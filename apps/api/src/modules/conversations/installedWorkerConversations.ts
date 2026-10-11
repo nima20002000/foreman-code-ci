@@ -1,6 +1,3 @@
-import type { ProviderAccountResolver } from '../provider-accounts/service.js'
-import { assertWorkerProviderAccountBinding } from '../provider-accounts/workerOperations.js'
-import { managedProviderEnvironment, resolveRuntimeProviderAccount } from '../harnesses/providerAccountRuntime.js'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
@@ -14,7 +11,7 @@ import { readInstalledWorkflowConfiguration, type InstalledWorkflowConfiguration
 import { createWorkerMcpEndpoint } from '../runs/remote/workerMcpEndpoint.js'
 import type { RemoteOperationJournal } from '../runs/remote/operationJournal.js'
 import { NativeProcessRegistry, type NativeLaunchObservation } from '../harnesses/recovery/processRegistry.js'
-import { CodexAppServerSessionManager, safeEnvironment, type CodexSessionDependencies } from '../harnesses/codexAppServer.js'
+import { CodexAppServerSessionManager, type CodexSessionDependencies } from '../harnesses/codexAppServer.js'
 import { CodexDiagnostics } from '../harnesses/codexDiagnostics.js'
 import { codexMcpInspectorAdapter } from '../harnesses/codexMcpInspectorAdapter.js'
 import { inspectInstalledCodex } from '../harnesses/installedCodexInspection.js'
@@ -51,7 +48,6 @@ export async function createInstalledWorkerConversations(input: {
   request(namespace: string, payload: unknown, options: { signal: AbortSignal }): Promise<DeviceApplicationResult>
   approvedRoots(): Promise<ApprovedRootAllowlist>
   codexSuiteRevision: string
-  accounts?: ProviderAccountResolver
   signal: AbortSignal
 }) {
   const selected = await readInstalledWorkflowConfiguration(input.configuration)
@@ -73,18 +69,13 @@ export async function createInstalledWorkerConversations(input: {
       stateDirectory: input.stateDirectory, selection: input.configuration, launcher: selected.appMcpLauncher,
       journal: conversationJournal,
       current: input.current, source, callbacks, approvedRoots: input.approvedRoots, registry: input.registry,
-      request: input.request, signal: input.signal, ...(input.accounts ? { accounts: input.accounts } : {}) })
+      request: input.request, signal: input.signal })
     if (harness !== 'codex') unavailable('The installed native selection does not support this driver.')
-    if (configuration.harness.harness !== 'codex') unavailable('The selected Codex configuration changed.')
-    assertWorkerProviderAccountBinding(binding.accountBinding, connection)
-    const account = await resolveRuntimeProviderAccount(input.accounts, 'codex', configuration.harness.accountId,
-      input.registry.scope(`conversation:${binding.owner.conversationId}`), undefined, binding.accountBinding)
-    const environment = account ? managedProviderEnvironment(process.env, account, 'codex') : process.env
     const directory = await installedConversationDirectory({ binding, configuration, approvedRoots: input.approvedRoots })
     const reader = createInstalledConversationNativeReader({ binding, configuration, connection,
       current: input.current, signal: () => input.signal, suiteRevision: input.codexSuiteRevision,
       inspect: signal => inspectInstalledCodex({ binding: input.current(), configuration: input.configuration,
-        environment, cwd: input.stateDirectory, signal }),
+        environment: process.env, cwd: input.stateDirectory, signal }),
       readFacts: signal => callbacks.profile(source(), signal),
     })
     const original = await reader.capture()
@@ -119,10 +110,6 @@ export async function createInstalledWorkerConversations(input: {
         host: () => localCodexChatHost(fileStorageRoot) }) : undefined
     const dependencies = createInstalledCodexDependencies({ reader, codexSuiteRevision: input.codexSuiteRevision })
     const operations: Extract<CodexSessionDependencies, { mode: 'native' }> = { ...dependencies,
-      environment: (variables, scopedNames) => {
-        const source = safeEnvironment(variables, scopedNames)
-        return account ? managedProviderEnvironment(source, account, 'codex') : source
-      },
       qualify: async (executable, cwd, environment, authenticated, signal, recovery = scope) => {
         await before(signal)
         return dependencies.qualify(executable, cwd, environment, authenticated, signal, recovery)

@@ -43,7 +43,6 @@ import { ChatDecisionReceipts } from '../conversations/ChatDecisionReceipts'
 import { OperatorTranscript } from './OperatorTranscript'
 import { OperatorApprovalCard } from './OperatorApprovalCard'
 import { OperatorComposerSettings } from './OperatorComposerSettings'
-import { PinnedProviderAccount } from '../provider-accounts/PinnedProviderAccount'
 import { useProviderAccounts } from '../provider-accounts/providerAccountsQueries'
 import { OperatorAccessPicker } from './OperatorAccessPicker'
 import { OperatorComposer } from './OperatorComposer'
@@ -417,17 +416,10 @@ function OperatorChatContent({ settingsWarning }: { settingsWarning?: string }) 
   const settings = preferencesDenied ? undefined : preferences.settings
   // Historical OpenCode chats stay readable, with no composer or response controls.
   const retired = conversation?.settings?.harness === 'opencode'
-  const acceptedBinding = conversation?.providerAccountBinding
-  let conversationAccountId: string | undefined
-  if (acceptedBinding?.kind === 'slot') conversationAccountId = acceptedBinding.accountId
-  else if (conversation?.settings?.harness !== 'opencode') conversationAccountId = conversation?.settings?.accountId
-  const hasAcceptedConversation = Boolean(acceptedBinding || conversation?.messages.length || conversation?.hasEarlierMessages)
-  const usesSavedAccount = hasAcceptedConversation && settings?.harness === conversation?.settings?.harness
-  const defaultAccountId = accounts.data?.accounts.find(account =>
-    account.provider === settings?.harness && account.isDefault && !account.removedAt)?.id
-  const requestedAccountId = settings?.accountId ?? (usesSavedAccount ? conversationAccountId : defaultAccountId)
-  const messageSettings = settings && !settings.accountId
-    && usesSavedAccount && conversationAccountId ? { ...settings, accountId: conversationAccountId } : settings
+  const requestedAccountId = settings?.accountId ?? accounts.data?.accounts.find(account =>
+    account.provider === settings?.harness && account.isDefault)?.id
+  const conversationAccountId = conversation?.settings?.harness === 'opencode'
+    ? undefined : conversation?.settings?.accountId
   const pendingHandoff = Boolean(settings && conversation?.settings
     && (settings.harness !== conversation.settings.harness || requestedAccountId !== conversationAccountId)
     && (conversation.messages.length > 0 || conversation.hasEarlierMessages))
@@ -502,7 +494,7 @@ function OperatorChatContent({ settingsWarning }: { settingsWarning?: string }) 
     const navigationGeneration = useOperatorChatStore.getState().navigationGeneration
     reservations.current.add(id); setPreparingId(id)
     try {
-      const command = await reserveOperatorMessage(id, content, window.location.pathname + window.location.search, messageSettings,
+      const command = await reserveOperatorMessage(id, content, window.location.pathname + window.location.search, settings,
         conversation?.revision,
         { configurationVersionId: conversation?.conversation.operatorConfigurationVersionId,
           defaultsRevision: preferences.query.data?.revision, ...(sessionMode ? { sessionMode } : {}) }, attachmentAttempt.attachments)
@@ -601,7 +593,6 @@ function OperatorChatContent({ settingsWarning }: { settingsWarning?: string }) 
           {selected.isLoading ? <LoadingState label="Loading conversation…" rows={4} /> : null}
           {selected.isError && !missingSelection ? <Alert live tone="danger" title={conversation ? 'Conversation refresh failed' : 'Conversation could not be loaded'} action={<Button size="sm" disabled={selected.isFetching} loading={selected.isFetching} onClick={() => void selected.refetch()}>Retry conversation</Button>}>{conversation ? 'Previously loaded messages are still shown.' : 'Try the request again.'}</Alert> : null}
           {conversation ? <>
-            {!retired ? <PinnedProviderAccount binding={conversation.providerAccountBinding} /> : null}
             {archived ? <Alert tone="warning" title="Conversation ended">This conversation is read-only. Its history and pending receipt remain available.</Alert> : null}
             {conversation.handoff ? <p className="operator-chat-handoff">Continued from <Button size="sm" variant="ghost" onClick={() => select(conversation.handoff!.parentConversationId)}>{conversation.handoff.sourceHarness} chat</Button>
               {conversation.handoff.omittedMessages ? ` · ${conversation.handoff.omittedMessages} older messages omitted from agent context` : ''}</p> : null}

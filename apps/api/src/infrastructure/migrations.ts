@@ -1,5 +1,4 @@
 import { runWorktreesMigration } from './runWorktreesMigration.js'
-import { providerAccountsMigration, providerAccountObservationsMigration } from '../modules/provider-accounts/migration.js'
 import { nativeProofSourceLimitMigration } from './nativeProofSourceLimitMigration.js'
 import { nativeActivityNoiseMigration } from './nativeActivityNoiseMigration.js'
 import { workspaceRepositoryImportsMigration } from './workspaceRepositoryImportsMigration.js'
@@ -909,8 +908,6 @@ export const migrations = [
   nativeActivityNoiseMigration,
   hostCiRunsMigration,
   ciFileDurationsMigration,
-  providerAccountsMigration,
-  providerAccountObservationsMigration,
 ] as const
 
 export async function applyApplicationMigrations(pool: pg.Pool): Promise<void> {
