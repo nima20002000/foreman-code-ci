@@ -471,7 +471,7 @@ describe('Run inspection inside the one mounted Board', () => {
 describe('Live Run status on the Board', () => {
   it('shows whose turn it is, Agent CI at the top and a pending decision that opens the existing inbox', async () => {
     const { scope, version, run } = fixture.runs.after
-    const [first, added] = version.definition.nodes.map(nativeNode) as [ReturnType<typeof nativeNode>, ReturnType<typeof nativeNode>]
+    const first = nativeNode(version.definition.nodes[0]!), added = nativeNode(version.definition.nodes[1]!)
     const nameOf = (node: typeof first) => node.name ?? node.label ?? node.id
     const execution = (node: typeof first, state: 'queued' | 'running' | 'completed') => ({
       identity: { workflowNodeId: node.id, executionId: `exec-live-${node.id}`, agentId: node.agentId,
