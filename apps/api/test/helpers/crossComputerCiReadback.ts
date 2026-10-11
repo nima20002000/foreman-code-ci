@@ -6,6 +6,7 @@ import { CiComputerHostSchema } from './crossComputerCiInput.js'
 import { callCiTool } from './crossComputerCiSetup.js'
 
 const TerminalStateSchema = CiRunRecordSchema.shape.state.extract(['passed', 'failed', 'canceled', 'lost'])
+// Agents may add notes such as verification details; every required field is still checked exactly.
 export const AgentCiReportSchema = z.object({
   ticketId: CiRunRecordSchema.shape.id,
   groupId: CiRunRecordSchema.shape.groupId,
@@ -23,8 +24,8 @@ export const AgentCiReportSchema = z.object({
     exitCode: CiRunRecordSchema.shape.exitCode,
     logLine: z.string().trim().min(1).max(2000),
     observedStates: z.array(CiRunRecordSchema.shape.state).min(1).max(7),
-  }).strict()).min(1).max(66),
-}).strict().superRefine((report, context) => {
+  })).min(1).max(66),
+}).superRefine((report, context) => {
   const ids = report.tickets.map(ticket => ticket.ticketId)
   if (new Set(ids).size !== ids.length || !ids.includes(report.ticketId)) {
     context.addIssue({ code: 'custom', message: 'Report every returned ticket exactly once, including the first.' })
@@ -36,7 +37,10 @@ export type CiReadback = z.infer<typeof CiGetOutputSchema>
 export function readAgentCiReport(output: unknown): AgentCiReport {
   const envelope = z.object({ text: z.string() }).safeParse(output)
   const raw = envelope.success ? envelope.data.text : output
-  return AgentCiReportSchema.parse(typeof raw === 'string' ? JSON.parse(raw) : raw)
+  const value: unknown = typeof raw === 'string' ? JSON.parse(raw) : raw
+  // Workflow Agents return their deliverable inside the routed workflow output.
+  const routed = z.object({ data: z.object({ latestDeliverable: z.unknown() }) }).safeParse(value)
+  return AgentCiReportSchema.parse(routed.success ? routed.data.data.latestDeliverable : value)
 }
 
 export function ciTerminal(state: string): boolean {

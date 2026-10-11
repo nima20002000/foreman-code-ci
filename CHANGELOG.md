@@ -7,6 +7,68 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.0.75] - 2026-10-11
+
+### Fixed
+
+- Remote workflow Agents register their Foreman Code MCP launcher route before the session starts, so their MCP tools load.
+- Workflow turns start only after Codex reports the Foreman Code MCP server connected with tools; the managed launcher entry sets MCP startup and tool timeouts.
+- Approved Git objects are imported in batches, so large repositories materialize; failures keep a safe diagnostic.
+- MCP schema conversions are shared by schema shape; aged snapshots are released every ten minutes; production statements get five seconds.
+
+## [0.0.74] - 2026-10-11
+
+### Fixed
+
+- A transient failure refreshing an Agent's App credential is retried while the credential is valid instead of stopping the Agent.
+- Reconciliation closes executions whose native owner is gone and backs off per Run instead of retrying in a hot loop.
+- Paired Workers reconnect by themselves after Main restarts and retry an interrupted self-update.
+
+## [0.0.73] - 2026-10-11
+
+### Fixed
+
+- A paired Worker no longer stops admitting Agent work while an obsolete CI runtime refresh is pending; cross-filesystem quota relocation is skipped safely.
+- The Worker MCP installer builds on platforms without `process.getuid`.
+
+## [0.0.72] - 2026-10-11
+
+### Performance
+
+- MCP request servers, payload validation, source directory identity checks, canonical graph JSON and launcher discovery do less repeated work under load.
+
+### Fixed
+
+- A Worker update keeps its managed Foreman Code MCP launcher entry recognized when its Node interpreter changes.
+
+## [0.0.71] - 2026-10-11
+
+### Performance
+
+- The production API database pool has 40 connections instead of 10.
+
+## [0.0.70] - 2026-10-11
+
+### Performance
+
+- MCP requests reuse tool JSON Schema conversions instead of rebuilding ~250 schemas per request.
+
+### Fixed
+
+- A transient database timeout on a native lane lease renewal is retried while the lease is still valid instead of cancelling the Agent.
+
+## [0.0.69] - 2026-10-11
+
+### Performance
+
+- Main no longer rescans every native process record: observations are cached and confirmed retired records are pruned.
+- Idle filesystem identity walks, telemetry reads and executable probes are cached, freeing the API's main thread under load.
+
+### Fixed
+
+- Shutdown waits for unstarted guardians and drains retained reviewer operations before releasing runtime ownership.
+- Closing during a native start waits for it to settle instead of failing the restart closure.
+
 ## [0.0.68] - 2026-10-11
 
 ### Fixed
