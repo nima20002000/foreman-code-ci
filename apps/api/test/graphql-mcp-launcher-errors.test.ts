@@ -1,0 +1,99 @@
+import { describe, expect, it } from 'vitest'
+import { mcpLauncherFixture } from './support/mcpLauncher.js'
+
+describe('MCP launcher failure guidance', () => {
+  it.each([
+    { status: 401, kind: 'authentication', guidance: 'Refresh the owning app credential' },
+    { status: 403, kind: 'forbidden', guidance: 'grants and scope' },
+    { status: 413, kind: 'request_too_large', guidance: 'Reduce the request payload' },
+    { status: 503, kind: 'service_unavailable', guidance: 'Retry later' },
+  ])('preserves the RPC id and safely classifies HTTP $status', async ({ status, kind, guidance }) => {
+    const f = await mcpLauncherFixture((_message, response) => {
+      response.writeHead(status, { 'content-type': 'text/plain' }).end('secret server diagnostic /private/path')
+    })
+    try {
+      f.send({ id: `request-${status}`, method: 'tools/call', params: { name: 'interaction_get' } })
+      const result = await f.receive(`request-${status}`)
+      expect(result.id).toBe(`request-${status}`)
+      expect(result.error).toMatchObject({ data: { kind, httpStatus: status }, message: expect.stringContaining(guidance) })
+      expect(JSON.stringify(result)).not.toMatch(/secret|private|[Rr]estart|could not connect/)
+    } finally { await f.close() }
+  }, 10_000)
+
+  it('reports connection refusal as a transport failure without restart advice', async () => {
+    const f = await mcpLauncherFixture(() => {}, { unavailableEndpoint: true })
+    try {
+      f.send({ id: 17, method: 'ping' })
+      const result = await f.receive(17)
+      expect(result).toMatchObject({ id: 17, error: {
+        data: { kind: 'transport' }, message: expect.stringContaining('Check that the owning app is running'),
+      } })
+      expect(result.error?.message).not.toMatch(/[Rr]estart/)
+    } finally { await f.close() }
+  }, 10_000)
+
+  it.each([false, true])('reports timeout before or during streaming; streaming=%s', async (streaming) => {
+    const f = await mcpLauncherFixture((_message, response) => {
+      if (streaming) {
+        response.writeHead(200, { 'content-type': 'text/event-stream' })
+        response.write(': keepalive\n\n')
+      }
+    }, {
+      preload: 'const originalTimeout = AbortSignal.timeout; AbortSignal.timeout = () => originalTimeout(100);',
+    })
+    try {
+      f.send({ id: 'timed-out', method: 'tools/call', params: { name: 'interaction_respond' } })
+      const result = await f.receive('timed-out')
+      expect(result).toMatchObject({ id: 'timed-out', error: {
+        data: { kind: 'timeout' }, message: expect.stringContaining('may have committed'),
+      } })
+      expect(result.error?.message).not.toMatch(/[Rr]estart|could not connect/)
+    } finally { await f.close() }
+  }, 10_000)
+
+  it.each(['truncated-json', 'truncated-sse', 'broken-body', 'empty-accepted'])('reports uncertain delivery after a committed request with %s', async fault => {
+      const committed: string[] = []
+      const commandId = '695abeb8-598a-49a4-8c3c-c6e3533053e8'
+      const f = await mcpLauncherFixture((message, response) => {
+        committed.push(String((message.params?.arguments as { commandId: string }).commandId))
+        if (fault === 'empty-accepted') {
+          response.writeHead(202).end()
+        } else if (fault === 'truncated-json') {
+          response.writeHead(200, { 'content-type': 'application/json' }).end('{"jsonrpc":"2.0","result":')
+        } else {
+          response.writeHead(200, { 'content-type': 'text/event-stream' })
+          response.write('data: {"jsonrpc":"2.0","id":"uncertain","result":')
+          if (fault === 'broken-body') setTimeout(() => response.destroy(), 20)
+          else response.end()
+        }
+      })
+      try {
+        f.send({ id: 'uncertain', method: 'tools/call', params: { arguments: { commandId } } })
+        const result = await f.receive('uncertain')
+        expect(result.error).toMatchObject({
+          data: expect.objectContaining({ delivery: 'indeterminate' }),
+          message: expect.stringContaining('Read back the original command'),
+        })
+        expect(result.result).toBeUndefined()
+        expect(committed).toEqual([commandId])
+        expect(f.messages.filter(message => message.id === 'uncertain')).toHaveLength(1)
+      } finally { await f.close() }
+    }, 10_000)
+
+  it('delivers one split SSE result and ignores trailing duplicate results', async () => {
+    let requests = 0
+    const f = await mcpLauncherFixture((message, response) => {
+      requests++
+      const terminal = JSON.stringify({ jsonrpc: '2.0', id: message.id, result: { commandId: 'original' } })
+      response.writeHead(200, { 'content-type': 'text/event-stream' })
+      response.write(`data: ${terminal.slice(0, 15)}`)
+      setTimeout(() => response.end(`${terminal.slice(15)}\n\ndata: ${terminal}\n\n`), 10)
+    })
+    try {
+      f.send({ id: 'split', method: 'tools/call' })
+      expect(await f.receive('split')).toMatchObject({ id: 'split', result: { commandId: 'original' } })
+      expect(f.messages.filter(message => message.id === 'split')).toHaveLength(1)
+      expect(requests).toBe(1)
+    } finally { await f.close() }
+  }, 10_000)
+})

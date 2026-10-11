@@ -1,0 +1,178 @@
+import { realpath } from 'node:fs/promises'
+import { requireWorkspaceStoragePath, workspaceStorageRoot } from '../workspaces/storage.js'
+import { randomUUID } from 'node:crypto'
+
+import {
+  AgentDefaultsSchema,
+  UpdateAgentDefaultsRequestSchema,
+  DEFAULT_AGENT_DEFAULTS,
+  WorkflowDefaultsSchema,
+  withAdvancedDefaults,
+  type AgentDefaults,
+  type WorkflowDefaults,
+} from '@foreman-code/contracts'
+import type pg from 'pg'
+import { WorkspaceDefaultsSchema, DEFAULT_WORKSPACE_DEFAULTS, type WorkspaceDefaults } from '@foreman-code/contracts/management'
+import { GeneralSettingsSchema, DEFAULT_GENERAL_SETTINGS, type GeneralSettings } from '@foreman-code/contracts/management'
+import {
+  PromptTextSchema, DEFAULT_PROMPT_TEXT, type PromptText, type PromptSettingSnapshot,
+} from '@foreman-code/contracts/management'
+
+import { RemoteExecutionSettingsSchema, DEFAULT_REMOTE_EXECUTION_SETTINGS,
+  type RemoteExecutionSettings } from '@foreman-code/contracts/management'
+
+import { inTransaction } from '../../infrastructure/transaction.js'
+
+import { DomainError } from '../errors.js'
+import type { GraphSqlClient } from '../run-graph/connection.js'
+
+const KEYS = { agents: 'agent-defaults-v1', workflows: 'workflow-defaults-v1', workspaces: 'workspace-defaults-v1' } as const
+
+const LEGACY_WORKFLOW_DEFAULTS: WorkflowDefaults = {
+  approvalHandler: 'orchestrator',
+}
+
+export interface VersionedSetting<T> { value: T; versionId: string | null; revision: number }
+
+async function readSetting<T>(sql: GraphSqlClient, key: string, schema: { parse(value: unknown): T },
+  fallback: T): Promise<VersionedSetting<T>> {
+  const result = await sql.query<{ record: unknown; revision: string; current_version_id: string | null }>(
+    'select record, revision, current_version_id from application_settings where key = $1', [key],
+  )
+  const row = result.rows[0]
+  if (!row) return { value: schema.parse(fallback), revision: 0, versionId: null }
+  return { value: schema.parse(row.record), revision: Number(row.revision), versionId: row.current_version_id }
+}
+
+export function readSystemPromptSetting(sql: GraphSqlClient): Promise<PromptSettingSnapshot> {
+  return readSetting(sql, 'system-prompt', PromptTextSchema, DEFAULT_PROMPT_TEXT)
+}
+
+/** Versioned application defaults. Callers copy values; stored versions never mutate consumers. */
+export class PostgresFoundationSettingsRepository {
+  constructor(private readonly pool: pg.Pool, private readonly projectRoot?: string) {}
+
+  getSystemPrompt(client?: GraphSqlClient): Promise<VersionedSetting<PromptText>> {
+    return readSystemPromptSetting(client ?? this.pool)
+  }
+
+  updateSystemPrompt(value: PromptText, expectedRevision: number, client: pg.ClientBase) {
+    return this.write('system-prompt', PromptTextSchema.parse(value), expectedRevision, client)
+  }
+
+  getOperatorInitialPrompt(client?: GraphSqlClient): Promise<VersionedSetting<PromptText>> {
+    return this.read('operator-initial-prompt', PromptTextSchema, DEFAULT_PROMPT_TEXT, client)
+  }
+
+  updateOperatorInitialPrompt(value: PromptText, expectedRevision: number, client: pg.ClientBase) {
+    return this.write('operator-initial-prompt', PromptTextSchema.parse(value), expectedRevision, client)
+  }
+
+  getRemoteExecutionSettings(client?: pg.ClientBase): Promise<VersionedSetting<RemoteExecutionSettings>> {
+    return this.read('remote-execution-settings', RemoteExecutionSettingsSchema, DEFAULT_REMOTE_EXECUTION_SETTINGS, client)
+  }
+
+  updateRemoteExecutionSettings(value: RemoteExecutionSettings, expectedRevision: number, client: pg.ClientBase) {
+    return this.write('remote-execution-settings', RemoteExecutionSettingsSchema.parse(value), expectedRevision, client)
+  }
+
+  getGeneralSettings(client?: pg.ClientBase): Promise<VersionedSetting<GeneralSettings>> {
+    return this.read('general-settings', GeneralSettingsSchema, DEFAULT_GENERAL_SETTINGS, client)
+  }
+
+  updateGeneralSettings(value: GeneralSettings, expectedRevision: number, client: pg.ClientBase) {
+    return this.write('general-settings', GeneralSettingsSchema.parse(value), expectedRevision, client)
+  }
+
+  getAgentDefaults(client?: pg.ClientBase): Promise<VersionedSetting<AgentDefaults>> {
+    return this.read(KEYS.agents, AgentDefaultsSchema, DEFAULT_AGENT_DEFAULTS, client).then((snapshot) => ({
+      ...snapshot,
+      value: {
+        orchestrator: { ...snapshot.value.orchestrator, harness: withAdvancedDefaults(snapshot.value.orchestrator.harness) },
+        coder: { ...snapshot.value.coder, harness: withAdvancedDefaults(snapshot.value.coder.harness) },
+        operator: { ...snapshot.value.operator, harness: withAdvancedDefaults(snapshot.value.operator.harness) },
+      },
+    }))
+  }
+
+  getWorkspaceDefaults(client?: pg.ClientBase): Promise<VersionedSetting<WorkspaceDefaults>> {
+    return this.read(KEYS.workspaces, WorkspaceDefaultsSchema, DEFAULT_WORKSPACE_DEFAULTS, client)
+      .then(async (snapshot) => {
+        let parentPath = snapshot.value.parentPath ?? this.projectRoot ?? workspaceStorageRoot()
+        if (this.projectRoot) {
+          try {
+            parentPath = await realpath(parentPath)
+            requireWorkspaceStoragePath(await realpath(this.projectRoot), parentPath)
+          }
+          catch { parentPath = this.projectRoot }
+        }
+        return { ...snapshot, value: { ...snapshot.value, parentPath } }
+      })
+  }
+
+  async updateWorkspaceDefaults(value: WorkspaceDefaults, expectedRevision: number, client?: pg.ClientBase): Promise<VersionedSetting<WorkspaceDefaults>> {
+    if (!client) return inTransaction(this.pool, undefined, (transaction) => this.updateWorkspaceDefaults(value, expectedRevision, transaction))
+    await client.query('select pg_advisory_xact_lock(hashtext($1))', ['workspace-folder-lifecycle'])
+    const accepted = WorkspaceDefaultsSchema.parse(value)
+    if (this.projectRoot && accepted.parentPath) {
+      accepted.parentPath = await realpath(accepted.parentPath)
+      await client.query('select pg_advisory_xact_lock(hashtext($1))', [`workspace-folder:${accepted.parentPath}`])
+      accepted.parentPath = await realpath(accepted.parentPath)
+      requireWorkspaceStoragePath(await realpath(this.projectRoot), accepted.parentPath)
+    }
+    return this.write(KEYS.workspaces, accepted, expectedRevision, client)
+  }
+
+  getWorkflowDefaults(client?: pg.ClientBase): Promise<VersionedSetting<WorkflowDefaults>> {
+    return this.read(KEYS.workflows, WorkflowDefaultsSchema, LEGACY_WORKFLOW_DEFAULTS, client)
+  }
+
+  updateAgentDefaults(value: AgentDefaults, expectedRevision: number, client?: pg.ClientBase) {
+    const accepted = UpdateAgentDefaultsRequestSchema.parse({ value, expectedRevision }).value
+    return this.write(KEYS.agents, accepted, expectedRevision, client)
+  }
+
+  updateWorkflowDefaults(value: WorkflowDefaults, expectedRevision: number, client?: pg.ClientBase) {
+    return this.write(KEYS.workflows, WorkflowDefaultsSchema.parse(value), expectedRevision, client)
+  }
+
+  updateManagedAgentDefaults(client: pg.PoolClient, value: AgentDefaults, expectedRevision: number) {
+    return this.updateAgentDefaults(value, expectedRevision, client)
+  }
+
+  updateManagedWorkflowDefaults(client: pg.PoolClient, value: WorkflowDefaults, expectedRevision: number) {
+    return this.updateWorkflowDefaults(value, expectedRevision, client)
+  }
+
+  private async read<T>(key: string, schema: { parse(value: unknown): T }, fallback: T, client?: GraphSqlClient): Promise<VersionedSetting<T>> {
+    return readSetting(client ?? this.pool, key, schema, fallback)
+  }
+
+  private async write<T>(key: string, value: T, expectedRevision: number, supplied?: pg.ClientBase): Promise<VersionedSetting<T>> {
+    if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0) {
+      throw new DomainError('REVISION_INVALID', 'Expected revision must be a nonnegative integer.', 400)
+    }
+    return inTransaction(this.pool, supplied, async (client) => {
+      await client.query('select pg_advisory_xact_lock(hashtext($1))', [`setting:${key}`])
+      const current = await client.query<{ revision: string }>(
+        'select revision from application_settings where key = $1 for update', [key],
+      )
+      const revision = Number(current.rows[0]?.revision ?? 0)
+      if (revision !== expectedRevision) throw new DomainError('REVISION_CONFLICT', 'Defaults changed since they were read.', 409, { currentRevision: revision })
+      const nextRevision = revision + 1
+      const versionId = `${key}-v${nextRevision}-${randomUUID()}`
+      await client.query(
+        `insert into application_setting_versions (id, setting_key, version, record)
+         values ($1, $2, $3, $4::jsonb)`, [versionId, key, nextRevision, JSON.stringify(value)],
+      )
+      await client.query(
+        `insert into application_settings (key, record, revision, current_version_id, updated_at)
+         values ($1, $2::jsonb, 1, $3, now())
+         on conflict (key) do update set record = excluded.record,
+           revision = application_settings.revision + 1, current_version_id = excluded.current_version_id,
+           updated_at = excluded.updated_at`, [key, JSON.stringify(value), versionId],
+      )
+      return { value, revision: nextRevision, versionId }
+    })
+  }
+}

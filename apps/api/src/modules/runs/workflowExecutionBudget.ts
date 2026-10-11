@@ -1,0 +1,39 @@
+import type { WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
+import { DomainError } from '../errors.js'
+import { assertGraphTransaction, type GraphTransactionSql } from '../run-graph/connection.js'
+import { repeatConflict } from './repeatResolution.js'
+
+/** Call while holding the Run lock. Starting an unissued activation consumes
+ * its reservation; retries and new activations require additional capacity. */
+export async function hasWorkflowExecutionCapacityLocked(sql: GraphTransactionSql, runId: string,
+  version: WorkflowVersionV3, activationId: string | null = null): Promise<boolean> {
+  assertGraphTransaction(sql)
+  const maximum = version.definition.executionPolicy!.maxNodeExecutions
+  const row = (await sql.query<{ total: string }>(`select (
+    (select count(*) from harness_executions e where e.run_id=$1
+      and not exists (select 1 from workflow_native_entries n
+        where n.execution_id=e.id and n.run_id=e.run_id and n.phase='not_submitted'))
+    + (select count(*) from run_repeat_executions where run_id=$1 and identity->>'kind'='job')
+    + (select count(*) from workflow_job_preparations p where p.run_id=$1
+      and not exists (select 1 from run_repeat_executions e
+        where e.run_id=p.run_id and e.slot_id=p.slot_id))
+    + (select count(*) from run_work_activations a where a.run_id=$1
+      and a.state in ('queued','waiting','running')
+      and ($2::text is null or a.activation_id<>$2)
+      and not exists (select 1 from harness_executions e
+        where e.run_id=a.run_id and e.work_activation_id=a.activation_id))
+    )::text as total`, [runId, activationId])).rows[0]
+  if (!row || !/^[0-9]+$/.test(row.total)) return repeatConflict('REPEAT_EXECUTION_BUDGET_INVALID')
+  return BigInt(row.total) < BigInt(maximum)
+}
+
+export async function assertWorkflowExecutionCapacityLocked(sql: GraphTransactionSql, runId: string,
+  version: WorkflowVersionV3, activationId: string | null = null): Promise<void> {
+  if (!await hasWorkflowExecutionCapacityLocked(sql, runId, version, activationId)) {
+    if (version.definition.handoffs) {
+      throw new DomainError('WORK_RUN_EXECUTION_BUDGET_EXHAUSTED',
+        'The Run reached its execution limit and cannot start more work.', 409)
+    }
+    return repeatConflict('REPEAT_EXECUTION_BUDGET_EXHAUSTED')
+  }
+}

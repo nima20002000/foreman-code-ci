@@ -1,0 +1,34 @@
+/* Authoring chrome remains owned by the existing Board. Reserve its top/bottom
+ * overlays; the context note is a row above, not a competing canvas column. */
+.unified-workflow-board { flex-direction: column; }
+.pinned-run-canvas {
+  box-sizing: border-box;
+  padding-top: 72px;
+  padding-bottom: 64px;
+  display: flex;
+  flex-direction: column;
+  min-height: 360px;
+}
+.pinned-run-flow { position: relative; flex: 1; min-height: 120px; }
+.pinned-run-flow .react-flow { background: var(--canvas-glow, none), var(--color-surface); }
+.pinned-work-limit-object { overflow: visible; pointer-events: none; }
+.pinned-work-limit-control { display: grid; justify-items: center; gap: 3px; pointer-events: auto; }
+.pinned-work-limit-pill { min-width: 44px; min-height: 32px; padding: 4px 10px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface-raised); color: var(--text-strong); font: var(--type-control); cursor: pointer; }
+.pinned-work-limit-pill:hover, .pinned-work-limit-pill:focus-visible { border-color: var(--accent); outline: 2px solid var(--focus); outline-offset: 2px; }
+.pinned-work-limit-usage { padding: 2px 6px; border-radius: 5px; background: var(--surface-raised); color: var(--text-muted); font: var(--type-caption); text-align: center; }
+.run-execution-inspector { display: grid; gap: 12px; min-width: 0; }
+.run-execution-inspector header { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.run-execution-inspector label { display: grid; gap: 6px; font-weight: 500; }
+.run-execution-inspector select { min-width: 0; max-width: 100%; padding: 8px; background: var(--surface-raised, Canvas); color: inherit; border: 1px solid var(--border); border-radius: 6px; }
+.run-execution-list { display: grid; gap: 12px; padding-inline-start: 24px; }
+.run-execution-list p { font-size: 12px; margin-block: 4px; overflow-wrap: anywhere; }
+.run-exact-execution { border-top: 1px solid var(--border); padding-top: 12px; min-width: 0; }
+.run-inspection-json { max-height: 320px; max-width: 100%; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 12px; }
+.run-inspection-json:focus-visible { outline: 2px solid var(--accent, Highlight); }
+.run-exact-execution dd { margin-inline-start: 0; overflow-wrap: anywhere; }
+.board-run-context-note { flex: 0 0 auto; padding: 6px 12px; margin: 0; font-size: 12px; border-bottom: 1px solid var(--border); }
+
+.workflow-board-run-panel .board-run-row > span:last-child { grid-column: 1 / -1; justify-self: start; overflow-wrap: anywhere; }
+@media (max-width: 900px) {
+  .pinned-run-canvas { padding-top: 120px; overflow: auto; }
+}
