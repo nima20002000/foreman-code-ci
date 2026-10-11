@@ -1,21 +1,24 @@
-import { dirname } from 'node:path'
 import type { HarnessConfiguration } from '@foreman-code/contracts'
 import type { HarnessProfileSelection } from '@foreman-code/contracts/harness-registry'
-import type { ProviderAccountResolver, ResolvedProviderAccount } from '../provider-accounts/service.js'
+import type { ProviderAccountResolver } from '../provider-accounts/service.js'
 import { DomainError } from '../errors.js'
-import { providerAccountEnvironment } from '../provider-accounts/environment.js'
 import type { HostHarnessOverrideService } from './instanceSettings/service.js'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import type pg from 'pg'
 import type { GraphSqlClient } from '../run-graph/connection.js'
-import type { NativeProcessRecovery } from './recovery/processRegistry.js'
-import { resolveRuntimeProviderAccount } from './providerAccountRuntime.js'
+export { managedProviderEnvironment, pinnedCodexAccountEnvironment } from './providerAccountRuntime.js'
+import { AcceptedProviderAccountBindings } from '../provider-accounts/acceptedBindings.js'
 
 export class ProviderAccountConfigurationService {
-  private profiles?: Pick<HostHarnessOverrideService, 'selectionForConfiguration' | 'prepareOperatorConfiguration'>
-  constructor(private readonly accounts: ProviderAccountResolver) {}
+  readonly acceptedBindings: AcceptedProviderAccountBindings
+  private profiles?: Pick<HostHarnessOverrideService,
+    'selectionForConfiguration' | 'prepareOperatorConfiguration' | 'validateSelection'>
+  constructor(private readonly accounts: ProviderAccountResolver) {
+    this.acceptedBindings = new AcceptedProviderAccountBindings(accounts)
+  }
 
-  bindProfiles(profiles: Pick<HostHarnessOverrideService, 'selectionForConfiguration' | 'prepareOperatorConfiguration'>): void {
+  bindProfiles(profiles: Pick<HostHarnessOverrideService,
+    'selectionForConfiguration' | 'prepareOperatorConfiguration' | 'validateSelection'>): void {
     this.profiles = profiles
   }
 
@@ -24,6 +27,11 @@ export class ProviderAccountConfigurationService {
     if (input.configuration.harness !== 'claude' || !input.configuration.accountId) return input.selection
     if (!this.profiles) throw new DomainError('HARNESS_PROFILE_SELECTION_UNAVAILABLE',
       'Managed Claude accounts require local harness profile setup.', 503)
+    if (input.selection?.target.hostRef.kind === 'device') {
+      await this.resolve(input.configuration, input.selection, { sql: input.client })
+      await this.profiles.validateSelection(input.principal, input.selection, input.configuration, input.client)
+      return input.selection
+    }
     const selected = await this.profiles.selectionForConfiguration(input.principal, input.configuration, input.client)
     if (selected) return selected
     if (input.check) return this.profiles.prepareOperatorConfiguration(input.principal, input.source,
@@ -35,11 +43,21 @@ export class ProviderAccountConfigurationService {
   async resolve(configuration: HarnessConfiguration, selection?: HarnessProfileSelection,
     options?: { sql: GraphSqlClient }): Promise<HarnessConfiguration> {
     if (configuration.harness === 'opencode') return configuration
+    if (!configuration.accountId && (selection || configuration.harness === 'claude')) return configuration
     const account = await this.accounts.resolve(configuration.harness, configuration.accountId, options)
     if (!account) return configuration
-    if (selection?.target.hostRef.kind === 'device') {
+    if (selection?.target.hostRef.kind === 'device' && account.binding?.target.hostRef.kind !== 'device') {
       throw new DomainError('PROVIDER_ACCOUNT_LOCAL_ONLY',
-        'Managed provider accounts can run only on the computer where they were added.', 409)
+        'Select an account owned by the selected Worker installation.', 409)
+    }
+    if (account.binding?.target.hostRef.kind === 'device') {
+      if (selection?.target.hostRef.kind !== 'device'
+        || selection.target.hostRef.mainId !== account.binding.target.hostRef.mainId
+        || selection.target.hostRef.deviceId !== account.binding.target.hostRef.deviceId
+        || selection.target.applicationInstallationId !== account.binding.target.applicationInstallationId) {
+        throw new DomainError('PROVIDER_ACCOUNT_TARGET_CONFLICT', 'Select the qualified profile on the owning Worker.', 409)
+      }
+      return { ...configuration, accountId: account.accountId }
     }
     if (configuration.harness === 'claude') {
       return { ...configuration, accountId: account.accountId,
@@ -53,42 +71,4 @@ export function harnessSessionChanged(left: HarnessConfiguration, right: Harness
   if (left.harness !== right.harness) return true
   if (left.harness === 'opencode' || right.harness === 'opencode') return false
   return left.accountId !== right.accountId
-}
-
-/** A managed account cannot inherit provider authentication or provider routing from the API process. */
-export function managedProviderEnvironment(source: NodeJS.ProcessEnv, account: ResolvedProviderAccount,
-  provider: 'codex' | 'claude'): NodeJS.ProcessEnv {
-  const environment = { ...source }
-  for (const key of Object.keys(environment)) {
-    if (/^(?:OPENAI_|CODEX_|ANTHROPIC_|CLAUDE_|CLAUDECODE$|AWS_|AZURE_|VERTEX_|BEDROCK_)/.test(key)) {
-      delete environment[key]
-    }
-  }
-  const selected = providerAccountEnvironment(provider, account.homePath, dirname(account.homePath), environment)
-  if (provider === 'claude') {
-    if (account.authMode === 'api-key') {
-      if (!account.apiKey) throw new DomainError('CLAUDE_API_KEY_REQUIRED', 'The selected account has no API key.', 409)
-      selected.ANTHROPIC_API_KEY = account.apiKey
-    }
-  }
-  return selected
-}
-
-export function pinnedCodexAccountEnvironment(accounts: ProviderAccountResolver | undefined, accountId: string | undefined,
-  recovery?: NativeProcessRecovery, sourceRecovery?: NativeProcessRecovery) {
-  let selected: ResolvedProviderAccount | null | undefined
-  let pending: Promise<void> | undefined
-  return {
-    prepare(): Promise<void> {
-      pending ??= Promise.resolve().then(async () => {
-        selected = await resolveRuntimeProviderAccount(accounts, 'codex', accountId, recovery, sourceRecovery)
-      })
-      return pending
-    },
-    environment(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-      if (selected === undefined) throw new DomainError('PROVIDER_ACCOUNT_NOT_RESOLVED',
-        'Resolve the selected account before starting the harness.', 500)
-      return selected ? managedProviderEnvironment(source, selected, 'codex') : source
-    },
-  }
 }
