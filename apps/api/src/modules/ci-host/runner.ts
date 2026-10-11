@@ -2,10 +2,12 @@ import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { mkdir, open, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { availableParallelism, homedir, totalmem } from 'node:os'
-import { join } from 'node:path'
+import { join, matchesGlob } from 'node:path'
 import { CiDurationsSchema, CiHostReplySchema, CiHostRequestSchema, integrationPartition,
+  CiScopeSchema, CiSelectedFilesSchema, validCiSelection,
   type CiDurations, type CiHostReply, type CiHostRun, type CiSuite, type CiPart, type CiPartition, type CiScope } from '@foreman-code/contracts'
 import { DomainError } from '../errors.js'
+import { ciRepositoryCapabilities } from './repository.js'
 
 type Command = { code: number; stdout: string; stderr: string }
 export interface HostCiPorts {
@@ -34,7 +36,7 @@ interface RunMeta {
   runId: string; repository: string; commit: string; suite: CiSuite; partition: CiPartition | null
   startedAt: string; state: CiHostRun['state']; finishedAt: string | null; exitCode: number | null
   message: string | null; cleaned: boolean; durations?: CiDurations
-  scope?: CiScope; files?: string[]; part?: CiPart
+  scope?: CiScope; files?: string[]; part?: CiPart; defaultBranch?: string; deriveFiles?: boolean
 }
 
 const unitName = (runId: string) => `foreman-ci-${runId}`
@@ -124,7 +126,8 @@ export class HostCiRunner {
   }
 
   private async start(request: { runId: string; repository: string; commit: string; suite: CiSuite
-    part?: CiPart | undefined; partition?: CiPartition | undefined; durations?: CiDurations | undefined; scope?: CiScope | undefined; files?: string[] | undefined }) {
+    part?: CiPart | undefined; partition?: CiPartition | undefined; durations?: CiDurations | undefined;
+    scope?: CiScope | undefined; files?: string[] | undefined; defaultBranch?: string | undefined }) {
     const directory = this.runDirectory(request.runId)
     if (existsSync(join(directory, 'meta.json'))) return this.refresh(request.runId)
     const busy = await this.active()
@@ -136,7 +139,9 @@ export class HostCiRunner {
       suite: request.suite, partition: request.partition ?? null, startedAt: this.ports.now().toISOString(),
       state: 'starting', finishedAt: null, exitCode: null, message: null, cleaned: false,
       ...(request.part ? { part: request.part } : {}),
-      scope: request.scope ?? 'full', files: request.files ?? [],
+      scope: request.scope ?? 'affected', ...(request.files !== undefined ? { files: request.files } : {}),
+      deriveFiles: (request.scope ?? 'affected') === 'affected' && request.files === undefined,
+      ...(request.defaultBranch ? { defaultBranch: request.defaultBranch } : {}),
       ...(request.durations ? { durations: request.durations } : {}) }
     await this.writeMeta(meta)
     const preparing = this.launch(meta).catch(async error => {
@@ -166,6 +171,7 @@ export class HostCiRunner {
     const source = join(this.runDirectory(meta.runId), 'src')
     await this.git(['worktree', 'prune'], clone)
     await this.git(['worktree', 'add', '--quiet', '--detach', source, meta.commit], clone)
+    await this.selectFiles(meta, source)
     const script = await this.script(meta, source)
     await writeFile(join(this.runDirectory(meta.runId), 'run.sh'), script, { mode: 0o700 })
     const reserve = Math.max(2 ** 30, this.ports.memoryBytes * 0.1)
@@ -179,28 +185,113 @@ export class HostCiRunner {
     await this.writeMeta({ ...meta, state: 'running' })
   }
 
+  private async selectFiles(meta: RunMeta, source: string) {
+    if (meta.scope !== 'affected' || meta.files !== undefined) return
+    const full = (reason: string) => {
+      meta.scope = 'full'
+      meta.message = `Running full suite: ${reason}`
+    }
+    const selector = join(source, 'scripts/ci-affected.mjs')
+    if (!existsSync(selector)) return full('The repository has no affected selector.')
+    const branch = meta.defaultBranch ?? 'main'
+    const ref = `refs/remotes/origin/${branch}`
+    await this.git(['fetch', '--quiet', '--no-tags', 'origin', `+refs/heads/${branch}:${ref}`], source)
+    if ((await this.git(['rev-parse', ref], source)).trim() === meta.commit) {
+      return full('The commit is the workspace default branch head.')
+    }
+    const base = await this.ports.run('git', ['merge-base', meta.commit, ref], { cwd: source, env: this.environment })
+    if (base.code !== 0) return full('No merge-base with the workspace default branch is available.')
+    const changed = (await this.git(['diff', '--name-only', '--no-renames', '-z', base.stdout.trim(), meta.commit], source))
+      .split('\0').filter(Boolean)
+    const selection = await this.repositorySelection(meta, source, selector, changed)
+    if (selection.scope === 'full') return full(selection.reason)
+    const files = await this.partFiles(meta, source, selection.files)
+    meta.files = files
+    meta.message = files.length ? `Selected ${files.length} affected files for ${meta.part ?? meta.suite}.`
+      : 'No affected files for this suite part.'
+  }
+
+  private async repositorySelection(meta: RunMeta, source: string, selector: string, changed: string[]) {
+    // selectAffectedFiles also supports repositories whose snapshot helper assumes origin/main.
+    const code = [
+      "import { execFileSync } from 'node:child_process'",
+      "import { readFileSync } from 'node:fs'",
+      "import { join } from 'node:path'",
+      "import { pathToFileURL } from 'node:url'",
+      'const [selector, suite, commit, changed] = process.argv.slice(1)',
+      'const { selectAffectedFiles } = await import(pathToFileURL(selector).href)',
+      "const paths = execFileSync('git', ['ls-tree', '-r', '--name-only', '-z', commit], { encoding: 'utf8' })",
+      "  .split('\\0').filter(Boolean)",
+      'const sources = new Map(paths.map(file => [file, /\\.(?:[cm]?[jt]sx?|json|css)$/.test(file)',
+      "  ? readFileSync(join(process.cwd(), file), 'utf8') : '']))",
+      "const manifest = sources.get('packages/contracts/package.json')",
+      'console.log(JSON.stringify(selectAffectedFiles({ suite, changedFiles: JSON.parse(changed), sources,',
+      '  exports: manifest ? JSON.parse(manifest).exports : {} })))',
+    ].join('\n')
+    const result = await this.ports.run('node', ['--input-type=module', '-e', code, selector,
+      meta.suite, meta.commit, JSON.stringify(changed)], { cwd: source, env: this.environment })
+    if (result.code !== 0) throw new Error(`Affected selection failed: ${result.stderr.trim().slice(0, 500)}`)
+    const selection = JSON.parse(result.stdout) as { scope: unknown; files: unknown; reason: string }
+    const scope = CiScopeSchema.parse(selection.scope)
+    const files = CiSelectedFilesSchema.parse(selection.files)
+    if (!validCiSelection({ suite: meta.suite, scope, files })) throw new Error('The repository returned invalid affected files.')
+    return { scope, files, reason: selection.reason }
+  }
+
+  private async partFiles(meta: RunMeta, source: string, selected: string[]) {
+    const part = meta.part
+    if (!part) return selected
+    const heavyPath = join(source, 'apps/web/heavy-tests.json')
+    const heavy = existsSync(heavyPath) ? (JSON.parse(await readFile(heavyPath, 'utf8')) as { files: string[] }).files : []
+    let files = selected.filter(file => {
+      if (part.endsWith('-api')) return file.startsWith('apps/api/')
+      if (part.endsWith('-other')) {
+        return !file.startsWith('apps/api/') && (meta.suite !== 'unit' || !file.startsWith('apps/web/'))
+      }
+      const isHeavy = heavy.some(pattern => matchesGlob(file.slice('apps/web/'.length), pattern))
+      return file.startsWith('apps/web/') && (part === 'unit-web-heavy' ? isHeavy : !isHeavy)
+    })
+    if (meta.partition) {
+      const timingsPath = join(source, 'scripts/unit-durations.json')
+      const committed = existsSync(timingsPath) ? JSON.parse(await readFile(timingsPath, 'utf8')) as CiDurations : {}
+      files = integrationPartition(files, { ...committed, ...meta.durations }, meta.partition)
+    }
+    return files
+  }
+
   private async script(meta: RunMeta, source: string) {
     const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
     const manifest = JSON.parse(await readFile(join(source, 'package.json'), 'utf8')) as { scripts?: Record<string, string> }
     const scripts = manifest.scripts ?? {}
+    const capabilities = ciRepositoryCapabilities(['scripts/ci-suite.sh', 'scripts/ci-files.mjs',
+      'scripts/ci-affected-run.mjs'].filter(file => existsSync(join(source, file))))
+    const pm = this.packageManager(source)
     const suiteScript: Record<CiSuite, string | null> = { install: null, typecheck: 'typecheck', lint: 'lint',
       unit: 'test', build: 'build', integration: 'test:integration' }
-    const name = suiteScript[meta.suite]
+    let name: string | null = null
+    if (capabilities.parts) name = suiteScript[meta.suite]
+    else if (meta.suite !== 'install') name = meta.suite
     if (!meta.part && name && !scripts[name]) throw new Error(`The repository has no "${name}" script for the ${meta.suite} suite.`)
+    if (meta.part && !capabilities.parts) throw new Error('The repository does not support CI suite parts.')
+    if (meta.partition && !meta.part && !capabilities.integrationPartitions) {
+      throw new Error('The repository does not support integration partitions.')
+    }
     let command = ''
     if (meta.part) command = this.partCommand(meta, quote)
-    else if (name) command = `corepack pnpm ${name}`
-    if (meta.scope === 'affected' && meta.suite !== 'integration') {
+    else if (name) command = capabilities.parts ? `${pm} ${name}` : `${pm} run ${name}`
+    const supportsSelection = meta.suite === 'integration' ? capabilities.integrationPartitions : capabilities.affected
+    const affected = meta.scope === 'affected' && supportsSelection
+    if (affected && meta.suite !== 'integration') {
       const selectedPath = join(this.runDirectory(meta.runId), 'selected-files.json')
       await writeFile(selectedPath, JSON.stringify(meta.files ?? []), { mode: 0o600 })
-      command = `node scripts/ci-affected-run.mjs ${meta.suite} --files-from ${quote(selectedPath)}`
+      command = meta.files?.length ? `node scripts/ci-affected-run.mjs ${meta.suite} --files-from ${quote(selectedPath)}` : 'true'
     }
     const apiUnit = meta.suite === 'unit' && (meta.part === 'unit-api'
-      || (meta.scope === 'affected' && meta.files?.some(file => file.startsWith('apps/api/'))))
+      || (affected && meta.files?.some(file => file.startsWith('apps/api/'))))
     const prerequisiteSuite = apiUnit ? 'unit-api' : meta.part ?? meta.suite
     const run = this.runDirectory(meta.runId)
     let integrationEnvironment = ''
-    if (meta.suite === 'integration') {
+    if (meta.suite === 'integration' && capabilities.integrationPartitions) {
       // Main's learned durations, with the commit's committed ones for files it has not measured yet.
       const durationsPath = join(source, 'scripts/integration-durations.json')
       const committed = existsSync(durationsPath) ? JSON.parse(await readFile(durationsPath, 'utf8')) as Record<string, number> : {}
@@ -209,68 +300,50 @@ export class HostCiRunner {
       // The repository's integration runner uses them for per-file hang deadlines and reports what it measured.
       integrationEnvironment = ` FOREMAN_CODE_INTEGRATION_DURATIONS=${quote(join(run, 'expected-durations.json'))}`
         + ` FOREMAN_CODE_INTEGRATION_DURATIONS_OUTPUT=${quote(join(run, 'measured-durations.json'))}`
-      if (meta.partition || meta.scope === 'affected') {
+      if (meta.partition || affected) {
         const tests = join(source, 'apps/api/test')
         const files = existsSync(tests) ? (await readdir(tests)).filter(file => file.endsWith('.integration.test.ts'))
           .map(file => `apps/api/test/${file}`).sort() : []
-        const selected = meta.scope === 'affected' ? meta.files ?? [] : files
+        const selected = affected ? meta.files ?? [] : files
         if (selected.some(file => !files.includes(file))) throw new Error('Selected integration files are absent from the commit.')
         const slice = meta.partition ? integrationPartition(selected, durations, meta.partition) : selected
-        if (!slice.length && meta.partition) throw new Error('This partition has no integration files.')
+        if (!slice.length && meta.partition && meta.scope !== 'affected' && !meta.deriveFiles) {
+          throw new Error('This partition has no integration files.')
+        }
+        if (!slice.length && meta.scope === 'affected') meta.message = 'No affected files for this suite part.'
         command = slice.length ? `${command} --files ${slice.map(quote).join(' ')}` : 'true'
       }
     }
     return ['#!/bin/bash', 'set -o pipefail', `exec >>${quote(join(run, 'log'))} 2>&1`,
       // The repository's own integration runner sizes its shards to this computer.
       // Compiled test modules outlive the run's worktree, so the next run on this computer starts warm.
-      `export TMPDIR=${quote(join(run, 'tmp'))} CI=true FOREMAN_CODE_CI_DEDICATED=1 NODE_OPTIONS=--max-old-space-size=6144`
-        + ` FOREMAN_CODE_VITEST_CACHE=${quote(join(this.root, 'vitest-cache'))}${integrationEnvironment}`,
+      `export TMPDIR=${quote(join(run, 'tmp'))} CI=true NODE_OPTIONS=--max-old-space-size=6144`
+        + (capabilities.parts ? ` CI_HOST_RUNNER=1 FOREMAN_CODE_CI_DEDICATED=1`
+          + ` FOREMAN_CODE_VITEST_CACHE=${quote(join(this.root, 'vitest-cache'))}` : '') + integrationEnvironment,
       'mkdir -p "$TMPDIR"',
       `finish() { echo "$1" > ${quote(join(run, 'exit'))}; exit "$1"; }`,
       `step() { echo "$1" > ${quote(join(run, 'step'))}; echo "::step $1"; }`,
-      'step install', 'corepack pnpm install --frozen-lockfile || finish $?',
+      ...(meta.message ? [`echo ${quote(meta.message)}`] : []),
+      'step install', `${pm} install${existsSync(join(source, 'pnpm-lock.yaml')) ? ' --frozen-lockfile' : ''} || finish $?`,
       ...(command ? [`step ${meta.part ?? meta.suite}`,
-        `SUITE=${quote(prerequisiteSuite)} bash scripts/ci-suite.sh prepare || finish $?`,
+        ...(command !== 'true' && capabilities.parts
+          ? [`SUITE=${quote(prerequisiteSuite)} bash scripts/ci-suite.sh prepare || finish $?`] : []),
         `${command} || finish $?`] : []),
       'finish 0', ''].join('\n')
   }
 
-  /** The same package commands and unit selector used by ci-suite.sh, without cloud machine setup. */
+  private packageManager(source: string): string {
+    if (existsSync(join(source, 'pnpm-lock.yaml'))) return 'corepack pnpm'
+    if (existsSync(join(source, 'package-lock.json')) || existsSync(join(source, 'npm-shrinkwrap.json'))) return 'npm'
+    if (existsSync(join(source, 'yarn.lock'))) return 'corepack yarn'
+    return 'npm'
+  }
+
   private partCommand(meta: RunMeta, quote: (value: string) => string): string {
-    const contracts = 'corepack pnpm --filter @foreman-code/contracts build'
-    const part = meta.part!
-    if (part === 'unit-api' || part === 'unit-web') {
-      const run = this.runDirectory(meta.runId)
-      const output = join(run, 'measured-durations.json')
-      const report = `${output}.vitest.json`
-      const list = quote(join(run, 'unit-files'))
-      const slice = meta.partition ? `${meta.partition.index + 1}/${meta.partition.count}` : ''
-      const project = part === 'unit-api' ? 'apps/api' : 'apps/web'
-      const test = part === 'unit-api' ? 'corepack pnpm test' : 'FOREMAN_WEB_TEST_PHASE=fast corepack pnpm exec vitest run'
-      return ['(', `${contracts} || exit $?`,
-        `node scripts/ci-unit-files.mjs select ${part} ${quote(slice)} > ${list} || exit $?`,
-        `mapfile -d '' -t files < ${list} || exit $?`,
-        `code=0; (cd ${project} && ${test} "\${files[@]}" --reporter=default --reporter=json`
-          + ` --outputFile.json=${quote(report)}) || code=$?`,
-        `if [ -f ${quote(report)} ]; then node scripts/ci-unit-files.mjs record ${part} ${quote(report)} ${quote(output)}`
-          + ' || exit $?; fi', 'exit "$code"', ')'].join('\n')
-    }
-    const commands: Record<Exclude<CiPart, 'unit-api' | 'unit-web'>, string> = {
-      // The run-graph smoke runs once, in the first shard of the heavy phase.
-      'unit-web-heavy': `${contracts}`
-        + (!meta.partition || meta.partition.index === 0 ? ' && corepack pnpm --filter @foreman-code/web test:run-graph-smoke' : '')
-        + ' && (cd apps/web && FOREMAN_WEB_TEST_PHASE=heavy corepack pnpm exec vitest run'
-        + `${meta.partition ? ` --shard=${meta.partition.index + 1}/${meta.partition.count}` : ''})`,
-      'unit-other': `${contracts} && corepack pnpm --filter @foreman-code/contracts --filter @foreman-code/worker test`
-        + ' && corepack pnpm test:scripts',
-      'lint-api': `${contracts} && corepack pnpm --filter @foreman-code/api lint`,
-      'lint-other': `${contracts} && corepack pnpm -r --no-bail --filter '!@foreman-code/api' --if-present lint`,
-      'typecheck-api': `${contracts} && corepack pnpm --filter @foreman-code/api typecheck`,
-      'typecheck-other': `${contracts} && corepack pnpm -r --filter '!@foreman-code/api' --if-present typecheck`,
-      'build-api': `${contracts} && corepack pnpm --filter @foreman-code/api build`,
-      'build-other': 'corepack pnpm -r --filter \'!@foreman-code/api\' --if-present build',
-    }
-    return commands[part]
+    const output = join(this.runDirectory(meta.runId), 'measured-durations.json')
+    const slice = meta.partition ? `${meta.partition.index + 1}/${meta.partition.count}` : ''
+    // The runner already chose the scope; the hook must not derive its own selection.
+    return `SUITE=${quote(meta.part!)} SCOPE=full SLICE=${quote(slice)} DURATIONS_OUTPUT=${quote(output)} bash scripts/ci-suite.sh`
   }
 
   private async finish(runId: string, state: CiHostRun['state'], exitCode: number | null, message: string | null) {
@@ -287,7 +360,7 @@ export class HostCiRunner {
       const exit = await readFile(join(directory, 'exit'), 'utf8').catch(() => null)
       if (exit !== null) {
         const code = Number(exit.trim())
-        await this.finish(runId, code === 0 ? 'passed' : 'failed', Number.isInteger(code) ? code : 1, null)
+        await this.finish(runId, code === 0 ? 'passed' : 'failed', Number.isInteger(code) ? code : 1, meta.message)
       } else {
         const unit = await this.ports.run('systemctl', ['--user', 'is-active', `${unitName(runId)}.service`], { env: this.environment })
         if (!['active', 'activating'].includes(unit.stdout.trim())) {

@@ -9,10 +9,14 @@ import { buildApp } from '../src/app.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { RunCiAuthority, CI_GET_ACTIONS, CI_RUN_ACTIONS } from '../src/modules/jobs/ciAuthority.js'
-import { HostCiService, type HostCiComputer, type HostCiEndpoint } from '../src/modules/ci-host/service.js'
+import { HostCiService, type CiCommits, type HostCiComputer, type HostCiEndpoint } from '../src/modules/ci-host/service.js'
 import type { CiUnitInventory } from '../src/modules/ci-host/parts.js'
 import { codexApprovalRuntime } from './helpers/codexApprovalRuntime.js'
 import { DomainError } from '../src/modules/errors.js'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { PostgresAppInteractionService } from '../src/modules/interactions/app.js'
+import { bindRunAuthority, currentOperatorAuthority } from '../src/modules/access/runAuthority.js'
+import { genericCiRepository } from './helpers/genericCiRepository.js'
 
 /** Two build computers that answer the host CI protocol from memory; tests finish their runs. */
 function fakeComputers(github: Record<string, boolean> = {}, cloud: boolean | { github: number; circleci: number } = false) {
@@ -78,8 +82,14 @@ function fakeComputers(github: Record<string, boolean> = {}, cloud: boolean | { 
 }
 
 async function fixture(options: { repository?: boolean; github?: Record<string, boolean>; unitInventory?: CiUnitInventory
-  cloud?: boolean | { github: number; circleci: number } } = {}) {
-  const runtime = await codexApprovalRuntime('user')
+  cloud?: boolean | { github: number; circleci: number }; agent?: boolean
+  repositoryRunner?: { commits: CiCommits; endpoint: HostCiEndpoint } } = {}) {
+  const saved = makeCurrentWorkflowFixture(randomUUID())
+  if (options.agent) {
+    saved.configurations = saved.configurations.map(configuration => ({ ...configuration,
+      graphqlTools: ['context_get' as const, 'ci_run' as const, 'ci_get' as const] }))
+  }
+  const runtime = await codexApprovalRuntime('user', { fixture: saved })
   const workspaceId = runtime.f.scope.workspaceId
   if (options.repository !== false) {
     await runtime.db.pool.query(`update workspaces set record=record || '{"repository":{"provider":"github","owner":"octo","name":"site","defaultBranch":"main"}}'::jsonb where id=$1`,
@@ -87,7 +97,9 @@ async function fixture(options: { repository?: boolean; github?: Record<string, 
   }
   const published: string[] = []
   const inventory = options.unitInventory
-  const commits = { ...(inventory ? { unitInventory: async () => inventory } : {}),
+  const commits = options.repositoryRunner?.commits ?? {
+    capabilities: async () => ({ parts: true, integrationPartitions: true, affected: true }),
+    ...(inventory ? { unitInventory: async () => inventory } : {}),
     resolve: async (_repository: string, _branch: string, commit: string | undefined) => {
     const resolved = commit ?? 'a'.repeat(40)
     published.push(resolved)
@@ -95,9 +107,12 @@ async function fixture(options: { repository?: boolean; github?: Record<string, 
   } }
   const computers = fakeComputers(options.github, options.cloud)
   const commands = new PostgresCommandCoordinator(runtime.db.pool)
-  const ci = new HostCiService(runtime.db.pool, commands, new RunCiAuthority(runtime.db.pool), commits, computers.endpoint)
+  const ci = new HostCiService(runtime.db.pool, commands, new RunCiAuthority(runtime.db.pool), commits,
+    options.repositoryRunner?.endpoint ?? computers.endpoint)
   const app = buildApp({ logger: false, readiness: { database: { ping: async () => {} }, checkpoints: { ping: async () => {} } },
-    operator: { access: runtime.access, services: { commands, ci } as unknown as OperatorServices } })
+    operator: { access: runtime.access, services: { commands, ci } as unknown as OperatorServices },
+    ...(options.agent ? { appMcp: { access: runtime.access, commands,
+      interactions: new PostgresAppInteractionService(runtime.db.pool, runtime.repository, commands) } } : {}) })
   const address = await app.listen({ host: '127.0.0.1', port: 0 })
   const clients: Client[] = []
   const credential = (actions: ManagementAction[]) => runtime.access.issue({ name: 'CI HTTP caller', audience: 'operator',
@@ -112,6 +127,26 @@ async function fixture(options: { repository?: boolean; github?: Record<string, 
     return client
   }
   const operator = await connect([...CI_RUN_ACTIONS, ...CI_GET_ACTIONS, 'jobs:cancel'])
+  let agent: Client | undefined
+  if (options.agent) {
+    await runtime.db.pool.query(`update management_principals set grants=grants || $2::jsonb where id=$1`,
+      [runtime.authorizationPrincipalId, JSON.stringify([{ actions: [...CI_RUN_ACTIONS, ...CI_GET_ACTIONS],
+        scope: { workspaceIds: [workspaceId] } }])])
+    const client = await runtime.db.pool.connect()
+    try {
+      const authority = await currentOperatorAuthority(client, runtime.authorizationPrincipalId)
+      await bindRunAuthority(client, runtime.f.run.id, { principal: authority.principal,
+        ownerId: authority.owner.id, callerId: authority.principal.id })
+    } finally { client.release() }
+    await runtime.engine.start(runtime.f.run.id)
+    const [interaction] = await runtime.pending()
+    if (!interaction) throw new Error('Expected an active Agent')
+    const issued = await runtime.credentials.issueForExecution(interaction.executionId)
+    agent = new Client({ name: 'ci-agent-test', version: '1' })
+    clients.push(agent)
+    await agent.connect(new StreamableHTTPClientTransport(new URL('/mcp', address),
+      { requestInit: { headers: { authorization: `Bearer ${issued.environment.variables.GRAPHQL_MCP_TOKEN!}` } } }))
+  }
   const call = async (client: Client, name: string, input: Record<string, unknown>) =>
     client.callTool({ name, arguments: { workspaceId, ...input } })
   const value = async (client: Client, name: string, input: Record<string, unknown>) => {
@@ -119,7 +154,9 @@ async function fixture(options: { repository?: boolean; github?: Record<string, 
     expect(result.isError, JSON.stringify(result.content)).not.toBe(true)
     return decodeMcpToolResult(result)
   }
-  return { ...computers, ci, app, credential, workspaceId, operator, connect, call, value, published, pool: runtime.db.pool,
+  return { ...computers, ci, app, credential, workspaceId, operator, agent,
+    authorizationPrincipalId: runtime.authorizationPrincipalId,
+    connect, call, value, published, pool: runtime.db.pool,
     async close() {
       await Promise.all(clients.map(client => client.close()))
       await ci.close()
@@ -127,6 +164,161 @@ async function fixture(options: { repository?: boolean; github?: Record<string, 
       await runtime.close()
     } }
 }
+
+it.each([
+  ['pnpm-lock.yaml', 'corepack pnpm'], ['package-lock.json', 'npm'], ['yarn.lock', 'corepack yarn'],
+  [undefined, 'npm'],
+])('runs another repository with %s as single jobs through authenticated MCP', async (lockfile, pm) => {
+  const repository = await genericCiRepository(lockfile ? { lockfile } : {})
+  const f = await fixture({ repositoryRunner: repository })
+  try {
+    const reader = await f.connect(CI_GET_ACTIONS)
+    expect((await f.call(reader, 'ci_run', { suite: 'build', commandId: 'denied-generic' })).isError).toBe(true)
+    expect((await f.pool.query('select count(*)::int as count from ci_runs')).rows[0].count).toBe(0)
+    for (const suite of ['build', 'lint', 'unit'] as const) {
+      const input = { suite, commandId: `generic-${suite}` }
+      const started = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', input))
+      expect(started.partitions).toBeUndefined()
+      expect(CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', input))).toEqual(started)
+      await expect.poll(async () => CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get',
+        { ticketId: started.ticketId })).run.state).toBe('passed')
+      const read = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: started.ticketId }))
+      expect(read.run).toMatchObject({ suite, part: null, partition: null, scope: 'full', files: [],
+        state: 'passed', exitCode: 0, commit: repository.commit, computer: { hostRef: { kind: 'main' } } })
+      expect(read.partitions).toBeUndefined()
+      expect(read.logTail).toContain(`${pm} install`)
+      expect(read.logTail).toContain(`${pm} run ${suite}`)
+      expect(read.logTail).toContain(`fixture ${suite} passed`)
+      const stored = (await f.pool.query<{ record: unknown }>('select record from ci_runs where group_id=$1',
+        [read.run.groupId])).rows
+      expect(stored.map(row => row.record)).toEqual([read.run])
+    }
+  } finally {
+    await f.close()
+    await repository.close()
+  }
+})
+
+it('runs generic integration once despite requested partitions and falls back from an unconfigured cloud mirror', async () => {
+  const repository = await genericCiRepository({ integration: true, cloud: true })
+  const f = await fixture({ repositoryRunner: repository })
+  try {
+    const started = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run',
+      { suite: 'integration', partitions: 4, commandId: 'generic-integration' }))
+    expect(started.partitions).toBeUndefined()
+    await expect.poll(async () => CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get',
+      { ticketId: started.ticketId })).run.state).toBe('passed')
+    const read = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: started.ticketId }))
+    expect(read.run).toMatchObject({ part: null, partition: null, state: 'passed',
+      computer: { hostRef: { kind: 'main' } } })
+    expect(read.logTail).toContain('npm run integration')
+    expect(read.logTail).toContain('fixture integration passed')
+    expect((await f.pool.query<{ record: unknown }>('select record from ci_runs where group_id=$1',
+      [read.run.groupId])).rows.map(row => row.record)).toEqual([read.run])
+  } finally {
+    await f.close()
+    await repository.close()
+  }
+})
+
+it('runs a generic full suite for an empty affected selection and preserves HTTP and MCP readback', async () => {
+  const repository = await genericCiRepository({ cloud: true })
+  const f = await fixture({ repositoryRunner: repository })
+  try {
+    const input = { suite: 'unit', scope: 'affected', files: [], commit: repository.commit, commandId: 'generic-affected' }
+    const writer = await f.credential([...CI_RUN_ACTIONS, ...CI_GET_ACTIONS])
+    const headers = { authorization: `Bearer ${writer.token}` }
+    const url = `/api/management/workspaces/${f.workspaceId}/ci`
+    const reader = await f.credential(CI_GET_ACTIONS)
+    const denied = await f.app.inject({ method: 'POST', url,
+      headers: { authorization: `Bearer ${reader.token}` }, payload: input })
+    expect(denied.statusCode).toBe(403)
+    const response = await f.app.inject({ method: 'POST', url, headers, payload: input })
+    expect(response.statusCode).toBe(200)
+    const started = CiRunOutputSchema.parse(response.json())
+    await expect.poll(async () => CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get',
+      { ticketId: started.ticketId })).run.state).toBe('passed')
+    const read = await f.app.inject({ method: 'GET', url: `${url}/${started.ticketId}`, headers })
+    expect(read.statusCode).toBe(200)
+    const result = CiGetOutputSchema.parse(read.json())
+    expect(result.run).toMatchObject({ state: 'passed', part: null, partition: null, scope: 'full', files: [],
+      computer: { hostRef: { kind: 'main' } } })
+    expect(result.logTail).toContain('fixture unit passed')
+    expect(repository.cloudAttempts).toContain(started.ticketId)
+    expect(CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: started.ticketId })).run)
+      .toEqual(result.run)
+    expect((await f.pool.query<{ record: unknown }>('select record from ci_runs where id=$1',
+      [started.ticketId])).rows[0]!.record).toEqual(result.run)
+  } finally {
+    await f.close()
+    await repository.close()
+  }
+})
+
+it.each(['typecheck', 'integration'] as const)('reports a missing generic %s script through MCP and persisted readback', async suite => {
+  const repository = await genericCiRepository()
+  const f = await fixture({ repositoryRunner: repository })
+  try {
+    const started = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', { suite, commandId: `missing-${suite}` }))
+    await expect.poll(async () => CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get',
+      { ticketId: started.ticketId })).run.state).toBe('failed')
+    const read = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: started.ticketId }))
+    expect(read.run).toMatchObject({ state: 'failed', part: null, partition: null,
+      message: `The repository has no "${suite}" script for the ${suite} suite.` })
+    expect((await f.pool.query<{ record: unknown }>('select record from ci_runs where id=$1',
+      [started.ticketId])).rows[0]!.record).toEqual(read.run)
+  } finally {
+    await f.close()
+    await repository.close()
+  }
+})
+
+it('runs another repository’s named parts through its own suite hook', async () => {
+  const repository = await genericCiRepository({ suiteHook: true })
+  const f = await fixture({ repositoryRunner: repository })
+  try {
+    const started = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', { suite: 'build', commandId: 'custom-hook' }))
+    expect(started.partitions).toHaveLength(2)
+    await expect.poll(async () => CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get',
+      { ticketId: started.ticketId })).group!.state).toBe('passed')
+    const read = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: started.ticketId }))
+    expect(read.partitions!.map(run => run.part).sort()).toEqual(['build-api', 'build-other'])
+    for (const run of read.partitions!) {
+      expect(run.state).toBe('passed')
+      const logs = CiLogsOutputSchema.parse(await f.value(f.operator, 'ci_logs_read', { ticketId: run.id }))
+      expect(logs.text).toContain(`fixture hook ${run.part} passed`)
+    }
+    expect((await f.pool.query<{ record: unknown }>('select record from ci_runs where group_id=$1',
+      [read.run.groupId])).rows.map(row => row.record)).toEqual(expect.arrayContaining(read.partitions!))
+  } finally {
+    await f.close()
+    await repository.close()
+  }
+})
+
+it('runs generic install without an install script and persists a package-script failure', async () => {
+  const repository = await genericCiRepository({ suiteExit: 7 })
+  const f = await fixture({ repositoryRunner: repository })
+  try {
+    const install = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', { suite: 'install', commandId: 'generic-install' }))
+    await expect.poll(async () => CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get',
+      { ticketId: install.ticketId })).run.state).toBe('passed')
+    const installed = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: install.ticketId }))
+    expect(installed.run).toMatchObject({ part: null, partition: null, step: 'install', exitCode: 0 })
+    expect(installed.logTail).toContain('npm install')
+    expect(installed.logTail).not.toContain('npm run install')
+    const build = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', { suite: 'build', commandId: 'generic-failure' }))
+    await expect.poll(async () => CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get',
+      { ticketId: build.ticketId })).run.state).toBe('failed')
+    const failed = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: build.ticketId }))
+    expect(failed.run).toMatchObject({ part: null, partition: null, step: 'build', state: 'failed', exitCode: 7 })
+    expect((await f.pool.query<{ record: unknown }>('select record from ci_runs where id=$1',
+      [build.ticketId])).rows[0]!.record).toEqual(failed.run)
+  } finally {
+    await f.close()
+    await repository.close()
+  }
+})
 
 it.each([
   ['unit', 10], ['lint', 2], ['typecheck', 2], ['build', 2],
@@ -294,7 +486,7 @@ it('shares affected CI validation, grants and persisted readback between HTTP an
   } finally { await f.close() }
 })
 
-it('records an empty affected selection as passed and defaults omitted scope to full', async () => {
+it('records an empty affected selection as passed and preserves explicit full scope', async () => {
   const f = await fixture()
   try {
     const empty = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', { suite: 'integration', scope: 'affected',
@@ -303,11 +495,74 @@ it('records an empty affected selection as passed and defaults omitted scope to 
     const read = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: empty.ticketId }))
     expect(read.run).toMatchObject({ state: 'passed', exitCode: 0, scope: 'affected', files: [], computer: null })
     expect(f.started).toHaveLength(0)
-    const full = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', { suite: 'unit', commandId: 'default-full' }))
+    const full = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', {
+      suite: 'unit', scope: 'full', commandId: 'explicit-full' }))
     expect(CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: full.ticketId })).run)
       .toMatchObject({ scope: 'full', files: [] })
   } finally { await f.close() }
 })
+
+it('defaults authenticated Operator MCP and HTTP calls to runner-selected affected scope with denied read-only callers', async () => {
+  const f = await fixture()
+  try {
+    const reader = await f.connect(CI_GET_ACTIONS)
+    const writer = await f.credential([...CI_RUN_ACTIONS, ...CI_GET_ACTIONS])
+    const deniedHttp = await f.credential(CI_GET_ACTIONS)
+    const url = `/api/management/workspaces/${f.workspaceId}/ci`
+    const headers = { authorization: `Bearer ${writer.token}` }
+    for (const scope of [undefined, 'full'] as const) {
+      const input = { suite: 'integration', commandId: `mcp-${scope ?? 'default'}`, ...(scope ? { scope } : {}) }
+      expect((await f.call(reader, 'ci_run', input)).isError).toBe(true)
+      const started = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', input))
+      expect(CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', input))).toEqual(started)
+      const read = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: started.ticketId }))
+      expect(read.run).toMatchObject({ scope: scope ?? 'affected', files: [] })
+      expect(read.run.deriveFiles).toBe(scope === undefined ? true : undefined)
+      const stored = (await f.pool.query<{ record: unknown }>('select record from ci_runs where id=$1', [started.ticketId])).rows[0]!
+      expect(stored.record).toEqual(read.run)
+      const httpInput = { ...input, commandId: `http-${scope ?? 'default'}` }
+      expect((await f.app.inject({ method: 'POST', url, payload: httpInput,
+        headers: { authorization: `Bearer ${deniedHttp.token}` } })).statusCode).toBe(403)
+      const response = await f.app.inject({ method: 'POST', url, headers, payload: httpInput })
+      expect(response.statusCode).toBe(200)
+      const http = CiRunOutputSchema.parse(response.json())
+      const httpRead = await f.app.inject({ method: 'GET', url: `${url}/${http.ticketId}`, headers })
+      expect(CiGetOutputSchema.parse(httpRead.json()).run).toMatchObject({ scope: scope ?? 'affected', files: [] })
+    }
+    await f.ci.dispatch()
+    const request = f.started.find(item => item.request.operation === 'start' && item.request.scope === 'affected')!.request
+    expect(request).toMatchObject({ scope: 'affected', defaultBranch: 'main' })
+    expect(request).not.toHaveProperty('files')
+  } finally { await f.close() }
+})
+
+it('defaults authenticated Agent MCP to affected scope, reads explicit full scope and denies a caller without CI grants', async () => {
+  const f = await fixture({ agent: true })
+  try {
+    const agent = f.agent!
+    const tool = (await agent.listTools()).tools.find(item => item.name === 'ci_run')!
+    expect(tool.inputSchema.properties).toHaveProperty('scope')
+    expect(tool.inputSchema.properties).toHaveProperty('files')
+    for (const scope of [undefined, 'full'] as const) {
+      const result = await agent.callTool({ name: 'ci_run', arguments: {
+        suite: 'integration', commandId: `agent-${scope ?? 'default'}`, ...(scope ? { scope } : {}) } })
+      expect(result.isError).not.toBe(true)
+      const started = CiRunOutputSchema.parse(decodeMcpToolResult(result))
+      const read = await agent.callTool({ name: 'ci_get', arguments: { ticketId: started.ticketId } })
+      expect(read.isError).not.toBe(true)
+      const run = CiGetOutputSchema.parse(decodeMcpToolResult(read)).run
+      expect(run).toMatchObject({ scope: scope ?? 'affected', files: [] })
+      expect((await f.pool.query<{ record: unknown }>('select record from ci_runs where id=$1', [run.id])).rows[0]!.record)
+        .toEqual(run)
+    }
+    const stored = (await f.pool.query<{ grants: { actions: ManagementAction[]; scope: Record<string, unknown> }[] }>(
+      'select grants from management_principals where id=$1', [f.authorizationPrincipalId])).rows[0]!
+    const grants = stored.grants.map(grant => ({ ...grant, actions: grant.actions.filter(action => action !== 'jobs:start') }))
+    await f.pool.query('update management_principals set grants=$2::jsonb where id=$1',
+      [f.authorizationPrincipalId, JSON.stringify(grants)])
+    expect((await agent.callTool({ name: 'ci_run', arguments: { suite: 'unit', commandId: 'agent-denied' } })).isError).toBe(true)
+  } finally { await f.close() }
+}, 60_000)
 
 it('splits integration over two build computers, reports progress and logs, and replays a retried command', async () => {
   const f = await fixture()
