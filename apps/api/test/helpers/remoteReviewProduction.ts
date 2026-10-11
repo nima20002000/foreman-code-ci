@@ -1,3 +1,4 @@
+import { readUntil } from './observableCondition.js'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { spawn, execFile, type ChildProcess } from 'node:child_process'
 import { createHash, randomUUID, sign, X509Certificate } from 'node:crypto'
@@ -39,19 +40,14 @@ import { buildRemoteReviewWorkerRelease, createRemoteReviewProvider, createRemot
 import { createRemoteReviewTransport } from './remoteReviewTransport.js'
 import { gitFixtureEnvironment } from './gitFixture.js'
 import { remoteReviewEnvironment } from './remoteReviewEnvironment.js'
+import { waitForChildReady } from './remoteReviewReadiness.js'
 
 const execute = promisify(execFile)
 const tsxLoader = createRequire(import.meta.url).resolve('tsx')
 
 export async function waitForRemoteReview<T>(read: () => Promise<T>, accept: (value: T) => boolean,
   description: string): Promise<T> {
-  const deadline = Date.now() + 90_000
-  for (;;) {
-    const value = await read()
-    if (accept(value)) return value
-    if (Date.now() >= deadline) throw new Error(`Timed out waiting for ${description}.`)
-    await new Promise(resolve => setTimeout(resolve, 25))
-  }
+  return readUntil(read, accept, { timeoutMs: 90_000, description })
 }
 
 async function freePort() {
@@ -87,7 +83,8 @@ async function postDeviceJson(endpoint: string, certificate: Buffer, payload: un
  * shipped installed domains in a separate process with its own native owners. */
 export async function remoteReviewProduction(options: {
   workflow?: 'approval' | 'sequential' | 'single'; modelCatalog?: 'empty-at-startup'; executionHost?: 'main' | 'worker'
-  claudeInventory?: boolean; parallelProfileChecks?: boolean; reuseMatchingProfiles?: boolean; workerRelease?: string
+  claudeInventory?: boolean; parallelProfileChecks?: boolean; reuseMatchingProfiles?: boolean
+  workerRelease?: string | Promise<string>
   installationRefreshIntervalMs?: number; parallelSetup?: boolean; includeNodeRuntimePayload?: boolean
   reportPhase?: (phase: string, elapsedMs: number) => void
 } = {}) {
@@ -122,15 +119,18 @@ export async function remoteReviewProduction(options: {
       await installManagedLauncher(new URL('../../../../scripts/graphql-mcp.mjs', import.meta.url), launcher)
       return createRemoteReviewProvider(join(directory, 'provider'), launcher)
     }
-    const setupWorkerRelease = () => options.workerRelease ?? buildRemoteReviewWorkerRelease(directory)
+    const workerReleaseResult = Promise.allSettled([
+      options.workerRelease ?? buildRemoteReviewWorkerRelease(directory),
+    ] as const)
+    closes.push(async () => { await workerReleaseResult })
     const setupClaude = () => createRemoteReviewClaudeInventory(claudeDirectory)
     const setupTls = () => createRemoteReviewTls(join(directory, 'tls'))
     const setup = async () => {
       if (!options.parallelSetup) {
-        return [await setupDatabase(), await setupWorkerRelease(), await setupProvider(),
+        return [await setupDatabase(), await setupProvider(),
           await setupClaude(), await setupTls()] as const
       }
-      const tasks = [setupDatabase(), setupWorkerRelease(), setupProvider(), setupClaude(), setupTls()] as const
+      const tasks = [setupDatabase(), setupProvider(), setupClaude(), setupTls()] as const
       try {
         return await Promise.all(tasks)
       } catch (error) {
@@ -139,7 +139,7 @@ export async function remoteReviewProduction(options: {
         throw error
       }
     }
-    const [db, workerRelease, provider, claudeCommands, tls] = await setup()
+    const [db, provider, claudeCommands, tls] = await setup()
     beginPhase('source repository and workflow seed')
     const claudeInventory = options.claudeInventory ? claudeCommands : undefined
     if (options.modelCatalog) await provider.hideModels()
@@ -286,12 +286,8 @@ export async function remoteReviewProduction(options: {
           ready = true
         }
       })
-      await waitForRemoteReview(async () => {
-        if (started.exitCode !== null || started.signalCode !== null) {
-          throw new Error(`Production Main exited: ${mainFailure}`)
-        }
-        return ready
-      }, value => value, 'production Main startup')
+      await waitForChildReady(started, () => ready, 'production Main startup',
+        () => `Production Main exited: ${mainFailure}`)
     }
     beginPhase('Main startup')
     await startMain()
@@ -415,6 +411,10 @@ export async function remoteReviewProduction(options: {
       codexBinary: provider.binary, expectedVersion: 'codex-cli 0.154.0',
       appMcpLauncher: launcher, payloadPaths }), { mode: 0o600 })
     const workerEntrypoint = fileURLToPath(new URL('../fixtures/remote-review-worker.mjs', import.meta.url))
+    beginPhase('Worker release readiness')
+    const [release] = await workerReleaseResult
+    if (release.status === 'rejected') throw release.reason
+    const workerRelease = release.value
     beginPhase('installed Worker initialization')
     await execute(process.execPath, [workerEntrypoint, stateDirectory, workerRelease, 'initialize'], {
       env: logEnvironment,
@@ -440,12 +440,8 @@ export async function remoteReviewProduction(options: {
           if (!ready) workerStateRevision++
         }
       })
-      await waitForRemoteReview(async () => {
-        if (started.exitCode !== null || started.signalCode !== null) {
-          throw new Error(`Installed Worker exited: ${workerFailure}`)
-        }
-        return ready
-      }, value => value, 'authenticated installed Worker connection')
+      await waitForChildReady(started, () => ready, 'authenticated installed Worker connection',
+        () => `Installed Worker exited: ${workerFailure}`)
     }
     const stopWorker = async (signal: NodeJS.Signals = 'SIGTERM') => {
       if (!worker || worker.exitCode !== null || worker.signalCode !== null) return
