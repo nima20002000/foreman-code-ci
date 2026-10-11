@@ -10,7 +10,8 @@ import { ManagementActionSchema } from '@foreman-code/contracts/management'
 import { JobDefinitionSchema, JobExecutionSchema, type JobExecution } from '@foreman-code/contracts/jobs'
 import { JobVerificationProfileSchema } from '@foreman-code/contracts/job-verification-runtime'
 import { ApprovedSourceSchema, SourceApproveResultSchema, SourceListResultSchema,
-  SourceRootRecordSchema, type ApprovedSource } from '@foreman-code/contracts/source-admission'
+  SourceRootRecordSchema, SourceRootListResultSchema, type ApprovedSource,
+  type SourceRootRecord } from '@foreman-code/contracts/source-admission'
 import { buildApp } from '../src/app.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
@@ -25,7 +26,7 @@ import { reconcileFailedCaptures } from '../src/modules/sources/failedCaptureCle
 import { PrivateSourceSnapshotStore } from '../src/modules/sources/store.js'
 import { WorkspaceLocationService } from '../src/modules/workspaces/location.js'
 import { WorkspaceManagementService } from '../src/modules/workspaces/management.js'
-import { agent3Database } from './helpers/wave25Agent3.js'
+import { agent3Database, deferred } from './helpers/wave25Agent3.js'
 import { jobExecution, jobSpec } from './helpers/jobFixture.js'
 import { verificationCapacityFixture } from './helpers/verificationCapacityFixture.js'
 
@@ -266,6 +267,72 @@ it('keeps active Jobs, recent terminal use, longer Job retention and a qualified
   expect((await f.read(pinned)).availability).toBe('retained')
 }, 60_000)
 
+it.each(['age', 'pressure'] as const)(
+  'retains current Main and Worker bindings without a workflow while releasing superseded bindings by %s', async mode => {
+    fixture = await setup()
+    const f = fixture
+    const age = mode === 'age' ? SOURCE_RETENTION_SECONDS * 3 : 0
+    const superseded = (await f.approve(age)).source
+    const current = (await f.approve(age)).source
+    const roots: SourceRootRecord[] = []
+    let workerRootId = ''
+    for (const host of ['main', 'device'] as const) {
+      const base = verificationCapacityFixture(host).root
+      const rootId = randomUUID()
+      if (host === 'device') workerRootId = rootId
+      const hostRef = { ...base.selection.hostRef, mainId: f.mainId }
+      await f.pool.query(`insert into source_root_catalog(root_id,workspace_id,scope_hash,current_binding_revision)
+        values($1,$2,$3,$4)`, [rootId, f.workspaceId, randomUUID(), host === 'main' ? 2 : 1])
+      for (const [index, source] of [superseded, current].entries()) {
+        const root = SourceRootRecordSchema.parse({ ...base, source: f.sourcePin(source),
+          selection: { ...base.selection, hostRef },
+          binding: { ...base.binding, rootId, bindingRevision: index + 1, mainId: f.mainId,
+            workspaceId: f.workspaceId, snapshotId: source.manifest.snapshotId,
+            manifestDigest: source.manifest.manifestDigest },
+          ownerPrincipalId: f.owner.principal.id, authorizedByPrincipalId: f.owner.principal.id,
+          boundAt: source.approvedAt })
+        await f.pool.query(`insert into source_root_bindings(root_id,binding_revision,workspace_id,snapshot_id,record)
+          values($1,$2,$3,$4,$5::jsonb)`,
+        [rootId, index + 1, f.workspaceId, source.manifest.snapshotId, JSON.stringify(root)])
+        if (index === 1) roots.push(root)
+      }
+    }
+
+    await f.sources.releaseUnusedSnapshots(undefined, mode === 'pressure')
+
+    expect((await f.read(superseded)).availability).toBe('retained')
+    expect((await f.reservation(superseded)).state).toBe('retained')
+    expect((await f.read(current)).availability).toBe('retained')
+    await f.pool.query('update source_root_catalog set current_binding_revision=2 where root_id=$1', [workerRootId])
+    await f.sources.releaseUnusedSnapshots(undefined, mode === 'pressure')
+
+    expect((await f.read(current)).manifest).toEqual(current.manifest)
+    expect((await f.reservation(current)).state).toBe('retained')
+    expect(await f.store.retainedCaptureBytes(current.manifest.snapshotId)).toBeGreaterThan(0)
+    expect((await f.reservation(superseded)).state).toBe('reclaimed')
+    expect(await f.store.retainedCaptureBytes(superseded.manifest.snapshotId)).toBe(0)
+    const listed = await f.client.callTool({ name: 'source_list',
+      arguments: { workspaceId: f.workspaceId, detail: 'full' } })
+    expect(listed.isError).not.toBe(true)
+    expect(SourceListResultSchema.parse(decodeMcpToolResult(listed)).items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ manifest: superseded.manifest, availability: 'unavailable' }),
+      expect.objectContaining({ manifest: current.manifest, availability: 'retained' }),
+    ]))
+    const bound = await f.client.callTool({ name: 'source_root_list',
+      arguments: { workspaceId: f.workspaceId } })
+    expect(bound.isError).not.toBe(true)
+    expect(SourceRootListResultSchema.parse(decodeMcpToolResult(bound)).items)
+      .toEqual(expect.arrayContaining(roots))
+    const denied = await f.access.issue({ name: 'Other workspace reader', audience: 'operator',
+      grants: [{ actions: ['sources:read', 'source_roots:read', 'workspace_locations:read'],
+        scope: { workspaceIds: ['other-workspace'] } }], expiresAt: new Date(Date.now() + 120_000) })
+    const deniedClient = await f.connect(denied.token)
+    const deniedRead = await deniedClient.callTool({ name: 'source_root_list',
+      arguments: { workspaceId: f.workspaceId } })
+    expect(deniedRead.isError).toBe(true)
+    expect(JSON.stringify(deniedRead.content)).toContain('ACCESS_DENIED')
+  }, 60_000)
+
 it.each(['startup', 'admission'] as const)('reconciles an interrupted partial capture on %s without touching a live writer',
   async mode => {
     fixture = await setup()
@@ -338,6 +405,113 @@ it.each(['startup', 'admission'] as const)('reconciles an interrupted partial ca
     expect((await state()).state).toBe('reclaimed')
     expect(await f.store.retainedCaptureBytes(snapshotId)).toBe(0)
     expect((await f.read(approved.source)).availability).toBe('retained')
+  }, 60_000)
+
+it.each(['measurement', 'deletion'] as const)(
+  'allows concurrent reconciliation and approval during failed capture %s', async phase => {
+    fixture = await setup()
+    const f = fixture
+    const snapshotIds: string[] = []
+    const write = f.store.write.bind(f.store)
+    for (let index = 0; index < 2; index += 1) {
+      const input = { ...f.approval, commandId: randomUUID() }
+      const interrupted = vi.spyOn(f.store, 'write').mockImplementationOnce(async (...args) => {
+        await write(...args)
+        throw new Error('Capture interrupted')
+      })
+      try {
+        const response = await f.client.callTool({ name: 'source_approve', arguments: input })
+        expect(response.isError).toBe(true)
+      } finally {
+        interrupted.mockRestore()
+      }
+      const approval = (await f.pool.query<{ snapshot_id: string; state: string }>(
+        'select snapshot_id,state from source_approvals where command_id=$1', [input.commandId])).rows[0]!
+      expect(approval.state).toBe('failed')
+      snapshotIds.push(approval.snapshot_id)
+    }
+    await f.pool.query(`update source_approvals
+      set created_at=clock_timestamp()-make_interval(secs=>$2)
+      where snapshot_id=any($1::uuid[])`, [snapshotIds, SOURCE_RETENTION_SECONDS * 2])
+    const reader = await f.access.issue({ name: 'Capture reader', audience: 'operator',
+      grants: [{ actions: ['sources:read'], scope: { workspaceIds: [f.workspaceId] } }],
+      expiresAt: new Date(Date.now() + 120_000) })
+    const deniedClient = await f.connect(reader.token)
+    const restartedStore = new PrivateSourceSnapshotStore(f.canonical)
+    const entered = deferred()
+    const resume = deferred()
+    const removals = new Map<string, number>()
+    const measured = restartedStore.retainedCaptureBytes.bind(restartedStore)
+    if (phase === 'measurement') {
+      vi.spyOn(restartedStore, 'retainedCaptureBytes').mockImplementation(async snapshotId => {
+        if (snapshotId === snapshotIds[0]) {
+          entered.resolve()
+          await resume.promise
+        }
+        return measured(snapshotId)
+      })
+    }
+    for (const store of [f.store, restartedStore]) {
+      const remove = store.remove.bind(store)
+      vi.spyOn(store, 'remove').mockImplementation(async snapshotId => {
+        removals.set(snapshotId, (removals.get(snapshotId) ?? 0) + 1)
+        if (store === restartedStore && phase === 'deletion' && snapshotId === snapshotIds[0]) {
+          entered.resolve()
+          await resume.promise
+        }
+        await remove(snapshotId)
+      })
+    }
+    const startup = reconcileFailedCaptures(f.pool, restartedStore, error => { throw error })
+    await entered.promise
+    try {
+      // Both database row sets remain available while filesystem work is paused.
+      const sql = await f.pool.connect()
+      try {
+        await sql.query('begin')
+        const approvals = await sql.query(`select snapshot_id from source_approvals
+          where snapshot_id=any($1::uuid[]) for update skip locked`, [snapshotIds])
+        const reservations = await sql.query(`select owner_id from source_storage_reservations
+          where owner_kind='capture' and owner_id=any($1::text[]) for update skip locked`, [snapshotIds])
+        expect(approvals.rowCount).toBe(snapshotIds.length)
+        expect(reservations.rowCount).toBe(snapshotIds.length)
+      } finally {
+        await sql.query('rollback')
+        sql.release()
+      }
+      const input = { ...f.approval, commandId: randomUUID() }
+      const [, response, denied] = await Promise.all([
+        f.sources.reconcileCaptures(),
+        f.client.callTool({ name: 'source_approve', arguments: input }),
+        deniedClient.callTool({ name: 'source_approve',
+          arguments: { ...f.approval, commandId: randomUUID() } }),
+      ])
+      expect(response.isError, JSON.stringify(response.content)).not.toBe(true)
+      expect(denied.isError).toBe(true)
+      expect(JSON.stringify(denied.content)).toContain('ACCESS_DENIED')
+      const source = SourceApproveResultSchema.parse(decodeMcpToolResult(response)).value
+      expect((await f.read(source)).manifest).toEqual(source.manifest)
+      expect((await f.reservation(source)).state).toBe('retained')
+    } finally {
+      resume.resolve()
+      await startup
+    }
+    const reclaimed = await f.pool.query<{ owner_id: string; state: string }>(
+      `select owner_id,state from source_storage_reservations
+        where owner_kind='capture' and owner_id=any($1::text[])`, [snapshotIds])
+    expect(reclaimed.rows).toHaveLength(snapshotIds.length)
+    expect(reclaimed.rows.every(row => row.state === 'reclaimed')).toBe(true)
+    await f.sources.reconcileCaptures()
+    const audit = await f.pool.query<{ snapshot_id: string; count: string }>(
+      `select details->>'snapshotId' as snapshot_id,count(*)::text as count from management_audit
+        where action='source.capture.release' and details->>'snapshotId'=any($1::text[])
+        group by details->>'snapshotId'`, [snapshotIds])
+    expect(audit.rows).toHaveLength(snapshotIds.length)
+    for (const snapshotId of snapshotIds) {
+      expect(removals.get(snapshotId)).toBe(1)
+      expect(audit.rows.find(row => row.snapshot_id === snapshotId)?.count).toBe('1')
+      expect(await f.store.retainedCaptureBytes(snapshotId)).toBe(0)
+    }
   }, 60_000)
 
 it('skips a snapshot while admission holds its shared lock, then releases it after admission ends', async () => {
