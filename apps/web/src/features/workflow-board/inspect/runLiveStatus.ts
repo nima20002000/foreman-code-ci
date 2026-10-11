@@ -59,5 +59,5 @@ export function ciComputerLabel(ci: CiActivity): string {
 
 export function ciJobLabel(ci: CiActivity): string {
   const partition = ci.partition ? ` · partition ${ci.partition.index + 1} of ${ci.partition.count}` : ''
-  return `${ci.suite}${ci.part && ci.part !== ci.suite ? ` · ${ci.part}` : ''}${partition}`
+  return `${ci.suite}${ci.part ? ` · ${ci.part}` : ''}${partition}`
 }
