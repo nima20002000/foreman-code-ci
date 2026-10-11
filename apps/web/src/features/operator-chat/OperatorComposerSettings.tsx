@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { AgentHarnessSchema, AgentEffortSchema, ClaudeEffortSchema, operatorChatSettings, type OperatorChatSettings } from '@foreman-code/contracts'
 import type { ReactNode } from 'react'
-import { useProviderHarnessModels } from '../provider-accounts/useProviderHarnessModels'
+import { useNativeHarnessOptions } from '../../shared/api/harnessSettings'
 import { useHarnessDefaultsQuery } from '../../shared/api/query'
 import { Button, Icon, SearchField, SegmentedControl, Slider, Switch } from '../../shared/ui/nocturne'
 import { harnessNames } from '../settings/settingsPresentation'
@@ -12,7 +12,7 @@ export function OperatorComposerSettings({ value, onChange, disabled, access }: 
   value: OperatorChatSettings; onChange(value: OperatorChatSettings): void; disabled: boolean;
   access?: ReactNode;
 }) {
-  const catalog = useProviderHarnessModels(value.harness, value.accountId)
+  const catalog = useNativeHarnessOptions(value.harness)
   const defaults = useHarnessDefaultsQuery()
   const [open, setOpen] = useState(false)
   const [choosingModel, setChoosingModel] = useState(false)
@@ -102,8 +102,8 @@ export function OperatorComposerSettings({ value, onChange, disabled, access }: 
         <button className="operator-model-choice" type="button" disabled={disabled || !catalog.isSuccess} onClick={() => { setChoosingModel(true); setSearch('') }}>
           <span>{modelName}<small>Choose model</small></span><Icon name="chevron" size={14} />
         </button>
-        {value.harness !== 'claude' || efforts.length > 0 || Boolean(effort) ? <Slider label="Effort" min={0} max={Math.max(0, efforts.length - 1)} step={1}
-          value={Math.max(0, efforts.indexOf(effort))} disabled={disabled || !catalog.isSuccess || efforts.length < 2}
+        {value.harness !== 'claude' || efforts.length > 0 ? <Slider label="Effort" min={0} max={Math.max(0, efforts.length - 1)} step={1}
+          value={Math.max(0, efforts.indexOf(effort))} disabled={disabled || efforts.length < 2}
           format={(index) => efforts.includes(effort) ? efforts[index] ?? 'Default' : effort || 'Default'}
           onValueChange={(index) => {
             const next = efforts[index]
@@ -113,15 +113,13 @@ export function OperatorComposerSettings({ value, onChange, disabled, access }: 
               if (effort.success) update({ ...value, reasoningEffort: effort.data })
             } else if (value.harness === 'claude') { const effort = ClaudeEffortSchema.safeParse(next); if (effort.success) update({ ...value, effort: effort.data }) }
           }} /> : null}
-        {effort && !efforts.includes(effort) ? <p>Saved effort {effort} is unavailable for this model.</p> : null}
         {access}
         <div className="operator-agent-toggles">
         <Switch label="Fast mode" checked={value.harness === 'codex' && value.serviceTier === 'priority'}
-          disabled={disabled || !catalog.isSuccess || value.harness !== 'codex' || (!fastSupported && value.serviceTier !== 'priority')}
+          disabled={disabled || value.harness !== 'codex' || (!fastSupported && value.serviceTier !== 'priority')}
           onChange={(event) => { if (value.harness === 'codex') update({ ...value, serviceTier: event.target.checked ? 'priority' : 'standard' }) }} />
         <Switch label="Show thinking" checked={value.showThinking} disabled={disabled} onChange={(event) => update({ ...value, showThinking: event.target.checked })} />
         </div>
-        {value.accountId ? <p>Options come from this account. Check the configuration before running.</p> : null}
         {catalog.isPending ? <small role="status">Loading models…</small> : null}
         {catalog.isError || defaults.isError ? <div role="alert">Settings unavailable. <Button size="sm" onClick={() => { void catalog.refetch(); void defaults.refetch() }}>Retry</Button></div> : null}
       </>}

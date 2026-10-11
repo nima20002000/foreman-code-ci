@@ -154,7 +154,7 @@ export function operatorToolRequirements(name: OperatorToolName, resource?: Auth
   const result: Requirement[] = [{action:entry.action,scope}]
   if (name.startsWith('provider_account')) {
     result[0]!.scope = 'global'
-    if (entry.action === 'provider_accounts:manage') result.push({ action: 'provider_accounts:read', scope: 'global' })
+    if (name !== 'provider_accounts_list') result.push({ action: 'settings:read', scope: 'global' })
   }
   if (name === 'interaction_respond') result.push({ action: 'interactions:read', scope: 'resource' })
   if (name === 'workspace_storage_folders_list' || name === 'workspace_storage_folder_delete') {
@@ -215,8 +215,7 @@ function usable(scope: ManagementScope, kind: ScopeKind): boolean {
 }
 function intersect(left: ManagementScope, right: ManagementScope): ManagementScope | undefined {
   const result: ManagementScope = {}
-  for (const dimension of ['workspaceIds','workflowIds','runIds', 'mainIds', 'deviceIds',
-    'applicationInstallationIds', 'providerAccountIds'] as const) {
+  for (const dimension of ['workspaceIds','workflowIds','runIds'] as const) {
     const a=left[dimension],b=right[dimension]
     const ids=a&&b ? a.filter((id)=>b.includes(id)) : a??b
     if (ids?.length===0) return undefined
@@ -230,11 +229,6 @@ export function operatorToolAvailable(context: OperatorRequestContext, name: Ope
   const service = context.services
   if (name.startsWith('bug_report') && !service.bugReports) return false
   if (name.startsWith('provider_account') && !service.providerAccounts) return false
-  if (name.startsWith('provider_account')) {
-    const action = OPERATOR_TOOL_ACTIONS.find(entry => entry.name === name)!.action
-    return hasAction(context.principal, 'provider_accounts:read')
-      && (action === 'provider_accounts:read' || hasAction(context.principal, 'provider_accounts:manage'))
-  }
   if ((name.startsWith('general_settings_') || name.startsWith('system_prompt_')
     || name.startsWith('operator_initial_prompt_')) && !service.settings) return false
   if (name === 'resource_telemetry_read' || name === 'resource_telemetry_selector_get') {

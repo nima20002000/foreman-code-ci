@@ -1,5 +1,5 @@
 import { RETIRED_OPENCODE_MESSAGE } from '@foreman-code/contracts'
-import { timeRuntimeOperation, withRuntimeTimingContext } from '../../infrastructure/runtimeTiming.js'
+import { runtimeTimingPoint, timeRuntimeOperation, withRuntimeTimingContext } from '../../infrastructure/runtimeTiming.js'
 import { inspectNativeResponse } from '../harnesses/responseAvailability.js'
 import type { InteractionActivityEvidence } from './activityProjection.js'
 import type { ReviewNativeCapture, ReviewNativeCapturePort, ReviewOriginalNativeSource } from './reviewNativeCapture.js'
@@ -19,6 +19,7 @@ import {
   type NativeHarnessEvent,
   type PendingNativeInteraction,
   type ReviewJob,
+  type WorkflowRun,
   HarnessExecutionRequestSchema,
 } from '@foreman-code/contracts'
 
@@ -94,6 +95,8 @@ interface OwnedNativeSession {
   openingFailed?: boolean
   preparing?: Promise<IssuedWorkerCredential['environment'] | undefined>
   startupSignal?: AbortSignal
+  // A canceled remote attach can leave the original Worker session running without a Main acknowledgment.
+  restartAttachment?: { session: NativeSessionReference; request: HarnessExecutionRequest }
   cleanup?: Promise<Error[]>
   reviewFinalizer?: symbol
   reviewFinishing?: boolean
@@ -132,6 +135,7 @@ export class ApprovalExecutionCoordinator {
   private readonly pendingCleanupRuns = new Set<string>()
   private readonly cancellations = new Map<string, Promise<void>>()
   private readonly reviewerRecoveries = new Map<string, Promise<boolean>>()
+  private readonly sharedRunOwners = new Map<string, RunOwnership>()
   private closing = false
   private restartClosure: Promise<void> | undefined
 
@@ -663,6 +667,19 @@ export class ApprovalExecutionCoordinator {
     }
   }
 
+  private async workflowRequest(execution: HarnessExecution, configuration: AgentConfigurationVersion,
+    run: Pick<WorkflowRun, 'id' | 'workflowVersionId' | 'workspaceId'>, owner?: RunOwnership) {
+    const version = await this.runs.getRepeatVersion(run.id, run.workflowVersionId, owner)
+    let executionContext
+    if (version.definition.handoffs) {
+      const retained = owner ? undefined : await this.retainRunOwner(execution, () => {})
+      try {
+        executionContext = await (await this.runs.repeat(owner ?? retained!.owner)).readWorkExecutionContext(execution.id)
+      } finally { await retained?.release() }
+    }
+    return workflowExecutionRequest({ execution, version, configuration, workspaceId: run.workspaceId, executionContext })
+  }
+
   private prepareEnvironment(
     context: NativeManagerResolutionContext,
     resolved: ResolvedNativeSessionManager,
@@ -1035,14 +1052,17 @@ export class ApprovalExecutionCoordinator {
       || !this.credentials?.recoverRemote) return false
     const retained = await owner.oneShotConnection().transaction(sql => readRecoverableRemoteReviewer(sql, execution))
     if (!retained) return false
-    const resolved = this.resolveManager(context, owner)
+    const request = await this.workflowRequest(execution, configuration, run, owner)
+    const resolved = this.resolveManager({ ...context, workflowRequest: request }, owner)
     resolved.beginStart?.()
-    const owned = this.ownSession(execution, { ...context, purpose: 'reviewer' }, resolved.manager)
+    const owned = this.ownSession(execution,
+      { ...context, workflowRequest: request, purpose: 'reviewer' }, resolved.manager)
     owned.runOwner = owner
     const signal = AbortSignal.any([owned.controller.signal, ...(parentSignal ? [parentSignal] : [])])
     owned.startupSignal = signal
     owned.closureRegistration = Promise.resolve(retained.generation)
     owned.closureGeneration = retained.generation
+    owned.restartAttachment = { session: native.session, request }
     try {
       let lane = await this.interactions.coordination.getLane(native.session.harness, native.session.nativeSessionId)
       while (lane?.leaseExpiresAt && Date.parse(lane.leaseExpiresAt) > Date.now()) {
@@ -1062,9 +1082,6 @@ export class ApprovalExecutionCoordinator {
           'The original reviewer credential cannot bind its current job.', 409)
       }
       const identity = reviewPreflightIdentity(lane, `execution:${execution.id}`)
-      const request = HarnessExecutionRequestSchema.parse({ executionId: execution.id, runId: execution.runId,
-        workspaceId: run.workspaceId, workflowNodeId: execution.workflowNodeId, workingDirectory: execution.workingDirectory,
-        runtimeDirectory: execution.runtimeDirectory, systemPrompt: execution.systemPrompt, configuration, input: execution.input })
       if (retained.detached) {
         owned.closureRegistration = this.workflowClosures.begin(execution)
         owned.closureGeneration = await owned.closureRegistration
@@ -1113,8 +1130,15 @@ export class ApprovalExecutionCoordinator {
     if (this.restartClosure) return this.restartClosure
     const sessions = [...this.ownedSessions.values()]
     const reason = new DomainError('ENGINE_RESTART', 'The native lifetime is detaching for application restart.', 409)
-    for (const owned of sessions) owned.controller.abort(reason)
+    const drainingReviews = this.reviewers.shutdown()
+    // A captured finalizer may already be running outside the dispatch guard.
+    // Keep its lifetime valid until the dispatcher has joined it.
+    for (const owned of sessions) {
+      if (!owned.reviewFinalizer) owned.controller.abort(reason)
+    }
     const task = (async () => {
+      const reviewResults = await Promise.allSettled([drainingReviews])
+      for (const owned of sessions) owned.controller.abort(reason)
       const closeSession = async (owned: OwnedNativeSession) => {
         const safe = nativePersistenceRedactor(Object.values(this.managerCredentials.get(owned.manager)?.environment.variables ?? {}))
         const failures: Error[] = []
@@ -1122,7 +1146,7 @@ export class ApprovalExecutionCoordinator {
           // A failed drain can leave cleanup or create/attach in flight. Observe
           // its actual completion; an abort/timeout is never a closure receipt.
           await owned.cleanup
-          for (const startup of [owned.preparing, owned.opening]) {
+          for (const startup of [this.reviewerRecoveries.get(owned.execution.id), owned.preparing, owned.opening]) {
             try { await startup }
             catch (error) {
               if (!isRestartCancellation(error, owned.startupSignal)) throw error
@@ -1130,6 +1154,17 @@ export class ApprovalExecutionCoordinator {
           }
           if (this.ownedSessions.get(owned.execution.id) !== owned) return
           if (this.closedExecutions.has(owned.execution.id)) return
+          if (owned.restartAttachment && !owned.failed
+            && owned.context.acceptedPlacement?.hostRef.kind === 'device'
+            && (!owned.session || owned.openingFailed || owned.generation === 0)) {
+            // Worker reattachment only observes the saved process; it cannot launch or resubmit a turn.
+            const { session, request } = owned.restartAttachment
+            const lane = await this.interactions.coordination.getLane(session.harness, session.nativeSessionId)
+            const identity = reviewPreflightIdentity(lane, `execution:${owned.execution.id}`)
+            const attached = await this.openingSession(owned,
+              owned.manager.attachSession(session, { request, ...identity }))
+            this.assertSessionIdentity(session, attached)
+          }
           // A failed opening can still own a transport without an acknowledged
           // session. Its captured manager must positively drain that transport.
           if (!owned.session || owned.openingFailed || owned.generation === 0) {
@@ -1161,6 +1196,9 @@ export class ApprovalExecutionCoordinator {
         Object.values(this.managerCredentials.get(owned.manager)?.environment.variables ?? {})))
       const failures = results.flatMap(result => result.status === 'fulfilled'
         ? result.value : [safe.error(result.reason) as Error])
+      for (const result of reviewResults) {
+        if (result.status === 'rejected') failures.push(safe.error(result.reason) as Error)
+      }
       if (failures.length) throw new AggregateError(failures, 'Native restart closure was incomplete.', { cause: failures[0] })
     })()
     this.restartClosure = task
@@ -1350,19 +1388,7 @@ export class ApprovalExecutionCoordinator {
     await this.validateContinuation?.(execution.id, signal)
     let request = this.ownedSessions.get(execution.id)?.context.workflowRequest
     if (!request) {
-      const version = await this.runs.getRepeatVersion(run.id, run.workflowVersionId, options.restartOwner)
-      let executionContext
-      if (version.definition.handoffs) {
-        const retained = options.restartOwner ? undefined : await this.retainRunOwner(execution, () => {})
-        const owner = options.restartOwner ?? retained!.owner
-        try {
-          executionContext = await (await this.runs.repeat(owner)).readWorkExecutionContext(execution.id)
-        } finally {
-          await retained?.release()
-        }
-      }
-      request = workflowExecutionRequest({ execution, version, configuration,
-        workspaceId: run.workspaceId, executionContext })
+      request = await this.workflowRequest(execution, configuration, run, options.restartOwner)
     }
     const resolutionContext = {
       ...await this.managerContext(execution, configuration, context.purpose), workflowRequest: request,
@@ -1372,6 +1398,7 @@ export class ApprovalExecutionCoordinator {
     // Claim outside cleanup: losing a concurrent startup race does not own its credentials.
     if (resolved.processState === 'needs_start') resolved.beginStart?.()
     const owned = this.ownSession(execution, resolutionContext, resolved.manager)
+    if (options.restartOwner) owned.runOwner = options.restartOwner
     if (continuing) {
       owned.closureRegistration = Promise.resolve(continuing.generation)
       owned.closureGeneration = continuing.generation
@@ -1379,6 +1406,9 @@ export class ApprovalExecutionCoordinator {
     owned.session = sessionReference
     signal = signal ? AbortSignal.any([signal, owned.controller.signal]) : owned.controller.signal
     owned.startupSignal = signal
+    if (resolutionContext.acceptedPlacement?.hostRef.kind === 'device') {
+      owned.restartAttachment = { session: sessionReference, request }
+    }
     try {
       if (continuing) {
         if (!this.credentials?.restore || !resolved.manager.originalApplicationAccess) throw new DomainError(
@@ -1518,17 +1548,35 @@ export class ApprovalExecutionCoordinator {
   }
 
   private async retainRunOwner(execution: HarnessExecution, onLost: () => void) {
-    let owner = this.ownedSessions.get(execution.id)?.runOwner
+    let owner = this.sharedRunOwners.get(execution.runId) ?? this.ownedSessions.get(execution.id)?.runOwner
     try { owner?.assertOwned() }
     catch (error) {
       if (!(error instanceof DomainError) || error.code !== 'RUN_OWNERSHIP_LOST') throw error
       await owner?.release()
       owner = undefined
     }
-    if (owner) return { owner, release: owner.retain(onLost) }
+    if (owner) {
+      const release = owner.retain(onLost)
+      runtimeTimingPoint('engine', 'run.retain_owner', {
+        runId: execution.runId, executionId: execution.id, reused: true, success: true,
+      })
+      return { owner, release }
+    }
     const acquired = await this.runs.acquireOwnership(execution.runId, onLost)
+    runtimeTimingPoint('engine', 'run.retain_owner', {
+      runId: execution.runId, executionId: execution.id, reused: false, success: Boolean(acquired),
+    })
     if (!acquired) throw new DomainError('SESSION_LANE_BUSY', 'The Run is still completing its current native operation.', 409)
     return { owner: acquired, release: () => acquired.release() }
+  }
+
+  shareRunOwner(owner: RunOwnership): () => void {
+    this.adoptRunOwner(owner)
+    // Cold review attachment can start before recovery registers any session.
+    this.sharedRunOwners.set(owner.runId, owner)
+    return () => {
+      if (this.sharedRunOwners.get(owner.runId) === owner) this.sharedRunOwners.delete(owner.runId)
+    }
   }
 
   adoptRunOwner(owner: RunOwnership): void {
@@ -1822,6 +1870,9 @@ export class ApprovalExecutionCoordinator {
       ownedSession = this.ownSession(execution, context, manager)
       ownedSession.runOwner = input.owner
       if (session && !ownedSession.session) ownedSession.session = session
+      if (session && context.acceptedPlacement?.hostRef.kind === 'device') {
+        ownedSession.restartAttachment = { session, request }
+      }
       signal = AbortSignal.any([signal, ownedSession.controller.signal])
       ownedSession.startupSignal = signal
 
@@ -1914,10 +1965,11 @@ export class ApprovalExecutionCoordinator {
               },
             }, signal)
           } else {
-            await publishObservedSession(await this.openingSession(ownedSession,
-              timeRuntimeOperation('harness', 'native.create_session', () => manager!.createSession(start, signal))))
-            nativeEvents = manager.startTurnBatches(session!, {
+            const observed = await this.openingSession(ownedSession,
+              timeRuntimeOperation('harness', 'native.create_session', () => manager!.createSession(start, signal)))
+            nativeEvents = manager.startTurnBatches(observed, {
               prompt: buildHarnessPrompt(request), clientCorrelationId: `execution:${execution.id}`,
+              onSessionReady: () => publishObservedSession(observed),
               onTurnOffered: () => { nativeTurnOffered = true },
             }, signal)
           }
