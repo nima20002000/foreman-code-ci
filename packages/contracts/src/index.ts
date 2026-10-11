@@ -1,5 +1,7 @@
 import { TextTruncationSchema } from './activityText.js';
 import { PromptSettingSnapshotSchema } from './prompts.js';
+import { AcceptedProviderAccountBindingSchema } from './providerAccounts.js';
+export * from './providerAccounts.js';
 export * from './prompts.js';
 import { HarnessProfileSelectionSchema } from './harnessProfileSelection.js';
 import { NativeInteractionSupportSchema } from './nativeInteractionSupport.js';
@@ -1515,6 +1517,7 @@ export const OperatorActivityQuerySchema = z.object({
 }).strict();
 export type OperatorActivityQuery = z.infer<typeof OperatorActivityQuerySchema>;
 export const OperatorConversationStateSchema = z.object({
+  providerAccountBinding: AcceptedProviderAccountBindingSchema.optional(),
   activitySnapshot: ActivitySnapshotV1Schema.optional(),
   responseAvailability: NativeInteractionResponseAvailabilitySchema.optional(),
   qualificationKey: z.string().regex(/^[a-f0-9]{64}$/).optional(),  conversation: ConversationSchema,
