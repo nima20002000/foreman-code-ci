@@ -8,11 +8,11 @@ import {
 } from '@foreman-code/contracts'
 import { ClaudeHarnessConfigurationSchema } from '@foreman-code/contracts/claude'
 import type { ProviderAccountResolver, ResolvedProviderAccount } from '../provider-accounts/service.js'
-import { ProviderAccountConfigurationService, harnessSessionChanged } from './providerAccountConfiguration.js'
+import { ProviderAccountConfigurationService, harnessSessionChanged, pinnedCodexAccountEnvironment } from './providerAccountConfiguration.js'
 import { claudeEnvironment } from './claudeSdk/configuration.js'
 import { HostHarnessOverrideService } from './instanceSettings/service.js'
 import { NativeHarnessFactories } from './runtimeFactory.js'
-import { pinnedCodexAccountEnvironment, resolveRuntimeProviderAccount } from './providerAccountRuntime.js'
+import { resolveRuntimeProviderAccount } from './providerAccountRuntime.js'
 import { requireClaudeProductionCredentialDelivery } from './claudeSdk/productionCredentials.js'
 import { NativeProcessRegistry } from './recovery/processRegistry.js'
 
@@ -65,7 +65,7 @@ describe('provider account execution selection', () => {
   it('keeps one resolved home and strips ambient provider credentials from every Codex process environment', async () => {
     let calls = 0
     let account: ResolvedProviderAccount = { accountId: first, homePath: '/accounts/first/home', authMode: 'subscription' }
-    const pin = pinnedCodexAccountEnvironment({ async resolve() { calls++; return account } }, first)
+    const pin = pinnedCodexAccountEnvironment({ async resolve() { calls++; return account } }, undefined)
     await pin.prepare()
     account = { accountId: second, homePath: '/accounts/second/home', authMode: 'subscription' }
     await pin.prepare()
@@ -82,12 +82,12 @@ describe('provider account execution selection', () => {
 
   it('uses the server-resolved Claude home/authentication and only the explicitly supplied local key', async () => {
     const selected = await new ProviderAccountConfigurationService(resolver({ accountId: first,
-      homePath: '/accounts/first/home', authMode: 'api-key', apiKey: 'local-secret' })).resolve({ ...claude, accountId: first })
+      homePath: '/accounts/first/home', authMode: 'api-key', apiKey: 'local-secret' })).resolve(claude)
     expect(selected).toMatchObject({ accountId: first, configDirectory: '/accounts/first/home', authMode: 'api-key' })
     if (selected.harness !== 'claude') throw new Error('Expected Claude')
     const environment = claudeEnvironment(selected, { ANTHROPIC_API_KEY: 'ambient', ANTHROPIC_AUTH_TOKEN: 'ambient',
       CLAUDE_CODE_USE_BEDROCK: '1', CLAUDE_CODE_OAUTH_TOKEN: 'ambient', HOME: '/ambient' }, 'local-secret')
-    expect(environment).toMatchObject({ CLAUDE_CONFIG_DIR: '/accounts/first/home', HOME: '/ambient',
+    expect(environment).toMatchObject({ CLAUDE_CONFIG_DIR: '/accounts/first/home', HOME: '/accounts/first',
       ANTHROPIC_API_KEY: 'local-secret', CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: '1' })
     expect(environment.ANTHROPIC_AUTH_TOKEN).toBeUndefined()
     expect(environment.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined()
@@ -99,7 +99,7 @@ describe('provider account execution selection', () => {
     const service = new ProviderAccountConfigurationService(resolver({ accountId: first,
       homePath: '/accounts/first/home', authMode: 'subscription' }))
     await expect(service.resolve({ ...codex, accountId: second })).rejects.toThrow('unavailable')
-    await expect(service.resolve({ ...codex, accountId: first }, { instanceId: first, instanceRevision: '1', target: {
+    await expect(service.resolve(codex, { instanceId: first, instanceRevision: '1', target: {
       hostRef: { kind: 'device', mainId: first, deviceId: second }, applicationInstallationId: first,
       harnessInstallationId: first, installationFingerprint: 'selected-installation',
     } })).rejects.toMatchObject({ code: 'PROVIDER_ACCOUNT_LOCAL_ONLY' })
@@ -116,7 +116,7 @@ describe('provider account execution selection', () => {
       homePath: '/accounts/first/home', authMode: 'subscription' }))
     accounts.bindProfiles(new HostHarnessOverrideService({} as never, {} as never,
       { authorize: async () => undefined }, async () => null))
-    const configuration = await accounts.resolve({ ...claude, accountId: first })
+    const configuration = await accounts.resolve(claude)
     await expect(accounts.profile({ principal: { id: 'reader', name: 'Reader', audience: 'operator',
       revokedAt: null, expiresAt: '2099-01-01T00:00:00Z', grants: [] }, source: 'mcp',
       configuration, selection: undefined, commandId: 'account-change', client: {} as never, check: true,
@@ -151,7 +151,7 @@ describe('provider account execution selection', () => {
       if (id === first && !available) throw new Error('Pinned account unavailable')
       return { accountId: id ?? defaultId, homePath: '/selected/home', authMode: 'subscription' }
     } }
-    expect(await resolveRuntimeProviderAccount(accounts, 'codex', first, recovery)).toMatchObject({ accountId: first })
+    expect(await resolveRuntimeProviderAccount(accounts, 'codex', undefined, recovery)).toMatchObject({ accountId: first })
     defaultId = second
     expect(await resolveRuntimeProviderAccount(accounts, 'codex', undefined, { ...recovery })).toMatchObject({ accountId: first })
     available = false
@@ -185,7 +185,7 @@ describe('provider account execution selection', () => {
     const root = join(directory, 'native-processes')
     const execution = { root, owner: 'execution:source' }
     const firstAccount = resolver({ accountId: first, homePath: '/accounts/first/home', authMode: 'subscription' })
-    await resolveRuntimeProviderAccount(firstAccount, 'codex', first, execution)
+    await resolveRuntimeProviderAccount(firstAccount, 'codex', undefined, execution)
     const registry = new NativeProcessRegistry(root)
     const launch = registry.reserveLaunch(execution.owner)
     await registry.abandonReservedLaunch(launch)
@@ -211,15 +211,6 @@ describe('provider account execution selection', () => {
     const chat = { root, owner: 'conversation:agent-chat:historical-child' }
     expect(await resolveRuntimeProviderAccount({ resolve }, 'codex', undefined, chat, source)).toBeNull()
     expect(resolve).not.toHaveBeenCalled()
-    await expect(resolveRuntimeProviderAccount({ resolve }, 'codex', first, chat, source))
-      .rejects.toMatchObject({ code: 'PROVIDER_ACCOUNT_BINDING_CONFLICT' })
+    expect(await resolveRuntimeProviderAccount({ resolve }, 'codex', first, chat, source)).toMatchObject({ accountId: first })
   })
-})
-
-
-it('preserves a saved Claude profile without consulting the managed default', async () => {
-  const resolve = vi.fn().mockResolvedValue({ accountId: first, homePath: '/accounts/first/home', authMode: 'subscription' })
-  const service = new ProviderAccountConfigurationService({ resolve })
-  expect(await service.resolve(claude)).toBe(claude)
-  expect(resolve).not.toHaveBeenCalled()
 })
