@@ -120,7 +120,11 @@ describe('profile-scoped Start after Worker reconnect', () => {
       expect((await profiles(fixture, reader)).find(profile => profile.instanceId === pending.instanceId)
         ?.qualification).toBe('qualifying')
 
-      const readyVersion = await saveGraph(fixture.version.definition)
+      const readyGraph = structuredClone(pendingVersion.definition)
+      const readyNode = readyGraph.nodes[0]!
+      if (readyNode.kind === 'job') throw new Error('Expected an Agent placement.')
+      readyNode.placement = structuredClone(placedNode.placement)
+      const readyVersion = await saveGraph(readyGraph)
       const readyInput = await startInput(readyVersion)
       const started = ManualRunStartResultSchema.parse(await fixture.value('run_start', readyInput))
       expect((await fixture.details(started.run.id)).run.workflowVersionId).toBe(readyVersion.id)
