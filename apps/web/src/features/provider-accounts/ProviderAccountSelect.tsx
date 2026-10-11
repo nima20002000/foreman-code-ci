@@ -6,16 +6,15 @@ export function ProviderAccountSelect({ provider, value, onChange, disabled = fa
   provider: AccountProvider; value?: string; onChange(value: string | undefined): void
   disabled?: boolean; remote?: boolean
 }) {
-  const query = useProviderAccounts(!remote)
-  const accounts = query.data?.accounts.filter(account => account.provider === provider && !account.removedAt) ?? []
+  const query = useProviderAccounts()
+  const accounts = query.data?.accounts.filter(account => account.provider === provider) ?? []
   const defaultAccount = accounts.find(account => account.isDefault)
   const options = [
-    { value: '', label: defaultAccount ? `Provider default · ${defaultAccount.name}` : 'Provider default', disabled: false },
-    ...accounts.map(account => ({ value: account.id, label: `${account.name} · ${account.status.replaceAll('-', ' ')}`,
-      disabled: account.status === 'unavailable' })),
+    { value: '', label: defaultAccount ? `Provider default · ${defaultAccount.name}` : 'Provider default' },
+    ...accounts.map(account => ({ value: account.id, label: `${account.name} · ${account.status.replaceAll('-', ' ')}` })),
   ]
   if (value && !accounts.some(account => account.id === value)) {
-    options.push({ value, label: 'Saved account · unavailable', disabled: true })
+    options.push({ value, label: 'Saved account · unavailable' })
   }
   return <div className="provider-account-select">
     <Select label="Account" value={value ?? ''} options={options}
