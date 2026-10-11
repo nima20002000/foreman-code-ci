@@ -27,7 +27,7 @@ vi.mock('../../shared/api/client', async (original) => ({ ...await original<type
   createOperatorConversation: api.create, getOperatorConversation: api.get, sendOperatorMessage: api.send }))
 vi.mock('../../shared/api/operatorChatSummaries', () => ({ listOperatorConversationSummaries: api.list, deleteOperatorConversation: api.remove, restoreOperatorConversation: api.restore }))
 vi.mock('../../shared/api/operatorChatStream', () => ({ subscribeOperatorChat: () => () => {} }))
-vi.mock('../../shared/api/harnessSettings', async (original) => ({ ...await original<typeof import('../../shared/api/harnessSettings')>(), useNativeHarnessOptions: () => ({ isSuccess: true, data: { models: [
+vi.mock('../provider-accounts/useProviderHarnessModels', () => ({ useProviderHarnessModels: () => ({ isSuccess: true, data: { models: [
   { id: 'model-a', name: 'Model A', reasoningEfforts: ['low', 'high'], serviceTiers: ['standard', 'priority'], variants: ['high'] },
   { id: 'model-b', name: 'Model B', reasoningEfforts: ['low'], serviceTiers: ['standard'], variants: [] },
   { id: 'claude-sonnet-5-5', name: 'Sonnet 5.5', reasoningEfforts: ['low', 'medium', 'high'], serviceTiers: [], variants: [] },
@@ -204,6 +204,17 @@ describe('Operator chat UX', () => {
         acceptedModel: { harness: 'claude', model: 'claude-opus-5-5' } }] })
     api.get.mockResolvedValue(pinned)
     server.use(
+      http.get('/api/management/harnesses/claude/options', () => HttpResponse.json({
+        harness: 'claude', providerVersion: 'mock', authenticated: true,
+        models: [
+          { id: 'claude-sonnet-5-5', name: 'Sonnet 5.5', reasoningEfforts: ['low', 'medium', 'high'],
+            serviceTiers: [], variants: [] },
+          { id: 'claude-opus-5-5', name: 'Opus 5.5', reasoningEfforts: ['low', 'medium', 'high'],
+            serviceTiers: [], variants: [] },
+          { id: 'claude-haiku-4-5-20251001', name: 'Haiku 4.5', reasoningEfforts: [], serviceTiers: [], variants: [] },
+        ],
+        nativeAgents: [], settings: [], restrictions: [], checkedAt: new Date().toISOString(),
+      })),
       http.get('/api/management/settings/agents', () => HttpResponse.json(saved)),
       http.put('/api/management/settings/agents', async ({ request }) => {
         const input = AgentDefaultsUpdateInputSchema.parse(await request.json())
