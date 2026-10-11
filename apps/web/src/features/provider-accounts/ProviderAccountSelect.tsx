@@ -1,45 +1,31 @@
 import type { AccountProvider } from '@foreman-code/contracts/provider-accounts'
-import type { DeviceProvisioningTarget } from '@foreman-code/contracts/device-resources'
 import { Button, Select } from '../../shared/ui/nocturne'
-import { useProtectedAccessError } from '../../shared/api/useProtectedAccessError'
-import { useProviderAccounts, useProviderAccountScope } from './providerAccountsQueries'
-import { useProviderAccountAccess } from './providerAccountAccess'
+import { useProviderAccounts } from './providerAccountsQueries'
 
-export function ProviderAccountSelect({ provider, value, onChange, disabled = false, target, hostRef }: {
+export function ProviderAccountSelect({ provider, value, onChange, disabled = false, remote = false }: {
   provider: AccountProvider; value?: string; onChange(value: string | undefined): void
-  disabled?: boolean; target?: DeviceProvisioningTarget | undefined; hostRef?: DeviceProvisioningTarget['hostRef'] | undefined
+  disabled?: boolean; remote?: boolean
 }) {
-  const scope = useProviderAccountScope({ provider, ...(target ? { target } : {}), ...(hostRef ? { hostRef } : {}) })
-  const access = useProviderAccountAccess(scope.target)
-  const query = useProviderAccounts(access.target?.canRead === true, scope)
-  const denied = useProtectedAccessError(query)
-  const accounts = !denied && !query.isError ? query.data?.accounts.filter(account => !account.removedAt) ?? [] : []
+  const query = useProviderAccounts()
+  const accounts = query.data?.accounts.filter(account => account.provider === provider) ?? []
   const defaultAccount = accounts.find(account => account.isDefault)
-  const capability = access.target?.providers.find(item => item.provider === provider)
-  const available = access.target?.connected && capability?.qualified && access.target.canRead
-  const defaultUnavailable = Boolean(defaultAccount && (defaultAccount.observation?.readiness !== 'ready'
-    || defaultAccount.observation.generation !== scope.generation))
   const options = [
-    { value: '', label: defaultAccount ? `Provider default · ${defaultAccount.name}${defaultUnavailable ? ' · unavailable' : ''}`
-      : 'Provider default', disabled: defaultUnavailable },
-    ...accounts.map(account => ({ value: account.id,
-      label: `${account.name} · ${account.status.replaceAll('-', ' ')} · ${account.observation?.readiness ?? 'unknown'}`,
-      disabled: !available || !account.binding || account.observation?.readiness !== 'ready'
-        || account.observation.generation !== scope.generation })),
+    { value: '', label: defaultAccount ? `Provider default · ${defaultAccount.name}` : 'Provider default' },
+    ...accounts.map(account => ({ value: account.id, label: `${account.name} · ${account.status.replaceAll('-', ' ')}` })),
   ]
   if (value && !accounts.some(account => account.id === value)) {
-    options.push({ value, label: 'Saved account · unavailable', disabled: true })
+    options.push({ value, label: 'Saved account · unavailable' })
   }
-  const unavailable = access.discovery.isSuccess && !available
   return <div className="provider-account-select">
     <Select label="Account" value={value ?? ''} options={options}
-      disabled={disabled || !available || !query.isSuccess || Boolean(denied)}
-      hint="Choose an account on the selected computer. Manage accounts in Settings > Harnesses."
+      disabled={disabled || remote || !query.isSuccess}
+      hint={remote ? 'Managed accounts stay on Main. Remote Agents use credentials on their selected computer.'
+        : 'Credentials stay on this computer. Manage accounts in Settings > Harnesses.'}
       onChange={event => onChange(event.target.value || undefined)} />
-    {access.discovery.isPending || !unavailable && query.isPending ? <small role="status">Loading accounts…</small> : null}
-    {query.isError || access.discovery.isError ? <div role="alert">Accounts unavailable. Your selection is kept.
-      <Button size="sm" variant="ghost" onClick={() => { void access.discovery.refetch(); void query.refetch() }}>Retry accounts</Button>
+    {query.isPending ? <small role="status">Loading accounts…</small> : null}
+    {query.isError ? <div role="alert">Accounts unavailable. Your selection is kept.
+      <Button size="sm" variant="ghost" onClick={() => void query.refetch()}>Retry accounts</Button>
     </div> : null}
-    {unavailable ? <p role="alert">Accounts are unavailable on the selected computer. Your saved selection is kept.</p> : null}
+    {remote && (value || defaultAccount) ? <p role="alert">This account is local to Main. Choose Main before running.</p> : null}
   </div>
 }
