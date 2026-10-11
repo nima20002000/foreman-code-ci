@@ -53,19 +53,9 @@ jobs:
           key: ci-${{ inputs.suite }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ inputs.ref }}
           restore-keys: ci-${{ inputs.suite }}-${{ hashFiles('pnpm-lock.yaml') }}-
       - name: Suite
-        run: |
-          case "$SUITE" in
-            install) ;;
-            unit) pnpm db:up && pnpm test ;;
-            typecheck|lint|build) pnpm "$SUITE" ;;
-            integration)
-              pnpm db:up
-              export FOREMAN_CODE_INTEGRATION_DURATIONS_OUTPUT="$RUNNER_TEMP/durations.json"
-              # Native process tests need a delegated cgroup, as a systemd user service gets on our build computers.
-              sudo -E env "PATH=$PATH" systemd-run --quiet --scope -p Delegate=yes --uid="$(id -u)" --gid="$(id -g)" -- \
-                pnpm test:integration ${FILES:+--files $FILES} ;;
-            *) echo "Unknown suite $SUITE"; exit 2 ;;
-          esac
+        run: scripts/ci-suite.sh
+        env:
+          DURATIONS_OUTPUT: ${{ runner.temp }}/durations.json
       - if: always() && inputs.suite == 'integration'
         uses: actions/upload-artifact@v4
         with:
