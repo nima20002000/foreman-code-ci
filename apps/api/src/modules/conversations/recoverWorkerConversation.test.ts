@@ -20,8 +20,19 @@ import type { ClaudeSdkClient } from '../harnesses/claudeSdk/port.js'
 
 /** Recorded native/process ports verify recovery behavior, not installed harness qualification. */
 async function fixture(harness: AgentHarness = 'codex', kind: 'operator' | 'agent' = 'agent',
-  options: { journalStatus?: 'completed' | 'uncertain'; appMcpAccess?: 'none' | 'scoped' } = {}) {
+  options: { journalStatus?: 'completed' | 'uncertain'; appMcpAccess?: 'none' | 'scoped'; managedAccount?: boolean } = {}) {
   const f = workerConversationFixture(kind, harness)
+  if (options.managedAccount && (harness === 'codex' || harness === 'claude')) {
+    const accountId = randomUUID()
+    f.binding.accountBinding = { kind: 'slot', accountId, provider: harness, profileRef: accountId, bindingRevision: 1,
+      subject: null, target: { hostRef: { kind: 'device', mainId: f.connection.mainId, deviceId: f.connection.deviceId },
+        applicationInstallationId: f.connection.workerInstallationId, keyRevision: f.connection.keyRevision,
+        authorizationRevision: f.connection.authorizationRevision } }
+    if (f.configuration.harness.harness === 'codex' || f.configuration.harness.harness === 'claude') {
+      f.configuration.harness.accountId = accountId
+      f.binding.owner.configurationHash = commandInputHash(f.configuration)
+    }
+  }
   if (options.appMcpAccess) f.binding.appMcpAccess = options.appMcpAccess
   const directory = await privateFixtureDirectory('worker-recovery-')
   const journal = await RemoteOperationJournal.open(join(directory, 'operations.json'), { initializeNewInstallation: true })
@@ -296,5 +307,62 @@ it('refuses an unknown compact result without changing the native owner or dispa
     expect((await f.journal.conversations.read(f.binding))?.nativeOwner).toEqual(f.owner)
     expect((await f.journal.conversations.read(f.binding))?.compactions[0]?.state).toEqual(dispatched)
     expect(f.close).toHaveBeenCalledOnce()
+  } finally { await f.cleanup() }
+})
+
+
+it.each(['codex', 'claude'] as const)('retains the accepted %s account during cold Worker recovery', async harness => {
+  const f = await fixture(harness, 'agent', { managedAccount: true })
+  try {
+    expect(await f.recover()).toBe(f.allocation)
+    const saved = await f.journal.conversations.read(f.binding)
+    expect(saved?.binding.accountBinding).toEqual(f.record.binding.accountBinding)
+    expect(saved?.session).toEqual(f.session)
+    expect(f.attach).toHaveBeenCalledWith(f.session, expect.objectContaining({ configuration: f.configuration }), expect.anything())
+    expect(f.allocate).toHaveBeenCalledTimes(1)
+  } finally { await f.cleanup() }
+})
+
+it('keeps account-bound recovery blocked without positive original process closure', async () => {
+  const f = await fixture('claude', 'agent', { managedAccount: true })
+  delete (f.launch as { closureEvidence?: unknown }).closureEvidence
+  try {
+    await expect(f.recover()).rejects.toThrow('positively closed')
+    expect(f.allocate).not.toHaveBeenCalled()
+    expect((await f.journal.conversations.read(f.binding))?.binding.accountBinding).toEqual(f.binding.accountBinding)
+  } finally { await f.cleanup() }
+})
+
+it('rejects another Worker account binding without replacement allocation', async () => {
+  const f = await fixture('codex', 'agent', { managedAccount: true })
+  const binding = structuredClone(f.binding)
+  if (binding.accountBinding?.kind !== 'slot') throw new Error('Account fixture required')
+  binding.accountBinding.accountId = randomUUID()
+  try {
+    await expect(f.recover({ method: 'conversation.open', binding, configuration: f.configuration,
+      operationId: 'original-create', mode: 'attach', source: f.session })).rejects.toThrow('changed')
+    expect(f.allocate).not.toHaveBeenCalled()
+  } finally { await f.cleanup() }
+})
+
+it('does not invent terminal proof from account-bound Claude input receipts', async () => {
+  const f = await fixture('claude', 'agent', { managedAccount: true, journalStatus: 'uncertain' })
+  delete f.observed.terminalResult
+  try {
+    await expect(f.recover()).rejects.toMatchObject({ code: 'WORKER_CONVERSATION_RECOVERY_REQUIRED' })
+    const saved = await f.journal.conversations.read(f.binding)
+    expect(saved?.binding.accountBinding).toEqual(f.binding.accountBinding)
+    expect(saved?.turns[0]?.status).toBe('uncertain')
+  } finally { await f.cleanup() }
+})
+
+it('retains a matching completed Claude journal result for account-bound recovery', async () => {
+  const f = await fixture('claude', 'agent', { managedAccount: true, journalStatus: 'completed' })
+  delete f.observed.terminalResult
+  try {
+    expect(await f.recover()).toBe(f.allocation)
+    const saved = await f.journal.conversations.read(f.binding)
+    expect(saved?.turns[0]?.result).toEqual(f.result)
+    expect(saved?.binding.accountBinding).toEqual(f.binding.accountBinding)
   } finally { await f.cleanup() }
 })
