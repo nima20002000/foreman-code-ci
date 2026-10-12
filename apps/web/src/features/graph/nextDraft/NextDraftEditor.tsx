@@ -456,6 +456,7 @@ function EditorForm({ draftKey, edit, updateFailures }: { draftKey: string; edit
     }
     const agent = agents.find((item) => item.id === node.agentId)
     const run = runNodeView(runRecord, Boolean(board?.run), node.id, node.agentId)
+    const statusLabel = board?.run ? [run.label, run.activity].filter(Boolean).join(' · ') : 'Draft'
     const savedGraph = (context.savedDraft ?? context.draft).graph
     const savedNode = savedGraph.nodes.some((item) =>
       item.kind !== 'job' && item.id === node.id && item.agentId === node.agentId)
@@ -464,7 +465,6 @@ function EditorForm({ draftKey, edit, updateFailures }: { draftKey: string; edit
     const chat = unsavedChat ? <EmptyState icon="chat" title="Save this Agent and workflow to chat"
       description="Save the Agent settings and workflow changes, then reopen chat. Workflow alerts list any missing setup." />
       : <AgentChatPanel name={pinned?.name ?? nodeTitle(graph, node.id)} activity={run.activity} running={run.state === 'running'}
-      role={pinned?.role ?? (agent?.productRole === 'orchestrator' ? 'Orchestrator' : 'Worker')} runLabel={pinned?.runLabel ?? run.label} onClose={() => inspect(() => setOpenNode(undefined))}
       context={{ workspaceId: graph.workspaceId, workflowId: graph.id, workflowNodeId: node.id, agentId: node.agentId,
         ...(board?.run ? { runId: board.run.runId } : {}) }}
       onNewConversation={() => {
@@ -475,24 +475,22 @@ function EditorForm({ draftKey, edit, updateFailures }: { draftKey: string; edit
           else { setOpenNode(undefined); setPanel('agents') }
         } else { setOpenNode(undefined); setPanel('agents') }
       }} />
-    if (pinned) return { chat, chatHasHeader: true,
+    if (pinned) return { chat,
       settings: <p className="agent-panel-note">This is a saved Run Agent. Return to the draft to edit settings for future work. Chat does not change this Run.</p>,
-      info: <AgentInfoTabs scope={board?.run} agentId={node.agentId} details={<AgentFacts items={[{ label: 'Status', value: run.activity ? `${run.label} · ${run.activity}` : run.label },
+      info: <AgentInfoTabs scope={board?.run} agentId={node.agentId} details={<AgentFacts items={[{ label: 'Status', value: statusLabel },
         { label: 'Node', value: node.id, mono: true }, { label: 'Agent', value: node.agentId, mono: true },
         { label: 'Run', value: board?.run?.runId, mono: true }]} />} /> }
     const role = roleEvidence(context, node.agentId, edit.agentEdits)
     return {
       chat,
-      chatHasHeader: !unsavedChat,
       settings: <fieldset className="board-popover-fields" disabled={edit.busy || reloading || editIntent.locked}>
-        <p className="agent-panel-note">Executable changes require every affected Run to stop and finish cleanup before Save. Use Stop-and-save or discard the edits. Moving Agents on the Board does not require Stop.</p>
         <BoardAgentSettings draftKey={draftKey} edit={edit} nodeId={node.id} close={() => setOpenNode(undefined)}
           remove={() => { setOpenNode(undefined); change((value) => removeNode(value, node.id)) }} />
         <NodeWorkflowFields graph={graph} node={graph.nodes.find((item) => item.id === node.id)!} context={context} agentEdits={edit.agentEdits} change={change} />
       </fieldset>,
       info: <AgentInfoTabs scope={board?.run} agentId={node.agentId} details={<>
         <AgentFacts items={[
-          { label: 'Status', value: run.activity ? `${run.label} · ${run.activity}` : run.label },
+          { label: 'Status', value: statusLabel },
           { label: 'Role', value: role.role === 'orchestrator' ? 'Orchestrator' : role.role === 'coder' ? 'Worker' : 'Unknown' },
           { label: 'Starts workflow', value: graph.entryNodeId === node.id ? 'Yes' : 'No' },
           ...(agent ? agentSettingRows(agent) : []),
@@ -510,6 +508,10 @@ function EditorForm({ draftKey, edit, updateFailures }: { draftKey: string; edit
   const rawErrorText = edit.error ? edit.error.message : startOutbox.error ?? localError
   // The save alert already shows the edit-intent failure; do not repeat it.
   const errorText = rawErrorText && rawErrorText === editIntent.mutation.error?.message ? undefined : rawErrorText
+  const locationValidation = workspace.data?.locationValidation
+  let locationMessage = 'Choose an execution folder to run this workflow.'
+  if (locationValidation?.status === 'restricted') locationMessage = 'Execution folder access is restricted.'
+  else if (locationValidation?.status === 'unavailable') locationMessage = locationValidation.error.message
   const panelTitle = panel === 'workflow' ? 'Workflow settings' : panel === 'agents' ? 'Add node' : ''
   return <section className="workflow-graph board-typed-editor" aria-label="Workflow authoring">
     <div className="workflow-graph-canvas">
@@ -580,8 +582,10 @@ function EditorForm({ draftKey, edit, updateFailures }: { draftKey: string; edit
           else openPanel(issue.code === 'ENTRY_REQUIRED' && !graph.nodes.length ? 'agents' : 'workflow')
         }} />
       <div className="board-notices" aria-live="polite">
-        {!pendingStart && workspace.data && workspace.data.locationValidation.status !== 'ready' ? <BoardNotice tone="warning" title="Choose an execution folder to run this workflow."
-          action={<Button size="sm" onClick={board?.openLocation}>Choose folder</Button>} /> : null}
+        {!pendingStart && workspace.data && workspace.data.locationValidation.status !== 'ready'
+          ? <BoardNotice tone="warning" title={locationMessage}
+            action={<Button size="sm" onClick={board?.openLocation}>{workspace.data.locationValidation.status === 'unconfigured'
+              ? 'Choose folder' : 'Review folder'}</Button>} /> : null}
         {pendingStart ? <BoardNotice tone="warning" title="An earlier start may have gone through."
           action={<Button size="sm" onClick={() => void (pendingStart ? start() : prepare(start)).catch(report)}>Check again</Button>}>Confirm it before starting another run.</BoardNotice> : null}
         {startReloadRequired ? <BoardNotice tone="warning" title="Reload the saved draft before starting another Run."
@@ -630,7 +634,7 @@ function EditorForm({ draftKey, edit, updateFailures }: { draftKey: string; edit
               </div> : null}
             </section>
             <section className="next-draft-section"><h3>Execution folder</h3>
-              <p className="next-draft-hint">{workspace.data?.locationValidation.status === 'ready' ? 'Runs work in this workspace’s folder.' : 'No usable folder is set yet.'}</p>
+              <p className="next-draft-hint">{workspace.data?.locationValidation.status === 'ready' ? 'Runs work in this workspace’s folder.' : locationMessage}</p>
               <Button size="sm" onClick={board?.openLocation}>Change folder</Button>
             </section>
             <section className="next-draft-section"><h3>Draft</h3>
