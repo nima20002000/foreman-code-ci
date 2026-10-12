@@ -17,6 +17,7 @@ import { requiredLocationAccess, type WorkspaceLocationService } from '../worksp
 import type { PostgresWorkflowRepository } from '../workflows/postgres.js'
 import type { RunnerAdmission } from './runnerAdmission.js'
 import { workflowExecutionRequest } from './workflowExecutionRequest.js'
+import { currentInitialPrompt } from './currentRouting.js'
 import { readUnconsumedWorkflowApprovals } from './workflowLifecycle.js'
 
 import type { RunOwnership } from './ownership.js'
@@ -43,6 +44,7 @@ export function repeatExecutionDriver(input: {
    * Completed input is per-execution cleanup/reconciliation ONLY. It must never
    * allocate a candidate, directory, credential, session or turn, or call finishRun. */
   observeExact(execution: HarnessExecution, signal: AbortSignal): Promise<void>
+  requestStartCleanup(failure: ExecutionResult): Promise<void>
   reconcileArtifacts?(execution: HarnessExecution, signal: AbortSignal): Promise<void>
 }): RepeatExecutionDriver {
   const inFlight = new Map<string, Promise<void>>()
@@ -97,8 +99,25 @@ export function repeatExecutionDriver(input: {
           if (isGraphInterrupt(error)) throw error
           input.owner.assertOwned()
           signal.throwIfAborted()
-          const terminal = await input.store.readExecution(execution.id)
-          if (terminal.execution.state !== 'completed') throw error
+          const terminal = await retryDatabaseTimeout(() => input.store.readExecution(execution.id), {
+            signal, check: () => input.owner.assertOwned(),
+          })
+          if (terminal.execution.state !== 'completed') {
+            const startFailed = !(error instanceof DomainError) || isDatabaseTimeout(error)
+              || error instanceof DomainError && error.code === 'NATIVE_SESSION_START_UNCERTAIN'
+            if (startFailed && !terminal.execution.nativeSessionId
+              && ['queued', 'starting'].includes(terminal.execution.state)) {
+              const failure = new DomainError('EXECUTION_START_INTERRUPTED',
+                'Execution startup failed before a native session was saved.', 409)
+              failure.cause = error
+              await retryDatabaseTimeout(() => input.requestStartCleanup({ outcome: 'failed',
+                error: { code: failure.code, message: failure.message, retryable: false } }), {
+                signal, check: () => input.owner.assertOwned(),
+              })
+              throw failure
+            }
+            throw error
+          }
           // Native cleanup can throw after the terminal committed. Preserve it,
           // but never let that fact alone unblock a repeat or technical retry.
           await finalize(terminal.execution)
@@ -264,8 +283,11 @@ export function repeatNativeObserver(context: RepeatNativeObserverContext):
       check()
       const request = workflowExecutionRequest({ execution: { ...execution, ...paths },
         version: context.version, configuration, workspaceId: run.workspaceId, executionContext })
+      const workHandoffContract = context.version.definition.handoffs && repeatTickIndex(execution.input) === undefined
+        ? currentInitialPrompt({ ...node, initialPrompt: undefined }, false, true) : undefined
       for (;;) {
-        const observation = await native.observeExact({ ...common, execution, request, store: boundary, signal })
+        const observation = await native.observeExact({ ...common, execution, request, store: boundary, signal,
+          workHandoffContract })
         execution = observation.execution
         if (observation.state === 'completed') {
           return
@@ -317,11 +339,14 @@ export interface RepeatRuntimeLifecycle {
   finishCleanup(): Promise<void>
 }
 
+const preparationFailureCodes = new Set(['SOURCE_MATERIALIZATION_UNCERTAIN', 'HARNESS_PROFILE_UNAVAILABLE'])
+
 /** Re-activates interval nodes beside the graph: one loop per node admits a check when it is due
  * and observes it through the same native driver without using graph parallelism slots. Each loop
  * re-observes its node's latest check until that check is settled, also after a restart. The
  * returned stop only ends scheduling: the caller's task drain waits for in-flight checks, with the
- * bounded cleanup deadline after Stop or failure. Errors back off; they do not fail the Run. */
+ * bounded cleanup deadline after Stop or failure. Transient errors back off; refused preparation
+ * or a failed start with a persisted cleanup intent ends the Run. */
 export function startIntervalChecks(input: {
   version: WorkflowVersionV3; store: Partial<Pick<RepeatRunRepository, 'admitTick'>>
   driver: RepeatExecutionDriver; signal: AbortSignal
@@ -353,6 +378,7 @@ export function startIntervalChecks(input: {
         }
       } catch (error) {
         if (input.signal.aborted) return
+        if (error instanceof DomainError && (preparationFailureCodes.has(error.code) || error.code === 'EXECUTION_START_INTERRUPTED')) throw error
         if (!scheduling.aborted) componentLogger('engine').warn({ err: error, workflowNodeId: node.id }, 'interval check failed')
       }
       if (scheduling.aborted) return
@@ -389,6 +415,8 @@ export async function executeRepeatRuntime(input: {
   const readCurrentState = () => retryDatabaseTimeout(() => input.lifecycle.currentState(), {
     check: () => input.owner.assertOwned(),
   })
+  const requestCleanup = (failure?: ExecutionResult) => retryDatabaseTimeout(
+    () => input.lifecycle.requestCleanup(failure), { check: () => input.owner.assertOwned() })
   const tasks = new Set<Promise<unknown>>()
   let firstFailure: unknown, preflightComplete = false, cancellation: Promise<boolean> | undefined
   const definitive = (error: unknown): boolean => {
@@ -396,9 +424,10 @@ export async function executeRepeatRuntime(input: {
     if (error instanceof ZodError || (error instanceof Error && error.message === 'GRAPH_JSON_LIMIT')) return true
     if (typeof error !== 'object' || !error || !('code' in error)) return false
     const code = String(error.code)
-    return code.startsWith('REPEAT_') || code.startsWith('AUTH_') || [
+    return preparationFailureCodes.has(code) || code.startsWith('REPEAT_') || code.startsWith('AUTH_') || [
       'WORKFLOW_SELECTED_EXECUTION_FAILED', 'WORKFLOW_UNRESOLVED', 'WORKFLOW_RESULT_TOO_LARGE', 'EXECUTION_OCCURRENCE_CONFLICT',
       'WORKFLOW_EXECUTION_BUDGET_EXHAUSTED', 'JOB_PREPARATION_TIMEOUT',
+      'EXECUTION_START_INTERRUPTED',
       'RUN_PIN_CONFLICT', 'ACCESS_DENIED', 'GRAPH_SECURITY_UNQUALIFIED', 'GRAPH_STOP_CONFLICT', 'GRAPH_TERMINAL_CONFLICT',
       // Launch preflight refusals happen before any native session exists.
       'APP_MCP_PREFLIGHT_FAILED', 'APP_MCP_PREFLIGHT_TIMEOUT',
@@ -425,8 +454,8 @@ export async function executeRepeatRuntime(input: {
   }
   const failureResult = (error: unknown): ExecutionResult | undefined => {
     if (!(error instanceof DomainError)) return undefined
-    if (!['WORKFLOW_EXECUTION_BUDGET_EXHAUSTED', 'JOB_PREPARATION_TIMEOUT',
-      'WORK_RUN_EXECUTION_BUDGET_EXHAUSTED'].includes(error.code)) return undefined
+    if (!preparationFailureCodes.has(error.code) && !['WORKFLOW_EXECUTION_BUDGET_EXHAUSTED', 'JOB_PREPARATION_TIMEOUT',
+      'WORK_RUN_EXECUTION_BUDGET_EXHAUSTED', 'EXECUTION_START_INTERRUPTED'].includes(error.code)) return undefined
     return { outcome: 'failed', error: { code: error.code, message: error.message, retryable: false } }
   }
   const cancel = () => cancellation ??= input.lifecycle.cancelNativeAndRequestCleanup()
@@ -453,7 +482,7 @@ export async function executeRepeatRuntime(input: {
         tasks.delete(task)
         if (!(input.signal.reason instanceof DomainError && input.signal.reason.code === 'ENGINE_RESTART') && definitive(error)) {
           firstFailure ??= error
-          const cleanup = input.lifecycle.requestCleanup(failureResult(firstFailure)).then(() => {
+          const cleanup = requestCleanup(failureResult(firstFailure)).then(() => {
             failed.abort(error)
             return cancel()
           })
@@ -501,10 +530,7 @@ export async function executeRepeatRuntime(input: {
         // independently, then existing exact native cleanup and wrapper drain run below.
         let onAbort: (() => void) | undefined
         const stopChecks = startIntervalChecks({ version: input.version, store: input.store, driver: input.driver,
-          signal, track: (task) => {
-            tasks.add(task)
-            void task.then(() => { tasks.delete(task) }, () => { tasks.delete(task) })
-          } })
+          signal, track })
         try {
           const invocation = invoke(state)
           tasks.add(invocation)
@@ -576,7 +602,7 @@ export async function executeRepeatRuntime(input: {
       // The owning engine may retry the same checkpoint, never initial state.
       throw error
     }
-    await input.lifecycle.requestCleanup(failureResult(firstFailure ?? error))
+    await requestCleanup(failureResult(firstFailure ?? error))
     failed.abort(error)
     const closing = cancel()
     let drained = false
