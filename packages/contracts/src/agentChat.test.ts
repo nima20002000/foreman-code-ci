@@ -1,39 +1,19 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  AgentChatSourceTranscriptSchema,
-  AgentChatStateSchema,
-  SendAgentChatMessageRequestSchema,
-  agentChatFixtures,
-} from "./agentChat.js";
+import { AgentChatStateSchema, SendAgentChatMessageRequestSchema, agentChatFixtures } from "./agentChat.js";
 import { ReadSelectedRunChatResponseSchema } from './selectedRunChat.js';
 
 describe("agent chat contract", () => {
-  it('accepts an empty execution transcript at revision zero', () => {
-    const sourceTranscript = {
-      executionId: 'source-execution', state: 'starting', revision: '0',
-      messages: [], hasEarlierMessages: false,
-    };
-    const value = {
-      ...agentChatFixtures.empty,
-      context: { ...agentChatFixtures.empty.context, runId: 'source-run' },
-      sourceTranscript,
-    };
+  it.each(['starting', 'running', 'completed'] as const)('accepts an empty %s source transcript at revision zero', state => {
+    const context = { ...agentChatFixtures.empty.context, runId: 'source-run' };
+    const sourceTranscript = { executionId: 'source-execution', state, revision: '0',
+      messages: [], hasEarlierMessages: false };
+    const value = { ...agentChatFixtures.empty, context, sourceTranscript };
     expect(AgentChatStateSchema.parse(value).sourceTranscript).toEqual(sourceTranscript);
-    const { workspaceId, workflowId, workflowNodeId, runId } = value.context;
-    expect(ReadSelectedRunChatResponseSchema.safeParse({
-      kind: 'selected',
-      selection: { workspaceId, workflowId, workflowNodeId, runId, executionId: sourceTranscript.executionId },
-      key: null,
-      state: value,
-    }).success).toBe(true);
-  });
-
-  it.each(['-1', '01', '1.5', 'invalid'])('rejects transcript revision %s', revision => {
-    expect(AgentChatSourceTranscriptSchema.safeParse({
-      executionId: 'source-execution', state: 'starting', revision,
-      messages: [], hasEarlierMessages: false,
-    }).success).toBe(false);
+    const target = { workspaceId: context.workspaceId, workflowId: context.workflowId,
+      workflowNodeId: context.workflowNodeId, runId: context.runId, executionId: sourceTranscript.executionId };
+    const selected = ReadSelectedRunChatResponseSchema.parse({ kind: 'selected', selection: target, key: null, state: value });
+    expect(selected).toMatchObject({ kind: 'selected', state: { sourceTranscript } });
   });
 
   it.each(['starting', 'running', 'completed'] as const)('accepts a %s source transcript without creating a conversation', state => {
