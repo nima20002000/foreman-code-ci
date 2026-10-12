@@ -7,56 +7,6 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
-## [0.0.88] - 2026-10-12
-
-### Fixed
-
-- Ships the v0.0.87 CI distribution change (v0.0.87 failed to build).
-
-## [0.0.87] - 2026-10-12
-
-### Fixed
-
-- CI distribution: CircleCI now takes typecheck, lint, build and unit parts too (all but the podman Worker unit tests) instead of leaving checks queued behind GitHub slots.
-- The systemd restart integration coverage is split to fit the runner watchdog; a retired source-text test became a behavior test.
-
-## [0.0.86] - 2026-10-12
-
-### Fixed
-
-- Agent start: source preparation 93 s → about 15 s (no redundant copies, batched writes, shared Git imports).
-- A restart during source preparation no longer leaves Runs queued forever; native qualification survives restarts.
-- Database: 1 s pool acquisition with one retry for read-only MCP tools; native activity query 7x faster; CI group index.
-- Agent sessions survive short database stalls instead of losing their lease.
-- A failed execution start is always persisted; abandoned starts are reconciled.
-
-## [0.0.85] - 2026-10-12
-
-### Fixed
-
-- A "model at capacity" turn failure is retried in the same session with backoff instead of failing the Run.
-- An Agent whose final result breaks the handoff contract gets up to two corrective turns before the node fails.
-- Foreman Code MCP no longer fails to start because of a credential-binding race at session start.
-- Changing an Agent's model or profile moves its workflow node placements on save; agent_update lists affected workflows.
-
-## [0.0.84] - 2026-10-12
-
-### Fixed
-
-- After an API restart, running Agents and their interval checks are re-adopted before source verification and finish normally (restart survival, part 4).
-
-## [0.0.83] - 2026-10-12
-
-### Added
-
-- Per-role native tools: Orchestrator and Coder Agents load only Foreman Code by default (no host MCP servers or apps); the Operator inherits host settings. Per-Agent overrides and Operator MCP parity.
-
-### Fixed
-
-- Runs in a GitHub workspace start their Agents from the current default-branch commit instead of an old approved snapshot; unchanged Agent CI tests that commit.
-- A recovery record left mid-publication no longer kills an Agent's interval check.
-- Tests that need user systemd run only on build computers; a script test no longer leaks its CI environment.
-
 ## [0.0.82] - 2026-10-12
 
 ### Fixed

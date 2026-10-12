@@ -143,9 +143,7 @@ export class ReviewEvidenceTracker {
   }
 
   observeHistory(history: NativeHistory): void {
-    const retryIndex = this.session.harness === 'codex' ? history.events.findLastIndex(event =>
-      event.type === 'turn.capacity_retry' && event.payload.threadId === this.session.nativeSessionId) : -1
-    for (const event of history.events.slice(retryIndex + 1)) this.observeEvent(event)
+    for (const event of history.events) this.observeEvent(event)
     const terminal = history.terminalTurn
     const submission = history.nativeSubmission
     const messageId = submission?.kind === 'message' && this.session.harness === 'claude'
