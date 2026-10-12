@@ -299,7 +299,7 @@ it('hands over an interrupted ordinary remote workflow attachment before disposi
     assert.equal(detached, true, 'live remote work requires confirmed restart detachment')
   }
   const failed = startupFailure(first.attachOriginal())
-  await attaching.promise
+  await Promise.race([attaching.promise, failed.then(error => { throw error })])
   await first.coordinator.closeForRestart()
   const error = await failed
   assert.ok(error instanceof DomainError)

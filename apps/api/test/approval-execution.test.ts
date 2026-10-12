@@ -263,7 +263,7 @@ function fixture(harness: AgentHarness = 'codex') {
     async finish() {},
     async stop(id: string) {
       stops.push(id)
-      if (stopFailure) { const error = stopFailure; stopFailure = undefined; throw error }
+      if (stopFailure) throw stopFailure
     },
   } as unknown as PostgresApprovalBudgetRepository
   const credentials = {
@@ -386,6 +386,7 @@ it('continues observing normal native work after approval without replay or cred
   const f = fixture()
   f.snapshot('request-a')
   assert.equal((await f.coordinator.observeExact(f.input)).state, 'waiting')
+  assert.deepEqual(f.resumes, [f.candidate.id])
   f.delivered('request-a')
   f.snapshot()
   let observations = 0
@@ -400,7 +401,7 @@ it('continues observing normal native work after approval without replay or cred
   assert.equal(f.manager.turns.length, 1)
   assert.equal(f.manager.responses, 0)
   assert.deepEqual(f.prepared, [f.candidate.id])
-  assert.deepEqual(f.resumes, [f.candidate.id])
+  assert.deepEqual(f.resumes, [f.candidate.id, f.candidate.id])
   assert.deepEqual(f.revoked, [f.candidate.id])
   assert.ok(f.manager.observed.every((session) => session.nativeSessionId === f.manager.session.nativeSessionId))
 })
@@ -728,7 +729,9 @@ it('still cancels the resident native session when stopping its budget fails', a
   assert.equal(f.manager.canceled.length, 1)
   assert.equal(f.manager.closed.length, 1)
   assert.notEqual(f.executions.get(f.candidate.id)?.result?.outcome, 'succeeded')
-  assert.equal(f.cancelPendingCalls(), 1)
+  assert.deepEqual(f.stops, [f.candidate.id, f.candidate.id])
+  assert.equal(f.negativeSettlements.length, 0)
+  assert.equal(f.cancelPendingCalls(), 2)
 })
 
 it('does not stop the shared budget or revoke replacement credentials after ownership is lost', async () => {
