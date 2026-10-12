@@ -1,12 +1,7 @@
 import { DEVICE_BUFFER_BYTES, DEVICE_FRAME_BYTES, DEVICE_QUEUE_DEPTH, type DeviceFrame } from '@foreman-code/contracts/device-connection'
 
 export class DeviceConnectionError extends Error {
-  readonly code: import('@foreman-code/contracts/device-connection').DeviceFailureCode
-
-  constructor(code: import('@foreman-code/contracts/device-connection').DeviceFailureCode) {
-    super(code)
-    this.code = code
-  }
+  constructor(readonly code: import('@foreman-code/contracts/device-connection').DeviceFailureCode) { super(code) }
 }
 /** Adapter must install message/error/close handlers synchronously, before returning. */
 export interface DeviceSocket {

@@ -93,11 +93,9 @@ export function deviceApplicationFailure(error: unknown): DeviceApplicationFailu
 }
 
 export class DeviceApplicationError extends Error {
-  readonly code: string
   readonly retryable: boolean
-  constructor(code: string) {
+  constructor(readonly code: string) {
     super(code)
-    this.code = code
     this.retryable = deviceApplicationFailure({ code }).retryable
   }
 }
