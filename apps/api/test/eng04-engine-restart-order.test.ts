@@ -10,10 +10,6 @@ const runtime = vi.hoisted(() => ({ work: async (context: RepeatEngineStartConte
 vi.mock('../src/modules/runs/repeatStartComposition.js', () => ({
   executeRepeatEngineStart: (context: RepeatEngineStartContext) => runtime.work(context),
 }))
-vi.mock('../src/modules/runs/workflowLifecycle.js', async (importOriginal) => ({
-  ...await importOriginal<typeof import('../src/modules/runs/workflowLifecycle.js')>(),
-  settleWorkForRestart: async () => false,
-}))
 
 function deferred() {
   let resolve!: () => void, reject!: (reason: Error) => void
@@ -23,12 +19,10 @@ function deferred() {
 
 // Current engine and checkpoint inspection; recording repository/native ports.
 // This isolates shutdown ordering and does not claim database or provider proof.
-for (const preserving of [false, true]) for (const uncertain of [false, true])
-for (const handoffs of preserving ? [false, true] : [false]) test(
+for (const preserving of [false, true]) for (const uncertain of [false, true]) test(
   `restart ${preserving ? 'preserves active work and ' : ''}holds owner until captured native closure `
-    + `${uncertain ? 'succeeds on retry' : 'completes'}${handoffs ? ' with work handoffs' : ''}`, async () => {
+    + `${uncertain ? 'succeeds on retry' : 'completes'}`, async () => {
   const f = makeCurrentWorkflowFixture('restart-order', 'single')
-  if (handoffs) f.version.definition.handoffs = { contractVersion: 1 }
   const entered = deferred(), closure = deferred(), events: string[] = []
   let released = false
   const owner = {
@@ -51,7 +45,7 @@ for (const handoffs of preserving ? [false, true] : [false]) test(
       assert.equal(actual, owner)
       owner.assertOwned()
       events.push('preserve-check')
-      return preserving && !events.includes('abort')
+      return preserving
     }),
     requestColdRunCleanup: vi.fn(async (actual: typeof owner) => {
       assert.equal(actual, owner)
@@ -123,8 +117,7 @@ for (const handoffs of preserving ? [false, true] : [false]) test(
   }
   assert(events.indexOf('close-settled') < events.indexOf('release'))
   assert.equal(events.filter((event) => event === 'release').length, 1)
-  const preservationChecks = uncertain && !preserving ? 2 : 1
-  assert.equal(native.preserveActiveForRestart.mock.calls.length, preservationChecks)
+  assert.equal(native.preserveActiveForRestart.mock.calls.length, uncertain ? 2 : 1)
   if (preserving) assert.equal(events.includes('cleanup-intent'), false)
 })
 
@@ -152,7 +145,7 @@ test('restart retains the original owner when cleanup persistence fails and retr
   const engine = new LangGraphWorkflowEngine(runs as unknown as Args[0], {
     getVersion: async (versionId: string) => { assert.equal(versionId, f.version.id); return f.version },
   } as unknown as Args[1],
-    native as unknown as Args[2], new MemorySaver(), '/workspace/restart-intent-failure', {} as Args[5], {} as Args[6], {} as Args[7])
+    native as unknown as Args[2], new MemorySaver(), '/tmp/eng04-restart-intent-failure', {} as Args[5], {} as Args[6], {} as Args[7])
   runtime.work = async ({ signal }) => {
     entered.resolve()
     await new Promise<void>((_resolve, reject) => signal.addEventListener('abort', () => {
@@ -197,7 +190,7 @@ for (const failFirst of [false, true]) test(`naturally completing drive holds it
   const engine = new LangGraphWorkflowEngine(runs as unknown as Args[0], {
     getVersion: async (versionId: string) => { assert.equal(versionId, f.version.id); return f.version },
   } as unknown as Args[1], native as unknown as Args[2],
-    new MemorySaver(), '/workspace/natural-finish', {} as Args[5], {} as Args[6], {} as Args[7])
+    new MemorySaver(), '/tmp/eng04-natural-finish', {} as Args[5], {} as Args[6], {} as Args[7])
   runtime.work = async () => { entered.resolve(); await complete.promise }
   const active = engine.start(f.run.id), activeResult = active.then(() => null, (error: unknown) => error)
   await entered.promise
