@@ -1,7 +1,6 @@
 import { z } from 'zod'
 import { IdSchema, TimestampSchema } from './schemaPrimitives.js'
-export { integrationPartition, requiresUserSystemd } from './ciPartition.mjs'
-export { userSystemdIntegrationFiles } from './integrationScheduling.mjs'
+export { integrationPartition } from './ciPartition.mjs'
 import { WorkspaceRepositorySchema } from './workspaceRepository.js'
 
 /** Host CI: a build computer runs a suite directly in a git worktree of the commit, like a self-hosted runner.
@@ -40,7 +39,7 @@ export const CiRepositorySchema = z.string().regex(/^[A-Za-z0-9](?:[A-Za-z0-9-]{
 /** `weights` gives each slice's relative speed (its computer's measured throughput), so slices finish together. */
 export const CiPartitionSchema = z.object({ index: z.number().int().nonnegative(), count: z.number().int().min(2).max(32),
   weights: z.array(z.number().positive().finite()).optional(),
-  /** Only user-systemd files run in these slices; ordinary files use the other slices. */
+  /** These slices run on build computers with a user systemd manager, never cloud runners. */
   hostIndexes: z.array(z.number().int().nonnegative()).min(1).max(32).optional() }).strict()
   .refine(value => value.index < value.count, 'The partition index must be below its count.')
   .refine(value => !value.weights || value.weights.length === value.count, 'Give one weight per partition.')
