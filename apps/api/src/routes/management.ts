@@ -85,7 +85,7 @@ function page(query: Query) {
 }
 
 export function registerManagementRoutes(app: FastifyInstance, services: OperatorServices): void {
-  registerHostCiRoutes(app, services)
+  if (services.ci) registerHostCiRoutes(app, services.ci)
   if (services.bugReports) registerBugReportRoutes(app, services.bugReports)
   if (services.harnessRegistry) registerHarnessRegistryRoutes(app, services.harnessRegistry, async request => requirePrincipal(request))
   if (services.computerActivity) registerComputerActivityRoutes(app, services.computerActivity)

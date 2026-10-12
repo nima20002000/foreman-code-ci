@@ -35,34 +35,26 @@ export async function installedRestartService(directory: string, configuration: 
   await mkdir(dirname(api), { recursive: true, mode: 0o700 })
   await cp(join(repository, 'scripts'), join(release, 'scripts'), { recursive: true })
   await cp(join(repository, 'packages/contracts/src'), join(release, 'packages/contracts/src'), { recursive: true })
-  // Legacy pnpm deployment changes its source workspace's dependency selection.
-  const deployment = join(directory, 'deployment-source')
-  await mkdir(join(deployment, 'scripts'), { recursive: true, mode: 0o700 })
-  for (const name of ['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml']) {
-    await copyFile(join(repository, name), join(deployment, name))
-  }
-  await copyFile(join(repository, 'scripts/require-pnpm.mjs'), join(deployment, 'scripts/require-pnpm.mjs'))
-  for (const name of ['api', 'web', 'worker']) {
-    await mkdir(join(deployment, 'apps', name), { recursive: true })
-    await copyFile(join(repository, 'apps', name, 'package.json'), join(deployment, 'apps', name, 'package.json'))
-  }
-  await cp(join(repository, 'packages/contracts'), join(deployment, 'packages/contracts'), {
-    recursive: true, filter: path => path !== join(repository, 'packages/contracts/node_modules'),
-  })
   await deployProductionApi(async (command: string, args: string[]) => {
-    // The disposable deployment workspace is discarded, so it needs no dependency restoration.
-    if (args.includes('install')) return
+    const installationArgs = args.includes('install') ? [...args, '--prod=false'] : args
+    if (args.includes('install')) {
+      await mkdir(join(api, 'test/helpers'), { recursive: true })
+      await copyFile(join(repository, 'apps/api/test/helpers/testPool.mjs'), join(api, 'test/helpers/testPool.mjs'))
+    }
+    // Keep the same database guard on stable installed dependencies while pnpm
+    // replaces the workspace's modules during deployment and restoration.
+    const guard = join(repository, 'scripts/test-postgres-guard.mjs')
+    const nodeOptions = process.env.NODE_OPTIONS?.replaceAll(guard, join(release, 'scripts/test-postgres-guard.mjs'))
     try {
-      await execute(command, args, { cwd: deployment, maxBuffer: 4 * 1024 * 1024,
-        env: { ...process.env, CI: 'true', npm_config_offline: 'true' } })
+      await execute(command, installationArgs, { cwd: repository, maxBuffer: 4 * 1024 * 1024,
+        env: { ...process.env, CI: 'true', npm_config_offline: 'true',
+          ...(args.includes('install') && nodeOptions ? { NODE_OPTIONS: nodeOptions } : {}) } })
     } catch (error) {
       const output = error as Error & { stdout?: string; stderr?: string; code?: unknown; signal?: unknown }
       throw new Error(`${output.message} (code ${output.code}, signal ${output.signal})\n`
         + `${output.stderr ?? ''}\n${output.stdout ?? ''}`, { cause: error })
     }
   }, api)
-  await mkdir(join(api, 'test/helpers'), { recursive: true })
-  await copyFile(join(repository, 'apps/api/test/helpers/testPool.mjs'), join(api, 'test/helpers/testPool.mjs'))
   const source = join(repository, 'apps/api/src')
   await cp(source, join(api, 'dist'), { recursive: true, filter: path => !path.endsWith('.ts') })
   for (const path of await sources(source)) {
@@ -122,7 +114,6 @@ export async function installedRestartService(directory: string, configuration: 
   return {
     unit, registry,
     state: async () => (await systemctl('show', unit, '--property=ActiveState', '--value')).stdout.trim(),
-    pid: async () => Number((await systemctl('show', unit, '--property=MainPID', '--value')).stdout.trim()),
     async start() {
       await rm(readyFile, { force: true })
       await systemctl('start', unit)
