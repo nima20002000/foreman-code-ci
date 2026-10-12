@@ -29,7 +29,7 @@ export function ConversationViewport({ revision, children }: {
       onScroll={(event) => {
         const scroll = event.currentTarget
         following.current = scroll.scrollHeight - scroll.clientHeight - scroll.scrollTop < 48
-        setNewOutput(!following.current)
+        if (following.current) setNewOutput(false)
       }}>
       <div ref={contentRef}>{children(onBrowse)}</div>
     </div>
