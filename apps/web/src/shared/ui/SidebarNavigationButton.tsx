@@ -25,6 +25,4 @@ const NavigationButton = forwardRef<HTMLButtonElement, NavigationButtonProps>(
   },
 )
 
-const SidebarNavigationButton = createLink(NavigationButton)
-
-export { SidebarNavigationButton }
+export const SidebarNavigationButton = createLink(NavigationButton)

@@ -36,7 +36,7 @@ function mockRelocation() {
   const cancel = vi.fn()
   const animate = vi.fn(() => ({ cancel }))
   Object.defineProperty(HTMLElement.prototype, 'animate', { configurable: true, value: animate })
-  vi.spyOn(HTMLButtonElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLButtonElement) {
+  vi.spyOn(HTMLAnchorElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLAnchorElement) {
     const index = Array.from(this.parentElement!.children).indexOf(this)
     const { collapsed, width } = useNavigationUiStore.getState()
     return new DOMRect(collapsed ? 0 : 10 + index * width / 3, collapsed ? index * 34 : 0, 40, 32)
