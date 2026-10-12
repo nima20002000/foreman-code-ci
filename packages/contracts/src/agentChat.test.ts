@@ -1,9 +1,41 @@
 import { describe, expect, it } from "vitest";
 
-import { AgentChatStateSchema, SendAgentChatMessageRequestSchema, agentChatFixtures } from "./agentChat.js";
+import {
+  AgentChatSourceTranscriptSchema,
+  AgentChatStateSchema,
+  SendAgentChatMessageRequestSchema,
+  agentChatFixtures,
+} from "./agentChat.js";
 import { ReadSelectedRunChatResponseSchema } from './selectedRunChat.js';
 
 describe("agent chat contract", () => {
+  it('accepts an empty execution transcript at revision zero', () => {
+    const sourceTranscript = {
+      executionId: 'source-execution', state: 'starting', revision: '0',
+      messages: [], hasEarlierMessages: false,
+    };
+    const value = {
+      ...agentChatFixtures.empty,
+      context: { ...agentChatFixtures.empty.context, runId: 'source-run' },
+      sourceTranscript,
+    };
+    expect(AgentChatStateSchema.parse(value).sourceTranscript).toEqual(sourceTranscript);
+    const { workspaceId, workflowId, workflowNodeId, runId } = value.context;
+    expect(ReadSelectedRunChatResponseSchema.safeParse({
+      kind: 'selected',
+      selection: { workspaceId, workflowId, workflowNodeId, runId, executionId: sourceTranscript.executionId },
+      key: null,
+      state: value,
+    }).success).toBe(true);
+  });
+
+  it.each(['-1', '01', '1.5', 'invalid'])('rejects transcript revision %s', revision => {
+    expect(AgentChatSourceTranscriptSchema.safeParse({
+      executionId: 'source-execution', state: 'starting', revision,
+      messages: [], hasEarlierMessages: false,
+    }).success).toBe(false);
+  });
+
   it.each(['starting', 'running', 'completed'] as const)('accepts a %s source transcript without creating a conversation', state => {
     const context = { ...agentChatFixtures.empty.context, runId: 'source-run' };
     const sourceTranscript = { executionId: 'source-execution', state, revision: '1',

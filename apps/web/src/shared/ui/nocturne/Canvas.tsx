@@ -91,7 +91,6 @@ export interface AgentPopoverProps {
   panel: AgentPanel
   onClose: () => void
   chat: ReactNode
-  chatHasHeader?: boolean
   settings: ReactNode
   info: ReactNode
   className?: string
@@ -99,7 +98,7 @@ export interface AgentPopoverProps {
 
 const GAP = 20
 /** Nonmodal panel anchored beside an agent. Escape closes it; a phone gets a bottom sheet from CSS. */
-export function AgentPopover({ open, anchor, title, subtitle, icon = 'bot', harness, panel, onClose, chat, chatHasHeader = false, settings, info, className }: AgentPopoverProps) {
+export function AgentPopover({ open, anchor, title, subtitle, icon = 'bot', harness, panel, onClose, chat, settings, info, className }: AgentPopoverProps) {
   const surface = useRef<HTMLElement>(null)
   const id = useId()
   const close = useRef(onClose)
@@ -168,7 +167,7 @@ export function AgentPopover({ open, anchor, title, subtitle, icon = 'bot', harn
       const body = surface.current?.querySelector('.n-agent-popover-body')
       const panel = body?.querySelector('[role=tabpanel]:not([hidden])') ?? body
       const field = panel?.querySelector<HTMLElement>('input:not([type=checkbox]):not([type=radio]):not(:disabled), textarea:not(:disabled), select:not(:disabled)')
-      ;(field ?? surface.current?.querySelector<HTMLElement>('[role=tab][aria-selected=true], .conversation-viewport-scroll, button'))?.focus({ preventScroll: true })
+      ;(field ?? surface.current?.querySelector<HTMLElement>('[role=tab][aria-selected=true]'))?.focus({ preventScroll: true })
     })
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented) return
@@ -198,11 +197,11 @@ export function AgentPopover({ open, anchor, title, subtitle, icon = 'bot', harn
     role="dialog" aria-modal="false" aria-label={`${title} ${actionLabels[panel]}`}
     onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}
     onKeyDown={(event) => { if (event.key !== 'Escape') event.stopPropagation() }}>
-    {panel !== 'chat' || !chatHasHeader ? <header className="n-agent-popover-header">
+    <header className="n-agent-popover-header">
       <span className="n-agent-popover-glyph" aria-hidden="true"><Icon name={icon} size={18} /></span>
       <div><h2 id={`${id}-title`}>{title} · {panelTitles[panel]}</h2>{subtitle ? <p>{subtitle}</p> : null}</div>
       <IconButton label={`Close ${title}`} variant="ghost" onClick={onClose}><Icon name="close" size={16} /></IconButton>
-    </header> : null}
+    </header>
     <div className="n-agent-popover-body">{panel === 'chat' ? chat : panel === 'settings' ? settings : info}</div>
   </section>, document.body)
 }
