@@ -131,7 +131,7 @@ function AgentConversationContent({ context, name, role, activity, runLabel, onC
   const background = state && !busy ? chatBackgroundWork(state.activitySnapshot) : undefined
   const empty = (!draft.trim() && !attachments.hasAttachments) || attachments.hasBlockingAttachments || draft.length > 32_000
   const latest = chat.latestCommand
-  const receipt = chat.currentReceipt ?? chat.confirmedReceipt ?? chat.latestReceipt
+  const receipt = chat.latestReceipt
   const error = !receipt && latest?.status === 'error' ? latest.error : undefined
   const notActive = latest?.command?.kind === 'send' && ApiError.is(error) && error.code === 'AGENT_CHAT_TURN_NOT_ACTIVE'
   const stale = ApiError.is(error) && error.code === 'AGENT_CHAT_CONTEXT_STALE'
@@ -161,18 +161,17 @@ function AgentConversationContent({ context, name, role, activity, runLabel, onC
     if (!conversation?.providerAccountBinding && onNewConversation) attentionAction = <Button size="sm" variant="ghost"
       onClick={onNewConversation}>{context.runId ? 'Start separate chat without this Run' : 'Choose another Agent for a new conversation'}</Button>
   }
+  if (!attention && compactReason) attention = compactReason
+  if (!attention && background) attention = background.label
   if (!attention && (chat.connection === 'reconnecting' || chat.connection === 'unavailable')) attention = 'Reconnecting to live updates'
   if (!attention && chat.query.isError) {
     attention = 'Chat could not be refreshed'
     attentionAction = <Button size="sm" variant="ghost" onClick={() => void chat.query.refetch()}>Retry</Button>
   }
-  if (!attention && compactReason) attention = compactReason
-  if (!attention && background) attention = background.label
   const composerDisabled = retired || !!state && !state.conversation && !state.availability.canSend
   let composerReason = commandOnly ? controlReason : nextReason
-  // One compact line while the Run Agent works: "Working — you can message it when it finishes".
-  if (state?.availability.reason === 'run_active') composerReason = state.availability.message
-    ?? (state.sourceTranscript?.state === 'starting' ? 'Read-only while starting' : 'Read-only while working')
+  if (state?.availability.reason === 'run_active') composerReason = state.sourceTranscript?.state === 'starting'
+    ? 'Read-only while starting' : 'Read-only while working'
   else if (state?.sessionState === 'creating') composerReason = 'Read-only while starting'
   else if (retired) composerReason = 'Retired harness: read-only'
   if (!composerReason && attachments.hasBlockingAttachments) composerReason = 'Wait for attachments'
