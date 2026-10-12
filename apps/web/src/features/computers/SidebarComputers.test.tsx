@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { onlineManager } from '@tanstack/react-query'
 import { Outlet, RouterProvider, createMemoryHistory, createRootRoute, createRoute, createRouter } from '@tanstack/react-router'
 import { http, HttpResponse } from 'msw'
-import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it } from 'vitest'
 import { resourceTelemetryFixtures } from '@foreman-code/contracts/resource-telemetry-fixtures'
 import { telemetrySelectorKey, type TelemetrySelector } from '@foreman-code/contracts/resource-telemetry'
 import { server } from '../../mocks/server'
@@ -32,39 +32,23 @@ function cpuReading(percent: number) {
   return [http.post('*/api/management/resource-telemetry/selector', () => HttpResponse.json({ kind: 'selector', selector })),
     http.post('*/api/management/resource-telemetry/read', () => HttpResponse.json(sample))]
 }
-const originalAnimate = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'animate')
-const cancelAnimation = vi.fn()
-const animate = vi.fn(() => ({ cancel: cancelAnimation }))
-beforeAll(() => Object.defineProperty(HTMLElement.prototype, 'animate', { configurable: true, value: animate }))
-beforeEach(() => {
-  animate.mockClear()
-  cancelAnimation.mockClear()
-  vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })))
-})
-afterEach(() => {
-  onlineManager.setOnline(true)
-  vi.unstubAllGlobals()
-})
-afterAll(() => {
-  if (originalAnimate) Object.defineProperty(HTMLElement.prototype, 'animate', originalAnimate)
-  else Reflect.deleteProperty(HTMLElement.prototype, 'animate')
-})
+afterEach(() => onlineManager.setOnline(true))
 
 it('shows each computer as a row whose load is named in words and colored by level', async () => {
   const f = computersFixture(inRouter().element)
-  const main = await screen.findByRole('link', { name: 'Main PC, Main, Plenty of capacity' })
+  const main = await screen.findByRole('button', { name: 'Main PC, Main, Plenty of capacity' })
   expect(main.closest('li')).toHaveAttribute('data-load', 'calm')
-  const device = screen.getByRole('link', { name: `${deviceName}, Worker, Offline` })
+  const device = screen.getByRole('button', { name: `${deviceName}, Worker, Offline` })
   expect(device.closest('li')).toHaveAttribute('data-load', 'offline')
   expect(within(device).getByText('Offline')).toBeInTheDocument()
   f.activity.computers[0]!.agents.push({ id: 'execution-1', workspaceId: 'workspace-1', workflowId: 'workflow-1',
     workflowName: 'Release', runId: 'run-1', nodeId: 'review', agentName: 'Reviewer', state: 'waiting' })
   await act(() => f.client.invalidateQueries({ queryKey: ['computer-activity'] }))
-  expect(await screen.findByRole('link', { name: 'Main PC, Main, Some load, 1 running Agent or CI job' })).toHaveTextContent('1 running')
+  expect(await screen.findByRole('button', { name: 'Main PC, Main, Some load' })).toHaveTextContent('1 running')
 })
 it('derives the level from live CPU and shows the short metric', async () => {
   computersFixture(inRouter().element, cpuReading(95))
-  const main = await screen.findByRole('link', { name: 'Main PC, Main, Near its limits' })
+  const main = await screen.findByRole('button', { name: 'Main PC, Main, Near its limits' })
   expect(main.closest('li')).toHaveAttribute('data-load', 'saturated')
   expect(within(main).getByText('CPU 95%')).toBeInTheDocument()
 })
@@ -79,7 +63,7 @@ it('shows a detail card on hover with role, load, utilization, running work and 
     workflowId: 'workflow-1', workflowName: 'Release', runId: 'run-1', nodeId: `node-${index}`, agentName: `Agent ${index}`, state: 'running' })
   await act(() => f.client.invalidateQueries({ queryKey: ['computer-activity'] }))
   const user = userEvent.setup()
-  const main = await screen.findByRole('link', { name: 'Main PC, Main, Some load, 5 running Agents and CI jobs' })
+  const main = await screen.findByRole('button', { name: 'Main PC, Main, Some load' })
   expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
   await user.hover(main)
   const card = await screen.findByRole('tooltip')
@@ -112,7 +96,7 @@ it('opens the card on keyboard focus with a Worker last seen time and app versio
         connectionEpoch: '55555555-5555-4555-8555-555555555555' },
       phase: 'offline', dispatch: false, transfer: false, appVersion: '9.9.0', protocolVersion: 1, lastSeenAt } } })),
   ])
-  await screen.findByRole('link', { name: `${deviceName}, Worker, Offline` })
+  await screen.findByRole('button', { name: `${deviceName}, Worker, Offline` })
   const user = userEvent.setup()
   await user.tab()
   await user.tab()
@@ -126,86 +110,25 @@ it('opens the card on keyboard focus with a Worker last seen time and app versio
 })
 it('stops presenting load as current while activity reads fail or the browser is offline', async () => {
   const f = computersFixture(inRouter().element)
-  await screen.findByRole('link', { name: 'Main PC, Main, Plenty of capacity' })
+  await screen.findByRole('button', { name: 'Main PC, Main, Plenty of capacity' })
   act(() => onlineManager.setOnline(false))
-  expect(screen.getByRole('link', { name: 'Main PC, Main, Status unknown' }).closest('li')).toHaveAttribute('data-load', 'unknown')
+  expect(screen.getByRole('button', { name: 'Main PC, Main, Status unknown' }).closest('li')).toHaveAttribute('data-load', 'unknown')
   act(() => onlineManager.setOnline(true))
   server.use(http.get('*/api/management/computers/activity', () => HttpResponse.json({
     error: { code: 'UNAVAILABLE', message: 'Unavailable' } }, { status: 503 })))
   await act(() => f.client.invalidateQueries({ queryKey: ['computer-activity'] }))
-  expect(await screen.findByRole('link', { name: 'Main PC, Main, Status unknown' })).toBeInTheDocument()
-  expect(screen.getByRole('link', { name: `${deviceName}, Worker, Status unknown` })).toBeInTheDocument()
+  expect(await screen.findByRole('button', { name: 'Main PC, Main, Status unknown' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: `${deviceName}, Worker, Status unknown` })).toBeInTheDocument()
 })
 it('shows cloud CI services by machines in use', async () => {
   const f = computersFixture(inRouter().element)
   f.activity.cloud.push({ provider: 'github', name: 'GitHub Actions', ready: true, slots: 16, running: 12 },
     { provider: 'circleci', name: 'CircleCI', ready: false, slots: 24, running: 0 })
   await act(() => f.client.invalidateQueries({ queryKey: ['computer-activity'] }))
-  const github = await screen.findByRole('link', { name: 'GitHub Actions, Cloud CI, Heavy load, 12 running Agents and CI jobs' })
+  const github = await screen.findByRole('button', { name: 'GitHub Actions, Cloud CI, Heavy load' })
   expect(within(github).getByText('12/16')).toBeInTheDocument()
-  const circle = screen.getByRole('link', { name: 'CircleCI, Cloud CI, Not logged in on Main' })
+  const circle = screen.getByRole('button', { name: 'CircleCI, Cloud CI, Not logged in on Main' })
   expect(circle.closest('li')).toHaveAttribute('data-load', 'offline')
   await userEvent.setup().hover(github)
   expect(await within(await screen.findByRole('tooltip')).findByText('12 of 16 CI machines in use')).toBeInTheDocument()
-})
-
-it('counts Agents and CI jobs, caps the badge, and pulses on starts including a replacement at the same count', async () => {
-  const f = computersFixture(inRouter().element)
-  const main = await screen.findByRole('link', { name: 'Main PC, Main, Plenty of capacity' })
-  const computer = f.activity.computers[0]!
-  expect(animate).not.toHaveBeenCalled()
-  expect(within(main).queryByText('1')).not.toBeInTheDocument()
-  computer.jobs.push({ id: 'job-1', name: 'Web build', workspaceId: 'workspace-1', workspaceName: 'Store',
-    phase: 'running', startedAt: null })
-  await act(() => f.client.invalidateQueries({ queryKey: ['computer-activity'] }))
-  expect(await screen.findByRole('link', { name: 'Main PC, Main, Some load, 1 running Agent or CI job' })).toBe(main)
-  expect(within(main).getByText('1')).toBeInTheDocument()
-  expect(animate).toHaveBeenCalledTimes(1)
-  expect(animate).toHaveBeenLastCalledWith([
-    { transform: 'scale(1)' }, { transform: 'scale(1.08)' }, { transform: 'scale(1)' },
-  ], { duration: 300, easing: 'ease-out' })
-  await act(() => f.client.invalidateQueries({ queryKey: ['computer-activity'] }))
-  expect(animate).toHaveBeenCalledTimes(1)
-  computer.jobs[0]!.id = 'job-2'
-  await act(() => f.client.invalidateQueries({ queryKey: ['computer-activity'] }))
-  expect(animate).toHaveBeenCalledTimes(2)
-  for (let index = 0; index < 9; index++) computer.agents.push({ id: `execution-${index}`, workspaceId: 'workspace-1',
-    workflowId: 'workflow-1', workflowName: 'Release', runId: 'run-1', nodeId: `node-${index}`, agentName: `Agent ${index}`, state: 'running' })
-  await act(() => f.client.invalidateQueries({ queryKey: ['computer-activity'] }))
-  expect(await screen.findByRole('link', { name: 'Main PC, Main, Heavy load, 10 running Agents and CI jobs' })).toBe(main)
-  expect(within(main).getByText('9+')).toBeInTheDocument()
-  expect(animate).toHaveBeenCalledTimes(3)
-  computer.agents = []
-  computer.jobs = []
-  await act(() => f.client.invalidateQueries({ queryKey: ['computer-activity'] }))
-  expect(await screen.findByRole('link', { name: 'Main PC, Main, Plenty of capacity' })).toBe(main)
-  expect(within(main).queryByText('9+')).not.toBeInTheDocument()
-  expect(animate).toHaveBeenCalledTimes(3)
-})
-it('hides activity indicators when offline or stale even if the last observation has running work', async () => {
-  const f = computersFixture(inRouter().element)
-  await screen.findByRole('link', { name: 'Main PC, Main, Plenty of capacity' })
-  f.activity.computers[0]!.jobs.push({ id: 'job-1', name: 'Web build', workspaceId: 'workspace-1', workspaceName: 'Store',
-    phase: 'running', startedAt: null })
-  await act(() => f.client.invalidateQueries({ queryKey: ['computer-activity'] }))
-  const main = await screen.findByRole('link', { name: 'Main PC, Main, Some load, 1 running Agent or CI job' })
-  act(() => onlineManager.setOnline(false))
-  expect(main).toHaveAccessibleName('Main PC, Main, Status unknown')
-  expect(within(main).queryByText('1')).not.toBeInTheDocument()
-  act(() => onlineManager.setOnline(true))
-  f.activity.computers[0]!.online = false
-  await act(() => f.client.invalidateQueries({ queryKey: ['computer-activity'] }))
-  expect(await screen.findByRole('link', { name: 'Main PC, Main, Offline' })).toBe(main)
-  expect(within(main).queryByText('1')).not.toBeInTheDocument()
-})
-it('keeps the running badge and skips the start pulse when reduced motion is preferred', async () => {
-  vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() })))
-  const f = computersFixture(inRouter().element)
-  await screen.findByRole('link', { name: 'Main PC, Main, Plenty of capacity' })
-  f.activity.computers[0]!.jobs.push({ id: 'job-1', name: 'Web build', workspaceId: 'workspace-1', workspaceName: 'Store',
-    phase: 'running', startedAt: null })
-  await act(() => f.client.invalidateQueries({ queryKey: ['computer-activity'] }))
-  const main = await screen.findByRole('link', { name: 'Main PC, Main, Some load, 1 running Agent or CI job' })
-  expect(within(main).getByText('1')).toBeInTheDocument()
-  expect(animate).not.toHaveBeenCalled()
 })
