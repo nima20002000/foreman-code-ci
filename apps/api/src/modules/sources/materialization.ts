@@ -1,6 +1,7 @@
 import { importGitSourceObjects } from './gitSourceObjects.js'
+import { processSourceEntries } from './entryProcessing.js'
 import { sourceMaterializationClaimName, restoreQuotaMaterializationClaim, writeSourceClaim } from './quotaClaims.js'
-import { reclaimMaterializationQuota, reclaimPreparationQuota } from './quotaReclamation.js'
+import { reclaimMaterializationQuota, reclaimPreparationQuota, removeSourceDirectory } from './quotaReclamation.js'
 import { constants } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { open, mkdir, rename, statfs, readdir, readlink, stat, readFile, type FileHandle } from 'node:fs/promises'
@@ -56,7 +57,8 @@ export class PrivateSourceMaterializer implements SourceMaterializationPort {
   async prepare(input: { manifest: SourceManifest; binding: RootBinding; attempt: MaterializationAttempt; signal?: AbortSignal; sharedWritableTree?: true
     /** Workflow agents in a GitHub workspace get their own worktree and branch instead of the shared copy. */
     worktree?: WorktreeRequest }): Promise<MaterializationReceipt> {
-    if (!this.bytes) throw new SourceError('SOURCE_READ_ONLY_VERIFIER', 'A verification-only materializer cannot prepare source bytes.')
+    const bytes = this.bytes
+    if (!bytes) throw new SourceError('SOURCE_READ_ONLY_VERIFIER', 'A verification-only materializer cannot prepare source bytes.')
     const manifest = verifySourceManifest(input.manifest), binding = RootBindingSchema.parse(input.binding)
     if (binding.snapshotId !== manifest.snapshotId || binding.manifestDigest !== manifest.manifestDigest)
       throw new SourceError('SOURCE_PIN_CONFLICT', 'The root is not bound to this exact source snapshot.')
@@ -138,22 +140,30 @@ export class PrivateSourceMaterializer implements SourceMaterializationPort {
       }
       await mkdir(anchored(reservation, 'staging'), { mode: 0o700 })
       tree = await openChildDirectory(reservation, 'staging')
-      for (const entry of manifest.entries) {
+      const staging = tree
+      await processSourceEntries(manifest.entries, async entry => {
         signal.throwIfAborted()
-        const content = await this.bytes.read(manifest, entry, signal)
-        signal.throwIfAborted(); verifySourceBytes(entry, content)
-        const { parent, leaf } = await entryParent(tree, entry.path, true)
+        const content = await bytes.read(manifest, entry, signal)
+        signal.throwIfAborted()
+        verifySourceBytes(entry, content)
+        const { parent, leaf } = await entryParent(staging, entry.path, true)
         try {
-          const file = await open(anchored(parent, leaf), constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600)
-          try { await file.writeFile(content); await file.chmod(binding.accessMode === 'read-only' || input.sharedWritableTree ? (entry.executable ? 0o500 : 0o400) : (entry.executable ? 0o700 : 0o600)); await file.sync() }
-          finally { await file.close() }
+          const file = await open(anchored(parent, leaf),
+            constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600)
+          const readOnly = binding.accessMode === 'read-only' || input.sharedWritableTree
+          const mode = readOnly ? 0o400 : 0o600
+          try {
+            await file.writeFile(content)
+            await file.chmod(mode | (entry.executable ? 0o100 : 0))
+            await file.sync()
+          } finally { await file.close() }
           await parent.sync()
         } finally { await parent.close() }
-      }
-      await verifyMaterializedSourceTree(tree, manifest)
+      }, signal)
+      await verifyMaterializedSourceTree(tree, manifest, signal)
       const writable = input.sharedWritableTree && binding.accessMode === 'exclusive-write'
       if (manifest.git?.metadata) {
-        const metadata = await this.bytes.readGitMetadata?.(manifest, signal)
+        const metadata = await bytes.readGitMetadata?.(manifest, signal)
         if (!metadata) throw new SourceError('SOURCE_GIT_OBJECT_UNAVAILABLE', 'Approved Git metadata is unavailable.')
         if (writable && input.worktree) {
           await importGitSourceObjects({ ports: this.git, repository: input.worktree.repository, manifest, metadata, signal,
@@ -298,7 +308,7 @@ export async function verifyMaterializedSourceTree(tree: FileHandle, manifest: S
     }
   }
   await walk(tree, '')
-  for (const entry of manifest.entries) {
+  await processSourceEntries(manifest.entries, async entry => {
     signal?.throwIfAborted()
     const { parent, leaf } = await entryParent(tree, entry.path, false)
     try {
@@ -310,7 +320,7 @@ export async function verifyMaterializedSourceTree(tree: FileHandle, manifest: S
         verifySourceBytes(entry, await file.readFile({ signal }))
       } finally { await file.close() }
     } finally { await parent.close() }
-  }
+  }, signal)
 }
 
 /** Called only after authoritative execution reconciliation, never on disconnect. */
@@ -321,7 +331,22 @@ export async function releaseMaterializationClaim(receipt: MaterializationReceip
     if (!quotaPool) throw new SourceError('SOURCE_QUOTA_MISSING', 'The original quota configuration is required for cleanup.')
     return reclaimMaterializationQuota(receipt, quotaPool, reconcile, signal)
   }
-  return archiveMaterializationClaim(receipt, { filesystem: receipt.binding.filesystem, signal }, reconcile)
+  await archiveMaterializationClaim(receipt, { filesystem: receipt.binding.filesystem, signal }, reconcile)
+  if (!receipt.sharedTree || receipt.binding.deviceId !== null) return
+  const root = await openPrivateRoot(receipt.binding.canonicalPath)
+  try {
+    if (!equal(await identity(root), receipt.binding.filesystem)) {
+      throw new SourceError('SOURCE_ROOT_CHANGED', 'Destination root changed before reference cleanup.')
+    }
+    await withClaimLock(root, async () => {
+      if (await reconcile() !== 'released') throw new SourceError('SOURCE_ROOT_OWNED', 'Execution closure changed.')
+      const directory = await materializationDirectory(root, receipt)
+      try {
+        // The Agent writes its separate shared tree; keep the receipt for idempotent closure.
+        await removeSourceDirectory(directory, 'tree', receipt, signal)
+      } finally { await directory.close() }
+    }, { signal })
+  } finally { await root.close() }
 }
 
 /** Only the separately signed original-Job cleanup grant can authorize a restored volume. */
