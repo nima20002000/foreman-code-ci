@@ -4,13 +4,14 @@ import { createContext, useContext, memo, useMemo, useRef, useState } from 'reac
 import { useQueries, useQuery } from '@tanstack/react-query'
 import { Background, ReactFlow, ReactFlowProvider, useNodesInitialized, useReactFlow, type Edge, type EdgeProps, type Node, type NodeProps } from '@xyflow/react'
 import type { RepeatGraphScopeV3, WorkflowNodeV3, WorkflowRelationship } from '@foreman-code/contracts/wave25'
-import { AgentNodeView, AgentPopover, Dialog, Alert, Button, type AgentNodeState, type AgentNodeTransition } from '../../../shared/ui/nocturne'
+import { AgentNodeView, AgentPopover, Dialog, Alert, Button, useReducedMotion, type AgentNodeState, type AgentNodeTransition } from '../../../shared/ui/nocturne'
 import { useProtectedAccessError } from '../../../shared/api/useProtectedAccessError'
 import type { AgentPanelRenderer, OpenAgentPanel } from '../../graph/nextDraft/DraftCanvas'
 import { CircularNodeResizer } from '../../graph/CircularNodeResizer'
 import type { GraphGeometryChange } from '../../graph/geometry'
 import { AgentHandles } from '../../graph/AgentHandles'
 import { SignalEdgeShape } from '../../graph/SignalEdgeShape'
+import { intervalLabel } from '../../graph/nextDraft/intervalLabel'
 import { agentNodeFacts, edgeBend, relationshipLines, useFloatingCurve } from '../../graph/signalEdge'
 import type { EdgePulse } from '../../graph/SignalEdgeShape'
 import { useWorkflowBoard } from '../context'
@@ -28,6 +29,11 @@ import { useApprovalInboxStore } from '../../approvals/approvalInboxStore'
 import { activeCiJobs, interactionWaits, liveNodeView } from './runLiveStatus'
 import { RunLiveStatus } from './RunLiveStatus'
 import { RunSubagentsOverlay } from '../../run-subagents/RunSubagentsOverlay'
+import { CI_SERVER_NODE_ID, CiServerDialog, CiServerNode, CiTransferEdge,
+  type CiServerFlowNode, type CiTransferFlowEdge } from './CiServer'
+import { useCiTransfers } from './useCiTransfers'
+import { ciServerSummary, isActiveCiJob, runCiApi } from './ciServer'
+import { useInspectionPresentation } from './presentation'
 import type { SubagentLayoutNode } from '../../run-subagents/layout'
 import './inspection.css'
 
@@ -46,7 +52,9 @@ type RunNode = Node<ReturnType<typeof pinnedTopology>['nodes'][number] & {
 const PinnedRunNode = memo(function PinnedRunNode({ id, data, width, height }: NodeProps<RunNode>) {
   const ui = useContext(RunAgentPanels), anchor = useRef<HTMLButtonElement>(null)
   const panel = ui?.open?.nodeId === id ? ui.open.panel : undefined
-  const meta = [...(data.blockId ? [{ label: 'Repeat', value: data.blockId }] : []), ...data.facts.meta].slice(0, 2)
+  const meta = [...(data.blockId ? [{ label: 'Repeat', value: data.blockId }] : []),
+    ...(data.kind === 'agent' && data.intervalSeconds ? [{ label: 'Checks', value: intervalLabel(data.intervalSeconds) }] : []),
+    ...data.facts.meta].slice(0, 2)
   return <><AgentNodeView ref={anchor} className="pinned-run-node" name={data.label} harness={data.facts.harness} harnessLabel={data.facts.harnessLabel}
     model={data.facts.model} icon={data.facts.icon} statusLabel={data.status} state={data.state} transition={data.transition} transitionKey={data.transitionKey} meta={meta}
     entry={data.entry} selected={data.selected} ariaLabel={`Inspect Run node ${data.label}`} onSelect={()=>{if(data.kind==='job'){data.inspect();ui?.setOpen({nodeId:id,panel:'info'})}}} openPanel={panel}
@@ -96,7 +104,8 @@ const PinnedRunEdge = memo(function PinnedRunEdge({ id, source, target, data, se
     </foreignObject> : null}
   </g>
 })
-const nodeTypes = { pinnedRunNode: PinnedRunNode }, edgeTypes = { pinnedRunEdge: PinnedRunEdge }
+const nodeTypes = { pinnedRunNode: PinnedRunNode, ciServer: CiServerNode }
+const edgeTypes = { pinnedRunEdge: PinnedRunEdge, ciTransfer: CiTransferEdge }
 const fitViewOptions = { padding: 0.25, minZoom: 0.3, maxZoom: 1 }
 const proOptions = { hideAttribution: true }
 const unknownFacts: Facts = { harnessLabel: 'Pinned settings unavailable', icon: 'bot', roleLabel: 'Agent', meta: [] }
@@ -138,6 +147,8 @@ export function SelectedRunCanvas({ scope, panels, layout, geometry }: {
     return data?.snapshot.kind === 'available' && data.snapshot.workflowVersionId === scope.workflowVersionId
       ? runBoardCi(data.snapshot, data.activitySnapshot) : new Map<string, CiActivity>()
   }, [ciQuery.data, ciQuery.isError, scope.workflowVersionId])
+  const checks = useMemo(() => new Map((ciQuery.isError ? undefined : ciQuery.data)?.intervalChecks
+    ?.map((check) => [check.nodeId, check]) ?? []), [ciQuery.data, ciQuery.isError])
   const topology = useMemo(() => version ? pinnedTopology(version) : undefined, [version])
   const ciJobs = useMemo(() => {
     const data = ciQuery.isError ? undefined : ciQuery.data
@@ -145,6 +156,23 @@ export function SelectedRunCanvas({ scope, panels, layout, geometry }: {
       ? activeCiJobs(data.activitySnapshot, scope.runId) : []
   }, [ciQuery.data, ciQuery.isError, scope.workflowVersionId, scope.runId])
   const live = Boolean(record && record.state.run.executionState !== 'completed')
+  // Every CI ticket this Run's Agents requested; polled while the Run or any ticket is still going.
+  const ciList = useQuery({
+    queryKey: [...runInspectionQueryKey(scope), 'ci-jobs'],
+    queryFn: ({ signal }) => runCiApi.list({ workspaceId: scope.workspaceId, runId: scope.runId }, { signal }),
+    enabled: Boolean(version && !canonicalDenied), retry: false, staleTime: 0,
+    refetchInterval: (query) => isRunAccessError(query.state.error) ? false
+      : live || query.state.data?.jobs.some(isActiveCiJob) ? 1500 : false,
+  })
+  const ciRunJobs = ciList.data?.runId === scope.runId ? ciList.data.jobs : undefined
+  // Shown with the Agents from the first render, so the first fit includes it; unknown until its first read.
+  const ciUnavailable = ciList.isError && !ciRunJobs
+  const ciSummary = useMemo(() => ciRunJobs ? ciServerSummary(ciRunJobs) : { ...ciServerSummary([]), state: 'unavailable' as const,
+    label: ciUnavailable ? 'CI unavailable' : 'Loading CI' }, [ciRunJobs, ciUnavailable])
+  const transfers = useCiTransfers(ciRunJobs, useReducedMotion())
+  const ciDialogKey = JSON.stringify(['ci-server', scope.runId])
+  const ciDialogOpen = useInspectionPresentation((state) => !!state.open[ciDialogKey])
+  const setCiDialogOpen = (value: boolean) => useInspectionPresentation.getState().setOpen(ciDialogKey, value)
   // The same pending-request read as the approval inbox; this Run's requests name why its Agents wait.
   const pending = useInteractionsQuery({ workspaceId: scope.workspaceId, workflowId: scope.workflowId, status: 'pending', limit: 100 }, live)
   const names = useMemo(() => new Map(topology?.nodes.map((node) => [node.id, node.label])), [topology])
@@ -218,7 +246,7 @@ export function SelectedRunCanvas({ scope, panels, layout, geometry }: {
       const nodeFacts:Facts = node.kind==='job'?{...unknownFacts,harness:undefined,harnessLabel:'Job',roleLabel:'Job',model:undefined,meta:[{label:'Revision',value:String(node.jobDefinitionRevision)}]}:facts.get(node.configurationId)??unknownFacts
       const baseView = !record ? { state: 'unavailable' as const, label: 'Unavailable' }
         : choreography.nodes.get(node.id) ?? { state: 'idle' as const, label: 'Not started' }
-      const current = liveNodeView(baseView, waits.get(node.id), cis.get(node.id))
+      const current = liveNodeView(baseView, waits.get(node.id), cis.get(node.id), checks.get(node.id))
       const view = current === baseView ? baseView : { ...baseView, ...current }
       const shown = `${view.state}:${view.label}:${'transition' in view ? `${view.transition}@${view.transitionKey}` : ''}`
       const cached = previous.current.get(node.id)
@@ -232,7 +260,7 @@ export function SelectedRunCanvas({ scope, panels, layout, geometry }: {
     }) ?? []
     previous.current = next
     return result
-  }, [topology, states, record, facts, jobExecutions, board.inspection.runNodeId, choreography.nodes, cis, waits])
+  }, [topology, states, record, facts, jobExecutions, board.inspection.runNodeId, choreography.nodes, cis, waits, checks])
   const layoutById = useMemo(() => new Map(layout?.map((node) => [node.id, node])), [layout])
   const pinnedById = useMemo(() => new Map(version?.definition.nodes.map((node) => [node.id, node])), [version])
   const presented = useRef(new Map<string, { source: RunNode; node: RunNode }>())
@@ -253,6 +281,18 @@ export function SelectedRunCanvas({ scope, panels, layout, geometry }: {
     presented.current.set(node.id, { source: node, node: result })
     return result
   }), [nodes, layoutById, pinnedById, resizing, geometry])
+  // The CI server stands below the Agents, centered under them, so it adds no width; it is not part of the saved graph.
+  const ciServerNode = useMemo<CiServerFlowNode | undefined>(() => {
+    if (!presentedNodes.length) return undefined
+    const left = Math.min(...presentedNodes.map((node) => node.position.x))
+    const right = Math.max(...presentedNodes.map((node) => node.position.x + (node.width ?? 212)))
+    const bottom = Math.max(...presentedNodes.map((node) => node.position.y + (node.height ?? 212)))
+    return { id: CI_SERVER_NODE_ID, type: 'ciServer', position: { x: (left + right) / 2 - 106, y: bottom + 160 },
+      // Not selectable or draggable, yet its button must still take clicks.
+      width: 212, height: 212, style: { width: 212, height: 212, pointerEvents: 'all' }, draggable: false, selectable: false, connectable: false,
+      deletable: false, data: { summary: ciSummary, open: () => useInspectionPresentation.getState().setOpen(ciDialogKey, true) } }
+  }, [ciSummary, presentedNodes, ciDialogKey])
+  const flowNodes = useMemo(() => ciServerNode ? [...presentedNodes, ciServerNode] : presentedNodes, [presentedNodes, ciServerNode])
   const finishResize = (change: GraphGeometryChange) => {
     const saved = layout?.find((node) => node.id === change.id)
     if (saved && (change.width !== (saved.width ?? 212) || change.height !== (saved.height ?? 212)
@@ -275,6 +315,12 @@ export function SelectedRunCanvas({ scope, panels, layout, geometry }: {
           used: handoffs?.connections.find((item) => item.relationshipId === edge.id)?.used } }
     })
   }, [lines, board.inspection.runRelationshipId, version?.definition.handoffs, handoffs?.connections])
+  // A light per Agent while its CI request or result travels; no lasting line to the server.
+  const flowEdges = useMemo<(RunEdge | CiTransferFlowEdge)[]>(() => ciServerNode && transfers.size ? [...edges,
+    ...[...transfers].filter(([nodeId]) => presentedNodes.some((node) => node.id === nodeId)).map(([nodeId, pulses]) => ({
+      id: `ci-transfer:${nodeId}`, type: 'ciTransfer' as const, source: nodeId, target: CI_SERVER_NODE_ID,
+      sourceHandle: 'right', targetHandle: 'left', selectable: false, focusable: false, deletable: false, data: { pulses } }))]
+    : edges, [edges, transfers, ciServerNode, presentedNodes])
   const missingNode = !!version && !!board.inspection.runNodeId
     && !version.definition.nodes.some((node) => node.id === board.inspection.runNodeId)
   return <section className="next-draft-canvas board-draft-canvas pinned-run-canvas" aria-label="Selected Run pinned topology">
@@ -299,16 +345,18 @@ export function SelectedRunCanvas({ scope, panels, layout, geometry }: {
       if (!edgeId || !topology?.edges.some((edge) => edge.id === edgeId)) return
       event.preventDefault(); board.selectInspection({ runRelationshipId: edgeId }); board.openRuns()
     }}>
-      <ReactFlowProvider><RunAgentPanels.Provider value={{ panels, open, setOpen, resize: setResizing, finishResize }}><Choreography.Provider value={motion}><ReactFlow<RunNode, RunEdge> nodes={presentedNodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes}
+      <ReactFlowProvider><RunAgentPanels.Provider value={{ panels, open, setOpen, resize: setResizing, finishResize }}><Choreography.Provider value={motion}><ReactFlow<RunNode | CiServerFlowNode, RunEdge | CiTransferFlowEdge> nodes={flowNodes} edges={flowEdges} nodeTypes={nodeTypes} edgeTypes={edgeTypes}
         nodesDraggable={false} nodesConnectable={false} nodesFocusable={false} edgesFocusable
         elementsSelectable deleteKeyCode={null} onlyRenderVisibleElements
-        onEdgeClick={(_, edge) => { board.selectInspection({ runRelationshipId: edge.id }); board.openRuns() }}
+        onEdgeClick={(_, edge) => { if (edge.type !== 'pinnedRunEdge') return; board.selectInspection({ runRelationshipId: edge.id }); board.openRuns() }}
         fitView fitViewOptions={fitViewOptions} proOptions={proOptions} minZoom={0.1} maxZoom={1.6}
         aria-label="Run graph canvas">
         <SelectedRunSubagents key={scope.runId} scope={scope} nodes={presentedNodes} />
         <Background color="var(--border)" gap={24} size={1} />
       </ReactFlow></Choreography.Provider></RunAgentPanels.Provider></ReactFlowProvider>
     </div> : null}
+    <CiServerDialog open={ciDialogOpen} onOpenChange={setCiDialogOpen} scope={scope} jobs={ciRunJobs ?? []} names={names}
+      truncated={ciList.data?.truncated ?? false} error={ciList.isError} loading={ciList.isPending} />
   </section>
 }
 
