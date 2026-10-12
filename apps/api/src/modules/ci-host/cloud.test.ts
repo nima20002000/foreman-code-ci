@@ -589,11 +589,13 @@ describe('GitHub Actions CI on a public mirror', () => {
       suite: 'unit' })).rejects.toMatchObject({ code: 'CI_CLOUD_UNAVAILABLE' })
   })
 
-  it('leaves the podman Worker unit tests on CircleCI to the other computers', async () => {
+  it('leaves check and unit suites on CircleCI to the other computers', async () => {
     const f = await fixture({}, { provider: 'circleci' })
-    await expect(f.cloud.handle({ operation: 'start', runId: randomUUID(), repository: 'octo/site', commit: f.commit,
-      suite: 'unit', part: 'unit-other' })).rejects.toMatchObject({ code: 'CI_CLOUD_UNAVAILABLE' })
-    expect(f.circle.triggered).toEqual([])
+    for (const suite of ['unit', 'lint', 'typecheck'] as const) {
+      await expect(f.cloud.handle({ operation: 'start', runId: randomUUID(), repository: 'octo/site', commit: f.commit,
+        suite })).rejects.toMatchObject({ code: 'CI_CLOUD_UNAVAILABLE' })
+    }
+    expect(f.dispatched).toEqual([])
   })
 
   it('runs the same published files on CircleCI and reads its result, log and durations back', async () => {
