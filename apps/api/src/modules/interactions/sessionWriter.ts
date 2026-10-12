@@ -14,15 +14,13 @@ import type { NativeHarnessSessionManager, NativeHistory, NativeSessionStart, Na
 import { PostgresInteractionCoordinationRepository, type WriterFence } from './coordination.js'
 import { ReviewEvidenceTracker, reviewTurnEvidence, type TurnEvidence } from './reviewerEvidence.js'
 
-/** Native sessions can retain their transport while fenced ownership confirmation waits for the database. */
+/** Heartbeats start before native awaits; renewal failures retain the last confirmed expiry. */
 export class LeaseGuard {
   private readonly controller = new AbortController()
   private timer: ReturnType<typeof setTimeout> | undefined
   private stopped = false
   private deadline: ReturnType<typeof setTimeout> | undefined
   private expiresAt: number
-  private readonly lostCode: string
-  private readonly recover: (() => Promise<string>) | undefined
   readonly signal: AbortSignal
 
   constructor(
@@ -31,19 +29,16 @@ export class LeaseGuard {
     renew: () => Promise<string>,
     signal?: AbortSignal,
     expiresAt = new Date(Date.now() + leaseMs).toISOString(),
-    options: { lostCode?: string; recover?: () => Promise<string> } = {},
+    private readonly lostCode = 'SESSION_LANE_LEASE_LOST',
   ) {
     if (!Number.isSafeInteger(leaseMs) || leaseMs < 3) throw new RangeError('leaseMs must be an integer of at least 3 milliseconds.')
     this.signal = signal ? AbortSignal.any([signal, this.controller.signal]) : this.controller.signal
-    this.lostCode = options.lostCode ?? 'SESSION_LANE_LEASE_LOST'
-    this.recover = options.recover
     this.expiresAt = Date.parse(expiresAt)
     const armDeadline = (expiry: string) => {
       this.expiresAt = Date.parse(expiry)
       if (this.deadline) clearTimeout(this.deadline)
-      if (this.recover) return
       this.deadline = setTimeout(() => this.controller.abort(
-        new DomainError(this.lostCode, 'The lease expired without a confirmed renewal.', 409),
+        new DomainError(lostCode, 'The lease expired without a confirmed renewal.', 409),
       ), Math.max(0, this.expiresAt - Date.now()))
       this.deadline.unref()
     }
@@ -53,25 +48,22 @@ export class LeaseGuard {
     const safetyMarginMs = Math.max(1, Math.min(1_000, Math.floor(leaseMs / 10)))
     runtimeTimingPoint('harness', 'lease.heartbeat_interval', { intervalMs })
     const scheduleRenewal = (delayMs: number) => {
-      if (this.stopped || this.signal.aborted) return
-      if (!this.recover && Date.now() + delayMs >= this.expiresAt - safetyMarginMs) return
+      if (this.stopped || this.signal.aborted || Date.now() + delayMs >= this.expiresAt - safetyMarginMs) return
       this.timer = setTimeout(() => {
-        if (this.stopped || this.signal.aborted) return
-        if (!this.recover && Date.now() >= this.expiresAt - safetyMarginMs) return
-        const renewal = this.recover ?? renew
-        void Promise.resolve().then(() => timeRuntimeOperation('harness', 'lease.renew', renewal)).then((expiry) => {
+        if (this.stopped || this.signal.aborted || Date.now() >= this.expiresAt - safetyMarginMs) return
+        void Promise.resolve().then(() => timeRuntimeOperation('harness', 'lease.renew', renew)).then((expiry) => {
           if (this.stopped || this.signal.aborted) return
+          // A late response cannot revive a writer whose confirmed lease already expired.
           this.checkExpiry()
           armDeadline(expiry)
           scheduleRenewal(intervalMs)
         }).catch((error: unknown) => {
           if (this.stopped || this.signal.aborted) return
-          if (error instanceof DomainError && error.code === this.lostCode
-            || this.recover && !isDatabaseTimeout(error)) {
+          if (error instanceof DomainError && error.code === lostCode) {
             this.controller.abort(error)
             return
           }
-          componentLogger('harness').warn({ err: error }, 'Lease renewal is awaiting database confirmation.')
+          componentLogger('harness').warn({ err: error }, 'Lease renewal failed while the lease is still valid.')
           scheduleRenewal(retryMs)
         })
       }, delayMs)
@@ -81,30 +73,16 @@ export class LeaseGuard {
   }
 
   private checkExpiry(): void {
-    if (!this.recover && Date.now() >= this.expiresAt) {
+    if (Date.now() >= this.expiresAt) {
       this.controller.abort(new DomainError(this.lostCode, 'The lease expired without a confirmed renewal.', 409))
     }
     this.signal.throwIfAborted()
   }
 
-  private async confirmOwnership(): Promise<void> {
-    if (this.recover && Date.now() >= this.expiresAt) {
-      this.expiresAt = Date.parse(await this.recover())
-      return
-    }
-    try {
-      await this.assertOwned()
-    } catch (error) {
-      // A check can reach PostgreSQL after expiry even though it began under a valid lease.
-      if (!this.recover || !isLeaseLost(error) || Date.now() < this.expiresAt) throw error
-      this.expiresAt = Date.parse(await this.recover())
-    }
-  }
-
   async check(): Promise<void> {
     this.checkExpiry()
     try {
-      await retryDatabaseTimeout(() => timeRuntimeOperation('harness', 'lease.check', () => this.confirmOwnership()), {
+      await retryDatabaseTimeout(() => timeRuntimeOperation('harness', 'lease.check', () => this.assertOwned()), {
         signal: this.signal,
         check: () => this.checkExpiry(),
       })
@@ -136,7 +114,7 @@ export class LeaseGuard {
   }
 }
 
-/** Stop requesting events when ownership is lost, even if the iterator ignores abort. */
+/** Stop requesting events as soon as ownership expires, even if the iterator ignores abort. */
 export function ownedEvents(events: AsyncIterable<NativeHarnessEvent>, guard: LeaseGuard, signal: AbortSignal = guard.signal): AsyncIterable<NativeHarnessEvent> {
   const ownedSignal = signal === guard.signal ? signal : AbortSignal.any([guard.signal, signal])
   return observeEvents(events, ownedSignal, guard)
@@ -376,11 +354,9 @@ export class SingleWriterSessionManager implements NativeHarnessSessionManager {
         laneId: lane.id, nativeSessionId: session.nativeSessionId, ownerId: this.agentId,
         correlationId: previous.correlationId ?? correlationId,
       })
-      const ownership = { owner: this.agentId, connectionGeneration: lane.connectionGeneration }
-      const renew = () => this.coordination.renewLane(lane.id, token, this.leaseMs, ownership)
       const guard = new LeaseGuard(this.leaseMs,
-        () => this.coordination.assertLaneLease(lane.id, token, ownership),
-        renew, signal, lane.leaseExpiresAt, { recover: renew })
+        () => this.coordination.assertLaneLease(lane.id, token),
+        () => this.coordination.renewLane(lane.id, token, this.leaseMs), signal, lane.leaseExpiresAt)
       let finish!: () => void
       const finished = new Promise<void>((resolve) => { finish = resolve })
       return {
@@ -569,7 +545,7 @@ export class SingleWriterSessionManager implements NativeHarnessSessionManager {
     input: NativeTurnInput & { onTurnOffered?(): void; onSessionReady?(): Promise<void> }, signal?: AbortSignal,
     batches = nativeEventBatches): AsyncIterable<NativeHarnessEvent[]> {
     const lease = await this.acquire(session, input.clientCorrelationId, signal)
-    let evidence = new ReviewEvidenceTracker(session, input.clientCorrelationId)
+    const evidence = new ReviewEvidenceTracker(session, input.clientCorrelationId)
     let submitted = false
     try {
       await this.requireIdle(this.manager, session, input.clientCorrelationId, lease)
@@ -587,18 +563,6 @@ export class SingleWriterSessionManager implements NativeHarnessSessionManager {
       onTurnOffered?.()
       const events = this.manager.startTurn(session, {
         ...nativeInput,
-        onRetry: async (providerId) => {
-          await lease.guard.check()
-          if (session.harness !== 'codex' || lease.providerId !== providerId || !evidence.snapshot().terminal) {
-            throw new DomainError('NATIVE_TURN_IDENTITY_CONFLICT', 'Capacity retry does not match a completed owned turn.', 409)
-          }
-          await input.onRetry?.(providerId)
-          await this.coordination.bindLaneTurn(lease.fence, input.clientCorrelationId)
-          evidence = new ReviewEvidenceTracker(session, input.clientCorrelationId)
-          delete lease.providerId
-          lease.observedStatus = 'uncertain'
-          await lease.guard.check()
-        },
         onMessageSubmitted: async (receipt) => {
           await lease.guard.check()
           if (receipt.nativeSessionId !== session.nativeSessionId || receipt.clientCorrelationId !== input.clientCorrelationId) {

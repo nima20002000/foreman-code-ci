@@ -15,7 +15,7 @@ import { toolFailure, toolResult } from './results.js'
 import { logOperatorToolFailure } from '../operator/invoke.js'
 
 export const CI_CAPABILITY_DETAIL = 'ci_run runs one suite (install, typecheck, lint, unit, build, integration) of the workspace '
-  + 'GitHub repository at a commit: the requested one, the Agent’s Run-start commit when unchanged, its edited files (published to GitHub first), or the default '
+  + 'GitHub repository at a commit: the requested one, the Agent’s current files (published to GitHub first) or the default '
   + 'branch head. A build computer fetches it with its own GitHub CLI login, installs packages and runs the repository’s '
   + 'own script in a fresh worktree, like a self-hosted runner. scope defaults to affected; scope=full always runs everything. '
   + 'Main and paired computers participate only with builds enabled; buildPriority orders their selection. '
@@ -54,7 +54,6 @@ export const CI_CAPABILITY_DETAIL = 'ci_run runs one suite (install, typecheck, 
   + 'Agent CI readback and cancellation are limited to tickets from that execution. '
   + 'Agent requests publish their persisted lifecycle into their Run’s activities and Board activity snapshot. '
   + '(group=true includes bounded pages and individual cursors for every part); ci_cancel stops one ticket. '
-  + 'run_stop cancels every non-terminal ticket created by that Run’s Agents and its remote provider run, with audit. '
   + 'Agents are restricted to their active Run workspace. Computers without a GitHub login report it in ci_computers_list.'
 
 export const CI_TOOLS = ['ci_run', 'ci_get', 'ci_computers_list', 'ci_cancel', 'ci_logs_read', 'ci_list'] as const
@@ -112,8 +111,7 @@ export function registerCiTools(server: McpServer, context: CiContext) {
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, input => invoke('ci_get', () => ci.get(context.principal, input)))
   if (available('ci_computers_list')) server.registerTool('ci_computers_list', {
-    description: 'List the build computers CI can use, with readiness (GitHub login, git, corepack), size '
-      + 'and persisted starting/running ticket IDs assigned to each computer. '
+    description: 'List the build computers CI can use, with readiness (GitHub login, git, corepack), size and running runs. '
       + 'Read participation and priority with build_computer_get. '
       + CI_CAPABILITY_DETAIL,
     inputSchema: operator ? OperatorCiGetInputSchema.pick({ workspaceId: true }) : z.object({}).strict(),
