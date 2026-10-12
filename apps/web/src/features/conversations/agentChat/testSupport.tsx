@@ -54,7 +54,7 @@ export function mountChat(initial: AgentChatState = agentChatFixtures.empty, act
   const rendered = render(renderPanel(initial.context))
   const ready = () => waitFor(() => {
     expect(client.getQueryData(agentChatStateKey(initial.context))).toBeDefined()
-    expect(screen.getByRole('status', { name: 'Agent state' })).toBeInTheDocument()
+    expect(screen.getByTestId('agent-conversation').querySelector('.agent-chat-session-label')).not.toBeNull()
   })
   return { mock, client, ready, newConversation, ...rendered,
     switchContext: (context: AgentChatContext) => rendered.rerender(renderPanel(context)),
