@@ -40,7 +40,6 @@ export function deviceConnector(options: {
   return (signal) => {
     if (signal.aborted) return Promise.reject(new DeviceConnectionError('transport'))
     const raw = options.create(url.href, { headers: { Authorization: `Bearer ${options.credential}` }, rejectUnauthorized: true, perMessageDeflate: false, maxPayload: 16_384, handshakeTimeout: 10_000 })
-    const adapted = adaptDeviceSocket(raw)
     return new Promise<DeviceSocket>((resolve, reject) => {
       const cleanup = () => { raw.off('open', open); raw.off('error', fail); raw.off('close', fail); raw.off('unexpected-response', rejected); signal.removeEventListener('abort', fail) }
       const rejected = (_request: unknown, response: unknown) => {
@@ -57,6 +56,8 @@ export function deviceConnector(options: {
         cleanup(); adapted.close(); reject(new DeviceConnectionError(certificateFailure ? 'wrong-main' : 'transport'))
       }
       raw.on('open', open); raw.on('error', fail); raw.on('close', fail); raw.on('unexpected-response', rejected); signal.addEventListener('abort', fail, { once: true })
+      // Classify handshake errors before the adapter can close the transport.
+      const adapted = adaptDeviceSocket(raw)
     })
   }
 }
