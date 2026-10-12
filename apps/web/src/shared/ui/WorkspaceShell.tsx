@@ -9,9 +9,9 @@ import {
   type ReactNode,
 } from 'react'
 import { Settings } from 'lucide-react'
-import { SidebarNavigationButton } from './SidebarNavigationButton'
+import { Link } from '@tanstack/react-router'
 
-import { SidebarComputers } from '../../features/computers/SidebarComputers'
+import { SidebarComputers } from '../../features/computers/ComputerActivity'
 import { ThemeToggle } from '../../features/theme'
 import { HarnessStatusMenu } from '../../features/settings/HarnessStatusMenu'
 import { useWorkspacePages } from '../api/query'
@@ -260,7 +260,7 @@ export function WorkspaceShell({
           <SidebarComputers />
           <HarnessStatusMenu />
           <div className="sidebar-preferences-row">
-            <SidebarNavigationButton
+            <Link
               to="/settings"
               className={`sidebar-settings-link${activeGlobalSection === 'settings' ? ' sidebar-settings-link-active' : ''}`}
               aria-current={activeGlobalSection === 'settings' ? 'page' : undefined}
@@ -268,7 +268,7 @@ export function WorkspaceShell({
               title="Settings"
             >
               <Settings aria-hidden="true" size={16} />
-            </SidebarNavigationButton>
+            </Link>
             <ThemeToggle />
           </div>
         </div>
