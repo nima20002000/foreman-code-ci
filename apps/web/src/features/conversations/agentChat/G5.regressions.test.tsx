@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
@@ -12,7 +12,7 @@ import { claimDraftReadback, receiptForCommand } from './receiptReadback'
 import { AGENT_CHAT_ACKNOWLEDGEMENT_LIMIT, agentChatReadbacksKey, compactAgentChatResult, confirmedCommandReceipt,
   isRetirableAcknowledgement, rememberAgentChatReadback, retireAgentChatAcknowledgements,
   type AgentChatCommand, type AgentChatCommandRecord, type AgentChatReadbacks } from './commandRecords'
-import { AgentChatTestSource, installChatSource, mountChat } from './testSupport'
+import { AgentChatTestSource, chatTooltip, installChatSource, mountChat } from './testSupport'
 
 const messagePath = '/api/workspaces/:workspaceId/agent-chat/messages'
 const clients: QueryClient[] = []
@@ -190,12 +190,12 @@ describe('G5 B2-PF-02 / B-R01 terminal readback survives eviction', () => {
     await screen.findAllByLabelText('Queued').then(items => items.at(-1)!)
     const completed = withReceipt(initial, sent[0]!, 'completed'); completed.revision++
     mounted.mock.setState(completed); await act(() => mounted.refresh())
-    await userEvent.hover((await screen.findAllByLabelText('Completed')).at(-1)!)
-    expect(await screen.findByText(/Initial acknowledgement: Queued/, { selector: '[role=tooltip]' })).toBeInTheDocument()
-    await userEvent.unhover((await screen.findAllByLabelText('Completed')).at(-1)!)
-    // After eviction the retired acknowledgement is not shown again; the retained completion is.
+    await screen.findAllByLabelText('Completed').then(items => items.at(-1)!)
     const later = laterWindow(completed); mounted.mock.setState(later); await act(() => mounted.refresh())
-    await screen.findAllByLabelText('Completed')
+    const history = await screen.findByRole('region', { name: 'Messages outside the current history page' })
+    const original = within(history).getByText('Initially queued').closest('article')!
+    expect(await chatTooltip(within(original).getByLabelText('Completed')))
+      .toHaveTextContent('Initial acknowledgement: Queued')
     expect(screen.queryAllByLabelText('Queued')).toHaveLength(0)
     const mutation = mounted.client.getMutationCache().getAll()[0]!
     expect(isRetirableAcknowledgement({ status: mutation.state.status, result: mutation.state.data as AgentChatCommandRecord['result'],
