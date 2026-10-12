@@ -82,7 +82,7 @@ describe('HarnessStatusMenu', () => {
     else Reflect.deleteProperty(HTMLElement.prototype, 'animate')
   })
   it.each(['dark', 'light'].flatMap(theme =>
-    ['installed', 'missing', 'unverified'].map(state => ({ theme, state }))))(
+    (['installed', 'missing', 'unverified'] as const).map(state => ({ theme, state }))))(
     'keeps actionable harness marks above 3:1 contrast in $theme with $state inventory', async ({ theme, state }) => {
       const previousTheme = document.documentElement.getAttribute('data-theme')
       document.documentElement.setAttribute('data-theme', theme)
@@ -95,7 +95,7 @@ describe('HarnessStatusMenu', () => {
           <aside className="shell-sidebar" aria-label="Sidebar"><HarnessStatusMenu /></aside>
         </>)
         const label = { installed: 'Installed', missing: 'Not installed', unverified: 'Unverified' }[state]
-        const sidebar = screen.getByRole('complementary', { name: 'Sidebar' })
+        const sidebar = await screen.findByRole('complementary', { name: 'Sidebar' })
         const background = getComputedStyle(sidebar).backgroundColor
         for (const name of ['Codex', 'Claude']) {
           const button = await screen.findByRole('button', { name: `${name}: ${label}` })
