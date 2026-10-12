@@ -65,7 +65,7 @@ const PinnedRunNode = memo(function PinnedRunNode({ id, data, selected, width, h
     {panel && ui?.panels && data.kind==='agent' ? <AgentPopover open anchor={anchor} title={data.label} subtitle={`Selected Run · ${data.recorded}`}
       harness={data.facts.harness} icon={data.facts.icon} panel={panel}
       onClose={() => ui.setOpen(undefined)}
-      {...ui.panels(id,{agentId:data.agentId,name:data.label,role:data.facts.roleLabel,runLabel:data.status})} /> : null}
+      {...ui.panels(id,{agentId:data.agentId,name:data.label})} /> : null}
   </>
 })
 // Pulses and traces are timed once per canvas, so an edge remount never replays a handoff.
@@ -125,6 +125,8 @@ export function SelectedRunCanvas({ scope, panels, layout, geometry }: {
   const denied = useProtectedAccessError(query)
   // Observe (never fetch) the canonical Run read: its confirmed denial hides the pinned topology too.
   const canonical = useSelectedRunQueryState()
+  // Before the first current read lands, nodes say Loading rather than Unavailable.
+  const recordLoading = !canonical || canonical.status === 'pending' && canonical.fetchStatus !== 'paused'
   const canonicalDenied = useProtectedAccessError({
     error: canonical?.error,
     failureReason: canonical?.fetchFailureReason,
@@ -231,11 +233,11 @@ export function SelectedRunCanvas({ scope, panels, layout, geometry }: {
     const result = topology?.nodes.map((node) => {
       const state = states.get(node.id)
       const selected = board.inspection.runNodeId === node.id
-      const recorded = !record ? 'Current status unavailable' : !state ? 'No activation in the bounded current cut' :
+      const recorded = !record ? recordLoading ? 'Loading current status' : 'Current status unavailable' : !state ? 'No activation in the bounded current cut' :
         `${state.label}${state.occurrenceIndex ? ` · repetition ${state.occurrenceIndex}` : ''}${state.attempt ? ` · attempt ${state.attempt}` : ''}`
         + (checking.has(node.id) ? ` · ${checkingView(checking.get(node.id)!.check, checking.get(node.id)!.queued).label}` : '')
       const nodeFacts:Facts = node.kind==='job'?{...unknownFacts,harness:undefined,harnessLabel:'Job',roleLabel:'Job',model:undefined,meta:[{label:'Revision',value:String(node.jobDefinitionRevision)}]}:facts.get(node.configurationId)??unknownFacts
-      const baseView = !record ? { state: 'unavailable' as const, label: 'Unavailable' }
+      const baseView = !record ? { state: 'unavailable' as const, label: recordLoading ? 'Loading…' : 'Unavailable' }
         : choreography.nodes.get(node.id) ?? { state: 'idle' as const, label: 'Not started' }
       const current = liveNodeView(baseView, waits.get(node.id), cis.get(node.id), checks.get(node.id), checking.get(node.id))
       const view = current === baseView ? baseView : { ...baseView, ...current }
@@ -251,7 +253,7 @@ export function SelectedRunCanvas({ scope, panels, layout, geometry }: {
     }) ?? []
     previous.current = next
     return result
-  }, [topology, states, record, facts, jobExecutions, board.inspection.runNodeId, choreography.nodes, cis, waits, checks, checking])
+  }, [topology, states, record, recordLoading, facts, jobExecutions, board.inspection.runNodeId, choreography.nodes, cis, waits, checks, checking])
   const layoutById = useMemo(() => new Map(layout?.map((node) => [node.id, node])), [layout])
   const pinnedById = useMemo(() => new Map(version?.definition.nodes.map((node) => [node.id, node])), [version])
   const presented = useRef(new Map<string, { source: RunNode; node: RunNode }>())

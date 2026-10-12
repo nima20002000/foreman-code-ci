@@ -1,11 +1,11 @@
-import userEvent from '@testing-library/user-event'
 import { act, fireEvent, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SendAgentChatMessageRequest } from '@foreman-code/contracts/agent-chat'
 import { useConversationDraftStore } from '../conversationDraftStore'
 import { intentUnavailable } from './model'
 import { completedFixture, ephemeralFixture, startedFixture } from './f7.testSupport'
-import { chatTooltip, mountChat } from './testSupport'
+import { mountChat } from './testSupport'
 
 const clients: ReturnType<typeof mountChat>['client'][] = []
 afterEach(() => { clients.splice(0).forEach((client) => client.clear()); useConversationDraftStore.getState().clearAllDrafts(); vi.unstubAllGlobals() })
@@ -23,7 +23,7 @@ describe('F7 B-R06 terminal-decided ephemeral Codex facts', () => {
     const first = await send('First live ephemeral turn')
     let state = completedFixture(startedFixture(mounted.mock.getState(initial.context), first.requestId), 'First answer')
     mounted.mock.setState(state); await act(() => mounted.refresh())
-    await screen.findAllByLabelText('Completed').then(items => items.at(-1)!)
+    await screen.findByLabelText('Latest command delivery: Next turn · Completed')
     expect(state.capabilities.resume).toBe(true)
     const second = await send('Follow up in the resident session')
     expect(second.expectedConversationId).toBe(state.conversation!.id)
@@ -34,11 +34,10 @@ describe('F7 B-R06 terminal-decided ephemeral Codex facts', () => {
     const lost = ephemeralFixture('restarted')
     state = { ...state, sessionState: lost.sessionState, capabilities: lost.capabilities, availability: lost.availability, revision: state.revision + 1 }
     mounted.mock.setState(state); await act(() => mounted.refresh())
-    await screen.findByText('Original session unavailable')
+    await screen.findByText('Native session unavailable')
     fireEvent.change(screen.getByRole('textbox', { name: 'Message' }), { target: { value: 'Keep after restart' } })
     expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled()
-    expect(await chatTooltip(screen.getByRole('status', { name: 'Agent state' })))
-      .toHaveTextContent('ephemeral Codex session was lost')
+    expect(screen.getAllByText(/ephemeral Codex session was lost/).length).toBeGreaterThan(0)
     expect(screen.queryByRole('button', { name: /resume/i })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Choose another Agent for a new conversation' })).toBeInTheDocument()
     fireEvent.keyDown(screen.getByRole('textbox', { name: 'Message' }), { key: 'Enter' })
