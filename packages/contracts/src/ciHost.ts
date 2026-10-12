@@ -6,6 +6,7 @@ import { WorkspaceRepositorySchema } from './workspaceRepository.js'
 /** Host CI: a build computer runs a suite directly in a git worktree of the commit, like a self-hosted runner.
  * It fetches with its own GitHub CLI login and installs packages normally; a systemd unit caps CPU and memory. */
 export const CI_HOST_NAMESPACE = 'ci-host-v1'
+export const CI_LOG_MAX_BYTES = 65_536
 
 export const CiSuiteSchema = z.enum(['install', 'typecheck', 'lint', 'unit', 'build', 'integration'])
 export type CiSuite = z.infer<typeof CiSuiteSchema>
@@ -37,9 +38,13 @@ const CommitSchema = z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/)
 export const CiRepositorySchema = z.string().regex(/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/[A-Za-z0-9._-]{1,100}$/)
 /** `weights` gives each slice's relative speed (its computer's measured throughput), so slices finish together. */
 export const CiPartitionSchema = z.object({ index: z.number().int().nonnegative(), count: z.number().int().min(2).max(32),
-  weights: z.array(z.number().positive().finite()).optional() }).strict()
+  weights: z.array(z.number().positive().finite()).optional(),
+  /** These slices run on build computers with a user systemd manager, never cloud runners. */
+  hostIndexes: z.array(z.number().int().nonnegative()).min(1).max(32).optional() }).strict()
   .refine(value => value.index < value.count, 'The partition index must be below its count.')
   .refine(value => !value.weights || value.weights.length === value.count, 'Give one weight per partition.')
+  .refine(value => !value.hostIndexes || (new Set(value.hostIndexes).size === value.hostIndexes.length
+    && value.hostIndexes.every(index => index < value.count)), 'Host indexes must be unique partition indexes.')
 export type CiPartition = z.infer<typeof CiPartitionSchema>
 
 /** Test file -> wall milliseconds. Bounded so a start request or read reply stays far below the device
@@ -85,7 +90,7 @@ export const CiHostRequestSchema = z.discriminatedUnion('operation', [
   // `durations: true` asks a finished test run for the file durations it measured, `testResults: true` for its
   // test results. Results are opt-in so a Worker never sends them to a Main whose reply schema predates them.
   z.object({ operation: z.literal('read'), runId: CiHostRunIdSchema, afterOffset: z.number().int().nonnegative(),
-    maxBytes: z.number().int().min(1).max(65_536), durations: z.boolean().optional(), testResults: z.boolean().optional() }).strict(),
+    maxBytes: z.number().int().min(1).max(CI_LOG_MAX_BYTES), durations: z.boolean().optional(), testResults: z.boolean().optional() }).strict(),
   z.object({ operation: z.literal('cancel'), runId: CiHostRunIdSchema }).strict(),
 ])
 export type CiHostRequest = z.infer<typeof CiHostRequestSchema>

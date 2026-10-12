@@ -1,4 +1,5 @@
 import { worktreeSecurity } from './worktreeSecurity.js'
+import { codexDisabledMcpTransports } from './codexNativeTools.js'
 import { APP_MCP_SERVER_NAMES, APP_MCP_TOKEN_NAMES } from '@foreman-code/contracts/product'
 import { beginRuntimeTiming, runtimeTimingPoint, timeRuntimeOperation } from '../diagnostics/runtimeTiming.js'
 import { isWorkflowStart, sessionStartConfiguration, sessionStartDirectory, sessionStartOwner,
@@ -21,7 +22,7 @@ import {
   type ApprovalResponseOption, type CodexAdvancedConfiguration, type CodexHarnessConfiguration,
   type ExecutionResult, type McpDetection, type NativeHarnessCapabilities, type NativeHarnessEvent,
   type NativeSessionReference, type PendingNativeInteraction,
-  isSessionNativeInteraction,
+  isSessionNativeInteraction, nativeMcpServerAllowed,
 } from '@foreman-code/contracts'
 
 import { DomainError } from '../errors.js'
@@ -54,6 +55,7 @@ import type { SubagentControlLease } from '../subagents/types.js'
 import { normalizeCodexNotification } from './codexNormalization.js'
 import { unavailableNativeResponse, type NativeResponseAvailability, type NativeResponseAvailabilityQuery } from './responseAvailability.js'
 import { CodexRpcError, CodexStdioTransport, isObject, object, text, type JsonObject, type RequestId, type RpcRequest } from './codexStdioTransport.js'
+import { CODEX_CAPACITY_ATTEMPTS, codexCapacityDelay, isCodexCapacityError, waitForCodexCapacity } from './codexCapacity.js'
 
 /** Structural client boundary shared by native production and recorded replay. */
 export type CodexTransport = Pick<CodexStdioTransport, 'start' | 'request' | 'respond' | 'reject' | 'close'>
@@ -166,6 +168,12 @@ interface StartingTurn {
   stagedBytes: number
 }
 interface Runtime extends TurnSnapshot {
+  capacityRetry?: {
+    attempt: number
+    canAdvanceIdentity: boolean
+    controller: AbortController
+    failure?: ExecutionResult
+  }
   parent?: Runtime
   contextBudgetLimit?: number
   sessionPreferences?: SessionPreferences
@@ -224,7 +232,9 @@ interface Prepared {
   strippedCredentialVariable: string | undefined
   environment: NodeJS.ProcessEnv
   qualified: QualifiedCodex
-  disabledAppMcpServerNames: readonly string[]
+  disabledMcpServerNames: readonly string[]
+  mcpTransportOverrides?: Record<string, string>
+  nativeApps?: boolean | undefined
   /** The App MCP server whose tools a workflow Agent calls without native prompts; app grants still authorize each call. */
   approvedAppMcpServerName?: string
   effectiveSandbox?: CodexNativeOutputSandbox
@@ -350,7 +360,11 @@ function configOverrides(value: CodexHarnessConfiguration): JsonObject {
   }
   return config
 }
-function threadParameters(prepared: Pick<Prepared, 'harnessConfiguration' | 'workingDirectory' | 'input' | 'disabledAppMcpServerNames' | 'approvedAppMcpServerName'>, resume = false): JsonObject {
+function threadParameters(
+  prepared: Pick<Prepared, 'harnessConfiguration' | 'workingDirectory' | 'input' | 'disabledMcpServerNames'
+    | 'mcpTransportOverrides' | 'nativeApps' | 'approvedAppMcpServerName'>,
+  resume = false,
+): JsonObject {
   const value = prepared.harnessConfiguration
   const draft = advanced(value)
   return {
@@ -365,7 +379,9 @@ function threadParameters(prepared: Pick<Prepared, 'harnessConfiguration' | 'wor
         ? { model_context_window: prepared.input.sessionPreferences.contextBudget } : {}),
       ...(prepared.input.sessionPreferences?.autoCompactTokens != null
         ? { model_auto_compact_token_limit: prepared.input.sessionPreferences.autoCompactTokens } : {}),
-      ...Object.fromEntries(prepared.disabledAppMcpServerNames.map((name) => [`mcp_servers.${name}.enabled`, false])),
+      ...Object.fromEntries(prepared.disabledMcpServerNames.map((name) => [`mcp_servers.${name}.enabled`, false])),
+      ...prepared.mcpTransportOverrides,
+      ...(prepared.nativeApps !== undefined ? { 'features.apps': prepared.nativeApps } : {}),
       // Codex 0.16x prompts for every MCP tool call under on-request approval; an unattended workflow Agent would
       // wait on its own App tools (ci_run, context_get) forever. Each call is still authorized by the Agent's grants.
       ...(prepared.approvedAppMcpServerName
@@ -1019,6 +1035,56 @@ export class CodexAppServerSessionManager implements NativeHarnessSessionManager
     let runtime: Runtime
     try {
       runtime = this.requireRuntime(session)
+    } catch (error) {
+      throw new NativeDeliveryError('turn_submission', 'not_sent', error)
+    }
+    if (runtime.capacityRetry) throw new NativeDeliveryError('turn_submission', 'not_sent',
+      new HarnessExecutionError('CODEX_TURN_ACTIVE', 'This session is waiting for model capacity.'))
+    const retry: NonNullable<Runtime['capacityRetry']> = {
+      attempt: 1, canAdvanceIdentity: !input.onSubmitted || Boolean(input.onRetry), controller: new AbortController(),
+    }
+    runtime.capacityRetry = retry
+    const retrySignal = AbortSignal.any([retry.controller.signal, subscriberSignal,
+      this.shutdownController.signal, ...(signal ? [signal] : [])])
+    const attemptSignal = AbortSignal.any([retry.controller.signal, ...(signal ? [signal] : [])])
+    try {
+      for (;;) {
+        yield* this.streamTurnAttempt(session, input, attemptSignal, subscriberSignal)
+        if (!retry.failure || retrySignal.aborted || runtime.closed) return
+        await this.finishTurnResources(runtime)
+        const turnId = runtime.activeTurnId!
+        const delayMs = codexCapacityDelay(retry.attempt)
+        this.record(runtime, 'turn.capacity_wait', {
+          threadId: session.nativeSessionId, turnId, attempt: retry.attempt, delayMs,
+        })
+        yield structuredClone(runtime.events.at(-1)!)
+        await waitForCodexCapacity(delayMs, retrySignal, this.dependencies)
+        retrySignal.throwIfAborted()
+        await input.onRetry?.(turnId)
+        retrySignal.throwIfAborted()
+        this.record(runtime, 'turn.capacity_retry', { threadId: session.nativeSessionId, turnId })
+        yield structuredClone(runtime.events.at(-1)!)
+        retrySignal.throwIfAborted()
+        retry.attempt += 1
+        delete retry.failure
+      }
+    } catch (error) {
+      if (!retrySignal.aborted || error !== retrySignal.reason) throw error
+      if (!signal?.aborted && !subscriberSignal.aborted) {
+        runtime.terminalResult = { outcome: 'canceled' }
+        this.record(runtime, 'turn.retry_canceled', { threadId: session.nativeSessionId, turnId: runtime.activeTurnId })
+        yield structuredClone(runtime.events.at(-1)!)
+      }
+    } finally {
+      delete runtime.capacityRetry
+    }
+  }
+
+  private async *streamTurnAttempt(session: NativeSessionReference, input: NativeTurnInput,
+    signal: AbortSignal | undefined, subscriberSignal: AbortSignal): AsyncGenerator<NativeHarnessEvent, void> {
+    let runtime: Runtime
+    try {
+      runtime = this.requireRuntime(session)
       signal?.throwIfAborted()
       if (this.locks.has(session.nativeSessionId)) throw new HarnessExecutionError('CODEX_SESSION_BUSY', 'A session lifecycle operation is in progress.')
       if (runtime.closed) throw new HarnessExecutionError('CODEX_APP_SERVER_DISCONNECTED', 'Reconcile the disconnected session before starting another turn.')
@@ -1365,6 +1431,10 @@ export class CodexAppServerSessionManager implements NativeHarnessSessionManager
     const runtime = this.requireRuntime(session)
     // An explicit stale target cannot withdraw the newly preparing turn's files.
     if (nativeTurnId && nativeTurnId !== runtime.activeTurnId) return false
+    if (runtime.capacityRetry?.failure) {
+      runtime.capacityRetry.controller.abort()
+      return true
+    }
     if (runtime.starting) {
       runtime.starting.cancelRequested = true
       runtime.starting.preparationController.abort()
@@ -1410,7 +1480,7 @@ export class CodexAppServerSessionManager implements NativeHarnessSessionManager
           reason: 'retention' as const } } : {}),
       pendingInteractions: all.map((entry) => entry.pending),
       ...(first?.delivery === 'pending' ? { pendingInteraction: first.pending } : {}),
-      ...(runtime.terminalResult ? { terminalResult: runtime.terminalResult } : {}),
+      ...(runtime.terminalResult && !runtime.capacityRetry?.failure ? { terminalResult: runtime.terminalResult } : {}),
       ...((runtime.finalAnswer !== undefined ? runtime.finalAnswerId : runtime.lastAgentMessageId)
         ? { nativeMessageId: runtime.finalAnswer !== undefined ? runtime.finalAnswerId! : runtime.lastAgentMessageId! } : {}),
       firstRetainedSequence: events[0]?.sequence ?? runtime.sequence,
@@ -1656,7 +1726,7 @@ export class CodexAppServerSessionManager implements NativeHarnessSessionManager
             ...history,
             correlationId,
             nativeTurnId: runtime.activeTurnId,
-            ...(runtime.terminalResult ? {
+            ...(runtime.terminalResult && !runtime.capacityRetry?.failure ? {
               terminalTurn: {
                 correlationId,
                 providerId: runtime.activeTurnId,
@@ -1676,6 +1746,7 @@ export class CodexAppServerSessionManager implements NativeHarnessSessionManager
       if (runtime.session.providerVersion !== session.providerVersion) throw new HarnessExecutionError('CODEX_SESSION_VERSION_MISMATCH', 'The loaded session belongs to another Codex release.')
       runtime.closed = true
       runtime.disposed = true
+      if (runtime.capacityRetry?.failure) runtime.capacityRetry.controller.abort()
       for (const [id, child] of this.childRuntimes) {
         if (child.runtime.parent !== runtime) continue
         child.runtime.closed = true
@@ -2027,9 +2098,12 @@ export class CodexAppServerSessionManager implements NativeHarnessSessionManager
     await this.validateMcpPolicies(harnessConfiguration, qualified.binary, workingDirectory, environment, signal, io)
     let scopedCredentialVariable: string | undefined
     let excludedCredentialVariable: string | undefined
-    let disabledAppMcpServerNames: readonly string[] = []
+    let disabledMcpServerNames: readonly string[] = []
+    let mcpTransportOverrides: Record<string, string> = {}
     let approvedAppMcpServerName: string | undefined
-    if (this.appMcpAccess === 'none') {
+    const nativeTools = accepted(input).nativeTools
+    const nativeApps = nativeMcpServerAllowed('codex_apps', nativeTools) ? nativeTools?.apps : false
+    if (this.appMcpAccess === 'none' || nativeTools?.mcpServers !== undefined || nativeTools?.apps === false) {
       const listed = await io.runCommand(qualified.binary, ['mcp', 'list', '--json'], workingDirectory, signal, environment)
       let entries: unknown
       try { entries = JSON.parse(listed.stdout) } catch { entries = undefined }
@@ -2037,8 +2111,11 @@ export class CodexAppServerSessionManager implements NativeHarnessSessionManager
         || !entries.every((entry: unknown) => isObject(entry) && typeof entry.name === 'string')) {
         throw new HarnessExecutionError('CODEX_MCP_INSPECTION_FAILED', 'Codex MCP configuration inspection failed; absence was not established.')
       }
-      const configuredNames = new Set(entries.map((entry: JsonObject) => entry.name))
-      disabledAppMcpServerNames = chatExcludedAppMcpServerNames(this.appMcpServerName).filter((name) => configuredNames.has(name))
+      const configuredNames = entries.map((entry: JsonObject) => String(entry.name))
+      const chatExcluded = this.appMcpAccess === 'none' ? chatExcludedAppMcpServerNames(this.appMcpServerName) : []
+      disabledMcpServerNames = configuredNames.filter(name => chatExcluded.includes(name)
+        || !nativeMcpServerAllowed(name, nativeTools))
+      mcpTransportOverrides = codexDisabledMcpTransports(entries, disabledMcpServerNames)
     }
     try {
       const mcp = await this.mcpConfiguration(qualified.binary, workingDirectory, environment, qualified.providerVersion, signal, io)
@@ -2057,7 +2134,11 @@ export class CodexAppServerSessionManager implements NativeHarnessSessionManager
       io.environment(input.environment, strippedCredentialVariable ? [strippedCredentialVariable] : []), signal,
       undefined, { qualified, assertUnchanged: io.assertUnchanged,
         runCommand: io.runCommand,
-        transportFactory: (...args) => this.ownTransport(this.dependencies.transport(...args)) })
+        transportFactory: (...args) => {
+          args[9] = disabledMcpServerNames
+          args[11] = { ...args[11], nativeApps, mcpTransportOverrides }
+          return this.ownTransport(this.dependencies.transport(...args))
+        } })
     if (this.nativeOutputs) {
       if (!isWorkflowStart(input) || this.appMcpAccess !== 'scoped' || harnessConfiguration.sandbox === 'read-only'
         || harnessConfiguration.sandbox === 'danger-full-access' && this.nativeOutputs.storageKind !== 'buffer') {
@@ -2068,7 +2149,8 @@ export class CodexAppServerSessionManager implements NativeHarnessSessionManager
       signal.throwIfAborted()
     }
     return { input, harnessConfiguration, workingDirectory, scopedCredentialVariable, strippedCredentialVariable, environment: scopedEnvironment, qualified,
-      disabledAppMcpServerNames, contextBudgetLimit: typeof modelFacts === 'object' ? modelFacts.contextWindow ?? undefined : undefined,
+      disabledMcpServerNames, mcpTransportOverrides, nativeApps,
+      contextBudgetLimit: typeof modelFacts === 'object' ? modelFacts.contextWindow ?? undefined : undefined,
       ...(approvedAppMcpServerName ? { approvedAppMcpServerName } : {}),
     }
   }
@@ -2252,8 +2334,9 @@ export class CodexAppServerSessionManager implements NativeHarnessSessionManager
         disconnected = true
         if (runtime?.generation === generation && runtime.transport === transport && !runtime.disposed) this.handleDisconnect(runtime)
       },
-      undefined, this.processRecovery, prepared.disabledAppMcpServerNames, undefined,
-      { reconnectableStdio: isWorkflowStart(prepared.input)
+      undefined, this.processRecovery, prepared.disabledMcpServerNames, undefined,
+      { nativeApps: prepared.nativeApps, mcpTransportOverrides: prepared.mcpTransportOverrides ?? {},
+        reconnectableStdio: isWorkflowStart(prepared.input)
         && advanced(prepared.harnessConfiguration).sessionPersistence !== 'ephemeral' },
     )
     // Also own cold-attachment candidates before a Runtime has been published.
@@ -2267,7 +2350,7 @@ export class CodexAppServerSessionManager implements NativeHarnessSessionManager
         const servers = config.mcp_servers === undefined ? {} : object(config.mcp_servers, 'CODEX_APP_MCP_UNAVAILABLE')
         if (chatExcludedAppMcpServerNames(this.appMcpServerName).some((name) => {
           const entry = servers[name]
-          return prepared.disabledAppMcpServerNames.includes(name)
+          return prepared.disabledMcpServerNames.includes(name)
             ? !Object.hasOwn(servers, name) || !isObject(entry) || entry.enabled !== false
             : Object.hasOwn(servers, name)
         })) {
@@ -2613,6 +2696,7 @@ export class CodexAppServerSessionManager implements NativeHarnessSessionManager
 
   private applyTurn(runtime: Runtime, turn: JsonObject): void {
     if (turn.id !== runtime.activeTurnId || !Array.isArray(turn.items)) return
+    if (runtime.capacityRetry?.failure) return
     if (!['inProgress', 'completed', 'failed', 'interrupted'].includes(String(turn.status))) return
     for (const value of turn.items) {
       if (isObject(value) && text(value.id) && !['userMessage', 'agentMessage'].includes(String(value.type))) {
@@ -2644,10 +2728,14 @@ export class CodexAppServerSessionManager implements NativeHarnessSessionManager
       if (!runtime.terminalResult) runtime.phase = 'active'
       return
     }
-    runtime.terminalResult = turn.status === 'completed'
+    const result: ExecutionResult = turn.status === 'completed'
       ? { outcome: 'succeeded', output: { text: runtime.finalAnswer ?? runtime.lastAgentMessage ?? '' } }
       : turn.status === 'interrupted' ? { outcome: 'canceled' }
         : { outcome: 'failed', error: { code: 'CODEX_TURN_FAILED', message: text(isObject(turn.error) ? turn.error.message : undefined) ?? 'Codex turn failed.', retryable: false } }
+    const retry = runtime.capacityRetry
+    runtime.terminalResult = result
+    if (turn.status === 'failed' && retry?.canAdvanceIdentity && isCodexCapacityError(turn.error)
+      && retry.attempt < CODEX_CAPACITY_ATTEMPTS && !retry.controller.signal.aborted) retry.failure = result
     runtime.phase = 'idle'
     void this.finishTurnResources(runtime).catch(() => undefined)
     for (const [key, waiting] of runtime.interactions) {
@@ -2863,7 +2951,10 @@ export class CodexAppServerSessionManager implements NativeHarnessSessionManager
       if (!Array.isArray(turn.items) || !['inProgress', 'completed', 'failed', 'interrupted'].includes(String(turn.status))) return
       if (method === 'turn/completed' && turn.status === 'inProgress') return
       this.applyTurn(runtime, turn)
-      this.record(runtime, method === 'turn/started' ? 'turn.started' : 'turn.completed', { threadId: params.threadId, turnId: turn.id, status: turn.status })
+      this.record(runtime, method === 'turn/started' ? 'turn.started' : 'turn.completed', {
+        threadId: params.threadId, turnId: turn.id, status: turn.status,
+        ...(runtime.capacityRetry?.failure ? { willRetry: true } : {}),
+      })
       return
     }
     if (method === 'item/started' || method === 'item/completed') {

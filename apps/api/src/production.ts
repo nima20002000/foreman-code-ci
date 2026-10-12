@@ -1206,9 +1206,12 @@ export function buildProductionApp(
   const telemetryLifetime = new AbortController()
   let mainTelemetryContext: Extract<TrustedTelemetryContext, { kind: 'main-local' }> | null = null
   let jobRuntime: Awaited<ReturnType<typeof createProductionJobs>> | undefined
+  let hostCi: HostCiService | undefined
   const engine = new LangGraphWorkflowEngine(
     runs, workflows, approvals, checkpoints.saver, config.harnesses.workspaceRoot,
-    locations, launchCredentials, repository, undefined, {}, (owner, version) => {
+    locations, launchCredentials, repository, async runId => {
+      await hostCi?.cancelStoppedRun(runId)
+    }, {}, (owner, version) => {
       if (!jobRuntime) throw new DomainError('WORKFLOW_JOB_COMPOSITION_REQUIRED', 'The actual Job domain has not initialized.', 503)
       const bound = jobRuntime.workflow.forOwner(owner, version)
       return { store: new PostgresWorkflowJobNodeStore(owner, version, runs.repeatRepositoryFactory().hostForOwner(owner, version),
@@ -1803,14 +1806,11 @@ export function buildProductionApp(
     current: Awaited<ReturnType<PostgresOperatorRepository['ensure']>>,
     template: AgentDefaults['operator'],
   ): Promise<void> => {
-    if (current.configuration.harness.harness === 'opencode') {
-      await inTransaction(database.pool, undefined, client => operators.updateWithClient(
-        client, template.harness, current.operator.currentConfigurationVersionId,
-        template.showThinking ?? false, template.assignedSkills, template.harnessProfileSelection ?? null,
-      ))
-      return
-    }
-    await operators.update(template.harness, current.operator.currentConfigurationVersionId)
+    await inTransaction(database.pool, undefined, client => operators.updateWithClient(
+      client, template.harness, current.operator.currentConfigurationVersionId,
+      template.showThinking ?? false, template.assignedSkills, template.harnessProfileSelection ?? null,
+      template.nativeTools ?? null,
+    ))
   }
   const initialize = (): Promise<void> => {
     if (closing) return Promise.reject(new DomainError('NATIVE_RUNTIME_CLOSING', 'The native runtime is shutting down.', 503))
@@ -1833,7 +1833,8 @@ export function buildProductionApp(
       assertOpen()
       const defaults = await foundationSettings.getAgentDefaults()
       assertOpen()
-      if (!isDeepStrictEqual(operator.configuration.harness, defaults.value.operator.harness)) {
+      if (!isDeepStrictEqual(operator.configuration.harness, defaults.value.operator.harness)
+        || !isDeepStrictEqual(operator.configuration.nativeTools, defaults.value.operator.nativeTools)) {
         await synchronizeOperatorDefaults(operator, defaults.value.operator)
         assertOpen()
       }
@@ -2058,15 +2059,15 @@ export function buildProductionApp(
         }
         const reply = AgentSnapshotResultSchema.parse((await endpoint.request(hostRef.deviceId, AGENT_SNAPSHOT_NAMESPACE,
           { path, baseCommit }, { signal })).payload)
-        return { commit: reply.commit, bundle: Buffer.from(reply.bundleBase64, 'base64') }
+        return { commit: reply.commit, bundle: reply.bundleBase64 === null ? null : Buffer.from(reply.bundleBase64, 'base64') }
       }
       // CI runs directly on build computers (Main included) from GitHub, like self-hosted runners.
-      const hostCi = new HostCiService(database.pool, commands, new RunCiAuthority(database.pool), new GitCiCommits(),
+      hostCi = new HostCiService(database.pool, commands, new RunCiAuthority(database.pool), new GitCiCommits(),
         new ProductionHostCiEndpoint(database.pool, machine.installationId, () => deviceRuntime.endpointForDomains(), new HostCiRunner(),
           clouds),
         agentSnapshots(database.pool, readAgentFiles))
       hostCi.start()
-      app.addHook('onClose', async () => { await hostCi.close() })
+      app.addHook('onClose', async () => { await hostCi?.close() })
       runtimeServices.ci = hostCi
       runtimeServices.jobRuntimeProfiles = jobRuntime.profiles
       runtimeServices.ciRuntime = new CiRuntimeProvisioner(database.pool, jobRuntime.profiles, jobRuntime.sources,
