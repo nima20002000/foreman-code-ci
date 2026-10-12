@@ -100,7 +100,6 @@ function codexStdioBridge(native, environment, released) {
       connection?.destroy()
       connection=undefined
       connectionId=undefined
-      input=''
       native.stdout.resume()
     }
   }
