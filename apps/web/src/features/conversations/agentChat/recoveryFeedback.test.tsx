@@ -36,9 +36,11 @@ describe('faithful canonical work and decision feedback', () => {
     value.activitySnapshot.active = [{ ref: { kind: 'subagent', itemId: 'older-child' }, phase: 'active', outcome: null,
       delivery: null, evidence: 'unknown', startedAt: null }]; value.activitySnapshot.hasMoreActiveWork = true
     const mounted = mountChat(value); await mounted.ready()
-    expect(screen.getByText('Unfinished work unconfirmed')).toBeInTheDocument()
+    expect(screen.getByRole('status', { name: 'Agent state' })).toHaveTextContent('Completed')
     await userEvent.hover(screen.getByRole('status', { name: 'Agent state' }))
-    expect(await screen.findByRole('tooltip')).toHaveTextContent('More unfinished items exist than are shown')
+    const tooltip = await screen.findByRole('tooltip')
+    expect(tooltip).toHaveTextContent('Some tools or subagents have no confirmed outcome')
+    expect(tooltip).toHaveTextContent('More unfinished items exist than are shown')
     const input = screen.getByRole('textbox', { name: 'Message' })
     fireEvent.change(input, { target: { value: 'Independent next input' } })
     expect(screen.getByRole('button', { name: 'Send message' })).toBeEnabled()
@@ -52,11 +54,12 @@ describe('faithful canonical work and decision feedback', () => {
     const saved = receipt(value, delivery)
     value.activitySnapshot.pendingInteractions = [saved]
     const { onRefresh, onSendAgain } = transcript(value)
-    const label = delivery === 'uncertain' ? 'Decision delivery unconfirmed' : 'Decision recorded'
+    const label = delivery === 'uncertain' ? 'Decision delivery unconfirmed' : 'Decision sending'
     await userEvent.hover(screen.getByRole('status', { name: label }))
     const tooltip = await screen.findByRole('tooltip')
     expect(tooltip).toHaveTextContent('Delivery to the provider is not confirmed')
-    expect(tooltip).toHaveTextContent('Do not submit this decision again')
+    expect(tooltip).toHaveTextContent('Your decision is saved')
+    expect(tooltip).toHaveTextContent('Check its status before submitting again')
     expect(tooltip).toHaveTextContent('original-native-question')
     fireEvent.click(screen.getByRole('button', { name: 'Refresh decision status' }))
     expect(onRefresh).toHaveBeenCalledOnce(); expect(onSendAgain).not.toHaveBeenCalled()
@@ -67,9 +70,11 @@ describe('faithful canonical work and decision feedback', () => {
     value.activitySnapshot.activities = [{ kind: 'interaction', id: saved.id, revision: saved.revision, order: '0', owner: saved.owner,
       source: { schemaVersion: 1, system: 'management_command_receipt', observedAt: null }, evidence: 'confirmed', interaction: saved }]
     transcript(value)
-    expect(screen.getByText('Decision delivery acknowledged')).toBeInTheDocument()
-    await userEvent.hover(screen.getByRole('status', { name: 'Decision delivery acknowledged' }))
-    expect(await screen.findByRole('tooltip')).toHaveTextContent('Work completion is unconfirmed')
+    expect(screen.getByText('Decision delivered')).toBeInTheDocument()
+    await userEvent.hover(screen.getByRole('status', { name: 'Decision delivered' }))
+    const tooltip = await screen.findByRole('tooltip')
+    expect(tooltip).toHaveTextContent('The provider acknowledged this decision')
+    expect(tooltip).toHaveTextContent('This does not confirm work completion')
   })
 })
 
