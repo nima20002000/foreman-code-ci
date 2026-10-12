@@ -24,7 +24,9 @@ import { runsSelectorApi } from '../../runs-selector/client'
 import { isRunAccessError } from '../../runs-selector/query'
 import { useRunChoreography } from './runChoreography'
 import { useInteractionsQuery } from '../../../shared/api/query'
+import { useApprovalInboxStore } from '../../approvals/approvalInboxStore'
 import { interactionWaits, liveNodeView } from './runLiveStatus'
+import { RunLiveStatus } from './RunLiveStatus'
 import { RunSubagentsOverlay } from '../../run-subagents/RunSubagentsOverlay'
 import { CI_SERVER_NODE_ID, CiServerDialog, CiServerNode, CiTransferEdge,
   type CiServerFlowNode, type CiTransferFlowEdge } from './CiServer'
@@ -124,8 +126,6 @@ export function SelectedRunCanvas({ scope, panels, layout, geometry }: {
   const denied = useProtectedAccessError(query)
   // Observe (never fetch) the canonical Run read: its confirmed denial hides the pinned topology too.
   const canonical = useSelectedRunQueryState()
-  // Before the first current read lands, nodes say Loading rather than Unavailable.
-  const recordLoading = !canonical || canonical.status === 'pending' && canonical.fetchStatus !== 'paused'
   const canonicalDenied = useProtectedAccessError({
     error: canonical?.error,
     failureReason: canonical?.fetchFailureReason,
@@ -159,6 +159,9 @@ export function SelectedRunCanvas({ scope, panels, layout, geometry }: {
   })
   const ciRunJobs = ciList.data?.runId === scope.runId ? ciList.data.jobs : undefined
   const cis = useMemo(() => ciNodeActivities(ciRunJobs ?? []), [ciRunJobs])
+  const ciJobs = useMemo(() => (ciRunJobs ?? []).filter(isActiveCiJob)
+    .map(({ ci, requester }) => ({ ci, nodeId: requester.nodeId, agentId: requester.agentId }))
+    .sort((a, b) => a.ci.queuedAt.localeCompare(b.ci.queuedAt) || a.ci.id.localeCompare(b.ci.id)), [ciRunJobs])
   // Shown with the Agents from the first render, so the first fit includes it; unknown until its first read.
   const ciUnavailable = ciList.isError && !ciRunJobs
   const ciSummary = useMemo(() => ciRunJobs ? ciServerSummary(ciRunJobs) : { ...ciServerSummary([]), state: 'unavailable' as const,
@@ -236,11 +239,11 @@ export function SelectedRunCanvas({ scope, panels, layout, geometry }: {
     const result = topology?.nodes.map((node) => {
       const state = states.get(node.id)
       const selected = board.inspection.runNodeId === node.id
-      const recorded = !record ? recordLoading ? 'Loading current status' : 'Current status unavailable' : !state ? 'No activation in the bounded current cut' :
+      const recorded = !record ? 'Current status unavailable' : !state ? 'No activation in the bounded current cut' :
         `${state.label}${state.occurrenceIndex ? ` · repetition ${state.occurrenceIndex}` : ''}${state.attempt ? ` · attempt ${state.attempt}` : ''}`
         + (checking.has(node.id) ? ` · ${checkingView(checking.get(node.id)!.check, checking.get(node.id)!.queued).label}` : '')
       const nodeFacts:Facts = node.kind==='job'?{...unknownFacts,harness:undefined,harnessLabel:'Job',roleLabel:'Job',model:undefined,meta:[{label:'Revision',value:String(node.jobDefinitionRevision)}]}:facts.get(node.configurationId)??unknownFacts
-      const baseView = !record ? { state: 'unavailable' as const, label: recordLoading ? 'Loading…' : 'Unavailable' }
+      const baseView = !record ? { state: 'unavailable' as const, label: 'Unavailable' }
         : choreography.nodes.get(node.id) ?? { state: 'idle' as const, label: 'Not started' }
       const current = liveNodeView(baseView, waits.get(node.id), cis.get(node.id), checks.get(node.id), checking.get(node.id))
       const view = current === baseView ? baseView : { ...baseView, ...current }
@@ -256,7 +259,7 @@ export function SelectedRunCanvas({ scope, panels, layout, geometry }: {
     }) ?? []
     previous.current = next
     return result
-  }, [topology, states, record, recordLoading, facts, jobExecutions, board.inspection.runNodeId, choreography.nodes, cis, waits, checks, checking])
+  }, [topology, states, record, facts, jobExecutions, board.inspection.runNodeId, choreography.nodes, cis, waits, checks, checking])
   const layoutById = useMemo(() => new Map(layout?.map((node) => [node.id, node])), [layout])
   const pinnedById = useMemo(() => new Map(version?.definition.nodes.map((node) => [node.id, node])), [version])
   const presented = useRef(new Map<string, { source: RunNode; node: RunNode }>())
@@ -342,6 +345,9 @@ export function SelectedRunCanvas({ scope, panels, layout, geometry }: {
   return <section className="next-draft-canvas board-draft-canvas pinned-run-canvas" aria-label="Selected Run pinned topology">
     {/* Seen, the Run is just this Board; the small Run tag names it. Assistive tech still gets the exact pins. */}
     <h2 className="visually-hidden">{version?.definition.name ?? 'Selected Run'} · Run {scope.runId} · version {scope.workflowVersionId}</h2>
+    <RunLiveStatus live={live} ci={ciJobs} waits={waits}
+      nodes={nodes.map((node) => ({ id: node.id, name: node.data.label, state: node.data.state, label: node.data.status }))}
+      onOpenDecision={() => useApprovalInboxStore.getState().openInbox({ workspaceId: scope.workspaceId, workflowId: scope.workflowId })} />
     {query.isPaused ? <p role="status">Pinned topology refresh is paused. Any retained topology is a previously verified saved version.</p>
       : query.isPending ? <p role="status">Loading this Run’s exact saved topology…</p> : null}
     {query.isError || denied || canonicalDenied ? <Alert tone="warning" title="The selected Run topology is unavailable.">
