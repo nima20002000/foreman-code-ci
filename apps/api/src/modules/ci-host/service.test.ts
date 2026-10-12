@@ -22,12 +22,13 @@ const computer: HostCiComputer = {
   key: 'main:builder', hostRef: { kind: 'main', mainId: 'main' }, label: 'Builder', priority: 0,
 }
 
-function fixture() {
+function fixture(suite: 'lint' | 'integration' = 'lint') {
   let record = CiRunRecordSchema.parse({
     id: '11111111-1111-4111-8111-111111111111', workspaceId: 'workspace',
-    groupId: '22222222-2222-4222-8222-222222222222', suite: 'lint', part: null,
-    scope: 'full', files: [], partition: null, repository: 'owner/repo', commit: 'a'.repeat(40),
-    state: 'running', computer: { hostRef: computer.hostRef, label: computer.label }, step: 'lint',
+    groupId: '22222222-2222-4222-8222-222222222222', suite, part: null,
+    scope: 'full', files: [], partition: suite === 'integration' ? { index: 0, count: 2, hostIndexes: [0] } : null,
+    repository: 'owner/repo', commit: 'a'.repeat(40),
+    state: 'running', computer: { hostRef: computer.hostRef, label: computer.label }, step: suite,
     exitCode: null, message: null, queuedAt: '2026-10-12T00:00:00.000Z',
     startedAt: '2026-10-12T00:00:01.000Z', finishedAt: null,
     initiator: { principalId: 'worker', executionId: 'execution' },
@@ -40,6 +41,7 @@ function fixture() {
       return { rows: [], rowCount: 1 }
     }
     if (sql.includes('durations from ci_runs')) return { rows: [] }
+    if (sql.startsWith('select id,host_key')) return { rows: [{ id: record.id, host_key: computer.key }] }
     return { rows: [{ record, log_tail: logTail, host_key: computer.key }] }
   }) } as unknown as pg.Pool
   const resolve = vi.fn(async (principal: ManagementPrincipal) => {
@@ -56,6 +58,13 @@ function fixture() {
     {} as CiCommits, endpoint)
   return { create, pool, commands, endpoint, resolve, read: () => ({ record, logTail }) }
 }
+
+it('keeps assigned running ticket ids visible when the computer is offline', async () => {
+  const f = fixture()
+  expect(await f.create().computers(caller, { workspaceId: 'workspace' })).toMatchObject({ computers: [{
+    ready: false, reasons: ['Build computer unavailable'], running: [f.read().record.id],
+  }] })
+})
 
 it('refreshes submitted CI in the background without status reads and stops on close', async () => {
   vi.useFakeTimers()
@@ -94,8 +103,8 @@ it('refreshes submitted CI in the background without status reads and stops on c
   }
 })
 
-it('serves authenticated MCP polling from persisted data while fleet dispatch is blocked', async () => {
-  const f = fixture()
+it.each(['lint', 'integration'] as const)('serves authenticated MCP %s polling from persisted data while fleet dispatch is blocked', async suite => {
+  const f = fixture(suite)
   const ci = f.create()
   let unblock!: () => void
   const blocked = new Promise<void>(resolve => { unblock = resolve })
@@ -139,7 +148,7 @@ it('serves authenticated MCP polling from persisted data while fleet dispatch is
   }
 })
 
-it.each([10, 40_000])('persists a bounded %i-byte log with terminal status across service restart', async length => {
+it.each([10, 40_000, 70_000])('persists a bounded %i-byte log with terminal status across service restart', async length => {
   const f = fixture()
   const log = 'x'.repeat(length) + '\nfinished\n'
   const state: CiHostRun = {
@@ -158,6 +167,14 @@ it.each([10, 40_000])('persists a bounded %i-byte log with terminal status acros
   expect(result.run.state).toBe('passed')
   expect(result.logTail).toBe(log.slice(-32_768))
   expect(f.endpoint.request).not.toHaveBeenCalled()
+  const page = await f.create().logs(caller, {
+    workspaceId: 'workspace', ticketId: state.runId, afterOffset: 0, maxBytes: 500_000,
+  })
+  expect(page).toEqual({ text: log.slice(0, 65_536), maxBytes: 65_536,
+    nextOffset: Math.min(log.length, 65_536), logBytes: log.length })
+  expect(f.endpoint.request).toHaveBeenCalledWith(expect.anything(), {
+    operation: 'read', runId: state.runId, afterOffset: 0, maxBytes: 65_536,
+  })
 })
 
 it('checks worker ownership before returning cached logs or group data', async () => {

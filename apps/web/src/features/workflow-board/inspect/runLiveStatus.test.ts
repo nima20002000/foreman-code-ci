@@ -20,8 +20,8 @@ describe('live Run waits', () => {
     const waits = interactionWaits(record(), [request('a', { kind: 'work_direction' }),
       request('b', { approval: { handler: 'orchestrator', designatedOrchestratorAgentId: 'agent-c' } }),
       request('c', { executionId: 'outside-cut', status: 'delivered' })], names)
-    expect(Object.fromEntries([...waits].map(([node, wait]) => [node, [wait.label, wait.actionable]]))).toEqual({
-      a: ['Waiting for your decision', true], b: ['Waiting for approval from Lead', false] })
+    expect(Object.fromEntries([...waits].map(([node, wait]) => [node, wait.label]))).toEqual({
+      a: 'Waiting for your decision', b: 'Waiting for approval from Lead' })
     expect(interactionWaits(record(), [request('c', { executionId: 'outside-cut' })], names).get('c')?.label).toBe('Waiting for your approval')
     expect(interactionWaits(record('completed'), [request('a', {})], names).size).toBe(0)
     expect(interactionWaits(record(), [request('a', { runId: 'other-run' })], names).size).toBe(0)
@@ -31,7 +31,7 @@ describe('live Run waits', () => {
     const running = { state: 'running' as const, label: 'Running' }
     expect(liveNodeView(running, undefined, ci({ part: 'integration' as never }))).toEqual({ state: 'waiting', label: 'Waiting for CI integration · running' })
     expect(liveNodeView(running, undefined, ci({ state: 'passed' }))).toEqual({ state: 'running', label: 'Running · CI integration · passed' })
-    expect(liveNodeView(running, { interactionId: 'i', label: 'Waiting for your decision', actionable: true }, undefined))
+    expect(liveNodeView(running, { interactionId: 'i', label: 'Waiting for your decision' }, undefined))
       .toEqual({ state: 'waiting', label: 'Waiting for your decision' })
     expect(liveNodeView(running, undefined, undefined)).toBe(running)
   })
@@ -39,14 +39,17 @@ describe('live Run waits', () => {
   it('shows a running interval check and when the next one is due', () => {
     const idle = { state: 'completed' as const, label: 'Succeeded' }
     const check = { nodeId: 'a', everySeconds: 60, checks: 2, running: false, nextCheckAt: null }
-    expect(liveNodeView(idle, undefined, undefined, { ...check, running: true })).toEqual({ state: 'running', label: 'Interval check running' })
+    expect(liveNodeView(idle, undefined, undefined, { ...check, running: true })).toEqual({ state: 'running', label: 'Checking · check 2' })
+    // The current cut wakes the node even before the Run read reports the check.
+    expect(liveNodeView(idle, undefined, undefined, check, { check: 3, queued: false })).toEqual({ state: 'running', label: 'Checking · check 3' })
+    expect(liveNodeView(idle, undefined, undefined, undefined, { check: 3, queued: true })).toEqual({ state: 'queued', label: 'Check 3 queued' })
     expect(liveNodeView(idle, undefined, undefined, check)).toBe(idle)
     const next = liveNodeView(idle, undefined, undefined, { ...check, nextCheckAt: '2026-10-12T10:05:30.000Z' })
     expect(next.state).toBe('completed')
     expect(next.label).toBe(`Succeeded · Next check ${new Date('2026-10-12T10:05:30.000Z')
       .toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`)
     // A wait for an answer still explains the node first.
-    expect(liveNodeView(idle, { interactionId: 'i', label: 'Waiting for your approval', actionable: true }, undefined,
+    expect(liveNodeView(idle, { interactionId: 'i', label: 'Waiting for your approval' }, undefined,
       { ...check, running: true }).label).toBe('Waiting for your approval')
   })
 
