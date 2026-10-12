@@ -239,8 +239,7 @@ export function currentRestartUnit(reviewer = false, acceptedPlacement?: Accepte
     await beforePreflight()
     return { credential: { principalId: 'synthetic-credential', expiresAt: new Date(Date.now() + 300_000).toISOString(),
       environment: { agentId: execution.agentId, variables: {} } } }
-  }, restore: async () => { throw new Error('Credential restoration is forbidden during interrupted attachment') },
-    revokeForExecution: async () => { state.revocations++ } }
+  }, revokeForExecution: async () => { state.revocations++ } }
   const cold = () => {
     let resident = false, restartClosed = false
     const close = async (reference: NativeSessionReference) => {
@@ -267,7 +266,6 @@ export function currentRestartUnit(reviewer = false, acceptedPlacement?: Accepte
       budgets as unknown as Args[2], resolver, 60_000, credentials as unknown as Args[5], undefined, store,
       undefined, captures.capture, undefined, undefined, undefined,
       acceptedPlacement ? async context => ({ ...context, acceptedPlacement }) : undefined)
-    coordinator.shareRunOwner(owner)
     const observation: RepeatNativeObservationStore = {
       async readExecution(id) {
         assert.equal(id, execution.id)

@@ -153,7 +153,7 @@ test('host preparation propagates a missing harness installation failure', t => 
   assert.equal(result.status, 9)
   assert.equal(calls.length, 2)
 })
-for (const suite of ['unit', 'unit-api', 'unit-web', 'unit-web-heavy', 'unit-other', 'integration']) {
+for (const suite of ['unit', 'unit-api', 'integration']) {
   test(`${suite} prepares the host database and reuses installed harness CLIs`, t => {
     const { result, calls } = runSuite(t, suite, '', 'full', 'prepare')
     assert.equal(result.status, 0, result.stderr)
@@ -165,14 +165,7 @@ for (const suite of ['unit', 'unit-api', 'unit-web', 'unit-web-heavy', 'unit-oth
     assert.deepEqual(calls, [['pnpm', 'db:up']])
   })
 }
-for (const suite of ['unit-web', 'unit-web-heavy', 'unit-other']) {
-  test(`${suite} prepares the database without installing harness CLIs`, t => {
-    const { result, calls } = runSuite(t, suite, '', 'full', 'prepare', false)
-    assert.equal(result.status, 0, result.stderr)
-    assert.deepEqual(calls, [['pnpm', 'db:up']])
-  })
-}
-for (const suite of ['install', 'lint-api', 'typecheck-other', 'build-api']) {
+for (const suite of ['install', 'unit-web', 'unit-web-heavy', 'unit-other', 'lint-api', 'typecheck-other', 'build-api']) {
   test(`${suite} needs no host database or harness preparation`, t => {
     const { result, calls } = runSuite(t, suite, '', 'full', 'prepare')
     assert.equal(result.status, 0, result.stderr)

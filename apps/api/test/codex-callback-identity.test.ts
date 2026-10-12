@@ -31,11 +31,6 @@ async function fixture(id: string | number = 901, files = true) {
   let closes = 0
   let failClose = false
   const transport: CodexTransport = { start: async () => undefined, request: async (method) => {
-    if (method === 'mcpServerStatus/list') return { data: [{
-      name: 'graphql', runtimeStatus: 'connected', toolsError: null,
-      tools: { context_get: { name: 'context_get', inputSchema: { type: 'object' } } },
-      resources: [], resourceTemplates: [], authStatus: 'bearerToken',
-    }], nextCursor: null }
     assert.equal(method, 'turn/start')
     return { turn: { id: 'next-callback-turn', status: 'inProgress', itemsView: 'full', items: [],
       error: null, startedAt: 1, completedAt: null, durationMs: null } }

@@ -137,7 +137,6 @@ function fixture() {
     finishCleanup: async (_id: string, pending: boolean) => { control.cleanupPending = pending },
   }
   const native = { shareRunOwner: () => () => {}, cancelRun: async () => { calls.cancel++ }, finishRun: async () => { calls.finish++ },
-    preserveActiveForRestart: async () => false,
     reconcileReviews: async () => undefined, closeForRestart: async () => undefined, requestColdRunCleanup: async () => false,
     nativeBoundaryEvidence: async () => { throw new Error('No native evidence is fabricated in engine port tests') } }
   const interactions = { list: async () => { throw new Error('Historical pagination must never select resume IDs') } }
@@ -280,7 +279,6 @@ it('a checkpoint read failure leaves delivered approval state recoverable for th
   const read = f.control.read; f.control.read = async () => { throw new Error('checkpoint unavailable') }
   assert.equal((await f.reconcile()).length, 1); assert.equal(f.run.executionState, 'waiting')
   assert.equal(f.items.get(item.id)?.deliveryState, 'delivered'); assert.equal(f.calls.cancel, 0)
-  await delay(1_100)
   f.control.read = read; f.control.work = async () => f.complete()
   assert.deepEqual(await f.reconcile(), []); assert.equal(f.run.outcome, 'succeeded')
 })
