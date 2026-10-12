@@ -41,7 +41,6 @@ import {
   RunStopInputSchema,
   WorkflowArchiveInputSchema,
   WorkflowBatchArchiveInputSchema,
-  WorkflowReorderInputSchema,
   WorkflowGetInputSchema,
   WorkflowListInputSchema,
   WorkflowUpdateInputSchema,
@@ -161,8 +160,6 @@ export function registerManagementRoutes(app: FastifyInstance, services: Operato
     services.workflows.update(requirePrincipal(request), 'http', WorkflowUpdateInputSchema.parse(routeInput(request.params, request.body))))
   app.post<{ Params: Params; Body: unknown }>('/api/management/workspaces/:workspaceId/workflows/batch-archive', async (request) =>
     services.workflows.archiveBatch(requirePrincipal(request), 'http', WorkflowBatchArchiveInputSchema.parse(routeInput(request.params, request.body))))
-  app.put<{ Params: Params; Body: unknown }>('/api/management/workspaces/:workspaceId/workflows/order', async (request) =>
-    services.workflows.reorder(requirePrincipal(request), 'http', WorkflowReorderInputSchema.parse(routeInput(request.params, request.body))))
   app.delete<{ Params: Params; Body: unknown }>('/api/management/workspaces/:workspaceId/workflows/:workflowId', async (request) =>
     services.workflows.archive(requirePrincipal(request), 'http', WorkflowArchiveInputSchema.parse(routeInput(request.params, request.body))))
 
