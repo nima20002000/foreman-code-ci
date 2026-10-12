@@ -35,8 +35,6 @@ export function configurationInput(
   const assignedSkills = agent.assignedSkills ?? current?.assignedSkills ?? []
   const productRole = agent.productRole ?? current?.productRole
   const graphqlTools = agent.graphqlTools ?? current?.graphqlTools
-  const nativeTools = Object.hasOwn(agent, 'nativeTools') ? agent.nativeTools : current?.nativeTools
-  const nativePolicy = nativeTools ? { nativeTools } : {}
   const harnessProfileSelection = Object.hasOwn(agent, 'harnessProfileSelection') ? agent.harnessProfileSelection : current?.harnessProfileSelection
   const profile = harnessProfileSelection ? { harnessProfileSelection } : {}
   const outside = graphqlToolsOutsideRole(productRole ?? 'coder', graphqlTools ?? [])
@@ -48,7 +46,7 @@ export function configurationInput(
     const configuration = agent.harnessConfiguration?.harness === 'claude' ? agent.harnessConfiguration
       : current?.harness.harness === 'claude' ? current.harness : undefined
     if (!configuration) throw new DomainError('AGENT_CONFIGURATION_REQUIRED', 'Claude requires an explicit accepted configuration.', 400)
-    return { workspaceId, agentId: agent.id, productRole, prompt, assignedSkills, ...profile, ...nativePolicy,
+    return { workspaceId, agentId: agent.id, productRole, prompt, assignedSkills, ...profile,
       ...(graphqlTools ? { graphqlTools } : {}), harness: configuration } as const
   }
   const suppliedHarness = agent.harnessConfiguration?.harness === 'codex'
@@ -59,7 +57,6 @@ export function configurationInput(
   return {
     workspaceId,
     ...profile,
-    ...nativePolicy,
     agentId: agent.id,
     productRole,
     prompt,
@@ -198,7 +195,6 @@ export async function saveAgentConfiguration(
     prompt: configuration.prompt,
     assignedSkills: configuration.assignedSkills,
     graphqlTools: configuration.graphqlTools,
-    nativeTools: configuration.nativeTools,
     createdAt: previousAgent?.createdAt ?? parsed.createdAt ?? now,
     updatedAt: now,
   })

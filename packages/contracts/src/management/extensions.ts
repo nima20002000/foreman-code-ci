@@ -25,7 +25,6 @@ export const AgentCreateInputSchema = z.object({
   harnessProfileSelection: AgentSchema.shape.harnessProfileSelection,
   prompt: AgentSchema.shape.prompt, assignedSkills: AgentSchema.shape.assignedSkills,
   graphqlTools: AgentSchema.shape.graphqlTools,
-  nativeTools: AgentSchema.shape.nativeTools,
 }).strict();
 export const AgentUpdateInputSchema = z.object({
   ...Workspace, agentId: IdSchema, ...Mutation,
@@ -37,19 +36,15 @@ export const AgentUpdateInputSchema = z.object({
   harnessProfileSelection: AgentSchema.shape.harnessProfileSelection,
   prompt: AgentSchema.shape.prompt, assignedSkills: AgentSchema.shape.assignedSkills,
   graphqlTools: AgentSchema.shape.graphqlTools,
-  nativeTools: AgentSchema.shape.nativeTools,
 }).strict().refine((value) => [value.name, value.description, value.role, value.configuration,
-  value.prompt, value.assignedSkills, value.graphqlTools, value.nativeTools, value.harnessProfileSelection].some((item) => item !== undefined), "At least one editable field is required");
+  value.prompt, value.assignedSkills, value.graphqlTools, value.harnessProfileSelection].some((item) => item !== undefined), "At least one editable field is required");
 export const AgentCloneInputSchema = z.object({
   ...Workspace, commandId: Command, agentId: IdSchema, sourceAgentId: IdSchema,
   expectedSourceRevision: Revision, expectedSourceConfigurationVersionId: IdSchema,
   name: z.string().trim().min(1).max(200),
 }).strict();
 export const AgentMutationResultSchema = z.object({
-  value: z.object({ agent: AgentSchema, metadataRevision: Revision,
-    affectedWorkflowIds: z.array(IdSchema).optional()
-      .describe("Returned by agent_update: referencing workflows to re-save before using the changed configuration."),
-  }).strict(), replayed: z.boolean(),
+  value: z.object({ agent: AgentSchema, metadataRevision: Revision }).strict(), replayed: z.boolean(),
 }).strict();
 export type AgentCreateInput = z.infer<typeof AgentCreateInputSchema>;
 export type AgentUpdateInput = z.infer<typeof AgentUpdateInputSchema>;

@@ -9,9 +9,7 @@ import type { PlacementCommitFence } from './admission.js'
  * authenticated host/W09 I/O before the existing Start transaction begins. */
 export interface RunPlacementAdmissionPort {
   prepare(input: RunStartV3Input, principal: ManagementPrincipal,
-    signal?: AbortSignal, options?: {
-      source: 'http' | 'mcp'; sourcePreparationStarted?: () => void
-    }): Promise<PreparedRunPlacementAdmission | undefined>
+    signal?: AbortSignal): Promise<PreparedRunPlacementAdmission | undefined>
 }
 export interface PreparedRunPlacementAdmission {
   /** Pure function binds prepared immutable evidence to the NEW Run identity. */

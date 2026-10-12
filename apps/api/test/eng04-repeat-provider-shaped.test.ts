@@ -44,7 +44,6 @@ describe('NIM-2648 ENG04-D provider-shaped observation regression', () => {
       version: fixture.version,
       owner: harness.owner,
       store: harness.store,
-      requestStartCleanup: async () => { throw new Error('Unexpected start failure') },
       observeExact: async (stored) => {
         observed.push({ ...trace, executionId: stored.id })
         started()
