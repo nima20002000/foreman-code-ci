@@ -30,7 +30,7 @@ async function mount(reply?: ReplyOverride) {
   return { ...view, wire, mock, key, workspaceId, workflowId }
 }
 const board = () => within(screen.getByRole('region', { name: 'Workflow authoring' }))
-const sidebar = () => within(screen.getByRole('region', { name: 'Workspace workflows' }))
+const sidebar = () => within(screen.getByRole('complementary', { name: 'Primary navigation' }))
 function change(key: string, name = 'First Board') {
   act(() => useGraphDraftStore.getState().changeNextDraft(key, (graph) => ({ ...graph, name,
     nodes: graph.nodes.map((node, index) => index ? node : { ...node, initialPrompt: `${name} instructions` }) })))

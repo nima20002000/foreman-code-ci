@@ -49,7 +49,7 @@ describe('WorkspaceRoute', () => {
     expect(screen.queryByText('Execution folder could not be checked')).not.toBeInTheDocument()
   })
 
-  it('keeps Workspaces active on the graph and opens the workflow directory', async () => {
+  it('keeps Workspaces active on the graph route and opens the workflows directory', async () => {
     const { router } = renderWithRouter(
       <WorkspaceRouteView
         workspaceId="workspace-1"
@@ -59,10 +59,10 @@ describe('WorkspaceRoute', () => {
     )
 
     expect(await screen.findByTestId('workspace-stale')).toHaveTextContent('agent-old')
-    const workflows = await screen.findByRole('button', { name: 'Workflows' })
+    const workflows = await screen.findByRole('button', { name: 'Workflows', exact: true })
     expect(workflows).not.toHaveAttribute('aria-current')
-    const workspaces = screen.getAllByRole('button', { name: 'Workspaces' })
-      .find(button => !button.hasAttribute('aria-expanded'))
+    const workspaces = screen.getAllByRole('button', { name: 'Workspaces', exact: true })
+      .find(button => !button.hasAttribute('aria-expanded'))!
     expect(workspaces).toHaveClass('nav-item-active')
     await userEvent.click(workflows)
     await waitFor(() => expect(router.state.location.pathname).toBe('/workspaces/workspace-1/workflows'))
