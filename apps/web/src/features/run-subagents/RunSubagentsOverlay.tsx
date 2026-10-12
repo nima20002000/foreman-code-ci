@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { ViewportPortal } from '@xyflow/react'
 import { Button, Icon } from '../../shared/ui/nocturne'
 import { layoutSubagents, isTerminalSubagent, SUBAGENT_ORB, type SubagentLayoutNode } from './layout'
@@ -6,6 +6,7 @@ import { subagentLabel, subagentName, subagentStatus } from './presentation'
 import { useRunSubagents, type SubagentsScope } from './query'
 import { useSelectedSubagent } from './selection'
 import { SubagentPanel } from './SubagentPanel'
+import { useBlockingReadError } from '../../shared/api/readFailure'
 import './runSubagents.css'
 
 export function RunSubagentsOverlay({ scope, nodes }: {
@@ -18,8 +19,13 @@ export function RunSubagentsOverlay({ scope, nodes }: {
     const orb = trigger.current
     void select(null).then(() => orb?.focus({ preventScroll: true }))
   }
-  // A failed read (including revoked access) cannot leave cached chips visible.
-  const children = query.isError ? [] : query.data?.pages.flatMap((page) => page.items.map((item) => item.subagent)) ?? []
+  const blocked = useBlockingReadError(query)
+  const children = blocked ? [] : query.data?.pages.flatMap((page) => page.items.map((item) => item.subagent)) ?? []
+  const { fetchNextPage, hasNextPage, isFetching, isError } = query
+  const pageCount = query.data?.pages.length ?? 0
+  useEffect(() => {
+    if (hasNextPage && !isFetching && !isError && !blocked && pageCount < 5) void fetchNextPage()
+  }, [hasNextPage, isFetching, isError, blocked, pageCount, fetchNextPage])
   const chips = layoutSubagents(nodes, children)
   const unplaced = children.length - chips.length
   const syncing = query.data?.pages.some((page) => page.projection === 'catching-up')
@@ -54,10 +60,11 @@ export function RunSubagentsOverlay({ scope, nodes }: {
           {syncing && <span>Updating subagent activity…</span>}
           {unplaced > 0 && <span>{unplaced === 1 ? '1 subagent isn\'t shown yet because its parent hasn\'t reported in.'
             : `${unplaced} subagents aren't shown yet because their parents haven't reported in.`}</span>}
-          {query.hasNextPage && <Button size="sm" loading={query.isFetchingNextPage} onClick={() => void query.fetchNextPage()}>Show more subagents</Button>}
+          {query.hasNextPage && pageCount >= 5 && <span>Showing {children.length} subagents.</span>}
+          {query.hasNextPage && pageCount >= 5 && <Button size="sm" loading={query.isFetchingNextPage} onClick={() => void query.fetchNextPage()}>Show more subagents</Button>}
         </>}
       </div>}
-    {!query.isError && selected && <SubagentPanel key={`${scope.runId}:${selected}`} scope={scope}
+    {!blocked && selected && <SubagentPanel key={`${scope.runId}:${selected}`} scope={scope}
       subagentId={selected} anchor={trigger} onClose={closePanel} />}
   </>
 }
