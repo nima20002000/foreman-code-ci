@@ -16,11 +16,8 @@ export async function prepareRunSources(pool: pg.Pool,
 ): Promise<readonly SourceRootRecord[]> {
   requireAuthorization(principal, 'source_roots:bind', { workspaceId: input.workspaceId })
   let executablePolicy: SourceManifest['executablePolicy'] = 'preserve-approved'
-  const selectedSnapshots = new Set<string>()
   for (const root of input.roots) {
-    if (selectedSnapshots.has(root.source.snapshotId)) continue
     const selected = await sources.get(principal, input.source, { workspaceId: input.workspaceId, ...root.source })
-    selectedSnapshots.add(root.source.snapshotId)
     if (selected.manifest.executablePolicy === 'strip') executablePolicy = 'strip'
   }
   const command = `run-source:${commandInputHash({ principalId: principal.id, commandId: input.commandId })}`

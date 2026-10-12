@@ -323,6 +323,7 @@ export async function admitRepeatRun(pool: pg.Pool, locations: WorkspaceLocation
     const preparationStarted = performance.now()
     const { preparedPlacements, prepared } = await prepareStart(pool, locations, input, principal, sourceTransport, publication,
       options.schedule)
+    // Preparation has its own deadline; keep the remaining shared lock-wait budget.
     lockWait.deadline += performance.now() - preparationStarted
     options.schedule?.signal?.throwIfAborted()
     return await withExclusiveGraphConnection(pool, (connection) => connection.transaction(async (sql) => {

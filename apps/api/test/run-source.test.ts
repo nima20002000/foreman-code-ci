@@ -84,8 +84,9 @@ function fixture(policies: SourceManifest['executablePolicy'][] = ['strip']) {
       return { value: bound, replayed: false }
     }),
   }
-  const pool = { query: vi.fn(async (_text: string, values: unknown[]) => ({
-    rows: values.length === 2 ? [{ current_binding_revision: String(heads.get(String(values[0]))!.binding.bindingRevision) }] : [],
+  const pool = { query: vi.fn(async (text: string, values: unknown[]) => ({
+    rows: text.includes('source_root_catalog')
+      ? [{ current_binding_revision: String(heads.get(String(values[0]))!.binding.bindingRevision) }] : [],
   })) } as unknown as pg.Pool
   const start = (transport: 'http' | 'mcp' = 'http') => prepareRunSources(pool, sources, principal, {
     workspaceId, commandId: randomUUID(), source: transport, roots,
