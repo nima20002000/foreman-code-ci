@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type pg from 'pg'
-import { CI_HOST_NAMESPACE, CI_LOG_MAX_BYTES, CI_RUN_JOBS_LIMIT, CiHostReplySchema, CiListOutputSchema, CiRunRecordSchema,
-  WorkspaceSchema,
+import { CI_HOST_NAMESPACE, CI_RUN_JOBS_LIMIT, CiHostReplySchema, CiListOutputSchema, CiRunRecordSchema, WorkspaceSchema,
   type CiDurations, type CiHostRequest, type CiHostReply, type CiListOutput, type CiRunRecord, type CiRunInput,
   type CiTestResults, type CiTestStatus } from '@foreman-code/contracts'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
@@ -296,26 +295,25 @@ export class HostCiService {
     const scope = await this.authority.resolve(caller, input.workspaceId, CI_GET_ACTIONS)
     const run = await this.read(input.ticketId, scope.workspaceId)
     assertCiReadAccess(caller, scope.executionId, run)
-    const maxBytes = Math.min(input.maxBytes ?? CI_LOG_MAX_BYTES, CI_LOG_MAX_BYTES)
     if (input.group) {
       const group = (await this.pool.query<{ record: unknown }>(
         `select record from ci_runs where group_id=$1 and workspace_id=$2
           and record->'initiator'=$3::jsonb order by created_at,id`,
         [run.groupId, scope.workspaceId, JSON.stringify(run.initiator)])).rows.map(row => CiRunRecordSchema.parse(row.record))
-      const partMaxBytes = Math.max(1, Math.floor(maxBytes / group.length))
+      const maxBytes = Math.max(1, Math.floor((input.maxBytes ?? 65_536) / group.length))
       const parts = await Promise.all(group.map(async part => ({ run: part,
-        ...await this.readLog(part, { afterOffset: input.afterOffset, maxBytes: partMaxBytes }) })))
+        ...await this.readLog(part, { afterOffset: input.afterOffset, maxBytes }) })))
       const own = parts.find(part => part.run.id === run.id)!
-      return { text: own.text, nextOffset: own.nextOffset, logBytes: own.logBytes, maxBytes, parts }
+      return { text: own.text, nextOffset: own.nextOffset, logBytes: own.logBytes, parts }
     }
     if (!run.computer) throw new DomainError('CI_NOT_STARTED', 'This CI run is still queued.', 409)
-    return this.readLog(run, { afterOffset: input.afterOffset, maxBytes })
+    return this.readLog(run, input)
   }
 
   private async readLog(run: CiRunRecord, input: { afterOffset?: number | undefined; maxBytes?: number | undefined }) {
-    const maxBytes = input.maxBytes ?? CI_LOG_MAX_BYTES
-    if (!run.computer) return { text: '', nextOffset: 0, logBytes: 0, maxBytes }
+    if (!run.computer) return { text: '', nextOffset: 0, logBytes: 0 }
     const computer = await this.computer(run.computer.hostRef)
+    const maxBytes = input.maxBytes ?? 65_536
     let afterOffset = input.afterOffset
     if (afterOffset === undefined) {
       const state = await this.endpoint.request(computer, { operation: 'read', runId: run.id, afterOffset: 0, maxBytes: 1 })
@@ -323,7 +321,7 @@ export class HostCiService {
     }
     const reply = await this.endpoint.request(computer, { operation: 'read', runId: run.id, afterOffset, maxBytes })
     if (reply.operation !== 'read') throw new DomainError('CI_HOST_REPLY_INVALID', 'The build computer replied out of order.', 502)
-    return { text: reply.text, nextOffset: reply.nextOffset, logBytes: reply.run.logBytes, maxBytes }
+    return { text: reply.text, nextOffset: reply.nextOffset, logBytes: reply.run.logBytes }
   }
 
   async cancel(caller: ManagementPrincipal,

@@ -21,8 +21,6 @@ import { WorkConnectionLimitEditor } from './WorkConnectionLimitEditor'
 import type { EditGraph } from './AuthoringFields'
 import { useWorkflowBoard } from '../../workflow-board/context'
 import { SelectedRunCanvas } from '../../workflow-board/inspect/SelectedRunCanvas'
-import { CiServerDialog, CiServerNode, type CiServerFlowNode } from '../../workflow-board/inspect/CiServer'
-import { CI_SERVER_NODE_ID, ciServerFlowNode, ciServerSummary } from '../../workflow-board/inspect/ciServer'
 import '@xyflow/react/dist/style.css'
 
 export type OpenAgentPanel = { nodeId: string; panel: AgentPanel }
@@ -49,7 +47,7 @@ const DraftAgent = memo(function DraftAgent({ id, data, selected, width, height 
   const entry = useGraphDraftStore((state) => state.nextDrafts[draftKey]?.graph.entryNodeId === id)
   const presentation = useGraphPresentationStore()
   const runSelected = Boolean(useWorkflowBoard()?.run)
-  const run = { label: 'Draft', state: 'idle' as const }
+  const run = { label: 'Idle', state: 'idle' as const }
   const facts = agentNodeFacts(data.agent)
   const meta = data.intervalSeconds ? [{ label: 'Checks', value: intervalLabel(data.intervalSeconds) }, ...facts.meta].slice(0, 2) : facts.meta
   const core = useRef<HTMLButtonElement>(null)
@@ -75,30 +73,27 @@ const DraftAgent = memo(function DraftAgent({ id, data, selected, width, height 
   </>
 })
 
-type DraftEdge = Edge<{ kind: WorkflowRelationship['kind']; bend: number;
+type DraftEdge = Edge<{ kind: WorkflowRelationship['kind']; bend: number; label: string; explicit: boolean;
   remove: () => void; removeLabel: string; removalDisabled: boolean;
   workPolicy: boolean; maxWorkHandoffsPerRun?: number; draftChanged: boolean; disabled: boolean;
   onApplyLimit?: (value?: number) => void }>
-const TypedEdge = memo(function TypedEdge({ id, source, target, data, selected }: EdgeProps<DraftEdge>) {
+const TypedEdge = memo(function TypedEdge({ id, source, target, data }: EdgeProps<DraftEdge>) {
   const curve = useFloatingCurve(source, target, data?.bend ?? 28)
   const { hovered, onPointerEnter, onPointerLeave } = useHoverControls()
   const [editing, setEditing] = useState(false)
-  const [focused, setFocused] = useState(false)
-  const visible = hovered || focused || selected
   if (!curve) return null
+  const offset = data?.explicit ? (data.label.length * 7.2 + 24) / 2 + 8 : 0
   const limit = data?.maxWorkHandoffsPerRun
-  return <g onPointerEnter={onPointerEnter} onPointerLeave={onPointerLeave}
-    onFocus={() => setFocused(true)} onBlur={event => {
-      if (!event.currentTarget.contains(event.relatedTarget as globalThis.Node | null)) setFocused(false)
-    }}>
-    <SignalEdgeShape id={id} curve={curve} kind={data?.kind} />
-    {visible ? <rect className="board-edge-hover-bridge" x={curve.mid.x - 18} y={curve.mid.y - 36}
-      width={36} height={48} /> : null}
-    <foreignObject data-visible={visible} className="board-edge-remove nodrag nopan" x={curve.mid.x - 18} y={curve.mid.y - 36} width={36} height={36}>
+  return <g onPointerEnter={onPointerEnter} onPointerLeave={onPointerLeave}>
+    <SignalEdgeShape id={id} curve={curve} kind={data?.kind}
+      label={data?.label} showLabel={data?.explicit && hovered} />
+    {hovered ? <rect className="board-edge-hover-bridge" x={curve.mid.x - 18} y={curve.mid.y - 36}
+      width={offset + 36} height={48} /> : null}
+    <foreignObject aria-hidden={!hovered} data-visible={hovered} className="board-edge-remove nodrag nopan" x={curve.mid.x + offset - 18} y={curve.mid.y - 36} width={36} height={36}>
       <IconButton size="sm" variant="ghost" label={data?.removeLabel ?? `Remove connection from ${source} to ${target}`}
-        tabIndex={0} disabled={data?.removalDisabled} onClick={(event) => { event.stopPropagation(); data?.remove() }}><Icon name="close" size={14} /></IconButton>
+        tabIndex={hovered ? 0 : -1} disabled={data?.removalDisabled} onClick={(event) => { event.stopPropagation(); data?.remove() }}><Icon name="close" size={14} /></IconButton>
     </foreignObject>
-    {data?.workPolicy ? <foreignObject className="work-connection-limit-object" data-visible={hovered || editing}
+    {data?.workPolicy ? <foreignObject className="work-connection-limit-object"
       x={curve.mid.x - (editing ? 132 : 54)} y={curve.mid.y + 12}
       width={editing ? 264 : 108} height={editing ? 208 : 42}>
       <div className="work-connection-limit-control nodrag nopan nowheel"
@@ -125,8 +120,7 @@ const DraftJob=memo(function DraftJob({id,data,selected}:NodeProps<JobGraphNode>
 ><AgentHandles name={data.label}/></AgentNodeView>
     {panel?<Dialog open className="job-dialog" title={data.label} description="Noninteractive job" onOpenChange={value=>{if(!value)inspect(()=>setOpen(undefined))}}>{panels(id).info}{panels(id).settings}</Dialog>:null}</>
 })
-const nodeTypes = { agent: DraftAgent, job: DraftJob, ciServer: CiServerNode }, edgeTypes = { typed: TypedEdge }
-const idleCiServer = ciServerSummary([])
+const nodeTypes = { agent: DraftAgent, job: DraftJob }, edgeTypes = { typed: TypedEdge }
 const fitViewOptions = RESPONSIVE_FIT_OPTIONS
 const proOptions = { hideAttribution: true }
 export type DraftCanvasHandle = { flush(): void; cancel(): void }
@@ -145,16 +139,13 @@ export const DraftCanvas = forwardRef<DraftCanvasHandle, {
   change, geometry, pending, report, inspect = (action) => action(), removalDisabled = false,
   open, setOpen = () => undefined, panels = () => ({ chat: null, settings: null, info: null }), children }, ref) {
   const selectedRun = useWorkflowBoard()?.run
-  const responsive = useResponsiveGraphViewport<GraphNode | CiServerFlowNode, DraftEdge>({ enabled: !selectedRun })
+  const responsive = useResponsiveGraphViewport<GraphNode, DraftEdge>({ enabled: !selectedRun })
   const [project] = useState(() => createGraphTopologyProjector())
   const topology = useMemo(() => project(graph, agents), [project, graph, agents])
   const [adapter] = useState(() => createGraphGeometryAdapter(topology.nodes))
   const [nodes, setNodes] = useState(topology.nodes)
   const [connecting, setConnecting] = useState(false)
-  const [ciOpen, setCiOpen] = useState(false)
-  // Every Board shows the CI server automatically; it is never a workflow node and cannot be added by hand.
-  const ciServer = useMemo(() => ciServerFlowNode(nodes, idleCiServer, () => setCiOpen(true)), [nodes])
-  const flowNodes = useMemo<(GraphNode | CiServerFlowNode)[]>(() => ciServer ? [...nodes, ciServer] : nodes, [nodes, ciServer])
+  const connectionSource = useRef<string | undefined>(undefined)
   const selectedIds = useGraphPresentation((state) => state.selectedNodeIds)
   const presentation = useGraphPresentationStore()
   useLayoutEffect(() => { setNodes(adapter.reconcile(topology.nodes, selectedIds)) }, [adapter, topology.nodes, selectedIds])
@@ -164,6 +155,7 @@ export const DraftCanvas = forwardRef<DraftCanvasHandle, {
     pending(false)
   }
   const prepareResize = () => {
+    connectionSource.current = undefined
     setConnecting(false)
   }
   const beginResize = () => {
@@ -184,7 +176,7 @@ export const DraftCanvas = forwardRef<DraftCanvasHandle, {
       const kindLabel = members.length > 1 ? 'Handoff · approval' : edge.kind === 'approval' ? 'Approval' : 'Handoff'
       return { ...edge, type: 'typed', sourceHandle: 'right', targetHandle: 'left',
         ariaLabel: `${kindLabel} from ${nodeTitle(graph, edge.source)} to ${nodeTitle(graph, edge.target)}${edge.label ? `: ${edge.label}` : ''}`,
-        data: { kind: edge.kind, bend: edgeBend(count, edge.source < edge.target),
+        data: { kind: edge.kind, bend: edgeBend(count, edge.source < edge.target), label: edge.label || kindLabel, explicit: Boolean(edge.label),
           remove: () => change((value) => removeRelationship(value, edge.id)),
           removeLabel: `Remove ${edge.kind === 'approval' ? 'approval' : 'handoff'} from ${nodeTitle(graph, edge.source)} to ${nodeTitle(graph, edge.target)}`,
           removalDisabled, workPolicy: Boolean(graph.handoffs && edge.kind === 'execution'),
@@ -197,8 +189,7 @@ export const DraftCanvas = forwardRef<DraftCanvasHandle, {
           } } }
     })
   }, [graph, baseGraph, semanticLocked, change, report, removalDisabled])
-  const onNodesChange = (allChanges: NodeChange<GraphNode | CiServerFlowNode>[]) => {
-    const changes = allChanges.filter((item): item is NodeChange<GraphNode> => !('id' in item) || item.id !== CI_SERVER_NODE_ID)
+  const onNodesChange = (changes: NodeChange<GraphNode>[]) => {
     const nextSelection = new Set(presentation.getState().selectedNodeIds)
     for (const item of changes) if (item.type === 'select') {
       if (item.selected) nextSelection.add(item.id); else nextSelection.delete(item.id)
@@ -214,6 +205,11 @@ export const DraftCanvas = forwardRef<DraftCanvasHandle, {
     catch (error) { report(error) }
   }
   const selectNode = (nodeId: string) => inspect(() => {
+    const source = connectionSource.current
+    if (source && source !== nodeId && graph.nodes.some((node) => node.id === source)) {
+      connectNodes(source, nodeId)
+      connectionSource.current = undefined
+    } else connectionSource.current = source === nodeId ? undefined : nodeId
     presentation.getState().setFocusedNodeId(nodeId)
     presentation.getState().setSelectedNodeIds(new Set([nodeId]))
     presentation.getState().setFocusedEdgeId(undefined)
@@ -231,23 +227,23 @@ export const DraftCanvas = forwardRef<DraftCanvasHandle, {
     <div ref={responsive.containerRef} className={`next-draft-canvas board-draft-canvas${connecting ? ' is-connecting' : ''}`} style={selectedRun ? { display: 'none' } : undefined} aria-hidden={!!selectedRun} inert={!!selectedRun} aria-label="Editable workflow graph">
       {/* While a Run is shown, the draft's data stays mounted but its flow does not: a hidden
           flow measures a zero-size box and would come back empty on Return to draft. */}
-      {selectedRun ? null : <ReactFlow<GraphNode | CiServerFlowNode, DraftEdge> nodes={flowNodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes}
+      {selectedRun ? null : <ReactFlow<GraphNode, DraftEdge> nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes}
         onNodesChange={onNodesChange} connectionMode={ConnectionMode.Loose} connectionRadius={120} deleteKeyCode={null}
         fitView fitViewOptions={fitViewOptions} proOptions={proOptions} minZoom={RESPONSIVE_MIN_ZOOM} maxZoom={1.6} onInit={responsive.onInit}
         onMove={responsive.onMove}
         isValidConnection={(connection) => connection.source !== connection.target}
         onConnectStart={() => setConnecting(true)} onConnectEnd={() => setConnecting(false)}
         onClickConnectStart={() => setConnecting(true)} onClickConnectEnd={() => setConnecting(false)}
-        onNodeClick={(_, node) => { if (node.id !== CI_SERVER_NODE_ID) selectNode(node.id) }}
-        onPaneClick={() => inspect(() => { setOpen(undefined); presentation.getState().setFocusedNodeId(undefined); presentation.getState().setFocusedEdgeId(undefined) })}
+        onNodeClick={(_, node) => selectNode(node.id)}
+        onPaneClick={() => inspect(() => { connectionSource.current = undefined; setOpen(undefined); presentation.getState().setFocusedNodeId(undefined); presentation.getState().setFocusedEdgeId(undefined) })}
         onConnect={(connection) => {
+          connectionSource.current = undefined
           connectNodes(connection.source, connection.target)
         }}>
         <Background color="var(--border)" gap={24} size={1} />
       </ReactFlow>}
       {children}
     </div>
-    {selectedRun ? null : <CiServerDialog open={ciOpen} onOpenChange={setCiOpen} jobs={[]} names={new Map()} truncated={false} error={false} loading={false} />}
     {selectedRun ? <SelectedRunCanvas key={JSON.stringify(selectedRun)} scope={selectedRun} panels={panels} layout={topology.nodes} geometry={geometry} /> : null}
   </CanvasContext.Provider>
 })
