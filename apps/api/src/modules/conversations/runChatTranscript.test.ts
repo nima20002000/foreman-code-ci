@@ -16,10 +16,21 @@ const row = (sequence: number, content = `Message ${sequence}`) => ({
 
 it('keeps execution identity, partial text and chronological order without fabricating a conversation', () => {
   const result = projectRunChatTranscript(execution, [row(1), { ...row(2), complete: true }])
-  expect(result).toMatchObject({ executionId: execution.id, state: 'running', revision: '2',
+  expect(result).toMatchObject({ executionId: execution.id, state: 'running', revision: '3',
     messages: [{ content: 'Message 1', nativeMessageComplete: false },
       { content: 'Message 2', nativeMessageComplete: true }] })
   expect(result.messages.every(message => !('conversationId' in message))).toBe(true)
+})
+
+it('returns an empty transcript and advances its revision when the first native message arrives', () => {
+  const empty = projectRunChatTranscript(execution, [])
+  expect(empty).toEqual({ executionId: execution.id, state: 'running', revision: '1',
+    messages: [], hasEarlierMessages: false })
+
+  const first = projectRunChatTranscript(execution, [row(1)])
+  expect(first.revision).toBe('2')
+  expect(BigInt(first.revision)).toBeGreaterThan(BigInt(empty.revision))
+  expect(first.messages[0]).toMatchObject({ content: 'Message 1', sequence: '1', revision: '1' })
 })
 
 it('bounds history and text while exposing truncation and redacting retained application credentials', () => {
