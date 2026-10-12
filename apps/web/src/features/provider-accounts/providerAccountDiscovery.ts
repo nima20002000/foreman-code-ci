@@ -2,7 +2,6 @@ import { useQuery } from '@tanstack/react-query'
 import type { ProviderAccountBinding, ProviderAccountTarget } from '@foreman-code/contracts/provider-accounts'
 import { sameDeviceProvisioningTarget, type DeviceProvisioningTarget } from '@foreman-code/contracts/device-resources'
 import { ApiError } from '../../shared/api/client'
-import { useBlockingReadError } from '../../shared/api/readFailure'
 import { assertSession, sessionIsSwitching } from '../../shared/api/sessionBoundary'
 import { useHarnessSessionEpoch } from '../../shared/api/harnessSettings'
 import { useRuntimeInstallationId } from '../../shared/api/runtimeIdentity'
@@ -27,8 +26,7 @@ export function useProviderAccountTargets() {
 export function useProviderAccountScope(scope: ProviderAccountScope = {}): ProviderAccountScope {
   const installationId = useRuntimeInstallationId()
   const discovery = useProviderAccountTargets()
-  const blocked = useBlockingReadError(discovery)
-  const targets = !blocked ? discovery.data?.targets : undefined
+  const targets = !discovery.isError ? discovery.data?.targets : undefined
   const selected = findTarget(targets, scope, installationId)
   if (!selected) return scope
   return { ...scope, target: selected.target, generation: selected.generation }
