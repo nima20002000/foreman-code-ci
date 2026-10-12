@@ -402,6 +402,7 @@ export async function executeRepeatRuntime(input: {
       'RUN_PIN_CONFLICT', 'ACCESS_DENIED', 'GRAPH_SECURITY_UNQUALIFIED', 'GRAPH_STOP_CONFLICT', 'GRAPH_TERMINAL_CONFLICT',
       // Launch preflight refusals happen before any native session exists.
       'APP_MCP_PREFLIGHT_FAILED', 'APP_MCP_PREFLIGHT_TIMEOUT',
+      'SOURCE_MATERIALIZATION_UNCERTAIN', 'HARNESS_PROFILE_UNAVAILABLE',
       'MCP_INSPECTION_CONTEXT_MISMATCH', 'HARNESS_INSPECTOR_UNAVAILABLE',
       'WORKER_EXECUTION_IDENTITY_INVALID', 'HARNESS_CONFIGURATION_MISMATCH',
       'WORKER_NATIVE_OUTPUT_PROTECTION_FAILED', 'WORKFLOW_ARTIFACT_OUTPUTS_CONFLICT',
@@ -426,7 +427,8 @@ export async function executeRepeatRuntime(input: {
   const failureResult = (error: unknown): ExecutionResult | undefined => {
     if (!(error instanceof DomainError)) return undefined
     if (!['WORKFLOW_EXECUTION_BUDGET_EXHAUSTED', 'JOB_PREPARATION_TIMEOUT',
-      'WORK_RUN_EXECUTION_BUDGET_EXHAUSTED'].includes(error.code)) return undefined
+      'WORK_RUN_EXECUTION_BUDGET_EXHAUSTED', 'SOURCE_MATERIALIZATION_UNCERTAIN',
+      'HARNESS_PROFILE_UNAVAILABLE'].includes(error.code)) return undefined
     return { outcome: 'failed', error: { code: error.code, message: error.message, retryable: false } }
   }
   const cancel = () => cancellation ??= input.lifecycle.cancelNativeAndRequestCleanup()
