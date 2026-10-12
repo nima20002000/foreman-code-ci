@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
-import { SidebarNavigationButton } from '../../shared/ui/SidebarNavigationButton'
+import { Link } from '@tanstack/react-router'
 import { Cloud, Laptop, Monitor } from 'lucide-react'
 import type { CloudCiActivity, ComputerActivity } from '@foreman-code/contracts/computer-activity'
 import { computerKey, useComputerActivity } from '../../shared/api/computerActivity'
@@ -72,7 +72,7 @@ function HoverRow({ level, label, icon, name, metric, link, card, runningCount, 
   runningCount: number; activityIds?: string[]
 }) {
   const id = useId()
-  const anchor = useRef<HTMLButtonElement>(null)
+  const anchor = useRef<HTMLAnchorElement>(null)
   const surface = useRef<HTMLDivElement>(null)
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
   const [open, setOpen] = useState(false)
@@ -94,14 +94,14 @@ function HoverRow({ level, label, icon, name, metric, link, card, runningCount, 
     return () => document.removeEventListener('keydown', escape)
   }, [open])
   return <li data-load={level}>
-    <SidebarNavigationButton ref={anchor} {...link} className="sidebar-computer"
+    <Link ref={anchor} {...link} className="sidebar-computer"
       aria-label={runningCount > 0 ? `${label}, ${countLabel}` : label}
       aria-describedby={open ? id : undefined}
       onMouseEnter={() => show(200)} onMouseLeave={scheduleHide} onFocus={() => show(0)} onBlur={scheduleHide}>
       <ComputerIcon icon={icon} runningCount={runningCount} activityIds={activityIds} />
       <span className="sidebar-computer-name" aria-hidden="true">{name}</span>
       <span className="sidebar-computer-metric" aria-hidden="true">{metric}</span>
-    </SidebarNavigationButton>
+    </Link>
     {open && <div ref={surface} id={id} popover="manual" role="tooltip" className="n-theme computer-hover-card"
       onMouseEnter={() => clearTimeout(timer.current)} onMouseLeave={scheduleHide}>{card}</div>}
   </li>
