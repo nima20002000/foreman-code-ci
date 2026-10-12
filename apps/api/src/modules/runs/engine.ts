@@ -262,8 +262,7 @@ export class LangGraphWorkflowEngine implements WorkflowOrchestrator {
             startedAt: run.startedAt ?? new Date().toISOString() }, owner, permit),
           currentState: async () => {
             const current = await this.runs.getRepeatSnapshot(runId, owner)
-            return { executionState: current.run.executionState, stopRequested: current.stopRequested,
-              cleanupPending: current.cleanupPending }
+            return { executionState: current.run.executionState, stopRequested: current.stopRequested }
           },
           persistWait: async (current) => (await persistWorkflowApprovalWait(owner, this.checkpointer, current)).length > 0,
           persistDirectionWait: () => persistWorkDirectionWait(owner, this.locations),

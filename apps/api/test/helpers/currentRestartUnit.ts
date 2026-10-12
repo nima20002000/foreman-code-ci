@@ -271,6 +271,7 @@ export function currentRestartUnit(reviewer = false, acceptedPlacement?: Accepte
       budgets as unknown as Args[2], resolver, 60_000, credentials as unknown as Args[5], undefined, store,
       undefined, captures.capture, undefined, undefined, undefined,
       acceptedPlacement ? async context => ({ ...context, acceptedPlacement }) : undefined)
+    coordinator.shareRunOwner(owner)
     const observation: RepeatNativeObservationStore = {
       async readExecution(id) {
         assert.equal(id, execution.id)

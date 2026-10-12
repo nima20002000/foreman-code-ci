@@ -5,7 +5,6 @@ import { nativeEventBatches } from './nativeEventBatches.js'
 import { reviewPreflightIdentity } from './reviewPolicy.js'
 import { setImmediate as yieldToEventLoop } from 'node:timers/promises'
 import { componentLogger } from '../diagnostics/logger.js'
-import { isDatabaseTimeout, retryDatabaseTimeout } from '../../infrastructure/databaseTimeout.js'
 
 import type { NativeHarnessEvent, NativeSessionLane, NativeSessionReference } from '@foreman-code/contracts'
 
@@ -81,15 +80,8 @@ export class LeaseGuard {
 
   async check(): Promise<void> {
     this.checkExpiry()
-    try {
-      await retryDatabaseTimeout(() => timeRuntimeOperation('harness', 'lease.check', () => this.assertOwned()), {
-        signal: this.signal,
-        check: () => this.checkExpiry(),
-      })
-    } catch (cause) {
-      this.checkExpiry()
+    try { await timeRuntimeOperation('harness', 'lease.check', () => this.assertOwned()) } catch {
       const error = new DomainError(this.lostCode, 'The lease could not be confirmed.', 409)
-      error.cause = cause
       this.controller.abort(error)
       throw error
     }
@@ -318,8 +310,7 @@ export class SingleWriterSessionManager implements NativeHarnessSessionManager {
   async createSession(input: NativeSessionStart, signal?: AbortSignal): Promise<NativeSessionReference> {
     if (this.closing) throw new DomainError('NATIVE_MANAGER_DISPOSED', 'The captured native manager is disposed.', 409)
     const session = await this.manager.createSession(input, signal)
-    // Return a late-created session to its owner so Stop can close the captured transport.
-    if (!signal?.aborted) await this.ensure(session, 'idle')
+    await this.ensure(session, 'idle')
     return session
   }
 
@@ -330,26 +321,11 @@ export class SingleWriterSessionManager implements NativeHarnessSessionManager {
       nativeSessionId: session.nativeSessionId, correlationId, ownerId: this.agentId,
     })
     try {
-      const previous = await retryDatabaseTimeout(() => this.ensure(session, 'uncertain'), { signal })
+      const previous = await this.ensure(session, 'uncertain')
       const token = `writer-${randomUUID()}`
       // Preserve the unresolved turn correlation through attach/control operations and failed preflight.
-      let claimUncertain = false
-      const lane = await retryDatabaseTimeout(async () => {
-        if (claimUncertain) {
-          const current = await this.coordination.getLane(session.harness, session.nativeSessionId)
-          if (current?.id === previous.id && current.leaseToken === token && current.leaseOwner === this.agentId) {
-            await this.coordination.assertLaneLease(current.id, token)
-            return current
-          }
-        }
-        try {
-          return await this.coordination.claimLane(previous.id, previous.revision, this.agentId, token,
-            new Date(Date.now() + this.leaseMs).toISOString(), previous.correlationId ?? correlationId)
-        } catch (error) {
-          if (isDatabaseTimeout(error)) claimUncertain = true
-          throw error
-        }
-      }, { signal })
+      const lane = await this.coordination.claimLane(previous.id, previous.revision, this.agentId, token,
+        new Date(Date.now() + this.leaseMs).toISOString(), previous.correlationId ?? correlationId)
       runtimeTimingPoint('harness', 'lease.claimed', {
         laneId: lane.id, nativeSessionId: session.nativeSessionId, ownerId: this.agentId,
         correlationId: previous.correlationId ?? correlationId,
@@ -372,23 +348,10 @@ export class SingleWriterSessionManager implements NativeHarnessSessionManager {
     await lease.guard.stop()
     try {
       if (isLeaseLost(lease.guard.signal.reason)) return
-      let releaseUncertain = false
-      await retryDatabaseTimeout(async () => {
-        if (releaseUncertain) {
-          const current = await this.coordination.getLane(lease.previous.harness, lease.previous.nativeSessionId)
-          // A lost release response cannot authorize touching a successor's lane.
-          if (current?.id === lease.fence.id && current.leaseToken !== lease.fence.token) return
-        }
-        try {
-          await this.coordination.releaseLane(lease.fence.id, lease.fence.token, {
-            observedStatus: lease.guard.signal.aborted ? 'uncertain' : lease.observedStatus,
-            ...(lease.providerId ? { currentTurnOrMessageId: lease.providerId } : {}),
-          })
-        } catch (error) {
-          if (isDatabaseTimeout(error)) releaseUncertain = true
-          throw error
-        }
-      }, { signal: AbortSignal.timeout(this.leaseMs) })
+      await this.coordination.releaseLane(lease.fence.id, lease.fence.token, {
+        observedStatus: lease.guard.signal.aborted ? 'uncertain' : lease.observedStatus,
+        ...(lease.providerId ? { currentTurnOrMessageId: lease.providerId } : {}),
+      })
     } finally { lease.finish() }
   }
 
@@ -501,8 +464,7 @@ export class SingleWriterSessionManager implements NativeHarnessSessionManager {
           await lease.guard.check()
           evidence.acknowledge(receipt.nativeMessageId)
           if (evidence.snapshot().identityConflict) throw new DomainError('NATIVE_MESSAGE_IDENTITY_CONFLICT', 'Initial receipt conflicts with its writer lane.', 409)
-          await retryDatabaseTimeout(() => this.coordination.acknowledgeLaneTurn(
-            lease!.fence, input.clientCorrelationId, receipt.nativeMessageId), { signal: lease.guard.signal })
+          await this.coordination.acknowledgeLaneTurn(lease.fence, input.clientCorrelationId, receipt.nativeMessageId)
           lease.providerId = receipt.nativeMessageId
           await input.onMessageSubmitted?.(receipt)
           await lease.guard.check()
@@ -571,8 +533,7 @@ export class SingleWriterSessionManager implements NativeHarnessSessionManager {
           evidence.acknowledge(receipt.nativeMessageId)
           if (evidence.snapshot().identityConflict) throw new DomainError('NATIVE_MESSAGE_IDENTITY_CONFLICT',
             'The provider returned conflicting message identities. Native work will not be replayed.', 409)
-          await retryDatabaseTimeout(() => this.coordination.acknowledgeLaneTurn(
-            lease!.fence, input.clientCorrelationId, receipt.nativeMessageId), { signal: lease.guard.signal })
+          await this.coordination.acknowledgeLaneTurn(lease.fence, input.clientCorrelationId, receipt.nativeMessageId)
           lease.providerId = receipt.nativeMessageId
           await input.onMessageSubmitted?.(receipt)
           await lease.guard.check()
@@ -582,8 +543,7 @@ export class SingleWriterSessionManager implements NativeHarnessSessionManager {
           evidence.acknowledge(providerId)
           if (evidence.snapshot().identityConflict) throw new DomainError('NATIVE_TURN_IDENTITY_CONFLICT',
             'The provider returned conflicting turn identities. Native work will not be replayed.', 409)
-          await retryDatabaseTimeout(() => this.coordination.acknowledgeLaneTurn(
-            lease.fence, input.clientCorrelationId, providerId), { signal: lease.guard.signal })
+          await this.coordination.acknowledgeLaneTurn(lease.fence, input.clientCorrelationId, providerId)
           lease.providerId = providerId
           await input.onSubmitted?.(providerId)
           await lease.guard.check()

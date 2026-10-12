@@ -102,7 +102,6 @@ export const CiHostStatusSchema = z.object({
   cpuCount: z.number().int().positive(), memoryBytes: z.number().int().positive(),
   runs: z.array(CiHostRunSchema).max(50),
 }).strict()
-export type CiHostStatus = z.infer<typeof CiHostStatusSchema>
 export const CiHostReplySchema = z.discriminatedUnion('operation', [
   CiHostStatusSchema,
   z.object({ operation: z.literal('start'), run: CiHostRunSchema }).strict(),

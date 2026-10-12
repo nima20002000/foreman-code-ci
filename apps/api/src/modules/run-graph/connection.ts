@@ -3,7 +3,6 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import { createHash } from 'node:crypto'
 import type pg from 'pg'
 import { RunGraphError } from './errors.js'
-import { isDatabaseTimeout, retryDatabaseTimeout } from '../../infrastructure/databaseTimeout.js'
 
 export interface GraphSqlClient {
   query<R extends pg.QueryResultRow = pg.QueryResultRow>(text: string, values?: unknown[]): Promise<pg.QueryResult<R>>
@@ -165,17 +164,12 @@ export class ExclusiveGraphConnection implements GraphSqlClient {
         return result
       } catch (error) {
         if (pending) await pending.catch(() => undefined)
-        if (committing && !isDatabaseTimeout(error)) {
+        if (committing) {
           // COMMIT outcome can be unknown: do not retry the callback.
           this.#unusable = true
           this.#unusableCause = error
         }
-        // A confirmed rollback restores the session after a query deadline. The
-        // caller still receives the error and must reconcile an uncertain COMMIT.
-        try {
-          // Rollback only undoes this connection's uncommitted work, including after ownership loss.
-          await retryDatabaseTimeout(() => timeRuntimeOperation('db', 'sql.rollback', () => this.#client.query('rollback')))
-        }
+        try { await timeRuntimeOperation('db', 'sql.rollback', () => this.#client.query('rollback')) }
         catch (rollbackError) {
           if (!this.#unusable) this.#unusableCause = rollbackError
           this.#unusable = true
