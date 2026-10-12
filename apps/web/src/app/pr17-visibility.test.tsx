@@ -54,4 +54,3 @@ describe('PR17 authorized last-known visibility', () => {
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
   })
 })
-// CI probe
