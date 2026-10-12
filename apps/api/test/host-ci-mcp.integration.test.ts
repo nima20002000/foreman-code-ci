@@ -1012,6 +1012,7 @@ it.each(['github', 'circleci'] as const)('requeues an unstarted %s ticket and ru
     expect((CiGetOutputSchema.parse(await f.value(reader, 'ci_get', { ticketId: started.ticketId }))).run)
       .toMatchObject({ state: 'starting', step: 'dispatch', computer: { hostRef: { provider } } })
     exhausted = true
+    await f.ci.dispatch()
     const queued = CiGetOutputSchema.parse(await f.value(reader, 'ci_get', { ticketId: started.ticketId }))
     expect(queued.run).toMatchObject({ state: 'queued', computer: null, step: null, startedAt: null,
       finishedAt: null, unstartedProviders: [provider], message: expect.stringContaining('dispatch retries exhausted') })
@@ -1024,6 +1025,7 @@ it.each(['github', 'circleci'] as const)('requeues an unstarted %s ticket and ru
     expect(running.run).toMatchObject({ id: started.ticketId, state: 'running', computer: { label: 'laptop' },
       message: null, unstartedProviders: [provider] })
     f.finish(started.ticketId, 0, 'Completed on another computer.\n')
+    await f.ci.dispatch()
     const finished = CiGetOutputSchema.parse(await f.value(reader, 'ci_get', { ticketId: started.ticketId }))
     expect(finished.run).toMatchObject({ state: 'passed', exitCode: 0, message: null })
     expect((await f.pool.query('select record from ci_runs where id=$1', [started.ticketId])).rows[0].record)
@@ -1070,7 +1072,7 @@ it('preserves MCP cancellation when an in-flight refresh returns an unstarted ti
   } finally { release(); await f.close() }
 })
 
-it('prefers build computers and CircleCI over higher-priority GitHub slots for integration', async () => {
+it.each(['completed', 'canceled'] as const)('prefers build computers and CircleCI when a host slice is %s', async hostOutcome => {
   const f = await fixture({ cloud: { github: 2, circleci: 2 } })
   try {
     for (const computer of f.computers) {
@@ -1095,7 +1097,12 @@ it('prefers build computers and CircleCI over higher-priority GitHub slots for i
       message: expect.stringContaining('Waiting for a build computer') })
     expect(fallbackRead.partitions!.filter(run => run.id !== hostSlice.id).every(run => run.state === 'running'
       && run.computer?.hostRef.provider === 'github')).toBe(true)
-    f.finish(read.partitions!.find(run => run.computer?.hostRef.kind === 'device')!.id, 0, 'Host slice completed.\n')
+    const hostTicket = read.partitions!.find(run => run.computer?.hostRef.kind === 'device')!
+    if (hostOutcome === 'canceled') {
+      await f.value(f.operator, 'ci_cancel', { ticketId: hostTicket.id })
+    } else {
+      f.finish(hostTicket.id, 0, 'Host slice completed.\n')
+    }
     await f.ci.dispatch()
     const running = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: fallback.ticketId }))
     expect(running.partitions!.every(run => run.state === 'running')).toBe(true)
