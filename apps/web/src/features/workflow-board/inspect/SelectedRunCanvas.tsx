@@ -69,13 +69,13 @@ const PinnedRunNode = memo(function PinnedRunNode({ id, data, width, height }: N
   </>
 })
 // Pulses and traces are timed once per canvas, so an edge remount never replays a handoff.
-type LineMotion = { pulses: Map<string, EdgePulse[]> }
-const Choreography = createContext<LineMotion>({ pulses: new Map() })
+type LineMotion = { pulses: Map<string, EdgePulse[]>; reversed: Map<string, boolean> }
+const Choreography = createContext<LineMotion>({ pulses: new Map(), reversed: new Map() })
 
-type RunEdge = Edge<{ kind: WorkflowRelationship['kind']; bend: number;
+type RunEdge = Edge<{ kind: WorkflowRelationship['kind']; bend: number; label: string; explicit: boolean;
   handoffs: boolean; limit?: number; used?: number }>
 const PinnedRunEdge = memo(function PinnedRunEdge({ id, source, target, data, selected }: EdgeProps<RunEdge>) {
-  const { pulses } = useContext(Choreography)
+  const { pulses, reversed } = useContext(Choreography)
   const curve = useFloatingCurve(source, target, data?.bend ?? 28)
   const { hovered, onPointerEnter, onPointerLeave } = useHoverControls()
   const [expanded, setExpanded] = useState(false)
@@ -84,10 +84,11 @@ const PinnedRunEdge = memo(function PinnedRunEdge({ id, source, target, data, se
   const usage = data?.used === undefined ? 'Usage unavailable' : data.limit === undefined
     ? `${data.used} used · no connection cap` : `${data.used} of ${data.limit} used`
   return <g onPointerEnter={onPointerEnter} onPointerLeave={onPointerLeave}>
-    <SignalEdgeShape id={id} curve={curve} kind={data?.kind} pulses={pulses.get(id)} />
+    <SignalEdgeShape id={id} curve={curve} kind={data?.kind} pulses={pulses.get(id)} reversed={reversed.get(id)}
+      label={data?.label} showLabel={data?.explicit && (hovered || selected)} />
     {data?.handoffs && showUsage ? <rect className="board-edge-hover-bridge"
       x={curve.mid.x - 90} y={curve.mid.y} width={180} height={54} /> : null}
-    {data?.handoffs ? <foreignObject className="pinned-work-limit-object" data-visible={showUsage}
+    {data?.handoffs ? <foreignObject className="pinned-work-limit-object"
       x={curve.mid.x - 90} y={curve.mid.y + 12} width={180} height={showUsage ? 70 : 42}>
       <div className="pinned-work-limit-control nodrag nopan">
         <button type="button" className="pinned-work-limit-pill"
@@ -123,6 +124,8 @@ export function SelectedRunCanvas({ scope, panels, layout, geometry }: {
   const denied = useProtectedAccessError(query)
   // Observe (never fetch) the canonical Run read: its confirmed denial hides the pinned topology too.
   const canonical = useSelectedRunQueryState()
+  // Before the first current read lands, nodes say Loading rather than Unavailable.
+  const recordLoading = !canonical || canonical.status === 'pending' && canonical.fetchStatus !== 'paused'
   const canonicalDenied = useProtectedAccessError({
     error: canonical?.error,
     failureReason: canonical?.fetchFailureReason,
@@ -176,14 +179,18 @@ export function SelectedRunCanvas({ scope, panels, layout, geometry }: {
   const lines = useMemo(() => relationshipLines(topology?.edges ?? []), [topology])
   const motion = useMemo<LineMotion>(() => {
     // A plain line: meaning travels on the pulse, not as a lasting glow or badge.
-    const pulses = new Map<string, EdgePulse[]>()
+    const pulses = new Map<string, EdgePulse[]>(), latest = new Map<string, { reversed: boolean; at: number }>()
     for (const [id, items] of choreography.pulses) {
       const line = lines.alias.get(id)
       if (line) pulses.set(line.lineId, [...pulses.get(line.lineId) ?? [], ...items.map((pulse) => ({ ...pulse, reversed: pulse.reversed !== line.flipped }))]
         .sort((a, b) => a.startsAt - b.startsAt))
     }
-    return { pulses }
-  }, [choreography.pulses, lines])
+    for (const [id, direction] of choreography.directions) {
+      const line = lines.alias.get(id)
+      if (line && (latest.get(line.lineId)?.at ?? -Infinity) < direction.at) latest.set(line.lineId, { reversed: direction.reversed !== line.flipped, at: direction.at })
+    }
+    return { pulses, reversed: new Map([...latest].map(([id, value]) => [id, value.reversed])) }
+  }, [choreography.pulses, choreography.directions, lines])
   // Facts come from each node's pinned Agent configuration version, never current Agent settings.
   const pins = useMemo(() => [...new Map(topology?.nodes.filter(node=>node.kind==='agent').map((node) => [node.configurationId, node.agentId])).entries()], [topology])
   const configurations = useQueries({ queries: pins.map(([versionId, agentId]) => ({
@@ -229,11 +236,11 @@ export function SelectedRunCanvas({ scope, panels, layout, geometry }: {
     const result = topology?.nodes.map((node) => {
       const state = states.get(node.id)
       const selected = board.inspection.runNodeId === node.id
-      const recorded = !record ? 'Current status unavailable' : !state ? 'No activation in the bounded current cut' :
+      const recorded = !record ? recordLoading ? 'Loading current status' : 'Current status unavailable' : !state ? 'No activation in the bounded current cut' :
         `${state.label}${state.occurrenceIndex ? ` · repetition ${state.occurrenceIndex}` : ''}${state.attempt ? ` · attempt ${state.attempt}` : ''}`
         + (checking.has(node.id) ? ` · ${checkingView(checking.get(node.id)!.check, checking.get(node.id)!.queued).label}` : '')
       const nodeFacts:Facts = node.kind==='job'?{...unknownFacts,harness:undefined,harnessLabel:'Job',roleLabel:'Job',model:undefined,meta:[{label:'Revision',value:String(node.jobDefinitionRevision)}]}:facts.get(node.configurationId)??unknownFacts
-      const baseView = !record ? { state: 'unavailable' as const, label: 'Unavailable' }
+      const baseView = !record ? { state: 'unavailable' as const, label: recordLoading ? 'Loading…' : 'Unavailable' }
         : choreography.nodes.get(node.id) ?? { state: 'idle' as const, label: 'Not started' }
       const current = liveNodeView(baseView, waits.get(node.id), cis.get(node.id), checks.get(node.id), checking.get(node.id))
       const view = current === baseView ? baseView : { ...baseView, ...current }
@@ -249,7 +256,7 @@ export function SelectedRunCanvas({ scope, panels, layout, geometry }: {
     }) ?? []
     previous.current = next
     return result
-  }, [topology, states, record, facts, jobExecutions, board.inspection.runNodeId, choreography.nodes, cis, waits, checks, checking])
+  }, [topology, states, record, recordLoading, facts, jobExecutions, board.inspection.runNodeId, choreography.nodes, cis, waits, checks, checking])
   const layoutById = useMemo(() => new Map(layout?.map((node) => [node.id, node])), [layout])
   const pinnedById = useMemo(() => new Map(version?.definition.nodes.map((node) => [node.id, node])), [version])
   const presented = useRef(new Map<string, { source: RunNode; node: RunNode }>())
@@ -313,12 +320,13 @@ export function SelectedRunCanvas({ scope, panels, layout, geometry }: {
     return lines.lines.map((edge) => {
       const pair = JSON.stringify([edge.source, edge.target].sort()), count = counts.get(pair) ?? 0
       counts.set(pair, count + 1)
+      const kindLabel = edge.members.length > 1 ? 'Handoff · approval' : edge.kind === 'approval' ? 'Approval' : 'Handoff'
       return { id: edge.id, source: edge.source, target: edge.target, type: 'pinnedRunEdge',
         sourceHandle: 'right', targetHandle: 'left',
         selected: edge.members.some((member) => member.id === board.inspection.runRelationshipId),
         ariaLabel: `${edge.kind} relationship ${edge.id} from ${edge.source} to ${edge.target}`,
-        data: { kind: edge.kind, bend: edgeBend(count, edge.source < edge.target),
-          handoffs: Boolean(version?.definition.handoffs && edge.kind === 'execution'),
+        data: { kind: edge.kind, bend: edgeBend(count, edge.source < edge.target), label: edge.label || kindLabel,
+          explicit: Boolean(edge.label), handoffs: Boolean(version?.definition.handoffs && edge.kind === 'execution'),
           limit: edge.maxWorkHandoffsPerRun,
           used: handoffs?.connections.find((item) => item.relationshipId === edge.id)?.used } }
     })
