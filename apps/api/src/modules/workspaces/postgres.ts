@@ -80,19 +80,13 @@ export class PostgresWorkspaceRepository {
   async getDetails(workspaceId: string, principal?: ManagementPrincipal): Promise<SavedWorkspaceDetails | undefined> {
     if (!principal) throw new DomainError('AUTH_REQUIRED', 'Workspace readback requires an authenticated management caller.', 401)
     requireWorkspaceRead(principal, workspaceId)
-    // Independent reads run together; a missing workspace still answers undefined.
-    const [result, agents, workflows, runs] = await Promise.all([
-      this.pool.query<{ record: unknown }>('select record from workspaces where id = $1', [workspaceId]),
-      this.listAgents(workspaceId),
-      this.workflows.list(workspaceId),
-      this.currentSummaries(workspaceId, principal),
-    ])
+    const result = await this.pool.query<{ record: unknown }>('select record from workspaces where id = $1', [workspaceId])
     if (!result.rows[0]) return undefined
     return SavedWorkspaceDetailsSchema.parse({
       workspace: WorkspaceSchema.parse(result.rows[0].record),
-      agents,
-      workflows,
-      runs,
+      agents: await this.listAgents(workspaceId),
+      workflows: await this.workflows.list(workspaceId),
+      runs: await this.currentSummaries(workspaceId, principal),
       resources: [],
       runners: [{
         id: 'runner-local',
