@@ -46,8 +46,10 @@ it.each(['normal cleanup', 'retried cleanup', 'Stop during cleanup'] as const)(
     }
   })
   try {
-    await f.engine.start(f.f.run.id)
-    if (mode !== 'normal cleanup') {
+    if (mode === 'normal cleanup') {
+      await f.engine.start(f.f.run.id)
+    } else {
+      await expect(f.engine.start(f.f.run.id)).rejects.toMatchObject({ code: '57014' })
       const recovery = f.compose()
       await recovery.engine.start(f.f.run.id)
     }
