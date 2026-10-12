@@ -21,12 +21,9 @@ export function integrationPartition(files, durations, partition) {
   for (const file of ordered) {
     // Heavy files use each partition once per round before host speed breaks ties.
     const isHeavy = heavy.has(file)
-    const hostRequired = requirements.get(file)?.includes('installedWorkerHost')
-    const eligible = hostRequired && partition.hostIndexes
-      ? partition.hostIndexes : Array.from({ length: partition.count }, (_, index) => index)
-    let lightest = eligible[0]
+    let lightest = 0
     const finish = index => (loads[index] + weight(file)) / speed(index)
-    for (const index of eligible.slice(1)) {
+    for (let index = 1; index < loads.length; index++) {
       const fewerHeavy = isHeavy && heavyCounts[index] < heavyCounts[lightest]
       const sameHeavy = !isHeavy || heavyCounts[index] === heavyCounts[lightest]
       if (fewerHeavy || (sameHeavy && finish(index) < finish(lightest))) lightest = index

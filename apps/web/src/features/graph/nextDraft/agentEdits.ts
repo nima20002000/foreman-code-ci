@@ -19,8 +19,7 @@ export function editorAgents(edit: NextDraftEdit): Agent[] {
 }
 function content(agent: Agent) {
   return { prompt: agent.prompt ?? {}, assignedSkills: agent.assignedSkills ?? [], description: agent.description ?? null, role: agent.role ?? null,
-    ...(agent.graphqlTools ? { graphqlTools: agent.graphqlTools } : {}),
-    ...(agent.nativeTools ? { nativeTools: agent.nativeTools } : {}) }
+    ...(agent.graphqlTools ? { graphqlTools: agent.graphqlTools } : {}) }
 }
 /** Compare the fields the existing Agent writer persists, including its defaults. */
 function sameAgentContent(before: Agent | undefined, after: Agent): boolean {

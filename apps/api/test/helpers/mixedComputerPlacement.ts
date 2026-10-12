@@ -6,7 +6,6 @@ import { SourceRootRecordSchema, type SourceRootRecord } from '@foreman-code/con
 import type { SourceManifest } from '@foreman-code/contracts/source-materialization'
 import { SavedNodePlacementSchema } from '@foreman-code/contracts/node-placement'
 import { HostHarnessOverrideSchema, HostHarnessProfileEvidenceSchema } from '@foreman-code/contracts/harness-registry'
-import { HarnessQualificationSchema } from '@foreman-code/contracts/harness-qualification'
 import { AgentPlacementProducer } from '../../src/modules/placement/agentProducer.js'
 import { RunPlacementReadService } from '../../src/modules/placement/readService.js'
 import { readRemoteObservations } from '../../src/modules/runs/remote/persistence.js'
@@ -14,15 +13,13 @@ import { PostgresWorkspaceRootPolicies, workspaceRootHostScope } from '../../src
 import type { WorkspaceRootHostPort } from '../../src/modules/sources/rootPolicyPorts.js'
 import { PostgresSourceService } from '../../src/modules/sources/service.js'
 import { PrivateSourceSnapshotStore } from '../../src/modules/sources/store.js'
-import { RegisteredWorkspaceSourceRoots } from '../../src/modules/sources/registeredSourceRoots.js'
+import type { RegisteredSourceRootPort } from '../../src/modules/sources/admissionPorts.js'
 import { createSourceManifest, sourceSha256 } from '../../src/modules/sources/manifest.js'
 import { identity, openPrivateRoot } from '../../src/modules/sources/privateFilesystem.js'
 import { assertDeviceHostInstallation } from '../../src/modules/devices/hostAuthorization.js'
 import { HarnessInstallationRegistry, type HarnessInstallationRecord } from '../../src/modules/harnesses/installationRegistry.js'
 import { HarnessInstanceRegistry, localHarnessDrivers } from '../../src/modules/harnesses/instanceRegistry.js'
 import { harnessHostKey } from '../../src/modules/harnesses/instanceSettings/repository.js'
-import { qualificationIdentity } from '../../src/modules/harnesses/qualification/identity.js'
-import { HarnessQualificationRepository } from '../../src/modules/harnesses/qualification/repository.js'
 import { WorkerExecutionPolicy } from '../../src/modules/settings/workerExecution.js'
 import type { currentOperatorIntegration } from './currentOperatorIntegration.js'
 
@@ -56,10 +53,7 @@ export async function mixedComputerPlacement(f: Fixture, directory: string, opti
     const registered = await assertDeviceHostInstallation(sql, host, installationId)
     return registered ? { workerInstallationId: registered.workerInstallationId,
       keyRevision: registered.keyRevision, authorizationRevision: registered.authorizationRevision } : null
-  }, sourceNamespace: async (policy, rootPolicyId) => {
-    const canonicalPath = join(policy.managedRuntimeRoot, 'source-materializations', rootPolicyId)
-    return { canonicalPath, filesystem, attestationId: randomUUID(), attestationDigest: 'a'.repeat(64) }
-  } } satisfies Pick<WorkspaceRootHostPort, 'authorize' | 'sourceNamespace'>
+  } } satisfies Pick<WorkspaceRootHostPort, 'authorize'>
   const policies = new PostgresWorkspaceRootPolicies(mainId, hosts as WorkspaceRootHostPort)
   const bytes = Buffer.from('export const approved = true\n')
   const manifest = createSourceManifest({ version: 1, snapshotId: randomUUID(), approvedSourceId: randomUUID(),
@@ -123,9 +117,7 @@ export async function mixedComputerPlacement(f: Fixture, directory: string, opti
     ownerPrincipalId: f.writer.principal.id, authorizedByPrincipalId: f.writer.principal.id,
     registration: policy.registration, attestationId: randomUUID(), attestationDigest: 'a'.repeat(64), boundAt: f.f.createdAt })
     await f.db.pool.query(`insert into source_root_catalog(root_id,workspace_id,scope_hash,current_binding_revision)
-      values($1,$2,$3,1)`, [root.binding.rootId, policy.workspaceId, sourceSha256(Buffer.from(JSON.stringify({
-        workspaceId: policy.workspaceId, hostRef, rootPolicyId: policy.rootPolicyId,
-      })))])
+      values($1,$2,$3,1)`, [root.binding.rootId, policy.workspaceId, randomUUID()])
     await f.db.pool.query(`insert into source_root_bindings(root_id,binding_revision,workspace_id,snapshot_id,record)
       values($1,1,$2,$3,$4::jsonb)`, [root.binding.rootId, policy.workspaceId, source.snapshotId, JSON.stringify(root)])
     const configuration = f.f.configurations[kind === 'main' ? 0 : 1]!
@@ -157,24 +149,16 @@ export async function mixedComputerPlacement(f: Fixture, directory: string, opti
       projectRoot: canonicalProjectRoot, cwdPolicy: 'project-root', relativeCwd: '', instanceId,
       instanceRevision: '1', harnessInstallationId, source, rootBinding: { rootId: root.binding.rootId, bindingRevision: 1 } }))
   }
+  await f.db.pool.query(`insert into harness_qualifications(harness,version,binary_sha256,suite_revision,profile,status,
+    checks,started_at,checked_at) values('codex','0.156.1',$1,'codex-live-4','codex-0.156','passed',$2::jsonb,$3,$3)`,
+  ['a'.repeat(64), JSON.stringify([{ id: 'fixture-check', passed: true, detail: null }]), f.f.createdAt])
   const instances = new HarnessInstanceRegistry(localHarnessDrivers)
   instances.reload(instanceValues)
   const installations = new HarnessInstallationRegistry(instances)
   installations.refresh(inventory)
-  const mainPlacement = placements[0]!
-  const mainHarness = installations.pin({ instanceId: mainPlacement.instanceId,
-    hostRef: mainPlacement.hostRef, harnessInstallationId: mainPlacement.harnessInstallationId,
-    connectionGeneration: '1', environmentGeneration: '1' })
-  const qualification = HarnessQualificationSchema.parse({ harness: 'codex', version: '0.156.1',
-    binarySha256: 'a'.repeat(64), suiteRevision: 'codex-live-4', profile: 'codex-0.156', status: 'qualified',
-    checks: [{ id: 'fixture-check', passed: true, detail: null }], failureReason: null,
-    startedAt: f.f.createdAt, checkedAt: f.f.createdAt })
-  await new HarnessQualificationRepository(f.db.pool).save(qualification, {
-    qualificationIdentity: qualificationIdentity(mainHarness, qualification.suiteRevision),
-  })
   const unused = async (): Promise<never> => { throw new Error('No native source operation in the admission fixture') }
   const sources = new PostgresSourceService(f.db.pool, f.commands, f.locations,
-    new PrivateSourceSnapshotStore(join(directory, 'snapshots')), mainId, new RegisteredWorkspaceSourceRoots(policies, hosts as WorkspaceRootHostPort),
+    new PrivateSourceSnapshotStore(join(directory, 'snapshots')), mainId, {} as RegisteredSourceRootPort,
     { authorize: unused, prepare: unused, verify: unused, verifyWorkingDirectory: unused,
       releaseClaim: unused, authorizeFinal: unused }, { confirmedClosed: unused })
   const producer = new AgentPlacementProducer(f.db.pool, mainId, sources, policies, {

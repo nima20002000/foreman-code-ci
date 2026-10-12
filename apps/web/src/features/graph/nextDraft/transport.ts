@@ -124,7 +124,6 @@ export function createNextDraftApi(client: ApiClient = apiClient) {
         const content = configure?.type === 'agent.configure' ? {
           prompt: configure.prompt, assignedSkills: configure.assignedSkills,
           ...(configure.graphqlTools ? { graphqlTools: configure.graphqlTools } : {}),
-          ...(configure.nativeTools ? { nativeTools: configure.nativeTools } : {}),
           ...(configure.description ? { description: configure.description } : {}), ...(configure.role ? { role: configure.role } : {}),
         } : { prompt: {}, assignedSkills: [] }
         const configuration = configure?.type === 'agent.configure' ? configure.configuration : operation.configuration
@@ -143,7 +142,6 @@ export function createNextDraftApi(client: ApiClient = apiClient) {
           ...(edit.configure ? { configuration: SupportedHarnessConfigurationSchema.parse(edit.configure.configuration), prompt: edit.configure.prompt,
             assignedSkills: edit.configure.assignedSkills, description: edit.configure.description ?? null,
             ...(edit.configure.graphqlTools ? { graphqlTools: edit.configure.graphqlTools } : {}),
-            ...(edit.configure.nativeTools ? { nativeTools: edit.configure.nativeTools } : {}),
             role: edit.configure.role ?? null } : {}),
         }
         const pending = structuredClone({ path: `${agentsPath}/${part(operation.agentId)}`, method: 'PATCH' as const, body: {
@@ -200,8 +198,8 @@ export function createNextDraftApi(client: ApiClient = apiClient) {
     },
     async context(workspaceId: string, workflowId: string, options?: RequestOptions, reload = false): Promise<AuthoringContext> {
       for (let attempt = 0; attempt < 3; ++attempt) {
-        // The two saved reads still bracket the Agent read; only the first runs alongside it.
-        const [before, agents] = await Promise.all([load(workspaceId, workflowId, options), client.listManagedAgents(workspaceId, options)])
+        const before = await load(workspaceId, workflowId, options)
+        const agents = await client.listManagedAgents(workspaceId, options)
         const after = await load(workspaceId, workflowId, options)
         if (before.savedRevision === after.savedRevision
           && sameAuthoredWorkflow(before.savedDraft.graph, after.savedDraft.graph)) {
