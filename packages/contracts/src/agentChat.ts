@@ -1,7 +1,7 @@
 import { NativeInteractionResponseAvailabilitySchema } from './interaction-activity.js';
 import { NativeMessageSubmissionSchema } from './claude.js';
 import { z } from "zod";
-import { ActivityRevisionSchema, ActivitySnapshotV1Schema } from "./activity.js";
+import { ActivitySnapshotV1Schema } from "./activity.js";
 import { MessageAttachmentFields } from "./files.js";
 import { OperatorConversationHistoryQuerySchema } from "./operatorChat.js";
 import { SavedNodePlacementSchema } from './nodePlacement.js';
@@ -173,7 +173,7 @@ export type AgentChatTurn = z.infer<typeof AgentChatTurnSchema>;
 export const AgentChatSourceTranscriptSchema = z.object({
   executionId: IdSchema,
   state: HarnessExecutionSchema.shape.state,
-  revision: ActivityRevisionSchema,
+  revision: OperatorActivityCursorSchema,
   messages: z.array(MessageSchema.omit({ conversationId: true })).max(100),
   hasEarlierMessages: z.boolean(),
 }).strict();
