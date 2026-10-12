@@ -26,9 +26,9 @@ import { CI_SERVER_NODE_ID, ciServerFlowNode, ciServerSummary } from '../../work
 import '@xyflow/react/dist/style.css'
 
 export type OpenAgentPanel = { nodeId: string; panel: AgentPanel }
-export type AgentPanels = { chat: ReactNode; settings: ReactNode; info: ReactNode }
+export type AgentPanels = { chatHasHeader?: boolean; chat: ReactNode; settings: ReactNode; info: ReactNode }
 /** A selected Run supplies its pinned identity, including nodes no longer present in the draft. */
-export type PinnedPanelNode = {kind?:'agent';agentId:string;name:string}|{kind:'job';jobDefinitionId:string;jobDefinitionRevision:number;jobDefinitionVersionId:string;name:string;workflowExecution?:JobWorkflowAdmissionReference}
+export type PinnedPanelNode = {kind?:'agent';agentId:string;name:string;role?:string;runLabel?:string}|{kind:'job';jobDefinitionId:string;jobDefinitionRevision:number;jobDefinitionVersionId:string;name:string;workflowExecution?:JobWorkflowAdmissionReference}
 export type AgentPanelRenderer = (nodeId: string, pinned?: PinnedPanelNode) => AgentPanels
 type Canvas = {
   draftKey: string
@@ -49,7 +49,7 @@ const DraftAgent = memo(function DraftAgent({ id, data, selected, width, height 
   const entry = useGraphDraftStore((state) => state.nextDrafts[draftKey]?.graph.entryNodeId === id)
   const presentation = useGraphPresentationStore()
   const runSelected = Boolean(useWorkflowBoard()?.run)
-  const run = { label: 'Draft', state: 'idle' as const }
+  const run = { label: 'Idle', state: 'idle' as const }
   const facts = agentNodeFacts(data.agent)
   const meta = data.intervalSeconds ? [{ label: 'Checks', value: intervalLabel(data.intervalSeconds) }, ...facts.meta].slice(0, 2) : facts.meta
   const core = useRef<HTMLButtonElement>(null)
@@ -79,24 +79,19 @@ type DraftEdge = Edge<{ kind: WorkflowRelationship['kind']; bend: number;
   remove: () => void; removeLabel: string; removalDisabled: boolean;
   workPolicy: boolean; maxWorkHandoffsPerRun?: number; draftChanged: boolean; disabled: boolean;
   onApplyLimit?: (value?: number) => void }>
-const TypedEdge = memo(function TypedEdge({ id, source, target, data, selected }: EdgeProps<DraftEdge>) {
+const TypedEdge = memo(function TypedEdge({ id, source, target, data }: EdgeProps<DraftEdge>) {
   const curve = useFloatingCurve(source, target, data?.bend ?? 28)
   const { hovered, onPointerEnter, onPointerLeave } = useHoverControls()
   const [editing, setEditing] = useState(false)
-  const [focused, setFocused] = useState(false)
-  const visible = hovered || focused || selected
   if (!curve) return null
   const limit = data?.maxWorkHandoffsPerRun
-  return <g onPointerEnter={onPointerEnter} onPointerLeave={onPointerLeave}
-    onFocus={() => setFocused(true)} onBlur={event => {
-      if (!event.currentTarget.contains(event.relatedTarget as globalThis.Node | null)) setFocused(false)
-    }}>
+  return <g onPointerEnter={onPointerEnter} onPointerLeave={onPointerLeave}>
     <SignalEdgeShape id={id} curve={curve} kind={data?.kind} />
-    {visible ? <rect className="board-edge-hover-bridge" x={curve.mid.x - 18} y={curve.mid.y - 36}
+    {hovered ? <rect className="board-edge-hover-bridge" x={curve.mid.x - 18} y={curve.mid.y - 36}
       width={36} height={48} /> : null}
-    <foreignObject data-visible={visible} className="board-edge-remove nodrag nopan" x={curve.mid.x - 18} y={curve.mid.y - 36} width={36} height={36}>
+    <foreignObject aria-hidden={!hovered} data-visible={hovered} className="board-edge-remove nodrag nopan" x={curve.mid.x - 18} y={curve.mid.y - 36} width={36} height={36}>
       <IconButton size="sm" variant="ghost" label={data?.removeLabel ?? `Remove connection from ${source} to ${target}`}
-        tabIndex={0} disabled={data?.removalDisabled} onClick={(event) => { event.stopPropagation(); data?.remove() }}><Icon name="close" size={14} /></IconButton>
+        tabIndex={hovered ? 0 : -1} disabled={data?.removalDisabled} onClick={(event) => { event.stopPropagation(); data?.remove() }}><Icon name="close" size={14} /></IconButton>
     </foreignObject>
     {data?.workPolicy ? <foreignObject className="work-connection-limit-object" data-visible={hovered || editing}
       x={curve.mid.x - (editing ? 132 : 54)} y={curve.mid.y + 12}
@@ -155,6 +150,7 @@ export const DraftCanvas = forwardRef<DraftCanvasHandle, {
   // Every Board shows the CI server automatically; it is never a workflow node and cannot be added by hand.
   const ciServer = useMemo(() => ciServerFlowNode(nodes, idleCiServer, () => setCiOpen(true)), [nodes])
   const flowNodes = useMemo<(GraphNode | CiServerFlowNode)[]>(() => ciServer ? [...nodes, ciServer] : nodes, [nodes, ciServer])
+  const connectionSource = useRef<string | undefined>(undefined)
   const selectedIds = useGraphPresentation((state) => state.selectedNodeIds)
   const presentation = useGraphPresentationStore()
   useLayoutEffect(() => { setNodes(adapter.reconcile(topology.nodes, selectedIds)) }, [adapter, topology.nodes, selectedIds])
@@ -164,6 +160,7 @@ export const DraftCanvas = forwardRef<DraftCanvasHandle, {
     pending(false)
   }
   const prepareResize = () => {
+    connectionSource.current = undefined
     setConnecting(false)
   }
   const beginResize = () => {
@@ -214,6 +211,11 @@ export const DraftCanvas = forwardRef<DraftCanvasHandle, {
     catch (error) { report(error) }
   }
   const selectNode = (nodeId: string) => inspect(() => {
+    const source = connectionSource.current
+    if (source && source !== nodeId && graph.nodes.some((node) => node.id === source)) {
+      connectNodes(source, nodeId)
+      connectionSource.current = undefined
+    } else connectionSource.current = source === nodeId ? undefined : nodeId
     presentation.getState().setFocusedNodeId(nodeId)
     presentation.getState().setSelectedNodeIds(new Set([nodeId]))
     presentation.getState().setFocusedEdgeId(undefined)
@@ -239,8 +241,9 @@ export const DraftCanvas = forwardRef<DraftCanvasHandle, {
         onConnectStart={() => setConnecting(true)} onConnectEnd={() => setConnecting(false)}
         onClickConnectStart={() => setConnecting(true)} onClickConnectEnd={() => setConnecting(false)}
         onNodeClick={(_, node) => { if (node.id !== CI_SERVER_NODE_ID) selectNode(node.id) }}
-        onPaneClick={() => inspect(() => { setOpen(undefined); presentation.getState().setFocusedNodeId(undefined); presentation.getState().setFocusedEdgeId(undefined) })}
+        onPaneClick={() => inspect(() => { connectionSource.current = undefined; setOpen(undefined); presentation.getState().setFocusedNodeId(undefined); presentation.getState().setFocusedEdgeId(undefined) })}
         onConnect={(connection) => {
+          connectionSource.current = undefined
           connectNodes(connection.source, connection.target)
         }}>
         <Background color="var(--border)" gap={24} size={1} />
