@@ -11,23 +11,16 @@ const Providers = ({ children }: { children: ReactNode }) => <QueryClientProvide
 const path = { sourceX: 0, sourceY: 0, targetX: 120, targetY: 80,
   sourcePosition: Position.Right, targetPosition: Position.Left }
 
-describe('edge interaction controls', () => {
-  it('keeps mounted controls hidden and unfocusable until their edge is touched', () => {
+describe('lazy edge interaction controls', () => {
+  it('keeps inactive edges SVG-only and mounts controls for the touched edge', () => {
     const onRemove = vi.fn()
     const { container } = render(<Providers><GraphPresentationProvider><svg>
       <HandoffEdge {...path} id="one" source="a" target="b" data={{ explanation: 'First connection', onRemove }} />
       <HandoffEdge {...path} id="two" source="b" target="c" data={{ explanation: 'Second connection', onRemove }} />
     </svg></GraphPresentationProvider></Providers>)
-    expect(container.querySelectorAll('foreignObject')).toHaveLength(2)
-    expect(screen.queryByRole('button')).not.toBeInTheDocument()
-    for (const button of screen.getAllByRole('button', { hidden: true })) {
-      expect(button).toHaveAttribute('tabindex', '-1')
-      expect(button.closest('[aria-hidden]')).toHaveAttribute('aria-hidden', 'true')
-    }
+    expect(container.querySelectorAll('foreignObject')).toHaveLength(0)
     fireEvent.click(screen.getByRole('group', { name: 'Connection from b to c' }))
-    expect(container.querySelectorAll('foreignObject')).toHaveLength(2)
-    expect(screen.getAllByRole('button')).toHaveLength(2)
-    expect(screen.getByRole('button', { name: 'Remove connection from b to c' })).toHaveAttribute('tabindex', '0')
+    expect(container.querySelectorAll('foreignObject')).toHaveLength(1)
     expect(screen.queryByRole('button', { name: 'Remove connection from a to b' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Remove connection from b to c' }))
     expect(onRemove).toHaveBeenCalledExactlyOnceWith('two')
