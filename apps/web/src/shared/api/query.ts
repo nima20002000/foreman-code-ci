@@ -1,9 +1,7 @@
 import type { CurrentRunDetails, CurrentWorkspaceDetails } from '@foreman-code/contracts/wave25'
-import { useEffect } from 'react'
 import {
   useMutation,
   useInfiniteQuery,
-  useIsMutating,
   useQuery,
   useQueryClient,
   type InfiniteData,
@@ -63,7 +61,6 @@ export const queryKeys = {
   managedWorkspace: (workspaceId: string) => ['workbench', 'management', 'workspace', workspaceId] as const,
   managedWorkflow: (workspaceId: string, workflowId: string) => ['workbench', 'management', 'workspace', workspaceId, 'workflows', 'detail', workflowId] as const,
   managedWorkflows: (workspaceId: string) => ['workbench', 'management', 'workspace', workspaceId, 'workflows'] as const,
-  workflowOrderMutation: (workspaceId: string) => ['workbench', 'workflow-order', workspaceId] as const,
   managedAgents: (workspaceId: string) => ['workbench', 'management', 'workspace', workspaceId, 'agents'] as const,
   managedDraft: (workspaceId: string, workflowId: string) => ['workbench', 'management', 'workspace', workspaceId, 'workflow', workflowId, 'draft'] as const,
   managedHarnessCatalog: ['workbench', 'management', 'harnesses'] as const,
@@ -171,6 +168,12 @@ export function cachedWorkflowName(client: ReturnType<typeof useQueryClient>, wo
 export function usePrefetchBoard() {
   const client = useQueryClient()
   return {
+    board: (workspaceId: string, workflowId?: string) => {
+      void client.prefetchQuery({ queryKey: queryKeys.workspaceDetails(workspaceId), staleTime: 10_000,
+        queryFn: ({ signal }) => getWorkspaceDetails({ workspaceId }, { signal }) }).catch(() => undefined)
+      if (workflowId) void client.prefetchQuery({ queryKey: queryKeys.managedWorkflow(workspaceId, workflowId), staleTime: 10_000,
+        queryFn: ({ signal }) => apiClient.getManagedWorkflow(workspaceId, workflowId, { signal }) }).catch(() => undefined)
+    },
     workspace: (workspaceId: string) => {
       void client.prefetchQuery({ queryKey: queryKeys.managedWorkspace(workspaceId), staleTime: 10_000,
         queryFn: ({ signal }) => getManagedWorkspace(workspaceId, { signal }) }).catch(() => undefined)
@@ -186,34 +189,20 @@ export function usePrefetchBoard() {
 
 export function useWorkflowPages(workspaceId: string, enabled = true, view: CatalogView = 'navigation') {
   const client = useQueryClient()
-  const reordering = useIsMutating({ mutationKey: queryKeys.workflowOrderMutation(workspaceId) }) > 0
   type Pages = InfiniteData<Awaited<ReturnType<typeof apiClient.listManagedWorkflowPage>>, string | undefined>
-  const queryKey = [...queryKeys.managedWorkflows(workspaceId), 'pages', ...(view === 'directory' ? ['directory'] : [])]
-  const query = useInfiniteQuery({
-    enabled, queryKey,
+  return useInfiniteQuery({
+    enabled, queryKey: [...queryKeys.managedWorkflows(workspaceId), 'pages', ...(view === 'directory' ? ['directory'] : [])],
     // The directory shows the sidebar's already-loaded page while it reads the full list.
     ...(view === 'directory' ? { maxPages: 0, placeholderData: () => client.getQueryData<Pages>([...queryKeys.managedWorkflows(workspaceId), 'pages']) } : {}),
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam, signal }) => apiClient.listManagedWorkflowPage(workspaceId, pageParam, { signal }),
     // Workflows created or deleted elsewhere (Operator, Agents, other tabs) appear without a reload.
-    refetchInterval: enabled && !reordering ? CATALOG_REFRESH_MS : false,
-    refetchOnWindowFocus: !reordering,
-    refetchOnReconnect: !reordering,
+    refetchInterval: enabled ? CATALOG_REFRESH_MS : false,
     getNextPageParam: (last, _pages, _lastParam, params) => {
       const next = last.pageInfo.nextCursor
       return next && !params.includes(next) ? next : undefined
     },
   })
-  useEffect(() => {
-    if (query.isFetching || !(query.error instanceof ApiError) || query.error.code !== 'REVISION_CONFLICT') return
-    // A concurrent reorder invalidates older cursors. Restart from the first page.
-    const key = [...queryKeys.managedWorkflows(workspaceId), 'pages', ...(view === 'directory' ? ['directory'] : [])]
-    client.setQueryData<Pages>(key, data => data ? {
-      ...data, pages: data.pages.slice(0, 1), pageParams: [undefined],
-    } : data)
-    void client.invalidateQueries({ queryKey: key })
-  }, [client, query.error, query.isFetching, view, workspaceId])
-  return query
 }
 
 export function useManagedWorkspacesQuery(enabled = true) {
