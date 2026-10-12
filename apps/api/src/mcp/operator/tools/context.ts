@@ -21,11 +21,30 @@ import { placementCapabilityLimit } from '../../../modules/placement/transports.
 import type { OperatorCatalog } from '../presentation.js'
 
 export const OPERATOR_RUNTIME_LIMITS = [
+  { feature: 'native_tool_loading', state: 'protected',
+    detail: 'agent_defaults_get/update reads and replaces role nativeTools policies with global settings grants. '
+      + 'agent_create copies them; agent_update overrides them with scoped agents:update and revision checks. '
+      + 'Read agent_get for the saved policy: mcpServers is a native server allowlist, apps controls apps/connectors '
+      + 'and Claude SDK plugins, {} inherits host settings. Foreman Code retains its role and access grants. '
+      + 'Changes apply to new sessions; accepted Runs keep immutable configuration pins. '
+      + 'Claude external MCP connections remain unsupported.' },
+  { feature: 'run_start_source', state: 'protected',
+    detail: 'In a GitHub workspace, run_start fetches the configured default branch and automatically approves its '
+      + 'tracked tree under the existing source policy and audit. All Run Agents retain that commit; unchanged '
+      + 'commits reuse a snapshot. Requires workspace-scoped sources:approve, sources:read, source_roots:bind, '
+      + 'source_roots:read and workspace_locations:read in addition to runs:start. Missing grants remain denied. '
+      + 'ci_run without commit tests unchanged Agent files at that Run-start commit without uploading a bundle.' },
   { feature: 'run_start_contention', state: 'limited',
     detail: 'Concurrent run_start calls serialize on the command, runner and workspace locks. '
       + 'Each Start shares a 30-second deadline for those locks; RUN_START_BUSY means '
       + 'retry the same commandId and input. Ordinary SQL query deadlines and scoped Start grants still apply.' },
   {feature:'provider_accounts',state:'limited',detail:'Named account slots belong to one computer/application installation. Read/page/get/status/models require explicit provider_accounts:read; registration/rename/default/removal/auth prepare/cancel require provider_accounts:manage as well. Defaults apply only to new work without a saved account/profile. Accepted Runs and chats retain their original binding; removal preserves history. Authentication is reserved before native dispatch and reconciles the same operation after an unknown response. Only qualified native installations support authentication/models; browser authorization is human-only. MCP receives no credentials or challenges. Existing API-key provisioning remains local-human-only. Foreign installations are unavailable unless their owning Worker account service and advertised narrow transport are explicitly composed.'},
+  { feature: 'agent_profile_placements', state: 'protected',
+    detail: 'agent_update returns affectedWorkflowIds. Re-save each workflow with the returned configuration version IDs; '
+      + 'workflow_validate_v3 and workflow_save_v3 reconcile explicit Agent node placements to harnessProfileSelection '
+      + 'on the same computer, preserving source/root/CWD. A host mismatch returns a node-specific '
+      + 'AGENT_PROFILE_PLACEMENT_CONFLICT issue. Historical WorkflowVersions and Runs retain their placements. '
+      + 'Existing Agent, graph, harness and location grants still apply.' },
   { feature: 'operator_read_detail', state: 'limited', detail: 'source_list defaults to 10 compact source summaries and run_get to compact status with at most 25 executions and 25 activities. Both accept detail: "full". Compact reads omit file inventories and execution bodies; use source_get or paged Run inspection for more detail. workflow_save_v3 fills omitted graph.createdAt, graph.updatedAt and graph.version from the revision-checked workflow; revision, configuration and location pins remain required.' },
   { feature: 'workspace_repository_import', state: 'protected', detail: 'workspace_repository_add prepares a pinned supported tracked GitHub snapshot on Main in the existing app-managed Workspaces base, composing repository metadata, root location, source approval and binding. Read workspace_repository_get for readiness and incomplete progress. Discovery requires the complete scoped read/provision/update/approve/bind grant combination. Retry unknown acknowledgment with the original commandId and input; quarantined capture failures require a new import. Existing project folders, saved workflow versions and historical Runs remain retained.' },
   { feature: 'worker_updates', state: 'limited',
@@ -54,7 +73,7 @@ export const OPERATOR_RUNTIME_LIMITS = [
   {feature:'named_workflow_routing',state:'limited',detail:'Explicit named outcomes, acyclic execution relationships and all-required joins share the current validator. Arbitrary cycles, nested repeats, inferred routes and unknown outcomes are rejected. Valid authoring is not native admission.'},
   {feature:'run_pause_node_retry_and_steering',state:'unsupported',detail:'Pause, selected-node retry, single-execution Stop, and live worker steering are not implemented. A deliberate new full Run uses the current pinned run_start contract; the old unpinned retry adapter is retired.'},
   {feature:'checkpoint_resume',state:'limited',detail:'Automatic current checkpoint continuation requires A’s exact native approval receipts. The old manual run_resume adapter is retired; no caller can skip approval.'},
-  {feature:'process_exit_confirmation',state:'limited',detail:'run_stop recovers interrupted native lifetimes only with positive closure evidence under the Run owner fence. Live or unconfirmed owners stay pending; domain errors permit retry with the same commandId and input. Stop acceptance is not native-process-exit proof; processStopped remains conservative.'},
+  {feature:'process_exit_confirmation',state:'limited',detail:'run_stop recovers interrupted native lifetimes only with positive closure evidence under the Run owner fence. Live or unconfirmed owners stay pending; domain errors permit retry with the same commandId and input. Run Stop also cancels its Agents’ non-terminal CI tickets and their provider runs, with audit; CI failures retain pending cleanup for retry. This subordinate cleanup requires runs:stop, without an additional jobs:cancel grant. Stop acceptance is not native-process-exit proof; processStopped remains conservative.'},
   {feature:'historical_runs',state:'limited',detail:'Restore history into a new validated current version before running it. Old immutable versions are never edited.'},
   {feature:'resource_deletion',state:'protected',detail:'Workspace archive retains workflow/run history and deletes app-created project folders. Archive cleanup protects accepted Run directories and pending cleanup even after workspace location changes. workspace_storage_folder_delete explicitly deletes an unregistered direct-child folder and its contents using its listed identity and global archive/provision/location-read grants. Registered locations, defaults, active runs, roots and symlinks are protected.'},
   {feature:'remote_runners_and_host_browsing',state:'limited',detail:'workspace_create folder provisioning operates on the local runner under an explicit parentPath with provisioning, location-update and location-read grants. workspace_folders_list and workspace_folder_create operate only inside app-managed workspace storage; Desktop and runtime storage are not workspace destinations. There is no arbitrary host browsing. Execution on an approved computer requires its separately configured services and accepted source/root authority.'},
