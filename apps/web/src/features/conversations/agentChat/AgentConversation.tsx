@@ -95,8 +95,7 @@ function AgentConversationContent({ context, name, role, activity, runLabel, onC
       focus()
     }
   }
-  const stateLabel = agentChatStateLabel(state, runLabel)
-  const header = <AgentChatHeader name={name} role={role} state={stateLabel}
+  const header = <AgentChatHeader name={name} role={role} state={agentChatStateLabel(state, runLabel)}
     detail={[activity, state?.availability.message, state ? chatBackgroundWork(state.activitySnapshot)?.message : undefined]
       .filter(Boolean).join(' · ')} onClose={onClose} />
   if (chat.access.isPending) return <div className="agent-conversation">{header}
@@ -132,7 +131,7 @@ function AgentConversationContent({ context, name, role, activity, runLabel, onC
   const background = state && !busy ? chatBackgroundWork(state.activitySnapshot) : undefined
   const empty = (!draft.trim() && !attachments.hasAttachments) || attachments.hasBlockingAttachments || draft.length > 32_000
   const latest = chat.latestCommand
-  const receipt = chat.latestReceipt
+  const receipt = chat.currentReceipt ?? chat.confirmedReceipt ?? chat.latestReceipt
   const error = !receipt && latest?.status === 'error' ? latest.error : undefined
   const notActive = latest?.command?.kind === 'send' && ApiError.is(error) && error.code === 'AGENT_CHAT_TURN_NOT_ACTIVE'
   const stale = ApiError.is(error) && error.code === 'AGENT_CHAT_CONTEXT_STALE'
@@ -162,17 +161,18 @@ function AgentConversationContent({ context, name, role, activity, runLabel, onC
     if (!conversation?.providerAccountBinding && onNewConversation) attentionAction = <Button size="sm" variant="ghost"
       onClick={onNewConversation}>{context.runId ? 'Start separate chat without this Run' : 'Choose another Agent for a new conversation'}</Button>
   }
-  if (!attention && compactReason) attention = compactReason
-  if (!attention && background) attention = background.label
   if (!attention && (chat.connection === 'reconnecting' || chat.connection === 'unavailable')) attention = 'Reconnecting to live updates'
   if (!attention && chat.query.isError) {
     attention = 'Chat could not be refreshed'
     attentionAction = <Button size="sm" variant="ghost" onClick={() => void chat.query.refetch()}>Retry</Button>
   }
+  if (!attention && compactReason) attention = compactReason
+  if (!attention && background) attention = background.label
   const composerDisabled = retired || !!state && !state.conversation && !state.availability.canSend
   let composerReason = commandOnly ? controlReason : nextReason
-  if (state?.availability.reason === 'run_active') composerReason = stateLabel === 'Starting'
-    ? 'Read-only while starting' : 'Read-only while working'
+  // One compact line while the Run Agent works: "Working — you can message it when it finishes".
+  if (state?.availability.reason === 'run_active') composerReason = state.availability.message
+    ?? (state.sourceTranscript?.state === 'starting' ? 'Read-only while starting' : 'Read-only while working')
   else if (state?.sessionState === 'creating') composerReason = 'Read-only while starting'
   else if (retired) composerReason = 'Retired harness: read-only'
   if (!composerReason && attachments.hasBlockingAttachments) composerReason = 'Wait for attachments'
@@ -192,8 +192,7 @@ function AgentConversationContent({ context, name, role, activity, runLabel, onC
       : <ConversationViewport revision="loading">{() => <LoadingState label="Loading conversation…" rows={1} />}</ConversationViewport>}
     {state ? <div className="agent-chat-composer-controls" role="group" aria-label="Chat actions" {...drop.dropTargetProps}>
       <AgentChatComposer name={name} draftKey={chat.draftKey} inputRef={composer} sessionControls={sessionControls}
-        disabled={composerDisabled} reason={composerReason} controlReason={controlReason}
-        pending={chat.pending} controlPending={sessionControls.mutation.isPending}
+        disabled={composerDisabled} reason={composerReason} pending={chat.pending} controlPending={sessionControls.mutation.isPending}
         hasAttachments={attachments.hasAttachments} canStop={canStop} stopReason={stopReason}
         onStop={() => { chat.stop(); focus() }} onSubmit={(content, mode) => { void submit('next_turn', content, mode) }}
         attachmentControl={!composerDisabled ? <Tooltip content="Attach files">
