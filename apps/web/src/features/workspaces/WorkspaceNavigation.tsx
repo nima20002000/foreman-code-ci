@@ -7,8 +7,7 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { useNavigate } from '@tanstack/react-router'
-import { SidebarNavigationButton } from '../../shared/ui/SidebarNavigationButton'
+import { Link, useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   ChevronDown,
@@ -272,7 +271,7 @@ function WorkspaceTreeItem({
       return (
         <>
           <div className="nav-item-row" {...reorderProps}>
-            <SidebarNavigationButton
+            <Link
               to="/workspaces/$workspaceId/workflows"
               params={{ workspaceId: entry.id }}
               activeOptions={{ exact: true }}
@@ -288,7 +287,7 @@ function WorkspaceTreeItem({
                 <Workflow aria-hidden="true" className="nav-item-icon" size={16} />
                 <span className="nav-item-label">Workflows</span>
               </span>
-            </SidebarNavigationButton>
+            </Link>
             <IconButton
               className="nav-item-toggle"
               label={`${workflowsExpanded ? 'Collapse' : 'Expand'} workflows in ${entry.name}`}
@@ -325,7 +324,7 @@ function WorkspaceTreeItem({
   return (
     <li>
       <div className="nav-item-row" {...reorderItemProps}>
-        <SidebarNavigationButton
+        <Link
           to="/workspaces/$workspaceId/settings"
           params={{ workspaceId: entry.id }}
           search={{}}
@@ -344,7 +343,7 @@ function WorkspaceTreeItem({
             <PanelsTopLeft aria-hidden="true" className="nav-item-icon" size={16} />
             <span className="nav-item-label">{entry.name}</span>
           </span>
-        </SidebarNavigationButton>
+        </Link>
         <IconButton
           className="nav-item-toggle"
           label={`${expanded ? 'Collapse' : 'Expand'} ${entry.name}`}
@@ -452,7 +451,7 @@ export function WorkspaceNavigation({
       <ul className="workspace-navigation" data-testid="workspace-navigation">
         <li>
           <div className="nav-item-row">
-            <SidebarNavigationButton
+            <Link
               to="/workspaces"
               activeOptions={{ exact: true }}
               className={`nav-item nav-item-parent${workspacesActive ? ' nav-item-active' : ''}`}
@@ -463,7 +462,7 @@ export function WorkspaceNavigation({
                 <PanelsTopLeft aria-hidden="true" className="nav-item-icon" size={16} />
                 <span className="nav-item-label">Workspaces</span>
               </span>
-            </SidebarNavigationButton>
+            </Link>
             <IconButton
               className="nav-item-toggle"
               label="Workspaces"
