@@ -703,9 +703,9 @@ export class ApprovalExecutionCoordinator {
   ) {
     const { signal, purpose, enterNative, restartOwner } = options
     restartOwner?.assertOwned()
+    const owned = this.ownedSessions.get(context.executionId)
+    if (!owned || owned.manager !== resolved.manager) throw new Error('Native preflight has no exact manager owner.')
     if (this.workflowClosures) {
-      const owned = this.ownedSessions.get(context.executionId)
-      if (!owned || owned.manager !== resolved.manager) throw new Error('Native preflight has no exact manager owner.')
       // The original process intent must be durable before entered commits.
       // Allocation/reviewer cleanup alone must not reserve or dispatch anything.
       if (resolved.processState === 'needs_start' && !owned.launchReserved) {
@@ -728,6 +728,56 @@ export class ApprovalExecutionCoordinator {
     await enterNative?.()
     signal?.throwIfAborted()
     if (!this.credentials) return undefined
+    if (owned.session && owned.restartAttachment && context.acceptedPlacement?.hostRef.kind === 'device'
+      && resolved.processState === 'needs_start') {
+      if (!this.credentials.restore) throw new DomainError('NATIVE_CREDENTIAL_RECOVERY_REQUIRED',
+        'The original Worker credential cannot be restored.', 409)
+      const { session, request } = owned.restartAttachment
+      const lane = await this.interactions.coordination.getLane(session.harness, session.nativeSessionId)
+      const identity = reviewPreflightIdentity(lane, `execution:${context.executionId}`)
+      const attached = await this.openingSession(owned,
+        resolved.manager.attachSession(session, { request, ...identity }, signal))
+      this.assertSessionIdentity(session, attached)
+      const completed = async () => {
+        const history = await resolved.manager.reconcile(session, `execution:${context.executionId}`, signal)
+        const terminal = history.terminalTurn
+        return terminal?.correlationId === `execution:${context.executionId}`
+          && history.correlationId === terminal.correlationId
+          && terminal.providerId === (history.nativeTurnId ?? history.nativeMessageId)
+          && !history.pendingInteraction && history.pendingInteractions.length === 0
+      }
+      if (await completed()) {
+        resolved.markResident?.()
+        return undefined
+      }
+      const originalApplicationAccess = resolved.manager.originalApplicationAccess
+      if (!originalApplicationAccess) throw new DomainError('NATIVE_CREDENTIAL_RECOVERY_REQUIRED',
+        'The original Worker application access cannot be restored.', 409)
+      let access: Awaited<ReturnType<typeof originalApplicationAccess>>
+      try { access = await originalApplicationAccess.call(resolved.manager, session, signal) }
+      catch (error) {
+        if (!await completed()) throw error
+        resolved.markResident?.()
+        return undefined
+      }
+      const credential = await this.credentials.restore(context.executionId, { agentId: context.agentId,
+        variables: { [APP_MCP_TOKEN_ENVIRONMENT_VARIABLE]: access.token } })
+      this.managerCredentials.set(resolved.manager, credential)
+      signal?.throwIfAborted()
+      resolved.markResident?.()
+      return undefined
+    }
+    if (owned.session && resolved.manager.originalEnvironment && resolved.processState === 'needs_start') {
+      const variables = await resolved.manager.originalEnvironment(owned.session, signal)
+      if (variables) {
+        if (!this.credentials.restore) throw new DomainError('NATIVE_CREDENTIAL_RECOVERY_REQUIRED',
+          'The original native process credential cannot be restored.', 409)
+        const credential = await this.credentials.restore(context.executionId, { agentId: context.agentId, variables })
+        this.managerCredentials.set(resolved.manager, credential)
+        signal?.throwIfAborted()
+        return credential.environment
+      }
+    }
     if (resolved.processState === 'resident') {
       const credential = this.managerCredentials.get(resolved.manager)
       if (!credential) throw new Error('The resident native process has no owned worker credential lease.')
@@ -1129,6 +1179,28 @@ export class ApprovalExecutionCoordinator {
     }
   }
 
+  async preserveActiveForRestart(owner: RunOwnership): Promise<boolean> {
+    const snapshot = await this.runs.getRepeatSnapshot(owner.runId, owner)
+    if (snapshot.stopRequested || snapshot.cleanupPending || snapshot.run.executionState === 'completed') return false
+    const active: OwnedNativeSession[] = []
+    for await (const executions of this.runs.executionPages(owner.runId, owner)) {
+      for (const execution of executions) {
+        if (execution.state === 'completed' || execution.state === 'queued') continue
+        const owned = this.ownedSessions.get(execution.id)
+        if (!owned?.session || !execution.nativeSessionId || owned.opening || owned.openingFailed
+          || owned.failed || owned.cleanup || !owned.closureGeneration
+          || owned.session.nativeSessionId !== execution.nativeSessionId
+          || !owned.manager.canDetachForRestart?.(owned.session)) return false
+        active.push(owned)
+      }
+    }
+    if (!active.length) return false
+    owner.assertOwned()
+    for (const owned of active) await this.budgets.beginWait(owned.execution.id)
+    owner.assertOwned()
+    return true
+  }
+
   /** Production calls this AFTER stopping/draining producers and BEFORE raw
    * manager disposal. Waiting Workers and retained reviewers are not Stop: their
    * checkpoints, budgets, credentials and business records must survive restart.
@@ -1154,15 +1226,19 @@ export class ApprovalExecutionCoordinator {
           if (this.ownedSessions.get(owned.execution.id) !== owned) return
           if (this.closedExecutions.has(owned.execution.id)) return
           if (owned.restartAttachment && !owned.failed
-            && owned.context.acceptedPlacement?.hostRef.kind === 'device'
             && (!owned.session || owned.openingFailed || owned.generation === 0)) {
-            // Worker reattachment only observes the saved process; it cannot launch or resubmit a turn.
             const { session, request } = owned.restartAttachment
-            const lane = await this.interactions.coordination.getLane(session.harness, session.nativeSessionId)
-            const identity = reviewPreflightIdentity(lane, `execution:${owned.execution.id}`)
-            const attached = await this.openingSession(owned,
-              owned.manager.attachSession(session, { request, ...identity }))
-            this.assertSessionIdentity(session, attached)
+            const remote = owned.context.acceptedPlacement?.hostRef.kind === 'device'
+            const variables = remote ? undefined : await owned.manager.originalEnvironment?.(session)
+            if (remote || variables) {
+              const lane = await this.interactions.coordination.getLane(session.harness, session.nativeSessionId)
+              const identity = reviewPreflightIdentity(lane, `execution:${owned.execution.id}`)
+              const attached = await this.openingSession(owned, owned.manager.attachSession(session, {
+                request, ...identity,
+                ...(variables ? { environment: { agentId: owned.execution.agentId, variables } } : {}),
+              }))
+              this.assertSessionIdentity(session, attached)
+            }
           }
           // Creation can finish before the session binding commits. Dispose the
           // captured manager when startup settles without a persisted binding.
@@ -1416,7 +1492,8 @@ export class ApprovalExecutionCoordinator {
     }
     owned.session = sessionReference
     signal = signal ? AbortSignal.any([signal, owned.controller.signal]) : owned.controller.signal
-    if (resolutionContext.acceptedPlacement?.hostRef.kind === 'device') {
+    if (resolutionContext.acceptedPlacement?.hostRef.kind === 'device'
+      || resolutionContext.harness === 'codex' && !resolutionContext.purpose) {
       owned.restartAttachment = { session: sessionReference, request }
     }
     try {
@@ -1636,7 +1713,7 @@ export class ApprovalExecutionCoordinator {
             }
             const failures: Error[] = []
             await attemptCleanup(failures, `${execution.id}: recover terminal native lifetime`, (signal) =>
-              recoverWorkflowNativeClosure(owner, execution, this.recoverNativeProcesses, signal, 'terminal'))
+              recoverWorkflowNativeClosure(owner, execution, this.recoverNativeProcesses, signal, { purpose: 'terminal' }))
             owner.assertOwned()
             if (failures.length) throw new AggregateError(failures, 'Terminal native closure remains unconfirmed.')
           }
@@ -1654,8 +1731,8 @@ export class ApprovalExecutionCoordinator {
 
   /** Stop first fences all new work in the database. This pass only cancels
    * ORIGINAL resident managers and revokes execution resources under that fence.
-   * Missing local managers are never resolved, attached or treated as closed.
-   * The owner-only cold pass uses positive kernel-backed registry receipts.
+   * The owner-only cold pass also recovers failed resident transports using
+   * positive closure receipts for their captured lifetime generation.
    * Positive repository proof, not this method's return value, settles a Run. */
   async cancelRun(runId: string, owner?: RunOwnership): Promise<void> {
     owner?.assertOwned()
@@ -1695,21 +1772,35 @@ export class ApprovalExecutionCoordinator {
       })().finally(() => { this.cancellations.delete(runId) })
       this.cancellations.set(runId, task)
     }
-    await task
+    let retryResidentCleanup = false
+    try {
+      await task
+    } catch (error) {
+      if (!owner || !(error instanceof AggregateError)) throw error
+      // Retry every failed operation only after owner-fenced physical recovery.
+      retryResidentCleanup = true
+    }
     if (owner) {
       owner.assertOwned()
       const store = await this.runs.repeat(owner)
       const failures: Error[] = []
       for await (const executions of this.runs.executionPages(runId, owner)) {
         for (const execution of executions) {
-          // An original resident/opening manager must finish its own captured
-          // cleanup; a cold resolver is never substituted for that lifetime.
-          if (this.ownedSessions.has(execution.id)) continue
-          await attemptCleanup(failures, `${execution.id}: recover original native lifetime`, (signal) =>
-            recoverWorkflowNativeClosure(owner, execution, this.recoverNativeProcesses, signal))
+          const resident = this.ownedSessions.get(execution.id)
+          if (resident && !retryResidentCleanup) continue
+          await attemptCleanup(failures, `${execution.id}: recover original native lifetime`, async (signal) => {
+            if (resident) {
+              assertSameRepeatExecution(resident.execution, execution)
+              if (resident.opening || resident.cleanup || !resident.closureGeneration) throw new DomainError(
+                'REPEAT_CLEANUP_PENDING', 'The original native operation is still completing cleanup.', 409)
+            }
+            await recoverWorkflowNativeClosure(owner, execution, this.recoverNativeProcesses, signal,
+              resident ? { generation: resident.closureGeneration! } : {})
+          })
         }
       }
       if (failures.length) throw new AggregateError(failures, 'Cold native closure remains unconfirmed.')
+      if (retryResidentCleanup) await this.cancelRun(runId)
       // Original closures and revocations above precede review retirement. The
       // attempt settlement gate below requires those review receipts, not vice versa.
       await this.interactions.coordination.finishStoppedReviews(runId, Boolean(this.credentials))
@@ -1834,7 +1925,7 @@ export class ApprovalExecutionCoordinator {
         return { state: 'completed', execution, result: execution.result }
       }
       await this.budgets.ensure(execution.id, input.graphThreadId, input.agentActiveTimeoutMs ?? this.activeTimeoutMs)
-      if (execution.state === 'waiting') await this.budgets.resume(execution.id)
+      await this.budgets.resume(execution.id)
       const budgetStarted = performance.now()
       // An exhausted budget found on recovery takes the same deadline path as a
       // live timeout: abort, close the exact session and settle negatively.
@@ -1883,7 +1974,8 @@ export class ApprovalExecutionCoordinator {
       ownedSession = this.ownSession(execution, context, manager)
       ownedSession.runOwner = input.owner
       if (session && !ownedSession.session) ownedSession.session = session
-      if (session && context.acceptedPlacement?.hostRef.kind === 'device') {
+      if (session && (context.acceptedPlacement?.hostRef.kind === 'device'
+        || context.harness === 'codex' && !context.purpose)) {
         ownedSession.restartAttachment = { session, request }
       }
       signal = AbortSignal.any([signal, ownedSession.controller.signal])
