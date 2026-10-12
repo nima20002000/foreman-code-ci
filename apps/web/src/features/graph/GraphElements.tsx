@@ -80,9 +80,10 @@ export const AgentNode = memo(function AgentNode({ data: staticData, isConnectab
     >
       {view(<AgentHandles name={data.label} connectable={isConnectable && !readOnly} />, true)}
       <AgentPopover open={menuOpen} anchor={core} title={data.label} subtitle={`${facts.harnessLabel}${facts.model ? ` · ${facts.model}` : ''}`}
-        icon={facts.icon} harness={facts.harness} panel={panel}
+        icon={facts.icon} harness={facts.harness} panel={panel} chatHasHeader
         onClose={() => void (async () => { if (!guard || await guard.surfaces()) setMenuOpen(false) })()}
-        chat={<AgentChatPanel name={data.label} activity={nodeView.actionLabel} running={nodeView.working} />}
+        chat={<AgentChatPanel name={data.label} role={facts.roleLabel} activity={nodeView.actionLabel} running={nodeView.working}
+          onClose={() => void (async () => { if (!guard || await guard.surfaces()) setMenuOpen(false) })()} />}
         settings={readOnly || !data.onSaveSettings ? <>
           <p className="agent-panel-note">A Run keeps the settings it started with. Change them on the workflow board.</p>
           <AgentFacts items={agentSettingRows(data.agent)} />
@@ -176,7 +177,7 @@ export const HandoffEdge = memo(function HandoffEdge({
       }
     }}>
     <title>{data?.explanation ?? description}</title>
-    <SignalEdgeShape id={id} curve={curve} signal={signal} label={typeof label === 'string' && label ? label : undefined} showLabel />
+    <SignalEdgeShape id={id} curve={curve} signal={signal} />
     {active ? <rect className="board-edge-hover-bridge" x={mid.x - 112} y={mid.y}
       width={224} height={48} /> : null}
     <foreignObject aria-hidden={!active} data-visible={active} className="graph-edge-active-controls"

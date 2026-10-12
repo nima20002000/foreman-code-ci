@@ -55,7 +55,6 @@ export const SavedManagedWorkflowSchema = z.object({ workflow: SavedWorkflowDefi
 export type SavedManagedWorkflow = z.infer<typeof SavedManagedWorkflowSchema>
 export const SavedManagedWorkflowPageSchema = z.object({
   items: z.array(SavedManagedWorkflowSchema), pageInfo: ManagementPageInfoSchema,
-  orderRevision: ExpectedRevisionSchema.default(0),
 }).strict()
 export const SavedManagedWorkflowCommandResultSchema = z.object({
   value: SavedManagedWorkflowSchema, replayed: z.boolean(),
