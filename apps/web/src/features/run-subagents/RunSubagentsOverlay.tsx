@@ -6,7 +6,6 @@ import { subagentLabel, subagentName, subagentStatus } from './presentation'
 import { useRunSubagents, type SubagentsScope } from './query'
 import { useSelectedSubagent } from './selection'
 import { SubagentPanel } from './SubagentPanel'
-import { useBlockingReadError } from '../../shared/api/readFailure'
 import './runSubagents.css'
 
 export function RunSubagentsOverlay({ scope, nodes }: {
@@ -19,12 +18,12 @@ export function RunSubagentsOverlay({ scope, nodes }: {
     const orb = trigger.current
     void select(null).then(() => orb?.focus({ preventScroll: true }))
   }
-  const blocked = useBlockingReadError(query)
-  const children = blocked ? [] : query.data?.pages.flatMap((page) => page.items.map((item) => item.subagent)) ?? []
+  // A failed read (including revoked access) cannot leave cached chips visible.
+  const children = query.isError ? [] : query.data?.pages.flatMap((page) => page.items.map((item) => item.subagent)) ?? []
   const chips = layoutSubagents(nodes, children)
   // Every page loads on its own so all children appear as nodes without a status strip.
   const { hasNextPage, isFetchingNextPage, isError, fetchNextPage } = query
-  useEffect(() => { if (hasNextPage && !isFetchingNextPage && !isError && !blocked) void fetchNextPage() }, [hasNextPage, isFetchingNextPage, isError, blocked, fetchNextPage])
+  useEffect(() => { if (hasNextPage && !isFetchingNextPage && !isError) void fetchNextPage() }, [hasNextPage, isFetchingNextPage, isError, fetchNextPage])
   return <>
     <ViewportPortal>
       <div className="run-subagents-overlay">
@@ -53,7 +52,7 @@ export function RunSubagentsOverlay({ scope, nodes }: {
     {query.isError && <div className="run-subagents-notice nopan nodrag" role="status">
       <span>Couldn't load subagents.</span><Button size="sm" onClick={() => void query.refetch()}>Retry</Button>
     </div>}
-    {!blocked && selected && <SubagentPanel key={`${scope.runId}:${selected}`} scope={scope}
+    {!query.isError && selected && <SubagentPanel key={`${scope.runId}:${selected}`} scope={scope}
       subagentId={selected} anchor={trigger} onClose={closePanel} />}
   </>
 }
