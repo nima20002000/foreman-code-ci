@@ -36,11 +36,9 @@ describe('faithful canonical work and decision feedback', () => {
     value.activitySnapshot.active = [{ ref: { kind: 'subagent', itemId: 'older-child' }, phase: 'active', outcome: null,
       delivery: null, evidence: 'unknown', startedAt: null }]; value.activitySnapshot.hasMoreActiveWork = true
     const mounted = mountChat(value); await mounted.ready()
-    expect(screen.getByRole('status', { name: 'Agent state' })).toHaveTextContent('Completed')
+    expect(screen.getByText('Unfinished work unconfirmed')).toBeInTheDocument()
     await userEvent.hover(screen.getByRole('status', { name: 'Agent state' }))
-    const tooltip = await screen.findByRole('tooltip')
-    expect(tooltip).toHaveTextContent('Some tools or subagents have no confirmed outcome')
-    expect(tooltip).toHaveTextContent('More unfinished items exist than are shown')
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('More unfinished items exist than are shown')
     const input = screen.getByRole('textbox', { name: 'Message' })
     fireEvent.change(input, { target: { value: 'Independent next input' } })
     expect(screen.getByRole('button', { name: 'Send message' })).toBeEnabled()

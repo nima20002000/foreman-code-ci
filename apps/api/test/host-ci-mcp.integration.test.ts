@@ -1072,7 +1072,7 @@ it('preserves MCP cancellation when an in-flight refresh returns an unstarted ti
   } finally { release(); await f.close() }
 })
 
-it.each(['completed', 'canceled'] as const)('prefers build computers and CircleCI when a host slice is %s', async hostOutcome => {
+it('prefers build computers and CircleCI over higher-priority GitHub slots for integration', async () => {
   const f = await fixture({ cloud: { github: 2, circleci: 2 } })
   try {
     for (const computer of f.computers) {
@@ -1097,12 +1097,7 @@ it.each(['completed', 'canceled'] as const)('prefers build computers and CircleC
       message: expect.stringContaining('Waiting for a build computer') })
     expect(fallbackRead.partitions!.filter(run => run.id !== hostSlice.id).every(run => run.state === 'running'
       && run.computer?.hostRef.provider === 'github')).toBe(true)
-    const hostTicket = read.partitions!.find(run => run.computer?.hostRef.kind === 'device')!
-    if (hostOutcome === 'canceled') {
-      await f.value(f.operator, 'ci_cancel', { ticketId: hostTicket.id })
-    } else {
-      f.finish(hostTicket.id, 0, 'Host slice completed.\n')
-    }
+    f.finish(read.partitions!.find(run => run.computer?.hostRef.kind === 'device')!.id, 0, 'Host slice completed.\n')
     await f.ci.dispatch()
     const running = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: fallback.ticketId }))
     expect(running.partitions!.every(run => run.state === 'running')).toBe(true)

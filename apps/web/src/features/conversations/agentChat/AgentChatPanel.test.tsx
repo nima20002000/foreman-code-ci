@@ -445,6 +445,7 @@ describe('AgentChatPanel live reads and interaction', () => {
     const reads = mounted.mock.calls.filter(call => call.method === 'GET').length
     act(() => { first.snapshot(agentChatFixtures.active); first.fail() })
     expect(screen.getByText('Reconnecting to live updates')).toBeInTheDocument()
+    expect(screen.queryByText('Connecting to live activity')).not.toBeInTheDocument()
     mounted.mock.setState(agentChatFixtures.idleAfterCompletion)
     await waitFor(() => expect(AgentChatTestSource.instances).toHaveLength(2), { timeout: 2000 })
     act(() => AgentChatTestSource.instances[1]!.snapshot(agentChatFixtures.idleAfterCompletion))
