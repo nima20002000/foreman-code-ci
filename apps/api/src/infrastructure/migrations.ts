@@ -10,7 +10,6 @@ import { hostCiActivityMigration } from './hostCiActivityMigration.js'
 import { agentIntervalMigration } from './agentIntervalMigration.js'
 import { ciTestResultsMigration } from './ciTestResultsMigration.js'
 import { ciLogTailMigration } from './ciLogTailMigration.js'
-import { workResultRepairMigration } from './workResultRepairMigration.js'
 import { ciFileDurationsMigration } from './ciFileDurationsMigration.js'
 import { sessionControlsMigration } from './sessionControlsMigration.js'
 import { workerConversationBindingMigration } from './workerConversationBindingMigration.js'
@@ -920,7 +919,6 @@ export const migrations = [
   agentIntervalMigration,
   ciTestResultsMigration,
   ciLogTailMigration,
-  workResultRepairMigration,
 ] as const
 
 export async function applyApplicationMigrations(pool: pg.Pool): Promise<void> {

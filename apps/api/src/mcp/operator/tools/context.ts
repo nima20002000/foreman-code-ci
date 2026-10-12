@@ -21,19 +21,6 @@ import { placementCapabilityLimit } from '../../../modules/placement/transports.
 import type { OperatorCatalog } from '../presentation.js'
 
 export const OPERATOR_RUNTIME_LIMITS = [
-  { feature: 'native_tool_loading', state: 'protected',
-    detail: 'agent_defaults_get/update reads and replaces role nativeTools policies with global settings grants. '
-      + 'agent_create copies them; agent_update overrides them with scoped agents:update and revision checks. '
-      + 'Read agent_get for the saved policy: mcpServers is a native server allowlist, apps controls apps/connectors '
-      + 'and Claude SDK plugins, {} inherits host settings. Foreman Code retains its role and access grants. '
-      + 'Changes apply to new sessions; accepted Runs keep immutable configuration pins. '
-      + 'Claude external MCP connections remain unsupported.' },
-  { feature: 'run_start_source', state: 'protected',
-    detail: 'In a GitHub workspace, run_start fetches the configured default branch and automatically approves its '
-      + 'tracked tree under the existing source policy and audit. All Run Agents retain that commit; unchanged '
-      + 'commits reuse a snapshot. Requires workspace-scoped sources:approve, sources:read, source_roots:bind, '
-      + 'source_roots:read and workspace_locations:read in addition to runs:start. Missing grants remain denied. '
-      + 'ci_run without commit tests unchanged Agent files at that Run-start commit without uploading a bundle.' },
   { feature: 'run_start_contention', state: 'limited',
     detail: 'Concurrent run_start calls serialize on the command, runner and workspace locks. '
       + 'Each Start shares a 30-second deadline for those locks; RUN_START_BUSY means '
