@@ -548,6 +548,8 @@ describe('Live Run status on the Board', () => {
     await waitFor(() => expect(within(agentNode(added)).getByText('Waiting for your decision')).toBeVisible())
     expect(nodeState(added)).toBe('waiting')
     expect(screen.queryByRole('region', { name: 'Run status' })).not.toBeInTheDocument()
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Open human approval inbox' }))
+    expect(await screen.findByRole('dialog', { name: 'Human approval inbox' })).toBeVisible()
   }, 15_000)
 })
 
