@@ -51,8 +51,9 @@ describe('faithful canonical work and decision feedback', () => {
     const saved = receipt(value, delivery)
     value.activitySnapshot.pendingInteractions = [saved]
     const { onRefresh, onSendAgain } = transcript(value)
-    expect(screen.getByText(/The decision is saved/)).toBeInTheDocument()
-    expect(screen.getByText(/Do not submit this decision again/)).toBeInTheDocument()
+    expect(screen.getByText(/Your decision is saved/)).toBeInTheDocument()
+    expect(screen.getByText(/Check its status before submitting again/)).toBeInTheDocument()
+    fireEvent.click(screen.getByText('Delivery details'))
     expect(screen.getByText('original-native-question')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Refresh decision status' }))
     expect(onRefresh).toHaveBeenCalledOnce(); expect(onSendAgain).not.toHaveBeenCalled()
@@ -63,8 +64,10 @@ describe('faithful canonical work and decision feedback', () => {
     value.activitySnapshot.activities = [{ kind: 'interaction', id: saved.id, revision: saved.revision, order: '0', owner: saved.owner,
       source: { schemaVersion: 1, system: 'management_command_receipt', observedAt: null }, evidence: 'confirmed', interaction: saved }]
     transcript(value)
-    expect(screen.getByText('Decision delivery acknowledged')).toBeInTheDocument()
-    expect(screen.getByText(/Work completion is not confirmed/)).toBeInTheDocument()
+    expect(screen.getByText('Decision delivered')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('Delivery details'))
+    expect(screen.getByText(/The provider acknowledged this decision/)).toBeVisible()
+    expect(screen.getByText(/This does not confirm work completion/)).toBeVisible()
   })
 })
 

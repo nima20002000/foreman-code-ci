@@ -184,7 +184,7 @@ describe('workspace section routes', () => {
       expect(screen.queryByRole('link', { name: 'Account' })).not.toBeInTheDocument()
       expect(screen.queryByText('preview@example.test')).not.toBeInTheDocument()
       expect(screen.queryByRole('button', { name: /sign in|sign out|connect browser/i })).not.toBeInTheDocument()
-      expect(screen.getByRole('link', { name: 'Settings' })).toHaveAttribute('aria-current', 'page')
+      expect(screen.getByRole('button', { name: 'Settings' })).toHaveAttribute('aria-current', 'page')
     },
   )
 
@@ -235,7 +235,7 @@ describe('workspace section routes', () => {
     renderRoute('/approvals?interactionId=unscoped-request')
     expect(await screen.findByRole('heading', { name: 'Workspaces', level: 1 })).toBeVisible()
     expect(screen.queryByRole('region', { name: 'Approval Inbox' })).not.toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Settings' })).not.toHaveAttribute('aria-current')
+    expect(screen.getByRole('button', { name: 'Settings' })).not.toHaveAttribute('aria-current')
   })
 
   it('omits the approvals shortcut from workspace settings', async () => {

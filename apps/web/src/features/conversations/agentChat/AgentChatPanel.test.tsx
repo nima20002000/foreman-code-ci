@@ -435,12 +435,15 @@ describe('AgentChatPanel live reads and interaction', () => {
     const mounted = mountChat(agentChatFixtures.active); await mounted.ready()
     await waitFor(() => expect(AgentChatTestSource.instances).toHaveLength(1))
     const first = AgentChatTestSource.instances[0]!
+    const reads = mounted.mock.calls.filter(call => call.method === 'GET').length
     act(() => { first.snapshot(agentChatFixtures.active); first.fail() })
-    expect(screen.getByText('Connecting to live activity')).toBeInTheDocument()
+    expect(screen.getByText('Agent is working')).toBeVisible()
+    expect(screen.queryByText('Connecting to live activity')).not.toBeInTheDocument()
     mounted.mock.setState(agentChatFixtures.idleAfterCompletion)
     await waitFor(() => expect(AgentChatTestSource.instances).toHaveLength(2), { timeout: 2000 })
     act(() => AgentChatTestSource.instances[1]!.snapshot(agentChatFixtures.idleAfterCompletion))
     await screen.findByText('Ready for a follow-up')
+    expect(mounted.mock.calls.filter(call => call.method === 'GET').length).toBeGreaterThan(reads)
     expect(first.close).toHaveBeenCalled()
     expect(sent(mounted.mock)).toHaveLength(0)
   })
