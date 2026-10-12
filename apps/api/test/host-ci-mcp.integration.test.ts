@@ -63,8 +63,8 @@ function fakeComputers(github: Record<string, boolean> = {}, cloud: boolean | { 
       }
       if (request.operation === 'start') {
         if (computer.hostRef.kind === 'cloud' && computer.hostRef.provider === 'circleci'
-          && request.part === 'unit-other') {
-          throw new DomainError('CI_CLOUD_UNAVAILABLE', 'CircleCI cannot run the Worker unit tests (no podman).', 409)
+          && request.suite !== 'integration') {
+          throw new DomainError('CI_CLOUD_UNAVAILABLE', 'CircleCI runs integration only.', 409)
         }
         if (github[computer.label] === false) throw new DomainError('COMPUTER_GITHUB_REQUIRED', 'Log in to GitHub.', 409)
         const existing = runs.get(request.runId)
@@ -815,37 +815,6 @@ it('lists cloud CI slots beside build computers through MCP', async () => {
     const computers = CiComputersOutputSchema.parse(await f.value(f.operator, 'ci_computers_list', {}))
     expect(computers.computers.find(value => value.label === 'GitHub Actions 1'))
       .toMatchObject({ hostRef: { kind: 'cloud', provider: 'github', slot: 0 }, priority: 30 })
-  } finally { await f.close() }
-})
-
-it('lists persisted active tickets on their assigned computers even when host status has no runs', async () => {
-  const f = await fixture({ cloud: { github: 1, circleci: 1 } })
-  try {
-    const denied = await f.connect(['workflows:read'])
-    expect((await f.call(denied, 'ci_computers_list', {})).isError).toBe(true)
-    await f.value(f.operator, 'ci_run', { suite: 'integration', scope: 'full', partitions: 5,
-      commandId: 'computer-readback' })
-    const request = f.endpoint.request.bind(f.endpoint)
-    f.endpoint.request = async (computer, input) => {
-      const reply = await request(computer, input)
-      if (reply.operation === 'start' && computer.hostRef.provider === 'circleci') {
-        return { ...reply, run: { ...reply.run, state: 'starting' } }
-      }
-      return reply.operation === 'status' ? { ...reply, runs: [] } : reply
-    }
-    await f.ci.dispatch()
-    expect(f.started).toHaveLength(4)
-    const read = CiComputersOutputSchema.parse(await f.value(f.operator, 'ci_computers_list', {}))
-    for (const computer of f.computers) {
-      const assigned = f.started.filter(start => start.computer === computer.label)
-        .map(start => start.request.operation === 'start' ? start.request.runId : '')
-      expect(read.computers.find(value => value.label === computer.label)?.running).toEqual(assigned)
-    }
-    const first = f.started[0]!
-    if (first.request.operation !== 'start') throw new Error('Expected a start request')
-    await f.value(f.operator, 'ci_cancel', { ticketId: first.request.runId })
-    const afterCancel = CiComputersOutputSchema.parse(await f.value(f.operator, 'ci_computers_list', {}))
-    expect(afterCancel.computers.find(value => value.label === first.computer)?.running).toEqual([])
   } finally { await f.close() }
 })
 

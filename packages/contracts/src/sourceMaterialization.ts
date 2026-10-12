@@ -76,21 +76,6 @@ export const MaterializationReceiptSchema = z.object({
 })
 export type MaterializationReceipt = z.infer<typeof MaterializationReceiptSchema>
 
-/** Main's private receipt file can reuse its retained, immutable snapshot bytes. */
-export const SourceSnapshotReferenceSchema = z.object({
-  canonicalStorePath: z.string().min(1), storeIdentity: RootBindingSchema.shape.filesystem,
-}).strict()
-export type SourceSnapshotReference = z.infer<typeof SourceSnapshotReferenceSchema>
-export const SourceMaterializationFileSchema = z.object({
-  receipt: MaterializationReceiptSchema, manifest: SourceManifestSchema,
-  snapshotReference: SourceSnapshotReferenceSchema.optional(),
-}).strict().superRefine((value, context) => {
-  if (value.snapshotReference && (!value.receipt.worktree || value.receipt.binding.deviceId !== null || value.receipt.quota)) {
-    context.addIssue({ code: 'custom', path: ['snapshotReference'],
-      message: 'Shared snapshot references require a Main-local agent worktree without a Job quota.' })
-  }
-})
-
 export function sourceMaterializationComponents(receipt: Pick<MaterializationReceipt, 'materializationId' | 'quota'>): string[] {
   return [...(receipt.quota ? [receipt.quota.namespace] : []), receipt.materializationId]
 }
@@ -98,7 +83,7 @@ export function sourceMaterializationParent(receipt: MaterializationReceipt): st
   return [receipt.binding.canonicalPath.replace(/\/$/, ''), ...sourceMaterializationComponents(receipt)].join('/')
 }
 
-/** Main asks an Agent's computer for its current files as its base commit when unchanged, or a git bundle when changed. */
+/** Main asks an Agent's computer for its current files as a git bundle on top of the worktree's base commit. */
 export const AGENT_SNAPSHOT_NAMESPACE = 'agent-snapshot-v1'
 export const AgentSnapshotRequestSchema = z.object({
   path: z.string().startsWith('/').max(4096),
@@ -106,5 +91,5 @@ export const AgentSnapshotRequestSchema = z.object({
 }).strict()
 export const AgentSnapshotResultSchema = z.object({
   commit: z.string().regex(/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/),
-  bundleBase64: z.string().max(960 * 1024).nullable(),
+  bundleBase64: z.string().max(960 * 1024),
 }).strict()
