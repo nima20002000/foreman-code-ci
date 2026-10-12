@@ -976,7 +976,7 @@ it('lists persisted active tickets on their assigned computers even when host st
 })
 
 it.each(['github', 'circleci'] as const)('requeues an unstarted %s ticket and runs it elsewhere through MCP', async provider => {
-  const readiness = { laptop: false, builder: false }
+  const readiness = { laptop: true, builder: false }
   const f = await fixture({ github: readiness,
     cloud: { github: provider === 'github' ? 2 : 0, circleci: provider === 'circleci' ? 2 : 0 } })
   f.computers.splice(1, 1)
@@ -1012,22 +1012,18 @@ it.each(['github', 'circleci'] as const)('requeues an unstarted %s ticket and ru
     expect((CiGetOutputSchema.parse(await f.value(reader, 'ci_get', { ticketId: started.ticketId }))).run)
       .toMatchObject({ state: 'starting', step: 'dispatch', computer: { hostRef: { provider } } })
     exhausted = true
-    await f.ci.dispatch()
     const queued = CiGetOutputSchema.parse(await f.value(reader, 'ci_get', { ticketId: started.ticketId }))
     expect(queued.run).toMatchObject({ state: 'queued', computer: null, step: null, startedAt: null,
       finishedAt: null, unstartedProviders: [provider], message: expect.stringContaining('dispatch retries exhausted') })
     expect((await f.pool.query('select record,host_key from ci_runs where id=$1', [started.ticketId])).rows[0])
       .toMatchObject({ host_key: null, record: queued.run })
     expect(CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', input))).toEqual(tickets)
-    readiness.laptop = true
-    await f.ci.dispatch()
     f.finish(tickets.ticketId, 0, 'Host slice completed.\n')
     await f.ci.dispatch()
     const running = CiGetOutputSchema.parse(await f.value(reader, 'ci_get', { ticketId: started.ticketId }))
     expect(running.run).toMatchObject({ id: started.ticketId, state: 'running', computer: { label: 'laptop' },
       message: null, unstartedProviders: [provider] })
     f.finish(started.ticketId, 0, 'Completed on another computer.\n')
-    await f.ci.dispatch()
     const finished = CiGetOutputSchema.parse(await f.value(reader, 'ci_get', { ticketId: started.ticketId }))
     expect(finished.run).toMatchObject({ state: 'passed', exitCode: 0, message: null })
     expect((await f.pool.query('select record from ci_runs where id=$1', [started.ticketId])).rows[0].record)

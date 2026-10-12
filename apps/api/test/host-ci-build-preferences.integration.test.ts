@@ -102,13 +102,9 @@ it('honors persisted MCP build participation and priority while retaining assign
       return saved
     }
     const list = async () => CiComputersOutputSchema.parse(await call(reader, 'ci_computers_list', { workspaceId }))
-    const start = async () => {
-      const started = CiRunOutputSchema.parse(await call(writer, 'ci_run', {
-        workspaceId, suite: 'install', commandId: randomUUID(),
-      }))
-      await ci!.dispatch()
-      return started
-    }
+    const start = async () => CiRunOutputSchema.parse(await call(writer, 'ci_run', {
+      workspaceId, suite: 'install', commandId: randomUUID(),
+    }))
     const get = async (ticketId: string) => CiGetOutputSchema.parse(await call(reader, 'ci_get', { workspaceId, ticketId }))
 
     expect((await list()).computers).toEqual([])
@@ -155,7 +151,6 @@ it('honors persisted MCP build participation and priority while retaining assign
     const entry = runs.get(second.ticketId)!
     entry.run = { ...entry.run, state: 'passed', exitCode: 0, finishedAt: new Date().toISOString() }
     await save(devices[0]!.target, false, 20)
-    await ci.dispatch()
     expect((await get(second.ticketId)).run.state).toBe('passed')
     expect((await db.pool.query('select state from ci_runs where id=$1', [second.ticketId])).rows[0]!.state).toBe('passed')
     await db.pool.query('update build_computer_preferences set target=$1::jsonb where host_key=$2',
@@ -183,7 +178,6 @@ it('honors persisted MCP build participation and priority while retaining assign
     const partitioned = CiRunOutputSchema.parse(await call(writer, 'ci_run', {
       workspaceId, suite: 'integration', commandId: randomUUID(), partitions: 2,
     }))
-    await ci.dispatch()
     const partitionRead = await get(partitioned.ticketId)
     const higher = partitionRead.partitions!.find(run => run.partition?.index === 0)!
     const lower = partitionRead.partitions!.find(run => run.partition?.index === 1)!
