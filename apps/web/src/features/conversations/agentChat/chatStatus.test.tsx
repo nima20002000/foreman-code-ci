@@ -1,5 +1,4 @@
-import { act, cleanup, fireEvent, screen, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { agentChatFixtures, type AgentChatState } from '@foreman-code/contracts/agent-chat'
@@ -17,9 +16,9 @@ afterEach(() => {
 })
 
 it.each([
-  ['interrupting', 'Stopping chat'],
-  ['uncertain', 'Delivery unconfirmed'],
-  ['waiting_approval', 'Approval pending'],
+  ['interrupting', 'Stop requested—execution not yet confirmed stopped.'],
+  ['uncertain', 'Delivery uncertain—may still be running.'],
+  ['waiting_approval', 'Waiting for approval'],
 ] as const)('visibly explains Board chat %s even when sending is unavailable', async (phase, label) => {
   const state: AgentChatState = structuredClone(agentChatFixtures.active)
   state.sessionState = phase
@@ -28,11 +27,12 @@ it.each([
   clients.push(mounted.client)
   await mounted.ready()
   expect(screen.getByText(label)).toBeVisible()
-  await userEvent.hover(screen.getByRole('status', { name: 'Agent state' }))
-  expect(await screen.findByRole('tooltip')).toHaveTextContent('Native delivery not confirmed')
+  const availability = screen.getByText('Messaging paused').closest('details')!
+  fireEvent.click(within(availability).getByText('Messaging paused'))
+  expect(within(availability).getByText('Native delivery not confirmed')).toBeVisible()
 })
 
-it('shows online reconnection while saved GET reads remain available', async () => {
+it('keeps readable chat quiet while polling is available', async () => {
   const mounted = mountChat(agentChatFixtures.idleAfterCompletion)
   clients.push(mounted.client)
   await mounted.ready()
@@ -40,8 +40,8 @@ it('shows online reconnection while saved GET reads remain available', async () 
   const stream = AgentChatTestSource.instances[0]!
   act(() => stream.open())
   act(() => stream.fail())
-  expect(await screen.findByText('Reconnecting to live updates')).toBeVisible()
-  expect(screen.getByText('It is a workflow engine.', { selector: '.conversation-message-content, .conversation-message-content p' })).toBeVisible()
+  expect(screen.queryByText('Connecting to activity updates.')).not.toBeInTheDocument()
+  expect(screen.getByText('It is a workflow engine.', { selector: '.conversation-message-content' })).toBeVisible()
 })
 
 it('shows the Board chat command error inline', async () => {
