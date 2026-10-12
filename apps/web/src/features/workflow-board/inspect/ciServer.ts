@@ -1,5 +1,5 @@
 import { CiListOutputSchema, CiLogsOutputSchema, CiTestsOutputSchema,
-  type CiPlacement, type CiRunJob, type CiTestStatus } from '@foreman-code/contracts'
+  type CiActivity, type CiPlacement, type CiRunJob, type CiTestStatus } from '@foreman-code/contracts'
 import { apiClient, type RequestOptions } from '../../../shared/api/client'
 import type { AgentNodeState } from '../../../shared/ui/nocturne'
 
@@ -19,6 +19,22 @@ export const runCiApi = {
 
 const ACTIVE: readonly CiRunJob['ci']['state'][] = ['queued', 'starting', 'running']
 export const isActiveCiJob = (job: CiRunJob) => ACTIVE.includes(job.ci.state)
+
+/** Prefer unfinished work, then the newest ticket, so a completed part cannot hide running CI. */
+export function ciNodeActivities(jobs: readonly CiRunJob[]): Map<string, CiActivity> {
+  const priority = { running: 3, starting: 2, queued: 1, passed: 0, failed: 0, canceled: 0, lost: 0 }
+  const nodes = new Map<string, CiActivity>()
+  for (const job of jobs) {
+    const previous = nodes.get(job.requester.nodeId)
+    if (!previous || priority[job.ci.state] > priority[previous.state]) {
+      nodes.set(job.requester.nodeId, job.ci)
+    }
+  }
+  return nodes
+}
+
+/** The CI server tower on the Board; edges meet its box-shaped border. */
+export const CI_SERVER_SIZE = { width: 184, height: 212 } as const
 
 export const CI_PLACEMENT_LABELS: Record<CiPlacement, string> = { host: 'Host CI', github: 'GitHub Actions', circleci: 'CircleCI' }
 

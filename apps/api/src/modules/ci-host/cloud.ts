@@ -9,10 +9,11 @@ import { componentLogger } from '../diagnostics/logger.js'
 import { ensureClone, fetchRepositoryBranch, systemGitWorktreePorts, type GitWorktreePorts } from '../sources/gitWorktree.js'
 import { systemHostCiPorts, type HostCiPorts } from './runner.js'
 import type { HostCiComputer } from './service.js'
-import { CircleCiProvider, GitHubActionsProvider, type CloudDispatchInput, type CloudProvider } from './cloudProviders.js'
+import { CLOUD_START_TIMEOUT_MS, CircleCiProvider, GitHubActionsProvider,
+  type CloudDispatchInput, type CloudProvider } from './cloudProviders.js'
+import { runsOnCircleCi } from './parts.js'
 
 const LOG_LIMIT = 4 * 1024 * 1024
-const START_TIMEOUT_MS = 75_000
 const MAX_DISPATCH_ATTEMPTS = 3
 const log = componentLogger('jobs')
 
@@ -133,10 +134,14 @@ export class CloudCi {
     files?: string[] | undefined; defaultBranch?: string | undefined; baseCommit?: string | undefined }): Promise<CiHostRun> {
     const existing = await this.read(request.runId).catch(() => null)
     if (existing) return this.view(existing, 0)
+    if (request.suite === 'integration' && request.partition?.hostIndexes?.includes(request.partition.index)) {
+      throw new DomainError('CI_CLOUD_UNAVAILABLE',
+        'This integration partition requires a build computer with user systemd.', 409)
+    }
     const mirror = await this.mirrors(request.repository)
-    // CircleCI's machine image has no podman, which the Worker and check suites use; it takes integration work only.
-    if (this.provider.id === 'circleci' && request.suite !== 'integration') {
-      throw new DomainError('CI_CLOUD_UNAVAILABLE', `${this.provider.label} runs integration partitions only.`, 409)
+    // CircleCI's machine image has no podman, which the Worker unit tests (unit-other) use.
+    if (this.provider.id === 'circleci' && !runsOnCircleCi(request)) {
+      throw new DomainError('CI_CLOUD_UNAVAILABLE', `${this.provider.label} cannot run the Worker unit tests (no podman).`, 409)
     }
     if (!mirror || !await this.ready()) {
       throw new DomainError('CI_CLOUD_UNAVAILABLE', `This workspace has no CI mirror, or Main is not logged in to ${this.provider.label}.`, 409)
@@ -200,7 +205,7 @@ export class CloudCi {
 
   private async recoverUnstarted(run: CloudRun) {
     const dispatchedAt = run.dispatch?.at ?? run.startedAt
-    if (this.ports.now().getTime() - Date.parse(dispatchedAt) < START_TIMEOUT_MS) return run
+    if (this.ports.now().getTime() - Date.parse(dispatchedAt) < CLOUD_START_TIMEOUT_MS) return run
     // Retire the pipeline before retrying so it cannot acquire a workflow later.
     if (run.providerRunId) {
       await this.provider.cancel(run)
