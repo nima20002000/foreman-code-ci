@@ -2,8 +2,7 @@ import { useEffect, useRef } from 'react'
 import { Link } from '@tanstack/react-router'
 import type { ManagedWorkflow } from '@foreman-code/contracts/management'
 
-import { useInteractionsQuery, useWorkflowPages, useManagedWorkflowQuery } from '../../shared/api/query'
-import { usePrefetchWorkflowBoard } from '../workflow-board/prefetch'
+import { useInteractionsQuery, useWorkflowPages, useManagedWorkflowQuery, usePrefetchBoard } from '../../shared/api/query'
 import { LoadMore } from '../../shared/ui/LoadMore'
 import { Badge } from '../../shared/ui/nocturne'
 import { RemoveWorkflowButton } from './RemoveWorkflowButton'
@@ -28,7 +27,7 @@ function WorkflowNavigationItem({
   pendingCount: number | undefined
 }) {
   const { workflow } = item
-  const prefetch = usePrefetchWorkflowBoard()
+  const prefetch = usePrefetchBoard()
   // The open workflow stays in sight in a long list instead of sitting clipped below the fold.
   const row = useRef<HTMLLIElement>(null)
   useEffect(() => { if (active) row.current?.scrollIntoView?.({ block: 'nearest' }) }, [active])
@@ -41,8 +40,8 @@ function WorkflowNavigationItem({
         className={`nav-item workflow-navigation-item${active ? ' nav-item-active' : ''}`}
         aria-current={active ? 'page' : undefined}
         title={workflow.name}
-        onMouseEnter={() => prefetch(workspaceId, workflow.id)}
-        onFocus={() => prefetch(workspaceId, workflow.id)}
+        onMouseEnter={() => prefetch.board(workspaceId, workflow.id)}
+        onFocus={() => prefetch.board(workspaceId, workflow.id)}
       >
         <span className="nav-item-label">{workflow.name}</span>
         {item.currentVersionId === null ? <Badge className="workflow-draft-badge">Draft</Badge> : null}
