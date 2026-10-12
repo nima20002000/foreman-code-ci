@@ -167,7 +167,6 @@ export class FoundationSettingsManagementService {
         const skillsChanged = !isDeepStrictEqual(previous.value.operator.assignedSkills ?? [], skills)
         const operatorChanged = !isDeepStrictEqual(previous.value.operator.harnessProfileSelection, value.operator.harnessProfileSelection) || skillsChanged || !isDeepStrictEqual(withAdvancedDefaults(previous.value.operator.harness), withAdvancedDefaults(value.operator.harness))
           || (previous.value.operator.showThinking ?? false) !== (value.operator.showThinking ?? false)
-          || !isDeepStrictEqual(previous.value.operator.nativeTools, value.operator.nativeTools)
         if (operatorChanged) {
           // Republishing unchanged references still requires authority over their source workspaces.
           for (const reference of skills) requireAuthorization(principal, 'skills:read', { workspaceId: reference.workspaceId })
@@ -178,12 +177,9 @@ export class FoundationSettingsManagementService {
         if (operators && current && (!isDeepStrictEqual(current.configuration.harnessProfileSelection, value.operator.harnessProfileSelection)
           || !isDeepStrictEqual(current.configuration.harness, value.operator.harness)
           || (current.configuration.showThinking ?? false) !== (value.operator.showThinking ?? false)
-          || !isDeepStrictEqual(current.configuration.assignedSkills ?? [], skills)
-          || !isDeepStrictEqual(current.configuration.nativeTools, value.operator.nativeTools))) {
+          || !isDeepStrictEqual(current.configuration.assignedSkills ?? [], skills))) {
           await operators.updateWithClient(
-            client, value.operator.harness, current.operator.currentConfigurationVersionId,
-            value.operator.showThinking ?? false, skills, value.operator.harnessProfileSelection ?? null,
-            value.operator.nativeTools ?? null,
+            client, value.operator.harness, current.operator.currentConfigurationVersionId, value.operator.showThinking ?? false, skills, value.operator.harnessProfileSelection ?? null,
           )
         }
         return result

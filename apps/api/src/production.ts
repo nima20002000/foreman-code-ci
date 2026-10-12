@@ -1803,11 +1803,14 @@ export function buildProductionApp(
     current: Awaited<ReturnType<PostgresOperatorRepository['ensure']>>,
     template: AgentDefaults['operator'],
   ): Promise<void> => {
-    await inTransaction(database.pool, undefined, client => operators.updateWithClient(
-      client, template.harness, current.operator.currentConfigurationVersionId,
-      template.showThinking ?? false, template.assignedSkills, template.harnessProfileSelection ?? null,
-      template.nativeTools ?? null,
-    ))
+    if (current.configuration.harness.harness === 'opencode') {
+      await inTransaction(database.pool, undefined, client => operators.updateWithClient(
+        client, template.harness, current.operator.currentConfigurationVersionId,
+        template.showThinking ?? false, template.assignedSkills, template.harnessProfileSelection ?? null,
+      ))
+      return
+    }
+    await operators.update(template.harness, current.operator.currentConfigurationVersionId)
   }
   const initialize = (): Promise<void> => {
     if (closing) return Promise.reject(new DomainError('NATIVE_RUNTIME_CLOSING', 'The native runtime is shutting down.', 503))
@@ -1830,8 +1833,7 @@ export function buildProductionApp(
       assertOpen()
       const defaults = await foundationSettings.getAgentDefaults()
       assertOpen()
-      if (!isDeepStrictEqual(operator.configuration.harness, defaults.value.operator.harness)
-        || !isDeepStrictEqual(operator.configuration.nativeTools, defaults.value.operator.nativeTools)) {
+      if (!isDeepStrictEqual(operator.configuration.harness, defaults.value.operator.harness)) {
         await synchronizeOperatorDefaults(operator, defaults.value.operator)
         assertOpen()
       }

@@ -21,13 +21,6 @@ import { placementCapabilityLimit } from '../../../modules/placement/transports.
 import type { OperatorCatalog } from '../presentation.js'
 
 export const OPERATOR_RUNTIME_LIMITS = [
-  { feature: 'native_tool_loading', state: 'protected',
-    detail: 'agent_defaults_get/update reads and replaces role nativeTools policies with global settings grants. '
-      + 'agent_create copies them; agent_update overrides them with scoped agents:update and revision checks. '
-      + 'Read agent_get for the saved policy: mcpServers is a native server allowlist, apps controls apps/connectors '
-      + 'and Claude SDK plugins, {} inherits host settings. Foreman Code retains its role and access grants. '
-      + 'Changes apply to new sessions; accepted Runs keep immutable configuration pins. '
-      + 'Claude external MCP connections remain unsupported.' },
   { feature: 'run_start_source', state: 'protected',
     detail: 'In a GitHub workspace, run_start fetches the configured default branch and automatically approves its '
       + 'tracked tree under the existing source policy and audit. All Run Agents retain that commit; unchanged '
