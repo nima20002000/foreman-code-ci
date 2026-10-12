@@ -1,6 +1,6 @@
-/* global process */
-import { readFile } from 'node:fs/promises'
-import { serializeError } from '../../src/modules/diagnostics/logger.ts'
+/* global process, setInterval, clearInterval */
+import { readFile, rename, writeFile } from 'node:fs/promises'
+import { componentLogger, serializeError } from '../../src/modules/diagnostics/logger.ts'
 import { createDatabase } from '../../src/infrastructure/database.ts'
 import { createCheckpointStore } from '../../src/infrastructure/checkpoints.ts'
 import { buildProductionApp } from '../../src/production.ts'
@@ -8,6 +8,17 @@ import { codexQualificationSuite } from '../../src/modules/harnesses/qualificati
 import { discoverInventoryLauncher } from '../../src/modules/harnesses/hostDiscovery.ts'
 import { inventoryDriverPayloads } from '../../src/modules/harnesses/payloadDiscovery.ts'
 import { discoverInstalledClaudeSdk } from '../../src/modules/harnesses/claudeSdk/currentPin.ts'
+import { ApprovalExecutionCoordinator } from '../../src/modules/interactions/execution.ts'
+
+if (process.env.FOREMAN_CODE_RESTART_FIXTURE_READY) {
+  const preserve = ApprovalExecutionCoordinator.prototype.preserveActiveForRestart
+  ApprovalExecutionCoordinator.prototype.preserveActiveForRestart = function (owner) {
+    return Promise.all([
+      preserve.call(this, owner),
+      writeFile(`${process.env.FOREMAN_CODE_RESTART_FIXTURE_READY}.preserving`, 'preserving', { mode: 0o600 }),
+    ]).then(([result]) => result)
+  }
+}
 
 const { config, infrastructure, claudeInventory } = JSON.parse(await readFile(process.argv[2], 'utf8'))
 infrastructure.inventoryDiscovery = {
@@ -21,6 +32,14 @@ const database = createDatabase(config.database)
 const checkpoints = createCheckpointStore(config.database.connectionString, config.checkpoints.schema, config.database)
 const production = buildProductionApp(config, database, checkpoints, false,
   undefined, undefined, { codex: codexQualificationSuite }, infrastructure)
+const reportReconciliation = error => componentLogger('engine').error({ err: error }, 'run reconciliation failed')
+if (process.env.FOREMAN_CODE_RESTART_FIXTURE_READY) {
+  production.app.post('/__fixture-reconcile', async request => {
+    if (request.body.kind === 'reconcile-reviews') await production.engine.reconcile(reportReconciliation)
+    else await production.reconcile(reportReconciliation)
+    return { reconciled: true }
+  })
+}
 const files = production.registerFileStorage()
 await checkpoints.setup()
 await production.initialize()
@@ -28,7 +47,21 @@ await production.initialize()
 await files.bytes.initialize()
 const origin = await production.app.listen({ host: '127.0.0.1', port: config.port })
 await production.startDeviceListener()
+let reconciliationTimer
+if (process.env.FOREMAN_CODE_RESTART_FIXTURE_READY) {
+  await production.reconcile(reportReconciliation)
+  reconciliationTimer = setInterval(() => {
+    void production.reconcile(reportReconciliation).catch(reportReconciliation)
+  }, 5000)
+  reconciliationTimer.unref()
+}
 process.send?.({ kind: 'ready', origin })
+if (process.env.FOREMAN_CODE_RESTART_FIXTURE_READY) {
+  const readyFile = process.env.FOREMAN_CODE_RESTART_FIXTURE_READY
+  await writeFile(`${readyFile}.tmp`,
+    JSON.stringify({ pid: process.pid, origin }), { mode: 0o600 })
+  await rename(`${readyFile}.tmp`, readyFile)
+}
 let closing = false
 let reconciliationFailure
 process.on('message', async message => {
@@ -54,6 +87,7 @@ process.on('message', async message => {
 async function close() {
   if (closing) return
   closing = true
+  clearInterval(reconciliationTimer)
   try {
     await production.shutdown()
     await checkpoints.close()

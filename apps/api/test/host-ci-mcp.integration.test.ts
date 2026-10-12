@@ -203,8 +203,11 @@ async function fixture(options: { repository?: boolean; github?: Record<string, 
       throw error
     }
   }
-  const call = async (client: Client, name: string, input: Record<string, unknown>) =>
-    client.callTool({ name, arguments: { workspaceId, ...input } })
+  const call = async (client: Client, name: string, input: Record<string, unknown>) => {
+    // Drive the background refresh explicitly; polling itself only reads persisted state.
+    if (name === 'ci_get') await ci.dispatch()
+    return client.callTool({ name, arguments: { workspaceId, ...input } })
+  }
   const value = async (client: Client, name: string, input: Record<string, unknown>) => {
     const result = await call(client, name, input)
     expect(result.isError, JSON.stringify(result.content)).not.toBe(true)
@@ -435,6 +438,13 @@ it('shares split suite and group log readback between authenticated HTTP and MCP
     expect(started.partitions).toHaveLength(2)
     await f.ci.dispatch()
     for (const [index, ticket] of started.partitions!.entries()) f.finish(ticket.ticketId, index, `result ${index}\n`)
+    // Completion reaches Main through background refresh, independently of HTTP or MCP reads.
+    await expect.poll(async () => {
+      const rows = (await f.pool.query<{ record: unknown }>(
+        'select record from ci_runs where group_id=(select group_id from ci_runs where id=$1)',
+        [started.ticketId])).rows
+      return rows.map(row => CiRunRecordSchema.parse(row.record).state).sort()
+    }, { timeout: 10_000 }).toEqual(['failed', 'passed'])
     const read = await f.app.inject({ method: 'GET', url: `${url}/${started.ticketId}`, headers })
     const result = CiGetOutputSchema.parse(read.json())
     expect(result.group?.state).toBe('failed')

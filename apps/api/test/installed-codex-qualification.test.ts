@@ -23,14 +23,9 @@ const mount = vi.hoisted(() => ({ revision: '', manifest: {} as unknown,
 }))
 vi.mock('node:fs/promises', async importOriginal => {
   const actual = await importOriginal<typeof import('node:fs/promises')>()
-  return { ...actual, readFile: async (...args: Parameters<typeof actual.readFile>) => {
-    const path = args[0] instanceof URL ? args[0].pathname : String(args[0])
-    if (path.endsWith('/apps/worker/manifest.json')) return JSON.stringify(mount.manifest)
-    if (path.endsWith('/apps/worker/artifacts/graphql-mcp.mjs')) {
-      return actual.readFile(new URL('../../../scripts/graphql-mcp.mjs', import.meta.url), args[1])
-    }
-    return actual.readFile(...args)
-  } }
+  return { ...actual, readFile: async (...args: Parameters<typeof actual.readFile>) =>
+    (args[0] instanceof URL ? args[0].pathname : String(args[0])).endsWith('/apps/worker/manifest.json')
+      ? JSON.stringify(mount.manifest) : actual.readFile(...args) }
 })
 vi.mock('node:fs', async importOriginal => {
   const actual = await importOriginal<typeof import('node:fs')>()
