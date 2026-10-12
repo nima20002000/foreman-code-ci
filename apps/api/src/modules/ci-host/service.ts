@@ -8,21 +8,13 @@ import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import type { PostgresCommandCoordinator } from '../commands/postgres.js'
 import type { CiAuthority } from '../jobs/ciAuthority.js'
 import { CI_GET_ACTIONS, CI_RUN_ACTIONS } from '../jobs/ciAuthority.js'
-import { DomainError, databaseReadFailure } from '../errors.js'
+import { DomainError } from '../errors.js'
 import { requireAuthorization } from '../access/policy.js'
 import { componentLogger } from '../diagnostics/logger.js'
 import { ciGroupState, planCiParts, runsOnCircleCi, type CiUnitInventory } from './parts.js'
 import { assertCiReadAccess } from './runAccess.js'
 import type { CiRepositoryCapabilities } from './repository.js'
 import { RUN_CI_JOBS_SQL, runCiJob, storedCiTestResults, type RunCiJobRow } from './runJobs.js'
-
-/** CI reads are idempotent: one retry after a lock or statement timeout, then a typed retryable error. */
-async function retryRead<T>(work: () => Promise<T>): Promise<T> {
-  try { return await work() } catch (error) {
-    if (databaseReadFailure(error) === error) throw error
-    return work().catch(retry => { throw databaseReadFailure(retry) })
-  }
-}
 
 type HostRef = CiRunRecord['computer'] extends infer C ? C extends { hostRef: infer H } ? H : never : never
 export interface HostCiComputer { key: string; hostRef: HostRef; label: string; priority: number }
@@ -251,33 +243,29 @@ export class HostCiService {
 
   async get(caller: ManagementPrincipal, input: { workspaceId?: string | undefined; ticketId: string
     testStatus?: CiTestStatus[] | undefined }) {
-    return retryRead(async () => {
-      const scope = await this.authority.resolve(caller, input.workspaceId, CI_GET_ACTIONS)
-      const row = (await this.pool.query<{ record: unknown; log_tail: string }>(
-        'select record,log_tail from ci_runs where id=$1 and workspace_id=$2',
-        [input.ticketId, scope.workspaceId])).rows[0]
-      if (!row) throw new DomainError('CI_RUN_NOT_FOUND', 'No such CI run in this workspace.', 404)
-      const run = CiRunRecordSchema.parse(row.record)
-      assertCiReadAccess(caller, scope.executionId, run)
-      const group = (await this.pool.query<{ record: unknown }>(
-        `select record from ci_runs where group_id=$1 and workspace_id=$2
-          and record->'initiator'=$3::jsonb order by created_at,id`,
-        [run.groupId, scope.workspaceId, JSON.stringify(run.initiator)])).rows.map(row => CiRunRecordSchema.parse(row.record))
-      return { run, partitions: group.length > 1 ? group : undefined, logTail: row.log_tail,
-        group: { groupId: run.groupId, state: ciGroupState(group) },
-        ...(input.testStatus ? { tests: await this.testResults(run.id, scope.workspaceId, input.testStatus) } : {}) }
-    })
+    const scope = await this.authority.resolve(caller, input.workspaceId, CI_GET_ACTIONS)
+    const row = (await this.pool.query<{ record: unknown; log_tail: string }>(
+      'select record,log_tail from ci_runs where id=$1 and workspace_id=$2',
+      [input.ticketId, scope.workspaceId])).rows[0]
+    if (!row) throw new DomainError('CI_RUN_NOT_FOUND', 'No such CI run in this workspace.', 404)
+    const run = CiRunRecordSchema.parse(row.record)
+    assertCiReadAccess(caller, scope.executionId, run)
+    const group = (await this.pool.query<{ record: unknown }>(
+      `select record from ci_runs where group_id=$1 and workspace_id=$2
+        and record->'initiator'=$3::jsonb order by created_at,id`,
+      [run.groupId, scope.workspaceId, JSON.stringify(run.initiator)])).rows.map(row => CiRunRecordSchema.parse(row.record))
+    return { run, partitions: group.length > 1 ? group : undefined, logTail: row.log_tail,
+      group: { groupId: run.groupId, state: ciGroupState(group) },
+      ...(input.testStatus ? { tests: await this.testResults(run.id, scope.workspaceId, input.testStatus) } : {}) }
   }
 
   /** The ticket's structured test results, limited to the given statuses; null until a finished test run reports them. */
   async tests(caller: ManagementPrincipal, input: { workspaceId?: string | undefined; ticketId: string
     status?: CiTestStatus[] | undefined }) {
-    return retryRead(async () => {
-      const scope = await this.authority.resolve(caller, input.workspaceId, CI_GET_ACTIONS)
-      const run = await this.read(input.ticketId, scope.workspaceId)
-      assertCiReadAccess(caller, scope.executionId, run)
-      return { ticketId: run.id, tests: await this.testResults(run.id, scope.workspaceId, input.status) }
-    })
+    const scope = await this.authority.resolve(caller, input.workspaceId, CI_GET_ACTIONS)
+    const run = await this.read(input.ticketId, scope.workspaceId)
+    assertCiReadAccess(caller, scope.executionId, run)
+    return { ticketId: run.id, tests: await this.testResults(run.id, scope.workspaceId, input.status) }
   }
 
   private async testResults(id: string, workspaceId: string, statuses?: CiTestStatus[]): Promise<CiTestResults | null> {
@@ -289,43 +277,39 @@ export class HostCiService {
   /** Every CI ticket the Run's Agents requested, newest first, with the requesting Agent's node and test counts.
    * Agents read only their own tickets with ci_get; the Run-wide list is for the app and the Operator. */
   async list(caller: ManagementPrincipal, input: { workspaceId?: string | undefined; runId: string }): Promise<CiListOutput> {
-    return retryRead(async () => {
-      if (caller.audience === 'worker') {
-        throw new DomainError('ACCESS_DENIED', 'Agents read their own CI tickets with ci_get.', 403)
-      }
-      const scope = await this.authority.resolve(caller, input.workspaceId, CI_GET_ACTIONS)
-      const run = (await this.pool.query<{ workflow_id: string }>('select workflow_id from runs where id=$1 and workspace_id=$2',
-        [input.runId, scope.workspaceId])).rows[0]
-      if (!run) throw new DomainError('RUN_NOT_FOUND', 'The Run was not found in this workspace.', 404)
-      requireAuthorization(caller, 'runs:read', { workspaceId: scope.workspaceId, workflowId: run.workflow_id, runId: input.runId })
-      const rows = (await this.pool.query<RunCiJobRow>(RUN_CI_JOBS_SQL, [scope.workspaceId, input.runId])).rows
-      return CiListOutputSchema.parse({ runId: input.runId, jobs: rows.slice(0, CI_RUN_JOBS_LIMIT).map(runCiJob),
-        truncated: rows.length > CI_RUN_JOBS_LIMIT })
-    })
+    if (caller.audience === 'worker') {
+      throw new DomainError('ACCESS_DENIED', 'Agents read their own CI tickets with ci_get.', 403)
+    }
+    const scope = await this.authority.resolve(caller, input.workspaceId, CI_GET_ACTIONS)
+    const run = (await this.pool.query<{ workflow_id: string }>('select workflow_id from runs where id=$1 and workspace_id=$2',
+      [input.runId, scope.workspaceId])).rows[0]
+    if (!run) throw new DomainError('RUN_NOT_FOUND', 'The Run was not found in this workspace.', 404)
+    requireAuthorization(caller, 'runs:read', { workspaceId: scope.workspaceId, workflowId: run.workflow_id, runId: input.runId })
+    const rows = (await this.pool.query<RunCiJobRow>(RUN_CI_JOBS_SQL, [scope.workspaceId, input.runId])).rows
+    return CiListOutputSchema.parse({ runId: input.runId, jobs: rows.slice(0, CI_RUN_JOBS_LIMIT).map(runCiJob),
+      truncated: rows.length > CI_RUN_JOBS_LIMIT })
   }
 
   /** Reads the run's log from its computer; without afterOffset it returns the last maxBytes. */
   async logs(caller: ManagementPrincipal, input: { workspaceId?: string | undefined; ticketId: string
     afterOffset?: number | undefined; maxBytes?: number | undefined; group?: boolean | undefined }) {
-    return retryRead(async () => {
-      const scope = await this.authority.resolve(caller, input.workspaceId, CI_GET_ACTIONS)
-      const run = await this.read(input.ticketId, scope.workspaceId)
-      assertCiReadAccess(caller, scope.executionId, run)
-      const maxBytes = Math.min(input.maxBytes ?? CI_LOG_MAX_BYTES, CI_LOG_MAX_BYTES)
-      if (input.group) {
-        const group = (await this.pool.query<{ record: unknown }>(
-          `select record from ci_runs where group_id=$1 and workspace_id=$2
-            and record->'initiator'=$3::jsonb order by created_at,id`,
-          [run.groupId, scope.workspaceId, JSON.stringify(run.initiator)])).rows.map(row => CiRunRecordSchema.parse(row.record))
-        const partMaxBytes = Math.max(1, Math.floor(maxBytes / group.length))
-        const parts = await Promise.all(group.map(async part => ({ run: part,
-          ...await this.readLog(part, { afterOffset: input.afterOffset, maxBytes: partMaxBytes }) })))
-        const own = parts.find(part => part.run.id === run.id)!
-        return { text: own.text, nextOffset: own.nextOffset, logBytes: own.logBytes, maxBytes, parts }
-      }
-      if (!run.computer) throw new DomainError('CI_NOT_STARTED', 'This CI run is still queued.', 409)
-      return this.readLog(run, { afterOffset: input.afterOffset, maxBytes })
-    })
+    const scope = await this.authority.resolve(caller, input.workspaceId, CI_GET_ACTIONS)
+    const run = await this.read(input.ticketId, scope.workspaceId)
+    assertCiReadAccess(caller, scope.executionId, run)
+    const maxBytes = Math.min(input.maxBytes ?? CI_LOG_MAX_BYTES, CI_LOG_MAX_BYTES)
+    if (input.group) {
+      const group = (await this.pool.query<{ record: unknown }>(
+        `select record from ci_runs where group_id=$1 and workspace_id=$2
+          and record->'initiator'=$3::jsonb order by created_at,id`,
+        [run.groupId, scope.workspaceId, JSON.stringify(run.initiator)])).rows.map(row => CiRunRecordSchema.parse(row.record))
+      const partMaxBytes = Math.max(1, Math.floor(maxBytes / group.length))
+      const parts = await Promise.all(group.map(async part => ({ run: part,
+        ...await this.readLog(part, { afterOffset: input.afterOffset, maxBytes: partMaxBytes }) })))
+      const own = parts.find(part => part.run.id === run.id)!
+      return { text: own.text, nextOffset: own.nextOffset, logBytes: own.logBytes, maxBytes, parts }
+    }
+    if (!run.computer) throw new DomainError('CI_NOT_STARTED', 'This CI run is still queued.', 409)
+    return this.readLog(run, { afterOffset: input.afterOffset, maxBytes })
   }
 
   private async readLog(run: CiRunRecord, input: { afterOffset?: number | undefined; maxBytes?: number | undefined }) {
@@ -426,24 +410,22 @@ export class HostCiService {
   }
 
   async computers(caller: ManagementPrincipal, input: { workspaceId?: string | undefined }) {
-    return retryRead(async () => {
-      await this.authority.resolve(caller, input.workspaceId, CI_GET_ACTIONS)
-      const active = (await this.pool.query<{ id: string; host_key: string }>(
-        `select id,host_key from ci_runs where state in ('starting','running') and host_key is not null
-          order by created_at,id`)).rows
-      const result = []
-      for (const computer of await this.endpoint.computers()) {
-        const running = active.filter(run => run.host_key === computer.key).map(run => run.id)
-        const status = await this.endpoint.request(computer, { operation: 'status' }).catch(error => error as Error)
-        result.push(status instanceof Error
-          ? { label: computer.label, hostRef: computer.hostRef, priority: computer.priority,
-            ready: false, reasons: [status.message], running }
-          : status.operation === 'status' ? { label: computer.label, hostRef: computer.hostRef, priority: computer.priority,
-            ready: status.ready, reasons: status.reasons, cpuCount: status.cpuCount, memoryBytes: status.memoryBytes,
-            running } : null)
-      }
-      return { computers: result.filter(Boolean) }
-    })
+    await this.authority.resolve(caller, input.workspaceId, CI_GET_ACTIONS)
+    const active = (await this.pool.query<{ id: string; host_key: string }>(
+      `select id,host_key from ci_runs where state in ('starting','running') and host_key is not null
+        order by created_at,id`)).rows
+    const result = []
+    for (const computer of await this.endpoint.computers()) {
+      const running = active.filter(run => run.host_key === computer.key).map(run => run.id)
+      const status = await this.endpoint.request(computer, { operation: 'status' }).catch(error => error as Error)
+      result.push(status instanceof Error
+        ? { label: computer.label, hostRef: computer.hostRef, priority: computer.priority,
+          ready: false, reasons: [status.message], running }
+        : status.operation === 'status' ? { label: computer.label, hostRef: computer.hostRef, priority: computer.priority,
+          ready: status.ready, reasons: status.reasons, cpuCount: status.cpuCount, memoryBytes: status.memoryBytes,
+          running } : null)
+    }
+    return { computers: result.filter(Boolean) }
   }
 
   private async computer(hostRef: HostRef) {
@@ -466,8 +448,7 @@ export class HostCiService {
     const requeued = state.state === 'queued' && computer.hostRef.kind === 'cloud'
     const unstartedProviders = new Set(run.unstartedProviders ?? [])
     if (requeued && computer.hostRef.provider) unstartedProviders.add(computer.hostRef.provider)
-    const previousMessage = run.state === 'queued' && state.state !== 'queued' ? null : run.message
-    const message = [...new Set([previousMessage, state.message].filter(Boolean))].join(' ') || null
+    const message = [...new Set([run.message, state.message].filter(Boolean))].join(' ') || null
     const next = CiRunRecordSchema.parse({ ...run, state: state.state, step: state.step, exitCode: state.exitCode,
       computer: requeued ? null : { hostRef: computer.hostRef, label: computer.label },
       startedAt: requeued ? null : run.startedAt ?? state.startedAt,
@@ -561,7 +542,6 @@ export class HostCiService {
     await Promise.all(queued.map(async run => {
       const hostRequired = run.suite === 'integration' && (!run.partition?.hostIndexes
         || run.partition.hostIndexes.includes(run.partition.index))
-      const reasons = (run.unstartedProviders ?? []).map(provider => `${provider}: dispatch retries exhausted`)
       const preferred = (computer: HostCiComputer) => Number(run.suite === 'integration'
         ? !isGitHubComputer(computer) : isGitHubComputer(computer))
       const order = computers.filter(computer => runsOnCircleCi(run)
@@ -575,15 +555,9 @@ export class HostCiService {
       for (const computer of order) {
         if (computer.hostRef.kind === 'cloud' && computer.hostRef.provider
           && run.unstartedProviders?.includes(computer.hostRef.provider)) continue
-        if (busy.has(computer.key)) {
-          reasons.push(`${computer.label}: busy`)
-          continue
-        }
+        if (busy.has(computer.key)) continue
         const usesGitHubIntegration = run.suite === 'integration' && isGitHubComputer(computer)
-        if (usesGitHubIntegration && integrationOnGitHub.size >= githubIntegrationLimit) {
-          reasons.push(`${computer.label}: slots reserved for queued checks`)
-          continue
-        }
+        if (usesGitHubIntegration && integrationOnGitHub.size >= githubIntegrationLimit) continue
         busy.add(computer.key)
         if (usesGitHubIntegration) integrationOnGitHub.add(computer.key)
         try {
@@ -596,7 +570,6 @@ export class HostCiService {
           if (reply.operation !== 'start') {
             busy.delete(computer.key)
             if (usesGitHubIntegration) integrationOnGitHub.delete(computer.key)
-            reasons.push(`${computer.label}: no start reply`)
             continue
           }
           const saved = await this.settle(run, computer, reply.run)
@@ -612,38 +585,20 @@ export class HostCiService {
             if (usesGitHubIntegration) integrationOnGitHub.delete(computer.key)
             run = await this.read(run.id, run.workspaceId)
             if (run.state !== 'queued') return
-            reasons.push(`${computer.label}: ${reply.run.message ?? 'dispatch created no work'}`)
             continue
           }
           return
         } catch (error) {
           // A busy or unready computer is skipped; the run stays queued for the next free one.
           const code = (error as { code?: unknown } | null)?.code
-          reasons.push(`${computer.label}: ${code === 'CI_HOST_BUSY' ? 'busy' : (error as Error).message}`)
           if (code !== 'CI_HOST_BUSY') {
             busy.delete(computer.key)
             if (usesGitHubIntegration) integrationOnGitHub.delete(computer.key)
           }
           if (code === 'CI_HOST_BUSY' || code === 'COMPUTER_GITHUB_REQUIRED' || code === 'CI_CLOUD_UNAVAILABLE'
             || code === 'BUILD_COMPUTER_DISABLED') continue
-          // The commit itself names private machines; no retry can publish it, so the caller learns why at once.
-          if (code === 'CI_MIRROR_PRIVATE_DATA') {
-            const now = new Date().toISOString()
-            await this.settle(run, computer, { state: 'failed', step: null, exitCode: null, startedAt: now, finishedAt: now,
-              message: (error as Error).message })
-            return
-          }
           log.warn({ err: error, runId: run.id, computer: computer.key }, 'CI start failed')
         }
-      }
-      const prefix = hostRequired ? 'Waiting for a build computer: this integration slice needs one'
-        : `No ready computer for ${run.part ?? run.suite}`
-      const message = `${prefix}; ${reasons.join('; ') || 'no eligible computers'}`.slice(0, 2000)
-      if (message !== run.message) {
-        await this.pool.query(`update ci_runs set record=$4::jsonb
-          where id=$1 and state=$2 and host_key is not distinct from $3
-            and record->>'message' is distinct from $5`,
-        [run.id, 'queued', null, JSON.stringify({ ...run, message }), message])
       }
     }))
   }
