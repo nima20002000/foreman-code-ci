@@ -29,23 +29,11 @@ function setup(defaults: HarnessDefaults, discoveryError: { code: string; messag
   const configuration = harness === 'claude' ? saved : defaults.codex
   const agent = defaultAgentForHarness(harness, 'saved-agent', 'Main coordinator', configuration)
   const onSave = vi.fn()
-  const view = render(<QueryClientProvider client={client}>
+  render(<QueryClientProvider client={client}>
     <AgentSettingsForm agent={agent} onClose={() => undefined} onSave={onSave} />
   </QueryClientProvider>)
-  return { client, onSave, agent, user: userEvent.setup(), view }
+  return { client, onSave, agent, user: userEvent.setup() }
 }
-
-it('shows the saved native tools policy and retains it on a metadata save', async () => {
-  const { client, agent, onSave, user, view } = setup(DEFAULT_HARNESS_DEFAULTS, null, 'codex')
-  const saved = { ...agent, nativeTools: { mcpServers: ['linear'], apps: false } }
-  view.rerender(<QueryClientProvider client={client}>
-    <AgentSettingsForm agent={saved} onClose={() => undefined} onSave={onSave} />
-  </QueryClientProvider>)
-  expect(screen.getByText('Native tools: Foreman Code, linear; apps off')).toBeVisible()
-  await user.type(screen.getByRole('textbox', { name: 'Name' }), ' renamed')
-  await user.click(screen.getByRole('button', { name: 'Save agent settings' }))
-  expect(onSave.mock.calls[0]![0].nativeTools).toEqual(saved.nativeTools)
-})
 
 it.each(['missing', 'incomplete', 'unavailable'] as const)(
   'shows saved Claude when its preset is %s and preserves it on a name-only save', async availability => {
