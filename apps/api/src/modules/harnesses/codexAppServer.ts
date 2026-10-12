@@ -60,7 +60,6 @@ import { CODEX_CAPACITY_ATTEMPTS, codexCapacityDelay, isCodexCapacityError, wait
 /** Structural client boundary shared by native production and recorded replay. */
 export type CodexTransport = Pick<CodexStdioTransport, 'start' | 'request' | 'respond' | 'reject' | 'close'>
   & { isConnected?(): boolean; reattached?(): boolean; detachForRestart?(): Promise<void>
-    originalProcessClosed?(): boolean
     retainedThreadSettings?(threadId: string): JsonObject | undefined }
 interface CodexSessionOperations {
   prepareEnvironment?: () => Promise<void>
@@ -227,7 +226,6 @@ interface Runtime extends TurnSnapshot {
   seenNotifications: Set<string>
   wake: Set<() => void>
   closed: boolean
-  observerUnavailable?: HarnessExecutionError
   disposed: boolean
 }
 interface Prepared {
@@ -1244,7 +1242,6 @@ export class CodexAppServerSessionManager implements NativeHarnessSessionManager
           // The consumer can suspend at yield while more events (including terminal
           // events) arrive. Drain them before returning or registering a waiter.
           if (runtime.events.some((event) => event.sequence >= cursor)) continue
-          if (runtime.observerUnavailable && !runtime.terminalResult) throw runtime.observerUnavailable
           if (runtime.terminalResult || runtime.closed) { await this.finishTurnResources(runtime); return }
           await this.wait(runtime, AbortSignal.any([subscriberSignal, ...(signal ? [signal] : [])]))
         }
@@ -1715,22 +1712,11 @@ export class CodexAppServerSessionManager implements NativeHarnessSessionManager
           result: structuredClone(rejected) } }
       const observedTerminal = runtime.activeCorrelationId === correlationId
         && runtime.activeTurnId !== undefined && runtime.terminalResult !== undefined
-      let restarted = runtime.closed && !observedTerminal
+      const restarted = runtime.closed && !observedTerminal
       if (restarted) await this.restart(runtime, signal)
       const locallyIdle = !runtime.attached && runtime.phase === 'idle' && runtime.activeCorrelationId === undefined
         && runtime.activeTurnId === undefined && runtime.interactions.size === 0
-      if (!locallyIdle && !observedTerminal) {
-        try { await this.synchronize(runtime, correlationId, signal) }
-        catch (error) {
-          signal?.throwIfAborted()
-          const disconnected = error instanceof HarnessExecutionError
-            && error.result.error?.code === 'CODEX_APP_SERVER_DISCONNECTED'
-          if (!disconnected || !runtime.closed || restarted) throw error
-          await this.restart(runtime, signal)
-          restarted = true
-          await this.synchronize(runtime, correlationId, signal)
-        }
-      }
+      if (!locallyIdle && !observedTerminal) await this.synchronize(runtime, correlationId, signal)
       const lateRejection = runtime.rejectedStarts.get(correlationId)
         ?? this.responseJournal?.readTurnRejection(session, correlationId)
       if (lateRejection) return { ...await this.history(session), correlationId,
@@ -2410,11 +2396,6 @@ export class CodexAppServerSessionManager implements NativeHarnessSessionManager
   }
 
   private async restart(runtime: Runtime, signal?: AbortSignal, supplied?: Prepared): Promise<void> {
-    if (runtime.closed && runtime.transport.reattached?.()
-      && runtime.transport.originalProcessClosed?.() !== true) {
-      throw new HarnessExecutionError('CODEX_OBSERVER_UNAVAILABLE',
-        'The original Codex daemon has not been confirmed closed; reconnect its observer before resuming.', true)
-    }
     if (advanced(runtime.configuration).sessionPersistence === 'ephemeral') {
       throw new HarnessExecutionError('CODEX_SETTING_UNSUPPORTED', 'An ephemeral native session cannot survive a process restart.')
     }
@@ -2442,7 +2423,6 @@ export class CodexAppServerSessionManager implements NativeHarnessSessionManager
       runtime.qualified = { ...prepared.qualified }
       runtime.effectiveSandbox = prepared.effectiveSandbox ? structuredClone(prepared.effectiveSandbox) : undefined
       runtime.closed = false
-      delete runtime.observerUnavailable
       for (const waiting of runtime.interactions.values()) waiting.delivery = 'uncertain'
       await candidate.activate(runtime)
     } catch (error) {
@@ -2949,17 +2929,6 @@ export class CodexAppServerSessionManager implements NativeHarnessSessionManager
       return
     }
     if (method === 'protocol/malformed') { this.record(runtime, 'native.malformed', params); return }
-    if (method === 'transport/reconnected') {
-      delete runtime.observerUnavailable
-      this.record(runtime, 'transport.reconnected', {})
-      return
-    }
-    if (method === 'transport/observerUnavailable') {
-      runtime.observerUnavailable = new HarnessExecutionError('CODEX_OBSERVER_UNAVAILABLE',
-        'Codex is still recoverable, but its observer connection is unavailable.', true)
-      this.record(runtime, 'transport.observer_unavailable', {})
-      return
-    }
     if (['serverRequest/resolved', 'turn/started', 'turn/completed', 'item/started', 'item/completed',
       'item/agentMessage/delta'].includes(method)) {
       if (params.threadId === runtime.session.nativeSessionId && !staged && this.stage(runtime, { method, params, arrivalOrdinal })) return
