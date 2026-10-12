@@ -10,7 +10,7 @@ import { CI_GET_ACTIONS, CI_RUN_ACTIONS } from '../jobs/ciAuthority.js'
 import { DomainError } from '../errors.js'
 import { requireAuthorization } from '../access/policy.js'
 import { componentLogger } from '../diagnostics/logger.js'
-import { ciGroupState, planCiParts, type CiUnitInventory } from './parts.js'
+import { ciGroupState, planCiParts, runsOnCircleCi, type CiUnitInventory } from './parts.js'
 import { assertCiReadAccess } from './runAccess.js'
 import type { CiRepositoryCapabilities } from './repository.js'
 import { RUN_CI_JOBS_SQL, runCiJob, storedCiTestResults, type RunCiJobRow } from './runJobs.js'
@@ -27,9 +27,9 @@ export interface CiCommits {
   capabilities(repository: string, commit: string): Promise<CiRepositoryCapabilities>
   unitInventory?(repository: string, commit: string): Promise<CiUnitInventory>
   resolve(repository: string, defaultBranch: string, commit: string | undefined,
-    snapshot: { baseCommit: string; commit: string; bundle: Buffer } | null): Promise<string>
+    snapshot: { baseCommit: string; commit: string; bundle: Buffer | null } | null): Promise<string>
 }
-export type AgentSnapshots = (executionId: string) => Promise<{ baseCommit: string; commit: string; bundle: Buffer } | null>
+export type AgentSnapshots = (executionId: string) => Promise<{ baseCommit: string; commit: string; bundle: Buffer | null } | null>
 
 const log = componentLogger('jobs')
 
@@ -154,18 +154,25 @@ export class HostCiService {
     for (const group of groups.values()) {
       const count = group[0]!.partition!.count
       if (group.length !== count) continue
-      const ordered = [...free].sort((left, right) => Number(isGitHubComputer(left)) - Number(isGitHubComputer(right))
+      const ordered = [...free].sort((left, right) =>
+        Number(left.hostRef.kind === 'cloud') - Number(right.hostRef.kind === 'cloud')
+        || Number(isGitHubComputer(left)) - Number(isGitHubComputer(right))
         || right.priority - left.priority
         || (speed.get(right.key) ?? 0) - (speed.get(left.key) ?? 0)).slice(0, count)
+      const hostCount = Math.max(1, ordered.filter(computer => computer.hostRef.kind !== 'cloud').length)
+      const hostIndexes = Array.from({ length: hostCount }, (_, index) => index)
+      const planned: (HostCiComputer | undefined)[] = [...ordered]
+      // Reserve a host slice even when every build computer is currently busy.
+      if (ordered[0]?.hostRef.kind === 'cloud') planned.unshift(undefined)
       const known = ordered.map(computer => speed.get(computer.key)).filter((value): value is number => value !== undefined)
       const mean = known.length ? known.reduce((sum, value) => sum + value, 0) / known.length : 1
       const weights = group.map((_, index) => {
-        const computer = ordered[index]
+        const computer = planned[index]
         return Number((computer ? speed.get(computer.key) ?? mean : mean).toPrecision(6))
       })
       for (const [index, run] of group.sort((left, right) => left.partition!.index - right.partition!.index).entries()) {
-        const next = CiRunRecordSchema.parse({ ...run, partition: { ...run.partition!, weights },
-          plannedHostKey: ordered[index]?.key ?? null })
+        const next = CiRunRecordSchema.parse({ ...run, partition: { ...run.partition!, weights, hostIndexes },
+          plannedHostKey: planned[index]?.key ?? null })
         await this.save(next, null)
         replaced.set(run.id, next)
       }
@@ -363,7 +370,9 @@ export class HostCiService {
     const hostKey = ['starting', 'running'].includes(next.state) ? computer.key : null
     const saved = await this.pool.query(`update ci_runs set state=$2, host_key=$3, record=$4::jsonb,
         log_tail=coalesce($6,log_tail)
-      where id=$1 and state in ('queued','starting','running') and host_key is not distinct from $5`,
+      where id=$1 and state in ('queued','starting','running') and host_key is not distinct from $5
+        and ($6::text is null or state is distinct from $2 or host_key is distinct from $3
+          or record is distinct from $4::jsonb or log_tail is distinct from $6)`,
       [run.id, next.state, hostKey, JSON.stringify(next), run.state === 'queued' ? null : computer.key, logTail ?? null])
     if (requeued && saved.rowCount) log.warn({ runId: run.id, provider: computer.hostRef.provider, message },
       'CI dispatch created no work; ticket queued for another computer')
@@ -442,10 +451,13 @@ export class HostCiService {
     queued = await this.weighPartitions(queued, computers.filter(computer => !busy.has(computer.key)))
     // Runs start at once, in queue order: each claims its computer before waiting, so none is given twice.
     await Promise.all(queued.map(async run => {
+      const hostRequired = run.suite === 'integration' && (!run.partition?.hostIndexes
+        || run.partition.hostIndexes.includes(run.partition.index))
       const preferred = (computer: HostCiComputer) => Number(run.suite === 'integration'
         ? !isGitHubComputer(computer) : isGitHubComputer(computer))
-      const order = computers.filter(computer => run.suite === 'integration'
+      const order = computers.filter(computer => runsOnCircleCi(run)
         || computer.hostRef.kind !== 'cloud' || computer.hostRef.provider !== 'circleci')
+        .filter(computer => !hostRequired || computer.hostRef.kind !== 'cloud')
         .filter(computer => computer.hostRef.kind !== 'cloud' || !computer.hostRef.provider
           || !run.unstartedProviders?.includes(computer.hostRef.provider))
         .sort((left, right) => preferred(right) - preferred(left)
