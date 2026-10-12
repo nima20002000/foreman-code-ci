@@ -172,14 +172,7 @@ async function setup(options: { ephemeral?: boolean; stored?: boolean; origin?: 
   let allocations = 0, sourceReads = 0
   const factory: AgentChatManagerFactory = Object.assign((id: string) => { allocations++; owners.set(id, native); return native },
     { release: (id: string) => { owners.delete(id) } })
-  const source: HarnessExecution[] = origin.kind === 'run_execution' ? [{
-    id: origin.executionId, runId: origin.runId, workflowNodeId: context.workflowNodeId, agentId: context.agentId,
-    agentConfigurationVersionId: configuration.id, attempt: 1, state: 'completed', result: { outcome: 'succeeded' },
-    nativeSessionId: origin.sourceNativeSessionId, workingDirectory: '/fixture-read-only',
-    input: options.repeat ? { occurrence: { identity: { scope: fixture.scope, blockId: 'repair',
-      occurrenceId: 'occ-1', occurrenceIndex: 1 } } } : {},
-    createdAt: fixture.createdAt, finishedAt: fixture.createdAt,
-  }] : []
+  const source: HarnessExecution[] = []
   const runs = { getForWorkspace: async () => ({ ...fixture.run, executionState: 'completed' as const, outcome: 'succeeded' as const }),
     getExecution: async (id: string) => source.find(item => item.id === id),
     async *executionPages() { sourceReads++; for (const execution of source) yield [execution] } }
@@ -189,7 +182,6 @@ async function setup(options: { ephemeral?: boolean; stored?: boolean; origin?: 
     const sql = text.replace(/\s+/g, ' ').trim()
     if (['begin', 'commit', 'rollback'].includes(sql)) return { rows: [] }
     if (sql.startsWith('select record from conversation_session_controls where conversation_id=$1')) return { rows: [] }
-    if (sql.includes('from harness_native_events')) return { rows: [] }
     if (sql.includes('from management_principals')) return { rows: values[0] === principal.id
       ? [{ id: principal.id, name: principal.name, audience: principal.audience, grants: principal.grants,
         expires_at: new Date(principal.expiresAt), revoked_at: null, delegated_from: null }] : [] }

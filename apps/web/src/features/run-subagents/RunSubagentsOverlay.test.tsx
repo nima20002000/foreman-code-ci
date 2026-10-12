@@ -161,7 +161,7 @@ describe('Run subagent overlays', () => {
     expect(screen.getByRole('button', { name: 'Research, Codex, Running' })).toBeVisible()
     expect(screen.getByText('Child answer')).toBeVisible()
     expect(input).toHaveValue('Unsent input')
-    expect(await screen.findByText("Couldn't load subagents.")).toBeVisible()
+    expect(screen.getByText("Couldn't load subagents.")).toBeVisible()
   })
   it('removes cached circles after a denied refresh', async () => {
     const { client } = await mount()
