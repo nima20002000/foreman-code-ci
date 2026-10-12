@@ -222,9 +222,13 @@ describe('WorkspaceRouteEntry integration', () => {
     await user.paste('Draft workflow')
     await user.click(screen.getByRole('button', { name: 'Create workflow' }))
 
-    // The sidebar marks a never-published workflow with a "Draft" badge inside its link.
-    const newLink = await screen.findByRole('link', { name: /^Draft workflow/ })
-    const createdId = new URL(newLink.getAttribute('href')!, 'http://localhost').searchParams.get('workflowId')
+    // The sidebar marks a never-published workflow with a "Draft" badge inside its button.
+    const sidebar = within(screen.getByRole('complementary', { name: 'Primary navigation' }))
+    const newLink = await sidebar.findByRole('button', { name: /^Draft workflow/ })
+    const open = vi.spyOn(window, 'open').mockReturnValue(null)
+    fireEvent.click(newLink, { ctrlKey: true })
+    const createdId = new URL(open.mock.calls[0]![0] as string, 'http://localhost').searchParams.get('workflowId')
+    open.mockRestore()
     expect(createdId).toBeTruthy()
     await waitFor(() => expect(router.state.location.search.workflowId).toBe(createdId))
     await act(async () => {

@@ -1,7 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
 import { expect, vi } from 'vitest'
-import userEvent from '@testing-library/user-event'
 import type { ManagementAction } from '@foreman-code/contracts/management'
 import type { AgentChatContext, AgentChatState, AgentChatStreamEvent } from '@foreman-code/contracts/agent-chat'
 import { agentChatFixtures } from '@foreman-code/contracts/agent-chat'
@@ -55,20 +54,10 @@ export function mountChat(initial: AgentChatState = agentChatFixtures.empty, act
   const rendered = render(renderPanel(initial.context))
   const ready = () => waitFor(() => {
     expect(client.getQueryData(agentChatStateKey(initial.context))).toBeDefined()
-    expect(screen.getByRole('status', { name: 'Agent state' })).toBeInTheDocument()
+    expect(screen.getByTestId('agent-conversation').querySelector('.agent-chat-session-label')).not.toBeNull()
   })
   return { mock, client, ready, newConversation, ...rendered,
     switchContext: (context: AgentChatContext) => rendered.rerender(renderPanel(context)),
     refresh: () => client.invalidateQueries({ queryKey: agentChatStateKey(initial.context) }),
   }
-}
-
-export async function chatTooltip(control: HTMLElement) {
-  await userEvent.hover(control)
-  return waitFor(() => {
-    const id = control.getAttribute('aria-describedby')?.split(' ').at(-1)
-    const tooltip = id ? document.getElementById(id) : null
-    expect(tooltip).toHaveAttribute('role', 'tooltip')
-    return tooltip!
-  })
 }
