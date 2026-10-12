@@ -75,6 +75,7 @@ it('RH-02 keeps new, in-steer replay and ordinary replay responses on the explic
       && row.workflow_id === values[1] && row.origin_run_id === values[2] && row.workflow_node_id === values[3]
       && row.agent_id === values[4] && row.origin_execution_id === values[5]) }
     if (sql.includes('operator_conversation_activit')) return { rows: [] }
+    if (sql.includes('from harness_native_events')) return { rows: [] }
     throw new Error(`Unexpected SQL in RH-02 fixture: ${sql}`)
   })
   const client = { query, release: vi.fn() } as unknown as pg.PoolClient
