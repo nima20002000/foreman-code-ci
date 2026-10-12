@@ -35,7 +35,6 @@ export function AgentChatMessage({ message, name, status, actions, children }: {
   const time = timestamp ? new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : undefined
   if (message.role === 'tool') return <details className="agent-chat-tool">
     <summary>Tool output</summary><CodeBlock code={message.content} label="Tool output" />
-    <TextTruncationNotice truncation={message.truncation} />{children}
   </details>
   return <article className={`agent-chat-message agent-chat-message--${user ? 'user' : 'agent'}`}
     aria-label={`Message from ${user ? 'You' : name}`} data-message-role={message.role}>
