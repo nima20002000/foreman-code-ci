@@ -7,6 +7,39 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.0.92] - 2026-10-12
+
+### Changed
+
+- The Board's CI server is drawn as a server tower with drive-bay status lights.
+
+### Fixed
+
+- A test no longer names a fleet computer, which had blocked all cloud CI through the public mirror.
+
+## [0.0.91] - 2026-10-12
+
+### Fixed
+
+- Board: an Agent woken by its interval check shows "Checking · check N" instead of Idle.
+- Board: CI no longer shows "unavailable" (CI routes registered after startup); subagents load while projections catch up.
+- Agent chat shows the transcript while starting/running and allows follow-ups after completion.
+- Board node action icons appear on hover; nodes can be moved and resized during a Run.
+
+## [0.0.90] - 2026-10-12
+
+### Fixed
+
+- Deploying a new release no longer interrupts running Agents: harness qualification no longer depends on the release install folder.
+
+## [0.0.89] - 2026-10-12
+
+### Fixed
+
+- Stopping a Run cancels its Agents' CI tickets and provider runs.
+- ci_computers_list shows each computer's running tickets; a just-triggered CircleCI run is not an error.
+- The web app offers a reload after a release instead of failing Operator settings and chat checks.
+
 ## [0.0.88] - 2026-10-12
 
 ### Fixed
