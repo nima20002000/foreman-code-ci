@@ -1,5 +1,4 @@
 import { useQuery } from '@tanstack/react-query'
-import { useBlockingReadError } from '../../shared/api/readFailure'
 import { useHarnessSessionEpoch } from '../../shared/api/harnessSettings'
 import { assertSession, sessionGeneration, sessionIsSwitching } from '../../shared/api/sessionBoundary'
 import { isRunAccessError, runReadErrorLabel } from '../runs-selector/query'
@@ -25,16 +24,11 @@ export function SelectedNodePlacement({ selection, nodeId }: { selection: Select
     retry: false, staleTime: 0, gcTime: 0, placeholderData: () => undefined,
     refetchInterval: query => isRunAccessError(query.state.error) ? false : 3000,
   })
-  const blocked = useBlockingReadError(query)
   const current = selection.active && !selection.invalid && selection.isCurrent(generation) && session === sessionGeneration() && !sessionIsSwitching()
   if (!current || identity.runId === null) return null
-  if (blocked || query.isError && !query.data) return <p role="status">{runReadErrorLabel(query.error)}. Computer evidence is unavailable.
+  if (query.isError) return <p role="status">{runReadErrorLabel(query.error)}. Computer evidence is unavailable.
     <button type="button" onClick={() => { if (selection.isCurrent(generation)) void query.refetch() }}>Refresh computer evidence</button>
   </p>
   if (!query.data) return <p role="status">{query.isPaused ? 'Offline. Computer evidence is unavailable.' : 'Reading accepted computer evidence…'}</p>
-  return <>
-    {query.isError ? <p role="status">Computer details refresh failed. Showing the last successful read from {new Date(query.dataUpdatedAt).toLocaleTimeString()}.
-      <button type="button" onClick={() => void query.refetch()}>Retry computer details</button></p> : null}
-    <NodePlacementFacts runId={identity.runId} nodeId={nodeId} readback={query.data.readback} />
-  </>
+  return <NodePlacementFacts runId={identity.runId} nodeId={nodeId} readback={query.data.readback} />
 }
