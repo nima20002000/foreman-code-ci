@@ -1243,8 +1243,9 @@ export class ApprovalExecutionCoordinator {
       for (const execution of executions) {
         if (execution.state === 'completed' || execution.state === 'queued') continue
         const owned = this.ownedSessions.get(execution.id)
-        // Startup can be blocked in preflight until the restart cleanup fence
-        // commits. Classify its current state without waiting for that barrier.
+        // Session publication precedes initial turn admission. Let the original
+        // startup finish before deciding whether its siblings can survive restart.
+        await owned?.starting
         const current = await this.runs.getExecution(execution.id, owner)
         if (current?.state === 'completed') continue
         if (!owned?.session || !execution.nativeSessionId || owned.opening || owned.openingFailed
@@ -1311,7 +1312,7 @@ export class ApprovalExecutionCoordinator {
           if (this.closedExecutions.has(owned.execution.id)) return
           // Local engine ownership can finish before its native session detaches.
           const snapshot = await this.runs.getRepeatSnapshot(owned.execution.runId, owner)
-          if (snapshot.stopRequested) {
+          if (snapshot.stopRequested || snapshot.cleanupPending) {
             const cleanup = await this.cleanupSession(owned)
             if (cleanup.length) throw new AggregateError(cleanup, 'Interrupted native cleanup remains unconfirmed.')
             return

@@ -1,7 +1,6 @@
 import Fastify from 'fastify'
 import type pg from 'pg'
 import { describe, expect, it, vi } from 'vitest'
-import type { HarnessExecution } from '@foreman-code/contracts'
 import { agentChatFixtures, type SendAgentChatMessageRequest } from '@foreman-code/contracts/agent-chat'
 import type { ManagementAction, ManagementPrincipal, ManagementScope, OperatorToolName } from '@foreman-code/contracts/management'
 import type { McpServer } from '@modelcontextprotocol/server'
@@ -40,10 +39,6 @@ function fixture(runId?: string) {
   }
   let live: ManagementPrincipal | null = principal()
   const poolQuery = vi.fn(async (sql: string, values: unknown[]) => {
-    if (sql.includes('from harness_native_events')) {
-      expect(values).toEqual(['execution', runId, context.workflowNodeId, context.agentId])
-      return { rows: [] }
-    }
     expect(sql).toBe(livePrincipalSql) // Any receipt, audit or reservation write is an error in this read-only port.
     expect(values).toEqual(['f4-caller'])
     return { rows: live ? [{ id: live.id, name: live.name, audience: live.audience, grants: live.grants,
@@ -62,14 +57,7 @@ function fixture(runId?: string) {
   const version = { definition: { nodes: [{ id: context.workflowNodeId, agentId: context.agentId }] } }
   const workflows = { getCurrentSavedVersion: async () => version, getSavedVersion: async () => version,
     getAgentConfiguration: async () => undefined } as unknown as ConstructorParameters<typeof AgentChatService>[3]
-  const execution: HarnessExecution | undefined = runId ? {
-    id: 'execution', runId, workflowNodeId: context.workflowNodeId, agentId: context.agentId,
-    agentConfigurationVersionId: row.agent_configuration_version_id, attempt: 1, input: {}, state: 'completed',
-    nativeSessionId: 'source', workingDirectory: '/tmp/f4', result: { outcome: 'succeeded' },
-    createdAt: base.conversation.createdAt, finishedAt: base.conversation.updatedAt,
-  } : undefined
   const runs = { getForWorkspace: async () => ({ workflowId: context.workflowId, workflowVersionId: 'version', executionState: 'completed', id: runId }),
-    getExecution: async (id: string) => execution?.id === id ? execution : undefined,
     async *executionPages() { yield [] } } as unknown as ConstructorParameters<typeof AgentChatService>[4]
   const native = vi.fn()
   const service = new AgentChatService({ query: poolQuery } as unknown as pg.Pool, repository as unknown as PostgresAgentChatRepository,
