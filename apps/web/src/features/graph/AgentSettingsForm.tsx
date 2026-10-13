@@ -272,7 +272,7 @@ function EditableAgentSettingsForm({ agent, initialPrompt, nodeGraphqlTools, cre
         hint="The task this node starts with." onChange={(event) => { setPrompt(event.target.value); clearErrors() }} />
       <GraphqlToolsFields role={agent.productRole === 'orchestrator' ? 'orchestrator' : 'coder'} defaults={graphqlTools.defaults} override={graphqlTools.override}
         onChange={(defaults, override) => { setGraphqlTools({ ...(defaults ? { defaults } : {}), ...(override ? { override } : {}) }); clearErrors() }} />
-      <HarnessConfigurationFields editor={editor} issues={issuesAt(issues, ['harness'])} onChange={(next) => { setEditor(next); clearErrors() }} allowHarnessChange={false} harnessDefaults={providerDefaults} workspaceId={workspaceId} routedApproval={Boolean(workflowApprovalHandler)} allowAutoReview={workflowApprovalHandler === 'orchestrator'} allowCiFullScope compact advancedOnly />
+      <HarnessConfigurationFields editor={editor} issues={issuesAt(issues, ['harness'])} onChange={(next) => { setEditor(next); clearErrors() }} allowHarnessChange={false} harnessDefaults={providerDefaults} workspaceId={workspaceId} routedApproval={Boolean(workflowApprovalHandler)} allowAutoReview={workflowApprovalHandler === 'orchestrator'} compact advancedOnly />
       {embedded ? null : <p className="settings-help">Save updates this graph draft. Use Save graph to persist it.</p>}
     </div>}
     {error ? <Alert tone="danger" live title={error} /> : null}

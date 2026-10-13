@@ -4,22 +4,6 @@ import { credentialActions } from '../src/cli/credentialAccess.js'
 import { parseCredentialArguments } from '../src/cli/operatorCredentialArguments.js'
 
 describe('Browser credential CLI', () => {
-  it('issues CI-lane credentials without full-suite or management permissions', () => {
-    expect(parseCredentialArguments(['issue', '--name', 'CI lane', '--access', 'ci-lane']))
-      .toMatchObject({ audience: 'operator', access: 'ci-lane' })
-    const actions = credentialActions('ci-lane')
-    expect(actions).toContain('jobs:start')
-    expect(actions).toContain('jobs:cancel')
-    expect(actions).not.toContain('jobs:ci_full')
-    expect(actions).not.toContain('harnesses:update')
-  })
-  it('requires a named full-suite grant and rejects it for read-only callers', () => {
-    expect(credentialActions()).not.toContain('jobs:ci_full')
-    expect(parseCredentialArguments(['issue', '--name', 'CI gate', '--access', 'ci-lane', '--grant', 'jobs:ci_full']))
-      .toMatchObject({ access: 'ci-lane', ciFull: true })
-    expect(() => parseCredentialArguments(['issue', '--name', 'Reader', '--access', 'read-only', '--grant', 'jobs:ci_full']))
-      .toThrow('Read-only')
-  })
   it('read-only actions are an exact read-only subset of the shared catalog', () => {
     expect(credentialActions('read-only')).toEqual(DEFAULT_MANAGEMENT_ACTIONS.filter((action) => action.endsWith(':read')))
     expect(credentialActions('read-only')).not.toContain('harnesses:update')

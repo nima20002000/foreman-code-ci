@@ -4,8 +4,7 @@ export interface AffectedSelection {
   reason: string
 }
 
-export function affectedSnapshot(commit: string, suite: string, cwd?: string, defaultRef?: string,
-  baseCommit?: string, temporaryRoot?: string): AffectedSelection
+export function affectedSnapshot(commit: string, suite: string, cwd?: string, defaultRef?: string): AffectedSelection
 
 export function selectAffectedFiles(input: {
   suite: string
