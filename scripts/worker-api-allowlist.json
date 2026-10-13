@@ -22,6 +22,7 @@
   "apps/api/src/modules/ci-host/prewarmScript.ts",
   "apps/api/src/modules/ci-host/slotCheckout.ts",
   "apps/api/src/modules/ci-host/text.ts",
+  "apps/api/src/modules/ci-host/logPage.ts",
   "apps/api/src/modules/computers/accountProbe.ts",
   "apps/api/src/modules/computers/claudePlugins.ts",
   "apps/api/src/modules/computers/githubLogin.ts",
