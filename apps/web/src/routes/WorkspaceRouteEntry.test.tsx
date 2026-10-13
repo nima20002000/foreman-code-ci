@@ -1,4 +1,3 @@
-import { installBrowserLocks } from '../test/browserLocks'
 import { nativeNode } from '../shared/mocks/nativeFixtureTypes'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
@@ -35,7 +34,6 @@ function readyWorkspace() {
 }
 
 const clients: QueryClient[] = []
-let restoreBrowserLocks: () => void
 async function researcherButton() {
   // Wait for the current Board before querying its canvas; initial route selection
   // and definition loading are separate asynchronous steps.
@@ -76,7 +74,6 @@ async function renderWorkspace(initialEntry: string) {
 
 describe('WorkspaceRouteEntry integration', () => {
   beforeEach(() => {
-    restoreBrowserLocks = installBrowserLocks()
     useGraphDraftStore.getState().clearAllDrafts(); localStorage.clear(); bindMockInstallation(); sessionStorage.clear()
     server.use(http.get('/api/management/workspaces/workspace-1', () => HttpResponse.json(readyWorkspace())))
     server.use(
@@ -101,9 +98,7 @@ describe('WorkspaceRouteEntry integration', () => {
   })
 
   afterEach(() => {
-    cleanup(); window.dispatchEvent(new Event('pagehide'))
-    restoreBrowserLocks()
-    clients.splice(0).forEach((client) => client.clear())
+    cleanup(); clients.splice(0).forEach((client) => client.clear())
     useGraphDraftStore.getState().clearAllDrafts(); vi.restoreAllMocks(); vi.unstubAllGlobals()
     setMockScenario('normal')
     sessionStorage.clear()
@@ -170,6 +165,9 @@ describe('WorkspaceRouteEntry integration', () => {
   it('opens an unselected reloaded Claude Agent settings panel while cross-computer choices are unavailable', async () => {
     // Apply the canvas CSS so userEvent checks the same pointer access as the browser.
     render(<style>{canvasStyles}</style>)
+    vi.stubGlobal('navigator', { ...navigator, locks: {
+      request: async (_name: string, work: () => Promise<unknown>) => work(),
+    } })
     const fixture = getMockFixture('workspace-1')!
     const agent = fixture.agents.find((item) => item.id === 'agent-researcher')!
     agent.harness = 'claude'
