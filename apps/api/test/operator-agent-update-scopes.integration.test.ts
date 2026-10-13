@@ -3,6 +3,7 @@ import { afterAll, beforeAll, expect, it } from 'vitest'
 import { DEFAULT_CODEX_ADVANCED_CONFIGURATION, type Agent } from '@foreman-code/contracts'
 import * as contracts from '@foreman-code/contracts/management'
 import {
+  CurrentOperatorCapabilitiesSchema,
   CurrentWorkflowSaveResultSchema,
   SavedManagedWorkflowCommandResultSchema,
 } from '@foreman-code/contracts/wave25'
@@ -16,7 +17,7 @@ import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'
 let fixture: Awaited<ReturnType<typeof workspaceMcpFixture>>
 
 beforeAll(async () => {
-  fixture = await workspaceMcpFixture({ configure: async ({ pool, commands, services }) => {
+  fixture = await workspaceMcpFixture({ configureServices: async ({ pool, commands, services }) => {
     services.agents = new AgentManagementService(pool)
     services.workflows = new WorkflowManagementService(pool, commands)
     services.extensions = {
@@ -85,6 +86,13 @@ it('allows workflow-scoped Agent readers to update through HTTP and MCP and deni
     expectedConfigurationVersionId: created.agent.configurationVersionId!,
     prompt: { system: 'HTTP instructions' },
   }
+  const readOnly = await fixture.issue([{ actions: ['agents:read'],
+    scope: { workspaceIds: [workspaceId], workflowIds: [workflowId] } }])
+  const deniedUpdate = await fixture.app.inject({ method: 'PATCH', url: agentUrl,
+    headers: { ...headers, authorization: `Bearer ${readOnly.token}` }, payload: httpInput })
+  expect(deniedUpdate.statusCode).toBe(403)
+  expect(deniedUpdate.json()).toMatchObject({ error: { code: 'ACCESS_DENIED' } })
+  await expectMcpAccessDenied(readOnly.client.callTool({ name: 'agent_update', arguments: httpInput }))
   const httpReply = await fixture.app.inject({ method: 'PATCH', url: agentUrl, headers, payload: httpInput })
   expect(httpReply.statusCode).toBe(200)
   const httpSaved = contracts.AgentMutationResultSchema.parse(httpReply.json())
@@ -95,7 +103,7 @@ it('allows workflow-scoped Agent readers to update through HTTP and MCP and deni
   expect(tools).toContain('agent_update')
   expect(tools).not.toContain('agent_create')
   const capabilities = await callWorkspaceTool(scoped.client, 'operator_get_capabilities',
-    contracts.OperatorCapabilitiesSchema, { detail: 'full', workspaceId, workflowId })
+    CurrentOperatorCapabilitiesSchema, { detail: 'full', workspaceId, workflowId })
   expect(capabilities.tools).toContain('agent_update')
   expect(capabilities.requirements?.find(requirement => requirement.name === 'agent_update')?.actions)
     .toEqual(['agents:update', 'agents:read'])
@@ -166,5 +174,5 @@ it('does not discover Agent updates when workspace mutation and workflow read gr
   const capabilities = decodeMcpToolResult(await scoped.client.callTool({
     name: 'operator_get_capabilities', arguments: { detail: 'full' },
   }))
-  expect(contracts.OperatorCapabilitiesSchema.parse(capabilities).tools).not.toContain('agent_update')
+  expect(CurrentOperatorCapabilitiesSchema.parse(capabilities).tools).not.toContain('agent_update')
 })
