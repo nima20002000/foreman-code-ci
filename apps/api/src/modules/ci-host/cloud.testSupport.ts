@@ -11,8 +11,10 @@ import { pruneMirrorBranches } from './mirrorBranches.js'
 import { CircleCiProvider, GitHubActionsProvider } from './cloudProviders.js'
 import { systemHostCiPorts, type HostCiPorts } from './runner.js'
 
-const roots: string[] = []
-afterEach(async () => { for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }) })
+const disposals: (() => Promise<void>)[] = []
+afterEach(async () => {
+  for (const dispose of disposals.splice(0)) await dispose()
+})
 
 /** A private repository and its public mirror as local bare repositories standing in for GitHub, with a gh that
  * records dispatches and replays the run states a test sets. */
@@ -20,7 +22,12 @@ export async function fixture(files: Record<string, string> = {}, options: { mir
   mirrorWorkflows?: boolean; sourceWorkflows?: boolean; userSystemd?: boolean } = {}) {
   await mkdir(process.env.FOREMAN_CODE_TEST_ROOT ?? join(homedir(), '.cache', 'foreman-tmp'), { recursive: true })
   const root = await mkdtemp(join(process.env.FOREMAN_CODE_TEST_ROOT ?? join(homedir(), '.cache', 'foreman-tmp'), 'cloud-ci-'))
-  roots.push(root)
+  let waitForCleanup: (() => Promise<void>) | undefined
+  const dispose = async () => {
+    await waitForCleanup?.()
+    await rm(root, { recursive: true, force: true })
+  }
+  disposals.push(dispose)
   const environment = gitFixtureEnvironment()
   const run = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, env: environment, encoding: 'utf8' }).trim()
   const work = join(root, 'work'), mirrorWork = join(root, 'mirror-work')
@@ -54,12 +61,13 @@ export async function fixture(files: Record<string, string> = {}, options: { mir
   const commit = run(work, 'rev-parse', 'HEAD')
   const local = (value: string) => value === 'https://github.com/octo/site.git' ? origin
     : value === 'https://github.com/octo/site-ci.git' ? mirror : value
-  const cleanup = { unavailable: false }
+  const cleanup = { unavailable: false, failures: 0 }
   const git: GitWorktreePorts = {
     cloneDirectory: repository => join(root, 'clones', ...repository.split('/')),
     // Asynchronous like Main's git, so concurrent starts really overlap.
     git: (args, options) => new Promise(resolve => {
       if (cleanup.unavailable && args[0] === 'push' && args.includes('--atomic')) {
+        cleanup.failures++
         resolve({ code: 1, stdout: '', stderr: 'fixture remote is unavailable for cleanup' })
         return
       }
@@ -76,7 +84,7 @@ export async function fixture(files: Record<string, string> = {}, options: { mir
     watchdogFailure: null as unknown, log: 'ci\tSuite\tall green\n', rateLimited: false, jobReads: [] as ('full' | 'unchanged')[], artifactError: '', logError: '' }
   const circle = { triggered: [] as string[][], outcome: '' as string, durations: null as Record<string, number> | null,
     testResults: null as unknown, watchdogFailure: null as unknown, log: 'Suite\nall green\n',
-    phantoms: 0, lookupError: '', canceled: [] as string[], runView: null as unknown,
+    phantoms: 0, lookupError: '', cancelError: '', canceled: [] as string[], runView: null as unknown,
     jobDetails: {} as Record<string, unknown>,
     steps: [] as { num: number; name: string; phase: string; outcome?: string }[], output: '',
     downloaded: [] as string[], downloadGate: Promise.resolve() as Promise<void>, artifactError: '', logError: '' }
@@ -96,11 +104,12 @@ export async function fixture(files: Record<string, string> = {}, options: { mir
       if (args[0] === 'run' && args[1] === 'get') {
         if (circle.lookupError) return { code: 1, stdout: '', stderr: circle.lookupError }
         const phantom = Number(args[2]!.slice('run-'.length)) <= circle.phantoms
-        return ok(JSON.stringify(circle.runView ?? (phantom ? { phase: 'ended', outcome: 'succeeded', workflows: [] }
+        return ok(JSON.stringify(circle.runView ?? (phantom ? { phase: 'created', workflows: [] }
           : { workflows: [{ jobs: [{ id: 'job-1' }] }] })))
       }
       if (args[0] === 'run' && args[1] === 'cancel') {
         circle.canceled.push(args[2]!)
+        if (circle.cancelError) return { code: 1, stdout: '', stderr: circle.cancelError }
         return ok()
       }
       if (args[0] === 'job' && args[1] === 'get') return ok(JSON.stringify(circle.jobDetails[args[2]!] ??
@@ -115,7 +124,8 @@ export async function fixture(files: Record<string, string> = {}, options: { mir
       if (args[0] === 'job' && args[1] === 'artifact' && circle.artifactError) {
         return { code: 1, stdout: '', stderr: circle.artifactError }
       }
-      if (args[0] === 'job' && args[1] === 'artifact' && args.includes('--json') && (circle.durations || circle.watchdogFailure)) {
+      if (args[0] === 'job' && args[1] === 'artifact' && args.includes('--json')) {
+        if (!circle.durations && !circle.watchdogFailure) return ok('[]')
         const listed = [...circle.watchdogFailure ? ['durations/watchdog-message.json'] : [], 'durations/durations.json', ...circle.testResults ? ['durations/test-results.json'] : [],
           'integration-logs/run/slot-1/a.integration.test.ts.log']
         return ok(JSON.stringify(listed.map(path => ({ path, url: `https://artifacts.example/${path}`, execution: 0 }))))
@@ -179,8 +189,10 @@ export async function fixture(files: Record<string, string> = {}, options: { mir
     : workspaceId === 'ci-workspace' ? 'octo/site-ci' : null, join(root, 'ci-cloud'), ports, git,
     { home: '/home/owner', user: 'owner', host: 'owner-desktop' })
   const cloud = reopen()
+  waitForCleanup = () => cloud.waitForMirrorCleanup('octo/site', 'octo/site-ci')
   const mirrorGit = (...args: string[]) => run(mirror, ...args)
-  return { cloud, reopen, root, commit, dispatched, github, circle, cleanup, mirrorGit, run: (...args: string[]) => run(work, ...args),
+  return { cloud, reopen, root, commit, ports, dispatched, github, circle, cleanup, git, mirrorGit, dispose,
+    run: (...args: string[]) => run(work, ...args),
     async prune(activeIds: Set<string>) {
       return pruneMirrorBranches({ mirror: 'octo/site-ci', roots: [join(root, 'ci-cloud')],
         activeRuns: { ids: activeIds, readAt: Date.now() },

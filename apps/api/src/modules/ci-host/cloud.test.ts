@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { parse } from 'yaml'
 import { selectByIndexes } from '../../../../../scripts/ci-files.mjs'
 import { affectedSnapshot } from '../../../../../scripts/ci-affected.mjs'
@@ -17,7 +17,7 @@ it.each([undefined, 221366])('sends declared CircleCI pipeline parameters with c
   }
   const commands: string[][] = []
   const provider = new CircleCiProvider({ ...systemHostCiPorts(), run: async (_file, args) => {
-    commands.push(args)
+    commands.push([...args])
     return { code: 0, stdout: JSON.stringify({ id: 'pipeline' }), stderr: '' }
   } })
   const input: CloudDispatchInput = {
@@ -66,6 +66,66 @@ it.each([false, true])('fails an ended CircleCI pipeline with errors on the next
   expect(f.circle.triggered).toHaveLength(1)
 })
 
+it.each([
+  { outcome: 'succeeded', state: 'passed', exitCode: 0 },
+  { outcome: 'failed', state: 'failed', exitCode: 1 },
+  { outcome: 'canceled', state: 'canceled', exitCode: 1 },
+])('settles ended CircleCI pipelines without workflows as $state', async ({ outcome, state, exitCode }) => {
+  const f = await fixture({}, { provider: 'circleci' })
+  for (const started of [false, true]) {
+    f.circle.runView = started ? null : { phase: 'created', workflows: [] }
+    const runId = randomUUID()
+    await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId, repository: 'octo/site',
+      commit: f.commit, suite: 'integration', scope: 'full' })
+    f.circle.runView = { phase: 'ended', current_outcome: outcome, stopped_at: '2026-10-11T02:00:00Z', workflows: [] }
+    expect(await f.cloud.handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 1024 }))
+      .toMatchObject({ run: { state, exitCode, finishedAt: '2026-10-11T02:00:00Z' } })
+    expect(await f.reopen().handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 1 }))
+      .toMatchObject({ run: { state, exitCode } })
+  }
+  expect(f.circle.triggered).toHaveLength(2)
+})
+
+it.each(['pipeline', 'workflow'] as const)('uses an ended CircleCI %s despite stale child status', async ended => {
+  const f = await fixture({}, { provider: 'circleci' })
+  const runId = randomUUID()
+  await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId, repository: 'octo/site',
+    commit: f.commit, suite: 'integration', scope: 'full' })
+  f.circle.runView = ended === 'pipeline'
+    ? { phase: 'ended', outcome: 'failed', workflows: [{ phase: 'started', jobs: [{ id: 'job-1' }] }] }
+    : { phase: 'started', workflows: [{ phase: 'ended', outcome: 'canceled', jobs: [{ id: 'job-1' }] }] }
+  expect(await f.cloud.handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 1024 }))
+    .toMatchObject({ run: { state: ended === 'pipeline' ? 'failed' : 'canceled', exitCode: 1 } })
+})
+
+it.each(['unknown outcome', 'no active workflows'] as const)('fails an ended CircleCI run with %s clearly', async reason => {
+  const f = await fixture({}, { provider: 'circleci' })
+  const runId = randomUUID()
+  await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId, repository: 'octo/site',
+    commit: f.commit, suite: 'integration', scope: 'full' })
+  if (reason === 'unknown outcome') f.circle.runView = { phase: 'ended', workflows: [] }
+  else f.circle.lookupError = 'error: Run run-1 has no active workflows'
+  expect(await f.cloud.handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 1024 }))
+    .toMatchObject({ run: { state: 'failed', exitCode: 1, message: expect.stringContaining('final outcome is unknown') } })
+  expect(await f.reopen().handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 1 }))
+    .toMatchObject({ run: { state: 'failed' } })
+  expect(f.circle.triggered).toHaveLength(1)
+})
+
+it.each([false, true])('settles CircleCI cancellation when nothing is active, lookup also ended: %s', async lookupEnded => {
+  const f = await fixture({}, { provider: 'circleci' })
+  const runId = randomUUID()
+  await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId, repository: 'octo/site',
+    commit: f.commit, suite: 'integration', scope: 'full' })
+  f.circle.cancelError = 'error: Run run-1 has no active workflows to cancel.'
+  if (lookupEnded) f.circle.lookupError = 'error: Run run-1 has no active workflows to cancel.'
+  expect(await f.cloud.handle({ operation: 'cancel', runId }))
+    .toMatchObject({ operation: 'cancel', run: { state: 'canceled', finishedAt: expect.any(String) } })
+  expect(await f.reopen().handle({ operation: 'cancel', runId })).toMatchObject({ run: { state: 'canceled' } })
+  expect(f.circle.canceled).toHaveLength(lookupEnded ? 0 : 1)
+  expect(f.circle.triggered).toHaveLength(1)
+})
+
 function expectMirrorDispatch(provider: 'github' | 'circleci', command: string[] | undefined) {
   const option = provider === 'github' ? '-R' : '--project'
   const target = provider === 'github' ? 'octo/site-ci' : 'gh/octo/site-ci'
@@ -75,6 +135,76 @@ function expectMirrorDispatch(provider: 'github' | 'circleci', command: string[]
 }
 
 describe('GitHub Actions CI on a public mirror', () => {
+  it('shares one publication across concurrent starts of the same commit', async () => {
+    const f = await fixture()
+    const git = vi.spyOn(f.git, 'git')
+    const services = [f.cloud, f.reopen()]
+    const replies = await Promise.all(Array.from({ length: 8 }, (_, index) => services[index % services.length]!.handle({
+      operation: 'start', workspaceId: 'ci-workspace', runId: randomUUID(), repository: 'octo/site',
+      commit: f.commit, suite: 'lint', scope: 'full',
+    })))
+    expect(replies).toHaveLength(8)
+    for (const reply of replies) expect(reply).toMatchObject({ operation: 'start', run: { state: 'starting' } })
+    expect(f.dispatched).toHaveLength(8)
+    const publications = git.mock.calls.filter(([args]) => args[0] === 'push' && args.includes('--force'))
+    expect(publications).toHaveLength(1)
+  })
+
+  it('dispatches every concurrent start while stale-branch pruning is blocked', async () => {
+    const f = await fixture()
+    f.mirrorGit('update-ref', 'refs/heads/ci/retired-run', 'main')
+    let release!: () => void
+    const blocked = new Promise<void>(resolve => { release = resolve })
+    let pruning = false
+    f.cloud.setActiveRunLookup(async () => {
+      pruning = true
+      await blocked
+      return { ids: new Set<string>(), readAt: 0 }
+    })
+    let completed = 0
+    const starts = Promise.all(Array.from({ length: 8 }, () => f.cloud.handle({
+      operation: 'start', workspaceId: 'ci-workspace', runId: randomUUID(), repository: 'octo/site',
+      commit: f.commit, suite: 'lint', scope: 'full',
+    }).then(reply => {
+      completed++
+      return reply
+    })))
+    try {
+      await expect.poll(() => pruning, { timeout: 5_000 }).toBe(true)
+      await expect.poll(() => f.dispatched.length, { timeout: 5_000 }).toBe(8)
+      await expect.poll(() => completed, { timeout: 5_000 }).toBe(8)
+    } finally {
+      release()
+      await starts
+    }
+    await expect.poll(() => f.mirrorGit('for-each-ref', '--format=%(refname)', 'refs/heads/ci/'), { timeout: 5_000 })
+      .not.toContain('refs/heads/ci/retired-run')
+    expect(f.mirrorGit('rev-parse', `refs/heads/ci/${f.commit}`)).toMatch(/^[a-f0-9]{40}$/)
+  })
+
+  it('limits background pruning to once every five minutes per mirror', async () => {
+    const f = await fixture()
+    f.mirrorGit('update-ref', 'refs/heads/ci/retired-run', 'main')
+    let sweeps = 0
+    f.cloud.setActiveRunLookup(async () => {
+      sweeps++
+      return { ids: new Set<string>(), readAt: 0 }
+    })
+    const start = () => f.cloud.handle({
+      operation: 'start', workspaceId: 'ci-workspace', runId: randomUUID(), repository: 'octo/site',
+      commit: f.commit, suite: 'lint', scope: 'full',
+    })
+    await start()
+    await expect.poll(() => sweeps, { timeout: 5_000 }).toBe(1)
+    await expect.poll(() => f.mirrorGit('for-each-ref', '--format=%(refname)', 'refs/heads/ci/'), { timeout: 5_000 })
+      .not.toContain('refs/heads/ci/retired-run')
+    await Promise.all(Array.from({ length: 8 }, start))
+    expect(sweeps).toBe(1)
+    f.advance(5 * 60_000)
+    await start()
+    await expect.poll(() => sweeps, { timeout: 5_000 }).toBe(2)
+  })
+
   it('uses the admitted mirror even when the workspace settings no longer provide one', async () => {
     const f = await fixture({}, { mirror: false })
     await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', ciMirror: 'octo/site-ci',
@@ -285,6 +415,38 @@ describe('GitHub Actions CI on a public mirror', () => {
     expect(await f.cloud.handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 1 }))
       .toMatchObject({ run: { state: 'canceled' } })
     expect(provider === 'github' ? f.dispatched : f.circle.triggered).toHaveLength(1)
+  })
+
+  it('waits for mirror cleanup and its queued cancellation sweep before disposing the fixture', async () => {
+    const f = await fixture()
+    let release!: () => void
+    const blocked = new Promise<void>(resolve => { release = resolve })
+    let sweeps = 0
+    f.cloud.setActiveRunLookup(async () => {
+      sweeps++
+      await blocked
+      return { ids: new Set<string>(), readAt: 0 }
+    })
+    const runId = randomUUID()
+    await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId,
+      repository: 'octo/site', commit: f.commit, suite: 'integration', scope: 'full' })
+    await expect.poll(() => sweeps).toBe(1)
+    await f.cloud.handle({ operation: 'cancel', runId })
+    const disposal = f.dispose()
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      const waiting = await Promise.race([
+        disposal.then(() => false),
+        new Promise<boolean>(resolve => { timer = setTimeout(() => resolve(true), 1_000) }),
+      ])
+      expect(waiting).toBe(true)
+    } finally {
+      clearTimeout(timer)
+      release()
+      await disposal
+    }
+    expect(sweeps).toBe(2)
+    expect(f.dispatched).toHaveLength(1)
   })
 
   it.each(['github', 'circleci'] as const)('leaves omitted files for the %s runner and mirrors the default-branch merge-base without private history', async provider => {
@@ -886,13 +1048,14 @@ it.each(['github', 'circleci'] as const)('prunes stale mirror branches and keeps
     .toMatchObject({ operation: 'read', run: { state: activeState } })
   expect(provider === 'github' ? f.dispatched : f.circle.triggered).toHaveLength(2)
   const refs = () => f.mirrorGit('for-each-ref', '--format=%(refname)', 'refs/heads/')
-  expect(refs()).not.toContain(`refs/heads/${stale}`)
-  expect(refs()).not.toContain('refs/heads/ci/retired-run')
+  await expect.poll(refs, { timeout: 5_000 }).not.toContain(`refs/heads/${stale}`)
+  await expect.poll(refs, { timeout: 5_000 }).not.toContain('refs/heads/ci/retired-run')
   expect(refs()).toContain('refs/heads/feature/keep')
   await f.cloud.handle({ operation: 'cancel', runId: first })
   expect(refs()).toContain(`refs/heads/ci/${f.commit}`)
+  f.advance(5 * 60_000)
   await f.reopen().handle({ operation: 'cancel', runId: second })
-  expect(refs()).not.toContain(`refs/heads/ci/${f.commit}`)
+  await expect.poll(refs, { timeout: 5_000 }).not.toContain(`refs/heads/ci/${f.commit}`)
   await f.reopen().handle({ ...request, runId: randomUUID() })
   expectMirrorDispatch(provider, (provider === 'github' ? f.dispatched : f.circle.triggered).at(-1))
   expect(refs()).toContain(`refs/heads/ci/${f.commit}`)
@@ -910,8 +1073,9 @@ it.each(['success', 'failure'] as const)('removes mirror branches after a %s res
   f.github.conclusion = conclusion
   const read = { operation: 'read' as const, runId, afterOffset: 0, maxBytes: 65_536 }
   const state = conclusion === 'success' ? 'passed' : 'failed'
+  f.advance(5 * 60_000)
   expect(await f.cloud.handle(read)).toMatchObject({ run: { state }, text: expect.stringContaining('all green') })
-  expect(f.mirrorGit('for-each-ref', '--format=%(refname)', 'refs/heads/ci/')).toBe('')
+  await expect.poll(() => f.mirrorGit('for-each-ref', '--format=%(refname)', 'refs/heads/ci/'), { timeout: 5_000 }).toBe('')
   expect(await f.reopen().handle(read)).toMatchObject({ run: { state }, text: expect.stringContaining('all green') })
 })
 
@@ -927,9 +1091,11 @@ it.each(['configured', 'admitted'] as const)(
     .toMatchObject({ operation: 'start', run: { state: 'running' } })
   expectMirrorDispatch('circleci', f.circle.triggered[0])
   f.cleanup.unavailable = true
+  f.advance(5 * 60_000)
   f.circle.outcome = 'succeeded'
   expect(await f.cloud.handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 65_536 }))
     .toMatchObject({ run: { state: 'passed' } })
+  await expect.poll(() => f.cleanup.failures, { timeout: 5_000 }).toBeGreaterThan(0)
   const branch = `refs/heads/ci/${f.commit}`
   expect(f.mirrorGit('rev-parse', branch)).toMatch(/^[a-f0-9]{40}$/)
   // Maintenance in another process deletes the ref without touching the live publisher's memory.
