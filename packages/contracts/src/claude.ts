@@ -1,6 +1,5 @@
 import { z } from 'zod';
 import { APP_MCP_SERVER_NAMES } from './product.js';
-import { CiFullScopePermissionSchema } from './ciPermissions.js';
 
 const AbsolutePath = z.string().min(1).max(4096).refine((value) => value.startsWith('/') && !value.includes('\0'), 'An absolute local path is required');
 const ToolName = z.string().regex(/^[A-Za-z][A-Za-z0-9_.-]{0,199}$/);
@@ -23,7 +22,6 @@ export const ClaudeHarnessConfigurationSchema = z.object({
   effort: ClaudeEffortSchema.optional(),
   authMode: z.enum(['subscription', 'api-key']), configDirectory: AbsolutePath,
   permissionMode: z.literal('default'), sandbox: z.enum(['read-only', 'workspace-write', 'danger-full-access']),
-  ciFullScope: CiFullScopePermissionSchema,
   tools: z.array(ToolName).max(100),
   permissionRules: z.array(z.object({ tool: ToolName, effect: z.enum(['allow', 'ask', 'deny']) }).strict()).max(100),
   instructions: z.string().max(200_000),
