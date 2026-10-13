@@ -1,5 +1,6 @@
 import type pg from 'pg'
-import { CI_HOST_NAMESPACE, CiHostReplySchema, type CiHostRequest } from '@foreman-code/contracts'
+import { CI_HOST_NAMESPACE, CI_HOST_START_PROTOCOL_VERSION, CiHostReplySchema,
+  type CiHostReply, type CiHostRequest } from '@foreman-code/contracts'
 import type { HostCiComputer, HostCiEndpoint } from './service.js'
 import type { HostCiRunner } from './runner.js'
 import type { CloudCi } from './cloud.js'
@@ -21,6 +22,7 @@ export class ProductionHostCiEndpoint implements HostCiEndpoint {
     private readonly clouds: CloudCi[] = []) {}
 
   async computers(): Promise<HostCiComputer[]> {
+    await Promise.all(this.clouds.map(cloud => cloud.reconcile()))
     const rows = (await this.pool.query<{ host_key: string; target: DeviceProvisioningTarget
       build_enabled: boolean; build_priority: number }>(
       'select host_key,target,build_enabled,build_priority from build_computer_preferences')).rows
@@ -48,7 +50,7 @@ export class ProductionHostCiEndpoint implements HostCiEndpoint {
       .sort((left, right) => right.priority - left.priority)
   }
 
-  async request(computer: HostCiComputer, request: CiHostRequest) {
+  async request(computer: HostCiComputer, request: CiHostRequest): Promise<CiHostReply> {
     if (request.operation === 'start' && computer.hostRef.kind !== 'cloud'
       && !(await this.computers()).some(value => value.key === computer.key
         && JSON.stringify(value.hostRef) === JSON.stringify(computer.hostRef))) {
@@ -62,7 +64,20 @@ export class ProductionHostCiEndpoint implements HostCiEndpoint {
     }
     const devices = this.devices()
     if (!devices || !computer.hostRef.deviceId) throw new Error('The build computer is offline.')
+    if (request.operation === 'start') {
+      const status = await this.request(computer, { operation: 'status' })
+      if (status.operation !== 'status') throw new DomainError('CI_HOST_REPLY_INVALID', 'Expected Worker CI status.', 502)
+      if ((status.startProtocolVersion ?? 0) < CI_HOST_START_PROTOCOL_VERSION) {
+        throw new DomainError('CI_HOST_PROTOCOL_UNSUPPORTED', status.reasons.join('; '), 409)
+      }
+      if (!status.ready) throw new DomainError('CI_HOST_BUSY', status.reasons.join('; '), 409)
+    }
     const reply = await devices.request(computer.hostRef.deviceId, CI_HOST_NAMESPACE, request, { timeoutMs: 120_000 })
-    return CiHostReplySchema.parse(reply.payload)
+    const parsed = CiHostReplySchema.parse(reply.payload)
+    if (parsed.operation === 'status' && (parsed.startProtocolVersion ?? 0) < CI_HOST_START_PROTOCOL_VERSION) {
+      return { ...parsed, ready: false, reasons: [...parsed.reasons,
+        'Worker CI start protocol is unsupported; update the Worker.'].slice(-10) }
+    }
+    return parsed
   }
 }

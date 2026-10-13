@@ -846,15 +846,15 @@ const measuredFiles = Array.from({ length: 9 }, (_, index) => `apps/api/test/mea
 const ordinaryFiles = Array.from({ length: 5 }, (_, index) => `apps/api/test/ordinary-${index}.integration.test.ts`)
 const cpuSchedulingCases = [
   {
-    name: 'four CPUs admit two installed-Worker files even with short measurements',
+    name: 'four CPUs admit two nonexclusive installed-Worker files even with short measurements',
     capacity: 4, files: installedWorkerFiles,
     durations: Object.fromEntries(installedWorkerFiles.map(file => [file, 1000])),
-    cost: () => 2, firstWave: installedWorkerFiles.slice(0, 2),
+    cost: () => 2, firstWave: [installedWorkerFiles[0], installedWorkerFiles[2]],
   },
   {
     name: 'failed heavy files release CPU capacity and retest on healthy database slots',
     capacity: 4, files: installedWorkerFiles, failFile: installedWorkerFiles[0],
-    cost: () => 2, firstWave: installedWorkerFiles.slice(0, 2),
+    cost: () => 2, firstWave: [installedWorkerFiles[0], installedWorkerFiles[2]],
   },
   {
     name: 'four CPUs admit long measured files in longest-first order',
@@ -986,6 +986,43 @@ test('integration and gate checks share the bounded queue and delay exclusive fi
   assert.ok(events.indexOf(`start:${exclusive}`) > events.indexOf(`end:${ordinary}`))
   assert.ok(events.indexOf('start:gate:typecheck') > events.indexOf('end:gate:lint'))
   assert.equal(peak, 2)
+})
+
+for (const [name, reservedReview] of [
+  ['reserved remote review', 'apps/api/test/remote-review-production-reserved-decision.integration.test.ts'],
+  ['remote review Worker crash recovery', 'apps/api/test/remote-review-production-worker-crash.integration.test.ts'],
+  ['computer workflow directory save', 'apps/api/test/computer-workflow-save.regression-directories.integration.test.ts'],
+  ['six-node checkpoint routing', 'apps/api/test/eng03-b-durability-routing.integration.test.ts'],
+]) test(`${name} runs without competing integration or gate processes`, async () => {
+  const ordinary = 'apps/api/test/ordinary.integration.test.ts'
+  const active = new Set()
+  const overlaps = []
+  let remainingPeers = 2
+  let finishPeers
+  const peersFinished = new Promise((resolve) => { finishPeers = resolve })
+  const run = async (id) => {
+    active.add(id)
+    if (active.has(reservedReview) && active.size > 1) overlaps.push([...active])
+    if (id === reservedReview) await peersFinished
+    else {
+      await new Promise(setImmediate)
+      remainingPeers--
+      if (remainingPeers === 0) finishPeers()
+    }
+    active.delete(id)
+    return { code: 0, complete: true }
+  }
+  const result = await scheduleIntegrationQueue([reservedReview, ordinary],
+    [{ index: 1 }, { index: 2 }, { index: 3 }, { index: 4 }], {
+      maxConcurrency: 4, samplePressure: lowPressure, pollIntervalMs: 1,
+      profiles: { [reservedReview]: { durationMs: 90_000 } },
+      extraItems: [{ id: 'gate:lint' }],
+      executeExtra: (item) => run(item.id),
+      runFile: (_slot, file) => run(file),
+    })
+  assert.equal(result.results.length, 3)
+  assert.ok(result.results.every((item) => item.status === 'PASSED'))
+  assert.deepEqual(overlaps, [])
 })
 
 test('failed integrations retest serially after gate checks with fresh resources and load context', async () => {
@@ -1201,4 +1238,11 @@ test('learned durations from the CI runner replace the committed ones as expecta
   assert.match(integrationDurationsPath({}), /scripts\/integration-durations\.json$/)
   assert.equal(integrationDurationsPath({ FOREMAN_CODE_INTEGRATION_DURATIONS: '/runs/x/durations.json' }),
     '/runs/x/durations.json')
+})
+
+test('reports each file startup as the time until its test module was collected', async () => {
+  const { startupText } = await import('./test-integration.mjs')
+  assert.equal(startupText([{ phase: 'worker-setup', elapsedMs: 3412 }, { phase: 'module-collected', elapsedMs: 8526 }]),
+    '; startup 8526 ms')
+  assert.equal(startupText([{ phase: 'worker-setup', elapsedMs: 3412 }]), '')
 })

@@ -4,9 +4,10 @@ import { randomUUID } from 'node:crypto';
 import { lstat, readFile, realpath, open, rename, rm, symlink } from 'node:fs/promises';
 import { basename, dirname, join, relative } from 'node:path';
 import { setTimeout as wait } from 'node:timers/promises';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { WorkerError, requirePrivateDirectory } from './diagnostics.mjs';
 import { readWorkerStatus } from './runtime.mjs';
+import { WORKER_UPDATE_STARTUP_TIMEOUT_MS } from './ciSmokeTiming.mjs';
 
 const execute = promisify(execFile);
 const services = ['graphql-worker.service', 'foreman-ci-worker.service'];
@@ -151,11 +152,29 @@ export async function switchWorkerPointer(pointer, directory) {
   } finally { await rm(temporary, { force: true }); }
 }
 
+export async function workerPointerMatches(pointer, directory) {
+  try {
+    const info = await lstat(pointer.path);
+    if (info.uid !== process.getuid()) return false;
+    if (pointer.kind === 'symlink' && info.isSymbolicLink()) {
+      return await realpath(pointer.path) === await realpath(directory);
+    }
+    if (pointer.kind === 'file' && info.isFile() && !(info.mode & 0o022)) {
+      return await realpath((await readFile(pointer.path, 'utf8')).trim()) === await realpath(directory);
+    }
+    return false;
+  } catch (error) {
+    if (['ENOENT', 'ENOTDIR', 'EACCES', 'ELOOP'].includes(error.code)) return false;
+    throw error;
+  }
+}
+
 export async function waitForWorkerReady({ stateDirectory, version, workerInstallationId,
   timeoutMs = 60_000, pollMs = 250, readStatus = readWorkerStatus }) {
   const deadline = Date.now() + timeoutMs;
   do {
     const status = await readStatus(stateDirectory);
+    if (status?.phase === 'blocked' && status.failure) throw new Error(status.failure);
     if (status?.active === true && status.phase === 'ready' && status.appVersion === version
       && status.workerInstallationId === workerInstallationId) return;
     await wait(pollMs);
@@ -170,14 +189,31 @@ export async function superviseWorkerUpdate(record, ports = {}) {
     await execute('/usr/bin/systemctl', ['--user', 'restart', service],
       { timeout: 30_000, maxBuffer: 4096, env: environment() });
   }, ready = waitForWorkerReady, switchPointer = switchWorkerPointer,
-  prepareService = migrateWorkerService, persist = writeUpdateRecord } = ports;
+  prepareService = migrateWorkerService, persist = writeUpdateRecord,
+  smoke = async plan => {
+    if (!plan.ciSmoke) return;
+    if (process.env.FOREMAN_INSTALL_SKIP_CI_SMOKE === '1') {
+      process.stderr.write('Worker CI smoke explicitly skipped (FOREMAN_INSTALL_SKIP_CI_SMOKE=1).\n');
+      return;
+    }
+    const { runInstalledCiSmoke } = await import(pathToFileURL(join(plan.directory, 'src/worker.mjs')));
+    await runInstalledCiSmoke(plan.ciSmoke);
+  } } = ports;
   const plan = record.restart;
   if (!plan || !services.includes(plan.service)) throw new WorkerError('worker_update_state_invalid');
+  const previousManifestSha256 = record.status.manifestSha256;
   const save = async (state, currentVersion, lastError) => {
-    record.status = { ...record.status, state, currentVersion, lastError };
+    const manifestSha256 = state === 'current' ? record.manifestSha256 : previousManifestSha256;
+    record.status = { ...record.status, state, currentVersion, manifestSha256, lastError };
     const outcome = { requestId: plan.requestId, status: record.status, finishedAt: new Date().toISOString() };
     record.outcomes = [...(record.outcomes ?? []).filter(value => value.requestId !== plan.requestId), outcome].slice(-20);
     await persist(plan.stateDirectory, record);
+  };
+  const restartWorker = async () => {
+    // A surviving process may resume only when neither restart was attempted.
+    plan.restartAttempted = true;
+    await persist(plan.stateDirectory, record);
+    await restart(plan.service);
   };
   try {
     await prepareService(plan);
@@ -185,18 +221,20 @@ export async function superviseWorkerUpdate(record, ports = {}) {
     if (plan.pointer.kind === 'symlink') {
       await switchPointer({ kind: 'symlink', path: join(plan.root, 'previous') }, plan.previousDirectory);
     }
-    await restart(plan.service);
+    await restartWorker();
     await ready({ stateDirectory: plan.stateDirectory, version: record.status.targetVersion,
-      workerInstallationId: plan.workerInstallationId });
+      workerInstallationId: plan.workerInstallationId, timeoutMs: WORKER_UPDATE_STARTUP_TIMEOUT_MS });
+    await smoke(plan);
     await save('current', record.status.targetVersion, null);
   } catch (error) {
-    const failure = error instanceof WorkerError ? error.code : 'worker_update_start_failed';
+    const failure = error instanceof WorkerError ? error.code : error.message;
+    process.stderr.write(`Worker update failed: ${failure}\n`);
     try {
       await switchPointer(plan.pointer, plan.previousDirectory);
-      await restart(plan.service);
+      await restartWorker();
       await ready({ stateDirectory: plan.stateDirectory, version: plan.previousVersion,
         workerInstallationId: plan.workerInstallationId });
-      await save('rolled-back', plan.previousVersion, failure);
+      await save('rolled-back', plan.previousVersion, failure.slice(0, 2000));
     } catch (rollbackError) {
       const reason = rollbackError instanceof WorkerError ? rollbackError.code : 'worker_update_rollback_start_failed';
       await save('failed', plan.previousVersion, `${failure}; ${reason}`);
@@ -215,6 +253,7 @@ export async function launchUpdateSupervisor(stateDirectory, { run = execute } =
   await writeUpdateRecord(stateDirectory, record);
   await run('/usr/bin/systemd-run', ['--user', '--collect', '--unit', unit, '--property=Type=exec',
     '--property=Restart=on-failure', '--property=RestartSec=1',
+    ...(process.env.FOREMAN_INSTALL_SKIP_CI_SMOKE === '1' ? ['--setenv=FOREMAN_INSTALL_SKIP_CI_SMOKE=1'] : []),
     process.execPath, helper, stateDirectory], { timeout: 10_000, maxBuffer: 4096, env: environment() });
   const deadline = Date.now() + 10_000;
   do {

@@ -23,6 +23,7 @@ export interface DatabaseOptions {
   maxConnections: number
   connectionTimeoutMs: number
   queryTimeoutMs?: number
+  lockTimeoutMs?: number
   onError?: (error: Error) => void
 }
 
@@ -41,6 +42,7 @@ export function createPool(options: DatabaseOptions, applicationName: string): p
     // acknowledgment) needs bounded delivery time before the client gives up.
     query_timeout: Math.min(queryTimeoutMs + 1000, 2_147_483_647),
     statement_timeout: queryTimeoutMs,
+    lock_timeout: options.lockTimeoutMs,
     application_name: applicationName,
   })
   pool.on('error', options.onError ?? ((error: Error) => {
@@ -52,7 +54,7 @@ export function createPool(options: DatabaseOptions, applicationName: string): p
 /**
  * Destroy an aborted/failed probe's connection rather than returning a still-busy
  * client to the pool. Acquisition is bounded by connectionTimeoutMillis. If an
- * abort happens while acquiring, wait for that lease and immediately discard it;
+ * abort happens while acquiring, return the unused healthy lease to the pool;
  * the HTTP probe coalesces callers until this cleanup finishes.
  */
 export async function queryForReadiness(
@@ -62,6 +64,10 @@ export async function queryForReadiness(
 ): Promise<void> {
   signal?.throwIfAborted()
   const client = await pool.connect()
+  if (signal?.aborted) {
+    client.release(false)
+    signal.throwIfAborted()
+  }
   const connection = (client as pg.PoolClient & {
     connection?: { stream?: { destroy(): void } }
   }).connection
