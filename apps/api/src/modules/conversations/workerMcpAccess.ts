@@ -1,5 +1,5 @@
 import { APP_MCP_TOKEN } from '../harnesses/appMcpLauncher.js'
-import { WORKER_MCP_EXTENSION, decodeWorkerMcpResult, WorkerConversationMcpRequestSchema, WorkerConversationMcpAuthorizationSchema,
+import { WORKER_MCP_EXTENSION, WorkerConversationMcpRequestSchema, WorkerConversationMcpAuthorizationSchema,
   WorkerMcpRelayResponseSchema } from '@foreman-code/contracts/worker-mcp-relay'
 import type { DeviceApplicationResult } from '@foreman-code/contracts/device-application'
 import type { WorkerConversationRpcRequest } from '@foreman-code/contracts/remote-execution-rpc'
@@ -20,7 +20,8 @@ export async function prepareWorkerConversationMcp(input: {
     signal.throwIfAborted()
     const reply = await input.request(WORKER_MCP_EXTENSION.namespace, WorkerConversationMcpRequestSchema.parse(payload), { signal })
     signal.throwIfAborted()
-    return decodeWorkerMcpResult(reply)
+    if (reply.bytes !== undefined) throw new DomainError('WORKER_CONVERSATION_MCP_DENIED', 'MCP replies cannot contain binary transfer data.', 403)
+    return reply.payload
   }
   const lease = WorkerConversationMcpAuthorizationSchema.parse(await request({ ...fields,
     operation: 'conversation-mcp.authorize' }, input.signal))
