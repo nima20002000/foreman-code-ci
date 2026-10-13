@@ -1,4 +1,5 @@
 import {
+  GetHarnessDefaultsResponseSchema,
   GetAgentDefaultsResponseSchema,
   UpdateAgentDefaultsResponseSchema,
   GetWorkflowDefaultsResponseSchema,
@@ -10,6 +11,8 @@ import {
   GetInteractionResponseSchema,
   RespondToInteractionRequestSchema,
   RespondToInteractionResponseSchema,
+  SaveHarnessDefaultsRequestSchema,
+  SaveHarnessDefaultsResponseSchema,
 } from '@foreman-code/contracts'
 import { SavedWorkflowResponseSchema, SavedRunDetailsSchema } from '@foreman-code/contracts/wave25'
 import type { OperatorServices } from '../mcp/operator/types.js'
@@ -20,6 +23,7 @@ import { requirePrincipal } from '../modules/access/http.js'
 import { DomainError } from '../modules/errors.js'
 import type { LangGraphWorkflowEngine } from '../modules/runs/engine.js'
 import type { PostgresRunRepository } from '../modules/runs/postgres.js'
+import type { PostgresSettingsRepository } from '../modules/settings/postgres.js'
 import type { PostgresFoundationSettingsRepository } from '../modules/settings/foundation.js'
 import type { PostgresWorkflowRepository } from '../modules/workflows/postgres.js'
 import type { PostgresWorkspaceRepository } from '../modules/workspaces/postgres.js'
@@ -31,6 +35,7 @@ export interface ProductServices {
   workspaces: PostgresWorkspaceRepository
   workflows: PostgresWorkflowRepository
   runs: PostgresRunRepository
+  settings: PostgresSettingsRepository
   foundationSettings?: PostgresFoundationSettingsRepository
   engine: LangGraphWorkflowEngine
   chat?: OperatorChatService
@@ -65,9 +70,17 @@ export function registerProductRoutes(app: FastifyInstance, services: ProductSer
       return UpdateWorkflowDefaultsResponseSchema.parse(await services.foundationSettings!.updateWorkflowDefaults(input.value, input.expectedRevision))
     })
   }
-  // Harness defaults are read and changed only through the identity-, grant-,
-  // revision- and audit-checked /api/management/harnesses family (MCP parity:
-  // harness_list, harness_get, harness_defaults_update).
+  app.get('/api/settings/harnesses', async () => GetHarnessDefaultsResponseSchema.parse({
+    defaults: await services.settings.getHarnessDefaults(),
+  }))
+
+  app.put<{ Body: unknown }>('/api/settings/harnesses', async (request) => {
+    if (managementOnlyMutations) throw new DomainError('MANAGEMENT_ROUTE_REQUIRED', 'Use the revision-checked management defaults command.', 409)
+    const input = SaveHarnessDefaultsRequestSchema.parse(request.body)
+    return SaveHarnessDefaultsResponseSchema.parse({
+      defaults: await services.settings.saveHarnessDefaults(input.defaults),
+    })
+  })
 
   app.get<{ Params: WorkspaceParams }>('/api/workspaces/:workspaceId', async (request) => {
     const details = await services.workspaces.getDetails(request.params.workspaceId, requirePrincipal(request))

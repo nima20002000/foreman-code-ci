@@ -1,14 +1,13 @@
 import type { z } from 'zod'
-import { withTransaction } from '../../infrastructure/transaction.js'
 import { createHash, randomUUID } from 'node:crypto'
 import type pg from 'pg'
 import {
   ProviderAccountApiKeyInputSchema, ProviderAccountCommandInputSchema,
   ProviderAccountCreateInputSchema, ProviderAccountIdSchema, ProviderAccountRenameInputSchema,
-  type AccountProvider, type ProviderAccount,
+  type AccountProvider, type ProviderAccount, type ProviderAccountAuthMode,
   ProviderAccountsSnapshotSchema, type ProviderAccountsSnapshot,
   type AcceptedProviderAccountBinding, type ProviderAccountBinding, type ProviderAccountAuthenticationOperation,
-  type ProviderAccountObservation, type ProviderAccountModels,
+  type ProviderAccountNativeAuthenticationObservation, type ProviderAccountObservation, type ProviderAccountModels, type ProviderAccountCapability, type ProviderAccountProfileChoice,
   type ProviderAccountTarget, type ProviderAccountHumanHandoff,
 } from '@foreman-code/contracts/provider-accounts'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
@@ -17,8 +16,11 @@ import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.j
 import type { GraphSqlClient } from '../run-graph/connection.js'
 import type { PostgresCommandCoordinator } from '../commands/postgres.js'
 import { DomainError } from '../errors.js'
+import { LocalProviderCredentials } from './localCredentials.js'
+import type { ProviderAccountNativePort } from './nativeCommands.js'
 import { ProviderAccountsRepository } from './repository.js'
 import type { DeviceProvisioningTarget } from '@foreman-code/contracts/device-resources'
+import type { ProviderAccountNativeInput } from './nativeCommands.js'
 import { sameDeviceProvisioningTarget } from '@foreman-code/contracts/device-resources'
 import { isDeepStrictEqual } from 'node:util'
 import { ProviderAccountListInputSchema, ProviderAccountPageSchema, ProviderAccountGetInputSchema,
@@ -32,12 +34,50 @@ import { ProviderAccountDiscoveryInputSchema, ProviderAccountProfilesSchema, Pro
   ProviderAccountHumanHandoffSchema } from '@foreman-code/contracts/provider-accounts'
 import { assertAccountUnused, ProviderAccountAuthenticationOperations } from './authenticationOperations.js'
 import { AcceptedProviderAccountBindings } from './acceptedBindings.js'
-import type { ResolvedProviderAccount, ProviderAccountResolver, ProviderAccountOperationNativePort, ProviderAccountCredentials } from './ports.js'
 import { legacyProviderAccountBinding, readProviderAccountBinding, type AccountBindingOwner } from './acceptedBindings.js'
 import type { HarnessConfiguration } from '@foreman-code/contracts'
 import type { HarnessProfileSelection } from '@foreman-code/contracts/harness-registry'
 
-export type { ResolvedProviderAccount, ProviderAccountResolver, ProviderAccountOperationNativePort, ProviderAccountCredentials }
+export interface ResolvedProviderAccount {
+  accountId: string
+  homePath: string
+  authMode: ProviderAccountAuthMode
+  apiKey?: string
+  binding?: ProviderAccountBinding
+  observation?: ProviderAccountObservation
+}
+export interface ProviderAccountResolver {
+  resolve(provider: AccountProvider, accountId?: string,
+    options?: { sql?: GraphSqlClient; allowDefault?: boolean;
+      acceptedBinding?: AcceptedProviderAccountBinding }): Promise<ResolvedProviderAccount | null>
+}
+/** Native paths stay inside the owning host; only sanitized observations cross this port. */
+export interface ProviderAccountOperationNativePort extends ProviderAccountNativePort {
+  discover?(target: DeviceProvisioningTarget, provider?: AccountProvider): Promise<{
+    providers: ProviderAccountCapability[]; profiles: ProviderAccountProfileChoice[]; generation: number
+  }>
+  humanHandoff?(input: ProviderAccountNativeInput & { operation: ProviderAccountAuthenticationOperation }):
+    Promise<ProviderAccountHumanHandoff>
+  provisionAccount?(account: ProviderAccount): Promise<void>
+  prepareAuthentication?(input: ProviderAccountNativeInput & {
+    operation: ProviderAccountAuthenticationOperation;
+  }): Promise<ProviderAccountNativeAuthenticationObservation>
+  observeAuthentication?(input: ProviderAccountNativeInput & {
+    operation: ProviderAccountAuthenticationOperation;
+  }): Promise<ProviderAccountNativeAuthenticationObservation>
+  cancelAuthentication?(input: ProviderAccountNativeInput & {
+    operation: ProviderAccountAuthenticationOperation;
+  }): Promise<ProviderAccountNativeAuthenticationObservation>
+  registerProfile?(input: { provider: AccountProvider; authMode?: ProviderAccountAuthMode | undefined; profileRef: string; qualificationId: string;
+    target: DeviceProvisioningTarget }): Promise<{ profileRef: string }>
+  observeAccount?(input: ProviderAccountNativeInput): Promise<ProviderAccountObservation>
+  models?(input: ProviderAccountNativeInput): Promise<ProviderAccountModels>
+  authenticationGeneration?(input: ProviderAccountNativeInput): Promise<number>
+  requireRuntimeAccount?(input: ProviderAccountNativeInput): Promise<void>
+  resolveProfile?(account: ProviderAccount): Promise<{ homePath: string; userHome: string }>
+}
+export type ProviderAccountCredentials = Pick<LocalProviderCredentials, 'paths' | 'create' | 'assertAvailable'
+  | 'apiKey' | 'backup' | 'saveApiKey' | 'restore' | 'clearApiKey' | 'removeCreatedHome'>
 type CommandSource = 'http' | 'mcp'
 type Change = (snapshot: ProviderAccountsSnapshot, sql: GraphSqlClient) => Promise<void>
 
@@ -218,7 +258,9 @@ export class ProviderAccountsService implements ProviderAccountResolver {
       return
     }
     await this.authorize(this.pool, principal, 'provider_accounts:read', account.id)
-    return withTransaction(this.pool, async (sql) => {
+    const sql = await this.pool.connect()
+    try {
+      await sql.query('begin')
       await this.authorize(sql, principal, 'provider_accounts:read', account.id)
       const snapshot = await this.repository.lock(sql)
       const current = this.account(snapshot, account.id)
@@ -231,12 +273,17 @@ export class ProviderAccountsService implements ProviderAccountResolver {
           if (!(error instanceof DomainError) || error.code !== 'PROVIDER_ACCOUNT_PRINCIPAL_LOCKED') throw error
           Object.assign(account, { status: 'unavailable', identity: null,
             observation: { ...observation, status: 'unavailable', subject: null, identity: null, readiness: 'unavailable' } })
+          await sql.query('commit')
           return
         }
       }
       const saved = await this.repository.observe(sql, account.id, observation)
       Object.assign(account, { observation: saved, status: saved.status, identity: saved.identity })
-    })
+      await sql.query('commit')
+    } catch (error) {
+      await sql.query('rollback')
+      throw error
+    } finally { sql.release() }
   }
 
   async targets(principal: ManagementPrincipal): Promise<z.infer<typeof ProviderAccountTargetsSchema>> {
