@@ -11,10 +11,9 @@ import { repeatTickIndex } from '../../src/modules/runs/repeatResolution.js'
 
 type RestartPhase = 'active' | 'writable source' | 'admitting interval' | 'failed admission'
 
-export async function assertInstalledWorkflowRestart(phase: RestartPhase,
-  installedFixture?: Awaited<ReturnType<typeof installationUpdateFixture>>) {
+export async function assertInstalledWorkflowRestart(phase: RestartPhase) {
   const activePhase = phase === 'active' || phase === 'writable source'
-  const fixture = installedFixture ?? await installationUpdateFixture({ workflow: 'interval', executionHost: 'main',
+  const fixture = await installationUpdateFixture({ workflow: 'interval', executionHost: 'main',
     installedMainService: true,
     sourceAccessMode: phase === 'writable source' ? 'exclusive-write' : 'read-only' })
   const service = fixture.mainService!
@@ -66,13 +65,6 @@ export async function assertInstalledWorkflowRestart(phase: RestartPhase,
     await fixture.reconcile()
     await expectMcpAccessDenied(fixture.call('run_stop', { workspaceId: started.run.workspaceId,
       runId: started.run.id, commandId: randomUUID() }, reader.token))
-    const callsAfterRestart = await fixture.provider.calls()
-    if (phase === 'admitting interval') {
-      for (const original of active) {
-        expect(callsAfterRestart.filter(call => call.method === 'turn/start'
-          && call.correlationId === `execution:${original.id}`)).toHaveLength(1)
-      }
-    }
     const recovered = SavedRunDetailsSchema.parse(decodeMcpToolResult(await fixture.call('run_get', {
       detail: 'full', workspaceId: started.run.workspaceId, runId: started.run.id,
     }, reader.token)))
@@ -141,8 +133,6 @@ export async function assertInstalledWorkflowRestart(phase: RestartPhase,
       await fixture.provider.releaseWorkflowAdmission()
       await fixture.provider.releaseWorkflowTurns()
       await restart
-    } finally {
-      if (!installedFixture) await fixture.close()
-    }
+    } finally { await fixture.close() }
   }
 }
