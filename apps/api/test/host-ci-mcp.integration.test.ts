@@ -275,7 +275,7 @@ it.each(['http', 'mcp'] as const)('returns and replays every maximum unit shard 
   } finally { await f.close() }
 })
 
-it('persists pending MCP cancellation during host preparation and confirms cleanup afterward', async () => {
+it('joins in-flight host preparation before confirming direct MCP cancellation', async () => {
   const f = await fixture()
   let release!: () => void
   const gate = new Promise<void>(resolve => { release = resolve })
@@ -286,41 +286,37 @@ it('persists pending MCP cancellation during host preparation and confirms clean
     if (input.operation === 'start') { entered(); await gate }
     return request(computer, input)
   }
-  let dispatch: Promise<void> | undefined
+  let cancellation: Promise<unknown> | undefined
   try {
-    const reader = await f.connect(CI_GET_ACTIONS)
     const result = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run',
       { suite: 'install', commandId: 'preparing-cancel' }))
     await preparing
-    dispatch = f.ci.dispatch()
-    const commandId = randomUUID()
+    const reader = await f.connect(CI_GET_ACTIONS)
     expect((await f.call(reader, 'ci_cancel', { ticketId: result.ticketId })).isError).toBe(true)
-    const cancellation = await f.call(f.operator, 'ci_cancel', { ticketId: result.ticketId, commandId })
-    expect(cancellation.isError).toBe(true)
-    expect(decodeMcpToolResult(cancellation)).toMatchObject({ error: { code: 'CI_CANCEL_PENDING' } })
-    const pending = await reader.callTool({ name: 'ci_get',
-      arguments: { workspaceId: f.workspaceId, ticketId: result.ticketId } })
-    expect(pending.isError).not.toBe(true)
-    const pendingRun = CiGetOutputSchema.parse(decodeMcpToolResult(pending)).run
-    expect(pendingRun).toMatchObject({ state: 'starting', cancellation: {
-      source: 'mcp', commandId, reason: 'direct',
-    } })
-    expect((await f.pool.query('select record from ci_runs where id=$1', [result.ticketId])).rows[0].record)
-      .toEqual(pendingRun)
+    let completed = false
+    cancellation = f.value(f.operator, 'ci_cancel', { ticketId: result.ticketId }).then(value => {
+      completed = true
+      return value
+    })
+    await expect.poll(async () => {
+      const response = await reader.callTool({ name: 'ci_get',
+        arguments: { workspaceId: f.workspaceId, ticketId: result.ticketId } })
+      expect(response.isError).not.toBe(true)
+      return CiGetOutputSchema.parse(decodeMcpToolResult(response)).run.cancellation
+    }).toMatchObject({ source: 'mcp', reason: 'direct' })
+    // eslint-disable-next-line no-restricted-syntax -- Proves cancellation cannot finish during blocked dispatch.
+    await new Promise(resolve => setTimeout(resolve, 100))
+    expect(completed).toBe(false)
     release()
-    await dispatch
+    expect(await cancellation).toMatchObject({ run: { state: 'canceled' } })
     await f.ci.dispatch()
-    const read = CiGetOutputSchema.parse(await f.value(reader, 'ci_get', { ticketId: result.ticketId }))
-    expect(read.run).toMatchObject({ state: 'canceled' })
-    expect(read.run.cancellation).toBeUndefined()
-    expect((await f.pool.query('select record,host_key from ci_runs where id=$1', [result.ticketId])).rows[0])
-      .toEqual({ record: read.run, host_key: null })
-    expect(f.started).toHaveLength(1)
+    expect(CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: result.ticketId })).run.state)
+      .toBe('canceled')
     for (const computer of f.computers) {
       const reply = await f.endpoint.request(computer, { operation: 'status' })
       expect(reply.operation === 'status' && reply.runs.some(run => ['starting', 'running'].includes(run.state))).toBe(false)
     }
-  } finally { release(); await dispatch; await f.close() }
+  } finally { release(); await cancellation; await f.close() }
 })
 
 it.each([
@@ -369,10 +365,8 @@ it.each([0, 1250])(
     const started = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run',
       { suite: 'integration', partitions: 4, commandId: 'generic-integration' }))
     expect(started.partitions).toBeUndefined()
-    await f.ci.dispatch()
-    await f.ci.dispatch()
-    expect((await repository.waitForCompletion(started.ticketId)).code).toBe(0)
-    await f.ci.dispatch()
+    await expect.poll(async () => CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get',
+      { ticketId: started.ticketId })).run.state, { timeout: 10_000 }).toBe('passed')
     const read = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: started.ticketId }))
     expect(read.run).toMatchObject({ part: null, partition: null, state: 'passed',
       computer: { hostRef: { kind: 'main' } } })
@@ -415,10 +409,8 @@ it.each([
     const response = await f.app.inject({ method: 'POST', url, headers, payload: input })
     expect(response.statusCode).toBe(200)
     const started = CiRunOutputSchema.parse(response.json())
-    await f.ci.dispatch()
-    await f.ci.dispatch()
-    expect((await repository.waitForCompletion(started.ticketId)).code).toBe(0)
-    await f.ci.dispatch()
+    await expect.poll(async () => CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get',
+      { ticketId: started.ticketId })).run.state, { timeout: 10_000 }).toBe('passed')
     const read = await f.app.inject({ method: 'GET', url: `${url}/${started.ticketId}`, headers })
     expect(read.statusCode).toBe(200)
     const result = CiGetOutputSchema.parse(read.json())
@@ -543,7 +535,12 @@ it.each([
       const running = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: started.ticketId }))
       const active = running.partitions!.filter(run => run.state === 'running')
       if (!active.length) break
-      for (const run of active) f.finish(run.id, 0, `${run.part} passed\n`)
+      for (const run of active) {
+        const computer = f.computers.find(value => value.label === run.computer?.label)!
+        const status = await f.endpoint.request(computer, { operation: 'status' })
+        expect(status.operation === 'status' && status.runs.some(value => value.runId === run.id)).toBe(true)
+        f.finish(run.id, 0, `${run.part} passed\n`)
+      }
     }
     const done = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: started.ticketId }))
     expect(done.group).toMatchObject({ groupId: read.run.groupId, state: 'passed' })
@@ -1423,7 +1420,7 @@ it('preserves MCP cancellation when an in-flight refresh returns an unstarted ti
   let entered!: () => void
   const blocked = new Promise<void>(resolve => { release = resolve })
   const reading = new Promise<void>(resolve => { entered = resolve })
-  let dispatch: Promise<void> | undefined
+  let cancellation: Promise<unknown> | undefined
   try {
     const tickets = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', {
       suite: 'integration', scope: 'full', partitions: 2, commandId: 'cancel-unstarted',
@@ -1441,26 +1438,35 @@ it('preserves MCP cancellation when an in-flight refresh returns an unstarted ti
       return { ...reply, run: { ...reply.run, state: 'queued', step: null,
         message: 'Dispatch retries exhausted; queued for another computer.' } }
     }
-    dispatch = f.ci.dispatch()
+    const dispatch = f.ci.dispatch()
     await reading
-    const commandId = randomUUID()
-    expect(await f.value(f.operator, 'ci_cancel', { ticketId: started.ticketId, commandId }))
-      .toMatchObject({ run: { state: 'canceled' } })
+    let canceled = false
+    cancellation = f.value(f.operator, 'ci_cancel', { ticketId: started.ticketId }).then(value => {
+      canceled = true
+      return value
+    })
+    // eslint-disable-next-line no-restricted-syntax -- Proves cancellation cannot finish during blocked dispatch.
+    await new Promise(resolve => setTimeout(resolve, 100))
+    expect(canceled).toBe(false)
     const pending = await reader.callTool({ name: 'ci_get',
       arguments: { workspaceId: f.workspaceId, ticketId: started.ticketId } })
     expect(pending.isError).not.toBe(true)
-    const canceledRun = CiGetOutputSchema.parse(decodeMcpToolResult(pending)).run
-    expect(canceledRun.state).toBe('canceled')
-    expect((await f.pool.query('select record,host_key from ci_runs where id=$1', [started.ticketId])).rows[0])
-      .toEqual({ record: canceledRun, host_key: null })
+    expect(CiGetOutputSchema.parse(decodeMcpToolResult(pending)).run.state).toBe('running')
     release()
     await dispatch
+    expect(await cancellation).toMatchObject({ run: { state: 'canceled' } })
     const read = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: started.ticketId }))
-    expect(read.run).toEqual(canceledRun)
+    expect(read.run.state).toBe('canceled')
     expect((await f.pool.query('select record,host_key from ci_runs where id=$1', [started.ticketId])).rows[0])
       .toEqual({ record: read.run, host_key: null })
     expect(f.started).toHaveLength(1)
-  } finally { release(); await dispatch; await f.close() }
+    for (const computer of f.computers) {
+      const status = await f.endpoint.request(computer, { operation: 'status' })
+      expect(status.operation === 'status' && status.runs.some(run => run.state === 'running')).toBe(false)
+    }
+    expect((await f.pool.query("select count(*)::int as count from management_audit where action='ci.cancel'")).rows)
+      .toEqual([{ count: 1 }])
+  } finally { release(); await cancellation; await f.close() }
 })
 
 it('prefers build computers and CircleCI over higher-priority GitHub slots for integration', async () => {
