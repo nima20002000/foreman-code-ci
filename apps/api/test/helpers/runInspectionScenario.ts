@@ -72,9 +72,7 @@ export async function inspectRepeatRun({ exit, maxOccurrences, expectedOccurrenc
   } }))
   const exitId = fixture.version.definition.nodes[1]!.id
   let exits = 0
-  const diagStart = Date.now()
   const f = await currentOperatorIntegration({ fixture, insertRun: false, approvalNodeIds: [], outputFor: (nodeId) => {
-    process.stderr.write(`DIAG ${exit} node=${nodeId} t=${Date.now() - diagStart}\n`)
     if (nodeId !== exitId) return { nodeId }
     exits++
     const outcome = exit === 'early' && exits === 2 ? 'pass' : 'issues'
