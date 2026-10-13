@@ -41,13 +41,11 @@ import { currentOperatorIntegration } from './currentOperatorIntegration.js'
 import { providerLaunchCredentials, providerAppEndpoint } from './wave25Br1003Runtime.js'
 import { RecoveryProvider, type Fault, type Submission } from './eng06DProvider.js'
 import { waitForEng06Settlement } from './eng06DSettlement.js'
-import { measureIntegrationPhase } from './integrationPhase.js'
 
 export type Form = 'sequential' | 'repeat'
 type Base = Awaited<ReturnType<typeof currentOperatorIntegration>>
 type Runtime = ReturnType<Base['compose']>
 export type Transport = Pick<Base, 'app' | 'client' | 'connect'> & { close(): Promise<void> }
-const RECOVERY_POLL_INTERVAL_MS = 25
 
 /** Same composition as checkpointRuntimeFixture, plus d32a361's final physical
  * recovery port. Only the external provider/registry and filesystem inspector
@@ -155,24 +153,17 @@ export async function recoveryFixture(form: Form, plan: (input: Submission) => F
   fixture.run.approval = { handler: 'native' }
   fixture.version.definition.executionPolicy = { maxParallelism: 1, maxNodeExecutions: budget }
   fixture.run.input = { instruction: 'Preserve the accepted input across attempts and recovery' }
-  const base = await measureIntegrationPhase('recovery fixture setup',
-    () => currentOperatorIntegration({ fixture, approvalNodeIds: [] }))
+  const base = await currentOperatorIntegration({ fixture, approvalNodeIds: [] })
   const provider = new RecoveryProvider(base.f.version, plan)
   // The inherited runtime only seeds the authentic saved version/Run. It has no
   // recovery registry port, so it must never run this fixture's native work.
-  await measureIntegrationPhase('recovery inherited runtime shutdown', async () => {
-    await base.client.close()
-    await base.app.close()
-    await base.engine.shutdown()
-  })
+  await base.client.close(); await base.app.close(); await base.engine.shutdown()
   const errors: unknown[] = [], shutdownErrors: unknown[] = []
   const activeStarts = new Set<Promise<void>>()
   let runtime = composeRuntime(base, provider, errors, activeStarts)
   const runtimes = [runtime]
   let transport: Transport
-  try {
-    transport = await measureIntegrationPhase('recovery transport setup', () => openTransport(base, runtime, errors))
-  }
+  try { transport = await openTransport(base, runtime, errors) }
   catch (error) {
     await runtime.engine.shutdown().catch((failure: unknown) => shutdownErrors.push(failure))
     await base.close()
@@ -187,36 +178,30 @@ export async function recoveryFixture(form: Form, plan: (input: Submission) => F
     get runtime() { return runtime }, get transport() { return transport },
     launch(runId = base.f.run.id) { void runtime.engine.start(runId).catch((error: unknown) => errors.push(error)) },
     async restart(options: { mode?: 'crash' | 'graceful' } = {}) {
-      await measureIntegrationPhase('recovery restart', async () => {
-        await transport.close()
-        // A dead API cannot publish its original manager's close or detach callback.
-        const crashClose = options.mode === 'crash'
-          ? vi.spyOn(runtime.native, 'closeForRestart').mockResolvedValue(undefined) : undefined
-        // Continue through a reported shutdown failure so a separate Stop/readback
-        // assertion still exercises the recovery path. Tests assert this array too.
-        try {
-          await runtime.engine.shutdown()
-        } catch (error) {
-          shutdownErrors.push(error)
-        } finally {
-          crashClose?.mockRestore()
-          if (options.mode === 'crash') provider.killAll()
-        }
-        runtime = composeRuntime(base, provider, errors, activeStarts)
-        runtimes.push(runtime)
-        transport = await openTransport(base, runtime, errors)
-      })
+      await transport.close()
+      // A dead API cannot publish its original manager's close or detach callback.
+      const crashClose = options.mode === 'crash'
+        ? vi.spyOn(runtime.native, 'closeForRestart').mockResolvedValue(undefined) : undefined
+      // Continue through a reported shutdown failure so a separate Stop/readback
+      // assertion still exercises the recovery path. Tests assert this array too.
+      try { await runtime.engine.shutdown() } catch (error) { shutdownErrors.push(error) }
+      finally {
+        crashClose?.mockRestore()
+        if (options.mode === 'crash') provider.killAll()
+      }
+      runtime = composeRuntime(base, provider, errors, activeStarts); runtimes.push(runtime)
+      transport = await openTransport(base, runtime, errors)
     },
     async settled(runId = base.f.run.id, options: { pollIntervalMs?: number } = {}) {
       try {
-        await measureIntegrationPhase('recovery settlement', () => waitForEng06Settlement(async () => {
+        await waitForEng06Settlement(async () => {
           await runtime.engine.reconcile((error) => errors.push(error))
           const snapshot = await runtime.runs.getRepeatSnapshot(runId)
           const executions = (await base.db.pool.query<{ id: string; state: string; accepted: boolean }>(
             "select id,record->>'state' as state,accepted from harness_executions where run_id=$1 order by id", [runId])).rows
           return { state: snapshot.run.executionState, cleanupPending: snapshot.cleanupPending,
             activeStarts: activeStarts.size, executions }
-        }, { pollIntervalMs: RECOVERY_POLL_INTERVAL_MS, ...options }))
+        }, options)
       } catch (error) {
         // Preserve the real error behind HTTP INTERNAL_ERROR / a generic timeout.
         // No catch converts a failed convergence assertion into a passing test.
@@ -231,20 +216,18 @@ export async function recoveryFixture(form: Form, plan: (input: Submission) => F
       }
     },
     async close() {
-      await measureIntegrationPhase('recovery fixture cleanup', async () => {
-        provider.killAll()
-        try {
-          await transport.close()
-          // Drain all rebuilt runtimes even when one restart closure rejects.
-          await Promise.allSettled(runtimes.map((item) => item.engine.shutdown()))
-          await base.close()
-        } finally {
-          for (const item of runtimes) {
-            vi.mocked(item.locations.revalidateSnapshot).mockRestore()
-            vi.mocked(item.engine.start).mockRestore()
-          }
+      provider.killAll()
+      try {
+        await transport.close()
+        // Drain all rebuilt runtimes even when one restart closure rejects.
+        await Promise.allSettled(runtimes.map((item) => item.engine.shutdown()))
+        await base.close()
+      } finally {
+        for (const item of runtimes) {
+          vi.mocked(item.locations.revalidateSnapshot).mockRestore()
+          vi.mocked(item.engine.start).mockRestore()
         }
-      })
+      }
     },
   }
 }
