@@ -53,7 +53,7 @@ if (args[0] === 'mcp') {
     process.stderr.write(`Error: No MCP server named '${args[2]}' found.\n`)
     process.exit(1)
   }
-  send(args[1] === 'list' ? [{ name: mcpName }] : mcp)
+  send(args[1] === 'list' ? [{ name: mcpName, transport: mcp.transport }] : mcp)
   process.exit(0)
 }
 if (args[0] !== 'app-server') process.exit(2)
@@ -128,6 +128,7 @@ async function qualificationFiles(turn, prompt) {
 
 async function mcpCall(name, arguments_) {
   const { Client, StreamableHTTPClientTransport } = await import(settings.clientModule)
+  const { decodeMcpToolResult } = await import(settings.mcpResultModule)
   const token = process.env.FOREMAN_CODE_MCP_TOKEN
   const digest = createHash('sha256').update(token).digest('hex')
   const route = JSON.parse(readFileSync(join(dirname(settings.launcher), 'routes', `${digest}.json`), 'utf8'))
@@ -138,7 +139,7 @@ async function mcpCall(name, arguments_) {
     }))
     const result = await client.callTool({ name, arguments: arguments_ })
     if (result.isError) throw new Error(`MCP ${name} denied: ${JSON.stringify(result.content)}`)
-    return result.structuredContent
+    return decodeMcpToolResult(result)
   } finally {
     await client.close()
   }
