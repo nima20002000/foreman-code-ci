@@ -18,6 +18,7 @@ import { approvalResponse } from './approvalResponse.js'
 import { agent3Database } from './wave25Agent3.js'
 import { reserveFromExitedParent } from './eng06LaunchReservation.testSupport.js'
 import { holdCrashCut, observeCrashTask } from './eng06CrashCut.testSupport.js'
+import { measureIntegrationPhase } from './integrationPhase.js'
 
 type Runtime = Awaited<ReturnType<typeof checkpointRuntimeFixture>>
 type Ports = {
@@ -134,11 +135,12 @@ type TerminalRecoveryKind = 'success' | 'approval' | 'retry' | 'retry-exhausted'
 export function useCrashCutDatabase() {
   let database: CrashCutDatabase | undefined
   beforeAll(async () => {
-    database = await agent3Database()
+    database = await measureIntegrationPhase('recovery database setup', () => agent3Database())
   }, 60_000)
   afterEach(() => vi.restoreAllMocks())
   afterAll(async () => {
-    await database?.close()
+    const fixtureDatabase = database
+    if (fixtureDatabase) await measureIntegrationPhase('recovery database cleanup', () => fixtureDatabase.close())
   }, 60_000)
   return () => {
     if (!database) throw new Error('Crash-cut database has not been initialized')
@@ -266,11 +268,12 @@ export async function recoverTerminalBeforeClosure(
     expect(parseRepeatExitResultV1({ outcome: 'succeeded', output: exitOutput },
       fixture.version.definition.nodes[1]!.choice!).data).toEqual(exitOutput.data)
   }
-  const t = await checkpointRuntimeFixture(1, 1, { database, fixture,
+  const t = await measureIntegrationPhase('terminal recovery fixture setup', () => checkpointRuntimeFixture(1, 1, {
+    database, fixture,
     approvalNodeIds: kind === 'approval' ? [fixture.version.entryNodeId] : [],
     outputFor: (nodeId) => nodeId === fixture.version.definition.nodes[1]!.id && form === 'repeat'
       ? exitOutput : { node: nodeId },
-  })
+  }))
   let restore: () => void = () => undefined
   try {
     if (kind === 'retry' || kind === 'retry-exhausted') failEntryAtProvider(t, kind === 'retry-exhausted')
@@ -295,11 +298,12 @@ export async function recoverTerminalBeforeClosure(
         return record.call(this, execution, ...args)
       })
     restore = () => fault.mockRestore()
-    await t.engine.start(t.f.run.id)
+    await measureIntegrationPhase('terminal recovery original Start', () => t.engine.start(t.f.run.id))
     if (kind === 'approval') {
       const interaction = (await t.pending())[0]!
       expect(interaction).toBeDefined()
-      await t.service.respond({ kind: 'user', principal: t.principal }, approvalResponse(interaction))
+      await measureIntegrationPhase('terminal recovery approval response',
+        () => t.service.respond({ kind: 'user', principal: t.principal }, approvalResponse(interaction)))
     }
     expect(cut).toBeDefined()
     const original = cut!
@@ -319,7 +323,7 @@ export async function recoverTerminalBeforeClosure(
     const checkpoint = await readWorkflowCheckpoint(t.f.run.id, t.f.version, t.saver)
     expect(checkpoint.tasks.some((task) => isSettlementPendingCheckpointError(task.error))).toBe(true)
     restore()
-    const next = await coldRuntime(t)
+    const next = await measureIntegrationPhase('terminal recovery restart', () => coldRuntime(t))
     // Success itself requests post-terminal cleanup. Observe DURABLE
     // state at the call, not call count or the final state after the fact.
     const cleanupStates: Array<{ executionState: string; outcome: string }> = []
@@ -347,7 +351,8 @@ export async function recoverTerminalBeforeClosure(
       // close receipt, acceptance, negative Run intent or retry permission.
       const before = { ...t.provider.counts }, unchangedRun = await next.runs.get(t.f.run.id)
       expect(unchangedRun?.outcome).toBe('pending')
-      await expect(next.engine.start(t.f.run.id)).rejects.toThrow('Terminal native closure remains unconfirmed.')
+      await expect(measureIntegrationPhase('terminal recovery missing closure', () => next.engine.start(t.f.run.id)))
+        .rejects.toThrow('Terminal native closure remains unconfirmed.')
       expect(physical).toHaveBeenCalledTimes(1)
       expect(await next.runs.get(t.f.run.id)).toEqual(unchangedRun)
       expect(await next.runs.getExecution(original.id)).toEqual(original)
@@ -363,12 +368,13 @@ export async function recoverTerminalBeforeClosure(
     }
     if (kind === 'stop') {
       await t.stop()
-      expect(await next.engine.cancel(t.f.run.id)).toBe(true)
+      expect(await measureIntegrationPhase('terminal recovery Stop', () => next.engine.cancel(t.f.run.id))).toBe(true)
     } else if (kind === 'retry-exhausted') {
       // The real driver reports the selected failed node even AFTER
       // negative settlement succeeds. Both facts are part of the contract.
-      await expect(next.engine.start(t.f.run.id)).rejects.toMatchObject({ code: 'WORKFLOW_SELECTED_EXECUTION_FAILED' })
-    } else await next.engine.start(t.f.run.id)
+      await expect(measureIntegrationPhase('terminal recovery retry exhaustion', () => next.engine.start(t.f.run.id)))
+        .rejects.toMatchObject({ code: 'WORKFLOW_SELECTED_EXECUTION_FAILED' })
+    } else await measureIntegrationPhase('terminal recovery completion', () => next.engine.start(t.f.run.id))
     expect(await next.runs.get(t.f.run.id)).toMatchObject({ executionState: 'completed',
       outcome: kind === 'stop' ? 'canceled' : kind === 'retry-exhausted' ? 'failed' : 'succeeded' })
     expect(await next.runs.getExecution(original.id)).toEqual(original)
@@ -439,5 +445,8 @@ export async function recoverTerminalBeforeClosure(
     expect(await effects(t, 'result.accept')).toEqual(accepted)
     expect(await successfulResults(t)).toEqual(resultRows)
     expect(await next.runs.hasPendingCleanup(t.f.run.id)).toBe(false)
-  } finally { restore(); await t.close() }
+  } finally {
+    restore()
+    await measureIntegrationPhase('terminal recovery runtime cleanup', () => t.close())
+  }
 }
