@@ -25,7 +25,6 @@ interface CompletedSource {
   record: unknown
   execution: unknown
   settlement_pending: boolean
-  preparation_closed: boolean
 }
 
 const cleanupPageSize = 100
@@ -33,8 +32,6 @@ const cleanupPageSize = 100
 async function completedSourcePage(pool: Pick<pg.Pool, 'query'>, after: CompletedSource | undefined) {
   return pool.query<CompletedSource>(`select m.materialization_id,m.state='closed' as already_closed,
       m.record,e.record as execution,
-      exists(select 1 from source_preparation_reconciliations c
-        where c.operation_id::text=m.record->>'operationId' and c.status='closed') as preparation_closed,
       (r.execution_state in ('running','waiting')
         and e.record#>>'{result,outcome}'='succeeded'
         and exists(select 1 from execution_native_sessions n
@@ -59,6 +56,8 @@ async function completedSourcePage(pool: Pick<pg.Pool, 'query'>, after: Complete
           or (m.record#>'{receipt,worktree}' is not null
             and m.worktree_cleanup->>'state' is distinct from 'removed')
         )
+        and not exists(select 1 from source_preparation_reconciliations c
+          where c.operation_id::text=m.record->>'operationId' and c.status='closed')
       )) and e.record->>'state'='completed'
       and ($1::uuid is null or (m.state='closed',m.materialization_id)>($2::boolean,$1::uuid))
     order by m.state='closed',m.materialization_id limit $3`,
@@ -78,8 +77,8 @@ export async function closeCompletedWorkflowSources(
         // A successful result can be published before its native closure commits.
         if (row.settlement_pending) continue
         const execution = HarnessExecutionSchema.parse(row.execution)
-        // Sessionless cleanup still requires the original preparation and physical closure.
-        if (!execution.nativeSessionId && !row.already_closed && !row.preparation_closed) continue
+        // Sessionless attempts use physical reservation reclamation.
+        if (!execution.nativeSessionId) continue
         const record = SourceMaterializationRecordSchema.parse(row.record)
         if (record.receipt.binding.deviceId !== null && execution.id === record.receipt.executionId
           && await hasRetainedRemoteReviewerSource(pool, execution)) continue

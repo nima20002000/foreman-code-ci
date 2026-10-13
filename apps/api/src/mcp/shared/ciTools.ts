@@ -38,9 +38,6 @@ export const CI_CAPABILITY_DETAIL = 'ci_run runs one suite (install, typecheck, 
   + 'Commits changing only CI infrastructure automatically receive high priority based on their Git changes, '
   + 'independent of caller files. Cloud and build-computer queues order high before normal, oldest first within each. '
   + 'ci_get returns persisted priority and priorityReason, plus queue position and waiting reason for queued tickets. '
-  + 'Cloud tickets include provenance with sourceCommit, workflowCommit and the immutable workflowRef. '
-  + 'collection reports pending, complete or unsupported independently of the terminal execution outcome; '
-  + 'Main retries pending logs and results without rerunning the suite. '
   + 'Main and paired computers participate only with builds enabled; buildPriority orders their selection. '
   + 'When files are omitted in affected scope, optional baseCommit (full SHA) compares changes since that commit, '
   + 'so sandboxed Agents can request changes since a release through MCP without running git. baseCommit must be '
@@ -78,9 +75,7 @@ export const CI_CAPABILITY_DETAIL = 'ci_run runs one suite (install, typecheck, 
   + 'computer, part, shard, exit code, group state and a 32 KiB log tail; ci_logs_read pages the full log '
   + `for authorized callers. maxBytes defaults to ${CI_LOG_MAX_BYTES} bytes and larger requests are clamped to `
   + `that maximum; responses report the applied maxBytes and nextOffset. group=true divides the capped budget `
-  + 'between parts, allowing zero-byte parts, and reports each part’s maxBytes and nextOffset. '
-  + 'Pages contain complete UTF-8 characters; offsets inside a character skip to the next character. '
-  + 'Increase maxBytes if the next character does not fit and nextOffset does not advance. '
+  + 'between parts and reports each part’s maxBytes and nextOffset. '
   + 'ci_get reads the persisted background refresh without waiting for dispatch or build computers. '
   + 'Queued tickets include the dispatch waiting reason in message; it clears when they start. '
   + 'ci_computers_list shows readiness reasons, userSystemd support and its unavailable reason, used/total CI slots, assigned tickets and up to 500 authorized queued '
