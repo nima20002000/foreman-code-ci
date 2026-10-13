@@ -11,6 +11,7 @@ let defaults: {
 vi.mock('@tanstack/react-router', () => ({ Outlet: () => null, useLocation: () => ({ pathname: '/workspaces' }), useBlocker: () => undefined }))
 // These tests isolate Operator visibility; the connection boundary has separate tests.
 vi.mock('./AppConnectionBoundary', () => ({ AppConnectionBoundary: ({ children }: { children: ReactNode }) => children }))
+vi.mock('./RuntimeInstanceBoundary', () => ({ ReleaseAutoReload: () => null }))
 vi.mock('../shared/ui/AppNavigationHistory', () => ({ AppNavigationHistoryProvider: ({ children }: { children: ReactNode }) => children }))
 vi.mock('../shared/api/query', () => ({ useAgentDefaultsQuery: () => defaults }))
 // Theme sync reads shared settings; it is unrelated to Operator visibility.

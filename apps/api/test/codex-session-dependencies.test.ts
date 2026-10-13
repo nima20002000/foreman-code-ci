@@ -4,6 +4,7 @@ import { describe, it } from 'vitest'
 import { APP_MCP_SERVER_NAMES } from '@foreman-code/contracts/product'
 import { CodexAppServerSessionManager, type CodexSessionDependencies, type CodexTransport } from '../src/modules/harnesses/codexAppServer.js'
 import { HarnessExecutionError } from '../src/modules/harnesses/errors.js'
+import { qualifyNativeCodexModel } from '../src/modules/harnesses/codexQualification.js'
 import type { JsonObject } from '../src/modules/harnesses/codexStdioTransport.js'
 import { fixtureProtocol, input } from './fixtures/codex-test-helpers.js'
 
@@ -79,6 +80,45 @@ describe('Codex production/replay dependency boundary', () => {
 })
 
 describe('Codex native model discovery', () => {
+  it('keeps App MCP disabled during model admission without disabling the scoped execution transport', async () => {
+    const f = replay()
+    const transport = f.dependencies.transport
+    const command = f.dependencies.runCommand
+    const disabled: Array<readonly string[]> = []
+    f.dependencies.runCommand = async (...args) => {
+      if (args[1][1] === 'list') return {
+        exitCode: 0, stderr: '', stdout: JSON.stringify([
+          { name: 'graphql', transport: { type: 'streamable_http', url: 'http://127.0.0.1/mcp' } },
+        ]),
+      }
+      return command(...args)
+    }
+    f.dependencies.qualifyModel = qualifyNativeCodexModel
+    f.dependencies.transport = (...args) => {
+      disabled.push(args[9] ?? [])
+      const native = transport(...args)
+      const request = native.request
+      native.request = async (...requestArgs) => {
+        if (requestArgs[0] === 'model/list') return {
+          data: [{ model: 'test-model', displayName: 'Test model', hidden: false,
+            supportedReasoningEfforts: [{ reasoningEffort: 'medium' }], additionalSpeedTiers: [] }],
+          nextCursor: null,
+        }
+        return request(...requestArgs)
+      }
+      return native
+    }
+    const manager = new CodexAppServerSessionManager('/recorded-codex',
+      undefined, undefined, undefined, undefined, undefined, f.dependencies)
+    const source = input('/recorded-workspace')
+    delete source.environment
+    try {
+      await manager.createSession(source)
+      assert.deepEqual(disabled, [['graphql'], []])
+      assert.equal(f.calls.filter(value => value === 'thread/start').length, 1)
+    } finally { await manager.shutdown() }
+  })
+
   it('does not publish fallback options after native diagnostics report a failed remote refresh', async () => {
     const f = replay()
     f.dependencies.transport = (...args) => ({

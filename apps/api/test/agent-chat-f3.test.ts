@@ -17,7 +17,6 @@ import { agentChatKey, type AgentConversationRow, PostgresAgentChatRepository } 
 import type { PostgresOperatorConversationRepository } from '../src/modules/conversations/operatorChatRepository.js'
 import { HarnessExecutionError, NativeDeliveryError } from '../src/modules/harnesses/errors.js'
 import type { NativeHarnessSessionManager, NativeHistory, NativeSessionStart, NativeTurnInput } from '../src/modules/harnesses/port.js'
-import { deferred } from './helpers/deferred.js'
 
 // Isolated service regressions. SQL persistence and provider I/O are deliberately substituted here.
 // The existing authenticated HTTP/MCP PostgreSQL suite remains a separate integration gate.
@@ -25,6 +24,11 @@ const principal: ManagementPrincipal = { id: 'f3-reader', name: 'F3 fixture', au
   expiresAt: '2099-01-01T00:00:00.000Z', grants: [{ scope: {}, actions: ['agent_chat:read', 'agent_chat:write', 'agent_chat:cancel', 'agent_chat:respond'] }] }
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((done) => { resolve = done })
+  return { promise, resolve }
+}
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve))
 
 class MemoryConversations {
@@ -173,8 +177,8 @@ async function setup(options: { ephemeral?: boolean; stored?: boolean; origin?: 
     agentConfigurationVersionId: configuration.id, attempt: fixture.identities[0]!.attempt,
     state: 'completed', result: { outcome: 'succeeded' }, nativeSessionId: origin.sourceNativeSessionId,
     workingDirectory: '/fixture-read-only', createdAt: fixture.createdAt, finishedAt: fixture.createdAt,
-    input: { executionSemanticsVersion: 3, occurrence: { identity: { scope: fixture.scope,
-      blockId: 'repair', occurrenceId: 'occ-1', occurrenceIndex: 1 } } },
+    input: { executionSemanticsVersion: 3, ...(options.repeat ? { occurrence: { identity: { scope: fixture.scope,
+      blockId: 'repair', occurrenceId: 'occ-1', occurrenceIndex: 1 } } } : {}) },
   }] : []
   const runs = { getForWorkspace: async () => ({ ...fixture.run, executionState: 'completed' as const, outcome: 'succeeded' as const }),
     getExecution: async (id: string) => source.find(item => item.id === id),

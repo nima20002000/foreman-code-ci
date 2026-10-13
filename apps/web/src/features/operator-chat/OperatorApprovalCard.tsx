@@ -1,4 +1,3 @@
-import { asRecord } from '../../shared/records'
 import type { PendingNativeInteraction, InteractionResponseValue } from '@foreman-code/contracts'
 import { NativeInteractionResponse } from '../../shared/ui/NativeInteractionResponse'
 import { Fragment, useId } from 'react'
@@ -7,6 +6,7 @@ import { approvalOptionScope } from '../../shared/ui/approvalOptionScope'
 import { Button, Icon } from '../../shared/ui/nocturne'
 import './operatorApprovalCard.css'
 
+const object = (value: unknown): Record<string, unknown> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
 const string = (value: unknown): string | undefined => typeof value === 'string' && value.trim() ? value : undefined
 
 export function OperatorApprovalCard({ interaction, disabled, onSelect, onBrowse, actor = 'Operator' }: {
@@ -17,9 +17,9 @@ export function OperatorApprovalCard({ interaction, disabled, onSelect, onBrowse
   onBrowse?: () => void
 }) {
   const scopeId = useId()
-  const request = asRecord(interaction.request)
-  const meta = asRecord(request._meta)
-  const params = asRecord(meta.tool_params)
+  const request = object(interaction.request)
+  const meta = object(request._meta)
+  const params = object(meta.tool_params)
   const mcp = interaction.nativeRequestType === 'mcpServer/elicitation/request' && meta.codex_approval_kind === 'mcp_tool_call'
   const summary = summarizeApprovalRequest(interaction.request, interaction.nativeRequestType)
   const tool = string(meta.tool_title) ?? string(meta.tool_name)

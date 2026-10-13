@@ -1,5 +1,3 @@
-import { isRecord } from '../../../shared/records.js'
-import { errorMessage } from '../../../shared/errorMessage.js'
 import { CODEX_RESPONSE_FIELDS, protocolFromBundle } from '../codexProtocol.js'
 import { CompatibilityCheckError } from './errors.js'
 
@@ -7,7 +5,7 @@ type ObjectValue = Record<string, unknown>
 const invalid = (contract = 'protocol and settings') => new CompatibilityCheckError('PROTOCOL_SETTINGS_UNSUPPORTED',
   `Required contract is unavailable: ${contract}.`)
 function object(value: unknown): ObjectValue {
-  if (!isRecord(value)) throw invalid()
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw invalid()
   return value as ObjectValue
 }
 /** Local refs only; never fetch a schema, follow external refs, or execute sample requests. */
@@ -101,6 +99,6 @@ export function checkCodexSchema(document: ObjectValue): void {
     protocol.request({ id: 2, method: 'config/read', params: { includeLayers: false } })
   } catch (error) {
     if (error instanceof CompatibilityCheckError) throw error
-    throw invalid(errorMessage(error, 'protocol and settings'))
+    throw invalid(error instanceof Error ? error.message : 'protocol and settings')
   }
 }
