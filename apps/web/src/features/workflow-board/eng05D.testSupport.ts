@@ -149,8 +149,7 @@ export function installBoardTestLifecycle() {
     useGraphDraftStore.getState().clearAllDrafts(); useInspectionPresentation.setState({ open: {} })
     vi.stubGlobal('crypto', webcrypto)
     const queues = new Map<string, Promise<unknown>>()
-    Object.defineProperty(navigator, 'locks', { configurable: true, value: { request: (key: string, work: (() => unknown) | LockOptions, claim?: (lock: { name: string }) => unknown) => {
-    if (typeof work !== 'function') return claim!({ name: key })
+    Object.defineProperty(navigator, 'locks', { configurable: true, value: { request: (key: string, work: () => unknown) => {
       const result = (queues.get(key) ?? Promise.resolve()).then(work)
       queues.set(key, result.catch(() => undefined)); return result
     } } })
