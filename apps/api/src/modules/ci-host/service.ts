@@ -532,15 +532,8 @@ export class HostCiService {
         join harness_executions e on e.id=c.record#>>'{initiator,executionId}'
         where e.run_id=$1 and c.workspace_id=$2 and c.state in ('queued','starting','running')
         order by c.id`, [runId, intent.workspace_id])).rows
-      const audit: CiCancellation = {
-        principalId: intent.record.principalId,
-        source: intent.record.source,
-        commandId: intent.record.commandId,
-        runId,
-        reason: 'run_stop',
-      }
       const results = await Promise.allSettled(tickets.map(ticket =>
-        this.cancelTicket(intent.workspace_id, ticket.id, audit)))
+        this.cancelTicket(intent.workspace_id, ticket.id, { ...intent.record, reason: 'run_stop' })))
       const errors = results.flatMap(result => result.status === 'rejected' ? [result.reason] : [])
       if (errors.length) throw new AggregateError(errors, 'Run CI cancellation is incomplete.')
     } finally {
