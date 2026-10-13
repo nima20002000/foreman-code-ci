@@ -1,4 +1,3 @@
-import { asRecord } from '../../../shared/records.js'
 import type { ReviewNativeCapture } from '../reviewNativeCapture.js'
 import { ReviewNativeProofServices, reviewSourceEvents, reviewSourceReadiness } from '../reviewNativeProof.js'
 import { canonicalGraphJson } from '@foreman-code/contracts/wave25'
@@ -6,8 +5,7 @@ import { HarnessExecutionSchema, ReviewJobSchema, type HarnessNativeEvent, type 
 import { type NativeGraphObservation, type NativeGraphProjectionKey } from '@foreman-code/contracts/wave25'
 import type pg from 'pg'
 import type { WriterFence } from '../coordination.js'
-import { transact } from './transaction.js'
-import { fail, identity, requireLeaseAtCommit, runFor } from './context.js'
+import { fail, identity, requireLeaseAtCommit, runFor, transact } from './context.js'
 import { appendNormalizedNativeEvent } from '../../runs/nativeEvents.js'
 import { nativeDisconnectObservation, normalizeNativeProducerEvent } from '../../run-graph/nativeProducerNormalization.js'
 import { appendNativeGraphEvent, claudeNativeGraphObservation, nativeGraphSource } from '../../run-graph/nativeIngestion.js'
@@ -16,6 +14,9 @@ import { readNativeGraphCorrelation, type NativeGraphProjectionGuard } from '../
 import { PostgresNativeGraphProjectionWriter } from '../../run-graph/nativeWriter.js'
 import { recordReviewObservation } from './nativeEvidence.js'
 
+function object(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
+}
 
 /** Native terminal evidence needs both the exact provider turn and the
  * dispatcher's post-event pending/settlement observation. An idle echo, outer
@@ -27,7 +28,7 @@ function observationFor(job: ReviewJob, event: HarnessNativeEvent, scope: Native
   if (job.provider === 'claude') return claudeNativeGraphObservation(scope, work, event, {
     nativeSessionId: job.nativeSessionId, nativeMessageId: providerId, clientCorrelationId: job.correlationId,
     connectionGeneration: generation, terminalReady })
-  const payload = event.payload, turn = asRecord(payload.turn), info = asRecord(payload.info)
+  const payload = event.payload, turn = object(payload.turn), info = object(payload.info)
   const turnId = typeof payload.turnId === 'string' ? payload.turnId : typeof turn.id === 'string' ? turn.id : undefined
   const source = nativeGraphSource(event)
   const base = { scope, work, source,

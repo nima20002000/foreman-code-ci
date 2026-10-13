@@ -1,4 +1,3 @@
-import { errorMessage } from '../../shared/errorMessage'
 import type { WorkflowDefinitionV3 } from '@foreman-code/contracts/wave25'
 import { useState } from 'react'
 import type { Agent } from '@foreman-code/contracts'
@@ -141,7 +140,7 @@ export function AgentsDirectory({
         <EmptyState
           icon="warning"
           title="Agents unavailable"
-          description={errorMessage(agentsQuery.error, 'The agents directory could not be loaded.')}
+          description={agentsQuery.error instanceof Error ? agentsQuery.error.message : 'The agents directory could not be loaded.'}
           action={<Button onClick={() => void agentsQuery.refetch()} leading={<Icon name="refresh" size={16} />}>Retry</Button>}
         />
       </div>

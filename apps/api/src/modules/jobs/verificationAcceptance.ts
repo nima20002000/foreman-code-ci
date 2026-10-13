@@ -5,8 +5,7 @@ import { JobVerificationDispatchValiditySchema, verificationJobLifecycle }
 import type { RunInput } from '@foreman-code/contracts'
 import { acceptedJobSpecDigests, jobSpecDigests } from '@foreman-code/contracts/jobs-node'
 import { DomainError } from '../errors.js'
-import { canonicalJson } from '@foreman-code/contracts/canonical-json'
-import type { JobSql } from './repository.js'
+import { canonical, type JobSql } from './repository.js'
 import { readJobRuntimeProfileVersion } from './runtimeProfileVersion.js'
 import { verificationDependencyBasis } from './dependencyBasis.js'
 
@@ -32,7 +31,7 @@ export async function acceptVerificationSpec(sql: JobSql, input: {
       where s.execution_id=$1 and s.workspace_id=$2 for share of s`,
   [input.executionId, input.definition.workspaceId])).rows[0]
   if (!selection?.claimed_at || selection.operation_id !== input.operationId || selection.attempt_id !== input.attemptId
-    || canonicalJson(selection.limits) !== canonicalJson(spec.verification.resources.limits)) {
+    || canonical(selection.limits) !== canonical(spec.verification.resources.limits)) {
     throw new DomainError('JOB_COMPUTER_SELECTION_CONFLICT', 'The original verification capacity claim is missing or changed.', 409)
   }
   const measurement = profile.measurement
