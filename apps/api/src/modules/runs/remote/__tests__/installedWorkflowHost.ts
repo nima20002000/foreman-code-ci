@@ -156,7 +156,6 @@ export async function sourceFixture(relativeCwd='', options: {
 
 export async function runningInstalledFixture(phase: 'generation' | 'approval wait' = 'generation',
   fixtureOptions: { retainReviewer?: boolean; artifactOutputKeys?: string[];
-    mainNow?: () => number;
     mcp?: { request: WorkerMcpRelay['request']; onSessionStart(input: NativeSessionStart): Promise<void> } } = {}) {
   const { artifactOutputKeys } = fixtureOptions
   const f = await sourceFixture('', artifactOutputKeys
@@ -198,9 +197,7 @@ export async function runningInstalledFixture(phase: 'generation' | 'approval wa
   })
   const session: NativeSessionReference = { harness: 'codex', providerVersion: '0.132.0', nativeSessionId: 'original-session' }
   const registry = new NativeProcessRegistry(join(f.root, 'native-processes'))
-  const log = await RemoteOperationJournal.open(join(f.root, 'workflow-journal'), {
-    initializeNewInstallation: true, ...(fixtureOptions.mainNow ? { now: fixtureOptions.mainNow } : {}),
-  })
+  const log = await RemoteOperationJournal.open(join(f.root, 'workflow-journal'), { initializeNewInstallation: true })
   journals.push(log)
   let terminalRecorded!: () => void
   const settled = new Promise<void>(resolve => { terminalRecorded = resolve })
@@ -314,8 +311,7 @@ export async function runningInstalledFixture(phase: 'generation' | 'approval wa
           return { payload: { version: 1, action: request.action, operationId: f.intent.operationId,
             attemptId: f.intent.attemptId, bindingHash: f.intent.bindingHash, owner: request.intent.owner,
             ...(retain && request.action === 'retain-reviewer'
-              ? { reviewer: { agentId: 'agent',
-                expiresAt: new Date((fixtureOptions.mainNow?.() ?? Date.now()) + 60_000).toISOString() } } : {}),
+              ? { reviewer: { agentId: 'agent', expiresAt: new Date(Date.now() + 60_000).toISOString() } } : {}),
             ...(cleanupOnly ? { cleanupOnly: true } : {}) } }
         }
         if (mcpDenied) throw new Error('App binding requires recovery')
