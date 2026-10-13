@@ -117,8 +117,7 @@ it('shares concurrent GitHub branch listings while keeping each ticket match and
   let reads = 0
   const records = [{ databaseId: 1, displayTitle: 'ci first', headSha: 'a'.repeat(40) },
     { databaseId: 2, displayTitle: 'ci second', headSha: 'a'.repeat(40) }]
-  const provider = new GitHubActionsProvider({ ...systemHostCiPorts(), run: async (_file, args) => {
-    if (args[0] === 'auth' && args[1] === 'token') return { code: 1, stdout: '', stderr: '' }
+  const provider = new GitHubActionsProvider({ ...systemHostCiPorts(), run: async () => {
     reads++
     await Promise.resolve()
     return { code: 0, stdout: JSON.stringify(records), stderr: '' }
