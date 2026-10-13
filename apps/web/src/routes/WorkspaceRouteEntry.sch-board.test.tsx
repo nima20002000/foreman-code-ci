@@ -14,6 +14,7 @@ import { boardDraftContextKey } from '../features/workflow-board/keys'
 import { pinnedRunHandlers, reply, runsUrl, versionReply } from '../features/run-board/testFixtures'
 import { installFlowLayout } from '../features/run-board/testFlowLayout'
 import { page, runA, runB } from '../features/runs-selector/testFixtures'
+import { installBrowserLocks } from '../test/browserLocks'
 import { bindMockInstallation } from '../shared/mocks/handlers'
 import { getMockFixture, setMockScenario } from '../shared/mocks/scenarios'
 import { server } from '../mocks/server'
@@ -88,6 +89,7 @@ function installNodeInspection() {
 }
 
 beforeEach(() => {
+  installBrowserLocks()
   unhandled.length = 0; server.events.on('request:unhandled', recordUnhandled)
   useGraphDraftStore.getState().clearAllDrafts()
   localStorage.clear(); sessionStorage.clear(); bindMockInstallation()
@@ -158,6 +160,20 @@ afterEach(() => {
 })
 
 describe('Workspace Board route, editor and HTTP boundary', { timeout: 20_000 }, () => {
+  it('opens a cold draft, inspects a saved Run and returns without sending a write', async () => {
+    const { router } = await mount()
+    const editor = await authoring()
+    await choose('run-a')
+    expect(await savedY()).toBeVisible()
+    expect(screen.getByRole('region', { name: 'Selected Run pinned topology' })).toBeVisible()
+    expect(router.state.location.search.runId).toBe('run-a')
+    await choose(null)
+    await waitFor(() => expect(editor).toBeVisible())
+    expect(within(editor).getByRole('heading', { name: 'Research to review' })).toBeVisible()
+    expect(router.state.location.search.runId).toBeUndefined()
+    expect(writes).toEqual([])
+  })
+
   it('inspects a saved Agent missing from the current workflow and reopens its generated URL', async () => {
     const reads = installNodeInspection()
     const current = getMockFixture(scope.workspaceId)!.workflows.find(item => item.id === scope.workflowId)!
