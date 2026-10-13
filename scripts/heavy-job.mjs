@@ -1,3 +1,4 @@
+import { sleep } from './sleep.mjs'
 import { readProductEnvironment } from '../packages/contracts/src/productEnvironment.mjs'
 import { retainedHeavyJobTokens } from './heavy-job-slots.mjs'
 import { spawn, spawnSync } from 'node:child_process'
@@ -11,7 +12,8 @@ import { fileURLToPath } from 'node:url'
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const require = createRequire(import.meta.url)
 const git = (...args) => spawnSync('git', args, { cwd: root, encoding: 'utf8' })
-const commonResult = git('rev-parse', '--path-format=absolute', '--git-common-dir')
+const queueDirectoryArgument = process.env.CI_HOST_RUNNER === '1' ? '--git-dir' : '--git-common-dir'
+const commonResult = git('rev-parse', '--path-format=absolute', queueDirectoryArgument)
 if (commonResult.status !== 0) throw new Error(commonResult.stderr || 'Cannot find Git common directory')
 const common = realpathSync(commonResult.stdout.trim())
 const state = join(common, 'graphql-heavy-jobs')
@@ -23,7 +25,6 @@ const running = join(state, 'running')
 const gate = { common, multiSlotGate: true }
 const baseTmp = readProductEnvironment(process.env, 'HEAVY_BASE_TMPDIR') || tmpdir()
 const tempRoot = join(baseTmp, `graphql-heavy-${createHash('sha256').update(common).digest('hex').slice(0, 16)}`)
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 const readJson = (path) => { try { return JSON.parse(readFileSync(path, 'utf8')) } catch { return null } }
 const ageMs = (path) => { try { return Date.now() - statSync(path).mtimeMs } catch { return 0 } }
 const isDirectory = (path) => { try { return lstatSync(path).isDirectory() } catch { return false } }
@@ -96,8 +97,9 @@ function cleanTemps() {
     const path = join(tempRoot, entry)
     const marker = readJson(join(path, 'owner.json'))
     if (!isDirectory(path) || ageMs(path) < 10 * 60_000 || !marker || marker.common !== common || alive(marker) || groupUsed(marker.pgid, true) || tokenUsed(marker.token, 0, true) || usedPath(path)) continue
-    // Verify whether the recorded checkout still belongs to this common Git directory.
-    const check = spawnSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: marker.worktree, encoding: 'utf8' })
+    // Verify the recorded checkout still belongs to this admission queue.
+    const check = spawnSync('git', ['rev-parse', '--path-format=absolute', queueDirectoryArgument],
+      { cwd: marker.worktree, encoding: 'utf8' })
     if (check.status === 0 && realpathSync(check.stdout.trim()) !== common) continue
     rmSync(path, { recursive: true, force: true })
   }
@@ -277,7 +279,12 @@ async function main() {
   if (timeoutIndex >= 0 && (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0)) throw new Error('Invalid timeout')
   const stopGraceMs = graceIndex >= 0 ? Number(options[graceIndex + 1]) : 30_000
   if (!Number.isSafeInteger(stopGraceMs) || stopGraceMs <= 0) throw new Error('Invalid stop grace')
-  const command = process.argv.slice(divider + 1)
+  let command = process.argv.slice(divider + 1)
+  if (buildKind === 'contracts' && process.env.FOREMAN_CODE_CI_CONTRACTS_CACHE) {
+    const cache = resolve(root, process.env.FOREMAN_CODE_CI_CONTRACTS_CACHE)
+    command = [process.execPath, fileURLToPath(new URL('./ci-contracts.mjs', import.meta.url)),
+      'build', root, cache, '--', ...command]
+  }
   const reported = process.env.FOREMAN_CODE_VERIFICATION_ROOT === root
     && (buildKind || command[0] === 'vitest' || command[0] === 'tsc' || command[0] === 'eslint'
       || (command[0].endsWith('/node') || command[0] === 'node') && command.includes('--test'))
