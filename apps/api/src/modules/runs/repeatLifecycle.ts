@@ -10,8 +10,7 @@ import { publicRunClosedFacts } from '../run-graph/publicProjection.js'
 import { publishRepeatRunStateLocked } from '../run-graph/repeatPublication.js'
 import { requireRepeatCanonicalReceiptBeforeCommit } from '../run-graph/repeatReceipts.js'
 import type { WorkspaceLocationService } from '../workspaces/location.js'
-import type { WorkflowResumePermit } from './approvalCheckpointResume.js'
-import { assertConsumedWorkflowResumeLocked } from './approvalCheckpointResume.js'
+import { assertConsumedWorkflowResumeLocked, type WorkflowResumePermit } from './workflowResumePermit.js'
 import type { RunOwnership } from './ownership.js'
 import type { RunStateUpdate } from './port.js'
 import { sameRepeatValue } from './repeatResolution.js'
@@ -80,7 +79,7 @@ export async function markRepeatRunRunning(owner: RunOwnership,
         or p.id=(select owner_principal_id from run_authority_principals where principal_id=$1 and run_id=$2)
         order by p.id for share`, [run.authorizationPrincipalId, run.id])
       await locations.revalidateRunAuthorization(run.authorizationPrincipalId, run.workspaceId, run.workflowId,
-        sql as unknown as Pick<pg.PoolClient, 'query'>, atCommit)
+        sql, atCommit)
       if (!sameRepeatValue(fence, await owner.readOneShotFence(sql))) throw new DomainError('RUN_OWNERSHIP_LOST', 'The exact Run owner changed before lifecycle COMMIT.', 409)
     }
     await authorize()
