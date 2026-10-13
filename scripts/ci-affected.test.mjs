@@ -69,10 +69,35 @@ test('lint checks changed files and typecheck checks packages reached by imports
   assert.deepEqual(affectedCommands('unit', [unit]), [[process.execPath, 'scripts/test-command.mjs', '--',
     'corepack', 'pnpm', '--dir', 'apps/api', 'exec', 'vitest', 'run', 'src/feature.test.ts']])
   assert.deepEqual(affectedCommands('unit', ['apps/web/src/view.test.tsx', 'scripts/tool.test.mjs']), [
-    ['corepack', 'pnpm', '--dir', 'apps/web', 'exec', 'vitest', 'run', 'src/view.test.tsx'],
+    ['env', 'FOREMAN_WEB_TEST_PHASE=fast', 'corepack', 'pnpm', '--dir', 'apps/web', 'exec', 'vitest', 'run', 'src/view.test.tsx'],
     [process.execPath, '--test', 'scripts/tool.test.mjs']])
   assert.deepEqual(selectByIndexes(['a', 'b', 'c'], 's:0,2'), ['a', 'c'])
   assert.throws(() => selectByIndexes(['a', 'b', 'c'], '-1'), /Invalid/)
+})
+
+test('runs every selected web test with its configured fast or heavy profile', t => {
+  const root = mkdtempSync(join(process.env.TMPDIR ?? tmpdir(), 'affected-web-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const files = ['apps/web/src/view.test.tsx', 'apps/web/src/routes/WorkspaceRouteEntry.test.tsx']
+  for (const file of files) {
+    mkdirSync(join(root, file, '..'), { recursive: true })
+    writeFileSync(join(root, file), 'export {}')
+  }
+  const selection = join(root, 'selected.json')
+  writeFileSync(selection, JSON.stringify(files))
+  writeFileSync(join(root, 'corepack'), `#!${process.execPath}\n`
+    + "console.log(JSON.stringify({ args: process.argv.slice(2), phase: process.env.FOREMAN_WEB_TEST_PHASE ?? null }))\n",
+  { mode: 0o755 })
+  const result = spawnSync(process.execPath, [new URL('./ci-affected-run.mjs', import.meta.url).pathname,
+    'unit', '--files-from', selection], { cwd: root, encoding: 'utf8', env: { ...process.env,
+    PATH: `${root}:${process.env.PATH}`, FOREMAN_WEB_TEST_PHASE: 'heavy' } })
+  assert.equal(result.status, 0, result.stderr)
+  const calls = result.stdout.trim().split('\n').map(line => JSON.parse(line))
+  assert.deepEqual(calls, [
+    { args: ['pnpm', '--filter', '@foreman-code/contracts', 'build'], phase: null },
+    { args: ['pnpm', '--dir', 'apps/web', 'exec', 'vitest', 'run', 'src/view.test.tsx'], phase: 'fast' },
+    { args: ['pnpm', '--dir', 'apps/web', 'exec', 'vitest', 'run', 'src/routes/WorkspaceRouteEntry.test.tsx'], phase: 'heavy' },
+  ])
 })
 
 test('runs affected commands without leaking dispatch selections into nested commands', t => {

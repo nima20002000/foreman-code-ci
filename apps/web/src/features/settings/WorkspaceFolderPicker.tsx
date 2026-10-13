@@ -1,4 +1,3 @@
-import { errorMessage } from '../../shared/errorMessage'
 import { useContext, useEffect, useId, useRef, useState, type RefObject } from 'react'
 import { useBoundFolderDirectories, type BoundFolderBrowser } from '../../shared/api/workspaceBoundLocation'
 import { useCreateWorkspaceFolder, useRenameWorkspaceFolder, useUndoWorkspaceFolder, useDeleteWorkspaceFolders, useHarnessDirectories, useHarnessSessionEpoch } from '../../shared/api/harnessSettings'
@@ -109,7 +108,7 @@ function FolderPicker({ disabled, onSelect, value, label = 'Project folder', sel
   const selectPath = async (path: string) => {
     setSelectedPath(path); setSelecting(true); setSelectionError(undefined)
     try { await onSelect(path); setOpen(false) }
-    catch (failure) { setSelectionError(errorMessage(failure, 'The location could not be saved.')) }
+    catch (failure) { setSelectionError(failure instanceof Error ? failure.message : 'The location could not be saved.') }
     finally { setSelecting(false) }
   }
   const creationRoot = locationsOpen
@@ -130,7 +129,7 @@ function FolderPicker({ disabled, onSelect, value, label = 'Project folder', sel
       setSelectedPath(result.value.path); setName(result.value.name); setCreating(true)
     } catch (failure) {
       attempt.current.failed(failure)
-      setError(errorMessage(failure, 'The folder could not be created.'))
+      setError(failure instanceof Error ? failure.message : 'The folder could not be created.')
     } finally { inFlight.current = false }
   }
   const finishName = async (select: boolean) => {
@@ -156,7 +155,7 @@ function FolderPicker({ disabled, onSelect, value, label = 'Project folder', sel
     } catch (failure) {
       closeAfterName.current = false
       renameAttempt.current.failed(failure)
-      setError(errorMessage(failure, 'The folder could not be renamed.'))
+      setError(failure instanceof Error ? failure.message : 'The folder could not be renamed.')
     } finally { inFlight.current = false }
   }
 
@@ -174,7 +173,7 @@ function FolderPicker({ disabled, onSelect, value, label = 'Project folder', sel
       else { pendingFocus.current = 'new-folder'; toasts?.notify({ tone: 'success', title: result.value.deleted.length === 1 ? 'Folder deleted' : 'Folders deleted' }) }
     } catch (failure) {
       deleteAttempt.current.failed(failure)
-      setError(errorMessage(failure, 'The folders could not be deleted.'))
+      setError(failure instanceof Error ? failure.message : 'The folders could not be deleted.')
     } finally { inFlight.current = false }
   }
 
@@ -196,7 +195,7 @@ function FolderPicker({ disabled, onSelect, value, label = 'Project folder', sel
       toasts?.notify({ tone: 'success', title: 'Folder creation undone' })
     } catch (failure) {
       undoAttempt.current.failed(failure)
-      setError(errorMessage(failure, 'Folder creation could not be undone.'))
+      setError(failure instanceof Error ? failure.message : 'Folder creation could not be undone.')
     } finally { inFlight.current = false }
   }
 

@@ -9,7 +9,6 @@ import { useProviderAccount, useProviderAccounts, useProviderAccountModels } fro
 import { accountBinding, accountId, accountTarget, accountTargetInfo, observedAccount, secondAccountId,
   workerAccountTarget, authenticationOperation } from './providerAccounts.fixtures'
 import { useProviderAuthenticationOperations, useProviderAuthentication } from './providerAccountsQueries'
-import { deferred } from '../../test/deferred'
 
 const clients: QueryClient[] = []
 beforeEach(() => server.use(http.get('/api/provider-accounts/targets', () => HttpResponse.json({ targets: [accountTargetInfo()] }))))
@@ -19,9 +18,14 @@ function wrapper() {
   clients.push(client)
   return ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>
 }
+function held<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>(done => { resolve = done })
+  return { promise, resolve }
+}
 
 it('keeps a late account A read away from the newly selected account B', async () => {
-  const late = deferred<void>()
+  const late = held<void>()
   let firstStarted = false
   server.use(http.get('/api/provider-accounts/:id', async ({ params }) => {
     if (params.id === accountId) { firstStarted = true; await late.promise }
@@ -89,8 +93,8 @@ it('isolates provider-card failures and retains successful persisted readback', 
 })
 
 it('ignores a reply begun under an old browser session', async () => {
-  const late = deferred<void>()
-  const next = deferred<void>()
+  const late = held<void>()
+  const next = held<void>()
   let reads = 0
   server.use(http.get('/api/provider-accounts/:id', async () => {
     const read = ++reads
@@ -108,7 +112,7 @@ it('ignores a reply begun under an old browser session', async () => {
 })
 
 it('isolates a late read when the Main and application installation change', async () => {
-  const late = deferred<void>()
+  const late = held<void>()
   const firstBinding = accountBinding()
   const secondBinding = { ...firstBinding, target: { ...firstBinding.target,
     hostRef: { kind: 'main' as const, mainId: '40000000-0000-4000-8000-000000000001' },

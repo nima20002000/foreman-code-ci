@@ -1,4 +1,3 @@
-import { asRecord } from '../../../shared/records.js'
 /** Structured SDK evidence only. These are adapter observations, not admission,
  * response delivery, cancellation, or Foreman Code work-completion receipts. */
 export interface ClaudeEventOwner { readonly ownerId: string; readonly attemptId: string; readonly generation: string | number }
@@ -53,6 +52,7 @@ function appendText(block: Block, text: string): string {
   block.text += retained
   return retained
 }
+const object = (value: unknown): Record<string, unknown> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
 const string = (value: unknown): string | undefined => typeof value === 'string' && value.length ? value : undefined
 const count = (value: unknown): number | undefined => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : undefined
 const cost = (value: unknown): number | undefined => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined
@@ -61,7 +61,7 @@ const tokenFields = ['inputTokens', 'outputTokens', 'thinkingTokens', 'cacheRead
 function cumulativeModelUsage(value: unknown): Record<string, ClaudeCumulativeModelUsage> | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
   return Object.fromEntries(Object.entries(value).slice(0, 64).map(([model, raw]) => {
-    const usage = asRecord(raw)
+    const usage = object(raw)
     return [model, { ...Object.fromEntries(tokenFields.filter((key) => count(usage[key]) !== undefined).map((key) => [key, usage[key]])),
       ...(cost(usage.costUSD) !== undefined ? { costUSD: usage.costUSD as number } : {}) }]
   }))
@@ -107,7 +107,7 @@ export function createClaudeEventNormalizer(options: { owner: ClaudeEventOwner; 
   }
   return {
     ingest(raw) {
-      const frame = asRecord(raw)
+      const frame = object(raw)
       const nativeId = string(frame.session_id)
       if (nativeId && sessionId && nativeId !== sessionId) return diagnostic(evidence(frame), 'CLAUDE_SESSION_MISMATCH')
       sessionId ??= nativeId
@@ -128,7 +128,7 @@ export function createClaudeEventNormalizer(options: { owner: ClaudeEventOwner; 
           const taskId = string(frame.task_id)
           if (!taskId) return diagnostic(base, 'CLAUDE_TASK_ID_MISSING')
           if (!tasks.has(taskId) && tasks.size >= limit) return diagnostic(base, 'CLAUDE_TASK_WINDOW_EXCEEDED')
-          const patch = asRecord(frame.patch)
+          const patch = object(frame.patch)
           const value = frame.subtype === 'task_notification' ? frame.status : patch.status
           const prior = tasks.get(taskId)
           const status = value === 'completed' ? 'completed' : value === 'failed' ? 'failed'
@@ -152,10 +152,10 @@ export function createClaudeEventNormalizer(options: { owner: ClaudeEventOwner; 
       if (frame.type === 'stream_event') {
         // Current SDK does not promise subagent token deltas.
         if (base.parentToolUseId) return diagnostic(base, 'CLAUDE_CHILD_STREAM_UNQUALIFIED')
-        const event = asRecord(frame.event)
+        const event = object(frame.event)
         const key = scopeKey(base.parentToolUseId)
         if (event.type === 'message_start') {
-          const messageId = string(asRecord(event.message).id)
+          const messageId = string(object(event.message).id)
           if (!messageId) return diagnostic(base, 'CLAUDE_MESSAGE_ID_MISSING')
           streams.set(key, { messageId, blocks: new Map() })
           return []
@@ -164,7 +164,7 @@ export function createClaudeEventNormalizer(options: { owner: ClaudeEventOwner; 
         const index = count(event.index)
         if (event.type === 'content_block_start' && stream && index !== undefined) {
           if (stream.blocks.size >= limit) return diagnostic(base, 'CLAUDE_BLOCK_WINDOW_EXCEEDED')
-          const content = asRecord(event.content_block)
+          const content = object(event.content_block)
           const type = String(content.type)
           const toolUseId = string(content.id)
           const name = string(content.name)
@@ -187,7 +187,7 @@ export function createClaudeEventNormalizer(options: { owner: ClaudeEventOwner; 
           const block = stream.blocks.get(index)
           if (!block) return diagnostic(base, 'CLAUDE_BLOCK_START_MISSING')
           if (block.canonical) return []
-          const delta = asRecord(event.delta)
+          const delta = object(event.delta)
           const extra = { messageId: stream.messageId, contentIndex: index, ...(block.toolUseId ? { toolUseId: block.toolUseId } : {}) }
           if (delta.type === 'text_delta' && typeof delta.text === 'string' && block.type === 'text') {
             const text = appendText(block, delta.text)
@@ -202,12 +202,12 @@ export function createClaudeEventNormalizer(options: { owner: ClaudeEventOwner; 
         return diagnostic(base, 'CLAUDE_STREAM_VARIANT')
       }
       if (frame.type === 'assistant') {
-        const message = asRecord(frame.message)
+        const message = object(frame.message)
         const messageId = string(message.id)
         if (!eventId || !messageId || !Array.isArray(message.content)) return diagnostic(base, 'CLAUDE_ASSISTANT_ID_MISSING')
         const stream = streams.get(scopeKey(base.parentToolUseId))
         return message.content.flatMap((value, offset): ClaudeDecodedEvent[] => {
-          const content = asRecord(value)
+          const content = object(value)
           const type = String(content.type)
           const toolUseId = string(content.id)
           if (type === 'tool_use') rememberTool(toolUseId, string(content.name))
@@ -228,9 +228,9 @@ export function createClaudeEventNormalizer(options: { owner: ClaudeEventOwner; 
         })
       }
       if (frame.type === 'user') {
-        const message = asRecord(frame.message)
+        const message = object(frame.message)
         return (Array.isArray(message.content) ? message.content : typeof message.content === 'string' ? [{ type: 'text', text: message.content }] : []).flatMap((value, index): ClaudeDecodedEvent[] => {
-          const content = asRecord(value)
+          const content = object(value)
           const toolUseId = string(content.tool_use_id)
           if (base.parentToolUseId && eventId && content.type === 'text' && typeof content.text === 'string') {
             const text = textPrefix(content.text)
