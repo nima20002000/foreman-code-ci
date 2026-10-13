@@ -17,7 +17,7 @@ async function hostDatabaseClient(env: NodeJS.ProcessEnv) {
     import { testAdminPool } from ${JSON.stringify(resources.href)}
     const pool = await testAdminPool()
     process.on('message', async statement => {
-      if (statement?.type === 'close') {
+      if (statement === null) {
         await pool.end()
         process.disconnect()
         return
@@ -55,21 +55,12 @@ async function hostDatabaseClient(env: NodeJS.ProcessEnv) {
       return read()
     },
     async end() {
-      child.send({ type: 'close' })
+      child.send(null)
       const code = await closed
       if (code !== 0) throw new Error(`Host database client exited (${code}): ${stderr}`)
     },
   }
 }
-
-it('closes the database client process after returning query results', async () => {
-  const client = await hostDatabaseClient(process.env)
-  try {
-    expect((await client.query('select 1 as alive')).rows).toEqual([{ alive: 1 }])
-  } finally {
-    await client.end()
-  }
-})
 
 it('keeps an active database session and its rows when another checkout starts the shared test server', async () => {
   const fixture = await currentDatabase()

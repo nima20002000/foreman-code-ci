@@ -8,7 +8,6 @@ import {
   type WorkerArtifactManifest, type WorkerArtifactTarget,
 } from '@foreman-code/contracts/computer-maintenance'
 import { DeviceApplicationError } from '../devices/deviceApplicationError.js'
-import type { DeviceSessionBinding } from '@foreman-code/contracts'
 import type { DeviceExtensionRegistration } from '../devices/deviceApplicationChannel.js'
 
 const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex')
@@ -130,7 +129,7 @@ async function artifactManifest(root: string, manifestSha256: string, version: s
 }
 
 /** Registered only on the paired, authenticated device channel. */
-export function createWorkerArtifactExtension(options: { directory: string; version: string; buildEnabled?: (binding: DeviceSessionBinding) => Promise<boolean> }): DeviceExtensionRegistration {
+export function createWorkerArtifactExtension(options: { directory: string; version: string }): DeviceExtensionRegistration {
   const verifiedFiles = new Map<string, VerifiedFile>()
   return {
     namespace: WORKER_UPDATE_NAMESPACE,
@@ -158,8 +157,6 @@ export function createWorkerArtifactExtension(options: { directory: string; vers
         return { payload: { operation: 'release', release: {
           version: options.version, manifestSha256: artifact.manifestSha256, manifest,
           ...(index.github ? { github: index.github } : {}),
-          ...(index.github && await options.buildEnabled?.(context.binding)
-            ? { ciSmoke: { repository: index.github.repository, commit: manifest.commit } } : {}),
         } } }
       }
       const file = manifest.files.find(entry => entry.path === request.path)

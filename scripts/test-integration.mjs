@@ -262,8 +262,7 @@ export function integrationShardLimit(value, maximum = 64) {
 
 export function reservedIntegrationShards(environment, maximum = 12) {
   if (!environment.FOREMAN_CODE_VERIFICATION_ROOT) {
-    // A request above what this computer can hold right now runs at the measured limit instead of failing.
-    return Math.min(integrationShardLimit(readProductEnvironment(environment, 'INTEGRATION_SHARDS') ?? String(maximum)), maximum)
+    return integrationShardLimit(readProductEnvironment(environment, 'INTEGRATION_SHARDS') ?? String(maximum), maximum)
   }
   if (!environment.FOREMAN_CODE_VERIFICATION_INTEGRATION_SHARDS
     || !environment.FOREMAN_CODE_VERIFICATION_MAX_INTEGRATION_SHARDS) {
@@ -271,8 +270,8 @@ export function reservedIntegrationShards(environment, maximum = 12) {
   }
   const reserved = integrationShardLimit(environment.FOREMAN_CODE_VERIFICATION_INTEGRATION_SHARDS)
   const qualified = integrationShardLimit(environment.FOREMAN_CODE_VERIFICATION_MAX_INTEGRATION_SHARDS)
-  const requested = Math.min(integrationShardLimit(readProductEnvironment(environment, 'INTEGRATION_SHARDS')
-    ?? String(Math.min(reserved, maximum))), maximum)
+  const requested = integrationShardLimit(readProductEnvironment(environment, 'INTEGRATION_SHARDS')
+    ?? String(Math.min(reserved, maximum)), maximum)
   if (requested > reserved || requested > qualified) {
     throw new Error('Integration shards exceed the accepted reservation or suite qualification')
   }
@@ -517,8 +516,7 @@ export function options(argv, environment = process.env) {
 
 async function main() {
   options(process.argv.slice(2))
-  const commonResult = spawnSync('git', ['rev-parse', '--path-format=absolute',
-    process.env.CI_HOST_RUNNER === '1' ? '--git-dir' : '--git-common-dir'], { cwd: root, encoding: 'utf8' })
+  const commonResult = spawnSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: root, encoding: 'utf8' })
   if (commonResult.status !== 0) throw new Error('Could not find the project heavy-job queue')
   const common = realpathSync(commonResult.stdout.trim())
   if (!hasHeavyJobAdmission(process.env, common)) {
