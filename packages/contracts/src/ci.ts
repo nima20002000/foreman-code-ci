@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { CI_LOG_MAX_BYTES, CiActivitySchema, CiRunRecordSchema, CiSuiteSchema, CiScopeSchema, CiSelectedFilesSchema,
-  CiTestResultsSchema,
+  CiTestResultsSchema, CiPrioritySchema, CiPriorityReasonSchema,
   CiTestStatusSchema, CiTestSummarySchema, validCiSelection } from './ciHost.js'
 import { IdSchema } from './schemaPrimitives.js'
 import { JobResourceRequestSchema } from './jobVerificationPolicy.js'
@@ -8,6 +8,8 @@ import { SourceRootRecordSchema } from './sourceAdmission.js'
 import { SourceManifestSchema } from './sourceMaterialization.js'
 
 const CiRunInputObjectSchema = z.object({
+  priority: CiPrioritySchema.optional().describe('Defaults to normal. High requires Operator role or an explicit '
+    + 'jobs:prioritize grant. Commits changing only CI infrastructure are automatically high priority.'),
   suite: CiSuiteSchema.describe('Repositories with the CI suite hook queue unit, lint, typecheck and build parts; '
     + 'other repositories run their package script for the suite as one job. Install runs one job.'),
   commit: z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/).optional(),
@@ -48,20 +50,23 @@ export const CiGetInputSchema = CiTicketInputSchema.extend({
 export const OperatorCiGetInputSchema = CiGetInputSchema.extend({ workspaceId: IdSchema }).strict()
 export const CiGetOutputSchema = z.object({
   run: CiRunRecordSchema, partitions: z.array(CiRunRecordSchema).optional(), logTail: z.string(),
+  queue: z.object({ position: z.number().int().positive(), reason: z.string() }).strict().nullable().optional(),
   group: z.object({ groupId: CiRunRecordSchema.shape.groupId, state: CiRunRecordSchema.shape.state }).strict().optional(),
   tests: CiTestResultsSchema.nullable().optional(),
 }).strict()
 export type CiRunInput = z.infer<typeof CiRunInputSchema>
+export type CiGetInput = z.infer<typeof CiGetInputSchema>
 export const CiCancelInputSchema = CiTicketInputSchema
 export const OperatorCiCancelInputSchema = CiTicketInputSchema.extend({ workspaceId: IdSchema }).strict()
 export const CiCancelOutputSchema = z.object({ run: CiRunRecordSchema }).strict()
 export const CiTestsOutputSchema = z.object({ ticketId: IdSchema, tests: CiTestResultsSchema.nullable() }).strict()
+export type CiTestsOutput = z.infer<typeof CiTestsOutputSchema>
 
 /** Where a CI job ran: this computer fleet's Host CI, GitHub Actions or CircleCI. */
-const CiPlacementSchema = z.enum(['host', 'github', 'circleci'])
+export const CiPlacementSchema = z.enum(['host', 'github', 'circleci'])
 export type CiPlacement = z.infer<typeof CiPlacementSchema>
 /** One CI ticket an Agent of a Run requested, with that Agent's Run node. */
-const CiRunJobSchema = z.object({
+export const CiRunJobSchema = z.object({
   ticketId: IdSchema, ci: CiActivitySchema, scope: CiScopeSchema, placement: CiPlacementSchema.nullable(),
   message: z.string().max(2000).nullable(),
   requester: z.object({ executionId: IdSchema, agentId: IdSchema, nodeId: z.string().min(1).max(200),
@@ -91,7 +96,13 @@ export const CiLogsOutputSchema = z.object({ text: z.string(), nextOffset: z.num
     logBytes: z.number().int().nonnegative(),
     maxBytes: z.number().int().min(1).max(CI_LOG_MAX_BYTES) }).strict()).optional(),
 }).strict()
-export const CiComputersOutputSchema = z.object({ computers: z.array(z.object({
+export const CiQueueEntrySchema = z.object({
+  ticketId: IdSchema, priority: CiPrioritySchema, priorityReason: CiPriorityReasonSchema,
+  position: z.number().int().positive(), reason: z.string(),
+}).strict()
+export const CiComputersOutputSchema = z.object({
+  queue: z.array(CiQueueEntrySchema).optional(), queueTruncated: z.boolean().optional(),
+  computers: z.array(z.object({
   label: z.string(), hostRef: CiRunRecordSchema.shape.computer.unwrap().shape.hostRef,
   priority: z.number().int(), ready: z.boolean(), reasons: z.array(z.string()),
   cpuCount: z.number().int().positive().optional(), memoryBytes: z.number().int().positive().optional(),
@@ -99,6 +110,8 @@ export const CiComputersOutputSchema = z.object({ computers: z.array(z.object({
   slotsUsed: z.number().int().nonnegative(), slotsTotal: z.number().int().positive(),
   running: z.array(z.string()).optional(),
 }).strict()) }).strict()
+export type CiCancelInput = z.infer<typeof CiCancelInputSchema>
+export type CiLogsInput = z.infer<typeof CiLogsInputSchema>
 
 export * from './ciEnrollment.js'
 import { CiInstalledStorageSchema, CiManagedSetupSchema } from './ciEnrollment.js'
@@ -107,7 +120,7 @@ const CommitSchema = z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/)
 const AbsolutePathSchema = z.string().min(2).max(4096).startsWith('/')
 /** Build computers prepare their own CI runtime for a commit: offline seed, image and qualification source. */
 export const CI_RUNTIME_NAMESPACE = 'ci-runtime-v1'
-const CiPreparationLimitsSchema = z.object({
+export const CiPreparationLimitsSchema = z.object({
   cpuCount: z.number().positive(), memoryBytes: z.number().int().positive(),
 }).strict()
 export type CiPreparationLimits = z.infer<typeof CiPreparationLimitsSchema>

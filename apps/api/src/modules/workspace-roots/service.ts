@@ -1,5 +1,4 @@
 import type pg from 'pg'
-import { withTransaction } from '../../infrastructure/transaction.js'
 import type { ManagementAction, ManagementPrincipal } from '@foreman-code/contracts/management'
 import { ExecutionLocationSchema } from '@foreman-code/contracts'
 import { WorkspaceRootListResultSchema, WorkspaceRootSelectionSchema, WorkspaceRootAttestationSchema, WorkspaceRootPolicySchema, WorkspaceLocationIdentitySchema, type WorkspaceRootSelection, type WorkspaceRootPolicy } from '@foreman-code/contracts/workspace-root-policies'
@@ -39,12 +38,14 @@ export class WorkspaceBoundLocationService {
   private async read<T>(principal: ManagementPrincipal, action: ManagementAction, workspaceId: string,
     work: (sql: Sql, live: ManagementPrincipal) => Promise<T>): Promise<T> {
     requireAuthorization(principal, action, { workspaceId })
-    return withTransaction(this.pool, async (client) => {
+    const client = await this.pool.connect()
+    try {
+      await client.query('begin')
       const live = await this.authorize(client, principal, action, workspaceId)
       const result = await work(client, live)
       await this.authorize(client, principal, action, workspaceId)
-      return result
-    })
+      await client.query('commit'); return result
+    } catch (error) { await client.query('rollback'); throw error } finally { client.release() }
   }
   async choices(principal: ManagementPrincipal, raw: unknown) {
     const { workspaceId } = WorkspaceBoundLocationGetInputSchema.parse(raw)

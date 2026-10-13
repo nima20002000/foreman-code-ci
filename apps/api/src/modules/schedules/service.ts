@@ -1,5 +1,4 @@
 import { isDeepStrictEqual } from 'node:util'
-import { withTransaction } from '../../infrastructure/transaction.js'
 import type pg from 'pg'
 import { z } from 'zod'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
@@ -89,11 +88,20 @@ export class WorkflowScheduleService {
   private async read<T>(principal: ManagementPrincipal, scope: ScheduleGetInput,
     work: (client: pg.PoolClient) => Promise<T>): Promise<T> {
     requireAuthorization(principal, 'workflows:read', scope)
-    return withTransaction(this.pool, async (client) => {
+    const client = await this.pool.connect()
+    let releaseError: Error | undefined
+    try {
+      await client.query('begin')
       await this.authorize(client, principal, scope, 'workflows:read')
       const result = await work(client)
+      await client.query('commit')
       return result
-    })
+    } catch (error) {
+      await client.query('rollback').catch((failure: unknown) => {
+        releaseError = failure instanceof Error ? failure : new Error('Schedule read rollback failed.')
+      })
+      throw error
+    } finally { client.release(releaseError) }
   }
 
   async get(principal: ManagementPrincipal, raw: unknown): Promise<ScheduleGetResult> {

@@ -1,22 +1,28 @@
+import type { McpServer } from '@modelcontextprotocol/server'
 import { OperatorToolSchemaInputSchema, OperatorToolSchemaResultSchema } from '@foreman-code/contracts/operator-mcp'
 import { DomainError } from '../../../modules/errors.js'
-import { defineOperatorTool } from '../definition.js'
+import { operatorToolAvailable } from '../availability.js'
+import { invokeOperatorTool } from '../invoke.js'
+import type { OperatorCatalog } from '../presentation.js'
+import type { OperatorRequestContext } from '../types.js'
 import { operatorCapabilities } from './context.js'
 
-export const toolSchemaTools = [defineOperatorTool({
-  name: 'operator_tool_schema_get',
-  requires: [['capabilities:read', 'caller']],
-  description: 'Read one available Operator tool’s complete input schema, instructions and permission requirements. '
-    + 'Requires capabilities:read and the target tool’s original discovery grants. '
-    + 'Set includeOutputSchema:true for its output schema. This read never invokes the target operation.',
-  inputSchema: OperatorToolSchemaInputSchema,
-  outputSchema: OperatorToolSchemaResultSchema,
-  annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  run: async (context, input, { extra, catalog, tools: registry }) => {
-    const tools = await catalog?.(extra) ?? []
+export function registerToolSchemaLookup(
+  server: McpServer, context: OperatorRequestContext, catalog?: OperatorCatalog,
+): void {
+  if (!operatorToolAvailable(context, 'operator_tool_schema_get')) return
+  server.registerTool('operator_tool_schema_get', {
+    description: 'Read one available Operator tool’s complete input schema, instructions and permission requirements. '
+      + 'Requires capabilities:read and the target tool’s original discovery grants. '
+      + 'Set includeOutputSchema:true for its output schema. This read never invokes the target operation.',
+    inputSchema: OperatorToolSchemaInputSchema,
+    outputSchema: OperatorToolSchemaResultSchema,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  }, async (input, callbackContext) => invokeOperatorTool(context, 'operator_tool_schema_get', async () => {
+    const tools = await catalog?.(callbackContext) ?? []
     const tool = tools.find((candidate) => candidate.name === input.name)
     if (!tool) throw new DomainError('ACCESS_DENIED', 'The requested tool is unavailable to this caller.', 403)
-    const requirement = operatorCapabilities(context, {}, registry).requirements.find((entry) => entry.name === input.name)
+    const requirement = operatorCapabilities(context, {}).requirements.find((entry) => entry.name === input.name)
     return {
       name: tool.name,
       description: tool.description ?? '',
@@ -28,5 +34,5 @@ export const toolSchemaTools = [defineOperatorTool({
         detail: [tool.description, requirement?.detail].filter(Boolean).join(' '),
       },
     }
-  },
-})]
+  }))
+}

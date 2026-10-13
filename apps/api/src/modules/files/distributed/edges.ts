@@ -1,6 +1,6 @@
 import { isDeepStrictEqual } from 'node:util'
 import type { Readable } from 'node:stream'
-import { ArtifactEdgeBindingSchema, ArtifactEdgeReadSchema, type ArtifactAttempt, type ArtifactGrantReference,
+import { ArtifactEdgeBindingSchema, ArtifactEdgeReadSchema, type ArtifactAttempt, type ArtifactAuthority,
   type ArtifactEdgeBinding } from '@foreman-code/contracts/artifact-edges'
 import { fileStateAt, parseAgentFileReadResult } from '@foreman-code/contracts/files'
 import type { FileQuery, FileRepository } from '../repository.js'
@@ -46,7 +46,7 @@ export class ArtifactEdgeService {
       // SQL repository rechecks lifecycle after authorization row-lock waits.
     })
   }
-  async readAccepted(edgeId: string, consumer: ArtifactAttempt, authority: ArtifactGrantReference,
+  async readAccepted(edgeId: string, consumer: ArtifactAttempt, authority: ArtifactAuthority,
     offset: number, length: number) {
     const input = ArtifactEdgeReadSchema.parse({ edgeId, offset, length })
     const binding = await this.edges.read(input.edgeId)
