@@ -245,6 +245,7 @@ async function fixture(options: { repository?: boolean; github?: Record<string, 
     connect, connectAgent, call, value, published, pool: db.pool, close }
 }
 
+// Real Git checkouts and package-script processes can outlast the one-second polling default.
 it.each([
   ['pnpm-lock.yaml', 'corepack pnpm'], ['package-lock.json', 'npm'], ['yarn.lock', 'corepack yarn'],
   [undefined, 'npm'],
@@ -261,7 +262,7 @@ it.each([
       expect(started.partitions).toBeUndefined()
       expect(CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', input))).toEqual(started)
       await expect.poll(async () => CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get',
-        { ticketId: started.ticketId })).run.state).toBe('passed')
+        { ticketId: started.ticketId })).run.state, { timeout: 10_000 }).toBe('passed')
       const read = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: started.ticketId }))
       expect(read.run).toMatchObject({ suite, part: null, partition: null, scope: 'full', files: [],
         state: 'passed', exitCode: 0, commit: repository.commit, computer: { hostRef: { kind: 'main' } } })
@@ -277,6 +278,25 @@ it.each([
     await f.close()
     await repository.close()
   }
+}, 40_000)
+
+it('reads a delayed generic job completion through authenticated MCP', async () => {
+  const repository = await genericCiRepository({ suiteDelayMs: 1500 })
+  const f = await fixture({ repositoryRunner: repository })
+  try {
+    const started = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run',
+      { suite: 'build', commandId: 'delayed-generic-build' }))
+    await expect.poll(async () => CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get',
+      { ticketId: started.ticketId })).run.state, { timeout: 10_000 }).toBe('passed')
+    const read = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: started.ticketId }))
+    expect(read.run).toMatchObject({ state: 'passed', exitCode: 0 })
+    expect(read.logTail).toContain('fixture build passed')
+    expect((await f.pool.query<{ record: unknown }>('select record from ci_runs where id=$1',
+      [started.ticketId])).rows[0]!.record).toEqual(read.run)
+  } finally {
+    await f.close()
+    await repository.close()
+  }
 })
 
 it('runs generic integration once despite requested partitions and falls back from an unconfigured cloud mirror', async () => {
@@ -287,7 +307,7 @@ it('runs generic integration once despite requested partitions and falls back fr
       { suite: 'integration', partitions: 4, commandId: 'generic-integration' }))
     expect(started.partitions).toBeUndefined()
     await expect.poll(async () => CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get',
-      { ticketId: started.ticketId })).run.state).toBe('passed')
+      { ticketId: started.ticketId })).run.state, { timeout: 10_000 }).toBe('passed')
     const read = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: started.ticketId }))
     expect(read.run).toMatchObject({ part: null, partition: null, state: 'passed',
       computer: { hostRef: { kind: 'main' } } })
@@ -318,7 +338,7 @@ it('runs a generic full suite for an empty affected selection and preserves HTTP
     expect(response.statusCode).toBe(200)
     const started = CiRunOutputSchema.parse(response.json())
     await expect.poll(async () => CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get',
-      { ticketId: started.ticketId })).run.state).toBe('passed')
+      { ticketId: started.ticketId })).run.state, { timeout: 10_000 }).toBe('passed')
     const read = await f.app.inject({ method: 'GET', url: `${url}/${started.ticketId}`, headers })
     expect(read.statusCode).toBe(200)
     const result = CiGetOutputSchema.parse(read.json())
@@ -342,7 +362,7 @@ it.each(['typecheck', 'integration'] as const)('reports a missing generic %s scr
   try {
     const started = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', { suite, commandId: `missing-${suite}` }))
     await expect.poll(async () => CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get',
-      { ticketId: started.ticketId })).run.state).toBe('failed')
+      { ticketId: started.ticketId })).run.state, { timeout: 10_000 }).toBe('failed')
     const read = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: started.ticketId }))
     expect(read.run).toMatchObject({ state: 'failed', part: null, partition: null,
       message: `The repository has no "${suite}" script for the ${suite} suite.` })
@@ -361,7 +381,7 @@ it('runs another repository’s named parts through its own suite hook', async (
     const started = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', { suite: 'build', commandId: 'custom-hook' }))
     expect(started.partitions).toHaveLength(2)
     await expect.poll(async () => CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get',
-      { ticketId: started.ticketId })).group!.state).toBe('passed')
+      { ticketId: started.ticketId })).group!.state, { timeout: 10_000 }).toBe('passed')
     const read = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: started.ticketId }))
     expect(read.partitions!.map(run => run.part).sort()).toEqual(['build-api', 'build-other'])
     for (const run of read.partitions!) {
@@ -383,14 +403,14 @@ it('runs generic install without an install script and persists a package-script
   try {
     const install = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', { suite: 'install', commandId: 'generic-install' }))
     await expect.poll(async () => CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get',
-      { ticketId: install.ticketId })).run.state).toBe('passed')
+      { ticketId: install.ticketId })).run.state, { timeout: 10_000 }).toBe('passed')
     const installed = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: install.ticketId }))
     expect(installed.run).toMatchObject({ part: null, partition: null, step: 'install', exitCode: 0 })
     expect(installed.logTail).toContain('npm install')
     expect(installed.logTail).not.toContain('npm run install')
     const build = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', { suite: 'build', commandId: 'generic-failure' }))
     await expect.poll(async () => CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get',
-      { ticketId: build.ticketId })).run.state).toBe('failed')
+      { ticketId: build.ticketId })).run.state, { timeout: 10_000 }).toBe('failed')
     const failed = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: build.ticketId }))
     expect(failed.run).toMatchObject({ part: null, partition: null, step: 'build', state: 'failed', exitCode: 7 })
     expect((await f.pool.query<{ record: unknown }>('select record from ci_runs where id=$1',
@@ -399,7 +419,7 @@ it('runs generic install without an install script and persists a package-script
     await f.close()
     await repository.close()
   }
-})
+}, 30_000)
 
 it.each([
   ['unit', 11], ['lint', 2], ['typecheck', 2], ['build', 2],
