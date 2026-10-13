@@ -13,7 +13,7 @@ import { SkillEditor, type SavedSkill } from './SkillEditor'
 import { SkillDetailPage } from './SkillPages'
 import { AgentSkillsField } from './AgentSkillsField'
 import { readSkillFile } from './skillImport'
-import { deferred } from '../../test/deferred'
+import { deferred } from '../runs-selector/testFixtures'
 
 vi.mock('@tanstack/react-router', () => ({ Link: ({ children, className, params }: {
   children: ReactNode; className?: string; params?: { workspaceId: string; skillId: string }

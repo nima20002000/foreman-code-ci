@@ -1,4 +1,3 @@
-import { asRecord } from '../../infrastructure/records.js'
 import { randomUUID } from 'node:crypto'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { runtimeTimingPoint, runtimeTimingPublisher, type RuntimeTimingRecord } from '../diagnostics/runtimeTiming.js'
@@ -9,9 +8,12 @@ const transportEvents = new Set([
 ])
 const bodyLimit = 1024 * 1024
 
+function object(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
+}
 function array(value: unknown): unknown[] { return Array.isArray(value) ? value : [] }
 function scalar(value: unknown): unknown {
-  const fields = asRecord(value)
+  const fields = object(value)
   return fields.stringValue ?? fields.intValue ?? fields.doubleValue ?? fields.boolValue
 }
 function number(value: unknown): number | undefined {
@@ -24,13 +26,13 @@ function number(value: unknown): number | undefined {
 /** Whitelist timing metadata; prompt, model output, headers and tool results never leave this decoder. */
 export function codexTransportTimings(payload: unknown): RuntimeTimingRecord[] {
   const result: RuntimeTimingRecord[] = []
-  for (const resource of array(asRecord(payload).resourceLogs)) {
-    for (const scope of array(asRecord(resource).scopeLogs)) {
-      for (const value of array(asRecord(scope).logRecords)) {
-        const record = asRecord(value)
-        const entries = [...array(asRecord(asRecord(resource).resource).attributes), ...array(record.attributes)]
+  for (const resource of array(object(payload).resourceLogs)) {
+    for (const scope of array(object(resource).scopeLogs)) {
+      for (const value of array(object(scope).logRecords)) {
+        const record = object(value)
+        const entries = [...array(object(object(resource).resource).attributes), ...array(record.attributes)]
         const attributes = new Map(entries.map(entry => {
-          const attribute = asRecord(entry)
+          const attribute = object(entry)
           return [attribute.key, scalar(attribute.value)] as const
         }))
         const event = attributes.get('event.name') ?? scalar(record.body)
