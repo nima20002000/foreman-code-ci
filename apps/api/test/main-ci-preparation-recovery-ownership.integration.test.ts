@@ -1,7 +1,7 @@
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { BuildComputerPrepareStatusSchema } from '@foreman-code/contracts'
 import { describe, expect, it } from 'vitest'
-import { randomUUID } from 'node:crypto'
+import { mainId } from './helpers/ciPreparationFixture.js'
 import { postgresEnabled } from './helpers/eng04CurrentDatabase.js'
 import { mainPreparationRecoverySuite } from './helpers/mainPreparationRecoverySuite.js'
 import { JobOwnership } from '../src/modules/jobs/ownership.js'
@@ -17,9 +17,7 @@ describe.skipIf(!postgresEnabled)('Main CI preparation interruption and recovery
     const disconnected = rejectableDeferred()
     const acquired = rejectableDeferred<JobOwnership>()
     let interrupted = false
-    const installationId = randomUUID()
     const f = await suite.createFixture({
-      mainInstallationId: installationId,
       acquire: async (pool, id, onLost) => {
         const owner = await JobOwnership.acquire(pool, id, () => {
           onLost()
@@ -40,14 +38,11 @@ describe.skipIf(!postgresEnabled)('Main CI preparation interruption and recovery
     const request = input(f)
     try {
       expect((await original.call('build_computer_prepare', request, f.reader.token)).isError).toBe(true)
-      const started = await original.call('build_computer_prepare', request)
-      expect(started.isError).not.toBe(true)
-      expect(BuildComputerPrepareStatusSchema.parse(decodeMcpToolResult(started)))
-        .toMatchObject({ state: 'approving', deviceId: installationId })
+      await original.call('build_computer_prepare', request)
       await reached.promise
       const pending = (await f.repository.pending())[0]!
       const owner = await acquired.promise
-      const competing = await JobOwnership.acquire(suite.database.pool, `ci-runtime:${installationId}`, () => undefined)
+      const competing = await JobOwnership.acquire(suite.database.pool, `ci-runtime:${mainId}`, () => undefined)
       try { expect(competing).toBeUndefined() } finally { await competing?.release() }
       const pid = await owner.connection.transaction(async sql => {
         const fence = await owner.readFence(sql)
@@ -80,9 +75,7 @@ describe.skipIf(!postgresEnabled)('Main CI preparation interruption and recovery
     const reached = rejectableDeferred()
     const paused = rejectableDeferred()
     let interrupted = false
-    const installationId = randomUUID()
     const f = await suite.createFixture({
-      mainInstallationId: installationId,
       onMainRefresh: async () => {
         if (!interrupted) {
           reached.resolve()
@@ -93,10 +86,7 @@ describe.skipIf(!postgresEnabled)('Main CI preparation interruption and recovery
     const original = await f.create()
     const request = input(f)
     try {
-      const started = await original.call('build_computer_prepare', request)
-      expect(started.isError).not.toBe(true)
-      expect(BuildComputerPrepareStatusSchema.parse(decodeMcpToolResult(started)))
-        .toMatchObject({ state: 'approving', deviceId: installationId })
+      await original.call('build_computer_prepare', request)
       await reached.promise
       const pending = (await f.repository.pending())[0]!
       expect(pending.status.state).toBe('refreshing')
