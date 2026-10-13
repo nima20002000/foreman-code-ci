@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { retainedReviewRecovery, useRemoteReviewFixture, waitForReplacementReviewInventory }
+import { deliveredReview, retainedReviewRecovery, reviewInProgress, useRemoteReviewFixture, waitForRemoteReview,
+  waitForReplacementReviewInventory }
   from './helpers/remoteReviewProductionCases.js'
+import { SavedRunDetailsSchema } from '@foreman-code/contracts/wave25'
 import { harnessConnectionGeneration } from '../src/modules/harnesses/hostConnectionGeneration.js'
 
 const withRemoteReviewFixture = useRemoteReviewFixture()
@@ -34,4 +36,24 @@ describe('production remote review and native recovery through authenticated MCP
     // The file stays within the suite's three-minute limit.
     }, 120_000,
   )
+  it('publishes successful completion after the original review is delivered', async () => {
+    await withRemoteReviewFixture(async fixture => {
+      await fixture.provider.blockReview()
+      const active = await reviewInProgress(fixture)
+      await fixture.provider.releaseReview()
+      await deliveredReview(fixture, active.interaction.id)
+      const completed = await waitForRemoteReview(async () => {
+        await fixture.reconcile()
+        return SavedRunDetailsSchema.parse(await fixture.value('run_get', {
+          workspaceId: active.run.workspaceId, runId: active.run.id, detail: 'full',
+        }))
+      }, details => details.run.executionState === 'completed' && details.cleanupPending !== true,
+      'persisted successful review completion')
+      expect(completed.run.outcome).toBe('succeeded')
+      expect(completed.executions.every(execution => execution.state === 'completed')).toBe(true)
+      expect(SavedRunDetailsSchema.parse(await fixture.value('run_get', {
+        workspaceId: active.run.workspaceId, runId: active.run.id, detail: 'full',
+      })).run).toEqual(completed.run)
+    })
+  }, 120_000)
 })
