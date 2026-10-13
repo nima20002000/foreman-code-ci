@@ -1,7 +1,7 @@
 import { z } from 'zod'
 
 /** Shared HTTP/MCP validation details. Paths refer to the submitted workflow graph. */
-const WorkflowSaveIssueSchema = z.object({
+export const WorkflowSaveIssueSchema = z.object({
   code: z.string(), path: z.array(z.union([z.string(), z.number()])), message: z.string(),
   minimum: z.number().optional(), actual: z.number().optional(),
 }).strict()

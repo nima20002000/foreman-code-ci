@@ -27,8 +27,7 @@ import { temporaryCiConnectionError } from './ciRuntimeErrors.js'
 import { JobOwnership } from './ownership.js'
 import type { JobRuntimeProfiles } from './runtimeProfiles.js'
 import type { JobSql } from './repository.js'
-import { canonicalJson } from '@foreman-code/contracts/canonical-json'
-import { jobDigest } from './digest.js'
+import { canonical, jobDigest } from './digest.js'
 import { matchesRuntimePolicy } from './runtimeSelection.js'
 
 export const BUILD_COMPUTER_PREPARE_ACTIONS = CI_PREPARATION_ACTIONS
@@ -128,7 +127,7 @@ export class CiRuntimeProvisioner {
       if (profile.schemaVersion !== 2 || profile.status === 'revoked' || !profile.spec.suites.includes(suite as never)) continue
       if (this.usesHostCi(profile)) continue
       if (request && (!matchesRuntimePolicy(request, profile) || !('verification' in request)
-        || canonicalJson(request.verification.resources) !== canonicalJson(profile.spec.resources))) continue
+        || canonical(request.verification.resources) !== canonical(profile.spec.resources))) continue
       const computer = this.computerId(profile)
       if (!computer || devices.has(computer)) continue
       const preference = await readBuildComputerPreference(this.pool, this.profileTarget(profile))
