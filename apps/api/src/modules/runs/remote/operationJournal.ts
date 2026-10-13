@@ -476,9 +476,6 @@ export class RemoteOperationJournal {
       receipt.native.turnId = turnId; receipt.sequence++; return receipt
     })
   }
-  reviewerExpired(expiresAt: string): boolean {
-    return Date.parse(expiresAt) <= this.now()
-  }
   retainReviewer(operationId: string, policy: { agentId: string; expiresAt: string }, history: NativeHistory) {
     return this.change(data => {
       const receipt = this.receipt(data, operationId)
@@ -486,7 +483,7 @@ export class RemoteOperationJournal {
       if (receipt.stopFence || receipt.terminal || !receipt.native?.turnId || !terminal
         || terminal.correlationId !== receipt.turnInput?.correlationId || terminal.providerId !== receipt.native.turnId
         || terminal.result.outcome !== 'succeeded' || history.pendingInteractions.length || history.pendingInteraction
-        || this.reviewerExpired(policy.expiresAt)) throw new Error('Reviewer workflow settlement mismatch')
+        || Date.parse(policy.expiresAt) <= Date.now()) throw new Error('Reviewer workflow settlement mismatch')
       const retained = { ...policy, workflowTurnId: terminal.providerId, result: terminal.result }
       if (receipt.retainedReviewer && !same({ ...receipt.retainedReviewer, expiresAt: policy.expiresAt }, retained))
         throw new Error('Retained reviewer identity changed')
@@ -499,7 +496,7 @@ export class RemoteOperationJournal {
     return this.change(data => {
       const receipt = this.receipt(data, operationId)
       if (!receipt.retainedReviewer || receipt.retainedReviewer.agentId !== policy.agentId
-        || receipt.stopFence || receipt.terminal || this.reviewerExpired(policy.expiresAt))
+        || receipt.stopFence || receipt.terminal || Date.parse(policy.expiresAt) <= Date.now())
         throw new Error('Retained reviewer renewal mismatch')
       receipt.retainedReviewer.expiresAt = policy.expiresAt
       receipt.sequence++
@@ -512,7 +509,7 @@ export class RemoteOperationJournal {
       assignment = RemoteReviewerAssignmentSchema.parse(assignment)
       if (!receipt.retainedReviewer || receipt.retainedReviewer.agentId !== assignment.reviewerAgentId
         || receipt.native?.sessionId !== assignment.session.nativeSessionId || receipt.stopFence || receipt.terminal
-        || this.reviewerExpired(receipt.retainedReviewer.expiresAt)) throw new Error('Reviewer lifetime unavailable')
+        || Date.parse(receipt.retainedReviewer.expiresAt) <= Date.now()) throw new Error('Reviewer lifetime unavailable')
       const turns = receipt.reviewTurns ??= []
       const known = turns.find(turn => turn.assignment.correlationId === assignment.correlationId
         || turn.assignment.jobId === assignment.jobId)

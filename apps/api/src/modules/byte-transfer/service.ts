@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { constants } from 'node:fs'
-import { open, mkdir, lstat, readdir, rename, unlink, type FileHandle } from 'node:fs/promises'
+import { open, mkdir, lstat, readdir, rename, unlink, rm, type FileHandle } from 'node:fs/promises'
 import { isAbsolute, join, parse, sep } from 'node:path'
 import { Readable } from 'node:stream'
 import { z } from 'zod'
@@ -8,7 +8,6 @@ import { BYTE_TRANSFER_POLICY as POLICY, TransferIntentSchema, TransferContextSc
   TransferProgressSchema, VerifiedTransferReceiptSchema, type TransferIntent, type TransferContext,
   type TransferProgress, type VerifiedTransferReceipt, type ByteTransferPort } from '@foreman-code/contracts/byte-transfer'
 import { ignoreError } from '../diagnostics/ignoredError.js'
-import { CanonicalTransferOwnership } from './canonicalOwnership.js'
 
 export type TransferOperation = 'start' | 'status' | 'append' | 'finish' | 'cancel' | 'read'
 export class TransferExpiredError extends Error {}
@@ -22,7 +21,6 @@ const ExternalHoldSchema = z.object({ byteSize: z.number().int().nonnegative().m
 const JournalSchema = z.object({ intent: TransferIntentSchema, progress: TransferProgressSchema,
   prefixHash: z.string().regex(/^[a-f0-9]{64}$/), receipt: VerifiedTransferReceiptSchema.optional(),
   canonical: z.boolean().optional(), canonicalReclaimed: z.boolean().optional(),
-  deletionRequested: z.boolean().optional(),
   external: z.object({ 'rsync-source': ExternalHoldSchema.optional(), 'rsync-receiver': ExternalHoldSchema.optional() }).strict().optional() }).strict()
 type Journal = z.infer<typeof JournalSchema>
 const digest = (data: Uint8Array) => createHash('sha256').update(data).digest('hex')
@@ -31,11 +29,10 @@ function key(id: string) { return z.uuid().parse(id) }
 
 /** One owner process, sequential bounded chunks, app-private journals. Never publishes files.
  * Root directory FD anchors all operations on Linux, so renamed/swapped ancestors cannot redirect writes.
- * Ownership records allow recovery only after the original process has stopped.
+ * Crash-left writer locks fail closed; supervisor must confirm the old owner stopped before removing them.
  */
 export class ResumableByteTransferService implements ByteTransferPort {
   private directory: FileHandle | undefined
-  private ownership: CanonicalTransferOwnership | undefined
   private initializing: Promise<void> | undefined
   private busy = new Set<string>()
   private allocationBusy = false
@@ -64,15 +61,7 @@ export class ResumableByteTransferService implements ByteTransferPort {
       if (pinned.dev !== stat.dev || pinned.ino !== stat.ino) {
         await this.directory.close(); this.directory = undefined; throw new Error('Transfer root changed')
       }
-      this.ownership = new CanonicalTransferOwnership(this.directory)
-      await this.ownership.recover()
-    })().catch(async error => {
-      await this.directory?.close()
-      this.directory = undefined
-      this.ownership = undefined
-      this.initializing = undefined
-      throw error
-    })
+    })()
     await this.initializing
   }
   private path(id: string, suffix: string) { return `/proc/self/fd/${this.directory!.fd}/${key(id)}.${suffix}` }
@@ -127,24 +116,24 @@ export class ResumableByteTransferService implements ByteTransferPort {
     if (this.busy.size >= POLICY.maxActiveGlobal) throw new Error('Transfer operation capacity exceeded')
     if (this.busy.has(id)) throw new Error('Transfer writer busy')
     this.busy.add(id)
-    let release: (() => Promise<void>) | undefined
+    let acquired = false
     try {
-      release = await this.ownership!.acquire(`${id}.lock`)
+      await mkdir(this.path(id, 'lock'), { mode: 0o700 }); acquired = true
       return await action()
     } finally {
-      try { await release?.() }
+      try { if (acquired) await rm(this.path(id, 'lock'), { recursive: true }) }
       finally { this.busy.delete(id) }
     }
   }
   private async allocated<T>(action: () => Promise<T>): Promise<T> {
     if (this.allocationBusy) throw new Error('Transfer allocation busy')
     this.allocationBusy = true
-    let release: (() => Promise<void>) | undefined
+    let acquired = false
     try {
-      release = await this.ownership!.acquire('allocation.lock')
+      await mkdir(`/proc/self/fd/${this.directory!.fd}/allocation.lock`, { mode: 0o700 }); acquired = true
       return await action()
     } finally {
-      try { await release?.() }
+      try { if (acquired) await rm(`/proc/self/fd/${this.directory!.fd}/allocation.lock`, { recursive: true }) }
       finally { this.allocationBusy = false }
     }
   }
@@ -171,7 +160,7 @@ export class ResumableByteTransferService implements ByteTransferPort {
       if (name === `${candidate.intent.transferId}.json`) continue
       const id = name.slice(0, -5)
       let j = await this.load(id)
-      // Finish requested deletion once readers close; expiry also permits retirement.
+      // An expired or idle transfer can never progress; reclaim its bytes instead of charging them forever.
       if (this.reclaimable(j)) {
         try { await this.retire(id); j = await this.load(id) }
         catch (error) { if (!['Transfer writer busy', 'Transfer operation capacity exceeded'].includes((error as Error).message)) throw error }
@@ -183,7 +172,6 @@ export class ResumableByteTransferService implements ByteTransferPort {
       || bytes > POLICY.maxStagingBytes || deviceBytes > POLICY.maxStagingPerDeviceBytes) throw new Error('Transfer staging quota exceeded')
   }
   private async hasReaders(id: string) {
-    await this.ownership!.recoverReaders(id)
     return (await readdir(`/proc/self/fd/${this.directory!.fd}`)).some(name => name.startsWith(`${id}.reader-`))
   }
   private canonical(j: Journal) {
@@ -389,16 +377,16 @@ export class ResumableByteTransferService implements ByteTransferPort {
       const j = await this.load(receipt.transferId); this.canonical(j); await this.authorize(j, context, 'read')
       if (j.progress.state !== 'verified' || JSON.stringify(j.receipt) !== JSON.stringify(receipt)) throw new Error('Unrecognized verified receipt')
       const handle = await this.regular(this.path(receipt.transferId, 'part'), constants.O_RDONLY)
-      let releasePin: (() => Promise<void>) | undefined
       try {
         if ((await handle.stat()).size !== receipt.byteSize || await this.hash(handle, receipt.byteSize) !== receipt.sha256) throw new Error('Verified staging corrupted')
         await this.authorize(j, context, 'read')
-        const closePin = await this.ownership!.reader(`${receipt.transferId}.reader-${randomUUID()}`)
-        releasePin = closePin
-        await this.syncDirectory()
+        // A durable pin keeps unlinked inodes charged across service instances and crashes.
+        // Crash-left pins require the supervisor's original stopped-reader proof before removal.
+        const pin = this.path(receipt.transferId, `reader-${randomUUID()}`)
+        await mkdir(pin, { mode: 0o700 }); await this.syncDirectory()
         let closing: Promise<void> | undefined
         const closeReader = () => closing ??= (async () => {
-          await handle.close(); await closePin(); await this.syncDirectory()
+          await handle.close(); await rm(pin, { recursive: true }); await this.syncDirectory()
           this.readers.delete(stream)
         })()
         const load = () => this.load(receipt.transferId)
@@ -421,11 +409,7 @@ export class ResumableByteTransferService implements ByteTransferPort {
           void closeReader().catch(ignoreError('byte-transfer', 'close verified transfer reader', { transferId: receipt.transferId }))
         })
         return stream
-      } catch (error) {
-        await handle.close()
-        await releasePin?.()
-        throw error
-      }
+      } catch (error) { await handle.close(); throw error }
     })
   }
   async resolveVerifiedReceipt(id: string, context: TransferContext) {
@@ -440,10 +424,7 @@ export class ResumableByteTransferService implements ByteTransferPort {
   async retire(id: string): Promise<void> {
     await this.locked(id, async () => {
       const j = await this.load(id)
-      j.progress.state = 'cancelled'
-      j.deletionRequested = true
-      delete j.receipt
-      await this.save(j)
+      j.progress.state = 'cancelled'; delete j.receipt; await this.save(j)
       await unlink(this.path(id, 'part')).catch(error => { if (error.code !== 'ENOENT') throw error })
       await this.syncDirectory()
       if (!await this.hasReaders(id)) { j.canonicalReclaimed = true; await this.save(j) }
@@ -451,11 +432,9 @@ export class ResumableByteTransferService implements ByteTransferPort {
   }
   /** Cancelled bytes stay charged until their owner confirms deletion through retire(). */
   private reclaimable(j: Journal) {
-    if (j.canonical === false || j.canonicalReclaimed) return false
-    if (j.deletionRequested) return true
-    if (j.progress.state === 'cancelled') return false
-    return this.now() >= Date.parse(j.intent.expiresAt)
-      || (j.progress.state !== 'verified' && this.now() - Date.parse(j.progress.updatedAt) >= POLICY.maxIdleMs)
+    return j.canonical !== false && !j.canonicalReclaimed && j.progress.state !== 'cancelled'
+      && (this.now() >= Date.parse(j.intent.expiresAt)
+        || (j.progress.state !== 'verified' && this.now() - Date.parse(j.progress.updatedAt) >= POLICY.maxIdleMs))
   }
   async cleanupExpired(limit = 64): Promise<number> {
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 64) throw new Error('Cleanup limit exceeds policy')
@@ -492,18 +471,8 @@ export class ResumableByteTransferService implements ByteTransferPort {
     }
     return this.busy.size === 0 && this.readers.size === 0 && !this.allocationBusy
   }
-  async recoverOwnership(): Promise<void> {
-    await this.initialize()
-    await this.ownership!.recover()
-    for (const intent of await this.inventory()) {
-      const journal = await this.load(intent.transferId)
-      if (journal.deletionRequested && journal.canonical !== false && !journal.canonicalReclaimed) {
-        await this.retire(intent.transferId)
-      }
-    }
-  }
   async close() {
     if (this.busy.size || this.readers.size) throw new Error('Transfer operations still active')
-    await this.directory?.close(); this.directory = undefined; this.ownership = undefined; this.initializing = undefined
+    await this.directory?.close(); this.directory = undefined; this.initializing = undefined
   }
 }
