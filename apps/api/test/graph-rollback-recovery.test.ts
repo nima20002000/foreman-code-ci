@@ -1,6 +1,7 @@
 import type pg from 'pg'
+import { EventEmitter } from 'node:events'
 import { afterEach, expect, it, vi } from 'vitest'
-import { ExclusiveGraphConnection } from '../src/modules/run-graph/connection.js'
+import { ExclusiveGraphConnection, withExclusiveGraphConnection } from '../src/modules/run-graph/connection.js'
 
 const connections: ExclusiveGraphConnection[] = []
 afterEach(async () => {
@@ -64,17 +65,15 @@ it('keeps a connection healthy when one rollback timeout is followed by confirma
 })
 
 it('discards a pooled lease when rollback recovery cannot confirm the transaction', async () => {
-  vi.useFakeTimers()
   const failure = new Error('Transaction failed')
   const release = vi.fn()
-  const raw = { release, query: async () => ({ rows: [], rowCount: 0 }) } as unknown as pg.PoolClient
-  const connection = new ExclusiveGraphConnection(raw, () => undefined)
-  connections.push(connection)
-  const failed = connection.transaction(async () => { throw failure }).catch(error => error)
-  const closing = connection.close()
-  await vi.advanceTimersByTimeAsync(0)
-  await closing
-  expect(await failed).toBe(failure)
+  const raw = Object.assign(new EventEmitter(), { release, query: async (statement: string) => {
+    if (statement === 'rollback') throw new Error('Rollback failed')
+    return { rows: [], rowCount: 0 }
+  } }) as unknown as pg.PoolClient
+  const pool = { connect: async () => raw } as unknown as pg.Pool
+  await expect(withExclusiveGraphConnection(pool, connection =>
+    connection.transaction(async () => { throw failure }))).rejects.toBe(failure)
   expect(release).toHaveBeenCalledWith(true)
-  expect(connection.unusable).toBe(true)
+  expect(release).toHaveBeenCalledOnce()
 })
