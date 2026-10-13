@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { expect, it } from 'vitest'
 import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
 import type { ProviderAccountBinding, ProviderAccountObservation } from '@foreman-code/contracts/provider-accounts'
-import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { currentDatabase } from './helpers/eng04CurrentDatabase.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { readLiveManagementPrincipal } from '../src/modules/access/liveManagementPrincipal.js'
 import { requireAuthorization } from '../src/modules/access/policy.js'
@@ -10,7 +10,7 @@ import { ProviderAccountWorkerCarrier } from '../src/modules/provider-accounts/w
 import { createProviderAccountWorkerExtension } from '../src/modules/provider-accounts/workerOperations.js'
 
 it('uses one advertised authenticated account channel and rejects revoked or reinstalled targets without credential transport', async () => {
-  const db = await migratedDatabase()
+  const db = await currentDatabase()
   try {
     const connection: DeviceSessionBinding = { mainId: randomUUID(), deviceId: randomUUID(),
       workerInstallationId: randomUUID(), bootId: randomUUID(), connectionEpoch: randomUUID(),
