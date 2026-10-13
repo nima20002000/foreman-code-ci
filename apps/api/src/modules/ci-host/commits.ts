@@ -4,11 +4,46 @@ import { publishCommit } from '../sources/githubPublisher.js'
 import type { CiCommits } from './service.js'
 import { CiDurationsSchema } from '@foreman-code/contracts'
 import { ciRepositoryCapabilities } from './repository.js'
+import { onlyCiInfrastructure } from './priority.js'
+import { gitFailure } from '../sources/gitErrors.js'
 
 /** Main's clone of the workspace repository: the requested commit, an Agent's files as a commit on its base, or the
  * default branch head; whatever GitHub lacks is pushed so build computers can fetch it. */
 export class GitCiCommits implements CiCommits {
   constructor(private readonly git: GitWorktreePorts = systemGitWorktreePorts()) {}
+
+  async infrastructureOnly(repository: string, commit: string) {
+    const signal = AbortSignal.timeout(30_000)
+    const clone = await ensureCommit(this.git, repository, commit, signal)
+    const diff = await this.git.git(['diff-tree', '--root', '--no-commit-id', '--name-only',
+      '--no-renames', '--first-parent', '-r', '-m', '-z', commit], { cwd: clone, signal })
+    if (diff.code !== 0) throw new Error('Could not read the CI commit changes.')
+    return onlyCiInfrastructure(diff.stdout.split('\0').filter(Boolean))
+  }
+
+  async branch(repository: string, defaultBranch: string, commit: string): Promise<string | null> {
+    const signal = AbortSignal.timeout(30_000)
+    const clone = await ensureCommit(this.git, repository, commit, signal)
+    const result = await this.git.git(['for-each-ref', '--contains', commit, '--format=%(refname)',
+      'refs/remotes/origin/'], { cwd: clone, signal })
+    if (result.code !== 0) throw gitFailure('SOURCE_WORKTREE_FAILED', 'for-each-ref')
+    const branches = result.stdout.trim().split('\n')
+      .filter(ref => ref.startsWith('refs/remotes/origin/'))
+      .map(ref => ref.slice('refs/remotes/origin/'.length))
+      .filter(branch => branch !== 'HEAD' && !branch.startsWith('foreman/ci/'))
+    if (branches.includes(defaultBranch)) return defaultBranch
+    return branches.length === 1 ? branches[0]! : null
+  }
+
+  async isAncestor(repository: string, ancestor: string, commit: string): Promise<boolean> {
+    const signal = AbortSignal.timeout(30_000)
+    const clone = await ensureCommit(this.git, repository, commit, signal)
+    await ensureCommit(this.git, repository, ancestor, signal)
+    const result = await this.git.git(['merge-base', '--is-ancestor', ancestor, commit], { cwd: clone, signal })
+    if (result.code === 0) return true
+    if (result.code === 1) return false
+    throw gitFailure('SOURCE_WORKTREE_FAILED', 'merge-base')
+  }
 
   async capabilities(repository: string, commit: string) {
     const signal = AbortSignal.timeout(30_000)
@@ -34,6 +69,19 @@ export class GitCiCommits implements CiCommits {
       && (!file.startsWith('apps/web/') || /^apps\/web\/src\/.*\.(?:test|spec)\.tsx?$/.test(file)))
     return { files, durations: timings.code === 0 ? CiDurationsSchema.parse(JSON.parse(timings.stdout)) : {},
       heavy: heavy.code === 0 ? (JSON.parse(heavy.stdout) as { files: string[] }).files : [] }
+  }
+
+  async integrationInventory(repository: string, commit: string) {
+    const signal = AbortSignal.timeout(30_000)
+    const clone = await ensureCommit(this.git, repository, commit, signal)
+    const [tree, timings] = await Promise.all([
+      this.git.git(['ls-tree', '-r', '--name-only', commit], { cwd: clone, signal }),
+      this.git.git(['show', `${commit}:scripts/integration-durations.json`], { cwd: clone, signal }),
+    ])
+    if (tree.code !== 0) throw new Error('Could not read the CI integration inventory.')
+    return { files: tree.stdout.trim().split('\n').filter(file =>
+      /^apps\/api\/test\/[^/]+\.integration\.test\.ts$/.test(file)).sort(),
+    durations: timings.code === 0 ? CiDurationsSchema.parse(JSON.parse(timings.stdout)) : {} }
   }
 
   async resolve(repository: string, defaultBranch: string, commit: string | undefined,
