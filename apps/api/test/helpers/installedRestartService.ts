@@ -10,7 +10,10 @@ import { apiServiceTemplate, deployProductionApi, publish }
   from '../../../../scripts/local-production-runtime.mjs'
 import { renderUserService } from '../../../worker/src/service.mjs'
 import { copyApiRuntime } from '../../../../scripts/copy-api-runtime.mjs'
+import { createRuntimeBuildIdentity } from '@foreman-code/contracts/runtime-build-identity-node'
 import { readUntil } from './observableCondition.js'
+import { removeRestartUnit } from '../../../../scripts/test-restart-units.mjs'
+import { ownedTestPath } from './testResources.js'
 
 const execute = promisify(execFile)
 const repository = fileURLToPath(new URL('../../../..', import.meta.url))
@@ -33,6 +36,7 @@ async function sources(directory: string): Promise<string[]> {
 /** Uses the installer's package layout and unit, with isolated fixture configuration. */
 export async function installedRestartService(directory: string, configuration: string,
   environment: NodeJS.ProcessEnv, runtime: string) {
+  ownedTestPath(directory)
   const app = join(directory, 'installed')
   const release = join(app, 'current')
   const api = join(release, 'apps/api')
@@ -78,6 +82,8 @@ export async function installedRestartService(directory: string, configuration: 
     await writeFile(output, compiled.outputText)
   }
   await copyApiRuntime(repository, join(api, 'dist'))
+  await writeFile(join(api, 'dist/runtime-build.json'),
+    `${JSON.stringify(createRuntimeBuildIdentity(repository))}\n`, { mode: 0o600 })
   await cp(join(repository, 'apps/worker/src'), join(release, 'apps/worker/src'), { recursive: true })
   await copyFile(join(repository, 'package.json'), join(release, 'package.json'))
   await copyFile(process.execPath, join(release, 'node'))
@@ -101,70 +107,79 @@ export async function installedRestartService(directory: string, configuration: 
     .replace('Restart=always', 'Restart=no')
   const service = renderUserService(template, { node: join(release, 'node'), app,
     state: directory, home: serviceUser.homedir, path: environment.PATH ?? '/usr/bin:/bin' })
-  await publishRestartUnit(unitPath, service)
+  const serviceEnvironment = { ...process.env, XDG_RUNTIME_DIR: `/run/user/${serviceUser.uid}`,
+    DBUS_SESSION_BUS_ADDRESS: `unix:path=/run/user/${serviceUser.uid}/bus` }
   const systemctl = (...args: string[]) => execute('systemctl', ['--user', ...args], {
-    env: { ...process.env, XDG_RUNTIME_DIR: `/run/user/${serviceUser.uid}`,
-      DBUS_SESSION_BUS_ADDRESS: `unix:path=/run/user/${serviceUser.uid}/bus` },
+    env: serviceEnvironment, timeout: 130_000,
   })
-  await systemctl('daemon-reload')
-  const registry = new (await import('../../src/modules/harnesses/recovery/processRegistry.js')).NativeProcessRegistry(
-    join(runtime, 'native-process-registry'))
-  async function ready() {
-    return readUntil(async () => {
-      try {
-        return JSON.parse(await readFile(readyFile, 'utf8')) as { pid: number; origin: string }
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-        const status = (await systemctl('show', unit, '--property=ActiveState', '--value')).stdout.trim()
-        if (status === 'failed' || status === 'inactive') {
-          throw new Error(`Installed API startup failed: ${unit}`, { cause: error })
+  try {
+    await publishRestartUnit(unitPath, service)
+    await systemctl('daemon-reload')
+    const registry = new (await import('../../src/modules/harnesses/recovery/processRegistry.js')).NativeProcessRegistry(
+      join(runtime, 'native-process-registry'))
+    async function ready() {
+      return readUntil(async () => {
+        try {
+          return JSON.parse(await readFile(readyFile, 'utf8')) as { pid: number; origin: string }
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+          const status = (await systemctl('show', unit, '--property=ActiveState', '--value')).stdout.trim()
+          if (status === 'failed' || status === 'inactive') {
+            let diagnostic: string
+            try {
+              const journal = await execute('journalctl', [
+                '--user', '--unit', unit, '--no-pager', '--output=cat', '--lines=40',
+              ], { env: serviceEnvironment, timeout: 10_000, maxBuffer: 1024 * 1024 })
+              diagnostic = journal.stdout.trim().slice(-16384)
+            } catch (journalError) {
+              diagnostic = `Could not capture the service journal: ${String(journalError)}`
+            }
+            throw new Error(`Installed API startup failed: ${unit}\n${diagnostic}`, { cause: error })
+          }
+          return undefined
         }
-        return undefined
-      }
-    }, value => value !== undefined, { timeoutMs: 120_000, description: 'installed systemd API startup' })
-  }
-  return {
-    unit, registry,
-    state: async () => (await systemctl('show', unit, '--property=ActiveState', '--value')).stdout.trim(),
-    pid: async () => Number((await systemctl('show', unit, '--property=MainPID', '--value')).stdout.trim()),
-    async start() {
-      await rm(readyFile, { force: true })
-      await systemctl('start', unit)
-      return ready()
-    },
-    async restart() {
-      await rm(readyFile, { force: true })
-      await rm(preservingFile, { force: true })
-      await systemctl('restart', unit)
-      return ready()
-    },
-    waitForPreservation: () => readUntil(async () => {
-      try {
-        return await readFile(preservingFile, 'utf8')
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-        return undefined
-      }
-    }, value => value === 'preserving', { timeoutMs: 10_000, description: 'Main checking restart preservation' }),
-    stop: () => systemctl('stop', unit),
-    async close() {
-      try {
-        await systemctl('stop', unit)
-        for (const owner of new Set(registry.snapshot().launches.map(launch => launch.owner))) {
-          if (!await registry.closeOwner(owner)) throw new Error('Installed fixture native cleanup is unconfirmed.')
+      }, value => value !== undefined, { timeoutMs: 120_000, description: 'installed systemd API startup' })
+    }
+    return {
+      unit, registry,
+      state: async () => (await systemctl('show', unit, '--property=ActiveState', '--value')).stdout.trim(),
+      pid: async () => Number((await systemctl('show', unit, '--property=MainPID', '--value')).stdout.trim()),
+      async start() {
+        await rm(readyFile, { force: true })
+        await systemctl('start', unit)
+        return ready()
+      },
+      async restart() {
+        await rm(readyFile, { force: true })
+        await rm(preservingFile, { force: true })
+        await systemctl('restart', unit)
+        return ready()
+      },
+      waitForPreservation: () => readUntil(async () => {
+        try {
+          return await readFile(preservingFile, 'utf8')
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+          return undefined
         }
-      } finally {
-        // A failed assertion can leave native children in this fixture's unit.
-        // Kill only that unit after the registry has attempted normal cleanup.
-        await systemctl('kill', '--kill-whom=all', '--signal=SIGKILL', unit).catch(error => {
-          if (!/not running|not loaded|No such process/.test(String(error.stderr))) throw error
-        })
-        await rm(unitPath, { force: true })
-        await systemctl('daemon-reload')
-        await systemctl('reset-failed', unit).catch(error => {
-          if (!String(error.stderr).includes('not loaded')) throw error
-        })
-      }
-    },
+      }, value => value === 'preserving', { timeoutMs: 10_000, description: 'Main checking restart preservation' }),
+      stop: () => systemctl('stop', unit),
+      async close() {
+        try {
+          await systemctl('stop', unit)
+          for (const owner of new Set(registry.snapshot().launches.map(launch => launch.owner))) {
+            if (!await registry.closeOwner(owner)) throw new Error('Installed fixture native cleanup is unconfirmed.')
+          }
+        } finally {
+          await removeRestartUnit(unit)
+        }
+      },
+    }
+  } catch (error) {
+    try { await removeRestartUnit(unit) }
+    catch (cleanupError) {
+      throw new AggregateError([error, cleanupError], 'Restart fixture installation and cleanup failed.', { cause: cleanupError })
+    }
+    throw error
   }
 }
