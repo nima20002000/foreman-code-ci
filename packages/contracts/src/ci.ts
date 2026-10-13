@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { CI_LOG_MAX_BYTES, CiActivitySchema, CiRunRecordSchema, CiSuiteSchema, CiScopeSchema, CiSelectedFilesSchema,
-  CiTestResultsSchema,
+  CiTestResultsSchema, CiPrioritySchema, CiPriorityReasonSchema,
   CiTestStatusSchema, CiTestSummarySchema, validCiSelection } from './ciHost.js'
 import { IdSchema } from './schemaPrimitives.js'
 import { JobResourceRequestSchema } from './jobVerificationPolicy.js'
@@ -8,6 +8,8 @@ import { SourceRootRecordSchema } from './sourceAdmission.js'
 import { SourceManifestSchema } from './sourceMaterialization.js'
 
 const CiRunInputObjectSchema = z.object({
+  priority: CiPrioritySchema.optional().describe('Defaults to normal. High requires Operator role or an explicit '
+    + 'jobs:prioritize grant. Commits changing only CI infrastructure are automatically high priority.'),
   suite: CiSuiteSchema.describe('Repositories with the CI suite hook queue unit, lint, typecheck and build parts; '
     + 'other repositories run their package script for the suite as one job. Install runs one job.'),
   commit: z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/).optional(),
@@ -16,9 +18,8 @@ const CiRunInputObjectSchema = z.object({
       + 'commit; an unavailable or non-ancestor base falls back to the full suite with a reason.'),
   commandId: IdSchema,
   /** Split integration when the repository supplies its CI hook and file selector. */
-  partitions: z.number().int().min(2).max(64).describe('Optional integration partition limit (2–64); otherwise sized automatically '
-    + 'from measured durations and free slots. '
-    + 'Requires scripts/ci-suite.sh and scripts/ci-files.mjs. User-systemd files use separate build-computer slices; '
+  partitions: z.number().int().min(2).max(32).describe('Integration partitions for repositories with '
+    + 'scripts/ci-suite.sh and scripts/ci-files.mjs. User-systemd files use separate build-computer slices; '
     + 'mixed explicit selections split even when this is omitted. Other repositories run integration as one job.').optional(),
   scope: CiScopeSchema.optional().describe('Defaults to affected; full runs the complete suite. '
     + 'Repositories without an affected selector always run the full suite.'),
@@ -49,6 +50,7 @@ export const CiGetInputSchema = CiTicketInputSchema.extend({
 export const OperatorCiGetInputSchema = CiGetInputSchema.extend({ workspaceId: IdSchema }).strict()
 export const CiGetOutputSchema = z.object({
   run: CiRunRecordSchema, partitions: z.array(CiRunRecordSchema).optional(), logTail: z.string(),
+  queue: z.object({ position: z.number().int().positive(), reason: z.string() }).strict().nullable().optional(),
   group: z.object({ groupId: CiRunRecordSchema.shape.groupId, state: CiRunRecordSchema.shape.state }).strict().optional(),
   tests: CiTestResultsSchema.nullable().optional(),
 }).strict()
@@ -94,7 +96,13 @@ export const CiLogsOutputSchema = z.object({ text: z.string(), nextOffset: z.num
     logBytes: z.number().int().nonnegative(),
     maxBytes: z.number().int().min(1).max(CI_LOG_MAX_BYTES) }).strict()).optional(),
 }).strict()
-export const CiComputersOutputSchema = z.object({ computers: z.array(z.object({
+export const CiQueueEntrySchema = z.object({
+  ticketId: IdSchema, priority: CiPrioritySchema, priorityReason: CiPriorityReasonSchema,
+  position: z.number().int().positive(), reason: z.string(),
+}).strict()
+export const CiComputersOutputSchema = z.object({
+  queue: z.array(CiQueueEntrySchema).optional(), queueTruncated: z.boolean().optional(),
+  computers: z.array(z.object({
   label: z.string(), hostRef: CiRunRecordSchema.shape.computer.unwrap().shape.hostRef,
   priority: z.number().int(), ready: z.boolean(), reasons: z.array(z.string()),
   cpuCount: z.number().int().positive().optional(), memoryBytes: z.number().int().positive().optional(),

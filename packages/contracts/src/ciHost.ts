@@ -38,12 +38,10 @@ export function validCiSelection(value: { suite: CiSuite; scope?: CiScope | unde
 const CommitSchema = z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/)
 export const CiRepositorySchema = z.string().regex(/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/[A-Za-z0-9._-]{1,100}$/)
 /** `weights` gives each slice's relative speed (its computer's measured throughput), so slices finish together. */
-export const CiPartitionSchema = z.object({ index: z.number().int().nonnegative(), count: z.number().int().min(2).max(64),
-  /** Keep files at or above this measured duration alone when capacity permits. */
-  targetDurationMs: z.number().positive().finite().optional(),
+export const CiPartitionSchema = z.object({ index: z.number().int().nonnegative(), count: z.number().int().min(2).max(32),
   weights: z.array(z.number().positive().finite()).optional(),
   /** Only user-systemd files run in these slices; ordinary files use the other slices. */
-  hostIndexes: z.array(z.number().int().nonnegative()).min(1).max(64).optional() }).strict()
+  hostIndexes: z.array(z.number().int().nonnegative()).min(1).max(32).optional() }).strict()
   .refine(value => value.index < value.count, 'The partition index must be below its count.')
   .refine(value => !value.weights || value.weights.length === value.count, 'Give one weight per partition.')
   .refine(value => !value.hostIndexes || (new Set(value.hostIndexes).size === value.hostIndexes.length
@@ -125,9 +123,12 @@ export const CiHostReplySchema = z.discriminatedUnion('operation', [
 export type CiHostReply = z.infer<typeof CiHostReplySchema>
 
 /** What an Agent or the Operator sees for one CI run. */
+export const CiPrioritySchema = z.enum(['normal', 'high'])
+export const CiPriorityReasonSchema = z.enum(['normal', 'requested', 'ci-infrastructure'])
 export const CiRunRecordSchema = z.object({
   id: CiHostRunIdSchema, workspaceId: IdSchema, suite: CiSuiteSchema, commit: CommitSchema, repository: CiRepositorySchema,
   scope: CiScopeSchema.default('full'), files: CiSelectedFilesSchema.default([]),
+  priority: CiPrioritySchema.default('normal'), priorityReason: CiPriorityReasonSchema.default('normal'),
   /** An omitted caller selection is computed on the runner; an explicit empty list is already complete. */
   deriveFiles: z.boolean().optional(), defaultBranch: WorkspaceRepositorySchema.shape.defaultBranch.optional(),
   baseCommit: CommitSchema.optional(),
@@ -142,10 +143,6 @@ export const CiRunRecordSchema = z.object({
   initiator: z.object({ principalId: IdSchema, executionId: IdSchema.nullable() }).strict(),
   /** The computer a weighted partition was sized for; another free computer may still take it. */
   plannedHostKey: z.string().nullable().optional(),
-  /** Measured test time plus a fixed setup allowance; runner-derived selections use a full-suite upper estimate. */
-  expectedDurationMs: z.number().nonnegative().finite().optional(),
-  /** The planned slice contains files requiring a build computer. */
-  requiresBuildComputer: z.boolean().optional(),
   /** Providers that accepted a dispatch but exhausted retries without creating work. */
   unstartedProviders: z.array(z.enum(['github', 'circleci'])).max(2).optional(),
 }).strict().refine(validCiPart, 'The part and partition must belong to the requested suite.')
