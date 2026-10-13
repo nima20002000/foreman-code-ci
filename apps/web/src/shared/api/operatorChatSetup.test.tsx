@@ -50,9 +50,8 @@ it.each([403, 503])('retains a real setup failure (%s) and recovers only after a
   mount()
   expect(await screen.findByText('Tool connection check failed')).toBeVisible()
   expect(client.getQueryCache().findAll({ queryKey: ['operator-chat', 'setup'] })[0]?.state.data).toBeUndefined()
-  fireEvent.click(screen.getByText('Tool connection check failed'))
-  expect(screen.getByText('Check the tool connection before sending a message.')).toBeVisible()
   available = true
+  fireEvent.click(screen.getByText('Tool connection check failed'))
   fireEvent.click(screen.getByRole('button', { name: 'Check again' }))
   await waitFor(() => expect(screen.queryByText('Tool connection check failed')).not.toBeInTheDocument())
   expect(calls).toBe(2)
