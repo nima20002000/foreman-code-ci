@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto'
-import { withTransaction } from '../../infrastructure/transaction.js'
 import pg from 'pg'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import {
@@ -92,11 +91,15 @@ export class DurableEditIntentService<S extends EditStageScope, I extends Durabl
     for (const item of current) requireAuthorization(principal, 'runs:read', item.pin)
   }
   private async transaction<T>(principal: ManagementPrincipal, work: (client: pg.PoolClient, live: ManagementPrincipal) => Promise<T>) {
-    return withTransaction(this.pool, async (client) => {
+    const client = await this.pool.connect()
+    try {
+      await client.query('begin')
       const live = await readLiveManagementPrincipal(client, principal.id)
       const result = await work(client, live)
+      await client.query('commit')
       return result
-    })
+    } catch (error) { await client.query('rollback'); throw error }
+    finally { client.release() }
   }
   private async withLease<T>(principalId: string, intentId: string, work: () => Promise<T>): Promise<T> {
     const pool = new pg.Pool({ ...this.pool.options, max: 1, application_name: 'graphql-edit-intent' })

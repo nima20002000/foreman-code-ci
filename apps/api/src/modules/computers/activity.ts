@@ -1,5 +1,4 @@
 import type pg from 'pg'
-import { withTransaction } from '../../infrastructure/transaction.js'
 import { z } from 'zod'
 import {
   COMPUTER_ACTIVITY_LIMIT, ComputerActivityListSchema, computerDisplayName, ComputerAgentActivitySchema, ComputerJobActivitySchema,
@@ -39,7 +38,9 @@ export class ComputerActivityService {
       await this.commands.recordDenied(principal.id, source, 'computer_activity_list', this.mainId)
       throw error
     }
-    return withTransaction(this.pool, async (sql) => {
+    const sql = await this.pool.connect()
+    try {
+      await sql.query('begin')
       const live = await readLiveManagementPrincipal(sql, principal.id)
       requireAuthorization(live, 'settings:read')
       const registrations = await sql.query<{ record: unknown }>(`select record from device_registrations
@@ -91,8 +92,14 @@ export class ComputerActivityService {
       }
       const activityComplete = !truncated && [principal, live, latest].every(caller =>
         isAuthorized(caller, 'jobs:read') && isAuthorized(caller, 'runs:read'))
+      await sql.query('commit')
       return ComputerActivityListSchema.parse({ mainId: this.mainId, computers, cloud, truncated, activityComplete })
-    })
+    } catch (error) {
+      await sql.query('rollback')
+      throw error
+    } finally {
+      sql.release()
+    }
   }
 }
 

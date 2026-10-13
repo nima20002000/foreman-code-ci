@@ -1,5 +1,4 @@
 import type pg from 'pg'
-import { withTransaction } from '../../infrastructure/transaction.js'
 import { componentLogger } from '../diagnostics/logger.js'
 import { JobRuntimeProfileSchema, JobRuntimeFingerprintSchema, InstalledJobRuntimeDescriptorSchema }
   from '@foreman-code/contracts/job-runtime'
@@ -35,7 +34,9 @@ export interface InstalledJobRuntimeHost {
 }
 export function createJobRuntimeProfileService(input:{pool:pg.Pool;commands:PostgresCommandCoordinator;sources:PostgresSourceService;host:InstalledJobRuntimeHost;changed?: () => void}) {
   async function transaction<T>(work:(sql:pg.PoolClient)=>Promise<T>) {
-    return withTransaction(input.pool, work)
+    const sql=await input.pool.connect()
+    try{await sql.query('begin');const value=await work(sql);await sql.query('commit');return value}
+    catch(error){await sql.query('rollback');throw error}finally{sql.release()}
   }
   async function authorized(sql:JobSql,approval:JobRuntimeApprovalRecord,intent:'execute'|'reconcile'='execute') {
     const row=(await sql.query<{record:unknown;run_command_id:string|null;run_principal_id:string|null}>(`select record,run_command_id,run_principal_id from job_runtime_qualification_approvals where id=$1 and workspace_id=$2 for share`,[approval.id,approval.workspaceId])).rows[0]
