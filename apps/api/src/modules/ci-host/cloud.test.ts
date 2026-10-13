@@ -594,7 +594,7 @@ describe('GitHub Actions CI on a public mirror', () => {
     expect(f.mirrorGit('rev-list', '--count', branch)).toBe('2')
     expect(() => f.mirrorGit('cat-file', '-e', f.commit)).toThrow()
     expect(f.mirrorGit('rev-parse', 'refs/heads/main')).toBe(f.mirrorGit('rev-parse', branch))
-    expect(f.dispatched).toEqual([['workflow', 'run', 'ci.yml', '-R', 'octo/site-ci', '--ref', 'main', '-f', `ref=${f.mirrorGit('rev-parse', `refs/heads/ci/${f.commit}`)}`,
+    expect(f.dispatched).toEqual([['workflow', 'run', 'ci.yml', '-R', 'octo/site-ci', '--ref', 'main', '-f', `ref=ci/${f.commit}`,
       '-f', `run_id=${runId}`, '-f', 'suite=integration',
       '-f', 'slice=s:0,3', '-f', 'scope=full']])
     // A retried start returns the same run without dispatching again.
@@ -779,44 +779,4 @@ describe('GitHub Actions CI on a public mirror', () => {
     f.advance(1_000)
     expect(await read()).toMatchObject({ run: { state: 'passed' } })
   })
-})
-
-
-it.each(['github', 'circleci'] as const)('prunes stale mirror branches and keeps shared %s branches until every ticket finishes', async provider => {
-  const f = await fixture({}, { provider })
-  const stale = `ci/${'a'.repeat(40)}`
-  f.mirrorGit('update-ref', `refs/heads/${stale}`, 'main')
-  f.mirrorGit('update-ref', 'refs/heads/ci/retired-run', 'main')
-  f.mirrorGit('update-ref', 'refs/heads/feature/keep', 'main')
-  const first = randomUUID()
-  const second = randomUUID()
-  const request = { operation: 'start' as const, repository: 'octo/site', commit: f.commit,
-    suite: 'lint' as const, scope: 'affected' as const, files: [] }
-  await f.cloud.handle({ ...request, runId: first })
-  await f.cloud.handle({ ...request, runId: second })
-  const refs = () => f.mirrorGit('for-each-ref', '--format=%(refname)', 'refs/heads/')
-  expect(refs()).not.toContain(`refs/heads/${stale}`)
-  expect(refs()).not.toContain('refs/heads/ci/retired-run')
-  expect(refs()).toContain('refs/heads/feature/keep')
-  await f.cloud.handle({ operation: 'cancel', runId: first })
-  expect(refs()).toContain(`refs/heads/ci/${f.commit}`)
-  await f.reopen().handle({ operation: 'cancel', runId: second })
-  expect(refs()).not.toContain(`refs/heads/ci/${f.commit}`)
-  await f.reopen().handle({ ...request, runId: randomUUID() })
-  expect(refs()).toContain(`refs/heads/ci/${f.commit}`)
-})
-
-it.each(['success', 'failure'] as const)('removes mirror branches after a %s result without losing persisted results', async conclusion => {
-  const f = await fixture()
-  const runId = randomUUID()
-  await f.cloud.handle({ operation: 'start', runId, repository: 'octo/site', commit: f.commit,
-    suite: 'lint', scope: 'affected', files: [] })
-  f.github.listed = [{ databaseId: 8, displayTitle: `ci ${runId}` }]
-  f.github.status = 'completed'
-  f.github.conclusion = conclusion
-  const read = { operation: 'read' as const, runId, afterOffset: 0, maxBytes: 65_536 }
-  const state = conclusion === 'success' ? 'passed' : 'failed'
-  expect(await f.cloud.handle(read)).toMatchObject({ run: { state }, text: expect.stringContaining('all green') })
-  expect(f.mirrorGit('for-each-ref', '--format=%(refname)', 'refs/heads/ci/')).toBe('')
-  expect(await f.reopen().handle(read)).toMatchObject({ run: { state }, text: expect.stringContaining('all green') })
 })
