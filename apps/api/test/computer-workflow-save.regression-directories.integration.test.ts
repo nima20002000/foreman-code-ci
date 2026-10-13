@@ -3,22 +3,27 @@ import { expect, it } from 'vitest'
 import { CURRENT_WORKFLOW_TOOLS, CurrentWorkflowReadResultSchema, CurrentWorkflowSaveResultSchema } from '@foreman-code/contracts/wave25'
 import { agentWorkflowNode } from './helpers/agentWorkflowFixture.js'
 import { remoteReviewProduction, waitForRemoteReview } from './helpers/remoteReviewProduction.js'
+import { measureIntegrationPhase } from './helpers/integrationPhase.js'
 
 it('saves a completed computer workflow using each accepted native directory and rejects changed execution directories', async () => {
   // Directory validation needs two native executions, but only one identical harness profile.
-  const fixture = await remoteReviewProduction({
+  const fixture = await measureIntegrationPhase('computer save fixture', () => remoteReviewProduction({
     workflow: 'sequential', parallelProfileChecks: true, reuseMatchingProfiles: true, parallelSetup: true,
     includeNodeRuntimePayload: false,
-  })
+  }))
   try {
-    const started = await fixture.start()
-    const details = await waitForRemoteReview(async () => {
+    const started = await measureIntegrationPhase('computer save start', fixture.start)
+    const details = await measureIntegrationPhase('computer save workflow cleanup', () => waitForRemoteReview(async () => {
       const current = await fixture.details(started.run.id)
+      if (current.run.executionState === 'completed' && current.run.outcome !== 'succeeded') {
+        throw new Error(`Computer workflow failed: ${JSON.stringify(current.executions.map(execution => execution.result))}`)
+      }
       if (current.run.executionState === 'completed' && !current.cleanupPending) return current
       // Active Runs can yield after bounded settlement retries and need another engine pass.
       await fixture.reconcile()
       return fixture.details(started.run.id)
-    }, value => value.run.executionState === 'completed' && !value.cleanupPending, 'completed remote workflow cleanup')
+    }, value => value.run.executionState === 'completed' && !value.cleanupPending,
+    'completed remote workflow cleanup', fixture.subscribeNativeChanges))
     expect(details.run.outcome).toBe('succeeded')
     expect(details.executions).toHaveLength(2)
     expect(details.executions.every(execution => execution.nativeSessionId
@@ -37,7 +42,8 @@ it('saves a completed computer workflow using each accepted native directory and
       .then(result => ({ result }), (error: unknown) => ({ error }))
     if ('error' in denied) expect(denied.error).toMatchObject({ code: -32602 })
     else expect(denied.result.isError).toBe(true)
-    const saved = CurrentWorkflowSaveResultSchema.parse(await fixture.value(CURRENT_WORKFLOW_TOOLS.save, input)).value
+    const saved = CurrentWorkflowSaveResultSchema.parse(await measureIntegrationPhase('computer save persisted version',
+      () => fixture.value(CURRENT_WORKFLOW_TOOLS.save, input))).value
     expect(saved.version.id).not.toBe(details.run.workflowVersionId)
     const [persisted, retainedRun] = await Promise.all([
       fixture.value(CURRENT_WORKFLOW_TOOLS.saved, scope),
@@ -83,6 +89,6 @@ it('saves a completed computer workflow using each accepted native directory and
       console.error('Computer workflow provider startup diagnostics unavailable', diagnosticError)
     }
     throw error
-  } finally { await fixture.close() }
+  } finally { await measureIntegrationPhase('computer save fixture cleanup', fixture.close) }
 }, 240_000)
 
