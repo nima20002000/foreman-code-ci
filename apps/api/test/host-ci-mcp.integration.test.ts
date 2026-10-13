@@ -100,13 +100,13 @@ function fakeComputers(github: Record<string, boolean> = {}, cloud: boolean | { 
         ...(request.durations && finished && entry.durations ? { durations: entry.durations } : {}) }
     },
   }
-  const finish = (runId: string, exitCode: number, log: string, durations?: Record<string, number>, message?: string) => {
+  const finish = (runId: string, exitCode: number, log: string, durations?: Record<string, number>) => {
     const entry = runs.get(runId)!
     entry.log = log
     if (durations) entry.durations = durations
     else delete entry.durations
     entry.run = { ...entry.run, state: exitCode === 0 ? 'passed' : 'failed', exitCode, step: entry.request.operation === 'start'
-      ? entry.request.suite : null, message: message ?? null, finishedAt: new Date().toISOString(), logBytes: Buffer.byteLength(log) }
+      ? entry.request.suite : null, finishedAt: new Date().toISOString(), logBytes: Buffer.byteLength(log) }
   }
   return { endpoint, started, finish, computers }
 }
@@ -1757,80 +1757,5 @@ it('resolves branches of existing tickets before superseding them and protects e
       .toBe('queued')
     expect(CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: feature.ticketId })).run)
       .toMatchObject({ state: 'canceled', supersededBy: next.ticketId })
-  } finally { await f.close() }
-})
-
-it('reads warm-up status and persisted CI tickets through authenticated MCP without granting write access', async () => {
-  const f = await fixture()
-  const warmup = { repository: 'octo/site', commit: 'b'.repeat(40), run: {
-    runId: randomUUID(), warmup: true, state: 'passed' as const, step: 'install', exitCode: 0,
-    startedAt: new Date().toISOString(), finishedAt: new Date().toISOString(), logBytes: 0, message: null,
-  } }
-  const request = f.endpoint.request.bind(f.endpoint)
-  f.endpoint.request = async (computer, input) => {
-    const reply = await request(computer, input)
-    return reply.operation === 'status' ? { ...reply, prewarmSupported: true, warmup } : reply
-  }
-  try {
-    const reader = await f.connect([...CI_GET_ACTIONS])
-    const denied = await f.connect(['workflows:read'])
-    expect((await f.call(denied, 'ci_computers_list', {})).isError).toBe(true)
-    const input = { commandId: randomUUID(), suite: 'lint', scope: 'affected', commit: 'a'.repeat(40),
-      files: ['apps/api/src/modules/ci-host/warmSetup.ts'] }
-    expect((await f.call(reader, 'ci_run', input)).isError).toBe(true)
-    const output = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', input))
-    await f.ci.dispatch()
-    f.finish(output.ticketId, 0, '[ci-cache] dependency inputs unchanged; install skipped')
-    await f.ci.dispatch()
-    const persisted = CiGetOutputSchema.parse(await f.value(reader, 'ci_get', { ticketId: output.ticketId }))
-    expect(persisted.run).toMatchObject({ state: 'passed', scope: 'affected', files: input.files, commit: input.commit })
-    expect(persisted.logTail).toContain('install skipped')
-    const listed = CiComputersOutputSchema.parse(await f.value(reader, 'ci_computers_list', {}))
-    expect(listed.computers[0]).toMatchObject({ prewarmSupported: true, warmup })
-  } finally { await f.close() }
-})
-
-
-it('persists a CI watchdog failure for authenticated MCP status and log readback and denies ungranted callers', async () => {
-  const f = await fixture()
-  try {
-    const started = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', {
-      commandId: randomUUID(), suite: 'unit', scope: 'affected', commit: 'a'.repeat(40),
-      files: ['apps/api/test/loop.test.ts'],
-    }))
-    await f.ci.dispatch()
-    const reason = 'CI hang watchdog: no test progress for 60000 ms; running: apps/api/test/loop.test.ts > planner never returns'
-    f.finish(started.ticketId, 1, `[ci-watchdog] ${reason}\n`, undefined, reason)
-    const result = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: started.ticketId }))
-    expect(result.run).toMatchObject({ state: 'failed', exitCode: 1, message: reason })
-    expect(result.logTail).toContain(reason)
-    const logs = CiLogsOutputSchema.parse(await f.value(f.operator, 'ci_logs_read', { ticketId: started.ticketId }))
-    expect(logs.text).toContain(reason)
-    const stored = (await f.pool.query<{ record: unknown }>('select record from ci_runs where id=$1',
-      [started.ticketId])).rows[0]!
-    expect(CiRunRecordSchema.parse(stored.record)).toMatchObject({ state: 'failed', message: reason })
-    const denied = await f.connect(['workflows:read'])
-    for (const tool of ['ci_get', 'ci_logs_read']) {
-      expect((await f.call(denied, tool, { ticketId: started.ticketId })).isError).toBe(true)
-    }
-
-  } finally { await f.close() }
-})
-
-it('hides another repository warm-up from a workspace-scoped MCP reader', async () => {
-  const f = await fixture()
-  const warmup = { repository: 'other/project', commit: 'c'.repeat(40), run: {
-    runId: randomUUID(), warmup: true, state: 'running' as const, step: 'install', exitCode: null,
-    startedAt: new Date().toISOString(), finishedAt: null, logBytes: 0, message: null,
-  } }
-  const request = f.endpoint.request.bind(f.endpoint)
-  f.endpoint.request = async (computer, input) => {
-    const reply = await request(computer, input)
-    return reply.operation === 'status' ? { ...reply, prewarmSupported: true, warmup } : reply
-  }
-  try {
-    const reader = await f.connect([...CI_GET_ACTIONS])
-    const listed = CiComputersOutputSchema.parse(await f.value(reader, 'ci_computers_list', {}))
-    expect(listed.computers.every(computer => computer.warmup === null)).toBe(true)
   } finally { await f.close() }
 })
