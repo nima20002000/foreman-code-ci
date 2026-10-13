@@ -2273,7 +2273,6 @@ export function buildProductionApp(
     return applicationClose
   }
   return { app, engine, prepareSchema, initialize, reconcile, shutdown, drainShutdown, rsync,
-    shutdownPending: () => lifecycle.pending(),
     registerFileStorage: () => {
       fileStorage ??= registerProductionFileStorage(app, database.pool, config)
       mountArtifacts()

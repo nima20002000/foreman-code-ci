@@ -58,18 +58,7 @@ export class AcceptedHarnessProfileAdmission<Owner> {
     private readonly authority: AcceptedProfileAuthority<Owner>,
   ) {}
   async admit(owner: Owner, selector: AcceptedProfileSelector): Promise<AcceptedHarnessProfile> {
-    const selected = structuredClone(selector)
-    try {
-      return await this.readProfile(owner, selected, { purpose: 'execution' })
-    } catch (error) {
-      if (error instanceof DomainError && error.code === 'HARNESS_PROFILE_UNAVAILABLE') {
-        // Qualification can start while the authorized profile read is awaiting IO.
-        this.authority.assertReady?.(selected.target.hostRef)
-        // A completed check can replace the proof before the stale read returns.
-        return this.readProfile(owner, selected, { purpose: 'execution' })
-      }
-      throw error
-    }
+    return this.readProfile(owner, selector, { purpose: 'execution' })
   }
   async admitObservation(owner: Owner, selector: AcceptedProfileSelector): Promise<AcceptedHarnessProfile> {
     return this.readProfile(owner, selector, { purpose: 'observation' })

@@ -7,7 +7,6 @@ import type { HarnessInstanceSettingsRepository } from '../src/modules/harnesses
 import type { HostHarnessProfileEvidenceRepository } from '../src/modules/harnesses/instanceSettings/profileRepository.js'
 import { HarnessInstanceRegistry, localHarnessDrivers } from '../src/modules/harnesses/instanceRegistry.js'
 import { claudeDiscoveryDeclaration } from '../src/modules/harnesses/claudeDiscovery.js'
-import { DomainError } from '../src/modules/errors.js'
 
 function fixture() {
   const target = { hostRef: { kind: 'main' as const, mainId: 'main' }, applicationInstallationId: 'main', harnessInstallationId: 'cli', installationFingerprint: 'hash' }
@@ -85,65 +84,12 @@ describe('exact accepted Claude profile admission', () => {
     const f = fixture(); vi.mocked(f.authority.authorize).mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('revoked'))
     await expect(f.admission.admit('owner', f.selector)).rejects.toThrow('revoked')
   })
-  it('keeps recovery retryable when automatic qualification starts during profile admission', async () => {
-    const f = fixture()
-    let checking = false
-    f.authority.assertReady = () => {
-      if (checking) throw new DomainError('HARNESS_PROFILE_CHECK_PENDING', 'Checking profile', 503)
-    }
-    vi.mocked(f.authority.current).mockImplementation(async () => {
-      checking = true
-      throw new DomainError('HARNESS_PROFILE_UNAVAILABLE', 'Profile proof is stale', 409)
-    })
-    await expect(f.admission.admit('owner', f.selector))
-      .rejects.toMatchObject({ code: 'HARNESS_PROFILE_CHECK_PENDING' })
-
-    checking = false
-    vi.mocked(f.authority.current).mockRejectedValue(
-      new DomainError('HARNESS_PROFILE_UNAVAILABLE', 'Profile check failed', 409),
-    )
-    await expect(f.admission.admit('owner', f.selector))
-      .rejects.toMatchObject({ code: 'HARNESS_PROFILE_UNAVAILABLE' })
-    vi.mocked(f.authority.authorize).mockRejectedValue(new DomainError('ACCESS_DENIED', 'Revoked owner', 403))
-    checking = true
-    await expect(f.admission.admit('owner', f.selector)).rejects.toMatchObject({ code: 'ACCESS_DENIED' })
-  })
   it('rejects old SDK pin and revalidates revocation before native effect', async () => {
     const f = fixture(); const accepted = await f.admission.admit('owner', f.selector)
     f.proof.claudeProof!.pin.sdkIntegrity = 'different'
     await expect(f.admission.revalidate('owner', accepted)).rejects.toThrow('stale')
     vi.mocked(f.authority.authorize).mockRejectedValue(new Error('revoked'))
     await expect(f.admission.revalidate('owner', accepted)).rejects.toThrow('revoked')
-  })
-  it('reads replacement proof when automatic qualification finishes during admission IO', async () => {
-    const f = fixture()
-    const previousProof = structuredClone(f.proof)
-    let checking = false
-    f.authority.assertReady = () => {
-      if (checking) throw new DomainError('HARNESS_PROFILE_CHECK_PENDING', 'Checking profile', 503)
-    }
-    f.proofs.latest.mockImplementationOnce(async () => {
-      checking = true
-      return previousProof
-    })
-    vi.mocked(f.authority.current).mockImplementation(async () => {
-      f.proof.connectionGeneration = 'replacement-connection'
-      Object.assign(f.registry.installation, { connectionGeneration: 'replacement-connection' })
-      checking = false
-      return { registry: f.registry, applicationInstallationId: 'main', suiteRevision: 's',
-        pin: f.proof.claudeProof!.pin }
-    })
-
-    const accepted = await f.admission.admit('owner', f.selector)
-    expect(accepted.persistedProof.connectionGeneration).toBe('replacement-connection')
-    expect(accepted.currentBinding.connectionGeneration).toBe('replacement-connection')
-    expect(f.proofs.latest).toHaveBeenCalledTimes(2)
-
-    f.proof.qualified = false
-    await expect(f.admission.admit('owner', f.selector))
-      .rejects.toMatchObject({ code: 'HARNESS_PROFILE_UNAVAILABLE' })
-    vi.mocked(f.authority.authorize).mockRejectedValue(new DomainError('ACCESS_DENIED', 'Revoked owner', 403))
-    await expect(f.admission.admit('owner', f.selector)).rejects.toMatchObject({ code: 'ACCESS_DENIED' })
   })
   it('registers Claude configuration without a manager or default profile', () => {
     const f = fixture(); const registry = new HarnessInstanceRegistry(localHarnessDrivers)
