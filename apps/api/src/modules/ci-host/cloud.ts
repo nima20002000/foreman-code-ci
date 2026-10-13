@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { homedir, hostname, userInfo } from 'node:os'
 import { join } from 'node:path'
 import type pg from 'pg'
-import { CiDurationsSchema, CiHostReplySchema, CiHostRequestSchema, CiTestResultsSchema, WorkspaceSchema,
+import { CiWatchdogFailureSchema, CiDurationsSchema, CiHostReplySchema, CiHostRequestSchema, CiTestResultsSchema, WorkspaceSchema,
   integrationPartition, requiresUserSystemd,
   type CiDurations, type CiTestResults, type CiHostReply, type CiHostRequest, type CiHostRun, type CiPartition, type CiSuite, type CiPart, type CiScope } from '@foreman-code/contracts'
 import { DomainError } from '../errors.js'
@@ -153,7 +153,8 @@ export class CloudCi {
 
   private async start(request: { runId: string; repository: string; commit: string; suite: CiSuite
     part?: CiPart | undefined; partition?: CiPartition | undefined; durations?: CiDurations | undefined; scope?: CiScope | undefined;
-    files?: string[] | undefined; defaultBranch?: string | undefined; baseCommit?: string | undefined }): Promise<CiHostRun> {
+    files?: string[] | undefined; defaultBranch?: string | undefined; baseCommit?: string | undefined;
+    gate?: boolean | undefined; integrationShards?: number | undefined; expectedDurationMs?: number | undefined }): Promise<CiHostRun> {
     const existing = await this.read(request.runId).catch(fallbackOnError(null, 'jobs', 'read existing CI run', { runId: request.runId }, ['ENOENT']))
     if (existing) return this.view(existing, 0)
     if (!this.provider.userSystemd.supported && request.suite === 'integration'
@@ -180,7 +181,8 @@ export class CloudCi {
       ? 'Running full suite: ' + (request.baseCommit
         ? 'baseCommit is unavailable or is not an ancestor of the resolved commit.'
         : 'No merge-base with the workspace default branch is available.') : null
-    let slice = request.suite === 'integration' && !selectOnRunner && (request.partition || !deriveFiles && scope === 'affected')
+    let slice = request.suite === 'integration' && !selectOnRunner
+      && (request.gate || request.partition || !deriveFiles && scope === 'affected')
       ? await this.slice(git, request.commit, request.partition, request.durations ?? {}, request.files) : ''
     if ((!request.files || scope !== 'affected') && request.partition && request.part) {
       slice = `${request.partition.index + 1}/${request.partition.count}`
@@ -203,6 +205,7 @@ export class CloudCi {
     }
     const durations = selectOnRunner && request.durations ? JSON.stringify(request.durations) : undefined
     const input: CloudDispatchInput = { mirror, branch, runId: request.runId, suite: request.part ?? request.suite, slice,
+      expectedDurationMs: request.expectedDurationMs ?? 0,
       scope: message ? 'full' : scope, ...(files !== undefined ? { files } : {}),
       ...(defaultBranch ? { defaultBranch } : {}),
       ...(baseCommit ? { baseCommit } : {}),
@@ -506,9 +509,9 @@ export class CloudCi {
       { flag: 'a', mode: 0o600 })
     let durations: CiDurations | undefined
     let testResults: CiTestResults | undefined
+    const artifacts = await this.provider.artifacts(run, join(this.root, 'runs', runId, 'artifact'))
+      .catch(fallbackOnError(null, 'jobs', 'fetch CI run artifacts', { runId }))
     if (run.suite === 'integration' || run.suite === 'unit') {
-      const artifacts = await this.provider.artifacts(run, join(this.root, 'runs', runId, 'artifact'))
-        .catch(fallbackOnError(null, 'jobs', 'fetch CI run artifacts', { runId }))
       const parsed = CiDurationsSchema.safeParse(artifacts?.durations)
       if (parsed.success && (run.suite === 'integration' || run.part === 'unit-api' || run.part === 'unit-web')) {
         durations = parsed.data
@@ -516,10 +519,13 @@ export class CloudCi {
       const tests = CiTestResultsSchema.safeParse(artifacts?.testResults)
       if (tests.success) testResults = tests.data
     }
+    const watchdog = CiWatchdogFailureSchema.safeParse(artifacts?.watchdogFailure)
+    const watchdogMessage = watchdog.success ? watchdog.data.message : undefined
     const passed = status.conclusion === 'success'
     return this.save({ ...run, state: passed ? 'passed' : status.conclusion === 'cancelled' ? 'canceled' : 'failed',
       exitCode: passed ? 0 : 1, finishedAt: status.finishedAt,
-      message: passed ? run.message : [run.message, `${this.provider.label}: ${status.conclusion}.`].filter(Boolean).join(' '),
+      message: passed ? run.message : watchdogMessage
+        ?? [run.message, `${this.provider.label}: ${status.conclusion}.`].filter(Boolean).join(' '),
       ...(durations ? { durations } : {}), ...(testResults ? { testResults } : {}) })
   }
 }

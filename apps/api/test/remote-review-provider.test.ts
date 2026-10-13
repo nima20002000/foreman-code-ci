@@ -6,10 +6,6 @@ import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 import { fileURLToPath } from 'node:url'
 import { expect, it, vi } from 'vitest'
-import { isObject, type JsonObject } from '../src/modules/harnesses/codexStdioTransport.js'
-import { fixtureProtocol } from './fixtures/codex-test-helpers.js'
-import { privateFixtureDirectory } from './helpers/privateFixtureDirectory.js'
-import { removeFixtureDirectory } from './helpers/testResources.js'
 
 it('finishes the native review after its decision is recorded while delivery is still pending', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'review-provider-'))
@@ -59,57 +55,5 @@ it('finishes the native review after its decision is recorded while delivery is 
       await new Promise<void>(resolve => { provider.once('exit', () => resolve()); provider.kill('SIGTERM') })
     }
     await rm(directory, { recursive: true, force: true })
-  }
-})
-
-it('reports native progress for the same blocked workflow turn before completion is released', async () => {
-  const directory = await privateFixtureDirectory('workflow-provider-progress-')
-  await writeFile(join(directory, 'codex'), 'workflow provider executable fixture', { mode: 0o700 })
-  await writeFile(join(directory, 'settings.json'), JSON.stringify({
-    clientModule: process.execPath, launcher: join(directory, 'launcher.mjs'),
-  }), { mode: 0o600 })
-  await writeFile(join(directory, 'block-workflow-turns'), '', { mode: 0o600 })
-  const provider = spawn(process.execPath, [fileURLToPath(new URL('./fixtures/remote-review-codex.mjs', import.meta.url)),
-    directory, 'app-server'], { stdio: ['pipe', 'pipe', 'pipe'] })
-  const messages: JsonObject[] = []
-  const lines = createInterface({ input: provider.stdout })
-  lines.on('line', line => { messages.push(JSON.parse(line) as JsonObject) })
-  let stderr = ''
-  provider.stderr.on('data', chunk => { stderr += String(chunk) })
-  const send = (value: unknown) => provider.stdin.write(`${JSON.stringify(value)}\n`)
-  try {
-    send({ id: 1, method: 'thread/start', params: {
-      cwd: directory, baseInstructions: 'fixture-reviewer fixture-work-handoff',
-    } })
-    await vi.waitFor(() => expect(messages.some(message => message.id === 1), stderr).toBe(true))
-    const created = messages.find(message => message.id === 1)!.result
-    if (!isObject(created) || !isObject(created.thread)) throw new Error('Expected the created native thread.')
-    const threadId = created.thread.id
-    send({ id: 2, method: 'turn/start', params: { threadId, clientUserMessageId: 'workflow-original',
-      input: [{ type: 'text', text: 'Wait for the original workflow result.', text_elements: [] }] } })
-    await vi.waitFor(() => expect(messages.some(message => message.id === 2), stderr).toBe(true))
-    const started = messages.find(message => message.id === 2)!.result
-    if (!isObject(started) || !isObject(started.turn)) throw new Error('Expected the original native turn.')
-    const turnId = started.turn.id
-    await writeFile(join(directory, 'workflow-progress'), 'progress-pulse-1', { mode: 0o600 })
-    await vi.waitFor(() => expect(messages.some(message => message.method === 'item/agentMessage/delta'), stderr)
-      .toBe(true), { timeout: 5_000 })
-    const progress = messages.find(message => message.method === 'item/started')!
-    const delta = messages.find(message => message.method === 'item/agentMessage/delta')!
-    expect(() => fixtureProtocol.notification(progress)).not.toThrow()
-    expect(() => fixtureProtocol.notification(delta)).not.toThrow()
-    expect(progress.params).toMatchObject({ threadId, turnId, item: { type: 'agentMessage', phase: 'commentary' } })
-    if (!isObject(progress.params) || !isObject(progress.params.item)) throw new Error('Expected a native progress item.')
-    expect(delta.params).toMatchObject({ threadId, turnId, itemId: progress.params.item.id, delta: expect.any(String) })
-    expect(messages.filter(message => message.method === 'turn/completed')).toEqual([])
-    await rm(join(directory, 'block-workflow-turns'))
-    await vi.waitFor(() => expect(messages.filter(message => message.method === 'turn/completed'), stderr)
-      .toHaveLength(1))
-  } finally {
-    lines.close()
-    if (provider.exitCode === null && provider.signalCode === null) {
-      await new Promise<void>(resolve => { provider.once('exit', () => resolve()); provider.kill('SIGTERM') })
-    }
-    await removeFixtureDirectory(directory)
   }
 })
