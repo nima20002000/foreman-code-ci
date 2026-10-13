@@ -189,7 +189,6 @@ async function setup(options: { ephemeral?: boolean; stored?: boolean; origin?: 
     const sql = text.replace(/\s+/g, ' ').trim()
     if (['begin', 'commit', 'rollback'].includes(sql)) return { rows: [] }
     if (sql.startsWith('select record from conversation_session_controls where conversation_id=$1')) return { rows: [] }
-    if (sql.includes('from harness_native_events')) return { rows: [] }
     if (sql.includes('from management_principals')) return { rows: values[0] === principal.id
       ? [{ id: principal.id, name: principal.name, audience: principal.audience, grants: principal.grants,
         expires_at: new Date(principal.expiresAt), revoked_at: null, delegated_from: null }] : [] }

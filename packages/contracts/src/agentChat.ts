@@ -174,7 +174,7 @@ const NativeSequenceSchema = z.string().regex(/^(0|[1-9][0-9]{0,18})$/);
 export const AgentChatSourceTranscriptSchema = z.object({
   executionId: IdSchema,
   state: HarnessExecutionSchema.shape.state,
-  /** Revision of the execution transcript, including an empty transcript. */
+  /** Latest public native message revision; "0" when no messages have been recorded. */
   revision: NativeSequenceSchema,
   messages: z.array(MessageSchema.omit({ conversationId: true })).max(100),
   hasEarlierMessages: z.boolean(),
