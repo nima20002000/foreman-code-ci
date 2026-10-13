@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { postgresEnabled } from './helpers/wave25Agent3.js'
 import { approvalAtomicSetup } from './helpers/approvalAtomic.js'
-import { readContext } from '../src/modules/interactions/wave25/context.js'
-import { transact } from '../src/modules/interactions/wave25/transaction.js'
+import { readContext, transact } from '../src/modules/interactions/wave25/context.js'
 import { interactionFact, nextInteraction, writeInteraction } from '../src/modules/interactions/wave25/publication.js'
 import { graphSourceDigest } from '../src/modules/run-graph/publication.js'
 

@@ -11,7 +11,7 @@ export type RunPlacementGetInput = z.infer<typeof RunPlacementGetInputSchema>
 
 export const NodePlacementChoicesInputSchema = z.object({ workspaceId: IdSchema, workflowId: IdSchema,
   nodeId: GraphIdSchema, agentConfigurationVersionId: IdSchema }).strict()
-const NodePlacementChoiceSchema = z.object({
+export const NodePlacementChoiceSchema = z.object({
   id: IdSchema, label: z.string().min(1),
   placement: SavedNodePlacementSchema,
   /** Readiness is authoritative discovery, never a native launch grant. */

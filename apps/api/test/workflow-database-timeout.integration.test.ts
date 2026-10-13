@@ -10,7 +10,12 @@ import { readUntil } from './helpers/observableCondition.js'
 import { agent3Database } from './helpers/wave25Agent3.js'
 import { retryDatabaseTimeout } from '../src/infrastructure/databaseTimeout.js'
 import { maintainCredential } from '../src/modules/harnesses/credentialHeartbeat.js'
-import { deferred } from './helpers/deferred.js'
+
+function gate() {
+  let resolve!: () => void
+  const promise = new Promise<void>(done => { resolve = done })
+  return { promise, resolve }
+}
 
 it.each(['canceling statement due to user request', 'Native event persistence was interrupted.'])(
   'does not retry query cancellation or database failure: %s', async message => {
@@ -50,8 +55,8 @@ it('keeps graph work and an interval Agent alive through database timeouts and r
     } }
   }
   const f = await currentOperatorIntegration({ fixture, approvalNodeIds: [] })
-  const flush = deferred()
-  const finish = deferred()
+  const flush = gate()
+  const finish = gate()
   const held = new Set<string>()
   const timedOut = new Set<string>()
   const persisted = new Set<string>()
@@ -183,8 +188,8 @@ it('rolls back a real PostgreSQL statement deadline and keeps the same connectio
 it('closes the original session when authenticated MCP Stop interrupts active database retries', async () => {
   const fixture = makeCurrentWorkflowFixture(randomUUID(), 'single')
   const f = await currentOperatorIntegration({ fixture, approvalNodeIds: [] })
-  const flush = deferred()
-  const finish = deferred()
+  const flush = gate()
+  const finish = gate()
   let published = false
   let timedOut = false
   let running: Promise<unknown> | undefined

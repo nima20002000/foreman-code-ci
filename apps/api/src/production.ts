@@ -1,5 +1,6 @@
 import { RunWorktrees } from './modules/runs/runWorktrees.js'
-import { withTransaction } from './infrastructure/transaction.js'
+import { inTransaction } from './infrastructure/transaction.js'
+import type pg from 'pg'
 import { ComputerActivityService } from './modules/computers/activity.js'
 import { registerComputerActivityRoutes } from './routes/computerActivity.js'
 import { ComputerAccountsService } from './modules/computers/accounts.js'
@@ -13,7 +14,6 @@ import { HostCiService } from './modules/ci-host/service.js'
 import { GitCiCommits } from './modules/ci-host/commits.js'
 import { RunCiAuthority } from './modules/jobs/ciAuthority.js'
 import { ProductionHostCiEndpoint } from './modules/ci-host/endpoint.js'
-import { CiPrewarmService } from './modules/ci-host/prewarm.js'
 import { HostCiRunner } from './modules/ci-host/runner.js'
 import { cloudCis, workspaceMirrors } from './modules/ci-host/cloud.js'
 import { agentSnapshots, type ReadAgentFiles } from './modules/ci-host/agentSnapshots.js'
@@ -95,7 +95,7 @@ import { WorkspaceBoundLocationService } from './modules/workspace-roots/service
 import { ManagedWorkspaceRootService } from './modules/workspace-roots/managedRoot.js'
 import { bootstrapLocalMainWorkspaceRoot } from './modules/workspace-roots/localMainBootstrap.js'
 import { WorkspaceRepositoryService } from './modules/workspaces/repositoryService.js'
-import { registerWorkspaceRepositoryRoutes } from './routes/workspaceRepository.js'
+import { registerWorkspaceRepositoryRoutes } from './modules/workspaces/repositoryRoutes.js'
 import { registerWorkspaceRootRoutes } from './modules/workspace-roots/transports.js'
 import { RemoteJobMainRpcRequestRecordSchema } from '@foreman-code/contracts/remote-job-execution'
 import { JOB_INPUT_NAMESPACE } from './modules/files/jobInputs/service.js'
@@ -104,7 +104,7 @@ import { createProductionJobs } from './modules/jobs/production.js'
 import type { OperatorServices } from './mcp/operator/types.js'
 import { registerJobRoutes } from './routes/jobs.js'
 import { registerJobRuntimeProfileRoutes } from './routes/jobRuntimeProfiles.js'
-import { registerSourceRoutes } from './routes/sources.js'
+import { registerSourceRoutes } from './modules/sources/routes.js'
 import { createClaudeProductionDiscovery } from './modules/harnesses/claudeSdk/bootstrap.js'
 import { productionClaudeMetadata } from './modules/harnesses/claudeSdk/productionMetadata.js'
 import { initializeNativeDefaults } from './modules/harnesses/initializeDefaults.js'
@@ -177,8 +177,7 @@ import { registerApprovalCheckpointResume } from './modules/runs/approvalCheckpo
 import { createCurrentNativeProductionFactory, isCurrentNativeProductionBinding } from './modules/runs/workflowProduction.js'
 import { isDeepStrictEqual } from 'node:util'
 import { NativeResponseJournal } from './modules/harnesses/recovery/responseJournal.js'
-import { hasDetachedStdioProcess, hasNativeRestartDetachment, NativeProcessRegistry,
-  type NativeProcessRecovery } from './modules/harnesses/recovery/processRegistry.js'
+import { hasDetachedStdioProcess, NativeProcessRegistry, type NativeProcessRecovery } from './modules/harnesses/recovery/processRegistry.js'
 import { join, resolve } from 'node:path'
 
 import type { ApiConfig } from './config.js'
@@ -253,7 +252,6 @@ import { PostgresAppInteractionService } from './modules/interactions/app.js'
 import { PostgresApprovalBudgetRepository } from './modules/interactions/budget.js'
 import { ApprovalExecutionCoordinator } from './modules/interactions/execution.js'
 import { PostgresWorkflowClosureStore } from './modules/interactions/workflowClosure.js'
-import { retryStartupDatabase } from './infrastructure/startupDatabase.js'
 import { OperatorInteractionService } from './modules/interactions/operator.js'
 import { Wave25InteractionRepository as PostgresInteractionRepository } from './modules/interactions/wave25/repository.js'
 import { ExecutionScopedNativeSessionManagerResolver,
@@ -772,20 +770,23 @@ export function buildProductionApp(
   const hostSettings = new HarnessInstanceSettingsRepository(database.pool)
   const hostAuthority: HostHarnessOverrideAuthority = { async authorize(principal, action, hostRef, applicationInstallationId, client) {
     if (client) { await authorizeDeviceHost(client, principal, action, hostRef, applicationInstallationId); return }
-    await withTransaction(database.pool, async (connection) => {
+    const connection = await database.pool.connect()
+    try {
+      await connection.query('begin')
       await authorizeDeviceHost(connection, principal, action, hostRef, applicationInstallationId)
-    })
+      await connection.query('commit')
+    } catch (error) { await connection.query('rollback'); throw error } finally { connection.release() }
   } }
   const profileAuthority: AcceptedProfileAuthority<ClaudeProfileOwner> = {
     async authorize(binding, selector, client) {
       binding.admissionSignal?.throwIfAborted()
       if (binding.kind === 'workflow') {
-        const current = await credentialAuthority(client, binding.executionId, binding.purpose ?? 'workflow')
+        const current = await credentialAuthority(client as unknown as GraphSqlClient, binding.executionId, binding.purpose ?? 'workflow')
         if (current.run.id !== binding.runId || current.execution.attempt !== binding.attempt) throw new DomainError('HARNESS_PROFILE_OWNER_CONFLICT', 'The exact Run attempt changed.', 409)
         if (!current.nativeSessionId && binding.purpose !== 'reviewer') {
           const owner = binding.getOwner()
           if (!owner || owner.runId !== binding.runId) throw new DomainError('HARNESS_PROFILE_OWNER_CONFLICT', 'The original native launch owner is unavailable.', 409)
-          owner.assertOwned(); await owner.readOneShotFence(owner.client)
+          owner.assertOwned(); await owner.readOneShotFence(owner.client as unknown as GraphSqlClient)
         }
         const row = (await client.query<{ principal_id: string }>("select record->>'authorizationPrincipalId' as principal_id from runs where id=$1", [binding.runId])).rows[0]
         if (!row?.principal_id) throw new DomainError('HARNESS_PROFILE_OWNER_CONFLICT', 'The accepted Run principal is unavailable.', 409)
@@ -1170,10 +1171,7 @@ export function buildProductionApp(
   }
   const approvals = new ApprovalExecutionCoordinator(
     runs, repository, budgets, managers, config.harnesses.timeoutMs, launchCredentials, validateContinuation,
-    new PostgresWorkflowClosureStore(database.pool, executionId =>
-      processRegistry instanceof NativeProcessRegistry
-        && hasNativeRestartDetachment(processRegistry.scope(`execution:${executionId}`))),
-    new PostgresRepeatReviewerBindings(database.pool),
+    new PostgresWorkflowClosureStore(database.pool), new PostgresRepeatReviewerBindings(database.pool),
     { capture(input) {
       const evidence = workflowCapture.capture.capture(input)
       remoteWorkflow!.capture(input, workflowCapture.verify.read(evidence))
@@ -1431,8 +1429,8 @@ export function buildProductionApp(
     operatorConversations, operators,
     resolveOperatorManager, operatorWorkingDirectory, chatAuthority,
     async (principal, configuration, commandId) => {
-      const selection = await withTransaction(database.pool,
-        client => harnessInstances.selectionForConfiguration(principal, configuration, client))
+      const selection = await inTransaction(database.pool, undefined,
+        client => harnessInstances.selectionForConfiguration(principal, configuration, client as pg.PoolClient))
       return selection ?? harnessInstances.prepareOperatorConfiguration(principal, 'http', configuration, commandId)
     },
   )
@@ -1685,7 +1683,6 @@ export function buildProductionApp(
     wake: () => engine.reconcile(),
   })
   const app = buildApp({
-    ...(infrastructure?.closeInfrastructure ? { closeInfrastructure: infrastructure.closeInfrastructure } : {}),
     runtimeIdentity: async () => {
       const identity = await readRuntimeIdentity(database.pool,
         fileURLToPath(new URL('../../../', import.meta.url)), config.database.connectionString)
@@ -1696,7 +1693,7 @@ export function buildProductionApp(
     ...(config.browserOrigin ? { browserOrigin: config.browserOrigin } : {}),
     readiness: { database, checkpoints },
     readinessTimeoutMs: config.readinessTimeoutMs,
-    product: { workspaces, workflows, runs, engine, interactions, chat },
+    product: { workspaces, workflows, runs, settings, foundationSettings, engine, interactions, chat },
     operator: { access, services: runtimeServices },
     appMcp: { access, commands, bugReports, interactions: Object.assign(new PostgresAppInteractionService(database.pool, repository, commands, interactions), {
       syncedFolder: (workspaceId: string, hostRef: { kind: 'main' } | { kind: 'device'; deviceId: string }) =>
@@ -1716,7 +1713,6 @@ export function buildProductionApp(
       endpoint: deviceRuntime.endpointForDomains(), stagingRoot: resolve(fileStorageRoot, 'workflow-artifact-transfers') })
   }
   let httpClosing = false
-  const startupLifetime = new AbortController()
   let initialization: Promise<void> | undefined
   let nativeDefaultsInitialization: Promise<void> | undefined
   let reconciliation: Promise<void> | undefined
@@ -1801,27 +1797,20 @@ export function buildProductionApp(
   })
   const beginShutdown = (): void => {
     closing = true
-    startupLifetime.abort()
     lifecycle.begin()
   }
   const assertOpen = (): void => {
     if (closing) throw new DomainError('NATIVE_RUNTIME_CLOSING', 'The native runtime is shutting down.', 503)
   }
-  const startupDatabase = <T>(work: () => Promise<T>): Promise<T> =>
-    retryStartupDatabase(work, { signal: startupLifetime.signal, check: assertOpen })
   const synchronizeOperatorDefaults = async (
+    current: Awaited<ReturnType<PostgresOperatorRepository['ensure']>>,
     template: AgentDefaults['operator'],
   ): Promise<void> => {
-    await withTransaction(database.pool, async client => {
-      const current = await operators.ensureWithClient(client)
-      if (isDeepStrictEqual(current.configuration.harness, template.harness)
-        && isDeepStrictEqual(current.configuration.nativeTools, template.nativeTools)) return
-      await operators.updateWithClient(
-        client, template.harness, current.operator.currentConfigurationVersionId,
-        template.showThinking ?? false, template.assignedSkills, template.harnessProfileSelection ?? null,
-        template.nativeTools ?? null,
-      )
-    })
+    await inTransaction(database.pool, undefined, client => operators.updateWithClient(
+      client, template.harness, current.operator.currentConfigurationVersionId,
+      template.showThinking ?? false, template.assignedSkills, template.harnessProfileSelection ?? null,
+      template.nativeTools ?? null,
+    ))
   }
   const initialize = (): Promise<void> => {
     if (closing) return Promise.reject(new DomainError('NATIVE_RUNTIME_CLOSING', 'The native runtime is shutting down.', 503))
@@ -1831,7 +1820,7 @@ export function buildProductionApp(
       assertOpen()
       await runtimeOwner.acquire()
       assertOpen()
-      await startupDatabase(() => remoteExecution.initialize())
+      await remoteExecution.initialize()
       assertOpen()
       if (infrastructure?.mode !== 'replay') await mainCodex.initialize()
       assertOpen()
@@ -1840,26 +1829,26 @@ export function buildProductionApp(
       if (canonicalDirectory !== operatorWorkingDirectory) {
         throw new DomainError('OPERATOR_RUNTIME_DIRECTORY_INVALID', 'The canonical Operator directory differs from the configured managed path.', 422)
       }
-      const operator = await startupDatabase(() => operators.ensure())
+      const operator = await operators.ensure()
       assertOpen()
-      const defaults = await startupDatabase(() => foundationSettings.getAgentDefaults())
+      const defaults = await foundationSettings.getAgentDefaults()
       assertOpen()
       if (!isDeepStrictEqual(operator.configuration.harness, defaults.value.operator.harness)
         || !isDeepStrictEqual(operator.configuration.nativeTools, defaults.value.operator.nativeTools)) {
-        await startupDatabase(() => synchronizeOperatorDefaults(defaults.value.operator))
+        await synchronizeOperatorDefaults(operator, defaults.value.operator)
         assertOpen()
       }
-      await startupDatabase(() => chatAuthority.revokeOrphanedCredentials())
-      await startupDatabase(() => appRoutes.refresh())
+      await chatAuthority.revokeOrphanedCredentials()
+      await appRoutes.refresh()
       assertOpen()
-      await startupDatabase(() => harnessSettings.mcp.recover())
+      await harnessSettings.mcp.recover()
       assertOpen()
-      await startupDatabase(() => operatorServices.runs.recoverSubagentCommands())
+      await operatorServices.runs.recoverSubagentCommands()
       assertOpen()
-      await startupDatabase(() => harnessSettings.plugins.recover())
+      await harnessSettings.plugins.recover()
       assertOpen()
-      const machine = await deviceRuntime.initializeFromRuntime(() => startupDatabase(() => readRuntimeIdentity(database.pool,
-        fileURLToPath(new URL('../../../', import.meta.url)), config.database.connectionString)))
+      const machine = await deviceRuntime.initializeFromRuntime(() => readRuntimeIdentity(database.pool,
+        fileURLToPath(new URL('../../../', import.meta.url)), config.database.connectionString))
       providerAccounts.bindTarget(async () => ({ hostRef: { kind: 'main', mainId: machine.installationId },
         applicationInstallationId: machine.installationId, keyRevision: null, authorizationRevision: null }))
       assertOpen()
@@ -1877,10 +1866,13 @@ export function buildProductionApp(
       const captureNativeSession: SourceNativeSessionCaptureReader = async record => {
         const captures = approvals.passiveOwnedNativeSessions()
         const readCurrent = async () => {
-          return withTransaction(database.pool, async (sql) => {
+          const sql = await database.pool.connect()
+          try {
+            await sql.query('begin')
             const proof = await readSourceCurrentNativeSession(sql, record, captures)
+            await sql.query('commit')
             return proof
-          })
+          } catch (error) { await sql.query('rollback'); throw error } finally { sql.release() }
         }
         let proof = await readCurrent()
         if (!proof) return null
@@ -1987,8 +1979,8 @@ export function buildProductionApp(
       artifactComposition = { mainId: machine.installationId, authority: artifactAuthority,
         fence: new PostgresAcceptedArtifactAttemptFence(machine.installationId, artifactPorts) }
       mountArtifacts()
-      await startupDatabase(() => bootstrapLocalMainWorkspaceRoot({ pool: database.pool, policies: jobRuntime!.policies,
-        mainId: machine.installationId, runtimeRoot: config.harnesses.workspaceRoot, appStorageRoot: projectRoot }))
+      await bootstrapLocalMainWorkspaceRoot({ pool: database.pool, policies: jobRuntime.policies, mainId: machine.installationId,
+        runtimeRoot: config.harnesses.workspaceRoot, appStorageRoot: projectRoot })
       runtimeServices.workspaceRoots = new WorkspaceBoundLocationService(database.pool, commands, jobRuntime.policies)
       locations.setRootPolicies(jobRuntime.policies)
       registerWorkspaceRootRoutes(app, runtimeServices.workspaceRoots)
@@ -2070,15 +2062,11 @@ export function buildProductionApp(
         return { commit: reply.commit, bundle: reply.bundleBase64 === null ? null : Buffer.from(reply.bundleBase64, 'base64') }
       }
       // CI runs directly on build computers (Main included) from GitHub, like self-hosted runners.
-      const ciCommits = new GitCiCommits()
-      const ciEndpoint = new ProductionHostCiEndpoint(database.pool, machine.installationId,
-        () => deviceRuntime.endpointForDomains(), new HostCiRunner(), clouds)
-      hostCi = new HostCiService(database.pool, commands, new RunCiAuthority(database.pool), ciCommits, ciEndpoint,
+      hostCi = new HostCiService(database.pool, commands, new RunCiAuthority(database.pool), new GitCiCommits(),
+        new ProductionHostCiEndpoint(database.pool, machine.installationId, () => deviceRuntime.endpointForDomains(), new HostCiRunner(),
+          clouds),
         agentSnapshots(database.pool, readAgentFiles))
       hostCi.start()
-      const prewarm = new CiPrewarmService(database.pool, ciCommits, ciEndpoint)
-      prewarm.start()
-      app.addHook('onClose', async () => { await prewarm.close() })
       app.addHook('onClose', async () => { await hostCi?.close() })
       runtimeServices.ci = hostCi
       runtimeServices.jobRuntimeProfiles = jobRuntime.profiles
@@ -2099,13 +2087,13 @@ export function buildProductionApp(
         clearInterval(enrollmentTimer)
         await runtimeServices.ciEnrollment?.close()
       })
-      await startupDatabase(() => runtimeServices.ciRuntime!.recover())
+      await runtimeServices.ciRuntime.recover()
       jobRuntime.jobs.requestQueueWake()
       registerSourceRoutes(app, jobRuntime.sources)
       registerJobRoutes(app, jobRuntime.jobs)
       registerJobRuntimeProfileRoutes(app, jobRuntime.profiles, runtimeServices.ciRuntime)
       assertOpen()
-      await startupDatabase(() => harnessRegistry.initialize(machine.installationId))
+      await harnessRegistry.initialize(machine.installationId)
       assertOpen()
       if (processRegistry instanceof NativeProcessRegistry) {
         const registry = processRegistry
@@ -2113,7 +2101,7 @@ export function buildProductionApp(
           // Approved canonical alias for the Main, not a separate hardware UUID.
           deviceId: machine.installationId, applicationInstallationId: machine.installationId,
           bootId: (await readFile('/proc/sys/kernel/random/boot_id', 'utf8')).trim(),
-          runtimeEpoch: await startupDatabase(() => runtimeOwner.readRuntimeEpoch()), capability: RESOURCE_TELEMETRY_CAPABILITY }
+          runtimeEpoch: await runtimeOwner.readRuntimeEpoch(), capability: RESOURCE_TELEMETRY_CAPABILITY }
         const authorities = createPassiveTelemetryAuthorities({ pool: database.pool, registry,
           mainContext: () => mainTelemetryContext, mainActive: () => !closing && runtimeOwner.active,
           deviceBinding: id => deviceRuntime.currentBinding(id), presence: id => deviceRuntime.presenceFor(id),
@@ -2142,7 +2130,7 @@ export function buildProductionApp(
       // Qualification still runs at every existing on-demand configuration/execution gate.
       // The bounded compatibility diagnostic creates no native session or model turn.
       if (qualificationRegistry && harnessQualifications) {
-        await qualificationRegistry.load(startupDatabase)
+        await qualificationRegistry.load()
       }
       harnessCompatibility.start()
       assertOpen()
@@ -2168,17 +2156,16 @@ export function buildProductionApp(
     nativeDefaultsInitialization ??= (async () => {
       await initializeNativeDefaults({
         pool: database.pool,
-        options: harness => startupDatabase(() => nativeConfigurations.options(harness)),
+        options: harness => nativeConfigurations.options(harness),
         appMcpEndpoint,
-        signal: startupLifetime.signal,
       })
       assertOpen()
-      await startupDatabase(() => harnessRegistry.refreshMain())
+      await harnessRegistry.refreshMain()
       assertOpen()
-      const initializedDefaults = await startupDatabase(() => foundationSettings.getAgentDefaults())
-      const currentOperator = await startupDatabase(() => operators.ensure())
+      const initializedDefaults = await foundationSettings.getAgentDefaults()
+      const currentOperator = await operators.ensure()
       if (!isDeepStrictEqual(currentOperator.configuration.harness, initializedDefaults.value.operator.harness)) {
-        await startupDatabase(() => synchronizeOperatorDefaults(initializedDefaults.value.operator))
+        await synchronizeOperatorDefaults(currentOperator, initializedDefaults.value.operator)
       }
     })()
     await nativeDefaultsInitialization

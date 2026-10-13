@@ -5,7 +5,6 @@ import type { NativeHistory } from '../harnesses/port.js'
 import { DomainError } from '../errors.js'
 import type { SessionWriteLease, SingleWriterSessionManager } from './sessionWriter.js'
 import type { RunOwnership } from '../runs/ownership.js'
-import type { ReviewNativeCapture } from './coordination.js'
 
 /** Private companion to the existing reviewer writer, not an HTTP/MCP proof
  * schema. Entry is command intent only. Event/history retain the original source
@@ -14,7 +13,7 @@ export type ReviewOriginalNativeSource =
   | { type: 'entry' }
   | { type: 'event'; event: NativeHarnessEvent; pending: PendingNativeInteraction | null }
   | { type: 'history'; history: NativeHistory }
-export type { ReviewNativeCapture }
+export interface ReviewNativeCapture { readonly executionId: string }
 export interface ReviewNativeCaptureInput {
   execution: HarnessExecution
   session: NativeSessionReference

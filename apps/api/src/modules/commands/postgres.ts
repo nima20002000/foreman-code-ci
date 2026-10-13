@@ -1,5 +1,4 @@
 import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
-import { beginTransaction, commitTransaction, rollbackTransaction } from '../../infrastructure/transaction.js'
 export { commandInputHash } from '@foreman-code/contracts/command-identity-node'
 
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
@@ -7,7 +6,6 @@ import pg from 'pg'
 
 import { DomainError } from '../errors.js'
 import type { GraphSqlClient } from '../run-graph/connection.js'
-import { ignoreError } from '../diagnostics/ignoredError.js'
 
 function commitWasRejected(error: unknown): boolean {
   if (!(error instanceof pg.DatabaseError) || !error.code) return false
@@ -60,7 +58,7 @@ export class PostgresCommandCoordinator {
     let performing = false
     const commandLock = `command:${input.principal.id}:${input.operation}:${input.commandId}`
     try {
-      await beginTransaction(client)
+      await client.query('begin')
       inTransaction = true
       if (dedicatedConnection) {
         await client.query('select pg_advisory_lock(hashtext($1))', [commandLock])
@@ -87,7 +85,7 @@ export class PostgresCommandCoordinator {
         resumingReceipt = await input.shouldResumeReceipt?.(client) ?? false
         if (!resumingReceipt) {
           const value = input.replayResult ? input.replayResult(receipt.result) : receipt.result as T
-          await commitTransaction(client)
+          await client.query('commit')
           inTransaction = false
           return { value, replayed: true }
         }
@@ -97,19 +95,19 @@ export class PostgresCommandCoordinator {
       // Keep its command identity serialized by the session advisory lock, but
       // do not retain row locks while the idempotent callback runs.
       if (dedicatedConnection) {
-        await commitTransaction(client)
+        await client.query('commit')
         inTransaction = false
       }
       if (input.prepare) {
         await input.prepare()
-        await beginTransaction(client)
+        await client.query('begin')
         inTransaction = true
         await input.authorize?.(client)
       }
       performing = true
       const value = await input.perform(client)
       if (dedicatedConnection && !input.prepare) {
-        await beginTransaction(client)
+        await client.query('begin')
         inTransaction = true
       }
       if (resumingReceipt) {
@@ -132,7 +130,7 @@ export class PostgresCommandCoordinator {
         [input.principal.id, input.source, input.operation, input.targetKey, JSON.stringify({ commandId: input.commandId })],
       )
       committing = true
-      await commitTransaction(client)
+      await client.query('commit')
       inTransaction = false
       return { value, replayed: false }
     } catch (error) {
@@ -140,7 +138,7 @@ export class PostgresCommandCoordinator {
       let rolledBack = false
       if (inTransaction) {
         try {
-          await rollbackTransaction(client)
+          await client.query('rollback')
           inTransaction = false
           rolledBack = true
         } catch (rollbackError) {
@@ -155,7 +153,7 @@ export class PostgresCommandCoordinator {
         } catch (cleanupError) {
           failure = new AggregateError([error, cleanupError], 'The command and rollback cleanup failed.')
           try {
-            await rollbackTransaction(client)
+            await client.query('rollback')
           } catch (rollbackError) {
             releaseError = rollbackError instanceof Error ? rollbackError : new Error('Command cleanup rollback failed.')
           }
@@ -172,7 +170,7 @@ export class PostgresCommandCoordinator {
             code: failure instanceof DomainError ? failure.code : 'INTERNAL_ERROR',
             ...(failure !== error ? { cleanupFailed: true } : {}),
           })],
-        ).catch(ignoreError('db', 'record failed command audit', { commandId: input.commandId, command: input.operation }))
+        ).catch(() => undefined)
       }
       throw failure
     } finally {

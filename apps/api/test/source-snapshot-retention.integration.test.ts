@@ -27,10 +27,9 @@ import { reconcileFailedCaptures } from '../src/modules/sources/failedCaptureCle
 import { PrivateSourceSnapshotStore } from '../src/modules/sources/store.js'
 import { WorkspaceLocationService } from '../src/modules/workspaces/location.js'
 import { WorkspaceManagementService } from '../src/modules/workspaces/management.js'
-import { agent3Database } from './helpers/wave25Agent3.js'
+import { agent3Database, deferred } from './helpers/wave25Agent3.js'
 import { jobExecution, jobSpec } from './helpers/jobFixture.js'
 import { verificationCapacityFixture } from './helpers/verificationCapacityFixture.js'
-import { rejectableDeferred } from './helpers/deferred.js'
 
 let fixture: Awaited<ReturnType<typeof setup>> | undefined
 afterEach(async () => {
@@ -222,8 +221,8 @@ it.each(['approved', 'failed'] as const)(
       ? (await f.approve(SOURCE_RETENTION_SECONDS * 3)).source.manifest.snapshotId
       : (await f.failedCapture()).snapshotId
     const held = await f.captureReservation(snapshotId)
-    const entered = rejectableDeferred()
-    const resume = rejectableDeferred()
+    const entered = deferred()
+    const resume = deferred()
     const remove = f.store.remove.bind(f.store)
     vi.spyOn(f.store, 'remove').mockImplementation(async id => {
       if (id === snapshotId) {
@@ -308,8 +307,8 @@ it('prepares sixteen executions concurrently without releasing unused snapshots'
   const unused = (await f.approve(SOURCE_RETENTION_SECONDS * 3)).source
   const source = (await f.approve()).source
   const root = await f.executionRoot(source)
-  const entered = rejectableDeferred()
-  const resume = rejectableDeferred()
+  const entered = deferred()
+  const resume = deferred()
   const prepare = vi.mocked(f.executions.prepare).getMockImplementation()!
   let preparing = 0
   vi.mocked(f.executions.prepare).mockImplementation(async (...args) => {
@@ -375,8 +374,8 @@ it('waits for an in-flight pressure release and refreshes capacity before retryi
   const held = await f.reservation(unused)
   await f.sources.reservations.retain(f.pool, held.record, 'retained',
     sourceStorageLimits(sourceStorageCapacityFixture()).bytes)
-  const entered = rejectableDeferred()
-  const resume = rejectableDeferred()
+  const entered = deferred()
+  const resume = deferred()
   const remove = f.store.remove.bind(f.store)
   vi.spyOn(f.store, 'remove').mockImplementation(async snapshotId => {
     if (snapshotId === unused.manifest.snapshotId) {
@@ -391,7 +390,7 @@ it('waits for an in-flight pressure release and refreshes capacity before retryi
   let joined: Promise<void> | undefined
   try {
     await entered.promise
-    const waiting = rejectableDeferred()
+    const waiting = deferred()
     const release = f.sources.releaseUnusedSnapshots.bind(f.sources)
     vi.spyOn(f.sources, 'releaseUnusedSnapshots').mockImplementation(async (...args) => {
       waiting.resolve()
@@ -450,8 +449,8 @@ it('coalesces concurrent pressure scans and allows retry after a deletion failur
   const f = fixture
   const source = (await f.approve()).source
   const scopeId = (await f.reservation(source)).record.scopeId
-  const entered = rejectableDeferred()
-  const resume = rejectableDeferred()
+  const entered = deferred()
+  const resume = deferred()
   const failure = new Error('Interrupted shared release')
   const remove = vi.spyOn(f.store, 'remove').mockImplementation(async () => {
     entered.resolve()
@@ -493,8 +492,8 @@ it('honors pressure callers that join a periodic release scan', async () => {
   const expired = (await f.approve(SOURCE_RETENTION_SECONDS * 3)).source
   const recent = (await f.approve()).source
   const scopeId = (await f.reservation(expired)).record.scopeId
-  const entered = rejectableDeferred()
-  const resume = rejectableDeferred()
+  const entered = deferred()
+  const resume = deferred()
   const remove = f.store.remove.bind(f.store)
   vi.spyOn(f.store, 'remove').mockImplementation(async snapshotId => {
     if (snapshotId === expired.manifest.snapshotId) {
@@ -527,8 +526,8 @@ it('rechecks a candidate that acquires an active consumer after the batch scan',
   const f = fixture
   const first = (await f.approve(SOURCE_RETENTION_SECONDS * 3)).source
   const protectedSource = (await f.approve(SOURCE_RETENTION_SECONDS * 3)).source
-  const entered = rejectableDeferred()
-  const resume = rejectableDeferred()
+  const entered = deferred()
+  const resume = deferred()
   const remove = f.store.remove.bind(f.store)
   vi.spyOn(f.store, 'remove').mockImplementation(async snapshotId => {
     if (snapshotId === first.manifest.snapshotId) {
@@ -837,8 +836,8 @@ it.each(['measurement', 'deletion'] as const)(
       expiresAt: new Date(Date.now() + 120_000) })
     const deniedClient = await f.connect(reader.token)
     const restartedStore = new PrivateSourceSnapshotStore(f.canonical)
-    const entered = rejectableDeferred()
-    const resume = rejectableDeferred()
+    const entered = deferred()
+    const resume = deferred()
     const removals = new Map<string, number>()
     const measured = restartedStore.retainedCaptureBytes.bind(restartedStore)
     if (phase === 'measurement') {
