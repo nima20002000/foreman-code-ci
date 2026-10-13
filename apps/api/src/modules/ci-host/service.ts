@@ -4,7 +4,7 @@ import { CI_HOST_NAMESPACE, CI_LOG_MAX_BYTES, CI_RUN_JOBS_LIMIT, CiHostReplySche
   WorkspaceSchema,
   requiresUserSystemd, userSystemdIntegrationFiles,
   type CiDurations, type CiHostRequest, type CiHostReply, type CiListOutput, type CiRunRecord, type CiRunInput,
-  type CiTestResults, type CiTestStatus } from '@foreman-code/contracts'
+  type CiTestResults, type CiTestStatus, type CiUserSystemd } from '@foreman-code/contracts'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import type { PostgresCommandCoordinator } from '../commands/postgres.js'
 import type { CiAuthority } from '../jobs/ciAuthority.js'
@@ -16,7 +16,6 @@ import { ciGroupState, planCiParts, runsOnCircleCi, type CiUnitInventory } from 
 import { assertCiReadAccess } from './runAccess.js'
 import type { CiRepositoryCapabilities } from './repository.js'
 import { RUN_CI_JOBS_SQL, runCiJob, storedCiTestResults, type RunCiJobRow } from './runJobs.js'
-import { supersedeCiRuns } from './supersession.js'
 
 /** CI reads are idempotent: one retry after a lock or statement timeout, then a typed retryable error. */
 async function retryRead<T>(work: () => Promise<T>): Promise<T> {
@@ -27,7 +26,9 @@ async function retryRead<T>(work: () => Promise<T>): Promise<T> {
 }
 
 type HostRef = CiRunRecord['computer'] extends infer C ? C extends { hostRef: infer H } ? H : never : never
-export interface HostCiComputer { key: string; hostRef: HostRef; label: string; priority: number }
+export interface HostCiComputer {
+  key: string; hostRef: HostRef; label: string; priority: number; userSystemd?: CiUserSystemd
+}
 export interface HostCiEndpoint {
   /** Paired computers that serve host CI now. */
   computers(): Promise<HostCiComputer[]>
@@ -35,8 +36,6 @@ export interface HostCiEndpoint {
 }
 /** Resolves the commit to test and makes sure GitHub has it, so build computers can fetch it. */
 export interface CiCommits {
-  branch?(repository: string, defaultBranch: string, commit: string): Promise<string | null>
-  isAncestor?(repository: string, ancestor: string, commit: string): Promise<boolean>
   capabilities(repository: string, commit: string): Promise<CiRepositoryCapabilities>
   unitInventory?(repository: string, commit: string): Promise<CiUnitInventory>
   resolve(repository: string, defaultBranch: string, commit: string | undefined,
@@ -57,7 +56,11 @@ function isGitHubComputer(computer: HostCiComputer): boolean {
   return computer.hostRef.kind === 'cloud' && computer.hostRef.provider === 'github'
 }
 
-function needsBuildComputer(run: CiRunRecord): boolean {
+function supportsUserSystemd(computer: HostCiComputer): boolean {
+  return computer.hostRef.kind !== 'cloud' || computer.userSystemd?.supported === true
+}
+
+function needsSystemdExecutor(run: CiRunRecord): boolean {
   return run.suite === 'integration' && (run.partition
     ? run.partition.hostIndexes?.includes(run.partition.index) === true
     : run.scope === 'full' || Boolean(run.deriveFiles) || run.files.some(requiresUserSystemd))
@@ -95,25 +98,8 @@ export class HostCiService {
       }
       throw error
     })
-    // A start already in flight must settle before admission can supersede its ticket.
-    this.stoppingRuns += 1
-    try {
-      await this.dispatching
-      const result = await this.enqueue(caller, input, source, scope)
-      await this.cancelSuperseded()
-      return result
-    } finally {
-      this.stoppingRuns -= 1
-      this.start()
-      void this.dispatch()
-    }
-  }
-
-  private async enqueue(caller: ManagementPrincipal, input: CiRunInput,
-    source: 'mcp' | 'http', scope: Awaited<ReturnType<CiAuthority['resolve']>>) {
     const outcome = await this.commands.execute({ principal: caller, source, operation: 'ci.run',
       commandId: input.commandId, targetKey: scope.workspaceId, payload: input,
-      resourceLock: `ci-admission:${scope.workspaceId}:${caller.id}`,
       authorize: async () => { await this.authority.resolve(caller, scope.workspaceId, CI_RUN_ACTIONS) },
       perform: async client => {
         const workspace = WorkspaceSchema.parse((await client.query<{ record: unknown }>(
@@ -125,7 +111,6 @@ export class HostCiService {
         // An Agent's CI tests its current files; they are published to GitHub so build computers can fetch them.
         const snapshot = scope.executionId && !input.commit && this.snapshots ? await this.snapshots(scope.executionId) : null
         const commit = await this.commits.resolve(repository, defaultBranch, input.commit, snapshot)
-        const branch = await this.commits.branch?.(repository, defaultBranch, commit)
         const groupId = randomUUID(), now = new Date().toISOString()
         const capabilities = await this.commits.capabilities(repository, commit)
         const inventory = capabilities.parts && input.suite === 'unit'
@@ -144,11 +129,8 @@ export class HostCiService {
         const runs = parts.map(({ part, partition, files }) => CiRunRecordSchema.parse({
           id: randomUUID(), workspaceId: scope.workspaceId,
           suite: input.suite, part, scope: selectionScope, files, commit, repository, partition, groupId,
-          defaultBranch,
-          ...(branch !== undefined ? { branch } : {}),
-          ...(input.noSupersede !== undefined ? { noSupersede: input.noSupersede } : {}),
           ...(input.baseCommit ? { baseCommit: input.baseCommit } : {}),
-          ...(deriveFiles ? { deriveFiles } : {}),
+          ...(deriveFiles ? { deriveFiles, defaultBranch } : {}),
           state: empty ? 'passed' : 'queued', computer: null, step: empty ? input.suite : null,
           exitCode: empty ? 0 : null, message: empty ? 'No affected files for this suite.' : null,
           queuedAt: now, startedAt: empty ? now : null, finishedAt: empty ? now : null,
@@ -165,7 +147,6 @@ export class HostCiService {
             throw new DomainError('GRAPH_STOP_CONFLICT', 'The Run no longer accepts CI tickets.', 409)
           }
         }
-        await supersedeCiRuns(client, this.commits, runs[0]!, { source, commandId: input.commandId })
         for (const run of runs) {
           await client.query(`insert into ci_runs(id,workspace_id,group_id,state,record,durations)
             values($1,$2,$3,$6,$4::jsonb,$5::jsonb)`, [run.id, run.workspaceId, groupId, JSON.stringify(run),
@@ -174,6 +155,8 @@ export class HostCiService {
         return { ticketId: runs[0]!.id, ...(runs.length > 1 ? { partitions: runs.map(run => ({ ticketId: run.id })) } : {}) }
       },
     })
+    this.start()
+    void this.dispatch()
     return outcome.value
   }
 
@@ -217,18 +200,21 @@ export class HostCiService {
         Number(isGitHubComputer(left)) - Number(isGitHubComputer(right))
         || right.priority - left.priority
         || (speed.get(right.key) ?? 0) - (speed.get(left.key) ?? 0))
-      const hosts = ordered.filter(computer => computer.hostRef.kind !== 'cloud')
-      const cloud = ordered.filter(computer => computer.hostRef.kind === 'cloud')
+      const systemdComputers = ordered.filter(supportsUserSystemd).sort((left, right) =>
+        Number(right.hostRef.kind === 'cloud') - Number(left.hostRef.kind === 'cloud'))
       const selection = group[0]!
       const knownFiles = selection.scope === 'affected' && !selection.deriveFiles
       const hostFiles = knownFiles ? selection.files.filter(requiresUserSystemd).length : userSystemdIntegrationFiles.size
       const ordinaryFiles = knownFiles ? selection.files.length - hostFiles : count
       const hostCount = hostFiles ? Math.min(hostFiles, ordinaryFiles ? count - 1 : count,
-        Math.max(1, hosts.length, count - ordinaryFiles)) : 0
+        Math.max(1, systemdComputers.length, count - ordinaryFiles)) : 0
       const hostIndexes = Array.from({ length: hostCount }, (_, index) => index)
-      // A busy build computer holds only user-systemd files; every ordinary slice can start on cloud slots.
+      // Keep systemd files separate so executors without a user manager can take ordinary slices.
       const planned: (HostCiComputer | undefined)[] = [
-        ...hostIndexes.map(index => hosts[index]), ...cloud, ...hosts.slice(hostCount),
+        ...hostIndexes.map(index => systemdComputers[index]),
+        ...ordered.filter(computer => computer.hostRef.kind === 'cloud'
+          && !systemdComputers.slice(0, hostCount).includes(computer)),
+        ...systemdComputers.slice(hostCount).filter(computer => computer.hostRef.kind !== 'cloud'),
       ]
       const known = ordered.map(computer => speed.get(computer.key)).filter((value): value is number => value !== undefined)
       const mean = known.length ? known.reduce((sum, value) => sum + value, 0) / known.length : 1
@@ -419,8 +405,7 @@ export class HostCiService {
     audit?: RunStopAudit): Promise<{ run: CiRunRecord }> {
     const run = await this.read(ticketId, workspaceId)
     if (run.state === 'queued') {
-      const message = run.supersededBy ? `superseded by ${run.supersededBy}` : 'Canceled.'
-      const canceled = { ...run, state: 'canceled' as const, finishedAt: new Date().toISOString(), message }
+      const canceled = { ...run, state: 'canceled' as const, finishedAt: new Date().toISOString(), message: 'Canceled.' }
       const saved = await this.saveCancellation(`update ci_runs set state='canceled', host_key=null, record=$2::jsonb
         where id=$1 and state='queued'`, [run.id, JSON.stringify(canceled)], canceled, audit)
       if (!saved.rowCount) return this.cancelTicket(workspaceId, ticketId, audit)
@@ -438,23 +423,10 @@ export class HostCiService {
     const reassigned = ['starting', 'running'].includes(current.state)
       && JSON.stringify(current.computer) !== JSON.stringify(run.computer)
     if (current.state === 'queued' || reassigned) return this.cancelTicket(workspaceId, ticketId, audit)
-    if ((audit || run.supersededBy) && ['starting', 'running'].includes(current.state)) {
+    if (audit && ['starting', 'running'].includes(current.state)) {
       throw new DomainError('CI_CANCEL_PENDING', 'The build computer has not canceled the CI ticket.', 409)
     }
     return { run: current }
-  }
-
-  private async cancelSuperseded() {
-    const rows = (await this.pool.query<{ record: unknown }>(`select record from ci_runs
-      where state in ('queued','starting','running') and record->>'supersededBy' is not null`)).rows
-    const runs = rows.map(row => CiRunRecordSchema.parse(row.record)).filter(run => run.supersededBy)
-    await inBatches(runs, 8, async run => {
-      try {
-        await this.cancelTicket(run.workspaceId, run.id)
-      } catch (error) {
-        log.warn({ err: error, runId: run.id }, 'Superseded CI cleanup failed; retrying')
-      }
-    })
   }
 
   private async saveCancellation(sql: string, parameters: unknown[], run: CiRunRecord, audit?: RunStopAudit) {
@@ -498,6 +470,7 @@ export class HostCiService {
           : status.operation === 'status' ? { label: computer.label, hostRef: computer.hostRef, priority: computer.priority,
             ready: status.ready, reasons: status.reasons, cpuCount: status.cpuCount, memoryBytes: status.memoryBytes,
             availableMemoryBytes: status.availableMemoryBytes,
+            ...(status.userSystemd ? { userSystemd: status.userSystemd } : {}),
             slotsUsed: Math.max(running.length, status.slotsUsed ?? 0), slotsTotal: status.slotsTotal ?? 1,
             running } : null)
       }
@@ -526,8 +499,7 @@ export class HostCiService {
     const unstartedProviders = new Set(run.unstartedProviders ?? [])
     if (requeued && computer.hostRef.provider) unstartedProviders.add(computer.hostRef.provider)
     const previousMessage = run.state === 'queued' && state.state !== 'queued' ? null : run.message
-    const message = run.supersededBy ? `superseded by ${run.supersededBy}`
-      : [...new Set([previousMessage, state.message].filter(Boolean))].join(' ') || null
+    const message = [...new Set([previousMessage, state.message].filter(Boolean))].join(' ') || null
     const next = CiRunRecordSchema.parse({ ...run, state: state.state, step: state.step, exitCode: state.exitCode,
       computer: requeued ? null : { hostRef: computer.hostRef, label: computer.label },
       startedAt: requeued ? null : run.startedAt ?? state.startedAt,
@@ -537,11 +509,9 @@ export class HostCiService {
     const saved = await this.saveCancellation(`update ci_runs set state=$2, host_key=$3, record=$4::jsonb,
         log_tail=coalesce($6,log_tail)
       where id=$1 and state in ('queued','starting','running') and host_key is not distinct from $5
-        and record->>'supersededBy' is not distinct from $7
         and ($6::text is null or state is distinct from $2 or host_key is distinct from $3
           or record is distinct from $4::jsonb or log_tail is distinct from $6)`,
-      [run.id, next.state, hostKey, JSON.stringify(next), run.state === 'queued' ? null : computer.key,
-        logTail ?? null, run.supersededBy ?? null],
+      [run.id, next.state, hostKey, JSON.stringify(next), run.state === 'queued' ? null : computer.key, logTail ?? null],
       next, audit)
     if (requeued && saved.rowCount) log.warn({ runId: run.id, provider: computer.hostRef.provider, message },
       'CI dispatch created no work; ticket queued for another computer')
@@ -557,7 +527,6 @@ export class HostCiService {
   }
 
   private async dispatchOnce() {
-    await this.cancelSuperseded()
     const computers = await this.endpoint.computers()
     const active = (await this.pool.query<{ record: unknown; host_key: string }>(
       `select record,host_key from ci_runs where state in ('starting','running')`)).rows
@@ -629,9 +598,8 @@ export class HostCiService {
     // Check parts must remain visible even behind more than one batch of integration partitions.
     const queuedRows = (await this.pool.query<{ record: unknown; durations: CiDurations | null }>(
       `select record,durations from ci_runs where id in
-        (select id from ci_runs where state='queued' and record->>'supersededBy' is null order by created_at,id limit 50)
-        or id in (select id from ci_runs where state='queued' and record->>'supersededBy' is null
-          and record->>'suite'<>'integration'
+        (select id from ci_runs where state='queued' order by created_at,id limit 50)
+        or id in (select id from ci_runs where state='queued' and record->>'suite'<>'integration'
           order by created_at,id limit 50)
         order by created_at,id`)).rows
     let queued = queuedRows.map(row => CiRunRecordSchema.parse(row.record))
@@ -640,11 +608,11 @@ export class HostCiService {
     const durations = new Map(queuedRows.map((row, index) => [queued[index]!.id, row.durations]))
     queued = await this.weighPartitions(queued, computers.flatMap(computer =>
       Array.from({ length: freeSlots(computer) }, () => computer)))
-    queued.sort((left, right) => Number(needsBuildComputer(right)) - Number(needsBuildComputer(left)))
+    queued.sort((left, right) => Number(needsSystemdExecutor(right)) - Number(needsSystemdExecutor(left)))
     // Reserve slots before awaiting a start so concurrent dispatches cannot spend the same capacity.
     await Promise.all(queued.map(async run => {
       if (run.suite === 'integration' && run.partition && !run.partition.weights) return
-      const hostRequired = needsBuildComputer(run)
+      const hostRequired = needsSystemdExecutor(run)
       const reasons = (run.unstartedProviders ?? []).map(provider => `${provider}: dispatch retries exhausted`)
       const preferred = (computer: HostCiComputer) => {
         if (run.suite !== 'integration') return Number(isGitHubComputer(computer))
@@ -653,7 +621,7 @@ export class HostCiService {
       }
       const order = computers.filter(computer => runsOnCircleCi(run)
         || computer.hostRef.kind !== 'cloud' || computer.hostRef.provider !== 'circleci')
-        .filter(computer => !hostRequired || computer.hostRef.kind !== 'cloud')
+        .filter(computer => !hostRequired || supportsUserSystemd(computer))
         .filter(computer => computer.hostRef.kind !== 'cloud' || !computer.hostRef.provider
           || !run.unstartedProviders?.includes(computer.hostRef.provider))
         .sort((left, right) => Number(right.key === run.plannedHostKey) - Number(left.key === run.plannedHostKey)
@@ -729,8 +697,12 @@ export class HostCiService {
           log.warn({ err: error, runId: run.id, computer: computer.key }, 'CI start failed')
         }
       }
-      const prefix = hostRequired ? 'Waiting for a build computer: this integration slice needs one'
-        : `No ready computer for ${run.part ?? run.suite}`
+      const systemdCloud = computers.some(computer => computer.hostRef.kind === 'cloud' && supportsUserSystemd(computer))
+      let prefix = `No ready computer for ${run.part ?? run.suite}`
+      if (hostRequired) {
+        prefix = systemdCloud ? 'Waiting for a systemd-capable executor'
+          : 'Waiting for a build computer: this integration slice needs one'
+      }
       const message = `${prefix}; ${reasons.join('; ') || 'no eligible computers'}`.slice(0, 2000)
       if (message !== run.message) {
         await this.pool.query(`update ci_runs set record=$4::jsonb
