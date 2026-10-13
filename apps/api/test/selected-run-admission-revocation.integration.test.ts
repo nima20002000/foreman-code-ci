@@ -3,7 +3,8 @@ import { assertRevocationRejected } from './rh01-selected-run-admission.helpers.
 import { postgresEnabled } from './helpers/wave25Agent3.js'
 
 const cases = (['http', 'mcp'] as const).flatMap(transport =>
-  (['principal', 'parent'] as const).map(revocation => ({ transport, revocation, boundary: 'first-advisory' as const })))
+  (['first-advisory', 'existing-advisory', 'existing-row'] as const).flatMap(boundary =>
+    (['principal', 'parent'] as const).map(revocation => ({ transport, revocation, boundary }))))
 
 describe.skipIf(!postgresEnabled)('selected Run authorization during message admission', () => {
   it.each(cases)(
