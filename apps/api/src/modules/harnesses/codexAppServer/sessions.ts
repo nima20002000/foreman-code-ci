@@ -153,18 +153,15 @@ export abstract class CodexManagerSessions extends CodexManagerTurns {
       const notCreated = !creationAttempted || !creationAccepted && error instanceof CodexRpcError
         && error.method === method && !error.uncertain
       if (!notCreated && isUncertain(error) && candidate && !this.shutdownController.signal.aborted) {
-        // A late rejection can arrive before the original request failure unwinds.
-        if (creation.status !== 'rejected') {
-          creation.status = 'uncertain'
-          // Keep a bounded late-response window. Expiry never authorizes a retry.
-          expiration = this.dependencies.schedule(() => {
-            void candidate!.transport.close().catch(() => {
-              // ignore: late-response cleanup stays owned for shutdown to retry.
-            })
-          }, 300_000)
-          creation.timer = expiration
-          expiration.unref()
-        }
+        creation.status = 'uncertain'
+        // Keep a bounded late-response window. Expiry never authorizes a retry.
+        expiration = this.dependencies.schedule(() => {
+          void candidate!.transport.close().catch(() => {
+            // ignore: late-response cleanup stays owned for shutdown to retry.
+          })
+        }, 300_000)
+        creation.timer = expiration
+        expiration.unref()
       } else {
         try { await candidate?.transport.close() }
         catch (cleanupError) {
