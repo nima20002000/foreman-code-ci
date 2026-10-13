@@ -6,7 +6,6 @@ import { constants } from 'node:fs'
 import { homedir } from 'node:os'
 import { delimiter, join } from 'node:path'
 import { ComputerAccountsSchema, type ComputerAccount, type ComputerAccounts } from '@foreman-code/contracts/computer-accounts'
-import { fallbackOnError } from '../diagnostics/ignoredError.js'
 
 export interface AccountProbePorts {
   /** Absolute executable path, or null when the tool is not installed. */
@@ -26,7 +25,7 @@ export async function probeComputerAccounts(ports: AccountProbePorts = systemPor
   const accounts = await Promise.all([codex(ports).then(account => ({ account, observedAt: Date.now() })),
     cachedAccount(ports, 'claude', signal, options),
     cachedAccount(ports, 'github', signal, options)]
-    .map(probe => probe.catch(fallbackOnError(null, 'lifecycle', 'probe computer account'))))
+    .map(probe => probe.catch((): null => null)))
   const tools = ['codex', 'claude', 'github'] as const
   const observedAt = Math.min(Date.now(), ...accounts.flatMap(value => value ? [value.observedAt] : []))
   return ComputerAccountsSchema.parse({ observedAt: new Date(observedAt).toISOString(),
@@ -194,7 +193,7 @@ export function systemPorts(environment: NodeJS.ProcessEnv = process.env,
     async find(name) {
       const selected = binaries[name]
       if (selected) {
-        try { await access(selected, constants.X_OK); return selected } catch { /* ignore: fall back to PATH */ }
+        try { await access(selected, constants.X_OK); return selected } catch { /* fall back to PATH */ }
       }
       for (const directory of directories) {
         const candidate = join(directory, name)
@@ -209,6 +208,6 @@ export function systemPorts(environment: NodeJS.ProcessEnv = process.env,
         resolve({ code, stdout, stderr })
       })
     }),
-    readText: path => readFile(path, 'utf8').catch(fallbackOnError(null, 'lifecycle', 'read account file', {}, ['ENOENT'])),
+    readText: path => readFile(path, 'utf8').catch(() => null),
   }
 }

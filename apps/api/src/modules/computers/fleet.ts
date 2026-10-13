@@ -19,7 +19,6 @@ import type { ClaudePluginCatalog } from './claudePlugins.js'
 import type { ComputerMaintenance } from './maintenance.js'
 import { syncFingerprint } from './syncFingerprint.js'
 import { assertComputerTarget } from './target.js'
-import { ignoreError, fallbackOnError } from '../diagnostics/ignoredError.js'
 
 export interface MaintenanceEndpoint {
   capabilities(deviceId: string): readonly { namespace: string; mainCanRequest: boolean }[]
@@ -200,8 +199,7 @@ export class FleetMaintenanceService {
       const status = await this.status(target, true)
       if (!status) return
       const behind = status.harnesses.filter(entry => entry.latest && entry.version !== entry.latest).map(entry => entry.harness)
-      if (behind.length) await this.startOn(target, { kind: 'update-harnesses', harnesses: behind })
-        .catch(ignoreError('lifecycle', 'start harness update on computer', { host: target.hostRef }))
+      if (behind.length) await this.startOn(target, { kind: 'update-harnesses', harnesses: behind }).catch(() => undefined)
       if (target.hostRef.kind === 'main') return
       for (const task of sync) {
         if (task.status === 'fulfilled') await this.syncSource(target, task.value, status)
@@ -410,7 +408,7 @@ export class FleetMaintenanceService {
       if (target.hostRef.kind === 'main') return this.local.status(AbortSignal.timeout(90_000))
       const reply = MaintenanceReplySchema.parse((await this.request(target.hostRef.deviceId, { operation: 'status' })).payload)
       return reply.operation === 'status' ? reply.status : null
-    })().catch(fallbackOnError(null, 'lifecycle', 'read computer maintenance status', { host: target.hostRef }))
+    })().catch((): null => null)
     const entry = { at: this.now(), pending: true, running: false, value }
     this.cache.set(key, entry)
     void value.then(status => {

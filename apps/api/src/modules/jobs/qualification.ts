@@ -275,7 +275,7 @@ export async function runQualificationCommand(
     })
     if (signal.aborted) abort()
   })
-  void completed.catch(() => { /* ignore: the owner awaits the original promise; this observer prevents a duplicate unhandled rejection. */ })
+  void completed.catch(() => {})
   return completed
 }
 
