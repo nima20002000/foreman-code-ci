@@ -79,7 +79,6 @@ function codexStdioBridge(native, environment, released, observerLost) {
     if(!originalReleased && !released() && process.connected)process.stderr.write(chunk)
   })
   return {
-    flush:()=>connection?flushOutput(connection):Promise.resolve(),
     environment:()=>variables,
     settings:()=>settings,
     attach(socket,id) {

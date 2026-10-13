@@ -18,6 +18,8 @@ import { JobExecutionRecordSchema, type JobExecutionRecord } from '@foreman-code
 import { SourcePreparationClosureSchema, type SourcePreparationClosure } from '@foreman-code/contracts/source-admission'
 import type { DeviceConnectionIdentity } from '@foreman-code/contracts/device-identity'
 import { WorkerConversationReceiptSchema } from '@foreman-code/contracts/remote-execution-rpc'
+import { DomainError } from '../../errors.js'
+import { WorkerConversationArchive } from '../../conversations/workerConversationArchive.js'
 import { WorkerConversationJournal } from '../../conversations/workerJournal.js'
 import { RemoteOperationReceiptSchema, RemoteOwnerControlSchema, RemoteTerminalEvidenceSchema, RemoteNativeIdentitySchema, RemoteInteractionTargetSchema, RemoteOwnerReconciliationSchema,
   type RemoteOperationReceipt, type RemoteOperationStatus, type RemoteOwnerControl,
@@ -80,6 +82,7 @@ export class RemoteOperationJournal {
   private tail: Promise<unknown> = Promise.resolve()
   readonly conversations: WorkerConversationJournal
   private readonly runtimeArchive: RuntimeJournalArchive
+  private readonly conversationArchive: WorkerConversationArchive
   private constructor(
     private readonly path: string,
     private data: z.infer<typeof JournalSchema>,
@@ -90,14 +93,30 @@ export class RemoteOperationJournal {
     private readonly retentionNow: () => number | undefined,
   ) {
     this.runtimeArchive = new RuntimeJournalArchive(path, (path, value) => this.writeSnapshot(path, value))
+    this.conversationArchive = new WorkerConversationArchive(path, byteLimit,
+      (archivePath, value) => this.writeSnapshot(archivePath, value))
     this.conversations = new WorkerConversationJournal({
-      read: async () => {
+      read: async conversationId => {
         await this.tail
         if (this.closed || this.faulted) throw new Error('Journal unavailable: recovery required')
-        return structuredClone(this.data.conversations)
+        const retained = this.data.conversations.find(record => record.binding.owner.conversationId === conversationId)
+        const record = retained ?? await this.conversationArchive.read(conversationId)
+        return record ? [structuredClone(record)] : []
       },
-      change: apply => this.change(data => apply(data.conversations)),
-    }, capacity)
+      change: (conversationId, apply) => this.change(async data => {
+        if (data.conversations.some(record => record.binding.owner.conversationId === conversationId)) {
+          return apply(data.conversations)
+        }
+        const archived = await this.conversationArchive.read(conversationId)
+        if (!archived) return apply(data.conversations)
+        const records = [structuredClone(archived)]
+        const result = apply(records)
+        if (!same(records, [archived])) {
+          throw new DomainError('WORKER_CONVERSATION_CONFLICT', 'The native conversation is retired.', 409)
+        }
+        return result
+      }),
+    }, capacity, now)
   }
   static async open(path: string,
     options: { initializeNewInstallation?: boolean; capacity?: number; byteLimit?: number; now?: () => number;
@@ -130,7 +149,6 @@ export class RemoteOperationJournal {
       if (data.receipts.length + data.qualificationReceipts.length + data.conversations.length > capacity) throw new Error('Journal exceeds capacity')
       const now = options.now ?? Date.now
       const journal = new RemoteOperationJournal(path, data, capacity, byteLimit, lock, now, options.retentionNow ?? now)
-      await journal.archiveWorkflowIndexes(data)
       await journal.persist(journal.serialize(data, { skipControlReserve: true }))
       await journal.compactReviewResults()
       await journal.pruneFinishedRuntime()
@@ -283,35 +301,26 @@ export class RemoteOperationJournal {
     const archived = await this.readArchivedReview(status.receipt, correlationId)
     return archived?.history ? remoteWorkflowNativeHistory(archived.history) : undefined
   }
-  private async archiveWorkflowIndexes(data: z.infer<typeof JournalSchema>) {
-    for (const archived of data.archivedWorkflows) {
-      const path = this.archivePath(archived.operationId)
-      if ((await stat(path)).size > this.byteLimit) throw new Error('Archived receipt byte limit reached')
-      const serialized = await readFile(path, 'utf8')
-      if (hash(serialized) !== archived.receiptDigest) throw new Error('Archived receipt changed: recovery required')
-      const receipt = RemoteOperationReceiptSchema.parse(JSON.parse(serialized))
-      if (!receipt.terminal || receipt.intent.operationId !== archived.operationId
-        || receipt.intent.executionId !== archived.executionId || receipt.intent.attemptId !== archived.attemptId) {
-        throw new Error('Archived ownership changed: recovery required')
-      }
-      await this.runtimeArchive.save({ kind: 'workflow', receipt })
-    }
-    data.archivedWorkflows = []
-  }
-  private async archivedReceipt(operationId: string) {
-    const archived = await this.runtimeArchive.read(`operation:${operationId}`)
-    if (archived?.kind !== 'workflow') return undefined
-    if (!archived.receipt.terminal) throw new Error('Archived ownership changed: recovery required')
-    return archived.receipt
+  private async archivedReceipt(data: z.infer<typeof JournalSchema>, operationId: string) {
+    const archived = data.archivedWorkflows.find(value => value.operationId === operationId)
+    if (!archived) return undefined
+    const path = this.archivePath(operationId)
+    if ((await stat(path)).size > this.byteLimit) throw new Error('Archived receipt byte limit reached')
+    const serialized = await readFile(path, 'utf8')
+    if (hash(serialized) !== archived.receiptDigest) throw new Error('Archived receipt changed: recovery required')
+    const receipt = RemoteOperationReceiptSchema.parse(JSON.parse(serialized))
+    if (!receipt.terminal || receipt.intent.operationId !== operationId || receipt.intent.executionId !== archived.executionId
+      || receipt.intent.attemptId !== archived.attemptId) throw new Error('Archived ownership changed: recovery required')
+    return receipt
   }
   async isRetired(operationId: string) {
     await this.tail
     if (this.faulted) throw new Error('Journal durability uncertain: recovery required')
-    return (await this.archivedReceipt(operationId)) !== undefined
+    return this.data.archivedWorkflows.some(value => value.operationId === operationId)
   }
   retireSettled(intent: DispatchIntent, sequence: number) {
     return this.change(async data => {
-      const archived = await this.archivedReceipt(intent.operationId)
+      const archived = await this.archivedReceipt(data, intent.operationId)
       if (archived) {
         if (!same(archived.intent, intent) || archived.sequence !== sequence) throw new Error('Retirement ownership conflict')
         return archived
@@ -320,7 +329,10 @@ export class RemoteOperationJournal {
       if (!same(receipt.intent, intent) || receipt.sequence !== sequence || !receipt.terminal) {
         throw new Error('Confirmed terminal retirement required')
       }
-      await this.runtimeArchive.save({ kind: 'workflow', receipt })
+      const serialized = JSON.stringify(receipt)
+      await this.writeSnapshot(this.archivePath(intent.operationId), serialized)
+      data.archivedWorkflows.push({ operationId: intent.operationId, executionId: intent.executionId,
+        attemptId: intent.attemptId, receiptDigest: hash(serialized) })
       data.receipts = data.receipts.filter(value => value.intent.operationId !== intent.operationId)
       data.controlDeliveries = data.controlDeliveries.filter(value => value.operationId !== intent.operationId)
       data.reconciliations = data.reconciliations.filter(value => value.operationId !== intent.operationId)
@@ -359,6 +371,19 @@ export class RemoteOperationJournal {
     const now = this.retentionNow()
     if (now === undefined) return
     const cutoff = now - RUNTIME_JOURNAL_RETENTION_MS
+    for (const receipt of [...data.conversations]) {
+      if (!receipt.closed) continue
+      // Snapshots without a closure timestamp begin retention when first observed closed.
+      receipt.closedAt ??= new Date(now).toISOString()
+      if (Date.parse(receipt.closedAt) > cutoff
+        || receipt.turns.some(turn => !['completed', 'rejected'].includes(turn.status))
+        || receipt.compactions.some(control => ['accepted', 'running', 'uncertain'].includes(control.state.status))
+        || receipt.applicationAccessChange?.state === 'reserved'
+        || Object.values(receipt.claudeCallbacks ?? {}).some(callback => !callback.acknowledged
+          || callback.state === 'uncertain')) continue
+      await this.conversationArchive.save(receipt)
+      data.conversations = data.conversations.filter(record => record !== receipt)
+    }
     for (const receipt of [...data.receipts]) {
       if (!('kind' in receipt) || !receipt.terminal?.processStopped
         || Date.parse(receipt.terminal.finishedAt) > cutoff || !['complete', 'failed'].includes(receipt.publication)) continue
@@ -398,21 +423,19 @@ export class RemoteOperationJournal {
     await this.tail
     if (this.faulted) throw new Error('Journal durability uncertain: recovery required')
     const receipt = this.data.receipts.find((value): value is RemoteOperationReceipt => !('kind' in value) && value.intent.operationId === operationId)
-    const retained = receipt ?? await this.archivedReceipt(operationId)
+    const retained = receipt ?? await this.archivedReceipt(this.data, operationId)
     return retained ? { status: 'known', receipt: structuredClone(retained) } : { status: 'unknown', reason: 'journal_absence_requires_reconciliation' }
   }
   accept(intent: DispatchIntent, connection: DeviceConnectionIdentity, workerIncarnationId: string) {
     return this.change(async data => {
       intent = DispatchIntentSchema.parse(intent)
-      const archived = await this.archivedReceipt(intent.operationId)
+      for (const identity of [`operation:${intent.operationId}`, `execution:${intent.executionId}`, `attempt:${intent.attemptId}`]) {
+        if (await this.runtimeArchive.read(identity)) throw new Error('Operation identity already retired')
+      }
+      const archived = await this.archivedReceipt(data, intent.operationId)
       if (archived) {
         if (!same(archived.intent, intent)) throw new Error('Operation binding conflict')
         return archived
-      }
-      for (const identity of [`operation:${intent.operationId}`, `execution:${intent.executionId}`, `attempt:${intent.attemptId}`]) {
-        const retired = await this.runtimeArchive.read(identity)
-        if (retired) throw new Error(retired.kind === 'workflow'
-          ? 'Execution attempt already bound to another operation' : 'Operation identity already retired')
       }
       const existing = data.receipts.find(value => value.intent.operationId === intent.operationId)
       if (existing) {
@@ -420,7 +443,8 @@ export class RemoteOperationJournal {
         if (!same(existing.intent, intent)) throw new Error('Operation binding conflict')
         return existing
       }
-      if (data.receipts.some(value => value.intent.executionId === intent.executionId || value.intent.attemptId === intent.attemptId)) throw new Error('Execution attempt already bound to another operation')
+      if (data.archivedWorkflows.some(value => value.executionId === intent.executionId || value.attemptId === intent.attemptId)
+        || data.receipts.some(value => value.intent.executionId === intent.executionId || value.intent.attemptId === intent.attemptId)) throw new Error('Execution attempt already bound to another operation')
       if (data.qualificationReceipts.some(value => value.admission.operationId === intent.operationId)) throw new Error('Operation already bound to a qualification')
       if (data.receipts.length + data.qualificationReceipts.length >= this.capacity) throw new Error('Journal full: explicit retention disposition required')
       if (connection.mainId !== intent.mainId) throw new Error('Wrong main identity')
@@ -432,7 +456,7 @@ export class RemoteOperationJournal {
   }
   reserveEntry(operationId: string) {
     return this.change(async data => {
-      const archived = await this.archivedReceipt(operationId)
+      const archived = await this.archivedReceipt(data, operationId)
       if (archived) return { reserved: false, receipt: archived }
       const receipt = this.receipt(data, operationId)
       if (receipt.stopFence || receipt.phase !== 'received') return { reserved: false, receipt }
@@ -453,7 +477,7 @@ export class RemoteOperationJournal {
   }
   reserveTurn(operationId: string, input: { correlationId: string; promptDigest: string; sessionMode?: 'regular' | 'plan' }) {
     return this.change(async data => {
-      const archived = await this.archivedReceipt(operationId)
+      const archived = await this.archivedReceipt(data, operationId)
       if (archived) {
         if (archived.turnInput && !same(archived.turnInput, input)) throw new Error('Turn input binding conflict')
         return { reserved: false, receipt: archived }
@@ -632,7 +656,7 @@ export class RemoteOperationJournal {
   control(command: RemoteOwnerControl) {
     return this.change(async data => {
       command = RemoteOwnerControlSchema.parse(command)
-      const archived = await this.archivedReceipt(command.operationId)
+      const archived = await this.archivedReceipt(data, command.operationId)
       const receipt = archived ?? this.receipt(data, command.operationId)
       const prior = receipt.controls.find(value => value.commandId === command.commandId)
       if (prior) { if (!same(prior, command)) throw new Error('Control command conflict'); return { dispatch: false, receipt } }
@@ -660,7 +684,7 @@ export class RemoteOperationJournal {
   async controlDelivery(command: RemoteOwnerControl) {
     await this.tail
     if (this.faulted) throw new Error('Journal durability uncertain: recovery required')
-    const receipt = await this.archivedReceipt(command.operationId) ?? this.receipt(this.data, command.operationId)
+    const receipt = await this.archivedReceipt(this.data, command.operationId) ?? this.receipt(this.data, command.operationId)
     const prior = receipt.controls.find(value => value.commandId === command.commandId)
     if (!prior) return undefined
     if (!same(prior, command)) throw new Error('Control command conflict')
@@ -722,7 +746,7 @@ export class RemoteOperationJournal {
   }
   terminal(operationId: string, evidence: RemoteTerminalEvidence) {
     return this.change(async data => {
-      const receipt = await this.archivedReceipt(operationId) ?? this.receipt(data, operationId)
+      const receipt = await this.archivedReceipt(data, operationId) ?? this.receipt(data, operationId)
       evidence = RemoteTerminalEvidenceSchema.parse(evidence)
       if (receipt.terminal) { if (!same(receipt.terminal, evidence)) throw new Error('Conflicting terminal evidence'); return receipt }
       const entryClosed = hasPositiveRemoteEntryClosure({ ...receipt, terminal: evidence })
@@ -1146,7 +1170,8 @@ export class RemoteOperationJournal {
         if (!('kind' in existing) || !same(existing.intent, intent)) throw new Error('Job operation binding conflict')
         return existing
       }
-      if (data.receipts.some(value => value.intent.executionId === intent.executionId || value.intent.attemptId === intent.attemptId)) throw new Error('Execution attempt already bound to another operation')
+      if (data.archivedWorkflows.some(value => value.executionId === intent.executionId || value.attemptId === intent.attemptId)
+        || data.receipts.some(value => value.intent.executionId === intent.executionId || value.intent.attemptId === intent.attemptId)) throw new Error('Execution attempt already bound to another operation')
       if (data.qualificationReceipts.some(value => value.admission.operationId === intent.operationId)) throw new Error('Operation already bound to a qualification')
       if (data.receipts.length + data.qualificationReceipts.length >= this.capacity) throw new Error('Journal full: explicit retention disposition required')
       if (connection.mainId !== intent.mainId) throw new Error('Wrong main identity')

@@ -15,7 +15,6 @@ import { CLOUD_START_TIMEOUT_MS, CircleCiProvider, GitHubActionsProvider,
 import { runsOnCircleCi } from './parts.js'
 import { pruneMirrorBranches, type ActiveCiRuns } from './mirrorBranches.js'
 import { fallbackOnError } from '../diagnostics/ignoredError.js'
-import { ciLogPage } from './logPage.js'
 import { sanitizeCiText, serializeCiJson } from './text.js'
 
 const LOG_LIMIT = 4 * 1024 * 1024
@@ -133,9 +132,10 @@ export class CloudCi {
   private async answer(request: Extract<CiHostRequest, { operation: 'read' }>, run: CloudRun) {
     const log = await readFile(this.path(run.runId, 'log')).catch(() => Buffer.alloc(0))
     if (!['starting', 'running', 'queued'].includes(run.state)) await this.prune(run, run.runId)
-    const page = ciLogPage(log, request.afterOffset, request.maxBytes)
+    const text = log.subarray(request.afterOffset, request.afterOffset + request.maxBytes)
     return CiHostReplySchema.parse({ operation: 'read', run: this.view(run, log.length),
-      text: sanitizeCiText(page.text), nextOffset: page.nextOffset,
+      text: sanitizeCiText(text.toString('utf8')),
+      nextOffset: request.afterOffset + text.length,
       ...(request.durations && run.durations ? { durations: run.durations } : {}),
       ...(request.testResults && run.testResults ? { testResults: run.testResults } : {}) })
   }
