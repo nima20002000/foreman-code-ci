@@ -12,7 +12,7 @@ import { CiWatchdogFailureSchema, CiDurationsSchema, CiHostReplySchema, CiHostRe
   type CiDurations, type CiHostReply, type CiHostRun, type CiSuite, type CiPart, type CiPartition, type CiScope } from '@foreman-code/contracts'
 import { DomainError } from '../errors.js'
 import { ciRepositoryCapabilities } from './repository.js'
-import { allowedCiResources, gateIntegrationShards, hostCiCapacity } from './capacity.js'
+import { gateIntegrationShards, hostCiCapacity } from './capacity.js'
 import { fallbackOnError } from '../diagnostics/ignoredError.js'
 import { warmPnpmInstall } from './warmSetup.js'
 import { ciLogPage } from './logPage.js'
@@ -67,8 +67,7 @@ interface RunMeta {
 type StartRequest = { runId: string; repository: string; commit: string; suite: CiSuite
   part?: CiPart | undefined; partition?: CiPartition | undefined; durations?: CiDurations | undefined;
   scope?: CiScope | undefined; files?: string[] | undefined; defaultBranch?: string | undefined;
-  expectedDurationMs?: number | undefined; baseCommit?: string | undefined; gate?: boolean | undefined;
-  integrationShards?: number | undefined; buildAllowancePercent?: number | undefined }
+  expectedDurationMs?: number | undefined; baseCommit?: string | undefined; gate?: boolean | undefined; integrationShards?: number | undefined }
 
 const unitName = (runId: string) => `foreman-ci-${runId}`
 // GitHub CLI's own credential helper: a computer that is logged in to gh fetches without any app setup.
@@ -192,7 +191,7 @@ export class HostCiRunner {
     const pendingStart = startingRun && !runs.some(run => run?.runId === startingRun.runId)
     if (pendingStart) runs.push(startingRun)
     const availableMemoryBytes = this.ports.availableMemoryBytes?.() ?? this.ports.memoryBytes
-    const capacity = this.capacity(active, { availableMemoryBytes })
+    const capacity = this.capacity(active, availableMemoryBytes)
     const activeRuns = runs.filter(run => run && ['starting', 'running'].includes(run.state))
     const finishedRuns = runs.filter(run => run && !['starting', 'running'].includes(run.state))
     return CiHostReplySchema.parse({ operation: 'status', ready: !reasons.length, reasons,
@@ -202,11 +201,8 @@ export class HostCiRunner {
       runs: [...activeRuns, ...finishedRuns.slice(-Math.max(0, 50 - activeRuns.length))].slice(0, 50) })
   }
 
-  private capacity(active: RunMeta[], options: { availableMemoryBytes?: number; buildAllowancePercent?: number } = {}) {
-    const resources = allowedCiResources({ cpuCount: this.ports.cpus, memoryBytes: this.ports.memoryBytes,
-      availableMemoryBytes: options.availableMemoryBytes ?? this.ports.availableMemoryBytes?.() ?? this.ports.memoryBytes },
-      options.buildAllowancePercent)
-    return hostCiCapacity(resources,
+  private capacity(active: RunMeta[], availableMemoryBytes = this.ports.availableMemoryBytes?.() ?? this.ports.memoryBytes) {
+    return hostCiCapacity({ cpuCount: this.ports.cpus, memoryBytes: this.ports.memoryBytes, availableMemoryBytes },
       active.map(run => run.resources ?? { cpuCount: this.ports.cpus, memoryBytes: this.ports.memoryBytes }))
   }
 
@@ -248,8 +244,7 @@ export class HostCiRunner {
     if (active.some(run => run.gate) || request.gate && active.length) {
       throw new DomainError('CI_HOST_BUSY', 'A gate requires exclusive use of this build computer.', 409)
     }
-    const allowance = { buildAllowancePercent: request.buildAllowancePercent ?? 100 }
-    let capacity = this.capacity(active, allowance)
+    let capacity = this.capacity(active)
     if (capacity.slotsUsed >= capacity.slotsTotal) {
       throw new DomainError('CI_HOST_BUSY',
         `All CI slots are in use (${capacity.slotsUsed}/${capacity.slotsTotal}); waiting for CPU or memory capacity.`, 409)
@@ -261,12 +256,17 @@ export class HostCiRunner {
     const databaseSuite = ['unit', 'integration'].includes(request.suite)
     const isolatedDatabase = databaseSuite && await this.supportsDatabaseIsolation(request)
     active = await this.active()
-    capacity = this.capacity(active, allowance)
-    const resources = allowedCiResources({ cpuCount: this.ports.cpus, memoryBytes: this.ports.memoryBytes,
-      availableMemoryBytes: this.ports.availableMemoryBytes?.() ?? this.ports.memoryBytes }, allowance.buildAllowancePercent)
-    if (request.gate || databaseSuite && !isolatedDatabase) {
-      capacity = { ...capacity, slotsUsed: active.length, slotsTotal: 1, cpuCount: resources.cpuCount,
-        memoryBytes: Math.max(1, Math.min(capacity.memoryBudget, resources.availableMemoryBytes)) }
+    capacity = this.capacity(active)
+    if (request.gate) {
+      capacity = { ...capacity, slotsUsed: active.length, slotsTotal: 1, cpuCount: this.ports.cpus,
+        memoryBytes: Math.max(1, Math.min(capacity.memoryBudget,
+          this.ports.availableMemoryBytes?.() ?? capacity.memoryBudget)) }
+    }
+    if (databaseSuite && !isolatedDatabase) {
+      capacity = { slotsUsed: active.length, slotsTotal: 1, cpuCount: this.ports.cpus,
+        memoryBudget: capacity.memoryBudget,
+        memoryBytes: Math.min(this.ports.availableMemoryBytes?.() ?? this.ports.memoryBytes,
+          Math.floor(this.ports.memoryBytes - Math.max(2 ** 30, this.ports.memoryBytes * 0.1))) }
     }
     if (capacity.slotsUsed >= capacity.slotsTotal) {
       throw new DomainError('CI_HOST_BUSY',
