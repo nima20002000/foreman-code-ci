@@ -108,8 +108,6 @@ export type CiHostRun = z.infer<typeof CiHostRunSchema>
 export const CiHostStatusSchema = z.object({
   operation: z.literal('status'), ready: z.boolean(), reasons: z.array(z.string().max(300)).max(10),
   cpuCount: z.number().int().positive(), memoryBytes: z.number().int().positive(),
-  availableMemoryBytes: z.number().int().nonnegative().optional(),
-  slotsUsed: z.number().int().nonnegative().optional(), slotsTotal: z.number().int().positive().optional(),
   runs: z.array(CiHostRunSchema).max(50),
 }).strict()
 export type CiHostStatus = z.infer<typeof CiHostStatusSchema>
