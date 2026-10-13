@@ -64,13 +64,11 @@ export class CiRuntimeWorker {
   private async restore(): Promise<CiRuntimeWorkerState> {
     const saved = await readCiRuntimeState(this.stateDirectory)
     const last = await this.ports.lastRefresh(this.stateDirectory)
-    // The refresh result supersedes preparation saved before the service restarted.
-    const refreshed = saved && last?.operationId === saved.operationId && last?.commit === saved.commit
-      && (saved.state === 'prepared' || saved.state === 'refreshing')
-    if (saved && !refreshed) {
+    if (saved && (!last || last.operationId !== saved.operationId || last.commit !== saved.commit)) {
       this.state = saved
       return saved
     }
+    // A completed refresh supersedes the prepared state retained before the service restart.
     return this.set({ operationId: last?.operationId ?? null, state: last && !last.ok ? 'failed' : 'idle',
       commit: last?.commit ?? null, stage: last ? 'refresh' : null,
       prepared: null, message: last && !last.ok ? `The runtime refresh failed: ${last.log}` : null })
