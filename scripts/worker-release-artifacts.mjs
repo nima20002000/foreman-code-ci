@@ -2,7 +2,6 @@ import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { chmod, mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { setTimeout as sleep } from 'node:timers/promises'
 import { artifactFiles, validateWorkerTarget, workerReleaseVersion } from './worker-artifact-files.mjs'
 
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex')
@@ -52,7 +51,7 @@ async function verifyArtifact(directory, target, version, commit) {
 
 /** Uploads each artifact as <manifestSha256>.tar.gz to the GitHub release worker-<commit>, so paired Workers download
  * their update from GitHub with their own login instead of through Main. */
-export async function publishWorkerArtifactsToGitHub({ repository, directory, commit, artifacts, run, sleep: wait = sleep }) {
+export async function publishWorkerArtifactsToGitHub({ repository, directory, commit, artifacts, run }) {
   const origin = execFileSync('git', ['remote', 'get-url', 'origin'], { cwd: repository, encoding: 'utf8' }).trim()
   const name = /github\.com[:/]([^/]+\/[^/]+?)(?:\.git)?$/u.exec(origin)?.[1]
   if (!name) throw new Error('Worker artifacts publish to GitHub: the repository origin is not a GitHub repository.')
@@ -65,24 +64,11 @@ export async function publishWorkerArtifactsToGitHub({ repository, directory, co
       await run('tar', ['-czf', asset, '-C', join(directory, manifestSha256), '.'], { cwd: repository })
       assets.push(asset)
     }
-    const backoff = [5000, 10000, 20000, 25000]
-    for (let attempt = 0; ; attempt++) {
-      try {
-        const exists = await run('gh', ['release', 'view', tag, '--repo', name], { cwd: repository })
-          .then(() => true, () => false)
-        if (!exists) {
-          await run('gh', ['release', 'create', tag, '--repo', name, '--prerelease',
-            '--title', `Worker ${commit.slice(0, 12)}`,
-            '--notes', `Foreman Code Worker artifacts built from ${commit}.`], { cwd: repository })
-        }
-        await run('gh', ['release', 'upload', tag, ...assets, '--repo', name, '--clobber'], { cwd: repository })
-        return { repository: name, tag }
-      } catch (error) {
-        // GitHub can briefly hide a release after creation, including from asset uploads.
-        if (attempt === backoff.length) throw error
-        await wait(backoff[attempt])
-      }
-    }
+    const exists = await run('gh', ['release', 'view', tag, '--repo', name], { cwd: repository }).then(() => true, () => false)
+    await run('gh', exists ? ['release', 'upload', tag, ...assets, '--repo', name, '--clobber']
+      : ['release', 'create', tag, ...assets, '--repo', name, '--prerelease', '--title', `Worker ${commit.slice(0, 12)}`,
+        '--notes', `Foreman Code Worker artifacts built from ${commit}.`], { cwd: repository })
+    return { repository: name, tag }
   } finally {
     await rm(staging, { recursive: true, force: true })
   }
