@@ -598,8 +598,7 @@ export class HostCiService {
     assertCiReadAccess(caller, scope.executionId, run)
     this.stoppingRuns += 1
     try {
-      // Queued cancellation and dispatch claims compete through their database state checks.
-      if (run.state !== 'queued') await this.dispatching
+      await this.dispatching
       return await this.cancelTicket(scope.workspaceId, run.id, {
         principalId: caller.id, source, commandId: input.commandId ?? randomUUID(), reason: 'direct',
       })
