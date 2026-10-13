@@ -1316,8 +1316,6 @@ export class ApprovalExecutionCoordinator {
     for await (const executions of this.runs.executionPages(owner.runId, owner)) {
       for (const execution of executions) {
         const owned = this.ownedSessions.get(execution.id)
-        // Initial admission must settle before deciding whether its original turn can detach.
-        await owned?.starting
         const current = await this.runs.getExecution(execution.id, owner)
         if (!current) return false
         if (current.state === 'completed' || current.state === 'queued') continue

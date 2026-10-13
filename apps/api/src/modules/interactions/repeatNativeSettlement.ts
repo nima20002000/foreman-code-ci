@@ -13,7 +13,7 @@ import { readAcceptedRepeatRunLocked } from '../runs/repeatStartRead.js'
 import { readRepeatExecutionLocked } from '../runs/repeatExecutionRead.js'
 import { assertWorkflowNativeNotSubmittedLocked, readWorkflowNativeEntryLocked, workflowNativeReservation, type WorkflowNativeEntryRecord } from '../runs/workflowNativeEntry.js'
 import { assertRepeatNativeClosure, repeatNativePending } from './repeatNativeEvidence.js'
-import { readRemoteReviewerForSettlement, retainRemoteReviewerCredential } from './retainedRemoteReviewer.js'
+import { readRetainedRemoteReviewer, retainRemoteReviewerCredential } from './retainedRemoteReviewer.js'
 
 interface SessionRow { reference: unknown; finalized: boolean }
 interface ClosedExecution { execution: HarnessExecution; session: NativeSessionReference; generation: string; finalized: boolean }
@@ -97,7 +97,7 @@ async function settleExact(sql: GraphTransactionSql, runId: string,
   const unbound: RepeatNativeSettlementCheckpoint[] = []
   const retained: RepeatNativeSettlementCheckpoint[] = []
   for (const execution of ordered) {
-    const reviewer = await readRemoteReviewerForSettlement(sql, execution)
+    const reviewer = await readRetainedRemoteReviewer(sql, execution)
     await assertExecutionResourcesSettled(sql, runId, execution.id, reviewer?.principalId)
     const native = (await sql.query<SessionRow>(
       `select reference,workflow_finalized_at is not null as finalized
