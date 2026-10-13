@@ -1,4 +1,3 @@
-import { errorMessage } from '../../shared/errorMessage'
 import { useEffect, useId, type SetStateAction } from 'react'
 import { create } from 'zustand'
 
@@ -102,7 +101,7 @@ export async function saveRevisionedForm<T>(
     const issues = validationIssues(error)
     update<T>(key, (form) => form && ({
       ...form, pending: retained, issues, savedRevision: undefined,
-      error: issues.length ? 'Review the marked fields before saving.' : errorMessage(error, 'Settings could not be saved.'),
+      error: issues.length ? 'Review the marked fields before saving.' : error instanceof Error ? error.message : 'Settings could not be saved.',
     }))
     return false
   }

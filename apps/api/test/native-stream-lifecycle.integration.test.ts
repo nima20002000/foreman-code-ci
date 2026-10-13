@@ -5,9 +5,8 @@ import { streamingOperator } from './helpers/streamingRunOperator.js'
 import { graphRpc, graphRpcValue } from './eng04-graph-composition-fixture.js'
 import { checkpointRuntimeFixture } from './helpers/wave25Br1003Runtime.js'
 import { approvalResponse } from './helpers/approvalResponse.js'
-import { postgresEnabled, readCurrentExecutions } from './helpers/wave25Agent3.js'
+import { deferred, postgresEnabled, readCurrentExecutions } from './helpers/wave25Agent3.js'
 import { graphParity } from './helpers/wave25R1GraphParity.js'
-import { rejectableDeferred } from './helpers/deferred.js'
 
 const closes: Array<() => Promise<void>> = []
 afterEach(async () => {
@@ -110,9 +109,9 @@ describe.skipIf(!postgresEnabled)('native stream lifecycle', () => {
   it('releases a silent stream after publication failure and recovers without another native submission', async () => {
     const f = await checkpointRuntimeFixture(1, 1, { approvalNodeIds: [] })
     closes.push(f.close)
-    const reading = rejectableDeferred()
-    const release = rejectableDeferred()
-    const detached = rejectableDeferred()
+    const reading = deferred()
+    const release = deferred()
+    const detached = deferred()
     const original = f.provider.startTurn.bind(f.provider)
     let failedSessionId: string | undefined
     vi.spyOn(f.provider, 'startTurn').mockImplementation(async function* (session, input) {
@@ -174,12 +173,12 @@ describe.skipIf(!postgresEnabled)('native stream lifecycle', () => {
     closes.push(f.close)
     const operator = await streamingOperator(f)
     closes.push(() => operator.app.close())
-    const entered = rejectableDeferred()
-    const release = rejectableDeferred()
+    const entered = deferred()
+    const release = deferred()
     const streamingSessions = new Set<string>()
     const original = f.provider.startTurn.bind(f.provider)
     const batches: number[] = []
-    const initialFramesPublished = rejectableDeferred()
+    const initialFramesPublished = deferred()
     let publishedFrames = 0
     let publicationMs = 0
     const append = f.runs.appendNativeEvents.bind(f.runs)
@@ -286,9 +285,9 @@ describe.skipIf(!postgresEnabled)('native stream lifecycle', () => {
     const approvalNodeId = source.version.definition.nodes[1]!.id
     const f = await checkpointRuntimeFixture(2, 1, { fixture: source, approvalNodeIds: [approvalNodeId] })
     closes.push(f.close)
-    const closing = rejectableDeferred()
-    const release = rejectableDeferred()
-    const closed = rejectableDeferred()
+    const closing = deferred()
+    const release = deferred()
+    const closed = deferred()
     const originalClose = f.provider.close.bind(f.provider)
     let siblingSessionId: string | undefined
     vi.spyOn(f.provider, 'close').mockImplementation(async (session) => {

@@ -115,7 +115,7 @@ export function validateCurrentWorkflowTopology(version: Version, context: z.Ref
 
 /** Interval checks run outside the graph, so they cannot hold a routed approval wait. Only
  * Agents that never ask the workflow for approval may be re-activated on an interval. */
-function agentIntervalAllowed(harness: z.infer<typeof AgentConfigurationVersionSchema>['harness'],
+export function agentIntervalAllowed(harness: z.infer<typeof AgentConfigurationVersionSchema>['harness'],
   handler: 'user' | 'orchestrator' | 'native'): boolean {
   return handler === 'native' || harness.harness === 'codex' && harness.advanced?.approvalPolicy === 'never'
 }

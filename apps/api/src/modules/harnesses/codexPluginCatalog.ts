@@ -1,18 +1,24 @@
-import { asRecord } from '../../shared/records.js'
-import { pluginHash, pluginCanonical, pluginSourceIdentities, pluginCatalogRevision,
-  type NativePluginCatalog, type PluginConfiguration } from './codexPluginIdentity.js'
+import { pluginHash, pluginCanonical, pluginSourceIdentities, pluginCatalogRevision } from './codexPluginIdentity.js'
+import { z } from 'zod'
 import { CodexPluginSummarySchema, type CodexPluginSummary } from '@foreman-code/contracts/management'
 
 export { pluginHash, pluginCanonical } from './codexPluginIdentity.js'
-export { NativePluginCatalogSchema, type NativePluginCatalog, type PluginConfiguration } from './codexPluginIdentity.js'
+const NativeEntry = z.object({ pluginId: z.string(), name: z.string(), marketplaceName: z.string(),
+  version: z.string().nullable().optional(), installed: z.boolean(), enabled: z.boolean(),
+  source: z.object({ source: z.string() }).passthrough(), marketplaceSource: z.unknown().optional(),
+  installPolicy: z.string(), authPolicy: z.string() }).passthrough()
+export const NativePluginCatalogSchema = z.object({ installed: z.array(NativeEntry).max(10_000), available: z.array(NativeEntry).max(10_000) }).passthrough()
+export type NativePluginCatalog = z.infer<typeof NativePluginCatalogSchema>
+export type PluginConfiguration = { file: string; userConfig: Record<string, unknown>; verified?: boolean }
 export type PluginEvidence = { artifactIdentity: string; sourceIdentity: string }
 export type CodexPluginCatalog = {
   installed: CodexPluginSummary[]; available: CodexPluginSummary[]; revision: string
   catalogStatus: 'complete' | 'partial'; inventoryStatus: 'complete' | 'unknown'
   evidence: Record<string, PluginEvidence>; configuration: PluginConfiguration
 }
+const object = (value: unknown): Record<string, unknown> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
 export function unrelatedPluginConfiguration(config: PluginConfiguration, pluginId: string): string {
-  const plugins = { ...asRecord(config.userConfig.plugins) }
+  const plugins = { ...object(config.userConfig.plugins) }
   delete plugins[pluginId]
   const user = { ...config.userConfig }
   delete user.plugins
@@ -20,7 +26,7 @@ export function unrelatedPluginConfiguration(config: PluginConfiguration, plugin
   return pluginHash([config.file, { ...user, plugins }])
 }
 export function pluginConfigurationHas(config: PluginConfiguration, pluginId: string): boolean {
-  return Object.hasOwn(asRecord(config.userConfig.plugins), pluginId)
+  return Object.hasOwn(object(config.userConfig.plugins), pluginId)
 }
 
 /** Full source data stays private, but URL/path/ref/SHA/remote ID/marketplace changes remain significant. */
@@ -52,7 +58,7 @@ export function normalizeCodexPluginCatalog(native: NativePluginCatalog, configu
     })
     ;(item.installed ? installed : available).push(item)
   }
-  const configured = Object.keys(asRecord(configuration.userConfig.plugins))
+  const configured = Object.keys(object(configuration.userConfig.plugins))
   const hints = [...new Set([...configured, ...cachedIds])].sort()
   for (const pluginId of hints) {
     if (installed.some((item) => item.pluginId === pluginId)) continue
