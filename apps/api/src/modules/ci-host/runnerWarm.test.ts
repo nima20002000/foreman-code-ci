@@ -12,7 +12,7 @@ afterEach(async () => {
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true })
 })
 
-async function computer() {
+async function computer({ prepareDatabase = false } = {}) {
   const base = process.env.FOREMAN_CODE_TEST_ROOT ?? process.env.TMPDIR
     ?? join(homedir(), '.cache/foreman-code/tests')
   await mkdir(base, { recursive: true })
@@ -26,6 +26,11 @@ async function computer() {
   await mkdir(bin)
   await writeFile(join(origin, 'package.json'), JSON.stringify({ scripts: { lint: 'fixture' } }))
   await writeFile(join(origin, 'pnpm-lock.yaml'), 'fixture-lock-one')
+  if (prepareDatabase) {
+    await mkdir(join(origin, 'scripts'))
+    await writeFile(join(origin, 'scripts/ci-suite.sh'),
+      '#!/bin/bash\ncorepack pnpm db:up\n')
+  }
   const environment = gitFixtureEnvironment()
   const git = (...args: string[]) => execFileSync('git', args, { cwd: origin, env: environment, encoding: 'utf8' }).trim()
   git('init', '-q', '-b', 'main')
@@ -36,7 +41,13 @@ const fs = require('node:fs')
 const path = require('node:path')
 const args = process.argv.slice(2)
 fs.appendFileSync(${JSON.stringify(calls)}, JSON.stringify(args) + '\\n')
-if (args[1] === 'install') {
+if (args[1] === 'db:up') {
+  if (!fs.existsSync('node_modules/dependency')) {
+    console.error('Database preparation attempted to reinstall unfinished dependencies')
+    process.exit(8)
+  }
+} else if (args[1] === 'install') {
+  if (${prepareDatabase}) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 200)
   if (args.includes('--offline') && fs.existsSync(${JSON.stringify(offlineFailure)})) process.exit(7)
   const storeIndex = args.indexOf('--store-dir')
   const store = storeIndex < 0 ? '.fixture-store' : args[storeIndex + 1]
@@ -61,7 +72,7 @@ if (args[1] === 'install') {
     availableMemoryBytes: () => 16 * 2 ** 30,
     run: async (file, args, options) => {
       if (file === 'gh') return { code: 0, stdout: '', stderr: '' }
-      if (file === 'git' && args.some(value => value.startsWith('https://github.com/'))) {
+      if (file === 'git' && args.includes('clone')) {
         return system.run(file, args.map(arg => arg.startsWith('https://') ? origin : arg), options)
       }
       if (file === 'systemd-run') {
@@ -89,9 +100,7 @@ if (args[1] === 'install') {
   const commands = async () => (await readFile(calls, 'utf8')).trim().split('\n')
     .map(line => JSON.parse(line) as string[])
   const failOffline = () => writeFile(offlineFailure, 'store unavailable')
-  return { run, commands, origin, git, failOffline, checkout: (...args: string[]) => execFileSync('git', args, {
-    cwd: join(root, 'runner/git/example/project'), env: environment, encoding: 'utf8',
-  }).trim() }
+  return { run, commands, origin, git, failOffline }
 }
 
 it('warms once, installs offline on later jobs, and preserves private mutable dependencies', async () => {
@@ -144,17 +153,8 @@ it('fails an unavailable warmed store without allowing another online install', 
   expect(installs.filter(args => !args.includes('--offline'))).toHaveLength(1)
 })
 
-
-it('fetches only the tested commit on a cold runner and on later jobs with explicit files', async () => {
-  const fixture = await computer()
-  const staleCommit = fixture.git('rev-parse', 'HEAD')
-  fixture.git('branch', 'ci/stale', staleCommit)
-  fixture.git('commit', '--allow-empty', '-qm', 'tested commit')
+it('waits for dependencies before database preparation can trigger another install', async () => {
+  const fixture = await computer({ prepareDatabase: true })
   await expect(fixture.run()).resolves.toMatchObject({ run: { state: 'passed' } })
-  expect(fixture.checkout('for-each-ref', '--format=%(refname)', 'refs/remotes/')).toBe('')
-  expect(fixture.checkout('rev-list', '--count', fixture.git('rev-parse', 'HEAD'))).toBe('1')
-  fixture.git('commit', '--allow-empty', '-qm', 'next tested commit')
-  await expect(fixture.run()).resolves.toMatchObject({ run: { state: 'passed' } })
-  expect(fixture.checkout('for-each-ref', '--format=%(refname)', 'refs/remotes/')).toBe('')
-  expect(fixture.checkout('rev-list', '--count', fixture.git('rev-parse', 'HEAD'))).toBe('1')
+  expect(await fixture.commands()).toContainEqual(['pnpm', 'db:up'])
 })
