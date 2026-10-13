@@ -1,10 +1,10 @@
 export type CredentialArguments =
   | { command: 'revoke'; principalId: string }
-  | { command: 'issue'; name: string; audience: 'operator' | 'worker'; days: number; workspaceId?: string; access?: 'manage' | 'read-only'
+  | { command: 'issue'; name: string; audience: 'operator' | 'worker'; days: number; workspaceId?: string; access?: 'manage' | 'read-only' | 'ci-lane'
       /** Whole-computer telemetry is never part of a preset; whoever runs this CLI on Main grants it by name. */
-      computerMetrics?: true }
+      computerMetrics?: true; ciFull?: true }
 
-const USAGE = 'Usage: pnpm credential issue --name <name> [--days 30] [--workspace <id>] [--audience operator|worker] [--access manage|read-only] [--grant devices:metrics:read], or pnpm credential revoke <principal-id>'
+const USAGE = 'Usage: pnpm credential issue --name <name> [--days 30] [--workspace <id>] [--audience operator|worker] [--access manage|read-only|ci-lane] [--grant devices:metrics:read|jobs:ci_full], or pnpm credential revoke <principal-id>'
 const FLAGS = new Set(['--name', '--days', '--workspace', '--audience', '--access', '--grant'])
 
 /** Parse everything before opening a database or issuing any credential. */
@@ -40,14 +40,17 @@ export function parseCredentialArguments(argv: readonly string[]): CredentialArg
   }
   const workspaceId = values.get('--workspace')
   const access = values.get('--access')
-  if (access !== undefined && (audience !== 'operator' || !['manage', 'read-only'].includes(access))) {
-    throw new Error('--access must be manage or read-only and is only valid for Operator credentials')
+  if (access !== undefined && (audience !== 'operator' || !['manage', 'read-only', 'ci-lane'].includes(access))) {
+    throw new Error('--access must be manage, read-only or ci-lane and is only valid for Operator credentials')
   }
   const grant = values.get('--grant')
-  if (grant !== undefined && (audience !== 'operator' || grant !== 'devices:metrics:read')) {
-    throw new Error('--grant accepts only devices:metrics:read and is only valid for Operator credentials')
+  if (grant !== undefined && (audience !== 'operator' || !['devices:metrics:read', 'jobs:ci_full'].includes(grant))) {
+    throw new Error('--grant accepts devices:metrics:read or jobs:ci_full and is only valid for Operator credentials')
   }
+  if (grant === 'jobs:ci_full' && access === 'read-only') throw new Error('Read-only credentials cannot run full CI.')
   return { command, name, audience, days, ...(workspaceId !== undefined ? { workspaceId } : {}),
-    ...(access ? { access: access as 'manage' | 'read-only' } : {}), ...(grant ? { computerMetrics: true as const } : {}) }
+    ...(access ? { access: access as 'manage' | 'read-only' | 'ci-lane' } : {}),
+    ...(grant === 'devices:metrics:read' ? { computerMetrics: true as const } : {}),
+    ...(grant === 'jobs:ci_full' ? { ciFull: true as const } : {}) }
 
 }

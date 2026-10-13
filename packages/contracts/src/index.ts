@@ -231,6 +231,7 @@ const RetiredOpenCodeAdvancedConfigurationSchema = z.object({
   configLoading: z.object({ mode: z.literal("native") }).strict(),
   mcp: z.object({ serverEnabled: z.record(z.string().trim().min(1), z.boolean()) }).strict(),
 }).strict();
+import { CiFullScopePermissionSchema } from './ciPermissions.js';
 export const CodexHarnessConfigurationSchema = z
   .object({
     harness: z.literal("codex"),
@@ -239,6 +240,7 @@ export const CodexHarnessConfigurationSchema = z
     reasoningEffort: AgentEffortSchema,
     sandbox: z.enum(["read-only", "workspace-write", "danger-full-access"]),
     serviceTier: z.enum(["standard", "priority"]),
+    ciFullScope: CiFullScopePermissionSchema,
     advanced: CodexAdvancedConfigurationSchema.optional(),
   })
   .strict()
@@ -330,6 +332,10 @@ const AgentTemplateSchema = z.object({
   boardAddable: z.boolean(),
   harness: HarnessConfigurationSchema,
 }).strict().superRefine((value, context) => {
+  if (value.harness.harness !== 'opencode' && value.harness.ciFullScope) {
+    context.addIssue({ code: 'custom', path: ['harness', 'ciFullScope'],
+      message: 'Full-suite CI permission must be configured for a specific Agent, not global defaults.' });
+  }
   if (value.role === "operator" && value.boardAddable) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["boardAddable"], message: "Operator is application-level and cannot be added to a workflow board" });
   }
@@ -356,7 +362,8 @@ export const HarnessDefaultsSchema = z
     /** Absent until an owner selects an actual host-local Claude profile. */
     claude: ClaudeHarnessConfigurationSchema.optional(),
   })
-  .strict();
+  .strict().refine(value => !value.codex.ciFullScope && !value.claude?.ciFullScope,
+    'Full-suite CI permission must be configured for a specific Agent, not global defaults.');
 export type HarnessDefaults = z.infer<typeof HarnessDefaultsSchema>;
 export const DEFAULT_HARNESS_DEFAULTS: HarnessDefaults = HarnessDefaultsSchema.parse({
   codex: {
