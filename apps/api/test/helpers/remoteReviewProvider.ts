@@ -80,7 +80,8 @@ int main(int argc, char **argv) {
   if (failures.length) throw new AggregateError(failures, 'Provider fixture preparation failed.')
   const settings = join(directory, 'settings.json')
   await writeFile(settings, JSON.stringify({ launcher,
-    clientModule: require.resolve('@modelcontextprotocol/client') }), { mode: 0o600 })
+    clientModule: require.resolve('@modelcontextprotocol/client'),
+    mcpResultModule: require.resolve('@foreman-code/contracts/operator-mcp') }), { mode: 0o600 })
   const payloadPaths = [script, settings, process.execPath,
     join(directory, 'stable', 'codex_app_server_protocol.schemas.json'),
     join(directory, 'experimental', 'codex_app_server_protocol.schemas.json')]
