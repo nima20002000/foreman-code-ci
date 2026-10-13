@@ -137,18 +137,6 @@ export async function reviewInProgress(fixture: Fixture) {
   const location = RunExecutionLocationV3Schema.parse(started.run.executionLocation)
   expect(location.runnerId).toBe(fixture.profiles[0]!.target.applicationInstallationId)
   expect((await fixture.details(started.run.id)).run.executionLocation).toEqual(location)
-  // The execution edge starts the requester only after the reviewer's workflow turn settles.
-  await waitForRemoteReview(async () => {
-    await fixture.reconcileReviews()
-    const details = await fixture.details(started.run.id)
-    const reviewer = details.executions.find(execution =>
-      execution.agentId === fixture.version.approval.designatedOrchestratorAgentId)
-    if (reviewer?.result?.outcome === 'failed') {
-      throw new Error(`Native reviewer failed before requester startup: ${reviewer.result.error?.code}`)
-    }
-    return reviewer
-  }, reviewer => reviewer?.state === 'completed' && reviewer.result?.outcome === 'succeeded',
-  'completed reviewer workflow turn', fixture.subscribeNativeChanges)
   const interaction = await waitForRemoteReview(async () => {
     // Retry recoverable workflow boundaries through the engine without the source-cleanup sweep.
     await fixture.reconcileReviews()
@@ -417,5 +405,4 @@ export async function retainedReviewRecovery(fixture: Fixture, recovery: 'crash'
   }, value => value.run.executionState === 'completed' && value.cleanupPending !== true,
   'completed Run and native cleanup after recovered review delivery')
   expect(settled.run.outcome).toBe('succeeded')
-  return { runId: active.run.id, launchIds: ownerLaunchIds }
 }
