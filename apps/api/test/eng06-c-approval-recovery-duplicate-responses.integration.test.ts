@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { DomainError } from '../src/modules/errors.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled, deferred } from './helpers/wave25Agent3.js'
 import { approvalResponse } from './helpers/eng06ApprovalFaults.js'
 import { createApprovalRecoverySetup, startWaiting } from './helpers/approvalRecovery.js'
-import { rejectableDeferred } from './helpers/deferred.js'
 
 const setup = createApprovalRecoverySetup()
 
@@ -11,7 +10,7 @@ for (const form of ['ordinary', 'repeat'] as const) {
   describe.skipIf(!postgresEnabled)(`Approval recovery ${form}: duplicate responses`, () => {
     it('deduplicates open and terminal responses without replaying native work or another occurrence', async () => {
       const t = await setup(form), first = await startWaiting(t), input = approvalResponse(first)
-      const entered = rejectableDeferred(), release = rejectableDeferred()
+      const entered = deferred(), release = deferred()
       t.f.provider.beforeRespond = async () => { entered.resolve(); await release.promise }
       const firstReply = t.runtime.service.respond(t.responder, input)
         .then((value) => ({ value }), (error: unknown) => ({ error }))

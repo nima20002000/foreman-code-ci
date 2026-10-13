@@ -9,8 +9,7 @@ import { Wave25WorkerCredentialService } from '../src/modules/interactions/wave2
 import { LOCAL_RUNNER_ID } from '../src/modules/workspaces/location.js'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { readUntil } from './helpers/observableCondition.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
-import { rejectableDeferred } from './helpers/deferred.js'
+import { deferred, postgresEnabled } from './helpers/wave25Agent3.js'
 
 type Runtime = Awaited<ReturnType<typeof currentOperatorIntegration>>
 
@@ -99,8 +98,8 @@ async function detachment(runtime: Runtime, executionId: string) {
 describe.runIf(postgresEnabled)('restart credential safety', () => {
   it('joins an in-flight heartbeat renewal without canceling or replacing the native execution', async () => {
     const runtime = await activeWorkflow()
-    const renewing = rejectableDeferred()
-    const release = rejectableDeferred()
+    const renewing = deferred()
+    const release = deferred()
     const issue = Wave25WorkerCredentialService.prototype.issueForExecution
     const issued = vi.spyOn(Wave25WorkerCredentialService.prototype, 'issueForExecution')
       .mockImplementation(async function (this: Wave25WorkerCredentialService, id) {

@@ -9,7 +9,7 @@ function socketName(stateDirectory) {
 }
 
 export async function readWorkerStatus(stateDirectory) {
-  const canonical = await realpath(stateDirectory).catch(() => { /* ignore: an unresolvable state directory reads as no running worker */ return null; });
+  const canonical = await realpath(stateDirectory).catch(() => null);
   if (!canonical) return null;
   return new Promise((accept) => {
     const socket = connect(socketName(canonical));
