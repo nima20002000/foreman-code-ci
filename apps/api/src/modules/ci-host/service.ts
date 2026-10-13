@@ -4,7 +4,7 @@ import { CI_HOST_NAMESPACE, CI_LOG_MAX_BYTES, CI_RUN_JOBS_LIMIT, CiHostReplySche
   WorkspaceSchema,
   requiresUserSystemd, userSystemdIntegrationFiles,
   type CiDurations, type CiHostRequest, type CiHostReply, type CiListOutput, type CiRunRecord, type CiRunInput,
-  type CiTestResults, type CiTestStatus, type CiUserSystemd } from '@foreman-code/contracts'
+  type CiTestResults, type CiTestStatus } from '@foreman-code/contracts'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import type { PostgresCommandCoordinator } from '../commands/postgres.js'
 import type { CiAuthority } from '../jobs/ciAuthority.js'
@@ -13,6 +13,7 @@ import { DomainError, databaseReadFailure } from '../errors.js'
 import { requireAuthorization } from '../access/policy.js'
 import { componentLogger } from '../diagnostics/logger.js'
 import { ciGroupState, planCiParts, runsOnCircleCi, type CiUnitInventory } from './parts.js'
+import { planIntegrationParts, type CiIntegrationInventory, type CiIntegrationSlots } from './integrationParts.js'
 import { assertCiReadAccess } from './runAccess.js'
 import type { CiRepositoryCapabilities } from './repository.js'
 import { RUN_CI_JOBS_SQL, runCiJob, storedCiTestResults, type RunCiJobRow } from './runJobs.js'
@@ -26,9 +27,7 @@ async function retryRead<T>(work: () => Promise<T>): Promise<T> {
 }
 
 type HostRef = CiRunRecord['computer'] extends infer C ? C extends { hostRef: infer H } ? H : never : never
-export interface HostCiComputer {
-  key: string; hostRef: HostRef; label: string; priority: number; userSystemd?: CiUserSystemd
-}
+export interface HostCiComputer { key: string; hostRef: HostRef; label: string; priority: number }
 export interface HostCiEndpoint {
   /** Paired computers that serve host CI now. */
   computers(): Promise<HostCiComputer[]>
@@ -37,6 +36,7 @@ export interface HostCiEndpoint {
 /** Resolves the commit to test and makes sure GitHub has it, so build computers can fetch it. */
 export interface CiCommits {
   capabilities(repository: string, commit: string): Promise<CiRepositoryCapabilities>
+  integrationInventory?(repository: string, commit: string): Promise<CiIntegrationInventory>
   unitInventory?(repository: string, commit: string): Promise<CiUnitInventory>
   resolve(repository: string, defaultBranch: string, commit: string | undefined,
     snapshot: { baseCommit: string; commit: string; bundle: Buffer | null } | null): Promise<string>
@@ -56,11 +56,8 @@ function isGitHubComputer(computer: HostCiComputer): boolean {
   return computer.hostRef.kind === 'cloud' && computer.hostRef.provider === 'github'
 }
 
-function supportsUserSystemd(computer: HostCiComputer): boolean {
-  return computer.hostRef.kind !== 'cloud' || computer.userSystemd?.supported === true
-}
-
-function needsSystemdExecutor(run: CiRunRecord): boolean {
+function needsBuildComputer(run: CiRunRecord): boolean {
+  if (run.requiresBuildComputer !== undefined) return run.requiresBuildComputer
   return run.suite === 'integration' && (run.partition
     ? run.partition.hostIndexes?.includes(run.partition.index) === true
     : run.scope === 'full' || Boolean(run.deriveFiles) || run.files.some(requiresUserSystemd))
@@ -116,7 +113,14 @@ export class HostCiService {
         const inventory = capabilities.parts && input.suite === 'unit'
           ? await this.commits.unitInventory?.(repository, commit) : undefined
         const learned = ['unit', 'integration'].includes(input.suite) ? await this.learnedDurations(repository) : null
-        const durations = input.suite === 'integration' ? learned : null
+        const integration = capabilities.integrationPartitions && input.suite === 'integration'
+          ? await this.commits.integrationInventory?.(repository, commit) : undefined
+        let durations = input.suite === 'integration' ? learned : null
+        if (integration) {
+          const merged = { ...integration.durations, ...learned }
+          durations = Object.fromEntries(integration.files.filter(file => merged[file] !== undefined)
+            .map(file => [file, merged[file]!]))
+        }
         const unitDurations = { ...inventory?.durations, ...learned }
         const supportsSelection = input.suite === 'integration' ? capabilities.integrationPartitions : capabilities.affected
         const selectionScope = supportsSelection ? input.scope ?? 'affected' : 'full'
@@ -124,11 +128,16 @@ export class HostCiService {
         const selection = { ...input, scope: selectionScope, files: selectionScope === 'affected' ? input.files : [] }
         const empty = selectionScope === 'affected' && input.files?.length === 0
         const split = input.suite === 'integration' ? capabilities.integrationPartitions : capabilities.parts
-        const parts = split ? planCiParts(selection, unitDurations, inventory)
+        let parts: { part: CiRunRecord['part']; partition: CiRunRecord['partition']; files: string[];
+          expectedDurationMs?: number }[] = split ? planCiParts(selection, unitDurations, inventory)
           : [{ part: null, partition: null, files: selection.files ?? [] }]
-        const runs = parts.map(({ part, partition, files }) => CiRunRecordSchema.parse({
+        if (integration) {
+          parts = planIntegrationParts(selection, { ...integration, durations: durations! }, await this.integrationSlots())
+        }
+        const runs = parts.map(planned => CiRunRecordSchema.parse({
+          ...planned,
           id: randomUUID(), workspaceId: scope.workspaceId,
-          suite: input.suite, part, scope: selectionScope, files, commit, repository, partition, groupId,
+          suite: input.suite, scope: selectionScope, commit, repository, groupId,
           ...(input.baseCommit ? { baseCommit: input.baseCommit } : {}),
           ...(deriveFiles ? { deriveFiles, defaultBranch } : {}),
           state: empty ? 'passed' : 'queued', computer: null, step: empty ? input.suite : null,
@@ -158,6 +167,26 @@ export class HostCiService {
     this.start()
     void this.dispatch()
     return outcome.value
+  }
+
+  private async integrationSlots(): Promise<CiIntegrationSlots> {
+    const active = (await this.pool.query<{ host_key: string; count: number }>(`select host_key,count(*)::int as count
+      from ci_runs where state in ('starting','running') and host_key is not null group by host_key`)).rows
+    const used = new Map(active.map(row => [row.host_key, row.count]))
+    const slots = { host: 0, ordinary: 0 }
+    await inBatches(await this.endpoint.computers(), 8, async computer => {
+      const status = await this.endpoint.request(computer, { operation: 'status' }).catch(error => {
+        log.warn({ err: error, computer: computer.key }, 'CI capacity unavailable while sizing integration')
+        return null
+      })
+      if (status?.operation !== 'status' || !status.ready) return
+      const free = Math.max(0, (status.slotsTotal ?? 1) - Math.max(status.slotsUsed ?? 0, used.get(computer.key) ?? 0))
+      if (computer.hostRef.kind === 'cloud') slots.ordinary += free
+      else slots.host += free
+    })
+    // Build computers can also take ordinary work after reserving the host-only slices.
+    if (!slots.ordinary) slots.ordinary = Math.max(1, slots.host - 1)
+    return slots
   }
 
   /** The repository's learned test file durations, most recently measured first, within the start request's
@@ -200,21 +229,18 @@ export class HostCiService {
         Number(isGitHubComputer(left)) - Number(isGitHubComputer(right))
         || right.priority - left.priority
         || (speed.get(right.key) ?? 0) - (speed.get(left.key) ?? 0))
-      const systemdComputers = ordered.filter(supportsUserSystemd).sort((left, right) =>
-        Number(right.hostRef.kind === 'cloud') - Number(left.hostRef.kind === 'cloud'))
+      const hosts = ordered.filter(computer => computer.hostRef.kind !== 'cloud')
+      const cloud = ordered.filter(computer => computer.hostRef.kind === 'cloud')
       const selection = group[0]!
       const knownFiles = selection.scope === 'affected' && !selection.deriveFiles
       const hostFiles = knownFiles ? selection.files.filter(requiresUserSystemd).length : userSystemdIntegrationFiles.size
       const ordinaryFiles = knownFiles ? selection.files.length - hostFiles : count
       const hostCount = hostFiles ? Math.min(hostFiles, ordinaryFiles ? count - 1 : count,
-        Math.max(1, systemdComputers.length, count - ordinaryFiles)) : 0
+        Math.max(1, hosts.length, count - ordinaryFiles)) : 0
       const hostIndexes = Array.from({ length: hostCount }, (_, index) => index)
-      // Keep systemd files separate so executors without a user manager can take ordinary slices.
+      // A busy build computer holds only user-systemd files; every ordinary slice can start on cloud slots.
       const planned: (HostCiComputer | undefined)[] = [
-        ...hostIndexes.map(index => systemdComputers[index]),
-        ...ordered.filter(computer => computer.hostRef.kind === 'cloud'
-          && !systemdComputers.slice(0, hostCount).includes(computer)),
-        ...systemdComputers.slice(hostCount).filter(computer => computer.hostRef.kind !== 'cloud'),
+        ...hostIndexes.map(index => hosts[index]), ...cloud, ...hosts.slice(hostCount),
       ]
       const known = ordered.map(computer => speed.get(computer.key)).filter((value): value is number => value !== undefined)
       const mean = known.length ? known.reduce((sum, value) => sum + value, 0) / known.length : 1
@@ -470,7 +496,6 @@ export class HostCiService {
           : status.operation === 'status' ? { label: computer.label, hostRef: computer.hostRef, priority: computer.priority,
             ready: status.ready, reasons: status.reasons, cpuCount: status.cpuCount, memoryBytes: status.memoryBytes,
             availableMemoryBytes: status.availableMemoryBytes,
-            ...(status.userSystemd ? { userSystemd: status.userSystemd } : {}),
             slotsUsed: Math.max(running.length, status.slotsUsed ?? 0), slotsTotal: status.slotsTotal ?? 1,
             running } : null)
       }
@@ -608,11 +633,11 @@ export class HostCiService {
     const durations = new Map(queuedRows.map((row, index) => [queued[index]!.id, row.durations]))
     queued = await this.weighPartitions(queued, computers.flatMap(computer =>
       Array.from({ length: freeSlots(computer) }, () => computer)))
-    queued.sort((left, right) => Number(needsSystemdExecutor(right)) - Number(needsSystemdExecutor(left)))
+    queued.sort((left, right) => Number(needsBuildComputer(right)) - Number(needsBuildComputer(left)))
     // Reserve slots before awaiting a start so concurrent dispatches cannot spend the same capacity.
     await Promise.all(queued.map(async run => {
       if (run.suite === 'integration' && run.partition && !run.partition.weights) return
-      const hostRequired = needsSystemdExecutor(run)
+      const hostRequired = needsBuildComputer(run)
       const reasons = (run.unstartedProviders ?? []).map(provider => `${provider}: dispatch retries exhausted`)
       const preferred = (computer: HostCiComputer) => {
         if (run.suite !== 'integration') return Number(isGitHubComputer(computer))
@@ -621,7 +646,7 @@ export class HostCiService {
       }
       const order = computers.filter(computer => runsOnCircleCi(run)
         || computer.hostRef.kind !== 'cloud' || computer.hostRef.provider !== 'circleci')
-        .filter(computer => !hostRequired || supportsUserSystemd(computer))
+        .filter(computer => !hostRequired || computer.hostRef.kind !== 'cloud')
         .filter(computer => computer.hostRef.kind !== 'cloud' || !computer.hostRef.provider
           || !run.unstartedProviders?.includes(computer.hostRef.provider))
         .sort((left, right) => Number(right.key === run.plannedHostKey) - Number(left.key === run.plannedHostKey)
@@ -697,12 +722,8 @@ export class HostCiService {
           log.warn({ err: error, runId: run.id, computer: computer.key }, 'CI start failed')
         }
       }
-      const systemdCloud = computers.some(computer => computer.hostRef.kind === 'cloud' && supportsUserSystemd(computer))
-      let prefix = `No ready computer for ${run.part ?? run.suite}`
-      if (hostRequired) {
-        prefix = systemdCloud ? 'Waiting for a systemd-capable executor'
-          : 'Waiting for a build computer: this integration slice needs one'
-      }
+      const prefix = hostRequired ? 'Waiting for a build computer: this integration slice needs one'
+        : `No ready computer for ${run.part ?? run.suite}`
       const message = `${prefix}; ${reasons.join('; ') || 'no eligible computers'}`.slice(0, 2000)
       if (message !== run.message) {
         await this.pool.query(`update ci_runs set record=$4::jsonb
