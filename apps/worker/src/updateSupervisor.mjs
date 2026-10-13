@@ -7,7 +7,6 @@ import { setTimeout as wait } from 'node:timers/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { WorkerError, requirePrivateDirectory } from './diagnostics.mjs';
 import { readWorkerStatus } from './runtime.mjs';
-import { WORKER_UPDATE_STARTUP_TIMEOUT_MS } from './ciSmokeTiming.mjs';
 
 const execute = promisify(execFile);
 const services = ['graphql-worker.service', 'foreman-ci-worker.service'];
@@ -221,7 +220,7 @@ export async function superviseWorkerUpdate(record, ports = {}) {
     }
     await restartWorker();
     await ready({ stateDirectory: plan.stateDirectory, version: record.status.targetVersion,
-      workerInstallationId: plan.workerInstallationId, timeoutMs: WORKER_UPDATE_STARTUP_TIMEOUT_MS });
+      workerInstallationId: plan.workerInstallationId });
     await smoke(plan);
     await save('current', record.status.targetVersion, null);
   } catch (error) {

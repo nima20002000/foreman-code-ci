@@ -8,7 +8,6 @@ import { fileURLToPath } from 'node:url'
 import { join, matchesGlob } from 'node:path'
 import { CiWatchdogFailureSchema, CiDurationsSchema, CiHostReplySchema, CiHostRequestSchema, CiTestResultsSchema, integrationPartition,
   CiScopeSchema, CiSelectedFilesSchema, validCiSelection,
-  CI_HOST_START_PROTOCOL_VERSION,
   type CiDurations, type CiHostReply, type CiHostRun, type CiSuite, type CiPart, type CiPartition, type CiScope } from '@foreman-code/contracts'
 import { DomainError } from '../errors.js'
 import { ciRepositoryCapabilities } from './repository.js'
@@ -73,24 +72,19 @@ const unitName = (runId: string) => `foreman-ci-${runId}`
 // GitHub CLI's own credential helper: a computer that is logged in to gh fetches without any app setup.
 const gitAuth = ['-c', 'credential.helper=', '-c', 'credential.helper=!gh auth git-credential']
 
-export function hostCiDirectory() {
-  return join(homedir(), '.local/share/foreman-code/ci-host')
-}
-
 /** Runs CI suites directly on this computer, like a self-hosted runner. Each run is a transient
  * systemd user service, so it outlives a Worker restart, and its CPU and memory stay below the host reserve. */
 export class HostCiRunner {
   private readonly preparing = new Map<string, Promise<void>>()
   private startQueue = Promise.resolve()
-  private startingRun: CiHostRun | null = null
+  private startingRunId: string | null = null
   private readonly repositoryQueues = new Map<string, Promise<void>>()
   private githubChecked: { at: number; ready: boolean; reason: string | null } | undefined
   private draining = false
 
-  constructor(private readonly root = hostCiDirectory(),
+  constructor(private readonly root = join(homedir(), '.local/share/foreman-code/ci-host'),
     private readonly ports: HostCiPorts = systemHostCiPorts(),
-    private readonly environment: NodeJS.ProcessEnv = process.env,
-    private readonly startupSmokePending: () => boolean | Promise<boolean> = () => false) {}
+    private readonly environment: NodeJS.ProcessEnv = process.env) {}
 
   async handle(raw: unknown): Promise<CiHostReply> {
     const request = CiHostRequestSchema.parse(raw)
@@ -131,7 +125,7 @@ export class HostCiRunner {
 
   resumeAdmissions() { this.draining = false }
 
-  isUpdateIdle() { return this.preparing.size === 0 && this.startingRun === null }
+  isUpdateIdle() { return this.preparing.size === 0 && this.startingRunId === null }
 
   private runDirectory(runId: string) { return join(this.root, 'runs', runId) }
 
@@ -167,11 +161,8 @@ export class HostCiRunner {
   }
 
   async status(): Promise<CiHostReply> {
-    const startingRun = this.startingRun
     const github = await this.github()
     const reasons = github.reason ? [github.reason] : []
-    if (await this.startupSmokePending()) reasons.push('Worker update CI smoke is pending; this computer is reserved for validation.')
-    if (this.draining) reasons.push('Worker runtime update is draining CI preparation.')
     for (const tool of ['git', 'corepack']) {
       if ((await this.ports.run(tool, ['--version'], { env: this.environment, timeoutMs: 15_000 })).code !== 0) {
         reasons.push(`${tool} is not installed for the Worker.`)
@@ -183,21 +174,14 @@ export class HostCiRunner {
     for (const runId of names) runs.push(await this.refresh(runId).catch(fallbackOnError(
       null, 'jobs', 'refresh CI run', { runId }, ['ENOENT'],
     )))
-    const active: RunMeta[] = []
-    for (const run of runs) {
-      if (run && ['starting', 'running'].includes(run.state)) active.push(await this.readMeta(run.runId))
-    }
-    // Repository preparation precedes metadata; status must still acknowledge the accepted start.
-    const pendingStart = startingRun && !runs.some(run => run?.runId === startingRun.runId)
-    if (pendingStart) runs.push(startingRun)
+    const active = await this.active()
     const availableMemoryBytes = this.ports.availableMemoryBytes?.() ?? this.ports.memoryBytes
     const capacity = this.capacity(active, availableMemoryBytes)
     const activeRuns = runs.filter(run => run && ['starting', 'running'].includes(run.state))
     const finishedRuns = runs.filter(run => run && !['starting', 'running'].includes(run.state))
     return CiHostReplySchema.parse({ operation: 'status', ready: !reasons.length, reasons,
-      startProtocolVersion: CI_HOST_START_PROTOCOL_VERSION,
       cpuCount: this.ports.cpus, memoryBytes: this.ports.memoryBytes, availableMemoryBytes,
-      slotsUsed: capacity.slotsUsed + Number(Boolean(pendingStart)), slotsTotal: capacity.slotsTotal,
+      slotsUsed: capacity.slotsUsed, slotsTotal: capacity.slotsTotal,
       runs: [...activeRuns, ...finishedRuns.slice(-Math.max(0, 50 - activeRuns.length))].slice(0, 50) })
   }
 
@@ -218,8 +202,6 @@ export class HostCiRunner {
   }
 
   private async start(request: StartRequest) {
-    if (await this.startupSmokePending()) throw new DomainError('CI_HOST_BUSY',
-      'Worker update CI smoke is pending; this computer is reserved for validation.', 409)
     if (this.draining) throw new DomainError('WORKER_RUNTIME_DRAINING',
       'This computer is waiting for CI preparation to finish before updating its runtime.', 409)
     // Keep the busy check and initial persistence together, including same-run retries.
@@ -230,7 +212,7 @@ export class HostCiRunner {
     try {
       return await this.startRun(request)
     } finally {
-      this.startingRun = null
+      this.startingRunId = null
       release()
     }
   }
@@ -238,8 +220,7 @@ export class HostCiRunner {
   private async startRun(request: StartRequest) {
     const directory = this.runDirectory(request.runId)
     if (existsSync(join(directory, 'meta.json'))) return this.refresh(request.runId)
-    this.startingRun = { runId: request.runId, state: 'starting', step: 'dispatch',
-      startedAt: this.ports.now().toISOString(), finishedAt: null, exitCode: null, logBytes: 0, message: null }
+    this.startingRunId = request.runId
     let active = await this.active()
     if (active.some(run => run.gate) || request.gate && active.length) {
       throw new DomainError('CI_HOST_BUSY', 'A gate requires exclusive use of this build computer.', 409)
@@ -677,7 +658,7 @@ export class HostCiRunner {
   /** Reads the current state of a run, settling it once its unit has exited, and frees its worktree. */
   async refresh(runId: string): Promise<CiHostRun> {
     // Launch can finish while the metadata read is awaiting I/O.
-    const preparing = this.preparing.has(runId) || this.startingRun?.runId === runId
+    const preparing = this.preparing.has(runId) || this.startingRunId === runId
     let meta = await this.readMeta(runId)
     const directory = this.runDirectory(runId)
     await this.reconcile(meta, preparing)
