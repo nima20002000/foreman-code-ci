@@ -519,12 +519,11 @@ for (const failure of ['launcher', 'readiness']) {
   })
 }
 
-test('a stopped-API backup failure restarts the previous release without restoring data', async t => {
+test('an online backup failure leaves the running API untouched', async t => {
   const fixture = await cutoverFixture(t, [3])
   fixture.steps.backup = async () => { throw new Error('dump failed') }
   await assert.rejects(production.runReleaseCutover(fixture), /dump failed/)
-  assert.deepEqual(fixture.events, ['pending migrations', 'stop', 'stop', 'activate', 'start', 'ready'])
-  assert.equal(fixture.data(), 'before migration')
+  assert.deepEqual(fixture.events, ['pending migrations'])
   assert.equal(fixture.running(), true)
   assert.equal(fixture.selected(), fixture.previousRelease)
   assert.equal(JSON.parse(await readFile(fixture.stateFile, 'utf8')).phase, 'recovered')
