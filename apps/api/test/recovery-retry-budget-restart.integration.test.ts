@@ -7,7 +7,7 @@ import {
 
 const forms: Form[] = ['repeat', 'sequential']
 const cases = forms.flatMap(form =>
-  (['cleanup', 'reattach'] as const).map(recovery => ({ form, recovery })))
+  (['crash_cleanup', 'graceful_close'] as const).map(recovery => ({ form, recovery })))
 
 describeRetryBudget('finite technical retry budget: restart', () => {
   it.each(cases)('$form: $recovery after restart cannot reset the final attempt budget', async ({ form, recovery }) => {
@@ -25,8 +25,8 @@ describeRetryBudget('finite technical retry budget: restart', () => {
       sameSlot(before)
       expect(before.find((row) => row.execution.attempt === 1)!.execution.result?.outcome).toBe('failed')
       expect(before.find((row) => row.execution.attempt === 2)!.execution.result).toBeUndefined()
-      await f.restart()
-      if (recovery === 'cleanup') {
+      await f.restart({ mode: recovery === 'crash_cleanup' ? 'crash' : 'graceful' })
+      if (recovery === 'crash_cleanup') {
         const owner = await f.runtime.runs.acquireOwnership(f.base.f.run.id, () => undefined)
         if (!owner) throw new Error('The restarted Run is already owned.')
         try {
@@ -44,22 +44,27 @@ describeRetryBudget('finite technical retry budget: restart', () => {
       expect(first.execution).toEqual(before.find((row) => row.execution.attempt === 1)!.execution)
       await assertOriginalFailure(f, first.execution.id, true)
       const final = after.find((row) => row.execution.attempt === 2)!
-      if (recovery === 'cleanup') {
-        expect(final.execution.result).toMatchObject({ outcome: 'failed',
-          error: { code: 'EXECUTION_INTERRUPTED', retryable: false } })
-      } else {
-        await assertOriginalFailure(f, final.execution.id, true)
-      }
+      // Provider-only history behind a lost reply is not an accepted result.
+      expect(final.execution.result).toMatchObject({ outcome: 'failed',
+        error: { code: 'EXECUTION_INTERRUPTED', retryable: false } })
+      expect(view.details.find(detail => detail.execution.executionId === finalId)).toMatchObject({
+        acceptedResult: { status: 'not_accepted' },
+        reportedResult: final.execution.result,
+      })
+      expect(f.provider.originalResult(finalId)).toEqual({ outcome: 'failed',
+        error: { code: 'ENG06_NATIVE_FAILURE', message: 'Exact original provider failure', retryable: true } })
       expect(final.result_json).toBeNull()
-      if (recovery === 'cleanup') {
-        expect(f.provider.counts.attaches).toBe(0)
-        await assertRecoveryReceipts(f, [finalId])
+      expect(f.provider.counts.attaches).toBe(0)
+      if (recovery === 'crash_cleanup') {
+        await assertRecoveryReceipts(f, [finalId], { detached: false })
       } else {
-        expect(f.provider.counts.attaches).toBe(1)
         expect(f.provider.recoveryCalls).toEqual([])
       }
       expect(f.provider.counts.starts).toBe(2); expect(f.provider.counts.sessions).toBe(2)
       expect(await occurrences(f)).toHaveLength(form === 'repeat' ? 1 : 0)
+      await f.runtime.engine.reconcile(error => f.errors.push(error))
+      expect(await readback(f)).toEqual(view)
+      expect(attempts(await executionRows(f))).toEqual([1, 2])
       expect(f.shutdownErrors).toEqual([])
     } finally { await f.close() }
   }, 90000)

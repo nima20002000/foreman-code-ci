@@ -6,7 +6,7 @@ import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import ts from 'typescript'
-import { apiServiceTemplate, deployProductionApi, publish }
+import { apiServiceTemplate, deployProductionApi }
   from '../../../../scripts/local-production-runtime.mjs'
 import { renderUserService } from '../../../worker/src/service.mjs'
 import { copyApiRuntime } from '../../../../scripts/copy-api-runtime.mjs'
@@ -15,13 +15,6 @@ import { readUntil } from './observableCondition.js'
 const execute = promisify(execFile)
 const repository = fileURLToPath(new URL('../../../..', import.meta.url))
 const serviceUser = userInfo()
-
-export async function installRestartServiceUnit(unitPath: string, service: string,
-  systemctl: (...args: string[]) => Promise<{ stdout: string }>) {
-  await publish(unitPath, service)
-  await systemctl('--runtime', 'link', unitPath)
-  await systemctl('daemon-reload')
-}
 
 async function sources(directory: string): Promise<string[]> {
   const files: string[] = []
@@ -91,7 +84,7 @@ export async function installedRestartService(directory: string, configuration: 
   const readyFile = join(directory, 'service-ready.json')
   const preservingFile = `${readyFile}.preserving`
   const unit = `graphql-restart-${randomUUID()}.service`
-  const unitPath = join(directory, 'systemd-user', unit)
+  const unitPath = join(serviceUser.homedir, '.config/systemd/user', unit)
   const envFile = join(directory, 'service.env')
   const variables = { ...environment, FOREMAN_CODE_RESTART_FIXTURE_READY: readyFile }
   await writeFile(envFile, Object.entries(variables).filter((entry): entry is [string, string] =>
@@ -104,11 +97,12 @@ export async function installedRestartService(directory: string, configuration: 
     .replace('Restart=always', 'Restart=no')
   const service = renderUserService(template, { node: join(release, 'node'), app,
     state: directory, home: serviceUser.homedir, path: environment.PATH ?? '/usr/bin:/bin' })
+  await writeFile(unitPath, service, { mode: 0o600 })
   const systemctl = (...args: string[]) => execute('systemctl', ['--user', ...args], {
     env: { ...process.env, XDG_RUNTIME_DIR: `/run/user/${serviceUser.uid}`,
       DBUS_SESSION_BUS_ADDRESS: `unix:path=/run/user/${serviceUser.uid}/bus` },
   })
-  await installRestartServiceUnit(unitPath, service, systemctl)
+  await systemctl('daemon-reload')
   const registry = new (await import('../../src/modules/harnesses/recovery/processRegistry.js')).NativeProcessRegistry(
     join(runtime, 'native-process-registry'))
   async function ready() {
@@ -161,7 +155,6 @@ export async function installedRestartService(directory: string, configuration: 
         await systemctl('kill', '--kill-whom=all', '--signal=SIGKILL', unit).catch(error => {
           if (!/not running|not loaded|No such process/.test(String(error.stderr))) throw error
         })
-        await systemctl('--runtime', 'disable', unit)
         await rm(unitPath, { force: true })
         await systemctl('daemon-reload')
         await systemctl('reset-failed', unit).catch(error => {
