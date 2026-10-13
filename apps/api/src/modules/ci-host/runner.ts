@@ -484,8 +484,7 @@ export class HostCiRunner {
         + ` FOREMAN_CODE_CI_CPU_COUNT=${Math.max(1, Math.floor(resources.cpuCount))}`
         + ` FOREMAN_CODE_CI_MEMORY_BYTES=${resources.memoryBytes}`
         + ` FOREMAN_CODE_VERIFICATION_UNIT_WORKERS=${workers}`
-        + (meta.gate ? ` FOREMAN_CODE_INTEGRATION_SHARDS=${meta.integrationShards}`
-          + ` GRAPHQL_INTEGRATION_SHARDS=${meta.integrationShards}` : '')
+        + (meta.gate ? ` FOREMAN_CODE_CI_INTEGRATION_SHARDS=${meta.integrationShards}` : '')
         // The repository's suite hook writes structured test results here; integration has its own setting.
         + (capabilities.parts ? ` CI_HOST_RUNNER=1 FOREMAN_CODE_CI_DEDICATED=1`
           + (meta.suite === 'integration' ? '' : ` TEST_RESULTS_OUTPUT=${quote(join(run, 'test-results.json'))}`)
@@ -502,10 +501,11 @@ export class HostCiRunner {
       ...(database ? [`trap '${pm} db:down' EXIT`] : []),
       `step() { echo "$1" > ${quote(join(run, 'step'))}; echo "::step $1"; }`,
       ...(meta.message ? [`echo ${quote(meta.message)}`] : []),
-      ...(prerequisites ? [`SUITE=${quote(prerequisiteSuite)} bash scripts/ci-suite.sh prepare`
-        + ` >${quote(join(run, 'preparation.log'))} 2>&1 & preparation_pid=$!`] : []),
       'step install',
       ...(existsSync(join(source, 'pnpm-lock.yaml')) ? warmPnpmInstall(source, cache, run) : [`${pm} install || finish $?`]),
+      // pnpm script commands can reinstall dependencies, so preparation must wait for installation.
+      ...(prerequisites ? [`SUITE=${quote(prerequisiteSuite)} bash scripts/ci-suite.sh prepare`
+        + ` >${quote(join(run, 'preparation.log'))} 2>&1 & preparation_pid=$!`] : []),
       ...(contracts ? ['step contracts', 'corepack pnpm --filter @foreman-code/contracts build || finish $?'] : []),
       ...(prerequisites ? ['step prepare', 'wait "$preparation_pid"; preparation_code=$?',
         `cat ${quote(join(run, 'preparation.log'))}`, '[ "$preparation_code" = 0 ] || finish "$preparation_code"'] : []),
