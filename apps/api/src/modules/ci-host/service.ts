@@ -21,7 +21,7 @@ import { RUN_CI_JOBS_SQL, runCiJob, storedCiTestResults, type RunCiJobRow } from
 import { fallbackOnError } from '../diagnostics/ignoredError.js'
 import { CI_QUEUE_ORDER, ciQueueReason, compareCiQueue } from './priority.js'
 import { supersedeCiRuns } from './supersession.js'
-import { gateQueueBlock, planCiGate } from './gate.js'
+import { gatePartStealer, gateQueueBlock, planCiGate } from './gate.js'
 import { ciGateReport } from './gateReport.js'
 
 /** CI reads are idempotent: one retry after a lock or statement timeout, then a typed retryable error. */
@@ -43,7 +43,6 @@ export interface HostCiEndpoint {
 }
 /** Resolves the commit to test and makes sure GitHub has it, so build computers can fetch it. */
 export interface CiCommits {
-  heads?(repository: string): Promise<{ branch: string; commit: string }[]>
   infrastructureOnly?(repository: string, commit: string): Promise<boolean>
   branch?(repository: string, defaultBranch: string, commit: string): Promise<string | null>
   isAncestor?(repository: string, ancestor: string, commit: string): Promise<boolean>
@@ -588,8 +587,6 @@ export class HostCiService {
           : status.operation === 'status' ? { label: computer.label, hostRef: computer.hostRef, priority: computer.priority,
             ready: status.ready, reasons: status.reasons, cpuCount: status.cpuCount, memoryBytes: status.memoryBytes,
             availableMemoryBytes: status.availableMemoryBytes,
-            ...(status.prewarmSupported !== undefined ? { prewarmSupported: status.prewarmSupported } : {}),
-            ...(status.warmup !== undefined ? { warmup: status.warmup } : {}),
             ...(status.userSystemd ? { userSystemd: status.userSystemd } : {}),
             slotsUsed: Math.max(running.length, status.slotsUsed ?? 0), slotsTotal: status.slotsTotal ?? 1,
             running } : null)
@@ -782,6 +779,7 @@ export class HostCiService {
     queued.sort((left, right) => (left.priority === right.priority
       && !left.gate && !right.gate
       ? Number(needsSystemdExecutor(right)) - Number(needsSystemdExecutor(left)) : 0) || compareCiQueue(left, right))
+    const stealsGatePart = gatePartStealer(computers, queued)
     // Reserve slots before awaiting a start so concurrent dispatches cannot spend the same capacity.
     await Promise.all(queued.map(async run => {
       const blocked = gateQueueBlock(run, gate)
@@ -806,7 +804,7 @@ export class HostCiService {
       const order = computers.filter(computer => runsOnCircleCi(run)
         || computer.hostRef.kind !== 'cloud' || computer.hostRef.provider !== 'circleci')
         .filter(computer => !hostRequired || supportsUserSystemd(computer))
-        .filter(computer => !run.gate || computer.key === run.plannedHostKey)
+        .filter(computer => !run.gate || computer.key === run.plannedHostKey || stealsGatePart(run, computer))
         .filter(computer => run.gate || computer.hostRef.kind === 'cloud' || !reservedHosts.has(computer.key))
         .filter(computer => computer.hostRef.kind !== 'cloud' || !computer.hostRef.provider
           || !run.unstartedProviders?.includes(computer.hostRef.provider))
@@ -833,9 +831,11 @@ export class HostCiService {
         used.set(computer.key, (used.get(computer.key) ?? 0) + (exclusiveGate ? totals.get(computer.key) ?? 1 : 1))
         if (usesGitHubIntegration) integrationOnGitHub.add(computer.key)
         try {
+          // A build computer that takes a cloud-planned gate part runs it with every shard it can hold.
+          const shards = stealsGatePart(run, computer) ? { integrationShards: 64 } : {}
           const reply = CiHostReplySchema.parse(await this.endpoint.request(computer, { operation: 'start', runId: run.id,
             repository: run.repository, commit: run.commit, suite: run.suite, ...(run.part ? { part: run.part } : {}), ...(run.partition ? { partition: run.partition } : {}),
-            scope: run.scope, ...selection,
+            scope: run.scope, ...selection, ...shards,
             ...(run.defaultBranch ? { defaultBranch: run.defaultBranch } : {}),
             ...(run.baseCommit ? { baseCommit: run.baseCommit } : {}),
             ...(durations.get(run.id) ? { durations: durations.get(run.id)! } : {}) }))

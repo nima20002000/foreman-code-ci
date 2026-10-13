@@ -57,14 +57,14 @@ async function computer(beforeGithub?: () => Promise<void>, cpuCount = 8, isolat
   const root = await mkdtemp(join(directory, 'host-ci-concurrency-'))
   const launches: { args: readonly string[] }[] = []
   const ports: HostCiPorts = { cpus: cpuCount, memoryBytes: 16 * 2 ** 30, now: () => new Date(),
-    run: async (file, args, options) => {
+    run: async (file, args) => {
       if (file === 'gh') await beforeGithub?.()
       if (file === 'git' && args.includes('show')) {
         return { code: 0, stdout: JSON.stringify({ foremanCi: { hostSlots: isolatedDatabase ? 1 : 0 } }), stderr: '' }
       }
-      if (file === 'git' && args.includes('checkout')) {
+      if (file === 'git' && args.includes('worktree') && args.includes('add')) {
         await beforeCheckout?.()
-        const source = options!.cwd!
+        const source = args.at(-2)!
         await mkdir(source, { recursive: true })
         await writeFile(join(source, 'package.json'), JSON.stringify({ scripts: { lint: 'fixture', unit: 'fixture' } }))
       }
@@ -92,7 +92,7 @@ describe('host CI runner concurrent starts', () => {
     expect(launches[0]!.args).toContain('--property=CPUQuota=1600%')
   })
 
-  it('retains a canceled slot checkout after preparation has stopped', async () => {
+  it('removes a canceled checkout only after preparation has stopped', async () => {
     const checkout = barrier()
     const { root, runner, request } = await computer(undefined, 16, true, checkout.pause)
     await runner.handle(request)
@@ -108,7 +108,7 @@ describe('host CI runner concurrent starts', () => {
     }
     await expect(canceled).resolves.toMatchObject({ state: 'canceled' })
     const { access } = await import('node:fs/promises')
-    await expect(access(join(root, 'cache/slots/0/src/package.json'))).resolves.toBeUndefined()
+    await expect(access(join(root, 'runs', request.runId, 'src'))).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
   it('admits two different jobs into two slots, queues a third, and releases one slot on cancellation', async () => {
@@ -174,42 +174,4 @@ describe('host CI runner concurrent starts', () => {
       writing.release()
     }
   })
-})
-
-it('cancels low priority warm-up before real CI resets a slot and keeps all real slots available', async () => {
-  const { runner, request, launches } = await computer(undefined, 16, true)
-  const warm = { ...request, runId: randomUUID(), warmup: true, suite: 'install' }
-  await runner.handle(warm)
-  await vi.waitFor(async () => {
-    await expect(runner.status()).resolves.toMatchObject({ slotsUsed: 0, slotsTotal: 2,
-      warmup: { run: { state: 'running' } } })
-  })
-  expect(launches[0]!.args).toEqual(expect.arrayContaining([
-    '--property=Nice=19', '--property=CPUWeight=1', '--property=IOWeight=1', '--property=IOSchedulingClass=idle',
-  ]))
-  await runner.handle(request)
-  await expect(runner.handle({ operation: 'read', runId: warm.runId, afterOffset: 0, maxBytes: 1 }))
-    .resolves.toMatchObject({ run: { state: 'canceled' } })
-  await runner.handle({ ...request, runId: randomUUID() })
-  await expect(runner.status()).resolves.toMatchObject({ slotsUsed: 2 })
-  await expect(runner.handle({ ...warm, runId: randomUUID() })).resolves.toMatchObject({ run: { state: 'queued' } })
-})
-
-it('keeps a canceled slot reserved until its checkout operation finishes', async () => {
-  const checkout = barrier()
-  const { runner, request } = await computer(undefined, 8, true, checkout.pause)
-  await runner.handle(request)
-  await checkout.entered
-  const canceled = runner.cancel(request.runId)
-  try {
-    await vi.waitFor(async () => {
-      await expect(runner.handle({ operation: 'read', runId: request.runId, afterOffset: 0, maxBytes: 1 }))
-        .resolves.toMatchObject({ run: { state: 'canceled' } })
-    })
-    await expect(runner.handle({ ...request, runId: randomUUID() })).rejects.toMatchObject({ code: 'CI_HOST_BUSY' })
-  } finally {
-    checkout.release()
-  }
-  await canceled
-  await expect(runner.handle({ ...request, runId: randomUUID() })).resolves.toMatchObject({ run: { state: 'starting' } })
 })
