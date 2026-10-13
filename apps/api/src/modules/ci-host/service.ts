@@ -2,7 +2,6 @@ import { isDeepStrictEqual } from 'node:util'
 import { randomUUID } from 'node:crypto'
 import { inTransaction, type SqlQuery } from '../../infrastructure/transaction.js'
 import type pg from 'pg'
-import { withProviderPoll } from './providerPoll.js'
 import { CI_HOST_NAMESPACE, CI_LOG_MAX_BYTES, CI_RUN_JOBS_LIMIT, CiComputerRefSchema, CiHostReplySchema, CiListOutputSchema, CiRunRecordSchema, CiRunOutputSchema,
   WorkspaceSchema,
   requiresUserSystemd, userSystemdIntegrationFiles,
@@ -599,7 +598,7 @@ export class HostCiService {
     assertCiReadAccess(caller, scope.executionId, run)
     this.stoppingRuns += 1
     try {
-      // Persist intent before trying the executor lock, even while its start reply is pending.
+      await this.dispatching
       return await this.cancelTicket(scope.workspaceId, run.id, {
         principalId: caller.id, source, commandId: input.commandId ?? randomUUID(), reason: 'direct',
       })
@@ -820,7 +819,7 @@ export class HostCiService {
   /** One pass: refresh running runs, then give queued runs to free CI slots in priority order. */
   dispatch(): Promise<void> {
     if (this.stoppingRuns) return this.dispatching ?? Promise.resolve()
-    this.dispatching ??= withProviderPoll(() => this.dispatchOnce()).catch(error => log.warn({ err: error }, 'CI dispatch failed'))
+    this.dispatching ??= this.dispatchOnce().catch(error => log.warn({ err: error }, 'CI dispatch failed'))
       .finally(() => { this.dispatching = undefined })
     return this.dispatching
   }
@@ -1037,15 +1036,13 @@ export class HostCiService {
         ? github.length : githubIntegrationLimit
       const reasons = (run.unstartedProviders ?? []).map(provider => `${provider}: dispatch retries exhausted`)
       const preferred = (computer: HostCiComputer) => {
-        if (run.gate && run.suite !== 'integration') return Number(computer.hostRef.kind === 'cloud')
         if (computer.hostRef.kind !== 'cloud') return 3
         if (run.suite !== 'integration') return Number(isGitHubComputer(computer))
         return isGitHubComputer(computer) ? 1 : 2
       }
       const affectedFiles = run.scope === 'affected' && !run.deriveFiles ? { files: run.files } : {}
       const selection = (run.gate || smokeTarget) && run.suite === 'integration'
-        ? { gate: true, scope: 'full' as const, integrationShards: run.integrationShards!, files: run.files }
-        : affectedFiles
+        ? { gate: true, integrationShards: run.integrationShards!, files: run.files } : affectedFiles
       const plannedGateReady = run.plannedHostKey && gateShards.has(run.plannedHostKey)
       const order = computers.filter(computer => runsOnCircleCi(run)
         || computer.hostRef.kind !== 'cloud' || computer.hostRef.provider !== 'circleci')
