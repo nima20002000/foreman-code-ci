@@ -25,7 +25,7 @@ it.each(['before turn', 'session reply', 'lane bind'] as const)(
     vi.spyOn(f.locations, 'revalidateRunAuthorization').mockImplementation(async (...args) => {
       if (sessionSaved) {
         sessionSaved = false
-        throw Object.assign(new Error('Database authorization query failed.'), { code: 'XX000' })
+        throw Object.assign(new Error('canceling statement due to statement timeout'), { code: '57014' })
       }
       return authorize(...args)
     })
