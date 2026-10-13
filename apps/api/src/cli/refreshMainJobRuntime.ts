@@ -7,7 +7,6 @@ import { z } from 'zod'
 import { captureInstalledRuntimeConfigurationRecord, InstalledJobRuntimeConfigurationRecordSchema }
   from '../modules/jobs/installedRuntimeHost.js'
 import { InstalledVerificationRuntimeCaptureInputSchema } from '../modules/jobs/installedVerificationConfiguration.js'
-import { ignoreError } from '../modules/diagnostics/ignoredError.js'
 
 const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex')
 const ReviewedRefreshSchema = z.object({
@@ -51,7 +50,7 @@ export async function refreshMainJobRuntime(input: { stateDirectory: string; inp
   try {
     await writePrivate(temporary, Buffer.from(`${JSON.stringify(configuration)}\n`), true)
     await rename(temporary, output)
-  } finally { await unlink(temporary).catch(ignoreError('lifecycle', 'unlink', { module: 'refreshMainJobRuntime' })) }
+  } finally { await unlink(temporary).catch(() => undefined) }
   const directory = await open(input.stateDirectory, 'r')
   try { await directory.sync() } finally { await directory.close() }
   return { configurationPath: output, previousConfigurationPath: retained }

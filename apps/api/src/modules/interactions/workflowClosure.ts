@@ -8,7 +8,6 @@ import { DomainError } from '../errors.js'
 import type { ClosedWorkflowSession } from './stoppedWorkflowFinalization.js'
 import { RemoteOperationReceiptSchema } from '@foreman-code/contracts/remote-execution'
 import { readExecutionPlacement } from '../placement/persistence.js'
-import { ignoreError } from '../diagnostics/ignoredError.js'
 
 /** Backend-only lifetime receipt. It is not a native action or Run authority.
  * Reserve BEFORE credential preflight, create or
@@ -226,7 +225,7 @@ export class PostgresWorkflowClosureStore implements WorkflowClosureStore {
       await client.query('commit')
       return value
     } catch (error) {
-      await client.query('rollback').catch(ignoreError('db', 'transaction rollback', { module: 'workflowClosure' }))
+      await client.query('rollback').catch(() => undefined)
       throw error
     } finally { client.release() }
   }
