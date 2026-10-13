@@ -60,6 +60,9 @@ describeRetryBudget('finite technical retry budget: restart', () => {
       }
       expect(f.provider.counts.starts).toBe(2); expect(f.provider.counts.sessions).toBe(2)
       expect(await occurrences(f)).toHaveLength(form === 'repeat' ? 1 : 0)
+      await f.runtime.engine.reconcile(error => f.errors.push(error))
+      expect(await readback(f)).toEqual(view)
+      expect(attempts(await executionRows(f))).toEqual([1, 2])
       expect(f.shutdownErrors).toEqual([])
     } finally { await f.close() }
   }, 90000)
