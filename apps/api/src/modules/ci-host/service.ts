@@ -631,32 +631,6 @@ export class HostCiService {
     return this.dispatching
   }
 
-  /** Slow-tier parts wait until every other part of their request passed; if any of those did not pass, the slow
-   * tier is skipped (canceled with the reason) because its result could not make the request green. */
-  private async releaseSlowTier(queued: CiRunRecord[]): Promise<CiRunRecord[]> {
-    const deferred = queued.filter(run => run.deferred)
-    if (!deferred.length) return queued
-    const groups = [...new Set(deferred.map(run => run.groupId))]
-    const rows = (await this.pool.query<{ group_id: string; state: string }>(
-      `select record->>'groupId' as group_id, state from ci_runs
-        where record->>'groupId' = any($1::text[]) and coalesce((record->>'deferred')::boolean, false) = false`,
-      [groups])).rows
-    const waiting = new Set<string>()
-    for (const groupId of groups) {
-      const states = rows.filter(row => row.group_id === groupId).map(row => row.state)
-      if (states.some(state => ['failed', 'canceled', 'lost'].includes(state))) {
-        const now = new Date().toISOString()
-        for (const run of deferred.filter(value => value.groupId === groupId)) {
-          const skipped = { ...run, state: 'canceled' as const, finishedAt: now,
-            message: 'Skipped: slow tests run only after every other test of this request passed, and some did not.' }
-          await this.save(skipped, null)
-        }
-        waiting.add(groupId)
-      } else if (states.some(state => state !== 'passed')) waiting.add(groupId)
-    }
-    return queued.filter(run => !run.deferred || !waiting.has(run.groupId))
-  }
-
   private async dispatchOnce() {
     await this.cancelSuperseded()
     const computers = await this.endpoint.computers()
@@ -737,11 +711,10 @@ export class HostCiService {
           and record->>'suite'<>'integration'
           order by ${CI_QUEUE_ORDER} limit 50)
         order by ${CI_QUEUE_ORDER}`)).rows
-    const parsed = queuedRows.map(row => CiRunRecordSchema.parse(row.record))
-    const durations = new Map(queuedRows.map((row, index) => [parsed[index]!.id, row.durations]))
-    let queued = await this.releaseSlowTier(parsed)
+    let queued = queuedRows.map(row => CiRunRecordSchema.parse(row.record))
     // Reserve four GitHub slots while checks wait, including integration already using GitHub.
     const githubIntegrationLimit = Math.max(0, github.length - (queued.some(run => run.suite !== 'integration') ? 4 : 0))
+    const durations = new Map(queuedRows.map((row, index) => [queued[index]!.id, row.durations]))
     queued = await this.weighPartitions(queued, computers.flatMap(computer =>
       Array.from({ length: freeSlots(computer) }, () => computer)))
     queued.sort((left, right) => (left.priority === right.priority

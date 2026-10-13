@@ -2,6 +2,7 @@ import { expect } from 'vitest'
 import { HostHarnessOverrideListSchema, HostHarnessProfileEvidenceSchema } from '@foreman-code/contracts/harness-registry'
 import { HarnessQualificationListSchema } from '@foreman-code/contracts/harness-qualification'
 import { remoteReviewProduction, waitForRemoteReview } from './remoteReviewProduction.js'
+import { measureIntegrationPhase } from './integrationPhase.js'
 
 type Fixture = Awaited<ReturnType<typeof remoteReviewProduction>>
 
@@ -12,7 +13,7 @@ export async function latestEvidence(fixture: Fixture) {
 }
 
 export async function refreshedEvidence(fixture: Fixture, previousGeneration: string) {
-  return waitForRemoteReview(async () => {
+  return measureIntegrationPhase('automatic profile evidence refresh', () => waitForRemoteReview(async () => {
     const evidence = await latestEvidence(fixture)
     const failed = evidence.find(proof => proof.connectionGeneration !== previousGeneration && !proof.qualified)
     if (failed) throw new Error(`Automatic profile qualification failed: ${failed.failure?.code}`)
@@ -22,26 +23,29 @@ export async function refreshedEvidence(fixture: Fixture, previousGeneration: st
     return evidence
   }, evidence =>
     evidence.length === fixture.profiles.length && evidence.every(proof =>
-      proof.connectionGeneration !== previousGeneration && proof.qualified), 'fresh automatic profile evidence')
+      proof.connectionGeneration !== previousGeneration && proof.qualified), 'fresh automatic profile evidence'))
 }
 
 export async function startWhenReady(fixture: Fixture) {
-  return waitForRemoteReview(async () => {
-    try { return await fixture.start() } catch (error) {
+  return measureIntegrationPhase('Start after automatic profile checks', () => waitForRemoteReview(async () => {
+    try {
+      return await fixture.start()
+    } catch (error) {
       if (error instanceof Error && error.message.includes('HARNESS_PROFILE_CHECK_PENDING')) return undefined
       throw error
     }
-  }, result => result !== undefined, 'Run admission after automatic profile checks')
+  }, result => result !== undefined, 'Run admission after automatic profile checks'))
 }
 
 export async function assertMcpReadback(fixture: Fixture, evidence: Awaited<ReturnType<typeof latestEvidence>>) {
   // Evidence commits before the inventory refresh finishes and clears the pending check.
-  const profiles = await waitForRemoteReview(async () => HostHarnessOverrideListSchema.parse(
-    await fixture.value('harness_instances_list', {
-      hostRef: fixture.hostRef, applicationInstallationId: fixture.profiles[0]!.target.applicationInstallationId,
-    })), profiles => profiles.overrides.length === fixture.profiles.length
+  const profiles = await measureIntegrationPhase('automatic profile MCP readback', () => waitForRemoteReview(
+    async () => HostHarnessOverrideListSchema.parse(
+      await fixture.value('harness_instances_list', {
+        hostRef: fixture.hostRef, applicationInstallationId: fixture.profiles[0]!.target.applicationInstallationId,
+      })), profiles => profiles.overrides.length === fixture.profiles.length
       && profiles.overrides.every(profile => profile.qualification !== 'qualifying'),
-  'automatic profile checks completing through MCP')
+    'automatic profile checks completing through MCP'))
   expect(profiles.overrides).toHaveLength(fixture.profiles.length)
   expect(profiles.overrides.every(profile => profile.qualification === 'qualified')).toBe(true)
   const completed = evidence.map(proof => proof.completedNativeQualification!)
