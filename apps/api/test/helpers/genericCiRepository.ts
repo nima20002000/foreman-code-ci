@@ -11,7 +11,7 @@ import { gitFixtureEnvironment } from './gitFixture.js'
 
 /** Real git and package scripts, with local origins and a process standing in for the systemd service. */
 export async function genericCiRepository(options: { lockfile?: string; integration?: boolean; cloud?: boolean
-  suiteExit?: number; suiteHook?: boolean; suiteDelayMs?: number } = {}) {
+  suiteExit?: number; suiteHook?: boolean } = {}) {
   const base = process.env.FOREMAN_CODE_TEST_ROOT ?? process.env.TMPDIR
   if (!base) throw new Error('A disposable test root is required.')
   const root = await mkdtemp(join(base, 'generic-ci-'))
@@ -37,8 +37,7 @@ export async function genericCiRepository(options: { lockfile?: string; integrat
     await mkdir(mirror)
     await mkdir(bin)
     const scripts: Record<string, string> = Object.fromEntries(['build', 'lint', 'unit'].map(suite =>
-      [suite, `node -e "setTimeout(() => { console.log('fixture ${suite} passed');`
-        + ` process.exit(${options.suiteExit ?? 0}) }, ${options.suiteDelayMs ?? 0})"`]))
+      [suite, `node -e "console.log('fixture ${suite} passed'); process.exit(${options.suiteExit ?? 0})"`]))
     if (options.integration) scripts.integration = "node -e \"console.log('fixture integration passed')\""
     await writeFile(join(origin, 'package.json'), JSON.stringify({ name: 'fixture-project', private: true, scripts }))
     if (options.lockfile) await writeFile(join(origin, options.lockfile), '')
