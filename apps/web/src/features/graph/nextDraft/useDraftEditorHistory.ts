@@ -25,7 +25,7 @@ export function useDraftEditorHistory({ draftKey, undoScope, board, editIntent, 
       if (!current) return
       // Settings saved straight to the server (schedule) interleave with draft steps in the order they happened.
       if (direction === 'undo') {
-        const action = pendingBoardAction(undoScope, current.history.length + (current.historyOffset ?? 0))
+        const action = pendingBoardAction(undoScope, current.history.length)
         if (action) {
           await action.undo()
           popBoardAction(undoScope, action)
