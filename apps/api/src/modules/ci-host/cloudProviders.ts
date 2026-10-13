@@ -1,10 +1,22 @@
 import { mkdir, readdir, readFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
-import type { CiExecutionSuite, CiScope } from '@foreman-code/contracts'
+import type { CiDurations, CiExecutionSuite, CiHostRun, CiPart, CiScope, CiSuite, CiTestResults, CiUserSystemd } from '@foreman-code/contracts'
 import { DomainError } from '../errors.js'
 import type { HostCiPorts } from './runner.js'
-import type { CloudRun } from './cloud.js'
+import { fallbackOnError } from '../diagnostics/ignoredError.js'
 
+export interface CloudRun {
+  runId: string; repository: string; mirror: string; commit: string; suite: CiSuite; startedAt: string
+  providerRunId: string | null; state: CiHostRun['state']; finishedAt: string | null; exitCode: number | null
+  message: string | null; durations?: CiDurations; testResults?: CiTestResults
+  scope?: CiScope; files?: string[]; part?: CiPart; baseCommit?: string
+  dispatch?: { input: CloudDispatchInput; attempts: number; at: string }
+  mirrorBranch?: string
+  workflowStarted?: boolean
+  /** Live progress kept while the run is followed: steps already written to the log, the running step's output
+   * bytes written so far, and bytes written in all. */
+  live?: { step: string | null; seen: string[]; output?: { key: string; bytes: number }; bytes: number }
+}
 export const CLOUD_START_TIMEOUT_MS = 75_000
 
 /** One step of the provider's job; `key` stays the same across polls. */
@@ -14,7 +26,8 @@ export interface CloudStep { key: string; name: string; state: 'running' | 'pass
 export type CloudStatus = ({ done: false } | { done: true; conclusion: 'success' | 'failure' | 'cancelled'; finishedAt: string })
   & { steps?: CloudStep[]; output?: { key: string; text: string } }
 export interface CloudDispatchInput {
-  mirror: string; branch: string; runId: string; suite: CiExecutionSuite; slice: string
+  mirror: string; branch: string; snapshotCommit?: string; runId: string; suite: CiExecutionSuite; slice: string
+  expectedDurationMs?: number
   scope?: CiScope; files?: string; defaultBranch?: string; baseCommit?: string; partition?: string; durations?: string
 }
 
@@ -29,6 +42,7 @@ export interface CloudProvider {
   readonly cpus: number
   readonly memoryBytes: number
   readonly loginHint: string
+  readonly userSystemd: CiUserSystemd
   ready(): Promise<boolean>
   /** Starts a run; returns the service's run id when it is known at once. */
   dispatch(input: CloudDispatchInput): Promise<string | null>
@@ -68,7 +82,7 @@ async function findFile(directory: string, name: string): Promise<string | null>
   return null
 }
 
-export interface CloudArtifacts { durations: unknown; testResults: unknown }
+export interface CloudArtifacts { durations: unknown; testResults: unknown; watchdogFailure?: unknown }
 const noArtifacts: CloudArtifacts = { durations: null, testResults: null }
 
 async function readArtifacts(directory: string): Promise<CloudArtifacts> {
@@ -76,7 +90,8 @@ async function readArtifacts(directory: string): Promise<CloudArtifacts> {
     const path = await findFile(directory, name)
     return path ? JSON.parse(await readFile(path, 'utf8')) as unknown : null
   }
-  return { durations: await read('durations.json').catch(() => null), testResults: await read('test-results.json').catch(() => null) }
+  return { durations: await read('durations.json').catch(fallbackOnError(null, 'jobs', 'read CI durations artifact')), testResults: await read('test-results.json').catch(fallbackOnError(null, 'jobs', 'read CI test results artifact')),
+    watchdogFailure: await read('watchdog-message.json').catch(fallbackOnError(null, 'jobs', 'read CI watchdog artifact')) }
 }
 
 const WORKFLOW = 'ci.yml'
@@ -87,6 +102,7 @@ interface GitHubJob { id: number; status: string; steps?: { number: number; name
 export class GitHubActionsProvider implements CloudProvider {
   readonly id = 'github' as const
   readonly label = 'GitHub Actions'
+  readonly userSystemd = { supported: true, reason: null }
   readonly slots = 16
   readonly cpus = 4
   readonly memoryBytes = 16 * 2 ** 30
@@ -103,8 +119,9 @@ export class GitHubActionsProvider implements CloudProvider {
 
   async dispatch(input: CloudDispatchInput) {
     // Runs start from main, whose cache scope every run shares, and check out the commit's branch.
-    await this.gh(['workflow', 'run', WORKFLOW, '-R', input.mirror, '--ref', 'main', '-f', `ref=${input.branch}`,
+    await this.gh(['workflow', 'run', WORKFLOW, '-R', input.mirror, '--ref', 'main', '-f', `ref=${input.snapshotCommit ?? input.branch}`,
       '-f', `run_id=${input.runId}`, '-f', `suite=${input.suite}`, '-f', `slice=${input.slice}`,
+      '-f', `expected_duration_ms=${input.expectedDurationMs ?? 0}`,
       ...(input.scope ? ['-f', `scope=${input.scope}`] : []), ...(input.files !== undefined ? ['-f', `files=${input.files}`] : []),
       ...(input.defaultBranch ? ['-f', `default_branch=${input.defaultBranch}`] : []),
       ...(input.baseCommit ? ['-f', `base_commit=${input.baseCommit}`] : []),
@@ -185,6 +202,7 @@ export class GitHubActionsProvider implements CloudProvider {
 export class CircleCiProvider implements CloudProvider {
   readonly id = 'circleci' as const
   readonly label = 'CircleCI'
+  readonly userSystemd = { supported: true, reason: null }
   /** CircleCI rejects pipeline parameter values longer than 512 characters. */
   readonly parameterLimit = 500
   readonly slots = 28
@@ -203,7 +221,7 @@ export class CircleCiProvider implements CloudProvider {
   async dispatch(input: CloudDispatchInput) {
     const started = JSON.parse(await this.circleci(['run', 'trigger', '--project', `gh/${input.mirror}`, '--branch', input.branch,
       '--parameter', `run_id=${input.runId}`, '--parameter', `suite=${input.suite}`,
-      '--parameter', `slice=${input.slice}`, ...(input.scope ? ['--parameter', `scope=${input.scope}`] : []),
+      '--parameter', `slice=${input.slice}`, '--parameter', `expected_duration_ms=${input.expectedDurationMs ?? 0}`, ...(input.scope ? ['--parameter', `scope=${input.scope}`] : []),
       ...(input.files !== undefined ? ['--parameter', `files=${input.files}`] : []),
       ...(input.defaultBranch ? ['--parameter', `default_branch=${input.defaultBranch}`] : []),
       ...(input.baseCommit ? ['--parameter', `base_commit=${input.baseCommit}`] : []),

@@ -1,10 +1,11 @@
+import { readPublicProjectionLocked } from '../run-graph/compactSnapshot.js'
 import { randomUUID } from 'node:crypto'
 import type { BaseCheckpointSaver } from '@langchain/langgraph-checkpoint'
 import type { DurableInteraction } from '@foreman-code/contracts'
 import { WorkflowRunV3Schema, RunGraphScopeSchema } from '@foreman-code/contracts/wave25'
-import { isAtomicApprovalCheckpointSaver, type AtomicApprovalCheckpointSaver } from '../../infrastructure/approvalCheckpointSaver.js'
+import { isAtomicApprovalCheckpointSaver } from '../../infrastructure/approvalCheckpointSaver.js'
 import { DomainError } from '../errors.js'
-import { openRunGraphPublication, currentRunGraphPublication } from '../run-graph/publication.js'
+import { openRunGraphPublication } from '../run-graph/publication.js'
 import { beforeGraphCommit, didGraphTransactionCommit, type GraphTransactionSql } from '../run-graph/connection.js'
 import type { PostgresInteractionRepository } from '../interactions/postgres.js'
 import { Wave25InteractionRepository } from '../interactions/wave25/repository.js'
@@ -12,9 +13,11 @@ import { lockInteraction, readContext } from '../interactions/wave25/context.js'
 import { consumeApprovalGraphResume } from '../interactions/wave25/resume.js'
 import type { GraphResumeClaim } from '../interactions/deliveryPostgres.js'
 import type { RunOwnership } from './ownership.js'
+import { mintWorkflowResumePermit, type WorkflowResumePermit } from './workflowResumePermit.js'
 import { assertWorkflowApprovalAckLocked } from '../interactions/nativeApprovalProof.js'
 
 type WorkflowRunV3 = ReturnType<typeof WorkflowRunV3Schema.parse>
+export type { WorkflowResumePermit }
 export type AuthorizeApprovalResume = (sql: GraphTransactionSql, run: WorkflowRunV3) => Promise<void>
 
 /** The existing permission checker reads current grants. Hold the accepted and
@@ -74,7 +77,7 @@ export async function consumeDeliveredApprovals(owner: RunOwnership, saver: Base
     const discovery = WorkflowRunV3Schema.parse(row?.record)
     const scope = RunGraphScopeSchema.parse({ workspaceId: discovery.workspaceId, workflowId: discovery.workflowId,
       runId: discovery.id, workflowVersionId: discovery.workflowVersionId, executionSemanticsVersion: 3 })
-    const publication = await openRunGraphPublication(sql, scope)
+    const publication = await openRunGraphPublication(sql, scope, readPublicProjectionLocked)
     await owner.readOneShotFence(sql)
     // Match the shared publication hierarchy: parent/head, executions, then
     // interactions/outboxes, and finally checkpoint writes. Never lock a child
@@ -169,36 +172,5 @@ export async function consumeDeliveredApprovals(owner: RunOwnership, saver: Base
   if (!transaction || !didGraphTransactionCommit(transaction) || owner.oneShotConnection().unusable) {
     throw new DomainError('GRAPH_RESUME_COMMIT_UNCERTAIN', 'No confirmed checkpoint commit permits graph continuation.', 409)
   }
-  const permit = Object.freeze({ runId: committed.runId, checkpointId: committed.checkpointId })
-  resumePermits.set(permit, { ...committed, owner, saver })
-  return permit
-}
-
-/** Only a confirmed atomic checkpoint/effect COMMIT mints this private permit.
- * Serialized IDs or an arbitrary Command can never move a waiting Run forward. */
-export interface WorkflowResumePermit { readonly runId: string; readonly checkpointId: string }
-const resumePermits = new WeakMap<object, {
-  owner: RunOwnership; saver: AtomicApprovalCheckpointSaver; runId: string; versionId: string; checkpointId: string;
-  fence: { ownerId: string; fence: string }; interactions: DurableInteraction[]
-}>()
-export async function assertConsumedWorkflowResumeLocked(sql: GraphTransactionSql, owner: RunOwnership,
-  run: WorkflowRunV3, permit: WorkflowResumePermit | undefined): Promise<void> {
-  const captured = permit && resumePermits.get(permit)
-  owner.assertOwned()
-  if (!captured || captured.owner !== owner || captured.runId !== run.id || captured.versionId !== run.workflowVersionId
-    || JSON.stringify(captured.fence) !== JSON.stringify(await owner.readOneShotFence(sql))) {
-    throw new DomainError('GRAPH_RESUME_RECEIPT_MISSING', 'A waiting Run requires its exact committed checkpoint permit.', 409)
-  }
-  const publication = currentRunGraphPublication(sql, {
-    workspaceId: run.workspaceId, workflowId: run.workflowId, runId: run.id,
-    workflowVersionId: run.workflowVersionId, executionSemanticsVersion: 3,
-  })
-  for (const interaction of captured.interactions) {
-    if (await captured.saver.inspectApprovalInterrupt(sql, interaction) !== captured.checkpointId) {
-      throw new DomainError('GRAPH_INTERRUPT_NOT_CURRENT', 'An old resume permit cannot release a new checkpoint.', 409)
-    }
-    await consumeApprovalGraphResume(publication, { interaction, ownerToken: '' }, async () => {
-      throw new DomainError('GRAPH_RESUME_RECEIPT_MISSING', 'A resume permit cannot write another checkpoint.', 409)
-    })
-  }
+  return mintWorkflowResumePermit({ ...committed, owner, saver })
 }

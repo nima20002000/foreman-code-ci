@@ -4,7 +4,6 @@ import { randomUUID } from 'node:crypto'
 
 import {
   AgentDefaultsSchema,
-  UpdateAgentDefaultsRequestSchema,
   DEFAULT_AGENT_DEFAULTS,
   WorkflowDefaultsSchema,
   withAdvancedDefaults,
@@ -12,7 +11,9 @@ import {
   type WorkflowDefaults,
 } from '@foreman-code/contracts'
 import type pg from 'pg'
-import { WorkspaceDefaultsSchema, DEFAULT_WORKSPACE_DEFAULTS, type WorkspaceDefaults } from '@foreman-code/contracts/management'
+import {
+  AgentDefaultsUpdateInputSchema, WorkspaceDefaultsSchema, DEFAULT_WORKSPACE_DEFAULTS, type WorkspaceDefaults,
+} from '@foreman-code/contracts/management'
 import { GeneralSettingsSchema, DEFAULT_GENERAL_SETTINGS, type GeneralSettings } from '@foreman-code/contracts/management'
 import {
   PromptTextSchema, DEFAULT_PROMPT_TEXT, type PromptText, type PromptSettingSnapshot,
@@ -21,7 +22,7 @@ import {
 import { RemoteExecutionSettingsSchema, DEFAULT_REMOTE_EXECUTION_SETTINGS,
   type RemoteExecutionSettings } from '@foreman-code/contracts/management'
 
-import { inTransaction } from '../../infrastructure/transaction.js'
+import { inTransaction, withTransaction } from '../../infrastructure/transaction.js'
 
 import { DomainError } from '../errors.js'
 import type { GraphSqlClient } from '../run-graph/connection.js'
@@ -111,7 +112,7 @@ export class PostgresFoundationSettingsRepository {
   }
 
   async updateWorkspaceDefaults(value: WorkspaceDefaults, expectedRevision: number, client?: pg.ClientBase): Promise<VersionedSetting<WorkspaceDefaults>> {
-    if (!client) return inTransaction(this.pool, undefined, (transaction) => this.updateWorkspaceDefaults(value, expectedRevision, transaction))
+    if (!client) return withTransaction(this.pool, (transaction) => this.updateWorkspaceDefaults(value, expectedRevision, transaction))
     await client.query('select pg_advisory_xact_lock(hashtext($1))', ['workspace-folder-lifecycle'])
     const accepted = WorkspaceDefaultsSchema.parse(value)
     if (this.projectRoot && accepted.parentPath) {
@@ -128,7 +129,7 @@ export class PostgresFoundationSettingsRepository {
   }
 
   updateAgentDefaults(value: AgentDefaults, expectedRevision: number, client?: pg.ClientBase) {
-    const accepted = UpdateAgentDefaultsRequestSchema.parse({ value, expectedRevision }).value
+    const accepted = AgentDefaultsUpdateInputSchema.shape.value.parse(value)
     return this.write(KEYS.agents, accepted, expectedRevision, client)
   }
 
