@@ -6,7 +6,6 @@ import { attachDetachedStdio, detachRecoveredChild, hasDetachedStdioProcess,
   nativeProcessExit, type NativeProcessRecovery } from './recovery/processRegistry.js'
 import { redactKnownSecrets } from './secrets.js'
 import { openCodexRuntimeTiming } from './codexRuntimeTiming.js'
-import { ignoreError, logIgnoredError } from '../diagnostics/ignoredError.js'
 
 export type JsonObject = Record<string, unknown>
 export type RequestId = string | number
@@ -161,7 +160,7 @@ export class CodexStdioTransport {
       }, signal)
       await this.write({ method: 'initialized' })
     } catch (error) {
-      await this.close().catch(ignoreError('harness', 'close Codex transport', { connectionId: this.requestPrefix }))
+      await this.close().catch(() => undefined)
       throw error
     }
   }
@@ -371,10 +370,7 @@ export class CodexStdioTransport {
   private async closeTiming() {
     // Optional diagnostics cannot change native execution or physical-closure results.
     try { await this.timing?.close() }
-    catch (error) {
-      runtimeTimingPoint('harness', 'native.api_timing_unavailable', { eventType: 'receiver_close_failed' })
-      logIgnoredError('harness', 'close timing receiver', error, { connectionId: this.requestPrefix })
-    }
+    catch { runtimeTimingPoint('harness', 'native.api_timing_unavailable', { eventType: 'receiver_close_failed' }) }
   }
 
   private async closeModelInspection(): Promise<void> {
@@ -559,7 +555,7 @@ export class CodexStdioTransport {
 
   private fail(error: Error): void {
     if (!this.stop(error)) return
-    try { this.onDisconnect(error) } catch { /* ignore: observer failure cannot escape this process boundary. */ }
-    void this.close().catch(ignoreError('harness', 'close Codex transport', { connectionId: this.requestPrefix }))
+    try { this.onDisconnect(error) } catch { /* Observer failure cannot escape this process boundary. */ }
+    void this.close().catch(() => undefined)
   }
 }
