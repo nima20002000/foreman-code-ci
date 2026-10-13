@@ -1,4 +1,3 @@
-import { isRecord } from '../../../../infrastructure/records.js'
 import type { HarnessQualificationCheck } from '@foreman-code/contracts'
 import type { QualificationSuiteInput, QualificationSuiteResult } from '../types.js'
 
@@ -33,7 +32,7 @@ export async function collectChecks(input: QualificationSuiteInput, checks: read
 }
 
 export function object(value: unknown): Record<string, unknown> {
-  if (!isRecord(value)) throw new Error('Native response is not an object.')
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Native response is not an object.')
   return value as Record<string, unknown>
 }
 

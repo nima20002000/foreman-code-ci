@@ -71,7 +71,6 @@ import { VerifiedRemoteEvidence } from '../resultBridge.js'
 import { ExclusiveGraphConnection } from '../../../run-graph/connection.js'
 import { repeatExecutionIdentity } from '../../repeatResolution.js'
 import { DeviceApplicationChannel } from '../../../devices/deviceApplicationChannel.js'
-import { deferred } from '../../../../../test/helpers/deferred.js'
 
 export const roots:string[]=[],journals:RemoteOperationJournal[]=[]
 
@@ -470,6 +469,12 @@ export async function restartedInstalledFixture(captureOptions: { accepted?: boo
   }
   return { ...f, journal, journalPath, registry, recovery, native, launch, session, startHost,
     deny: () => { authorized = false }, allow: () => { authorized = true } }
+}
+
+export function deferred() {
+  let resolve!: () => void
+  const promise = new Promise<void>(done => { resolve = done })
+  return { promise, resolve }
 }
 
 export async function constructionFixture(fixtureOptions: {

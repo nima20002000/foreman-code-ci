@@ -15,8 +15,7 @@ import { repeatStartPublication } from '../src/modules/run-graph/repeatStartPubl
 import { createWorkflowNativeCaptureChannel } from '../src/modules/interactions/workflowNativeCapture.js'
 import { createWorkflowRepositoryServices } from '../src/modules/runs/workflowRepositoryServices.js'
 import { RunOwnership } from '../src/modules/runs/ownership.js'
-import { agent3Database, seedAgent3, candidateFor, graphHead, postgresEnabled } from './helpers/wave25Agent3.js'
-import { rejectableDeferred } from './helpers/deferred.js'
+import { agent3Database, seedAgent3, candidateFor, graphHead, deferred, postgresEnabled } from './helpers/wave25Agent3.js'
 
 /** Tests transactional admission and the public application service in isolated fixtures. */
 describe.skipIf(!postgresEnabled)('Agent 3 atomic Run admission and live authorization', () => {
@@ -118,7 +117,7 @@ describe.skipIf(!postgresEnabled)('Agent 3 atomic Run admission and live authori
     f.run = accepted.value; f.scope.runId = accepted.value.id
     const owner = await RunOwnership.acquire(db.pool, accepted.value.id, () => undefined)
     if (!owner) throw new Error('Expected actual Run ownership')
-    const entered = rejectableDeferred(), release = rejectableDeferred()
+    const entered = deferred(), release = deferred()
     let pause = true
     const repository = repositoryFor(locations), store = await repository.repeat(owner)
     const validate = locations.revalidateRunAuthorization.bind(locations)
