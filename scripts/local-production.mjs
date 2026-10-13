@@ -16,9 +16,7 @@ import {
   pruneReleases, removeUninstalledRelease, readActiveRuns, readProductionIdentity, waitForIdleRuns, renderEnvironment, waitForProductionReady, withInstallationLock,
   shouldOpenDashboardAfterInstall,
   productionIntegrationPaths, publishDesktopIntegration, enableProductionServices, apiServiceTemplate,
-  launchProduction, launchBrowser, parseRunWaitMinutes, readReleaseSelection,
-  needsStartupConfiguration, recordStartupConfiguration, withProductionSourceSnapshot,
-  backupDatabase, restoreDatabase, runReleaseCutover, recoverReleaseCutover,
+  launchProduction, launchBrowser,
 } from './local-production-runtime.mjs'
 
 const source = fileURLToPath(new URL('../', import.meta.url))
@@ -28,8 +26,6 @@ const state = join(home, '.local/state/graphql-production')
 const data = join(home, '.local/share/graphql-production')
 const config = join(home, '.config/graphql-production')
 const envFile = join(config, 'production.env')
-const deploymentFile = join(config, 'deployment.json')
-const startupFile = join(config, 'installation.json')
 const current = join(app, 'current')
 const origin = 'http://127.0.0.1:3041'
 const capture = promisify(execFile)
@@ -49,7 +45,7 @@ function run(command, args, options = {}) {
   })
 }
 
-async function configureEnvironment(buildSource) {
+async function configureEnvironment() {
   for (const directory of [config, state, data, app, join(data, 'files'), join(data, 'workspaces'),
     join(state, 'runs'), join(state, 'logs'), join(state, 'cache')]) {
     await mkdir(directory, { recursive: true, mode: 0o700 })
@@ -70,46 +66,43 @@ async function configureEnvironment(buildSource) {
     password = randomBytes(32).toString('hex')
   }
   const owned = localProductionEnvironment(home, password)
-  const { loadConfig } = await import(pathToFileURL(join(buildSource, 'apps/api/dist/config.js')))
+  const { loadConfig } = await import('../apps/api/dist/config.js')
   const environment = await preserveOperatorConfiguration(join(config, 'operator.json'), previous, owned, loadConfig)
   await publish(envFile, renderEnvironment(environment))
   return environment
 }
 
-async function stageRelease({ source: buildSource, commit }, runBuild) {
+async function stageRelease() {
   const releases = join(app, 'releases')
   await mkdir(releases, { recursive: true, mode: 0o700 })
   const release = await mkdtemp(join(releases, 'release-'))
   try {
     await mkdir(join(release, 'apps'), { recursive: true })
-    await deployProductionApi(runBuild, join(release, 'apps/api'))
-    await cp(join(buildSource, 'apps/web/dist'), join(release, 'apps/web/dist'), { recursive: true })
+    await deployProductionApi(run, join(release, 'apps/api'))
+    await cp(join(source, 'apps/web/dist'), join(release, 'apps/web/dist'), { recursive: true })
     await mkdir(join(release, 'scripts'), { recursive: true })
     for (const name of ['local-production.mjs', 'local-production-runtime.mjs', 'graphql-mcp.mjs',
       'worker-release-artifacts.mjs', 'worker-artifact-files.mjs', 'install-ci-smoke.mjs']) {
-      await copyFile(join(buildSource, 'scripts', name), join(release, 'scripts', name))
+      await copyFile(join(source, 'scripts', name), join(release, 'scripts', name))
     }
-    await copyVerificationRuntime(buildSource, release)
+    await copyVerificationRuntime(source, release)
     const contractsSource = join(release, 'packages/contracts/src')
     await mkdir(contractsSource, { recursive: true })
-    for (const name of ['productEnvironment.mjs', 'productionMaintenance.mjs']) {
-      await copyFile(join(buildSource, 'packages/contracts/src', name), join(contractsSource, name))
-    }
+    await copyFile(join(source, 'packages/contracts/src/productEnvironment.mjs'),
+      join(contractsSource, 'productEnvironment.mjs'))
     await mkdir(join(release, 'apps/worker/src'), { recursive: true })
     for (const name of ['service.mjs', 'diagnostics.mjs', 'harnessPath.mjs']) {
-      await copyFile(join(buildSource, 'apps/worker/src', name), join(release, 'apps/worker/src', name))
+      await copyFile(join(source, 'apps/worker/src', name), join(release, 'apps/worker/src', name))
     }
-    const { stdout: remote } = await capture('git', ['remote', 'get-url', 'origin'], { cwd: buildSource })
+    const { stdout: commit } = await capture('git', ['rev-parse', 'HEAD'], { cwd: source })
+    const { stdout: remote } = await capture('git', ['remote', 'get-url', 'origin'], { cwd: source })
     const repository = /github\.com[:/]([^/]+\/[^/]+?)(?:\.git)?\s*$/.exec(remote)?.[1]
     if (!repository) throw new Error('Production CI smoke requires a GitHub origin repository.')
-    await publish(join(release, 'ci-smoke.json'), JSON.stringify({ commit, repository }))
+    await publish(join(release, 'ci-smoke.json'), JSON.stringify({ commit: commit.trim(), repository }))
     await copyFile(process.execPath, join(release, 'node'))
     await chmod(join(release, 'node'), 0o700)
-    await buildWorkerReleaseArtifacts({ repository: buildSource, expectedCommit: commit,
-      directory: join(release, 'worker-artifacts'), productManifestPath: join(release, 'package.json'),
-      run: runBuild, publish: publishWorkerArtifactsToGitHub })
-    const provenance = { api: commit, web: commit, contracts: commit, worker: commit }
-    await publish(join(release, 'source.json'), JSON.stringify(provenance) + '\n')
+    await buildWorkerReleaseArtifacts({ repository: source, directory: join(release, 'worker-artifacts'),
+      productManifestPath: join(release, 'package.json'), run, publish: publishWorkerArtifactsToGitHub })
     return release
   } catch (error) {
     await removeUninstalledRelease(release, current)
@@ -149,7 +142,7 @@ WantedBy=default.target
   await publish(join(directory, units.api), service(apiServiceTemplate(units.database)))
 }
 
-async function installDesktop(firstInstall, buildSource) {
+async function installDesktop(firstInstall) {
   const paths = productionIntegrationPaths(home, process.env)
   const icon = paths.icon
   const launcher = join(app, 'graphql')
@@ -157,7 +150,7 @@ async function installDesktop(firstInstall, buildSource) {
 exec '${current}/node' '${current}/scripts/local-production.mjs' launch
 `, 0o700)
   await publishDesktopIntegration(paths, { firstInstall,
-    icon: await readFile(join(buildSource, 'apps/web/public/graphql.svg')),
+    icon: await readFile(join(source, 'apps/web/public/graphql.svg')),
     desktop: `[Desktop Entry]
 Type=Application
 Name=Foreman Code
@@ -178,36 +171,15 @@ X-GNOME-Autostart-enabled=true
 ` })
 }
 
-async function waitForReady({ timeoutMs = 90_000, selectedRelease, ...checks } = {}) {
+async function waitForReady({ timeoutMs = 90_000, ...checks } = {}) {
   const environment = await readEnvironment(envFile)
   if (!environment) throw new Error('Production configuration is missing.')
-  const release = selectedRelease ?? await realpath(current)
+  const release = await realpath(current)
   const expected = await readProductionIdentity(release, environment.DATABASE_URL)
   await waitForProductionReady({ origin, expected, timeoutMs, ...checks })
 }
 
-async function runAuthenticatedCiSmoke(release, environment) {
-  if (process.env.FOREMAN_INSTALL_SKIP_CI_SMOKE === '1') {
-    await runProductionCiSmoke({ origin, release })
-    return
-  }
-  const api = join(release, 'apps/api/dist')
-  const { loadConfig } = await import(pathToFileURL(join(api, 'config.js')))
-  const { createDatabase } = await import(pathToFileURL(join(api, 'infrastructure/database.js')))
-  const { withInstallSmokeCredential } = await import(pathToFileURL(join(api, 'cli/installSmokeCredential.js')))
-  const database = createDatabase(loadConfig({ ...process.env, ...environment }).database)
-  try {
-    await withInstallSmokeCredential(database.pool, token => runProductionCiSmoke({ origin, release, token }))
-  } finally {
-    await database.close()
-  }
-}
-
 async function activateRelease(release) {
-  if (!release) {
-    await rm(current, { force: true })
-    return
-  }
   const pending = join(app, `current.${randomBytes(8).toString('hex')}`)
   try {
     await symlink(release, pending)
@@ -217,81 +189,61 @@ async function activateRelease(release) {
   }
 }
 
-function cutoverSteps(environment, { firstInstall = false, releaseMaintenance = () => {} } = {}) {
-  const databaseCommand = async (command, args, options) => {
-    if (!environment) throw new Error('Restore production.env before recovering this deployment.')
-    await run('/usr/bin/docker', ['compose', '--project-name', 'graphql-local-production',
-      '--file', join(app, 'compose.production.yaml'), 'exec', '-T', '-e', 'PGPASSWORD', '-e', 'PGUSER',
-      'postgres', command, ...args], {
-      ...options, env: { ...process.env, ...environment,
-        PGUSER: 'graphql_production', PGPASSWORD: readProductEnvironment(environment, 'PRODUCTION_DB_PASSWORD') },
-    })
+async function rollbackRelease(previousRelease) {
+  await run('/usr/bin/systemctl', ['--user', 'stop', units.api])
+  if (!previousRelease) {
+    await rm(current, { force: true })
+    console.error('Rejected release stopped; no previous release is available.')
+    return
   }
-  return {
-    stop: () => run('/usr/bin/systemctl', ['--user', 'stop', units.api]),
-    backup: archive => backupDatabase({ archive, database: 'graphql_production', run: databaseCommand }),
-    migrate: release => run(join(release, 'node'), ['dist/cli/migrate.js'], {
-      cwd: join(release, 'apps/api'), env: { ...process.env, ...environment },
-    }),
-    upgradeLauncher: async release => {
-      const upgradeModule = join(release, 'apps/api/dist/modules/harnesses/productionMcpUpgrade.js')
-      const { upgradeProductionMcpLauncher } = await import(pathToFileURL(upgradeModule))
-      await upgradeProductionMcpLauncher(home)
-    },
-    activate: activateRelease,
-    enable: () => enableProductionServices(run, [units.database, units.api], { firstInstall }),
-    start: () => run('/usr/bin/systemctl', ['--user', 'start', units.api]),
-    ready: release => waitForReady({ selectedRelease: release }),
-    checkReady: (release, { start, rollback }) => waitForReady({ selectedRelease: release,
-      start, smoke: () => runAuthenticatedCiSmoke(release, environment), rollback }),
-    restore: async archive => {
-      // The API is stopped; close the maintenance connection before recreating its database.
-      await releaseMaintenance()
-      await restoreDatabase({ archive, run: databaseCommand })
-    },
-  }
+  await activateRelease(previousRelease)
+  await run('/usr/bin/systemctl', ['--user', 'start', units.api])
+  await waitForReady()
+  console.error('Restored the previous production release.')
 }
 
-async function install(timeoutMs) {
+async function install() {
   // The worker service renderer also validates the installation paths before any mutation.
   service('@NODE@ @APP@ @STATE@ @HOME@ @PATH@')
   await access('/usr/bin/docker', constants.X_OK)
   await access('/usr/bin/google-chrome', constants.X_OK)
   await access('/usr/bin/ss', constants.X_OK)
-  await recoverReleaseCutover({ stateFile: deploymentFile, steps: cutoverSteps(await readEnvironment(envFile)) })
-  const previousRelease = await readReleaseSelection(current)
-  const firstInstall = await needsStartupConfiguration(startupFile, { previousRelease })
-  await withProductionSourceSnapshot(source, join(state, 'builds'), async snapshot => {
-    const runBuild = (command, args, options = {}) => run(command, args, { cwd: snapshot.source, ...options })
-    await runBuild('corepack', ['pnpm', 'install', '--frozen-lockfile'])
-    await runBuild('corepack', ['pnpm', 'build'])
-    const environment = await configureEnvironment(snapshot.source)
-    const release = await stageRelease(snapshot, runBuild)
-    await finishInstallation({ release, previousRelease, firstInstall, environment, snapshot, timeoutMs })
-  })
-}
-
-async function finishInstallation({ release, previousRelease, firstInstall, environment, snapshot, timeoutMs }) {
-  let cutoverBegan = false
+  let previousRelease
   try {
-    await copyFile(join(snapshot.source, 'compose.production.yaml'), join(app, 'compose.production.yaml'))
+    previousRelease = await realpath(current)
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error
+  }
+  const firstInstall = !previousRelease && !(await readEnvironment(envFile))
+  await run('corepack', ['pnpm', 'install', '--frozen-lockfile'])
+  await run('corepack', ['pnpm', 'build'])
+  const environment = await configureEnvironment()
+  const release = await stageRelease()
+  try {
+    if (previousRelease) {
+      await readActiveRuns(release, environment.DATABASE_URL, (query) => waitForIdleRuns({ query,
+        timeoutMs: Number(process.env.FOREMAN_INSTALL_RUN_WAIT_MINUTES ?? 120) * 60_000,
+        interrupt: process.env.FOREMAN_INSTALL_INTERRUPT_RUNS === '1' }))
+    }
+    await copyFile(join(source, 'compose.production.yaml'), join(app, 'compose.production.yaml'))
     await run('/usr/bin/docker', ['volume', 'create', '--label', 'io.graphql.environment=production', 'graphql-production-postgres'])
     await installServices()
-    await installDesktop(firstInstall, snapshot.source)
+    await installDesktop(firstInstall)
     await run('/usr/bin/systemctl', ['--user', 'daemon-reload'])
     await run('/usr/bin/systemctl', ['--user', 'start', units.database])
-    const cutover = async (releaseMaintenance = () => {}) => {
-      cutoverBegan = true
-      await runReleaseCutover({ release, previousRelease, stateFile: deploymentFile,
-        backupFile: join(release, 'database.dump'), steps: cutoverSteps(environment, { firstInstall, releaseMaintenance }) })
-    }
-    if (previousRelease) {
-      await readActiveRuns(release, environment.DATABASE_URL, async (query, releaseMaintenance) => {
-        await waitForIdleRuns({ query, timeoutMs, interrupt: process.env.FOREMAN_INSTALL_INTERRUPT_RUNS === '1' })
-        await cutover(releaseMaintenance)
-      })
-    } else await cutover()
-    await recordStartupConfiguration(startupFile)
+    await run('/usr/bin/systemctl', ['--user', 'stop', units.api])
+    await run(join(release, 'node'), ['dist/cli/migrate.js'], {
+      cwd: join(release, 'apps/api'), env: { ...process.env, ...environment },
+    })
+    const upgradeModule = join(release, 'apps/api/dist/modules/harnesses/productionMcpUpgrade.js')
+    const { upgradeProductionMcpLauncher } = await import(pathToFileURL(upgradeModule))
+    await upgradeProductionMcpLauncher(home)
+    await activateRelease(release)
+    await waitForReady({ start: async () => {
+      await enableProductionServices(run, [units.database, units.api], { firstInstall })
+      await run('/usr/bin/systemctl', ['--user', 'start', units.api])
+    }, smoke: () => runProductionCiSmoke({ origin, release }),
+      rollback: () => rollbackRelease(previousRelease) })
     const pruned = await pruneReleases(join(app, 'releases'), [release, previousRelease])
     if (pruned.length) console.log(`Removed ${pruned.length} old release(s); kept the current and previous release.`)
     console.log(`Foreman Code backend installed: ${origin}/workspaces`)
@@ -302,7 +254,7 @@ async function finishInstallation({ release, previousRelease, firstInstall, envi
     }
     console.log(`API logs: ${state}/logs (and journalctl --user -u ${units.api})`)
   } finally {
-    if (!cutoverBegan) await removeUninstalledRelease(release, current)
+    await removeUninstalledRelease(release, current)
   }
 }
 
@@ -318,7 +270,7 @@ async function launchDesktop() {
   await launchProduction({
     lockPath: join(config, 'install.lock'),
     start: () => capture('/usr/bin/systemctl', ['--user', 'start', '--no-block', units.api], { timeout: 5000 }),
-    ready: timeoutMs => waitForReady({ timeoutMs }),
+    ready: waitForReady,
     openDashboard: handoffDashboard,
   })
 }
@@ -327,8 +279,7 @@ const command = process.argv[2]
 try {
   if (command === 'install') {
     productionIntegrationPaths(home, process.env)
-    const timeoutMs = parseRunWaitMinutes(process.env.FOREMAN_INSTALL_RUN_WAIT_MINUTES)
-    await withInstallationLock(join(config, 'install.lock'), () => install(timeoutMs))
+    await withInstallationLock(join(config, 'install.lock'), install)
   }
   else if (command === 'health') await waitForReady()
   else if (command === 'open' || command === 'launch') await launchDesktop()

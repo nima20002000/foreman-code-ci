@@ -1,6 +1,6 @@
 import type { AcceptedNodePlacement, DispatchIntent } from '@foreman-code/contracts/node-placement'
 import { RemoteApplicationAccessSchema, type RemoteApplicationAccess } from '@foreman-code/contracts/remote-execution'
-import { WORKER_MCP_EXTENSION, decodeWorkerMcpResult, WorkerMcpRelayAuthorizationSchema, WorkerMcpRelayRequestSchema, WorkerMcpRelayResponseSchema } from '@foreman-code/contracts/worker-mcp-relay'
+import { WORKER_MCP_EXTENSION, WorkerMcpRelayAuthorizationSchema, WorkerMcpRelayRequestSchema, WorkerMcpRelayResponseSchema } from '@foreman-code/contracts/worker-mcp-relay'
 import type { ChildProcessEnvironment } from '../../harnesses/port.js'
 import type { DeviceConnectionSupervisor } from '../../devices/connectionSupervisor.js'
 
@@ -43,7 +43,8 @@ export async function prepareWorkerApplicationAccess(channel: Pick<DeviceConnect
       WorkerMcpRelayRequestSchema.parse({ ...envelope(), operation: 'worker-mcp.request', body,
         ...(protocolVersion ? { protocolVersion } : {}) }),
       requestSignal ? { signal: requestSignal } : {})
+    if (response.bytes !== undefined) throw new Error('Application MCP response cannot contain binary bytes')
     requestSignal?.throwIfAborted()
-    return WorkerMcpRelayResponseSchema.parse(decodeWorkerMcpResult(response))
+    return WorkerMcpRelayResponseSchema.parse(response.payload)
   } }
 }

@@ -1,4 +1,3 @@
-import { workflowPreparationExtension } from './preparationExtension.js'
 import type { DeviceExtensionRegistration } from '../../devices/deviceApplicationChannel.js'
 import { RemoteExecutionHost, type RemoteExecutionHostPorts } from './executionHost.js'
 import { RemoteJobExecutionHost, type RemoteJobExecutionHostPorts } from './jobExecutionHost.js'
@@ -27,7 +26,6 @@ export function createWorkerExecutionDomains(input: { workflows: RemoteExecution
       context.signal.throwIfAborted()
       return { payload: result }
     } }]
-  extensions.push(workflowPreparationExtension(extensions[0]!))
   return { extensions, workflows, jobs, conversations, async close() {
     closing = true
     await Promise.all([workflows.shutdown(), jobs?.shutdown(), conversations?.shutdown()])

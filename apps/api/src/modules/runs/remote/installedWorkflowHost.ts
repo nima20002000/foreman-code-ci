@@ -1,4 +1,3 @@
-import { workflowPreparationExtension } from './preparationExtension.js'
 import type { ProviderAccountResolver, ResolvedProviderAccount } from '../../provider-accounts/service.js'
 import { assertWorkerProviderAccountBinding } from '../../provider-accounts/workerOperations.js'
 import { managedProviderEnvironment, resolveRuntimeProviderAccount } from '../../harnesses/providerAccountRuntime.js'
@@ -1153,6 +1152,5 @@ export async function createInstalledWorkflowHost(input:InstalledWorkflowHostOpt
     await Promise.allSettled([...active])
     await Promise.all([...hosts.values()].map(host => host.drain()))
   }
-  extensions.push(workflowPreparationExtension(extensions[0]!))
   return {kind:'configured' as const,extensions,nativeOwnerFor,preparationClosed,reservationClosed,close,drainForUpdate}
 }

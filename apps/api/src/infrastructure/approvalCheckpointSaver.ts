@@ -7,7 +7,6 @@ import type { GraphTransactionSql } from '../modules/run-graph/connection.js'
 import { assertGraphTransaction } from '../modules/run-graph/connection.js'
 import { DomainError } from '../modules/errors.js'
 import { nextApprovalResumeValues } from './approvalCheckpointPlan.js'
-import { CheckpointMutationSaver } from './checkpointMutations.js'
 
 const INTERRUPT = '__interrupt__', RESUME = '__resume__'
 const MAX_WRITE_BYTES = 262144
@@ -26,7 +25,7 @@ function denied(code = 'GRAPH_INTERRUPT_INVALID'): never {
  * persistence notifies the live Run owner after COMMIT. Approval consumption
  * uses the owner's transaction rather than the saver's private pool transaction.
  */
-export class ApprovalPostgresSaver extends CheckpointMutationSaver {
+export class ApprovalPostgresSaver extends PostgresSaver {
   private readonly approvalSchema: string
   // Bookkeeping for writes made by THIS saver in THIS live SQL transaction.
   // Publication stages receipts until its commit finalizer. This is not a

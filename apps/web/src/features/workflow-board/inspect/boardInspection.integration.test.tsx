@@ -41,22 +41,9 @@ function href(scope: RepeatGraphScopeV3, inspection: WorkspaceBoardInspection = 
 }
 function domInfrastructure() {
   const queues = new Map<string, Promise<unknown>>()
-  Object.defineProperty(navigator, 'locks', { configurable: true, value: { request: (
-    key: string,
-    work: (() => unknown) | LockOptions,
-    claim?: (lock: Lock | null) => unknown,
-  ) => {
-    const lock: Lock = { name: key, mode: 'exclusive' }
-    if (typeof work !== 'function' && work.ifAvailable && queues.has(key)) {
-      return Promise.resolve().then(() => claim!(null))
-    }
-    const action = typeof work === 'function' ? work : () => claim!(lock)
+  Object.defineProperty(navigator, 'locks', { configurable: true, value: { request: (key: string, action: () => unknown) => {
     const result = (queues.get(key) ?? Promise.resolve()).then(action)
-    const settled = result.then(release, release)
-    queues.set(key, settled)
-    function release() {
-      if (queues.get(key) === settled) queues.delete(key)
-    }
+    queues.set(key, result.catch(() => undefined))
     return result
   } } })
   vi.stubGlobal('ResizeObserver', class {
@@ -81,7 +68,6 @@ async function mount(url: string) {
   await router.load()
   const view = render(<QueryClientProvider client={cache}><RouterProvider router={router} /></QueryClientProvider>)
   await screen.findByTestId('unified-workflow-board')
-  await screen.findByRole('region', { name: 'Workflow authoring' })
   return { ...view, cache, router, history }
 }
 const pinnedCanvas = () => screen.getByRole('region', { name: 'Selected Run pinned topology' })
@@ -110,7 +96,6 @@ beforeEach(async () => {
 })
 afterEach(() => {
   cleanup()
-  window.dispatchEvent(new Event('pagehide'))
   clients.splice(0).forEach((cache) => cache.clear()); clearBoardStopStorage()
   useGraphDraftStore.setState({ nextDrafts: {} })
   useInspectionPresentation.setState({ open: {} })
@@ -120,28 +105,40 @@ afterEach(() => {
 })
 
 describe('Run inspection inside the one mounted Board', () => {
-  it('loads a pinned Run after claiming tab ownership and returns to the same authoring surface', async () => {
+  it.each([401, 403])('removes cached CI jobs and node activity after CI-only HTTP %s denial', async status => {
     const scope = fixture.runs.before.scope
-    const user = userEvent.setup()
-    await mount(href(scope))
-    const authoring = await screen.findByRole('region', { name: 'Workflow authoring' })
-    const pinned = await screen.findByRole('region', { name: 'Selected Run pinned topology' })
-    expect(pinned).toHaveTextContent(scope.workflowVersionId)
-    expect(await within(pinned).findByRole('button', {
-      name: `Inspect Run node ${fixture.first.name ?? fixture.first.label ?? fixture.first.id}`,
-    })).toBeVisible()
-    expect(screen.getByLabelText('Editable workflow graph')).toHaveAttribute('aria-hidden', 'true')
-
-    await user.click(screen.getByRole('button', { name: /^Runs$/ }))
-    await user.click(await screen.findByRole('menuitemradio', { name: 'New run' }))
-
-    await waitFor(() => expect(screen.queryByRole('region', {
-      name: 'Selected Run pinned topology',
-    })).not.toBeInTheDocument())
-    expect(screen.getByRole('region', { name: 'Workflow authoring' })).toBe(authoring)
-    expect(screen.getByLabelText('Editable workflow graph')).toHaveAttribute('aria-hidden', 'false')
-    expect(screen.getByRole('button', { name: 'Start saved version' })).toBeVisible()
-    expect(fixture.mock.calls.filter((call) => call.method === 'POST')).toEqual([])
+    const route = `/api/management/workspaces/${scope.workspaceId}/ci`
+    const ticketId = '00000000-0000-4000-8000-000000000001'
+    let responseStatus = 200
+    server.use(http.get(route, () => responseStatus !== 200
+      ? HttpResponse.json({ error: { code: 'FORBIDDEN', message: 'CI read denied' } }, { status: responseStatus })
+      : HttpResponse.json({ runId: scope.runId, truncated: false, jobs: [{ ticketId,
+        scope: 'affected', placement: 'host', message: null, tests: { passed: 0, failed: 1, skipped: 0 },
+        requester: { executionId: 'ci-owner', agentId: fixture.first.agentId,
+          nodeId: fixture.first.id, nodeName: 'CI Agent' },
+        ci: { id: ticketId, groupId: '00000000-0000-4000-8000-000000000002',
+          suite: 'build', part: 'build-api', partition: null, state: 'running', computer: null,
+          step: null, exitCode: null, queuedAt: '2026-10-01T00:00:00.000Z',
+          startedAt: null, finishedAt: null } }] })))
+    const { cache } = await mount(href(scope))
+    expect(await within(pinnedCanvas()).findByText(/CI build-api · running/)).toBeVisible()
+    await userEvent.click(screen.getByRole('button', { name: /CI server, 1 running/ }))
+    const dialog = await screen.findByRole('dialog', { name: 'CI server' })
+    expect(within(dialog).getByRole('button', { name: /Show tests of build · build-api/ })).toBeVisible()
+    responseStatus = 503
+    await act(async () => { await cache.refetchQueries({ queryKey: [...runInspectionQueryKey(scope), 'ci-jobs'] }) })
+    expect(within(dialog).getByText('The list shows the last jobs read.')).toBeVisible()
+    expect(within(dialog).getByRole('button', { name: /Show tests of build · build-api/ })).toBeVisible()
+    for (const next of [status, 503]) {
+      responseStatus = next
+      await act(async () => { await cache.refetchQueries({ queryKey: [...runInspectionQueryKey(scope), 'ci-jobs'] }) })
+      await waitFor(() => expect(within(pinnedCanvas()).queryByText(/CI build-api · running/)).not.toBeInTheDocument())
+      expect(within(dialog).queryByRole('button', { name: /Show tests of build · build-api/ })).not.toBeInTheDocument()
+      expect(within(dialog).getByRole('tab', { name: 'Tests' })).toBeDisabled()
+      expect(within(dialog).getByRole('tab', { name: 'Log' })).toBeDisabled()
+      expect(screen.getByRole('button', { name: /CI server, CI unavailable/ })).toBeVisible()
+      expect(within(pinnedCanvas()).getByText('Before repeat')).toBeVisible()
+    }
   })
 
   it('shows the originating Agent CI lifecycle on the pinned canvas', async () => {
