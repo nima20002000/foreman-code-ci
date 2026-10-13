@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { CI_LOG_MAX_BYTES, CiActivitySchema, CiRunRecordSchema, CiSuiteSchema, CiScopeSchema, CiSelectedFilesSchema,
+import { CI_LOG_MAX_BYTES, CI_MAX_RUN_TICKETS, CiComputerRefSchema, CiActivitySchema, CiRunRecordSchema, CiSuiteSchema, CiScopeSchema, CiSelectedFilesSchema,
   CiTestResultsSchema, CiPrioritySchema, CiPriorityReasonSchema,
   CiTestStatusSchema, CiTestSummarySchema, CiUserSystemdSchema, validCiSelection } from './ciHost.js'
 import { IdSchema } from './schemaPrimitives.js'
@@ -8,6 +8,9 @@ import { SourceRootRecordSchema } from './sourceAdmission.js'
 import { SourceManifestSchema } from './sourceMaterialization.js'
 
 const CiRunInputObjectSchema = z.object({
+  smokeComputer: CiComputerRefSchema.optional().describe('Operator-only deployment smoke target. Requires unit or integration, '
+    + 'affected scope, an explicit commit and exactly one test file. Uses normal CI grants, setup and execution; '
+    + 'never falls back to a different computer.'),
   gate: z.boolean().optional().describe('Operator/orchestrator only. With suite=integration and scope=full, '
     + 'queue typecheck, lint, unit and duration-balanced integration as one gate. Gates run one at a time.'),
   priority: CiPrioritySchema.optional().describe('Defaults to normal. High requires Operator role or an explicit '
@@ -40,17 +43,23 @@ const selectedSuite = (value: z.infer<typeof CiRunInputObjectSchema>) => validCi
   && ((value.scope ?? 'affected') !== 'affected' || value.files === undefined || value.commit !== undefined)
 const validGate = (value: z.infer<typeof CiRunInputObjectSchema>) => !value.gate
   || (value.suite === 'integration' && value.scope === 'full' && value.files === undefined && value.partitions === undefined)
+const validSmoke = (value: z.infer<typeof CiRunInputObjectSchema>) => !value.smokeComputer
+  || (['unit', 'integration'].includes(value.suite) && value.scope === 'affected' && value.commit !== undefined
+    && value.files?.length === 1 && !value.gate && value.partitions === undefined)
+const smokeIssue = { message: 'Computer smoke requires unit/integration, affected scope, commit and one file.', path: ['smokeComputer'] }
 const gateIssue = { message: 'A gate requires integration, full scope, and no files or partition limit.', path: ['gate'] }
 export const CiRunInputSchema = CiRunInputObjectSchema.refine(partitionedSuite, partitionIssue)
   .refine(selectedSuite, selectionIssue)
   .refine(validGate, gateIssue)
+  .refine(validSmoke, smokeIssue)
 export const OperatorCiRunInputSchema = CiRunInputObjectSchema.extend({ workspaceId: IdSchema }).strict()
   .refine(partitionedSuite, partitionIssue)
   .refine(selectedSuite, selectionIssue)
   .refine(validGate, gateIssue)
+  .refine(validSmoke, smokeIssue)
 const CiRunTicketSchema = z.object({ ticketId: IdSchema }).strict()
 /** `partitions` lists every part or integration partition; the first is also `ticketId`. Poll each with ci_get. */
-export const CiRunOutputSchema = CiRunTicketSchema.extend({ partitions: z.array(CiRunTicketSchema).min(2).max(66).optional() }).strict()
+export const CiRunOutputSchema = CiRunTicketSchema.extend({ partitions: z.array(CiRunTicketSchema).min(2).max(CI_MAX_RUN_TICKETS).optional() }).strict()
 const CiTicketInputSchema = z.object({ ticketId: IdSchema }).strict()
 /** Statuses to include; the results' summary always counts every test. */
 export const CiTestStatusFilterSchema = z.array(CiTestStatusSchema).min(1).max(3)
@@ -75,8 +84,10 @@ export const CiGetOutputSchema = z.object({
   }).strict().optional(),
 }).strict()
 export type CiRunInput = z.infer<typeof CiRunInputSchema>
-export const CiCancelInputSchema = CiTicketInputSchema
-export const OperatorCiCancelInputSchema = CiTicketInputSchema.extend({ workspaceId: IdSchema }).strict()
+export const CiCancelInputSchema = CiTicketInputSchema.extend({
+  commandId: IdSchema.optional().describe('Optional caller request identity recorded with cancellation; generated when omitted.'),
+}).strict()
+export const OperatorCiCancelInputSchema = CiCancelInputSchema.extend({ workspaceId: IdSchema }).strict()
 export const CiCancelOutputSchema = z.object({ run: CiRunRecordSchema }).strict()
 export const CiTestsOutputSchema = z.object({ ticketId: IdSchema, tests: CiTestResultsSchema.nullable() }).strict()
 
@@ -99,10 +110,12 @@ export const CiListOutputSchema = z.object({ runId: IdSchema, jobs: z.array(CiRu
   truncated: z.boolean() }).strict()
 export type CiListOutput = z.infer<typeof CiListOutputSchema>
 export const CiLogsInputSchema = CiTicketInputSchema.extend({
-  /** Omit to read the last maxBytes; continue with nextOffset. */
-  afterOffset: z.number().int().nonnegative().optional(),
+  /** Omit to read the last maxBytes; continue with nextOffset. Offsets inside UTF-8 characters skip their remainder. */
+  afterOffset: z.number().int().nonnegative().optional()
+    .describe('Byte cursor; offsets inside UTF-8 characters skip to the next character. Continue with nextOffset.'),
   maxBytes: z.number().int().min(1).optional()
-    .describe(`Defaults to ${CI_LOG_MAX_BYTES} bytes; larger values are clamped to this limit.`),
+    .describe(`Defaults to ${CI_LOG_MAX_BYTES} bytes; larger values are clamped. Only complete UTF-8 characters are returned; `
+      + 'increase the budget if the next character does not fit. Group reads divide this total, allowing zero-byte parts.'),
   /** Include a bounded page from every part, with a separate cursor for each ticket. */
   group: z.boolean().optional(),
 }).strict()
@@ -112,7 +125,7 @@ export const CiLogsOutputSchema = z.object({ text: z.string(), nextOffset: z.num
   maxBytes: z.number().int().min(1).max(CI_LOG_MAX_BYTES),
   parts: z.array(z.object({ run: CiRunRecordSchema, text: z.string(), nextOffset: z.number().int().nonnegative(),
     logBytes: z.number().int().nonnegative(),
-    maxBytes: z.number().int().min(1).max(CI_LOG_MAX_BYTES) }).strict()).optional(),
+    maxBytes: z.number().int().nonnegative().max(CI_LOG_MAX_BYTES) }).strict()).optional(),
 }).strict()
 export const CiQueueEntrySchema = z.object({
   ticketId: IdSchema, priority: CiPrioritySchema, priorityReason: CiPriorityReasonSchema,
