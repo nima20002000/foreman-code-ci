@@ -1,5 +1,4 @@
 import {
-  BugReportCloseInputSchema,
   BugReportCreateInputSchema,
   BugReportListInputSchema,
   BugReportUpdateInputSchema,
@@ -22,8 +21,6 @@ export function registerBugReportRoutes(app: FastifyInstance, service: BugReport
     if (!result.replayed && !result.deduplicated) reply.code(201)
     return result
   })
-  app.post<{ Body: unknown }>('/api/management/bug-reports/close', request =>
-    service.close(requirePrincipal(request), 'http', BugReportCloseInputSchema.parse(request.body)))
   app.get<{ Params: { reportId: string } }>('/api/management/bug-reports/:reportId', request =>
     service.get(requirePrincipal(request), request.params.reportId))
   app.post<{ Params: { reportId: string }; Body: unknown }>(
