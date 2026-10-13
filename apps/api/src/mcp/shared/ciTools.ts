@@ -29,12 +29,18 @@ export const CI_CAPABILITY_DETAIL = 'ci_run runs one suite (install, typecheck, 
   + 'Exclusive and user-systemd files are balanced over eligible executors. One gate runs at a time across workspaces: '
   + 'other full requests wait behind queued/running gates with a reason; affected requests use spare capacity below gate priority. '
   + 'ci_get on any gate ticket reports per-computer and per-suite expected/actual durations, critical path and wallTimeMs. '
+  + 'smokeComputer is Operator-only: unit or integration, affected scope, an explicit commit and one test file. '
+  + 'It pins the job to that enabled computer through normal setup, grants and audit; no executor fallback or supersession. Integration smoke exercises gate planning and measured integration shard limits. '
+  + 'ci_get reads back smokeComputer and the actual computer. '
   + 'scope defaults to affected; scope=full always runs everything. '
   + 'priority defaults to normal. Requesting high requires Operator role or an explicit workspace jobs:prioritize grant '
   + 'on the Agent’s live authorization principal, in addition to all CI run grants. '
   + 'Commits changing only CI infrastructure automatically receive high priority based on their Git changes, '
   + 'independent of caller files. Cloud and build-computer queues order high before normal, oldest first within each. '
   + 'ci_get returns persisted priority and priorityReason, plus queue position and waiting reason for queued tickets. '
+  + 'Cloud tickets include provenance with sourceCommit, workflowCommit and the immutable workflowRef. '
+  + 'collection reports pending, complete or unsupported independently of the terminal execution outcome; '
+  + 'Main retries pending logs and results without rerunning the suite. '
   + 'Main and paired computers participate only with builds enabled; buildPriority orders their selection. '
   + 'When files are omitted in affected scope, optional baseCommit (full SHA) compares changes since that commit, '
   + 'so sandboxed Agents can request changes since a release through MCP without running git. baseCommit must be '
@@ -42,6 +48,8 @@ export const CI_CAPABILITY_DETAIL = 'ci_run runs one suite (install, typecheck, 
   + 'Without baseCommit, the runner compares the resolved commit with its merge-base against the workspace default branch '
   + 'and uses the repository selector for the suite and part. Missing selectors, shared infrastructure changes and the '
   + 'default branch head (without baseCommit) run the full suite, with the reason in the run message or log. '
+  + 'CI fetches the tested commit and the affected comparison base; jobs with explicit files use shallow checkouts. '
+  + 'Cloud mirror branches are pruned after their last active ticket finishes, preserving persisted results and logs. '
   + 'Caller files remain supported; '
   + 'ci-remote continues to compute and send its selection. '
   + 'ci_get reads back the persisted baseCommit, scope and files. Empty affected selections pass without launching a runner. '
@@ -58,6 +66,7 @@ export const CI_CAPABILITY_DETAIL = 'ci_run runs one suite (install, typecheck, 
   + 'install for install and run <suite> for the others, failing clearly when that script is missing. '
   + 'Cloud CI requires the mirror’s provider workflow (.github/workflows/ci.yml or .circleci/config.yml); '
   + 'without it build computers take the work. '
+  + 'Publication uses the mirror approved in the requesting workspace when the ticket was admitted. '
   + 'A cloud dispatch must create a workflow within 75 seconds; Main retries twice, then queues the same ticket '
   + 'on another provider or build computer. The ticket message records recovery and unstartedProviders lists excluded providers. '
   + 'Caller selections omit empty parts and shard only selected tests; runner selections keep queued parts and pass empty shards. '
@@ -70,7 +79,9 @@ export const CI_CAPABILITY_DETAIL = 'ci_run runs one suite (install, typecheck, 
   + 'computer, part, shard, exit code, group state and a 32 KiB log tail; ci_logs_read pages the full log '
   + `for authorized callers. maxBytes defaults to ${CI_LOG_MAX_BYTES} bytes and larger requests are clamped to `
   + `that maximum; responses report the applied maxBytes and nextOffset. group=true divides the capped budget `
-  + 'between parts and reports each part’s maxBytes and nextOffset. '
+  + 'between parts, allowing zero-byte parts, and reports each part’s maxBytes and nextOffset. '
+  + 'Pages contain complete UTF-8 characters; offsets inside a character skip to the next character. '
+  + 'Increase maxBytes if the next character does not fit and nextOffset does not advance. '
   + 'ci_get reads the persisted background refresh without waiting for dispatch or build computers. '
   + 'Queued tickets include the dispatch waiting reason in message; it clears when they start. '
   + 'ci_computers_list shows readiness reasons, userSystemd support and its unavailable reason, used/total CI slots, assigned tickets and up to 500 authorized queued '
@@ -87,6 +98,8 @@ export const CI_CAPABILITY_DETAIL = 'ci_run runs one suite (install, typecheck, 
   + 'Agent CI readback and cancellation are limited to tickets from that execution. '
   + 'Agent requests publish their persisted lifecycle into their Run’s activities and Board activity snapshot. '
   + '(group=true includes bounded pages and individual cursors for every part); ci_cancel stops one ticket. '
+  + 'Cancellation records the caller and optional commandId once; failed remote cleanup remains pending and retries '
+  + 'on the assigned executor. An unknown start reply retains that executor until reconciled. '
   + 'run_stop cancels every non-terminal ticket created by that Run’s Agents and its remote provider run, with audit. '
   + 'Agents are restricted to their active Run workspace. Computers without a GitHub login report it in ci_computers_list.'
 
@@ -153,7 +166,8 @@ export function registerCiTools(server: McpServer, context: CiContext) {
     outputSchema: CiComputersOutputSchema, annotations: read,
   }, input => invoke('ci_computers_list', () => ci.computers(context.principal, input)))
   if (available('ci_cancel')) server.registerTool('ci_cancel', {
-    description: 'Cancel a queued or running CI run by ticketId. Requires jobs:cancel. ' + CI_CAPABILITY_DETAIL,
+    description: 'Cancel a queued or running CI run by ticketId. Requires jobs:cancel. Optional commandId identifies '
+      + 'the audited request; replay does not duplicate the successful transition. ' + CI_CAPABILITY_DETAIL,
     inputSchema: operator ? OperatorCiCancelInputSchema : CiCancelInputSchema,
     outputSchema: CiCancelOutputSchema,
     annotations: { ...read, readOnlyHint: false, destructiveHint: true },
