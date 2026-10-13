@@ -12,7 +12,6 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { cleanupTestResources, createTestDatabase, createTestRoot, dropTestDatabase, removeTestRoot, requireTestServerUrl,
   resetTestDatabase, settleTestResources, testAdminPool, testEnvironment } from './test-resources.mjs'
 import { createTestDatabaseTemplate, dropTestDatabaseTemplate } from './test-database-template.mjs'
-import { ciTemplateCacheDirectory } from './ci-postgres-cache.mjs'
 import { readIntegrationStartup } from './integration-startup.mjs'
 import { integrationPhaseForwarder } from './integration-phase.mjs'
 import { testFixtureCacheRoot } from './test-fixture-cache.mjs'
@@ -21,7 +20,6 @@ import { adaptiveDeadlineMs, groupUsed, integrationProcessLimits, integrationPro
 import { boundedLog, emptyCounts, junitReport, logArchive, mergedVitestReport, positiveInteger,
   readVitestReport, privateDirectory, writeReport } from './verification-reports.mjs'
 import { scheduleQueue } from './dense-scheduler.mjs'
-import { reusableIntegrationFile, startSlotServer, stopSlotServer, stopStrayProcesses } from './integration-slot-process.mjs'
 import { writeCiTestResults } from './ci-test-results.mjs'
 import { readProfiles, startProcessMetrics, writeProfiles } from './dense-resources.mjs'
 
@@ -107,12 +105,6 @@ export function hungContext(output) {
   const lastCase = lines.findLast((line) => /^[✓✔×✗↓]\s+\S.* > /.test(line))
   return { lastCase: lastCase?.replace(/^\S+\s+/, '').replace(/\s+\d+ms$/, '').slice(0, 500) ?? null,
     lastOutput: lines.at(-1)?.slice(0, 500) ?? null }
-}
-
-/** Fixed per-file overhead: milliseconds from the file's launch until its test module was collected. */
-export function startupText(phases) {
-  const collected = phases.find((phase) => phase.phase === 'module-collected')
-  return collected ? `; startup ${collected.elapsedMs} ms` : ''
 }
 
 export function parseVitestCases(output) {
@@ -268,16 +260,9 @@ export function integrationShardLimit(value, maximum = 64) {
   return limit
 }
 
-/** A request above what this computer can hold right now runs at the measured limit instead of failing. */
-function requestedShards(value, maximum) {
-  const requested = Number(value)
-  if (!Number.isSafeInteger(requested) || requested < 1) throw new Error('Integration shards must be a positive integer')
-  return Math.min(requested, maximum)
-}
-
 export function reservedIntegrationShards(environment, maximum = 12) {
   if (!environment.FOREMAN_CODE_VERIFICATION_ROOT) {
-    return requestedShards(readProductEnvironment(environment, 'INTEGRATION_SHARDS') ?? String(maximum), maximum)
+    return integrationShardLimit(readProductEnvironment(environment, 'INTEGRATION_SHARDS') ?? String(maximum), maximum)
   }
   if (!environment.FOREMAN_CODE_VERIFICATION_INTEGRATION_SHARDS
     || !environment.FOREMAN_CODE_VERIFICATION_MAX_INTEGRATION_SHARDS) {
@@ -285,7 +270,7 @@ export function reservedIntegrationShards(environment, maximum = 12) {
   }
   const reserved = integrationShardLimit(environment.FOREMAN_CODE_VERIFICATION_INTEGRATION_SHARDS)
   const qualified = integrationShardLimit(environment.FOREMAN_CODE_VERIFICATION_MAX_INTEGRATION_SHARDS)
-  const requested = requestedShards(readProductEnvironment(environment, 'INTEGRATION_SHARDS')
+  const requested = integrationShardLimit(readProductEnvironment(environment, 'INTEGRATION_SHARDS')
     ?? String(Math.min(reserved, maximum)), maximum)
   if (requested > reserved || requested > qualified) {
     throw new Error('Integration shards exceed the accepted reservation or suite qualification')
@@ -343,24 +328,20 @@ export function integrationShardPlan(environment, resources = {}, fileCount = In
     && Number.isSafeInteger(activeConnections) && activeConnections >= 0
   // One worker uses the default ten-connection pool plus admin and peer connections.
   const connectionsPerShard = 16
-  // Shards mostly wait on PostgreSQL and child processes: measured ~0.5 core and well under 0.5 GiB each.
-  const memoryPerShard = 1024 ** 3 / 2
-  const cpuLimit = knownCpu ? cpuCount * 2 : 12
+  const memoryPerShard = 1024 ** 3
+  const cpuLimit = knownCpu ? cpuCount : 12
   const memoryLimit = knownMemory ? Math.floor(availableMemoryBytes / memoryPerShard) : 12
   const freeConnections = knownDatabase ? maxConnections - reservedConnections - activeConnections : null
   const databaseLimit = knownDatabase ? Math.floor(freeConnections / connectionsPerShard) : 12
-  const ciShardCeiling = environment.FOREMAN_CODE_CI_INTEGRATION_SHARDS
-  const ciShardLimit = ciShardCeiling === undefined ? Infinity : integrationShardLimit(ciShardCeiling)
-  const limit = Math.min(cpuLimit, memoryLimit, databaseLimit, ciShardLimit)
+  const limit = Math.min(cpuLimit, memoryLimit, databaseLimit)
   const reasons = [
     knownCpu ? `CPU limit ${cpuLimit}` : 'CPU unknown (fallback 12)',
-    knownMemory ? `memory limit ${memoryLimit} (${availableMemoryBytes} available bytes, 0.5 GiB/shard)`
+    knownMemory ? `memory limit ${memoryLimit} (${availableMemoryBytes} available bytes, 1 GiB/shard)`
       : 'memory unknown (fallback 12)',
     knownDatabase ? `PostgreSQL limit ${databaseLimit} (max_connections=${maxConnections},`
       + ` ${reservedConnections} reserved, ${activeConnections} occupied, ${connectionsPerShard} connections/shard)`
       : 'PostgreSQL limits unknown (fallback 12)',
   ]
-  if (ciShardCeiling !== undefined) reasons.push(`CI shard ceiling ${ciShardLimit}`)
   if (slotCpu !== undefined || slotMemory !== undefined) reasons.push('limited to this CI slot share')
   if (limit < 1) throw new Error(`No integration shard fits available resources: ${reasons.join('; ')}`)
   const requested = readProductEnvironment(environment, 'INTEGRATION_SHARDS')
@@ -535,8 +516,7 @@ export function options(argv, environment = process.env) {
 
 async function main() {
   options(process.argv.slice(2))
-  const commonResult = spawnSync('git', ['rev-parse', '--path-format=absolute',
-    process.env.CI_HOST_RUNNER === '1' ? '--git-dir' : '--git-common-dir'], { cwd: root, encoding: 'utf8' })
+  const commonResult = spawnSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: root, encoding: 'utf8' })
   if (commonResult.status !== 0) throw new Error('Could not find the project heavy-job queue')
   const common = realpathSync(commonResult.stdout.trim())
   if (!hasHeavyJobAdmission(process.env, common)) {
@@ -651,13 +631,6 @@ export async function runIntegration(argv = [], {
     slot.databaseSetupMs = performance.now() - started
     delete slot.resetError
   }
-  // An idle reusable coordinator ends before its slot runs a fresh process, is rebuilt, or is cleaned up.
-  const dropSlotServer = async (slot) => {
-    const server = slot.server
-    slot.server = undefined
-    try { await stopSlotServer(server) }
-    catch (error) { slot.resetError = error; throw error }
-  }
   const recordUnexecuted = (files, phase = 'first', reason = 'no usable integration slots') => {
     const isRetest = phase === 'retest'
     for (const file of files) {
@@ -678,10 +651,9 @@ export async function runIntegration(argv = [], {
     }
   }
   try {
-    template = await createTestDatabaseTemplate(admin, tempRoot, { cacheDirectory: ciTemplateCacheDirectory(env) })
+    template = await createTestDatabaseTemplate(admin, tempRoot)
     console.log(`[integration] database template ${template.hash}; migration import ${Math.round(template.timings.importMs)} ms;`
-      + ` migrations ${Math.round(template.timings.migrationMs)} ms; setup ${Math.round(template.timings.setupMs)} ms;`
-      + ` ${template.persistent ? 'persistent' : 'job'} template.`)
+      + ` migrations ${Math.round(template.timings.migrationMs)} ms; setup ${Math.round(template.timings.setupMs)} ms.`)
     for (let index = 0; index < shardCount; index++) {
       if (interrupted) throw new Error(`Interrupted during database setup (${interrupted})`)
       const resource = createTestRoot(tempRoot.directory, `slot-${index + 1}-`)
@@ -723,11 +695,8 @@ export async function runIntegration(argv = [], {
       const environment = { ...integrationEnvironment(env, slot), FOREMAN_CODE_TEST_FILE_STARTED_AT: String(Date.now()),
         FOREMAN_CODE_TEST_FILE: file, FOREMAN_CODE_TEST_CACHE_ROOT: testFixtureCacheRoot(env) }
       const vitest = vitestCommand(environment, file, testNamePattern, json)
-      const reuse = !isRetest && reusableIntegrationFile(file)
-      if (!reuse) await dropSlotServer(slot)
       // One slot is one case; it.concurrent must not multiply its SQL fixture load.
-      const server = reuse ? (slot.server ??= startSlotServer(vitest.env, testNamePattern)) : undefined
-      const child = server?.child ?? spawn(vitest.command, vitest.args,
+      const child = spawn(vitest.command, vitest.args,
         { cwd: vitest.cwd, env: vitest.env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] })
       const progress = integrationProcessProgress()
       const phaseOutput = integrationPhaseForwarder(line => console.log(line))
@@ -736,24 +705,18 @@ export async function runIntegration(argv = [], {
         progress.lastOutputAt = Date.now()
         output.write(chunk)
       }
-      const recordStdout = chunk => {
+      child.stdout.on('data', chunk => {
         recordOutput(chunk)
         phaseOutput.push(chunk)
-      }
+      })
+      child.stderr.on('data', recordOutput)
       let outputResult
       const closeOutput = () => {
         phaseOutput.finish()
         outputResult ??= output.close()
         return outputResult
       }
-      let outputClosed
-      let finished
-      if (server) finished = server.run({ file, json, environment: vitest.env }, recordStdout)
-      else {
-        child.stdout.on('data', recordStdout)
-        child.stderr.on('data', recordOutput)
-        outputClosed = new Promise((done) => child.once('close', () => done(closeOutput())))
-      }
+      const outputClosed = new Promise((done) => child.once('close', () => done(closeOutput())))
       active.set(slot.index, { child, file, progress })
       console.log(`[integration] ${label}START ${file} (slot ${slot.index}, pid ${child.pid ?? 'unavailable'}); log: ${log}`)
       if (interrupted) signalOwnedChildren(active, killTimers, interrupted)
@@ -769,10 +732,6 @@ export async function runIntegration(argv = [], {
           fileTimeoutMs, deadlineMs,
           onTimeout: (reason) => console.error(`[integration] ${label}TIMEOUT ${file} (slot ${slot.index}): ${reason.message}`),
           cleanupAfterExit: () => settleTestResources(admin, slot),
-          finished,
-          // A coordinator that finished its file stays for the slot's next file; only what the file left is stopped.
-          stopProcesses: (outcome, graceMs) => server && !outcome.timedOut && server.alive
-            ? stopStrayProcesses(child.pid, { graceMs }) : stopGroup(child.pid, { graceMs }),
           resetAfterTimeout: async () => {
             try { await resetSlotDatabase(slot) }
             catch (reason) { slot.resetError = reason; throw reason }
@@ -782,25 +741,17 @@ export async function runIntegration(argv = [], {
       } finally {
         metrics = metricsTracker?.stop()
       }
-      if (server) {
-        server.detach()
-        if (result.timedOut || result.slotUnavailable || !server.alive) {
-          try { await stopGroup(child.pid) }
-          catch (reason) { console.error(`[integration] slot ${slot.index} coordinator stop failed: ${reason.message}`) }
-          slot.server = undefined
-        }
-      }
-      const ownedProcessActive = slot.server ? false : groupUsed(child.pid)
+      const ownedProcessActive = groupUsed(child.pid)
       if (ownedProcessActive) {
         slot.unavailable = true
         stopForProcessFailure(result.error?.message
           ?? `Integration slot ${slot.index} still owns child process group ${child.pid}`)
-        child.stdout.off('data', recordStdout)
+        child.stdout.off('data', recordOutput)
         child.stderr.off('data', recordOutput)
         child.stdout.destroy()
         child.stderr.destroy()
       }
-      const retainedLog = ownedProcessActive || server ? closeOutput() : await outputClosed
+      const retainedLog = ownedProcessActive ? closeOutput() : await outputClosed
       let code = ownedProcessActive ? 1 : result.code
       let error = ownedProcessActive ? new Error(fatalProcessError) : result.error
       clearTimeout(killTimers.get(slot.index))
@@ -835,11 +786,10 @@ export async function runIntegration(argv = [], {
         error = new Error(`${summary.skipped} skipped cases in an integration run`)
       }
       let hangDetails
-      const startupPhases = readIntegrationStartup(readFileSync(log, 'utf8'))
       if (code === 0) {
         if (isRetest) retest.passed++
         else passed++
-        console.log(`[integration] ${label}PASS ${file} (slot ${slot.index}; ${summary.passed} cases passed, ${summary.skipped} skipped; ${elapsedMs} ms${startupText(startupPhases)})`)
+        console.log(`[integration] ${label}PASS ${file} (slot ${slot.index}; ${summary.passed} cases passed, ${summary.skipped} skipped; ${elapsedMs} ms)`)
       }
       else {
         if (isRetest) {
@@ -869,7 +819,7 @@ export async function runIntegration(argv = [], {
         if (result.resetError) console.error(`[integration] ${result.resetError.message}`)
       }
       const record = { file, slot: slot.index, code, elapsedMs,
-        startup: { databaseSetupMs, phases: startupPhases },
+        startup: { databaseSetupMs, phases: readIntegrationStartup(readFileSync(log, 'utf8')) },
         complete: Boolean(fileReport?.complete && !reportError && !ownedProcessActive), timedOut: result.timedOut,
         report: fileReport, reportError, log: retainedLog, metrics, reason: error?.message ?? reportError,
         ...(hangDetails ? { status: 'HUNG', hung: hangDetails } : {}) }
@@ -914,7 +864,6 @@ export async function runIntegration(argv = [], {
       recordFileAttempt(retestReports, file,
         { slot: slot.index, code: 1, complete: false, reason: 'retest database setup failed' })
       try {
-        await dropSlotServer(slot)
         await dropTestDatabase(admin, slot)
         removeTestRoot(slot)
         const resource = createTestRoot(tempRoot.directory, `retest-slot-${slot.index}-`)
@@ -977,10 +926,6 @@ export async function runIntegration(argv = [], {
       try { await stopGroup(child.pid, { signal: interrupted || 'SIGTERM' }); active.delete(index) }
       catch (error) { cleanupError ??= error }
     }
-    for (const slot of slots) {
-      try { await dropSlotServer(slot) }
-      catch (error) { cleanupError ??= error }
-    }
     for (const timer of killTimers.values()) clearTimeout(timer)
     process.off('SIGINT', onSigint)
     process.off('SIGTERM', onSigterm)
@@ -992,7 +937,7 @@ export async function runIntegration(argv = [], {
           }
           catch (error) { cleanupError ??= error }
         }
-        if (template && !template.persistent && !cleanupError) {
+        if (template && !cleanupError) {
           try { await dropTestDatabaseTemplate(admin, template) }
           catch (error) { cleanupError ??= error }
         }

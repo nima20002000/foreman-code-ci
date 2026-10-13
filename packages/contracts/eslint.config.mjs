@@ -8,7 +8,7 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    files: ['**/*.ts', 'ci-test-runner.mjs'],
+    files: ['**/*.ts'],
     languageOptions: {
       globals: globals.node,
     },

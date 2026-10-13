@@ -62,9 +62,9 @@ async function computer(beforeGithub?: () => Promise<void>, cpuCount = 8, isolat
       if (file === 'git' && args.includes('show')) {
         return { code: 0, stdout: JSON.stringify({ foremanCi: { hostSlots: isolatedDatabase ? 1 : 0 } }), stderr: '' }
       }
-      if (file === 'git' && args.includes('worktree') && args.includes('add')) {
+      if (file === 'git' && args.includes('clone') && args.includes('--shared')) {
         await beforeCheckout?.()
-        const source = args.at(-2)!
+        const source = args.at(-1)!
         await mkdir(source, { recursive: true })
         await writeFile(join(source, 'package.json'), JSON.stringify({ scripts: { lint: 'fixture', unit: 'fixture' } }))
       }
