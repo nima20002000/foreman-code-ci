@@ -6,7 +6,6 @@ import pg from 'pg'
 
 import { DomainError } from '../errors.js'
 import type { GraphSqlClient } from '../run-graph/connection.js'
-import { ignoreError } from '../diagnostics/ignoredError.js'
 
 function commitWasRejected(error: unknown): boolean {
   if (!(error instanceof pg.DatabaseError) || !error.code) return false
@@ -171,7 +170,7 @@ export class PostgresCommandCoordinator {
             code: failure instanceof DomainError ? failure.code : 'INTERNAL_ERROR',
             ...(failure !== error ? { cleanupFailed: true } : {}),
           })],
-        ).catch(ignoreError('db', 'record failed command audit', { commandId: input.commandId, command: input.operation }))
+        ).catch(() => undefined)
       }
       throw failure
     } finally {

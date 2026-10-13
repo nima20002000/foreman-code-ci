@@ -2,7 +2,6 @@ import { DurableInteractionSchema, type DurableInteraction } from '@foreman-code
 import type pg from 'pg'
 
 import { DomainError } from '../errors.js'
-import { ignoreError } from '../diagnostics/ignoredError.js'
 
 /** Database-only ownership metadata, not a provider idempotency key or public interaction shape. */
 export interface InteractionLease {
@@ -46,7 +45,7 @@ export async function interactionTransaction<T>(pool: pg.Pool, work: (client: pg
     await client.query('commit')
     return result
   } catch (error) {
-    await client.query('rollback').catch(ignoreError('db', 'transaction rollback', { module: 'interactions/persistence' }))
+    await client.query('rollback').catch(() => undefined)
     throw error
   } finally { client.release() }
 }
