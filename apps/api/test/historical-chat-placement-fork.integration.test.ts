@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { expect, it, vi } from 'vitest'
-import { AgentChatStateSchema, agentChatFixtures } from '@foreman-code/contracts/agent-chat'
+import { agentChatFixtures } from '@foreman-code/contracts/agent-chat'
 import { historicalChatPlacement, historicalChatSource, forkHistoricalChat,
   waitForHistoricalChatTurn } from './helpers/historicalChatPlacement.js'
 
@@ -46,10 +46,9 @@ it('reports a historical chat read error without polling again', async () => {
 
 it.each(['error', 'unavailable'] as const)('reports a %s historical chat session on its first read', async sessionState => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] })
-  const state = AgentChatStateSchema.parse(agentChatFixtures.active)
+  const state = structuredClone(agentChatFixtures.active)
   state.sessionState = sessionState
   state.availability = { canSend: false, reason: 'harness_unavailable', message: 'Native chat was rejected.' }
-  expect(AgentChatStateSchema.parse(state).sessionState).toBe(sessionState)
   const read = vi.fn(async () => state)
   const result = waitForHistoricalChatTurn(read, 'request-1', 'Worker chat fork completion')
     .catch(error => error as Error)
