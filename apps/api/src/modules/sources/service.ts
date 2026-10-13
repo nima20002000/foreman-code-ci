@@ -1,5 +1,4 @@
-import type { SourceStorageCapacity } from '@foreman-code/contracts/source-operations'
-import { withTransaction } from '../../infrastructure/transaction.js'
+import type { RetainedSourceFootprint, SourceStorageCapacity } from '@foreman-code/contracts/source-operations'
 import type { SourceWorktreeRequest } from '@foreman-code/contracts/source-materialization'
 import { createHash, randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
@@ -28,9 +27,10 @@ import { sourceBindingHash } from './bindingHash.js'
 import { sourceMaterializationBytes, sourceStructureBytes } from './footprint.js'
 import { PostgresSourceReservations, requireUnreclaimedSourceOperation, type SourceReservation } from './reservations.js'
 import type { RegisteredSourceRootPort, SourceAdmissionPort, SourceClosureProofPort } from './admissionPorts.js'
-import type { MaterializationAttempt, SourceExecutionHostPort } from './ports.js'
+import type { MaterializationAttempt } from './ports.js'
 import type { GraphSqlClient } from '../run-graph/connection.js'
 import { PostgresSourcePreparationReconciliation } from './preparationReconciliation.js'
+import type { SourceOperationOwner } from '@foreman-code/contracts/source-operations'
 import type { SourcePreparationClosure } from '@foreman-code/contracts/source-admission'
 import type { JobQueueTicket } from '@foreman-code/contracts/job-admission'
 import { QueuedSourcePreparationCleanup } from './queuedPreparationCleanup.js'
@@ -41,7 +41,19 @@ import { reconcileFailedCaptures } from './failedCaptureCleanup.js'
 import { readSourceStorageCapacity } from './storageCapacity.js'
 import { prepareRunSources } from './runSource.js'
 
-export type { SourceExecutionHostPort }
+export interface SourceExecutionHostPort {
+  storageCapacity?(root: SourceRootRecord, attempt: MaterializationAttempt): Promise<SourceStorageCapacity>
+  /** W08/CI allocated this actual attempt; this SQL-only port checks its accepted
+   * owner and placement before source service can prepare a native directory. */
+  authorize(sql: GraphSqlClient, principal: ManagementPrincipal,
+    input: { workspaceId: string; root: SourceRootRecord; attempt: MaterializationAttempt; operationId: string }): Promise<void>
+  prepare(manifest: SourceManifest, root: SourceRootRecord, attempt: MaterializationAttempt, options?: { sharedWritableTree?: true; worktree?: SourceWorktreeRequest }): Promise<SourceMaterializationRecord['receipt']>
+  verifyWorkingDirectory(record: SourceMaterializationRecord, relativeCwd: string): Promise<VerifiedSourceWorkingTree>
+  verify(record: SourceMaterializationRecord): Promise<string>
+  releaseClaim(record: SourceMaterializationRecord, options?: { signal?: AbortSignal; deadlineAt?: string }): Promise<RetainedSourceFootprint>
+  authorizeFinal(sql: GraphSqlClient, principal: ManagementPrincipal, record: SourceMaterializationRecord, finalDispatchBindingHash: string): Promise<void>
+  reconcilePreparation?(reconciliationId: string, owner: SourceOperationOwner): Promise<SourcePreparationClosure>
+}
 type Transport = 'http' | 'mcp'
 type Sql = GraphSqlClient
 interface ApprovalRow { approved_source_id: string; snapshot_id: string; input_hash: string; state: string;
@@ -86,7 +98,9 @@ export class PostgresSourceService implements SourceAdmissionPort {
     private readonly executions: SourceExecutionHostPort, private readonly closure: SourceClosureProofPort,
     private readonly lifecycle: SourceLifecycle = {}) {}
   private async transaction<T>(work: (sql: pg.PoolClient) => Promise<T>): Promise<T> {
-    return withTransaction(this.pool, work)
+    const sql = await this.pool.connect()
+    try { await sql.query('begin'); const result = await work(sql); await sql.query('commit'); return result }
+    catch (error) { await sql.query('rollback'); throw error } finally { sql.release() }
   }
   private async host(sql: Sql): Promise<void> {
     const row = (await sql.query<{ id: string }>('select id from application_installation where singleton=true for share')).rows[0]

@@ -1,6 +1,7 @@
 import { beginRuntimeTiming, runtimeTimingPoint, withRuntimeTimingContext } from '../../infrastructure/runtimeTiming.js'
 import { retryDatabaseTimeout } from '../../infrastructure/databaseTimeout.js'
 import { resolve } from 'node:path'
+import type pg from 'pg'
 import type { BaseCheckpointSaver } from '@langchain/langgraph-checkpoint'
 import type { DurableInteraction } from '@foreman-code/contracts'
 import { CurrentRunVersionSnapshotSchema, ExecutableWorkflowV3Schema,
@@ -325,7 +326,8 @@ export class LangGraphWorkflowEngine implements WorkflowOrchestrator {
 
   private authorize(sql: import('../run-graph/connection.js').GraphTransactionSql, run: WorkflowRunV3): Promise<void> {
     if (!run.authorizationPrincipalId) throw new DomainError('RUN_AUTHORIZATION_REVOKED', 'The accepted Run authority is missing.', 403)
-    return this.locations.revalidateRunAuthorization(run.authorizationPrincipalId, run.workspaceId, run.workflowId, sql)
+    return this.locations.revalidateRunAuthorization(run.authorizationPrincipalId, run.workspaceId, run.workflowId,
+      sql as unknown as Pick<pg.PoolClient, 'query'>)
   }
 
   private async cleanupOwned(owner: RunOwnership): Promise<void> {

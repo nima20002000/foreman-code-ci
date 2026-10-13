@@ -1,5 +1,4 @@
 import { RETIRED_OPENCODE_MESSAGE } from '@foreman-code/contracts'
-import { withTransaction } from '../../infrastructure/transaction.js'
 import { APP_MCP_SERVER_NAME, isSupportedAppMcpServerName, isSupportedAppMcpTokenName, registerAppRoute } from '../harnesses/appMcpLauncher.js'
 import { APP_MCP_TOKEN_ENVIRONMENT_VARIABLE } from '../access/workerCredentials.js'
 import type pg from 'pg'
@@ -94,7 +93,10 @@ export class PostgresOperatorChatAuthority implements OperatorChatAuthority {
     }
     this.assertConfiguration(configuration)
     signal.throwIfAborted()
-    const issued = await withTransaction(this.pool, async (client) => {
+    const client = await this.pool.connect()
+    let issued: Awaited<ReturnType<PostgresAccessService['issue']>> | undefined
+    try {
+      await client.query('begin')
       // Same ordering as Run review shutdown: parent authority, then conversation.
       await client.query('select id from management_principals where id=$1 for share', [principalId])
       const owner = (await currentOperatorAuthority(client, principalId)).principal
@@ -105,14 +107,17 @@ export class PostgresOperatorChatAuthority implements OperatorChatAuthority {
       signal.throwIfAborted()
       const grants = operatorChatGrants(owner.grants)
       if (!grants.length) throw new DomainError('ACCESS_DENIED', 'This principal has no management authority to delegate to the Operator.', 403)
-      const issued = await this.access.issue({ name: `operator-chat:${conversationId}`, audience: 'operator', grants,
+      issued = await this.access.issue({ name: `operator-chat:${conversationId}`, audience: 'operator', grants,
         expiresAt: new Date(owner.expiresAt) }, client)
       // Issuance and both bindings commit together. End/release cannot miss a late credential.
       await client.query('update management_principals set delegated_from=$2 where id=$1', [issued.principal.id, owner.id])
       await client.query('insert into operator_chat_credentials(principal_id,conversation_id) values($1,$2)', [issued.principal.id, conversationId])
       signal.throwIfAborted()
-      return issued
-    })
+      await client.query('commit')
+    } catch (error) {
+      await client.query('rollback').catch(() => undefined)
+      throw error
+    } finally { client.release() }
     let removeRoute: (() => Promise<void>) | undefined
     try {
       signal.throwIfAborted()
