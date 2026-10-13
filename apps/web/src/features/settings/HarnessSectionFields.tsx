@@ -11,16 +11,22 @@ import { HarnessMcpManager } from './HarnessMcpManager'
 import { McpDetectionSettings } from './McpDetectionSettings'
 import { ClaudeMcpConfiguration } from './ClaudeMcpConfiguration'
 
-export function HarnessSectionFields({ editor, onChange, section, issues = [], routedApproval = false, allowAutoReview = false, requiresResume = false, workspaceId, writableDirectories, qualified = false, checking = false, checkError }: {
+export function HarnessSectionFields({ editor, onChange, section, issues = [], routedApproval = false, allowAutoReview = false, allowCiFullScope = false, requiresResume = false, workspaceId, writableDirectories, qualified = false, checking = false, checkError }: {
   editor: HarnessEditor; onChange(editor: HarnessEditor): void; section: HarnessSettingsSection;
+  allowCiFullScope?: boolean;
   issues?: readonly FieldIssue[]; routedApproval?: boolean; allowAutoReview?: boolean; requiresResume?: boolean; workspaceId?: string; writableDirectories?: ReactNode; qualified?: boolean; checking?: boolean; checkError?: string;
 }) {
   const value = withAdvancedDefaults(editor.configuration)
   const error = (path: string) => fieldMessage(issues, path)
   const change = (configuration: HarnessConfiguration) => onChange({ ...editor, configuration })
   const codex = (advanced: CodexAdvancedConfiguration) => { if (value.harness === 'codex') change({ ...value, advanced }) }
+  const ciPermission = allowCiFullScope && section === 'permissions' && value.harness !== 'opencode'
+    ? <Checkbox label="Allow full-suite CI" checked={value.ciFullScope === true} error={error('ciFullScope')}
+      hint="Grants this Agent permission to run all checks. The Run owner also needs the full-suite CI grant. Save the workflow to apply."
+      onChange={event => change({ ...value, ciFullScope: event.target.checked })} /> : null
   if (value.harness === 'opencode') return null
   if (value.harness === 'claude') return <div className="harness-section-fields">
+    {ciPermission}
     {section === 'model' || section === 'permissions' ? <HarnessBasicFields value={value} onChange={change} issues={issues}
       qualified={qualified} checking={checking} checkError={checkError} /> : section === 'session' ? <>
       <p>Claude sessions use the accepted profile. Native hooks, plugins and agents are excluded.</p>
@@ -35,6 +41,7 @@ export function HarnessSectionFields({ editor, onChange, section, issues = [], r
     </>}
   </div>
   return <div className="harness-section-fields">
+    {ciPermission}
     {section === 'model' ? <HarnessBasicFields value={value} onChange={change} issues={issues} includeSandbox={false} /> : null}
             {value.harness === 'codex' && section === 'permissions' ? <>
               <HarnessSandboxField value={value} onChange={change} issues={issues} />

@@ -79,7 +79,7 @@ export function selectAffectedFiles({ suite, changedFiles, sources, exports = {}
 }
 
 /** Read the snapshot tree against an explicit ancestor or its default branch merge-base. */
-export function affectedSnapshot(commit, suite, cwd = process.cwd(), defaultRef = 'origin/main', baseCommit) {
+export function affectedSnapshot(commit, suite, cwd = process.cwd(), defaultRef = 'origin/main', baseCommit, temporaryRoot) {
   cwd = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd, encoding: 'utf8' }).trim()
   const git = (args, env) => execFileSync('git', args, { cwd, env, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }).trim()
   if (!baseCommit && git(['rev-list', '--parents', '-n', '1', commit]).split(' ').length > 2) {
@@ -104,7 +104,7 @@ export function affectedSnapshot(commit, suite, cwd = process.cwd(), defaultRef 
     catch { return { scope: 'full', files: [], reason: 'No merge-base with the default branch is available.' } }
   }
   const changedFiles = git(['diff', '--name-only', '--no-renames', '-z', base, commit]).split('\0').filter(Boolean)
-  const directory = mkdtempSync(join(process.env.TMPDIR ?? tmpdir(), 'ci-selection-'))
+  const directory = mkdtempSync(join(temporaryRoot ?? process.env.TMPDIR ?? tmpdir(), 'ci-selection-'))
   try {
     const env = { ...process.env, GIT_INDEX_FILE: join(directory, 'index') }
     git(['read-tree', commit], env)

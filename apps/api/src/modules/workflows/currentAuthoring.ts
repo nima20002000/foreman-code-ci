@@ -396,6 +396,7 @@ export class CurrentWorkflowAuthoring {
     const executable = ExecutableWorkflowV3Schema.safeParse({ version, configurations })
     if (!executable.success) throw new DomainError('GRAPH_INVALID', 'Fix the workflow settings below.', 409, { issues: workflowSaveIssues(executable.error.issues) })
     for (const config of configurations) {
+      if (config.harness.harness !== 'opencode' && config.harness.ciFullScope) requireAuthorization(principal, 'jobs:ci_full', input)
       if (config.assignedSkills?.length) requireAuthorization(principal, 'skills:read', { workspaceId: input.workspaceId })
       if (config.harness.harness === 'codex' && config.harness.sandbox === 'danger-full-access') requireAuthorization(principal, 'harnesses:update', input)
       assertNativeWorkflowConfiguration(config.harness, version.approval,

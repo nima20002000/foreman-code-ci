@@ -28,7 +28,7 @@ async function main() {
     }
     const { name, audience, days, workspaceId, computerMetrics } = input
     const grant: ManagementGrant = {
-      actions: credentialActions(input.access),
+      actions: [...credentialActions(input.access), ...(input.ciFull ? ['jobs:ci_full' as const] : [])],
       scope: workspaceId ? { workspaceIds: [workspaceId] } : {},
     }
     const issued = await access.issue({

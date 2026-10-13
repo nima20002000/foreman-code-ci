@@ -114,12 +114,15 @@ function fakeComputers(github: Record<string, boolean> = {}, cloud: boolean | { 
 async function fixture(options: { repository?: boolean; github?: Record<string, boolean>; unitInventory?: CiUnitInventory
   integrationInventory?: CiIntegrationInventory
   cloud?: boolean | { github: number; circleci: number }; agent?: boolean; hostSlots?: number; cloudSystemd?: boolean
-  changedFiles?: string[]; priorityGrant?: boolean
+  changedFiles?: string[]; priorityGrant?: boolean; fullGrant?: boolean
+  selection?: { scope: 'affected' | 'full'; files: string[]; reason: string }
+  supportsSelection?: boolean
   supersession?: { branch(commit: string): string | null; isAncestor(ancestor: string, commit: string): boolean }
   repositoryRunner?: { commits: CiCommits; endpoint: HostCiEndpoint } } = {}) {
   const saved = options.agent ? makeCurrentWorkflowFixture(randomUUID()) : undefined
   if (saved) {
     saved.configurations = saved.configurations.map(configuration => ({ ...configuration,
+      harness: options.fullGrant ? { ...configuration.harness, ciFullScope: true } : configuration.harness,
       graphqlTools: ['context_get' as const, 'ci_run' as const, 'ci_get' as const, 'ci_logs_read' as const,
         'ci_computers_list' as const] }))
   }
@@ -139,7 +142,10 @@ async function fixture(options: { repository?: boolean; github?: Record<string, 
   const inventory = options.unitInventory
   const commits = options.repositoryRunner?.commits ?? {
     infrastructureOnly: async () => onlyCiInfrastructure(options.changedFiles ?? ['apps/web/src/App.tsx']),
-    capabilities: async () => ({ parts: true, integrationPartitions: true, affected: true }),
+    capabilities: async () => ({ parts: true, integrationPartitions: true, affected: options.supportsSelection !== false }),
+    affectedSelection: async () => options.selection ?? {
+      scope: 'affected' as const, files: ['apps/api/src/example.test.ts'], reason: 'Affected files.',
+    },
     ...(options.integrationInventory ? { integrationInventory: async () => options.integrationInventory! } : {}),
     ...(inventory ? { unitInventory: async () => inventory } : {}),
     ...(options.supersession ? {
@@ -173,7 +179,7 @@ async function fixture(options: { repository?: boolean; github?: Record<string, 
       { requestInit: { headers: { authorization: `Bearer ${issued.token}` } } }))
     return client
   }
-  const operator = await connect([...CI_RUN_ACTIONS, ...CI_GET_ACTIONS, 'jobs:cancel'])
+  const operator = await connect([...CI_RUN_ACTIONS, ...CI_GET_ACTIONS, 'jobs:cancel', 'jobs:ci_full'])
   const close = async () => {
     await Promise.all(clients.map(client => client.close()))
     await ci.close()
@@ -185,7 +191,7 @@ async function fixture(options: { repository?: boolean; github?: Record<string, 
   if (runtime) {
     try {
       await runtime.db.pool.query(`update management_principals set grants=grants || $2::jsonb where id=$1`,
-        [runtime.authorizationPrincipalId, JSON.stringify([{ actions: [...CI_RUN_ACTIONS, ...CI_GET_ACTIONS,
+        [runtime.authorizationPrincipalId, JSON.stringify([{ actions: [...CI_RUN_ACTIONS, ...CI_GET_ACTIONS, 'jobs:ci_full',
           ...(options.priorityGrant ? ['jobs:prioritize'] : [])],
           scope: { workspaceIds: [workspaceId] } }])])
       runtime.f.run = await withExclusiveGraphConnection(runtime.db.pool, connection => connection.transaction(async sql => {
@@ -279,6 +285,61 @@ it.each([
   }
 })
 
+it.each([
+  { supportsSelection: false },
+  { selection: { scope: 'full' as const, files: [], reason: 'Shared CI infrastructure changed.' } },
+  { unitInventory: { files: ['apps/api/src/example.test.ts'], durations: {}, heavy: [] } },
+])('denies affected requests that expand to the full suite without the grant: %j', async options => {
+  const f = await fixture(options)
+  try {
+    const caller = await f.connect([...CI_RUN_ACTIONS, ...CI_GET_ACTIONS])
+    const denied = await f.call(caller, 'ci_run', { suite: 'unit', commandId: 'expanded-full-suite' })
+    expect(denied.isError).toBe(true)
+    expect(JSON.stringify(denied.content)).toContain('CI_FULL_SCOPE_FORBIDDEN')
+    expect((await f.pool.query('select count(*)::int as count from ci_runs')).rows[0].count).toBe(0)
+  } finally { await f.close() }
+})
+
+it('resolves affected files for an ungranted MCP caller before dispatch and audits full HTTP denials', async () => {
+  const f = await fixture()
+  try {
+    const caller = await f.connect([...CI_RUN_ACTIONS, ...CI_GET_ACTIONS])
+    const started = CiRunOutputSchema.parse(await f.value(caller, 'ci_run', { suite: 'unit', commandId: 'derived-affected' }))
+    const read = CiGetOutputSchema.parse(await f.value(caller, 'ci_get', { ticketId: started.ticketId }))
+    expect(read.run).toMatchObject({ scope: 'affected', files: ['apps/api/src/example.test.ts'] })
+    expect(read.run.deriveFiles).toBeUndefined()
+    await f.ci.dispatch()
+    expect(f.started[0]!.request).toMatchObject({ scope: 'affected', files: read.run.files })
+    const writer = await f.credential([...CI_RUN_ACTIONS, ...CI_GET_ACTIONS])
+    const rejected = await f.app.inject({ method: 'POST', url: `/api/management/workspaces/${f.workspaceId}/ci`,
+      headers: { authorization: `Bearer ${writer.token}` }, payload: { suite: 'unit', scope: 'full', commandId: 'http-full-denied' } })
+    expect(rejected.statusCode).toBe(403)
+    expect(rejected.json()).toMatchObject({ error: { code: 'CI_FULL_SCOPE_FORBIDDEN' } })
+    expect((await f.pool.query("select outcome from management_audit where source='http' and action='ci.run'")).rows)
+      .toContainEqual({ outcome: 'denied' })
+    const tool = (await caller.listTools()).tools.find(tool => tool.name === 'ci_run')!
+    expect(tool.description).toContain('jobs:ci_full')
+    expect(tool.inputSchema.properties).toHaveProperty('scope')
+  } finally { await f.close() }
+})
+
+it('keeps a Workflow Agent without explicit CI permission from using the owner’s full-suite grant', async () => {
+  const f = await fixture({ agent: true })
+  try {
+    const denied = await f.agent!.callTool({ name: 'ci_run', arguments: {
+      suite: 'unit', scope: 'full', commandId: 'agent-full-denied',
+    } })
+    expect(denied.isError).toBe(true)
+    expect(JSON.stringify(denied.content)).toContain('CI_FULL_SCOPE_FORBIDDEN')
+    const started = CiRunOutputSchema.parse(decodeMcpToolResult(await f.agent!.callTool({ name: 'ci_run', arguments: {
+      suite: 'unit', commit: 'a'.repeat(40), files: ['apps/api/src/example.test.ts'], commandId: 'agent-affected',
+    } })))
+    const read = CiGetOutputSchema.parse(decodeMcpToolResult(await f.agent!.callTool({ name: 'ci_get',
+      arguments: { ticketId: started.ticketId } })))
+    expect(read.run).toMatchObject({ scope: 'affected', files: ['apps/api/src/example.test.ts'] })
+  } finally { await f.close() }
+}, 60_000)
+
 it('runs generic integration once despite requested partitions and falls back from an unconfigured cloud mirror', async () => {
   const repository = await genericCiRepository({ integration: true, cloud: true })
   const f = await fixture({ repositoryRunner: repository })
@@ -307,7 +368,7 @@ it('runs a generic full suite for an empty affected selection and preserves HTTP
   const f = await fixture({ repositoryRunner: repository })
   try {
     const input = { suite: 'unit', scope: 'affected', files: [], commit: repository.commit, commandId: 'generic-affected' }
-    const writer = await f.credential([...CI_RUN_ACTIONS, ...CI_GET_ACTIONS])
+    const writer = await f.credential([...CI_RUN_ACTIONS, ...CI_GET_ACTIONS, 'jobs:ci_full'])
     const headers = { authorization: `Bearer ${writer.token}` }
     const url = `/api/management/workspaces/${f.workspaceId}/ci`
     const reader = await f.credential(CI_GET_ACTIONS)
@@ -453,7 +514,7 @@ it('shares split suite and group log readback between authenticated HTTP and MCP
   const f = await fixture()
   try {
     const url = `/api/management/workspaces/${f.workspaceId}/ci`
-    const writer = await f.credential([...CI_RUN_ACTIONS, ...CI_GET_ACTIONS])
+    const writer = await f.credential([...CI_RUN_ACTIONS, ...CI_GET_ACTIONS, 'jobs:ci_full'])
     const headers = { authorization: `Bearer ${writer.token}` }
     const input = { suite: 'build', commandId: 'http-parts' }
     const reader = await f.credential(CI_GET_ACTIONS)
@@ -635,6 +696,32 @@ it('shares affected CI validation, grants and persisted readback between HTTP an
   } finally { await f.close() }
 })
 
+it.each([
+  { suite: 'unit', scope: 'full' },
+  { suite: 'integration', scope: 'affected' },
+])('denies unrestricted $suite CI through authenticated MCP without a separate full-suite grant', async selection => {
+  const f = await fixture()
+  try {
+    const caller = await f.connect([...CI_RUN_ACTIONS, ...CI_GET_ACTIONS])
+    const denied = await f.call(caller, 'ci_run', { ...selection, commandId: 'ungranted-full-suite' })
+    expect(denied.isError).toBe(true)
+    expect(JSON.stringify(denied.content)).toContain('CI_FULL_SCOPE_FORBIDDEN')
+    expect(JSON.stringify(denied.content)).toContain('affected')
+    expect(JSON.stringify(denied.content)).toContain('files')
+    expect((await f.pool.query('select count(*)::int as count from ci_runs')).rows[0].count).toBe(0)
+    expect((await f.pool.query("select outcome from management_audit where action='ci_run'")).rows)
+      .toContainEqual({ outcome: 'denied' })
+    const started = CiRunOutputSchema.parse(await f.value(caller, 'ci_run', {
+      suite: 'integration', commit: 'a'.repeat(40), files: ['apps/api/test/example.integration.test.ts'],
+      commandId: 'ungranted-affected-files',
+    }))
+    const read = CiGetOutputSchema.parse(await f.value(caller, 'ci_get', { ticketId: started.ticketId }))
+    expect(read.run).toMatchObject({ scope: 'affected', files: ['apps/api/test/example.integration.test.ts'] })
+    expect((await f.pool.query<{ record: unknown }>('select record from ci_runs where id=$1',
+      [started.ticketId])).rows[0]!.record).toEqual(read.run)
+  } finally { await f.close() }
+})
+
 it('records an empty affected selection as passed and preserves explicit full scope', async () => {
   const f = await fixture()
   try {
@@ -689,7 +776,7 @@ it('defaults authenticated Operator MCP and HTTP calls to runner-selected affect
   const f = await fixture()
   try {
     const reader = await f.connect(CI_GET_ACTIONS)
-    const writer = await f.credential([...CI_RUN_ACTIONS, ...CI_GET_ACTIONS])
+    const writer = await f.credential([...CI_RUN_ACTIONS, ...CI_GET_ACTIONS, 'jobs:ci_full'])
     const deniedHttp = await f.credential(CI_GET_ACTIONS)
     const url = `/api/management/workspaces/${f.workspaceId}/ci`
     const headers = { authorization: `Bearer ${writer.token}` }
@@ -719,8 +806,8 @@ it('defaults authenticated Operator MCP and HTTP calls to runner-selected affect
   } finally { await f.close() }
 })
 
-it('defaults authenticated Agent MCP to affected scope, reads explicit full scope and denies a caller without CI grants', async () => {
-  const f = await fixture({ agent: true })
+it('allows an explicitly granted Agent to read full CI and preserves affected defaults and live grant checks', async () => {
+  const f = await fixture({ agent: true, fullGrant: true })
   try {
     const agent = f.agent!
     const tool = (await agent.listTools()).tools.find(item => item.name === 'ci_run')!
@@ -742,6 +829,15 @@ it('defaults authenticated Agent MCP to affected scope, reads explicit full scop
           .toEqual(run)
       }
     }
+    await f.pool.query(`update management_principals set grants=(select jsonb_agg(
+      jsonb_set(grant_entry,'{actions}',(select jsonb_agg(action) from jsonb_array_elements(grant_entry->'actions') action
+        where action <> '"jobs:ci_full"'::jsonb))) from jsonb_array_elements(grants) grant_entry) where id=$1`,
+    [f.authorizationPrincipalId])
+    const revoked = await agent.callTool({ name: 'ci_run', arguments: {
+      suite: 'integration', scope: 'full', commandId: 'agent-full',
+    } })
+    expect(revoked.isError).toBe(true)
+    expect(JSON.stringify(revoked.content)).toContain('CI_FULL_SCOPE_FORBIDDEN')
     const stored = (await f.pool.query<{ grants: { actions: ManagementAction[]; scope: Record<string, unknown> }[] }>(
       'select grants from management_principals where id=$1', [f.authorizationPrincipalId])).rows[0]!
     const grants = stored.grants.map(grant => ({ ...grant, actions: grant.actions.filter(action => action !== 'jobs:start') }))
@@ -1389,7 +1485,7 @@ it('dispatches queued typecheck parts beyond the first fifty integration partiti
 })
 
 it.each([false, true])('requires a high-priority grant for Agents (granted: %s)', async priorityGrant => {
-  const f = await fixture({ agent: true, priorityGrant })
+  const f = await fixture({ agent: true, priorityGrant, fullGrant: true })
   try {
     f.computers.splice(0)
     const input = { suite: 'install', priority: 'high', commandId: 'agent-high-priority' }
@@ -1709,7 +1805,7 @@ it('retries superseded running cleanup before releasing its computer slot', asyn
 })
 
 it('supersedes detached Agent commits only within that execution through authenticated MCP', async () => {
-  const f = await fixture({ agent: true, supersession: { branch: () => null, isAncestor: () => true } })
+  const f = await fixture({ agent: true, fullGrant: true, supersession: { branch: () => null, isAncestor: () => true } })
   f.computers.splice(0)
   try {
     const call = async (input: Record<string, unknown>, client = f.agent!) => {

@@ -61,7 +61,8 @@ const ManagementHarnessConfigurationSchema = z.discriminatedUnion("harness", [
 export const ManagementHarnessDefaultsSchema = z.object({
   codex: CodexHarnessConfigurationSchema,
   claude: ClaudeHarnessConfigurationSchema.optional(),
-}).strict();
+}).strict().refine(value => !value.codex.ciFullScope && !value.claude?.ciFullScope,
+  'Full-suite CI permission must be configured for a specific Agent, not global defaults.');
 
 import { CommandIdSchema, ExpectedRevisionSchema } from './commands.js';
 export { CommandIdSchema, ExpectedRevisionSchema } from './commands.js';
