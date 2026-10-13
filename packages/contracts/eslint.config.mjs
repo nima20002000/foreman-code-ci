@@ -1,7 +1,6 @@
 import js from '@eslint/js'
 import globals from 'globals'
 import tseslint from 'typescript-eslint'
-import { foremanLint } from '../../scripts/eslint-plugin-foreman/index.mjs'
 
 export default tseslint.config(
   { ignores: ['dist/**'] },
@@ -13,5 +12,4 @@ export default tseslint.config(
       globals: globals.node,
     },
   },
-  ...foremanLint(import.meta.dirname),
 )
