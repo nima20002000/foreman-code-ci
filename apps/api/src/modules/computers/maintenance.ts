@@ -1,4 +1,3 @@
-import { errorMessage } from '../../infrastructure/errorMessage.js'
 import { readClaudePlugins, claudeCliResult } from './claudePlugins.js'
 import { isCodexStagingRenameError, removeCodexStagingDirectories } from './npmStaging.js'
 import { syncFingerprint } from './syncFingerprint.js'
@@ -59,7 +58,7 @@ function versionOf(output: string): string | null {
 
 function maintenanceError(error: unknown, fallback: string): string {
   const details = error as NodeJS.ErrnoException | null
-  const message = errorMessage(error, fallback)
+  const message = error instanceof Error ? error.message : fallback
   if (details?.code === 'EDQUOT' || details?.errno === -122 || message.includes('Unknown system error -122')) {
     return 'Disk quota reached on this computer. Free space or increase its disk quota, then retry maintenance.'
   }

@@ -1,8 +1,10 @@
-import { asRecord } from '../../infrastructure/records.js'
 import type { HarnessExecution, NativeSessionReference } from '@foreman-code/contracts'
 import type { NativeHistory } from '../harnesses/port.js'
 import { DomainError } from '../errors.js'
 
+function object(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
+}
 function outcome(status: unknown): 'succeeded' | 'failed' | 'canceled' | undefined {
   return status === 'completed' ? 'succeeded' : status === 'failed' ? 'failed' : status === 'interrupted' ? 'canceled' : undefined
 }
@@ -28,12 +30,12 @@ export function assertOriginalWorkflowTerminal(execution: Pick<HarnessExecution,
     || history.pendingInteraction || history.pendingInteractions.length) return fail()
   if (session.harness === 'claude') {
     for (const event of history.events) {
-      const payload = asRecord(event.payload)
-      const raw = asRecord(payload.nativeResult)
+      const payload = object(event.payload)
+      const raw = object(payload.nativeResult)
       const prompts = Array.isArray(raw.user_message_uuids) ? raw.user_message_uuids : [raw.user_message_uuid]
       if (event.type !== 'claude.result' || payload.clientCorrelationId !== command
         || raw.type !== 'result' || raw.session_id !== session.nativeSessionId || raw.parent_tool_use_id != null
-        || typeof raw.uuid !== 'string' || !raw.uuid || asRecord(payload.source).eventId !== raw.uuid
+        || typeof raw.uuid !== 'string' || !raw.uuid || object(payload.source).eventId !== raw.uuid
         || !prompts.includes(terminal.providerId) || raw.deferred_tool_use != null) continue
       if (raw.subtype === 'success' && raw.is_error === false && terminal.result.outcome === 'succeeded'
         && raw.result === terminal.result.output) return
@@ -45,17 +47,17 @@ export function assertOriginalWorkflowTerminal(execution: Pick<HarnessExecution,
   }
   if (session.harness !== 'codex') return fail()
   for (const event of history.events) {
-    const payload = asRecord(event.payload), turn = asRecord(payload.turn)
+    const payload = object(event.payload), turn = object(payload.turn)
     if ((event.type === 'turn.completed' || event.type === 'turn/completed')
       && payload.threadId === session.nativeSessionId
       && (payload.turnId ?? turn.id) === terminal.providerId
       && (payload.clientCorrelationId === undefined || payload.clientCorrelationId === command)
       && outcome(payload.status ?? turn.status) === terminal.result.outcome) return
     if (event.type !== 'thread.reconciled' && event.type !== 'thread.attached') continue
-    const thread = asRecord(payload.thread)
+    const thread = object(payload.thread)
     if (thread.id !== session.nativeSessionId || !Array.isArray(thread.turns)) continue
     for (const raw of thread.turns) {
-      const current = asRecord(raw)
+      const current = object(raw)
       if (current.id === terminal.providerId && outcome(current.status) === terminal.result.outcome
         && (current.clientUserMessageId === undefined || current.clientUserMessageId === command)) return
     }

@@ -1,4 +1,3 @@
-import { errorMessage } from '../errorMessage'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useBlocker } from '@tanstack/react-router'
 import { staysOnWorkflowBoard } from '@foreman-code/contracts/wave25'
@@ -76,7 +75,7 @@ export function UnsavedChangesProvider({ children }: { children: ReactNode }) {
     setPhase('working')
     setFailure(undefined)
     try { await active[choice]() }
-    catch (error) { setFailure(errorMessage(error, 'Changes could not be saved. Your draft is kept.')) }
+    catch (error) { setFailure(error instanceof Error ? error.message : 'Changes could not be saved. Your draft is kept.') }
     finally { working.current = false; setPhase('settled') }
   }
   return <UnsavedChangesContext.Provider value={context}>{children}
