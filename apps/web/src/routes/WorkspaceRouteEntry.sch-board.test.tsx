@@ -1,3 +1,4 @@
+import { installBrowserLocks } from '../test/browserLocks'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createMemoryHistory, createRouter, RouterProvider } from '@tanstack/react-router'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -14,6 +15,7 @@ import { boardDraftContextKey } from '../features/workflow-board/keys'
 import { pinnedRunHandlers, reply, runsUrl, versionReply } from '../features/run-board/testFixtures'
 import { installFlowLayout } from '../features/run-board/testFlowLayout'
 import { page, runA, runB } from '../features/runs-selector/testFixtures'
+import { runsSelectorApi } from '../features/runs-selector/client'
 import { bindMockInstallation } from '../shared/mocks/handlers'
 import { getMockFixture, setMockScenario } from '../shared/mocks/scenarios'
 import { server } from '../mocks/server'
@@ -88,6 +90,7 @@ function installNodeInspection() {
 }
 
 beforeEach(() => {
+  installBrowserLocks()
   unhandled.length = 0; server.events.on('request:unhandled', recordUnhandled)
   useGraphDraftStore.getState().clearAllDrafts()
   localStorage.clear(); sessionStorage.clear(); bindMockInstallation()
@@ -148,7 +151,8 @@ beforeEach(() => {
   )
 })
 afterEach(() => {
-  cleanup(); clients.splice(0).forEach((client) => client.clear())
+  cleanup(); window.dispatchEvent(new Event('pagehide'))
+  clients.splice(0).forEach((client) => client.clear())
   server.events.removeListener('request:unhandled', recordUnhandled)
   expect(unhandled, 'No selected Board request may bypass MSW').toEqual([])
   server.events.removeListener('request:start', recordWrite)
@@ -158,6 +162,15 @@ afterEach(() => {
 })
 
 describe('Workspace Board route, editor and HTTP boundary', { timeout: 20_000 }, () => {
+  it.each([null, 'run-a'])('opens the Board after claiming browser tab ownership for Run %s', async (runId) => {
+    await mount(runsUrl(runId, scope))
+    const name = runId ? 'Selected Run pinned topology' : 'Workflow authoring'
+    expect(await screen.findByRole('region', { name })).toBeVisible()
+    expect(screen.queryByText('This browser cannot safely recover independent tab edits.')).not.toBeInTheDocument()
+    expect(screen.getByRole('group', { name: 'Board controls' })).toBeVisible()
+    expect(writes).toEqual([])
+  })
+
   it('inspects a saved Agent missing from the current workflow and reopens its generated URL', async () => {
     const reads = installNodeInspection()
     const current = getMockFixture(scope.workspaceId)!.workflows.find(item => item.id === scope.workflowId)!
@@ -328,6 +341,8 @@ describe('Workspace Board route, editor and HTTP boundary', { timeout: 20_000 },
 
       await choose('run-a')
       await savedY()
+      await waitFor(() => expect(workspaceReads).toBe(initialWorkspaceReads + 1))
+      expect(within(editor).getByRole('heading', { name: 'Retained local name' })).toBeVisible()
       await waitFor(() => expect(client.isFetching({ queryKey: boardDraftContextKey(scope.workspaceId, scope.workflowId) })).toBe(0))
       const historyReads = context.mock.calls.length
       await act(async () => { await vi.advanceTimersByTimeAsync(3_200) })
@@ -353,6 +368,8 @@ describe('Workspace Board route, editor and HTTP boundary', { timeout: 20_000 },
       resources: fixture.resources, browserProfiles: fixture.browserProfiles, runners: fixture.runners,
       runs: [{ ...fixture.runs[0], id: 'run-a', executionState: 'running', outcome: 'pending', finishedAt: undefined }],
     })))
+    const listed = await runsSelectorApi.list({ ...scope, limit: 20 })
+    expect(listed.items.find(run => run.runId === 'run-a')).toMatchObject({ status: 'running' })
     const { router } = await mount()
     await savedY()
     expect(router.state.location.search).toMatchObject({ runId: 'run-a', workflowVersionId: 'version-a',
