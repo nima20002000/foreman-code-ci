@@ -3,7 +3,7 @@ import { setImmediate } from 'node:timers/promises'
 import type pg from 'pg'
 import { describe, expect, it } from 'vitest'
 import { CiGetOutputSchema, CiListOutputSchema, CiRunOutputSchema, CiRunRecordSchema, CiTestsOutputSchema,
-  type CiHostRun, type CiRunInput, type CiTestResults } from '@foreman-code/contracts'
+  DEFAULT_HARNESS_DEFAULTS, type CiHostRun, type CiRunInput, type CiTestResults } from '@foreman-code/contracts'
 import { RunBoardSnapshotGetResultSchema } from '@foreman-code/contracts/run-snapshots'
 import { AcceptedRepeatStartV1Schema, RunActivitiesPageSchema, makeCurrentWorkflowFixture,
   type AcceptedRepeatStartV1 } from '@foreman-code/contracts/wave25'
@@ -43,7 +43,8 @@ async function admitCiRun(pool: pg.Pool, input: AcceptedRepeatStartV1, principal
 
 async function fixture(options: { deferMigration?: number | number[] } = {}) {
   const database = await currentDatabase(options)
-  const graph = await graphFixture(database, { form: 'single', qualifiedReads: true, insert: false })
+  const graph = await graphFixture(database, { form: 'single', qualifiedReads: true, insert: false,
+    harness: { ...DEFAULT_HARNESS_DEFAULTS.codex, ciFullScope: true } })
   graph.accepted = await admitCiRun(database.pool, graph.accepted, graph.writer.principal)
   graph.run = graph.accepted.run
   graph.f.run = graph.run

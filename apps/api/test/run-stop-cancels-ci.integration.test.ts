@@ -21,6 +21,7 @@ import { checkpointRuntimeFixture, insertProviderRun } from './helpers/wave25Br1
 async function fixture() {
   const saved = makeCurrentWorkflowFixture(randomUUID(), 'single')
   saved.configurations = saved.configurations.map(configuration => ({ ...configuration,
+    harness: { ...configuration.harness, ciFullScope: true },
     graphqlTools: ['context_get', 'ci_run', 'ci_get'] }))
   const f = await checkpointRuntimeFixture(1, 1, { fixture: saved,
     approvalNodeIds: [saved.version.entryNodeId], insertRun: false,
@@ -33,7 +34,7 @@ async function fixture() {
       provider: 'github', owner: 'example', name: 'repo', defaultBranch: 'main',
     } })])
   await pool.query(`update management_principals set grants=grants || $2::jsonb where id=$1`,
-    [f.authorizationPrincipalId, JSON.stringify([{ actions: [...CI_RUN_ACTIONS, ...CI_GET_ACTIONS],
+    [f.authorizationPrincipalId, JSON.stringify([{ actions: [...CI_RUN_ACTIONS, ...CI_GET_ACTIONS, 'jobs:ci_full'],
       scope: { workspaceIds: [f.f.run.workspaceId] } }])])
   const admitRun = async (runId: string) => {
     const authority = await withExclusiveGraphConnection(pool, connection => connection.transaction(async sql => {

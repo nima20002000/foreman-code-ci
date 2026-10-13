@@ -17,19 +17,10 @@ import { logOperatorToolFailure } from '../operator/invoke.js'
 export const CI_CAPABILITY_DETAIL = 'ci_run runs one suite (install, typecheck, lint, unit, build, integration) of the workspace '
   + 'GitHub repository at a commit: the requested one, the Agent’s Run-start commit when unchanged, its edited files (published to GitHub first), or the default '
   + 'branch head. A build computer fetches it with its own GitHub CLI login, installs packages and runs the repository’s '
-  + 'own script in an isolated worktree. Build computers retain repository, pnpm store and dependency caches; '
-  + 'pnpm installs offline after warming a lockfile, and contracts builds are reused for unchanged inputs. '
-  + 'The log reports setup milliseconds before the suite. '
-  + 'gate=true with suite=integration, scope=full and no file or partition selection requests a complete '
-  + 'typecheck+lint+unit+integration gate. Only Operators, including orchestrators using Operator credentials, can request gates; '
-  + 'all existing CI start, cancellation and workspace grants still apply. Gates cannot be superseded. '
-  + 'Integration files are assigned longest-first from recorded durations: each build computer runs one exclusive gate job '
-  + 'with CPU/memory-sized internal shards (12 on a sufficiently provisioned 16-core computer). '
-  + 'Cloud slots run checks first and integration overflow that reduces the predicted build-computer critical path. '
-  + 'Exclusive and user-systemd files are balanced over eligible executors. One gate runs at a time across workspaces: '
-  + 'other full requests wait behind queued/running gates with a reason; affected requests use spare capacity below gate priority. '
-  + 'ci_get on any gate ticket reports per-computer and per-suite expected/actual durations, critical path and wallTimeMs. '
-  + 'scope defaults to affected; scope=full always runs everything. '
+  + 'own script in a fresh worktree, like a self-hosted runner. scope defaults to affected. Every caller requires an explicit '
+  + 'jobs:ci_full grant for scope=full, gate=true, integration without files, unsupported selectors or any full-suite expansion. '
+  + 'Without it, CI_FULL_SCOPE_FORBIDDEN says to use affected scope with files. Workflow Agents also require '
+  + 'ciFullScope=true in their saved harness permission; it is never inherited from global defaults. '
   + 'priority defaults to normal. Requesting high requires Operator role or an explicit workspace jobs:prioritize grant '
   + 'on the Agent’s live authorization principal, in addition to all CI run grants. '
   + 'Commits changing only CI infrastructure automatically receive high priority based on their Git changes, '
@@ -38,14 +29,15 @@ export const CI_CAPABILITY_DETAIL = 'ci_run runs one suite (install, typecheck, 
   + 'Main and paired computers participate only with builds enabled; buildPriority orders their selection. '
   + 'When files are omitted in affected scope, optional baseCommit (full SHA) compares changes since that commit, '
   + 'so sandboxed Agents can request changes since a release through MCP without running git. baseCommit must be '
-  + 'an available ancestor of the resolved commit; otherwise the full suite runs with a clear reason. '
+  + 'an available ancestor of the resolved commit; otherwise a full-suite fallback requires jobs:ci_full. '
   + 'Without baseCommit, the runner compares the resolved commit with its merge-base against the workspace default branch '
   + 'and uses the repository selector for the suite and part. Missing selectors, shared infrastructure changes and the '
-  + 'default branch head (without baseCommit) run the full suite, with the reason in the run message or log. '
+  + 'default branch head (without baseCommit) require jobs:ci_full for full-suite fallback. Ungranted callers’ derived '
+  + 'selections are checked on Main before admission and sent as explicit files; full-suite fallback is denied and audited. '
   + 'Caller files remain supported; '
   + 'ci-remote continues to compute and send its selection. '
   + 'ci_get reads back the persisted baseCommit, scope and files. Empty affected selections pass without launching a runner. '
-  + 'Requires the same CI run grants for either scope. Integration automatically targets four minutes of measured test time '
+  + 'Affected runs require the CI run grants; full runs additionally require jobs:ci_full. Integration automatically targets four minutes of measured test time '
   + 'per part, bounded by free CI slots; partitions (2–64, integration only) caps that count. Heavy measured files stay alone '
   + 'when capacity permits. ci_get includes expectedDurationMs (test time plus 90 seconds setup); runner-derived affected '
   + 'selections use full-suite estimates. Requires scripts/ci-suite.sh and scripts/ci-files.mjs. '
@@ -104,9 +96,13 @@ const actions: Record<CiTool, ManagementAction[]> = {
 }
 export function ciCapabilities(context: CiContext, resource: AuthorizedResource) {
   if (!context.services.ci) return []
+  const fullAllowed = Object.keys(resource).length
+    ? isAuthorized(context.principal, 'jobs:ci_full', resource) : hasAction(context.principal, 'jobs:ci_full')
+  const fullDetail = fullAllowed ? ' This caller holds jobs:ci_full in the selected scope.'
+    : ' This caller has no jobs:ci_full grant in the selected scope.'
   return CI_TOOLS.filter(name => actions[name].every(action =>
     Object.keys(resource).length ? isAuthorized(context.principal, action, resource) : hasAction(context.principal, action)))
-    .map(name => ({ name, actions: actions[name], detail: CI_CAPABILITY_DETAIL }))
+    .map(name => ({ name, actions: actions[name], detail: CI_CAPABILITY_DETAIL + (name === 'ci_run' ? fullDetail : '') }))
 }
 
 export function registerCiTools(server: McpServer, context: CiContext) {
