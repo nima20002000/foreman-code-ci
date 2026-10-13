@@ -22,7 +22,7 @@ import { DEVICE_APPLICATION_JSON_BYTES } from '@foreman-code/contracts/device-ap
 import type { DispatchIntent, AcceptedNodePlacement, NativeExecutionPlacement } from '@foreman-code/contracts/node-placement'
 import { RemoteNativeIdentitySchema, RemoteTerminalEvidenceSchema, RemoteOperationReceiptSchema, type RemoteReviewerRequest,
   type RemoteNativeIdentity, type RemoteTerminalEvidence, type RemoteApplicationAccess,
-  type RemoteOwnerReconciliation } from '@foreman-code/contracts/remote-execution'
+  type RemoteOwnerReconciliation, type RemoteOperationReceipt } from '@foreman-code/contracts/remote-execution'
 import { RemoteWorkflowPhysicalReadoutSchema, remoteWorkflowPhysicalOutput } from '@foreman-code/contracts/remote-workflow-physical'
 import { ApprovedRootAllowlistSchema, type ApprovedRootAllowlist } from '@foreman-code/contracts/workspace-root-policies'
 import { SourceMaterializationRecordSchema, type SourceMaterializationRecord } from '@foreman-code/contracts/source-admission'
@@ -73,6 +73,12 @@ import { InstalledWorkflowRecovery } from './installedWorkflowRecovery.js'
 import { recoverInstalledWorkflowReply } from './installedWorkflowRecoveryHandler.js'
 import { InstalledWorkflowResponsePages } from './installedWorkflowResponsePages.js'
 import { hasPositiveRemoteEntryClosure, remoteNonEntryClosureDigest } from '@foreman-code/contracts/remote-execution-entry-closure-node'
+
+function nativeReadAuthority(receipt: RemoteOperationReceipt): 'stop' | 'read' {
+  const nativeClose = receipt.controls.some(command => command.action.kind === 'close')
+    && !receipt.controls.some(command => command.action.kind === 'stop')
+  return receipt.stopFence && !nativeClose ? 'stop' : 'read'
+}
 
 function unavailable(reason:string):never {throw new DomainError('WORKER_WORKFLOW_UNAVAILABLE','The original installed workflow authority is unavailable.',409,{reason})}
 const digest=(value:unknown)=>commandInputHash(value).slice('sha256:'.length)
@@ -866,7 +872,7 @@ export async function createInstalledWorkflowHost(input:InstalledWorkflowHostOpt
             unavailable('original_receipt_transfer_owner_changed')
           }
           await workerExecutionAuthorizer(forBinding(context.binding))(frame.intent, frame.placement,
-            status.receipt.stopFence ? 'stop' : 'read')
+            nativeReadAuthority(status.receipt))
           current(context.binding)
           return { payload: responsePages.read(frame, context.binding) }
         }
@@ -956,7 +962,7 @@ export async function createInstalledWorkflowHost(input:InstalledWorkflowHostOpt
           const receipt=RemoteOperationReceiptSchema.parse(status.receipt),resident=operation(frame.intent)
           if(receipt.native&&resident.native&&resident.session&&resident.runtimeLeaf&&resident.leaseExpiresAt) {
             const authority = await workerExecutionAuthorizer(forBinding(context.binding))(frame.intent, frame.placement,
-              receipt.stopFence ? 'stop' : 'read')
+              nativeReadAuthority(receipt))
             const cleanupOnly = authority?.cleanupOnly === true
             if (!reviewerObservationExpiresAt && !cleanupOnly && !receipt.stopFence && !resident.physicalClosure) {
               if (!resident.mcp) unavailable('original_main_lease_required')
@@ -985,7 +991,8 @@ export async function createInstalledWorkflowHost(input:InstalledWorkflowHostOpt
                 receipt.terminal.artifactValidationError) } : {})})
             const assertOwnerCurrent = async () => {
               current(context.binding)
-              await workerExecutionAuthorizer(forBinding(context.binding))(resident.intent,resident.placement,receipt.stopFence?'stop':'read')
+              await workerExecutionAuthorizer(forBinding(context.binding))(resident.intent, resident.placement,
+                nativeReadAuthority(receipt))
               const logged = await(await journal()).status(resident.intent.operationId)
               if(logged.status!=='known'||!isDeepStrictEqual(logged.receipt.intent,resident.intent)
                 ||logged.receipt.native?.sessionId!==resident.session?.nativeSessionId

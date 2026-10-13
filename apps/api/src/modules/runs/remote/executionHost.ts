@@ -656,7 +656,7 @@ export class RemoteExecutionHost {
     await this.ports.authorize(resident.intent, resident.placement, action)
     if (!await this.ports.journal.enterControlDelivery(command)) return this.ports.journal.status(command.operationId)
     try {
-      if (command.action.kind === 'stop') { resident.controller.abort(); resident.manager.stopAutomaticResponses?.(resident.session); await resident.manager.cancel(resident.session, undefined, remoteActiveNative(recorded.receipt)?.turnId) }
+      if (command.action.kind !== 'respond') { resident.controller.abort(); resident.manager.stopAutomaticResponses?.(resident.session); await resident.manager.cancel(resident.session, undefined, remoteActiveNative(recorded.receipt)?.turnId) }
       else await resident.manager.respond(resident.session, command.action.nativeInteractionId, ApprovalResponseOptionSchema.parse(command.action.response))
       await this.ports.journal.acknowledgeControl(command)
       await this.settle(resident, `execution:${resident.intent.executionId}`)
