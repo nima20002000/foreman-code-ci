@@ -260,9 +260,16 @@ export function integrationShardLimit(value, maximum = 64) {
   return limit
 }
 
+/** A request above what this computer can hold right now runs at the measured limit instead of failing. */
+function requestedShards(value, maximum) {
+  const requested = Number(value)
+  if (!Number.isSafeInteger(requested) || requested < 1) throw new Error('Integration shards must be a positive integer')
+  return Math.min(requested, maximum)
+}
+
 export function reservedIntegrationShards(environment, maximum = 12) {
   if (!environment.FOREMAN_CODE_VERIFICATION_ROOT) {
-    return integrationShardLimit(readProductEnvironment(environment, 'INTEGRATION_SHARDS') ?? String(maximum), maximum)
+    return requestedShards(readProductEnvironment(environment, 'INTEGRATION_SHARDS') ?? String(maximum), maximum)
   }
   if (!environment.FOREMAN_CODE_VERIFICATION_INTEGRATION_SHARDS
     || !environment.FOREMAN_CODE_VERIFICATION_MAX_INTEGRATION_SHARDS) {
@@ -270,7 +277,7 @@ export function reservedIntegrationShards(environment, maximum = 12) {
   }
   const reserved = integrationShardLimit(environment.FOREMAN_CODE_VERIFICATION_INTEGRATION_SHARDS)
   const qualified = integrationShardLimit(environment.FOREMAN_CODE_VERIFICATION_MAX_INTEGRATION_SHARDS)
-  const requested = integrationShardLimit(readProductEnvironment(environment, 'INTEGRATION_SHARDS')
+  const requested = requestedShards(readProductEnvironment(environment, 'INTEGRATION_SHARDS')
     ?? String(Math.min(reserved, maximum)), maximum)
   if (requested > reserved || requested > qualified) {
     throw new Error('Integration shards exceed the accepted reservation or suite qualification')
@@ -333,7 +340,9 @@ export function integrationShardPlan(environment, resources = {}, fileCount = In
   const memoryLimit = knownMemory ? Math.floor(availableMemoryBytes / memoryPerShard) : 12
   const freeConnections = knownDatabase ? maxConnections - reservedConnections - activeConnections : null
   const databaseLimit = knownDatabase ? Math.floor(freeConnections / connectionsPerShard) : 12
-  const limit = Math.min(cpuLimit, memoryLimit, databaseLimit)
+  const ciShardCeiling = environment.FOREMAN_CODE_CI_INTEGRATION_SHARDS
+  const ciShardLimit = ciShardCeiling === undefined ? Infinity : integrationShardLimit(ciShardCeiling)
+  const limit = Math.min(cpuLimit, memoryLimit, databaseLimit, ciShardLimit)
   const reasons = [
     knownCpu ? `CPU limit ${cpuLimit}` : 'CPU unknown (fallback 12)',
     knownMemory ? `memory limit ${memoryLimit} (${availableMemoryBytes} available bytes, 1 GiB/shard)`
@@ -342,6 +351,7 @@ export function integrationShardPlan(environment, resources = {}, fileCount = In
       + ` ${reservedConnections} reserved, ${activeConnections} occupied, ${connectionsPerShard} connections/shard)`
       : 'PostgreSQL limits unknown (fallback 12)',
   ]
+  if (ciShardCeiling !== undefined) reasons.push(`CI shard ceiling ${ciShardLimit}`)
   if (slotCpu !== undefined || slotMemory !== undefined) reasons.push('limited to this CI slot share')
   if (limit < 1) throw new Error(`No integration shard fits available resources: ${reasons.join('; ')}`)
   const requested = readProductEnvironment(environment, 'INTEGRATION_SHARDS')
@@ -516,7 +526,8 @@ export function options(argv, environment = process.env) {
 
 async function main() {
   options(process.argv.slice(2))
-  const commonResult = spawnSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: root, encoding: 'utf8' })
+  const commonResult = spawnSync('git', ['rev-parse', '--path-format=absolute',
+    process.env.CI_HOST_RUNNER === '1' ? '--git-dir' : '--git-common-dir'], { cwd: root, encoding: 'utf8' })
   if (commonResult.status !== 0) throw new Error('Could not find the project heavy-job queue')
   const common = realpathSync(commonResult.stdout.trim())
   if (!hasHeavyJobAdmission(process.env, common)) {

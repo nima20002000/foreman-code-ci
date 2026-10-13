@@ -284,7 +284,6 @@ export class LangGraphWorkflowEngine {
           },
           settleRun: async () => { await this.cleanupOwned(owner) },
           requestCleanup: (failure) => this.runs.requestCleanup(runId, owner, failure),
-          settleRetainedReviewers: () => this.nativeExecutions.settleRetainedReviewers(owner),
           finishNative: () => this.nativeExecutions.finishRun(runId),
           finishCleanup: () => this.runs.finishCleanup(runId, false, owner),
         },
