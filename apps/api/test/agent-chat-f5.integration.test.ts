@@ -194,7 +194,7 @@ describe.skipIf(!postgresEnabled)('F5 approval and receipt PostgreSQL / HTTP / M
       const mcpState = await f.mcp.callTool({ name: 'agent_chat_read', arguments: { workspaceId: f.workspaceId, query: f.query } })
       assert.deepEqual(AgentChatStateSchema.parse(decodeMcpToolResult(mcpState)).turns, state.turns)
       const queued = state.turns.filter((turn) => turn.delivery === 'queued')
-      const cancel = async (turn: (typeof queued)[number], index: number) => {
+      for (const [index, turn] of queued.entries()) {
         if (index % 2) {
           const result = await f.mcp.callTool({ name: 'agent_chat_cancel_queued', arguments: { workspaceId: f.workspaceId,
             conversationId: f.id, turnRequestId: turn.requestId, requestId: `cancel-${turn.requestId}` } })
@@ -205,12 +205,6 @@ describe.skipIf(!postgresEnabled)('F5 approval and receipt PostgreSQL / HTTP / M
           assert.equal(result.statusCode, 200, result.body)
         }
         assert.equal((await f.repository.turn(f.id, turn.requestId))?.delivery, 'canceled')
-      }
-      // Independent cancellations share the database pool without serial transport round trips.
-      for (let offset = 0; offset < queued.length; offset += 8) {
-        const results = await Promise.allSettled(queued.slice(offset, offset + 8)
-          .map((turn, index) => cancel(turn, offset + index)))
-        for (const result of results) if (result.status === 'rejected') throw result.reason
       }
       await admit(f.message('capacity-freed', f.id))
       assert.equal((await f.read()).turns.some((turn) => turn.requestId === 'capacity-freed'), true)
