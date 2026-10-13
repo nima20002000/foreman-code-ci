@@ -142,7 +142,6 @@ export function useDraftStartMutation({ draftKey, edit, editIntent, core, startS
   } })
   const recovery = useMutation({ retry: false, mutationFn: async () => {
     if (startLock.current) return
-    const selectionToken = latestBoard.current?.getSelectionToken?.()
     startLock.current = true
     try {
       if (!canStart) throw new Error('Start permission is unavailable for this workflow.')
@@ -154,9 +153,7 @@ export function useDraftStartMutation({ draftKey, edit, editIntent, core, startS
       if (!alive.current || acknowledgement === 'superseded'
         || useGraphDraftStore.getState().nextDrafts[draftKey]?.instanceId !== instanceId) return
       if (result.status === 'accepted') {
-        if (latestBoard.current?.getSelectionToken?.() === selectionToken) {
-          latestBoard.current?.selectRun(scopeForBoardRun(result.run))
-        }
+        latestBoard.current?.selectRun(scopeForBoardRun(result.run))
         setMessage('The earlier Run was accepted.')
       } else {
         useGraphDraftStore.getState().updateNextDraft(draftKey, current => ({ ...current, startCanceled: true }))
