@@ -47,8 +47,6 @@ export async function codexApprovalRuntime(handler: 'user' | 'orchestrator' = 'u
       productRole: handler === 'orchestrator' && c.agentId === entry.agentId ? 'orchestrator' : 'coder',
       harness: {
         ...DEFAULT_HARNESS_DEFAULTS.codex, model: 'test-model', reasoningEffort: 'low',
-        ...(c.harness.harness !== 'opencode' && c.harness.ciFullScope !== undefined
-          ? { ciFullScope: c.harness.ciFullScope } : {}),
         sandbox: 'read-only', serviceTier: 'standard',
         advanced: {
           ...structuredClone(DEFAULT_CODEX_ADVANCED_CONFIGURATION),

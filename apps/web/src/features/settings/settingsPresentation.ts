@@ -20,7 +20,7 @@ export function sectionForHarnessIssue(path: readonly (string | number)[]): Harn
   const field = path.join('.')
   if (/mcp/i.test(field)) return 'tools'
   if (/sessionPersistence|requiresResume|webSearch|compaction|subagentDepth|plugins/.test(field)) return 'session'
-  if (/sandbox|approval|autoApprove|permission|ciFullScope|Writable|workspaceWrite|shellEnvironment/.test(field)) return 'permissions'
+  if (/sandbox|approval|autoApprove|permission|Writable|workspaceWrite|shellEnvironment/.test(field)) return 'permissions'
   return 'model'
 }
 export const retiredHarnessLabel = 'Retired harness (OpenCode): read-only'
