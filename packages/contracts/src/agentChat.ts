@@ -1,7 +1,7 @@
 import { NativeInteractionResponseAvailabilitySchema } from './interaction-activity.js';
 import { NativeMessageSubmissionSchema } from './claude.js';
 import { z } from "zod";
-import { ActivitySnapshotV1Schema } from "./activity.js";
+import { ActivityRevisionSchema, ActivitySnapshotV1Schema } from "./activity.js";
 import { MessageAttachmentFields } from "./files.js";
 import { OperatorConversationHistoryQuerySchema } from "./operatorChat.js";
 import { SavedNodePlacementSchema } from './nodePlacement.js';

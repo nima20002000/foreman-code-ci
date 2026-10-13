@@ -531,7 +531,7 @@ it('retains the saved account name after a temporary list refresh failure', asyn
   expect(await screen.findByText(/Account details could not be refreshed/)).toBeVisible()
   expect(screen.getByRole('option', { name: /Personal · signed in · ready/ })).toBeInTheDocument()
   expect(screen.getByRole('combobox', { name: 'Account' })).toHaveValue(personalId)
-  expect(screen.getByRole('combobox', { name: 'Account' })).toBeDisabled()
+  await waitFor(() => expect(screen.getByRole('combobox', { name: 'Account' })).toBeDisabled())
 })
 
 it('shows sign-in separately from qualification and clears stale display identity after an unavailable observation', async () => {
