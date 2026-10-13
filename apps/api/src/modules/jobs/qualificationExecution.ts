@@ -1,4 +1,3 @@
-import { errorMessage } from '../../infrastructure/errorMessage.js'
 import { acceptedJobSpecDigests } from '@foreman-code/contracts/jobs-node'
 import { AcceptedVerificationJobSpecSchema, VerificationJobExecutionSchema,
   type JobVerificationReport } from '@foreman-code/contracts/job-verification'
@@ -29,7 +28,7 @@ export async function publishFailedQualification(input: {
   try {
     report = await input.publish()
   } catch (error) {
-    const publication = errorMessage(error, 'Reports are unavailable')
+    const publication = error instanceof Error ? error.message : 'Reports are unavailable'
     throw new Error(`${failure} Report publication failed: ${publication.slice(0, 160)}. ${diagnostic}`.trim()
       .slice(0, 500), { cause: error })
   }

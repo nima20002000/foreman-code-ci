@@ -1,5 +1,3 @@
-import { sameComputer } from '../../shared/api/sameComputer'
-import { errorMessage } from '../../shared/errorMessage'
 import { useContext, useEffect, useRef, type RefObject } from 'react'
 import { useIsMutating } from '@tanstack/react-query'
 import { WorkspaceRootSelectionSchema, type ApprovedRootAllowlist, type WorkspaceRootSelection } from '@foreman-code/contracts/workspace-root-policies'
@@ -25,13 +23,17 @@ import { useWorkspaceCreationDefaultsQuery } from '../../shared/api/settingsExpe
 import './computerSettings.css'
 
 type Props = { workspaceId: string; presentation?: 'field' | 'card' | 'tile' | 'compact'; onSaved?: () => void; triggerRef?: RefObject<HTMLButtonElement | null> }
+function errorMessage(error: unknown) { return error instanceof Error ? error.message : 'The folder operation failed.' }
 function hostLabel(host: WorkspaceRootSelection['hostRef']) { return host.kind === 'main' ? `Main · ${host.mainId}` : `Worker · ${host.deviceId}` }
+function sameHost(left: WorkspaceRootSelection['hostRef'], right: WorkspaceRootSelection['hostRef']) {
+  return left.kind === right.kind && left.mainId === right.mainId && (left.kind === 'main' || right.kind === 'device' && left.deviceId === right.deviceId)
+}
 function revision(value: string | undefined) {
   const result = Number(value ?? 0)
   if (!Number.isSafeInteger(result) || result < 0) throw new Error('This root policy revision cannot be represented by the location API.')
   return result
 }
-function LocationSettings({ workspaceId, presentation = 'field', onSaved, triggerRef }: Props) {
+function useLocationSettings({ workspaceId, presentation = 'field', onSaved }: Props) {
   const epoch = useHarnessSessionEpoch(), scope = `${epoch}:${workspaceId}`
   const toasts = useContext(ToastContext)
   const workspace = useManagedWorkspaceQuery(workspaceId)
@@ -79,7 +81,7 @@ function LocationSettings({ workspaceId, presentation = 'field', onSaved, trigge
   const choose = (key: string) => {
     const record = records.find(value => value.key === key)
     if (!record || !saved.isSuccess || !choices.isSuccess) return
-    const previousPolicy = choices.data.policies.find(policy => sameComputer(policy.hostRef, record.host.hostRef))
+    const previousPolicy = choices.data.policies.find(policy => sameHost(policy.hostRef, record.host.hostRef))
     change(previous => ({ ...previous, selected: key, candidates: { ...previous.candidates, [key]: previous.candidates[key] ?? {
       relativePath: previousPolicy?.allowedBaseId === record.base.baseId ? previousPolicy.relativePath : '',
       accessMode: previousPolicy?.allowedBaseId === record.base.baseId && record.base.accessModes.includes(previousPolicy.accessMode) ? previousPolicy.accessMode
@@ -136,7 +138,7 @@ function LocationSettings({ workspaceId, presentation = 'field', onSaved, trigge
     const binding = readback?.binding
     operation.saving = true
     try {
-      if (!operation.attempt.unresolved && submitted && record && readback && binding && sameComputer(binding.hostRef, submitted.hostRef)
+      if (!operation.attempt.unresolved && submitted && record && readback && binding && sameHost(binding.hostRef, submitted.hostRef)
         && binding.applicationInstallationId === record.host.applicationInstallationId && binding.allowedBaseId === submitted.allowedBaseId
         && binding.configurationRevision === submitted.configurationRevision && binding.relativePath === submitted.relativePath
         && binding.accessMode === submitted.accessMode && readback.locationRevision === submitted.expectedLocationRevision) {
@@ -167,7 +169,7 @@ function LocationSettings({ workspaceId, presentation = 'field', onSaved, trigge
       if (!(hadUnknownOutcome && error instanceof ApiError && (error.status === 401 || error.status === 403))) operation.attempt.failed(error)
       operation.uncertain = operation.attempt.unresolved
       if (!operation.attempt.unresolved) operation.original = undefined
-      update(scope, previous => ({ ...previous, conflict: error instanceof ApiError && error.status === 409 ? true : previous.conflict, notice: errorMessage(error, 'The folder operation failed.') }))
+      update(scope, previous => ({ ...previous, conflict: error instanceof ApiError && error.status === 409 ? true : previous.conflict, notice: errorMessage(error) }))
       if (throwFailure) throw error
     } finally {
       operation.saving = false
@@ -175,6 +177,21 @@ function LocationSettings({ workspaceId, presentation = 'field', onSaved, trigge
   }
   const runBrowse = async () => { if (selection && chosen) try { await browse.mutateAsync({ input: selection, expectedHost: chosen.host }) } catch { /* Mutation exposes the scoped error. */ } }
   const runValidate = async () => { if (selection && chosen) try { await validate.mutateAsync({ input: selection, expectedHost: chosen.host }) } catch { /* Mutation exposes the scoped error. */ } }
+  return {
+    scope, toasts, workspace, identity, defaults, current, saved, choices, browse, validate, save, operation,
+    busy, picker, update, records, chosen, candidate, selection, locked, setPickerOpen, archived, conflict,
+    choose, savedBinding, mainRecord, changeCandidate, reload, submit, runBrowse, runValidate,
+  }
+}
+
+function LocationSettings({ workspaceId, presentation = 'field', onSaved, triggerRef }: Props) {
+  const {
+    scope, toasts, workspace, identity, defaults, current, saved, choices, browse, validate, save, operation,
+    busy, picker, update, records, chosen, candidate, selection, locked, setPickerOpen, archived, conflict,
+    choose, savedBinding, mainRecord, changeCandidate, reload, submit, runBrowse, runValidate,
+  } = useLocationSettings({
+    workspaceId, presentation, onSaved, triggerRef,
+  })
   const guard = <UnsavedEditorGuard editor={{ label: 'execution folder command', dirty: operation.attempt.unresolved, busy, uncertain: operation.attempt.unresolved,
     save: submit, discard: () => { if (!operation.attempt.unresolved) update(scope, () => empty()) }, error: save.error?.message }} />
   const recovery = operation.attempt.unresolved ? <><Alert tone="warning" title="A submitted folder command has an unknown outcome. Its original selection is retained." />

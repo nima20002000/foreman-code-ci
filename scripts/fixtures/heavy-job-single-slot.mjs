@@ -1,4 +1,3 @@
-import { setTimeout as sleep } from 'node:timers/promises'
 import { spawn, spawnSync } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, readlinkSync, rmSync, statSync, writeFileSync } from 'node:fs'
@@ -17,6 +16,7 @@ const queue = join(state, 'queue')
 const active = join(state, 'active')
 const baseTmp = process.env.GRAPHQL_HEAVY_BASE_TMPDIR || tmpdir()
 const tempRoot = join(baseTmp, `graphql-heavy-${createHash('sha256').update(common).digest('hex').slice(0, 16)}`)
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 const readJson = (path) => { try { return JSON.parse(readFileSync(path, 'utf8')) } catch { return null } }
 const ageMs = (path) => { try { return Date.now() - statSync(path).mtimeMs } catch { return 0 } }
 const isDirectory = (path) => { try { return lstatSync(path).isDirectory() } catch { return false } }
