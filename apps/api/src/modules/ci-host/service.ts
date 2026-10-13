@@ -5,8 +5,7 @@ import type pg from 'pg'
 import { withProviderPoll } from './providerPoll.js'
 import { CI_HOST_NAMESPACE, CI_LOG_MAX_BYTES, CI_RUN_JOBS_LIMIT, CiComputerRefSchema, CiHostReplySchema, CiListOutputSchema, CiRunRecordSchema, CiRunOutputSchema,
   WorkspaceSchema,
-  requiresUserSystemd, userSystemdIntegrationFiles,
-  type CiDurations, type CiHostRequest, type CiHostReply, type CiHostRun, type CiListOutput, type CiRunRecord, type CiRunInput,
+  type CiDurations, type CiHostRequest, type CiHostReply, type CiHostRun, type CiHostStatus, type CiListOutput, type CiRunRecord, type CiRunInput,
   type CiTestResults, type CiTestStatus, type CiUserSystemd, type CiCancellation, type Workspace } from '@foreman-code/contracts'
 import type { ManagementAction, ManagementPrincipal } from '@foreman-code/contracts/management'
 import type { PostgresCommandCoordinator } from '../commands/postgres.js'
@@ -26,9 +25,12 @@ import { prepareCiSupersession, validateCiSupersession, supersedeCiRuns } from '
 import { gatePartStealer, gateQueueBlock, planCiGate, readCiComputerStatus } from './gate.js'
 import { gateIntegrationShards } from './capacity.js'
 import { ciGateReport } from './gateReport.js'
-import { claimCiDispatch, releaseCiDispatch, saveQueuedCiRun, ciMessages, rejectedCiStart, withCiTicketLock } from './dispatch.js'
+import { claimCiDispatch, releaseCiDispatch, saveQueuedCiRun, ciMessages, rejectedCiStart, withCiTicketLock,
+  requestCiStart, CI_START_ACK_TIMEOUT_MS, CI_START_MAX_ATTEMPTS } from './dispatch.js'
 import { collectCiResults } from './resultCollection.js'
 import { sanitizeCiText, serializeCiJson } from './text.js'
+import { isGitHubComputer, needsSystemdExecutor, supportsUserSystemd } from './computerCapabilities.js'
+import { weighCiPartitions } from './partitionPlanning.js'
 
 /** CI reads are idempotent: one retry after a lock or statement timeout, then a typed retryable error. */
 async function retryRead<T>(work: () => Promise<T>): Promise<T> {
@@ -75,21 +77,6 @@ interface RunStopAudit {
   runId: string
 }
 
-function isGitHubComputer(computer: HostCiComputer): boolean {
-  return computer.hostRef.kind === 'cloud' && computer.hostRef.provider === 'github'
-}
-
-function supportsUserSystemd(computer: HostCiComputer): boolean {
-  return computer.hostRef.kind !== 'cloud' || computer.userSystemd?.supported === true
-}
-
-function needsSystemdExecutor(run: CiRunRecord): boolean {
-  if (run.requiresBuildComputer !== undefined) return run.requiresBuildComputer
-  return run.suite === 'integration' && (run.partition
-    ? run.partition.hostIndexes?.includes(run.partition.index) === true
-    : run.scope === 'full' || Boolean(run.deriveFiles) || run.files.some(requiresUserSystemd))
-}
-
 /** Runs work over every item with at most `limit` in flight. */
 async function inBatches<T>(items: readonly T[], limit: number, work: (item: T) => Promise<void>) {
   let next = 0
@@ -103,10 +90,33 @@ export class HostCiService {
   private dispatching: Promise<void> | undefined
   private timer: NodeJS.Timeout | undefined
   private stoppingRuns = 0
+  private readonly endpoint: HostCiEndpoint
 
   constructor(private readonly pool: pg.Pool, private readonly commands: PostgresCommandCoordinator,
     private readonly authority: CiAuthority, private readonly commits: CiCommits,
-    private readonly endpoint: HostCiEndpoint, private readonly snapshots?: AgentSnapshots) {}
+    endpoint: HostCiEndpoint, private readonly snapshots?: AgentSnapshots) {
+    this.endpoint = {
+      computers: () => endpoint.computers(),
+      request: async (computer, request) => {
+        if (request.operation !== 'status' || computer.hostRef.kind === 'cloud') {
+          return endpoint.request(computer, request)
+        }
+        const assigned = (await this.pool.query<{ record: unknown; host_key: string }>(
+          `select record,host_key from ci_runs where state in ('starting','running')`)).rows
+          .filter(row => row.host_key === computer.key)
+        let status: CiHostStatus | null = null
+        try {
+          const reply = await endpoint.request(computer, request)
+          if (reply.operation === 'status') status = reply
+          return reply
+        } finally {
+          for (const row of assigned) {
+            await this.reconcileHostStart(CiRunRecordSchema.parse(row.record), computer, status)
+          }
+        }
+      },
+    }
+  }
 
   start(intervalMs = 5000) {
     this.timer ??= setInterval(() => { void this.dispatch() }, intervalMs)
@@ -364,114 +374,6 @@ export class HostCiService {
       [repository])
   }
 
-  /** Sizes a partitioned run's slices by the measured speed of the computers that will run them, so they finish
-   * together: each free computer takes one slice, weighted by its throughput; slices without a computer yet get the
-   * mean. Throughput is share of the suite per wall second from that computer's last integration slice. */
-  private async weighPartitions(queued: CiRunRecord[], free: HostCiComputer[]): Promise<CiRunRecord[]> {
-    const groupIds = [...new Set(queued.filter(run => run.suite === 'integration'
-      && run.partition && !run.partition.weights).map(run => run.groupId))]
-    if (!groupIds.length) return queued
-    const members = (await this.pool.query<{ record: unknown }>(
-      'select record from ci_runs where group_id=any($1::uuid[])', [groupIds])).rows
-      .map(row => CiRunRecordSchema.parse(row.record))
-    const groups = new Map<string, CiRunRecord[]>()
-    for (const run of members) {
-      if (run.suite === 'integration' && run.partition) groups.set(run.groupId, [...groups.get(run.groupId) ?? [], run])
-    }
-    if (!groups.size) return queued
-    const speed = await this.throughput(free)
-    const replaced = new Map<string, CiRunRecord>()
-    for (const group of groups.values()) {
-      group.sort((left, right) => left.partition!.index - right.partition!.index)
-      const count = group[0]!.partition!.count
-      if (group.length !== count) continue
-      if (group.every(run => run.partition!.weights)) {
-        for (const run of group) replaced.set(run.id, await this.read(run.id, run.workspaceId))
-        continue
-      }
-      const existing = group.find(run => run.partition!.weights)
-      const ordered = [...free].sort((left, right) =>
-        Number(isGitHubComputer(left)) - Number(isGitHubComputer(right))
-        || right.priority - left.priority
-        || (speed.get(right.key) ?? 0) - (speed.get(left.key) ?? 0))
-      const systemdComputers = ordered.filter(supportsUserSystemd).sort((left, right) =>
-        Number(right.hostRef.kind === 'cloud') - Number(left.hostRef.kind === 'cloud'))
-      const selection = group[0]!
-      const knownFiles = selection.scope === 'affected' && !selection.deriveFiles
-      const hostFiles = knownFiles ? selection.files.filter(requiresUserSystemd).length : userSystemdIntegrationFiles.size
-      const ordinaryFiles = knownFiles ? selection.files.length - hostFiles : count
-      const hostCount = hostFiles ? Math.min(hostFiles, ordinaryFiles ? count - 1 : count,
-        Math.max(1, systemdComputers.length, count - ordinaryFiles)) : 0
-      const hostIndexes = existing ? existing.partition!.hostIndexes ?? []
-        : Array.from({ length: hostCount }, (_, index) => index)
-      // Keep systemd files separate so executors without a user manager can take ordinary slices.
-      const planned: (HostCiComputer | undefined)[] = [
-        ...hostIndexes.map(index => systemdComputers[index]),
-        ...ordered.filter(computer => computer.hostRef.kind === 'cloud'
-          && !systemdComputers.slice(0, hostCount).includes(computer)),
-        ...systemdComputers.slice(hostCount).filter(computer => computer.hostRef.kind !== 'cloud'),
-      ]
-      const known = ordered.map(computer => speed.get(computer.key)).filter((value): value is number => value !== undefined)
-      const mean = known.length ? known.reduce((sum, value) => sum + value, 0) / known.length : 1
-      const weights = existing?.partition!.weights ?? group.map((_, index) => {
-        const computer = planned[index]
-        return Number((computer ? speed.get(computer.key) ?? mean : mean).toPrecision(6))
-      })
-      const plan = group.map((run, index) => ({ id: run.id, patch: { partition: { ...run.partition!, weights,
-          ...(hostIndexes.length ? { hostIndexes } : {}) },
-        plannedHostKey: planned[index]?.key ?? null } }))
-      // One immutable plan includes canceled siblings; their slices remain reserved and their state stays terminal.
-      const saved = await this.pool.query<{ record: unknown }>(`update ci_runs
-        set record=ci_runs.record || plan.patch
-        from jsonb_to_recordset($1::jsonb) as plan(id text, patch jsonb)
-        where ci_runs.id=plan.id::uuid and ci_runs.group_id=$2
-          and ci_runs.record#>'{partition,weights}' is null
-        returning ci_runs.record`, [JSON.stringify(plan), group[0]!.groupId])
-      for (const row of saved.rows) {
-        const run = CiRunRecordSchema.parse(row.record)
-        replaced.set(run.id, run)
-      }
-      // A concurrent planner or assignment can exclude rows from the update; use their persisted state.
-      for (const run of group) {
-        if (!replaced.has(run.id)) replaced.set(run.id, await this.read(run.id, run.workspaceId))
-      }
-    }
-    return queued.map(run => replaced.get(run.id) ?? run).filter(run => run.state === 'queued' && !run.computer)
-  }
-
-  private async throughput(computers: HostCiComputer[]): Promise<Map<string, number>> {
-    const rows = (await this.pool.query<{ record: unknown }>(`select record from ci_runs
-      where state in ('passed','failed') and record->>'suite'='integration' and record->'partition' is not null
-        and record->>'finishedAt' is not null order by created_at desc limit 200`)).rows
-      .map(row => CiRunRecordSchema.parse(row.record))
-    const speed = new Map<string, number>()
-    for (const run of rows) {
-      const key = computers.find(value => JSON.stringify(value.hostRef) === JSON.stringify(run.computer?.hostRef))?.key
-      if (!key || speed.has(key) || !run.startedAt || !run.finishedAt || run.step !== 'integration' || run.scope === 'affected') continue
-      const seconds = (Date.parse(run.finishedAt) - Date.parse(run.startedAt)) / 1000
-      // Fail-fast runs say nothing about speed.
-      if (seconds < 120) continue
-      const partition = run.partition!
-      if (partition.hostIndexes?.includes(partition.index)) continue
-      const weights = partition.weights ?? Array.from({ length: partition.count }, () => 1)
-      const ordinaryWeight = weights.reduce((sum, value, index) =>
-        sum + (partition.hostIndexes?.includes(index) ? 0 : value), 0)
-      const share = weights[partition.index]! / ordinaryWeight
-      speed.set(key, share / seconds)
-    }
-    for (const computer of computers) {
-      if (speed.has(computer.key)) continue
-      // No measurement yet: CPU count relative to the measured computers' typical speed per CPU.
-      const status = await this.endpoint.request(computer, { operation: 'status' })
-        .catch(fallbackOnError(null, 'jobs', 'read CI computer status', { computer: computer.key }))
-      if (status?.operation === 'status' && speed.size) {
-        const perCpu = [...speed.values()].reduce((sum, value) => sum + value, 0) / speed.size / 12
-        speed.set(computer.key, perCpu * Math.max(1, Math.floor(status.cpuCount / (status.slotsTotal ?? 1))))
-      }
-    }
-    return speed
-  }
-
   private async read(id: string, workspaceId: string, sql: SqlQuery = this.pool): Promise<CiRunRecord> {
     const row = (await sql.query<{ record: unknown }>('select record from ci_runs where id=$1 and workspace_id=$2',
       [id, workspaceId])).rows[0]
@@ -599,8 +501,7 @@ export class HostCiService {
     assertCiReadAccess(caller, scope.executionId, run)
     this.stoppingRuns += 1
     try {
-      // Queued cancellation and dispatch claims compete through their database state checks.
-      if (run.state !== 'queued') await this.dispatching
+      // Persist intent before trying the executor lock, even while its start reply is pending.
       return await this.cancelTicket(scope.workspaceId, run.id, {
         principalId: caller.id, source, commandId: input.commandId ?? randomUUID(), reason: 'direct',
       })
@@ -623,8 +524,15 @@ export class HostCiService {
         join harness_executions e on e.id=c.record#>>'{initiator,executionId}'
         where e.run_id=$1 and c.workspace_id=$2 and c.state in ('queued','starting','running')
         order by c.id`, [runId, intent.workspace_id])).rows
+      const audit: CiCancellation = {
+        principalId: intent.record.principalId,
+        source: intent.record.source,
+        commandId: intent.record.commandId,
+        runId,
+        reason: 'run_stop',
+      }
       const results = await Promise.allSettled(tickets.map(ticket =>
-        this.cancelTicket(intent.workspace_id, ticket.id, { ...intent.record, reason: 'run_stop' })))
+        this.cancelTicket(intent.workspace_id, ticket.id, audit)))
       const errors = results.flatMap(result => result.status === 'rejected' ? [result.reason] : [])
       if (errors.length) throw new AggregateError(errors, 'Run CI cancellation is incomplete.')
     } finally {
@@ -743,13 +651,20 @@ export class HostCiService {
         return { ticketId: run.id, priority: run.priority, priorityReason: run.priorityReason,
           position: row.position, reason: ciQueueReason(run) }
       })
-      const active = (await this.pool.query<{ id: string; host_key: string }>(
-        `select id,host_key from ci_runs where state in ('starting','running') and host_key is not null
+      const active = (await this.pool.query<{ id: string; host_key: string; record: unknown }>(
+        `select id,host_key,record from ci_runs where state in ('starting','running') and host_key is not null
           order by created_at,id`)).rows
       const result = []
       for (const computer of await this.endpoint.computers()) {
-        const running = active.filter(run => run.host_key === computer.key).map(run => run.id)
+        const assigned = active.filter(run => run.host_key === computer.key)
         const status = await this.endpoint.request(computer, { operation: 'status' }).catch(error => error as Error)
+        const running = []
+        for (const row of assigned) {
+          const previous = CiRunRecordSchema.parse(row.record)
+          const current = previous.state === 'starting' && !previous.startedAt
+            ? await this.read(row.id, previous.workspaceId) : previous
+          if (['starting', 'running'].includes(current.state)) running.push(row.id)
+        }
         result.push(status instanceof Error
           ? { label: computer.label, hostRef: computer.hostRef, priority: computer.priority,
             ready: false, reasons: [status.message], running, slotsUsed: running.length,
@@ -784,11 +699,11 @@ export class HostCiService {
   }
 
   private async settle(run: CiRunRecord, computer: HostCiComputer, state: { state: string; step: string | null
-    exitCode: number | null; startedAt: string; finishedAt: string | null; message: string | null
+    exitCode: number | null; startedAt: string | null; finishedAt: string | null; message: string | null
     collection?: CiHostRun['collection']; provenance?: CiHostRun['provenance'] },
     options: { logTail?: string | undefined; audit?: CiCancellation | undefined; client?: pg.PoolClient | undefined } = {}) {
     const { logTail, audit, client } = options
-    const requeued = state.state === 'queued' && computer.hostRef.kind === 'cloud'
+    const requeued = state.state === 'queued'
     const unstartedProviders = new Set(run.unstartedProviders ?? [])
     if (requeued && computer.hostRef.provider) unstartedProviders.add(computer.hostRef.provider)
     const messages = ciMessages(run, state.message === null ? null : sanitizeCiText(state.message))
@@ -797,6 +712,7 @@ export class HostCiService {
       computer: requeued ? null : { hostRef: computer.hostRef, label: computer.label },
       startedAt: requeued ? null : run.startedAt ?? state.startedAt,
       finishedAt: state.finishedAt, ...messages, dispatchRequest: undefined,
+      dispatchedAt: undefined, dispatchHostKey: undefined,
       cancellation: terminal ? undefined : run.cancellation,
       ...(state.collection ? { collection: state.collection } : {}),
       ...(state.provenance ? { provenance: state.provenance } : {}),
@@ -892,10 +808,12 @@ export class HostCiService {
   }
 
   private async sendAssignedDispatch(run: CiRunRecord, computer: HostCiComputer, client: pg.PoolClient) {
-    if (!run.dispatchRequest) throw new Error('CI dispatch request is missing.')
+    const request = run.dispatchRequest
+    if (!request) throw new Error('CI dispatch request is missing.')
     let reply: Extract<CiHostReply, { operation: 'start' }>
     try {
-      const response = CiHostReplySchema.parse(await this.endpoint.request(computer, run.dispatchRequest))
+      const start = () => this.endpoint.request(computer, request)
+      const response = CiHostReplySchema.parse(await (computer.hostRef.kind === 'cloud' ? start() : requestCiStart(start)))
       if (response.operation !== 'start') {
         throw new DomainError('CI_HOST_REPLY_INVALID', 'The build computer replied out of order.', 502)
       }
@@ -911,7 +829,18 @@ export class HostCiService {
           startedAt: now, finishedAt: now, message: (error as Error).message }, { client })
         return 'settled'
       }
-      if (!await releaseCiDispatch(client, run, computer, (error as Error).message)) return 'pending'
+      const attempts = run.dispatchAttempts ?? 1
+      const uncertainRetry = computer.hostRef.kind !== 'cloud' && attempts > 1
+      if (uncertainRetry && attempts >= CI_START_MAX_ATTEMPTS) {
+        const now = new Date().toISOString()
+        await this.settle(run, computer, { state: 'failed', step: 'dispatch', exitCode: null,
+          startedAt: null, finishedAt: now,
+          message: `CI start was not acknowledged after ${attempts} attempts. ${(error as Error).message}` },
+        { client })
+        return 'settled'
+      }
+      if (!await releaseCiDispatch(client, run, computer, (error as Error).message,
+        { clearRetry: !uncertainRetry })) return 'pending'
       return (error as DomainError).code === 'CI_HOST_BUSY' ? 'busy' : 'rejected'
     }
     // A persistence failure keeps the pre-dispatch assignment for same-executor recovery.
@@ -919,17 +848,50 @@ export class HostCiService {
     return 'settled'
   }
 
+  private async reconcileHostStart(run: CiRunRecord, computer: HostCiComputer, status: CiHostStatus | null) {
+    if (computer.hostRef.kind === 'cloud' || run.state !== 'starting' || run.startedAt || run.cancellation) return false
+    const outcome = await withCiTicketLock(this.pool, run.id, async client => {
+      const current = await this.read(run.id, run.workspaceId, client)
+      if (current.state !== 'starting' || current.startedAt || current.cancellation
+        || !isDeepStrictEqual(current.computer?.hostRef, computer.hostRef)
+        || current.dispatchedAt !== run.dispatchedAt || current.dispatchAttempts !== run.dispatchAttempts) return false
+      const observed = status?.runs.find(value => value.runId === current.id)
+      if (observed) {
+        // Preflight status acknowledges delivery before there is a persisted run to read.
+        if (observed.state === 'starting' && observed.step === 'dispatch') return false
+        return this.settle(current, computer, observed, { client })
+      }
+      const elapsed = Date.now() - Date.parse(current.dispatchedAt ?? current.queuedAt)
+      if (!status && elapsed < CI_START_ACK_TIMEOUT_MS) return false
+      const attempts = current.dispatchAttempts ?? 1
+      const reason = status ? 'The computer reports no such CI run.' : 'The start acknowledgement timed out.'
+      if (attempts >= CI_START_MAX_ATTEMPTS) {
+        const now = new Date().toISOString()
+        return this.settle(current, computer, { state: 'failed', step: 'dispatch', exitCode: null,
+          startedAt: null, finishedAt: now,
+          message: `CI start was not acknowledged after ${attempts} attempts. ${reason}` }, { client })
+      }
+      return releaseCiDispatch(client, current, computer, `${reason} Queued to retry on the same computer.`)
+    })
+    return outcome ?? false
+  }
+
   private async refreshRun(row: { record: unknown; host_key: string | null }, computers: HostCiComputer[]) {
     const run = CiRunRecordSchema.parse(row.record)
-    const computer = computers.find(value => value.key === row.host_key)
+    let computer = computers.find(value => value.key === row.host_key)
       ?? computers.find(value => run.collection === 'pending' && run.computer
         && value.hostRef.kind === run.computer.hostRef.kind && value.hostRef.mainId === run.computer.hostRef.mainId
         && value.hostRef.deviceId === run.computer.hostRef.deviceId && value.hostRef.provider === run.computer.hostRef.provider
         && value.hostRef.slot === run.computer.hostRef.slot)
       ?? (run.computer && run.computer.hostRef.kind !== 'cloud' ? await this.computer(run.computer.hostRef) : null)
     if (!computer) return
+    if (row.host_key) computer = { ...computer, key: row.host_key }
     if (run.cancellation) {
       await this.cancelTicket(run.workspaceId, run.id, run.cancellation)
+      return
+    }
+    if (computer.hostRef.kind !== 'cloud' && run.state === 'starting' && !run.startedAt) {
+      await readCiComputerStatus(this.endpoint, computer)
       return
     }
     if (run.dispatchRequest) {
@@ -1017,8 +979,8 @@ export class HostCiService {
     let queued = await this.releaseSlowTier(parsed)
     // Reserve four GitHub slots while checks wait, including integration already using GitHub.
     const githubIntegrationLimit = Math.max(0, github.length - (queued.some(run => run.suite !== 'integration') ? 4 : 0))
-    queued = await this.weighPartitions(queued, computers.flatMap(computer =>
-      Array.from({ length: freeSlots(computer) }, () => computer)))
+    queued = await weighCiPartitions(this.pool, this.endpoint, queued, computers.flatMap(computer =>
+      Array.from({ length: freeSlots(computer) }, () => computer)), (id, workspaceId) => this.read(id, workspaceId))
     queued.sort((left, right) => (left.priority === right.priority
       && !left.gate && !right.gate
       ? Number(needsSystemdExecutor(right)) - Number(needsSystemdExecutor(left)) : 0) || compareCiQueue(left, right))
@@ -1051,6 +1013,7 @@ export class HostCiService {
       const order = computers.filter(computer => runsOnCircleCi(run)
         || computer.hostRef.kind !== 'cloud' || computer.hostRef.provider !== 'circleci')
         .filter(computer => !hostRequired || supportsUserSystemd(computer))
+        .filter(computer => !run.dispatchHostKey || computer.key === run.dispatchHostKey)
         .filter(computer => !smokeTarget || isDeepStrictEqual(computer.hostRef, smokeTarget))
         .filter(computer => !run.gate || gateShards.has(computer.key)
           && (!plannedGateReady || computer.key === run.plannedHostKey || stealsGatePart(run, computer)))

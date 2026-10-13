@@ -275,7 +275,7 @@ it.each(['http', 'mcp'] as const)('returns and replays every maximum unit shard 
   } finally { await f.close() }
 })
 
-it('joins in-flight host preparation before confirming direct MCP cancellation', async () => {
+it('reports pending MCP cancellation during host preparation and confirms cleanup after dispatch', async () => {
   const f = await fixture()
   let release!: () => void
   const gate = new Promise<void>(resolve => { release = resolve })
@@ -286,20 +286,24 @@ it('joins in-flight host preparation before confirming direct MCP cancellation',
     if (input.operation === 'start') { entered(); await gate }
     return request(computer, input)
   }
-  let cancellation: Promise<unknown> | undefined
+  let cancellation: ReturnType<typeof f.call> | undefined
   try {
     const result = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run',
       { suite: 'install', commandId: 'preparing-cancel' }))
     await preparing
-    let completed = false
-    cancellation = f.value(f.operator, 'ci_cancel', { ticketId: result.ticketId }).then(value => {
-      completed = true
-      return value
-    })
-    await new Promise(resolve => setTimeout(resolve, 100))
-    expect(completed).toBe(false)
+    const reader = await f.connect(CI_GET_ACTIONS)
+    expect((await f.call(reader, 'ci_cancel', { ticketId: result.ticketId })).isError).toBe(true)
+    cancellation = f.call(f.operator, 'ci_cancel', { ticketId: result.ticketId })
+    await expect.poll(async () => {
+      const response = await reader.callTool({ name: 'ci_get',
+        arguments: { workspaceId: f.workspaceId, ticketId: result.ticketId } })
+      expect(response.isError).not.toBe(true)
+      return CiGetOutputSchema.parse(decodeMcpToolResult(response)).run.cancellation
+    }).toMatchObject({ source: 'mcp', reason: 'direct' })
+    const pending = await cancellation
+    expect(pending.isError).toBe(true)
+    expect(decodeMcpToolResult(pending)).toMatchObject({ error: { code: 'CI_CANCEL_PENDING' } })
     release()
-    expect(await cancellation).toMatchObject({ run: { state: 'canceled' } })
     await f.ci.dispatch()
     expect(CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: result.ticketId })).run.state)
       .toBe('canceled')
@@ -307,7 +311,14 @@ it('joins in-flight host preparation before confirming direct MCP cancellation',
       const reply = await f.endpoint.request(computer, { operation: 'status' })
       expect(reply.operation === 'status' && reply.runs.some(run => ['starting', 'running'].includes(run.state))).toBe(false)
     }
-  } finally { release(); await cancellation; await f.close() }
+  } finally {
+    release()
+    try {
+      await cancellation
+    } finally {
+      await f.close()
+    }
+  }
 })
 
 it.each([
@@ -344,15 +355,20 @@ it.each([
   }
 })
 
-it('runs generic integration once despite requested partitions and falls back from an unconfigured cloud mirror', async () => {
-  const repository = await genericCiRepository({ integration: true, cloud: true })
+it.each([0, 1250])(
+  'runs generic integration once despite requested partitions and falls back from an unconfigured cloud mirror after a %i ms launch delay',
+  async launchDelayMs => {
+  const repository = await genericCiRepository({ integration: true, cloud: true, beforeLaunch: async () => {
+    // eslint-disable-next-line no-restricted-syntax
+    await new Promise(resolve => setTimeout(resolve, launchDelayMs))
+  } })
   const f = await fixture({ repositoryRunner: repository })
   try {
     const started = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run',
       { suite: 'integration', partitions: 4, commandId: 'generic-integration' }))
     expect(started.partitions).toBeUndefined()
     await expect.poll(async () => CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get',
-      { ticketId: started.ticketId })).run.state).toBe('passed')
+      { ticketId: started.ticketId })).run.state, { timeout: 10_000 }).toBe('passed')
     const read = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: started.ticketId }))
     expect(read.run).toMatchObject({ part: null, partition: null, state: 'passed',
       computer: { hostRef: { kind: 'main' } } })
@@ -367,9 +383,15 @@ it('runs generic integration once despite requested partitions and falls back fr
   }
 })
 
-it.each(['unit', 'lint'] as const)(
-  'runs generic %s for an empty affected selection and preserves HTTP and MCP readback', async suite => {
-  const repository = await genericCiRepository({ cloud: true })
+it.each([
+  ['unit', 0], ['unit', 1250], ['lint', 0], ['lint', 1250],
+] as const)(
+  'runs generic %s for an empty affected selection and preserves HTTP and MCP readback after a %i ms launch delay',
+  async (suite, launchDelayMs) => {
+  const repository = await genericCiRepository({ cloud: true, beforeLaunch: async () => {
+    // eslint-disable-next-line no-restricted-syntax
+    await new Promise(resolve => setTimeout(resolve, launchDelayMs))
+  } })
   const computers = repository.endpoint.computers.bind(repository.endpoint)
   // Make the unconfigured mirror the only candidate until fallback has been exercised.
   repository.endpoint.computers = async () => {
@@ -390,7 +412,7 @@ it.each(['unit', 'lint'] as const)(
     expect(response.statusCode).toBe(200)
     const started = CiRunOutputSchema.parse(response.json())
     await expect.poll(async () => CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get',
-      { ticketId: started.ticketId })).run.state).toBe('passed')
+      { ticketId: started.ticketId })).run.state, { timeout: 10_000 }).toBe('passed')
     const read = await f.app.inject({ method: 'GET', url: `${url}/${started.ticketId}`, headers })
     expect(read.statusCode).toBe(200)
     const result = CiGetOutputSchema.parse(read.json())
@@ -515,7 +537,12 @@ it.each([
       const running = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: started.ticketId }))
       const active = running.partitions!.filter(run => run.state === 'running')
       if (!active.length) break
-      for (const run of active) f.finish(run.id, 0, `${run.part} passed\n`)
+      for (const run of active) {
+        const computer = f.computers.find(value => value.label === run.computer?.label)!
+        const status = await f.endpoint.request(computer, { operation: 'status' })
+        expect(status.operation === 'status' && status.runs.some(value => value.runId === run.id)).toBe(true)
+        f.finish(run.id, 0, `${run.part} passed\n`)
+      }
     }
     const done = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: started.ticketId }))
     expect(done.group).toMatchObject({ groupId: read.run.groupId, state: 'passed' })
@@ -1400,8 +1427,17 @@ it('preserves MCP cancellation when an in-flight refresh returns an unstarted ti
     const tickets = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', {
       suite: 'integration', scope: 'full', partitions: 2, commandId: 'cancel-unstarted',
     }))
-    const started = { ticketId: tickets.partitions![1]!.ticketId }
     await f.ci.dispatch()
+    const running = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: tickets.ticketId }))
+    const active = running.partitions!.find(run => run.state === 'running')
+    expect(active).toBeDefined()
+    const started = { ticketId: active!.id }
+    const queued = running.partitions!.filter(run => run.state === 'queued')
+    expect(queued).toHaveLength(1)
+    for (const run of queued) {
+      expect(await f.value(f.operator, 'ci_cancel', { ticketId: run.id }))
+        .toMatchObject({ run: { state: 'canceled' } })
+    }
     const reader = await f.connect(CI_GET_ACTIONS)
     expect((await f.call(reader, 'ci_cancel', { ticketId: started.ticketId })).isError).toBe(true)
     const request = f.endpoint.request.bind(f.endpoint)
@@ -1415,26 +1451,34 @@ it('preserves MCP cancellation when an in-flight refresh returns an unstarted ti
     }
     const dispatch = f.ci.dispatch()
     await reading
-    let canceled = false
-    cancellation = f.value(f.operator, 'ci_cancel', { ticketId: started.ticketId }).then(value => {
-      canceled = true
-      return value
-    })
-    await new Promise(resolve => setTimeout(resolve, 100))
-    expect(canceled).toBe(false)
-    const pending = await reader.callTool({ name: 'ci_get',
+    cancellation = f.value(f.operator, 'ci_cancel', { ticketId: started.ticketId })
+    expect(await cancellation).toMatchObject({ run: { state: 'canceled' } })
+    const canceled = await reader.callTool({ name: 'ci_get',
       arguments: { workspaceId: f.workspaceId, ticketId: started.ticketId } })
-    expect(pending.isError).not.toBe(true)
-    expect(CiGetOutputSchema.parse(decodeMcpToolResult(pending)).run.state).toBe('running')
+    expect(canceled.isError).not.toBe(true)
+    expect(CiGetOutputSchema.parse(decodeMcpToolResult(canceled)).run.state).toBe('canceled')
     release()
     await dispatch
-    expect(await cancellation).toMatchObject({ run: { state: 'canceled' } })
     const read = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: started.ticketId }))
     expect(read.run.state).toBe('canceled')
     expect((await f.pool.query('select record,host_key from ci_runs where id=$1', [started.ticketId])).rows[0])
       .toEqual({ record: read.run, host_key: null })
     expect(f.started).toHaveLength(1)
-  } finally { release(); await cancellation; await f.close() }
+    for (const computer of f.computers) {
+      const status = await f.endpoint.request(computer, { operation: 'status' })
+      expect(status.operation === 'status' && status.runs.some(run => run.state === 'running')).toBe(false)
+    }
+    expect((await f.pool.query(
+      "select count(*)::int as count from management_audit where action='ci.cancel' and target_key=$1",
+      [`ci:${started.ticketId}`])).rows).toEqual([{ count: 1 }])
+  } finally {
+    release()
+    try {
+      await cancellation
+    } finally {
+      await f.close()
+    }
+  }
 })
 
 it('prefers build computers and CircleCI over higher-priority GitHub slots for integration', async () => {
