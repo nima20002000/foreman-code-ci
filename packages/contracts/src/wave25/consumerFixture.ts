@@ -4,7 +4,7 @@ import {
   type RunGraphSnapshot, type RunGraphCurrentState, type GraphFact,
 } from './protocol.js'
 
-type GraphFixtureApplyResult = {
+export type GraphFixtureApplyResult = {
   kind: 'applied' | 'duplicate' | 'discarded' | 'reset'
   snapshot: RunGraphSnapshot
   appliedEventIds: string[]
