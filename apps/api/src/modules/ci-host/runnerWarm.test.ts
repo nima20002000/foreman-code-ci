@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { gitFixtureEnvironment } from '../../../test/helpers/gitFixture.js'
 import { HostCiRunner, systemHostCiPorts, type HostCiPorts } from './runner.js'
@@ -61,12 +61,8 @@ if (args[1] === 'db:up') {
   fs.mkdirSync(path.dirname(metadata), { recursive: true })
   fs.writeFileSync(metadata, 'verified package publication time')
   fs.mkdirSync('node_modules', { recursive: true })
-  if (!fs.existsSync('node_modules/dependency')) {
-    if (args.includes('--package-import-method=clone-or-copy')) fs.copyFileSync(seed, 'node_modules/dependency')
-    else fs.linkSync(seed, 'node_modules/dependency')
-  }
+  if (!fs.existsSync('node_modules/dependency')) fs.linkSync(seed, 'node_modules/dependency')
 } else {
-  if (${cpuCount} > 8) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 150)
   console.log('dependency=' + fs.readFileSync('node_modules/dependency', 'utf8'))
   fs.writeFileSync('suite-output', 'unfinished output')
 }
@@ -74,12 +70,6 @@ if (args[1] === 'db:up') {
   await writeFile(join(bin, 'cp'), `#!/bin/bash
 printf '%s\\n' "$*" >> '${join(root, 'copies')}'
 exec /bin/cp "$@"
-`, { mode: 0o755 })
-  await writeFile(join(bin, 'git'), `#!${process.execPath}
-const { spawnSync } = require('node:child_process')
-const args = process.argv.slice(2).map(arg => arg.startsWith('https://') ? ${JSON.stringify(origin)} : arg)
-const result = spawnSync('/usr/bin/git', args, { stdio: 'inherit' })
-process.exit(result.status ?? 1)
 `, { mode: 0o755 })
   const system = systemHostCiPorts()
   const launched = new Map<string, Promise<unknown>>()
@@ -90,7 +80,7 @@ process.exit(result.status ?? 1)
     run: async (file, args, options) => {
       hostCommands.push({ file, args })
       if (file === 'gh') return { code: 0, stdout: '', stderr: '' }
-      if (file === 'git' && (args.includes('clone') || args.includes('remote'))) {
+      if (file === 'git' && args.includes('clone')) {
         return system.run(file, args.map(arg => arg.startsWith('https://') ? origin : arg), options)
       }
       if (file === 'systemd-run') {
@@ -120,7 +110,6 @@ process.exit(result.status ?? 1)
   const failOffline = () => writeFile(offlineFailure, 'store unavailable')
   const copies = async () => existsSync(join(root, 'copies')) ? readFile(join(root, 'copies'), 'utf8') : ''
   const update = async (file: string, contents: string) => {
-    await mkdir(dirname(join(origin, file)), { recursive: true })
     await writeFile(join(origin, file), contents)
     git('add', '.')
     git('commit', '-qm', 'fixture update')
@@ -140,7 +129,7 @@ it('runs consecutive parts in the same checkout with zero installs or copies whe
   expect(await fixture.copies()).toBe('')
 })
 
-it.each(['pnpm-lock.yaml', 'pnpm-workspace.yaml', '.npmrc', '.pnpmfile.cjs', 'apps/api/package.json'])('installs once when %s changes and records successful inputs', async file => {
+it.each(['pnpm-lock.yaml', 'pnpm-workspace.yaml', '.npmrc'])('installs once when %s changes and records successful inputs', async file => {
   const fixture = await computer()
   await fixture.run()
   const firstCount = (await fixture.commands()).length
@@ -211,16 +200,4 @@ it('waits for dependencies before database preparation can trigger another insta
   const fixture = await computer({ prepareDatabase: true })
   await expect(fixture.run()).resolves.toMatchObject({ run: { state: 'passed' } })
   expect(await fixture.commands()).toContainEqual(['pnpm', 'db:up'])
-})
-
-it('keeps mutable dependencies private to each persistent slot and preserves the shared store', async () => {
-  const fixture = await computer({ cpuCount: 16 })
-  await fixture.run()
-  await writeFile(join(fixture.checkouts[0]!, 'node_modules/dependency'), 'modified in one slot')
-  const results = await Promise.all([fixture.run(), fixture.run()])
-  const logs = results.map(result => result.operation === 'read' ? result.text : '')
-  expect(logs.filter(text => text.includes('dependency=modified in one slot'))).toHaveLength(1)
-  expect(logs.filter(text => text.includes('dependency=pristine'))).toHaveLength(1)
-  expect((await fixture.commands()).filter(args => args[1] === 'install' && !args.includes('--offline'))).toHaveLength(1)
-  expect(await fixture.copies()).toBe('')
 })

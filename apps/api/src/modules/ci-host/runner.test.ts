@@ -111,7 +111,7 @@ async function computer(options: { github?: boolean; suiteExit?: number; pause?:
     availableMemoryBytes: () => 16 * 2 ** 30,
     run: async (file, args, runOptions = {}) => {
       if (file === 'gh') return { code: options.github === false ? 1 : 0, stdout: '', stderr: '' }
-      if (file === 'git' && (args.includes('clone') || args.includes('remote'))) {
+      if (file === 'git' && args.includes('clone')) {
         return system.run('git', args.map(value => value.startsWith('https://github.com/') ? origin : value), runOptions)
       }
       if (file === 'systemd-run') {
@@ -358,7 +358,7 @@ describe('host CI runner', () => {
     expect(done.text).not.toContain('test/second.test.ts')
   })
 
-  it('fetches the commit, installs and runs the suite, then releases its slot', async () => {
+  it('fetches the commit, installs and runs the suite in its own worktree, then frees the worktree', async () => {
     const f = await computer()
     const runId = randomUUID()
     const started = await f.runner.handle({ operation: 'start', runId, repository: 'octo/site', commit: f.commit, suite: 'unit' })
@@ -367,7 +367,7 @@ describe('host CI runner', () => {
     expect(done.run).toMatchObject({ state: 'passed', exitCode: 0, step: 'unit' })
     expect(done.text).toContain('corepack pnpm install --frozen-lockfile')
     expect(done.text).toContain('corepack pnpm test')
-    await expect(f.runner.status()).resolves.toMatchObject({ slotsUsed: 0 })
+    expect(existsSync(join(f.root, 'ci/runs', runId, 'src'))).toBe(false)
     // A retried start returns the same run instead of starting it again.
     expect(await f.runner.handle({ operation: 'start', runId, repository: 'octo/site', commit: f.commit, suite: 'unit' }))
       .toMatchObject({ run: { runId, state: 'passed' } })
