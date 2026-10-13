@@ -1,4 +1,5 @@
 import { readJobComputerSelection } from './computerSelection.js'
+import { withTransaction } from '../../infrastructure/transaction.js'
 import { requireJobPreparationDeadline } from './preparationDeadline.js'
 import type pg from 'pg'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
@@ -13,7 +14,8 @@ import type { MaterializationAttempt } from '../sources/ports.js'
 import { sourceBindingHash } from '../sources/bindingHash.js'
 import { DomainError } from '../errors.js'
 import { JobQueueTicketSchema } from '@foreman-code/contracts/job-admission'
-import { canonical, JobRepository, type JobSql } from './repository.js'
+import { canonicalJson } from '@foreman-code/contracts/canonical-json'
+import { JobRepository, type JobSql } from './repository.js'
 import { WorkflowJobPreparationSchema } from './workflowPreparation.js'
 import { IMMUTABLE_WORKFLOW_VERSION_COLUMNS, readImmutableWorkflowVersion, type ImmutableWorkflowVersionRow } from '../workflows/immutableRead.js'
 
@@ -76,8 +78,8 @@ export class JobSourceAttemptAuthority implements SourceAttemptAuthority {
     return {principal:actor,workspaceId:run.workspaceId,spec:isAutoJobSpecRecord(definition.spec) ? await readJobComputerSelection(sql, definition, {executionId,attemptId,operationId}) : definition.spec}
   }
   private check(root:SourceRootRecord,spec:ResolvedJobDefinitionSpecRecord) {
-    if(canonical(root.source)!==canonical({approvedSourceId:spec.source.approvedSourceId,snapshotId:spec.source.snapshotId,manifestDigest:spec.source.manifestDigest})
-      ||root.binding.accessMode!=='exclusive-write'||canonical(root.selection.hostRef)!==canonical(spec.target.hostRef)||canonical(root.registration)!==canonical(spec.target.registration)
+    if(canonicalJson(root.source)!==canonicalJson({approvedSourceId:spec.source.approvedSourceId,snapshotId:spec.source.snapshotId,manifestDigest:spec.source.manifestDigest})
+      ||root.binding.accessMode!=='exclusive-write'||canonicalJson(root.selection.hostRef)!==canonicalJson(spec.target.hostRef)||canonicalJson(root.registration)!==canonicalJson(spec.target.registration)
       ||root.attestationId!==spec.target.destination.attestationId||root.attestationDigest!==spec.target.destination.attestationHash
       ||root.selection.rootPolicyId!==spec.target.destination.rootPolicyId||root.selection.rootPolicyRevision!==spec.target.destination.rootPolicyRevision||root.selection.locationRevision!==spec.target.destination.locationRevision)throw new DomainError('JOB_SOURCE_PIN_CONFLICT','Source authority differs from the exact saved job host/root/snapshot.',409)
   }
@@ -96,9 +98,7 @@ export class JobSourceAttemptAuthority implements SourceAttemptAuthority {
     await this.authorize(sql,principal,{workspaceId:execution.workspaceId,root:SourceRootRecordSchema.parse(rootRow?.record),attempt:record.receipt,operationId:record.operationId})
   }
   private async read<T>(work:(sql:JobSql)=>Promise<T>) {
-    const sql=await this.pool.connect()
-    try {await sql.query('begin');const result=await work(sql);await sql.query('commit');return result}
-    catch(error){await sql.query('rollback');throw error}finally{sql.release()}
+    return withTransaction(this.pool, work)
   }
   revalidate(root:SourceRootRecord,attempt:MaterializationAttempt) {
     return this.read(async sql=>{
