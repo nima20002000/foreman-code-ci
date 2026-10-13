@@ -201,8 +201,7 @@ describe('WorkspaceRouteEntry integration', () => {
     const title = 'Main coordinator'
     expect(node).toHaveAccessibleName(/Claude/)
     expect(node).toHaveAttribute('aria-pressed', 'false')
-    await user.hover(node)
-    await user.click(screen.getByRole('button', { name: `Open ${title} settings` }))
+    await userEvent.click(screen.getByRole('button', { name: `Open ${title} settings` }))
     const dialog = await screen.findByRole('dialog', { name: `${title} settings` })
     expect(dialog).toBeVisible()
     expect(within(dialog).getByRole('textbox', { name: 'Name' })).toHaveValue(agent.name)
