@@ -4,7 +4,6 @@ import { announceBoardChange, describeDraftChange, pendingBoardAction, popBoardA
 import type { useWorkflowBoard } from '../../workflow-board/context'
 import type { DraftEditorCore } from './useDraftEditorCore'
 import type { useGraphEditIntent } from './useGraphEditIntent'
-import { canUndoNextDraft } from './state'
 
 /** Undo/redo across draft steps and server-saved settings, plus the Ctrl/Cmd+Z/Y shortcuts. */
 export function useDraftEditorHistory({ draftKey, undoScope, board, editIntent, core, saveBusy, starting }: {
@@ -26,14 +25,13 @@ export function useDraftEditorHistory({ draftKey, undoScope, board, editIntent, 
       if (!current) return
       // Settings saved straight to the server (schedule) interleave with draft steps in the order they happened.
       if (direction === 'undo') {
-        const action = pendingBoardAction(undoScope, current.history.length + (current.historyOffset ?? 0))
+        const action = pendingBoardAction(undoScope, current.history.length)
         if (action) {
           await action.undo()
           popBoardAction(undoScope, action)
           announceBoardChange(undoScope, `Undid ${action.label}`)
           return
         }
-        if (!canUndoNextDraft(current)) return
         const previous = current.history.at(-1)
         if (!previous) return
         store.undoNextDraft(draftKey)

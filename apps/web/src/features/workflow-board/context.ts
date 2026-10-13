@@ -8,7 +8,6 @@ export const WorkflowBoardContext = createContext<{
   inspection: WorkspaceBoardInspection
   selectInspection(inspection: WorkspaceBoardInspection): void
   selectRun(scope?: RepeatGraphScopeV3): void
-  getSelectionToken?(): unknown
   openLocation(): void
   openRuns(): void
   navigationControls?: ReactNode
