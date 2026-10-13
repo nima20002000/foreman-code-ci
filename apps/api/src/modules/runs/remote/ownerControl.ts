@@ -7,6 +7,7 @@ import type { RunOwnership } from '../ownership.js'
 import type { AcceptedExecutionBinding } from '../../placement/nativeComposition.js'
 import type { RemoteNativeManagerOptions } from './nativeManagerProxy.js'
 import { DomainError } from '../../errors.js'
+import { canCloseRetainedRemoteReviewer } from '../../placement/remoteReviewerAuthority.js'
 import { selectedInteractionResponse } from '../../interactions/delivery.js'
 
 export type RemoteControlInput = Parameters<RemoteNativeManagerOptions['controlFor']>[0]
@@ -24,24 +25,21 @@ export async function prepareRemoteOwnerControl(sql: GraphTransactionSql, owner:
   if (!receipt || !sameWorkflowValue(receipt.intent, binding.intent) || !sameWorkflowValue(remoteActiveNative(receipt), command.native)
     || receipt.terminal || binding.placement.bindingHash !== binding.intent.bindingHash) throw new DomainError('REMOTE_CONTROL_UNAVAILABLE', 'The exact committed original native ownership is required.', 409)
   let commandId: string, action: { kind: 'stop' } | { kind: 'respond'; interactionId: string; interactionRevision: string; nativeInteractionId: string; response: unknown }
+  let target: Pick<RemoteOwnerControl, 'native' | 'nativeTarget'> = { native: command.native }
   if (command.kind === 'stop') {
     const cleanup = (await sql.query<{ requested_at: Date }>('select requested_at from run_cleanup_intents where run_id=$1 and pending for share', [owner.runId])).rows[0]
     if (cleanup) {
       commandId = `stop:${binding.intent.operationId}:${cleanup.requested_at.toISOString()}`
-    } else {
-      if (!receipt.retainedReviewer || receipt.reviewTurns?.some(turn => !turn.settled)) {
-        throw new DomainError('REMOTE_CONTROL_UNAVAILABLE',
-          'The original accepted Run cleanup intent is required for remote Stop.', 409)
+      if (receipt.retainedReviewer) {
+        // Run cleanup closes the session even if its review turn advances before delivery.
+        target = { nativeTarget: { kind: 'session', sessionId: command.native.sessionId } }
       }
-      // A completed reviewer closes at the workflow boundary while its Run still owns the session.
-      const completed = await sql.query(`select 1 from harness_executions e
-        where e.id=$1 and e.run_id=$2 and e.state='completed'
-          and not exists(select 1 from review_jobs j where j.execution_id=e.id and j.state<>'completed'
-            and (j.state<>'failed' or j.record->'cleanup'->>'completedAt' is null)) for share of e`,
-      [binding.intent.executionId, owner.runId])
-      if (completed.rowCount !== 1) throw new DomainError('REMOTE_CONTROL_UNAVAILABLE',
-        'The original retained reviewer has not finished its workflow and reviews.', 409)
+    } else if (!receipt.reviewTurns?.some(turn => !turn.settled)
+      && await canCloseRetainedRemoteReviewer(sql, receipt)) {
       commandId = `close-reviewer:${binding.intent.operationId}`
+    } else {
+      throw new DomainError('REMOTE_CONTROL_UNAVAILABLE',
+        'The original accepted Run cleanup intent is required for remote Stop.', 409)
     }
     action = { kind: 'stop' }
   } else {
@@ -56,5 +54,5 @@ export async function prepareRemoteOwnerControl(sql: GraphTransactionSql, owner:
   }
   return RemoteOwnerControlSchema.parse({ schemaVersion: 1, protocolVersion: 1, commandId,
     operationId: binding.intent.operationId, attemptId: binding.intent.attemptId, executionId: binding.intent.executionId,
-    bindingHash: binding.intent.bindingHash, owner: binding.intent.owner, native: command.native, action })
+    bindingHash: binding.intent.bindingHash, owner: binding.intent.owner, ...target, action })
 }
