@@ -18,7 +18,6 @@ import { Wave25WorkerCredentialService } from '../src/modules/interactions/wave2
 import { currentDatabase, postgresEnabled } from './helpers/eng04CurrentDatabase.js'
 import { applyApplicationMigrations } from '../src/infrastructure/migrations.js'
 import { hostCiActivityMigration } from '../src/infrastructure/hostCiActivityMigration.js'
-import { databaseHotQueriesMigration } from '../src/infrastructure/databaseHotQueriesMigration.js'
 import { changeRunState, graphFixture, graphRpc, graphRpcValue } from './eng04-graph-composition-fixture.js'
 import { agentWorkflowNode } from './helpers/agentWorkflowFixture.js'
 import { insertCurrentRunFixture } from './helpers/eng04CurrentRunFixture.js'
@@ -41,7 +40,7 @@ async function admitCiRun(pool: pg.Pool, input: AcceptedRepeatStartV1, principal
   }))
 }
 
-async function fixture(options: { deferMigration?: number | readonly number[] } = {}) {
+async function fixture(options: { deferMigration?: number } = {}) {
   const database = await currentDatabase(options)
   const graph = await graphFixture(database, { form: 'single', qualifiedReads: true, insert: false })
   graph.accepted = await admitCiRun(database.pool, graph.accepted, graph.writer.principal)
@@ -185,16 +184,12 @@ describe.skipIf(!postgresEnabled)('Agent Host CI in public Run activity', () => 
       expect(initialBoard.activitySnapshot?.active).toContainEqual(expect.objectContaining({
         ref: ciRef(ticket.ticketId, f.executionId), phase: 'waiting', ci: expect.objectContaining({ state: 'queued' }) }))
       f.online()
-      expect((await f.get(ticket.ticketId)).run.state).toBe('queued')
-      await f.ci.dispatch()
       const running = await f.get(ticket.ticketId)
       expect(running.run.state).toBe('running')
       expect((await f.board()).activitySnapshot?.active).toContainEqual(expect.objectContaining({
         ref: ciRef(ticket.ticketId, f.executionId), phase: 'active', evidence: 'confirmed',
         ci: expect.objectContaining({ state: 'running', computer: expect.objectContaining({ label: 'Build computer' }) }) }))
       f.finish(ticket.ticketId, 'passed')
-      expect((await f.get(ticket.ticketId)).run.state).toBe('running')
-      await f.ci.dispatch()
       const done = await f.get(ticket.ticketId)
       const stored = (await f.database.pool.query<{ record: unknown }>('select record from ci_runs where id=$1',
         [ticket.ticketId])).rows[0]!
@@ -232,7 +227,6 @@ describe.skipIf(!postgresEnabled)('Agent Host CI in public Run activity', () => 
     try {
       const ticket = await f.submit()
       f.online()
-      await f.ci.dispatch()
       expect((await f.get(ticket.ticketId)).run.state).toBe('running')
       const results: CiTestResults = { summary: { passed: 1, failed: 1, skipped: 1 }, truncated: false, files: [
         { file: 'apps/api/test/a.integration.test.ts', status: 'failed', durationMs: 900, tests: [
@@ -241,7 +235,6 @@ describe.skipIf(!postgresEnabled)('Agent Host CI in public Run activity', () => 
         { file: 'apps/api/test/b.integration.test.ts', status: 'skipped', durationMs: 5, tests: [
           { name: 'b waits for a computer', status: 'skipped', durationMs: null }] }] }
       f.finish(ticket.ticketId, 'failed', results)
-      await f.ci.dispatch()
       expect((await f.get(ticket.ticketId)).run.state).toBe('failed')
       const stored = (await f.database.pool.query<{ test_results: unknown }>('select test_results from ci_runs where id=$1',
         [ticket.ticketId])).rows[0]!
@@ -303,7 +296,6 @@ describe.skipIf(!postgresEnabled)('Agent Host CI in public Run activity', () => 
       f.legacyWorker(true)
       const old = await f.submit()
       f.finish(old.ticketId, 'passed', results)
-      await f.ci.dispatch()
       expect((await f.get(old.ticketId)).run.state).toBe('passed')
       expect(await stored(old.ticketId)).toBeNull()
 
@@ -311,10 +303,8 @@ describe.skipIf(!postgresEnabled)('Agent Host CI in public Run activity', () => 
       const ticket = await f.submit()
       await f.database.pool.query('alter table ci_runs add constraint ci_results_blocked check (test_results is null) not valid')
       f.finish(ticket.ticketId, 'passed', results)
-      await f.ci.dispatch()
       expect((await f.get(ticket.ticketId)).run.state).toBe('running')
       await f.database.pool.query('alter table ci_runs drop constraint ci_results_blocked')
-      await f.ci.dispatch()
       expect((await f.get(ticket.ticketId)).run.state).toBe('passed')
       expect(await stored(ticket.ticketId)).toEqual(results)
     } finally { await f.close() }
@@ -372,11 +362,9 @@ describe.skipIf(!postgresEnabled)('Agent Host CI in public Run activity', () => 
         refs: expect.objectContaining({ ciTicketId: waiting.ticketId }) }))
       const ticket = await f.submit()
       f.online()
-      await f.ci.dispatch()
       await f.get(ticket.ticketId)
       if (terminal === 'canceled') await f.value(f.workerToken, 'ci_cancel', { ticketId: ticket.ticketId })
       else f.finish(ticket.ticketId, terminal)
-      await f.ci.dispatch()
       expect((await f.get(ticket.ticketId)).run.state).toBe(terminal)
       const events = (await f.activity()).items.filter(item => item.refs.ciTicketId === ticket.ticketId)
       expect(events.map(item => item.ci?.state)).toEqual(['queued', 'running', terminal])
@@ -450,7 +438,7 @@ describe.skipIf(!postgresEnabled)('Agent Host CI in public Run activity', () => 
   }, 120000)
 
   it('observes retained Host CI once without inventing earlier transitions', async () => {
-    const f = await fixture({ deferMigration: [hostCiActivityMigration.version, databaseHotQueriesMigration.version] })
+    const f = await fixture({ deferMigration: hostCiActivityMigration.version })
     try {
       const ticket = await f.submit()
       expect((await f.activity()).items.filter(item => item.kind === 'job_work')).toEqual([])
