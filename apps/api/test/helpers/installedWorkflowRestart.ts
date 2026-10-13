@@ -19,6 +19,9 @@ export async function assertInstalledWorkflowRestart(phase: RestartPhase) {
   const service = fixture.mainService!
   let restart: ReturnType<typeof service.restart> | undefined
   try {
+    if (phase === 'writable source') {
+      expect(await service.unitFileState()).toBe('linked-runtime')
+    }
     await fixture.provider.blockWorkflowTurns({ allowFirst: 1 })
     if (!activePhase) await fixture.provider.blockWorkflowAdmission()
     const started = (await startWhenReady(fixture))!
