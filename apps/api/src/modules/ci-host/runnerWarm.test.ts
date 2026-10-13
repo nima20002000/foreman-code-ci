@@ -133,11 +133,11 @@ it('isolates dependencies when concurrent jobs share a warmed repository and sto
   expect(installs.filter(args => !args.includes('--offline'))).toHaveLength(1)
 })
 
-it('refills an unavailable warmed store online instead of failing the job', async () => {
+it('fails an unavailable warmed store without allowing another online install', async () => {
   const fixture = await computer()
   await expect(fixture.run()).resolves.toMatchObject({ run: { state: 'passed' } })
   await fixture.failOffline()
-  await expect(fixture.run()).resolves.toMatchObject({ run: { state: 'passed' } })
+  await expect(fixture.run()).resolves.toMatchObject({ run: { state: 'failed', exitCode: 7 } })
   const installs = (await fixture.commands()).filter(args => args[1] === 'install')
-  expect(installs.filter(args => !args.includes('--offline'))).toHaveLength(2)
+  expect(installs.filter(args => !args.includes('--offline'))).toHaveLength(1)
 })
