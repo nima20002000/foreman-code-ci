@@ -7,7 +7,6 @@ import {
 import { scenarioFixture, type Scenario } from './eng07BScenarios.js'
 import { scenarioHarness, type Harness, type Saved, type Started, type Via } from './eng07BHarness.js'
 import { assertScenarioEvidence } from './eng07BEvidence.js'
-import { measureIntegrationPhase } from './integrationPhase.js'
 
 function withoutRepeat(graph: WorkflowDefinitionV3) {
   const { repeat: _repeat, ...ordinary } = graph
@@ -92,8 +91,7 @@ async function rejectedTag(f: Harness, method: string, path: string, tool: strin
 }
 
 export async function assertHistoricalVersionPins(via: Via) {
-  const repeated = scenarioFixture('S3-05-early', randomUUID())
-  const f = await measureIntegrationPhase('version history fixture', () => scenarioHarness(repeated))
+  const repeated = scenarioFixture('S3-05-early', randomUUID()), f = await scenarioHarness(repeated)
   // Same IDs/configurations/Run input, different saved definitions. No retagging
   // of versions or Runs, and no overwriting an old accepted result.
   const ordinary: Scenario = { ...repeated, id: 'S3-01', repeat: false, occurrences: 1,
@@ -106,24 +104,17 @@ export async function assertHistoricalVersionPins(via: Via) {
       const raw = expected.repeat ? repeated.source.version.definition : withoutRepeat(repeated.source.version.definition)
       const graph = previous ? { ...raw, id: previous.version.workflowId, version: previous.version.version,
         createdAt: previous.version.definition.createdAt, updatedAt: previous.version.definition.updatedAt } : raw
-      const stage = ['initial ordinary', 'repeat', 'final ordinary'][completed.length]!
-      const { saved } = await measureIntegrationPhase(`version history ${stage} save`, () => f.save(via, previous, graph))
+      const { saved } = await f.save(via, previous, graph)
       expect(saved.version.executionSemanticsVersion).toBe(3)
       expect(Object.hasOwn(saved.version.definition, 'repeat')).toBe(expected.repeat)
       if (previous) expect(saved.version.id).not.toBe(previous.version.id)
       f.setOracle(expected.result)
-      const release = f.hold(expected.nodes[0]!.id)
-      const started = await measureIntegrationPhase(`version history ${stage} Run start`, () => f.start(via, saved))
-      await measureIntegrationPhase(`version history ${stage} provider gate`,
-        () => f.waitUntilParked(started.scope, expected.nodes[0]!.id))
-      const initial = RepeatGraphSnapshotV3Schema.parse(await measureIntegrationPhase(
-        `version history ${stage} initial graph`, () => f.graph(started.scope, 'snapshot')))
-      release()
-      await measureIntegrationPhase(`version history ${stage} Run completion`, () => settledWithDiagnosis(f, started))
-      const evidence = await measureIntegrationPhase(`version history ${stage} evidence`,
-        () => assertScenarioEvidence(f, started, initial, expected))
-      completed.push({ started, initial, expected, evidence })
-      previous = saved
+      const release = f.hold(expected.nodes[0]!.id), started = await f.start(via, saved)
+      await f.waitUntilParked(started.scope, expected.nodes[0]!.id)
+      const initial = RepeatGraphSnapshotV3Schema.parse(await f.graph(started.scope, 'snapshot'))
+      release(); await settledWithDiagnosis(f, started)
+      const evidence = await assertScenarioEvidence(f, started, initial, expected)
+      completed.push({ started, initial, expected, evidence }); previous = saved
     }
     expect(new Set(completed.map((item) => item.started.scope.runId)).size).toBe(3)
     expect(new Set(completed.map((item) => item.started.scope.workflowVersionId)).size).toBe(3)
@@ -132,18 +123,12 @@ export async function assertHistoricalVersionPins(via: Via) {
     expect(f.base.provider.counts.starts).toBe(8)
     // A later Save cannot rewrite any previous execution, input, result, graph
     // cursor, receipt or version; compare the complete earlier readback again.
-    const current = previous!
-    await measureIntegrationPhase('version history immutable readback', () => Promise.all(completed.map(async item => {
-      const [, evidence] = await Promise.all([
-        historicalVersion(f, item.started.saved, current),
-        assertScenarioEvidence(f, item.started, item.initial, item.expected),
-      ])
-      expect(evidence).toEqual(item.evidence)
-    })))
+    for (const item of completed) {
+      await historicalVersion(f, item.started.saved, previous!)
+      expect(await assertScenarioEvidence(f, item.started, item.initial, item.expected)).toEqual(item.evidence)
+    }
     expect(f.base.provider.counts.starts).toBe(8)
-  } finally {
-    await measureIntegrationPhase('version history cleanup', () => f.close())
-  }
+  } finally { await f.close() }
 }
 
 export async function assertRejectedExecutionTag(f: Harness, tag: number) {

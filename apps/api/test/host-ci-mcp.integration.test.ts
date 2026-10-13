@@ -100,13 +100,13 @@ function fakeComputers(github: Record<string, boolean> = {}, cloud: boolean | { 
         ...(request.durations && finished && entry.durations ? { durations: entry.durations } : {}) }
     },
   }
-  const finish = (runId: string, exitCode: number, log: string, durations?: Record<string, number>) => {
+  const finish = (runId: string, exitCode: number, log: string, durations?: Record<string, number>, message?: string) => {
     const entry = runs.get(runId)!
     entry.log = log
     if (durations) entry.durations = durations
     else delete entry.durations
     entry.run = { ...entry.run, state: exitCode === 0 ? 'passed' : 'failed', exitCode, step: entry.request.operation === 'start'
-      ? entry.request.suite : null, finishedAt: new Date().toISOString(), logBytes: Buffer.byteLength(log) }
+      ? entry.request.suite : null, message: message ?? null, finishedAt: new Date().toISOString(), logBytes: Buffer.byteLength(log) }
   }
   return { endpoint, started, finish, computers }
 }
@@ -244,6 +244,68 @@ async function fixture(options: { repository?: boolean; github?: Record<string, 
     authorizationPrincipalId: runtime?.authorizationPrincipalId,
     connect, connectAgent, call, value, published, pool: db.pool, close }
 }
+
+it.each(['http', 'mcp'] as const)('returns and replays every maximum unit shard through %s', async transport => {
+  const files = ['apps/api/test', 'apps/web/src'].flatMap(directory => Array.from({ length: 32 }, (_, index) =>
+    `${directory}/measured${index}.test.ts`))
+  const durations = Object.fromEntries(files.map(file => [file, 120_000]))
+  const f = await fixture({ unitInventory: { files, durations, heavy: [] } })
+  try {
+    const input = { suite: 'unit', scope: 'full', commit: 'a'.repeat(40), commandId: `maximum-${transport}` }
+    const reader = await f.connect(CI_GET_ACTIONS)
+    expect((await f.call(reader, 'ci_run', input)).isError).toBe(true)
+    const credential = await f.credential([...CI_RUN_ACTIONS, ...CI_GET_ACTIONS])
+    const run = async () => {
+      if (transport === 'mcp') return CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', input))
+      const response = await f.app.inject({ method: 'POST', url: `/api/management/workspaces/${f.workspaceId}/ci`,
+        headers: { authorization: `Bearer ${credential.token}` }, payload: input })
+      expect(response.statusCode, response.body).toBe(200)
+      return CiRunOutputSchema.parse(response.json())
+    }
+    const result = await run()
+    expect(result.partitions).toHaveLength(67)
+    expect(await run()).toEqual(result)
+    const read = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: result.ticketId }))
+    expect(read.partitions).toHaveLength(67)
+    expect(new Set(read.partitions!.map(part => part.id))).toEqual(new Set(result.partitions!.map(part => part.ticketId)))
+    expect((await f.pool.query('select count(*)::int as count from ci_runs')).rows[0].count).toBe(67)
+  } finally { await f.close() }
+})
+
+it('joins in-flight host preparation before confirming direct MCP cancellation', async () => {
+  const f = await fixture()
+  let release!: () => void
+  const gate = new Promise<void>(resolve => { release = resolve })
+  let entered!: () => void
+  const preparing = new Promise<void>(resolve => { entered = resolve })
+  const request = f.endpoint.request.bind(f.endpoint)
+  f.endpoint.request = async (computer, input) => {
+    if (input.operation === 'start') { entered(); await gate }
+    return request(computer, input)
+  }
+  let cancellation: Promise<unknown> | undefined
+  try {
+    const result = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run',
+      { suite: 'install', commandId: 'preparing-cancel' }))
+    await preparing
+    let completed = false
+    cancellation = f.value(f.operator, 'ci_cancel', { ticketId: result.ticketId }).then(value => {
+      completed = true
+      return value
+    })
+    await new Promise(resolve => setTimeout(resolve, 100))
+    expect(completed).toBe(false)
+    release()
+    expect(await cancellation).toMatchObject({ run: { state: 'canceled' } })
+    await f.ci.dispatch()
+    expect(CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: result.ticketId })).run.state)
+      .toBe('canceled')
+    for (const computer of f.computers) {
+      const reply = await f.endpoint.request(computer, { operation: 'status' })
+      expect(reply.operation === 'status' && reply.runs.some(run => ['starting', 'running'].includes(run.state))).toBe(false)
+    }
+  } finally { release(); await cancellation; await f.close() }
+})
 
 it.each([
   ['pnpm-lock.yaml', 'corepack pnpm'], ['package-lock.json', 'npm'], ['yarn.lock', 'corepack yarn'],
@@ -1757,5 +1819,31 @@ it('resolves branches of existing tickets before superseding them and protects e
       .toBe('queued')
     expect(CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: feature.ticketId })).run)
       .toMatchObject({ state: 'canceled', supersededBy: next.ticketId })
+  } finally { await f.close() }
+})
+
+
+it('persists a CI watchdog failure for authenticated MCP status and log readback and denies ungranted callers', async () => {
+  const f = await fixture()
+  try {
+    const started = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', {
+      commandId: randomUUID(), suite: 'unit', scope: 'affected', commit: 'a'.repeat(40),
+      files: ['apps/api/test/loop.test.ts'],
+    }))
+    await f.ci.dispatch()
+    const reason = 'CI hang watchdog: no test progress for 60000 ms; running: apps/api/test/loop.test.ts > planner never returns'
+    f.finish(started.ticketId, 1, `[ci-watchdog] ${reason}\n`, undefined, reason)
+    const result = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: started.ticketId }))
+    expect(result.run).toMatchObject({ state: 'failed', exitCode: 1, message: reason })
+    expect(result.logTail).toContain(reason)
+    const logs = CiLogsOutputSchema.parse(await f.value(f.operator, 'ci_logs_read', { ticketId: started.ticketId }))
+    expect(logs.text).toContain(reason)
+    const stored = (await f.pool.query<{ record: unknown }>('select record from ci_runs where id=$1',
+      [started.ticketId])).rows[0]!
+    expect(CiRunRecordSchema.parse(stored.record)).toMatchObject({ state: 'failed', message: reason })
+    const denied = await f.connect(['workflows:read'])
+    for (const tool of ['ci_get', 'ci_logs_read']) {
+      expect((await f.call(denied, tool, { ticketId: started.ticketId })).isError).toBe(true)
+    }
   } finally { await f.close() }
 })
