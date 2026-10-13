@@ -1,11 +1,13 @@
-import { CODEX_RESPONSE_FIELDS, protocolFromBundle } from '../codexProtocol.js'
+import { isRecord } from '../../../shared/records.js'
+import { errorMessage } from '../../../shared/errorMessage.js'
+import { CODEX_RESPONSE_FIELDS, protocolFromBundle } from '../codexProtocolBundle.js'
 import { CompatibilityCheckError } from './errors.js'
 
 type ObjectValue = Record<string, unknown>
 const invalid = (contract = 'protocol and settings') => new CompatibilityCheckError('PROTOCOL_SETTINGS_UNSUPPORTED',
   `Required contract is unavailable: ${contract}.`)
 function object(value: unknown): ObjectValue {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw invalid()
+  if (!isRecord(value)) throw invalid()
   return value as ObjectValue
 }
 /** Local refs only; never fetch a schema, follow external refs, or execute sample requests. */
@@ -36,7 +38,7 @@ function supportsEnum(document: ObjectValue, value: unknown, expected: readonly 
   if (expected.every((item) => choices.includes(item))) return
   for (const choice of [...(Array.isArray(schema.anyOf) ? schema.anyOf : []),
     ...(Array.isArray(schema.oneOf) ? schema.oneOf : []), ...(Array.isArray(schema.allOf) ? schema.allOf : [])]) {
-    try { supportsEnum(document, choice, expected, depth + 1); return } catch { /* Try another declared branch. */ }
+    try { supportsEnum(document, choice, expected, depth + 1); return } catch { /* ignore: try another declared branch. */ }
   }
   throw invalid(`enum values ${expected.join(', ')}`)
 }
@@ -46,7 +48,7 @@ function supportsType(document: ObjectValue, value: unknown, expected: string, d
   if (schema.type === expected || (Array.isArray(schema.type) && schema.type.includes(expected))) return
   for (const choice of [...(Array.isArray(schema.anyOf) ? schema.anyOf : []),
     ...(Array.isArray(schema.oneOf) ? schema.oneOf : []), ...(Array.isArray(schema.allOf) ? schema.allOf : [])]) {
-    try { supportsType(document, choice, expected, depth + 1); return } catch { /* Another declared branch. */ }
+    try { supportsType(document, choice, expected, depth + 1); return } catch { /* ignore: another declared branch. */ }
   }
   throw invalid(`type ${expected}`)
 }
@@ -99,6 +101,6 @@ export function checkCodexSchema(document: ObjectValue): void {
     protocol.request({ id: 2, method: 'config/read', params: { includeLayers: false } })
   } catch (error) {
     if (error instanceof CompatibilityCheckError) throw error
-    throw invalid(error instanceof Error ? error.message : 'protocol and settings')
+    throw invalid(errorMessage(error, 'protocol and settings'))
   }
 }
