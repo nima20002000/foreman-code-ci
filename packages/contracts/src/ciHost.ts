@@ -86,6 +86,7 @@ const CiHostRunIdSchema = z.uuid()
 /** `durations` are Main's learned integration file durations; the commit's committed durations fill the gaps. */
 const CiHostStartSchema = z.object({
   operation: z.literal('start'), runId: CiHostRunIdSchema, repository: CiRepositorySchema, commit: CommitSchema,
+  warmup: z.boolean().optional(),
   suite: CiSuiteSchema, part: CiPartSchema.optional(), partition: CiPartitionSchema.optional(), durations: CiDurationsSchema.optional(),
   scope: CiScopeSchema.optional(), files: CiSelectedFilesSchema.optional(),
   gate: z.boolean().optional(), integrationShards: z.number().int().min(1).max(64).optional(),
@@ -97,6 +98,8 @@ const CiHostStartSchema = z.object({
   : validCiSelection(value) && value.integrationShards === undefined,
   'Gate jobs require full integration scope, assigned files and a shard count; other selections require affected scope.')
   .refine(validCiPart, 'The part and partition must belong to the requested suite.')
+  .refine(value => !value.warmup || value.suite === 'install' && !value.gate && !value.part
+    && !value.partition && value.files === undefined, 'Warm-ups only prepare a commit.')
 export const CiHostRequestSchema = z.discriminatedUnion('operation', [
   z.object({ operation: z.literal('status') }).strict(),
   CiHostStartSchema,
@@ -110,6 +113,7 @@ export type CiHostRequest = z.infer<typeof CiHostRequestSchema>
 
 const CiHostRunStateSchema = z.enum(['queued', 'starting', 'running', 'passed', 'failed', 'canceled', 'lost'])
 const CiHostRunSchema = z.object({
+  warmup: z.boolean().optional(),
   runId: CiHostRunIdSchema, state: CiHostRunStateSchema, step: z.string().max(80).nullable(),
   exitCode: z.number().int().nullable(), startedAt: TimestampSchema, finishedAt: TimestampSchema.nullable(),
   logBytes: z.number().int().nonnegative(), message: z.string().max(2000).nullable(),
@@ -117,12 +121,16 @@ const CiHostRunSchema = z.object({
 export type CiHostRun = z.infer<typeof CiHostRunSchema>
 export const CiUserSystemdSchema = z.object({ supported: z.boolean(), reason: z.string().max(300).nullable() }).strict()
 export type CiUserSystemd = z.infer<typeof CiUserSystemdSchema>
+export const CiWarmupSchema = z.object({
+  repository: CiRepositorySchema, commit: CommitSchema, run: CiHostRunSchema,
+}).strict()
 export const CiHostStatusSchema = z.object({
   operation: z.literal('status'), ready: z.boolean(), reasons: z.array(z.string().max(300)).max(10),
   cpuCount: z.number().int().positive(), memoryBytes: z.number().int().positive(),
   availableMemoryBytes: z.number().int().nonnegative().optional(),
   slotsUsed: z.number().int().nonnegative().optional(), slotsTotal: z.number().int().positive().optional(),
   userSystemd: CiUserSystemdSchema.optional(),
+  prewarmSupported: z.boolean().optional(), warmup: CiWarmupSchema.nullable().optional(),
   runs: z.array(CiHostRunSchema).max(50),
 }).strict()
 export type CiHostStatus = z.infer<typeof CiHostStatusSchema>
