@@ -24,7 +24,6 @@ import { repeatStartPublication } from '../src/modules/run-graph/repeatStartPubl
 import { insertRepeatRun } from '../src/modules/runs/repeatStartAdmission.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { migratedDatabase } from './helpers/migratedDatabase.js'
-import { onlyCiInfrastructure } from '../src/modules/ci-host/priority.js'
 
 let database: Awaited<ReturnType<typeof migratedDatabase>>
 beforeAll(async () => { database = await migratedDatabase() }, 60_000)
@@ -41,7 +40,7 @@ afterEach(() => { vi.unstubAllEnvs() })
 
 /** Two build computers that answer the host CI protocol from memory; tests finish their runs. */
 function fakeComputers(github: Record<string, boolean> = {}, cloud: boolean | { github: number; circleci: number } = false,
-  hostSlots = 1) {
+  hostSlots = 1, cloudSystemd = false) {
   const mainId = randomUUID()
   const computers: HostCiComputer[] = ['laptop', 'builder'].map((name, index) => ({ key: `${mainId}:${name}`,
     hostRef: { kind: 'device', mainId, deviceId: randomUUID() }, label: name, priority: 60 - index }))
@@ -49,7 +48,8 @@ function fakeComputers(github: Record<string, boolean> = {}, cloud: boolean | { 
   for (const provider of ['github', 'circleci'] as const) {
     for (let slot = 0; slot < slots[provider]; slot++) {
       computers.push({ key: `${mainId}:cloud:${provider}:${slot}`, hostRef: { kind: 'cloud', mainId, provider, slot },
-        label: `${provider === 'github' ? 'GitHub Actions' : 'CircleCI'} ${slot + 1}`, priority: 30 })
+        label: `${provider === 'github' ? 'GitHub Actions' : 'CircleCI'} ${slot + 1}`, priority: 30,
+        userSystemd: { supported: cloudSystemd, reason: cloudSystemd ? null : 'Executor has no systemd user manager' } })
     }
   }
   const runs = new Map<string, { computer: string; run: CiHostRun; log: string; request: CiHostRequest
@@ -62,6 +62,7 @@ function fakeComputers(github: Record<string, boolean> = {}, cloud: boolean | { 
         const active = [...runs.values()].filter(value => value.computer === computer.label
           && ['starting', 'running'].includes(value.run.state))
         return { operation: 'status', ready: github[computer.label] !== false, cpuCount: 16, memoryBytes: 14 * 2 ** 30,
+          ...(computer.userSystemd ? { userSystemd: computer.userSystemd } : {}),
           slotsTotal: computer.hostRef.kind === 'cloud' ? 1 : hostSlots, slotsUsed: active.length,
           reasons: github[computer.label] === false ? ['Log in to GitHub on this computer (gh auth login).'] : [],
           runs: [...runs.values()].filter(value => value.computer === computer.label).map(value => value.run) }
@@ -109,14 +110,12 @@ function fakeComputers(github: Record<string, boolean> = {}, cloud: boolean | { 
 }
 
 async function fixture(options: { repository?: boolean; github?: Record<string, boolean>; unitInventory?: CiUnitInventory
-  cloud?: boolean | { github: number; circleci: number }; agent?: boolean; hostSlots?: number
-  changedFiles?: string[]; priorityGrant?: boolean
+  cloud?: boolean | { github: number; circleci: number }; agent?: boolean; hostSlots?: number; cloudSystemd?: boolean
   repositoryRunner?: { commits: CiCommits; endpoint: HostCiEndpoint } } = {}) {
   const saved = options.agent ? makeCurrentWorkflowFixture(randomUUID()) : undefined
   if (saved) {
     saved.configurations = saved.configurations.map(configuration => ({ ...configuration,
-      graphqlTools: ['context_get' as const, 'ci_run' as const, 'ci_get' as const, 'ci_logs_read' as const,
-        'ci_computers_list' as const] }))
+      graphqlTools: ['context_get' as const, 'ci_run' as const, 'ci_get' as const, 'ci_logs_read' as const] }))
   }
   const runtime = saved ? await codexApprovalRuntime('user', { fixture: saved }) : undefined
   const db = runtime?.db ?? database
@@ -133,7 +132,6 @@ async function fixture(options: { repository?: boolean; github?: Record<string, 
   const published: string[] = []
   const inventory = options.unitInventory
   const commits = options.repositoryRunner?.commits ?? {
-    infrastructureOnly: async () => onlyCiInfrastructure(options.changedFiles ?? ['apps/web/src/App.tsx']),
     capabilities: async () => ({ parts: true, integrationPartitions: true, affected: true }),
     ...(inventory ? { unitInventory: async () => inventory } : {}),
     resolve: async (_repository: string, _branch: string, commit: string | undefined) => {
@@ -141,7 +139,7 @@ async function fixture(options: { repository?: boolean; github?: Record<string, 
     published.push(resolved)
     return resolved
   } }
-  const computers = fakeComputers(options.github, options.cloud, options.hostSlots)
+  const computers = fakeComputers(options.github, options.cloud, options.hostSlots, options.cloudSystemd)
   const commands = new PostgresCommandCoordinator(db.pool)
   const ci = new HostCiService(db.pool, commands, new RunCiAuthority(db.pool), commits,
     options.repositoryRunner?.endpoint ?? computers.endpoint)
@@ -173,8 +171,7 @@ async function fixture(options: { repository?: boolean; github?: Record<string, 
   if (runtime) {
     try {
       await runtime.db.pool.query(`update management_principals set grants=grants || $2::jsonb where id=$1`,
-        [runtime.authorizationPrincipalId, JSON.stringify([{ actions: [...CI_RUN_ACTIONS, ...CI_GET_ACTIONS,
-          ...(options.priorityGrant ? ['jobs:prioritize'] : [])],
+        [runtime.authorizationPrincipalId, JSON.stringify([{ actions: [...CI_RUN_ACTIONS, ...CI_GET_ACTIONS],
           scope: { workspaceIds: [workspaceId] } }])])
       runtime.f.run = await withExclusiveGraphConnection(runtime.db.pool, connection => connection.transaction(async sql => {
         const client = sql as unknown as pg.PoolClient
@@ -856,6 +853,38 @@ it('queues a run while every computer is busy and starts it on the first one tha
   } finally { await f.close() }
 })
 
+it.each(['github', 'circleci'] as const)('runs user-systemd slices on capable %s slots through authenticated MCP', async provider => {
+  const f = await fixture({ cloud: { github: provider === 'github' ? 2 : 0, circleci: provider === 'circleci' ? 2 : 0 },
+    cloudSystemd: true })
+  f.computers.splice(0, 2)
+  const systemd = 'apps/api/test/native-service-restart.integration.test.ts'
+  const ordinary = 'apps/api/test/agent-chat.integration.test.ts'
+  try {
+    const reader = await f.connect(CI_GET_ACTIONS)
+    const input = { suite: 'integration', scope: 'affected', files: [systemd, ordinary], commit: 'a'.repeat(40),
+      commandId: 'cloud-systemd' }
+    expect((await f.call(reader, 'ci_run', input)).isError).toBe(true)
+    expect(f.started).toHaveLength(0)
+    const started = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', input))
+    expect(CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', input))).toEqual(started)
+    await f.ci.dispatch()
+    const read = CiGetOutputSchema.parse(await f.value(reader, 'ci_get', { ticketId: started.ticketId }))
+    expect(read.partitions).toHaveLength(2)
+    for (const run of read.partitions!) {
+      expect(run).toMatchObject({ state: 'running', computer: { hostRef: { kind: 'cloud', provider } } })
+      expect((await f.pool.query('select record from ci_runs where id=$1', [run.id])).rows[0].record).toEqual(run)
+    }
+    const slices = read.partitions!.map(run => integrationPartition(run.files, {}, run.partition!))
+    expect(slices).toContainEqual([systemd])
+    expect(slices).toContainEqual([ordinary])
+    const listed = CiComputersOutputSchema.parse(await f.value(reader, 'ci_computers_list', {}))
+    expect(listed.computers.every(computer => computer.userSystemd?.supported)).toBe(true)
+    for (const run of read.partitions!) f.finish(run.id, 0, 'Systemd cloud slice completed.\n')
+    const completed = CiGetOutputSchema.parse(await f.value(reader, 'ci_get', { ticketId: started.ticketId }))
+    expect(completed.partitions!.every(run => run.state === 'passed')).toBe(true)
+  } finally { await f.close() }
+})
+
 it('queues only user-systemd files through MCP while ordinary files run on cloud, then clears the wait on start', async () => {
   const readiness = { laptop: true }
   const f = await fixture({ github: readiness, cloud: true })
@@ -899,6 +928,8 @@ it('queues only user-systemd files through MCP while ordinary files run on cloud
     expect(integrationPartition(sibling.files, {}, sibling.partition!).sort()).toEqual([...ordinary].sort())
     expect((await f.pool.query('select record from ci_runs where id=$1', [host.id])).rows[0].record).toEqual(host)
     const computers = CiComputersOutputSchema.parse(await f.value(reader, 'ci_computers_list', {}))
+    expect(computers.computers.find(computer => computer.hostRef.kind === 'cloud')?.userSystemd)
+      .toEqual({ supported: false, reason: 'Executor has no systemd user manager' })
     expect(computers.computers.find(computer => computer.label === 'laptop'))
       .toMatchObject({ ready: true, running: [older.ticketId] })
 
@@ -1330,120 +1361,6 @@ it('dispatches queued typecheck parts beyond the first fifty integration partiti
     expect(stored.every(run => run.state === 'running' && run.computer?.hostRef.provider === 'github')).toBe(true)
     const read = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: checks.ticketId }))
     expect(read.partitions).toEqual(expect.arrayContaining(stored))
-  } finally { await f.close() }
-})
-
-it.each([false, true])('requires a high-priority grant for Agents (granted: %s)', async priorityGrant => {
-  const f = await fixture({ agent: true, priorityGrant })
-  try {
-    f.computers.splice(0)
-    const input = { suite: 'install', priority: 'high', commandId: 'agent-high-priority' }
-    const result = await f.call(f.agent!, 'ci_run', input)
-    if (!priorityGrant) {
-      expect(result.isError).toBe(true)
-      expect(JSON.stringify(result.content)).toContain('ACCESS_DENIED')
-      expect((await f.pool.query('select count(*)::int as count from ci_runs')).rows[0].count).toBe(0)
-      expect((await f.pool.query("select outcome from management_audit where action='ci_run'")).rows)
-        .toContainEqual({ outcome: 'denied' })
-      const normal = CiRunOutputSchema.parse(await f.value(f.agent!, 'ci_run', {
-        suite: 'install', commandId: 'agent-normal-priority',
-      }))
-      expect(CiGetOutputSchema.parse(await f.value(f.agent!, 'ci_get', { ticketId: normal.ticketId })).run)
-        .toMatchObject({ priority: 'normal', priorityReason: 'normal' })
-    } else {
-      expect(result.isError).not.toBe(true)
-      const started = CiRunOutputSchema.parse(decodeMcpToolResult(result))
-      expect(CiGetOutputSchema.parse(await f.value(f.agent!, 'ci_get', { ticketId: started.ticketId })).run)
-        .toMatchObject({ priority: 'high', priorityReason: 'requested' })
-      const replay = CiRunOutputSchema.parse(await f.value(f.agent!, 'ci_run', input))
-      expect(replay).toEqual(started)
-      expect((await f.pool.query("select details->>'priority' as priority from management_audit where action='ci.priority'"))
-        .rows).toEqual([{ priority: 'high' }])
-      await f.value(f.operator, 'ci_run', { suite: 'install', commandId: 'another-caller' })
-      const listed = CiComputersOutputSchema.parse(await f.value(f.agent!, 'ci_computers_list', {}))
-      expect(listed.queue).toEqual([{ ticketId: started.ticketId, priority: 'high', priorityReason: 'requested',
-        position: 1, reason: expect.any(String) }])
-      await f.pool.query(`update management_principals set grants=(select jsonb_agg(
-        jsonb_set(grant_entry,'{actions}',(select jsonb_agg(action) from jsonb_array_elements(grant_entry->'actions') action
-          where action <> '"jobs:prioritize"'::jsonb))) from jsonb_array_elements(grants) grant_entry) where id=$1`,
-      [f.authorizationPrincipalId])
-      expect((await f.call(f.agent!, 'ci_run', input)).isError).toBe(true)
-    }
-  } finally { await f.close() }
-})
-
-it.each([
-  { changedFiles: ['scripts/test-db.mjs'], priority: 'high', priorityReason: 'ci-infrastructure' },
-  { changedFiles: ['scripts/test-db.mjs', 'apps/web/src/App.tsx'], priority: 'normal', priorityReason: 'normal' },
-])('derives $priority priority from actual commit changes through Agent MCP', async expected => {
-  const f = await fixture({ agent: true, changedFiles: expected.changedFiles })
-  try {
-    const started = CiRunOutputSchema.parse(await f.value(f.agent!, 'ci_run', {
-      suite: 'lint', commandId: 'commit-priority', commit: 'b'.repeat(40), scope: 'affected',
-      files: ['apps/api/src/modules/ci-host/service.ts', 'packages/contracts/src/ciHost.ts'],
-    }))
-    const read = CiGetOutputSchema.parse(await f.value(f.agent!, 'ci_get', { ticketId: started.ticketId }))
-    expect(read.run).toMatchObject({ priority: expected.priority, priorityReason: expected.priorityReason })
-    expect(read.partitions?.every(run => run.priority === expected.priority)).toBe(true)
-    const stored = (await f.pool.query<{ record: unknown }>('select record from ci_runs where id=$1',
-      [started.ticketId])).rows[0]!.record
-    expect(CiRunRecordSchema.parse(stored)).toEqual(read.run)
-    expect((await f.pool.query("select details from management_audit where action='ci.priority'")).rows)
-      .toEqual([{ details: expect.objectContaining({ priority: expected.priority,
-        priorityReason: expected.priorityReason, requestedPriority: 'normal' }) }])
-  } finally { await f.close() }
-})
-
-it('shows priority and global queue position through MCP and admits high tickets beyond fifty older tickets', async () => {
-  const f = await fixture({ cloud: { github: 1, circleci: 1 } })
-  try {
-    const available = f.computers.splice(0)
-    const older: string[] = []
-    for (let index = 0; index < 51; index++) {
-      const ticket = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', {
-        suite: 'install', commandId: `normal-backlog-${index}`,
-      }))
-      older.push(ticket.ticketId)
-    }
-    const input = { suite: 'install', commandId: 'operator-high', priority: 'high' }
-    const high = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', input))
-    expect(CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', input))).toEqual(high)
-    expect((await f.call(f.operator, 'ci_run', { ...input, priority: 'normal' })).isError).toBe(true)
-    const read = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: high.ticketId }))
-    expect(read.run).toMatchObject({ state: 'queued', priority: 'high', priorityReason: 'requested' })
-    expect(read.queue).toMatchObject({ position: 1, reason: expect.any(String) })
-    expect(CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: older[0] })).queue?.position).toBe(2)
-    const computers = CiComputersOutputSchema.parse(await f.value(f.operator, 'ci_computers_list', {}))
-    expect(computers.queue?.[0]).toEqual({ ticketId: high.ticketId, priority: 'high', priorityReason: 'requested',
-      position: 1, reason: read.queue!.reason })
-    expect(computers.queue).toHaveLength(52)
-    expect(computers.queueTruncated).toBe(false)
-    const denied = await f.connect(CI_GET_ACTIONS)
-    expect((await f.call(denied, 'ci_run', { suite: 'install', commandId: 'denied-high', priority: 'high' })).isError)
-      .toBe(true)
-    f.computers.push(...available)
-    await f.ci.dispatch()
-    expect(f.started[0]?.request).toMatchObject({ runId: high.ticketId })
-    expect(CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: high.ticketId })).queue).toBeNull()
-  } finally { await f.close() }
-})
-
-it('lets high integration tickets use cloud slots reserved for normal checks', async () => {
-  const f = await fixture({ cloud: { github: 2, circleci: 0 } })
-  try {
-    const available = f.computers.splice(0).filter(computer => computer.hostRef.kind === 'cloud')
-    await f.value(f.operator, 'ci_run', { suite: 'lint', commandId: 'normal-checks' })
-    const integration = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', {
-      suite: 'integration', scope: 'affected', commit: 'a'.repeat(40), partitions: 2,
-      files: ['apps/api/test/first.integration.test.ts', 'apps/api/test/second.integration.test.ts'],
-      commandId: 'high-integration', priority: 'high',
-    }))
-    await f.ci.dispatch()
-    f.computers.push(...available)
-    await f.ci.dispatch()
-    const read = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: integration.ticketId }))
-    expect(read.partitions!.every(run => run.priority === 'high' && run.state === 'running')).toBe(true)
-    expect(f.started).toHaveLength(2)
   } finally { await f.close() }
 })
 
