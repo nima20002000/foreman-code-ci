@@ -24,12 +24,9 @@ export const privateCanary = 'ENG04-PRIVATE-INPUT-MUST-NOT-REACH-GRAPH'
  * No native/public Start acceptance is claimed. Current authoring, authentication,
  * SQL receipts/audit and canonical publication are actual production services. */
 export async function graphFixture(db: GraphTestDatabase, options: { insert?: boolean; qualifiedReads?: boolean;
-  form?: CurrentFixtureForm; handoffs?: boolean; maxNodeExecutions?: number; intervalEverySeconds?: number;
+  form?: CurrentFixtureForm; handoffs?: boolean; maxNodeExecutions?: number;
   harness?: AgentConfigurationVersion['harness'] } = {}) {
   const f = makeCurrentWorkflowFixture(randomUUID(), options.form ?? 'repeat')
-  if (options.intervalEverySeconds !== undefined) {
-    for (const node of f.version.definition.nodes) node.interval = { everySeconds: options.intervalEverySeconds }
-  }
   if (options.harness) {
     for (const configuration of f.configurations) configuration.harness = structuredClone(options.harness)
   }
