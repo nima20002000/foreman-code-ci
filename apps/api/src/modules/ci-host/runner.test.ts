@@ -1,6 +1,6 @@
 import { once } from 'node:events'
 import { execFileSync, spawn } from 'node:child_process'
-import { mkdir, mkdtemp, readFile, rm, writeFile, chmod, readdir } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, copyFile, rm, writeFile, chmod, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { randomUUID } from 'node:crypto'
@@ -26,7 +26,7 @@ afterEach(async () => {
 async function computer(options: { github?: boolean; suiteExit?: number; watchdogReason?: string; pause?: boolean
   measured?: Record<string, number>; databaseExit?: number; selector?: boolean;
   change?: 'source' | 'infrastructure' | 'docs'; defaultBranch?: string; cpuCount?: number; hostSlots?: boolean
-  affectedUnitTests?: number } = {}) {
+  affectedUnitTests?: number; inspectSource?: boolean } = {}) {
   const temporaryRoot = process.env.FOREMAN_CODE_TEST_ROOT ?? join(homedir(), '.cache', 'foreman-tmp')
   await mkdir(temporaryRoot, { recursive: true })
   const root = await mkdtemp(join(temporaryRoot, 'host-ci-'))
@@ -40,6 +40,9 @@ async function computer(options: { github?: boolean; suiteExit?: number; watchdo
     typecheck: 'tsc', lint: 'eslint', build: 'tsc -b', test: 'vitest',
     'test:integration': 'node scripts/test-integration.mjs', 'db:up': 'node db.mjs',
     'test:scripts': 'node --test scripts/fixture.test.mjs' } }))
+  if (options.inspectSource) {
+    await writeFile(join(origin, 'program.mjs'), 'process.stdout.write(JSON.stringify({value: 1}))\n')
+  }
   await writeFile(join(origin, 'pnpm-lock.yaml'), '')
   for (const name of ['a', 'b', 'c', 'd']) await writeFile(join(origin, `apps/api/test/${name}.integration.test.ts`), '')
   await mkdir(join(origin, 'scripts'))
@@ -51,12 +54,12 @@ async function computer(options: { github?: boolean; suiteExit?: number; watchdo
     'apps/api/test/c.integration.test.ts': 200, 'apps/api/test/d.integration.test.ts': 100 }))
   await mkdir(join(origin, 'apps/web/src'), { recursive: true })
   await writeFile(join(origin, 'apps/web/heavy-tests.json'), JSON.stringify({ files: [] }))
-  await writeFile(join(origin, 'scripts/ci-unit-files.mjs'),
-    await readFile(new URL('../../../../../scripts/ci-unit-files.mjs', import.meta.url), 'utf8'))
+  await copyFile(new URL('../../../../../scripts/ci-unit-files.mjs', import.meta.url),
+    join(origin, 'scripts/ci-unit-files.mjs'))
   const suiteFiles = ['ci-affected-run.mjs', 'ci-files.mjs', 'ci-suite.sh',
-    'ci-test-results.mjs', 'ci-node-test-reporter.mjs']
+    'ci-test-results.mjs', 'ci-node-test-reporter.mjs', 'ci-typecheck-cache.mjs']
   for (const file of suiteFiles) {
-    await writeFile(join(origin, 'scripts', file), await readFile(new URL(`../../../../../scripts/${file}`, import.meta.url), 'utf8'))
+    await copyFile(new URL(`../../../../../scripts/${file}`, import.meta.url), join(origin, 'scripts', file))
   }
   await writeFile(join(origin, 'scripts/test-command.mjs'),
     "import { spawnSync } from 'node:child_process'; const [, command, ...args] = process.argv.slice(2);"
@@ -65,11 +68,11 @@ async function computer(options: { github?: boolean; suiteExit?: number; watchdo
     'apps/web/src/first.test.tsx', 'apps/web/src/second.test.tsx']
   for (const file of unitFiles) await writeFile(join(origin, file), '')
   if (options.selector) {
-    await writeFile(join(origin, 'scripts/ci-affected.mjs'),
-      await readFile(new URL('../../../../../scripts/ci-affected.mjs', import.meta.url), 'utf8'))
+    await copyFile(new URL('../../../../../scripts/ci-affected.mjs', import.meta.url),
+      join(origin, 'scripts/ci-affected.mjs'))
     await mkdir(join(origin, 'packages/contracts/src'), { recursive: true })
-    await writeFile(join(origin, 'packages/contracts/src/ciImportGraph.mjs'),
-      await readFile(new URL('../../../../../packages/contracts/src/ciImportGraph.mjs', import.meta.url), 'utf8'))
+    await copyFile(new URL('../../../../../packages/contracts/src/ciImportGraph.mjs', import.meta.url),
+      join(origin, 'packages/contracts/src/ciImportGraph.mjs'))
     await mkdir(join(origin, 'apps/api/src'), { recursive: true })
     await writeFile(join(origin, 'apps/api/src/feature.ts'), 'export const value = 1')
     await writeFile(join(origin, unitFiles[0]!), "import '../src/feature.js'")
@@ -109,6 +112,7 @@ async function computer(options: { github?: boolean; suiteExit?: number; watchdo
     + 'echo "CI budget $FOREMAN_CODE_CI_CPU_COUNT $FOREMAN_CODE_CI_MEMORY_BYTES $FOREMAN_CODE_VERIFICATION_UNIT_WORKERS"\n'
     + 'echo "CI database $FOREMAN_CODE_CI_DATABASE_CPUS $FOREMAN_CODE_CI_DATABASE_MEMORY_BYTES"\n'
     + `${integration}${unitReport}`
+    + (options.inspectSource ? 'if [ "$2" = typecheck ]; then node program.mjs; fi\n' : '')
     + `if [ "$2" = db:up ]; then code=${options.databaseExit ?? 0};`
     + ' if [ "$code" = 0 ]; then touch "$TMPDIR/database-ready"; fi; exit "$code"; fi\n'
     + 'if [ "$2" = test ] || [ "$2" = test:integration ]'
@@ -327,7 +331,7 @@ describe('host CI runner', () => {
   })
   it.each([
     ['unit', undefined, true], ['unit', 'unit-api', true], ['integration', undefined, true],
-    ['unit', 'unit-web', true], ['unit', 'unit-web-heavy', true], ['unit', 'unit-other', true],
+    ['unit', 'unit-web', false], ['unit', 'unit-web-heavy', false], ['unit', 'unit-other', true],
     ['lint', 'lint-api', false], ['typecheck', 'typecheck-api', false], ['build', 'build-api', false],
   ])('prepares the database for %s/%s only when needed', async (suite, part, databaseRequired) => {
     const f = await computer()
@@ -339,7 +343,7 @@ describe('host CI runner', () => {
     if (part === 'unit-other') {
       expect(done.text).toContain('corepack pnpm --filter @foreman-code/contracts test')
       expect(done.text).toContain('--test-reporter=spec')
-      expect(done.text).toContain('scripts/fixture.test.mjs')
+      expect(done.text).toContain('scripts/**/*.test.mjs')
     }
     const database = done.text.indexOf('corepack pnpm db:up')
     if (databaseRequired) {
@@ -428,6 +432,24 @@ describe('host CI runner', () => {
     expect(done.run).toMatchObject({ state: 'passed', step: 'unit-api' })
     expect(done.text).toContain('corepack pnpm --dir apps/api exec vitest run test/first.test.ts')
     expect(done.text).not.toContain('test/second.test.ts')
+  })
+
+  it('executes the accepted commit after the original checkout changes', async () => {
+    const f = await computer({ inspectSource: true })
+    const origin = join(f.root, 'origin')
+    await writeFile(join(origin, 'dependency.mjs'), 'export const value = 2\n')
+    await writeFile(join(origin, 'program.mjs'),
+      "import {value} from './dependency.mjs'; process.stdout.write(JSON.stringify({value}))\n")
+    const runId = randomUUID()
+    await f.runner.handle({ operation: 'start', runId, repository: 'example/project',
+      commit: f.commit, suite: 'typecheck', scope: 'full' })
+    const done = await f.settle(runId)
+    expect(done.run).toMatchObject({ state: 'passed', exitCode: 0 })
+    expect(done.text).toContain('{"value":1}')
+    expect(done.text).not.toContain('{"value":2}')
+    expect(f.git('rev-parse', 'HEAD')).toBe(f.commit)
+    const current = execFileSync(process.execPath, ['program.mjs'], { cwd: origin, encoding: 'utf8' })
+    expect(JSON.parse(current)).toEqual({ value: 2 })
   })
 
   it('fetches the commit, installs and runs the suite in its own checkout, then frees its slot', async () => {
@@ -523,7 +545,8 @@ describe('host CI runner', () => {
     await f.unitStarted
     await Promise.all([...f.units.values()].map(stopUnit))
     expect((await f.settle(runId)).run).toMatchObject({ state: 'lost', exitCode: null })
-    expect(await readFile(join(f.root, 'ci/runs', runId, 'meta.json'), 'utf8')).toContain('"cleaned":true')
+    expect(await f.runner.handle({ operation: 'status' }))
+      .toMatchObject({ slotsUsed: 0, runs: [expect.objectContaining({ runId, state: 'lost' })] })
   })
 })
 

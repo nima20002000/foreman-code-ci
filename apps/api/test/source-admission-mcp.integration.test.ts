@@ -8,6 +8,7 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
 import { expect, it } from 'vitest'
 import { ManagementActionSchema, OperatorCapabilitiesSchema } from '@foreman-code/contracts/management'
 import { SourceApproveResultSchema, SourceListResultSchema, ApprovedSourceSchema, SourceRootBindResultSchema, SourceRootListResultSchema, SourceRootRecordSchema } from '@foreman-code/contracts/source-admission'
+import { withTransaction } from '../src/infrastructure/transaction.js'
 import { buildApp } from '../src/app.js'
 import { applyApplicationMigrations } from '../src/infrastructure/migrations.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
@@ -66,25 +67,18 @@ it.skipIf(!process.env.TEST_DATABASE_URL)('admits exact approved sources and roo
       return null
     }, { request: nativeNotInvoked })
     const policies = new PostgresWorkspaceRootPolicies(mainId, hosts)
-    const sql = await pool.connect()
-    let authorized: Awaited<ReturnType<typeof policies.authorize>>
-    try {
-      await sql.query('begin')
+    const authorized = await withTransaction(pool, async sql => {
       await policies.publishApprovedHostConfiguration(sql, approvedRoots, { mainId, hostRef: approvedRoots.hostRef, applicationInstallationId: mainId,
         configurationRevision: '1', configurationDigest: sourceSha256(Buffer.from(JSON.stringify(approvedRoots))) })
-      authorized = await policies.authorize(sql, owner.principal, { workspaceId: workspace.id, hostRef: approvedRoots.hostRef,
+      return policies.authorize(sql, owner.principal, { workspaceId: workspace.id, hostRef: approvedRoots.hostRef,
         allowedBaseId: approvedRoots.bases[0]!.baseId, configurationRevision: '1', relativePath: '', accessMode: 'read-write', expectedLocationRevision: located.value.locationRevision, expectedRootPolicyRevision: 0 })
-      await sql.query('commit')
-    } finally { sql.release() }
+    })
     const attestation = await policies.attest(authorized)
-    const bindingSql = await pool.connect()
-    let policy: Awaited<ReturnType<typeof policies.bind>>
-    try {
-      await bindingSql.query('begin'); await policies.fence(bindingSql, authorized)
+    const policy = await withTransaction(pool, async bindingSql => {
+      await policies.fence(bindingSql, authorized)
       await bindingSql.query('update workspaces set location_revision=location_revision+1 where id=$1 and location_revision=$2', [workspace.id, located.value.locationRevision])
-      policy = await policies.bind(bindingSql, owner.principal, authorized, attestation, located.value.locationRevision + 1)
-      await bindingSql.query('commit')
-    } finally { bindingSql.release() }
+      return policies.bind(bindingSql, owner.principal, authorized, attestation, located.value.locationRevision + 1)
+    })
     const roots = new RegisteredWorkspaceSourceRoots(policies, hosts)
     const createSources = () => new PostgresSourceService(pool, new PostgresCommandCoordinator(pool), locations, new PrivateSourceSnapshotStore(canonical), mainId, roots,
       { authorize: nativeNotInvoked, prepare: nativeNotInvoked, verifyWorkingDirectory: nativeNotInvoked, verify: nativeNotInvoked, releaseClaim: nativeNotInvoked, authorizeFinal: nativeNotInvoked }, { confirmedClosed: nativeNotInvoked })
@@ -258,8 +252,23 @@ it.skipIf(!process.env.TEST_DATABASE_URL)('admits exact approved sources and roo
     } })
     expect(unchangedRevision.isError).toBe(true)
     expect(JSON.stringify(unchangedRevision.content)).toContain('SOURCE_ROOT_REVISION_CONFLICT')
-    const wrong = await client.callTool({ name: 'source_approve', arguments: { ...approve, rootPath: '/home/other', runId: 'invented', agentId: 'invented' } })
-    expect(wrong.isError).toBe(true)
+    const ignoredInput = { ...approve, commandId: randomUUID(), rootPath: '/unrelated/source',
+      runId: 'invented', agentId: 'invented' }
+    const wrongHttp = await app.inject({ method: 'POST',
+      url: `/api/management/workspaces/${workspace.id}/sources/approve`, headers, payload: ignoredInput })
+    expect(wrongHttp.statusCode).toBe(400)
+    const tolerated = await client.callTool({ name: 'source_approve', arguments: ignoredInput })
+    expect(tolerated.isError, JSON.stringify(tolerated)).not.toBe(true)
+    const captured = SourceApproveResultSchema.parse(decodeMcpToolResult(tolerated)).value
+    expect(captured.workspaceId).toBe(workspace.id)
+    expect(captured.locationRevision).toBe(read.locationRevision)
+    expect(captured.originIdentityHash).toBe(read.originIdentityHash)
+    expect(captured.manifest.git).toEqual(read.manifest.git)
+    expect(captured.manifest.entries).toEqual(read.manifest.entries)
+    expect(ApprovedSourceSchema.parse(decodeMcpToolResult(await client.callTool({ name: 'source_get',
+      arguments: { workspaceId: workspace.id, approvedSourceId: captured.manifest.approvedSourceId,
+        snapshotId: captured.manifest.snapshotId, manifestDigest: captured.manifest.manifestDigest },
+    })))).toEqual(captured)
     const denied = await access.issue({ name: 'Other scope', audience: 'operator', grants: [{ actions: ['sources:read', 'source_roots:bind', 'workspace_locations:read'], scope: { workspaceIds: ['workspace-other'] } }], expiresAt: new Date(Date.now() + 120_000) })
     const deniedClient = await connect(denied.token)
     expect(failure(await deniedClient.callTool({ name: 'source_approve',
@@ -278,7 +287,7 @@ it.skipIf(!process.env.TEST_DATABASE_URL)('admits exact approved sources and roo
     const newCommit = (await qualifiedGit(project, ['rev-parse', 'HEAD'])).toString().trim()
     const second = await client.callTool({ name: 'source_approve', arguments: { ...approve, commandId: randomUUID(), commit: newCommit } }); expect(second.isError).not.toBe(true)
     expect(ApprovedSourceSchema.parse(decodeMcpToolResult((await client.callTool({ name: 'source_get', arguments: { workspaceId: workspace.id, ...pin } })))).manifest.git?.commit).toBe(commit)
-    expect(SourceListResultSchema.parse(decodeMcpToolResult((await client.callTool({ name: 'source_list', arguments: { workspaceId: workspace.id, detail: 'full' } })))).items).toHaveLength(2)
+    expect(SourceListResultSchema.parse(decodeMcpToolResult((await client.callTool({ name: 'source_list', arguments: { workspaceId: workspace.id, detail: 'full' } })))).items).toHaveLength(3)
     const page = OperatorSourceListResultSchema.parse(decodeMcpToolResult(await client.callTool({
       name: 'source_list', arguments: { workspaceId: workspace.id, limit: 1 },
     })))
@@ -290,7 +299,7 @@ it.skipIf(!process.env.TEST_DATABASE_URL)('admits exact approved sources and roo
     expect(next.items).toHaveLength(1)
     expect(next.items[0]!.manifest.snapshotId).not.toBe(page.items[0]!.manifest.snapshotId)
     expect(SourceListResultSchema.parse(decodeMcpToolResult((await client.callTool({ name: 'source_list',
-      arguments: { workspaceId: workspace.id, detail: 'full' } })))).items).toHaveLength(2)
+      arguments: { workspaceId: workspace.id, detail: 'full' } })))).items).toHaveLength(3)
     expect(ApprovedSourceSchema.parse(decodeMcpToolResult((await client.callTool({ name: 'source_get',
       arguments: { workspaceId: workspace.id, ...pin } }))))).toEqual(read)
     const http = await app.inject({ method: 'POST', url: `/api/management/workspaces/${workspace.id}/sources/get`, headers: { authorization: `Bearer ${operator.token}` }, payload: pin })
@@ -302,7 +311,11 @@ it.skipIf(!process.env.TEST_DATABASE_URL)('admits exact approved sources and roo
     await expect(access.authenticate(operator.token)).rejects.toMatchObject({ code: 'AUTH_REVOKED', status: 401 })
     await expect(client.callTool({ name: 'source_get', arguments: { workspaceId: workspace.id, ...pin } })).rejects.toThrow('Unauthorized')
   } finally {
-    for (const client of clients) await client.close().catch(() => undefined)
+    for (const client of clients) {
+      await client.close().catch(() => {
+        // ignore: MCP session shutdown is best-effort so the remaining fixture cleanup still runs.
+      })
+    }
     await app?.close(); await pool.end(); await dropFixtureSchema(admin, schema); await admin.end(); await removeFixtureDirectory(directory)
   }
 }, 180_000)
