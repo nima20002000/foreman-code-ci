@@ -9,8 +9,12 @@ import type { HarnessQualificationRepository } from './repository.js'
 export class HarnessQualificationRegistry {
   constructor(private readonly repository: Pick<HarnessQualificationRepository, 'list' | 'find'>, private readonly revisions: Partial<Record<CompatibilityHarness, string>>) {}
 
-  async load(): Promise<void> {
-    for (const row of await this.repository.list()) {
+  async load(retryRead?: (
+    work: () => ReturnType<HarnessQualificationRepository['list']>,
+  ) => ReturnType<HarnessQualificationRepository['list']>): Promise<void> {
+    const read = () => this.repository.list()
+    const rows = await (retryRead ? retryRead(read) : read())
+    for (const row of rows) {
       if (row.status === 'qualified' && row.suiteRevision === this.revisions[row.harness] && row.profile === QUALIFICATION_TARGET_PROFILE[row.harness]) {
         rememberQualifiedProfile(row.harness, row.version, row.profile)
       }
@@ -21,7 +25,7 @@ export class HarnessQualificationRegistry {
     const candidates = isAbsolute(binary) || binary.includes('/') ? [binary] : (process.env.PATH ?? '').split(delimiter).map((entry) => resolve(entry || '.', binary))
     let resolved: string | undefined
     for (const candidate of candidates) {
-      try { await access(candidate, constants.X_OK); resolved = await realpath(candidate); break } catch { /* ignore: try PATH. */ }
+      try { await access(candidate, constants.X_OK); resolved = await realpath(candidate); break } catch { /* Try PATH. */ }
     }
     if (!resolved) throw new Error('The configured harness executable is unavailable.')
     const sha256 = createHash('sha256').update(await readFile(resolved)).digest('hex')
