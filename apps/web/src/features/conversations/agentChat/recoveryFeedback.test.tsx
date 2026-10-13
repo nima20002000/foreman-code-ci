@@ -73,7 +73,9 @@ describe('faithful canonical work and decision feedback', () => {
     transcript(value)
     expect(screen.getByText('Decision delivered')).toBeInTheDocument()
     await userEvent.hover(screen.getByRole('status', { name: 'Decision delivered' }))
-    expect(await screen.findByRole('tooltip')).toHaveTextContent('This does not confirm work completion.')
+    const tooltip = await screen.findByRole('tooltip')
+    expect(tooltip).toHaveTextContent('The provider acknowledged this decision.')
+    expect(tooltip).toHaveTextContent('This does not confirm work completion.')
   })
 })
 
