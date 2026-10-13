@@ -185,9 +185,6 @@ export async function executeRepeatEngineStart(input: RepeatEngineStartContext):
       cancelNativeAndRequestCleanup: () => lifecycle.cancelNativeAndRequestCleanup(),
       settleRun: (stopped, interrupted) => lifecycle.settleRun(stopped, interrupted),
       requestCleanup: (failure) => lifecycle.requestCleanup(failure),
-      ...(lifecycle.settleRetainedReviewers ? {
-        settleRetainedReviewers: () => lifecycle.settleRetainedReviewers!(),
-      } : {}),
       finishNative: () => lifecycle.finishNative(),
       finishCleanup: () => lifecycle.finishCleanup(),
       preflight: async () => {
