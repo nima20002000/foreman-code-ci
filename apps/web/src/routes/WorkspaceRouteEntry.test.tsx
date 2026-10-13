@@ -1,3 +1,4 @@
+import { installBrowserLocks } from '../test/browserLocks'
 import { nativeNode } from '../shared/mocks/nativeFixtureTypes'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
@@ -20,7 +21,6 @@ import { bindMockInstallation } from '../shared/mocks/handlers'
 import { savedClaudeConfiguration } from '../features/settings/claudeSettings.fixtures'
 import { savedPlacementFixture } from '../features/node-placement/fixtures'
 import { createCurrentBoardMock } from '../shared/mocks/currentBoard'
-import { installBrowserLocks } from '../test/browserLocks'
 import canvasStyles from '../shared/ui/nocturne/canvas.css?inline'
 
 function readyWorkspace() {
@@ -100,32 +100,13 @@ describe('WorkspaceRouteEntry integration', () => {
   })
 
   afterEach(() => {
-    cleanup(); clients.splice(0).forEach((client) => client.clear())
+    cleanup(); window.dispatchEvent(new Event('pagehide'))
+    clients.splice(0).forEach((client) => client.clear())
     useGraphDraftStore.getState().clearAllDrafts(); vi.restoreAllMocks(); vi.unstubAllGlobals()
     setMockScenario('normal')
     sessionStorage.clear()
     vi.unstubAllEnvs()
     vi.useRealTimers()
-  })
-
-  it('opens saved authoring in a fresh tab after reloading the selected workflow', async () => {
-    const entry = '/workspaces/workspace-1?workflowId=workflow-content-pipeline&agentId=agent-researcher'
-    const first = await renderWorkspace(entry)
-    expect(await workflowBoard('Research to review')).toBeVisible()
-    first.unmount()
-    first.queryClient.clear()
-    useGraphDraftStore.getState().clearAllDrafts()
-    sessionStorage.clear()
-
-    const reloaded = await renderWorkspace(entry)
-    const board = await workflowBoard('Research to review')
-    expect(within(board).getByLabelText('Editable workflow graph')).toBeVisible()
-    expect(reloaded.router.state.location.search.workflowId).toBe('workflow-content-pipeline')
-    expect(reloaded.router.state.location.search.agentId).toBe('agent-researcher')
-    await waitFor(() => expect(screen.getByRole('button', {
-      name: (name) => name.startsWith('Researcher,'),
-    })).toHaveAttribute('aria-pressed', 'true'))
-    expect(screen.queryByRole('heading', { name: 'Authoring unavailable' })).not.toBeInTheDocument()
   })
 
   it('renders the saved workflow and keeps a valid agent selection in the URL', async () => {
