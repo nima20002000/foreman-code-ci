@@ -1759,3 +1759,37 @@ it('resolves branches of existing tickets before superseding them and protects e
       .toMatchObject({ state: 'canceled', supersededBy: next.ticketId })
   } finally { await f.close() }
 })
+
+
+it('reads persisted warm-up status through authenticated MCP after Worker restart and denies callers without CI read grants', async () => {
+  const repository = await genericCiRepository({ lockfile: 'pnpm-lock.yaml' })
+  const f = await fixture({ repositoryRunner: repository })
+  try {
+    const start = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', {
+      commandId: randomUUID(), suite: 'lint', commit: repository.commit, scope: 'affected',
+      files: ['apps/api/src/feature.ts'],
+    }))
+    await vi.waitFor(async () => {
+      const read = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: start.ticketId }))
+      expect(read.run.state).toBe('passed')
+    })
+    const [computer] = await repository.endpoint.computers()
+    if (!computer) throw new Error('Missing build computer')
+    await repository.endpoint.request(computer, { operation: 'start', warmup: true, runId: randomUUID(),
+      repository: 'octo/site', commit: repository.commit, suite: 'install' })
+    await vi.waitFor(async () => {
+      const read = CiComputersOutputSchema.parse(await f.value(f.operator, 'ci_computers_list', {}))
+      expect(read.computers[0]).toMatchObject({ prewarmSupported: true, slotsUsed: 0,
+        warmup: { repository: 'octo/site', commit: repository.commit, run: { warmup: true, state: 'passed' } } })
+    })
+    repository.restart()
+    const denied = await f.connect(CI_RUN_ACTIONS)
+    expect((await f.call(denied, 'ci_computers_list', {})).isError).toBe(true)
+    const read = CiComputersOutputSchema.parse(await f.value(f.operator, 'ci_computers_list', {}))
+    expect(read.computers[0]).toMatchObject({ slotsUsed: 0, warmup: { run: { state: 'passed' } } })
+    expect((await f.pool.query('select count(*)::int as count from ci_runs')).rows[0].count).toBe(1)
+  } finally {
+    await f.close()
+    await repository.close()
+  }
+})
