@@ -7,11 +7,9 @@ import { startProcessMetrics } from './dense-resources.mjs'
 import { stopGroup } from './integration-process.mjs'
 import { ciTestResults } from './ci-test-results.mjs'
 
-// Matches the integration runner's per-file silence limit: cold cloud machines run single tests for over a minute.
-export const CI_IDLE_TIMEOUT_MS = 180_000
-/** Without a known expected duration there is no part deadline; the idle limit still catches hangs. */
+export const CI_IDLE_TIMEOUT_MS = 60_000
 export function ciPartDeadlineMs(expectedDurationMs) {
-  return expectedDurationMs > 0 ? Math.max(3 * expectedDurationMs, 120_000) : Number.POSITIVE_INFINITY
+  return Math.max(3 * expectedDurationMs, 120_000)
 }
 
 /** Runs outside the test process so blocked test workers cannot block either deadline. */
@@ -112,8 +110,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     throw new Error('CI watchdog requires a command and a nonnegative expected duration')
   }
   const base = resolve(process.env.CI_WATCHDOG_DIRECTORY ?? '.logs/ci-watchdog')
-  const idleTimeoutMs = Number(process.env.CI_WATCHDOG_IDLE_MS ?? CI_IDLE_TIMEOUT_MS)
-  process.exitCode = await runCiPart(command, { expectedDurationMs, idleTimeoutMs,
+  process.exitCode = await runCiPart(command, { expectedDurationMs,
     progressFile: resolve(base, 'progress.jsonl'),
     ...(process.env.TEST_RESULTS_OUTPUT || process.env.FOREMAN_CODE_INTEGRATION_TEST_RESULTS_OUTPUT
       ? { resultsFile: resolve(process.env.TEST_RESULTS_OUTPUT ?? process.env.FOREMAN_CODE_INTEGRATION_TEST_RESULTS_OUTPUT) } : {}),
