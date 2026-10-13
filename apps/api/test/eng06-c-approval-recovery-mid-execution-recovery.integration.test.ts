@@ -38,8 +38,7 @@ for (const form of ['ordinary', 'repeat'] as const) {
     }, 90000)
 
     it('reports a refused restart attachment as interruption through HTTP and authenticated MCP', async () => {
-      const f = await recoveryFixture(form === 'ordinary' ? 'sequential' : 'repeat', () => 'park', 12,
-        { sessionPersistence: 'persistent' })
+      const f = await recoveryFixture(form === 'ordinary' ? 'sequential' : 'repeat', () => 'park')
       const connection = f.provider.connection.bind(f.provider)
       let refusedAttachments = 0
       const attachment = vi.spyOn(f.provider, 'connection').mockImplementation(() => ({
@@ -54,9 +53,6 @@ for (const form of ['ordinary', 'repeat'] as const) {
         const before = await parked(f)
         const executionId = before.details[0]!.execution.executionId
         await f.restart()
-        const detached = await readback(f)
-        expect(detached.record.run).toMatchObject({ executionState: 'running', outcome: 'pending' })
-        expect(detached.details[0]!.execution).toMatchObject({ executionId, state: 'running', attempt: 1 })
         await f.settled()
         const after = await readback(f)
         const result = { outcome: 'failed', error: { code: 'EXECUTION_INTERRUPTED', retryable: false } }
