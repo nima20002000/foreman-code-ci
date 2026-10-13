@@ -14,6 +14,22 @@ const row = (sequence: number, content = `Message ${sequence}`) => ({
   complete: false, sequence: String(sequence), revision: String(sequence),
 })
 
+it('reads an execution without public text at revision zero', () => {
+  expect(projectRunChatTranscript(execution, [])).toEqual({
+    executionId: execution.id,
+    state: execution.state,
+    revision: '0',
+    messages: [],
+    hasEarlierMessages: false,
+  })
+})
+
+it('preserves the first native event sequence and revision when they start at zero', () => {
+  const result = projectRunChatTranscript(execution, [row(0)])
+  expect(result.revision).toBe('0')
+  expect(result.messages).toMatchObject([{ sequence: '0', revision: '0', content: 'Message 0' }])
+})
+
 it('keeps execution identity, partial text and chronological order without fabricating a conversation', () => {
   const result = projectRunChatTranscript(execution, [row(1), { ...row(2), complete: true }])
   expect(result).toMatchObject({ executionId: execution.id, state: 'running', revision: '2',

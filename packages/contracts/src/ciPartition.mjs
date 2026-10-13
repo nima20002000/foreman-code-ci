@@ -19,9 +19,7 @@ export function integrationPartition(files, durations, partition) {
   const loads = Array(partition.count).fill(0)
   const speed = index => partition.weights?.[index] ?? 1
   const owner = new Map()
-  const heavy = partition.targetDurationMs
-    ? new Set(files.filter(file => weight(file) >= partition.targetDurationMs))
-    : new Set([...requirements.keys(), ...exclusiveIntegrationFiles])
+  const heavy = new Set([...requirements.keys(), ...exclusiveIntegrationFiles])
   const heavyCounts = Array(partition.count).fill(0)
   const indexes = Array.from({ length: partition.count }, (_, index) => index)
   const ordinaryIndexes = indexes.filter(index => !partition.hostIndexes?.includes(index))
@@ -33,10 +31,6 @@ export function integrationPartition(files, durations, partition) {
     let eligible = indexes
     if (partition.hostIndexes) {
       eligible = requiresUserSystemd(file) ? partition.hostIndexes : ordinaryIndexes
-    }
-    if (partition.targetDurationMs && !isHeavy && !requiresUserSystemd(file)) {
-      const withoutHeavy = eligible.filter(index => heavyCounts[index] === 0)
-      if (withoutHeavy.length) eligible = withoutHeavy
     }
     if (!eligible.length) throw new Error('Partition plan has no eligible slice for an integration file.')
     let lightest = eligible[0]
