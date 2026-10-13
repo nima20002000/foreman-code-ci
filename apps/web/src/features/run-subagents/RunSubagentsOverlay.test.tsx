@@ -170,7 +170,7 @@ describe('Run subagent overlays', () => {
     server.use(http.get(base, () => HttpResponse.json({ error: { code: 'DENIED', message: 'Denied' } }, { status: 403 })))
     await act(async () => { await client.invalidateQueries({ queryKey: subagentsKey(scope) }) })
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Research, Codex, Running' })).not.toBeInTheDocument())
-    expect(screen.getByText("Couldn't load subagents.")).toBeVisible()
+    expect(await screen.findByText("Couldn't load subagents.")).toBeVisible()
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(screen.queryByText('Child answer')).not.toBeInTheDocument()
   })

@@ -14,12 +14,13 @@ const settings = SessionControlStateSchema.parse({ conversationId: 'chat', revis
   context: null, nativeSessionId: 'native', nativeProviderVersion: 'test', compaction: null, compactions: [],
   busyReason: null, capabilities: unavailableSessionControls('profile') })
 let controls: sessionHooks.ComposerSessionControls
+const clients: QueryClient[] = []
 beforeEach(() => {
   controls = { state: settings, query: { isError: false, refetch: vi.fn() },
     mutation: { isPending: false, isError: false }, change: vi.fn(), command: vi.fn(async () => true) } as unknown as sessionHooks.ComposerSessionControls
   vi.spyOn(sessionHooks, 'useSessionControls').mockImplementation(() => controls)
 })
-afterEach(() => { cleanup(); vi.restoreAllMocks(); useConversationDraftStore.getState().clearAllDrafts() })
+afterEach(() => { cleanup(); clients.splice(0).forEach(client => client.clear()); vi.restoreAllMocks(); useConversationDraftStore.getState().clearAllDrafts() })
 
 for (const action of ['Steer', 'Interrupt and send']) {
   it.each(['/plan', '/plan off', '/compact'])(`${action} routes %s only to native controls`, async content => {
@@ -105,7 +106,8 @@ it.each(['regular', 'plan'] as const)('preserves the original local %s mode in r
   state.messages[0]!.originalInput = { requestId: turn.requestId, content: 'Inspect files', attachments: [] }
   const onSendAgain = vi.fn()
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  const view = render(<QueryClientProvider client={client}><AgentChatTranscript state={state} name="Agent" commands={[{ status: 'success', submittedAt: 1,
+  clients.push(client)
+  render(<QueryClientProvider client={client}><AgentChatTranscript state={state} name="Agent" commands={[{ status: 'success', submittedAt: 1,
     result: undefined, error: undefined, command: { kind: 'send', clearDraft: true,
       input: { requestId: turn.requestId, expectedConversationId: state.conversation!.id,
         context: state.context, content: 'Inspect files', sessionMode: mode, intent: 'next_turn' } } }]}
@@ -113,8 +115,6 @@ it.each(['regular', 'plan'] as const)('preserves the original local %s mode in r
     onCancel={vi.fn()} onRespond={vi.fn()} onSendAgain={onSendAgain} /></QueryClientProvider>)
   fireEvent.click(screen.getByRole('button', { name: 'Send again as new message' }))
   expect(onSendAgain).toHaveBeenCalledExactlyOnceWith('Inspect files', [], mode)
-  view.unmount()
-  client.clear()
 })
 
 it.each(['/plan', '/plan off', '/compact'])('routes an explicitly resent %s to controls instead of message admission', async content => {

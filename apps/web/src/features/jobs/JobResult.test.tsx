@@ -48,7 +48,7 @@ it('retains results through a server failure and withdraws them through denial a
   await waitFor(() => expect(screen.queryByText('Process: build failed')).not.toBeInTheDocument())
   server.use(http.get(root, () => HttpResponse.error()))
   await act(async () => { await view.client.invalidateQueries({ queryKey, exact: true }) })
-  expect(screen.queryByText('Process: build failed')).not.toBeInTheDocument()
+  await waitFor(() => expect(screen.queryByText('Process: build failed')).not.toBeInTheDocument())
   responses()
   await act(async () => { await view.client.invalidateQueries({ queryKey, exact: true }) })
   expect(await screen.findByText('Process: build failed')).toBeVisible()

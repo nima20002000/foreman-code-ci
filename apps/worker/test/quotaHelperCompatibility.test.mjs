@@ -14,9 +14,9 @@ const targets = [
 ];
 
 const containers = await mkdtemp(join(persistentFixtureRoot, 'qhc-'));
-// Podman limits runroot to 50 characters; CI's persistent TMPDIR can be much longer.
-const runroot = await mkdtemp('/tmp/qhc-');
-const storage = ['--root', join(containers, 'storage'), '--runroot', runroot];
+// Podman's runtime path has a 50-character limit; keep image layers on persistent storage.
+const runtime = await mkdtemp('/tmp/qhc-');
+const storage = ['--root', join(containers, 'storage'), '--runroot', runtime];
 const podman = (args, timeout = 60_000) => spawnSync('podman', [...storage, ...args], {
   encoding: 'utf8', timeout,
 });
@@ -27,7 +27,7 @@ after(async () => {
   assert.ifError(cleanup.error);
   assert.equal(cleanup.status, 0, cleanup.stderr);
   await rm(containers, { recursive: true, force: true });
-  await rm(runroot, { recursive: true, force: true });
+  await rm(runtime, { recursive: true, force: true });
 });
 
 for (const name of targets) {

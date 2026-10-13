@@ -42,12 +42,10 @@ describe('workflow submenu route integration', () => {
 
     const submenu = await screen.findByRole('region', { name: 'Workspace workflows' }, { timeout: 5000 })
     expect(within(submenu).getByRole('button', { name: 'New workflow' })).toBeVisible()
-    const workflow = await within(submenu).findByRole('button', { name: 'Research to review' })
+    const workflow = await within(submenu).findByRole('button', { name: /^Research to review/ })
     await userEvent.click(workflow)
-    await waitFor(() => {
-      expect(router.state.location.pathname).toBe('/workspaces/workspace-1')
-      expect(router.state.location.search.workflowId).toBe('workflow-content-pipeline')
-    })
+    await waitFor(() => expect(router.state.location.search.workflowId).toBe('workflow-content-pipeline'))
+    expect(router.state.location.pathname).toBe('/workspaces/workspace-1')
   })
 
   it('keeps New workflow visible when the workspace has no workflows', async () => {
@@ -62,7 +60,7 @@ describe('workflow submenu route integration', () => {
     renderRoute('/workspaces/workspace-1?workflowId=workflow-content-pipeline')
 
     const submenu = await screen.findByRole('region', { name: 'Workspace workflows' })
-    const workflow = await within(submenu).findByRole('button', { name: 'Research to review' })
+    const workflow = await within(submenu).findByRole('button', { name: /^Research to review/ })
     expect(workflow).toHaveAttribute('aria-current', 'page')
   })
 })

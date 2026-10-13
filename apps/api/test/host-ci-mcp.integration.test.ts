@@ -1130,7 +1130,6 @@ it.each(['github', 'circleci'] as const)('requeues an unstarted %s ticket and ru
     expect((CiGetOutputSchema.parse(await f.value(reader, 'ci_get', { ticketId: started.ticketId }))).run)
       .toMatchObject({ state: 'starting', step: 'dispatch', computer: { hostRef: { provider } } })
     exhausted = true
-    await f.ci.dispatch()
     const queued = CiGetOutputSchema.parse(await f.value(reader, 'ci_get', { ticketId: started.ticketId }))
     expect(queued.run).toMatchObject({ state: 'queued', computer: null, step: null, startedAt: null,
       finishedAt: null, unstartedProviders: [provider], message: expect.stringContaining('dispatch retries exhausted') })
@@ -1143,7 +1142,6 @@ it.each(['github', 'circleci'] as const)('requeues an unstarted %s ticket and ru
     expect(running.run).toMatchObject({ id: started.ticketId, state: 'running', computer: { label: 'laptop' },
       message: null, unstartedProviders: [provider] })
     f.finish(started.ticketId, 0, 'Completed on another computer.\n')
-    await f.ci.dispatch()
     const finished = CiGetOutputSchema.parse(await f.value(reader, 'ci_get', { ticketId: started.ticketId }))
     expect(finished.run).toMatchObject({ state: 'passed', exitCode: 0, message: null })
     expect((await f.pool.query('select record from ci_runs where id=$1', [started.ticketId])).rows[0].record)
