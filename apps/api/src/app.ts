@@ -47,6 +47,7 @@ export interface BuildAppOptions {
   workerArtifacts?: GraphqlMcpServices['workerArtifacts']
   mcpDetection?: { pool: pg.Pool; service: McpDetectionService }
   logger?: boolean | FastifyBaseLogger
+  closeInfrastructure?: () => Promise<void>
 }
 
 type DependencyStatus = 'ok' | 'unavailable'
@@ -121,6 +122,11 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     // Fastify's per-request lines are replaced by one line whose level says whether it matters.
     logController: new LogController({ disableRequestLogging: true }),
   })
+  const closeInfrastructure = options.closeInfrastructure
+  if (closeInfrastructure) {
+    // Fastify closes hooks in reverse order; infrastructure outlives every runtime hook.
+    app.addHook('onClose', async () => { await closeInfrastructure() })
+  }
   // Timed delivery is an API lifecycle, never a browser or HTTP-request timer.
   app.addHook('onReady', async () => {
     options.operator?.services.runs?.startScheduleDispatcher?.((error, context) => {
@@ -177,7 +183,7 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
   }
   if (options.operator?.services.agentChat) registerAgentChatRoutes(app, options.operator.services.agentChat)
   if (options.operator && options.product?.interactions) registerUserInteractions(app, options.product.interactions)
-  if (options.product) registerProductRoutes(app, options.product, Boolean(options.operator), options.operator?.services)
+  if (options.product) registerProductRoutes(app, options.product, options.operator?.services)
   const bugReports = options.appMcp?.bugReports ?? options.operator?.services.bugReports
   const commands = options.appMcp?.commands ?? options.operator?.services.commands
   if (options.operator || options.appMcp) registerGraphqlMcp(app, {

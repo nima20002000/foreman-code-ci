@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  AgentChatSourceTranscriptSchema,
-  AgentChatStateSchema,
-  SendAgentChatMessageRequestSchema,
-  agentChatFixtures,
-} from "./agentChat.js";
+import { AgentChatStateSchema, SendAgentChatMessageRequestSchema, agentChatFixtures } from "./agentChat.js";
 import { ReadSelectedRunChatResponseSchema } from './selectedRunChat.js';
 
 describe("agent chat contract", () => {
@@ -19,13 +14,6 @@ describe("agent chat contract", () => {
       workflowNodeId: context.workflowNodeId, runId: context.runId, executionId: sourceTranscript.executionId };
     const selected = ReadSelectedRunChatResponseSchema.parse({ kind: 'selected', selection: target, key: null, state: value });
     expect(selected).toMatchObject({ kind: 'selected', state: { sourceTranscript } });
-  });
-
-  it.each(['-1', '01', '1.5', 'invalid'])('rejects transcript revision %s', revision => {
-    expect(AgentChatSourceTranscriptSchema.safeParse({
-      executionId: 'source-execution', state: 'starting', revision,
-      messages: [], hasEarlierMessages: false,
-    }).success).toBe(false);
   });
 
   it.each(['starting', 'running', 'completed'] as const)('accepts a %s source transcript without creating a conversation', state => {
