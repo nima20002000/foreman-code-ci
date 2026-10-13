@@ -13,6 +13,7 @@ import { HostCiService } from './modules/ci-host/service.js'
 import { GitCiCommits } from './modules/ci-host/commits.js'
 import { RunCiAuthority } from './modules/jobs/ciAuthority.js'
 import { ProductionHostCiEndpoint } from './modules/ci-host/endpoint.js'
+import { CiPrewarmService } from './modules/ci-host/prewarm.js'
 import { HostCiRunner } from './modules/ci-host/runner.js'
 import { cloudCis, workspaceMirrors } from './modules/ci-host/cloud.js'
 import { agentSnapshots, type ReadAgentFiles } from './modules/ci-host/agentSnapshots.js'
@@ -62,7 +63,7 @@ import { readLiveManagementPrincipal } from './modules/access/liveManagementPrin
 import { readSourceCurrentNativeSession } from './modules/sources/activeNativeSession.js'
 import type { SourceActiveNativeSessionReader, SourceNativeSessionCaptureReader } from './modules/sources/executionHosts.js'
 import { EXECUTION_AUTHORITY_EXTENSION } from '@foreman-code/contracts/execution-authority'
-import { WORKER_MCP_EXTENSION, encodeWorkerMcpResult } from '@foreman-code/contracts/worker-mcp-relay'
+import { WORKER_MCP_EXTENSION } from '@foreman-code/contracts/worker-mcp-relay'
 import { AgentPlacementProducer } from './modules/placement/agentProducer.js'
 import { RunPlacementReadService } from './modules/placement/readService.js'
 import { NodePlacementChoicesService } from './modules/placement/choicesService.js'
@@ -411,17 +412,17 @@ export function buildProductionApp(
         return executionAuthority.handle(payload, context)
       } },
       { namespace: WORKER_MCP_EXTENSION.namespace, version: WORKER_MCP_EXTENSION.version, role: 'server',
-        maxJsonBytes: WORKER_MCP_EXTENSION.maxJsonBytes, maxBinaryBytes: WORKER_MCP_EXTENSION.maxBinaryBytes, async handle(payload, context) {
-          if (context.bytes !== undefined) throw new DomainError('WORKER_MCP_SCOPE_CONFLICT', 'MCP requests cannot carry binary bytes.', 403)
+        maxJsonBytes: WORKER_MCP_EXTENSION.maxJsonBytes, maxBinaryBytes: 0, async handle(payload, context) {
           if (payload && typeof payload === 'object' && 'operation' in payload
             && typeof payload.operation === 'string' && payload.operation.startsWith('conversation-mcp.')) {
-            return encodeWorkerMcpResult(await workerChats.mcp.handle(payload, context.binding, context.signal))
+            if (context.bytes !== undefined) throw new DomainError('WORKER_CONVERSATION_MCP_DENIED', 'Chat MCP cannot carry transfer bytes.', 403)
+            return { payload: await workerChats.mcp.handle(payload, context.binding, context.signal) }
           }
           if (!mainWorkerMcp) throw new DomainError('WORKER_MCP_UNAVAILABLE', 'The original Main worker MCP authority has not initialized.', 503)
           context.signal.throwIfAborted()
           const result = await mainWorkerMcp.handle(payload, context.binding, context.signal)
           context.signal.throwIfAborted()
-          return encodeWorkerMcpResult(result)
+          return { payload: result }
         } },
       { ...SOURCE_OPERATION_EXTENSION, role: 'duplex', async handle(payload, context) {
         const handler = jobRuntime?.sourceExtension.handle
@@ -2069,11 +2070,15 @@ export function buildProductionApp(
         return { commit: reply.commit, bundle: reply.bundleBase64 === null ? null : Buffer.from(reply.bundleBase64, 'base64') }
       }
       // CI runs directly on build computers (Main included) from GitHub, like self-hosted runners.
-      hostCi = new HostCiService(database.pool, commands, new RunCiAuthority(database.pool), new GitCiCommits(),
-        new ProductionHostCiEndpoint(database.pool, machine.installationId, () => deviceRuntime.endpointForDomains(), new HostCiRunner(),
-          clouds),
+      const ciCommits = new GitCiCommits()
+      const ciEndpoint = new ProductionHostCiEndpoint(database.pool, machine.installationId,
+        () => deviceRuntime.endpointForDomains(), new HostCiRunner(), clouds)
+      hostCi = new HostCiService(database.pool, commands, new RunCiAuthority(database.pool), ciCommits, ciEndpoint,
         agentSnapshots(database.pool, readAgentFiles))
       hostCi.start()
+      const prewarm = new CiPrewarmService(database.pool, ciCommits, ciEndpoint)
+      prewarm.start()
+      app.addHook('onClose', async () => { await prewarm.close() })
       app.addHook('onClose', async () => { await hostCi?.close() })
       runtimeServices.ci = hostCi
       runtimeServices.jobRuntimeProfiles = jobRuntime.profiles
