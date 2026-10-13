@@ -4,6 +4,7 @@ import { runtimeTimingPoint, timeRuntimeOperation, withRuntimeTimingContext } fr
 import { inspectNativeResponse } from '../harnesses/responseAvailability.js'
 import type { InteractionActivityEvidence } from './activityProjection.js'
 import type { ReviewNativeCapture, ReviewNativeCapturePort, ReviewOriginalNativeSource } from './reviewNativeCapture.js'
+import { randomUUID } from 'node:crypto'
 import { setTimeout as delay } from 'node:timers/promises'
 import { isDeepStrictEqual } from 'node:util'
 
@@ -1498,6 +1499,41 @@ export class ApprovalExecutionCoordinator {
     return task
   }
 
+  async settleRetainedReviewers(owner: RunOwnership): Promise<void> {
+    owner.assertOwned()
+    this.adoptRunOwner(owner)
+    for (const owned of this.ownedSessions.values()) {
+      if (owned.execution.runId !== owner.runId || !owned.session || !owned.manager.retainsReviewerSession) continue
+      const session = owned.session
+      const current = await this.runs.getExecution(owned.execution.id, owner)
+      owner.assertOwned()
+      if (!current || current.state !== 'completed' || current.result?.outcome !== 'succeeded') {
+        throw new DomainError('REPEAT_CLEANUP_PENDING', 'The reviewer workflow has not completed.', 409)
+      }
+      assertSameRepeatExecution(owned.execution, current)
+      owned.execution = current
+      if (owned.manager.isActive(session)) throw new DomainError('REPEAT_CLEANUP_PENDING',
+        'The reviewer still owns a native writer operation.', 409)
+      const lane = await this.interactions.coordination.getLane(session.harness, session.nativeSessionId)
+      if (!lane) throw new DomainError('REPEAT_CLEANUP_PENDING',
+        'The retained reviewer writer lane is unavailable.', 409)
+      await owned.manager.withLane(session, `close-${randomUUID()}`, undefined, async (_manager, lease) => {
+        const check = async () => {
+          owner.assertOwned()
+          await lease.guard.check()
+          if (await this.interactions.coordination.hasUnsettledReview(current.id)) {
+            throw new DomainError('REPEAT_CLEANUP_PENDING', 'The reviewer still has unsettled native work.', 409)
+          }
+        }
+        await check()
+        await this.closeRepeatLifetime(owned, () => owner.assertOwned())
+        lease.observedStatus = 'idle'
+        await lease.guard.check()
+      })
+    }
+    owner.assertOwned()
+  }
+
   async finishRun(runId: string): Promise<void> {
     const run = await this.runs.get(runId)
     if (run?.executionState !== 'completed') throw new DomainError('GRAPH_TERMINAL_CONFLICT', 'Only a terminal Run may finish native cleanup.', 409)
@@ -2597,11 +2633,9 @@ export class ApprovalExecutionCoordinator {
         componentLogger('harness').warn({ executionId: execution.id, code, err: error },
           'Workflow native execution failed before cleanup')
         let failure: ExecutionResult | undefined
-        const failedRestartAttachment = restartRecovery && ownedSession?.openingFailed
         if (activeTimeout) {
           failure = { outcome: 'failed', error: { code: error.code, message: error.message, retryable: false } }
-        } else if (!signal.aborted && !failedRestartAttachment
-          && error instanceof HarnessExecutionError && error.result.error) {
+        } else if (!signal.aborted && error instanceof HarnessExecutionError && error.result.error) {
           // A closed transport is a failed observation, not a retryable native terminal.
           failure = { outcome: 'failed', error: { ...error.result.error, retryable: false } }
         }
