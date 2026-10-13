@@ -96,3 +96,59 @@ it('keeps an unpartitioned integration suite on a build computer', async () => {
   expect(f.started).toEqual([])
   expect(records[0]?.state).toBe('queued')
 })
+
+it.each(['github', 'circleci'] as const)('assigns systemd slices to %s when its executor declares support', async provider => {
+  const records = queuedRuns(2)
+  const capable = { ...cloud, hostRef: { ...cloud.hostRef, provider },
+    userSystemd: { supported: true, reason: null } }
+  const f = fleet(records, [capable])
+  await f.service.dispatch()
+  expect(f.started).toHaveLength(1)
+  expect(f.started[0]?.request).toMatchObject({ partition: { index: 0, hostIndexes: [0] } })
+  expect(records[0]).toMatchObject({ state: 'running', computer: { hostRef: { kind: 'cloud', provider } } })
+})
+
+it('runs an unpartitioned systemd selection on a capable cloud slot', async () => {
+  const records = queuedRuns(1)
+  records[0] = CiRunRecordSchema.parse({ ...records[0], scope: 'affected',
+    files: ['apps/api/test/native-service-restart.integration.test.ts'] })
+  const f = fleet(records, [{ ...cloud, userSystemd: { supported: true, reason: null } }])
+  await f.service.dispatch()
+  expect(f.started).toHaveLength(1)
+  expect(records[0]?.state).toBe('running')
+})
+
+it('plans systemd files on capable cloud capacity and keeps a build computer available for other slices', async () => {
+  const records = queuedRuns(2)
+  const f = fleet(records, [host, { ...cloud, userSystemd: { supported: true, reason: null } }])
+  await f.service.dispatch()
+  expect(f.started.find(item => item.computer.key === cloud.key)?.request)
+    .toMatchObject({ partition: { index: 0, hostIndexes: [0] } })
+  expect(f.started.find(item => item.computer.key === host.key)?.request)
+    .toMatchObject({ partition: { index: 1, hostIndexes: [0] } })
+})
+
+it.each([host, cloud])('dispatches high priority then oldest tickets on $label', async computer => {
+  const records = queuedRuns(4).map((record, index) => CiRunRecordSchema.parse({ ...record,
+    suite: 'install', partition: null, priority: index > 1 ? 'high' : 'normal',
+    queuedAt: new Date(Date.parse(record.queuedAt) + index * 1000).toISOString(),
+  }))
+  const f = fleet(records, [computer])
+  const expected = [records[2]!.id, records[3]!.id, records[0]!.id, records[1]!.id]
+  for (const id of expected) {
+    await f.service.dispatch()
+    expect(f.started.at(-1)?.request).toMatchObject({ runId: id })
+    const running = records.find(record => record.id === id)!
+    running.state = 'passed'
+  }
+  expect(f.started.map(item => item.request.operation === 'start' ? item.request.runId : null)).toEqual(expected)
+})
+
+it('dispatches a duration-planned single ordinary full slice to cloud', async () => {
+  const records = queuedRuns(1).map(run => ({ ...run, expectedDurationMs: 210_000, requiresBuildComputer: false }))
+  const f = fleet(records, [cloud])
+  await f.service.dispatch()
+  expect(f.started).toHaveLength(1)
+  expect(f.started[0]!.computer.key).toBe(cloud.key)
+  expect(records[0]!.state).toBe('running')
+})
