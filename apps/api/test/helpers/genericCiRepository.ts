@@ -1,5 +1,5 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { basename, dirname, join } from 'node:path'
+import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { GitCiCommits } from '../../src/modules/ci-host/commits.js'
 import { CloudCi } from '../../src/modules/ci-host/cloud.js'
@@ -8,9 +8,6 @@ import { HostCiRunner, systemHostCiPorts, type HostCiPorts } from '../../src/mod
 import type { HostCiComputer, HostCiEndpoint } from '../../src/modules/ci-host/service.js'
 import type { GitWorktreePorts } from '../../src/modules/sources/gitWorktree.js'
 import { gitFixtureEnvironment } from './gitFixture.js'
-import { deferred, type Deferred } from './deferred.js'
-
-type CommandResult = Awaited<ReturnType<HostCiPorts['run']>>
 
 /** Real git and package scripts, with local origins and a process standing in for the systemd service. */
 export async function genericCiRepository(options: { lockfile?: string; integration?: boolean; cloud?: boolean
@@ -35,7 +32,6 @@ export async function genericCiRepository(options: { lockfile?: string; integrat
     }),
   }
   const processes = new Set<Promise<unknown>>()
-  const completions = new Map<string, Deferred<CommandResult>>()
   try {
     await mkdir(origin)
     await mkdir(mirror)
@@ -85,14 +81,9 @@ process.exit(result.status ?? 1)
       if (file === 'systemd-run') {
         await options.beforeLaunch?.()
         const cwd = args.find(value => value.startsWith('--working-directory='))!.slice('--working-directory='.length)
-        const script = args.at(-1)!
-        const runId = basename(dirname(script))
-        const completion = system.run('bash', [script], { cwd, env: environment })
+        const completion = system.run('bash', [args.at(-1)!], { cwd, env: environment })
         processes.add(completion)
-        void completion.then(result => {
-          completions.get(runId)!.resolve(result)
-          processes.delete(completion)
-        })
+        void completion.finally(() => processes.delete(completion))
         return { code: 0, stdout: '', stderr: '' }
       }
       if (file === 'systemctl') return { code: 0, stdout: processes.size ? 'active' : 'inactive', stderr: '' }
@@ -107,22 +98,12 @@ process.exit(result.status ?? 1)
     const endpoint: HostCiEndpoint = {
       computers: async () => options.cloud ? [...cloud.computers().slice(0, 1), computer] : [computer],
       request: async (target, request) => {
-        if (target.hostRef.kind !== 'cloud') {
-          if (request.operation === 'start' && !completions.has(request.runId)) {
-            completions.set(request.runId, deferred<CommandResult>())
-          }
-          return runner.handle(request)
-        }
+        if (target.hostRef.kind !== 'cloud') return runner.handle(request)
         if (request.operation === 'start') cloudAttempts.push(request.runId)
         return cloud.handle(request)
       },
     }
     return { commits: new GitCiCommits(git), endpoint, cloudAttempts, commit: head.stdout.trim(),
-      waitForCompletion(runId: string) {
-        const completion = completions.get(runId)
-        if (!completion) throw new Error('The fixture has not started this CI run.')
-        return completion.promise
-      },
       async close() {
         await runner.beginDrain()
         await Promise.all(processes)
