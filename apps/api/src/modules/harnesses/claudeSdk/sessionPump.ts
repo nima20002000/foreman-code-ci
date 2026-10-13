@@ -132,28 +132,24 @@ export async function pump(ctx: ClaudeManagerContext, runtime: Runtime): Promise
         if (active === matched) delete runtime.active
       }
     }
-    closeOutput(runtime, new Error('Claude output closed before compaction completed'),
-      new Error('Claude stream ended without an exact result; submission remains uncertain'))
+    runtime.closed = true
+    delete runtime.httpCredentialAcknowledgement
     if (!runtime.session && !runtime.replacingForResume) runtime.rejectInit(new Error('Claude stream ended before native initialization'))
+    runtime.compaction?.fail(new Error('Claude output closed before compaction completed'))
+    runtime.active?.events.close(new Error('Claude stream ended without an exact result; submission remains uncertain'))
   } catch (error) {
     runtime.failure = error
-    closeOutput(runtime, error)
+    runtime.closed = true
+    delete runtime.httpCredentialAcknowledgement
     await record(ctx, runtime, 'claude.session.failed', {
       nativeSessionId: runtime.session?.nativeSessionId,
       error: { code: 'CLAUDE_NATIVE_STREAM_ERROR',
         message: error instanceof Error ? error.message : 'The native Claude query failed.' },
     })
     runtime.rejectInit(error)
+    runtime.active?.events.close(error)
     await runtime.sdk.close()
   }
-}
-
-function closeOutput(runtime: Runtime, error: unknown, turnError = error): void {
-  runtime.closed = true
-  delete runtime.httpCredentialAcknowledgement
-  // Output failure cannot establish whether an already offered command was delivered.
-  runtime.compaction?.fail(error)
-  runtime.active?.events.close(turnError)
 }
 
 type Frame = Record<string, unknown>
