@@ -1,5 +1,4 @@
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
-import { createHash } from 'node:crypto'
 import { homedir, hostname, userInfo } from 'node:os'
 import { join } from 'node:path'
 import type pg from 'pg'
@@ -252,12 +251,8 @@ export class CloudCi {
         try {
           if (await this.provider.find(run)) run = await this.save({ ...run, state: 'running', workflowStarted: true })
         } catch (error) {
-          if (error instanceof DomainError && error.code === 'CI_CLOUD_PIPELINE_FAILED') {
-            run = await this.failPipeline(run, { message: error.message, configError: error.details?.configError === true })
-          } else {
-            // The trigger was accepted, so a lookup failure must not dispatch the ticket to another computer.
-            log.warn({ err: error, runId: run.runId }, 'Cloud CI workflow lookup failed; dispatch remains pending')
-          }
+          // The trigger was accepted, so a lookup failure must not dispatch the ticket to another computer.
+          log.warn({ err: error, runId: run.runId }, 'Cloud CI workflow lookup failed; dispatch remains pending')
         }
       }
       return this.view(run, 0)
@@ -270,31 +265,9 @@ export class CloudCi {
   private async trigger(run: CloudRun, input: CloudDispatchInput) {
     const pending = await this.save({ ...run, state: 'starting', providerRunId: null,
       dispatch: { input, attempts: (run.dispatch?.attempts ?? 0) + 1, at: this.ports.now().toISOString() } })
-    if (this.provider.id === 'circleci') {
-      const failed = await readCloudRun(this.configErrorPath(pending)).catch(error => {
-        if (error instanceof DomainError && error.code === 'CI_RUN_UNKNOWN') return null
-        throw error
-      })
-      if (failed) return this.failPipeline(pending, { message: failed.message! })
-    }
     const providerRunId = await this.provider.dispatch(input)
     return this.save({ ...pending, providerRunId, dispatchHistory: [...pending.dispatchHistory ?? [],
       { at: pending.dispatch!.at, providerRunId }] })
-  }
-
-  private configErrorPath(run: CloudRun) {
-    const key = createHash('sha256').update(canonicalJson({ mirror: run.mirror, commit: run.commit })).digest('hex')
-    return join(this.root, 'config-errors', `${key}.json`)
-  }
-
-  private async failPipeline(run: CloudRun, failure: { message: string; configError?: boolean }): Promise<CloudRun> {
-    const failed: CloudRun = { ...run, state: 'failed', exitCode: 1, finishedAt: this.ports.now().toISOString(),
-      message: sanitizeCiText(failure.message), collection: { log: true, artifacts: true } }
-    delete failed.reconciliation
-    // A rejected pipeline has no job logs or artifacts; keep the provider error as its final log.
-    await writeFile(this.path(run.runId, 'log'), `${failed.message}\n`, { flag: 'a', mode: 0o600 })
-    if (failure.configError) await saveCloudRun(this.configErrorPath(failed), failed)
-    return this.save(failed)
   }
 
   private async recoverUnstarted(run: CloudRun) {
@@ -579,9 +552,6 @@ export class CloudCi {
       }
       return next
     } catch (error) {
-      if (error instanceof DomainError && error.code === 'CI_CLOUD_PIPELINE_FAILED') {
-        return this.failPipeline(run, { message: error.message, configError: error.details?.configError === true })
-      }
       if (error instanceof DomainError && error.code === 'CI_CLOUD_RUN_NOT_FOUND') {
         return this.reconcileLookupFailure(run, error)
       }
