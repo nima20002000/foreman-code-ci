@@ -15,6 +15,7 @@ import { PostgresAgentChatRepository } from '../src/modules/conversations/agentC
 import { PostgresOperatorConversationRepository } from '../src/modules/conversations/operatorChatRepository.js'
 import { createWorkflowNativeCaptureChannel } from '../src/modules/interactions/workflowNativeCapture.js'
 import { PostgresRunRepository } from '../src/modules/runs/postgres.js'
+import { repeatTerminalResolution } from '../src/modules/runs/repeatNode.js'
 import { createWorkflowRepositoryServices } from '../src/modules/runs/workflowRepositoryServices.js'
 import { WorkspaceLocationService } from '../src/modules/workspaces/location.js'
 import { PostgresWorkflowRepository } from '../src/modules/workflows/postgres.js'
@@ -39,7 +40,8 @@ describe('Persisted execution activity through HTTP and authenticated MCP', { ti
   afterAll(async () => { await database?.close() })
 
   async function setup(harness?: ClaudeHarnessConfiguration) {
-    const graph = await graphFixture(database, { form: 'single', ...(harness ? { harness } : {}) })
+    const graph = await graphFixture(database, { form: 'single', intervalEverySeconds: 10,
+      ...(harness ? { harness } : {}) })
     const node = agentWorkflowNode(graph.version.definition.nodes[0])
     const workflows = new PostgresWorkflowRepository(database.pool)
     const locations = new WorkspaceLocationService(database.pool, graph.commands)
@@ -146,6 +148,53 @@ describe('Persisted execution activity through HTTP and authenticated MCP', { ti
         [candidate.id, JSON.stringify(terminal)])
     }
     return { executionId: candidate.id, transfers, managers, append, state, http, mcpPage,
+      seedNewerExecutions: async () => {
+        const stored = (await database.pool.query<{ created_at: Date }>(
+          'select created_at from harness_executions where id=$1', [candidate.id])).rows[0]!
+        // Retained terminal history is synthetic; admission still creates every input binding and receipt.
+        const original = (await runs.getExecution(candidate.id))!
+        const completed = HarnessExecutionSchema.parse({ ...original, state: 'completed',
+          finishedAt: at, result: { outcome: 'canceled' } })
+        const resolution = repeatTerminalResolution(graph.version, graph.scope,
+          { nodeId: node.id, occurrence: null }, completed)
+        await database.pool.query('update harness_executions set record=$2::jsonb where id=$1',
+          [candidate.id, JSON.stringify(completed)])
+        await database.pool.query(`insert into run_repeat_resolutions
+          (run_id,occurrence_key,workflow_node_id,execution_id,record) values($1,'',$2,$3,$4::jsonb)`,
+        [graph.run.id, node.id, candidate.id, JSON.stringify(resolution)])
+        await ownedGraph(database, graph, async owner => {
+          const repository = await runs.repeat(owner)
+          let settledId: string | null = null
+          for (let index = 1; index <= 21; index++) {
+            const createdAt = new Date(stored.created_at.getTime() + index * 1000).toISOString()
+            const admitted = await repository.admitTick(node.id,
+              () => HarnessExecutionSchema.parse({ ...candidate, id: randomUUID(), createdAt }), settledId)
+            if (admitted.kind !== 'admitted') throw new Error('Expected a retained interval check to be admitted')
+            const execution = HarnessExecutionSchema.parse({ ...admitted.execution, state: 'completed',
+              finishedAt: at, result: { outcome: 'canceled' } })
+            await database.pool.query('update harness_executions set record=$2::jsonb,created_at=$3 where id=$1',
+              [execution.id, JSON.stringify(execution), createdAt])
+            settledId = execution.id
+          }
+        })
+      },
+      foreignScope: async (field: 'workspaceId' | 'workflowId' | 'workflowNodeId' | 'agentId' | 'runId') => {
+        const workspaceId = field === 'workspaceId' ? 'foreign-workspace' : graph.scope.workspaceId
+        const foreignQuery = { ...query, ...(field === 'workspaceId' ? {} : { [field]: 'foreign-identity' }) }
+        const response = await app.inject({ method: 'GET',
+          url: `/api/workspaces/${workspaceId}/agent-chat/execution-activity?${new URLSearchParams({
+            ...foreignQuery, executionId: candidate.id, itemId: 'old-answer',
+          })}`, headers: { authorization: `Bearer ${reader.token}` } })
+        if (response.statusCode === 200) {
+          expect(AgentChatExecutionActivityPageSchema.parse(response.json()).items).toEqual([])
+        } else expect(response.statusCode).toBeGreaterThanOrEqual(400)
+        const result = await mcp.callTool({ name: 'agent_chat_read', arguments: {
+          workspaceId, query: foreignQuery, executionActivity: { executionId: candidate.id, itemId: 'old-answer' },
+        } })
+        if (!result.isError) {
+          expect(ReadAgentChatResponseSchema.parse(decodeMcpToolResult(result)).executionActivity?.items).toEqual([])
+        }
+      },
       denied: async () => {
         expect((await httpResponse({}, denied.token)).statusCode).toBe(403)
         await expectMcpAccessDenied(deniedMcp.callTool({ name: 'agent_chat_read', arguments: mcpArguments() }))
@@ -158,6 +207,46 @@ describe('Persisted execution activity through HTTP and authenticated MCP', { ti
       },
     }
   }
+
+  it('reads the MCP overview after retained history exceeds twenty executions', async () => {
+    const fixture = await setup()
+    try {
+      await fixture.seedNewerExecutions()
+      const overview = await fixture.http()
+      expect(overview.executions).toHaveLength(20)
+      expect(overview.hasEarlierExecutions).toBe(true)
+      expect(await fixture.mcpPage()).toEqual(overview)
+      await fixture.denied()
+      expect(fixture.managers).not.toHaveBeenCalled()
+    } finally { await fixture.close() }
+  })
+
+  it('reads an older execution and its message beyond the bounded overview through HTTP and MCP', async () => {
+    const fixture = await setup()
+    try {
+      await fixture.append([{ type: 'item.completed', payload: {
+        item: { id: 'old-answer', type: 'agentMessage', text: 'Persisted oldest answer' },
+      } }])
+      await fixture.seedNewerExecutions()
+      const overview = await fixture.http()
+      expect(overview.executions).toHaveLength(20)
+      expect(overview.executions.map(item => item.tickIndex)).toEqual(
+        Array.from({ length: 20 }, (_, index) => index + 2),
+      )
+      expect(overview.executions.some(item => item.executionId === fixture.executionId)).toBe(false)
+      expect(overview.hasEarlierExecutions).toBe(true)
+      for (const request of [{ executionId: fixture.executionId }, { executionId: fixture.executionId, itemId: 'old-answer' }]) {
+        const page = await fixture.http(request)
+        expect(page.items).toMatchObject([{ executionId: fixture.executionId, id: 'old-answer',
+          entry: { kind: 'message', message: { content: 'Persisted oldest answer' } } }])
+        expect(await fixture.mcpPage(request)).toEqual(page)
+      }
+      for (const field of ['workspaceId', 'workflowId', 'workflowNodeId', 'agentId', 'runId'] as const) {
+        await fixture.foreignScope(field)
+      }
+      await fixture.denied()
+    } finally { await fixture.close() }
+  })
 
   it.each(['failed', 'canceled'] as const)('delivers every unfinished tool after %s without new native events', async state => {
     const fixture = await setup()
