@@ -1,6 +1,7 @@
 import Fastify from 'fastify'
 import type pg from 'pg'
 import { describe, expect, it, vi } from 'vitest'
+import type { HarnessExecution } from '@foreman-code/contracts'
 import { agentChatFixtures, type SendAgentChatMessageRequest } from '@foreman-code/contracts/agent-chat'
 import type { ManagementAction, ManagementPrincipal, ManagementScope, OperatorToolName } from '@foreman-code/contracts/management'
 import type { McpServer } from '@modelcontextprotocol/server'
@@ -63,10 +64,14 @@ function fixture(runId?: string) {
   const version = { definition: { nodes: [{ id: context.workflowNodeId, agentId: context.agentId }] } }
   const workflows = { getCurrentSavedVersion: async () => version, getSavedVersion: async () => version,
     getAgentConfiguration: async () => ({ id: 'config', agentId: context.agentId, harness: { harness: 'codex' } }) } as unknown as ConstructorParameters<typeof AgentChatService>[3]
+  const execution: HarnessExecution | undefined = runId ? {
+    id: 'execution', runId, workflowNodeId: context.workflowNodeId, agentId: context.agentId,
+    agentConfigurationVersionId: row.agent_configuration_version_id, attempt: 1, input: {}, state: 'completed',
+    nativeSessionId: 'source', workingDirectory: '/tmp/chat-access', result: { outcome: 'succeeded' },
+    createdAt: base.conversation.createdAt, finishedAt: base.conversation.updatedAt,
+  } : undefined
   const runs = { getForWorkspace: async () => ({ workflowId: context.workflowId, workflowVersionId: 'version', executionState: 'completed', id: runId }),
-    getExecution: async (id: string) => id === 'execution' ? { id, runId, workflowNodeId: context.workflowNodeId,
-      agentId: context.agentId, agentConfigurationVersionId: 'config', attempt: 1, input: {}, state: 'completed',
-      nativeSessionId: 'source', workingDirectory: '/tmp/chat-access', createdAt: base.conversation.createdAt } : undefined,
+    getExecution: async (id: string) => execution?.id === id ? execution : undefined,
     async *executionPages() { yield [] } } as unknown as ConstructorParameters<typeof AgentChatService>[4]
   const native = vi.fn()
   const service = new AgentChatService({ query: poolQuery } as unknown as pg.Pool, repository as unknown as PostgresAgentChatRepository,

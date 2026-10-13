@@ -177,8 +177,8 @@ async function setup(options: { ephemeral?: boolean; stored?: boolean; origin?: 
     agentConfigurationVersionId: configuration.id, attempt: fixture.identities[0]!.attempt,
     state: 'completed', result: { outcome: 'succeeded' }, nativeSessionId: origin.sourceNativeSessionId,
     workingDirectory: '/fixture-read-only', createdAt: fixture.createdAt, finishedAt: fixture.createdAt,
-    input: { executionSemanticsVersion: 3, occurrence: { identity: { scope: fixture.scope,
-      blockId: 'repair', occurrenceId: 'occ-1', occurrenceIndex: 1 } } },
+    input: { executionSemanticsVersion: 3, ...(options.repeat ? { occurrence: { identity: { scope: fixture.scope,
+      blockId: 'repair', occurrenceId: 'occ-1', occurrenceIndex: 1 } } } : {}) },
   }] : []
   const runs = { getForWorkspace: async () => ({ ...fixture.run, executionState: 'completed' as const, outcome: 'succeeded' as const }),
     getExecution: async (id: string) => source.find(item => item.id === id),
