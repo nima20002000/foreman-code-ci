@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it, vi } from 'vitest'
-import { CodexStdioTransport } from '../src/modules/harnesses/codexStdioTransport.js'
+import { CodexStdioTransport, isObject } from '../src/modules/harnesses/codexStdioTransport.js'
 import { postgresEnabled } from './helpers/wave25Agent3.js'
 import { calls, until } from './fixtures/codex-test-helpers.js'
 import { useCodexChatDelivery } from './codex-chat-delivery.helpers.js'
@@ -22,8 +22,7 @@ describe.skipIf(!postgresEnabled)('Codex chat delivery through authenticated MCP
             // Process exit confirms the late rejection was received and its transport closed.
             await until(async () => {
               const records = await calls(native.directory)
-              const owner = records.find(entry => entry.wire && typeof entry.wire === 'object'
-                && !Array.isArray(entry.wire) && entry.wire.method === 'thread/start')
+              const owner = records.find(entry => isObject(entry.wire) && entry.wire.method === 'thread/start')
               return owner && records.some(entry => entry.exited === owner.processPid) || undefined
             })
           }
@@ -39,6 +38,7 @@ describe.skipIf(!postgresEnabled)('Codex chat delivery through authenticated MCP
         return state.turns.find(turn => turn.requestId === 'late-rejected' && turn.delivery === 'failed')
       })
       assert.equal(failed.error?.code, 'CODEX_APP_SERVER_REQUEST_FAILED')
+      assert.equal((await readAgent()).conversation?.id, id)
       assert.equal((await readAgent()).availability.canSend, true)
       const denied = await fixture.denied.callTool({ name: 'agent_chat_read', arguments: {
         workspaceId: fixture.workspaceId, query: fixture.context,

@@ -47,10 +47,12 @@ describe.skipIf(!postgresEnabled)('current durable approval orchestration', () =
       const app = new PostgresAppInteractionService(f.pool, f.repository, f.commands, f.service)
       const retainedPrincipal = await f.access.authenticate(token, 'worker')
       expect(retainedPrincipal).toEqual(f.principal)
+      const retainedSession = await f.repository.coordination.workflowSession(f.reviewer.id)
+      expect(retainedSession).toEqual({ ...native, reviewerActive: true })
       await expect(app.respond(retainedPrincipal, approvalResponse(f.interaction)))
         .rejects.toMatchObject({ code: 'REVIEWER_AUTHORITY_LOST' })
       expect(await f.repository.get(f.interaction.id)).toEqual(f.interaction)
-      expect(await f.repository.coordination.workflowSession(f.reviewer.id)).toEqual(native)
+      expect(await f.repository.coordination.workflowSession(f.reviewer.id)).toEqual(retainedSession)
       expect(await f.repository.coordination.findReviewJob(f.interaction.id, f.reviewer.agentId)).toEqual(successor)
       const retainedBinding = (await f.pool.query(`select approval_review_job_id,approval_review_lease_fence
         from worker_credential_bindings where principal_id=$1`, [f.principal.id])).rows[0]
