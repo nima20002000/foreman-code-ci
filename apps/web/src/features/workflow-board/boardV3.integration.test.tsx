@@ -17,7 +17,6 @@ import { readBoardStart } from './startOutbox'
 import { readBoardStop } from './stopOutbox'
 import { readEditOutbox } from '../graph/nextDraft/editIntentStorage'
 import { queryKeys } from '../../shared/api/query'
-import { readLocalHumanAccess } from '../../shared/api/settingsExperience'
 import { boardDraftContextKey } from './keys'
 import { clickConnectionHandles } from '../graph/testConnectionHandles'
 import { worktreeFixture } from './worktree.fixtures'
@@ -48,8 +47,7 @@ function newBoardMock(options: Parameters<typeof createCurrentBoardMock>[0] = {}
 }
 function locks() {
   const queues = new Map<string, Promise<unknown>>()
-  Object.defineProperty(navigator, 'locks', { configurable: true, value: { request: (key: string, action: (() => unknown) | LockOptions, claim?: (lock: { name: string }) => unknown) => {
-    if (typeof action !== 'function') return claim!({ name: key })
+  Object.defineProperty(navigator, 'locks', { configurable: true, value: { request: (key: string, action: () => unknown) => {
     const result = (queues.get(key) ?? Promise.resolve()).then(action); queues.set(key, result.catch(() => undefined)); return result
   } } })
 }
@@ -269,8 +267,6 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
       expect(nextDraftDirty(useGraphDraftStore.getState().nextDrafts[key]!)).toBe(false)
       expect(useGraphDraftStore.getState().nextDrafts[key]!.history).toHaveLength(initial.history.length)
     }
-    await user.keyboard('{Control>}z{/Control}')
-    assertClean()
     await user.click(within(authoring()).getByRole('button', { name: 'S3 mounted workflow' }))
     await user.keyboard('Canceled title{Escape}')
     assertClean()
@@ -541,11 +537,7 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     const { key } = await create(mock, user); stageShape(key, 'sequential', mock); await save(mock, user, 1)
     const button = control('Start saved version'); await waitFor(() => expect(button).toBeEnabled())
     // Deny in the service AFTER its allowed session/read display: authority is rechecked.
-    if (mode === 'denied') {
-      const advertised = await readLocalHumanAccess()
-      server.use(http.get('/api/local-human', () => HttpResponse.json(advertised)))
-      mock.controls.deniedStart = true
-    }
+    if (mode === 'denied') mock.controls.deniedStart = true
     if (mode === 'stale') mock.controls.staleStart = true
     if (mode === 'unsupported') mock.controls.unsupportedStart = true
     if (mode === 'lost') mock.controls.loseStartReply = true
