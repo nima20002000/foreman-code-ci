@@ -5,6 +5,7 @@ import { ReadSelectedRunChatResponseSchema } from '@foreman-code/contracts/selec
 import { WorkerConversationBindingSchema } from '@foreman-code/contracts/remote-execution-rpc'
 import { remoteReviewProduction, waitForRemoteReview } from './remoteReviewProduction.js'
 import { measureIntegrationPhase } from './integrationPhase.js'
+import { readUntil } from './observableCondition.js'
 
 export async function historicalChatPlacement(
   scenario: (fixture: Awaited<ReturnType<typeof remoteReviewProduction>>) => Promise<void>,
@@ -71,7 +72,7 @@ export async function forkHistoricalChat(
 }
 
 export function waitForHistoricalChatTurn(read: () => Promise<AgentChatState>, requestId: string, description: string) {
-  return waitForRemoteReview(read, state => {
+  return readUntil(read, state => {
     const turn = state.turns.find(turn => turn.requestId === requestId)
     if (turn?.delivery === 'completed') return true
     if (turn?.delivery === 'failed' || turn?.delivery === 'canceled') {
@@ -83,5 +84,5 @@ export function waitForHistoricalChatTurn(read: () => Promise<AgentChatState>, r
         + (state.availability.message ?? 'The chat session cannot complete this turn.'))
     }
     return false
-  }, description)
+  }, { timeoutMs: 15_000, description })
 }
