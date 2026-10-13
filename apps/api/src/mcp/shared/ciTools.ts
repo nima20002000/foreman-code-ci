@@ -18,6 +18,11 @@ export const CI_CAPABILITY_DETAIL = 'ci_run runs one suite (install, typecheck, 
   + 'GitHub repository at a commit: the requested one, the Agent’s Run-start commit when unchanged, its edited files (published to GitHub first), or the default '
   + 'branch head. A build computer fetches it with its own GitHub CLI login, installs packages and runs the repository’s '
   + 'own script in a fresh worktree, like a self-hosted runner. scope defaults to affected; scope=full always runs everything. '
+  + 'priority defaults to normal. Requesting high requires Operator role or an explicit workspace jobs:prioritize grant '
+  + 'on the Agent’s live authorization principal, in addition to all CI run grants. '
+  + 'Commits changing only CI infrastructure automatically receive high priority based on their Git changes, '
+  + 'independent of caller files. Cloud and build-computer queues order high before normal, oldest first within each. '
+  + 'ci_get returns persisted priority and priorityReason, plus queue position and waiting reason for queued tickets. '
   + 'Main and paired computers participate only with builds enabled; buildPriority orders their selection. '
   + 'When files are omitted in affected scope, optional baseCommit (full SHA) compares changes since that commit, '
   + 'so sandboxed Agents can request changes since a release through MCP without running git. baseCommit must be '
@@ -44,17 +49,14 @@ export const CI_CAPABILITY_DETAIL = 'ci_run runs one suite (install, typecheck, 
   + 'Caller selections omit empty parts and shard only selected tests; runner selections keep queued parts and pass empty shards. '
   + 'Poll every ticket in partitions. Retrying commandId returns the '
   + 'original tickets. ci_get returns state (queued, starting, running, passed, failed, canceled, lost), current step, '
-  + 'ci_run requires jobs:cancel as well as the CI start grants. A newer descendant commit cancels active tickets '
-  + 'of the same suite, repository, workspace and requester on the same confirmed branch or Agent execution. '
-  + 'Main, unrelated branches and noSupersede=true tickets are kept. ci_get returns supersededBy and '
-  + 'the message superseded by <ticket>; follow that replacement ticket and all its partitions. '
   + 'computer, part, shard, exit code, group state and a 32 KiB log tail; ci_logs_read pages the full log '
   + `for authorized callers. maxBytes defaults to ${CI_LOG_MAX_BYTES} bytes and larger requests are clamped to `
   + `that maximum; responses report the applied maxBytes and nextOffset. group=true divides the capped budget `
   + 'between parts and reports each part’s maxBytes and nextOffset. '
   + 'ci_get reads the persisted background refresh without waiting for dispatch or build computers. '
   + 'Queued tickets include the dispatch waiting reason in message; it clears when they start. '
-  + 'ci_computers_list shows readiness reasons, used/total CI slots and assigned tickets. '
+  + 'ci_computers_list shows readiness reasons, used/total CI slots, assigned tickets and up to 500 authorized queued '
+  + 'tickets with priority, global queue position and reason; queueTruncated reports additional tickets. '
   + 'Status and the log tail update on the dispatcher cadence (normally five seconds). Pre-upgrade tickets '
   + 'can have an empty cached tail; ci_logs_read still reads their logs. '
   + 'ci_get with testStatus (passed, failed, skipped) adds the ticket’s structured test results: '
@@ -114,7 +116,7 @@ export function registerCiTools(server: McpServer, context: CiContext) {
     description: CI_CAPABILITY_DETAIL,
     inputSchema: operator ? OperatorCiRunInputSchema : CiRunInputSchema,
     outputSchema: CiRunOutputSchema,
-    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
   }, input => invoke('ci_run', () => ci.run(context.principal, input)))
   if (available('ci_get')) server.registerTool('ci_get', {
     description: CI_CAPABILITY_DETAIL,
