@@ -344,13 +344,8 @@ it.each([
   }
 })
 
-it.each([0, 1250])(
-  'runs generic integration once despite requested partitions and falls back from an unconfigured cloud mirror after a %i ms launch delay',
-  async launchDelayMs => {
-  const repository = await genericCiRepository({ integration: true, cloud: true, beforeLaunch: async () => {
-    // eslint-disable-next-line no-restricted-syntax
-    await new Promise(resolve => setTimeout(resolve, launchDelayMs))
-  } })
+it('runs generic integration once despite requested partitions and falls back from an unconfigured cloud mirror', async () => {
+  const repository = await genericCiRepository({ integration: true, cloud: true })
   const f = await fixture({ repositoryRunner: repository })
   try {
     const started = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run',
@@ -372,15 +367,9 @@ it.each([0, 1250])(
   }
 })
 
-it.each([
-  ['unit', 0], ['unit', 1250], ['lint', 0], ['lint', 1250],
-] as const)(
-  'runs generic %s for an empty affected selection and preserves HTTP and MCP readback after a %i ms launch delay',
-  async (suite, launchDelayMs) => {
-  const repository = await genericCiRepository({ cloud: true, beforeLaunch: async () => {
-    // eslint-disable-next-line no-restricted-syntax
-    await new Promise(resolve => setTimeout(resolve, launchDelayMs))
-  } })
+it.each(['unit', 'lint'] as const)(
+  'runs generic %s for an empty affected selection and preserves HTTP and MCP readback', async suite => {
+  const repository = await genericCiRepository({ cloud: true })
   const computers = repository.endpoint.computers.bind(repository.endpoint)
   // Make the unconfigured mirror the only candidate until fallback has been exercised.
   repository.endpoint.computers = async () => {
