@@ -1,10 +1,12 @@
 import { runWorktreesMigration } from './runWorktreesMigration.js'
+import { withTransaction } from './transaction.js'
 import { providerAccountsMigration, providerAccountObservationsMigration } from '../modules/provider-accounts/migration.js'
 import { nativeProofSourceLimitMigration } from './nativeProofSourceLimitMigration.js'
 import { nativeActivityNoiseMigration } from './nativeActivityNoiseMigration.js'
 import { workspaceRepositoryImportsMigration } from './workspaceRepositoryImportsMigration.js'
 import { retiredHarnessCredentialsMigration } from './retiredHarnessCredentialsMigration.js'
 import { bugReportsMigration } from './bugReportsMigration.js'
+import { bugReportLifecycleMigration } from './bugReportLifecycleMigration.js'
 import { hostCiRunsMigration } from './hostCiRunsMigration.js'
 import { hostCiActivityMigration } from './hostCiActivityMigration.js'
 import { agentIntervalMigration } from './agentIntervalMigration.js'
@@ -925,12 +927,11 @@ export const migrations = [
   workResultRepairMigration,
   databaseHotQueriesMigration,
   workflowOrderMigration,
+  bugReportLifecycleMigration,
 ] as const
 
 export async function applyApplicationMigrations(pool: pg.Pool): Promise<void> {
-  const client = await pool.connect()
-  try {
-    await client.query('begin')
+  return withTransaction(pool, async (client) => {
     const schema = (await client.query<{ schema: string | null }>('select current_schema() as schema')).rows[0]?.schema
     if (!schema) throw new Error('Application migrations require a current PostgreSQL schema.')
     // Independent test schemas can migrate together; retain the established
@@ -951,11 +952,5 @@ export async function applyApplicationMigrations(pool: pg.Pool): Promise<void> {
       await client.query(migration.sql)
       await client.query('insert into application_migrations (version) values ($1)', [version])
     }
-    await client.query('commit')
-  } catch (error) {
-    await client.query('rollback')
-    throw error
-  } finally {
-    client.release()
-  }
+  })
 }
