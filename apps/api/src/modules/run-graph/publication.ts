@@ -1,12 +1,14 @@
+import { graphSourceDigest } from './graphDigest.js'
+import type { PublicProjectionReader } from './publicProjectionReader.js'
 import { timeRuntimeOperation } from '../../infrastructure/runtimeTiming.js'
 import { readPublicRunStateLocked } from './publicRunState.js'
 import { capturePublicProjectionLocked, assertPublicProjectionUnchangedLocked, assertPublicProjectionCommittedLocked } from './publicProjectionReceipt.js'
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import {
   canonicalGraphJson, graphJsonBytes, sameGraphScope, GraphDigestSchema, GraphEvidenceSchema, GraphFactSchema,
   RUN_GRAPH_LIMITS, RunGraphScopeSchema,
   GraphEffectSchema, GraphEffectFenceSchema, assertGraphEffectAuthority, RunGraphErrorCodeSchema,
-  type GraphEffect, type GraphEffectFence, type GraphEffectAuthority, type GraphEffectIdentity,
+  type GraphEffect, type GraphEffectFence, type GraphEffectAccessState, type GraphEffectIdentity,
   type GraphEvidence, type GraphFact, type RunGraphEvent, type RunGraphScope,
   CanonicalRunGraphScopeSchema, sameCanonicalGraphScope, RepeatGraphScopeV3Schema,
   RepeatGraphFactV3Schema, RepeatGraphEffectV3Schema, RepeatGraphEventContentV3Schema, RepeatGraphBatchV3Schema,
@@ -21,12 +23,12 @@ import {
   type ExclusiveGraphConnection, type GraphTransactionSql,
 } from './connection.js'
 import { RunGraphError } from './errors.js'
+import { DomainError } from '../errors.js'
 import type { RunOwnership } from '../runs/ownership.js'
 import { workflowJobGraphSourceChangesLocked } from './workflowJobProjection.js'
 
-export function graphSourceDigest(value: unknown): string {
-  return 'sha256:' + createHash('sha256').update(canonicalGraphJson(value)).digest('hex')
-}
+export { graphSourceDigest } from './graphDigest.js'
+
 /** Digest-only receipt for the complete ordered envelope, in the EXISTING
  * source table. Per-source digests alone cannot prove source-group ordering.
  * This reserved source never emits another event or allocates another counter.
@@ -104,7 +106,7 @@ export interface GraphEffectGuard {
    * Return exact scope/subject/session binding, live owner/fence/generation and
    * qualified security. Cached snapshots or echoing expected is NOT an implementation.
    */
-  readCurrentLocked(sql: GraphTransactionSql, scope: RunGraphScope, effect: GraphEffectIdentity): Promise<GraphEffectAuthority>
+  readCurrentLocked(sql: GraphTransactionSql, scope: RunGraphScope, effect: GraphEffectIdentity): Promise<GraphEffectAccessState>
 }
 export interface GraphEffectChange extends GraphSourceChange { effect: GraphEffect }
 interface StagedEffect { effect: GraphEffect | RepeatGraphEffectV3; semanticDigest: string }
@@ -140,7 +142,8 @@ export class RunGraphPublication<S extends CanonicalRunGraphScope = RunGraphScop
   readonly #ownerCommitChecks = new WeakMap<RunOwnership, (expected: readonly { ownerId: string; fence: string }[]) => Promise<void>>()
   #finalized = false
   #receipt: GraphPublicationReceipt = { sequence: null, batchId: null, kind: 'none' }
-  constructor(key: symbol, sql: GraphTransactionSql, scope: S, version: { hasJobNodes: boolean }) {
+  constructor(key: symbol, sql: GraphTransactionSql, scope: S, version: { hasJobNodes: boolean },
+    private readonly readPublicProjection: PublicProjectionReader) {
     if (key !== constructionKey) throw new RunGraphError('GRAPH_TRANSACTION_CLOSED')
     this.sql = sql
     this.scope = Object.freeze({ ...scope })
@@ -645,7 +648,7 @@ export class RunGraphPublication<S extends CanonicalRunGraphScope = RunGraphScop
       return { replayed, semanticDigest, ...(!replayed && value !== undefined ? { value } : {}) }
     } catch (error) {
       poisonGraphTransaction(this.sql)
-      if (error instanceof RunGraphError) throw error
+      if (error instanceof RunGraphError || error instanceof DomainError) throw error
       if (error instanceof Error && error.message === 'GRAPH_JSON_LIMIT') throw new RunGraphError('GRAPH_TRANSACTION_LIMIT')
       throw new RunGraphError('GRAPH_INVALID_FACT')
     } finally { if (entered) this.#busy = false }
@@ -719,7 +722,7 @@ export class RunGraphPublication<S extends CanonicalRunGraphScope = RunGraphScop
       )
     }
     const projection = await timeRuntimeOperation('db', 'graph.capture_projection',
-      () => capturePublicProjectionLocked(this.sql, this.scope), { runId: this.scope.runId })
+      () => capturePublicProjectionLocked(this.sql, this.scope, this.readPublicProjection), { runId: this.scope.runId })
     if (projection) {
       const key = canonicalGraphJson(projection.evidence)
       if (this.#sources.has(key)) throw new RunGraphError('GRAPH_SOURCE_CONFLICT')
@@ -728,7 +731,7 @@ export class RunGraphPublication<S extends CanonicalRunGraphScope = RunGraphScop
           evidence: projection.evidence, sourceDigest: projection.sourceDigest, semanticDigest: projection.semanticDigest,
           effect: null, fact: projection.fact })] })
       beforeGraphCommit(this.sql, () => timeRuntimeOperation('db', 'graph.recheck_projection',
-        () => assertPublicProjectionUnchangedLocked(this.sql, this.scope, projection), { runId: this.scope.runId }))
+        () => assertPublicProjectionUnchangedLocked(this.sql, this.scope, projection, this.readPublicProjection), { runId: this.scope.runId }))
     }
     if (this.#sources.size > RUN_GRAPH_LIMITS.transactionSources
       || graphJsonBytes([...this.#sources.values()]) > RUN_GRAPH_LIMITS.transactionBytes) throw new RunGraphError('GRAPH_TRANSACTION_LIMIT')
@@ -804,7 +807,7 @@ export class RunGraphPublication<S extends CanonicalRunGraphScope = RunGraphScop
  * No arbitrary ClientBase overload exists. The commit finalizer cannot be forgotten.
  */
 export async function openRunGraphPublication<S extends CanonicalRunGraphScope>(
-  sql: GraphTransactionSql, input: S,
+  sql: GraphTransactionSql, input: S, readPublicProjection: PublicProjectionReader,
   initialize?: { historyCoverage: 'from_admission' | 'from_snapshot' },
 ): Promise<RunGraphPublication<S>> {
   assertGraphTransaction(sql)
@@ -831,7 +834,7 @@ export async function openRunGraphPublication<S extends CanonicalRunGraphScope>(
     if (head.rows[0].sequence !== '0') {
       const priorRun = await readRepeatRunSourceLocked(sql, scope)
       if (!priorRun.replayed) throw new RunGraphError('GRAPH_INVARIANT_VIOLATION')
-      await assertPublicProjectionCommittedLocked(sql, scope, head.rows[0].sequence)
+      await assertPublicProjectionCommittedLocked(sql, scope, head.rows[0].sequence, readPublicProjection)
       if (run.has_job_nodes && (await workflowJobGraphSourceChangesLocked(sql, scope)).length) {
         throw new RunGraphError('GRAPH_INVARIANT_VIOLATION')
       }
@@ -840,7 +843,7 @@ export async function openRunGraphPublication<S extends CanonicalRunGraphScope>(
         'select xmin=pg_current_xact_id_if_assigned()::xid and created_at=transaction_timestamp() as fresh from runs where id=$1', [scope.runId])).rows[0]
       if (!initialize || initialize.historyCoverage !== 'from_admission' || inserted?.fresh !== true) throw new RunGraphError('GRAPH_NOT_INITIALIZED')
     }
-    const publication = new RunGraphPublication(constructionKey, sql, scope, { hasJobNodes: run.has_job_nodes })
+    const publication = new RunGraphPublication(constructionKey, sql, scope, { hasJobNodes: run.has_job_nodes }, readPublicProjection)
     publications.set(sql, publication)
     return publication
   } catch (error) { poisonGraphTransaction(sql); throw error }
@@ -855,11 +858,12 @@ export function assertRunGraphPublication(sql: GraphTransactionSql, scope: Canon
 export async function withRunGraphPublication<T>(
   connection: ExclusiveGraphConnection, scope: RunGraphScope,
   work: (publication: RunGraphPublication) => Promise<T>,
+  readPublicProjection: PublicProjectionReader,
   initialize?: { historyCoverage: 'from_admission' | 'from_snapshot' },
 ): Promise<{ value: T; publication: Readonly<GraphPublicationReceipt> }> {
   let publication: RunGraphPublication | undefined
   const value = await connection.transaction(async (sql) => {
-    publication = await openRunGraphPublication(sql, scope, initialize)
+    publication = await openRunGraphPublication(sql, scope, readPublicProjection, initialize)
     return work(publication)
   })
   return { value, publication: publication!.receipt }

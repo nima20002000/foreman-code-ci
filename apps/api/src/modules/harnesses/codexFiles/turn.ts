@@ -1,9 +1,10 @@
 import { Readable } from 'node:stream'
+import { canonicalJson } from '@foreman-code/contracts/canonical-json'
 import { FileRevisionSchema, type FileRevision, type FileWithRevision, type MessageAttachmentRef } from '@foreman-code/contracts/files'
 import type { FileToolOperation } from '../../files/tools/types.js'
 import { markdownReadText } from '../../files/tools/markdownReadText.js'
 import { assertRegisteredCodexCopy, CodexFileDeliveryError, collectCodexFileBytes, fail, sha256 } from './bytes.js'
-import { warnCodexFileError } from './runtime.js'
+import { warnCodexFileError } from './errorLog.js'
 import type {
   AcceptedCodexFileTurn, CodexAttachmentSource, CodexFileCall, CodexFileCallResult,
   CodexFileHostLease, CodexFileInput, CodexFileLimits, CodexFileServices,
@@ -21,12 +22,7 @@ export const CODEX_FILE_TOOL_ALIASES = Object.freeze({
 } as const)
 const mutation = (name: FileToolOperation) => name !== 'files.list' && name !== 'files.read'
 const pins = (ref: MessageAttachmentRef): string => JSON.stringify([ref.fileId, ref.revisionId])
-const sameScope = (left: unknown, right: unknown): boolean => {
-  const canonical = (value: unknown): unknown => Array.isArray(value) ? value.map(canonical)
-    : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value)
-      .sort(([a], [b]) => a.localeCompare(b)).map(([key, entry]) => [key, canonical(entry)])) : value
-  return JSON.stringify(canonical(left)) === JSON.stringify(canonical(right))
-}
+const sameScope = (left: unknown, right: unknown): boolean => canonicalJson(left) === canonicalJson(right)
 const textResult = (value: unknown, extra?: string): CodexFileCallResult => ({ success: true,
   contentItems: [{ type: 'inputText', text: JSON.stringify(value) }, ...(extra ? [{ type: 'inputText' as const, text: extra }] : [])],
 })
@@ -347,7 +343,7 @@ export class CodexFileTurn {
     if (this.#closeAttempt) return this.#closeAttempt
     this.#closing = true
     const attempt = (async () => {
-      await this.#activation?.catch(() => undefined)
+      await this.#activation?.catch(() => { /* ignore: the owner awaits the original promise; this observer prevents a duplicate unhandled rejection. */ })
       if (this.#token) { await this.#dependencies.files.sessions.revoke(this.#token); this.#token = undefined }
       await Promise.allSettled([...this.#pending])
       await this.#dependencies.host.close()

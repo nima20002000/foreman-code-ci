@@ -1,4 +1,5 @@
 import { DeviceSetupApproveInputSchema,DeviceSetupOptionsSchema,encodeWorkerEnrollmentCode,type DeviceSetupApproveInput,type DeviceSetupOptions } from '@foreman-code/contracts/device-setup'
+import { withTransaction } from '../../infrastructure/transaction.js'
 import { verifiedWorkerIdentityRequest } from '@foreman-code/contracts/device-setup-node'
 import { createHash, createHmac, randomBytes, randomUUID, verify } from 'node:crypto'
 import type pg from 'pg'
@@ -10,10 +11,9 @@ import { requireAuthorization } from '../access/policy.js'
 import { DomainError } from '../errors.js'
 import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
 import { initializePairedBuildComputer } from '../settings/buildComputers.js'
+import { DeviceAccessError } from './accessError.js'
 
-export class DeviceAccessError extends DomainError {
-  constructor(readonly code: 'unauthorized' | 'revoked' | 'expired' | 'conflict' | 'forbidden' | 'wrong_main') { super(code, `Device access rejected: ${code}`, 403) }
-}
+export { DeviceAccessError }
 const digest = (value: string) => createHash('sha256').update(value).digest('hex')
 export type PairDeviceInput = DevicePairingRequest
 export { pairingProof } from '@foreman-code/contracts/device-identity-node'
@@ -22,9 +22,7 @@ export class PostgresDeviceAccessService {
   constructor(private readonly pool: pg.Pool, readonly mainId: string, private readonly onRevoked?: (deviceId: string, authorizationRevision: number) => void,private readonly setupOptions:()=>DeviceSetupOptions=()=>({endpoint:null,available:false,reason:'listener-unconfigured'})) {}
   private pairingAttempts = { window: 0, count: 0 }
   private async transaction<T>(operation: (client: pg.PoolClient) => Promise<T>): Promise<T> {
-    const client = await this.pool.connect()
-    try { await client.query('begin'); const result = await operation(client); await client.query('commit'); return result }
-    catch (error) { await client.query('rollback'); throw error } finally { client.release() }
+    return withTransaction(this.pool, operation)
   }
   private async management(client: pg.PoolClient, principal: ManagementPrincipal, write: boolean): Promise<void> {
     requireAuthorization(await readLiveManagementPrincipal(client, principal.id), write ? 'settings:update' : 'settings:read')
