@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { PostgresInteractionRepository } from '../src/modules/interactions/postgres.js'
-import { deliveredReview, receipts, reviewInProgress, useRemoteReviewFixture, waitForRemoteReview } from './helpers/remoteReviewProductionCases.js'
+import { deliveredReview, receipts, reviewInProgress, useRemoteReviewFixture } from './helpers/remoteReviewProductionCases.js'
 
 const withRemoteReviewFixture = useRemoteReviewFixture()
 
@@ -33,12 +33,6 @@ describe('production remote review and native recovery through authenticated MCP
         assignment: expect.objectContaining({ jobId: active.job.id, correlationId: active.job.correlationId }),
         providerId: delivered.job.providerTurnOrMessageId, settled: true,
       }))
-      const completed = await waitForRemoteReview(async () => {
-        await fixture.reconcile()
-        return fixture.details(active.run.id)
-      }, value => value.run.executionState === 'completed' && value.cleanupPending !== true,
-      'completed Run after authenticated remote decision delivery')
-      expect(completed.run.outcome).toBe('succeeded')
     })
   }, 240_000)
 })

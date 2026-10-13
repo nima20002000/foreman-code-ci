@@ -281,14 +281,14 @@ export async function remoteReviewProduction(options: {
             const timing = parsed as RuntimeTimingRecord & { diagnostic: 'runtime-timing' }
             // Per-query logging fills the runner's log cap before native failures are reported.
             if (timing.component === 'db') continue
-            console.info(`[remote-review] ${role} timing`, JSON.stringify({
+            console.info(`[remote-review] ${role} timing`, {
               component: timing.component, phase: timing.phase, operation: timing.operation,
               startedAt: timing.startedAt, finishedAt: timing.finishedAt, durationMs: timing.durationMs,
               intervalMs: timing.intervalMs, reused: timing.reused, count: timing.count,
               runId: timing.runId, executionId: timing.executionId, nativeSessionId: timing.nativeSessionId,
               laneId: timing.laneId, correlationId: timing.correlationId, ownerId: timing.ownerId,
               nativeTurnId: timing.nativeTurnId, eventType: timing.eventType, success: timing.success,
-            }))
+            })
           }
           const event = parsed as { level?: unknown; code?: unknown; errorCode?: unknown; stackFrames?: unknown;
             namespace?: unknown; runId?: unknown; err?: { code?: unknown; stack?: unknown; message?: unknown; type?: unknown }; msg?: unknown;
