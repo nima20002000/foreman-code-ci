@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -12,7 +12,7 @@ afterEach(async () => {
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true })
 })
 
-async function computer() {
+async function computer({ prepareDatabase = false } = {}) {
   const base = process.env.FOREMAN_CODE_TEST_ROOT ?? process.env.TMPDIR
     ?? join(homedir(), '.cache/foreman-code/tests')
   await mkdir(base, { recursive: true })
@@ -26,6 +26,11 @@ async function computer() {
   await mkdir(bin)
   await writeFile(join(origin, 'package.json'), JSON.stringify({ scripts: { lint: 'fixture' } }))
   await writeFile(join(origin, 'pnpm-lock.yaml'), 'fixture-lock-one')
+  if (prepareDatabase) {
+    await mkdir(join(origin, 'scripts'))
+    await writeFile(join(origin, 'scripts/ci-suite.sh'),
+      '#!/bin/bash\ncorepack pnpm db:up\n')
+  }
   const environment = gitFixtureEnvironment()
   const git = (...args: string[]) => execFileSync('git', args, { cwd: origin, env: environment, encoding: 'utf8' }).trim()
   git('init', '-q', '-b', 'main')
@@ -36,7 +41,13 @@ const fs = require('node:fs')
 const path = require('node:path')
 const args = process.argv.slice(2)
 fs.appendFileSync(${JSON.stringify(calls)}, JSON.stringify(args) + '\\n')
-if (args[1] === 'install') {
+if (args[1] === 'db:up') {
+  if (!fs.existsSync('node_modules/dependency')) {
+    console.error('Database preparation attempted to reinstall unfinished dependencies')
+    process.exit(8)
+  }
+} else if (args[1] === 'install') {
+  if (${prepareDatabase}) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 200)
   if (args.includes('--offline') && fs.existsSync(${JSON.stringify(offlineFailure)})) process.exit(7)
   const storeIndex = args.indexOf('--store-dir')
   const store = storeIndex < 0 ? '.fixture-store' : args[storeIndex + 1]
@@ -89,7 +100,14 @@ if (args[1] === 'install') {
   const commands = async () => (await readFile(calls, 'utf8')).trim().split('\n')
     .map(line => JSON.parse(line) as string[])
   const failOffline = () => writeFile(offlineFailure, 'store unavailable')
-  return { run, commands, origin, git, failOffline }
+  async function damageSnapshot() {
+    const modules = join(root, 'runner/cache/example/project/modules')
+    const snapshots = await readdir(modules)
+    expect(snapshots).toHaveLength(1)
+    // A malformed snapshot entry conflicts with the checkout even when the runner has root privileges.
+    await mkdir(join(modules, snapshots[0]!, 'package.json'))
+  }
+  return { run, commands, origin, git, failOffline, damageSnapshot }
 }
 
 it('warms once, installs offline on later jobs, and preserves private mutable dependencies', async () => {
@@ -140,4 +158,28 @@ it('refills an unavailable warmed store online instead of failing the job', asyn
   await expect(fixture.run()).resolves.toMatchObject({ run: { state: 'passed' } })
   const installs = (await fixture.commands()).filter(args => args[1] === 'install')
   expect(installs.filter(args => !args.includes('--offline'))).toHaveLength(2)
+})
+
+it('waits for dependencies before database preparation can trigger another install', async () => {
+  const fixture = await computer({ prepareDatabase: true })
+  await expect(fixture.run()).resolves.toMatchObject({ run: { state: 'passed' } })
+  expect(await fixture.commands()).toContainEqual(['pnpm', 'db:up'])
+})
+
+it('installs fresh when a warmed dependency snapshot cannot be copied', async () => {
+  const fixture = await computer()
+  await expect(fixture.run()).resolves.toMatchObject({ run: { state: 'passed' } })
+  await fixture.damageSnapshot()
+  const result = await fixture.run()
+  expect(result).toMatchObject({
+    run: { state: 'passed' },
+    text: expect.stringContaining('[ci-cache] dependency snapshot unusable; installing fresh'),
+  })
+  expect(result).toMatchObject({ text: expect.stringContaining('dependency=pristine') })
+  const installs = (await fixture.commands()).filter(args => args[1] === 'install')
+  expect(installs).toHaveLength(3)
+  expect(installs.at(-1)).toEqual(expect.arrayContaining(['--offline', '--frozen-lockfile']))
+  await expect(fixture.run()).resolves.toMatchObject({
+    run: { state: 'passed' }, text: expect.stringContaining('dependency=pristine'),
+  })
 })

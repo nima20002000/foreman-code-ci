@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
+import { setTimeout as delay } from 'node:timers/promises'
 import { expect, it, vi } from 'vitest'
 import { AgentConfigurationVersionSchema } from '@foreman-code/contracts'
+import { AgentChatStateSchema, SendAgentChatMessageResponseSchema } from '@foreman-code/contracts/agent-chat'
 import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import type { ClaudeHarnessConfiguration } from '@foreman-code/contracts/claude'
 import { buildApp } from '../src/app.js'
@@ -46,7 +48,23 @@ it('settles an unoffered rollover failure and retries through authenticated Agen
       getForWorkspace: async () => { throw new Error('Agent rollover must not read or create a Run.') },
       getExecution: async () => { throw new Error('This fixture must not read a Run execution.') }, executionPages() { throw new Error('Agent rollover must not select a Run execution.') },
     }, (id, configuration, cwd) => {
-      transport ??= claudeSdkToolTransport(cwd, () => [])
+      if (!transport) {
+        transport = claudeSdkToolTransport(cwd, () => [])
+        const query = transport.sdk.query.bind(transport.sdk)
+        vi.spyOn(transport.sdk, 'query').mockImplementation(input => {
+          const running = query(input)
+          return {
+            ...running,
+            async *[Symbol.asyncIterator]() {
+              for await (const event of running) {
+                // Native completion can exceed one second while other CI files are active.
+                if (event.type === 'result' && transport!.offers.length === 200) await delay(1_100)
+                yield event
+              }
+            },
+          }
+        })
+      }
       const start = { kind: 'workflow' as const, correlationId: `agent:${id}:first`, request: {
         executionId: `agent-chat:${id}`, runId: `agent-chat:${id}`, workspaceId: seeded.scope.workspaceId,
         workflowNodeId: node.id, configuration, input: {}, workingDirectory: cwd, runtimeDirectory: join(db.directory, 'agent-chat', id),
@@ -106,7 +124,7 @@ it('settles an unoffered rollover failure and retries through authenticated Agen
       return snapshot
     })
     const pending = manager!.pending.bind(manager!)
-    const pendingRead = vi.spyOn(manager!, 'pending').mockImplementationOnce(async (...args) => {
+    vi.spyOn(manager!, 'pending').mockImplementationOnce(async (...args) => {
       try {
         return await pending(...args)
       } finally {
@@ -116,12 +134,25 @@ it('settles an unoffered rollover failure and retries through authenticated Agen
     const failed = await graphRpc(app, owner.token, 'tools/call', { name: 'agent_chat_send',
       arguments: { workspaceId: seeded.scope.workspaceId, request: input } })
     expect(failed.result?.isError, JSON.stringify(failed)).not.toBe(true)
-    expect(pendingRead).toHaveBeenCalledOnce()
+    const admitted = SendAgentChatMessageResponseSchema.parse(graphRpcValue(failed.result))
+    expect(admitted).toMatchObject({
+      replayed: false,
+      turn: { requestId: input.requestId, delivery: 'queued' },
+      state: { conversation: { id, nativeSession: { nativeSessionId: nativeId } } },
+    })
     await waitForDelivery(chat, repository, id!, input.requestId, 'failed', { timeoutMs: 1_000 })
     expect((await repository.turn(id!, input.requestId))?.delivery).toBe('failed')
     expect((await repository.get(id!))?.active_request_id).toBeNull()
     expect((await repository.turn(id!, input.requestId))?.nativeSubmission).toBeUndefined()
     expect(transport!.offers).toHaveLength(256)
+    const settled = await graphRpc(app, owner.token, 'tools/call', { name: 'agent_chat_read',
+      arguments: { workspaceId: seeded.scope.workspaceId, query } })
+    expect(settled.result?.isError).not.toBe(true)
+    const settledState = AgentChatStateSchema.parse(graphRpcValue(settled.result))
+    expect(settledState.activeTurn).toBeNull()
+    expect(settledState.pendingInteraction).toBeUndefined()
+    expect(settledState.turns.find(turn => turn.requestId === input.requestId)).toMatchObject({ delivery: 'failed' })
+    expect(settledState.conversation?.nativeSession?.nativeSessionId).toBe(nativeId)
     const retry = await graphRpc(app, owner.token, 'tools/call', { name: 'agent_chat_send',
       arguments: { workspaceId: seeded.scope.workspaceId, request: { ...input, requestId: 'retry-unoffered' } } })
     expect(retry.result?.isError).not.toBe(true)
@@ -137,6 +168,9 @@ it('settles an unoffered rollover failure and retries through authenticated Agen
     const replay = await graphRpc(app, owner.token, 'tools/call', { name: 'agent_chat_send',
       arguments: { workspaceId: seeded.scope.workspaceId, request: input } })
     expect(replay.result?.isError).not.toBe(true)
+    expect(SendAgentChatMessageResponseSchema.parse(graphRpcValue(replay.result))).toMatchObject({
+      replayed: true, turn: { requestId: input.requestId, delivery: 'failed' },
+    })
     expect(transport!.offers).toHaveLength(257)
   } finally {
     claimReady.resolve()
