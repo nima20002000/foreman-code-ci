@@ -15,7 +15,7 @@ const CiRunInputObjectSchema = z.object({
   commit: z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/).optional(),
   baseCommit: z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/).optional()
     .describe('Optional full SHA for runner-selected affected scope. Compare against this ancestor of the resolved '
-      + 'commit; an unavailable or non-ancestor base falls back to the full suite with a reason.'),
+      + 'commit; an unavailable or non-ancestor base requires jobs:ci_full for a full-suite fallback.'),
   commandId: IdSchema,
   noSupersede: z.boolean().optional().describe('Keep this request’s tickets when newer commits arrive. '
     + 'By default, newer descendant commits supersede active tickets of the same suite and requester '
@@ -25,10 +25,12 @@ const CiRunInputObjectSchema = z.object({
     + 'from measured durations and free slots. '
     + 'Requires scripts/ci-suite.sh and scripts/ci-files.mjs. User-systemd files use separate systemd-capable slices; '
     + 'mixed explicit selections split even when this is omitted. Other repositories run integration as one job.').optional(),
-  scope: CiScopeSchema.optional().describe('Defaults to affected; full runs the complete suite. '
-    + 'Repositories without an affected selector always run the full suite.'),
+  scope: CiScopeSchema.optional().describe('Defaults to affected. Full scope and any full-suite expansion require '
+    + 'an explicit jobs:ci_full grant for every caller. Without it, use affected scope with files. '
+    + 'Workflow Agents additionally require their saved harness ciFullScope permission.'),
   files: CiSelectedFilesSchema.optional().describe('Optional affected selection with an explicit commit. Omit to select '
-    + 'on the runner against baseCommit or the workspace default branch; an empty list runs no tests.'),
+    + 'against baseCommit or the workspace default branch; an empty list runs no tests. Integration without files '
+    + 'requires jobs:ci_full. Ungranted callers’ derived selections are resolved before admission; full fallback is denied.'),
 }).strict()
 const partitionedSuite = (value: { suite: string; partitions?: number | undefined }) =>
   value.partitions === undefined || value.suite === 'integration'

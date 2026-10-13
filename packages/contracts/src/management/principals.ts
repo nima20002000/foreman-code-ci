@@ -9,7 +9,7 @@ export const ManagementActionSchema = z.enum([
   'bug_reports:report', 'bug_reports:read', 'bug_reports:update',
   "sources:read", "sources:approve", "sources:reconcile", "source_roots:read", "source_roots:bind",
   "job_definitions:read", "job_definitions:write", "jobs:start", "jobs:read", "jobs:cancel", "job_logs:read", "job_artifacts:read",
-  'jobs:prioritize',
+  'jobs:prioritize', 'jobs:ci_full',
   "agents:create",
   "agents:update",
   "agents:archive",
@@ -68,7 +68,8 @@ export type ManagementAction = z.infer<typeof ManagementActionSchema>;
 /** Host telemetry, provisioning and CI priority require separately selected grants, including for broad presets. */
 export const DEFAULT_MANAGEMENT_ACTIONS = ManagementActionSchema.options.filter(
   (action) => action !== "devices:metrics:read" && action !== "devices:provision"
-    && action !== 'provider_accounts:read' && action !== 'provider_accounts:manage' && action !== 'jobs:prioritize',
+    && action !== 'provider_accounts:read' && action !== 'provider_accounts:manage'
+    && action !== 'jobs:prioritize' && action !== 'jobs:ci_full',
 );
 
 const ManagementScopeSchema = z

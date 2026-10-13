@@ -11,7 +11,7 @@ import type { PostgresCommandCoordinator } from '../commands/postgres.js'
 import type { CiAuthority } from '../jobs/ciAuthority.js'
 import { CI_GET_ACTIONS, CI_RUN_ACTIONS } from '../jobs/ciAuthority.js'
 import { DomainError, databaseReadFailure } from '../errors.js'
-import { requireAuthorization } from '../access/policy.js'
+import { isAuthorized, requireAuthorization } from '../access/policy.js'
 import { componentLogger } from '../diagnostics/logger.js'
 import { ciGroupState, planCiParts, runsOnCircleCi, type CiUnitInventory } from './parts.js'
 import { planIntegrationParts, type CiIntegrationInventory, type CiIntegrationSlots } from './integrationParts.js'
@@ -21,6 +21,7 @@ import { RUN_CI_JOBS_SQL, runCiJob, storedCiTestResults, type RunCiJobRow } from
 import { fallbackOnError } from '../diagnostics/ignoredError.js'
 import { CI_QUEUE_ORDER, ciQueueReason, compareCiQueue } from './priority.js'
 import { supersedeCiRuns } from './supersession.js'
+import { requireFullCiGrant, requiresFullCiGrant } from './fullScope.js'
 
 /** CI reads are idempotent: one retry after a lock or statement timeout, then a typed retryable error. */
 async function retryRead<T>(work: () => Promise<T>): Promise<T> {
@@ -41,6 +42,8 @@ export interface HostCiEndpoint {
 }
 /** Resolves the commit to test and makes sure GitHub has it, so build computers can fetch it. */
 export interface CiCommits {
+  affectedSelection?(repository: string, commit: string, suite: CiRunInput['suite'], defaultBranch: string,
+    baseCommit?: string): Promise<{ scope: 'affected' | 'full'; files: string[]; reason: string }>
   infrastructureOnly?(repository: string, commit: string): Promise<boolean>
   branch?(repository: string, defaultBranch: string, commit: string): Promise<string | null>
   isAncestor?(repository: string, ancestor: string, commit: string): Promise<boolean>
@@ -103,13 +106,22 @@ export class HostCiService {
 
   async run(caller: ManagementPrincipal, input: CiRunInput & { workspaceId?: string | undefined }, source: 'mcp' | 'http' = 'mcp') {
     const actions = input.priority === 'high' && caller.audience !== 'operator'
-      ? [...CI_RUN_ACTIONS, 'jobs:prioritize' as const] : CI_RUN_ACTIONS
+      ? [...CI_RUN_ACTIONS, 'jobs:prioritize' as const] : [...CI_RUN_ACTIONS]
     const scope = await this.authority.resolve(caller, input.workspaceId, actions).catch(async error => {
       if (source === 'http' && error instanceof DomainError && [401, 403, 404].includes(error.status)) {
         await this.commands.recordDenied(caller.id, source, 'ci.run', input.workspaceId ?? 'ci')
       }
       throw error
     })
+    try {
+      if (requiresFullCiGrant(input)) {
+        requireFullCiGrant(isAuthorized(scope.principal, 'jobs:ci_full', { workspaceId: scope.workspaceId }))
+        actions.push('jobs:ci_full')
+      }
+    } catch (error) {
+      if (source === 'http') await this.commands.recordDenied(caller.id, source, 'ci.run', scope.workspaceId)
+      throw error
+    }
     // A start already in flight must settle before admission can supersede its ticket.
     this.stoppingRuns += 1
     try {
@@ -117,6 +129,11 @@ export class HostCiService {
       const result = await this.enqueue(caller, input, source, scope, actions)
       await this.cancelSuperseded()
       return result
+    } catch (error) {
+      if (source === 'http' && error instanceof DomainError && error.status === 403) {
+        await this.commands.recordDenied(caller.id, source, 'ci.run', scope.workspaceId)
+      }
+      throw error
     } finally {
       this.stoppingRuns -= 1
       this.start()
@@ -160,11 +177,27 @@ export class HostCiService {
             .map(file => [file, merged[file]!]))
         }
         const unitDurations = { ...inventory?.durations, ...learned }
+        const liveScope = await this.authority.resolve(caller, scope.workspaceId, actions)
+        const fullAllowed = isAuthorized(liveScope.principal, 'jobs:ci_full', { workspaceId: scope.workspaceId })
         const supportsSelection = input.suite === 'integration' ? capabilities.integrationPartitions : capabilities.affected
         const selectionScope = supportsSelection ? input.scope ?? 'affected' : 'full'
-        const deriveFiles = selectionScope === 'affected' && input.files === undefined
-        const selection = { ...input, scope: selectionScope, files: selectionScope === 'affected' ? input.files : [] }
-        const empty = selectionScope === 'affected' && input.files?.length === 0
+        if (selectionScope === 'full') requireFullCiGrant(fullAllowed)
+        let selectedFiles = input.files
+        if (selectionScope === 'affected' && selectedFiles === undefined && !fullAllowed) {
+          const selected = await this.commits.affectedSelection?.(repository, commit, input.suite, defaultBranch, input.baseCommit)
+          requireFullCiGrant(selected?.scope === 'affected', selected?.reason ?? 'The affected selector is unavailable.')
+          selectedFiles = selected!.files
+        }
+        const deriveFiles = selectionScope === 'affected' && selectedFiles === undefined
+        const suiteFiles = input.suite === 'unit' ? inventory?.files : integration?.files
+        if (selectedFiles && suiteFiles?.length) {
+          const selected = new Set(selectedFiles)
+          if (suiteFiles.every(file => selected.has(file))) {
+            requireFullCiGrant(fullAllowed, 'The selected files cover the whole suite.')
+          }
+        }
+        const selection = { ...input, scope: selectionScope, files: selectionScope === 'affected' ? selectedFiles : [] }
+        const empty = selectionScope === 'affected' && selectedFiles?.length === 0
         const split = input.suite === 'integration' ? capabilities.integrationPartitions : capabilities.parts
         let parts: { part: CiRunRecord['part']; partition: CiRunRecord['partition']; files: string[];
           expectedDurationMs?: number }[] = split ? planCiParts(selection, unitDurations, inventory)
@@ -631,32 +664,6 @@ export class HostCiService {
     return this.dispatching
   }
 
-  /** Slow-tier parts wait until every other part of their request passed; if any of those did not pass, the slow
-   * tier is skipped (canceled with the reason) because its result could not make the request green. */
-  private async releaseSlowTier(queued: CiRunRecord[]): Promise<CiRunRecord[]> {
-    const deferred = queued.filter(run => run.deferred)
-    if (!deferred.length) return queued
-    const groups = [...new Set(deferred.map(run => run.groupId))]
-    const rows = (await this.pool.query<{ group_id: string; state: string }>(
-      `select record->>'groupId' as group_id, state from ci_runs
-        where record->>'groupId' = any($1::text[]) and coalesce((record->>'deferred')::boolean, false) = false`,
-      [groups])).rows
-    const waiting = new Set<string>()
-    for (const groupId of groups) {
-      const states = rows.filter(row => row.group_id === groupId).map(row => row.state)
-      if (states.some(state => ['failed', 'canceled', 'lost'].includes(state))) {
-        const now = new Date().toISOString()
-        for (const run of deferred.filter(value => value.groupId === groupId)) {
-          const skipped = { ...run, state: 'canceled' as const, finishedAt: now,
-            message: 'Skipped: slow tests run only after every other test of this request passed, and some did not.' }
-          await this.save(skipped, null)
-        }
-        waiting.add(groupId)
-      } else if (states.some(state => state !== 'passed')) waiting.add(groupId)
-    }
-    return queued.filter(run => !run.deferred || !waiting.has(run.groupId))
-  }
-
   private async dispatchOnce() {
     await this.cancelSuperseded()
     const computers = await this.endpoint.computers()
@@ -737,7 +744,7 @@ export class HostCiService {
           and record->>'suite'<>'integration'
           order by ${CI_QUEUE_ORDER} limit 50)
         order by ${CI_QUEUE_ORDER}`)).rows
-    let queued = await this.releaseSlowTier(queuedRows.map(row => CiRunRecordSchema.parse(row.record)))
+    let queued = queuedRows.map(row => CiRunRecordSchema.parse(row.record))
     // Reserve four GitHub slots while checks wait, including integration already using GitHub.
     const githubIntegrationLimit = Math.max(0, github.length - (queued.some(run => run.suite !== 'integration') ? 4 : 0))
     const durations = new Map(queuedRows.map((row, index) => [queued[index]!.id, row.durations]))
