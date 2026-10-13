@@ -510,7 +510,8 @@ export class LangGraphWorkflowEngine {
   }
 
   private async requestRestartCleanup(owner: RunOwnership, approvals?: WorkflowRestartApprovals): Promise<void> {
-    if (await settleWorkForRestart(owner, approvals)) return
+    const { version } = await this.runs.getRepeatSnapshot(owner.runId, owner)
+    if (version.definition.handoffs && await settleWorkForRestart(owner, approvals)) return
     await this.runs.requestCleanup(owner.runId, owner)
   }
 }
