@@ -1,5 +1,4 @@
 import { JobRuntimeMeasurementRecordSchema } from '@foreman-code/contracts/job-verification-runtime'
-import { withTransaction } from '../../infrastructure/transaction.js'
 import { createHash, createPublicKey, randomUUID, sign, verify } from 'node:crypto'
 import { isDeepStrictEqual as same } from 'node:util'
 import type pg from 'pg'
@@ -106,7 +105,9 @@ export class PostgresJobCancellationRecovery {
   }
   async get(principal: ManagementPrincipal, raw: unknown) {
     const input = JobCancellationRecoveryGetSchema.parse(raw)
-    return withTransaction(this.pool, async (sql) => {
+    const sql = await this.pool.connect()
+    try {
+      await sql.query('begin')
       await this.authorize(sql, principal, input.workspaceId)
       const proposal = await this.proposal(sql, input.workspaceId, input.executionId, input.recoveryId)
       if (proposal.principalId !== principal.id) deny('This cleanup belongs to another caller.')
@@ -123,8 +124,9 @@ export class PostgresJobCancellationRecovery {
       } else if (proposal.grant) {
         proposal.state = Date.parse(proposal.grant.grant.expiresAt) > Date.now() ? 'approved' : 'expired'
       }
+      await sql.query('commit')
       return proposal
-    })
+    } catch (error) { await sql.query('rollback'); throw error } finally { sql.release() }
   }
   async approveBrowser(request: FastifyRequest, workspaceId: string, executionId: string, recoveryId: string,
     commandId: string) {

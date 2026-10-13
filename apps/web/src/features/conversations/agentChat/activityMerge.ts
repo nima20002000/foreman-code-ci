@@ -1,10 +1,11 @@
 import type { OperatorActivity } from '@foreman-code/contracts'
-import { canonicalJson } from '@foreman-code/contracts/canonical-json'
 import type { ActivityItem, ActivityScope, ActivitySnapshotV1, ActivitySourceRevision, InteractionSummary } from '@foreman-code/contracts/activity'
 
 /** Canonical structural scope key; object property insertion order is not identity. */
 export function activityScopeKey(scope: ActivityScope): string {
-  return canonicalJson(scope)
+  const canonical = (value: unknown): unknown => value && typeof value === 'object' && !Array.isArray(value)
+    ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => [key, canonical(item)])) : value
+  return JSON.stringify(canonical(scope))
 }
 type Sources = readonly ActivitySourceRevision[] | undefined
 const sourceKey = (source: ActivitySourceRevision) => JSON.stringify([source.source, source.id])
