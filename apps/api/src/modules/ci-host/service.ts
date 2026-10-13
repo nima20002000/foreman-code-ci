@@ -738,11 +738,14 @@ export class HostCiService {
 
   private async gateReservation() {
     const rows = (await this.pool.query<{ record: unknown }>(`select record from ci_runs
-      where state in ('queued','starting','running') and record->>'gate'='true'
+      where state in ('queued','starting','running','failed','lost') and record->>'gate'='true'
       order by record->>'queuedAt',group_id,id`)).rows
     const runs = rows.map(row => CiRunRecordSchema.parse(row.record))
-    const gate = runs[0]
-    const reservedHosts = new Set(runs.filter(run => run.groupId === gate?.groupId && run.suite === 'integration')
+    // A gate with a failed or lost part cannot pass, so it no longer holds the barrier or host reservations.
+    const doomed = new Set(runs.filter(run => run.state === 'failed' || run.state === 'lost').map(run => run.groupId))
+    const live = runs.filter(run => !doomed.has(run.groupId) && ['queued', 'starting', 'running'].includes(run.state))
+    const gate = live[0]
+    const reservedHosts = new Set(live.filter(run => run.groupId === gate?.groupId && run.suite === 'integration')
       .map(run => run.plannedHostKey))
     return { gate, reservedHosts }
   }
@@ -846,8 +849,8 @@ export class HostCiService {
         ? github.length : githubIntegrationLimit
       const reasons = (run.unstartedProviders ?? []).map(provider => `${provider}: dispatch retries exhausted`)
       const preferred = (computer: HostCiComputer) => {
+        if (computer.hostRef.kind !== 'cloud') return 3
         if (run.suite !== 'integration') return Number(isGitHubComputer(computer))
-        if (computer.hostRef.kind !== 'cloud') return 0
         return isGitHubComputer(computer) ? 1 : 2
       }
       const affectedFiles = run.scope === 'affected' && !run.deriveFiles ? { files: run.files } : {}
