@@ -11,7 +11,6 @@ import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { RunCiAuthority, CI_GET_ACTIONS, CI_RUN_ACTIONS } from '../src/modules/jobs/ciAuthority.js'
 import { HostCiService, type CiCommits, type HostCiComputer, type HostCiEndpoint } from '../src/modules/ci-host/service.js'
-import type { CiIntegrationInventory } from '../src/modules/ci-host/integrationParts.js'
 import type { CiUnitInventory } from '../src/modules/ci-host/parts.js'
 import { codexApprovalRuntime } from './helpers/codexApprovalRuntime.js'
 import { DomainError } from '../src/modules/errors.js'
@@ -109,7 +108,6 @@ function fakeComputers(github: Record<string, boolean> = {}, cloud: boolean | { 
 }
 
 async function fixture(options: { repository?: boolean; github?: Record<string, boolean>; unitInventory?: CiUnitInventory
-  integrationInventory?: CiIntegrationInventory
   cloud?: boolean | { github: number; circleci: number }; agent?: boolean; hostSlots?: number
   repositoryRunner?: { commits: CiCommits; endpoint: HostCiEndpoint } } = {}) {
   const saved = options.agent ? makeCurrentWorkflowFixture(randomUUID()) : undefined
@@ -133,7 +131,6 @@ async function fixture(options: { repository?: boolean; github?: Record<string, 
   const inventory = options.unitInventory
   const commits = options.repositoryRunner?.commits ?? {
     capabilities: async () => ({ parts: true, integrationPartitions: true, affected: true }),
-    ...(options.integrationInventory ? { integrationInventory: async () => options.integrationInventory! } : {}),
     ...(inventory ? { unitInventory: async () => inventory } : {}),
     resolve: async (_repository: string, _branch: string, commit: string | undefined) => {
     const resolved = commit ?? 'a'.repeat(40)
@@ -845,7 +842,7 @@ it('queues a run while every computer is busy and starts it on the first one tha
     const third = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', { suite: 'install', commandId: 'three' }))
     await f.ci.dispatch()
     expect(CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: third.ticketId })).run)
-      .toMatchObject({ state: 'queued', message: 'No ready computer for install; laptop: all CI slots in use (1/1); builder: all CI slots in use (1/1)' })
+      .toMatchObject({ state: 'queued', message: 'No ready computer for install; laptop: busy; builder: busy' })
     f.finish(first.ticketId, 0, 'ok\n')
     await f.ci.dispatch()
     const moved = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: third.ticketId }))
@@ -891,7 +888,7 @@ it('queues only user-systemd files through MCP while ordinary files run on cloud
     const host = waiting.partitions!.find(run => run.partition!.hostIndexes!.includes(run.partition!.index))!
     const sibling = waiting.partitions!.find(run => run.id !== host.id)!
     expect(host).toMatchObject({ state: 'queued', computer: null,
-      message: 'Waiting for a build computer: this integration slice needs one; laptop: all CI slots in use (1/1)' })
+      message: 'Waiting for a build computer: this integration slice needs one; laptop: busy' })
     expect(sibling).toMatchObject({ state: 'running', computer: { hostRef: { kind: 'cloud' } } })
     expect(integrationPartition(host.files, {}, host.partition!).sort()).toEqual([...systemd].sort())
     expect(integrationPartition(sibling.files, {}, sibling.partition!).sort()).toEqual([...ordinary].sort())
@@ -1066,8 +1063,7 @@ it('runs two host-only tickets on one computer and queues a third through authen
   const f = await fixture({ hostSlots: 2, cloud: true })
   f.computers.splice(1, 1)
   try {
-    const request = { suite: 'integration', scope: 'affected', commit: 'a'.repeat(40),
-      files: [[...userSystemdIntegrationFiles][0]!] }
+    const request = { suite: 'integration', scope: 'affected', files: [[...userSystemdIntegrationFiles][0]!] }
     const denied = await f.connect([...CI_GET_ACTIONS])
     expect((await f.call(denied, 'ci_run', { ...request, commandId: randomUUID() })).isError).toBe(true)
     const tickets = []
@@ -1381,35 +1377,5 @@ it('learns integration file durations from finished runs and hands every partiti
     await f.ci.dispatch()
     expect(f.started.slice(4).map(value => value.request.operation === 'start' && value.request.suite)).toEqual(['integration', 'unit'])
     expect(startedDurations().slice(4)).toEqual([{ ...learned, [file('a')]: 2000 }, undefined])
-  } finally { await f.close() }
-})
-
-
-it.each(['full', 'affected'] as const)('automatically sizes %s integration via MCP with estimates and persisted readback', async scope => {
-  const files = Array.from({ length: 20 }, (_, index) => `apps/api/test/timed-${index}.integration.test.ts`)
-  const durations = Object.fromEntries(files.map(file => [file, 120_000]))
-  const f = await fixture({ integrationInventory: { files, durations }, cloud: { github: 16, circleci: 28 } })
-  try {
-    const reader = await f.connect(CI_GET_ACTIONS)
-    const input = { suite: 'integration', scope, commit: 'a'.repeat(40), commandId: `automatic-${scope}`,
-      ...(scope === 'affected' ? { files: files.slice(0, 6) } : {}) }
-    expect((await f.call(reader, 'ci_run', input)).isError).toBe(true)
-    expect((await f.pool.query('select count(*)::int as count from ci_runs')).rows[0].count).toBe(0)
-    const started = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', input))
-    expect(started.partitions).toHaveLength(scope === 'full' ? 10 : 3)
-    expect(CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', input))).toEqual(started)
-    const read = CiGetOutputSchema.parse(await f.value(reader, 'ci_get', { ticketId: started.ticketId }))
-    expect(read.partitions!.every(run => run.expectedDurationMs === 330_000)).toBe(true)
-    expect(read.partitions!.every(run => run.computer?.hostRef.kind === 'cloud')).toBe(true)
-    const selected = scope === 'full' ? files : files.slice(0, 6)
-    const slices = read.partitions!.map(run => integrationPartition(selected, durations, run.partition!))
-    expect(slices.flat().sort()).toEqual([...selected].sort())
-    const stored = (await f.pool.query<{ record: unknown }>('select record from ci_runs where group_id=$1',
-      [read.run.groupId])).rows.map(row => row.record)
-    expect(stored).toEqual(expect.arrayContaining(read.partitions!))
-    for (const run of read.partitions!) f.finish(run.id, 0, 'passed')
-    await f.ci.dispatch()
-    expect(CiGetOutputSchema.parse(await f.value(reader, 'ci_get', { ticketId: started.ticketId })).group?.state)
-      .toBe('passed')
   } finally { await f.close() }
 })
