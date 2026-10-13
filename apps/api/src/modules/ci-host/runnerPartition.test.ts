@@ -59,11 +59,11 @@ it.each([
       ...(ciShell ? { BASH_ENV: shellStartup } : {}) }
     const ports: HostCiPorts = { ...system, run: async (file, args, options) => {
       if (file === 'gh') return { code: 0, stdout: '', stderr: '' }
+      if (file === 'git' && args.includes('checkout') && preparationDelayMs) {
+        await delay(preparationDelayMs)
+        preparationDelayMs = 0
+      }
       if (file === 'git' && args.some(value => value.startsWith('https://github.com/'))) {
-        if (args.includes('--shared') && preparationDelayMs) {
-          await delay(preparationDelayMs)
-          preparationDelayMs = 0
-        }
         return system.run(file, args.map(value => value.startsWith('https://') ? origin : value), options)
       }
       if (file === 'systemd-run') {

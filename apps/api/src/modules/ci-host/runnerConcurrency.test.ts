@@ -32,10 +32,11 @@ function barrier() {
   } }
 }
 
-const fixtures: { root: string; runner: HostCiRunner }[] = []
+const fixtures: { root: string; runner: HostCiRunner; control: { stopCode: number } }[] = []
 afterEach(async () => {
   writes.duringRunningWrite = null
-  for (const { root, runner } of fixtures.splice(0)) {
+  for (const { root, runner, control } of fixtures.splice(0)) {
+    control.stopCode = 0
     await vi.waitFor(async () => {
       const status = await runner.status()
       if (status.operation !== 'status' || status.runs.some(run => run.state === 'starting')) {
@@ -56,16 +57,19 @@ async function computer(beforeGithub?: () => Promise<void>, cpuCount = 8, isolat
   await mkdir(directory, { recursive: true })
   const root = await mkdtemp(join(directory, 'host-ci-concurrency-'))
   const launches: { args: readonly string[] }[] = []
+  const checkoutSources: string[] = []
   const activeUnits = new Set<string>()
+  const control = { stopCode: 0 }
   const ports: HostCiPorts = { cpus: cpuCount, memoryBytes: 16 * 2 ** 30, now: () => new Date(),
-    run: async (file, args) => {
+    run: async (file, args, options) => {
       if (file === 'gh') await beforeGithub?.()
       if (file === 'git' && args.includes('show')) {
         return { code: 0, stdout: JSON.stringify({ foremanCi: { hostSlots: isolatedDatabase ? 1 : 0 } }), stderr: '' }
       }
-      if (file === 'git' && args.includes('worktree') && args.includes('add')) {
+      if (file === 'git' && args.includes('checkout')) {
         await beforeCheckout?.()
-        const source = args.at(-2)!
+        const source = options!.cwd!
+        checkoutSources.push(source)
         await mkdir(source, { recursive: true })
         await writeFile(join(source, 'package.json'), JSON.stringify({ scripts: { lint: 'fixture', unit: 'fixture' } }))
       }
@@ -75,16 +79,19 @@ async function computer(beforeGithub?: () => Promise<void>, cpuCount = 8, isolat
       }
       if (file === 'systemctl') {
         const unit = args.at(-1)!.replace('.service', '')
-        if (args.includes('stop')) activeUnits.delete(unit)
+        if (args.includes('stop')) {
+          if (control.stopCode !== 0) return { code: control.stopCode, stdout: '', stderr: 'Manager unavailable' }
+          activeUnits.delete(unit)
+        }
         return { code: 0, stdout: activeUnits.has(unit) ? 'active\n' : 'inactive\n', stderr: '' }
       }
       return { code: 0, stdout: '', stderr: '' }
     } }
   const runner = new HostCiRunner(root, ports)
-  fixtures.push({ root, runner })
+  fixtures.push({ root, runner, control })
   const request = { operation: 'start', runId: randomUUID(), repository: 'octo/site', commit: 'a'.repeat(40),
     suite: 'lint', scope: 'full' }
-  return { root, runner, request, launches }
+  return { root, runner, request, launches, checkoutSources, control }
 }
 
 describe('host CI runner concurrent starts', () => {
@@ -99,9 +106,9 @@ describe('host CI runner concurrent starts', () => {
     expect(launches[0]!.args).toContain('--property=CPUQuota=1600%')
   })
 
-  it('removes a canceled checkout only after preparation has stopped', async () => {
+  it('retains a canceled slot checkout after preparation has stopped', async () => {
     const checkout = barrier()
-    const { root, runner, request } = await computer(undefined, 16, true, checkout.pause)
+    const { runner, request, checkoutSources } = await computer(undefined, 16, true, checkout.pause)
     await runner.handle(request)
     await checkout.entered
     const canceled = runner.cancel(request.runId)
@@ -115,7 +122,7 @@ describe('host CI runner concurrent starts', () => {
     }
     await expect(canceled).resolves.toMatchObject({ state: 'canceled' })
     const { access } = await import('node:fs/promises')
-    await expect(access(join(root, 'runs', request.runId, 'src'))).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(access(join(checkoutSources[0]!, 'package.json'))).resolves.toBeUndefined()
   })
 
   it('admits two different jobs into two slots, queues a third, and releases one slot on cancellation', async () => {
@@ -181,4 +188,64 @@ describe('host CI runner concurrent starts', () => {
       writing.release()
     }
   })
+})
+
+it('cancels low priority warm-up before real CI resets a slot and keeps all real slots available', async () => {
+  const { runner, request, launches } = await computer(undefined, 16, true)
+  const warm = { ...request, runId: randomUUID(), warmup: true, suite: 'install' }
+  await runner.handle(warm)
+  await vi.waitFor(async () => {
+    await expect(runner.status()).resolves.toMatchObject({ slotsUsed: 0, slotsTotal: 2,
+      warmup: { run: { state: 'running' } } })
+  })
+  expect(launches[0]!.args).toEqual(expect.arrayContaining([
+    '--property=Nice=19', '--property=CPUWeight=1', '--property=IOWeight=1', '--property=IOSchedulingClass=idle',
+  ]))
+  await runner.handle(request)
+  await expect(runner.handle({ operation: 'read', runId: warm.runId, afterOffset: 0, maxBytes: 1 }))
+    .resolves.toMatchObject({ run: { state: 'canceled' } })
+  await runner.handle({ ...request, runId: randomUUID() })
+  await expect(runner.status()).resolves.toMatchObject({ slotsUsed: 2 })
+  await expect(runner.handle({ ...warm, runId: randomUUID() })).resolves.toMatchObject({ run: { state: 'queued' } })
+})
+
+it('keeps a canceled slot reserved until its checkout operation finishes', async () => {
+  const checkout = barrier()
+  const { runner, request } = await computer(undefined, 8, true, checkout.pause)
+  await runner.handle(request)
+  await checkout.entered
+  const canceled = runner.cancel(request.runId)
+  try {
+    await vi.waitFor(async () => {
+      await expect(runner.handle({ operation: 'read', runId: request.runId, afterOffset: 0, maxBytes: 1 }))
+        .resolves.toMatchObject({ run: { state: 'starting', message: expect.stringContaining('Cancellation requested') } })
+    })
+    await expect(runner.handle({ ...request, runId: randomUUID() })).rejects.toMatchObject({ code: 'CI_HOST_BUSY' })
+  } finally {
+    checkout.release()
+  }
+  await canceled
+  await expect(runner.handle({ ...request, runId: randomUUID() })).resolves.toMatchObject({ run: { state: 'starting' } })
+})
+
+
+it('waits for a warm-up to confirm cancellation before real CI resets its slot', async () => {
+  const { runner, request, launches, checkoutSources, control } = await computer(undefined, 16, true)
+  const warm = { ...request, runId: randomUUID(), warmup: true, suite: 'install' }
+  await runner.handle(warm)
+  await vi.waitFor(async () => {
+    await expect(runner.status()).resolves.toMatchObject({ warmup: { run: { state: 'running' } } })
+  })
+  control.stopCode = 1
+  await expect(runner.handle(request)).rejects.toMatchObject({ code: 'CI_HOST_BUSY' })
+  await expect(runner.handle({ operation: 'read', runId: warm.runId, afterOffset: 0, maxBytes: 1 }))
+    .resolves.toMatchObject({ run: { state: 'running', finishedAt: null } })
+  expect(launches).toHaveLength(1)
+  expect(checkoutSources).toEqual([])
+  control.stopCode = 0
+  await runner.handle(request)
+  await vi.waitFor(() => expect(launches).toHaveLength(2))
+  await expect(runner.handle({ operation: 'read', runId: warm.runId, afterOffset: 0, maxBytes: 1 }))
+    .resolves.toMatchObject({ run: { state: 'canceled' } })
+  expect(checkoutSources).toHaveLength(1)
 })

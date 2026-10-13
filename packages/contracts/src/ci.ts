@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { CI_LOG_MAX_BYTES, CiComputerRefSchema, CiActivitySchema, CiRunRecordSchema, CiSuiteSchema, CiScopeSchema, CiSelectedFilesSchema,
   CiTestResultsSchema, CiPrioritySchema, CiPriorityReasonSchema,
-  CiTestStatusSchema, CiTestSummarySchema, CiUserSystemdSchema, validCiSelection } from './ciHost.js'
+  CiWarmupSchema, CiTestStatusSchema, CiTestSummarySchema, CiUserSystemdSchema, validCiSelection } from './ciHost.js'
 import { IdSchema } from './schemaPrimitives.js'
 import { JobResourceRequestSchema } from './jobVerificationPolicy.js'
 import { SourceRootRecordSchema } from './sourceAdmission.js'
@@ -108,12 +108,10 @@ export const CiListOutputSchema = z.object({ runId: IdSchema, jobs: z.array(CiRu
   truncated: z.boolean() }).strict()
 export type CiListOutput = z.infer<typeof CiListOutputSchema>
 export const CiLogsInputSchema = CiTicketInputSchema.extend({
-  /** Omit to read the last maxBytes; continue with nextOffset. Offsets inside UTF-8 characters skip their remainder. */
-  afterOffset: z.number().int().nonnegative().optional()
-    .describe('Byte cursor; offsets inside UTF-8 characters skip to the next character. Continue with nextOffset.'),
+  /** Omit to read the last maxBytes; continue with nextOffset. */
+  afterOffset: z.number().int().nonnegative().optional(),
   maxBytes: z.number().int().min(1).optional()
-    .describe(`Defaults to ${CI_LOG_MAX_BYTES} bytes; larger values are clamped. Only complete UTF-8 characters are returned; `
-      + 'increase the budget if the next character does not fit. Group reads divide this total, allowing zero-byte parts.'),
+    .describe(`Defaults to ${CI_LOG_MAX_BYTES} bytes; larger values are clamped to this limit.`),
   /** Include a bounded page from every part, with a separate cursor for each ticket. */
   group: z.boolean().optional(),
 }).strict()
@@ -123,7 +121,7 @@ export const CiLogsOutputSchema = z.object({ text: z.string(), nextOffset: z.num
   maxBytes: z.number().int().min(1).max(CI_LOG_MAX_BYTES),
   parts: z.array(z.object({ run: CiRunRecordSchema, text: z.string(), nextOffset: z.number().int().nonnegative(),
     logBytes: z.number().int().nonnegative(),
-    maxBytes: z.number().int().nonnegative().max(CI_LOG_MAX_BYTES) }).strict()).optional(),
+    maxBytes: z.number().int().min(1).max(CI_LOG_MAX_BYTES) }).strict()).optional(),
 }).strict()
 export const CiQueueEntrySchema = z.object({
   ticketId: IdSchema, priority: CiPrioritySchema, priorityReason: CiPriorityReasonSchema,
@@ -137,6 +135,7 @@ export const CiComputersOutputSchema = z.object({
   cpuCount: z.number().int().positive().optional(), memoryBytes: z.number().int().positive().optional(),
   availableMemoryBytes: z.number().int().nonnegative().optional(),
   userSystemd: CiUserSystemdSchema.optional(),
+  prewarmSupported: z.boolean().optional(), warmup: CiWarmupSchema.nullable().optional(),
   slotsUsed: z.number().int().nonnegative(), slotsTotal: z.number().int().positive(),
   running: z.array(z.string()).optional(),
 }).strict()) }).strict()
