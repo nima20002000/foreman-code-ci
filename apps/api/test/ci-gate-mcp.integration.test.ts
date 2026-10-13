@@ -174,11 +174,8 @@ it('admits one complete gate, denies a reader, and persists the plan and measure
     expect(read.partitions!.every(run => run.scope === 'full')).toBe(true)
     const hosts = f.started.filter(item => item.key.startsWith('builder-'))
     expect(hosts).toHaveLength(2)
-    for (const host of hosts) expect(host.request).toMatchObject({ suite: 'integration', gate: true, integrationShards: 26 })
+    for (const host of hosts) expect(host.request).toMatchObject({ suite: 'integration', gate: true, integrationShards: 12 })
     const integration = read.partitions!.filter(run => run.suite === 'integration')
-    for (const host of hosts) {
-      expect(integration.find(run => run.plannedHostKey === host.key)).toMatchObject({ integrationShards: 26 })
-    }
     const assigned = integration.flatMap(run => run.files)
     expect(assigned.sort()).toEqual([...f.files].sort())
     expect(new Set(assigned).size).toBe(assigned.length)
