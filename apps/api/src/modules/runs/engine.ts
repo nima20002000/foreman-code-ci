@@ -31,7 +31,6 @@ import { componentLogger } from '../diagnostics/logger.js'
 import { isAtomicApprovalCheckpointSaver } from '../../infrastructure/approvalCheckpointSaver.js'
 import type { WorkflowRestartApprovals } from './workflowRepositoryServices.js'
 import { readRunAcceptedPlacements } from '../placement/persistence.js'
-import { ignoreError } from '../diagnostics/ignoredError.js'
 
 /** One engine, Run owner, checkpoint thread and repository for all current V3
  * graphs. Optional bounded blocks are compiled into this same LangGraph; an
@@ -138,7 +137,7 @@ export class LangGraphWorkflowEngine implements WorkflowOrchestrator {
       return this.consumeActiveApproval(owner, claim, ids, this.activeRuns.get(runId)!.signal)
     }
     const previous = this.resumeTasks.get(runId) ?? this.activeTasks.get(runId) ?? Promise.resolve()
-    const task = previous.catch(() => { /* ignore: a failed earlier operation is reported to its own caller; this queue only orders the next one */ }).then(() =>
+    const task = previous.catch(() => undefined).then(() =>
       this.trackRun(runId, (controller) => this.drive(runId, controller, ids, claim)),
     ).finally(() => { if (this.resumeTasks.get(runId) === task) this.resumeTasks.delete(runId) })
     this.resumeTasks.set(runId, task)
@@ -347,7 +346,7 @@ export class LangGraphWorkflowEngine implements WorkflowOrchestrator {
         } else await this.nativeExecutions.finishRun(owner.runId)
         await this.finishOwned(owner)
       } catch (error) {
-        await this.runs.finishCleanup(owner.runId, true, owner).catch(ignoreError('engine', 'runs.finishCleanup', { module: 'engine' }))
+        await this.runs.finishCleanup(owner.runId, true, owner).catch(() => undefined)
         throw error
       }
     } finally { finished() }

@@ -30,7 +30,6 @@ import {
   fitsInteractionMcpResponse, interactionMcpGet, interactionMcpSummary, interactionMcpView,
 } from './mcpReadback.js'
 import type { InteractionResponseOptions } from './cancellation.js'
-import { ignoreError } from '../diagnostics/ignoredError.js'
 
 const CURSOR_PREFIX = 'interaction:'
 export const AppInteractionListInputSchema = ListInteractionsRequestSchema.pick({ cursor: true, limit: true }).strict()
@@ -87,7 +86,7 @@ export class PostgresAppInteractionService implements AppInteractionService {
     const access = await this.toolAccess(principal)
     const enabled = (tool: string) => access.tools.includes(tool as never)
     const worktree = await this.worktree(principal)
-    const sharedFiles = await this.sharedFiles(principal).catch(ignoreError('engine', 'load shared files for interaction view'))
+    const sharedFiles = await this.sharedFiles(principal).catch(() => undefined)
     return {
       ...(worktree ? { worktree } : {}),
       ...(sharedFiles ? { sharedFiles } : {}),
@@ -294,13 +293,12 @@ export class PostgresAppInteractionService implements AppInteractionService {
     } catch (error) {
       const denied = error instanceof DomainError && ['INTERACTION_NOT_FOUND', 'INTERACTION_ACCESS_DENIED'].includes(error.code)
       if (denied) {
-        await this.commands.recordDenied(principal.id, 'mcp', 'interaction_respond', 'interaction:requested')
-          .catch(ignoreError('engine', 'record denied interaction response audit'))
+        await this.commands.recordDenied(principal.id, 'mcp', 'interaction_respond', 'interaction:requested').catch(() => undefined)
       } else {
         await this.commands.recordAudit(principal.id, 'mcp', 'interaction_respond',
           `interaction:${current?.id ?? parsed.interactionId}`, 'failed', {
             code: error instanceof DomainError ? error.code : 'INTERNAL_ERROR',
-          }).catch(ignoreError('engine', 'record failed interaction response audit', { interactionId: parsed.interactionId }))
+          }).catch(() => undefined)
       }
       throw error
     }

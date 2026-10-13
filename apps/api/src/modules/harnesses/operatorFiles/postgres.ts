@@ -9,7 +9,6 @@ import { DomainError } from '../../errors.js'
 import { PostgresFileConversationAuthorization } from '../../files/authorization.js'
 import { bindingIdentity } from '../../files/tools/context.js'
 import type { FileToolContext } from '../../files/tools/types.js'
-import { ignoreError } from '../../diagnostics/ignoredError.js'
 
 interface ReceiptRow {
   owner_principal_id: string
@@ -190,6 +189,6 @@ export async function adoptOperatorFilePublications(pool: pg.Pool, context: File
         [context.messageId, JSON.stringify(outputs)])
     }
     await client.query('commit')
-  } catch (error) { await client.query('rollback').catch(ignoreError('db', 'transaction rollback', { module: 'postgres' })); throw error }
+  } catch (error) { await client.query('rollback').catch(() => undefined); throw error }
   finally { client.release() }
 }

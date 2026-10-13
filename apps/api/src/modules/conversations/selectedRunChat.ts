@@ -11,7 +11,6 @@ import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.j
 import { DomainError } from '../errors.js'
 import type { PostgresRunRepository } from '../runs/postgres.js'
 import { agentChatKey, type AgentConversationRow } from './agentChatRepository.js'
-import { ignoreError } from '../diagnostics/ignoredError.js'
 
 type Queryable = Pick<pg.PoolClient, 'query'>
 export type RunChatAuthorityCheck = (transaction?: pg.PoolClient) => Promise<void>
@@ -149,7 +148,7 @@ export async function withRunChatAuthority<T>(pool: pg.Pool, principal: Manageme
       authorize(principal); authorize(live)
       await client.query('commit')
     } catch (error) {
-      await client.query('rollback').catch(ignoreError('db', 'transaction rollback', { module: 'selectedRunChat' }))
+      await client.query('rollback').catch(() => undefined)
       throw error
     } finally { client.release() }
   }

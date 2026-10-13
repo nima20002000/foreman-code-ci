@@ -7,7 +7,6 @@ import type {
   ClaudeNativeObservation, ClaudePersistedSession, ClaudeSdkClient, ClaudeSdkOpenInput,
   ClaudeSdkOutput, ClaudeSdkQuery, ClaudeSdkRunner, ClaudeSdkSession, ClaudeSdkUserMessage, ClaudeSessionScope,
 } from './port.js'
-import { ignoreError } from '../../diagnostics/ignoredError.js'
 
 
 
@@ -262,7 +261,7 @@ export function createClaudeSdkRunner(input: {
     }
     const externalAbort = () => {
       abort.abort(options.signal?.reason)
-      void session.close().catch(ignoreError('harness', 'session.close', { module: 'runner' }))
+      void session.close().catch(() => undefined)
     }
     const session: ClaudeSdkSession = {
       output: outputQueue,
