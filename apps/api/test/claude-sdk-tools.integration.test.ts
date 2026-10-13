@@ -23,6 +23,7 @@ import { registerProductionFileStorage } from '../src/modules/files/production.j
 import { productionFileTools } from '../src/modules/files/tools/production.js'
 import { nim2691TaskDatabase } from './helpers/nim2691Database.js'
 import { privateFixtureDirectory } from './helpers/privateFixtureDirectory.js'
+import { readUntil } from './helpers/observableCondition.js'
 import { graphRpc, graphRpcValue } from './eng04-graph-composition-fixture.js'
 import { productionClaudeFixture } from './support/claudeProduction.js'
 import { claudeSdkToolTransport } from './support/claudeSdkToolTransport.js'
@@ -94,8 +95,19 @@ it.each([
         const ready = await files.finalize(owner.principal, target, uploadId)
         arguments_ = { fileId: ready.value.file.fileId, revisionId: ready.value.revision.revisionId }
       }
+      const gatePermission = scenario === 'management' && serverName === 'graphql'
+      let releasePermission!: () => void
+      const permissionReady = new Promise<void>(resolve => { releasePermission = resolve })
+      let permissionWaiting = false
       const transport = claudeSdkToolTransport(directory, () => [{ name: scenario === 'files' ? 'files.read' : 'workspace_create',
-        arguments: arguments_, server: serverName, source: scenario === 'files' ? 'sdk' : 'dynamic' }])
+        arguments: arguments_, server: serverName, source: scenario === 'files' ? 'sdk' : 'dynamic' }], {
+        beforePermission: async () => {
+          if (gatePermission) {
+            permissionWaiting = true
+            await permissionReady
+          }
+        },
+      })
       const start = { kind: 'operator' as const, correlationId: `operator:${conversation.id}:${requestId}`, configuration,
         workingDirectory: directory, environment: { agentId: configuration.operatorId, variables: {} } }
       const f = productionClaudeFixture('operator', undefined, endpoint, scenario === 'files' ? productionFileTools(app) : undefined,
@@ -129,9 +141,31 @@ it.each([
       })
       try {
         await chat.send(conversation.id, { requestId, content: 'Call the configured tool' }, owner.principal)
+        if (gatePermission) {
+          await readUntil(async () => permissionWaiting, Boolean, {
+            timeoutMs: 15_000, description: 'native tool waiting before permission',
+          })
+          const waiting = await chat.get(conversation.id, owner.principal)
+          expect(waiting.activeRequestId).toBe(requestId)
+          expect(waiting.pendingInteraction).toBeUndefined()
+          expect(transport.results).toEqual([])
+          expect((await pool.query("select count(*)::int as n from workspaces where record->>'name'=$1",
+            [arguments_.name])).rows[0]?.n).toBe(0)
+          releasePermission()
+        }
         if (scenario !== 'denied-management') {
-          await vi.waitFor(async () => expect((await repository.get(conversation.id))?.pendingInteraction).toBeDefined())
-          const pending = (await repository.get(conversation.id))!.pendingInteraction!
+          const state = await readUntil(async () => {
+            const current = await chat.get(conversation.id, owner.principal)
+            if (current.error) throw new Error(JSON.stringify(current.error))
+            if (!current.activeRequestId && !current.pendingInteraction) {
+              throw new Error('The tool turn ended without requesting its configured approval.')
+            }
+            return current
+          }, current => current.pendingInteraction !== undefined, {
+            timeoutMs: 15_000, description: 'SDK tool approval',
+          })
+          const pending = state.pendingInteraction!
+          expect(transport.results).toEqual([])
           const input = { commandId: randomUUID(), requestId, nativeRequestId: pending.turn.nativeRequestId,
             optionId: pending.responseOptions[0]!.optionId }
           const denied = await graphRpc(app, reader.token, 'tools/call', { name: 'operator_chat_respond',
@@ -185,6 +219,7 @@ it.each([
         expect(credentials).toHaveLength(scenario === 'files' ? 0 : 1)
         expect(credentials.every(row => row.revoked_at !== null)).toBe(true)
       } finally {
+        releasePermission()
         try { await chat.shutdown() } finally { await app.close() }
       }
     }).finally(() => rm(vault, { recursive: true, force: true }))
