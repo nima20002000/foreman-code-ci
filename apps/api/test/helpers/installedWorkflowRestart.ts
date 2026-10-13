@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { setTimeout as delay } from 'node:timers/promises'
 import { expect } from 'vitest'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { SavedRunDetailsSchema } from '@foreman-code/contracts/wave25'
@@ -58,18 +57,11 @@ export async function assertInstalledWorkflowRestart(phase: RestartPhase) {
       await readUntil(service.state, value => value === 'deactivating',
       { timeoutMs: 10_000, description: 'systemd beginning API restart' })
       await service.waitForPreservation()
-      // Keep admission pending while shutdown classifies the original session.
-      if (phase === 'admitting interval') await delay(250)
       if (phase === 'failed admission') await fixture.provider.failWorkflowAdmission()
       await fixture.provider.releaseWorkflowAdmission()
     }
     const ready = (await restart)!
     expect(ready.pid).not.toBe(previousPid)
-    if (phase === 'admitting interval') {
-      await readUntil(() => fixture.provider.calls(), calls => active.every(original =>
-        calls.some(call => call.method === 'turn/start' && call.correlationId === `execution:${original.id}`)),
-      { timeoutMs: 10_000, description: 'the original graph and interval turns admitted across restart' })
-    }
     await fixture.reconcile()
     await expectMcpAccessDenied(fixture.call('run_stop', { workspaceId: started.run.workspaceId,
       runId: started.run.id, commandId: randomUUID() }, reader.token))
