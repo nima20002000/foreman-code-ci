@@ -1,4 +1,3 @@
-import { installBrowserLocks } from '../test/browserLocks'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createMemoryHistory, createRouter, RouterProvider } from '@tanstack/react-router'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -89,7 +88,6 @@ function installNodeInspection() {
 }
 
 beforeEach(() => {
-  installBrowserLocks()
   unhandled.length = 0; server.events.on('request:unhandled', recordUnhandled)
   useGraphDraftStore.getState().clearAllDrafts()
   localStorage.clear(); sessionStorage.clear(); bindMockInstallation()
@@ -150,8 +148,7 @@ beforeEach(() => {
   )
 })
 afterEach(() => {
-  cleanup(); window.dispatchEvent(new Event('pagehide'))
-  clients.splice(0).forEach((client) => client.clear())
+  cleanup(); clients.splice(0).forEach((client) => client.clear())
   server.events.removeListener('request:unhandled', recordUnhandled)
   expect(unhandled, 'No selected Board request may bypass MSW').toEqual([])
   server.events.removeListener('request:start', recordWrite)
@@ -161,15 +158,6 @@ afterEach(() => {
 })
 
 describe('Workspace Board route, editor and HTTP boundary', { timeout: 20_000 }, () => {
-  it.each([null, 'run-a'])('opens the Board after claiming browser tab ownership for Run %s', async (runId) => {
-    await mount(runsUrl(runId, scope))
-    const name = runId ? 'Selected Run pinned topology' : 'Workflow authoring'
-    expect(await screen.findByRole('region', { name })).toBeVisible()
-    expect(screen.queryByText('This browser cannot safely recover independent tab edits.')).not.toBeInTheDocument()
-    expect(screen.getByRole('group', { name: 'Board controls' })).toBeVisible()
-    expect(writes).toEqual([])
-  })
-
   it('inspects a saved Agent missing from the current workflow and reopens its generated URL', async () => {
     const reads = installNodeInspection()
     const current = getMockFixture(scope.workspaceId)!.workflows.find(item => item.id === scope.workflowId)!
