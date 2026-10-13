@@ -47,7 +47,6 @@ import { measureIntegrationPhase, reportIntegrationPhase } from './integrationPh
 import { remoteReviewWorkerArtifacts } from './remoteReviewWorkerArtifacts.js'
 import { remoteReviewChanges } from './remoteReviewChanges.js'
 import { installedRestartService } from './installedRestartService.js'
-import { installedRestartArtifact } from './installedRestartArtifact.js'
 import type { RuntimeTimingRecord } from '../../src/modules/diagnostics/runtimeTiming.js'
 
 const execute = promisify(execFile)
@@ -137,9 +136,6 @@ export async function remoteReviewProduction(options: {
       options.workerRelease ?? buildRemoteReviewWorkerRelease(directory),
     ] as const)
     closes.push(async () => { await workerReleaseResult })
-    const installedReleaseResult = options.installedMainService
-      ? Promise.allSettled([installedRestartArtifact()] as const) : undefined
-    if (installedReleaseResult) closes.push(async () => { await installedReleaseResult })
     const setupClaude = () => measureIntegrationPhase('Claude fixture',
       () => createRemoteReviewClaudeInventory(claudeDirectory))
     const setupTls = () => measureIntegrationPhase('fixture TLS', () => createRemoteReviewTls(join(directory, 'tls')))
@@ -245,10 +241,6 @@ export async function remoteReviewProduction(options: {
       'Worker update artifacts', () => remoteReviewWorkerArtifacts(workerRelease))
     workerEnvironment.FOREMAN_CODE_WORKER_ARTIFACT_DIRECTORY = logEnvironment.FOREMAN_CODE_WORKER_ARTIFACT_DIRECTORY
     let main: ChildProcess | undefined
-    if (installedReleaseResult) {
-      const [prepared] = await installedReleaseResult
-      if (prepared.status === 'rejected') throw prepared.reason
-    }
     const mainService = options.installedMainService
       ? await installedRestartService(directory, mainConfiguration, logEnvironment, runtime) : undefined
     if (mainService) closes.push(mainService.close)

@@ -5,25 +5,12 @@ import { HostHarnessOverrideListSchema, HostHarnessProfileEvidenceSchema } from 
 import { remoteReviewProduction, waitForRemoteReview } from './remoteReviewProduction.js'
 import { AcceptedNodePlacementSchema } from '@foreman-code/contracts/node-placement'
 import { expectMcpAccessDenied } from './deniedMcpTool.js'
-import { measureIntegrationPhase } from './integrationPhase.js'
 
 type Fixture = Awaited<ReturnType<typeof remoteReviewProduction>>
 
-export async function installationUpdateFixture(options: Parameters<typeof remoteReviewProduction>[0] = {}) {
-  const fixture = await measureIntegrationPhase('installation update fixture', () => remoteReviewProduction({
-    ...options, installationRefreshIntervalMs: options.installationRefreshIntervalMs ?? 500,
-    parallelSetup: true, parallelProfileChecks: true, includeNodeRuntimePayload: false,
-  }))
-  return {
-    ...fixture,
-    close: () => measureIntegrationPhase('installation update cleanup', fixture.close),
-  }
-}
-
-export async function waitForInstallationUpdate<T>(
-  read: () => Promise<T>, accept: (value: T) => boolean, description: string,
-): Promise<T> {
-  return measureIntegrationPhase(description, () => waitForRemoteReview(read, accept, description))
+export function installationUpdateFixture(options: Parameters<typeof remoteReviewProduction>[0] = {}) {
+  return remoteReviewProduction({ ...options, installationRefreshIntervalMs: 100,
+    parallelSetup: true, parallelProfileChecks: true, includeNodeRuntimePayload: false })
 }
 
 export async function profiles(fixture: Fixture, token = fixture.writer.token) {
@@ -40,10 +27,8 @@ export async function latestEvidence(fixture: Fixture) {
 }
 
 export async function startWhenReady(fixture: Fixture) {
-  return waitForInstallationUpdate(async () => {
-    try {
-      return await fixture.start()
-    } catch (error) {
+  return waitForRemoteReview(async () => {
+    try { return await fixture.start() } catch (error) {
       if (error instanceof Error && error.message.includes('HARNESS_PROFILE_CHECK_PENDING')) return undefined
       throw error
     }
@@ -72,7 +57,7 @@ export async function profileReader(fixture: Fixture) {
 }
 
 export async function runningTurn(fixture: Fixture) {
-  const calls = await waitForInstallationUpdate(() => fixture.provider.calls(), values =>
+  const calls = await waitForRemoteReview(() => fixture.provider.calls(), values =>
     values.some(call => call.workflowTurn !== undefined), 'the resident native turn')
   return calls.find(call => call.workflowTurn !== undefined)!.workflowTurn as {
     pid: number; sessionId: string; turnId: string
@@ -80,24 +65,11 @@ export async function runningTurn(fixture: Fixture) {
 }
 
 export async function completedRun(fixture: Fixture, runId: string) {
-  const details = await completedRuns(fixture, [runId])
-  return details[0]!
-}
-
-export async function completedRuns(fixture: Fixture, runIds: string[]) {
-  const details = await waitForInstallationUpdate(async () => {
+  const details = await waitForRemoteReview(async () => {
     await fixture.reconcile()
-    const reads = await Promise.allSettled(runIds.map(runId => fixture.details(runId)))
-    const errors = reads.flatMap(result => result.status === 'rejected' ? [result.reason] : [])
-    if (errors.length) throw new AggregateError(errors, 'Resident Run readback failed.')
-    return reads.flatMap(result => result.status === 'fulfilled' ? [result.value] : [])
-  }, values => values.every(value => value.run.executionState === 'completed'), 'resident Runs completion')
-  for (const value of details) {
-    expect(value.run.outcome, JSON.stringify({
-      run: value.run.result,
-      executions: value.executions.map(item => [item.id, item.result]),
-    })).toBe('succeeded')
-  }
+    return fixture.details(runId)
+  }, value => value.run.executionState === 'completed', 'resident Run completion')
+  expect(details.run.outcome, JSON.stringify({ run: details.run.result, executions: details.executions.map(item => [item.id, item.result]) })).toBe('succeeded')
   return details
 }
 
