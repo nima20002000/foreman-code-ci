@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { withTransaction } from '../../infrastructure/transaction.js'
 import type pg from 'pg'
 import { CI_HOST_NAMESPACE, CI_LOG_MAX_BYTES, CI_RUN_JOBS_LIMIT, CiHostReplySchema, CiListOutputSchema, CiRunRecordSchema,
   WorkspaceSchema,
@@ -16,7 +17,6 @@ import { ciGroupState, planCiParts, runsOnCircleCi, type CiUnitInventory } from 
 import { assertCiReadAccess } from './runAccess.js'
 import type { CiRepositoryCapabilities } from './repository.js'
 import { RUN_CI_JOBS_SQL, runCiJob, storedCiTestResults, type RunCiJobRow } from './runJobs.js'
-import { fallbackOnError } from '../diagnostics/ignoredError.js'
 
 /** CI reads are idempotent: one retry after a lock or statement timeout, then a typed retryable error. */
 async function retryRead<T>(work: () => Promise<T>): Promise<T> {
@@ -248,8 +248,7 @@ export class HostCiService {
     for (const computer of computers) {
       if (speed.has(computer.key)) continue
       // No measurement yet: CPU count relative to the measured computers' typical speed per CPU.
-      const status = await this.endpoint.request(computer, { operation: 'status' })
-        .catch(fallbackOnError(null, 'jobs', 'read CI computer status', { computer: computer.key }))
+      const status = await this.endpoint.request(computer, { operation: 'status' }).catch(() => null)
       if (status?.operation === 'status' && speed.size) {
         const perCpu = [...speed.values()].reduce((sum, value) => sum + value, 0) / speed.size / 12
         speed.set(computer.key, perCpu * Math.max(1, Math.floor(status.cpuCount / (status.slotsTotal ?? 1))))
@@ -424,9 +423,7 @@ export class HostCiService {
 
   private async saveCancellation(sql: string, parameters: unknown[], run: CiRunRecord, audit?: RunStopAudit) {
     if (!audit || run.state !== 'canceled') return this.pool.query(sql, parameters)
-    const client = await this.pool.connect()
-    try {
-      await client.query('begin')
+    return withTransaction(this.pool, async (client) => {
       const saved = await client.query(sql, parameters)
       if (saved.rowCount) {
         await client.query(`insert into management_audit(principal_id,source,action,target_key,outcome,details)
@@ -436,14 +433,8 @@ export class HostCiService {
           executionId: run.initiator.executionId, reason: 'run_stop',
         })])
       }
-      await client.query('commit')
       return saved
-    } catch (error) {
-      await client.query('rollback')
-      throw error
-    } finally {
-      client.release()
-    }
+    })
   }
 
   async computers(caller: ManagementPrincipal, input: { workspaceId?: string | undefined }) {
@@ -530,8 +521,7 @@ export class HostCiService {
         ?? (run.computer && run.computer.hostRef.kind !== 'cloud' ? await this.computer(run.computer.hostRef) : null)
       if (!computer) return
       const reply = await this.endpoint.request(computer, { operation: 'read', runId: run.id, afterOffset: 0, maxBytes: 32_768,
-        ...(['integration', 'unit'].includes(run.suite) ? { durations: true } : {}) })
-        .catch(fallbackOnError(null, 'jobs', 'read CI run from computer', { runId: run.id }))
+        ...(['integration', 'unit'].includes(run.suite) ? { durations: true } : {}) }).catch(() => null)
       if (reply?.operation !== 'read') return
       let logTail = reply.text
       if (reply.run.logBytes > 32_768) {
@@ -548,8 +538,7 @@ export class HostCiService {
       // tests; if they cannot be saved, the run stays active and the next pass tries again.
       if (['integration', 'unit'].includes(run.suite) && !['starting', 'running'].includes(reply.run.state)) {
         const results = await this.endpoint.request(computer, { operation: 'read', runId: run.id, afterOffset: 0, maxBytes: 1,
-          testResults: true })
-          .catch(fallbackOnError(null, 'jobs', 'read CI test results from computer', { runId: run.id }))
+          testResults: true }).catch(() => null)
         if (results?.operation === 'read' && results.testResults) {
           const saved = await this.pool.query('update ci_runs set test_results=$2::jsonb where id=$1',
             [run.id, JSON.stringify(results.testResults)]).then(() => true,

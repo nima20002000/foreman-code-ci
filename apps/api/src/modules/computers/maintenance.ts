@@ -3,6 +3,7 @@ import { isCodexStagingRenameError, removeCodexStagingDirectories } from './npmS
 import { syncFingerprint } from './syncFingerprint.js'
 import { MaintenanceTaskStore } from './maintenanceTaskStore.js'
 import { MaintenanceCommandStore } from './maintenanceCommandStore.js'
+import type { MaintenancePorts } from './maintenancePorts.js'
 import { DomainError } from '../errors.js'
 import { z } from 'zod'
 import { execFile } from 'node:child_process'
@@ -18,29 +19,8 @@ import {
   type MaintenanceTaskStart, type SyncedMarketplace, type SyncedMcpServer,
   type WorkerUpdateStatus,
 } from '@foreman-code/contracts/computer-maintenance'
-import { fallbackOnError } from '../diagnostics/ignoredError.js'
 
-export interface MaintenancePorts {
-  environment: NodeJS.ProcessEnv
-  /** Absolute executable path, or null when not installed. */
-  find(name: string): Promise<string | null>
-  run(binary: string, args: string[], options: { signal: AbortSignal; timeoutMs: number }): Promise<{ code: number | null; stdout: string; stderr: string }>
-  exists(path: string): Promise<boolean>
-  readText(path: string): Promise<string | null>
-  /** Writes a private (0600) file atomically, creating its directory. */
-  writePrivateText(path: string, text: string): Promise<void>
-  disk(path: string): Promise<{ freeBytes: number; totalBytes: number } | null>
-  /** Runs fn after ms; restart uses it so the reply reaches Main before the computer goes down. */
-  later(fn: () => void, ms: number): void
-  now(): Date
-  /** Moves this computer's runtime selection to the installed update. Qualification still checks the selected binary. */
-  selectInstalledCodex?(signal: AbortSignal): Promise<string | null>
-  workerUpdate?: {
-    status(): Promise<WorkerUpdateStatus>
-    start(): Promise<string>
-    outcome?(task: MaintenanceTask): Promise<WorkerUpdateStatus | null>
-  }
-}
+export type { MaintenancePorts }
 
 type FleetLedger = { mcp: Record<MaintainedHarness, string[]>; codexPlugins: string[]; claudePlugins: string[] }
 const PACKAGES: Record<MaintainedHarness, string> = { codex: '@openai/codex', claude: '@anthropic-ai/claude-code' }
@@ -167,7 +147,7 @@ export class ComputerMaintenance {
     const request = MaintenanceTaskStartSchema.parse(raw)
     const admission = this.admissions.then(() => this.admit(request, id))
     // A rejected request does not prevent a later independent command from being admitted.
-    this.admissions = admission.catch(() => { /* ignore: the previous caller receives its failure; the queue must still admit the next operation. */ })
+    this.admissions = admission.catch(() => undefined)
     return admission
   }
 
@@ -305,7 +285,7 @@ export class ComputerMaintenance {
       change(ledger)
       await this.ports.writePrivateText(this.ledgerPath(), `${JSON.stringify(ledger)}\n`)
     })
-    this.ledgerWrites = write.catch(() => { /* ignore: the previous caller receives its failure; the queue must still admit the next operation. */ })
+    this.ledgerWrites = write.catch(() => undefined)
     return write
   }
 
@@ -673,8 +653,7 @@ export class ComputerMaintenance {
   private async installedVersion(harness: MaintainedHarness, signal: AbortSignal): Promise<string | null | undefined> {
     const binary = await this.ports.find(harness)
     if (!binary) return undefined
-    const result = await this.ports.run(binary, ['--version'], { signal, timeoutMs: 15_000 })
-      .catch(fallbackOnError(null, 'lifecycle', 'read harness version', { harness }))
+    const result = await this.ports.run(binary, ['--version'], { signal, timeoutMs: 15_000 }).catch(() => null)
     return result?.code === 0 ? versionOf(result.stdout) : null
   }
 
@@ -684,8 +663,7 @@ export class ComputerMaintenance {
       const npm = await this.ports.find('npm')
       if (!npm) return {}
       const entries = await Promise.all((['codex', 'claude'] as const).map(async harness => {
-        const result = await this.ports.run(npm, ['view', PACKAGES[harness], 'version'], { signal, timeoutMs: 20_000 })
-          .catch(fallbackOnError(null, 'lifecycle', 'read latest harness version', { harness }))
+        const result = await this.ports.run(npm, ['view', PACKAGES[harness], 'version'], { signal, timeoutMs: 20_000 }).catch(() => null)
         return [harness, result?.code === 0 ? result.stdout.trim() || null : null] as const
       }))
       return Object.fromEntries(entries)
@@ -699,8 +677,7 @@ export class ComputerMaintenance {
     const apt = await this.ports.find('apt-get')
     if (!apt) return null
     const result = await this.ports.run(apt, ['-s', '-o', 'Debug::NoLocking=1', '--with-new-pkgs', 'upgrade'],
-      { signal, timeoutMs: 60_000 })
-      .catch(fallbackOnError(null, 'lifecycle', 'read pending package updates'))
+      { signal, timeoutMs: 60_000 }).catch(() => null)
     if (result?.code !== 0) return null
     const counts = result.stdout.match(/(\d+) upgraded, (\d+) newly installed, \d+ to remove and (\d+) not upgraded\./u)
     if (!counts) return null
@@ -708,8 +685,7 @@ export class ComputerMaintenance {
   }
 
   private async sudo(signal: AbortSignal): Promise<boolean> {
-    const result = await this.ports.run('sudo', ['-n', 'true'], { signal, timeoutMs: 10_000 })
-      .catch(fallbackOnError(null, 'lifecycle', 'check sudo availability'))
+    const result = await this.ports.run('sudo', ['-n', 'true'], { signal, timeoutMs: 10_000 }).catch(() => null)
     return result?.code === 0
   }
 
@@ -771,7 +747,7 @@ export function systemMaintenancePorts(environment: NodeJS.ProcessEnv = process.
     environment,
     async find(name) {
       const selected = binaries[name]
-      if (selected) { try { await access(selected, constants.X_OK); return selected } catch { /* ignore: fall back to PATH */ } }
+      if (selected) { try { await access(selected, constants.X_OK); return selected } catch { /* fall back to PATH */ } }
       let firstExecutable: string | null = null
       for (const directory of directories) {
         const candidate = join(directory, name)

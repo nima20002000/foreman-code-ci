@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { withTransaction } from '../../infrastructure/transaction.js'
 import pg from 'pg'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import {
@@ -19,7 +20,6 @@ import type { RunManagementService } from '../runs/management.js'
 import { lockActiveWorkspace } from '../workspaces/admission.js'
 import { lockAgentConfigurations } from '../workspaces/agentConfiguration.js'
 import { readAffectedGraphRuns } from './saveAdmission.js'
-import { ignoreError } from '../diagnostics/ignoredError.js'
 
 export type EditIntentSource = 'http' | 'mcp'
 type Source = EditIntentSource
@@ -92,15 +92,11 @@ export class DurableEditIntentService<S extends EditStageScope, I extends Durabl
     for (const item of current) requireAuthorization(principal, 'runs:read', item.pin)
   }
   private async transaction<T>(principal: ManagementPrincipal, work: (client: pg.PoolClient, live: ManagementPrincipal) => Promise<T>) {
-    const client = await this.pool.connect()
-    try {
-      await client.query('begin')
+    return withTransaction(this.pool, async (client) => {
       const live = await readLiveManagementPrincipal(client, principal.id)
       const result = await work(client, live)
-      await client.query('commit')
       return result
-    } catch (error) { await client.query('rollback'); throw error }
-    finally { client.release() }
+    })
   }
   private async withLease<T>(principalId: string, intentId: string, work: () => Promise<T>): Promise<T> {
     const pool = new pg.Pool({ ...this.pool.options, max: 1, application_name: 'graphql-edit-intent' })
@@ -426,7 +422,7 @@ export class DurableEditIntentService<S extends EditStageScope, I extends Durabl
           await this.commands.recordAudit(live.id, source, 'graph.stop_and_save', `edit-intent:${latest.id}`,
             uncertain ? 'uncertain' : 'failed', { commandId: input.commandId,
               code: error instanceof DomainError ? error.code : 'COMMAND_UNCERTAIN' }, client)
-        }).catch(ignoreError('engine', 'record uncertain graph edit intent', { intentId: input.intentId, commandId: input.commandId })) // Revocation withholds readback; it must not delete the intent.
+        }).catch(() => undefined) // Revocation withholds readback; it must not delete the intent.
         if (error instanceof DomainError && (error.code === 'ACCESS_DENIED' || error.code.startsWith('AUTH_'))) throw error
       }
       return this.read(principal, { action: 'read_edits', workspaceId: input.workspaceId,

@@ -1,8 +1,8 @@
 import { DurableInteractionSchema, type DurableInteraction } from '@foreman-code/contracts'
+import { withTransaction } from '../../infrastructure/transaction.js'
 import type pg from 'pg'
 
 import { DomainError } from '../errors.js'
-import { ignoreError } from '../diagnostics/ignoredError.js'
 
 /** Database-only ownership metadata, not a provider idempotency key or public interaction shape. */
 export interface InteractionLease {
@@ -39,16 +39,7 @@ export interface LockedInteraction {
 }
 
 export async function interactionTransaction<T>(pool: pg.Pool, work: (client: pg.PoolClient) => Promise<T>): Promise<T> {
-  const client = await pool.connect()
-  try {
-    await client.query('begin')
-    const result = await work(client)
-    await client.query('commit')
-    return result
-  } catch (error) {
-    await client.query('rollback').catch(ignoreError('db', 'transaction rollback', { module: 'interactions/persistence' }))
-    throw error
-  } finally { client.release() }
+  return withTransaction(pool, work)
 }
 
 export async function lockInteraction(client: pg.ClientBase, id: string): Promise<LockedInteraction> {

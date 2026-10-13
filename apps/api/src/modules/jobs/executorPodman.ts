@@ -1,5 +1,5 @@
 import { JOB_GIT_ENVIRONMENT, JOB_GIT_CONTAINER_DIRECTORY, JOB_PRIVATE_GIT_LAYOUT, requireJobGitMounts, verifyJobGitMounts } from './privateGitMounts.js'
-import { spawn, type ChildProcess } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import { constants } from 'node:fs'
 import { mkdir, open, readdir, realpath, stat } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -10,12 +10,12 @@ import type { JobVerificationRuntimeMeasurement } from '@foreman-code/contracts/
 import { JobResourceRequestSchema, type JobResourceRequest } from '@foreman-code/contracts/job-verification-policy'
 import { JOB_INPUT_DIRECTORY } from '@foreman-code/contracts/job-inputs'
 import { JOB_INPUT_MANIFEST_CONTAINER_PATH, verifyJobInputDirectory } from './inputs.js'
-import { OwnedOCIContainer, type OCIContainerOwnership } from './executorContainerOwner.js'
-import type { QualificationNativeOwner, JobQualificationCandidate, JobQualificationAuthority } from './qualification.js'
+import { OwnedOCIContainer, type OCIContainerOwnership, type PodmanCommandRunner } from './executorContainerOwner.js'
+import type { QualificationNativeOwner, JobQualificationAuthority } from './qualificationPorts.js'
+import type { JobQualificationCandidate } from '@foreman-code/contracts/job-runtime'
 import type { JobExecution } from '@foreman-code/contracts'
 import { jobSupervisorIdentity, requireVerificationRuntime, type JobLaunchPlan, type JobSupervisor,
   type QualifiedJobProfile, type RuntimeJobExecution, type VerificationExecution } from './executor.js'
-import { ignoreError, fallbackOnError } from '../diagnostics/ignoredError.js'
 
 export interface PodmanIsolationInput {
   identity: string
@@ -213,10 +213,7 @@ export function spawnPodmanCommand(executable: string, argv: string[], environme
   return spawn(executable, argv[0] === '--remote=false' ? argv : ['--remote=false', ...argv], { shell: false, stdio: ['ignore', 'pipe', 'pipe'], env: environment })
 }
 
-export interface PodmanCommandRunner {
-  run(argv: string[], timeoutMs?: number): Promise<{ exitCode: number; stdout: string }>
-  attach(argv: string[]): Promise<ChildProcess>
-}
+export type { PodmanCommandRunner }
 
 /** Bounded control replies. Job logs go through the executor's bounded streaming sink. */
 export function nodePodmanCommandRunner(executable: string, environment: Record<string, string>): PodmanCommandRunner {
@@ -292,7 +289,7 @@ export class PodmanJobSupervisor<Execution extends RuntimeJobExecution = JobExec
     const end = this.timing ? await this.timing.deadlineMs() : Date.now() + execution.acceptedSpec.policy.executionTimeoutMs
     if (!this.watchdogs.has(execution.operationId)) {
       const timer = setTimeout(() => {
-        void (async () => { try { await this.timing?.markTimeout() } finally { await stop() } })().catch(ignoreError('jobs', 'stop container after timeout', { operationId: execution.operationId }))
+        void (async () => { try { await this.timing?.markTimeout() } finally { await stop() } })().catch(() => {})
       }, Math.max(0, end - Date.now()))
       timer.unref(); this.watchdogs.set(execution.operationId, timer)
     }
@@ -407,7 +404,7 @@ export class PodmanJobSupervisor<Execution extends RuntimeJobExecution = JobExec
       if (waited.exitCode !== 0 || Number(waited.stdout.trim()) !== row.State.ExitCode) throw new Error('Container wait evidence mismatch.')
       return { exitCode: row.State.ExitCode, signal: null, ...(await this.timing?.isTimedOut() ? { timedOut: true } : {}), ...(row.State.Error ? { execError: 'Container command launch failed.' } : {}) }
     })
-    void exited.catch(() => { /* ignore: the owner awaits the original promise; this observer prevents a duplicate unhandled rejection. */ })
+    void exited.catch(() => {})
     try {
       const entryDeadline=Math.min(end,Date.now()+plan.execution.acceptedSpec.policy.preparationTimeoutMs)
       while(true){
@@ -422,10 +419,7 @@ export class PodmanJobSupervisor<Execution extends RuntimeJobExecution = JobExec
       const release=await this.commands.run(['exec',containerId,'node','-e',JOB_COMMAND_RELEASE,'--',JOB_COMMAND_GATE],Math.min(plan.execution.acceptedSpec.policy.preparationTimeoutMs,Math.max(1,end-Date.now())))
       if(release.exitCode!==0)throw new Error('Original Job command release unconfirmed.')
     } catch (error) {
-      const closed = await owned.close(plan.execution.acceptedSpec.policy.cancellationGraceMs).catch(fallbackOnError(
-        false, 'jobs', 'close failed job container', { operationId: plan.execution.operationId },
-      ))
-      if (closed) this.clearWatch(plan.execution)
+      if(await owned.close(plan.execution.acceptedSpec.policy.cancellationGraceMs).catch(() => false))this.clearWatch(plan.execution)
       throw error
     }
     return { containerId, stdout, stderr, exited, proveStopped, stop }

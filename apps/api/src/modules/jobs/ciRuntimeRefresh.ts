@@ -12,10 +12,9 @@ import { InstalledVerificationRuntimeCaptureInputSchema, InstalledVerificationRu
 import type { JobResourceRequest, PreparedCiRuntime } from '@foreman-code/contracts'
 import { DEVICE_MIB, DEVICE_RESOURCE_HOST_RESERVE, DeviceResourceLimitsSchema, type DeviceResourceLimits }
   from '@foreman-code/contracts/device-resources'
-import { InstalledJobRuntimeConfigurationRecordSchema } from './installedRuntimeHost.js'
+import { InstalledJobRuntimeConfigurationRecordSchema } from './installedRuntimeConfiguration.js'
 import { readCiRuntimeInstallation, readCiRuntimeTemplate, relocateCiQuotaSlots } from './ciRuntimeInstallation.js'
 import { DomainError } from '../errors.js'
-import { fallbackOnError } from '../diagnostics/ignoredError.js'
 
 const run = promisify(execFile)
 
@@ -157,8 +156,7 @@ export async function pruneCiRuntimeRefreshFiles(stateDirectory: string, workDir
 export async function lastCiRuntimeRefresh(stateDirectory: string, workDirectory = join(stateDirectory, 'managed', 'ci')): Promise<{
   operationId: string | null; commit: string; ok: boolean; log: string
 } | null> {
-  const recorded = await readFile(join(workDirectory, LAST_REFRESH), 'utf8')
-    .catch(fallbackOnError(null, 'jobs', 'read last CI runtime refresh', {}, ['ENOENT']))
+  const recorded = await readFile(join(workDirectory, LAST_REFRESH), 'utf8').catch(() => null)
   if (!recorded) return null
   const { operationId, commit, log } = JSON.parse(recorded) as { operationId?: string; commit: string; log: string }
   const text = await readFile(log, 'utf8').catch(() => '')

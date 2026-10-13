@@ -1,4 +1,4 @@
-import { JOB_GIT_ENVIRONMENT, JOB_PRIVATE_GIT_LAYOUT, requireJobGitMounts, type VerifiedJobGitMounts } from './privateGitMounts.js'
+import { JOB_GIT_ENVIRONMENT, JOB_PRIVATE_GIT_LAYOUT, requireJobGitMounts } from './privateGitMounts.js'
 import { requireJobInputReceipt,JOB_INPUT_MANIFEST_CONTAINER_PATH,type VerifiedJobSource } from './inputs.js'
 import type { JobInputDeliveryReceipt } from '@foreman-code/contracts/job-inputs'
 import { createHash } from 'node:crypto'
@@ -6,7 +6,6 @@ import { StringDecoder } from 'node:string_decoder'
 import { AcceptedJobSpecSchema, JobExecutionSchema, type AcceptedJobSpec, type PreparedJobSpec, type JobExecution } from '@foreman-code/contracts'
 import { jobSpecDigests } from '@foreman-code/contracts/jobs-node'
 import { componentLogger } from '../diagnostics/logger.js'
-import { fallbackOnError } from '../diagnostics/ignoredError.js'
 import { isDeepStrictEqual } from 'node:util'
 import { canonicalGraphJson } from '@foreman-code/contracts/wave25'
 import { AcceptedVerificationJobSpecSchema, VerificationJobExecutionSchema, JobExecutionRecordSchema,
@@ -26,7 +25,7 @@ export interface JobLaunchAuthority<Execution extends RuntimeJobExecution = JobE
   launched(execution: Execution, supervisorIdentity: string, containerId?: string): Promise<void>
 }
 export interface JobSourcePort<Spec extends RuntimeJobExecution['acceptedSpec'] = AcceptedJobSpec> {
-  verify(spec: Spec, signal: AbortSignal): Promise<{ privateRepositoryRoot: string; directoryIdentityHash: string; privateGit: true; diskQuotaBytes: number; gitMounts?:VerifiedJobGitMounts }>
+  verify(spec: Spec, signal: AbortSignal): Promise<VerifiedJobSource>
 }
 export interface QualifiedJobProfile {
   workspaceLayout?:string|undefined
@@ -333,19 +332,17 @@ async function superviseJob<Execution extends RuntimeJobExecution>(
   let reason: 'cancelled' | 'timed_out' | 'log_limit' | null = null
   let exitObserved = false
   const exited = process.exited.then(exit => { exitObserved = true; return exit })
-  void exited.catch(() => { /* ignore: the owner awaits the original promise; this observer prevents a duplicate unhandled rejection. */ }) // Result handling below retains transport uncertainty.
+  void exited.catch(() => {}) // Result handling below retains transport uncertainty.
   let stopPromise: Promise<boolean> | undefined
   let resolveStopped!: (exit: JobExitEvidence) => void
   let rejectStopped!: (error: Error) => void
   const stoppedWithoutExit = new Promise<JobExitEvidence>((resolve, reject) => { resolveStopped = resolve; rejectStopped = reject })
-  void stoppedWithoutExit.catch(() => { /* ignore: the owner awaits the original promise; this observer prevents a duplicate unhandled rejection. */ })
+  void stoppedWithoutExit.catch(() => {})
   const stop = (why: NonNullable<typeof reason>) => {
     if (exitObserved && why !== 'log_limit') return
     reason ??= why
     if (!stopPromise) {
-      stopPromise = process.stop(spec.policy.cancellationGraceMs).catch(fallbackOnError(
-        false, 'jobs', 'stop job process', { executionId: execution.id, operationId: execution.operationId },
-      ))
+      stopPromise = process.stop(spec.policy.cancellationGraceMs).catch(() => false)
       void stopPromise.then(confirmed => {
         if (confirmed) resolveStopped({ exitCode: null, signal: null })
         else rejectStopped(new Error('Original Job physical stop unconfirmed.'))
@@ -399,14 +396,8 @@ async function superviseJob<Execution extends RuntimeJobExecution>(
     const exit = await Promise.race([exited, stoppedWithoutExit])
     result.exitCode = exit.exitCode
     result.signal = exit.signal
-    result.processStopped = stopPromise ? await stopPromise : await process.proveStopped().catch(fallbackOnError(
-      false, 'jobs', 'verify job process stopped', { executionId: execution.id, operationId: execution.operationId },
-    ))
-    if (!result.processStopped) {
-      result.processStopped = await process.stop(spec.policy.cancellationGraceMs).catch(fallbackOnError(
-        false, 'jobs', 'stop job process after exit', { executionId: execution.id, operationId: execution.operationId },
-      ))
-    }
+    result.processStopped = stopPromise ? await stopPromise : await process.proveStopped().catch(() => false)
+    if (!result.processStopped) result.processStopped = await process.stop(spec.policy.cancellationGraceMs).catch(() => false)
     let drainDeadline: ReturnType<typeof setTimeout> | undefined
     try { await Promise.race([drains, new Promise<never>((_resolve, reject) => {
       drainDeadline = setTimeout(() => reject(new Error('Closed Job output pipes failed to drain.')), spec.policy.cancellationGraceMs + 30000)

@@ -5,18 +5,20 @@ import { HarnessProfileSelectionSchema, type HarnessProfileSelection } from '@fo
 import { RETIRED_OPENCODE_MESSAGE, withAdvancedDefaults } from '@foreman-code/contracts'
 import { HostHarnessOverrideListInputSchema, HostHarnessOverrideSaveSchema, type HostHarnessOverride, type HostHarnessOverrideListInput, type HostHarnessOverrideSave, type HostHarnessInstanceCheckInput } from '@foreman-code/contracts/harness-registry'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
-import type { CanonicalMachineReference } from '@foreman-code/contracts/device-identity'
 import { DomainError } from '../../errors.js'
 import { requireAuthorization } from '../../access/policy.js'
 import { commandInputHash, type PostgresCommandCoordinator } from '../../commands/postgres.js'
 import type { HostHarnessInstanceProfileChecks } from './profileChecks.js'
 import { harnessHostKey, type HarnessInstanceSettingsRepository } from './repository.js'
 import { nativeProfileCheckId } from './profileChecks.js'
-import type { ProviderAccountConfigurationService } from '../providerAccountConfiguration.js'
-import { fallbackOnError } from '../../diagnostics/ignoredError.js'
+import type { HostHarnessOverrideAuthority } from './authority.js'
+import type { GraphSqlClient } from '../../run-graph/connection.js'
 
-export interface HostHarnessOverrideAuthority {
-  authorize(principal: ManagementPrincipal, action: 'harnesses:read' | 'harnesses:update', hostRef: CanonicalMachineReference, applicationInstallationId: string, client?: pg.PoolClient): Promise<void>
+export type { HostHarnessOverrideAuthority }
+/** Account resolution port, implemented by ProviderAccountConfigurationService. */
+export interface HarnessAccountConfigurationResolver {
+  resolve(configuration: HarnessConfiguration, selection?: HarnessProfileSelection,
+    options?: { sql: GraphSqlClient }): Promise<HarnessConfiguration>
 }
 export interface HostHarnessOverrideEvidence {
   /** Resolver must match current driver/protocol/suite and authorized connection generations. */
@@ -34,7 +36,7 @@ export class HostHarnessOverrideService {
     private readonly evidence: (value: HostHarnessOverride, client?: pg.PoolClient) => Promise<HostHarnessOverrideEvidence | null>,
     private readonly profileChecks?: HostHarnessInstanceProfileChecks,
     private readonly configurationTarget?: (configuration: HarnessConfiguration) => HostHarnessOverride['target'],
-    private readonly accountConfigurations?: ProviderAccountConfigurationService,
+    private readonly accountConfigurations?: HarnessAccountConfigurationResolver,
   ) {}
   get qualificationSupported(): boolean { return Boolean(this.profileChecks) }
   async closeChecks(): Promise<void> { await this.profileChecks?.close() }
@@ -55,7 +57,7 @@ export class HostHarnessOverrideService {
     if (!value.enabled) return { ...value, qualification: 'disabled' }
     if (this.profileChecks?.pending(value.target.hostRef)) return { ...value, qualification: 'qualifying' }
     // Missing/remote failed evidence remains unavailable, never substitutes local discovery.
-    const evidence = await this.evidence(value, client).catch(fallbackOnError(null, 'harness', 'read harness qualification evidence'))
+    const evidence = await this.evidence(value, client).catch(() => null)
     const qualification = !evidence ? 'unqualified' : harnessHostKey(evidence.target.hostRef) !== harnessHostKey(value.target.hostRef)
       || evidence.target.applicationInstallationId !== value.target.applicationInstallationId
       || evidence.target.harnessInstallationId !== value.target.harnessInstallationId

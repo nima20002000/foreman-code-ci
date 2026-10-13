@@ -11,9 +11,8 @@ import { ensureClone, fetchRepositoryBranch, systemGitWorktreePorts, type GitWor
 import { systemHostCiPorts, type HostCiPorts } from './runner.js'
 import type { HostCiComputer } from './service.js'
 import { CLOUD_START_TIMEOUT_MS, CircleCiProvider, GitHubActionsProvider,
-  type CloudDispatchInput, type CloudProvider, type CloudStatus } from './cloudProviders.js'
+  type CloudDispatchInput, type CloudProvider, type CloudRun, type CloudStatus } from './cloudProviders.js'
 import { runsOnCircleCi } from './parts.js'
-import { fallbackOnError } from '../diagnostics/ignoredError.js'
 
 const LOG_LIMIT = 4 * 1024 * 1024
 const MAX_DISPATCH_ATTEMPTS = 3
@@ -24,17 +23,7 @@ const MAX_BACKOFF_MS = 10 * 60_000
 const POLL_CONCURRENCY = 3
 const log = componentLogger('jobs')
 
-export interface CloudRun {
-  runId: string; repository: string; mirror: string; commit: string; suite: CiSuite; startedAt: string
-  providerRunId: string | null; state: CiHostRun['state']; finishedAt: string | null; exitCode: number | null
-  message: string | null; durations?: CiDurations; testResults?: CiTestResults
-  scope?: CiScope; files?: string[]; part?: CiPart; baseCommit?: string
-  dispatch?: { input: CloudDispatchInput; attempts: number; at: string }
-  workflowStarted?: boolean
-  /** Live progress kept while the run is followed: steps already written to the log, the running step's output
-   * bytes written so far, and bytes written in all. */
-  live?: { step: string | null; seen: string[]; output?: { key: string; bytes: number }; bytes: number }
-}
+export type { CloudRun }
 type Mirrors = (repository: string) => Promise<string | null>
 /** Pushes to one mirror, across both services, run one at a time: concurrent force-pushes of the mirror's main fail
  * the remote's old-value check ("incorrect old value provided"), and concurrent fetches race on its local ref. */
@@ -163,7 +152,7 @@ export class CloudCi {
   private async start(request: { runId: string; repository: string; commit: string; suite: CiSuite
     part?: CiPart | undefined; partition?: CiPartition | undefined; durations?: CiDurations | undefined; scope?: CiScope | undefined;
     files?: string[] | undefined; defaultBranch?: string | undefined; baseCommit?: string | undefined }): Promise<CiHostRun> {
-    const existing = await this.read(request.runId).catch(fallbackOnError(null, 'jobs', 'read existing CI run', { runId: request.runId }, ['ENOENT']))
+    const existing = await this.read(request.runId).catch(() => null)
     if (existing) return this.view(existing, 0)
     if (request.suite === 'integration' && (request.partition?.hostIndexes?.includes(request.partition.index)
       || !request.partition && request.files?.some(requiresUserSystemd))) {
@@ -258,11 +247,11 @@ export class CloudCi {
     const key = `${mirror}\n${commit}\n${defaultBranch ?? ''}\n${baseCommit ?? ''}`
     let published = this.published.get(key)
     if (!published) {
-      const queued = (mirrorPushes.get(mirror) ?? Promise.resolve()).catch(() => { /* ignore: the previous caller receives its failure; the queue must still admit the next operation. */ })
+      const queued = (mirrorPushes.get(mirror) ?? Promise.resolve()).catch(() => undefined)
       const pushed = queued.then(() => this.push(repository, mirror, commit, defaultBranch, baseCommit))
       published = pushed
       mirrorPushes.set(mirror, pushed)
-      void pushed.catch(() => { /* ignore: the push failure is reported to the caller awaiting it; this only clears the queue entry */ }).then(() => { if (mirrorPushes.get(mirror) === pushed) mirrorPushes.delete(mirror) })
+      void pushed.catch(() => undefined).then(() => { if (mirrorPushes.get(mirror) === pushed) mirrorPushes.delete(mirror) })
       this.published.set(key, published)
       // A failed push is retried by the next start; a done one is kept for the run's later partitions.
       published.catch(() => { this.published.delete(key) })
@@ -403,7 +392,7 @@ export class CloudCi {
     const fixed = new Set<string>([this.identity.home]), words = new Set<string>([this.identity.user])
     const word = (value: string) => { const first = value.toLowerCase().split(/[^a-z0-9]/)[0] ?? ''; if (first.length >= 3) words.add(first) }
     word(this.identity.host)
-    const status = await this.ports.run('tailscale', ['status', '--json'], { timeoutMs: 15_000 }).catch(fallbackOnError(null, 'jobs', 'read tailscale status'))
+    const status = await this.ports.run('tailscale', ['status', '--json'], { timeoutMs: 15_000 }).catch(() => null)
     if (status?.code === 0) {
       const parsed = JSON.parse(status.stdout) as { Self?: Peer; Peer?: Record<string, Peer>; MagicDNSSuffix?: string
         User?: Record<string, { LoginName?: string }> }
@@ -514,8 +503,7 @@ export class CloudCi {
     let durations: CiDurations | undefined
     let testResults: CiTestResults | undefined
     if (run.suite === 'integration' || run.suite === 'unit') {
-      const artifacts = await this.provider.artifacts(run, join(this.root, 'runs', runId, 'artifact'))
-        .catch(fallbackOnError(null, 'jobs', 'fetch CI run artifacts', { runId }))
+      const artifacts = await this.provider.artifacts(run, join(this.root, 'runs', runId, 'artifact')).catch(() => null)
       const parsed = CiDurationsSchema.safeParse(artifacts?.durations)
       if (parsed.success && (run.suite === 'integration' || run.part === 'unit-api' || run.part === 'unit-web')) {
         durations = parsed.data
