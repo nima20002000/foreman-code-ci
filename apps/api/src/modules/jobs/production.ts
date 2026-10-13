@@ -1,6 +1,4 @@
-import { readPublicProjectionLocked } from '../run-graph/compactSnapshot.js'
 import { bootIdentity } from '../harnesses/recovery/linuxIdentity.js'
-import { withTransaction } from '../../infrastructure/transaction.js'
 import { componentLogger } from '../diagnostics/logger.js'
 import { createMainJobExecutionHost } from './mainExecution.js'
 import { createQualificationReportPublisher } from './qualificationReports.js'
@@ -18,6 +16,7 @@ import { reserveInstalledJobQualification, recoverInstalledJobRuntimeQualificati
   reconcileInstalledJobRuntimeQualification } from './installedRuntimeQualification.js'
 import { createJobQualificationCarrier } from './qualificationCarrier.js'
 import { SourceRootRecordSchema, SourceMaterializationRecordSchema } from '@foreman-code/contracts/source-admission'
+import type { SourceManifest } from '@foreman-code/contracts/source-materialization'
 import type pg from 'pg'
 import type { DeviceEndpoint } from '../devices/deviceEndpoint.js'
 import type { PostgresCommandCoordinator } from '../commands/postgres.js'
@@ -58,7 +57,7 @@ import { JobBuildQueueConfigurationSchema, type JobBuildQueueConfiguration } fro
 import { isAutoJobSpec } from '@foreman-code/contracts/jobs'
 import { JobRuntimeProfileSchema } from '@foreman-code/contracts/job-runtime'
 import { JobResourceRequestSchema, type JobResourceRequest } from '@foreman-code/contracts/job-verification-policy'
-import { canonicalJson } from '@foreman-code/contracts/canonical-json'
+import { canonical } from './repository.js'
 import { JobRuntimeMetadataRecovery } from './runtimeMetadataRecovery.js'
 
 export interface ProductionJobInfrastructure {
@@ -121,7 +120,7 @@ export function createReviewedBuildQueueConfiguration(
     async resources(sql, definition) {
       if ('verification' in definition.spec) {
         const resources = definition.spec.verification.resources
-        if (!configuration.envelopes.some(envelope => canonicalJson(envelope) === canonicalJson(resources))) {
+        if (!configuration.envelopes.some(envelope => canonical(envelope) === canonical(resources))) {
           throw new DomainError('JOB_QUEUE_ENVELOPE_REVIEW_REQUIRED', 'No reviewed resource envelope covers this verification.', 409)
         }
         return JobResourceRequestSchema.parse(resources)
@@ -135,12 +134,12 @@ export function createReviewedBuildQueueConfiguration(
         if (!row) throw new DomainError('JOB_RUNTIME_PROFILE_VERSION_NOT_FOUND', 'The saved build profile version is unavailable.', 409)
         const profile = JobRuntimeProfileSchema.parse(row.record)
         if (profile.id !== isolationPolicyId || profile.revision !== isolationPolicyRevision
-          || profile.workspaceId !== definition.workspaceId || canonicalJson(profile.policy) !== canonicalJson(definition.spec.policy)) {
+          || profile.workspaceId !== definition.workspaceId || canonical(profile.policy) !== canonical(definition.spec.policy)) {
           throw new DomainError('JOB_QUEUE_PROFILE_CONFLICT', 'The saved build profile differs from the definition policy or workspace.', 409)
         }
         limits = profile.limits
       }
-      const envelope = configuration.envelopes.find(candidate => canonicalJson(candidate.limits) === canonicalJson(limits))
+      const envelope = configuration.envelopes.find(candidate => canonical(candidate.limits) === canonical(limits))
       if (!envelope) throw new DomainError('JOB_QUEUE_ENVELOPE_REVIEW_REQUIRED', 'No reviewed resource envelope covers this build.', 409)
       return JobResourceRequestSchema.parse(envelope)
     },
@@ -322,7 +321,7 @@ export async function createProductionJobs(input: { pool: pg.Pool; commands: Pos
         const snapshot = await readAcceptedRepeatRunLocked(sql, execution.workflow.runId)
         const scope = { runId: snapshot.run.id, workspaceId: snapshot.run.workspaceId, workflowId: snapshot.run.workflowId,
           workflowVersionId: snapshot.version.id, executionSemanticsVersion: 3 as const }
-        await publishWorkflowJobReceiptLocked(await openRunGraphPublication(sql, scope, readPublicProjectionLocked), execution, receipt, artifacts)
+        await publishWorkflowJobReceiptLocked(await openRunGraphPublication(sql, scope), execution, receipt, artifacts)
       } else await projectJobReceiptLocked(sql, execution, receipt, artifacts)
     },
   }, input.workerExecution)
@@ -332,12 +331,16 @@ export async function createProductionJobs(input: { pool: pg.Pool; commands: Pos
   const inputs = { ...canonicalInputs, extension: createMainJobInputRsyncExtension(canonicalInputs.main, canonicalInputs.extension, input.inputRsync) }
   const privateRepositories = new CanonicalJobPrivateRepositories(input.pool, source.sources, source.executions,
     input.infrastructure?.privateRepositoryRemote ?? { async preparePrivateRepository(principal, record) {
-      const manifest = await withTransaction(input.pool, async (sql) => {
+      const sql = await input.pool.connect()
+      let manifest: SourceManifest
+      try {
+        await sql.query('begin')
         const row = (await sql.query<{ record: unknown }>('select record from source_root_bindings where root_id=$1 and binding_revision=$2 for share',
           [record.receipt.binding.rootId, record.receipt.binding.bindingRevision])).rows[0]
         const root = SourceRootRecordSchema.parse(row?.record)
-        return (await source.sources.resolveApprovedSource(sql, principal, record.receipt.binding.workspaceId, root.source)).manifest
-      })
+        manifest = (await source.sources.resolveApprovedSource(sql, principal, record.receipt.binding.workspaceId, root.source)).manifest
+        await sql.query('commit')
+      } catch (error) { await sql.query('rollback'); throw error } finally { sql.release() }
       await source.sources.verifyPreparation({ principal, record })
       await source.executions.privateRepository(record, manifest)
     } })

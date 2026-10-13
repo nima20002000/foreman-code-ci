@@ -1,5 +1,4 @@
 import type pg from 'pg'
-import { withTransaction } from '../../infrastructure/transaction.js'
 import { z } from 'zod'
 import type { ManagementAction, ManagementPrincipal } from '@foreman-code/contracts/management'
 import { subagentCapabilities, RunSubagentSchema, RunSubagentGetInputSchema, RunSubagentsListInputSchema, RunSubagentItemsInputSchema,
@@ -10,11 +9,13 @@ import { DomainError } from '../errors.js'
 import { subagentAvailableActions } from './capabilities.js'
 import { reconcileRunSubagents } from './projection.js'
 import { backfillRunSubagents } from './recovery.js'
-import type { SubagentNativeRecoverySource, SubagentControlResolver, SubagentReadScope, SubagentRecoveryFailure } from './types.js'
+import type { SubagentNativeRecoverySource, SubagentControlResolver } from './types.js'
 import { executeSubagentCommand } from './commands.js'
 import { componentLogger } from '../diagnostics/logger.js'
 
-export type { SubagentReadScope, SubagentRecoveryFailure }
+export interface SubagentRecoveryFailure {
+  workspaceId: string; runId: string; executionId?: string; code: string
+}
 const recoveryLogger = componentLogger('harness')
 
 function readSubagent(record: unknown) {
@@ -27,6 +28,14 @@ function readSubagent(record: unknown) {
   } }
 }
 
+export interface SubagentReadScope {
+  sql: pg.PoolClient
+  principal: ManagementPrincipal
+  stopped: boolean
+  workflowId: string
+  workflowVersionId: string
+  projectionLocked: boolean
+}
 export class RunSubagentService {
   private readonly backfills = new Map<string, Promise<void>>()
   constructor(readonly pool: pg.Pool, readonly controls: SubagentControlResolver = () => undefined, readonly nativeRecovery?: SubagentNativeRecoverySource,
@@ -58,7 +67,9 @@ export class RunSubagentService {
   async scoped<T>(principal: ManagementPrincipal, input: { workspaceId: string; runId: string }, action: ManagementAction,
     work: (scope: SubagentReadScope) => Promise<T>,
     options: { projectionLock?: 'if-available' } = {}): Promise<T> {
-    return withTransaction(this.pool, async (sql) => {
+    const sql = await this.pool.connect()
+    try {
+      await sql.query('begin')
       // Listing reads immutable ownership and a committed stop state; commands still lock the Run.
       const runLock = options.projectionLock === 'if-available' ? '' : ' for share'
       const row = (await sql.query<{ workflow_id: string; workflow_version_id: string; stopped: boolean }>(`select workflow_id,workflow_version_id,
@@ -80,8 +91,14 @@ export class RunSubagentService {
       }
       const result = await work({ sql, principal: live, stopped: row.stopped,
         workflowId: row.workflow_id, workflowVersionId: row.workflow_version_id, projectionLocked })
+      await sql.query('commit')
       return result
-    })
+    } catch (error) {
+      await sql.query('rollback')
+      throw error
+    } finally {
+      sql.release()
+    }
   }
   async child(scope: SubagentReadScope, input: z.infer<typeof RunSubagentGetInputSchema>) {
     const row = (await scope.sql.query<{ record: unknown }>('select record from run_subagents where id=$1 and run_id=$2 for update', [input.subagentId, input.runId])).rows[0]
@@ -150,6 +167,6 @@ function decodeCursor(cursor: string | undefined, scope: string[]): string | nul
   try {
     const parsed = z.object({ scope: z.array(z.string()), key: z.string().min(1).max(512) }).strict().parse(JSON.parse(Buffer.from(cursor, 'base64url').toString()))
     if (JSON.stringify(parsed.scope) === JSON.stringify(scope)) return parsed.key
-  } catch { /* ignore: all malformed and cross-scope cursors share the same public error. */ }
+  } catch { /* All malformed and cross-scope cursors share the same public error. */ }
   throw new DomainError('SUBAGENT_CURSOR_INVALID', 'The page cursor does not belong to this exact child read.', 400)
 }

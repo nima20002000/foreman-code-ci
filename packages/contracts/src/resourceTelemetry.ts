@@ -1,14 +1,14 @@
 import { z } from 'zod'
-import { canonicalJsonLocaleOrderLegacy } from './canonicalJson.js'
 import type { DeviceSessionBinding } from './deviceConnection.js'
 import { DispatchIntentSchema, MachineReferenceSchema } from './nodePlacement.js'
 import { RemoteJobDispatchIntentSchema } from './remoteJobExecution.js'
 
+export const RESOURCE_TELEMETRY_VERSION = 1 as const
 export const RESOURCE_TELEMETRY_CAPABILITY = 'resource-telemetry/v1' as const
 export const TELEMETRY_LIMITS = { intervalMs: 2000, freshMs: 6000, lastKnownMs: 900_000,
   batchBytes: 65_536, rows: 64, devices: 32, cacheBytes: 33_554_432, outstanding: 2, queuedFrames: 2 } as const
 const Id = z.string().min(1).max(128).refine(value => new TextEncoder().encode(value).length <= 128)
-const TelemetryUIntSchema = z.string().regex(/^(0|[1-9][0-9]{0,19})$/).refine(value => BigInt(value) <= 18_446_744_073_709_551_615n)
+export const TelemetryUIntSchema = z.string().regex(/^(0|[1-9][0-9]{0,19})$/).refine(value => BigInt(value) <= 18_446_744_073_709_551_615n)
 const Bytes = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)
 const Time = Bytes
 export const TelemetryReasonSchema = z.enum(['not-yet-sampled', 'unsupported', 'source-failure', 'counter-invalid',
@@ -28,7 +28,7 @@ export const TelemetryHostSchema = z.object({ hostRef: MachineReferenceSchema,
 })
 export const TelemetryIdentitySchema = z.object({ mainId: z.uuid(), host: TelemetryHostSchema }).strict()
 const Attempt = DispatchIntentSchema.pick({ executionId: true, attemptId: true, operationId: true, bindingHash: true, owner: true })
-const TelemetryOwnerSchema = z.discriminatedUnion('kind', [
+export const TelemetryOwnerSchema = z.discriminatedUnion('kind', [
   Attempt.extend({ kind: z.literal('workflow-execution'), workspaceId: Id, workflowId: Id,
     runId: DispatchIntentSchema.shape.runId, nodeId: DispatchIntentSchema.shape.nodeId, agentId: Id }).strict(),
   z.object({ kind: z.literal('ci-job'), subject: RemoteJobDispatchIntentSchema.shape.subject,
@@ -55,15 +55,19 @@ export type TelemetrySelector = z.infer<typeof TelemetrySelectorSchema>
 export type TelemetryHost = z.infer<typeof TelemetryHostSchema>
 export type TelemetryIdentity = z.infer<typeof TelemetryIdentitySchema>
 export type TelemetryOwner = z.infer<typeof TelemetryOwnerSchema>
-/** Sort every object level so input property order cannot alter selection identity.
- * Persisted selector keys depend on the frozen legacy format. */
-export const telemetryCanonical: (value: unknown) => string = canonicalJsonLocaleOrderLegacy
+/** Sort every object level so input property order cannot alter selection identity. */
+export function telemetryCanonical(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(telemetryCanonical).join(',')}]`
+  if (value !== null && typeof value === 'object') return `{${Object.entries(value).sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, child]) => `${JSON.stringify(key)}:${telemetryCanonical(child)}`).join(',')}}`
+  return JSON.stringify(value) as string
+}
 export function telemetrySelectorKey(selector: TelemetrySelector): string {
   return `resource-telemetry/v1:${telemetryCanonical(TelemetrySelectorSchema.parse(selector))}`
 }
-const TelemetryCoverageSchema = z.object({ boundary: z.enum(['complete-boundary', 'partial']),
+export const TelemetryCoverageSchema = z.object({ boundary: z.enum(['complete-boundary', 'partial']),
   shared: z.boolean(), reasons: z.array(TelemetryReasonSchema).max(16) }).strict()
-const TelemetryCpuSchema = z.object({ basis: z.enum(['host-active-ticks', 'cgroup-usage-usec', 'process-utime-stime']),
+export const TelemetryCpuSchema = z.object({ basis: z.enum(['host-active-ticks', 'cgroup-usage-usec', 'process-utime-stime']),
   normalization: z.literal('whole-host-capacity'), logicalCpuCount: z.number().int().min(1).max(4096),
   hostCapacityPercent: z.number().finite().min(0).max(100), oneCorePercent: z.number().finite().nonnegative().nullable(),
   elapsedNs: TelemetryUIntSchema, cpuDeltaNs: TelemetryUIntSchema.nullable(),
@@ -71,7 +75,7 @@ const TelemetryCpuSchema = z.object({ basis: z.enum(['host-active-ticks', 'cgrou
   if (BigInt(value.elapsedNs) === 0n || (value.oneCorePercent !== null && value.oneCorePercent > 100 * value.logicalCpuCount))
     ctx.addIssue({ code: 'custom', message: 'Invalid CPU window or capacity.' })
 })
-const TelemetryMemorySchema = z.object({ kind: z.enum(['host-used-estimate', 'cgroup-current', 'rss-sum']),
+export const TelemetryMemorySchema = z.object({ kind: z.enum(['host-used-estimate', 'cgroup-current', 'rss-sum']),
   bytes: Bytes, totalBytes: Bytes.nullable(), availableBytes: Bytes.nullable(), sharedPagesMayDoubleCount: z.boolean(),
 }).strict().superRefine((value, ctx) => {
   if (value.kind === 'host-used-estimate' && (value.totalBytes === null || value.availableBytes === null
@@ -81,16 +85,16 @@ const TelemetryMemorySchema = z.object({ kind: z.enum(['host-used-estimate', 'cg
     ctx.addIssue({ code: 'custom', message: 'RSS must report possible shared-page double counting.' })
 })
 /** Free space on the filesystem holding the computer's home directory; computer scope only. */
-const TelemetryStorageSchema = z.object({ totalBytes: Bytes, availableBytes: Bytes }).strict()
+export const TelemetryStorageSchema = z.object({ totalBytes: Bytes, availableBytes: Bytes }).strict()
   .refine(value => value.availableBytes <= value.totalBytes, 'Available storage cannot exceed total storage.')
 const metric = <T extends z.ZodType>(value: T) => z.discriminatedUnion('state', [
   z.object({ state: z.literal('fresh'), value, reason: z.null(), sampledAtUnixMs: Time, freshUntilUnixMs: Time }).strict(),
   z.object({ state: z.enum(['warmup', 'stale', 'unavailable', 'permission-denied']), value: z.null(),
     reason: TelemetryReasonSchema, sampledAtUnixMs: Time.nullable(), freshUntilUnixMs: Time.nullable() }).strict(),
 ])
-const TelemetryCpuMetricSchema = metric(TelemetryCpuSchema)
-const TelemetryMemoryMetricSchema = metric(TelemetryMemorySchema)
-const TelemetrySampleSchema = z.object({ schemaVersion: z.literal(1), selector: TelemetrySelectorSchema,
+export const TelemetryCpuMetricSchema = metric(TelemetryCpuSchema)
+export const TelemetryMemoryMetricSchema = metric(TelemetryMemorySchema)
+export const TelemetrySampleSchema = z.object({ schemaVersion: z.literal(1), selector: TelemetrySelectorSchema,
   selectorKey: z.string().max(8192), identity: TelemetryIdentitySchema, sampleId: z.string().max(4096), sequence: TelemetryUIntSchema,
   collectedAtUnixMs: Time, collectionDurationNs: TelemetryUIntSchema, receivedAtUnixMs: Time, serverNowUnixMs: Time,
   ageUpperBoundMs: z.number().finite().nonnegative(), freshUntilUnixMs: Time,
@@ -119,20 +123,21 @@ export type TelemetryReason = z.infer<typeof TelemetryReasonSchema>
 export type TelemetrySample = z.infer<typeof TelemetrySampleSchema>
 export type TelemetryReadResult = z.infer<typeof TelemetryReadResultSchema>
 export type TelemetryCpu = z.infer<typeof TelemetryCpuSchema>
+export type TelemetryMemory = z.infer<typeof TelemetryMemorySchema>
 export type TelemetryStorage = z.infer<typeof TelemetryStorageSchema>
 /** Counter endpoints belong to the actual capture window, never the configured cadence. */
-const TelemetryCpuCaptureSchema = z.discriminatedUnion('state', [
+export const TelemetryCpuCaptureSchema = z.discriminatedUnion('state', [
   z.object({ state: z.literal('ok'), basis: TelemetryCpuSchema.shape.basis, windowStartMonoNs: TelemetryUIntSchema, windowEndMonoNs: TelemetryUIntSchema,
     previousCounter: TelemetryUIntSchema, currentCounter: TelemetryUIntSchema, previousTotal: TelemetryUIntSchema.nullable(), currentTotal: TelemetryUIntSchema.nullable(),
     /** proc fallback is an interval delta over validated generations, not lifetime sums. */
     intervalDeltaNs: TelemetryUIntSchema.nullable(), baselineRef: Id }).strict(),
   z.object({ state: z.enum(['warmup', 'unavailable', 'permission-denied']), reason: TelemetryReasonSchema }).strict(),
 ])
-const TelemetryMemoryCaptureSchema = z.discriminatedUnion('state', [
+export const TelemetryMemoryCaptureSchema = z.discriminatedUnion('state', [
   z.object({ state: z.literal('ok'), value: TelemetryMemorySchema }).strict(),
   z.object({ state: z.enum(['unavailable', 'permission-denied']), reason: TelemetryReasonSchema }).strict(),
 ])
-const TelemetryCollectedRowSchema = z.object({ selector: TelemetrySelectorSchema, coverage: TelemetryCoverageSchema,
+export const TelemetryCollectedRowSchema = z.object({ selector: TelemetrySelectorSchema, coverage: TelemetryCoverageSchema,
   cpu: TelemetryCpuCaptureSchema, memory: TelemetryMemoryCaptureSchema,
   storage: TelemetryStorageSchema.nullable().optional() }).strict().superRefine((row, ctx) => {
   if (row.memory.state === 'ok' && (row.selector.scope === 'computer') !== (row.memory.value.kind === 'host-used-estimate')
@@ -174,9 +179,11 @@ export interface TelemetryReadService<Principal> {
   changes(principal: Principal, selector: TelemetrySelector, signal: AbortSignal): AsyncIterable<TelemetryReadResult>
 }
 
+export type TelemetryCpuCapture = z.infer<typeof TelemetryCpuCaptureSchema>
+export type TelemetryMemoryCapture = z.infer<typeof TelemetryMemoryCaptureSchema>
 
 /** Public domain references only; trusted authorities recover owner/attribution/host generations. */
-const TelemetryOwnedTargetSchema = z.discriminatedUnion('kind', [
+export const TelemetryOwnedTargetSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('workflow-execution'), workspaceId: Id, workflowId: Id, runId: Id,
     nodeId: Id, executionId: Id }).strict(),
   z.object({ kind: z.literal('ci-job'), workspaceId: Id, jobExecutionId: Id, attemptId: Id }).strict(),
@@ -198,6 +205,7 @@ export const TelemetrySelectorResultSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('unavailable') }).strict(),
   z.object({ kind: z.literal('denied') }).strict(),
 ])
+export type TelemetryOwnedTarget = z.infer<typeof TelemetryOwnedTargetSchema>
 export type TelemetrySelectorTarget = z.infer<typeof TelemetrySelectorTargetSchema>
 export type TelemetrySelectorResult = z.infer<typeof TelemetrySelectorResultSchema>
 export interface TelemetrySelectorService<Principal> {

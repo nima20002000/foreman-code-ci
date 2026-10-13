@@ -1,5 +1,4 @@
 import { qualificationUnitWorkers, qualificationIntegrationShards } from '@foreman-code/contracts/job-verification-policy'
-import { withTransaction } from '../../infrastructure/transaction.js'
 import { createHash } from 'node:crypto'
 import { Readable } from 'node:stream'
 import { join } from 'node:path'
@@ -121,7 +120,9 @@ export function createQualificationReportPublisher(input: { pool: pg.Pool; stora
       requireAuthorization(principal, 'job_artifacts:read', { workspaceId: execution.workspaceId })
       return { principal, execution }
     }
-    await withTransaction(input.pool, async (sql) => {
+    const sql = await input.pool.connect()
+    try {
+      await sql.query('begin')
       const { principal } = await authorize(sql)
       const { target, argv, inputs, outputs, policy, verification } = spec
       const definition = JobDefinitionRecordSchema.parse({ schemaVersion: 2, id: spec.definitionId,
@@ -143,7 +144,11 @@ export function createQualificationReportPublisher(input: { pool: pg.Pool; stora
       const saved = (await sql.query<{ accepted_spec: unknown }>('select accepted_spec from job_executions where id=$1',
         [execution.id])).rows[0]!
       if (!isDeepStrictEqual(saved.accepted_spec, spec)) throw new Error('Original diagnostic Job changed.')
-    })
+      await sql.query('commit')
+    } catch (error) {
+      await sql.query('rollback')
+      throw error
+    } finally { sql.release() }
     const artifacts = createCanonicalJobArtifactPort({ ...input,
       authority: { authorizePublication: authorize },
       reader: { open: async request => {

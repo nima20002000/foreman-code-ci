@@ -1,5 +1,4 @@
 import { isDeepStrictEqual } from 'node:util'
-import { withTransaction } from '../../infrastructure/transaction.js'
 import type pg from 'pg'
 import { TransferIntentSchema, TransferContextSchema, type TransferIntent, type TransferContext } from '@foreman-code/contracts/byte-transfer'
 import { SourceRootRecordSchema, type SourceRootRecord } from '@foreman-code/contracts/source-admission'
@@ -27,7 +26,9 @@ export class PostgresSourcePackageTransfers implements AcceptedTransferAuthority
     return binding
   }
   async revalidate(root: SourceRootRecord, attempt: MaterializationAttempt, identity: Identity) {
-    await withTransaction(this.pool, async (sql) => { await this.owners.authorizePreparation(sql, root, attempt, identity); this.binding(root) })
+    const sql = await this.pool.connect()
+    try { await sql.query('begin'); await this.owners.authorizePreparation(sql, root, attempt, identity); this.binding(root); await sql.query('commit') }
+    catch (error) { await sql.query('rollback'); throw error } finally { sql.release() }
   }
   private async allocation(id: string): Promise<Allocation> {
     const row = (await this.pool.query<{ result: unknown }>(`select result from management_command_receipts where operation='source.package.admit' and result->'intent'->>'transferId'=$1`, [id])).rows
