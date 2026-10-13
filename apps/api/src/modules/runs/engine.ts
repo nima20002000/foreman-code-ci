@@ -1,7 +1,6 @@
 import { beginRuntimeTiming, runtimeTimingPoint, withRuntimeTimingContext } from '../../infrastructure/runtimeTiming.js'
 import { retryDatabaseTimeout } from '../../infrastructure/databaseTimeout.js'
 import { resolve } from 'node:path'
-import type pg from 'pg'
 import type { BaseCheckpointSaver } from '@langchain/langgraph-checkpoint'
 import type { DurableInteraction } from '@foreman-code/contracts'
 import { CurrentRunVersionSnapshotSchema, ExecutableWorkflowV3Schema,
@@ -25,7 +24,6 @@ import { consumeDeliveredApprovals, type WorkflowResumePermit } from './approval
 import type { AuthorizeWorkflowStop } from './repeatLifecycle.js'
 import type { PostgresRunRepository } from './postgres.js'
 import type { RunOwnership } from './ownership.js'
-import type { WorkflowOrchestrator } from './port.js'
 import { RunnerAdmission } from './runnerAdmission.js'
 import { componentLogger } from '../diagnostics/logger.js'
 import { isAtomicApprovalCheckpointSaver } from '../../infrastructure/approvalCheckpointSaver.js'
@@ -36,7 +34,7 @@ import { readRunAcceptedPlacements } from '../placement/persistence.js'
  * graphs. Optional bounded blocks are compiled into this same LangGraph; an
  * ordinary graph has no block/round/carry/decision storage. There is no legacy
  * dispatcher, retagging, second scheduler, or caller-supplied runtime binding. */
-export class LangGraphWorkflowEngine implements WorkflowOrchestrator {
+export class LangGraphWorkflowEngine {
   private readonly workerAdmission: RunnerAdmission
   private readonly configuredParallelism: number
   private readonly maximumActiveRuns: number
@@ -326,8 +324,7 @@ export class LangGraphWorkflowEngine implements WorkflowOrchestrator {
 
   private authorize(sql: import('../run-graph/connection.js').GraphTransactionSql, run: WorkflowRunV3): Promise<void> {
     if (!run.authorizationPrincipalId) throw new DomainError('RUN_AUTHORIZATION_REVOKED', 'The accepted Run authority is missing.', 403)
-    return this.locations.revalidateRunAuthorization(run.authorizationPrincipalId, run.workspaceId, run.workflowId,
-      sql as unknown as Pick<pg.PoolClient, 'query'>)
+    return this.locations.revalidateRunAuthorization(run.authorizationPrincipalId, run.workspaceId, run.workflowId, sql)
   }
 
   private async cleanupOwned(owner: RunOwnership): Promise<void> {

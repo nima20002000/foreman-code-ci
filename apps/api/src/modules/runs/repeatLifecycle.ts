@@ -1,6 +1,6 @@
 import type pg from 'pg'
 import { AcceptedWorkflowRunV3Schema, RepeatGraphScopeV3Schema,
-  type AcceptedWorkflowRunV3, type GraphEffectAuthority } from '@foreman-code/contracts/wave25'
+  type AcceptedWorkflowRunV3, type GraphEffectAccessState } from '@foreman-code/contracts/wave25'
 
 import { DomainError } from '../errors.js'
 import { beforeGraphCommit, withExclusiveGraphConnection, type GraphTransactionSql } from '../run-graph/connection.js'
@@ -10,8 +10,7 @@ import { publicRunClosedFacts } from '../run-graph/publicProjection.js'
 import { publishRepeatRunStateLocked } from '../run-graph/repeatPublication.js'
 import { requireRepeatCanonicalReceiptBeforeCommit } from '../run-graph/repeatReceipts.js'
 import type { WorkspaceLocationService } from '../workspaces/location.js'
-import type { WorkflowResumePermit } from './approvalCheckpointResume.js'
-import { assertConsumedWorkflowResumeLocked } from './approvalCheckpointResume.js'
+import { assertConsumedWorkflowResumeLocked, type WorkflowResumePermit } from './workflowResumePermit.js'
 import type { RunOwnership } from './ownership.js'
 import type { RunStateUpdate } from './port.js'
 import { sameRepeatValue } from './repeatResolution.js'
@@ -80,7 +79,7 @@ export async function markRepeatRunRunning(owner: RunOwnership,
         or p.id=(select owner_principal_id from run_authority_principals where principal_id=$1 and run_id=$2)
         order by p.id for share`, [run.authorizationPrincipalId, run.id])
       await locations.revalidateRunAuthorization(run.authorizationPrincipalId, run.workspaceId, run.workflowId,
-        sql as unknown as Pick<pg.PoolClient, 'query'>, atCommit)
+        sql, atCommit)
       if (!sameRepeatValue(fence, await owner.readOneShotFence(sql))) throw new DomainError('RUN_OWNERSHIP_LOST', 'The exact Run owner changed before lifecycle COMMIT.', 409)
     }
     await authorize()
@@ -125,7 +124,7 @@ export async function requestWorkflowStopLocked(sql: GraphTransactionSql, runId:
   const effect = { identity: { kind: 'run.stop' as const, entityId: runId }, digest: graphSourceDigest({ runId, stop: true }) }
   // This authority is the actual authorized command transaction, not a native
   // session or replacement Run owner. Parent locking fences concurrent launch.
-  const readAuthority = async (): Promise<GraphEffectAuthority> => {
+  const readAuthority = async (): Promise<GraphEffectAccessState> => {
     await authorize(sql)
     const row = (await sql.query<{ owner: string; fence: string; record: unknown }>(
       'select pg_backend_pid()::text as owner,txid_current()::text as fence,record from runs where id=$1', [runId])).rows[0]

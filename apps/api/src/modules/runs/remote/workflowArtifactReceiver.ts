@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto'
+import { withTransaction } from '../../../infrastructure/transaction.js'
 import { isDeepStrictEqual } from 'node:util'
 import type pg from 'pg'
 import type { FastifyRequest } from 'fastify'
-import { ArtifactAttemptSchema, type ArtifactAttempt, type ArtifactAuthority } from '@foreman-code/contracts/artifact-edges'
+import { ArtifactAttemptSchema, type ArtifactAttempt, type ArtifactGrantReference } from '@foreman-code/contracts/artifact-edges'
 import { BYTE_TRANSFER_POLICY, TransferIntentSchema, TransferContextSchema, type TransferContext, type TransferIntent } from '@foreman-code/contracts/byte-transfer'
 import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
 import { ManagementPrincipalSchema, type ManagementPrincipal } from '@foreman-code/contracts/management'
@@ -29,7 +30,7 @@ type Fence = Pick<PostgresAcceptedArtifactAttemptFence, 'assertCurrent'>
 interface Caller {
   worker: ManagementPrincipal
   attempt: ArtifactAttempt
-  authority: ArtifactAuthority
+  authority: ArtifactGrantReference
   binding: Readonly<DeviceSessionBinding>
   intent: NonNullable<Awaited<ReturnType<typeof readDispatchIntent>>>
   placement: NonNullable<Awaited<ReturnType<typeof readAcceptedPlacement>>>
@@ -43,9 +44,7 @@ export class WorkflowArtifactEndpointAuthorization implements DistributedArtifac
     return this.access.authenticate(bearerToken(request.headers.authorization), 'worker')
   }
   async transaction<T>(work: (sql: pg.PoolClient) => Promise<T>): Promise<T> {
-    const sql = await this.pool.connect()
-    try { await sql.query('begin'); const value = await work(sql); await sql.query('commit'); return value }
-    catch (error) { await sql.query('rollback'); throw error } finally { sql.release() }
+    return withTransaction(this.pool, work)
   }
   async locked(sql: pg.PoolClient, snapshot: ManagementPrincipal): Promise<Caller> {
     if (snapshot.audience !== 'worker' || !snapshot.agentId) return denied()
