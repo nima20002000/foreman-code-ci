@@ -142,7 +142,7 @@ export class PostgresAccessService {
     grants: ManagementGrant[]
     expiresAt: Date
   }, client?: pg.ClientBase): Promise<{ principal: ManagementPrincipal; token: string }> {
-    if (!Number.isFinite(input.expiresAt.getTime())) throw new DomainError('INVALID_EXPIRY', 'Credential expiry must be in the future.', 400)
+    if (!Number.isFinite(input.expiresAt.getTime()) || input.expiresAt.getTime() <= Date.now()) throw new DomainError('INVALID_EXPIRY', 'Credential expiry must be in the future.', 400)
     const name = input.name.trim()
     if (!name) throw new DomainError('INVALID_PRINCIPAL_NAME', 'Credential name is required.', 400)
     const grants = input.grants.map((grant) => ManagementGrantSchema.parse(grant))
@@ -160,16 +160,15 @@ export class PostgresAccessService {
     const token = `opm_${randomBytes(32).toString('base64url')}`
     const result = await (client ?? this.pool).query<PrincipalRow>(
       `insert into management_principals (id, name, audience, agent_id, token_hash, grants, expires_at)
-       select $1, $2, $3, $4, $5, $6::jsonb, $7::timestamptz where $7::timestamptz>clock_timestamp()
+       values ($1, $2, $3, $4, $5, $6::jsonb, $7)
        returning id, name, audience, agent_id, token_hash, grants, expires_at, revoked_at`,
       [id, accepted.name, accepted.audience, accepted.agentId ?? null, digest(token), JSON.stringify(accepted.grants), input.expiresAt],
     )
-    if (!result.rows[0]) throw new DomainError('INVALID_EXPIRY', 'Credential expiry must be in the future.', 400)
-    return { principal: fromRow(result.rows[0]), token }
+    return { principal: fromRow(result.rows[0]!), token }
   }
 
-  async revoke(principalId: string, client?: pg.ClientBase): Promise<boolean> {
-    const result = await (client ?? this.pool).query(
+  async revoke(principalId: string): Promise<boolean> {
+    const result = await this.pool.query(
       'update management_principals set revoked_at = coalesce(revoked_at, now()) where id = $1',
       [principalId],
     )

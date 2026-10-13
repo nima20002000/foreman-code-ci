@@ -11,7 +11,7 @@ import { draftOperations, hasLocalChanges, mergeAcknowledgement } from './model'
 import { readBoardStart } from '../../workflow-board/startOutbox'
 import { nextDraftDirty, type NextDraftEdit } from './state'
 import { assertDraftSubmission, nextDraftApi } from './transport'
-import { acknowledgeEditOutbox, acknowledgeEditSubmission, editSnapshotAcknowledged, editSnapshotSubmitted, matchesEditIntent, readEditOutbox, readEditSubmission,
+import { acknowledgeEditOutbox, editSnapshotAcknowledged, editSnapshotSubmitted, matchesEditIntent, readEditOutbox, readEditSubmission,
   rejectEditOutbox, reserveEditOutbox, storeEditSnapshot, withEditIntentLock, type EditIntentOutbox } from './editIntentStorage'
 
 export const activeEditIntent = (intent: GraphEditIntentV3 | null | undefined) => !!intent && !['saved', 'discarded'].includes(intent.state)
@@ -74,15 +74,7 @@ export function acknowledgeEditIntentSnapshot(draftKey: string, current: NextDra
     const agents = saved.agents
     if (intent.stagedDraft.stagedAgents?.some(({ agent }) => !agents?.some((savedAgent) =>
       savedAgent.agent.id === agent.id && savedAgent.agent.configurationVersionId === saved.version.agentConfigurationVersionIds[agent.id]))) return current
-    const sourcePins = new Map((context.draft.sourceAgentPins ?? []).map(pin => [pin.agentId, pin]))
-    for (const record of agents ?? []) {
-      if (record.agent.configurationVersionId) sourcePins.set(record.agent.id, {
-        agentId: record.agent.id, metadataRevision: record.metadataRevision,
-        configurationVersionId: record.agent.configurationVersionId,
-      })
-    }
-    const draft = { ...context.draft, ...(agents?.length ? { sourceAgentPins: [...sourcePins.values()] } : {}) }
-    context = { ...context, draft, savedDraft: draft,
+    context = { ...context, savedDraft: context.draft,
       agents: [...new Map([...context.agents, ...(agents ?? [])].map((item) => [item.agent.id, item])).values()] }
   }
   const graph = intent.state === 'saved' && cleanRemoteForm && !submittedHere && !exactSubmittedForm
@@ -94,7 +86,6 @@ export function acknowledgeEditIntentSnapshot(draftKey: string, current: NextDra
       intent.state === 'discarded' ? graph : undefined),
     remoteEditIntent: undefined, error: undefined, validation: undefined }
   storeEditSnapshot(draftKey, next, intent.stageCommandId)
-  acknowledgeEditSubmission(draftKey, intent)
   return next
 }
 
