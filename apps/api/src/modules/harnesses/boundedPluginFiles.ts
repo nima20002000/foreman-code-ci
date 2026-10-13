@@ -1,7 +1,6 @@
 import { constants } from 'node:fs'
 import { lstat, open, opendir, realpath, type FileHandle } from 'node:fs/promises'
 import { isAbsolute, relative as relativePath, resolve, sep } from 'node:path'
-import { ignoreError } from '../diagnostics/ignoredError.js'
 
 export const PLUGIN_FILE_LIMIT = 65_536
 export const PLUGIN_DIRECTORY_LIMIT = 256
@@ -20,7 +19,7 @@ export async function pluginDeadline<T>(task: Promise<T>, signal: AbortSignal, l
     if (signal.aborted) abort()
     void task.then((value) => {
       signal.removeEventListener('abort', abort)
-      if (canceled) { void late?.(value).catch(ignoreError('harness', 'dispose late plugin file read')); return }
+      if (canceled) { void late?.(value).catch(() => undefined); return }
       resolve(value)
     }, (error: unknown) => { signal.removeEventListener('abort', abort); if (!canceled) reject(error) })
   })

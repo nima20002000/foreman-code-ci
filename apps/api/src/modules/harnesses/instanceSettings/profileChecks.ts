@@ -65,7 +65,7 @@ export class HostHarnessInstanceProfileChecks {
       return result
     })
     this.flights.add(flight)
-    void flight.finally(() => this.flights.delete(flight)).catch(() => { /* ignore: the owner awaits the original promise; this observer prevents a duplicate unhandled rejection. */ })
+    void flight.finally(() => this.flights.delete(flight)).catch(() => undefined)
     return flight
   }
   recheckWorker(binding: Readonly<DeviceSessionBinding>, connectionSignal: AbortSignal,
