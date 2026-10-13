@@ -2,10 +2,11 @@ import type { AgentConfigurationVersion } from '@foreman-code/contracts'
 import type pg from 'pg'
 import type { SavedWorkflowDefinition, SavedWorkflowVersion } from '@foreman-code/contracts/wave25'
 import { DomainError } from '../errors.js'
+import type { WorkflowRepository } from './port.js'
 import { readImmutableWorkflowVersion, readImmutableAgentConfiguration, readSavedWorkflowDefinition, IMMUTABLE_WORKFLOW_VERSION_COLUMNS,
   type ImmutableWorkflowVersionRow, type ImmutableAgentConfigurationRow } from './immutableRead.js'
 
-export class PostgresWorkflowRepository {
+export class PostgresWorkflowRepository implements WorkflowRepository {
   constructor(private readonly pool: pg.Pool) {}
 
   async list(workspaceId: string): Promise<SavedWorkflowDefinition[]> {

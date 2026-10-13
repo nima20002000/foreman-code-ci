@@ -4,6 +4,7 @@ import { definition } from '../../jobs/fixtures'
 import { clickConnectionHandles } from '../testConnectionHandles'
 import { GraphPresentationProvider } from '../GraphPresentation'
 import { useGraphDraftStore } from '../store'
+import { installFlowLayout } from '../../run-board/testFlowLayout'
 import { fixture } from './core.cases'
 import { DraftCanvas } from './DraftCanvas'
 import { attachJob } from './model'
@@ -14,14 +15,7 @@ const key = nextDraftKey('workspace', 'workflow')
 const context = fixture()
 const graph = attachJob(context.draft.graph, { ...definition, workspaceId: 'workspace' }, 'job-node')
 beforeEach(() => {
-  vi.stubGlobal('ResizeObserver', class {
-    constructor(private readonly notify: ResizeObserverCallback) {}
-    observe(target: Element) { queueMicrotask(() => this.notify([{ target, contentRect: target.getBoundingClientRect() } as ResizeObserverEntry], this as unknown as ResizeObserver)) }
-    unobserve() {} disconnect() {}
-  })
-  if (!globalThis.DOMMatrixReadOnly) vi.stubGlobal('DOMMatrixReadOnly', class { m11 = 1; m22 = 1; m41 = 0; m42 = 0 })
-  vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(1000)
-  vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(800)
+  installFlowLayout(1000, 800)
   useGraphDraftStore.getState().installNextDraft(key, structuredClone(context)) })
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); useGraphDraftStore.getState().clearAllDrafts() })
 

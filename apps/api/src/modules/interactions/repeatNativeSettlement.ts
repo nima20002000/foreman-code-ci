@@ -10,7 +10,7 @@ import { assertReviewJobTerminalProofLocked } from './reviewNativeProof.js'
 import { CANCELED_INTERACTION_RETIRED_SQL, decisionDigest } from './wave25/publication.js'
 import { assertWorkflowApprovalAckLocked } from './nativeApprovalProof.js'
 import { readAcceptedRepeatRunLocked } from '../runs/repeatStartRead.js'
-import { readRepeatExecutionLocked } from '../runs/repeatExecutionRead.js'
+import { readRepeatExecutionLocked } from '../runs/repeatPostgres.js'
 import { assertWorkflowNativeNotSubmittedLocked, readWorkflowNativeEntryLocked, workflowNativeReservation, type WorkflowNativeEntryRecord } from '../runs/workflowNativeEntry.js'
 import { assertRepeatNativeClosure, repeatNativePending } from './repeatNativeEvidence.js'
 import { readRetainedRemoteReviewer, retainRemoteReviewerCredential } from './retainedRemoteReviewer.js'
@@ -34,8 +34,10 @@ export interface RepeatNativeSettlementCheckpoint {
  * finishRun, Stop, timeout, process absence or in-memory Set can satisfy it.
  *
  * Positive repeat routing calls this from RepeatRunRepository after its Run/head
- * lock and exact occurrence/slot/input receipt checks. Private
- * workflow-finalization updates roll back with the enclosing owner transaction.
+ * lock and exact occurrence/slot/input receipt checks. Terminal Run cleanup calls
+ * it from finalizeStoppedWorkflowSessions after strict Run/version validation;
+ * that path grants no routing authority. Private workflow-finalization updates
+ * roll back with the enclosing owner transaction in either case.
  */
 export async function settleRepeatNativeExecutionLocked(sql: GraphTransactionSql, runId: string,
   supplied: HarnessExecution): Promise<void> {

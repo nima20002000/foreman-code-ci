@@ -2,7 +2,7 @@ import type { AgentChatTurn } from '@foreman-code/contracts/agent-chat'
 import { afterEach, expect, it, vi } from 'vitest'
 import { AgentChatEvents } from '../src/modules/conversations/agentChat.js'
 import { waitForDelivery } from './helpers/agentChatDelivery.js'
-import { rejectableDeferred } from './helpers/deferred.js'
+import { deferred } from './helpers/wave25Agent3.js'
 
 afterEach(() => { vi.useRealTimers() })
 
@@ -34,7 +34,7 @@ it('waits for committed delivery without polling during native startup or stream
 })
 
 it('does not lose a completion published while its first snapshot is being read', async () => {
-  const snapshot = rejectableDeferred<AgentChatTurn>()
+  const snapshot = deferred<AgentChatTurn>()
   const events = new AgentChatEvents()
   const repository = { turn: vi.fn(async () => turn('completed')), get: async () => undefined }
   repository.turn.mockImplementationOnce(() => snapshot.promise)

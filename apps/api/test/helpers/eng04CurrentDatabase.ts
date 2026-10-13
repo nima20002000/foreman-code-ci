@@ -9,7 +9,7 @@ export const postgresEnabled = Boolean(process.env.TEST_DATABASE_URL)
 /** The existing disposable loopback test gate, without importing retired
  * execution seeders. No DATABASE_URL fallback or live/shared data cleanup. */
 export async function currentDatabase(options: {
-  beforeMigration?: number; deferMigration?: number | number[]; databaseUrl?: string
+  beforeMigration?: number; deferMigration?: number | readonly number[]; databaseUrl?: string
 } = {}) {
   const started = performance.now()
   const url = options.databaseUrl ?? process.env.TEST_DATABASE_URL
@@ -26,15 +26,17 @@ export async function currentDatabase(options: {
   const directory = await privateFixtureDirectory('eng04-b-')
   const beforeMigration = performance.now()
   try {
-    const deferred = Array.isArray(options.deferMigration) ? options.deferMigration : [options.deferMigration]
-    const pendingMigration = options.beforeMigration ?? deferred[0]
+    const pendingMigration = options.beforeMigration ?? options.deferMigration
     if (pendingMigration === undefined) {
       await applyApplicationMigrations(pool)
     } else {
-      const index = migrations.findIndex((migration) => migration.version === pendingMigration)
+      const deferredMigrations = typeof options.deferMigration === 'number'
+        ? [options.deferMigration] : options.deferMigration ?? []
+      const firstPendingMigration = options.beforeMigration ?? deferredMigrations[0]
+      const index = migrations.findIndex((migration) => migration.version === firstPendingMigration)
       if (index < 0) throw new Error('The requested migration is not registered')
       const fixtureMigrations = options.beforeMigration === undefined
-        ? migrations.filter((migration) => !deferred.includes(migration.version))
+        ? migrations.filter((migration) => !deferredMigrations.includes(migration.version))
         : migrations.slice(0, index)
       const client = await pool.connect()
       try {

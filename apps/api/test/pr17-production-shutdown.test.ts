@@ -14,7 +14,12 @@ import { RunWorktrees } from '../src/modules/runs/runWorktrees.js'
 import { buildProductionApp } from '../src/production.js'
 import * as rsyncComposition from '../src/modules/byte-transfer/productionComposition.js'
 import { ProductionDeviceRuntime } from '../src/modules/devices/productionRuntime.js'
-import { deferred } from './helpers/deferred.js'
+
+function gate() {
+  let resolve!: () => void
+  const promise = new Promise<void>((done) => { resolve = done })
+  return { promise, resolve }
+}
 
 const config = loadConfig({ DATABASE_URL: 'postgresql://graphql:graphql@127.0.0.1:5432/graphql_shutdown_fixture' })
 let database: ReturnType<typeof createDatabase>
@@ -45,8 +50,8 @@ describe('PR17 F7 production shutdown composition', () => {
   it('keeps device channels open until their rsync writers have stopped', async () => {
     await production.app.close()
     vi.mocked(OperatorRuntimeOwner.prototype.close).mockClear()
-    const entered = deferred()
-    const stopped = deferred()
+    const entered = gate()
+    const stopped = gate()
     const close = vi.fn(() => { entered.resolve(); return stopped.promise })
     vi.spyOn(rsyncComposition, 'createInstalledRsyncComposition').mockReturnValue({
       kind: 'configured', extensions: [], rsyncWriters: { close },
@@ -68,7 +73,7 @@ describe('PR17 F7 production shutdown composition', () => {
     }
   })
   it('does not release ownership when the app closes but a public runtime shutdown is pending', async () => {
-    const pending = deferred(); const entered = deferred()
+    const pending = gate(); const entered = gate()
     vi.mocked(OperatorChatService.prototype.shutdown).mockImplementation(() => { entered.resolve(); return pending.promise })
     await production.app.ready()
     const closing = production.app.close()
@@ -86,7 +91,7 @@ describe('PR17 F7 production shutdown composition', () => {
   })
 
   it('handles repeated shutdown during HTTP drain and hook re-entry without an early unlock or close deadlock', async () => {
-    const pending = deferred(); const entered = deferred(); const preClose = deferred()
+    const pending = gate(); const entered = gate(); const preClose = gate()
     const order: string[] = []
     production.app.get('/agent3-held-request', async () => {
       entered.resolve()
@@ -120,7 +125,7 @@ describe('PR17 F7 production shutdown composition', () => {
   }, 10_000)
 
   it('drains in-flight recovery before disposing managers and does not admit another recovery page', async () => {
-    const pending = deferred(); const entered = deferred()
+    const pending = gate(); const entered = gate()
     vi.spyOn(production.engine, 'reconcile').mockImplementation(() => { entered.resolve(); return pending.promise })
     const recover = vi.spyOn(InteractionService.prototype, 'recover')
     const running = production.reconcile(vi.fn())
@@ -139,8 +144,8 @@ describe('PR17 F7 production shutdown composition', () => {
   })
 
   it('drains worktree cleanup already in progress before disposing managers', async () => {
-    const pending = deferred()
-    const entered = deferred()
+    const pending = gate()
+    const entered = gate()
     vi.spyOn(production.engine, 'reconcile').mockResolvedValue()
     vi.mocked(RunWorktrees.prototype.cleanup).mockImplementation(() => {
       entered.resolve()
@@ -167,7 +172,7 @@ describe('PR17 F7 production shutdown composition', () => {
   })
 
   it('drains acquisition during canceled startup even though initialized never became true', async () => {
-    const pending = deferred(); const entered = deferred()
+    const pending = gate(); const entered = gate()
     vi.mocked(OperatorRuntimeOwner.prototype.acquire).mockImplementation(() => { entered.resolve(); return pending.promise })
     const ensure = vi.spyOn(PostgresOperatorRepository.prototype, 'ensure')
     const initializing = production.initialize()

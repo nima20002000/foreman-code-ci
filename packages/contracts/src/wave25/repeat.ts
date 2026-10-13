@@ -79,7 +79,7 @@ export const ExecutableRepeatWorkflowV1Schema = z.object({
   version: RepeatWorkflowVersionV1Schema,
   configurations: z.array(AgentConfigurationVersionSchema).max(1000),
 }).strict().superRefine(validateCurrentWorkflowConfigurations)
-type ExecutableRepeatWorkflowV1 = z.infer<typeof ExecutableRepeatWorkflowV1Schema>
+export type ExecutableRepeatWorkflowV1 = z.infer<typeof ExecutableRepeatWorkflowV1Schema>
 
 const executableWorkflowPinsSchema = z.custom<ExecutableRepeatWorkflowV1>()
   .superRefine(validateCurrentWorkflowConfigurations)
@@ -92,6 +92,7 @@ export function assertExecutableWorkflow(snapshot: ExecutableRepeatWorkflowV1): 
 /** Same current Run lifecycle schema for ordinary work and real configured blocks.
  * The V1 suffix versions only the repeat contract, never execution semantics. */
 export const RepeatWorkflowRunV1Schema = CurrentWorkflowRunSchema
+export type RepeatWorkflowRunV1 = z.infer<typeof RepeatWorkflowRunV1Schema>
 export const RepeatRunVersionV1Schema = z.object({
   run: RepeatWorkflowRunV1Schema, version: RepeatWorkflowVersionV1Schema,
 }).strict().superRefine(({ run, version }, context) => {
@@ -105,7 +106,7 @@ export const RepeatRunVersionV1Schema = z.object({
 })
 
 /** One fixed carry/exit payload, not an expression or configurable mapping language. */
-const RepeatExitDataV1Schema = z.unknown().superRefine((value, context) => {
+export const RepeatExitDataV1Schema = z.unknown().superRefine((value, context) => {
   try { canonicalGraphJson(value, 64 * 1024) } catch { context.addIssue({ code: 'custom', message: 'REPEAT_EXIT_DATA_INVALID_OR_TOO_LARGE' }) }
 }).pipe(z.object({
   latestDeliverable: z.json().refine((value) => value !== null, 'REPEAT_DELIVERABLE_REQUIRED'),
