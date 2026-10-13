@@ -1,5 +1,4 @@
 import { deflateSync } from 'node:zlib'
-import { fallbackOnError } from '../diagnostics/ignoredError.js'
 import { JOB_PRIVATE_GIT_LAYOUT, JOB_GIT_ENVIRONMENT, JOB_GIT_CONTAINER_DIRECTORY } from './privateGitMounts.js'
 import { createHash } from 'node:crypto'
 import type { ChildProcess, SpawnOptions } from 'node:child_process'
@@ -276,7 +275,7 @@ export async function runQualificationCommand(
     })
     if (signal.aborted) abort()
   })
-  void completed.catch(() => { /* ignore: the owner awaits the original promise; this observer prevents a duplicate unhandled rejection. */ })
+  void completed.catch(() => {})
   return completed
 }
 
@@ -571,11 +570,7 @@ export async function qualifyJobRuntime(raw: JobQualificationCandidate, authorit
     record.reasons = [error instanceof Error ? error.message : 'Qualification failed.']
     return record
   } finally {
-    if (!physicallyClosed) {
-      physicallyClosed = await owner.close().catch(fallbackOnError(
-        false, 'jobs', 'close qualification owner', { qualificationId: candidate.qualificationId },
-      ))
-    }
+    if (!physicallyClosed) physicallyClosed = await owner.close().catch(() => false)
     record.closure = physicallyClosed ? 'confirmed' : 'unconfirmed'
     if (physicallyClosed && scratch) await rm(scratch, { recursive: true, force: true })
     if (!physicallyClosed) { record.reasons.push('native_closure_incomplete'); record.outcome = 'denied' }
