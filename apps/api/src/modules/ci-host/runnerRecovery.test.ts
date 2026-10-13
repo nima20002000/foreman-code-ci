@@ -28,20 +28,14 @@ async function fixture() {
   const root = await privateFixtureDirectory('host-ci-recovery-')
   roots.push(root)
   const control = { state: 'active', code: 0, stopCode: 0, launches: 0 }
-  const checkoutSources: string[] = []
   const ports: HostCiPorts = {
     cpus: 8, memoryBytes: 16 * 2 ** 30, now: () => new Date(),
-    run: async (file, args, options) => {
-      if (file === 'git' && args.includes('checkout')) {
-        const source = options!.cwd!
-        checkoutSources.push(source)
-        await mkdir(source, { recursive: true })
-        await writeFile(join(source, 'package.json'), JSON.stringify({ scripts: { lint: 'fixture' } }))
+    run: async (file, args) => {
+      if (file === 'git' && args.includes('worktree') && args.includes('add')) {
+        await mkdir(args.at(-2)!, { recursive: true })
+        await writeFile(join(args.at(-2)!, 'package.json'), JSON.stringify({ scripts: { lint: 'fixture' } }))
       }
-      if (file === 'systemd-run') {
-        control.launches++
-        control.state = 'active'
-      }
+      if (file === 'systemd-run') control.launches++
       if (file === 'systemctl' && args.includes('stop')) {
         if (control.stopCode === 0) control.state = 'inactive'
         return { code: control.stopCode, stdout: '', stderr: control.stopCode ? 'Manager unavailable' : '' }
@@ -54,8 +48,8 @@ async function fixture() {
   const request = { operation: 'start', runId: randomUUID(), repository: 'fixture/site',
     commit: 'a'.repeat(40), suite: 'lint', scope: 'full' }
   const read = { operation: 'read', runId: request.runId, afterOffset: 0, maxBytes: 100 }
-  return { root, ports, runner, control, request, read, checkoutSources,
-    get source() { return checkoutSources[0]! } }
+  const source = join(root, 'runs', request.runId, 'src')
+  return { root, ports, runner, control, request, read, source }
 }
 
 it('recovers the original service after restart between native entry and the running metadata write', async () => {
@@ -105,7 +99,7 @@ it.each([
   await expect(f.runner.status()).resolves.toMatchObject({ slotsUsed: 1 })
 })
 
-it('persists failed cancellation, retains capacity after restart and retries before releasing the persistent slot', async () => {
+it('persists failed cancellation, retains capacity after restart and retries before cleaning the source', async () => {
   const f = await fixture()
   await f.runner.handle(f.request)
   await vi.waitFor(async () => {
@@ -121,14 +115,6 @@ it('persists failed cancellation, retains capacity after restart and retries bef
     .rejects.toMatchObject({ code: 'CI_HOST_BUSY' })
   f.control.stopCode = 0
   await expect(recovered.handle(f.read)).resolves.toMatchObject({ run: { state: 'canceled' } })
-  await expect(access(f.source)).resolves.toBeUndefined()
+  await expect(access(f.source)).rejects.toMatchObject({ code: 'ENOENT' })
   await expect(recovered.status()).resolves.toMatchObject({ slotsUsed: 0 })
-  const next = { ...f.request, runId: randomUUID() }
-  await recovered.handle(next)
-  await vi.waitFor(async () => {
-    await expect(recovered.handle({ ...f.read, runId: next.runId }))
-      .resolves.toMatchObject({ run: { state: 'running' } })
-  })
-  expect(f.control.launches).toBe(2)
-  expect(f.checkoutSources).toEqual([f.source, f.source])
 })

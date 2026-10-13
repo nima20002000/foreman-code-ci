@@ -13,7 +13,6 @@ import { HostCiService } from './modules/ci-host/service.js'
 import { GitCiCommits } from './modules/ci-host/commits.js'
 import { RunCiAuthority } from './modules/jobs/ciAuthority.js'
 import { ProductionHostCiEndpoint } from './modules/ci-host/endpoint.js'
-import { CiPrewarmService } from './modules/ci-host/prewarm.js'
 import { HostCiRunner } from './modules/ci-host/runner.js'
 import { activeCiRuns, cloudCis, workspaceMirrors } from './modules/ci-host/cloud.js'
 import { agentSnapshots, type ReadAgentFiles } from './modules/ci-host/agentSnapshots.js'
@@ -2104,15 +2103,11 @@ export function buildProductionApp(
         return { commit: reply.commit, bundle: reply.bundleBase64 === null ? null : Buffer.from(reply.bundleBase64, 'base64') }
       }
       // CI runs directly on build computers (Main included) from GitHub, like self-hosted runners.
-      const ciCommits = new GitCiCommits()
-      const ciEndpoint = new ProductionHostCiEndpoint(database.pool, machine.installationId,
-        () => deviceRuntime.endpointForDomains(), new HostCiRunner(), clouds)
-      hostCi = new HostCiService(database.pool, commands, new RunCiAuthority(database.pool), ciCommits, ciEndpoint,
+      hostCi = new HostCiService(database.pool, commands, new RunCiAuthority(database.pool), new GitCiCommits(),
+        new ProductionHostCiEndpoint(database.pool, machine.installationId, () => deviceRuntime.endpointForDomains(), new HostCiRunner(),
+          clouds),
         agentSnapshots(database.pool, readAgentFiles))
       hostCi.start()
-      const prewarm = new CiPrewarmService(database.pool, ciCommits, ciEndpoint)
-      prewarm.start()
-      app.addHook('onClose', async () => { await prewarm.close() })
       app.addHook('onClose', async () => { await hostCi?.close() })
       runtimeServices.ci = hostCi
       runtimeServices.jobRuntimeProfiles = jobRuntime.profiles

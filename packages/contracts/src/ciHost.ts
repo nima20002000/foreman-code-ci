@@ -4,8 +4,8 @@ export { integrationPartition, requiresUserSystemd } from './ciPartition.mjs'
 export { userSystemdIntegrationFiles, exclusiveIntegrationFiles } from './integrationScheduling.mjs'
 import { WorkspaceRepositorySchema } from './workspaceRepository.js'
 
-/** Host CI: a build computer runs a suite directly in a persistent slot checkout of the commit, like a self-hosted runner.
- * It fetches with its own GitHub CLI login and installs packages only when dependency inputs change; a systemd unit caps CPU and memory. */
+/** Host CI: a build computer runs a suite directly in a git worktree of the commit, like a self-hosted runner.
+ * It fetches with its own GitHub CLI login and installs packages normally; a systemd unit caps CPU and memory. */
 export const CI_HOST_NAMESPACE = 'ci-host-v1'
 export const CI_LOG_MAX_BYTES = 65_536
 
@@ -88,10 +88,6 @@ const CiHostRunIdSchema = z.uuid()
 /** `durations` are Main's learned integration file durations; the commit's committed durations fill the gaps. */
 const CiHostStartSchema = z.object({
   operation: z.literal('start'), runId: CiHostRunIdSchema, repository: CiRepositorySchema, commit: CommitSchema,
-  warmup: z.boolean().optional(),
-  workspaceId: IdSchema.optional(),
-  /** Publication destination approved in this ticket's workspace at admission; null disables cloud publication. */
-  ciMirror: CiRepositorySchema.nullable().optional(),
   suite: CiSuiteSchema, part: CiPartSchema.optional(), partition: CiPartitionSchema.optional(), durations: CiDurationsSchema.optional(),
   scope: CiScopeSchema.optional(), files: CiSelectedFilesSchema.optional(),
   expectedDurationMs: z.number().nonnegative().finite().optional(),
@@ -104,8 +100,6 @@ const CiHostStartSchema = z.object({
   : validCiSelection(value) && value.integrationShards === undefined,
   'Gate jobs require full integration scope, assigned files and a shard count; other selections require affected scope.')
   .refine(validCiPart, 'The part and partition must belong to the requested suite.')
-  .refine(value => !value.warmup || value.suite === 'install' && !value.gate && !value.part
-    && !value.partition && value.files === undefined, 'Warm-ups only prepare a commit.')
 export const CiHostRequestSchema = z.discriminatedUnion('operation', [
   z.object({ operation: z.literal('status') }).strict(),
   CiHostStartSchema,
@@ -123,7 +117,6 @@ export const CiProvenanceSchema = z.object({
   sourceCommit: CommitSchema, workflowCommit: CommitSchema, workflowRef: z.string().min(1).max(200),
 }).strict()
 const CiHostRunSchema = z.object({
-  warmup: z.boolean().optional(),
   runId: CiHostRunIdSchema, state: CiHostRunStateSchema, step: z.string().max(80).nullable(),
   exitCode: z.number().int().nullable(), startedAt: TimestampSchema, finishedAt: TimestampSchema.nullable(),
   logBytes: z.number().int().nonnegative(), message: z.string().max(2000).nullable(),
@@ -132,16 +125,12 @@ const CiHostRunSchema = z.object({
 export type CiHostRun = z.infer<typeof CiHostRunSchema>
 export const CiUserSystemdSchema = z.object({ supported: z.boolean(), reason: z.string().max(300).nullable() }).strict()
 export type CiUserSystemd = z.infer<typeof CiUserSystemdSchema>
-export const CiWarmupSchema = z.object({
-  repository: CiRepositorySchema, commit: CommitSchema, run: CiHostRunSchema,
-}).strict()
 export const CiHostStatusSchema = z.object({
   operation: z.literal('status'), ready: z.boolean(), reasons: z.array(z.string().max(300)).max(10),
   cpuCount: z.number().int().positive(), memoryBytes: z.number().int().positive(),
   availableMemoryBytes: z.number().int().nonnegative().optional(),
   slotsUsed: z.number().int().nonnegative().optional(), slotsTotal: z.number().int().positive().optional(),
   userSystemd: CiUserSystemdSchema.optional(),
-  prewarmSupported: z.boolean().optional(), warmup: CiWarmupSchema.nullable().optional(),
   runs: z.array(CiHostRunSchema).max(50),
 }).strict()
 export type CiHostStatus = z.infer<typeof CiHostStatusSchema>
@@ -157,23 +146,11 @@ export type CiHostReply = z.infer<typeof CiHostReplySchema>
 /** What an Agent or the Operator sees for one CI run. */
 export const CiPrioritySchema = z.enum(['normal', 'high'])
 export const CiPriorityReasonSchema = z.enum(['normal', 'requested', 'ci-infrastructure', 'gate'])
-export const CiCancellationSchema = z.object({
-  principalId: IdSchema, source: z.enum(['http', 'mcp']), commandId: IdSchema,
-  runId: IdSchema.optional(), reason: z.enum(['direct', 'run_stop', 'superseded']),
-}).strict()
-export type CiCancellation = z.infer<typeof CiCancellationSchema>
 export const CiComputerRefSchema = z.object({ kind: z.enum(['main', 'device', 'cloud']), mainId: z.string(), deviceId: z.string().optional(),
     provider: z.enum(['github', 'circleci']).optional(), slot: z.number().int().nonnegative().optional() }).strict()
 
 export const CiRunRecordSchema = z.object({
   id: CiHostRunIdSchema, workspaceId: IdSchema, suite: CiSuiteSchema, commit: CommitSchema, repository: CiRepositorySchema,
-  ciMirror: CiRepositorySchema.nullable().optional(),
-  /** Kept until the assigned executor confirms start; retries use this same request and executor. */
-  dispatchRequest: CiHostStartSchema.optional(),
-  /** Kept until the assigned executor confirms cancellation or another terminal result. */
-  cancellation: CiCancellationSchema.optional(),
-  providerMessage: z.string().max(2000).nullable().optional(),
-  messageHistory: z.array(z.string().max(2000)).max(8).optional(),
   scope: CiScopeSchema.default('full'), files: CiSelectedFilesSchema.default([]),
   priority: CiPrioritySchema.default('normal'), priorityReason: CiPriorityReasonSchema.default('normal'),
   gate: z.boolean().optional(), integrationShards: z.number().int().min(1).max(64).optional(),

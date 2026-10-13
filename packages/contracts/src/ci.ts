@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { CI_LOG_MAX_BYTES, CiComputerRefSchema, CiActivitySchema, CiRunRecordSchema, CiSuiteSchema, CiScopeSchema, CiSelectedFilesSchema,
   CiTestResultsSchema, CiPrioritySchema, CiPriorityReasonSchema,
-  CiWarmupSchema, CiTestStatusSchema, CiTestSummarySchema, CiUserSystemdSchema, validCiSelection } from './ciHost.js'
+  CiTestStatusSchema, CiTestSummarySchema, CiUserSystemdSchema, validCiSelection } from './ciHost.js'
 import { IdSchema } from './schemaPrimitives.js'
 import { JobResourceRequestSchema } from './jobVerificationPolicy.js'
 import { SourceRootRecordSchema } from './sourceAdmission.js'
@@ -84,10 +84,8 @@ export const CiGetOutputSchema = z.object({
   }).strict().optional(),
 }).strict()
 export type CiRunInput = z.infer<typeof CiRunInputSchema>
-export const CiCancelInputSchema = CiTicketInputSchema.extend({
-  commandId: IdSchema.optional().describe('Optional caller request identity recorded with cancellation; generated when omitted.'),
-}).strict()
-export const OperatorCiCancelInputSchema = CiCancelInputSchema.extend({ workspaceId: IdSchema }).strict()
+export const CiCancelInputSchema = CiTicketInputSchema
+export const OperatorCiCancelInputSchema = CiTicketInputSchema.extend({ workspaceId: IdSchema }).strict()
 export const CiCancelOutputSchema = z.object({ run: CiRunRecordSchema }).strict()
 export const CiTestsOutputSchema = z.object({ ticketId: IdSchema, tests: CiTestResultsSchema.nullable() }).strict()
 
@@ -139,7 +137,6 @@ export const CiComputersOutputSchema = z.object({
   cpuCount: z.number().int().positive().optional(), memoryBytes: z.number().int().positive().optional(),
   availableMemoryBytes: z.number().int().nonnegative().optional(),
   userSystemd: CiUserSystemdSchema.optional(),
-  prewarmSupported: z.boolean().optional(), warmup: CiWarmupSchema.nullable().optional(),
   slotsUsed: z.number().int().nonnegative(), slotsTotal: z.number().int().positive(),
   running: z.array(z.string()).optional(),
 }).strict()) }).strict()
