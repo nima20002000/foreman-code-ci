@@ -332,12 +332,12 @@ async function superviseJob<Execution extends RuntimeJobExecution>(
   let reason: 'cancelled' | 'timed_out' | 'log_limit' | null = null
   let exitObserved = false
   const exited = process.exited.then(exit => { exitObserved = true; return exit })
-  void exited.catch(() => {}) // Result handling below retains transport uncertainty.
+  void exited.catch(() => { /* ignore: the owner awaits the original promise; this observer prevents a duplicate unhandled rejection. */ }) // Result handling below retains transport uncertainty.
   let stopPromise: Promise<boolean> | undefined
   let resolveStopped!: (exit: JobExitEvidence) => void
   let rejectStopped!: (error: Error) => void
   const stoppedWithoutExit = new Promise<JobExitEvidence>((resolve, reject) => { resolveStopped = resolve; rejectStopped = reject })
-  void stoppedWithoutExit.catch(() => {})
+  void stoppedWithoutExit.catch(() => { /* ignore: the owner awaits the original promise; this observer prevents a duplicate unhandled rejection. */ })
   const stop = (why: NonNullable<typeof reason>) => {
     if (exitObserved && why !== 'log_limit') return
     reason ??= why
