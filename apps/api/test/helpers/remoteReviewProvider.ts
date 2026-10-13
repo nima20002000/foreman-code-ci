@@ -125,6 +125,7 @@ int main(int argc, char **argv) {
     restoreVersions: () => rm(join(directory, 'invalid-versions')),
     calls: () => readActivity('calls.jsonl'),
     startupActivity: () => readActivity('startup.jsonl'),
+    blockReview: () => rm(join(directory, 'release-review'), { force: true }),
     releaseReview: () => writeFile(join(directory, 'release-review'), '', { mode: 0o600 }),
     blockWorkflowTurns: (options?: { allowFirst: number }) => writeFile(join(directory, 'block-workflow-turns'),
       options ? JSON.stringify(options) : '', { mode: 0o600 }),
