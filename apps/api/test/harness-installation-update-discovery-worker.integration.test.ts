@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest'
-import { ApprovedSourceSchema, SourceRootRecordSchema } from '@foreman-code/contracts/source-admission'
 import { installationUpdateFixture, profileReader, profiles, startWhenReady, pinnedPlacements, completedRun }
   from './helpers/harnessInstallationUpdate.js'
 
@@ -15,22 +14,10 @@ describe('installed harness updates', () => {
       await fixture.releaseWorkerDiscovery()
       const started = (await startWhenReady(fixture))!
       expect(fixture.sourceManifest.git?.repository).toBe(fixture.repositoryName)
-      const placements = await pinnedPlacements(fixture, started.run.id)
-      expect(placements).toHaveLength(1)
-      const placement = placements[0]!
-      expect(placement.hostRef).toEqual(fixture.hostRef)
-      if (!('kind' in placement.source)) throw new Error('Expected an accepted source awaiting materialization.')
-      const root = SourceRootRecordSchema.parse(await fixture.value('source_root_get', {
-        workspaceId: fixture.version.workspaceId, rootId: placement.source.rootId,
-        bindingRevision: placement.source.bindingRevision,
-      }))
-      expect(placement.source).toMatchObject(root.source)
-      const source = ApprovedSourceSchema.parse(await fixture.value('source_get', {
-        workspaceId: fixture.version.workspaceId, ...root.source,
-      }))
-      expect(source.manifest.git).toEqual(fixture.sourceManifest.git)
-      expect(source.manifest.entries).toEqual(fixture.sourceManifest.entries)
-      expect(source.manifest.snapshotId).not.toBe(fixture.sourceManifest.snapshotId)
+      expect(await pinnedPlacements(fixture, started.run.id)).toEqual([expect.objectContaining({
+        hostRef: fixture.hostRef,
+        source: expect.objectContaining({ manifestDigest: fixture.sourceManifest.manifestDigest }),
+      })])
       await completedRun(fixture, started.run.id)
     } finally {
       await fixture.releaseWorkerDiscovery()

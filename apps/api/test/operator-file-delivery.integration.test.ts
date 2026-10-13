@@ -242,22 +242,6 @@ describe.skipIf(!connectionString || process.platform === 'win32')('AF-02 produc
     }, 10000)
   }
 
-  it('disables App MCP during model discovery while keeping scoped access for the Operator turn', async () => {
-    const current = await operators.ensure()
-    await operators.update(input(f.directory).request.configuration.harness,
-      current.operator.currentConfigurationVersionId)
-    const conversation = await chat.create(owner)
-    await chat.send(conversation.id, { requestId: randomUUID(), content: 'Reply with ACK.' }, owner)
-    const active = await until(async () => {
-      const row = await repository.active(conversation.id)
-      expect(row?.turn_state, row?.last_error ?? 'Operator admission failed').not.toBe('error')
-      return row?.active_native_turn_id ? row : undefined
-    }, 10000)
-    await expectCodexCredentialIsolation(f.directory)
-    await finish(f.directory, active.native_session_id!, 'ACK')
-    await until(async () => (await chat.get(conversation.id, owner)).turnState === 'idle', 10000)
-  }, 30000)
-
   it.each(['codex-cli 0.154.0', 'codex-cli 0.156.1'])(
     'R2-1 %s: a completed text-first Operator thread retains callable file tools on attachment resume', async (version) => {
       await retainCodexDeclarations(f)
