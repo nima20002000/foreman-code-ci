@@ -113,7 +113,7 @@ export class DeviceApplicationChannel {
     }
     if (namespace !== 'execution-v1') return false
     const parsed = RemoteExecutionRpcRequestSchema.safeParse(payload)
-    if (!parsed.success || parsed.data.method !== 'control' || parsed.data.command.action.kind !== 'stop') return false
+    if (!parsed.success || parsed.data.method !== 'control' || parsed.data.command.action.kind === 'respond') return false
     const { intent, placement, command } = parsed.data
     return this.stopPlacement(intent, placement)
       && command.bindingHash === intent.bindingHash

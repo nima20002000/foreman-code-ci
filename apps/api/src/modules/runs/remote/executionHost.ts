@@ -134,7 +134,7 @@ export class RemoteExecutionHost {
     }
     if (recorded.status === 'known' && !isDeepStrictEqual(recorded.receipt.intent, frame.intent)) throw new Error('RPC stale execution owner')
     let action: 'start' | 'read' | 'control' | 'stop' = 'read'
-    if (frame.method === 'control') action = frame.command.action.kind === 'stop' ? 'stop' : 'control'
+    if (frame.method === 'control') action = frame.command.action.kind === 'respond' ? 'control' : 'stop'
     else if (frame.method === 'session-compact' || frame.method === 'session-preferences-apply') action = 'control'
     else if (frame.method === 'prepare' || frame.method === 'start-turn' && !frame.review) action = 'start'
     await this.ports.authorize(frame.intent, placement, action)
@@ -616,7 +616,7 @@ export class RemoteExecutionHost {
   }
   async control(raw: unknown, binding?: { intent: DispatchIntent; placement: AcceptedNodePlacement }) {
     const command = RemoteOwnerControlSchema.parse(raw)
-    const action = command.action.kind === 'stop' ? 'stop' : 'control'
+    const action = command.action.kind === 'respond' ? 'control' : 'stop'
     if (binding) {
       const intent = DispatchIntentSchema.parse(binding.intent), placement = readPlacement(binding.placement)
       if (intent.operationId !== command.operationId || intent.bindingHash !== placement.bindingHash
@@ -656,7 +656,7 @@ export class RemoteExecutionHost {
     await this.ports.authorize(resident.intent, resident.placement, action)
     if (!await this.ports.journal.enterControlDelivery(command)) return this.ports.journal.status(command.operationId)
     try {
-      if (command.action.kind === 'stop') { resident.controller.abort(); resident.manager.stopAutomaticResponses?.(resident.session); await resident.manager.cancel(resident.session, undefined, remoteActiveNative(recorded.receipt)?.turnId) }
+      if (command.action.kind !== 'respond') { resident.controller.abort(); resident.manager.stopAutomaticResponses?.(resident.session); await resident.manager.cancel(resident.session, undefined, remoteActiveNative(recorded.receipt)?.turnId) }
       else await resident.manager.respond(resident.session, command.action.nativeInteractionId, ApprovalResponseOptionSchema.parse(command.action.response))
       await this.ports.journal.acknowledgeControl(command)
       await this.settle(resident, `execution:${resident.intent.executionId}`)

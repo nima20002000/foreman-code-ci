@@ -336,6 +336,7 @@ export interface RepeatRuntimeLifecycle {
   settleRun(stopped: boolean, interrupted: boolean): Promise<void>
   /** These are the existing post-terminal cleanup/finalization paths, not fake ack. */
   requestCleanup(failure?: ExecutionResult): Promise<void>
+  settleRetainedReviewers?(): Promise<void>
   finishNative(): Promise<void>
   finishCleanup(): Promise<void>
 }
@@ -557,7 +558,11 @@ export async function executeRepeatRuntime(input: {
             return
           }
         }
-        else await timeRuntimeOperation('engine', 'run.settle', () => bookkeeping(() => input.store.completeRun()))
+        else {
+          await input.lifecycle.settleRetainedReviewers?.()
+          signal.throwIfAborted()
+          await timeRuntimeOperation('engine', 'run.settle', () => bookkeeping(() => input.store.completeRun()))
+        }
         await bookkeeping(() => input.lifecycle.requestCleanup())
         await input.lifecycle.finishNative()
         await input.lifecycle.finishCleanup()

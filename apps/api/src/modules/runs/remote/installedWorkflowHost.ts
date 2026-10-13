@@ -877,7 +877,7 @@ export async function createInstalledWorkflowHost(input:InstalledWorkflowHostOpt
           if (!acknowledged || resident.preparationRecovery) {
             if (!isDeepStrictEqual(resident.intent, frame.intent) || !isDeepStrictEqual(resident.placement, frame.placement)
               || resident.context.binding.bootId !== context.binding.bootId) unavailable('original_operation_binding_changed')
-            const action = frame.method === 'control' && frame.command.action.kind === 'stop' ? 'stop' : 'read'
+            const action = frame.method === 'control' && frame.command.action.kind !== 'respond' ? 'stop' : 'read'
             await workerExecutionAuthorizer(forBinding(context.binding))(frame.intent, frame.placement, action)
             current(context.binding)
             resident.context = context
@@ -897,7 +897,7 @@ export async function createInstalledWorkflowHost(input:InstalledWorkflowHostOpt
         if (journalOpening && await(await journalOpening).isRetired(frame.intent.operationId)) {
           return retiredReply(frame, context, await journalOpening)
         }
-        const action = frame.method === 'control' && frame.command.action.kind === 'stop' ? 'stop' : 'read'
+        const action = frame.method === 'control' && frame.command.action.kind !== 'respond' ? 'stop' : 'read'
         const host=await construct(context,frame.intent,frame.placement,action,
           frame.method === 'renew-owner' ? frame.transition : undefined)
         context.signal.throwIfAborted()

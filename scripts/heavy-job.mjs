@@ -12,8 +12,7 @@ import { fileURLToPath } from 'node:url'
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const require = createRequire(import.meta.url)
 const git = (...args) => spawnSync('git', args, { cwd: root, encoding: 'utf8' })
-const queueDirectoryArgument = process.env.CI_HOST_RUNNER === '1' ? '--git-dir' : '--git-common-dir'
-const commonResult = git('rev-parse', '--path-format=absolute', queueDirectoryArgument)
+const commonResult = git('rev-parse', '--path-format=absolute', '--git-common-dir')
 if (commonResult.status !== 0) throw new Error(commonResult.stderr || 'Cannot find Git common directory')
 const common = realpathSync(commonResult.stdout.trim())
 const state = join(common, 'graphql-heavy-jobs')
@@ -97,9 +96,8 @@ function cleanTemps() {
     const path = join(tempRoot, entry)
     const marker = readJson(join(path, 'owner.json'))
     if (!isDirectory(path) || ageMs(path) < 10 * 60_000 || !marker || marker.common !== common || alive(marker) || groupUsed(marker.pgid, true) || tokenUsed(marker.token, 0, true) || usedPath(path)) continue
-    // Verify the recorded checkout still belongs to this admission queue.
-    const check = spawnSync('git', ['rev-parse', '--path-format=absolute', queueDirectoryArgument],
-      { cwd: marker.worktree, encoding: 'utf8' })
+    // Verify whether the recorded checkout still belongs to this common Git directory.
+    const check = spawnSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: marker.worktree, encoding: 'utf8' })
     if (check.status === 0 && realpathSync(check.stdout.trim()) !== common) continue
     rmSync(path, { recursive: true, force: true })
   }
@@ -279,12 +277,7 @@ async function main() {
   if (timeoutIndex >= 0 && (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0)) throw new Error('Invalid timeout')
   const stopGraceMs = graceIndex >= 0 ? Number(options[graceIndex + 1]) : 30_000
   if (!Number.isSafeInteger(stopGraceMs) || stopGraceMs <= 0) throw new Error('Invalid stop grace')
-  let command = process.argv.slice(divider + 1)
-  if (buildKind === 'contracts' && process.env.FOREMAN_CODE_CI_CONTRACTS_CACHE) {
-    const cache = resolve(root, process.env.FOREMAN_CODE_CI_CONTRACTS_CACHE)
-    command = [process.execPath, fileURLToPath(new URL('./ci-contracts.mjs', import.meta.url)),
-      'build', root, cache, '--', ...command]
-  }
+  const command = process.argv.slice(divider + 1)
   const reported = process.env.FOREMAN_CODE_VERIFICATION_ROOT === root
     && (buildKind || command[0] === 'vitest' || command[0] === 'tsc' || command[0] === 'eslint'
       || (command[0].endsWith('/node') || command[0] === 'node') && command.includes('--test'))
