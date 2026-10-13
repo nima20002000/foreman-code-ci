@@ -14,7 +14,7 @@ import { GitCiCommits } from './modules/ci-host/commits.js'
 import { RunCiAuthority } from './modules/jobs/ciAuthority.js'
 import { ProductionHostCiEndpoint } from './modules/ci-host/endpoint.js'
 import { HostCiRunner } from './modules/ci-host/runner.js'
-import { activeCiRuns, cloudCis, workspaceMirrors } from './modules/ci-host/cloud.js'
+import { cloudCis, workspaceMirrors } from './modules/ci-host/cloud.js'
 import { agentSnapshots, type ReadAgentFiles } from './modules/ci-host/agentSnapshots.js'
 import { systemGitWorktreePorts } from './modules/sources/gitWorktree.js'
 import { registerComputerAccountsRoutes } from './routes/computerAccounts.js'
@@ -130,7 +130,7 @@ import { assertClaudeCredentialEndpoint } from './modules/harnesses/claudeSdk/mc
 import { PostgresClaudeInteractionAuthority } from './modules/harnesses/claudeSdk/domainAuthority.js'
 import { productionSelectedProfileManager } from './modules/harnesses/selectedProfileProduction.js'
 import { createProductionWorkerConversations } from './modules/conversations/workerProduction.js'
-import { REMOTE_PREPARATION_EXTENSION, WorkerConversationCallbackSchema } from '@foreman-code/contracts/remote-execution-rpc'
+import { WorkerConversationCallbackSchema } from '@foreman-code/contracts/remote-execution-rpc'
 import { credentialAuthority } from './modules/interactions/wave25/credentialAuthority.js'
 import type { GraphSqlClient } from './modules/run-graph/connection.js'
 import { currentOperatorAuthority } from './modules/access/runAuthority.js'
@@ -462,7 +462,6 @@ export function buildProductionApp(
       { namespace: COMPUTER_ACCOUNTS_NAMESPACE, version: 1, role: 'client', maxJsonBytes: 65_536, maxBinaryBytes: 0 },
       { namespace: COMPUTER_MAINTENANCE_NAMESPACE, version: COMPUTER_MAINTENANCE_VERSION, role: 'client', maxJsonBytes: 1_048_576, maxBinaryBytes: 0 },
       createProductionWorkerArtifactExtension({
-        pool: database.pool,
         environment: process.env,
         releaseDirectory: fileURLToPath(new URL('../../../', import.meta.url)),
       }),
@@ -472,7 +471,6 @@ export function buildProductionApp(
       { namespace: CI_RUNTIME_NAMESPACE, version: 1, role: 'client', maxJsonBytes: 1_048_576, maxBinaryBytes: 0 },
       { namespace: CI_HOST_NAMESPACE, version: 1, role: 'client', maxJsonBytes: 1_048_576, maxBinaryBytes: 0 },
       { namespace: 'host-harness-check-v1', version: 1, role: 'client', maxJsonBytes: 1_048_576, maxBinaryBytes: 0 },
-      { ...REMOTE_PREPARATION_EXTENSION, role: 'client' },
       { namespace: 'execution-v1', version: 1, role: 'duplex', maxJsonBytes: 1_048_576, maxBinaryBytes: 0,
         handle: async (payload, context) => {
           if (WorkerConversationCallbackSchema.safeParse(payload).success) {
@@ -494,7 +492,7 @@ export function buildProductionApp(
           if (!handler) throw new DomainError('JOB_RUNTIME_UNAVAILABLE', 'The actual Job input authority is unavailable.', 503)
           return handler(payload, context)
         } },
-      ...(infrastructure?.deviceDomains?.extensions.filter(value => !['execution-v1', REMOTE_PREPARATION_EXTENSION.namespace, JOB_INPUT_NAMESPACE, BYTE_TRANSFER_NAMESPACE,
+      ...(infrastructure?.deviceDomains?.extensions.filter(value => !['execution-v1', JOB_INPUT_NAMESPACE, BYTE_TRANSFER_NAMESPACE,
         remoteTelemetry.extension.namespace].includes(value.namespace)) ?? []),
     ],
     async bindingLost(binding) {
@@ -1998,9 +1996,7 @@ export function buildProductionApp(
         runtimeServices.workspaces, runtimeServices.workspaceRoots, jobRuntime.policies, jobRuntime.sources,
         machine.installationId, projectRoot)
       registerWorkspaceRepositoryRoutes(app, runtimeServices.workspaceRepositories)
-      const clouds = cloudCis(machine.installationId, workspaceMirrors(database.pool), {
-        activeRuns: () => activeCiRuns(database.pool),
-      })
+      const clouds = cloudCis(machine.installationId, workspaceMirrors(database.pool))
       runtimeServices.computerActivity = new ComputerActivityService(database.pool, machine.installationId,
         id => deviceRuntime.presenceFor(id), commands, clouds)
       registerComputerActivityRoutes(app, runtimeServices.computerActivity)
