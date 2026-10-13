@@ -1,10 +1,22 @@
-import { describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi, type MockInstance } from 'vitest'
 import { PostgresInteractionRepository } from '../src/modules/interactions/postgres.js'
 import { deliveredReview, receipts, reviewInProgress, useRemoteReviewFixture } from './helpers/remoteReviewProductionCases.js'
 
+let progress: MockInstance<typeof console.info>
+beforeAll(() => { progress = vi.spyOn(console, 'info') })
+
 const withRemoteReviewFixture = useRemoteReviewFixture()
+afterAll(() => { progress.mockRestore() })
 
 describe('production remote review and native recovery through authenticated MCP', () => {
+  it('keeps runtime timing records out of normal fixture progress output', async () => {
+    await withRemoteReviewFixture(async () => {
+      const timings = progress.mock.calls.flat().filter(value => value !== null && typeof value === 'object'
+        && 'phase' in value && 'durationMs' in value && 'startedAt' in value)
+      expect(timings).toEqual([])
+    })
+  })
+
   it('persists a delivered remote decision and denies a read-only caller on the same product endpoint', async () => {
     await withRemoteReviewFixture(async fixture => {
       const active = await reviewInProgress(fixture)
