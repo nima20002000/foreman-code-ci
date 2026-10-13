@@ -1,22 +1,10 @@
 import { mkdir, readdir, readFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
-import type { CiDurations, CiExecutionSuite, CiHostRun, CiPart, CiScope, CiSuite, CiTestResults, CiUserSystemd } from '@foreman-code/contracts'
+import type { CiExecutionSuite, CiScope } from '@foreman-code/contracts'
 import { DomainError } from '../errors.js'
 import type { HostCiPorts } from './runner.js'
 import type { CloudRun } from './cloud.js'
-import { fallbackOnError } from '../diagnostics/ignoredError.js'
 
-export interface CloudRun {
-  runId: string; repository: string; mirror: string; commit: string; suite: CiSuite; startedAt: string
-  providerRunId: string | null; state: CiHostRun['state']; finishedAt: string | null; exitCode: number | null
-  message: string | null; durations?: CiDurations; testResults?: CiTestResults
-  scope?: CiScope; files?: string[]; part?: CiPart; baseCommit?: string
-  dispatch?: { input: CloudDispatchInput; attempts: number; at: string }
-  workflowStarted?: boolean
-  /** Live progress kept while the run is followed: steps already written to the log, the running step's output
-   * bytes written so far, and bytes written in all. */
-  live?: { step: string | null; seen: string[]; output?: { key: string; bytes: number }; bytes: number }
-}
 export const CLOUD_START_TIMEOUT_MS = 75_000
 
 /** One step of the provider's job; `key` stays the same across polls. */
@@ -41,7 +29,6 @@ export interface CloudProvider {
   readonly cpus: number
   readonly memoryBytes: number
   readonly loginHint: string
-  readonly userSystemd: CiUserSystemd
   ready(): Promise<boolean>
   /** Starts a run; returns the service's run id when it is known at once. */
   dispatch(input: CloudDispatchInput): Promise<string | null>
@@ -89,7 +76,7 @@ async function readArtifacts(directory: string): Promise<CloudArtifacts> {
     const path = await findFile(directory, name)
     return path ? JSON.parse(await readFile(path, 'utf8')) as unknown : null
   }
-  return { durations: await read('durations.json').catch(fallbackOnError(null, 'jobs', 'read CI durations artifact')), testResults: await read('test-results.json').catch(fallbackOnError(null, 'jobs', 'read CI test results artifact')) }
+  return { durations: await read('durations.json').catch(() => null), testResults: await read('test-results.json').catch(() => null) }
 }
 
 const WORKFLOW = 'ci.yml'
@@ -100,7 +87,6 @@ interface GitHubJob { id: number; status: string; steps?: { number: number; name
 export class GitHubActionsProvider implements CloudProvider {
   readonly id = 'github' as const
   readonly label = 'GitHub Actions'
-  readonly userSystemd = { supported: true, reason: null }
   readonly slots = 16
   readonly cpus = 4
   readonly memoryBytes = 16 * 2 ** 30
@@ -199,7 +185,6 @@ export class GitHubActionsProvider implements CloudProvider {
 export class CircleCiProvider implements CloudProvider {
   readonly id = 'circleci' as const
   readonly label = 'CircleCI'
-  readonly userSystemd = { supported: true, reason: null }
   /** CircleCI rejects pipeline parameter values longer than 512 characters. */
   readonly parameterLimit = 500
   readonly slots = 28

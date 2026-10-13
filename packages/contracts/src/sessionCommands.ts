@@ -1,6 +1,6 @@
 import type { SessionMode } from './sessionControls.js'
 
-type SessionCommand =
+export type SessionCommand =
   | { kind: 'message' }
   | { kind: 'compact' }
   | { kind: 'mode'; mode: SessionMode }

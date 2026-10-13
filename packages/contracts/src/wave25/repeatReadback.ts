@@ -11,6 +11,11 @@ import {
   RepeatWorkflowVersionV1Schema,
 } from './repeat.js'
 
+export const RepeatWorkflowReadInputSchema = z.object({
+  workspaceId: IdSchema,
+  workflowId: IdSchema,
+}).strict()
+export type RepeatWorkflowReadInput = z.infer<typeof RepeatWorkflowReadInputSchema>
 
 export const RepeatWorkflowReadbackSchema = z.object({
   contractVersion: z.literal(REPEAT_CONTRACT_VERSION),
@@ -27,6 +32,7 @@ export const RepeatWorkflowReadbackSchema = z.object({
     context.addIssue({ code: 'custom', message: 'repeat readback identity mismatch' })
   }
 })
+export type RepeatWorkflowReadback = z.infer<typeof RepeatWorkflowReadbackSchema>
 
 export const RepeatRunReadInputSchema = z.object({
   workspaceId: IdSchema,
@@ -38,7 +44,7 @@ export const RepeatRunReadInputSchema = z.object({
 }).strict()
 export type RepeatRunReadInput = z.infer<typeof RepeatRunReadInputSchema>
 
-const RepeatOccurrenceReadItemSchema = z.object({
+export const RepeatOccurrenceReadItemSchema = z.object({
   occurrence: RepeatOccurrenceV1Schema,
   decision: z.union([RepeatDecisionMetadataV1Schema, RepeatDecisionV1Schema]).nullable(),
 }).strict().superRefine((value, context) => {
@@ -49,8 +55,9 @@ const RepeatOccurrenceReadItemSchema = z.object({
     context.addIssue({ code: 'custom', message: 'occurrence and decision readback records differ' })
   }
 })
+export type RepeatOccurrenceReadItem = z.infer<typeof RepeatOccurrenceReadItemSchema>
 
-const REPEAT_READBACK_MAX_BYTES = 512 * 1024
+export const REPEAT_READBACK_MAX_BYTES = 512 * 1024
 
 export const RepeatRunReadbackSchema = z.object({
   contractVersion: z.literal(REPEAT_CONTRACT_VERSION),

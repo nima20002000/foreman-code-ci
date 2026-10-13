@@ -1,7 +1,6 @@
 import type pg from 'pg'
-import { beginTransaction, commitTransaction, rollbackTransaction } from '../../../infrastructure/transaction.js'
 
-import { cleanupBatchSize, type FileArtifactCleanupCandidate,
+import { cleanupBatchSize, type FileArtifactCleanupCandidate, type FileArtifactCleanupRepository,
   type FileCleanupOutcome } from './repository.js'
 
 // Sessions issued before storage tracking have no binding in their record. Conservatively
@@ -15,7 +14,7 @@ const ownsKey = `(coalesce(a.record->'storageKeys','[]'::jsonb) ? k.storage_key:
 /** Artifact records are the durable byte registry, including writes that never became snapshots.
  * Never infer ownership of an unknown disk key. The snapshot fallback also reclaims current
  * pre-upgrade artifacts; a later write registers that old snapshot before replacing its pointer. */
-export class PostgresFileArtifactCleanupRepository {
+export class PostgresFileArtifactCleanupRepository implements FileArtifactCleanupRepository {
   constructor(private readonly pool: pg.Pool) {}
 
   async findByStorageKeys(keys: readonly string[]): Promise<FileArtifactCleanupCandidate[]> {
@@ -37,13 +36,13 @@ export class PostgresFileArtifactCleanupRepository {
     const check = () => { if (broken) throw new Error('Artifact cleanup database ownership was lost.') }
     const begin = async () => {
       check()
-      await beginTransaction(client).catch((error: unknown) => { broken = true; throw error })
+      await client.query('begin').catch((error: unknown) => { broken = true; throw error })
       inTransaction = true
       await client.query("set local lock_timeout='1s'; set local statement_timeout='5s'")
     }
     const commit = async () => {
       check()
-      await commitTransaction(client).catch((error: unknown) => { broken = true; throw error })
+      await client.query('commit').catch((error: unknown) => { broken = true; throw error })
       inTransaction = false; check()
     }
     const read = async () => {
@@ -85,7 +84,7 @@ export class PostgresFileArtifactCleanupRepository {
       return complete ? 'cleaned' : 'remaining'
     } finally {
       if (inTransaction) {
-        try { await rollbackTransaction(client) } catch { broken = true }
+        try { await client.query('rollback') } catch { broken = true }
       }
       if (locked && !broken) {
         try {

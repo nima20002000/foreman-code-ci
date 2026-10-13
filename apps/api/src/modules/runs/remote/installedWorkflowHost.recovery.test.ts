@@ -33,8 +33,14 @@ import {
   type DeviceExtensionRegistration,
 } from '../../devices/deviceApplicationChannel.js'
 import { adaptDeviceSocket } from '../../devices/deviceWire.js'
-import { journals, sourceFixture, restartedInstalledFixture, constructionFixture, delayedFacts } from './__tests__/installedWorkflowHost.js'
-import { deferred } from '../../../../test/helpers/deferred.js'
+import {
+  journals,
+  sourceFixture,
+  restartedInstalledFixture,
+  deferred,
+  constructionFixture,
+  delayedFacts,
+} from './__tests__/installedWorkflowHost.js'
 
 describe('installed worker cold recovery', () => {
   it('settles an interrupted write-ahead registration before journal acceptance without a replacement launch', async () => {
