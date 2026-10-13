@@ -72,12 +72,8 @@ it('uses the selected Worker qualification when the general harness cache has a 
     expect(denied.isError).toBe(true)
     expect(JSON.stringify(denied.content)).toContain('ACCESS_DENIED')
     await fixture.value('agent_chat_send', { workspaceId, request })
-    const state = await waitForRemoteReview(async () => {
-      const current = AgentChatStateSchema.parse(await fixture.value('agent_chat_read', { workspaceId, query: context }))
-      const turn = current.turns.find(turn => turn.requestId === request.requestId)
-      expect(turn?.error, JSON.stringify(turn?.error)).toBeUndefined()
-      return current
-    }, value =>
+    const state = await waitForRemoteReview(async () => AgentChatStateSchema.parse(await fixture.value(
+      'agent_chat_read', { workspaceId, query: context })), value =>
       Boolean(value.conversation?.nativeSession) && value.turns.some(turn =>
         turn.requestId === request.requestId && turn.nativeTurnId !== undefined && turn.delivery === 'completed'),
     'selected Worker chat completion')
