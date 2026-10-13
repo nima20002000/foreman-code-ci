@@ -1,3 +1,4 @@
+import { errorMessage } from '../../shared/errorMessage.js'
 import { RETIRED_OPENCODE_MESSAGE } from '@foreman-code/contracts'
 import type { ChatResponseAcknowledgment } from '@foreman-code/contracts/interaction-activity'
 import { withInteractionResponse, isSessionNativeInteraction } from '@foreman-code/contracts'
@@ -70,6 +71,7 @@ import type { ActivityScope } from '@foreman-code/contracts/activity'
 import {
   agentChatCorrelation, agentChatKey, agentConversation, type AgentConversationRow, type AgentChatInterruptTarget, type NewAgentConversation, PostgresAgentChatRepository,
 } from './agentChatRepository.js'
+import { ignoreError } from '../diagnostics/ignoredError.js'
 
 /** One native manager per conversation; its process is owned by this service, never by a UI connection. */
 export interface AgentChatManagerFactory {
@@ -90,7 +92,7 @@ export class AgentChatEvents {
   publish(conversationId: string, type: AgentChatStreamEvent['type'], data: Record<string, unknown>) {
     const event = AgentChatStreamEventSchema.parse({ id: this.sequence++, conversationId, type, data })
     for (const listener of this.listeners.get(conversationId) ?? []) {
-      try { listener(event) } catch { /* A disconnected subscriber cannot fail a native turn. */ }
+      try { listener(event) } catch { /* ignore: a disconnected subscriber cannot fail a native turn. */ }
     }
   }
   subscribe(id: string, listener: (event: AgentChatStreamEvent) => void) {
@@ -132,7 +134,7 @@ const STEER_UNAVAILABLE_REASON = 'This harness cannot add input to a running tur
 function failure(error: unknown, code = 'AGENT_CHAT_TURN_FAILED'): ExecutionResult {
   const provider = error && typeof error === 'object' && 'result' in error ? (error as { result?: ExecutionResult }).result?.error : undefined
   return { outcome: 'failed', error: { code: nativeErrorCode(error) ?? code,
-    message: provider?.message ?? (error instanceof Error ? error.message : 'The native turn failed.'), retryable: true } }
+    message: provider?.message ?? (errorMessage(error, 'The native turn failed.')), retryable: true } }
 }
 function definiteRejection(error: unknown): boolean {
   if (error instanceof NativeDeliveryError) {
@@ -221,16 +223,16 @@ export class AgentChatService {
   private command<T>(operation: () => Promise<T>): Promise<T> {
     const next = Promise.resolve().then(() => { this.assertOpen(); return operation() })
     this.inflightCommands.add(next)
-    void next.finally(() => this.inflightCommands.delete(next)).catch(() => undefined)
+    void next.finally(() => this.inflightCommands.delete(next)).catch(() => { /* ignore: the owner awaits the original promise; this observer prevents a duplicate unhandled rejection. */ })
     return next
   }
 
   /** Serialize native lifecycle decisions per conversation. */
   private control<T>(id: string, operation: () => Promise<T>): Promise<T> {
     const previous = this.controls.get(id) ?? Promise.resolve()
-    const next = previous.catch(() => undefined).then(() => { this.assertOpen(); return operation() })
+    const next = previous.catch(() => { /* ignore: the previous caller receives its failure; the queue must still admit the next operation. */ }).then(() => { this.assertOpen(); return operation() })
     this.controls.set(id, next)
-    void next.finally(() => { if (this.controls.get(id) === next) this.controls.delete(id) }).catch(() => undefined)
+    void next.finally(() => { if (this.controls.get(id) === next) this.controls.delete(id) }).catch(() => { /* ignore: the owner awaits the original promise; this observer prevents a duplicate unhandled rejection. */ })
     return next
   }
   private assertOpen() {
@@ -265,7 +267,8 @@ export class AgentChatService {
     const blocked = (reason: AgentChatBlockedReason, message: string): Resolution => ({ context, key,
       ...(executionId ? { executionId } : {}), ...(row ? { row } : {}), blocked: { reason, message } })
     if (context.runId) {
-      const run = await this.runs.getForWorkspace(context.workspaceId, context.runId).catch(() => undefined)
+      const run = await this.runs.getForWorkspace(context.workspaceId, context.runId)
+        .catch(ignoreError('engine', 'load selected run for chat context', { workspaceId: context.workspaceId, runId: context.runId }))
       if (!run || run.id !== context.runId || run.workflowId !== context.workflowId) return blocked('context_stale', 'The selected Run does not belong to this workflow.')
       const version = await this.workflows.getSavedVersion(run.workflowVersionId)
       const node = version?.definition.nodes.find((entry) => entry.id === context.workflowNodeId)
@@ -838,7 +841,7 @@ export class AgentChatService {
           await this.repository.discard(row.id, input.requestId)
           throw new DomainError('AGENT_CHAT_TURN_NOT_ACTIVE', 'The turn finished before the steer arrived. Send it as the next turn instead.', 409)
         }
-        await this.repository.unknown(row.id, input.requestId, error instanceof Error ? error.message : 'Steer delivery is unconfirmed.')
+        await this.repository.unknown(row.id, input.requestId, errorMessage(error, 'Steer delivery is unconfirmed.'))
         this.scheduleReconcile(row.id)
       }
       this.events.publish(row.id, 'turn', { requestId: input.requestId })
@@ -951,7 +954,7 @@ export class AgentChatService {
           AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(10_000)]), nativeId)
         if (acknowledged) runtime.acknowledgedCancel = { requestId: target.requestId, nativeId }
       } catch (error) {
-        this.events.publish(id, 'error', { message: error instanceof Error ? error.message : 'Interrupt delivery failed.' })
+        this.events.publish(id, 'error', { message: errorMessage(error, 'Interrupt delivery failed.') })
       }
     }
     if (controlled) await interrupt()
@@ -983,7 +986,7 @@ export class AgentChatService {
         await this.runTurn(id, next)
       }
     })().catch((error: unknown) => {
-      this.events.publish(id, 'error', { message: error instanceof Error ? error.message : 'Agent chat delivery failed.' })
+      this.events.publish(id, 'error', { message: errorMessage(error, 'Agent chat delivery failed.') })
     }).finally(() => {
       this.tasks.delete(id)
       this.scheduleReconcile(id)
@@ -1238,7 +1241,8 @@ export class AgentChatService {
           textStream?.flush()
           this.events.publish(id, 'turn', { requestId: turn.requestId, delivery: 'accepted', nativeTurnId: id_ })
           // Re-read the captured target under the control fence, also for a late callback.
-          void this.interruptActive(id, false, { requestId: turn.requestId, nativeTurnId: id_ }).catch(() => undefined)
+          void this.interruptActive(id, false, { requestId: turn.requestId, nativeTurnId: id_ })
+            .catch(ignoreError('harness', 'interrupt active turn', { chatId: id, requestId: turn.requestId }))
         },
       }, streamSignal)) {
         submitted = true
@@ -1299,7 +1303,7 @@ export class AgentChatService {
         if (unavailable || error && typeof error === 'object'
           && 'deliveryState' in error && error.deliveryState === 'not-delivered') await this.release(id)
       } else {
-        await this.repository.abandon(id, turn.requestId, error instanceof Error ? error.message : 'Native delivery is unconfirmed.')
+        await this.repository.abandon(id, turn.requestId, errorMessage(error, 'Native delivery is unconfirmed.'))
         // Retain the manager: it may still own a late acknowledgement or a live native turn.
         this.scheduleReconcile(id)
         this.events.publish(id, 'state', { requestId: turn.requestId, delivery: 'unknown' })
@@ -1317,7 +1321,7 @@ export class AgentChatService {
     if (context) {
       const snapshot = structuredClone(context)
       void this.control(id, () => this.sessionControls.observeContext(id, snapshot, runtime.configuration.id)).catch(error => {
-        this.events.publish(id, 'error', { message: error instanceof Error ? error.message : 'Context usage could not be saved.' })
+        this.events.publish(id, 'error', { message: errorMessage(error, 'Context usage could not be saved.') })
       })
     }
     const known = knownNativeActivity(event, runtime.manager.harness)
@@ -1436,7 +1440,7 @@ export class AgentChatService {
       this.reconciliationTimers.delete(id)
       // Own the complete repair, including its post-control SQL reads, until shutdown drains it.
       void this.command(() => this.repair(id)).catch((error: unknown) => {
-        this.events.publish(id, 'error', { message: error instanceof Error ? error.message : 'Native reconciliation failed.' })
+        this.events.publish(id, 'error', { message: errorMessage(error, 'Native reconciliation failed.') })
         this.scheduleReconcile(id)
       })
     }, 1_000)
@@ -1540,7 +1544,7 @@ export class AgentChatService {
           const evidence = await runtime.manager.reconcileSteers?.(runtime.session!, identities,
             AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(30_000)])).catch((error: unknown) => {
               // Failure to read an OLD steer is not loss of the independently proven active turn.
-              this.events.publish(id, 'error', { message: error instanceof Error ? error.message : 'Steer receipt lookup failed.' })
+              this.events.publish(id, 'error', { message: errorMessage(error, 'Steer receipt lookup failed.') })
               return []
             }) ?? []
           let unresolved = false
@@ -1562,7 +1566,7 @@ export class AgentChatService {
       } catch (error) {
         const unavailable = await this.markNativeUnavailable(id, error)
         if (requestId) await this.repository.abandon(id, requestId,
-          `Native delivery is not yet confirmed. ${error instanceof Error ? error.message : ''}`.trim())
+          `Native delivery is not yet confirmed. ${errorMessage(error, '')}`.trim())
         // Also convert a crash-left provisional steer; missing evidence never means acceptance.
         for (const steer of steers) await this.repository.unknown(id, steer.requestId, 'Steer delivery is not yet confirmed.')
         if (unavailable || error && typeof error === 'object'
@@ -1601,7 +1605,7 @@ export class AgentChatService {
     if (this.recovery) return this.recovery
     const task = Promise.resolve().then(() => this.recoverConversations())
     this.recovery = task
-    void task.finally(() => { if (this.recovery === task) this.recovery = undefined }).catch(() => undefined)
+    void task.finally(() => { if (this.recovery === task) this.recovery = undefined }).catch(() => { /* ignore: the owner awaits the original promise; this observer prevents a duplicate unhandled rejection. */ })
     return task
   }
   private async recoverConversations(): Promise<void> {

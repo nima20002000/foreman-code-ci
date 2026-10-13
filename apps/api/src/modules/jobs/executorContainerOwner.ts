@@ -3,8 +3,13 @@ import { open, readFile, realpath, statfs } from 'node:fs/promises'
 import { normalize } from 'node:path'
 import { canonicalGraphJson } from '@foreman-code/contracts/wave25'
 import type { JobRuntimeNativeAdmissionRecord } from '@foreman-code/contracts/job-verification-runtime'
-import type { PodmanCommandRunner } from './executorPodman.js'
+import type { ChildProcess } from 'node:child_process'
+import { ignoreError, logIgnoredError } from '../diagnostics/ignoredError.js'
 
+export interface PodmanCommandRunner {
+  run(argv: string[], timeoutMs?: number): Promise<{ exitCode: number; stdout: string }>
+  attach(argv: string[]): Promise<ChildProcess>
+}
 export interface OCIProcessIdentity { pid: number; startTicks: string; bootId: string }
 export interface OCICgroupBoundary { kind: 'cgroup-v2'; path: string; device: string; inode: string }
 export type OCIOwnerScope = {
@@ -176,8 +181,8 @@ export class OwnedOCIContainer {
       }
     }
     if (row.State.Running) {
-      if (!this.certificate) await this.entered().catch(() => undefined) // Stop exact ID even when telemetry identity is unavailable; closure stays unconfirmed.
-      try { await this.commands.run(['stop', '--time', String(Math.ceil(graceMs / 1000)), row.Id], graceMs + 30000) } catch { /* Reinspect original identity. */ }
+      if (!this.certificate) await this.entered().catch(ignoreError('jobs', 'record container entry before stop', { containerId: row.Id })) // Stop exact ID even when telemetry identity is unavailable; closure stays unconfirmed.
+      try { await this.commands.run(['stop', '--time', String(Math.ceil(graceMs / 1000)), row.Id], graceMs + 30000) } catch (error) { logIgnoredError('jobs', 'stop container', error, { containerId: row.Id }) } // Reinspect original identity.
       row = await this.inspect(row.Id)
       if (row?.State.Running) { await this.commands.run(['kill', '--signal', 'KILL', row.Id]); row = await this.inspect(row.Id) }
     }
