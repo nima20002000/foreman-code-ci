@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto'
-import { withTransaction } from '../../infrastructure/transaction.js'
 import type pg from 'pg'
 import { SourceMaterializationRecordSchema, SourceRootRecordSchema } from '@foreman-code/contracts/source-admission'
 import { SourceOperationOwnerSchema, SourceReservationReclamationSchema,
@@ -72,7 +71,16 @@ export class MaterializationReservationCleanup {
     private readonly reclaim: (grant: SourceReservationReclamation) => Promise<SourceReclamationResult>) {}
 
   private async transaction<T>(work: (sql: pg.PoolClient) => Promise<T>): Promise<T> {
-    return withTransaction(this.pool, work)
+    const sql = await this.pool.connect()
+    try {
+      await sql.query('begin')
+      const result = await work(sql)
+      await sql.query('commit')
+      return result
+    } catch (error) {
+      await sql.query('rollback')
+      throw error
+    } finally { sql.release() }
   }
 
   async authorize(sql: GraphSqlClient, reservationId: string, reclamationId: string) {

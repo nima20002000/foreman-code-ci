@@ -1,4 +1,3 @@
-import { readPublicProjectionLocked } from '../src/modules/run-graph/compactSnapshot.js'
 import assert from 'node:assert/strict'
 import { describe, expect, it } from 'vitest'
 import {
@@ -168,7 +167,7 @@ describe.skipIf(!postgresEnabled)('workflow Job Run publication', () => {
       const execution = await f.admitJob()
       const before = await snapshot(f)
       await expect(f.owner.oneShotConnection().transaction(async sql => {
-        await openRunGraphPublication(sql, f.scope, readPublicProjectionLocked)
+        await openRunGraphPublication(sql, f.scope)
         const next = { ...execution, process: { ...execution.process, phase: 'running' },
           startedAt: execution.createdAt }
         await sql.query('update job_executions set record=$2::jsonb where id=$1',
@@ -184,8 +183,8 @@ describe.skipIf(!postgresEnabled)('workflow Job Run publication', () => {
     await withJob(async f => {
       const before = await snapshot(f)
       await expect(f.owner.oneShotConnection().transaction(async sql => {
-        await openRunGraphPublication(sql, f.scope, readPublicProjectionLocked)
-        await openRunGraphPublication(sql, f.scope, readPublicProjectionLocked)
+        await openRunGraphPublication(sql, f.scope)
+        await openRunGraphPublication(sql, f.scope)
       })).rejects.toMatchObject({ code: 'GRAPH_TRANSACTION_NESTED' })
       expect(await snapshot(f)).toEqual(before)
     })
