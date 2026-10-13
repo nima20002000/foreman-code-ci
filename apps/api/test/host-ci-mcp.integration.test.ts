@@ -430,8 +430,15 @@ it.each([
   }
 })
 
-it.each(['typecheck', 'integration'] as const)('reports a missing generic %s script through MCP and persisted readback', async suite => {
-  const repository = await genericCiRepository()
+it.each([
+  ['typecheck', 0], ['typecheck', 1250], ['integration', 0], ['integration', 1250],
+] as const)(
+  'reports a missing generic %s script through MCP and persisted readback after a %i ms checkout delay',
+  async (suite, checkoutDelayMs) => {
+  const repository = await genericCiRepository({ beforeCheckout: async () => {
+    // eslint-disable-next-line no-restricted-syntax
+    await new Promise(resolve => setTimeout(resolve, checkoutDelayMs))
+  } })
   const f = await fixture({ repositoryRunner: repository })
   try {
     const started = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', { suite, commandId: `missing-${suite}` }))
@@ -1119,8 +1126,17 @@ it.each(['mcp', 'http'] as const)('reads queued user-systemd slices through %s w
     f.finish(older.ticketId, 0, 'Older integration completed.\n')
     await f.ci.dispatch()
     const unready = (await read()).partitions!.find(run => run.id === host.id)!
+    const unavailable = CiComputersOutputSchema.parse(await f.value(reader, 'ci_computers_list', {}))
+    const buildComputer = unavailable.computers.find(computer => computer.hostRef.kind !== 'cloud')!
+    expect(buildComputer.ready).toBe(false)
+    expect(buildComputer.reasons).toEqual(['Log in to GitHub on this computer (gh auth login).'])
+    expect(unavailable.queue).toContainEqual({ ticketId: host.id, priority: 'normal', priorityReason: 'normal',
+      position: 1, reason: unready.message })
+    const denied = await f.connect(['workflows:read'])
+    expect((await f.call(denied, 'ci_get', { ticketId: host.id })).isError).toBe(true)
     expect(unready).toMatchObject({ state: 'queued',
-      message: 'Waiting for a build computer: this integration slice needs one; laptop: Log in to GitHub on this computer (gh auth login).' })
+      message: 'Waiting for a build computer: this integration slice needs one; '
+        + `${buildComputer.label}: ${buildComputer.reasons[0]}` })
     expect((await f.pool.query('select record from ci_runs where id=$1', [host.id])).rows[0].record).toEqual(unready)
     await f.ci.dispatch()
     expect((await read()).partitions!.find(run => run.id === host.id)).toEqual(unready)
