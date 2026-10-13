@@ -11,6 +11,7 @@ import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { RunCiAuthority, CI_GET_ACTIONS, CI_RUN_ACTIONS } from '../src/modules/jobs/ciAuthority.js'
 import { HostCiService, type CiCommits, type HostCiComputer, type HostCiEndpoint } from '../src/modules/ci-host/service.js'
+import type { CiIntegrationInventory } from '../src/modules/ci-host/integrationParts.js'
 import type { CiUnitInventory } from '../src/modules/ci-host/parts.js'
 import { codexApprovalRuntime } from './helpers/codexApprovalRuntime.js'
 import { DomainError } from '../src/modules/errors.js'
@@ -108,8 +109,8 @@ function fakeComputers(github: Record<string, boolean> = {}, cloud: boolean | { 
 }
 
 async function fixture(options: { repository?: boolean; github?: Record<string, boolean>; unitInventory?: CiUnitInventory
+  integrationInventory?: CiIntegrationInventory
   cloud?: boolean | { github: number; circleci: number }; agent?: boolean; hostSlots?: number
-  supersession?: { branch(commit: string): string | null; isAncestor(ancestor: string, commit: string): boolean }
   repositoryRunner?: { commits: CiCommits; endpoint: HostCiEndpoint } } = {}) {
   const saved = options.agent ? makeCurrentWorkflowFixture(randomUUID()) : undefined
   if (saved) {
@@ -132,12 +133,8 @@ async function fixture(options: { repository?: boolean; github?: Record<string, 
   const inventory = options.unitInventory
   const commits = options.repositoryRunner?.commits ?? {
     capabilities: async () => ({ parts: true, integrationPartitions: true, affected: true }),
+    ...(options.integrationInventory ? { integrationInventory: async () => options.integrationInventory! } : {}),
     ...(inventory ? { unitInventory: async () => inventory } : {}),
-    ...(options.supersession ? {
-      branch: async (_repository: string, _defaultBranch: string, commit: string) => options.supersession!.branch(commit),
-      isAncestor: async (_repository: string, ancestor: string, commit: string) =>
-        options.supersession!.isAncestor(ancestor, commit),
-    } : {}),
     resolve: async (_repository: string, _branch: string, commit: string | undefined) => {
     const resolved = commit ?? 'a'.repeat(40)
     published.push(resolved)
@@ -1386,148 +1383,32 @@ it('learns integration file durations from finished runs and hands every partiti
   } finally { await f.close() }
 })
 
-it('supersedes every queued and running part through MCP and preserves the replacement across retries', async () => {
-  const oldCommit = 'a'.repeat(40)
-  const nextCommit = 'b'.repeat(40)
-  const f = await fixture({ supersession: {
-    branch: () => 'feature', isAncestor: (ancestor, commit) => ancestor === oldCommit && commit === nextCommit,
-  } })
-  f.computers.splice(1)
-  const canceled: string[] = []
-  const request = f.endpoint.request.bind(f.endpoint)
-  f.endpoint.request = async (computer, input) => {
-    const reply = await request(computer, input)
-    if (input.operation === 'cancel') canceled.push(input.runId)
-    return reply
-  }
-  try {
-    const old = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', {
-      suite: 'typecheck', commit: oldCommit, commandId: 'old-checks',
-    }))
-    const before = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: old.ticketId }))
-    expect(before.partitions!.map(run => run.state).sort()).toEqual(['queued', 'running'])
-    const input = { suite: 'typecheck', commit: nextCommit, commandId: 'replacement-checks' }
-    const denied = await f.connect([...CI_RUN_ACTIONS, ...CI_GET_ACTIONS], { workspaceIds: ['another-workspace'] })
-    expect((await f.call(denied, 'ci_run', input)).isError).toBe(true)
-    expect(CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: old.ticketId })).partitions!)
-      .toEqual(before.partitions)
-    const next = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', input))
-    const read = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: old.ticketId }))
-    expect(read.partitions).toHaveLength(2)
-    for (const part of read.partitions!) {
-      expect(part).toMatchObject({ state: 'canceled', supersededBy: next.ticketId,
-        message: `superseded by ${next.ticketId}` })
-      expect(part.finishedAt).not.toBeNull()
-    }
-    expect(canceled).toEqual([before.partitions!.find(run => run.state === 'running')!.id])
-    expect(CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', input))).toEqual(next)
-    expect(canceled).toHaveLength(1)
-    const persisted = (await f.pool.query<{ record: unknown; host_key: string | null }>(
-      'select record,host_key from ci_runs where group_id=$1', [read.run.groupId])).rows
-    expect(persisted.map(row => row.record)).toEqual(expect.arrayContaining(read.partitions!))
-    expect(persisted.every(row => row.host_key === null)).toBe(true)
-    expect((await f.pool.query(`select details from management_audit where action='ci.supersede'`)).rows)
-      .toHaveLength(2)
-    expect((await f.pool.query(`select outcome from management_audit where action='ci_run'`)).rows)
-      .toContainEqual({ outcome: 'denied' })
-    const replacement = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: next.ticketId }))
-    expect(replacement.partitions!.some(run => run.state === 'running')).toBe(true)
-  } finally { await f.close() }
-})
 
-it('keeps main, explicit keep, unrelated branch, suite, requester and non-descendant tickets through MCP', async () => {
-  const commits = ['a', 'b', 'c', 'd', 'e', 'f'].map(char => char.repeat(40))
-  const f = await fixture({ supersession: {
-    branch: commit => commit === commits[0] ? 'main' : commit === commits[2] ? 'other-feature' : 'feature',
-    isAncestor: (ancestor, commit) => commit === '1'.repeat(40) && ancestor !== commits[4],
-  } })
-  f.computers.splice(0)
+it.each(['full', 'affected'] as const)('automatically sizes %s integration via MCP with estimates and persisted readback', async scope => {
+  const files = Array.from({ length: 20 }, (_, index) => `apps/api/test/timed-${index}.integration.test.ts`)
+  const durations = Object.fromEntries(files.map(file => [file, 120_000]))
+  const f = await fixture({ integrationInventory: { files, durations }, cloud: { github: 16, circleci: 28 } })
   try {
-    const tickets: string[] = []
-    for (const [index, commit] of commits.entries()) {
-      tickets.push(CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', {
-        suite: index === 5 ? 'build' : 'typecheck', commit,
-        noSupersede: index === 1, commandId: `protected-${index}`,
-      })).ticketId)
-    }
-    const other = await f.connect([...CI_RUN_ACTIONS, ...CI_GET_ACTIONS])
-    const foreign = CiRunOutputSchema.parse(await f.value(other, 'ci_run', {
-      suite: 'typecheck', commit: commits[3], commandId: 'another-requester',
-    }))
-    const noCancel = await f.connect(CI_RUN_ACTIONS.filter(action => action !== 'jobs:cancel'))
-    expect((await f.call(noCancel, 'ci_run', {
-      suite: 'typecheck', commit: '1'.repeat(40), commandId: 'missing-cancel-grant',
-    })).isError).toBe(true)
-    const next = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', {
-      suite: 'typecheck', commit: '1'.repeat(40), commandId: 'latest-checks',
-    }))
-    for (const [index, ticketId] of tickets.entries()) {
-      const read = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId }))
-      if (index === 3) {
-        expect(read.run).toMatchObject({ state: 'canceled', supersededBy: next.ticketId })
-      } else {
-        expect(read.run.state).toBe('queued')
-        expect(read.run.supersededBy).toBeUndefined()
-      }
-      if (index === 1) expect(read.run.noSupersede).toBe(true)
-    }
-    expect(CiGetOutputSchema.parse(await f.value(other, 'ci_get', { ticketId: foreign.ticketId })).run.state)
-      .toBe('queued')
-  } finally { await f.close() }
-})
-
-it('retries superseded running cleanup before releasing its computer slot', async () => {
-  const f = await fixture({ supersession: { branch: () => 'feature', isAncestor: () => true } })
-  f.computers.splice(1)
-  const request = f.endpoint.request.bind(f.endpoint)
-  let offline = false
-  f.endpoint.request = async (computer, input) => {
-    if (offline && input.operation === 'cancel') throw new DomainError('CI_COMPUTER_OFFLINE', 'Offline.', 409)
-    return request(computer, input)
-  }
-  try {
-    const old = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', {
-      suite: 'install', commit: 'a'.repeat(40), commandId: 'cleanup-old',
-    }))
+    const reader = await f.connect(CI_GET_ACTIONS)
+    const input = { suite: 'integration', scope, commit: 'a'.repeat(40), commandId: `automatic-${scope}`,
+      ...(scope === 'affected' ? { files: files.slice(0, 6) } : {}) }
+    expect((await f.call(reader, 'ci_run', input)).isError).toBe(true)
+    expect((await f.pool.query('select count(*)::int as count from ci_runs')).rows[0].count).toBe(0)
+    const started = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', input))
+    expect(started.partitions).toHaveLength(scope === 'full' ? 10 : 3)
+    expect(CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', input))).toEqual(started)
+    const read = CiGetOutputSchema.parse(await f.value(reader, 'ci_get', { ticketId: started.ticketId }))
+    expect(read.partitions!.every(run => run.expectedDurationMs === 330_000)).toBe(true)
+    expect(read.partitions!.every(run => run.computer?.hostRef.kind === 'cloud')).toBe(true)
+    const selected = scope === 'full' ? files : files.slice(0, 6)
+    const slices = read.partitions!.map(run => integrationPartition(selected, durations, run.partition!))
+    expect(slices.flat().sort()).toEqual([...selected].sort())
+    const stored = (await f.pool.query<{ record: unknown }>('select record from ci_runs where group_id=$1',
+      [read.run.groupId])).rows.map(row => row.record)
+    expect(stored).toEqual(expect.arrayContaining(read.partitions!))
+    for (const run of read.partitions!) f.finish(run.id, 0, 'passed')
     await f.ci.dispatch()
-    offline = true
-    const next = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', {
-      suite: 'install', commit: 'b'.repeat(40), commandId: 'cleanup-next',
-    }))
-    expect(CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: old.ticketId })).run)
-      .toMatchObject({ state: 'running', supersededBy: next.ticketId })
-    expect(CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: next.ticketId })).run.state)
-      .toBe('queued')
-    expect(f.started).toHaveLength(1)
-    offline = false
-    await f.ci.dispatch()
-    expect(CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: old.ticketId })).run)
-      .toMatchObject({ state: 'canceled', message: `superseded by ${next.ticketId}` })
-    expect(CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: next.ticketId })).run.state)
-      .toBe('running')
-  } finally { await f.close() }
-})
-
-it('supersedes detached Agent commits only within that execution through authenticated MCP', async () => {
-  const f = await fixture({ agent: true, supersession: { branch: () => null, isAncestor: () => true } })
-  f.computers.splice(0)
-  try {
-    const call = async (input: Record<string, unknown>) => {
-      const result = await f.agent!.callTool({ name: 'ci_run', arguments: input })
-      expect(result.isError, JSON.stringify(result.content)).not.toBe(true)
-      return CiRunOutputSchema.parse(decodeMcpToolResult(result))
-    }
-    const old = await call({ suite: 'install', commit: 'a'.repeat(40), commandId: 'agent-old' })
-    const operator = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', {
-      suite: 'install', commit: 'a'.repeat(40), commandId: 'operator-detached',
-    }))
-    const next = await call({ suite: 'install', commit: 'b'.repeat(40), commandId: 'agent-next' })
-    const read = await f.agent!.callTool({ name: 'ci_get', arguments: { ticketId: old.ticketId } })
-    expect(CiGetOutputSchema.parse(decodeMcpToolResult(read)).run)
-      .toMatchObject({ state: 'canceled', supersededBy: next.ticketId })
-    expect(CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: operator.ticketId })).run.state)
-      .toBe('queued')
-    const denied = await f.agent!.callTool({ name: 'ci_get', arguments: { ticketId: operator.ticketId } })
-    expect(denied.isError).toBe(true)
+    expect(CiGetOutputSchema.parse(await f.value(reader, 'ci_get', { ticketId: started.ticketId })).group?.state)
+      .toBe('passed')
   } finally { await f.close() }
 })

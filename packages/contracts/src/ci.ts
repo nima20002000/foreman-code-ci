@@ -15,12 +15,10 @@ const CiRunInputObjectSchema = z.object({
     .describe('Optional full SHA for runner-selected affected scope. Compare against this ancestor of the resolved '
       + 'commit; an unavailable or non-ancestor base falls back to the full suite with a reason.'),
   commandId: IdSchema,
-  noSupersede: z.boolean().optional().describe('Keep this request’s tickets when newer commits arrive. '
-    + 'By default, newer descendant commits supersede active tickets of the same suite and requester '
-    + 'on the same branch or Agent execution. Main tickets are always kept.'),
   /** Split integration when the repository supplies its CI hook and file selector. */
-  partitions: z.number().int().min(2).max(32).describe('Integration partitions for repositories with '
-    + 'scripts/ci-suite.sh and scripts/ci-files.mjs. User-systemd files use separate build-computer slices; '
+  partitions: z.number().int().min(2).max(64).describe('Optional integration partition limit (2–64); otherwise sized automatically '
+    + 'from measured durations and free slots. '
+    + 'Requires scripts/ci-suite.sh and scripts/ci-files.mjs. User-systemd files use separate build-computer slices; '
     + 'mixed explicit selections split even when this is omitted. Other repositories run integration as one job.').optional(),
   scope: CiScopeSchema.optional().describe('Defaults to affected; full runs the complete suite. '
     + 'Repositories without an affected selector always run the full suite.'),

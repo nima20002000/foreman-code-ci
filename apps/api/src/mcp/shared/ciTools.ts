@@ -28,8 +28,10 @@ export const CI_CAPABILITY_DETAIL = 'ci_run runs one suite (install, typecheck, 
   + 'Caller files remain supported; '
   + 'ci-remote continues to compute and send its selection. '
   + 'ci_get reads back the persisted baseCommit, scope and files. Empty affected selections pass without launching a runner. '
-  + 'Requires the same CI run grants for either scope. partitions (2–32, integration only) splits integration '
-  + 'into duration-balanced runs on separate computers when scripts/ci-suite.sh and scripts/ci-files.mjs support them. '
+  + 'Requires the same CI run grants for either scope. Integration automatically targets four minutes of measured test time '
+  + 'per part, bounded by free CI slots; partitions (2–64, integration only) caps that count. Heavy measured files stay alone '
+  + 'when capacity permits. ci_get includes expectedDurationMs (test time plus 90 seconds setup); runner-derived affected '
+  + 'selections use full-suite estimates. Requires scripts/ci-suite.sh and scripts/ci-files.mjs. '
   + 'Only files requiring user systemd wait for build computers; ordinary files use the other weighted slices on cloud slots. '
   + 'Mixed explicit integration selections split into separate host and ordinary slices even without partitions. '
   + 'Repositories providing the scripts/ci-suite.sh part contract automatically queue unit-api and unit-web shards '
@@ -44,10 +46,6 @@ export const CI_CAPABILITY_DETAIL = 'ci_run runs one suite (install, typecheck, 
   + 'Caller selections omit empty parts and shard only selected tests; runner selections keep queued parts and pass empty shards. '
   + 'Poll every ticket in partitions. Retrying commandId returns the '
   + 'original tickets. ci_get returns state (queued, starting, running, passed, failed, canceled, lost), current step, '
-  + 'ci_run requires jobs:cancel as well as the CI start grants. A newer descendant commit cancels active tickets '
-  + 'of the same suite, repository, workspace and requester on the same confirmed branch or Agent execution. '
-  + 'Main, unrelated branches and noSupersede=true tickets are kept. ci_get returns supersededBy and '
-  + 'the message superseded by <ticket>; follow that replacement ticket and all its partitions. '
   + 'computer, part, shard, exit code, group state and a 32 KiB log tail; ci_logs_read pages the full log '
   + `for authorized callers. maxBytes defaults to ${CI_LOG_MAX_BYTES} bytes and larger requests are clamped to `
   + `that maximum; responses report the applied maxBytes and nextOffset. group=true divides the capped budget `
