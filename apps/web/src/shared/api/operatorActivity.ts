@@ -5,8 +5,6 @@ export function getOperatorActivity(conversationId: string, query: Partial<Opera
   const input = OperatorActivityQuerySchema.parse(query)
   const params = new URLSearchParams({ limit: String(input.limit) })
   if (input.before) params.set('before', input.before)
-  if (input.requestId) params.set('requestId', input.requestId)
-  if (input.activityId) params.set('activityId', input.activityId)
   return apiClient.request(`/api/operator/conversations/${encodeURIComponent(conversationId)}/activity?${params}`, OperatorActivityPageSchema, options)
 }
 
@@ -19,18 +17,4 @@ export function mergeOperatorActivity(...sources: readonly (readonly OperatorAct
     if (!prior || entry.revision > prior.revision) entries.set(key, entry)
   }
   return [...entries.values()].sort((a, b) => BigInt(a.sequence) < BigInt(b.sequence) ? -1 : BigInt(a.sequence) > BigInt(b.sequence) ? 1 : 0)
-}
-
-/** Keep the newest contiguous suffix; older records remain available from its server sequence. */
-export function retainRecentOperatorActivity(entries: OperatorActivity[]) {
-  const encoder = new TextEncoder()
-  let bytes = 2
-  let start = entries.length
-  while (start > 0 && entries.length - start < 100) {
-    const size = encoder.encode(JSON.stringify(entries[start - 1])).byteLength + (start < entries.length ? 1 : 0)
-    if (bytes + size > 256 * 1024) break
-    bytes += size
-    start -= 1
-  }
-  return { activities: entries.slice(start), removed: start > 0 }
 }

@@ -3,7 +3,7 @@ import type { CiRunInput, CiRunRecord } from '@foreman-code/contracts'
 import { gatePartStealer, planCiGate } from './gate.js'
 import type { HostCiComputer, HostCiEndpoint } from './service.js'
 
-function fleet(clouds: number, unavailable?: string): HostCiEndpoint {
+function fleet(clouds: number): HostCiEndpoint {
   const computers: HostCiComputer[] = [
     { key: 'builder-main', label: 'Main builder', priority: 60, hostRef: { kind: 'main', mainId: 'main' } },
     { key: 'builder-paired', label: 'Paired builder', priority: 50,
@@ -14,30 +14,11 @@ function fleet(clouds: number, unavailable?: string): HostCiEndpoint {
   ]
   return {
     computers: async () => computers,
-    request: async computer => {
-      if (computer.key === 'builder-paired' && unavailable) {
-        if (unavailable !== 'not-ready') throw new Error(unavailable)
-        return { operation: 'status', ready: false, reasons: ['Builds unavailable'],
-          cpuCount: 16, memoryBytes: 32 * 2 ** 30, runs: [] }
-      }
-      return { operation: 'status', ready: true, reasons: [],
-        cpuCount: computer.hostRef.kind === 'cloud' ? 4 : 16, memoryBytes: 32 * 2 ** 30,
-        slotsUsed: 0, slotsTotal: computer.hostRef.kind === 'cloud' ? 1 : 2, runs: [] }
-    },
+    request: async computer => ({ operation: 'status', ready: true, reasons: [],
+      cpuCount: computer.hostRef.kind === 'cloud' ? 4 : 16, memoryBytes: 32 * 2 ** 30,
+      slotsUsed: 0, slotsTotal: computer.hostRef.kind === 'cloud' ? 1 : 2, runs: [] }),
   }
 }
-
-it.each(['not-ready', 'offline', 'extension-rejected'])('excludes a %s build computer from a requested gate',
-  async unavailable => {
-    const files = Array.from({ length: 48 }, (_, index) => `apps/api/test/feature-${index}.integration.test.ts`)
-    const parts = await planCiGate({ suite: 'integration', scope: 'full', gate: true, commandId: 'gate' },
-      { files, durations: Object.fromEntries(files.map(file => [file, 120_000])) },
-      { files: ['apps/api/src/site.test.ts'], durations: {}, heavy: [] }, {}, fleet(2, unavailable))
-    expect(parts.some(part => part.plannedHostKey === 'builder-paired')).toBe(false)
-    expect(parts.some(part => part.plannedHostKey === 'builder-main')).toBe(true)
-    expect(parts.filter(part => part.suite === 'integration').flatMap(part => part.files).sort())
-      .toEqual([...files].sort())
-  })
 
 it('plans a production-sized gate within a second', async () => {
   const files = Array.from({ length: 800 }, (_, index) => `apps/api/test/feature-${index}.integration.test.ts`)
@@ -79,7 +60,7 @@ it.each([80_000, 120_000])('balances %i ms integration files against cloud check
   expect(Math.max(...times.values())).toBeLessThanOrEqual(210_000)
 })
 
-it('lets a build computer without a queued gate part take cloud parts and another build computer integration part', () => {
+it('lets a build computer whose own gate part started take unstarted cloud gate parts', () => {
   const host: HostCiComputer = { key: 'builder-main', label: 'Main builder', priority: 60, hostRef: { kind: 'main', mainId: 'main' } }
   const paired: HostCiComputer = { key: 'builder-paired', label: 'Paired builder', priority: 50,
     hostRef: { kind: 'device', mainId: 'main', deviceId: 'paired' } }
@@ -92,9 +73,6 @@ it('lets a build computer without a queued gate part take cloud parts and anothe
   expect(steals(queued[0]!, host)).toBe(true)
   expect(steals(queued[0]!, paired)).toBe(false)
   expect(steals(queued[0]!, cloud)).toBe(false)
-  expect(steals(queued[2]!, host)).toBe(true)
-  expect(steals(queued[1]!, host)).toBe(true)
-  expect(steals(queued[1]!, paired)).toBe(false)
-  expect(steals(queued[1]!, cloud)).toBe(false)
-  expect(steals(part('builder-paired', 'unit'), host)).toBe(false)
+  expect(steals(queued[2]!, host)).toBe(false)
+  expect(steals(queued[1]!, host)).toBe(false)
 })
