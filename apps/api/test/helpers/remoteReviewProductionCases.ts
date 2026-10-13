@@ -1,5 +1,4 @@
 import { readFile } from 'node:fs/promises'
-import { reportIntegrationPhase } from './integrationPhase.js'
 import { join } from 'node:path'
 import { afterAll, beforeAll, expect } from 'vitest'
 import { AgentConfigurationVersionSchema, GetInteractionResponseSchema, NativeSessionLaneSchema, ReviewJobSchema,
@@ -33,11 +32,11 @@ export async function waitForReplacementReviewInventory(
 export async function waitForRemoteReview<T>(read: () => Promise<T>, accept: (value: T) => boolean,
   description: string, subscribe?: (changed: () => void) => () => void): Promise<T> {
   const started = performance.now()
-  reportIntegrationPhase(`waiting for ${description}`, 0)
+  console.info(`[remote-review] waiting for ${description} at ${new Date().toISOString()}`)
   try {
     return await waitForProduction(read, accept, description, subscribe)
   } finally {
-    reportIntegrationPhase(description, performance.now() - started)
+    console.info(`[remote-review] ${description}: ${Math.round(performance.now() - started)} ms`)
   }
 }
 
@@ -138,20 +137,10 @@ export async function reviewInProgress(fixture: Fixture) {
   const location = RunExecutionLocationV3Schema.parse(started.run.executionLocation)
   expect(location.runnerId).toBe(fixture.profiles[0]!.target.applicationInstallationId)
   expect((await fixture.details(started.run.id)).run.executionLocation).toEqual(location)
-  let nextStartupReport = performance.now()
   const interaction = await waitForRemoteReview(async () => {
     // Retry recoverable workflow boundaries through the engine without the source-cleanup sweep.
     await fixture.reconcileReviews()
     const pending = (await fixture.pending(started.run.id))[0]
-    if (!pending && performance.now() >= nextStartupReport) {
-      nextStartupReport = performance.now() + 10_000
-      const executions = await fixture.executions(started.run.id)
-      const activity = await fixture.provider.startupActivity()
-      const lastMethod = activity.findLast(event => typeof event.method === 'string')?.method
-      const states = executions.map(execution => `${execution.state}-${execution.result?.error?.code ?? 'no-error'}`)
-      reportIntegrationPhase(`native startup ${lastMethod} ${states.join(' ')}`, 0)
-      for (const failure of fixture.failures()) reportIntegrationPhase(`native failure ${failure.code}`, 0)
-    }
     if (!pending) {
       const failed = (await fixture.executions(started.run.id)).find(execution => execution.result?.outcome === 'failed')
       if (failed) throw new Error(`Native execution failed before review: ${failed.result?.error?.code}`)

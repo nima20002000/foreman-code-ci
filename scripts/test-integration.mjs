@@ -12,7 +12,6 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { cleanupTestResources, createTestDatabase, createTestRoot, dropTestDatabase, removeTestRoot, requireTestServerUrl,
   resetTestDatabase, settleTestResources, testAdminPool, testEnvironment } from './test-resources.mjs'
 import { createTestDatabaseTemplate, dropTestDatabaseTemplate } from './test-database-template.mjs'
-import { ciTemplateCacheDirectory } from './ci-postgres-cache.mjs'
 import { readIntegrationStartup } from './integration-startup.mjs'
 import { integrationPhaseForwarder } from './integration-phase.mjs'
 import { testFixtureCacheRoot } from './test-fixture-cache.mjs'
@@ -336,9 +335,8 @@ export function integrationShardPlan(environment, resources = {}, fileCount = In
     && Number.isSafeInteger(activeConnections) && activeConnections >= 0
   // One worker uses the default ten-connection pool plus admin and peer connections.
   const connectionsPerShard = 16
-  // Shards mostly wait on PostgreSQL and child processes: measured ~0.5 core and well under 0.5 GiB each.
-  const memoryPerShard = 1024 ** 3 / 2
-  const cpuLimit = knownCpu ? cpuCount * 2 : 12
+  const memoryPerShard = 1024 ** 3
+  const cpuLimit = knownCpu ? cpuCount : 12
   const memoryLimit = knownMemory ? Math.floor(availableMemoryBytes / memoryPerShard) : 12
   const freeConnections = knownDatabase ? maxConnections - reservedConnections - activeConnections : null
   const databaseLimit = knownDatabase ? Math.floor(freeConnections / connectionsPerShard) : 12
@@ -347,7 +345,7 @@ export function integrationShardPlan(environment, resources = {}, fileCount = In
   const limit = Math.min(cpuLimit, memoryLimit, databaseLimit, ciShardLimit)
   const reasons = [
     knownCpu ? `CPU limit ${cpuLimit}` : 'CPU unknown (fallback 12)',
-    knownMemory ? `memory limit ${memoryLimit} (${availableMemoryBytes} available bytes, 0.5 GiB/shard)`
+    knownMemory ? `memory limit ${memoryLimit} (${availableMemoryBytes} available bytes, 1 GiB/shard)`
       : 'memory unknown (fallback 12)',
     knownDatabase ? `PostgreSQL limit ${databaseLimit} (max_connections=${maxConnections},`
       + ` ${reservedConnections} reserved, ${activeConnections} occupied, ${connectionsPerShard} connections/shard)`
@@ -664,10 +662,9 @@ export async function runIntegration(argv = [], {
     }
   }
   try {
-    template = await createTestDatabaseTemplate(admin, tempRoot, { cacheDirectory: ciTemplateCacheDirectory(env) })
+    template = await createTestDatabaseTemplate(admin, tempRoot)
     console.log(`[integration] database template ${template.hash}; migration import ${Math.round(template.timings.importMs)} ms;`
-      + ` migrations ${Math.round(template.timings.migrationMs)} ms; setup ${Math.round(template.timings.setupMs)} ms;`
-      + ` ${template.persistent ? 'persistent' : 'job'} template.`)
+      + ` migrations ${Math.round(template.timings.migrationMs)} ms; setup ${Math.round(template.timings.setupMs)} ms.`)
     for (let index = 0; index < shardCount; index++) {
       if (interrupted) throw new Error(`Interrupted during database setup (${interrupted})`)
       const resource = createTestRoot(tempRoot.directory, `slot-${index + 1}-`)
@@ -951,7 +948,7 @@ export async function runIntegration(argv = [], {
           }
           catch (error) { cleanupError ??= error }
         }
-        if (template && !template.persistent && !cleanupError) {
+        if (template && !cleanupError) {
           try { await dropTestDatabaseTemplate(admin, template) }
           catch (error) { cleanupError ??= error }
         }
