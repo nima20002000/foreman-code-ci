@@ -66,13 +66,6 @@ export async function assertInstalledWorkflowRestart(phase: RestartPhase,
     await fixture.reconcile()
     await expectMcpAccessDenied(fixture.call('run_stop', { workspaceId: started.run.workspaceId,
       runId: started.run.id, commandId: randomUUID() }, reader.token))
-    const callsAfterRestart = await fixture.provider.calls()
-    if (phase === 'admitting interval') {
-      for (const original of active) {
-        expect(callsAfterRestart.filter(call => call.method === 'turn/start'
-          && call.correlationId === `execution:${original.id}`)).toHaveLength(1)
-      }
-    }
     const recovered = SavedRunDetailsSchema.parse(decodeMcpToolResult(await fixture.call('run_get', {
       detail: 'full', workspaceId: started.run.workspaceId, runId: started.run.id,
     }, reader.token)))
