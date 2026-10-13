@@ -11,7 +11,7 @@ import { requireAuthorization } from '../../access/policy.js'
 import type { PostgresCommandCoordinator } from '../../commands/postgres.js'
 import { DomainError } from '../../errors.js'
 import { assertClaudeFullAccess } from '../nativeWorkflowConfiguration.js'
-import type { HostHarnessOverrideAuthority } from './service.js'
+import type { HostHarnessOverrideAuthority } from './authority.js'
 import { harnessHostKey, type HarnessInstanceSettingsRepository } from './repository.js'
 import type { NativeQualificationRetention } from '../installedNativeQualificationRetention.js'
 import type { HostHarnessProfileEvidenceRepository } from './profileRepository.js'
@@ -65,7 +65,7 @@ export class HostHarnessInstanceProfileChecks {
       return result
     })
     this.flights.add(flight)
-    void flight.finally(() => this.flights.delete(flight)).catch(() => undefined)
+    void flight.finally(() => this.flights.delete(flight)).catch(() => { /* ignore: the owner awaits the original promise; this observer prevents a duplicate unhandled rejection. */ })
     return flight
   }
   recheckWorker(binding: Readonly<DeviceSessionBinding>, connectionSignal: AbortSignal,
