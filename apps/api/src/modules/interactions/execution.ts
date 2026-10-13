@@ -60,7 +60,7 @@ import type {
   ResolvedNativeSessionManager,
 } from './runtimePorts.js'
 import type { ExecutionCredentialProvider } from '../harnesses/mcpDetection.js'
-import { readDetachedWorkflowLifetime, readDetachedWorkflowSession, readRemoteWorkflowContinuation, recoverWorkflowNativeClosure,
+import { readDetachedWorkflowSession, readRemoteWorkflowContinuation, recoverWorkflowNativeClosure,
   type WorkflowClosureStore } from './workflowClosure.js'
 import { finishRecoveredWorkflowCredentials } from './workflowTerminalRecovery.js'
 import { assertSavedPendingApprovalOriginalLocked } from './nativeApprovalProof.js'
@@ -612,46 +612,10 @@ export class ApprovalExecutionCoordinator {
     await this.reviewers.reconcile(onError)
   }
 
-  private detachedWorkflowSession(owner: RunOwnership,
-    execution: HarnessExecution): Promise<NativeSessionReference | undefined> {
-    if (this.workflowClosures?.recoverDetached) return this.workflowClosures.recoverDetached(owner, execution)
-    return readDetachedWorkflowSession(owner, execution)
-  }
-
-  private async waitForRestartWriter(owner: RunOwnership, execution: HarnessExecution,
-    session: NativeSessionReference, correlationId: string, readLifetime: () => Promise<unknown>, signal?: AbortSignal) {
-    owner.assertOwned()
-    signal?.throwIfAborted()
-    const lane = await this.interactions.coordination.getLane(session.harness, session.nativeSessionId)
-    if (!lane?.leaseToken || !lane.leaseExpiresAt || Date.parse(lane.leaseExpiresAt) <= Date.now()) return
-    const expiresAt = Date.parse(lane.leaseExpiresAt)
-    const conflict = () => new DomainError('SESSION_LANE_BUSY',
-      'The original native writer changed during restart recovery.', 409)
-    const control = lane.correlationId && /^(?:control|close|attach)-/.test(lane.correlationId)
-    if (lane.ownerAgentId !== execution.agentId || lane.leaseOwner !== execution.agentId
-      || lane.correlationId && !control && lane.correlationId !== correlationId
-      || expiresAt - Date.now() > 30_000) throw conflict()
-    const lifetime = await readLifetime()
-    if (!lifetime) throw conflict()
-    for (;;) {
-      owner.assertOwned()
-      signal?.throwIfAborted()
-      if (this.closing) throw new DomainError('ENGINE_RESTART',
-        'The native session recovery is stopping for application restart.', 409)
-      const currentLifetime = await readLifetime()
-      const currentLane = await this.interactions.coordination.getLane(session.harness, session.nativeSessionId)
-      owner.assertOwned()
-      if (!isDeepStrictEqual(currentLifetime, lifetime) || !isDeepStrictEqual(currentLane, lane)) throw conflict()
-      const remaining = expiresAt - Date.now()
-      if (remaining <= 0) return
-      await delay(Math.min(100, remaining), undefined, { signal })
-    }
-  }
-
   /** Restore a detached Main session before source verification requires its writer. */
   private async restoreSourceSession(owner: RunOwnership, execution: HarnessExecution): Promise<void> {
     if (!execution.nativeSessionId || !['running', 'waiting'].includes(execution.state)) return
-    const session = await this.detachedWorkflowSession(owner, execution)
+    const session = await readDetachedWorkflowSession(owner, execution)
     if (!session) return
     const configuration = await this.runs.getExecutionConfiguration(execution.agentConfigurationVersionId)
     if (!configuration) throw new DomainError('AGENT_CONFIGURATION_NOT_FOUND',
@@ -777,20 +741,10 @@ export class ApprovalExecutionCoordinator {
     restartOwner?.assertOwned()
     const owned = this.ownedSessions.get(context.executionId)
     if (!owned || owned.manager !== resolved.manager) throw new Error('Native preflight has no exact manager owner.')
-    const continuing = restartOwner && owned.session && resolved.processState === 'needs_start'
-      && context.acceptedPlacement?.hostRef.kind === 'device'
-      ? await readRemoteWorkflowContinuation(restartOwner, owned.execution) : undefined
-    if (continuing) {
-      this.assertSessionIdentity(continuing.session, owned.session!)
-      if (!continuing.detached) {
-        owned.closureRegistration = Promise.resolve(continuing.generation)
-        owned.closureGeneration = continuing.generation
-      }
-    }
     if (this.workflowClosures) {
       // The original process intent must be durable before entered commits.
       // Allocation/reviewer cleanup alone must not reserve or dispatch anything.
-      if (resolved.processState === 'needs_start' && !owned.launchReserved && !continuing) {
+      if (resolved.processState === 'needs_start' && !owned.launchReserved) {
         signal?.throwIfAborted()
         this.reserveNativeLaunch?.(context.executionId, this.rawManagers.get(owned.manager) ?? owned.manager)
         owned.launchReserved = true
@@ -846,13 +800,6 @@ export class ApprovalExecutionCoordinator {
       }
       const credential = await this.credentials.restore(context.executionId, { agentId: context.agentId,
         variables: { [APP_MCP_TOKEN_ENVIRONMENT_VARIABLE]: access.token } })
-      if (continuing) {
-        const current = await readRemoteWorkflowContinuation(restartOwner!, owned.execution)
-        const expected = { ...continuing, generation: owned.closureGeneration, detached: false }
-        if (credential.principalId !== continuing.principalId || !isDeepStrictEqual(current, expected)) {
-          throw new DomainError('NATIVE_CREDENTIAL_RECOVERY_REQUIRED', 'The original remote process lease changed.', 409)
-        }
-      }
       this.managerCredentials.set(resolved.manager, credential)
       signal?.throwIfAborted()
       resolved.markResident?.()
@@ -1294,13 +1241,16 @@ export class ApprovalExecutionCoordinator {
     const active: OwnedNativeSession[] = []
     for await (const executions of this.runs.executionPages(owner.runId, owner)) {
       for (const execution of executions) {
+        if (execution.state === 'completed' || execution.state === 'queued') continue
         const owned = this.ownedSessions.get(execution.id)
+        // Session publication precedes initial turn admission. Let the original
+        // startup finish before deciding whether its siblings can survive restart.
+        await owned?.starting
         const current = await this.runs.getExecution(execution.id, owner)
-        if (!current) return false
-        if (current.state === 'completed' || current.state === 'queued') continue
-        if (!owned?.session || !current.nativeSessionId || owned.opening || owned.openingFailed
+        if (current?.state === 'completed') continue
+        if (!owned?.session || !execution.nativeSessionId || owned.opening || owned.openingFailed
           || owned.failed || owned.cleanup || !owned.closureGeneration
-          || owned.session.nativeSessionId !== current.nativeSessionId
+          || owned.session.nativeSessionId !== execution.nativeSessionId
           || !owned.manager.canDetachForRestart?.(owned.session)) return false
         active.push(owned)
       }
@@ -1612,17 +1562,11 @@ export class ApprovalExecutionCoordinator {
       ? await readRemoteWorkflowContinuation(options.restartOwner, execution) : undefined
     if (!this.ownedSessions.has(execution.id)) {
       const detached = options.restartOwner
-        ? await this.detachedWorkflowSession(options.restartOwner, execution) : undefined
+        ? await readDetachedWorkflowSession(options.restartOwner, execution) : undefined
       if (continuing) this.assertSessionIdentity(continuing.session, sessionReference)
       else if (detached) this.assertSessionIdentity(detached, sessionReference)
       else if (execution.state !== 'completed' || !await this.workflowClosures?.read(execution)) throw new DomainError(
         'NATIVE_SESSION_RECOVERY_REQUIRED', 'The original requester requires verified Run recovery.', 409)
-      if (options.restartOwner && (continuing || detached)) {
-        await this.waitForRestartWriter(options.restartOwner, execution, sessionReference,
-          context.correlationId ?? `execution:${execution.id}`, continuing
-            ? () => readRemoteWorkflowContinuation(options.restartOwner!, execution)
-            : () => readDetachedWorkflowLifetime(options.restartOwner!, execution), signal)
-      }
     }
     const run = await this.runs.get(execution.runId)
     if (!run) throw new Error('The durable execution Run is unavailable.')
@@ -1728,7 +1672,7 @@ export class ApprovalExecutionCoordinator {
 
   private async restorePendingWorkflowApprovals(owner: RunOwnership, execution: HarnessExecution,
     pending: readonly DurableInteraction[], signal?: AbortSignal): Promise<boolean> {
-    const detached = await this.detachedWorkflowSession(owner, execution)
+    const detached = await readDetachedWorkflowSession(owner, execution)
       ?? (await readRemoteWorkflowContinuation(owner, execution))?.session
     if (!detached) return false
     if (detached.harness === 'opencode') {
@@ -1859,16 +1803,12 @@ export class ApprovalExecutionCoordinator {
         if (this.ownedSessions.has(execution.id)) continue
         if (execution.state === 'queued' && !execution.nativeSessionId && !execution.startedAt) continue
         if (execution.state === 'running' && execution.nativeSessionId
-          && (await this.detachedWorkflowSession(owner, execution)
-            ?? (await readRemoteWorkflowContinuation(owner, execution))?.session)) continue
+          && await readDetachedWorkflowSession(owner, execution)) continue
         const pending = approvals.filter((item) => item.executionId === execution.id)
         if (execution.state === 'waiting' && pending.length
           && pending.every((item) => item.status === 'pending' && item.deliveryState === 'not_started')) {
           if (await this.restorePendingWorkflowApprovals(owner, execution, pending, signal)) continue
         }
-        if (execution.state === 'waiting' && !pending.length && execution.nativeSessionId
-          && (await this.detachedWorkflowSession(owner, execution)
-            ?? (await readRemoteWorkflowContinuation(owner, execution))?.session)) continue
         if (execution.state === 'completed') continue
         await this.runs.requestCleanup(owner.runId, owner)
         owner.assertOwned()
@@ -2166,17 +2106,6 @@ export class ApprovalExecutionCoordinator {
           }
           if (resident.session && session) this.assertSessionIdentity(resident.session, session)
         }
-        if (!resident && session) {
-          const continuing = context.acceptedPlacement?.hostRef.kind === 'device'
-            ? await bookkeeping(() => readRemoteWorkflowContinuation(input.owner, execution)) : undefined
-          const detached = continuing ? undefined : await this.detachedWorkflowSession(input.owner, execution)
-          if (continuing || detached) {
-            this.assertSessionIdentity(continuing?.session ?? detached!, session)
-            await this.waitForRestartWriter(input.owner, execution, session, workflowCorrelation, continuing
-              ? () => readRemoteWorkflowContinuation(input.owner, execution)
-              : () => readDetachedWorkflowLifetime(input.owner, execution), signal)
-          }
-        }
       }
       resolved = this.resolveManager(context, input.owner)
       if (resolved.processState === 'needs_start') resolved.beginStart?.()
@@ -2330,7 +2259,7 @@ export class ApprovalExecutionCoordinator {
         if (!session) throw new DomainError('NATIVE_SESSION_IDENTITY_MISMATCH', 'Recovery requires the exact saved session.', 409)
         ownedSession.session = session
         if (existing) this.assertSessionIdentity(session, existing)
-        const environment = await this.prepareEnvironment(context, resolved, { signal, restartOwner: input.owner })
+        const environment = await this.prepareEnvironment(context, resolved, { signal })
         startCredentialMaintenance()
         await validateContinuation()
         signal.throwIfAborted()
