@@ -1,10 +1,11 @@
-import { removeFixtureDirectory } from './helpers/testResources.js'
+import { createFixtureSchema, dropFixtureSchema, removeFixtureDirectory } from './helpers/testResources.js'
 import { randomUUID } from 'node:crypto'
 import { mkdtemp, readdir } from 'node:fs/promises'
 import { tmpdir, homedir } from 'node:os'
 import { join } from 'node:path'
-import { migratedDatabase } from './helpers/migratedDatabase.js'
+import pg from 'pg'
 import { expect, it } from 'vitest'
+import { applyApplicationMigrations } from '../src/infrastructure/migrations.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { PostgresFoundationSettingsRepository } from '../src/modules/settings/foundation.js'
@@ -12,10 +13,14 @@ import { WorkspaceManagementService } from '../src/modules/workspaces/management
 import { WorkspaceLocationService } from '../src/modules/workspaces/location.js'
 
 it('creates a ready project folder once, preserves defaults and rejects collisions and traversal', async () => {
+  const connectionString = process.env.TEST_DATABASE_URL!
+  const admin = new pg.Pool({ connectionString })
+  const schema = 'workspace_create_' + randomUUID().replaceAll('-', '')
   const parentPath = await mkdtemp(join(tmpdir(), 'workspace-create-'))
-  const database = await migratedDatabase()
-  const { pool } = database
+  await createFixtureSchema(admin, schema)
+  const pool = new pg.Pool({ connectionString, options: `-c search_path=${schema}` })
   try {
+    await applyApplicationMigrations(pool)
     const principal = (await new PostgresAccessService(pool).issue({
       name: 'Creation test', audience: 'operator', expiresAt: new Date(Date.now() + 60_000),
       grants: [{ actions: ['workspaces:create', 'workspaces:read', 'workspace_locations:read', 'workspace_locations:update', 'workspace_locations:provision'], scope: {} }],
@@ -42,7 +47,9 @@ it('creates a ready project folder once, preserves defaults and rejects collisio
     expect((await service.get(principal, created.value.workspace.id)).executionLocation?.rootPath).toBe(join(parentPath, input.name))
     expect((await pool.query('select count(*)::int as count from workspaces')).rows[0].count).toBe(2)
   } finally {
-    await database.close()
+    await pool.end()
+    await dropFixtureSchema(admin, schema)
+    await admin.end()
     await removeFixtureDirectory(parentPath)
   }
 }, 30_000)

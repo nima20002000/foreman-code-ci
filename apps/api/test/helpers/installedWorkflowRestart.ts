@@ -8,29 +8,35 @@ import { installationUpdateFixture, startWhenReady, completedRun } from './harne
 import { readUntil } from './observableCondition.js'
 import { expectMcpAccessDenied } from './deniedMcpTool.js'
 import { repeatTickIndex } from '../../src/modules/runs/repeatResolution.js'
+import { measureIntegrationPhase } from './integrationPhase.js'
 
 type RestartPhase = 'active' | 'writable source' | 'admitting interval' | 'failed admission'
 
-export async function assertInstalledWorkflowRestart(phase: RestartPhase,
-  installedFixture?: Awaited<ReturnType<typeof installationUpdateFixture>>) {
+export async function assertInstalledWorkflowRestart(phase: RestartPhase) {
   const activePhase = phase === 'active' || phase === 'writable source'
-  const fixture = installedFixture ?? await installationUpdateFixture({ workflow: 'interval', executionHost: 'main',
+  const fixture = await measureIntegrationPhase('installed restart fixture', () => installationUpdateFixture({
+    workflow: 'interval', executionHost: 'main',
     installedMainService: true,
-    sourceAccessMode: phase === 'writable source' ? 'exclusive-write' : 'read-only' })
+    installationRefreshIntervalMs: 60_000,
+    sourceAccessMode: phase === 'writable source' ? 'exclusive-write' : 'read-only',
+  }))
   const service = fixture.mainService!
   let restart: ReturnType<typeof service.restart> | undefined
   try {
     await fixture.provider.blockWorkflowTurns({ allowFirst: 1 })
     if (!activePhase) await fixture.provider.blockWorkflowAdmission()
-    const started = (await startWhenReady(fixture))!
-    const before = await readUntil(async () => {
+    const started = (await measureIntegrationPhase('installed restart Start', () => startWhenReady(fixture)))!
+    const before = await measureIntegrationPhase('installed restart active sessions', () => readUntil(async () => {
       const details = await fixture.details(started.run.id)
+      if (details.run.executionState === 'completed') {
+        throw new Error(`Run completed before the restart boundary: ${JSON.stringify(details.run.result)}`)
+      }
       const calls = await fixture.provider.calls()
       const active = details.executions.filter(item => item.state === 'running' && item.nativeSessionId)
       const blocked = calls.some(call => call.workflowAdmissionBlocked)
       const turns = calls.filter(call => call.workflowTurn)
       return active.length === 2 && (activePhase ? turns.length === 3 : blocked) ? details : undefined
-    }, value => value !== undefined, { timeoutMs: 180_000, description: 'graph work and interval session' })
+    }, value => value !== undefined, { timeoutMs: 180_000, description: 'graph work and interval session' }))
     if (!before) throw new Error('Expected two saved active native sessions.')
     const active = before.executions.filter(item => item.state === 'running')
     const nativeEventCounts = async () => {
@@ -53,17 +59,17 @@ export async function assertInstalledWorkflowRestart(phase: RestartPhase,
     const reader = await fixture.access.issue({ name: 'Installed restart reader', audience: 'operator',
       expiresAt: new Date(Date.now() + 600_000), grants: [{ actions: ['runs:read'],
         scope: { workspaceIds: [started.run.workspaceId], workflowIds: [started.run.workflowId] } }] })
-    restart = service.restart()
+    restart = measureIntegrationPhase('installed restart systemd restart', () => service.restart())
     if (!activePhase) {
       await readUntil(service.state, value => value === 'deactivating',
       { timeoutMs: 10_000, description: 'systemd beginning API restart' })
-      await service.waitForPreservation()
+      await measureIntegrationPhase('installed restart preservation', () => service.waitForPreservation())
       if (phase === 'failed admission') await fixture.provider.failWorkflowAdmission()
       await fixture.provider.releaseWorkflowAdmission()
     }
     const ready = (await restart)!
     expect(ready.pid).not.toBe(previousPid)
-    await fixture.reconcile()
+    await measureIntegrationPhase('installed restart reconciliation', () => fixture.reconcile())
     await expectMcpAccessDenied(fixture.call('run_stop', { workspaceId: started.run.workspaceId,
       runId: started.run.id, commandId: randomUUID() }, reader.token))
     const recovered = SavedRunDetailsSchema.parse(decodeMcpToolResult(await fixture.call('run_get', {
@@ -82,20 +88,23 @@ export async function assertInstalledWorkflowRestart(phase: RestartPhase,
             .toEqual(original.provider)
           if (original.provider) expect(() => process.kill(original.provider!.pid, 0)).not.toThrow()
         }
-        await readUntil(nativeEventCounts, counts => active.every(original =>
+        await fixture.provider.emitWorkflowProgress()
+        await measureIntegrationPhase('installed restart adopted events', () => readUntil(nativeEventCounts,
+          counts => active.every(original =>
           (counts.get(original.id) ?? 0) > (previousEvents.get(original.id) ?? 0)),
-        { timeoutMs: 30_000, description: 'native events from both adopted sessions' })
+        { timeoutMs: 30_000, description: 'native events from both adopted sessions' }))
       }
       await fixture.provider.releaseWorkflowTurns()
     }
-    const finished = phase === 'failed admission'
-      ? await readUntil(async () => {
+    const finished = await measureIntegrationPhase('installed restart Run completion', async () => {
+      if (phase !== 'failed admission') return completedRun(fixture, started.run.id)
+      return readUntil(async () => {
         await fixture.reconcile()
         return fixture.details(started.run.id)
       },
         details => details.run.executionState === 'completed',
         { timeoutMs: 90_000, description: 'interrupted run settlement' })
-      : await completedRun(fixture, started.run.id)
+    })
     expect(finished.run.outcome).toBe(phase === 'failed admission' ? 'failed' : 'succeeded')
     const persisted = SavedRunDetailsSchema.parse(decodeMcpToolResult(await fixture.call('run_get', {
       detail: 'full', workspaceId: started.run.workspaceId, runId: started.run.id,
@@ -123,9 +132,10 @@ export async function assertInstalledWorkflowRestart(phase: RestartPhase,
           && call.correlationId === `execution:${original.id}`)).toHaveLength(1)
       }
     }
-    await readUntil(async () => service.registry.snapshot().launches, values => launches.every(original =>
+    await measureIntegrationPhase('installed restart native cleanup', () => readUntil(
+      async () => service.registry.snapshot().launches, values => launches.every(original =>
       values.find(item => item.launchId === original.launchId)?.lifecycle === 'closed'),
-    { timeoutMs: 10_000, description: 'reattached native process cleanup' })
+    { timeoutMs: 10_000, description: 'reattached native process cleanup' }))
     for (const original of launches) {
       if (original.provider) expect(() => process.kill(original.provider!.pid, 0)).toThrow()
     }
@@ -134,8 +144,6 @@ export async function assertInstalledWorkflowRestart(phase: RestartPhase,
       await fixture.provider.releaseWorkflowAdmission()
       await fixture.provider.releaseWorkflowTurns()
       await restart
-    } finally {
-      if (!installedFixture) await fixture.close()
-    }
+    } finally { await measureIntegrationPhase('installed restart cleanup', () => fixture.close()) }
   }
 }

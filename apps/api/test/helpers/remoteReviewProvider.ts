@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { chmod, copyFile, mkdir, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { delimiter, dirname, join } from 'node:path'
@@ -128,6 +129,7 @@ int main(int argc, char **argv) {
     releaseReview: () => writeFile(join(directory, 'release-review'), '', { mode: 0o600 }),
     blockWorkflowTurns: (options?: { allowFirst: number }) => writeFile(join(directory, 'block-workflow-turns'),
       options ? JSON.stringify(options) : '', { mode: 0o600 }),
+    emitWorkflowProgress: () => writeFile(join(directory, 'workflow-progress'), randomUUID(), { mode: 0o600 }),
     releaseWorkflowTurns: () => rm(join(directory, 'block-workflow-turns'), { force: true }),
     retryReview: () => writeFile(join(directory, 'retry-review'), '', { mode: 0o600 }),
     blockRequesterSession: () => writeFile(join(directory, 'block-requester-session'), '', { mode: 0o600 }),

@@ -185,9 +185,25 @@ async function started(turn, prompt) {
     const block = join(root, 'block-workflow-turns')
     const position = readFileSync(join(root, 'calls.jsonl'), 'utf8').split('\n')
       .filter(line => line && JSON.parse(line).workflowTurn).length
+    const progressMarker = join(root, 'workflow-progress')
+    let reportedProgress = ''
     while (existsSync(block)) {
       const contents = readFileSync(block, 'utf8')
       if (contents && position <= JSON.parse(contents).allowFirst) break
+      const progress = existsSync(progressMarker) ? readFileSync(progressMarker, 'utf8') : ''
+      if (progress && progress !== reportedProgress) {
+        reportedProgress = progress
+        const item = { type: 'agentMessage', id: `progress-${turn.id}-${progress}`, text: '',
+          phase: 'commentary', memoryCitation: null, delivery: null, questions: null }
+        turn.items.push(item)
+        save()
+        notify('item/started', { threadId: thread.id, turnId: turn.id, item, startedAtMs: 1 })
+        item.text = 'The original workflow turn is still running.'
+        save()
+        notify('item/agentMessage/delta', { threadId: thread.id, turnId: turn.id,
+          itemId: item.id, delta: item.text })
+        log({ workflowProgress: { pid: process.pid, sessionId: thread.id, turnId: turn.id, nonce: progress } })
+      }
       await new Promise(resolve => setTimeout(resolve, 20))
     }
     const output = thread.instructions.includes('fixture-work-handoff')
