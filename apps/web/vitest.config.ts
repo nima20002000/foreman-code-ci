@@ -18,7 +18,6 @@ if (phase !== undefined && phase !== 'fast' && phase !== 'heavy') throw new Erro
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   test: {
-    ...(process.env.CI_PROGRESS_FILE ? { runner: '../../packages/contracts/ci-test-runner.mjs', reporters: ['default', '../../scripts/ci-progress-reporter.mjs'] } : {}),
     globalSetup: ['../../scripts/vitest-heavy-setup.mjs'],
     // Leave CPU headroom for the Vitest coordinator and jsdom.
     maxWorkers: phase === 'heavy' ? Math.min(maxWorkers, heavy.workers) : maxWorkers,

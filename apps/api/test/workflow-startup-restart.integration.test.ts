@@ -11,8 +11,7 @@ import { isWorkflowStart } from '../src/modules/harnesses/sessionStart.js'
 import { PostgresWorkflowClosureStore } from '../src/modules/interactions/workflowClosure.js'
 import { LOCAL_RUNNER_ID } from '../src/modules/workspaces/location.js'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
-import { rejectableDeferred } from './helpers/deferred.js'
+import { deferred, postgresEnabled } from './helpers/wave25Agent3.js'
 
 describe.runIf(postgresEnabled)('restart during native startup', () => {
   for (const boundary of ['reservation', 'authorization'] as const) {
@@ -22,9 +21,9 @@ describe.runIf(postgresEnabled)('restart during native startup', () => {
           fixture: makeCurrentWorkflowFixture(randomUUID(), 'single'),
           approvalNodeIds: [], insertRun: false,
         })
-        const paused = rejectableDeferred()
-        const release = rejectableDeferred()
-        const restarting = rejectableDeferred()
+        const paused = deferred()
+        const release = deferred()
+        const restarting = deferred()
         let pauseNext = true
         let startupFailure: unknown
         let failDisposal = failFirst
@@ -182,9 +181,9 @@ describe.runIf(postgresEnabled)('restart during native startup', () => {
         fixture: makeCurrentWorkflowFixture(randomUUID(), 'single'),
         approvalNodeIds: [], insertRun: false,
       })
-      const paused = rejectableDeferred()
-      const release = rejectableDeferred()
-      const restarting = rejectableDeferred()
+      const paused = deferred()
+      const release = deferred()
+      const restarting = deferred()
       let pauseNext = true
       let observed: NativeSessionReference | undefined
       let executionId: string | undefined

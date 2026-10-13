@@ -16,8 +16,7 @@ import { PostgresOperatorConversationRepository } from '../src/modules/conversat
 import { runChatStorageKey } from '../src/modules/conversations/selectedRunChat.js'
 import type { NativeSteerInput } from '../src/modules/harnesses/port.js'
 import type { PostgresRunRepository } from '../src/modules/runs/postgres.js'
-import { AgentChatF5Native } from './helpers/agentChatF5.js'
-import { deferred } from './helpers/deferred.js'
+import { AgentChatF5Native, deferred } from './helpers/agentChatF5.js'
 
 class SteeringNative extends AgentChatF5Native {
   readonly steerTurn = vi.fn(async (_session: NativeSessionReference, input: NativeSteerInput) => ({ nativeTurnId: input.expectedTurnId }))

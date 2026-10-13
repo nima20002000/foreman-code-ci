@@ -1,4 +1,3 @@
-import { errorMessage } from '../../shared/errorMessage.js'
 import type pg from 'pg'
 import { randomUUID } from 'node:crypto'
 import { APP_MCP_SERVER_NAMES } from '@foreman-code/contracts/product'
@@ -20,7 +19,6 @@ import type { ClaudePluginCatalog } from './claudePlugins.js'
 import type { ComputerMaintenance } from './maintenance.js'
 import { syncFingerprint } from './syncFingerprint.js'
 import { assertComputerTarget } from './target.js'
-import { ignoreError, fallbackOnError } from '../diagnostics/ignoredError.js'
 
 export interface MaintenanceEndpoint {
   capabilities(deviceId: string): readonly { namespace: string; mainCanRequest: boolean }[]
@@ -144,7 +142,7 @@ export class FleetMaintenanceService {
             return { target, task: null, error: 'This computer is not paired with this Main.' }
           }
           try { return { target, task: await this.startOn(target, task, input.commandId), error: null } }
-          catch (error) { return { target, task: null, error: errorMessage(error, 'The computer did not answer.') } }
+          catch (error) { return { target, task: null, error: error instanceof Error ? error.message : 'The computer did not answer.' } }
         }))
         for (const target of targets) this.cache.delete(this.key(target))
         return ComputerMaintenanceStartResultSchema.parse({ computers })
@@ -201,8 +199,7 @@ export class FleetMaintenanceService {
       const status = await this.status(target, true)
       if (!status) return
       const behind = status.harnesses.filter(entry => entry.latest && entry.version !== entry.latest).map(entry => entry.harness)
-      if (behind.length) await this.startOn(target, { kind: 'update-harnesses', harnesses: behind })
-        .catch(ignoreError('lifecycle', 'start harness update on computer', { host: target.hostRef }))
+      if (behind.length) await this.startOn(target, { kind: 'update-harnesses', harnesses: behind }).catch(() => undefined)
       if (target.hostRef.kind === 'main') return
       for (const task of sync) {
         if (task.status === 'fulfilled') await this.syncSource(target, task.value, status)
@@ -411,7 +408,7 @@ export class FleetMaintenanceService {
       if (target.hostRef.kind === 'main') return this.local.status(AbortSignal.timeout(90_000))
       const reply = MaintenanceReplySchema.parse((await this.request(target.hostRef.deviceId, { operation: 'status' })).payload)
       return reply.operation === 'status' ? reply.status : null
-    })().catch(fallbackOnError(null, 'lifecycle', 'read computer maintenance status', { host: target.hostRef }))
+    })().catch((): null => null)
     const entry = { at: this.now(), pending: true, running: false, value }
     this.cache.set(key, entry)
     void value.then(status => {

@@ -1,5 +1,4 @@
 import type { discoverInstalledClaudeSdk } from './claudeSdk/currentPin.js'
-import { withTransaction } from '../../infrastructure/transaction.js'
 import { harnessConnectionGeneration } from './hostConnectionGeneration.js'
 import type pg from 'pg'
 import { HarnessConfigurationSchema, RETIRED_OPENCODE_MESSAGE, withAdvancedDefaults, type HarnessDefaults } from '@foreman-code/contracts'
@@ -241,7 +240,9 @@ export class ProductionHarnessRegistry {
   async get(principal: ManagementPrincipal, raw: CanonicalMachineReference): Promise<HarnessRegistryReadback> {
     this.assertOpen()
     const hostRef = HarnessHostReferenceSchema.parse(raw)
-    return withTransaction(this.pool, async (client) => {
+    const client = await this.pool.connect()
+    try {
+      await client.query('begin')
       const applicationInstallationId = await this.applicationInstallationId(client, hostRef)
       await authorizeDeviceHost(client, principal, 'harnesses:read', hostRef, applicationInstallationId)
       const managed = await this.managedDefaults(client)
@@ -259,8 +260,9 @@ export class ProductionHarnessRegistry {
       const result = snapshot ? { ...structuredClone(snapshot),
         ...(snapshot.hostMetadata ? { hostMetadata: { ...snapshot.hostMetadata, connection } } : {}), instances } : { instances,
         installations: [], hostMetadata: { hostRef, applicationInstallationId, platform: null, workspaceRoots: null, connection } }
+      await client.query('commit')
       return HarnessRegistryReadbackSchema.parse(result)
-    })
+    } catch (error) { await client.query('rollback'); throw error } finally { client.release() }
   }
   private async applicationInstallationId(client: pg.PoolClient, host: CanonicalMachineReference): Promise<string> {
     if (host.kind === 'main') return host.mainId

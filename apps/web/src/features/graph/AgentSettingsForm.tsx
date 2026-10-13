@@ -1,4 +1,3 @@
-import { errorMessage } from '../../shared/errorMessage'
 import { nativeToolsSummary } from '@foreman-code/contracts'
 import { sameWorkflowValue } from '@foreman-code/contracts/wave25'
 import { SavedNodePlacementSchema, type SavedNodePlacement } from '@foreman-code/contracts/node-placement'
@@ -28,7 +27,12 @@ import { GraphqlToolsFields } from './GraphqlToolsFields'
 import { AgentSkillsField } from '../skills/AgentSkillsField'
 import './agentSettingsPanel.css'
 
-type EditableAgentSettingsFormProps = {
+function EditableAgentSettingsForm({ agent, initialPrompt, nodeGraphqlTools, creationDefaults, onClose, onRemove, onSave, retainedForm, onFormChange, onDiscardForm, canResume,
+  nodePlacement, nodeWorktree, workflowWorktree, workflowWorktreeLabel, worktreeDisabled,
+  placementOptions, placementHidden, placementOptionsState, placementStage,
+  executionPolicy = { maxNodeExecutions: 1, maxParallelism: 1 }, workspaceId,
+  workflowApprovalHandler, designatedOrchestrator = false, embedded = false,
+}: {
   /** Inside an agent popover: the popover owns the title and close button. */
   embedded?: boolean
   nodePlacement?: SavedNodePlacement
@@ -59,13 +63,7 @@ type EditableAgentSettingsFormProps = {
   workspaceId?: string
   workflowApprovalHandler?: ApprovalHandler
   designatedOrchestrator?: boolean
-}
-
-function useAgentSettingsForm({ agent, initialPrompt, nodeGraphqlTools, creationDefaults, onClose, onSave, retainedForm, onFormChange, onDiscardForm, canResume,
-  nodePlacement, nodeWorktree,
-  executionPolicy = { maxNodeExecutions: 1, maxParallelism: 1 },
-  workflowApprovalHandler, designatedOrchestrator = false,
-}: EditableAgentSettingsFormProps) {
+}) {
   const [localName, setLocalName] = useState(agent.name)
   const [localPrompt, setLocalPrompt] = useState(initialPrompt ?? '')
   const [localGraphqlTools, setLocalGraphqlTools] = useState<NonNullable<AgentForm['graphqlTools']>>(() => ({
@@ -172,36 +170,11 @@ function useAgentSettingsForm({ agent, initialPrompt, nodeGraphqlTools, creation
       initialSnapshot.current = previousSnapshot
       const nextIssues = validationIssues(failure)
       setIssues(nextIssues)
-      setError(nextIssues.length ? 'Review the marked fields before saving.' : errorMessage(failure, 'Agent settings are invalid.'))
+      setError(nextIssues.length ? 'Review the marked fields before saving.' : failure instanceof Error ? failure.message : 'Agent settings are invalid.')
     }
   }
   const leave = useUnsavedChanges({ scope: 'surface', label: 'agent settings', canResume, get dirty() { return currentSnapshot !== initialSnapshot.current },
     error, save, discard: () => { initialSnapshot.current = currentSnapshot; onDiscardForm?.(); onClose() },
-  })
-  return {
-    error, issues, view, setView, root, setLocalPlacement, setLocalPrefix, name, prompt, editor, placement,
-    branchPrefix, graphqlTools, instructions, skills, changeForm, setName, setPrompt, setGraphqlTools,
-    setInstructions, setSkills, setEditor, providerDefaults, configuration, harnessOptions, harnessReason,
-    isDirty, nameError, clearErrors, updateConfiguration, save, leave,
-  }
-}
-
-function EditableAgentSettingsForm({ agent, initialPrompt, nodeGraphqlTools, creationDefaults, onClose, onRemove, onSave, retainedForm, onFormChange, onDiscardForm, canResume,
-  nodePlacement, nodeWorktree, workflowWorktree, workflowWorktreeLabel, worktreeDisabled,
-  placementOptions, placementHidden, placementOptionsState, placementStage,
-  executionPolicy = { maxNodeExecutions: 1, maxParallelism: 1 }, workspaceId,
-  workflowApprovalHandler, designatedOrchestrator = false, embedded = false,
-}: EditableAgentSettingsFormProps) {
-  const {
-    error, issues, view, setView, root, setLocalPlacement, setLocalPrefix, name, prompt, editor, placement,
-    branchPrefix, graphqlTools, instructions, skills, changeForm, setName, setPrompt, setGraphqlTools,
-    setInstructions, setSkills, setEditor, providerDefaults, configuration, harnessOptions, harnessReason,
-    isDirty, nameError, clearErrors, updateConfiguration, save, leave,
-  } = useAgentSettingsForm({
-    agent, initialPrompt, nodeGraphqlTools, creationDefaults, onClose, onRemove, onSave, retainedForm,
-    onFormChange, onDiscardForm, canResume, nodePlacement, nodeWorktree, workflowWorktree,
-    workflowWorktreeLabel, worktreeDisabled, placementOptions, placementHidden, placementOptionsState,
-    placementStage, executionPolicy, workspaceId, workflowApprovalHandler, designatedOrchestrator, embedded,
   })
   return <div ref={root} className={`agent-settings-panel${embedded ? ' agent-settings-panel-embedded' : ''}`}>
     {embedded ? view === 'advanced' ? <header className="agent-settings-heading">

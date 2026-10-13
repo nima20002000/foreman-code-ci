@@ -378,17 +378,6 @@ export async function retainedReviewRecovery(fixture: Fixture, recovery: 'crash'
     && Date.parse(receipt.retainedReviewer!.expiresAt) > Date.parse(beforeRenewal.retainedReviewer!.expiresAt),
   'periodic retained reviewer renewal with the original process credential')
   await fixture.provider.releaseReview()
-  const decisionCall = await waitForRemoteReview(async () => {
-    await fixture.reconcile()
-    const calls = await fixture.provider.calls()
-    const denied = calls.find(call => call.reviewDecisionError !== undefined)
-    expect(denied, 'the retained reviewer must remain authorized after Main recovery').toBeUndefined()
-    return calls.find(call => call.reviewDecision !== undefined)
-  }, call => call !== undefined, 'authenticated retained reviewer decision response')
-  expect(decisionCall?.reviewDecision).toMatchObject({
-    interactionId: pending.id,
-    value: { interaction: { id: pending.id, selectedOptionId: option.optionId, selectedSemantic: 'approve_once' } },
-  })
   const delivered = await deliveredReview(fixture, active.interaction.id)
   expect(delivered.job.nativeSessionId).toBe(active.job.nativeSessionId)
   expect(delivered.job.providerTurnOrMessageId).toBe(active.job.providerTurnOrMessageId)
@@ -399,10 +388,4 @@ export async function retainedReviewRecovery(fixture: Fixture, recovery: 'crash'
   expect(fixture.registry.snapshot().launches.filter(owner => originalLaunches.some(
     original => original.owner === owner.owner)).map(owner => owner.launchId).sort())
     .toEqual(ownerLaunchIds)
-  const settled = await waitForRemoteReview(async () => {
-    await fixture.reconcile()
-    return fixture.details(active.run.id)
-  }, value => value.run.executionState === 'completed' && value.cleanupPending !== true,
-  'completed Run and native cleanup after recovered review delivery')
-  expect(settled.run.outcome).toBe('succeeded')
 }

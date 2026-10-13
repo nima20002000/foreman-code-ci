@@ -1,5 +1,4 @@
 import { createHash } from 'node:crypto'
-import { withTransaction } from '../../infrastructure/transaction.js'
 import { mkdir, open } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import type pg from 'pg'
@@ -64,8 +63,9 @@ export async function bootstrapLocalMainWorkspaceRoot(input: {
   if (resolve(storageRoot) !== storageRoot || pathsOverlap(storageRoot, runtimeRoot)) {
     throw new DomainError('ROOT_CONFIGURATION_CONFLICT', 'App-managed workspace storage must be canonical and separate from harness runtime.', 409)
   }
-  const baseId = storageBaseId(input.mainId, storageRoot)
-  return withTransaction(input.pool, async (sql) => {
+  const baseId = storageBaseId(input.mainId, storageRoot), sql = await input.pool.connect()
+  try {
+    await sql.query('begin')
     const main = (await sql.query<{ id: string }>('select id from application_installation where singleton=true for share')).rows[0]
     if (main?.id !== input.mainId) throw new DomainError('ROOT_WRONG_MAIN', 'Workspace storage belongs to the actual Main installation.', 403)
     const hostScope = workspaceRootHostScope(hostRef)
@@ -85,6 +85,7 @@ export async function bootstrapLocalMainWorkspaceRoot(input: {
         }
         await verifyApprovedRootAllowlist(approved)
       }
+      await sql.query('commit')
       return approved
     }
     await initializePrivateStorage(storageRoot)
@@ -93,6 +94,7 @@ export async function bootstrapLocalMainWorkspaceRoot(input: {
     await input.policies.publishApprovedHostConfiguration(sql, approved, { mainId: input.mainId, hostRef,
       applicationInstallationId: input.mainId, configurationRevision: approved.configurationRevision,
       configurationDigest: sourceSha256(Buffer.from(JSON.stringify(approved))) })
+    await sql.query('commit')
     return approved
-  })
+  } catch (error) { await sql.query('rollback'); throw error } finally { sql.release() }
 }

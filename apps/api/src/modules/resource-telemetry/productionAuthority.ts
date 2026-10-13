@@ -1,5 +1,4 @@
 import { createHash } from 'node:crypto'
-import { withTransaction } from '../../infrastructure/transaction.js'
 import type pg from 'pg'
 import { HarnessExecutionSchema, NativeSessionLaneSchema, NativeSessionReferenceSchema, type HarnessExecution, type NativeSessionReference } from '@foreman-code/contracts'
 import { AcceptedWorkflowRunV3Schema } from '@foreman-code/contracts/wave25'
@@ -18,7 +17,7 @@ import { DomainError } from '../errors.js'
 import { readAcceptedPlacement, readDispatchIntent } from '../placement/persistence.js'
 import { readReconciledDispatchIntent } from '../runs/remote/persistence.js'
 import type { NativeLaunchObservation, PassiveNativeRegistry, TrustedNativeScope, TrustedNativeScopes } from './collector/registryAdapter.js'
-import type { TelemetryOwnershipReader, TelemetryReadAuthority, TelemetrySessionReader } from './ingestion/ports.js'
+import type { TelemetryOwnershipAuthority, TelemetryReadAuthority, TelemetrySessionAuthority } from './ingestion/ports.js'
 import type { TelemetryOwnedTargetFacts, TelemetryTargetAuthority } from './readback/selector.js'
 
 export interface CapturedTelemetryNativeOwner {
@@ -36,7 +35,7 @@ export interface CapturedRemoteTelemetryNativeOwner extends CapturedTelemetryNat
   native: RemoteNativeIdentity
   assertCurrent(): void
 }
-export interface PassiveTelemetryServicesInput {
+export interface PassiveTelemetryAuthorityInput {
   pool: pg.Pool
   getNativeOwners(): readonly CapturedTelemetryNativeOwner[]
   getRemoteNativeOwners?(): readonly CapturedRemoteTelemetryNativeOwner[]
@@ -85,8 +84,8 @@ function ownerTarget(mainId: string, owner: TelemetryOwner): Extract<TelemetrySe
   return { schemaVersion: 1, scope: 'owned', mainId, target }
 }
 /** Read-only projection of actual accepted facts. No ownership ledger, PID discovery, runtime acquisition or grant upgrade. */
-export function createPassiveTelemetryAuthorities(input: PassiveTelemetryServicesInput): {
-  sessions: TelemetrySessionReader; ownership: TelemetryOwnershipReader; reads: TelemetryReadAuthority;
+export function createPassiveTelemetryAuthorities(input: PassiveTelemetryAuthorityInput): {
+  sessions: TelemetrySessionAuthority; ownership: TelemetryOwnershipAuthority; reads: TelemetryReadAuthority;
   targets: TelemetryTargetAuthority; nativeScopes(identity: TelemetryIdentity): TrustedNativeScopes;
 } {
   const captures = () => {
@@ -119,11 +118,14 @@ export function createPassiveTelemetryAuthorities(input: PassiveTelemetryService
   }
   const withSql = async <T>(signal: AbortSignal, work: (sql: pg.PoolClient) => Promise<T>): Promise<T> => {
     signal.throwIfAborted()
-    return withTransaction(input.pool, async (client) => {
+    const client = await input.pool.connect()
+    try {
+      await client.query('begin')
       const result = await work(client)
-      signal.throwIfAborted()
+      signal.throwIfAborted(); await client.query('commit')
       return result
-    })
+    } catch (error) { await client.query('rollback'); throw error }
+    finally { client.release() }
   }
   const authorized = async (sql: pg.PoolClient, principal: ManagementPrincipal, target: TelemetrySelectorTarget) => {
     const requirement = grant(target)
@@ -279,7 +281,7 @@ export function createPassiveTelemetryAuthorities(input: PassiveTelemetryService
       return context ? targets.allowTarget(principal, ownerTarget(context.mainId, owner), signal) : Promise.resolve(false)
     },
   }
-  const ownership: TelemetryOwnershipReader = { resolve: (selector, signal) => withSql(signal, async sql => {
+  const ownership: TelemetryOwnershipAuthority = { resolve: (selector, signal) => withSql(signal, async sql => {
     if (selector.owner.kind !== 'workflow-execution') return null
     const scopes = await load(sql, signal, selector.owner.executionId)
     const scope = scopes.length === 1 ? scopes[0] : undefined
@@ -289,7 +291,7 @@ export function createPassiveTelemetryAuthorities(input: PassiveTelemetryService
       attributionRef: scope.attributionRef, attributionRevision: scope.attributionRevision }) as OwnedSelector
     return telemetrySelectorKey(exact) === telemetrySelectorKey(selector) ? { selector: exact, state: scope.state, sharedOwners: scope.sharedOwners, sharedOwnersComplete: scope.host.hostRef.kind === 'main' } : null
   }) }
-  const sessions: TelemetrySessionReader = {
+  const sessions: TelemetrySessionAuthority = {
     active: async (context, signal) => {
       signal.throwIfAborted()
       if (!input.mainActive() || !input.mainContext() || context.capability !== 'resource-telemetry/v1') return false
