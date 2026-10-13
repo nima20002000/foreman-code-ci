@@ -408,7 +408,18 @@ export async function readProductionIdentity(release, databaseUrl) {
   }
 }
 
-export async function waitForProductionReady({ origin, expected, timeoutMs = 90_000 }) {
+export async function waitForProductionReady(options) {
+  try {
+    await pollProductionReady(options)
+    await options.smoke?.()
+  } catch (error) {
+    try { await options.rollback?.() }
+    catch (failure) { throw new Error(`${error.message}\nRollback failed: ${failure.message}`, { cause: error }) }
+    throw error
+  }
+}
+
+async function pollProductionReady({ origin, expected, timeoutMs = 90_000 }) {
   const deadline = Date.now() + timeoutMs
   let failure = 'API has not responded.'
   const identityMatches = async () => {
@@ -438,9 +449,7 @@ export async function waitForProductionReady({ origin, expected, timeoutMs = 90_
 }
 
 export async function copyVerificationRuntime(source, release) {
-  const paths = ['scripts/ci-watchdog.mjs', 'scripts/ci-progress-reporter.mjs',
-    'scripts/ci-test-results.mjs', 'scripts/dense-resources.mjs',
-    'scripts/verification-runner.mjs', 'scripts/verification-reports.mjs',
+  const paths = ['scripts/verification-runner.mjs', 'scripts/verification-reports.mjs',
     'scripts/integration-process.mjs', 'scripts/integration-capabilities.mjs',
     'apps/worker/src/diagnostics.mjs', 'packages/contracts/src/verificationEnvironment.mjs',
     'packages/contracts/src/integrationScheduling.mjs']
