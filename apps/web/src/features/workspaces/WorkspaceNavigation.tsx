@@ -1,4 +1,3 @@
-import { useUnsavedChanges } from '../../shared/ui/unsavedChanges'
 import { errorMessage } from '../../shared/errorMessage'
 import {
   useCallback,
@@ -151,17 +150,6 @@ function NewWorkspaceControl() {
       if (sessionGeneration() === generation) setNameError(errorMessage(error, 'The workspace could not be created.'))
     } finally { inFlight.current = false }
   }
-
-  useUnsavedChanges({
-    scope: 'surface', label: 'New workspace',
-    dirty: creating && (touched.current.name || touched.current.parentPath),
-    busy: createManagedWorkspace.isPending,
-    uncertain,
-    saveDisabled: !name.trim() || !parentPath.trim() || (defaults.isPending && !uncertain),
-    error: nameError,
-    save: createNewWorkspace,
-    discard: closeCreateDialog,
-  })
 
   return (
     <>
