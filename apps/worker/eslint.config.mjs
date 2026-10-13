@@ -1,6 +1,5 @@
 import js from '@eslint/js'
 import globals from 'globals'
-import { foremanLint } from '../../scripts/eslint-plugin-foreman/index.mjs'
 
 export default [
   { ignores: ['dist/**'] },
@@ -11,5 +10,4 @@ export default [
       globals: globals.node,
     },
   },
-  ...foremanLint(import.meta.dirname),
 ]
