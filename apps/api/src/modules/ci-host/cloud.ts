@@ -15,7 +15,6 @@ import { CLOUD_START_TIMEOUT_MS, CircleCiProvider, GitHubActionsProvider,
 import { runsOnCircleCi } from './parts.js'
 import { pruneMirrorBranches, type ActiveCiRuns } from './mirrorBranches.js'
 import { fallbackOnError } from '../diagnostics/ignoredError.js'
-import { ciLogPage } from './logPage.js'
 import { sanitizeCiText, serializeCiJson } from './text.js'
 
 const LOG_LIMIT = 4 * 1024 * 1024
@@ -28,19 +27,17 @@ const POLL_CONCURRENCY = 3
 const log = componentLogger('jobs')
 
 export type { CloudRun }
-type Mirrors = (repository: string) => Promise<string | null>
+type Mirrors = (workspaceId: string) => Promise<string | null>
 /** Pushes to one mirror, across both services, run one at a time: concurrent force-pushes of the mirror's main fail
  * the remote's old-value check ("incorrect old value provided"), and concurrent fetches race on its local ref. */
 const mirrorPushes = new Map<string, Promise<unknown>>()
 const publishingBranches = new Map<string, Set<string>>()
 
-/** The public mirror configured for a private repository's workspace, if any. */
+/** The public mirror belonging to this workspace, if any. */
 export function workspaceMirrors(pool: pg.Pool): Mirrors {
-  return async repository => {
-    const [owner, name] = repository.split('/')
-    const row = (await pool.query<{ record: unknown }>(`select record from workspaces where archived_at is null
-      and record->'repository'->>'owner'=$1 and record->'repository'->>'name'=$2 and record ? 'ciMirror'
-      order by id limit 1`, [owner, name])).rows[0]
+  return async workspaceId => {
+    const row = (await pool.query<{ record: unknown }>(`select record from workspaces
+      where id=$1 and archived_at is null`, [workspaceId])).rows[0]
     const mirror = row ? WorkspaceSchema.parse(row.record).ciMirror : undefined
     return mirror ? `${mirror.owner}/${mirror.name}` : null
   }
@@ -133,9 +130,10 @@ export class CloudCi {
   private async answer(request: Extract<CiHostRequest, { operation: 'read' }>, run: CloudRun) {
     const log = await readFile(this.path(run.runId, 'log')).catch(() => Buffer.alloc(0))
     if (!['starting', 'running', 'queued'].includes(run.state)) await this.prune(run, run.runId)
-    const page = ciLogPage(log, request.afterOffset, request.maxBytes)
+    const text = log.subarray(request.afterOffset, request.afterOffset + request.maxBytes)
     return CiHostReplySchema.parse({ operation: 'read', run: this.view(run, log.length),
-      text: sanitizeCiText(page.text), nextOffset: page.nextOffset,
+      text: sanitizeCiText(text.toString('utf8')),
+      nextOffset: request.afterOffset + text.length,
       ...(request.durations && run.durations ? { durations: run.durations } : {}),
       ...(request.testResults && run.testResults ? { testResults: run.testResults } : {}) })
   }
@@ -172,6 +170,7 @@ export class CloudCi {
   }
 
   private async start(request: { runId: string; repository: string; commit: string; suite: CiSuite
+    workspaceId?: string | undefined; ciMirror?: string | null | undefined;
     part?: CiPart | undefined; partition?: CiPartition | undefined; durations?: CiDurations | undefined; scope?: CiScope | undefined;
     files?: string[] | undefined; defaultBranch?: string | undefined; baseCommit?: string | undefined;
     gate?: boolean | undefined; integrationShards?: number | undefined; expectedDurationMs?: number | undefined }): Promise<CiHostRun> {
@@ -183,7 +182,8 @@ export class CloudCi {
       throw new DomainError('CI_CLOUD_UNAVAILABLE',
         `${this.provider.label} cannot run user-systemd files: ${this.provider.userSystemd.reason ?? 'user systemd is unavailable'}.`, 409)
     }
-    const mirror = await this.mirrors(request.repository)
+    let mirror = request.ciMirror ?? null
+    if (request.ciMirror === undefined && request.workspaceId) mirror = await this.mirrors(request.workspaceId)
     // CircleCI's machine image has no podman, which the Worker unit tests (unit-other) use.
     if (this.provider.id === 'circleci' && !runsOnCircleCi(request)) {
       throw new DomainError('CI_CLOUD_UNAVAILABLE', `${this.provider.label} cannot run the Worker unit tests (no podman).`, 409)
