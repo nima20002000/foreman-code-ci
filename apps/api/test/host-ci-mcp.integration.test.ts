@@ -304,11 +304,12 @@ it('runs generic integration once despite requested partitions and falls back fr
   }
 })
 
-it('runs a generic full suite for an empty affected selection and preserves HTTP and MCP readback', async () => {
+it.each(['unit', 'lint'] as const)(
+  'runs generic %s for an empty affected selection and preserves HTTP and MCP readback', async suite => {
   const repository = await genericCiRepository({ cloud: true })
   const f = await fixture({ repositoryRunner: repository })
   try {
-    const input = { suite: 'unit', scope: 'affected', files: [], commit: repository.commit, commandId: 'generic-affected' }
+    const input = { suite, scope: 'affected', files: [], commit: repository.commit, commandId: 'generic-affected' }
     const writer = await f.credential([...CI_RUN_ACTIONS, ...CI_GET_ACTIONS])
     const headers = { authorization: `Bearer ${writer.token}` }
     const url = `/api/management/workspaces/${f.workspaceId}/ci`
@@ -326,7 +327,7 @@ it('runs a generic full suite for an empty affected selection and preserves HTTP
     const result = CiGetOutputSchema.parse(read.json())
     expect(result.run).toMatchObject({ state: 'passed', part: null, partition: null, scope: 'full', files: [],
       computer: { hostRef: { kind: 'main' } } })
-    expect(result.logTail).toContain('fixture unit passed')
+    expect(result.logTail).toContain(`fixture ${suite} passed`)
     expect(repository.cloudAttempts).toContain(started.ticketId)
     expect(CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: started.ticketId })).run)
       .toEqual(result.run)
@@ -735,7 +736,6 @@ it('defaults authenticated Agent MCP to affected scope, reads explicit full scop
           ...(baseCommit ? { baseCommit } : {}), ...(scope ? { scope } : {}) } })
         expect(result.isError).not.toBe(true)
         const started = CiRunOutputSchema.parse(decodeMcpToolResult(result))
-        await f.ci.close()
         const read = await agent.callTool({ name: 'ci_get', arguments: { ticketId: started.ticketId } })
         expect(read.isError).not.toBe(true)
         const run = CiGetOutputSchema.parse(decodeMcpToolResult(read)).run
@@ -1151,7 +1151,10 @@ it('runs two host-only tickets on one computer and queues a third through authen
   } finally { await f.close() }
 })
 
-it('settles NUL log output and dispatches the next queued ticket with persisted MCP readback', async () => {
+it.each([
+  { text: 'finished\0 café\n', message: 'Done.\0\ud800', cleanText: 'finished café\n', cleanMessage: 'Done.\ufffd' },
+  { text: 'finished\ud800\n', message: 'Done.\udc00', cleanText: 'finished\ufffd\n', cleanMessage: 'Done.\ufffd' },
+])('settles invalid log output and dispatches the next queued ticket with persisted MCP readback: $cleanText', async output => {
   const f = await fixture()
   f.computers.splice(1, 1)
   const read = async (ticketId: string) => CiGetOutputSchema.parse(decodeMcpToolResult(await f.operator.callTool({
@@ -1162,15 +1165,17 @@ it('settles NUL log output and dispatches the next queued ticket with persisted 
       suite: 'lint', commandId: 'nul-log', noSupersede: true,
     }))
     await f.ci.dispatch()
+    expect(first.partitions).toBeUndefined()
+    expect((await read(first.ticketId)).run.state).toBe('running')
     const second = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', {
       suite: 'lint', commandId: 'after-nul-log', noSupersede: true,
     }))
     await f.ci.close()
     expect((await read(second.ticketId)).run.state).toBe('queued')
-    f.finish(first.ticketId, 0, 'finished\0 café\n', undefined, 'Done.\0\ud800')
+    f.finish(first.ticketId, 0, output.text, undefined, output.message)
     await f.ci.dispatch()
     const finished = await read(first.ticketId)
-    expect(finished).toMatchObject({ run: { state: 'passed', message: 'Done.\ufffd' }, logTail: 'finished café\n' })
+    expect(finished).toMatchObject({ run: { state: 'passed', message: output.cleanMessage }, logTail: output.cleanText })
     expect((await read(second.ticketId)).run.state).toBe('running')
     const denied = await f.connect(['workflows:read'])
     expect((await denied.callTool({ name: 'ci_get',
@@ -1790,36 +1795,6 @@ it('resolves branches of existing tickets before superseding them and protects e
   } finally { await f.close() }
 })
 
-it('reads warm-up status and persisted CI tickets through authenticated MCP without granting write access', async () => {
-  const f = await fixture()
-  const warmup = { repository: 'octo/site', commit: 'b'.repeat(40), run: {
-    runId: randomUUID(), warmup: true, state: 'passed' as const, step: 'install', exitCode: 0,
-    startedAt: new Date().toISOString(), finishedAt: new Date().toISOString(), logBytes: 0, message: null,
-  } }
-  const request = f.endpoint.request.bind(f.endpoint)
-  f.endpoint.request = async (computer, input) => {
-    const reply = await request(computer, input)
-    return reply.operation === 'status' ? { ...reply, prewarmSupported: true, warmup } : reply
-  }
-  try {
-    const reader = await f.connect([...CI_GET_ACTIONS])
-    const denied = await f.connect(['workflows:read'])
-    expect((await f.call(denied, 'ci_computers_list', {})).isError).toBe(true)
-    const input = { commandId: randomUUID(), suite: 'lint', scope: 'affected', commit: 'a'.repeat(40),
-      files: ['apps/api/src/modules/ci-host/warmSetup.ts'] }
-    expect((await f.call(reader, 'ci_run', input)).isError).toBe(true)
-    const output = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', input))
-    await f.ci.dispatch()
-    f.finish(output.ticketId, 0, '[ci-cache] dependency inputs unchanged; install skipped')
-    await f.ci.dispatch()
-    const persisted = CiGetOutputSchema.parse(await f.value(reader, 'ci_get', { ticketId: output.ticketId }))
-    expect(persisted.run).toMatchObject({ state: 'passed', scope: 'affected', files: input.files, commit: input.commit })
-    expect(persisted.logTail).toContain('install skipped')
-    const listed = CiComputersOutputSchema.parse(await f.value(reader, 'ci_computers_list', {}))
-    expect(listed.computers[0]).toMatchObject({ prewarmSupported: true, warmup })
-  } finally { await f.close() }
-})
-
 
 it('persists a CI watchdog failure for authenticated MCP status and log readback and denies ungranted callers', async () => {
   const f = await fixture()
@@ -1843,25 +1818,6 @@ it('persists a CI watchdog failure for authenticated MCP status and log readback
     for (const tool of ['ci_get', 'ci_logs_read']) {
       expect((await f.call(denied, tool, { ticketId: started.ticketId })).isError).toBe(true)
     }
-
-  } finally { await f.close() }
-})
-
-it('hides another repository warm-up from a workspace-scoped MCP reader', async () => {
-  const f = await fixture()
-  const warmup = { repository: 'other/project', commit: 'c'.repeat(40), run: {
-    runId: randomUUID(), warmup: true, state: 'running' as const, step: 'install', exitCode: null,
-    startedAt: new Date().toISOString(), finishedAt: null, logBytes: 0, message: null,
-  } }
-  const request = f.endpoint.request.bind(f.endpoint)
-  f.endpoint.request = async (computer, input) => {
-    const reply = await request(computer, input)
-    return reply.operation === 'status' ? { ...reply, prewarmSupported: true, warmup } : reply
-  }
-  try {
-    const reader = await f.connect([...CI_GET_ACTIONS])
-    const listed = CiComputersOutputSchema.parse(await f.value(reader, 'ci_computers_list', {}))
-    expect(listed.computers.every(computer => computer.warmup === null)).toBe(true)
   } finally { await f.close() }
 })
 

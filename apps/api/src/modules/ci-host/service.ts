@@ -46,7 +46,6 @@ export interface HostCiEndpoint {
 }
 /** Resolves the commit to test and makes sure GitHub has it, so build computers can fetch it. */
 export interface CiCommits {
-  heads?(repository: string): Promise<{ branch: string; commit: string }[]>
   infrastructureOnly?(repository: string, commit: string): Promise<boolean>
   branch?(repository: string, defaultBranch: string, commit: string): Promise<string | null>
   isAncestor?(repository: string, ancestor: string, commit: string): Promise<boolean>
@@ -629,20 +628,9 @@ export class HostCiService {
         `select id,host_key from ci_runs where state in ('starting','running') and host_key is not null
           order by created_at,id`)).rows
       const result = []
-      let repository: string | null | undefined
       for (const computer of await this.endpoint.computers()) {
         const running = active.filter(run => run.host_key === computer.key).map(run => run.id)
         const status = await this.endpoint.request(computer, { operation: 'status' }).catch(error => error as Error)
-        let warmup = status instanceof Error || status.operation !== 'status' ? undefined : status.warmup
-        if (warmup) {
-          if (repository === undefined) {
-            const row = (await this.pool.query<{ record: unknown }>('select record from workspaces where id=$1',
-              [scope.workspaceId])).rows[0]
-            const configured = row ? WorkspaceSchema.parse(row.record).repository : null
-            repository = configured ? `${configured.owner}/${configured.name}` : null
-          }
-          if (warmup.repository !== repository) warmup = null
-        }
         result.push(status instanceof Error
           ? { label: computer.label, hostRef: computer.hostRef, priority: computer.priority,
             ready: false, reasons: [status.message], running, slotsUsed: running.length,
@@ -650,8 +638,6 @@ export class HostCiService {
           : status.operation === 'status' ? { label: computer.label, hostRef: computer.hostRef, priority: computer.priority,
             ready: status.ready, reasons: status.reasons, cpuCount: status.cpuCount, memoryBytes: status.memoryBytes,
             availableMemoryBytes: status.availableMemoryBytes,
-            ...(status.prewarmSupported !== undefined ? { prewarmSupported: status.prewarmSupported } : {}),
-            ...(warmup !== undefined ? { warmup } : {}),
             ...(status.userSystemd ? { userSystemd: status.userSystemd } : {}),
             slotsUsed: Math.max(running.length, status.slotsUsed ?? 0), slotsTotal: status.slotsTotal ?? 1,
             running } : null)
