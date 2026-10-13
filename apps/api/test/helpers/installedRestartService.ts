@@ -16,12 +16,6 @@ const execute = promisify(execFile)
 const repository = fileURLToPath(new URL('../../../..', import.meta.url))
 const serviceUser = userInfo()
 
-export async function installRestartServiceUnit(unitPath: string, service: string,
-  systemctl: (...args: string[]) => Promise<{ stdout: string }>) {
-  await writeFile(unitPath, service, { mode: 0o600 })
-  await systemctl('daemon-reload')
-}
-
 async function sources(directory: string): Promise<string[]> {
   const files: string[] = []
   for (const entry of await readdir(directory, { withFileTypes: true })) {
@@ -103,11 +97,12 @@ export async function installedRestartService(directory: string, configuration: 
     .replace('Restart=always', 'Restart=no')
   const service = renderUserService(template, { node: join(release, 'node'), app,
     state: directory, home: serviceUser.homedir, path: environment.PATH ?? '/usr/bin:/bin' })
+  await writeFile(unitPath, service, { mode: 0o600 })
   const systemctl = (...args: string[]) => execute('systemctl', ['--user', ...args], {
     env: { ...process.env, XDG_RUNTIME_DIR: `/run/user/${serviceUser.uid}`,
       DBUS_SESSION_BUS_ADDRESS: `unix:path=/run/user/${serviceUser.uid}/bus` },
   })
-  await installRestartServiceUnit(unitPath, service, systemctl)
+  await systemctl('daemon-reload')
   const registry = new (await import('../../src/modules/harnesses/recovery/processRegistry.js')).NativeProcessRegistry(
     join(runtime, 'native-process-registry'))
   async function ready() {
