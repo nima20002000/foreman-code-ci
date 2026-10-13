@@ -8,7 +8,7 @@ import { HarnessHostReferenceSchema, HostHarnessOverrideTargetSchema } from './h
 export { HarnessHostReferenceSchema, HostHarnessOverrideTargetSchema, HarnessProfileSelectionSchema, type HarnessProfileSelection } from './harnessProfileSelection.js'
 
 const Identity = z.string().min(1)
-const HarnessInstanceAvailabilitySchema = z.enum(['available', 'disabled', 'unknown-driver', 'invalid-configuration', 'retired'])
+export const HarnessInstanceAvailabilitySchema = z.enum(['available', 'disabled', 'unknown-driver', 'invalid-configuration', 'retired'])
 export const ConfiguredHarnessInstanceSchema = z.object({
   instanceId: Identity, instanceRevision: Identity, driverId: Identity, enabled: z.boolean(),
   // Unrecognized configuration stays unavailable; raw unknown data is never exposed to clients.
@@ -16,10 +16,10 @@ export const ConfiguredHarnessInstanceSchema = z.object({
   availability: HarnessInstanceAvailabilitySchema, retirementMessage: z.string().optional(), driverRevision: Identity.optional(),
 }).strict()
 export type ConfiguredHarnessInstanceDto = z.infer<typeof ConfiguredHarnessInstanceSchema>
-const HarnessTargetEnvironmentSchema = z.object({
+export const HarnessTargetEnvironmentSchema = z.object({
   generation: Identity, provenance: z.enum(['terminal', 'gui', 'systemd', 'ssh', 'worker']), cwd: z.string(), path: z.string(),
 }).strict()
-const HarnessLauncherEvidenceSchema = z.object({
+export const HarnessLauncherEvidenceSchema = z.object({
   requested: z.string(), resolvedLauncher: z.string().nullable(), fingerprint: z.string().nullable(),
   payloadFingerprints: z.array(z.object({ path: z.string(), fingerprint: Identity }).strict()).optional(),
   status: z.enum(['installed', 'missing', 'not-executable', 'broken-symlink', 'missing-interpreter', 'unreadable']),
@@ -39,8 +39,9 @@ export const PinnedHarnessSelectionSchema = z.object({
   driverId: Identity, instanceId: Identity, instanceRevision: Identity, hostRef: HarnessHostReferenceSchema,
   harnessInstallationId: Identity, installationFingerprint: Identity,
 }).strict()
+export type PinnedHarnessSelectionDto = z.infer<typeof PinnedHarnessSelectionSchema>
 /** References to W09/W08 permitted roots, never a new root authority or filesystem proof. */
-const HarnessWorkspaceRootReferenceSchema = z.object({
+export const HarnessWorkspaceRootReferenceSchema = z.object({
   rootId: z.uuid(), bindingRevision: z.number().int().positive(), rootPolicyId: Identity,
   rootPolicyRevision: z.string().regex(/^[1-9][0-9]*$/), locationRevision: z.string().regex(/^[1-9][0-9]*$/),
   workspaceId: Identity, rootPath: z.string().min(1), accessMode: z.enum(['read-only', 'exclusive-write']),
@@ -114,6 +115,7 @@ export const CompletedNativeQualificationSchema = z.object({
   target: HostHarnessOverrideTargetSchema, binarySha256: z.string().regex(/^[a-f0-9]{64}$/),
   record: RecordedHarnessQualificationSchema,
 }).strict()
+export type CompletedNativeQualification = z.infer<typeof CompletedNativeQualificationSchema>
 
 /** Native-produced exact-profile evidence; callers cannot supply it to the check command. */
 export const HostHarnessProfileEvidenceSchema = z.object({

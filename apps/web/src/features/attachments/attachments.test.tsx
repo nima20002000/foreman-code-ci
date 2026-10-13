@@ -17,7 +17,6 @@ import { ChatAttachmentControl } from './ChatAttachmentControl'
 import { createAttachmentHttpClient, type AttachmentClient, type AttachmentUploadInput } from './attachmentClient'
 import { ATTACHMENT_ACCEPT, attachmentDraftKey, inspectAttachment } from './attachmentFiles'
 import { useConversationAttachments, type ConversationAttachments } from './useConversationAttachments'
-import { deferred } from '../../test/deferred'
 
 const paths = {
   upload: '*/files/uploads', bytes: '*/files/uploads/:requestId',
@@ -44,6 +43,11 @@ let clients: QueryClient[]
 let createUrl: ReturnType<typeof vi.fn<typeof URL.createObjectURL>>
 let revokeUrl: ReturnType<typeof vi.fn<typeof URL.revokeObjectURL>>
 
+function deferred<T = void>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  const promise = new Promise<T>((done) => { resolve = done })
+  return { promise, resolve }
+}
 function row(input: UploadRequest, state: 'pending' | 'ready' = 'pending'): FileWithRevision {
   const createdAt = new Date().toISOString()
   return FileWithRevisionSchema.parse({

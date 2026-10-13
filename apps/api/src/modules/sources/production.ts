@@ -1,5 +1,4 @@
 import { ResolvedJobDefinitionSpecRecordSchema } from '@foreman-code/contracts/job-verification'
-import { withTransaction } from '../../infrastructure/transaction.js'
 import type { MaterializationAttempt } from './ports.js'
 import { installedSourceQuotaPool } from '../jobs/quotaOwnership.js'
 import type { InstalledRuntimeConfigurationLocation } from '../jobs/installedRuntimeHost.js'
@@ -220,12 +219,18 @@ export async function createProductionSources(input: { pool: pg.Pool; commands: 
         && ticket.attemptId === owner.attempt.attemptId
     },
     async authorize(reconciliationId, owner) {
-      await withTransaction(input.pool, async (sql) => {
+      const sql = await input.pool.connect()
+      try {
+        await sql.query('begin')
         const authorized = await resolvePreparationReconciliationOwner(sql, reconciliationId)
         if (!isDeepStrictEqual(authorized, owner)) {
           throw new DomainError('SOURCE_RECONCILIATION_CONFLICT', 'The original Main cleanup owner changed.', 409)
         }
-      })
+        await sql.query('commit')
+      } catch (error) {
+        await sql.query('rollback')
+        throw error
+      } finally { sql.release() }
     },
   }, quotaPoolFor)
   const sources = new PostgresSourceService(input.pool, input.commands, input.locations, snapshots, input.mainId, roots, executions, {
@@ -246,12 +251,18 @@ export async function createProductionSources(input: { pool: pg.Pool; commands: 
   const reclamations = new MaterializationReservationCleanup(input.pool, async grant => {
     const root = grant.roots[0]!
     const authorize = async () => {
-      return withTransaction(input.pool, async (sql) => {
+      const sql = await input.pool.connect()
+      try {
+        await sql.query('begin')
         const current = await reclamations.authorize(sql, grant.reservationId, grant.reclamationId)
         if (!isDeepStrictEqual(current, grant)) {
           throw new DomainError('SOURCE_RECLAMATION_UNCONFIRMED', 'The original source cleanup changed.', 409)
         }
-      })
+        await sql.query('commit')
+      } catch (error) {
+        await sql.query('rollback')
+        throw error
+      } finally { sql.release() }
     }
     if (root.binding.deviceId) {
       const endpoint = input.endpoint()
@@ -293,7 +304,9 @@ export async function createProductionSources(input: { pool: pg.Pool; commands: 
     reconcileMaterializationReservations: (report: (error: unknown) => void) => reclamations.reconcile(report),
     reconcileFailedCaptures: (report: (error: unknown) => void) => sources.reconcileCaptures(report),
     sourceExtension: createMainSourceOperationExtension(owners, transfers, lifecycle, async (reservationId, reclamationId, context) => {
-      return withTransaction(input.pool, async (sql) => {
+      const sql = await input.pool.connect()
+      try {
+        await sql.query('begin')
         const grant = await reclamations.authorize(sql, reservationId, reclamationId)
         if (grant.roots.some(root => root.binding.mainId !== context.binding.mainId
           || root.binding.deviceId !== context.binding.deviceId
@@ -302,7 +315,11 @@ export async function createProductionSources(input: { pool: pg.Pool; commands: 
           || root.registration.authorizationRevision !== context.binding.authorizationRevision)) {
           throw new DomainError('SOURCE_CONNECTION_CONFLICT', 'Cleanup belongs to another Worker installation.', 403)
         }
+        await sql.query('commit')
         return grant
-      })
+      } catch (error) {
+        await sql.query('rollback')
+        throw error
+      } finally { sql.release() }
     }) }
 }

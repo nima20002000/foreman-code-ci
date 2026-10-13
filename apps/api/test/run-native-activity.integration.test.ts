@@ -1,4 +1,3 @@
-import { readPublicProjectionLocked } from '../src/modules/run-graph/compactSnapshot.js'
 import type pg from 'pg'
 import { describe, expect, it } from 'vitest'
 import { OperatorRunCompactSchema } from '@foreman-code/contracts/operator-mcp'
@@ -37,7 +36,7 @@ async function captureExecution(db: Awaited<ReturnType<typeof currentDatabase>>,
   const effect = { kind: 'input.bind' as const, entityId: queued.id,
     digest: repeatDigest({ ref, queued, inputDigest: bound.digest, bindings: bound.bindings }) }
   await ownedGraph(db, fixture, (owner) => owner.oneShotConnection().transaction(async (sql) => {
-    const publication = await openRunGraphPublication(sql, fixture.scope, readPublicProjectionLocked)
+    const publication = await openRunGraphPublication(sql, fixture.scope)
     await publishRepeatRunStateLocked(publication, owner)
     const canonical = await openRepeatCanonicalPublicationLocked(sql, fixture.scope, owner, publication)
     const fence = await owner.readOneShotFence(sql)

@@ -3,16 +3,13 @@ import { randomUUID } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { mkdir, open, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { availableParallelism, freemem, homedir, totalmem } from 'node:os'
-import { fileURLToPath } from 'node:url'
 import { join, matchesGlob } from 'node:path'
-import { CiWatchdogFailureSchema, CiDurationsSchema, CiHostReplySchema, CiHostRequestSchema, CiTestResultsSchema, integrationPartition,
+import { CiDurationsSchema, CiHostReplySchema, CiHostRequestSchema, CiTestResultsSchema, integrationPartition,
   CiScopeSchema, CiSelectedFilesSchema, validCiSelection,
   type CiDurations, type CiHostReply, type CiHostRun, type CiSuite, type CiPart, type CiPartition, type CiScope } from '@foreman-code/contracts'
 import { DomainError } from '../errors.js'
 import { ciRepositoryCapabilities } from './repository.js'
-import { gateIntegrationShards, hostCiCapacity } from './capacity.js'
-import { fallbackOnError } from '../diagnostics/ignoredError.js'
-import { warmPnpmInstall } from './warmSetup.js'
+import { hostCiCapacity } from './capacity.js'
 
 type Command = { code: number; stdout: string; stderr: string }
 export interface HostCiPorts {
@@ -54,15 +51,13 @@ interface RunMeta {
   message: string | null; cleaned: boolean; durations?: CiDurations
   scope?: CiScope; files?: string[]; part?: CiPart; defaultBranch?: string; baseCommit?: string; deriveFiles?: boolean
   resources?: { cpuCount: number; memoryBytes: number; memoryBudget?: number }
-  expectedDurationMs?: number
   isolatedDatabase?: boolean
-  gate?: boolean; integrationShards?: number
 }
 
 type StartRequest = { runId: string; repository: string; commit: string; suite: CiSuite
   part?: CiPart | undefined; partition?: CiPartition | undefined; durations?: CiDurations | undefined;
   scope?: CiScope | undefined; files?: string[] | undefined; defaultBranch?: string | undefined;
-  expectedDurationMs?: number | undefined; baseCommit?: string | undefined; gate?: boolean | undefined; integrationShards?: number | undefined }
+  baseCommit?: string | undefined }
 
 const unitName = (runId: string) => `foreman-ci-${runId}`
 // GitHub CLI's own credential helper: a computer that is logged in to gh fetches without any app setup.
@@ -101,8 +96,7 @@ export class HostCiRunner {
     // A finished test run reports the file durations and test results it measured, so Main can learn and show them.
     const finished = !['starting', 'running'].includes(run.state)
     const report = (name: string) => readFile(join(this.runDirectory(request.runId), name), 'utf8')
-      .then(text => JSON.parse(text) as unknown)
-      .catch(fallbackOnError(null, 'jobs', 'read CI report', { runId: request.runId, report: name }, ['ENOENT']))
+      .then(text => JSON.parse(text) as unknown).catch(() => null)
     const measured = request.durations && finished ? CiDurationsSchema.safeParse(await report('measured-durations.json')) : null
     const tests = request.testResults && finished ? CiTestResultsSchema.safeParse(await report('test-results.json')) : null
     return CiHostReplySchema.parse({ operation: 'read', run, text, nextOffset,
@@ -150,9 +144,7 @@ export class HostCiRunner {
     const runs = []
     const directory = join(this.root, 'runs')
     const names = existsSync(directory) ? (await readdir(directory)).sort() : []
-    for (const runId of names) runs.push(await this.refresh(runId).catch(fallbackOnError(
-      null, 'jobs', 'refresh CI run', { runId }, ['ENOENT'],
-    )))
+    for (const runId of names) runs.push(await this.refresh(runId).catch(() => null))
     const active = await this.active()
     const availableMemoryBytes = this.ports.availableMemoryBytes?.() ?? this.ports.memoryBytes
     const capacity = this.capacity(active, availableMemoryBytes)
@@ -174,7 +166,7 @@ export class HostCiRunner {
     if (!existsSync(directory)) return []
     const active = []
     for (const runId of await readdir(directory)) {
-      const run = await this.refresh(runId).catch(fallbackOnError(null, 'jobs', 'refresh CI run', { runId }, ['ENOENT']))
+      const run = await this.refresh(runId).catch(() => null)
       if (run && ['starting', 'running'].includes(run.state)) active.push(await this.readMeta(runId))
     }
     return active
@@ -199,9 +191,6 @@ export class HostCiRunner {
     if (existsSync(join(directory, 'meta.json'))) return this.refresh(request.runId)
     this.startingRunId = request.runId
     let active = await this.active()
-    if (active.some(run => run.gate) || request.gate && active.length) {
-      throw new DomainError('CI_HOST_BUSY', 'A gate requires exclusive use of this build computer.', 409)
-    }
     let capacity = this.capacity(active)
     if (capacity.slotsUsed >= capacity.slotsTotal) {
       throw new DomainError('CI_HOST_BUSY',
@@ -209,17 +198,11 @@ export class HostCiRunner {
     }
     const github = await this.github()
     if (!github.ready) throw new DomainError('COMPUTER_GITHUB_REQUIRED', github.reason!, 409)
-    const startedAt = this.ports.now().toISOString()
     await this.prepareRepository(request)
     const databaseSuite = ['unit', 'integration'].includes(request.suite)
     const isolatedDatabase = databaseSuite && await this.supportsDatabaseIsolation(request)
     active = await this.active()
     capacity = this.capacity(active)
-    if (request.gate) {
-      capacity = { ...capacity, slotsUsed: active.length, slotsTotal: 1, cpuCount: this.ports.cpus,
-        memoryBytes: Math.max(1, Math.min(capacity.memoryBudget,
-          this.ports.availableMemoryBytes?.() ?? capacity.memoryBudget)) }
-    }
     if (databaseSuite && !isolatedDatabase) {
       capacity = { slotsUsed: active.length, slotsTotal: 1, cpuCount: this.ports.cpus,
         memoryBudget: capacity.memoryBudget,
@@ -232,13 +215,10 @@ export class HostCiRunner {
     }
     await mkdir(directory, { recursive: true, mode: 0o700 })
     const meta: RunMeta = { runId: request.runId, repository: request.repository, commit: request.commit,
-      suite: request.suite, partition: request.partition ?? null, startedAt,
+      suite: request.suite, partition: request.partition ?? null, startedAt: this.ports.now().toISOString(),
       state: 'starting', finishedAt: null, exitCode: null, message: null, cleaned: false,
       resources: { cpuCount: capacity.cpuCount, memoryBytes: capacity.memoryBytes, memoryBudget: capacity.memoryBudget },
       isolatedDatabase,
-      ...(request.expectedDurationMs !== undefined ? { expectedDurationMs: request.expectedDurationMs } : {}),
-      ...(request.gate ? { gate: true, integrationShards: Math.min(request.integrationShards!,
-        gateIntegrationShards(capacity.cpuCount, capacity.memoryBytes)) } : {}),
       ...(request.part ? { part: request.part } : {}),
       scope: request.scope ?? 'affected', ...(request.files !== undefined ? { files: request.files } : {}),
       deriveFiles: (request.scope ?? 'affected') === 'affected' && request.files === undefined,
@@ -299,8 +279,7 @@ export class HostCiRunner {
     const clone = join(this.root, 'git', ...request.repository.split('/'))
     if (!existsSync(join(clone, '.git'))) {
       await mkdir(join(clone, '..'), { recursive: true, mode: 0o700 })
-      await this.git(['clone', '--quiet', '--filter=blob:none', '--no-checkout',
-        `https://github.com/${request.repository}.git`, clone])
+      await this.git(['clone', '--quiet', '--no-checkout', `https://github.com/${request.repository}.git`, clone])
     }
     if ((await this.ports.run('git', ['cat-file', '-e', `${request.commit}^{commit}`], { cwd: clone, env: this.environment })).code !== 0) {
       await this.git(['fetch', '--quiet', '--no-tags', 'origin', request.commit], clone)
@@ -318,7 +297,11 @@ export class HostCiRunner {
 
   private async checkout(meta: RunMeta, source: string) {
     const clone = join(this.root, 'git', ...meta.repository.split('/'))
-    await this.git(['worktree', 'add', '--quiet', '--detach', source, meta.commit], clone)
+    // A private Git directory gives each job its own test/build admission queue.
+    await this.git(['clone', '--quiet', '--shared', '--no-checkout', clone, source])
+    const origin = (await this.git(['remote', 'get-url', 'origin'], clone)).trim()
+    await this.git(['remote', 'set-url', 'origin', origin], source)
+    await this.git(['checkout', '--quiet', '--detach', meta.commit], source)
   }
 
   private suiteResources(meta: RunMeta) {
@@ -453,9 +436,6 @@ export class HostCiRunner {
     const heapMb = Math.max(256, Math.min(6144, Math.floor(resources.memoryBytes / 2 / 2 ** 20)))
     const database = capabilities.parts && meta.isolatedDatabase === true
     const databaseResources = this.databaseResources(meta)
-    const cache = join(this.root, 'cache', ...meta.repository.split('/'))
-    const prerequisites = command !== '' && command !== 'true' && capabilities.parts
-    const contracts = prerequisites && existsSync(join(source, 'scripts/ci-contracts.mjs'))
     let integrationEnvironment = ''
     if (meta.suite === 'integration' && capabilities.integrationPartitions) {
       // Main's learned durations, with the commit's committed ones for files it has not measured yet.
@@ -467,11 +447,11 @@ export class HostCiRunner {
       integrationEnvironment = ` FOREMAN_CODE_INTEGRATION_DURATIONS=${quote(join(run, 'expected-durations.json'))}`
         + ` FOREMAN_CODE_INTEGRATION_DURATIONS_OUTPUT=${quote(join(run, 'measured-durations.json'))}`
         + ` FOREMAN_CODE_INTEGRATION_TEST_RESULTS_OUTPUT=${quote(join(run, 'test-results.json'))}`
-      if (meta.partition || affected || meta.gate) {
+      if (meta.partition || affected) {
         const tests = join(source, 'apps/api/test')
         const files = existsSync(tests) ? (await readdir(tests)).filter(file => file.endsWith('.integration.test.ts'))
           .map(file => `apps/api/test/${file}`).sort() : []
-        const selected = affected || meta.gate ? meta.files ?? [] : files
+        const selected = affected ? meta.files ?? [] : files
         if (selected.some(file => !files.includes(file))) throw new Error('Selected integration files are absent from the commit.')
         const slice = meta.partition ? integrationPartition(selected, durations, meta.partition) : selected
         if (!slice.length && meta.partition && meta.scope !== 'affected' && !meta.deriveFiles) {
@@ -481,20 +461,11 @@ export class HostCiRunner {
         command = slice.length ? `${command} --files ${slice.map(quote).join(' ')}` : 'true'
       }
     }
-    const sourceWatchdog = join(source, 'scripts/ci-watchdog.mjs')
-    const watchdog = existsSync(sourceWatchdog) ? sourceWatchdog
-      : fileURLToPath(new URL('../../../../../scripts/ci-watchdog.mjs', import.meta.url))
-    const watchedCommand = `CI_EXPECTED_DURATION_MS=${meta.expectedDurationMs ?? 0}`
-        + ` CI_WATCHDOG_DIRECTORY=${quote(run)} CI_WATCHDOG_MESSAGE_FILE=${quote(join(run, 'watchdog-message.json'))}`
-        // Only test suites report per-test progress; typecheck, lint and build can stay silent for minutes.
-        + (['unit', 'integration'].includes(meta.suite) ? ` node ${quote(watchdog)} --` : '') + ` bash -c ${quote(command)}`
     return ['#!/bin/bash', 'set -o pipefail', `exec >>${quote(join(run, 'log'))} 2>&1`,
       `export TMPDIR=${quote(join(run, 'tmp'))} CI=true NODE_OPTIONS=--max-old-space-size=${heapMb}`
-        + ` FOREMAN_CODE_CI_CONTRACTS_CACHE=${quote(join(cache, 'contracts'))}`
         + ` FOREMAN_CODE_CI_CPU_COUNT=${Math.max(1, Math.floor(resources.cpuCount))}`
         + ` FOREMAN_CODE_CI_MEMORY_BYTES=${resources.memoryBytes}`
         + ` FOREMAN_CODE_VERIFICATION_UNIT_WORKERS=${workers}`
-        + (meta.gate ? ` FOREMAN_CODE_CI_INTEGRATION_SHARDS=${meta.integrationShards}` : '')
         // The repository's suite hook writes structured test results here; integration has its own setting.
         + (capabilities.parts ? ` CI_HOST_RUNNER=1 FOREMAN_CODE_CI_DEDICATED=1`
           + (meta.suite === 'integration' ? '' : ` TEST_RESULTS_OUTPUT=${quote(join(run, 'test-results.json'))}`)
@@ -504,26 +475,19 @@ export class HostCiRunner {
         + ` FOREMAN_CODE_CI_DATABASE_MEMORY_BYTES=${databaseResources.memoryBytes}`] : []),
       'mkdir -p "$TMPDIR"',
       `finish() { local code="$1";`
-        + ' if [ -n "${preparation_pid:-}" ]; then wait "$preparation_pid" || true; fi;'
         + (database ? ` ${pm} db:down || { [ "$code" != 0 ] || code=1; }; trap - EXIT;` : '')
         + ` echo "$code" > ${quote(join(run, 'exit.tmp'))};`
         + ` mv -- ${quote(join(run, 'exit.tmp'))} ${quote(join(run, 'exit'))}; exit "$code"; }`,
       ...(database ? [`trap '${pm} db:down' EXIT`] : []),
       `step() { echo "$1" > ${quote(join(run, 'step'))}; echo "::step $1"; }`,
       ...(meta.message ? [`echo ${quote(meta.message)}`] : []),
-      'step install',
-      ...(existsSync(join(source, 'pnpm-lock.yaml')) ? warmPnpmInstall(source, cache, run) : [`${pm} install || finish $?`]),
-      // pnpm script commands can reinstall dependencies, so preparation must wait for installation.
-      ...(prerequisites ? [`SUITE=${quote(prerequisiteSuite)} bash scripts/ci-suite.sh prepare`
-        + ` >${quote(join(run, 'preparation.log'))} 2>&1 & preparation_pid=$!`] : []),
-      ...(contracts ? ['step contracts', 'corepack pnpm --filter @foreman-code/contracts build || finish $?'] : []),
-      ...(prerequisites ? ['step prepare', 'wait "$preparation_pid"; preparation_code=$?',
-        `cat ${quote(join(run, 'preparation.log'))}`, '[ "$preparation_code" = 0 ] || finish "$preparation_code"'] : []),
-      `echo "[ci-setup] setup completed in $(( $(date +%s%3N) - ${Date.parse(meta.startedAt)} )) ms"`,
+      'step install', `${pm} install${existsSync(join(source, 'pnpm-lock.yaml')) ? ' --frozen-lockfile' : ''} || finish $?`,
       ...(command ? [`step ${meta.part ?? meta.suite}`,
+        ...(command !== 'true' && capabilities.parts
+          ? [`SUITE=${quote(prerequisiteSuite)} bash scripts/ci-suite.sh prepare || finish $?`] : []),
         ...(database ? ['if [ -f "$TMPDIR/test-database-url" ]; then',
           '  export FOREMAN_CODE_CI_TEST_ADMIN_URL="$(cat "$TMPDIR/test-database-url")"', 'fi'] : []),
-        `${watchedCommand} || finish $?`] : []),
+        `${command} || finish $?`] : []),
       'finish 0', ''].join('\n')
   }
 
@@ -566,14 +530,11 @@ export class HostCiRunner {
     let meta = await this.readMeta(runId)
     const directory = this.runDirectory(runId)
     if (meta.state === 'running') {
-      const exit = await readFile(join(directory, 'exit'), 'utf8').catch(fallbackOnError(null, 'jobs', 'read CI exit status', { runId }, ['ENOENT']))
+      const exit = await readFile(join(directory, 'exit'), 'utf8').catch(() => null)
       // A unit launched before atomic exit publication can expose an empty file mid-write.
       if (exit !== null && exit.trim() !== '') {
         const code = Number(exit.trim())
-        const watchdogMessage = await readFile(join(directory, 'watchdog-message.json'), 'utf8')
-          .catch(fallbackOnError(null, 'jobs', 'read CI watchdog message', { runId }, ['ENOENT']))
-        await this.finish(runId, code === 0 ? 'passed' : 'failed', Number.isInteger(code) ? code : 1,
-          watchdogMessage ? CiWatchdogFailureSchema.parse(JSON.parse(watchdogMessage)).message : meta.message)
+        await this.finish(runId, code === 0 ? 'passed' : 'failed', Number.isInteger(code) ? code : 1, meta.message)
       } else {
         const unit = await this.ports.run('systemctl', ['--user', 'is-active', `${unitName(runId)}.service`], { env: this.environment })
         if (!['active', 'activating'].includes(unit.stdout.trim())) {
@@ -594,13 +555,12 @@ export class HostCiRunner {
           await this.ports.run('git', ['worktree', 'remove', '--force', join(directory, 'src')], { cwd: clone, env: this.environment })
         }
         await rm(join(directory, 'src'), { recursive: true, force: true })
-        await this.ports.run('git', ['worktree', 'prune'], { cwd: clone, env: this.environment })
       }
       await rm(join(directory, 'tmp'), { recursive: true, force: true })
       meta = { ...meta, cleaned: true }
       await this.writeMeta(meta)
     }
-    const log = await stat(join(directory, 'log')).catch(fallbackOnError(null, 'jobs', 'stat CI log', { runId }, ['ENOENT']))
+    const log = await stat(join(directory, 'log')).catch(() => null)
     const step = (await readFile(join(directory, 'step'), 'utf8').catch(() => '')).trim() || null
     return { runId, state: meta.state, step, exitCode: meta.exitCode, startedAt: meta.startedAt,
       finishedAt: meta.finishedAt, logBytes: log?.size ?? 0, message: meta.message }

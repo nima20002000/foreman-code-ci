@@ -3,7 +3,12 @@ import { describe, expect, it, vi } from 'vitest'
 import type { AgentConfigurationVersion, HarnessExecutionRequest } from '@foreman-code/contracts'
 import type { NativeHarnessSessionManager } from '../src/modules/harnesses/port.js'
 import { ExecutionScopedNativeSessionManagerResolver } from '../src/modules/interactions/runtimePorts.js'
-import { deferred } from './helpers/deferred.js'
+
+function gate() {
+  let resolve!: () => void
+  const promise = new Promise<void>((done) => { resolve = done })
+  return { promise, resolve }
+}
 
 const context = {
   harness: 'codex' as const, executionId: 'execution-1', agentId: 'agent-1', workingDirectory: '/fixture',
@@ -12,7 +17,7 @@ const context = {
 
 describe('execution allocation cleanup ownership', () => {
   it('joins concurrent disposal, retains a failed allocation, and retries only remaining owners', async () => {
-    const closing = deferred()
+    const closing = gate()
     const first = { harness: 'codex', dispose: vi.fn(async (): Promise<void> => { await closing.promise; throw new Error('cgroup not empty') }) }
     const second = { harness: 'codex', dispose: vi.fn(async () => undefined) }
     const factory = vi.fn((input) => input.executionId === 'execution-1' ? first : second)

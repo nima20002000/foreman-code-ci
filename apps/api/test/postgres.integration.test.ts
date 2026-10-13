@@ -114,7 +114,6 @@ describe('PostgreSQL infrastructure', () => {
     try {
       await createFixtureSchema(admin, schema)
       await checkpoints.setup()
-      await Promise.all([database.ping(), checkpoints.ping()])
       expect((await app.inject('/health/ready')).statusCode).toBe(200)
       await blocker.query('begin')
       locked = true
