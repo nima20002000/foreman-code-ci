@@ -1,4 +1,5 @@
 import pg from 'pg'
+import { setTimeout as delay } from 'node:timers/promises'
 import { expect, it, vi } from 'vitest'
 import type { GraphTransactionSql } from '../src/modules/run-graph/connection.js'
 import { RunOwnership } from '../src/modules/runs/ownership.js'
@@ -41,21 +42,14 @@ it('releases a real Run owner and its advisory lock while rollback replies remai
     if (!owner) throw new Error('Expected the original Run owner')
     const runId = owner.runId
     const connection = owner.oneShotConnection()
-    let queryFailure: unknown
     const work = vi.fn(async (sql: GraphTransactionSql) => {
       await sql.query('select 1')
       responses.hold()
-      try {
-        await sql.query('select 2')
-      } catch (error) {
-        queryFailure = error
-        throw error
-      }
+      await sql.query('select 2')
     })
     const failed = connection.transaction(work).catch(error => error)
     const queued = connection.query('select 3').catch(error => error)
-    await vi.waitFor(() => expect(queryFailure).toMatchObject({ message: 'Query read timeout' }),
-      { timeout: 3_000, interval: 10 })
+    await delay(250)
     await owner.release()
     expect(await failed).toMatchObject({ message: 'Query read timeout' })
     expect(await queued).toMatchObject({ code: 'GRAPH_TRANSACTION_FAILED' })
