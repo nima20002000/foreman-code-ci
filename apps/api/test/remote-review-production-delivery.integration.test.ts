@@ -1,14 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { PostgresInteractionRepository } from '../src/modules/interactions/postgres.js'
 import { deliveredReview, receipts, reviewInProgress, useRemoteReviewFixture } from './helpers/remoteReviewProductionCases.js'
-import { measureIntegrationPhase } from './helpers/integrationPhase.js'
 
-const withRemoteReviewFixture = useRemoteReviewFixture({ includeNodeRuntimePayload: false })
+const withRemoteReviewFixture = useRemoteReviewFixture()
 
 describe('production remote review and native recovery through authenticated MCP', () => {
   it('persists a delivered remote decision and denies a read-only caller on the same product endpoint', async () => {
     await withRemoteReviewFixture(async fixture => {
-      const active = await measureIntegrationPhase('remote review submission', () => reviewInProgress(fixture))
+      const active = await reviewInProgress(fixture)
       const reader = await fixture.access.issue({ name: 'Remote review reader', audience: 'operator',
         expiresAt: new Date(Date.now() + 300_000), grants: [{ actions: ['interactions:read'],
           scope: { runIds: [active.run.id] } }] })
@@ -23,8 +22,7 @@ describe('production remote review and native recovery through authenticated MCP
       expect(await new PostgresInteractionRepository(fixture.db.pool).get(active.interaction.id)).toEqual(before)
       expect((await fixture.provider.calls()).filter(call => 'approvalResponse' in call)).toHaveLength(0)
       await fixture.provider.releaseReview()
-      const delivered = await measureIntegrationPhase('remote decision delivery',
-        () => deliveredReview(fixture, active.interaction.id))
+      const delivered = await deliveredReview(fixture, active.interaction.id)
       const persisted = await new PostgresInteractionRepository(fixture.db.pool).get(active.interaction.id)
       expect(persisted).toEqual(delivered.interaction)
       expect((await fixture.provider.calls()).filter(call => 'approvalResponse' in call)).toHaveLength(1)
