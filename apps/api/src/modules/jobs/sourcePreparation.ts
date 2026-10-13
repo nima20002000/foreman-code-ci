@@ -1,7 +1,7 @@
 import type { JobAuthoringChoicesRecord } from '@foreman-code/contracts/job-verification'
-import { withTransaction } from '../../infrastructure/transaction.js'
 import { join } from 'node:path'
 import type pg from 'pg'
+import type { SourceManifest } from '@foreman-code/contracts/source-materialization'
 import type { WorkspaceRootPolicyPort } from '../sources/rootPolicyPorts.js'
 import type { InstalledSourceExecutionHosts } from '../sources/executionHosts.js'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
@@ -39,8 +39,7 @@ import { DomainError } from '../errors.js'
 import { componentLogger } from '../diagnostics/logger.js'
 import { matchesRuntimePolicy } from './runtimeSelection.js'
 import { DeviceAccessError } from '../devices/access.js'
-import { canonicalJson } from '@foreman-code/contracts/canonical-json'
-import { JobRepository, type JobSql } from './repository.js'
+import { canonical, JobRepository, type JobSql } from './repository.js'
 import { JobPreparationService, type JobPreparationSources } from './preparation.js'
 
 /** W07/CI qualification readback; no probing, installing or pulling during authoring. */
@@ -81,7 +80,7 @@ export class CanonicalJobPreparationSources implements JobPreparationSources {
     }))
     const verificationTemplates = profiles.flatMap(profile => {
       if (profile.schemaVersion !== 2 || profile.status === 'revoked') return []
-      const ready = policies.some(policy => canonicalJson(policy) === canonicalJson(jobRuntimeProfilePolicy(profile)))
+      const ready = policies.some(policy => canonical(policy) === canonical(jobRuntimeProfilePolicy(profile)))
       return profile.spec.suites.flatMap(value => {
         const suite = JobOrdinaryVerificationSuiteSchema.safeParse(value)
         if (!suite.success) return []
@@ -134,27 +133,27 @@ export class CanonicalJobPreparationSources implements JobPreparationSources {
     if (!isAutoJobSpecRecord(spec)) {
       const fixedTarget = spec.target
       const root = roots.find(root => root.selection.rootPolicyId === fixedTarget.destination.rootPolicyId)
-      if (!root || canonicalJson(root.source) !== canonicalJson({ approvedSourceId: spec.source.approvedSourceId,
+      if (!root || canonical(root.source) !== canonical({ approvedSourceId: spec.source.approvedSourceId,
         snapshotId: spec.source.snapshotId, manifestDigest: spec.source.manifestDigest })) {
         throw new DomainError('JOB_ROOT_PIN_CONFLICT', 'The saved build root or source binding changed.', 409)
       }
-      if (!profiles.some(profile => canonicalJson(jobRuntimeProfilePolicy(profile)) === canonicalJson(spec.policy))) {
+      if (!profiles.some(profile => canonical(jobRuntimeProfilePolicy(profile)) === canonical(spec.policy))) {
         throw new DomainError('JOB_RUNTIME_UNQUALIFIED', 'The saved runtime policy is no longer qualified.', 409)
       }
     }
     for (const root of roots) {
       if (placement?.kind === 'explicit'
         && (root.selection.rootPolicyId !== placement.target.destination.rootPolicyId
-          || canonicalJson(root.selection.hostRef) !== canonicalJson(placement.target.hostRef))) continue
+          || canonical(root.selection.hostRef) !== canonical(placement.target.hostRef))) continue
       if (root.binding.accessMode !== 'exclusive-write' || root.source.snapshotId !== spec.source.snapshotId
         || root.source.manifestDigest !== spec.source.manifestDigest || root.source.approvedSourceId !== spec.source.approvedSourceId) continue
       const matchingProfiles = profiles.filter(profile =>
-        canonicalJson(profile.root.selection.hostRef) === canonicalJson(root.selection.hostRef)
+        canonical(profile.root.selection.hostRef) === canonical(root.selection.hostRef)
         && profile.root.selection.rootPolicyId === root.selection.rootPolicyId
         && (isAutoJobSpecRecord(spec)
           ? matchesRuntimePolicy(spec, profile)
-            && canonicalJson(jobRuntimeProfileLimits(profile)) === canonicalJson(spec.limits)
-          : canonicalJson(jobRuntimeProfilePolicy(profile)) === canonicalJson(spec.policy)))
+            && canonical(jobRuntimeProfileLimits(profile)) === canonical(spec.limits)
+          : canonical(jobRuntimeProfilePolicy(profile)) === canonical(spec.policy)))
       if (!matchingProfiles.length) continue
       let target: ResolvedJobDefinitionSpecRecord['target']
       try { target = await this.target(sql, principal, root) } catch (error) {
@@ -166,7 +165,7 @@ export class CanonicalJobPreparationSources implements JobPreparationSources {
         }
         throw error
       }
-      if (!isAutoJobSpecRecord(spec) && canonicalJson(target) !== canonicalJson(spec.target)) {
+      if (!isAutoJobSpecRecord(spec) && canonical(target) !== canonical(spec.target)) {
         if (root.selection.rootPolicyId === spec.target.destination.rootPolicyId) {
           throw new DomainError('JOB_ROOT_PIN_CONFLICT', 'The saved build root or computer identity changed.', 409)
         }
@@ -209,7 +208,7 @@ export class CanonicalJobPreparationSources implements JobPreparationSources {
   private async target(sql:JobSql,principal:ManagementPrincipal,root:SourceRootRecord) {
     const policy=await this.roots.resolve(sql,principal,{workspaceId:root.binding.workspaceId,...root.selection})
     const main=(await sql.query<{id:string}>('select id from application_installation where singleton=true for share')).rows[0]
-    if(!main||main.id!==root.binding.mainId||policy.hostRef.mainId!==main.id||canonicalJson(policy.hostRef)!==canonicalJson(root.selection.hostRef)||canonicalJson(policy.registration)!==canonicalJson(root.registration)||root.binding.canonicalPath!==join(policy.managedRuntimeRoot,'source-materializations',policy.rootPolicyId))throw new DomainError('JOB_ROOT_PIN_CONFLICT','The original root namespace, registration or actual main installation changed.',409)
+    if(!main||main.id!==root.binding.mainId||policy.hostRef.mainId!==main.id||canonical(policy.hostRef)!==canonical(root.selection.hostRef)||canonical(policy.registration)!==canonical(root.registration)||root.binding.canonicalPath!==join(policy.managedRuntimeRoot,'source-materializations',policy.rootPolicyId))throw new DomainError('JOB_ROOT_PIN_CONFLICT','The original root namespace, registration or actual main installation changed.',409)
     return JobTargetSchema.parse({schemaVersion:1,mainId:main.id,mainInstallationId:main.id,hostRef:root.selection.hostRef,registration:root.registration,
       destination:{canonicalProjectRoot:root.binding.canonicalPath,canonicalCwd:root.binding.canonicalPath,managedRuntimeRoot:policy.managedRuntimeRoot,
         directoryIdentityHash:sourceSha256(Buffer.from(JSON.stringify(root.binding.filesystem))),rootPolicyId:root.selection.rootPolicyId,rootPolicyRevision:root.selection.rootPolicyRevision,locationRevision:root.selection.locationRevision,attestationId:root.attestationId,attestationHash:root.attestationDigest}})
@@ -223,8 +222,8 @@ export class CanonicalJobPreparationSources implements JobPreparationSources {
           where c.workspace_id=$1 and b.record->>'attestationId'=$2 for share of b,c`,[workspaceId,spec.target.destination.attestationId])).rows
     if(row.length!==1)throw new DomainError('JOB_ROOT_PIN_CONFLICT','The captured job root attestation is unavailable.',409)
     const root=SourceRootRecordSchema.parse(row[0]!.record)
-    if(root.binding.accessMode!=='exclusive-write'||canonicalJson(await this.target(sql,principal,root))!==canonicalJson(spec.target))throw new DomainError('JOB_ROOT_PIN_CONFLICT','The saved target is not the current exclusive job source root.',409)
-    if(canonicalJson(root.source)!==canonicalJson({approvedSourceId:spec.source.approvedSourceId,snapshotId:spec.source.snapshotId,manifestDigest:spec.source.manifestDigest}))throw new DomainError('JOB_SOURCE_PIN_CONFLICT','The target root is bound to a different exact approved snapshot.',409)
+    if(root.binding.accessMode!=='exclusive-write'||canonical(await this.target(sql,principal,root))!==canonical(spec.target))throw new DomainError('JOB_ROOT_PIN_CONFLICT','The saved target is not the current exclusive job source root.',409)
+    if(canonical(root.source)!==canonical({approvedSourceId:spec.source.approvedSourceId,snapshotId:spec.source.snapshotId,manifestDigest:spec.source.manifestDigest}))throw new DomainError('JOB_SOURCE_PIN_CONFLICT','The target root is bound to a different exact approved snapshot.',409)
     const source=await this.sources.resolveApprovedSource(sql,principal,workspaceId,{approvedSourceId:spec.source.approvedSourceId,snapshotId:spec.source.snapshotId,manifestDigest:spec.source.manifestDigest})
     if(source.manifest.git?.commit!==spec.source.commit)throw new DomainError('JOB_SOURCE_PIN_CONFLICT','The saved commit differs from the approved snapshot.',409)
     await this.sources.resolveRootBinding(sql,principal,{workspaceId,rootId:root.binding.rootId,bindingRevision:root.binding.bindingRevision,source:root.source})
@@ -255,7 +254,7 @@ export class CanonicalJobPreparationSources implements JobPreparationSources {
     if(!['prepared','running','closed'].includes(record.state)||record.operationId!==execution.operationId||record.finalDispatchBindingHash!==execution.acceptedSpec.bindingHash||sourceMaterializationDigest(record)!==execution.acceptedSpec.source.materializationDigest)throw new DomainError('SOURCE_ATTEMPT_CONFLICT','The original accepted source binding changed.',409)
     const source={approvedSourceId:execution.acceptedSpec.source.approvedSourceId,snapshotId:execution.acceptedSpec.source.snapshotId,manifestDigest:execution.acceptedSpec.source.manifestDigest}
     const root=await this.sources.resolveRootBinding(sql,principal,{workspaceId:execution.workspaceId,rootId:record.receipt.binding.rootId,bindingRevision:record.receipt.binding.bindingRevision,source})
-    if(root.attestationId!==execution.acceptedSpec.target.destination.attestationId||root.attestationDigest!==execution.acceptedSpec.target.destination.attestationHash||canonicalJson(root.registration)!==canonicalJson(execution.acceptedSpec.target.registration))throw new DomainError('JOB_ROOT_PIN_CONFLICT','The original accepted root/registration differs from its stored materialization.',409)
+    if(root.attestationId!==execution.acceptedSpec.target.destination.attestationId||root.attestationDigest!==execution.acceptedSpec.target.destination.attestationHash||canonical(root.registration)!==canonical(execution.acceptedSpec.target.registration))throw new DomainError('JOB_ROOT_PIN_CONFLICT','The original accepted root/registration differs from its stored materialization.',409)
     await new JobRepository().version(sql,execution.workspaceId,execution.acceptedSpec.definitionVersionId,execution.acceptedSpec.definitionId)
     if (options?.requireQualification) await this.runtime.revalidate(sql,principal,root,execution.acceptedSpec)
   }
@@ -301,12 +300,15 @@ export class CanonicalJobPrivateRepositories implements JobPrivateRepositoryPort
     private readonly remote:{preparePrivateRepository(principal:ManagementPrincipal,record:SourceMaterializationRecord):Promise<void>}) {}
   async prepare(principal:ManagementPrincipal,record:SourceMaterializationRecord) {
     if(record.receipt.binding.deviceId!==null)return this.remote.preparePrivateRepository(principal,record)
-    const manifest=await withTransaction(this.pool,async(sql)=>{
+    const sql=await this.pool.connect()
+    let manifest:SourceManifest
+    try {
+      await sql.query('begin')
       const row=(await sql.query<{record:unknown}>('select record from source_root_bindings where root_id=$1 and binding_revision=$2 for share',[record.receipt.binding.rootId,record.receipt.binding.bindingRevision])).rows[0]
       const root=SourceRootRecordSchema.parse(row?.record)
       const source=await this.sources.resolveApprovedSource(sql,principal,record.receipt.binding.workspaceId,root.source)
-      return source.manifest
-    })
+      manifest=source.manifest;await sql.query('commit')
+    } catch(error){await sql.query('rollback');throw error}finally{sql.release()}
     await this.sources.verifyPreparation({principal,record})
     await this.hosts.privateRepository(record,manifest)
   }
