@@ -307,10 +307,28 @@ describe.skipIf(!postgresEnabled)('Agent Host CI in public Run activity', () => 
       const ticket = await f.submit()
       await f.database.pool.query('alter table ci_runs add constraint ci_results_blocked check (test_results is null) not valid')
       f.finish(ticket.ticketId, 'passed', results)
-      expect((await f.get(ticket.ticketId)).run.state).toBe('running')
+      const pending = await f.get(ticket.ticketId)
+      expect(pending.run.state).toBe('running')
+      expect(pending.run.collection).toBe('pending')
+      const pendingTests = CiGetOutputSchema.parse(await f.value(f.workerToken, 'ci_get', {
+        ticketId: ticket.ticketId, testStatus: ['passed'],
+      }))
+      expect(pendingTests.tests).toBeNull()
+      expect(await stored(ticket.ticketId)).toBeNull()
+      const history = await f.activity()
+      expect(history.items.filter(item => item.refs.ciTicketId === ticket.ticketId).at(-1))
+        .toMatchObject({ status: 'completed', ci: { state: 'passed', exitCode: 0 } })
+      expect((await f.board()).activitySnapshot?.active.some(work => work.ref.kind === 'ci')).toBe(false)
       await f.database.pool.query('alter table ci_runs drop constraint ci_results_blocked')
-      expect((await f.get(ticket.ticketId)).run.state).toBe('passed')
+      const complete = await f.get(ticket.ticketId)
+      expect(complete.run).toMatchObject({ state: 'passed', collection: 'complete',
+        exitCode: pending.run.exitCode, finishedAt: pending.run.finishedAt })
+      const completeTests = CiGetOutputSchema.parse(await f.value(f.workerToken, 'ci_get', {
+        ticketId: ticket.ticketId, testStatus: ['passed'],
+      }))
+      expect(completeTests.tests).toEqual(results)
       expect(await stored(ticket.ticketId)).toEqual(results)
+      expect((await f.activity()).items).toEqual(history.items)
     } finally { await f.close() }
   }, 120000)
 
