@@ -7,7 +7,6 @@ import { setTimeout as wait } from 'node:timers/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { WorkerError, requirePrivateDirectory } from './diagnostics.mjs';
 import { readWorkerStatus } from './runtime.mjs';
-import { WORKER_UPDATE_STARTUP_TIMEOUT_MS } from './ciSmokeTiming.mjs';
 
 const execute = promisify(execFile);
 const services = ['graphql-worker.service', 'foreman-ci-worker.service'];
@@ -201,10 +200,8 @@ export async function superviseWorkerUpdate(record, ports = {}) {
   } } = ports;
   const plan = record.restart;
   if (!plan || !services.includes(plan.service)) throw new WorkerError('worker_update_state_invalid');
-  const previousManifestSha256 = record.status.manifestSha256;
   const save = async (state, currentVersion, lastError) => {
-    const manifestSha256 = state === 'current' ? record.manifestSha256 : previousManifestSha256;
-    record.status = { ...record.status, state, currentVersion, manifestSha256, lastError };
+    record.status = { ...record.status, state, currentVersion, lastError };
     const outcome = { requestId: plan.requestId, status: record.status, finishedAt: new Date().toISOString() };
     record.outcomes = [...(record.outcomes ?? []).filter(value => value.requestId !== plan.requestId), outcome].slice(-20);
     await persist(plan.stateDirectory, record);
@@ -223,7 +220,7 @@ export async function superviseWorkerUpdate(record, ports = {}) {
     }
     await restartWorker();
     await ready({ stateDirectory: plan.stateDirectory, version: record.status.targetVersion,
-      workerInstallationId: plan.workerInstallationId, timeoutMs: WORKER_UPDATE_STARTUP_TIMEOUT_MS });
+      workerInstallationId: plan.workerInstallationId });
     await smoke(plan);
     await save('current', record.status.targetVersion, null);
   } catch (error) {
