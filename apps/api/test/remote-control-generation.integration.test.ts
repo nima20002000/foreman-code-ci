@@ -1,9 +1,76 @@
-import { expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
+import { NATIVE_INTERACTION_FIXTURES } from '@foreman-code/contracts'
 import { RemoteOwnerControlSchema } from '@foreman-code/contracts/remote-execution'
-import { approvalDatabase } from './helpers/wave25ApprovalDatabase.js'
+import { CodexAppServerSessionManager } from '../src/modules/harnesses/codexAppServer.js'
+import { PostgresInteractionRepository } from '../src/modules/interactions/postgres.js'
+import { currentRunHistory } from './helpers/currentRunHistory.js'
+
+afterEach(() => vi.restoreAllMocks())
+
+async function remoteControlDatabase() {
+  const createSession = vi.spyOn(CodexAppServerSessionManager.prototype, 'createSession')
+    .mockRejectedValue(new Error('Database snapshot checks must not start native sessions'))
+  const history = await currentRunHistory()
+  const f = history.db
+  try {
+    const interaction = {
+      ...structuredClone(NATIVE_INTERACTION_FIXTURES.codex),
+      workspaceId: history.run.workspaceId,
+      workflowId: history.run.workflowId,
+      runId: history.run.id,
+      graphThreadId: history.run.id,
+      requestingAgentId: history.f.configurations[0]!.agentId,
+    }
+    const repository = new PostgresInteractionRepository(f.pool)
+    const created = await repository.create(interaction)
+    return { ...f, interaction, repository, created, createSession }
+  } catch (error) {
+    await f.close()
+    throw error
+  }
+}
+
+it('persists a pending remote interaction and its run activity without native sessions', async () => {
+  const f = await remoteControlDatabase()
+  try {
+    expect(f.created).toEqual({ interaction: f.interaction, created: true })
+    expect(await f.repository.get(f.interaction.id)).toEqual(f.interaction)
+    const activity = await f.pool.query(`select kind, payload from run_activity where run_id=$1`,
+      [f.interaction.runId])
+    expect(activity.rows).toContainEqual({
+      kind: 'interaction_pending',
+      payload: expect.objectContaining({ interactionId: f.interaction.id, status: 'pending' }),
+    })
+    expect(f.createSession).not.toHaveBeenCalled()
+  } finally {
+    await f.close()
+  }
+}, 30_000)
+
+it('reads back a checkpoint-bound approval from its original workflow execution', async () => {
+  const f = await remoteControlDatabase()
+  try {
+    const persisted = await f.repository.get(f.interaction.id)
+    expect(persisted).toMatchObject({
+      runId: f.interaction.runId,
+      workflowId: f.interaction.workflowId,
+      executionId: f.interaction.executionId,
+      nativeSessionId: f.interaction.nativeSessionId,
+      nativeRequestId: f.interaction.nativeRequestId,
+      status: 'pending',
+      deliveryState: 'not_started',
+      approval: { handler: 'user' },
+    })
+    expect(persisted?.graphThreadId).toBe(f.interaction.runId)
+    expect(persisted?.graphInterruptId).toEqual(expect.any(String))
+    expect(persisted?.graphInterruptId).not.toBe('')
+  } finally {
+    await f.close()
+  }
+}, 30_000)
 
 it('persists generation-zero remote admission and keeps its original snapshot immutable', async () => {
-  const f = await approvalDatabase()
+  const f = await remoteControlDatabase()
   try {
     const interaction = f.interaction
     const command = RemoteOwnerControlSchema.parse({ schemaVersion: 1, protocolVersion: 1,
@@ -22,11 +89,17 @@ it('persists generation-zero remote admission and keeps its original snapshot im
     expect(stored).toEqual([{ remote_owner_control: command, generation: '0' }])
     await expect(f.pool.query(`update interaction_delivery_attempts set remote_owner_control_generation=1
       where interaction_id=$1`, [interaction.id])).rejects.toThrow('immutable')
+    const unchanged = (await f.pool.query(`select remote_owner_control,remote_owner_control_generation::text as generation
+      from interaction_delivery_attempts where interaction_id=$1`, [interaction.id])).rows
+    expect(unchanged).toEqual([{ remote_owner_control: command, generation: '0' }])
+    await expect(f.pool.query(`delete from interaction_delivery_attempts where interaction_id=$1`,
+      [interaction.id])).rejects.toThrow('retained')
     await expect(f.pool.query(`insert into interaction_delivery_attempts(interaction_id,attempt,state,native_session_id,
       native_request_id,correlation_id,remote_owner_control,remote_owner_control_token,
       remote_owner_control_fence,remote_owner_control_generation)
       values($1,2,'submitted',$2,$3,'other-correlation',$4::jsonb,'original-owner',1,-1)`,
     [interaction.id, interaction.nativeSessionId, interaction.nativeRequestId, JSON.stringify(command)]))
       .rejects.toMatchObject({ code: '23514' })
+    expect(f.createSession).not.toHaveBeenCalled()
   } finally { await f.close() }
 }, 30_000)

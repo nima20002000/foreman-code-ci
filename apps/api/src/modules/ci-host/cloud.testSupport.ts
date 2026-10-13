@@ -11,8 +11,10 @@ import { pruneMirrorBranches } from './mirrorBranches.js'
 import { CircleCiProvider, GitHubActionsProvider } from './cloudProviders.js'
 import { systemHostCiPorts, type HostCiPorts } from './runner.js'
 
-const roots: string[] = []
-afterEach(async () => { for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }) })
+const disposals: (() => Promise<void>)[] = []
+afterEach(async () => {
+  for (const dispose of disposals.splice(0)) await dispose()
+})
 
 /** A private repository and its public mirror as local bare repositories standing in for GitHub, with a gh that
  * records dispatches and replays the run states a test sets. */
@@ -20,7 +22,12 @@ export async function fixture(files: Record<string, string> = {}, options: { mir
   mirrorWorkflows?: boolean; sourceWorkflows?: boolean; userSystemd?: boolean } = {}) {
   await mkdir(process.env.FOREMAN_CODE_TEST_ROOT ?? join(homedir(), '.cache', 'foreman-tmp'), { recursive: true })
   const root = await mkdtemp(join(process.env.FOREMAN_CODE_TEST_ROOT ?? join(homedir(), '.cache', 'foreman-tmp'), 'cloud-ci-'))
-  roots.push(root)
+  let waitForCleanup: (() => Promise<void>) | undefined
+  const dispose = async () => {
+    await waitForCleanup?.()
+    await rm(root, { recursive: true, force: true })
+  }
+  disposals.push(dispose)
   const environment = gitFixtureEnvironment()
   const run = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, env: environment, encoding: 'utf8' }).trim()
   const work = join(root, 'work'), mirrorWork = join(root, 'mirror-work')
@@ -54,12 +61,13 @@ export async function fixture(files: Record<string, string> = {}, options: { mir
   const commit = run(work, 'rev-parse', 'HEAD')
   const local = (value: string) => value === 'https://github.com/octo/site.git' ? origin
     : value === 'https://github.com/octo/site-ci.git' ? mirror : value
-  const cleanup = { unavailable: false }
+  const cleanup = { unavailable: false, failures: 0 }
   const git: GitWorktreePorts = {
     cloneDirectory: repository => join(root, 'clones', ...repository.split('/')),
     // Asynchronous like Main's git, so concurrent starts really overlap.
     git: (args, options) => new Promise(resolve => {
       if (cleanup.unavailable && args[0] === 'push' && args.includes('--atomic')) {
+        cleanup.failures++
         resolve({ code: 1, stdout: '', stderr: 'fixture remote is unavailable for cleanup' })
         return
       }
@@ -179,8 +187,10 @@ export async function fixture(files: Record<string, string> = {}, options: { mir
     : workspaceId === 'ci-workspace' ? 'octo/site-ci' : null, join(root, 'ci-cloud'), ports, git,
     { home: '/home/owner', user: 'owner', host: 'owner-desktop' })
   const cloud = reopen()
+  waitForCleanup = () => cloud.waitForMirrorCleanup('octo/site', 'octo/site-ci')
   const mirrorGit = (...args: string[]) => run(mirror, ...args)
-  return { cloud, reopen, root, commit, dispatched, github, circle, cleanup, mirrorGit, run: (...args: string[]) => run(work, ...args),
+  return { cloud, reopen, root, commit, dispatched, github, circle, cleanup, git, mirrorGit, dispose,
+    run: (...args: string[]) => run(work, ...args),
     async prune(activeIds: Set<string>) {
       return pruneMirrorBranches({ mirror: 'octo/site-ci', roots: [join(root, 'ci-cloud')],
         activeRuns: { ids: activeIds, readAt: Date.now() },
