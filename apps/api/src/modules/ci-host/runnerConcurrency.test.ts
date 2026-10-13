@@ -56,8 +56,10 @@ async function computer(beforeGithub?: () => Promise<void>, cpuCount = 8, isolat
   await mkdir(directory, { recursive: true })
   const root = await mkdtemp(join(directory, 'host-ci-concurrency-'))
   const launches: { args: readonly string[] }[] = []
+  const events: string[] = []
   const ports: HostCiPorts = { cpus: cpuCount, memoryBytes: 16 * 2 ** 30, now: () => new Date(),
     run: async (file, args) => {
+      events.push(`${file} ${args.join(' ')}`)
       if (file === 'gh') await beforeGithub?.()
       if (file === 'git' && args.includes('show')) {
         return { code: 0, stdout: JSON.stringify({ foremanCi: { hostSlots: isolatedDatabase ? 1 : 0 } }), stderr: '' }
@@ -77,7 +79,7 @@ async function computer(beforeGithub?: () => Promise<void>, cpuCount = 8, isolat
   fixtures.push({ root, runner })
   const request = { operation: 'start', runId: randomUUID(), repository: 'octo/site', commit: 'a'.repeat(40),
     suite: 'lint', scope: 'full' }
-  return { root, runner, request, launches }
+  return { root, runner, request, launches, events, ports }
 }
 
 describe('host CI runner concurrent starts', () => {
@@ -174,4 +176,39 @@ describe('host CI runner concurrent starts', () => {
       writing.release()
     }
   })
+})
+
+
+it('cancels a warm-up before real CI prepares the repository and preserves all real slots', async () => {
+  const { runner, request, events } = await computer(undefined, 16, true)
+  const warm = { ...request, runId: randomUUID(), warmup: true, suite: 'install' }
+  await runner.handle(warm)
+  await vi.waitFor(async () => {
+    await expect(runner.status()).resolves.toMatchObject({ slotsUsed: 0, slotsTotal: 2,
+      warmup: { run: { state: 'running' } } })
+  })
+  const before = events.length
+  await runner.handle(request)
+  const realEvents = events.slice(before)
+  const stop = realEvents.findIndex(event => event.includes(`stop foreman-ci-${warm.runId}.service`))
+  const preflight = realEvents.findIndex(event => event.includes('cat-file'))
+  expect(stop).toBeGreaterThanOrEqual(0)
+  expect(preflight).toBeGreaterThan(stop)
+  await expect(runner.handle({ operation: 'read', runId: warm.runId, afterOffset: 0, maxBytes: 1 }))
+    .resolves.toMatchObject({ run: { state: 'canceled' } })
+  await expect(runner.status()).resolves.toMatchObject({ slotsUsed: 1 })
+  await expect(runner.handle({ ...warm, runId: randomUUID(), commit: 'b'.repeat(40) }))
+    .resolves.toMatchObject({ run: { state: 'queued' } })
+})
+
+it('does not restart a completed warm-up when the Worker is recreated', async () => {
+  const { root, runner, request, launches, ports } = await computer()
+  const warm = { ...request, warmup: true, suite: 'install' }
+  await runner.handle(warm)
+  await vi.waitFor(() => expect(launches).toHaveLength(1))
+  await writeFile(join(root, 'runs', warm.runId, 'exit'), '0')
+  const restarted = new HostCiRunner(root, ports)
+  const retry = await restarted.handle({ ...warm, runId: randomUUID() })
+  expect(retry).toMatchObject({ run: { state: 'passed', runId: warm.runId } })
+  expect(launches).toHaveLength(1)
 })

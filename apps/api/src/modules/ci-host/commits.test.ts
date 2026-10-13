@@ -110,3 +110,15 @@ it('resolves branch identity and ancestry from published Git commits while prote
   git(clone, 'update-ref', 'refs/remotes/origin/ambiguous', second)
   expect(await commits.branch('octo/site', 'main', first)).toBeNull()
 })
+
+
+it('discovers only published main and integration heads without preparing a checkout', async () => {
+  const git = vi.fn(async () => ({ code: 0, stderr: '', stdout: [
+    `${'a'.repeat(40)}\trefs/heads/main`, `${'b'.repeat(40)}\trefs/heads/audit/integration`,
+    `${'c'.repeat(40)}\trefs/heads/feature`,
+  ].join('\n') }))
+  const commits = new GitCiCommits({ cloneDirectory: () => { throw new Error('No checkout needed') }, git })
+  expect(await commits.heads('example/project')).toEqual([
+    { branch: 'main', commit: 'a'.repeat(40) }, { branch: 'audit/integration', commit: 'b'.repeat(40) },
+  ])
+})
