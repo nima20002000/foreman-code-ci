@@ -69,7 +69,9 @@ export const CiGetInputSchema = CiTicketInputSchema.extend({
 }).strict()
 export const OperatorCiGetInputSchema = CiGetInputSchema.extend({ workspaceId: IdSchema }).strict()
 export const CiGetOutputSchema = z.object({
-  run: CiRunRecordSchema, partitions: z.array(CiRunRecordSchema).optional(), logTail: z.string(),
+  run: CiRunRecordSchema,
+  partitions: z.array(CiRunRecordSchema).optional().describe('Run records ordered by suite, part and numeric shard index.'),
+  logTail: z.string(),
   queue: z.object({ position: z.number().int().positive(), reason: z.string() }).strict().nullable().optional(),
   group: z.object({ groupId: CiRunRecordSchema.shape.groupId, state: CiRunRecordSchema.shape.state }).strict().optional(),
   tests: CiTestResultsSchema.nullable().optional(),
@@ -104,7 +106,12 @@ const CiRunJobSchema = z.object({
 }).strict()
 export type CiRunJob = z.infer<typeof CiRunJobSchema>
 export const CI_RUN_JOBS_LIMIT = 500
-export const OperatorCiListInputSchema = z.object({ workspaceId: IdSchema, runId: IdSchema }).strict()
+export const OperatorCiListInputSchema = z.object({
+  workspaceId: IdSchema, runId: IdSchema,
+  /** Filter before applying the ticket limit so other executions cannot hide this execution's jobs. */
+  executionId: IdSchema.optional(),
+}).strict()
+export type OperatorCiListInput = z.infer<typeof OperatorCiListInputSchema>
 export const CiListOutputSchema = z.object({ runId: IdSchema, jobs: z.array(CiRunJobSchema).max(CI_RUN_JOBS_LIMIT),
   /** Older tickets beyond the limit were left out. */
   truncated: z.boolean() }).strict()

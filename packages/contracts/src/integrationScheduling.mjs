@@ -62,6 +62,8 @@ export const exclusiveIntegrationFiles = [startupFile,
   'apps/api/test/main-codex-qualification-partial-version.integration.test.ts',
   // Checkpoint routing must settle within its fixed deadline under CI load.
   'apps/api/test/eng03-b-durability-routing.integration.test.ts',
+  // Pending settlement and sibling approval resume share a fixed completion deadline.
+  'apps/api/test/engine-pending-sibling-settlement.integration.test.ts',
   // Two sequential native executions must settle within the fixed completion deadline.
   'apps/api/test/computer-workflow-save.regression-directories.integration.test.ts',
   // Sequential native startup and decision delivery share the fixed file deadline.
@@ -70,6 +72,11 @@ export const exclusiveIntegrationFiles = [startupFile,
   'apps/api/test/remote-review-production-reserved-decision.integration.test.ts',
   // Startup and original-owner recovery must finish within the same fixed file deadline.
   'apps/api/test/remote-review-production-worker-crash.integration.test.ts',
+  // Repeated schema migrations need uncontended host resources.
+  'apps/api/test/workflow-historical-version-pins.integration.test.ts',
+  'apps/api/test/source-snapshot-retention.integration.test.ts',
+  // Terminal recovery must settle without competing fixture setup.
+  'apps/api/test/recovery-terminal-before-closure.integration.test.ts',
   // Keep installed API packaging sequential on each user-systemd host.
   'apps/api/test/workflow-systemd-installed-service.integration.test.ts',
   'apps/api/test/workflow-systemd-active-recovery.integration.test.ts',

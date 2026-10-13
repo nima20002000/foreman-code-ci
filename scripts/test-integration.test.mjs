@@ -976,6 +976,37 @@ for (const scenario of cpuSchedulingCases) {
   })
 }
 
+test('pending sibling settlement keeps its fixed deadline without competing queue work', async () => {
+  const settlement = 'apps/api/test/engine-pending-sibling-settlement.integration.test.ts'
+  const ordinary = 'apps/api/test/ordinary.integration.test.ts'
+  const gate = 'gate:check'
+  const events = []
+  const active = new Set()
+  const run = async id => {
+    if (id === settlement) assert.equal(active.size, 0)
+    else assert.equal(active.has(settlement), false)
+    active.add(id)
+    events.push(id)
+    try {
+      await new Promise(resolve => setImmediate(resolve))
+      return { code: 0, complete: true }
+    } finally {
+      active.delete(id)
+    }
+  }
+  const result = await scheduleIntegrationQueue([settlement, ordinary], [{ index: 1 }, { index: 2 }], {
+    maxConcurrency: 2, samplePressure: lowPressure, pollIntervalMs: 0.01,
+    durations: { [settlement]: 52_540 },
+    extraItems: [{ id: gate }],
+    runFile: (_slot, file) => run(file), executeExtra: item => run(item.id),
+  })
+  assert.equal(result.unexecuted.length, 0)
+  assert.equal(result.results.length, 3)
+  assert.equal(result.results.every(item => item.status === 'PASSED'), true)
+  assert.deepEqual(new Set(events), new Set([settlement, ordinary, gate]))
+  assert.equal(active.size, 0)
+})
+
 test('integration and gate checks share the bounded queue and delay exclusive files', async () => {
   const ordinary = 'apps/api/test/ordinary.integration.test.ts'
   const exclusive = 'apps/api/test/dev-startup.integration.test.ts'
@@ -1010,6 +1041,10 @@ for (const [name, reservedReview] of [
   ['reserved remote review', 'apps/api/test/remote-review-production-reserved-decision.integration.test.ts'],
   ['remote review Worker crash recovery', 'apps/api/test/remote-review-production-worker-crash.integration.test.ts'],
   ['computer workflow directory save', 'apps/api/test/computer-workflow-save.regression-directories.integration.test.ts'],
+  ['remote review delivery', 'apps/api/test/remote-review-production-delivery.integration.test.ts'],
+  ['historical workflow version pins', 'apps/api/test/workflow-historical-version-pins.integration.test.ts'],
+  ['source snapshot retention', 'apps/api/test/source-snapshot-retention.integration.test.ts'],
+  ['terminal recovery', 'apps/api/test/recovery-terminal-before-closure.integration.test.ts'],
   ['six-node checkpoint routing', 'apps/api/test/eng03-b-durability-routing.integration.test.ts'],
 ]) test(`${name} runs without competing integration or gate processes`, async () => {
   const ordinary = 'apps/api/test/ordinary.integration.test.ts'

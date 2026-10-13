@@ -88,7 +88,7 @@ async function computer(beforeGithub?: () => Promise<void>, cpuCount = 8, isolat
   fixtures.push({ root, runner })
   const request = { operation: 'start', runId: randomUUID(), repository: 'octo/site', commit: 'a'.repeat(40),
     suite: 'lint', scope: 'full' }
-  return { root, runner, request, launches }
+  return { root, runner, request, launches, ports }
 }
 
 describe('host CI runner concurrent starts', () => {
@@ -103,9 +103,9 @@ describe('host CI runner concurrent starts', () => {
     expect(launches[0]!.args).toContain('--property=CPUQuota=1600%')
   })
 
-  it('removes a canceled checkout only after preparation has stopped', async () => {
+  it('releases the slot of a canceled run only after preparation has stopped', async () => {
     const checkout = barrier()
-    const { root, runner, request } = await computer(undefined, 16, true, checkout.pause)
+    const { runner, request } = await computer(undefined, 16, true, checkout.pause)
     await runner.handle(request)
     await checkout.entered
     const canceled = runner.cancel(request.runId)
@@ -118,8 +118,7 @@ describe('host CI runner concurrent starts', () => {
       checkout.release()
     }
     await expect(canceled).resolves.toMatchObject({ state: 'canceled' })
-    const { access } = await import('node:fs/promises')
-    await expect(access(join(root, 'runs', request.runId, 'src'))).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(runner.status()).resolves.toMatchObject({ slotsUsed: 0 })
   })
 
   it('admits two different jobs into two slots, queues a third, and releases one slot on cancellation', async () => {
@@ -204,4 +203,35 @@ describe('host CI runner concurrent starts', () => {
       writing.release()
     }
   })
+})
+
+
+it.each([false, true])('fences cancellation during repository fetch across restart=%s', async restarted => {
+  const fetch = barrier()
+  const { root, runner, request, launches, ports } = await computer(undefined, 8, false, undefined, fetch.pause)
+  const canceler = restarted ? new HostCiRunner(root, ports) : runner
+  const start = runner.handle(request)
+  try {
+    await fetch.entered
+    await expect(canceler.handle({ operation: 'cancel', runId: request.runId }))
+      .resolves.toMatchObject({ operation: 'cancel', run: { state: 'starting', finishedAt: null } })
+    expect(launches).toHaveLength(0)
+    fetch.release()
+    await expect(start).resolves.toMatchObject({ run: { state: 'canceled' } })
+    await expect(runner.handle(request)).resolves.toMatchObject({ run: { state: 'canceled' } })
+    await expect(runner.status()).resolves.toMatchObject({ slotsUsed: 0 })
+    expect(launches).toHaveLength(0)
+  } finally {
+    fetch.release()
+    await start
+  }
+})
+
+it('persists cancellation before delayed start delivery and rejects native entry on replay', async () => {
+  const { root, runner, request, launches, ports } = await computer()
+  await expect(runner.handle({ operation: 'cancel', runId: request.runId }))
+    .resolves.toMatchObject({ run: { state: 'canceled' } })
+  const restarted = new HostCiRunner(root, ports)
+  await expect(restarted.handle(request)).resolves.toMatchObject({ run: { state: 'canceled' } })
+  expect(launches).toHaveLength(0)
 })
