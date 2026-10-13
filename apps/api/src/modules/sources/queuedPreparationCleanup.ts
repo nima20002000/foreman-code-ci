@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto'
+import { withTransaction } from '../../infrastructure/transaction.js'
 import type pg from 'pg'
 import type { JobQueueTicket } from '@foreman-code/contracts/job-admission'
 import { SourceOperationOwnerSchema, type SourceOperationOwner } from '@foreman-code/contracts/source-operations'
 import { SourcePreparationClosureSchema } from '@foreman-code/contracts/source-admission'
 import { DomainError } from '../errors.js'
-import type { SourceExecutionHostPort } from './service.js'
+import type { SourceExecutionHostPort } from './ports.js'
 import { loadSourcePreparation, requireSourcePreparationHost, resolvePreparationReconciliationOwner,
   validateSourcePreparationClosure, validateQueuedSourcePreparation } from './preparationReconciliation.js'
 import { requireQueuedPreparationClosed } from './queuedPreparationAuthority.js'
@@ -15,16 +16,7 @@ export class QueuedSourcePreparationCleanup {
     private readonly retireTransfers?: (closure: ReturnType<typeof SourcePreparationClosureSchema.parse>) => Promise<void>) {}
 
   private async transaction<T>(work: (sql: pg.PoolClient) => Promise<T>): Promise<T> {
-    const sql = await this.pool.connect()
-    try {
-      await sql.query('begin')
-      const value = await work(sql)
-      await sql.query('commit')
-      return value
-    } catch (error) {
-      await sql.query('rollback')
-      throw error
-    } finally { sql.release() }
+    return withTransaction(this.pool, work)
   }
 
   async close(ticket: JobQueueTicket): Promise<void> {
