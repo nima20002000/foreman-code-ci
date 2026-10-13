@@ -1,5 +1,3 @@
-import type { PostgresFileArtifactCleanupRepository } from './artifacts.js'
-
 /** Internal cleanup identity, not an authorization input or public file DTO.
  * expiresAt is PostgreSQL's lossless UTC text, not a millisecond-rounded JS Date. */
 export interface FileCleanupCandidate {
@@ -18,10 +16,14 @@ export interface FileArtifactCleanupCandidate {
   binding: string
   storageKey: string
 }
+export interface FileArtifactCleanupRepository {
+  findByStorageKeys(keys: readonly string[]): Promise<FileArtifactCleanupCandidate[]>
+  remove(candidate: FileArtifactCleanupCandidate, removeBytes: () => Promise<boolean>): Promise<FileCleanupOutcome>
+}
 
 export interface FileCleanupRepository {
   /** Turn artifacts have session lifetime, not a user-file retention preference. */
-  readonly artifacts?: PostgresFileArtifactCleanupRepository
+  readonly artifacts?: FileArtifactCleanupRepository
 
   /** Only overdue pending/ready files; persisted tombstones are discovered from disk instead. */
   findDue(afterFileId: string | null, limit: number): Promise<FileCleanupCandidate[]>

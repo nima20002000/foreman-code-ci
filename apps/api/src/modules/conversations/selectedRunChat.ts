@@ -1,5 +1,4 @@
 import type pg from 'pg'
-import { withTransaction } from '../../infrastructure/transaction.js'
 import type { HarnessExecution } from '@foreman-code/contracts'
 import type { AgentChatContext } from '@foreman-code/contracts/agent-chat'
 import type { ManagementAction, ManagementPrincipal } from '@foreman-code/contracts/management'
@@ -12,7 +11,6 @@ import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.j
 import { DomainError } from '../errors.js'
 import type { PostgresRunRepository } from '../runs/postgres.js'
 import { agentChatKey, type AgentConversationRow } from './agentChatRepository.js'
-import { ignoreError } from '../diagnostics/ignoredError.js'
 
 type Queryable = Pick<pg.PoolClient, 'query'>
 export type RunChatAuthorityCheck = (transaction?: pg.PoolClient) => Promise<void>
@@ -143,10 +141,16 @@ export async function withRunChatAuthority<T>(pool: pg.Pool, principal: Manageme
       authorize(principal); authorize(live)
       return
     }
-    return withTransaction(pool, async (client) => {
+    const client = await pool.connect()
+    try {
+      await client.query('begin')
       const live = await readLiveManagementPrincipal(client, principal.id)
       authorize(principal); authorize(live)
-    })
+      await client.query('commit')
+    } catch (error) {
+      await client.query('rollback').catch(() => undefined)
+      throw error
+    } finally { client.release() }
   }
   await assertCurrent()
   const result = await work(pool, assertCurrent)

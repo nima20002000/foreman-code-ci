@@ -1,5 +1,4 @@
 import { jobLifecycleSignal } from '../../jobs/lifecycle.js'
-import { withTransaction } from '../../../infrastructure/transaction.js'
 import { createHash } from 'node:crypto'
 import { basename } from 'node:path'
 import type pg from 'pg'
@@ -22,7 +21,6 @@ import type { FileMutationSource } from '../repository.js'
 import { JobOutputPublicationInputSchema, type JobOutputPublicationInput } from '@foreman-code/contracts/job-output-transfer'
 import type { FileStorageService } from '../service.js'
 import { completedBytes } from '../tools/transfers.js'
-import { ignoreError } from '../../diagnostics/ignoredError.js'
 
 export type { JobOutputPublicationInput } from '@foreman-code/contracts/job-output-transfer'
 export interface TrustedJobOutputReader {
@@ -49,7 +47,13 @@ export class CanonicalJobArtifactPort implements JobArtifactPort {
     private readonly authority: Pick<JobPublicationAuthority, 'authorizePublication'>, private readonly reader: TrustedJobOutputReader,
     private readonly clock: () => Date = () => new Date()) {}
   private async transaction<T>(operation: (query: JobSql) => Promise<T>): Promise<T> {
-    return withTransaction(this.pool, operation)
+    const sql = await this.pool.connect()
+    try {
+      await sql.query('begin')
+      const result = await operation(sql)
+      await sql.query('commit'); return result
+    } catch (error) { await sql.query('rollback').catch(() => {}); throw error }
+    finally { sql.release() }
   }
   private artifact(link: JobPublicationLink, value: FileWithRevision): JobArtifact {
     const job = JobArtifactFileWithRevisionSchema.parse(value)

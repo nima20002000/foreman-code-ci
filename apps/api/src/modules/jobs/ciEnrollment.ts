@@ -1,4 +1,3 @@
-import { errorMessage } from '../../shared/errorMessage.js'
 import type pg from 'pg'
 import { CiEnrollmentReadSchema, CiEnrollmentUpdateSchema, type CiEnrollmentComputer,
   type CiEnrollmentState, type CiEnrollmentTemplate, type CiInstalledStorage } from '@foreman-code/contracts'
@@ -16,11 +15,10 @@ import type { CiRuntimeProvisioner } from './ciRuntimeProvisioner.js'
 import type { JobRuntimeProfiles } from './runtimeProfiles.js'
 import { CiEnrollmentRepository, type CiEnrollmentRecord } from './ciEnrollmentRepository.js'
 import type { CiEnrollmentInventory, CiEnrollmentTarget } from './ciEnrollmentInventory.js'
-import { ciEnrollmentDisabled, lockCiEnrollment } from './ciEnrollmentState.js'
+import { ciEnrollmentDisabled, lockCiEnrollment } from './ciEnrollmentInventory.js'
 import { ciEnrollmentProfileInput, ciEnrollmentTemplateDigest, requireCiEnrollmentStorage } from './ciEnrollmentProfiles.js'
 import { JobOwnership } from './ownership.js'
-import { canonicalJson } from '@foreman-code/contracts/canonical-json'
-import { jobDigest } from './digest.js'
+import { canonical, jobDigest } from './digest.js'
 import type { JobSql } from './repository.js'
 import { lockActiveWorkspace } from '../workspaces/admission.js'
 
@@ -195,7 +193,7 @@ export class CiEnrollment {
 
   private targetState(computer: CiEnrollmentTarget, state?: CiEnrollmentComputer): CiEnrollmentComputer {
     if (!state) return this.initial(computer)
-    if (canonicalJson(state.target) === canonicalJson(computer.target)) {
+    if (canonical(state.target) === canonical(computer.target)) {
       return { ...state, ...(computer.executionMode ? { executionMode: computer.executionMode } : {}) }
     }
     return { ...this.initial(computer), revision: state.revision, enabled: state.enabled }
@@ -269,7 +267,7 @@ export class CiEnrollment {
         } catch (error) {
           if (this.scopeFailure(error)) throw error
           result.state = this.failureState(error)
-          result.message = (errorMessage(error, 'CI profile enrollment failed.')).slice(0, 2000)
+          result.message = (error instanceof Error ? error.message : 'CI profile enrollment failed.').slice(0, 2000)
           componentLogger('jobs').warn({ err: error, workspaceId, templateId: template.id,
             host: buildComputerKey(computer.target) }, 'CI profile enrollment is pending')
         }
@@ -278,7 +276,7 @@ export class CiEnrollment {
     } catch (error) {
       const failure = this.failureState(error)
       record.state.state = failure
-      record.state.message = (errorMessage(error, 'CI enrollment failed.')).slice(0, 2000)
+      record.state.message = (error instanceof Error ? error.message : 'CI enrollment failed.').slice(0, 2000)
       for (const result of record.state.templates.filter(value => value.state === 'pending')) {
         result.state = failure
         result.message = record.state.message

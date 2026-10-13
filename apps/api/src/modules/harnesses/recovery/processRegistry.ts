@@ -421,7 +421,7 @@ export class NativeProcessRegistry {
     const attempt = timeRuntimeOperation('harness', 'process.close',
       () => this.closeRegistered(scope, id, signal), { ownerId: scope.owner })
     closing.set(identity, attempt)
-    void attempt.finally(() => { if (closing.get(identity) === attempt) closing.delete(identity) }).catch(() => { /* ignore: the owner awaits the original promise; this observer prevents a duplicate unhandled rejection. */ })
+    void attempt.finally(() => { if (closing.get(identity) === attempt) closing.delete(identity) }).catch(() => undefined)
     return attempt
   }
 
@@ -724,7 +724,7 @@ function spawnNativeProcessUnobserved(binary: string, args: string[], options: {
       ...(options.claudeSessionScope ? { claudeSessionScope: options.claudeSessionScope } : {}),
       reconnectableStdio: options.reconnectableStdio === true,
       restartDetachable: options.restartDetachable === true }, (error) => {
-      if (error) { try { child.disconnect() } catch { /* ignore: already disconnected. */ } }
+      if (error) { try { child.disconnect() } catch { /* Already disconnected. */ } }
     })
   } catch (error) {
     // Until configuration dispatch the guardian has no native child. Closing IPC asks it to exit.

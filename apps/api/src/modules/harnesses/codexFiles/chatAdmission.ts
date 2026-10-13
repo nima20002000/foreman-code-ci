@@ -1,5 +1,4 @@
 import type pg from 'pg'
-import { withTransaction } from '../../../infrastructure/transaction.js'
 import { mkdir, realpath } from 'node:fs/promises'
 import { isAbsolute, relative, resolve } from 'node:path'
 import { MessageAttachmentRefsSchema, type MessageAttachmentRef } from '@foreman-code/contracts/files'
@@ -14,7 +13,6 @@ import { MessagePublicationRefsSchema } from '../../conversations/messagePublica
 import { codexChatFileTools } from './declarations.js'
 import type { CodexFileHostLease } from './port.js'
 import type { ProductionCodexChatFiles } from './production.js'
-import { ignoreError } from '../../diagnostics/ignoredError.js'
 
 interface AdmissionRow {
   request_id: string
@@ -121,7 +119,9 @@ export function postgresCodexChatFiles(pool: pg.Pool, files: () => TemporaryFile
         }, recheck,
       } },
       async adoptPublished(nativeTurnId, refs) {
-        await withTransaction(pool, async (client) => {
+        const client = await pool.connect()
+        try {
+          await client.query('begin')
           const current = (await client.query<{ native_session_id: string; native_turn_id: string; message_id: string }>(`
             select c.native_session_id,t.native_turn_id,t.message_id from operator_conversations c
             join operator_conversation_turns t on t.conversation_id=c.id and t.request_id=$2
@@ -155,7 +155,9 @@ export function postgresCodexChatFiles(pool: pg.Pool, files: () => TemporaryFile
             .filter((ref) => !originals.some((input) => input.fileId === ref.fileId)))
           await client.query(`update operator_conversation_messages set record=jsonb_set(record,'{publicationRefs}',$2::jsonb)
             where id=$1`, [row.message_id, JSON.stringify(output)])
-        })
+          await client.query('commit')
+        } catch (error) { await client.query('rollback').catch(() => undefined); throw error }
+        finally { client.release() }
       },
     }
   } }

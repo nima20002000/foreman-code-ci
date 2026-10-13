@@ -1,19 +1,21 @@
 import type pg from 'pg'
-import { withTransaction } from '../../../infrastructure/transaction.js'
 import { ArtifactEdgeBindingSchema, type ArtifactEdgeBinding } from '@foreman-code/contracts/artifact-edges'
 import { DomainError } from '../../errors.js'
 import type { FileQuery } from '../repository.js'
 import type { ArtifactEdgeRepository } from './edges.js'
-import { ignoreError } from '../../diagnostics/ignoredError.js'
 
 export class PostgresArtifactEdgeRepository implements ArtifactEdgeRepository {
   constructor(private readonly pool: pg.Pool) {}
   private async transaction<T>(operation: (query: FileQuery) => Promise<T>): Promise<T> {
-    return withTransaction(this.pool, async (client) => {
+    const client = await this.pool.connect()
+    try {
+      await client.query('begin')
       await client.query("set local lock_timeout='5s'; set local statement_timeout='10s'")
       const result = await operation(client)
+      await client.query('commit')
       return result
-    })
+    } catch (error) { await client.query('rollback').catch(() => {}); throw error }
+    finally { client.release() }
   }
   private async live(query: FileQuery, b: ArtifactEdgeBinding): Promise<void> {
     // Lock the file after grant/attempt locks. Sample wall time AFTER those waits.
