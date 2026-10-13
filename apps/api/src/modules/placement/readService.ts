@@ -1,5 +1,4 @@
 import type pg from 'pg'
-import { withTransaction } from '../../infrastructure/transaction.js'
 import { WorkerObservationSchema, type WorkerObservation } from '@foreman-code/contracts/node-placement'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import {
@@ -45,7 +44,9 @@ export class RunPlacementReadService {
       requireAuthorization(candidate, 'workspace_locations:read', input)
     }
     authorize(principal)
-    return withTransaction(this.pool, async (client) => {
+    const client = await this.pool.connect()
+    try {
+      await client.query('begin')
       const live = await readLiveManagementPrincipal(client, principal.id)
       authorize(live)
       const run = await client.query('select id from runs where workspace_id=$1 and workflow_id=$2 and id=$3',
@@ -57,6 +58,7 @@ export class RunPlacementReadService {
         const result = await readUnplacedNode(client, input)
         authorize(principal)
         authorize(live)
+        await client.query('commit')
         return result
       }
       const placement = readPlacement(pin.record)
@@ -98,7 +100,11 @@ export class RunPlacementReadService {
         readback: { evidence: 'accepted', placement, observations,
           ...(nativePlacements.length ? { nativePlacements } : {}) } })
       authorize(principal); authorize(live)
+      await client.query('commit')
       return result
-    })
+    } catch (error) {
+      await client.query('rollback')
+      throw error
+    } finally { client.release() }
   }
 }

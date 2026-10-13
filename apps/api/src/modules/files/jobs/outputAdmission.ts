@@ -1,5 +1,4 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
-import { withTransaction } from '../../../infrastructure/transaction.js'
 import { randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import type pg from 'pg'
@@ -23,11 +22,12 @@ import type { DeviceEndpoint } from '../../devices/deviceEndpoint.js'
 import { sourceMaterializationDigest } from '../../sources/bindingHash.js'
 import { DomainError } from '../../errors.js'
 import type { FileMutationSource } from '../repository.js'
+import type { AcceptedJobTransferResolver } from './transferReader.js'
 
 import { JOB_OUTPUT_NAMESPACE, outputTransferContext } from './workerProtocol.js'
 export { JOB_OUTPUT_NAMESPACE, outputTransferContext } from './workerProtocol.js'
 const OPERATION = 'job.output.admit'
-export class PostgresJobOutputAdmission {
+export class PostgresJobOutputAdmission implements AcceptedJobTransferResolver {
   private readonly commands: PostgresCommandCoordinator
   private readonly frames = new AsyncLocalStorage<Readonly<DeviceSessionBinding>>()
   constructor(private readonly pool: pg.Pool, private readonly authority: JobPublicationAuthority,
@@ -35,7 +35,10 @@ export class PostgresJobOutputAdmission {
     private readonly reserve: (input: JobOutputPublicationInput, source: FileMutationSource) => Promise<FileWithRevision>,
     private readonly clock: () => Date = () => new Date()) { this.commands = new PostgresCommandCoordinator(pool) }
   private async transaction<T>(perform: (sql: JobSql) => Promise<T>): Promise<T> {
-    return withTransaction(this.pool, perform)
+    const client = await this.pool.connect(); let broken = false
+    try { await client.query('begin'); const value = await perform(client); await client.query('commit'); return value }
+    catch (error) { await client.query('rollback').catch(() => {broken=true}); throw error }
+    finally { client.release(broken) }
   }
   private current(deviceId: string): Readonly<DeviceSessionBinding> {
     const binding = this.endpoint.currentBinding(deviceId,JOB_OUTPUT_NAMESPACE), frame = this.frames.getStore()

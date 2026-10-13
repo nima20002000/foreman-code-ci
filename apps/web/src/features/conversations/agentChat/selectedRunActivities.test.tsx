@@ -4,8 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { server } from '../../../mocks/server'
 import { useRunsSelectorUi } from '../../runs-selector/uiStore'
-import { activitiesRoute, activityPage, clients, installSelectedHandlers, mountSelectedActivities } from './sch10.testSupport'
-import { deferred } from '../../../test/deferred'
+import { activitiesRoute, activityPage, clients, deferred, installSelectedHandlers, mountSelectedActivities } from './sch10.testSupport'
 
 beforeEach(() => { useRunsSelectorUi.getState().setOpen(null) })
 afterEach(() => {

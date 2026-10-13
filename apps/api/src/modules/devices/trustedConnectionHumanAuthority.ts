@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto'
-import { withTransaction } from '../../infrastructure/transaction.js'
 import type pg from 'pg'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
@@ -77,7 +76,9 @@ export class PostgresTrustedConnectionHumanAuthority {
     return requirePrincipal(request)
   }
   private async transaction<T>(operation: (client: pg.PoolClient) => Promise<T>): Promise<T> {
-    return withTransaction(this.pool, operation)
+    const client = await this.pool.connect()
+    try { await client.query('begin'); const result = await operation(client); await client.query('commit'); return result }
+    catch (error) { await client.query('rollback'); throw error } finally { client.release() }
   }
   private async lock(client: pg.PoolClient, id: string): Promise<void> {
     await client.query('select pg_advisory_xact_lock(hashtext($1))', [`trusted-connection-approval:${this.target(id)}`])
