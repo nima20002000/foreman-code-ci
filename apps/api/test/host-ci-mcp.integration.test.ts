@@ -115,6 +115,8 @@ async function fixture(options: { repository?: boolean; github?: Record<string, 
   integrationInventory?: CiIntegrationInventory
   cloud?: boolean | { github: number; circleci: number }; agent?: boolean; hostSlots?: number; cloudSystemd?: boolean
   changedFiles?: string[]; priorityGrant?: boolean
+  selection?: { scope: 'affected' | 'full'; files: string[]; reason: string }
+  supportsSelection?: boolean
   supersession?: { branch(commit: string): string | null; isAncestor(ancestor: string, commit: string): boolean }
   repositoryRunner?: { commits: CiCommits; endpoint: HostCiEndpoint } } = {}) {
   const saved = options.agent ? makeCurrentWorkflowFixture(randomUUID()) : undefined
@@ -139,7 +141,10 @@ async function fixture(options: { repository?: boolean; github?: Record<string, 
   const inventory = options.unitInventory
   const commits = options.repositoryRunner?.commits ?? {
     infrastructureOnly: async () => onlyCiInfrastructure(options.changedFiles ?? ['apps/web/src/App.tsx']),
-    capabilities: async () => ({ parts: true, integrationPartitions: true, affected: true }),
+    capabilities: async () => ({ parts: true, integrationPartitions: true, affected: options.supportsSelection !== false }),
+    affectedSelection: async () => options.selection ?? {
+      scope: 'affected' as const, files: ['apps/api/src/example.test.ts'], reason: 'Affected files.',
+    },
     ...(options.integrationInventory ? { integrationInventory: async () => options.integrationInventory! } : {}),
     ...(inventory ? { unitInventory: async () => inventory } : {}),
     ...(options.supersession ? {
@@ -278,6 +283,37 @@ it.each([
     await repository.close()
   }
 })
+
+it.each([
+  { supportsSelection: false },
+  { selection: { scope: 'full' as const, files: [], reason: 'Shared CI infrastructure changed.' } },
+])('denies affected requests that expand to the full suite without the grant: %j', async options => {
+  const f = await fixture(options)
+  try {
+    const caller = await f.connect([...CI_RUN_ACTIONS, ...CI_GET_ACTIONS])
+    const denied = await f.call(caller, 'ci_run', { suite: 'unit', commandId: 'expanded-full-suite' })
+    expect(denied.isError).toBe(true)
+    expect(JSON.stringify(denied.content)).toContain('CI_FULL_SCOPE_FORBIDDEN')
+    expect((await f.pool.query('select count(*)::int as count from ci_runs')).rows[0].count).toBe(0)
+  } finally { await f.close() }
+})
+
+it('keeps a Workflow Agent without explicit CI permission from using the owner’s full-suite grant', async () => {
+  const f = await fixture({ agent: true })
+  try {
+    const denied = await f.agent!.callTool({ name: 'ci_run', arguments: {
+      suite: 'unit', scope: 'full', commandId: 'agent-full-denied',
+    } })
+    expect(denied.isError).toBe(true)
+    expect(JSON.stringify(denied.content)).toContain('CI_FULL_SCOPE_FORBIDDEN')
+    const started = CiRunOutputSchema.parse(decodeMcpToolResult(await f.agent!.callTool({ name: 'ci_run', arguments: {
+      suite: 'unit', commit: 'a'.repeat(40), files: ['apps/api/src/example.test.ts'], commandId: 'agent-affected',
+    } })))
+    const read = CiGetOutputSchema.parse(decodeMcpToolResult(await f.agent!.callTool({ name: 'ci_get',
+      arguments: { ticketId: started.ticketId } })))
+    expect(read.run).toMatchObject({ scope: 'affected', files: ['apps/api/src/example.test.ts'] })
+  } finally { await f.close() }
+}, 60_000)
 
 it('runs generic integration once despite requested partitions and falls back from an unconfigured cloud mirror', async () => {
   const repository = await genericCiRepository({ integration: true, cloud: true })
@@ -632,6 +668,32 @@ it('shares affected CI validation, grants and persisted readback between HTTP an
       const rejected = await f.app.inject({ method: 'POST', url, headers, payload: invalid })
       expect(rejected.statusCode).toBe(400)
     }
+  } finally { await f.close() }
+})
+
+it.each([
+  { suite: 'unit', scope: 'full' },
+  { suite: 'integration', scope: 'affected' },
+])('denies unrestricted $suite CI through authenticated MCP without a separate full-suite grant', async selection => {
+  const f = await fixture()
+  try {
+    const caller = await f.connect([...CI_RUN_ACTIONS, ...CI_GET_ACTIONS])
+    const denied = await f.call(caller, 'ci_run', { ...selection, commandId: 'ungranted-full-suite' })
+    expect(denied.isError).toBe(true)
+    expect(JSON.stringify(denied.content)).toContain('CI_FULL_SCOPE_FORBIDDEN')
+    expect(JSON.stringify(denied.content)).toContain('affected')
+    expect(JSON.stringify(denied.content)).toContain('files')
+    expect((await f.pool.query('select count(*)::int as count from ci_runs')).rows[0].count).toBe(0)
+    expect((await f.pool.query("select outcome from management_audit where action='ci_run'")).rows)
+      .toContainEqual({ outcome: 'denied' })
+    const started = CiRunOutputSchema.parse(await f.value(caller, 'ci_run', {
+      suite: 'integration', commit: 'a'.repeat(40), files: ['apps/api/test/example.integration.test.ts'],
+      commandId: 'ungranted-affected-files',
+    }))
+    const read = CiGetOutputSchema.parse(await f.value(caller, 'ci_get', { ticketId: started.ticketId }))
+    expect(read.run).toMatchObject({ scope: 'affected', files: ['apps/api/test/example.integration.test.ts'] })
+    expect((await f.pool.query<{ record: unknown }>('select record from ci_runs where id=$1',
+      [started.ticketId])).rows[0]!.record).toEqual(read.run)
   } finally { await f.close() }
 })
 
