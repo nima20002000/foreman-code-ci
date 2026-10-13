@@ -111,7 +111,7 @@ async function computer(options: { github?: boolean; suiteExit?: number; pause?:
     availableMemoryBytes: () => 16 * 2 ** 30,
     run: async (file, args, runOptions = {}) => {
       if (file === 'gh') return { code: options.github === false ? 1 : 0, stdout: '', stderr: '' }
-      if (file === 'git' && args.some(value => value.startsWith('https://github.com/'))) {
+      if (file === 'git' && args.includes('clone')) {
         return system.run('git', args.map(value => value.startsWith('https://github.com/') ? origin : value), runOptions)
       }
       if (file === 'systemd-run') {
@@ -284,7 +284,7 @@ describe('host CI runner', () => {
     await f.runner.handle({ operation: 'start', runId, repository: 'example/project', commit: f.commit,
       suite: 'unit', part: 'unit-api' })
     const done = await f.settle(runId)
-    expect(done.run).toMatchObject({ state: 'failed', exitCode: 9, step: 'prepare' })
+    expect(done.run).toMatchObject({ state: 'failed', exitCode: 9, step: 'unit-api' })
     expect(done.text).toContain('corepack pnpm db:up')
     expect(done.text).not.toContain('corepack pnpm test')
   })
