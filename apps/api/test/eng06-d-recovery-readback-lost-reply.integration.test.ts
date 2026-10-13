@@ -16,9 +16,9 @@ describe.skipIf(!postgresEnabled)('ENG06-D recovery readback over real HTTP and 
       // This is provider durability, NOT an application result/acceptance COMMIT.
       // d32a361 deliberately does not cold-attach to fetch that provider history.
       expect(f.provider.originalResult(original)?.outcome).toBe('succeeded')
-      await f.restart({ mode: 'crash' })
+      await f.restart()
       const during = await readback(f), counts = { ...f.provider.counts }
-      // The crash leaves the committed cleanup fence without a close callback.
+      // Restart durably fences reentry before original transport detachment.
       // It changes no model result, accepted input, task, session or Run fact;
       // recovery/settlement below, not provider history, clears this obligation.
       expect(during).toEqual({ ...before, record: { ...before.record, cleanupPending: true },
@@ -41,7 +41,7 @@ describe.skipIf(!postgresEnabled)('ENG06-D recovery readback over real HTTP and 
       expect(f.provider.counts.starts).toBe(counts.starts)
       expect(f.provider.counts.sessions).toBe(counts.sessions)
       expect(f.provider.counts.attaches).toBe(0)
-      await assertRecoveryReceipts(f, [original], { detached: false })
+      await assertRecoveryReceipts(f, [original])
       expect(after.record.run.agentConfigurationVersionIds).toEqual(before.record.run.agentConfigurationVersionIds)
       expect(after.record.run.executionLocation).toEqual(before.record.run.executionLocation)
       expect(f.shutdownErrors).toEqual([])
