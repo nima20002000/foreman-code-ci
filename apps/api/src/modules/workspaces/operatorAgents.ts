@@ -58,6 +58,7 @@ export async function readAgentForReuse(client: pg.ClientBase, principal: Manage
 }
 
 export function authorizeAgentConfiguration(principal: ManagementPrincipal, workspaceId: string, configuration: HarnessConfiguration, assignedSkills: Agent['assignedSkills']): void {
+  if (configuration.harness !== 'opencode' && configuration.ciFullScope) requireAuthorization(principal, 'jobs:ci_full', { workspaceId })
   if (configuration.harness === 'codex' && configuration.sandbox === 'danger-full-access') requireAuthorization(principal,'harnesses:update',{workspaceId})
   if (assignedSkills?.length) requireAuthorization(principal,'skills:read',{workspaceId})
   // An Agent may be configured before its workflow assigns approval authority.

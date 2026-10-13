@@ -43,6 +43,8 @@ export const GRAPHQL_AGENT_TOOLS = {
     description: "Run install, typecheck, lint, unit, build or integration on a build computer. "
       + "Tests the requested commit, the Agent's current files published to GitHub, or the default branch head. "
       + "Scope defaults to affected. Omit files for runner selection against the workspace default branch merge-base; "
+      + "Affected scope is the default. Full scope, gate=true, integration without files and full-suite fallback require jobs:ci_full "
+      + "plus this Agent’s saved harness ciFullScope permission. Without it, use affected scope with files. "
       + "Priority defaults to normal; high requires Operator role or jobs:prioritize. CI-only commits are automatically high. "
       + "caller files remain supported with an explicit commit. Missing selectors, shared infrastructure changes and "
       + "the default branch head run the full suite and report the reason. Scope full always runs everything. "

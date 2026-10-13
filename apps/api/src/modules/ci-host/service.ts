@@ -11,7 +11,7 @@ import type { PostgresCommandCoordinator } from '../commands/postgres.js'
 import type { CiAuthority } from '../jobs/ciAuthority.js'
 import { CI_GET_ACTIONS, CI_RUN_ACTIONS } from '../jobs/ciAuthority.js'
 import { DomainError, databaseReadFailure } from '../errors.js'
-import { requireAuthorization } from '../access/policy.js'
+import { isAuthorized, requireAuthorization } from '../access/policy.js'
 import { componentLogger } from '../diagnostics/logger.js'
 import { ciGroupState, planCiParts, runsOnCircleCi, type CiUnitInventory } from './parts.js'
 import { planIntegrationParts, type CiIntegrationInventory, type CiIntegrationSlots } from './integrationParts.js'
@@ -21,6 +21,7 @@ import { RUN_CI_JOBS_SQL, runCiJob, storedCiTestResults, type RunCiJobRow } from
 import { fallbackOnError } from '../diagnostics/ignoredError.js'
 import { CI_QUEUE_ORDER, ciQueueReason, compareCiQueue } from './priority.js'
 import { supersedeCiRuns } from './supersession.js'
+import { requireFullCiGrant, requiresFullCiGrant } from './fullScope.js'
 
 /** CI reads are idempotent: one retry after a lock or statement timeout, then a typed retryable error. */
 async function retryRead<T>(work: () => Promise<T>): Promise<T> {
@@ -41,6 +42,8 @@ export interface HostCiEndpoint {
 }
 /** Resolves the commit to test and makes sure GitHub has it, so build computers can fetch it. */
 export interface CiCommits {
+  affectedSelection?(repository: string, commit: string, suite: CiRunInput['suite'], defaultBranch: string,
+    baseCommit?: string): Promise<{ scope: 'affected' | 'full'; files: string[]; reason: string }>
   infrastructureOnly?(repository: string, commit: string): Promise<boolean>
   branch?(repository: string, defaultBranch: string, commit: string): Promise<string | null>
   isAncestor?(repository: string, ancestor: string, commit: string): Promise<boolean>
@@ -103,13 +106,22 @@ export class HostCiService {
 
   async run(caller: ManagementPrincipal, input: CiRunInput & { workspaceId?: string | undefined }, source: 'mcp' | 'http' = 'mcp') {
     const actions = input.priority === 'high' && caller.audience !== 'operator'
-      ? [...CI_RUN_ACTIONS, 'jobs:prioritize' as const] : CI_RUN_ACTIONS
+      ? [...CI_RUN_ACTIONS, 'jobs:prioritize' as const] : [...CI_RUN_ACTIONS]
     const scope = await this.authority.resolve(caller, input.workspaceId, actions).catch(async error => {
       if (source === 'http' && error instanceof DomainError && [401, 403, 404].includes(error.status)) {
         await this.commands.recordDenied(caller.id, source, 'ci.run', input.workspaceId ?? 'ci')
       }
       throw error
     })
+    try {
+      if (requiresFullCiGrant(input)) {
+        requireFullCiGrant(isAuthorized(scope.principal, 'jobs:ci_full', { workspaceId: scope.workspaceId }))
+        actions.push('jobs:ci_full')
+      }
+    } catch (error) {
+      if (source === 'http') await this.commands.recordDenied(caller.id, source, 'ci.run', scope.workspaceId)
+      throw error
+    }
     // A start already in flight must settle before admission can supersede its ticket.
     this.stoppingRuns += 1
     try {
@@ -160,11 +172,27 @@ export class HostCiService {
             .map(file => [file, merged[file]!]))
         }
         const unitDurations = { ...inventory?.durations, ...learned }
+        const liveScope = await this.authority.resolve(caller, scope.workspaceId, actions)
+        const fullAllowed = isAuthorized(liveScope.principal, 'jobs:ci_full', { workspaceId: scope.workspaceId })
         const supportsSelection = input.suite === 'integration' ? capabilities.integrationPartitions : capabilities.affected
         const selectionScope = supportsSelection ? input.scope ?? 'affected' : 'full'
-        const deriveFiles = selectionScope === 'affected' && input.files === undefined
-        const selection = { ...input, scope: selectionScope, files: selectionScope === 'affected' ? input.files : [] }
-        const empty = selectionScope === 'affected' && input.files?.length === 0
+        if (selectionScope === 'full') requireFullCiGrant(fullAllowed)
+        let selectedFiles = input.files
+        if (selectionScope === 'affected' && selectedFiles === undefined && !fullAllowed) {
+          const selected = await this.commits.affectedSelection?.(repository, commit, input.suite, defaultBranch, input.baseCommit)
+          requireFullCiGrant(selected?.scope === 'affected', selected?.reason ?? 'The affected selector is unavailable.')
+          selectedFiles = selected!.files
+        }
+        const deriveFiles = selectionScope === 'affected' && selectedFiles === undefined
+        const suiteFiles = input.suite === 'unit' ? inventory?.files : integration?.files
+        if (selectedFiles && suiteFiles?.length) {
+          const selected = new Set(selectedFiles)
+          if (suiteFiles.every(file => selected.has(file))) {
+            requireFullCiGrant(fullAllowed, 'The selected files cover the whole suite.')
+          }
+        }
+        const selection = { ...input, scope: selectionScope, files: selectionScope === 'affected' ? selectedFiles : [] }
+        const empty = selectionScope === 'affected' && selectedFiles?.length === 0
         const split = input.suite === 'integration' ? capabilities.integrationPartitions : capabilities.parts
         let parts: { part: CiRunRecord['part']; partition: CiRunRecord['partition']; files: string[];
           expectedDurationMs?: number }[] = split ? planCiParts(selection, unitDurations, inventory)
