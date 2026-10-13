@@ -1,8 +1,10 @@
+import { errorMessage } from '../../shared/errorMessage.js'
 import { readClaudePlugins, claudeCliResult } from './claudePlugins.js'
 import { isCodexStagingRenameError, removeCodexStagingDirectories } from './npmStaging.js'
 import { syncFingerprint } from './syncFingerprint.js'
 import { MaintenanceTaskStore } from './maintenanceTaskStore.js'
 import { MaintenanceCommandStore } from './maintenanceCommandStore.js'
+import type { MaintenancePorts } from './maintenancePorts.js'
 import { DomainError } from '../errors.js'
 import { z } from 'zod'
 import { execFile } from 'node:child_process'
@@ -20,27 +22,7 @@ import {
 } from '@foreman-code/contracts/computer-maintenance'
 import { fallbackOnError } from '../diagnostics/ignoredError.js'
 
-export interface MaintenancePorts {
-  environment: NodeJS.ProcessEnv
-  /** Absolute executable path, or null when not installed. */
-  find(name: string): Promise<string | null>
-  run(binary: string, args: string[], options: { signal: AbortSignal; timeoutMs: number }): Promise<{ code: number | null; stdout: string; stderr: string }>
-  exists(path: string): Promise<boolean>
-  readText(path: string): Promise<string | null>
-  /** Writes a private (0600) file atomically, creating its directory. */
-  writePrivateText(path: string, text: string): Promise<void>
-  disk(path: string): Promise<{ freeBytes: number; totalBytes: number } | null>
-  /** Runs fn after ms; restart uses it so the reply reaches Main before the computer goes down. */
-  later(fn: () => void, ms: number): void
-  now(): Date
-  /** Moves this computer's runtime selection to the installed update. Qualification still checks the selected binary. */
-  selectInstalledCodex?(signal: AbortSignal): Promise<string | null>
-  workerUpdate?: {
-    status(): Promise<WorkerUpdateStatus>
-    start(): Promise<string>
-    outcome?(task: MaintenanceTask): Promise<WorkerUpdateStatus | null>
-  }
-}
+export type { MaintenancePorts }
 
 type FleetLedger = { mcp: Record<MaintainedHarness, string[]>; codexPlugins: string[]; claudePlugins: string[] }
 const PACKAGES: Record<MaintainedHarness, string> = { codex: '@openai/codex', claude: '@anthropic-ai/claude-code' }
@@ -59,7 +41,7 @@ function versionOf(output: string): string | null {
 
 function maintenanceError(error: unknown, fallback: string): string {
   const details = error as NodeJS.ErrnoException | null
-  const message = error instanceof Error ? error.message : fallback
+  const message = errorMessage(error, fallback)
   if (details?.code === 'EDQUOT' || details?.errno === -122 || message.includes('Unknown system error -122')) {
     return 'Disk quota reached on this computer. Free space or increase its disk quota, then retry maintenance.'
   }

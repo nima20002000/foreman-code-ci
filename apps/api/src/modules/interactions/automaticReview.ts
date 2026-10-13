@@ -1,3 +1,4 @@
+import { errorMessage } from '../../shared/errorMessage.js'
 import { randomUUID } from 'node:crypto'
 import { DurableInteractionSchema, type DurableInteraction } from '@foreman-code/contracts'
 import type pg from 'pg'
@@ -86,10 +87,7 @@ export class AutomaticReviewService {
         if (this.closing) return
         // One unavailable native boundary must not starve other Runs' cleanup.
         try { await this.stopFailedJob(row.id) }
-        catch (error) {
-          this.lastErrors.set(`failure:${row.id}`, error instanceof Error ? error.message : 'Review cleanup failed.')
-          logIgnoredError('engine', 'stop failed review job', error, { reviewJobId: row.id })
-        }
+        catch (error) { this.lastErrors.set(`failure:${row.id}`, errorMessage(error, 'Review cleanup failed.')) }
       }
     }
   }

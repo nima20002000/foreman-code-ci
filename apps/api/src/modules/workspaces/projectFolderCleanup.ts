@@ -1,4 +1,6 @@
+import { errorMessage } from '../../shared/errorMessage.js'
 import { lstat, realpath, rm } from 'node:fs/promises'
+import { beginTransaction, commitTransaction, rollbackTransaction } from '../../infrastructure/transaction.js'
 import { isAbsolute, relative, sep } from 'node:path'
 import { z } from 'zod'
 import type pg from 'pg'
@@ -19,7 +21,7 @@ export const CreatedProjectFolderSchema = z.object({
 export async function cleanupWorkspaceProjectFolders(pool: pg.Pool, principal: ManagementPrincipal, ids: string[], runnerId: string, source: 'http' | 'mcp', commandId: string) {
   const client = await pool.connect()
   try {
-    await client.query('begin')
+    await beginTransaction(client)
     await client.query('select pg_advisory_xact_lock(hashtext($1))', [WORKSPACE_FOLDER_LIFECYCLE_LOCK])
     const owned = await client.query<{ id: string; created_project_folder: unknown }>(
       'select id, created_project_folder from workspaces where id = any($1::text[]) and archived_at is not null and created_project_folder is not null for update', [ids],
@@ -78,14 +80,14 @@ export async function cleanupWorkspaceProjectFolders(pool: pg.Pool, principal: M
         values ($1, $2, 'workspace.folder.cleanup', $3, 'succeeded', $4::jsonb)`,
       [principal.id, source, `workspace:${row.id}`, JSON.stringify({ commandId })])
     }
-    await client.query('commit')
+    await commitTransaction(client)
   } catch (error) {
-    await client.query('rollback')
+    await rollbackTransaction(client)
     await client.query(`insert into management_audit (principal_id, source, action, target_key, outcome, details)
       values ($1, $2, 'workspace.folder.cleanup', 'workspaces:cleanup', 'failed', $3::jsonb)`,
     [principal.id, source, JSON.stringify({ commandId, workspaceIds: ids })])
       .catch(ignoreError('lifecycle', 'record failed workspace folder cleanup audit', { commandId }))
     throw new DomainError('WORKSPACE_FOLDER_CLEANUP_FAILED',
-      `The workspace was archived, but its project folder could not be removed. Retry removal. ${error instanceof Error ? error.message : ''}`, 503)
+      `The workspace was archived, but its project folder could not be removed. Retry removal. ${errorMessage(error, '')}`, 503)
   } finally { client.release() }
 }

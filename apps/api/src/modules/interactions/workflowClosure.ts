@@ -1,14 +1,23 @@
 import { isDeepStrictEqual } from 'node:util'
+import { withTransaction } from '../../infrastructure/transaction.js'
 import { HarnessExecutionSchema, NativeSessionReferenceSchema,
   type HarnessExecution, type NativeSessionReference } from '@foreman-code/contracts'
 import type pg from 'pg'
 import { beforeGraphCommit, type GraphSqlClient, type GraphTransactionSql } from '../run-graph/connection.js'
 import type { RunOwnership } from '../runs/ownership.js'
 import { DomainError } from '../errors.js'
-import type { ClosedWorkflowSession } from './stoppedWorkflowFinalization.js'
 import { RemoteOperationReceiptSchema } from '@foreman-code/contracts/remote-execution'
 import { readExecutionPlacement } from '../placement/persistence.js'
 import { ignoreError } from '../diagnostics/ignoredError.js'
+
+/** Private native-closure evidence, captured by the coordinator, never an API
+ * input or an inference from a terminal business result. No secrets are stored. */
+export interface ClosedWorkflowSession {
+  execution: Pick<HarnessExecution, 'id' | 'runId' | 'workflowNodeId' | 'agentId' | 'agentConfigurationVersionId'
+    | 'attempt' | 'workingDirectory' | 'runtimeDirectory' | 'nativeSessionId'>
+  session: NativeSessionReference
+  durableGeneration?: string
+}
 
 /** Backend-only lifetime receipt. It is not a native action or Run authority.
  * Reserve BEFORE credential preflight, create or
@@ -213,9 +222,7 @@ export class PostgresWorkflowClosureStore implements WorkflowClosureStore {
   constructor(private readonly pool: pg.Pool) {}
 
   private async transaction<T>(execution: HarnessExecution, work: (sql: Sql, current: HarnessExecution) => Promise<T>): Promise<T> {
-    const client = await this.pool.connect()
-    try {
-      await client.query('begin')
+    return withTransaction(this.pool, async (client) => {
       const parent = await client.query('select id from runs where id=$1 for update', [execution.runId])
       const row = await client.query<{ record: unknown }>(
         'select record from harness_executions where id=$1 and run_id=$2 for update', [execution.id, execution.runId])
@@ -223,12 +230,8 @@ export class PostgresWorkflowClosureStore implements WorkflowClosureStore {
       const current = HarnessExecutionSchema.parse(row.rows[0]!.record)
       if (!isDeepStrictEqual(executionIdentity(current), executionIdentity(execution))) return conflict()
       const value = await work(client, current)
-      await client.query('commit')
       return value
-    } catch (error) {
-      await client.query('rollback').catch(ignoreError('db', 'transaction rollback', { module: 'interactions/workflowClosure', executionId: execution.id, runId: execution.runId }))
-      throw error
-    } finally { client.release() }
+    })
   }
 
   async begin(execution: HarnessExecution): Promise<string> {

@@ -11,7 +11,7 @@ import { ensureClone, fetchRepositoryBranch, systemGitWorktreePorts, type GitWor
 import { systemHostCiPorts, type HostCiPorts } from './runner.js'
 import type { HostCiComputer } from './service.js'
 import { CLOUD_START_TIMEOUT_MS, CircleCiProvider, GitHubActionsProvider,
-  type CloudDispatchInput, type CloudProvider, type CloudStatus } from './cloudProviders.js'
+  type CloudDispatchInput, type CloudProvider, type CloudRun, type CloudStatus } from './cloudProviders.js'
 import { runsOnCircleCi } from './parts.js'
 import { fallbackOnError } from '../diagnostics/ignoredError.js'
 
@@ -24,17 +24,7 @@ const MAX_BACKOFF_MS = 10 * 60_000
 const POLL_CONCURRENCY = 3
 const log = componentLogger('jobs')
 
-export interface CloudRun {
-  runId: string; repository: string; mirror: string; commit: string; suite: CiSuite; startedAt: string
-  providerRunId: string | null; state: CiHostRun['state']; finishedAt: string | null; exitCode: number | null
-  message: string | null; durations?: CiDurations; testResults?: CiTestResults
-  scope?: CiScope; files?: string[]; part?: CiPart; baseCommit?: string
-  dispatch?: { input: CloudDispatchInput; attempts: number; at: string }
-  workflowStarted?: boolean
-  /** Live progress kept while the run is followed: steps already written to the log, the running step's output
-   * bytes written so far, and bytes written in all. */
-  live?: { step: string | null; seen: string[]; output?: { key: string; bytes: number }; bytes: number }
-}
+export type { CloudRun }
 type Mirrors = (repository: string) => Promise<string | null>
 /** Pushes to one mirror, across both services, run one at a time: concurrent force-pushes of the mirror's main fail
  * the remote's old-value check ("incorrect old value provided"), and concurrent fetches race on its local ref. */
@@ -76,7 +66,7 @@ export class CloudCi {
   computers(priority = 30): HostCiComputer[] {
     return Array.from({ length: this.provider.slots }, (_, slot) => ({ key: `${this.mainId}:cloud:${this.provider.id}:${slot}`,
       hostRef: { kind: 'cloud' as const, mainId: this.mainId, provider: this.provider.id, slot },
-      label: `${this.provider.label} ${slot + 1}`, priority }))
+      label: `${this.provider.label} ${slot + 1}`, priority, userSystemd: this.provider.userSystemd }))
   }
 
   async handle(raw: unknown): Promise<CiHostReply> {
@@ -84,7 +74,8 @@ export class CloudCi {
     if (request.operation === 'status') {
       const ready = await this.ready()
       return CiHostReplySchema.parse({ operation: 'status', ready, reasons: ready ? [] : [this.provider.loginHint],
-        cpuCount: this.provider.cpus, memoryBytes: this.provider.memoryBytes, runs: [] })
+        cpuCount: this.provider.cpus, memoryBytes: this.provider.memoryBytes,
+        userSystemd: this.provider.userSystemd, runs: [] })
     }
     if (request.operation === 'read' && this.reading.has(request.runId)) {
       // Another read is following the provider; this one answers from the kept state and log instead of queueing.
@@ -165,10 +156,11 @@ export class CloudCi {
     files?: string[] | undefined; defaultBranch?: string | undefined; baseCommit?: string | undefined }): Promise<CiHostRun> {
     const existing = await this.read(request.runId).catch(fallbackOnError(null, 'jobs', 'read existing CI run', { runId: request.runId }, ['ENOENT']))
     if (existing) return this.view(existing, 0)
-    if (request.suite === 'integration' && (request.partition?.hostIndexes?.includes(request.partition.index)
+    if (!this.provider.userSystemd.supported && request.suite === 'integration'
+      && (request.partition?.hostIndexes?.includes(request.partition.index)
       || !request.partition && request.files?.some(requiresUserSystemd))) {
       throw new DomainError('CI_CLOUD_UNAVAILABLE',
-        'This integration partition requires a build computer with user systemd.', 409)
+        `${this.provider.label} cannot run user-systemd files: ${this.provider.userSystemd.reason ?? 'user systemd is unavailable'}.`, 409)
     }
     const mirror = await this.mirrors(request.repository)
     // CircleCI's machine image has no podman, which the Worker unit tests (unit-other) use.
@@ -370,8 +362,9 @@ export class CloudCi {
     }
     const candidates = selected ?? files
     const slice = new Set<string>(partition ? integrationPartition(candidates, { ...committed, ...learned }, partition) : candidates)
-    if ([...slice].some(requiresUserSystemd)) {
-      throw new DomainError('CI_CLOUD_UNAVAILABLE', 'Selected integration files require user systemd.', 409)
+    if (!this.provider.userSystemd.supported && [...slice].some(requiresUserSystemd)) {
+      throw new DomainError('CI_CLOUD_UNAVAILABLE',
+        `${this.provider.label} cannot run user-systemd files: ${this.provider.userSystemd.reason ?? 'user systemd is unavailable'}.`, 409)
     }
     if (!slice.size) throw new DomainError('CI_CLOUD_FAILED', 'This partition has no integration files.', 409)
     return this.indexSpec(files, slice)
