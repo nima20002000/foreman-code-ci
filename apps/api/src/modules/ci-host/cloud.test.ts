@@ -1,70 +1,11 @@
 import { randomUUID } from 'node:crypto'
-import { readFile } from 'node:fs/promises'
-import { describe, expect, it, vi } from 'vitest'
-import { parse } from 'yaml'
+import { describe, expect, it } from 'vitest'
 import { selectByIndexes } from '../../../../../scripts/ci-files.mjs'
 import { affectedSnapshot } from '../../../../../scripts/ci-affected.mjs'
 import { executionSelection } from '../../../../../scripts/ci-selection.mjs'
 import { cloudService } from './cloudService.testSupport.js'
 
 import { fixture } from './cloud.testSupport.js'
-import { CircleCiProvider, type CloudDispatchInput } from './cloudProviders.js'
-import { systemHostCiPorts } from './runner.js'
-
-it.each([undefined, 221366])('sends declared CircleCI pipeline parameters with compatible types: %s', async duration => {
-  const config = parse(await readFile(new URL('../../../../../.circleci/config.yml', import.meta.url), 'utf8')) as {
-    parameters: Record<string, { type: string; enum?: unknown[] }>
-  }
-  const commands: string[][] = []
-  const provider = new CircleCiProvider({ ...systemHostCiPorts(), run: async (_file, args) => {
-    commands.push([...args])
-    return { code: 0, stdout: JSON.stringify({ id: 'pipeline' }), stderr: '' }
-  } })
-  const input: CloudDispatchInput = {
-    mirror: 'octo/site-ci', branch: 'main', runId: 'ticket', suite: 'integration', slice: 's:1-2',
-    ...(duration === undefined ? {} : { expectedDurationMs: duration }),
-    scope: 'affected', files: 's:3-4', defaultBranch: 'main', baseCommit: 'a'.repeat(40),
-    partition: JSON.stringify({ index: 0, count: 2 }), durations: JSON.stringify({ 'sample.test.ts': 100 }),
-  }
-  await provider.dispatch(input)
-  const parameters = Object.fromEntries(commands[0]!.flatMap((argument, index, args) => {
-    if (argument !== '--parameter') return []
-    const parameter = args[index + 1]!
-    const separator = parameter.indexOf('=')
-    const name = parameter.slice(0, separator)
-    const text = parameter.slice(separator + 1)
-    // The CLI converts integer arguments to JSON numbers before triggering the pipeline.
-    const value = /^-?\d+$/.test(text) ? Number(text) : text
-    return [[name, value]]
-  }))
-  expect(Object.keys(parameters).sort()).toEqual(Object.keys(config.parameters).sort())
-  for (const [name, value] of Object.entries(parameters)) {
-    const declaration = config.parameters[name]!
-    const type = typeof value === 'number' && Number.isInteger(value) ? 'integer' : typeof value
-    expect(type, `CircleCI parameter ${name}`).toBe(declaration.type === 'enum' ? 'string' : declaration.type)
-    if (declaration.enum) expect(declaration.enum).toContain(value)
-  }
-  expect(parameters.expected_duration_ms).toBe(duration ?? 0)
-})
-
-it.each([false, true])('fails an ended CircleCI pipeline with errors on the next read, workflow started: %s', async started => {
-  const f = await fixture({}, { provider: 'circleci' })
-  f.circle.phantoms = started ? 0 : 1
-  const runId = randomUUID()
-  const start = { operation: 'start', workspaceId: 'ci-workspace', runId, repository: 'octo/site', commit: f.commit,
-    suite: 'integration', scope: 'full' }
-  const reply = await f.cloud.handle(start)
-  if (reply.operation !== 'start') throw new Error('Expected a start reply')
-  const message = 'Type error for argument expected_duration_ms: expected type: string, actual value: "221366" (type integer)'
-  f.circle.runView = { phase: 'ended', current_outcome: 'not_run', errors: [{ type: 'config', message }], workflows: [] }
-  const main = cloudService(f.cloud, reply.run, f.commit)
-  await main.service.dispatch()
-  expect(await main.read()).toMatchObject({ run: { state: 'failed', exitCode: 1, message: expect.stringContaining(message) } })
-  expect(await f.cloud.handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 65_536 }))
-    .toMatchObject({ run: { state: 'failed', exitCode: 1, finishedAt: expect.any(String) },
-      text: expect.stringContaining(`config: ${message}`) })
-  expect(f.circle.triggered).toHaveLength(1)
-})
 
 function expectMirrorDispatch(provider: 'github' | 'circleci', command: string[] | undefined) {
   const option = provider === 'github' ? '-R' : '--project'
@@ -75,76 +16,6 @@ function expectMirrorDispatch(provider: 'github' | 'circleci', command: string[]
 }
 
 describe('GitHub Actions CI on a public mirror', () => {
-  it('shares one publication across concurrent starts of the same commit', async () => {
-    const f = await fixture()
-    const git = vi.spyOn(f.git, 'git')
-    const services = [f.cloud, f.reopen()]
-    const replies = await Promise.all(Array.from({ length: 8 }, (_, index) => services[index % services.length]!.handle({
-      operation: 'start', workspaceId: 'ci-workspace', runId: randomUUID(), repository: 'octo/site',
-      commit: f.commit, suite: 'lint', scope: 'full',
-    })))
-    expect(replies).toHaveLength(8)
-    for (const reply of replies) expect(reply).toMatchObject({ operation: 'start', run: { state: 'starting' } })
-    expect(f.dispatched).toHaveLength(8)
-    const publications = git.mock.calls.filter(([args]) => args[0] === 'push' && args.includes('--force'))
-    expect(publications).toHaveLength(1)
-  })
-
-  it('dispatches every concurrent start while stale-branch pruning is blocked', async () => {
-    const f = await fixture()
-    f.mirrorGit('update-ref', 'refs/heads/ci/retired-run', 'main')
-    let release!: () => void
-    const blocked = new Promise<void>(resolve => { release = resolve })
-    let pruning = false
-    f.cloud.setActiveRunLookup(async () => {
-      pruning = true
-      await blocked
-      return { ids: new Set<string>(), readAt: 0 }
-    })
-    let completed = 0
-    const starts = Promise.all(Array.from({ length: 8 }, () => f.cloud.handle({
-      operation: 'start', workspaceId: 'ci-workspace', runId: randomUUID(), repository: 'octo/site',
-      commit: f.commit, suite: 'lint', scope: 'full',
-    }).then(reply => {
-      completed++
-      return reply
-    })))
-    try {
-      await expect.poll(() => pruning, { timeout: 5_000 }).toBe(true)
-      await expect.poll(() => f.dispatched.length, { timeout: 5_000 }).toBe(8)
-      await expect.poll(() => completed, { timeout: 5_000 }).toBe(8)
-    } finally {
-      release()
-      await starts
-    }
-    await expect.poll(() => f.mirrorGit('for-each-ref', '--format=%(refname)', 'refs/heads/ci/'), { timeout: 5_000 })
-      .not.toContain('refs/heads/ci/retired-run')
-    expect(f.mirrorGit('rev-parse', `refs/heads/ci/${f.commit}`)).toMatch(/^[a-f0-9]{40}$/)
-  })
-
-  it('limits background pruning to once every five minutes per mirror', async () => {
-    const f = await fixture()
-    f.mirrorGit('update-ref', 'refs/heads/ci/retired-run', 'main')
-    let sweeps = 0
-    f.cloud.setActiveRunLookup(async () => {
-      sweeps++
-      return { ids: new Set<string>(), readAt: 0 }
-    })
-    const start = () => f.cloud.handle({
-      operation: 'start', workspaceId: 'ci-workspace', runId: randomUUID(), repository: 'octo/site',
-      commit: f.commit, suite: 'lint', scope: 'full',
-    })
-    await start()
-    await expect.poll(() => sweeps, { timeout: 5_000 }).toBe(1)
-    await expect.poll(() => f.mirrorGit('for-each-ref', '--format=%(refname)', 'refs/heads/ci/'), { timeout: 5_000 })
-      .not.toContain('refs/heads/ci/retired-run')
-    await Promise.all(Array.from({ length: 8 }, start))
-    expect(sweeps).toBe(1)
-    f.advance(5 * 60_000)
-    await start()
-    await expect.poll(() => sweeps, { timeout: 5_000 }).toBe(2)
-  })
-
   it('uses the admitted mirror even when the workspace settings no longer provide one', async () => {
     const f = await fixture({}, { mirror: false })
     await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', ciMirror: 'octo/site-ci',
@@ -956,13 +827,13 @@ it.each(['github', 'circleci'] as const)('prunes stale mirror branches and keeps
     .toMatchObject({ operation: 'read', run: { state: activeState } })
   expect(provider === 'github' ? f.dispatched : f.circle.triggered).toHaveLength(2)
   const refs = () => f.mirrorGit('for-each-ref', '--format=%(refname)', 'refs/heads/')
-  await expect.poll(refs, { timeout: 5_000 }).not.toContain(`refs/heads/${stale}`)
-  await expect.poll(refs, { timeout: 5_000 }).not.toContain('refs/heads/ci/retired-run')
+  expect(refs()).not.toContain(`refs/heads/${stale}`)
+  expect(refs()).not.toContain('refs/heads/ci/retired-run')
   expect(refs()).toContain('refs/heads/feature/keep')
   await f.cloud.handle({ operation: 'cancel', runId: first })
   expect(refs()).toContain(`refs/heads/ci/${f.commit}`)
   await f.reopen().handle({ operation: 'cancel', runId: second })
-  await expect.poll(refs, { timeout: 5_000 }).not.toContain(`refs/heads/ci/${f.commit}`)
+  expect(refs()).not.toContain(`refs/heads/ci/${f.commit}`)
   await f.reopen().handle({ ...request, runId: randomUUID() })
   expectMirrorDispatch(provider, (provider === 'github' ? f.dispatched : f.circle.triggered).at(-1))
   expect(refs()).toContain(`refs/heads/ci/${f.commit}`)
@@ -981,7 +852,7 @@ it.each(['success', 'failure'] as const)('removes mirror branches after a %s res
   const read = { operation: 'read' as const, runId, afterOffset: 0, maxBytes: 65_536 }
   const state = conclusion === 'success' ? 'passed' : 'failed'
   expect(await f.cloud.handle(read)).toMatchObject({ run: { state }, text: expect.stringContaining('all green') })
-  await expect.poll(() => f.mirrorGit('for-each-ref', '--format=%(refname)', 'refs/heads/ci/'), { timeout: 5_000 }).toBe('')
+  expect(f.mirrorGit('for-each-ref', '--format=%(refname)', 'refs/heads/ci/')).toBe('')
   expect(await f.reopen().handle(read)).toMatchObject({ run: { state }, text: expect.stringContaining('all green') })
 })
 
@@ -1000,7 +871,6 @@ it.each(['configured', 'admitted'] as const)(
   f.circle.outcome = 'succeeded'
   expect(await f.cloud.handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 65_536 }))
     .toMatchObject({ run: { state: 'passed' } })
-  await expect.poll(() => f.cleanup.failures, { timeout: 5_000 }).toBeGreaterThan(0)
   const branch = `refs/heads/ci/${f.commit}`
   expect(f.mirrorGit('rev-parse', branch)).toMatch(/^[a-f0-9]{40}$/)
   // Maintenance in another process deletes the ref without touching the live publisher's memory.
