@@ -111,12 +111,12 @@ export function registerManagementRoutes(app: FastifyInstance, services: Operato
   if (services.extensions) {
     const agents = services.extensions.agents
     app.post<{ Params: Params; Body: unknown }>('/api/management/workspaces/:workspaceId/agents', async (request, reply) => {
-      const result = await agents.create(requirePrincipal(request), AgentCreateInputSchema.parse(routeInput(request.params, request.body)), 'http')
+      const result = await agents.create(requirePrincipal(request), AgentCreateInputSchema.parse(routeInput(request.params, request.body)))
       if (result && typeof result === 'object' && 'replayed' in result && result.replayed === false) reply.code(201)
       return result
     })
     app.patch<{ Params: Params & { agentId: string }; Body: unknown }>('/api/management/workspaces/:workspaceId/agents/:agentId', async (request) =>
-      agents.update(requirePrincipal(request), AgentUpdateInputSchema.parse(routeInput(request.params, request.body)), 'http'))
+      agents.update(requirePrincipal(request), AgentUpdateInputSchema.parse(routeInput(request.params, request.body))))
   }
   app.get<{ Querystring: Query }>('/api/management/workspaces', async (request) =>
     services.workspaces.list(requirePrincipal(request), WorkspaceListInputSchema.parse(page(request.query))))
