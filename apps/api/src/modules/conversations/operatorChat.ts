@@ -52,7 +52,6 @@ import { currentOperatorHistory, operatorActivity } from './operatorActivity.js'
 import { completedNativeAssistantMessage } from './operatorText.js'
 import { nativeActivityFence } from './nativeActivityFence.js'
 import { createNativeTextStream } from './nativeTextStream.js'
-import { ignoreError } from '../diagnostics/ignoredError.js'
 
 export { PostgresOperatorConversationRepository } from './operatorChatRepository.js'
 
@@ -80,7 +79,7 @@ export class OperatorConversationEvents {
   publish(conversationId: string, type: OperatorConversationStreamEvent['type'], data: Record<string, unknown>) {
     const event = OperatorConversationStreamEventSchema.parse({ id: this.sequence++, conversationId, type, data })
     for (const listener of this.listeners.get(conversationId) ?? []) {
-      try { listener(event) } catch { /* ignore: a disconnected subscriber cannot fail a native turn. */ }
+      try { listener(event) } catch { /* A disconnected subscriber cannot fail a native turn. */ }
     }
   }
   subscribe(id: string, listener: (event: OperatorConversationStreamEvent) => void) {
@@ -201,9 +200,9 @@ export class OperatorChatService {
 
   private control<T>(id: string, operation: () => Promise<T>): Promise<T> {
     const previous = this.controls.get(id) ?? Promise.resolve()
-    const next = previous.catch(() => { /* ignore: the previous caller receives its failure; the queue must still admit the next operation. */ }).then(operation)
+    const next = previous.catch(() => undefined).then(operation)
     this.controls.set(id, next)
-    void next.finally(() => { if (this.controls.get(id) === next) this.controls.delete(id) }).catch(() => { /* ignore: the owner awaits the original promise; this observer prevents a duplicate unhandled rejection. */ })
+    void next.finally(() => { if (this.controls.get(id) === next) this.controls.delete(id) }).catch(() => undefined)
     return next
   }
   private assertOpen(): void {
@@ -265,7 +264,7 @@ export class OperatorChatService {
     })()
     this.setupCheck = { configurationId, promise: check }
     this.accepting.add(check)
-    void check.finally(() => { if (this.setupCheck?.promise === check) this.setupCheck = undefined; this.accepting.delete(check) }).catch(() => { /* ignore: the owner awaits the original promise; this observer prevents a duplicate unhandled rejection. */ })
+    void check.finally(() => { if (this.setupCheck?.promise === check) this.setupCheck = undefined; this.accepting.delete(check) }).catch(() => undefined)
     return check
   }
   async assertAccess(id: string, principal: ManagementPrincipal, action: ManagementAction = 'operator_chat:read', includeDeleted = false) {
@@ -433,14 +432,14 @@ export class OperatorChatService {
     const safe = redact.value(change)
     if (!runtime.session || !nativeTurnId && !nativeSubmission) {
       this.events.publish(id, 'state', { requestId, snapshotRequired: true })
-      void runtime.reconcile?.().catch(ignoreError('harness', 'reconcile native runtime', { chatId: id, requestId }))
+      void runtime.reconcile?.().catch(() => undefined)
       return
     }
     const accepted = await this.repository.activity.append(id, requestId, safe, {
       ...nativeActivityFence(runtime.session, nativeTurnId, event, authoritativeReconciliation, nativeSubmission),
       onReconciliationRequired: () => {
         this.events.publish(id, 'state', { requestId, snapshotRequired: true })
-        void runtime.reconcile?.().catch(ignoreError('harness', 'reconcile native runtime', { chatId: id, requestId }))
+        void runtime.reconcile?.().catch(() => undefined)
       },
     })
     if (accepted) this.events.publish(id, 'activity', accepted)
@@ -552,7 +551,7 @@ export class OperatorChatService {
       const promise = this.runTurn(targetId, input, accepted, row.owner_principal_id!, taskController.signal)
         .finally(() => { if (this.tasks.get(targetId)?.promise === promise) this.tasks.delete(targetId) })
       this.tasks.set(targetId, { requestId: input.requestId, controller: taskController, promise })
-      void promise.catch(ignoreError('harness', 'finish operator turn', { chatId: targetId, requestId: input.requestId }))
+      void promise.catch(() => undefined) // Persistence failure leaves the accepted identity fenced.
       return begun
     })
     return fork || childReceipt ? this.control(childId, admit) : admit()
@@ -751,8 +750,7 @@ export class OperatorChatService {
       const redactText = nativePersistenceRedactor(Object.values(runtime.environment?.variables ?? {}))
       const committed = committedNativeText({ id, requestId: input.requestId, repository: this.repository,
         harness: runtime.manager.harness, session: runtime.session, owner: textOwner, sanitize: (operation) => redactText.value(operation),
-        reconcile: () => { void this.control(id, () => this.observe(id, input.requestId, runtime))
-          .catch(ignoreError('harness', 'observe native turn after reconcile request', { chatId: id, requestId: input.requestId })) } })
+        reconcile: () => { void this.control(id, () => this.observe(id, input.requestId, runtime)).catch(() => undefined) } })
       textStream = createNativeTextStream({
         signal, harness: runtime.manager.harness,
         owner: textOwner,
@@ -816,7 +814,7 @@ export class OperatorChatService {
                 const task = this.tasks.get(id)
                 if (task && task.requestId === input.requestId) task.controller.abort()
               }
-            }).catch(ignoreError('harness', 'deliver cancellation to native turn', { chatId: id, requestId: input.requestId })) // Persistence failure leaves the accepted request fenced.
+            }).catch(() => undefined) // Persistence failure leaves the accepted request fenced.
           }
         },
       }, signal)) {
@@ -1127,7 +1125,7 @@ export class OperatorChatService {
     })
     // Preserve the ordinary immediate-cancel response, but never wait behind
     // an approval delivery just to acknowledge durable cancellation intent.
-    void delivery.catch(ignoreError('harness', 'deliver operator cancellation', { chatId: id, requestId }))
+    void delivery.catch(() => undefined)
     if (!responseInFlight) await delivery
     return this.get(id, principal)
   }
@@ -1319,8 +1317,7 @@ export class OperatorChatService {
           if (error instanceof DomainError && /AUTH_|ACCESS_DENIED/.test(error.code)) {
             const runtime = this.runtimes.get(row.id)
             await this.repository.requestCancel(row.id, requestId)
-            if (runtime) await this.interrupt(row.id, row, runtime)
-              .catch(ignoreError('harness', 'interrupt native turn after failed delivery', { chatId: row.id, requestId }))
+            if (runtime) await this.interrupt(row.id, row, runtime).catch(() => undefined)
           }
           this.events.publish(row.id, 'error', { requestId, turnState: 'uncertain' })
         }
