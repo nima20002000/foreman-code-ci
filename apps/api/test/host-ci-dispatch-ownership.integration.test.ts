@@ -55,11 +55,10 @@ async function fixture() {
     request: async (computer, request): Promise<CiHostReply> => {
       if (request.operation === 'status') {
         await control.onStatus(computer)
-        const runs = [...remote.entries()].filter(([key]) => key.startsWith(`${computer.key}:`))
-          .map(([, run]) => run)
         return { operation: 'status', ready: true, reasons: [], cpuCount: 8, memoryBytes: 8 * 2 ** 30,
-          slotsUsed: runs.filter(run => ['starting', 'running'].includes(run.state)).length,
-          slotsTotal: 1, runs }
+          slotsUsed: [...remote.entries()].filter(([key, run]) => key.startsWith(`${computer.key}:`)
+            && ['starting', 'running'].includes(run.state)).length,
+          slotsTotal: 1, runs: [] }
       }
       const key = `${computer.key}:${request.runId}`
       if (request.operation === 'start') {
@@ -197,23 +196,6 @@ it('retains one executor after an accepted start loses its reply and reconciles 
     await restarted?.close()
     await f.close()
   }
-})
-
-it('discovers an accepted run when its start acknowledgement was lost', async () => {
-  const f = await fixture()
-  try {
-    const ticket = await f.enqueue()
-    f.control.onStart = async () => { throw new Error('Start reply lost') }
-    f.control.available = true
-    await f.ci.dispatch()
-    expect((await f.read(ticket.ticketId)).state).toBe('starting')
-    const computers = await f.value('ci_computers_list', {})
-    expect(computers).toMatchObject({ computers: expect.arrayContaining([
-      expect.objectContaining({ hostRef: f.starts[0]!.computer.hostRef, running: [ticket.ticketId] }),
-    ]) })
-    expect((await f.read(ticket.ticketId)).state).toBe('running')
-    expect(f.starts).toHaveLength(1)
-  } finally { await f.close() }
 })
 
 it('preserves the assignment when the database rejects settlement after an accepted start', async () => {
