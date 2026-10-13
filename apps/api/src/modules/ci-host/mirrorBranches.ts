@@ -32,17 +32,14 @@ export async function pruneMirrorBranches(options: {
   mirror: string
   roots: string[]
   git: (args: string[]) => Promise<string>
-  keep?: string[] | (() => string[] | ReadonlySet<string>)
+  keep?: string[] | (() => string[])
   beforeRemove?: (branches: string[]) => void
   activeRuns?: ActiveCiRuns | undefined
 }) {
   const remote = `https://github.com/${options.mirror}.git`
   const listed = await options.git(['ls-remote', '--heads', remote, 'refs/heads/ci/*', 'refs/heads/ci-default/*'])
-  const reservations = () => {
-    const branches = typeof options.keep === 'function' ? options.keep() : options.keep ?? []
-    return Array.isArray(branches) ? new Set(branches) : branches
-  }
-  const keep = new Set([...reservations()].map(branch => `refs/heads/${branch}`))
+  const reservations = () => typeof options.keep === 'function' ? options.keep() : options.keep ?? []
+  const keep = new Set(reservations().map(branch => `refs/heads/${branch}`))
   for (const root of new Set(options.roots)) {
     for (const directory of await runDirectories(root)) {
       if (!directory.isDirectory()) continue
@@ -71,15 +68,14 @@ export async function pruneMirrorBranches(options: {
       if (run.dispatch?.input.defaultBranch) keep.add(`refs/heads/${run.dispatch.input.defaultBranch}`)
     }
   }
-  const refs = listed.split('\n').flatMap(line => {
+  const stale = listed.split('\n').flatMap(line => {
     const [sha, ref] = line.trim().split(/\s+/)
-    return sha && ref && ciBranch.test(ref) ? [{ sha, ref }] : []
+    return sha && ref && ciBranch.test(ref) && !keep.has(ref) ? [{ sha, ref }] : []
   })
-  const stale = refs.filter(({ ref }) => !keep.has(ref))
   const removed: string[] = []
   for (let offset = 0; offset < stale.length; offset += 50) {
-    const reserved = reservations()
-    const batch = stale.slice(offset, offset + 50).filter(({ ref }) => !reserved.has(ref.slice('refs/heads/'.length)))
+    const reserved = new Set(reservations().map(branch => `refs/heads/${branch}`))
+    const batch = stale.slice(offset, offset + 50).filter(({ ref }) => !reserved.has(ref))
     if (!batch.length) continue
     // Evict cached publications before deletion so a new start republishes rather than reusing a removed ref.
     options.beforeRemove?.(batch.map(({ ref }) => ref.slice('refs/heads/'.length)))
@@ -89,7 +85,10 @@ export async function pruneMirrorBranches(options: {
     removed.push(...batch.map(({ ref }) => ref.slice('refs/heads/'.length)))
   }
   const removedRefs = new Set(removed.map(branch => `refs/heads/${branch}`))
-  const retained = refs.filter(({ ref }) => !removedRefs.has(ref)).map(({ ref }) => ref.slice('refs/heads/'.length))
+  const retained = listed.split('\n').flatMap(line => {
+    const ref = line.trim().split(/\s+/)[1]
+    return ref && ciBranch.test(ref) && !removedRefs.has(ref) ? [ref.slice('refs/heads/'.length)] : []
+  })
   return { removed, retained }
 }
 

@@ -2,7 +2,6 @@ import { isDeepStrictEqual } from 'node:util'
 import { randomUUID } from 'node:crypto'
 import { inTransaction, type SqlQuery } from '../../infrastructure/transaction.js'
 import type pg from 'pg'
-import { withProviderPoll } from './providerPoll.js'
 import { CI_HOST_NAMESPACE, CI_LOG_MAX_BYTES, CI_RUN_JOBS_LIMIT, CiComputerRefSchema, CiHostReplySchema, CiListOutputSchema, CiRunRecordSchema, CiRunOutputSchema,
   WorkspaceSchema,
   requiresUserSystemd, userSystemdIntegrationFiles,
@@ -599,8 +598,7 @@ export class HostCiService {
     assertCiReadAccess(caller, scope.executionId, run)
     this.stoppingRuns += 1
     try {
-      // Queued cancellation and dispatch claims compete through their database state checks.
-      if (run.state !== 'queued') await this.dispatching
+      await this.dispatching
       return await this.cancelTicket(scope.workspaceId, run.id, {
         principalId: caller.id, source, commandId: input.commandId ?? randomUUID(), reason: 'direct',
       })
@@ -821,7 +819,7 @@ export class HostCiService {
   /** One pass: refresh running runs, then give queued runs to free CI slots in priority order. */
   dispatch(): Promise<void> {
     if (this.stoppingRuns) return this.dispatching ?? Promise.resolve()
-    this.dispatching ??= withProviderPoll(() => this.dispatchOnce()).catch(error => log.warn({ err: error }, 'CI dispatch failed'))
+    this.dispatching ??= this.dispatchOnce().catch(error => log.warn({ err: error }, 'CI dispatch failed'))
       .finally(() => { this.dispatching = undefined })
     return this.dispatching
   }
