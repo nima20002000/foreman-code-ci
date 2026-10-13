@@ -186,10 +186,7 @@ export class RecoveryProvider {
       },
       async close(reference) { provider.close(reference) },
       canDetachForRestart(reference) {
-        const session = provider.lookup(reference)
-        const configuration = session.submission.request.configuration.harness
-        return owned?.nativeSessionId === reference.nativeSessionId && session.alive
-          && configuration.harness === 'codex' && configuration.advanced?.sessionPersistence !== 'ephemeral'
+        return owned?.nativeSessionId === reference.nativeSessionId && provider.lookup(reference).alive
       },
       async closeForRestart(reference) { provider.close(reference) },
       async dispose() { if (owned) provider.close(owned) },
