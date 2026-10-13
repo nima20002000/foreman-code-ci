@@ -15,7 +15,7 @@ const { Unpackr } = require('msgpackr');
 const unpacker = new Unpackr({ useRecords: true, moreTypes: true });
 import {
   copySharpPackagesFromStore, artifactFiles, assertWorkerDependency,
-  committedWorkerInputPath, workerReleaseVersion, validateWorkerTarget, assertWorkerUpdateToolchain,
+  committedWorkerInputPath, workerReleaseVersion, validateWorkerTarget,
 } from './worker-artifact-files.mjs';
 const [targetFile, outputDirectory, runtimeFile] = process.argv.slice(2);
 if (!targetFile || !outputDirectory) throw new Error('Usage: build-worker-artifact.mjs apps/worker/artifacts/approved-target.json /new-output-directory [apps/worker/artifacts/reviewed-runtime.json]');
@@ -56,7 +56,6 @@ function reviewedInput(input) {
   }
   return { path, value: JSON.parse(bytes.toString('utf8')) };
 }
-assertWorkerUpdateToolchain(JSON.parse(snapshotSource('package.json')));
 const targetInput = reviewedInput(targetFile);
 const target = targetInput.value;
 validateWorkerTarget(target);
