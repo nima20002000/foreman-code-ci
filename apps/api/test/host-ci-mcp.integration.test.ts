@@ -100,13 +100,13 @@ function fakeComputers(github: Record<string, boolean> = {}, cloud: boolean | { 
         ...(request.durations && finished && entry.durations ? { durations: entry.durations } : {}) }
     },
   }
-  const finish = (runId: string, exitCode: number, log: string, durations?: Record<string, number>, message?: string) => {
+  const finish = (runId: string, exitCode: number, log: string, durations?: Record<string, number>) => {
     const entry = runs.get(runId)!
     entry.log = log
     if (durations) entry.durations = durations
     else delete entry.durations
     entry.run = { ...entry.run, state: exitCode === 0 ? 'passed' : 'failed', exitCode, step: entry.request.operation === 'start'
-      ? entry.request.suite : null, message: message ?? null, finishedAt: new Date().toISOString(), logBytes: Buffer.byteLength(log) }
+      ? entry.request.suite : null, finishedAt: new Date().toISOString(), logBytes: Buffer.byteLength(log) }
   }
   return { endpoint, started, finish, computers }
 }
@@ -1761,26 +1761,35 @@ it('resolves branches of existing tickets before superseding them and protects e
 })
 
 
-it('persists a CI watchdog failure for authenticated MCP status and log readback and denies ungranted callers', async () => {
-  const f = await fixture()
+it('reads persisted warm-up status through authenticated MCP after Worker restart and denies callers without CI read grants', async () => {
+  const repository = await genericCiRepository({ lockfile: 'pnpm-lock.yaml' })
+  const f = await fixture({ repositoryRunner: repository })
   try {
-    const started = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', {
-      commandId: randomUUID(), suite: 'unit', scope: 'affected', files: ['apps/api/test/loop.test.ts'],
+    const start = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', {
+      commandId: randomUUID(), suite: 'lint', commit: repository.commit, scope: 'affected',
+      files: ['apps/api/src/feature.ts'],
     }))
-    await f.ci.dispatch()
-    const reason = 'CI hang watchdog: no test progress for 60000 ms; running: apps/api/test/loop.test.ts > planner never returns'
-    f.finish(started.ticketId, 1, `[ci-watchdog] ${reason}\n`, undefined, reason)
-    const result = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: started.ticketId }))
-    expect(result.run).toMatchObject({ state: 'failed', exitCode: 1, message: reason })
-    expect(result.logTail).toContain(reason)
-    const logs = CiLogsOutputSchema.parse(await f.value(f.operator, 'ci_logs_read', { ticketId: started.ticketId }))
-    expect(logs.text).toContain(reason)
-    const stored = (await f.pool.query<{ record: unknown }>('select record from ci_runs where id=$1',
-      [started.ticketId])).rows[0]!
-    expect(CiRunRecordSchema.parse(stored.record)).toMatchObject({ state: 'failed', message: reason })
-    const denied = await f.connect(['workflows:read'])
-    for (const tool of ['ci_get', 'ci_logs_read']) {
-      expect((await f.call(denied, tool, { ticketId: started.ticketId })).isError).toBe(true)
-    }
-  } finally { await f.close() }
+    await vi.waitFor(async () => {
+      const read = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: start.ticketId }))
+      expect(read.run.state).toBe('passed')
+    })
+    const [computer] = await repository.endpoint.computers()
+    if (!computer) throw new Error('Missing build computer')
+    await repository.endpoint.request(computer, { operation: 'start', warmup: true, runId: randomUUID(),
+      repository: 'octo/site', commit: repository.commit, suite: 'install' })
+    await vi.waitFor(async () => {
+      const read = CiComputersOutputSchema.parse(await f.value(f.operator, 'ci_computers_list', {}))
+      expect(read.computers[0]).toMatchObject({ prewarmSupported: true, slotsUsed: 0,
+        warmup: { repository: 'octo/site', commit: repository.commit, run: { warmup: true, state: 'passed' } } })
+    })
+    repository.restart()
+    const denied = await f.connect(CI_RUN_ACTIONS)
+    expect((await f.call(denied, 'ci_computers_list', {})).isError).toBe(true)
+    const read = CiComputersOutputSchema.parse(await f.value(f.operator, 'ci_computers_list', {}))
+    expect(read.computers[0]).toMatchObject({ slotsUsed: 0, warmup: { run: { state: 'passed' } } })
+    expect((await f.pool.query('select count(*)::int as count from ci_runs')).rows[0].count).toBe(1)
+  } finally {
+    await f.close()
+    await repository.close()
+  }
 })
