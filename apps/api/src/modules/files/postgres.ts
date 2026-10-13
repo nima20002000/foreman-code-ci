@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { withClientTransaction } from '../../infrastructure/transaction.js'
 import type pg from 'pg'
 import { z } from 'zod'
 import {
@@ -10,6 +11,7 @@ import {
 import { DomainError } from '../errors.js'
 import type { AllocationSession, AllocationState, FileAllocation, FileReferenceRepository,
   FileMutationContext, NewStoredFile, StoredFile, FileQuery } from './repository.js'
+import { ignoreError } from '../diagnostics/ignoredError.js'
 
 type Query = FileQuery
 interface FileRow {
@@ -80,12 +82,6 @@ function allocation(row: AllocationRow): FileAllocation {
   return { allocationId: row.allocation_id, requestId: row.request_id, inputHash: row.input_hash,
     state: row.allocation_state, stored: stored(row) }
 }
-async function transaction<T>(client: pg.PoolClient, work: () => Promise<T>): Promise<T> {
-  await client.query('begin')
-  try { const value = await work(); await client.query('commit'); return value }
-  catch (error) { await client.query('rollback').catch(() => undefined); throw error }
-}
-
 /** Bytes live only in FileByteStorage. This repository also serves FIL-04/05/36. */
 export class PostgresFileRepository implements FileReferenceRepository {
   constructor(private readonly pool: pg.Pool,
@@ -112,7 +108,7 @@ export class PostgresFileRepository implements FileReferenceRepository {
 
   async create(input: NewStoredFile): Promise<StoredFile> {
     const client = await this.pool.connect()
-    try { await transaction(client, () => this.insert(client, input)); return (await this.read(input.value.file.fileId, input.value.revision.revisionId, client))! }
+    try { await withClientTransaction(client, () => this.insert(client, input)); return (await this.read(input.value.file.fileId, input.value.revision.revisionId, client))! }
     finally { client.release() }
   }
 
@@ -221,9 +217,9 @@ export class PostgresFileRepository implements FileReferenceRepository {
       const retentionSnapshot = this.retentionSnapshot
       const session: AllocationSession = {
         read,
-        create: (value) => transaction(client, () => insertAllocation(value)),
+        create: (value) => withClientTransaction(client, () => insertAllocation(value)),
         ...(retentionSnapshot ? { createWithRetention: (build: (durationSeconds: number) => FileAllocation) =>
-          transaction(client, async () => {
+          withClientTransaction(client, async () => {
             check()
             const duration = await retentionSnapshot(client, ownerPrincipalId)
             const value = build(duration)
@@ -232,7 +228,7 @@ export class PostgresFileRepository implements FileReferenceRepository {
           }) } : {}),
         setState: async (state) => {
           check()
-          await transaction(client, async () => {
+          await withClientTransaction(client, async () => {
             await mutation?.authorize(client)
             const current = await read()
             if (!current) throw new DomainError('FILE_UPLOAD_NOT_FOUND', 'Upload was not found.', 404)
@@ -260,7 +256,10 @@ export class PostgresFileRepository implements FileReferenceRepository {
     } finally {
       if (locked && !broken) {
         try { await client.query('select pg_advisory_unlock(hashtextextended($1,273601))', [lockKey]) }
-        catch { broken = true }
+        catch (error) {
+          broken = true
+          ignoreError('db', 'release file allocation lock', { ownerPrincipalId, requestId })(error)
+        }
       }
       client.removeListener('error', onError)
       client.release(broken)

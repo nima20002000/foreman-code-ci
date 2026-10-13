@@ -4,7 +4,8 @@ import type { AgentFileToolService } from '../../src/modules/files/tools/service
 import Fastify from 'fastify'
 import { McpServer } from '@modelcontextprotocol/server'
 import { NodeStreamableHTTPServerTransport } from '@modelcontextprotocol/node'
-import { registerWorkspaceTools } from '../../src/mcp/operator/tools/workspaces.js'
+import { workspaceTools } from '../../src/mcp/operator/tools/workspaces.js'
+import { registerOperatorToolGroup } from '../../src/mcp/operator/server.js'
 import type { OperatorRequestContext } from '../../src/mcp/operator/types.js'
 import { vi } from 'vitest'
 import type pg from 'pg'
@@ -27,13 +28,8 @@ import type { NativeSessionStart } from '../../src/modules/harnesses/port.js'
 import type { RunOwnership } from '../../src/modules/runs/ownership.js'
 import { PostgresAgentChatRepository } from '../../src/modules/conversations/agentChatRepository.js'
 import { PostgresOperatorConversationRepository } from '../../src/modules/conversations/operatorChatRepository.js'
+import { rejectableDeferred } from '../helpers/deferred.js'
 
-export const deferred = <T>() => {
-  let resolve!: (value: T) => void
-  let reject!: (error: unknown) => void
-  const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail })
-  return { promise, resolve, reject }
-}
 const createdAt = '2026-10-01T00:00:00.000Z'
 /** Synthetic installed/profile records and redacted SDK frames. Exercises actual
  * admission/domain/factory/manager classes without native or PostgreSQL claims. */
@@ -142,7 +138,7 @@ export function productionClaudeFixture(surface: 'workflow' | 'operator' | 'agen
     : { kind: 'workflow', correlationId: `${surface}:request-1`, request: { executionId: 'execution', runId: 'run', workspaceId: 'workspace', workflowNodeId: 'node', workingDirectory: '/recorded/work', runtimeDirectory: '/recorded/runtime', configuration: agent, input: {} } })
   const queries: { frames: ClaudeBoundedQueue<unknown>; messages: AsyncIterator<ClaudeSdkUserMessage> }[] = []
   const initialFrames = new ClaudeBoundedQueue<unknown>(64)
-  const ready = deferred<AsyncIterator<ClaudeSdkUserMessage>>()
+  const ready = rejectableDeferred<AsyncIterator<ClaudeSdkUserMessage>>()
   const setMcpServers = vi.fn(async () => ({ added: ['graphql'], removed: [], errors: {} }))
   const sdkQuery = vi.fn<ClaudeSdkClient['query']>(options => {
     const frames = queries.length ? new ClaudeBoundedQueue<unknown>(64) : initialFrames
@@ -197,7 +193,7 @@ export async function managementEndpoint(token = 'synthetic-scoped-token') {
   app.post('/mcp', async (request, reply) => {
     if (request.headers.authorization !== `Bearer ${token}`) return reply.code(401).send()
     const server = new McpServer({ name: 'graphql', version: '1.0.0' })
-    registerWorkspaceTools(server, { principal, services: { workspaces: { list } } } as unknown as OperatorRequestContext)
+    registerOperatorToolGroup(server, { principal, services: { workspaces: { list } } } as unknown as OperatorRequestContext, workspaceTools)
     const transport = new NodeStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true })
     reply.raw.on('close', () => { void transport.close(); void server.close() })
     await server.connect(transport)
