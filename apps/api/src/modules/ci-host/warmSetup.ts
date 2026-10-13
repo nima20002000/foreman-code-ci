@@ -1,52 +1,46 @@
-import { createHash } from 'node:crypto'
-import { existsSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 
 export const shellQuote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
 
-/** Cache copies have independent inodes so builds cannot mutate another job's dependencies. */
+const dependencyInputs = [
+  "const { execFileSync } = require('node:child_process')",
+  "const { createHash } = require('node:crypto')",
+  "const { existsSync, readFileSync } = require('node:fs')",
+  'const hash = createHash("sha256").update(process.version).update(process.platform).update(process.arch)',
+  'const manifests = execFileSync("git", ["ls-files", "-z", "--", "**/package.json"]).toString()',
+  '  .split("\\0").filter(Boolean).sort()',
+  'for (const name of ["pnpm-lock.yaml", "pnpm-workspace.yaml", ".npmrc", "package.json", ".pnpmfile.cjs", ...manifests]) {',
+  '  hash.update(name)',
+  '  hash.update(existsSync(name) ? readFileSync(name) : "missing")',
+  '}',
+  'console.log(hash.digest("hex"))',
+].join('\n')
+
+/** The stamp lives outside the source tree so cleaning a slot preserves its installed dependencies. */
 export function warmPnpmInstall(source: string, cache: string, run: string): string[] {
-  const lockfile = readFileSync(join(source, 'pnpm-lock.yaml'))
-  const lock = createHash('sha256').update(process.version).update(lockfile).digest('hex')
-  const inputs = createHash('sha256').update(lock)
-  for (const name of ['.npmrc', 'pnpm-workspace.yaml']) {
-    if (existsSync(join(source, name))) inputs.update(name).update(readFileSync(join(source, name)))
-  }
-  const modules = join(cache, 'modules', inputs.digest('hex'))
-  const ready = join(cache, 'locks', `${lock}.ready`)
+  const stamp = join(dirname(source), 'install-inputs')
+  const temporary = join(run, 'install-inputs')
   const install = `corepack pnpm install --frozen-lockfile --store-dir ${shellQuote(join(cache, 'pnpm-store'))}`
     + ` --cache-dir ${shellQuote(join(cache, 'pnpm-metadata'))}`
-    + ' --package-import-method=hardlink'
+    + ' --package-import-method=clone-or-copy'
   return [
-    `mkdir -p ${shellQuote(join(cache, 'locks'))} ${shellQuote(join(cache, 'modules'))}`,
-    `exec {cache_lock}>${shellQuote(join(cache, 'locks', `${lock}.lock`))}`,
-    'flock "$cache_lock" || finish $?',
-    `modules=${shellQuote(modules)}`,
-    // Leftover dependency directories from an interrupted job would make the snapshot copy fail on existing paths.
-    'while IFS= read -r -d "" directory; do rm -rf "$directory"; done < <(find . -type d -name node_modules -prune -print0)',
-    'if [ -d "$modules" ] && ! cp -a --reflink=auto "$modules/." .; then',
-    "  echo '[ci-cache] dependency snapshot unusable; installing fresh'",
-    '  while IFS= read -r -d "" directory; do rm -rf "$directory"; done < <(find . -type d -name node_modules -prune -print0)',
-    '  rm -rf "$modules"',
+    `inputs=$(node -e ${shellQuote(dependencyInputs)}) || finish $?`,
+    `if [ -d node_modules ] && [ -f ${shellQuote(stamp)} ]`
+      + ` && [ "$(cat ${shellQuote(stamp)})" = "$inputs" ]; then`,
+    "  echo '[ci-cache] dependency inputs unchanged; install skipped'",
+    'else',
+    `  rm -f ${shellQuote(stamp)} || finish $?`,
+    `  mkdir -p ${shellQuote(join(cache, 'locks'))} || finish $?`,
+    `  exec {cache_lock}>${shellQuote(join(cache, 'locks', 'install.lock'))}`,
+    '  flock "$cache_lock" || finish $?',
+    `  ${install} --offline || {`,
+    "    echo '[ci-cache] filling store online'",
+    `    ${install} || finish $?`,
+    '  }',
+    `  printf '%s' "$inputs" > ${shellQuote(temporary)} || finish $?`,
+    `  mv ${shellQuote(temporary)} ${shellQuote(stamp)} || finish $?`,
+    '  flock -u "$cache_lock"',
+    '  exec {cache_lock}>&-',
     'fi',
-    `${install} --offline || {`,
-    // A warmed store can still miss metadata (pruned or partial cache); refill it online instead of failing the job.
-    `  echo '[ci-cache] filling store online'`,
-    `  ${install} || finish $?`,
-    '}',
-    `touch ${shellQuote(ready)}`,
-    'if [ ! -d "$modules" ]; then',
-    `  snapshot=${shellQuote(join(run, 'modules'))}`,
-    '  mkdir -p "$snapshot" || finish $?',
-    '  while IFS= read -r -d "" directory; do',
-    '    mkdir -p "$snapshot/$(dirname "$directory")" || finish $?',
-    '    cp -a --reflink=auto "$directory" "$snapshot/$directory" || finish $?',
-    '  done < <(find . -type d -name node_modules -prune -print0)',
-    '  mv "$snapshot" "$modules" || finish $?',
-    '  while IFS= read -r -d "" directory; do rm -rf "$directory"; done < <(find . -type d -name node_modules -prune -print0)',
-    '  cp -a --reflink=auto "$modules/." . || finish $?',
-    'fi',
-    'flock -u "$cache_lock"',
-    'exec {cache_lock}>&-',
   ]
 }
