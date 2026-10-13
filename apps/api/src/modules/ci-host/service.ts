@@ -30,6 +30,7 @@ import { collectCiResults } from './resultCollection.js'
 import { sanitizeCiText, serializeCiJson } from './text.js'
 import { isGitHubComputer, needsSystemdExecutor, supportsUserSystemd } from './computerCapabilities.js'
 import { weighCiPartitions } from './partitionPlanning.js'
+import { readExecutorSpeeds } from './executorSpeed.js'
 import { readQueuedCiRuns } from './queuedRuns.js'
 import { dispatchCloudTicket, expireCloudDispatch, requestCloud } from './cloudDispatch.js'
 import { claimCiSlot, reservedCloudSlotKeys } from './cloudSlots.js'
@@ -272,7 +273,7 @@ export class HostCiService {
         && fleet.some(computer => computer.hostRef.kind === 'cloud')) {
         const smokeUnit = await this.commits.unitInventory?.(repository, commit)
         if (smokeUnit) {
-          try { await planCiGate(input, integration, smokeUnit, unitDurations, this.endpoint, this.reservedCloudSlots) }
+          try { await planCiGate(input, integration, smokeUnit, unitDurations, this.endpoint, new Map(), this.reservedCloudSlots) }
           catch (error) {
             if (!(error instanceof DomainError) || error.code !== 'CI_GATE_CAPACITY_REQUIRED') throw error
             log.info({ reason: error.message }, 'CI smoke has no complete ready gate fleet')
@@ -282,7 +283,7 @@ export class HostCiService {
       parts = [{ part: null, partition: null, files: input.files! }]
     } else if (input.gate) {
       parts = await planCiGate(input, { ...integration!, durations: durations! }, inventory!, unitDurations, this.endpoint,
-        this.reservedCloudSlots)
+        await readExecutorSpeeds(this.pool, this.endpoint), this.reservedCloudSlots)
     } else if (integration) {
       parts = planIntegrationParts(selection, { ...integration, durations: durations! }, await this.integrationSlots())
     }

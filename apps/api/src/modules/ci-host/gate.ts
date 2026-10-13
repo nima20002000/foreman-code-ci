@@ -6,6 +6,7 @@ import type { HostCiComputer, HostCiEndpoint } from './service.js'
 import type { CiIntegrationInventory } from './integrationParts.js'
 import { planCiParts, runsOnCircleCi, type CiUnitInventory } from './parts.js'
 import { buildComputerIntegrationShards } from './capacity.js'
+import { executorSpeedKey, type ExecutorSpeeds } from './executorSpeed.js'
 import { withoutReservedCloudSlots } from './cloudSlots.js'
 
 const SETUP_MS = 90_000
@@ -27,6 +28,7 @@ export interface GatePart {
   expectedDurationMs: number
   integrationShards?: number
   requiresBuildComputer?: boolean
+  speedFactor?: number
 }
 
 function integrationTime(files: string[], shards: number, duration: (file: string) => number) {
@@ -63,9 +65,11 @@ async function gateComputers(endpoint: HostCiEndpoint, reservedCloudSlots: numbe
 }
 
 /** Hosts get one large job each. Cloud takes checks first, then work that extends the hosts' critical path.
+ * Learned executor speeds scale each computer's integration time, so slower computers take less work.
  * Reserved cloud slots stay out of the plan so non-gate tickets can start while the gate runs. */
 export async function planCiGate(input: CiRunInput, integration: CiIntegrationInventory,
-  unit: CiUnitInventory, durations: CiDurations, endpoint: HostCiEndpoint, reservedCloudSlots = 0): Promise<GatePart[]> {
+  unit: CiUnitInventory, durations: CiDurations, endpoint: HostCiEndpoint,
+  speeds: ExecutorSpeeds = new Map(), reservedCloudSlots = 0): Promise<GatePart[]> {
   const fleet = await gateComputers(endpoint, reservedCloudSlots)
   const hosts = fleet.filter(item => item.computer.hostRef.kind !== 'cloud')
   const clouds = fleet.filter(item => item.computer.hostRef.kind === 'cloud')
@@ -89,11 +93,12 @@ export async function planCiGate(input: CiRunInput, integration: CiIntegrationIn
   // Longest-first list scheduling over hosts and clouds with incremental shard loads: each file goes where it finishes
   // earliest (hosts win ties), so clouds only take integration that shortens the gate's critical path.
   const load = new Map(fleet.map(item => [item, { lanes: Array.from({ length: item.shards }, () => 0), serial: 0 }]))
+  const factor = (item: GateComputer) => speeds.get(executorSpeedKey(item.computer)) ?? 1
   const finishWith = (item: GateComputer, file: string) => {
     const state = load.get(item)!
     const serial = exclusive.has(file) ? state.serial + duration(file) : state.serial
     const lanes = exclusive.has(file) ? Math.max(...state.lanes) : Math.max(Math.max(...state.lanes), Math.min(...state.lanes) + duration(file))
-    return item.checkMs + SETUP_MS + serial + lanes
+    return item.checkMs + factor(item) * (SETUP_MS + serial + lanes)
   }
   const exclusiveCount = (item: GateComputer) => item.files.filter(file => exclusive.has(file) || requiresUserSystemd(file)).length
   for (const file of files) {
@@ -113,8 +118,9 @@ export async function planCiGate(input: CiRunInput, integration: CiIntegrationIn
   for (const item of fleet.filter(item => item.files.length)) {
     result.push({ suite: 'integration', part: null, partition: null, files: item.files,
       plannedHostKey: item.computer.key, integrationShards: item.shards,
-      expectedDurationMs: SETUP_MS + integrationTime(item.files, item.shards, duration),
-      requiresBuildComputer: item.files.some(requiresUserSystemd) })
+      expectedDurationMs: Math.round(factor(item) * (SETUP_MS + integrationTime(item.files, item.shards, duration))),
+      requiresBuildComputer: item.files.some(requiresUserSystemd),
+      ...(factor(item) !== 1 ? { speedFactor: factor(item) } : {}) })
   }
   return result
 }
