@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
-import { setTimeout as delay } from 'node:timers/promises'
 import { expect, it, vi } from 'vitest'
 import { AgentConfigurationVersionSchema } from '@foreman-code/contracts'
 import { AgentChatStateSchema, SendAgentChatMessageResponseSchema } from '@foreman-code/contracts/agent-chat'
@@ -48,23 +47,7 @@ it('settles an unoffered rollover failure and retries through authenticated Agen
       getForWorkspace: async () => { throw new Error('Agent rollover must not read or create a Run.') },
       getExecution: async () => { throw new Error('This fixture must not read a Run execution.') }, executionPages() { throw new Error('Agent rollover must not select a Run execution.') },
     }, (id, configuration, cwd) => {
-      if (!transport) {
-        transport = claudeSdkToolTransport(cwd, () => [])
-        const query = transport.sdk.query.bind(transport.sdk)
-        vi.spyOn(transport.sdk, 'query').mockImplementation(input => {
-          const running = query(input)
-          return {
-            ...running,
-            async *[Symbol.asyncIterator]() {
-              for await (const event of running) {
-                // Native completion can exceed one second while other CI files are active.
-                if (event.type === 'result' && transport!.offers.length === 200) await delay(1_100)
-                yield event
-              }
-            },
-          }
-        })
-      }
+      transport ??= claudeSdkToolTransport(cwd, () => [])
       const start = { kind: 'workflow' as const, correlationId: `agent:${id}:first`, request: {
         executionId: `agent-chat:${id}`, runId: `agent-chat:${id}`, workspaceId: seeded.scope.workspaceId,
         workflowNodeId: node.id, configuration, input: {}, workingDirectory: cwd, runtimeDirectory: join(db.directory, 'agent-chat', id),
