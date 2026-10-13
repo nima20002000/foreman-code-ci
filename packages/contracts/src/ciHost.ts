@@ -8,6 +8,9 @@ import { WorkspaceRepositorySchema } from './workspaceRepository.js'
  * It fetches with its own GitHub CLI login and installs packages normally; a systemd unit caps CPU and memory. */
 export const CI_HOST_NAMESPACE = 'ci-host-v1'
 export const CI_LOG_MAX_BYTES = 65_536
+export const CI_UNIT_SHARD_LIMIT = 32
+export const CI_HEAVY_WEB_SHARDS = 2
+export const CI_MAX_RUN_TICKETS = CI_UNIT_SHARD_LIMIT * 2 + CI_HEAVY_WEB_SHARDS + 1
 
 export const CiSuiteSchema = z.enum(['install', 'typecheck', 'lint', 'unit', 'build', 'integration'])
 export type CiSuite = z.infer<typeof CiSuiteSchema>
@@ -141,9 +144,6 @@ export type CiHostReply = z.infer<typeof CiHostReplySchema>
 /** What an Agent or the Operator sees for one CI run. */
 export const CiPrioritySchema = z.enum(['normal', 'high'])
 export const CiPriorityReasonSchema = z.enum(['normal', 'requested', 'ci-infrastructure', 'gate'])
-export const CiComputerRefSchema = z.object({ kind: z.enum(['main', 'device', 'cloud']), mainId: z.string(), deviceId: z.string().optional(),
-    provider: z.enum(['github', 'circleci']).optional(), slot: z.number().int().nonnegative().optional() }).strict()
-
 export const CiRunRecordSchema = z.object({
   id: CiHostRunIdSchema, workspaceId: IdSchema, suite: CiSuiteSchema, commit: CommitSchema, repository: CiRepositorySchema,
   scope: CiScopeSchema.default('full'), files: CiSelectedFilesSchema.default([]),
@@ -158,14 +158,14 @@ export const CiRunRecordSchema = z.object({
   partition: CiPartitionSchema.nullable(), groupId: CiHostRunIdSchema,
   part: CiPartSchema.nullable().default(null),
   state: z.enum(['queued', 'starting', 'running', 'passed', 'failed', 'canceled', 'lost']),
-  computer: z.object({ hostRef: CiComputerRefSchema,
+  computer: z.object({ hostRef: z.object({ kind: z.enum(['main', 'device', 'cloud']), mainId: z.string(), deviceId: z.string().optional(),
+    provider: z.enum(['github', 'circleci']).optional(), slot: z.number().int().nonnegative().optional() }).strict(),
     label: z.string() }).strict().nullable(),
   step: z.string().nullable(), exitCode: z.number().int().nullable(), message: z.string().nullable(),
   queuedAt: TimestampSchema, startedAt: TimestampSchema.nullable(), finishedAt: TimestampSchema.nullable(),
   initiator: z.object({ principalId: IdSchema, executionId: IdSchema.nullable() }).strict(),
   /** The computer a weighted partition was sized for; another free computer may still take it. */
   plannedHostKey: z.string().nullable().optional(),
-  smokeComputer: CiComputerRefSchema.optional(),
   /** Measured test time plus a fixed setup allowance; runner-derived selections use a full-suite upper estimate. */
   expectedDurationMs: z.number().nonnegative().finite().optional(),
   /** The planned slice contains files requiring a build computer. */
