@@ -743,47 +743,22 @@ export function registeredNativeProcess(child: ChildProcess): NativeProcessRecov
   return { root: registration.scope.root, owner: registration.scope.owner, launchId: registration.id }
 }
 
-function restartDetachment(scope: NativeProcessRecovery, observation: NativeLaunchObservation) {
-  const directory = join(scope.root, key(scope.owner), observation.launchId)
-  if (!existingPrivateDirectory(directory)) return undefined
-  const raw = readRecord(join(directory, 'restart-detached.json'))
-  if (raw === undefined) return undefined
-  const marker = recordObject(raw)
-  const launch = launchRecord(readRecord(join(directory, 'intent.json')))
-  const birth = birthRecord(readRecord(join(directory, 'birth.json')), launch)
-  const captured = recordObject(readRecord(join(directory, 'provider.json')))
-  const provider = recordObject(captured.provider)
-  if (launch.id !== observation.launchId || launch.owner !== scope.owner || launch.boot !== observation.bootId
-    || marker.format !== 1 || marker.id !== launch.id || marker.owner !== launch.owner || marker.boot !== launch.boot
-    || typeof marker.reconnectableStdio !== 'boolean'
-    || captured.format !== 1 || captured.id !== launch.id || captured.owner !== launch.owner
-    || captured.boot !== launch.boot || captured.capture !== 'captured'
-    || !isDeepStrictEqual(captured.guardian, birth.guardian)
-    || !isDeepStrictEqual(marker.guardian, birth.guardian) || !isDeepStrictEqual(marker.provider, captured.provider)
-    || !observation.guardian || !observation.provider
-    || birth.guardian.pid !== observation.guardian.pid || birth.guardian.startTicks !== observation.guardian.startTicks
-    || provider.pid !== observation.provider.pid || provider.startTicks !== observation.provider.startTicks) {
-    throw new Error('Detached native process identity changed.')
-  }
-  return { launch, birth, marker }
-}
-
-/** Recorded restart detachment remains readable after the original provider exits. */
-export function hasNativeRestartDetachment(scope: NativeProcessRecovery): boolean {
-  const launches = new NativeProcessRegistry(scope.root).snapshot().launches.filter(launch =>
-    launch.owner === scope.owner && launch.lifecycle !== 'closed'
-      && (!scope.launchId || launch.launchId === scope.launchId))
-  if (launches.length > 1) throw new Error('Restart-detached native owner is ambiguous.')
-  const launch = launches[0]
-  return launch !== undefined && restartDetachment(scope, launch) !== undefined
-}
-
 /** Original daemon identity only; a detached marker cannot authorize a new launch. */
 export function readDetachedNativeProcess(scope: NativeProcessRecovery): NativeLaunchObservation | undefined {
-  const launches = new NativeProcessRegistry(scope.root).snapshot().launches.filter(launch =>
-    launch.owner === scope.owner && (!scope.launchId || launch.launchId === scope.launchId))
+  const launches = new NativeProcessRegistry(scope.root).snapshot().launches.filter(item => item.owner === scope.owner)
   const detached = launches.filter(launch => {
-    if (!restartDetachment(scope, launch)) return false
+    const path = join(scope.root, key(scope.owner), launch.launchId, 'restart-detached.json')
+    const raw = readRecord(path)
+    if (raw === undefined) return false
+    const row = recordObject(raw)
+    const guardian = recordObject(row.guardian)
+    const provider = recordObject(row.provider)
+    if (!launch.guardian || !launch.provider || row.format !== 1 || row.id !== launch.launchId
+      || row.owner !== scope.owner || row.boot !== launch.bootId
+      || guardian.pid !== launch.guardian.pid || guardian.startTicks !== launch.guardian.startTicks
+      || provider.pid !== launch.provider.pid || provider.startTicks !== launch.provider.startTicks) {
+      throw new Error('Detached native process identity changed.')
+    }
     return launch.lifecycle === 'active' && launch.bootId === bootIdentity()
       && !!launch.guardian && identityAlive(launch.guardian) && !!launch.provider && identityAlive(launch.provider)
       && !!launch.boundary && cgroupPopulated(cgroupBoundary(launch.boundary, launch.launchId))
@@ -795,9 +770,12 @@ export function readDetachedNativeProcess(scope: NativeProcessRecovery): NativeL
 function detachedStdioRegistration(scope: NativeProcessRecovery) {
   const detached = readDetachedNativeProcess(scope)
   if (!detached) return undefined
-  const registration = restartDetachment(scope, detached)
-  if (registration?.marker.reconnectableStdio !== true) return undefined
-  return registration
+  const directory = join(privateDirectory(scope.root), key(scope.owner), detached.launchId)
+  const marker = recordObject(readRecord(join(directory, 'restart-detached.json')))
+  if (marker.reconnectableStdio !== true) return undefined
+  const launch = launchRecord(readRecord(join(directory, 'intent.json')))
+  const birth = birthRecord(readRecord(join(directory, 'birth.json')), launch)
+  return { launch, birth }
 }
 
 export function hasDetachedStdioProcess(scope: NativeProcessRecovery): boolean {
