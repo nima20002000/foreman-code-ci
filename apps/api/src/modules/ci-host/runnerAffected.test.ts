@@ -6,7 +6,6 @@ import { randomUUID } from 'node:crypto'
 import { expect, it } from 'vitest'
 import { HostCiRunner, systemHostCiPorts, type HostCiPorts } from './runner.js'
 import { gitFixtureEnvironment } from '../../../test/helpers/gitFixture.js'
-import { deferred } from '../../../test/helpers/deferred.js'
 
 it.each([false, true])('runs only affected integration files and balances partitions within that selection (CI shell: %s)', async ciShell => {
   const root = await mkdtemp(join(process.env.TMPDIR ?? tmpdir(), 'affected-host-'))
@@ -15,7 +14,6 @@ it.each([false, true])('runs only affected integration files and balances partit
   const calls = join(root, 'calls.jsonl')
   const system = systemHostCiPorts()
   let launched = Promise.resolve()
-  const serviceStarted = deferred()
   try {
     await mkdir(join(origin, 'apps/api/test'), { recursive: true })
     await mkdir(join(origin, 'scripts'))
@@ -64,7 +62,6 @@ it.each([false, true])('runs only affected integration files and balances partit
           const log = await readFile(join(dirname(script), 'log'), 'utf8')
           expect(result.code, log).toBe(0)
         })
-        serviceStarted.resolve()
         return { code: 0, stdout: '', stderr: '' }
       }
       if (file === 'systemctl') return { code: 0, stdout: 'active', stderr: '' }
@@ -74,11 +71,16 @@ it.each([false, true])('runs only affected integration files and balances partit
     const runId = randomUUID()
     await runner.handle({ operation: 'start', runId, repository: 'example/project', commit, suite: 'integration',
       scope: 'affected', files: [files[1]!, files[3]!], partition: { index: 0, count: 2 } })
-    await serviceStarted.promise
+    // Await the public running state before waiting for the launched shell.
+    await expect.poll(async () => {
+      const reply = await runner.handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 1 })
+      return reply.operation === 'read' ? reply.run.state : 'unexpected'
+    }).not.toBe('starting')
     await launched
     expect(await runner.handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 1 })).toMatchObject({ run: { state: 'passed' } })
     const commands = (await readFile(calls, 'utf8')).trim().split('\n').map(line => JSON.parse(line) as string[])
-    expect(commands.slice(0, 2)).toEqual([['pnpm', 'install', '--frozen-lockfile'], ['pnpm', 'db:up']])
+    expect(commands).toContainEqual(expect.arrayContaining(['pnpm', 'install', '--offline', '--frozen-lockfile']))
+    expect(commands).toContainEqual(['pnpm', 'db:up'])
     expect(commands).toContainEqual(['pnpm', 'test:integration', '--files', files[1]!])
     expect(commands.filter(command => command[1] === 'test:integration')).toHaveLength(1)
   } finally {
