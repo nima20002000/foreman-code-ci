@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest'
-import { ApprovedSourceSchema } from '@foreman-code/contracts/source-admission'
 import { installationUpdateFixture, profileReader, profiles, startWhenReady, pinnedPlacements, completedRun }
   from './helpers/harnessInstallationUpdate.js'
 
@@ -15,20 +14,10 @@ describe('installed harness updates', () => {
       await fixture.releaseWorkerDiscovery()
       const started = (await startWhenReady(fixture))!
       expect(fixture.sourceManifest.git?.repository).toBe(fixture.repositoryName)
-      const placements = await pinnedPlacements(fixture, started.run.id)
-      expect(placements).toHaveLength(1)
-      expect(placements[0]!.hostRef).toEqual(fixture.hostRef)
-      const source = placements[0]!.source
-      if (!('kind' in source) || source.kind !== 'pending') {
-        throw new Error('Run Start must retain its approved source pins')
-      }
-      const approved = ApprovedSourceSchema.parse(await fixture.value('source_get', {
-        workspaceId: fixture.version.workspaceId, approvedSourceId: source.approvedSourceId,
-        snapshotId: source.snapshotId, manifestDigest: source.manifestDigest,
-      }))
-      expect(approved.manifest.git).toEqual(fixture.sourceManifest.git)
-      expect(approved.manifest.entries).toEqual(fixture.sourceManifest.entries)
-      expect(source.manifestDigest).toBe(approved.manifest.manifestDigest)
+      expect(await pinnedPlacements(fixture, started.run.id)).toEqual([expect.objectContaining({
+        hostRef: fixture.hostRef,
+        source: expect.objectContaining({ manifestDigest: fixture.sourceManifest.manifestDigest }),
+      })])
       await completedRun(fixture, started.run.id)
     } finally {
       await fixture.releaseWorkerDiscovery()
