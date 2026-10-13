@@ -47,7 +47,8 @@ it.each([
     await writeFile(join(bin, 'corepack'), `#!${process.execPath}\n`
       + "require('node:fs').appendFileSync(process.env.CI_CALLS_FILE, JSON.stringify(process.argv.slice(2)) + '\\n')\n"
       + "require('node:fs').appendFileSync(process.env.CI_RESOURCES_FILE, JSON.stringify({"
-      + "cpu: process.env.FOREMAN_CODE_CI_CPU_COUNT, shards: process.env.GRAPHQL_INTEGRATION_SHARDS"
+      + "cpu: process.env.FOREMAN_CODE_CI_CPU_COUNT, ceiling: process.env.FOREMAN_CODE_CI_INTEGRATION_SHARDS,"
+      + "shards: process.env.GRAPHQL_INTEGRATION_SHARDS, alias: process.env.FOREMAN_CODE_INTEGRATION_SHARDS"
       + "}) + '\\n')\n")
     await chmod(join(bin, 'corepack'), 0o755)
     for (const cli of ['codex', 'claude']) {
@@ -60,7 +61,7 @@ it.each([
     const ports: HostCiPorts = { ...system, cpus: 16, memoryBytes: 32 * 2 ** 30,
       availableMemoryBytes: () => 24 * 2 ** 30, run: async (file, args, options) => {
       if (file === 'gh') return { code: 0, stdout: '', stderr: '' }
-      if (file === 'git' && args.some(value => value.startsWith('https://github.com/'))) {
+      if (file === 'git' && args.includes('clone')) {
         return system.run(file, args.map(value => value.startsWith('https://') ? origin : value), options)
       }
       if (file === 'systemd-run') {
@@ -102,7 +103,7 @@ it.each([
     expect(commands.filter(command => command[1] === 'test:integration')).toHaveLength(1)
     if (gate) {
       const budgets = (await readFile(resources, 'utf8')).trim().split('\n').map(line => JSON.parse(line))
-      expect(budgets).toContainEqual({ cpu: '16', shards: '12' })
+      expect(budgets).toContainEqual({ cpu: '16', ceiling: '12' })
     }
   } finally {
     await launched
