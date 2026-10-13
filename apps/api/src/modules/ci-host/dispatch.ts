@@ -61,11 +61,7 @@ export function ciMessages(run: CiRunRecord, observed: string | null) {
   }
   const messageHistory = history.slice(-8)
   const message = run.supersededBy ? `superseded by ${run.supersededBy}` : providerMessage
-  return {
-    ...(providerMessage !== null || run.providerMessage !== undefined ? { providerMessage } : {}),
-    ...(messageHistory.length > 0 || run.messageHistory !== undefined ? { messageHistory } : {}),
-    message,
-  }
+  return { providerMessage, messageHistory, message }
 }
 
 export function rejectedCiStart(error: unknown) {
