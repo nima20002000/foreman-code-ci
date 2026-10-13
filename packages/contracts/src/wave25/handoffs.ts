@@ -8,18 +8,24 @@ import {
   WorkflowArtifactOutputsV1Schema, WorkflowArtifactResultV1Schema,
   type WorkflowArtifactOutputsV1, type WorkflowArtifactResultV1,
 } from '../workflowArtifactDeclarations.js'
-export { WorkHandoffPolicyV1Schema } from './workflowShape.js'
+export { HANDOFF_CONTRACT_VERSION, WorkHandoffPolicyV1Schema } from './workflowShape.js'
+export type { WorkHandoffPolicyV1 } from './workflowShape.js'
 
 const Count = z.number().int().min(0).max(2147483647)
 
 /** Logical work is independent of native attempts, approval exchanges and turns. */
-const WorkHandoffScopeSchema = RunGraphScopeSchema
+export const WorkHandoffScopeSchema = RunGraphScopeSchema
+export const WorkHandoffConnectionSchema = z.object({
+  relationshipId: GraphIdSchema, sourceNodeId: GraphIdSchema, targetNodeId: GraphIdSchema,
+  maxWorkHandoffsPerRun: z.number().int().min(1).max(2147483647).optional(),
+  workRequestDirection: z.enum(['source_to_target', 'both']),
+}).strict().refine((value) => value.sourceNodeId !== value.targetNodeId, 'HANDOFF_SELF_CONNECTION')
 export const WorkHandoffUsageSchema = z.object({
   scope: WorkHandoffScopeSchema, relationshipId: GraphIdSchema,
   used: Count, maxWorkHandoffsPerRun: z.number().int().min(1).max(2147483647).nullable(),
 }).strict().refine((value) => value.maxWorkHandoffsPerRun === null || value.used <= value.maxWorkHandoffsPerRun,
   'HANDOFF_USAGE_EXCEEDS_LIMIT')
-type WorkHandoffUsage = z.infer<typeof WorkHandoffUsageSchema>
+export type WorkHandoffUsage = z.infer<typeof WorkHandoffUsageSchema>
 export function canAdmitWorkHandoff(usage: WorkHandoffUsage): boolean {
   return usage.maxWorkHandoffsPerRun === null || usage.used < usage.maxWorkHandoffsPerRun
 }
@@ -47,6 +53,7 @@ export const WorkActivationIdentitySchema = z.object({
     z.object({ kind: z.literal('limit_denial'), denialId: GraphIdSchema }).strict(),
   ]),
 }).strict()
+export type WorkActivationIdentity = z.infer<typeof WorkActivationIdentitySchema>
 
 export const WorkRequestSchema = z.object({
   scope: WorkHandoffScopeSchema, requestId: GraphIdSchema, relationshipId: GraphIdSchema,
@@ -232,11 +239,11 @@ export function parseWorkHandoffArtifactResult(result: unknown, declaration: Wor
   return { ...envelope, artifactOutputs }
 }
 
-const WorkHandoffOperationKindSchema = z.enum([
+export const WorkHandoffOperationKindSchema = z.enum([
   'work_request', 'work_return', 'permission_exchange', 'approval_exchange',
   'technical_retry', 'replay', 'progress', 'system_notice', 'delivery_acknowledgement',
 ])
-type WorkHandoffOperationKind = z.infer<typeof WorkHandoffOperationKindSchema>
+export type WorkHandoffOperationKind = z.infer<typeof WorkHandoffOperationKindSchema>
 export function consumesWorkHandoffSlot(kind: WorkHandoffOperationKind): boolean {
   return kind === 'work_request'
 }

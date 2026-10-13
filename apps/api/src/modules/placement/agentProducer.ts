@@ -235,6 +235,12 @@ export class AgentPlacementProducer implements RunPlacementAdmissionPort {
           }
           const live = await readLiveManagementPrincipal(transaction, principal.id)
           await assertRepository(transaction)
+          if (saved.implicit && !version.definition.defaultWorktree) {
+            const current = (await transaction.query<{ current_binding_revision: string }>(
+              'select current_binding_revision from source_root_catalog where root_id=$1 for share',
+              [saved.saved.rootBinding!.rootId])).rows[0]
+            if (Number(current?.current_binding_revision) !== saved.saved.rootBinding!.bindingRevision) this.conflict()
+          }
           if (saved.implicit && !sameWorkflowValue(saved.saved, await resolveInherited(transaction, live, saved.configuration))) {
             this.conflict()
           }

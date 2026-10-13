@@ -29,14 +29,18 @@ export type { Id, Timestamp } from "./schemaPrimitives.js";
 import {
   ApprovalHandlerSchema, AcceptedWorkflowApprovalConfigurationSchema,
   ExecutionConditionSchema,
+  CurrentAgentWorkflowNodeFields, CurrentWorkflowNodeSchema, CurrentWorkflowRelationshipSchema, CurrentWorkflowDefinitionBaseSchema,
   WorkflowDefinitionV3Schema, ExecutionSemanticsVersionSchema,
 } from "./wave25/workflowShape.js";
 export {
-  ApprovalHandlerSchema, AcceptedWorkflowApprovalConfigurationSchema, WorkflowApprovalConfigurationSchema, ExecutionConditionSchema, WorkflowExecutionPolicySchema,
-  ChoiceOutcomeSchema, ChoiceTargetSchema, WorkflowChoiceSchema, WorkflowRelationshipSchema,
+  ApprovalHandlerSchema, AcceptedWorkflowApprovalConfigurationSchema, WorkflowApprovalConfigurationSchema,
+  ExecutionConditionKindSchema, ExecutionConditionSchema, WorkflowExecutionPolicySchema,
+  ChoiceOutcomeSchema, ChoiceTargetSchema, WorkflowChoiceSchema,
+  WorkflowExecutionRelationshipSchema, WorkflowApprovalRelationshipSchema, WorkflowRelationshipSchema,
 } from "./wave25/workflowShape.js";
 export type {
-  ApprovalHandler, WorkflowApprovalConfiguration, WorkflowExecutionPolicy, WorkflowChoice, WorkflowRelationship,
+  ApprovalHandler, AcceptedWorkflowApprovalConfiguration, WorkflowApprovalConfiguration,
+  ExecutionConditionKind, ExecutionCondition, WorkflowExecutionPolicy, WorkflowChoice, WorkflowRelationship,
 } from "./wave25/workflowShape.js";
 import type { ApprovalHandler } from "./wave25/workflowShape.js";
 import { RunLiveActivitySchema } from "./runLiveActivity.js";
@@ -96,16 +100,17 @@ export const AgentStatusSchema = z.enum([
   "disconnected",
 ]);
 export type AgentStatus = z.infer<typeof AgentStatusSchema>;
-const AgentExecutionStateSchema = AgentStatusSchema;
+export const AgentExecutionStateSchema = AgentStatusSchema;
 export type AgentExecutionState = z.infer<typeof AgentExecutionStateSchema>;
 
-const AgentRoleSchema = z.string().trim().min(1);
+export const AgentRoleSchema = z.string().trim().min(1);
+export type AgentRole = z.infer<typeof AgentRoleSchema>;
 
 /** Product authority role. Free-form Agent.role remains display metadata only. */
-const AgentProductRoleSchema = z.enum(["orchestrator", "coder", "operator"]);
+export const AgentProductRoleSchema = z.enum(["orchestrator", "coder", "operator"]);
 export type AgentProductRole = z.infer<typeof AgentProductRoleSchema>;
 
-const HarnessStatusSchema = z.enum(["ready", "running", "disconnected", "unavailable"]);
+export const HarnessStatusSchema = z.enum(["ready", "running", "disconnected", "unavailable"]);
 export type HarnessStatus = z.infer<typeof HarnessStatusSchema>;
 
 /** A small runner/harness projection suitable for an Agent context panel. */
@@ -117,6 +122,7 @@ export const HarnessSummarySchema = z
     runnerId: IdSchema.optional(),
   })
   .strict();
+export type HarnessSummary = z.infer<typeof HarnessSummarySchema>;
 
 export const AgentHarnessSchema = z.enum(["codex", "claude"]);
 /** Persisted facts retain the provider that originally produced them. */
@@ -136,7 +142,7 @@ export const AssignedSkillSchema = z
   .strict();
 export type AssignedSkill = z.infer<typeof AssignedSkillSchema>;
 /** The application-level Operator is not workspace-owned, so its skill references name their workspace. */
-const WorkspaceSkillReferenceSchema = AssignedSkillSchema.extend({ workspaceId: IdSchema }).strict();
+export const WorkspaceSkillReferenceSchema = AssignedSkillSchema.extend({ workspaceId: IdSchema }).strict();
 export type WorkspaceSkillReference = z.infer<typeof WorkspaceSkillReferenceSchema>;
 
 /** Per-skill instruction body limit, in UTF-16 code units (JavaScript string length). */
@@ -145,7 +151,7 @@ export const MAX_SKILL_INSTRUCTIONS_CHARS = 100_000;
  * A bounded context size, never a token or cost quota; exceeding it is rejected, never truncated. */
 export const MAX_AGENT_INSTRUCTIONS_BYTES = 512 * 1024;
 /** Server-resolved immutable snapshot. Callers cannot supply one. */
-const ResolvedSkillSchema = AssignedSkillSchema.extend({
+export const ResolvedSkillSchema = AssignedSkillSchema.extend({
   // Operator snapshots include scope; optional for previously accepted snapshots.
   workspaceId: IdSchema.optional(),
   name: z.string().min(1).max(200).optional(),
@@ -154,22 +160,23 @@ const ResolvedSkillSchema = AssignedSkillSchema.extend({
 }).strict();
 export type ResolvedSkill = z.infer<typeof ResolvedSkillSchema>;
 
-const AgentPromptSchema = z
+export const AgentPromptSchema = z
   .object({
     system: z.string().trim().min(1).optional(),
   })
   .strict();
+export type AgentPrompt = z.infer<typeof AgentPromptSchema>;
 
 const WritableRootSchema = z.string().min(1)
   .refine((value) => !value.includes("\0"), "path cannot contain NUL")
   .refine((value) => value.startsWith("/") || /^[A-Za-z]:[\\/]/.test(value), "path must be absolute");
-const CodexMcpToolApprovalModeSchema = z.enum(["auto", "prompt", "writes", "approve"]);
-const CodexMcpToolPolicySchema = z.object({
+export const CodexMcpToolApprovalModeSchema = z.enum(["auto", "prompt", "writes", "approve"]);
+export const CodexMcpToolPolicySchema = z.object({
   enabled: z.boolean().optional(),
   approvalMode: CodexMcpToolApprovalModeSchema.optional(),
 }).strict();
 export type CodexMcpToolPolicy = z.infer<typeof CodexMcpToolPolicySchema>;
-const CodexMcpServerSettingsSchema = z.object({
+export const CodexMcpServerSettingsSchema = z.object({
   enabled: z.boolean(),
   required: z.boolean(),
   enabledTools: z.array(z.string().trim().min(1)).optional(),
@@ -185,7 +192,7 @@ const CodexMcpServerSettingsSchema = z.object({
     if (disabled.has(tool)) context.addIssue({ code: z.ZodIssueCode.custom, path: ["enabledTools", index], message: "enabled and disabled MCP tools must be disjoint" });
   }
 });
-const CodexAdvancedConfigurationSchema = z.object({
+export const CodexAdvancedConfigurationSchema = z.object({
   approvalPolicy: z.enum(["on-request", "never"]),
   approvalsReviewer: z.enum(["user", "auto_review"]),
   additionalWritableDirectories: z.array(WritableRootSchema),
@@ -213,12 +220,12 @@ export const DEFAULT_CODEX_ADVANCED_CONFIGURATION: CodexAdvancedConfiguration = 
   mcpServers: {},
 };
 
-const RetiredOpenCodePermissionRuleSchema = z.object({
+export const RetiredOpenCodePermissionRuleSchema = z.object({
   permission: z.string().trim().min(1),
   pattern: z.string().min(1),
   effect: z.enum(["allow", "ask", "deny"]),
 }).strict();
-const RetiredOpenCodeAdvancedConfigurationSchema = z.object({
+export const RetiredOpenCodeAdvancedConfigurationSchema = z.object({
   apiVersion: z.literal("v1"),
   permissionRules: z.array(RetiredOpenCodePermissionRuleSchema),
   permissionHandling: z.enum(["graphql_routed", "native_auto"]),
@@ -231,6 +238,7 @@ const RetiredOpenCodeAdvancedConfigurationSchema = z.object({
   configLoading: z.object({ mode: z.literal("native") }).strict(),
   mcp: z.object({ serverEnabled: z.record(z.string().trim().min(1), z.boolean()) }).strict(),
 }).strict();
+export type RetiredOpenCodeAdvancedConfiguration = z.infer<typeof RetiredOpenCodeAdvancedConfigurationSchema>;
 export const CodexHarnessConfigurationSchema = z
   .object({
     harness: z.literal("codex"),
@@ -323,7 +331,7 @@ export function validateHarnessWorkflowCompatibility(
   return HarnessWorkflowCompatibilitySchema.parse({ configuration, workflowApprovalHandler, designatedOrchestrator }).configuration;
 }
 
-const AgentTemplateSchema = z.object({
+export const AgentTemplateSchema = z.object({
   nativeTools: NativeToolsSchema.optional(),
   harnessProfileSelection: z.lazy(() => HarnessProfileSelectionSchema).optional(),
   role: AgentProductRoleSchema,
@@ -334,6 +342,7 @@ const AgentTemplateSchema = z.object({
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["boardAddable"], message: "Operator is application-level and cannot be added to a workflow board" });
   }
 });
+export type AgentTemplate = z.infer<typeof AgentTemplateSchema>;
 
 export const AgentDefaultsSchema = z.object({
   orchestrator: AgentTemplateSchema.safeExtend({ role: z.literal("orchestrator"), boardAddable: z.literal(true) }),
@@ -439,7 +448,7 @@ export const HarnessQualificationSchema = z
   .strict();
 export type HarnessQualification = z.infer<typeof HarnessQualificationSchema>;
 
-const McpDetectionStateSchema = z.enum([
+export const McpDetectionStateSchema = z.enum([
   "not_detected", "misconfigured", "status_unavailable", "connected", "disabled",
   "authentication_required", "broken", "check_failed",
 ]);
@@ -487,7 +496,7 @@ export const ApprovalResponseSemanticSchema = z.enum([
   "approve_once", "allow_turn", "allow_session", "reject", "cancel",
   "provider_scoped_allow", "persistent_policy_change",
 ]);
-const ApprovalPersistenceSchema = z.enum([
+export const ApprovalPersistenceSchema = z.enum([
   "request", "turn", "session", "provider_instance", "project", "persistent_config",
 ]);
 export const ApprovalResponseOptionSchema = z.object({
@@ -621,6 +630,10 @@ const NativeInteractionIdentitySchema = z.object({
   nativeMessageId: IdSchema.optional(),
   nativeRequestId: IdSchema.optional(),
 }).strict();
+export const NativeTurnReferenceSchema = NativeInteractionIdentitySchema.refine(
+  (value) => (value.nativeTurnId !== undefined) !== (value.nativeMessageId !== undefined),
+  { message: "Exactly one observed native turn or message identity is required." });
+export type NativeTurnReference = z.infer<typeof NativeTurnReferenceSchema>;
 export const NativeHarnessEventSchema = z.object({
   connectionId: IdSchema.optional(),
   sequence: z.number().int().nonnegative(),
@@ -649,6 +662,17 @@ export function isSessionNativeInteraction(value: PendingNativeInteraction): boo
     && !value.turn.nativeTurnId && !value.turn.nativeMessageId && Boolean(value.turn.nativeRequestId);
 }
 
+export const ActiveTimeBudgetSchema = z.object({
+  activeTimeoutMs: z.number().int().positive(),
+  activeElapsedMs: z.number().int().nonnegative(),
+  approvalWaitStartedAt: TimestampSchema.optional(),
+  infrastructureDeadlineAt: TimestampSchema.optional(),
+}).strict();
+export const NativeCancellationSchema = z.object({
+  requestedAt: TimestampSchema,
+  reason: z.string().trim().min(1).optional(),
+  nativeAcknowledgedAt: TimestampSchema.optional(),
+}).strict();
 
 export const NativeSessionLaneSchema = z.object({
   id: IdSchema,
@@ -741,6 +765,13 @@ export const AgentSchema = z
   .strict();
 export type Agent = z.infer<typeof AgentSchema>;
 
+/** Generic presentation names refer to the one current shape, never retired validators. */
+export const WorkflowNodeSchema = CurrentWorkflowNodeSchema;
+export const WorkflowNodeFields = CurrentAgentWorkflowNodeFields;
+export const WorkflowEdgeSchema = CurrentWorkflowRelationshipSchema;
+export const WorkflowDefinitionFields = CurrentWorkflowDefinitionBaseSchema.omit({ nodes: true, edges: true }).shape;
+export type WorkflowNode = z.infer<typeof CurrentWorkflowNodeSchema>;
+export type WorkflowEdge = z.infer<typeof CurrentWorkflowRelationshipSchema>;
 export type WorkflowDefinition = import('./wave25/workflowShape.js').WorkflowDefinitionV3;
 export type WorkflowVersion = import('./wave25/workflowSchemas.js').WorkflowVersionV3;
 
@@ -795,7 +826,8 @@ export const OperatorAgentSchema = z.object({
 }).strict();
 export type OperatorAgent = z.infer<typeof OperatorAgentSchema>;
 
-const ConversationStatusSchema = z.enum(["open", "archived"]);
+export const ConversationStatusSchema = z.enum(["open", "archived"]);
+export type ConversationStatus = z.infer<typeof ConversationStatusSchema>;
 
 export const ConversationSchema = z
   .object({
@@ -825,7 +857,8 @@ export const ConversationSchema = z
   });
 export type Conversation = z.infer<typeof ConversationSchema>;
 
-const MessageRoleSchema = z.enum(["user", "assistant", "system", "tool"]);
+export const MessageRoleSchema = z.enum(["user", "assistant", "system", "tool"]);
+export type MessageRole = z.infer<typeof MessageRoleSchema>;
 
 export const MessageSchema = z
   .object({
@@ -1054,6 +1087,7 @@ export const ActivityKindSchema = z.enum([
   "work_needs_direction",
   "work_direction_wait",
 ]);
+export type ActivityKind = z.infer<typeof ActivityKindSchema>;
 
 /** Ordered native/backend activity. payload remains source-specific but JSON-safe. */
 export const RunActivitySchema = z
@@ -1111,7 +1145,7 @@ export const HarnessExecutionRequestSchema = z
   .strict();
 export type HarnessExecutionRequest = z.infer<typeof HarnessExecutionRequestSchema>;
 
-const BrowserWaitReasonSchema = z.enum([
+export const BrowserWaitReasonSchema = z.enum([
   "auth_required",
   "browser_profile",
   "operator_input",
@@ -1119,8 +1153,10 @@ const BrowserWaitReasonSchema = z.enum([
   "rate_limited",
   "other",
 ]);
+export type BrowserWaitReason = z.infer<typeof BrowserWaitReasonSchema>;
 
-const ResourceHolderSchema = z.enum(["none", "operator", "runner", "agent"]);
+export const ResourceHolderSchema = z.enum(["none", "operator", "runner", "agent"]);
+export type ResourceHolder = z.infer<typeof ResourceHolderSchema>;
 
 /** Why a run is waiting for a browser and who currently holds that resource. */
 export const BrowserWaitSchema = z
@@ -1135,22 +1171,25 @@ export const BrowserWaitSchema = z
     executionLabel: z.string().trim().min(1).optional(),
   })
   .strict();
+export type BrowserWait = z.infer<typeof BrowserWaitSchema>;
 
-const RunnerHealthStatusSchema = z.enum([
+export const RunnerHealthStatusSchema = z.enum([
   "healthy",
   "degraded",
   "offline",
   "disconnected",
   "unknown",
 ]);
+export type RunnerHealthStatus = z.infer<typeof RunnerHealthStatusSchema>;
 
-const RunnerHealthSchema = z
+export const RunnerHealthSchema = z
   .object({
     status: RunnerHealthStatusSchema,
     message: z.string().optional(),
     checkedAt: TimestampSchema.optional(),
   })
   .strict();
+export type RunnerHealth = z.infer<typeof RunnerHealthSchema>;
 
 /**
  * A compact run projection for cards and activity views. Execution state, outcome,
@@ -1177,15 +1216,17 @@ export type WorkflowRunSummary = z.infer<typeof WorkflowRunSummarySchema>;
 export const RunSummarySchema = WorkflowRunSummarySchema;
 export type RunSummary = WorkflowRunSummary;
 
-const ResourceKindSchema = z.enum(["browser", "file", "document", "tool", "other"]);
+export const ResourceKindSchema = z.enum(["browser", "file", "document", "tool", "other"]);
+export type ResourceKind = z.infer<typeof ResourceKindSchema>;
 
-const ResourceStatusSchema = z.enum([
+export const ResourceStatusSchema = z.enum([
   "available",
   "in_use",
   "waiting",
   "auth_required",
   "unavailable",
 ]);
+export type ResourceStatus = z.infer<typeof ResourceStatusSchema>;
 
 export const ResourceSummarySchema = z
   .object({
@@ -1198,14 +1239,17 @@ export const ResourceSummarySchema = z
   })
   .strict();
 export type ResourceSummary = z.infer<typeof ResourceSummarySchema>;
+export const VisibleResourceSchema = ResourceSummarySchema;
+export type VisibleResource = ResourceSummary;
 
-const BrowserProfileStatusSchema = z.enum([
+export const BrowserProfileStatusSchema = z.enum([
   "available",
   "in_use",
   "waiting",
   "auth_required",
   "unavailable",
 ]);
+export type BrowserProfileStatus = z.infer<typeof BrowserProfileStatusSchema>;
 
 /** A browser profile summary is a resource projection, not a browser implementation. */
 export const BrowserProfileSummarySchema = z
@@ -1247,6 +1291,8 @@ export const ApiErrorResponseSchema = z
   })
   .strict();
 export type ApiErrorResponse = z.infer<typeof ApiErrorResponseSchema>;
+export const ErrorResponseSchema = ApiErrorResponseSchema;
+export type ErrorResponse = ApiErrorResponse;
 
 export const ServiceHealthSchema = z
   .object({
@@ -1265,25 +1311,41 @@ export type ServiceHealth = z.infer<typeof ServiceHealthSchema>;
 
 /** The same explicit V3 request as HTTP/Operator MCP; no unpinned Start DTO. */
 export const CreateRunRequestSchema = RunStartV3InputSchema;
+export type CreateRunRequest = z.infer<typeof CreateRunRequestSchema>;
+export const CreateRunResponseSchema = z.object({ run: WorkflowRunSchema }).strict();
+export type CreateRunResponse = z.infer<typeof CreateRunResponseSchema>;
 
 export const GetRunRequestSchema = z
   .object({ workspaceId: IdSchema, runId: IdSchema })
   .strict();
 export type GetRunRequest = z.infer<typeof GetRunRequestSchema>;
-const RunDetailsRecordFields = {
+export const RunDetailsRecordFields = {
   executions: z.array(HarnessExecutionSchema), activity: z.array(RunActivitySchema),
   liveActivity: RunLiveActivitySchema.optional(), cleanupPending: z.boolean().optional(),
 };
-const GetRunResponseSchema = z.object({ ...RunDetailsRecordFields, run: WorkflowRunSchema }).strict();
+export const GetRunResponseSchema = z.object({ ...RunDetailsRecordFields, run: WorkflowRunSchema }).strict();
 export type GetRunResponse = z.infer<typeof GetRunResponseSchema>;
 
+export const ListRunActivityRequestSchema = z
+  .object({
+    workspaceId: IdSchema,
+    runId: IdSchema,
+    afterSequence: z.number().int().nonnegative().optional(),
+    limit: z.number().int().positive().max(500).optional(),
+  })
+  .strict();
+export type ListRunActivityRequest = z.infer<typeof ListRunActivityRequestSchema>;
+export const ListRunActivityResponseSchema = z
+  .object({ activity: z.array(RunActivitySchema) })
+  .strict();
+export type ListRunActivityResponse = z.infer<typeof ListRunActivityResponseSchema>;
 
 export const WorkspaceDetailsRecordFields = {
   workspace: WorkspaceSchema, agents: z.array(AgentSchema), runs: z.array(WorkflowRunSummarySchema),
   resources: z.array(ResourceSummarySchema), browserProfiles: z.array(BrowserProfileSummarySchema).optional(),
   runners: z.array(RunnerSummarySchema).optional(),
 };
-const WorkspaceDetailsSchema = z.object({ ...WorkspaceDetailsRecordFields,
+export const WorkspaceDetailsSchema = z.object({ ...WorkspaceDetailsRecordFields,
   workflows: z.array(WorkflowDefinitionV3Schema) }).strict();
 export type WorkspaceDetails = z.infer<typeof WorkspaceDetailsSchema>;
 
@@ -1293,6 +1355,10 @@ export const WorkspaceDetailsRequestSchema = z
 export type WorkspaceDetailsRequest = z.infer<typeof WorkspaceDetailsRequestSchema>;
 export const WorkspaceDetailsResponseSchema = WorkspaceDetailsSchema;
 export type WorkspaceDetailsResponse = WorkspaceDetails;
+export const GetWorkspaceDetailsRequestSchema = WorkspaceDetailsRequestSchema;
+export type GetWorkspaceDetailsRequest = WorkspaceDetailsRequest;
+export const GetWorkspaceDetailsResponseSchema = WorkspaceDetailsResponseSchema;
+export type GetWorkspaceDetailsResponse = WorkspaceDetailsResponse;
 
 export const ListAgentsRequestSchema = WorkspaceDetailsRequestSchema;
 export type ListAgentsRequest = WorkspaceDetailsRequest;
@@ -1308,6 +1374,11 @@ export type GetWorkflowRequest = z.infer<typeof GetWorkflowRequestSchema>;
 export const GetWorkflowResponseSchema = z
   .object({ workflow: WorkflowDefinitionV3Schema })
   .strict();
+export type GetWorkflowResponse = z.infer<typeof GetWorkflowResponseSchema>;
+export const ReadWorkflowRequestSchema = GetWorkflowRequestSchema;
+export type ReadWorkflowRequest = GetWorkflowRequest;
+export const ReadWorkflowResponseSchema = GetWorkflowResponseSchema;
+export type ReadWorkflowResponse = GetWorkflowResponse;
 
 export const SaveWorkflowRequestSchema = z
   .object({
@@ -1325,12 +1396,14 @@ export const SaveWorkflowRequestSchema = z
       });
     }
   });
+export type SaveWorkflowRequest = z.infer<typeof SaveWorkflowRequestSchema>;
 export const SaveWorkflowResponseSchema = z
   .object({
     workflow: WorkflowDefinitionV3Schema,
     agents: z.array(AgentSchema).optional(),
   })
   .strict();
+export type SaveWorkflowResponse = z.infer<typeof SaveWorkflowResponseSchema>;
 
 export const GetHarnessDefaultsResponseSchema = z
   .object({ defaults: HarnessDefaultsSchema })
@@ -1342,6 +1415,10 @@ export const SaveHarnessDefaultsRequestSchema = z
 export type SaveHarnessDefaultsRequest = z.infer<typeof SaveHarnessDefaultsRequestSchema>;
 export const SaveHarnessDefaultsResponseSchema = GetHarnessDefaultsResponseSchema;
 export type SaveHarnessDefaultsResponse = GetHarnessDefaultsResponse;
+export const ReadWorkflowDefinitionRequestSchema = GetWorkflowRequestSchema;
+export const ReadWorkflowDefinitionResponseSchema = GetWorkflowResponseSchema;
+export const SaveWorkflowDefinitionRequestSchema = SaveWorkflowRequestSchema;
+export const SaveWorkflowDefinitionResponseSchema = SaveWorkflowResponseSchema;
 
 export const CreateConversationRequestSchema = z.discriminatedUnion("scope", [
   z.object({
@@ -1354,9 +1431,12 @@ export const CreateConversationRequestSchema = z.discriminatedUnion("scope", [
     title: z.string().trim().min(1).optional(),
   }).strict(),
 ]);
+export type CreateConversationRequest = z.infer<typeof CreateConversationRequestSchema>;
+export const CreateConversationResponseSchema = z.object({ conversation: ConversationSchema }).strict();
+export type CreateConversationResponse = z.infer<typeof CreateConversationResponseSchema>;
 
 /** Application-global Operator chat commands. Browser route context is only a prompt hint. */
-const OperatorConversationContextSchema = z.object({
+export const OperatorConversationContextSchema = z.object({
   route: z.string().trim().min(1).optional(),
   workspaceId: IdSchema.optional(),
   workflowId: IdSchema.optional(),
@@ -1573,7 +1653,7 @@ export const McpInteractionSummarySchema = z.object(DurableInteractionSchema.sha
   responseOptionsComplete: z.boolean(),
   retrieval: z.object({ tool: z.literal('interaction_get'), interactionId: IdSchema }).strict(),
 }).strict();
-const McpInteractionSchema = z.union([DurableInteractionSchema, McpInteractionSummarySchema]);
+export const McpInteractionSchema = z.union([DurableInteractionSchema, McpInteractionSummarySchema]);
 export const AppInteractionGetInputSchema = z.object({
   interactionId: IdSchema, contentCursor: z.string().min(1).max(1000).optional(),
 }).strict();
@@ -1622,6 +1702,8 @@ export const ListVisibleResourcesResponseSchema = z
   })
   .strict();
 export type ListVisibleResourcesResponse = z.infer<typeof ListVisibleResourcesResponseSchema>;
+export const VisibleResourcesResponseSchema = ListVisibleResourcesResponseSchema;
+export type VisibleResourcesResponse = ListVisibleResourcesResponse;
 
 /** Scenario IDs are URL-safe and intentionally open-ended for additive Phase 1 scenarios. */
 export const ScenarioIdSchema = z
@@ -1642,10 +1724,12 @@ export const UrlSearchSelectionSchema = z
     interactionId: IdSchema.optional(),
   })
   .strict();
+export type UrlSearchSelection = z.infer<typeof UrlSearchSelectionSchema>;
 export const ScenarioSelectionSchema = UrlSearchSelectionSchema;
+export type ScenarioSelection = UrlSearchSelection;
 
 /** Linkable Approval Inbox presentation; this does not change API authorization or request status. */
-const ApprovalInboxViewSchema = z.enum(["pending", "delivery", "history"]);
+export const ApprovalInboxViewSchema = z.enum(["pending", "delivery", "history"]);
 export type ApprovalInboxView = z.infer<typeof ApprovalInboxViewSchema>;
 export const ApprovalInboxSearchSchema = UrlSearchSelectionSchema.extend({
   approvalView: ApprovalInboxViewSchema.optional().catch(undefined),
