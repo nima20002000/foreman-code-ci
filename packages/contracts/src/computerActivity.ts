@@ -26,7 +26,7 @@ export const ComputerAgentActivitySchema = z.object({
   agentName: z.string(),
   state: HarnessExecutionStateSchema.exclude(['queued', 'completed']),
 }).strict()
-const ComputerActivitySchema = z.object({
+export const ComputerActivitySchema = z.object({
   target: DeviceProvisioningTargetSchema,
   name: z.string(),
   online: z.boolean(),
@@ -34,7 +34,7 @@ const ComputerActivitySchema = z.object({
   agents: z.array(ComputerAgentActivitySchema).max(COMPUTER_ACTIVITY_LIMIT),
 }).strict()
 /** A cloud CI service Main can hand CI runs to: its machines exist only while a run uses them. */
-const CloudCiActivitySchema = z.object({
+export const CloudCiActivitySchema = z.object({
   provider: z.enum(['github', 'circleci']),
   name: z.string(),
   /** Main's login for the service works, so runs can start there. */
@@ -53,6 +53,8 @@ export const ComputerActivityListSchema = z.object({
   /** Only global Jobs and Runs readers can infer that a computer has no activity. */
   activityComplete: z.boolean(),
 }).strict()
+export type ComputerJobActivity = z.infer<typeof ComputerJobActivitySchema>
+export type ComputerAgentActivity = z.infer<typeof ComputerAgentActivitySchema>
 export type ComputerActivity = z.infer<typeof ComputerActivitySchema>
 export type CloudCiActivity = z.infer<typeof CloudCiActivitySchema>
 export type ComputerActivityList = z.infer<typeof ComputerActivityListSchema>
