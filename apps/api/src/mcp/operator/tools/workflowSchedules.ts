@@ -14,9 +14,12 @@ import {
 } from '../../../modules/schedules/transportSchemas.js'
 import { invokeOperatorTool } from '../invoke.js'
 import type { OperatorRequestContext } from '../types.js'
-import { WORKFLOW_SCHEDULE_TOOLS, type WorkflowScheduleToolName } from '../toolNames.js'
 
-export { WORKFLOW_SCHEDULE_TOOLS, type WorkflowScheduleToolName }
+export const WORKFLOW_SCHEDULE_TOOLS = [
+  'workflow_schedule_get', 'workflow_schedule_save', 'workflow_schedule_enable',
+  'workflow_schedule_disable', 'workflow_schedule_clear', 'workflow_schedule_occurrences_list',
+] as const
+export type WorkflowScheduleToolName = typeof WORKFLOW_SCHEDULE_TOOLS[number]
 const actions: Record<WorkflowScheduleToolName, ManagementAction> = {
   workflow_schedule_get: 'workflows:read', workflow_schedule_occurrences_list: 'workflows:read',
   workflow_schedule_save: 'workflows:update', workflow_schedule_enable: 'workflows:update',

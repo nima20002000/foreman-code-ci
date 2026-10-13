@@ -4,7 +4,7 @@ import type { NativeResponseJournal } from '../harnesses/recovery/responseJourna
 import { hasAction, isAuthorized, requireAuthorization } from '../access/policy.js'
 import { projectInteractionActivity, type InteractionActivityEvidence } from './activityProjection.js'
 import { DomainError } from '../errors.js'
-import type { InteractionResponder } from './responder.js'
+import type { WorkerInteractionAuthority } from './authorization.js'
 import type { PostgresApprovalBudgetRepository } from './budget.js'
 import type { InteractionNativeRuntime } from './runtimePorts.js'
 import { Wave25InteractionRepository } from './wave25/repository.js'
@@ -13,7 +13,12 @@ import type { WorkDirectionActions } from './workDirection.js'
 import { deliverApproval, respondToApproval, resumeApproval,
   type ApprovalRuntimeDependencies, type AtomicApprovalResumeConsumer } from './wave25/service.js'
 
-export type { InteractionResponder }
+export type InteractionResponder =
+  | { kind: 'user'; principal?: ManagementPrincipal }
+  | { kind: 'operator'; principal: ManagementPrincipal; source?: 'http' | 'mcp' }
+  | { kind: 'orchestrator'; authority: WorkerInteractionAuthority; principal?: ManagementPrincipal;
+      /** Rejected explicitly; audit belongs to the shared G1 decision writer. */
+      beforeCommit?: unknown }
 const message = (error: unknown) => error instanceof DomainError ? error.code : 'APPROVAL_RECOVERY_UNCERTAIN'
 
 /** One current authenticated decision/delivery/resume service. Transport source
