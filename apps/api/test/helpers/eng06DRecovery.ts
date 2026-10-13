@@ -139,15 +139,13 @@ async function openTransport(base: Base, runtime: Runtime, errors: unknown[]): P
   } catch (error) { await Promise.allSettled(clients.map((client) => client.close())); await app.close(); stopObserver.mockRestore(); throw error }
 }
 
-export async function recoveryFixture(form: Form, plan: (input: Submission) => Fault = () => 'success', budget = 12,
-  options: { sessionPersistence?: 'persistent' | 'ephemeral' } = {}) {
+export async function recoveryFixture(form: Form, plan: (input: Submission) => Fault = () => 'success', budget = 12) {
   const fixture = makeCurrentWorkflowFixture(randomUUID(), form)
-  // Ephemeral sessions keep technical retry attempts in separate native sessions.
+  // This provider models a separate native session for every execution attempt.
   fixture.configurations = fixture.configurations.map((configuration) => AgentConfigurationVersionSchema.parse({
     ...configuration,
     harness: { ...configuration.harness, advanced: {
-      ...DEFAULT_CODEX_ADVANCED_CONFIGURATION, approvalPolicy: 'never',
-      sessionPersistence: options.sessionPersistence ?? 'ephemeral',
+      ...DEFAULT_CODEX_ADVANCED_CONFIGURATION, approvalPolicy: 'never', sessionPersistence: 'ephemeral',
     } },
   }))
   fixture.version.approval = { handler: 'native' }

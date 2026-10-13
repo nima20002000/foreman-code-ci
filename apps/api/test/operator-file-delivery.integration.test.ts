@@ -97,10 +97,8 @@ async function expectCodexCredentialIsolation(directory: string, auditOffset = 0
   expect(execution.every(entry => (entry.af02CredentialKeys as string[])
     .includes(OPERATOR_MCP_ENVIRONMENT_VARIABLE))).toBe(true)
   expect(metadata.every(entry => (entry.af02CredentialKeys as string[]).length === 0)).toBe(true)
-  const overrides = audit.filter(entry => Array.isArray(entry.cli)
-    && (entry.cli as string[]).some(arg => /^mcp_servers\..+\.enabled=false$/.test(arg)))
-  expect(overrides.some(entry => metadataPids.has(entry.processPid))).toBe(true)
-  expect(overrides.some(entry => executionPids.has(entry.processPid))).toBe(false)
+  expect(metadata.every(entry => entry.appMcpEnabled === false)).toBe(true)
+  expect(execution.every(entry => entry.appMcpEnabled === true)).toBe(true)
 }
 function fileCallValue(result: CodexFileCallResult): unknown {
   expect(result.success).toBe(true)
@@ -148,7 +146,11 @@ describe.skipIf(!connectionString || process.platform === 'win32')('AF-02 produc
     const seam = "const agent = process.env.TEST_AGENT_ID || 'agent-a'"
     assert.equal(binary.split(seam).length, 2)
     await writeFile(f.binary, binary.replace(seam,
-      `log({ af02CredentialKeys: Object.keys(process.env).filter((key) => /^(?:GRAPHQL|FOREMAN_CODE).*(?:TOKEN|CREDENTIAL)/.test(key) && key !== 'GRAPHQL_HEAVY_JOB_TOKEN' && key !== 'FOREMAN_CODE_HEAVY_JOB_TOKEN') })\n${seam}`))
+      `const appMcp = read('mcp.json', { name: 'graphql', enabled: true })
+      log({
+        af02CredentialKeys: Object.keys(process.env).filter((key) => /^(?:GRAPHQL|FOREMAN_CODE).*(?:TOKEN|CREDENTIAL)/.test(key) && key !== 'GRAPHQL_HEAVY_JOB_TOKEN' && key !== 'FOREMAN_CODE_HEAVY_JOB_TOKEN'),
+        appMcpEnabled: appMcp.enabled !== false && !processDisabledMcp.has(appMcp.name || 'graphql'),
+      })\n${seam}`))
     const reservation = createServer()
     await new Promise<void>((resolve, reject) => {
       reservation.once('error', reject)
