@@ -25,6 +25,7 @@ import { repeatStartPublication } from '../src/modules/run-graph/repeatStartPubl
 import { insertRepeatRun } from '../src/modules/runs/repeatStartAdmission.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { activeCiRuns } from '../src/modules/ci-host/cloud.js'
 import { onlyCiInfrastructure } from '../src/modules/ci-host/priority.js'
 
 let database: Awaited<ReturnType<typeof migratedDatabase>>
@@ -100,13 +101,13 @@ function fakeComputers(github: Record<string, boolean> = {}, cloud: boolean | { 
         ...(request.durations && finished && entry.durations ? { durations: entry.durations } : {}) }
     },
   }
-  const finish = (runId: string, exitCode: number, log: string, durations?: Record<string, number>) => {
+  const finish = (runId: string, exitCode: number, log: string, durations?: Record<string, number>, message?: string) => {
     const entry = runs.get(runId)!
     entry.log = log
     if (durations) entry.durations = durations
     else delete entry.durations
     entry.run = { ...entry.run, state: exitCode === 0 ? 'passed' : 'failed', exitCode, step: entry.request.operation === 'start'
-      ? entry.request.suite : null, finishedAt: new Date().toISOString(), logBytes: Buffer.byteLength(log) }
+      ? entry.request.suite : null, message: message ?? null, finishedAt: new Date().toISOString(), logBytes: Buffer.byteLength(log) }
   }
   return { endpoint, started, finish, computers }
 }
@@ -1757,5 +1758,49 @@ it('resolves branches of existing tickets before superseding them and protects e
       .toBe('queued')
     expect(CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: feature.ticketId })).run)
       .toMatchObject({ state: 'canceled', supersededBy: next.ticketId })
+  } finally { await f.close() }
+})
+
+
+it('persists a CI watchdog failure for authenticated MCP status and log readback and denies ungranted callers', async () => {
+  const f = await fixture()
+  try {
+    const started = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', {
+      commandId: randomUUID(), suite: 'unit', scope: 'affected', commit: 'a'.repeat(40),
+      files: ['apps/api/test/loop.test.ts'],
+    }))
+    await f.ci.dispatch()
+    const reason = 'CI hang watchdog: no test progress for 60000 ms; running: apps/api/test/loop.test.ts > planner never returns'
+    f.finish(started.ticketId, 1, `[ci-watchdog] ${reason}\n`, undefined, reason)
+    const result = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: started.ticketId }))
+    expect(result.run).toMatchObject({ state: 'failed', exitCode: 1, message: reason })
+    expect(result.logTail).toContain(reason)
+    const logs = CiLogsOutputSchema.parse(await f.value(f.operator, 'ci_logs_read', { ticketId: started.ticketId }))
+    expect(logs.text).toContain(reason)
+    const stored = (await f.pool.query<{ record: unknown }>('select record from ci_runs where id=$1',
+      [started.ticketId])).rows[0]!
+    expect(CiRunRecordSchema.parse(stored.record)).toMatchObject({ state: 'failed', message: reason })
+    const denied = await f.connect(['workflows:read'])
+    for (const tool of ['ci_get', 'ci_logs_read']) {
+      expect((await f.call(denied, tool, { ticketId: started.ticketId })).isError).toBe(true)
+    }
+  } finally { await f.close() }
+})
+
+it('indexes only active Main tickets after authenticated MCP writes and persisted completion', async () => {
+  const f = await fixture()
+  try {
+    const reader = await f.connect(CI_GET_ACTIONS)
+    const input = { suite: 'install', commandId: randomUUID() }
+    expect((await f.call(reader, 'ci_run', input)).isError).toBe(true)
+    expect((await activeCiRuns(f.pool)).ids.size).toBe(0)
+    const started = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', input))
+    expect((await activeCiRuns(f.pool)).ids.has(started.ticketId)).toBe(true)
+    await expect.poll(async () => CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get',
+      { ticketId: started.ticketId })).run.state).toBe('running')
+    f.finish(started.ticketId, 0, 'finished')
+    await expect.poll(async () => CiGetOutputSchema.parse(await f.value(reader, 'ci_get',
+      { ticketId: started.ticketId })).run.state).toBe('passed')
+    expect((await activeCiRuns(f.pool)).ids.has(started.ticketId)).toBe(false)
   } finally { await f.close() }
 })
