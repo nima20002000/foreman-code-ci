@@ -1,4 +1,3 @@
-import { runtimeTimingChannel } from '../../src/modules/diagnostics/runtimeTiming.js'
 import { agentWorkflowVersion } from './agentWorkflowFixture.js'
 import { Buffer } from 'node:buffer'
 import { randomUUID } from 'node:crypto'
@@ -73,18 +72,7 @@ export async function inspectRepeatRun({ exit, maxOccurrences, expectedOccurrenc
   } }))
   const exitId = fixture.version.definition.nodes[1]!.id
   let exits = 0
-  const diagStart = Date.now()
-  const diagPhases = new Map<string, { ms: number; n: number }>()
-  runtimeTimingChannel.subscribe((message) => {
-    const r = message as { component: string; phase: string; statementId?: string; operation?: string; durationMs: number }
-    const key = `${r.component}:${r.phase}${r.statementId ? `:${r.statementId}` : ''}${r.operation ? `:${r.operation}` : ''}`
-    const v = diagPhases.get(key) ?? { ms: 0, n: 0 }; v.ms += r.durationMs; v.n++; diagPhases.set(key, v)
-  })
   const f = await currentOperatorIntegration({ fixture, insertRun: false, approvalNodeIds: [], outputFor: (nodeId) => {
-    const top = [...diagPhases].sort((a, b) => b[1].ms - a[1].ms).slice(0, 8)
-      .map(([k, v]) => `${k}=${Math.round(v.ms)}ms/${v.n}`).join(' ')
-    diagPhases.clear()
-    process.stderr.write(`DIAG ${exit} node=${nodeId} t=${Date.now() - diagStart} ${top}\n`)
     if (nodeId !== exitId) return { nodeId }
     exits++
     const outcome = exit === 'early' && exits === 2 ? 'pass' : 'issues'

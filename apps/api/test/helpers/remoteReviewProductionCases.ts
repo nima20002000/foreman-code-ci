@@ -73,6 +73,7 @@ async function checkRemoteReviewFixture(check: (fixture: Fixture) => Promise<voi
   } catch (error) {
     console.error('Remote review production failure', error)
     console.error('Remote review production error codes', fixture.failures())
+    console.error('Remote review runtime timing', fixture.timings())
     console.error('Remote review jobs', (await fixture.db.pool.query(`select id,state,
       record->'error' as error,record->>'retryAfter' as retry_after,
       record->>'providerTurnOrMessageId' as provider_turn,record->>'attempt' as attempt,
