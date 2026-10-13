@@ -26,7 +26,6 @@ import { AgentConfigurationVersionSchema } from '@foreman-code/contracts'
 import { legacyProviderAccountBinding, readProviderAccountBinding, type AcceptedProviderAccountBindings }
   from '../provider-accounts/acceptedBindings.js'
 import type { AcceptedProviderAccountBinding } from '@foreman-code/contracts/provider-accounts'
-import { ignoreError } from '../diagnostics/ignoredError.js'
 
 type Queryable = Pick<pg.PoolClient, 'query'>
 
@@ -268,7 +267,7 @@ export class PostgresAgentChatRepository {
       await client.query('commit')
       return restored
     } catch (error) {
-      await client.query('rollback').catch(ignoreError('db', 'transaction rollback', { module: 'conversations/agentChatRepository', conversationId: id }))
+      await client.query('rollback').catch(() => undefined)
       throw error
     } finally { client.release() }
   }
@@ -437,7 +436,7 @@ export class PostgresAgentChatRepository {
       await client.query('commit')
       return { conversationId: row.id, turn: turn(inserted), replayed: false, created, ...(interruptTarget ? { interruptTarget } : {}) }
     } catch (error) {
-      await client.query('rollback').catch(ignoreError('db', 'transaction rollback', { module: 'conversations/agentChatRepository', conversationKey: input.key, requestId: input.request.requestId }))
+      await client.query('rollback').catch(() => undefined)
       throw error
     } finally { client.release() }
   }
@@ -457,7 +456,7 @@ export class PostgresAgentChatRepository {
       }
       await client.query('commit')
     } catch (error) {
-      await client.query('rollback').catch(ignoreError('db', 'transaction rollback', { module: 'conversations/agentChatRepository', conversationId: id, requestId }))
+      await client.query('rollback').catch(() => undefined)
       throw error
     } finally { client.release() }
   }
@@ -482,7 +481,7 @@ export class PostgresAgentChatRepository {
       await client.query('commit')
       return true
     } catch (error) {
-      await client.query('rollback').catch(ignoreError('db', 'transaction rollback', { module: 'conversations/agentChatRepository', conversationId: id, requestId }))
+      await client.query('rollback').catch(() => undefined)
       throw error
     } finally { client.release() }
   }
@@ -583,7 +582,7 @@ export class PostgresAgentChatRepository {
       await client.query('commit')
       return updated.rowCount === 1
     } catch (error) {
-      await client.query('rollback').catch(ignoreError('db', 'transaction rollback', { module: 'conversations/agentChatRepository', conversationId: id, requestId }))
+      await client.query('rollback').catch(() => undefined)
       throw error
     } finally { client.release() }
   }
@@ -603,7 +602,7 @@ export class PostgresAgentChatRepository {
       await this.bump(id, client)
       await client.query('commit')
     } catch (error) {
-      await client.query('rollback').catch(ignoreError('db', 'transaction rollback', { module: 'conversations/agentChatRepository', conversationId: id, requestId }))
+      await client.query('rollback').catch(() => undefined)
       throw error
     } finally { client.release() }
   }
@@ -640,7 +639,7 @@ export class PostgresAgentChatRepository {
       await client.query('commit')
       return target
     } catch (error) {
-      await client.query('rollback').catch(ignoreError('db', 'transaction rollback', { module: 'conversations/agentChatRepository', conversationId: id }))
+      await client.query('rollback').catch(() => undefined)
       throw error
     } finally { client.release() }
   }
@@ -699,7 +698,7 @@ export class PostgresAgentChatRepository {
       await client.query('commit')
       return true
     } catch (error) {
-      await client.query('rollback').catch(ignoreError('db', 'transaction rollback', { module: 'conversations/agentChatRepository', conversationId: id, requestId }))
+      await client.query('rollback').catch(() => undefined)
       throw error
     } finally { client.release() }
   }
@@ -725,7 +724,7 @@ export class PostgresAgentChatRepository {
       if (receipt.rowCount && !owner.rowCount) await this.bump(id, client) // A steer changes readback, not active ownership.
       await client.query('commit')
     } catch (error) {
-      await client.query('rollback').catch(ignoreError('db', 'transaction rollback', { module: 'conversations/agentChatRepository', conversationId: id, requestId }))
+      await client.query('rollback').catch(() => undefined)
       throw error
     } finally { client.release() }
   }
@@ -808,7 +807,7 @@ export class PostgresAgentChatRepository {
       await client.query('commit')
       return { ...loaded, commandActivity }
     } catch (error) {
-      await client.query('rollback').catch(ignoreError('db', 'transaction rollback', { module: 'conversations/agentChatRepository', conversationId: id }))
+      await client.query('rollback').catch(() => undefined)
       throw error
     } finally { client.release() }
   }

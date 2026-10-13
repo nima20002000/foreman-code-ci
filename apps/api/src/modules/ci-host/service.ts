@@ -16,7 +16,6 @@ import { ciGroupState, planCiParts, runsOnCircleCi, type CiUnitInventory } from 
 import { assertCiReadAccess } from './runAccess.js'
 import type { CiRepositoryCapabilities } from './repository.js'
 import { RUN_CI_JOBS_SQL, runCiJob, storedCiTestResults, type RunCiJobRow } from './runJobs.js'
-import { fallbackOnError } from '../diagnostics/ignoredError.js'
 
 /** CI reads are idempotent: one retry after a lock or statement timeout, then a typed retryable error. */
 async function retryRead<T>(work: () => Promise<T>): Promise<T> {
@@ -53,6 +52,12 @@ interface RunStopAudit {
 
 function isGitHubComputer(computer: HostCiComputer): boolean {
   return computer.hostRef.kind === 'cloud' && computer.hostRef.provider === 'github'
+}
+
+function needsBuildComputer(run: CiRunRecord): boolean {
+  return run.suite === 'integration' && (run.partition
+    ? run.partition.hostIndexes?.includes(run.partition.index) === true
+    : run.scope === 'full' || Boolean(run.deriveFiles) || run.files.some(requiresUserSystemd))
 }
 
 /** Runs work over every item with at most `limit` in flight. */
@@ -242,11 +247,10 @@ export class HostCiService {
     for (const computer of computers) {
       if (speed.has(computer.key)) continue
       // No measurement yet: CPU count relative to the measured computers' typical speed per CPU.
-      const status = await this.endpoint.request(computer, { operation: 'status' })
-        .catch(fallbackOnError(null, 'jobs', 'read CI computer status', { computer: computer.key }))
+      const status = await this.endpoint.request(computer, { operation: 'status' }).catch(() => null)
       if (status?.operation === 'status' && speed.size) {
         const perCpu = [...speed.values()].reduce((sum, value) => sum + value, 0) / speed.size / 12
-        speed.set(computer.key, perCpu * status.cpuCount)
+        speed.set(computer.key, perCpu * Math.max(1, Math.floor(status.cpuCount / (status.slotsTotal ?? 1))))
       }
     }
     return speed
@@ -452,9 +456,12 @@ export class HostCiService {
         const status = await this.endpoint.request(computer, { operation: 'status' }).catch(error => error as Error)
         result.push(status instanceof Error
           ? { label: computer.label, hostRef: computer.hostRef, priority: computer.priority,
-            ready: false, reasons: [status.message], running }
+            ready: false, reasons: [status.message], running, slotsUsed: running.length,
+            slotsTotal: Math.max(1, running.length) }
           : status.operation === 'status' ? { label: computer.label, hostRef: computer.hostRef, priority: computer.priority,
             ready: status.ready, reasons: status.reasons, cpuCount: status.cpuCount, memoryBytes: status.memoryBytes,
+            availableMemoryBytes: status.availableMemoryBytes,
+            slotsUsed: Math.max(running.length, status.slotsUsed ?? 0), slotsTotal: status.slotsTotal ?? 1,
             running } : null)
       }
       return { computers: result.filter(Boolean) }
@@ -501,7 +508,7 @@ export class HostCiService {
     return Boolean(saved.rowCount)
   }
 
-  /** One pass: refresh running runs, then give queued runs to idle computers in priority order. */
+  /** One pass: refresh running runs, then give queued runs to free CI slots in priority order. */
   dispatch(): Promise<void> {
     if (this.stoppingRuns) return this.dispatching ?? Promise.resolve()
     this.dispatching ??= this.dispatchOnce().catch(error => log.warn({ err: error }, 'CI dispatch failed'))
@@ -521,8 +528,7 @@ export class HostCiService {
         ?? (run.computer && run.computer.hostRef.kind !== 'cloud' ? await this.computer(run.computer.hostRef) : null)
       if (!computer) return
       const reply = await this.endpoint.request(computer, { operation: 'read', runId: run.id, afterOffset: 0, maxBytes: 32_768,
-        ...(['integration', 'unit'].includes(run.suite) ? { durations: true } : {}) })
-        .catch(fallbackOnError(null, 'jobs', 'read CI run from computer', { runId: run.id }))
+        ...(['integration', 'unit'].includes(run.suite) ? { durations: true } : {}) }).catch(() => null)
       if (reply?.operation !== 'read') return
       let logTail = reply.text
       if (reply.run.logBytes > 32_768) {
@@ -539,8 +545,7 @@ export class HostCiService {
       // tests; if they cannot be saved, the run stays active and the next pass tries again.
       if (['integration', 'unit'].includes(run.suite) && !['starting', 'running'].includes(reply.run.state)) {
         const results = await this.endpoint.request(computer, { operation: 'read', runId: run.id, afterOffset: 0, maxBytes: 1,
-          testResults: true })
-          .catch(fallbackOnError(null, 'jobs', 'read CI test results from computer', { runId: run.id }))
+          testResults: true }).catch(() => null)
         if (results?.operation === 'read' && results.testResults) {
           const saved = await this.pool.query('update ci_runs set test_results=$2::jsonb where id=$1',
             [run.id, JSON.stringify(results.testResults)]).then(() => true,
@@ -557,7 +562,25 @@ export class HostCiService {
     })
     const busyRows = (await this.pool.query<{ host_key: string; record: unknown }>(
       `select host_key,record from ci_runs where state in ('starting','running')`)).rows
-    const busy = new Set(busyRows.map(row => row.host_key))
+    const used = new Map<string, number>()
+    for (const row of busyRows) used.set(row.host_key, (used.get(row.host_key) ?? 0) + 1)
+    const totals = new Map<string, number>()
+    await inBatches(computers, 8, async computer => {
+      if (computer.hostRef.kind === 'cloud') {
+        totals.set(computer.key, 1)
+        return
+      }
+      const status = await this.endpoint.request(computer, { operation: 'status' }).catch(() => null)
+      totals.set(computer.key, status?.operation === 'status' ? status.slotsTotal ?? 1 : 1)
+      if (status?.operation === 'status') {
+        used.set(computer.key, Math.max(used.get(computer.key) ?? 0, status.slotsUsed ?? 0))
+      }
+    })
+    const freeSlots = (computer: HostCiComputer) => Math.max(0,
+      (totals.get(computer.key) ?? 1) - (used.get(computer.key) ?? 0))
+    const releaseSlot = (computer: HostCiComputer) => {
+      used.set(computer.key, Math.max(0, (used.get(computer.key) ?? 0) - 1))
+    }
     const github = computers.filter(isGitHubComputer)
     const githubKeys = new Set(github.map(computer => computer.key))
     const integrationOnGitHub = new Set(busyRows.filter(row => githubKeys.has(row.host_key)
@@ -573,13 +596,13 @@ export class HostCiService {
     // Reserve four GitHub slots while checks wait, including integration already using GitHub.
     const githubIntegrationLimit = Math.max(0, github.length - (queued.some(run => run.suite !== 'integration') ? 4 : 0))
     const durations = new Map(queuedRows.map((row, index) => [queued[index]!.id, row.durations]))
-    queued = await this.weighPartitions(queued, computers.filter(computer => !busy.has(computer.key)))
-    // Runs start at once, in queue order: each claims its computer before waiting, so none is given twice.
+    queued = await this.weighPartitions(queued, computers.flatMap(computer =>
+      Array.from({ length: freeSlots(computer) }, () => computer)))
+    queued.sort((left, right) => Number(needsBuildComputer(right)) - Number(needsBuildComputer(left)))
+    // Reserve slots before awaiting a start so concurrent dispatches cannot spend the same capacity.
     await Promise.all(queued.map(async run => {
       if (run.suite === 'integration' && run.partition && !run.partition.weights) return
-      const hostRequired = run.suite === 'integration' && (run.partition
-        ? run.partition.hostIndexes?.includes(run.partition.index) === true
-        : run.scope === 'full' || run.deriveFiles || run.files.some(requiresUserSystemd))
+      const hostRequired = needsBuildComputer(run)
       const reasons = (run.unstartedProviders ?? []).map(provider => `${provider}: dispatch retries exhausted`)
       const preferred = (computer: HostCiComputer) => {
         if (run.suite !== 'integration') return Number(isGitHubComputer(computer))
@@ -597,8 +620,8 @@ export class HostCiService {
       for (const computer of order) {
         if (computer.hostRef.kind === 'cloud' && computer.hostRef.provider
           && run.unstartedProviders?.includes(computer.hostRef.provider)) continue
-        if (busy.has(computer.key)) {
-          reasons.push(`${computer.label}: busy`)
+        if (!freeSlots(computer)) {
+          reasons.push(`${computer.label}: all CI slots in use (${used.get(computer.key) ?? 0}/${totals.get(computer.key) ?? 1})`)
           continue
         }
         const usesGitHubIntegration = run.suite === 'integration' && isGitHubComputer(computer)
@@ -606,7 +629,7 @@ export class HostCiService {
           reasons.push(`${computer.label}: slots reserved for queued checks`)
           continue
         }
-        busy.add(computer.key)
+        used.set(computer.key, (used.get(computer.key) ?? 0) + 1)
         if (usesGitHubIntegration) integrationOnGitHub.add(computer.key)
         try {
           const reply = CiHostReplySchema.parse(await this.endpoint.request(computer, { operation: 'start', runId: run.id,
@@ -616,7 +639,7 @@ export class HostCiService {
             ...(run.baseCommit ? { baseCommit: run.baseCommit } : {}),
             ...(durations.get(run.id) ? { durations: durations.get(run.id)! } : {}) }))
           if (reply.operation !== 'start') {
-            busy.delete(computer.key)
+            releaseSlot(computer)
             if (usesGitHubIntegration) integrationOnGitHub.delete(computer.key)
             reasons.push(`${computer.label}: no start reply`)
             continue
@@ -630,20 +653,26 @@ export class HostCiService {
             return
           }
           if (reply.run.state === 'queued') {
-            busy.delete(computer.key)
+            releaseSlot(computer)
             if (usesGitHubIntegration) integrationOnGitHub.delete(computer.key)
             run = await this.read(run.id, run.workspaceId)
             if (run.state !== 'queued') return
             reasons.push(`${computer.label}: ${reply.run.message ?? 'dispatch created no work'}`)
             continue
           }
+          if (!['starting', 'running'].includes(reply.run.state)) {
+            releaseSlot(computer)
+            if (usesGitHubIntegration) integrationOnGitHub.delete(computer.key)
+          }
           return
         } catch (error) {
           // A busy or unready computer is skipped; the run stays queued for the next free one.
           const code = (error as { code?: unknown } | null)?.code
-          reasons.push(`${computer.label}: ${code === 'CI_HOST_BUSY' ? 'busy' : (error as Error).message}`)
-          if (code !== 'CI_HOST_BUSY') {
-            busy.delete(computer.key)
+          reasons.push(`${computer.label}: ${(error as Error).message}`)
+          if (code === 'CI_HOST_BUSY') {
+            used.set(computer.key, totals.get(computer.key) ?? 1)
+          } else {
+            releaseSlot(computer)
             if (usesGitHubIntegration) integrationOnGitHub.delete(computer.key)
           }
           if (code === 'CI_HOST_BUSY' || code === 'COMPUTER_GITHUB_REQUIRED' || code === 'CI_CLOUD_UNAVAILABLE'
