@@ -62,3 +62,19 @@ it('keeps a connection healthy when one rollback timeout is followed by confirma
   expect(f.end).not.toHaveBeenCalled()
   await expect(f.connection.query('select 1')).resolves.toMatchObject({ rows: [] })
 })
+
+it('discards a pooled lease when rollback recovery cannot confirm the transaction', async () => {
+  vi.useFakeTimers()
+  const failure = new Error('Transaction failed')
+  const release = vi.fn()
+  const raw = { release, query: async () => ({ rows: [], rowCount: 0 }) } as unknown as pg.PoolClient
+  const connection = new ExclusiveGraphConnection(raw, () => undefined)
+  connections.push(connection)
+  const failed = connection.transaction(async () => { throw failure }).catch(error => error)
+  const closing = connection.close()
+  await vi.advanceTimersByTimeAsync(0)
+  await closing
+  expect(await failed).toBe(failure)
+  expect(release).toHaveBeenCalledWith(true)
+  expect(connection.unusable).toBe(true)
+})
