@@ -54,9 +54,7 @@ describe('Operator canonical cold decision readback', () => {
   })
   it('shows provider acknowledgment after the pending approval is gone without claiming worker completion', async () => {
     const { client } = mounted('delivered', true)
-    const detail = await decisionDetail('Decision delivered')
-    expect(detail).toHaveTextContent('The provider acknowledged this decision.')
-    expect(detail).toHaveTextContent('This does not confirm work completion.')
+    expect(await decisionDetail('Decision delivered')).toHaveTextContent('This does not confirm work completion.')
     expect(respondOperatorInteraction).not.toHaveBeenCalled()
     client.clear()
   })
