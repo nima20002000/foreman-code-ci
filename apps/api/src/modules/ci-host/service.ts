@@ -43,7 +43,6 @@ export interface HostCiEndpoint {
 }
 /** Resolves the commit to test and makes sure GitHub has it, so build computers can fetch it. */
 export interface CiCommits {
-  heads?(repository: string): Promise<{ branch: string; commit: string }[]>
   infrastructureOnly?(repository: string, commit: string): Promise<boolean>
   branch?(repository: string, defaultBranch: string, commit: string): Promise<string | null>
   isAncestor?(repository: string, ancestor: string, commit: string): Promise<boolean>
@@ -588,8 +587,6 @@ export class HostCiService {
           : status.operation === 'status' ? { label: computer.label, hostRef: computer.hostRef, priority: computer.priority,
             ready: status.ready, reasons: status.reasons, cpuCount: status.cpuCount, memoryBytes: status.memoryBytes,
             availableMemoryBytes: status.availableMemoryBytes,
-            ...(status.prewarmSupported !== undefined ? { prewarmSupported: status.prewarmSupported } : {}),
-            ...(status.warmup !== undefined ? { warmup: status.warmup } : {}),
             ...(status.userSystemd ? { userSystemd: status.userSystemd } : {}),
             slotsUsed: Math.max(running.length, status.slotsUsed ?? 0), slotsTotal: status.slotsTotal ?? 1,
             running } : null)
@@ -673,6 +670,20 @@ export class HostCiService {
       } else if (states.some(state => state !== 'passed')) waiting.add(groupId)
     }
     return queued.filter(run => !run.deferred || !waiting.has(run.groupId))
+  }
+
+  private async queuedRuns() {
+    // Check parts must remain visible even behind more than one batch of integration partitions.
+    const queuedRows = (await this.pool.query<{ record: unknown; durations: CiDurations | null }>(
+      `select record,durations from ci_runs where id in
+        (select id from ci_runs where state='queued' and record->>'supersededBy' is null order by ${CI_QUEUE_ORDER} limit 50)
+        or id in (select id from ci_runs where state='queued' and record->>'supersededBy' is null
+          and record->>'suite'<>'integration'
+          order by ${CI_QUEUE_ORDER} limit 50)
+        order by ${CI_QUEUE_ORDER}`)).rows
+    const parsed = queuedRows.map(row => CiRunRecordSchema.parse(row.record))
+    const durations = new Map(queuedRows.map((row, index) => [parsed[index]!.id, row.durations]))
+    return { parsed, durations }
   }
 
   private async gateReservation() {
@@ -759,16 +770,7 @@ export class HostCiService {
     const githubKeys = new Set(github.map(computer => computer.key))
     const integrationOnGitHub = new Set(busyRows.filter(row => githubKeys.has(row.host_key)
       && CiRunRecordSchema.parse(row.record).suite === 'integration').map(row => row.host_key))
-    // Check parts must remain visible even behind more than one batch of integration partitions.
-    const queuedRows = (await this.pool.query<{ record: unknown; durations: CiDurations | null }>(
-      `select record,durations from ci_runs where id in
-        (select id from ci_runs where state='queued' and record->>'supersededBy' is null order by ${CI_QUEUE_ORDER} limit 50)
-        or id in (select id from ci_runs where state='queued' and record->>'supersededBy' is null
-          and record->>'suite'<>'integration'
-          order by ${CI_QUEUE_ORDER} limit 50)
-        order by ${CI_QUEUE_ORDER}`)).rows
-    const parsed = queuedRows.map(row => CiRunRecordSchema.parse(row.record))
-    const durations = new Map(queuedRows.map((row, index) => [parsed[index]!.id, row.durations]))
+    const { parsed, durations } = await this.queuedRuns()
     let queued = await this.releaseSlowTier(parsed)
     // Reserve four GitHub slots while checks wait, including integration already using GitHub.
     const githubIntegrationLimit = Math.max(0, github.length - (queued.some(run => run.suite !== 'integration') ? 4 : 0))
@@ -890,11 +892,12 @@ export class HostCiService {
           : 'Waiting for a build computer: this integration slice needs one'
       }
       const message = `${prefix}; ${reasons.join('; ') || 'no eligible computers'}`.slice(0, 2000)
-      if (message === run.message) return
-      await this.pool.query(`update ci_runs set record=$4::jsonb
-        where id=$1 and state=$2 and host_key is not distinct from $3
-          and record->>'message' is distinct from $5`,
-      [run.id, 'queued', null, JSON.stringify({ ...run, message }), message])
+      if (message !== run.message) {
+        await this.pool.query(`update ci_runs set record=$4::jsonb
+          where id=$1 and state=$2 and host_key is not distinct from $3
+            and record->>'message' is distinct from $5`,
+        [run.id, 'queued', null, JSON.stringify({ ...run, message }), message])
+      }
     }))
   }
 }

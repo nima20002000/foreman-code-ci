@@ -88,7 +88,7 @@ process.exit(result.status ?? 1)
       if (file === 'systemctl') return { code: 0, stdout: processes.size ? 'active' : 'inactive', stderr: '' }
       return system.run(file, args, settings)
     } }
-    let runner = new HostCiRunner(join(root, 'runner'), ports, environment)
+    const runner = new HostCiRunner(join(root, 'runner'), ports, environment)
     const computer: HostCiComputer = { key: randomUUID(), hostRef: { kind: 'main', mainId: randomUUID() },
       label: 'Build computer', priority: 60 }
     const cloud = new CloudCi(computer.hostRef.mainId, new GitHubActionsProvider(ports), async () => 'octo/site-ci',
@@ -103,7 +103,6 @@ process.exit(result.status ?? 1)
       },
     }
     return { commits: new GitCiCommits(git), endpoint, cloudAttempts, commit: head.stdout.trim(),
-      restart: () => { runner = new HostCiRunner(join(root, 'runner'), ports, environment) },
       async close() {
         await Promise.all(processes)
         await rm(root, { recursive: true, force: true })

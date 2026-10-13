@@ -1760,36 +1760,54 @@ it('resolves branches of existing tickets before superseding them and protects e
   } finally { await f.close() }
 })
 
-
-it('reads persisted warm-up status through authenticated MCP after Worker restart and denies callers without CI read grants', async () => {
-  const repository = await genericCiRepository({ lockfile: 'pnpm-lock.yaml' })
-  const f = await fixture({ repositoryRunner: repository })
+it('targets one smoke computer through authenticated MCP and HTTP with grants, retries and persisted readback', async () => {
+  const f = await fixture({ cloud: { github: 1, circleci: 1 } })
   try {
-    const start = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', {
-      commandId: randomUUID(), suite: 'lint', commit: repository.commit, scope: 'affected',
-      files: ['apps/api/src/feature.ts'],
-    }))
-    await vi.waitFor(async () => {
-      const read = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: start.ticketId }))
-      expect(read.run.state).toBe('passed')
-    })
-    const [computer] = await repository.endpoint.computers()
-    if (!computer) throw new Error('Missing build computer')
-    await repository.endpoint.request(computer, { operation: 'start', warmup: true, runId: randomUUID(),
-      repository: 'octo/site', commit: repository.commit, suite: 'install' })
-    await vi.waitFor(async () => {
-      const read = CiComputersOutputSchema.parse(await f.value(f.operator, 'ci_computers_list', {}))
-      expect(read.computers[0]).toMatchObject({ prewarmSupported: true, slotsUsed: 0,
-        warmup: { repository: 'octo/site', commit: repository.commit, run: { warmup: true, state: 'passed' } } })
-    })
-    repository.restart()
-    const denied = await f.connect(CI_RUN_ACTIONS)
-    expect((await f.call(denied, 'ci_computers_list', {})).isError).toBe(true)
-    const read = CiComputersOutputSchema.parse(await f.value(f.operator, 'ci_computers_list', {}))
-    expect(read.computers[0]).toMatchObject({ slotsUsed: 0, warmup: { run: { state: 'passed' } } })
-    expect((await f.pool.query('select count(*)::int as count from ci_runs')).rows[0].count).toBe(1)
-  } finally {
-    await f.close()
-    await repository.close()
-  }
+    const reader = await f.connect(CI_GET_ACTIONS)
+    const input = { suite: 'unit', scope: 'affected', commit: 'a'.repeat(40),
+      files: ['apps/api/src/modules/ci-host/ciSmoke.test.ts'], noSupersede: true }
+    for (const [index, computer] of f.computers.entries()) {
+      const request = { ...input, smokeComputer: computer.hostRef, commandId: `smoke-${index}` }
+      expect((await f.call(reader, 'ci_run', request)).isError).toBe(true)
+      const started = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', request))
+      expect(started.partitions).toBeUndefined()
+      expect(CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', request))).toEqual(started)
+      const read = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: started.ticketId }))
+      expect(read.run.computer?.hostRef).toEqual(computer.hostRef)
+      expect(read.run.smokeComputer).toEqual(computer.hostRef)
+      f.finish(started.ticketId, 0, 'one test passed')
+      expect(CiGetOutputSchema.parse(await f.value(reader, 'ci_get', { ticketId: started.ticketId })).run.state)
+        .toBe('passed')
+    }
+    const token = await f.credential([...CI_RUN_ACTIONS, ...CI_GET_ACTIONS])
+    const response = await f.app.inject({ method: 'POST', url: `/api/management/workspaces/${f.workspaceId}/ci`,
+      headers: { authorization: `Bearer ${token.token}` },
+      payload: { ...input, commandId: 'http-smoke', smokeComputer: f.computers[1]!.hostRef } })
+    expect(response.statusCode, response.body).toBe(200)
+    const ticket = CiRunOutputSchema.parse(response.json())
+    await f.ci.dispatch()
+    const httpRead = await f.app.inject({ url: `/api/management/workspaces/${f.workspaceId}/ci/${ticket.ticketId}`,
+      headers: { authorization: `Bearer ${token.token}` } })
+    expect(httpRead.json().run.smokeComputer).toEqual(f.computers[1]!.hostRef)
+    expect(httpRead.json().run.computer.hostRef).toEqual(f.computers[1]!.hostRef)
+  } finally { await f.close() }
+})
+
+it('rejects Agent smoke targeting and never falls back to another computer when a target is unavailable', async () => {
+  const f = await fixture({ agent: true })
+  try {
+    const request = { suite: 'unit', scope: 'affected', commit: 'a'.repeat(40),
+      files: ['apps/api/src/modules/ci-host/ciSmoke.test.ts'], commandId: 'smoke-denied',
+      smokeComputer: f.computers[0]!.hostRef }
+    expect((await f.agent!.callTool({ name: 'ci_run', arguments: request })).isError).toBe(true)
+    const computer = f.computers.shift()!
+    expect((await f.call(f.operator, 'ci_run', request)).isError).toBe(true)
+    expect(f.started).toHaveLength(0)
+    f.computers.push(computer)
+    const started = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', { ...request, commandId: 'smoke-busy' }))
+    f.computers.pop()
+    const other = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', {
+      ...request, commandId: 'smoke-disabled', smokeComputer: f.computers[0]!.hostRef }))
+    expect(other.ticketId).not.toBe(started.ticketId)
+  } finally { await f.close() }
 })

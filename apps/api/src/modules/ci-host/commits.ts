@@ -12,18 +12,6 @@ import { gitFailure } from '../sources/gitErrors.js'
 export class GitCiCommits implements CiCommits {
   constructor(private readonly git: GitWorktreePorts = systemGitWorktreePorts()) {}
 
-  async heads(repository: string) {
-    const result = await this.git.git(['ls-remote', '--heads', `https://github.com/${repository}.git`,
-      'refs/heads/main', 'refs/heads/audit/integration'], { signal: AbortSignal.timeout(15_000) })
-    if (result.code !== 0) throw gitFailure('SOURCE_WORKTREE_FAILED', 'ls-remote')
-    return result.stdout.trim().split('\n').flatMap(line => {
-      const [commit, ref] = line.split(/\s+/)
-      if (!commit || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(commit)
-        || !['refs/heads/main', 'refs/heads/audit/integration'].includes(ref ?? '')) return []
-      return [{ branch: ref!.slice('refs/heads/'.length), commit }]
-    })
-  }
-
   async infrastructureOnly(repository: string, commit: string) {
     const signal = AbortSignal.timeout(30_000)
     const clone = await ensureCommit(this.git, repository, commit, signal)
