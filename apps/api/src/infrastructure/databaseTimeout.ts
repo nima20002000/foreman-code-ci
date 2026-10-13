@@ -17,21 +17,11 @@ export function isDatabaseTimeout(error: unknown): boolean {
   return false
 }
 
-export interface DatabaseRetryOptions {
+/** Retry only replay-safe bookkeeping. Native submissions are never passed here. */
+export async function retryDatabaseTimeout<T>(work: () => Promise<T>, options: {
   signal?: AbortSignal | undefined
   check?(): void
-}
-
-/** Retry only replay-safe bookkeeping. Native submissions are never passed here. */
-export function retryDatabaseTimeout<T>(work: () => Promise<T>, options: DatabaseRetryOptions = {}): Promise<T> {
-  return retryDatabaseOperation(work, isDatabaseTimeout, options)
-}
-
-export async function retryDatabaseOperation<T>(
-  work: () => Promise<T>,
-  isRetryable: (error: unknown) => boolean,
-  options: DatabaseRetryOptions = {},
-): Promise<T> {
+} = {}): Promise<T> {
   let waitMs = 100
   for (;;) {
     options.signal?.throwIfAborted()
@@ -44,9 +34,9 @@ export async function retryDatabaseOperation<T>(
     } catch (error) {
       options.signal?.throwIfAborted()
       options.check?.()
-      if (!isRetryable(error)) throw error
+      if (!isDatabaseTimeout(error)) throw error
       if (waitMs === 100) {
-        componentLogger('engine').warn('Database operation is temporarily unavailable; retrying.')
+        componentLogger('engine').warn('Database bookkeeping timed out; retaining native work while retrying.')
       }
       await delay(waitMs, undefined, { signal: options.signal })
       waitMs = Math.min(1_000, waitMs * 2)
