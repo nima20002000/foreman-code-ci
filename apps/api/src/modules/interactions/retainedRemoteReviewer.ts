@@ -35,12 +35,19 @@ export async function readRetainedRemoteReviewer(sql: GraphSqlClient, execution:
   return { generation: retained.generation, principalId: retained.principalId, session: retained.session }
 }
 
+/** Settlement can retain an original reviewer until successful Run cleanup closes it. */
+export async function readRemoteReviewerForSettlement(sql: GraphSqlClient, execution: HarnessExecution) {
+  const retained = await readRemoteReviewer(sql, execution, 'settlement')
+  if (!retained) return undefined
+  return { generation: retained.generation, principalId: retained.principalId, session: retained.session }
+}
+
 /** A saved candidate grants no review access until authenticated Worker attachment refreshes its lease. */
 export function readRecoverableRemoteReviewer(sql: GraphSqlClient, execution: HarnessExecution) {
   return readRemoteReviewer(sql, execution, 'recovery')
 }
 
-async function readRemoteReviewer(sql: GraphSqlClient, execution: HarnessExecution, purpose: 'live' | 'recovery') {
+async function readRemoteReviewer(sql: GraphSqlClient, execution: HarnessExecution, purpose: 'live' | 'recovery' | 'settlement') {
   const placement = await readExecutionPlacement(sql, execution.id)
   if (placement?.hostRef.kind !== 'device') return undefined
   const row = (await sql.query<{ receipt: unknown }>(`select r.receipt from remote_execution_receipts r
@@ -48,8 +55,15 @@ async function readRemoteReviewer(sql: GraphSqlClient, execution: HarnessExecuti
   if (!row) return undefined
   const receipt = RemoteOperationReceiptSchema.parse(row.receipt)
   const policy = await remoteReviewerPolicy(sql, receipt.intent)
-  if (!receipt.retainedReviewer || receipt.terminal || receipt.stopFence || !policy
-    || !['running', 'waiting'].includes(policy.run.executionState) || policy.run.outcome !== 'pending') return undefined
+  if (!receipt.retainedReviewer || receipt.terminal || receipt.stopFence || !policy) return undefined
+  const active = ['running', 'waiting'].includes(policy.run.executionState) && policy.run.outcome === 'pending'
+  if (!active) {
+    if (purpose !== 'settlement' || policy.run.executionState !== 'completed'
+      || policy.run.outcome !== 'succeeded') return undefined
+    const cleanup = await sql.query(`select 1 from runs r join run_cleanup_intents c on c.run_id=r.id
+      where r.id=$1 and r.stop_requested_at is null and c.pending`, [execution.runId])
+    if (cleanup.rowCount !== 1) return undefined
+  }
   const current = await readReconciledDispatchIntent(sql, receipt.intent.operationId)
   await assertRemoteReviewerReceipt(sql, receipt)
   if (!sameWorkflowValue(current, receipt.intent) || placement.bindingHash !== receipt.intent.bindingHash
