@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
-import { CiGetOutputSchema, CiRunOutputSchema, exclusiveIntegrationFiles, userSystemdIntegrationFiles,
+import { CiGetOutputSchema, CiRunOutputSchema, CiRunRecordSchema, exclusiveIntegrationFiles, userSystemdIntegrationFiles,
   type CiHostRun, type CiHostRequest } from '@foreman-code/contracts'
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from 'vitest'
 import pg from 'pg'
@@ -22,8 +22,49 @@ beforeEach(async () => {
   await database.pool.query('truncate ci_runs, ci_file_durations, management_command_receipts, management_audit')
 })
 
+it('persists a throughput-sized gate through MCP and rejects a read-only caller', async () => {
+  const files = Array.from({ length: 700 }, (_, index) => `apps/api/test/feature-${index}.integration.test.ts`)
+  const f = await fixture({ files })
+  try {
+    const builder = f.computers[0]!
+    const historyFiles = files.slice(0, 148)
+    for (const wallMs of [800_000, 800_000, 800_000, 100_000]) {
+      const started = Date.now() - 3_600_000
+      const record = CiRunRecordSchema.parse({ id: randomUUID(), workspaceId: f.workspaceId, groupId: randomUUID(),
+        suite: 'integration', scope: 'full', gate: true, part: null, partition: null, files: historyFiles,
+        repository: 'octo/site', commit: 'b'.repeat(40), state: 'passed',
+        computer: { hostRef: builder.hostRef, label: builder.label }, step: 'integration', exitCode: 0, message: null,
+        queuedAt: new Date(started).toISOString(), startedAt: new Date(started).toISOString(),
+        finishedAt: new Date(started + wallMs).toISOString(), initiator: { principalId: 'operator', executionId: null },
+        plannedHostKey: builder.key, expectedDurationMs: 272_000, speedFactor: 0.5, integrationShards: 12 })
+      const results = { summary: { passed: 148, failed: 0, skipped: 0 }, truncated: false,
+        files: historyFiles.map(file => ({ file, status: 'passed', durationMs: 20_000, tests: [] })) }
+      await database.pool.query(`insert into ci_runs(id,workspace_id,group_id,state,record,test_results)
+        values($1,$2,$3,'passed',$4::jsonb,$5::jsonb)`,
+      [record.id, f.workspaceId, record.groupId, JSON.stringify(record), JSON.stringify(results)])
+    }
+    const input = { suite: 'integration', scope: 'full', gate: true, commit: 'a'.repeat(40), commandId: randomUUID() }
+    const reader = await f.connect(true)
+    expect((await f.call(reader, 'ci_run', input)).isError).toBe(true)
+    expect((await database.pool.query('select count(*)::int as count from ci_runs')).rows[0].count).toBe(4)
+    const admitted = CiRunOutputSchema.parse(await f.value('ci_run', input))
+    expect(CiRunOutputSchema.parse(await f.value('ci_run', input))).toEqual(admitted)
+    const read = CiGetOutputSchema.parse(await f.value('ci_get', { ticketId: admitted.ticketId }))
+    const host = read.partitions!.find(run => run.plannedHostKey === builder.key)!
+    const cloudEnd = Math.max(...read.partitions!.filter(run => run.plannedHostKey?.startsWith('cloud-'))
+      .map(run => run.expectedDurationMs!))
+    const measuredEnd = host.files.length * 120_000 / (148 * 20_000 / 800_000)
+    expect(measuredEnd).toBeLessThanOrEqual(cloudEnd)
+    expect(host.expectedDurationMs).toBeGreaterThanOrEqual(measuredEnd)
+    expect(read.partitions!.filter(run => run.suite === 'integration').flatMap(run => run.files).sort())
+      .toEqual([...files].sort())
+    const stored = (await database.pool.query('select record from ci_runs where id=$1', [host.id])).rows[0].record
+    expect(stored).toEqual(host)
+  } finally { await f.close() }
+})
+
 async function fixture(options: { cloudSlots?: number; files?: string[]; offlineKey?: string; pool?: pg.Pool;
-  occupiedKeys?: Set<string>; allowance?: number } = {}) {
+  occupiedKeys?: Set<string>; unavailableKeys?: Set<string>; allowance?: number; hostCpuCount?: number } = {}) {
   const pool = options.pool ?? database.pool
   const workspaceId = randomUUID()
   await database.pool.query('insert into workspaces(id,record) values($1,$2::jsonb)', [workspaceId,
@@ -54,8 +95,9 @@ async function fixture(options: { cloudSlots?: number; files?: string[]; offline
     computers: async () => computers,
     request: async (computer, request) => {
       if (computer.key === options.offlineKey) throw new Error('Computer disconnected')
-      if (request.operation === 'status') return { operation: 'status', ready: true, reasons: [],
-        cpuCount: computer.hostRef.kind === 'cloud' ? 4 : 16, memoryBytes: 16 * 2 ** 30,
+      if (request.operation === 'status') return { operation: 'status', ready: !options.unavailableKeys?.has(computer.key),
+        reasons: options.unavailableKeys?.has(computer.key) ? ['Worker draining'] : [],
+        cpuCount: computer.hostRef.kind === 'cloud' ? 4 : options.hostCpuCount ?? 16, memoryBytes: 16 * 2 ** 30,
         slotsTotal: computer.hostRef.kind === 'cloud' ? 1 : 2,
         slotsUsed: options.occupiedKeys?.has(computer.key) ? 1 : 0, runs: [] }
       if (request.operation === 'start') {
@@ -76,10 +118,13 @@ async function fixture(options: { cloudSlots?: number; files?: string[]; offline
     operator: { access, services: { commands, ci } as unknown as OperatorServices } })
   const address = await app.listen({ host: '127.0.0.1', port: 0 })
   const clients: Client[] = []
-  const connect = async (readOnly = false) => {
+  const connect = async (readOnly: boolean | 'ungranted' = false) => {
+    let actions = [...CI_RUN_ACTIONS, ...CI_GET_ACTIONS]
+    if (readOnly === 'ungranted') actions = ['workflows:read']
+    else if (readOnly) actions = CI_GET_ACTIONS
     const issued = await access.issue({ name: 'Gate caller', audience: 'operator',
       expiresAt: new Date(Date.now() + 600_000), grants: [{
-        actions: readOnly ? CI_GET_ACTIONS : [...CI_RUN_ACTIONS, ...CI_GET_ACTIONS], scope: { workspaceIds: [workspaceId] },
+        actions, scope: { workspaceIds: [workspaceId] },
       }] })
     const client = new Client({ name: 'gate-test', version: '1' })
     clients.push(client)
@@ -110,12 +155,160 @@ async function fixture(options: { cloudSlots?: number; files?: string[]; offline
     }
     throw new Error('The gate did not finish every assigned job')
   }
-  return { ci, started, files, computers, connect, call, value, operator, finishGate, close: async () => {
+  return { ci, started, runs, files, computers, workspaceId, connect, call, value, operator, finishGate, close: async () => {
     await Promise.all(clients.map(client => client.close()))
     await ci.close()
     await app.close()
   } }
 }
+
+it.each(['cloud', 'build'] as const)('requeues a cloud setup failure once on another %s slot and completes the gate', async destination => {
+  const f = await fixture()
+  try {
+    const computers = [...f.computers]
+    const started = CiRunOutputSchema.parse(await f.value('ci_run', {
+      suite: 'integration', scope: 'full', gate: true, commandId: randomUUID(), commit: 'a'.repeat(40),
+    }))
+    await f.ci.dispatch()
+    const initial = CiGetOutputSchema.parse(await f.value('ci_get', { ticketId: started.ticketId }))
+    const part = initial.partitions!.find(run => run.state === 'running' && run.suite === 'unit'
+      && run.computer?.hostRef.kind === 'cloud')!
+    expect(part).toBeDefined()
+    const attempt = f.runs.get(part.id)!
+    const reason = 'CI hang watchdog: no test progress for 180000 ms; running: no test started (setup or command)'
+    const failed = { ...attempt, state: 'failed' as const, exitCode: 1,
+      finishedAt: new Date().toISOString(), message: reason, testsStarted: false }
+    f.runs.set(part.id, failed)
+    if (destination === 'build') {
+      for (const host of initial.partitions!.filter(run => run.computer?.hostRef.kind !== 'cloud')) {
+        const running = f.runs.get(host.id)
+        if (running) f.runs.set(host.id, { ...running, state: 'passed', exitCode: 0,
+          finishedAt: new Date().toISOString() })
+      }
+    }
+    // Keep the failed slot available so the retry must explicitly exclude it.
+    f.computers.splice(0, f.computers.length, ...f.computers.filter(computer =>
+      computer.key === part.plannedHostKey || (destination === 'cloud'
+        ? computer.hostRef.kind === 'cloud' : computer.hostRef.kind !== 'cloud')))
+    await f.ci.dispatch()
+    const read = CiGetOutputSchema.parse(await f.value('ci_get', { ticketId: part.id }))
+    expect(read.run).toMatchObject({ state: 'running', id: part.id, groupId: part.groupId,
+      setupRetry: { reason, failedComputer: part.computer!.hostRef } })
+    expect(read.run.computer!.hostRef).not.toEqual(part.computer!.hostRef)
+    expect(read.run.computer!.hostRef.kind).toBe(destination === 'cloud' ? 'cloud' : 'main')
+    expect(read.group?.state).not.toBe('failed')
+    const attempts = f.started.filter(value => value.request.operation === 'start'
+      && value.request.runId === part.id)
+    expect(attempts).toHaveLength(1)
+    expect(f.started.some(value => value.request.operation === 'start'
+      && value.request.runId !== part.id && value.request.suite === part.suite && value.key !== part.plannedHostKey)).toBe(true)
+    expect((await database.pool.query('select record from ci_runs where id=$1', [part.id])).rows[0].record)
+      .toEqual(read.run)
+    const denied = await f.connect('ungranted')
+    expect((await f.call(denied, 'ci_get', { ticketId: part.id })).isError).toBe(true)
+    const retry = f.started.findLast(value => value.request.operation === 'start'
+      && value.request.suite === part.suite && value.request.part === part.part)!.request
+    if (retry.operation !== 'start') throw new Error('Expected a retry start')
+    f.runs.set(retry.runId, { ...f.runs.get(retry.runId)!, state: 'passed', exitCode: 0,
+      finishedAt: new Date().toISOString() })
+    f.computers.splice(0, f.computers.length, ...computers)
+    await f.ci.dispatch()
+    await f.finishGate(started.ticketId)
+    const completed = CiGetOutputSchema.parse(await f.value('ci_get', { ticketId: part.id }))
+    expect(completed.run).toMatchObject({ state: 'passed', setupRetry: { reason } })
+    expect(completed.group?.state).toBe('passed')
+  } finally { await f.close() }
+})
+
+it('fails the gate on a second setup failure and does not retry a failure after tests start', async () => {
+  const f = await fixture()
+  try {
+    const started = CiRunOutputSchema.parse(await f.value('ci_run', {
+      suite: 'integration', scope: 'full', gate: true, commandId: randomUUID(), commit: 'a'.repeat(40),
+    }))
+    await f.ci.dispatch()
+    const initial = CiGetOutputSchema.parse(await f.value('ci_get', { ticketId: started.ticketId }))
+    const parts = initial.partitions!.filter(run => run.state === 'running' && run.suite === 'unit'
+      && run.computer?.hostRef.kind === 'cloud')
+    const part = parts[0]!
+    const other = parts[1]!
+    const reason = 'Setup failed before the first test started'
+    for (const [run, testsStarted] of [[part, false], [other, true]] as const) {
+      const failed = { ...f.runs.get(run.id)!, state: 'failed' as const, exitCode: 1,
+        finishedAt: new Date().toISOString(), message: reason, testsStarted }
+      f.runs.set(run.id, failed)
+    }
+    await f.ci.dispatch()
+    const retried = CiGetOutputSchema.parse(await f.value('ci_get', { ticketId: part.id }))
+    expect(retried.run).toMatchObject({ state: 'running', setupRetry: { reason } })
+    expect(CiGetOutputSchema.parse(await f.value('ci_get', { ticketId: other.id })).run)
+      .toMatchObject({ state: 'failed' })
+    const request = f.started.findLast(value => value.request.operation === 'start'
+      && value.request.suite === part.suite && value.request.part === part.part)!.request
+    if (request.operation !== 'start') throw new Error('Expected a retry start')
+    expect(request.runId).not.toBe(part.id)
+    const failed = { ...f.runs.get(request.runId)!, state: 'failed' as const, exitCode: 2,
+      finishedAt: new Date().toISOString(), message: 'Second setup failure', testsStarted: false }
+    f.runs.set(request.runId, failed)
+    const attempts = f.started.length
+    await f.ci.dispatch()
+    const finished = CiGetOutputSchema.parse(await f.value('ci_get', { ticketId: part.id }))
+    expect(finished.run).toMatchObject({ state: 'failed', exitCode: 2,
+      message: 'Second setup failure', setupRetry: { reason } })
+    expect(finished.group?.state).toBe('failed')
+    expect(f.started).toHaveLength(attempts)
+  } finally { await f.close() }
+})
+
+it('keeps a draining build gate off cloud until the grace expires, then persists and completes its cloud parts through MCP', async () => {
+  const files = Array.from({ length: 80 }, (_, index) => `apps/api/test/feature-${index}.integration.test.ts`)
+  const durations = Object.fromEntries(files.map((file, index) => [file, index < 24 ? 60_000 : 5_000]))
+  const f = await fixture({ cloudSlots: 4, files,
+    unavailableKeys: new Set(['builder-main', 'builder-paired']) })
+  const now = Date.now()
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(now)
+  try {
+    const reader = await f.connect(true)
+    expect((await f.call(reader, 'ci_run', { suite: 'integration', scope: 'full', gate: true,
+      commandId: randomUUID() })).isError).toBe(true)
+    expect((await database.pool.query('select count(*)::int as count from ci_runs')).rows[0].count).toBe(0)
+    const root = CiRunRecordSchema.parse({ id: randomUUID(), workspaceId: f.workspaceId, groupId: randomUUID(),
+      suite: 'integration', part: null, partition: null, scope: 'full', files,
+      repository: 'octo/site', commit: 'a'.repeat(40), gate: true, noSupersede: true,
+      plannedHostKey: 'builder-main', integrationShards: 16, expectedDurationMs: 300_000,
+      priority: 'high', priorityReason: 'gate', state: 'queued', computer: null, step: null,
+      exitCode: null, message: null, queuedAt: new Date(now).toISOString(), startedAt: null, finishedAt: null,
+      initiator: { principalId: 'operator', executionId: null }, requiresBuildComputer: false })
+    await database.pool.query(`insert into ci_runs(id,workspace_id,group_id,state,record,durations)
+      values($1,$2,$3,'queued',$4::jsonb,$5::jsonb)`,
+    [root.id, root.workspaceId, root.groupId, JSON.stringify(root), JSON.stringify(durations)])
+    clock.mockReturnValue(now + 90_000)
+    await f.ci.dispatch()
+    expect(f.started).toEqual([])
+    expect(CiGetOutputSchema.parse(await f.value('ci_get', { ticketId: root.id })).run)
+      .toMatchObject({ state: 'queued', files, plannedHostKey: 'builder-main', integrationShards: 16 })
+    clock.mockReturnValue(now + 90_001)
+    await f.ci.dispatch()
+    const read = CiGetOutputSchema.parse(await f.value('ci_get', { ticketId: root.id }))
+    expect(read.partitions!.length).toBeGreaterThan(4)
+    expect(read.partitions!.flatMap(run => run.files).sort()).toEqual([...files].sort())
+    expect(f.started).toHaveLength(4)
+    for (const run of read.partitions!) {
+      expect(run).toMatchObject({ gate: true, groupId: root.groupId, integrationShards: 4,
+        plannedHostKey: expect.stringMatching(/^cloud-/), partition: null })
+      const stored = (await database.pool.query('select record from ci_runs where id=$1', [run.id])).rows[0].record
+      expect(stored).toEqual(run)
+    }
+    await f.finishGate(root.id)
+    const finished = CiGetOutputSchema.parse(await f.value('ci_get', { ticketId: root.id }))
+    expect(finished.group?.state).toBe('passed')
+    const executed = f.started.flatMap(item => item.request.operation === 'start' ? item.request.files ?? [] : [])
+    expect(executed.sort()).toEqual([...files].sort())
+  } finally {
+    clock.mockRestore()
+    await f.close()
+  }
+})
 
 it('persists gate check reassignment to an idle build computer through MCP when cloud slots are busy', async () => {
   const occupiedKeys = new Set(['cloud-0', 'cloud-1'])
@@ -352,4 +545,35 @@ it('rechecks the build allowance when dispatching an already planned gate throug
         .toMatchObject({ integrationShards: 8 })
     }
   } finally { await f.close() }
+})
+
+it('persists the heavy-file CPU budget before exclusive Worker recovery through authenticated MCP', async () => {
+  const files = [
+    'apps/api/test/harness-installation-update-rollback.integration.test.ts',
+    'apps/api/test/remote-review-production-defaults.integration.test.ts',
+    'apps/api/test/remote-review-production-worker-crash.integration.test.ts',
+  ]
+  const f = await fixture({ files, cloudSlots: 2, hostCpuCount: 2,
+    unavailableKeys: new Set(['builder-paired']) })
+  try {
+    const input = { suite: 'integration', scope: 'full', gate: true, commit: 'a'.repeat(40), commandId: randomUUID() }
+    const reader = await f.connect(true)
+    expect((await f.call(reader, 'ci_run', input)).isError).toBe(true)
+    expect((await database.pool.query('select count(*)::int as count from ci_runs')).rows[0].count).toBe(0)
+    const admitted = CiRunOutputSchema.parse(await f.value('ci_run', input))
+    expect(CiRunOutputSchema.parse(await f.value('ci_run', input))).toEqual(admitted)
+    const read = CiGetOutputSchema.parse(await f.value('ci_get', { ticketId: admitted.ticketId }))
+    const integration = read.partitions!.filter(run => run.suite === 'integration')
+    expect(integration).toHaveLength(1)
+    expect(integration[0]).toMatchObject({ plannedHostKey: 'builder-main', integrationShards: 2,
+      expectedDurationMs: 450_000 })
+    expect(integration[0]!.files.slice().sort()).toEqual(files.slice().sort())
+    const stored = (await database.pool.query('select record from ci_runs where id=$1', [integration[0]!.id])).rows[0].record
+    expect(stored).toEqual(integration[0])
+    const readerResult = await f.call(reader, 'ci_get', { ticketId: admitted.ticketId })
+    expect(readerResult.isError).not.toBe(true)
+    expect(CiGetOutputSchema.parse(decodeMcpToolResult(readerResult)).partitions).toEqual(read.partitions)
+  } finally {
+    await f.close()
+  }
 })

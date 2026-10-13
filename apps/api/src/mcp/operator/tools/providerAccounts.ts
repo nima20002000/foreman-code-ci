@@ -16,7 +16,7 @@ import type { OperatorRequestContext } from '../types.js'
 
 const readAnnotations = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
 const writeAnnotations = { ...readAnnotations, readOnlyHint: false }
-/** Provider account grants are target-specific: discovery needs only the unscoped actions. */
+/** Manage credentials include these actions; resource scope is checked by the service. */
 const canRead = (context: OperatorRequestContext) => hasAction(context.principal, 'provider_accounts:read')
 const canManage = (context: OperatorRequestContext) => canRead(context) && hasAction(context.principal, 'provider_accounts:manage')
 const readRequires = [['provider_accounts:read', 'global']] as const
@@ -28,7 +28,7 @@ export const providerAccountTools = [
     requires: readRequires,
     enabled: s => !!s.providerAccounts,
     discoverable: canRead,
-    description: 'Read a target-identified cursor page with fresh ordered observations and independently revisioned defaults. Requires provider_accounts:read on the target.',
+    description: 'Read a target-identified cursor page with fresh ordered observations and independently revisioned defaults. Included in the manage preset; requires provider_accounts:read on the target.',
     inputSchema: ProviderAccountListInputSchema, outputSchema: ProviderAccountPageSchema, annotations: readAnnotations,
     run: (context, input) => context.services.providerAccounts!.page(context.principal, input),
   }),
@@ -100,7 +100,7 @@ export const providerAccountTools = [
     requires: manageRequires,
     enabled: s => !!s.providerAccounts,
     discoverable: canManage,
-    description: 'Reserve an authentication intent before native dispatch. A human completes provider authorization. Reuse the original command after an unknown response. Requires provider_accounts:read/manage.',
+    description: 'Reserve an authentication intent valid for one hour before native dispatch. A human completes provider authorization. Reuse the original command and expiry after an unknown response. Requires provider_accounts:read/manage.',
     inputSchema: ProviderAccountAuthenticationPrepareInputSchema.extend({ accountId: ProviderAccountGetInputSchema.shape.accountId }),
     outputSchema: ProviderAccountAuthenticationResultSchema, annotations: writeAnnotations,
     run: (context, { accountId, ...input }) => context.services.providerAccounts!.prepareAuthentication(context.principal, 'mcp', accountId, input),
@@ -187,7 +187,7 @@ export const providerAccountTools = [
     requires: manageRequires,
     enabled: s => !!s.providerAccounts,
     discoverable: canManage,
-    description: 'Prepare the original provider sign-in operation on the owning computer. A human completes browser authorization there. Rediscover the same operation with provider_account_auth_list after an unknown response.' + ' Requires target-specific provider_accounts:read and provider_accounts:manage. expectedRevision is the '
+    description: 'Prepare the original provider sign-in operation, valid for one hour, on the owning computer. A human completes browser authorization there. Rediscover the same operation with provider_account_auth_list after an unknown response.' + ' Requires target-specific provider_accounts:read and provider_accounts:manage. expectedRevision is the '
       + 'accounts snapshot revision; retry the same commandId and input. Credentials stay on the owning computer.',
     inputSchema: ProviderAccountToolCommandSchema, outputSchema: ProviderAccountUpdateResultSchema,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true,

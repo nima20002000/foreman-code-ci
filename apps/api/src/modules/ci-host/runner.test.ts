@@ -264,16 +264,16 @@ describe('host CI runner', () => {
     expect(done.text).not.toContain('apps/web')
   })
 
-  it('runs a part whose affected selection exceeds the recordable file limit as its full suite', async () => {
-    // A typecheck-api part selected thousands of files and was rejected before running anything.
+  it('preserves affected selections with more than 2000 files', async () => {
     const f = await computer({ selector: true, change: 'source', affectedUnitTests: 2001 })
     const runId = randomUUID()
     await f.runner.handle({ operation: 'start', runId, repository: 'example/project', commit: f.commit,
       suite: 'unit', part: 'unit-api' })
     const done = await f.settle(runId)
     expect(done.run).toMatchObject({ state: 'passed' })
-    expect(done.run.message).toContain('more than the 2000')
-    expect(done.text).toContain('Running full suite:')
+    expect(done.run.message).toBe('Selected 2002 affected files for unit-api.')
+    expect(done.text).toContain('many-2000.test.ts')
+    expect(done.text).not.toContain('Running full suite:')
   }, 30_000)
 
   it.each(['docs', 'source'] as const)('passes an empty affected unit shard after a %s change without running the suite', async change => {
@@ -458,7 +458,9 @@ describe('host CI runner', () => {
     for (const index of [0, 1]) {
       const runId = randomUUID()
       await f.runner.handle({ operation: 'start', runId, repository: 'octo/site', commit: f.commit, suite: 'integration',
-        partition: { index, count: 2 } })
+        partition: { index, count: 2 }, durations: {
+          'apps/api/test/a.integration.test.ts': 400, 'apps/api/test/b.integration.test.ts': 300,
+          'apps/api/test/c.integration.test.ts': 200, 'apps/api/test/d.integration.test.ts': 100 } })
       const done = await f.settle(runId)
       expect(done.run.state).toBe('passed')
       expect(done.text).toContain('corepack pnpm db:up')
@@ -471,9 +473,9 @@ describe('host CI runner', () => {
   it('splits and times integration files by Main\'s learned durations and reports the durations it measured', async () => {
     const measured = { 'apps/api/test/d.integration.test.ts': 870 }
     const f = await computer({ measured })
-    // Learned: d became the slowest file and a the fastest; c keeps its committed duration.
+    // The database snapshot makes d the slowest file and a the fastest.
     const durations = { 'apps/api/test/a.integration.test.ts': 50, 'apps/api/test/b.integration.test.ts': 300,
-      'apps/api/test/d.integration.test.ts': 900 }
+      'apps/api/test/c.integration.test.ts': 200, 'apps/api/test/d.integration.test.ts': 900 }
     const slices: string[][] = []
     for (const index of [0, 1]) {
       const runId = randomUUID()
@@ -485,7 +487,7 @@ describe('host CI runner', () => {
       const command = done.text.split('\n').find(line => line.startsWith('corepack pnpm test:integration'))!
       slices.push([...command.matchAll(/apps\/api\/test\/(\w)\.integration/g)].map(match => match[1]!).sort())
       const expected = JSON.parse(done.text.split('\n').find(line => line.startsWith('expected '))!.slice('expected '.length))
-      expect(expected).toEqual({ ...durations, 'apps/api/test/c.integration.test.ts': 200 })
+      expect(expected).toEqual(durations)
       expect(await f.runner.handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 1, durations: true }))
         .toMatchObject({ operation: 'read', durations: measured })
     }

@@ -15,6 +15,13 @@ caller's role returns `ROLE_NOT_ALLOWED` with the allowed roles and records a
 denial audit; it never reaches the owning service. The server's `instructions`
 tell the model its role. `context_get` returns `role` and `tools`.
 
+MCP tool inputs ignore unknown fields, including fields inside typed nested
+objects. They are stripped before service validation and command identity, so
+extra fields do not change saved data or idempotent retries. Declared fields
+still require valid values; open record/map payloads retain their keys. Output,
+HTTP and persisted schemas retain their existing validation. Unknown fields
+cannot change caller identity, grants, scope or read-only access.
+
 ### Per-Agent tools
 
 Within its role, each Agent can have fewer tools:
@@ -66,7 +73,10 @@ Operator chat credentials for the conversation's lifetime. The launcher reads
 loopback `/mcp`. It never scans ports or falls back to another instance. Route
 files hold an endpoint, runtime PID and expiry, never a token, and are
 owner-only. Restarting on another port refreshes routes without changing native
-configuration. A revoked or expired credential stays denied even if a route file
+configuration. Owner Operator credentials default to no expiry (reported as
+`9999-12-31T23:59:59.999Z`); explicitly finite tokens still expire. Accepted
+Runs continue after starter-token expiry and still honor owner revocation and
+current scopes. A revoked or expired credential stays denied even if a route file
 survives an interrupted shutdown.
 
 Verification: `graphql-mcp-roles.test.ts` covers each role's tool list and

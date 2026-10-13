@@ -9,7 +9,7 @@ import { join, matchesGlob } from 'node:path'
 import { CiWatchdogFailureSchema, CiDurationsSchema, CiHostReplySchema, CiHostRequestSchema, CiTestResultsSchema, integrationPartition,
   CiScopeSchema, CiSelectedFilesSchema, validCiSelection,
   CI_HOST_START_PROTOCOL_VERSION,
-  type CiDurations, type CiHostReply, type CiHostRun, type CiSuite, type CiPart, type CiPartition, type CiScope, CI_SELECTED_FILES_MAX } from '@foreman-code/contracts'
+  type CiDurations, type CiHostReply, type CiHostRun, type CiSuite, type CiPart, type CiPartition, type CiScope } from '@foreman-code/contracts'
 import { DomainError } from '../errors.js'
 import { ciRepositoryCapabilities } from './repository.js'
 import { allowedCiResources, gateIntegrationShards, hostCiCapacity } from './capacity.js'
@@ -525,9 +525,6 @@ export class HostCiRunner {
     const selection = await this.repositorySelection(meta, source, selector, changed)
     if (selection.scope === 'full') return full(selection.reason)
     const files = await this.partFiles(meta, source, selection.files)
-    if (files.length > CI_SELECTED_FILES_MAX) {
-      return full(`The affected selection has ${files.length} files, more than the ${CI_SELECTED_FILES_MAX} one run records.`)
-    }
     meta.files = files
     meta.message = files.length ? `Selected ${files.length} affected files for ${meta.part ?? meta.suite}.`
       : 'No affected files for this suite part.'
@@ -555,10 +552,6 @@ export class HostCiRunner {
     if (result.code !== 0) throw new Error(`Affected selection failed: ${result.stderr.trim().slice(0, 500)}`)
     const selection = JSON.parse(result.stdout) as { scope: unknown; files: unknown; reason: string }
     const scope = CiScopeSchema.parse(selection.scope)
-    if (Array.isArray(selection.files) && selection.files.length > CI_SELECTED_FILES_MAX) {
-      return { scope: 'full' as const, files: [],
-        reason: `The affected selection has ${selection.files.length} files, more than the ${CI_SELECTED_FILES_MAX} one run records.` }
-    }
     const files = CiSelectedFilesSchema.parse(selection.files)
     if (!validCiSelection({ suite: meta.suite, scope, files })) throw new Error('The repository returned invalid affected files.')
     return { scope, files, reason: selection.reason }
@@ -578,9 +571,7 @@ export class HostCiRunner {
       return file.startsWith('apps/web/') && (part === 'unit-web-heavy' ? isHeavy : !isHeavy)
     })
     if (meta.partition) {
-      const timingsPath = join(source, 'scripts/unit-durations.json')
-      const committed = existsSync(timingsPath) ? JSON.parse(await readFile(timingsPath, 'utf8')) as CiDurations : {}
-      files = integrationPartition(files, { ...committed, ...meta.durations }, meta.partition)
+      files = integrationPartition(files, meta.durations ?? {}, meta.partition)
     }
     return files
   }
@@ -612,6 +603,10 @@ export class HostCiRunner {
       await writeFile(selectedPath, JSON.stringify(meta.files ?? []), { mode: 0o600 })
       command = meta.files?.length ? `node scripts/ci-affected-run.mjs ${meta.suite} --files-from ${quote(selectedPath)}` : 'true'
     }
+    if (meta.suite === 'typecheck' && command !== 'true'
+      && existsSync(join(source, 'scripts/ci-typecheck-cache.mjs'))) {
+      command = `node scripts/ci-typecheck-cache.mjs -- bash -c ${quote(command)}`
+    }
     const apiUnit = meta.suite === 'unit' && (meta.part === 'unit-api'
       || (affected && meta.files?.some(file => file.startsWith('apps/api/'))))
     const prerequisiteSuite = apiUnit ? 'unit-api' : meta.part ?? meta.suite
@@ -626,10 +621,7 @@ export class HostCiRunner {
     const contracts = prerequisites && existsSync(join(source, 'scripts/ci-contracts.mjs'))
     let integrationEnvironment = ''
     if (meta.suite === 'integration' && capabilities.integrationPartitions) {
-      // Main's learned durations, with the commit's committed ones for files it has not measured yet.
-      const durationsPath = join(source, 'scripts/integration-durations.json')
-      const committed = existsSync(durationsPath) ? JSON.parse(await readFile(durationsPath, 'utf8')) as Record<string, number> : {}
-      const durations = { ...committed, ...meta.durations }
+      const durations = meta.durations ?? {}
       await writeFile(join(run, 'expected-durations.json'), JSON.stringify(durations), { mode: 0o600 })
       // The repository's integration runner uses them for per-file hang deadlines and reports what it measured.
       integrationEnvironment = ` FOREMAN_CODE_INTEGRATION_DURATIONS=${quote(join(run, 'expected-durations.json'))}`
@@ -661,6 +653,7 @@ export class HostCiRunner {
     return ['#!/bin/bash', 'set -o pipefail', `exec >>${quote(join(run, 'log'))} 2>&1`,
       `export TMPDIR=${quote(join(run, 'tmp'))} CI=true NODE_OPTIONS=--max-old-space-size=${heapMb}`
         + ` FOREMAN_CODE_CI_CONTRACTS_CACHE=${quote(join(cache, 'contracts'))}`
+        + ` FOREMAN_CODE_CI_TYPECHECK_CACHE=${quote(join(source, '..', 'typecheck-cache'))}`
         + ` FOREMAN_CODE_CI_CPU_COUNT=${Math.max(1, Math.floor(resources.cpuCount))}`
         + ` FOREMAN_CODE_CI_MEMORY_BYTES=${resources.memoryBytes}`
         + ` FOREMAN_CODE_VERIFICATION_UNIT_WORKERS=${workers}`

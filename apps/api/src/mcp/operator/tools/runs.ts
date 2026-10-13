@@ -17,7 +17,8 @@ export const runTools = [
     enabled: s => !!s.runs,
     description: 'List authorized execution-semantics-3 Runs newest-first by creation time and ID. '
       + 'Retained historical Runs remain readable through run_board_snapshot_get. '
-      + 'Returns 10 by default. Pass nextCursor unchanged; it is scoped to this workspace and optional workflow filter.', inputSchema: OperatorRunListInputSchema,
+      + 'Returns 10 by default. Use this paged read for older Runs omitted from the newest 2000 workspace summaries. '
+      + 'Pass nextCursor unchanged; it is scoped to this workspace and optional workflow filter.', inputSchema: OperatorRunListInputSchema,
     outputSchema: SavedRunPageSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     run: (context, input) => context.services.runs.list(context.principal, input),
@@ -84,8 +85,10 @@ export const runTools = [
     name: 'run_start',
     requires: [['runs:start', 'workflow'], ['workspace_locations:read', 'workspace']],
     enabled: s => !!s.runs,
-    description: 'Request one Run of the explicit saved version. Every new workflow uses semantics 3, with or without '
-      + 'repeat. Pin 3 plus the current workflow revision, exact Agent configuration map and location revision. In '
+    description: 'Request one Run of the explicit saved version. Accepted Run authority survives starter-token expiry; '
+      + 'owner revocation, current scopes, Stop and completion still apply. Every new workflow uses semantics 3, with or without '
+      + 'repeat. Default Codex Agents use approvalPolicy never and need no routed workflow approval handler; sandbox restrictions '
+      + 'still apply. Pin 3 plus the current workflow revision, exact Agent configuration map and location revision. In '
       + 'mixed-computer workflows, Agents without a saved computer choice resolve to the authorized Main source, '
       + 'root and matching qualified harness; all accepted placements are persisted in the Run. For a GitHub '
       + 'workspace, Start fetches the configured default branch once, approves its tracked tree, and persists that '

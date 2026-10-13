@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { IdSchema, TimestampSchema } from './schemaPrimitives.js'
 export { integrationPartition, requiresUserSystemd } from './ciPartition.mjs'
-export { userSystemdIntegrationFiles, exclusiveIntegrationFiles } from './integrationScheduling.mjs'
+export { userSystemdIntegrationFiles, exclusiveIntegrationFiles, integrationCpuCost } from './integrationScheduling.mjs'
 import { WorkspaceRepositorySchema } from './workspaceRepository.js'
 import { BuildComputerAllowanceSchema } from './buildComputers.js'
 
@@ -27,11 +27,9 @@ function validCiPart(value: { suite: CiSuite; part?: CiPart | null | undefined; 
 }
 export const CiScopeSchema = z.enum(['affected', 'full'])
 export type CiScope = z.infer<typeof CiScopeSchema>
-/** Most files one CI run records; a larger derived selection runs its part in full instead. */
-export const CI_SELECTED_FILES_MAX = 2000
-export const CiSelectedFilesSchema = z.array(z.string().min(1).max(300)
-  .regex(/^(?:apps\/(?:api|web|worker)|packages\/contracts|scripts)\/[A-Za-z0-9_./-]+$/)
-  .refine(file => !file.split('/').some(part => part === '..' || part === '.' || part === ''))).max(CI_SELECTED_FILES_MAX)
+export const CiSelectedFilesSchema = z.array(z.string().min(1)
+  .regex(/^(?!\/|[A-Za-z]:)[^\\\0]+$/)
+  .refine(file => !file.split('/').some(part => part === '..' || part === '.' || part === '')))
 
 export function validCiSelection(value: { suite: CiSuite; scope?: CiScope | undefined; files?: string[] | undefined }) {
   if (value.scope === 'full') return !value.files?.length
@@ -94,7 +92,20 @@ export type CiTestResults = z.infer<typeof CiTestResultsSchema>
 export const CiCachedFileSchema = z.object({ file: z.string().min(1).max(300), ticketId: z.uuid(), commit: CommitSchema }).strict()
 export type CiCachedFile = z.infer<typeof CiCachedFileSchema>
 
-export const CiWatchdogFailureSchema = z.object({ message: z.string().max(2000) }).strict()
+export const CiWatchdogFailureSchema = z.object({
+  message: z.string().max(2000), testsStarted: z.boolean().optional(),
+}).strict()
+
+export const CiMirrorPublicationSchema = z.object({
+  state: z.enum(['pending', 'ready', 'failed']),
+  startedAt: TimestampSchema,
+  finishedAt: TimestampSchema.nullable(),
+  snapshotCommit: CommitSchema.optional(),
+  reusedSnapshot: CommitSchema.optional(),
+  timings: z.object({ queueMs: z.number().nonnegative(), sourceMs: z.number().nonnegative(), fetchMs: z.number().nonnegative(),
+    guardMs: z.number().nonnegative(), snapshotMs: z.number().nonnegative(),
+    pushMs: z.number().nonnegative(), totalMs: z.number().nonnegative() }).strict().optional(),
+}).strict()
 
 const CiHostRunIdSchema = z.uuid()
 /** `durations` are Main's learned integration file durations; the commit's committed durations fill the gaps. */
@@ -103,6 +114,8 @@ const CiHostStartSchema = z.object({
   workspaceId: IdSchema.optional(),
   /** Publication destination approved in this ticket's workspace at admission; null disables cloud publication. */
   ciMirror: CiRepositorySchema.nullable().optional(),
+  /** Main can record cloud ownership before publishing its checked snapshot. */
+  deferMirror: z.boolean().optional(),
   suite: CiSuiteSchema, part: CiPartSchema.optional(), partition: CiPartitionSchema.optional(), durations: CiDurationsSchema.optional(),
   scope: CiScopeSchema.optional(), files: CiSelectedFilesSchema.optional(),
   expectedDurationMs: z.number().nonnegative().finite().optional(),
@@ -140,6 +153,9 @@ const CiHostRunSchema = z.object({
   exitCode: z.number().int().nullable(), startedAt: TimestampSchema, finishedAt: TimestampSchema.nullable(),
   logBytes: z.number().int().nonnegative(), message: z.string().max(2000).nullable(),
   collection: CiCollectionSchema.optional(), provenance: CiProvenanceSchema.optional(),
+  mirrorPublication: CiMirrorPublicationSchema.optional(),
+  /** Absent when the executor cannot establish whether a test case ran. */
+  testsStarted: z.boolean().optional(),
 }).strict()
 export type CiHostRun = z.infer<typeof CiHostRunSchema>
 export const CiUserSystemdSchema = z.object({ supported: z.boolean(), reason: z.string().max(300).nullable() }).strict()
@@ -195,7 +211,7 @@ export const CiRunRecordSchema = z.object({
   deriveFiles: z.boolean().optional(), defaultBranch: WorkspaceRepositorySchema.shape.defaultBranch.optional(),
   baseCommit: CommitSchema.optional(),
   /** On a request's first ticket: selected files skipped because an earlier passed ticket proved identical inputs. */
-  cachedFiles: z.array(CiCachedFileSchema).max(CI_SELECTED_FILES_MAX).optional(),
+  cachedFiles: z.array(CiCachedFileSchema).optional(),
   branch: WorkspaceRepositorySchema.shape.defaultBranch.nullable().optional(),
   noSupersede: z.boolean().optional(),
   supersededBy: CiHostRunIdSchema.optional(),
@@ -206,6 +222,7 @@ export const CiRunRecordSchema = z.object({
     label: z.string() }).strict().nullable(),
   step: z.string().nullable(), exitCode: z.number().int().nullable(), message: z.string().nullable(),
   collection: CiCollectionSchema.optional(), provenance: CiProvenanceSchema.optional(),
+  mirrorPublication: CiMirrorPublicationSchema.optional(),
   queuedAt: TimestampSchema, startedAt: TimestampSchema.nullable(), finishedAt: TimestampSchema.nullable(),
   initiator: z.object({ principalId: IdSchema, executionId: IdSchema.nullable() }).strict(),
   /** The computer a weighted partition was sized for; another free computer may still take it. */
@@ -221,6 +238,10 @@ export const CiRunRecordSchema = z.object({
   deferred: z.boolean().optional(),
   /** Providers that accepted a dispatch but exhausted retries without creating work. */
   unstartedProviders: z.array(z.enum(['github', 'circleci'])).max(2).optional(),
+  /** One fresh executor attempt after a cloud failure before its first test case. */
+  setupRetry: z.object({
+    runId: CiHostRunIdSchema, failedComputer: CiComputerRefSchema, reason: z.string().max(2000),
+  }).strict().optional(),
 }).strict().refine(validCiPart, 'The part and partition must belong to the requested suite.')
 export type CiRunRecord = z.infer<typeof CiRunRecordSchema>
 

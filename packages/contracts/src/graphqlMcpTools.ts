@@ -42,12 +42,13 @@ export const GRAPHQL_AGENT_TOOLS = {
     label: "Run CI",
     description: "Run install, typecheck, lint, unit, build or integration on a build computer. "
       + "Tests the requested commit, the Agent's current files published to GitHub, or the default branch head. "
+      + "Edited Agent files use snapshot bundles up to 32 MiB before publication. "
       + "Scope defaults to affected. Omit files for runner selection against the workspace default branch merge-base; "
-      + "Priority defaults to normal; high requires Operator role or jobs:prioritize. CI-only commits are automatically high. "
+      + "Priority defaults to normal; callers authorized for ci can request high. CI-only commits are automatically high. "
       + "caller files remain supported with an explicit commit. Missing selectors, shared infrastructure changes and "
       + "the default branch head run the full suite and report the reason. Scope full always runs everything. "
       + "Retry the same commandId and payload. Integration automatically sizes duration-balanced parts to free CI slots; "
-      + "partitions caps the count (2–64). Requires jobs:cancel with the CI start grants. Newer descendant commits supersede active work of the same "
+      + "partitions caps the count (2–64). Requires the ci action. Newer descendant commits supersede active work of the same "
       + "suite and requester on the same branch or Agent execution. Main and noSupersede=true tickets are kept.",
     roles: ["operator", "orchestrator", "coder"],
   },
@@ -58,7 +59,9 @@ export const GRAPHQL_AGENT_TOOLS = {
   run_status_get: {
     label: "Read own Run status",
     description: "Read-only, bounded status of this Agent's own Run: Run state, each node's latest execution state, "
-      + "the Run's latest CI tickets and recent errors. Available only on workflow nodes with interval checks enabled.",
+      + "the Run's latest CI tickets and recent errors, including AGENT_EXECUTION_STUCK warnings for idle running "
+      + "executions whose CI tickets are all terminal. Warnings do not stop executions. "
+      + "Available only on workflow nodes with interval checks enabled.",
     roles: ["orchestrator", "coder"],
   },
 } as const satisfies Record<string, { label: string; description: string; roles: readonly GraphqlMcpRole[] }>;

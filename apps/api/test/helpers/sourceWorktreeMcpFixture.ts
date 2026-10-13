@@ -179,7 +179,7 @@ export async function sourceWorktreeMcpFixture() {
     })
     const approved = (await production.sources.approve(base.writer.principal, 'mcp', {
       workspaceId: base.f.scope.workspaceId, commandId: randomUUID(), expectedLocationRevision: located.locationRevision,
-      commit, approvedPaths: ['app.txt'], executablePolicy: 'strip',
+      commit, executablePolicy: 'strip',
     })).value
     const source = { approvedSourceId: approved.manifest.approvedSourceId,
       snapshotId: approved.manifest.snapshotId, manifestDigest: approved.manifest.manifestDigest }
@@ -255,7 +255,7 @@ export async function sourceWorktreeMcpFixture() {
     const savedResponse = await client.callTool({ name: 'workflow_save_v3', arguments: {
       workspaceId: base.f.scope.workspaceId, workflowId: base.f.scope.workflowId, commandId: randomUUID(),
       executionSemanticsVersion: 3, expectedRevision: workflow.revision,
-      expectedWorkflowVersionId: base.f.version.id, expectedLocationRevision: located.locationRevision,
+      expectedWorkflowVersionId: base.f.version.id,
       expectedAgentConfigurationVersionIds: base.f.version.agentConfigurationVersionIds, graph,
     } })
     expect(savedResponse.isError, JSON.stringify(savedResponse)).not.toBe(true)

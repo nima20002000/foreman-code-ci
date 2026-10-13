@@ -89,7 +89,7 @@ export async function schedulePlacementFixture(f: Sch11Fixture) {
   const policy = bound.binding
   const approved = (await authorities.sources.approve(writer.principal, 'http', { workspaceId: f.scope.workspaceId,
     commandId: randomUUID(), expectedLocationRevision: bound.locationRevision, commit,
-    approvedPaths: ['source.ts'], executablePolicy: 'strip' })).value
+    executablePolicy: 'strip' })).value
   const source = { approvedSourceId: approved.manifest.approvedSourceId, snapshotId: approved.manifest.snapshotId,
     manifestDigest: approved.manifest.manifestDigest }
   const selection = { hostRef, rootPolicyId: policy.rootPolicyId,
@@ -114,7 +114,7 @@ export async function schedulePlacementFixture(f: Sch11Fixture) {
   }
   await f.workflows.current.save(writer.principal, 'http', { ...f.scope, commandId: randomUUID(),
     executionSemanticsVersion: 3, expectedRevision: workflow.revision,
-    expectedWorkflowVersionId: f.fixture.version.id, expectedLocationRevision: bound.locationRevision,
+    expectedWorkflowVersionId: f.fixture.version.id,
     expectedAgentConfigurationVersionIds: f.fixture.version.agentConfigurationVersionIds, graph })
   const producer = () => new AgentPlacementProducer(pool, mainId, authorities.sources, authorities.policies,
     harness.registry, harness.suites)

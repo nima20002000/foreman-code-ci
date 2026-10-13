@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { CI_LOG_MAX_BYTES, CI_MAX_RUN_TICKETS, CI_SELECTED_FILES_MAX, CiCachedFileSchema, CiComputerRefSchema, CiActivitySchema, CiRunRecordSchema, CiSuiteSchema, CiScopeSchema, CiSelectedFilesSchema,
+import { CI_LOG_MAX_BYTES, CI_MAX_RUN_TICKETS, CiCachedFileSchema, CiComputerRefSchema, CiActivitySchema, CiRunRecordSchema, CiSuiteSchema, CiScopeSchema, CiSelectedFilesSchema,
   CiTestResultsSchema, CiPrioritySchema, CiPriorityReasonSchema,
   CiTestStatusSchema, CiTestSummarySchema, CiUserSystemdSchema, validCiSelection } from './ciHost.js'
 import { IdSchema } from './schemaPrimitives.js'
@@ -13,15 +13,15 @@ const CiRunInputObjectSchema = z.object({
     + 'never falls back to a different computer.'),
   gate: z.boolean().optional().describe('Operator/orchestrator only. With suite=integration and scope=full, '
     + 'queue typecheck, lint, unit and duration-balanced integration as one gate. Gates run one at a time.'),
-  priority: CiPrioritySchema.optional().describe('Defaults to normal. High requires Operator role or an explicit '
-    + 'jobs:prioritize grant. Commits changing only CI infrastructure are automatically high priority.'),
+  priority: CiPrioritySchema.optional().describe('Defaults to normal. Callers authorized for ci can request high priority. '
+    + 'Commits changing only CI infrastructure are automatically high priority.'),
   suite: CiSuiteSchema.describe('Repositories with the CI suite hook queue unit, lint, typecheck and build parts; '
     + 'other repositories run their package script for the suite as one job. Install runs one job.'),
   commit: z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/).optional(),
   baseCommit: z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/).optional()
     .describe('Optional full SHA for runner-selected affected scope. Compare against this ancestor of the resolved '
       + 'commit; an unavailable or non-ancestor base falls back to the full suite with a reason.'),
-  commandId: IdSchema,
+  commandId: IdSchema.optional().describe('Optional retry identity; generated server-side when omitted.'),
   noSupersede: z.boolean().optional().describe('Keep this request’s tickets when newer commits arrive. '
     + 'By default, newer descendant commits supersede active tickets of the same suite and requester '
     + 'on the same branch or Agent execution. Main tickets are always kept.'),
@@ -32,7 +32,8 @@ const CiRunInputObjectSchema = z.object({
     + 'mixed explicit selections split even when this is omitted. Other repositories run integration as one job.').optional(),
   scope: CiScopeSchema.optional().describe('Defaults to affected; full runs the complete suite. '
     + 'Repositories without an affected selector always run the full suite.'),
-  files: CiSelectedFilesSchema.optional().describe('Optional affected selection with an explicit commit. Omit to select '
+  files: CiSelectedFilesSchema.optional().describe('Optional affected selection of safe repository-relative paths '
+    + 'with an explicit commit; no file-count cap or repository-root restriction. Omit to select '
     + 'on the runner against baseCommit or the workspace default branch; an empty list runs no tests. '
     + 'Unit and integration files whose inputs match an earlier passed ticket are skipped and listed in cachedFiles; '
     + 'full scope, gates and smoke runs always run every file.'),
@@ -63,7 +64,7 @@ const CiRunTicketSchema = z.object({ ticketId: IdSchema }).strict()
 /** `partitions` lists every part or integration partition; the first is also `ticketId`. Poll each with ci_get. */
 /** `cachedFiles` lists selected files skipped because an earlier passed ticket ran them with identical inputs. */
 export const CiRunOutputSchema = CiRunTicketSchema.extend({ partitions: z.array(CiRunTicketSchema).min(2).max(CI_MAX_RUN_TICKETS).optional(),
-  cachedFiles: z.array(CiCachedFileSchema).max(CI_SELECTED_FILES_MAX).optional() }).strict()
+  cachedFiles: z.array(CiCachedFileSchema).optional() }).strict()
 const CiTicketInputSchema = z.object({ ticketId: IdSchema }).strict()
 /** Statuses to include; the results' summary always counts every test. */
 export const CiTestStatusFilterSchema = z.array(CiTestStatusSchema).min(1).max(3)
@@ -191,7 +192,9 @@ export const CiRuntimeWorkerStateSchema = z.object({
   message: z.string().max(2000).nullable(), updatedAt: z.string().datetime(),
 }).strict()
 export const BuildComputerPrepareInputSchema = z.object({ workspaceId: IdSchema, profileId: IdSchema,
-  commit: CommitSchema.optional(), commandId: IdSchema }).strict()
+  commit: CommitSchema.optional(),
+  commandId: IdSchema.optional().describe('Optional retry identity; generated server-side when omitted.'),
+}).strict()
 export const BuildComputerPrepareGetInputSchema = z.object({ workspaceId: IdSchema, profileId: IdSchema }).strict()
 export const BuildComputerPrepareStatusSchema = z.object({
   preparationLimits: CiPreparationLimitsSchema.optional(),

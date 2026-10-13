@@ -51,7 +51,7 @@ are 32 scenario Agent executions across both rounds, plus the host profile check
    choice/readback; set also takes a fresh `commandId`. For a new policy use `expectedRootPolicyRevision: 0`.
    Validate before setting. Return the primary workspace location to Main before approving/binding the source,
    then read its latest location revision. Approve the pinned tracked source with `source_approve`: supply `workspaceId`, a fresh
-   `commandId`, `expectedLocationRevision` from `workspace_get`, the full commit SHA, `approveTrackedTree: true`, and
+   `commandId`, `expectedLocationRevision` from `workspace_get`, the full commit SHA, and
    `executablePolicy: "preserve-approved"`. This preserves the ordinary sensitive-file and executable checks. Read
    `workspace_root_choices_list` for Main and the paired Worker. Bind the approved source on both hosts
    with `source_root_bind`: pass its returned `{approvedSourceId, snapshotId, manifestDigest}` as `source`, the current
@@ -72,7 +72,8 @@ are 32 scenario Agent executions across both rounds, plus the host profile check
    GitHub login flow or `gh auth login` locally). Both accounts must be able to fetch the source repositories;
    Main must also push snapshots and mirrors. Read `build_computer_get` with the current provisioning target. Enable
    both build computers with `build_computer_update`, preserving the current target identity, using the read revision
-   as `expectedRevision`, `buildEnabled: true`, an ordinary priority (for example 50) and a fresh `commandId`.
+   as `expectedRevision`, `buildEnabled: true`, an ordinary priority (for example 50) and an optional
+   `commandId` (generated server-side when omitted).
    Read `ci_computers_list` for each workspace: both physical host refs must appear with `ready: true`. Host CI runs
    directly in runner Git worktrees under user systemd; retired verification-template qualification, OCI Job queue
    tickets and `build_computer_prepare` are not prerequisites for this Host CI acceptance.
@@ -248,3 +249,16 @@ milliseconds. These include server startup, importing and applying migrations
 when needed, and cloning one database. The separate `*-server-startup` phases
 measure startup alone. Run this through Foreman CI on a build computer or a
 Docker-capable cloud runner; do not run it on the Agent computer.
+
+Repository hygiene is automatic: `test:scripts` discovers every `scripts/**/*.test.mjs`,
+including nested helpers, and verification captures the same inventory. Application
+migrations retain their stored versions and registration order; startup rejects
+duplicate versions before acquiring a database connection. No migration ranges
+need to be reserved between worktrees.
+
+Test-file durations live in `ci_file_durations` and finished `ci_runs`. Host and
+cloud runners receive the same database snapshot for planning; unmeasured files
+use median or equal weights. Duration artifacts are transient report inputs and
+outputs, including `scripts/ci-learned-durations.json` in generated cloud snapshots.
+Do not commit timing measurements to the source repository. Operator MCP CI tools
+use this automatically without additional input, grants, or manual updates.

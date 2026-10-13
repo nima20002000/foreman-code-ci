@@ -1,4 +1,5 @@
-import { exclusiveIntegrationFiles, requirements } from '../packages/contracts/src/integrationScheduling.mjs'
+import { exclusiveIntegrationFiles, integrationCpuCost,
+  requirements } from '../packages/contracts/src/integrationScheduling.mjs'
 import { readProductEnvironment } from '../packages/contracts/src/productEnvironment.mjs'
 import { integrationEnvironmentCapabilities, partitionIntegrationCapabilities } from './integration-capabilities.mjs'
 import { spawn, spawnSync } from 'node:child_process'
@@ -132,6 +133,12 @@ export function failForSkippedCases(summary, startAt) {
   return !startAt && Boolean(summary?.skipped)
 }
 
+/** Host gates already carry their shard allocation; cloud gates can pass an explicit marker. */
+export function integrationGate(environment) {
+  return environment.FOREMAN_CODE_CI_GATE === '1'
+    || environment.FOREMAN_CODE_CI_INTEGRATION_SHARDS !== undefined
+}
+
 export function autoRetestFiles(failedFiles, { interrupted }) {
   return interrupted ? [] : [...new Set(failedFiles)].sort()
 }
@@ -162,9 +169,10 @@ export function orderByDuration(files, durations) {
   return [...files].sort((a, b) => duration(b) - duration(a))
 }
 
-/** Main's learned durations when the host CI runner provides them, otherwise the committed ones. */
+/** Main supplies expectations from the CI database; unmeasured files use the scheduler's fallback. */
 export function integrationDurationsPath(environment) {
-  return readProductEnvironment(environment, 'INTEGRATION_DURATIONS') || join(root, 'scripts', 'integration-durations.json')
+  const snapshot = join(root, 'scripts/ci-learned-durations.json')
+  return readProductEnvironment(environment, 'INTEGRATION_DURATIONS') || (existsSync(snapshot) ? snapshot : null)
 }
 
 /** Wall time of each file that passed on its first attempt; failed and hung files say nothing about their usual time. */
@@ -174,6 +182,7 @@ export function measuredDurations(firstPass) {
 }
 
 export function readDurations(path) {
+  if (!path) return {}
   try {
     const durations = JSON.parse(readFileSync(path, 'utf8'))
     return durations && typeof durations === 'object' && !Array.isArray(durations) ? durations : {}
@@ -393,7 +402,7 @@ export async function scheduleFiles(files, slots, runFile, shouldStop = () => fa
 }
 
 export async function scheduleIntegrationQueue(files, slots, {
-  extraItems = [], executeExtra, runFile, prepareRetest = async () => {},
+  extraItems = [], executeExtra, runFile, prepareRetest = async () => {}, gate = false,
   maxConcurrency, profiles = {}, durations = {}, samplePressure, shouldStop = () => false, onEvent,
   pollIntervalMs, onProcessFailure = () => {},
 }) {
@@ -403,10 +412,8 @@ export async function scheduleIntegrationQueue(files, slots, {
     if (Number.isFinite(durationMs) && durationMs >= 0) {
       queueProfiles[file] = { ...profiles[file], durationMs }
     }
-    const cpuHeavy = requirements.get(file)?.includes('installedWorkerHost')
-      || [profiles[file]?.durationMs, durations[file]].some((ms) => Number.isFinite(ms) && ms >= 60_000)
-    // The queue capacity scales with CPUs; heavy files reserve two of those slots.
-    return { id: file, file, kind: 'integration', cpuCost: cpuHeavy ? Math.min(2, maxConcurrency) : 1,
+    const cpuCost = integrationCpuCost(file, maxConcurrency, profiles[file]?.durationMs, durations[file])
+    return { id: file, file, kind: 'integration', cpuCost,
       exclusive: exclusiveIntegrationFiles.includes(file) }
   })
   const items = [...integrationItems, ...extraItems]
@@ -423,7 +430,7 @@ export async function scheduleIntegrationQueue(files, slots, {
       if (event.type === 'finish') usedCpuSlots -= event.item.cpuCost ?? 1
       onEvent?.(event)
     },
-    pollIntervalMs, retest: true,
+    pollIntervalMs, retest: !gate,
     canUseWorker: (_index, item) => usedCpuSlots + (item.cpuCost ?? 1) <= maxConcurrency
       && (item.kind !== 'integration' || Boolean(freeSlot())),
     execute: async (item, context) => {
@@ -553,6 +560,7 @@ export async function runIntegration(argv = [], {
   extraItems = [], executeExtra, reportDirectory, profilePath, env = process.env, contractsBuilt = false,
 } = {}) {
   const { startAt, failedFrom, files } = options(argv, env)
+  const gate = integrationGate(env) || extraItems.length > 0
   if (!contractsBuilt) {
     const contractsBuild = spawnSync('corepack', ['pnpm', '--dir', 'packages/contracts', 'build'],
       { cwd: root, stdio: 'inherit', env })
@@ -937,7 +945,7 @@ export async function runIntegration(argv = [], {
       }
     }
     queueResult = await scheduleIntegrationQueue(runnable, slots, {
-      maxConcurrency: concurrency, profiles, durations: expectedDurations, runFile: runSafely, prepareRetest,
+      gate, maxConcurrency: concurrency, profiles, durations: expectedDurations, runFile: runSafely, prepareRetest,
       extraItems,
       executeExtra: (item, context) => executeExtra(item, context, {
         shouldStop: shouldStopQueue, signal: abortController.signal,
@@ -958,12 +966,13 @@ export async function runIntegration(argv = [], {
       if (result.status === 'FLAKY' && record) {
         console.error(`[integration] FLAKY ${result.id}: failed first pass, passed isolated retest; first pass still fails this run.`)
       }
-      if (record && record.code !== null && record.code !== 0 && result.attempts.length === 1 && !interrupted) {
+      if (!gate && record && record.code !== null && record.code !== 0
+        && result.attempts.length === 1 && !interrupted) {
         recordUnexecuted([result.id], 'retest',
           result.retestReason ?? result.reason ?? 'no usable integration slots for isolated retest')
       }
     }
-    retest.skipped = interrupted ? Math.max(0, failedFiles.length - retest.passed - retest.failed) : 0
+    retest.skipped = !gate && interrupted ? Math.max(0, failedFiles.length - retest.passed - retest.failed) : 0
   } finally {
     clearInterval(heartbeat)
     if (queueResult) {
