@@ -1,5 +1,4 @@
 import type pg from 'pg'
-import { beginTransaction, commitTransaction, rollbackAfterFailure } from '../../../infrastructure/transaction.js'
 import { WorkerCredentialService, type IssuedWorkerCredential, APP_MCP_TOKEN_ENVIRONMENT_VARIABLE } from '../../access/workerCredentials.js'
 import type { PostgresAccessService } from '../../access/postgres.js'
 import { fail, isCurrentApprovalRun, runFor } from './context.js'
@@ -23,7 +22,7 @@ export class Wave25WorkerCredentialService extends WorkerCredentialService {
     let broken = false
     let committing = false
     try {
-      await beginTransaction(client)
+      await client.query('begin')
       const runId = await runFor(client, 'execution', executionId)
       const lock = lockWait === 'nowait' ? 'nowait' : ''
       await client.query(`select id from runs where id=$1 for no key update ${lock}`, [runId])
@@ -31,11 +30,12 @@ export class Wave25WorkerCredentialService extends WorkerCredentialService {
       if (await runFor(client, 'execution', executionId) !== runId) return fail('AUTH_REVOKED')
       const value = await work(client)
       committing = true
-      await commitTransaction(client)
+      await client.query('commit')
       return value
     } catch (error) {
       broken = committing
-      if (await rollbackAfterFailure(client)) broken = true
+      try { await client.query('rollback') }
+      catch { broken = true }
       throw error
     } finally { client.release(broken) }
   }
