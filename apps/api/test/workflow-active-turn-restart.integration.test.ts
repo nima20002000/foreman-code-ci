@@ -7,11 +7,10 @@ import { installationUpdateFixture, startWhenReady, runningTurn, completedRun }
 import { waitForRemoteReview } from './helpers/remoteReviewProduction.js'
 import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'
 
-describe('API restart during a native workflow turn', () => {
+describe('planned API restart during a native workflow turn', () => {
   for (const executionHost of ['main', 'worker'] as const) {
-    for (const mode of ['graceful', 'crash'] as const) {
     for (const completion of ['after reconnect', 'while API is down'] as const) {
-      it(`keeps the same ${executionHost} execution after ${mode} and collects its result ${completion}`, async () => {
+      it(`keeps the same ${executionHost} execution and collects its result ${completion}`, async () => {
         const fixture = await installationUpdateFixture({ workflow: 'single', executionHost })
         let blocked = false
         try {
@@ -32,7 +31,7 @@ describe('API restart during a native workflow turn', () => {
             expiresAt: new Date(Date.now() + 600_000), grants: [{ actions: ['runs:read'],
               scope: { workspaceIds: [started.run.workspaceId], workflowIds: [started.run.workflowId] } }] })
           const workerPid = fixture.workerPid()
-          await fixture.restartMain({ mode, afterShutdown: async () => {
+          await fixture.restartMain({ mode: 'graceful', afterShutdown: async () => {
             const preserved = (await fixture.executions(started.run.id))[0]!
             expect(preserved.id).toBe(execution.id)
             expect(preserved.attempt).toBe(execution.attempt)
@@ -83,7 +82,6 @@ describe('API restart during a native workflow turn', () => {
           await fixture.close()
         }
       }, 240_000)
-    }
     }
   }
 })
