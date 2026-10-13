@@ -11,10 +11,9 @@ import { repeatTickIndex } from '../../src/modules/runs/repeatResolution.js'
 
 type RestartPhase = 'active' | 'writable source' | 'admitting interval' | 'failed admission'
 
-export async function assertInstalledWorkflowRestart(phase: RestartPhase,
-  installedFixture?: Awaited<ReturnType<typeof installationUpdateFixture>>) {
+export async function assertInstalledWorkflowRestart(phase: RestartPhase) {
   const activePhase = phase === 'active' || phase === 'writable source'
-  const fixture = installedFixture ?? await installationUpdateFixture({ workflow: 'interval', executionHost: 'main',
+  const fixture = await installationUpdateFixture({ workflow: 'interval', executionHost: 'main',
     installedMainService: true,
     sourceAccessMode: phase === 'writable source' ? 'exclusive-write' : 'read-only' })
   const service = fixture.mainService!
@@ -134,8 +133,6 @@ export async function assertInstalledWorkflowRestart(phase: RestartPhase,
       await fixture.provider.releaseWorkflowAdmission()
       await fixture.provider.releaseWorkflowTurns()
       await restart
-    } finally {
-      if (!installedFixture) await fixture.close()
-    }
+    } finally { await fixture.close() }
   }
 }

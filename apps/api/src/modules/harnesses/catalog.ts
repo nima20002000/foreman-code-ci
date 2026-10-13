@@ -1,7 +1,6 @@
-import { errorMessage } from '../../shared/errorMessage.js'
 import { assertClaudeFullAccess } from './nativeWorkflowConfiguration.js'
 import { isDeepStrictEqual } from 'node:util'
-import { canonicalJson } from '@foreman-code/contracts/canonical-json'
+import { canonical } from './codexProtocol.js'
 import { QualificationCache } from './qualificationCache.js'
 import { qualificationError } from './qualificationErrors.js'
 
@@ -39,14 +38,14 @@ export class HarnessCatalogService {
 
   private currentStatus(value: HarnessConfiguration,
     options: { signal?: AbortSignal; allowStale?: boolean } = {}) {
-    return this.statuses.get(canonicalJson(withAdvancedDefaults(value)),
+    return this.statuses.get(canonical(withAdvancedDefaults(value)),
       (active) => this.inspectConfiguration(value, active), options)
   }
 
   private async inspectConfiguration(value: HarnessConfiguration, signal?: AbortSignal) {
     assertClaudeFullAccess(value)
     try {
-      return await this.checks.get(canonicalJson(withAdvancedDefaults(value)), async (active) => {
+      return await this.checks.get(canonical(withAdvancedDefaults(value)), async (active) => {
         const qualification = HarnessQualificationSchema.parse(
           await this.qualifier.qualify(value, this.qualificationDirectory,
             AbortSignal.any([active, AbortSignal.timeout(60_000)])))
@@ -121,7 +120,7 @@ export class HarnessCatalogService {
     } catch (error) {
       return {
         harness, defaults: configuration, defaultsRevision: revision, capability: null, ...support,
-        discoveryError: { code: error instanceof DomainError ? error.code : 'HARNESS_DISCOVERY_UNAVAILABLE', message: errorMessage(error, 'Harness discovery failed.') },
+        discoveryError: { code: error instanceof DomainError ? error.code : 'HARNESS_DISCOVERY_UNAVAILABLE', message: error instanceof Error ? error.message : 'Harness discovery failed.' },
       }
     }
   }

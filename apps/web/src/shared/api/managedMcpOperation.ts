@@ -1,4 +1,3 @@
-import { errorMessage } from '../errorMessage'
 import type { HarnessMcpManagedInput, HarnessMcpPlan } from '@foreman-code/contracts/management'
 
 export type ManagedMcpOperation = {
@@ -30,5 +29,5 @@ export function managedMcpFailed(operation: ManagedMcpOperation, error: unknown)
   // command's identity. A later 4xx does not disprove an earlier commit.
   if (!operation.plan && !operation.uncertainDelivery && definitePrePlanRejection(error)) return null
   return { ...operation, phase: 'retry', uncertainDelivery: true,
-    error: errorMessage(error, 'The change could not be confirmed. Retry its original command.') }
+    error: error instanceof Error ? error.message : 'The change could not be confirmed. Retry its original command.' }
 }
