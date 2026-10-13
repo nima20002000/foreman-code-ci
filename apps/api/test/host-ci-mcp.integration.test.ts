@@ -279,6 +279,25 @@ it.each([
   }
 })
 
+it('reads a delayed generic job completion through authenticated MCP', async () => {
+  const repository = await genericCiRepository({ suiteDelayMs: 1500 })
+  const f = await fixture({ repositoryRunner: repository })
+  try {
+    const started = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run',
+      { suite: 'build', commandId: 'delayed-generic-build' }))
+    await expect.poll(async () => CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get',
+      { ticketId: started.ticketId })).run.state).toBe('passed')
+    const read = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: started.ticketId }))
+    expect(read.run).toMatchObject({ state: 'passed', exitCode: 0 })
+    expect(read.logTail).toContain('fixture build passed')
+    expect((await f.pool.query<{ record: unknown }>('select record from ci_runs where id=$1',
+      [started.ticketId])).rows[0]!.record).toEqual(read.run)
+  } finally {
+    await f.close()
+    await repository.close()
+  }
+})
+
 it('runs generic integration once despite requested partitions and falls back from an unconfigured cloud mirror', async () => {
   const repository = await genericCiRepository({ integration: true, cloud: true })
   const f = await fixture({ repositoryRunner: repository })
