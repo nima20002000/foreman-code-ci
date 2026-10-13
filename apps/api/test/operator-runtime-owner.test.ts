@@ -21,6 +21,11 @@ vi.mock('pg', async () => {
 })
 beforeEach(() => { state.drivers.length = 0 })
 afterEach(() => { vi.useRealTimers() })
+function gate() {
+  let resolve!: () => void
+  const promise = new Promise<void>((done) => { resolve = done })
+  return { promise, resolve }
+}
 function fixture() {
   const lost = vi.fn()
   const owner = new OperatorRuntimeOwner('postgresql://fixture/fixture', lost)

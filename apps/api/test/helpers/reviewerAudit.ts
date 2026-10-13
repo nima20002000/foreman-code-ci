@@ -302,7 +302,6 @@ export async function reviewerFixture(options: {
     : undefined
   let generation = closure ? 1 : 0
   const closures: WorkflowClosureStore = {
-    async recoverDetached() { return undefined },
     async begin() { closure = undefined; return String(++generation) },
     async record(execution, session, durableGeneration, check) { check(); closure = { execution, session, durableGeneration }; return closure },
     async read() { return closure },
