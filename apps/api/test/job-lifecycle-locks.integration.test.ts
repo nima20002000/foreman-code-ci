@@ -18,7 +18,12 @@ import type { RepeatRepositoryHost } from '../src/modules/runs/repeatPostgres.js
 import { assertGraphTransaction } from '../src/modules/run-graph/connection.js'
 import { repeatDigest, repeatSlotId } from '../src/modules/runs/repeatResolution.js'
 import { jobExecution } from './helpers/jobFixture.js'
-import { deferred } from './helpers/deferred.js'
+
+function barrier() {
+  let resolve!: () => void
+  const promise = new Promise<void>(done => { resolve = done })
+  return { promise, resolve }
+}
 
 // A task-owned database with only the rows needed by the actual lock/read paths.
 // This proves PostgreSQL ordering, not application migration or native execution.
@@ -95,7 +100,7 @@ describe.skipIf(process.env.JOB_LIFECYCLE_POSTGRES !== '1' && !process.env.TEST_
       })
       runOwner = await RunOwnership.acquire(pool, run.id, () => {})
       if (!runOwner) throw new Error('Missing Run owner')
-      const runLocked = deferred(), readJob = deferred(), jobRequested = deferred()
+      const runLocked = barrier(), readJob = barrier(), jobRequested = barrier()
       const repository = new JobRepository()
       const composition = createWorkflowJobComposition({ jobs: { repository } as JobService, dispatch,
         outputs: { listCanonicalOutputs: async () => [], verifyRequiredOutputs: async () => {} } }).forOwner(runOwner, version)
