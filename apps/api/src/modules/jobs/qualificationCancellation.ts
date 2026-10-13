@@ -1,4 +1,4 @@
-import type { QualificationNativeOwner } from './qualification.js'
+import type { QualificationNativeOwner } from './qualificationPorts.js'
 import type { JobVerificationQualificationCandidateSchema } from '@foreman-code/contracts/job-verification-runtime'
 import type { z } from 'zod'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -43,7 +43,7 @@ export async function interruptActiveQualification(input: {
     child.once('error', reject)
   })
   // Join the controller after the original container has been stopped.
-  void exited.catch(() => {})
+  void exited.catch(() => { /* ignore: the owner awaits the original promise; this observer prevents a duplicate unhandled rejection. */ })
   let output = ''
   const active = new Promise<void>((resolve, reject) => {
     child.stdout!.on('data', (bytes: Buffer) => {
