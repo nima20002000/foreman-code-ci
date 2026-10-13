@@ -5,8 +5,8 @@ import type pg from 'pg'
 import { withProviderPoll } from './providerPoll.js'
 import { CI_HOST_NAMESPACE, CI_HOST_START_PROTOCOL_VERSION, CI_LOG_MAX_BYTES, CI_RUN_JOBS_LIMIT, CiComputerRefSchema, CiHostReplySchema, CiListOutputSchema, CiRunRecordSchema, CiRunOutputSchema,
   WorkspaceSchema,
-  type CiDurations, type CiHostReply, type CiHostRun, type CiHostStatus, type CiListOutput, type CiRunRecord, type CiRunInput,
-  type CiTestResults, type CiTestStatus, type CiCancellation, type Workspace } from '@foreman-code/contracts'
+  type CiDurations, type CiHostRequest, type CiHostReply, type CiHostRun, type CiHostStatus, type CiListOutput, type CiRunRecord, type CiRunInput,
+  type CiTestResults, type CiTestStatus, type CiUserSystemd, type CiCancellation, type Workspace } from '@foreman-code/contracts'
 import type { ManagementAction, ManagementPrincipal } from '@foreman-code/contracts/management'
 import type { PostgresCommandCoordinator } from '../commands/postgres.js'
 import type { CiAuthority } from '../jobs/ciAuthority.js'
@@ -14,15 +14,16 @@ import { CI_GET_ACTIONS, CI_RUN_ACTIONS } from '../jobs/ciAuthority.js'
 import { DomainError, databaseReadFailure } from '../errors.js'
 import { requireAuthorization } from '../access/policy.js'
 import { componentLogger } from '../diagnostics/logger.js'
-import { ciGroupState, planCiParts, runsOnCircleCi } from './parts.js'
-import { planIntegrationParts, type CiIntegrationSlots } from './integrationParts.js'
+import { ciGroupState, planCiParts, runsOnCircleCi, type CiUnitInventory } from './parts.js'
+import { planIntegrationParts, type CiIntegrationInventory, type CiIntegrationSlots } from './integrationParts.js'
 import { assertCiReadAccess } from './runAccess.js'
+import type { CiRepositoryCapabilities } from './repository.js'
 import { RUN_CI_JOBS_SQL, runCiJob, storedCiTestResults, type RunCiJobRow } from './runJobs.js'
 import { fallbackOnError } from '../diagnostics/ignoredError.js'
 import { CI_QUEUE_ORDER, ciQueueReason, compareCiQueue } from './priority.js'
 import { prepareCiSupersession, validateCiSupersession, supersedeCiRuns } from './supersession.js'
 import { gatePartStealer, gateQueueBlock, planCiGate, readCiComputerStatus } from './gate.js'
-import { buildComputerIntegrationShards, gateDispatchShards } from './capacity.js'
+import { gateIntegrationShards } from './capacity.js'
 import { ciGateReport } from './gateReport.js'
 import { claimCiDispatch, releaseCiDispatch, saveQueuedCiRun, ciMessages, rejectedCiStart, withCiTicketLock,
   requestCiStart, CI_START_ACK_TIMEOUT_MS, CI_START_MAX_ATTEMPTS } from './dispatch.js'
@@ -31,9 +32,6 @@ import { sanitizeCiText, serializeCiJson } from './text.js'
 import { isGitHubComputer, needsSystemdExecutor, supportsUserSystemd } from './computerCapabilities.js'
 import { weighCiPartitions } from './partitionPlanning.js'
 import { readQueuedCiRuns } from './queuedRuns.js'
-import type { AgentSnapshots, CiCommits, HostCiComputer, HostCiEndpoint, HostRef } from './serviceTypes.js'
-
-export type { AgentSnapshots, CiCommits, HostCiComputer, HostCiEndpoint } from './serviceTypes.js'
 
 /** CI reads are idempotent: one retry after a lock or statement timeout, then a typed retryable error. */
 async function retryRead<T>(work: () => Promise<T>): Promise<T> {
@@ -42,6 +40,28 @@ async function retryRead<T>(work: () => Promise<T>): Promise<T> {
     return work().catch(retry => { throw databaseReadFailure(retry) })
   }
 }
+
+type HostRef = CiRunRecord['computer'] extends infer C ? C extends { hostRef: infer H } ? H : never : never
+export interface HostCiComputer {
+  key: string; hostRef: HostRef; label: string; priority: number; userSystemd?: CiUserSystemd
+}
+export interface HostCiEndpoint {
+  /** Paired computers that serve host CI now. */
+  computers(): Promise<HostCiComputer[]>
+  request(computer: HostCiComputer, request: CiHostRequest): Promise<CiHostReply>
+}
+/** Resolves the commit to test and makes sure GitHub has it, so build computers can fetch it. */
+export interface CiCommits {
+  infrastructureOnly?(repository: string, commit: string): Promise<boolean>
+  branch?(repository: string, defaultBranch: string, commit: string): Promise<string | null>
+  isAncestor?(repository: string, ancestor: string, commit: string): Promise<boolean>
+  capabilities(repository: string, commit: string): Promise<CiRepositoryCapabilities>
+  integrationInventory?(repository: string, commit: string): Promise<CiIntegrationInventory>
+  unitInventory?(repository: string, commit: string): Promise<CiUnitInventory>
+  resolve(repository: string, defaultBranch: string, commit: string | undefined,
+    snapshot: { baseCommit: string; commit: string; bundle: Buffer | null } | null): Promise<string>
+}
+export type AgentSnapshots = (executionId: string) => Promise<{ baseCommit: string; commit: string; bundle: Buffer | null } | null>
 
 const log = componentLogger('jobs')
 
@@ -259,7 +279,7 @@ export class HostCiService {
       if (status.operation !== 'status' || !status.ready) {
         throw new DomainError('CI_SMOKE_COMPUTER_UNAVAILABLE', 'The smoke computer is not ready.', 409)
       }
-      smokeShards = buildComputerIntegrationShards(status, smokeTarget.buildAllowancePercent)
+      smokeShards = gateIntegrationShards(status.cpuCount, Math.floor(status.memoryBytes * 0.9))
       const fleet = await this.endpoint.computers()
       if (integration && fleet.some(computer => computer.hostRef.kind !== 'cloud')
         && fleet.some(computer => computer.hostRef.kind === 'cloud')) {
@@ -936,7 +956,7 @@ export class HostCiService {
       if (status) {
         used.set(computer.key, Math.max(used.get(computer.key) ?? 0, status.slotsUsed ?? 0))
         if (status.ready) {
-          gateShards.set(computer.key, buildComputerIntegrationShards(status, computer.buildAllowancePercent))
+          gateShards.set(computer.key, gateIntegrationShards(status.cpuCount, Math.floor(status.memoryBytes * 0.9)))
         }
       }
     })
@@ -1021,7 +1041,8 @@ export class HostCiService {
         }
         used.set(computer.key, (used.get(computer.key) ?? 0) + (exclusiveGate ? totals.get(computer.key) ?? 1 : 1))
         if (usesGitHubIntegration) integrationOnGitHub.add(computer.key)
-        const shards = gateDispatchShards(run, computer.key, gateShards.get(computer.key)!)
+        const shards = run.gate && run.suite === 'integration' && computer.key !== run.plannedHostKey
+          ? { integrationShards: gateShards.get(computer.key)! } : {}
         const assigned = await claimCiDispatch(this.pool, run, computer, {
           operation: 'start', runId: run.id, workspaceId: run.workspaceId, ciMirror: run.ciMirror ?? null,
           repository: run.repository, commit: run.commit, suite: run.suite,
