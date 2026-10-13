@@ -19,7 +19,7 @@ export const GraphEffectFenceSchema = z.object({
   connectionGeneration: GraphSequenceSchema.nullable(),
 }).strict()
 export type GraphEffectFence = z.infer<typeof GraphEffectFenceSchema>
-const NativeSubmissionStateSchema = z.enum(['unknown', 'not_submitted', 'uncertain', 'acknowledged', 'settled'])
+export const NativeSubmissionStateSchema = z.enum(['unknown', 'not_submitted', 'uncertain', 'acknowledged', 'settled'])
 export const GraphEffectAuthoritySchema = GraphEffectFenceSchema.extend({
   ownership: z.enum(['held', 'lost']), access: z.enum(['effect', 'observe']),
   security: z.enum(['valid', 'invalid', 'unknown']),
@@ -74,7 +74,7 @@ export const NativeWorkReliabilitySchema = z.object({
   if (value.submission === 'settled' && !value.terminal?.nativeSettled) context.addIssue({ code: 'custom', message: 'settled submission requires positive native settlement evidence' })
   if (value.terminal?.outcome === 'succeeded' && !['acknowledged', 'settled'].includes(value.submission)) context.addIssue({ code: 'custom', message: 'unknown or uncertain submission is not success' })
 })
-type NativeWorkReliability = z.infer<typeof NativeWorkReliabilitySchema>
+export type NativeWorkReliability = z.infer<typeof NativeWorkReliabilitySchema>
 export function assertNativeWorkTransition(previousInput: NativeWorkReliability, nextInput: NativeWorkReliability): void {
   const previous = NativeWorkReliabilitySchema.parse(previousInput), next = NativeWorkReliabilitySchema.parse(nextInput)
   if (previous.stopRequested && !next.stopRequested) throw new Error('GRAPH_STOP_CONFLICT')
@@ -93,7 +93,7 @@ const ObservationFields = {
   source: GraphEvidenceSchema, sourceStreamId: GraphIdSchema, sourcePosition: GraphSequenceSchema,
   connectionGeneration: GraphSequenceSchema, observedAt: TimestampSchema,
 }
-const NativeGraphObservationSchema = z.discriminatedUnion('kind', [
+export const NativeGraphObservationSchema = z.discriminatedUnion('kind', [
   z.object({ ...ObservationFields, kind: z.literal('transport'), transport: z.enum(['open', 'closed', 'keepalive']) }).strict(),
   z.object({ ...ObservationFields, kind: z.literal('submission'), submissionId: GraphIdSchema,
     state: z.enum(['uncertain', 'acknowledged']) }).strict(),
@@ -115,10 +115,10 @@ export function parseNativeGraphObservation(input: unknown): NativeGraphObservat
 }
 
 /** Ordering classification only, NOT a native projector or permission to discard late terminal evidence. */
-const GraphSourceObservationSchema = z.object({
+export const GraphSourceObservationSchema = z.object({
   scope: RunGraphScopeSchema, evidence: GraphEvidenceSchema, digest: GraphDigestSchema, streamId: GraphIdSchema, position: GraphSequenceSchema,
 }).strict()
-type GraphSourceObservation = z.infer<typeof GraphSourceObservationSchema>
+export type GraphSourceObservation = z.infer<typeof GraphSourceObservationSchema>
 export function classifyGraphObservation(previousInput: GraphSourceObservation, nextInput: GraphSourceObservation): 'duplicate' | 'earlier' | 'later' | 'independent' {
   const previous = GraphSourceObservationSchema.parse(previousInput), next = GraphSourceObservationSchema.parse(nextInput)
   if (!sameGraphScope(previous.scope, next.scope)) throw new Error('GRAPH_SCOPE_MISMATCH')
@@ -154,7 +154,7 @@ export const NativeGraphProjectionFenceSchema = z.object({
   ownerId: GraphIdSchema, fence: GraphSequenceSchema, connectionGeneration: GraphSequenceSchema,
 }).strict()
 export type NativeGraphProjectionFence = z.infer<typeof NativeGraphProjectionFenceSchema>
-const NativeGraphProjectionAuthoritySchema = NativeGraphProjectionFenceSchema.extend({
+export const NativeGraphProjectionAuthoritySchema = NativeGraphProjectionFenceSchema.extend({
   ownership: z.enum(['held', 'lost']), access: z.enum(['project', 'observe']),
 }).strict()
 export type NativeGraphProjectionAuthority = z.infer<typeof NativeGraphProjectionAuthoritySchema>
