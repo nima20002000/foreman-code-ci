@@ -1,5 +1,4 @@
 import { JobInitiatingAgentSchema, type JobInitiatingAgent } from '@foreman-code/contracts/jobs'
-import { withTransaction } from '../../infrastructure/transaction.js'
 import { jobDigest } from './digest.js'
 import { componentLogger } from '../diagnostics/logger.js'
 import { requireJobPreparationDeadline } from './preparationDeadline.js'
@@ -120,12 +119,23 @@ export class JobService {
       await this.commands.recordDenied(principal.id, source, action, workspaceId)
       throw error
     }
-    return withTransaction(this.pool, async (sql) => {
+    const sql = await this.pool.connect()
+    let releaseError: Error | undefined
+    try {
+      await sql.query('begin')
       const live = await this.authorize(sql, principal, workspaceId, action, scope)
       const result = await work(sql, live)
       await this.authorize(sql, principal, workspaceId, action, scope)
+      await sql.query('commit')
       return result
-    })
+    } catch (error) {
+      await sql.query('rollback').catch((failure: unknown) => {
+        releaseError = failure instanceof Error ? failure : new Error('Job rollback failed.')
+      })
+      throw error
+    } finally {
+      sql.release(releaseError)
+    }
   }
   private async readExecution<T>(principal: ManagementPrincipal, workspaceId: string, executionId: string,
     action: ManagementAction, work: (sql: pg.PoolClient, live: ManagementPrincipal) => Promise<T>,
@@ -284,7 +294,9 @@ export class JobService {
     }, source)
   }
   private async transaction<T>(work:(sql:pg.PoolClient)=>Promise<T>):Promise<T> {
-    return withTransaction(this.pool, work)
+    const sql=await this.pool.connect()
+    try {await sql.query('begin');const value=await work(sql);await sql.query('commit');return value}
+    catch(error) {await sql.query('rollback');throw error} finally {sql.release()}
   }
   private queueConfiguration(): JobQueueConfiguration {
     const configuration = this.ports.queue

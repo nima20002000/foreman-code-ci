@@ -1,5 +1,4 @@
 import type pg from 'pg'
-import { withTransaction } from '../../infrastructure/transaction.js'
 import { posix } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
 import { AcceptedWorkflowRunV3Schema } from '@foreman-code/contracts/wave25'
@@ -67,7 +66,9 @@ export class AgentSourceAttemptAuthority implements SourceAttemptAuthority {
     await this.authorize(sql, principal, { workspaceId: actual.run.workspaceId, root: SourceRootRecordSchema.parse(rootRow?.record), attempt: record.receipt, operationId: record.operationId })
   }
   private async read<T>(operation: (sql: GraphSqlClient) => Promise<T>): Promise<T> {
-    return withTransaction(this.pool, operation)
+    const sql = await this.pool.connect()
+    try { await sql.query('begin'); const result = await operation(sql); await sql.query('commit'); return result }
+    catch (error) { await sql.query('rollback'); throw error } finally { sql.release() }
   }
   revalidate(root: SourceRootRecord, attempt: MaterializationAttempt): Promise<void> {
     return this.read(async sql => {

@@ -1,5 +1,4 @@
 import type { ReviewNativeCapture } from './reviewNativeCapture.js'
-import { withTransaction, inTransaction } from '../../infrastructure/transaction.js'
 import { DurableInteractionSchema, type DurableInteraction, IdSchema, TimestampSchema, NativeSessionLaneSchema, NativeSessionReferenceSchema, ReviewJobSchema, type NativeHarnessEvent, type NativeSessionReference, type NativeSessionLane, type ReviewJob } from '@foreman-code/contracts'
 import type pg from 'pg'
 
@@ -179,7 +178,9 @@ export class PostgresInteractionCoordinationRepository {
 
   async claimReviewJob(id: string, owner: string, token: string, leaseExpiresAt: string): Promise<ReviewJob> {
     const input = leaseInput(id, owner, token, leaseExpiresAt)
-    return withTransaction(this.pool, async (client) => {
+    const client = await this.pool.connect()
+    try {
+      await client.query('begin')
       const found = await client.query<{ record: unknown }>(
         `select record from review_jobs where id=$1 and
          ${recoverableJob} and $2::timestamptz > clock_timestamp() for update`, [input.id, input.expiresAt],
@@ -195,8 +196,9 @@ export class PostgresInteractionCoordinationRepository {
         `update review_jobs set state=$3,revision=revision+1,record=$2::jsonb,updated_at=now() where id=$1`,
         [id, JSON.stringify(next), next.state],
       )
+      await client.query('commit')
       return next
-    })
+    } catch (error) { await client.query('rollback'); throw error } finally { client.release() }
   }
 
   async nextReviewJob(reviewerAgentId: string): Promise<ReviewJob | undefined> {
@@ -258,7 +260,9 @@ export class PostgresInteractionCoordinationRepository {
   async transitionReviewJob(id: string, leaseToken: string, state: ReviewJob['state'], fields: {
     providerTurnOrMessageId?: string; error?: ReviewJob['error']; cleanup?: ReviewJob['cleanup']; nativeCapture?: ReviewNativeCapture; writerFence?: WriterFence; releaseLease?: boolean; retryAfter?: string
   } = {}, expected?: { revision: number; fence: number }): Promise<ReviewJob> {
-    return withTransaction(this.pool, async (client) => {
+    const client = await this.pool.connect()
+    try {
+      await client.query('begin')
       const found = await client.query<{ record: unknown; revision: string; lease_fence: string; lease_active: boolean }>(
         `select record,revision::text,lease_fence::text,
            coalesce(lease_expires_at > clock_timestamp(),false) as lease_active
@@ -324,8 +328,9 @@ export class PostgresInteractionCoordinationRepository {
         [id, state, JSON.stringify(next), row.revision, leaseToken, row.lease_fence, fields.writerFence?.id ?? null, fields.writerFence?.token ?? null],
       )
       if (updated.rowCount !== 1) throw new DomainError('REVIEW_JOB_LEASE_LOST', 'The review job lease expired during its transition.', 409)
+      await client.query('commit')
       return next
-    })
+    } catch (error) { await client.query('rollback'); throw error } finally { client.release() }
   }
 
   /** Compatibility entry point for the earlier owner/token/attempt fencing contract. */
@@ -457,7 +462,10 @@ export class PostgresInteractionCoordinationRepository {
   async releaseLane(id: string, leaseToken: string, observed: {
     observedStatus: NativeSessionLane['observedStatus']; currentTurnOrMessageId?: string; connectionGeneration?: number
   }): Promise<NativeSessionLane> {
-    return inTransaction(this.pool, interactionConnection.getStore(), async (client) => {
+    const outer = interactionConnection.getStore()
+    const client = outer ?? await this.pool.connect()
+    try {
+      if (!outer) await client.query('begin')
       const found = await client.query<{ record: unknown }>(
         `select record from native_session_lanes where id=$1 and record->>'leaseToken'=$2
          and (record->>'leaseExpiresAt')::timestamptz > clock_timestamp() for update`, [id, leaseToken],
@@ -482,7 +490,8 @@ export class PostgresInteractionCoordinationRepository {
         [id, next.revision, JSON.stringify(next), leaseToken],
       )
       if (updated.rowCount !== 1) throw new DomainError('SESSION_LANE_LEASE_LOST', 'The native writer expired during release.', 409)
+      if (!outer) await client.query('commit')
       return next
-    })
+    } catch (error) { if (!outer) await client.query('rollback'); throw error } finally { if (!outer) client.release() }
   }
 }

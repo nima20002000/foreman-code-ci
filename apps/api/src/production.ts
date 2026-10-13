@@ -1,5 +1,6 @@
 import { RunWorktrees } from './modules/runs/runWorktrees.js'
-import { withTransaction } from './infrastructure/transaction.js'
+import { inTransaction } from './infrastructure/transaction.js'
+import type pg from 'pg'
 import { ComputerActivityService } from './modules/computers/activity.js'
 import { registerComputerActivityRoutes } from './routes/computerActivity.js'
 import { ComputerAccountsService } from './modules/computers/accounts.js'
@@ -769,20 +770,23 @@ export function buildProductionApp(
   const hostSettings = new HarnessInstanceSettingsRepository(database.pool)
   const hostAuthority: HostHarnessOverrideAuthority = { async authorize(principal, action, hostRef, applicationInstallationId, client) {
     if (client) { await authorizeDeviceHost(client, principal, action, hostRef, applicationInstallationId); return }
-    await withTransaction(database.pool, async (connection) => {
+    const connection = await database.pool.connect()
+    try {
+      await connection.query('begin')
       await authorizeDeviceHost(connection, principal, action, hostRef, applicationInstallationId)
-    })
+      await connection.query('commit')
+    } catch (error) { await connection.query('rollback'); throw error } finally { connection.release() }
   } }
   const profileAuthority: AcceptedProfileAuthority<ClaudeProfileOwner> = {
     async authorize(binding, selector, client) {
       binding.admissionSignal?.throwIfAborted()
       if (binding.kind === 'workflow') {
-        const current = await credentialAuthority(client, binding.executionId, binding.purpose ?? 'workflow')
+        const current = await credentialAuthority(client as unknown as GraphSqlClient, binding.executionId, binding.purpose ?? 'workflow')
         if (current.run.id !== binding.runId || current.execution.attempt !== binding.attempt) throw new DomainError('HARNESS_PROFILE_OWNER_CONFLICT', 'The exact Run attempt changed.', 409)
         if (!current.nativeSessionId && binding.purpose !== 'reviewer') {
           const owner = binding.getOwner()
           if (!owner || owner.runId !== binding.runId) throw new DomainError('HARNESS_PROFILE_OWNER_CONFLICT', 'The original native launch owner is unavailable.', 409)
-          owner.assertOwned(); await owner.readOneShotFence(owner.client)
+          owner.assertOwned(); await owner.readOneShotFence(owner.client as unknown as GraphSqlClient)
         }
         const row = (await client.query<{ principal_id: string }>("select record->>'authorizationPrincipalId' as principal_id from runs where id=$1", [binding.runId])).rows[0]
         if (!row?.principal_id) throw new DomainError('HARNESS_PROFILE_OWNER_CONFLICT', 'The accepted Run principal is unavailable.', 409)
@@ -1425,8 +1429,8 @@ export function buildProductionApp(
     operatorConversations, operators,
     resolveOperatorManager, operatorWorkingDirectory, chatAuthority,
     async (principal, configuration, commandId) => {
-      const selection = await withTransaction(database.pool,
-        client => harnessInstances.selectionForConfiguration(principal, configuration, client))
+      const selection = await inTransaction(database.pool, undefined,
+        client => harnessInstances.selectionForConfiguration(principal, configuration, client as pg.PoolClient))
       return selection ?? harnessInstances.prepareOperatorConfiguration(principal, 'http', configuration, commandId)
     },
   )
@@ -1802,7 +1806,7 @@ export function buildProductionApp(
     current: Awaited<ReturnType<PostgresOperatorRepository['ensure']>>,
     template: AgentDefaults['operator'],
   ): Promise<void> => {
-    await withTransaction(database.pool, client => operators.updateWithClient(
+    await inTransaction(database.pool, undefined, client => operators.updateWithClient(
       client, template.harness, current.operator.currentConfigurationVersionId,
       template.showThinking ?? false, template.assignedSkills, template.harnessProfileSelection ?? null,
       template.nativeTools ?? null,
@@ -1862,10 +1866,13 @@ export function buildProductionApp(
       const captureNativeSession: SourceNativeSessionCaptureReader = async record => {
         const captures = approvals.passiveOwnedNativeSessions()
         const readCurrent = async () => {
-          return withTransaction(database.pool, async (sql) => {
+          const sql = await database.pool.connect()
+          try {
+            await sql.query('begin')
             const proof = await readSourceCurrentNativeSession(sql, record, captures)
+            await sql.query('commit')
             return proof
-          })
+          } catch (error) { await sql.query('rollback'); throw error } finally { sql.release() }
         }
         let proof = await readCurrent()
         if (!proof) return null

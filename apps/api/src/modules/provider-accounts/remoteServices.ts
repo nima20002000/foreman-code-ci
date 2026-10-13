@@ -1,5 +1,4 @@
 import { createHash } from 'node:crypto'
-import { withTransaction } from '../../infrastructure/transaction.js'
 import type pg from 'pg'
 import { isDeepStrictEqual } from 'node:util'
 import { DeviceRegistrationSchema } from '@foreman-code/contracts/device-identity'
@@ -224,7 +223,9 @@ export function createRemoteAccountServices(input: {
           || binding.subject && observation.subject?.subject !== binding.subject.subject) {
           throw new DomainError('PROVIDER_ACCOUNT_PRINCIPAL_UNAVAILABLE', 'The accepted Worker principal is unproved or changed.', 409)
         }
-        await withTransaction(input.pool, async (client) => {
+        const client = await input.pool.connect()
+        try {
+          await client.query('begin')
           const currentDevice = await assertDeviceHostInstallation(client, binding.target.hostRef, binding.target.applicationInstallationId)
           if (!currentDevice || currentDevice.keyRevision !== binding.target.keyRevision
             || currentDevice.authorizationRevision !== binding.target.authorizationRevision) {
@@ -240,7 +241,11 @@ export function createRemoteAccountServices(input: {
             await assertAccountUnused(client, binding.accountId)
           }
           observation = await store.observe(client, binding.accountId, observation)
-        })
+          await client.query('commit')
+        } catch (error) {
+          await client.query('rollback')
+          throw error
+        } finally { client.release() }
         if (!isDeepStrictEqual(input.endpoint().currentBinding(device.deviceId), captured)) {
           throw new DomainError('PROVIDER_ACCOUNT_TARGET_CONFLICT', 'The owning Worker connection changed.', 409)
         }

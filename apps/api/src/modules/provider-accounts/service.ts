@@ -1,5 +1,4 @@
 import type { z } from 'zod'
-import { withTransaction } from '../../infrastructure/transaction.js'
 import { createHash, randomUUID } from 'node:crypto'
 import type pg from 'pg'
 import {
@@ -259,7 +258,9 @@ export class ProviderAccountsService implements ProviderAccountResolver {
       return
     }
     await this.authorize(this.pool, principal, 'provider_accounts:read', account.id)
-    return withTransaction(this.pool, async (sql) => {
+    const sql = await this.pool.connect()
+    try {
+      await sql.query('begin')
       await this.authorize(sql, principal, 'provider_accounts:read', account.id)
       const snapshot = await this.repository.lock(sql)
       const current = this.account(snapshot, account.id)
@@ -272,12 +273,17 @@ export class ProviderAccountsService implements ProviderAccountResolver {
           if (!(error instanceof DomainError) || error.code !== 'PROVIDER_ACCOUNT_PRINCIPAL_LOCKED') throw error
           Object.assign(account, { status: 'unavailable', identity: null,
             observation: { ...observation, status: 'unavailable', subject: null, identity: null, readiness: 'unavailable' } })
+          await sql.query('commit')
           return
         }
       }
       const saved = await this.repository.observe(sql, account.id, observation)
       Object.assign(account, { observation: saved, status: saved.status, identity: saved.identity })
-    })
+      await sql.query('commit')
+    } catch (error) {
+      await sql.query('rollback')
+      throw error
+    } finally { sql.release() }
   }
 
   async targets(principal: ManagementPrincipal): Promise<z.infer<typeof ProviderAccountTargetsSchema>> {

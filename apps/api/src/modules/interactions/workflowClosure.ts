@@ -1,5 +1,4 @@
 import { isDeepStrictEqual } from 'node:util'
-import { withTransaction } from '../../infrastructure/transaction.js'
 import { HarnessExecutionSchema, NativeSessionReferenceSchema,
   type HarnessExecution, type NativeSessionReference } from '@foreman-code/contracts'
 import type pg from 'pg'
@@ -213,7 +212,9 @@ export class PostgresWorkflowClosureStore implements WorkflowClosureStore {
   constructor(private readonly pool: pg.Pool) {}
 
   private async transaction<T>(execution: HarnessExecution, work: (sql: Sql, current: HarnessExecution) => Promise<T>): Promise<T> {
-    return withTransaction(this.pool, async (client) => {
+    const client = await this.pool.connect()
+    try {
+      await client.query('begin')
       const parent = await client.query('select id from runs where id=$1 for update', [execution.runId])
       const row = await client.query<{ record: unknown }>(
         'select record from harness_executions where id=$1 and run_id=$2 for update', [execution.id, execution.runId])
@@ -221,8 +222,12 @@ export class PostgresWorkflowClosureStore implements WorkflowClosureStore {
       const current = HarnessExecutionSchema.parse(row.rows[0]!.record)
       if (!isDeepStrictEqual(executionIdentity(current), executionIdentity(execution))) return conflict()
       const value = await work(client, current)
+      await client.query('commit')
       return value
-    })
+    } catch (error) {
+      await client.query('rollback').catch(() => undefined)
+      throw error
+    } finally { client.release() }
   }
 
   async begin(execution: HarnessExecution): Promise<string> {
