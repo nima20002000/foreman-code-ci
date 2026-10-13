@@ -7,7 +7,6 @@ import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'
 import { DomainError } from '../src/modules/errors.js'
 import { SourceError } from '../src/modules/sources/manifest.js'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
-import { measureIntegrationPhase } from './helpers/integrationPhase.js'
 
 describe('queued workflow preparation across engine restart', () => {
   it.each([
@@ -15,25 +14,22 @@ describe('queued workflow preparation across engine restart', () => {
     new DomainError('HARNESS_PROFILE_UNAVAILABLE', 'The saved native qualification is unavailable.', 409),
   ])('settles $code and exposes the persisted failure through authenticated MCP', async failure => {
     let preparationError: Error = new DomainError('COMPUTER_OFFLINE', 'Source host disconnected', 409)
-    const fixture = await measureIntegrationPhase('queued restart fixture', () => currentOperatorIntegration({
-      preparePlacementExecution: async () => {
+    const fixture = await currentOperatorIntegration({ preparePlacementExecution: async () => {
       throw preparationError
-      },
-    }))
+    } })
     try {
       await expect(fixture.engine.start(fixture.f.run.id)).rejects.toBe(preparationError)
       const before = await fixture.runs.getDetails(fixture.f.scope.workspaceId, fixture.f.run.id)
       if (!before) throw new Error('Expected the saved Run before restart.')
       expect(before.executions).toHaveLength(1)
       expect(before.executions[0]).toMatchObject({ state: 'queued', attempt: 1 })
-      await measureIntegrationPhase('queued restart shutdown', () => fixture.engine.shutdown())
+      await fixture.engine.shutdown()
       preparationError = failure
       const restarted = fixture.compose()
-      await measureIntegrationPhase('queued restart reconciliation', () => restarted.engine.reconcile())
-      const finished = await measureIntegrationPhase('queued restart Run completion', () => readUntil(
-        () => fixture.runs.getDetails(fixture.f.scope.workspaceId, fixture.f.run.id),
+      await restarted.engine.reconcile()
+      const finished = await readUntil(() => fixture.runs.getDetails(fixture.f.scope.workspaceId, fixture.f.run.id),
         details => details?.run.executionState === 'completed',
-        { timeoutMs: 30_000, description: 'queued preparation failure settlement after restart' }))
+        { timeoutMs: 30_000, description: 'queued preparation failure settlement after restart' })
       expect(finished!.run).toMatchObject({ outcome: 'failed', result: {
         outcome: 'failed', error: { code: failure.code, message: failure.message, retryable: false },
       } })
@@ -54,6 +50,6 @@ describe('queued workflow preparation across engine restart', () => {
       delete expectedRun.executionLocation
       expect(persisted.run).toEqual(expectedRun)
       expect(persisted.executions).toEqual(finished!.executions)
-    } finally { await measureIntegrationPhase('queued restart cleanup', () => fixture.close()) }
+    } finally { await fixture.close() }
   }, 60_000)
 })
