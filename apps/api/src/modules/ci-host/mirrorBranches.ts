@@ -32,29 +32,16 @@ export async function pruneMirrorBranches(options: {
   mirror: string
   roots: string[]
   git: (args: string[]) => Promise<string>
-  keep?: string[] | (() => string[] | ReadonlySet<string>)
-  beforeRemove?: (branches: string[]) => void
+  keep?: string[]
   activeRuns?: ActiveCiRuns | undefined
 }) {
   const remote = `https://github.com/${options.mirror}.git`
   const listed = await options.git(['ls-remote', '--heads', remote, 'refs/heads/ci/*', 'refs/heads/ci-default/*'])
-  const reservations = () => {
-    const branches = typeof options.keep === 'function' ? options.keep() : options.keep ?? []
-    return Array.isArray(branches) ? new Set(branches) : branches
-  }
-  const keep = new Set([...reservations()].map(branch => `refs/heads/${branch}`))
+  const keep = new Set((options.keep ?? []).map(branch => `refs/heads/${branch}`))
   for (const root of new Set(options.roots)) {
     for (const directory of await runDirectories(root)) {
       if (!directory.isDirectory()) continue
-      let text: string
-      try {
-        text = await readFile(join(root, 'runs', directory.name, 'meta.json'), 'utf8')
-      } catch (error) {
-        // A run directory can precede its first atomic metadata write.
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue
-        throw error
-      }
-      const run = JSON.parse(text) as MirrorRun
+      const run = JSON.parse(await readFile(join(root, 'runs', directory.name, 'meta.json'), 'utf8')) as MirrorRun
       if (run.mirror !== options.mirror || !['starting', 'running', 'queued'].includes(run.state)) continue
       const index = options.activeRuns
       // A new dispatch after the index was read stays protected until the next sweep.
@@ -71,25 +58,22 @@ export async function pruneMirrorBranches(options: {
       if (run.dispatch?.input.defaultBranch) keep.add(`refs/heads/${run.dispatch.input.defaultBranch}`)
     }
   }
-  const refs = listed.split('\n').flatMap(line => {
+  const stale = listed.split('\n').flatMap(line => {
     const [sha, ref] = line.trim().split(/\s+/)
-    return sha && ref && ciBranch.test(ref) ? [{ sha, ref }] : []
+    return sha && ref && ciBranch.test(ref) && !keep.has(ref) ? [{ sha, ref }] : []
   })
-  const stale = refs.filter(({ ref }) => !keep.has(ref))
-  const removed: string[] = []
   for (let offset = 0; offset < stale.length; offset += 50) {
-    const reserved = reservations()
-    const batch = stale.slice(offset, offset + 50).filter(({ ref }) => !reserved.has(ref.slice('refs/heads/'.length)))
-    if (!batch.length) continue
-    // Evict cached publications before deletion so a new start republishes rather than reusing a removed ref.
-    options.beforeRemove?.(batch.map(({ ref }) => ref.slice('refs/heads/'.length)))
+    const batch = stale.slice(offset, offset + 50)
     // A concurrently replaced branch must survive a sweep that saw its previous value.
     await options.git(['push', '--quiet', '--atomic', ...batch.map(({ sha, ref }) => `--force-with-lease=${ref}:${sha}`),
       remote, ...batch.map(({ ref }) => `:${ref}`)])
-    removed.push(...batch.map(({ ref }) => ref.slice('refs/heads/'.length)))
   }
-  const removedRefs = new Set(removed.map(branch => `refs/heads/${branch}`))
-  const retained = refs.filter(({ ref }) => !removedRefs.has(ref)).map(({ ref }) => ref.slice('refs/heads/'.length))
+  const removed = stale.map(({ ref }) => ref.slice('refs/heads/'.length))
+  const removedRefs = new Set(stale.map(({ ref }) => ref))
+  const retained = listed.split('\n').flatMap(line => {
+    const ref = line.trim().split(/\s+/)[1]
+    return ref && ciBranch.test(ref) && !removedRefs.has(ref) ? [ref.slice('refs/heads/'.length)] : []
+  })
   return { removed, retained }
 }
 
