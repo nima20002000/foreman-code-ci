@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto'
-import { withTransaction } from '../../../infrastructure/transaction.js'
 import { isDeepStrictEqual } from 'node:util'
 import type pg from 'pg'
 import type { FastifyRequest } from 'fastify'
@@ -44,7 +43,9 @@ export class WorkflowArtifactEndpointAuthorization implements DistributedArtifac
     return this.access.authenticate(bearerToken(request.headers.authorization), 'worker')
   }
   async transaction<T>(work: (sql: pg.PoolClient) => Promise<T>): Promise<T> {
-    return withTransaction(this.pool, work)
+    const sql = await this.pool.connect()
+    try { await sql.query('begin'); const value = await work(sql); await sql.query('commit'); return value }
+    catch (error) { await sql.query('rollback'); throw error } finally { sql.release() }
   }
   async locked(sql: pg.PoolClient, snapshot: ManagementPrincipal): Promise<Caller> {
     if (snapshot.audience !== 'worker' || !snapshot.agentId) return denied()
