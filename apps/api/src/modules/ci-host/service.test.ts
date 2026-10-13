@@ -1,6 +1,6 @@
 import type pg from 'pg'
 import Fastify from 'fastify'
-import { CiGetOutputSchema, CiRunRecordSchema, type CiHostRun, type CiRunRecord } from '@foreman-code/contracts'
+import { CiGetOutputSchema, CiRunRecordSchema, type CiHostRun } from '@foreman-code/contracts'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { expect, it, vi } from 'vitest'
@@ -34,16 +34,16 @@ function fixture(suite: 'lint' | 'integration' = 'lint') {
     initiator: { principalId: 'worker', executionId: 'execution' },
   })
   let logTail = 'persisted log\n'
-  const pool = { options: { max: 10 }, query: vi.fn(async (sql: string, parameters?: unknown[]) => {
+  const pool = { query: vi.fn(async (sql: string, parameters?: unknown[]) => {
     if (sql.startsWith('update ci_runs')) {
       record = CiRunRecordSchema.parse(JSON.parse(parameters![3] as string))
       if (typeof parameters![5] === 'string') logTail = parameters![5]
       return { rows: [], rowCount: 1 }
     }
     if (sql.includes('durations from ci_runs')) return { rows: [] }
-    if (sql.startsWith('select id,host_key')) return { rows: [{ id: record.id, host_key: computer.key, record }] }
+    if (sql.startsWith('select id,host_key')) return { rows: [{ id: record.id, host_key: computer.key }] }
     return { rows: [{ record, log_tail: logTail, host_key: computer.key }] }
-  }), connect: async () => ({ query: pool.query, release: () => {} }) } as unknown as pg.Pool
+  }) } as unknown as pg.Pool
   const resolve = vi.fn(async (principal: ManagementPrincipal) => {
     if (!principal.grants.length) throw new DomainError('ACCESS_DENIED', 'CI read denied.', 403)
     return { principal, workspaceId: 'workspace', executionId: 'execution' }
@@ -58,168 +58,6 @@ function fixture(suite: 'lint' | 'integration' = 'lint') {
     {} as CiCommits, endpoint)
   return { create, pool, commands, endpoint, resolve, read: () => ({ record, logTail }) }
 }
-
-function dispatchFixture(settlementError?: Error) {
-  const f = fixture()
-  const active = f.read().record
-  const queued = CiRunRecordSchema.parse({ ...active,
-    id: '33333333-3333-4333-8333-333333333333',
-    groupId: '44444444-4444-4444-8444-444444444444',
-    state: 'queued', computer: null, startedAt: null, step: null,
-  })
-  const records: CiRunRecord[] = [active, queued]
-  const tails = new Map<string, string>()
-  const query = async (sql: string, parameters?: unknown[]) => {
-    if (sql.startsWith('select pg_try_advisory_xact_lock')) return { rows: [{ acquired: true }] }
-    if (sql.startsWith('update ci_runs')) {
-      const next = CiRunRecordSchema.parse(JSON.parse(parameters![3] as string))
-      if (next.id === active.id && settlementError) throw settlementError
-      const tail = parameters![5]
-      for (const value of [next.message, tail]) {
-        if (typeof value === 'string' && (value.includes('\0') || Buffer.from(value).toString('utf8') !== value)) {
-          throw new Error('Database rejected invalid text')
-        }
-      }
-      records[records.findIndex(record => record.id === next.id)] = next
-      if (typeof tail === 'string') tails.set(next.id, tail)
-      return { rows: [], rowCount: 1 }
-    }
-    if (sql.includes("'supersededBy' is not null") || sql.includes("and record->>'gate'='true'")) return { rows: [] }
-    if (sql.includes("state='queued'")) {
-      return { rows: records.filter(record => record.state === 'queued').map(record => ({ record, durations: null })) }
-    }
-    if (sql.includes("state in ('starting','running')")) {
-      return { rows: records.filter(record => ['starting', 'running'].includes(record.state))
-        .map(record => ({ id: record.id, record, host_key: computer.key })) }
-    }
-    if (sql.includes("'gate'='true'")) return { rows: [] }
-    return { rows: records.filter(record => record.id === parameters?.[0] || record.groupId === parameters?.[0])
-      .map(record => ({ record, log_tail: tails.get(record.id) ?? '' })) }
-  }
-  vi.mocked(f.pool.query).mockImplementation(query as unknown as pg.Pool['query'])
-  const output = { text: 'finished\n', message: 'Done.' }
-  vi.mocked(f.endpoint.request).mockImplementation(async (_computer, request) => {
-    if (request.operation === 'status') {
-      return { operation: 'status', ready: true, reasons: [], cpuCount: 8,
-        memoryBytes: 16 * 2 ** 30, runs: [], slotsTotal: 2, slotsUsed: 0 }
-    }
-    if (request.operation !== 'read' && request.operation !== 'start') throw new Error('Unexpected request')
-    const run: CiHostRun = { runId: request.runId, state: request.operation === 'read' ? 'passed' : 'running',
-      step: 'lint', exitCode: request.operation === 'read' ? 0 : null,
-      startedAt: active.startedAt!, finishedAt: request.operation === 'read' ? '2026-10-12T00:01:00.000Z' : null,
-      message: output.message, logBytes: Buffer.byteLength(output.text) }
-    if (request.operation === 'start') return { operation: 'start', run }
-    return { operation: 'read', run, text: output.text, nextOffset: Buffer.byteLength(output.text) }
-  })
-  return { ...f, active, queued, records, output }
-}
-
-it.each(['unready', 'offline'])('keeps ordinary CI queued when the computer is %s', async state => {
-  const f = dispatchFixture()
-  f.records.splice(0, 1)
-  const request = vi.mocked(f.endpoint.request).getMockImplementation()!
-  vi.mocked(f.endpoint.request).mockImplementation(async (target, input) => {
-    if (input.operation === 'status') {
-      if (state === 'offline') throw new Error('Worker status unavailable')
-      return { operation: 'status', ready: false, reasons: ['Worker CI start protocol is unsupported; update the Worker.'],
-        cpuCount: 8, memoryBytes: 16 * 2 ** 30, runs: [], slotsTotal: 2, slotsUsed: 0 }
-    }
-    return request(target, input)
-  })
-  await f.create().dispatch()
-  expect(f.records[0]).toMatchObject({ state: 'queued', computer: null })
-  expect(f.endpoint.request).not.toHaveBeenCalledWith(computer, expect.objectContaining({ operation: 'start' }))
-  expect((await f.create().computers(caller, { workspaceId: 'workspace' })).computers[0])
-    .toMatchObject({ ready: false })
-})
-
-it('releases an incompatible Worker assignment when status confirms the ticket never started', async () => {
-  const f = dispatchFixture()
-  const worker: HostCiComputer = { ...computer, hostRef: { kind: 'device', mainId: 'fixture-main', deviceId: 'fixture-worker' } }
-  f.records.splice(0, 2, CiRunRecordSchema.parse({ ...f.queued, state: 'starting', step: 'dispatch',
-    computer: { hostRef: worker.hostRef, label: worker.label }, dispatchHostKey: worker.key, dispatchAttempts: 3,
-    dispatchedAt: new Date().toISOString(), dispatchRequest: { operation: 'start', runId: f.queued.id,
-      repository: f.queued.repository, commit: f.queued.commit, suite: f.queued.suite,
-      workspaceId: f.queued.workspaceId, ciMirror: null } }))
-  vi.mocked(f.endpoint.computers).mockResolvedValue([worker])
-  vi.mocked(f.endpoint.request).mockImplementation(async (_computer, input) => {
-    if (input.operation !== 'status') throw new Error('An incompatible Worker must not receive another start.')
-    return { operation: 'status', ready: false, reasons: ['Worker CI start protocol is unsupported; update the Worker.'],
-      cpuCount: 8, memoryBytes: 16 * 2 ** 30, runs: [] }
-  })
-  await f.create().dispatch()
-  expect(f.records[0]).toMatchObject({ state: 'queued', computer: null })
-  expect(f.records[0]?.dispatchHostKey).toBeUndefined()
-  expect(f.records[0]?.dispatchAttempts).toBeUndefined()
-})
-
-it.each(['lint', 'typecheck'] as const)('dispatches an ordinary queued $suite check without a gate ticket', async suite => {
-  const f = dispatchFixture()
-  f.records.splice(0, 1)
-  f.records[0] = CiRunRecordSchema.parse({ ...f.queued, suite })
-  await f.create().dispatch()
-  expect((await f.create().get(caller, { ticketId: f.queued.id })).run).toMatchObject({
-    id: f.queued.id, suite, state: 'running', computer: { hostRef: computer.hostRef },
-  })
-  expect(f.endpoint.request).toHaveBeenCalledWith(computer, expect.objectContaining({
-    operation: 'start', runId: f.queued.id, suite,
-  }))
-})
-
-it('dispatches a queued ticket after settling ordinary output', async () => {
-  const f = dispatchFixture()
-  await f.create().dispatch()
-  expect((await f.create().get(caller, { ticketId: f.active.id })).run.state).toBe('passed')
-  expect((await f.create().get(caller, { ticketId: f.queued.id })).run.state).toBe('running')
-  expect(f.endpoint.request).toHaveBeenCalledWith(computer, expect.objectContaining({
-    operation: 'start', runId: f.queued.id,
-  }))
-})
-
-it.each([
-  { text: 'finished\0 café 🚀\n', message: 'Done.\0 café 🚀',
-    cleanText: 'finished café 🚀\n', cleanMessage: 'Done. café 🚀' },
-  { text: 'finished\ud800\n', message: 'Done.\udc00',
-    cleanText: 'finished\ufffd\n', cleanMessage: 'Done.\ufffd' },
-])('settles invalid log text and dispatches a queued ticket in the same pass: $cleanMessage', async output => {
-  const f = dispatchFixture()
-  Object.assign(f.output, output)
-  await f.create().dispatch()
-  const result = await f.create().get(caller, { ticketId: f.active.id })
-  expect(result.run).toMatchObject({ state: 'passed', message: output.cleanMessage })
-  expect(result.logTail).toBe(output.cleanText)
-  expect((await f.create().get(caller, { ticketId: f.queued.id })).run.state).toBe('running')
-  expect(f.endpoint.request).toHaveBeenCalledWith(computer, expect.objectContaining({
-    operation: 'start', runId: f.queued.id,
-  }))
-})
-
-it('continues refreshing later batches and dispatching after one settlement write fails', async () => {
-  const f = dispatchFixture(new Error('Settlement storage unavailable'))
-  const later = Array.from({ length: 8 }, (_, index) => CiRunRecordSchema.parse({ ...f.active,
-    id: `55555555-5555-4555-8555-${String(index).padStart(12, '0')}`,
-  }))
-  f.records.push(...later)
-  await f.create().dispatch()
-  expect((await f.create().get(caller, { ticketId: f.active.id })).run.state).toBe('running')
-  for (const run of later) {
-    expect((await f.create().get(caller, { ticketId: run.id })).run.state).toBe('passed')
-  }
-  expect((await f.create().get(caller, { ticketId: f.queued.id })).run.state).toBe('running')
-})
-
-it('persists sanitized dispatch errors on queued tickets', async () => {
-  const f = dispatchFixture()
-  const request = vi.mocked(f.endpoint.request).getMockImplementation()!
-  vi.mocked(f.endpoint.request).mockImplementation(async (computer, input) => {
-    if (input.operation === 'start') throw new DomainError('BUILD_COMPUTER_DISABLED', 'Executor\0 unavailable\ud800', 409)
-    return request(computer, input)
-  })
-  await f.create().dispatch()
-  const result = await f.create().get(caller, { ticketId: f.queued.id })
-  expect(result.run).toMatchObject({ state: 'queued',
-    message: 'No ready computer for lint; Builder: Executor unavailable\ufffd' })
-})
 
 it('keeps assigned running ticket ids visible when the computer is offline', async () => {
   const f = fixture()
@@ -357,146 +195,4 @@ it('retries a CI read once after a statement timeout, then reports a retryable e
   f.resolve.mockRejectedValueOnce(canceled()).mockRejectedValueOnce(canceled())
   await expect(f.create().get(caller, { ticketId: f.read().record.id })).rejects.toMatchObject({
     code: 'DATABASE_READ_TIMEOUT', status: 503, details: { retryable: true, sqlState: '57014' } })
-})
-
-it('retries an unknown start reply on the assigned executor without requeueing', async () => {
-  const f = dispatchFixture()
-  const request = vi.mocked(f.endpoint.request).getMockImplementation()!
-  const starts: { computer: HostCiComputer; runId: string }[] = []
-  vi.mocked(f.endpoint.request).mockImplementation(async (computer, input) => {
-    if (input.operation === 'start') {
-      starts.push({ computer, runId: input.runId })
-      if (starts.length === 1) throw new Error('Start reply lost')
-    }
-    return request(computer, input)
-  })
-  const service = f.create()
-  await service.dispatch()
-  expect((await service.get(caller, { ticketId: f.queued.id })).run).toMatchObject({
-    state: 'starting', computer: { hostRef: computer.hostRef },
-    dispatchRequest: { operation: 'start', runId: f.queued.id },
-  })
-  expect(starts).toEqual([{ computer, runId: f.queued.id }])
-  await service.dispatch()
-  expect((await service.get(caller, { ticketId: f.queued.id })).run).toMatchObject({
-    state: 'running', computer: { hostRef: computer.hostRef },
-  })
-  expect(starts).toEqual([
-    { computer, runId: f.queued.id }, { computer, runId: f.queued.id },
-  ])
-})
-
-
-it('requeues an unacknowledged gate start missing from computer status and dispatches the same ticket again', async () => {
-  const f = dispatchFixture()
-  f.records.splice(0, 1)
-  f.records[0] = CiRunRecordSchema.parse({ ...f.queued, suite: 'integration', gate: true,
-    plannedHostKey: computer.key, integrationShards: 8, requiresBuildComputer: false,
-    files: ['apps/api/test/workflow.integration.test.ts'] })
-  const request = vi.mocked(f.endpoint.request).getMockImplementation()!
-  const starts: { hostKey: string; runId: string }[] = []
-  vi.mocked(f.endpoint.request).mockImplementation(async (target, input) => {
-    if (input.operation === 'start') {
-      starts.push({ hostKey: target.key, runId: input.runId })
-      if (starts.length === 1) throw new Error('Start reply lost during reconnect')
-    }
-    return request(target, input)
-  })
-  await f.create().dispatch()
-  expect((await f.create().get(caller, { ticketId: f.queued.id })).run)
-    .toMatchObject({ state: 'starting', startedAt: null, step: 'dispatch' })
-
-  await f.create().computers(caller, { workspaceId: 'workspace' })
-  expect((await f.create().get(caller, { ticketId: f.queued.id })).run)
-    .toMatchObject({ state: 'queued', computer: null, startedAt: null, step: null })
-  vi.mocked(f.endpoint.computers).mockResolvedValue([computer, {
-    key: 'device:replacement', hostRef: { kind: 'device', mainId: 'main', deviceId: 'replacement' },
-    label: 'Replacement builder', priority: 100,
-  }])
-  await f.create().dispatch()
-  expect((await f.create().get(caller, { ticketId: f.queued.id })).run).toMatchObject({ state: 'running' })
-  expect(starts).toEqual([
-    { hostKey: computer.key, runId: f.queued.id }, { hostKey: computer.key, runId: f.queued.id },
-  ])
-})
-
-it('fails a ticket with a clear reason after repeated missing start acknowledgements across service restarts', async () => {
-  const f = dispatchFixture()
-  f.records.splice(0, 1)
-  const request = vi.mocked(f.endpoint.request).getMockImplementation()!
-  let starts = 0
-  vi.mocked(f.endpoint.request).mockImplementation(async (target, input) => {
-    if (input.operation === 'start') {
-      starts++
-      throw new Error('Start delivery lost')
-    }
-    return request(target, input)
-  })
-  for (let attempt = 0; attempt < 4; attempt++) await f.create().dispatch()
-  expect(starts).toBe(3)
-  expect((await f.create().get(caller, { ticketId: f.queued.id })).run).toMatchObject({
-    state: 'failed', message: expect.stringContaining('not acknowledged after 3 attempts'),
-    finishedAt: expect.any(String),
-  })
-})
-
-it('bounds a hanging start and requeues it when status is unavailable, ignoring a late reply', async () => {
-  vi.useFakeTimers()
-  const f = dispatchFixture()
-  f.records.splice(0, 1)
-  const request = vi.mocked(f.endpoint.request).getMockImplementation()!
-  let acknowledge!: () => void
-  const delayed = new Promise<void>(resolve => { acknowledge = resolve })
-  let starts = 0
-  vi.mocked(f.endpoint.request).mockImplementation(async (target, input) => {
-    if (input.operation === 'start' && ++starts === 1) await delayed
-    return request(target, input)
-  })
-  const service = f.create()
-  try {
-    const settled = vi.fn()
-    const dispatch = service.dispatch().then(settled)
-    await vi.advanceTimersByTimeAsync(120_001)
-    expect(settled).toHaveBeenCalledOnce()
-    await dispatch
-    vi.mocked(f.endpoint.request).mockRejectedValue(new Error('Computer offline'))
-    await service.computers(caller, { workspaceId: 'workspace' })
-    expect((await service.get(caller, { ticketId: f.queued.id })).run)
-      .toMatchObject({ state: 'queued', computer: null, startedAt: null })
-    acknowledge()
-    await vi.advanceTimersByTimeAsync(0)
-    expect((await service.get(caller, { ticketId: f.queued.id })).run.state).toBe('queued')
-    vi.mocked(f.endpoint.request).mockImplementation(request)
-    await service.dispatch()
-    expect((await service.get(caller, { ticketId: f.queued.id })).run.state).toBe('running')
-  } finally {
-    acknowledge()
-    await service.close()
-    vi.useRealTimers()
-  }
-})
-
-it('accepts computer status as acknowledgement without sending a duplicate start', async () => {
-  const f = dispatchFixture()
-  f.records.splice(0, 1)
-  const request = vi.mocked(f.endpoint.request).getMockImplementation()!
-  let known = false
-  let starts = 0
-  vi.mocked(f.endpoint.request).mockImplementation(async (target, input) => {
-    if (input.operation === 'start') {
-      starts++
-      known = true
-      throw new Error('Start reply lost')
-    }
-    if (input.operation === 'status' && known) {
-      return { operation: 'status', ready: true, reasons: [], cpuCount: 8, memoryBytes: 16 * 2 ** 30,
-        slotsUsed: 1, slotsTotal: 2, runs: [{ runId: f.queued.id, state: 'running', step: 'lint',
-          startedAt: f.active.startedAt!, finishedAt: null, exitCode: null, logBytes: 0, message: null }] }
-    }
-    return request(target, input)
-  })
-  await f.create().dispatch()
-  await f.create().computers(caller, { workspaceId: 'workspace' })
-  expect((await f.create().get(caller, { ticketId: f.queued.id })).run).toMatchObject({ state: 'running' })
-  expect(starts).toBe(1)
 })

@@ -18,36 +18,31 @@ import { WorkspaceLocationService } from '../../src/modules/workspaces/location.
 import { WorkspaceManagementService } from '../../src/modules/workspaces/management.js'
 import type { OperatorServices } from '../../src/mcp/operator/types.js'
 import { closeTestResources } from '../support/cleanup.js'
-import type { migratedDatabase } from './migratedDatabase.js'
-import { assertTestDatabase, requireTestServerUrl } from '../../../../scripts/test-resources.mjs'
-
-type WorkspaceFixtureServices = {
-  pool: pg.Pool
-  access: PostgresAccessService
-  commands: PostgresCommandCoordinator
-  parentPath: string
-  services: OperatorServices
-}
 
 export async function workspaceMcpFixture(options: {
   connectionString?: string
-  /** A caller-owned migrated fixture avoids rebuilding the schema. */
-  database?: Awaited<ReturnType<typeof migratedDatabase>>
   port?: number
   runtimeIdentity?: BuildAppOptions['runtimeIdentity']
-  configureServices?(fixture: WorkspaceFixtureServices): Promise<void>
-  configure?(fixture: WorkspaceFixtureServices & {
+  configure?(fixture: {
     app: ReturnType<typeof buildApp>
+    pool: pg.Pool
+    access: PostgresAccessService
+    commands: PostgresCommandCoordinator
+    parentPath: string
+    services: OperatorServices
   }): Promise<void>
 } = {}) {
-  const connectionString = options.database?.databaseUrl ?? options.connectionString ?? process.env.TEST_DATABASE_URL
+  const connectionString = options.connectionString ?? process.env.TEST_DATABASE_URL
   if (!connectionString) throw new Error('A disposable test database is required')
-  const databaseUrl = requireTestServerUrl(connectionString)
+  const databaseUrl = new URL(connectionString)
+  if (!['localhost', '127.0.0.1', '[::1]'].includes(databaseUrl.hostname)
+    || !databaseUrl.pathname.includes('test')) {
+    throw new Error('Use a disposable loopback test database')
+  }
   const schema = 'workspace_mcp_' + randomUUID().replaceAll('-', '')
-  const parentPath = options.database?.directory ?? await mkdtemp(join(tmpdir(), 'workspace-mcp-'))
+  const parentPath = await mkdtemp(join(tmpdir(), 'workspace-mcp-'))
   const admin = new pg.Pool({ connectionString })
-  const pool = options.database?.pool
-    ?? new pg.Pool({ connectionString, options: `-c search_path=${schema}`, application_name: schema })
+  const pool = new pg.Pool({ connectionString, options: `-c search_path=${schema}`, application_name: schema })
   const clients: Client[] = []
   const access = new PostgresAccessService(pool)
   const commands = new PostgresCommandCoordinator(pool)
@@ -55,36 +50,24 @@ export async function workspaceMcpFixture(options: {
   const defaults = new PostgresFoundationSettingsRepository(pool, parentPath)
   const workspaces = new WorkspaceManagementService(pool, commands, locations, defaults, parentPath)
   const services = { commands, locations, workspaces } as unknown as OperatorServices
-  let app: ReturnType<typeof buildApp> | undefined
+  const app = buildApp({ logger: false, readiness: {
+    database: { ping: async () => undefined }, checkpoints: { ping: async () => undefined },
+  }, operator: { access, services }, ...(options.runtimeIdentity ? { runtimeIdentity: options.runtimeIdentity } : {}) })
 
   let closing: Promise<void> | undefined
   function close() {
     return closing ??= closeTestResources([
       ...clients.map(client => () => client.close()),
-      async () => { await app?.close() },
-      ...(!options.database ? [
-        () => pool.end(),
-        () => dropFixtureSchema(admin, schema),
-        () => removeFixtureDirectory(parentPath),
-      ] : []),
+      () => app.close(),
+      () => pool.end(),
+      () => dropFixtureSchema(admin, schema),
       () => admin.end(),
+      () => removeFixtureDirectory(parentPath),
     ])
   }
   try {
-    await assertTestDatabase(admin, {
-      directory: process.env.FOREMAN_CODE_TEST_ROOT!,
-      token: process.env.FOREMAN_CODE_TEST_OWNER!,
-      name: decodeURIComponent(databaseUrl.pathname.slice(1)),
-      databaseUrl: connectionString,
-    })
-    if (!options.database) {
-      await createFixtureSchema(admin, schema)
-      await applyApplicationMigrations(pool)
-    }
-    await options.configureServices?.({ pool, access, commands, parentPath, services })
-    app = buildApp({ logger: false, readiness: {
-      database: { ping: async () => undefined }, checkpoints: { ping: async () => undefined },
-    }, operator: { access, services }, ...(options.runtimeIdentity ? { runtimeIdentity: options.runtimeIdentity } : {}) })
+    await createFixtureSchema(admin, schema)
+    await applyApplicationMigrations(pool)
     await options.configure?.({ app, pool, access, commands, parentPath, services })
     const address = await app.listen({ host: '127.0.0.1', port: options.port ?? 0 })
     async function connect(token: string) {

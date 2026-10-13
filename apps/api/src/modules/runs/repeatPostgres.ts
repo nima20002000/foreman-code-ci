@@ -1,4 +1,3 @@
-import { IntervalCheckAcceptedInputSchema } from '@foreman-code/contracts/wave25'
 import {
   SourceSchema, EntrySchema, readStoredRepeatOccurrence, readStoredRepeatExecution,
   readRepeatExecutionLocked, retainRepeatEffectReceipt, type StoredOccurrence, type StoredRepeatExecution,
@@ -949,10 +948,8 @@ export class RepeatRunRepository {
       const execution = HarnessExecutionSchema.parse(candidate())
       this.assertCandidate(context, ref, execution, 1)
       const tickIndex = facts.lastTick + 1
-      const input = IntervalCheckAcceptedInputSchema.parse({
-        executionSemanticsVersion: 3, runInput: context.hooks.run.input, occurrence: null, entry: null,
-        predecessors: [], tick: { index: tickIndex, everySeconds: node.interval.everySeconds },
-      })
+      const input = { executionSemanticsVersion: 3, runInput: context.hooks.run.input, occurrence: null, entry: null,
+        predecessors: [], tick: { index: tickIndex, everySeconds: node.interval.everySeconds } }
       const queued = HarnessExecutionSchema.parse({ ...execution, input })
       const inputDigest = repeatDigest(input, 4 * 1024 * 1024), slotId = tickSlotId(context.scope.runId, nodeId, tickIndex)
       await context.hooks.assertAdmissionLocked(context.sql, queued, ref)

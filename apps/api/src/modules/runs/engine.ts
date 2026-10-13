@@ -276,14 +276,7 @@ export class LangGraphWorkflowEngine {
             return { executionState: current.run.executionState, stopRequested: current.stopRequested,
               cleanupPending: current.cleanupPending }
           },
-          persistWait: async (current) => {
-            const waiting = (await persistWorkflowApprovalWait(owner, this.checkpointer, current)).length > 0
-            // A finished graph needs retained reviewer closure before the Run completion transaction.
-            if (!waiting && !current.next.length && !snapshot.version.definition.handoffs) {
-              await this.nativeExecutions.finishIdleReviewers(runId, owner, controller.signal)
-            }
-            return waiting
-          },
+          persistWait: async (current) => (await persistWorkflowApprovalWait(owner, this.checkpointer, current)).length > 0,
           persistDirectionWait: () => persistWorkDirectionWait(owner, this.locations),
           cancelNativeAndRequestCleanup: async () => {
             await this.runs.requestCleanup(runId, owner)
@@ -517,7 +510,8 @@ export class LangGraphWorkflowEngine {
   }
 
   private async requestRestartCleanup(owner: RunOwnership, approvals?: WorkflowRestartApprovals): Promise<void> {
-    if (await settleWorkForRestart(owner, approvals)) return
+    const { version } = await this.runs.getRepeatSnapshot(owner.runId, owner)
+    if (version.definition.handoffs && await settleWorkForRestart(owner, approvals)) return
     await this.runs.requestCleanup(owner.runId, owner)
   }
 }

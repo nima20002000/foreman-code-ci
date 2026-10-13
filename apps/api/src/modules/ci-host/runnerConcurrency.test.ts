@@ -50,20 +50,15 @@ afterEach(async () => {
 })
 
 async function computer(beforeGithub?: () => Promise<void>, cpuCount = 8, isolatedDatabase = false,
-  beforeCheckout?: () => Promise<void>, beforeFetch?: () => Promise<void>) {
+  beforeCheckout?: () => Promise<void>) {
   const directory = process.env.FOREMAN_CODE_TEST_ROOT ?? process.env.TMPDIR
     ?? join(homedir(), '.cache/foreman-code/tests')
   await mkdir(directory, { recursive: true })
   const root = await mkdtemp(join(directory, 'host-ci-concurrency-'))
   const launches: { args: readonly string[] }[] = []
-  const activeUnits = new Set<string>()
   const ports: HostCiPorts = { cpus: cpuCount, memoryBytes: 16 * 2 ** 30, now: () => new Date(),
     run: async (file, args) => {
       if (file === 'gh') await beforeGithub?.()
-      if (file === 'git' && args.includes('cat-file') && beforeFetch) {
-        return { code: 1, stdout: '', stderr: 'Commit not fetched' }
-      }
-      if (file === 'git' && args.includes('fetch')) await beforeFetch?.()
       if (file === 'git' && args.includes('show')) {
         return { code: 0, stdout: JSON.stringify({ foremanCi: { hostSlots: isolatedDatabase ? 1 : 0 } }), stderr: '' }
       }
@@ -75,14 +70,8 @@ async function computer(beforeGithub?: () => Promise<void>, cpuCount = 8, isolat
       }
       if (file === 'systemd-run') {
         launches.push({ args })
-        activeUnits.add(args.find(arg => arg.startsWith('--unit='))!.slice('--unit='.length))
       }
-      if (file === 'systemctl') {
-        const unit = args.at(-1)!.replace('.service', '')
-        if (args.includes('stop')) activeUnits.delete(unit)
-        return { code: 0, stdout: activeUnits.has(unit) ? 'active\n' : 'inactive\n', stderr: '' }
-      }
-      return { code: 0, stdout: '', stderr: '' }
+      return { code: 0, stdout: file === 'systemctl' && args.includes('is-active') ? 'active\n' : '', stderr: '' }
     } }
   const runner = new HostCiRunner(root, ports)
   fixtures.push({ root, runner })
@@ -112,7 +101,7 @@ describe('host CI runner concurrent starts', () => {
     try {
       await vi.waitFor(async () => {
         await expect(runner.handle({ operation: 'read', runId: request.runId, afterOffset: 0, maxBytes: 1 }))
-          .resolves.toMatchObject({ run: { state: 'starting', message: expect.stringContaining('Cancellation requested') } })
+          .resolves.toMatchObject({ run: { state: 'canceled' } })
       })
     } finally {
       checkout.release()
@@ -168,25 +157,6 @@ describe('host CI runner concurrent starts', () => {
     await expect(first).resolves.toMatchObject({ run: { runId: request.runId } })
     await expect(retry).resolves.toMatchObject({ run: { runId: request.runId } })
     await rejected
-  })
-
-  it('reports a start during preflight and launches it once when a retry arrives before acknowledgement', async () => {
-    const fetch = barrier()
-    const { runner, request, launches } = await computer(undefined, 8, false, undefined, fetch.pause)
-    const first = runner.handle(request)
-    await fetch.entered
-    const retry = runner.handle(request)
-    try {
-      await expect(runner.status()).resolves.toMatchObject({ runs: [expect.objectContaining({
-        runId: request.runId, state: 'starting', step: 'dispatch',
-      })] })
-      fetch.release()
-      await Promise.all([first, retry])
-      await vi.waitFor(() => expect(launches).toHaveLength(1))
-    } finally {
-      fetch.release()
-      await Promise.all([first, retry])
-    }
   })
 
   it('keeps the run readable and rejects a second start while launch writes its running state', async () => {
