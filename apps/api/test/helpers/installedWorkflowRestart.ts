@@ -62,6 +62,11 @@ export async function assertInstalledWorkflowRestart(phase: RestartPhase) {
     }
     const ready = (await restart)!
     expect(ready.pid).not.toBe(previousPid)
+    if (phase === 'admitting interval') {
+      await readUntil(() => fixture.provider.calls(), calls => active.every(original =>
+        calls.some(call => call.method === 'turn/start' && call.correlationId === `execution:${original.id}`)),
+      { timeoutMs: 10_000, description: 'the original graph and interval turns admitted across restart' })
+    }
     await fixture.reconcile()
     await expectMcpAccessDenied(fixture.call('run_stop', { workspaceId: started.run.workspaceId,
       runId: started.run.id, commandId: randomUUID() }, reader.token))

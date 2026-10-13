@@ -24,8 +24,9 @@ export function warmPnpmInstall(source: string, cache: string, run: string): str
     `modules=${shellQuote(modules)}`,
     'if [ -d "$modules" ]; then cp -a --reflink=auto "$modules/." . || finish $?; fi',
     `${install} --offline || {`,
-    // A warmed store can still miss metadata (pruned or partial cache); refill it online instead of failing the job.
-    `  echo '[ci-cache] filling store online'`,
+    '  code=$?',
+    `  if [ -f ${shellQuote(ready)} ]; then finish "$code"; fi`,
+    `  echo '[ci-cache] filling store for a new lockfile'`,
     `  ${install} || finish $?`,
     '}',
     `touch ${shellQuote(ready)}`,
