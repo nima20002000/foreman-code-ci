@@ -1,19 +1,23 @@
-import { removeFixtureDirectory } from './helpers/testResources.js'
+import { createFixtureSchema, dropFixtureSchema, removeFixtureDirectory } from './helpers/testResources.js'
 import { randomUUID } from 'node:crypto'
 import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { migratedDatabase } from './helpers/migratedDatabase.js'
+import pg from 'pg'
 import { expect, it } from 'vitest'
 import { makeCurrentWorkflowFixture, WorkflowVersionV3Schema } from '@foreman-code/contracts/wave25'
+import { applyApplicationMigrations } from '../src/infrastructure/migrations.js'
 import { resolveImmutableApprovalRoute } from '../src/modules/workflows/approvalRoutes.js'
 import { seedAgent3 } from './helpers/wave25Agent3.js'
 
 it('saves and reads exact approval routes for two nodes sharing a Worker Agent', async () => {
-  const database = await migratedDatabase()
-  const { pool } = database
+  const admin = new pg.Pool({ connectionString: process.env.TEST_DATABASE_URL! })
+  const schema = `auth_mcp_reuse_${randomUUID().replaceAll('-', '')}`
+  await createFixtureSchema(admin, schema)
+  const pool = new pg.Pool({ ...admin.options, options: `-c search_path=${schema}` })
   const directory = await mkdtemp(join(tmpdir(), 'auth-mcp-reuse-'))
   try {
+    await applyApplicationMigrations(pool)
     const fixture = makeCurrentWorkflowFixture(randomUUID(), 'approval')
     const reviewer = fixture.version.entryNodeId, worker = fixture.version.definition.nodes[1]!
     fixture.version.definition.nodes.push({ ...worker, id: 'second-worker' })
@@ -32,7 +36,7 @@ it('saves and reads exact approval routes for two nodes sharing a Worker Agent',
       expect(resolveImmutableApprovalRoute(version, nodeId, 'mismatched-agent')).toBeUndefined()
     }
   } finally {
-    await database.close()
+    await pool.end(); await dropFixtureSchema(admin, schema); await admin.end()
     await removeFixtureDirectory(directory)
   }
 }, 30_000)

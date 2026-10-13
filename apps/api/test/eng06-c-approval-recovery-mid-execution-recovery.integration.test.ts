@@ -38,9 +38,7 @@ for (const form of ['ordinary', 'repeat'] as const) {
     }, 90000)
 
     it('reports a refused restart attachment as interruption through HTTP and authenticated MCP', async () => {
-      // The original lifetime must be detachable, or restart closes it and never attempts an attachment.
-      const f = await recoveryFixture(form === 'ordinary' ? 'sequential' : 'repeat', () => 'park', undefined,
-        { sessionPersistence: 'persistent' })
+      const f = await recoveryFixture(form === 'ordinary' ? 'sequential' : 'repeat', () => 'park')
       const connection = f.provider.connection.bind(f.provider)
       let refusedAttachments = 0
       const attachment = vi.spyOn(f.provider, 'connection').mockImplementation(() => ({
