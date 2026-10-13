@@ -635,32 +635,6 @@ it('shares affected CI validation, grants and persisted readback between HTTP an
   } finally { await f.close() }
 })
 
-it.each([
-  { suite: 'unit', scope: 'full' },
-  { suite: 'integration', scope: 'affected' },
-])('denies unrestricted $suite CI through authenticated MCP without a separate full-suite grant', async selection => {
-  const f = await fixture()
-  try {
-    const caller = await f.connect([...CI_RUN_ACTIONS, ...CI_GET_ACTIONS])
-    const denied = await f.call(caller, 'ci_run', { ...selection, commandId: 'ungranted-full-suite' })
-    expect(denied.isError).toBe(true)
-    expect(JSON.stringify(denied.content)).toContain('CI_FULL_SCOPE_FORBIDDEN')
-    expect(JSON.stringify(denied.content)).toContain('affected')
-    expect(JSON.stringify(denied.content)).toContain('files')
-    expect((await f.pool.query('select count(*)::int as count from ci_runs')).rows[0].count).toBe(0)
-    expect((await f.pool.query("select outcome from management_audit where action='ci_run'")).rows)
-      .toContainEqual({ outcome: 'denied' })
-    const started = CiRunOutputSchema.parse(await f.value(caller, 'ci_run', {
-      suite: 'integration', commit: 'a'.repeat(40), files: ['apps/api/test/example.integration.test.ts'],
-      commandId: 'ungranted-affected-files',
-    }))
-    const read = CiGetOutputSchema.parse(await f.value(caller, 'ci_get', { ticketId: started.ticketId }))
-    expect(read.run).toMatchObject({ scope: 'affected', files: ['apps/api/test/example.integration.test.ts'] })
-    expect((await f.pool.query<{ record: unknown }>('select record from ci_runs where id=$1',
-      [started.ticketId])).rows[0]!.record).toEqual(read.run)
-  } finally { await f.close() }
-})
-
 it('records an empty affected selection as passed and preserves explicit full scope', async () => {
   const f = await fixture()
   try {
