@@ -112,15 +112,10 @@ export const CiHostRequestSchema = z.discriminatedUnion('operation', [
 export type CiHostRequest = z.infer<typeof CiHostRequestSchema>
 
 const CiHostRunStateSchema = z.enum(['queued', 'starting', 'running', 'passed', 'failed', 'canceled', 'lost'])
-export const CiCollectionSchema = z.enum(['pending', 'complete', 'unsupported'])
-export const CiProvenanceSchema = z.object({
-  sourceCommit: CommitSchema, workflowCommit: CommitSchema, workflowRef: z.string().min(1).max(200),
-}).strict()
 const CiHostRunSchema = z.object({
   runId: CiHostRunIdSchema, state: CiHostRunStateSchema, step: z.string().max(80).nullable(),
   exitCode: z.number().int().nullable(), startedAt: TimestampSchema, finishedAt: TimestampSchema.nullable(),
   logBytes: z.number().int().nonnegative(), message: z.string().max(2000).nullable(),
-  collection: CiCollectionSchema.optional(), provenance: CiProvenanceSchema.optional(),
 }).strict()
 export type CiHostRun = z.infer<typeof CiHostRunSchema>
 export const CiUserSystemdSchema = z.object({ supported: z.boolean(), reason: z.string().max(300).nullable() }).strict()
@@ -146,6 +141,9 @@ export type CiHostReply = z.infer<typeof CiHostReplySchema>
 /** What an Agent or the Operator sees for one CI run. */
 export const CiPrioritySchema = z.enum(['normal', 'high'])
 export const CiPriorityReasonSchema = z.enum(['normal', 'requested', 'ci-infrastructure', 'gate'])
+export const CiComputerRefSchema = z.object({ kind: z.enum(['main', 'device', 'cloud']), mainId: z.string(), deviceId: z.string().optional(),
+    provider: z.enum(['github', 'circleci']).optional(), slot: z.number().int().nonnegative().optional() }).strict()
+
 export const CiRunRecordSchema = z.object({
   id: CiHostRunIdSchema, workspaceId: IdSchema, suite: CiSuiteSchema, commit: CommitSchema, repository: CiRepositorySchema,
   scope: CiScopeSchema.default('full'), files: CiSelectedFilesSchema.default([]),
@@ -160,15 +158,14 @@ export const CiRunRecordSchema = z.object({
   partition: CiPartitionSchema.nullable(), groupId: CiHostRunIdSchema,
   part: CiPartSchema.nullable().default(null),
   state: z.enum(['queued', 'starting', 'running', 'passed', 'failed', 'canceled', 'lost']),
-  computer: z.object({ hostRef: z.object({ kind: z.enum(['main', 'device', 'cloud']), mainId: z.string(), deviceId: z.string().optional(),
-    provider: z.enum(['github', 'circleci']).optional(), slot: z.number().int().nonnegative().optional() }).strict(),
+  computer: z.object({ hostRef: CiComputerRefSchema,
     label: z.string() }).strict().nullable(),
   step: z.string().nullable(), exitCode: z.number().int().nullable(), message: z.string().nullable(),
-  collection: CiCollectionSchema.optional(), provenance: CiProvenanceSchema.optional(),
   queuedAt: TimestampSchema, startedAt: TimestampSchema.nullable(), finishedAt: TimestampSchema.nullable(),
   initiator: z.object({ principalId: IdSchema, executionId: IdSchema.nullable() }).strict(),
   /** The computer a weighted partition was sized for; another free computer may still take it. */
   plannedHostKey: z.string().nullable().optional(),
+  smokeComputer: CiComputerRefSchema.optional(),
   /** Measured test time plus a fixed setup allowance; runner-derived selections use a full-suite upper estimate. */
   expectedDurationMs: z.number().nonnegative().finite().optional(),
   /** The planned slice contains files requiring a build computer. */
