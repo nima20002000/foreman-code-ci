@@ -153,17 +153,27 @@ test('packages every reviewed target from one committed release in private stora
   }
 })
 
-test('builds every reviewed target at once and keeps the reviewed order in the index', async t => {
+test('builds every reviewed target at once and keeps the reviewed order in the index', { timeout: 10_000 }, async t => {
   const f = await fixture(t)
+  const reviewedTargets = readCommittedWorkerTargets(f.repository, f.commit)
+  const pending = new Map()
   let active = 0
   let peak = 0
   const run = async (...args) => {
+    const path = args[1][1]
+    const position = reviewedTargets.findIndex(value => value.path === path)
     active++
     peak = Math.max(peak, active)
-    // Each target takes ~10 s on a build computer; one after another made deploys wait for all of them.
-    await new Promise(resolve => setTimeout(resolve, 50))
+    // Reverse builder order only after every target has started.
+    await new Promise(resolve => {
+      pending.set(path, resolve)
+      if (pending.size === reviewedTargets.length) {
+        pending.get(reviewedTargets.at(-1).path)()
+      }
+    })
     await f.run(...args)
     active--
+    if (position > 0) pending.get(reviewedTargets[position - 1].path)()
   }
   const index = await buildWorkerReleaseArtifacts({ ...f, run })
   assert.equal(peak, 4)

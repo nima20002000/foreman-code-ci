@@ -2,7 +2,6 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { RemoteOwnerControlSchema } from '@foreman-code/contracts/remote-execution'
 import * as nativeProcess from '../src/modules/harnesses/process.js'
 import { codexApprovalRuntime } from './helpers/codexApprovalRuntime.js'
-import { migratedDatabase } from './helpers/migratedDatabase.js'
 
 afterEach(() => vi.restoreAllMocks())
 
@@ -10,27 +9,20 @@ async function remoteControlDatabase() {
   const spawnProcess = vi.spyOn(nativeProcess, 'spawnOwnedStdioProcess').mockImplementation(() => {
     throw new Error('Remote snapshot checks must use protocol replay without native processes')
   })
-  const database = await migratedDatabase()
-  let runtime: Awaited<ReturnType<typeof codexApprovalRuntime>> | undefined
+  const runtime = await codexApprovalRuntime('user')
   try {
-    runtime = await codexApprovalRuntime('user', { database })
-    const approvalRuntime = runtime
     await runtime.engine.start(runtime.f.run.id)
     const [interaction] = await runtime.pending()
     if (!interaction) throw new Error('Expected an original workflow approval request')
     return {
       pool: runtime.db.pool,
-      async close() {
-        try { await approvalRuntime.close() }
-        finally { await database.close() }
-      },
+      close: () => runtime.close(),
       interaction,
       repository: runtime.repository,
       spawnProcess,
     }
   } catch (error) {
-    try { await runtime?.close() }
-    finally { await database.close() }
+    await runtime.close()
     throw error
   }
 }
