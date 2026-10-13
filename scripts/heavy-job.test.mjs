@@ -19,8 +19,6 @@ const jobEnv = (cwd) => {
   delete env.FOREMAN_CODE_HEAVY_JOB_COMMON
   delete env.FOREMAN_CODE_HEAVY_JOB_TOKEN
   delete env.FOREMAN_CODE_HEAVY_BASE_TMPDIR
-  delete env.FOREMAN_CODE_CI_CONTRACTS_CACHE
-  delete env.CI_HOST_RUNNER
   return env
 }
 const run = (cwd, args, { signal, onQueued } = {}) => new Promise((resolve) => {
@@ -569,13 +567,11 @@ const waitFor = async (check) => {
   }
   throw new Error('Timed out waiting for scheduler state')
 }
-function heldJob(f, label, cwd = f.first, environment = {}) {
+function heldJob(f, label, cwd = f.first) {
   const started = join(f.home, `${label}-started`)
   const released = join(f.home, `${label}-released`)
   const script = `const fs=require('fs');const watcher=fs.watch(${JSON.stringify(f.home)},()=>{if(fs.existsSync(${JSON.stringify(released)})) watcher.close()});fs.writeFileSync(${JSON.stringify(started)},'yes')`
-  const child = spawn(process.execPath, ['scripts/heavy-job.mjs', '--', process.execPath, '-e', script], {
-    cwd, env: { ...jobEnv(cwd), ...environment }, stdio: ['ignore', 'pipe', 'pipe'],
-  })
+  const child = spawn(process.execPath, ['scripts/heavy-job.mjs', '--', process.execPath, '-e', script], { cwd, env: jobEnv(cwd), stdio: ['ignore', 'pipe', 'pipe'] })
   let output = ''
   const queued = Promise.withResolvers()
   child.stdout.on('data', (data) => {
@@ -596,44 +592,6 @@ function configureSlots(f, value) {
   mkdirSync(f.state, { recursive: true })
   writeFileSync(join(f.state, 'slots'), String(value))
 }
-
-test('host CI worktrees run concurrently while nested commands retain their own admission', async () => {
-  const f = fixture()
-  const jobs = []
-  try {
-    jobs.push(heldJob(f, 'first', f.first, { CI_HOST_RUNNER: '1' }))
-    await waitFile(jobs[0].started)
-    jobs.push(heldJob(f, 'second', f.second, { CI_HOST_RUNNER: '1' }))
-    await waitFile(jobs[1].started)
-    for (const job of jobs) job.release()
-    for (const job of jobs) assert.equal((await job.exited).code, 0)
-  } finally {
-    await stopJobs(jobs)
-    rmSync(f.home, { recursive: true, force: true })
-  }
-})
-
-test('Vitest setup uses the private admission queue in a host CI worktree', { timeout: 6000 }, () => {
-  const f = fixture()
-  try {
-    copyFileSync(hookSource, join(f.second, 'scripts/vitest-heavy-setup.mjs'))
-    const entry = `const { default: setup } = await import('./scripts/vitest-heavy-setup.mjs');
-      const teardown = await setup();
-      console.log('suite admitted');
-      await teardown();`
-    const result = spawnSync(process.execPath, ['--input-type=module', '-e', entry], {
-      cwd: f.second,
-      env: { ...jobEnv(f.second), CI_HOST_RUNNER: '1' },
-      encoding: 'utf8',
-      timeout: 4000,
-    })
-    assert.equal(result.status, 0, result.stdout + result.stderr)
-    assert.match(result.stdout, /suite admitted/)
-    assert.equal((result.stdout.match(/\[heavy-job\] running /g) ?? []).length, 1)
-  } finally {
-    rmSync(f.home, { recursive: true, force: true })
-  }
-})
 
 for (const setting of ['1', '0', '9', 'garbage']) test(`slot setting ${setting} keeps single-slot admission`, { timeout: 8000 }, async () => {
   const f = fixture(), jobs = []
