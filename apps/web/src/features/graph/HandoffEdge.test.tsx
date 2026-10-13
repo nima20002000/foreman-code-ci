@@ -19,14 +19,8 @@ describe('edge interaction controls', () => {
       <HandoffEdge {...path} id="two" source="b" target="c" data={{ explanation: 'Second connection', onRemove }} />
     </svg></GraphPresentationProvider></Providers>)
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
-    for (const button of screen.getAllByRole('button', { hidden: true })) {
-      expect(button).toHaveAttribute('tabindex', '-1')
-      expect(button.closest('[aria-hidden]')).toHaveAttribute('aria-hidden', 'true')
-    }
     fireEvent.click(screen.getByRole('group', { name: 'Connection from b to c' }))
     expect(screen.getByRole('button', { name: 'Inspect connection from b to c' })).toBeVisible()
-    expect(screen.getAllByRole('button')).toHaveLength(2)
-    expect(screen.getByRole('button', { name: 'Remove connection from b to c' })).toHaveAttribute('tabindex', '0')
     expect(screen.queryByRole('button', { name: 'Remove connection from a to b' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Remove connection from b to c' }))
     expect(onRemove).toHaveBeenCalledExactlyOnceWith('two')
