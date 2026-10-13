@@ -371,7 +371,6 @@ describe('GitHub Actions CI on a public mirror', () => {
     await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId,
       repository: 'octo/site', commit: f.commit, suite: 'integration', scope: 'full' })
     await expect.poll(() => sweeps).toBe(1)
-    f.advance(5 * 60_000)
     await f.cloud.handle({ operation: 'cancel', runId })
     const disposal = f.dispose()
     let timer: ReturnType<typeof setTimeout> | undefined
