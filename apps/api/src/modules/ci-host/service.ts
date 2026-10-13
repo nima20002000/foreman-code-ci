@@ -5,7 +5,6 @@ import type pg from 'pg'
 import { withProviderPoll } from './providerPoll.js'
 import { CI_HOST_NAMESPACE, CI_LOG_MAX_BYTES, CI_RUN_JOBS_LIMIT, CiComputerRefSchema, CiHostReplySchema, CiListOutputSchema, CiRunRecordSchema, CiRunOutputSchema,
   WorkspaceSchema,
-  requiresUserSystemd,
   type CiDurations, type CiHostRequest, type CiHostReply, type CiHostRun, type CiHostStatus, type CiListOutput, type CiRunRecord, type CiRunInput,
   type CiTestResults, type CiTestStatus, type CiUserSystemd, type CiCancellation, type Workspace } from '@foreman-code/contracts'
 import type { ManagementAction, ManagementPrincipal } from '@foreman-code/contracts/management'
@@ -30,8 +29,9 @@ import { claimCiDispatch, releaseCiDispatch, saveQueuedCiRun, ciMessages, reject
   requestCiStart, CI_START_ACK_TIMEOUT_MS, CI_START_MAX_ATTEMPTS } from './dispatch.js'
 import { collectCiResults } from './resultCollection.js'
 import { sanitizeCiText, serializeCiJson } from './text.js'
-import { isGitHubComputer, supportsUserSystemd } from './computerCapabilities.js'
+import { isGitHubComputer, needsSystemdExecutor, supportsUserSystemd } from './computerCapabilities.js'
 import { weighCiPartitions } from './partitionPlanning.js'
+import { readQueuedCiRuns } from './queuedRuns.js'
 
 /** CI reads are idempotent: one retry after a lock or statement timeout, then a typed retryable error. */
 async function retryRead<T>(work: () => Promise<T>): Promise<T> {
@@ -76,13 +76,6 @@ interface RunStopAudit {
   source: 'http' | 'mcp'
   commandId: string
   runId: string
-}
-
-function needsSystemdExecutor(run: CiRunRecord): boolean {
-  if (run.requiresBuildComputer !== undefined) return run.requiresBuildComputer
-  return run.suite === 'integration' && (run.partition
-    ? run.partition.hostIndexes?.includes(run.partition.index) === true
-    : run.scope === 'full' || Boolean(run.deriveFiles) || run.files.some(requiresUserSystemd))
 }
 
 /** Runs work over every item with at most `limit` in flight. */
@@ -532,8 +525,15 @@ export class HostCiService {
         join harness_executions e on e.id=c.record#>>'{initiator,executionId}'
         where e.run_id=$1 and c.workspace_id=$2 and c.state in ('queued','starting','running')
         order by c.id`, [runId, intent.workspace_id])).rows
+      const audit: CiCancellation = {
+        principalId: intent.record.principalId,
+        source: intent.record.source,
+        commandId: intent.record.commandId,
+        runId,
+        reason: 'run_stop',
+      }
       const results = await Promise.allSettled(tickets.map(ticket =>
-        this.cancelTicket(intent.workspace_id, ticket.id, { ...intent.record, reason: 'run_stop' })))
+        this.cancelTicket(intent.workspace_id, ticket.id, audit)))
       const errors = results.flatMap(result => result.status === 'rejected' ? [result.reason] : [])
       if (errors.length) throw new AggregateError(errors, 'Run CI cancellation is incomplete.')
     } finally {
@@ -769,20 +769,6 @@ export class HostCiService {
     return queued.filter(run => !run.deferred || !waiting.has(run.groupId))
   }
 
-  private async queuedRuns() {
-    // Check parts must remain visible even behind more than one batch of integration partitions.
-    const queuedRows = (await this.pool.query<{ record: unknown; durations: CiDurations | null }>(
-      `select record,durations from ci_runs where id in
-        (select id from ci_runs where state='queued' and record->>'supersededBy' is null order by ${CI_QUEUE_ORDER} limit 50)
-        or id in (select id from ci_runs where state='queued' and record->>'supersededBy' is null
-          and record->>'suite'<>'integration'
-          order by ${CI_QUEUE_ORDER} limit 50)
-        order by ${CI_QUEUE_ORDER}`)).rows
-    const parsed = queuedRows.map(row => CiRunRecordSchema.parse(row.record))
-    const durations = new Map(queuedRows.map((row, index) => [parsed[index]!.id, row.durations]))
-    return { parsed, durations }
-  }
-
   private async gateReservation() {
     const rows = (await this.pool.query<{ record: unknown }>(`select record from ci_runs
       where state in ('queued','starting','running','failed','lost') and record->>'gate'='true'
@@ -949,7 +935,7 @@ export class HostCiService {
     const used = new Map<string, number>()
     for (const row of busyRows) used.set(row.host_key, (used.get(row.host_key) ?? 0) + 1)
     const { gate, reservedHosts } = await this.gateReservation()
-    const { parsed, durations } = await this.queuedRuns()
+    const { parsed, durations } = await readQueuedCiRuns(this.pool)
     const hasQueuedGate = parsed.some(run => run.gate)
     const totals = new Map<string, number>()
     const gateShards = new Map<string, number>()
