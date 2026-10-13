@@ -280,7 +280,7 @@ export async function remoteReviewProduction(options: {
           if ('diagnostic' in parsed && parsed.diagnostic === 'runtime-timing' && options.reportPhase) {
             const timing = parsed as RuntimeTimingRecord & { diagnostic: 'runtime-timing' }
             // Per-query logging fills the runner's log cap before native failures are reported.
-            if (timing.component === 'db' || process.env.CI) continue
+            if (timing.component === 'db') continue
             console.info(`[remote-review] ${role} timing`, {
               component: timing.component, phase: timing.phase, operation: timing.operation,
               startedAt: timing.startedAt, finishedAt: timing.finishedAt, durationMs: timing.durationMs,
