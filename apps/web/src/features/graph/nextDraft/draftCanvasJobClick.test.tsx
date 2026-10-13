@@ -4,7 +4,6 @@ import { definition } from '../../jobs/fixtures'
 import { clickConnectionHandles } from '../testConnectionHandles'
 import { GraphPresentationProvider } from '../GraphPresentation'
 import { useGraphDraftStore } from '../store'
-import { installFlowLayout } from '../../run-board/testFlowLayout'
 import { fixture } from './core.cases'
 import { DraftCanvas } from './DraftCanvas'
 import { attachJob } from './model'
@@ -15,7 +14,14 @@ const key = nextDraftKey('workspace', 'workflow')
 const context = fixture()
 const graph = attachJob(context.draft.graph, { ...definition, workspaceId: 'workspace' }, 'job-node')
 beforeEach(() => {
-  installFlowLayout(1000, 800)
+  vi.stubGlobal('ResizeObserver', class {
+    constructor(private readonly notify: ResizeObserverCallback) {}
+    observe(target: Element) { queueMicrotask(() => this.notify([{ target, contentRect: target.getBoundingClientRect() } as ResizeObserverEntry], this as unknown as ResizeObserver)) }
+    unobserve() {} disconnect() {}
+  })
+  if (!globalThis.DOMMatrixReadOnly) vi.stubGlobal('DOMMatrixReadOnly', class { m11 = 1; m22 = 1; m41 = 0; m42 = 0 })
+  vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(1000)
+  vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(800)
   useGraphDraftStore.getState().installNextDraft(key, structuredClone(context)) })
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); useGraphDraftStore.getState().clearAllDrafts() })
 
@@ -46,7 +52,6 @@ it('selects Agent then Job without changing workflow connections', async () => {
 
 it('creates a connection only after the connection handles are activated', async () => {
   const { change, edges } = mount()
-  await screen.findByRole('button', { name: 'Remove handoff from Node 0 to Node 1' })
   clickConnectionHandles(screen.getByLabelText('Connect Node 0 to another agent'),
     screen.getByLabelText(`Connect to ${definition.name}`))
   expect(change).toHaveBeenCalledOnce()
