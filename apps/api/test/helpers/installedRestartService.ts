@@ -6,7 +6,7 @@ import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import ts from 'typescript'
-import { apiServiceTemplate, deployProductionApi, publish }
+import { apiServiceTemplate, deployProductionApi }
   from '../../../../scripts/local-production-runtime.mjs'
 import { renderUserService } from '../../../worker/src/service.mjs'
 import { copyApiRuntime } from '../../../../scripts/copy-api-runtime.mjs'
@@ -97,7 +97,7 @@ export async function installedRestartService(directory: string, configuration: 
     .replace('Restart=always', 'Restart=no')
   const service = renderUserService(template, { node: join(release, 'node'), app,
     state: directory, home: serviceUser.homedir, path: environment.PATH ?? '/usr/bin:/bin' })
-  await publish(unitPath, service, 0o600)
+  await writeFile(unitPath, service, { mode: 0o600 })
   const systemctl = (...args: string[]) => execute('systemctl', ['--user', ...args], {
     env: { ...process.env, XDG_RUNTIME_DIR: `/run/user/${serviceUser.uid}`,
       DBUS_SESSION_BUS_ADDRESS: `unix:path=/run/user/${serviceUser.uid}/bus` },
