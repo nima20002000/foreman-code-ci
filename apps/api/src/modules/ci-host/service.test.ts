@@ -90,7 +90,8 @@ function dispatchFixture(settlementError?: Error) {
     }
     if (sql.includes("state in ('starting','running')")) {
       return { rows: records.filter(record => ['starting', 'running'].includes(record.state))
-        .map(record => ({ id: record.id, record, host_key: computer.key })) }
+        .map(record => ({ id: record.id, record, host_key: record.computer?.hostRef.kind === 'cloud'
+          ? `cloud:${record.computer.hostRef.provider}` : computer.key })) }
     }
     if (sql.includes("'gate'='true'")) return { rows: [] }
     return { rows: records.filter(record => record.id === parameters?.[0] || record.groupId === parameters?.[0])
@@ -113,6 +114,60 @@ function dispatchFixture(settlementError?: Error) {
   })
   return { ...f, active, queued, records, output }
 }
+
+it.each(['github', 'circleci'] as const)(
+  'releases a stale %s dispatch with no provider run after Main restarts', async provider => {
+    const f = dispatchFixture()
+    const cloud: HostCiComputer = { key: `cloud:${provider}`, label: 'Cloud executor', priority: 0,
+      hostRef: { kind: 'cloud', mainId: 'fixture-main', provider, slot: 0 } }
+    f.records.splice(0, 2, CiRunRecordSchema.parse({ ...f.queued, state: 'starting', step: 'dispatch',
+      computer: { hostRef: cloud.hostRef, label: cloud.label },
+      dispatchRequest: { operation: 'start', runId: f.queued.id, repository: f.queued.repository,
+        commit: f.queued.commit, suite: f.queued.suite } }))
+    vi.mocked(f.endpoint.computers).mockResolvedValue([cloud])
+    vi.mocked(f.endpoint.request).mockImplementation(async (_computer, request) => {
+      if (request.operation === 'read' || request.operation === 'cancel') {
+        throw new DomainError('CI_RUN_UNKNOWN', 'No provider run exists.', 404)
+      }
+      if (request.operation === 'start') {
+        throw new DomainError('CI_CLOUD_FAILED', 'Selected integration files are absent from the commit.', 502)
+      }
+      throw new Error('Unexpected cloud status request')
+    })
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await f.create().dispatch()
+      const record = f.records[0]!
+      if (record.state === 'starting') f.records[0] = { ...record,
+        dispatchedAt: new Date(Date.now() - 75_000).toISOString() }
+    }
+    expect((await f.create().get(caller, { ticketId: f.queued.id })).run)
+      .toMatchObject({ state: 'queued', computer: null, startedAt: null, unstartedProviders: [provider] })
+    expect(f.endpoint.request).toHaveBeenCalledWith(cloud, expect.objectContaining({ operation: 'read' }))
+    expect(vi.mocked(f.endpoint.request).mock.calls.filter(([, request]) => request.operation === 'start'))
+      .toHaveLength(2)
+  })
+
+it.each(['missing-request', 'unavailable-provider'] as const)(
+  'frees an expired cloud slot after restart with %s', async failure => {
+    const f = dispatchFixture()
+    const cloud: HostCiComputer = { key: 'cloud:github', label: 'Cloud executor', priority: 0,
+      hostRef: { kind: 'cloud', mainId: 'fixture-main', provider: 'github', slot: 0 } }
+    f.records.splice(0, 2, CiRunRecordSchema.parse({ ...f.queued, state: 'starting', step: 'dispatch',
+      computer: { hostRef: cloud.hostRef, label: cloud.label },
+      ...(failure === 'unavailable-provider' ? { dispatchAttempts: 3,
+        dispatchedAt: new Date(Date.now() - 225_000).toISOString(),
+        dispatchRequest: { operation: 'start', runId: f.queued.id,
+          repository: f.queued.repository, commit: f.queued.commit, suite: f.queued.suite } } : {}) }))
+    vi.mocked(f.endpoint.computers).mockResolvedValue(failure === 'missing-request' ? [cloud] : [])
+    vi.mocked(f.endpoint.request).mockImplementation(async () => {
+      if (failure === 'missing-request') throw new DomainError('CI_RUN_UNKNOWN', 'No cloud run exists.', 404)
+      throw new Error('Cloud provider unavailable')
+    })
+    await f.create().dispatch()
+    expect((await f.create().get(caller, { ticketId: f.queued.id })).run)
+      .toMatchObject({ state: failure === 'missing-request' ? 'queued' : 'lost', startedAt: null })
+    expect(f.records[0]?.state).not.toBe('starting')
+  })
 
 it.each(['unready', 'offline'])('keeps ordinary CI queued when the computer is %s', async state => {
   const f = dispatchFixture()
@@ -387,7 +442,7 @@ it('retries an unknown start reply on the assigned executor without requeueing',
 })
 
 
-it('retries an unacknowledged gate on its assigned computer without releasing ownership', async () => {
+it('requeues an unacknowledged gate start missing from computer status and dispatches the same ticket again', async () => {
   const f = dispatchFixture()
   f.records.splice(0, 1)
   f.records[0] = CiRunRecordSchema.parse({ ...f.queued, suite: 'integration', gate: true,
@@ -408,7 +463,7 @@ it('retries an unacknowledged gate on its assigned computer without releasing ow
 
   await f.create().computers(caller, { workspaceId: 'workspace' })
   expect((await f.create().get(caller, { ticketId: f.queued.id })).run)
-    .toMatchObject({ state: 'running', computer: { hostRef: computer.hostRef } })
+    .toMatchObject({ state: 'queued', computer: null, startedAt: null, step: null })
   vi.mocked(f.endpoint.computers).mockResolvedValue([computer, {
     key: 'device:replacement', hostRef: { kind: 'device', mainId: 'main', deviceId: 'replacement' },
     label: 'Replacement builder', priority: 100,
@@ -420,7 +475,7 @@ it('retries an unacknowledged gate on its assigned computer without releasing ow
   ])
 })
 
-it('retains ownership after bounded missing start acknowledgements across service restarts', async () => {
+it('fails a ticket with a clear reason after repeated missing start acknowledgements across service restarts', async () => {
   const f = dispatchFixture()
   f.records.splice(0, 1)
   const request = vi.mocked(f.endpoint.request).getMockImplementation()!
@@ -435,13 +490,12 @@ it('retains ownership after bounded missing start acknowledgements across servic
   for (let attempt = 0; attempt < 4; attempt++) await f.create().dispatch()
   expect(starts).toBe(3)
   expect((await f.create().get(caller, { ticketId: f.queued.id })).run).toMatchObject({
-    state: 'starting', computer: { hostRef: computer.hostRef },
-    dispatchRequest: { runId: f.queued.id },
-    message: expect.stringContaining('cancellation is required'), finishedAt: null,
+    state: 'failed', message: expect.stringContaining('not acknowledged after 3 attempts'),
+    finishedAt: expect.any(String),
   })
 })
 
-it('bounds a hanging start and retains its assignment while status is unavailable', async () => {
+it('bounds a hanging start and requeues it when status is unavailable, ignoring a late reply', async () => {
   vi.useFakeTimers()
   const f = dispatchFixture()
   f.records.splice(0, 1)
@@ -463,11 +517,10 @@ it('bounds a hanging start and retains its assignment while status is unavailabl
     vi.mocked(f.endpoint.request).mockRejectedValue(new Error('Computer offline'))
     await service.computers(caller, { workspaceId: 'workspace' })
     expect((await service.get(caller, { ticketId: f.queued.id })).run)
-      .toMatchObject({ state: 'starting', computer: { hostRef: computer.hostRef }, startedAt: null,
-        dispatchRequest: { runId: f.queued.id } })
+      .toMatchObject({ state: 'queued', computer: null, startedAt: null })
     acknowledge()
     await vi.advanceTimersByTimeAsync(0)
-    expect((await service.get(caller, { ticketId: f.queued.id })).run.state).toBe('starting')
+    expect((await service.get(caller, { ticketId: f.queued.id })).run.state).toBe('queued')
     vi.mocked(f.endpoint.request).mockImplementation(request)
     await service.dispatch()
     expect((await service.get(caller, { ticketId: f.queued.id })).run.state).toBe('running')
