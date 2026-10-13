@@ -57,6 +57,7 @@ if (args[1] === 'install') {
 `, { mode: 0o755 })
   const system = systemHostCiPorts()
   const launched = new Map<string, Promise<unknown>>()
+  let seedLeftoverDependencies = false
   const ports: HostCiPorts = { ...system, cpus: 16, memoryBytes: 16 * 2 ** 30,
     availableMemoryBytes: () => 16 * 2 ** 30,
     run: async (file, args, options) => {
@@ -66,6 +67,10 @@ if (args[1] === 'install') {
       }
       if (file === 'systemd-run') {
         const cwd = args.find(arg => arg.startsWith('--working-directory='))!.slice('--working-directory='.length)
+        if (seedLeftoverDependencies) {
+          await mkdir(join(cwd, 'node_modules/dependency'), { recursive: true })
+          await writeFile(join(cwd, 'node_modules/dependency/leftover'), 'interrupted install')
+        }
         const env = Object.fromEntries(args.filter(arg => arg.startsWith('--setenv='))
           .map(arg => arg.slice('--setenv='.length).split(/=(.*)/s).slice(0, 2)))
         launched.set(cwd, system.run('/bin/bash', [args.at(-1)!], { cwd, env }))
@@ -89,8 +94,22 @@ if (args[1] === 'install') {
   const commands = async () => (await readFile(calls, 'utf8')).trim().split('\n')
     .map(line => JSON.parse(line) as string[])
   const failOffline = () => writeFile(offlineFailure, 'store unavailable')
-  return { run, commands, origin, git, failOffline }
+  const leaveDependencies = () => { seedLeftoverDependencies = true }
+  return { run, commands, origin, git, failOffline, leaveDependencies }
 }
+
+it('clears leftover dependencies before restoring a warmed snapshot', async () => {
+  const fixture = await computer()
+  await expect(fixture.run()).resolves.toMatchObject({ run: { state: 'passed' } })
+  fixture.leaveDependencies()
+  await expect(fixture.run()).resolves.toMatchObject({
+    run: { state: 'passed' },
+    text: expect.stringContaining('dependency=pristine'),
+  })
+  const installs = (await fixture.commands()).filter(args => args[1] === 'install')
+  expect(installs.filter(args => !args.includes('--offline'))).toHaveLength(1)
+  expect(installs.at(-1)).toEqual(expect.arrayContaining(['--offline', '--frozen-lockfile']))
+})
 
 it('warms once, installs offline on later jobs, and preserves private mutable dependencies', async () => {
   const fixture = await computer()
