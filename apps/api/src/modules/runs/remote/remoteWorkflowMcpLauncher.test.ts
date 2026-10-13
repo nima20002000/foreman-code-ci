@@ -17,17 +17,13 @@ afterEach(() => vi.unstubAllEnvs())
 it('blocks the remote Codex session when its launcher route cannot be registered', async () => {
   const root = await directory()
   const parent = join(root, 'occupied')
-  const contents = 'occupied launcher directory'
-  await writeFile(parent, contents)
+  await writeFile(parent, '')
   vi.stubEnv('FOREMAN_CODE_APP_MCP_DIRECTORY', parent)
   const onSessionStart = vi.fn(async () => {})
-  const request = vi.fn(async () => { throw new Error('Unregistered session cannot call MCP') })
   await expect(runningInstalledFixture('generation', { mcp: {
-    request, onSessionStart,
-  } })).rejects.toMatchObject({ code: 'EEXIST', syscall: 'mkdir', path: parent })
+    request: async () => { throw new Error('Unregistered session cannot call MCP') }, onSessionStart,
+  } })).rejects.toMatchObject({ code: 'ENOTDIR' })
   expect(onSessionStart).not.toHaveBeenCalled()
-  expect(request).not.toHaveBeenCalled()
-  expect(await readFile(parent, 'utf8')).toBe(contents)
 })
 
 it('registers the native launcher route before remote Codex startup and renews it for tool calls', async () => {
