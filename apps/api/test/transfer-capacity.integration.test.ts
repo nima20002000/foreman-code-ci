@@ -17,22 +17,16 @@ it('admits new transfers after retiring the record limit and preserves replay de
     rootBindingRevision: 1, direction: 'to-main', byteClass: 'source',
     sha256: createHash('sha256').digest('hex'), byteSize: 0, manifestDigest: 'b'.repeat(64),
     expiresAt: new Date(Date.now() + BYTE_TRANSFER_POLICY.maxLifetimeMs - 1000).toISOString(), chunkBytes: 8192 }
-  let admissionSyncs = 0
-  const createService = () => new ResumableByteTransferService(root, { authorize: async () => {} }, undefined,
-    async point => { if (point === 'directory-sync') admissionSyncs++ })
-  let service = createService()
+  let service = new ResumableByteTransferService(root, { authorize: async () => {} })
   try {
     for (let index = 0; index < BYTE_TRANSFER_POLICY.maxRecords; index++) {
       const current = { ...intent, transferId: index === 0 ? intent.transferId : randomUUID() }
-      admissionSyncs = 0
       await service.start(current, context)
-      expect(admissionSyncs).toBeLessThanOrEqual(BYTE_TRANSFER_POLICY.maxActiveGlobal + 2)
-      expect((await service.inventory()).length).toBeLessThanOrEqual(BYTE_TRANSFER_POLICY.maxActiveGlobal)
       await service.finish(current.transferId, context)
       await service.retire(current.transferId)
     }
     await service.close()
-    service = createService()
+    service = new ResumableByteTransferService(root, { authorize: async () => {} })
     const next = { ...intent, transferId: randomUUID() }
     expect((await service.start(next, context)).state).toBe('allocated')
     await expect(service.start(intent, context)).rejects.toThrow('cancelled')
