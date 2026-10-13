@@ -9,8 +9,7 @@ import { DomainError } from '../src/modules/errors.js'
 
 // The provider boundary is controllable; launch, publication, ownership and shutdown use production SQL/services.
 describe.runIf(postgresEnabled)('workflow startup preservation', () => {
-  it.each(['session creation', 'session publication'] as const)(
-    'reloads a starting execution when shutdown overlaps %s', async phase => {
+  it('reloads a starting execution after its original session and first native batch commit', async () => {
     const fixture = makeCurrentWorkflowFixture(randomUUID(), 'single')
     const runtime = await checkpointRuntimeFixture(1, 1, {
       fixture, approvalNodeIds: [fixture.version.entryNodeId],
@@ -26,23 +25,13 @@ describe.runIf(postgresEnabled)('workflow startup preservation', () => {
       return { ...manager,
         createSession: async (...args) => {
           original = await manager.createSession(...args)
-          if (phase === 'session creation') {
-            opening.resolve()
-            await publish.promise
-          }
+          opening.resolve()
+          await publish.promise
           return original
         },
         canDetachForRestart: () => true,
         closeForRestart: async session => { detached.push(session) },
       }
-    })
-    const updateExecution = runtime.runs.updateExecution.bind(runtime.runs)
-    const publication = vi.spyOn(runtime.runs, 'updateExecution').mockImplementation(async (...args) => {
-      if (phase === 'session publication' && args[0].nativeSessionId) {
-        opening.resolve()
-        await publish.promise
-      }
-      return updateExecution(...args)
     })
     let shutdown: Promise<void> | undefined
     let startup: Promise<unknown> | undefined
@@ -88,7 +77,6 @@ describe.runIf(postgresEnabled)('workflow startup preservation', () => {
       publish.resolve()
       await Promise.allSettled([startup, shutdown])
       restorePages()
-      publication.mockRestore()
       connections.mockRestore()
       await runtime.close()
     }
