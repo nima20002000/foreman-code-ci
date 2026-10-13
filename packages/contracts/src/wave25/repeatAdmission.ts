@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { AcceptedWorkflowApprovalConfigurationSchema, RunExecutionLocationSchema, TimestampSchema, IdSchema } from '../index.js'
 import { ExpectedRevisionSchema } from '../management/index.js'
-import { GraphDigestSchema, GraphIdSchema } from './protocol.js'
+import { GraphDigestSchema, GraphIdSchema } from './graphPrimitives.js'
 import { ExecutableRepeatWorkflowV1Schema } from './repeat.js'
 import { WorkflowDefinitionV3Schema, WorkflowRunV3Schema, SavedRunVersionSnapshotSchema } from './saved.js'
 import { sameExecutableWorkflow, sameWorkflowValue } from './meaningfulEdit.js'
@@ -18,6 +18,8 @@ export const RunStartV3ResultSchema = z.object({
  * not a selector for new execution. Parsing never qualifies native lifecycle. */
 export const ManualRunStartInputSchema = RunStartV3InputSchema
 export const ManualRunStartResultSchema = RunStartV3ResultSchema
+export type ManualRunStartInput = z.infer<typeof ManualRunStartInputSchema>
+export type ManualRunStartResult = z.infer<typeof ManualRunStartResultSchema>
 
 /** Shape of a server-validated location, not a filesystem validation capability.
  * Preserve path bytes. Relative paths and incomplete identity hashes fail closed. */
@@ -103,5 +105,8 @@ export const AcceptedRepeatStartV1Schema = z.object({
   }
 })
 
+export type RunStartV3Result = z.infer<typeof RunStartV3ResultSchema>
+export type RunExecutionLocationV3 = z.infer<typeof RunExecutionLocationV3Schema>
+export type ExecutableWorkflowV3 = z.infer<typeof ExecutableWorkflowV3Schema>
 export type GraphDraftV3 = z.infer<typeof GraphDraftV3Schema>
 export type AcceptedRepeatStartV1 = z.infer<typeof AcceptedRepeatStartV1Schema>
