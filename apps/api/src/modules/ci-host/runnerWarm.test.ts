@@ -72,6 +72,12 @@ if (args[1] === 'db:up') {
 printf '%s\\n' "$*" >> '${join(root, 'copies')}'
 exec /bin/cp "$@"
 `, { mode: 0o755 })
+  await writeFile(join(bin, 'git'), `#!${process.execPath}
+const { spawnSync } = require('node:child_process')
+const args = process.argv.slice(2).map(arg => arg.startsWith('https://') ? ${JSON.stringify(origin)} : arg)
+const result = spawnSync('/usr/bin/git', args, { stdio: 'inherit' })
+process.exit(result.status ?? 1)
+`, { mode: 0o755 })
   const system = systemHostCiPorts()
   const launched = new Map<string, Promise<unknown>>()
   const checkouts: string[] = []

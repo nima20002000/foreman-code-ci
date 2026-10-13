@@ -372,7 +372,7 @@ export class HostCiRunner {
     await this.writeMeta({ ...meta, state: 'running' })
   }
 
-  private async prepareRepository(request: Pick<StartRequest, 'repository' | 'commit' | 'baseCommit' | 'scope' | 'files'>, source: string) {
+  private async prepareRepository(request: Pick<StartRequest, 'repository' | 'commit'>, source: string) {
     await mkdir(source, { recursive: true, mode: 0o700 })
     const url = `https://github.com/${request.repository}.git`
     if (!existsSync(join(source, '.git'))) {
@@ -381,12 +381,9 @@ export class HostCiRunner {
     } else {
       await this.git(['remote', 'set-url', 'origin', url], source)
     }
-    const baseCommit = (request.scope ?? 'affected') === 'affected' && request.files === undefined ? request.baseCommit : undefined
-    for (const commit of new Set([request.commit, baseCommit].filter(value => value !== undefined))) {
-      if ((await this.ports.run('git', ['cat-file', '-e', `${commit}^{commit}`],
-        { cwd: source, env: this.environment })).code !== 0) {
-        await this.git(['fetch', '--quiet', '--no-tags', 'origin', commit], source)
-      }
+    if ((await this.ports.run('git', ['cat-file', '-e', `${request.commit}^{commit}`],
+      { cwd: source, env: this.environment })).code !== 0) {
+      await this.git(['fetch', '--quiet', '--no-tags', 'origin', request.commit], source)
     }
   }
 
@@ -426,6 +423,13 @@ export class HostCiRunner {
     if (!existsSync(selector)) return full('The repository has no affected selector.')
     let baseCommit = meta.baseCommit
     if (baseCommit) {
+      const available = await this.ports.run('git', ['cat-file', '-e', `${baseCommit}^{commit}`],
+        { cwd: source, env: this.environment })
+      if (available.code !== 0) {
+        const fetched = await this.ports.run('git', [...gitAuth, 'fetch', '--quiet', '--no-tags', 'origin', baseCommit],
+          { cwd: source, env: { ...this.environment, GIT_TERMINAL_PROMPT: '0' } })
+        if (fetched.code !== 0) return full('baseCommit is unavailable or is not an ancestor of the resolved commit.')
+      }
       const ancestor = await this.ports.run('git', ['merge-base', '--is-ancestor', baseCommit, meta.commit],
         { cwd: source, env: this.environment })
       if (ancestor.code !== 0) return full('baseCommit is unavailable or is not an ancestor of the resolved commit.')

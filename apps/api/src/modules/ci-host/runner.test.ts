@@ -358,7 +358,7 @@ describe('host CI runner', () => {
     expect(done.text).not.toContain('test/second.test.ts')
   })
 
-  it('fetches the commit, installs and runs the suite in its own worktree, then frees the worktree', async () => {
+  it('fetches the commit, installs and runs the suite, then releases its slot', async () => {
     const f = await computer()
     const runId = randomUUID()
     const started = await f.runner.handle({ operation: 'start', runId, repository: 'octo/site', commit: f.commit, suite: 'unit' })
@@ -367,7 +367,7 @@ describe('host CI runner', () => {
     expect(done.run).toMatchObject({ state: 'passed', exitCode: 0, step: 'unit' })
     expect(done.text).toContain('corepack pnpm install --frozen-lockfile')
     expect(done.text).toContain('corepack pnpm test')
-    expect(existsSync(join(f.root, 'ci/runs', runId, 'src'))).toBe(false)
+    await expect(f.runner.status()).resolves.toMatchObject({ slotsUsed: 0 })
     // A retried start returns the same run instead of starting it again.
     expect(await f.runner.handle({ operation: 'start', runId, repository: 'octo/site', commit: f.commit, suite: 'unit' }))
       .toMatchObject({ run: { runId, state: 'passed' } })

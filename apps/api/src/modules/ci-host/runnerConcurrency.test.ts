@@ -56,6 +56,7 @@ async function computer(beforeGithub?: () => Promise<void>, cpuCount = 8, isolat
   await mkdir(directory, { recursive: true })
   const root = await mkdtemp(join(directory, 'host-ci-concurrency-'))
   const launches: { args: readonly string[] }[] = []
+  const checkoutSources: string[] = []
   const ports: HostCiPorts = { cpus: cpuCount, memoryBytes: 16 * 2 ** 30, now: () => new Date(),
     run: async (file, args, options) => {
       if (file === 'gh') await beforeGithub?.()
@@ -65,6 +66,7 @@ async function computer(beforeGithub?: () => Promise<void>, cpuCount = 8, isolat
       if (file === 'git' && args.includes('checkout')) {
         await beforeCheckout?.()
         const source = options!.cwd!
+        checkoutSources.push(source)
         await mkdir(source, { recursive: true })
         await writeFile(join(source, 'package.json'), JSON.stringify({ scripts: { lint: 'fixture', unit: 'fixture' } }))
       }
@@ -77,7 +79,7 @@ async function computer(beforeGithub?: () => Promise<void>, cpuCount = 8, isolat
   fixtures.push({ root, runner })
   const request = { operation: 'start', runId: randomUUID(), repository: 'octo/site', commit: 'a'.repeat(40),
     suite: 'lint', scope: 'full' }
-  return { root, runner, request, launches }
+  return { root, runner, request, launches, checkoutSources }
 }
 
 describe('host CI runner concurrent starts', () => {
@@ -94,7 +96,7 @@ describe('host CI runner concurrent starts', () => {
 
   it('retains a canceled slot checkout after preparation has stopped', async () => {
     const checkout = barrier()
-    const { root, runner, request } = await computer(undefined, 16, true, checkout.pause)
+    const { runner, request, checkoutSources } = await computer(undefined, 16, true, checkout.pause)
     await runner.handle(request)
     await checkout.entered
     const canceled = runner.cancel(request.runId)
@@ -108,7 +110,7 @@ describe('host CI runner concurrent starts', () => {
     }
     await expect(canceled).resolves.toMatchObject({ state: 'canceled' })
     const { access } = await import('node:fs/promises')
-    await expect(access(join(root, 'cache/slots/0/src/package.json'))).resolves.toBeUndefined()
+    await expect(access(join(checkoutSources[0]!, 'package.json'))).resolves.toBeUndefined()
   })
 
   it('admits two different jobs into two slots, queues a third, and releases one slot on cancellation', async () => {
