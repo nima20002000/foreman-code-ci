@@ -83,9 +83,8 @@ export function projectRunChatTranscript(execution: HarnessExecution, rows: read
     const revision = BigInt(row.revision)
     return revision > latest ? revision : latest
   }, 0n)
-  // Reserve revision 1 for an execution with no public messages.
   return AgentChatSourceTranscriptSchema.parse({ executionId: execution.id, state: execution.state,
-    revision: String(latestRevision + 1n),
+    revision: String(latestRevision),
     messages: messages.reverse(), hasEarlierMessages: rows.length > 100 })
 }
 

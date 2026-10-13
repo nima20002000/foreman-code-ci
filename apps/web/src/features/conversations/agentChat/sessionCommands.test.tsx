@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { SessionControlStateSchema, unavailableSessionControls } from '@foreman-code/contracts'
@@ -103,14 +104,17 @@ it.each(['regular', 'plan'] as const)('preserves the original local %s mode in r
   state.turns = [{ ...turn, delivery: 'unknown' }]
   state.messages[0]!.originalInput = { requestId: turn.requestId, content: 'Inspect files', attachments: [] }
   const onSendAgain = vi.fn()
-  render(<AgentChatTranscript state={state} name="Agent" commands={[{ status: 'success', submittedAt: 1,
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const view = render(<QueryClientProvider client={client}><AgentChatTranscript state={state} name="Agent" commands={[{ status: 'success', submittedAt: 1,
     result: undefined, error: undefined, command: { kind: 'send', clearDraft: true,
       input: { requestId: turn.requestId, expectedConversationId: state.conversation!.id,
         context: state.context, content: 'Inspect files', sessionMode: mode, intent: 'next_turn' } } }]}
     history={{ data: undefined, hasNextPage: false } as ReturnType<typeof useAgentChat>['history']}
-    onCancel={vi.fn()} onRespond={vi.fn()} onSendAgain={onSendAgain} />)
+    onCancel={vi.fn()} onRespond={vi.fn()} onSendAgain={onSendAgain} /></QueryClientProvider>)
   fireEvent.click(screen.getByRole('button', { name: 'Send again as new message' }))
   expect(onSendAgain).toHaveBeenCalledExactlyOnceWith('Inspect files', [], mode)
+  view.unmount()
+  client.clear()
 })
 
 it.each(['/plan', '/plan off', '/compact'])('routes an explicitly resent %s to controls instead of message admission', async content => {
