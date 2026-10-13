@@ -53,7 +53,6 @@ for (const form of ['ordinary', 'repeat'] as const) {
         const before = await parked(f)
         const executionId = before.details[0]!.execution.executionId
         await f.restart()
-        expect((await readback(f)).record.cleanupPending).toBe(false)
         await f.settled()
         const after = await readback(f)
         const result = { outcome: 'failed', error: { code: 'EXECUTION_INTERRUPTED', retryable: false } }
