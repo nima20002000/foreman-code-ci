@@ -19,7 +19,6 @@ export async function persistedMainPreparationFixture(database: Awaited<ReturnTy
     onMainRefresh?(): Promise<void>
     acquire?: typeof JobOwnership.acquire
   } = {}) {
-  const installationId = options.mainInstallationId ?? mainId
   const fixture = await ciPreparationFixture({ ...options, main: 'installed' })
   const runtimes: Array<{ service: CiRuntimeProvisioner; app: ReturnType<typeof buildApp> }> = []
   const close = async () => {
@@ -31,7 +30,7 @@ export async function persistedMainPreparationFixture(database: Awaited<ReturnTy
     await fixture.app.close()
   }
   try {
-    await database.pool.query('update application_installation set id=$1 where singleton=true', [installationId])
+    await database.pool.query('update application_installation set id=$1 where singleton=true', [mainId])
     await database.pool.query('insert into workspaces(id,record) values($1,$2::jsonb)', [fixture.workspaceId,
       JSON.stringify({ id: fixture.workspaceId, name: 'Main recovery',
         repository: { provider: 'github', owner: 'octo', name: 'site', defaultBranch: 'main' } })])
@@ -44,7 +43,7 @@ export async function persistedMainPreparationFixture(database: Awaited<ReturnTy
       grants: [{ actions: ['job_definitions:read'], scope: { workspaceIds: [fixture.workspaceId] } }] })
     const profile = fixture.profiles.get('p-main')!
     const target = buildComputerTarget({ hostRef: profile.root.selection.hostRef,
-      registration: profile.root.registration, mainInstallationId: installationId })
+      registration: profile.root.registration, mainInstallationId: mainId })
     await database.pool.query(`insert into build_computer_preferences
       (host_key,target,revision,build_enabled,build_priority,updated_by) values($1,$2::jsonb,1,true,100,$3)`,
     [buildComputerKey(target), JSON.stringify(target), writer.principal.id])
