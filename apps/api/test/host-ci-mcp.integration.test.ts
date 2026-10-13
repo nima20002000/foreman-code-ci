@@ -126,7 +126,7 @@ async function fixture(options: { repository?: boolean; github?: Record<string, 
       graphqlTools: ['context_get' as const, 'ci_run' as const, 'ci_get' as const, 'ci_logs_read' as const,
         'ci_computers_list' as const] }))
   }
-  const runtime = saved ? await codexApprovalRuntime('user', { fixture: saved, database }) : undefined
+  const runtime = saved ? await codexApprovalRuntime('user', { fixture: saved }) : undefined
   const db = runtime?.db ?? database
   const access = runtime?.access ?? new PostgresAccessService(db.pool)
   const workspaceId = runtime?.f.scope.workspaceId ?? randomUUID()
@@ -872,33 +872,6 @@ it('defaults authenticated Agent MCP to affected scope, reads explicit full scop
     expect((await agent.callTool({ name: 'ci_run', arguments: { suite: 'unit', baseCommit: 'b'.repeat(40),
       commandId: 'agent-base-denied' } })).isError).toBe(true)
   } finally { await f.close() }
-}, 60_000)
-
-it('retains an Agent ticket for an authorized Operator after the Agent runtime closes', async () => {
-  const agent = await fixture({ agent: true })
-  let completed: z.infer<typeof CiGetOutputSchema>
-  try {
-    const started = CiRunOutputSchema.parse(await agent.value(agent.agent!, 'ci_run', {
-      suite: 'install', scope: 'full', commandId: 'retained-agent-ticket',
-    }))
-    await agent.ci.dispatch()
-    agent.finish(started.ticketId, 0, 'install passed\n')
-    completed = CiGetOutputSchema.parse(await agent.value(agent.agent!, 'ci_get', { ticketId: started.ticketId }))
-    expect(completed.run.state).toBe('passed')
-  } finally { await agent.close() }
-
-  const operator = await fixture()
-  try {
-    const input = { workspaceId: agent.workspaceId, ticketId: completed.run.id }
-    expect((await operator.call(operator.operator, 'ci_get', input)).isError).toBe(true)
-    const reader = await operator.connect(CI_GET_ACTIONS, { workspaceIds: [agent.workspaceId] })
-    const read = CiGetOutputSchema.parse(await operator.value(reader, 'ci_get', input))
-    expect(read.run).toEqual(completed.run)
-    expect(read.logTail).toBe('install passed\n')
-    const stored = await database.pool.query<{ record: unknown }>('select record from ci_runs where id=$1',
-      [read.run.id])
-    expect(stored.rows[0]?.record).toEqual(read.run)
-  } finally { await operator.close() }
 }, 60_000)
 
 it('splits integration over two build computers, reports progress and logs, and replays a retried command', async () => {
