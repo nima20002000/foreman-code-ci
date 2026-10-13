@@ -92,16 +92,14 @@ export class WorkerUpdater {
     this.closed = false;
     this.lifetime = new AbortController();
     this.recordOperation = Promise.resolve();
-    this.statusValue = { currentVersion: options.version, manifestSha256: options.manifestSha256,
-      targetVersion: null, state: 'current', lastError: null };
+    this.statusValue = { currentVersion: options.version, targetVersion: null, state: 'current', lastError: null };
   }
 
   async initialize() {
     const retained = await readUpdateRecord(this.options.stateDirectory);
     if (retained) {
       this.record = retained;
-      this.statusValue = WorkerUpdateStatusSchema.parse({ ...retained.status, currentVersion: this.options.version,
-        manifestSha256: this.options.manifestSha256 });
+      this.statusValue = WorkerUpdateStatusSchema.parse({ ...retained.status, currentVersion: this.options.version });
       if (['pending', 'draining', 'downloading', 'installing'].includes(this.statusValue.state)) {
         await this.save({ state: 'failed', lastError: 'worker_update_interrupted' });
       }
@@ -123,8 +121,7 @@ export class WorkerUpdater {
       const retained = await readUpdateRecord(this.options.stateDirectory);
       if (retained) {
         this.record = retained;
-        this.statusValue = WorkerUpdateStatusSchema.parse({ ...retained.status, currentVersion: this.options.version,
-          manifestSha256: this.options.manifestSha256 });
+        this.statusValue = WorkerUpdateStatusSchema.parse({ ...retained.status, currentVersion: this.options.version });
         await this.recoverAdmission(retained);
       }
       return { ...this.statusValue };
@@ -154,8 +151,7 @@ export class WorkerUpdater {
   save(change, details = {}) {
     return this.withUpdateRecord(async () => {
       this.options.assertStateOwnership();
-      this.statusValue = WorkerUpdateStatusSchema.parse({ ...this.statusValue, ...change,
-        manifestSha256: this.options.manifestSha256 });
+      this.statusValue = WorkerUpdateStatusSchema.parse({ ...this.statusValue, ...change });
       const retained = await readUpdateRecord(this.options.stateDirectory);
       this.record = { ...retained, ...details, format: 1, status: this.statusValue };
       await writeUpdateRecord(this.options.stateDirectory, this.record);
