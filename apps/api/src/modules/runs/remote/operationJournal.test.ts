@@ -136,6 +136,41 @@ describe('durable remote ownership', () => {
     expect((await recovered.control(current)).dispatch).toBe(true)
   }, 60_000)
 
+  it.each(['reserved', 'acknowledged'] as const)('keeps session Stop valid after a review is %s', async phase => {
+    const { journal } = await setup()
+    await journal.accept(intent, connection, randomUUID())
+    await journal.reserveEntry(intent.operationId)
+    await journal.acknowledgeStart(intent.operationId, native)
+    await journal.reserveTurn(intent.operationId, { correlationId: 'execution:execution', promptDigest: digest })
+    await journal.acknowledgeTurn(intent.operationId, native.turnId)
+    await journal.markRunning(intent.operationId)
+    await journal.retainReviewer(intent.operationId, { agentId: 'reviewer', expiresAt: '2099-01-01T00:00:00.000Z' },
+      { events: [], pendingInteractions: [], terminalTurn: { correlationId: 'execution:execution',
+        providerId: native.turnId, result: { outcome: 'succeeded' } } })
+    const command = { ...stop, nativeTarget: { kind: 'session' as const, sessionId: native.sessionId } }
+    const assignment = { jobId: 'review-job', interactionId: 'interaction', reviewerAgentId: 'reviewer',
+      correlationId: 'review:review-job', session: { harness: 'codex' as const,
+        providerVersion: 'fixture', nativeSessionId: native.sessionId } }
+    await journal.reserveReviewTurn(intent.operationId, assignment, digest, -1)
+    if (phase === 'acknowledged') {
+      await journal.enterReviewTurn(intent.operationId, assignment.correlationId)
+      await journal.acknowledgeReviewTurn(intent.operationId, assignment.correlationId, 'review-turn')
+    }
+    await expect(journal.control({ ...command, owner: { grantId: 'foreign', epoch: '2' } }))
+      .rejects.toThrow('Stale control ownership')
+    await expect(journal.control({ ...command, nativeTarget: { kind: 'session', sessionId: 'foreign-session' } }))
+      .rejects.toThrow('Wrong explicit native target')
+    expect((await journal.control(command)).dispatch).toBe(true)
+    expect(await journal.enterControlDelivery(command)).toBe(true)
+    await journal.acknowledgeControl(command)
+    expect(await journal.enterControlDelivery(command)).toBe(false)
+    await expect(journal.reserveReviewTurn(intent.operationId, { ...assignment, jobId: 'later-review',
+      correlationId: 'review:later-review' }, digest, -1)).rejects.toThrow('Reviewer lifetime unavailable')
+    expect(await journal.status(intent.operationId)).toMatchObject({ status: 'known', receipt: {
+      native, stopFence: true, reviewTurns: [{ assignment }],
+    } })
+  })
+
   it('enters Stop delivery for the acknowledged review turn while preserving the original workflow identity', async () => {
     const { journal } = await setup()
     await journal.accept(intent, connection, randomUUID())
@@ -511,6 +546,46 @@ describe('durable remote ownership', () => {
       attemptId: original.intent.attemptId, executionId: original.intent.executionId })).dispatch).toBe(false)
     await recovered.accept(intent, connection, randomUUID())
   })
+  it('keeps hot byte capacity across distinct workflow retirements and restarts without forgetting identities', async () => {
+    const initial = await setup()
+    await initial.journal.close()
+    let journal = await RemoteOperationJournal.open(initial.path, { capacity: 1, byteLimit: 16 * 1024 })
+    journals.push(journal)
+    let original: RemoteOperationReceipt | undefined
+    for (let index = 0; index < 48; index++) {
+      const suffix = `${index}-${'retained'.repeat(16)}`
+      const dispatched = { ...intent, operationId: `operation-${suffix}`,
+        executionId: `execution-${suffix}`, attemptId: `attempt-${suffix}` }
+      await journal.accept(dispatched, connection, randomUUID())
+      await journal.reserveEntry(dispatched.operationId)
+      await journal.acknowledgeStart(dispatched.operationId, native)
+      const terminal = await journal.terminal(dispatched.operationId, {
+        kind: 'completed', closureEvidenceDigest: digest, result: { outcome: 'succeeded' },
+      })
+      await journal.retireSettled(dispatched, terminal.sequence)
+      original ??= terminal
+      if (index % 8 === 7) {
+        await journal.close()
+        journal = await RemoteOperationJournal.open(initial.path, { capacity: 1, byteLimit: 16 * 1024 })
+        journals.push(journal)
+      }
+    }
+    if (!original) throw new Error('Missing retired workflow')
+    expect(await journal.status(original.intent.operationId)).toEqual({ status: 'known', receipt: original })
+    expect(await journal.accept(original.intent, connection, randomUUID())).toEqual(original)
+    expect((await journal.reserveEntry(original.intent.operationId)).reserved).toBe(false)
+    for (const changed of [
+      { operationId: 'replacement' },
+      { operationId: 'replacement', executionId: 'another-execution' },
+      { operationId: 'replacement', attemptId: 'another-attempt' },
+    ]) {
+      await expect(journal.accept({ ...original.intent, ...changed }, connection, randomUUID()))
+        .rejects.toThrow('already bound')
+    }
+    expect(await journal.isRetired(original.intent.operationId)).toBe(true)
+    await journal.accept(intent, connection, randomUUID())
+  })
+
   it('rejects byte exhaustion before disk uncertainty and preserves Stop for another active owner', async () => {
     const root = await mkdtemp(join(tmpdir(), 'journal-bytes-'))
     roots.push(root)

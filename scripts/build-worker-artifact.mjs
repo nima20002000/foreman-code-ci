@@ -15,7 +15,7 @@ const { Unpackr } = require('msgpackr');
 const unpacker = new Unpackr({ useRecords: true, moreTypes: true });
 import {
   copySharpPackagesFromStore, artifactFiles, assertWorkerDependency,
-  committedWorkerInputPath, workerReleaseVersion, validateWorkerTarget,
+  committedWorkerInputPath, workerReleaseVersion, validateWorkerTarget, assertWorkerUpdateToolchain,
 } from './worker-artifact-files.mjs';
 const [targetFile, outputDirectory, runtimeFile] = process.argv.slice(2);
 if (!targetFile || !outputDirectory) throw new Error('Usage: build-worker-artifact.mjs apps/worker/artifacts/approved-target.json /new-output-directory [apps/worker/artifacts/reviewed-runtime.json]');
@@ -56,6 +56,7 @@ function reviewedInput(input) {
   }
   return { path, value: JSON.parse(bytes.toString('utf8')) };
 }
+assertWorkerUpdateToolchain(JSON.parse(snapshotSource('package.json')));
 const targetInput = reviewedInput(targetFile);
 const target = targetInput.value;
 validateWorkerTarget(target);
@@ -95,7 +96,7 @@ for (const entry of [...Object.values(built.metafile.outputs), ...Object.values(
   if (dependency.external && !isBuiltin(dependency.path) && dependency.path !== 'sharp') throw new Error(`Unbundled dependency: ${dependency.path}`);
 }
 for (const name of ['installation.mjs', 'diagnostics.mjs', 'service.mjs', 'install-cli.mjs', 'runtime.mjs', 'setup.mjs', 'companion.mjs', 'setupInput.mjs', 'companionServer.mjs', 'companionService.mjs', 'harnessPath.mjs',
-  'updateSupervisor.mjs', 'update-supervisor-cli.mjs']) {
+  'updateSupervisor.mjs', 'update-supervisor-cli.mjs', 'ciSmokeTiming.mjs']) {
   await writeFile(join(output, 'src', name), snapshotSource(`apps/worker/src/${name}`), { mode: 0o600 });
 }
 await mkdir(join(output, 'artifacts'));
