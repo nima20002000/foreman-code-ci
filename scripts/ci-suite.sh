@@ -98,8 +98,7 @@ if [ "$scope" = affected ] && [ -z "${SELECTED_FILES:-}" ] && { [ "$SUITE" != in
     default_ref="refs/remotes/origin/$branch"
     if [ -n "${BASE_COMMIT:-}" ]; then
       if [ "$(git rev-parse --is-shallow-repository)" = true ]; then
-        git fetch --quiet --no-tags --depth=2 origin "$(git rev-parse HEAD)"
-        git fetch --quiet --no-tags --depth=1 origin "$BASE_COMMIT"
+        git fetch --quiet --no-tags --unshallow origin
       fi
     else
       if [ "$(git rev-parse --is-shallow-repository)" = true ]; then
@@ -117,16 +116,16 @@ if [ "$scope" = affected ] && [ -z "${SELECTED_FILES:-}" ] && { [ "$SUITE" != in
   fi
 fi
 
-# A full partition whose indexes exceed a provider parameter uses the timings retained in its snapshot.
+# A full partitioned run whose file list does not fit a provider parameter computes its own partition from the
+# commit's durations; every partition uses the same inputs, so together they cover each file exactly once.
 if [ "$scope" = full ] && [ "$SUITE" = integration ] && [ -z "${SLICE:-}" ] && [ -n "${CI_PARTITION:-}" ] && [ -z "$selected_list" ]; then
   mkdir -p "$state"
   selected_list="$state/selected-files.json"
   node --input-type=module -e '
-    import { writeFileSync } from "node:fs"
+    import { readFileSync, writeFileSync, existsSync } from "node:fs"
     import { integrationPartition } from "./packages/contracts/src/ciPartition.mjs"
     import { integrationFileList } from "./scripts/ci-files.mjs"
-    import { executionDurations } from "./scripts/ci-selection.mjs"
-    const durations = executionDurations("integration", process.cwd(), JSON.parse(process.env.CI_DURATIONS || "{}"))
+    const durations = existsSync("scripts/integration-durations.json") ? JSON.parse(readFileSync("scripts/integration-durations.json", "utf8")) : {}
     const partition = JSON.parse(process.env.CI_PARTITION)
     writeFileSync(process.argv[1], JSON.stringify(integrationPartition(integrationFileList(process.cwd()), durations, partition)))
   ' "$selected_list"
