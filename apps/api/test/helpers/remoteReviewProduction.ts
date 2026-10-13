@@ -248,8 +248,6 @@ export async function remoteReviewProduction(options: {
     let mainFailure = ''
     const failures: Array<{ code: string; runId: string | null; namespace?: unknown;
       phase?: unknown; errorType?: unknown; errorLocation?: unknown; errorDetail?: string | undefined }> = []
-    // Logging every timing record starves the test process and stalls the runtimes' piped stdout.
-    const timings: Array<{ role: 'Main' | 'Worker' } & Partial<RuntimeTimingRecord>> = []
     let origin = ''
     const stopMain = async (signal: NodeJS.Signals = 'SIGTERM') => {
       if (mainService) {
@@ -281,17 +279,16 @@ export async function remoteReviewProduction(options: {
           if (!parsed || typeof parsed !== 'object') continue
           if ('diagnostic' in parsed && parsed.diagnostic === 'runtime-timing' && options.reportPhase) {
             const timing = parsed as RuntimeTimingRecord & { diagnostic: 'runtime-timing' }
-            // Per-query records would evict the native timing that explains a failure.
+            // Per-query logging fills the runner's log cap before native failures are reported.
             if (timing.component === 'db') continue
-            timings.push({
-              role, component: timing.component, phase: timing.phase, operation: timing.operation,
+            console.info(`[remote-review] ${role} timing`, {
+              component: timing.component, phase: timing.phase, operation: timing.operation,
               startedAt: timing.startedAt, finishedAt: timing.finishedAt, durationMs: timing.durationMs,
               intervalMs: timing.intervalMs, reused: timing.reused, count: timing.count,
               runId: timing.runId, executionId: timing.executionId, nativeSessionId: timing.nativeSessionId,
               laneId: timing.laneId, correlationId: timing.correlationId, ownerId: timing.ownerId,
               nativeTurnId: timing.nativeTurnId, eventType: timing.eventType, success: timing.success,
             })
-            if (timings.length > 200) timings.shift()
           }
           const event = parsed as { level?: unknown; code?: unknown; errorCode?: unknown; stackFrames?: unknown;
             namespace?: unknown; runId?: unknown; err?: { code?: unknown; stack?: unknown; message?: unknown; type?: unknown }; msg?: unknown;
@@ -717,7 +714,6 @@ export async function remoteReviewProduction(options: {
       start, call, value, details, reconcile, reconcileReviews, registry, close, origin: () => origin,
       subscribeNativeChanges: changes.subscribe,
       failures: () => structuredClone(failures),
-      timings: () => structuredClone(timings),
       async workerWorkflowStartup() {
         const journal = JSON.parse(await readFile(join(stateDirectory, 'workflow-operations.json'), 'utf8')) as {
           receipts: unknown[]
