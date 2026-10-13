@@ -124,7 +124,7 @@ it('survives original and repeated observer SIGKILL without replaying native wor
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
         if (manager.exitCode !== null || manager.signalCode !== null) {
-          throw new Error(`Native fixture manager exited before becoming ready: ${errors}`, { cause: error })
+          throw new Error(`Native fixture manager exited before becoming ready: ${errors}`)
         }
         return undefined
       }
@@ -167,7 +167,8 @@ it('survives original and repeated observer SIGKILL without replaying native wor
     expect(identityAlive(descendant)).toBe(false)
   } finally {
     await Promise.all(managers.map(killManager))
-    expect(await registry.closeOwner(owner), 'Native crash fixture tree closure remains unconfirmed.').toBe(true)
+    const closed = await registry.closeOwner(owner)
+    if (!closed) throw new Error('Native crash fixture tree closure remains unconfirmed.')
     rmSync(directory, { recursive: true, force: true })
   }
 }, 40_000)
@@ -225,7 +226,8 @@ it('validates restart detachment after natural provider completion without retai
     expect(hasNativeRestartDetachment(registry.scope(owner))).toBe(false)
     expect(await registry.abandonReservedLaunch(later)).toBe(true)
   } finally {
-    expect(await registry.closeOwner(owner), 'Completed native fixture tree closure remains unconfirmed.').toBe(true)
+    const closed = await registry.closeOwner(owner)
+    if (!closed) throw new Error('Completed native fixture tree closure remains unconfirmed.')
     rmSync(directory, { recursive: true, force: true })
   }
 }, 20_000)
@@ -258,7 +260,8 @@ it('confirms the captured daemon launch after a preceding inspection consumes it
     expect(identityAlive(detached.guardian!)).toBe(false)
     expect(identityAlive(detached.provider!)).toBe(false)
   } finally {
-    expect(await registry.closeOwner(owner), 'Shared-scope native fixture tree closure remains unconfirmed.').toBe(true)
+    const closed = await registry.closeOwner(owner)
+    if (!closed) throw new Error('Shared-scope native fixture tree closure remains unconfirmed.')
     rmSync(directory, { recursive: true, force: true })
   }
 }, 20_000)
