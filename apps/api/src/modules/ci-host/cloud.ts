@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { homedir, hostname, userInfo } from 'node:os'
 import { join } from 'node:path'
 import type pg from 'pg'
-import { CiDurationsSchema, CiHostReplySchema, CiHostRequestSchema, CiTestResultsSchema, WorkspaceSchema,
+import { CiWatchdogFailureSchema, CiDurationsSchema, CiHostReplySchema, CiHostRequestSchema, CiTestResultsSchema, WorkspaceSchema,
   integrationPartition, requiresUserSystemd,
   type CiDurations, type CiTestResults, type CiHostReply, type CiHostRequest, type CiHostRun, type CiPartition, type CiSuite, type CiPart, type CiScope } from '@foreman-code/contracts'
 import { DomainError } from '../errors.js'
@@ -25,18 +25,16 @@ const POLL_CONCURRENCY = 3
 const log = componentLogger('jobs')
 
 export type { CloudRun }
-type Mirrors = (repository: string) => Promise<string | null>
+type Mirrors = (workspaceId: string) => Promise<string | null>
 /** Pushes to one mirror, across both services, run one at a time: concurrent force-pushes of the mirror's main fail
  * the remote's old-value check ("incorrect old value provided"), and concurrent fetches race on its local ref. */
 const mirrorPushes = new Map<string, Promise<unknown>>()
 
-/** The public mirror configured for a private repository's workspace, if any. */
+/** The public mirror belonging to this workspace, if any. */
 export function workspaceMirrors(pool: pg.Pool): Mirrors {
-  return async repository => {
-    const [owner, name] = repository.split('/')
-    const row = (await pool.query<{ record: unknown }>(`select record from workspaces where archived_at is null
-      and record->'repository'->>'owner'=$1 and record->'repository'->>'name'=$2 and record ? 'ciMirror'
-      order by id limit 1`, [owner, name])).rows[0]
+  return async workspaceId => {
+    const row = (await pool.query<{ record: unknown }>(`select record from workspaces
+      where id=$1 and archived_at is null`, [workspaceId])).rows[0]
     const mirror = row ? WorkspaceSchema.parse(row.record).ciMirror : undefined
     return mirror ? `${mirror.owner}/${mirror.name}` : null
   }
@@ -152,8 +150,10 @@ export class CloudCi {
   }
 
   private async start(request: { runId: string; repository: string; commit: string; suite: CiSuite
+    workspaceId?: string | undefined; ciMirror?: string | null | undefined;
     part?: CiPart | undefined; partition?: CiPartition | undefined; durations?: CiDurations | undefined; scope?: CiScope | undefined;
-    files?: string[] | undefined; defaultBranch?: string | undefined; baseCommit?: string | undefined }): Promise<CiHostRun> {
+    files?: string[] | undefined; defaultBranch?: string | undefined; baseCommit?: string | undefined;
+    gate?: boolean | undefined; integrationShards?: number | undefined; expectedDurationMs?: number | undefined }): Promise<CiHostRun> {
     const existing = await this.read(request.runId).catch(fallbackOnError(null, 'jobs', 'read existing CI run', { runId: request.runId }, ['ENOENT']))
     if (existing) return this.view(existing, 0)
     if (!this.provider.userSystemd.supported && request.suite === 'integration'
@@ -162,7 +162,8 @@ export class CloudCi {
       throw new DomainError('CI_CLOUD_UNAVAILABLE',
         `${this.provider.label} cannot run user-systemd files: ${this.provider.userSystemd.reason ?? 'user systemd is unavailable'}.`, 409)
     }
-    const mirror = await this.mirrors(request.repository)
+    let mirror = request.ciMirror ?? null
+    if (request.ciMirror === undefined && request.workspaceId) mirror = await this.mirrors(request.workspaceId)
     // CircleCI's machine image has no podman, which the Worker unit tests (unit-other) use.
     if (this.provider.id === 'circleci' && !runsOnCircleCi(request)) {
       throw new DomainError('CI_CLOUD_UNAVAILABLE', `${this.provider.label} cannot run the Worker unit tests (no podman).`, 409)
@@ -180,7 +181,8 @@ export class CloudCi {
       ? 'Running full suite: ' + (request.baseCommit
         ? 'baseCommit is unavailable or is not an ancestor of the resolved commit.'
         : 'No merge-base with the workspace default branch is available.') : null
-    let slice = request.suite === 'integration' && !selectOnRunner && (request.partition || !deriveFiles && scope === 'affected')
+    let slice = request.suite === 'integration' && !selectOnRunner
+      && (request.gate || request.partition || !deriveFiles && scope === 'affected')
       ? await this.slice(git, request.commit, request.partition, request.durations ?? {}, request.files) : ''
     if ((!request.files || scope !== 'affected') && request.partition && request.part) {
       slice = `${request.partition.index + 1}/${request.partition.count}`
@@ -203,6 +205,7 @@ export class CloudCi {
     }
     const durations = selectOnRunner && request.durations ? JSON.stringify(request.durations) : undefined
     const input: CloudDispatchInput = { mirror, branch, runId: request.runId, suite: request.part ?? request.suite, slice,
+      expectedDurationMs: request.expectedDurationMs ?? 0,
       scope: message ? 'full' : scope, ...(files !== undefined ? { files } : {}),
       ...(defaultBranch ? { defaultBranch } : {}),
       ...(baseCommit ? { baseCommit } : {}),
@@ -506,9 +509,9 @@ export class CloudCi {
       { flag: 'a', mode: 0o600 })
     let durations: CiDurations | undefined
     let testResults: CiTestResults | undefined
+    const artifacts = await this.provider.artifacts(run, join(this.root, 'runs', runId, 'artifact'))
+      .catch(fallbackOnError(null, 'jobs', 'fetch CI run artifacts', { runId }))
     if (run.suite === 'integration' || run.suite === 'unit') {
-      const artifacts = await this.provider.artifacts(run, join(this.root, 'runs', runId, 'artifact'))
-        .catch(fallbackOnError(null, 'jobs', 'fetch CI run artifacts', { runId }))
       const parsed = CiDurationsSchema.safeParse(artifacts?.durations)
       if (parsed.success && (run.suite === 'integration' || run.part === 'unit-api' || run.part === 'unit-web')) {
         durations = parsed.data
@@ -516,10 +519,13 @@ export class CloudCi {
       const tests = CiTestResultsSchema.safeParse(artifacts?.testResults)
       if (tests.success) testResults = tests.data
     }
+    const watchdog = CiWatchdogFailureSchema.safeParse(artifacts?.watchdogFailure)
+    const watchdogMessage = watchdog.success ? watchdog.data.message : undefined
     const passed = status.conclusion === 'success'
     return this.save({ ...run, state: passed ? 'passed' : status.conclusion === 'cancelled' ? 'canceled' : 'failed',
       exitCode: passed ? 0 : 1, finishedAt: status.finishedAt,
-      message: passed ? run.message : [run.message, `${this.provider.label}: ${status.conclusion}.`].filter(Boolean).join(' '),
+      message: passed ? run.message : watchdogMessage
+        ?? [run.message, `${this.provider.label}: ${status.conclusion}.`].filter(Boolean).join(' '),
       ...(durations ? { durations } : {}), ...(testResults ? { testResults } : {}) })
   }
 }

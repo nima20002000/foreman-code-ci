@@ -28,12 +28,19 @@ function queuedRuns(count: number) {
 function fleet(records: CiRunRecord[], available: HostCiComputer[]) {
   const started: { computer: HostCiComputer; request: CiHostRequest }[] = []
   let writes = 0
-  const pool = { query: async (sql: string, parameters?: unknown[]) => {
+  const pool = { options: { max: 10 }, query: async (sql: string, parameters?: unknown[]) => {
+    if (sql.startsWith('select pg_try_advisory_xact_lock')) return { rows: [{ acquired: true }] }
+    if (sql.startsWith('select record from ci_runs where id=')) {
+      return { rows: records.filter(record => record.id === parameters![0]).map(record => ({ record })) }
+    }
     if (sql.startsWith('update ci_runs')) {
       writes++
       const record = CiRunRecordSchema.parse(JSON.parse(parameters![3] as string))
       records[records.findIndex(item => item.id === record.id)] = record
       return { rows: [], rowCount: 1 }
+    }
+    if (sql.includes('as group_id')) {
+      return { rows: records.filter(record => !record.deferred).map(record => ({ group_id: record.groupId, state: record.state })) }
     }
     if (sql.includes("state='queued'")) {
       return { rows: records.filter(record => record.state === 'queued').map(record => ({ record, durations: null })) }
@@ -41,7 +48,7 @@ function fleet(records: CiRunRecord[], available: HostCiComputer[]) {
     if (sql.includes("state in ('passed','failed')")) return { rows: [] }
     return { rows: records.filter(record => ['starting', 'running'].includes(record.state))
       .map(record => ({ record, host_key: record.computer?.hostRef.kind === 'cloud' ? cloud.key : host.key })) }
-  } } as unknown as pg.Pool
+  }, connect: async () => ({ query: pool.query, release: () => {} }) } as unknown as pg.Pool
   const endpoint: HostCiEndpoint = {
     computers: async () => available,
     request: async (computer, request) => {
@@ -151,4 +158,33 @@ it('dispatches a duration-planned single ordinary full slice to cloud', async ()
   expect(f.started).toHaveLength(1)
   expect(f.started[0]!.computer.key).toBe(cloud.key)
   expect(records[0]!.state).toBe('running')
+})
+
+
+function tieredRuns() {
+  const [fast, slow] = queuedRuns(2)
+  return [CiRunRecordSchema.parse({ ...fast, partition: { index: 0, count: 1, weights: [1], tier: 'fast', slowFiles: ['slow'] } }),
+    CiRunRecordSchema.parse({ ...slow, partition: { index: 0, count: 1, weights: [1], tier: 'slow', slowFiles: ['slow'] },
+      deferred: true })]
+}
+
+it('starts the slow tier only after every other part of its request passed', async () => {
+  const records = tieredRuns()
+  const f = fleet(records, [cloud, { ...cloud, key: 'cloud:circleci:1', hostRef: { ...cloud.hostRef, slot: 1 } }])
+  await f.service.dispatch()
+  expect(f.started.map(item => item.request.operation === 'start' ? item.request.runId : null)).toEqual([records[0]!.id])
+  records[0] = CiRunRecordSchema.parse({ ...records[0]!, state: 'passed', finishedAt: '2026-10-12T00:05:00.000Z' })
+  await f.service.dispatch()
+  expect(f.started.map(item => item.request.operation === 'start' ? item.request.runId : null))
+    .toEqual([records[0]!.id, records[1]!.id])
+})
+
+it('skips the slow tier with a reason when another part of its request failed', async () => {
+  const records = tieredRuns()
+  records[0] = CiRunRecordSchema.parse({ ...records[0]!, state: 'failed', finishedAt: '2026-10-12T00:05:00.000Z' })
+  const f = fleet(records, [cloud])
+  await f.service.dispatch()
+  expect(f.started).toHaveLength(0)
+  expect(records[1]).toMatchObject({ state: 'canceled',
+    message: expect.stringContaining('slow tests run only after every other test of this request passed') })
 })

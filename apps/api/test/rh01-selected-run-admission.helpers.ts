@@ -6,16 +6,14 @@ import type { HarnessExecution } from '@foreman-code/contracts'
 import type { AgentChatContext } from '@foreman-code/contracts/agent-chat'
 import type { ManagementGrant } from '@foreman-code/contracts/management'
 import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
-import { buildApp } from '../../src/app.js'
-import { beginTransaction, commitTransaction, rollbackAfterFailure } from '../../src/infrastructure/transaction.js'
-import { AgentChatService } from '../../src/modules/conversations/agentChat.js'
-import { PostgresAgentChatRepository } from '../../src/modules/conversations/agentChatRepository.js'
-import { PostgresOperatorConversationRepository } from '../../src/modules/conversations/operatorChatRepository.js'
-import { runChatStorageKey } from '../../src/modules/conversations/selectedRunChat.js'
-import { currentOperatorIntegration } from './currentOperatorIntegration.js'
-import { measureIntegrationPhase } from './integrationPhase.js'
-import { readUntil } from './observableCondition.js'
-import { waitForSuccessfulRunCleanup } from './runSettlement.testSupport.js'
+import { buildApp } from '../src/app.js'
+import { AgentChatService } from '../src/modules/conversations/agentChat.js'
+import { PostgresAgentChatRepository } from '../src/modules/conversations/agentChatRepository.js'
+import { PostgresOperatorConversationRepository } from '../src/modules/conversations/operatorChatRepository.js'
+import { runChatStorageKey } from '../src/modules/conversations/selectedRunChat.js'
+import { eventually } from './helpers/agentChatF5.js'
+import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
+import { waitForSuccessfulRunCleanup } from './helpers/runSettlement.testSupport.js'
 
 /** Real PostgreSQL admission, live delegation reader and authenticated transports.
  * No native provider should be reached by any of these rejected commands. */
@@ -30,12 +28,9 @@ async function setup() {
   const clients: Client[] = []
   try {
     const address = await app.listen({ host: '127.0.0.1', port: 0 })
-    await measureIntegrationPhase('message revocation source Run completion', async () => {
-      await f.engine.start(f.f.run.id)
-      await waitForSuccessfulRunCleanup({ pool: f.db.pool, runId: f.f.run.id, timeoutMs: 20000,
-        readRecord: () => f.services.runs.inspection.record(f.writer.principal,
-          { workspaceId: f.f.scope.workspaceId, runId: f.f.run.id }) })
-    })
+    await f.engine.start(f.f.run.id)
+    await waitForSuccessfulRunCleanup({ pool: f.db.pool, runId: f.f.run.id, timeoutMs: 20000,
+      readRecord: () => f.services.runs.inspection.record(f.writer.principal, { workspaceId: f.f.scope.workspaceId, runId: f.f.run.id }) })
     const executions: HarnessExecution[] = []
     for await (const page of f.runs.executionPages(f.f.run.id)) executions.push(...page)
     const node = f.f.version.definition.nodes[0]!
@@ -47,8 +42,7 @@ async function setup() {
       runId: f.f.run.id, workflowNodeId: node.id, agentId: node.agentId }
     return { f, repository, managers, chat, app, context, execution,
       async connect(token: string) {
-        const client = new Client({ name: 'selected-run-message-revocation', version: '1' })
-        clients.push(client)
+        const client = new Client({ name: 'rh01-admission', version: '1' }); clients.push(client)
         await client.connect(new StreamableHTTPClientTransport(new URL('/mcp', address), { authProvider: { token: async () => token } }))
         return client
       },
@@ -75,18 +69,15 @@ export type RevocationCase = {
 }
 
 export async function assertRevocationRejected({ transport, revocation, boundary }: RevocationCase) {
-  const test = await measureIntegrationPhase('message revocation fixture', setup)
-  const { f, context, execution } = test
+  const test = await setup(), { f, context, execution } = test
   let blocker: pg.PoolClient | undefined
   let revoker: pg.PoolClient | undefined
   let pending: Promise<void> | undefined
   try {
     const grants: ManagementGrant[] = [{ actions: ['agent_chat:read', 'agent_chat:write'],
       scope: { workspaceIds: [context.workspaceId], workflowIds: [context.workflowId], runIds: [execution.runId] } }]
-    const parent = await f.access.issue({ name: 'Revocable chat parent', audience: 'operator', grants,
-      expiresAt: new Date(Date.now() + 600000) })
-    const sender = await f.access.issue({ name: 'Revocable chat sender', audience: 'operator', grants,
-      expiresAt: new Date(Date.now() + 600000) })
+    const parent = await f.access.issue({ name: 'RH-01 parent', audience: 'operator', grants, expiresAt: new Date(Date.now() + 600000) })
+    const sender = await f.access.issue({ name: 'RH-01 sender', audience: 'operator', grants, expiresAt: new Date(Date.now() + 600000) })
     // Persist a real delegation, not a principal/grant reader mock.
     await f.db.pool.query('update management_principals set delegated_from=$2 where id=$1', [sender.principal.id, parent.principal.id])
     const mcp = transport === 'mcp' ? await test.connect(sender.token) : undefined
@@ -106,7 +97,7 @@ export async function assertRevocationRejected({ transport, revocation, boundary
     const before = await chatRows(f.db.pool)
     const published = vi.spyOn(test.chat.events, 'publish')
     blocker = await f.db.pool.connect()
-    await beginTransaction(blocker)
+    await blocker.query('begin')
     const blockerPid = (await blocker.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid
     if (boundary === 'existing-row') {
       await blocker.query('select id from operator_conversations where id=$1 for update', [expectedConversationId])
@@ -129,55 +120,35 @@ export async function assertRevocationRejected({ transport, revocation, boundary
         expect(response.structuredContent).toBeUndefined()
         expect(JSON.stringify(response)).toMatch(/AUTH_REVOKED|no longer active/)
       })
-    let requestSettled = false
-    let requestFailure: unknown
-    void pending.then(() => { requestSettled = true }, error => {
-      requestSettled = true
-      requestFailure = error
+    void pending.catch(() => undefined)
+    // Observe an actual blocked SQL statement, not a sleep or a pre-authentication barrier.
+    await eventually(async () => {
+      const waiting = await f.db.pool.query<{ query: string }>(`select query from pg_stat_activity
+        where datname=current_database() and $1::int=any(pg_blocking_pids(pid)) and wait_event_type='Lock'`, [blockerPid])
+      return waiting.rows.some((row) => boundary === 'existing-row'
+        ? row.query.includes('operator_conversations') && row.query.includes('for update')
+        : row.query.includes('pg_advisory_xact_lock'))
     })
-    await measureIntegrationPhase('message revocation contention', () => readUntil(async () => {
-      if (requestSettled) {
-        if (requestFailure !== undefined) throw requestFailure
-        throw new Error('The message request completed before waiting for its conversation lock.')
-      }
-      const waiting = await f.db.pool.query<{ waiting: boolean }>(`select exists (
-        select 1 from pg_stat_activity where datname=current_database()
-          and $1::int=any(pg_blocking_pids(pid)) and wait_event_type='Lock'
-      ) as waiting`, [blockerPid])
-      return waiting.rows[0]!.waiting
-    }, waiting => waiting, { timeoutMs: 5000, description: 'message request conversation lock contention' }))
     revoker = await f.db.pool.connect()
-    await beginTransaction(revoker)
+    await revoker.query('begin')
     // A fix that holds authority before the admission wait must fail rather than hang.
     await revoker.query("set local lock_timeout='3s'")
     const revokedId = revocation === 'parent' ? parent.principal.id : sender.principal.id
-    await measureIntegrationPhase('message revocation commit', async () => {
-      expect((await revoker!.query('update management_principals set revoked_at=now() where id=$1', [revokedId])).rowCount).toBe(1)
-      await commitTransaction(revoker!)
-    })
-    revoker.release()
-    revoker = undefined
+    expect((await revoker.query('update management_principals set revoked_at=now() where id=$1', [revokedId])).rowCount).toBe(1)
+    await revoker.query('commit')
+    revoker.release(); revoker = undefined
     expect((await f.db.pool.query<{ revoked_at: Date | null }>('select revoked_at from management_principals where id=$1', [revokedId])).rows[0]!.revoked_at).not.toBeNull()
-    await commitTransaction(blocker)
-    blocker.release()
-    blocker = undefined
-    await measureIntegrationPhase('message revocation rejected response', () => pending!)
-    expect(await measureIntegrationPhase('message revocation persisted readback', () => chatRows(f.db.pool))).toEqual(before)
+    await blocker.query('commit')
+    blocker.release(); blocker = undefined
+    await pending
+    expect(await chatRows(f.db.pool)).toEqual(before)
     expect(test.managers).not.toHaveBeenCalled()
     expect(published).not.toHaveBeenCalled()
     expect(f.dispatchErrors).toEqual([])
   } finally {
-    if (revoker) {
-      const rollbackError = await rollbackAfterFailure(revoker)
-      revoker.release(rollbackError)
-    }
-    if (blocker) {
-      const rollbackError = await rollbackAfterFailure(blocker)
-      blocker.release(rollbackError)
-    }
-    await pending?.catch(() => {
-      // ignore: the rejected request is observed at the contention barrier or awaited above.
-    })
-    await measureIntegrationPhase('message revocation cleanup', () => test.close())
+    if (revoker) { await revoker.query('rollback').catch(() => undefined); revoker.release() }
+    if (blocker) { await blocker.query('rollback').catch(() => undefined); blocker.release() }
+    await pending?.catch(() => undefined)
+    await test.close()
   }
 }

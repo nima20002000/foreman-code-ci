@@ -17,7 +17,19 @@ import { logOperatorToolFailure } from '../operator/invoke.js'
 export const CI_CAPABILITY_DETAIL = 'ci_run runs one suite (install, typecheck, lint, unit, build, integration) of the workspace '
   + 'GitHub repository at a commit: the requested one, the Agent’s Run-start commit when unchanged, its edited files (published to GitHub first), or the default '
   + 'branch head. A build computer fetches it with its own GitHub CLI login, installs packages and runs the repository’s '
-  + 'own script in a fresh worktree, like a self-hosted runner. scope defaults to affected; scope=full always runs everything. '
+  + 'own script in an isolated worktree. Build computers retain repository, pnpm store and dependency caches; '
+  + 'pnpm installs offline after warming a lockfile, and contracts builds are reused for unchanged inputs. '
+  + 'The log reports setup milliseconds before the suite. '
+  + 'gate=true with suite=integration, scope=full and no file or partition selection requests a complete '
+  + 'typecheck+lint+unit+integration gate. Only Operators, including orchestrators using Operator credentials, can request gates; '
+  + 'all existing CI start, cancellation and workspace grants still apply. Gates cannot be superseded. '
+  + 'Integration files are assigned longest-first from recorded durations: each build computer runs one exclusive gate job '
+  + 'with CPU/memory-sized internal shards (12 on a sufficiently provisioned 16-core computer). '
+  + 'Cloud slots run checks first and integration overflow that reduces the predicted build-computer critical path. '
+  + 'Exclusive and user-systemd files are balanced over eligible executors. One gate runs at a time across workspaces: '
+  + 'other full requests wait behind queued/running gates with a reason; affected requests use spare capacity below gate priority. '
+  + 'ci_get on any gate ticket reports per-computer and per-suite expected/actual durations, critical path and wallTimeMs. '
+  + 'scope defaults to affected; scope=full always runs everything. '
   + 'priority defaults to normal. Requesting high requires Operator role or an explicit workspace jobs:prioritize grant '
   + 'on the Agent’s live authorization principal, in addition to all CI run grants. '
   + 'Commits changing only CI infrastructure automatically receive high priority based on their Git changes, '
@@ -46,6 +58,7 @@ export const CI_CAPABILITY_DETAIL = 'ci_run runs one suite (install, typecheck, 
   + 'install for install and run <suite> for the others, failing clearly when that script is missing. '
   + 'Cloud CI requires the mirror’s provider workflow (.github/workflows/ci.yml or .circleci/config.yml); '
   + 'without it build computers take the work. '
+  + 'Publication uses the mirror approved in the requesting workspace when the ticket was admitted. '
   + 'A cloud dispatch must create a workflow within 75 seconds; Main retries twice, then queues the same ticket '
   + 'on another provider or build computer. The ticket message records recovery and unstartedProviders lists excluded providers. '
   + 'Caller selections omit empty parts and shard only selected tests; runner selections keep queued parts and pass empty shards. '
@@ -63,6 +76,8 @@ export const CI_CAPABILITY_DETAIL = 'ci_run runs one suite (install, typecheck, 
   + 'Queued tickets include the dispatch waiting reason in message; it clears when they start. '
   + 'ci_computers_list shows readiness reasons, userSystemd support and its unavailable reason, used/total CI slots, assigned tickets and up to 500 authorized queued '
   + 'tickets with priority, global queue position and reason; queueTruncated reports additional tickets. '
+  + 'Every part fails after 60 seconds without test results/output or max(3x expectedDurationMs, 120 seconds). '
+  + 'The watchdog kills the process tree; message and logs name the running test from Vitest start events. '
   + 'Status and the log tail update on the dispatcher cadence (normally five seconds). Pre-upgrade tickets '
   + 'can have an empty cached tail; ci_logs_read still reads their logs. '
   + 'ci_get with testStatus (passed, failed, skipped) adds the ticket’s structured test results: '
@@ -73,6 +88,8 @@ export const CI_CAPABILITY_DETAIL = 'ci_run runs one suite (install, typecheck, 
   + 'Agent CI readback and cancellation are limited to tickets from that execution. '
   + 'Agent requests publish their persisted lifecycle into their Run’s activities and Board activity snapshot. '
   + '(group=true includes bounded pages and individual cursors for every part); ci_cancel stops one ticket. '
+  + 'Cancellation records the caller and optional commandId once; failed remote cleanup remains pending and retries '
+  + 'on the assigned executor. An unknown start reply retains that executor until reconciled. '
   + 'run_stop cancels every non-terminal ticket created by that Run’s Agents and its remote provider run, with audit. '
   + 'Agents are restricted to their active Run workspace. Computers without a GitHub login report it in ci_computers_list.'
 
@@ -139,7 +156,8 @@ export function registerCiTools(server: McpServer, context: CiContext) {
     outputSchema: CiComputersOutputSchema, annotations: read,
   }, input => invoke('ci_computers_list', () => ci.computers(context.principal, input)))
   if (available('ci_cancel')) server.registerTool('ci_cancel', {
-    description: 'Cancel a queued or running CI run by ticketId. Requires jobs:cancel. ' + CI_CAPABILITY_DETAIL,
+    description: 'Cancel a queued or running CI run by ticketId. Requires jobs:cancel. Optional commandId identifies '
+      + 'the audited request; replay does not duplicate the successful transition. ' + CI_CAPABILITY_DETAIL,
     inputSchema: operator ? OperatorCiCancelInputSchema : CiCancelInputSchema,
     outputSchema: CiCancelOutputSchema,
     annotations: { ...read, readOnlyHint: false, destructiveHint: true },
