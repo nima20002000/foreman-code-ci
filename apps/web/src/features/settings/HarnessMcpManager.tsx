@@ -79,9 +79,7 @@ function ConnectionForm({ busy, disabled, onReview }: {
   </div>
 }
 
-type NativeMcpManagerProps = { harness: Harness; accessUnavailable?: boolean }
-
-function useNativeMcpManager({ harness, accessUnavailable = false }: NativeMcpManagerProps) {
+function NativeMcpManager({ harness, accessUnavailable = false }: { harness: Harness; accessUnavailable?: boolean }) {
   const guard = useContext(UnsavedChangesContext)
   const servers = useNativeMcpServers(harness, !accessUnavailable)
   const accessError = useProtectedAccessError(servers)
@@ -168,23 +166,6 @@ function useNativeMcpManager({ harness, accessUnavailable = false }: NativeMcpMa
     if (managed.data?.status === 'applied' && managed.data.change.kind === 'remove' && managed.data.change.name === detailsName) setDetailsName(undefined)
     if (managed.operation && managed.operation.phase !== 'sending' && detailsName) setDetailsName(undefined)
   }, [managed.data, managed.operation, detailsName])
-  return {
-    guard, servers, blocked, serverData, plans, request, decision, managed, reconciliation,
-    setObservedAcceptance, adding, setAdding, active, setActive, detailsName, setDetailsName, feedback,
-    selected, reconcileInput, acceptObservedState, inspection, expired, requestChange, decide, manage,
-    reconcile, presets, details, detailsPreset, detailsRemovable, outstanding, managedBusy, detailsBusy,
-  }
-}
-
-function NativeMcpManager({ harness, accessUnavailable = false }: NativeMcpManagerProps) {
-  const {
-    guard, servers, blocked, serverData, plans, request, decision, managed, reconciliation,
-    setObservedAcceptance, adding, setAdding, active, setActive, detailsName, setDetailsName, feedback,
-    selected, reconcileInput, acceptObservedState, inspection, expired, requestChange, decide, manage,
-    reconcile, presets, details, detailsPreset, detailsRemovable, outstanding, managedBusy, detailsBusy,
-  } = useNativeMcpManager({
-    harness, accessUnavailable,
-  })
   return <section className="harness-mcp-manager" aria-label={`${harness} MCP connections`}>
     <div className="harness-section-heading"><div><h4>MCP servers</h4><p className="harness-muted">Native user configuration · changes apply to new sessions.</p></div>
       <div className="harness-inline-actions"><Button size="sm" disabled={servers.isFetching} onClick={() => void servers.refetch()}>Refresh</Button>
