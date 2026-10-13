@@ -1,8 +1,7 @@
 import type { NativeSessionReference } from '@foreman-code/contracts'
 
 import { harnessBinaries } from '../../src/modules/harnesses/binaries.js'
-import { canonicalJson } from '@foreman-code/contracts/canonical-json'
-import { qualifyCodex } from '../../src/modules/harnesses/codexProtocol.js'
+import { canonical, qualifyCodex } from '../../src/modules/harnesses/codexProtocol.js'
 import { CodexStdioTransport, object, type JsonObject } from '../../src/modules/harnesses/codexStdioTransport.js'
 
 /** Full persisted records, not notification counts or a resident manager's event cache.
@@ -23,7 +22,7 @@ export function nativeSourceContent(session: NativeSessionReference, records: Js
   }
   const entries = records.map((record) => ({ id: id(record), record }))
   if (new Set(entries.map((entry) => entry.id)).size !== entries.length) throw new Error('Source history repeated a record identity.')
-  return canonicalJson({ harness: session.harness, sessionId: session.nativeSessionId,
+  return canonical({ harness: session.harness, sessionId: session.nativeSessionId,
     records: entries.sort((a, b) => a.id.localeCompare(b.id)).map((entry) => entry.record) })
 }
 

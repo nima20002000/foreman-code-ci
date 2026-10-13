@@ -1,5 +1,4 @@
 import { isDeepStrictEqual } from 'node:util'
-import { withTransaction } from '../../infrastructure/transaction.js'
 import { join } from 'node:path'
 import type pg from 'pg'
 import { TransferIntentSchema, TransferContextSchema, type TransferIntent, type TransferContext } from '@foreman-code/contracts/byte-transfer'
@@ -67,7 +66,10 @@ export class PostgresSourceRsyncLifecycle implements AcceptedTransferAuthority {
   async committed(raw: TransferIntent, rawContext: TransferContext): Promise<SourceMaterializationRecord> {
     const intent = TransferIntentSchema.parse(raw), context = TransferContextSchema.parse(rawContext)
     await this.authorize(intent, context, 'read')
-    const record = await withTransaction(this.pool, async (sql) => {
+    const sql = await this.pool.connect()
+    let record: SourceMaterializationRecord
+    try {
+      await sql.query('begin')
       const original = await allocation(sql, intent.transferId)
       if (!isDeepStrictEqual(original.intent, intent)) conflict('Source package admission changed during readback.')
       const rows = (await sql.query<{ record: unknown; state: string; reservation_id: string; materialization_id: string }>(`select record,state,reservation_id,materialization_id
@@ -77,7 +79,7 @@ export class PostgresSourceRsyncLifecycle implements AcceptedTransferAuthority {
       if (rows.length !== 1) conflict('The exact source materialization has not committed.')
       const row = rows[0]!, stored = SourceMaterializationRecordSchema.parse(row.record)
       if (stored.state === 'uncertain') conflict('The original source materialization is uncertain.')
-      const record = SourceMaterializationRecordSchema.parse({ ...stored, state: row.state })
+      record = SourceMaterializationRecordSchema.parse({ ...stored, state: row.state })
       assertRecord(intent, record)
       if (!isDeepStrictEqual(record.receipt.binding, original.root.binding)
         || record.rootPolicyId !== original.root.selection.rootPolicyId || record.rootPolicyRevision !== original.root.selection.rootPolicyRevision
@@ -100,8 +102,8 @@ export class PostgresSourceRsyncLifecycle implements AcceptedTransferAuthority {
       if (reservations.length !== 1 || reservations[0]!.state !== 'owned' || reservations[0]!.owner_kind !== 'materialization'
         || reservations[0]!.owner_id !== intent.operationId || !Number.isSafeInteger(Number(reservations[0]!.reserved_bytes))
         || Number(reservations[0]!.reserved_bytes) < manifest.totalBytes) conflict('The actual source materialization reservation is not owned or accounted.')
-      return record
-    })
+      await sql.query('commit')
+    } catch (error) { await sql.query('rollback'); throw error } finally { sql.release() }
     // No transaction spans the live-authority recheck, local filesystem checks or rsync ACK.
     await this.authorize(intent, context, 'read'); return record
   }

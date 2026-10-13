@@ -1,5 +1,4 @@
 import type pg from 'pg'
-import { beginTransaction, commitTransaction, rollbackTransaction } from '../../../infrastructure/transaction.js'
 
 import { cleanupBatchSize, type FileArtifactCleanupCandidate, type FileArtifactCleanupRepository,
   type FileCleanupOutcome } from './repository.js'
@@ -37,13 +36,13 @@ export class PostgresFileArtifactCleanupRepository implements FileArtifactCleanu
     const check = () => { if (broken) throw new Error('Artifact cleanup database ownership was lost.') }
     const begin = async () => {
       check()
-      await beginTransaction(client).catch((error: unknown) => { broken = true; throw error })
+      await client.query('begin').catch((error: unknown) => { broken = true; throw error })
       inTransaction = true
       await client.query("set local lock_timeout='1s'; set local statement_timeout='5s'")
     }
     const commit = async () => {
       check()
-      await commitTransaction(client).catch((error: unknown) => { broken = true; throw error })
+      await client.query('commit').catch((error: unknown) => { broken = true; throw error })
       inTransaction = false; check()
     }
     const read = async () => {
@@ -85,7 +84,7 @@ export class PostgresFileArtifactCleanupRepository implements FileArtifactCleanu
       return complete ? 'cleaned' : 'remaining'
     } finally {
       if (inTransaction) {
-        try { await rollbackTransaction(client) } catch { broken = true }
+        try { await client.query('rollback') } catch { broken = true }
       }
       if (locked && !broken) {
         try {
