@@ -1,4 +1,3 @@
-import { errorMessage } from '../../shared/errorMessage.js'
 import { randomUUID } from 'node:crypto'
 import type pg from 'pg'
 import { BuildComputerPrepareGetInputSchema, BuildComputerPrepareInputSchema, BuildComputerPrepareStatusSchema,
@@ -204,7 +203,7 @@ export class CiRuntimeProvisioner {
       const retryDelay = Math.min(60 * 60_000, 60_000 * 2 ** Math.min(failureCount, 6))
       record.status = { ...record.status, state: 'failed',
         failureCount, retryAt: new Date(this.timing.now().getTime() + retryDelay).toISOString(),
-        message: (errorMessage(error, 'Runtime preparation failed.')).slice(0, 2000) }
+        message: (error instanceof Error ? error.message : 'Runtime preparation failed.').slice(0, 2000) }
       await checkpoint()
     } finally {
       await owner.release()
