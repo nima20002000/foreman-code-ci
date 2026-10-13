@@ -280,15 +280,15 @@ export async function remoteReviewProduction(options: {
           if ('diagnostic' in parsed && parsed.diagnostic === 'runtime-timing' && options.reportPhase) {
             const timing = parsed as RuntimeTimingRecord & { diagnostic: 'runtime-timing' }
             // Per-query logging fills the runner's log cap before native failures are reported.
-            if (timing.component === 'db') continue
-            console.info(`[remote-review] ${role} timing`, {
+            if (timing.component === 'db' || timing.durationMs < 1000) continue
+            console.info(`[remote-review] ${role} timing`, JSON.stringify({
               component: timing.component, phase: timing.phase, operation: timing.operation,
               startedAt: timing.startedAt, finishedAt: timing.finishedAt, durationMs: timing.durationMs,
               intervalMs: timing.intervalMs, reused: timing.reused, count: timing.count,
               runId: timing.runId, executionId: timing.executionId, nativeSessionId: timing.nativeSessionId,
               laneId: timing.laneId, correlationId: timing.correlationId, ownerId: timing.ownerId,
               nativeTurnId: timing.nativeTurnId, eventType: timing.eventType, success: timing.success,
-            })
+            }))
           }
           const event = parsed as { level?: unknown; code?: unknown; errorCode?: unknown; stackFrames?: unknown;
             namespace?: unknown; runId?: unknown; err?: { code?: unknown; stack?: unknown; message?: unknown; type?: unknown }; msg?: unknown;
@@ -303,6 +303,7 @@ export async function remoteReviewProduction(options: {
           const errorDetail = code === 'source-reconciliation-unconfirmed' && typeof sourceMessage === 'string'
             && /^Process \d+ (?:still |could not be inspected|exceeded )/.test(sourceMessage)
             ? sourceMessage.slice(0, 200) : undefined
+          reportIntegrationPhase(`${role} failure ${code}`, 0)
           failures.push({ code, phase: event.phase, errorType: event.errorType ?? event.err?.type,
             errorDetail,
             namespace: typeof event.namespace === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(event.namespace)

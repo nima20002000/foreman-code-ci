@@ -108,12 +108,6 @@ export function hungContext(output) {
     lastOutput: lines.at(-1)?.slice(0, 500) ?? null }
 }
 
-/** Fixed per-file overhead: milliseconds from the file's launch until its test module was collected. */
-export function startupText(phases) {
-  const collected = phases.find((phase) => phase.phase === 'module-collected')
-  return collected ? `; startup ${collected.elapsedMs} ms` : ''
-}
-
 export function parseVitestCases(output) {
   const lines = output.replace(/\x1b\[[0-9;]*m/g, '').split(/\r?\n/)
   const line = lines.findLast((item) => /^\s*Tests\s+.*\(\d+\)\s*$/.test(item))
@@ -806,11 +800,10 @@ export async function runIntegration(argv = [], {
         error = new Error(`${summary.skipped} skipped cases in an integration run`)
       }
       let hangDetails
-      const startupPhases = readIntegrationStartup(readFileSync(log, 'utf8'))
       if (code === 0) {
         if (isRetest) retest.passed++
         else passed++
-        console.log(`[integration] ${label}PASS ${file} (slot ${slot.index}; ${summary.passed} cases passed, ${summary.skipped} skipped; ${elapsedMs} ms${startupText(startupPhases)})`)
+        console.log(`[integration] ${label}PASS ${file} (slot ${slot.index}; ${summary.passed} cases passed, ${summary.skipped} skipped; ${elapsedMs} ms)`)
       }
       else {
         if (isRetest) {
@@ -840,7 +833,7 @@ export async function runIntegration(argv = [], {
         if (result.resetError) console.error(`[integration] ${result.resetError.message}`)
       }
       const record = { file, slot: slot.index, code, elapsedMs,
-        startup: { databaseSetupMs, phases: startupPhases },
+        startup: { databaseSetupMs, phases: readIntegrationStartup(readFileSync(log, 'utf8')) },
         complete: Boolean(fileReport?.complete && !reportError && !ownedProcessActive), timedOut: result.timedOut,
         report: fileReport, reportError, log: retainedLog, metrics, reason: error?.message ?? reportError,
         ...(hangDetails ? { status: 'HUNG', hung: hangDetails } : {}) }
