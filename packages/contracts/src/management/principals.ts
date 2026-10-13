@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { IdSchema, TimestampSchema } from '../schemaPrimitives.js'
 
-const ManagementAudienceSchema = z.enum(["operator", "worker", "user"]);
+export const ManagementAudienceSchema = z.enum(["operator", "worker", "user"]);
 export type ManagementAudience = z.infer<typeof ManagementAudienceSchema>;
 
 export const ManagementActionSchema = z.enum([
@@ -9,7 +9,6 @@ export const ManagementActionSchema = z.enum([
   'bug_reports:report', 'bug_reports:read', 'bug_reports:update',
   "sources:read", "sources:approve", "sources:reconcile", "source_roots:read", "source_roots:bind",
   "job_definitions:read", "job_definitions:write", "jobs:start", "jobs:read", "jobs:cancel", "job_logs:read", "job_artifacts:read",
-  'jobs:prioritize',
   "agents:create",
   "agents:update",
   "agents:archive",
@@ -65,13 +64,13 @@ export const ManagementActionSchema = z.enum([
 ]);
 export type ManagementAction = z.infer<typeof ManagementActionSchema>;
 
-/** Host telemetry, provisioning and CI priority require separately selected grants, including for broad presets. */
+/** Host telemetry and provisioning require separately selected grants, including for broad presets. */
 export const DEFAULT_MANAGEMENT_ACTIONS = ManagementActionSchema.options.filter(
   (action) => action !== "devices:metrics:read" && action !== "devices:provision"
-    && action !== 'provider_accounts:read' && action !== 'provider_accounts:manage' && action !== 'jobs:prioritize',
+    && action !== 'provider_accounts:read' && action !== 'provider_accounts:manage',
 );
 
-const ManagementScopeSchema = z
+export const ManagementScopeSchema = z
   .object({
     workspaceIds: z.array(IdSchema).max(500).optional(),
     workflowIds: z.array(IdSchema).max(500).optional(),
@@ -113,3 +112,4 @@ export const ManagementPrincipalSchema = z
     }
   });
 export type ManagementPrincipal = z.infer<typeof ManagementPrincipalSchema>;
+

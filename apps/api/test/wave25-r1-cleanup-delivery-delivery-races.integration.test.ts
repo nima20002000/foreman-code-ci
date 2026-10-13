@@ -1,14 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { deferred, postgresEnabled } from './helpers/wave25Agent3.js'
 import { approvalResponse } from './helpers/approvalResponse.js'
 import { cleanupDeliveryFixtures, within } from './helpers/cleanupDelivery.js'
-import { rejectableDeferred } from './helpers/deferred.js'
 
 describe.skipIf(!postgresEnabled)('PostgreSQL approval delivery races', () => {
   const { fixture } = cleanupDeliveryFixtures()
 
   it('Stop commits independently while the actual provider response remains unresolved', async () => {
-    const f = await fixture(), entered = rejectableDeferred(), release = rejectableDeferred()
+    const f = await fixture(), entered = deferred(), release = deferred()
     f.provider.beforeRespond = async () => { entered.resolve(); await release.promise }
     const operation = f.service.respond({ kind: 'user', principal: f.principal }, approvalResponse(f.interaction))
     const observed = operation.then((value) => ({ value }), (error: unknown) => ({ error }))
@@ -24,13 +23,17 @@ describe.skipIf(!postgresEnabled)('PostgreSQL approval delivery races', () => {
   }, 60000)
 
   it('a changed native generation cannot consume the old provider response', async () => {
-    const f = await fixture(), entered = rejectableDeferred(), release = rejectableDeferred()
+    const f = await fixture(), entered = deferred(), release = deferred()
     f.provider.beforeRespond = async () => { entered.resolve(); await release.promise }
     const operation = f.service.respond({ kind: 'user', principal: f.principal }, approvalResponse(f.interaction))
     const observed = operation.then(() => undefined, (error: unknown) => error)
     try {
       await within(entered.promise)
-      await f.db.pool.query("update native_session_lanes set record=jsonb_set(record,'{connectionGeneration}','1'::jsonb) where native_session_id=$1", [f.interaction.nativeSessionId])
+      const originalLane = await f.repository.coordination.getLane(f.interaction.harness, f.interaction.nativeSessionId)
+      expect(originalLane?.leaseToken).toBeDefined()
+      await f.repository.coordination.releaseLane(originalLane!.id, originalLane!.leaseToken!, {
+        observedStatus: 'uncertain', connectionGeneration: originalLane!.connectionGeneration + 1,
+      })
       release.resolve(); await observed
       expect(await f.receipts()).toEqual([])
       expect((await f.runs.get(f.f.run.id))?.outcome).not.toBe('succeeded')

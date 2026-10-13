@@ -1,7 +1,7 @@
 import { NativeInteractionResponseAvailabilitySchema } from './interaction-activity.js';
 import { NativeMessageSubmissionSchema } from './claude.js';
 import { z } from "zod";
-import { ActivitySnapshotV1Schema } from "./activity.js";
+import { ActivityRevisionSchema, ActivitySnapshotV1Schema } from "./activity.js";
 import { MessageAttachmentFields } from "./files.js";
 import { OperatorConversationHistoryQuerySchema } from "./operatorChat.js";
 import { SavedNodePlacementSchema } from './nodePlacement.js';
@@ -30,7 +30,7 @@ import {
  */
 
 /** How a new input relates to work already in the conversation. */
-const AgentChatIntentSchema = z.enum([
+export const AgentChatIntentSchema = z.enum([
   /** Run after the current turn finishes (or immediately when idle). */
   "next_turn",
   /** Add text to the active turn. Attachments require a new turn; capabilities.steer must be available. */
@@ -45,20 +45,22 @@ export type AgentChatIntent = z.infer<typeof AgentChatIntentSchema>;
  * model consumed the input. `unknown` means acceptance could not be proven; it is reconciled from
  * native history and never blindly resubmitted.
  */
-const AgentChatDeliveryStateSchema = z.enum([
+export const AgentChatDeliveryStateSchema = z.enum([
   "queued", "submitting", "accepted", "completed", "failed", "canceled", "unknown",
 ]);
+export type AgentChatDeliveryState = z.infer<typeof AgentChatDeliveryStateSchema>;
 
 /** Steering support of the installed provider version, qualified by the backend. */
-const AgentChatSteerSupportSchema = z.enum([
+export const AgentChatSteerSupportSchema = z.enum([
   /** Codex app-server `turn/steer` with an expectedTurnId precondition. */
   "native_expected_turn",
   /** Provider consumes extra input at its next processing step; no active-turn precondition. */
   "cooperative_next_step",
   "unavailable",
 ]);
+export type AgentChatSteerSupport = z.infer<typeof AgentChatSteerSupportSchema>;
 
-const AgentChatCapabilitiesSchema = z.object({
+export const AgentChatCapabilitiesSchema = z.object({
   harness: RecordedAgentHarnessSchema,
   providerVersion: z.string().trim().min(1).nullable(),
   steer: AgentChatSteerSupportSchema,
@@ -86,7 +88,7 @@ export const AgentChatContextSchema = z.object({
 }).strict();
 export type AgentChatContext = z.infer<typeof AgentChatContextSchema>;
 
-const AgentChatOriginSchema = z.discriminatedUnion("kind", [
+export const AgentChatOriginSchema = z.discriminatedUnion("kind", [
   /** New native session from the Agent's current accepted configuration. */
   z.object({ kind: z.literal("fresh") }).strict(),
   /** Native fork of a finished Run execution's session. The Run and its native history stay unchanged. */
@@ -121,7 +123,7 @@ export const AgentConversationSchema = z.object({
 }).strict();
 export type AgentConversation = z.infer<typeof AgentConversationSchema>;
 
-const AgentChatSessionStateSchema = z.enum([
+export const AgentChatSessionStateSchema = z.enum([
   /** No conversation yet; the first message creates exactly one native session. */
   "none",
   "creating",
@@ -138,7 +140,7 @@ const AgentChatSessionStateSchema = z.enum([
 export type AgentChatSessionState = z.infer<typeof AgentChatSessionStateSchema>;
 
 /** Why sending is blocked. Absent when `availability.canSend` is true. */
-const AgentChatBlockedReasonSchema = z.enum([
+export const AgentChatBlockedReasonSchema = z.enum([
   "run_active",
   "agent_missing",
   "harness_unavailable",
@@ -180,7 +182,7 @@ export const AgentChatSourceTranscriptSchema = z.object({
 export type AgentChatSourceTranscript = z.infer<typeof AgentChatSourceTranscriptSchema>;
 
 /** One public entry of a workflow execution: a message or a tool, file, MCP, plan, reasoning-summary or subagent step. */
-const AgentChatExecutionItemSchema = z.object({
+export const AgentChatExecutionItemSchema = z.object({
   executionId: IdSchema,
   /** Stable within the execution; a later page with the same id replaces the entry. */
   id: z.string().min(1).max(1024),
@@ -197,7 +199,7 @@ const AgentChatExecutionItemSchema = z.object({
 }).strict();
 export type AgentChatExecutionItem = z.infer<typeof AgentChatExecutionItemSchema>;
 
-const AgentChatExecutionSummarySchema = z.object({
+export const AgentChatExecutionSummarySchema = z.object({
   executionId: IdSchema,
   /** Human label: Execution, Attempt n, Interval check n or Occurrence n. */
   label: z.string().min(1).max(120),
@@ -311,7 +313,7 @@ export const SendAgentChatMessageRequestSchema = z.object({
 export type SendAgentChatMessageRequest = Omit<z.infer<typeof SendAgentChatMessageRequestSchema>, "attachments">
   & { attachments?: z.input<typeof MessageAttachmentFields.attachments> };
 /** Legacy urgent receipts did not retain the original target. This is readback, not target verification. */
-const AgentChatReplayWarningSchema = z.object({
+export const AgentChatReplayWarningSchema = z.object({
   code: z.literal("AGENT_CHAT_LEGACY_TARGET_UNVERIFIABLE"),
   message: z.string().min(1),
 }).strict();
@@ -392,5 +394,6 @@ export const AgentChatStreamEventSchema = z.object({
 }).strict();
 export type AgentChatStreamEvent = z.infer<typeof AgentChatStreamEventSchema>;
 
-export { agentChatFixtures, codexChatCapabilities, claudeChatCapabilities,
+export {
+  agentChatFixtureContext, agentChatFixtures, codexChatCapabilities, claudeChatCapabilities, steerUnavailableCapabilities,
 } from "./agentChatFixtures.js";

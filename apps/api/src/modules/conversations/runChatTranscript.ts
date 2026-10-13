@@ -79,8 +79,12 @@ export function projectRunChatTranscript(execution: HarnessExecution, rows: read
       ...(row.original_bytes > Buffer.byteLength(content)
         ? { truncation: { truncated: true, originalBytes: row.original_bytes } } : {}) })
   }
+  const latestRevision = rows.reduce((latest, row) => {
+    const revision = BigInt(row.revision)
+    return revision > latest ? revision : latest
+  }, 0n)
   return AgentChatSourceTranscriptSchema.parse({ executionId: execution.id, state: execution.state,
-    revision: rows.reduce((latest, row) => BigInt(row.revision) > BigInt(latest) ? row.revision : latest, '0'),
+    revision: String(latestRevision),
     messages: messages.reverse(), hasEarlierMessages: rows.length > 100 })
 }
 

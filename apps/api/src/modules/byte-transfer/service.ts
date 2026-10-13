@@ -7,7 +7,6 @@ import { z } from 'zod'
 import { BYTE_TRANSFER_POLICY as POLICY, TransferIntentSchema, TransferContextSchema,
   TransferProgressSchema, VerifiedTransferReceiptSchema, type TransferIntent, type TransferContext,
   type TransferProgress, type VerifiedTransferReceipt, type ByteTransferPort } from '@foreman-code/contracts/byte-transfer'
-import { ignoreError } from '../diagnostics/ignoredError.js'
 
 export type TransferOperation = 'start' | 'status' | 'append' | 'finish' | 'cancel' | 'read'
 export class TransferExpiredError extends Error {}
@@ -16,6 +15,12 @@ export interface TransferAuthorization {
   authorize(intent: TransferIntent, context: TransferContext, operation: TransferOperation): Promise<void>
 }
 export type ExternalStagingKind = 'rsync-source' | 'rsync-receiver'
+/** Trusted local composition only. Release follows physical cleanup and stopped-writer/readers proof.
+ * Reservation retries are idempotent; the existing transport runner owns POLICY.maxRetries. */
+export interface ExternalStagingQuota {
+  reserve(intent: TransferIntent, context: TransferContext, allocation: { kind: ExternalStagingKind; byteSize: number }): Promise<void>
+  release(intent: TransferIntent, kind: ExternalStagingKind): Promise<void>
+}
 const ExternalKindSchema = z.enum(['rsync-source', 'rsync-receiver'])
 const ExternalHoldSchema = z.object({ byteSize: z.number().int().nonnegative().max(POLICY.maxStagingBytes), released: z.boolean() }).strict()
 const JournalSchema = z.object({ intent: TransferIntentSchema, progress: TransferProgressSchema,
@@ -31,7 +36,7 @@ function key(id: string) { return z.uuid().parse(id) }
  * Root directory FD anchors all operations on Linux, so renamed/swapped ancestors cannot redirect writes.
  * Crash-left writer locks fail closed; supervisor must confirm the old owner stopped before removing them.
  */
-export class ResumableByteTransferService implements ByteTransferPort {
+export class ResumableByteTransferService implements ByteTransferPort, ExternalStagingQuota {
   private directory: FileHandle | undefined
   private initializing: Promise<void> | undefined
   private busy = new Set<string>()
@@ -406,7 +411,7 @@ export class ResumableByteTransferService implements ByteTransferPort {
         })(), { objectMode: false, highWaterMark: POLICY.maxChunkBytes })
         this.readers.add(stream)
         stream.once('close', () => {
-          void closeReader().catch(ignoreError('byte-transfer', 'close verified transfer reader', { transferId: receipt.transferId }))
+          void closeReader().catch(() => {})
         })
         return stream
       } catch (error) { await handle.close(); throw error }
