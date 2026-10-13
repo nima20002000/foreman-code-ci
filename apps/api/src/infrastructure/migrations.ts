@@ -5,7 +5,9 @@ import { nativeActivityNoiseMigration } from './nativeActivityNoiseMigration.js'
 import { workspaceRepositoryImportsMigration } from './workspaceRepositoryImportsMigration.js'
 import { retiredHarnessCredentialsMigration } from './retiredHarnessCredentialsMigration.js'
 import { bugReportsMigration } from './bugReportsMigration.js'
+import { bugReportLifecycleMigration } from './bugReportLifecycleMigration.js'
 import { hostCiRunsMigration } from './hostCiRunsMigration.js'
+import { ciHostSlotsMigration } from './ciHostSlotsMigration.js'
 import { hostCiActivityMigration } from './hostCiActivityMigration.js'
 import { agentIntervalMigration } from './agentIntervalMigration.js'
 import { ciTestResultsMigration } from './ciTestResultsMigration.js'
@@ -925,6 +927,8 @@ export const migrations = [
   workResultRepairMigration,
   databaseHotQueriesMigration,
   workflowOrderMigration,
+  bugReportLifecycleMigration,
+  ciHostSlotsMigration,
 ] as const
 
 export async function applyApplicationMigrations(pool: pg.Pool): Promise<void> {
