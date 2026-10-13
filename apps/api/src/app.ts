@@ -1,4 +1,3 @@
-import { registerRuntimeInstallationSecurity } from './infrastructure/runtimeIdentity.js'
 import { randomUUID } from 'node:crypto'
 import { scheduleDispatchLog } from './modules/schedules/dispatchErrors.js'
 
@@ -154,7 +153,6 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
   )
 
   if (options.runtimeIdentity) {
-    registerRuntimeInstallationSecurity(app, options.runtimeIdentity)
     app.get('/health/identity', async (_request, reply) => { reply.header('cache-control', 'no-store'); return options.runtimeIdentity!() })
     app.get('/api/runtime/identity', async (_request, reply) => { reply.header('cache-control', 'no-store'); return options.runtimeIdentity!() })
   }
