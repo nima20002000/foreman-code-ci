@@ -23,7 +23,7 @@ afterEach(async () => {
 
 /** A computer with a real git origin standing in for GitHub, gh and corepack shims, and a systemd-run that runs the
  * unit's script as a child process the way the user manager would. */
-async function computer(options: { github?: boolean; suiteExit?: number; pause?: boolean
+async function computer(options: { github?: boolean; suiteExit?: number; watchdogReason?: string; pause?: boolean
   measured?: Record<string, number>; databaseExit?: number; selector?: boolean;
   change?: 'source' | 'infrastructure' | 'docs'; defaultBranch?: string; cpuCount?: number; hostSlots?: boolean } = {}) {
   const root = await mkdtemp(join(process.env.FOREMAN_CODE_TEST_ROOT ?? '/tmp', 'host-ci-'))
@@ -97,6 +97,7 @@ async function computer(options: { github?: boolean; suiteExit?: number; pause?:
     + ' || { [ "$2" = --dir ] && [ "$3" = apps/api ] && [ "$5" = vitest ]; }; then\n'
     + '  [ -f "$TMPDIR/database-ready" ] || exit 11\nfi\n'
     + 'if [ "$*" = "pnpm --filter @foreman-code/contracts build" ]; then exit 0; fi\n'
+    + (options.watchdogReason ? `if [ -n "\${CI_WATCHDOG_MESSAGE_FILE:-}" ]; then printf '%s' '${JSON.stringify({ message: options.watchdogReason })}' > "$CI_WATCHDOG_MESSAGE_FILE"; echo '[ci-watchdog] ${options.watchdogReason}'; fi\n` : '')
     + 'if [ "$2" != install ] && [ "$2" != db:up ]; then '
     + `${options.pause ? 'read -r pauseInput; ' : ''}exit ${options.suiteExit ?? 0}; fi\n`)
   await chmod(join(bin, 'corepack'), 0o755)
@@ -111,7 +112,7 @@ async function computer(options: { github?: boolean; suiteExit?: number; pause?:
     availableMemoryBytes: () => 16 * 2 ** 30,
     run: async (file, args, runOptions = {}) => {
       if (file === 'gh') return { code: options.github === false ? 1 : 0, stdout: '', stderr: '' }
-      if (file === 'git' && (args.includes('clone') || args.includes('remote'))) {
+      if (file === 'git' && args.includes('clone')) {
         return system.run('git', args.map(value => value.startsWith('https://github.com/') ? origin : value), runOptions)
       }
       if (file === 'systemd-run') {
@@ -358,7 +359,7 @@ describe('host CI runner', () => {
     expect(done.text).not.toContain('test/second.test.ts')
   })
 
-  it('fetches the commit, installs and runs the suite, then releases its slot', async () => {
+  it('fetches the commit, installs and runs the suite in its own worktree, then frees the worktree', async () => {
     const f = await computer()
     const runId = randomUUID()
     const started = await f.runner.handle({ operation: 'start', runId, repository: 'octo/site', commit: f.commit, suite: 'unit' })
@@ -367,7 +368,7 @@ describe('host CI runner', () => {
     expect(done.run).toMatchObject({ state: 'passed', exitCode: 0, step: 'unit' })
     expect(done.text).toContain('corepack pnpm install --frozen-lockfile')
     expect(done.text).toContain('corepack pnpm test')
-    await expect(f.runner.status()).resolves.toMatchObject({ slotsUsed: 0 })
+    expect(existsSync(join(f.root, 'ci/runs', runId, 'src'))).toBe(false)
     // A retried start returns the same run instead of starting it again.
     expect(await f.runner.handle({ operation: 'start', runId, repository: 'octo/site', commit: f.commit, suite: 'unit' }))
       .toMatchObject({ run: { runId, state: 'passed' } })
@@ -451,4 +452,19 @@ describe('host CI runner', () => {
     expect((await f.settle(runId)).run).toMatchObject({ state: 'lost', exitCode: null })
     expect(await readFile(join(f.root, 'ci/runs', runId, 'meta.json'), 'utf8')).toContain('"cleaned":true')
   })
+})
+
+
+it('returns the saved watchdog reason with the failed build-computer ticket and logs', async () => {
+  const reason = 'CI hang watchdog: no test progress for 60000 ms; running: loop.test.ts > planner never returns'
+  const f = await computer({ suiteExit: 1, watchdogReason: reason })
+  const runId = randomUUID()
+  await f.runner.handle({ operation: 'start', runId, repository: 'example/project', commit: f.commit,
+    suite: 'typecheck', expectedDurationMs: 150_000 })
+  const result = await f.settle(runId)
+  expect(result.run).toMatchObject({ state: 'failed', exitCode: 1, message: reason })
+  expect(result.text).toContain(reason)
+  const reopened = new HostCiRunner(join(f.root, 'ci'))
+  expect(await reopened.handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 65_536 }))
+    .toMatchObject({ run: { state: 'failed', message: reason } })
 })
