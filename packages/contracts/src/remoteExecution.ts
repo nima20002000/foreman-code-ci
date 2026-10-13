@@ -22,9 +22,6 @@ export const RemoteOwnerControlSchema = OwnerControlSchema.extend({
   native: RemoteNativeIdentitySchema.optional(),
 }).superRefine((value, context) => {
   if (value.action.kind === 'respond' && !value.native?.turnId) context.addIssue({ code: 'custom', message: 'Respond requires the exact native session and turn.' })
-  if (value.action.kind === 'close' && !value.native) context.addIssue({
-    code: 'custom', message: 'Close requires the original native session and process.',
-  })
 })
 export type RemoteOwnerControl = z.infer<typeof RemoteOwnerControlSchema>
 export const WorkflowArtifactValidationFailureSchema = z.object({

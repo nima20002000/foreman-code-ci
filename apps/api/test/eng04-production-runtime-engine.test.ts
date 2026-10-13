@@ -87,7 +87,6 @@ async function fixture(options: {
     adoptRunOwner: (actual: RunOwnership) => { actual.assertOwned(); nativeOwner = actual },
     preserveActiveForRestart: async () => false,
     cancelRun: async () => { state.nativeCancel++; if (!state.clean) throw new Error('native closure uncertain') },
-    settleRetainedReviewers: async () => { assert.equal(nativeOwner, owner) },
     finishRun: async () => { assert.equal(nativeOwner, owner); state.events.push('finish-native') },
     nativeBoundaryEvidence: async () => { throw new Error('No fake native evidence in registration tests') },
     closeForRestart: async () => { state.events.push('restart-close') }, reconcileReviews: async () => undefined, requestColdRunCleanup: async () => false }

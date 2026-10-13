@@ -100,7 +100,7 @@ export async function recoverInstalledWorkflowReply(input: {
     throw new Error('Original workflow control delivery ownership changed')
   }
   let action: 'read' | 'stop' | 'control' = 'read'
-  if (frame.method === 'control') action = frame.command.action.kind === 'respond' ? 'control' : 'stop'
+  if (frame.method === 'control') action = frame.command.action.kind === 'stop' ? 'stop' : 'control'
   await input.authorize(action)
   input.assertCurrent()
   if (!receipt.native) {

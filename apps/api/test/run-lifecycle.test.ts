@@ -134,7 +134,6 @@ function fixture() {
     finishCleanup: async (_id: string, pending: boolean) => { control.cleanupPending = pending },
   }
   const native = { adoptRunOwner: () => undefined, shareRunOwner: () => () => {}, cancelRun: async () => { calls.cancel++ }, finishRun: async () => { calls.finish++ },
-    settleRetainedReviewers: async () => undefined,
     preserveActiveForRestart: async () => false,
     reconcileReviews: async () => undefined, closeForRestart: async () => undefined, requestColdRunCleanup: async () => false,
     nativeBoundaryEvidence: async () => { throw new Error('No native evidence is fabricated in engine port tests') } }

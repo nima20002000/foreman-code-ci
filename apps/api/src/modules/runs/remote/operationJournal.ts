@@ -633,10 +633,6 @@ export class RemoteOperationJournal {
       if (command.nativeTarget && (command.nativeTarget.kind !== 'session' || command.nativeTarget.sessionId !== receipt.native?.sessionId
         || (command.nativeTarget.turnId && command.nativeTarget.turnId !== remoteActiveNative(receipt)?.turnId))) throw new Error('Wrong explicit native target')
       if (command.native && !same(command.native, remoteActiveNative(receipt))) throw new Error('Wrong native control target')
-      if (command.action.kind === 'close' && (!receipt.retainedReviewer
-        || receipt.reviewTurns?.some(turn => turn.entered && !turn.settled))) {
-        throw new Error('Original retained reviewer still has unsettled native work')
-      }
       if (command.action.kind === 'respond') {
         const target = receipt.interaction
         if (receipt.stopFence || receipt.phase !== 'running' || !target || target.interactionId !== command.action.interactionId
@@ -648,7 +644,7 @@ export class RemoteOperationJournal {
       if (receipt.controls.length >= 128) throw new Error('Control journal full')
       receipt.controls.push(command)
       data.controlDeliveries.push({ operationId: command.operationId, commandId: command.commandId, phase: 'reserved' })
-      if (command.action.kind !== 'respond') { receipt.stopFence = true; if (receipt.phase !== 'confirmed_terminal') receipt.phase = 'stop_requested' }
+      if (command.action.kind === 'stop') { receipt.stopFence = true; if (receipt.phase !== 'confirmed_terminal') receipt.phase = 'stop_requested' }
       receipt.sequence++
       return { dispatch: receipt.phase !== 'confirmed_terminal' && receipt.native !== undefined, receipt }
     }, { controlOperationId: command.operationId })

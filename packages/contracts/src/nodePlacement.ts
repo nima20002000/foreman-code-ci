@@ -98,7 +98,6 @@ export const OwnerControlSchema = z.object({
     z.object({ kind: z.literal('process'), processId: z.number().int().positive(), processStartedAt: z.string().datetime() }).strict(),
   ]).optional(),
   action: z.discriminatedUnion('kind', [z.object({ kind: z.literal('stop') }).strict(),
-    z.object({ kind: z.literal('close') }).strict(),
     z.object({ kind: z.literal('respond'), interactionId: IdSchema, interactionRevision: Revision,
       nativeInteractionId: IdSchema, response: z.json() }).strict()]),
 }).strict()
