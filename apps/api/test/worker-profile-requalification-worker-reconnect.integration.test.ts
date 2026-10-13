@@ -4,12 +4,14 @@ import { describe, expect, it } from 'vitest'
 import { HostHarnessOverrideListSchema } from '@foreman-code/contracts/harness-registry'
 import { remoteReviewProduction, waitForRemoteReview } from './helpers/remoteReviewProduction.js'
 import { latestEvidence, refreshedEvidence, startWhenReady, assertMcpReadback } from './helpers/workerProfileRequalification.js'
+import { measureIntegrationPhase } from './helpers/integrationPhase.js'
 
 describe('automatic Worker profile qualification', () => {
   it('retries Start during a reconnect check and then starts with fresh evidence through authenticated MCP', async () => {
-    const fixture = await remoteReviewProduction({
+    const fixture = await measureIntegrationPhase('Worker reconnect fixture', () => remoteReviewProduction({
       workflow: 'sequential', parallelProfileChecks: true, parallelSetup: true,
-    })
+      installationRefreshIntervalMs: 60_000, includeNodeRuntimePayload: false,
+    }))
     let blocked = false
     try {
       const before = await latestEvidence(fixture)
@@ -19,9 +21,10 @@ describe('automatic Worker profile qualification', () => {
       // Keep inventory discovery responsive while the native profile check is pending.
       await fixture.provider.blockQualification()
       blocked = true
-      await fixture.restartWorker()
-      await waitForRemoteReview(() => fixture.provider.calls(), calls =>
-        calls.filter(call => call.qualificationSuite).length > checksBefore, 'automatic native profile check')
+      await measureIntegrationPhase('authenticated Worker reconnect', fixture.restartWorker)
+      await measureIntegrationPhase('automatic native profile check entering', () => waitForRemoteReview(
+        () => fixture.provider.calls(), calls =>
+          calls.filter(call => call.qualificationSuite).length > checksBefore, 'automatic native profile check'))
       await expect(fixture.start()).rejects.toThrow('HARNESS_PROFILE_CHECK_PENDING')
       expect(await latestEvidence(fixture)).toEqual(before)
       const checkingProfiles = HostHarnessOverrideListSchema.parse(await fixture.value('harness_instances_list', {
@@ -58,7 +61,7 @@ describe('automatic Worker profile qualification', () => {
         })))
     } finally {
       if (blocked) await fixture.provider.releaseQualification()
-      await fixture.close()
+      await measureIntegrationPhase('Worker reconnect cleanup', fixture.close)
     }
   }, 240_000)
 })

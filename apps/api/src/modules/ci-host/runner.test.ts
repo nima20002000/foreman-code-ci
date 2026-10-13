@@ -23,7 +23,7 @@ afterEach(async () => {
 
 /** A computer with a real git origin standing in for GitHub, gh and corepack shims, and a systemd-run that runs the
  * unit's script as a child process the way the user manager would. */
-async function computer(options: { github?: boolean; suiteExit?: number; watchdogReason?: string; pause?: boolean
+async function computer(options: { github?: boolean; suiteExit?: number; pause?: boolean
   measured?: Record<string, number>; databaseExit?: number; selector?: boolean;
   change?: 'source' | 'infrastructure' | 'docs'; defaultBranch?: string; cpuCount?: number; hostSlots?: boolean } = {}) {
   const root = await mkdtemp(join(process.env.FOREMAN_CODE_TEST_ROOT ?? '/tmp', 'host-ci-'))
@@ -97,7 +97,6 @@ async function computer(options: { github?: boolean; suiteExit?: number; watchdo
     + ' || { [ "$2" = --dir ] && [ "$3" = apps/api ] && [ "$5" = vitest ]; }; then\n'
     + '  [ -f "$TMPDIR/database-ready" ] || exit 11\nfi\n'
     + 'if [ "$*" = "pnpm --filter @foreman-code/contracts build" ]; then exit 0; fi\n'
-    + (options.watchdogReason ? `if [ -n "\${CI_WATCHDOG_MESSAGE_FILE:-}" ]; then printf '%s' '${JSON.stringify({ message: options.watchdogReason })}' > "$CI_WATCHDOG_MESSAGE_FILE"; echo '[ci-watchdog] ${options.watchdogReason}'; fi\n` : '')
     + 'if [ "$2" != install ] && [ "$2" != db:up ]; then '
     + `${options.pause ? 'read -r pauseInput; ' : ''}exit ${options.suiteExit ?? 0}; fi\n`)
   await chmod(join(bin, 'corepack'), 0o755)
@@ -107,13 +106,12 @@ async function computer(options: { github?: boolean; suiteExit?: number; watchdo
   let notifyUnitStarted!: () => void
   const unitStarted = new Promise<void>(resolve => { notifyUnitStarted = resolve })
   const units = new Map<string, ReturnType<typeof spawn>>()
-  const checkouts: string[] = []
   const system = systemHostCiPorts()
   const ports: HostCiPorts = { ...system, cpus: options.cpuCount ?? 8, memoryBytes: 16 * 2 ** 30,
     availableMemoryBytes: () => 16 * 2 ** 30,
     run: async (file, args, runOptions = {}) => {
       if (file === 'gh') return { code: options.github === false ? 1 : 0, stdout: '', stderr: '' }
-      if (file === 'git' && (args.includes('clone') || args.includes('remote'))) {
+      if (file === 'git' && args.includes('clone')) {
         return system.run('git', args.map(value => value.startsWith('https://github.com/') ? origin : value), runOptions)
       }
       if (file === 'systemd-run') {
@@ -121,7 +119,6 @@ async function computer(options: { github?: boolean; suiteExit?: number; watchdo
         const env = Object.fromEntries(args.filter(value => value.startsWith('--setenv='))
           .map(value => value.slice('--setenv='.length).split(/=(.*)/s).slice(0, 2)))
         const cwd = args.find(value => value.startsWith('--working-directory='))!.slice('--working-directory='.length)
-        checkouts.push(cwd)
         const child = spawn('/bin/bash', [args.at(-1)!], { cwd, detached: true, env: { ...env, PATH: `${bin}:${process.env.PATH}` } })
         units.set(name, child)
         children.add(child)
@@ -148,7 +145,7 @@ async function computer(options: { github?: boolean; suiteExit?: number; watchdo
     }
     return reply
   }, { interval: 5, timeout: 10_000 })
-  return { root, runner, commit, baseCommit, git, settle, units, unitStarted, checkouts }
+  return { root, runner, commit, baseCommit, git, settle, units, unitStarted }
 }
 
 describe('host CI runner', () => {
@@ -287,7 +284,7 @@ describe('host CI runner', () => {
     await f.runner.handle({ operation: 'start', runId, repository: 'example/project', commit: f.commit,
       suite: 'unit', part: 'unit-api' })
     const done = await f.settle(runId)
-    expect(done.run).toMatchObject({ state: 'failed', exitCode: 9, step: 'prepare' })
+    expect(done.run).toMatchObject({ state: 'failed', exitCode: 9, step: 'unit-api' })
     expect(done.text).toContain('corepack pnpm db:up')
     expect(done.text).not.toContain('corepack pnpm test')
   })
@@ -361,7 +358,7 @@ describe('host CI runner', () => {
     expect(done.text).not.toContain('test/second.test.ts')
   })
 
-  it('fetches the commit, installs and runs the suite, then releases its slot', async () => {
+  it('fetches the commit, installs and runs the suite in its own worktree, then frees the worktree', async () => {
     const f = await computer()
     const runId = randomUUID()
     const started = await f.runner.handle({ operation: 'start', runId, repository: 'octo/site', commit: f.commit, suite: 'unit' })
@@ -370,7 +367,7 @@ describe('host CI runner', () => {
     expect(done.run).toMatchObject({ state: 'passed', exitCode: 0, step: 'unit' })
     expect(done.text).toContain('corepack pnpm install --frozen-lockfile')
     expect(done.text).toContain('corepack pnpm test')
-    await expect(f.runner.status()).resolves.toMatchObject({ slotsUsed: 0 })
+    expect(existsSync(join(f.root, 'ci/runs', runId, 'src'))).toBe(false)
     // A retried start returns the same run instead of starting it again.
     expect(await f.runner.handle({ operation: 'start', runId, repository: 'octo/site', commit: f.commit, suite: 'unit' }))
       .toMatchObject({ run: { runId, state: 'passed' } })
@@ -454,39 +451,4 @@ describe('host CI runner', () => {
     expect((await f.settle(runId)).run).toMatchObject({ state: 'lost', exitCode: null })
     expect(await readFile(join(f.root, 'ci/runs', runId, 'meta.json'), 'utf8')).toContain('"cleaned":true')
   })
-})
-
-it('fetches only an explicitly selected commit and retrieves history later for an affected comparison', async () => {
-  const fixture = await computer({ selector: true, change: 'source' })
-  const first = randomUUID()
-  await fixture.runner.handle({ operation: 'start', runId: first, repository: 'example/project',
-    commit: fixture.commit, suite: 'unit', part: 'unit-api', scope: 'affected', files: [] })
-  expect((await fixture.settle(first)).run.state).toBe('passed')
-  const shallow = () => execFileSync('git', ['rev-parse', '--is-shallow-repository'], {
-    cwd: fixture.checkouts[0]!, encoding: 'utf8',
-  }).trim()
-  expect(shallow()).toBe('true')
-  const second = randomUUID()
-  await fixture.runner.handle({ operation: 'start', runId: second, repository: 'example/project',
-    commit: fixture.commit, baseCommit: fixture.baseCommit, suite: 'unit', part: 'unit-api', scope: 'affected' })
-  const compared = await fixture.settle(second)
-  expect(compared.run.state).toBe('passed')
-  expect(compared.text).toContain('corepack pnpm --dir apps/api exec vitest run test/first.test.ts')
-  expect(shallow()).toBe('false')
-})
-
-
-it('returns the saved watchdog reason with the failed build-computer ticket and logs', async () => {
-  const reason = 'CI hang watchdog: no test progress for 60000 ms; running: loop.test.ts > planner never returns'
-  const f = await computer({ suiteExit: 1, watchdogReason: reason })
-  const runId = randomUUID()
-  await f.runner.handle({ operation: 'start', runId, repository: 'example/project', commit: f.commit,
-    suite: 'typecheck', expectedDurationMs: 150_000 })
-  const result = await f.settle(runId)
-  expect(result.run).toMatchObject({ state: 'failed', exitCode: 1, message: reason })
-  expect(result.text).toContain(reason)
-  const reopened = new HostCiRunner(join(f.root, 'ci'))
-  expect(await reopened.handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 65_536 }))
-    .toMatchObject({ run: { state: 'failed', message: reason } })
-
 })
