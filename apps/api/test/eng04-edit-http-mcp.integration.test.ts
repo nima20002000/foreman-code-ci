@@ -18,7 +18,7 @@ describe.skipIf(!postgresEnabled)('ENG04 current full-definition durable edit pa
   beforeAll(async () => { db = await currentDatabase() }, 60000)
   afterEach(async () => { await Promise.all(fixtures.splice(0).map((t) => t.app.close())) })
   afterAll(async () => { await db?.close() })
-  it.each(['workflow rename', 'Agent settings', 'CI full permission', 'one-pass dependencies'] as const)(
+  it.each(['workflow rename', 'Agent settings', 'one-pass dependencies'] as const)(
     'saves %s through MCP with denied writes, replay and persisted readback', async (change) => {
       const t = await writerFixture(db)
       fixtures.push(t)
@@ -31,22 +31,16 @@ describe.skipIf(!postgresEnabled)('ENG04 current full-definition durable edit pa
       if (change === 'one-pass dependencies') delete graph.handoffs
       const agentId = t.configurations[0]!.agentId
       const row = (await db.pool.query('select record,metadata_revision from agents where id=$1', [agentId])).rows[0]!
-      const edited = { ...AgentSchema.parse(row.record), name: 'Saved Worker', prompt: { system: 'Updated instructions' },
-        ...(change === 'CI full permission' ? { harnessConfiguration: { ...t.configurations[0]!.harness, ciFullScope: true } } : {}) }
+      const edited = { ...AgentSchema.parse(row.record), name: 'Saved Worker', prompt: { system: 'Updated instructions' } }
       const stage = { ...t.input, action: 'stage_edits', draftId: `board-${t.input.workflowId}`,
         commandId: randomUUID(), expectedRevision: saved.revision,
         expectedWorkflowVersionId: saved.currentVersionId,
         expectedNodePresentation: workflowNodeNames(saved.version.definition),
-        graph, ...(change === 'Agent settings' || change === 'CI full permission'
+        graph, ...(change === 'Agent settings'
           ? { stagedAgents: [{ agent: edited, baseRevision: Number(row.metadata_revision) }] } : {}) }
       const reader = await t.credential([{ actions: ['workflows:read', 'graph:read'],
         scope: { workspaceIds: [t.input.workspaceId] } }])
       expect((await t.call(CURRENT_WORKFLOW_TOOLS.edits, stage, reader.token)).result?.isError).toBe(true)
-      if (change === 'CI full permission') {
-        const withoutFull = await t.credential(t.writer.principal.grants.map(grant => ({ ...grant,
-          actions: grant.actions.filter(action => action !== 'jobs:ci_full') })))
-        expect((await t.call(CURRENT_WORKFLOW_TOOLS.edits, stage, withoutFull.token)).result?.isError).toBe(true)
-      }
       const staged = await t.call(CURRENT_WORKFLOW_TOOLS.edits, stage)
       expect(staged.result?.isError, JSON.stringify(staged.result)).not.toBe(true)
       const intent = CurrentEditReadResultSchema.parse(graphRpcValue(staged.result)).intent!
@@ -72,13 +66,12 @@ describe.skipIf(!postgresEnabled)('ENG04 current full-definition durable edit pa
         revision: published.intent!.result!.revision, currentVersionId: published.intent!.result!.currentVersionId,
       })
       if (change === 'one-pass dependencies') expect(readback.version.definition).not.toHaveProperty('handoffs')
-      if (change === 'Agent settings' || change === 'CI full permission') {
+      if (change === 'Agent settings') {
         const agentRow = (await db.pool.query('select record from agents where id=$1', [agentId])).rows[0]!
         const persistedAgent = AgentSchema.parse(agentRow.record)
         expect(persistedAgent).toMatchObject({ name: 'Saved Worker', prompt: { system: 'Updated instructions' },
           configurationVersionId: readback.version.agentConfigurationVersionIds[agentId] })
         expect(published.intent!.result!.agents).toContainEqual(expect.objectContaining({ agent: persistedAgent }))
-        if (change === 'CI full permission') expect(persistedAgent.harnessConfiguration).toMatchObject({ ciFullScope: true })
       }
       const stale = await t.call(CURRENT_WORKFLOW_TOOLS.edits, { ...stage, commandId: randomUUID(),
         graph: { ...stage.graph, name: 'Stale rename' } })

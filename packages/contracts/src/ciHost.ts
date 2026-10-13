@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { IdSchema, TimestampSchema } from './schemaPrimitives.js'
 export { integrationPartition, requiresUserSystemd } from './ciPartition.mjs'
-export { userSystemdIntegrationFiles } from './integrationScheduling.mjs'
+export { userSystemdIntegrationFiles, exclusiveIntegrationFiles } from './integrationScheduling.mjs'
 import { WorkspaceRepositorySchema } from './workspaceRepository.js'
 
 /** Host CI: a build computer runs a suite directly in a git worktree of the commit, like a self-hosted runner.
@@ -38,7 +38,10 @@ export function validCiSelection(value: { suite: CiSuite; scope?: CiScope | unde
 const CommitSchema = z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/)
 const CiRepositorySchema = z.string().regex(/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/[A-Za-z0-9._-]{1,100}$/)
 /** `weights` gives each slice's relative speed (its computer's measured throughput), so slices finish together. */
-export const CiPartitionSchema = z.object({ index: z.number().int().nonnegative(), count: z.number().int().min(2).max(64),
+export const CiPartitionSchema = z.object({ index: z.number().int().nonnegative(), count: z.number().int().min(1).max(64),
+  /** Slow tier: files measured at or above the slow threshold run only after the rest of the request passed. */
+  tier: z.enum(['fast', 'slow']).optional(),
+  slowFiles: z.array(z.string().min(1).max(300)).max(300).optional(),
   /** Keep files at or above this measured duration alone when capacity permits. */
   targetDurationMs: z.number().positive().finite().optional(),
   weights: z.array(z.number().positive().finite()).optional(),
@@ -85,9 +88,14 @@ const CiHostStartSchema = z.object({
   operation: z.literal('start'), runId: CiHostRunIdSchema, repository: CiRepositorySchema, commit: CommitSchema,
   suite: CiSuiteSchema, part: CiPartSchema.optional(), partition: CiPartitionSchema.optional(), durations: CiDurationsSchema.optional(),
   scope: CiScopeSchema.optional(), files: CiSelectedFilesSchema.optional(),
+  gate: z.boolean().optional(), integrationShards: z.number().int().min(1).max(64).optional(),
   defaultBranch: WorkspaceRepositorySchema.shape.defaultBranch.optional(),
   baseCommit: CommitSchema.optional(),
-}).strict().refine(validCiSelection, 'Selected files require affected scope and a supported suite; full scope runs all files.')
+}).strict().refine(value => value.gate
+  ? value.suite === 'integration' && value.scope === 'full' && !!value.files?.length && !value.partition && !value.part
+    && value.integrationShards !== undefined && value.files.every(file => /^apps\/api\/test\/[^/]+\.integration\.test\.ts$/.test(file))
+  : validCiSelection(value) && value.integrationShards === undefined,
+  'Gate jobs require full integration scope, assigned files and a shard count; other selections require affected scope.')
   .refine(validCiPart, 'The part and partition must belong to the requested suite.')
 export const CiHostRequestSchema = z.discriminatedUnion('operation', [
   z.object({ operation: z.literal('status') }).strict(),
@@ -129,11 +137,12 @@ export type CiHostReply = z.infer<typeof CiHostReplySchema>
 
 /** What an Agent or the Operator sees for one CI run. */
 export const CiPrioritySchema = z.enum(['normal', 'high'])
-export const CiPriorityReasonSchema = z.enum(['normal', 'requested', 'ci-infrastructure'])
+export const CiPriorityReasonSchema = z.enum(['normal', 'requested', 'ci-infrastructure', 'gate'])
 export const CiRunRecordSchema = z.object({
   id: CiHostRunIdSchema, workspaceId: IdSchema, suite: CiSuiteSchema, commit: CommitSchema, repository: CiRepositorySchema,
   scope: CiScopeSchema.default('full'), files: CiSelectedFilesSchema.default([]),
   priority: CiPrioritySchema.default('normal'), priorityReason: CiPriorityReasonSchema.default('normal'),
+  gate: z.boolean().optional(), integrationShards: z.number().int().min(1).max(64).optional(),
   /** An omitted caller selection is computed on the runner; an explicit empty list is already complete. */
   deriveFiles: z.boolean().optional(), defaultBranch: WorkspaceRepositorySchema.shape.defaultBranch.optional(),
   baseCommit: CommitSchema.optional(),
@@ -155,6 +164,8 @@ export const CiRunRecordSchema = z.object({
   expectedDurationMs: z.number().nonnegative().finite().optional(),
   /** The planned slice contains files requiring a build computer. */
   requiresBuildComputer: z.boolean().optional(),
+  /** A slow-tier part: it starts only after every other part of its request passed, and is skipped otherwise. */
+  deferred: z.boolean().optional(),
   /** Providers that accepted a dispatch but exhausted retries without creating work. */
   unstartedProviders: z.array(z.enum(['github', 'circleci'])).max(2).optional(),
 }).strict().refine(validCiPart, 'The part and partition must belong to the requested suite.')

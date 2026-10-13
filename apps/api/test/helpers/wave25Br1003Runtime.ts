@@ -66,11 +66,7 @@ export async function checkpointRuntimeFixture(branches: 1 | 2 = 1, pendingPerEx
     // retain their explicitly configured policy and sandbox.
     if (f.version.definition.approval?.handler !== 'native') {
       f.configurations = f.configurations.map((configuration) => AgentConfigurationVersionSchema.parse({
-        ...configuration, harness: {
-          ...structuredClone(approvalFixture().configurations[1]!.harness),
-          ...(configuration.harness.harness !== 'opencode' && configuration.harness.ciFullScope !== undefined
-            ? { ciFullScope: configuration.harness.ciFullScope } : {}),
-        },
+        ...configuration, harness: structuredClone(approvalFixture().configurations[1]!.harness),
       }))
     }
     if (branches === 2) {

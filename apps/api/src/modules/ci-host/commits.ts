@@ -6,29 +6,11 @@ import { CiDurationsSchema } from '@foreman-code/contracts'
 import { ciRepositoryCapabilities } from './repository.js'
 import { onlyCiInfrastructure } from './priority.js'
 import { gitFailure } from '../sources/gitErrors.js'
-import { mkdir } from 'node:fs/promises'
-import { homedir } from 'node:os'
-import { join } from 'node:path'
-import { affectedSnapshot } from '../../../../../scripts/ci-affected.mjs'
 
 /** Main's clone of the workspace repository: the requested commit, an Agent's files as a commit on its base, or the
  * default branch head; whatever GitHub lacks is pushed so build computers can fetch it. */
 export class GitCiCommits implements CiCommits {
   constructor(private readonly git: GitWorktreePorts = systemGitWorktreePorts()) {}
-
-  async affectedSelection(repository: string, commit: string, suite: Parameters<typeof affectedSnapshot>[1],
-    defaultBranch: string, baseCommit?: string) {
-    const signal = AbortSignal.timeout(30_000)
-    const clone = await ensureCommit(this.git, repository, commit, signal)
-    const base = baseCommit ?? await fetchRepositoryBranch(this.git, clone, repository, defaultBranch, signal)
-    if (baseCommit) {
-      const available = await this.git.git(['cat-file', '-e', `${baseCommit}^{commit}`], { cwd: clone, signal })
-      if (available.code !== 0) return { scope: 'full' as const, files: [], reason: 'baseCommit is unavailable.' }
-    }
-    const temporaryRoot = join(homedir(), '.cache', 'foreman-code', 'ci-selection')
-    await mkdir(temporaryRoot, { recursive: true })
-    return affectedSnapshot(commit, suite, clone, base, baseCommit, temporaryRoot)
-  }
 
   async infrastructureOnly(repository: string, commit: string) {
     const signal = AbortSignal.timeout(30_000)

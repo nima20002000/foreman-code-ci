@@ -84,7 +84,7 @@ it('honors persisted MCP build participation and priority while retaining assign
         { requestInit: { headers: { authorization: `Bearer ${issued.token}` } } }))
       return client
     }
-    const writer = await connect([...CI_GET_ACTIONS, ...CI_RUN_ACTIONS, 'jobs:cancel', 'jobs:ci_full', 'settings:read', 'settings:update'])
+    const writer = await connect([...CI_GET_ACTIONS, ...CI_RUN_ACTIONS, 'jobs:cancel', 'settings:read', 'settings:update'])
     const reader = await connect([...CI_GET_ACTIONS, 'settings:read'])
     const call = async (client: Client, name: string, args: Record<string, unknown>) => {
       const result = await client.callTool({ name, arguments: args })

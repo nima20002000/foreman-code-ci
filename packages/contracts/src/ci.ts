@@ -8,6 +8,8 @@ import { SourceRootRecordSchema } from './sourceAdmission.js'
 import { SourceManifestSchema } from './sourceMaterialization.js'
 
 const CiRunInputObjectSchema = z.object({
+  gate: z.boolean().optional().describe('Operator/orchestrator only. With suite=integration and scope=full, '
+    + 'queue typecheck, lint, unit and duration-balanced integration as one gate. Gates run one at a time.'),
   priority: CiPrioritySchema.optional().describe('Defaults to normal. High requires Operator role or an explicit '
     + 'jobs:prioritize grant. Commits changing only CI infrastructure are automatically high priority.'),
   suite: CiSuiteSchema.describe('Repositories with the CI suite hook queue unit, lint, typecheck and build parts; '
@@ -15,7 +17,7 @@ const CiRunInputObjectSchema = z.object({
   commit: z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/).optional(),
   baseCommit: z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/).optional()
     .describe('Optional full SHA for runner-selected affected scope. Compare against this ancestor of the resolved '
-      + 'commit; an unavailable or non-ancestor base requires jobs:ci_full for a full-suite fallback.'),
+      + 'commit; an unavailable or non-ancestor base falls back to the full suite with a reason.'),
   commandId: IdSchema,
   noSupersede: z.boolean().optional().describe('Keep this request’s tickets when newer commits arrive. '
     + 'By default, newer descendant commits supersede active tickets of the same suite and requester '
@@ -25,12 +27,10 @@ const CiRunInputObjectSchema = z.object({
     + 'from measured durations and free slots. '
     + 'Requires scripts/ci-suite.sh and scripts/ci-files.mjs. User-systemd files use separate systemd-capable slices; '
     + 'mixed explicit selections split even when this is omitted. Other repositories run integration as one job.').optional(),
-  scope: CiScopeSchema.optional().describe('Defaults to affected. Full scope and any full-suite expansion require '
-    + 'an explicit jobs:ci_full grant for every caller. Without it, use affected scope with files. '
-    + 'Workflow Agents additionally require their saved harness ciFullScope permission.'),
+  scope: CiScopeSchema.optional().describe('Defaults to affected; full runs the complete suite. '
+    + 'Repositories without an affected selector always run the full suite.'),
   files: CiSelectedFilesSchema.optional().describe('Optional affected selection with an explicit commit. Omit to select '
-    + 'against baseCommit or the workspace default branch; an empty list runs no tests. Integration without files '
-    + 'requires jobs:ci_full. Ungranted callers’ derived selections are resolved before admission; full fallback is denied.'),
+    + 'on the runner against baseCommit or the workspace default branch; an empty list runs no tests.'),
 }).strict()
 const partitionedSuite = (value: { suite: string; partitions?: number | undefined }) =>
   value.partitions === undefined || value.suite === 'integration'
@@ -38,11 +38,16 @@ const partitionIssue = { message: 'Only the integration suite can be partitioned
 const selectionIssue = { message: 'Selected files require an explicit commit, affected scope and a supported suite.', path: ['scope'] }
 const selectedSuite = (value: z.infer<typeof CiRunInputObjectSchema>) => validCiSelection(value)
   && ((value.scope ?? 'affected') !== 'affected' || value.files === undefined || value.commit !== undefined)
+const validGate = (value: z.infer<typeof CiRunInputObjectSchema>) => !value.gate
+  || (value.suite === 'integration' && value.scope === 'full' && value.files === undefined && value.partitions === undefined)
+const gateIssue = { message: 'A gate requires integration, full scope, and no files or partition limit.', path: ['gate'] }
 export const CiRunInputSchema = CiRunInputObjectSchema.refine(partitionedSuite, partitionIssue)
   .refine(selectedSuite, selectionIssue)
+  .refine(validGate, gateIssue)
 export const OperatorCiRunInputSchema = CiRunInputObjectSchema.extend({ workspaceId: IdSchema }).strict()
   .refine(partitionedSuite, partitionIssue)
   .refine(selectedSuite, selectionIssue)
+  .refine(validGate, gateIssue)
 const CiRunTicketSchema = z.object({ ticketId: IdSchema }).strict()
 /** `partitions` lists every part or integration partition; the first is also `ticketId`. Poll each with ci_get. */
 export const CiRunOutputSchema = CiRunTicketSchema.extend({ partitions: z.array(CiRunTicketSchema).min(2).max(66).optional() }).strict()
@@ -59,6 +64,15 @@ export const CiGetOutputSchema = z.object({
   queue: z.object({ position: z.number().int().positive(), reason: z.string() }).strict().nullable().optional(),
   group: z.object({ groupId: CiRunRecordSchema.shape.groupId, state: CiRunRecordSchema.shape.state }).strict().optional(),
   tests: CiTestResultsSchema.nullable().optional(),
+  gate: z.object({
+    computers: z.array(z.object({ key: z.string(), ticketIds: z.array(IdSchema),
+      expectedDurationMs: z.number().nonnegative(), actualDurationMs: z.number().nonnegative().nullable() }).strict()),
+    suites: z.array(z.object({ suite: CiSuiteSchema, expectedDurationMs: z.number().nonnegative(),
+      actualDurationMs: z.number().nonnegative().nullable() }).strict()),
+    criticalPath: z.object({ computerKey: z.string().nullable(), expectedDurationMs: z.number().nonnegative(),
+      actualDurationMs: z.number().nonnegative().nullable() }).strict(),
+    wallTimeMs: z.number().nonnegative().nullable(),
+  }).strict().optional(),
 }).strict()
 export type CiRunInput = z.infer<typeof CiRunInputSchema>
 export const CiCancelInputSchema = CiTicketInputSchema

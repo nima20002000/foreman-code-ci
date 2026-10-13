@@ -99,7 +99,6 @@ describe.runIf(postgresEnabled)('GitHub Run-start sources and Agent CI through a
   it('queues unchanged Agent files at their base commit through worker MCP and denies a read-only caller', async () => {
     const saved = makeCurrentWorkflowFixture(randomUUID())
     saved.configurations = saved.configurations.map(configuration => ({ ...configuration,
-      harness: { ...configuration.harness, ciFullScope: true },
       graphqlTools: ['context_get', 'ci_run', 'ci_get'] }))
     const f = await codexApprovalRuntime('user', { fixture: saved })
     const clients: Client[] = []
@@ -109,7 +108,7 @@ describe.runIf(postgresEnabled)('GitHub Run-start sources and Agent CI through a
       await f.db.pool.query(`update workspaces set record=record || $2::jsonb where id=$1`,
         [workspaceId, JSON.stringify({ repository: { provider: 'github', owner: 'octo', name: 'site', defaultBranch: 'main' } })])
       await f.db.pool.query('update management_principals set grants=grants || $2::jsonb where id=$1',
-        [f.authorizationPrincipalId, JSON.stringify([{ actions: [...CI_RUN_ACTIONS, ...CI_GET_ACTIONS, 'jobs:ci_full'],
+        [f.authorizationPrincipalId, JSON.stringify([{ actions: [...CI_RUN_ACTIONS, ...CI_GET_ACTIONS],
           scope: { workspaceIds: [workspaceId] } }])])
       f.f.run = await withExclusiveGraphConnection(f.db.pool, connection => connection.transaction(async sql => {
         const owner = await currentOperatorAuthority(sql, f.authorizationPrincipalId)

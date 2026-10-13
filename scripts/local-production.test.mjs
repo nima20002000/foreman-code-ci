@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process'
 import { once } from 'node:events'
 import { mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
-import { homedir, tmpdir } from 'node:os'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 import { copyVerificationRuntime, desktopLaunchEnvironment, hasNativeTurnStarted, localProductionEnvironment, preserveOperatorConfiguration, publish, readEnvironment,
@@ -369,20 +369,14 @@ test('readiness rejects conflicting installations and releases despite healthy A
   }
 })
 
-test('staged runtime supports verification and affected CI selection without the source checkout', async () => {
-  const cache = join(homedir(), '.cache', 'foreman-tmp')
-  await mkdir(cache, { recursive: true })
-  const directory = await mkdtemp(join(cache, 'production-verification-runtime-'))
+test('staged verification runtime imports without invoking a CLI or requiring the source checkout', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'production-verification-runtime-'))
   try {
     await copyVerificationRuntime(new URL('..', import.meta.url).pathname, directory)
     const result = await new Promise((resolve, reject) => {
       const child = spawn(process.execPath, ['--input-type=module', '-e',
-        'const runtime = await import(process.argv[1]); const ci = await import(process.argv[2]); '
-        + 'console.log(typeof runtime.finalizeVerification); '
-        + 'const { scope, files } = ci.selectAffectedFiles({ suite: "unit", changedFiles: ["docs/guide.md"], sources: new Map() }); '
-        + 'console.log(JSON.stringify({ scope, files }))',
-        new URL(`file://${join(directory, 'scripts/verification-runner.mjs')}`).href,
-        new URL(`file://${join(directory, 'scripts/ci-affected.mjs')}`).href],
+        'const runtime = await import(process.argv[1]); console.log(typeof runtime.finalizeVerification)',
+        new URL(`file://${join(directory, 'scripts/verification-runner.mjs')}`).href],
       { stdio: ['ignore', 'pipe', 'pipe'] })
       let stdout = ''
       let stderr = ''
@@ -391,7 +385,7 @@ test('staged runtime supports verification and affected CI selection without the
       child.once('error', reject)
       child.once('exit', code => resolve({ code, stdout, stderr }))
     })
-    assert.deepEqual(result, { code: 0, stdout: 'function\n{"scope":"affected","files":[]}\n', stderr: '' })
+    assert.deepEqual(result, { code: 0, stdout: 'function\n', stderr: '' })
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
 
