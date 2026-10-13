@@ -8,8 +8,6 @@ import { lastCiRuntimeRefresh, scheduleCiRuntimeRefresh } from './ciRuntimeRefre
 import { readCiInstalledStorage } from './ciInstalledStorage.js'
 import { ciPreparationLimits } from './ciPreparationLimits.js'
 import { readCiManagedSetup } from './ciRuntimeInstallation.js'
-import { readCiRuntimeState, writeCiRuntimeState } from './ciRuntimeState.js'
-import { componentLogger } from '../diagnostics/logger.js'
 
 export interface CiRuntimeWorkerPorts {
   git: GitWorktreePorts
@@ -28,9 +26,6 @@ export interface CiRuntimeWorkerPorts {
 export class CiRuntimeWorker {
   private state: CiRuntimeWorkerState | undefined
   private preparation: Promise<void> | undefined
-  private preparationPending = false
-  private restoring: Promise<CiRuntimeWorkerState> | undefined
-  private draining = false
   /** `lifetime` is the Worker's, not a request's: preparation outlives the call that started it. */
   constructor(private readonly stateDirectory: string, private readonly ports: CiRuntimeWorkerPorts,
     private readonly lifetime: AbortSignal) {
@@ -58,40 +53,22 @@ export class CiRuntimeWorker {
 
   private async status(): Promise<CiRuntimeWorkerState> {
     if (this.state) return this.state
-    return this.restoring ??= this.restore()
-  }
-
-  private async restore(): Promise<CiRuntimeWorkerState> {
-    const saved = await readCiRuntimeState(this.stateDirectory)
+    // A fresh Worker process: report how the refresh that restarted it ended.
     const last = await this.ports.lastRefresh(this.stateDirectory)
-    // The refresh result supersedes preparation saved before the service restarted.
-    const refreshed = saved && last?.operationId === saved.operationId && last?.commit === saved.commit
-      && (saved.state === 'prepared' || saved.state === 'refreshing')
-    if (saved && !refreshed) {
-      this.state = saved
-      return saved
-    }
     return this.set({ operationId: last?.operationId ?? null, state: last && !last.ok ? 'failed' : 'idle',
       commit: last?.commit ?? null, stage: last ? 'refresh' : null,
       prepared: null, message: last && !last.ok ? `The runtime refresh failed: ${last.log}` : null })
   }
 
   private async prepare(request: Extract<CiRuntimeRequest, { operation: 'prepare' }>) {
-    if (this.draining) throw new DomainError('WORKER_RUNTIME_DRAINING',
-      'This computer is waiting for CI preparation to finish before updating its runtime.', 409)
-    const current = await this.status()
-    if (this.draining) throw new DomainError('WORKER_RUNTIME_DRAINING',
-      'This computer is waiting for CI preparation to finish before updating its runtime.', 409)
-    const latest = this.state ?? current
-    if (this.preparationPending || latest.state === 'preparing' || latest.state === 'refreshing') {
-      if (latest.operationId === request.operationId && latest.commit === request.commit) return latest
+    if (this.state?.state === 'preparing' || this.state?.state === 'refreshing') {
+      if (this.state.operationId === request.operationId && this.state.commit === request.commit) return this.state
       throw new DomainError('CI_RUNTIME_BUSY', 'This computer is already preparing its CI runtime for another commit.', 409)
     }
-    if (latest.state === 'prepared' && latest.operationId === request.operationId
-      && latest.commit === request.commit) return latest
+    if (this.state?.state === 'prepared' && this.state.operationId === request.operationId
+      && this.state.commit === request.commit) return this.state
     const state = this.set({ operationId: request.operationId, state: 'preparing', commit: request.commit,
       stage: 'fetch-source', prepared: null, message: null, preparationLimits: ciPreparationLimits() })
-    this.preparationPending = true
     this.preparation = (async () => {
       const repository = await ensureCommit(this.ports.git, request.repository, request.commit, this.lifetime).catch(error => {
         this.lifetime.throwIfAborted()
@@ -110,21 +87,14 @@ export class CiRuntimeWorker {
           if (this.state?.commit === request.commit) this.set({ ...this.state, stage })
         } })
       this.lifetime.throwIfAborted()
-      const completed = this.set({ operationId: request.operationId, state: 'prepared', commit: request.commit,
+      this.set({ operationId: request.operationId, state: 'prepared', commit: request.commit,
         stage: null, prepared: PreparedCiRuntimeSchema.parse(prepared), message: null,
         preparationLimits: state.preparationLimits! })
-      await writeCiRuntimeState(this.stateDirectory, completed)
-    })().catch(async error => {
-      const failed = this.set({ operationId: request.operationId, state: 'failed', commit: request.commit,
+    })().catch(error => {
+      this.set({ operationId: request.operationId, state: 'failed', commit: request.commit,
         stage: this.state?.stage ?? null, prepared: null,
         preparationLimits: state.preparationLimits!,
         message: (error instanceof Error ? error.message : String(error)).slice(-2000) })
-      await writeCiRuntimeState(this.stateDirectory, failed)
-    }).finally(() => {
-      this.preparationPending = false
-    })
-    void this.preparation.catch(error => {
-      componentLogger('jobs').error({ err: error, operationId: request.operationId }, 'CI preparation state could not be saved')
     })
     return state
   }
@@ -132,15 +102,6 @@ export class CiRuntimeWorker {
   async close(): Promise<void> {
     await this.preparation
   }
-
-  async beginDrain(): Promise<void> {
-    this.draining = true
-    await this.preparation
-  }
-
-  resumeAdmissions() { this.draining = false }
-
-  isUpdateIdle() { return !this.preparationPending }
 
   private async refresh(request: Extract<CiRuntimeRequest, { operation: 'refresh' }>) {
     if (this.state?.state === 'refreshing' && this.state.operationId === request.operationId

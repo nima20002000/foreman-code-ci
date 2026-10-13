@@ -41,19 +41,14 @@ function integrationTime(files: string[], shards: number, duration: (file: strin
   return serial + Math.max(...lanes)
 }
 
-export async function readCiComputerStatus(endpoint: HostCiEndpoint, computer: HostCiComputer) {
-  const status = await endpoint.request(computer, { operation: 'status' }).catch(error => {
-    log.warn({ err: error, computer: computer.key }, 'CI computer status unavailable')
-    return null
-  })
-  return status?.operation === 'status' ? status : null
-}
-
 async function gateComputers(endpoint: HostCiEndpoint): Promise<GateComputer[]> {
   const computers = await endpoint.computers()
   const available = await Promise.all(computers.map(async computer => {
-    const status = await readCiComputerStatus(endpoint, computer)
-    if (!status?.ready) return null
+    const status = await endpoint.request(computer, { operation: 'status' }).catch(error => {
+      log.warn({ err: error, computer: computer.key }, 'CI computer unavailable while planning gate')
+      return null
+    })
+    if (status?.operation !== 'status' || !status.ready) return null
     const memory = Math.floor(status.memoryBytes * 0.9)
     const available: GateComputer = { computer, shards: gateIntegrationShards(status.cpuCount, memory), checkMs: 0, files: [] }
     return available
@@ -123,16 +118,13 @@ export function gateQueueBlock(run: CiRunRecord, gate: CiRunRecord | undefined):
   return `Waiting behind CI gate ${gate.groupId}; full requests resume when that gate finishes.`
 }
 
-/** Cloud slots share provider capacity; build computers help once their own queued gate part has started. */
+/** Build computers whose own gate part already started take unstarted cloud-planned gate integration parts instead
+ * of idling while the cloud queue drains. */
 export function gatePartStealer(computers: readonly HostCiComputer[], queued: readonly CiRunRecord[]) {
-  const cloudProviders = new Map(computers.filter(computer => computer.hostRef.kind === 'cloud')
-    .map(computer => [computer.key, computer.hostRef.provider]))
-  const waitingHostGates = new Set(queued.filter(run => run.gate && run.plannedHostKey && !cloudProviders.has(run.plannedHostKey))
+  const cloudKeys = new Set(computers.filter(computer => computer.hostRef.kind === 'cloud').map(computer => computer.key))
+  const waitingHostGates = new Set(queued.filter(run => run.gate && run.plannedHostKey && !cloudKeys.has(run.plannedHostKey))
     .map(run => run.plannedHostKey))
-  return (run: CiRunRecord, computer: HostCiComputer) => {
-    if (!run.gate || !run.plannedHostKey || !cloudProviders.has(run.plannedHostKey)) return false
-    if (computer.hostRef.kind !== 'cloud') return !waitingHostGates.has(computer.key)
-    return computer.key !== run.plannedHostKey
-      && computer.hostRef.provider === cloudProviders.get(run.plannedHostKey)
-  }
+  return (run: CiRunRecord, computer: HostCiComputer) => Boolean(run.gate && run.suite === 'integration'
+    && run.plannedHostKey && cloudKeys.has(run.plannedHostKey) && computer.hostRef.kind !== 'cloud'
+    && !waitingHostGates.has(computer.key))
 }

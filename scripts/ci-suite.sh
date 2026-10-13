@@ -87,37 +87,6 @@ unit_slice() {
   return "$code"
 }
 
-node_tests() {
-  local report="$1"; shift
-  pnpm exec node --test --test-reporter=spec --test-reporter-destination=stdout \
-    "--test-reporter=$node_reporter" "--test-reporter-destination=$report" "$@"
-}
-
-unit_other() {
-  local code=0 status=0
-  local reports node_reporter
-  reports="$(realpath -m "$state/unit-other")"
-  node_reporter="$(realpath scripts/ci-node-test-reporter.mjs)"
-  mkdir -p "$reports"
-  rm -f "$reports/contracts.json" "$reports/worker.json" "$reports/scripts.json"
-  pnpm --filter @foreman-code/contracts build || return $?
-  pnpm --filter @foreman-code/contracts test --reporter=default --reporter=json \
-    "--outputFile.json=$reports/contracts.json" || code=$?
-  (cd apps/worker && node_tests "$reports/worker.json" test/*.test.mjs) || status=$?
-  if [ "$code" = 0 ]; then code="$status"; fi
-  local script_files=()
-  mapfile -t script_files < <(node --input-type=module -e '
-    import { readFileSync } from "node:fs"
-    const command = JSON.parse(readFileSync("package.json", "utf8")).scripts["test:scripts"]
-    console.log(command.split(/\s+/).filter(value => /^scripts\/.*\.test\.mjs$/.test(value)).join("\n"))
-  ')
-  status=0
-  node_tests "$reports/scripts.json" "${script_files[@]}" || status=$?
-  if [ "$code" = 0 ]; then code="$status"; fi
-  record_tests "$reports/contracts.json" "$reports/worker.json" "$reports/scripts.json"
-  return "$code"
-}
-
 scope="${SCOPE:-affected}"
 selected_list=''
 if [ "$scope" = affected ] && [ -z "${SELECTED_FILES:-}" ] && { [ "$SUITE" != integration ] || [ -z "${SLICE:-}" ]; }; then
@@ -148,16 +117,16 @@ if [ "$scope" = affected ] && [ -z "${SELECTED_FILES:-}" ] && { [ "$SUITE" != in
   fi
 fi
 
-# A full partition whose indexes exceed a provider parameter uses the timings retained in its snapshot.
+# A full partitioned run whose file list does not fit a provider parameter computes its own partition from the
+# commit's durations; every partition uses the same inputs, so together they cover each file exactly once.
 if [ "$scope" = full ] && [ "$SUITE" = integration ] && [ -z "${SLICE:-}" ] && [ -n "${CI_PARTITION:-}" ] && [ -z "$selected_list" ]; then
   mkdir -p "$state"
   selected_list="$state/selected-files.json"
   node --input-type=module -e '
-    import { writeFileSync } from "node:fs"
+    import { readFileSync, writeFileSync, existsSync } from "node:fs"
     import { integrationPartition } from "./packages/contracts/src/ciPartition.mjs"
     import { integrationFileList } from "./scripts/ci-files.mjs"
-    import { executionDurations } from "./scripts/ci-selection.mjs"
-    const durations = executionDurations("integration", process.cwd(), JSON.parse(process.env.CI_DURATIONS || "{}"))
+    const durations = existsSync("scripts/integration-durations.json") ? JSON.parse(readFileSync("scripts/integration-durations.json", "utf8")) : {}
     const partition = JSON.parse(process.env.CI_PARTITION)
     writeFileSync(process.argv[1], JSON.stringify(integrationPartition(integrationFileList(process.cwd()), durations, partition)))
   ' "$selected_list"
@@ -192,7 +161,8 @@ case "$SUITE" in
     (cd apps/web && FOREMAN_WEB_TEST_PHASE=heavy pnpm exec vitest run ${SLICE:+--shard=$SLICE} \
       --reporter=default --reporter=json "--reporter=$progress_reporter" "--outputFile.json=$heavy_report") || code=$?
     record_tests "$heavy_report"; exit "$code" ;;
-  unit-other) ready db; unit_other ;;
+  unit-other) ready db; pnpm --filter @foreman-code/contracts build && pnpm --filter @foreman-code/contracts --filter @foreman-code/worker test \
+    && pnpm test:scripts ;;
   lint-api) pnpm --filter @foreman-code/contracts build && pnpm --filter @foreman-code/api lint ;;
   lint-other) pnpm --filter @foreman-code/contracts build \
     && pnpm -r --no-bail --filter '!@foreman-code/api' --if-present lint ;;
