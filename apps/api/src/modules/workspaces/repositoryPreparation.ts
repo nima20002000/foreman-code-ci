@@ -1,6 +1,5 @@
-import { pathExists } from '../../infrastructure/pathExists.js'
 import { constants } from 'node:fs'
-import { mkdir, open } from 'node:fs/promises'
+import { lstat, mkdir, open } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { WorkspaceRootPolicy } from '@foreman-code/contracts/workspace-root-policies'
 import type { SourceManifest } from '@foreman-code/contracts/source-materialization'
@@ -28,6 +27,15 @@ function sameIdentity(left: FilesystemIdentity, right: FilesystemIdentity): bool
   return left.device === right.device && left.inode === right.inode && left.mountId === right.mountId
 }
 
+async function exists(path: string): Promise<boolean> {
+  try {
+    await lstat(path)
+    return true
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false
+    throw error
+  }
+}
 
 export function repositoryProjectPath(preparation: RepositoryPreparation): string {
   return join(preparation.basePath, preparation.directoryName, 'project')
@@ -88,7 +96,7 @@ export class OwnedRepositoryPreparation {
     const signal = AbortSignal.timeout(SOURCE_LIMITS.preparationMs)
     const clone = join(preparation.basePath, preparation.directoryName, 'staging')
     try {
-      if (await pathExists(repositoryProjectPath(preparation))) {
+      if (await exists(repositoryProjectPath(preparation))) {
         await this.verifyPublished(preparation, repository)
         return
       }
@@ -96,7 +104,7 @@ export class OwnedRepositoryPreparation {
         cloneDirectory: () => clone,
         git: (args, options) => this.git.git(['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', ...args], options),
       }
-      if (await pathExists(clone)) {
+      if (await exists(clone)) {
         const existing = await openPrivateRoot(clone)
         try {
           if (preparation.cloneIdentity && !sameIdentity(await identity(existing), preparation.cloneIdentity)) {
@@ -152,7 +160,7 @@ export class OwnedRepositoryPreparation {
         write: async (_snapshotId, entry, bytes) => {
           const { parent, leaf } = await entryParent(directory, entry.path, true)
           try {
-            if (await pathExists(anchored(parent, leaf))) {
+            if (await exists(anchored(parent, leaf))) {
               const file = await open(anchored(parent, leaf), constants.O_RDONLY | constants.O_NOFOLLOW)
               try {
                 verifySourceBytes(entry, await file.readFile())

@@ -1,4 +1,3 @@
-import { errorMessage } from '../../infrastructure/errorMessage.js'
 import { isDeepStrictEqual } from 'node:util'
 import pg from 'pg'
 import { WorkspaceSchema } from '@foreman-code/contracts'
@@ -41,7 +40,7 @@ function importFailure(error: unknown): ImportFailure {
   const unsupported = /UNSUPPORTED|SENSITIVE|SECRET|INVALID|INCLUSION|COLLISION|SOURCE_CAPTURE_FAILED|CAPACITY/u.test(code)
   const newCommandRequired = conflict || unsupported
     || error instanceof DomainError && error.details?.newCommandRequired === true
-  return { code, message: errorMessage(error, 'Repository preparation failed.'),
+  return { code, message: error instanceof Error ? error.message : 'Repository preparation failed.',
     retryable: !newCommandRequired, newCommandRequired }
 }
 

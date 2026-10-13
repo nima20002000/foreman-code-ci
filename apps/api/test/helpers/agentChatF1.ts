@@ -10,8 +10,12 @@ import type { PostgresOperatorConversationRepository } from '../../src/modules/c
 import { NativeTurnNotActiveError } from '../../src/modules/harnesses/errors.js'
 import type { NativeHarnessSessionManager, NativeHistory, NativeSteerInput, NativeTurnInput } from '../../src/modules/harnesses/port.js'
 import type { PostgresWorkflowRepository } from '../../src/modules/workflows/postgres.js'
-import { deferred } from './deferred.js'
 
+export function deferred() {
+  let resolve!: () => void
+  const promise = new Promise<void>((done) => { resolve = done })
+  return { promise, resolve }
+}
 export async function eventually(check: () => boolean | Promise<boolean>) {
   for (let i = 0; i < 200; i++) {
     if (await check()) return
