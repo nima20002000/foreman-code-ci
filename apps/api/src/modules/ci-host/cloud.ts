@@ -50,7 +50,6 @@ interface Publication {
 interface MirrorMaintenance {
   at: number
   cleanup: Promise<void> | undefined
-  afterFinish?: () => void
   keep: Set<string>
 }
 const mirrorPublications = new Map<string, Map<string, Promise<Publication>>>()
@@ -391,12 +390,7 @@ export class CloudCi {
       ?? { at: -Infinity, cleanup: undefined, keep: new Set<string>() }
     mirrorMaintenance.set(key, maintenance)
     const now = this.ports.now().getTime()
-    if (now - maintenance.at < PRUNE_INTERVAL_MS) return
-    if (maintenance.cleanup) {
-      // Coalesce due ticket completions into one pass after the active sweep.
-      if (finishedRunId) maintenance.afterFinish = () => this.schedulePrune(run, finishedRunId)
-      return
-    }
+    if (maintenance.cleanup || now - maintenance.at < PRUNE_INTERVAL_MS) return
     maintenance.keep.clear()
     for (const reservation of publishingBranches.get(run.mirror) ?? []) {
       const branch = reservation.split('\n')[1]!
@@ -408,9 +402,6 @@ export class CloudCi {
     maintenance.cleanup = cleanup
     void cleanup.then(() => {
       maintenance.cleanup = undefined
-      const afterFinish = maintenance.afterFinish
-      delete maintenance.afterFinish
-      afterFinish?.()
     })
   }
 
@@ -799,6 +790,11 @@ export class CloudCi {
     if (!collection.artifacts) {
       try {
         const artifacts = await this.provider.artifacts(run, join(this.root, 'runs', run.runId, 'artifact'))
+        if (artifacts.suiteLog !== undefined) {
+          const contents = Buffer.from(artifacts.suiteLog).subarray(-LOG_LIMIT)
+          await writeFile(this.path(run.runId, 'log'), contents, { mode: 0o600 })
+          collection.log = true
+        }
         if (run.suite === 'integration' || run.suite === 'unit') {
           const durations = CiDurationsSchema.safeParse(artifacts.durations)
           if (durations.success && (run.suite === 'integration' || run.part === 'unit-api' || run.part === 'unit-web')) {

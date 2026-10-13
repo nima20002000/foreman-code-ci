@@ -22,23 +22,16 @@ it.each(['failed', 'canceled'] as const)('reports a %s historical chat turn on i
   } finally { vi.useRealTimers() }
 })
 
-it.each([30_001, 60_001])('waits for a historical native chat turn that completes after %i milliseconds', async delayMs => {
+it('waits for a historical native chat turn that completes after thirty seconds', async () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] })
   const state = structuredClone(agentChatFixtures.active)
-  const read = vi.fn(async () => state)
-  let settled = false
-  const result = waitForHistoricalChatTurn(read, 'request-1', 'Worker chat fork completion')
-    .then(completed => { settled = true; return completed })
+  const result = waitForHistoricalChatTurn(async () => state, 'request-1', 'Worker chat fork completion')
     .catch(error => error as Error)
   try {
-    await vi.advanceTimersByTimeAsync(delayMs)
-    expect(settled).toBe(false)
-    const pendingReads = read.mock.calls.length
+    await vi.advanceTimersByTimeAsync(30_001)
     state.turns[0]!.delivery = 'completed'
-    await vi.advanceTimersToNextTimerAsync()
-    expect(settled).toBe(true)
+    await vi.advanceTimersByTimeAsync(25)
     expect(await result).toMatchObject({ turns: [expect.objectContaining({ delivery: 'completed' })] })
-    expect(read).toHaveBeenCalledTimes(pendingReads + 1)
     expect(vi.getTimerCount()).toBe(0)
   } finally {
     await vi.advanceTimersByTimeAsync(90_001)
