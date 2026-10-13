@@ -13,9 +13,10 @@ const targets = [
   'ubuntu-24.04-x64-node-22.23.2-target.json', 'ubuntu-26.04-x64-node-22.23.2-target.json',
 ];
 
-// Podman rejects a runroot over 50 characters; GitHub runners' TMPDIR is already 25.
 const containers = await mkdtemp(join(persistentFixtureRoot, 'qhc-'));
-const storage = ['--root', join(containers, 'storage'), '--runroot', join(containers, 'r')];
+// Podman limits runroot to 50 characters; CI's persistent TMPDIR can be much longer.
+const runroot = await mkdtemp('/tmp/qhc-');
+const storage = ['--root', join(containers, 'storage'), '--runroot', runroot];
 const podman = (args, timeout = 60_000) => spawnSync('podman', [...storage, ...args], {
   encoding: 'utf8', timeout,
 });
@@ -26,6 +27,7 @@ after(async () => {
   assert.ifError(cleanup.error);
   assert.equal(cleanup.status, 0, cleanup.stderr);
   await rm(containers, { recursive: true, force: true });
+  await rm(runroot, { recursive: true, force: true });
 });
 
 for (const name of targets) {
