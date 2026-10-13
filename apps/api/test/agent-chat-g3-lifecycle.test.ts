@@ -2,7 +2,8 @@ import assert from 'node:assert/strict'
 import { afterEach, beforeEach, describe, it, vi } from 'vitest'
 import type { AgentChatManagerFactory } from '../src/modules/conversations/agentChat.js'
 import type { NativeHarnessSessionManager } from '../src/modules/harnesses/port.js'
-import { deferred, fixture } from './helpers/agentChatF1.js'
+import { fixture } from './helpers/agentChatF1.js'
+import { deferred } from './helpers/deferred.js'
 
 const tick = () => new Promise<void>((done) => setImmediate(done))
 beforeEach(() => { vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] }) })
