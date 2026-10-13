@@ -24,6 +24,9 @@ it('settles an unoffered rollover failure and retries through authenticated Agen
   const claimReady = rejectableDeferred()
   const resumeEntered = rejectableDeferred()
   const resumeReady = rejectableDeferred()
+  const completionHeld = rejectableDeferred()
+  const completionReleased = rejectableDeferred()
+  let completionTimer: ReturnType<typeof setTimeout> | undefined
   let chat: AgentChatService | undefined
   let app: ReturnType<typeof buildApp> | undefined
   let manager: ReturnType<typeof productionClaudeFixture>['manager'] | undefined
@@ -41,6 +44,14 @@ it('settles an unoffered rollover failure and retries through authenticated Agen
     const reader = await access.issue({ name: 'rollover reader', audience: 'operator', expiresAt: new Date(Date.now() + 600_000),
       grants: [{ actions: ['agent_chat:read'], scope: {} }] })
     const repository = new PostgresAgentChatRepository(db.pool)
+    const finish = repository.finish.bind(repository)
+    vi.spyOn(repository, 'finish').mockImplementation(async (...args) => {
+      if (args[1] === 'completed-7') {
+        completionHeld.resolve()
+        await completionReleased.promise
+      }
+      return finish(...args)
+    })
     const messages = new PostgresOperatorConversationRepository(db.pool)
     let transport: ReturnType<typeof claudeSdkToolTransport> | undefined
     chat = new AgentChatService(db.pool, repository, messages, new PostgresWorkflowRepository(db.pool), {
@@ -73,8 +84,13 @@ it('settles an unoffered rollover failure and retries through authenticated Agen
         id = admitted.state.conversation!.id
         requestIds.push(requestId)
       }
+      if (offset === 0) {
+        await completionHeld.promise
+        // The batch remains valid when a completion commit takes more than one second.
+        completionTimer = setTimeout(() => completionReleased.resolve(), 1_100)
+      }
       await Promise.all(requestIds.map(async requestId => {
-        await waitForDelivery(chat!, repository, id!, requestId, 'completed', { timeoutMs: 1_000 })
+        await waitForDelivery(chat!, repository, id!, requestId, 'completed')
         expect((await repository.turn(id!, requestId))?.delivery).toBe('completed')
       }))
     }
@@ -123,7 +139,7 @@ it('settles an unoffered rollover failure and retries through authenticated Agen
       turn: { requestId: input.requestId, delivery: 'queued' },
       state: { conversation: { id, nativeSession: { nativeSessionId: nativeId } } },
     })
-    await waitForDelivery(chat, repository, id!, input.requestId, 'failed', { timeoutMs: 1_000 })
+    await waitForDelivery(chat, repository, id!, input.requestId, 'failed')
     expect((await repository.turn(id!, input.requestId))?.delivery).toBe('failed')
     expect((await repository.get(id!))?.active_request_id).toBeNull()
     expect((await repository.turn(id!, input.requestId))?.nativeSubmission).toBeUndefined()
@@ -139,7 +155,7 @@ it('settles an unoffered rollover failure and retries through authenticated Agen
     const retry = await graphRpc(app, owner.token, 'tools/call', { name: 'agent_chat_send',
       arguments: { workspaceId: seeded.scope.workspaceId, request: { ...input, requestId: 'retry-unoffered' } } })
     expect(retry.result?.isError).not.toBe(true)
-    await waitForDelivery(chat, repository, id!, 'retry-unoffered', 'completed', { timeoutMs: 1_000 })
+    await waitForDelivery(chat, repository, id!, 'retry-unoffered', 'completed')
     expect((await repository.turn(id!, 'retry-unoffered'))?.delivery).toBe('completed')
     const read = await graphRpc(app, owner.token, 'tools/call', { name: 'agent_chat_read',
       arguments: { workspaceId: seeded.scope.workspaceId, query } })
@@ -156,6 +172,8 @@ it('settles an unoffered rollover failure and retries through authenticated Agen
     })
     expect(transport!.offers).toHaveLength(257)
   } finally {
+    clearTimeout(completionTimer)
+    completionReleased.resolve()
     claimReady.resolve()
     resumeReady.resolve()
     resumeEntered.resolve()
