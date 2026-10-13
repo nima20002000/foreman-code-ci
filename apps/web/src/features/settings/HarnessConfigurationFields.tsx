@@ -13,13 +13,11 @@ import './harnessWorkbench.css'
 import './settingsExperience.css'
 
 function EditableHarnessConfigurationFields({ editor, onChange, routedApproval = false, allowAutoReview = false, requiresResume = false,
-  allowCiFullScope = false,
   allowHarnessChange = true, compact = false, advancedOnly = false, workspaceId, harnessDefaults, issues = [],
   section: selectedSection, onSectionChange, frameless = false,
 }: {
   editor: HarnessEditor; onChange(editor: HarnessEditor): void; routedApproval?: boolean; allowAutoReview?: boolean; requiresResume?: boolean;
   allowHarnessChange?: boolean; compact?: boolean; advancedOnly?: boolean; workspaceId?: string;
-  allowCiFullScope?: boolean;
   harnessDefaults?: HarnessDefaults; issues?: readonly FieldIssue[];
   section?: HarnessSettingsSection; onSectionChange?(section: HarnessSettingsSection): void; frameless?: boolean;
 }) {
@@ -66,7 +64,6 @@ function EditableHarnessConfigurationFields({ editor, onChange, routedApproval =
         action={<Button size="sm" onClick={() => void presetsQuery.refetch()}>Retry</Button>}>Your draft is kept. Presets were not replaced.</Alert> : null}
     </> : null}
     <HarnessSectionFields editor={editor} onChange={onChange} section={section} issues={issues}
-      allowCiFullScope={allowCiFullScope}
       routedApproval={routedApproval} allowAutoReview={allowAutoReview} requiresResume={requiresResume} workspaceId={workspaceId}
       qualified={check.current && check.result.isSuccess} checking={check.current && check.result.isFetching}
       checkError={check.current && check.result.isError ? check.result.error.message : undefined} />

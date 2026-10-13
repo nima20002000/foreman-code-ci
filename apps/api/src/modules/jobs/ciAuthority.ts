@@ -1,7 +1,6 @@
 import type pg from 'pg'
 import { withTransaction } from '../../infrastructure/transaction.js'
 import type { JobInitiatingAgent } from '@foreman-code/contracts/jobs'
-import { AgentConfigurationVersionSchema } from '@foreman-code/contracts'
 import type { ManagementAction, ManagementPrincipal } from '@foreman-code/contracts/management'
 import { currentOperatorAuthority } from '../access/runAuthority.js'
 import { intersectGrants } from '../access/operatorDelegation.js'
@@ -40,7 +39,6 @@ export class RunCiAuthority implements CiAuthority {
       let workspaceId = requestedWorkspace
       let executionId: string | undefined
       let initiatingAgent: JobInitiatingAgent | undefined
-      let agentFullScope = false
       if (caller.audience === 'worker') {
         // Credential admission locks the Run before its worker binding.
         if (mutating) await sql.query(`select r.id from runs r join worker_credential_bindings b
@@ -64,14 +62,6 @@ export class RunCiAuthority implements CiAuthority {
         workspaceId = binding.workspace_id
         principalId = binding.authorization_principal_id
         executionId = binding.execution_id ?? undefined
-        if (executionId) {
-          const configuration = (await sql.query<{ record: unknown }>(`select c.record
-            from harness_executions e join agent_configuration_versions c
-              on c.id=e.record->>'agentConfigurationVersionId' and c.agent_id=e.agent_id and c.workspace_id=$2
-            where e.id=$1`, [executionId, workspaceId])).rows[0]
-          const harness = configuration && AgentConfigurationVersionSchema.parse(configuration.record).harness
-          agentFullScope = !!harness && harness.harness !== 'opencode' && harness.ciFullScope === true
-        }
         if (executionId) initiatingAgent = {
           workflowId: binding.workflow_id,
           runId: binding.run_id,
@@ -81,14 +71,9 @@ export class RunCiAuthority implements CiAuthority {
       }
       if (!workspaceId) throw new DomainError('INVALID_REQUEST', 'Operator CI requires workspaceId.', 400)
       const accepted = (await currentOperatorAuthority(sql, principalId)).principal
-      let grants = caller.audience === 'operator' ? intersectGrants(caller.grants, accepted.grants) : accepted.grants
-      if (caller.audience === 'worker' && !agentFullScope) {
-        grants = grants.map(grant => ({ ...grant, actions: grant.actions.filter(action => action !== 'jobs:ci_full') }))
-          .filter(grant => grant.actions.length > 0)
-      }
+      const grants = caller.audience === 'operator' ? intersectGrants(caller.grants, accepted.grants) : accepted.grants
       const principal = { ...accepted, grants: intersectGrants(grants, [{
-        actions: actions.includes('jobs:start')
-          ? [...new Set([...actions, ...CI_PREPARATION_ACTIONS, 'jobs:ci_full' as const])] : actions,
+        actions: actions.includes('jobs:start') ? [...new Set([...actions, ...CI_PREPARATION_ACTIONS])] : actions,
         scope: { workspaceIds: [workspaceId] },
       }]), expiresAt: caller.audience === 'operator'
         ? new Date(Math.min(Date.parse(caller.expiresAt), Date.parse(accepted.expiresAt))).toISOString()
