@@ -10,12 +10,8 @@ import type { PostgresOperatorConversationRepository } from '../../src/modules/c
 import { NativeTurnNotActiveError } from '../../src/modules/harnesses/errors.js'
 import type { NativeHarnessSessionManager, NativeHistory, NativeSteerInput, NativeTurnInput } from '../../src/modules/harnesses/port.js'
 import type { PostgresWorkflowRepository } from '../../src/modules/workflows/postgres.js'
+import { deferred } from './deferred.js'
 
-export function deferred() {
-  let resolve!: () => void
-  const promise = new Promise<void>((done) => { resolve = done })
-  return { promise, resolve }
-}
 export async function eventually(check: () => boolean | Promise<boolean>) {
   for (let i = 0; i < 200; i++) {
     if (await check()) return
@@ -346,7 +342,7 @@ export class F1Native implements NativeHarnessSessionManager {
   readonly prompts: string[] = []
   readonly cancels: string[] = []
   readonly steers: NativeSteerInput[] = []
-  readonly holds = new Map<string, ReturnType<typeof deferred>>()
+  readonly holds = new Map<string, ReturnType<typeof deferred<void>>>()
   readonly histories = new Map<string, NativeHistory>()
   active: string | undefined
   steerReply: ((input: NativeSteerInput) => Promise<{ nativeTurnId: string }>) | undefined
