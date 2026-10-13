@@ -3,7 +3,6 @@ import { setTimeout as delay } from 'node:timers/promises'
 import type { NativeHarnessEvent } from '@foreman-code/contracts'
 import { NATIVE_PRODUCER_REJECTION_TYPE } from '../run-graph/nativeProducerNormalization.js'
 import { selectNativeGraphEvidence } from '../run-graph/nativeEvidence.js'
-import { ignoreError } from '../diagnostics/ignoredError.js'
 
 export const NATIVE_EVENT_BATCH_SIZE = 16
 const flushIntervalMs = 25
@@ -54,7 +53,7 @@ export async function* nativeEventBatches(events: AsyncIterable<NativeHarnessEve
       }
     }
   } finally {
-    void pending?.catch(ignoreError('harness', 'finish pending native event read'))
+    void pending?.catch(() => undefined)
     await iterator.return?.()
   }
 }

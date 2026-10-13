@@ -26,7 +26,6 @@ import type { RunOwnership } from '../../src/modules/runs/ownership.js'
 import type { PostgresRunRepository } from '../../src/modules/runs/postgres.js'
 import { nativeLanes } from './nativeLanes.js'
 import { currentUnitSnapshot } from './currentUnitSnapshot.js'
-import { rejectableDeferred } from './deferred.js'
 
 export const session = {
   harness: 'codex', providerVersion: 'codex-cli 0.154.0', nativeSessionId: 'review-native-exact',
@@ -54,6 +53,12 @@ export function permission(): PendingNativeInteraction {
     nativeRequestType: 'item/commandExecution/requestApproval', request: { command: `echo ${secret}` },
     responseOptions: [{ optionId: 'approve', label: 'Approve once', semantic: 'approve_once', persistence: 'request',
       affectsOtherPendingRequests: false, interruptsCurrentTurn: false, mutatesPersistentPolicy: false }] }
+}
+export function deferred<T = void>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (error: unknown) => void
+  const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no })
+  return { promise, resolve, reject }
 }
 export async function until(condition: () => boolean): Promise<void> {
   for (let index = 0; index < 2_000 && !condition(); index += 1) await Promise.resolve()
@@ -124,7 +129,7 @@ export async function reviewerFixture(options: {
     pending?: PendingNativeInteraction; lostJob: boolean; reviewPending: boolean; canceled: boolean
     countOnly: boolean; eventCount: number; validations: number
   } = { lostJob: false, reviewPending: !options.recovering, canceled: false, countOnly: false, eventCount: 0, validations: 0 }
-  const silence = rejectableDeferred()
+  const silence = deferred()
   const starts: NativeTurnInput[] = []
   const attaches: NativeSessionStart[] = []
   const cancellations: { session: NativeSessionReference; nativeTurnId: string | undefined }[] = []
@@ -302,7 +307,6 @@ export async function reviewerFixture(options: {
     : undefined
   let generation = closure ? 1 : 0
   const closures: WorkflowClosureStore = {
-    async recoverDetached() { return undefined },
     async begin() { closure = undefined; return String(++generation) },
     async record(execution, session, durableGeneration, check) { check(); closure = { execution, session, durableGeneration }; return closure },
     async read() { return closure },
