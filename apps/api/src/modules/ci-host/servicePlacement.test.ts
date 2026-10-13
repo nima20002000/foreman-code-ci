@@ -28,11 +28,7 @@ function queuedRuns(count: number) {
 function fleet(records: CiRunRecord[], available: HostCiComputer[]) {
   const started: { computer: HostCiComputer; request: CiHostRequest }[] = []
   let writes = 0
-  const pool = { options: { max: 10 }, query: async (sql: string, parameters?: unknown[]) => {
-    if (sql.startsWith('select pg_try_advisory_xact_lock')) return { rows: [{ acquired: true }] }
-    if (sql.startsWith('select record from ci_runs where id=')) {
-      return { rows: records.filter(record => record.id === parameters![0]).map(record => ({ record })) }
-    }
+  const pool = { query: async (sql: string, parameters?: unknown[]) => {
     if (sql.startsWith('update ci_runs')) {
       writes++
       const record = CiRunRecordSchema.parse(JSON.parse(parameters![3] as string))
@@ -48,7 +44,7 @@ function fleet(records: CiRunRecord[], available: HostCiComputer[]) {
     if (sql.includes("state in ('passed','failed')")) return { rows: [] }
     return { rows: records.filter(record => ['starting', 'running'].includes(record.state))
       .map(record => ({ record, host_key: record.computer?.hostRef.kind === 'cloud' ? cloud.key : host.key })) }
-  }, connect: async () => ({ query: pool.query, release: () => {} }) } as unknown as pg.Pool
+  } } as unknown as pg.Pool
   const endpoint: HostCiEndpoint = {
     computers: async () => available,
     request: async (computer, request) => {
