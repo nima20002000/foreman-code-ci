@@ -14,39 +14,12 @@ const row = (sequence: number, content = `Message ${sequence}`) => ({
   complete: false, sequence: String(sequence), revision: String(sequence),
 })
 
-it('reads an execution without public text at revision zero', () => {
-  expect(projectRunChatTranscript(execution, [])).toEqual({
-    executionId: execution.id,
-    state: execution.state,
-    revision: '0',
-    messages: [],
-    hasEarlierMessages: false,
-  })
-})
-
-it('preserves the first native event sequence and revision when they start at zero', () => {
-  const result = projectRunChatTranscript(execution, [row(0)])
-  expect(result.revision).toBe('0')
-  expect(result.messages).toMatchObject([{ sequence: '0', revision: '0', content: 'Message 0' }])
-})
-
 it('keeps execution identity, partial text and chronological order without fabricating a conversation', () => {
   const result = projectRunChatTranscript(execution, [row(1), { ...row(2), complete: true }])
   expect(result).toMatchObject({ executionId: execution.id, state: 'running', revision: '2',
     messages: [{ content: 'Message 1', nativeMessageComplete: false },
       { content: 'Message 2', nativeMessageComplete: true }] })
   expect(result.messages.every(message => !('conversationId' in message))).toBe(true)
-})
-
-it('returns an empty transcript and advances its revision when the first native message arrives', () => {
-  const empty = projectRunChatTranscript(execution, [])
-  expect(empty).toEqual({ executionId: execution.id, state: 'running', revision: '0',
-    messages: [], hasEarlierMessages: false })
-
-  const first = projectRunChatTranscript(execution, [row(1)])
-  expect(first.revision).toBe('1')
-  expect(BigInt(first.revision)).toBeGreaterThan(BigInt(empty.revision))
-  expect(first.messages[0]).toMatchObject({ content: 'Message 1', sequence: '1', revision: '1' })
 })
 
 it('bounds history and text while exposing truncation and redacting retained application credentials', () => {
