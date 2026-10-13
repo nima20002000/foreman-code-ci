@@ -176,6 +176,35 @@ it('keeps unchanged provider messages and the persisted row stable after a messa
   } finally { await f.close() }
 })
 
+it('preserves a running ticket without optional message metadata during an unchanged MCP refresh', async () => {
+  const f = await fixture()
+  try {
+    const ticket = await f.enqueue()
+    f.control.available = true
+    await f.ci.dispatch()
+    const stored = async () => (await f.pool.query(
+      'select record,xmin::text as revision from ci_runs where id=$1', [ticket.ticketId])).rows[0]
+    const running = await f.read(ticket.ticketId)
+    expect(running.state).toBe('running')
+    const withoutMessages = { ...running }
+    delete withoutMessages.providerMessage
+    delete withoutMessages.messageHistory
+    await f.pool.query('update ci_runs set record=$2::jsonb where id=$1',
+      [ticket.ticketId, JSON.stringify(withoutMessages)])
+    const before = await stored()
+    expect(await f.read(ticket.ticketId)).toEqual(withoutMessages)
+
+    await f.ci.dispatch()
+    await f.ci.dispatch()
+
+    expect(await f.read(ticket.ticketId)).toEqual(withoutMessages)
+    expect(await stored()).toEqual(before)
+    const denied = await f.connect(['jobs:cancel'], [randomUUID()])
+    expect((await f.call(denied.client, 'ci_get', { ticketId: ticket.ticketId })).isError).toBe(true)
+    expect(await stored()).toEqual(before)
+  } finally { await f.close() }
+})
+
 it('retains one executor after an accepted start loses its reply and reconciles after restart', async () => {
   const f = await fixture()
   let restarted: HostCiService | undefined
@@ -277,6 +306,51 @@ it('retries persisted cancellation on the assigned executor after transport fail
   }
 })
 
+it('cancels a queued ticket through MCP before a blocked capacity read finishes', async () => {
+  const f = await fixture()
+  const entered = deferred()
+  const release = deferred()
+  let dispatch: Promise<void> | undefined
+  let cancellation: ReturnType<typeof f.call> | undefined
+  let timeout: ReturnType<typeof setTimeout> | undefined
+  try {
+    const ticket = await f.enqueue()
+    f.control.onStatus = async () => {
+      entered.resolve()
+      await release.promise
+    }
+    f.control.available = true
+    dispatch = f.ci.dispatch()
+    await entered.promise
+    const denied = await f.connect(CI_GET_ACTIONS)
+    expect((await f.call(denied.client, 'ci_cancel', { ticketId: ticket.ticketId })).isError).toBe(true)
+    expect((await f.read(ticket.ticketId)).state).toBe('queued')
+    cancellation = f.call(f.operator.client, 'ci_cancel', { ticketId: ticket.ticketId })
+    const result = await Promise.race([
+      cancellation,
+      new Promise<undefined>(resolve => { timeout = setTimeout(() => resolve(undefined), 1000) }),
+    ])
+    expect(result, 'Cancellation must finish while capacity discovery is blocked').toBeDefined()
+    expect(result!.isError, JSON.stringify(result!.content)).not.toBe(true)
+    expect((await f.read(ticket.ticketId)).state).toBe('canceled')
+    expect(f.starts).toEqual([])
+    release.resolve()
+    await dispatch
+    expect((await f.read(ticket.ticketId)).state).toBe('canceled')
+    expect(f.starts).toEqual([])
+    const audit = (await f.pool.query(
+      "select principal_id from management_audit where action='ci.cancel' and target_key=$1",
+      [`ci:${ticket.ticketId}`])).rows
+    expect(audit).toEqual([{ principal_id: f.operator.principalId }])
+  } finally {
+    clearTimeout(timeout)
+    release.resolve()
+    await dispatch
+    await cancellation
+    await f.close()
+  }
+})
+
 it('retains cleanup when cancellation arrives while the accepted start reply is still in flight', async () => {
   const f = await fixture()
   const entered = deferred()
@@ -291,8 +365,16 @@ it('retains cleanup when cancellation arrives while the accepted start reply is 
     f.control.available = true
     dispatch = f.ci.dispatch()
     await entered.promise
-    expect((await f.call(f.operator.client, 'ci_cancel', { ticketId: ticket.ticketId })).isError).toBe(true)
-    expect((await f.read(ticket.ticketId)).state).toBe('starting')
+    const commandId = randomUUID()
+    const denied = await f.connect(CI_GET_ACTIONS)
+    expect((await f.call(denied.client, 'ci_cancel', { ticketId: ticket.ticketId })).isError).toBe(true)
+    expect((await f.read(ticket.ticketId)).cancellation).toBeUndefined()
+    const pending = await f.call(f.operator.client, 'ci_cancel', { ticketId: ticket.ticketId, commandId })
+    expect(pending.isError).toBe(true)
+    expect(decodeMcpToolResult(pending)).toMatchObject({ error: { code: 'CI_CANCEL_PENDING' } })
+    expect(await f.read(ticket.ticketId)).toMatchObject({ state: 'starting', cancellation: {
+      principalId: f.operator.principalId, source: 'mcp', commandId, reason: 'direct',
+    } })
     release.resolve()
     await dispatch
     f.control.onStart = async () => {}
@@ -382,6 +464,10 @@ it.each([2, 3])('persists one partition plan without changing concurrent cancell
     expect(saved).toHaveLength(partitions)
     expect(new Set(saved.map(row => row.revision)).size).toBe(1)
     const planned = await Promise.all(canceled.map(run => f.read(run.id)))
+    const hostIndexes = Array.from({ length: Math.min(f.computers.length, partitions - 1) }, (_, index) => index)
+    expect(planned[0]!.partition).toMatchObject({
+      weights: Array.from({ length: partitions }, () => 1), hostIndexes,
+    })
     for (const [index, run] of planned.entries()) {
       expect(run).toMatchObject(canceled[index]!)
       expect(run.partition?.weights).toHaveLength(partitions)

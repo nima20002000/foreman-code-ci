@@ -598,7 +598,7 @@ export class HostCiService {
     assertCiReadAccess(caller, scope.executionId, run)
     this.stoppingRuns += 1
     try {
-      await this.dispatching
+      // Record intent before waiting for remote entry; the ticket lock protects executor cleanup.
       return await this.cancelTicket(scope.workspaceId, run.id, {
         principalId: caller.id, source, commandId: input.commandId ?? randomUUID(), reason: 'direct',
       })
@@ -1036,13 +1036,15 @@ export class HostCiService {
         ? github.length : githubIntegrationLimit
       const reasons = (run.unstartedProviders ?? []).map(provider => `${provider}: dispatch retries exhausted`)
       const preferred = (computer: HostCiComputer) => {
+        if (run.gate && run.suite !== 'integration') return Number(computer.hostRef.kind === 'cloud')
         if (computer.hostRef.kind !== 'cloud') return 3
         if (run.suite !== 'integration') return Number(isGitHubComputer(computer))
         return isGitHubComputer(computer) ? 1 : 2
       }
       const affectedFiles = run.scope === 'affected' && !run.deriveFiles ? { files: run.files } : {}
       const selection = (run.gate || smokeTarget) && run.suite === 'integration'
-        ? { gate: true, integrationShards: run.integrationShards!, files: run.files } : affectedFiles
+        ? { gate: true, scope: 'full' as const, integrationShards: run.integrationShards!, files: run.files }
+        : affectedFiles
       const plannedGateReady = run.plannedHostKey && gateShards.has(run.plannedHostKey)
       const order = computers.filter(computer => runsOnCircleCi(run)
         || computer.hostRef.kind !== 'cloud' || computer.hostRef.provider !== 'circleci')
