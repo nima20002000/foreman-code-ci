@@ -633,7 +633,7 @@ describe('GitHub Actions CI on a public mirror', () => {
       .toMatchObject({ run: { state: 'running' } })
   })
 
-  it('ends an unrecoverable unstarted CircleCI ticket as lost and releases its Main slot', async () => {
+  it('persists missing CircleCI recovery in Main until explicit cancellation resolves ownership', async () => {
     const f = await fixture({}, { provider: 'circleci' })
     f.circle.lookupError = 'run.not_found'
     const runId = randomUUID()
@@ -642,25 +642,18 @@ describe('GitHub Actions CI on a public mirror', () => {
     if (started.operation !== 'start') throw new Error('Expected a start reply')
     const main = cloudService(f.cloud, started.run, f.commit)
     const read = { operation: 'read', runId, afterOffset: 0, maxBytes: 65_536 }
-    let now = Date.parse(started.run.startedAt!)
-    const clock = vi.spyOn(Date, 'now').mockImplementation(() => now)
-    try {
-      for (let attempt = 0; attempt < 3; attempt++) {
-        now += 75_000
-        f.advance(75_000)
-        await f.reopen().handle(read)
-        await main.service.dispatch()
-      }
-    } finally {
-      clock.mockRestore()
+    for (let attempt = 0; attempt < 3; attempt++) {
+      f.advance(75_000)
+      await f.reopen().handle(read)
+      await main.service.dispatch()
     }
-    expect(await main.read()).toMatchObject({ run: { state: 'lost', computer: { label: 'CircleCI' },
-      finishedAt: expect.any(String), message: expect.stringContaining('slot was released') } })
+    expect(await main.read()).toMatchObject({ run: { state: 'starting', computer: { label: 'CircleCI' },
+      message: expect.stringContaining('Operator cancellation is required') } })
     expect(f.circle.triggered).toHaveLength(1)
-    expect(f.circle.canceled).toEqual(['run-1'])
+    expect(f.circle.canceled).toEqual([])
     expect(await f.reopen().handle({ operation: 'cancel', runId })).toMatchObject({ run: { state: 'canceled' } })
     await main.service.dispatch()
-    expect(await main.read()).toMatchObject({ run: { state: 'lost' } })
+    expect(await main.read()).toMatchObject({ run: { state: 'canceled' } })
   })
 
   it('recovers a transiently missing CircleCI lookup before its reconciliation budget is spent', async () => {
