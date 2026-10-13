@@ -52,12 +52,6 @@ export const userSystemdIntegrationFiles = new Set([
 const startupFile = 'apps/api/test/dev-startup.integration.test.ts'
 // These files measure bounded startup/latency while exercising shared host resources.
 export const exclusiveIntegrationFiles = [startupFile,
-  // Checkpoint routing must settle within its fixed deadline under CI load.
-  'apps/api/test/eng03-b-durability-routing.integration.test.ts',
-  // Two sequential native executions must settle within the fixed completion deadline.
-  'apps/api/test/computer-workflow-save.regression-directories.integration.test.ts',
-  // Native review startup and reserved-decision recovery must fit the fixed file deadline.
-  'apps/api/test/remote-review-production-reserved-decision.integration.test.ts',
   // Keep installed API packaging sequential on each user-systemd host.
   'apps/api/test/workflow-systemd-restart-active.integration.test.ts',
   'apps/api/test/workflow-systemd-restart-writable-source.integration.test.ts',
