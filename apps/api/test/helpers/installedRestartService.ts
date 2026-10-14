@@ -15,11 +15,13 @@ import { readUntil } from './observableCondition.js'
 import { removeRestartUnit } from '../../../../scripts/test-restart-units.mjs'
 import { testFixtureCacheRoot } from '../../../../scripts/test-fixture-cache.mjs'
 import { ownedTestPath } from './testResources.js'
+import { measureIntegrationPhase } from './integrationPhase.js'
 
 const execute = promisify(execFile)
 const repository = fileURLToPath(new URL('../../../..', import.meta.url))
 const serviceUser = userInfo()
 const workerRequire = createRequire(new URL('../../../worker/package.json', import.meta.url))
+const { parse } = workerRequire('yaml') as { parse(text: string): { storeDir: string } }
 const { build } = workerRequire('esbuild') as {
   build(options: {
     entryPoints: string[]
@@ -56,20 +58,12 @@ async function sources(directory: string): Promise<string[]> {
   return files
 }
 
-/** Uses the installer's package layout and unit, with isolated fixture configuration. */
-export async function installedRestartService(directory: string, configuration: string,
-  environment: NodeJS.ProcessEnv, runtime: string) {
-  ownedTestPath(directory)
-  const app = join(directory, 'installed')
-  const release = join(app, 'current')
-  const api = join(release, 'apps/api')
-  await mkdir(dirname(api), { recursive: true, mode: 0o700 })
-  await cp(join(repository, 'scripts'), join(release, 'scripts'), { recursive: true })
-  await cp(join(repository, 'packages/contracts/src'), join(release, 'packages/contracts/src'), { recursive: true })
+async function deployRestartApi(directory: string, api: string) {
+  const { storeDir } = parse(await readFile(join(repository, 'node_modules/.modules.yaml'), 'utf8'))
   // Legacy pnpm deployment changes its source workspace's dependency selection.
   const deployment = join(directory, 'deployment-source')
   await mkdir(join(deployment, 'scripts'), { recursive: true, mode: 0o700 })
-  for (const name of ['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml']) {
+  for (const name of ['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', '.npmrc']) {
     await copyFile(join(repository, name), join(deployment, name))
   }
   await copyFile(join(repository, 'scripts/require-pnpm.mjs'), join(deployment, 'scripts/require-pnpm.mjs'))
@@ -87,14 +81,31 @@ export async function installedRestartService(directory: string, configuration: 
     // The disposable deployment workspace is discarded, so it needs no dependency restoration.
     if (args.includes('install')) return
     try {
-      await execute(command, args, { cwd: deployment, maxBuffer: 4 * 1024 * 1024,
-        env: { ...process.env, CI: 'true', npm_config_offline: 'true' } })
+      // CI may populate a custom store; the isolated workspace must use that same installed store.
+      await measureIntegrationPhase('Installed API dependencies', () => execute(command,
+        [...args, '--offline', '--store-dir', dirname(storeDir)], {
+          cwd: deployment, maxBuffer: 4 * 1024 * 1024, timeout: 60_000,
+          env: { ...process.env, CI: 'true' },
+        }))
     } catch (error) {
       const output = error as Error & { stdout?: string; stderr?: string; code?: unknown; signal?: unknown }
       throw new Error(`${output.message} (code ${output.code}, signal ${output.signal})\n`
         + `${output.stderr ?? ''}\n${output.stdout ?? ''}`, { cause: error })
     }
   }, api, { dependencies: { root: join(testFixtureCacheRoot(), 'api-dependencies'), source: deployment } })
+}
+
+/** Uses the installer's package layout and unit, with isolated fixture configuration. */
+export async function installedRestartService(directory: string, configuration: string,
+  environment: NodeJS.ProcessEnv, runtime: string) {
+  ownedTestPath(directory)
+  const app = join(directory, 'installed')
+  const release = join(app, 'current')
+  const api = join(release, 'apps/api')
+  await mkdir(dirname(api), { recursive: true, mode: 0o700 })
+  await cp(join(repository, 'scripts'), join(release, 'scripts'), { recursive: true })
+  await cp(join(repository, 'packages/contracts/src'), join(release, 'packages/contracts/src'), { recursive: true })
+  await deployRestartApi(directory, api)
   await mkdir(join(api, 'test/helpers'), { recursive: true })
   await copyFile(join(repository, 'apps/api/test/helpers/testPool.mjs'), join(api, 'test/helpers/testPool.mjs'))
   const source = join(repository, 'apps/api/src')
