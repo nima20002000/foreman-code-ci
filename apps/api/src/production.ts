@@ -1,3 +1,5 @@
+import { MANAGED_MCP_NAMESPACE } from '@foreman-code/contracts/managed-mcp-channel'
+import { DeviceManagedMcp } from './modules/harnesses/deviceManagedMcp.js'
 import { RunWorktrees } from './modules/runs/runWorktrees.js'
 import { withTransaction } from './infrastructure/transaction.js'
 import { ComputerActivityService } from './modules/computers/activity.js'
@@ -695,6 +697,7 @@ function configureDeviceRuntime(composition: ProductionComposition) {
         releaseDirectory: fileURLToPath(new URL('../../../', import.meta.url)),
       }),
       { namespace: COMPUTER_GITHUB_NAMESPACE, version: 1, role: 'client', maxJsonBytes: 16_384, maxBinaryBytes: 0 },
+      { namespace: MANAGED_MCP_NAMESPACE, version: 1, role: 'client', maxJsonBytes: 1_048_576, maxBinaryBytes: 0 },
       { namespace: COMPUTER_SYNC_NAMESPACE, version: 1, role: 'client', maxJsonBytes: 1_048_576, maxBinaryBytes: 0 },
       { namespace: AGENT_SNAPSHOT_NAMESPACE, version: 1, role: 'client', maxJsonBytes: AGENT_SNAPSHOT_JSON_BYTES, maxBinaryBytes: 0 },
       { namespace: CI_RUNTIME_NAMESPACE, version: 1, role: 'client', maxJsonBytes: 1_048_576, maxBinaryBytes: 0 },
@@ -1178,7 +1181,9 @@ function configureHarnessProfiles(composition: ProductionComposition) {
     if (hostRef.kind !== 'main' || !binding.installation.installationFingerprint) throw new DomainError('CLAUDE_INSTALLATION_UNAVAILABLE', 'The actual local Claude installation is unavailable.', 409)
     return { hostRef, applicationInstallationId: hostRef.mainId, harnessInstallationId: binding.selection.harnessInstallationId,
       installationFingerprint: binding.installation.installationFingerprint }
-  }, accountConfigurations)
+  }, accountConfigurations, value => hostProfileChecks.checkAutomatically(
+    value, harnessRegistry.pinOverride(value).installation,
+  ))
   accountConfigurations.bindProfiles(harnessInstances)
   composition.installationMonitor = new HarnessInstallationMonitor(harnessRegistry, hostProfileChecks,
     () => deviceRuntime.endpointForDomains(), async (binding, inventory) => {
@@ -2117,7 +2122,18 @@ function configureOperatorServices(composition: ProductionComposition) {
     placementChoices: new NodePlacementChoicesService(database.pool, new ProductionPlacementChoiceDiscovery(
       database.pool, () => {
         if (!composition.jobRuntime) throw new DomainError('PLACEMENT_CHOICES_UNAVAILABLE', 'Computer choices are not initialized.', 503)
-        return { roots: composition.jobRuntime.policies, sources: composition.jobRuntime.sources, profiles: hostSettings, registry: harnessRegistry }
+        const runtime = composition.jobRuntime
+        return { roots: runtime.policies, sources: runtime.sources, profiles: hostSettings, registry: harnessRegistry,
+          ensureProfileReady: profile => composition.harnessInstances.ensureReady(profile),
+          provisionRoot: (...args: Parameters<ProductionCiEnrollmentInventory['root']>) => {
+            const workspaceRoots = composition.runtimeServices.workspaceRoots
+            if (!workspaceRoots) throw new DomainError('PLACEMENT_CHOICES_UNAVAILABLE', 'Workspace roots are not initialized.', 503)
+            const inventory = new ProductionCiEnrollmentInventory(database.pool, runtime.sources,
+              () => deviceRuntime.endpointForDomains(), () => runtime.mainCiRuntime, workerExecution,
+              new ManagedWorkspaceRootService(commands, workspaceRoots, runtime.policies))
+            return inventory.root(...args)
+          },
+        }
       },
     )),
   }
@@ -2664,7 +2680,7 @@ async function initializeWorkflowArtifacts(composition: ProductionComposition, m
     remoteWorkflow,
     harnessRegistry,
     selectedSuites,
-    hostProfileChecks,
+    harnessInstances,
     installationMonitor,
     app,
     mountArtifacts,
@@ -2676,7 +2692,7 @@ async function initializeWorkflowArtifacts(composition: ProductionComposition, m
   if (selectedSuites) {
     composition.agentPlacement = new AgentPlacementProducer(database.pool, machine.installationId, jobRuntime.sources, jobRuntime.policies,
       harnessRegistry, { codex: selectedSuites.codex.revision },
-      workerExecution, profile => hostProfileChecks.assertReady(profile),
+      workerExecution, profile => harnessInstances.ensureReady(profile),
       (hosts, signal) => installationMonitor.refreshHosts(hosts, signal), providerAccounts)
     composition.agentPreparation = new AgentExecutionPreparation(jobRuntime.sources, composition.agentPlacement)
     composition.executionAuthority = createExecutionAuthorityExtension(database.pool, locations, composition.agentPlacement)
@@ -2925,6 +2941,8 @@ async function initializeHarnessServices(composition: ProductionComposition, mac
     database,
   } = composition
 
+  harnessSettings.mcp.configureDevices(new DeviceManagedMcp(database.pool, machine.installationId,
+    () => deviceRuntime.endpointForDomains(), commands))
   await startupDatabase(() => harnessRegistry.initialize(machine.installationId))
   assertOpen()
   if (processRegistry instanceof NativeProcessRegistry) {
