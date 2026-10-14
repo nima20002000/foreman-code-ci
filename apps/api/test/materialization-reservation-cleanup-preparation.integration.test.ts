@@ -10,7 +10,6 @@ import { PrivateSourceSnapshotStore } from '../src/modules/sources/store.js'
 import { measureRetainedMaterializationFootprint, measureRetainedSourceDirectory } from '../src/modules/sources/retainedDirectoryUsage.js'
 import { WorkspaceLocationService } from '../src/modules/workspaces/location.js'
 import { readSourceStorageCapacity } from '../src/modules/sources/storageCapacity.js'
-import { withTransaction } from '../src/infrastructure/transaction.js'
 
 let fixture: Awaited<ReturnType<typeof setupMaterializationReservationCleanup>> | undefined
 afterEach(async () => { await fixture?.close(); fixture = undefined })
@@ -32,7 +31,7 @@ it.each(['timeout', 'invalid reply', 'adoption rollback'] as const)(
       authorize.mockResolvedValueOnce().mockResolvedValueOnce().mockRejectedValueOnce(new Error('Adoption rolled back'))
     }
     const sources = new PostgresSourceService(f.pool, f.commands,
-      new WorkspaceLocationService(f.pool, f.commands, f.runtime, 'fixture'),
+      new WorkspaceLocationService(f.pool, f.commands, f.runtime, 'fixture', f.runtime),
       new PrivateSourceSnapshotStore(join(f.runtime, 'snapshots')), f.root.binding.mainId,
       { authorize: f.unused, attest: f.unused, fence: f.unused },
       { authorize, authorizeFinal: f.unused, verify: f.unused, verifyWorkingDirectory: f.unused,
@@ -73,12 +72,6 @@ it('keeps abandoned writable trees and their measured charge after releasing pre
     'select state,reserved_bytes from source_storage_reservations where reservation_id=$1',
     [orphan.reservation.reservationId])).rows[0]!
   expect(retained).toEqual({ state: 'retained', reserved_bytes: String(footprint.retainedBytes + 16 * 1024) })
-  const stored = (await f.pool.query<{ record: SourceReservation }>(
-    'select record from source_storage_reservations where reservation_id=$1',
-    [orphan.reservation.reservationId])).rows[0]!.record
-  expect(stored.preparationClosure).toMatchObject({ operationId: orphan.reservation.ownerId,
-    executionId: orphan.attempt.executionId, attemptId: orphan.attempt.attemptId,
-    materializationId: orphan.receipt.materializationId, childrenClosed: true, claimReleased: true })
   expect(await readFile(working, 'utf8')).toBe('Unintegrated Agent output')
   expect(await readFile(join(f.namespace, orphan.receipt.materializationId, 'tree', 'source.txt'))).toBeDefined()
   const next = await f.orphan('owned')
@@ -93,10 +86,16 @@ it('charges three closed references and one reused writable tree across closure 
   async function close(copy: Awaited<ReturnType<typeof f.orphan>>) {
     await releaseMaterializationClaim(copy.receipt, async () => 'released')
     const footprint = await measureRetainedMaterializationFootprint(copy.receipt)
-    await withTransaction(f.pool, async sql => {
+    const sql = await f.pool.connect()
+    try {
+      await sql.query('begin')
       await reservations.retainMaterialization(sql, copy.reservation,
         { ...footprint, retainedBytes: footprint.retainedBytes + 16 * 1024 })
-    })
+      await sql.query('commit')
+    } catch (error) {
+      await sql.query('rollback')
+      throw error
+    } finally { sql.release() }
   }
   for (let index = 0; index < 3; index++) {
     const copy = await f.orphan('owned', { sharedWritableTree: true })

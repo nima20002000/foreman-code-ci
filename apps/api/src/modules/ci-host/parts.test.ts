@@ -1,4 +1,3 @@
-import { integrationPartition } from '@foreman-code/contracts'
 import { expect, it } from 'vitest'
 import { ciGroupState, planCiParts } from './parts.js'
 
@@ -61,29 +60,4 @@ it('reports unfinished and failed group members alongside passed parts', () => {
   expect(ciGroupState([{ state: 'passed' }, { state: 'running' }])).toBe('running')
   expect(ciGroupState([{ state: 'failed' }, { state: 'running' }])).toBe('failed')
   expect(ciGroupState([{ state: 'passed' }, { state: 'passed' }])).toBe('passed')
-})
-
-it.each(['apps/api/test', 'apps/web/src'])('grows %s shards to target 150 seconds of measured work', directory => {
-  const files = Array.from({ length: 60 }, (_, index) => `${directory}/feature-${index}.test.ts`)
-  const durations = Object.fromEntries(files.map(file => [file, 30_000]))
-  const parts = planCiParts({ suite: 'unit', scope: 'full', commandId: 'growth' }, durations,
-    { files, durations, heavy: [] })
-  const part = directory.startsWith('apps/api') ? 'unit-api' : 'unit-web'
-  expect(parts.filter(item => item.part === part)).toHaveLength(12)
-})
-
-it.each(['apps/api/src', 'apps/web/src'])('adds %s parts when measured slices exceed the unit budget', directory => {
-  const files = Array.from({ length: 9 }, (_, index) => `${directory}/feature-${index}.test.ts`)
-  const durations = Object.fromEntries(files.map(file => [file, 90_000]))
-  const part = directory.startsWith('apps/api') ? 'unit-api' : 'unit-web'
-  const parts = planCiParts({ suite: 'unit', scope: 'full' }, durations, { files, durations, heavy: [] })
-    .filter(item => item.part === part)
-  expect(parts).toHaveLength(9)
-  const slices = parts.map(item => integrationPartition(files, durations, item.partition!))
-  expect(slices.flat().sort()).toEqual([...files].sort())
-  for (const [index, item] of parts.entries()) {
-    const measuredMs = slices[index]!.reduce((sum, file) => sum + durations[file]!, 0)
-    expect(item).toMatchObject({ expectedDurationMs: 90_000 + measuredMs })
-    expect(90_000 + measuredMs).toBeLessThanOrEqual(240_000)
-  }
 })

@@ -2,28 +2,14 @@ import { z } from 'zod'
 import { NativeSessionReferenceSchema } from './index.js'
 import { DispatchIntentSchema } from './nodePlacement.js'
 import { IdSchema } from './schemaPrimitives.js'
-import { SourceHashSchema, MaterializationReceiptSchema, SourceWorktreeRequestSchema, RootBindingSchema } from './sourceMaterialization.js'
+import { SourceHashSchema, MaterializationReceiptSchema, SourceWorktreeRequestSchema } from './sourceMaterialization.js'
 import { SourceRootRecordSchema, SourceMaterializationRecordSchema, SourcePinSchema, SourceCwdAttestationSchema, SourcePreparationClosureSchema } from './sourceAdmission.js'
 import { TransferIntentSchema } from './byteTransfer.js'
 import { RootFilesystemIdentitySchema } from './workspaceRootPolicies.js'
-export { SOURCE_MATERIALIZATION_RECORD_MAX_BYTES } from './sourceMaterialization.js'
 // Capacity probes and closure requests share the channel with bounded source preparations.
 export const SOURCE_OPERATION_EXTENSION = { namespace: 'source-operations-v1', version: 1, maxJsonBytes: 1048576, maxBinaryBytes: 0, maxPending: 64 } as const
 export const SourceOperationAttemptSchema = z.object({ placementHash: SourceHashSchema, executionId: IdSchema, attemptId: IdSchema,
   keyRevision: z.number().int().positive().nullable(), authorizationRevision: z.number().int().positive().nullable() }).strict()
-/** Written before secondary source bytes; the placement hash identifies the accepted operation. */
-export const SecondarySourceAllocationSchema = z.object({
-  version: z.literal(1),
-  id: z.uuid(),
-  materializationId: z.uuid(),
-  binding: RootBindingSchema,
-  attempt: SourceOperationAttemptSchema,
-  kind: z.enum(['shared', 'worktree']),
-  state: z.enum(['preparing', 'reclaimed']),
-  filesystem: RootFilesystemIdentitySchema.optional(),
-  worktree: MaterializationReceiptSchema.shape.worktree.optional(),
-}).strict()
-export type SecondarySourceAllocation = z.infer<typeof SecondarySourceAllocationSchema>
 export const SourcePreparationIdentitySchema = z.object({ operationId: IdSchema, ownerPrincipalId: IdSchema, expiresAt: z.string().datetime() }).strict()
 export const SourceStorageCapacitySchema = z.object({
   filesystem: RootFilesystemIdentitySchema,
@@ -55,6 +41,7 @@ export type SourceFilesystemOperation = z.infer<typeof SourceFilesystemOperation
 export const SourceOperationRequestSchema = z.union([SourceFilesystemOperationSchema,
   z.object({ version: z.literal(1), operation: z.literal('sources.authorize'), request: SourceFilesystemOperationSchema }).strict(),
   z.object({ version: z.literal(1), operation: z.literal('sources.transfer-authorize'), transferId: z.uuid() }).strict()])
+export type SourceOperationRequest = z.infer<typeof SourceOperationRequestSchema>
 /** Existing authenticated source channel; Main resolves the original admission.
  * A status request never supplies an intent, materialization or ACK assertion. */
 export const SourceTransferStatusRequestSchema = z.object({ version: z.literal(1),
@@ -72,6 +59,8 @@ export const SourceTransferStatusResponseSchema = z.object({ version: z.literal(
     && binding.rootId === intent.rootId && binding.bindingRevision === intent.rootBindingRevision
     && binding.manifestDigest === intent.manifestDigest && receipt.verifiedManifestDigest === intent.manifestDigest
 }, { message: 'Committed materialization must identify the original source transfer' })
+export type SourceTransferStatusRequest = z.infer<typeof SourceTransferStatusRequestSchema>
+export type SourceTransferStatusResponse = z.infer<typeof SourceTransferStatusResponseSchema>
 /** Trusted Main readback of an entered, currently owned native lifetime. A
  * filesystem request never supplies this evidence or selects mutable mode. */
 export const SourceActiveNativeSessionSchema = z.object({
@@ -119,7 +108,7 @@ export const SourceReservationReclamationResponseSchema = z.object({ version: z.
   operationId: IdSchema, reclaimed: z.boolean(), closures: z.array(SourcePreparationClosureSchema).max(1024),
   retained: RetainedSourceFootprintSchema.optional() }).strict()
   .refine(value => value.reclaimed === !value.retained, 'Retained working trees keep their storage reservation')
-const PrivateSourceRepositoryResultSchema = z.object({ workTree: z.string().startsWith('/'), gitDirectory: z.string().startsWith('/'),
+export const PrivateSourceRepositoryResultSchema = z.object({ workTree: z.string().startsWith('/'), gitDirectory: z.string().startsWith('/'),
   generatedCommit: z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/), sourceCommit: z.string().nullable() }).strict()
 export const SourceOperationResponseSchema = z.discriminatedUnion('operation', [
   z.object({ version: z.literal(1), operation: z.literal('sources.capacity'), capacity: SourceStorageCapacitySchema }).strict(),

@@ -1,7 +1,6 @@
-import { errorMessage } from '../../shared/errorMessage.js'
 import { assertClaudeFullAccess } from './nativeWorkflowConfiguration.js'
 import { isDeepStrictEqual } from 'node:util'
-import { canonicalJson } from '@foreman-code/contracts/canonical-json'
+import { canonical } from './codexProtocol.js'
 import { QualificationCache } from './qualificationCache.js'
 import { qualificationError } from './qualificationErrors.js'
 
@@ -39,14 +38,14 @@ export class HarnessCatalogService {
 
   private currentStatus(value: HarnessConfiguration,
     options: { signal?: AbortSignal; allowStale?: boolean } = {}) {
-    return this.statuses.get(canonicalJson(withAdvancedDefaults(value)),
+    return this.statuses.get(canonical(withAdvancedDefaults(value)),
       (active) => this.inspectConfiguration(value, active), options)
   }
 
   private async inspectConfiguration(value: HarnessConfiguration, signal?: AbortSignal) {
     assertClaudeFullAccess(value)
     try {
-      return await this.checks.get(canonicalJson(withAdvancedDefaults(value)), async (active) => {
+      return await this.checks.get(canonical(withAdvancedDefaults(value)), async (active) => {
         const qualification = HarnessQualificationSchema.parse(
           await this.qualifier.qualify(value, this.qualificationDirectory,
             AbortSignal.any([active, AbortSignal.timeout(60_000)])))
@@ -121,13 +120,13 @@ export class HarnessCatalogService {
     } catch (error) {
       return {
         harness, defaults: configuration, defaultsRevision: revision, capability: null, ...support,
-        discoveryError: { code: error instanceof DomainError ? error.code : 'HARNESS_DISCOVERY_UNAVAILABLE', message: errorMessage(error, 'Harness discovery failed.') },
+        discoveryError: { code: error instanceof DomainError ? error.code : 'HARNESS_DISCOVERY_UNAVAILABLE', message: error instanceof Error ? error.message : 'Harness discovery failed.' },
       }
     }
   }
 
   async updateDefaults(principal: ManagementPrincipal, source: 'http' | 'mcp', input: {
-    commandId: string; expectedRevision?: number | undefined; defaults: HarnessDefaults; configure?: AgentHarness[] | undefined
+    commandId: string; expectedRevision: number; defaults: HarnessDefaults; configure?: AgentHarness[] | undefined
   }) {
     requireAuthorization(principal, 'harnesses:update')
     const defaults = HarnessDefaultsSchema.parse(input.defaults)
@@ -138,7 +137,7 @@ export class HarnessCatalogService {
         const current = await this.settings.getManagedHarnessDefaults(client)
         const unavailable = new Set(current.unavailable ?? [])
         const configure = new Set(input.configure ?? [])
-        if (input.expectedRevision !== undefined && current.revision !== input.expectedRevision) throw new DomainError('REVISION_CONFLICT', 'Harness defaults changed since they were read.', 409)
+        if (current.revision !== input.expectedRevision) throw new DomainError('REVISION_CONFLICT', 'Harness defaults changed since they were read.', 409)
         for (const harness of ['codex', 'claude'] as const) {
           const next = defaults[harness], previous = current.defaults[harness]
           if (!next && configure.has(harness)) throw new DomainError('HARNESS_PROFILE_REQUIRED',

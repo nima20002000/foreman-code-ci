@@ -52,7 +52,7 @@ it('shows Codex and Claude as summary cards with status and no editor', () => {
   expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
 })
 
-it('drafts a preset change for the Operator and opens Codex panels', async () => {
+it('drafts a preset change for the Operator and opens human-only Codex panels', async () => {
   const onOpen = vi.fn()
   mount({ onOpen })
   await userEvent.click(screen.getByRole('button', { name: 'Edit Codex defaults' }))
@@ -67,9 +67,6 @@ it.each([['plugins', 'Codex plugins', 'Plugin catalog'], ['connections', 'Codex 
   'shows the %s panel in a dialog from the URL', (section, title, content) => {
     mount({ selectedHarness: 'codex', section })
     expect(within(screen.getByRole('dialog', { name: title })).getByText(content)).toBeVisible()
-    if (section === 'connections') {
-      expect(screen.getByRole('dialog', { name: title })).toHaveTextContent('Ask the Operator to manage connections.')
-    }
   })
 
 it('opens the Claude plugin summary from its card and URL', async () => {
@@ -102,14 +99,11 @@ it('keeps account controls in each card footer and independent of preset navigat
   expect(useOperatorChatStore.getState().request).toBeUndefined()
 })
 
-it.each([
-  [503, 'Claude accounts could not update'],
-  [500, 'Claude accounts could not update'],
-] as const)('keeps the other card, presets and panels usable after one account read fails with HTTP %s', async (status, message) => {
+it('keeps the other card, presets and panels usable after one account read fails', async () => {
   server.use(http.get('/api/provider-accounts/page', ({ request }) => {
     if (new URL(request.url).searchParams.get('provider') === 'claude') return HttpResponse.json({
       error: { code: 'UNAVAILABLE', message: 'Claude accounts could not update' },
-    }, { status })
+    }, { status: 503 })
     return HttpResponse.json({ target: accountTarget, revision: 2, accounts: [observedAccount()], defaults: [], nextCursor: null })
   }))
   const client = mount()
@@ -117,9 +111,7 @@ it.each([
   const codex = screen.getByRole('button', { name: 'Edit Codex defaults' }).closest('.settings-choice') as HTMLElement
   const claude = screen.getByRole('button', { name: 'Edit Claude defaults' }).closest('.settings-choice') as HTMLElement
   expect(await within(codex).findByRole('article', { name: 'Original account account' })).toBeVisible()
-  expect(await within(claude).findByText(message)).toBeVisible()
-  expect(within(claude).getByRole('button', { name: 'Retry accounts' })).toBeEnabled()
-  expect(within(codex).queryByRole('button', { name: 'Retry accounts' })).not.toBeInTheDocument()
+  expect(within(claude).getByText('Claude accounts could not update')).toBeVisible()
   expect(within(codex).getByRole('button', { name: 'Connections' })).toBeEnabled()
   expect(within(claude).getByRole('button', { name: 'Plugins' })).toBeEnabled()
   expect(within(codex).getByText('Ready')).toBeVisible()

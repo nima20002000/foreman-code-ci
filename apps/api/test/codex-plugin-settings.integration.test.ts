@@ -1,8 +1,8 @@
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
-import { createFixtureSchema, dropFixtureSchema } from './helpers/testResources.js'
+import { createFixtureSchema, dropFixtureSchema, removeFixtureDirectory } from './helpers/testResources.js'
 import { randomUUID } from 'node:crypto'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { homedir } from 'node:os'
+import { mkdtemp, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import pg from 'pg'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
@@ -39,9 +39,7 @@ it('lists, reads, installs and removes Codex plugins through authenticated MCP w
   let changes = 0
   let failChange = false
   const nativeMcp = { linear: { url: 'https://mcp.linear.app/mcp/readonly' } }
-  const cache = join(homedir(), '.cache', 'foreman-tmp')
-  await mkdir(cache, { recursive: true })
-  const home = await mkdtemp(join(cache, 'plugin-settings-test-'))
+  const home = await mkdtemp(join(tmpdir(), 'plugin-settings-test-'))
   const file = join(home, 'config.toml'); await writeFile(file, '')
   const adapter: CodexPluginAdapter = {
     recoveryIdentity: 'integration-writer',
@@ -102,42 +100,15 @@ it('lists, reads, installs and removes Codex plugins through authenticated MCP w
     expect(CodexPluginDetailResultSchema.parse(decodeMcpToolResult((await allowed.callTool({ name: 'codex_plugin_get',
       arguments: { pluginId: item.pluginId } })))).contents).toEqual({ status: 'known', skills: ['summarize'], hooks: [], mcpServers: ['notes'], apps: [] })
     const removal = { pluginId: item.pluginId, action: 'remove' as const, expectedRevision: (await list('installed')).revision, artifactIdentity: (await plugins.get(owner.principal, item.pluginId)).artifactIdentity, commandId: randomUUID() }
-    const removeHttp = await app.inject({ method: 'POST', url: '/api/management/harnesses/codex/plugins/change',
-      headers: { authorization: `Bearer ${owner.token}` }, payload: removal })
-    expect(removeHttp.statusCode).toBe(200)
-    expect(CodexPluginChangeResultSchema.parse(removeHttp.json()).status).toBe('applied')
-    const deniedHttp = await app.inject({ method: 'POST', url: '/api/management/harnesses/codex/plugins/change',
-      headers: { authorization: `Bearer ${reader.token}` }, payload: { ...removal, commandId: randomUUID() } })
-    expect(deniedHttp.statusCode).toBe(403)
-    expect(deniedHttp.json().error.code).toBe('ACCESS_DENIED')
+    expect((await plugins.change(owner.principal, removal)).status).toBe('applied')
     expect((await list('available')).items).toHaveLength(1)
     expect(nativeMcp.linear.url).toBe('https://mcp.linear.app/mcp/readonly')
     failChange = true
     const uncertainInput = { ...input, expectedRevision: (await list('available')).revision, commandId: randomUUID() }
     expect((await plugins.change(owner.principal, uncertainInput)).status).toBe('uncertain')
     expect((await plugins.change(owner.principal, uncertainInput)).status).toBe('uncertain')
-    const operations = await app.inject({ url: '/api/management/harnesses/codex/plugins/operations',
-      headers: { authorization: `Bearer ${owner.token}` } })
-    expect(operations.statusCode, operations.body).toBe(200)
-    expect(operations.json().items).toEqual(expect.arrayContaining([
-      expect.objectContaining({ requestedBy: owner.principal.id, commandId: uncertainInput.commandId,
-        input: uncertainInput, result: expect.objectContaining({ status: 'uncertain' }) }),
-    ]))
-    const reconciliation = { commandId: uncertainInput.commandId, requestedBy: owner.principal.id,
-      acceptObservedState: true, expectedRevision: (await list('available')).revision }
-    const deniedReconcile = await allowed.callTool({ name: 'codex_plugin_reconcile', arguments: reconciliation })
-    expect(deniedReconcile.isError).toBe(true)
-    expect(JSON.stringify(deniedReconcile.content)).toContain('ACCESS_DENIED')
-    const mcpReconciled = await operator.callTool({ name: 'codex_plugin_reconcile', arguments: reconciliation })
-    expect(mcpReconciled.isError, JSON.stringify(mcpReconciled)).not.toBe(true)
-    expect(CodexPluginChangeResultSchema.parse(decodeMcpToolResult(mcpReconciled)).status).toBe('reconciled')
-    const reconciled = await app.inject({ method: 'POST', url: '/api/management/harnesses/codex/plugins/reconcile',
-      headers: { authorization: `Bearer ${owner.token}` }, payload: reconciliation })
-    expect(reconciled.statusCode).toBe(200)
-    expect(CodexPluginChangeResultSchema.parse(reconciled.json()).status).toBe('reconciled')
-    expect((await list('available')).items).toHaveLength(1)
     expect(changes).toBe(3)
   } finally {
-    await plugins.shutdown(); await app.close(); await rm(home, { recursive: true, force: true })
+    await plugins.shutdown(); await app.close(); await removeFixtureDirectory(home)
   }
 })

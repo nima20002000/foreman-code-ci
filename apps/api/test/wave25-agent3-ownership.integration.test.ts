@@ -1,20 +1,22 @@
 import { randomUUID } from 'node:crypto'
-import type pg from 'pg'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import pg from 'pg'
+import { afterAll, describe, expect, it } from 'vitest'
 import { RunOwnership } from '../src/modules/runs/ownership.js'
 
-import { currentDatabase, postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+// Only a disposable explicitly configured test database. No application tables
+// or migrations are created/dropped; each lock has a random test-only identity.
+const databaseUrl = process.env.TEST_DATABASE_URL
+if (databaseUrl) {
+  const url = new URL(databaseUrl)
+  if (!['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) || !url.pathname.toLowerCase().includes('test')) {
+    throw new Error('Use a loopback PostgreSQL database explicitly named for tests')
+  }
+}
+const pool = databaseUrl ? new pg.Pool({ connectionString: databaseUrl, max: 3 }) : undefined
 
-let database: Awaited<ReturnType<typeof currentDatabase>>
-let pool: pg.Pool
-beforeAll(async () => {
-  if (!postgresEnabled) return
-  database = await currentDatabase()
-  pool = database.pool
-}, 60_000)
-afterAll(async () => { await database?.close() })
+afterAll(async () => { await pool?.end() })
 
-describe.skipIf(!postgresEnabled)('Agent 3 dedicated PostgreSQL publication ownership', () => {
+describe.skipIf(!databaseUrl)('Agent 3 dedicated PostgreSQL publication ownership', () => {
   it('joins an already-started release until the original database connection has drained', async () => {
     const owner = (await RunOwnership.acquire(pool!, `release-drain-${randomUUID()}`, () => undefined))!
     let entered!: () => void

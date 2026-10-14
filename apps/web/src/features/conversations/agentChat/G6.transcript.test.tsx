@@ -89,13 +89,6 @@ function disclosure(label: string) {
   return { summary, details }
 }
 
-function jumpButton() {
-  const button = screen.getByText('Jump to latest').closest('button')!
-  expect(button).toHaveAccessibleName('Jump to latest')
-  expect(button).toBeVisible()
-  return button
-}
-
 function openFromKeyboard(summary: HTMLElement) {
   // JSDOM does not implement the browser's summary/Enter default action. Dispatch
   // the keyboard-generated activation click (detail 0), with real DOM focus and
@@ -105,7 +98,7 @@ function openFromKeyboard(summary: HTMLElement) {
 
 function scrollMetrics(scroll: HTMLElement, height: number) {
   // Deliberately modeled metrics, not a claim about real phone/browser layout.
-  const rows = () => [...scroll.querySelectorAll('article, details')]
+  const rows = () => [...scroll.querySelectorAll('.operator-tool-activity, .conversation-message-content')]
   let top = 0
   Object.defineProperties(scroll, {
     scrollHeight: { configurable: true, get: () => rows().length * 40 },
@@ -133,7 +126,7 @@ describe('G6 B2-PF-03 stable activity disclosure identity', () => {
       const metrics = scrollMetrics(scroll, 240)
       // Start at the bottom; opening a disclosure alone must stop following.
       scroll.scrollTop = metrics.bottom(); fireEvent.scroll(scroll)
-      const { summary, details } = disclosure('Ran G6 tool 3/12')
+      const { summary, details } = disclosure('Tool · G6 tool 3/12')
       openFromKeyboard(summary)
       expect(details).toHaveAttribute('open')
       expect(summary).toHaveFocus()
@@ -142,21 +135,21 @@ describe('G6 B2-PF-03 stable activity disclosure identity', () => {
       await mounted.publish(completed, readback)
       await screen.findByText('G6 reply 3')
       const assertPreserved = () => {
-        expect(disclosure('Ran G6 tool 3/12').summary).toBe(summary)
-        expect(disclosure('Ran G6 tool 3/12').details).toBe(details)
+        expect(disclosure('Tool · G6 tool 3/12').summary).toBe(summary)
+        expect(disclosure('Tool · G6 tool 3/12').details).toBe(details)
         expect(summary.isConnected).toBe(true)
         expect(details).toHaveAttribute('open')
         expect(summary).toHaveFocus()
         expect(scroll.scrollTop).toBe(top)
-        expect(screen.getAllByText('Ran G6 tool 3/12')).toHaveLength(1)
+        expect(screen.getAllByText('Tool · G6 tool 3/12')).toHaveLength(1)
         expect(screen.getAllByText('G6 reply 3')).toHaveLength(1)
         expect(metrics.rows().at(-1)).toHaveTextContent('G6 reply 3')
       }
       assertPreserved()
       await mounted.replay(completed)
       assertPreserved()
-      expect(jumpButton()).toBeInTheDocument()
-      await userEvent.click(jumpButton())
+      expect(screen.getByRole('button', { name: 'Jump to latest' })).toBeInTheDocument()
+      await userEvent.click(screen.getByRole('button', { name: 'Jump to latest' }))
       expect(scroll.scrollTop).toBe(metrics.bottom())
       expect(details).toHaveAttribute('open')
     })
@@ -164,7 +157,7 @@ describe('G6 B2-PF-03 stable activity disclosure identity', () => {
 
   it('preserves individual open tools when multiple reply boundaries split the activity list', async () => {
     const initial = toolState('codex'), mounted = await mountPopover(initial)
-    const first = disclosure('Ran G6 tool 3/4'), last = disclosure('Ran G6 tool 3/20')
+    const first = disclosure('Tool · G6 tool 3/4'), last = disclosure('Tool · G6 tool 3/20')
     openFromKeyboard(first.summary); openFromKeyboard(last.summary)
     expect(first.details).toHaveAttribute('open'); expect(last.details).toHaveAttribute('open')
     const partial = structuredClone(initial)
@@ -172,14 +165,14 @@ describe('G6 B2-PF-03 stable activity disclosure identity', () => {
     partial.messages.push({ id: 'g6-intermediate', conversationId: partial.conversation!.id, requestId: 'g6-request-3',
       role: 'assistant', content: 'G6 intermediate reply', nativeMessageComplete: true, afterActivitySequence: '60' })
     await mounted.publish(partial, 'SSE')
-    expect(disclosure('Ran G6 tool 3/4').details).toBe(first.details)
-    expect(disclosure('Ran G6 tool 3/20').details).toBe(last.details)
+    expect(disclosure('Tool · G6 tool 3/4').details).toBe(first.details)
+    expect(disclosure('Tool · G6 tool 3/20').details).toBe(last.details)
     const final = toolState('codex', true)
     final.revision = partial.revision + 1
     final.messages.splice(final.messages.length - 1, 0, partial.messages.at(-1)!)
     await mounted.publish(final, 'SSE')
-    expect(disclosure('Ran G6 tool 3/4').details).toBe(first.details)
-    expect(disclosure('Ran G6 tool 3/20').details).toBe(last.details)
+    expect(disclosure('Tool · G6 tool 3/4').details).toBe(first.details)
+    expect(disclosure('Tool · G6 tool 3/20').details).toBe(last.details)
     expect(first.details).toHaveAttribute('open'); expect(last.details).toHaveAttribute('open')
     expect(last.summary).toHaveFocus()
     expect(first.summary.compareDocumentPosition(screen.getByText('G6 intermediate reply')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
@@ -200,10 +193,10 @@ describe('G6 B-R04 activity/reply ordering and bottom-following', () => {
     const history = within(scroll).getByRole('list', { name: 'Conversation history' })
     expect(history.lastElementChild).toHaveTextContent('G6 reply 3')
     expect(scroll.scrollTop).toBe(metrics.bottom())
-    expect(screen.queryByText('Jump to latest')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Jump to latest' })).not.toBeInTheDocument()
     for (let turn = 1; turn <= 3; turn++) {
       const reply = within(scroll).getByText(`G6 reply ${turn}`)
-      const tool = within(scroll).getByText(`Ran G6 tool ${turn}/24`)
+      const tool = within(scroll).getByText(`Tool · G6 tool ${turn}/24`)
       expect(tool.compareDocumentPosition(reply) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     }
     scroll.scrollTop = 120; fireEvent.scroll(scroll)
@@ -215,11 +208,11 @@ describe('G6 B-R04 activity/reply ordering and bottom-following', () => {
     expect(scroll.scrollTop).toBe(120)
     await mounted.replay(next)
     expect(scroll.scrollTop).toBe(120)
-    await userEvent.click(jumpButton())
+    await userEvent.click(screen.getByRole('button', { name: 'Jump to latest' }))
     expect(scroll.scrollTop).toBe(metrics.bottom())
     expect(metrics.rows().at(-1)).toHaveTextContent('G6 later reply')
     expect(history.lastElementChild).toHaveTextContent('G6 later reply')
     await mounted.replay(next)
-    expect(screen.queryByText('Jump to latest')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Jump to latest' })).not.toBeInTheDocument()
   })
 })

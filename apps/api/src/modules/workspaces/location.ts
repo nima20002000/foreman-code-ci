@@ -1,6 +1,5 @@
 export { requiredLocationAccess } from './locationAccess.js'
 import type { GraphSqlClient } from '../run-graph/connection.js'
-import { withTransaction } from '../../infrastructure/transaction.js'
 import { createHash } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import { constants } from 'node:fs'
@@ -27,6 +26,7 @@ import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.j
 import { currentOperatorAuthority } from '../access/runAuthority.js'
 import { PostgresCommandCoordinator } from '../commands/postgres.js'
 import { DomainError } from '../errors.js'
+import { requireWorkspaceStoragePath } from './storage.js'
 import { canonicalRuntimePath, pathsOverlap, withFilesystemDeadline } from './filesystem.js'
 import { WORKSPACE_FOLDER_LIFECYCLE_LOCK } from './projectFolderCleanup.js'
 import type { WorkspaceRootPolicyPort } from '../sources/rootPolicyPorts.js'
@@ -63,6 +63,7 @@ export class WorkspaceLocationService {
     private readonly commands: PostgresCommandCoordinator,
     managedRuntimeRoot?: string,
     readonly runnerId = LOCAL_RUNNER_ID,
+    private readonly projectRoot?: string,
   ) {
     this.managedRuntimeRoot = managedRuntimeRoot ? resolve(managedRuntimeRoot) : undefined
   }
@@ -119,6 +120,7 @@ export class WorkspaceLocationService {
     try {
       return await withFilesystemDeadline(async (check) => {
         const canonicalPath = await check(() => realpath(rootPath))
+        if (this.projectRoot) requireWorkspaceStoragePath(await check(() => realpath(this.projectRoot!)), canonicalPath)
         if (this.managedRuntimeRoot) {
           const runtimePath = await canonicalRuntimePath(this.managedRuntimeRoot, check)
           if (pathsOverlap(canonicalPath, runtimePath)) {
@@ -248,13 +250,22 @@ export class WorkspaceLocationService {
 
   async inspectionSnapshot(workspaceId: string, signal?: AbortSignal): Promise<RunExecutionLocation> {
     signal?.throwIfAborted()
-    const snapshot = await withTransaction(this.pool, async (client) => {
+    const client = await this.pool.connect()
+    let snapshot: RunExecutionLocation
+    try {
+      await client.query('begin')
       const rows = await client.query<{ location_revision: string }>(
         'select location_revision from workspaces where id=$1 for update', [workspaceId],
       )
       if (!rows.rows[0]) throw new DomainError('WORKSPACE_NOT_FOUND', 'The workspace was not found.', 404)
-      return this.snapshot(client, workspaceId, Number(rows.rows[0].location_revision), 'read-only', signal)
-    })
+      snapshot = await this.snapshot(client, workspaceId, Number(rows.rows[0].location_revision), 'read-only', signal)
+      await client.query('commit')
+    } catch (error) {
+      await client.query('rollback')
+      throw error
+    } finally {
+      client.release()
+    }
     await this.revalidateSnapshot(workspaceId, snapshot, 'read-only', signal)
     return snapshot
   }

@@ -1,8 +1,8 @@
 import { z } from "zod";
 
-const SettingsAgentRoleSchema = z.enum(["operator", "orchestrator", "coder"]);
+export const SettingsAgentRoleSchema = z.enum(["operator", "orchestrator", "coder"]);
 export type SettingsAgentRole = z.infer<typeof SettingsAgentRoleSchema>;
-const HarnessSettingsSectionSchema = z.enum(["model", "permissions", "session", "tools", "connections", "plugins", "workspace"]);
+export const HarnessSettingsSectionSchema = z.enum(["model", "permissions", "session", "tools", "connections", "plugins", "workspace"]);
 export type HarnessSettingsSection = z.infer<typeof HarnessSettingsSectionSchema>;
 export const AgentSettingsSearchSchema = z.object({
   role: SettingsAgentRoleSchema.optional().catch(undefined),
@@ -39,7 +39,7 @@ export const ManagedWorkspaceDefaultsSchema = z.object({
 export const WorkspaceDefaultsUpdateInputSchema = z.object({
   value: WorkspaceDefaultsSchema,
   commandId: z.string().trim().min(8).max(200),
-  expectedRevision: z.number().int().nonnegative().optional().describe('Omit for last write wins; supply to reject a stale revision.'),
+  expectedRevision: z.number().int().nonnegative(),
 }).strict();
 export type WorkspaceDefaultsUpdateInput = z.infer<typeof WorkspaceDefaultsUpdateInputSchema>;
 export const WorkspaceDefaultsUpdateResultSchema = z.object({

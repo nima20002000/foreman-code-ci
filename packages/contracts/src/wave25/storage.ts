@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { GraphActivitySchema, AgentGraphExecutionIdentitySchema, GraphIdSchema, GraphSequenceSchema } from './graphPrimitives.js'
+import { GraphActivitySchema, AgentGraphExecutionIdentitySchema, GraphIdSchema, GraphSequenceSchema } from './protocol.js'
 
 /** INTERNAL storage contracts: never embed these native identifiers into wire snapshots/events. */
 export const NativeGraphProjectionKeySchema = z.object({

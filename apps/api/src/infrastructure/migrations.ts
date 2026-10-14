@@ -1,18 +1,11 @@
-import { workflowAuthoringMigration } from './workflowAuthoringMigration.js'
-import { ciGrantMigration } from './ciGrantMigration.js'
 import { runWorktreesMigration } from './runWorktreesMigration.js'
-import { withTransaction } from './transaction.js'
-import { checkpointOwnerMigration } from './checkpointOwnerMigration.js'
-import { errorMessage } from '../shared/errorMessage.js'
 import { providerAccountsMigration, providerAccountObservationsMigration } from '../modules/provider-accounts/migration.js'
 import { nativeProofSourceLimitMigration } from './nativeProofSourceLimitMigration.js'
 import { nativeActivityNoiseMigration } from './nativeActivityNoiseMigration.js'
 import { workspaceRepositoryImportsMigration } from './workspaceRepositoryImportsMigration.js'
 import { retiredHarnessCredentialsMigration } from './retiredHarnessCredentialsMigration.js'
 import { bugReportsMigration } from './bugReportsMigration.js'
-import { bugReportLifecycleMigration } from './bugReportLifecycleMigration.js'
 import { hostCiRunsMigration } from './hostCiRunsMigration.js'
-import { ciHostSlotsMigration } from './ciHostSlotsMigration.js'
 import { hostCiActivityMigration } from './hostCiActivityMigration.js'
 import { agentIntervalMigration } from './agentIntervalMigration.js'
 import { ciTestResultsMigration } from './ciTestResultsMigration.js'
@@ -21,7 +14,6 @@ import { workResultRepairMigration } from './workResultRepairMigration.js'
 import { databaseHotQueriesMigration } from './databaseHotQueriesMigration.js'
 import { workflowOrderMigration } from './workflowOrderMigration.js'
 import { ciFileDurationsMigration } from './ciFileDurationsMigration.js'
-import { ciResultCacheMigration } from './ciResultCacheMigration.js'
 import { sessionControlsMigration } from './sessionControlsMigration.js'
 import { workerConversationBindingMigration } from './workerConversationBindingMigration.js'
 import { workDeliverySettlementMigration } from './workDeliverySettlementMigration.js'
@@ -140,6 +132,9 @@ import { fileToolsMigration } from '../modules/files/tools/migration.js'
 import { harnessQualificationMigration } from './harnessQualificationMigration.js'
 import { workspaceProvisioningMigration } from './workspaceProvisioningMigration.js'
 
+// Reserved migration blocks: HAP-01 100-109, HAP-02 200-209, HAP-03 300-309,
+// HAP-04 400-409, HAP-05 500-509, HAP-06 600-609, HAP-07 700-709.
+// Explicit versions prevent sibling worktrees from colliding when integrated.
 export const migrations = [
   { version: 1, sql: `
     create table if not exists application_migrations (
@@ -930,25 +925,12 @@ export const migrations = [
   workResultRepairMigration,
   databaseHotQueriesMigration,
   workflowOrderMigration,
-  bugReportLifecycleMigration,
-  ciHostSlotsMigration,
-  checkpointOwnerMigration,
-  ciResultCacheMigration,
-  workflowAuthoringMigration,
-  ciGrantMigration,
 ] as const
 
-export function assertMigrationVersions(entries: readonly { version: number }[]): void {
-  const versions = new Set<number>()
-  for (const { version } of entries) {
-    if (versions.has(version)) throw new Error(`Duplicate application migration version: ${version}`)
-    versions.add(version)
-  }
-}
-
 export async function applyApplicationMigrations(pool: pg.Pool): Promise<void> {
-  assertMigrationVersions(migrations)
-  return withTransaction(pool, async (client) => {
+  const client = await pool.connect()
+  try {
+    await client.query('begin')
     const schema = (await client.query<{ schema: string | null }>('select current_schema() as schema')).rows[0]?.schema
     if (!schema) throw new Error('Application migrations require a current PostgreSQL schema.')
     // Independent test schemas can migrate together; retain the established
@@ -966,13 +948,14 @@ export async function applyApplicationMigrations(pool: pg.Pool): Promise<void> {
     for (const migration of migrations) {
       const { version } = migration
       if (appliedVersions.has(version)) continue
-      try {
-        await client.query(migration.sql)
-      } catch (error) {
-        const reason = errorMessage(error, 'Unknown database error')
-        throw new Error(`Application migration ${version} failed: ${reason}. Resolve it before restarting.`, { cause: error })
-      }
+      await client.query(migration.sql)
       await client.query('insert into application_migrations (version) values ($1)', [version])
     }
-  })
+    await client.query('commit')
+  } catch (error) {
+    await client.query('rollback')
+    throw error
+  } finally {
+    client.release()
+  }
 }

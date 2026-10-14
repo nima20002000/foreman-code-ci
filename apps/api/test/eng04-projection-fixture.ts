@@ -1,6 +1,3 @@
-import type { PublicProjectionReader } from '../src/modules/run-graph/publicProjectionReader.js'
-import { readPublicProjectionLocked } from '../src/modules/run-graph/compactSnapshot.js'
-import { CURRENT_NATIVE_ACTIVITIES_SQL } from '../src/modules/run-graph/currentActivity.js'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
 import type pg from 'pg'
@@ -34,7 +31,6 @@ interface State { head: number; floor: number; domain: number; stopped: boolean;
  * Unknown SQL is an error. The actual transaction facade/publication/receipt
  * verifier/page reader execute against this model, without a fake receipt hook. */
 export class ProjectionDatabase {
-  constructor(readonly readPublicProjection: PublicProjectionReader = readPublicProjectionLocked) {}
   state: State = { head: 0, floor: 0, domain: 0, stopped: false, executionState: 'queued', outcome: 'pending', sources: [], effects: [], batches: [], cleanupPending: false, projection: null }
   scope = { ...projectionScope } as { workspaceId: string; workflowId: string; workflowVersionId: string; runId: string; executionSemanticsVersion: number }
   initialized = false
@@ -70,21 +66,18 @@ export class ProjectionDatabase {
     const c = this.connection()
     try {
       await c.transaction(async (sql) => {
-        const publication = await openRunGraphPublication(sql, projectionScope, this.readPublicProjection, { historyCoverage: 'from_admission' })
+        const publication = await openRunGraphPublication(sql, projectionScope, { historyCoverage: 'from_admission' })
         await publication.repeatInsertedRunReadback(this.fixture.run)
       })
       assert.equal(this.state.head, 1)
     } finally { this.fresh = false; await c.close() }
     this.calls.length = 0
-    this.transactions.length = 0
-    this.protectedMetadataReads = 0
-    this.historyBodyReads = 0
   }
   /** Exercise the real publisher's before/after Run and public-projection checks. */
   async changeRun(patch: { stopped?: boolean; executionState?: string; outcome?: string; cleanupPending?: boolean }) {
     const c = this.connection()
     try { await c.transaction(async (sql) => {
-      await openRunGraphPublication(sql, projectionScope, this.readPublicProjection)
+      await openRunGraphPublication(sql, projectionScope)
       await sql.query('update projection_test_run set fields=$1', [patch])
     }) } finally { await c.close() }
   }
@@ -93,9 +86,6 @@ export class ProjectionDatabase {
   onInsertSource: (() => void) | undefined
   unknownCommit = false
   calls: string[] = []
-  transactions: Array<{ readOnly: boolean; isolation: string; outcome: 'pending' | 'committed' | 'rolled-back' }> = []
-  protectedMetadataReads = 0
-  historyBodyReads = 0
   readonly owner = { runId: projectionScope.runId, assertOwned: () => { if (this.ownerLost) throw new Error('RUN_OWNERSHIP_LOST') },
     readOneShotFence: async (sql: GraphTransactionSql) => {
       const row = (await sql.query<{ owner_id: string; fence: string }>('select projection_test_owner_fence')).rows[0]
@@ -103,7 +93,6 @@ export class ProjectionDatabase {
     } } as unknown as RunOwnership
   connect() {
     let transaction: State | null = null
-    let observedTransaction: typeof this.transactions[number] | undefined
     let initializedBefore = this.initialized
     const client = new EventEmitter() as EventEmitter & { query: pg.ClientBase['query']; release: () => void }
     client.release = () => undefined
@@ -111,32 +100,10 @@ export class ProjectionDatabase {
       const q = text.replace(/\s+/g, ' ').trim(), s = transaction ?? this.state
       this.calls.push(q)
       const result = (rows: unknown[] = []) => ({ rows: structuredClone(rows), rowCount: rows.length, command: '', oid: 0, fields: [] })
-      if (q.startsWith('begin ')) {
-        observedTransaction = { readOnly: q.endsWith('read only'),
-          isolation: q.includes('repeatable read') ? 'repeatable read' : 'other', outcome: 'pending' }
-        this.transactions.push(observedTransaction)
-        initializedBefore = this.initialized
-        assert.equal(transaction, null)
-        transaction = structuredClone(this.state)
-        return result()
-      }
-      if (q === 'commit') {
-        if (observedTransaction) observedTransaction.outcome = 'committed'
-        assert.ok(transaction)
-        this.state = transaction
-        transaction = null
-        if (this.unknownCommit) {
-          this.unknownCommit = false
-          throw new Error('COMMIT reply lost')
-        }
-        return result()
-      }
-      if (q === 'rollback') {
-        if (observedTransaction) observedTransaction.outcome = 'rolled-back'
-        if (transaction) this.initialized = initializedBefore
-        transaction = null
-        return result()
-      }
+      if (q.startsWith('begin ')) { initializedBefore = this.initialized; assert.equal(transaction, null); transaction = structuredClone(this.state); return result() }
+      if (q === 'commit') { assert.ok(transaction); this.state = transaction; transaction = null;
+        if (this.unknownCommit) { this.unknownCommit = false; throw new Error('COMMIT reply lost') } return result() }
+      if (q === 'rollback') { if (transaction) this.initialized = initializedBefore; transaction = null; return result() }
       if (q === 'select projection_test_owner_fence') return result([{ owner_id: '42', fence: this.ownerFence }])
       if (q === 'update projection_test_domain set revision=revision+1') { s.domain++; return result() }
       if (q.startsWith('select effect_kind,entity_id,payload_digest from run_repeat_effects')) return result([])
@@ -204,7 +171,6 @@ export class ProjectionDatabase {
           semantic_digest: String(values[4]), sequence: String(values[1]) }; return result()
       }
       if (q.startsWith('select r.workspace_id,r.workflow_id,r.workflow_version_id,r.execution_state')) {
-        this.protectedMetadataReads++
         const version = this.fixture.version
         return result([{ workspace_id: this.scope.workspaceId, workflow_id: this.scope.workflowId,
           workflow_version_id: this.scope.workflowVersionId, execution_state: s.executionState,
@@ -220,10 +186,10 @@ export class ProjectionDatabase {
         ? [{ id: this.scope.runId, workspace_id: this.scope.workspaceId, workflow_id: this.scope.workflowId }] : [])
       // Empty, ordinary workflow cut. Each named query is an explicit physical
       // table read: no catch-all SELECT branch, native proof or history fallback.
-      if (q === CURRENT_NATIVE_ACTIVITIES_SQL.replace(/\s+/g, ' ').trim()) return result()
       for (const prefix of [
         'select distinct on (e.workflow_node_id) e.id',
         'select d.record from run_repeat_resolutions',
+        'select a.execution_id,a.workflow_node_id,a.attempt,a.work_kind',
         'with interactions as ( select e.workflow_node_id as node_id,count(*)::text,',
         'select b.record,b.bound_at from run_repeat_bindings',
         'select i.record from durable_interactions',
@@ -267,11 +233,8 @@ export class ProjectionDatabase {
       if (q.startsWith('select b.sequence::text,b.kind,b.payload_bytes')) return result(s.batches
         .filter(x => BigInt(x.sequence) > BigInt(String(values[1])) && BigInt(x.sequence) <= BigInt(String(values[2])))
         .sort((a,b) => Number(a.sequence)-Number(b.sequence)).slice(0, Number(values[3])))
-      if (q.startsWith('select b.sequence::text,b.payload')) {
-        this.historyBodyReads++
-        return result(s.batches.filter(x => (values[1] as string[]).includes(x.sequence))
-          .sort((a,b) => Number(a.sequence)-Number(b.sequence)))
-      }
+      if (q.startsWith('select b.sequence::text,b.payload')) return result(s.batches.filter(x => (values[1] as string[]).includes(x.sequence))
+        .sort((a,b) => Number(a.sequence)-Number(b.sequence)))
       throw new Error(`Unmodelled SQL: ${q}`)
     }) as pg.ClientBase['query']
     return client

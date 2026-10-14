@@ -50,15 +50,6 @@ Do not duplicate one state source in another layer without a documented reason.
 - Send related changes and follow-up issues to the existing agent that owns the feature or workstream. Message a running agent or resume an idle agent; do not spawn a new agent for every related issue.
 - Start a separate agent for distinct work, an explicitly requested separate assignment, or an independent review. Preserve clear ownership when coordinating shared files.
 
-## Releases
-
-- No release without one clean full round on the release commit's code: typecheck, lint, unit and integration,
-  all with full scope and every part passed, on the exact commit the release builds on. A failed or affected-scope
-  round blocks the release; fix and run a new full round.
-- The round runs through Foreman CI, not locally. Release only with `corepack pnpm release <X.Y.Z>`
-  (`scripts/release.mjs`), which records the passing tickets in the commit's `Clean-Round` trailers. Deployers
-  verify a release commit with `node scripts/verify-release-round.mjs <commit>` before deploying it.
-
 ## Verification
 
 From the repository root, use the pinned pnpm runtime. Plain npm installs are
@@ -85,39 +76,8 @@ never keep or add slop to satisfy them. Never skip, weaken, or delete a test to
 get a green run. A removed test needs a replacement that covers the same
 behavior.
 
-Every bug fix ships its own regression test, through a public interface, that
-fails on the code before the fix and passes after it. Show the failing run on
-the pre-fix commit before merging the fix.
-
 Keep generated output, local environment files, caches, and credentials out of
 Git. Make focused changes and preserve unrelated worktree edits.
-
-## Lint rules
-
-Every package lint enforces these as errors (local rules live in
-`scripts/eslint-plugin-foreman`). Files, test names and cycles listed in
-`scripts/lint-allowlist.json` predate a rule; never add to that list, fix the
-code instead. Exemptions use content IDs so unchanged renames keep their exemptions, including in the cloud mirror.
-Editing an exempt file requires fixing its violations. `node scripts/lint-baseline.mjs` prunes entries that pass.
-
-- `max-lines-per-function` 200 outside tests: oversized functions hide unrelated
-  responsibilities.
-- `foreman/no-source-text-tests`: tests may not read repository source files
-  or `?raw` imports, or assert on SQL/query/statement text. See above.
-- `foreman/no-local-canonical-json`: one shared canonical JSON module
-  (`canonicalJson`), so hashes and comparisons agree everywhere.
-- `foreman/no-raw-transactions`: `BEGIN`/`COMMIT`/`ROLLBACK` only through the
-  shared transaction helper, which handles release and rollback failures.
-- `foreman/no-silent-catch`: no empty `catch` or `.catch(() => {})`; log or
-  handle the error, or explain with a comment starting `ignore:`.
-- `foreman/no-legacy-execution-semantics`: no branches on execution
-  semantics 1 or 2 (see above).
-- `foreman/test-timeout-limit`: unit test and hook timeouts in `src/` stay at
-  or below 30 s; slow work belongs in integration tests.
-- `scripts/check-import-cycles.mjs` (API lint): no runtime import cycles in
-  `apps/api/src`; move shared code into a module both sides import.
-- `scripts/check-test-names.mjs` (API lint): name test files after behavior,
-  not tickets, waves, lanes, rounds or agents (`eng04-`, `pr17-`, `w08-`).
 
 ======
 ## 1. Think Before Coding

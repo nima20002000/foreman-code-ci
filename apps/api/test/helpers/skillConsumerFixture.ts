@@ -9,7 +9,6 @@ import * as current from '@foreman-code/contracts/wave25'
 import type { FastifyInstance } from 'fastify'
 import type { z } from 'zod'
 import { afterAll, beforeAll, expect } from 'vitest'
-import { withTransaction } from '../../src/infrastructure/transaction.js'
 import { buildApp } from '../../src/app.js'
 import type { OperatorServices } from '../../src/mcp/operator/types.js'
 import { PostgresAccessService } from '../../src/modules/access/postgres.js'
@@ -58,7 +57,7 @@ export function skillConsumerFixture() {
     database = await migratedDatabase()
     commands = new PostgresCommandCoordinator(database.pool)
     access = new PostgresAccessService(database.pool)
-    const locations = new WorkspaceLocationService(database.pool, commands, undefined, 'runner-local')
+    const locations = new WorkspaceLocationService(database.pool, commands, undefined, 'runner-local', database.directory)
     agents = new OperatorAgentMutationService(database.pool, commands, { qualifyConfiguration: async (value) => ({
       harness: value.harness, version: 'fixture', authenticated: true, ready: true,
       structuredEvents: true, supportsResume: true, supportsCancellation: true, supportsWorkingDirectory: true,
@@ -99,11 +98,13 @@ export function skillConsumerFixture() {
     const workflow = (await call('workflow_create', current.SavedManagedWorkflowCommandResultSchema, {
       workspaceId, commandId: randomUUID(), name,
     })).value
+    const located = await call('workspace_get', c.ManagedWorkspaceSchema, { workspaceId })
     const nodes = members.map((agent, index) => ({ id: `step-${index}`, agentId: agent.id, name: agent.name }))
     return (await call('workflow_save_v3', current.CurrentWorkflowSaveResultSchema, {
       workspaceId, workflowId: workflow.workflow.id, executionSemanticsVersion: 3, commandId: randomUUID(),
       expectedRevision: workflow.revision, expectedWorkflowVersionId: null,
       expectedAgentConfigurationVersionIds: Object.fromEntries(members.map(agent => [agent.id, agent.configurationVersionId])),
+      expectedLocationRevision: located.locationRevision,
       graph: { ...workflow.workflow, entryNodeId: nodes[0]!.id, nodes,
         edges: nodes.slice(1).map((node, index) => ({ id: `edge-${index}`, kind: 'execution',
           source: nodes[index]!.id, target: node.id })),
@@ -156,7 +157,9 @@ export function skillConsumerFixture() {
         configurations: version.agentConfigurationVersionIds, entryNodeId: version.entryNodeId })
       return { agent, configuration, version, graph: version.definition }
     }))
-    await withTransaction(database.pool, async sql => {
+    const sql = await database.pool.connect()
+    try {
+      await sql.query('begin')
       await sql.query(`insert into agents(id,workspace_id,record)
         select item#>>'{agent,id}',$2,item->'agent' from jsonb_array_elements($1::jsonb) item`, [records, f.workspaceId])
       await sql.query(`insert into agent_configuration_versions(id,workspace_id,agent_id,version,record)
@@ -173,7 +176,13 @@ export function skillConsumerFixture() {
         select item#>>'{version,id}',$2,item#>>'{graph,id}',(item#>>'{version,version}')::integer,
           item#>>'{version,entryNodeId}',item->'version',3 from jsonb_array_elements($1::jsonb) item`,
       [records, f.workspaceId])
-    })
+      await sql.query('commit')
+    } catch (error) {
+      await sql.query('rollback')
+      throw error
+    } finally {
+      sql.release()
+    }
   }
 
   async function configurationOf(workspaceId: string, agentId: string) {

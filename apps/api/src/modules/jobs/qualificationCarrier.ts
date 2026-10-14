@@ -1,5 +1,4 @@
 import { setTimeout as delay } from 'node:timers/promises'
-import { withTransaction } from '../../infrastructure/transaction.js'
 import type pg from 'pg'
 import { sameWorkflowValue } from '@foreman-code/contracts/wave25'
 import { JOB_RUNTIME_QUALIFICATION_EXTENSION } from '@foreman-code/contracts/job-runtime'
@@ -149,7 +148,9 @@ export function createJobQualificationCarrier(input: { pool: pg.Pool; sources: P
     if (!admission.connection || !sameWorkflowValue(admission.connection, context.binding)
       || !sameWorkflowValue(input.endpoint().currentBinding(context.binding.deviceId), context.binding))
       throw new DomainError('JOB_RUNTIME_NATIVE_ADMISSION_CONFLICT', 'Diagnostic admission is not on its original authenticated worker channel.', 403)
-    await withTransaction(input.pool, async (sql) => {
+    const sql = await input.pool.connect()
+    try {
+      await sql.query('begin')
       await assertInstalledJobQualification(sql, { candidate, runCommandId: admission.runCommandId, runPrincipalId: admission.runPrincipalId,
         resolveRoot: (sql, profile, principal) => input.sources.resolveRootBinding(sql, principal, { workspaceId: profile.workspaceId,
           rootId: profile.root.binding.rootId, bindingRevision: profile.root.binding.bindingRevision, source: profile.root.source }),
@@ -161,7 +162,8 @@ export function createJobQualificationCarrier(input: { pool: pg.Pool; sources: P
       }, admission)
       context.signal.throwIfAborted()
       if (!sameWorkflowValue(input.endpoint().currentBinding(context.binding.deviceId), context.binding)) throw new DomainError('JOB_RUNTIME_CONNECTION_CHANGED', 'The actual original qualification connection changed before commit.', 409)
-    })
+      await sql.query('commit')
+    } catch (error) { await sql.query('rollback'); throw error } finally { sql.release() }
   }
   const extension: DeviceExtensionRegistration = { ...JOB_RUNTIME_QUALIFICATION_EXTENSION, role: 'duplex', async handle(raw, context) {
     const request = JobRuntimeQualificationRpcRequestRecordSchema.parse(raw)

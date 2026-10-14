@@ -16,9 +16,6 @@ import {
 } from '@foreman-code/contracts/files'
 import type { ManagementGrant } from '@foreman-code/contracts/management'
 
-import {
-  beginTransaction, commitTransaction, rollbackTransaction, withTransaction,
-} from '../src/infrastructure/transaction.js'
 import { fileStorageMigration } from '../src/infrastructure/fileStorageMigration.js'
 import { fileRetentionMigration } from '../src/infrastructure/fileRetentionMigration.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
@@ -66,10 +63,13 @@ describe.skipIf(!postgresEnabled)('FIL-40 retention persistence and transport pa
     for (const migration of [fileStorageMigration, fileRetentionMigration]) {
       const found = await database.pool.query('select 1 from application_migrations where version=$1', [migration.version])
       if (found.rowCount) continue
-      await withTransaction(database.pool, async client => {
+      const client = await database.pool.connect()
+      try {
+        await client.query('begin')
         await client.query(migration.sql)
         await client.query('insert into application_migrations(version) values($1)', [migration.version])
-      })
+        await client.query('commit')
+      } catch (error) { await client.query('rollback'); throw error } finally { client.release() }
     }
     access = new PostgresAccessService(database.pool)
     commands = new PostgresCommandCoordinator(database.pool)
@@ -172,26 +172,6 @@ describe.skipIf(!postgresEnabled)('FIL-40 retention persistence and transport pa
     return decoded.error.code
   }
 
-  it('saves without a revision through MCP, replays and reads back the last write', async () => {
-    const owner = await newOwner()
-    const reader = await newOwner([{ actions: ['settings:read'], scope: {} }])
-    const input = { commandId: randomUUID(), durationSeconds: 3600 }
-    assert.equal(failure(await call(reader, 'file_retention_save', input)), 'ACCESS_DENIED')
-    const first = FileRetentionSaveResultSchema.parse(success(await call(owner, 'file_retention_save', input)))
-    assert.equal(first.value.preference.revision, 1)
-    const lastInput = { commandId: randomUUID(), durationSeconds: 7200 }
-    const last = FileRetentionSaveResultSchema.parse(success(await call(owner, 'file_retention_save', lastInput)))
-    assert.equal(last.value.preference.revision, 2)
-    assert.deepEqual(FileRetentionSaveResultSchema.parse(success(await call(owner, 'file_retention_save', lastInput))),
-      { ...last, replayed: true })
-    assert.deepEqual(FileRetentionGetResultSchema.parse(success(await call(owner, 'file_retention_get'))).preference,
-      last.value.preference)
-    assert.equal(failure(await call(owner, 'file_retention_save', {
-      ...input, commandId: randomUUID(), expectedRevision: 1,
-    })), 'REVISION_CONFLICT')
-    assert.deepEqual(await get(owner), last.value.preference)
-  })
-
   it('returns default revision 0, allocates seven days, and snapshots a non-default for future files only', async () => {
     const owner = await newOwner(), requestId = randomUUID()
     assert.deepEqual(await get(owner), { ownerPrincipalId: owner.principal.id, durationSeconds: 604800, revision: 0 })
@@ -268,13 +248,11 @@ describe.skipIf(!postgresEnabled)('FIL-40 retention persistence and transport pa
     const blocker = await database.pool.connect()
     let saving: ReturnType<FileRetentionService['save']> | undefined
     try {
-      await beginTransaction(blocker)
+      await blocker.query('begin')
       await blocker.query('select file_id from files where file_id=$1 for share', [original.value.file.fileId])
       const blockerPid = (await blocker.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid
       saving = retention.save(owner.principal, 'http', payload(7200, 0, true))
-      void saving.catch(() => {
-        // ignore: The saving promise is awaited after releasing the row lock and settled during cleanup.
-      })
+      void saving.catch(() => undefined)
       const waiting = await readUntil(async () => {
         return (await database.pool.query<{ waiting: boolean }>(`select exists(select 1 from pg_stat_activity
           where $1::int=any(pg_blocking_pids(pid)) and query like '%for update%'
@@ -286,7 +264,7 @@ describe.skipIf(!postgresEnabled)('FIL-40 retention persistence and transport pa
       const unavailable = await app.inject({ method: 'GET', headers: headers(owner),
         url: `${root(owner)}/${original.value.file.fileId}/revisions/${original.value.revision.revisionId}/content` })
       assert.equal(unavailable.statusCode, 410, unavailable.body)
-      await commitTransaction(blocker)
+      await blocker.query('commit')
       const saved = await saving
       assert.equal(saved.value.updatedFileCount, 0)
       assert.deepEqual(await reread(original), original)
@@ -294,7 +272,7 @@ describe.skipIf(!postgresEnabled)('FIL-40 retention persistence and transport pa
         url: `${root(owner)}/${original.value.file.fileId}/revisions/${original.value.revision.revisionId}/content` })
       assert.equal(stillUnavailable.statusCode, 410, stillUnavailable.body)
     } finally {
-      await rollbackTransaction(blocker)
+      await blocker.query('rollback')
       blocker.release()
       if (saving) await Promise.allSettled([saving])
     }

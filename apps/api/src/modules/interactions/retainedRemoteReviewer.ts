@@ -48,17 +48,8 @@ async function readRemoteReviewer(sql: GraphSqlClient, execution: HarnessExecuti
   if (!row) return undefined
   const receipt = RemoteOperationReceiptSchema.parse(row.receipt)
   const policy = await remoteReviewerPolicy(sql, receipt.intent)
-  if (!receipt.retainedReviewer || receipt.terminal || receipt.stopFence || !policy) return undefined
-  const active = ['running', 'waiting'].includes(policy.run.executionState) && policy.run.outcome === 'pending'
-  if (!active) {
-    if (purpose !== 'live' || policy.run.executionState !== 'completed' || policy.run.outcome !== 'succeeded') {
-      return undefined
-    }
-    // A completed Run retains resource ownership until its cleanup closes the original process.
-    const cleanup = await sql.query(`select 1 from runs r join run_cleanup_intents c on c.run_id=r.id
-      where r.id=$1 and r.stop_requested_at is null and c.pending`, [execution.runId])
-    if (cleanup.rowCount !== 1) return undefined
-  }
+  if (!receipt.retainedReviewer || receipt.terminal || receipt.stopFence || !policy
+    || !['running', 'waiting'].includes(policy.run.executionState) || policy.run.outcome !== 'pending') return undefined
   const current = await readReconciledDispatchIntent(sql, receipt.intent.operationId)
   await assertRemoteReviewerReceipt(sql, receipt)
   if (!sameWorkflowValue(current, receipt.intent) || placement.bindingHash !== receipt.intent.bindingHash
@@ -125,15 +116,9 @@ export async function retainRemoteReviewerCredential(sql: GraphSqlClient, execut
   [retained.session.harness, retained.session.nativeSessionId, execution.agentId])).rows[0]
   if (!lane) throw new DomainError('REMOTE_REVIEWER_DENIED', 'The original reviewer writer lane is required.', 409)
   // Process recovery precedes the dispatcher's binding to a claimed review job.
-  const result = await sql.query(`with retained_job as (
-    select j.id,j.lease_fence from worker_credential_bindings b join review_jobs j
-      on j.id=b.approval_review_job_id and j.lease_fence=b.approval_review_lease_fence
-    where b.principal_id=$1 and b.approval_connection_generation=$5::bigint
-      and j.execution_id=$2 and j.record->>'nativeSessionId'=$4
-  ) update worker_credential_bindings set purpose='reviewer',
+  const result = await sql.query(`update worker_credential_bindings set purpose='reviewer',
     approval_native_session_id=$4,approval_connection_generation=$5::bigint,
-    approval_review_job_id=(select id from retained_job),
-    approval_review_lease_fence=(select lease_fence from retained_job)
+    approval_review_job_id=null,approval_review_lease_fence=null
     where principal_id=$1 and execution_id=$2 and agent_id=$3 and revoked_at is null`,
   [retained.principalId, execution.id, execution.agentId, retained.session.nativeSessionId, lane.generation])
   if (result.rowCount !== 1) throw new DomainError('REMOTE_REVIEWER_DENIED', 'The process lease changed during retention.', 409)

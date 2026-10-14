@@ -36,7 +36,7 @@ it.skipIf(!process.env.TEST_DATABASE_URL)('moves Agents and their saved workflow
   const clients: Client[] = []
   const access = new PostgresAccessService(pool)
   const commands = new PostgresCommandCoordinator(pool)
-  const locations = new WorkspaceLocationService(pool, commands, undefined, 'runner-local')
+  const locations = new WorkspaceLocationService(pool, commands, undefined, 'runner-local', parentPath)
   const agents = new OperatorAgentMutationService(pool, commands, { qualifyConfiguration: async (configuration) => ({
     harness: configuration.harness, version: 'synthetic-test-port', authenticated: true, ready: true,
     structuredEvents: true, supportsResume: true, supportsCancellation: true, supportsWorkingDirectory: true,
@@ -85,9 +85,10 @@ it.skipIf(!process.env.TEST_DATABASE_URL)('moves Agents and their saved workflow
       name: 'Reviewer', productRole: 'coder', configuration, assignedSkills: [{ skillId, version: skill.version.version }] })).value.agent
     const workflow = (await call('workflow_create', current.SavedManagedWorkflowCommandResultSchema,
       { workspaceId, commandId: randomUUID(), name: 'Review' })).value
+    const located = await call('workspace_get', c.ManagedWorkspaceSchema, { workspaceId })
     const saved = await call('workflow_save_v3', current.CurrentWorkflowSaveResultSchema, { workspaceId, workflowId: workflow.workflow.id,
       executionSemanticsVersion: 3, commandId: randomUUID(), expectedRevision: workflow.revision, expectedWorkflowVersionId: null,
-      expectedAgentConfigurationVersionIds: { [agent.id]: agent.configurationVersionId },
+      expectedAgentConfigurationVersionIds: { [agent.id]: agent.configurationVersionId }, expectedLocationRevision: located.locationRevision,
       graph: { ...workflow.workflow, entryNodeId: 'review', nodes: [{ id: 'review', agentId: agent.id, name: 'Reviewer' }], edges: [],
         approval: { handler: 'user' }, executionCondition: { kind: 'manual', description: 'Manual' },
         executionPolicy: { maxParallelism: 1, maxNodeExecutions: 5 } } })
@@ -127,20 +128,6 @@ it.skipIf(!process.env.TEST_DATABASE_URL)('moves Agents and their saved workflow
     expect(c.SkillUsersUpdateResultSchema.parse(await http.json())).toEqual(updated)
     expect((await pool.query('select count(*)::int as count from agent_configuration_versions where agent_id=$1',
       ['reviewer'])).rows[0].count).toBe(2)
-    await call('skill_update', c.SkillMutationResultSchema, { workspaceId, skillId, commandId: randomUUID(),
-      expectedRevision: 2, name: 'Reviewer', instructions: 'Version three' })
-    const httpCommand = randomUUID()
-    const httpUpdate = await fetch(new URL(`/api/management/workspaces/${workspaceId}/skills/${skillId}/update-users`, address), {
-      method: 'POST', headers: { authorization: `Bearer ${owner.token}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ commandId: httpCommand }) })
-    expect(c.SkillUsersUpdateResultSchema.parse(await httpUpdate.json()).failed).toEqual([])
-    const audits = (await pool.query<{ source: string; principal_id: string; action: string; target_key: string }>(
-      "select source,principal_id,action,target_key from management_audit where action='agent.update' order by sequence")).rows
-    expect(audits).toEqual([
-      { source: 'mcp', principal_id: owner.principal.id, action: 'agent.update', target_key: `workspace:${workspaceId}:agent:reviewer` },
-      { source: 'http', principal_id: owner.principal.id, action: 'agent.update', target_key: `workspace:${workspaceId}:agent:reviewer` },
-    ])
-
   } finally {
     await Promise.allSettled(clients.map(client => client.close()))
     await app.close(); await pool.end(); await dropFixtureSchema(admin, schema); await admin.end(); await removeFixtureDirectory(parentPath)

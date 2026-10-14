@@ -1,17 +1,12 @@
 import type pg from 'pg'
-import { CI_HOST_NAMESPACE, CI_HOST_START_PROTOCOL_VERSION, CiHostReplySchema,
-  type CiHostReply, type CiHostRequest } from '@foreman-code/contracts'
+import { CI_HOST_NAMESPACE, CiHostReplySchema, type CiHostRequest } from '@foreman-code/contracts'
 import type { HostCiComputer, HostCiEndpoint } from './service.js'
-import type { CiMirrorInput } from './serviceTypes.js'
 import type { HostCiRunner } from './runner.js'
 import type { CloudCi } from './cloud.js'
 import { DomainError } from '../errors.js'
 import type { DeviceProvisioningTarget } from '@foreman-code/contracts/device-resources'
 import { assertBuildComputerTarget } from '../settings/buildComputers.js'
 import { DeviceAccessError } from '../devices/access.js'
-import { componentLogger } from '../diagnostics/logger.js'
-
-const log = componentLogger('jobs')
 
 interface DeviceRequests {
   capabilities(deviceId: string): readonly { namespace: string; mainCanRequest?: boolean }[]
@@ -25,19 +20,10 @@ export class ProductionHostCiEndpoint implements HostCiEndpoint {
     private readonly devices: () => DeviceRequests | undefined, private readonly local: Pick<HostCiRunner, 'handle'>,
     private readonly clouds: CloudCi[] = []) {}
 
-  async publishMirror(input: CiMirrorInput): Promise<void> {
-    // Publication is shared by provider and slot; readiness remains a dispatch concern.
-    await Promise.all(this.clouds.map(cloud => cloud.publishMirror(input)))
-  }
-
   async computers(): Promise<HostCiComputer[]> {
-    // Recovery sweeps make provider calls; planning and listing must not wait for them.
-    for (const cloud of this.clouds) {
-      void cloud.reconcile().catch(error => { log.warn({ err: error, provider: cloud.provider.id }, 'Cloud CI recovery sweep failed') })
-    }
     const rows = (await this.pool.query<{ host_key: string; target: DeviceProvisioningTarget
-      build_enabled: boolean; build_priority: number; build_allowance_percent: number }>(
-      'select host_key,target,build_enabled,build_priority,build_allowance_percent from build_computer_preferences')).rows
+      build_enabled: boolean; build_priority: number }>(
+      'select host_key,target,build_enabled,build_priority from build_computer_preferences')).rows
     const devices = this.devices()
     const computers: HostCiComputer[] = []
     for (const row of rows) {
@@ -51,27 +37,22 @@ export class ProductionHostCiEndpoint implements HostCiEndpoint {
         throw error
       }
       if (hostRef.kind === 'main') {
-        computers.push({ key: row.host_key, hostRef, label: 'Main computer', priority: row.build_priority,
-          buildAllowancePercent: row.build_allowance_percent })
+        computers.push({ key: row.host_key, hostRef, label: 'Main computer', priority: row.build_priority })
         continue
       }
       if (hostRef.kind !== 'device' || !hostRef.deviceId) continue
       if (!devices?.capabilities(hostRef.deviceId).some(value => value.namespace === CI_HOST_NAMESPACE && value.mainCanRequest)) continue
-      computers.push({ key: row.host_key, hostRef, label: `Computer ${hostRef.deviceId.slice(0, 8)}`, priority: row.build_priority,
-        buildAllowancePercent: row.build_allowance_percent })
+      computers.push({ key: row.host_key, hostRef, label: `Computer ${hostRef.deviceId.slice(0, 8)}`, priority: row.build_priority })
     }
     return [...computers, ...this.clouds.flatMap(cloud => cloud.computers())]
       .sort((left, right) => right.priority - left.priority)
   }
 
-  async request(computer: HostCiComputer, request: CiHostRequest): Promise<CiHostReply> {
-    if (request.operation === 'start' && computer.hostRef.kind !== 'cloud') {
-      const saved = (await this.computers()).find(value => value.key === computer.key
-        && JSON.stringify(value.hostRef) === JSON.stringify(computer.hostRef))
-      if (!saved) {
-        throw new DomainError('BUILD_COMPUTER_DISABLED', 'This computer is no longer available for builds.', 409)
-      }
-      request = { ...request, buildAllowancePercent: saved.buildAllowancePercent ?? 100 }
+  async request(computer: HostCiComputer, request: CiHostRequest) {
+    if (request.operation === 'start' && computer.hostRef.kind !== 'cloud'
+      && !(await this.computers()).some(value => value.key === computer.key
+        && JSON.stringify(value.hostRef) === JSON.stringify(computer.hostRef))) {
+      throw new DomainError('BUILD_COMPUTER_DISABLED', 'This computer is no longer available for builds.', 409)
     }
     if (computer.hostRef.kind === 'main') return this.local.handle(request)
     if (computer.hostRef.kind === 'cloud') {
@@ -81,20 +62,7 @@ export class ProductionHostCiEndpoint implements HostCiEndpoint {
     }
     const devices = this.devices()
     if (!devices || !computer.hostRef.deviceId) throw new Error('The build computer is offline.')
-    if (request.operation === 'start') {
-      const status = await this.request(computer, { operation: 'status' })
-      if (status.operation !== 'status') throw new DomainError('CI_HOST_REPLY_INVALID', 'Expected Worker CI status.', 502)
-      if ((status.startProtocolVersion ?? 0) < CI_HOST_START_PROTOCOL_VERSION) {
-        throw new DomainError('CI_HOST_PROTOCOL_UNSUPPORTED', status.reasons.join('; '), 409)
-      }
-      if (!status.ready) throw new DomainError('CI_HOST_BUSY', status.reasons.join('; '), 409)
-    }
     const reply = await devices.request(computer.hostRef.deviceId, CI_HOST_NAMESPACE, request, { timeoutMs: 120_000 })
-    const parsed = CiHostReplySchema.parse(reply.payload)
-    if (parsed.operation === 'status' && (parsed.startProtocolVersion ?? 0) < CI_HOST_START_PROTOCOL_VERSION) {
-      return { ...parsed, ready: false, reasons: [...parsed.reasons,
-        'Worker CI start protocol is unsupported; update the Worker.'].slice(-10) }
-    }
-    return parsed
+    return CiHostReplySchema.parse(reply.payload)
   }
 }

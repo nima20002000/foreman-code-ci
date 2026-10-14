@@ -1,5 +1,4 @@
-import { isDatabasePoolTimeout } from '../../infrastructure/databaseReadRetry.js'
-import { isDatabaseTimeout, retryDatabaseTimeout, retryDatabaseOperation } from '../../infrastructure/databaseTimeout.js'
+import { isDatabaseTimeout, retryDatabaseTimeout } from '../../infrastructure/databaseTimeout.js'
 import { beginRuntimeTiming, timeRuntimeOperation } from '../../infrastructure/runtimeTiming.js'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
@@ -29,7 +28,6 @@ import { buildWorkHandoffGraph } from './workHandoffGraph.js'
 import { workHandoffNodeAction } from './workHandoffNode.js'
 import { ExecutionLimiter } from './limiter.js'
 import { componentLogger } from '../diagnostics/logger.js'
-import { logIgnoredError } from '../diagnostics/ignoredError.js'
 
 /** Adapt the existing exact-session native driver, not a second native runtime.
  * The shell supplies the same ApprovalExecutionCoordinator/SingleWriterSessionManager
@@ -217,10 +215,7 @@ export function repeatNativeObserver(context: RepeatNativeObserverContext):
         return
       }
       const node = context.version.definition.nodes.find((item) => item.id === execution.workflowNodeId)
-      const configuration = await retryDatabaseOperation(
-        () => context.workflows.getAgentConfiguration(execution.agentConfigurationVersionId),
-        (error) => isDatabaseTimeout(error) || isDatabasePoolTimeout(error), { signal, check },
-      )
+      const configuration = await context.workflows.getAgentConfiguration(execution.agentConfigurationVersionId)
       check()
       if (!node || node.kind === 'job' || !configuration || configuration.id !== context.version.agentConfigurationVersionIds[node.agentId]
         || configuration.agentId !== node.agentId || configuration.workspaceId !== run.workspaceId) {
@@ -387,7 +382,7 @@ export function startIntervalChecks(input: {
         if (!scheduling.aborted) componentLogger('engine').warn({ err: error, workflowNodeId: node.id }, 'interval check failed')
       }
       if (scheduling.aborted) return
-      await delay(waitMs, undefined, { signal: scheduling }).catch(() => { /* ignore: aborting the wait is how scheduling stops early */ })
+      await delay(waitMs, undefined, { signal: scheduling }).catch(() => undefined)
     }
   })())
   return () => stopped.abort()
@@ -401,7 +396,6 @@ export async function executeRepeatRuntime(input: {
   jobs?: { store: import('../jobs/workflowNode.js').WorkflowJobNodeStore; driver: import('../jobs/workflowRuntimePorts.js').WorkflowJobDriver }
   runId: string; version: WorkflowVersionV3
   owner: Pick<RunOwnership, 'assertOwned'>; signal: AbortSignal
-  checkpointOwnerGeneration?: string | undefined
   store: Pick<RepeatRunRepository, 'admit' | 'acceptTerminal' | 'enterBlock' | 'readOccurrence' | 'transition'
     | 'resolveExcluded' | 'completeRun' | 'ensureWorkEntry' | 'admitWorkActivation' | 'acceptWorkTerminal'
     | 'admitWorkRequest' | 'returnWork' | 'recordWorkUnresolved' | 'resolveWaitingWorkJoins' | 'completeWorkRun'>
@@ -511,9 +505,6 @@ export async function executeRepeatRuntime(input: {
     },
   }) : null
   const repeat = work ? null : buildRepeatGraph({ ...input, signal, track, limiter })
-  const checkpointOwner = { checkpoint_owner_generation: input.checkpointOwnerGeneration }
-  if (work) Object.assign(work.config.configurable, checkpointOwner)
-  if (repeat) Object.assign(repeat.config.configurable, checkpointOwner)
   const readCheckpoint = (): Promise<import('./repeatGraph.js').RepeatCheckpoint> => bookkeeping(async () => work
     ? await work.graph.getState(work.config) as import('./repeatGraph.js').RepeatCheckpoint
     : await repeat!.graph.getState(repeat!.config))
@@ -568,7 +559,7 @@ export async function executeRepeatRuntime(input: {
         else await timeRuntimeOperation('engine', 'run.settle', () => bookkeeping(() => input.store.completeRun()))
         await bookkeeping(() => input.lifecycle.requestCleanup())
         await input.lifecycle.finishNative()
-        await bookkeeping(() => input.lifecycle.finishCleanup())
+        await input.lifecycle.finishCleanup()
         return
       } catch (error) {
         const databaseTimeout = isDatabaseTimeout(error)
@@ -615,7 +606,7 @@ export async function executeRepeatRuntime(input: {
     failed.abort(error)
     const closing = cancel()
     let drained = false
-    try { await drain(true); drained = true } catch (drainError) { logIgnoredError('engine', 'drain repeat work after failure', drainError, { runId: input.runId }) } // Uncertain cleanup is retained.
+    try { await drain(true); drained = true } catch { /* retain uncertain cleanup */ }
     const clean = await closing
     input.owner.assertOwned()
     await input.lifecycle.settleRun(current.stopRequested, input.signal.aborted && !current.stopRequested)

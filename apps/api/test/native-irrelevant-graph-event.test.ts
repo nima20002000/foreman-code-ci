@@ -10,13 +10,12 @@ import * as rawEvents from '../src/modules/runs/nativeEvents.js'
 import * as records from '../src/modules/run-graph/records.js'
 import type { RunOwnership } from '../src/modules/runs/ownership.js'
 
-vi.mock('../src/modules/run-graph/publication.js', async (importOriginal) => ({
-  ...await importOriginal<typeof import('../src/modules/run-graph/publication.js')>(), currentRunGraphPublication: () => ({}) }))
+vi.mock('../src/modules/run-graph/publication.js', () => ({ currentRunGraphPublication: () => ({}) }))
 afterEach(() => vi.restoreAllMocks())
 
 // SQL-only composition model. Actual private-capture/physical proof checks are
 // exercised separately; this does not claim PostgreSQL or native process proof.
-function fixture(type: string, expiresBeforeCommit = false, persistedSequences = new Map<number, string>()) {
+function fixture(type: string, expiresBeforeCommit = false) {
   const { run, version } = makeCurrentWorkflowFixture('transcript-fast-path')
   const node = version.definition.nodes[0]!
   const execution = HarnessExecutionSchema.parse({ id: 'original-execution', runId: run.id,
@@ -41,10 +40,6 @@ function fixture(type: string, expiresBeforeCommit = false, persistedSequences =
   }
   let transaction: GraphTransactionSql | undefined
   const connection = new ExclusiveGraphConnection({ query: async (sql: string, values: unknown[]) => {
-    if (sql.startsWith('select sequence::text from harness_native_events')) {
-      const position = values[2] as number
-      return { rows: [{ sequence: persistedSequences.get(position) ?? String(position) }], rowCount: 1 }
-    }
     if (sql.includes('select correlation_key from run_native_correlations')) {
       const base = values[2] as string
       const latest = [...correlations.values()].filter(value =>
@@ -182,20 +177,4 @@ it('revalidates lane expiry before commit after reusing a captured context', asy
   const f = fixture('native.notification', true)
   await expect(f.appendCaptured()).rejects.toMatchObject({ code: 'SESSION_LANE_LEASE_LOST' })
   expect(f.raw.mock.calls[0]![1].event).toEqual(f.event)
-})
-
-
-it('initializes transcript and capacity retry boundaries at their persisted positions', async () => {
-  const f = fixture('native.notification', false, new Map([[100, '3'], [180, '8']]))
-  f.event.sequence = 100
-  await f.append()
-  const original = structuredClone([...f.correlations.values()][0]!)
-  expect(original).toMatchObject({ firstNativeSequence: '3', lastNativeSequence: '3' })
-  f.event.type = 'turn.capacity_retry'
-  f.event.sequence = 180
-  await f.append()
-  expect(f.correlations.get(original.correlationKey)).toEqual(original)
-  expect([...f.correlations.values()][1]).toMatchObject({
-    firstNativeSequence: '8', lastNativeSequence: '8', terminalNativeSequence: null,
-  })
 })

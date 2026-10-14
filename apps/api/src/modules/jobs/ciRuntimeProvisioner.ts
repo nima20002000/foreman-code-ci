@@ -1,4 +1,3 @@
-import { errorMessage } from '../../shared/errorMessage.js'
 import { randomUUID } from 'node:crypto'
 import type pg from 'pg'
 import { BuildComputerPrepareGetInputSchema, BuildComputerPrepareInputSchema, BuildComputerPrepareStatusSchema,
@@ -28,8 +27,7 @@ import { temporaryCiConnectionError } from './ciRuntimeErrors.js'
 import { JobOwnership } from './ownership.js'
 import type { JobRuntimeProfiles } from './runtimeProfiles.js'
 import type { JobSql } from './repository.js'
-import { canonicalJson } from '@foreman-code/contracts/canonical-json'
-import { jobDigest } from './digest.js'
+import { canonical, jobDigest } from './digest.js'
 import { matchesRuntimePolicy } from './runtimeSelection.js'
 
 export const BUILD_COMPUTER_PREPARE_ACTIONS = CI_PREPARATION_ACTIONS
@@ -68,8 +66,7 @@ export class CiRuntimeProvisioner {
   }
 
   async start(principal: ManagementPrincipal, source: 'http' | 'mcp', raw: BuildComputerPrepareInput): Promise<BuildComputerPrepareStatus> {
-    const parsed = BuildComputerPrepareInputSchema.parse(raw)
-    const input = { ...parsed, commandId: parsed.commandId ?? randomUUID() }
+    const input = BuildComputerPrepareInputSchema.parse(raw)
     try {
       this.requireActions(principal, input.workspaceId)
     } catch (error) {
@@ -130,7 +127,7 @@ export class CiRuntimeProvisioner {
       if (profile.schemaVersion !== 2 || profile.status === 'revoked' || !profile.spec.suites.includes(suite as never)) continue
       if (this.usesHostCi(profile)) continue
       if (request && (!matchesRuntimePolicy(request, profile) || !('verification' in request)
-        || canonicalJson(request.verification.resources) !== canonicalJson(profile.spec.resources))) continue
+        || canonical(request.verification.resources) !== canonical(profile.spec.resources))) continue
       const computer = this.computerId(profile)
       if (!computer || devices.has(computer)) continue
       const preference = await readBuildComputerPreference(this.pool, this.profileTarget(profile))
@@ -206,7 +203,7 @@ export class CiRuntimeProvisioner {
       const retryDelay = Math.min(60 * 60_000, 60_000 * 2 ** Math.min(failureCount, 6))
       record.status = { ...record.status, state: 'failed',
         failureCount, retryAt: new Date(this.timing.now().getTime() + retryDelay).toISOString(),
-        message: (errorMessage(error, 'Runtime preparation failed.')).slice(0, 2000) }
+        message: (error instanceof Error ? error.message : 'Runtime preparation failed.').slice(0, 2000) }
       await checkpoint()
     } finally {
       await owner.release()

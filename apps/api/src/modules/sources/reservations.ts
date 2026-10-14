@@ -16,7 +16,6 @@ export { SOURCE_AGGREGATE_LIMITS } from './storageCapacity.js'
 export type SourceReservation = { reservationId: string; scopeId: string; ownerKind: 'capture' | 'transfer' | 'materialization'; ownerId: string; reservedBytes: number;
   preparation?: SourceOperationOwner; reclamation?: SourceReservationReclamation;
   storageCapacity?: SourceStorageCapacity;
-  preparationClosure?: SourcePreparationClosure;
   referenceReclaimed?: true;
   retainedSharedTree?: { id: string; bytes: number } }
 export async function requireUnreclaimedSourceOperation(sql: GraphSqlClient, operationId: string): Promise<void> {
@@ -131,34 +130,12 @@ export class PostgresSourceReservations {
         from source_storage_reservations r where r.scope_id=$1 and r.state<>'reclaimed') usage`, [request.scopeId])).rows[0]!
     const usedBytes = capacity.verification ? Number(totals.verification_bytes) : Number(totals.bytes)
     const activeMaterializations = Number(capacity.verification ? totals.verification_materializations : totals.materializations)
-    const pendingBytes = Number(totals.pending_bytes)
-    const preparing = Number(totals.preparing)
-    const idle = preparing === 0 && Number(totals.materializations) === 0
-      && Number(totals.verification_materializations) === 0
-    // An idle scope gets one memory slot so low-memory hosts can make progress.
-    const minimumConcurrency = idle ? 1 : 0
-    const preparationLimit = Math.max(limits.preparing, minimumConcurrency)
-    const materializationLimit = capacity.verification ? capacity.materializations
-      : Math.max(capacity.materializations, minimumConcurrency)
     // Free space already excludes retained files. Outstanding writers remain fully charged in both pools.
-    const exhausted: string[] = []
-    if (usedBytes + request.reservedBytes > capacity.bytes) exhausted.push('retained_bytes')
-    if (pendingBytes + request.reservedBytes > limits.availableBytes) exhausted.push('available_bytes')
-    if (preparing >= preparationLimit) exhausted.push('preparations')
-    if (request.ownerKind === 'materialization' && activeMaterializations >= materializationLimit) {
-      exhausted.push('materializations')
-    }
-    if (exhausted.length) {
-      throw new DomainError('SOURCE_CAPACITY',
-        'Aggregate source staging, retained copies or active materializations exhaust this host/filesystem budget.', 409, {
-          exhausted,
-          usage: { usedBytes, pendingBytes, preparing, activeMaterializations, requestedBytes: request.reservedBytes },
-          limits: { bytes: capacity.bytes, availableBytes: limits.availableBytes,
-            preparing: preparationLimit, materializations: materializationLimit },
-          measured: { cpuCount: measured.cpuCount, availableMemoryBytes: measured.availableMemoryBytes,
-            observedAt: measured.observedAt },
-        })
-    }
+    if (usedBytes + request.reservedBytes > capacity.bytes
+      || Number(totals.pending_bytes) + request.reservedBytes > limits.availableBytes
+      || Number(totals.preparing) >= limits.preparing
+      || (request.ownerKind === 'materialization' && activeMaterializations >= capacity.materializations))
+      throw new DomainError('SOURCE_CAPACITY', 'Aggregate source staging, retained copies or active materializations exhaust this host/filesystem budget.', 409)
     const reservation = { ...request, reservationId: randomUUID(), storageCapacity: measured }
     await sql.query(`insert into source_storage_reservations(reservation_id,scope_id,owner_kind,owner_id,reserved_bytes,state,record)
       values($1,$2,$3,$4,$5,'preparing',$6::jsonb)`, [reservation.reservationId, request.scopeId, request.ownerKind, request.ownerId, request.reservedBytes, JSON.stringify(reservation)])

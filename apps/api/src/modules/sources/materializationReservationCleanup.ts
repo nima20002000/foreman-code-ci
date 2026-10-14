@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto'
-import { withTransaction } from '../../infrastructure/transaction.js'
 import type pg from 'pg'
 import { SourceMaterializationRecordSchema, SourceRootRecordSchema } from '@foreman-code/contracts/source-admission'
 import { SourceOperationOwnerSchema, SourceReservationReclamationSchema,
@@ -10,7 +9,6 @@ import { assertDeviceHostInstallation } from '../devices/hostAuthorization.js'
 import { admissionClosed, loadSourcePreparation, validateSourcePreparationClosure } from './preparationReconciliation.js'
 import type { SourceReclamationResult } from './reclaimSourceReservation.js'
 import { PostgresSourceReservations, type SourceReservation } from './reservations.js'
-import { localWorkflowSourceClosed } from './workflowCleanup.js'
 
 async function admissionInactive(sql: GraphSqlClient, operationId: string): Promise<boolean> {
   const active = await sql.query(`select 1 from job_executions e where e.operation_id=$1
@@ -73,7 +71,16 @@ export class MaterializationReservationCleanup {
     private readonly reclaim: (grant: SourceReservationReclamation) => Promise<SourceReclamationResult>) {}
 
   private async transaction<T>(work: (sql: pg.PoolClient) => Promise<T>): Promise<T> {
-    return withTransaction(this.pool, work)
+    const sql = await this.pool.connect()
+    try {
+      await sql.query('begin')
+      const result = await work(sql)
+      await sql.query('commit')
+      return result
+    } catch (error) {
+      await sql.query('rollback')
+      throw error
+    } finally { sql.release() }
   }
 
   async authorize(sql: GraphSqlClient, reservationId: string, reclamationId: string) {
@@ -116,13 +123,6 @@ export class MaterializationReservationCleanup {
       const binding = materialization ? SourceMaterializationRecordSchema.parse(materialization.record).receipt.binding
         : owner?.root.binding
       if (!binding) return null
-      if (materialization && binding.deviceId === null) {
-        const record = SourceMaterializationRecordSchema.parse(materialization.record)
-        const native = await sql.query(`select id from harness_executions
-          where id=$1 and record->>'nativeSessionId' is not null`, [record.receipt.executionId])
-        // A published result can precede the original native owner's close.
-        if (native.rowCount && !await localWorkflowSourceClosed(sql, record.receipt.executionId)) return null
-      }
       const rows = await sql.query<{ record: unknown }>(`select b.record from source_root_bindings b
         join application_installation a on a.singleton and a.id::text=(b.record#>>'{binding,mainId}')
         where concat(b.record#>>'{binding,mainId}',':',coalesce(b.record#>>'{binding,deviceId}','original-main'),':',
@@ -137,14 +137,13 @@ export class MaterializationReservationCleanup {
         const root = roots.find(root => root.binding.rootId === record.receipt.binding.rootId
           && root.binding.bindingRevision === record.receipt.binding.bindingRevision)
         if (!root) throw new DomainError('SOURCE_ROOT_NOT_FOUND', 'The original cleanup root is missing.', 409)
-        owner = SourceOperationOwnerSchema.parse({ ...(owner ?? {}), identity: { operationId: reservation.ownerId,
+        owner = SourceOperationOwnerSchema.parse({ identity: { operationId: reservation.ownerId,
           ownerPrincipalId: root.ownerPrincipalId, expiresAt: new Date(Date.now() + 300_000).toISOString() },
         root, source: root.source, record, physicalClosureConfirmed: false,
         attempt: { executionId: record.receipt.executionId, attemptId: record.receipt.attemptId,
           placementHash: record.receipt.placementHash, keyRevision: record.receipt.keyRevision,
           authorizationRevision: record.receipt.authorizationRevision } })
       }
-      if (owner) owner = SourceOperationOwnerSchema.parse({ ...owner, preparationClosed: true })
       const grant = SourceReservationReclamationSchema.parse({ reservationId, scopeId: reservation.scopeId,
         operationId: reservation.ownerId, reclamationId: reservation.reclamation?.reclamationId
           ?? reconciliation?.reconciliation_id ?? randomUUID(),
@@ -172,13 +171,6 @@ export class MaterializationReservationCleanup {
           await this.authorize(sql, grant.reservationId, grant.reclamationId)
           const reservation = (await sql.query<{ record: SourceReservation }>(
             'select record from source_storage_reservations where reservation_id=$1 for update', [grant.reservationId])).rows[0]!.record
-          const original = grant.owner
-          if (original) {
-            const closure = result.closures.find(value => value.executionId === original.attempt.executionId
-              && value.rootId === original.root.binding.rootId
-              && value.bindingRevision === original.root.binding.bindingRevision)
-            reservation.preparationClosure = validateSourcePreparationClosure(grant.reclamationId, original, closure)
-          }
           const reservations = new PostgresSourceReservations()
           if (result.retained) {
             await reservations.retainMaterialization(sql, reservation,
@@ -186,9 +178,7 @@ export class MaterializationReservationCleanup {
           } else {
             await reservations.reclaimed(sql, reservation, async () => true)
           }
-          await sql.query(`update source_execution_materializations set state='closed',
-            worktree_cleanup=coalesce($2::jsonb,worktree_cleanup) where operation_id=$1`,
-          [grant.operationId, result.retained?.worktree ? JSON.stringify(result.retained.worktree) : null])
+          await sql.query("update source_execution_materializations set state='closed' where operation_id=$1", [grant.operationId])
           await sql.query('update job_computer_selections set released_at=clock_timestamp() where operation_id=$1 and released_at is null',
             [grant.operationId])
           const pending = (await sql.query<{ reconciliation_id: string; owner: unknown }>(`select reconciliation_id,owner

@@ -28,7 +28,7 @@ export const retentionClient = {
     })
     const { preference, updatedFileCount, expiredNowCount } = result.value
     if (preference.durationSeconds !== request.durationSeconds
-      || (request.expectedRevision !== undefined && preference.revision !== request.expectedRevision + 1)
+      || preference.revision !== request.expectedRevision + 1
       || (!request.applyToExisting && (updatedFileCount !== 0 || expiredNowCount !== 0))) {
       // A malformed acknowledgement is NOT evidence that the command failed.
       throw new ApiError({ code: 'INVALID_RESPONSE', message: 'Could not verify the saved retention.' })

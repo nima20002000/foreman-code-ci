@@ -8,7 +8,7 @@ import { regressionAuthoringFixture } from './helpers/executionRegressions.js'
 describe.skipIf(!postgresEnabled)('current execution authoring regressions', () => {
   const authoring = regressionAuthoringFixture()
 
-  it('saves authored immutable Agent snapshots after the Agent head changes', async () => {
+  it('preserves old Agent settings and requires the newly displayed pin on Save', async () => {
     const f = await authoring()
     const original = f.f.configurations[0]!
     const agents = new OperatorAgentMutationService(f.db.pool, f.commands, { qualifyConfiguration: async (configuration) => ({
@@ -23,12 +23,12 @@ describe.skipIf(!postgresEnabled)('current execution authoring regressions', () 
     const id = updated.value.agent.configurationVersionId!
     expect(id).not.toBe(original.id)
     expect((await f.db.pool.query('select record from agent_configuration_versions where id=$1', [original.id])).rows[0].record).toEqual(original)
+    // A meaningful executable edit must validate the displayed current pins.
+    // Saving the unchanged definition preserves its existing immutable version.
     const edited = { ...f.input, graph: { ...f.input.graph, executionPolicy: { maxParallelism: 2, maxNodeExecutions: 1 } } }
-    const retained = await f.workflows.current.save(f.writer.principal, 'mcp', edited)
-    expect(retained.value.version.agentConfigurationVersionIds[original.agentId]).toBe(original.id)
+    await expect(f.workflows.current.save(f.writer.principal, 'mcp', edited)).rejects.toMatchObject({ code: 'AGENT_CONFIGURATION_CONFLICT' })
     const saved = await f.workflows.current.save(f.writer.principal, 'mcp', { ...edited, commandId: randomUUID(),
-      expectedRevision: retained.value.revision, expectedWorkflowVersionId: retained.value.currentVersionId,
-      graph: retained.value.version.definition, expectedAgentConfigurationVersionIds: { [original.agentId]: id } })
+      expectedAgentConfigurationVersionIds: { [original.agentId]: id } })
     expect(saved.value.version.agentConfigurationVersionIds[original.agentId]).toBe(id)
   })
 

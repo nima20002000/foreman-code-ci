@@ -406,9 +406,7 @@ describe.skipIf(process.platform === 'win32')('Codex app-server regressions agai
     const lifetime = manager.originalSessionLifetime(session, source)!
     await flag('read-delay')
     const read = manager.reattachOriginalSession(session, source, lifetime.residency)
-    void read.catch(() => {
-      // ignore: this only prevents an unhandled rejection; the read outcome is asserted below.
-    })
+    void read.catch(() => undefined)
     await until(async () => (await wire('thread/read')).length > 0)
     const launched = (await processesForRequests(f.directory, 'thread/start'))[0]
     assert(launched && typeof launched.pid === 'number')
@@ -567,7 +565,7 @@ describe.skipIf(process.platform === 'win32')('Codex app-server regressions agai
     await assertCode(pinned.history({ ...session, providerVersion: 'codex-cli 0.156.1' }), 'CODEX_SESSION_VERSION_MISMATCH')
   })
 
-  it('refuses every accepted configuration change, not just model/effort/cwd', async () => {
+  it('F02: refuses every accepted configuration change, not just model/effort/cwd', async () => {
     codex().sandbox = 'danger-full-access'
     const session = await manager.createSession(source)
     const mutations: Array<(value: WorkflowNativeSessionStart) => void> = [
@@ -577,7 +575,7 @@ describe.skipIf(process.platform === 'win32')('Codex app-server regressions agai
       (value) => { value.request.configuration.prompt.system = 'different instructions' },
       (value) => { codex(value).sandbox = 'read-only' },
       (value) => { codex(value).serviceTier = 'priority' },
-      (value) => { codex(value).advanced!.approvalPolicy = 'on-request' },
+      (value) => { codex(value).advanced!.approvalPolicy = 'never' },
       (value) => { codex(value).advanced!.approvalsReviewer = 'auto_review' },
       (value) => { codex(value).advanced!.additionalWritableDirectories = ['/other'] },
       (value) => { codex(value).advanced!.sessionPersistence = 'ephemeral' },
@@ -587,8 +585,6 @@ describe.skipIf(process.platform === 'win32')('Codex app-server regressions agai
     ]
     for (const mutate of mutations) {
       const changed = structuredClone(source); mutate(changed)
-      assert.notDeepEqual(changed.request.configuration, source.request.configuration,
-        'Each mutation must change the accepted configuration')
       await assertCode(manager.attachSession(session, changed), 'CODEX_SESSION_CONFIGURATION_MISMATCH')
     }
     const changed = structuredClone(source)

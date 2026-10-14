@@ -10,8 +10,6 @@ import { nativePersistenceRedactor } from '../src/modules/interactions/nativePer
 import { nativeHttpIsolation, type NativeHttpIsolationInput } from './helpers/nativeHttpIsolation.js'
 
 const enabled = process.env.RUN_REAL_HARNESS_TESTS === '1' || process.env.RUN_ENG03_C_NATIVE_TESTS === '1'
-const databaseUrl = process.env.ENG03_A_TEST_DATABASE_URL ?? process.env.WAVE25_TEST_DATABASE_URL
-  ?? process.env.TEST_DATABASE_URL
 
 describe.skipIf(!enabled)('installed harness local-human isolation', { timeout: 180_000 }, () => {
   it.each(['codex'] as const)(
@@ -66,7 +64,7 @@ describe.skipIf(!enabled)('installed harness local-human isolation', { timeout: 
         await signalTree(child, 'SIGKILL')
         await exited
       }
-    }, databaseUrl ? { databaseUrl } : {})
+    }, process.env.ENG03_A_TEST_DATABASE_URL ?? process.env.WAVE25_TEST_DATABASE_URL ?? process.env.TEST_DATABASE_URL)
   })
 
   it('cannot approve a human gate or mutate settings by omitting or forging browser headers', async () => {
@@ -109,7 +107,7 @@ describe.skipIf(!enabled)('installed harness local-human isolation', { timeout: 
         clearTimeout(deadline)
         await owned.close()
       }
-    }, databaseUrl ? { databaseUrl } : {})
+    }, process.env.ENG03_A_TEST_DATABASE_URL ?? process.env.WAVE25_TEST_DATABASE_URL ?? process.env.TEST_DATABASE_URL)
   })
 })
 

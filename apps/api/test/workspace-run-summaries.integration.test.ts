@@ -239,62 +239,21 @@ describe('workspace Run summaries', () => {
     }
   }, 60000)
 
-  it('returns the newest summaries when the active set exceeds the read cap', async () => {
-    const f = await currentOperatorIntegration({ approvalNodeIds: [], interactions: true })
+  it('rejects an oversized active set without truncating or changing persisted Runs', async () => {
+    const f = await currentOperatorIntegration({ approvalNodeIds: [] })
     try {
-      const workspaceId = f.f.run.workspaceId
+      const repository = new PostgresWorkspaceRepository(f.db.pool, f.workflows, f.runs)
       const prefix = `queued-${randomUUID()}`
-      const location = f.f.run.executionLocation!
-      await f.db.pool.query(`insert into runs(id,workspace_id,workflow_id,workflow_version_id,execution_state,
-          record,created_at,runner_id,working_directory,location_revision)
+      await f.db.pool.query(`insert into runs(id,workspace_id,workflow_id,workflow_version_id,execution_state,record)
         select $1::text || '-' || n,$2,$3,$4,'queued',
-          $5::jsonb || jsonb_build_object('id',$1::text || '-' || n,'createdAt',
-            to_char(('2099-01-01T00:00:00Z'::timestamptz + n * interval '1 second') at time zone 'UTC',
-              'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')),
-          '2099-01-01T00:00:00Z'::timestamptz + n * interval '1 second',$6,$7,$8
-        from generate_series(1,2001) as n`,
-      [prefix, workspaceId, f.f.run.workflowId, f.f.run.workflowVersionId, JSON.stringify(f.f.run),
-        location.runnerId, location.rootPath, location.locationRevision])
-      const records = (await f.db.pool.query('select id,record from runs where workspace_id=$1 order by id',
-        [workspaceId])).rows
-      const response = await f.app.inject({ method: 'GET', url: `/api/workspaces/${workspaceId}`,
-        headers: { authorization: `Bearer ${f.writer.token}` } })
-      expect(response.statusCode, response.body).toBe(200)
-      const summaries = response.json().runs
-      expect(summaries.map((run: { id: string }) => run.id)).toEqual(
-        Array.from({ length: 2000 }, (_, index) => `${prefix}-${2001 - index}`),
-      )
-      const input = { workspaceId, workflowId: f.f.run.workflowId, limit: 1 }
-      const listUrl = `/api/management/workspaces/${workspaceId}/runs?workflowId=${input.workflowId}&limit=1`
-      const listed = await f.app.inject({ method: 'GET', url: listUrl,
-        headers: { authorization: `Bearer ${f.writer.token}` } })
-      expect(listed.statusCode, listed.body).toBe(200)
-      const httpPage = SavedRunPageSchema.parse(listed.json())
-      expect(httpPage.items.map(run => run.id)).toEqual([summaries[0].id])
-      expect(httpPage.items[0]?.executionLocation).toEqual(f.f.run.executionLocation)
-      const remote = await f.client.callTool({ name: 'run_list', arguments: input })
-      expect(remote.isError, JSON.stringify(remote)).not.toBe(true)
-      const page = SavedRunPageSchema.parse(decodeMcpToolResult(remote))
-      expect(page).toEqual(httpPage)
-      expect(page.items.map(run => run.id)).toEqual([summaries[0].id])
-      expect(page.pageInfo.nextCursor).not.toBeNull()
-      const next = await f.client.callTool({ name: 'run_list', arguments: {
-        ...input, cursor: page.pageInfo.nextCursor,
-      } })
-      expect(next.isError).not.toBe(true)
-      expect(SavedRunPageSchema.parse(decodeMcpToolResult(next)).items[0]?.id).toBe(`${prefix}-2000`)
-      const nextListed = await f.app.inject({ method: 'GET',
-        url: `${listUrl}&cursor=${encodeURIComponent(page.pageInfo.nextCursor!)}`,
-        headers: { authorization: `Bearer ${f.writer.token}` } })
-      expect(nextListed.statusCode, nextListed.body).toBe(200)
-      expect(SavedRunPageSchema.parse(nextListed.json())).toEqual(decodeMcpToolResult(next))
-      const denied = await f.access.issue({ name: 'Other workspace reader', audience: 'operator',
-        expiresAt: new Date(Date.now() + 600000), grants: [{ actions: ['runs:read'],
-          scope: { workspaceIds: ['other-workspace'] } }] })
-      expect((await (await f.connect(denied.token)).callTool({ name: 'run_list', arguments: input })).isError)
-        .toBe(true)
-      expect((await f.db.pool.query('select id,record from runs where workspace_id=$1 order by id',
-        [workspaceId])).rows).toEqual(records)
+          $5::jsonb || jsonb_build_object('id',$1::text || '-' || n)
+        from generate_series(1,2000) as n`,
+      [prefix, f.f.run.workspaceId, f.f.run.workflowId, f.f.run.workflowVersionId, JSON.stringify(f.f.run)])
+      await expect(repository.getDetails(f.f.run.workspaceId, f.writer.principal)).rejects.toMatchObject({
+        code: 'WORKSPACE_RUN_READ_TOO_LARGE', status: 409,
+      })
+      expect((await f.db.pool.query('select count(*)::int as count from runs where workspace_id=$1',
+        [f.f.run.workspaceId])).rows[0]?.count).toBe(2001)
     } finally {
       await f.close()
     }

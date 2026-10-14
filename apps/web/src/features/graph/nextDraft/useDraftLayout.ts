@@ -3,7 +3,7 @@ import { create } from 'zustand'
 import { useMutation } from '@tanstack/react-query'
 import { z } from 'zod'
 import { CurrentWorkflowSaveInputSchema, CurrentWorkflowSaveResultSchema, CURRENT_WORKFLOW_ROUTES,
-  sameWorkflowValue } from '@foreman-code/contracts/wave25'
+  sameWorkflowValue, workflowNodeNames } from '@foreman-code/contracts/wave25'
 import { apiClient, ApiError } from '../../../shared/api/client'
 import { protectedKey } from '../../../shared/api/protectedChatStorage'
 import { assertSession, sessionGeneration } from '../../../shared/api/sessionBoundary'
@@ -92,7 +92,9 @@ export function useDraftLayout(draftKey: string) {
             workflowId: draft.workflowId, commandId: crypto.randomUUID(), executionSemanticsVersion: 3,
             expectedRevision: draft.revision, expectedWorkflowVersionId: draft.baseWorkflowVersionId,
             expectedAgentConfigurationVersionIds: saved.expectedAgentConfigurationVersionIds,
-            graph }), nodeId: moved.id, rejectedRevision: false }
+            expectedLocationRevision: saved.expectedLocationRevision, graph,
+            expectedNodePresentation: workflowNodeNames(saved.draft.graph),
+            expectedGeometry: saved.draft.graph.nodes.map(({ id, position, width, height }) => ({ id, position, width, height })) }), nodeId: moved.id, rejectedRevision: false }
           retain(draftKey, journal) // durable before HTTP
         }
         const request = journal.request
@@ -118,7 +120,7 @@ export function useDraftLayout(draftKey: string) {
         } catch (error) {
           assertSession(generation)
           if (ApiError.is(error) && error.status === 409
-            && error.code === 'REVISION_CONFLICT') {
+            && ['REVISION_CONFLICT', 'LAYOUT_REVISION_CONFLICT', 'PRESENTATION_REVISION_CONFLICT'].includes(error.code)) {
             journal = { request, nodeId, rejectedRevision: true }; retain(draftKey, journal)
           }
           throw error
@@ -140,7 +142,5 @@ export function clearCurrentLayoutJournals() {
       const key = localStorage.key(index)
       if (key?.startsWith(prefix)) localStorage.removeItem(key)
     }
-  } catch {
-    // ignore: session rotation also makes old protected layout keys inaccessible.
-  }
+  } catch { /* The protected principal namespace is also removed by session teardown. */ }
 }

@@ -19,7 +19,7 @@ import type { ClaudeNativeSessionManager } from '../src/modules/harnesses/claude
 import type { ClaudeSdkClient, ClaudeSdkUserMessage } from '../src/modules/harnesses/claudeSdk/port.js'
 import { graphRpc, graphRpcValue } from './eng04-graph-composition-fixture.js'
 import { nim2691TaskDatabase } from './helpers/nim2691Database.js'
-import { rejectableDeferred } from './helpers/deferred.js'
+import { deferred } from './support/claudeProduction.js'
 
 /** Native transport frames are doubled; runner, normalizer, manager, callback authority, caller and PostgreSQL are real. */
 function runtime(pool: pg.Pool, repository: PostgresOperatorConversationRepository, configuration: OperatorConfigurationVersion,
@@ -28,7 +28,7 @@ function runtime(pool: pg.Pool, repository: PostgresOperatorConversationReposito
     binding: { kind: 'operator', conversationId, repository },
     manager: { nativeCallbackContext: (sessionId, toolId) => manager.nativeCallbackContext(sessionId, toolId) } })
   const frames = new ClaudeBoundedQueue<unknown>(64)
-  const ready = rejectableDeferred<AsyncIterator<ClaudeSdkUserMessage>>()
+  const ready = deferred<AsyncIterator<ClaudeSdkUserMessage>>()
   let options!: Options
   const client: ClaudeSdkClient = {
     sdkVersion: '0.3.284',
@@ -96,13 +96,8 @@ it.each(['aborted', 'resident-write-loss', 'restart-without-proof', 'restart-wit
         return owned.manager
       }
       const closeRecoveredRuntime = vi.fn(async () => true)
-      const accountBindingReady = rejectableDeferred<void>()
       const createChat = () => new OperatorChatService(repository, new PostgresOperatorRepository(pool),
-        Object.assign(resolver, { closeRecoveredRuntime,
-          prepareAccountBinding: async () => {
-            if (scenario === 'restart-after-terminal') await accountBindingReady.promise
-          },
-        }), directory, { current: id => access.currentOperator(id), assertConfiguration() {},
+        Object.assign(resolver, { closeRecoveredRuntime }), directory, { current: id => access.currentOperator(id), assertConfiguration() {},
         setup: async () => ({ harness: 'claude', status: 'configured', endpoint: 'http://127.0.0.1/mcp', checkedAt: new Date().toISOString() }),
         prepare: async (_manager, configuration) => ({ agentId: configuration.operatorId, variables: {} }), release: async () => {} })
       let chat = createChat()
@@ -117,16 +112,7 @@ it.each(['aborted', 'resident-write-loss', 'restart-without-proof', 'restart-wit
         const conversation = await chat.create(owner.principal)
         const id = conversation.id
         await chat.send(id, { requestId: 'model-request', content: 'Read an admitted file' }, owner.principal)
-        if (scenario === 'restart-after-terminal') {
-          const starting = await graphRpc(app, owner.token, 'tools/call', {
-            name: 'operator_chat_get', arguments: { conversationId: id },
-          })
-          expect(starting.result?.isError).not.toBe(true)
-          expect(graphRpcValue(starting.result)).toMatchObject({ activeRequestId: 'model-request' })
-          expect(offers).toEqual([])
-          accountBindingReady.resolve()
-        }
-        await vi.waitFor(() => expect(runtimes).toHaveLength(1), { timeout: 20_000, interval: 50 })
+        await vi.waitFor(() => expect(runtimes).toHaveLength(1))
         const owned = runtimes[0]!
         const message = (await (await owned.ready.promise).next()).value!
         nativeHistory.push({ type: 'user', uuid: message.uuid, session_id: session.nativeSessionId,
@@ -141,8 +127,7 @@ it.each(['aborted', 'resident-write-loss', 'restart-without-proof', 'restart-wit
         const permission = callbacks.canUseTool!('Read', hook.tool_input, {
           toolUseID: 'read-tool', requestId: 'permission-request', signal: controller.signal,
         }).then(decision => { responses++; return decision })
-        await vi.waitFor(async () => expect((await repository.get(id))?.pendingInteraction).toBeDefined(),
-          { timeout: 20_000, interval: 50 })
+        await vi.waitFor(async () => expect((await repository.get(id))?.pendingInteraction).toBeDefined())
         const admitted = await graphRpc(app, owner.token, 'tools/call', {
           name: 'operator_chat_get', arguments: { conversationId: id },
         })
@@ -156,8 +141,8 @@ it.each(['aborted', 'resident-write-loss', 'restart-without-proof', 'restart-wit
         expect((await pool.query('select count(*)::int as n from management_command_receipts')).rows[0].n).toBe(0)
         const query = pool.query.bind(pool)
         const concurrentPoll = scenario.startsWith('concurrent-poll')
-        const journalEntered = rejectableDeferred<void>()
-        const finishJournal = rejectableDeferred<void>()
+        const journalEntered = deferred<void>()
+        const finishJournal = deferred<void>()
         let validations = 0
         const spy = vi.spyOn(pool, 'query').mockImplementation(((...args: unknown[]) => {
           const statement = String(args[0])
@@ -230,8 +215,7 @@ it.each(['aborted', 'resident-write-loss', 'restart-without-proof', 'restart-wit
             message: { id: 'after-approval', content: [{ type: 'text', text: 'Tool completed after approval.' }] } })
           void owned.frames.offer({ type: 'result', uuid: 'after-approval-terminal', session_id: session.nativeSessionId,
             user_message_uuid: message.uuid, subtype: 'success', is_error: false, result: 'done' })
-          await vi.waitFor(async () => expect(await repository.terminal(id, 'model-request')).toBeDefined(),
-            { timeout: 20_000, interval: 50 })
+          await vi.waitFor(async () => expect(await repository.terminal(id, 'model-request')).toBeDefined())
         }
         if (scenario === 'restart-after-terminal') {
           const terminal = await repository.terminal(id, 'model-request')
@@ -294,7 +278,6 @@ it.each(['aborted', 'resident-write-loss', 'restart-without-proof', 'restart-wit
         expect(offers).toEqual([message.uuid])
         expect(responses).toBe(1)
       } finally {
-        accountBindingReady.resolve()
         vi.restoreAllMocks()
         controller.abort()
         try { await app.close() }

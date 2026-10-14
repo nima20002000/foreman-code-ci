@@ -1,7 +1,4 @@
 import { sourceStorageCapacityFixture } from './helpers/sourceStorageCapacityFixture.js'
-import {
-  beginTransaction, commitTransaction, rollbackTransaction, withTransaction,
-} from '../src/infrastructure/transaction.js'
 import { sourceStorageLimits } from '../src/modules/sources/storageCapacity.js'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { randomUUID } from 'node:crypto'
@@ -30,12 +27,9 @@ import { reconcileFailedCaptures } from '../src/modules/sources/failedCaptureCle
 import { PrivateSourceSnapshotStore } from '../src/modules/sources/store.js'
 import { WorkspaceLocationService } from '../src/modules/workspaces/location.js'
 import { WorkspaceManagementService } from '../src/modules/workspaces/management.js'
-import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { agent3Database, deferred } from './helpers/wave25Agent3.js'
 import { jobExecution, jobSpec } from './helpers/jobFixture.js'
 import { verificationCapacityFixture } from './helpers/verificationCapacityFixture.js'
-import { ownedTestDatabaseUrl } from './helpers/testResources.js'
-import { createTestPool } from './helpers/testPool.mjs'
-import { rejectableDeferred } from './helpers/deferred.js'
 
 let fixture: Awaited<ReturnType<typeof setup>> | undefined
 afterEach(async () => {
@@ -46,7 +40,7 @@ afterEach(async () => {
 })
 
 async function setup() {
-  const database = await migratedDatabase()
+  const database = await agent3Database()
   const pool = database.pool
   const project = join(database.directory, 'project')
   const canonical = join(database.directory, 'snapshots')
@@ -57,7 +51,7 @@ async function setup() {
   const owner = await access.issue({ name: 'Snapshot retention fixture', audience: 'operator',
     grants: [{ actions: [...ManagementActionSchema.options], scope: {} }],
     expiresAt: new Date(Date.now() + 3600_000) })
-  const locations = new WorkspaceLocationService(pool, commands, runtime, 'runner-local')
+  const locations = new WorkspaceLocationService(pool, commands, runtime, 'runner-local', database.directory)
   const workspaces = new WorkspaceManagementService(pool, commands, locations)
   const created = await workspaces.create(owner.principal, 'http', { commandId: randomUUID(), name: 'Retention' })
   const workspaceId = created.value.workspace.id
@@ -95,7 +89,7 @@ async function setup() {
     return client
   }
   const client = await connect(owner.token)
-  const approval = { workspaceId, commandId: randomUUID(), commit,
+  const approval = { workspaceId, commandId: randomUUID(), commit, approvedPaths: ['source.ts'],
     executablePolicy: 'strip', expectedLocationRevision: located.value.locationRevision }
   async function approve(ageSeconds = 0) {
     const input = { ...approval, commandId: randomUUID() }
@@ -219,29 +213,6 @@ async function setup() {
     } }
 }
 
-it('reuses prepared migration history with an independent installation and authenticated source storage', async () => {
-  const prepared = createTestPool({ connectionString: ownedTestDatabaseUrl(), max: 1 })
-  let migrationHistory: unknown[]
-  let installationId: string
-  try {
-    migrationHistory = (await prepared.query(
-      'select version,applied_at from application_migrations order by version')).rows
-    installationId = (await prepared.query<{ id: string }>(
-      'select id from application_installation where singleton=true')).rows[0]!.id
-  } finally {
-    await prepared.end()
-  }
-  fixture = await setup()
-  const f = fixture
-  expect(migrationHistory.length).toBeGreaterThan(0)
-  expect((await f.pool.query(
-    'select version,applied_at from application_migrations order by version')).rows).toEqual(migrationHistory)
-  expect(f.mainId).not.toBe(installationId)
-  const source = (await f.approve()).source
-  expect((await f.read(source)).manifest).toEqual(source.manifest)
-  expect((await f.reservation(source)).state).toBe('retained')
-}, 60_000)
-
 it.each(['approved', 'failed'] as const)(
   'reserves capacity within a short database timeout while %s capture removal is paused', async kind => {
     fixture = await setup()
@@ -250,8 +221,8 @@ it.each(['approved', 'failed'] as const)(
       ? (await f.approve(SOURCE_RETENTION_SECONDS * 3)).source.manifest.snapshotId
       : (await f.failedCapture()).snapshotId
     const held = await f.captureReservation(snapshotId)
-    const entered = rejectableDeferred()
-    const resume = rejectableDeferred()
+    const entered = deferred()
+    const resume = deferred()
     const remove = f.store.remove.bind(f.store)
     vi.spyOn(f.store, 'remove').mockImplementation(async id => {
       if (id === snapshotId) {
@@ -265,14 +236,21 @@ it.each(['approved', 'failed'] as const)(
     try {
       await entered.promise
       const capacity = sourceStorageCapacityFixture({ filesystem: await f.store.storageIdentity() })
-      const reservation = await withTransaction(f.pool, async sql => {
+      const sql = await f.pool.connect()
+      let reservation: SourceReservation
+      try {
+        await sql.query('begin')
         await sql.query("set local statement_timeout='250ms'")
         const heldRow = await sql.query<{ state: string }>(`select state from source_storage_reservations
           where reservation_id=$1 for update`, [held.record.reservationId])
         expect(heldRow.rows[0]?.state).toBe('retained')
-        return f.sources.reservations.reserve(sql, { scopeId: held.record.scopeId,
+        reservation = await f.sources.reservations.reserve(sql, { scopeId: held.record.scopeId,
           ownerKind: 'capture', ownerId: randomUUID(), reservedBytes: 1 }, { capacity })
-      })
+        await sql.query('commit')
+      } finally {
+        await sql.query('rollback')
+        sql.release()
+      }
       expect((await f.captureReservation(reservation.ownerId)).state).toBe('preparing')
       const approved = await f.approve()
       expect((await f.read(approved.source)).manifest).toEqual(approved.source.manifest)
@@ -329,8 +307,8 @@ it('prepares sixteen executions concurrently without releasing unused snapshots'
   const unused = (await f.approve(SOURCE_RETENTION_SECONDS * 3)).source
   const source = (await f.approve()).source
   const root = await f.executionRoot(source)
-  const entered = rejectableDeferred()
-  const resume = rejectableDeferred()
+  const entered = deferred()
+  const resume = deferred()
   const prepare = vi.mocked(f.executions.prepare).getMockImplementation()!
   let preparing = 0
   vi.mocked(f.executions.prepare).mockImplementation(async (...args) => {
@@ -396,8 +374,8 @@ it('waits for an in-flight pressure release and refreshes capacity before retryi
   const held = await f.reservation(unused)
   await f.sources.reservations.retain(f.pool, held.record, 'retained',
     sourceStorageLimits(sourceStorageCapacityFixture()).bytes)
-  const entered = rejectableDeferred()
-  const resume = rejectableDeferred()
+  const entered = deferred()
+  const resume = deferred()
   const remove = f.store.remove.bind(f.store)
   vi.spyOn(f.store, 'remove').mockImplementation(async snapshotId => {
     if (snapshotId === unused.manifest.snapshotId) {
@@ -412,7 +390,7 @@ it('waits for an in-flight pressure release and refreshes capacity before retryi
   let joined: Promise<void> | undefined
   try {
     await entered.promise
-    const waiting = rejectableDeferred()
+    const waiting = deferred()
     const release = f.sources.releaseUnusedSnapshots.bind(f.sources)
     vi.spyOn(f.sources, 'releaseUnusedSnapshots').mockImplementation(async (...args) => {
       waiting.resolve()
@@ -453,7 +431,7 @@ it('scans protected snapshots without waiting for the storage lock', async () =>
   const held = await f.reservation(protectedSources[0]!)
   const sql = await f.pool.connect()
   try {
-    await beginTransaction(sql)
+    await sql.query('begin')
     await sql.query('select pg_advisory_xact_lock(hashtext($1))', [`source-storage:${held.record.scopeId}`])
     await f.sources.releaseUnusedSnapshots(undefined, true)
     for (const source of protectedSources) {
@@ -461,7 +439,7 @@ it('scans protected snapshots without waiting for the storage lock', async () =>
       expect((await f.reservation(source)).state).toBe('retained')
     }
   } finally {
-    await rollbackTransaction(sql)
+    await sql.query('rollback')
     sql.release()
   }
 }, 60_000)
@@ -471,8 +449,8 @@ it('coalesces concurrent pressure scans and allows retry after a deletion failur
   const f = fixture
   const source = (await f.approve()).source
   const scopeId = (await f.reservation(source)).record.scopeId
-  const entered = rejectableDeferred()
-  const resume = rejectableDeferred()
+  const entered = deferred()
+  const resume = deferred()
   const failure = new Error('Interrupted shared release')
   const remove = vi.spyOn(f.store, 'remove').mockImplementation(async () => {
     entered.resolve()
@@ -514,8 +492,8 @@ it('honors pressure callers that join a periodic release scan', async () => {
   const expired = (await f.approve(SOURCE_RETENTION_SECONDS * 3)).source
   const recent = (await f.approve()).source
   const scopeId = (await f.reservation(expired)).record.scopeId
-  const entered = rejectableDeferred()
-  const resume = rejectableDeferred()
+  const entered = deferred()
+  const resume = deferred()
   const remove = f.store.remove.bind(f.store)
   vi.spyOn(f.store, 'remove').mockImplementation(async snapshotId => {
     if (snapshotId === expired.manifest.snapshotId) {
@@ -548,8 +526,8 @@ it('rechecks a candidate that acquires an active consumer after the batch scan',
   const f = fixture
   const first = (await f.approve(SOURCE_RETENTION_SECONDS * 3)).source
   const protectedSource = (await f.approve(SOURCE_RETENTION_SECONDS * 3)).source
-  const entered = rejectableDeferred()
-  const resume = rejectableDeferred()
+  const entered = deferred()
+  const resume = deferred()
   const remove = f.store.remove.bind(f.store)
   vi.spyOn(f.store, 'remove').mockImplementation(async snapshotId => {
     if (snapshotId === first.manifest.snapshotId) {
@@ -607,7 +585,7 @@ it('reclaims older terminal snapshots before capture capacity fails and exposes 
     await expect(stat(join(f.canonical, first.source.manifest.snapshotId))).rejects.toMatchObject({ code: 'ENOENT' })
     await f.read(approvals.at(-1)!.source)
     const denied = await f.access.issue({ name: 'Other workspace', audience: 'operator',
-      grants: [{ actions: ['sources:read', 'source_roots:bind', 'workspace_locations:read'],
+      grants: [{ actions: ['sources:read', 'sources:approve', 'workspace_locations:read'],
         scope: { workspaceIds: ['other-workspace'] } }], expiresAt: new Date(Date.now() + 120_000) })
     const deniedClient = await f.connect(denied.token)
     for (const name of ['source_get', 'source_list']) {
@@ -858,8 +836,8 @@ it.each(['measurement', 'deletion'] as const)(
       expiresAt: new Date(Date.now() + 120_000) })
     const deniedClient = await f.connect(reader.token)
     const restartedStore = new PrivateSourceSnapshotStore(f.canonical)
-    const entered = rejectableDeferred()
-    const resume = rejectableDeferred()
+    const entered = deferred()
+    const resume = deferred()
     const removals = new Map<string, number>()
     const measured = restartedStore.retainedCaptureBytes.bind(restartedStore)
     if (phase === 'measurement') {
@@ -888,7 +866,7 @@ it.each(['measurement', 'deletion'] as const)(
       // Both database row sets remain available while filesystem work is paused.
       const sql = await f.pool.connect()
       try {
-        await beginTransaction(sql)
+        await sql.query('begin')
         const approvals = await sql.query(`select snapshot_id from source_approvals
           where snapshot_id=any($1::uuid[]) for update skip locked`, [snapshotIds])
         const reservations = await sql.query(`select owner_id from source_storage_reservations
@@ -896,7 +874,7 @@ it.each(['measurement', 'deletion'] as const)(
         expect(approvals.rowCount).toBe(snapshotIds.length)
         expect(reservations.rowCount).toBe(snapshotIds.length)
       } finally {
-        await rollbackTransaction(sql)
+        await sql.query('rollback')
         sql.release()
       }
       const input = { ...f.approval, commandId: randomUUID() }
@@ -940,15 +918,15 @@ it('skips a snapshot while admission holds its shared lock, then releases it aft
   const source = (await f.approve(SOURCE_RETENTION_SECONDS * 3)).source
   const sql = await f.pool.connect()
   try {
-    await beginTransaction(sql)
+    await sql.query('begin')
     await f.sources.resolveApprovedSource(sql, f.owner.principal, f.workspaceId, f.pin(source))
     await f.sources.releaseUnusedSnapshots()
     expect((await f.read(source)).availability).toBe('retained')
-    await commitTransaction(sql)
+    await sql.query('commit')
     await f.sources.releaseUnusedSnapshots()
     expect((await f.reservation(source)).state).toBe('reclaimed')
   } finally {
-    await rollbackTransaction(sql)
+    await sql.query('rollback')
     sql.release()
   }
 }, 60_000)

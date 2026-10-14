@@ -135,10 +135,7 @@ describe('repository draft', () => {
     await waitFor(() => expect(router.state.location.pathname).toBe('/workspaces/workspace-1/files'))
   })
 
-  it.each([
-    [503, 'Workspace refresh unavailable.'],
-    [500, 'Workspace refresh unavailable.'],
-  ] as const)('keeps the draft and navigation guard through a failed workspace refresh with HTTP %s', async (status, message) => {
+  it('keeps the draft and navigation guard through a failed workspace refresh', async () => {
     fixture()
     let fail = true
     const user = userEvent.setup()
@@ -146,28 +143,23 @@ describe('repository draft', () => {
     const input = await screen.findByRole('textbox', { name: 'Repository' })
     await user.type(screen.getByRole('textbox', { name: 'Base branch' }), '-local')
     server.use(http.get('/api/management/workspaces/workspace-1', () => fail
-      ? HttpResponse.json({ error: { code: 'INTERNAL_ERROR', message: 'Workspace refresh unavailable.' } }, { status })
+      ? HttpResponse.json({ error: { code: 'INTERNAL_ERROR', message: 'Workspace refresh unavailable.' } }, { status: 503 })
       : undefined))
     await act(async () => {
       await view.queryClient.invalidateQueries({ queryKey: queryKeys.managedWorkspace('workspace-1') })
     })
-    expect(await screen.findByText(message)).toBeVisible()
-    expect(input).toBeVisible()
-    expect(screen.getByRole('textbox', { name: 'Base branch' })).toHaveValue('main-local')
+    expect(await screen.findByText('Workspace refresh unavailable.')).toBeVisible()
     await user.click(screen.getByRole('link', { name: /Project files/ }))
     expect(await screen.findByRole('alertdialog')).toHaveTextContent('You have unsaved changes in repository settings.')
     await user.keyboard('{Escape}')
     fail = false
     await user.click(screen.getByRole('button', { name: 'Try again' }))
-    await waitFor(() => expect(screen.queryByText(message)).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.queryByText('Workspace refresh unavailable.')).not.toBeInTheDocument())
     expect(input).toBeInTheDocument()
     expect(screen.getByRole('textbox', { name: 'Base branch' })).toHaveValue('main-local')
   })
 
-  it.each([
-    [503, 'Workspace refresh unavailable.'],
-    [500, 'Workspace refresh unavailable.'],
-  ] as const)('retains the original unconfirmed command through a failed workspace refresh with HTTP %s', async (status, message) => {
+  it('retains the original unconfirmed command through a failed workspace refresh', async () => {
     const state = fixture()
     const attempts: unknown[] = []
     server.use(http.patch('/api/management/workspaces/workspace-1', async ({ request }) => {
@@ -182,56 +174,22 @@ describe('repository draft', () => {
     await user.type(await screen.findByRole('textbox', { name: 'Base branch' }), '-release')
     await user.click(screen.getByRole('button', { name: 'Save repository' }))
     expect(await screen.findByRole('button', { name: 'Retry repository save' })).toBeEnabled()
-    expect(await screen.findByText('Save response unavailable.')).toBeVisible()
     let fail = true
     server.use(http.get('/api/management/workspaces/workspace-1', () => fail
-      ? HttpResponse.json({ error: { code: 'INTERNAL_ERROR', message: 'Workspace refresh unavailable.' } }, { status })
+      ? HttpResponse.json({ error: { code: 'INTERNAL_ERROR', message: 'Workspace refresh unavailable.' } }, { status: 503 })
       : undefined))
     await act(async () => {
       await view.queryClient.invalidateQueries({ queryKey: queryKeys.managedWorkspace('workspace-1') })
     })
-    expect(await screen.findByText(message)).toBeVisible()
-    expect(screen.getByText('Save response unavailable.')).toBeVisible()
-    expect(screen.getByText('The repository save is unconfirmed. Retry before editing or leaving.')).toBeVisible()
-    expect(screen.getByRole('textbox', { name: 'Base branch' })).toHaveValue('main-release')
-    expect(screen.getByRole('button', { name: 'Retry repository save' })).toBeEnabled()
-    expect(attempts).toHaveLength(1)
+    expect(await screen.findByText('Workspace refresh unavailable.')).toBeVisible()
     fail = false
     await user.click(screen.getByRole('button', { name: 'Try again' }))
-    await waitFor(() => expect(screen.queryByText(message)).not.toBeInTheDocument())
-    expect(screen.getByText('Save response unavailable.')).toBeVisible()
     const retry = await screen.findByRole('button', { name: 'Retry repository save' })
     expect(screen.getByRole('textbox', { name: 'Base branch' })).toBeDisabled()
     await user.click(retry)
     await waitFor(() => expect(attempts).toHaveLength(2))
     expect(attempts[1]).toEqual(attempts[0])
     expect(state.read().workspace.repository?.defaultBranch).toBe('main-release')
-  })
-
-  it('withholds the repository draft after denial until a successful workspace read', async () => {
-    fixture()
-    const user = userEvent.setup()
-    const view = mount()
-    const input = await screen.findByRole('textbox', { name: 'Repository' })
-    await user.type(screen.getByRole('textbox', { name: 'Base branch' }), '-local')
-    let status = 403
-    server.use(http.get('/api/management/workspaces/workspace-1', () => status === 200
-      ? undefined
-      : status === 503 ? new HttpResponse(null, { status })
-        : HttpResponse.json({ error: { code: 'READ_UNAVAILABLE', message: 'Workspace read unavailable.' } }, { status })))
-    await act(async () => {
-      await view.queryClient.invalidateQueries({ queryKey: queryKeys.managedWorkspace('workspace-1') })
-    })
-    expect(await screen.findByText('Workspace read unavailable.')).toBeVisible()
-    expect(input).not.toBeVisible()
-    status = 503
-    await user.click(screen.getByRole('button', { name: 'Try again' }))
-    expect(await screen.findByText('Updating — reconnecting…')).toBeVisible()
-    expect(input).not.toBeVisible()
-    status = 200
-    await user.click(screen.getByRole('button', { name: 'Try again' }))
-    await waitFor(() => expect(input).toBeVisible())
-    expect(screen.getByRole('textbox', { name: 'Base branch' })).toHaveValue('main-local')
   })
 
   it('loads a rejected revision without losing the draft and retries after reapplying', async () => {

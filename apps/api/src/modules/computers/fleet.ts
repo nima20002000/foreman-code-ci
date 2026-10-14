@@ -1,4 +1,3 @@
-import { errorMessage } from '../../shared/errorMessage.js'
 import type pg from 'pg'
 import { randomUUID } from 'node:crypto'
 import { APP_MCP_SERVER_NAMES } from '@foreman-code/contracts/product'
@@ -20,7 +19,6 @@ import type { ClaudePluginCatalog } from './claudePlugins.js'
 import type { ComputerMaintenance } from './maintenance.js'
 import { syncFingerprint } from './syncFingerprint.js'
 import { assertComputerTarget } from './target.js'
-import { ignoreError, fallbackOnError } from '../diagnostics/ignoredError.js'
 
 export interface MaintenanceEndpoint {
   capabilities(deviceId: string): readonly { namespace: string; mainCanRequest: boolean }[]
@@ -33,7 +31,6 @@ export interface FleetSources {
   codexPlugins(): Promise<string[]>
   codexMarketplaces(): Promise<SyncedMarketplace[]>
   claudePlugins(): Promise<ClaudePluginCatalog>
-  workerManifestSha256s?(): Promise<readonly string[]>
 }
 
 const CACHE_MS = 20_000
@@ -145,7 +142,7 @@ export class FleetMaintenanceService {
             return { target, task: null, error: 'This computer is not paired with this Main.' }
           }
           try { return { target, task: await this.startOn(target, task, input.commandId), error: null } }
-          catch (error) { return { target, task: null, error: errorMessage(error, 'The computer did not answer.') } }
+          catch (error) { return { target, task: null, error: error instanceof Error ? error.message : 'The computer did not answer.' } }
         }))
         for (const target of targets) this.cache.delete(this.key(target))
         return ComputerMaintenanceStartResultSchema.parse({ computers })
@@ -197,16 +194,13 @@ export class FleetMaintenanceService {
 
   private async keepCurrentNow(): Promise<void> {
     const targets = await this.allTargets()
-    const manifests = await this.workerManifests()
     const sync = await Promise.allSettled([this.taskFor({ kind: 'sync-mcp' }), this.taskFor({ kind: 'sync-plugins' })])
     await Promise.all(targets.map(async target => {
       const status = await this.status(target, true)
       if (!status) return
       const behind = status.harnesses.filter(entry => entry.latest && entry.version !== entry.latest).map(entry => entry.harness)
-      if (behind.length) await this.startOn(target, { kind: 'update-harnesses', harnesses: behind })
-        .catch(ignoreError('lifecycle', 'start harness update on computer', { host: target.hostRef }))
+      if (behind.length) await this.startOn(target, { kind: 'update-harnesses', harnesses: behind }).catch(() => undefined)
       if (target.hostRef.kind === 'main') return
-      await this.syncWorkerUpdate(target, status, manifests)
       for (const task of sync) {
         if (task.status === 'fulfilled') await this.syncSource(target, task.value, status)
       }
@@ -219,9 +213,6 @@ export class FleetMaintenanceService {
     fingerprint: string; taskId: string; state: 'pending' | 'failed' | 'delivered'; retryAt: number
   }>()
   private readonly syncing = new Map<string, Promise<void>>()
-  private readonly workerUpdates = new Map<string, {
-    manifests: string; commandId: string; pending: boolean; retryAt: number
-  }>()
   /**
    * Pushes Main's current MCP servers and plugins to every connected computer that has not received this exact set yet.
    * Runs every minute on Main, so installs and removals on Main reach the other computers within about a minute, and a
@@ -234,53 +225,14 @@ export class FleetMaintenanceService {
   private async syncChangedSourcesNow(): Promise<void> {
     const sources = await Promise.allSettled([this.taskFor({ kind: 'sync-mcp' }), this.taskFor({ kind: 'sync-plugins' })])
     const targets = (await this.allTargets()).filter(target => target.hostRef.kind !== 'main')
-    const manifests = await this.workerManifests()
     await Promise.all(targets.map(async target => {
       const status = await this.status(target, true)
-      await this.syncWorkerUpdate(target, status, manifests)
       await Promise.all(sources.map(async source => {
         if (source.status === 'fulfilled') await this.syncSource(target, source.value, status)
       }))
     }))
     const failures = sources.filter(result => result.status === 'rejected').map(result => result.reason as unknown)
     if (failures.length) throw new AggregateError(failures, 'Some fleet settings could not be read.')
-  }
-
-  private syncWorkerUpdate(target: DeviceProvisioningTarget, status: MaintenanceStatus | null,
-    manifests: readonly string[]): Promise<void> {
-    const key = `${this.key(target)}:update-worker`
-    const active = this.syncing.get(key)
-    if (active) return active
-    const task = this.deliverWorkerUpdate(target, status, manifests).finally(() => this.syncing.delete(key))
-    this.syncing.set(key, task)
-    return task
-  }
-
-  private async workerManifests(): Promise<readonly string[]> {
-    return await this.sources.workerManifestSha256s?.()
-      .catch(fallbackOnError([], 'lifecycle', 'read available Worker manifests')) ?? []
-  }
-
-  private async deliverWorkerUpdate(target: DeviceProvisioningTarget, status: MaintenanceStatus | null,
-    manifests: readonly string[]): Promise<void> {
-    if (!status?.worker || !manifests.length || target.hostRef.kind !== 'device') return
-    if (!this.endpoint()?.capabilities(target.hostRef.deviceId).some(value => value.namespace === WORKER_UPDATE_NAMESPACE)) return
-    if (status.worker.manifestSha256 && manifests.includes(status.worker.manifestSha256)) return
-    if (!['current', 'rolled-back', 'failed'].includes(status.worker.state)
-      || status.tasks.some(task => task.kind === 'update-worker' && task.state === 'running')) return
-    const key = this.key(target)
-    const fingerprint = [...manifests].sort().join(':')
-    const previous = this.workerUpdates.get(key)
-    if (previous?.manifests === fingerprint && this.now() < previous.retryAt) return
-    const commandId = previous?.manifests === fingerprint && previous.pending ? previous.commandId : randomUUID()
-    const delivery = { manifests: fingerprint, commandId, pending: true, retryAt: this.now() + SYNC_RETRY_MS }
-    this.workerUpdates.set(key, delivery)
-    try {
-      await this.startOn(target, { kind: 'update-worker' }, commandId)
-      delivery.pending = false
-    } catch (error) {
-      ignoreError('lifecycle', 'prompt Worker manifest update', { host: target.hostRef })(error)
-    }
   }
 
   stopAdmission(): void {
@@ -456,7 +408,7 @@ export class FleetMaintenanceService {
       if (target.hostRef.kind === 'main') return this.local.status(AbortSignal.timeout(90_000))
       const reply = MaintenanceReplySchema.parse((await this.request(target.hostRef.deviceId, { operation: 'status' })).payload)
       return reply.operation === 'status' ? reply.status : null
-    })().catch(fallbackOnError(null, 'lifecycle', 'read computer maintenance status', { host: target.hostRef }))
+    })().catch((): null => null)
     const entry = { at: this.now(), pending: true, running: false, value }
     this.cache.set(key, entry)
     void value.then(status => {

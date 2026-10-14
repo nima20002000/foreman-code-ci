@@ -2,8 +2,7 @@ import assert from 'node:assert/strict'
 import { appendFile, link, realpath, stat, utimes, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, it, vi } from 'vitest'
-import { canonicalJsonNumericKeysFirstLegacy } from '@foreman-code/contracts/canonical-json'
-import { assertCodexUnchanged, codexBinaryIdentity, qualifyCodex, type QualifiedCodex } from '../src/modules/harnesses/codexProtocol.js'
+import { assertCodexUnchanged, canonical, codexBinaryIdentity, qualifyCodex, type QualifiedCodex } from '../src/modules/harnesses/codexProtocol.js'
 import { NativeProcessRegistry } from '../src/modules/harnesses/recovery/processRegistry.js'
 import { calls, errorCode, fixture, fixtureProtocol, type Fixture } from './fixtures/codex-test-helpers.js'
 import { codexSchema } from './fixtures/harness-schemas.js'
@@ -194,6 +193,6 @@ describe.skipIf(process.platform === 'win32')('Codex installed contract verifica
 })
 
 it('canonical objects ignore property order without changing array semantics', () => {
-  assert.equal(canonicalJsonNumericKeysFirstLegacy({ b: { d: 4, c: 3 }, a: 1 }), canonicalJsonNumericKeysFirstLegacy({ a: 1, b: { c: 3, d: 4 } }))
-  assert.notEqual(canonicalJsonNumericKeysFirstLegacy(['a', 'b']), canonicalJsonNumericKeysFirstLegacy(['b', 'a']))
+  assert.equal(canonical({ b: { d: 4, c: 3 }, a: 1 }), canonical({ a: 1, b: { c: 3, d: 4 } }))
+  assert.notEqual(canonical(['a', 'b']), canonical(['b', 'a']))
 })

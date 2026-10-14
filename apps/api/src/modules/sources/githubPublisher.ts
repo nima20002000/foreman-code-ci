@@ -9,29 +9,20 @@ import { SourceError } from './manifest.js'
 export async function publishCommit(ports: GitWorktreePorts, repository: string, commit: string,
   signal: AbortSignal): Promise<void> {
   const clone = await ensureClone(ports, repository, signal)
-  const local = await ports.git(['cat-file', '-e', `${commit}^{commit}`], { cwd: clone, signal })
-  if (local.code !== 0) {
-    // With no local object to satisfy negotiation, a successful fetch proves that origin serves the commit.
-    const fetched = await ports.git(['fetch', '--quiet', '--no-tags', '--depth=1', '--no-write-fetch-head',
-      'origin', commit], { cwd: clone, signal })
-    if (fetched.code !== 0) throw githubReadFailure(repository)
-    return
+  // A fetch by object id succeeds locally when Main already holds the commit, so ask GitHub's branches instead.
+  const fetched = await ports.git(['fetch', '--quiet', '--no-tags', '--prune', 'origin'], { cwd: clone, signal })
+  if (fetched.code !== 0) {
+    throw new SourceError('SOURCE_GITHUB_PUSH_REQUIRED', `Main could not read ${repository} from GitHub. `
+      + 'Connect GitHub with push access on Main (gh auth login), then retry.')
   }
-  // Main's clone is shallow, so local ancestry cannot prove what origin serves. A branch tip is served; any other held
-  // commit (an Agent's own, or a Run's start) is pinned under foreman/ci/, transferring nothing origin already has.
-  const tips = await ports.git(['ls-remote', '--heads', 'origin'], { cwd: clone, signal })
-  if (tips.code !== 0) throw githubReadFailure(repository)
-  if (tips.stdout.split('\n').some(line => line.split('\t')[0] === commit)) return
+  const published = await ports.git(['for-each-ref', '--contains', commit, '--count=1', '--format=%(refname)', 'refs/remotes/origin'],
+    { cwd: clone, signal })
+  if (published.code === 0 && published.stdout.trim()) return
   const pushed = await ports.git(['push', '--quiet', 'origin', `${commit}:refs/heads/foreman/ci/${commit}`], { cwd: clone, signal })
   if (pushed.code !== 0) {
     throw new SourceError('SOURCE_GITHUB_PUSH_REQUIRED', `Main could not publish commit ${commit.slice(0, 12)} to ${repository}. `
       + 'Connect GitHub with push access on Main (gh auth login), then retry.')
   }
-}
-
-function githubReadFailure(repository: string): SourceError {
-  return new SourceError('SOURCE_GITHUB_PUSH_REQUIRED', `Main could not read ${repository} from GitHub. `
-    + 'Connect GitHub with push access on Main (gh auth login), then retry.')
 }
 
 export class GitHubSourcePublisher {

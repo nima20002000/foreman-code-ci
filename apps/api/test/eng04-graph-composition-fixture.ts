@@ -1,7 +1,6 @@
-import { readPublicProjectionLocked } from '../src/modules/run-graph/compactSnapshot.js'
 import { randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
-import { AgentSchema, DEFAULT_CODEX_ADVANCED_CONFIGURATION, type AgentConfigurationVersion } from '@foreman-code/contracts'
+import { AgentSchema, type AgentConfigurationVersion } from '@foreman-code/contracts'
 import { ManagementActionSchema, type ManagementGrant } from '@foreman-code/contracts/management'
 import { makeCurrentWorkflowFixture, CANONICAL_RUN_GRAPH_ROUTES, CurrentWorkflowSaveResultSchema,
   SavedManagedWorkflowCommandResultSchema, type CurrentFixtureForm } from '@foreman-code/contracts/wave25'
@@ -24,22 +23,11 @@ export const privateCanary = 'ENG04-PRIVATE-INPUT-MUST-NOT-REACH-GRAPH'
  * No native/public Start acceptance is claimed. Current authoring, authentication,
  * SQL receipts/audit and canonical publication are actual production services. */
 export async function graphFixture(db: GraphTestDatabase, options: { insert?: boolean; qualifiedReads?: boolean;
-  form?: CurrentFixtureForm; handoffs?: boolean; maxNodeExecutions?: number; intervalEverySeconds?: number;
+  form?: CurrentFixtureForm; handoffs?: boolean; maxNodeExecutions?: number;
   harness?: AgentConfigurationVersion['harness'] } = {}) {
   const f = makeCurrentWorkflowFixture(randomUUID(), options.form ?? 'repeat')
   if (options.harness) {
     for (const configuration of f.configurations) configuration.harness = structuredClone(options.harness)
-  }
-  if (options.intervalEverySeconds !== undefined) {
-    for (const node of f.version.definition.nodes) node.interval = { everySeconds: options.intervalEverySeconds }
-    for (const configuration of f.configurations) {
-      if (configuration.harness.harness !== 'codex') continue
-      configuration.harness.advanced = {
-        ...DEFAULT_CODEX_ADVANCED_CONFIGURATION,
-        ...configuration.harness.advanced,
-        approvalPolicy: 'never',
-      }
-    }
   }
   if (options.handoffs && f.version.definition.repeat) throw new Error('Handoff fixture requires a non-repeat form')
   await db.pool.query(`insert into workspaces(id,record,execution_location,execution_location_identity,location_revision)
@@ -76,7 +64,7 @@ export async function graphFixture(db: GraphTestDatabase, options: { insert?: bo
     const response = await app.inject({ method: 'PUT', url: `/api/management/workspaces/${f.scope.workspaceId}/workflows/${workflowId}/definition`,
       headers: graphHeaders(writer.token), payload: {
         workspaceId: f.scope.workspaceId, workflowId, commandId: randomUUID(), executionSemanticsVersion: 3,
-        expectedRevision: managed.revision, expectedWorkflowVersionId: null,
+        expectedRevision: managed.revision, expectedWorkflowVersionId: null, expectedLocationRevision: 1,
         expectedAgentConfigurationVersionIds: f.version.agentConfigurationVersionIds,
         // A fresh authorable workflow has no saved version yet. Preserve its
         // exact creation stamps; publication assigns the first immutable V3.
@@ -109,7 +97,7 @@ export async function ownedGraph<T>(db: GraphTestDatabase, t: GraphFixture, work
 }
 export async function changeRunState(db: GraphTestDatabase, t: GraphFixture, state: 'running' | 'waiting') {
   return ownedGraph(db, t, (owner) => owner.oneShotConnection().transaction(async (sql) => {
-    const publication = await openRunGraphPublication(sql, t.scope, readPublicProjectionLocked)
+    const publication = await openRunGraphPublication(sql, t.scope)
     await sql.query(`update runs set execution_state=$2,record=jsonb_set(record,'{executionState}',to_jsonb($2::text)) where id=$1`, [t.run.id, state])
     await publishRepeatRunStateLocked(publication, owner)
   }))

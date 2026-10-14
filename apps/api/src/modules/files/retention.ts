@@ -1,5 +1,4 @@
 import type pg from 'pg'
-import { withTransaction } from '../../infrastructure/transaction.js'
 import {
   FileRetentionGetInputSchema, FileRetentionGetResultSchema,
   FileRetentionSaveInputSchema, FileRetentionSaveResultSchema,
@@ -59,12 +58,21 @@ export class FileRetentionService {
   private async read<T>(principal: ManagementPrincipal, source: Source, action: string,
     work: (client: pg.PoolClient) => Promise<T>): Promise<T> {
     return this.audited(principal, source, action, async () => {
-      return withTransaction(this.pool, async (client) => {
+      const client = await this.pool.connect()
+      let releaseError: Error | undefined
+      try {
+        await client.query('begin')
         await this.authorize(client, principal, false)
         await lockFileRetentionOwner(client, principal.id)
         const result = await work(client)
+        await client.query('commit')
         return result
-      })
+      } catch (error) {
+        try { await client.query('rollback') } catch (rollbackError) {
+          releaseError = rollbackError instanceof Error ? rollbackError : new Error('Retention read rollback failed.')
+        }
+        throw error
+      } finally { client.release(releaseError) }
     })
   }
 
@@ -101,7 +109,7 @@ export class FileRetentionService {
         perform: async (client) => {
           await lockFileRetentionOwner(client, principal.id)
           const current = await readFileRetentionPreference(client, principal.id)
-          if (request.expectedRevision !== undefined && current.revision !== request.expectedRevision) {
+          if (current.revision !== request.expectedRevision) {
             throw new DomainError('REVISION_CONFLICT', 'File retention changed. Read the current preference before saving.', 409,
               { expectedRevision: request.expectedRevision, actualRevision: current.revision })
           }

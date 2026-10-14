@@ -1,4 +1,3 @@
-import { errorMessage } from '../../shared/errorMessage.js'
 import { AgentDefaultsSchema, withAdvancedDefaults, CodexSessionCompatibilitySchema, validateHarnessWorkflowCompatibility, type AgentDefaults, type WorkflowDefaults } from '@foreman-code/contracts'
 import { WorkspaceDefaultsUpdateInputSchema, type WorkspaceDefaultsUpdateInput, type ManagementPrincipal } from '@foreman-code/contracts/management'
 import { GeneralSettingsUpdateInputSchema, type GeneralSettingsUpdateInput } from '@foreman-code/contracts/management'
@@ -93,18 +92,9 @@ export class FoundationSettingsManagementService {
   updateWorkspaceDefaults(principal: ManagementPrincipal, source: 'http' | 'mcp', input: WorkspaceDefaultsUpdateInput) {
     requireAuthorization(principal, 'settings:update')
     const accepted = WorkspaceDefaultsUpdateInputSchema.parse(input)
-    let livePrincipal = principal
     return this.commands.execute({ principal, source, operation: 'workspace.defaults.update', commandId: accepted.commandId,
       targetKey: 'workspace-defaults-v1', payload: accepted,
-      authorize: async client => {
-        livePrincipal = await readLiveManagementPrincipal(client, principal.id)
-        requireAuthorization(livePrincipal, 'settings:update')
-      },
-      perform: async client => {
-        const result = await this.settings.updateWorkspaceDefaults(accepted.value, accepted.expectedRevision, client)
-        requireAuthorization(await readLiveManagementPrincipal(client, principal.id), 'settings:update')
-        return result
-      },
+      perform: (client) => this.settings.updateWorkspaceDefaults(accepted.value, accepted.expectedRevision, client),
     })
   }
 
@@ -119,17 +109,12 @@ export class FoundationSettingsManagementService {
   }
 
   updateAgentDefaults(principal: ManagementPrincipal, source: 'http' | 'mcp', input: {
-    commandId: string; expectedRevision?: number | undefined; value: AgentDefaults
+    commandId: string; expectedRevision: number; value: AgentDefaults
   }) {
     requireAuthorization(principal, 'settings:update')
-    let livePrincipal = principal
     return this.commands.execute({
       principal, source, operation: 'agent.defaults.update', commandId: input.commandId,
       targetKey: 'agent-defaults-v1', payload: input,
-      authorize: async client => {
-        livePrincipal = await readLiveManagementPrincipal(client, principal.id)
-        requireAuthorization(livePrincipal, 'settings:update')
-      },
       perform: async (client) => {
         const value = AgentDefaultsSchema.parse(input.value)
         if (this.accountConfigurations) {
@@ -140,7 +125,7 @@ export class FoundationSettingsManagementService {
         }
         for (const role of ['orchestrator', 'coder', 'operator'] as const) assertClaudeFullAccess(value[role].harness)
         const previous = await this.settings.getAgentDefaults(client)
-        if (input.expectedRevision !== undefined && previous.revision !== input.expectedRevision) throw new DomainError('REVISION_CONFLICT', 'Agent defaults changed since they were read.', 409)
+        if (previous.revision !== input.expectedRevision) throw new DomainError('REVISION_CONFLICT', 'Agent defaults changed since they were read.', 409)
         for (const role of ['orchestrator', 'coder', 'operator'] as const) {
           const configuration = value[role].harness
           if (role === 'operator' && configuration.harness === 'claude'
@@ -152,8 +137,8 @@ export class FoundationSettingsManagementService {
             delete value[role].harnessProfileSelection
           }
           if (role === 'operator' && configuration.harness === 'claude' && !value[role].harnessProfileSelection) {
-            const resolved = await this.profiles?.selectionForConfiguration?.(livePrincipal, configuration, client)
-              ?? await this.profiles?.prepareOperatorConfiguration?.(livePrincipal, source, configuration, input.commandId)
+            const resolved = await this.profiles?.selectionForConfiguration?.(principal, configuration, client)
+              ?? await this.profiles?.prepareOperatorConfiguration?.(principal, source, configuration, input.commandId)
             if (resolved) value[role].harnessProfileSelection = resolved
           }
           const selection = value[role].harnessProfileSelection
@@ -164,7 +149,7 @@ export class FoundationSettingsManagementService {
           }
           if (selection) {
             if (!this.profiles) throw new DomainError('HARNESS_PROFILE_SELECTION_UNAVAILABLE', 'Selected host profile validation is not composed.', 503)
-            await this.profiles.validateSelection(livePrincipal, selection, configuration, client)
+            await this.profiles.validateSelection(principal, selection, configuration, client)
             continue
           }
           if (isDeepStrictEqual(withAdvancedDefaults(previous.value[role].harness), withAdvancedDefaults(configuration))) continue
@@ -174,7 +159,7 @@ export class FoundationSettingsManagementService {
             if (configuration.harness === 'codex') CodexSessionCompatibilitySchema.parse({ configuration, requiresResume: true })
           }
           try { await this.harnesses.qualifyConfiguration(configuration) } catch (error) {
-            throw new DomainError('AGENT_DEFAULTS_UNQUALIFIED', `The ${role} template was not saved: ${errorMessage(error, 'Native qualification failed.')}`, 409)
+            throw new DomainError('AGENT_DEFAULTS_UNQUALIFIED', `The ${role} template was not saved: ${error instanceof Error ? error.message : 'Native qualification failed.'}`, 409)
           }
         }
         const operators = this.operators
@@ -185,7 +170,7 @@ export class FoundationSettingsManagementService {
           || !isDeepStrictEqual(previous.value.operator.nativeTools, value.operator.nativeTools)
         if (operatorChanged) {
           // Republishing unchanged references still requires authority over their source workspaces.
-          for (const reference of skills) requireAuthorization(livePrincipal, 'skills:read', { workspaceId: reference.workspaceId })
+          for (const reference of skills) requireAuthorization(principal, 'skills:read', { workspaceId: reference.workspaceId })
           await operatorSkillContent(client, skills, previous.value.operator.assignedSkills)
         }
         const current = operatorChanged ? await operators?.ensureWithClient(client) : undefined
@@ -201,29 +186,19 @@ export class FoundationSettingsManagementService {
             value.operator.nativeTools ?? null,
           )
         }
-        requireAuthorization(await readLiveManagementPrincipal(client, principal.id), 'settings:update')
         return result
       },
     })
   }
 
   updateWorkflowDefaults(principal: ManagementPrincipal, source: 'http' | 'mcp', input: {
-    commandId: string; expectedRevision?: number | undefined; value: WorkflowDefaults
+    commandId: string; expectedRevision: number; value: WorkflowDefaults
   }) {
     requireAuthorization(principal, 'settings:update')
-    let livePrincipal = principal
     return this.commands.execute({
       principal, source, operation: 'workflow.defaults.update', commandId: input.commandId,
       targetKey: 'workflow-defaults-v1', payload: input,
-      authorize: async client => {
-        livePrincipal = await readLiveManagementPrincipal(client, principal.id)
-        requireAuthorization(livePrincipal, 'settings:update')
-      },
-      perform: async client => {
-        const result = await this.settings.updateManagedWorkflowDefaults(client, input.value, input.expectedRevision)
-        requireAuthorization(await readLiveManagementPrincipal(client, principal.id), 'settings:update')
-        return result
-      },
+      perform: (client) => this.settings.updateManagedWorkflowDefaults(client, input.value, input.expectedRevision),
     })
   }
 }

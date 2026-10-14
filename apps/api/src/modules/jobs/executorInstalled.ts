@@ -26,7 +26,6 @@ import type { OCIContainerOwnership } from './executorContainerOwner.js'
 import { assertJobRuntimeEntryContext } from './qualification.js'
 import type { QualifiedJobProfile } from './executor.js'
 import { requireJobGitMounts, verifyJobGitMounts } from './privateGitMounts.js'
-import { ignoreError } from '../diagnostics/ignoredError.js'
 
 export type InstalledJobExecutionHostInput = Omit<RemoteJobExecutionHostPorts, 'supervisor'> & {
   configuration: InstalledRuntimeConfigurationLocation | null
@@ -59,12 +58,6 @@ export function createInstalledJobExecutionPorts(input: InstalledJobExecutionHos
     journal: async () => input.journal })
   const contexts = new Map<string, NonNullable<Awaited<ReturnType<typeof systemInput>>>>()
   return { ...input, supervisor, preparePublication: createVerificationPublication(input.journal),
-    releaseOperation(execution) {
-      admissions.delete(execution.operationId)
-      supervisors.delete(execution.operationId)
-      contexts.delete(execution.operationId)
-      input.releaseOperation?.(execution)
-    },
     async verification(execution) {
       const qualification = await input.journal.qualifiedJobRuntime(execution)
       const result = qualification.result
@@ -96,7 +89,6 @@ export function createInstalledJobExecutionPorts(input: InstalledJobExecutionHos
           const reserve = await reserveVerificationReportSpace(job, signal)
           await input.journal.jobPrepareVerification(job.operationId, { context,
             contextPin: verificationContextPin({ verificationContext: context })!, reserve, finalizedAt: null })
-          contexts.delete(job.operationId)
           await input.prepareOutputs?.(job, signal)
         },
       }
@@ -249,7 +241,7 @@ async function installedSupervisor(input: InstalledJobExecutionHostInput, raw: J
     async attach(argv) {
       const { child, id } = await spawn(argv, 'attachment')
       // Physical closure is also joined by ownership.launchHelpers below.
-      child.once('close', () => { void closeLaunch(id).catch(ignoreError('jobs', 'close job helper launch', { launchId: id })) })
+      child.once('close', () => { void closeLaunch(id).catch(() => {}) })
       return child
     },
     async run(argv, timeoutMs = 30000) {

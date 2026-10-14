@@ -2,18 +2,16 @@ import assert from 'node:assert/strict'
 import { execFile, spawn } from 'node:child_process'
 import { once } from 'node:events'
 import { appendFile, chmod, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises'
-import { homedir } from 'node:os'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { promisify } from 'node:util'
-import { cachedTestFixture, cachedWorkerRelease, testFixtureCacheRoot, workerFixtureInputs } from './test-fixture-cache.mjs'
+import { cachedTestFixture, testFixtureCacheRoot, workerFixtureInputs } from './test-fixture-cache.mjs'
 
 const execute = promisify(execFile)
 
 async function fixtureCache(t) {
-  const cache = join(homedir(), '.cache/foreman-tmp')
-  await mkdir(cache, { recursive: true })
-  const root = await mkdtemp(join(cache, 'test-fixture-cache-'))
+  const root = await mkdtemp(join(tmpdir(), 'test-fixture-cache-'))
   t.after(() => rm(root, { recursive: true, force: true }))
   return root
 }
@@ -24,12 +22,14 @@ test('setup cache persists across invocation roots and respects an explicit cach
   assert.equal(testFixtureCacheRoot({ FOREMAN_CODE_TEST_CACHE_ROOT: 'selected-cache' }), 'selected-cache')
 })
 
-test('Worker output discovers API inputs without registration and rebuilds when their content changes', async t => {
+test('Worker output survives unrelated commits and rebuilds when packaging input content changes', async t => {
   const root = await fixtureCache(t)
   const repository = join(root, 'repository')
   await mkdir(join(repository, 'scripts'), { recursive: true })
   await mkdir(join(repository, 'apps/worker/src'), { recursive: true })
   await mkdir(join(repository, 'apps/api/src'), { recursive: true })
+  await writeFile(join(repository, 'scripts/worker-api-allowlist.json'),
+    JSON.stringify(['apps/api/src/native.ts']))
   await writeFile(join(repository, 'apps/api/src/native.ts'), 'export const native = 1\n')
   await writeFile(join(repository, 'apps/worker/src/worker.mjs'), 'export const worker = 1\n')
   await writeFile(join(repository, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n')
@@ -56,57 +56,10 @@ test('Worker output discovers API inputs without registration and rebuilds when 
   const changed = await output()
   assert.notEqual(changed, first)
   assert.equal(await readFile(join(changed, 'payload'), 'utf8'), 'build 2')
-  await writeFile(join(repository, 'apps/api/src/helper.ts'), 'export const helper = 1\n')
-  const helper = await output()
-  assert.notEqual(helper, changed)
-  assert.equal(await readFile(join(helper, 'payload'), 'utf8'), 'build 3')
   await writeFile(join(repository, 'pnpm-lock.yaml'), 'lockfileVersion: 10\n')
   const dependencies = await output()
-  assert.notEqual(dependencies, helper)
-  assert.equal(await readFile(join(dependencies, 'payload'), 'utf8'), 'build 4')
-})
-
-test('a release is reused when only files it did not bundle changed, and rebuilt when a bundled file changes', async t => {
-  const root = await fixtureCache(t)
-  const repository = join(root, 'repository')
-  await mkdir(join(repository, 'scripts'), { recursive: true })
-  await mkdir(join(repository, 'packages/contracts/src'), { recursive: true })
-  await writeFile(join(repository, 'packages/contracts/src/used.ts'), 'export const used = 1\n')
-  await writeFile(join(repository, 'packages/contracts/src/unused.ts'), 'export const unused = 1\n')
-  const git = async args => (await execute('git', args, { cwd: repository,
-    env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' } })).stdout.trim()
-  await git(['init', '--quiet'])
-  const commit = async () => {
-    await git(['add', '.'])
-    await git(['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',
-      '-c', 'commit.gpgsign=false', 'commit', '--quiet', '--allow-empty', '-m', 'Fixture input'])
-    return git(['rev-parse', 'HEAD'])
-  }
-  let builds = 0
-  const release = async (...identity) => {
-    const head = await commit()
-    const entry = await cachedWorkerRelease(join(root, 'cache'), repository, head, identity, async directory => {
-      builds++
-      await mkdir(join(directory, 'release'))
-      const blob = await git(['rev-parse', `${head}:packages/contracts/src/used.ts`])
-      await writeFile(join(directory, 'release', 'manifest.json'), JSON.stringify({
-        sourceSnapshot: { files: [{ path: 'packages/contracts/src/used.ts', gitBlobSha1: blob }] },
-      }))
-    })
-    return entry
-  }
-  const first = await release('target', 'linux')
-  await writeFile(join(repository, 'packages/contracts/src/unused.ts'), 'export const unused = 2\n')
-  const reused = await release('target', 'linux')
-  assert.notEqual(reused, first)
-  assert.equal(builds, 1)
-  assert.equal(await release('target', 'linux'), reused)
-  assert.equal(builds, 1)
-  await release('other-target', 'linux')
-  assert.equal(builds, 2)
-  await writeFile(join(repository, 'packages/contracts/src/used.ts'), 'export const used = 2\n')
-  await release('target', 'linux')
-  assert.equal(builds, 3)
+  assert.notEqual(dependencies, changed)
+  assert.equal(await readFile(join(dependencies, 'payload'), 'utf8'), 'build 3')
 })
 
 test('unchanged inputs reuse complete output and changed inputs populate separately', async t => {
