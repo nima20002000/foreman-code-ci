@@ -62,8 +62,10 @@ test('acceptance resources reject app URLs and socket overrides and own their na
   const resource = createTestRoot()
   try {
     const url = new URL('/graphql_test_acceptance', testAdminUrl)
-    assert.equal(requireTestServerUrl(url.href).port, '55439')
-    for (const value of ['postgresql://graphql:graphql@127.0.0.1:5432/graphql',
+    assert.equal(requireTestServerUrl(url.href).href, url.href)
+    const alternatePort = new URL(url)
+    alternatePort.port = alternatePort.port === '5432' ? '5433' : '5432'
+    for (const value of [alternatePort.href, 'postgresql://graphql:graphql@127.0.0.1:5432/graphql',
       url.href + '?host=/tmp/app-socket', url.href + '?options=-c%20search_path=public']) {
       assert.throws(() => requireTestServerUrl(value), /dedicated disposable/)
     }
