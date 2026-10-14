@@ -13,8 +13,7 @@ function httpClient(origin, signal, requestTimeoutMs, token, log = console.log) 
     const timeout = AbortSignal.timeout(timeoutMs)
     try {
       const response = await fetch(`${origin}${path}`, { ...options,
-        headers: { origin, ...(options.body ? { 'content-type': 'application/json' } : {}),
-          ...(token ? { authorization: `Bearer ${token}` } : {}) },
+        headers: { origin, 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
         signal: AbortSignal.any([signal, timeout]) })
       const body = await response.text()
       if (!response.ok) throw new Error(`${method} ${path}: HTTP ${response.status}: ${body}`)
@@ -52,7 +51,7 @@ function smokeTargets(computers) {
 }
 
 export async function runInstallCiSmoke({ origin, workspaceId, commit, token, probeDurationMs = 30_000,
-  timeoutMs = 240_000, requestTimeoutMs = 5000, admissionTimeoutMs = 60_000, pollMs = 1000, log = console.log }) {
+  timeoutMs = 165_000, requestTimeoutMs = 5000, admissionTimeoutMs = 60_000, pollMs = 1000, log = console.log }) {
   const controller = new AbortController()
   const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(timeoutMs)])
   const request = httpClient(origin, signal, requestTimeoutMs, token, log)
@@ -78,15 +77,7 @@ export async function runInstallCiSmoke({ origin, workspaceId, commit, token, pr
   }
   const wait = async (ticketId, computer) => {
     while (true) {
-      let result
-      try {
-        result = await request(`${root}/${ticketId}`, { step: `ticket ${ticketId}` })
-      } catch (error) {
-        // A slow status read right after a restart is retried; the smoke deadline still bounds the wait.
-        if (signal.aborted || !/timed out/.test(error.message)) throw error
-        log(error.message)
-        continue
-      }
+      const result = await request(`${root}/${ticketId}`, { step: `ticket ${ticketId}` })
       if (result.run.state === 'passed' && result.run.exitCode === 0) {
         if (computer) {
           if (!isDeepStrictEqual(result.run.computer?.hostRef, computer.hostRef)) {

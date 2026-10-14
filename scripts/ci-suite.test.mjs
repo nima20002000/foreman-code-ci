@@ -121,6 +121,7 @@ if (process.argv[2] === 'rev-parse') console.log('false')
       BASE_COMMIT: selection?.baseCommit ?? '',
       CI_HOST_RUNNER: hostRunner ? '1' : '0',
       FOREMAN_CODE_CI_CONTRACTS_CACHE: selection?.contractsCache ? '.logs/contracts-cache' : '',
+      FOREMAN_CODE_CI_TYPECHECK_CACHE: '', FOREMAN_CODE_CI_TYPECHECK_CACHE_ACTIVE: '',
       CONTRACTS_READY: String(selection?.contractsReady ?? false),
       CI_USER_SYSTEMD: '0', CI_EXPECTED_DURATION_MS: '', CI_WATCHDOG_ACTIVE: '', CI_PROGRESS_FILE: '',
       PATH: installedClis ? `${directory}${delimiter}${process.env.PATH}` : directory,
@@ -131,6 +132,19 @@ if (process.argv[2] === 'rev-parse') console.log('false')
 }
 
 const contractsBuild = ['--filter', '@foreman-code/contracts', 'build']
+test('suite fixtures propagate compiler failures with an ambient typecheck cache', t => {
+  const key = 'FOREMAN_CODE_CI_TYPECHECK_CACHE'
+  const previous = process.env[key]
+  t.after(() => {
+    if (previous === undefined) delete process.env[key]
+    else process.env[key] = previous
+  })
+  process.env[key] = join(tmpdir(), 'outer-ci-typecheck-cache')
+  const { result, calls } = runSuite(t, 'typecheck-api', 'build')
+  assert.equal(result.status, 9)
+  assert.deepEqual(calls, [contractsBuild])
+})
+
 test('cloud suites forward an explicit base to selection without fetching the default branch', t => {
   const baseCommit = 'a'.repeat(40)
   const { result, calls } = runSuite(t, 'typecheck-api', '', 'affected', '', true,
