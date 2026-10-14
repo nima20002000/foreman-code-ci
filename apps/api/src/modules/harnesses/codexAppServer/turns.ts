@@ -1,6 +1,5 @@
 /** Turn submission, streaming, steering, cancellation, history and native interaction responses. */
 import { runtimeTimingPoint } from '../../diagnostics/runtimeTiming.js'
-import { DEVICE_HISTORY_PAGE_BYTES } from '@foreman-code/contracts/device-application'
 import { isWorkflowStart } from '../sessionStart.js'
 import { SessionPreferencesSchema, type ApprovalResponseOption, type NativeHarnessEvent, type NativeSessionReference,
   type PendingNativeInteraction, isSessionNativeInteraction } from '@foreman-code/contracts'
@@ -186,18 +185,9 @@ export abstract class CodexManagerTurns extends CodexManagerControls {
         await input.onSettingsApplied?.()
         while (!signal?.aborted && !subscriberSignal.aborted) {
           const firstSequence = runtime.events[0]?.sequence ?? runtime.sequence
-          if (cursor < firstSequence) {
-            await input.onEventsSkipped?.({ fromSequence: cursor, toSequence: firstSequence - 1, reason: 'retention' })
-            cursor = firstSequence
-            runtime.streamCursor = cursor
-            continue
-          }
+          if (cursor < firstSequence) throw new HarnessExecutionError('NATIVE_HISTORY_GAP', 'The in-memory event window was exceeded; reload durable history.')
           const available = runtime.events.filter((event) => event.sequence >= cursor)
-          for (const event of available) {
-            cursor = event.sequence + 1
-            runtime.streamCursor = cursor
-            yield structuredClone(event)
-          }
+          for (const event of available) { cursor = event.sequence + 1; yield structuredClone(event); runtime.streamCursor = cursor }
           // The consumer can suspend at yield while more events (including terminal
           // events) arrive. Drain them before returning or registering a waiter.
           if (runtime.events.some((event) => event.sequence >= cursor)) continue
@@ -631,26 +621,5 @@ export abstract class CodexManagerTurns extends CodexManagerControls {
           }
         : history
     })
-  }
-
-  async reconcileHistoryPage(session: NativeSessionReference, correlationId: string,
-    afterSequence: number, signal?: AbortSignal): Promise<NativeHistory> {
-    const history = await this.reconcile(session, correlationId, signal)
-    const runtime = this.requireRuntime(session)
-    const events: NativeHarnessEvent[] = []
-    let bytes = 0
-    for (let index = 0; index < runtime.events.length; index++) {
-      const event = runtime.events[index]!
-      if (event.sequence <= afterSequence) continue
-      const size = runtime.eventSizes[index]!
-      if (events.length && (events.length >= 1024 || bytes + size > DEVICE_HISTORY_PAGE_BYTES)) break
-      events.push(event)
-      bytes += size
-    }
-    // The recent snapshot can contain a protected terminal frame separated by a gap.
-    // Cursor pages use the contiguous retained window instead.
-    delete history.gap
-    return { ...history, events: structuredClone(events),
-      firstRetainedSequence: runtime.events[0]?.sequence ?? runtime.sequence, nextSequence: runtime.sequence }
   }
 }

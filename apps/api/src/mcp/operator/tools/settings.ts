@@ -70,12 +70,12 @@ export const settingsTools = [
     name: 'operator_chat_create',
     requires: [['operator_chat:write', 'global']],
     enabled: s => !!s.operatorChat,
-    description: 'Create an owner-bound Operator conversation using the current saved Operator defaults. commandId is optional and generated when omitted. Supply an ID and reuse it with the same title after a lost response to recover the same conversation, even if defaults have changed. Reusing it with a different title is a conflict. Use operator_chat_list to rediscover owned conversations. Requires global operator_chat:write.',
-    inputSchema: CreateOperatorConversationRequestSchema,
+    description: 'Create an owner-bound Operator conversation using the current saved Operator defaults. Supply a commandId and reuse it with the same title after a lost response to recover the same conversation, even if defaults have changed. Reusing it with a different title is a conflict. Use operator_chat_list to rediscover owned conversations. Requires global operator_chat:write.',
+    inputSchema: CreateOperatorConversationRequestSchema.required({ commandId: true }),
     outputSchema: CreateOperatorConversationResponseSchema,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     run: async (context, { commandId, title }) => ({
-    conversation: await context.services.operatorChat!.create(context.principal, title, commandId ? { commandId, source: 'mcp' } : undefined),
+    conversation: await context.services.operatorChat!.create(context.principal, title, { commandId, source: 'mcp' }),
   }),
   }),
   defineOperatorTool({

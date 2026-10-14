@@ -27,9 +27,7 @@ import { assertRepeatExecution, repeatConflict, repeatTickIndex, type RepeatNode
 import type { RepeatRunRepository } from './repeatPostgres.js'
 import { buildWorkHandoffGraph } from './workHandoffGraph.js'
 import { workHandoffNodeAction } from './workHandoffNode.js'
-import { WorkExecutionFailure } from './workExecutionFailure.js'
 import { ExecutionLimiter } from './limiter.js'
-import { ZodError } from 'zod'
 import { componentLogger } from '../diagnostics/logger.js'
 import { logIgnoredError } from '../diagnostics/ignoredError.js'
 
@@ -212,14 +210,6 @@ export function repeatNativeObserver(context: RepeatNativeObserverContext):
       }
     }
     await waitForApprovals()
-    execution = await reload()
-    if (execution.state === 'completed') {
-      await native.observeExact({ ...common, execution, store, signal })
-      return
-    }
-    // Preparation validates the selected profile before waiting for native worker capacity.
-    const placement = await context.preparePlacement?.(execution)
-    check()
     await context.admission.run(run.id, signal, async () => {
       execution = await reload() // Stop or another exact observation may win while queued.
       if (execution.state === 'completed') {
@@ -238,6 +228,7 @@ export function repeatNativeObserver(context: RepeatNativeObserverContext):
       }
       assertNativeWorkflowConfiguration(configuration.harness, run.approval,
         run.approval.handler === 'orchestrator' && configuration.agentId === run.approval.designatedOrchestratorAgentId)
+      const placement = await context.preparePlacement?.(execution)
       const validate = async () => {
         check()
         await locations.revalidateRunAuthorization(run.authorizationPrincipalId, run.workspaceId, run.workflowId, owner.client)
@@ -332,9 +323,7 @@ export function repeatTerminalNormalizer(version: WorkflowVersionV3, scope: Repe
  * or permission to restart. The existing runtime persists its checkpoint/wait state. */
 export function repeatSettlementPending(error: unknown): boolean {
   return typeof error === 'object' && error !== null && 'code' in error
-    && ['APPROVAL_SETTLEMENT_PENDING', 'REPEAT_BOUNDARY_PENDING', 'REPEAT_CLEANUP_PENDING',
-      'WORK_ACTIVATIONS_UNRESOLVED', 'WORK_REQUEST_UNRESOLVED', 'WORK_DENIAL_CONTINUATION_UNRESOLVED',
-    ].includes(String(error.code))
+    && ['APPROVAL_SETTLEMENT_PENDING', 'REPEAT_BOUNDARY_PENDING', 'REPEAT_CLEANUP_PENDING'].includes(String(error.code))
 }
 
 /** Adapter to the existing Run lifecycle writers/coordinator. These operations are
@@ -346,7 +335,6 @@ export interface RepeatRuntimeLifecycle {
   currentState(): Promise<{ executionState: string; stopRequested: boolean; cleanupPending?: boolean }>
   persistWait(snapshot: import('./repeatGraph.js').RepeatCheckpoint): Promise<boolean>
   persistDirectionWait?(): Promise<void>
-  recordExecutionFailure?(executionId: string, failure: ExecutionResult): Promise<void>
   /** Persist cleanup intent BEFORE native cancellation; false retains uncertainty. */
   cancelNativeAndRequestCleanup(): Promise<boolean>
   settleRun(stopped: boolean, interrupted: boolean): Promise<void>
@@ -357,47 +345,6 @@ export interface RepeatRuntimeLifecycle {
 }
 
 const preparationFailureCodes = new Set(['SOURCE_MATERIALIZATION_UNCERTAIN', 'HARNESS_PROFILE_UNAVAILABLE'])
-
-function isRuntimeFailure(error: unknown): boolean {
-  if (repeatSettlementPending(error) || isGraphInterrupt(error)) return false
-  if (error instanceof ZodError || (error instanceof Error && error.message === 'GRAPH_JSON_LIMIT')) return true
-  if (typeof error !== 'object' || !error || !('code' in error)) return false
-  const code = String(error.code)
-  return preparationFailureCodes.has(code) || code.startsWith('REPEAT_') || code.startsWith('AUTH_') || [
-    'WORKFLOW_SELECTED_EXECUTION_FAILED', 'WORKFLOW_UNRESOLVED', 'WORKFLOW_RESULT_TOO_LARGE', 'EXECUTION_OCCURRENCE_CONFLICT',
-    'WORKFLOW_EXECUTION_BUDGET_EXHAUSTED', 'JOB_PREPARATION_TIMEOUT',
-    'EXECUTION_START_INTERRUPTED',
-    'RUN_PIN_CONFLICT', 'ACCESS_DENIED', 'GRAPH_SECURITY_UNQUALIFIED', 'GRAPH_STOP_CONFLICT', 'GRAPH_TERMINAL_CONFLICT',
-    // Launch preflight refusals happen before any native session exists.
-    'APP_MCP_PREFLIGHT_FAILED', 'APP_MCP_PREFLIGHT_TIMEOUT',
-    'MCP_INSPECTION_CONTEXT_MISMATCH', 'HARNESS_INSPECTOR_UNAVAILABLE',
-    'WORKER_EXECUTION_IDENTITY_INVALID', 'HARNESS_CONFIGURATION_MISMATCH',
-    'WORKER_NATIVE_OUTPUT_PROTECTION_FAILED', 'WORKFLOW_ARTIFACT_OUTPUTS_CONFLICT',
-    'WORKFLOW_ARTIFACT_SOURCE_CONFLICT', 'WORKFLOW_TERMINAL_SOURCE_CONFLICT',
-    'WORK_SELECTED_EXECUTION_FAILED', 'WORK_RUN_EXECUTION_BUDGET_EXHAUSTED',
-    'WORK_POLICY_PIN_CONFLICT', 'WORK_ACTIVATION_REPLAY_CONFLICT', 'WORK_ACTIVATION_PIN_CONFLICT',
-    'WORK_TERMINAL_REPLAY_CONFLICT', 'WORK_RETRY_ACTIVATION_CONFLICT', 'WORK_RETRY_NOT_ALLOWED',
-    'WORK_RESULT_RECEIPT_MISSING', 'WORK_SOURCE_RESULT_CONFLICT', 'WORK_SOURCE_PIN_CONFLICT',
-    'WORK_SOURCE_ACTIVATION_CONFLICT', 'WORK_COUNTER_PIN_CONFLICT',
-    'WORK_REQUEST_OUTCOME_UNDECLARED', 'WORK_REQUEST_ROUTE_FORBIDDEN', 'WORK_REQUEST_REPLAY_CONFLICT',
-    'WORK_RETURN_REQUEST_MISSING', 'WORK_RETURN_ANCESTRY_CONFLICT', 'WORK_RETURN_RESULT_CONFLICT',
-    'WORK_RETURN_SOURCE_PIN_CONFLICT', 'WORK_RETURN_REQUESTER_CONFLICT',
-    'WORK_RETURN_REPLAY_CONFLICT', 'WORK_JOIN_ACTIVATION_CONFLICT', 'WORK_JOIN_SOURCE_CONFLICT',
-    'WORK_FINISH_OUTCOME_REQUIRED', 'WORK_UNRESOLVED_CAUSE_CONFLICT', 'WORK_UNRESOLVED_RECEIPT_CONFLICT',
-    'WORK_UNRESOLVED_RECEIPT_MISSING', 'WORK_UNRESOLVED_REPLAY_CONFLICT',
-    'WORK_DIRECTION_WAIT_WRITER_REQUIRED', 'WORK_FAILURE_WRITER_REQUIRED',
-    'WORKFLOW_NATIVE_APPROVAL_UNHANDLED',
-    'WORK_CHECKPOINT_ACTIVATION_MISSING', 'WORK_SUCCESSOR_DUPLICATE', 'WORK_HANDOFF_DELIVERY_TOO_LARGE',
-  ].includes(code)
-}
-
-function runtimeFailureResult(error: unknown): ExecutionResult | undefined {
-  if (error instanceof WorkExecutionFailure) return error.result
-  if (!(error instanceof DomainError)) return undefined
-  if (!preparationFailureCodes.has(error.code) && !['WORKFLOW_EXECUTION_BUDGET_EXHAUSTED', 'JOB_PREPARATION_TIMEOUT',
-    'WORK_RUN_EXECUTION_BUDGET_EXHAUSTED', 'EXECUTION_START_INTERRUPTED'].includes(error.code)) return undefined
-  return { outcome: 'failed', error: { code: error.code, message: error.message, retryable: false } }
-}
 
 /** Re-activates interval nodes beside the graph: one loop per node admits a check when it is due
  * and observes it through the same native driver without using graph parallelism slots. Each loop
@@ -446,44 +393,6 @@ export function startIntervalChecks(input: {
   return () => stopped.abort()
 }
 
-async function drainRuntimeTasks(tasks: Set<Promise<unknown>>, signal: AbortSignal,
-  options: { cleanup: boolean }): Promise<void> {
-  const { withCleanupDeadline } = await import('../interactions/cleanup.js')
-  const finished = beginRuntimeTiming('engine', 'wrapper.drain', { count: tasks.size })
-  try {
-    const wait = async () => { while (tasks.size) await Promise.allSettled([...tasks]) }
-    if (options.cleanup) return await withCleanupDeadline(wait)
-    // Healthy siblings retain their active budgets; the cleanup deadline applies
-    // only after cancellation/restart, not while observing their original work.
-    let abort: (() => void) | undefined
-    try {
-      await Promise.race([wait(), new Promise<never>((_resolve, reject) => {
-        abort = () => reject(signal.reason)
-        signal.addEventListener('abort', abort, { once: true })
-        if (signal.aborted) abort()
-      })])
-    } finally { if (abort) signal.removeEventListener('abort', abort) }
-  } finally { finished() }
-}
-
-/** An idle loop Run retains its owner and scheduler until Stop, failure or restart. */
-async function waitForIntervalRun(input: Parameters<typeof startIntervalChecks>[0] & {
-  currentState: RepeatRuntimeLifecycle['currentState']
-}): Promise<void> {
-  const stopChecks = startIntervalChecks(input)
-  try {
-    for (;;) {
-      input.signal.throwIfAborted()
-      const current = await input.currentState()
-      if (current.stopRequested || current.cleanupPending) {
-        throw new DomainError('GRAPH_STOP_CONFLICT', 'The Run has a Stop or cleanup request.', 409)
-      }
-      if (current.executionState !== 'running') return
-      await delay(1_000, undefined, { signal: input.signal })
-    }
-  } finally { stopChecks() }
-}
-
 /** Executes the one graph on the existing Run thread. Settlement retries drain
  * wrappers and re-enter the same checkpoint; business progression stays inside
  * guarded graph edges. The shared engine owns Run ownership/admission,
@@ -502,6 +411,9 @@ export async function executeRepeatRuntime(input: {
   configuredParallelism?: number
 }): Promise<void> {
   const { buildRepeatGraph } = await import('./repeatGraph.js')
+  const { isGraphInterrupt } = await import('@langchain/langgraph')
+  const { withCleanupDeadline } = await import('../interactions/cleanup.js')
+  const { ZodError } = await import('zod')
   const failed = new AbortController(), signal = AbortSignal.any([input.signal, failed.signal])
   const bookkeeping = <T>(work: () => Promise<T>) => retryDatabaseTimeout(work, {
     signal, check: () => input.owner.assertOwned(),
@@ -513,15 +425,70 @@ export async function executeRepeatRuntime(input: {
     () => input.lifecycle.requestCleanup(failure), { check: () => input.owner.assertOwned() })
   const tasks = new Set<Promise<unknown>>()
   let firstFailure: unknown, preflightComplete = false, cancellation: Promise<boolean> | undefined
+  const definitive = (error: unknown): boolean => {
+    if (repeatSettlementPending(error) || isGraphInterrupt(error)) return false
+    if (error instanceof ZodError || (error instanceof Error && error.message === 'GRAPH_JSON_LIMIT')) return true
+    if (typeof error !== 'object' || !error || !('code' in error)) return false
+    const code = String(error.code)
+    return preparationFailureCodes.has(code) || code.startsWith('REPEAT_') || code.startsWith('AUTH_') || [
+      'WORKFLOW_SELECTED_EXECUTION_FAILED', 'WORKFLOW_UNRESOLVED', 'WORKFLOW_RESULT_TOO_LARGE', 'EXECUTION_OCCURRENCE_CONFLICT',
+      'WORKFLOW_EXECUTION_BUDGET_EXHAUSTED', 'JOB_PREPARATION_TIMEOUT',
+      'EXECUTION_START_INTERRUPTED',
+      'RUN_PIN_CONFLICT', 'ACCESS_DENIED', 'GRAPH_SECURITY_UNQUALIFIED', 'GRAPH_STOP_CONFLICT', 'GRAPH_TERMINAL_CONFLICT',
+      // Launch preflight refusals happen before any native session exists.
+      'APP_MCP_PREFLIGHT_FAILED', 'APP_MCP_PREFLIGHT_TIMEOUT',
+      'MCP_INSPECTION_CONTEXT_MISMATCH', 'HARNESS_INSPECTOR_UNAVAILABLE',
+      'WORKER_EXECUTION_IDENTITY_INVALID', 'HARNESS_CONFIGURATION_MISMATCH',
+      'WORKER_NATIVE_OUTPUT_PROTECTION_FAILED', 'WORKFLOW_ARTIFACT_OUTPUTS_CONFLICT',
+      'WORKFLOW_ARTIFACT_SOURCE_CONFLICT', 'WORKFLOW_TERMINAL_SOURCE_CONFLICT',
+      'WORK_SELECTED_EXECUTION_FAILED', 'WORK_RUN_EXECUTION_BUDGET_EXHAUSTED',
+      'WORK_POLICY_PIN_CONFLICT', 'WORK_ACTIVATION_REPLAY_CONFLICT', 'WORK_ACTIVATION_PIN_CONFLICT',
+      'WORK_TERMINAL_REPLAY_CONFLICT', 'WORK_RETRY_ACTIVATION_CONFLICT', 'WORK_RETRY_NOT_ALLOWED',
+      'WORK_RESULT_RECEIPT_MISSING', 'WORK_SOURCE_RESULT_CONFLICT', 'WORK_SOURCE_PIN_CONFLICT',
+      'WORK_SOURCE_ACTIVATION_CONFLICT', 'WORK_COUNTER_PIN_CONFLICT',
+      'WORK_REQUEST_OUTCOME_UNDECLARED', 'WORK_REQUEST_ROUTE_FORBIDDEN', 'WORK_REQUEST_REPLAY_CONFLICT',
+      'WORK_RETURN_REQUEST_MISSING', 'WORK_RETURN_ANCESTRY_CONFLICT', 'WORK_RETURN_RESULT_CONFLICT',
+      'WORK_RETURN_SOURCE_PIN_CONFLICT', 'WORK_RETURN_REQUESTER_CONFLICT',
+      'WORK_RETURN_REPLAY_CONFLICT', 'WORK_JOIN_ACTIVATION_CONFLICT', 'WORK_JOIN_SOURCE_CONFLICT',
+      'WORK_FINISH_OUTCOME_REQUIRED', 'WORK_UNRESOLVED_CAUSE_CONFLICT', 'WORK_UNRESOLVED_RECEIPT_CONFLICT',
+      'WORK_UNRESOLVED_RECEIPT_MISSING', 'WORK_UNRESOLVED_REPLAY_CONFLICT',
+      'WORK_ACTIVATIONS_UNRESOLVED', 'WORK_DENIAL_CONTINUATION_UNRESOLVED', 'WORK_REQUEST_UNRESOLVED',
+      'WORK_DIRECTION_WAIT_WRITER_REQUIRED',
+      'WORKFLOW_NATIVE_APPROVAL_UNHANDLED',
+      'WORK_CHECKPOINT_ACTIVATION_MISSING', 'WORK_SUCCESSOR_DUPLICATE', 'WORK_HANDOFF_DELIVERY_TOO_LARGE',
+    ].includes(code)
+  }
+  const failureResult = (error: unknown): ExecutionResult | undefined => {
+    if (!(error instanceof DomainError)) return undefined
+    if (!preparationFailureCodes.has(error.code) && !['WORKFLOW_EXECUTION_BUDGET_EXHAUSTED', 'JOB_PREPARATION_TIMEOUT',
+      'WORK_RUN_EXECUTION_BUDGET_EXHAUSTED', 'EXECUTION_START_INTERRUPTED'].includes(error.code)) return undefined
+    return { outcome: 'failed', error: { code: error.code, message: error.message, retryable: false } }
+  }
   const cancel = () => cancellation ??= input.lifecycle.cancelNativeAndRequestCleanup()
-  const drain = (cleanup = false) => drainRuntimeTasks(tasks, signal, { cleanup })
+  const drain = async (cleanup = false) => {
+    const finished = beginRuntimeTiming('engine', 'wrapper.drain', { count: tasks.size })
+    try {
+      const wait = async () => { while (tasks.size) await Promise.allSettled([...tasks]) }
+      if (cleanup) return await withCleanupDeadline(wait)
+      // Healthy siblings retain their active budgets; the cleanup deadline applies
+      // only after cancellation/restart, not while observing their original work.
+      let abort: (() => void) | undefined
+      try {
+        await Promise.race([wait(), new Promise<never>((_resolve, reject) => {
+          abort = () => reject(signal.reason)
+          signal.addEventListener('abort', abort, { once: true })
+          if (signal.aborted) abort()
+        })])
+      } finally { if (abort) signal.removeEventListener('abort', abort) }
+    } finally { finished() }
+  }
   const track = (task: Promise<unknown>) => {
       tasks.add(task)
       void task.then(() => { tasks.delete(task) }, (error: unknown) => {
         tasks.delete(task)
-        if (!(input.signal.reason instanceof DomainError && input.signal.reason.code === 'ENGINE_RESTART') && isRuntimeFailure(error)) {
+        if (!(input.signal.reason instanceof DomainError && input.signal.reason.code === 'ENGINE_RESTART') && definitive(error)) {
           firstFailure ??= error
-          const cleanup = requestCleanup(runtimeFailureResult(firstFailure)).then(() => {
+          const cleanup = requestCleanup(failureResult(firstFailure)).then(() => {
             failed.abort(error)
             return cancel()
           })
@@ -539,22 +506,8 @@ export async function executeRepeatRuntime(input: {
   const work = input.version.definition.handoffs ? buildWorkHandoffGraph({
     runId: input.runId, version: input.version, checkpointer: input.checkpointer, signal, track,
     port: { ensureEntryActivation: () => input.store.ensureWorkEntry(),
-      executeActivation: async activationId => {
-        try {
-          return await workHandoffNodeAction({ version: input.version, store: input.store,
-            driver: input.driver, limiter, signal })(activationId)
-        } catch (error) {
-          if (!(error instanceof WorkExecutionFailure)) throw error
-          const executionId = error.pendingExecutionId
-          if (executionId) {
-            const recordFailure = input.lifecycle.recordExecutionFailure?.bind(input.lifecycle)
-            if (!recordFailure) throw new DomainError('WORK_FAILURE_WRITER_REQUIRED',
-              'A handoff launch failure requires its persisted execution cause.', 409)
-            await bookkeeping(() => recordFailure(executionId, error.result))
-          }
-          return []
-        }
-      },
+      executeActivation: workHandoffNodeAction({ version: input.version, store: input.store,
+        driver: input.driver, limiter, signal }),
     },
   }) : null
   const repeat = work ? null : buildRepeatGraph({ ...input, signal, track, limiter })
@@ -602,26 +555,17 @@ export async function executeRepeatRuntime(input: {
         }
         await drain()
         signal.throwIfAborted()
+        if (firstFailure) throw firstFailure
         if (await bookkeeping(async () => input.lifecycle.persistWait(await readCheckpoint()))) return
-        if (!work && firstFailure) throw firstFailure
-        let idle = input.version.definition.nodes.some(node => node.kind !== 'job' && node.interval)
         if (work) {
-          const completion = await bookkeeping(() => input.store.completeWorkRun())
-          idle = completion === 'idle'
-          if (completion === 'needs_direction') {
+          if (await bookkeeping(() => input.store.completeWorkRun()) === 'needs_direction') {
             if (!input.lifecycle.persistDirectionWait) throw new DomainError('WORK_DIRECTION_WAIT_WRITER_REQUIRED',
               'Unresolved work requires the durable workflow direction-wait writer.', 409)
             await bookkeeping(() => input.lifecycle.persistDirectionWait!())
             return
           }
         }
-        else if (!idle) await timeRuntimeOperation('engine', 'run.settle', () => bookkeeping(() => input.store.completeRun()))
-        if (idle) {
-          await waitForIntervalRun({ version: input.version, store: input.store, driver: input.driver,
-            signal, track, currentState: readCurrentState })
-          await drain()
-          return
-        }
+        else await timeRuntimeOperation('engine', 'run.settle', () => bookkeeping(() => input.store.completeRun()))
         await bookkeeping(() => input.lifecycle.requestCleanup())
         await input.lifecycle.finishNative()
         await bookkeeping(() => input.lifecycle.finishCleanup())
@@ -658,7 +602,7 @@ export async function executeRepeatRuntime(input: {
     }
     const current = await readCurrentState()
     if (current.executionState === 'completed') throw error // immutable terminal, cleanup may still be pending
-    const terminalFailure = !preflightComplete || isRuntimeFailure(error) || input.signal.aborted || current.stopRequested
+    const terminalFailure = !preflightComplete || !!firstFailure || definitive(error) || input.signal.aborted || current.stopRequested
     if (!terminalFailure) {
       await drain()
       if ((isGraphInterrupt(error) || repeatSettlementPending(error))
@@ -667,7 +611,7 @@ export async function executeRepeatRuntime(input: {
       // The owning engine may retry the same checkpoint, never initial state.
       throw error
     }
-    await requestCleanup(runtimeFailureResult(firstFailure ?? error))
+    await requestCleanup(failureResult(firstFailure ?? error))
     failed.abort(error)
     const closing = cancel()
     let drained = false

@@ -1,4 +1,3 @@
-import { optionalCommandId } from './management/commands.js'
 import { z } from 'zod'
 import { DeviceProvisioningTargetSchema } from './deviceResources.js'
 import { IdSchema } from './schemaPrimitives.js'
@@ -37,7 +36,7 @@ export const SyncChannelRequestSchema = z.object({
 export const ComputerSyncReadInputSchema = z.object({ target: DeviceProvisioningTargetSchema }).strict()
 export const ComputerSyncUpdateInputSchema = ComputerSyncReadInputSchema.extend({
   workspaceId: IdSchema, enabled: z.boolean(), expectedRevision: z.number().int().nonnegative().optional().describe('Omit for last write wins; supply to reject a stale revision.'),
-  commandId: optionalCommandId(z.string().min(8).max(200)),
+  commandId: z.string().min(8).max(200),
 }).strict()
 export const ComputerSyncStatusSchema = z.object({
   target: DeviceProvisioningTargetSchema,
