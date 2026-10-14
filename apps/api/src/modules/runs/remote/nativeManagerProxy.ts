@@ -55,8 +55,6 @@ export class RemoteNativeSessionManager implements NativeHarnessSessionManager {
     value: z.infer<typeof RemoteNativeHistorySchema>
     receipt: RemoteOperationReceipt
     observedAt: number
-    afterSequence: number
-    page: z.infer<typeof DeviceHistoryPageSchema>
   } | undefined
   private preferences: SessionPreferences | undefined
   private context: ContextSnapshot | null = null
@@ -261,21 +259,13 @@ export class RemoteNativeSessionManager implements NativeHarnessSessionManager {
     streaming: while (true) {
       signal?.throwIfAborted()
       const requestedSequence = sequence
-      const cached: RemoteNativeSessionManager['streamHistory'] = this.streamHistory
-      const canReuse: boolean = cached !== undefined && cached.afterSequence === sequence
-        && Date.now() - cached.observedAt < 30_000 && isDeepStrictEqual(cached.receipt, this.receipt)
-      const observedAt: number = canReuse && cached ? cached.observedAt : Date.now()
-      const value: z.infer<typeof HistoryResponseSchema> = canReuse && cached
-        ? { history: cached.value, status: { status: 'known' as const, receipt: cached.receipt },
-          page: cached.page, context: this.context }
-        : await this.historyResponse(await this.request('history', { afterSequence: sequence,
-          correlationId: input.clientCorrelationId }, signal), signal)
-      const receipt: RemoteOperationReceipt = canReuse && cached ? cached.receipt : await this.status(value.status)
-      this.assertHistoryIdentity(value.history, session, input.clientCorrelationId, receipt)
+      const observedAt = Date.now()
+      const value = await this.historyResponse(await this.request('history', { afterSequence: sequence,
+        correlationId: input.clientCorrelationId }, signal), signal)
+      const receipt = await this.status(value.status)
       const retainedFloor = value.history.firstRetainedSequence ?? 0
-      if (sequence + 1 < retainedFloor) {
-        await input.onEventsSkipped?.({ fromSequence: sequence + 1, toSequence: retainedFloor - 1, reason: 'retention' })
-        sequence = retainedFloor - 1
+      if (value.history.gap || sequence + 1 < retainedFloor) {
+        throw new HarnessExecutionError('NATIVE_HISTORY_GAP', 'Remote native events are unavailable; reload durable history.')
       }
       const firstStarted = value.history.events.find(event => event.sequence > sequence
         && event.type === 'turn.started' && event.payload.clientCorrelationId === input.clientCorrelationId)
@@ -289,24 +279,16 @@ export class RemoteNativeSessionManager implements NativeHarnessSessionManager {
         providerId = submittedId
         submitted = true
       }
-      this.streamHistory = { value: value.history, receipt, observedAt, afterSequence: sequence, page: value.page }
+      this.streamHistory = { value: value.history, receipt, observedAt }
       try {
         for (const event of value.history.events) {
           if (event.sequence <= sequence) continue
           // Publication can outlast the Worker's physical observation window.
-          if (Date.now() - observedAt >= 30_000 || !isDeepStrictEqual(receipt, this.receipt)
-            || this.streamHistory?.value !== value.history) continue streaming
+          if (Date.now() - observedAt >= 30_000 || !isDeepStrictEqual(receipt, this.receipt)) continue streaming
           if (event.sequence !== sequence + 1) {
-            const gap = value.history.gap
-            if (!gap || gap.fromSequence > sequence + 1 || gap.toSequence !== event.sequence - 1) {
-              throw new HarnessExecutionError('NATIVE_HISTORY_GAP', 'Remote native event sequences are discontinuous.')
-            }
-            await input.onEventsSkipped?.({ ...gap, fromSequence: sequence + 1 })
-            sequence = gap.toSequence
-            if (Date.now() - observedAt >= 30_000 || !isDeepStrictEqual(receipt, this.receipt)) continue streaming
+            throw new HarnessExecutionError('NATIVE_HISTORY_GAP', 'Remote native event sequences are discontinuous.')
           }
           sequence = event.sequence
-          this.streamHistory!.afterSequence = sequence
           // A caller may refresh history between yields. Use its current original
           // receipt; the Worker still verifies this exact event in that history.
           const currentReceipt = this.receipt!
@@ -332,14 +314,7 @@ export class RemoteNativeSessionManager implements NativeHarnessSessionManager {
           yield event
         }
       } finally {
-        // A caller can refresh the page while publication is suspended at yield.
-        if (this.streamHistory?.value === value.history) this.streamHistory = undefined
-      }
-      const gap = value.history.gap
-      if (gap && gap.fromSequence <= sequence + 1 && gap.toSequence >= sequence + 1
-        && gap.toSequence === value.page.nextAfterSequence) {
-        await input.onEventsSkipped?.({ ...gap, fromSequence: sequence + 1 })
-        sequence = gap.toSequence
+        this.streamHistory = undefined
       }
       const continuationMatches = value.page.nextAfterSequence === sequence
       const continuationAdvances = !value.page.hasMore || sequence > requestedSequence
@@ -352,30 +327,6 @@ export class RemoteNativeSessionManager implements NativeHarnessSessionManager {
       if (value.history.terminalTurn?.correlationId === input.clientCorrelationId || receipt.phase === 'confirmed_terminal') return
       if (receipt.phase === 'uncertain') throw new Error('Original remote execution requires reconciliation')
       await delay(100, undefined, { signal })
-    }
-  }
-  private assertHistoryIdentity(history: z.infer<typeof RemoteNativeHistorySchema>, session: NativeSessionReference,
-    correlationId: string, receipt: RemoteOperationReceipt) {
-    const terminal = history.terminalTurn
-    const submission = history.nativeSubmission
-    const providerId = correlationId === `execution:${this.intent.executionId}` ? receipt.native?.turnId
-      : receipt.reviewTurns?.find(turn => turn.assignment.correlationId === correlationId)?.providerId
-    const wrongCorrelation = history.correlationId !== undefined && history.correlationId !== correlationId
-      || terminal !== undefined && terminal.correlationId !== correlationId
-    const wrongSubmission = submission !== undefined && (submission.nativeSessionId !== session.nativeSessionId
-      || submission.clientCorrelationId !== correlationId)
-    const wrongTerminal = terminal !== undefined && (terminal.providerId !== providerId
-      || history.nativeTurnId !== terminal.providerId
-      || history.terminalResult !== undefined && !isDeepStrictEqual(history.terminalResult, terminal.result))
-    const wrongSavedResult = terminal !== undefined && correlationId === `execution:${this.intent.executionId}`
-      && receipt.terminal?.kind === 'completed' && !isDeepStrictEqual(receipt.terminal.result, terminal.result)
-    if (wrongCorrelation || wrongSubmission || wrongTerminal || wrongSavedResult) {
-      throw new HarnessExecutionError('NATIVE_HISTORY_IDENTITY_CONFLICT', 'Remote history does not match the owned native turn.')
-    }
-    const gap = history.gap
-    if (history.nextSequence !== undefined && ((history.firstRetainedSequence ?? 0) > history.nextSequence
-      || gap && gap.toSequence >= history.nextSequence)) {
-      throw new HarnessExecutionError('NATIVE_HISTORY_GAP', 'Remote native history bounds are inconsistent.')
     }
   }
   async pending(session: NativeSessionReference, signal?: AbortSignal) { this.assertSession(session); const raw = await this.request('pending', { operationId: this.intent.operationId }, signal); return raw == null ? undefined : PendingNativeInteractionSchema.parse(raw) }
@@ -414,15 +365,11 @@ export class RemoteNativeSessionManager implements NativeHarnessSessionManager {
       await this.options.observeOriginalSource?.(streamed.receipt, { type: 'history', history })
       return history
     }
-    const value = await this.historyResponse(await this.request('history', {
-      ...(correlationId ? { correlationId } : {}),
-      ...(streamed ? { afterSequence: streamed.afterSequence } : {}),
-    }, signal), signal)
+    const value = await this.historyResponse(
+      await this.request('history', correlationId ? { correlationId } : {}, signal), signal)
     await this.status(value.status)
-    if (correlationId) this.assertHistoryIdentity(value.history, session, correlationId, this.receipt!)
     if (value.context !== undefined) this.context = value.context
-    if (streamed) this.streamHistory = { value: value.history, receipt: this.receipt!, observedAt: Date.now(),
-      afterSequence: streamed.afterSequence, page: value.page }
+    if (streamed) this.streamHistory = { value: value.history, receipt: this.receipt!, observedAt: Date.now() }
     const history = this.projectHistory(value.history)
     await this.options.observeOriginalSource?.(this.receipt!, { type: 'history', history })
     return history

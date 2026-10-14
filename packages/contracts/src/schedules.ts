@@ -1,4 +1,3 @@
-import { optionalCommandId } from './management/commands.js'
 import { z } from "zod";
 import { IdSchema, TimestampSchema } from "./schemaPrimitives.js";
 
@@ -22,7 +21,7 @@ const MAX_INSTANT = Date.parse("9999-12-31T23:59:59.999Z");
 const Revision = z.number().int().nonnegative();
 const Command = z.string().trim().min(8).max(200);
 const Workflow = { workspaceId: IdSchema, workflowId: IdSchema };
-const Mutation = { commandId: optionalCommandId(Command), expectedRevision: Revision };
+const Mutation = { commandId: Command, expectedRevision: Revision };
 
 /** Millisecond precision; normalize offsets before comparing or forming identities. */
 export const ScheduleInstantSchema = TimestampSchema.refine((value) => {

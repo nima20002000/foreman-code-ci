@@ -1,4 +1,3 @@
-import { optionalCommandId } from './management/commands.js'
 import { z } from "zod";
 import { FileNameSchema } from "./filePrimitives.js";
 export { FileNameSchema } from "./filePrimitives.js";
@@ -171,7 +170,7 @@ export const FileRetentionPreferenceSchema = z.object({
 export const FileRetentionGetInputSchema = z.object({}).strict();
 export const FileRetentionGetResultSchema = z.object({ preference: FileRetentionPreferenceSchema }).strict();
 export const FileRetentionSaveInputSchema = z.object({
-  commandId: optionalCommandId(Command), expectedRevision: Revision.optional().describe('Omit for last write wins; supply to reject a stale revision.'), durationSeconds: FileRetentionDurationSchema,
+  commandId: Command, expectedRevision: Revision.optional().describe('Omit for last write wins; supply to reject a stale revision.'), durationSeconds: FileRetentionDurationSchema,
   applyToExisting: z.boolean().optional(),
 }).strict();
 export const FileRetentionSaveResultSchema = z.object({

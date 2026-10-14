@@ -16,7 +16,6 @@ import { componentLogger } from '../diagnostics/logger.js'
 import { planCiParts, runsOnCircleCi, unitPartOf } from './parts.js'
 import { planIntegrationParts } from './integrationParts.js'
 import { readCiSlots } from './planningCapacity.js'
-import { CiPlanningSnapshot } from './planningSnapshot.js'
 import { HostCiReads, retryRead } from './readQueries.js'
 import { fallbackOnError } from '../diagnostics/ignoredError.js'
 import { CI_QUEUE_ORDER, ciQueueReason, compareCiQueue } from './priority.js'
@@ -83,7 +82,6 @@ export class HostCiService {
   private timer: NodeJS.Timeout | undefined
   private stoppingRuns = 0
   private readonly endpoint: HostCiEndpoint
-  private readonly planningEndpoint: CiPlanningSnapshot
   /** Cloud slots kept free for non-gate tickets while a gate is queued or running. */
   private readonly reservedCloudSlots: number
   private readonly reads: HostCiReads
@@ -92,24 +90,12 @@ export class HostCiService {
     private readonly authority: CiAuthority, private readonly commits: CiCommits,
     endpoint: HostCiEndpoint, private readonly snapshots?: AgentSnapshots, options: { reservedCloudSlots?: number } = {}) {
     this.reservedCloudSlots = options.reservedCloudSlots ?? 0
-    this.planningEndpoint = new CiPlanningSnapshot(endpoint)
     this.endpoint = {
-      computers: async () => {
-        const computers = await endpoint.computers()
-        this.planningEndpoint.observeComputers(computers)
-        return computers
-      },
+      computers: () => endpoint.computers(),
       ...(endpoint.publishMirror ? { publishMirror: endpoint.publishMirror.bind(endpoint) } : {}),
       request: async (computer, request) => {
         if (request.operation !== 'status' || computer.hostRef.kind === 'cloud') {
-          try {
-            const reply = await endpoint.request(computer, request)
-            this.planningEndpoint.observeStatus(computer, reply)
-            return reply
-          } catch (error) {
-            this.planningEndpoint.invalidate(computer)
-            throw error
-          }
+          return endpoint.request(computer, request)
         }
         const assigned = (await this.pool.query<{ record: unknown; host_key: string }>(
           `select record,host_key from ci_runs where state in ('starting','running')`)).rows
@@ -118,11 +104,7 @@ export class HostCiService {
         try {
           const reply = await endpoint.request(computer, request)
           if (reply.operation === 'status') status = reply
-          this.planningEndpoint.observeStatus(computer, reply)
           return reply
-        } catch (error) {
-          this.planningEndpoint.invalidate(computer)
-          throw error
         } finally {
           for (const row of assigned) {
             await this.reconcileHostStart(CiRunRecordSchema.parse(row.record), computer, status)
@@ -284,15 +266,9 @@ export class HostCiService {
     if (!workspace.repository) throw new DomainError('SOURCE_REPOSITORY_REQUIRED',
       'CI runs on build computers from GitHub. Set the workspace GitHub repository (workspace_update).', 409)
     const smokeTarget = input.smokeComputer
-      ? (await this.planningEndpoint.computers()).find(computer => isDeepStrictEqual(computer.hostRef, input.smokeComputer))
+      ? (await this.endpoint.computers()).find(computer => isDeepStrictEqual(computer.hostRef, input.smokeComputer))
       : undefined
     if (input.smokeComputer && !smokeTarget) {
-      // An enabled computer drops out of the list while its Worker reconnects, for example after an API restart.
-      const enabled = (await this.pool.query<{ build_enabled: boolean }>(
-        "select build_enabled from build_computer_preferences where target->'hostRef'=$1::jsonb",
-        [JSON.stringify(input.smokeComputer)])).rows[0]?.build_enabled
-      if (enabled) throw new DomainError('CI_SMOKE_COMPUTER_UNAVAILABLE',
-        'The smoke computer is not connected yet. Retry shortly.', 503, { retryable: true })
       throw new DomainError('CI_SMOKE_COMPUTER_UNAVAILABLE', 'The smoke computer is disabled or unavailable.', 409)
     }
     const repository = `${workspace.repository.owner}/${workspace.repository.name}`
@@ -380,22 +356,17 @@ export class HostCiService {
       : [{ part: null, partition: null, files: selection.files ?? [] }]
     let smokeShards: number | undefined
     if (smokeTarget && input.suite === 'integration') {
-      const status = await this.planningEndpoint.request(smokeTarget, { operation: 'status' }).catch(error => {
-        if (error instanceof DomainError) throw error
-        // A Worker that is still reconnecting after a restart is temporarily unavailable, not an API failure.
-        throw new DomainError('CI_SMOKE_COMPUTER_UNAVAILABLE', 'The smoke computer is not reachable yet. Retry shortly.', 503,
-          { retryable: true })
-      })
+      const status = await this.endpoint.request(smokeTarget, { operation: 'status' })
       if (status.operation !== 'status' || !status.ready) {
         throw new DomainError('CI_SMOKE_COMPUTER_UNAVAILABLE', 'The smoke computer is not ready.', 409)
       }
       smokeShards = buildComputerIntegrationShards(status, smokeTarget.buildAllowancePercent)
-      const fleet = await this.planningEndpoint.computers()
+      const fleet = await this.endpoint.computers()
       if (integration && fleet.some(computer => computer.hostRef.kind !== 'cloud')
         && fleet.some(computer => computer.hostRef.kind === 'cloud')) {
         const smokeUnit = await this.commits.unitInventory?.(repository, commit)
         if (smokeUnit) {
-          try { await planCiGate(input, integration, smokeUnit, unitDurations, this.planningEndpoint, new Map(), this.reservedCloudSlots) }
+          try { await planCiGate(input, integration, smokeUnit, unitDurations, this.endpoint, new Map(), this.reservedCloudSlots) }
           catch (error) {
             if (!(error instanceof DomainError) || error.code !== 'CI_GATE_CAPACITY_REQUIRED') throw error
             log.info({ reason: error.message }, 'CI smoke has no complete ready gate fleet')
@@ -404,17 +375,17 @@ export class HostCiService {
       }
       parts = [{ part: null, partition: null, files: input.files! }]
     } else if (input.gate) {
-      const speeds = await readExecutorSpeeds(this.pool, this.planningEndpoint)
+      const speeds = await readExecutorSpeeds(this.pool, this.endpoint)
       timing.mark('speedsMs')
-      const slots = await readCiSlots(this.pool, this.planningEndpoint)
+      const slots = await readCiSlots(this.pool, this.endpoint)
       timing.mark('slotsMs')
-      parts = await planCiGate(input, { ...integration!, durations: durations! }, inventory!, unitDurations, this.planningEndpoint,
+      parts = await planCiGate(input, { ...integration!, durations: durations! }, inventory!, unitDurations, this.endpoint,
         speeds, this.reservedCloudSlots, slots.ordinary, slots.usedByComputer)
     } else if (integration) {
-      parts = planIntegrationParts(selection, { ...integration, durations: durations! }, await readCiSlots(this.pool, this.planningEndpoint))
+      parts = planIntegrationParts(selection, { ...integration, durations: durations! }, await readCiSlots(this.pool, this.endpoint))
     }
     if (!input.gate && input.suite === 'unit' && split) {
-      parts = planCiParts(selection, unitDurations, inventory, (await readCiSlots(this.pool, this.planningEndpoint)).ordinary)
+      parts = planCiParts(selection, unitDurations, inventory, (await readCiSlots(this.pool, this.endpoint)).ordinary)
     }
     timing.mark('planMs')
     log.info({ gate: input.gate === true, suite: input.suite, ...timing.phases }, 'CI run preparation timing')
@@ -648,14 +619,10 @@ export class HostCiService {
       const active = (await this.pool.query<{ id: string; host_key: string; record: unknown }>(
         `select id,host_key,record from ci_runs where state in ('starting','running') and host_key is not null
           order by created_at,id`)).rows
-      // Ask every computer at once: one slow or offline host must not serialize the whole listing.
-      // Share the short-lived status snapshot that admission and dispatch keep fresh.
-      const result = await Promise.all((await this.planningEndpoint.computers()).map(async computer => {
+      const result = []
+      for (const computer of await this.endpoint.computers()) {
         const assigned = active.filter(run => run.host_key === computer.key)
-        // A starting ticket needs a live status: it can acknowledge a start whose reply was lost.
-        const starting = assigned.some(run => CiRunRecordSchema.parse(run.record).state === 'starting')
-        const status = await (starting ? this.endpoint : this.planningEndpoint).request(computer, { operation: 'status' })
-          .catch(error => error as Error)
+        const status = await this.endpoint.request(computer, { operation: 'status' }).catch(error => error as Error)
         const running = []
         for (const row of assigned) {
           const previous = CiRunRecordSchema.parse(row.record)
@@ -663,7 +630,7 @@ export class HostCiService {
             ? await this.read(row.id, previous.workspaceId) : previous
           if (['starting', 'running'].includes(current.state)) running.push(row.id)
         }
-        return status instanceof Error
+        result.push(status instanceof Error
           ? { label: computer.label, hostRef: computer.hostRef, priority: computer.priority,
             ready: false, reasons: [status.message], running, slotsUsed: running.length,
             slotsTotal: Math.max(1, running.length) }
@@ -672,8 +639,8 @@ export class HostCiService {
             availableMemoryBytes: status.availableMemoryBytes,
             ...(status.userSystemd ? { userSystemd: status.userSystemd } : {}),
             slotsUsed: Math.max(running.length, status.slotsUsed ?? 0), slotsTotal: status.slotsTotal ?? 1,
-            running } : null
-      }))
+            running } : null)
+      }
       return { computers: result.filter(Boolean), queue, queueTruncated: queued.length > 500 }
     })
   }
