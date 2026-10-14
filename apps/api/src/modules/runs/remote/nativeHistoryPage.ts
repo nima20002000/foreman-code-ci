@@ -69,7 +69,6 @@ export function pageNativeHistory(history: NativeHistory, afterSequence?: number
   let cursor = afterSequence ?? nextSequence - 1
   if (afterSequence !== undefined && afterSequence + 1 < firstSequence) {
     value.gap = { fromSequence: afterSequence + 1, toSequence: firstSequence - 1, reason: 'retention' }
-    cursor = firstSequence - 1
   }
   const candidates = afterSequence === undefined
     ? [...history.events].reverse() : history.events.filter(event => event.sequence > afterSequence)
