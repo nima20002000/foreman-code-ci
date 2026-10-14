@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify'
-import { Socket } from 'node:net'
+import { isIP, Socket } from 'node:net'
 
 import { LocalHumanAccessSchema, type ManagementPrincipal } from '@foreman-code/contracts/management'
 import { localHumanClient, LocalClientUnavailableError } from '@foreman-code/contracts/local-client-node'
@@ -19,13 +19,31 @@ declare module 'fastify' {
 const LOOPBACK_IPS = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1'])
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
 
+function isAllowedRequestHost(hostname: string): boolean {
+  if (LOOPBACK_HOSTS.has(hostname)) return true
+  if (isIP(hostname) === 4) {
+    const [first, second] = hostname.split('.').map(Number)
+    return first === 100 && second !== undefined && second >= 64 && second <= 127
+  }
+  return hostname.length <= 253
+    && /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+ts\.net$/i.test(hostname)
+}
+
 export function requireLocalRequest(request: FastifyRequest): void {
-  if (!LOOPBACK_HOSTS.has(request.hostname)) throw new DomainError('HOST_NOT_ALLOWED', 'The request Host is not allowed.', 403)
+  if (!isAllowedRequestHost(request.hostname)) {
+    throw new DomainError('HOST_NOT_ALLOWED', 'The request Host is not allowed.', 403)
+  }
   const origin = request.headers.origin
   if (!origin) return
   let url: URL
-  try { url = new URL(origin) } catch { throw new DomainError('ORIGIN_NOT_ALLOWED', 'The request Origin is invalid.', 403) }
-  if (!LOOPBACK_HOSTS.has(url.hostname)) throw new DomainError('ORIGIN_NOT_ALLOWED', 'The request Origin is not allowed.', 403)
+  try {
+    url = new URL(origin)
+  } catch {
+    throw new DomainError('ORIGIN_NOT_ALLOWED', 'The request Origin is invalid.', 403)
+  }
+  if (!isAllowedRequestHost(url.hostname)) {
+    throw new DomainError('ORIGIN_NOT_ALLOWED', 'The request Origin is not allowed.', 403)
+  }
 }
 
 function actionFor(request: FastifyRequest) {
@@ -36,7 +54,6 @@ function actionFor(request: FastifyRequest) {
   if (url === '/api/devices' || url === '/api/devices/main' || url === '/api/devices/setup-options') return 'settings:read' as const
   if (['/api/devices/connection-host', '/api/devices/connection-read', '/api/devices/connection-inspect', '/api/devices/connection-check'].includes(url)) return 'settings:read' as const
   if (url === '/api/devices/connection-configure') return 'settings:update' as const
-  if (url === '/api/devices/connection-approvals' || url.startsWith('/api/devices/connection-approvals/')) return request.method === 'GET' ? 'settings:read' as const : 'settings:update' as const
   if (url === '/api/devices/pairing-grants' || url === '/api/devices/revoke' || url === '/api/devices/setup-codes') return 'settings:update' as const
   if (/^\/api\/workspaces\/[^/]+\/reference-files(?:\/|$)/.test(url)) {
     return request.method === 'GET' ? 'workspaces:read' as const : 'workspaces:update' as const
@@ -59,8 +76,6 @@ function actionFor(request: FastifyRequest) {
     if (url.endsWith('/responses')) return 'agent_chat:respond' as const
     return 'agent_chat:write' as const
   }
-  if (url === '/api/settings/agents' || url === '/api/settings/workflows') return request.method === 'GET' ? 'settings:read' as const : 'settings:update' as const
-  if (url === '/api/settings/harnesses') return request.method === 'GET' ? 'harnesses:read' as const : 'harnesses:update' as const
   if (url.includes('/agents')) return request.method === 'GET' ? 'agents:read' as const : 'graph:edit' as const
   if (url.includes('/runs/') && url.endsWith('/cancel')) return 'runs:stop' as const
   if (url.includes('/runs')) return request.method === 'GET' ? 'runs:read' as const : 'runs:start' as const
@@ -94,6 +109,9 @@ export function registerOperatorHttpSecurity(app: FastifyInstance, access: Postg
       throw new DomainError('AUTH_INVALID', 'The Authorization header is invalid.', 401)
     }
     if (!headerToken) {
+      if (!LOOPBACK_HOSTS.has(request.hostname)) {
+        throw new DomainError('AUTH_REQUIRED', 'A bearer credential is required.', 401)
+      }
       if (!LOOPBACK_IPS.has(request.ip)) {
         throw new DomainError('LOCAL_HUMAN_REQUIRED', 'The local app requires a loopback client.', 403)
       }
@@ -119,7 +137,7 @@ export function registerOperatorHttpSecurity(app: FastifyInstance, access: Postg
     // Account and chat services resolve persisted resources before checking their full scopes.
     const providerAccounts = path === '/api/provider-accounts' || path.startsWith('/api/provider-accounts/')
     const agentChat = /^\/api\/workspaces\/[^/]+\/agent-chat(?:\/|$)/.test(path)
-    const selfReadback = path === '/api/local-human' || path === '/api/runtime/identity'
+    const selfReadback = path === '/api/local-human' || path === '/api/runtime/identity' || path === '/api/runtime/build-identity/v1'
     const params = request.params as Record<string, string | undefined>
     const resource = {
       ...(params.workspaceId ? { workspaceId: params.workspaceId } : {}),

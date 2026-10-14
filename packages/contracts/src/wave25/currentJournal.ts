@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { RunOutcomeSchema } from '../index.js'
-import { GraphDigestSchema, GraphIdSchema } from './protocol.js'
+import { GraphDigestSchema, GraphIdSchema } from './graphPrimitives.js'
 import { CurrentRunScopeSchema } from './currentWorkflowFoundation.js'
 
 /** Extracted journal identities/state, independent of any retired editor or
@@ -26,11 +26,10 @@ export const CurrentJournalRunStateSchema = z.object({
 })
 export const CurrentJournalStopSchema = z.object({
   input: z.object({ workspaceId: GraphIdSchema, runId: GraphIdSchema, commandId: GraphIdSchema }).strict(),
-  inputHash: GraphDigestSchema,
   receipt: z.object({ runId: GraphIdSchema, status: z.enum(['accepted', 'already_terminal', 'not_owner']),
     processStopped: z.literal(false) }).strict().optional(),
 }).strict()
-export const CurrentJournalAgentPinSchema = z.object({
+const CurrentJournalAgentPinSchema = z.object({
   agentId: GraphIdSchema, metadataRevision: z.number().int().nonnegative().nullable(),
   configurationVersionId: GraphIdSchema.nullable(),
 }).strict()

@@ -1,9 +1,10 @@
+import { pathExists } from '../../shared/pathExists.js'
 import { constants } from 'node:fs'
-import { lstat, mkdir, open } from 'node:fs/promises'
+import { mkdir, open } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { WorkspaceRootPolicy } from '@foreman-code/contracts/workspace-root-policies'
 import type { SourceManifest } from '@foreman-code/contracts/source-materialization'
-import { approvedGitTreePaths, captureGitSource, qualifiedGit } from '../sources/capture.js'
+import { captureGitSource, qualifiedGit } from '../sources/capture.js'
 import { ensureClone, fetchMissingSourceObjects, fetchRepositoryBranch, type GitWorktreePorts } from '../sources/gitWorktree.js'
 import { SOURCE_LIMITS, verifySourceBytes, verifySourceManifest } from '../sources/manifest.js'
 import { anchored, entryParent, identity, openChildDirectory, openPrivateRoot } from '../sources/privateFilesystem.js'
@@ -27,15 +28,6 @@ function sameIdentity(left: FilesystemIdentity, right: FilesystemIdentity): bool
   return left.device === right.device && left.inode === right.inode && left.mountId === right.mountId
 }
 
-async function exists(path: string): Promise<boolean> {
-  try {
-    await lstat(path)
-    return true
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false
-    throw error
-  }
-}
 
 export function repositoryProjectPath(preparation: RepositoryPreparation): string {
   return join(preparation.basePath, preparation.directoryName, 'project')
@@ -96,7 +88,7 @@ export class OwnedRepositoryPreparation {
     const signal = AbortSignal.timeout(SOURCE_LIMITS.preparationMs)
     const clone = join(preparation.basePath, preparation.directoryName, 'staging')
     try {
-      if (await exists(repositoryProjectPath(preparation))) {
+      if (await pathExists(repositoryProjectPath(preparation))) {
         await this.verifyPublished(preparation, repository)
         return
       }
@@ -104,7 +96,7 @@ export class OwnedRepositoryPreparation {
         cloneDirectory: () => clone,
         git: (args, options) => this.git.git(['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', ...args], options),
       }
-      if (await exists(clone)) {
+      if (await pathExists(clone)) {
         const existing = await openPrivateRoot(clone)
         try {
           if (preparation.cloneIdentity && !sameIdentity(await identity(existing), preparation.cloneIdentity)) {
@@ -153,14 +145,13 @@ export class OwnedRepositoryPreparation {
 
   private async populate(directory: Awaited<ReturnType<typeof openPrivateRoot>>, clone: string,
     preparation: RepositoryPreparation, repository: string): Promise<SourceManifest> {
-    const approvedPaths = await approvedGitTreePaths(clone, preparation.commit!)
     const manifest = await captureGitSource({ root: clone, approvedSourceId: preparation.importId,
-      snapshotId: preparation.importId, commit: preparation.commit!, repository, approvedPaths,
+      snapshotId: preparation.importId, commit: preparation.commit!, repository,
       executablePolicy: 'preserve-approved', sink: {
         write: async (_snapshotId, entry, bytes) => {
           const { parent, leaf } = await entryParent(directory, entry.path, true)
           try {
-            if (await exists(anchored(parent, leaf))) {
+            if (await pathExists(anchored(parent, leaf))) {
               const file = await open(anchored(parent, leaf), constants.O_RDONLY | constants.O_NOFOLLOW)
               try {
                 verifySourceBytes(entry, await file.readFile())

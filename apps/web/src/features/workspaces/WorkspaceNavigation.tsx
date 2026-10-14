@@ -1,3 +1,5 @@
+import { useUnsavedChanges } from '../../shared/ui/unsavedChanges'
+import { errorMessage } from '../../shared/errorMessage'
 import {
   useCallback,
   useEffect,
@@ -130,13 +132,13 @@ function NewWorkspaceControl() {
     if (inFlight.current || (defaults.isPending && !attempt.current.unresolved)) return
     const trimmedName = name.trim()
     if (!trimmedName) { setNameError('Enter a workspace name.'); nameInputRef.current?.focus(); return }
-    if (!parentPath.trim()) { setNameError('Choose a location for the project folder.'); return }
+    if (!parentPath) { setNameError('Choose a location for the project folder.'); return }
     inFlight.current = true
     const generation = sessionGeneration()
     setNameError(undefined)
     try {
       const workspace = (await createManagedWorkspace.mutateAsync(
-        attempt.current.input({ ...(touched.current.name ? { name: trimmedName } : {}), parentPath: parentPath.trim() }),
+        attempt.current.input({ ...(touched.current.name ? { name: trimmedName } : {}), parentPath }),
       )).value.workspace
       assertSession(generation)
       attempt.current.succeeded()
@@ -146,9 +148,20 @@ function NewWorkspaceControl() {
       void navigate({ to: '/workspaces/$workspaceId/settings', params: { workspaceId: workspace.id } })
     } catch (error) {
       attempt.current.failed(error)
-      if (sessionGeneration() === generation) setNameError(error instanceof Error ? error.message : 'The workspace could not be created.')
+      if (sessionGeneration() === generation) setNameError(errorMessage(error, 'The workspace could not be created.'))
     } finally { inFlight.current = false }
   }
+
+  useUnsavedChanges({
+    scope: 'surface', label: 'New workspace',
+    dirty: creating && (touched.current.name || touched.current.parentPath),
+    busy: createManagedWorkspace.isPending,
+    uncertain,
+    saveDisabled: !name.trim() || !parentPath.trim() || (defaults.isPending && !uncertain),
+    error: nameError,
+    save: createNewWorkspace,
+    discard: closeCreateDialog,
+  })
 
   return (
     <>

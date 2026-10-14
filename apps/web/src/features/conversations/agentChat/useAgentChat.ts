@@ -1,3 +1,5 @@
+import type { Dispatch, RefObject, SetStateAction } from 'react'
+import { errorMessage } from '../../../shared/errorMessage'
 import type { SessionMode } from '@foreman-code/contracts'
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { useInfiniteQuery, useIsMutating, useMutation, useMutationState, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
@@ -75,7 +77,7 @@ export function useAgentChat(inputContext: AgentChatContext) {
       restorePendingCommands(client, draftKey, generation)
       return undefined
     } catch (error) {
-      return error instanceof Error ? error.message : 'Pending messages could not be recovered.'
+      return errorMessage(error, 'Pending messages could not be recovered.')
     }
   }, [client, draftKey, generation])
   const commandFilters = useMemo(() => ({ mutationKey: commandKey, exact: true }), [commandKey])
@@ -116,13 +118,16 @@ export function useAgentChat(inputContext: AgentChatContext) {
     },
   })
   const historyId = query.data?.conversation?.id
-  const historyKey = ['agent-chat', generation, context, historyId, 'history']
+  const historyKey = useMemo(() => ['agent-chat', generation, context, historyId, 'history'],
+    [context, generation, historyId])
   const history = useInfiniteQuery({ queryKey: historyKey, maxPages: 5,
     queryFn: async ({ pageParam, signal }) => {
       try {
         const result = await readEarlierChatHistory(async (before) => {
           return agentChatApi.history(context.workspaceId, historyId!, before, { signal })
         }, pageParam, query.data?.messages[0]?.id)
+        signal.throwIfAborted()
+        assertSession(generation)
         return result
       } catch (error) {
         // A state GET started before a known denial cannot clear it with a stale response.
@@ -141,23 +146,25 @@ export function useAgentChat(inputContext: AgentChatContext) {
   const denial = useProtectedAccessError(query, commandDenial.current ?? historyDenial
     ?? (latestCommand && latestCommand.submittedAt > query.dataUpdatedAt ? latestCommand.error : undefined))
   const state = canRead && !denial && query.data && matches(query.data) ? query.data : undefined
+  const { data: historyData, refetch: refetchHistory } = history
+  const historyRevision = useRef<{ identity: string; revision: number } | undefined>(undefined)
+  useEffect(() => {
+    const identity = JSON.stringify(historyKey)
+    const revision = state?.revision
+    if (revision === undefined) return
+    const previous = historyRevision.current
+    historyRevision.current = { identity, revision }
+    const advanced = previous?.identity === identity && revision > previous.revision
+    const mutable = historyData?.pages.some(batch => batch.pages.some(page =>
+      page.messages.some(message => message.role === 'assistant' && message.nativeMessageComplete === false)))
+    if (advanced && mutable) void refetchHistory()
+  }, [historyKey, state?.revision, historyData, refetchHistory])
   const currentReceipt = latestCommand?.result
     ? currentCommandReceipt(latestCommand.result, state)
     : receiptForCommand(state, latestCommand?.command)
   const confirmedReceipt = confirmedCommandReceipt(latestCommand, state)
   const latestReceipt = currentReceipt ?? latestCommand?.result?.turn ?? confirmedReceipt
-  useEffect(() => {
-    if (generation !== sessionGeneration() || sessionIsSwitching()) return
-    if (reconcileDraftReadback(state, commands, draftKey)) setLocalError(undefined)
-    for (const record of commands) {
-      if (record.command?.kind !== 'send') continue
-      const receipt = confirmedCommandReceipt(record, state) ?? receiptForCommand(state, record.command)
-      if (receipt && ['completed', 'failed', 'canceled'].includes(receipt.delivery)) {
-        forgetPendingCommand(draftKey, record.command.input.requestId)
-      }
-    }
-  }, [state, commands, draftKey, generation])
-  useEffect(() => { retireAgentChatAcknowledgements(client) }, [client, state])
+  useAgentChatReceiptReadback({ generation, state, commands, draftKey, setLocalError, client })
   const accept = useCallback((incoming: AgentChatState, source: 'read' | 'receipt' = 'receipt') => {
     assertSession(generation)
     if (sessionIsSwitching() || !matches(incoming)) return
@@ -198,6 +205,102 @@ export function useAgentChat(inputContext: AgentChatContext) {
     return () => { disposed = true; readback.dispose(); close() }
   }, [client, key, context.workspaceId, conversationId, canRead, denial, accept, matches])
 
+  const mutation = useAgentChatMutation({ commandKey, generation, context, matches, accept, draftKey,
+    setLocalError, refresh, commandDenial, readGeneration, client, key })
+  const runCommand = (build: () => Command): boolean => {
+    const release = acquire(client, JSON.stringify(commandKey))
+    if (!release) return false
+    setLocalError(undefined)
+    try {
+      // Allocate exactly one requestId AFTER synchronous admission, not on each keystroke/click.
+      const command = build()
+      if (command.kind === 'send') rememberPendingCommand(draftKey, command)
+      void mutation.mutateAsync(command).catch(() => undefined).finally(() => { release(); retireAgentChatAcknowledgements(client) })
+      return true
+    } catch (error) { release(); setLocalError(errorMessage(error, 'The command could not be prepared.')); return false }
+  }
+  const blocked = (action: ManagementAction) => {
+    if (!online) return 'You are offline. Your draft is kept.'
+    if (!permits(action)) return 'Your access does not allow this action for this Agent and Run.'
+    if (recoveryError) return recoveryError
+    if (!state || query.isError) return 'Refresh this conversation before sending a command.'
+    if (state.availability.reason === 'run_active' || state.sessionState === 'unavailable') {
+      return state.availability.message ?? 'This selection is read only.'
+    }
+    if (pending) return 'A command is being sent.'
+    return undefined
+  }
+  const send = (content: string, intent: AgentChatIntent, clearDraft = true, allowNewMessage = false, attachmentAttempt?: ChatAttachmentAttempt, sessionMode?: SessionMode): boolean => {
+    const text = content.trim()
+    const attachments = attachmentAttempt?.attachments ?? []
+    const reason = blocked('agent_chat:write') ?? (state ? intentUnavailable(state, intent) : undefined)
+    // A completed send can clear the draft before React paints its empty value. Ignore an old
+    // Enter/click handler in that gap; do not allocate another requestId for the cleared text.
+    reconcileDraftReadback(client.getQueryData<AgentChatState>(key), commands, draftKey)
+    if (clearDraft && (useConversationDraftStore.getState().drafts[draftKey] ?? '').trim() !== text) return false
+    if (clearDraft && attachmentAttempt?.isCurrent && !attachmentAttempt.isCurrent()) return false
+    if (reason || !state || (!text && !attachments.length) || text.length > 32_000 || attachments.length > 0 && !state.conversation) { setLocalError(reason ?? 'Write a message of up to 32,000 characters.'); return false }
+    const unconfirmed = state.turns.some((turn) => turn.delivery === 'unknown' && state.messages.some((message) => message.id === turn.messageId && message.content.trim() === text && sameAttachmentRefs(messageAttachmentRefs(message), attachments)))
+      || commands.some((record) => {
+        if (record.command?.kind !== 'send' || record.command.input.content !== text || !sameAttachmentRefs(record.command.input.attachments, attachments)) return false
+        const receipt = confirmedCommandReceipt(record, state) ?? receiptForCommand(state, record.command) ?? (record.result && 'turn' in record.result ? record.result.turn : undefined)
+        return receipt ? receipt.delivery === 'unknown' : record.status === 'error' && commandMayHaveBeenAccepted(record.error)
+      })
+    if (unconfirmed && !allowNewMessage) { setLocalError('Delivery is unknown. Use “Send again as new message” and review the warning.'); return false }
+    return runCommand(() => {
+      const target = { workflowId: context.workflowId, workflowNodeId: context.workflowNodeId, agentId: context.agentId,
+        ...(context.runId ? { runId: context.runId } : {}) }
+      return { kind: 'send', clearDraft, attachmentAttempt, input: { requestId: `agent-chat-${crypto.randomUUID()}`, context: target, content: text, intent, ...(sessionMode ? { sessionMode } : {}),
+        ...(attachments.length ? { attachments: attachments.map((pin) => ({ ...pin })) } : {}),
+        expectedConversationId: state.conversation?.id ?? null,
+        ...(intent !== 'next_turn' && state.activeTurn?.nativeTurnId ? { expectedNativeTurnId: state.activeTurn.nativeTurnId } : {}) } }
+    })
+  }
+  const stop = () => {
+    const reason = blocked('agent_chat:cancel')
+    if (reason || !state?.conversation || !state.capabilities.interruptAndSend || state.availability.reason === 'run_active') return
+    runCommand(() => ({ kind: 'stop', conversationId: state.conversation!.id, requestId: `agent-chat-stop-${crypto.randomUUID()}`,
+      ...(state.activeTurn?.nativeTurnId ? { expectedNativeTurnId: state.activeTurn.nativeTurnId } : {}) }))
+  }
+  const cancelQueued = (turnRequestId: string) => {
+    if (blocked('agent_chat:cancel') || !state?.conversation || state.turns.find((turn) => turn.requestId === turnRequestId)?.delivery !== 'queued') return
+    runCommand(() => ({ kind: 'cancel', conversationId: state.conversation!.id, requestId: `agent-chat-cancel-${crypto.randomUUID()}`, turnRequestId }))
+  }
+  const respond = (optionId: string, response?: Extract<Command, { kind: 'respond' }>['response']) => {
+    if (blocked('agent_chat:respond') || !state?.conversation || !approvalReplyAvailable(state)
+      || !state.pendingInteraction?.responseOptions.some((option) => option.optionId === optionId)) return
+    runCommand(() => ({ kind: 'respond', conversationId: state.conversation!.id, requestId: `agent-chat-response-${crypto.randomUUID()}`,
+      nativeRequestId: state.pendingInteraction!.turn.nativeRequestId!, optionId,
+      ...(response !== undefined ? { response } : {}) }))
+  }
+  return { state, query, history: {
+    ...history,
+    hasGap: !!history.data && history.data.pageParams[0] !== undefined,
+    reloadNearer: async () => {
+      await client.resetQueries({ queryKey: historyKey, exact: true })
+      await history.fetchNextPage()
+    },
+  }, access, canRead, denial, online, pending, connection, commands, latestCommand, latestReceipt, currentReceipt, confirmedReceipt, localError, blocked,
+    send, stop, cancelQueued, respond, refresh, draftKey }
+}
+
+type AgentChatMutationOptions = {
+  commandKey: readonly ['agent-chat', number, string, 'command']
+  generation: number
+  context: AgentChatContext
+  matches: (state: AgentChatState) => boolean
+  accept: (state: AgentChatState, source?: 'read' | 'receipt') => void
+  draftKey: string
+  setLocalError: Dispatch<SetStateAction<string | undefined>>
+  refresh: () => void
+  commandDenial: RefObject<ApiError | undefined>
+  readGeneration: RefObject<number>
+  client: QueryClient
+  key: ReturnType<typeof agentChatStateKey>
+}
+
+function useAgentChatMutation({ commandKey, generation, context, matches, accept, draftKey,
+  setLocalError, refresh, commandDenial, readGeneration, client, key }: AgentChatMutationOptions) {
   const mutation = useMutation<Result, Error, Command>({ mutationKey: commandKey, retry: false, gcTime: Infinity,
     // Never park a write offline and send it later to a potentially changed native turn.
     networkMode: 'always',
@@ -263,72 +366,27 @@ export function useAgentChat(inputContext: AgentChatContext) {
       refresh()
     },
   })
-  const runCommand = (build: () => Command): boolean => {
-    const release = acquire(client, JSON.stringify(commandKey))
-    if (!release) return false
-    setLocalError(undefined)
-    try {
-      // Allocate exactly one requestId AFTER synchronous admission, not on each keystroke/click.
-      const command = build()
-      if (command.kind === 'send') rememberPendingCommand(draftKey, command)
-      void mutation.mutateAsync(command).catch(() => undefined).finally(() => { release(); retireAgentChatAcknowledgements(client) })
-      return true
-    } catch (error) { release(); setLocalError(error instanceof Error ? error.message : 'The command could not be prepared.'); return false }
-  }
-  const blocked = (action: ManagementAction) => {
-    if (!online) return 'You are offline. Your draft is kept.'
-    if (!permits(action)) return 'Your access does not allow this action for this Agent and Run.'
-    if (recoveryError) return recoveryError
-    if (!state || query.isError) return 'Refresh this conversation before sending a command.'
-    if (state.availability.reason === 'run_active' || state.sessionState === 'unavailable') {
-      return state.availability.message ?? 'This selection is read only.'
+  return mutation
+}
+
+function useAgentChatReceiptReadback({ generation, state, commands, draftKey, setLocalError, client }: {
+  generation: number
+  state: AgentChatState | undefined
+  commands: AgentChatCommandRecord[]
+  draftKey: string
+  setLocalError: Dispatch<SetStateAction<string | undefined>>
+  client: QueryClient
+}) {
+  useEffect(() => {
+    if (generation !== sessionGeneration() || sessionIsSwitching()) return
+    if (reconcileDraftReadback(state, commands, draftKey)) setLocalError(undefined)
+    for (const record of commands) {
+      if (record.command?.kind !== 'send') continue
+      const receipt = confirmedCommandReceipt(record, state) ?? receiptForCommand(state, record.command)
+      if (receipt && ['completed', 'failed', 'canceled'].includes(receipt.delivery)) {
+        forgetPendingCommand(draftKey, record.command.input.requestId)
+      }
     }
-    if (pending) return 'A command is being sent.'
-    return undefined
-  }
-  const send = (content: string, intent: AgentChatIntent, clearDraft = true, allowNewMessage = false, attachmentAttempt?: ChatAttachmentAttempt, sessionMode?: SessionMode): boolean => {
-    const text = content.trim()
-    const attachments = attachmentAttempt?.attachments ?? []
-    const reason = blocked('agent_chat:write') ?? (state ? intentUnavailable(state, intent) : undefined)
-    // A completed send can clear the draft before React paints its empty value. Ignore an old
-    // Enter/click handler in that gap; do not allocate another requestId for the cleared text.
-    reconcileDraftReadback(client.getQueryData<AgentChatState>(key), commands, draftKey)
-    if (clearDraft && (useConversationDraftStore.getState().drafts[draftKey] ?? '').trim() !== text) return false
-    if (clearDraft && attachmentAttempt?.isCurrent && !attachmentAttempt.isCurrent()) return false
-    if (reason || !state || (!text && !attachments.length) || text.length > 32_000 || attachments.length > 0 && !state.conversation) { setLocalError(reason ?? 'Write a message of up to 32,000 characters.'); return false }
-    const unconfirmed = state.turns.some((turn) => turn.delivery === 'unknown' && state.messages.some((message) => message.id === turn.messageId && message.content.trim() === text && sameAttachmentRefs(messageAttachmentRefs(message), attachments)))
-      || commands.some((record) => {
-        if (record.command?.kind !== 'send' || record.command.input.content !== text || !sameAttachmentRefs(record.command.input.attachments, attachments)) return false
-        const receipt = confirmedCommandReceipt(record, state) ?? receiptForCommand(state, record.command) ?? (record.result && 'turn' in record.result ? record.result.turn : undefined)
-        return receipt ? receipt.delivery === 'unknown' : record.status === 'error' && commandMayHaveBeenAccepted(record.error)
-      })
-    if (unconfirmed && !allowNewMessage) { setLocalError('Delivery is unknown. Use “Send again as new message” and review the warning.'); return false }
-    return runCommand(() => {
-      const target = { workflowId: context.workflowId, workflowNodeId: context.workflowNodeId, agentId: context.agentId,
-        ...(context.runId ? { runId: context.runId } : {}) }
-      return { kind: 'send', clearDraft, attachmentAttempt, input: { requestId: `agent-chat-${crypto.randomUUID()}`, context: target, content: text, intent, ...(sessionMode ? { sessionMode } : {}),
-        ...(attachments.length ? { attachments: attachments.map((pin) => ({ ...pin })) } : {}),
-        expectedConversationId: state.conversation?.id ?? null,
-        ...(intent !== 'next_turn' && state.activeTurn?.nativeTurnId ? { expectedNativeTurnId: state.activeTurn.nativeTurnId } : {}) } }
-    })
-  }
-  const stop = () => {
-    const reason = blocked('agent_chat:cancel')
-    if (reason || !state?.conversation || !state.capabilities.interruptAndSend || state.availability.reason === 'run_active') return
-    runCommand(() => ({ kind: 'stop', conversationId: state.conversation!.id, requestId: `agent-chat-stop-${crypto.randomUUID()}`,
-      ...(state.activeTurn?.nativeTurnId ? { expectedNativeTurnId: state.activeTurn.nativeTurnId } : {}) }))
-  }
-  const cancelQueued = (turnRequestId: string) => {
-    if (blocked('agent_chat:cancel') || !state?.conversation || state.turns.find((turn) => turn.requestId === turnRequestId)?.delivery !== 'queued') return
-    runCommand(() => ({ kind: 'cancel', conversationId: state.conversation!.id, requestId: `agent-chat-cancel-${crypto.randomUUID()}`, turnRequestId }))
-  }
-  const respond = (optionId: string, response?: Extract<Command, { kind: 'respond' }>['response']) => {
-    if (blocked('agent_chat:respond') || !state?.conversation || !approvalReplyAvailable(state)
-      || !state.pendingInteraction?.responseOptions.some((option) => option.optionId === optionId)) return
-    runCommand(() => ({ kind: 'respond', conversationId: state.conversation!.id, requestId: `agent-chat-response-${crypto.randomUUID()}`,
-      nativeRequestId: state.pendingInteraction!.turn.nativeRequestId!, optionId,
-      ...(response !== undefined ? { response } : {}) }))
-  }
-  return { state, query, history, access, canRead, denial, online, pending, connection, commands, latestCommand, latestReceipt, currentReceipt, confirmedReceipt, localError, blocked,
-    send, stop, cancelQueued, respond, refresh, draftKey }
+  }, [state, commands, draftKey, generation, setLocalError])
+  useEffect(() => { retireAgentChatAcknowledgements(client) }, [client, state])
 }

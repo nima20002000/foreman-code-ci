@@ -1,14 +1,20 @@
 import { beginRuntimeTiming, runtimeTimingChannel, timeRuntimeOperation } from '../../infrastructure/runtimeTiming.js'
+import { beginTransaction, commitTransaction } from '../../infrastructure/transaction.js'
+import { recoverGraphRollback } from './rollbackRecovery.js'
+import { ignoreError } from '../diagnostics/ignoredError.js'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { createHash } from 'node:crypto'
 import type pg from 'pg'
 import { RunGraphError } from './errors.js'
-import { isDatabaseTimeout, retryDatabaseTimeout } from '../../infrastructure/databaseTimeout.js'
+import { isDatabaseTimeout } from '../../infrastructure/databaseTimeout.js'
 
 export interface GraphSqlClient {
   query<R extends pg.QueryResultRow = pg.QueryResultRow>(text: string, values?: unknown[]): Promise<pg.QueryResult<R>>
 }
 export interface GraphTransactionSql extends GraphSqlClient { readonly transaction: true }
+interface GraphConnectionClient extends pg.ClientBase {
+  end?: () => Promise<void>
+}
 const adoptedClients = new WeakSet<pg.ClientBase>()
 const leases = new WeakMap<GraphSqlClient, {
   live: boolean; failed: boolean; committed: boolean; readOnly: boolean; finalizers: (() => Promise<void>)[]
@@ -74,12 +80,13 @@ export function assertGraphTransaction(sql: GraphSqlClient): asserts sql is Grap
  * Construction does NOT acquire RunOwnership or confer workflow authority.
  */
 export class ExclusiveGraphConnection implements GraphSqlClient {
-  readonly #client: pg.ClientBase
+  readonly #client: GraphConnectionClient
   readonly #assertOwner: () => void
   #tail: Promise<void> = Promise.resolve()
   #unusable = false
   #unusableCause: unknown
   #closing = false
+  readonly #closingSignal = new AbortController()
   constructor(client: pg.ClientBase, assertOwner: () => void,
     private readonly readPlans?: Map<string, string>) {
     if (adoptedClients.has(client)) throw new RunGraphError('GRAPH_TRANSACTION_CONCURRENT')
@@ -152,19 +159,19 @@ export class ExclusiveGraphConnection implements GraphSqlClient {
       if (status && status !== 'I') { state.live = false; throw new RunGraphError('GRAPH_TRANSACTION_NESTED') }
       let committing = false
       try {
-        await timeRuntimeOperation('db', 'sql.begin', () => this.#client.query(
-          readOnly ? 'begin isolation level repeatable read read only' : 'begin isolation level read committed'))
+        await timeRuntimeOperation('db', 'sql.begin', () => beginTransaction(this.#client,
+          readOnly ? { isolation: 'repeatable read', readOnly: true } : { isolation: 'read committed' }))
         const result = await work(sql)
         for (const finalize of state.finalizers) { assertGraphTransaction(sql); await finalize() }
-        if (pending) { state.failed = true; await pending.catch(() => undefined) }
+        if (pending) { state.failed = true; await pending.catch(() => { /* ignore: the owner awaits the original promise; this observer prevents a duplicate unhandled rejection. */ }) }
         assertGraphTransaction(sql)
         this.#assertOwner()
         committing = true
-        await timeRuntimeOperation('db', 'sql.commit', () => this.#client.query('commit'))
+        await timeRuntimeOperation('db', 'sql.commit', () => commitTransaction(this.#client))
         state.committed = true
         return result
       } catch (error) {
-        if (pending) await pending.catch(() => undefined)
+        if (pending) await pending.catch(() => { /* ignore: the owner awaits the original promise; this observer prevents a duplicate unhandled rejection. */ })
         if (committing && !isDatabaseTimeout(error)) {
           // COMMIT outcome can be unknown: do not retry the callback.
           this.#unusable = true
@@ -174,11 +181,15 @@ export class ExclusiveGraphConnection implements GraphSqlClient {
         // caller still receives the error and must reconcile an uncertain COMMIT.
         try {
           // Rollback only undoes this connection's uncommitted work, including after ownership loss.
-          await retryDatabaseTimeout(() => timeRuntimeOperation('db', 'sql.rollback', () => this.#client.query('rollback')))
+          await recoverGraphRollback(this.#client, this.#closingSignal.signal)
         }
         catch (rollbackError) {
           if (!this.#unusable) this.#unusableCause = rollbackError
           this.#unusable = true
+          // Dedicated sessions end here; the pool owner discards unusable leases during cleanup.
+          if (this.#client.end) {
+            void this.#client.end().catch(ignoreError('db', 'discard stalled graph connection'))
+          }
         }
         throw error
       } finally { state.live = false }
@@ -186,6 +197,7 @@ export class ExclusiveGraphConnection implements GraphSqlClient {
   }
   async close(): Promise<void> {
     this.#closing = true
+    this.#closingSignal.abort(new RunGraphError('GRAPH_TRANSACTION_CLOSED'))
     await this.#tail
     this.readPlans?.clear()
     adoptedClients.delete(this.#client)

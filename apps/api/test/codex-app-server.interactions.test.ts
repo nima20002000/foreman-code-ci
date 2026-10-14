@@ -140,14 +140,21 @@ describe.skipIf(process.platform === 'win32')('Codex app-server regressions agai
     const query = responseQuery(value)
     const controller = new AbortController()
     const response = manager.respond(session, query.nativeRequestId, value.responseOptions[0]!, controller.signal)
-    void response.catch(() => undefined)
+    void response.catch(() => { /* ignore: the abandoned response settles after the assertions; its outcome is not under test. */ })
     assert.equal((await manager.inspectResponseAvailability(session, query)).state, 'recovery_required')
     await until(async () => (await manager.history(session)).interactionDeliveries?.[0]?.state === 'submitted')
     assert.equal((await manager.inspectResponseAvailability(session, query)).state, 'recovery_required')
     assert.equal((await manager.inspectResponseAvailability(session, query)).reason, 'response_in_flight')
     controller.abort(new Error('stop waiting for delivery confirmation'))
     await assert.rejects(response)
-    const before = await wire()
+    // The fake server records receipt after the manager's pipe write completes.
+    const before = await until(async () => {
+      const messages = await wire()
+      return messages.some((message) => message.id === 901 && message.result) && messages
+    })
+    assert.deepEqual(before.filter((message) => message.id === 901 && message.result), [
+      { id: 901, result: { decision: 'accept' } },
+    ])
     assert.equal((await manager.inspectResponseAvailability(session, query)).state, 'recovery_required')
     assert.deepEqual(await wire(), before)
     await finish(f.directory, session.nativeSessionId)
@@ -250,7 +257,7 @@ describe.skipIf(process.platform === 'win32')('Codex app-server regressions agai
     const option = value.responseOptions[0]!
     const abort = new AbortController()
     const response = manager.respond(session, value.turn.nativeRequestId!, option, abort.signal)
-    void response.catch(() => undefined)
+    void response.catch(() => { /* ignore: the abandoned response settles after the assertions; its outcome is not under test. */ })
     await until(async () => (await manager.history(session)).interactionDeliveries?.[0]?.state === 'submitted')
     assert.equal(await manager.pending(session), undefined)
     assert.equal((await manager.history(session)).pendingInteractions.length, 1)
@@ -272,7 +279,7 @@ describe.skipIf(process.platform === 'win32')('Codex app-server regressions agai
     const { result } = await start(session, 'approval')
     await pending(session)
     await manager.closeForRestart(session)
-    await result.catch(() => undefined)
+    await result.catch(() => { /* ignore: closing for restart ends the turn; only the absence of a replayed answer is under test. */ })
     assert.equal((await wire()).filter((message) => message.id === 901 && message.result).length, 0)
     assert.equal((await wire()).filter((message) => message.id === 901 && message.error).length, 0)
   })

@@ -338,10 +338,16 @@ export class RemoteNativeSessionManager implements NativeHarnessSessionManager {
   }
   async cancel(session: NativeSessionReference, signal?: AbortSignal, nativeTurnId?: string) {
     this.assertSession(session)
-    const native = this.receipt && remoteActiveNative(this.receipt)
+    // A reconnect can recover a turn acknowledgment that this proxy has not observed.
+    const receipt = await this.status(await this.request('status', {}, signal))
+    const native = remoteActiveNative(receipt)
     if (!native || nativeTurnId && nativeTurnId !== native.turnId) throw new Error('Wrong remote cancel turn')
-    const command = await this.options.controlFor({ kind: 'stop', native })
-    await this.status(await this.request('control', { command, intent: this.intent, placement: this.options.placement }, signal))
+    if (!receipt.terminal) {
+      const command = await this.options.controlFor({ kind: 'stop', native })
+      await this.status(await this.request('control', {
+        command, intent: this.intent, placement: this.options.placement,
+      }, signal))
+    }
     await this.history(session, signal)
     // Requested cancellation is not confirmed physical closure.
     return this.receipt?.phase === 'confirmed_terminal' && this.receipt.terminal?.kind === 'cancelled'
@@ -416,7 +422,12 @@ export class RemoteNativeSessionManager implements NativeHarnessSessionManager {
     await this.options.observeOriginalSource?.(this.receipt!, { type: 'history', history })
     return history
   }
-  async close(session: NativeSessionReference) { this.assertSession(session); if (this.receipt?.phase !== 'confirmed_terminal') await this.cancel(session); if (this.receipt?.phase !== 'confirmed_terminal') throw new Error('Original remote native closure is unconfirmed') }
+  async close(session: NativeSessionReference) {
+    this.assertSession(session)
+    if (this.receipt?.phase !== 'confirmed_terminal') await this.status(await this.request('status', {}))
+    if (this.receipt?.phase !== 'confirmed_terminal') await this.cancel(session)
+    if (this.receipt?.phase !== 'confirmed_terminal') throw new Error('Original remote native closure is unconfirmed')
+  }
   async dispose() {
     if (!this.prepareAttempted) return
     if (!this.detached && this.receipt?.phase !== 'confirmed_terminal') {

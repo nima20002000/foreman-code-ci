@@ -15,6 +15,7 @@ import { ChatRetentionSettings } from './ChatRetentionSettings'
 import { retentionQueryKey } from './retentionQueries'
 import { clearRetentionCommandMemory, retentionCommandKey } from './retentionCommand'
 import { beginSessionChange, finishSessionChange, sessionGeneration } from '../../shared/api/sessionBoundary'
+import { deferred } from '../../test/deferred'
 
 const root = '/api/management/file-retention'
 const clients: QueryClient[] = []
@@ -35,7 +36,7 @@ function currentPreview(durationSeconds: number): FileRetentionPreviewResult {
 }
 function accept(input: FileRetentionSaveInput) {
   preference = FileRetentionPreferenceSchema.parse({
-    ...preference, durationSeconds: input.durationSeconds, revision: input.expectedRevision + 1,
+    ...preference, durationSeconds: input.durationSeconds, revision: (input.expectedRevision ?? preference.revision) + 1,
   })
   const result = FileRetentionSaveResultSchema.parse({
     value: {
@@ -66,11 +67,6 @@ async function save(user: ReturnType<typeof userEvent.setup>) {
   const button = screen.getByRole('button', { name: /^Save$/ })
   await waitFor(() => expect(button).toBeEnabled())
   await user.click(button)
-}
-function deferred<T>() {
-  let resolve!: (value: T) => void
-  const promise = new Promise<T>((done) => { resolve = done })
-  return { promise, resolve }
 }
 
 function clearRecovery() {

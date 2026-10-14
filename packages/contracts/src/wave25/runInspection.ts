@@ -9,6 +9,7 @@ import { RepeatExecutionIdentityV1Schema, RepeatOccurrenceIdentityV1Schema, Repe
 import { WorkflowRunV3Schema, WorkflowVersionV3Schema } from './saved.js'
 import { canonicalGraphJson } from './json.js'
 import { WorkActivationInputSchema } from './handoffs.js'
+import { IntervalCheckAcceptedInputSchema } from './intervalAcceptedInput.js'
 
 /** Private, authenticated inspection. These bodies NEVER enter graph snapshots/deltas. */
 export const RUN_INSPECTION_TOOLS = {
@@ -35,10 +36,6 @@ export const RunExecutionBindingsListInputSchema = RunExecutionGetInputSchema.ex
 export const RunRecordGetInputSchema = RunRequest
 export const RunVersionGetInputSchema = RunRequest
 export type RunExecutionsListInput = z.infer<typeof RunExecutionsListInputSchema>
-export type RunExecutionGetInput = z.infer<typeof RunExecutionGetInputSchema>
-export type RunExecutionBindingsListInput = z.infer<typeof RunExecutionBindingsListInputSchema>
-export type RunRecordGetInput = z.infer<typeof RunRecordGetInputSchema>
-export type RunVersionGetInput = z.infer<typeof RunVersionGetInputSchema>
 
 /** Explicit private Run disclosure, independent of execution/activity history.
  * Retains exact Run input/result and immutable pins. Principal identity is never
@@ -91,7 +88,7 @@ export const RunInputSourceSchema = z.object({
   occurrence: RepeatOccurrenceIdentityV1Schema.nullable(),
   acceptedResultDigest: GraphDigestSchema, acceptedResult: AcceptedCurrentNodeResultSchema,
 }).strict()
-export const RunInputCarrySchema = z.object({
+const RunInputCarrySchema = z.object({
   decisionId: GraphIdSchema, execution: RepeatExecutionIdentityV1Schema,
   acceptedResultDigest: GraphDigestSchema, acceptedResult: AcceptedCurrentNodeResultSchema,
 }).strict()
@@ -105,6 +102,7 @@ const RepeatInspectionInputSchema = z.object({
 }).strict()
 export const RunAcceptedInputValueSchema = z.union([
   RepeatInspectionInputSchema,
+  IntervalCheckAcceptedInputSchema,
   WorkActivationInputSchema.safeExtend({ runInput: RunInputSchema }),
 ]).superRefine((value, context) => {
   try { canonicalGraphJson(value, RUN_INSPECTION_LIMITS.inputBytes) }

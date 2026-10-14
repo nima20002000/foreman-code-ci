@@ -1,5 +1,18 @@
 # Selected-main Ubuntu worker
 
+## Pairing lifetime
+
+Pairing grants and enrollment codes from `device_pairing_grant_create` and
+`device_setup_code_create` are valid for one hour. They remain single-use and
+bound to the selected Worker key. Retrying the same command retains its original
+expiry; retrying a completed pairing with the same request returns its original
+credential.
+
+New pairings issue device credentials with a 100-year lifetime, so computers do
+not need monthly re-pairing. Revocation, installation/key revisions and device
+scope checks still apply. Previously issued grants and credentials retain their
+saved expiry.
+
 ## Main execution setting
 
 Main's persisted remote execution setting defaults off. New workflow Agent steps
@@ -10,7 +23,7 @@ cancellation and cleanup. Pairing a computer does not enable execution.
 Operator MCP's `remote_execution_settings_get` reads the saved value and revision,
 effective configuration, explicit environment overrides and listener runtime status.
 `remote_execution_settings_update` replaces the global settings with
-`{ value: { enabled, listener }, expectedRevision, commandId }`. Reads require global
+`{ value: { enabled, listener }, commandId, expectedRevision? }`. Omit `expectedRevision` for last write wins; supply it to reject a stale write. Reads require global
 `settings:read`; updates require global `settings:update`. Reuse the same command ID
 and input after an uncertain save, then read back the persisted result.
 Normal placement, permissions, source and runtime qualification checks still apply.
@@ -122,9 +135,13 @@ corepack pnpm --filter @foreman-code/worker build:artifact apps/worker/artifacts
 
 The fresh output includes the built worker, installer, service template and a
 manifest listing every shipped file's size/SHA-256, exact target/runtime,
-protocol/identity formats, commit and lockfile hashes. The builder rejects
-control-plane imports and external non-Node runtime imports. Review and approve
-the manifest SHA-256 through a trusted channel before transferring the artifact.
+protocol/identity formats, commit and lockfile hashes. API modules are discovered
+from the transitive import graphs of the Worker, rsync writer and schema Worker;
+new helpers and file splits need no manual registration. The builder retains
+the forbidden-module deny-list for API server entrypoints, database modules,
+migrations and bootstrap code, and rejects control-plane dependencies, sensitive
+paths, imports outside the source scope and external non-Node runtime imports.
+Review and approve the manifest SHA-256 through a trusted channel before transferring the artifact.
 An accompanying untrusted checksum file is insufficient.
 
 The manifest version is the captured product release version from the root
@@ -266,3 +283,19 @@ changed boot/connection IDs, service survival after browser/SSH closure,
 reconnect and persisted revocation while SSH remains usable. Logout/reboot/power
 and local provider login remain separate human gates. W08/W09 must independently
 qualify remote execution and exact source transfer before advertising them.
+
+Paired build computers run a small integration smoke after an automatic Worker
+update becomes ready. Main provides the artifact repository and commit through a separate authenticated
+configuration request only for
+the authenticated computer whose build preference is enabled and whose identity
+and authority revisions still match. The updated Worker uses normal Host CI
+setup and measured shard limits and requires one reported passing test within
+160 seconds. A failure restores the previous Worker pointer, restarts it, and
+persists the original smoke failure. `FOREMAN_INSTALL_SKIP_CI_SMOKE=1` on the
+update supervisor explicitly skips this check. Release announcements retain their
+previous wire shape so existing Workers can update. During the first upgrade
+from an older supervisor, the new Worker withholds ready health until its smoke
+finishes; the retained supervisor can roll back on its existing startup deadline.
+Initial manual setup remains
+stopped until pairing and service activation; CI is checked on enabled paired
+computers during production installation and subsequent automatic updates.

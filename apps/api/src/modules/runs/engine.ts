@@ -1,7 +1,6 @@
 import { beginRuntimeTiming, runtimeTimingPoint, withRuntimeTimingContext } from '../../infrastructure/runtimeTiming.js'
 import { retryDatabaseTimeout } from '../../infrastructure/databaseTimeout.js'
 import { resolve } from 'node:path'
-import type pg from 'pg'
 import type { BaseCheckpointSaver } from '@langchain/langgraph-checkpoint'
 import type { DurableInteraction } from '@foreman-code/contracts'
 import { CurrentRunVersionSnapshotSchema, ExecutableWorkflowV3Schema,
@@ -25,18 +24,18 @@ import { consumeDeliveredApprovals, type WorkflowResumePermit } from './approval
 import type { AuthorizeWorkflowStop } from './repeatLifecycle.js'
 import type { PostgresRunRepository } from './postgres.js'
 import type { RunOwnership } from './ownership.js'
-import type { WorkflowOrchestrator } from './port.js'
 import { RunnerAdmission } from './runnerAdmission.js'
 import { componentLogger } from '../diagnostics/logger.js'
 import { isAtomicApprovalCheckpointSaver } from '../../infrastructure/approvalCheckpointSaver.js'
 import type { WorkflowRestartApprovals } from './workflowRepositoryServices.js'
 import { readRunAcceptedPlacements } from '../placement/persistence.js'
+import { ignoreError } from '../diagnostics/ignoredError.js'
 
 /** One engine, Run owner, checkpoint thread and repository for all current V3
  * graphs. Optional bounded blocks are compiled into this same LangGraph; an
  * ordinary graph has no block/round/carry/decision storage. There is no legacy
  * dispatcher, retagging, second scheduler, or caller-supplied runtime binding. */
-export class LangGraphWorkflowEngine implements WorkflowOrchestrator {
+export class LangGraphWorkflowEngine {
   private readonly workerAdmission: RunnerAdmission
   private readonly configuredParallelism: number
   private readonly maximumActiveRuns: number
@@ -137,7 +136,7 @@ export class LangGraphWorkflowEngine implements WorkflowOrchestrator {
       return this.consumeActiveApproval(owner, claim, ids, this.activeRuns.get(runId)!.signal)
     }
     const previous = this.resumeTasks.get(runId) ?? this.activeTasks.get(runId) ?? Promise.resolve()
-    const task = previous.catch(() => undefined).then(() =>
+    const task = previous.catch(() => { /* ignore: the previous caller receives its failure; the queue must still admit the next operation. */ }).then(() =>
       this.trackRun(runId, (controller) => this.drive(runId, controller, ids, claim)),
     ).finally(() => { if (this.resumeTasks.get(runId) === task) this.resumeTasks.delete(runId) })
     this.resumeTasks.set(runId, task)
@@ -277,7 +276,14 @@ export class LangGraphWorkflowEngine implements WorkflowOrchestrator {
             return { executionState: current.run.executionState, stopRequested: current.stopRequested,
               cleanupPending: current.cleanupPending }
           },
-          persistWait: async (current) => (await persistWorkflowApprovalWait(owner, this.checkpointer, current)).length > 0,
+          persistWait: async (current) => {
+            const waiting = (await persistWorkflowApprovalWait(owner, this.checkpointer, current)).length > 0
+            // A finished graph needs retained reviewer closure before the Run completion transaction.
+            if (!waiting && !current.next.length && !snapshot.version.definition.handoffs) {
+              await this.nativeExecutions.finishIdleReviewers(runId, owner, controller.signal)
+            }
+            return waiting
+          },
           persistDirectionWait: () => persistWorkDirectionWait(owner, this.locations),
           cancelNativeAndRequestCleanup: async () => {
             await this.runs.requestCleanup(runId, owner)
@@ -326,14 +332,14 @@ export class LangGraphWorkflowEngine implements WorkflowOrchestrator {
 
   private authorize(sql: import('../run-graph/connection.js').GraphTransactionSql, run: WorkflowRunV3): Promise<void> {
     if (!run.authorizationPrincipalId) throw new DomainError('RUN_AUTHORIZATION_REVOKED', 'The accepted Run authority is missing.', 403)
-    return this.locations.revalidateRunAuthorization(run.authorizationPrincipalId, run.workspaceId, run.workflowId,
-      sql as unknown as Pick<pg.PoolClient, 'query'>)
+    return this.locations.revalidateRunAuthorization(run.authorizationPrincipalId, run.workspaceId, run.workflowId, sql)
   }
 
   private async cleanupOwned(owner: RunOwnership): Promise<void> {
     const finished = beginRuntimeTiming('engine', 'run.cleanup', { runId: owner.runId })
     try {
       owner.assertOwned()
+      this.nativeExecutions.adoptRunOwner(owner)
       const snapshot = await this.runs.getRepeatSnapshot(owner.runId, owner)
       if (!snapshot.stopRequested && !snapshot.cleanupPending && snapshot.run.executionState !== 'completed') throw new DomainError(
         'GRAPH_STOP_CONFLICT', 'Cleanup requires the committed negative or terminal fence.', 409)
@@ -345,7 +351,7 @@ export class LangGraphWorkflowEngine implements WorkflowOrchestrator {
         } else await this.nativeExecutions.finishRun(owner.runId)
         await this.finishOwned(owner)
       } catch (error) {
-        await this.runs.finishCleanup(owner.runId, true, owner).catch(() => undefined)
+        await this.runs.finishCleanup(owner.runId, true, owner).catch(ignoreError('engine', 'record failed run cleanup', { runId: owner.runId }))
         throw error
       }
     } finally { finished() }
@@ -356,6 +362,7 @@ export class LangGraphWorkflowEngine implements WorkflowOrchestrator {
     try {
       const current = await this.runs.getRepeatSnapshot(owner.runId, owner)
       if (current.run.executionState !== 'completed') throw new DomainError('GRAPH_TERMINAL_CONFLICT', 'The Run has not settled.', 409)
+      this.nativeExecutions.adoptRunOwner(owner)
       await this.nativeExecutions.finishRun(owner.runId)
       await this.onRunTerminal?.(owner.runId, reason)
       await this.runs.finishCleanup(owner.runId, false, owner)
@@ -454,31 +461,37 @@ export class LangGraphWorkflowEngine implements WorkflowOrchestrator {
       // Retain each actual Run owner until its durable stop-only cleanup intent
       // commits. Failed persistence must not authorize a Job abort or close.
       this.restartIntent = Promise.resolve().then(async () => {
-        const intents = await withCleanupDeadline(async () => Promise.allSettled([...this.activeOwners.entries()].map(async ([runId, owner]) => {
+        const intents = await Promise.allSettled([...this.activeOwners.entries()].map(async ([runId, owner]) => {
           if (this.activeOwners.get(runId) === owner) {
-            const run = await this.runs.get(runId)
-            const version = run && await this.workflows.getVersion(run.workflowVersionId)
-            const accepted = CurrentRunVersionSnapshotSchema.parse({ run, version })
-            let approvals: WorkflowRestartApprovals | undefined
-            if (accepted.version.definition.handoffs) {
-              const checkpoint = await readWorkflowCheckpoint(runId, accepted.version, this.checkpointer)
-              const interactions = checkpoint.tasks.some(task => task.interrupts?.length)
-                ? await persistWorkflowApprovalWait(owner, this.checkpointer, checkpoint) : []
-              if (interactions.length && isAtomicApprovalCheckpointSaver(this.checkpointer)) {
-                approvals = { saver: this.checkpointer, interactions }
+            const { accepted, approvals } = await withCleanupDeadline(async () => {
+              const run = await this.runs.get(runId)
+              const version = run && await this.workflows.getVersion(run.workflowVersionId)
+              const accepted = CurrentRunVersionSnapshotSchema.parse({ run, version })
+              let approvals: WorkflowRestartApprovals | undefined
+              if (accepted.version.definition.handoffs) {
+                const checkpoint = await readWorkflowCheckpoint(runId, accepted.version, this.checkpointer)
+                const interactions = checkpoint.tasks.some(task => task.interrupts?.length)
+                  ? await persistWorkflowApprovalWait(owner, this.checkpointer, checkpoint) : []
+                if (interactions.length && isAtomicApprovalCheckpointSaver(this.checkpointer)) {
+                  approvals = { saver: this.checkpointer, interactions }
+                }
               }
-            }
+              return { accepted, approvals }
+            })
             // Decide before cancellation drains observation; reuse that decision
             // for closure retries under the same Run owner.
+            // Startup has its own bounded wait; it must not consume the cleanup intent's deadline.
             const preserved = this.restartPreservedOwners.has(owner)
               || await this.nativeExecutions.preserveActiveForRestart(owner)
-            if (preserved) this.restartPreservedOwners.add(owner)
-            // Freeze handoff tasks before classifying their queued reservations.
-            // These tasks do not abort Jobs, which require the cleanup fence first.
-            if (accepted.version.definition.handoffs) this.activeRuns.get(runId)?.abort(reason)
-            if (!preserved) await this.requestRestartCleanup(owner, approvals)
+            await withCleanupDeadline(async () => {
+              if (preserved) this.restartPreservedOwners.add(owner)
+              // Freeze handoff tasks before classifying their queued reservations.
+              // These tasks do not abort Jobs, which require the cleanup fence first.
+              if (accepted.version.definition.handoffs) this.activeRuns.get(runId)?.abort(reason)
+              if (!preserved) await this.requestRestartCleanup(owner, approvals)
+            })
           }
-        })))
+        }))
         const intentErrors = intents.flatMap((item) => item.status === 'rejected' ? [item.reason] : [])
         if (intentErrors.length) throw new AggregateError(intentErrors, 'Workflow restart cleanup intent remains unconfirmed.')
       })
@@ -510,8 +523,7 @@ export class LangGraphWorkflowEngine implements WorkflowOrchestrator {
   }
 
   private async requestRestartCleanup(owner: RunOwnership, approvals?: WorkflowRestartApprovals): Promise<void> {
-    const { version } = await this.runs.getRepeatSnapshot(owner.runId, owner)
-    if (version.definition.handoffs && await settleWorkForRestart(owner, approvals)) return
+    if (await settleWorkForRestart(owner, approvals)) return
     await this.runs.requestCleanup(owner.runId, owner)
   }
 }

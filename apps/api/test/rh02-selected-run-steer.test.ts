@@ -16,7 +16,8 @@ import { PostgresOperatorConversationRepository } from '../src/modules/conversat
 import { runChatStorageKey } from '../src/modules/conversations/selectedRunChat.js'
 import type { NativeSteerInput } from '../src/modules/harnesses/port.js'
 import type { PostgresRunRepository } from '../src/modules/runs/postgres.js'
-import { AgentChatF5Native, deferred } from './helpers/agentChatF5.js'
+import { AgentChatF5Native } from './helpers/agentChatF5.js'
+import { deferred } from './helpers/deferred.js'
 
 class SteeringNative extends AgentChatF5Native {
   readonly steerTurn = vi.fn(async (_session: NativeSessionReference, input: NativeSteerInput) => ({ nativeTurnId: input.expectedTurnId }))
@@ -74,6 +75,13 @@ it('RH-02 keeps new, in-steer replay and ordinary replay responses on the explic
     if (sql.includes('origin_execution_id=$6')) return { rows: rows.filter((row) => row.workspace_id === values[0]
       && row.workflow_id === values[1] && row.origin_run_id === values[2] && row.workflow_node_id === values[3]
       && row.agent_id === values[4] && row.origin_execution_id === values[5]) }
+    if (sql.includes('from harness_native_events')) {
+      const execution = executions.find(item => item.id === values[0] && item.runId === values[1]
+        && item.workflowNodeId === values[2] && item.agentId === values[3])
+      return { rows: execution ? [{ item_key: 'source-reply', role: 'assistant',
+        content: `Source transcript for ${execution.id}`, original_bytes: 0, complete: true,
+        sequence: '1', revision: '1' }] : [] }
+    }
     if (sql.includes('operator_conversation_activit')) return { rows: [] }
     throw new Error(`Unexpected SQL in RH-02 fixture: ${sql}`)
   })
@@ -151,6 +159,8 @@ it('RH-02 keeps new, in-steer replay and ordinary replay responses on the explic
     responses.push(await chat.sendSelectedRun(principal, request))
     expect(responses[2]!.replayed).toBe(true)
     for (const response of responses) {
+      expect(response.state.sourceTranscript).toMatchObject({ executionId: executions[1]!.id,
+        messages: [{ role: 'assistant', content: `Source transcript for ${executions[1]!.id}` }] })
       expect(response.state.context).toEqual(context)
       expect(response.state.conversation?.id).toBe(selected.id)
       expect(response.state.conversation?.origin).toEqual(selected.record.origin)

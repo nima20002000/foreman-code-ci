@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event'
 import { HttpResponse, http } from 'msw'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { WorkspaceRootSelectionSchema, type WorkspaceRootSelection } from '@foreman-code/contracts/workspace-root-policies'
 import { FileRetentionSaveInputSchema, type FileRetentionPreference } from '@foreman-code/contracts/files'
 import { clearRevisionedFormPersistence } from '../features/settings/revisionedForm'
 import { clearRetentionCommandMemory } from '../features/retention-settings/retentionCommand'
@@ -12,7 +13,7 @@ import { clearRetentionCommandMemory } from '../features/retention-settings/rete
 import { routeTree } from '../app/router'
 import { server } from '../mocks/server'
 import { setMockScenario } from '../shared/mocks/scenarios'
-import { mainRoot, rootMainId } from '../features/settings/workspaceBoundLocation.fixtures'
+import { mainRoot } from '../features/settings/workspaceBoundLocation.fixtures'
 import { mockRuntimeIdentity } from '../shared/mocks/handlers'
 
 function renderRoute(path: string) {
@@ -39,6 +40,30 @@ afterEach(() => {
 function workspacesDestination() {
   return screen.getAllByRole('button', { name: 'Workspaces' })
     .find(button => !button.hasAttribute('aria-expanded'))!
+}
+
+function mockApprovedMainFolderBrowser() {
+  const browseRequests: WorkspaceRootSelection[] = []
+  const approvedRoot = {
+    ...mainRoot,
+    hostRef: { kind: 'main' as const, mainId: mockRuntimeIdentity.installationId },
+    applicationInstallationId: mockRuntimeIdentity.installationId,
+  }
+  server.use(
+    http.get('/api/management/workspaces/workspace-1/root-location', () => HttpResponse.json({ evidence: 'legacy_missing', workspaceId: 'workspace-1', locationRevision: 0, executionLocation: { runnerId: 'original-runner', rootPath: '/previous' } })),
+    http.get('/api/management/workspaces/workspace-1/root-policies', () => HttpResponse.json({ workspaceId: 'workspace-1', readiness: 'metadata-only', policies: [], allowlists: [approvedRoot] })),
+    http.get('/api/management/harnesses/directories', () => HttpResponse.json({
+      roots: [{ id: 'workspaces', label: 'Workspaces', path: mainRoot.bases[0]!.canonicalPath }],
+      rootId: null, path: null, parent: null, directories: [], nextCursor: null,
+    })),
+    http.post('/api/management/workspaces/workspace-1/root-location/browse', async ({ request }) => {
+      const selection = WorkspaceRootSelectionSchema.parse(await request.json())
+      browseRequests.push(selection)
+      return HttpResponse.json({ workspaceId: 'workspace-1', selection,
+        browse: { relativePath: '', directories: [], truncated: false } })
+    }),
+  )
+  return browseRequests
 }
 
 describe('workspace section routes', () => {
@@ -83,14 +108,14 @@ describe('workspace section routes', () => {
       'aria-expanded',
       'false',
     )
-    expect(screen.queryByRole('link', { name: 'Agents' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Agents' })).not.toBeInTheDocument()
   })
 
   it('keeps the temporarily hidden agents directory available by deep link', async () => {
     renderRoute('/workspaces/workspace-1/agents?agentId=agent-researcher')
 
     expect(await screen.findByRole('heading', { name: 'Agents', level: 1 })).toBeVisible()
-    expect(screen.queryByRole('link', { name: 'Agents' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Agents' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Researcher, researcher, Available/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('dialog', { name: 'Researcher' })).not.toBeInTheDocument()
 
@@ -107,7 +132,10 @@ describe('workspace section routes', () => {
     setMockScenario('error')
     renderRoute('/workspaces/workspace-1/agents')
 
-    expect(await screen.findByTestId('agents-error')).toHaveTextContent('selected mock scenario fails read requests')
+    const error = await screen.findByTestId('agents-error')
+    expect(error).toHaveTextContent('Agents unavailable')
+    expect(error).toHaveTextContent('The selected mock scenario fails read requests.')
+    expect(screen.queryByText('No agents yet')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Retry' })).toBeVisible()
   })
 
@@ -116,14 +144,14 @@ describe('workspace section routes', () => {
 
     expect(await screen.findByRole('heading', { name: 'Terminal' })).toBeVisible()
     expect(screen.getByTestId('coming-soon')).toHaveTextContent('Coming soon')
-    expect(screen.queryByRole('link', { name: 'Terminal' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Terminal' })).not.toBeInTheDocument()
   })
 
-  it('opens the workflow directory from the Workflows sidebar link', async () => {
+  it('opens the workflow directory from the Workflows sidebar button', async () => {
     const user = userEvent.setup()
     const { router } = renderRoute('/workspaces/workspace-1/settings')
-    await user.click(await screen.findByTitle('Workflows'))
-    expect(router.state.location.pathname).toBe('/workspaces/workspace-1/workflows')
+    await user.click(await screen.findByRole('button', { name: 'Workflows' }))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/workspaces/workspace-1/workflows'))
     expect(within(screen.getByRole('navigation', { name: 'Workspace sections' })).getByRole('link', { name: 'Workflows' })).toHaveAttribute('aria-current', 'page')
     expect(await screen.findByTestId('workflow-card-workflow-content-pipeline')).toBeVisible()
   })
@@ -150,7 +178,7 @@ describe('workspace section routes', () => {
     expect(await screen.findByRole('heading', { name: 'Project files', level: 1 })).toBeVisible()
     expect(screen.queryByTestId('coming-soon')).not.toBeInTheDocument()
     expect(within(await screen.findByRole('navigation', { name: 'Workspace sections' })).getByRole('link', { name: 'Project files' })).toHaveAttribute('aria-current', 'page')
-    expect(screen.queryByRole('link', { name: 'Files' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Files' })).not.toBeInTheDocument()
     expect(workspacesDestination()).toHaveClass('nav-item-active')
   })
 
@@ -181,10 +209,10 @@ describe('workspace section routes', () => {
       const { router } = renderRoute(path)
       expect(await screen.findByRole('heading', { name: 'General', level: 1 })).toBeVisible()
       expect(router.state.location.pathname).toBe('/settings/general')
-      expect(screen.queryByRole('link', { name: 'Account' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Account' })).not.toBeInTheDocument()
       expect(screen.queryByText('preview@example.test')).not.toBeInTheDocument()
       expect(screen.queryByRole('button', { name: /sign in|sign out|connect browser/i })).not.toBeInTheDocument()
-      expect(screen.getByRole('link', { name: 'Settings' })).toHaveAttribute('aria-current', 'page')
+      expect(screen.getByRole('button', { name: 'Settings' })).toHaveAttribute('aria-current', 'page')
     },
   )
 
@@ -228,14 +256,14 @@ describe('workspace section routes', () => {
     renderRoute('/settings/general')
     expect(await screen.findByRole('spinbutton', { name: 'Duration' })).toHaveValue(12)
     expect(screen.getByRole('combobox', { name: 'Unit' })).toHaveValue('hours')
-    expect(screen.queryByRole('link', { name: 'Account' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Account' })).not.toBeInTheDocument()
   })
 
   it('asks for workspace choice at the old global approval URL instead of opening a wider queue', async () => {
     renderRoute('/approvals?interactionId=unscoped-request')
     expect(await screen.findByRole('heading', { name: 'Workspaces', level: 1 })).toBeVisible()
     expect(screen.queryByRole('region', { name: 'Approval Inbox' })).not.toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Settings' })).not.toHaveAttribute('aria-current')
+    expect(screen.getByRole('button', { name: 'Settings' })).not.toHaveAttribute('aria-current')
   })
 
   it('omits the approvals shortcut from workspace settings', async () => {
@@ -316,18 +344,7 @@ describe('workspace section routes', () => {
   })
 
   it('opens the approved Main folder browser without navigating away from Settings', async () => {
-    localStorage.setItem('graphql.chat-instance-binding', `${mockRuntimeIdentity.checkoutId}:${rootMainId}`)
-    server.use(
-      http.get('/api/runtime/identity', () => HttpResponse.json({ ...mockRuntimeIdentity, installationId: rootMainId })),
-      http.get('/api/management/workspaces/workspace-1/root-location', () => HttpResponse.json({ evidence: 'legacy_missing', workspaceId: 'workspace-1', locationRevision: 0, executionLocation: { runnerId: 'original-runner', rootPath: '/previous' } })),
-      http.get('/api/management/workspaces/workspace-1/root-policies', () => HttpResponse.json({ workspaceId: 'workspace-1', readiness: 'metadata-only', policies: [], allowlists: [mainRoot] })),
-      http.get('/api/management/harnesses/directories', () => HttpResponse.json({
-        roots: [{ id: 'workspaces', label: 'Workspaces', path: mainRoot.bases[0]!.canonicalPath }],
-        rootId: null, path: null, parent: null, directories: [], nextCursor: null,
-      })),
-      http.post('/api/management/workspaces/workspace-1/root-location/browse', async ({ request }) => HttpResponse.json({ workspaceId: 'workspace-1', selection: await request.json(),
-        browse: { relativePath: '', directories: [], truncated: false } })),
-    )
+    mockApprovedMainFolderBrowser()
     const user = userEvent.setup()
     const { router } = renderRoute('/workspaces/workspace-1/settings')
 
@@ -343,6 +360,40 @@ describe('workspace section routes', () => {
     expect(await within(dialog).findByRole('button', { name: 'New folder' })).toBeVisible()
     expect(within(dialog).queryByRole('combobox')).not.toBeInTheDocument()
     expect(router.state.location.pathname).toBe('/workspaces/workspace-1/settings')
+  })
+
+  it('keeps workspace rename available after closing the approved Main folder browser', async () => {
+    const browseRequests = mockApprovedMainFolderBrowser()
+    const user = userEvent.setup()
+    const { router } = renderRoute('/workspaces/workspace-1/settings')
+
+    expect(await screen.findByRole('heading', { name: 'Settings', level: 1 })).toBeVisible()
+    const executionLocation = await screen.findByLabelText('Execution location', { selector: 'button' })
+    expect(executionLocation).toBe(screen.getByRole('button', { name: 'Execution location' }))
+    await user.click(executionLocation)
+    const dialog = await screen.findByRole('dialog', { name: 'Choose folder' })
+    await waitFor(() => expect(browseRequests).toHaveLength(1))
+    expect(browseRequests[0]).toMatchObject({
+      workspaceId: 'workspace-1',
+      hostRef: { kind: 'main', mainId: mockRuntimeIdentity.installationId },
+      allowedBaseId: mainRoot.bases[0]!.baseId,
+      relativePath: '',
+    })
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+
+    expect(screen.queryByRole('dialog', { name: 'Choose folder' })).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Settings', level: 1 })).toBeVisible()
+    expect(router.state.location.pathname).toBe('/workspaces/workspace-1/settings')
+    await user.click(screen.getByRole('button', { name: 'Rename workspace Website' }))
+    expect(screen.getByRole('textbox', { name: 'Workspace name' })).toHaveFocus()
+    expect(screen.getByRole('textbox', { name: 'Workspace name' })).toHaveValue('Website')
+    await user.clear(screen.getByRole('textbox', { name: 'Workspace name' }))
+    await user.paste('Renamed after folder cancellation')
+    await user.click(screen.getByRole('button', { name: 'Save name' }))
+    expect(await screen.findByRole('button', { name: 'Rename workspace Renamed after folder cancellation' }))
+      .toBeVisible()
+    await waitFor(() => expect(screen.getByTestId('workspace-entry-workspace-1'))
+      .toHaveTextContent('Renamed after folder cancellation'))
   })
 
   it('uses the same inline rename from the workspace name and settings, with a nearby removal control', async () => {
@@ -387,6 +438,7 @@ describe('workspace section routes', () => {
     await user.paste('Confirmed retry rename')
     await user.click(screen.getByRole('button', { name: 'Save name' }))
     expect(await screen.findByText('Rename acknowledgement lost.')).toBeVisible()
+    expect(screen.getByText('The rename may have succeeded. Retry to confirm its outcome.')).toBeVisible()
     expect(input).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled()
     await user.click(screen.getByRole('button', { name: 'Retry rename' }))

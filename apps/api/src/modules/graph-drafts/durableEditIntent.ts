@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { withTransaction } from '../../infrastructure/transaction.js'
 import pg from 'pg'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import {
@@ -17,8 +18,8 @@ import { commandInputHash, type PostgresCommandCoordinator } from '../commands/p
 import { DomainError } from '../errors.js'
 import type { RunManagementService } from '../runs/management.js'
 import { lockActiveWorkspace } from '../workspaces/admission.js'
-import { lockAgentConfigurations } from '../workspaces/agentConfiguration.js'
 import { readAffectedGraphRuns } from './saveAdmission.js'
+import { ignoreError } from '../diagnostics/ignoredError.js'
 
 export type EditIntentSource = 'http' | 'mcp'
 type Source = EditIntentSource
@@ -47,7 +48,6 @@ export interface EditIntentBoundary<S extends EditStageScope, I extends DurableE
   requiresRunSettlement(client: pg.PoolClient, draft: I['stagedDraft']): boolean | Promise<boolean>
   authorize(principal: ManagementPrincipal, input: Scope, write: boolean): void
   authorizeContent(principal: ManagementPrincipal, intent: I): void
-  assertDraft(client: pg.PoolClient, principal: ManagementPrincipal, intent: I): Promise<void>
   authorizePublication(client: pg.PoolClient, principal: ManagementPrincipal, intent: I): Promise<void>
   assertStopReady?(pin: GraphEditIntent['affected'][number]): void
   saveInputHash(input: I['saveInput'], intentId: string): string
@@ -91,15 +91,11 @@ export class DurableEditIntentService<S extends EditStageScope, I extends Durabl
     for (const item of current) requireAuthorization(principal, 'runs:read', item.pin)
   }
   private async transaction<T>(principal: ManagementPrincipal, work: (client: pg.PoolClient, live: ManagementPrincipal) => Promise<T>) {
-    const client = await this.pool.connect()
-    try {
-      await client.query('begin')
+    return withTransaction(this.pool, async (client) => {
       const live = await readLiveManagementPrincipal(client, principal.id)
       const result = await work(client, live)
-      await client.query('commit')
       return result
-    } catch (error) { await client.query('rollback'); throw error }
-    finally { client.release() }
+    })
   }
   private async withLease<T>(principalId: string, intentId: string, work: () => Promise<T>): Promise<T> {
     const pool = new pg.Pool({ ...this.pool.options, max: 1, application_name: 'graphql-edit-intent' })
@@ -185,10 +181,10 @@ export class DurableEditIntentService<S extends EditStageScope, I extends Durabl
         // applies existing typed operations in memory, and performs no publication.
         const prepared = await this.drafts.prepare(client, principal, input, randomUUID())
         const existing = await client.query<{ id: string }>(`select id from graph_edit_intents
-          where principal_id=$1 and workspace_id=$2 and workflow_id=$3 and state not in ('saved','discarded')`,
-        [principal.id, input.workspaceId, input.workflowId])
+          where workspace_id=$1 and workflow_id=$2 and state not in ('saved','discarded') limit 1`,
+        [input.workspaceId, input.workflowId])
         if (existing.rows[0]) throw new DomainError('GRAPH_EDIT_INTENT_EXISTS',
-          'An unresolved edit intent already exists. Read and reconcile it; do not allocate replacement Stop or save commands.', 409)
+          'This workflow already has staged edits. Resolve them before staging another edit.', 409)
         const current = await this.affectedRuns(client, { ...input, stagedDraft: prepared.stagedDraft })
         this.authorizeCurrent(principal, current)
         const saveInput = prepared.saveInput
@@ -204,7 +200,7 @@ export class DurableEditIntentService<S extends EditStageScope, I extends Durabl
           savedWorkflowRevision: prepared.savedWorkflowRevision, stagedDraft: prepared.stagedDraft, agentPins: prepared.agentPins,
           affected: current.map((item) => item.pin), stops: current.filter((item) => !item.settled).map((item) => {
             const stopInput = { workspaceId: item.pin.workspaceId, runId: item.pin.runId, commandId: randomUUID() }
-            return { input: stopInput, inputHash: commandInputHash(stopInput) }
+            return { input: stopInput }
           }),
           saveInput, saveInputHash: this.drafts.saveInputHash(saveInput, id),
           state: 'staged', saveAttempted: false, createdAt: now, updatedAt: now })
@@ -241,17 +237,6 @@ export class DurableEditIntentService<S extends EditStageScope, I extends Durabl
     if (Number(parent.revision) !== intent.savedWorkflowRevision || parent.current_version_id !== intent.expectedWorkflowVersionId) {
       throw new DomainError('WORKFLOW_BASE_CONFLICT', 'The saved workflow changed. The exact staged payload and commands are retained.', 409)
     }
-    await this.drafts.assertDraft(client, live, intent)
-    await lockAgentConfigurations(client, intent.agentPins.map((pin) => pin.agentId).sort())
-    for (const pin of intent.agentPins) {
-      const row = (await client.query<{ workspace_id: string; metadata_revision: string; current_configuration_version_id: string | null; archived_at: Date | null }>(
-        'select workspace_id,metadata_revision::text,current_configuration_version_id,archived_at from agents where id=$1 for share',
-        [pin.agentId])).rows[0]
-      if (pin.metadataRevision === null ? !!row : (!row || row.workspace_id !== intent.workspaceId || row.archived_at !== null
-        || Number(row.metadata_revision) !== pin.metadataRevision || row.current_configuration_version_id !== pin.configurationVersionId)) {
-        throw new DomainError('AGENT_REVISION_CONFLICT', 'An exact Agent configuration or metadata pin changed. The private staged payload is retained.', 409)
-      }
-    }
     await this.drafts.authorizePublication(client, live, intent)
     const current = await this.affectedRuns(client, intent)
     this.authorizeCurrent(live, current)
@@ -270,18 +255,14 @@ export class DurableEditIntentService<S extends EditStageScope, I extends Durabl
   }
 
   private async stopWasAttempted(client: Pick<pg.PoolClient, 'query'>, intent: I, entry: StopEntry) {
-    const rows = await client.query<{ details: { inputHash?: unknown; targetKey?: unknown } }>(`select details from management_audit
+    const rows = await client.query(`select 1 from management_audit
       where principal_id=$1 and action='graph.edit_stop_attempt' and target_key=$2 and details->>'commandId'=$3`,
     [intent.ownerPrincipalId, `edit-intent:${intent.id}`, entry.input.commandId])
-    if (rows.rows.some((row) => row.details.inputHash !== entry.inputHash || row.details.targetKey !== `run:${entry.input.runId}`)) {
-      throw new DomainError('COMMAND_ID_CONFLICT', 'The Stop submission evidence contradicts the exact planned command.', 409)
-    }
     return rows.rows.length > 0
   }
 
   private async stopReceipt(client: Pick<pg.PoolClient, 'query'>, intent: I, entry: StopEntry) {
-    if (commandInputHash(entry.input) !== entry.inputHash) throw new DomainError('COMMAND_ID_CONFLICT', 'The Stop input hash is inconsistent.', 409)
-    const receipt = await client.query<{ input_hash: string; target_key: string; result: unknown }>(`select input_hash,target_key,result
+    const receipt = await client.query<{ target_key: string; result: unknown }>(`select target_key,result
       from management_command_receipts where principal_id=$1 and operation='run.stop' and command_id=$2`,
     [intent.ownerPrincipalId, entry.input.commandId])
     const row = receipt.rows[0]
@@ -289,11 +270,11 @@ export class DurableEditIntentService<S extends EditStageScope, I extends Durabl
       if (entry.receipt) throw new Error('The previously observed exact Stop receipt is unavailable; retain uncertainty.')
       return undefined
     }
-    if (row.input_hash !== entry.inputHash || row.target_key !== `run:${entry.input.runId}`) {
+    if (row.target_key !== `run:${entry.input.runId}`) {
       throw new DomainError('COMMAND_ID_CONFLICT', 'The Stop receipt contradicts the exact planned command.', 409)
     }
     const parsed = GraphEditStopSchema.shape.receipt.unwrap().parse(row.result)
-    if (parsed.runId !== entry.input.runId || (entry.receipt && !sameWorkflowValue(entry.receipt, parsed))) {
+    if (parsed.runId !== entry.input.runId) {
       throw new DomainError('COMMAND_ID_CONFLICT', 'Contradictory Stop receipt evidence is retained, never overwritten.', 409)
     }
     return parsed
@@ -382,7 +363,7 @@ export class DurableEditIntentService<S extends EditStageScope, I extends Durabl
                 // It proves possible submission, not acceptance or native exit.
                 // Audit storage avoids changing the public intent/Stop schemas.
                 await this.commands.recordAudit(live.id, source, 'graph.edit_stop_attempt', `edit-intent:${intent.id}`,
-                  'uncertain', { commandId: entry.input.commandId, inputHash: entry.inputHash, targetKey: `run:${entry.input.runId}` }, client)
+                  'uncertain', { commandId: entry.input.commandId, targetKey: `run:${entry.input.runId}` }, client)
               }
               return { principal: live, submit: true, receipt: undefined }
             })
@@ -425,7 +406,7 @@ export class DurableEditIntentService<S extends EditStageScope, I extends Durabl
           await this.commands.recordAudit(live.id, source, 'graph.stop_and_save', `edit-intent:${latest.id}`,
             uncertain ? 'uncertain' : 'failed', { commandId: input.commandId,
               code: error instanceof DomainError ? error.code : 'COMMAND_UNCERTAIN' }, client)
-        }).catch(() => undefined) // Revocation withholds readback; it must not delete the intent.
+        }).catch(ignoreError('engine', 'record uncertain graph edit intent', { intentId: input.intentId, commandId: input.commandId })) // Revocation withholds readback; it must not delete the intent.
         if (error instanceof DomainError && (error.code === 'ACCESS_DENIED' || error.code.startsWith('AUTH_'))) throw error
       }
       return this.read(principal, { action: 'read_edits', workspaceId: input.workspaceId,

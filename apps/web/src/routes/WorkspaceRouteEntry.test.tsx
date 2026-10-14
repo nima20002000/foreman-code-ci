@@ -1,3 +1,4 @@
+import { installBrowserLocks } from '../test/browserLocks'
 import { nativeNode } from '../shared/mocks/nativeFixtureTypes'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
@@ -34,6 +35,7 @@ function readyWorkspace() {
 }
 
 const clients: QueryClient[] = []
+let restoreBrowserLocks: () => void
 async function researcherButton() {
   // Wait for the current Board before querying its canvas; initial route selection
   // and definition loading are separate asynchronous steps.
@@ -74,6 +76,7 @@ async function renderWorkspace(initialEntry: string) {
 
 describe('WorkspaceRouteEntry integration', () => {
   beforeEach(() => {
+    restoreBrowserLocks = installBrowserLocks()
     useGraphDraftStore.getState().clearAllDrafts(); localStorage.clear(); bindMockInstallation(); sessionStorage.clear()
     server.use(http.get('/api/management/workspaces/workspace-1', () => HttpResponse.json(readyWorkspace())))
     server.use(
@@ -98,12 +101,34 @@ describe('WorkspaceRouteEntry integration', () => {
   })
 
   afterEach(() => {
-    cleanup(); clients.splice(0).forEach((client) => client.clear())
+    cleanup(); window.dispatchEvent(new Event('pagehide'))
+    restoreBrowserLocks()
+    clients.splice(0).forEach((client) => client.clear())
     useGraphDraftStore.getState().clearAllDrafts(); vi.restoreAllMocks(); vi.unstubAllGlobals()
     setMockScenario('normal')
     sessionStorage.clear()
     vi.unstubAllEnvs()
     vi.useRealTimers()
+  })
+
+  it('opens saved authoring in a fresh tab after reloading the selected workflow', async () => {
+    const entry = '/workspaces/workspace-1?workflowId=workflow-content-pipeline&agentId=agent-researcher'
+    const first = await renderWorkspace(entry)
+    expect(await workflowBoard('Research to review')).toBeVisible()
+    first.unmount()
+    first.queryClient.clear()
+    useGraphDraftStore.getState().clearAllDrafts()
+    sessionStorage.clear()
+
+    const reloaded = await renderWorkspace(entry)
+    const board = await workflowBoard('Research to review')
+    expect(within(board).getByLabelText('Editable workflow graph')).toBeVisible()
+    expect(reloaded.router.state.location.search.workflowId).toBe('workflow-content-pipeline')
+    expect(reloaded.router.state.location.search.agentId).toBe('agent-researcher')
+    await waitFor(() => expect(screen.getByRole('button', {
+      name: (name) => name.startsWith('Researcher,'),
+    })).toHaveAttribute('aria-pressed', 'true'))
+    expect(screen.queryByRole('heading', { name: 'Authoring unavailable' })).not.toBeInTheDocument()
   })
 
   it('renders the saved workflow and keeps a valid agent selection in the URL', async () => {
@@ -165,9 +190,6 @@ describe('WorkspaceRouteEntry integration', () => {
   it('opens an unselected reloaded Claude Agent settings panel while cross-computer choices are unavailable', async () => {
     // Apply the canvas CSS so userEvent checks the same pointer access as the browser.
     render(<style>{canvasStyles}</style>)
-    vi.stubGlobal('navigator', { ...navigator, locks: {
-      request: async (_name: string, work: () => Promise<unknown>) => work(),
-    } })
     const fixture = getMockFixture('workspace-1')!
     const agent = fixture.agents.find((item) => item.id === 'agent-researcher')!
     agent.harness = 'claude'
@@ -201,7 +223,8 @@ describe('WorkspaceRouteEntry integration', () => {
     const title = 'Main coordinator'
     expect(node).toHaveAccessibleName(/Claude/)
     expect(node).toHaveAttribute('aria-pressed', 'false')
-    await userEvent.click(screen.getByRole('button', { name: `Open ${title} settings` }))
+    await user.hover(node)
+    await user.click(screen.getByRole('button', { name: `Open ${title} settings` }))
     const dialog = await screen.findByRole('dialog', { name: `${title} settings` })
     expect(dialog).toBeVisible()
     expect(within(dialog).getByRole('textbox', { name: 'Name' })).toHaveValue(agent.name)
@@ -223,7 +246,8 @@ describe('WorkspaceRouteEntry integration', () => {
     await user.click(screen.getByRole('button', { name: 'Create workflow' }))
 
     // The sidebar marks a never-published workflow with a "Draft" badge inside its button.
-    const newLink = await screen.findByRole('button', { name: /^Draft workflow/ })
+    const sidebar = within(screen.getByRole('region', { name: 'Workspace workflows' }))
+    const newLink = await sidebar.findByRole('button', { name: /^Draft workflow/ })
     const open = vi.spyOn(window, 'open').mockReturnValue(null)
     fireEvent.click(newLink, { ctrlKey: true })
     const createdId = new URL(open.mock.calls[0]![0] as string, 'http://localhost').searchParams.get('workflowId')

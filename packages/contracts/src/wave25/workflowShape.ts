@@ -48,15 +48,13 @@ export const AcceptedWorkflowApprovalConfigurationSchema = z
       context.addIssue({ code: z.ZodIssueCode.custom, path: ["designatedOrchestratorAgentId"], message: "only orchestrator handling may designate an Orchestrator" });
     }
   });
-export type AcceptedWorkflowApprovalConfiguration = z.infer<typeof AcceptedWorkflowApprovalConfigurationSchema>;
 
-export const ExecutionConditionKindSchema = z.enum([
+const ExecutionConditionKindSchema = z.enum([
   "manual",
   "on_message",
   "on_event",
   "schedule",
 ]);
-export type ExecutionConditionKind = z.infer<typeof ExecutionConditionKindSchema>;
 
 /** The condition that makes a workflow eligible to start. It is not a run outcome. */
 export const ExecutionConditionSchema = z
@@ -65,7 +63,6 @@ export const ExecutionConditionSchema = z
     description: z.string().trim().min(1).optional(),
   })
   .strict();
-export type ExecutionCondition = z.infer<typeof ExecutionConditionSchema>;
 
 export const DEFAULT_AGENT_ACTIVE_TIMEOUT_MS = 6 * 60 * 60 * 1000
 export const MAX_AGENT_ACTIVE_TIMEOUT_MS = 2_147_483_647
@@ -82,19 +79,22 @@ export const WorkflowExecutionPolicySchema = z
   .strict();
 export type WorkflowExecutionPolicy = z.infer<typeof WorkflowExecutionPolicySchema>;
 
-/** Re-activates an Agent node with a short check prompt every everySeconds while its Run is
- * active, after its first finished execution. Absent means off. Checks never route the graph. */
+/** A loop: re-activates an Agent node every everySeconds while its Run is active, after its first
+ * finished execution, with prompt or the default Run check. Absent means off. Loops never route the
+ * graph and stop with the Run; workflow schedules, which start Runs, are separate. */
 export const AGENT_INTERVAL_MIN_SECONDS = 10
 export const AGENT_INTERVAL_MAX_SECONDS = 24 * 60 * 60
 /** Checks across all Agents of one Run; the bound keeps the Run's history readable. */
 export const AGENT_INTERVAL_MAX_CHECKS_PER_RUN = 1000
-export const AgentIntervalSchema = z.object({
+export const AGENT_INTERVAL_PROMPT_MAX_LENGTH = 4000
+const AgentIntervalSchema = z.object({
   everySeconds: z.number().int().min(AGENT_INTERVAL_MIN_SECONDS).max(AGENT_INTERVAL_MAX_SECONDS),
+  /** What the Agent does on each loop. Omit for the default check of its Run. */
+  prompt: z.string().trim().min(1).max(AGENT_INTERVAL_PROMPT_MAX_LENGTH).optional(),
 }).strict()
-export type AgentInterval = z.infer<typeof AgentIntervalSchema>
 
 const Handle = z.enum(['top', 'right', 'bottom', 'left']).nullable().optional()
-export const CurrentAgentWorkflowNodeFields = {
+const CurrentAgentWorkflowNodeFields = {
   kind: z.literal('agent').optional(),
   placement: SavedNodePlacementSchema.optional(),
   worktree: AgentWorktreeSettingsSchema.optional(),
@@ -135,8 +135,6 @@ export const CurrentWorkflowDefinitionBaseSchema = z.object({
   createdAt: TimestampSchema.optional(), updatedAt: TimestampSchema.optional(),
 }).strict()
 
-export const WorkflowExecutionRelationshipSchema = CurrentWorkflowRelationshipSchema.extend({ kind: z.literal('execution') }).strict()
-export const WorkflowApprovalRelationshipSchema = CurrentWorkflowRelationshipSchema.extend({ kind: z.literal('approval') }).strict()
 export const WorkflowRelationshipSchema = CurrentWorkflowRelationshipSchema
 export type WorkflowRelationship = z.infer<typeof WorkflowRelationshipSchema>
 
@@ -144,9 +142,8 @@ export type WorkflowRelationship = z.infer<typeof WorkflowRelationshipSchema>
  * constants and validators are not runtime admission permission. */
 export const REPEAT_CONTRACT_VERSION = 1 as const
 export const REPEAT_EXECUTION_SEMANTICS_VERSION = 3 as const
-export const HANDOFF_CONTRACT_VERSION = 1 as const
+const HANDOFF_CONTRACT_VERSION = 1 as const
 export const WorkHandoffPolicyV1Schema = z.object({ contractVersion: z.literal(HANDOFF_CONTRACT_VERSION) }).strict()
-export type WorkHandoffPolicyV1 = z.infer<typeof WorkHandoffPolicyV1Schema>
 const Ordinal = z.number().int().min(1).max(2147483647)
 const Header = { contractVersion: z.literal(REPEAT_CONTRACT_VERSION) }
 

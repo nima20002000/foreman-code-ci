@@ -70,7 +70,11 @@ describe('WorkflowNavigation', () => {
     expect(link).toHaveAttribute('aria-current', 'page')
     const open = vi.spyOn(window, 'open').mockReturnValue(null)
     fireEvent.click(link, { ctrlKey: true })
-    expect(open).toHaveBeenCalledWith('/workspaces/workspace-1?workflowId=workflow-content-pipeline', '_blank')
+    expect(open).toHaveBeenCalledWith(
+      '/workspaces/workspace-1?workflowId=workflow-content-pipeline',
+      '_blank',
+      'noopener',
+    )
     open.mockRestore()
     expect(screen.getByRole('button', { name: 'New workflow' })).toBeVisible()
   })
@@ -149,7 +153,7 @@ describe('WorkflowNavigation', () => {
     await user.click(screen.getByRole('button', { name: 'Create workflow' }))
 
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-    const draftLink = screen.getByRole('button', { name: /Draft workflow/ })
+    const draftLink = screen.getByRole('button', { name: /^Draft workflow/ })
     expect(draftLink).toBeVisible()
     expect(draftLink).not.toHaveTextContent('Session')
   })
@@ -169,7 +173,7 @@ describe('WorkflowNavigation', () => {
     expect(await screen.findByText('Workflow created, but its graph could not be opened. Retry opening it.')).toHaveAttribute('role', 'alert')
     expect(router.state.location.search.workflowId).toBeUndefined()
     expect(screen.queryByRole('button', { name: 'Create workflow' })).not.toBeInTheDocument()
-    const newLink = await screen.findByRole('button', { name: /Draft workflow/ })
+    const newLink = await screen.findByRole('button', { name: /^Draft workflow/ })
     expect(newLink).toBeVisible()
 
     server.resetHandlers()
@@ -179,7 +183,7 @@ describe('WorkflowNavigation', () => {
     const createdId = new URL(open.mock.calls[0]![0] as string, 'http://localhost').searchParams.get('workflowId')
     open.mockRestore()
     await waitFor(() => expect(router.state.location.search.workflowId).toBe(createdId))
-    expect(screen.getAllByRole('button', { name: /Draft workflow/ })).toHaveLength(1)
+    expect(screen.getAllByRole('button', { name: /^Draft workflow/ })).toHaveLength(1)
   })
 
   it('keeps inside presses open and dismisses the creation dialog from its backdrop', async () => {
@@ -208,26 +212,28 @@ it('marks an unpublished workflow and removes it in one click without another di
   await user.click(await screen.findByRole('button', { name: 'New workflow' }))
   await user.type(screen.getByRole('textbox', { name: 'Name' }), 'Temporary draft')
   await user.click(screen.getByRole('button', { name: 'Create workflow' }))
-  expect(await screen.findByRole('button', { name: /Temporary draft/ })).toBeVisible()
+  expect(await screen.findByRole('button', { name: /^Temporary draft/ })).toBeVisible()
   screen.getByRole('button', { name: 'Remove Temporary draft' }).focus()
   await user.keyboard('{Enter}')
-  await waitFor(() => expect(screen.queryByRole('button', { name: /Temporary draft/ })).not.toBeInTheDocument())
+  await waitFor(() => expect(screen.queryByRole('button', { name: /^Temporary draft/ })).not.toBeInTheDocument())
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   expect(router.state.location.search.workflowId).toBeUndefined()
 })
 
-it('keeps a failed removal visible and retries the same command', async () => {
+it.each([500, 503, 'restart'] as const)('keeps an HTTP %s removal failure visible and retries the same command', async (failure) => {
+  const message = failure === 'restart' ? 'Updating — reconnecting…' : 'Could not remove workflow.'
   const requests: unknown[] = []
   server.use(http.delete('/api/management/workspaces/workspace-1/workflows/workflow-content-pipeline', async ({ request }) => {
     requests.push(await request.json())
-    return HttpResponse.json({ error: { code: 'UNAVAILABLE', message: 'Could not remove workflow.' } }, { status: 503 })
+    return failure === 'restart' ? new HttpResponse(null, { status: 503 })
+      : HttpResponse.json({ error: { code: 'UNAVAILABLE', message: 'Could not remove workflow.' } }, { status: failure })
   }))
   const user = userEvent.setup()
   renderNavigation()
   const remove = await screen.findByRole('button', { name: 'Remove Research to review' })
   remove.focus()
   await user.keyboard('{Enter}')
-  expect(await screen.findByRole('alert')).toHaveTextContent('Could not remove workflow.')
+  expect(await screen.findByRole('alert')).toHaveTextContent(message)
   expect(screen.getByRole('button', { name: 'Research to review' })).toBeVisible()
   screen.getByRole('button', { name: 'Retry removing Research to review' }).focus()
   await user.keyboard('{Enter}')

@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { homedir } from 'node:os'
 import { promisify } from 'node:util'
 import { readProductEnvironment } from '@foreman-code/contracts/product-environment'
-import { cachedTestFixture, testFixtureCacheRoot, workerFixtureInputs } from '../../../../scripts/test-fixture-cache.mjs'
+import { cachedTestFixture, cachedWorkerRelease as cachedWorkerReleaseEntry, testFixtureCacheRoot } from '../../../../scripts/test-fixture-cache.mjs'
 import { measureIntegrationPhase } from './integrationPhase.js'
 import { diagnosticEnvironment } from '../../src/modules/harnesses/compatibility/probe.js'
 import { passiveDriverPayloads } from '../../src/modules/harnesses/payloadDiscovery.js'
@@ -113,7 +113,15 @@ int main(int argc, char **argv) {
     showModels: () => rm(join(directory, 'hide-models')),
     blockModels: (options?: { workingDirectory: string }) => writeFile(join(directory, 'block-models'),
       options ? JSON.stringify(options) : '', { mode: 0o600 }),
-    releaseModels: () => rm(join(directory, 'block-models')),
+    allowModelDirectories: async (directories: string[]) => {
+      const destination = join(directory, 'allowed-model-directories')
+      await writeFile(`${destination}.pending`, JSON.stringify(directories), { mode: 0o600 })
+      await rename(`${destination}.pending`, destination)
+    },
+    releaseModels: async () => {
+      await rm(join(directory, 'block-models'))
+      await rm(join(directory, 'allowed-model-directories'), { force: true })
+    },
     blockQualification: () => writeFile(join(directory, 'block-qualification'), '', { mode: 0o600 }),
     blockWorkflowAdmission: () => writeFile(join(directory, 'block-workflow-admission'), '', { mode: 0o600 }),
     releaseWorkflowAdmission: () => rm(join(directory, 'block-workflow-admission'), { force: true }),
@@ -173,7 +181,7 @@ export async function createRemoteReviewTls(directory: string) {
   return { certificateFile, privateKeyFile, trustCertificateFile: certificateFile }
 }
 
-/** Build the same committed, allowlisted artifact used by the installer. An
+/** Build the same committed artifact used by the installer. An
  * unsupported host fails the real packaging gate instead of substituting facts. */
 export async function buildRemoteReviewWorkerRelease(directory: string) {
   return measureIntegrationPhase('Worker artifact', () => cachedWorkerRelease(directory))
@@ -202,13 +210,12 @@ async function cachedWorkerRelease(directory: string) {
     const commit = (await execute('git', ['rev-parse', requestedCommit ?? 'HEAD'], { cwd: root })).stdout.trim()
     // Cache hits retain the builder's committed-control-input gate.
     await execute('git', ['diff', '--quiet', commit, '--',
-      'scripts/build-worker-artifact.mjs', 'scripts/worker-artifact-files.mjs', 'scripts/worker-api-allowlist.json',
+      'scripts/build-worker-artifact.mjs', 'scripts/worker-artifact-files.mjs',
       'scripts/quota-helper-abi.mjs', 'packages/contracts/package.json', 'packages/contracts/src/productEnvironment.mjs',
       'apps/worker/package.json', 'package.json', 'pnpm-workspace.yaml', 'pnpm-lock.yaml', targetFile], { cwd: root })
     const builder = fileURLToPath(new URL('../../../../scripts/build-worker-artifact.mjs', import.meta.url))
-    const inputs = await workerFixtureInputs(root, commit)
-    const cached = await cachedTestFixture(testFixtureCacheRoot(), 'worker-artifacts',
-      [inputs, targetBytes, process.platform, process.arch, process.version], async temporary => {
+    const cached = await cachedWorkerReleaseEntry(testFixtureCacheRoot(), root, commit,
+      [targetBytes, process.platform, process.arch, process.version], async temporary => {
         await execute(process.execPath, [builder, targetFile, join(temporary, 'release')], {
           maxBuffer: 4 * 1024 * 1024,
           env: { ...process.env, FOREMAN_CODE_WORKER_BUILD_COMMIT: commit },

@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto'
-import { ManagementPrincipalSchema, type ManagementPrincipal } from '@foreman-code/contracts/management'
-import type pg from 'pg'
+import { ManagementPrincipalSchema, NON_EXPIRING_CREDENTIAL_TIMESTAMP, type ManagementPrincipal } from '@foreman-code/contracts/management'
+import type { TransactionSql } from '../../infrastructure/transaction.js'
 import type { GraphSqlClient } from '../run-graph/connection.js'
 import { DomainError } from '../errors.js'
 import { intersectGrants } from './operatorDelegation.js'
@@ -14,10 +14,10 @@ interface Binding {
   owner_principal_id: string; grant_ceiling: unknown; accepted_expires_at: Date
   execution_state: string; cleanup_pending: boolean
 }
-function principal(row: Row | undefined): ManagementPrincipal {
+function principal(row: Row | undefined, options: { checkExpiry: boolean } = { checkExpiry: true }): ManagementPrincipal {
   if (!row || row.audience !== 'operator') throw new DomainError('AUTH_INVALID', 'The owning Operator authority is unavailable.', 401)
   if (row.revoked_at) throw new DomainError('AUTH_REVOKED', 'The owning Operator authority was revoked.', 401)
-  if (!Number.isFinite(row.expires_at.getTime()) || row.expires_at.getTime() <= Date.now()) {
+  if (options.checkExpiry && (!Number.isFinite(row.expires_at.getTime()) || row.expires_at.getTime() <= Date.now())) {
     throw new DomainError('AUTH_EXPIRED', 'The owning Operator authority expired.', 401)
   }
   return ManagementPrincipalSchema.parse({ id: row.id, name: row.name, audience: 'operator',
@@ -30,7 +30,7 @@ async function row(database: Database, id: string): Promise<Row | undefined> {
 
 /** Only root human authority or a tokenless, Run-bound snapshot is durable authority. */
 /** `atCommit` rechecks a transaction that may itself be the Run's terminal
- * transition. It keeps revocation/expiry/grant checks but tolerates the Run
+ * transition. It keeps revocation and grant checks but tolerates the Run
  * completion and cleanup intent written by that same COMMIT. */
 export async function currentOperatorAuthority(database: Database, id: string, atCommit = false): Promise<{
   principal: ManagementPrincipal; owner: ManagementPrincipal
@@ -50,11 +50,11 @@ export async function currentOperatorAuthority(database: Database, id: string, a
     throw new DomainError('AUTH_RUN_ENDED', 'The accepted Run authority cannot act after Stop or terminal completion.', 401)
   }
   const ownerRow = await row(database, binding.owner_principal_id)
-  const owner = principal(ownerRow)
+  const owner = principal(ownerRow, { checkExpiry: false })
   if (ownerRow!.delegated_from) throw new DomainError('AUTH_INVALID', 'Run authority must have a root human owner.', 401)
   const ceiling = ManagementPrincipalSchema.shape.grants.parse(binding.grant_ceiling)
   accepted.grants = intersectGrants(intersectGrants(accepted.grants, ceiling), owner.grants)
-  accepted.expiresAt = new Date(Math.min(Date.parse(accepted.expiresAt), Date.parse(owner.expiresAt),
+  accepted.expiresAt = new Date(Math.min(Date.parse(accepted.expiresAt),
     binding.accepted_expires_at.getTime())).toISOString()
   if (Date.parse(accepted.expiresAt) <= Date.now()) throw new DomainError('AUTH_EXPIRED', 'The accepted Run authority expired.', 401)
   return { principal: accepted, owner }
@@ -68,7 +68,7 @@ export interface AcceptedRunAuthority {
 
 /** Called inside run.start's command transaction. No bearer token is created or returned. */
 export async function acceptRunAuthority(
-  client: pg.PoolClient, caller: ManagementPrincipal,
+  client: TransactionSql, caller: ManagementPrincipal,
 ): Promise<AcceptedRunAuthority> {
   const initial = await row(client, caller.id)
   principal(initial)
@@ -82,8 +82,7 @@ export async function acceptRunAuthority(
   const parent = await currentOperatorAuthority(client, parentId)
   if (parent.owner.id !== initialParent.owner.id) throw new DomainError('AUTH_INVALID', 'The root Run owner changed.', 401)
   const grants = intersectGrants(intersectGrants(caller.grants, live.grants), parent.principal.grants)
-  const expiresAt = new Date(Math.min(Date.parse(caller.expiresAt), Date.parse(live.expiresAt),
-    Date.parse(parent.principal.expiresAt), Date.parse(parent.owner.expiresAt))).toISOString()
+  const expiresAt = NON_EXPIRING_CREDENTIAL_TIMESTAMP
   const accepted = ManagementPrincipalSchema.parse({ id: `run-authority-${randomUUID()}`,
     name: `Run authority accepted by ${caller.id}`, audience: 'operator', grants, expiresAt, revokedAt: null })
   await client.query(`insert into management_principals
@@ -93,7 +92,7 @@ export async function acceptRunAuthority(
   return { principal: accepted, ownerId: parent.owner.id, callerId: caller.id }
 }
 
-export async function bindRunAuthority(client: pg.PoolClient, runId: string, accepted: AcceptedRunAuthority): Promise<void> {
+export async function bindRunAuthority(client: TransactionSql, runId: string, accepted: AcceptedRunAuthority): Promise<void> {
   await client.query(`insert into run_authority_principals
     (principal_id,run_id,owner_principal_id,caller_principal_id,grant_ceiling,accepted_expires_at)
     values($1,$2,$3,$4,$5::jsonb,$6)`, [accepted.principal.id, runId, accepted.ownerId, accepted.callerId,

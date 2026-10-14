@@ -264,7 +264,8 @@ readline.createInterface({ input: process.stdin, crlfDelay: Infinity }).on('line
     const owner = thread(`thread-${agent}-${process.pid}-${++created}`, params, original)
     store(owner)
     if (flag('hold-thread-fork-ack')) return
-    if (flag('late-thread-fork')) setTimeout(() => replyThread(owner, message.id, params), 800)
+    if (flag('hold-thread-fork')) replyOrHold('thread-fork', () => replyThread(owner, message.id, params))
+    else if (flag('late-thread-fork')) setTimeout(() => replyThread(owner, message.id, params), 800)
     else replyThread(owner, message.id, params)
   } else if (message.method === 'thread/compact/start') {
     const owner = loadThread(params.threadId)
@@ -284,7 +285,8 @@ readline.createInterface({ input: process.stdin, crlfDelay: Infinity }).on('line
   } else if (message.method === 'thread/resume') {
     if (flag('fail-resume')) { fail(message.id); return }
     const owner = read(`state-${params.threadId}.json`, thread('not-the-requested-thread', params))
-    if (flag('resume-delay')) setTimeout(() => replyThread(owner, message.id, params), 250)
+    const resumeDelayMs = read('resume-delay-ms.json', flag('resume-delay') ? 250 : 0)
+    if (resumeDelayMs) setTimeout(() => replyThread(owner, message.id, params), resumeDelayMs)
     else replyThread(owner, message.id, params)
   } else if (message.method === 'thread/read') {
     const persisted = loadThread(params.threadId)
@@ -296,6 +298,10 @@ readline.createInterface({ input: process.stdin, crlfDelay: Infinity }).on('line
     })
   }
   else if (message.method === 'thread/turns/list') {
+    if (flag('disconnect-turn-history')) {
+      fs.unlinkSync(path.join(root, 'disconnect-turn-history'))
+      process.exit(17)
+    }
     const persisted = loadThread(params.threadId)
     if (!persisted) { fail(message.id); return }
     const entries = [...persisted.turns]

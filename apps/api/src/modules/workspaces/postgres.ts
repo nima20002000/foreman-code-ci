@@ -4,6 +4,7 @@ import {
   WorkflowRunSummarySchema,
   type Agent,
 } from '@foreman-code/contracts'
+import { withTransaction } from '../../infrastructure/transaction.js'
 import type pg from 'pg'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { requireAuthorization } from '../access/policy.js'
@@ -48,10 +49,7 @@ async function readRunSummaries(client: pg.PoolClient, workspaceId: string) {
           and recent.record->'executionSemanticsVersion'='3'::jsonb
           and recent.execution_state='completed'
           order by recent.created_at desc,recent.id desc limit 20))
-    order by r.created_at desc,r.id desc limit 2001`, [workspaceId, new Date().toISOString()])).rows
-  if (rows.length > 2000) {
-    throw new DomainError('WORKSPACE_RUN_READ_TOO_LARGE', 'Use the bounded management Run pages for this workspace.', 409)
-  }
+    order by r.created_at desc,r.id desc limit 2000`, [workspaceId, new Date().toISOString()])).rows
   return rows.map((row) => {
     const summary = WorkflowRunSummarySchema.parse(row.summary)
     if (summary.id !== row.id || summary.workspaceId !== workspaceId || summary.workspaceId !== row.workspace_id
@@ -102,22 +100,14 @@ export class PostgresWorkspaceRepository {
     })
   }
   private async currentSummaries(workspaceId: string, principal: ManagementPrincipal) {
-    const client = await this.pool.connect()
-    try {
-      await client.query('begin')
+    return withTransaction(this.pool, async (client) => {
       const live = await readLiveManagementPrincipal(client, principal.id)
       requireWorkspaceRead(live, workspaceId)
       const summaries = await readRunSummaries(client, workspaceId)
       requireWorkspaceRead(principal, workspaceId)
       requireWorkspaceRead(live, workspaceId)
-      await client.query('commit')
       return summaries
-    } catch (error) {
-      await client.query('rollback')
-      throw error
-    } finally {
-      client.release()
-    }
+    })
   }
 
 }

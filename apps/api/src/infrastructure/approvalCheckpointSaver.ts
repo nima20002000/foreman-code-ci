@@ -1,3 +1,4 @@
+import { asRecord } from '../shared/records.js'
 import type pg from 'pg'
 import { PostgresSaver } from '@langchain/langgraph-checkpoint-postgres'
 import type { BaseCheckpointSaver, SerializerProtocol } from '@langchain/langgraph-checkpoint'
@@ -6,24 +7,17 @@ import type { GraphTransactionSql } from '../modules/run-graph/connection.js'
 import { assertGraphTransaction } from '../modules/run-graph/connection.js'
 import { DomainError } from '../modules/errors.js'
 import { nextApprovalResumeValues } from './approvalCheckpointPlan.js'
+import { CheckpointMutationSaver } from './checkpointMutations.js'
 
 const INTERRUPT = '__interrupt__', RESUME = '__resume__'
 const MAX_WRITE_BYTES = 262144
 const MAX_CHECKPOINT_WRITE_BYTES = 2_000_000
 interface StoredWrite { task_id: string; channel: string; type: string; blob: Buffer }
-export interface AtomicApprovalCheckpointSaver extends BaseCheckpointSaver {
-  inspectApprovalInterrupt(sql: GraphTransactionSql, interaction: Pick<DurableInteraction, 'id' | 'runId' | 'graphThreadId' | 'graphInterruptId'>): Promise<string>
-  consumeApprovalInterrupt(sql: GraphTransactionSql, interaction: DurableInteraction): Promise<void>
-  observeApprovalInterrupts(runId: string, observer: () => Promise<void>): () => void
-}
-export function isAtomicApprovalCheckpointSaver(saver: BaseCheckpointSaver): saver is AtomicApprovalCheckpointSaver {
+export function isAtomicApprovalCheckpointSaver(saver: BaseCheckpointSaver): saver is ApprovalPostgresSaver {
   return saver instanceof ApprovalPostgresSaver
 }
 function denied(code = 'GRAPH_INTERRUPT_INVALID'): never {
   throw new DomainError(code, 'The exact persisted approval checkpoint could not be consumed.', 409)
-}
-function object(value: unknown): Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
 }
 
 /** The SAME production PostgresSaver, not a second checkpoint table or MemorySaver.
@@ -32,7 +26,7 @@ function object(value: unknown): Record<string, unknown> {
  * persistence notifies the live Run owner after COMMIT. Approval consumption
  * uses the owner's transaction rather than the saver's private pool transaction.
  */
-export class ApprovalPostgresSaver extends PostgresSaver implements AtomicApprovalCheckpointSaver {
+export class ApprovalPostgresSaver extends CheckpointMutationSaver {
   private readonly approvalSchema: string
   // Bookkeeping for writes made by THIS saver in THIS live SQL transaction.
   // Publication stages receipts until its commit finalizer. This is not a
@@ -86,7 +80,7 @@ export class ApprovalPostgresSaver extends PostgresSaver implements AtomicApprov
       const pendingEntries = Array.isArray(parsed) ? parsed : [parsed]
       if (pendingEntries.length > 1000) denied()
       for (const pending of pendingEntries) {
-        const entry = object(pending), value = object(entry.value)
+        const entry = asRecord(pending), value = asRecord(entry.value)
         if (entry.id !== interaction.graphInterruptId) continue
         const ids: unknown = value.interactionIds ?? [value.interactionId]
         if (!Array.isArray(ids) || ids.length > 1000 || !ids.length
@@ -121,7 +115,7 @@ export class ApprovalPostgresSaver extends PostgresSaver implements AtomicApprov
       // A previous sibling callback in this publication may have written the
       // task value while its receipt is still staged. A historical value instead
       // needs a persisted receipt; never adopt an old unreceipted Command write.
-      const marker = plan.values.map(object).find((value) => typeof value.interactionId === 'string'
+      const marker = plan.values.map(asRecord).find((value) => typeof value.interactionId === 'string'
         && task.ids.includes(value.interactionId))
       if (this.transactionWrites.get(sql)?.has(key(marker?.interactionId))) return
       const receipt = await sql.query(`select 1 from run_graph_effects

@@ -10,9 +10,8 @@ export const CiManagedSetupSchema = z.object({
   message: z.string().max(2000).nullable(),
   updatedAt: z.string().datetime(),
 }).strict()
-export type CiManagedSetup = z.infer<typeof CiManagedSetupSchema>
 export const CiEnrollmentUpdateSchema = CiEnrollmentReadSchema.extend({
-  commandId: IdSchema,
+  commandId: IdSchema.optional().describe('Optional retry identity; generated server-side when omitted.'),
   target: DeviceProvisioningTargetSchema,
   expectedRevision: z.number().int().nonnegative(),
   enabled: z.boolean(),
@@ -21,7 +20,7 @@ const CiEnrollmentTemplateStateSchema = z.enum([
   'pending', 'runtime-required', 'root-required', 'storage-required', 'not-enrolled-automatically',
   'preparing', 'ready', 'failed',
 ])
-export const CiEnrollmentTemplateSchema = z.object({
+const CiEnrollmentTemplateSchema = z.object({
   templateId: IdSchema,
   profileId: IdSchema.nullable(),
   state: CiEnrollmentTemplateStateSchema,

@@ -1,7 +1,9 @@
+import { errorMessage } from '../../shared/errorMessage.js'
 import type pg from 'pg'
 import { CiEnrollmentReadSchema, CiEnrollmentUpdateSchema, type CiEnrollmentComputer,
   type CiEnrollmentState, type CiEnrollmentTemplate, type CiInstalledStorage } from '@foreman-code/contracts'
 import type { ManagementAction, ManagementPrincipal } from '@foreman-code/contracts/management'
+import type { DeviceProvisioningTarget } from '@foreman-code/contracts/device-resources'
 import type { JobRuntimeProfileRecord } from '@foreman-code/contracts/job-verification-runtime'
 import { intersectGrants } from '../access/operatorDelegation.js'
 import { currentOperatorAuthority } from '../access/runAuthority.js'
@@ -15,12 +17,14 @@ import type { CiRuntimeProvisioner } from './ciRuntimeProvisioner.js'
 import type { JobRuntimeProfiles } from './runtimeProfiles.js'
 import { CiEnrollmentRepository, type CiEnrollmentRecord } from './ciEnrollmentRepository.js'
 import type { CiEnrollmentInventory, CiEnrollmentTarget } from './ciEnrollmentInventory.js'
-import { ciEnrollmentDisabled, lockCiEnrollment } from './ciEnrollmentInventory.js'
+import { ciEnrollmentDisabled, lockCiEnrollment } from './ciEnrollmentState.js'
 import { ciEnrollmentProfileInput, ciEnrollmentTemplateDigest, requireCiEnrollmentStorage } from './ciEnrollmentProfiles.js'
 import { JobOwnership } from './ownership.js'
-import { canonical, jobDigest } from './digest.js'
+import { canonicalJson } from '@foreman-code/contracts/canonical-json'
+import { jobDigest } from './digest.js'
 import type { JobSql } from './repository.js'
 import { lockActiveWorkspace } from '../workspaces/admission.js'
+import { deviceApplicationFailure } from '../devices/deviceApplicationError.js'
 
 export const CI_ENROLLMENT_ACTIONS: ManagementAction[] = [
   ...CI_PREPARATION_ACTIONS, 'workspace_locations:validate', 'workspace_locations:update',
@@ -37,11 +41,14 @@ export class CiEnrollment {
   private readonly repository: CiEnrollmentRepository
   private pending: Promise<void> | undefined
   private requested = false
+  private readonly requestedComputers = new Set<string>()
+  private readonly retries = new Map<string, NodeJS.Timeout>()
   private closed = false
 
   constructor(private readonly pool: pg.Pool, private readonly commands: PostgresCommandCoordinator,
     private readonly profiles: Profiles, private readonly preparation: Preparation,
-    private readonly inventory: CiEnrollmentInventory) {
+    private readonly inventory: CiEnrollmentInventory,
+    private readonly changed?: () => void) {
     this.repository = new CiEnrollmentRepository(pool)
   }
 
@@ -71,14 +78,22 @@ export class CiEnrollment {
     this.request()
   }
 
-  request(): void {
+  request(target?: DeviceProvisioningTarget): void {
     if (this.closed) return
-    this.requested = true
+    if (target) {
+      const key = buildComputerKey(target)
+      clearTimeout(this.retries.get(key))
+      this.retries.delete(key)
+      this.requestedComputers.add(key)
+    } else this.requested = true
     if (this.pending) return
     this.pending = (async () => {
-      while (this.requested && !this.closed) {
+      while ((this.requested || this.requestedComputers.size) && !this.closed) {
+        const computers = this.requested ? undefined : new Set(this.requestedComputers)
         this.requested = false
-        await this.reconcile()
+        this.requestedComputers.clear()
+        await this.reconcile(computers)
+        if (!this.closed) this.changed?.()
       }
     })().catch(error => componentLogger('jobs').error({ err: error }, 'Automatic CI enrollment failed'))
       .finally(() => { this.pending = undefined })
@@ -86,6 +101,8 @@ export class CiEnrollment {
 
   async close(): Promise<void> {
     this.closed = true
+    for (const timer of this.retries.values()) clearTimeout(timer)
+    this.retries.clear()
     await this.pending
   }
 
@@ -141,7 +158,7 @@ export class CiEnrollment {
     return this.read(principal, { workspaceId: input.workspaceId })
   }
 
-  async reconcile(): Promise<void> {
+  async reconcile(hostKeys?: ReadonlySet<string>): Promise<void> {
     await this.registerExistingWorkspaces()
     for (const workspace of await this.repository.workspaces()) {
       if (this.closed) return
@@ -156,6 +173,7 @@ export class CiEnrollment {
         const templates = listed.profiles.map(row => row.profile)
           .filter(profile => profile.status !== 'revoked' && !generated.has(profile.id))
         for (const computer of await this.inventory.computers()) {
+          if (hostKeys && !hostKeys.has(buildComputerKey(computer.target))) continue
           owner.assertOwned()
           if (this.closed) return
           const record = saved.find(row => buildComputerKey(row.state.target) === buildComputerKey(computer.target))
@@ -193,7 +211,7 @@ export class CiEnrollment {
 
   private targetState(computer: CiEnrollmentTarget, state?: CiEnrollmentComputer): CiEnrollmentComputer {
     if (!state) return this.initial(computer)
-    if (canonical(state.target) === canonical(computer.target)) {
+    if (canonicalJson(state.target) === canonicalJson(computer.target)) {
       return { ...state, ...(computer.executionMode ? { executionMode: computer.executionMode } : {}) }
     }
     return { ...this.initial(computer), revision: state.revision, enabled: state.enabled }
@@ -265,18 +283,20 @@ export class CiEnrollment {
           await this.repository.save(this.pool, workspaceId, record)
           result.state = await this.prepareProfile(principal, workspaceId, link.profileId, record.state)
         } catch (error) {
+          this.retryTransport(error, computer.target)
           if (this.scopeFailure(error)) throw error
           result.state = this.failureState(error)
-          result.message = (error instanceof Error ? error.message : 'CI profile enrollment failed.').slice(0, 2000)
+          result.message = (errorMessage(error, 'CI profile enrollment failed.')).slice(0, 2000)
           componentLogger('jobs').warn({ err: error, workspaceId, templateId: template.id,
             host: buildComputerKey(computer.target) }, 'CI profile enrollment is pending')
         }
       }
       this.summarize(templates, record.state)
     } catch (error) {
+      this.retryTransport(error, computer.target)
       const failure = this.failureState(error)
       record.state.state = failure
-      record.state.message = (error instanceof Error ? error.message : 'CI enrollment failed.').slice(0, 2000)
+      record.state.message = (errorMessage(error, 'CI enrollment failed.')).slice(0, 2000)
       for (const result of record.state.templates.filter(value => value.state === 'pending')) {
         result.state = failure
         result.message = record.state.message
@@ -287,12 +307,31 @@ export class CiEnrollment {
     await this.repository.save(this.pool, workspaceId, record)
   }
 
+  private retryTransport(error: unknown, target: DeviceProvisioningTarget): void {
+    if (this.closed || !this.transientTransport(error)) return
+    const key = buildComputerKey(target)
+    if (this.retries.has(key)) return
+    const timer = setTimeout(() => {
+      this.retries.delete(key)
+      this.request(target)
+    }, 2_000)
+    timer.unref()
+    this.retries.set(key, timer)
+  }
+
+  private transientTransport(error: unknown): boolean {
+    if (error instanceof DomainError && error.code === 'CI_ENROLLMENT_OFFLINE') return true
+    const failure = deviceApplicationFailure(error)
+    return ['transport', 'unavailable', 'timeout', 'backpressure'].includes(failure.code)
+  }
+
   private scopeFailure(error: unknown): boolean {
     return error instanceof DomainError && (error.status === 403
       || ['CI_ENROLLMENT_OFFLINE', 'BUILD_COMPUTER_IDENTITY_CHANGED', 'WORKER_EXECUTION_DISABLED'].includes(error.code))
   }
 
   private failureState(error: unknown): CiEnrollmentTemplate['state'] {
+    if (this.transientTransport(error)) return 'pending'
     if (error instanceof DomainError) {
       if (error.code === 'CI_ENROLLMENT_ROOT_REQUIRED') return 'root-required'
       if (error.code === 'CI_ENROLLMENT_STORAGE_REQUIRED') return 'storage-required'

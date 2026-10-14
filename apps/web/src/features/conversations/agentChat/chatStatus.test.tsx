@@ -1,4 +1,5 @@
-import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { agentChatFixtures, type AgentChatState } from '@foreman-code/contracts/agent-chat'
@@ -16,9 +17,9 @@ afterEach(() => {
 })
 
 it.each([
-  ['interrupting', 'Stop requested—execution not yet confirmed stopped.'],
-  ['uncertain', 'Delivery uncertain—may still be running.'],
-  ['waiting_approval', 'Waiting for approval'],
+  ['interrupting', 'Stopping chat'],
+  ['uncertain', 'Delivery unconfirmed'],
+  ['waiting_approval', 'Approval pending'],
 ] as const)('visibly explains Board chat %s even when sending is unavailable', async (phase, label) => {
   const state: AgentChatState = structuredClone(agentChatFixtures.active)
   state.sessionState = phase
@@ -27,9 +28,8 @@ it.each([
   clients.push(mounted.client)
   await mounted.ready()
   expect(screen.getByText(label)).toBeVisible()
-  const availability = screen.getByText('Messaging paused').closest('details')!
-  fireEvent.click(within(availability).getByText('Messaging paused'))
-  expect(within(availability).getByText('Native delivery not confirmed')).toBeVisible()
+  await userEvent.hover(screen.getByRole('status', { name: 'Agent state' }))
+  expect(await screen.findByRole('tooltip')).toHaveTextContent('Native delivery not confirmed')
 })
 
 it('keeps readable chat quiet while polling is available', async () => {
@@ -40,18 +40,42 @@ it('keeps readable chat quiet while polling is available', async () => {
   const stream = AgentChatTestSource.instances[0]!
   act(() => stream.open())
   act(() => stream.fail())
-  expect(screen.queryByText('Connecting to activity updates.')).not.toBeInTheDocument()
-  expect(screen.getByText('It is a workflow engine.', { selector: '.conversation-message-content' })).toBeVisible()
+  expect(await screen.findByText('Reconnecting to live updates')).toBeVisible()
+  expect(screen.getByText('It is a workflow engine.', { selector: '.conversation-message-content, .conversation-message-content p' })).toBeVisible()
 })
 
-it('shows the Board chat command error inline', async () => {
+it('keeps unfinished work as the chat status while live updates reconnect', async () => {
+  const state: AgentChatState = structuredClone(agentChatFixtures.idleAfterCompletion)
+  state.activitySnapshot = { schemaVersion: 1, scope: { kind: 'agent_chat', conversationId: state.conversation!.id,
+    workspaceId: state.context.workspaceId, workflowId: state.context.workflowId, nodeId: state.context.workflowNodeId,
+    agentId: state.context.agentId }, revision: String(state.revision),
+  active: [{ ref: { kind: 'tool', itemId: 'running-tool' }, phase: 'active', outcome: null, delivery: null, evidence: 'confirmed', startedAt: null }],
+  queued: [], latest: null, pendingInteractions: [], activities: [], page: { before: null, nextCursor: null, hasMore: false } }
+  const mounted = mountChat(state)
+  clients.push(mounted.client)
+  await mounted.ready()
+  await waitFor(() => expect(AgentChatTestSource.instances).toHaveLength(1))
+  const stream = AgentChatTestSource.instances[0]!
+  act(() => stream.open())
+  act(() => stream.fail())
+  expect(await screen.findByText('Background work continues')).toBeVisible()
+  expect(screen.queryByText('Reconnecting to live updates')).not.toBeInTheDocument()
+})
+
+it.each([
+  [503, 'The selected computer is disconnected.'],
+  [500, 'The selected computer is disconnected.'],
+  ['restart', 'Updating — reconnecting…'],
+] as const)('shows the Board chat command error inline after HTTP %s', async (failure, message) => {
   const mounted = mountChat(agentChatFixtures.idleAfterCompletion)
   clients.push(mounted.client)
   await mounted.ready()
-  server.use(http.post('/api/workspaces/:workspaceId/agent-chat/messages', () => HttpResponse.json({
-    error: { code: 'HARNESS_UNAVAILABLE', message: 'The selected computer is disconnected.' },
-  }, { status: 503 })))
+  server.use(http.post('/api/workspaces/:workspaceId/agent-chat/messages', () => failure === 'restart'
+    ? new HttpResponse(null, { status: 502 })
+    : HttpResponse.json({
+      error: { code: 'HARNESS_UNAVAILABLE', message: 'The selected computer is disconnected.' },
+    }, { status: failure })))
   fireEvent.change(screen.getByRole('textbox', { name: 'Message' }), { target: { value: 'A follow-up' } })
   fireEvent.click(screen.getByRole('button', { name: 'Send message' }))
-  expect(await screen.findByText('The selected computer is disconnected.')).toBeVisible()
+  expect(await screen.findByText(message)).toBeVisible()
 })

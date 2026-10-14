@@ -98,7 +98,7 @@ export class HistoricalChatNative extends AgentChatF5Native {
  * This is a service/connection restart, not an OS kill or real-provider restart.
  * Unrelated management services and the already-settled fixture engine are reused. */
 export async function openHistoricalApi(f: HistoricalFixture) {
-  const pool = new pg.Pool({ connectionString: process.env.TEST_DATABASE_URL!, max: 4,
+  const pool = new pg.Pool({ connectionString: f.db.databaseUrl, max: 4,
     options: `-c search_path=${f.db.schema} -c statement_timeout=10000 -c lock_timeout=5000` })
   const commands = new PostgresCommandCoordinator(pool)
   const access = new PostgresAccessService(pool)
@@ -183,19 +183,16 @@ export async function saveWithoutY(f: HistoricalFixture) {
   const saved = (await f.services.workflows.current.save(f.writer.principal, 'http', {
     workspaceId, workflowId, commandId: randomUUID(), executionSemanticsVersion: 3,
     expectedRevision: revision, expectedWorkflowVersionId: f.f.version.id,
-    expectedLocationRevision: location.locationRevision,
     expectedAgentConfigurationVersionIds: Object.fromEntries(graph.nodes.map((node) =>
       [node.agentId, f.f.version.agentConfigurationVersionIds[node.agentId]!])), graph,
   })).value
   const layoutGraph = structuredClone(saved.version.definition)
-  const expectedGeometry = layoutGraph.nodes.map(({ id, position, width, height }) => ({ id, position, width, height }))
   layoutGraph.nodes[0]!.position = { x: 909, y: -33 }; layoutGraph.nodes[0]!.width = 480
   const layoutSaved = (await f.services.workflows.current.save(f.writer.principal, 'http', {
     workspaceId, workflowId, commandId: randomUUID(), executionSemanticsVersion: 3,
     expectedRevision: saved.revision, expectedWorkflowVersionId: saved.version.id,
-    expectedLocationRevision: location.locationRevision,
     expectedAgentConfigurationVersionIds: saved.version.agentConfigurationVersionIds,
-    expectedGeometry, graph: layoutGraph,
+    graph: layoutGraph,
   })).value
   return { saved: layoutSaved, location }
 }

@@ -9,9 +9,9 @@ import { DomainError } from '../../../modules/errors.js'
 import { toolFailure } from '../../shared/results.js'
 import { invokeOperatorTool } from '../invoke.js'
 import type { OperatorRequestContext } from '../types.js'
+import { RUN_HISTORY_TOOLS, type RunHistoryToolName } from '../toolNames.js'
 
-export const RUN_HISTORY_TOOLS = { list: 'run_summaries_list', snapshot: 'run_board_snapshot_get' } as const
-export type RunHistoryToolName = typeof RUN_HISTORY_TOOLS[keyof typeof RUN_HISTORY_TOOLS]
+export { RUN_HISTORY_TOOLS, type RunHistoryToolName }
 
 /** Discovery is not authorization: RunHistoryService locks/rechecks live grants
  * and validates the persisted hierarchy on every HTTP and MCP read. */
@@ -39,7 +39,7 @@ export function registerRunHistoryTools(server: McpServer, context: OperatorRequ
     inputSchema: RunDropdownListInputSchema, outputSchema: RunDropdownPageSchema, annotations,
   }, async (input) => invokeOperatorTool(context, RUN_HISTORY_TOOLS.list, () => reads.list(context.principal, input)))
   server.registerTool(RUN_HISTORY_TOOLS.snapshot, {
-    description: 'Read an immutable admission-time Run Board snapshot in a workspace/workflow/Run scope. Requires live runs:read. Includes saved node names, Agent/configuration-version IDs, layout and edges. Runs with Agent-requested Host CI also return a separate activitySnapshot with persisted CI state, originating execution, part, partition and computer. Runs whose pinned version has Agent interval checks also return live intervalChecks per node: interval, checks so far, whether a check is running (the Agent is awake on check number `checks` until it finishes), and nextCheckAt while the Run is running. Run activities label check executions as Interval check N. Old Runs without capture return unavailable/legacy_run. Does not require access to live Agents or start/modify a Run.',
+    description: 'Read an immutable admission-time Run Board snapshot in a workspace/workflow/Run scope. Requires live runs:read. Includes saved node names, Agent/configuration-version IDs, layout and edges. Runs with Agent-requested Host CI also return a separate activitySnapshot with persisted CI state, originating execution, part, partition and computer. Runs whose pinned version has Agent loops also return live intervalChecks from the same database snapshot as the Run lifecycle, per node: interval, checks so far, whether a check is running (the Agent is awake on check number `checks` until it finishes), and nextCheckAt while the Run is running. Run activities label loop executions as Loop N. Old Runs without capture return unavailable/legacy_run. Does not require access to live Agents or start/modify a Run.',
     inputSchema: RunBoardSnapshotGetInputSchema, outputSchema: RunBoardSnapshotGetResultSchema, annotations,
   }, async (input) => invokeOperatorTool(context, RUN_HISTORY_TOOLS.snapshot, () => reads.snapshot(context.principal, input)))
 }

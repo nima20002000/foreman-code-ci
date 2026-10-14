@@ -1,4 +1,4 @@
-import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
+import { decodeMcpToolResult, OperatorRunGetResultSchema } from '@foreman-code/contracts/operator-mcp'
 import { randomUUID } from 'node:crypto'
 import { lstat, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -49,7 +49,7 @@ describe.skipIf(!postgresEnabled)('workspace folder dependencies retained by acc
         const before = ManagedWorkspaceSchema.parse(decodeMcpToolResult((await f.client.callTool({ name: 'workspace_get',
           arguments: { workspaceId } }))))
         const savedResult = await f.client.callTool({ name: 'workflow_save_v3', arguments: {
-          ...await f.create(), expectedLocationRevision: before.locationRevision,
+          ...await f.create(),
         } })
         expect(savedResult.isError, JSON.stringify(savedResult)).not.toBe(true)
         const saved = CurrentWorkflowSaveResultSchema.parse(decodeMcpToolResult(savedResult)).value
@@ -59,12 +59,28 @@ describe.skipIf(!postgresEnabled)('workspace folder dependencies retained by acc
           expectedAgentConfigurationVersionIds: saved.version.agentConfigurationVersionIds,
           expectedLocationRevision: before.locationRevision, input: {},
         }
+        const engineStart = f.engine.start.bind(f.engine)
+        // Admission returns before execution; join the scheduled drive before inspecting its approval.
+        const dispatched = new Promise<string>((resolve, reject) => {
+          vi.spyOn(f.engine, 'start').mockImplementation((runId) => {
+            const task = engineStart(runId)
+            void task.then(() => resolve(runId), reject)
+            return task
+          })
+        })
         const started = await f.client.callTool({ name: 'run_start', arguments: start })
         expect(started.isError, JSON.stringify(started)).not.toBe(true)
         const runId = RunStartV3ResultSchema.parse(decodeMcpToolResult(started)).run.id
-        await vi.waitFor(async () => {
-          expect(await f.runs.get(runId)).toMatchObject({ executionState: 'waiting' })
-        }, { timeout: 10_000 })
+        expect(await dispatched).toBe(runId)
+        expect(await f.runs.get(runId)).toMatchObject({ executionState: 'waiting' })
+        const acceptedRun = await f.client.callTool({ name: 'run_get', arguments: {
+          workspaceId, runId, detail: 'full',
+        } })
+        expect(acceptedRun.isError, JSON.stringify(acceptedRun)).not.toBe(true)
+        expect(OperatorRunGetResultSchema.parse(decodeMcpToolResult(acceptedRun))).toMatchObject({
+          run: { id: runId, executionState: 'waiting', executionLocation: { rootPath: project } },
+        })
+        expect(f.dispatchErrors).toEqual([])
         const original = (await f.runs.getRepeatSnapshot(runId)).run
         const executions = await readCurrentExecutions(f.runs, runId)
         const pending = (await f.repository.list({ runId, limit: 100 })).find(item => item.status === 'pending')!

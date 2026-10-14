@@ -1,5 +1,6 @@
 import { authorizeWorkflowWorktreeContent, validateWorkflowWorktrees,
   type WorkflowWorktreeServices } from './worktreeSettings.js'
+import { withTransaction } from '../../infrastructure/transaction.js'
 import { validateReviewerBootstrap } from './reviewerBootstrap.js'
 import { reconcileAgentProfilePlacements } from './agentProfilePlacements.js'
 import { requireCurrentWorkflowAccess } from './currentWorkflowPolicy.js'
@@ -12,7 +13,7 @@ import {
   CurrentWorkflowSavedSchema, CurrentWorkflowReadInputSchema, CurrentWorkflowReadResultSchema,
   CurrentWorkflowValidationSchema, WorkflowDefinitionV3Schema, WorkflowVersionV3Schema,
   ExecutableWorkflowV3Schema, canonicalGraphJson, sameAuthoredWorkflow, sameExecutableWorkflow,
-  sameWorkflowValue, workflowNodeNames,
+  sameWorkflowValue,
   CurrentEditSaveInputSchema, CurrentEditMutationInputSchema, CurrentEditReadInputSchema, preserveWorkflowGeometry,
   type CurrentWorkflowValidateInput, type CurrentEditSaveInput, type WorkflowDefinitionV3,
 } from '@foreman-code/contracts/wave25'
@@ -139,9 +140,7 @@ export class CurrentWorkflowAuthoring {
     const input = CurrentWorkflowReadInputSchema.parse(raw)
     requireAuthorization(principal, 'workflows:read', input)
     requireAuthorization(principal, 'graph:read', input)
-    const client = await this.pool.connect()
-    try {
-      await client.query('begin')
+    return withTransaction(this.pool, async (client) => {
       const live = await readLiveManagementPrincipal(client, principal.id)
       requireAuthorization(live, 'workflows:read', input); requireAuthorization(live, 'graph:read', input)
       const row = (await client.query<{ revision: string; current_version_id: string | null }>(
@@ -151,25 +150,21 @@ export class CurrentWorkflowAuthoring {
       const { version } = await versionAt(client, input, input.workflowVersionId ?? row.current_version_id)
       const result = CurrentWorkflowReadResultSchema.parse({ workspaceId: input.workspaceId, workflowId: input.workflowId, revision: Number(row.revision),
         currentVersionId: row.current_version_id, version })
-      await client.query('commit')
       return result
-    } catch (error) { await client.query('rollback'); throw error } finally { client.release() }
+    })
   }
   async validate(principal: ManagementPrincipal, raw: unknown) {
     const input = CurrentWorkflowValidateInputSchema.parse(raw)
     authorize(principal, input, false)
-    const client = await this.pool.connect()
-    try {
-      await client.query('begin')
+    return withTransaction(this.pool, async (client) => {
       const live = await readLiveManagementPrincipal(client, principal.id)
       authorize(live, input, false)
       await this.prepare(client, live, input, false)
-      await client.query('commit')
       return CurrentWorkflowValidationSchema.parse({ valid: true, executionSemanticsVersion: 3,
         expectedRevision: input.expectedRevision, expectedWorkflowVersionId: input.expectedWorkflowVersionId,
         expectedAgentConfigurationVersionIds: input.expectedAgentConfigurationVersionIds,
-        expectedLocationRevision: input.expectedLocationRevision, ...this.availability() })
-    } catch (error) { await client.query('rollback'); throw error } finally { client.release() }
+        ...this.availability() })
+    })
   }
   save(principal: ManagementPrincipal, source: Source, raw: unknown) {
     return this.write(principal, source, raw)
@@ -313,9 +308,6 @@ export class CurrentWorkflowAuthoring {
     }
     const snapshot = row.current_version_id ? await versionAt(client, input, row.current_version_id) : undefined
     const base = snapshot?.version
-    const location = (await client.query<{ revision: string }>('select location_revision::text as revision from workspaces where id=$1 for share',
-      [input.workspaceId])).rows[0]
-    if (!location || Number(location.revision) !== input.expectedLocationRevision) return fail('LOCATION_REVISION_CONFLICT', 'The displayed workspace location revision changed.')
     if (base && (current.version !== base.version || !sameExecutableWorkflow({ ...current,
       name: base.definition.name, description: base.definition.description }, base.definition))) {
       return fail('WORKFLOW_BASE_CONFLICT', 'The current definition disagrees with its immutable executable version.')
@@ -328,27 +320,6 @@ export class CurrentWorkflowAuthoring {
     if (presentationOnly && snapshot) {
       presentationOnly = sameExecutableWorkflow(input.graph,
         reconcileAgentProfilePlacements(input.graph, snapshot.configurations))
-    }
-    const names = workflowNodeNames(current)
-    const suppliedNames = 'expectedNodePresentation' in input ? input.expectedNodePresentation : undefined
-    // Persisted commands predate presentation pins; their immutable base supplies
-    // the baseline without changing the reserved save input or its hash.
-    const expectedNames = suppliedNames ?? (intentId && base ? workflowNodeNames(base.definition) : undefined)
-    if (expectedNames && !sameWorkflowValue(names, expectedNames)) {
-      return fail('PRESENTATION_REVISION_CONFLICT', 'The saved node names changed. Reload before saving these edits.')
-    }
-    const submittedNames = new Map(workflowNodeNames(input.graph).map((node) => [node.id, node]))
-    const renamed = names.some((node) => submittedNames.has(node.id)
-      && !sameWorkflowValue(node, submittedNames.get(node.id)))
-    if (base && 'commandId' in input && !expectedNames && renamed) {
-      return fail('PRESENTATION_BASE_REQUIRED', 'Supply expectedNodePresentation from the saved workflow before changing node names.')
-    }
-    if ('expectedGeometry' in input && input.expectedGeometry) {
-      if (!presentationOnly) return fail('LAYOUT_MEANING_CONFLICT', 'A geometry command cannot publish executable changes.')
-      const geometry = current.nodes.map(({ id, position, width, height }) => ({ id, position, width, height }))
-      if (!sameWorkflowValue(geometry, input.expectedGeometry)) {
-        return fail('LAYOUT_REVISION_CONFLICT', 'The stored node geometry changed. Reconcile this rejected layout command before retrying.')
-      }
     }
     if (presentationOnly && base) {
       await validateWorkflowWorktrees({ sql: client, principal, definition: input.graph, previous: current,
@@ -373,8 +344,8 @@ export class CurrentWorkflowAuthoring {
     const heads = (await client.query<{ id: string; current_configuration_version_id: string | null }>(
       'select id,current_configuration_version_id from agents where workspace_id=$1 and id=any($2::text[]) and archived_at is null order by id for share',
       [input.workspaceId, agentIds])).rows
-    if (heads.length !== agentIds.length - (staged?.prepared.filter((item) => item.baseRevision === null).length ?? 0) || heads.some((head) => head.current_configuration_version_id !== input.expectedAgentConfigurationVersionIds[head.id])) {
-      return fail('AGENT_CONFIGURATION_CONFLICT', 'The exact displayed current Agent configuration map changed.')
+    if (heads.length !== agentIds.length - (staged?.prepared.filter((item) => item.baseRevision === null).length ?? 0)) {
+      return fail('AGENT_CONFIGURATION_CONFLICT', 'A referenced Agent is unavailable in this workspace.')
     }
     const rows = (await client.query<ImmutableAgentConfigurationRow>(
       'select id,workspace_id,agent_id,version,record from agent_configuration_versions where id=any($1::text[]) order by id for share',

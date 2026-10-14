@@ -1,4 +1,6 @@
+import { errorMessage } from '../../shared/errorMessage.js'
 import { isDeepStrictEqual } from 'node:util'
+import { withTransaction } from '../../infrastructure/transaction.js'
 import pg from 'pg'
 import { WorkspaceSchema } from '@foreman-code/contracts'
 import { type ManagementAction, type ManagementPrincipal } from '@foreman-code/contracts/management'
@@ -37,10 +39,11 @@ function importFailure(error: unknown): ImportFailure {
   const code = typeof candidate === 'string' && /^[A-Z][A-Z0-9_]{0,127}$/u.test(candidate)
     ? candidate : 'INTERNAL_ERROR'
   const conflict = /CONFLICT|CHANGED|REVISION|PENDING|EEXIST/u.test(code)
-  const unsupported = /UNSUPPORTED|SENSITIVE|SECRET|INVALID|INCLUSION|COLLISION|SOURCE_CAPTURE_FAILED|CAPACITY/u.test(code)
+  const unsupported = code !== 'SOURCE_GIT_CACHE_CAPACITY'
+    && /UNSUPPORTED|SENSITIVE|SECRET|INVALID|INCLUSION|COLLISION|SOURCE_CAPTURE_FAILED|CAPACITY/u.test(code)
   const newCommandRequired = conflict || unsupported
     || error instanceof DomainError && error.details?.newCommandRequired === true
-  return { code, message: error instanceof Error ? error.message : 'Repository preparation failed.',
+  return { code, message: errorMessage(error, 'Repository preparation failed.'),
     retryable: !newCommandRequired, newCommandRequired }
 }
 
@@ -54,18 +57,7 @@ export class WorkspaceRepositoryService {
   }
 
   private async transaction<T>(work: (sql: pg.PoolClient) => Promise<T>): Promise<T> {
-    const sql = await this.pool.connect()
-    try {
-      await sql.query('begin')
-      const value = await work(sql)
-      await sql.query('commit')
-      return value
-    } catch (error) {
-      await sql.query('rollback')
-      throw error
-    } finally {
-      sql.release()
-    }
+    return withTransaction(this.pool, work)
   }
 
   private async authorize(sql: Sql, principal: ManagementPrincipal, workspaceId: string,

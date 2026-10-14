@@ -1,174 +1,296 @@
-import { execFile, execFileSync } from 'node:child_process'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
-import { createHash, randomUUID } from 'node:crypto'
-import { afterEach, describe, expect, it } from 'vitest'
-import { gitFixtureEnvironment } from '../../../test/helpers/gitFixture.js'
-import type { GitWorktreePorts } from '../sources/gitWorktree.js'
-import { CloudCi } from './cloud.js'
-import { CircleCiProvider, GitHubActionsProvider } from './cloudProviders.js'
-import { systemHostCiPorts, type HostCiPorts } from './runner.js'
+import type { CiPart, CiSuite } from '@foreman-code/contracts'
+import { describe, expect, it, vi } from 'vitest'
 import { selectByIndexes } from '../../../../../scripts/ci-files.mjs'
 import { affectedSnapshot } from '../../../../../scripts/ci-affected.mjs'
 import { executionSelection } from '../../../../../scripts/ci-selection.mjs'
+import { cloudService } from './cloudService.testSupport.js'
 
-const roots: string[] = []
-afterEach(async () => { for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }) })
+import { fixture } from './cloud.testSupport.js'
 
-/** A private repository and its public mirror as local bare repositories standing in for GitHub, with a gh that
- * records dispatches and replays the run states a test sets. */
-async function fixture(files: Record<string, string> = {}, options: { mirror?: boolean; provider?: 'github' | 'circleci'
-  mirrorWorkflows?: boolean; sourceWorkflows?: boolean } = {}) {
-  const root = await mkdtemp(join(process.env.FOREMAN_CODE_TEST_ROOT ?? '/tmp', 'cloud-ci-'))
-  roots.push(root)
-  const environment = gitFixtureEnvironment()
-  const run = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, env: environment, encoding: 'utf8' }).trim()
-  const work = join(root, 'work'), mirrorWork = join(root, 'mirror-work')
-  const origin = join(root, 'origin.git'), mirror = join(root, 'mirror.git')
-  for (const path of [work, mirrorWork]) await mkdir(path)
-  run(root, 'init', '-q', '--bare', origin); run(root, 'init', '-q', '--bare', mirror)
-  // The mirror starts from one import commit without the private history.
-  run(mirrorWork, 'init', '-q', '-b', 'main'); await writeFile(join(mirrorWork, 'README.md'), 'import\n')
-  const workflows = { '.github/workflows/ci.yml': 'name: CI\non: workflow_dispatch\n',
-    '.circleci/config.yml': 'version: 2.1\n' }
-  for (const [path, text] of Object.entries(workflows)) {
-    if (options.mirrorWorkflows === false) continue
-    await mkdir(join(mirrorWork, path, '..'), { recursive: true })
-    await writeFile(join(mirrorWork, path), text)
+it.each([false, true])('keeps a first-pass CircleCI file failure in Main when its retest passes: report=%s', async reported => {
+  const f = await fixture({}, { provider: 'circleci' })
+  const runId = randomUUID()
+  const reply = await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId,
+    repository: 'octo/site', commit: f.commit, suite: 'integration', scope: 'full' })
+  if (reply.operation !== 'start') throw new Error('Expected a start reply')
+  const main = cloudService(f.cloud, reply.run, f.commit)
+  const file = 'apps/api/test/a.integration.test.ts'
+  const passing = { file, status: 'passed', durationMs: 40,
+    tests: [{ name: 'saves a record', status: 'passed', durationMs: 20 }] }
+  f.circle.artifacts = {
+    'durations/test-results.json': { summary: { passed: reported ? 1 : 0, failed: 0, skipped: 0 },
+      truncated: false, files: reported ? [passing] : [] },
+    'integration-logs/run/summary.json': { schemaVersion: 1, suite: 'integration',
+      totals: { total: reported ? 1 : 0, passed: reported ? 1 : 0, failed: 0, skipped: 0 },
+      files: [{ file, code: 1, complete: reported, elapsedMs: 90, reason: 'First-pass process failed' }],
+      retests: [{ file, code: 0, complete: true }] },
+    'integration-logs/run/slots/slot-1/a.log': 'unneeded slot output',
+    'integration-logs/run/logs.tar.gz': 'unneeded archive',
   }
-  run(mirrorWork, 'add', '.'); run(mirrorWork, 'commit', '-qm', 'Initial import'); run(mirrorWork, 'push', '-q', mirror, 'main')
-  run(work, 'init', '-q', '-b', 'main')
-  await writeFile(join(work, 'secret-history.txt'), 'old\n'); run(work, 'add', '.'); run(work, 'commit', '-qm', 'private history')
-  await rm(join(work, 'secret-history.txt'))
-  await mkdir(join(work, 'apps/api/test'), { recursive: true }); await mkdir(join(work, 'scripts'))
-  for (const name of ['a', 'b', 'c', 'd']) await writeFile(join(work, `apps/api/test/${name}.integration.test.ts`), '')
-  await writeFile(join(work, 'scripts/integration-durations.json'), JSON.stringify({ 'apps/api/test/a.integration.test.ts': 400,
-    'apps/api/test/b.integration.test.ts': 300, 'apps/api/test/c.integration.test.ts': 200, 'apps/api/test/d.integration.test.ts': 100 }))
-  for (const [path, text] of Object.entries(workflows)) {
-    if (options.sourceWorkflows === false) continue
-    await mkdir(join(work, path, '..'), { recursive: true })
-    await writeFile(join(work, path), text)
+  f.circle.outcome = 'failed'
+  await main.service.dispatch()
+  expect(await main.read(['failed'])).toMatchObject({ run: { state: 'failed', collection: 'complete' },
+    tests: { summary: { passed: reported ? 1 : 0, failed: 0, skipped: 0 },
+      files: [{ file, status: 'failed', tests: [] }] } })
+  expect(f.circle.downloaded).toEqual(['https://artifacts.example/durations/test-results.json',
+    'https://artifacts.example/integration-logs/run/summary.json'])
+  const reopened = await f.reopen().handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 1, testResults: true })
+  expect(reopened).toMatchObject({ testResults: { files: [{ file, status: 'failed' }] } })
+})
+
+it.each(['integration', 'unit-api', 'unit-web'] as const)(
+  'persists CircleCI %s test failures in Main without a durations artifact', async part => {
+    const f = await fixture({}, { provider: 'circleci' })
+    const runId = randomUUID()
+    const selection: { suite: CiSuite; part?: CiPart } = part === 'integration'
+      ? { suite: 'integration' } : { suite: 'unit', part }
+    const reply = await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId,
+      repository: 'octo/site', commit: f.commit, scope: 'full', ...selection })
+    if (reply.operation !== 'start') throw new Error('Expected a start reply')
+    const files = { integration: 'apps/api/test/a.integration.test.ts',
+      'unit-api': 'apps/api/src/value.test.ts', 'unit-web': 'apps/web/src/value.test.tsx' }
+    const file = files[part]
+    const failed = { file, status: 'failed', durationMs: 90,
+      tests: [{ name: 'rejects an invalid record', status: 'failed', durationMs: 20,
+        message: 'expected 1 to be 2', location: `${file}:12:3` }] }
+    const testResults = { summary: { passed: 0, failed: 1, skipped: 0 }, truncated: false, files: [failed] }
+    f.circle.artifacts = { 'durations/test-results.json': testResults }
+    f.circle.outcome = 'failed'
+    const main = cloudService(f.cloud, reply.run, f.commit, selection)
+    await main.service.dispatch()
+    expect(await main.read(['failed'])).toMatchObject({ run: { state: 'failed' }, tests: testResults })
+    expect(await f.reopen().handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 1, testResults: true }))
+      .toMatchObject({ testResults })
+  },
+)
+
+it.each([false, true])('keeps CircleCI Suite failure output beyond the rendered step log: artifact=%s', async artifact => {
+  const f = await fixture({}, { provider: 'circleci' })
+  const runId = randomUUID()
+  const reply = await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId,
+    repository: 'octo/site', commit: f.commit, suite: 'integration', scope: 'full' })
+  if (reply.operation !== 'start') throw new Error('Expected a start reply')
+  const main = cloudService(f.cloud, reply.run, f.commit)
+  const failure = '[integration] FAIL apps/api/test/a.integration.test.ts (slot 1, exit 1)\n'
+    + '[integration]   × rejects an invalid record\n'
+  f.circle.steps = [{ num: 108, name: 'Suite', phase: 'ended', outcome: 'failed' }]
+  f.circle.log = 'rendered step output\n'.repeat(3_000)
+  f.circle.rawOutput = `${'test progress\n'.repeat(6_000)}${failure}`
+  if (artifact) f.circle.artifacts = { 'durations/suite.log': f.circle.rawOutput }
+  f.circle.outcome = 'failed'
+  await main.service.dispatch()
+  expect(await main.read()).toMatchObject({ run: { state: 'failed' }, logTail: expect.stringContaining(failure) })
+  const first = await f.cloud.handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 1 })
+  if (first.operation !== 'read') throw new Error('Expected a read reply')
+  expect(first.run.logBytes).toBeGreaterThan(65_536)
+  const read = { operation: 'read' as const, runId,
+    afterOffset: first.run.logBytes - 32_768, maxBytes: 32_768 }
+  expect(await f.cloud.handle(read)).toMatchObject({ text: expect.stringContaining(failure) })
+  expect(await f.reopen().handle(read)).toMatchObject({ text: expect.stringContaining(failure) })
+})
+
+it.each([
+  { outcome: 'succeeded', state: 'passed', exitCode: 0 },
+  { outcome: 'failed', state: 'failed', exitCode: 1 },
+  { outcome: 'canceled', state: 'canceled', exitCode: 1 },
+])('settles ended CircleCI pipelines without workflows as $state', async ({ outcome, state, exitCode }) => {
+  const f = await fixture({}, { provider: 'circleci' })
+  for (const started of [false, true]) {
+    f.circle.runView = started ? null : { phase: 'created', workflows: [] }
+    const runId = randomUUID()
+    await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId, repository: 'octo/site',
+      commit: f.commit, suite: 'integration', scope: 'full' })
+    f.circle.runView = { phase: 'ended', current_outcome: outcome, stopped_at: '2026-10-11T02:00:00Z', workflows: [] }
+    expect(await f.cloud.handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 1024 }))
+      .toMatchObject({ run: { state, exitCode, finishedAt: '2026-10-11T02:00:00Z' } })
+    expect(await f.reopen().handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 1 }))
+      .toMatchObject({ run: { state, exitCode } })
   }
-  for (const [path, text] of Object.entries(files)) await writeFile(join(work, path), text)
-  run(work, 'add', '-A'); run(work, 'commit', '-qm', 'change'); run(work, 'push', '-q', origin, 'main')
-  const commit = run(work, 'rev-parse', 'HEAD')
-  const local = (value: string) => value === 'https://github.com/octo/site.git' ? origin
-    : value === 'https://github.com/octo/site-ci.git' ? mirror : value
-  const git: GitWorktreePorts = {
-    cloneDirectory: repository => join(root, 'clones', ...repository.split('/')),
-    // Asynchronous like Main's git, so concurrent starts really overlap.
-    git: (args, options) => new Promise(resolve => {
-      execFile('git', args.map(local), { cwd: options.cwd, env: { ...environment, ...options.env }, encoding: 'utf8' },
-        (error, stdout, stderr) => {
-          resolve({ code: error ? (typeof error.code === 'number' ? error.code : 1) : 0, stdout, stderr })
-        })
-    }),
-  }
-  const dispatched: string[][] = []
-  const github = { listed: [] as { databaseId: number; displayTitle: string }[], status: 'in_progress', conclusion: '',
-    durations: null as Record<string, number> | null, testResults: null as unknown, canceled: [] as string[],
-    steps: [] as { number: number; name: string; status: string; conclusion: string | null }[],
-    rateLimited: false, jobReads: [] as ('full' | 'unchanged')[] }
-  const circle = { triggered: [] as string[][], outcome: '' as string, durations: null as Record<string, number> | null,
-    testResults: null as unknown,
-    phantoms: 0, lookupError: '', canceled: [] as string[],
-    steps: [] as { num: number; name: string; phase: string; outcome?: string }[], output: '',
-    downloaded: [] as string[], downloadGate: Promise.resolve() as Promise<void> }
-  let now = Date.now()
-  const system = systemHostCiPorts()
-  const ports: HostCiPorts = { ...system, now: () => new Date(now), run: async (file, args) => {
-    const ok = (stdout = '') => ({ code: 0, stdout, stderr: '' })
-    if (file === 'tailscale') return ok(JSON.stringify({ MagicDNSSuffix: 'tail0000.ts.net',
-      Self: { HostName: 'owner-desktop', TailscaleIPs: ['100.90.1.2', 'fd7a::1'] },
-      Peer: { a: { HostName: 'builder-Laptop', TailscaleIPs: ['100.90.1.3'] } }, User: { 1: { LoginName: 'owner@example.org' } } }))
-    if (file === 'circleci') {
-      if (args[0] === 'auth') return ok()
-      if (args[0] === 'run' && args[1] === 'trigger') {
-        circle.triggered.push([...args])
-        return ok(JSON.stringify({ id: `run-${circle.triggered.length}` }))
-      }
-      if (args[0] === 'run' && args[1] === 'get') {
-        if (circle.lookupError) return { code: 1, stdout: '', stderr: circle.lookupError }
-        const phantom = Number(args[2]!.slice('run-'.length)) <= circle.phantoms
-        return ok(JSON.stringify(phantom ? { phase: 'ended', outcome: 'succeeded', workflows: [] }
-          : { workflows: [{ jobs: [{ id: 'job-1' }] }] }))
-      }
-      if (args[0] === 'run' && args[1] === 'cancel') {
-        circle.canceled.push(args[2]!)
-        return ok()
-      }
-      if (args[0] === 'job' && args[1] === 'get') return ok(JSON.stringify({ executions: [{ steps: circle.steps }], ...circle.outcome
-        ? { phase: 'ended', outcome: circle.outcome, stopped_at: '2026-10-11T02:00:00Z' } : { phase: 'started' } }))
-      if (args[0] === 'job' && args[1] === 'output' && args[2] === 'get') return ok(circle.output)
-      // The CLI's default view keeps only each step's last lines.
-      if (args[0] === 'job' && args[1] === 'output') {
-        return ok(args[args.indexOf('--tail') + 1] === '0' ? 'Suite\nall green\n' : '_… 1 earlier lines hidden_\nall green\n')
-      }
-      if (args[0] === 'job' && args[1] === 'artifact' && args.includes('--json') && circle.durations) {
-        const listed = ['durations/durations.json', ...circle.testResults ? ['durations/test-results.json'] : [],
-          'integration-logs/run/slot-1/a.integration.test.ts.log']
-        return ok(JSON.stringify(listed.map(path => ({ path, url: `https://artifacts.example/${path}`, execution: 0 }))))
-      }
-      return { code: 1, stdout: '', stderr: `unexpected circleci ${args.join(' ')}` }
-    }
-    if (file === 'curl') {
-      const url = args.at(-1)!
-      circle.downloaded.push(url)
-      await circle.downloadGate
-      const body = url.endsWith('/durations.json') ? circle.durations : url.endsWith('/test-results.json') ? circle.testResults : 'log'
-      await writeFile(args[args.indexOf('-o') + 1]!, JSON.stringify(body))
-      return ok()
-    }
-    if (file !== 'gh') return system.run(file, args)
-    if (args[0] === 'auth') return ok()
-    if (args[0] === 'workflow') { dispatched.push([...args]); return ok() }
-    if (args[0] === 'api') {
-      if (github.rateLimited) return { code: 1, stdout: 'HTTP/2.0 403 Forbidden\r\nX-Ratelimit-Remaining: 0\r\n\r\n{}',
-        stderr: 'gh: API rate limit exceeded for user ID 1. (HTTP 403)' }
-      const body = JSON.stringify({ jobs: [{ id: 1, status: github.status === 'completed' ? 'completed' : 'in_progress',
-        steps: github.steps }] })
-      const etag = `"${createHash('sha1').update(body).digest('hex')}"`
-      if (args.some(value => value.startsWith('If-None-Match:') && value.endsWith(etag))) {
-        github.jobReads.push('unchanged')
-        return { code: 1, stdout: `HTTP/2.0 304 Not Modified\r\nEtag: ${etag}\r\n\r\n`, stderr: 'gh: HTTP 304' }
-      }
-      github.jobReads.push('full')
-      return ok(`HTTP/2.0 200 OK\r\nEtag: W/${etag}\r\n\r\n${body}`)
-    }
-    if (args[1] === 'list') return ok(JSON.stringify(github.listed))
-    if (args[1] === 'cancel') { github.canceled.push(args[2]!); return ok() }
-    if (args[1] === 'view' && args.includes('--log')) return ok('ci\tSuite\tall green\n')
-    if (args[1] === 'view') return ok(JSON.stringify({ status: github.status, conclusion: github.conclusion, updatedAt: new Date().toISOString() }))
-    if (args[1] === 'download') {
-      if (!github.durations) return { code: 1, stdout: '', stderr: 'no artifact' }
-      const directory = args[args.indexOf('-D') + 1]!
-      await mkdir(directory, { recursive: true })
-      await writeFile(join(directory, 'durations.json'), JSON.stringify(github.durations))
-      if (github.testResults) await writeFile(join(directory, 'test-results.json'), JSON.stringify(github.testResults))
-      return ok()
-    }
-    return { code: 1, stdout: '', stderr: `unexpected gh ${args.join(' ')}` }
-  } }
-  const provider = options.provider === 'circleci' ? new CircleCiProvider(ports) : new GitHubActionsProvider(ports)
-  const reopen = () => new CloudCi('main-1', provider, async repository => options.mirror === false ? null
-    : repository === 'octo/site' ? 'octo/site-ci' : null, join(root, 'ci-cloud'), ports, git,
-    { home: '/home/owner', user: 'owner', host: 'owner-desktop' })
-  const cloud = reopen()
-  const mirrorGit = (...args: string[]) => run(mirror, ...args)
-  return { cloud, reopen, commit, dispatched, github, circle, mirrorGit, run: (...args: string[]) => run(work, ...args),
-    advance: (milliseconds: number) => { now += milliseconds },
-    write: (path: string, text: string) => writeFile(join(work, path), text),
-    push: (...refs: string[]) => run(work, 'push', '-q', origin, ...refs),
-    async checkoutMirror(ref: string) {
-      const directory = join(root, 'checkout')
-      await mkdir(directory)
-      run(root, 'clone', '-q', '--no-checkout', mirror, directory)
-      run(directory, 'checkout', '-q', '--detach', run(mirror, 'rev-parse', ref))
-      return directory
-    } }
-}
+  expect(f.circle.triggered).toHaveLength(2)
+})
+
+it.each(['pipeline', 'workflow'] as const)('uses an ended CircleCI %s despite stale child status', async ended => {
+  const f = await fixture({}, { provider: 'circleci' })
+  const runId = randomUUID()
+  await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId, repository: 'octo/site',
+    commit: f.commit, suite: 'integration', scope: 'full' })
+  f.circle.runView = ended === 'pipeline'
+    ? { phase: 'ended', outcome: 'failed', workflows: [{ phase: 'started', jobs: [{ id: 'job-1' }] }] }
+    : { phase: 'started', workflows: [{ phase: 'ended', outcome: 'canceled', jobs: [{ id: 'job-1' }] }] }
+  expect(await f.cloud.handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 1024 }))
+    .toMatchObject({ run: { state: ended === 'pipeline' ? 'failed' : 'canceled', exitCode: 1 } })
+})
+
+it.each(['unknown outcome', 'no active workflows'] as const)('fails an ended CircleCI run with %s clearly', async reason => {
+  const f = await fixture({}, { provider: 'circleci' })
+  const runId = randomUUID()
+  await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId, repository: 'octo/site',
+    commit: f.commit, suite: 'integration', scope: 'full' })
+  if (reason === 'unknown outcome') f.circle.runView = { phase: 'ended', workflows: [] }
+  else f.circle.lookupError = 'error: Run run-1 has no active workflows'
+  expect(await f.cloud.handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 1024 }))
+    .toMatchObject({ run: { state: 'failed', exitCode: 1, message: expect.stringContaining('final outcome is unknown') } })
+  expect(await f.reopen().handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 1 }))
+    .toMatchObject({ run: { state: 'failed' } })
+  expect(f.circle.triggered).toHaveLength(1)
+})
+
+it.each([false, true])('settles CircleCI cancellation when nothing is active, lookup also ended: %s', async lookupEnded => {
+  const f = await fixture({}, { provider: 'circleci' })
+  const runId = randomUUID()
+  await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId, repository: 'octo/site',
+    commit: f.commit, suite: 'integration', scope: 'full' })
+  f.circle.cancelError = 'error: Run run-1 has no active workflows to cancel.'
+  if (lookupEnded) f.circle.lookupError = 'error: Run run-1 has no active workflows to cancel.'
+  expect(await f.cloud.handle({ operation: 'cancel', runId }))
+    .toMatchObject({ operation: 'cancel', run: { state: 'canceled', finishedAt: expect.any(String) } })
+  expect(await f.reopen().handle({ operation: 'cancel', runId })).toMatchObject({ run: { state: 'canceled' } })
+  expect(f.circle.canceled).toHaveLength(lookupEnded ? 0 : 1)
+  expect(f.circle.triggered).toHaveLength(1)
+})
+
 
 describe('GitHub Actions CI on a public mirror', () => {
+  it('shares one publication across concurrent starts of the same commit', async () => {
+    const f = await fixture()
+    const git = vi.spyOn(f.git, 'git')
+    const services = [f.cloud, f.reopen()]
+    const replies = await Promise.all(Array.from({ length: 8 }, (_, index) => services[index % services.length]!.handle({
+      operation: 'start', workspaceId: 'ci-workspace', runId: randomUUID(), repository: 'octo/site',
+      commit: f.commit, suite: 'lint', scope: 'full',
+    })))
+    expect(replies).toHaveLength(8)
+    for (const reply of replies) expect(reply).toMatchObject({ operation: 'start', run: { state: 'starting' } })
+    expect(f.dispatched).toHaveLength(8)
+    const publications = git.mock.calls.filter(([args]) => args[0] === 'push' && args.includes('--force'))
+    expect(publications).toHaveLength(1)
+  })
+
+  it('dispatches every concurrent start while stale-branch pruning is blocked', async () => {
+    const f = await fixture()
+    f.mirrorGit('update-ref', 'refs/heads/ci/retired-run', 'main')
+    let release!: () => void
+    const blocked = new Promise<void>(resolve => { release = resolve })
+    let pruning = false
+    f.cloud.setActiveRunLookup(async () => {
+      pruning = true
+      await blocked
+      return { ids: new Set<string>(), readAt: 0 }
+    })
+    let completed = 0
+    const starts = Promise.all(Array.from({ length: 8 }, () => f.cloud.handle({
+      operation: 'start', workspaceId: 'ci-workspace', runId: randomUUID(), repository: 'octo/site',
+      commit: f.commit, suite: 'lint', scope: 'full',
+    }).then(reply => {
+      completed++
+      return reply
+    })))
+    try {
+      await expect.poll(() => pruning, { timeout: 5_000 }).toBe(true)
+      await expect.poll(() => f.dispatched.length, { timeout: 5_000 }).toBe(8)
+      await expect.poll(() => completed, { timeout: 5_000 }).toBe(8)
+    } finally {
+      release()
+      await starts
+    }
+    await expect.poll(() => f.mirrorGit('for-each-ref', '--format=%(refname)', 'refs/heads/ci/'), { timeout: 5_000 })
+      .not.toContain('refs/heads/ci/retired-run')
+    expect(f.mirrorGit('rev-parse', `refs/heads/ci/${f.commit}`)).toMatch(/^[a-f0-9]{40}$/)
+  })
+
+  it('limits background pruning to once every five minutes per mirror', async () => {
+    const f = await fixture()
+    f.mirrorGit('update-ref', 'refs/heads/ci/retired-run', 'main')
+    let sweeps = 0
+    f.cloud.setActiveRunLookup(async () => {
+      sweeps++
+      return { ids: new Set<string>(), readAt: 0 }
+    })
+    const start = () => f.cloud.handle({
+      operation: 'start', workspaceId: 'ci-workspace', runId: randomUUID(), repository: 'octo/site',
+      commit: f.commit, suite: 'lint', scope: 'full',
+    })
+    await start()
+    await expect.poll(() => sweeps, { timeout: 5_000 }).toBe(1)
+    await expect.poll(() => f.mirrorGit('for-each-ref', '--format=%(refname)', 'refs/heads/ci/'), { timeout: 5_000 })
+      .not.toContain('refs/heads/ci/retired-run')
+    await Promise.all(Array.from({ length: 8 }, start))
+    expect(sweeps).toBe(1)
+    f.advance(5 * 60_000)
+    await start()
+    await expect.poll(() => sweeps, { timeout: 5_000 }).toBe(2)
+  })
+
+  it('uses the admitted mirror even when the workspace settings no longer provide one', async () => {
+    const f = await fixture({}, { mirror: false })
+    await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', ciMirror: 'octo/site-ci',
+      runId: randomUUID(), repository: 'octo/site', commit: f.commit, suite: 'unit' })
+    expect(f.dispatched[0]).toContain('octo/site-ci')
+  })
+
+  it('refuses cloud publication when admission explicitly recorded no mirror', async () => {
+    const f = await fixture()
+    await expect(f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', ciMirror: null,
+      runId: randomUUID(), repository: 'octo/site', commit: f.commit, suite: 'unit' }))
+      .rejects.toMatchObject({ code: 'CI_CLOUD_UNAVAILABLE' })
+    expect(f.dispatched).toEqual([])
+  })
+
+  it.each(['unit', 'integration'] as const)('declines oversized fragmented %s selections without retaining a start', async suite => {
+    const candidates = Array.from({ length: 400 }, (_, index) =>
+      `apps/api/test/fragment${String(index).padStart(3, '0')}.${suite === 'integration' ? 'integration.' : ''}test.ts`)
+    const f = await fixture(Object.fromEntries(candidates.map(file => [file, ''])), { provider: 'circleci' })
+    const runId = randomUUID()
+    const files = candidates.filter((_, index) => index % 2 === 0)
+    const request = { operation: 'start', workspaceId: 'ci-workspace', runId, repository: 'octo/site', commit: f.commit,
+      suite, scope: 'affected', files }
+    await expect(f.cloud.handle(request)).rejects.toMatchObject({ code: 'CI_CLOUD_UNAVAILABLE' })
+    expect(f.circle.triggered).toEqual([])
+    // Reusing the id after a declined placement must still dispatch the caller's valid selection.
+    expect(await f.reopen().handle({ ...request, files: files.slice(0, 1) }))
+      .toMatchObject({ run: { state: 'running' } })
+    expect(f.circle.triggered).toHaveLength(1)
+    const input = f.circle.triggered[0]!.find(value => value.startsWith(suite === 'unit' ? 'files=' : 'slice='))!
+    const inventory = f.run('ls-tree', '-r', '--name-only', 'HEAD').split('\n').sort()
+      .filter(file => suite === 'unit' || file.endsWith('.integration.test.ts'))
+    expect(selectByIndexes(inventory, input.slice(input.indexOf('=') + 1))).toEqual(files.slice(0, 1))
+  })
+
+  it.each([
+    ['started', false], ['failed', false], ['started', true], ['failed', true],
+  ] as const)('waits for the second CircleCI job when it is %s in a separate workflow: %s', async (phase, separate) => {
+    const f = await fixture({}, { provider: 'circleci' })
+    f.circle.runView = { workflows: separate ? [{ jobs: [{ id: 'first' }] }, { jobs: [{ id: 'second' }] }]
+      : [{ jobs: [{ id: 'first' }, { id: 'second' }] }] }
+    f.circle.jobDetails.first = { phase: 'ended', outcome: 'succeeded' }
+    f.circle.jobDetails.second = phase === 'started' ? { phase: 'started' } : { phase: 'ended', outcome: 'failed' }
+    const runId = randomUUID()
+    const started = await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId, repository: 'octo/site', commit: f.commit,
+      suite: 'integration', scope: 'full' })
+    if (started.operation !== 'start') throw new Error('Expected a start reply')
+    const main = cloudService(f.cloud, started.run, f.commit)
+    const read = { operation: 'read', runId, afterOffset: 0, maxBytes: 1024 }
+    await main.service.dispatch()
+    expect(await main.read()).toMatchObject({ run: { state: phase === 'started' ? 'running' : 'failed' } })
+    if (phase === 'started') {
+      f.circle.jobDetails.second = { phase: 'ended', outcome: 'failed' }
+      f.advance(4_000)
+      expect(await f.reopen().handle(read)).toMatchObject({ run: { state: 'failed', exitCode: 1 } })
+    }
+  })
+
+  it('settles a terminal jobless CircleCI workflow instead of waiting forever', async () => {
+    const f = await fixture({}, { provider: 'circleci' })
+    f.circle.runView = { phase: 'ended', outcome: 'failed', workflows: [{ phase: 'ended', outcome: 'failed', jobs: [] }] }
+    const runId = randomUUID()
+    await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId, repository: 'octo/site', commit: f.commit,
+      suite: 'integration', scope: 'full' })
+    expect(await f.cloud.handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 1024 }))
+      .toMatchObject({ run: { state: 'failed', exitCode: 1 } })
+  })
+
   it.each(['github', 'circleci'] as const)('selects changes since an explicit base on the %s runner without publishing private history', async provider => {
     const source = 'apps/api/test/value.ts'
     const test = 'apps/api/test/value.integration.test.ts'
@@ -179,7 +301,7 @@ describe('GitHub Actions CI on a public mirror', () => {
     f.run('commit', '-qm', 'change since release')
     const commit = f.run('rev-parse', 'HEAD')
     f.push('main')
-    await f.cloud.handle({ operation: 'start', runId: randomUUID(), repository: 'octo/site', commit,
+    await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId: randomUUID(), repository: 'octo/site', commit,
       baseCommit, suite: 'integration', scope: 'affected', defaultBranch: 'unavailable-branch' })
     const command = (provider === 'github' ? f.dispatched : f.circle.triggered)[0]!
     expect(command).toContain('scope=affected')
@@ -202,7 +324,7 @@ describe('GitHub Actions CI on a public mirror', () => {
     f.push('main')
     for (const baseCommit of ['f'.repeat(40), laterCommit]) {
       const runId = randomUUID()
-      const started = await f.cloud.handle({ operation: 'start', runId, repository: 'octo/site', commit: f.commit,
+      const started = await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId, repository: 'octo/site', commit: f.commit,
         baseCommit, suite: 'integration', scope: 'affected' })
       expect(started.operation === 'start' && started.run.message)
         .toBe('Running full suite: baseCommit is unavailable or is not an ancestor of the resolved commit.')
@@ -217,7 +339,7 @@ describe('GitHub Actions CI on a public mirror', () => {
 
   it('selects no changes on a cloud runner when the explicit base equals the resolved commit', async () => {
     const f = await fixture()
-    await f.cloud.handle({ operation: 'start', runId: randomUUID(), repository: 'octo/site', commit: f.commit,
+    await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId: randomUUID(), repository: 'octo/site', commit: f.commit,
       baseCommit: f.commit, suite: 'integration', scope: 'affected' })
     const command = f.dispatched[0]!
     expect(command).toContain('scope=affected')
@@ -231,7 +353,7 @@ describe('GitHub Actions CI on a public mirror', () => {
     const f = await fixture({}, { provider: 'circleci' })
     f.circle.phantoms = 1
     const runId = randomUUID()
-    const start = { operation: 'start', runId, repository: 'octo/site', commit: f.commit,
+    const start = { operation: 'start', workspaceId: 'ci-workspace', runId, repository: 'octo/site', commit: f.commit,
       suite: 'integration', scope: 'full', partition: { index: 0, count: 2 } }
     const read = { operation: 'read', runId, afterOffset: 0, maxBytes: 65_536 }
     expect(await f.cloud.handle(start)).toMatchObject({ run: { state: 'starting', step: 'dispatch' } })
@@ -254,7 +376,7 @@ describe('GitHub Actions CI on a public mirror', () => {
     const f = await fixture({}, { provider })
     f.circle.phantoms = Number.POSITIVE_INFINITY
     const runId = randomUUID()
-    const start = { operation: 'start', runId, repository: 'octo/site', commit: f.commit,
+    const start = { operation: 'start', workspaceId: 'ci-workspace', runId, repository: 'octo/site', commit: f.commit,
       suite: 'integration', scope: 'full' }
     const read = { operation: 'read', runId, afterOffset: 0, maxBytes: 65_536 }
     await f.cloud.handle(start)
@@ -275,7 +397,7 @@ describe('GitHub Actions CI on a public mirror', () => {
     const f = await fixture()
     const runId = randomUUID()
     const read = { operation: 'read', runId, afterOffset: 0, maxBytes: 65_536 }
-    await f.cloud.handle({ operation: 'start', runId, repository: 'octo/site', commit: f.commit,
+    await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId, repository: 'octo/site', commit: f.commit,
       suite: 'integration', scope: 'full' })
     f.advance(75_000)
     await f.cloud.handle(read)
@@ -291,7 +413,7 @@ describe('GitHub Actions CI on a public mirror', () => {
   it('adopts a GitHub run that appears at the timeout without dispatching again', async () => {
     const f = await fixture()
     const runId = randomUUID()
-    await f.cloud.handle({ operation: 'start', runId, repository: 'octo/site', commit: f.commit,
+    await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId, repository: 'octo/site', commit: f.commit,
       suite: 'integration', scope: 'full' })
     f.advance(75_000)
     f.github.listed = [{ databaseId: 8, displayTitle: `ci ${runId}` }]
@@ -304,13 +426,46 @@ describe('GitHub Actions CI on a public mirror', () => {
     const f = await fixture({}, { provider })
     f.circle.phantoms = Number.POSITIVE_INFINITY
     const runId = randomUUID()
-    await f.cloud.handle({ operation: 'start', runId, repository: 'octo/site', commit: f.commit,
+    await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId, repository: 'octo/site', commit: f.commit,
       suite: 'integration', scope: 'full' })
     f.advance(75_000)
     expect(await f.cloud.handle({ operation: 'cancel', runId })).toMatchObject({ run: { state: 'canceled' } })
     expect(await f.cloud.handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 1 }))
       .toMatchObject({ run: { state: 'canceled' } })
     expect(provider === 'github' ? f.dispatched : f.circle.triggered).toHaveLength(1)
+  })
+
+  it('waits for mirror cleanup and its queued cancellation sweep before disposing the fixture', async () => {
+    const f = await fixture()
+    let release!: () => void
+    const blocked = new Promise<void>(resolve => { release = resolve })
+    let sweeps = 0
+    f.cloud.setActiveRunLookup(async () => {
+      sweeps++
+      await blocked
+      return { ids: new Set<string>(), readAt: 0 }
+    })
+    const runId = randomUUID()
+    await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId,
+      repository: 'octo/site', commit: f.commit, suite: 'integration', scope: 'full' })
+    await expect.poll(() => sweeps).toBe(1)
+    f.advance(5 * 60_000)
+    await f.cloud.handle({ operation: 'cancel', runId })
+    const disposal = f.dispose()
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      const waiting = await Promise.race([
+        disposal.then(() => false),
+        new Promise<boolean>(resolve => { timer = setTimeout(() => resolve(true), 1_000) }),
+      ])
+      expect(waiting).toBe(true)
+    } finally {
+      clearTimeout(timer)
+      release()
+      await disposal
+    }
+    expect(sweeps).toBe(2)
+    expect(f.dispatched).toHaveLength(1)
   })
 
   it.each(['github', 'circleci'] as const)('leaves omitted files for the %s runner and mirrors the default-branch merge-base without private history', async provider => {
@@ -327,7 +482,7 @@ describe('GitHub Actions CI on a public mirror', () => {
     f.push('feature')
     const partition = { index: 1, count: 2, weights: [2, 1] }
     const durations = { [test]: 500 }
-    await f.cloud.handle({ operation: 'start', runId: randomUUID(), repository: 'octo/site', commit,
+    await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId: randomUUID(), repository: 'octo/site', commit,
       suite: 'integration', defaultBranch: 'release/stable', partition, durations })
     const command = (provider === 'github' ? f.dispatched : f.circle.triggered)[0]!
     expect(command).toContain('scope=affected')
@@ -349,7 +504,7 @@ describe('GitHub Actions CI on a public mirror', () => {
 
   it('mirrors the default branch head as the same comparison commit so the cloud selector reports a full run', async () => {
     const f = await fixture()
-    await f.cloud.handle({ operation: 'start', runId: randomUUID(), repository: 'octo/site', commit: f.commit,
+    await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId: randomUUID(), repository: 'octo/site', commit: f.commit,
       suite: 'integration' })
     const branch = `refs/heads/ci/${f.commit}`
     expect(f.mirrorGit('rev-parse', branch)).toBe(f.mirrorGit('rev-parse', `refs/heads/ci-default/${f.commit}`))
@@ -361,7 +516,7 @@ describe('GitHub Actions CI on a public mirror', () => {
   it.each(['github', 'circleci'] as const)('declines %s when its mirror lacks workflow files without publishing', async provider => {
     const f = await fixture({}, { provider, mirrorWorkflows: false })
     const head = f.mirrorGit('rev-parse', 'main')
-    await expect(f.cloud.handle({ operation: 'start', runId: randomUUID(), repository: 'octo/site',
+    await expect(f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId: randomUUID(), repository: 'octo/site',
       commit: f.commit, suite: 'integration' })).rejects.toMatchObject({ code: 'CI_CLOUD_UNAVAILABLE' })
     expect(f.dispatched).toHaveLength(0)
     expect(f.circle.triggered).toHaveLength(0)
@@ -371,7 +526,7 @@ describe('GitHub Actions CI on a public mirror', () => {
   it.each(['github', 'circleci'] as const)('preserves both mirror workflows for a repository without them on %s', async provider => {
     const manifest = JSON.stringify({ scripts: { build: 'node build.mjs', lint: 'node lint.mjs', unit: 'node unit.mjs' } })
     const f = await fixture({ 'package.json': manifest }, { provider, sourceWorkflows: false })
-    await f.cloud.handle({ operation: 'start', runId: randomUUID(), repository: 'octo/site',
+    await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId: randomUUID(), repository: 'octo/site',
       commit: f.commit, suite: provider === 'github' ? 'build' : 'integration' })
     const commands = provider === 'github' ? f.dispatched : f.circle.triggered
     expect(commands).toHaveLength(1)
@@ -384,9 +539,9 @@ describe('GitHub Actions CI on a public mirror', () => {
   })
 
   it.each(['github', 'circleci'] as const)('refuses a host partition on %s before publishing or dispatching', async provider => {
-    const f = await fixture({}, { provider })
+    const f = await fixture({}, { provider, userSystemd: false })
     const head = f.mirrorGit('rev-parse', 'main')
-    await expect(f.cloud.handle({ operation: 'start', runId: randomUUID(), repository: 'octo/site',
+    await expect(f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId: randomUUID(), repository: 'octo/site',
       commit: f.commit, suite: 'integration', scope: 'full',
       partition: { index: 0, count: 2, hostIndexes: [0] } })).rejects.toMatchObject({ code: 'CI_CLOUD_UNAVAILABLE' })
     expect(f.dispatched).toHaveLength(0)
@@ -394,22 +549,61 @@ describe('GitHub Actions CI on a public mirror', () => {
     expect(f.mirrorGit('rev-parse', 'main')).toBe(head)
   })
 
-  it.each(['github', 'circleci'] as const)('excludes installed Worker and systemd files from %s cloud slices', async provider => {
-    const installed = [
-      'apps/api/test/workflow-systemd-restart.integration.test.ts',
+  it.each(['github', 'circleci'] as const)('runs installed Worker fixtures but excludes user-systemd files on %s', async provider => {
+    const systemd = [
+      'apps/api/test/workflow-systemd-installed-service.integration.test.ts',
+      'apps/api/test/workflow-systemd-active-recovery.integration.test.ts',
+      'apps/api/test/workflow-systemd-writable-source-recovery.integration.test.ts',
+      'apps/api/test/workflow-systemd-restart-unit-cleanup.integration.test.ts',
       'apps/api/test/native-service-restart.integration.test.ts',
+    ]
+    const cloud = [
+      'apps/api/test/workflow-systemd-restart.integration.test.ts',
       'apps/api/test/remote-review-production-main-crash.integration.test.ts',
     ]
-    const f = await fixture(Object.fromEntries(installed.map(file => [file, ''])), { provider })
-    const ordinary = ['a', 'b', 'c', 'd'].map(name => `apps/api/test/${name}.integration.test.ts`)
-    const inventory = [...ordinary, ...installed].sort()
-    await f.cloud.handle({ operation: 'start', runId: randomUUID(), repository: 'octo/site', commit: f.commit,
+    const f = await fixture(Object.fromEntries([...systemd, ...cloud].map(file => [file, ''])), { provider })
+    const ordinary = [...cloud, ...['a', 'b', 'c', 'd'].map(name => `apps/api/test/${name}.integration.test.ts`)]
+    const inventory = [...ordinary, ...systemd].sort()
+    await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId: randomUUID(), repository: 'octo/site', commit: f.commit,
       suite: 'integration', scope: 'full', partition: { index: 1, count: 2, hostIndexes: [0] } })
     const commands = provider === 'github' ? f.dispatched : f.circle.triggered
     expect(commands).toHaveLength(1)
     const slice = selectByIndexes(inventory, commands[0]!.find(value => value.startsWith('slice='))!.slice('slice='.length))
-    expect(slice.length).toBeGreaterThan(0)
-    expect(slice.every(file => ordinary.includes(file))).toBe(true)
+    expect(slice.sort()).toEqual(ordinary.sort())
+  })
+
+  it.each(['github', 'circleci'] as const)('rejects user-systemd files without host metadata on %s', async provider => {
+    const file = 'apps/api/test/native-service-restart.integration.test.ts'
+    const f = await fixture({ [file]: '' }, { provider, userSystemd: false })
+    await expect(f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId: randomUUID(), repository: 'octo/site',
+      commit: f.commit, suite: 'integration', scope: 'affected', files: [file] }))
+      .rejects.toMatchObject({ code: 'CI_CLOUD_UNAVAILABLE' })
+    await expect(f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId: randomUUID(), repository: 'octo/site',
+      commit: f.commit, suite: 'integration', scope: 'affected', files: [file], partition: { index: 0, count: 2 } }))
+      .rejects.toMatchObject({ code: 'CI_CLOUD_UNAVAILABLE' })
+    expect(f.dispatched).toHaveLength(0)
+    expect(f.circle.triggered).toHaveLength(0)
+  })
+
+  it.each(['github', 'circleci'] as const)('dispatches systemd slices and single files when %s declares support', async provider => {
+    const file = 'apps/api/test/native-service-restart.integration.test.ts'
+    const f = await fixture({ [file]: '' }, { provider })
+    expect(f.cloud.computers()[0]?.userSystemd).toEqual({ supported: true, reason: null })
+    expect(await f.cloud.handle({ operation: 'status' }))
+      .toMatchObject({ userSystemd: { supported: true, reason: null } })
+    for (const partition of [undefined, { index: 0, count: 2, hostIndexes: [0] }]) {
+      await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId: randomUUID(), repository: 'octo/site',
+        commit: f.commit, suite: 'integration', scope: 'affected', files: [file],
+        ...(partition ? { partition } : {}) })
+    }
+    const commands = provider === 'github' ? f.dispatched : f.circle.triggered
+    expect(commands).toHaveLength(2)
+    for (const command of commands) {
+      const slice = command.find(value => value.startsWith('slice='))!.slice('slice='.length)
+      const inventory = ['a', 'b', 'c', 'd', 'native-service-restart']
+        .map(name => `apps/api/test/${name}.integration.test.ts`).sort()
+      expect(selectByIndexes(inventory, slice)).toEqual([file])
+    }
   })
 
   it.each(['github', 'circleci'] as const)('spreads heavy integration files across every %s slice', async provider => {
@@ -423,7 +617,7 @@ describe('GitHub Actions CI on a public mirror', () => {
     const inventory = [...['a', 'b', 'c', 'd'].map(name => `apps/api/test/${name}.integration.test.ts`), ...heavy].sort()
     const durations = Object.fromEntries(heavy.map((file, index) => [file, 80 - index * 20]))
     for (const index of [0, 1, 2, 3]) {
-      await f.cloud.handle({ operation: 'start', runId: randomUUID(), repository: 'octo/site', commit: f.commit,
+      await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId: randomUUID(), repository: 'octo/site', commit: f.commit,
         suite: 'integration', scope: 'full', durations, partition: { index, count: 4, weights: [8, 1, 1, 1] } })
     }
     const commands = provider === 'github' ? f.dispatched : f.circle.triggered
@@ -437,7 +631,7 @@ describe('GitHub Actions CI on a public mirror', () => {
 
   it.each(['github'] as const)('dispatches unit part names and one-based shards through %s', async provider => {
     const f = await fixture({}, { provider })
-    await f.cloud.handle({ operation: 'start', runId: randomUUID(), repository: 'octo/site', commit: f.commit,
+    await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId: randomUUID(), repository: 'octo/site', commit: f.commit,
       suite: 'unit', scope: 'full', part: 'unit-web', partition: { index: 1, count: 3 } })
     const command = provider === 'github' ? f.dispatched[0]! : f.circle.triggered[0]!
     expect(command).toContain('suite=unit-web')
@@ -446,7 +640,7 @@ describe('GitHub Actions CI on a public mirror', () => {
 
   it.each(['github'] as const)('passes already sharded affected files to the unit part through %s', async provider => {
     const f = await fixture({ 'apps/api/test/feature.test.ts': 'export {}' }, { provider })
-    await f.cloud.handle({ operation: 'start', runId: randomUUID(), repository: 'octo/site', commit: f.commit,
+    await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId: randomUUID(), repository: 'octo/site', commit: f.commit,
       suite: 'unit', part: 'unit-api', scope: 'affected', files: ['apps/api/test/feature.test.ts'],
       partition: { index: 1, count: 2 } })
     const command = provider === 'github' ? f.dispatched[0]! : f.circle.triggered[0]!
@@ -459,7 +653,7 @@ describe('GitHub Actions CI on a public mirror', () => {
   it.each(['github'] as const)('reads measured unit durations from %s artifacts', async provider => {
     const f = await fixture({}, { provider })
     const runId = randomUUID()
-    await f.cloud.handle({ operation: 'start', runId, repository: 'octo/site', commit: f.commit,
+    await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId, repository: 'octo/site', commit: f.commit,
       suite: 'unit', scope: 'full', part: 'unit-api', partition: { index: 0, count: 5 } })
     const durations = { 'apps/api/test/feature.test.ts': 250 }
     f.github.listed = [{ databaseId: 8, displayTitle: `ci ${runId}` }]
@@ -474,7 +668,7 @@ describe('GitHub Actions CI on a public mirror', () => {
   it.each(['github', 'circleci'] as const)('reads integration test results from %s artifacts', async provider => {
     const f = await fixture({}, { provider })
     const runId = randomUUID()
-    await f.cloud.handle({ operation: 'start', runId, repository: 'octo/site', commit: f.commit,
+    await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId, repository: 'octo/site', commit: f.commit,
       suite: 'integration', scope: 'full' })
     const durations = { 'apps/api/test/a.integration.test.ts': 250 }
     const testResults = { summary: { passed: 0, failed: 1, skipped: 0 }, truncated: false, files: [
@@ -498,7 +692,7 @@ describe('GitHub Actions CI on a public mirror', () => {
   it('encodes affected integration files against the complete commit inventory before partitioning', async () => {
     const f = await fixture()
     const files = ['apps/api/test/b.integration.test.ts', 'apps/api/test/d.integration.test.ts']
-    await f.cloud.handle({ operation: 'start', runId: randomUUID(), repository: 'octo/site', commit: f.commit,
+    await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId: randomUUID(), repository: 'octo/site', commit: f.commit,
       suite: 'integration', scope: 'affected', files, partition: { index: 0, count: 2 } })
     expect(f.dispatched[0]).toContain('slice=s:1')
     expect(f.dispatched[0]).toContain('scope=affected')
@@ -507,7 +701,7 @@ describe('GitHub Actions CI on a public mirror', () => {
   it.each(['github'] as const)('passes affected unit scope and compact file indexes through %s', async provider => {
     const f = await fixture({ 'apps/api/test/feature.test.ts': 'export {}' }, { provider })
     const files = ['apps/api/test/feature.test.ts']
-    await f.cloud.handle({ operation: 'start', runId: randomUUID(), repository: 'octo/site', commit: f.commit,
+    await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId: randomUUID(), repository: 'octo/site', commit: f.commit,
       suite: 'unit', scope: 'affected', files })
     const command = provider === 'github' ? f.dispatched[0]! : f.circle.triggered[0]!
     expect(command).toContain('scope=affected')
@@ -517,7 +711,7 @@ describe('GitHub Actions CI on a public mirror', () => {
     const f = await fixture({}, { provider: 'circleci' })
     f.circle.lookupError = 'run.not_found'
     const runId = randomUUID()
-    expect(await f.cloud.handle({ operation: 'start', runId, repository: 'octo/site', commit: f.commit,
+    expect(await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId, repository: 'octo/site', commit: f.commit,
       suite: 'integration', scope: 'full' })).toMatchObject({ run: { state: 'starting' } })
     f.advance(74_999)
     expect(await f.reopen().handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 1 }))
@@ -528,23 +722,115 @@ describe('GitHub Actions CI on a public mirror', () => {
       .toMatchObject({ run: { state: 'running' } })
   })
 
-  it.each(['expired', 'started', 'other error'] as const)(
-    'does not suppress CircleCI lookup failures for %s pipelines', async kind => {
+  it('ends an unrecoverable unstarted CircleCI ticket as lost and releases its Main slot', async () => {
+    const f = await fixture({}, { provider: 'circleci' })
+    f.circle.lookupError = 'run.not_found'
+    const runId = randomUUID()
+    const started = await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId, repository: 'octo/site', commit: f.commit,
+      suite: 'integration', scope: 'full' })
+    if (started.operation !== 'start') throw new Error('Expected a start reply')
+    const main = cloudService(f.cloud, started.run, f.commit)
+    const read = { operation: 'read', runId, afterOffset: 0, maxBytes: 65_536 }
+    let now = Date.parse(started.run.startedAt!)
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => now)
+    try {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        now += 75_000
+        f.advance(75_000)
+        await f.reopen().handle(read)
+        await main.service.dispatch()
+      }
+    } finally {
+      clock.mockRestore()
+    }
+    expect(await main.read()).toMatchObject({ run: { state: 'lost', computer: { label: 'CircleCI' },
+      finishedAt: expect.any(String), message: expect.stringContaining('slot was released') } })
+    expect(f.circle.triggered).toHaveLength(1)
+    expect(f.circle.canceled).toEqual(['run-1'])
+    expect(await f.reopen().handle({ operation: 'cancel', runId })).toMatchObject({ run: { state: 'canceled' } })
+    await main.service.dispatch()
+    expect(await main.read()).toMatchObject({ run: { state: 'lost' } })
+  })
+
+  it('recovers a transiently missing CircleCI lookup before its reconciliation budget is spent', async () => {
+    const f = await fixture({}, { provider: 'circleci' })
+    f.circle.lookupError = 'run.not_found'
+    const runId = randomUUID()
+    await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId, repository: 'octo/site', commit: f.commit,
+      suite: 'integration', scope: 'full' })
+    const read = { operation: 'read', runId, afterOffset: 0, maxBytes: 1024 }
+    f.advance(75_000)
+    expect(await f.reopen().handle(read)).toMatchObject({ run: { state: 'starting', finishedAt: null,
+      message: expect.stringContaining('could not be reconciled') } })
+    f.circle.lookupError = ''
+    f.circle.outcome = 'failed'
+    f.advance(4_000)
+    expect(await f.reopen().handle(read)).toMatchObject({ run: { state: 'failed', exitCode: 1 } })
+    expect(f.circle.triggered).toHaveLength(1)
+    expect(f.circle.canceled).toEqual([])
+  })
+
+  it.each(['starting', 'running'] as const)(
+    'cancels the known CircleCI pipeline from %s when discovery is unavailable and persists the cancellation',
+    async state => {
       const f = await fixture({}, { provider: 'circleci' })
-      f.circle.lookupError = kind === 'other error' ? 'permission denied' : kind === 'expired' ? 'run.not_found' : ''
+      if (state === 'starting') f.circle.phantoms = Number.POSITIVE_INFINITY
       const runId = randomUUID()
-      await f.cloud.handle({ operation: 'start', runId, repository: 'octo/site', commit: f.commit,
-        suite: 'integration', scope: 'full' })
-      if (kind === 'expired') f.advance(75_000)
-      if (kind === 'started') f.circle.lookupError = 'run.not_found'
-      await expect(f.cloud.handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 1 }))
-        .rejects.toMatchObject({ code: kind === 'other error' ? 'CI_CLOUD_FAILED' : 'CI_CLOUD_RUN_NOT_FOUND' })
-    })
+      expect(await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId,
+        repository: 'octo/site', commit: f.commit, suite: 'integration', scope: 'full' }))
+        .toMatchObject({ run: { state } })
+      f.circle.lookupError = 'run.not_found'
+      f.advance(75_000)
+      const read = { operation: 'read', runId, afterOffset: 0, maxBytes: 1024 }
+      expect(await f.reopen().handle(read)).toMatchObject({ run: { state, finishedAt: null } })
+      expect(await f.reopen().handle({ operation: 'cancel', runId }))
+        .toMatchObject({ operation: 'cancel', run: { state: 'canceled', message: 'Canceled.' } })
+      expect(f.circle.canceled).toEqual(['run-1'])
+      expect(await f.reopen().handle({ operation: 'cancel', runId }))
+        .toMatchObject({ run: { state: 'canceled' } })
+      f.advance(4_000)
+      expect(await f.reopen().handle(read)).toMatchObject({ run: { state: 'canceled' } })
+      expect(f.circle.canceled).toEqual(['run-1'])
+      expect(f.circle.triggered).toHaveLength(1)
+    },
+  )
+
+  it('retains ownership and exposes bounded reconciliation when a started CircleCI pipeline disappears', async () => {
+    const f = await fixture({}, { provider: 'circleci' })
+    const runId = randomUUID()
+    await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId, repository: 'octo/site', commit: f.commit,
+      suite: 'integration', scope: 'full' })
+    f.circle.lookupError = 'run.not_found'
+    const read = { operation: 'read', runId, afterOffset: 0, maxBytes: 1024 }
+    for (let attempt = 0; attempt < 3; attempt++) {
+      f.advance(4_000)
+      expect(await f.reopen().handle(read)).toMatchObject({ run: { state: 'running', finishedAt: null,
+        message: expect.stringContaining('could not be reconciled') } })
+    }
+    expect(await f.reopen().handle(read)).toMatchObject({ run: { state: 'running',
+      message: expect.stringContaining('Operator cancellation is required') } })
+    expect(f.circle.triggered).toHaveLength(1)
+    expect(f.circle.canceled).toEqual([])
+    expect(await f.reopen().handle({ operation: 'cancel', runId })).toMatchObject({ run: { state: 'canceled' } })
+  })
+
+  it('does not suppress CircleCI permission failures', async () => {
+    const f = await fixture({}, { provider: 'circleci' })
+    f.circle.lookupError = 'permission denied'
+    const runId = randomUUID()
+    await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId, repository: 'octo/site', commit: f.commit,
+      suite: 'integration', scope: 'full' })
+    await expect(f.cloud.handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 1 }))
+      .resolves.toMatchObject({ run: { state: 'starting', finishedAt: null,
+        message: expect.stringContaining('permission denied') } })
+    await expect(f.reopen().handle({ operation: 'cancel', runId }))
+      .resolves.toMatchObject({ run: { state: 'canceled' } })
+  })
 
   it('publishes only the commit files, then dispatches one run with its partition slice', async () => {
     const f = await fixture()
     const runId = randomUUID()
-    const started = await f.cloud.handle({ operation: 'start', runId, repository: 'octo/site', commit: f.commit,
+    const started = await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId, repository: 'octo/site', commit: f.commit,
       suite: 'integration', scope: 'full', partition: { index: 0, count: 2 } })
     expect(started).toMatchObject({ operation: 'start', run: { runId, state: 'starting' } })
     const branch = `refs/heads/ci/${f.commit}`
@@ -553,11 +839,12 @@ describe('GitHub Actions CI on a public mirror', () => {
     expect(f.mirrorGit('rev-list', '--count', branch)).toBe('2')
     expect(() => f.mirrorGit('cat-file', '-e', f.commit)).toThrow()
     expect(f.mirrorGit('rev-parse', 'refs/heads/main')).toBe(f.mirrorGit('rev-parse', branch))
-    expect(f.dispatched).toEqual([['workflow', 'run', 'ci.yml', '-R', 'octo/site-ci', '--ref', 'main', '-f', `ref=ci/${f.commit}`,
+    const workflowRef = `ci-snapshot/${f.mirrorGit('rev-parse', branch)}`
+    expect(f.dispatched).toEqual([['workflow', 'run', 'ci.yml', '-R', 'octo/site-ci', '--ref', workflowRef, '-f', `ref=${workflowRef}`,
       '-f', `run_id=${runId}`, '-f', 'suite=integration',
-      '-f', 'slice=s:0,3', '-f', 'scope=full']])
+      '-f', 'slice=s:0,2', '-f', 'expected_duration_ms=0', '-f', 'scope=full']])
     // A retried start returns the same run without dispatching again.
-    await f.cloud.handle({ operation: 'start', runId, repository: 'octo/site', commit: f.commit, suite: 'integration', scope: 'full',
+    await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId, repository: 'octo/site', commit: f.commit, suite: 'integration', scope: 'full',
       partition: { index: 0, count: 2 } })
     expect(f.dispatched).toHaveLength(1)
   })
@@ -571,7 +858,7 @@ describe('GitHub Actions CI on a public mirror', () => {
     }
     const other = f.reopen()
     const started = await Promise.allSettled(commits.map((commit, index) => (index % 2 ? other : f.cloud).handle({
-      operation: 'start', runId: randomUUID(), repository: 'octo/site', commit, suite: 'unit' })))
+      operation: 'start', workspaceId: 'ci-workspace', runId: randomUUID(), repository: 'octo/site', commit, suite: 'unit' })))
     expect(started.map(result => result.status === 'rejected' ? String(result.reason) : 'started'))
       .toEqual(commits.map(() => 'started'))
     for (const commit of commits) {
@@ -581,10 +868,35 @@ describe('GitHub Actions CI on a public mirror', () => {
       .toContain(f.mirrorGit('rev-parse', 'refs/heads/main'))
   })
 
+  it('publishes again from a shallow source clone after the mirror moved on', async () => {
+    const f = await fixture()
+    const fixtureGit = f.git.git
+    // Main's git cache clones and fetches shallowly.
+    f.git.git = (args, options) => fixtureGit(args[0] === 'clone' ? ['clone', '--no-local', '--depth=1', ...args.slice(1)]
+      : args[0] === 'fetch' && args.includes('origin') ? ['fetch', '--depth=1', ...args.slice(1)] : args, options)
+    const start = (commit: string) => f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId: randomUUID(),
+      repository: 'octo/site', commit, suite: 'unit' })
+    await start(f.commit)
+    // Another computer publishes to the same mirror.
+    f.mirrorGit('update-ref', 'refs/heads/main', f.mirrorGit('commit-tree', 'main^{tree}', '-p', 'main', '-m', 'elsewhere'))
+    const commits: string[] = []
+    for (const name of ['two', 'three']) {
+      await f.write(`${name}.txt`, `${name}\n`); f.run('add', '.'); f.run('commit', '-qm', name); f.push('HEAD:refs/heads/main')
+      commits.push(f.run('rev-parse', 'HEAD'))
+      await expect(start(commits.at(-1)!)).resolves.toMatchObject({ operation: 'start', run: { state: 'starting' } })
+    }
+    for (const commit of commits) {
+      expect(f.mirrorGit('rev-parse', `refs/heads/ci/${commit}^{tree}`)).toBe(f.run('rev-parse', `${commit}^{tree}`))
+    }
+    // The persistent mirror clone reaches only objects it owns.
+    expect(await fixtureGit(['fsck', '--connectivity-only'], { cwd: join(f.root, 'clones', 'octo', 'site-ci'),
+      signal: AbortSignal.timeout(30_000) })).toMatchObject({ code: 0 })
+  })
+
   it("reports git's reason when the mirror cannot be read", async () => {
     const f = await fixture()
     f.mirrorGit('update-ref', '-d', 'refs/heads/main')
-    await expect(f.cloud.handle({ operation: 'start', runId: randomUUID(), repository: 'octo/site', commit: f.commit,
+    await expect(f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId: randomUUID(), repository: 'octo/site', commit: f.commit,
       suite: 'unit' })).rejects.toMatchObject({ code: 'CI_CLOUD_FAILED',
       message: expect.stringMatching(/^git fetch failed for the CI mirror\. .*main/) })
     expect(f.dispatched).toEqual([])
@@ -593,7 +905,7 @@ describe('GitHub Actions CI on a public mirror', () => {
   it('follows the GitHub run to its result, log and measured durations', async () => {
     const f = await fixture()
     const runId = randomUUID()
-    await f.cloud.handle({ operation: 'start', runId, repository: 'octo/site', commit: f.commit, suite: 'integration', scope: 'full',
+    await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId, repository: 'octo/site', commit: f.commit, suite: 'integration', scope: 'full',
       partition: { index: 1, count: 2 } })
     const read = () => f.cloud.handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 65_536, durations: true })
     expect(await read()).toMatchObject({ run: { state: 'starting' } })
@@ -613,7 +925,7 @@ describe('GitHub Actions CI on a public mirror', () => {
     ['the tailnet domain', { 'hosts.txt': 'owner-desktop.tail0000.ts.net\n' }],
   ])('refuses to publish files naming %s', async (_kind, files) => {
     const f = await fixture(files)
-    await expect(f.cloud.handle({ operation: 'start', runId: randomUUID(), repository: 'octo/site', commit: f.commit,
+    await expect(f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId: randomUUID(), repository: 'octo/site', commit: f.commit,
       suite: 'unit' })).rejects.toMatchObject({ code: 'CI_MIRROR_PRIVATE_DATA', message: expect.stringContaining(Object.keys(files)[0]!) })
     expect(() => f.mirrorGit('rev-parse', '--verify', `refs/heads/ci/${f.commit}`)).toThrow()
     expect(f.dispatched).toEqual([])
@@ -621,68 +933,14 @@ describe('GitHub Actions CI on a public mirror', () => {
 
   it('leaves a run without a mirror to the build computers', async () => {
     const f = await fixture({}, { mirror: false })
-    await expect(f.cloud.handle({ operation: 'start', runId: randomUUID(), repository: 'octo/site', commit: f.commit,
+    await expect(f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId: randomUUID(), repository: 'octo/site', commit: f.commit,
       suite: 'unit' })).rejects.toMatchObject({ code: 'CI_CLOUD_UNAVAILABLE' })
-  })
-
-  it('leaves the podman Worker unit tests on CircleCI to the other computers', async () => {
-    const f = await fixture({}, { provider: 'circleci' })
-    await expect(f.cloud.handle({ operation: 'start', runId: randomUUID(), repository: 'octo/site', commit: f.commit,
-      suite: 'unit', part: 'unit-other' })).rejects.toMatchObject({ code: 'CI_CLOUD_UNAVAILABLE' })
-    expect(f.circle.triggered).toEqual([])
-  })
-
-  it('runs the same published files on CircleCI and reads its result, log and durations back', async () => {
-    const f = await fixture({}, { provider: 'circleci' })
-    const runId = randomUUID()
-    expect(await f.cloud.handle({ operation: 'start', runId, repository: 'octo/site', commit: f.commit, suite: 'integration', scope: 'full',
-      partition: { index: 1, count: 2 } })).toMatchObject({ run: { runId, state: 'running' } })
-    expect(f.mirrorGit('rev-parse', `refs/heads/ci/${f.commit}^{tree}`)).toBe(f.run('rev-parse', 'HEAD^{tree}'))
-    expect(f.circle.triggered).toEqual([['run', 'trigger', '--project', 'gh/octo/site-ci', '--branch', `ci/${f.commit}`,
-      '--parameter', `run_id=${runId}`, '--parameter', 'suite=integration',
-      '--parameter', 'slice=s:1-2', '--parameter', 'scope=full', '--json']])
-    const read = () => f.cloud.handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 65_536, durations: true })
-    expect(await read()).toMatchObject({ run: { state: 'running' } })
-    f.circle.outcome = 'failed'; f.circle.durations = { 'apps/api/test/c.integration.test.ts': 180 }
-    f.advance(4_000)
-    expect(await read()).toMatchObject({ run: { state: 'failed', exitCode: 1, finishedAt: '2026-10-11T02:00:00Z' },
-      text: 'Suite\nall green\n', durations: { 'apps/api/test/c.integration.test.ts': 180 } })
-  })
-
-  it('downloads only the durations artifacts of a finished CircleCI job', async () => {
-    const f = await fixture({}, { provider: 'circleci' })
-    const runId = randomUUID()
-    await f.cloud.handle({ operation: 'start', runId, repository: 'octo/site', commit: f.commit, suite: 'integration', scope: 'full' })
-    const testResults = { summary: { passed: 0, failed: 1, skipped: 0 }, truncated: false, files: [
-      { file: 'apps/api/test/a.integration.test.ts', status: 'failed', durationMs: 90,
-        tests: [{ name: 'a saves', status: 'failed', durationMs: 20, message: 'expected 1 to be 2' }] }] }
-    Object.assign(f.circle, { outcome: 'failed', durations: { 'apps/api/test/a.integration.test.ts': 90 }, testResults })
-    expect(await f.cloud.handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 1, durations: true, testResults: true }))
-      .toMatchObject({ run: { state: 'failed' }, durations: { 'apps/api/test/a.integration.test.ts': 90 }, testResults })
-    expect(f.circle.downloaded).toEqual(['https://artifacts.example/durations/durations.json',
-      'https://artifacts.example/durations/test-results.json'])
-  })
-
-  it('answers a read from the kept log while another read is still collecting the finished run', async () => {
-    const f = await fixture({}, { provider: 'circleci' })
-    const runId = randomUUID()
-    await f.cloud.handle({ operation: 'start', runId, repository: 'octo/site', commit: f.commit, suite: 'integration', scope: 'full' })
-    let release!: () => void
-    f.circle.downloadGate = new Promise(resolve => { release = resolve })
-    Object.assign(f.circle, { outcome: 'failed', durations: { 'apps/api/test/a.integration.test.ts': 90 } })
-    const collecting = f.cloud.handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 65_536, durations: true })
-    await expect.poll(() => f.circle.downloaded.length).toBe(1)
-    expect(await f.cloud.handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 65_536 }))
-      .toMatchObject({ run: { state: 'running' }, text: 'Suite\nall green\n' })
-    release()
-    expect(await collecting).toMatchObject({ run: { state: 'failed' }, text: 'Suite\nall green\n',
-      durations: { 'apps/api/test/a.integration.test.ts': 90 } })
   })
 
   it('shows the running GitHub step live and asks GitHub again only when its jobs changed', async () => {
     const f = await fixture()
     const runId = randomUUID()
-    await f.cloud.handle({ operation: 'start', runId, repository: 'octo/site', commit: f.commit, suite: 'integration', scope: 'full' })
+    await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId, repository: 'octo/site', commit: f.commit, suite: 'integration', scope: 'full' })
     f.github.listed = [{ databaseId: 8, displayTitle: `ci ${runId}` }]
     f.github.steps = [{ number: 1, name: 'Set up job', status: 'completed', conclusion: 'success' },
       { number: 2, name: 'Cache', status: 'completed', conclusion: 'skipped' },
@@ -704,25 +962,10 @@ describe('GitHub Actions CI on a public mirror', () => {
       '==> Set up job\n==> Suite\n==> Suite failed\n--- GitHub Actions log ---\nci\tSuite\tall green\n')
   })
 
-  it('streams the running CircleCI step output into the log as it grows', async () => {
-    const f = await fixture({}, { provider: 'circleci' })
-    const runId = randomUUID()
-    await f.cloud.handle({ operation: 'start', runId, repository: 'octo/site', commit: f.commit, suite: 'integration', scope: 'full' })
-    f.circle.steps = [{ num: 101, name: 'Checkout code', phase: 'ended', outcome: 'succeeded' },
-      { num: 108, name: 'Suite', phase: 'started' }]
-    f.circle.output = 'a.test passed\n'
-    const read = (afterOffset = 0) => f.cloud.handle({ operation: 'read', runId, afterOffset, maxBytes: 65_536 })
-    const first = await read()
-    expect(first).toMatchObject({ run: { state: 'running', step: 'Suite' }, text: '==> Checkout code\n==> Suite\na.test passed\n' })
-    f.circle.output += 'b.test passed\n'
-    f.advance(4_000)
-    expect(await read(first.operation === 'read' ? first.nextOffset : 0)).toMatchObject({ text: 'b.test passed\n' })
-  })
-
   it('pauses polling while the service rate limit is spent and resumes after the backoff', async () => {
     const f = await fixture()
     const runId = randomUUID()
-    await f.cloud.handle({ operation: 'start', runId, repository: 'octo/site', commit: f.commit, suite: 'integration', scope: 'full' })
+    await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId, repository: 'octo/site', commit: f.commit, suite: 'integration', scope: 'full' })
     f.github.listed = [{ databaseId: 8, displayTitle: `ci ${runId}` }]
     const read = () => f.cloud.handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 1 })
     expect(await read()).toMatchObject({ run: { state: 'running' } })
@@ -738,4 +981,32 @@ describe('GitHub Actions CI on a public mirror', () => {
     f.advance(1_000)
     expect(await read()).toMatchObject({ run: { state: 'passed' } })
   })
+})
+
+
+it.each((['github', 'circleci'] as const).flatMap(provider => [
+  { provider, reason: 'CI hang watchdog: no test progress for 60000 ms; running: loop.test.ts > planner never returns',
+    expected: 'CI hang watchdog: no test progress for 60000 ms; running: loop.test.ts > planner never returns' },
+  { provider, reason: 'CI hang watchdog:\0 café 🚀\ud800', expected: 'CI hang watchdog: café 🚀\ufffd' },
+]))('keeps a valid watchdog reason and expected deadline on $provider: $expected', async ({ provider, reason, expected }) => {
+  const f = await fixture({}, { provider })
+  const runId = randomUUID()
+  await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId, repository: 'octo/site', commit: f.commit,
+    suite: 'unit', scope: 'full', expectedDurationMs: 210_000 })
+  const command = provider === 'github' ? f.dispatched[0]! : f.circle.triggered[0]!
+  expect(command).toContain('expected_duration_ms=210000')
+  f.github.listed = [{ databaseId: 91, displayTitle: `ci ${runId}` }]
+  f.github.status = 'completed'
+  f.github.conclusion = 'failure'
+  f.github.log = `ci\tSuite\t[ci-watchdog] ${reason}\n`
+  f.github.watchdogFailure = { message: reason }
+  f.circle.outcome = 'failed'
+  f.circle.output = `[ci-watchdog] ${reason}\n`
+  f.circle.log = f.circle.output
+  f.circle.watchdogFailure = { message: reason }
+  const result = await f.cloud.handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 65_536 })
+  expect(result).toMatchObject({ run: { state: 'failed', message: expected }, text: expect.stringContaining(expected) })
+  expect(result.operation === 'read' && result.text).not.toContain('\0')
+  expect(await f.reopen().handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 65_536 }))
+    .toMatchObject({ run: { state: 'failed', message: expected }, text: expect.stringContaining(expected) })
 })

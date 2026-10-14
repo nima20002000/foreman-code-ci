@@ -1,8 +1,8 @@
+import { sleep as delay } from './sleep.mjs'
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { scheduleQueue } from './dense-scheduler.mjs'
 
-const delay = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds))
 const idle = { cpuUtilization: 0.1, cpuPressure: 0, memoryUtilization: 0.1,
   memoryPressure: 0, totalMemoryBytes: 1000, cpuCount: 2 }
 const defaults = { maxConcurrency: 2, samplePressure: () => idle, pollIntervalMs: 2, stallTimeoutMs: 40 }
@@ -256,4 +256,17 @@ test('a dedicated computer fills every slot while CPU is busy and still stops at
   const full = await run({ ...busy, memoryUtilization: 0.95 })
   assert.ok(peak <= 1)
   assert.ok(full.results.some(result => result.status !== 'PASSED' || peak <= 1))
+})
+
+test('a dedicated computer starts free slots together while a shared host spaces its starts', async () => {
+  const startTimes = async dedicated => {
+    const started = []
+    await scheduleQueue(Array.from({ length: 3 }, (_, index) => ({ id: `file-${index}` })), {
+      ...defaults, maxConcurrency: 3, pollIntervalMs: 200, dedicated,
+      execute: async () => { started.push(performance.now()); await delay(10); return { code: 0 } },
+    })
+    return started.at(-1) - started[0]
+  }
+  assert.ok(await startTimes(true) < 100)
+  assert.ok(await startTimes(false) >= 2 * 200 - 20)
 })

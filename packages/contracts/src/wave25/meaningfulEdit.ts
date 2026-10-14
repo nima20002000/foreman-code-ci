@@ -1,4 +1,3 @@
-import type { WorkflowDefinitionV3 } from './saved.js'
 
 /**
  * The executable/presentation boundary used by authoring and save admission.
@@ -42,7 +41,7 @@ function authoredWorkflowContent<T extends PresentedWorkflow>(graph: T) {
   return { ...content, nodes: graph.nodes.map(executableNodeContent) }
 }
 
-export function executableWorkflowContent<T extends PresentedWorkflow>(graph: T) {
+function executableWorkflowContent<T extends PresentedWorkflow>(graph: T) {
   const authored = authoredWorkflowContent(graph)
   const nodes = authored.nodes.map((node) => {
     const execution = { ...node }
@@ -66,10 +65,6 @@ export function sameWorkflowExceptGeometry(left: PresentedWorkflow, right: Prese
 
 export function sameExecutableWorkflow(left: PresentedWorkflow, right: PresentedWorkflow): boolean {
   return sameWorkflowValue(executableWorkflowContent(left), executableWorkflowContent(right))
-}
-
-export function workflowNodeNames(graph: { nodes: ReadonlyArray<WorkflowDefinitionV3['nodes'][number]> }) {
-  return graph.nodes.map(({ id, name, label }) => ({ id, name, label }))
 }
 
 /** Hydrate mutable names and geometry after the executable definition is checked. */

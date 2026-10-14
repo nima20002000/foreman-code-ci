@@ -1,6 +1,8 @@
 import { HarnessExecutionSchema, WorkflowRunSchema } from '@foreman-code/contracts'
+import { withTransaction } from '../../infrastructure/transaction.js'
 import type pg from 'pg'
 
+import { databaseCredentialDeadline } from './credentialLifetime.js'
 import { DomainError } from '../errors.js'
 import type { ChildProcessEnvironment } from '../harnesses/port.js'
 import type { PostgresAccessService } from './postgres.js'
@@ -16,6 +18,8 @@ export interface IssuedWorkerCredential {
   principalId: string
   environment: ChildProcessEnvironment
   expiresAt: string
+  renewalDeadline?: number
+  nativeLifetimeGeneration?: string
 }
 
 /** Issues only from durable execution/run identity; callers cannot supply alternate scope. */
@@ -31,24 +35,7 @@ export class WorkerCredentialService {
   }
 
   private async transaction<T>(perform: (client: pg.PoolClient) => Promise<T>): Promise<T> {
-    for (let attempt = 0; ; attempt += 1) {
-      const client = await this.pool.connect()
-      let releaseError: Error | undefined
-      try {
-        await client.query('begin')
-        const value = await perform(client)
-        await client.query('commit')
-        return value
-      } catch (error) {
-        try { await client.query('rollback') } catch (rollbackError) {
-          releaseError = rollbackError instanceof Error ? rollbackError : new Error('Credential rollback failed.')
-        }
-        const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined
-        if (releaseError || attempt >= 2 || (code !== '40P01' && code !== '40001')) throw error
-      } finally {
-        client.release(releaseError)
-      }
-    }
+    return withTransaction(this.pool, perform, { conflictRetries: 2 })
   }
 
   issueForExecution(executionId: string): Promise<IssuedWorkerCredential> {
@@ -57,6 +44,15 @@ export class WorkerCredentialService {
 
   issueForReviewer(executionId: string): Promise<IssuedWorkerCredential> {
     return this.issue(executionId, 'reviewer')
+  }
+
+  protected async issueExpiry(client: pg.ClientBase): Promise<{ expiresAt: Date; renewalDeadline: number }> {
+    const requestedAt = performance.now()
+    const row = (await client.query<{ expires_at: Date; database_now: Date }>(
+      `select clock_timestamp()+($1::integer*interval '1 millisecond') as expires_at,
+        clock_timestamp() as database_now`, [this.ttlMs])).rows[0]!
+    return { expiresAt: row.expires_at,
+      renewalDeadline: databaseCredentialDeadline(row.expires_at, row.database_now, requestedAt) }
   }
 
   /** Recover only the original live credential retained by a detached native process. */
@@ -78,7 +74,12 @@ export class WorkerCredentialService {
         throw new DomainError('WORKER_CREDENTIAL_IDENTITY_CONFLICT',
           'The retained credential belongs to another execution or Agent.', 409)
       }
-      return { principalId: current.id, expiresAt: current.expiresAt, environment: structuredClone(environment) }
+      const requestedAt = performance.now()
+      const clock = (await client.query<{ expires_at: Date; database_now: Date }>(
+        'select expires_at,clock_timestamp() as database_now from management_principals where id=$1', [current.id])).rows[0]!
+      return { principalId: current.id, expiresAt: clock.expires_at.toISOString(),
+        renewalDeadline: databaseCredentialDeadline(clock.expires_at, clock.database_now, requestedAt),
+        environment: structuredClone(environment) }
     })
   }
 
@@ -105,6 +106,7 @@ export class WorkerCredentialService {
           throw new DomainError('REVIEWER_EXECUTION_NOT_READY', 'Only the finalized designated Orchestrator session can receive Run-lifetime review credentials.', 409)
         }
       }
+      const expiry = await this.issueExpiry(client)
       const issued = await this.access.issue({
         name: `execution:${identity.execution_id}`,
         audience: 'worker',
@@ -123,7 +125,7 @@ export class WorkerCredentialService {
             runIds: [identity.run_id],
           },
         }],
-        expiresAt: new Date(Date.now() + this.ttlMs),
+        expiresAt: expiry.expiresAt,
       }, client)
       await client.query(
         `insert into worker_credential_bindings
@@ -139,15 +141,17 @@ export class WorkerCredentialService {
           variables: { [APP_MCP_TOKEN_ENVIRONMENT_VARIABLE]: issued.token },
         },
         expiresAt: issued.principal.expiresAt,
+        renewalDeadline: expiry.renewalDeadline,
       }
     })
   }
 
   /** Extend the same principal/token only while its exact execution lease remains valid. */
-  async renewForExecution(executionId: string, credential: Pick<IssuedWorkerCredential, 'principalId'>): Promise<string> {
-    const result = await this.pool.query<{ expires_at: Date }>(
+  async renewForExecution(executionId: string, credential: Pick<IssuedWorkerCredential, 'principalId' | 'nativeLifetimeGeneration'>): Promise<string> {
+    const requestedAt = performance.now()
+    const result = await this.pool.query<{ expires_at: Date; database_now: Date }>(
       `update management_principals p
-       set expires_at=greatest(p.expires_at,now()+($3::bigint * interval '1 millisecond'))
+       set expires_at=greatest(p.expires_at,clock_timestamp()+($3::bigint * interval '1 millisecond'))
        from worker_credential_bindings b
        join harness_executions he on he.id=b.execution_id and he.agent_id=b.agent_id and he.run_id=b.run_id
        join runs r on r.id=b.run_id and r.workspace_id=b.workspace_id and r.workflow_id=b.workflow_id
@@ -156,6 +160,7 @@ export class WorkerCredentialService {
        where p.id=$1 and b.principal_id=p.id and b.execution_id=$2
          and p.audience='worker' and p.agent_id=b.agent_id
          and b.environment_variable=$4 and p.revoked_at is null and b.revoked_at is null
+         and p.expires_at>clock_timestamp()
          and he.record->>'id'=he.id and he.record->>'runId'=r.id and he.record->>'agentId'=b.agent_id
          and r.record->>'id'=r.id and r.record->>'workspaceId'=b.workspace_id and r.record->>'workflowId'=b.workflow_id
          and ((b.purpose='workflow' and he.record->>'state' in ('running','waiting')
@@ -167,13 +172,15 @@ export class WorkerCredentialService {
                and ns.workflow_finalized_at is not null and ns.reference->>'nativeSessionId'=he.record->>'nativeSessionId')))
          and r.record->>'executionState' in ('running','waiting') and r.record->>'outcome'='pending'
          and ${WORKER_BINDING_ELIGIBLE}
-       returning p.expires_at`,
+       returning p.expires_at,clock_timestamp() as database_now`,
       [credential.principalId, executionId, this.ttlMs, APP_MCP_TOKEN_ENVIRONMENT_VARIABLE],
     )
     if (!result.rows[0]) {
       throw new DomainError('WORKER_CREDENTIAL_NOT_RENEWABLE', 'The worker credential is revoked, mismatched, or its execution is no longer active.', 409)
     }
-    return result.rows[0].expires_at.toISOString()
+    const row = result.rows[0]
+    Object.assign(credential, { renewalDeadline: databaseCredentialDeadline(row.expires_at, row.database_now, requestedAt) })
+    return row.expires_at.toISOString()
   }
 
   private async lockParents(client: pg.PoolClient, executionId: string,

@@ -7,6 +7,7 @@ import { createNextDraftSlice, editNextDraft, newNextDraft, nextDraftDirty, next
   type DraftRequest, type NextDraftEdit, type NextDraftSlice } from './state'
 import { createNextDraftWriter, draftFailure } from './writer'
 import type { NextDraftApi } from './transport'
+import { deferred } from '../../../test/deferred'
 
 export function fixture(roles: ('coder' | 'orchestrator')[] = ['coder', 'coder']): NextDraftContext {
   const graph: WorkflowDefinitionV3 = {
@@ -24,11 +25,6 @@ export function fixture(roles: ('coder' | 'orchestrator')[] = ['coder', 'coder']
 const clone = <T>(value: T): T => structuredClone(value)
 const graphWith = (context: NextDraftContext, update: Partial<WorkflowDefinitionV3>) => ({ ...context.draft.graph, ...update })
 const issue = (graph: WorkflowDefinitionV3, context: NextDraftContext, code: string) => authoringHints(graph, context).some((item) => item.code === code)
-function deferred<T>() {
-  let resolve!: (value: T) => void
-  const promise = new Promise<T>((done) => { resolve = done })
-  return { promise, resolve }
-}
 
 /** Synthetic authoring transport only; not a PostgreSQL, authentication, or native fixture. */
 function harness(context = fixture()) {
@@ -72,7 +68,7 @@ function harness(context = fixture()) {
     committed.set(request.commandId, result)
     return result
   }
-  const api: NextDraftApi = { write, layoutBase: async () => ({ draft: server, expectedAgentConfigurationVersionIds: {}, expectedLocationRevision: 1 }), pins: async () => ({ expectedAgentConfigurationVersionIds: {}, expectedLocationRevision: 1, agents: context.agents }), discardLocal: () => { throw new Error('Authoring fixture does not discard local transport state') }, open: async () => server, get: async () => server,
+  const api: NextDraftApi = { write, layoutBase: async () => ({ draft: server, expectedAgentConfigurationVersionIds: {} }), pins: async () => ({ expectedAgentConfigurationVersionIds: {}, agents: context.agents }), discardLocal: () => { throw new Error('Authoring fixture does not discard local transport state') }, open: async () => server, get: async () => server,
     context: async () => ({ draft: server, agents: context.agents }), validate: async () => ({ valid: true, issues: [] }),
     editRead: async () => { throw new Error('Authoring fixture does not read edit intents') },
     editStage: async () => { throw new Error('Authoring fixture does not stage edit intents') },

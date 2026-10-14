@@ -35,21 +35,21 @@ export const HarnessMcpChangeSchema = z.discriminatedUnion('kind', [
 ])
 export type HarnessMcpChange = z.infer<typeof HarnessMcpChangeSchema>
 /** `graphql` is the one app connection for every role; the credential decides what a caller may use. */
-export const HarnessMcpManagedPresetSchema = z.enum(['graphql', 'linear'])
+const HarnessMcpManagedPresetSchema = z.enum(['graphql', 'linear'])
 export type HarnessMcpManagedPreset = z.infer<typeof HarnessMcpManagedPresetSchema>
 /** Plan history keeps the pre-unification `operator` and `worker` presets readable. */
 const HarnessMcpPlanPresetSchema = z.enum(['graphql', 'linear', 'operator', 'worker'])
 /** `legacy`: old graphql-app/graphql-operator entries remain; applying the preset replaces them. */
 const HarnessMcpPresetStatus = z.enum(['missing', 'installed', 'disabled', 'mismatch', 'inherited', 'legacy'])
 const HarnessMcpManagedBase = z.object({ harness: Harness, preset: HarnessMcpManagedPresetSchema,
-  commandId: CommandId, expectedRevision: Revision })
+  commandId: CommandId, expectedRevision: Revision.optional().describe('Omit for last write wins; supply to reject a stale revision.') })
 export const HarnessMcpManagedInputSchema = z.union([
   HarnessMcpManagedBase.extend({ installed: z.boolean() }).strict(),
   HarnessMcpManagedBase.extend({ enabled: z.boolean() }).strict(),
 ])
 export type HarnessMcpManagedInput = z.infer<typeof HarnessMcpManagedInputSchema>
 export const HarnessMcpListInputSchema = z.object({ harness: Harness }).strict()
-export const HarnessMcpServerSummarySchema = z.object({
+const HarnessMcpServerSummarySchema = z.object({
   name: z.string(), transport: z.enum(['remote', 'stdio', 'unknown']), label: z.string(), enabled: z.boolean(),
   endpoint: z.string().url().optional(),
   origin: z.enum(['user', 'inherited']), protected: z.boolean(), editable: z.boolean(),
@@ -60,7 +60,7 @@ export const HarnessMcpListResultSchema = z.object({
   checkedAt: z.string().datetime({ offset: true }), scope: z.literal('native-user'),
 }).strict()
 export type HarnessMcpList = z.infer<typeof HarnessMcpListResultSchema>
-export const HarnessMcpPlanInputSchema = z.object({ harness: Harness, commandId: CommandId, expectedRevision: Revision, change: HarnessMcpChangeSchema }).strict()
+export const HarnessMcpPlanInputSchema = z.object({ harness: Harness, commandId: CommandId, expectedRevision: Revision.optional().describe('Omit for last write wins; supply to reject a stale revision.'), change: HarnessMcpChangeSchema }).strict()
 export type HarnessMcpPlanInput = z.infer<typeof HarnessMcpPlanInputSchema>
 export const HarnessMcpPlanSchema = z.object({
   id: z.string().uuid(), harness: z.enum(['codex', 'opencode']), revision: Revision, change: HarnessMcpChangeSchema,
@@ -74,9 +74,9 @@ export const HarnessMcpPlanResultSchema = z.object({ value: HarnessMcpPlanSchema
 export const HarnessMcpPlansResultSchema = z.object({ items: z.array(HarnessMcpPlanSchema) }).strict()
 export const HarnessMcpPlanGetInputSchema = z.object({ planId: z.string().uuid() }).strict()
 export const HarnessMcpDecisionInputSchema = z.object({ planId: z.string().uuid(), approve: z.boolean() }).strict()
-/** Explicit browser-owner settlement; never authorizes another native write. */
+/** Reconciliation reads native state without repeating the write. */
 export const HarnessMcpReconcileInputSchema = z.object({
-  planId: z.string().uuid(), commandId: CommandId, expectedRevision: Revision,
+  planId: z.string().uuid(), commandId: CommandId, expectedRevision: Revision.optional().describe('Omit for last write wins; supply to reject a stale revision.'),
   acceptObservedState: z.boolean().default(false),
 }).strict()
 export type HarnessMcpReconcileInput = z.infer<typeof HarnessMcpReconcileInputSchema>
@@ -86,6 +86,7 @@ export const HarnessDirectoryBrowseResultSchema = z.object({
   roots: z.array(z.object({ id: z.string(), label: z.string(), path: z.string() }).strict()),
   rootId: z.string().nullable(), path: z.string().nullable(), parent: z.string().nullable(),
   directories: z.array(z.object({ name: z.string(), path: z.string() }).strict()), nextCursor: z.string().nullable(),
+  truncated: z.boolean().optional().describe('True when scanning stopped after 20,000 entries; cursor pages cover only the scanned subset.'),
 }).strict()
 
 export const WorkspaceFolderNameSchema = z.string().trim().min(1).max(200)

@@ -29,7 +29,7 @@ cannot restore the bytes. HTTP and authenticated Operator MCP share this behavio
 
 `resolve` verifies the exact persisted receipt, root and complete accepted source again. Native launch must consume it immediately under the same reconciled ownership and enforce the binding's read-only/exclusive-write harness security. File modes alone do not grant or implement a same-UID sandbox. `createPrivateSourceRepository` generates a new private Git object store adjacent to the verified tree, with no copied hooks, config, credentials, shared `.git`, or source history. CI receives explicit workTree/gitDirectory; the generated commit is separate from sourceCommit and cannot masquerade as the original Git identity.
 
-The committed driver is `runSourceMaterializationFixture` in `acceptanceDriver.ts`. W09-C supplies its authenticated SourceByteReader and W07/W08 authorization callback. The runnable focused local fixture command is:
+The runnable focused local fixture command is:
 
 ```sh
 corepack pnpm --filter @foreman-code/api exec vitest run src/modules/sources/sourceMaterialization.test.ts --maxWorkers=1
@@ -84,6 +84,16 @@ aggregate budget. Ordinary execution concurrency is the smaller of twice the
 available CPU count, available memory after its 1 GiB/25% reserve at 512 MiB per
 slot, and 64 slots. At most 32 preparations may be pending. Qualified verification
 pool byte and slot ceilings still apply independently.
+Capacity denials include the exhausted budgets, charged usage, measured CPU and
+memory, and admission limits so slot pressure can be distinguished from disk pressure.
+
+Completed workflow executions release active source ownership after their original
+native lifetime closes, including occurrences within a running Loop. Cleanup removes
+their unused Main reference trees and clean Git checkouts while keeping branch refs
+and commits. Dirty, untracked, or changed-branch worktrees remain charged at their
+measured retained size and are retried on later sweeps. Private closure records and
+non-Git shared working trees remain retained. Reconciliation visits bounded pages,
+prioritizing unfinished execution releases before older retained worktree cleanup.
 The Worker source handler bounds outstanding work at 64 operations, including
 capacity probes and cleanup alongside admitted preparations. The authenticated
 transport also applies its shared flow-control bounds.
@@ -125,7 +135,11 @@ workspace repository edits do not alter accepted Runs. The source package carrie
 raw commit and tree objects alongside the approved file bytes. It does not carry
 ancestor commits or their files. Workers import those objects into their managed
 clone before worktree creation, including unpublished Agent snapshots used for CI
-runtime preparation. Runtime preparation sends the same bounded source package in
+runtime preparation. Changed Agent worktrees can produce snapshot bundles up to
+32 MiB; unchanged worktrees reuse the base commit without a bundle. The Worker
+channel budgets include base64 overhead and preserve bounded chunks and scope
+checks. Larger changed bundles require pushing the branch instead.
+Runtime preparation sends the same bounded source package in
 chunks over its authenticated Worker channel.
 
 Agent worktrees are created without checkout, then populated from the verified
@@ -166,3 +180,22 @@ trial; the requested sub-10-second preparation target is not yet achieved.
 These measurements exercise real snapshots and Git worktrees with a fixture
 authorization callback, rather than a complete harness launch. Production DB
 state was not changed. Runtime phase logs separate copy and synchronization.
+
+## Git cache storage
+
+Git clone and fetch use a separate budget on the filesystem containing the
+cache. The host adapter serializes transfers with a directory lock, measures
+all retained bytes, and records the reservation and measured filesystem in
+`storage.json`. The budget is one quarter of filesystem size, capped at
+64 GiB. A transfer reserves 1 GiB plus a free-space margin before Git starts.
+The child inherits the cache lock and a 256 MiB kernel file-size limit.
+Fetch stores one pack and index with automatic maintenance disabled; clone
+and origin fetch use depth one so accepted commits do not pull full history.
+Each transfer remeasures retained objects, including result branches and
+active worktree metadata. Failed transfers remove only their own incomplete
+packs or newly allocated clone staging. Published objects and existing
+worktrees are retained and charged; capacity pressure never deletes them.
+
+HTTP and Operator MCP use the same host adapter. `SOURCE_GIT_CACHE_CAPACITY`
+reports a retryable storage failure through both transports and preserves the
+original repository import command for retry after space becomes available.

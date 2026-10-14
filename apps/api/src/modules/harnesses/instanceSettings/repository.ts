@@ -1,4 +1,5 @@
 import pg from 'pg'
+import { withTransaction } from '../../../infrastructure/transaction.js'
 import type { CanonicalMachineReference } from '@foreman-code/contracts/device-identity'
 import { HostHarnessOverrideSchema, type HostHarnessOverride } from '@foreman-code/contracts/harness-registry'
 import { DomainError } from '../../errors.js'
@@ -18,18 +19,20 @@ export class HarnessInstanceSettingsRepository {
       where host_key=$1 and application_installation_id=$2 order by instance_id,revision desc`, [harnessHostKey(host), applicationInstallationId])
     return result.rows.map(row => HostHarnessOverrideSchema.parse(row.record))
   }
+  async prioritizeForRuns(profiles: HostHarnessOverride[]): Promise<HostHarnessOverride[]> {
+    const result = await this.pool.query<{ instance_id: string; instance_revision: string }>(`
+      select distinct placement.record#>>'{payload,instanceId}' as instance_id,
+        placement.record#>>'{payload,instanceRevision}' as instance_revision
+      from run_node_placements placement join runs run on run.id=placement.run_id
+      where placement.record#>>'{payload,instanceId}'=any($1::text[])
+        and run.record->>'executionState' in ('queued','running','waiting')
+        and run.record->>'outcome'='pending'`, [profiles.map(profile => profile.instanceId)])
+    const used = new Set(result.rows.map(row => `${row.instance_id}:${row.instance_revision}`))
+    const priority = (value: HostHarnessOverride) => Number(used.has(`${value.instanceId}:${value.instanceRevision}`))
+    return [...profiles].sort((left, right) => priority(right) - priority(left))
+  }
   async readAuthorized<T>(operation: (client: pg.PoolClient) => Promise<T>): Promise<T> {
-    const client = await this.pool.connect()
-    let releaseError: Error | undefined
-    try {
-      await client.query('begin')
-      const result = await operation(client)
-      await client.query('commit')
-      return result
-    } catch (error) {
-      try { await client.query('rollback') } catch (rollbackError) { releaseError = rollbackError instanceof Error ? rollbackError : new Error('Settings read rollback failed.') }
-      throw error
-    } finally { client.release(releaseError) }
+    return withTransaction(this.pool, operation)
   }
   async latest(client: pg.ClientBase, instanceId: string): Promise<HostHarnessOverride | null> {
     const result = await client.query<{ record: unknown }>('select record from harness_instance_settings where instance_id=$1 order by revision desc limit 1', [instanceId])
@@ -46,10 +49,10 @@ export class HarnessInstanceSettingsRepository {
   async lockRevision(client: pg.ClientBase, instanceId: string): Promise<void> {
     await client.query('select pg_advisory_xact_lock(hashtext($1))', [`harness-instance:${instanceId}`])
   }
-  async append(client: pg.PoolClient, principalId: string, expectedRevision: number, value: HostHarnessOverride): Promise<HostHarnessOverride> {
+  async append(client: pg.PoolClient, principalId: string, expectedRevision: number | undefined, value: HostHarnessOverride): Promise<HostHarnessOverride> {
     await this.lockRevision(client, value.instanceId)
     const previous = await this.latest(client, value.instanceId)
-    if ((previous?.revision ?? 0) !== expectedRevision) throw new DomainError('REVISION_CONFLICT', 'Host harness settings changed since they were read.', 409, { currentRevision: previous?.revision ?? 0 })
+    if (expectedRevision !== undefined && (previous?.revision ?? 0) !== expectedRevision) throw new DomainError('REVISION_CONFLICT', 'Host harness settings changed since they were read.', 409, { currentRevision: previous?.revision ?? 0 })
     if (previous && (harnessHostKey(previous.target.hostRef) !== harnessHostKey(value.target.hostRef)
       || previous.target.applicationInstallationId !== value.target.applicationInstallationId
       || previous.driverId !== value.driverId)) throw new DomainError('HARNESS_INSTANCE_TARGET_CONFLICT', 'A configured instance cannot move to another host, installation or driver.', 409)

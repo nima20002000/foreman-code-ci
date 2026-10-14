@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
-import { CI_HOST_NAMESPACE, CiComputersOutputSchema, CiGetOutputSchema, CiHostRequestSchema,
+import { CI_HOST_NAMESPACE, CI_HOST_START_PROTOCOL_VERSION, CiComputersOutputSchema, CiGetOutputSchema, CiHostRequestSchema,
   CiRunOutputSchema, CiRunRecordSchema, type CiHostReply, type CiHostRequest, type CiHostRun } from '@foreman-code/contracts'
-import { BuildComputerStatusSchema } from '@foreman-code/contracts/build-computers'
+import { BuildComputerStatusSchema, BuildComputerBatchResultSchema } from '@foreman-code/contracts/build-computers'
 import type { DeviceProvisioningTarget } from '@foreman-code/contracts/device-resources'
 import type { ManagementAction } from '@foreman-code/contracts/management'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
@@ -40,8 +40,11 @@ it('honors persisted MCP build participation and priority while retaining assign
       keyRevision: null, authorizationRevision: null }
     const runs = new Map<string, { computer: string; run: CiHostRun }>()
     const starts: string[] = []
+    const requests = new Map<string, CiHostRequest>()
+    const outdated = new Set<string>()
     const request = async (computer: string, input: CiHostRequest): Promise<CiHostReply> => {
       if (input.operation === 'status') return { operation: 'status', ready: true, reasons: [],
+        ...(!outdated.has(computer) ? { startProtocolVersion: CI_HOST_START_PROTOCOL_VERSION } : {}),
         cpuCount: 8, memoryBytes: 16 * 2 ** 30,
         runs: [...runs.values()].filter(entry => entry.computer === computer).map(entry => entry.run) }
       if (input.operation === 'start') {
@@ -49,6 +52,7 @@ it('honors persisted MCP build participation and priority while retaining assign
           startedAt: new Date().toISOString(), finishedAt: null, logBytes: 0, message: null }
         runs.set(input.runId, { computer, run })
         starts.push(computer)
+        requests.set(input.runId, input)
         return { operation: 'start', run }
       }
       const entry = runs.get(input.runId)!
@@ -77,7 +81,7 @@ it('honors persisted MCP build participation and priority while retaining assign
     const address = await app.listen({ port: 0 })
     const connect = async (actions: ManagementAction[]) => {
       const issued = await access.issue({ name: 'CI preferences caller', audience: 'operator',
-        expiresAt: new Date(Date.now() + 600_000), grants: [{ actions, scope: {} }] })
+        expiresAt: new Date(Date.now() + 600_000), grants: actions.length ? [{ actions, scope: {} }] : [] })
       const client = new Client({ name: 'ci-preferences-test', version: '1' })
       clients.push(client)
       await client.connect(new StreamableHTTPClientTransport(new URL('/mcp', address),
@@ -93,39 +97,72 @@ it('honors persisted MCP build participation and priority while retaining assign
     }
     const read = async (target: DeviceProvisioningTarget) => BuildComputerStatusSchema.parse(
       await call(reader, 'build_computer_get', { target }))
-    const save = async (target: DeviceProvisioningTarget, buildEnabled: boolean, buildPriority: number) => {
+    const save = async (target: DeviceProvisioningTarget, buildEnabled: boolean, buildPriority: number,
+      buildAllowancePercent = 100) => {
       const old = await read(target)
       const saved = BuildComputerStatusSchema.parse(await call(writer, 'build_computer_update', {
-        commandId: randomUUID(), target, expectedRevision: old.preference.revision, buildEnabled, buildPriority,
+        target, expectedRevision: old.preference.revision,
+        buildEnabled, buildPriority, buildAllowancePercent,
       }))
       expect(await read(target)).toEqual(saved)
       return saved
     }
+    const saveBatch = async (target: DeviceProvisioningTarget) => {
+      const old = await read(target)
+      const result = BuildComputerBatchResultSchema.parse(await call(writer, 'build_computers_update', { updates: [{
+        target, expectedRevision: old.preference.revision, buildEnabled: old.preference.buildEnabled,
+        buildPriority: old.preference.buildPriority,
+      }] }))
+      expect(await read(target)).toEqual(BuildComputerStatusSchema.parse(result.computers[0]))
+    }
     const list = async () => CiComputersOutputSchema.parse(await call(reader, 'ci_computers_list', { workspaceId }))
     const start = async () => CiRunOutputSchema.parse(await call(writer, 'ci_run', {
-      workspaceId, suite: 'install', commandId: randomUUID(),
+      workspaceId, suite: 'install',
     }))
-    const get = async (ticketId: string) => CiGetOutputSchema.parse(await call(reader, 'ci_get', { workspaceId, ticketId }))
+    const get = async (ticketId: string) => {
+      await ci!.dispatch()
+      return CiGetOutputSchema.parse(await call(reader, 'ci_get', { workspaceId, ticketId }))
+    }
 
     expect((await list()).computers).toEqual([])
     await save(main, false, 100)
+    await saveBatch(main)
     await save(devices[0]!.target, true, 20)
-    const high = await save(devices[1]!.target, true, 90)
+    const high = await save(devices[1]!.target, true, 90, 50)
     await save(devices[2]!.target, false, 100)
     expect((await list()).computers.map(computer => computer.hostRef)).toEqual([
       devices[1]!.target.hostRef, devices[0]!.target.hostRef,
     ])
     const denied = await reader.callTool({ name: 'build_computer_update', arguments: {
-      commandId: randomUUID(), target: devices[1]!.target, expectedRevision: high.preference.revision,
+      target: devices[1]!.target, expectedRevision: high.preference.revision,
       buildEnabled: false, buildPriority: 0,
     } })
     expect(denied.isError).toBe(true)
     expect(JSON.stringify(denied.content)).toContain('ACCESS_DENIED')
     expect(await read(devices[1]!.target)).toEqual(high)
     expect((await reader.callTool({ name: 'ci_run', arguments: {
-      workspaceId, suite: 'install', commandId: randomUUID(),
+      workspaceId, suite: 'install',
     } })).isError).toBe(true)
     expect((await db.pool.query('select count(*)::int as count from ci_runs')).rows[0]!.count).toBe(0)
+
+    outdated.add(devices[1]!.registration.deviceId)
+    const incompatible = (await list()).computers.find(computer => computer.hostRef.deviceId === devices[1]!.registration.deviceId)
+    expect(incompatible).toMatchObject({ ready: false, reasons: [expect.stringMatching(/CI start protocol.*update/i)] })
+    const protocolTicket = await start()
+    const protocolRead = await get(protocolTicket.ticketId)
+    expect(protocolRead.run.computer?.hostRef).toEqual(devices[0]!.target.hostRef)
+    expect((await db.pool.query('select record from ci_runs where id=$1', [protocolTicket.ticketId])).rows[0]!.record)
+      .toEqual(protocolRead.run)
+    const ungranted = await connect([])
+    expect((await ungranted.listTools()).tools.map(tool => tool.name)).not.toContain('ci_computers_list')
+    const deniedList = await ungranted.callTool({ name: 'ci_computers_list', arguments: { workspaceId } })
+    expect(deniedList.isError).toBe(true)
+    expect(JSON.stringify(deniedList.content)).toContain('ACCESS_DENIED')
+    expect(await read(devices[1]!.target)).toEqual(high)
+    expect((await get(protocolTicket.ticketId)).run).toEqual(protocolRead.run)
+    await call(writer, 'ci_cancel', { workspaceId, ticketId: protocolTicket.ticketId })
+    outdated.clear()
+    starts.length = 0
 
     const first = await start()
     const firstRead = await get(first.ticketId)
@@ -162,7 +199,7 @@ it('honors persisted MCP build participation and priority while retaining assign
       .toMatchObject({ run: { state: 'canceled' } })
     await save(main, false, 100)
     await save(devices[0]!.target, true, 20)
-    await save(devices[1]!.target, true, 90)
+    await save(devices[1]!.target, true, 90, 50)
     for (const [index, device, seconds] of [[0, devices[1]!, 400], [1, devices[0]!, 200]] as const) {
       const finishedAt = new Date(Date.now() - 60_000)
       const startedAt = new Date(finishedAt.getTime() - seconds * 1000).toISOString()
@@ -181,10 +218,27 @@ it('honors persisted MCP build participation and priority while retaining assign
     const partitionRead = await get(partitioned.ticketId)
     const higher = partitionRead.partitions!.find(run => run.partition?.index === 0)!
     const lower = partitionRead.partitions!.find(run => run.partition?.index === 1)!
+    expect(requests.get(higher.id)).toMatchObject({ operation: 'start', buildAllowancePercent: 50 })
+    expect(requests.get(lower.id)).toMatchObject({ operation: 'start', buildAllowancePercent: 100 })
+    expect((await read(devices[1]!.target)).preference.buildAllowancePercent).toBe(50)
     expect(higher.computer?.hostRef).toEqual(devices[1]!.target.hostRef)
     expect(lower.computer?.hostRef).toEqual(devices[0]!.target.hostRef)
     expect(higher.partition!.weights).toEqual(lower.partition!.weights)
     expect(higher.partition!.weights![0]! / higher.partition!.weights![1]!).toBeCloseTo(0.5, 1)
+    await call(writer, 'ci_cancel', { workspaceId, ticketId: partitioned.ticketId })
+    const smokeInput = { workspaceId, suite: 'integration', scope: 'affected', commit: 'a'.repeat(40),
+      commandId: randomUUID(), files: ['apps/api/test/feature.integration.test.ts'],
+      smokeComputer: devices[1]!.target.hostRef }
+    expect((await reader.callTool({ name: 'ci_run', arguments: smokeInput })).isError).toBe(true)
+    const smoke = CiRunOutputSchema.parse(await call(writer, 'ci_run', smokeInput))
+    const smokeRead = await get(smoke.ticketId)
+    expect(smokeRead.run).toMatchObject({ state: 'running', integrationShards: 4,
+      smokeComputer: smokeInput.smokeComputer, computer: { hostRef: smokeInput.smokeComputer } })
+    expect(requests.get(smoke.ticketId))
+      .toMatchObject({ gate: true, integrationShards: 4, buildAllowancePercent: 50 })
+    const storedSmoke = (await db.pool.query('select record from ci_runs where id=$1', [smoke.ticketId])).rows[0]!.record
+    expect(storedSmoke).not.toHaveProperty('smokeComputer')
+    expect({ ...storedSmoke, smokeComputer: smokeInput.smokeComputer }).toEqual(smokeRead.run)
   } finally {
     await Promise.allSettled(clients.map(client => client.close()))
     await ci?.close()

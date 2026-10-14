@@ -40,16 +40,16 @@ describe('source admission boundaries', () => {
     expect(storedBytes).toBe(state === 'metadata-only' ? 16 * 1024 : reservedBytes)
   })
 
-  it('requires approval scope before SQL, filesystem, host or command work', async () => {
+  it('requires source root write scope before SQL, filesystem, host or command work', async () => {
     const probe = vi.fn()
     const service = new PostgresSourceService({ connect: probe } as unknown as pg.Pool, { execute: probe } as unknown as PostgresCommandCoordinator,
       { snapshot: probe } as unknown as WorkspaceLocationService, {} as PrivateSourceSnapshotStore, randomUUID(), {} as RegisteredSourceRootPort, {} as SourceExecutionHostPort, {} as SourceClosureProofPort)
     await expect(service.approve(principal, 'mcp', { workspaceId: 'workspace-owned', commandId: randomUUID(), expectedLocationRevision: 1,
-      commit: 'a'.repeat(40), approvedPaths: ['src/app.ts'], executablePolicy: 'strip' })).rejects.toMatchObject({ code: 'ACCESS_DENIED' })
+      commit: 'a'.repeat(40), executablePolicy: 'strip' })).rejects.toMatchObject({ code: 'ACCESS_DENIED' })
     expect(probe).not.toHaveBeenCalled()
   })
   it('rejects tool-supplied paths, fake Agent/Run selectors and mutable Git refs', () => {
-    const input = { workspaceId: 'workspace-owned', commandId: randomUUID(), expectedLocationRevision: 1, commit: 'a'.repeat(40), approvedPaths: ['src/app.ts'], executablePolicy: 'strip' }
+    const input = { workspaceId: 'workspace-owned', commandId: randomUUID(), expectedLocationRevision: 1, commit: 'a'.repeat(40), executablePolicy: 'strip' }
     for (const extra of [{ rootPath: '/home/other' }, { agentId: 'invented' }, { runId: 'invented' }, { commit: 'HEAD' }]) expect(SourceApproveInputSchema.safeParse({ ...input, ...extra }).success).toBe(false)
     expect(SourceRootBindInputSchema.safeParse({ rootPath: '/home/other' }).success).toBe(false)
   })
@@ -74,6 +74,20 @@ describe('source admission boundaries', () => {
     await expect(new PostgresSourceReservations().reclaimed({ query } as unknown as pg.PoolClient,
       { reservationId: randomUUID(), scopeId: 'main:filesystem', ownerKind: 'materialization', ownerId: 'real-operation', reservedBytes: 100 }, async () => false)).rejects.toMatchObject({ code: 'SOURCE_RECLAMATION_UNCONFIRMED' })
     expect(query).not.toHaveBeenCalled()
+  })
+  it('identifies active slot exhaustion separately from retained and available byte budgets', async () => {
+    const capacity = sourceStorageCapacityFixture()
+    const query = async (statement: string) => ({ rows: statement.includes('coalesce(sum')
+      ? [{ bytes: '4096', verification_bytes: '0', pending_bytes: '4096', preparing: '0',
+        materializations: '2', verification_materializations: '0' }] : [] })
+    await expect(new PostgresSourceReservations().reserve({ query } as unknown as pg.PoolClient,
+      { scopeId: 'capacity-scope', ownerKind: 'materialization', ownerId: 'operation', reservedBytes: 4096 },
+      { capacity })).rejects.toMatchObject({ code: 'SOURCE_CAPACITY', details: {
+        exhausted: ['materializations'],
+        usage: { usedBytes: 4096, pendingBytes: 4096, preparing: 0, activeMaterializations: 2, requestedBytes: 4096 },
+        limits: { materializations: 2, preparing: 2, bytes: 2 ** 30 },
+        measured: { cpuCount: 1, availableMemoryBytes: 4 * 2 ** 30, observedAt: capacity.observedAt },
+      } })
   })
   it('separates source selection hashes from actual final dispatch adoption', () => {
     const root = { source: { approvedSourceId: randomUUID(), snapshotId: randomUUID(), manifestDigest: 'a'.repeat(64) },

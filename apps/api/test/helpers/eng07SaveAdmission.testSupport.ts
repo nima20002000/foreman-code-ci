@@ -4,9 +4,10 @@ import { expect, vi } from 'vitest'
 import type { HarnessExecution } from '@foreman-code/contracts'
 import { CURRENT_WORKFLOW_TOOLS, CurrentEditReadResultSchema, CurrentWorkflowSaveInputSchema,
   CurrentWorkflowSaveResultSchema, type CurrentWorkflowSaveInput } from '@foreman-code/contracts/wave25'
+import { withTransaction } from '../../src/infrastructure/transaction.js'
 import type { currentOperatorIntegration } from './currentOperatorIntegration.js'
-import { deferred } from './wave25Agent3.js'
 import { graphHeaders, graphRpcValue } from '../eng04-graph-composition-fixture.js'
+import { rejectableDeferred } from './deferred.js'
 
 export type SaveFixture = Awaited<ReturnType<typeof currentOperatorIntegration>>
 export type Transport = 'http' | 'mcp'
@@ -19,7 +20,7 @@ export async function meaningfulInput(f: SaveFixture): Promise<CurrentWorkflowSa
     [f.f.scope.workflowId])).rows[0]!
   return CurrentWorkflowSaveInputSchema.parse({ workspaceId: f.f.scope.workspaceId, workflowId: f.f.scope.workflowId,
     commandId: randomUUID(), executionSemanticsVersion: 3, expectedRevision: Number(row.revision),
-    expectedWorkflowVersionId: row.current_version_id, expectedLocationRevision: 1,
+    expectedWorkflowVersionId: row.current_version_id,
     expectedAgentConfigurationVersionIds: f.f.version.agentConfigurationVersionIds,
     graph: { ...row.record, nodes: row.record.nodes.map((node: { id: string }) => ({ ...node, initialPrompt: `Meaningful edit for ${node.id}` })) } })
 }
@@ -73,7 +74,7 @@ export async function assertSettled(f: SaveFixture) {
  * gate, then the original method sees its original aborted owner/signal. No
  * execution result, native permission, closure or cleanup receipt is mocked. */
 export function parkBeforeNativeEntry(f: SaveFixture) {
-  const parked = deferred<HarnessExecution>(), release = deferred()
+  const parked = rejectableDeferred<HarnessExecution>(), release = rejectableDeferred()
   const observe = f.native.observeExact.bind(f.native)
   const spy = vi.spyOn(f.native, 'observeExact').mockImplementation(async (input) => {
     const abort = () => release.resolve()
@@ -97,9 +98,7 @@ export async function corruptProof(pool: pg.Pool, table: 'workflow_native_entrie
   const original = (await pool.query(`select to_jsonb(p) as record from ${table} p where execution_id=$1`, [executionId])).rows
   expect(original).toHaveLength(1)
   async function change(restore: boolean) {
-    const client = await pool.connect()
-    try {
-      await client.query('begin')
+    await withTransaction(pool, async client => {
       await client.query(`alter table ${table} disable trigger user`)
       if (restore) {
         await client.query(`delete from ${table} where execution_id=$1`, [executionId])
@@ -112,9 +111,7 @@ export async function corruptProof(pool: pg.Pool, table: 'workflow_native_entrie
         await client.query(`update execution_native_recoveries set execution_identity=jsonb_set(execution_identity,'{attempt}','2'::jsonb) where execution_id=$1`, [executionId])
       }
       await client.query(`alter table ${table} enable trigger user`)
-      await client.query('commit')
-    } catch (error) { await client.query('rollback'); throw error }
-    finally { client.release() }
+    })
   }
   await change(false)
   return () => change(true)

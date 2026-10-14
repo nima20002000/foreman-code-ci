@@ -11,6 +11,10 @@
 # TEST_RESULTS_OUTPUT: where structured test results go for unit and integration (scripts/ci-test-results.mjs).
 # Host CI uses this hook for named parts; ci-files.mjs opts into integration partitions.
 set -euo pipefail
+# Only test suites report per-test progress; typecheck, lint and build can stay silent for minutes.
+if [ "${CI_WATCHDOG_ACTIVE:-}" != 1 ] && [ -n "${CI_EXPECTED_DURATION_MS:-}" ] && [ -z "${1:-}" ]; then
+  case "${SUITE:-}" in unit|unit-*|integration) exec node "$(dirname "$0")/ci-watchdog.mjs" -- bash "$0" ;; esac
+fi
 # Test commands never inherit where this run's results go: a nested CI fixture would write over them.
 test_results="${TEST_RESULTS_OUTPUT:-}"
 unset TEST_RESULTS_OUTPUT
@@ -20,7 +24,15 @@ if [ "${CI_HOST_RUNNER:-0}" = 1 ]; then
   pnpm() { corepack pnpm "$@"; }
 fi
 
+if [ -z "${1:-}" ] && [ -n "${FOREMAN_CODE_CI_TYPECHECK_CACHE:-}" ] \
+  && [ "${FOREMAN_CODE_CI_TYPECHECK_CACHE_ACTIVE:-}" != 1 ]; then
+  case "$SUITE" in
+    typecheck|typecheck-*) exec node "$(dirname "$0")/ci-typecheck-cache.mjs" -- bash "$0" ;;
+  esac
+fi
+
 if [ "${1:-}" = start ] || [ "${1:-}" = prepare ]; then
+  case "$SUITE" in unit-web|unit-web-heavy) exit 0 ;; esac
   case "$SUITE" in unit|unit-*|integration) ;; *) exit 0 ;; esac
   clis="npm install --global --silent --before=$(date -u -d '-2 days' +%Y-%m-%dT%H:%M:%SZ) @openai/codex @anthropic-ai/claude-code"
   if [ "$1" = prepare ]; then
@@ -68,7 +80,7 @@ unit_slice() {
   output="$(realpath -m "${DURATIONS_OUTPUT:-$state/durations.json}")"
   mkdir -p "$state" "$(dirname "$output")"
   node scripts/ci-unit-files.mjs select "$suite" "${SLICE:-}" > "$state/unit-files"
-  local files=() reporters=(--reporter=default --reporter=json "--outputFile.json=$output.vitest.json")
+  local files=() reporters=(--reporter=default --reporter=json "--reporter=$(realpath scripts/ci-progress-reporter.mjs)" "--outputFile.json=$output.vitest.json")
   mapfile -d '' -t files < "$state/unit-files"
   rm -f "$output" "$output.vitest.json"
   if [ "$suite" = unit-api ]; then
@@ -83,6 +95,39 @@ unit_slice() {
   return "$code"
 }
 
+# An exact restored build can bypass pnpm startup; misses keep the ordinary build path.
+build_contracts() {
+  if [ -n "${FOREMAN_CODE_CI_CONTRACTS_CACHE:-}" ] && node scripts/ci-contracts.mjs ready "$PWD"; then
+    return 0
+  fi
+  pnpm --filter @foreman-code/contracts build
+}
+
+node_tests() {
+  local report="$1"; shift
+  pnpm exec node --test --test-reporter=spec --test-reporter-destination=stdout \
+    "--test-reporter=$node_reporter" "--test-reporter-destination=$report" "$@"
+}
+
+unit_other() {
+  local code=0 status=0
+  local reports node_reporter
+  reports="$(realpath -m "$state/unit-other")"
+  node_reporter="$(realpath scripts/ci-node-test-reporter.mjs)"
+  mkdir -p "$reports"
+  rm -f "$reports/contracts.json" "$reports/worker.json" "$reports/scripts.json"
+  build_contracts || return $?
+  pnpm --filter @foreman-code/contracts test --reporter=default --reporter=json \
+    "--outputFile.json=$reports/contracts.json" || code=$?
+  (cd apps/worker && node_tests "$reports/worker.json" test/*.test.mjs) || status=$?
+  if [ "$code" = 0 ]; then code="$status"; fi
+  status=0
+  node_tests "$reports/scripts.json" 'scripts/**/*.test.mjs' || status=$?
+  if [ "$code" = 0 ]; then code="$status"; fi
+  record_tests "$reports/contracts.json" "$reports/worker.json" "$reports/scripts.json"
+  return "$code"
+}
+
 scope="${SCOPE:-affected}"
 selected_list=''
 if [ "$scope" = affected ] && [ -z "${SELECTED_FILES:-}" ] && { [ "$SUITE" != integration ] || [ -z "${SLICE:-}" ]; }; then
@@ -94,7 +139,8 @@ if [ "$scope" = affected ] && [ -z "${SELECTED_FILES:-}" ] && { [ "$SUITE" != in
     default_ref="refs/remotes/origin/$branch"
     if [ -n "${BASE_COMMIT:-}" ]; then
       if [ "$(git rev-parse --is-shallow-repository)" = true ]; then
-        git fetch --quiet --no-tags --unshallow origin
+        git fetch --quiet --no-tags --depth=2 origin "$(git rev-parse HEAD)"
+        git fetch --quiet --no-tags --depth=1 origin "$BASE_COMMIT"
       fi
     else
       if [ "$(git rev-parse --is-shallow-repository)" = true ]; then
@@ -112,18 +158,17 @@ if [ "$scope" = affected ] && [ -z "${SELECTED_FILES:-}" ] && { [ "$SUITE" != in
   fi
 fi
 
-# A full partitioned run whose file list does not fit a provider parameter computes its own partition from the
-# commit's durations; every partition uses the same inputs, so together they cover each file exactly once.
+# A full partition whose indexes exceed a provider parameter uses the timings retained in its snapshot.
 if [ "$scope" = full ] && [ "$SUITE" = integration ] && [ -z "${SLICE:-}" ] && [ -n "${CI_PARTITION:-}" ] && [ -z "$selected_list" ]; then
   mkdir -p "$state"
   selected_list="$state/selected-files.json"
   node --input-type=module -e '
-    import { readFileSync, writeFileSync, existsSync } from "node:fs"
+    import { writeFileSync } from "node:fs"
     import { integrationPartition } from "./packages/contracts/src/ciPartition.mjs"
     import { integrationFileList } from "./scripts/ci-files.mjs"
-    const durations = existsSync("scripts/integration-durations.json") ? JSON.parse(readFileSync("scripts/integration-durations.json", "utf8")) : {}
+    import { executionDurations } from "./scripts/ci-selection.mjs"
+    const durations = executionDurations("integration", process.cwd(), JSON.parse(process.env.CI_DURATIONS || "{}"))
     const partition = JSON.parse(process.env.CI_PARTITION)
-    delete partition.weights
     writeFileSync(process.argv[1], JSON.stringify(integrationPartition(integrationFileList(process.cwd()), durations, partition)))
   ' "$selected_list"
 fi
@@ -131,7 +176,8 @@ fi
 if [ "$scope" = affected ] && [ "$SUITE" != integration ]; then
   case "$SUITE" in
     unit|unit-api) ready db; ready clis; delegate_cgroup ;;
-    unit-web|unit-web-heavy|unit-other) ready db ;;
+    unit-web|unit-web-heavy) ;;
+    unit-other) ready db ;;
     lint|lint-api|lint-other|typecheck|typecheck-api|typecheck-other) ;;
     *) echo "Unsupported affected suite $SUITE"; exit 2 ;;
   esac
@@ -146,29 +192,31 @@ fi
 case "$SUITE" in
   install) ;;
   unit) ready db; ready clis; delegate_cgroup; pnpm test ;;
-  unit-api) ready db; ready clis; delegate_cgroup; pnpm --filter @foreman-code/contracts build
+  unit-api) ready db; ready clis; delegate_cgroup; build_contracts
     unit_slice unit-api apps/api ;;
-  unit-web) ready db; pnpm --filter @foreman-code/contracts build
+  unit-web) build_contracts
     unit_slice unit-web apps/web ;;
   # SLICE i/n splits the heavy phase across machines; the run-graph smoke runs once, in the first shard.
-  unit-web-heavy) ready db; pnpm --filter @foreman-code/contracts build
+  unit-web-heavy) build_contracts
     case "${SLICE:-1/1}" in 1/*) pnpm --filter @foreman-code/web test:run-graph-smoke ;; esac
-    mkdir -p "$state"; heavy_report="$(realpath -m "$state/unit-web-heavy.vitest.json")"; code=0
+    mkdir -p "$state"; heavy_report="$(realpath -m "$state/unit-web-heavy.vitest.json")"; progress_reporter="$PWD/scripts/ci-progress-reporter.mjs"; code=0
     (cd apps/web && FOREMAN_WEB_TEST_PHASE=heavy pnpm exec vitest run ${SLICE:+--shard=$SLICE} \
-      --reporter=default --reporter=json "--outputFile.json=$heavy_report") || code=$?
+      --reporter=default --reporter=json "--reporter=$progress_reporter" "--outputFile.json=$heavy_report") || code=$?
     record_tests "$heavy_report"; exit "$code" ;;
-  unit-other) ready db; pnpm --filter @foreman-code/contracts build && pnpm --filter @foreman-code/contracts --filter @foreman-code/worker test \
-    && pnpm test:scripts ;;
-  lint-api) pnpm --filter @foreman-code/contracts build && pnpm --filter @foreman-code/api lint ;;
-  lint-other) pnpm --filter @foreman-code/contracts build \
+  unit-other) ready db; unit_other ;;
+  lint-api) build_contracts && pnpm --filter @foreman-code/api lint ;;
+  lint-other) build_contracts \
     && pnpm -r --no-bail --filter '!@foreman-code/api' --if-present lint ;;
-  typecheck-api) pnpm --filter @foreman-code/contracts build && pnpm --filter @foreman-code/api typecheck ;;
-  typecheck-other) pnpm --filter @foreman-code/contracts build \
+  typecheck-api) build_contracts && pnpm --filter @foreman-code/api typecheck ;;
+  typecheck-other) build_contracts \
     && pnpm -r --filter '!@foreman-code/api' --if-present typecheck ;;
-  build-api) pnpm --filter @foreman-code/contracts build && pnpm --filter @foreman-code/api build ;;
+  build-api) build_contracts && pnpm --filter @foreman-code/api build ;;
   build-other) pnpm -r --filter '!@foreman-code/api' --if-present build ;;
   typecheck|lint|build) pnpm "$SUITE" ;;
   integration)
+    if [ "${CI_USER_SYSTEMD:-0}" = 1 ] && [ "${CI_HOST_RUNNER:-0}" != 1 ]; then
+      source scripts/ci-user-systemd.sh
+    fi
     ready db; ready clis
     export FOREMAN_CODE_INTEGRATION_DURATIONS_OUTPUT="$DURATIONS_OUTPUT"
     if [ -n "$test_results" ]; then export FOREMAN_CODE_INTEGRATION_TEST_RESULTS_OUTPUT="$test_results"; fi
