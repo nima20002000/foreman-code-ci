@@ -36,10 +36,19 @@ describe('production remote review and native recovery through authenticated MCP
       expect((await fixture.provider.calls()).filter(call => 'approvalResponse' in call)).toHaveLength(0)
       await fixture.restoreOriginalResponseGrant()
       await fixture.provider.retryReview()
-      const delivered = await deliveredReview(fixture, active.interaction.id)
+      await deliveredReview(fixture, active.interaction.id)
+      // Native acknowledgement publishes another revision after delivery.
+      const completed = await waitForRemoteReview(async () => {
+        await fixture.reconcileReviews()
+        return fixture.details(active.run.id)
+      }, value => value.run.executionState === 'completed' && value.cleanupPending !== true,
+      'completed Run and native cleanup after reserved decision delivery', fixture.subscribeNativeChanges)
+      expect(completed.run.outcome).toBe('succeeded')
+      const persisted = await repository.get(active.interaction.id)
+      expect(persisted?.deliveryState).toBe('delivered')
       expect(DurableInteractionSchema.parse((await fixture.value('interaction_get', {
         interactionId: active.interaction.id,
-      }) as { interaction: unknown }).interaction)).toEqual(delivered.interaction)
+      }) as { interaction: unknown }).interaction)).toEqual(persisted)
       const receipt = (await receipts(fixture, active.run.id)).find(receipt => receipt.intent.executionId === active.requester.id)!
       expect(receipt.controls.filter(control => control.action.kind === 'respond')).toEqual([command])
       expect(fixture.deliveryReads).toContainEqual({ command, phase: 'reserved' })
