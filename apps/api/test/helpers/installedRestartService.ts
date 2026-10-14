@@ -15,6 +15,7 @@ import { readUntil } from './observableCondition.js'
 import { removeRestartUnit } from '../../../../scripts/test-restart-units.mjs'
 import { testFixtureCacheRoot } from '../../../../scripts/test-fixture-cache.mjs'
 import { ownedTestPath } from './testResources.js'
+import { measureIntegrationPhase, reportIntegrationPhase } from './integrationPhase.js'
 
 const execute = promisify(execFile)
 const repository = fileURLToPath(new URL('../../../..', import.meta.url))
@@ -86,15 +87,18 @@ export async function installedRestartService(directory: string, configuration: 
   await deployProductionApi(async (command: string, args: string[]) => {
     // The disposable deployment workspace is discarded, so it needs no dependency restoration.
     if (args.includes('install')) return
+    reportIntegrationPhase('installed API dependency deployment started', 0)
     try {
-      await execute(command, args, { cwd: deployment, maxBuffer: 4 * 1024 * 1024,
-        env: { ...process.env, CI: 'true', npm_config_offline: 'true' } })
+      await measureIntegrationPhase('installed API dependency deployment', () =>
+        execute(command, args, { cwd: deployment, maxBuffer: 4 * 1024 * 1024,
+          env: { ...process.env, CI: 'true', npm_config_offline: 'true' } }))
     } catch (error) {
       const output = error as Error & { stdout?: string; stderr?: string; code?: unknown; signal?: unknown }
       throw new Error(`${output.message} (code ${output.code}, signal ${output.signal})\n`
         + `${output.stderr ?? ''}\n${output.stdout ?? ''}`, { cause: error })
     }
   }, api, { dependencies: { root: join(testFixtureCacheRoot(), 'api-dependencies'), source: deployment } })
+  reportIntegrationPhase('installed API dependencies ready', 0)
   await mkdir(join(api, 'test/helpers'), { recursive: true })
   await copyFile(join(repository, 'apps/api/test/helpers/testPool.mjs'), join(api, 'test/helpers/testPool.mjs'))
   const source = join(repository, 'apps/api/src')
