@@ -6,7 +6,11 @@ import {
   EXECUTION_MAX_ATTEMPTS, executionRetryDelayMs, isTransientExecutionError, transientExecutionFailure,
 } from '../src/modules/runs/executionRetryPolicy.js'
 
-afterEach(() => { delete process.env.FOREMAN_EXECUTION_RETRY_BACKOFF_MS })
+const testBackoff = process.env.FOREMAN_EXECUTION_RETRY_BACKOFF_MS
+afterEach(() => {
+  if (testBackoff === undefined) delete process.env.FOREMAN_EXECUTION_RETRY_BACKOFF_MS
+  else process.env.FOREMAN_EXECUTION_RETRY_BACKOFF_MS = testBackoff
+})
 
 describe('execution failure classification', () => {
   it.each([
@@ -47,6 +51,7 @@ describe('execution failure classification', () => {
   })
 
   it('backs off 10 s, 30 s, then 60 s and allows three attempts', () => {
+    delete process.env.FOREMAN_EXECUTION_RETRY_BACKOFF_MS
     expect(EXECUTION_MAX_ATTEMPTS).toBe(3)
     expect([1, 2, 3, 4].map(executionRetryDelayMs)).toEqual([10_000, 30_000, 60_000, 60_000])
     process.env.FOREMAN_EXECUTION_RETRY_BACKOFF_MS = '5,7'

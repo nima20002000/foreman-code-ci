@@ -141,8 +141,6 @@ async function openTransport(base: Base, runtime: Runtime, errors: unknown[]): P
 
 export async function recoveryFixture(form: Form, plan: (input: Submission) => Fault = () => 'success', budget = 12,
   options: { sessionPersistence?: 'persistent' | 'ephemeral'; parallelism?: number } = {}) {
-  // Production backs off 10 s, 30 s, 60 s between attempts; this synthetic provider keeps the order faster.
-  process.env.FOREMAN_EXECUTION_RETRY_BACKOFF_MS = '20'
   const fixture = makeCurrentWorkflowFixture(randomUUID(), form)
   // This provider models a separate native session for every execution attempt.
   // Only persistent sessions can detach across a restart and be reattached.

@@ -106,7 +106,6 @@ describe.skipIf(!postgresEnabled)('configuration reads before native launch', ()
   }, 60_000)
 
   it('retries an uncertain native creation in a fresh attempt and completes the Run', async () => {
-    process.env.FOREMAN_EXECUTION_RETRY_BACKOFF_MS = '20'
     const f = await currentOperatorIntegration({ approvalNodeIds: [] })
     const create = f.provider.createSession.bind(f.provider)
     let uncertain = true
@@ -133,7 +132,6 @@ describe.skipIf(!postgresEnabled)('configuration reads before native launch', ()
         [f.f.run.id])
       expect(cleanup.rowCount).toBe(0)
     } finally {
-      delete process.env.FOREMAN_EXECUTION_RETRY_BACKOFF_MS
       await f.close()
     }
   }, 60_000)
