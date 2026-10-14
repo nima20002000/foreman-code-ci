@@ -5,10 +5,6 @@
   "type": "module",
   "files": ["dist"],
   "exports": {
-    "./failure": { "types": "./dist/failure.d.ts", "import": "./dist/failure.js" },
-    "./worker-update": { "types": "./dist/workerUpdate.d.ts", "import": "./dist/workerUpdate.js" },
-    "./worker-artifact-content-node": { "types": "./dist/workerArtifactContentNode.d.mts", "import": "./dist/workerArtifactContentNode.mjs" },
-    "./managed-mcp-channel": { "types": "./dist/managedMcpChannel.d.ts", "import": "./dist/managedMcpChannel.js" },
     "./runtime-build-identity-node": { "types": "./dist/runtimeBuildIdentityNode.d.mts", "import": "./dist/runtimeBuildIdentityNode.mjs" },
     "./worktree-settings": { "types": "./dist/worktreeSettings.d.ts", "import": "./dist/worktreeSettings.js" },
     "./workspace-git": { "types": "./dist/workspaceGit.d.ts", "import": "./dist/workspaceGit.js" },

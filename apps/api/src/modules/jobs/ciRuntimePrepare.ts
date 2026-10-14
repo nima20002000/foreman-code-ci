@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path'
 import { pipeline } from 'node:stream/promises'
 import { buildCiRuntimeContext, ciRuntimeInputDigest, parseCiLock } from './ciRuntimeContext.mjs'
 import { expectedPortions } from '../../../../../scripts/verification-runner.mjs'
-import type { CiCacheStatus, PreparedCiRuntime } from '@foreman-code/contracts'
+import type { PreparedCiRuntime } from '@foreman-code/contracts'
 import { JobVerificationQuotaPoolSchema } from '@foreman-code/contracts/job-verification-runtime'
 import { z } from 'zod'
 import { pruneCiRuntimeCache, readCiRuntimeCache, writeCiRuntimeCache } from './ciRuntimeCache.js'
@@ -59,14 +59,13 @@ export async function prepareCiRuntime({ stateDirectory, ...input }: Parameters<
  * needs to capture and qualify the new runtime. Everything stays inside `installer`. */
 export interface CiRuntimeReview { reviewedByPrincipalId: string; decisionDigest: string }
 async function prepareRuntime({ repository, commit, installer, review, keepImages = [], keepPaths = [],
-  environment = process.env, signal, log = () => {}, onCacheStatus }: {
+  environment = process.env, signal, log = () => {} }: {
   repository: string; commit: string; installer: string; review: CiRuntimeReview
   /** Image ids referenced by protected configurations and retained execution records. */
   keepImages?: readonly string[]
   /** Installer paths the current protected runtime still uses (its qualification source). */
   keepPaths?: readonly string[]
   environment?: NodeJS.ProcessEnv; log?: (stage: string) => void
-  onCacheStatus?: (status: CiCacheStatus) => void
   signal?: AbortSignal
 }): Promise<PreparedCiRuntime> {
   signal?.throwIfAborted()
@@ -87,13 +86,7 @@ async function prepareRuntime({ repository, commit, installer, review, keepImage
     return result.stdout
   }
   if ((await runCiRuntimeCommand('git', ['-C', repository, 'cat-file', '-e', `${commit}^{commit}`],
-    { env, signal }).then(() => true, (error: unknown) => {
-      signal?.throwIfAborted()
-      const failure = error as { code?: unknown; stderr?: unknown }
-      if (failure.code === 128 && typeof failure.stderr === 'string'
-        && /^fatal: Not a valid object name [a-f0-9]+\^\{commit\}\s*$/u.test(failure.stderr)) return false
-      throw error
-    })) === false) {
+    { env, signal }).then(() => true, () => false)) === false) {
     await sh('git', ['-C', repository, 'fetch', '--no-tags', 'origin', commit])
   }
   stage('reclaim-interrupted-preparation')
@@ -109,13 +102,7 @@ async function prepareRuntime({ repository, commit, installer, review, keepImage
       throw error
     }
   }
-  const cache: CiCacheStatus = { status: 'miss', lastError: null, missCount: 1, rebuildCount: 1 }
-  const cached = await readCiRuntimeCache({ installer, inputDigest, imageExists, onInvalid: reason => {
-    cache.status = 'invalid'
-    cache.lastError = reason
-  } })
-  if (cached) Object.assign(cache, { status: 'hit', missCount: 0, rebuildCount: 0 })
-  onCacheStatus?.(cache)
+  const cached = await readCiRuntimeCache({ installer, inputDigest, imageExists })
   if (cached) {
     stage('prune-images')
     await pruneCiImages({ keep: [...keepImages, cached.imageId], env, installer, signal })
@@ -124,7 +111,7 @@ async function prepareRuntime({ repository, commit, installer, review, keepImage
     stage('reusing-runtime-image')
     const qualificationSource = await extractQualificationSource(repository, commit,
       join(installer, `qualification-source-${short}`), env, signal)
-    return { ...cached, commit, qualificationSource, reusedImage: true, cache }
+    return { ...cached, commit, qualificationSource, reusedImage: true }
   }
   const source = join(installer, `source-${short}`)
   if (!await exists(source)) {
@@ -212,7 +199,7 @@ async function prepareRuntime({ repository, commit, installer, review, keepImage
   await runCiRuntimeCommand('git', ['-C', repository, 'worktree', 'remove', '--force', source], { env, signal })
   const prepared: PreparedCiRuntime = {
     commit, imageId: `sha256:${image.Id.replace(/^sha256:/u, '')}`, imageManifestDigest: image.Digest,
-    seedReceiptPath, contextReceiptPath, qualificationSource, cache,
+    seedReceiptPath, contextReceiptPath, qualificationSource,
   }
   if (unitCodex) {
     prepared.unitCodex = { executable: '/opt/graphql-ci/tools/codex', sourceExecutable: codex,

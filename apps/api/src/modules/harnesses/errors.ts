@@ -1,5 +1,4 @@
 import { errorMessage } from '../../shared/errorMessage.js'
-import { isTransientExecutionCode } from '../../shared/executionFailureCodes.js'
 import type { ExecutionResult } from '@foreman-code/contracts'
 
 export function isDefiniteCompactionRejection(error: unknown): boolean {
@@ -13,7 +12,7 @@ export function isDefiniteCompactionRejection(error: unknown): boolean {
 export class HarnessExecutionError extends Error {
   readonly result: ExecutionResult
 
-  constructor(code: string, message: string, retryable = isTransientExecutionCode(code), options?: ErrorOptions) {
+  constructor(code: string, message: string, retryable = false, options?: ErrorOptions) {
     super(message, options)
     this.name = 'HarnessExecutionError'
     this.result = { outcome: 'failed', error: { code, message, retryable } }
@@ -39,8 +38,8 @@ export class NativeDeliveryError extends HarnessExecutionError {
 
 /** Definite provider refusal: the addressed turn is not the active turn. No input was accepted. */
 export class NativeTurnNotActiveError extends HarnessExecutionError {
-  constructor(message = 'The addressed native turn is no longer active.', options?: ErrorOptions) {
-    super('NATIVE_TURN_NOT_ACTIVE', message, undefined, options)
+  constructor(message = 'The addressed native turn is no longer active.') {
+    super('NATIVE_TURN_NOT_ACTIVE', message)
     this.name = 'NativeTurnNotActiveError'
   }
 }

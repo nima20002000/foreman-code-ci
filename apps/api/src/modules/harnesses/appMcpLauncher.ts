@@ -11,8 +11,7 @@ import { APP_MCP_SERVER_NAMES, APP_MCP_TOKEN_NAMES, PRODUCT_SLUG } from '@forema
 /** One native entry serves every role; the credential decides Operator, Orchestrator or Coder. */
 export const APP_MCP_SERVER_NAME = PRODUCT_SLUG
 export const APP_MCP_TOKEN = 'FOREMAN_CODE_MCP_TOKEN'
-/** Group waits return before this native deadline so the Agent can repeat ci_get. */
-export const APP_MCP_TIMEOUTS = { startup_timeout_sec: 60, tool_timeout_sec: 300 } as const
+export const APP_MCP_TIMEOUTS = { startup_timeout_sec: 60, tool_timeout_sec: 120 } as const
 export const isSupportedAppMcpServerName = (name: string): name is (typeof APP_MCP_SERVER_NAMES)[number] =>
   APP_MCP_SERVER_NAMES.some((supported) => supported === name)
 export const isSupportedAppMcpTokenName = (name: string | undefined): name is (typeof APP_MCP_TOKEN_NAMES)[number] =>
@@ -226,17 +225,14 @@ export type AppMcpRouteRegistration = (() => Promise<void>) & {
   refresh(expiresAt: string): Promise<void>
 }
 
-/** `renewalFailure` records why the route's lease stopped renewing; the launcher reports it once the route expires. */
 export async function registerAppRoute(
-  token: string, endpoint: string, expiresAt: string, launcher = appLauncherPath(), renewalFailure?: string,
+  token: string, endpoint: string, expiresAt: string, launcher = appLauncherPath(),
 ): Promise<AppMcpRouteRegistration> {
-  return registerAppRouteDigest(createHash('sha256').update(token).digest('hex'), endpoint, expiresAt, launcher,
-    undefined, renewalFailure)
+  return registerAppRouteDigest(createHash('sha256').update(token).digest('hex'), endpoint, expiresAt, launcher)
 }
 
 export async function registerAppRouteDigest(
   digest: string, endpoint: string, expiresAt: string, launcher = appLauncherPath(), ownership?: AppMcpRouteOwnership,
-  renewalFailure?: string,
 ): Promise<AppMcpRouteRegistration> {
   if (!/^[a-f0-9]{64}$/.test(digest)) throw new Error('Invalid Foreman Code MCP route identity.')
   const directory = join(dirname(launcher), 'routes')
@@ -252,7 +248,7 @@ export async function registerAppRouteDigest(
       throw error
     }
   }
-  const publish = (expiration: string, mode: 'register' | 'refresh', failure?: string): Promise<void> =>
+  const publish = (expiration: string, mode: 'register' | 'refresh'): Promise<void> =>
     withLauncherLock(launcher, async signal => {
       ownership?.assertActive()
       if (mode === 'refresh' && !await ownsRoute()) return
@@ -260,8 +256,7 @@ export async function registerAppRouteDigest(
       const temporary = `${file}.${randomUUID()}.tmp`
       try {
         await writeFile(temporary, JSON.stringify({ endpoint, expiresAt: expiration, pid: process.pid,
-          toolTimeoutMs: APP_MCP_TIMEOUTS.tool_timeout_sec * 1000,
-          registrationId, runtimeEpoch, ...(failure ? { renewalFailure: failure } : {}) }), { mode: 0o600, flag: 'wx' })
+          registrationId, runtimeEpoch }), { mode: 0o600, flag: 'wx' })
         signal.throwIfAborted()
         ownership?.assertActive()
         await rename(temporary, file)
@@ -269,7 +264,7 @@ export async function registerAppRouteDigest(
         await rm(temporary, { force: true })
       }
     })
-  await publish(expiresAt, 'register', renewalFailure)
+  await publish(expiresAt, 'register')
   const remove = async (): Promise<void> => {
     await withLauncherLock(launcher, async () => {
       if (await ownsRoute()) await rm(file, { force: true })

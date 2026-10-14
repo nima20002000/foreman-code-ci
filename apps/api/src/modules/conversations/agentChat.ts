@@ -1,5 +1,3 @@
-import { logIgnoredError } from '../diagnostics/ignoredError.js'
-import type { ReadObservation } from '@foreman-code/contracts'
 import { errorMessage } from '../../shared/errorMessage.js'
 import { RETIRED_OPENCODE_MESSAGE } from '@foreman-code/contracts'
 import type { ChatResponseAcknowledgment } from '@foreman-code/contracts/interaction-activity'
@@ -94,7 +92,7 @@ export class AgentChatEvents {
   publish(conversationId: string, type: AgentChatStreamEvent['type'], data: Record<string, unknown>) {
     const event = AgentChatStreamEventSchema.parse({ id: this.sequence++, conversationId, type, data })
     for (const listener of this.listeners.get(conversationId) ?? []) {
-      try { listener(event) } catch (error) { logIgnoredError('engine', 'publish conversation event', error) }
+      try { listener(event) } catch { /* ignore: a disconnected subscriber cannot fail a native turn. */ }
     }
   }
   subscribe(id: string, listener: (event: AgentChatStreamEvent) => void) {
@@ -186,7 +184,6 @@ function intervalTick(execution: HarnessExecution): number {
 }
 
 export class AgentChatService {
-  private readonly activityObservations = new Map<string, ReadObservation>()
   readonly events = new AgentChatEvents()
   private readonly runtimes = new Map<string, Runtime>()
   private readonly tasks = new Map<string, Promise<void>>()
@@ -537,8 +534,7 @@ export class AgentChatService {
     const qualifiedResponse = responseAvailability && !isAuthorized(finalPrincipal, 'agent_chat:respond', { workspaceId: context.workspaceId, workflowId: context.workflowId, ...(context.runId ? { runId: context.runId } : {}) })
       ? { ...responseAvailability, available: false, status: 'unavailable' as const, path: null,
         reason: 'unauthorized' as const, message: 'Your current grants do not allow responding to this interaction.' } : responseAvailability
-    const activitySnapshot = { ...qualifyChatActivity(agentActivitySnapshot(loaded), qualifiedResponse),
-      ...(this.activityObservations.has(row.id) ? { observation: this.activityObservations.get(row.id) } : {}) }
+    const activitySnapshot = qualifyChatActivity(agentActivitySnapshot(loaded), qualifiedResponse)
     const qualificationKey = commandInputHash({ principal: finalPrincipal, configurationId: resolution.configuration?.id ?? null,
       availability, capabilities, scope: activitySnapshot.scope, revision: activitySnapshot.revision,
       sourceRevisions: 'sourceRevisions' in activitySnapshot ? activitySnapshot.sourceRevisions : null,
@@ -843,7 +839,7 @@ export class AgentChatService {
       } catch (error) {
         if (error instanceof NativeTurnNotActiveError || definiteRejection(error)) {
           await this.repository.discard(row.id, input.requestId)
-          throw new DomainError('AGENT_CHAT_TURN_NOT_ACTIVE', 'The turn finished before the steer arrived. Send it as the next turn instead.', 409, undefined, { cause: error })
+          throw new DomainError('AGENT_CHAT_TURN_NOT_ACTIVE', 'The turn finished before the steer arrived. Send it as the next turn instead.', 409)
         }
         await this.repository.unknown(row.id, input.requestId, errorMessage(error, 'Steer delivery is unconfirmed.'))
         this.scheduleReconcile(row.id)
@@ -1502,8 +1498,6 @@ export class AgentChatService {
       const recoveryRequestId = requestId ?? target?.targetRequestId
       if (!recoveryRequestId) {
         const remaining = await reconcileKnownActivities({ kind: 'agent', conversationId: id, activity: this.activity,
-          observations: this.activityObservations,
-          onObservation: candidate => this.events.publish(candidate, 'state', { snapshotRequired: true }),
           signal: AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(5_000)]),
           runtimeFor: (candidate) => {
             const runtime = this.runtimes.get(candidate)

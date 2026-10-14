@@ -8,9 +8,6 @@ import { TransferIntentSchema } from '@foreman-code/contracts/byte-transfer'
 import { WorkerMcpRelayResponseSchema } from '@foreman-code/contracts/worker-mcp-relay'
 import { z } from 'zod'
 import { componentLogger } from '../../diagnostics/logger.js'
-import { DeviceApplicationError, deviceApplicationFailure } from '../../devices/deviceApplicationError.js'
-import { DeviceConnectionError } from '../../devices/deviceWire.js'
-import { leaseFailureCause, renewOwnedLeases } from '../../leases/ownerLeases.js'
 
 const PublicationCall = z.object({ jsonrpc: z.literal('2.0'), id: z.union([z.string(), z.number().int()]),
   method: z.literal('tools/call'), params: z.object({ name: z.literal('files.publish_transferred_result'),
@@ -34,33 +31,6 @@ export function observedWorkflowArtifactPublication(body: unknown, response: z.i
   return { input: call.data.params.arguments, result: replies[0]!.result.structuredContent }
 }
 
-const RelayedToolCall = z.object({ jsonrpc: z.literal('2.0'), id: z.union([z.string(), z.number().int()]),
-  method: z.literal('tools/call') }).passthrough()
-
-/** A tool call the Main relay could not complete is answered as a JSON-RPC error naming the failure and whether a
- * retry can help. A bare HTTP 502 reached the Agent as a generic "service unavailable" and hid both. */
-export function relayFailureReply(body: unknown, error: unknown) {
-  const call = RelayedToolCall.safeParse(body)
-  if (!call.success) return undefined
-  const known = error instanceof DeviceApplicationError || error instanceof DeviceConnectionError
-  const code = known ? error.code : 'relay_failed'
-  const retryable = error instanceof DeviceConnectionError || deviceApplicationFailure(error).retryable
-  const cause = code === 'timeout' ? 'Foreman Main did not answer in time'
-    : code === 'transport' ? 'the Worker lost its link to Foreman Main'
-      : code === 'backpressure' ? 'the Worker link to Foreman Main is busy'
-        : `Foreman Main refused the call (${code})`
-  const message = `The Foreman Code MCP relay failed: ${cause}. ` + (retryable
-    ? 'The call may still have run on Main: read back the result of any write, then retry this call.'
-    : 'Retrying the same call will fail the same way.')
-  return { jsonrpc: '2.0' as const, id: call.data.id, error: { code: -32000, message,
-    data: { kind: retryable ? 'relay_unavailable' : 'relay_refused', code, retryable, delivery: 'indeterminate' } } }
-}
-
-/** Main answered the lease request and refused it (revoked credential, ended attempt); asking again cannot help. */
-export function isLeaseRefusal(error: unknown): error is DeviceApplicationError {
-  return error instanceof DeviceApplicationError && !error.retryable && error.code !== 'cancelled'
-}
-
 /** The admitted worker owns this private route until its original native owner closes.
  * Main reauthorizes every relayed request; neither this endpoint nor its route file grants access. */
 export interface WorkerMcpRelay {
@@ -70,10 +40,6 @@ export interface WorkerMcpRelay {
   /** Renews the same scoped lease with Main and returns its new expiry. */
   refresh?(signal?: AbortSignal): Promise<string>
 }
-
-/** A bound route renews itself this long before it expires, without waiting for a Main status frame.
- * Main renews the credential earlier (WORKER_CREDENTIAL_RENEWAL_WINDOW_MS), so this reads an extended expiry. */
-export const WORKER_MCP_LEASE_RENEWAL_WINDOW_MS = 2 * 60_000
 
 interface WorkerMcpEndpointOptions {
   launcher: string
@@ -96,11 +62,10 @@ export async function createUnboundWorkerMcpEndpoint(input: WorkerMcpEndpointOpt
       code: error instanceof Error && 'code' in error ? error.code : undefined,
       errorType: error instanceof Error ? error.name : typeof error }, 'Worker MCP relay failed')
   }
-  let bound: { relay: WorkerMcpRelay; digest: Buffer; expiresAt: string; refused?: DeviceApplicationError } | undefined
+  let bound: { relay: WorkerMcpRelay; digest: Buffer; expiresAt: string } | undefined
   const active = new Set<Promise<void>>()
   let closing = false, shutdown: Promise<void> | undefined
   const server = createServer((request, response) => {
-    let body: unknown
     const task = (async () => {
       response.setHeader('cache-control', 'no-store')
       const lease = bound
@@ -122,6 +87,7 @@ export async function createUnboundWorkerMcpEndpoint(input: WorkerMcpEndpointOpt
           if (byteSize > 1_000_000) { response.writeHead(413); response.end(); return }
           chunks.push(bytes)
         }
+        let body: unknown
         try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')) }
         catch { response.writeHead(400); response.end(); return }
         const protocol = request.headers['mcp-protocol-version']
@@ -136,12 +102,6 @@ export async function createUnboundWorkerMcpEndpoint(input: WorkerMcpEndpointOpt
       } finally { request.removeListener('aborted', disconnected); response.removeListener('close', disconnected) }
     })().catch(error => {
       logFailure('request', error)
-      const reply = !response.headersSent ? relayFailureReply(body, error) : undefined
-      if (reply) {
-        response.writeHead(200, { 'content-type': 'application/json' })
-        response.end(JSON.stringify(reply))
-        return
-      }
       if (!response.headersSent) response.writeHead(502)
       response.end()
     })
@@ -158,7 +118,6 @@ export async function createUnboundWorkerMcpEndpoint(input: WorkerMcpEndpointOpt
   let unregister: (() => Promise<void>) | undefined
   const close = () => shutdown ??= (async () => {
     closing = true
-    renewal?.abort()
     await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()))
     await Promise.all([...active])
     await updates
@@ -172,7 +131,6 @@ export async function createUnboundWorkerMcpEndpoint(input: WorkerMcpEndpointOpt
       if (closing || !token || !Number.isFinite(Date.parse(relay.expiresAt)) || Date.parse(relay.expiresAt) <= Date.now()) {
         throw new Error('The original Main MCP lease is unavailable.')
       }
-      renewal?.abort()
       bound = undefined
       await unregister?.()
       unregister = undefined
@@ -183,7 +141,6 @@ export async function createUnboundWorkerMcpEndpoint(input: WorkerMcpEndpointOpt
       }
       unregister = release
       bound = { relay, digest: createHash('sha256').update(`Bearer ${token}`).digest(), expiresAt: relay.expiresAt }
-      renewWhileBound(bound)
       log.info({ agentId: relay.environment.agentId, launcher: input.launcher, expiresAt: relay.expiresAt },
         'Worker MCP launcher route registered')
     }).catch(error => {
@@ -193,21 +150,12 @@ export async function createUnboundWorkerMcpEndpoint(input: WorkerMcpEndpointOpt
     updates = task.then(() => undefined, () => undefined)
     return task
   }
-  /** Refresh only in the renewal window; queued callers reuse the latest expiry. */
+  /** Long native turns renew the bound lease in place; the native URL and bearer stay the same. */
   const refreshLease = () => {
-    let repeatedRefusal = false
     const task = updates.then(async () => {
       const lease = bound
       if (closing || !lease?.relay.refresh) throw new Error('The original worker MCP endpoint is closing.')
-      if (Date.parse(lease.expiresAt) - Date.now() > WORKER_MCP_LEASE_RENEWAL_WINDOW_MS) return lease.expiresAt
-      // Main refused this lease for good (for example it ended the attempt and revoked the credential): asking
-      // again cannot succeed, so later renewals report the logged refusal without another Main request.
-      if (lease.refused) { repeatedRefusal = true; throw lease.refused }
-      let renewedExpiry: string
-      try { renewedExpiry = await lease.relay.refresh(input.signal) } catch (error) {
-        if (isLeaseRefusal(error) && bound === lease) lease.refused = error
-        throw error
-      }
+      const renewedExpiry = await lease.relay.refresh(input.signal)
       input.signal.throwIfAborted()
       if (closing || bound !== lease) throw new Error('The original worker MCP endpoint is closing.')
       if (!Number.isFinite(Date.parse(renewedExpiry)) || Date.parse(renewedExpiry) <= Date.now()) {
@@ -216,47 +164,14 @@ export async function createUnboundWorkerMcpEndpoint(input: WorkerMcpEndpointOpt
       const token = readProductEnvironment(lease.relay.environment.variables, 'MCP_TOKEN')!
       unregister = await registerAppRoute(token, endpoint, renewedExpiry, input.launcher)
       lease.expiresAt = renewedExpiry
-      if (renewal?.signal.aborted) renewWhileBound(lease)
       log.debug({ agentId: lease.relay.environment.agentId, launcher: input.launcher, expiresAt: renewedExpiry },
         'Worker MCP launcher route renewed')
       return renewedExpiry
     }).catch(error => {
-      if (!repeatedRefusal) logFailure('renew', error)
+      logFailure('renew', error)
       throw error
     })
     updates = task.then(() => undefined, () => undefined)
-    return task
-  }
-  /** The bound route is one lease of this attempt: it renews in its final window, so a long native turn never
-   * depends on Main status frames, and stops when the endpoint closes, the lease is rebound, or Main refuses it. */
-  let renewal: AbortController | undefined
-  const renewWhileBound = (lease: NonNullable<typeof bound>) => {
-    renewal?.abort()
-    renewal = undefined
-    if (!lease.relay.refresh) return
-    const owner = new AbortController()
-    renewal = owner
-    void renewOwnedLeases({ signal: AbortSignal.any([owner.signal, input.signal]),
-      leases: [{ name: 'Worker MCP route', renewWithinMs: WORKER_MCP_LEASE_RENEWAL_WINDOW_MS,
-        remainingMs: () => bound === lease ? Date.parse(lease.expiresAt) - Date.now() : NaN,
-        renew: async () => { await refreshLease() } }],
-      onFailure: error => {
-        owner.abort()
-        void reportRenewalFailure(lease, error, owner)
-      },
-    })
-  }
-  /** The route keeps its expiry but records why renewal stopped, so the launcher reports the real cause. */
-  const reportRenewalFailure = (lease: NonNullable<typeof bound>, error: Error, owner: AbortController) => {
-    const cause = leaseFailureCause(error)
-    log.error({ operation: 'renewal stopped', launcher: input.launcher, agentId: lease.relay.environment.agentId,
-      expiresAt: lease.expiresAt, cause }, 'Worker MCP route renewal stopped')
-    const task = updates.then(async () => {
-      if (closing || bound !== lease || renewal !== owner) return
-      const token = readProductEnvironment(lease.relay.environment.variables, 'MCP_TOKEN')!
-      unregister = await registerAppRoute(token, endpoint, lease.expiresAt, input.launcher, cause)
-    }).catch(failure => logFailure('report renewal failure', failure))
-    updates = task
     return task
   }
   return { endpoint, bindRelay, refreshLease, close }

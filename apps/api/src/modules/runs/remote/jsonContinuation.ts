@@ -2,7 +2,6 @@ import { createHash } from 'node:crypto'
 import { z } from 'zod'
 import { DEVICE_JSON_CONTINUATION_BYTES, DEVICE_JSON_CONTINUATION_LIMIT, DeviceJsonContinuationSchema,
   type DeviceJsonContinuation, type DeviceJsonContinuationRequest } from '@foreman-code/contracts/device-application'
-import { DomainError } from '../../errors.js'
 
 const digest = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex')
 type ContinuationOptions = { maxBytes?: number }
@@ -21,18 +20,8 @@ export function pageJsonContinuationBytes(bytes: Uint8Array,
   request?: DeviceJsonContinuationRequest, options: ContinuationOptions = {}): DeviceJsonContinuation {
   const contentDigest = digest(bytes)
   const offset = request?.offset ?? 0
-  const maxBytes = options.maxBytes ?? DEVICE_JSON_CONTINUATION_LIMIT
-  if (bytes.byteLength > maxBytes) {
-    throw new DomainError('payload-too-large', 'JSON continuation exceeds its size limit.', 413,
-      { byteSize: bytes.byteLength, maxBytes })
-  }
-  if (!Number.isSafeInteger(offset) || offset < 0 || offset >= bytes.byteLength) {
-    throw new DomainError('conflict', 'JSON continuation offset is outside the reply.', 409,
-      { offset, byteSize: bytes.byteLength })
-  }
-  if (request && request.digest !== contentDigest) {
-    throw new DomainError('conflict', 'JSON continuation changed.', 409, { reason: 'digest_changed' })
-  }
+  if (bytes.byteLength > (options.maxBytes ?? DEVICE_JSON_CONTINUATION_LIMIT) || offset >= bytes.byteLength
+    || request && request.digest !== contentDigest) throw new Error('JSON continuation changed or exceeds its limit')
   return continuationSchema(options).parse({ digest: contentDigest, byteSize: bytes.byteLength,
     offset, data: Buffer.from(bytes.subarray(offset, offset + DEVICE_JSON_CONTINUATION_BYTES)).toString('base64') })
 }

@@ -12,30 +12,14 @@ import type { SourceReclamationResult } from './reclaimSourceReservation.js'
 import { PostgresSourceReservations, type SourceReservation } from './reservations.js'
 import { localWorkflowSourceClosed } from './workflowCleanup.js'
 
-async function hasActiveAdmission(sql: GraphSqlClient, operationId: string): Promise<boolean> {
+async function admissionInactive(sql: GraphSqlClient, operationId: string): Promise<boolean> {
   const active = await sql.query(`select 1 from job_executions e where e.operation_id=$1
       and (e.record#>>'{process,phase}' is distinct from 'terminal'
         or e.record#>>'{process,processStopped}' is distinct from 'true'
         or e.record->>'publication' not in ('complete','failed'))
     union all select 1 from job_admission_queue q where q.operation_id=$1
       and q.record->>'state' in ('waiting','blocked','claimed')`, [operationId])
-  return Boolean(active.rowCount)
-}
-
-async function admissionRemainsClosed(sql: GraphSqlClient, operationId: string): Promise<boolean> {
-  if (await hasActiveAdmission(sql, operationId)) return false
-  // The fence already checked ownership. Cleanup callbacks may run while the Run owner waits for them.
-  const activeRuns = await sql.query(`with preparations as (
-      select i.run_id from execution_dispatch_intents i where i.operation_id=$1
-      union select w.run_id from workflow_job_preparations w where w.preparation->>'operationId'=$1
-    ) select r.id from preparations p join runs r on r.id=p.run_id
-      where r.execution_state not in ('completed','interrupted') and r.stop_requested_at is null
-        and not exists(select 1 from run_cleanup_intents c where c.run_id=r.id and c.pending)`, [operationId])
-  return activeRuns.rowCount === 0
-}
-
-async function admissionInactive(sql: GraphSqlClient, operationId: string): Promise<boolean> {
-  if (await hasActiveAdmission(sql, operationId)) return false
+  if (active.rowCount) return false
   const reconciliation = (await sql.query<{ owner: unknown; principal_id: string; command_id: string;
     queue_ticket_id: string | null }>(`select owner,principal_id,command_id,queue_ticket_id
       from source_preparation_reconciliations where operation_id=$1 and status<>'closed'`, [operationId])).rows[0]
@@ -85,29 +69,8 @@ async function admissionInactive(sql: GraphSqlClient, operationId: string): Prom
 }
 
 export class MaterializationReservationCleanup {
-  private reconciliation: Promise<number> | undefined
   constructor(private readonly pool: pg.Pool,
     private readonly reclaim: (grant: SourceReservationReclamation) => Promise<SourceReclamationResult>) {}
-
-  startReconciliation(report: (error: unknown) => void): void {
-    if (this.reconciliation) return
-    this.reconciliation = this.reconcile(report).catch(error => {
-      report(error)
-      return 0
-    }).finally(() => { this.reconciliation = undefined })
-  }
-
-  async drain(): Promise<void> {
-    await this.reconciliation
-  }
-
-  private async defer(reservationId: string, failures: number): Promise<void> {
-    const delayMs = failures === 0 ? 0 : Math.min(900_000, 30_000 * 2 ** Math.min(5, failures - 1))
-    await this.pool.query(`update source_storage_reservations
-      set record=jsonb_set(record,'{cleanupRetry}',$2::jsonb)
-      where reservation_id=$1 and state in ('preparing','owned','uncertain')`,
-    [reservationId, JSON.stringify({ failures, nextAttemptAt: new Date(Date.now() + delayMs).toISOString() })])
-  }
 
   private async transaction<T>(work: (sql: pg.PoolClient) => Promise<T>): Promise<T> {
     return withTransaction(this.pool, work)
@@ -122,7 +85,7 @@ export class MaterializationReservationCleanup {
     const grant = SourceReservationReclamationSchema.parse(row.record.reclamation)
     if (grant.reclamationId !== reclamationId || grant.reservationId !== reservationId
       || row.record.ownerId !== grant.operationId || row.record.scopeId !== grant.scopeId
-      || Date.parse(grant.expiresAt) <= Date.now() || !await admissionRemainsClosed(sql, grant.operationId)) {
+      || Date.parse(grant.expiresAt) <= Date.now() || !await admissionInactive(sql, grant.operationId)) {
       throw new DomainError('SOURCE_RECLAMATION_UNCONFIRMED', 'The original source cleanup no longer has authority.', 409)
     }
     for (const root of grant.roots) {
@@ -195,20 +158,13 @@ export class MaterializationReservationCleanup {
   }
 
   async reconcile(report?: (error: unknown) => void): Promise<number> {
-    const candidates = await this.pool.query<{ reservation_id: string; retry: SourceReservation['cleanupRetry'] }>(
-      `select reservation_id,record->'cleanupRetry' as retry from source_storage_reservations
-      where owner_kind='materialization' and state in ('preparing','owned','uncertain')
-        and (record#>>'{cleanupRetry,nextAttemptAt}' is null or record#>>'{cleanupRetry,nextAttemptAt}' <= $1)
-      order by coalesce(record#>>'{cleanupRetry,nextAttemptAt}',''),reservation_id limit 10`,
-      [new Date().toISOString()])
+    const candidates = await this.pool.query<{ reservation_id: string }>(`select reservation_id
+      from source_storage_reservations where owner_kind='materialization' and state in ('preparing','owned','uncertain')`)
     let reconciled = 0
     for (const candidate of candidates.rows) {
       try {
         const grant = await this.fence(candidate.reservation_id)
-        if (!grant) {
-          await this.defer(candidate.reservation_id, candidate.retry?.failures ?? 0)
-          continue
-        }
+        if (!grant) continue
         const result = await this.reclaim(grant)
         await this.transaction(async sql => {
           await sql.query('select pg_advisory_xact_lock(hashtext($1))', [`source-reconcile:${grant.operationId}`])
@@ -216,7 +172,6 @@ export class MaterializationReservationCleanup {
           await this.authorize(sql, grant.reservationId, grant.reclamationId)
           const reservation = (await sql.query<{ record: SourceReservation }>(
             'select record from source_storage_reservations where reservation_id=$1 for update', [grant.reservationId])).rows[0]!.record
-          delete reservation.cleanupRetry
           const original = grant.owner
           if (original) {
             const closure = result.closures.find(value => value.executionId === original.attempt.executionId
@@ -233,9 +188,7 @@ export class MaterializationReservationCleanup {
           }
           await sql.query(`update source_execution_materializations set state='closed',
             worktree_cleanup=coalesce($2::jsonb,worktree_cleanup) where operation_id=$1`,
-          [grant.operationId, result.retained?.worktree ? JSON.stringify({ ...result.retained.worktree,
-            ...(result.retained.worktree.state === 'retained'
-              ? { nextAttemptAt: new Date(Date.now() + 300_000).toISOString() } : {}) }) : null])
+          [grant.operationId, result.retained?.worktree ? JSON.stringify(result.retained.worktree) : null])
           await sql.query('update job_computer_selections set released_at=clock_timestamp() where operation_id=$1 and released_at is null',
             [grant.operationId])
           const pending = (await sql.query<{ reconciliation_id: string; owner: unknown }>(`select reconciliation_id,owner
@@ -257,7 +210,6 @@ export class MaterializationReservationCleanup {
         })
         reconciled++
       } catch (error) {
-        await this.defer(candidate.reservation_id, (candidate.retry?.failures ?? 0) + 1)
         if (!report) throw error
         report(error)
       }

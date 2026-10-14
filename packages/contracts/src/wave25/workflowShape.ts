@@ -6,7 +6,6 @@ import { SavedNodePlacementSchema } from '../nodePlacement.js'
 import { WorkflowArtifactInputsV1Schema, WorkflowArtifactOutputsV1Schema } from '../workflowArtifactDeclarations.js'
 import { GraphqlToolOverrideSchema } from '../graphqlMcpTools.js'
 import { ChoiceOutcomeSchema, ChoiceTargetSchema, WorkflowChoiceSchema } from './choice.js'
-import { NodeSkillOverrideSchema, OutputSchemaSchema } from './outputContract.js'
 export { ChoiceOutcomeSchema, ChoiceTargetSchema, WorkflowChoiceSchema } from './choice.js'
 export type { WorkflowChoice } from './choice.js'
 
@@ -85,6 +84,8 @@ export type WorkflowExecutionPolicy = z.infer<typeof WorkflowExecutionPolicySche
  * graph and stop with the Run; workflow schedules, which start Runs, are separate. */
 export const AGENT_INTERVAL_MIN_SECONDS = 10
 export const AGENT_INTERVAL_MAX_SECONDS = 24 * 60 * 60
+/** Checks across all Agents of one Run; the bound keeps the Run's history readable. */
+export const AGENT_INTERVAL_MAX_CHECKS_PER_RUN = 1000
 export const AGENT_INTERVAL_PROMPT_MAX_LENGTH = 4000
 const AgentIntervalSchema = z.object({
   everySeconds: z.number().int().min(AGENT_INTERVAL_MIN_SECONDS).max(AGENT_INTERVAL_MAX_SECONDS),
@@ -107,10 +108,6 @@ const CurrentAgentWorkflowNodeFields = {
   graphqlTools: GraphqlToolOverrideSchema.optional(),
   artifactOutputs: WorkflowArtifactOutputsV1Schema.optional(),
   interval: AgentIntervalSchema.optional(),
-  /** Enforced deliverable schema; absent applies the default non-empty deliverable rule. */
-  outputSchema: OutputSchemaSchema.optional(),
-  /** Adds or removes skills from this Agent's assigned skills for this node only. */
-  skills: NodeSkillOverrideSchema.optional(),
 }
 export const CurrentAgentWorkflowNodeSchema = z.object(CurrentAgentWorkflowNodeFields).strict().superRefine((node, context) => {
   if (!node.name && !node.label) context.addIssue({ code: 'custom', path: ['name'], message: 'a workflow node requires name or label' })
