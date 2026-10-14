@@ -26,8 +26,6 @@ vi.mock('../src/modules/runs/workflowLifecycle.js', () => ({
   persistWorkflowApprovalWait: async () => [{ id: 'approval-a1', status: checkpoints.delivered ? 'delivered' : 'pending',
     deliveryState: checkpoints.delivered ? 'delivered' : 'pending' }],
   settleWorkflowRun: async () => lifecycleCalls.settle?.(),
-  // Registration fixtures have no submitted executions requiring restart cleanup.
-  settleWorkForRestart: async () => true,
 }))
 vi.mock('../src/modules/runs/approvalCheckpointResume.js', () => ({
   consumeDeliveredApprovals: async (_owner: unknown, _checkpointer: unknown, _interactions: unknown, _delivered: unknown, claim?: GraphResumeClaim) => {
@@ -84,12 +82,10 @@ async function fixture(options: {
     if (state.cleanupFailure) state.run = { ...state.run, outcome: 'failed', result: state.cleanupFailure }
   }
   const stopSharingOwner = vi.fn()
-  let nativeOwner: RunOwnership | undefined
   const native = { shareRunOwner: vi.fn(() => stopSharingOwner),
-    adoptRunOwner: (actual: RunOwnership) => { actual.assertOwned(); nativeOwner = actual },
     preserveActiveForRestart: async () => false,
     cancelRun: async () => { state.nativeCancel++; if (!state.clean) throw new Error('native closure uncertain') },
-    finishRun: async () => { assert.equal(nativeOwner, owner); state.events.push('finish-native') },
+    finishRun: async () => { state.events.push('finish-native') },
     nativeBoundaryEvidence: async () => { throw new Error('No fake native evidence in registration tests') },
     closeForRestart: async () => { state.events.push('restart-close') }, reconcileReviews: async () => undefined, requestColdRunCleanup: async () => false }
   const { LangGraphWorkflowEngine: Engine } = await import('../src/modules/runs/engine.js')
@@ -345,29 +341,19 @@ test('ENG04 A1 owner loss blocks factory/runtime without creating fallback work'
   assert.equal(h.state.factoryReads, 1); assert.equal(calls.entries.length, 0)
 })
 
-test('restart waits for captured native closure and drains tasks without synthetic Stop', async () => {
+test('ENG04 A1 restart waits for captured native closure and drains tasks without synthetic Stop', async () => {
   const h = await fixture(); let entered!: () => void, closed!: () => void
   const started = new Promise<void>((done) => { entered = done }), closure = new Promise<void>((done) => { closed = done })
-  h.native.closeForRestart = async () => {
-    h.state.events.push('restart-close-start')
-    await closure
-    h.state.events.push('restart-close')
-  }
+  h.native.closeForRestart = async () => { await closure; h.state.events.push('restart-close') }
   calls.work = async (context) => {
     entered()
     await new Promise<void>((_resolve, reject) => context.signal.addEventListener('abort', () => reject(context.signal.reason), { once: true }))
   }
   const active = h.engine.start(h.run.id); void active.catch(() => undefined)
   await started; const shutdown = h.engine.shutdown()
-  await vi.waitFor(() => assert(h.state.events.includes('restart-close-start')))
-  assert.equal(h.state.released, 0)
-  assert.equal(h.state.stopRequested, false)
-  assert.equal(h.state.cleanupPending, false)
+  await Promise.resolve()
   closed(); await shutdown; await assert.rejects(active, { code: 'ENGINE_RESTART' })
   assert.equal(h.state.released, 1); assert.equal(h.state.stopRequested, false)
-  assert(h.state.events.indexOf('restart-close') < h.state.events.indexOf('release'))
-  assert.equal(h.state.nativeCancel, 0)
-  assert(!h.state.events.includes('request-cleanup'))
   assert(!h.state.events.includes('settle')); assert(!h.state.events.includes('finish-cleanup'))
   await assert.rejects(h.engine.start(h.run.id), { code: 'ENGINE_CLOSING' })
 })

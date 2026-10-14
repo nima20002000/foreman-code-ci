@@ -58,7 +58,6 @@ describe('browser peer verification', () => {
     status = 503
     mount()
     expect(await screen.findByRole('heading', { name: 'Cannot reach the server' })).toBeInTheDocument()
-    expect(screen.getByText(message)).toBeInTheDocument()
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
     status = 200
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }))

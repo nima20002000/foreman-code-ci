@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto'
-import { withClientTransaction } from '../../infrastructure/transaction.js'
 import { stat } from 'node:fs/promises'
 import type pg from 'pg'
 import { RETIRED_OPENCODE_MESSAGE } from '@foreman-code/contracts'
@@ -15,7 +14,6 @@ import { NativeMcpNotSubmittedError } from './nativeMcpDelivery.js'
 import { qualificationError } from './qualificationErrors.js'
 import { assertNoUnresolvedPluginWrites, lockNativeConfigurationFile } from './nativeSettingsWrites.js'
 import { MCP_INSPECTION_TIMEOUT_MS } from './mcpDetection.js'
-import { ignoreError } from '../diagnostics/ignoredError.js'
 
 type Harness = 'codex'
 type RecordedMcpHarness = Harness | 'opencode'
@@ -171,14 +169,14 @@ export class HarnessMcpSettingsService {
       targetKey: `harness-mcp:${input.harness}`, payload: mcpPlanPayload(input, managedPreset),
       perform: async (client) => this.work(async (signal) => {
         const snapshot = await this.adapters[input.harness].read(signal)
-        if (input.expectedRevision !== undefined && snapshot.revision !== input.expectedRevision) throw new DomainError('REVISION_CONFLICT', 'Native configuration changed. Refresh the list before reviewing this change.', 409)
+        if (snapshot.revision !== input.expectedRevision) throw new DomainError('REVISION_CONFLICT', 'Native configuration changed. Refresh the list before reviewing this change.', 409)
         if (managedPreset) assertManagedChange(snapshot, input.change, managedPreset, this.operatorEndpoint!)
         else assertChange(snapshot, input.change)
         const pending = await client.query("select 1 from harness_mcp_change_plans where harness=$1 and status in ('pending','submitting','uncertain') and (status <> 'pending' or expires_at>now()) limit 100", [input.harness])
         if (pending.rowCount && pending.rowCount >= 100) throw new DomainError('MCP_PLAN_LIMIT', 'Resolve existing MCP changes before adding more.', 409)
         const inserted = await client.query<Row>(`insert into harness_mcp_change_plans(id,harness,revision,change,requested_by,status,expires_at,managed_preset)
           values($1,$2,$3,$4::jsonb,$5,'pending',now()+interval '10 minutes',$6) returning *`,
-        [randomUUID(), input.harness, snapshot.revision, JSON.stringify(input.change), principal.id, managedPreset ?? null])
+        [randomUUID(), input.harness, input.expectedRevision, JSON.stringify(input.change), principal.id, managedPreset ?? null])
         return projection(inserted.rows[0]!)
       }),
     }) } catch (error) { throw qualificationError(error) }
@@ -250,8 +248,8 @@ export class HarnessMcpSettingsService {
         if (snapshot) unlockFile = await lockNativeConfigurationFile(client, snapshot.file)
         const managed = approve ? this.managed(selected) : undefined
         const expected = snapshot ? expectedMcpUserFingerprint(snapshot, selected.change, managed) : null
-        const plan = selected
-        await withClientTransaction(client, async () => {
+        await client.query('begin')
+        try {
           await this.liveWriter(client, principal)
           const updated = await client.query<Row>(`update harness_mcp_change_plans set status=$2,decided_by=$3,error=null,
               native_user_after_hash=$4,native_file=$5
@@ -261,48 +259,46 @@ export class HarnessMcpSettingsService {
           marked = approve
           await client.query(`insert into management_audit(principal_id,source,action,target_key,outcome,details)
             values($1,$4,'harness.mcp.review',$2,'succeeded',$3::jsonb)`,
-            [principal.id, `harness-mcp:${plan.harness}`, JSON.stringify({ planId: id, decision: approve ? 'approve' : 'reject' }), source])
-        })
+            [principal.id, `harness-mcp:${selected.harness}`, JSON.stringify({ planId: id, decision: approve ? 'approve' : 'reject' }), source])
+          await client.query('commit')
+        } catch (error) { await client.query('rollback').catch(() => undefined); throw error }
         if (!approve) return this.get(principal, id)
         signal.throwIfAborted()
         adapterEntered = true
         await this.adapters[selected.harness].apply(snapshot!, selected.change, signal, managed)
-        await withClientTransaction(client, async () => {
+        await client.query('begin')
+        try {
           await client.query("update harness_mcp_change_plans set status='applied',error=null where id=$1 and status='submitting'", [id])
           await client.query(`insert into management_audit(principal_id,source,action,target_key,outcome,details)
-            values($1,$4,'harness.mcp.apply',$2,'succeeded',$3::jsonb)`, [principal.id, `harness-mcp:${plan.harness}`, JSON.stringify({ planId: id }), source])
-        })
+            values($1,$4,'harness.mcp.apply',$2,'succeeded',$3::jsonb)`, [principal.id, `harness-mcp:${selected.harness}`, JSON.stringify({ planId: id }), source])
+          await client.query('commit')
+        } catch (error) { await client.query('rollback').catch(() => undefined); throw error }
         this.notifyChanged()
         return this.get(principal, id)
       } catch (error) {
         if (marked && selected) {
           const notSubmitted = !adapterEntered || error instanceof NativeMcpNotSubmittedError
-          const plan = selected
           const status = notSubmitted ? 'pending' : 'uncertain'
           const message = notSubmitted
             ? 'The native write was not attempted. Retry this same review, or reject it and prepare a new change.'
             : 'The native write may have completed. Use Reconcile; this write will not be repeated.'
-          await withClientTransaction(client, async () => {
+          await client.query('begin')
+          try {
             const updated = await client.query("update harness_mcp_change_plans set status=$2,error=$3 where id=$1 and status='submitting'", [id, status, message])
             if (updated.rowCount) await client.query(`insert into management_audit(principal_id,source,action,target_key,outcome,details)
               values($1,$4,'harness.mcp.delivery_recorded',$2,'succeeded',$3::jsonb)`,
-              [principal.id, `harness-mcp:${plan.harness}`, JSON.stringify({ planId: id, delivery: notSubmitted ? 'not_submitted' : 'uncertain' }), source])
-          })
+              [principal.id, `harness-mcp:${selected.harness}`, JSON.stringify({ planId: id, delivery: notSubmitted ? 'not_submitted' : 'uncertain' }), source])
+            await client.query('commit')
+          } catch (persistenceError) { await client.query('rollback').catch(() => undefined); throw persistenceError }
           this.notifyChanged()
           return this.get(principal, id)
         }
         throw qualificationError(error)
       } finally {
-        try { await unlockFile?.() } catch (error) {
-          destroyed = true
-          ignoreError('db', 'release native configuration file lock', { planId: id })(error)
-        }
+        try { await unlockFile?.() } catch { destroyed = true }
         if (locked) {
           try { await client.query("select pg_advisory_unlock(hashtext('graphql:harness-mcp-settings'))") }
-          catch (error) {
-            destroyed = true
-            ignoreError('db', 'release harness MCP settings lock', { planId: id })(error)
-          }
+          catch { destroyed = true }
         }
         client.release(destroyed)
       }
@@ -333,7 +329,7 @@ export class HarnessMcpSettingsService {
         await this.closeProcesses()
         signal.throwIfAborted()
         const snapshot = await this.adapters[row.harness].read(signal)
-        if (input.expectedRevision !== undefined && snapshot.revision !== input.expectedRevision) throw new DomainError('REVISION_CONFLICT', 'Native configuration changed. Refresh, inspect it, and reconcile again.', 409)
+        if (snapshot.revision !== input.expectedRevision) throw new DomainError('REVISION_CONFLICT', 'Native configuration changed. Refresh, inspect it, and reconcile again.', 409)
         const matchesExpected = row.native_file === snapshot.file
           && row.native_user_after_hash !== null && row.native_user_after_hash === mcpUserFingerprint(snapshot)
         if (!matchesExpected && !input.acceptObservedState) {

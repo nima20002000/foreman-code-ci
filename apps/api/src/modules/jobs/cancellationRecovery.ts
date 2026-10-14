@@ -1,18 +1,18 @@
 import { JobRuntimeMeasurementRecordSchema } from '@foreman-code/contracts/job-verification-runtime'
-import { withTransaction } from '../../infrastructure/transaction.js'
 import { createHash, createPublicKey, randomUUID, sign, verify } from 'node:crypto'
 import { isDeepStrictEqual as same } from 'node:util'
 import type pg from 'pg'
+import type { FastifyRequest } from 'fastify'
 import { DeviceRegistrationSchema } from '@foreman-code/contracts/device-identity'
 import { publicKeyFingerprint } from '@foreman-code/contracts/device-identity-node'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { JobCancellationProposalInputSchema, JobCancellationRecoveryGetSchema, JobCancellationRecoveryReadSchema,
-  JobCancellationRecoveryApproveSchema,
   JobCancellationGrantSchema, SignedJobCancellationGrantSchema, JobCancellationRecoveryApplySchema,
   JOB_CANCELLATION_GRANT_TTL_MS, jobCancellationGrantMessage, jobCancellationClosureMessage,
   type SignedJobCancellationClosure } from '@foreman-code/contracts/job-cancellation-recovery'
 import { RemoteJobDispatchIntentSchema } from '@foreman-code/contracts/remote-job-execution'
 import type { JobExecutionRecord } from '@foreman-code/contracts/job-verification'
+import { requireLocalHuman, requirePrincipal } from '../access/http.js'
 import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
 import { requireAuthorization } from '../access/policy.js'
 import { beforeGraphCommit, type GraphTransactionSql } from '../run-graph/connection.js'
@@ -105,7 +105,9 @@ export class PostgresJobCancellationRecovery {
   }
   async get(principal: ManagementPrincipal, raw: unknown) {
     const input = JobCancellationRecoveryGetSchema.parse(raw)
-    return withTransaction(this.pool, async (sql) => {
+    const sql = await this.pool.connect()
+    try {
+      await sql.query('begin')
       await this.authorize(sql, principal, input.workspaceId)
       const proposal = await this.proposal(sql, input.workspaceId, input.executionId, input.recoveryId)
       if (proposal.principalId !== principal.id) deny('This cleanup belongs to another caller.')
@@ -122,15 +124,24 @@ export class PostgresJobCancellationRecovery {
       } else if (proposal.grant) {
         proposal.state = Date.parse(proposal.grant.grant.expiresAt) > Date.now() ? 'approved' : 'expired'
       }
+      await sql.query('commit')
       return proposal
-    })
+    } catch (error) { await sql.query('rollback'); throw error } finally { sql.release() }
   }
-  async approve(principal: ManagementPrincipal, source: 'http' | 'mcp', raw: unknown) {
-    const { workspaceId, executionId, recoveryId, commandId } = JobCancellationRecoveryApproveSchema.parse(raw)
-    requireAuthorization(principal, 'jobs:cancel', { workspaceId })
-    return (await this.commands.execute({ principal, source, operation: APPROVE, commandId,
+  async approveBrowser(request: FastifyRequest, workspaceId: string, executionId: string, recoveryId: string,
+    commandId: string) {
+    requireLocalHuman(request)
+    const principal = requirePrincipal(request)
+    return (await this.commands.execute({ principal, source: 'http', operation: APPROVE, commandId,
       targetKey: recoveryId, payload: { workspaceId, executionId, recoveryId },
-      authorize: async sql => { await this.authorize(sql, principal, workspaceId) },
+      authorize: async sql => {
+        await this.authorize(sql, principal, workspaceId)
+        const owner = (await sql.query<{ principal_id: string }>(
+          'select principal_id from local_human_principal where singleton=true for share')).rows[0]
+        if (!owner || owner.principal_id !== principal.id) {
+          deny('Only the local human can approve cleanup.')
+        }
+      },
       perform: async sql => {
         await sql.query('select pg_advisory_xact_lock(hashtext($1))', [`job-cleanup:${recoveryId}`])
         const prior = await sql.query('select 1 from management_command_receipts where operation=$1 and target_key=$2',
@@ -175,7 +186,7 @@ export class PostgresJobCancellationRecovery {
     if (proposal.principalId !== principal.id) deny('The approved cleanup belongs to another caller.')
     const approved = (await sql.query<{ result: unknown }>(`select result from management_command_receipts
       where operation=$1 and target_key=$2 for share`, [APPROVE, recoveryId])).rows
-    if (approved.length !== 1) deny('A fresh cleanup authorization is required for this cleanup.')
+    if (approved.length !== 1) deny('A fresh human approval is required for this cleanup.')
     const authorization = SignedJobCancellationGrantSchema.parse(approved[0]!.result)
     const grant = authorization.grant
     if (grant.id !== recoveryId || grant.principalId !== principal.id || Date.parse(grant.expiresAt) <= Date.now()) {

@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { IdSchema, TimestampSchema } from '../schemaPrimitives.js'
 
-const ManagementAudienceSchema = z.enum(["operator", "worker", "user"]);
+export const ManagementAudienceSchema = z.enum(["operator", "worker", "user"]);
 export type ManagementAudience = z.infer<typeof ManagementAudienceSchema>;
 
 export const ManagementActionSchema = z.enum([
@@ -9,7 +9,6 @@ export const ManagementActionSchema = z.enum([
   'bug_reports:report', 'bug_reports:read', 'bug_reports:update',
   "sources:read", "sources:approve", "sources:reconcile", "source_roots:read", "source_roots:bind",
   "job_definitions:read", "job_definitions:write", "jobs:start", "jobs:read", "jobs:cancel", "job_logs:read", "job_artifacts:read",
-  'ci', 'jobs:prioritize',
   "agents:create",
   "agents:update",
   "agents:archive",
@@ -37,6 +36,7 @@ export const ManagementActionSchema = z.enum([
   "harnesses:read",
   "harnesses:update",
   "devices:read",
+  "devices:provision",
   "devices:metrics:read",
   "settings:read",
   "settings:update",
@@ -64,10 +64,13 @@ export const ManagementActionSchema = z.enum([
 ]);
 export type ManagementAction = z.infer<typeof ManagementActionSchema>;
 
-/** The local owner's manage preset includes every supported action. */
-export const DEFAULT_MANAGEMENT_ACTIONS = ManagementActionSchema.options;
+/** Host telemetry and provisioning require separately selected grants, including for broad presets. */
+export const DEFAULT_MANAGEMENT_ACTIONS = ManagementActionSchema.options.filter(
+  (action) => action !== "devices:metrics:read" && action !== "devices:provision"
+    && action !== 'provider_accounts:read' && action !== 'provider_accounts:manage',
+);
 
-const ManagementScopeSchema = z
+export const ManagementScopeSchema = z
   .object({
     workspaceIds: z.array(IdSchema).max(500).optional(),
     workflowIds: z.array(IdSchema).max(500).optional(),
@@ -88,9 +91,6 @@ export const ManagementGrantSchema = z
   .strict();
 export type ManagementGrant = z.infer<typeof ManagementGrantSchema>;
 
-/** Timestamp representation for credentials whose lifetime ends only on revocation. */
-export const NON_EXPIRING_CREDENTIAL_TIMESTAMP = '9999-12-31T23:59:59.999Z'
-
 export const ManagementPrincipalSchema = z
   .object({
     id: IdSchema,
@@ -99,7 +99,7 @@ export const ManagementPrincipalSchema = z
     /** Immutable backend-issued logical Agent subject for worker/App principals. */
     agentId: IdSchema.optional(),
     grants: z.array(ManagementGrantSchema),
-    expiresAt: TimestampSchema.describe('Credential expiry; 9999-12-31T23:59:59.999Z means no expiry.'),
+    expiresAt: TimestampSchema,
     revokedAt: TimestampSchema.nullable(),
   })
   .strict()
@@ -112,3 +112,4 @@ export const ManagementPrincipalSchema = z
     }
   });
 export type ManagementPrincipal = z.infer<typeof ManagementPrincipalSchema>;
+

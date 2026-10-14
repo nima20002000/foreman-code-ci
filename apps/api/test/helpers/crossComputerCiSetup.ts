@@ -120,6 +120,7 @@ async function saveGraph(client: Client, input: {
   graph: WorkflowDefinitionV3
   revision: number
   versionId: string | null
+  locationRevision: number
   configurations: Record<string, string>
   agents?: Agent[]
 }): Promise<SavedCiWorkflow> {
@@ -128,7 +129,7 @@ async function saveGraph(client: Client, input: {
   await callCiTool(client, 'workflow_edit_v3', {
     ...scope, action: 'stage_edits', commandId: randomUUID(), draftId, executionSemanticsVersion: 3,
     expectedRevision: input.revision, expectedWorkflowVersionId: input.versionId,
-    expectedAgentConfigurationVersionIds: input.configurations,
+    expectedLocationRevision: input.locationRevision, expectedAgentConfigurationVersionIds: input.configurations,
     graph: input.graph,
     ...(input.agents ? { stagedAgents: input.agents.map(agent => ({ agent, baseRevision: null })) } : {}),
   })
@@ -172,7 +173,7 @@ export async function prepareCiWorkflow(client: Client, workspace: ScenarioWorks
   const built = buildCrossComputerCiGraph(created.workflow, assignments)
   const first = await saveGraph(client, {
     graph: built.graph, agents: built.agents, revision: created.revision, versionId: null,
-    configurations: {},
+    locationRevision: managed.locationRevision, configurations: {},
   })
   for (const assignment of assignments) {
     const choices = NodePlacementChoicesResultSchema.parse(await callCiTool(client, 'workflow_node_placement_choices', {
@@ -194,7 +195,7 @@ export async function prepareCiWorkflow(client: Client, workspace: ScenarioWorks
   const { graph } = buildCrossComputerCiGraph(first.version.definition, assignments)
   const saved = await saveGraph(client, {
     graph, revision: first.revision, versionId: first.version.id,
-    configurations: first.version.agentConfigurationVersionIds,
+    locationRevision: managed.locationRevision, configurations: first.version.agentConfigurationVersionIds,
   })
   const savedPlacements = saved.version.definition.nodes.map(node => node.kind === 'job' ? null : node.placement)
   expect(savedPlacements).toEqual(assignments.map(assignment => assignment.placement))

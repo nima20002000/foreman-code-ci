@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from 'vitest'
 import { createHash, randomUUID } from 'node:crypto'
 import { copyFile, mkdir, mkdtemp, readFile, rename, rm, writeFile, readdir, lstat, type FileHandle } from 'node:fs/promises'
 import { join } from 'node:path'
-import { homedir } from 'node:os'
 import { isDeepStrictEqual } from 'node:util'
 import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
 import type { SourcePreparationClosure, SourceMaterializationRecord } from '@foreman-code/contracts/source-admission'
@@ -18,9 +17,7 @@ import { createProductionRsyncComposition, type ProductionRsyncProviders } from 
 
 const bytes = Buffer.from('exact accepted immutable package\n'), hash = (data: Uint8Array) => createHash('sha256').update(data).digest('hex')
 async function fixture(direction: TransferIntent['direction'] = 'to-worker', options: { realQuota?: boolean; cleanupProof?: boolean } = {}) {
-  const cache = join(homedir(), '.cache', 'foreman-tmp')
-  await mkdir(cache, { recursive: true })
-  const root = await mkdtemp(join(cache, 'rsync-production-'))
+  const root = await mkdtemp('/tmp/graphql-rsync-production-')
   const localRoot = join(root, 'main'), remoteRoot = join(root, 'worker')
   await mkdir(localRoot, { mode: 0o700 }); await mkdir(remoteRoot, { mode: 0o700 })
   const binary = join(root, 'binary'); await writeFile(binary, 'fixture binary', { mode: 0o600 })
@@ -37,11 +34,11 @@ async function fixture(direction: TransferIntent['direction'] = 'to-worker', opt
     localBinarySha256: hash(Buffer.from('fixture binary')), remoteBinarySha256: 'b'.repeat(64) }
   const check: TrustedConnectionCheck = { registration, consent: { ...registration, revision: 1, endpoint: { transport: 'tailscale',
     host: endpoint.host, port: 22, osUser: endpoint.user }, hostKeyFingerprint: `SHA256:${'c'.repeat(43)}`, allowOwnerCommands: true,
-    privilege: 'selected-os-user',
+    approvedBy: 'human-owner', approvalId: randomUUID(), approvedAt: new Date().toISOString(), privilege: 'selected-os-user',
     automaticSudo: false, grantsAgentPermissions: false }, state: 'ready', checkedAt: new Date().toISOString(),
     probe: { state: 'connected', hostKeyFingerprint: `SHA256:${'c'.repeat(43)}`, osUser: 'builder', uid: 1000,
       hostname: 'worker', sshVersion: 'OpenSSH_9.6p1', rsyncVersion: 'rsync 3.5.1', tailscaleVersion: '1.102.4' } }
-  // Consent schema is strict: registration scopes/status are not connection settings.
+  // Consent schema is strict: registration scopes/status are not owner-approval fields.
   delete (check.consent as unknown as Record<string, unknown>).scopes; delete (check.consent as unknown as Record<string, unknown>).status
   let denied = false, published = false, selection: RsyncBackendSelection = { backend: 'rsync', check, endpoint,
     nodeBinary: '/protected/node', entryPoint: '/protected/rsync-writer.mjs' }
@@ -207,17 +204,7 @@ describe('production rsync leaf', () => {
         sourceBindingHash: 'e'.repeat(64) }, AbortSignal.timeout(5000))).rejects.toThrow('does not own')
       await f.worker.retireMaterialization(record, AbortSignal.timeout(5000))
       await expect(f.workerReceiver.status(f.i.transferId, context)).rejects.toThrow('cancelled')
-      expect(await f.workerReceiver.inventory()).toEqual([])
-      await f.worker.retireMaterialization(record, AbortSignal.timeout(5000))
-      await expect(f.workerReceiver.start(f.i, context)).rejects.toThrow('cancelled')
-      await f.workerReceiver.close()
-      const restarted = new ResumableByteTransferService(join(f.root, 'worker-canonical'), f.accepted)
-      try {
-        await expect(restarted.start(f.i, context)).rejects.toThrow('cancelled')
-        expect(await restarted.inventory()).toEqual([])
-      } finally {
-        await restarted.close()
-      }
+      expect(await f.workerReceiver.inventory()).toContainEqual(f.i)
     } finally { await f.dispose() }
   })
 

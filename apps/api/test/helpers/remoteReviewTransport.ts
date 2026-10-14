@@ -1,6 +1,5 @@
 import { createServer } from 'node:https'
 import { readFile } from 'node:fs/promises'
-import type { Socket } from 'node:net'
 import WebSocket, { WebSocketServer, type RawData } from 'ws'
 import { ExecutionAuthorityRequestSchema, EXECUTION_AUTHORITY_EXTENSION } from '@foreman-code/contracts/execution-authority'
 import type { DeviceApplicationFrame } from '@foreman-code/contracts/device-application'
@@ -17,11 +16,6 @@ export async function createRemoteReviewTransport(input: {
 }) {
   const [cert, key] = await Promise.all([readFile(input.certificateFile), readFile(input.privateKeyFile)])
   const server = createServer({ cert, key })
-  const connections = new Set<Socket>()
-  server.on('connection', socket => {
-    connections.add(socket)
-    socket.once('close', () => connections.delete(socket))
-  })
   const sockets = new Set<WebSocket>()
   const deliveryReads: Array<{ command: ReturnType<typeof RemoteOwnerControlSchema.parse>; phase: string }> = []
   const websocket = new WebSocketServer({ server, perMessageDeflate: false, maxPayload: 16384 })
@@ -124,15 +118,8 @@ export async function createRemoteReviewTransport(input: {
   if (!address || typeof address === 'string') throw new Error('Expected a loopback transport fixture port.')
   return { endpoint: `wss://127.0.0.1:${address.port}/device/connect`, deliveryReads,
     close: async () => {
-      const serverClosed = new Promise<void>((resolve, reject) => {
-        server.close(error => error ? reject(error) : resolve())
-      })
       for (const socket of sockets) socket.terminate()
-      // TLS connections can exist before any WebSocket upgrade or HTTP request.
-      for (const connection of connections) connection.destroy()
-      await Promise.all([
-        serverClosed,
-        new Promise<void>((resolve, reject) => websocket.close(error => error ? reject(error) : resolve())),
-      ])
+      await new Promise<void>((resolve, reject) => websocket.close(error => error ? reject(error) : resolve()))
+      await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()))
     } }
 }

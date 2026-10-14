@@ -20,14 +20,15 @@ function request() {
         edges: graph.edges,
       },
       expectedAgentConfigurationVersionIds: fixture.version.agentConfigurationVersionIds,
+      expectedLocationRevision: 1,
     },
   }
 }
 
-it('accepts initial graph settings and requires configuration references', () => {
+it('accepts initial graph settings and requires configuration and location pins', () => {
   const input = request()
   expect(CurrentWorkflowCreateInputSchema.parse(input)).toEqual(input)
-  for (const pin of ['expectedAgentConfigurationVersionIds'] as const) {
+  for (const pin of ['expectedAgentConfigurationVersionIds', 'expectedLocationRevision'] as const) {
     const save: Record<string, unknown> = { ...input.initialSave }
     delete save[pin]
     expect(CurrentWorkflowCreateInputSchema.safeParse({ ...input, initialSave: save }).success).toBe(false)

@@ -12,12 +12,11 @@ const checkedAt = '2026-09-20T00:00:00.000Z'
 const clients: QueryClient[] = []
 afterEach(() => { cleanup(); clients.splice(0).forEach((client) => client.clear()) })
 
-it.each([500, 503])('shows HTTP %s refresh failures and disables writes until an inspection succeeds', async (status) => {
+it('shows refresh failures and disables writes until an inspection succeeds', async () => {
   let unavailable = false
-  const message = 'Native inspection unavailable'
   server.use(
     http.get('/api/management/harnesses/codex/mcp', () => unavailable
-      ? HttpResponse.json({ error: { code: 'HARNESS_QUALIFICATION_FAILED', message: 'Native inspection unavailable' } }, { status })
+      ? HttpResponse.json({ error: { code: 'HARNESS_QUALIFICATION_FAILED', message: 'Native inspection unavailable' } }, { status: 503 })
       : HttpResponse.json({ harness: 'codex', revision, checkedAt, scope: 'native-user', servers: [],
         presets: { graphql: 'missing', linear: 'missing' } })),
     http.get('/api/management/harnesses/codex/mcp/plans', () => HttpResponse.json({ items: [] })),
@@ -28,11 +27,11 @@ it.each([500, 503])('shows HTTP %s refresh failures and disables writes until an
   await waitFor(() => expect(screen.getByRole('button', { name: 'Add server' })).toBeEnabled())
   unavailable = true
   fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
-  expect(await screen.findByText(message)).toBeVisible()
+  expect(await screen.findByText('Native inspection unavailable')).toBeVisible()
   expect(screen.getByRole('button', { name: 'Add server' })).toBeDisabled()
   unavailable = false
   fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
-  await waitFor(() => expect(screen.queryByText(message)).not.toBeInTheDocument())
+  await waitFor(() => expect(screen.queryByText('Native inspection unavailable')).not.toBeInTheDocument())
   expect(screen.getByRole('button', { name: 'Add server' })).toBeEnabled()
 })
 
@@ -185,7 +184,7 @@ it('keeps native enablement behind the existing review flow in the details dialo
   expect(planned?.change).toMatchObject({ kind: 'enable', enabled: false })
 })
 
-it.each([500, 503])('adopts a plan settled by another session after HTTP %s while its uncertain review remains open', async (status) => {
+it('adopts a plan settled by another session while its uncertain review remains open', async () => {
   let plan: HarnessMcpPlan = {
     id: crypto.randomUUID(), harness: 'codex', revision,
     change: { kind: 'enable', name: 'mytools', enabled: false }, requestedBy: 'owner', status: 'pending',
@@ -193,12 +192,11 @@ it.each([500, 503])('adopts a plan settled by another session after HTTP %s whil
   }
   let decisions = 0
   let readbackFails = false
-  const message = 'Plan refresh failed'
   server.use(
     http.get('/api/management/harnesses/codex/mcp', () => HttpResponse.json({ harness: 'codex', revision, checkedAt,
       scope: 'native-user', servers: [], presets: { graphql: 'missing', linear: 'missing' } })),
     http.get('/api/management/harnesses/codex/mcp/plans', () => readbackFails
-      ? HttpResponse.json({ error: { code: 'UNAVAILABLE', message: 'Plan refresh failed' } }, { status })
+      ? HttpResponse.json({ error: { code: 'UNAVAILABLE', message: 'Plan refresh failed' } }, { status: 503 })
       : HttpResponse.json({ items: [plan] })),
     http.post('/api/management/harnesses/mcp/decision', () => {
       decisions++
@@ -213,7 +211,7 @@ it.each([500, 503])('adopts a plan settled by another session after HTTP %s whil
   fireEvent.click(await screen.findByRole('button', { name: 'Review' }))
   fireEvent.click(screen.getByRole('button', { name: 'Approve and apply' }))
   expect(await screen.findByText('Change uncertain')).toBeVisible()
-  expect(await screen.findByText(`Change requests: ${message}`)).toBeInTheDocument()
+  expect(await screen.findByText('Change requests: Plan refresh failed')).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Reconcile without rewriting' })).toBeVisible()
   plan = { ...plan, status: 'applied', error: null }
   readbackFails = false

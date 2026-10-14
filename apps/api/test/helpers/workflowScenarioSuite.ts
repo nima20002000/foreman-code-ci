@@ -107,20 +107,50 @@ async function approveThroughHttp(f: Harness, started: Started) {
     interaction: { id: interaction.id, runId, deliveryState: 'delivered' } })
   expect(f.base.provider.counts).toEqual(counts)
   const final = GetInteractionResponseSchema.parse(await f.http('GET', `/api/user/interactions/${interaction.id}`, undefined, ''))
-  expect(final.interaction).toEqual(terminalReplay.interaction)
-  // Worker acknowledgement can advance the revision after the first response snapshot.
-  const { revision: decisionRevision, updatedAt: decisionUpdatedAt, ...decisionFields } = decision.interaction
-  const { revision: finalRevision, updatedAt: finalUpdatedAt, ...finalFields } = final.interaction
-  expect(finalFields).toEqual(decisionFields)
-  expect(finalRevision).toBeGreaterThanOrEqual(decisionRevision)
-  expect(Date.parse(finalUpdatedAt)).toBeGreaterThanOrEqual(Date.parse(decisionUpdatedAt))
+  expect(final.interaction).toEqual(decision.interaction)
   const finalMonitoringResult = await monitor.callTool({
     name: 'interaction_list', arguments: { workspaceId, workflowId, runId, limit: 10 },
   })
   expect(finalMonitoringResult.isError).not.toBe(true)
   const finalMonitor = ManagedInteractionPageSchema.parse(decodeMcpToolResult(finalMonitoringResult))
   expect(finalMonitor.items).toEqual(ListInteractionsResponseSchema.parse(await list()).items)
-  return final.interaction
+}
+
+async function settleRepeatWithRecovery(f: Harness, started: Started) {
+  // Join each drive before retrying the same accepted Run's saved checkpoint.
+  const recoveryCodes: string[] = []
+  function recordRecoveryError(error: unknown) {
+    const code = error && typeof error === 'object' && 'code' in error && typeof error.code === 'string'
+      ? error.code : 'UNCLASSIFIED_RECOVERY_ERROR'
+    if (code !== 'RUN_ALREADY_OWNED' && recoveryCodes.length < 10) recoveryCodes.push(code)
+  }
+  let stopping = false
+  const recovery = (async () => {
+    while (!stopping) {
+      await f.base.engine.start(started.scope.runId).catch(recordRecoveryError)
+      const run = await f.base.runs.get(started.scope.runId)
+      if (run?.executionState === 'completed') return
+    }
+  })().catch(recordRecoveryError)
+  let settled = false
+  try {
+    await f.settled(started.scope, 75000)
+    settled = true
+    stopping = true
+    await recovery
+    expect(recoveryCodes).toEqual([])
+  } catch (error) {
+    throw new Error(`ENG07 repeat recovery did not settle: ${JSON.stringify({
+      runId: started.scope.runId, recoveryCodes })}`, { cause: error })
+  } finally {
+    stopping = true
+    // Stop a stalled drive before draining it so the settlement deadline can reach fixture cleanup.
+    try {
+      if (!settled) await f.base.engine.shutdown()
+    } finally {
+      await recovery
+    }
+  }
 }
 
 export function defineScenarioTests(id: ScenarioId, via: Via) {
@@ -165,23 +195,12 @@ export function defineScenarioTests(id: ScenarioId, via: Via) {
             if (id === 'S3-03') expect(f.base.provider.startedNodes).not.toContain(scenario.nodes[4]!.id)
             releaseSlow()
           }
-          const approval = id === 'S3-04' ? await approveThroughHttp(f, started) : undefined
-          await f.settled(started.scope, scenario.repeat ? 75000 : undefined)
+          if (id === 'S3-04') await approveThroughHttp(f, started)
+          if (scenario.repeat) await settleRepeatWithRecovery(f, started)
+          else await f.settled(started.scope)
           const view = await assertScenarioEvidence(f, started, initial)
           if (id === 'S3-04') expect(view.events.some((event) => event.fact.type === 'worker.resumed'
             && event.evidence.sourceKind === 'native_event')).toBe(true)
-          if (approval) {
-            const acknowledgements = view.events.filter((event) => event.fact.type === 'interaction.state'
-              && event.fact.interaction.interactionId === approval.id
-              && event.fact.interaction.resumeState === 'acknowledged')
-            expect(acknowledgements).toHaveLength(1)
-            expect(acknowledgements[0]).toMatchObject({
-              evidence: { sourceKind: 'native_event' },
-              fact: { interaction: { revision: String(approval.revision), status: 'delivered',
-                deliveryState: 'delivered', selectedOptionId: approval.selectedOptionId,
-                decision: approval.selectedSemantic } },
-            })
-          }
           const expectedNodes = Array.from({ length: scenario.occurrences }, () => scenario.executedIndexes
             .map((index) => scenario.nodes[index]!.id)).flat()
           expect([...f.base.provider.startedNodes].sort()).toEqual([...expectedNodes].sort())

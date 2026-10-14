@@ -1,6 +1,6 @@
-import { sleep } from './sleep.mjs'
 import { createPressureSampler, timeoutScale } from './dense-resources.mjs'
 
+const sleep = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds))
 const passed = result => result.code === 0 && result.complete !== false
 
 function validateQueue(items, maxConcurrency) {
@@ -207,13 +207,10 @@ export async function scheduleQueue(items, {
     const recent = [...active.values()].filter(entry => performance.now() - entry.startedAt <= pollIntervalMs * 2)
     const next = eligible.find(entry => fitsPressure(entry.item, pressure, recent, updatedProfiles,
       { cpuTarget, memoryTarget, allowOversize: !active.size, dedicated }))
-    // A shared host spaces starts so each one shows up in the next pressure sample. A dedicated computer ignores CPU
-    // and still reserves every recent start's profiled memory, so it fills free slots without waiting.
-    if (next && (dedicated || performance.now() - lastStartAt >= pollIntervalMs)) {
+    if (next && performance.now() - lastStartAt >= pollIntervalMs) {
       pending = pending.filter(item => item.id !== next.item.id)
       launch(next.item, next.workerIndex, pressure, 1)
       stalledAt = undefined
-      if (dedicated) continue
     } else if (!active.size) {
       stalledAt ??= performance.now()
       if (performance.now() - stalledAt >= stallTimeoutMs) {

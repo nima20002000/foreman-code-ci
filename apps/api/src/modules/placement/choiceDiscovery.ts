@@ -1,5 +1,4 @@
 import type pg from 'pg'
-import { withTransaction } from '../../infrastructure/transaction.js'
 import { AgentConfigurationVersionSchema, withAdvancedDefaults, type AgentConfigurationVersion } from '@foreman-code/contracts'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import type { HostHarnessOverride } from '@foreman-code/contracts/harness-registry'
@@ -43,7 +42,9 @@ export class ProductionPlacementChoiceDiscovery implements PlacementChoiceDiscov
 
   async list(principal: ManagementPrincipal, input: NodePlacementChoicesInput): Promise<NodePlacementChoice[]> {
     const services = this.services()
-    return withTransaction(this.pool, async (sql) => {
+    const sql = await this.pool.connect()
+    try {
+      await sql.query('begin')
       const row = (await sql.query<{ record: unknown }>(
         'select record from agent_configuration_versions where id=$1 and workspace_id=$2',
         [input.agentConfigurationVersionId, input.workspaceId],
@@ -76,8 +77,14 @@ export class ProductionPlacementChoiceDiscovery implements PlacementChoiceDiscov
           choices.push(await this.choice(sql, services, policy, root, profile, rootUnavailableReason))
         }
       }
+      await sql.query('commit')
       return choices
-    })
+    } catch (error) {
+      await sql.query('rollback')
+      throw error
+    } finally {
+      sql.release()
+    }
   }
 
   private async sourceRoots(sql: pg.PoolClient, workspaceId: string) {

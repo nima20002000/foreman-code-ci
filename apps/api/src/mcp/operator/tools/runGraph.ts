@@ -13,7 +13,6 @@ import type { OperatorRequestContext } from '../types.js'
 import { canonicalRunGraphReadApi } from '../../../modules/run-graph/repeatReadService.js'
 import type { RunGraphReadApi } from '../../../modules/run-graph/readService.js'
 import { RunGraphError, runGraphErrorResponse } from '../../../modules/run-graph/errors.js'
-import { ignoreError } from '../../../modules/diagnostics/ignoredError.js'
 
 /** Current execution reads; independent graph/MCP protocol versions are unchanged. */
 export function registerRunGraphTools(server: McpServer, context: OperatorRequestContext, reads: RunGraphReadApi): void {
@@ -26,7 +25,7 @@ export function registerRunGraphTools(server: McpServer, context: OperatorReques
     } catch (error) {
       const safe = error instanceof RunGraphError ? error : new RunGraphError('GRAPH_INVARIANT_VIOLATION')
       if (safe.code === 'GRAPH_READ_ACCESS_DENIED') await context.services.commands.recordDenied(
-        context.principal.id, 'mcp', safe.code, `mcp:${name}`).catch(ignoreError('http', 'record denied run graph read audit', { tool: name }))
+        context.principal.id, 'mcp', safe.code, `mcp:${name}`).catch(() => undefined)
       return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify(runGraphErrorResponse(safe)) }] }
     }
   }
@@ -39,7 +38,7 @@ export function registerRunGraphTools(server: McpServer, context: OperatorReques
     inputSchema: z.object({}).strict(), outputSchema: CanonicalRunGraphReadCapabilitiesSchema, annotations,
   }, async () => invoke(RUN_GRAPH_MCP_TOOLS.readCapabilities, () => canonical.readCapabilities(context.principal)))
   if (runGraphToolAvailable(context, RUN_GRAPH_MCP_TOOLS.snapshot)) server.registerTool(RUN_GRAPH_MCP_TOOLS.snapshot, {
-    description: 'Read a coherent, bounded graph snapshot for the exact authorized workspace/workflow/Run/version. Current node resolutions retain the newest 2000 rows. Truncated native checkpoints report unknown activity until complete evidence repairs them. No native bodies or filesystem details.',
+    description: 'Read a coherent, bounded graph snapshot for the exact authorized workspace/workflow/Run/version. No native bodies or filesystem details.',
     inputSchema: RunGraphReadRequestSchema, outputSchema: RunGraphSnapshotSchema, annotations,
   }, async (input) => invoke(RUN_GRAPH_MCP_TOOLS.snapshot, async () => RunGraphSnapshotSchema.parse(await canonical.snapshot(context.principal, input))))
   if (runGraphToolAvailable(context, RUN_GRAPH_MCP_TOOLS.current)) server.registerTool(RUN_GRAPH_MCP_TOOLS.current, {

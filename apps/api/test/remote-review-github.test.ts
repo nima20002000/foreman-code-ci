@@ -45,7 +45,7 @@ async function fixture() {
 
 async function approve(project: string, repository: string, commit: string) {
   const manifest = await captureGitSource({ root: project, repository, commit, approvedSourceId: randomUUID(),
-    executablePolicy: 'strip', sink: {
+    approvedPaths: ['README.md'], executablePolicy: 'strip', sink: {
       async write() {},
       async writeGitMetadata() {},
       async commit() {},

@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import type pg from 'pg'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CiGetOutputSchema, CiRunOutputSchema } from '@foreman-code/contracts'
@@ -84,9 +85,9 @@ describe.runIf(postgresEnabled)('GitHub Run-start sources and Agent CI through a
       expect((await f.base.db.pool.query(`select action from management_audit
         where principal_id=$1 and action='source.approve' and outcome='succeeded'`, [f.base.writer.principal.id]))
         .rows.length).toBeGreaterThanOrEqual(2)
-      const denied = await f.base.access.issue({ name: 'Start without source binding access', audience: 'operator',
+      const denied = await f.base.access.issue({ name: 'Start without source approval', audience: 'operator',
         expiresAt: new Date(Date.now() + 600000), grants: [{ actions: ['runs:start', 'workspace_locations:read',
-          'sources:read', 'source_roots:read'], scope: { workspaceIds: [input.workspaceId] } }] })
+          'sources:read', 'source_roots:read', 'source_roots:bind'], scope: { workspaceIds: [input.workspaceId] } }] })
       const deniedClient = await f.connect(denied.token)
       expect(toolError(await deniedClient.callTool({ name: 'run_start', arguments: {
         ...input, commandId: randomUUID(),
@@ -112,7 +113,7 @@ describe.runIf(postgresEnabled)('GitHub Run-start sources and Agent CI through a
           scope: { workspaceIds: [workspaceId] } }])])
       f.f.run = await withExclusiveGraphConnection(f.db.pool, connection => connection.transaction(async sql => {
         const owner = await currentOperatorAuthority(sql, f.authorizationPrincipalId)
-        const authority = await acceptRunAuthority(sql, owner.principal)
+        const authority = await acceptRunAuthority(sql as unknown as pg.PoolClient, owner.principal)
         const run = AcceptedWorkflowRunV3Schema.parse({ ...f.f.run, id: randomUUID(),
           authorizationPrincipalId: authority.principal.id })
         const version = f.f.version
@@ -129,7 +130,7 @@ describe.runIf(postgresEnabled)('GitHub Run-start sources and Agent CI through a
           workspace: { id: workspaceId, archived: false, location: run.executionLocation }, draft: null,
         } })
         const admitted = await insertRepeatRun(sql, accepted, repeatStartPublication)
-        await bindRunAuthority(sql, admitted.id, authority)
+        await bindRunAuthority(sql as unknown as pg.PoolClient, admitted.id, authority)
         return admitted
       }))
       f.f.scope.runId = f.f.run.id
@@ -140,10 +141,8 @@ describe.runIf(postgresEnabled)('GitHub Run-start sources and Agent CI through a
       const origin = join(f.db.directory, 'origin')
       await mkdir(origin)
       const environment = gitFixtureEnvironment()
-      const git = (cwd: string, ...args: string[]) => execFileSync('/bin/sh',
-        ['-c', 'umask 002 && exec git "$@"', 'git', ...args], {
-          cwd, env: environment, encoding: 'utf8',
-        }).trim()
+      const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, env: environment,
+        encoding: 'utf8' }).trim()
       git(origin, 'init', '-q', '-b', 'main')
       await writeFile(join(origin, 'source.txt'), 'Agent base source')
       git(origin, 'add', '.')
@@ -151,14 +150,11 @@ describe.runIf(postgresEnabled)('GitHub Run-start sources and Agent CI through a
       const baseCommit = git(origin, 'rev-parse', 'HEAD')
       const clone = join(f.db.directory, 'clone')
       const tree = join(f.db.directory, 'agent-tree')
-      const system = systemGitWorktreePorts(environment)
-      const cloned = await system.git(['clone', '-q', '--no-checkout', '--template=', origin, clone], {
-        cwd: f.db.directory, signal: AbortSignal.timeout(30_000),
-      })
-      expect(cloned.code, cloned.stderr).toBe(0)
+      git(f.db.directory, 'clone', '-q', '--no-checkout', origin, clone)
       git(clone, 'worktree', 'add', '-b', 'foreman/agent', tree, baseCommit)
       await writeFile(join(origin, 'source.txt'), 'Later default source')
       git(origin, 'commit', '-qam', 'Advance default')
+      const system = systemGitWorktreePorts(environment)
       const ports = { ...system, cloneDirectory: () => clone }
       const commands = new PostgresCommandCoordinator(f.db.pool)
       const snapshots = vi.fn(async (executionId: string) => {
@@ -180,9 +176,7 @@ describe.runIf(postgresEnabled)('GitHub Run-start sources and Agent CI through a
       }
       const agent = await connect(issued.environment.variables.GRAPHQL_MCP_TOKEN!)
       const args = { commandId: randomUUID(), suite: 'build' }
-      const response = await agent.callTool({ name: 'ci_run', arguments: args })
-      expect(response.isError, JSON.stringify(response)).not.toBe(true)
-      const ticket = CiRunOutputSchema.parse(decodeMcpToolResult(response))
+      const ticket = CiRunOutputSchema.parse(decodeMcpToolResult(await agent.callTool({ name: 'ci_run', arguments: args })))
       expect(CiRunOutputSchema.parse(decodeMcpToolResult(await agent.callTool({ name: 'ci_run', arguments: args }))))
         .toEqual(ticket)
       expect(snapshots).toHaveBeenCalledTimes(1)
@@ -190,8 +184,6 @@ describe.runIf(postgresEnabled)('GitHub Run-start sources and Agent CI through a
         ticketId: ticket.ticketId,
       } })))
       expect(result.run.commit).toBe(baseCommit)
-      expect(result.run).toMatchObject({ workspaceId, suite: 'build', state: 'queued',
-        initiator: { principalId: issued.principalId, executionId: interaction.executionId } })
       expect((await f.db.pool.query<{ record: { commit: string } }>('select record from ci_runs where id=$1',
         [ticket.ticketId])).rows[0]!.record.commit).toBe(baseCommit)
       const denied = await f.access.issue({ name: 'CI read only', audience: 'operator',

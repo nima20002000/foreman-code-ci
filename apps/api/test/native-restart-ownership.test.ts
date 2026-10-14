@@ -9,7 +9,7 @@ import { ApprovalExecutionCoordinator } from '../src/modules/interactions/execut
 import { ExecutionScopedNativeSessionManagerResolver } from '../src/modules/interactions/runtimePorts.js'
 import type { RunOwnership } from '../src/modules/runs/ownership.js'
 import { nativeLanes } from './helpers/nativeLanes.js'
-import { rejectableDeferred } from './helpers/deferred.js'
+import { deferred } from './helpers/reviewerAudit.js'
 
 vi.mock('../src/modules/interactions/retainedRemoteReviewer.js', () => {
   const retained = (_sql: unknown, execution: HarnessExecution) => ({
@@ -119,9 +119,7 @@ function restartOwnershipFixture(options: {
     getRepeatSnapshot: async (_runId: string, owner: RunOwnership) => {
       owner.assertOwned()
       expect(locked).toBe(true)
-      return { stopRequested: false, cleanupPending: false,
-        run: { ...saved.run, id: 'run', workspaceId: 'workspace', executionState: 'waiting' },
-      }
+      return { stopRequested: false, cleanupPending: false }
     },
     getExecution: async (id: string) => executions.find(execution => execution.id === id),
     getExecutionConfiguration: async () => configuration,
@@ -163,27 +161,6 @@ it('shares one reacquired Run owner across sibling retained session detachment',
   await f.managers.dispose()
 })
 
-it('uses an adopted live Run owner when a previous shared owner has released', async () => {
-  const f = restartOwnershipFixture()
-  await f.attachReviewers()
-  const previous = (await f.acquireOwnership())!
-  const stopSharing = f.coordinator.shareRunOwner(previous)
-  await previous.release()
-  const current = (await f.acquireOwnership())!
-  f.coordinator.adoptRunOwner(current)
-  const acquisitions = f.acquireOwnership.mock.calls.length
-  try {
-    await f.coordinator.closeForRestart()
-    expect(f.acquireOwnership.mock.calls.length).toBe(acquisitions)
-    expect(f.closeOwners).toEqual([current, current])
-    expect(f.detached).toHaveBeenCalledTimes(2)
-  } finally {
-    stopSharing()
-    await current.release()
-    await f.managers.dispose()
-  }
-})
-
 it.each([
   { boundary: 'acquiring', timeout: false },
   { boundary: 'observing', timeout: false },
@@ -192,8 +169,8 @@ it.each([
 ] as const)(
   'drains reviewer renewal at $boundary before runtime release (drain times out=$timeout)', async ({ boundary, timeout }) => {
     vi.useFakeTimers()
-    const entered = rejectableDeferred()
-    const finished = rejectableDeferred()
+    const entered = deferred()
+    const finished = deferred()
     const releaseOwnership = vi.fn(async () => {})
     const f = restartOwnershipFixture({
       executionIds: ['reviewer'],

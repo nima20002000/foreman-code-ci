@@ -1,5 +1,4 @@
 import type { SubagentNativeRecoverySource, SubagentControlResolver } from '../subagents/types.js'
-import { withTransaction } from '../../infrastructure/transaction.js'
 import { recoverSubagentCommands } from '../subagents/recovery.js'
 import { RunSubagentService } from '../subagents/service.js'
 import { RunActivitySchema } from '@foreman-code/contracts'
@@ -18,7 +17,6 @@ import {
   readAcceptedRepeatRunLocked, readAcceptedRepeatRunSnapshot, readRecordedRepeatRunSnapshot,
 } from './repeatStartRead.js'
 import { admitRepeatRun } from './repeatStartAdmission.js'
-import { resolveRunStart } from './startResolution.js'
 import { hasAction, isAuthorized, requireAuthorization } from '../access/policy.js'
 import { intersectGrants } from '../access/operatorDelegation.js'
 import { authorizedPage } from '../access/authorizedPage.js'
@@ -112,7 +110,9 @@ export class RunManagementService {
 
   private async listPage(principal: ManagementPrincipal, input: RunListInput) {
     requireRunListScope(principal, input)
-    return withTransaction(this.pool, async (client) => {
+    const client = await this.pool.connect()
+    try {
+      await client.query('begin')
       const live = await readLiveManagementPrincipal(client, principal.id)
       requireRunListScope(live, input)
       const effective = { ...live, grants: intersectGrants(principal.grants, live.grants),
@@ -121,8 +121,14 @@ export class RunManagementService {
       const page = await this.readListRows(client, effective, input)
       requireRunListScope(principal, input)
       requireRunListScope(live, input)
+      await client.query('commit')
       return page
-    })
+    } catch (error) {
+      await client.query('rollback')
+      throw error
+    } finally {
+      client.release()
+    }
   }
 
   private async readListRows(client: pg.PoolClient, principal: ManagementPrincipal, input: RunListInput) {
@@ -216,11 +222,6 @@ export class RunManagementService {
     return { run: this.visibleRun(principal, execution.value), accepted: true as const, replayed: execution.replayed }
   }
 
-  async resolveStart(principal: ManagementPrincipal, source: 'http' | 'mcp', input: RunStartV3Input) {
-    const result = await resolveRunStart(this.pool, principal, source, input)
-    return result.status === 'accepted' ? { ...result, run: this.visibleRun(principal, result.run) } : result
-  }
-
   async stop(principal: ManagementPrincipal, source: 'http' | 'mcp', raw: { workspaceId: string; runId: string; commandId: string }) {
     const input = RunStopInputSchema.parse(raw)
     const run = await withCurrentRunRead(this.pool, principal, input.workspaceId, input.runId, 'runs:stop',
@@ -245,6 +246,7 @@ export class RunManagementService {
         this.assertCurrentStopReady()
         const receipt = receiptSchema.parse(await this.currentProduction!.stop({ principal, source, input, run,
           authorizeLocked: async (sql) => {
+            const client = sql as unknown as Pick<pg.ClientBase, 'query'>
             await sql.query('select id from runs where id=$1 for update', [input.runId])
             const current = (await readAcceptedRepeatRunLocked(sql, input.runId)).run
             const immutable = (value: typeof run) => ({ id: value.id, workspaceId: value.workspaceId, workflowId: value.workflowId,
@@ -255,7 +257,7 @@ export class RunManagementService {
             if (canonicalGraphJson(immutable(current)) !== canonicalGraphJson(immutable(run))) {
               throw new DomainError('RUN_PIN_CONFLICT', 'Stop cannot change any accepted immutable Run pin.', 409)
             }
-            const live = await readLiveManagementPrincipal(sql, principal.id)
+            const live = await readLiveManagementPrincipal(client, principal.id)
             requireAuthorization(live, 'runs:stop', resource)
           },
         }))

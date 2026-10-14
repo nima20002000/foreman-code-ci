@@ -9,7 +9,7 @@ export const ManagedPromptSettingSchema = PromptSettingSnapshotSchema
 
 export const PromptSettingUpdateInputSchema = z.object({
   value: PromptTextSchema,
-  expectedRevision: z.number().int().nonnegative().optional().describe('Omit for last write wins; supply to reject a stale revision.'),
+  expectedRevision: z.number().int().nonnegative(),
   commandId: z.string().trim().min(8).max(200),
 }).strict()
 
@@ -18,4 +18,6 @@ export const PromptSettingUpdateResultSchema = z.object({
   replayed: z.boolean(),
 }).strict()
 
+export type ManagedPromptSetting = z.infer<typeof ManagedPromptSettingSchema>
 export type PromptSettingUpdateInput = z.infer<typeof PromptSettingUpdateInputSchema>
+export type PromptSettingUpdateResult = z.infer<typeof PromptSettingUpdateResultSchema>

@@ -50,7 +50,7 @@ it('skips retired host overrides before reading qualification evidence during wo
   expect(commands.execute).not.toHaveBeenCalled()
   expect(qualify).not.toHaveBeenCalled()
   expect(saved.qualification).toBe('qualified')
-  checks.assertReady(saved)
+  checks.assertReady(saved.target.hostRef)
   await checks.close()
 })
 

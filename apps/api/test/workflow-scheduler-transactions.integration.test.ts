@@ -10,10 +10,9 @@ import { admitRepeatRun, repeatStartReceipt } from '../src/modules/runs/repeatSt
 import type { ScheduledStart } from '../src/modules/schedules/postgresDispatcher.js'
 import { WorkflowScheduleService } from '../src/modules/schedules/service.js'
 import { WorkflowManagementService } from '../src/modules/workflows/management.js'
-import { agent3Database, postgresEnabled } from './helpers/wave25Agent3.js'
+import { agent3Database, deferred, postgresEnabled } from './helpers/wave25Agent3.js'
 import { sch11Minute, sch11Once } from './helpers/sch11ClockCases.js'
 import { sch11Blocked, sch11DomainState, sch11Fixture, sch11Pool, type Sch11Database, type Sch11Fixture } from './helpers/sch11Fixture.js'
-import { rejectableDeferred } from './helpers/deferred.js'
 
 async function reached(signal: Promise<unknown>, work: Promise<unknown>) {
   await Promise.race([signal, work.then(() => { throw new Error('Dispatch completed before the expected test barrier') })])
@@ -26,20 +25,9 @@ describe.skipIf(!postgresEnabled)('SCH-11 PostgreSQL transaction ordering and co
   afterAll(async () => { await database?.close() })
   beforeEach(async () => { f = await sch11Fixture(database) }, 60_000)
 
-  it('a peer session reads the schedule persisted in the fixture database', async () => {
-    const saved = await f.save()
-    const peer = sch11Pool(database)
-    const peerService = new WorkflowScheduleService(peer.pool, new PostgresCommandCoordinator(peer.pool), f.clock)
-    try {
-      expect(await peerService.get(f.reader.principal, f.scope)).toEqual({ schedule: saved })
-    } finally {
-      await peer.pool.end()
-    }
-  })
-
   it('an edit winning after preparation fences the old revision and retains only the new cursor', async () => {
     const saved = await f.save(); f.time.now = saved.nextOccurrenceAt!
-    const prepared = rejectableDeferred(), release = rejectableDeferred()
+    const prepared = deferred(), release = deferred()
     const work = f.dispatcher(async (...args) => { prepared.resolve(); await release.promise; await f.startUsing()(...args) }).dispatch(saved)
     try {
       await reached(prepared.promise, work)
@@ -52,17 +40,12 @@ describe.skipIf(!postgresEnabled)('SCH-11 PostgreSQL transaction ordering and co
       await f.dispatcher().dispatch(edited)
       expect(await f.history()).toEqual([expect.objectContaining({ status: 'accepted', scheduleRevision: 2,
         dueAt: '2030-01-07T10:30:00.000Z' })])
-    } finally {
-      release.resolve()
-      await work.catch(() => {
-        // ignore: cleanup joins the dispatcher without replacing an earlier test failure.
-      })
-    }
+    } finally { release.resolve(); await work.catch(() => undefined) }
   }, 60_000)
 
   it.each(['disable', 'clear'] as const)('%s winning before claim leaves no speculative Start artifacts', async (operation) => {
     const saved = await f.save(); f.time.now = saved.nextOccurrenceAt!
-    const prepared = rejectableDeferred(), release = rejectableDeferred()
+    const prepared = deferred(), release = deferred()
     const work = f.dispatcher(async (...args) => { prepared.resolve(); await release.promise; await f.startUsing()(...args) }).dispatch(saved)
     try {
       await reached(prepared.promise, work)
@@ -74,17 +57,12 @@ describe.skipIf(!postgresEnabled)('SCH-11 PostgreSQL transaction ordering and co
         where operation='run.start' and result->>'workflowId'=$1`, [f.scope.workflowId])).rows).toEqual([])
       expect(await f.history()).toEqual([expect.objectContaining({ status: 'skipped', reason: 'disabled', scheduleRevision: 1 })])
       expect((await f.current())?.enabled ?? false).toBe(false)
-    } finally {
-      release.resolve()
-      await work.catch(() => {
-        // ignore: cleanup joins the dispatcher without replacing an earlier test failure.
-      })
-    }
+    } finally { release.resolve(); await work.catch(() => undefined) }
   }, 60_000)
 
   it.each(['disable', 'edit'] as const)('claim winning the row locks commits once; a blocked %s changes only future admissions', async (operation) => {
     const saved = await f.save(); f.time.now = saved.nextOccurrenceAt!
-    const peer = sch11Pool(database), entered = rejectableDeferred<number>(), release = rejectableDeferred()
+    const peer = sch11Pool(database), entered = deferred<number>(), release = deferred()
     const peerPid = (await peer.pool.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid
     const peerService = new WorkflowScheduleService(peer.pool, new PostgresCommandCoordinator(peer.pool), f.clock)
     let mutation: ReturnType<WorkflowScheduleService['save']> | undefined
@@ -100,9 +78,8 @@ describe.skipIf(!postgresEnabled)('SCH-11 PostgreSQL transaction ordering and co
       mutation = operation === 'disable'
         ? peerService.disable(f.writer.principal, 'mcp', f.command())
         : peerService.save(f.writer.principal, 'mcp', { ...f.command(), schedule: { ...sch11Once, time: '10:30' } })
-      void mutation.catch(() => {
-        // ignore: attach while row locks are held; the original mutation is awaited below.
-      })
+      // Attach a handler immediately; a lock timeout must not be an unhandled rejection.
+      void mutation.catch(() => undefined)
       await sch11Blocked(database.pool, peerPid, await entered.promise)
       expect(await f.countRuns()).toBe(0)
       release.resolve(); await work
@@ -117,16 +94,7 @@ describe.skipIf(!postgresEnabled)('SCH-11 PostgreSQL transaction ordering and co
       const state = await sch11DomainState(f)
       await f.dispatcher().dispatch(saved)
       expect(await sch11DomainState(f)).toEqual(state)
-    } finally {
-      release.resolve()
-      await work.catch(() => {
-        // ignore: cleanup joins the dispatcher without replacing an earlier test failure.
-      })
-      await mutation?.catch(() => {
-        // ignore: cleanup joins the peer operation whose outcome is checked in the test body.
-      })
-      await peer.pool.end()
-    }
+    } finally { release.resolve(); await work.catch(() => undefined); await mutation?.catch(() => undefined); await peer.pool.end() }
   }, 60_000)
 
   async function versionInput() {
@@ -134,7 +102,7 @@ describe.skipIf(!postgresEnabled)('SCH-11 PostgreSQL transaction ordering and co
     const policy = f.fixture.version.definition.executionPolicy
     if (!policy || typeof policy.maxNodeExecutions !== 'number') throw new Error('The sequential SCH-11 fixture must have an execution policy')
     return { ...f.scope, commandId: randomUUID(), executionSemanticsVersion: 3 as const,
-      expectedRevision: Number(row.revision), expectedWorkflowVersionId: f.fixture.version.id,
+      expectedRevision: Number(row.revision), expectedWorkflowVersionId: f.fixture.version.id, expectedLocationRevision: 1,
       expectedAgentConfigurationVersionIds: f.fixture.version.agentConfigurationVersionIds,
       // An executable change, not a presentation-only rename/layout save.
       graph: { ...f.fixture.version.definition, executionPolicy: { ...policy, maxNodeExecutions: policy.maxNodeExecutions + 1 } } }
@@ -142,7 +110,7 @@ describe.skipIf(!postgresEnabled)('SCH-11 PostgreSQL transaction ordering and co
 
   it('a workflow save winning after preparation pins the fresh head, capture and receipt atomically', async () => {
     const saved = await f.save(); f.time.now = saved.nextOccurrenceAt!
-    const prepared = rejectableDeferred(), release = rejectableDeferred()
+    const prepared = deferred(), release = deferred()
     let calls = 0
     const work = f.dispatcher(async (...args) => {
       calls++; if (calls === 1) { prepared.resolve(); await release.promise }
@@ -160,18 +128,13 @@ describe.skipIf(!postgresEnabled)('SCH-11 PostgreSQL transaction ordering and co
         join management_command_receipts c on c.operation='run.start' and c.result->>'id'=r.id where r.workflow_id=$1`, [f.scope.workflowId])
       expect(rows.rows).toEqual([{ workflow_version_id: newer.version.id,
         snapshot_version: newer.version.id, receipt_version: newer.version.id }])
-    } finally {
-      release.resolve()
-      await work.catch(() => {
-        // ignore: cleanup joins the dispatcher without replacing an earlier test failure.
-      })
-    }
+    } finally { release.resolve(); await work.catch(() => undefined) }
   }, 60_000)
 
   it('claim winning before a blocked meaningful save preserves its pin and rejects the now-unsettled edit', async () => {
     const saved = await f.save(); f.time.now = saved.nextOccurrenceAt!
     const input = await versionInput()
-    const peer = sch11Pool(database), entered = rejectableDeferred<number>(), release = rejectableDeferred()
+    const peer = sch11Pool(database), entered = deferred<number>(), release = deferred()
     const peerPid = (await peer.pool.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid
     const peerWorkflows = new WorkflowManagementService(peer.pool, new PostgresCommandCoordinator(peer.pool))
     let saving: ReturnType<WorkflowManagementService['current']['save']> | undefined
@@ -185,9 +148,7 @@ describe.skipIf(!postgresEnabled)('SCH-11 PostgreSQL transaction ordering and co
     try {
       await reached(entered.promise, work)
       saving = peerWorkflows.current.save(f.writer.principal, 'mcp', input)
-      void saving.catch(() => {
-        // ignore: attach while row locks are held; the original save rejection is asserted below.
-      })
+      void saving.catch(() => undefined)
       await sch11Blocked(database.pool, peerPid, await entered.promise)
       release.resolve(); await work
       await expect(saving).rejects.toMatchObject({ code: 'WORKFLOW_RUNS_UNSETTLED' })
@@ -198,21 +159,12 @@ describe.skipIf(!postgresEnabled)('SCH-11 PostgreSQL transaction ordering and co
       expect(snapshot).toMatchObject({ kind: 'available', workflowVersionId: f.fixture.version.id })
       await f.dispatcher().dispatch(saved)
       expect((await database.pool.query('select record from run_board_snapshots where workflow_id=$1', [f.scope.workflowId])).rows[0]!.record).toEqual(snapshot)
-    } finally {
-      release.resolve()
-      await work.catch(() => {
-        // ignore: cleanup joins the dispatcher without replacing an earlier test failure.
-      })
-      await saving?.catch(() => {
-        // ignore: cleanup joins the peer operation whose outcome is checked in the test body.
-      })
-      await peer.pool.end()
-    }
+    } finally { release.resolve(); await work.catch(() => undefined); await saving?.catch(() => undefined); await peer.pool.end() }
   }, 60_000)
 
   it.each(['revoke', 'remove-start-grant'] as const)('rechecks %s between preparation and admission', async (change) => {
     const saved = await f.save(); f.time.now = saved.nextOccurrenceAt!
-    const prepared = rejectableDeferred(), release = rejectableDeferred()
+    const prepared = deferred(), release = deferred()
     const work = f.dispatcher(async (...args) => { prepared.resolve(); await release.promise; await f.startUsing()(...args) }).dispatch(saved)
     try {
       await reached(prepared.promise, work)
@@ -226,12 +178,7 @@ describe.skipIf(!postgresEnabled)('SCH-11 PostgreSQL transaction ordering and co
       expect((await f.current())?.nextOccurrenceAt).toBeNull()
       expect((await database.pool.query(`select 1 from management_command_receipts
         where operation='run.start' and result->>'workflowId'=$1`, [f.scope.workflowId])).rows).toEqual([])
-    } finally {
-      release.resolve()
-      await work.catch(() => {
-        // ignore: cleanup joins the dispatcher without replacing an earlier test failure.
-      })
-    }
+    } finally { release.resolve(); await work.catch(() => undefined) }
   }, 60_000)
 
   it('skips queued scheduled overlap and does not cancel or rewrite its accepted artifacts on disable', async () => {

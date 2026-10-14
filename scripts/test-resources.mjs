@@ -6,23 +6,8 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
 import { resolveProductEnvironment } from '../packages/contracts/src/productEnvironment.mjs'
 import { createTestPool } from '../apps/api/test/helpers/testPool.mjs'
-import { ciTemplateCacheDirectory } from './ci-postgres-cache.mjs'
 
-const defaultTestAdminUrl = 'postgresql://graphql_test_admin:graphql_test_disposable_only@127.0.0.1:55439/postgres'
-function hostTestAdminUrl() {
-  const value = process.env.FOREMAN_CODE_CI_TEST_ADMIN_URL
-  if (value === undefined) return defaultTestAdminUrl
-  const url = new URL(value)
-  const expected = new URL(defaultTestAdminUrl)
-  if (!/^[0-9a-f-]{36}$/.test(process.env.FOREMAN_CODE_CI_HOST_RUN_ID ?? '')
-    || url.protocol !== expected.protocol || url.hostname !== expected.hostname
-    || url.username !== expected.username || url.password !== expected.password || url.pathname !== '/postgres'
-    || !url.port || url.search || url.hash) throw new Error('Invalid host CI disposable database URL')
-  return value
-}
-export const testAdminUrl = hostTestAdminUrl()
-const hostCiRunId = process.env.FOREMAN_CODE_CI_TEST_ADMIN_URL === undefined
-  ? undefined : process.env.FOREMAN_CODE_CI_HOST_RUN_ID
+export const testAdminUrl = 'postgresql://graphql_test_admin:graphql_test_disposable_only@127.0.0.1:55439/postgres'
 const serverMarker = 'graphql-disposable-test-server'
 const rootMarker = '.graphql-test-owner.json'
 const cleanupDirectory = '.graphql-test-cleanup'
@@ -35,7 +20,7 @@ export function requireTestServerUrl(value) {
   const expected = new URL(testAdminUrl)
   if (url.protocol !== expected.protocol || url.hostname !== expected.hostname || url.port !== expected.port
     || url.username !== expected.username || url.password !== expected.password || url.search || url.hash) {
-    throw new Error(`Tests require the dedicated disposable PostgreSQL server on 127.0.0.1:${expected.port}`)
+    throw new Error('Tests require the dedicated disposable PostgreSQL server on 127.0.0.1:55439')
   }
   return url
 }
@@ -142,10 +127,6 @@ export function testEnvironment(environment, resource) {
   requireTestServerUrl(resource.databaseUrl)
   assertTestRoot(resource.directory, resource.token)
   const clean = { ...environment }
-  if (hostCiRunId) {
-    clean.FOREMAN_CODE_CI_TEST_ADMIN_URL = testAdminUrl
-    clean.FOREMAN_CODE_CI_HOST_RUN_ID = hostCiRunId
-  }
   for (const key of Object.keys(clean)) {
     if (/^PG/.test(key) || (!key.startsWith('FOREMAN_CODE_TEST_') && /(?:_API_KEY|_AUTH_TOKEN|_ACCESS_TOKEN)$/.test(key))
       || ['FOREMAN_CODE_MCP_TOKEN', 'LOG_FILE',
@@ -245,16 +226,6 @@ export async function testAdminPool() {
   const pool = createTestPool({ connectionString: testAdminUrl, max: 1,
     connectionTimeoutMillis: 10_000, query_timeout: 35_000,
     options: '-c statement_timeout=30000 -c lock_timeout=10000' })
-  const query = pool.query.bind(pool)
-  let pending = Promise.resolve()
-  // Slots share one admin session. Start connection and query deadlines only when that session is available.
-  pool.query = (...args) => {
-    const callback = typeof args.at(-1) === 'function' ? args.pop() : undefined
-    const result = pending.then(() => query(...args))
-    pending = result.then(() => undefined, () => undefined)
-    if (!callback) return result
-    result.then(value => callback(null, value), callback)
-  }
   try {
     const result = await pool.query("select shobj_description(oid, 'pg_database') as marker from pg_database where datname='postgres'")
     if (result.rows[0]?.marker !== serverMarker) throw new Error('PostgreSQL test server ownership marker is missing; run pnpm db:up')
@@ -292,16 +263,8 @@ export async function createTestDatabase(admin, resource, options = {}) {
 }
 
 export async function resetTestDatabase(admin, resource) {
-  assertTestResourcesSettled(resource)
-  await assertTestDatabase(admin, resource)
-  const replacement = await createTestDatabase(admin, resource, { template: resource.template })
-  try {
-    await dropTestDatabase(admin, resource)
-    return replacement
-  } catch (error) {
-    await dropTestDatabase(admin, replacement)
-    throw error
-  }
+  await dropTestDatabase(admin, resource)
+  return createTestDatabase(admin, resource, { template: resource.template })
 }
 
 export async function assertTestDatabase(pool, resource) {
@@ -321,8 +284,6 @@ export async function dropTestDatabase(admin, resource) {
 
 export async function settleTestResources(admin, resource) {
   assertTestRoot(resource.directory, resource.token)
-  const { sweepRestartUnits } = await import('./test-restart-units.mjs')
-  await sweepRestartUnits(resource)
   const directory = assertTestPath(resource, join(resource.directory, cleanupDirectory))
   const pending = existsSync(directory) ? readdirSync(directory).map(name =>
     JSON.parse(readFileSync(assertTestPath(resource, join(directory, name)), 'utf8'))) : []
@@ -377,32 +338,13 @@ export async function provisionTestResources(environment = process.env) {
   const admin = await testAdminPool()
   const root = createTestRoot()
   let resource
-  let template
-  const dropJobTemplate = async (admin) => {
-    if (!template || template.persistent) return
-    const { dropTestDatabaseTemplate } = await import('./test-database-template.mjs')
-    await dropTestDatabaseTemplate(admin, template)
-  }
   try {
-    const cacheDirectory = ciTemplateCacheDirectory(environment)
-    if (cacheDirectory) {
-      const { createTestDatabaseTemplate } = await import('./test-database-template.mjs')
-      template = await createTestDatabaseTemplate(admin, root, { cacheDirectory })
-    }
-    resource = await createTestDatabase(admin, root, { template })
+    resource = await createTestDatabase(admin, root)
     const isolated = testEnvironment(environment, resource)
     await admin.end()
-    return { environment: isolated, close: async () => {
-      if (template && !template.persistent) {
-        const cleanup = await testAdminPool()
-        try { await dropJobTemplate(cleanup) }
-        finally { await cleanup.end() }
-      }
-      await cleanupTestResources(resource)
-    } }
+    return { environment: isolated, close: () => cleanupTestResources(resource) }
   } catch (error) {
     if (resource) await dropTestDatabase(admin, resource)
-    await dropJobTemplate(admin)
     await admin.end()
     removeTestRoot(root)
     throw error

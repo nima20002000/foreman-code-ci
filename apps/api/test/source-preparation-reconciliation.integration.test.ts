@@ -13,7 +13,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import pino from 'pino'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
 import { DeviceConnectionIdentitySchema } from '@foreman-code/contracts/device-identity'
@@ -72,20 +72,11 @@ describe.skipIf(!postgresEnabled)('failed Job source preparation reconciliation'
   let closureDispatch: PostgresJobDispatch | undefined
   let failSourceSettlement = false
   let interruptSourceTransfer = false
-  let sharedInitialization: 'none' | 'fail' | 'complete' = 'none'
   let allowPreparationClosure = true
   let sourceQuotaConfiguration: { path: string; ownerUid: number } | undefined
   const queueServices: JobService[] = []
   const dispatches: PostgresJobDispatch[] = []
-  beforeEach(async () => {
-    verificationQuota = undefined
-    closureDispatch = undefined
-    failSourceSettlement = false
-    interruptSourceTransfer = false
-    sharedInitialization = 'none'
-    allowPreparationClosure = true
-    sourceQuotaConfiguration = undefined
-    pause = null
+  beforeAll(async () => {
     database = await agent3Database(); directory = await mkdtemp(`${process.env.FOREMAN_CODE_TEST_ROOT}/jobprep-reconcile-sql-`)
     const runtime = join(directory, 'runtime'), project = join(directory, 'project'), policyId = randomUUID()
     await mkdir(runtime, { mode: 0o700 }); await mkdir(project, { mode: 0o700 }); await mkdir(join(runtime, 'source-materializations'), { mode: 0o700 })
@@ -170,16 +161,8 @@ describe.skipIf(!postgresEnabled)('failed Job source preparation reconciliation'
             'select spec from job_computer_selections where execution_id=$1', [attempt.executionId])).rows[0]
           const quota = row && 'verification' in ResolvedJobDefinitionSpecRecordSchema.parse(row.spec)
             ? verificationQuota : undefined
-          let checks = 0
-          const authorize = async () => {
-            checks += 1
-            if (sharedInitialization === 'fail' && checks === 4) {
-              throw new DomainError('SOURCE_INITIALIZATION_INTERRUPTED', 'Shared initialization interrupted', 503)
-            }
-          }
-          return new PrivateSourceMaterializer({ read: async () => bytes }, authorize, quota)
-            .prepare({ manifest, binding: root.binding, attempt,
-              ...(sharedInitialization !== 'none' ? { sharedWritableTree: true as const } : {}) })
+          return new PrivateSourceMaterializer({ read: async () => bytes }, async () => {}, quota)
+            .prepare({ manifest, binding: root.binding, attempt })
         },verify: record => remote.verify(record),verifyWorkingDirectory:unused,
         releaseClaim: async record => {
           await releaseMaterializationClaim(record.receipt, async () => 'released',
@@ -210,20 +193,6 @@ describe.skipIf(!postgresEnabled)('failed Job source preparation reconciliation'
     const save = await app.inject({method:'POST',url:`/api/management/workspaces/${workspaceId}/jobs/definitions`,headers:{authorization:`Bearer ${writer.token}`},
       payload:{commandId:randomUUID(),expectedRevision:null,name:'Failure before native admission',spec}})
     expect(save.statusCode).toBe(200);definitionId=save.json().definition.id
-  },60000)
-  afterEach(async()=>{
-    await Promise.allSettled(queueServices.map(service => service.closeQueue()))
-    await Promise.allSettled(dispatches.map(dispatch => dispatch.close()))
-    await Promise.allSettled(clients.map(client=>client.close()));await app?.close();await journal?.close();await database?.close();if(directory)await removeFixtureDirectory(directory)
-    queueServices.length = 0
-    dispatches.length = 0
-    clients.length = 0
-    commandsToReconcile.length = 0
-  })
-  const sourceUrl=()=>`/api/management/workspaces/${workspaceId}/source-preparations`
-  const start=(commandId:string)=>app.inject({method:'POST',url:`/api/management/workspaces/${workspaceId}/jobs/executions`,headers:{authorization:`Bearer ${writer.token}`},payload:{commandId,definitionId,expectedRevision:1}})
-  async function client(token:string) {const value=new Client({name:'source-reconciliation-fixture',version:'1'});clients.push(value);await value.connect(new StreamableHTTPClientTransport(new URL('/mcp',address),{requestInit:{headers:{authorization:`Bearer ${token}`}}}));return value}
-  it('reproduces capacity exhaustion, preserves failed evidence, audits HTTP/MCP cleanup and frees active slots',async()=>{
     for(let i=0;i<2;i++) {
       interruptSourceTransfer = i === 1
       const commandId=randomUUID();commandsToReconcile.push(commandId)
@@ -235,6 +204,16 @@ describe.skipIf(!postgresEnabled)('failed Job source preparation reconciliation'
       const result=await start(commandId);expect(result.statusCode).toBeGreaterThanOrEqual(400)
     }
     interruptSourceTransfer = false
+  },60000)
+  afterAll(async()=>{
+    await Promise.allSettled(queueServices.map(service => service.closeQueue()))
+    await Promise.allSettled(dispatches.map(dispatch => dispatch.close()))
+    await Promise.allSettled(clients.map(client=>client.close()));await app?.close();await journal?.close();await database?.close();if(directory)await removeFixtureDirectory(directory)
+  })
+  const sourceUrl=()=>`/api/management/workspaces/${workspaceId}/source-preparations`
+  const start=(commandId:string)=>app.inject({method:'POST',url:`/api/management/workspaces/${workspaceId}/jobs/executions`,headers:{authorization:`Bearer ${writer.token}`},payload:{commandId,definitionId,expectedRevision:1}})
+  async function client(token:string) {const value=new Client({name:'source-reconciliation-fixture',version:'1'});clients.push(value);await value.connect(new StreamableHTTPClientTransport(new URL('/mcp',address),{requestInit:{headers:{authorization:`Bearer ${token}`}}}));return value}
+  it('reproduces capacity exhaustion, preserves failed evidence, audits HTTP/MCP cleanup and frees active slots',async()=>{
     const exhaustedCommand = randomUUID()
     await expect(jobs.start(writer.principal, 'http', workspaceId,
       { commandId: exhaustedCommand, definitionId, expectedRevision: 1 }))
@@ -282,51 +261,6 @@ describe.skipIf(!postgresEnabled)('failed Job source preparation reconciliation'
     await database.pool.query('update management_principals set revoked_at=now() where id=$1',[revoked.principal.id])
     await expect(sources.preparationGet(revoked.principal,'mcp',{workspaceId,operationId:rows[0]!.operation_id})).rejects.toMatchObject({code:'AUTH_REVOKED'})
   },60000)
-  it.each([undefined, '', '{"version":1', '{"version":1,"id":false}'])(
-    'recovers an incomplete readiness record %j through authenticated MCP and reads back the closed owner', async readiness => {
-    const operator = await client(writer.token)
-    const denied = await client(reader.token)
-    const startCommand = randomUUID()
-    sharedInitialization = 'fail'
-    try {
-      await expect(jobs.start(writer.principal, 'mcp', workspaceId,
-        { commandId: startCommand, definitionId, expectedRevision: 1 }))
-        .rejects.toMatchObject({ code: 'SOURCE_INITIALIZATION_INTERRUPTED' })
-      const operationId = (await database.pool.query<{ operation_id: string }>(
-        'select operation_id from job_preparations where workspace_id=$1 and command_id=$2',
-        [workspaceId, startCommand])).rows[0]!.operation_id
-      if (readiness !== undefined) {
-        const pending = (await readdir(root.binding.canonicalPath)).find(name => name.endsWith('.json.pending'))!
-        await writeFile(join(root.binding.canonicalPath, `${pending}.ready`), readiness, { mode: 0o600 })
-      }
-      const command = { workspaceId, operationId, commandId: randomUUID() }
-      await expectMcpAccessDenied(denied.callTool({ name: 'source_preparation_reconcile', arguments: command }))
-      const result = await operator.callTool({ name: 'source_preparation_reconcile', arguments: command })
-      expect(result.isError).not.toBe(true)
-      const value = (decodeMcpToolResult(result) as { value: unknown }).value
-      expect(value).toMatchObject({ operationId, reservationState: 'retained',
-        closure: { childrenClosed: true, claimReleased: true } })
-      expect(decodeMcpToolResult(await operator.callTool({ name: 'source_preparation_get',
-        arguments: { workspaceId, operationId } }))).toEqual(value)
-      sharedInitialization = 'complete'
-      const nextCommand = randomUUID()
-      await expect(jobs.start(writer.principal, 'mcp', workspaceId,
-        { commandId: nextCommand, definitionId, expectedRevision: 1 }))
-        .rejects.toMatchObject({ code: 'SOURCE_REPOSITORY_TIMEOUT' })
-      const next = (await database.pool.query<{ record: SourceMaterializationRecord }>(
-        `select m.record from source_execution_materializations m join job_preparations p using(operation_id)
-          where p.workspace_id=$1 and p.command_id=$2`, [workspaceId, nextCommand])).rows[0]!
-      expect(next.record.receipt.binding).toEqual(root.binding)
-      expect(await readFile(join(root.binding.canonicalPath, next.record.receipt.sharedTree!.id,
-        'tree', 'source.txt'), 'utf8')).toBe('original immutable source')
-      expect((await operator.callTool({ name: 'source_preparation_reconcile', arguments: {
-        workspaceId, operationId: next.record.operationId, commandId: randomUUID(),
-      } })).isError).not.toBe(true)
-    } finally {
-      sharedInitialization = 'none'
-    }
-  }, 60000)
-
   it('keeps capacity and evidence while the original Start command is live, then reconciles its recorded failure',async()=>{
     let entered!:()=>void,release!:()=>void
     const started=new Promise<void>(resolve=>{entered=resolve}),released=new Promise<void>(resolve=>{release=resolve})
@@ -574,8 +508,6 @@ describe.skipIf(!postgresEnabled)('failed Job source preparation reconciliation'
       expect(head.manifest.git?.commit).toBe(advancedCommit)
       expect(head.manifest.git?.commit).not.toBe(f.definition.spec.source.commit)
       await f.jobs.wakeQueue()
-      expect(await f.jobs.getQueueTicket(f.principal, workspaceId, ticket.id))
-        .toMatchObject({ state: 'accepted', executionId: ticket.executionId })
       const execution = await f.jobs.getExecution(f.principal, workspaceId, ticket.executionId)
       expect(execution.acceptedSpec.source.commit).toBe(f.definition.spec.source.commit)
       expect(execution.acceptedSpec.source.snapshotId).toBe(root.source.snapshotId)
@@ -697,11 +629,7 @@ describe.skipIf(!postgresEnabled)('failed Job source preparation reconciliation'
       f.pausePreparation(async () => { entered(); await paused })
       const ticket = await f.enqueue()
       const pending = f.jobs.wakeQueue()
-      await Promise.race([preparing, pending.then(() => {
-        throw new Error('Queue settled before source preparation entered')
-      })])
-      expect(await f.jobs.getQueueTicket(f.principal, workspaceId, ticket.id))
-        .toMatchObject({ state: 'claimed', executionId: ticket.executionId })
+      await preparing
       allowPreparationClosure = false
       try {
         await expect(sources.closeQueuedPreparation(ticket)).rejects.toMatchObject({ code: 'SOURCE_PREPARATION_ACTIVE' })

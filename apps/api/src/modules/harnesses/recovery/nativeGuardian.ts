@@ -13,17 +13,6 @@ const { createServer } = require('node:net')
 const { join, dirname, resolve, parse, sep } = require('node:path')
 const fs = require('node:fs')
 
-let launchId
-// This standalone guardian reports through stderr; it cannot import the API logger.
-function warnCleanup(operation, error, context={}, expected=[]) {
-  if(expected.includes(error?.code))return
-  const message=error instanceof Error?error.message:String(error)
-  try {
-    fs.writeSync(2,JSON.stringify({level:'warn',component:'harness',module:'nativeGuardian',
-      operation,launchId,pid:process.pid,...context,err:{message,code:error?.code}})+'\\n')
-  } catch { /* ignore: stderr is unavailable, so reporting its own write failure is impossible. */ }
-}
-
 function object(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Malformed guardian record')
   return value
@@ -96,7 +85,7 @@ function contain(id, dir, owner, boot) {
     return boundary
   } catch(error) {
     if(fd!==undefined)fs.closeSync(fd)
-    try{fs.rmdirSync(path)}catch(cleanupError){warnCleanup('remove failed containment',cleanupError,{launchId:id},['ENOENT'])}
+    try{fs.rmdirSync(path)}catch{}
     throw error
   }
 }
@@ -106,67 +95,39 @@ ${CODEX_STDIO_BRIDGE_SOURCE}
 let capture
 let disconnected=false
 let stopping=false,started=false,leader=false,detached=false,detachRecorded=false
-let detachOnDisconnect
 function killTree() {
   // The cgroup includes detached descendants and is pinned by an open fd.
   if(containmentFd!==undefined) {
-    try{fs.writeFileSync('/proc/self/fd/'+containmentFd+'/cgroup.kill','1');return}
-    catch(error){warnCleanup('kill native cgroup',error)}
+    try{fs.writeFileSync('/proc/self/fd/'+containmentFd+'/cgroup.kill','1');return}catch{}
   }
   // A failed boundary kill is never a close certificate. Recovery remains fenced.
-  try{process.kill(-process.pid,'SIGKILL')}catch(error){warnCleanup('kill native process group',error,{},['ESRCH'])}
+  try{process.kill(-process.pid,'SIGKILL')}catch{}
 }
 function stop() {
   if(stopping)return
   stopping=true
   if(!leader)process.exit(1) // No native child exists before leader qualification.
-  try {process.kill(-process.pid,'SIGTERM')}catch(error){warnCleanup('terminate native process group',error,{},['ESRCH'])}
+  try {process.kill(-process.pid,'SIGTERM')}catch{}
   setTimeout(killTree,1000)
 }
-function flushOutput(stream) {
-  if(stream.destroyed || !stream.writable)return Promise.resolve()
-  return new Promise((resolve,reject)=>stream.write('',error=>error?reject(error):resolve()))
-}
-function stopAfterNativeExit(drained) {
+function stopAfterNativeExit() {
   if(stopping)return // A cancellation already owns its graceful cleanup deadline.
   stopping=true
+  // The provider has exited and its receipt has flushed. No grace period is
+  // needed, but remaining descendants still require the same forced cleanup.
   if(!leader)process.exit(1)
-  // Descendants retaining pipes and consumers that stop reading cannot hold cleanup forever.
-  const deadline=setTimeout(killTree,5000)
-  drained.then(()=>{clearTimeout(deadline);killTree()},error=>{
-    warnCleanup('drain native output',error)
-    clearTimeout(deadline)
-    killTree()
-  })
+  killTree()
 }
 process.on('SIGTERM',stop)
 process.on('SIGINT',stop)
 process.on('disconnect',()=>{
   disconnected=true
   if(detached)return
-  try {
-    if(detachOnDisconnect?.())return
-  } catch {
-    stop()
-    return
-  }
   if(capture?.pending())setTimeout(stop,120000).unref()
   else stop()
 })
-function outputError(error) {
-  if(capture)return
-  if(error.code==='EPIPE') {
-    try {
-      if(detached || detachOnDisconnect?.())return
-    } catch {
-      stop()
-      return
-    }
-  }
-  stop()
-}
-process.stdout.on('error',outputError)
-process.stderr.on('error',outputError)
+process.stdout.on('error',error=>{if(!capture&&(!detached||error.code!=='EPIPE'))stop()})
+process.stderr.on('error',error=>{if(!capture&&(!detached||error.code!=='EPIPE'))stop()})
 process.on('uncaughtException',stop)
 process.on('unhandledRejection',stop)
 process.on('message',input=>{
@@ -180,7 +141,6 @@ process.on('message',input=>{
     if(Object.values(environment).some(x=>x!==undefined && typeof x!=='string'))throw new Error('Invalid environment')
     const dir=directory(config.directory)
     const intent=record(join(dir,'intent.json'))
-    launchId=intent.id
     const live=identity()
     const boot=fs.readFileSync('/proc/sys/kernel/random/boot_id','utf8').trim()
     if(live.group!==process.pid || live.session!==process.pid || intent.boot!==boot
@@ -191,15 +151,6 @@ process.on('message',input=>{
     const certificate={format:1,id:intent.id,owner:intent.owner,boot,guardian:live}
     let provider
     let bridge
-    function recordDetachment() {
-      if(config.restartDetachable!==true || !provider || stopping)return false
-      if(!detachRecorded) {
-        birth(join(dir,'restart-detached.json'),
-          {...certificate,provider,reconnectableStdio:config.reconnectableStdio===true})
-        detachRecorded=true
-      }
-      return true
-    }
     const expected=Buffer.from(intent.controlKey,'hex')
     const server=createServer(socket=>{
       let pending=''
@@ -219,7 +170,11 @@ process.on('message',input=>{
           if(message.operation==='detach') {
             if(config.restartDetachable!==true || !provider || stopping){socket.destroy();return}
             bridge?.detach(message.connectionId)
-            recordDetachment()
+            if(!detachRecorded) {
+              birth(join(dir,'restart-detached.json'),
+                {...certificate,provider,reconnectableStdio:config.reconnectableStdio===true})
+              detachRecorded=true
+            }
             detached=true
           }
           if(message.operation==='attach' || message.operation==='environment') {
@@ -258,17 +213,13 @@ process.on('message',input=>{
         const native=spawn(config.binary,config.args,{cwd:config.cwd,env:environment,
           detached:false,stdio:[detachable&&!config.claudeSessionScope&&!config.reconnectableStdio?'ignore':'pipe',
             pipedOutput?'pipe':'inherit',pipedOutput?'pipe':'inherit'],windowsHide:true})
-        const outputClosed=pipedOutput?new Promise(resolve=>native.once('close',resolve)):Promise.resolve()
-        const finishNativeExit=()=>stopAfterNativeExit(outputClosed.then(()=>
-          Promise.all([flushOutput(process.stdout),flushOutput(process.stderr),bridge?.flush()])))
         // Forward request input after the provider record so fast replies cannot race owner capture.
-        try{if(native.pid)provider=identity(native.pid)}
-        catch(error){warnCleanup('read native process identity',error,{nativePid:native.pid},['ENOENT','ESRCH'])}
+        try{if(native.pid)provider=identity(native.pid)}catch{}
         try {
           birth(join(dir,'provider.json'),{format:1,id:intent.id,owner:intent.owner,boot,
             guardian:live,...(provider?{provider}:{}),capture:provider?'captured':'unavailable'})
           if(process.connected)process.send({operation:'observation',id:intent.id},()=>{})
-        }catch(error){warnCleanup('record native provider',error,{nativePid:native.pid})}
+        }catch{}
         if(config.claudeSessionScope) {
           capture=claudeCompactionCapture(config.claudeSessionScope,()=>{if(disconnected)stop()})
           let stdoutClosed=false,stderrClosed=false
@@ -289,16 +240,7 @@ process.on('message',input=>{
           native.stderr.on('data',chunk=>{if(!stderrClosed && !process.stderr.write(chunk))native.stderr.pause()})
           process.stderr.on('drain',()=>native.stderr.resume())
         } else if(config.reconnectableStdio) {
-          bridge=codexStdioBridge(native,environment,()=>detached,()=>{detached=true})
-          if(config.restartDetachable===true) {
-            detachOnDisconnect=()=>{
-              if(detachRecorded)return true
-              if(!recordDetachment())return false
-              bridge.detach()
-              detached=true
-              return true
-            }
-          }
+          bridge=codexStdioBridge(native,environment,()=>detached)
         } else if(detachable) {
           native.stdout.on('data',chunk=>{if(!detached&&process.connected)process.stdout.write(chunk)})
           native.stderr.on('data',chunk=>{if(!detached&&process.connected)process.stderr.write(chunk)})
@@ -312,14 +254,15 @@ process.on('message',input=>{
             birth(join(dir,'provider-exit.json'),{format:1,id:intent.id,owner:intent.owner,boot,
               ...(provider?{provider}:{}),code:exitCode,signal:exitSignal})
             if(process.connected)process.send({operation:'observation',id:intent.id},()=>{})
-          }catch(error){warnCleanup('record native provider exit',error,{nativePid:native.pid})}
+          }catch{}
           try {
             const outcome={format:1,operation:'native_exit',id:intent.id,owner:intent.owner,boot,
               guardian:{pid:live.pid,startTicks:live.startTicks},nativePid:native.pid,exitCode,exitSignal}
-            // Persist/send the outcome immediately, then join the separate output relay.
-            if(process.connected)process.send(outcome,finishNativeExit)
-            else finishNativeExit()
-          }catch{finishNativeExit()}
+            // Flush the exact native outcome before cleanup kills this guardian too.
+            // Pipe output stays unchanged; a disconnected manager cannot receive success.
+            if(process.connected)process.send(outcome,()=>stopAfterNativeExit())
+            else stopAfterNativeExit()
+          }catch{stopAfterNativeExit()}
         })
       }catch{stop()}
     })

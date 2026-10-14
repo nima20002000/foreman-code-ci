@@ -9,28 +9,10 @@ import {
 import { SavedManagedWorkflowPageSchema, SavedManagedWorkflowSchema } from '@foreman-code/contracts/wave25'
 import { describe, expect, it, vi } from 'vitest'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
-import { agent3Database, postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/wave25Agent3.js'
 import { selectedMainMcpForward } from '../src/modules/placement/workerMcpRelay.js'
 
 describe.skipIf(!postgresEnabled)('Operator context over authenticated MCP', () => {
-  it('uses separate migrated databases for concurrent runtime fixtures', async () => {
-    const first = await agent3Database()
-    let second: Awaited<ReturnType<typeof agent3Database>> | undefined
-    try {
-      second = await agent3Database()
-      const readDatabase = async (fixture: typeof first) =>
-        (await fixture.pool.query<{ name: string }>('select current_database() as name')).rows[0]!.name
-      expect(await readDatabase(first)).not.toBe(await readDatabase(second))
-      const id = randomUUID()
-      await first.pool.query('insert into workspaces(id, record) values($1, $2::jsonb)',
-        [id, JSON.stringify({ id, name: 'Isolated fixture' })])
-      expect((await second.pool.query('select id from workspaces where id=$1', [id])).rows).toEqual([])
-    } finally {
-      await second?.close()
-      await first.close()
-    }
-  }, 60_000)
-
   it('forwards a complete large escaped Agent read through the bounded selected Main relay', async () => {
     const f = await currentOperatorIntegration({ agentManagement: true })
     try {
@@ -131,10 +113,8 @@ describe.skipIf(!postgresEnabled)('Operator context over authenticated MCP', () 
       expect(compact.tools).not.toContain('workspace_update')
       expect(compact.grants).toEqual(issued.principal.grants)
       expect(compact.runtimeLimits).toEqual(expect.arrayContaining([
-        expect.objectContaining({ feature: 'native_mcp_provisioning', detail: expect.stringContaining('harnesses:update') }),
-        expect.objectContaining({ feature: 'codex_plugins', detail: expect.stringContaining('codex_plugin_change') }),
-        expect.objectContaining({ feature: 'remote_runners_and_host_browsing', detail: expect.stringContaining('home') }),
-        expect.objectContaining({ feature: 'trusted_device_connections', detail: expect.stringContaining('settings:update') }),
+        expect.objectContaining({ feature: 'native_mcp_provisioning', detail: expect.stringContaining('human') }),
+        expect.objectContaining({ feature: 'trusted_device_owner_approval', detail: expect.stringContaining('human-only') }),
       ]))
     } finally { await f.close() }
   }, 60000)

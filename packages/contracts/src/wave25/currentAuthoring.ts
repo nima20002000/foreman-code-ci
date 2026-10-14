@@ -1,11 +1,10 @@
 import { WorkflowWorktreeSettingsSchema } from '../worktreeSettings.js'
 import { z } from 'zod'
-import { ApprovalHandlerSchema,
+import { ApprovalHandlerSchema, CurrentAgentWorkflowNodeSchema,
   DEFAULT_AGENT_ACTIVE_TIMEOUT_MS, MAX_AGENT_ACTIVE_TIMEOUT_MS,
-  AGENT_INTERVAL_MIN_SECONDS, AGENT_INTERVAL_MAX_SECONDS, AGENT_INTERVAL_MAX_CHECKS_PER_RUN,
-  AGENT_INTERVAL_PROMPT_MAX_LENGTH } from './workflowShape.js'
+  AGENT_INTERVAL_MIN_SECONDS, AGENT_INTERVAL_MAX_SECONDS, AGENT_INTERVAL_MAX_CHECKS_PER_RUN } from './workflowShape.js'
 import { CommandIdSchema, ExpectedRevisionSchema, WorkflowCreateInputSchema, ManagedAgentSchema } from '../management/index.js'
-import { GraphIdSchema } from './graphPrimitives.js'
+import { GraphIdSchema } from './protocol.js'
 import { WorkflowDefinitionV3Schema, WorkflowVersionV3Schema } from './saved.js'
 import { sameExecutableWorkflow } from './meaningfulEdit.js'
 
@@ -22,13 +21,14 @@ export const CurrentWorkflowCreateInputSchema = WorkflowCreateInputSchema.extend
   initialSave: z.object({
     graph: InitialWorkflowGraphSchema,
     expectedAgentConfigurationVersionIds: z.record(GraphIdSchema, GraphIdSchema),
+    expectedLocationRevision: ExpectedRevisionSchema,
   }).strict().optional(),
 }).strict()
 export type CurrentWorkflowCreateInput = z.infer<typeof CurrentWorkflowCreateInputSchema>
 
 /** One complete authored definition, not a complexity-selected mode, patch,
  * admission permit or caller-supplied WorkflowVersion. Shared by HTTP/MCP/Board.
- * Configurations are references to immutable Agent rows; saving
+ * Configurations are references to actual current immutable Agent rows; saving
  * this graph never edits a shared Agent or changes an accepted Run. */
 export const CurrentWorkflowValidateInputSchema = z.object({
   workspaceId: GraphIdSchema, workflowId: GraphIdSchema,
@@ -36,11 +36,27 @@ export const CurrentWorkflowValidateInputSchema = z.object({
   expectedRevision: ExpectedRevisionSchema,
   expectedWorkflowVersionId: GraphIdSchema.nullable(),
   expectedAgentConfigurationVersionIds: z.record(GraphIdSchema, GraphIdSchema),
+  expectedLocationRevision: ExpectedRevisionSchema,
   graph: WorkflowDefinitionV3Schema,
 }).strict()
 export const CurrentWorkflowSaveInputSchema = CurrentWorkflowValidateInputSchema.extend({
   commandId: CommandIdSchema,
+  // Compare names independently of immutable execution pins and geometry.
+  expectedNodePresentation: z.array(z.object({
+    id: GraphIdSchema,
+    name: CurrentAgentWorkflowNodeSchema.shape.name,
+    label: CurrentAgentWorkflowNodeSchema.shape.label,
+  }).strict()).optional(),
+  // Optional compare-and-swap for presentation-only Save. It never changes the
+  // executable revision and cannot accompany a meaningful publication.
+  expectedGeometry: z.array(z.object({
+    id: GraphIdSchema,
+    position: CurrentAgentWorkflowNodeSchema.shape.position,
+    width: CurrentAgentWorkflowNodeSchema.shape.width,
+    height: CurrentAgentWorkflowNodeSchema.shape.height,
+  }).strict()).optional(),
 }).strict()
+export type CurrentWorkflowSaveRequest = z.input<typeof CurrentWorkflowSaveInputSchema>
 export type CurrentWorkflowSaveInput = z.infer<typeof CurrentWorkflowSaveInputSchema>
 export type CurrentWorkflowValidateInput = z.infer<typeof CurrentWorkflowValidateInputSchema>
 export const CurrentWorkflowSavedSchema = z.object({
@@ -69,6 +85,7 @@ export const CurrentWorkflowValidationSchema = z.object({
   valid: z.literal(true), executionSemanticsVersion: z.literal(3),
   expectedRevision: ExpectedRevisionSchema, expectedWorkflowVersionId: GraphIdSchema.nullable(),
   expectedAgentConfigurationVersionIds: z.record(GraphIdSchema, GraphIdSchema),
+  expectedLocationRevision: ExpectedRevisionSchema,
   // Validation is neither persistence nor native/Stop qualification.
   runtimeAdmission: z.boolean(), stopAvailable: z.boolean(),
 }).strict()
@@ -98,7 +115,6 @@ export const CurrentWorkflowCapabilitiesSchema = z.object({
     perExecution: z.literal(true), approvalWaitExcluded: z.literal(true),
   }).strict(),
   agentInterval: z.object({ field: z.literal('node.interval.everySeconds'),
-    promptField: z.literal('node.interval.prompt'), promptMaxLength: z.literal(AGENT_INTERVAL_PROMPT_MAX_LENGTH),
     minimumSeconds: z.literal(AGENT_INTERVAL_MIN_SECONDS), maximumSeconds: z.literal(AGENT_INTERVAL_MAX_SECONDS),
     maximumChecksPerRun: z.literal(AGENT_INTERVAL_MAX_CHECKS_PER_RUN), defaultEnabled: z.literal(false), routesGraph: z.literal(false), runStatusTool: z.literal('run_status_get'),
     requires: z.literal('approval handler native, or a Codex Agent with approvalPolicy never; no artifactOutputs') }).strict(),
@@ -135,8 +151,7 @@ export const CURRENT_WORKFLOW_CAPABILITIES = CurrentWorkflowCapabilitiesSchema.p
   executionSemanticsVersion: 3, repeatOptional: true,
   agentActiveTimeBudget: { defaultMs: DEFAULT_AGENT_ACTIVE_TIMEOUT_MS, maximumMs: MAX_AGENT_ACTIVE_TIMEOUT_MS,
     perExecution: true, approvalWaitExcluded: true },
-  agentInterval: { field: 'node.interval.everySeconds', promptField: 'node.interval.prompt',
-    promptMaxLength: AGENT_INTERVAL_PROMPT_MAX_LENGTH, minimumSeconds: AGENT_INTERVAL_MIN_SECONDS,
+  agentInterval: { field: 'node.interval.everySeconds', minimumSeconds: AGENT_INTERVAL_MIN_SECONDS,
     maximumSeconds: AGENT_INTERVAL_MAX_SECONDS, maximumChecksPerRun: AGENT_INTERVAL_MAX_CHECKS_PER_RUN, defaultEnabled: false, routesGraph: false, runStatusTool: 'run_status_get',
     requires: 'approval handler native, or a Codex Agent with approvalPolicy never; no artifactOutputs' },
   approvalHandlers: ApprovalHandlerSchema.options,

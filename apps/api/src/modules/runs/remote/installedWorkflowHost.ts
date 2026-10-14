@@ -1,4 +1,3 @@
-import { workflowPreparationExtension } from './preparationExtension.js'
 import type { ProviderAccountResolver, ResolvedProviderAccount } from '../../provider-accounts/service.js'
 import { assertWorkerProviderAccountBinding } from '../../provider-accounts/workerOperations.js'
 import { managedProviderEnvironment, resolveRuntimeProviderAccount } from '../../harnesses/providerAccountRuntime.js'
@@ -19,6 +18,7 @@ import {
   type WorkerPairingConfiguration,
 } from '@foreman-code/contracts/device-identity'
 import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
+import type { DeviceApplicationResult } from '@foreman-code/contracts/device-application'
 import { DEVICE_APPLICATION_JSON_BYTES } from '@foreman-code/contracts/device-application'
 import type { DispatchIntent, AcceptedNodePlacement, NativeExecutionPlacement } from '@foreman-code/contracts/node-placement'
 import { RemoteNativeIdentitySchema, RemoteTerminalEvidenceSchema, RemoteOperationReceiptSchema, type RemoteReviewerRequest,
@@ -56,17 +56,18 @@ import { RemoteExecutionHost } from './executionHost.js'
 import { createRemoteExecutionHandler } from './executionRouter.js'
 import { RemoteJobExecutionRpcRequestRecordSchema } from '@foreman-code/contracts/remote-job-execution'
 import { RemoteExecutionRpcRequestSchema, type RemoteExecutionRpcRequest } from '@foreman-code/contracts/remote-execution-rpc'
-import type { DeviceExtensionRegistration, DeviceExtensionContext } from '../../devices/deviceApplicationChannel.js'
+import type { DeviceExtensionRegistration, DeviceExtensionContext, DeviceApplicationRequestOptions } from '../../devices/deviceApplicationChannel.js'
 import { prepareWorkerApplicationAccess } from './workerApplicationAccess.js'
 import { createWorkerMcpEndpoint } from './workerMcpEndpoint.js'
 import { readInstalledWorkflowConfiguration, type InstalledWorkflowConfigurationLocation } from './installedWorkflowConfiguration.js'
 import { RuntimeLeafAttestationSchema, assertRuntimeLeafPath, type RuntimeLeafAttestation } from './runtimeLeaf.js'
 import { InstalledWorkflowPhysicalReadouts, matchingOriginalRegistryLaunch,assertOriginalPhysicalDirectories, remoteWorkflowSourceDigest, remoteWorkflowNativeHistory } from './workflowPhysicalReadout.js'
 import { createInstalledNativeOutputs, type InstalledNativeOutputProviders } from './installedNativeOutput.js'
+import type { CodexNativeOutputTurnPin } from '../../harnesses/codexNativeOutput.js'
 import type { WorkflowOriginalNativeSource } from '../../interactions/workflowNativeCapture.js'
-import { createInstalledWorkflowNativeOutputProviders, type CapturedWorkflowMainRequest, type InstalledWorkflowNativeOutputContext } from './installedWorkflowNativeOutputs.js'
+import { createInstalledWorkflowNativeOutputProviders } from './installedWorkflowNativeOutputs.js'
 import { AgentFilePublishInputSchema, AgentFilePublishResultSchema,
-  type AgentFilePublishResult } from '@foreman-code/contracts/files'
+  type AgentFilePublishInput, type AgentFilePublishResult } from '@foreman-code/contracts/files'
 import { workflowArtifactDigestsByOutputKey, type WorkflowArtifactOutputsV1 } from '@foreman-code/contracts/workflow-artifact-result'
 import { pageNativeHistory, nativeHistoryPageSource } from './nativeHistoryPage.js'
 import { pagePhysicalReadout } from './workflowPhysicalReadout.js'
@@ -222,7 +223,21 @@ export async function attestInstalledWorkflowRuntimeLeaf(input:{sources:SourceOp
 
 type QualificationReader=ReturnType<typeof createInstalledCodexQualificationReader>
 type QualificationCapture=Awaited<ReturnType<QualificationReader['capture']>>
-export type { CapturedWorkflowMainRequest, InstalledWorkflowNativeOutputContext }
+export interface CapturedWorkflowMainRequest {
+  readonly binding:Readonly<DeviceSessionBinding>
+  request(payload:unknown,options?:DeviceApplicationRequestOptions):Promise<DeviceApplicationResult>
+}
+export interface InstalledWorkflowNativeOutputContext {
+  intent: DispatchIntent
+  placement: AcceptedNodePlacement
+  binding: Readonly<DeviceSessionBinding>
+  materialization: SourceMaterializationRecord
+  applicationAccess(): RemoteApplicationAccess
+  publicationCompleted(publication: AgentFilePublishInput, result: AgentFilePublishResult): void
+  /** Real original registry/ACK evidence; deliberately does not inspect passive
+   * originalSessionLifetime while the producer's starting gate is active. */
+  assertCurrent(pin?: CodexNativeOutputTurnPin, signal?: AbortSignal): Promise<void>
+}
 export interface InstalledWorkflowHostOptions {
   stateDirectory:string
   pairing:WorkerPairingConfiguration
@@ -345,14 +360,11 @@ export async function createInstalledWorkflowHost(input:InstalledWorkflowHostOpt
         if (status.status !== 'known' || !status.receipt.retainedReviewer || status.receipt.terminal) return
         try {
           const policy = await workerReviewerAuthorizer(forBinding(resident.context.binding))(resident.intent, resident.placement)
-          if (!policy) {
-            await resident.host!.closeRetainedReviewer(resident.intent.operationId)
-            return
-          }
-          await log.renewReviewer(resident.intent.operationId, policy)
+          if (!policy) unavailable('reviewer_run_finished')
+          await log.renewReviewer(resident.intent.operationId, policy!)
         } catch (error) {
           resident.reviewFailure = error
-          if (log.reviewerExpired(status.receipt.retainedReviewer.expiresAt)) {
+          if (Date.parse(status.receipt.retainedReviewer.expiresAt) <= Date.now()) {
             await resident.host!.closeRetainedReviewer(resident.intent.operationId)
             delete resident.reviewFailure
             return
@@ -386,21 +398,14 @@ export async function createInstalledWorkflowHost(input:InstalledWorkflowHostOpt
           unavailable('original_native_reconnection_unavailable')
         }
         await authorize(intent, placement, action)
-        const log = await journal()
-        let status = await log.status(intent.operationId)
-        let observed = matchingOriginalRegistryLaunch(registry, owned.native.launch)
-        if (observed.lifecycle !== 'active') {
-          // Native closure precedes the terminal journal commit. Join the original settlement before rebinding.
-          await owned.host.waitForSettlement(intent.operationId, context.signal)
-          status = await log.status(intent.operationId)
-          observed = matchingOriginalRegistryLaunch(registry, owned.native.launch)
-        }
+        const status = await (await journal()).status(intent.operationId)
         if (status.status !== 'known' || !isDeepStrictEqual(status.receipt.intent, owned.intent)
           || status.receipt.native?.sessionId !== owned.session.nativeSessionId
           || status.receipt.native?.processIdentityDigest !== owned.native.native.processIdentityDigest
           || !isDeepStrictEqual(status.receipt.connection, connectionIdentity(owned.capture.binding))) {
           unavailable('original_native_reconnection_conflict')
         }
+        const observed = matchingOriginalRegistryLaunch(registry, owned.native.launch)
         if (status.receipt.terminal ? !isDeepStrictEqual(observed, owned.physicalClosure) : observed.lifecycle !== 'active') {
           unavailable('original_native_reconnection_process_changed')
         }
@@ -947,19 +952,10 @@ export async function createInstalledWorkflowHost(input:InstalledWorkflowHostOpt
               || matchingOriginalRegistryLaunch(registry, resident.native.launch).lifecycle !== 'active') {
               unavailable('original_reviewer_observation_owner_missing')
             }
-            const request = forBinding(context.binding)
-            const authorize = workerExecutionAuthorizer(request)
-            const authority = await authorize(frame.intent, frame.placement, 'read')
-            if (!authority?.cleanupOnly) {
-              const policy = await workerReviewerAuthorizer(request)(frame.intent, frame.placement)
-              if (policy) {
-                const renewed = await log.renewReviewer(frame.intent.operationId, policy)
-                reviewerObservationExpiresAt = renewed.retainedReviewer!.expiresAt
-              } else {
-                const latest = await authorize(frame.intent, frame.placement, 'read')
-                if (!latest?.cleanupOnly) unavailable('original_reviewer_observation_denied')
-              }
-            }
+            const policy = await workerReviewerAuthorizer(forBinding(context.binding))(frame.intent, frame.placement)
+            if (!policy) unavailable('original_reviewer_observation_denied')
+            const renewed = await log.renewReviewer(frame.intent.operationId, policy!)
+            reviewerObservationExpiresAt = renewed.retainedReviewer!.expiresAt
           }
         }
         const response=await createRemoteExecutionHandler(host)(frame)
@@ -1165,6 +1161,5 @@ export async function createInstalledWorkflowHost(input:InstalledWorkflowHostOpt
     await Promise.allSettled([...active])
     await Promise.all([...hosts.values()].map(host => host.drain()))
   }
-  extensions.push(workflowPreparationExtension(extensions[0]!))
   return {kind:'configured' as const,extensions,nativeOwnerFor,preparationClosed,reservationClosed,close,drainForUpdate}
 }

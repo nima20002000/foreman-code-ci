@@ -49,6 +49,11 @@ export const contentUrl = (owner: Owner, value: FileWithRevision) =>
   `${base(owner)}/${value.file.fileId}/revisions/${value.revision.revisionId}/content`
 export const headers = (owner: Owner) => ({ authorization: `Bearer ${owner.token}`, host: 'localhost' })
 
+export function deferred() {
+  let resolve!: () => void
+  const promise = new Promise<void>((done) => { resolve = done })
+  return { promise, resolve }
+}
 /** Bounded observation, not an arbitrary sleep used to guess which transaction won. */
 export async function waitFor(check: () => Promise<boolean>, message: string, timeoutMs = 3000) {
   const deadline = performance.now() + timeoutMs
@@ -90,7 +95,7 @@ export async function fil14Database() {
     bytes?: FileByteStorage
   } = {}) {
     const applicationName = `fil14_${randomUUID()}`
-    const pool = new pg.Pool({ connectionString: database.databaseUrl, max: 6, application_name: applicationName,
+    const pool = new pg.Pool({ connectionString, max: 6, application_name: applicationName,
       options: `-c search_path=${database.schema} -c statement_timeout=10000 -c lock_timeout=5000` })
     const bytes = options.bytes ?? new FileByteStorage(storageRoot, MAX_FILE_BYTES)
     const files = options.repository?.(pool) ?? new PostgresFileRepository(pool, readFileRetentionSnapshot)

@@ -1,3 +1,4 @@
+import { execFile } from 'node:child_process'
 import { mkdir, open, rename, rm } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
@@ -6,8 +7,6 @@ import { SourceError } from './manifest.js'
 import { DomainError } from '../errors.js'
 import { gitFailure } from './gitErrors.js'
 import { directoryFlags, withPrivateDirectoryLock } from './privateFilesystem.js'
-import { runGitProcess } from './gitProcess.js'
-import { runGitWithCacheStorage } from './gitCacheStorage.js'
 
 export interface WorktreeRequest { repository: string; branch: string }
 export interface GitWorktreePorts {
@@ -31,10 +30,7 @@ export function assertWorktreeRequest(request: WorktreeRequest) {
 
 /** Fetches the approved commit into this computer's clone and adds a worktree on the agent's branch. */
 export async function addGitWorktree(ports: GitWorktreePorts, request: WorktreeRequest, commit: string, path: string,
-  signal: AbortSignal, options?: {
-    checkout: 'deferred'
-    beforeAllocate?(branch: string): Promise<void>
-  }): Promise<{ branch: string; commit: string }> {
+  signal: AbortSignal, options?: { checkout: 'deferred' }): Promise<{ branch: string; commit: string }> {
   assertWorktreeRequest(request)
   if (!/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/u.test(commit)) throw new SourceError('SOURCE_WORKTREE_INVALID', 'The approved commit is invalid.')
   const clone = await ensureCommit(ports, request.repository, commit, signal)
@@ -52,7 +48,6 @@ export async function addGitWorktree(ports: GitWorktreePorts, request: WorktreeR
     const branch = `${request.branch.slice(0, branchLimit - suffix.length)}${suffix}`
     const existing = await ports.git(['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`], { cwd: clone, signal })
     if (existing.code === 0) continue
-    await options?.beforeAllocate?.(branch)
     await run(['worktree', 'add', ...(options?.checkout === 'deferred' ? ['--no-checkout'] : []),
       '-b', branch, path, commit], clone)
     if (options?.checkout === 'deferred') await run(['read-tree', commit], path)
@@ -195,8 +190,24 @@ export function systemGitWorktreePorts(environment: NodeJS.ProcessEnv = process.
   const gitEnvironment = Object.fromEntries(Object.entries(environment).filter(([key]) => !key.startsWith('GIT_')))
   return {
     cloneDirectory: repository => join(home, '.local', 'share', 'foreman-code', 'git', ...repository.split('/')),
-    // GitHub CLI credentials supply authentication within the same bounded cache contract on every host.
-    git: (args, options) => runGitWithCacheStorage(join(home, '.local', 'share', 'foreman-code', 'git'),
-      args, options, (command, execution) => runGitProcess(command, execution, gitEnvironment)),
+    // GitHub CLI credentials (gh auth setup-git) supply authentication; no prompt can block a Run.
+    git: (args, options) => new Promise(resolve => {
+      let result: { code: number; stdout: string; stderr: string } | undefined
+      // Worktree files stay private to this user, like every other app-managed source directory.
+      const child = execFile('/bin/sh', ['-c', 'umask 077 && exec git "$@"', 'git', ...args], { ...(options.cwd ? { cwd: options.cwd } : {}), signal: options.signal, killSignal: 'SIGKILL', timeout: 15 * 60_000, maxBuffer: 4 * 1024 * 1024,
+        encoding: 'utf8', env: { ...gitEnvironment, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never', ...options.env } }, (error, stdout, stderr) => {
+        const code = error ? (typeof (error as { code?: unknown }).code === 'number' ? (error as { code: number }).code : 1) : 0
+        result = { code, stdout, stderr }
+      })
+      // execFile's abort handler can use SIGTERM despite its killSignal option.
+      const stop = () => { child.kill('SIGKILL') }
+      options.signal.addEventListener('abort', stop, { once: true })
+      if (options.signal.aborted) stop()
+      // Cancellation invokes execFile's callback before close; source cleanup waits for the process too.
+      child.once('close', () => {
+        options.signal.removeEventListener('abort', stop)
+        resolve(result ?? { code: 1, stdout: '', stderr: 'Git process closed without a result.' })
+      })
+    }),
   }
 }

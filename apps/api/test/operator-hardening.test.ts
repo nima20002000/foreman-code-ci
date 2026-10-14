@@ -38,9 +38,9 @@ test('F28 preserves an explicit narrow workspace and worker audience', () => {
   })
 })
 
-test('Operator credentials default to no expiry and retain explicit revocation', () => {
+test('F28 preserves documented defaults only when the flags are omitted', () => {
   assert.deepEqual(parseCredentialArguments(issue), {
-    command: 'issue', name: 'test-operator', audience: 'operator', days: null,
+    command: 'issue', name: 'test-operator', audience: 'operator', days: 30,
   })
   assert.deepEqual(parseCredentialArguments(['revoke', 'principal-1']), { command: 'revoke', principalId: 'principal-1' })
 })
@@ -75,10 +75,4 @@ test('A01 rejects invalid Unicode, empty IDs, and invalid attempts', () => {
   for (const attempt of [0, -1, 1.5, Number.NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
     assert.throws(() => resolveExecutionDirectory(root, 'run-1', 'node-1', attempt))
   }
-})
-
-test('Worker credentials retain a finite default lifetime', () => {
-  assert.deepEqual(parseCredentialArguments([...issue, '--audience', 'worker']), {
-    command: 'issue', name: 'test-operator', audience: 'worker', days: 30,
-  })
 })

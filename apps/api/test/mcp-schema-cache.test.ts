@@ -13,7 +13,6 @@ import { installOperatorPresentation } from '../src/mcp/operator/presentation.js
 import { registerOperatorTools } from '../src/mcp/operator/server.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { cacheToolSchemaConversions } from '../src/mcp/shared/schemaCache.js'
-import { stripMcpInputSchemas } from '../src/mcp/shared/inputSchemas.js'
 import { paginateToolLists } from '../src/mcp/toolListPagination.js'
 import { registerGraphqlMcp } from '../src/mcp/unified/transport.js'
 
@@ -99,7 +98,6 @@ it('keeps authenticated HTTP catalogs, calls and caller scopes fresh after warmi
   })
   registerGraphqlMcp(app, { access, operator: services })
   const referenceServer = new McpServer({ name: 'operator-reference', version: '1' })
-  stripMcpInputSchemas(referenceServer)
   paginateToolLists(referenceServer)
   const catalog = installOperatorPresentation(referenceServer)
   registerOperatorTools(referenceServer, { principal, services }, catalog)

@@ -139,16 +139,13 @@ async function openTransport(base: Base, runtime: Runtime, errors: unknown[]): P
   } catch (error) { await Promise.allSettled(clients.map((client) => client.close())); await app.close(); stopObserver.mockRestore(); throw error }
 }
 
-export async function recoveryFixture(form: Form, plan: (input: Submission) => Fault = () => 'success', budget = 12,
-  options: { sessionPersistence?: 'persistent' | 'ephemeral' } = {}) {
+export async function recoveryFixture(form: Form, plan: (input: Submission) => Fault = () => 'success', budget = 12) {
   const fixture = makeCurrentWorkflowFixture(randomUUID(), form)
   // This provider models a separate native session for every execution attempt.
-  // Only persistent sessions can detach across a restart and be reattached.
   fixture.configurations = fixture.configurations.map((configuration) => AgentConfigurationVersionSchema.parse({
     ...configuration,
     harness: { ...configuration.harness, advanced: {
-      ...DEFAULT_CODEX_ADVANCED_CONFIGURATION, approvalPolicy: 'never',
-      sessionPersistence: options.sessionPersistence ?? 'ephemeral',
+      ...DEFAULT_CODEX_ADVANCED_CONFIGURATION, approvalPolicy: 'never', sessionPersistence: 'ephemeral',
     } },
   }))
   fixture.version.approval = { handler: 'native' }
@@ -180,18 +177,11 @@ export async function recoveryFixture(form: Form, plan: (input: Submission) => F
       errors: errors.map((item) => describeError(item)), shutdownErrors: shutdownErrors.map((item) => describeError(item)) } },
     get runtime() { return runtime }, get transport() { return transport },
     launch(runId = base.f.run.id) { void runtime.engine.start(runId).catch((error: unknown) => errors.push(error)) },
-    async restart(options: { mode?: 'crash' | 'graceful' } = {}) {
+    async restart() {
       await transport.close()
-      // A dead API cannot publish its original manager's close or detach callback.
-      const crashClose = options.mode === 'crash'
-        ? vi.spyOn(runtime.native, 'closeForRestart').mockResolvedValue(undefined) : undefined
       // Continue through a reported shutdown failure so a separate Stop/readback
       // assertion still exercises the recovery path. Tests assert this array too.
       try { await runtime.engine.shutdown() } catch (error) { shutdownErrors.push(error) }
-      finally {
-        crashClose?.mockRestore()
-        if (options.mode === 'crash') provider.killAll()
-      }
       runtime = composeRuntime(base, provider, errors, activeStarts); runtimes.push(runtime)
       transport = await openTransport(base, runtime, errors)
     },
@@ -328,9 +318,7 @@ export async function assertOriginalFailure(f: RecoveryFixture, executionId: str
 
 /** Reads actual coordinator-created recovery receipts. No fixture INSERT or
  * UPDATE is permitted for closures, recoveries, results, attempts or Run state. */
-export async function assertRecoveryReceipts(f: RecoveryFixture, executionIds: readonly string[],
-  options: { detached?: boolean } = {}) {
-  const detached = options.detached ?? true
+export async function assertRecoveryReceipts(f: RecoveryFixture, executionIds: readonly string[]) {
   const rows = (await f.base.db.pool.query<{
     execution_id: string; generation: string; latest_generation: string;
     execution_identity: { id: string; runId: string }; reference: unknown; native_reference: unknown;
@@ -347,10 +335,10 @@ export async function assertRecoveryReceipts(f: RecoveryFixture, executionIds: r
     expect(row.execution_identity).toMatchObject({ id: row.execution_id, runId: f.base.f.run.id })
     expect(row.generation).toBe(row.latest_generation)
     expect(row.reference).toEqual(row.native_reference)
-    expect(row.detached_reference).toEqual(detached ? row.reference : null)
+    expect(row.detached_reference).toEqual(row.reference)
     // Recovery adds a separate receipt. It cannot rewrite an original detach
     // as a close, create a new native generation, or invent a provider terminal.
-    expect(row.detached).toBe(detached); expect(row.closed).toBe(false)
+    expect(row.detached).toBe(true); expect(row.closed).toBe(false)
     expect(row.owner_id).toMatch(/^\d+$/); expect(row.owner_fence).toMatch(/^\d+$/)
   }
   expect(new Set(f.provider.recoveryCalls)).toEqual(new Set(executionIds))

@@ -2,10 +2,10 @@ import { persistentFixtureRoot } from '../../../test/helpers/fixtureStorage.js'
 import { randomUUID } from 'node:crypto'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { deferred } from '../../../test/helpers/agentChatF1.js'
 import { afterEach, expect, it } from 'vitest'
 import { captureGitSource, qualifiedGit, type SourceSnapshotSink } from './capture.js'
 import { sourceSha256 } from './manifest.js'
-import { deferred } from '../../../test/helpers/deferred.js'
 
 const roots: string[] = []
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))) })
@@ -17,7 +17,7 @@ async function repository(bytes: Buffer) {
   await qualifiedGit(root, ['add', '.'])
   await qualifiedGit(root, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'source'])
   const commit = (await qualifiedGit(root, ['rev-parse', 'HEAD'])).toString().trim()
-  return { root, commit, approvedSourceId: randomUUID(), executablePolicy: 'strip' as const }
+  return { root, commit, approvedPaths: paths, approvedSourceId: randomUUID(), executablePolicy: 'strip' as const }
 }
 
 it('captures maximum-size blobs through a slow sink without exceeding the existing byte buffer budget', async () => {

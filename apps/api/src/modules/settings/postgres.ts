@@ -9,7 +9,7 @@ import {
 import type pg from 'pg'
 import type { ConfiguredHarnessInstance } from '../harnesses/instanceRegistry.js'
 import { UnavailableHarnessDefaultsSchema } from '@foreman-code/contracts/management'
-import { withTransaction } from '../../infrastructure/transaction.js'
+import { inTransaction } from '../../infrastructure/transaction.js'
 
 import { DomainError } from '../errors.js'
 
@@ -78,7 +78,7 @@ export class PostgresSettingsRepository {
   async updateManagedHarnessDefaults(
     client: pg.PoolClient,
     input: HarnessDefaults,
-    expectedRevision: number | undefined,
+    expectedRevision: number,
     options: { unavailable?: AgentHarness[] } = {},
   ): Promise<{ defaults: HarnessDefaults; revision: number }> {
     const defaults = HarnessDefaultsSchema.parse(input)
@@ -87,7 +87,7 @@ export class PostgresSettingsRepository {
       'select revision from application_settings where key = $1 for update', [SETTINGS_KEY],
     )
     const revision = Number(current.rows[0]?.revision ?? 0)
-    if (expectedRevision !== undefined && revision !== expectedRevision) {
+    if (revision !== expectedRevision) {
       throw new DomainError('REVISION_CONFLICT', 'Harness defaults changed since they were read.', 409, { currentRevision: revision })
     }
     const result = await client.query<{ revision: string }>(
@@ -97,7 +97,7 @@ export class PostgresSettingsRepository {
          revision = application_settings.revision + 1, updated_at = excluded.updated_at
        where application_settings.revision = $3
        returning revision`,
-      [SETTINGS_KEY, JSON.stringify(defaults), revision],
+      [SETTINGS_KEY, JSON.stringify(defaults), expectedRevision],
     )
     if (!result.rows[0]) {
       const latest = await client.query<{ revision: string }>(
@@ -120,7 +120,7 @@ export class PostgresSettingsRepository {
 
   async saveHarnessDefaults(input: HarnessDefaults): Promise<HarnessDefaults> {
     const defaults = HarnessDefaultsSchema.parse(input)
-    await withTransaction(this.pool, async client => {
+    await inTransaction(this.pool, undefined, async client => {
       await client.query('select pg_advisory_xact_lock(hashtext($1))', ['setting:harness-defaults'])
       await client.query(
         `insert into application_settings (key, record, revision, updated_at)

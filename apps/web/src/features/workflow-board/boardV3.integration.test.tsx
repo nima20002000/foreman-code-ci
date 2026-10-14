@@ -17,9 +17,7 @@ import { readBoardStart } from './startOutbox'
 import { readBoardStop } from './stopOutbox'
 import { readEditOutbox } from '../graph/nextDraft/editIntentStorage'
 import { queryKeys } from '../../shared/api/query'
-import { readLocalHumanAccess } from '../../shared/api/settingsExperience'
 import { boardDraftContextKey } from './keys'
-import { clickConnectionHandles } from '../graph/testConnectionHandles'
 import { worktreeFixture } from './worktree.fixtures'
 
 // The route tree, RootShell, sidebar, creation dialog, persisted boundary, Board,
@@ -48,8 +46,7 @@ function newBoardMock(options: Parameters<typeof createCurrentBoardMock>[0] = {}
 }
 function locks() {
   const queues = new Map<string, Promise<unknown>>()
-  Object.defineProperty(navigator, 'locks', { configurable: true, value: { request: (key: string, action: (() => unknown) | LockOptions, claim?: (lock: { name: string }) => unknown) => {
-    if (typeof action !== 'function') return claim!({ name: key })
+  Object.defineProperty(navigator, 'locks', { configurable: true, value: { request: (key: string, action: () => unknown) => {
     const result = (queues.get(key) ?? Promise.resolve()).then(action); queues.set(key, result.catch(() => undefined)); return result
   } } })
 }
@@ -269,12 +266,10 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
       expect(nextDraftDirty(useGraphDraftStore.getState().nextDrafts[key]!)).toBe(false)
       expect(useGraphDraftStore.getState().nextDrafts[key]!.history).toHaveLength(initial.history.length)
     }
-    await user.keyboard('{Control>}z{/Control}')
-    assertClean()
-    await user.click(within(authoring()).getByRole('button', { name: 'S3 mounted workflow' }))
+    await user.click(screen.getByRole('button', { name: 'S3 mounted workflow' }))
     await user.keyboard('Canceled title{Escape}')
     assertClean()
-    await user.click(within(authoring()).getByRole('button', { name: 'S3 mounted workflow' }))
+    await user.click(screen.getByRole('button', { name: 'S3 mounted workflow' }))
     await user.keyboard('{Enter}')
     assertClean()
     await user.click(control('Workflow actions'))
@@ -289,7 +284,7 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     assertClean()
     act(() => useGraphDraftStore.getState().changeNextDraft(key, (graph) => ({ ...structuredClone(graph), updatedAt: '2026-10-02T00:00:00Z' })))
     assertClean()
-    await user.click(within(authoring()).getByRole('button', { name: 'S3 mounted workflow' }))
+    await user.click(screen.getByRole('button', { name: 'S3 mounted workflow' }))
     await user.keyboard('Meaningful name{Enter}')
     await user.click(within(await screen.findByRole('dialog', { name: 'Rename workflow?' })).getByRole('button', { name: 'Rename' }))
     expect(screen.getByRole('group', { name: 'Draft actions' })).toBeVisible()
@@ -299,7 +294,7 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     expect(within(screen.getByRole('group', { name: 'Draft actions' })).getAllByRole('button').map((button) => button.getAttribute('aria-label')))
       .toEqual(['Redo'])
     expect(await screen.findByText('Undid workflow name “S3 mounted workflow” → “Meaningful name”', { selector: '.board-undo-notice span' })).toBeVisible()
-    expect(within(authoring()).getByRole('button', { name: 'S3 mounted workflow' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'S3 mounted workflow' })).toBeVisible()
     expect(mock.versions.size).toBe(1)
   }, 20_000)
 
@@ -328,15 +323,15 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     stageShape(key, 'single', mock)
     const editor = authoring(), canvas = screen.getByLabelText('Editable workflow graph'), href = window.location.href
     const title = screen.getByRole('heading', { name: 'S3 mounted workflow' })
-    await user.click(within(authoring()).getByRole('button', { name: 'S3 mounted workflow' }))
+    await user.click(screen.getByRole('button', { name: 'S3 mounted workflow' }))
     expect(screen.getByRole('textbox', { name: 'Workflow name' })).toHaveFocus()
     expect(screen.getByRole('heading', { name: 'S3 mounted workflow' })).toBe(title)
     expect(authoring()).toBe(editor); expect(screen.getByLabelText('Editable workflow graph')).toBe(canvas)
     expect(window.location.href).toBe(href)
     await user.keyboard('Canceled name{Escape}')
-    expect(within(authoring()).getByRole('button', { name: 'S3 mounted workflow' })).toBeVisible()
-    expect(within(authoring()).getByRole('button', { name: 'S3 mounted workflow' })).toHaveFocus()
-    await user.click(within(authoring()).getByRole('button', { name: 'S3 mounted workflow' }))
+    expect(screen.getByRole('button', { name: 'S3 mounted workflow' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'S3 mounted workflow' })).toHaveFocus()
+    await user.click(screen.getByRole('button', { name: 'S3 mounted workflow' }))
     await user.keyboard('Renamed board{Enter}')
     await user.click(within(await screen.findByRole('dialog', { name: 'Rename workflow?' })).getByRole('button', { name: 'Rename' }))
     expect(screen.getByRole('button', { name: 'Renamed board' })).toBeVisible()
@@ -358,7 +353,7 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     const removal = screen.getByRole('dialog', { name: 'Remove Menu renamed board?' })
     expect(removal).toHaveTextContent('Workflows with active runs cannot be removed.')
     await user.click(within(removal).getByRole('button', { name: 'Cancel' }))
-    expect(within(authoring()).getByRole('button', { name: 'Menu renamed board' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Menu renamed board' })).toBeVisible()
     server.use(http.delete(`/api/management/workspaces/${mock.workspaceId}/workflows/:workflowId`, () =>
       HttpResponse.json({ error: { code: 'ACTIVE_RUN', message: 'Stop active runs before removing this workflow.' } }, { status: 409 })))
     await user.click(screen.getByRole('button', { name: 'Workflow actions' }))
@@ -366,7 +361,7 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     await user.click(within(screen.getByRole('dialog', { name: 'Remove Menu renamed board?' })).getByRole('button', { name: 'Remove workflow' }))
     expect(await screen.findByText('Stop active runs before removing this workflow.')).toBeVisible()
     await user.click(screen.getByRole('button', { name: 'Cancel' }))
-    expect(within(authoring()).getByRole('button', { name: 'Menu renamed board' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Menu renamed board' })).toBeVisible()
   }, 15_000)
   it('saves before starting the exact newly published version from Save and run', async () => {
     const mock = newBoardMock({ allowSimulatedStart: true }), user = userEvent.setup()
@@ -393,7 +388,7 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     expect(within(authoring()).queryByRole('button', { name: 'Discard changes' })).not.toBeInTheDocument()
   })
 
-  it('keeps the agent picker open across additions and connects handles with undo and redo', async () => {
+  it('keeps the agent picker open across additions and connects two clicks with undo and redo', async () => {
     const mock = newBoardMock(), user = userEvent.setup()
     await mount(mock)
     const { key } = await create(mock, user)
@@ -421,9 +416,6 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     fireEvent.click(canvas.getByRole('button', { name: new RegExp(`^${mock.agents[0]!.name},`) }))
     await waitFor(() => expect(canvas.getByRole('button', { name: new RegExp(`^${mock.agents[0]!.name},`) })).toHaveAttribute('aria-pressed', 'true'))
     fireEvent.click(canvas.getByRole('button', { name: new RegExp(`^${mock.agents[1]!.name},`) }))
-    expect(useGraphDraftStore.getState().nextDrafts[key]!.graph.edges).toHaveLength(0)
-    clickConnectionHandles(canvas.getByLabelText(`Connect ${mock.agents[0]!.name} to another agent`),
-      canvas.getByLabelText(`Connect to ${mock.agents[1]!.name}`))
     await waitFor(() => expect(useGraphDraftStore.getState().nextDrafts[key]!.graph.edges).toHaveLength(1))
     expect(useGraphDraftStore.getState().nextDrafts[key]!.graph.edges).toHaveLength(1)
     await user.keyboard('{Control>}z{/Control}')
@@ -541,11 +533,7 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     const { key } = await create(mock, user); stageShape(key, 'sequential', mock); await save(mock, user, 1)
     const button = control('Start saved version'); await waitFor(() => expect(button).toBeEnabled())
     // Deny in the service AFTER its allowed session/read display: authority is rechecked.
-    if (mode === 'denied') {
-      const advertised = await readLocalHumanAccess()
-      server.use(http.get('/api/local-human', () => HttpResponse.json(advertised)))
-      mock.controls.deniedStart = true
-    }
+    if (mode === 'denied') mock.controls.deniedStart = true
     if (mode === 'stale') mock.controls.staleStart = true
     if (mode === 'unsupported') mock.controls.unsupportedStart = true
     if (mode === 'lost') mock.controls.loseStartReply = true

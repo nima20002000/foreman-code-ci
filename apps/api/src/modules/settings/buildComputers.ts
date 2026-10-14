@@ -1,5 +1,4 @@
 import type pg from 'pg'
-import { withTransaction } from '../../infrastructure/transaction.js'
 import {
   BuildComputerPreferenceSchema, BuildComputerReadSchema, BuildComputerUpdateSchema,
   BuildComputerBatchUpdateSchema, type BuildComputerBatchResult, type BuildComputerChange,
@@ -109,13 +108,19 @@ export class BuildComputerSettings {
       await this.commands.recordDenied(principal.id, source, 'build.computer.read', buildComputerKey(target))
       throw error
     }
-    return withTransaction(this.pool, async (sql) => {
+    const sql = await this.pool.connect()
+    try {
+      await sql.query('begin')
       await this.authorize(sql, principal, 'settings:read')
       await assertBuildComputerTarget(sql, target)
       const result = await this.status(sql, target)
       await this.authorize(sql, principal, 'settings:read')
+      await sql.query('commit')
       return result
-    })
+    } catch (error) {
+      await sql.query('rollback')
+      throw error
+    } finally { sql.release() }
   }
   async update(principal: ManagementPrincipal, source: 'http' | 'mcp', raw: unknown): Promise<BuildComputerStatus> {
     const input = BuildComputerUpdateSchema.parse(raw)
@@ -131,7 +136,7 @@ export class BuildComputerSettings {
       async sql => ({ computers: await this.savePreferences(sql, principal, input.updates) }))
   }
   private async save<T>(principal: ManagementPrincipal, source: 'http' | 'mcp',
-    input: { commandId?: string | undefined; updates: BuildComputerChange[] }, operation: string, targetKey: string,
+    input: { commandId: string; updates: BuildComputerChange[] }, operation: string, targetKey: string,
     payload: unknown, perform: (sql: pg.PoolClient) => Promise<T>): Promise<T> {
     try { requireAuthorization(principal, 'settings:update') } catch (error) {
       await this.commands.recordDenied(principal.id, source, operation, targetKey)

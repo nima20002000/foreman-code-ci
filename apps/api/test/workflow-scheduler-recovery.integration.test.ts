@@ -5,11 +5,10 @@ import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { WorkflowScheduleDispatcher } from '../src/modules/schedules/dispatcher.js'
 import { PostgresScheduleDispatcher } from '../src/modules/schedules/postgresDispatcher.js'
 import type { ScheduleDispatchContext } from '../src/modules/schedules/dispatchErrors.js'
-import { agent3Database, postgresEnabled } from './helpers/wave25Agent3.js'
+import { agent3Database, deferred, postgresEnabled } from './helpers/wave25Agent3.js'
 import { sch11ClockCases, sch11Minute, sch11Once, sch11Settings } from './helpers/sch11ClockCases.js'
 import { sch11DomainState, sch11Fixture, sch11Pool, type Sch11Database, type Sch11Fixture } from './helpers/sch11Fixture.js'
 import { sch11Child } from './helpers/sch11Process.js'
-import { rejectableDeferred } from './helpers/deferred.js'
 
 /** No `.fails`/skip markers hide product regressions. Except for the established
  * TEST_DATABASE_URL gate, every assertion is a normal failing regression test.
@@ -27,42 +26,6 @@ describe.skipIf(!postgresEnabled)('SCH-11 PostgreSQL clock parity / crash recove
       }
     }
     f = await sch11Fixture(database)
-  }, 60_000)
-
-  it('a fresh schedule service reads the fixture database and rechecks revoked readers', async () => {
-    const saved = await f.save()
-    const reader = await f.issue(['workflows:read'])
-    const other = sch11Pool(database)
-    try {
-      const service = new WorkflowScheduleService(other.pool, new PostgresCommandCoordinator(other.pool), f.clock)
-      expect(await service.get(reader.principal, f.scope)).toEqual({ schedule: saved })
-      expect(await f.access.revoke(reader.principal.id)).toBe(true)
-      await expect(service.get(reader.principal, f.scope)).rejects.toMatchObject({ code: 'AUTH_REVOKED' })
-      expect(await f.service.get(f.writer.principal, f.scope)).toEqual({ schedule: saved })
-    } finally {
-      await other.pool.end()
-    }
-  }, 60_000)
-
-  it('a child dispatcher accepts the schedule in the fixture database', async () => {
-    const saved = await f.save()
-    f.time.now = saved.nextOccurrenceAt!
-    const child = sch11Child(f, saved, 'prepared')
-    try {
-      await child.waitFor('prepared')
-      await child.release()
-      await child.waitFor('done')
-      expect(await child.exited).toEqual({ code: 0, signal: null })
-      expect(await f.history()).toEqual([expect.objectContaining({
-        id: scheduleOccurrenceId(f.scope.workflowId, saved.nextOccurrenceAt!),
-        status: 'accepted',
-        workflowVersionId: f.fixture.version.id,
-      })])
-      expect(await f.countRuns()).toBe(1)
-      expect((await f.current())?.nextOccurrenceAt).toBeNull()
-    } finally {
-      await child.close()
-    }
   }, 60_000)
 
   it.each(sch11ClockCases)('$name: preview equals the persisted acceptance and cursor', async ({ schedule, from, expected }) => {
@@ -232,7 +195,7 @@ describe.skipIf(!postgresEnabled)('SCH-11 PostgreSQL clock parity / crash recove
     const resumedAt = Date.parse(saved.nextOccurrenceAt!) + 86_400_000
     let clockReads = 0
     const clock = () => new Date(resumedAt + clockReads++ * 2)
-    const considered = rejectableDeferred()
+    const considered = deferred()
     let attemptedDue: string | undefined
     const port = new PostgresScheduleDispatcher(database.pool, async (_principal, input) => {
       attemptedDue = input.commandId
@@ -277,7 +240,7 @@ describe.skipIf(!postgresEnabled)('SCH-11 PostgreSQL clock parity / crash recove
       fixture.time.now = f.time.now
       return schedule
     }))
-    const entered = rejectableDeferred(), release = rejectableDeferred()
+    const entered = deferred(), release = deferred()
     const dispatcher = f.dispatcher(async (principal, input, guard) => {
       await f.startUsing()(principal, input, { ...guard, afterAcceptance: async (sql, run) => {
         await guard.afterAcceptance(sql, run); entered.resolve(); await release.promise

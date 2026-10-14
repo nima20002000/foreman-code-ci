@@ -1,6 +1,6 @@
 import type { HarnessExecution } from '@foreman-code/contracts'
 import { JobExecutionRecordSchema, type JobExecutionRecord } from '@foreman-code/contracts/job-verification'
-import { GraphExecutionIdentitySchema, NodeResolutionSchema, RUN_GRAPH_LIMITS, canonicalGraphJson, type GraphFact, type PublicGraphProjection, type RunGraphScope } from '@foreman-code/contracts/wave25'
+import { GraphExecutionIdentitySchema, NodeResolutionSchema, RUN_GRAPH_LIMITS, canonicalGraphJson, type GraphFact, type RunGraphCurrentState, type RunGraphScope } from '@foreman-code/contracts/wave25'
 import type { GraphTransactionSql } from './connection.js'
 import { assertGraphTransaction } from './connection.js'
 import { readCurrentNativeActivities, selectCurrentNodeActivity } from './currentActivity.js'
@@ -10,7 +10,7 @@ import { publicNodeState, publicReviewUnsettled, type PublicExecution } from './
 import { RunGraphError } from './errors.js'
 import { repeatTickIndex } from '../runs/repeatResolution.js'
 
-type PublicNode = PublicGraphProjection['nodes'][number]
+type PublicNode = RunGraphCurrentState['nodes'][number]
 export interface PublicProjectionOverlay extends PublicAttentionOverlay {
   executions?: readonly HarnessExecution[]
   /** Proposed persisted Job receipt state, under the existing Job/Run owner. */
@@ -139,11 +139,11 @@ export async function readPublicNodeProjection(sql: GraphTransactionSql, scope: 
   const resolutionRows = await sql.query<{ record: { value: NonNullable<PublicNode['resolution']> } }>(
     `select d.record from run_repeat_resolutions d where d.run_id=$1 and d.workflow_node_id=any($2::text[])
       and (d.execution_id=any($3::text[]) or d.execution_id is null and d.occurrence_key='')
-      order by (d.record #>> '{value,resolvedAt}')::timestamptz desc,
-        d.workflow_node_id,d.occurrence_key desc limit 2000`,
+      order by d.workflow_node_id,(d.occurrence_key='') desc limit 2001`,
     [scope.runId, [...nodeIds], [...executions.values()].map((item) => item.execution.executionId)])
+  if (resolutionRows.rows.length > 2000) throw new RunGraphError('GRAPH_SNAPSHOT_TOO_LARGE')
   const resolutions = new Map<string, NonNullable<PublicNode['resolution']>>()
-  for (const row of resolutionRows.rows.slice(0, 2000)) {
+  for (const row of resolutionRows.rows) {
     const value = NodeResolutionSchema.parse(row.record.value)
     if (!resolutions.has(value.workflowNodeId)) resolutions.set(value.workflowNodeId, value)
   }

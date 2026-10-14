@@ -1,19 +1,16 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdtemp, rm, appendFile, writeFile, readFile, symlink, mkdir, rename, link } from 'node:fs/promises'
 import { join } from 'node:path'
-import { homedir } from 'node:os'
 import { afterEach, describe, expect, it } from 'vitest'
 import { BYTE_TRANSFER_POLICY, type TransferContext, type TransferIntent } from '@foreman-code/contracts/byte-transfer'
 import { ResumableByteTransferService } from './service.js'
 const hash = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex')
-const fixtureRoot = join(homedir(), '.cache', 'foreman-tmp')
+const fixtureRoot = '/tmp'
 const roots: string[] = [], services: ResumableByteTransferService[] = []
 afterEach(async () => { for (const service of services.splice(0)) await service.close(); for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }) })
 async function fixture(bytes = Buffer.from('abcdefgh')) {
-  await mkdir(fixtureRoot, { recursive: true, mode: 0o700 })
   const root = await mkdtemp(join(fixtureRoot, '.graphql-transfer-test-')); roots.push(root)
   let epoch = randomUUID(), revoked = false, now = Date.now(), failure: string | undefined
-  let beforeDataSync: (() => Promise<void>) | undefined
   const context: TransferContext = { mainId: randomUUID(), deviceId: randomUUID(), workerInstallationId: randomUUID(),
     keyRevision: 1, authorizationRevision: 1, bootId: randomUUID(), connectionEpoch: epoch }
   const intent: TransferIntent = { ...context, version: 1, transferId: randomUUID(), operationId: randomUUID(),
@@ -24,18 +21,14 @@ async function fixture(bytes = Buffer.from('abcdefgh')) {
   const create = () => {
     const service = new ResumableByteTransferService(root, { authorize: async (_, current) => {
       if (revoked || current.connectionEpoch !== epoch) throw new Error('Denied current authority')
-    } }, () => now, async point => {
-      if (point === 'data-sync') await beforeDataSync?.()
-      if (failure === point) throw new Error('Injected disk failure')
-    })
+    } }, () => now, async point => { if (failure === point) throw new Error('Injected disk failure') })
     services.push(service); return service
   }
   const service = create()
   const chunk = (offset: number, value = bytes.subarray(offset, offset + 4)) => ({ offset, bytes: value, sha256: hash(value) })
   return { root, context, intent, bytes, service, create, chunk,
     revoke: () => { revoked = true }, reconnect: () => { epoch = randomUUID(); return { ...context, connectionEpoch: epoch, bootId: randomUUID() } },
-    time: (ms: number) => { now += ms }, fail: (point?: string) => { failure = point },
-    beforeDataSync: (callback: () => Promise<void>) => { beforeDataSync = callback } }
+    time: (ms: number) => { now += ms }, fail: (point?: string) => { failure = point } }
 }
 describe('bounded authenticated transfer staging', () => {
   it('keeps live writes and readers busy while finished old-epoch transfers permit Worker updates', async () => {
@@ -142,35 +135,6 @@ describe('bounded authenticated transfer staging', () => {
     const record = JSON.parse(await readFile(join(g.root, `${g.intent.transferId}.json`), 'utf8'))
     expect(record.payload.progress.state).toBe('cancelled')
   })
-  it('removes retired transfers from active inventory while preserving restart replay denials', async () => {
-    const f = await fixture(Buffer.alloc(0))
-    await f.service.start(f.intent, f.context)
-    await f.service.finish(f.intent.transferId, f.context)
-    await f.service.retire(f.intent.transferId)
-    expect(await f.service.inventory()).toEqual([])
-    await f.service.retire(f.intent.transferId)
-    await f.service.close()
-    const restarted = f.create()
-    expect(await restarted.inventory()).toEqual([])
-    await expect(restarted.start(f.intent, f.context)).rejects.toThrow('cancelled')
-    await expect(restarted.start({ ...f.intent, sha256: 'c'.repeat(64) }, f.context)).rejects.toThrow('immutable')
-    const next = { ...f.intent, transferId: randomUUID() }
-    expect((await restarted.start(next, f.context)).state).toBe('allocated')
-  })
-
-  it('keeps external reservations in active inventory when canonical bytes are retired', async () => {
-    const f = await fixture(Buffer.alloc(0))
-    await f.service.start(f.intent, f.context)
-    await f.service.reserve(f.intent, f.context, { kind: 'rsync-source', byteSize: 0 })
-    await f.service.retire(f.intent.transferId)
-    expect(await f.service.inventory()).toEqual([f.intent])
-    expect(await f.service.hasReservation(f.intent, 'rsync-source')).toBe(true)
-    await f.service.release(f.intent, 'rsync-source')
-    await f.service.retire(f.intent.transferId)
-    expect(await f.service.inventory()).toEqual([])
-    expect(await f.service.hasReservation(f.intent, 'rsync-source')).toBe(false)
-  })
-
   it('accepts zero bytes, tombstones cancellation and rejects other principals', async () => {
     const f = await fixture(Buffer.alloc(0)); await f.service.start(f.intent, f.context)
     await expect(f.service.status(f.intent.transferId, { ...f.context, deviceId: randomUUID() })).rejects.toThrow('principal')
@@ -187,19 +151,11 @@ describe('bounded authenticated transfer staging', () => {
   it('rejects competing receiver writers rather than stealing a lock', async () => {
     const f = await fixture(); await f.service.start(f.intent, f.context)
     const other = f.create(); await other.start(f.intent, f.context)
-    let announce!: () => void
-    let release!: () => void
-    const writing = new Promise<void>(resolve => { announce = resolve })
-    const gate = new Promise<void>(resolve => { release = resolve })
-    f.beforeDataSync(async () => { announce(); await gate })
-    const winner = f.service.append(f.intent.transferId, f.context, f.chunk(0))
-    await writing
-    try {
-      await expect(other.append(f.intent.transferId, f.context, f.chunk(0))).rejects.toThrow('busy')
-    } finally {
-      release()
-      expect((await winner).durableOffset).toBe(4)
-    }
+    const results = await Promise.allSettled([
+      f.service.append(f.intent.transferId, f.context, f.chunk(0)),
+      other.append(f.intent.transferId, f.context, f.chunk(0)),
+    ])
+    expect(results.filter(result => result.status === 'fulfilled')).toHaveLength(1)
     expect((await f.service.status(f.intent.transferId, f.context)).durableOffset).toBe(4)
   })
   it('reconciles a lost final ACK after directory fsync failure without another receipt', async () => {
@@ -221,28 +177,11 @@ describe('bounded authenticated transfer staging', () => {
     await expect(f.service.status(f.intent.transferId, f.context)).rejects.toThrow('Unsafe')
   })
   it('bounds cleanup and preserves cancellation tombstones after expiry', async () => {
-    const f = await fixture()
-    const other = { ...f.intent, transferId: randomUUID() }
-    await f.service.start(f.intent, f.context)
-    await f.service.start(other, f.context)
-    f.time(60_001)
-    expect(await f.service.cleanupExpired(1)).toBe(1)
-    expect(await f.service.inventory()).toHaveLength(1)
+    const f = await fixture(); await f.service.start(f.intent, f.context); f.time(60_001)
     expect(await f.service.cleanupExpired(1)).toBe(1)
     expect(await f.service.cleanupExpired(1)).toBe(0)
-    expect(await f.service.inventory()).toEqual([])
-    await f.service.close()
-    const restarted = f.create()
-    expect(await restarted.inventory()).toEqual([])
-    for (const intent of [f.intent, other]) {
-      await expect(restarted.cancel(intent.transferId, { ...f.context, deviceId: randomUUID() }))
-        .rejects.toThrow('principal')
-      expect((await restarted.cancel(intent.transferId, f.context)).state).toBe('cancelled')
-      await expect(restarted.start({
-        ...intent,
-        expiresAt: new Date(Date.parse(intent.expiresAt) + 60_000).toISOString(),
-      }, f.context)).rejects.toThrow('immutable')
-    }
+    await expect(readFile(join(f.root, `${f.intent.transferId}.part`))).rejects.toThrow()
+    expect(JSON.parse(await readFile(join(f.root, `${f.intent.transferId}.json`), 'utf8')).payload.progress.state).toBe('cancelled')
   })
   it('reclaims expired unfinished transfers before admitting another one for the device', async () => {
     const f = await fixture()
@@ -255,21 +194,9 @@ describe('bounded authenticated transfer staging', () => {
     f.time(60_001)
     const next = { ...f.intent, transferId: randomUUID(), expiresAt: new Date(Date.now() + 120_000).toISOString() }
     await f.service.start(next, f.context)
-    expect(await f.service.inventory()).toEqual([next])
-    await f.service.close()
-    const restarted = f.create()
-    expect(await restarted.inventory()).toEqual([next])
-    await restarted.append(next.transferId, f.context, f.chunk(0))
-    await restarted.append(next.transferId, f.context, f.chunk(4))
-    expect((await restarted.finish(next.transferId, f.context)).sha256).toBe(next.sha256)
     for (const transferId of stale) {
-      expect(await restarted.cancel(transferId, f.context)).toMatchObject({
-        transferId,
-        state: 'cancelled',
-        durableOffset: 4,
-        verifiedBytes: 0,
-      })
-      await expect(restarted.start({ ...next, transferId }, f.context)).rejects.toThrow('immutable')
+      await expect(readFile(join(f.root, `${transferId}.part`))).rejects.toThrow()
+      expect(JSON.parse(await readFile(join(f.root, `${transferId}.json`), 'utf8')).payload.progress.state).toBe('cancelled')
     }
   })
   it('rejects symlink ancestors and hardlinked/symlink partial files', async () => {

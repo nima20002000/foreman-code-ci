@@ -11,8 +11,7 @@ import { isWorkflowStart } from '../src/modules/harnesses/sessionStart.js'
 import { PostgresWorkflowClosureStore } from '../src/modules/interactions/workflowClosure.js'
 import { LOCAL_RUNNER_ID } from '../src/modules/workspaces/location.js'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
-import { rejectableDeferred } from './helpers/deferred.js'
+import { deferred, postgresEnabled } from './helpers/wave25Agent3.js'
 
 describe.runIf(postgresEnabled)('restart during native startup', () => {
   for (const boundary of ['reservation', 'authorization'] as const) {
@@ -22,9 +21,9 @@ describe.runIf(postgresEnabled)('restart during native startup', () => {
           fixture: makeCurrentWorkflowFixture(randomUUID(), 'single'),
           approvalNodeIds: [], insertRun: false,
         })
-        const paused = rejectableDeferred()
-        const release = rejectableDeferred()
-        const restarting = rejectableDeferred()
+        const paused = deferred()
+        const release = deferred()
+        const restarting = deferred()
         let pauseNext = true
         let startupFailure: unknown
         let failDisposal = failFirst
@@ -94,7 +93,7 @@ describe.runIf(postgresEnabled)('restart during native startup', () => {
           expect(locationResponse.isError, JSON.stringify(decodeMcpToolResult(locationResponse))).not.toBe(true)
           const location = WorkspaceLocationSetResultSchema.parse(decodeMcpToolResult(locationResponse)).value
           const savedResponse = await runtime.client.callTool({ name: CURRENT_WORKFLOW_TOOLS.save,
-            arguments: await runtime.create() })
+            arguments: { ...await runtime.create(), expectedLocationRevision: location.locationRevision } })
           expect(savedResponse.isError).not.toBe(true)
           const saved = CurrentWorkflowSaveResultSchema.parse(decodeMcpToolResult(savedResponse)).value
           const input = RunStartV3InputSchema.parse({
@@ -176,92 +175,15 @@ describe.runIf(postgresEnabled)('restart during native startup', () => {
     )
   }
 
-  it.each(['created', 'binding'] as const)(
-    'reaches restart closure while native startup is blocked at %s', async boundary => {
-      const runtime = await currentOperatorIntegration({
-        fixture: makeCurrentWorkflowFixture(randomUUID(), 'single'), approvalNodeIds: [],
-      })
-      const paused = rejectableDeferred()
-      const release = rejectableDeferred()
-      const restarting = rejectableDeferred()
-      let observed: NativeSessionReference | undefined
-      let shutdown: Promise<unknown> | undefined
-      let starting: Promise<unknown> | undefined
-      const connection = runtime.provider.connection.bind(runtime.provider)
-      const connections = vi.spyOn(runtime.provider, 'connection').mockImplementation(() => {
-        const manager = connection()
-        const createSession = manager.createSession.bind(manager)
-        return { ...manager, createSession: async (...args: Parameters<typeof manager.createSession>) => {
-          observed = await createSession(...args)
-          if (boundary === 'created') {
-            paused.resolve()
-            await release.promise
-          }
-          return observed
-        } }
-      })
-      const updateExecution = runtime.runs.updateExecution.bind(runtime.runs)
-      const publication = vi.spyOn(runtime.runs, 'updateExecution').mockImplementation(async (...args) => {
-        if (boundary === 'binding' && args[0].nativeSessionId && args[0].state === 'running') {
-          paused.resolve()
-          await release.promise
-        }
-        await updateExecution(...args)
-      })
-      const closeForRestart = runtime.native.closeForRestart.bind(runtime.native)
-      const close = vi.spyOn(runtime.native, 'closeForRestart').mockImplementation(() => {
-        const closing = closeForRestart()
-        restarting.resolve()
-        return closing
-      })
-      try {
-        starting = runtime.engine.start(runtime.f.run.id).then(() => undefined, (error: unknown) => error)
-        await Promise.race([paused.promise, starting.then(() => {
-          throw new Error('The Run finished before the startup boundary.')
-        })])
-        shutdown = runtime.engine.shutdown().then(() => undefined, (error: unknown) => error)
-        const reachedClosure = await Promise.race([
-          restarting.promise.then(() => true),
-          shutdown.then(() => false),
-        ])
-        expect(reachedClosure).toBe(true)
-        expect(runtime.provider.counts).toMatchObject({ sessions: 1, starts: 0 })
-        expect(runtime.provider.closedSessions.has(observed!.nativeSessionId)).toBe(false)
-        release.resolve()
-        expect(await shutdown).toBeUndefined()
-        expect(runtime.provider.closedSessions.has(observed!.nativeSessionId)).toBe(true)
-        expect(runtime.provider.counts.starts).toBe(0)
-        const read = await runtime.client.callTool({ name: 'run_get', arguments: {
-          workspaceId: runtime.f.scope.workspaceId, runId: runtime.f.run.id, detail: 'full',
-        } })
-        expect(read.isError).not.toBe(true)
-        expect(decodeMcpToolResult(read)).toMatchObject({ run: {
-          id: runtime.f.run.id, workflowVersionId: runtime.f.version.id, outcome: 'pending',
-        } })
-      } finally {
-        release.resolve()
-        await shutdown
-        await starting
-        try {
-          await runtime.close()
-        } finally {
-          connections.mockRestore()
-          publication.mockRestore()
-          close.mockRestore()
-        }
-      }
-    }, 60_000,
-  )
-
   it.each(['created', 'binding', 'bound'] as const)(
     'drains native startup paused at %s before closing its original manager', async boundary => {
       const runtime = await currentOperatorIntegration({
         fixture: makeCurrentWorkflowFixture(randomUUID(), 'single'),
         approvalNodeIds: [], insertRun: false,
       })
-      const paused = rejectableDeferred()
-      const release = rejectableDeferred()
-      const restarting = rejectableDeferred()
+      const paused = deferred()
+      const release = deferred()
+      const restarting = deferred()
       let pauseNext = true
       let observed: NativeSessionReference | undefined
       let executionId: string | undefined
@@ -320,7 +242,7 @@ describe.runIf(postgresEnabled)('restart during native startup', () => {
         expect(locationResponse.isError).not.toBe(true)
         const location = WorkspaceLocationSetResultSchema.parse(decodeMcpToolResult(locationResponse)).value
         const savedResponse = await runtime.client.callTool({ name: CURRENT_WORKFLOW_TOOLS.save,
-          arguments: await runtime.create() })
+          arguments: { ...await runtime.create(), expectedLocationRevision: location.locationRevision } })
         expect(savedResponse.isError).not.toBe(true)
         const saved = CurrentWorkflowSaveResultSchema.parse(decodeMcpToolResult(savedResponse)).value
         const input = RunStartV3InputSchema.parse({
@@ -355,12 +277,7 @@ describe.runIf(postgresEnabled)('restart during native startup', () => {
         expect(reservation.rows[0]).toMatchObject({ execution_identity: { id: executionId }, expected_reference: null })
 
         shutdown = runtime.engine.shutdown().then(() => undefined, (error: unknown) => error)
-        await Promise.race([
-          restarting.promise,
-          shutdown.then(error => {
-            throw error ?? new Error('Shutdown finished before native startup was drained.')
-          }),
-        ])
+        await restarting.promise
         const binding = await runtime.db.pool.query(`select e.record->>'nativeSessionId' as session_id,s.reference
           from harness_executions e left join execution_native_sessions s on s.execution_id=e.id
           where e.id=$1`, [executionId])

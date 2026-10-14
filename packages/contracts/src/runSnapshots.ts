@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { GraphIdSchema, IdSchema, TimestampSchema } from "./schemaPrimitives.js";
 import { CurrentWorkflowRelationshipSchema } from "./wave25/workflowShape.js";
-import type { RunExecutionState, RunOutcome, WorkflowRunSummary } from "./index.js";
+import type { RunExecutionState, RunOutcome } from "./index.js";
 import { AcceptedProviderAccountBindingSchema } from './providerAccounts.js';
 import { ActivitySnapshotV1Schema } from './activity.js';
 
@@ -45,38 +45,7 @@ export function runDropdownStatus(run: { executionState: RunExecutionState; outc
   return run.outcome;
 }
 
-/** Terminal Run facts cannot regress when independently refreshed projections arrive out of order. */
-export function preferRunSummary<T extends Pick<WorkflowRunSummary, 'id' | 'executionState' | 'outcome' | 'startedAt' | 'finishedAt'>>(
-  workspace: WorkflowRunSummary | undefined, listed: T, workspaceReadAt: number, listReadAt: number,
-): WorkflowRunSummary | T {
-  if (!workspace) return listed
-  if (workspace.executionState === 'completed' && listed.executionState !== 'completed') return workspace
-  if (listed.executionState === 'completed' && workspace.executionState !== 'completed') return listed
-  if (workspace.startedAt && !listed.startedAt) return workspace
-  if (listed.startedAt && !workspace.startedAt) return listed
-  return workspaceReadAt > listReadAt ? workspace : listed
-}
-
-/** Reconcile by identity before counting or choosing an automatically displayed Run. */
-export function activeRunCandidates(workspace: readonly WorkflowRunSummary[], listed: readonly RunDropdownSummary[]) {
-  const active = new Set(['queued', 'running', 'waiting', 'interrupted'])
-  const summaries = new Map(workspace.map(run => [run.id, run]))
-  const candidates = new Map<string, Pick<WorkflowRunSummary, 'id' | 'startedAt'>>()
-  for (const run of summaries.values()) {
-    if (active.has(run.executionState) || run.cleanupPending) candidates.set(run.id, run)
-  }
-  for (const run of listed) {
-    const summary = summaries.get(run.runId)
-    if (!active.has(run.status)) {
-      if (!(summary?.executionState === 'completed' && summary.cleanupPending)) candidates.delete(run.runId)
-    } else if (summary?.executionState !== 'completed') {
-      candidates.set(run.runId, { id: run.runId, ...(run.startedAt ? { startedAt: run.startedAt } : {}) })
-    }
-  }
-  return [...candidates.values()]
-}
-
-const AgentRunBoardNodeSnapshotSchema = z.object({
+export const AgentRunBoardNodeSnapshotSchema = z.object({
   kind:z.literal("agent").optional(),
   id: GraphIdSchema,
   name: z.string().min(1).refine((value) => value.trim().length > 0, "A snapshot node requires a name"),
@@ -85,14 +54,14 @@ const AgentRunBoardNodeSnapshotSchema = z.object({
   position: z.object({ x: z.number().finite(), y: z.number().finite() }).strict().readonly(),
   size: z.object({ width: z.number().finite().positive(), height: z.number().finite().positive() }).strict().readonly(),
 }).strict().readonly();
-const JobRunBoardNodeSnapshotSchema=z.object({kind:z.literal('job'),id:GraphIdSchema,name:z.string().min(1),
+export const JobRunBoardNodeSnapshotSchema=z.object({kind:z.literal('job'),id:GraphIdSchema,name:z.string().min(1),
   jobDefinitionId:GraphIdSchema,jobDefinitionRevision:z.number().int().positive(),jobDefinitionVersionId:IdSchema,
   position:AgentRunBoardNodeSnapshotSchema.unwrap().shape.position,size:AgentRunBoardNodeSnapshotSchema.unwrap().shape.size,
 }).strict().readonly()
 export const RunBoardNodeSnapshotSchema=z.union([AgentRunBoardNodeSnapshotSchema,JobRunBoardNodeSnapshotSchema])
 export type RunBoardNodeSnapshot = z.infer<typeof RunBoardNodeSnapshotSchema>;
 /** Reuse the current edge shape, including handles, labels and execution/approval semantics. */
-const RunBoardEdgeSnapshotSchema = CurrentWorkflowRelationshipSchema.readonly();
+export const RunBoardEdgeSnapshotSchema = CurrentWorkflowRelationshipSchema.readonly();
 export type RunBoardEdgeSnapshot = z.infer<typeof RunBoardEdgeSnapshotSchema>;
 
 const AvailableSnapshot = z.object({
@@ -129,7 +98,7 @@ export type RunBoardSnapshot = z.infer<typeof RunBoardSnapshotSchema>;
 export const RunBoardSnapshotGetInputSchema = z.object({ ...Run }).strict();
 /** Live state of one Agent node's interval checks in this Run. nextCheckAt is null while a check or the
  * node's graph work is running, before its first finished execution, and once the Run is not running. */
-const RunIntervalCheckSchema = z.object({
+export const RunIntervalCheckSchema = z.object({
   nodeId: GraphIdSchema, everySeconds: z.number().int().positive(), checks: z.number().int().nonnegative(),
   running: z.boolean(), nextCheckAt: TimestampSchema.nullable(),
 }).strict();
@@ -156,3 +125,4 @@ export type RunBoardSnapshotGetResult = z.infer<typeof RunBoardSnapshotGetResult
 export const SelectedRunChatKeySchema = z.object({
   ...Run, workflowNodeId: GraphIdSchema, agentId: GraphIdSchema, executionId: IdSchema, conversationId: IdSchema,
 }).strict().readonly();
+export type SelectedRunChatKey = z.infer<typeof SelectedRunChatKeySchema>;

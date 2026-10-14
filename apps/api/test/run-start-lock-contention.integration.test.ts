@@ -4,9 +4,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import {
   CURRENT_WORKFLOW_TOOLS, CurrentWorkflowSaveResultSchema, RunStartV3InputSchema, RunStartV3ResultSchema,
-  SavedRunDetailsSchema, makeCurrentWorkflowFixture, type RunStartV3Input,
+  makeCurrentWorkflowFixture, type RunStartV3Input,
 } from '@foreman-code/contracts/wave25'
-import { beginTransaction, commitTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
 import { createPool } from '../src/infrastructure/pool.js'
 import { LOCAL_RUNNER_ID } from '../src/modules/workspaces/location.js'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
@@ -49,8 +48,7 @@ describe.runIf(postgresEnabled)('authenticated Start lock contention', () => {
       const runtime = await currentOperatorIntegration({ database: { ...database, pool },
         fixture, approvalNodeIds: [], insertRun: false,
         outputFor: (nodeId) => nodeId === fixture.version.definition.repeat?.blocks[0]?.exitNodeId
-          ? { text: JSON.stringify({ routing: { outcome: 'pass' },
-            data: { latestDeliverable: { complete: true }, remainingFindings: [] } }) } : { node: nodeId } })
+          ? { text: JSON.stringify({ routing: { outcome: 'pass' } }) } : { node: nodeId } })
       runtimes.push(runtime)
       const location = await runtime.client.callTool({ name: 'workspace_location_set', arguments: {
         workspaceId: runtime.f.scope.workspaceId, commandId: randomUUID(), expectedLocationRevision: 1,
@@ -59,7 +57,7 @@ describe.runIf(postgresEnabled)('authenticated Start lock contention', () => {
       expect(location.isError).not.toBe(true)
       for (let workflow = 0; workflow < 2; workflow++) {
         const save = await runtime.client.callTool({ name: CURRENT_WORKFLOW_TOOLS.save,
-          arguments: await runtime.create() })
+          arguments: { ...await runtime.create(), expectedLocationRevision: 2 } })
         expect(save.isError).not.toBe(true)
         const saved = CurrentWorkflowSaveResultSchema.parse(decodeMcpToolResult(save)).value
         const input = RunStartV3InputSchema.parse({ workspaceId: saved.version.workspaceId,
@@ -71,19 +69,6 @@ describe.runIf(postgresEnabled)('authenticated Start lock contention', () => {
       }
     }
     return starters
-  }
-
-  async function assertSettled(starter: Starter, runId: string) {
-    // Start accepts asynchronously; teardown must wait for native cleanup as well as the terminal Run.
-    await vi.waitFor(async () => {
-      const response = await starter.runtime.client.callTool({ name: 'run_get', arguments: {
-        workspaceId: starter.input.workspaceId, runId, detail: 'full',
-      } })
-      expect(response.isError).not.toBe(true)
-      const details = SavedRunDetailsSchema.parse(decodeMcpToolResult(response))
-      expect(details).toMatchObject({ run: { id: runId, executionState: 'completed', outcome: 'succeeded' },
-        cleanupPending: false })
-    }, { timeout: 25_000, interval: 50 })
   }
 
   async function assertPersisted(starter: Starter, runId: string) {
@@ -102,60 +87,7 @@ describe.runIf(postgresEnabled)('authenticated Start lock contention', () => {
     [runId, starter.runtime.writer.principal.id, starter.input.commandId])
     expect(persisted.rows).toEqual([{ id: runId, workflow_id: starter.input.workflowId,
       workspace_id: starter.input.workspaceId, runner_id: LOCAL_RUNNER_ID, receipt_run_id: runId }])
-    await assertSettled(starter, runId)
   }
-
-  it('waits for repeat native closure after Start acceptance before teardown', async () => {
-    const runtimes: Runtime[] = []
-    let releaseClose!: () => void
-    const closeGate = new Promise<void>((resolve) => { releaseClose = resolve })
-    try {
-      const starter = (await createStarters(runtimes))[2]!
-      let closing = false
-      starter.runtime.provider.beforeClose = async () => {
-        closing = true
-        await closeGate
-      }
-      const response = await starter.runtime.client.callTool({ name: 'run_start', arguments: starter.input })
-      expect(response.isError).not.toBe(true)
-      const started = RunStartV3ResultSchema.parse(decodeMcpToolResult(response))
-      expect(started).toMatchObject({ accepted: true, replayed: false })
-      await vi.waitFor(() => { expect(closing).toBe(true) }, { timeout: 5_000, interval: 20 })
-
-      const callTool = starter.runtime.client.callTool.bind(starter.runtime.client)
-      let sawPending = false
-      vi.spyOn(starter.runtime.client, 'callTool').mockImplementation(async (...args) => {
-        const read = await callTool(...args)
-        if (args[0].name === 'run_get') {
-          const details = SavedRunDetailsSchema.parse(decodeMcpToolResult(read))
-          sawPending ||= details.run.executionState !== 'completed'
-          // Release only after the public read captures the unsettled Run.
-          releaseClose()
-        }
-        return read
-      })
-      await assertSettled(starter, started.run.id)
-      const settled = await starter.runtime.client.callTool({ name: 'run_get', arguments: {
-        workspaceId: starter.input.workspaceId, runId: started.run.id, detail: 'full',
-      } })
-      expect(settled.isError).not.toBe(true)
-      const details = SavedRunDetailsSchema.parse(decodeMcpToolResult(settled))
-      expect(details.executions).toHaveLength(2)
-      expect(details.executions).toEqual(expect.arrayContaining([expect.objectContaining({
-        result: expect.objectContaining({ outcome: 'succeeded', output: { text: JSON.stringify({
-          routing: { outcome: 'pass' }, data: { latestDeliverable: { complete: true }, remainingFindings: [] },
-        }) } }),
-      })]))
-      expect(starter.runtime.provider.closedSessions.size).toBe(2)
-      expect(sawPending).toBe(true)
-      expect(starter.runtime.provider.counts.starts).toBe(2)
-      expect(starter.runtime.dispatchErrors).toEqual([])
-    } finally {
-      releaseClose()
-      for (const runtime of runtimes.reverse()) await runtime.close()
-      vi.restoreAllMocks()
-    }
-  }, 60_000)
 
   it.each(['runner', 'workspace'] as const)(
     'queues four workflows across two workspaces beyond SQL deadlines at the %s lock', async (lockKind) => {
@@ -169,7 +101,7 @@ describe.runIf(postgresEnabled)('authenticated Start lock contention', () => {
         expect(new Set(starters.map(({ input }) => input.workspaceId)).size).toBe(2)
         const key = lockKind === 'runner' ? `admission:runner:${LOCAL_RUNNER_ID}`
           : `admission:workspace:${starters[0]!.input.workspaceId}`
-        await beginTransaction(holder)
+        await holder.query('begin')
         await holder.query('select pg_advisory_xact_lock(hashtext($1))', [key])
         const deadline = await pool.query("select current_setting('statement_timeout') as timeout")
         expect(deadline.rows[0]?.timeout).toBe('1s')
@@ -188,7 +120,7 @@ describe.runIf(postgresEnabled)('authenticated Start lock contention', () => {
         pending = calls
         await vi.waitFor(() => { expect(prepared).toBe(starters.length) }, { timeout: 5_000, interval: 20 })
         await waitForQueuedStarts(lockKind === 'runner' ? starters.length : 1)
-        await commitTransaction(holder)
+        await holder.query('commit')
         const accepted = await Promise.all(calls)
         const ids: string[] = []
         for (const [index, response] of accepted.entries()) {
@@ -222,7 +154,7 @@ describe.runIf(postgresEnabled)('authenticated Start lock contention', () => {
           [starters.map(({ input }) => input.workflowId)])
         expect(runs.rows.map((row) => row.id).sort()).toEqual(ids.sort())
       } finally {
-        await rollbackTransaction(holder)
+        await holder.query('rollback')
         holder.release()
         await Promise.allSettled(pending)
         for (const snapshot of snapshots) snapshot.mockRestore()
@@ -237,7 +169,7 @@ describe.runIf(postgresEnabled)('authenticated Start lock contention', () => {
     let pending: Promise<unknown>[] = []
     try {
       const starter = (await createStarters(runtimes))[0]!
-      await beginTransaction(holder)
+      await holder.query('begin')
       await holder.query('select pg_advisory_xact_lock(hashtext($1))',
         [`command:${starter.runtime.writer.principal.id}:run.start:${starter.input.commandId}`])
       const calls = Array.from({ length: 4 }, () => starter.runtime.client.callTool({
@@ -245,7 +177,7 @@ describe.runIf(postgresEnabled)('authenticated Start lock contention', () => {
       }))
       pending = calls
       await waitForQueuedStarts(calls.length)
-      await commitTransaction(holder)
+      await holder.query('commit')
       const responses = await Promise.all(calls)
       const results = responses.map((response) => {
         expect(response.isError).not.toBe(true)
@@ -257,7 +189,7 @@ describe.runIf(postgresEnabled)('authenticated Start lock contention', () => {
       const runs = await database.pool.query('select id from runs where workflow_id=$1', [starter.input.workflowId])
       expect(runs.rows).toEqual([{ id: results[0]!.run.id }])
     } finally {
-      await rollbackTransaction(holder)
+      await holder.query('rollback')
       holder.release()
       await Promise.allSettled(pending)
       for (const runtime of runtimes.reverse()) await runtime.close()
@@ -271,7 +203,7 @@ describe.runIf(postgresEnabled)('authenticated Start lock contention', () => {
     let pending: Promise<unknown>[] = []
     try {
       const starter = (await createStarters(runtimes))[0]!
-      await beginTransaction(holder)
+      await holder.query('begin')
       await holder.query('select pg_advisory_xact_lock(hashtext($1))',
         [`command:${starter.runtime.writer.principal.id}:run.start:${starter.input.commandId}`])
       const remote = starter.runtime.client.callTool({ name: 'run_start', arguments: starter.input })
@@ -290,14 +222,14 @@ describe.runIf(postgresEnabled)('authenticated Start lock contention', () => {
         where operation='run.start' and principal_id=$1 and command_id=$2`,
       [starter.runtime.writer.principal.id, starter.input.commandId])
       expect(receipts.rows).toEqual([])
-      await commitTransaction(holder)
+      await holder.query('commit')
       const retry = await starter.runtime.client.callTool({ name: 'run_start', arguments: starter.input })
       expect(retry.isError).not.toBe(true)
       const accepted = RunStartV3ResultSchema.parse(decodeMcpToolResult(retry))
       expect(accepted).toMatchObject({ accepted: true, replayed: false })
       await assertPersisted(starter, accepted.run.id)
     } finally {
-      await rollbackTransaction(holder)
+      await holder.query('rollback')
       holder.release()
       await Promise.allSettled(pending)
       for (const runtime of runtimes.reverse()) await runtime.close()

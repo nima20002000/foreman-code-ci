@@ -61,36 +61,21 @@ function stopRequest() {
   return { method: 'control' as const, intent, placement, command }
 }
 const flush = async () => { for (let i = 0; i < 160; i++) await Promise.resolve() }
-function setup(handler: NonNullable<DeviceExtensionRegistration['handle']>, limits = { maxJsonBytes: 1_048_576, maxBinaryBytes: 1_048_576 }, heartbeatMs = 1000, mainHandler?: NonNullable<DeviceExtensionRegistration['handle']>, namespace = 'execution-v1') {
+function setup(handler: NonNullable<DeviceExtensionRegistration['handle']>, limits = { maxJsonBytes: 1_048_576, maxBinaryBytes: 1_048_576 }, heartbeatMs = 1000, mainHandler?: NonNullable<DeviceExtensionRegistration['handle']>) {
   const rawMain = new Socket(), rawWorker = new Socket(); rawMain.peer = rawWorker; rawWorker.peer = rawMain
   const mainSocket = adaptDeviceSocket(rawMain), workerSocket = adaptDeviceSocket(rawWorker)
-  const mainRegistration: DeviceExtensionRegistration = { namespace, version: 1, role: mainHandler ? 'duplex' : 'client', ...limits, ...(mainHandler ? { handle: mainHandler } : {}) }
+  const mainRegistration: DeviceExtensionRegistration = { namespace: 'execution-v1', version: 1, role: mainHandler ? 'duplex' : 'client', ...limits, ...(mainHandler ? { handle: mainHandler } : {}) }
   const workerRegistration: DeviceExtensionRegistration = { ...mainRegistration, role: mainHandler ? 'duplex' : 'server', handle: handler }
   const extensions = negotiateDeviceExtensions(extensionDescriptors([mainRegistration]), extensionDescriptors([workerRegistration]))
   const parent = new AbortController(), revalidate = vi.fn(async () => {})
   const main = new DeviceApplicationChannel({ side: 'main', binding, socket: mainSocket, signal: parent.signal, extensions, registrations: [mainRegistration], revalidate })
   const worker = new DeviceApplicationChannel({ side: 'worker', binding, socket: workerSocket, signal: parent.signal, extensions, registrations: [workerRegistration] })
   const tasks = [main.run(mainSocket.messages[Symbol.asyncIterator](), heartbeatMs * 2), worker.run(workerSocket.messages[Symbol.asyncIterator](), heartbeatMs)]
-  for (const task of tasks) void task.catch(() => {
-    // ignore: close aborts these carrier tasks and joins their results with allSettled.
-  })
+  for (const task of tasks) void task.catch(() => {})
   return { main, worker, rawMain, rawWorker, revalidate, close: async () => { parent.abort(); main.close(); worker.close(); await Promise.allSettled(tasks) } }
 }
 afterEach(() => vi.useRealTimers())
 describe('authenticated namespace carrier mechanics', () => {
-  it('transfers multi-megabyte agent snapshots without enlarging other namespace limits', async () => {
-    const maxJsonBytes = Math.ceil(32 * 1024 * 1024 / 3) * 4 + 1024
-    const limits = { maxJsonBytes, maxBinaryBytes: 0 }
-    expect(() => extensionDescriptors([{ namespace: 'execution-v1', version: 1, role: 'client', ...limits }]))
-      .toThrow('Invalid device extension')
-    const payload = { commit: 'a'.repeat(40), bundleBase64: Buffer.alloc(8 * 1024 * 1024).toString('base64') }
-    const pair = setup(async () => ({ payload }), limits, 1000, undefined, 'agent-snapshot-v1')
-    try {
-      const response = await pair.main.request('agent-snapshot-v1', { path: '/project/tree', baseCommit: 'b'.repeat(40) })
-      expect(response.payload).toEqual(payload)
-      expect(pair.rawWorker.frames.every(frame => Buffer.byteLength(frame) <= 16_384)).toBe(true)
-    } finally { await pair.close() }
-  })
   it('requires actual server handler and exact role/version-compatible negotiation', () => {
     expect(() => extensionDescriptors([{ namespace: 'execution-v1', version: 1, role: 'server', maxJsonBytes: 1024, maxBinaryBytes: 0 }])).toThrow('actual domain handler')
     const client = { namespace: 'execution-v1', version: 1, role: 'client' as const, maxJsonBytes: 1024, maxBinaryBytes: 0 }
@@ -178,9 +163,7 @@ describe('authenticated namespace carrier mechanics', () => {
       if (frame.type !== 'application-ack' || frame.offset === 0) send(text)
     }
     const requests = Array.from({ length: 8 }, () => pair.main.request('execution-v1', 'x'.repeat(65_536)))
-    for (const request of requests) void request.catch(() => {
-      // ignore: the original requests are awaited below or joined after channel cancellation.
-    })
+    for (const request of requests) void request.catch(() => {})
     try {
       await flush()
       const chunks = pair.rawMain.frames.filter(frame => JSON.parse(frame).type === 'application-chunk')
@@ -287,11 +270,7 @@ describe('authenticated namespace carrier mechanics', () => {
     let finish!: (value: { payload: unknown }) => void; let handlerSignal!: AbortSignal
     const pair = setup(async (payload, context) => { if (payload === 'slow') { handlerSignal = context.signal; return new Promise((resolve) => { finish = resolve }) }; return { payload } })
     try {
-      const abort = new AbortController()
-      const result = pair.main.request('execution-v1', 'slow', { signal: abort.signal })
-      void result.catch(() => {
-        // ignore: attach before cancellation; the original rejection is asserted below.
-      })
+      const abort = new AbortController(), result = pair.main.request('execution-v1', 'slow', { signal: abort.signal }); void result.catch(() => {})
       await flush(); abort.abort(); await expect(result).rejects.toThrow('cancelled'); await flush(); expect(handlerSignal.aborted).toBe(true)
       finish({ payload: 'stale' }); await flush()
       expect(await pair.main.request('execution-v1', 'fresh')).toEqual({ payload: 'fresh' })
@@ -300,23 +279,14 @@ describe('authenticated namespace carrier mechanics', () => {
   it('joins the raw domain promise after cancellation has settled its transport wrapper', async () => {
     let finish!: (result: { payload: unknown }) => void
     const pair = setup(async () => new Promise((resolve) => { finish = resolve }))
-    const pending = pair.main.request('execution-v1', {})
-    void pending.catch(() => {
-      // ignore: attach before channel cancellation; the original rejection is asserted below.
-    })
-    await flush()
-    await pair.close()
-    await expect(pending).rejects.toThrow()
+    const pending = pair.main.request('execution-v1', {}); void pending.catch(() => {}); await flush(); await pair.close(); await expect(pending).rejects.toThrow()
     let joined = false; const drain = pair.worker.join().then(() => { joined = true }); await flush(); expect(joined).toBe(false)
     finish({ payload: 'late-and-fenced' }); await drain; expect(joined).toBe(true); await pair.main.join()
   })
   it('connection revocation rejects pending requests and fences handler generations', async () => {
     let handlerSignal!: AbortSignal
     const pair = setup(async (_payload, context) => { handlerSignal = context.signal; return new Promise(() => {}) })
-    const result = pair.main.request('execution-v1', 'pending')
-    void result.catch(() => {
-      // ignore: attach before channel cancellation; the original rejection is asserted below.
-    })
+    const result = pair.main.request('execution-v1', 'pending'); void result.catch(() => {})
     await flush(); await pair.close(); await expect(result).rejects.toThrow(); expect(handlerSignal.aborted).toBe(true)
     await expect(pair.main.request('execution-v1', 'stale')).rejects.toThrow()
   })
@@ -346,10 +316,7 @@ describe('authenticated namespace carrier mechanics', () => {
     const send = pair.rawWorker.send.bind(pair.rawWorker)
     pair.rawWorker.send = (text) => { if (JSON.parse(text).type !== 'application-ack') send(text) }
     try {
-      const pending = pair.main.request('execution-v1', { dispatch: true })
-      void pending.catch(() => {
-        // ignore: attach before advancing timers; the original timeout rejection is asserted below.
-      })
+      const pending = pair.main.request('execution-v1', { dispatch: true }); void pending.catch(() => {})
       await flush(); await vi.advanceTimersByTimeAsync(10_001); await expect(pending).rejects.toThrow('timeout')
       expect(handler).not.toHaveBeenCalled(); await flush(); pair.rawWorker.send = send
       expect(await pair.main.request('execution-v1', { dispatch: true })).toEqual({ payload: 'receipt' })
@@ -357,10 +324,7 @@ describe('authenticated namespace carrier mechanics', () => {
   })
   it('bounds concurrent requests even across awaited live authorization', async () => {
     const pair = setup(async () => new Promise(() => {}))
-    const requests = Array.from({ length: 8 }, () => pair.main.request('execution-v1', {}))
-    for (const request of requests) void request.catch(() => {
-      // ignore: the original requests are awaited below or joined after channel cancellation.
-    })
+    const requests = Array.from({ length: 8 }, () => pair.main.request('execution-v1', {})); for (const request of requests) void request.catch(() => {})
     await flush(); await expect(pair.main.request('execution-v1', {})).rejects.toThrow('backpressure'); await pair.close(); await Promise.allSettled(requests)
   })
   it('delivers exact-owner Stop with all ordinary outgoing slots occupied', async () => {
@@ -375,9 +339,7 @@ describe('authenticated namespace carrier mechanics', () => {
       return { payload: 'stopped' }
     })
     const requests = Array.from({ length: 8 }, () => pair.main.request('execution-v1', 'slow'))
-    for (const request of requests) void request.catch(() => {
-      // ignore: the original requests are awaited below or joined after channel cancellation.
-    })
+    for (const request of requests) void request.catch(() => {})
     try {
       await flush()
       expect(releases).toHaveLength(8)
@@ -403,9 +365,7 @@ describe('authenticated namespace carrier mechanics', () => {
       return { payload: 'late' }
     })
     const requests = Array.from({ length: 8 }, () => pair.main.request('execution-v1', 'slow', { timeoutMs: 20 }))
-    for (const request of requests) void request.catch(() => {
-      // ignore: the original requests are awaited below or joined after channel cancellation.
-    })
+    for (const request of requests) void request.catch(() => {})
     try {
       await flush()
       expect(signals).toHaveLength(8)
@@ -459,9 +419,7 @@ describe('authenticated namespace carrier mechanics', () => {
   it('refuses to reserve Stop capacity for a mismatched command owner', async () => {
     const pair = setup(async () => new Promise(() => {}))
     const requests = Array.from({ length: 8 }, () => pair.main.request('execution-v1', {}))
-    for (const request of requests) void request.catch(() => {
-      // ignore: the original requests are awaited below or joined after channel cancellation.
-    })
+    for (const request of requests) void request.catch(() => {})
     try {
       await flush()
       const stop = stopRequest()
@@ -484,9 +442,7 @@ describe('authenticated namespace carrier mechanics', () => {
       return { payload: 'stopped' }
     })
     const ordinary = Array.from({ length: 8 }, () => pair.main.request('execution-v1', 'occupied'))
-    for (const request of ordinary) void request.catch(() => {
-      // ignore: these occupied requests are canceled and joined in the finally block.
-    })
+    for (const request of ordinary) void request.catch(() => {})
     try {
       await flush()
       await expect(pair.main.request('execution-v1', stop)).resolves.toEqual({ payload: 'stopped' })
@@ -529,9 +485,7 @@ describe('authenticated namespace carrier mechanics', () => {
       if (frame.type !== 'application-ack' || frame.offset === 0 || !ordinaryIds.has(frame.id)) send(text)
     }
     const upload = pair.main.request('execution-v1', 'x'.repeat(65_536))
-    void upload.catch(() => {
-      // ignore: this blocked upload is canceled and joined in the finally block.
-    })
+    void upload.catch(() => {})
     try {
       await flush()
       await expect(pair.main.request('execution-v1', stopRequest())).resolves.toEqual({ payload: 'stopped' })
@@ -550,9 +504,7 @@ describe('authenticated namespace carrier mechanics', () => {
     const pair = setup(side === 'worker' ? slow : fast, undefined, 1000, side === 'main' ? slow : fast)
     const occupied = side === 'main' ? pair.main : pair.worker, caller = side === 'main' ? pair.worker : pair.main
     const requests = Array.from({ length: 8 }, () => caller.request('execution-v1', {}))
-    for (const request of requests) void request.catch(() => {
-      // ignore: the original requests are awaited below or joined after channel cancellation.
-    })
+    for (const request of requests) void request.catch(() => {})
     try {
       await flush(); expect(entered).toHaveBeenCalledTimes(8)
       await expect(caller.request('execution-v1', {})).rejects.toThrow('backpressure')
@@ -599,9 +551,7 @@ describe('authenticated namespace carrier mechanics', () => {
         }),
         uploader.request('execution-v1', payload, { signal: abort.signal }),
       ]
-      for (const upload of uploads) void upload.catch(() => {
-        // ignore: attach before aborting; the original upload rejections are asserted below.
-      })
+      for (const upload of uploads) void upload.catch(() => {})
       try {
         await flush()
         expect(uploadIds.size).toBe(2)

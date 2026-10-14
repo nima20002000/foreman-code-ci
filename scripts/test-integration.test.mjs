@@ -1,9 +1,8 @@
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
 import { integrationEnvironmentCapabilities, partitionIntegrationCapabilities,
   supportsInstalledWorkerHost } from './integration-capabilities.mjs'
@@ -15,7 +14,7 @@ import { autoRetestFiles, discoverFiles, failedCasesFromLog, failedFilesFromLog,
   finalizeIntegrationResult, fullRunExitCode, hasActiveHeavyJobToken, hasHeavyJobAdmission,
   hungContext, integrationDurationsPath, integrationEnvironment, integrationReport, measuredDurations,
   integrationLogPath, integrationProgressLine, integrationShardLimit, integrationShardPlan,
-  integrationTimeouts, integrationVitestArguments, integrationGate,
+  integrationTimeouts, integrationVitestArguments,
   isIntegrationTestPath, isRegularIntegrationFile, mergeDurations, options, orderByDuration, parseVitestCases,
   partitionIntegrationFiles, readDurations, readIntegrationResources, reservedIntegrationShards,
   scheduleFiles, scheduleIntegrationQueue, selectFiles, selectExactFiles,
@@ -95,10 +94,6 @@ test('each affected integration file runs only when its required capability is p
     ['apps/api/test/operator-management-file-authority.integration.test.ts', 'nativeCgroupDelegation'],
     ['apps/api/test/test-database-startup.integration.test.ts', 'testDatabaseStartup'],
     ['apps/api/test/workflow-systemd-restart.integration.test.ts', 'installedWorkerHost'],
-    ['apps/api/test/workflow-systemd-installed-service.integration.test.ts', 'installedWorkerHost'],
-    ['apps/api/test/workflow-systemd-active-recovery.integration.test.ts', 'installedWorkerHost'],
-    ['apps/api/test/workflow-systemd-writable-source-recovery.integration.test.ts', 'installedWorkerHost'],
-    ['apps/api/test/workflow-systemd-restart-unit-cleanup.integration.test.ts', 'installedWorkerHost'],
     ['apps/api/test/native-service-restart.integration.test.ts', 'installedWorkerHost'],
     ['apps/api/test/computer-workflow-save.regression-directories.integration.test.ts', 'installedWorkerHost'],
     ['apps/api/test/computer-workflow-save.regression-reservation-cleanup-preparing.integration.test.ts', 'installedWorkerHost'],
@@ -131,19 +126,6 @@ test('each affected integration file runs only when its required capability is p
     assert.equal(unavailable[0].complete, false)
     assert.equal(unavailable[0].code, null)
   }
-})
-
-test('installed API packaging and recovery files run exclusively while publication stays parallel', () => {
-  const installed = [
-    'apps/api/test/workflow-systemd-installed-service.integration.test.ts',
-    'apps/api/test/workflow-systemd-active-recovery.integration.test.ts',
-    'apps/api/test/workflow-systemd-writable-source-recovery.integration.test.ts',
-  ]
-  const ordinary = 'apps/api/test/workflow-systemd-restart-unit-publication.integration.test.ts'
-  assert.deepEqual(partitionIntegrationFiles([...installed, ordinary]), {
-    exclusive: installed,
-    parallel: [ordinary],
-  })
 })
 
 test('unsupported integration files remain required and prevent a complete or passing report', async () => {
@@ -400,62 +382,28 @@ test('integration shard validation retains the fallback and accepts a computed c
 
 const shardResources = {
   cpuCount: 16, availableMemoryBytes: 32 * 1024 ** 3,
-  maxConnections: 800, reservedConnections: 3, activeConnections: 1,
+  maxConnections: 300, reservedConnections: 3, activeConnections: 1,
 }
 
-test('a capable sixteen-CPU machine runs one integration shard per CPU and reports its resource limits', () => {
+test('a capable sixteen-CPU machine uses all CPUs and reports its resource limits', () => {
   const plan = integrationShardPlan({}, shardResources)
   assert.equal(plan.shards, 16)
   assert.equal(plan.limit, 16)
   assert.match(plan.reason, /CPU limit 16/)
-  assert.match(plan.reason, /memory limit 21.*1.5 GiB\/shard/)
-  assert.match(plan.reason, /PostgreSQL limit 49.*max_connections=800.*3 reserved.*1 occupied.*16 connections\/shard/)
+  assert.match(plan.reason, /memory limit 32.*1 GiB\/shard/)
+  assert.match(plan.reason, /PostgreSQL limit 18.*max_connections=300.*3 reserved.*1 occupied.*16 connections\/shard/)
 })
 
 test('each resource independently bounds integration parallelism', () => {
   for (const [resources, expected] of [
     [{ cpuCount: 4 }, 4],
-    [{ availableMemoryBytes: 3.5 * 1024 ** 3 }, 2],
+    [{ availableMemoryBytes: 3.5 * 1024 ** 3 }, 3],
     [{ maxConnections: 100 }, 6],
-    [{ activeConnections: 556 }, 15],
-    [{ reservedConnections: 560 }, 14],
+    [{ activeConnections: 45 }, 15],
+    [{ reservedConnections: 60 }, 14],
   ]) {
     assert.equal(integrationShardPlan({}, { ...shardResources, ...resources }).shards, expected)
   }
-})
-
-test('integration shards use their CI slot CPU and memory shares rather than the whole computer', () => {
-  const environment = { FOREMAN_CODE_CI_CPU_COUNT: '8', FOREMAN_CODE_CI_MEMORY_BYTES: String(6 * 1024 ** 3) }
-  const plan = integrationShardPlan(environment, shardResources)
-  assert.equal(plan.shards, 4)
-  assert.match(plan.reason, /CPU limit 8/)
-  assert.match(plan.reason, /memory limit 4/)
-  assert.match(plan.reason, /CI slot share/)
-  assert.equal(integrationShardPlan(environment, { ...shardResources, availableMemoryBytes: 3 * 1024 ** 3 }).shards, 2)
-  assert.throws(() => integrationShardPlan({ ...environment, FOREMAN_CODE_CI_CPU_COUNT: '0' }, shardResources), /CPU count/)
-  assert.equal(integrationShardPlan({ ...environment, FOREMAN_CODE_INTEGRATION_SHARDS: '20' }, shardResources).shards, 4)
-})
-
-test('a sixteen-CPU host with a 4.4 GiB CI slot runs two integration shards', () => {
-  const environment = {
-    FOREMAN_CODE_CI_CPU_COUNT: '6',
-    FOREMAN_CODE_CI_MEMORY_BYTES: String(Math.floor(4.4 * 1024 ** 3)),
-  }
-  const plan = integrationShardPlan(environment, shardResources)
-  assert.equal(plan.shards, 2)
-  assert.equal(plan.limit, 2)
-  assert.match(plan.reason, /memory limit 2.*1.5 GiB\/shard/)
-})
-
-test('CI shard ceilings respect database capacity without rejecting the run', () => {
-  const environment = { FOREMAN_CODE_CI_INTEGRATION_SHARDS: '12' }
-  assert.equal(integrationShardPlan(environment, shardResources).shards, 12)
-  const plan = integrationShardPlan(environment, { ...shardResources, maxConnections: 100 })
-  assert.equal(plan.shards, 6)
-  assert.match(plan.reason, /PostgreSQL limit 6/)
-  assert.equal(integrationShardPlan({ FOREMAN_CODE_CI_INTEGRATION_SHARDS: '4' }, shardResources).shards, 4)
-  assert.throws(() => integrationShardPlan({ FOREMAN_CODE_CI_INTEGRATION_SHARDS: '0' }, shardResources),
-    /integer from 1 to 64/)
 })
 
 test('unknown or invalid resource measurements retain twelve without ignoring known smaller limits', () => {
@@ -469,23 +417,22 @@ test('unknown or invalid resource measurements retain twelve without ignoring kn
   assert.equal(integrationShardPlan({}, { cpuCount: NaN, availableMemoryBytes: -1 }).shards, 12)
 })
 
-test('explicit shard requests run at most at the computed resource cap', () => {
+test('explicit shard requests must fit the computed resource cap', () => {
   for (const variable of ['GRAPHQL_INTEGRATION_SHARDS', 'FOREMAN_CODE_INTEGRATION_SHARDS']) {
     assert.equal(integrationShardPlan({ [variable]: '16' }, shardResources).shards, 16)
     const smaller = integrationShardPlan({ [variable]: '8' }, shardResources)
     assert.equal(smaller.shards, 8)
     assert.match(smaller.reason, /requested 8/)
-    for (const value of ['0', '-1', '1.5', 'NaN', 'Infinity']) {
-      assert.throws(() => integrationShardPlan({ [variable]: value }, shardResources), /positive integer/)
+    for (const value of ['0', '-1', '1.5', 'NaN', 'Infinity', '17']) {
+      assert.throws(() => integrationShardPlan({ [variable]: value }, shardResources), /integer from 1 to 16/)
     }
-    assert.equal(integrationShardPlan({ [variable]: '33' }, shardResources).shards, 16)
-    assert.equal(integrationShardPlan({ [variable]: '13' }).shards, 12)
+    assert.throws(() => integrationShardPlan({ [variable]: '13' }), /integer from 1 to 12/)
   }
 })
 
 test('resource-derived capacity can exceed the old explicit ceiling on larger machines', () => {
   const plan = integrationShardPlan({ GRAPHQL_INTEGRATION_SHARDS: '80' }, {
-    ...shardResources, cpuCount: 96, availableMemoryBytes: 144 * 1024 ** 3, maxConnections: 1600,
+    ...shardResources, cpuCount: 96, availableMemoryBytes: 96 * 1024 ** 3, maxConnections: 1600,
   })
   assert.equal(plan.limit, 96)
   assert.equal(plan.shards, 80)
@@ -502,9 +449,9 @@ test('runnable file count bounds chosen shards and appears in the explanation', 
 test('known resources that cannot support a shard fail before allocating databases', () => {
   for (const resources of [
     { availableMemoryBytes: 0 },
-    { availableMemoryBytes: 1.5 * 1024 ** 3 - 1 },
+    { availableMemoryBytes: 1024 ** 3 - 1 },
     { maxConnections: 19 },
-    { activeConnections: 800 },
+    { activeConnections: 300 },
   ]) {
     assert.throws(() => integrationShardPlan({}, { ...shardResources, ...resources }), /No integration shard fits/)
   }
@@ -785,11 +732,11 @@ test('computed capacity preserves Job reservations and qualification checks', ()
   const job = { FOREMAN_CODE_VERIFICATION_ROOT: '/source',
     FOREMAN_CODE_VERIFICATION_INTEGRATION_SHARDS: '16', FOREMAN_CODE_VERIFICATION_MAX_INTEGRATION_SHARDS: '16' }
   assert.equal(integrationShardPlan(job, shardResources).shards, 16)
-  const plan = integrationShardPlan(job, { ...shardResources, cpuCount: 4 })
-  assert.equal(plan.shards, 4)
+  const plan = integrationShardPlan(job, { ...shardResources, cpuCount: 8 })
+  assert.equal(plan.shards, 8)
   assert.match(plan.reason, /CI reservation 16, qualification 16/)
-  assert.equal(integrationShardPlan({ ...job, GRAPHQL_INTEGRATION_SHARDS: '9' },
-    { ...shardResources, cpuCount: 4 }).shards, 4)
+  assert.throws(() => integrationShardPlan({ ...job, GRAPHQL_INTEGRATION_SHARDS: '9' },
+    { ...shardResources, cpuCount: 8 }), /integer from 1 to 8/)
   assert.equal(integrationShardPlan({ ...job, FOREMAN_CODE_VERIFICATION_INTEGRATION_SHARDS: '4' },
     shardResources).shards, 4)
   assert.throws(() => integrationShardPlan({ ...job, FOREMAN_CODE_VERIFICATION_INTEGRATION_SHARDS: '4',
@@ -875,15 +822,15 @@ const measuredFiles = Array.from({ length: 9 }, (_, index) => `apps/api/test/mea
 const ordinaryFiles = Array.from({ length: 5 }, (_, index) => `apps/api/test/ordinary-${index}.integration.test.ts`)
 const cpuSchedulingCases = [
   {
-    name: 'four CPUs admit two nonexclusive installed-Worker files even with short measurements',
+    name: 'four CPUs admit two installed-Worker files even with short measurements',
     capacity: 4, files: installedWorkerFiles,
     durations: Object.fromEntries(installedWorkerFiles.map(file => [file, 1000])),
-    cost: () => 2, firstWave: [installedWorkerFiles[0], installedWorkerFiles[2]],
+    cost: () => 2, firstWave: installedWorkerFiles.slice(0, 2),
   },
   {
     name: 'failed heavy files release CPU capacity and retest on healthy database slots',
     capacity: 4, files: installedWorkerFiles, failFile: installedWorkerFiles[0],
-    cost: () => 2, firstWave: [installedWorkerFiles[0], installedWorkerFiles[2]],
+    cost: () => 2, firstWave: installedWorkerFiles.slice(0, 2),
   },
   {
     name: 'four CPUs admit long measured files in longest-first order',
@@ -988,37 +935,6 @@ for (const scenario of cpuSchedulingCases) {
   })
 }
 
-test('pending sibling settlement keeps its fixed deadline without competing queue work', async () => {
-  const settlement = 'apps/api/test/engine-pending-sibling-settlement.integration.test.ts'
-  const ordinary = 'apps/api/test/ordinary.integration.test.ts'
-  const gate = 'gate:check'
-  const events = []
-  const active = new Set()
-  const run = async id => {
-    if (id === settlement) assert.equal(active.size, 0)
-    else assert.equal(active.has(settlement), false)
-    active.add(id)
-    events.push(id)
-    try {
-      await new Promise(resolve => setImmediate(resolve))
-      return { code: 0, complete: true }
-    } finally {
-      active.delete(id)
-    }
-  }
-  const result = await scheduleIntegrationQueue([settlement, ordinary], [{ index: 1 }, { index: 2 }], {
-    maxConcurrency: 2, samplePressure: lowPressure, pollIntervalMs: 0.01,
-    durations: { [settlement]: 52_540 },
-    extraItems: [{ id: gate }],
-    runFile: (_slot, file) => run(file), executeExtra: item => run(item.id),
-  })
-  assert.equal(result.unexecuted.length, 0)
-  assert.equal(result.results.length, 3)
-  assert.equal(result.results.every(item => item.status === 'PASSED'), true)
-  assert.deepEqual(new Set(events), new Set([settlement, ordinary, gate]))
-  assert.equal(active.size, 0)
-})
-
 test('integration and gate checks share the bounded queue and delay exclusive files', async () => {
   const ordinary = 'apps/api/test/ordinary.integration.test.ts'
   const exclusive = 'apps/api/test/dev-startup.integration.test.ts'
@@ -1046,108 +962,6 @@ test('integration and gate checks share the bounded queue and delay exclusive fi
   assert.ok(events.indexOf(`start:${exclusive}`) > events.indexOf(`end:${ordinary}`))
   assert.ok(events.indexOf('start:gate:typecheck') > events.indexOf('end:gate:lint'))
   assert.equal(peak, 2)
-})
-
-for (const [name, reservedReview] of [
-  ['remote review decision delivery', 'apps/api/test/remote-review-production-delivery.integration.test.ts'],
-  ['reserved remote review', 'apps/api/test/remote-review-production-reserved-decision.integration.test.ts'],
-  ['remote review Worker crash recovery', 'apps/api/test/remote-review-production-worker-crash.integration.test.ts'],
-  ['computer workflow directory save', 'apps/api/test/computer-workflow-save.regression-directories.integration.test.ts'],
-  ['remote review delivery', 'apps/api/test/remote-review-production-delivery.integration.test.ts'],
-  ['historical workflow version pins', 'apps/api/test/workflow-historical-version-pins.integration.test.ts'],
-  ['source snapshot retention', 'apps/api/test/source-snapshot-retention.integration.test.ts'],
-  ['terminal recovery', 'apps/api/test/recovery-terminal-before-closure.integration.test.ts'],
-  ['six-node checkpoint routing', 'apps/api/test/eng03-b-durability-routing.integration.test.ts'],
-]) test(`${name} runs without competing integration or gate processes`, async () => {
-  const ordinary = 'apps/api/test/ordinary.integration.test.ts'
-  const active = new Set()
-  const overlaps = []
-  let remainingPeers = 2
-  let finishPeers
-  const peersFinished = new Promise((resolve) => { finishPeers = resolve })
-  const run = async (id) => {
-    active.add(id)
-    if (active.has(reservedReview) && active.size > 1) overlaps.push([...active])
-    if (id === reservedReview) await peersFinished
-    else {
-      await new Promise(setImmediate)
-      remainingPeers--
-      if (remainingPeers === 0) finishPeers()
-    }
-    active.delete(id)
-    return { code: 0, complete: true }
-  }
-  const result = await scheduleIntegrationQueue([reservedReview, ordinary],
-    [{ index: 1 }, { index: 2 }, { index: 3 }, { index: 4 }], {
-      maxConcurrency: 4, samplePressure: lowPressure, pollIntervalMs: 1,
-      profiles: { [reservedReview]: { durationMs: 90_000 } },
-      extraItems: [{ id: 'gate:lint' }],
-      executeExtra: (item) => run(item.id),
-      runFile: (_slot, file) => run(file),
-    })
-  assert.equal(result.results.length, 3)
-  assert.ok(result.results.every((item) => item.status === 'PASSED'))
-  assert.deepEqual(overlaps, [])
-})
-
-test('gate identity is explicit and full scope alone keeps diagnostic retests', () => {
-  assert.equal(integrationGate({ FOREMAN_CODE_CI_GATE: '1' }), true)
-  assert.equal(integrationGate({ FOREMAN_CODE_CI_INTEGRATION_SHARDS: '4' }), true)
-  assert.equal(integrationGate({ SCOPE: 'full' }), false)
-  assert.equal(integrationGate({ FOREMAN_CODE_CI_SCOPE: 'full' }), false)
-  assert.equal(integrationGate({ FOREMAN_CODE_CI_GATE: '0' }), false)
-  assert.equal(integrationGate({}), false)
-})
-
-test('gate failures return after one attempt without preparing an isolated retest', async () => {
-  const file = 'apps/api/test/one.integration.test.ts'
-  let attempts = 0
-  const result = await scheduleIntegrationQueue([file], [{ index: 1 }], {
-    gate: true, maxConcurrency: 1, samplePressure: lowPressure, pollIntervalMs: 1,
-    prepareRetest: async () => assert.fail('Gate failures must not allocate retest resources'),
-    runFile: async (_slot, selected, context) => {
-      assert.equal(selected, file)
-      assert.equal(context.isRetest, false)
-      attempts++
-      return { code: 1, complete: true }
-    },
-  })
-  assert.equal(attempts, 1)
-  assert.equal(result.results[0].status, 'FAILED')
-  assert.equal(result.results[0].attempts.length, 1)
-})
-
-test('worker ownership setup validates resources without loading API and execution contracts', () => {
-  const resource = createTestRoot()
-  try {
-    const slot = { ...resource, databaseUrl: new URL('/graphql_test_owned', testAdminUrl).href }
-    const environment = integrationEnvironment({ PATH: process.env.PATH }, slot)
-    const helper = new URL('../apps/api/test/helpers/testResources.ts', import.meta.url).href
-    const program = `
-      import assert from 'node:assert/strict'
-      import { registerHooks } from 'node:module'
-      registerHooks({ resolve(specifier, context, nextResolve) {
-        if (specifier === '@foreman-code/contracts' || specifier.startsWith('@foreman-code/contracts/')) {
-          throw new Error('Domain validation is unavailable during worker ownership setup')
-        }
-        return nextResolve(specifier, context)
-      } })
-      const resources = await import(${JSON.stringify(helper)})
-      assert.equal(resources.ownedTestDatabaseUrl(), process.env.TEST_DATABASE_URL)
-      assert.equal(resources.ownedTestPath(process.env.FOREMAN_CODE_TEST_ROOT), process.env.FOREMAN_CODE_TEST_ROOT)
-      assert.throws(() => resources.ownedTestDatabaseUrl('TEST_DATABASE_URL', {
-        ...process.env, FOREMAN_CODE_TEST_OWNER: 'invalid-owner',
-      }), /ownership/)
-      await assert.rejects(resources.assertOwnedTestApi(new URL('https://example.invalid'), {}), /loopback/)
-      await assert.rejects(resources.assertOwnedExecutionDestinations({ query: async () => ({ rows: [] }) }, {
-        workspaceId: 'workspace-example',
-      }), /Domain validation is unavailable/)
-    `
-    const result = spawnSync(process.execPath, ['--experimental-strip-types', '--input-type=module', '-e', program], {
-      env: environment, encoding: 'utf8',
-    })
-    assert.equal(result.status, 0, result.stderr || result.error?.message)
-  } finally { removeTestRoot(resource) }
 })
 
 test('failed integrations retest serially after gate checks with fresh resources and load context', async () => {
@@ -1359,30 +1173,8 @@ test('only files that passed their first attempt contribute measured durations',
   ]), { passed: 41_000 })
 })
 
-test('integration expectations use the retained snapshot unless explicitly overridden', () => {
-  const snapshot = fileURLToPath(new URL('./ci-learned-durations.json', import.meta.url))
-  assert.equal(integrationDurationsPath({}), existsSync(snapshot) ? snapshot : null)
-  assert.deepEqual(readDurations(integrationDurationsPath({})), readDurations(snapshot))
+test('learned durations from the CI runner replace the committed ones as expectations', () => {
+  assert.match(integrationDurationsPath({}), /scripts\/integration-durations\.json$/)
   assert.equal(integrationDurationsPath({ FOREMAN_CODE_INTEGRATION_DURATIONS: '/runs/x/durations.json' }),
     '/runs/x/durations.json')
-})
-
-test('reports each file startup as the time until its test module was collected', async () => {
-  const { startupText } = await import('./test-integration.mjs')
-  assert.equal(startupText([{ phase: 'worker-setup', elapsedMs: 3412 }, { phase: 'module-collected', elapsedMs: 8526 }]),
-    '; startup 8526 ms')
-  assert.equal(startupText([{ phase: 'worker-setup', elapsedMs: 3412 }]), '')
-})
-
-
-test('database benchmarks and cold qualification restarts run without competing fixtures', () => {
-  const measured = [
-    'apps/api/test/ci-postgres-setup.integration.test.ts',
-    'apps/api/test/main-codex-qualification-restart.integration.test.ts',
-    'apps/api/test/main-codex-qualification-partial-version.integration.test.ts',
-  ]
-  const ordinary = 'apps/api/test/operator-context.integration.test.ts'
-  const plan = partitionIntegrationFiles([...measured, ordinary])
-  assert.deepEqual(new Set(plan.exclusive), new Set(measured))
-  assert.deepEqual(plan.parallel, [ordinary])
 })

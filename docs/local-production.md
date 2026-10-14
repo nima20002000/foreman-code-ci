@@ -140,32 +140,6 @@ One OS file lock serializes the complete installation, including migration,
 activation and readiness. Readiness verifies the database installation identity
 and selected compiled release before opening Chrome.
 
-The installer builds the API, browser, contracts and Worker artifacts from one
-captured committed checkout. Commit desired source edits before installing;
-uncommitted edits are not included. Each release records component commits in
-`source.json`. Startup defaults have a separate completion record in
-`installation.json`, so an incomplete first install can be retried while completed
-upgrades preserve disabled services and deleted autostart entries.
-
-During an update, a PostgreSQL maintenance lock closes new Run publication through
-HTTP, Operator MCP and schedules before the installer checks for active Runs.
-Existing Runs can finish, receive approvals or be stopped. New Starts return
-`RUN_START_MAINTENANCE`; retry with the same command after installation. Saved
-command receipts remain readable, and scheduled occurrences remain due for retry.
-`FOREMAN_INSTALL_RUN_WAIT_MINUTES` accepts finite nonnegative minutes (default
-120); zero checks once and aborts if Runs are active. Invalid values fail before
-building. `FOREMAN_INSTALL_INTERRUPT_RUNS=1` explicitly permits interruption.
-
-After stopping the API, the installer saves a private database archive before
-migration and records cutover phases in `deployment.json`. A failed cutover
-restores that archive before selecting and starting the previous release. Failed
-releases and diagnostics are retained. If recovery fails, the installer stops the
-API and retains the archive, recording any service-stop failure too. Rerunning
-the installer retries recovery before building. Do not start the API manually
-against an unresolved deployment.
-Installation and database restoration remain OS-owner operations; Operator MCP
-does not grant service control or database restoration access.
-
 Native Codex and Claude harnesses use the desktop user's configured login files.
 The service keeps that user's `HOME`; accepted harness permissions, native
 qualification and application file-tool grants still control each operation.
@@ -188,7 +162,7 @@ reach native subprocesses, while database credentials and unscoped application
 tokens are excluded. Never put credentials in the checkout or qualification logs.
 An HTTP 401 from a particular provider requires fixing that provider's native
 login or explicit credential; qualification remains required. Supported model
-selection through Settings or `harness_defaults_update` MCP (with optional `expectedRevision`)
+selection through Settings or revision-checked `harness_defaults_update` MCP
 does not authenticate another provider or bypass its qualification.
 
 Operations:
@@ -262,21 +236,3 @@ systemctl --user disable --now graphql-operator-api.service graphql-production-d
 These actions retain production data.
 
 Installed production verification is an administrative operation. `production:verify` writes temporary workflow/chat records to the installed production database and restarts its live services. Run it deliberately in a quiet maintenance window. It replaces `test:production:installed`; ordinary `test:*` commands use disposable resources and do not invoke this operation.
-
-After API readiness, installation runs a CI smoke with a 165-second deadline:
-responsiveness probes for at least 30 seconds, two consecutive CI admissions,
-and one small integration test on every ready build computer and each ready
-cloud executor provider. Integration smoke also exercises gate planning without
-queuing the full gate and uses the measured integration shard limit. The
-installer reads its repository and commit from staged release metadata and
-requires an existing workspace configured for that repository. An enabled build
-computer that is unready fails the smoke rather than being omitted. Each job must
-report a passing smoke test; setup failures and empty test results fail closed.
-Failures restore and restart the retained release and print the original error.
-On a first install without a retained release, the rejected API is stopped.
-`FOREMAN_INSTALL_SKIP_CI_SMOKE=1` explicitly opts out and prints that choice.
-
-Operators can use `ci_run.smokeComputer` (or the workspace CI HTTP endpoint) to
-pin one affected unit/integration test to an enabled computer, with an explicit
-commit. Normal CI start/cancel grants and workspace scope checks apply. The
-persisted target appears in `ci_get`; unavailable targets never use a fallback.

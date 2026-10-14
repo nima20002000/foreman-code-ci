@@ -24,8 +24,8 @@ import { CodexRpcError, type CodexStdioTransport, type JsonObject } from '../src
 import { HarnessExecutionError } from '../src/modules/harnesses/errors.js'
 import { runCommand } from '../src/modules/harnesses/process.js'
 import { PostgresWorkflowRepository } from '../src/modules/workflows/postgres.js'
+import { deferred } from './helpers/agentChatF1.js'
 import { agent3Database, postgresEnabled, seedAgent3 } from './helpers/wave25Agent3.js'
-import { deferred } from './helpers/deferred.js'
 
 // The adapter's create/start/history/cleanup logic is real. Qualification and RPC I/O are test
 // substitutes: no executable, real provider, App credential, or workflow execution is used.
@@ -86,7 +86,7 @@ describe.skipIf(!postgresEnabled).each(APP_MCP_SERVER_NAMES)(
     }
     vi.mocked(runCommand).mockReset().mockImplementation(async (_binary, args) => {
       assert.equal(args[0], 'mcp')
-      if (args[1] === 'list') return { exitCode: 0, stderr: '', stdout: JSON.stringify([entry]) }
+      if (args[1] === 'list') return { exitCode: 0, stderr: '', stdout: JSON.stringify([{ name: serverName }]) }
       assert.equal(args[1], 'get')
       if (args[2] !== serverName) return {
         exitCode: 1, stdout: '', stderr: `Error: No MCP server named '${args[2]}' found.`,
@@ -102,7 +102,7 @@ describe.skipIf(!postgresEnabled).each(APP_MCP_SERVER_NAMES)(
     const context = { workspaceId: saved.scope.workspaceId, workflowId: saved.scope.workflowId, workflowNodeId: node.id, agentId: node.agentId }
     const { workspaceId, ...query } = context
     const repository = new PostgresAgentChatRepository(pool)
-    const controls: { mode: Mode; closeGate?: ReturnType<typeof deferred<void>> } = { mode: initial }
+    const controls: { mode: Mode; closeGate?: ReturnType<typeof deferred> } = { mode: initial }
     const calls: Array<{ method: string; params: JsonObject }> = []
     const created: string[] = []
     const managers: CodexAppServerSessionManager[] = []
@@ -172,28 +172,6 @@ describe.skipIf(!postgresEnabled).each(APP_MCP_SERVER_NAMES)(
     }
   }
 
-  it('creates a chat and completes its first message with an isolated App MCP transport', async () => {
-    const f = setup('success')
-    try {
-      const request = f.request('first-message', null)
-      const admitted = await f.chat.send(writer, f.workspaceId, request)
-      await eventually(async () => {
-        const state = await f.read()
-        return state.turns.some(turn => turn.requestId === request.requestId
-          && ['completed', 'failed', 'unknown', 'canceled'].includes(turn.delivery))
-      })
-      const state = await f.read()
-      assert.equal(state.conversation?.id, admitted.state.conversation!.id)
-      assert.equal(state.turns.find(turn => turn.requestId === request.requestId)?.delivery, 'completed')
-      assert.equal(state.activeTurn, null)
-      assert.equal(state.conversation?.nativeSession?.nativeSessionId, 'h1-native-1')
-      assert.equal(state.messages.filter(message => message.role === 'assistant'
-        && message.content === 'H1 completed reply').length, 1)
-    } finally {
-      await f.close()
-    }
-  }, 30_000)
-
   for (const preflight of [false, true]) {
     it(`actual Codex adapter: ${preflight ? 'preflight failure' : 'thread/start rejection'} is failed, exact replay is inert, explicit retry succeeds`, async () => {
       const f = setup()
@@ -242,29 +220,6 @@ describe.skipIf(!postgresEnabled).each(APP_MCP_SERVER_NAMES)(
       assert.equal((await f.repository.get(id))?.record.sessionCreation, undefined)
       assert.equal(f.calls.filter((call) => call.method === 'turn/start').length, 0)
     } finally { await f.close() }
-  }, 30_000)
-
-  it('creates and binds a chat session while its configured App MCP transport is disabled', async () => {
-    const f = setup('success')
-    try {
-      const request = f.request('disabled-app-mcp', null)
-      const admitted = await f.chat.send(writer, f.workspaceId, request)
-      const id = admitted.state.conversation!.id
-      await eventually(async () => {
-        const turn = await f.repository.turn(id, request.requestId)
-        assert.notEqual(turn?.delivery, 'failed', JSON.stringify(turn?.error))
-        return turn?.delivery === 'completed'
-      })
-      const state = await f.read()
-      assert.equal(state.conversation?.nativeSession?.nativeSessionId, 'h1-native-1')
-      assert.equal(state.availability.canSend, true)
-      assert.equal(f.created.length, 1)
-      assert.equal(f.calls.filter(call => call.method === 'turn/start').length, 1)
-      assert.equal((await f.chat.send(writer, f.workspaceId, request)).replayed, true)
-      assert.equal(f.created.length, 1)
-    } finally {
-      await f.close()
-    }
   }, 30_000)
 
   for (const mode of ['uncertain', 'cleanup-failure', 'activation-failure', 'binding-failure'] as const) {

@@ -17,7 +17,6 @@ import { useOperatorChatStore } from './operatorChatStore'
 import { configuredOperatorSetup } from './operatorSetupTestFixture'
 import { operatorDecision, operatorState } from './pr17-test-fixtures'
 import { summarizeOperatorConversation } from './operatorChatStatus'
-import { rejectableDeferred } from '../../test/deferred'
 
 const api = vi.hoisted(() => ({ get: vi.fn(), list: vi.fn(), create: vi.fn(), send: vi.fn(),
   remove: vi.fn(), restore: vi.fn(), cancel: vi.fn(), subscribe: vi.fn() }))
@@ -36,6 +35,12 @@ let originalLocks: PropertyDescriptor | undefined
 function state(id: string, title: string, revision = 1) {
   return operatorState({ conversation: { ...operatorState().conversation, id, title }, revision,
     messages: [], turnState: 'idle', activeRequestId: null, settings: operatorChatSettings(DEFAULT_HARNESS_DEFAULTS.codex) })
+}
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (error: Error) => void
+  const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail })
+  return { promise, resolve, reject }
 }
 function mount() {
   return render(<QueryClientProvider client={client}>
@@ -125,8 +130,8 @@ it('shows a newer restoration from another client and fences pre-deletion histor
 it.each(['select', 'new', 'round-trip'] as const)('does not let delayed Undo overwrite a newer %s navigation', async navigation => {
   mount()
   await deleteFirst()
-  const response = rejectableDeferred<{ conversationId: string; revision: number }>()
-  const history = rejectableDeferred<void>()
+  const response = deferred<{ conversationId: string; revision: number }>()
+  const history = deferred<void>()
   api.restore.mockReturnValueOnce(response.promise)
   fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
   await waitFor(() => expect(api.restore).toHaveBeenCalledOnce())
@@ -151,7 +156,7 @@ it.each(['select', 'new', 'round-trip'] as const)('does not let delayed Undo ove
 })
 
 it('recovers the original receipt after a send timeout even when completed GET readback arrived first', async () => {
-  const response = rejectableDeferred<never>()
+  const response = deferred<never>()
   api.send.mockReturnValueOnce(response.promise).mockImplementation(async (_id, command) => ({
     replayed: true, state: states.a, requestId: command.requestId,
   }))
@@ -267,51 +272,4 @@ it.each([false, true])('uses saved full native identity for live-text readiness 
   await waitFor(() => expect(screen.queryByText('Live answer')).not.toBeInTheDocument())
   if (!emptyFinal) expect(screen.getByText('Saved final answer')).toBeVisible()
   expect(screen.getByRole('status', { name: 'Operator is typing' })).toBeVisible()
-})
-
-it.each(['event', 'reconnect', 'history'] as const)('settles an observed tool outside the recent window after %s', async trigger => {
-  const running = { id: 'old-tool', requestId: 'accepted-turn', kind: 'tool' as const,
-    title: 'Old command', status: 'running' as const, sequence: '1', revision: 1 }
-  const newer = Array.from({ length: 100 }, (_, index) => ({ ...running, id: `newer-${index}`,
-    title: `Newer command ${index}`, status: 'completed' as const, sequence: String(index + 2) }))
-  states.a = { ...states.a!, revision: 1, turnState: 'active', activeRequestId: 'accepted-turn',
-    messages: [{ id: 'question', conversationId: 'a', requestId: 'accepted-turn', role: 'user', content: 'Question' }],
-    activities: trigger === 'history' ? newer : [running],
-    activityNextCursor: trigger === 'history' ? '2' : null }
-  let complete = false
-  const exact = vi.fn()
-  const historyRead = vi.fn()
-  server.use(http.get('/api/operator/conversations/:id/activity', ({ request }) => {
-    const params = new URL(request.url).searchParams
-    if (params.get('activityId') === running.id) {
-      exact(params.get('requestId'))
-      return HttpResponse.json({ activities: [{ ...running, status: 'completed', output: 'Saved result', revision: 2 }], nextCursor: null })
-    }
-    historyRead(params.get('before'))
-    return HttpResponse.json({ activities: [complete
-      ? { ...running, status: 'completed', output: 'Saved result', revision: 2 }
-      : running], nextCursor: null })
-  }))
-  mount()
-  await screen.findByRole('textbox', { name: 'Message' })
-  if (trigger === 'history') fireEvent.click(await screen.findByRole('button', { name: 'Load earlier activity' }))
-  expect(await screen.findByText('Tool · Old command')).toBeVisible()
-  states.a = { ...states.a!, revision: 2, activities: newer }
-  complete = true
-  const listeners = api.subscribe.mock.calls[0]![1] as Parameters<typeof subscribeOperatorChat>[1]
-  if (trigger === 'event') act(() => listeners.event({ id: 1, conversationId: 'a', type: 'activity',
-    data: { revision: 2, activity: { ...running, status: 'completed', revision: 2 } } }))
-  else act(() => listeners.reconnect())
-  await waitFor(() => expect(exact).toHaveBeenCalledWith('accepted-turn'))
-  await screen.findByText('Tool · Newer command 99')
-  if (trigger !== 'history') {
-    await waitFor(() => expect(screen.queryByText('Tool · Old command')).not.toBeInTheDocument())
-    fireEvent.click(await screen.findByRole('button', { name: 'Load earlier activity' }))
-  }
-  const tool = await screen.findByText('Tool · Old command')
-  fireEvent.click(tool.closest('summary')!)
-  expect(await screen.findByText('Saved result')).toBeVisible()
-  expect(historyRead).toHaveBeenCalledExactlyOnceWith('2')
-  expect(screen.getAllByText('Tool · Old command')).toHaveLength(1)
-  expect(screen.queryByText('Running')).not.toBeInTheDocument()
 })

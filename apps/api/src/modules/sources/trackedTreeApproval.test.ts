@@ -27,7 +27,8 @@ async function commit(root: string) {
 
 async function capture(root: string, commit: string, executablePolicy: 'strip' | 'preserve-approved' = 'strip') {
   const sink = { write: vi.fn(), commit: vi.fn(), abort: vi.fn() }
-  const manifest = await captureGitSource({ root, commit, executablePolicy,
+  const approvedPaths = await approvedGitTreePaths(root, commit)
+  const manifest = await captureGitSource({ root, commit, approvedPaths, executablePolicy,
     approvedSourceId: randomUUID(), sink })
   return { manifest, sink }
 }

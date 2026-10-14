@@ -421,7 +421,7 @@ export class NativeProcessRegistry {
     const attempt = timeRuntimeOperation('harness', 'process.close',
       () => this.closeRegistered(scope, id, signal), { ownerId: scope.owner })
     closing.set(identity, attempt)
-    void attempt.finally(() => { if (closing.get(identity) === attempt) closing.delete(identity) }).catch(() => { /* ignore: the owner awaits the original promise; this observer prevents a duplicate unhandled rejection. */ })
+    void attempt.finally(() => { if (closing.get(identity) === attempt) closing.delete(identity) }).catch(() => undefined)
     return attempt
   }
 
@@ -724,7 +724,7 @@ function spawnNativeProcessUnobserved(binary: string, args: string[], options: {
       ...(options.claudeSessionScope ? { claudeSessionScope: options.claudeSessionScope } : {}),
       reconnectableStdio: options.reconnectableStdio === true,
       restartDetachable: options.restartDetachable === true }, (error) => {
-      if (error) { try { child.disconnect() } catch { /* ignore: already disconnected. */ } }
+      if (error) { try { child.disconnect() } catch { /* Already disconnected. */ } }
     })
   } catch (error) {
     // Until configuration dispatch the guardian has no native child. Closing IPC asks it to exit.
@@ -743,47 +743,22 @@ export function registeredNativeProcess(child: ChildProcess): NativeProcessRecov
   return { root: registration.scope.root, owner: registration.scope.owner, launchId: registration.id }
 }
 
-function restartDetachment(scope: NativeProcessRecovery, observation: NativeLaunchObservation) {
-  const directory = join(scope.root, key(scope.owner), observation.launchId)
-  if (!existingPrivateDirectory(directory)) return undefined
-  const raw = readRecord(join(directory, 'restart-detached.json'))
-  if (raw === undefined) return undefined
-  const marker = recordObject(raw)
-  const launch = launchRecord(readRecord(join(directory, 'intent.json')))
-  const birth = birthRecord(readRecord(join(directory, 'birth.json')), launch)
-  const captured = recordObject(readRecord(join(directory, 'provider.json')))
-  const provider = recordObject(captured.provider)
-  if (launch.id !== observation.launchId || launch.owner !== scope.owner || launch.boot !== observation.bootId
-    || marker.format !== 1 || marker.id !== launch.id || marker.owner !== launch.owner || marker.boot !== launch.boot
-    || typeof marker.reconnectableStdio !== 'boolean'
-    || captured.format !== 1 || captured.id !== launch.id || captured.owner !== launch.owner
-    || captured.boot !== launch.boot || captured.capture !== 'captured'
-    || !isDeepStrictEqual(captured.guardian, birth.guardian)
-    || !isDeepStrictEqual(marker.guardian, birth.guardian) || !isDeepStrictEqual(marker.provider, captured.provider)
-    || !observation.guardian || !observation.provider
-    || birth.guardian.pid !== observation.guardian.pid || birth.guardian.startTicks !== observation.guardian.startTicks
-    || provider.pid !== observation.provider.pid || provider.startTicks !== observation.provider.startTicks) {
-    throw new Error('Detached native process identity changed.')
-  }
-  return { launch, birth, marker }
-}
-
-/** Recorded restart detachment remains readable after the original provider exits. */
-export function hasNativeRestartDetachment(scope: NativeProcessRecovery): boolean {
-  const launches = new NativeProcessRegistry(scope.root).snapshot().launches.filter(launch =>
-    launch.owner === scope.owner && launch.lifecycle !== 'closed'
-      && (!scope.launchId || launch.launchId === scope.launchId))
-  if (launches.length > 1) throw new Error('Restart-detached native owner is ambiguous.')
-  const launch = launches[0]
-  return launch !== undefined && restartDetachment(scope, launch) !== undefined
-}
-
 /** Original daemon identity only; a detached marker cannot authorize a new launch. */
 export function readDetachedNativeProcess(scope: NativeProcessRecovery): NativeLaunchObservation | undefined {
-  const launches = new NativeProcessRegistry(scope.root).snapshot().launches.filter(launch =>
-    launch.owner === scope.owner && (!scope.launchId || launch.launchId === scope.launchId))
+  const launches = new NativeProcessRegistry(scope.root).snapshot().launches.filter(item => item.owner === scope.owner)
   const detached = launches.filter(launch => {
-    if (!restartDetachment(scope, launch)) return false
+    const path = join(scope.root, key(scope.owner), launch.launchId, 'restart-detached.json')
+    const raw = readRecord(path)
+    if (raw === undefined) return false
+    const row = recordObject(raw)
+    const guardian = recordObject(row.guardian)
+    const provider = recordObject(row.provider)
+    if (!launch.guardian || !launch.provider || row.format !== 1 || row.id !== launch.launchId
+      || row.owner !== scope.owner || row.boot !== launch.bootId
+      || guardian.pid !== launch.guardian.pid || guardian.startTicks !== launch.guardian.startTicks
+      || provider.pid !== launch.provider.pid || provider.startTicks !== launch.provider.startTicks) {
+      throw new Error('Detached native process identity changed.')
+    }
     return launch.lifecycle === 'active' && launch.bootId === bootIdentity()
       && !!launch.guardian && identityAlive(launch.guardian) && !!launch.provider && identityAlive(launch.provider)
       && !!launch.boundary && cgroupPopulated(cgroupBoundary(launch.boundary, launch.launchId))
@@ -795,9 +770,12 @@ export function readDetachedNativeProcess(scope: NativeProcessRecovery): NativeL
 function detachedStdioRegistration(scope: NativeProcessRecovery) {
   const detached = readDetachedNativeProcess(scope)
   if (!detached) return undefined
-  const registration = restartDetachment(scope, detached)
-  if (registration?.marker.reconnectableStdio !== true) return undefined
-  return registration
+  const directory = join(privateDirectory(scope.root), key(scope.owner), detached.launchId)
+  const marker = recordObject(readRecord(join(directory, 'restart-detached.json')))
+  if (marker.reconnectableStdio !== true) return undefined
+  const launch = launchRecord(readRecord(join(directory, 'intent.json')))
+  const birth = birthRecord(readRecord(join(directory, 'birth.json')), launch)
+  return { launch, birth }
 }
 
 export function hasDetachedStdioProcess(scope: NativeProcessRecovery): boolean {
@@ -806,9 +784,7 @@ export function hasDetachedStdioProcess(scope: NativeProcessRecovery): boolean {
 
 /** Authenticated control stays separate from provider JSON-RPC, including after takeover. */
 async function stdioControl(scope: NativeProcessRecovery, operation: 'attach' | 'environment' | 'detach',
-  connectionId?: string, signal?: AbortSignal): Promise<{
-    socket: Socket; reply: Record<string, unknown>; launch: LaunchRecord; birth: BirthRecord
-  }> {
+  connectionId?: string, signal?: AbortSignal): Promise<{ socket: Socket; reply: Record<string, unknown> }> {
   const registration = detachedStdioRegistration(scope)
   if (!registration) throw new Error('The original Codex daemon is unavailable.')
   const { launch, birth } = registration
@@ -842,7 +818,7 @@ async function stdioControl(scope: NativeProcessRecovery, operation: 'attach' | 
         socket.pause()
         cleanup()
         if (buffer.length > end + 1) socket.unshift(buffer.subarray(end + 1))
-        resolve({ socket, reply, launch, birth })
+        resolve({ socket, reply })
       } catch (error) { fail(error instanceof Error ? error : new Error('Invalid native observer reply.')) }
     }
     socket.on('data', receive)
@@ -875,7 +851,7 @@ export async function detachedStdioEnvironment(scope: NativeProcessRecovery, sig
 
 export async function attachDetachedStdio(scope: NativeProcessRecovery, signal?: AbortSignal) {
   const connectionId = randomUUID()
-  const { socket, reply, launch, birth } = await stdioControl(scope, 'attach', connectionId, signal)
+  const { socket, reply } = await stdioControl(scope, 'attach', connectionId, signal)
   let threadSettings: Record<string, unknown>
   try { threadSettings = recordObject(reply.threadSettings) }
   catch (error) {
@@ -885,11 +861,7 @@ export async function attachDetachedStdio(scope: NativeProcessRecovery, signal?:
     }
     throw error
   }
-  const directory = join(scope.root, key(scope.owner), launch.id)
-  return { socket, threadSettings, originalProcessClosed: () => {
-    return retiredOwner(dirname(directory), scope.owner, launch.id)
-      || observeCgroupClosure(directory, launch, birth) !== undefined
-  }, detach: async () => {
+  return { socket, threadSettings, detach: async () => {
     const detached = await stdioControl(scope, 'detach', connectionId)
     detached.socket.destroy()
     socket.destroy()
@@ -910,7 +882,7 @@ export async function detachRecoveredChild(child: ChildProcessWithoutNullStreams
   const launch = launchRecord(readRecord(join(directory, 'intent.json')))
   const birth = birthRecord(readRecord(join(directory, 'birth.json')), launch)
   await controlGuardian(launch, birth, 'detach', signal)
-  const detached = readDetachedNativeProcess({ ...registration.scope, launchId: registration.id })
+  const detached = readDetachedNativeProcess(registration.scope)
   if (!detached || detached.launchId !== registration.id) throw new Error('Native process detachment is unconfirmed.')
   if (child.connected) child.disconnect()
   child.stdin.destroy()
