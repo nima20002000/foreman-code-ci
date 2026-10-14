@@ -10,14 +10,17 @@ import type { WorkspaceRootPolicy } from '@foreman-code/contracts/workspace-root
 import { sameWorkflowValue } from '@foreman-code/contracts/wave25'
 import { commandInputHash } from '../commands/postgres.js'
 import { DomainError } from '../errors.js'
+import type { HarnessInstanceSettingsRepository } from '../harnesses/instanceSettings/repository.js'
+import type { ProductionHarnessRegistry } from '../harnesses/productionRegistry.js'
 import type { SourceAdmissionPort } from '../sources/admissionPorts.js'
 import type { WorkspaceRootPolicyPort } from '../sources/rootPolicyPorts.js'
-import { provisionPairedAgentRoots, type PairedRootServices } from './pairedRoots.js'
 import type { PlacementChoiceDiscovery } from './choicesService.js'
 
-type DiscoveryServices = PairedRootServices & {
+type DiscoveryServices = {
   roots: WorkspaceRootPolicyPort
   sources: SourceAdmissionPort
+  profiles: HarnessInstanceSettingsRepository
+  registry: Pick<ProductionHarnessRegistry, 'installations' | 'profileEvidence'>
 }
 
 type PlacementRootPolicy = Pick<WorkspaceRootPolicy, 'hostRef' | 'applicationInstallationId'
@@ -34,23 +37,18 @@ function matchesConfiguration(profile: HostHarnessOverride, configuration: Agent
   )
 }
 
-/** Discovery prepares paired storage through shared services and reuses placement admission authorities. */
+/** Metadata discovery uses the same persisted authorities as placement admission; it never probes or launches a host. */
 export class ProductionPlacementChoiceDiscovery implements PlacementChoiceDiscovery {
   constructor(private readonly pool: pg.Pool, private readonly services: () => DiscoveryServices) {}
 
-  async list(principal: ManagementPrincipal, input: NodePlacementChoicesInput,
-    source: 'http' | 'mcp' = 'mcp'): Promise<NodePlacementChoice[]> {
+  async list(principal: ManagementPrincipal, input: NodePlacementChoicesInput): Promise<NodePlacementChoice[]> {
     const services = this.services()
-    const configuration = await withTransaction(this.pool, async sql => {
+    return withTransaction(this.pool, async (sql) => {
       const row = (await sql.query<{ record: unknown }>(
         'select record from agent_configuration_versions where id=$1 and workspace_id=$2',
         [input.agentConfigurationVersionId, input.workspaceId],
       )).rows[0]
-      return AgentConfigurationVersionSchema.parse(row?.record)
-    })
-    await provisionPairedAgentRoots(this.pool, services, principal, input.workspaceId, configuration,
-      matchesConfiguration, source)
-    return withTransaction(this.pool, async sql => {
+      const configuration = AgentConfigurationVersionSchema.parse(row?.record)
       const roots = await this.sourceRoots(sql, input.workspaceId)
       const choices: NodePlacementChoice[] = []
       for (const root of roots) {
@@ -105,19 +103,10 @@ export class ProductionPlacementChoiceDiscovery implements PlacementChoiceDiscov
         && installation.installationFingerprint === profile.target.installationFingerprint)
       const supportedDriver = profile.driverId === 'codex'
         || profile.driverId === 'claude' && policy.hostRef.kind === 'main'
-      if (supportedDriver && installed) {
-        try {
-          await services.ensureProfileReady?.(profile)
-        } catch (error) {
-          if (!(error instanceof DomainError) || ![409, 422, 503].includes(error.status)) throw error
-          reason = error.message
-        }
-      }
-      const qualified = reason === null && supportedDriver && installed
-        && await services.registry.profileEvidence(profile, sql)
+      const qualified = supportedDriver && installed && await services.registry.profileEvidence(profile, sql)
       if (!supportedDriver) {
         reason = 'This harness does not support workflow execution on this computer.'
-      } else if (reason === null && !qualified) {
+      } else if (!qualified) {
         reason = 'The matching harness profile needs qualification on this computer.'
       }
     }
