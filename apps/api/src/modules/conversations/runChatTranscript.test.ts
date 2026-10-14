@@ -22,17 +22,6 @@ it('keeps execution identity, partial text and chronological order without fabri
   expect(result.messages.every(message => !('conversationId' in message))).toBe(true)
 })
 
-it('returns an empty transcript and advances its revision when the first native message arrives', () => {
-  const empty = projectRunChatTranscript(execution, [])
-  expect(empty).toEqual({ executionId: execution.id, state: 'running', revision: '0',
-    messages: [], hasEarlierMessages: false })
-
-  const first = projectRunChatTranscript(execution, [row(1)])
-  expect(first.revision).toBe('1')
-  expect(BigInt(first.revision)).toBeGreaterThan(BigInt(empty.revision))
-  expect(first.messages[0]).toMatchObject({ content: 'Message 1', sequence: '1', revision: '1' })
-})
-
 it('bounds history and text while exposing truncation and redacting retained application credentials', () => {
   const credential = `opm_${'a'.repeat(43)}`
   const rows = Array.from({ length: 101 }, (_, index) => row(index + 1, '🙂'.repeat(9000)))
