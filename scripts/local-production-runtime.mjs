@@ -475,14 +475,9 @@ async function linkReleaseDependencies(shared, destination, source) {
 export async function deployProductionApi(run, destination, { dependencies } = {}) {
   if (!dependencies) return deployApiPackage(run, destination)
   await mkdir(dependencies.root, { recursive: true, mode: 0o700 })
-  const key = await apiDependencyKey(dependencies.source)
-  const shared = join(dependencies.root, key)
-  await withInstallationLock(join(dependencies.root, `.${key}.lock`), async () => {
-    const ready = await lstat(join(shared, 'api')).then(() => true, error => {
-      if (error.code === 'ENOENT') return false
-      throw error
-    })
-    if (ready) return
+  const shared = join(dependencies.root, await apiDependencyKey(dependencies.source))
+  const ready = await lstat(join(shared, 'api')).then(() => true, error => { if (error.code === 'ENOENT') return false; throw error })
+  if (!ready) {
     const staging = await mkdtemp(join(dependencies.root, '.staging-'))
     try {
       await deployApiPackage(run, join(staging, 'api'))
@@ -492,7 +487,7 @@ export async function deployProductionApi(run, destination, { dependencies } = {
       // Another install finished the same tree first; it is identical.
       if (error.code !== 'ENOTEMPTY' && error.code !== 'EEXIST') throw error
     }
-  })
+  }
   await mkdir(destination, { recursive: true })
   for (const name of await readdir(join(shared, 'api'))) {
     if (name === 'node_modules' || name === 'dist') continue

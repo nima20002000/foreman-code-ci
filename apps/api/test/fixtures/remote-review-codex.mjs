@@ -319,9 +319,9 @@ createInterface({ input: process.stdin, crlfDelay: Infinity }).on('line', async 
           throw error
         }
         if (!contents) return true
-        const { workingDirectory, includeDescendants = true } = JSON.parse(contents)
+        const { workingDirectory } = JSON.parse(contents)
         const cwd = process.cwd()
-        return cwd === workingDirectory || includeDescendants && cwd.startsWith(`${workingDirectory}/`)
+        return cwd === workingDirectory || cwd.startsWith(`${workingDirectory}/`)
       }
       while (blocked()) await new Promise(resolve => setTimeout(resolve, 20))
       reply(message.id, { data: existsSync(join(root, 'hide-models')) ? [] : models, nextCursor: null })

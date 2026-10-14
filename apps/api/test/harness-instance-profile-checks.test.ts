@@ -140,7 +140,7 @@ describe('automatic installation profile checks', () => {
     const authorize = vi.fn(async () => {})
     const request = { host: saved.target.hostRef, driverId: 'codex', applicationInstallationId: mainId,
       generation: 'updated-generation', signal: new AbortController().signal, authorize,
-      installation: () => installation, currentEvidence: async () => null }
+      installation: () => installation }
     return { ...f, saved, installation, request }
   }
   it('leaves qualified Codex profiles and their proofs unchanged after a Claude installation update', async () => {
