@@ -13,7 +13,7 @@ const log = componentLogger('jobs')
 type DispatchOutcome = { outcome: 'pending' | 'busy' | 'rejected' }
   | { outcome: 'settled'; run: CiRunRecord; observed: CiRunSettlement }
 
-function unstarted(run: CiRunRecord, state: 'queued' | 'failed', message: string): CiRunSettlement {
+function unstarted(run: CiRunRecord, state: 'queued' | 'lost' | 'failed', message: string): CiRunSettlement {
   return { runId: run.id, state, step: null, startedAt: null,
     finishedAt: state === 'queued' ? null : new Date().toISOString(), exitCode: null, logBytes: 0, message }
 }
@@ -24,43 +24,25 @@ export function requestCloud(endpoint: HostCiEndpoint, computer: HostCiComputer,
     ? { ...request, deferMirror: true } : request), { timeoutMs: CLOUD_START_TIMEOUT_MS })
 }
 
-function cloudDispatchStartedAt(run: CiRunRecord, observed?: CiHostRun): number {
-  const timestamps = [observed?.mirrorPublication?.finishedAt, run.mirrorPublication?.finishedAt,
-    observed?.startedAt, run.startedAt, run.dispatchedAt]
-    .filter((at): at is string => at != null)
-    .map(at => Date.parse(at))
-  return timestamps.length > 0 ? Math.max(...timestamps) : Date.parse(run.queuedAt)
-}
-
 export async function expireCloudDispatch(endpoint: HostCiEndpoint, computer: HostCiComputer,
   run: CiRunRecord, observed?: CiHostRun): Promise<CiRunSettlement | null> {
   if (observed?.mirrorPublication?.state === 'pending') return observed
-  const at = cloudDispatchStartedAt(run, observed)
+  const at = observed?.mirrorPublication?.finishedAt ?? run.startedAt ?? run.dispatchedAt ?? run.queuedAt
   if ((observed?.state ?? run.state) !== 'starting'
-    || Date.now() - at < CLOUD_START_TIMEOUT_MS * CI_START_MAX_ATTEMPTS) return observed ?? null
+    || Date.now() - Date.parse(at) < CLOUD_START_TIMEOUT_MS * CI_START_MAX_ATTEMPTS) return observed ?? null
   try {
-    const reply = CiHostReplySchema.parse(await requestCloud(endpoint, computer,
-      { operation: 'cancel', runId: ciExecutionRunId(run) }))
-    if (reply.operation !== 'cancel' || reply.run.runId !== ciExecutionRunId(run)
-      || ['queued', 'starting', 'running'].includes(reply.run.state)) {
-      throw new DomainError('CI_CLOUD_CLEANUP_PENDING', 'Cloud cancellation was not confirmed; ownership retained.', 503)
-    }
-    if (reply.run.state !== 'canceled') return reply.run
+    await requestCloud(endpoint, computer, { operation: 'cancel', runId: ciExecutionRunId(run) })
   } catch (error) {
-    log.warn({ runId: run.id }, 'Expired cloud dispatch cleanup remains pending; ownership retained')
-    if (error instanceof DomainError && error.code === 'CI_CLOUD_CLEANUP_PENDING') throw error
-    throw new DomainError('CI_CLOUD_CLEANUP_PENDING', 'Cloud cancellation failed; ownership retained.', 503, undefined, { cause: error })
+    log.warn({ err: error, runId: run.id }, 'Expired cloud dispatch cleanup remains pending')
   }
-  const reason = observed?.message ?? run.message
-  return unstarted(run, 'queued', ['Cloud dispatch created no workflow after recovery attempts; queued for another computer.',
-    reason].filter(Boolean).join(' '))
+  return unstarted(run, 'lost', 'Cloud dispatch created no workflow after recovery attempts; the CI slot was released.')
 }
 
 /** Main also bounds failures before the cloud adapter can persist its provider dispatch. */
 export async function dispatchCloudTicket(sql: SqlQuery, endpoint: HostCiEndpoint,
   computer: HostCiComputer, run: CiRunRecord): Promise<DispatchOutcome> {
   const attempts = run.dispatchAttempts ?? 1
-  const elapsed = Date.now() - cloudDispatchStartedAt(run)
+  const elapsed = Date.now() - Date.parse(run.dispatchedAt ?? run.queuedAt)
   if (attempts > 0) {
     try {
       const reply = await requestCloud(endpoint, computer, { operation: 'read', runId: ciExecutionRunId(run),
@@ -69,7 +51,6 @@ export async function dispatchCloudTicket(sql: SqlQuery, endpoint: HostCiEndpoin
       const observed = await expireCloudDispatch(endpoint, computer, run, reply.run) ?? reply.run
       return { outcome: 'settled', run, observed }
     } catch (error) {
-      if (error instanceof DomainError && error.code === 'CI_CLOUD_CLEANUP_PENDING') throw error
       if (!(error instanceof DomainError && error.code === 'CI_RUN_UNKNOWN')) {
         log.warn({ err: error, runId: run.id }, 'Cloud CI dispatch ownership could not be read')
         if (elapsed >= CLOUD_START_TIMEOUT_MS * CI_START_MAX_ATTEMPTS) {

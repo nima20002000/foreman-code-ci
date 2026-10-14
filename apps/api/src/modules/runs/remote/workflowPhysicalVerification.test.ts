@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { mkdtemp, mkdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
-import { homedir } from 'node:os'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_HARNESS_DEFAULTS, type AgentConfigurationVersion, type NativeSessionReference } from '@foreman-code/contracts'
 import { DispatchIntentSchema } from '@foreman-code/contracts/node-placement'
@@ -27,10 +26,9 @@ import type { HarnessExecution } from '@foreman-code/contracts'
 import type pg from 'pg'
 import { createRemoteWorkflowPhysicalVerification, type RemoteWorkflowMainLifetime } from './workflowPhysicalVerification.js'
 import { RemoteWorkflowPhysicalReadoutSchema } from '@foreman-code/contracts/remote-workflow-physical'
-import { assertRemoteNativeSourceLocked, createRemoteNativeSourceChannel, type RemoteNativeSourceEvidence } from '../../placement/remoteNativeSource.js'
+import { createRemoteNativeSourceChannel } from '../../placement/remoteNativeSource.js'
 import { VerifiedRemoteEvidence } from './resultBridge.js'
-import { deviceRequestTimeoutMs } from '../../devices/deviceRequestRetry.js'
-import { ExclusiveGraphConnection, beforeGraphCommit } from '../../run-graph/connection.js'
+import { ExclusiveGraphConnection } from '../../run-graph/connection.js'
 import { repeatExecutionIdentity, repeatDigest } from '../repeatResolution.js'
 
 import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
@@ -38,18 +36,9 @@ import type { WorkflowNativeProofRecord } from '../workflowNativeProof.js'
 import type { WorkflowNativeCapture, WorkflowOriginalNativeSource } from '../../interactions/workflowNativeCapture.js'
 import type { WorkflowPhysicalArtifactsPort } from './workflowPhysicalArtifacts.js'
 import { workflowNativeReservation } from '../workflowNativeEntry.js'
-import { workflowNativeSourceRecord } from '../workflowNativeSource.js'
-import { remoteWorkflowSourceDigest } from './workflowPhysicalReadout.js'
-import type { StoredRepeatExecution } from '../repeatPostgres.js'
 const roots:string[]=[],journals:RemoteOperationJournal[]=[]
 afterEach(async()=>{vi.restoreAllMocks();await Promise.all(journals.splice(0).map(journal=>journal.close()));await Promise.all(roots.splice(0).map(root=>rm(root,{recursive:true,force:true})))})
-async function directory() {
-  const parent = join(homedir(), '.cache', 'foreman-tmp')
-  await mkdir(parent, { recursive: true, mode: 0o700 })
-  const root = await mkdtemp(join(parent, 'installed-workflow-'))
-  roots.push(root)
-  return root
-}
+async function directory() {const root=await mkdtemp('/tmp/installed-workflow-');roots.push(root);return root}
 function nativeFixture(harness: 'codex' = 'codex') {
   const connection=DeviceConnectionIdentitySchema.parse({mainId:randomUUID(),deviceId:randomUUID(),workerInstallationId:randomUUID(),
     bootId:bootIdentity(),keyRevision:1,authorizationRevision:1,connectionGeneration:4})
@@ -157,13 +146,7 @@ async function physicalFixture(options: {
     correlation:`execution:${execution.id}`,provider_id:'original-turn',held:true}
   const request=vi.fn(async(payload:unknown):Promise<DeviceApplicationResult>=>{void payload;return {payload:readout}})
   const currentBinding=vi.fn<()=>DeviceSessionBinding|undefined>(()=>f.context.binding)
-  const canonicalProofs:{record:{execution:ReturnType<typeof repeatExecutionIdentity>;session:NativeSessionReference;original:WorkflowOriginalNativeSource}}[]=[]
-  let proofReadLimit = Infinity
-  const proofId = (original: WorkflowOriginalNativeSource) => workflowNativeSourceRecord(
-    { ...lifetime, source: original } as unknown as WorkflowNativeCapture,
-    { execution, ref: { nodeId: execution.workflowNodeId, occurrence: null } } as StoredRepeatExecution,
-    reservation.scope, { ownerId: 'original-owner', fence: '1' },
-  ).proofId
+  const canonicalProofs:{record:{execution:ReturnType<typeof repeatExecutionIdentity>;session:NativeSessionReference;original:typeof source}}[]=[]
   // Authenticated carrier/SQL/process observations are explicit unit doubles.
   // The real source materialization/runtime directory above exercises FD/CWD receipts; no native or signed connection is produced.
   const producer=createRemoteWorkflowPhysicalVerification({...artifacts?{artifacts}:{},endpoint:()=>({currentBinding,captureRequest:()=>({binding:f.context.binding,request})})})
@@ -183,49 +166,17 @@ async function physicalFixture(options: {
     if(text.includes('harness_executions'))return {rows:[{record:execution,accepted:retained.accepted}],rowCount:1}
     if(text.includes('workflow_native_entries'))return {rows:[entry],rowCount:1}
     if(text.includes('source_digest from workflow_native_proofs'))return {rows:retained.proof?[{record:retained.proof,source_digest:repeatDigest(retained.proof,4*1024*1024)}]:[],rowCount:retained.proof?1:0}
-    if (text.includes('workflow_native_proofs')) {
-      if (Array.isArray(args[2]) && args[2].length === 0) return { rows: [], rowCount: 0 }
-      const ids = new Set(canonicalProofs.map(row => proofId(row.record.original)))
-      const keys = args.flatMap(value => Array.isArray(value) ? value : [value])
-      const indexed = keys.filter(value => typeof value === 'string' && ids.has(value))
-      const rows = indexed.length
-        ? canonicalProofs.filter(row => indexed.includes(proofId(row.record.original))) : canonicalProofs
-      if (rows.length > proofReadLimit) {
-        throw Object.assign(new Error('canceling statement due to statement timeout'), { code: '57014' })
-      }
-      return { rows: rows.map(row => ({ ...row, original: row.record.original })), rowCount: rows.length }
-    }
+    if(text.includes('workflow_native_proofs'))return {rows:canonicalProofs.map(row=>({...row,original:row.record.original})),rowCount:canonicalProofs.length}
     if(text.includes('execution_native_sessions'))return {rows:[{reference:n.session}],rowCount:1}
     if(text.includes('execution_native_closures'))return {rows:[closure],rowCount:1}
     if(text.includes('remote_execution_receipts'))return {rows:[{receipt:retained.receipt}],rowCount:1}
     if(text.includes('from run_repeat_effects'))return {rows:retained.inputBound?[{payload_digest:retained.inputEffectDigest}]:[],rowCount:retained.inputBound?1:0}
-    if (text.includes('join run_graph_sources')) {
-      const readReceipt = (parameters: unknown[]) => {
-        const kind = parameters[1]
-        let valid = retained.canonical && !!retained.proof
-        if (kind === 'execution') valid = retained.entryCanonical
-        if (kind === 'input_binding') valid = retained.inputCanonical
-        let digest = retained.inputEffectDigest
-        if (kind === 'execution') digest = entry.source_digest
-        else if (kind !== 'input_binding') digest = repeatDigest(retained.proof, 4 * 1024 * 1024)
-        return valid ? [{ workspace_id: 'workspace', workflow_id: 'workflow', workflow_version_id: 'version',
-          execution_semantics_version: 3, protocol_version: 1, head_sequence: '2', source_digest: digest,
-          source_semantic_digest: repeatDigest('semantic'), source_sequence: '2',
-          effect_digest: parameters[4] ? digest : null,
-          effect_semantic_digest: parameters[4] ? repeatDigest('semantic') : null,
-          effect_sequence: parameters[4] ? '2' : null }] : []
-      }
-      if (text.trimStart().startsWith('select p.ordinal,')) {
-        const requests = JSON.parse(String(args[0])) as Array<{ ordinal: number; run_id: string;
-          source_kind: string; source_id: string; source_revision: string; effect_kind: string; entity_id: string }>
-        const rows = requests.map(request => ({ ordinal: request.ordinal, receipts: readReceipt([
-          request.run_id, request.source_kind, request.source_id, request.source_revision,
-          request.effect_kind, request.entity_id,
-        ]) }))
-        return { rows, rowCount: rows.length }
-      }
-      const rows = readReceipt(args)
-      return { rows, rowCount: rows.length }
+    if(text.includes('join run_graph_sources')){
+      const valid=args[1]==='execution'?retained.entryCanonical:args[1]==='input_binding'?retained.inputCanonical:retained.canonical&&!!retained.proof
+      const digest=args[1]==='execution'?entry.source_digest:args[1]==='input_binding'?retained.inputEffectDigest:repeatDigest(retained.proof,4*1024*1024)
+      return {rows:valid?[{workspace_id:'workspace',workflow_id:'workflow',workflow_version_id:'version',execution_semantics_version:3,protocol_version:1,
+        head_sequence:'2',source_digest:digest,source_semantic_digest:repeatDigest('semantic'),source_sequence:'2',
+        effect_digest:args[4]?digest:null,effect_semantic_digest:args[4]?repeatDigest('semantic'):null,effect_sequence:args[4]?'2':null}]:[],rowCount:valid?1:0}
     }
     if(text.includes('native_session_lanes'))return {rows:[lane],rowCount:1}
     throw new Error(`Unexpected physical SQL: ${text}`)
@@ -246,29 +197,8 @@ async function physicalFixture(options: {
     return original
   }
   return {...f,registry:n.registry,snapshot:n.snapshot,session:n.session,launch:n.launch,connection,captured,journal,readout,source,execution,lifetime,
-    entry,lane,request,currentBinding,producer,query,sqlConnection,owner,originals,bind,canonicalProofs,closure,retained,
-    limitProofReads: (limit: number) => { proofReadLimit = limit } }
+    entry,lane,request,currentBinding,producer,query,sqlConnection,owner,originals,bind,canonicalProofs,closure,retained}
 }
-
-it('acknowledges an original history without scanning unrelated retained histories', async () => {
-  const f = await physicalFixture()
-  try {
-    const original = await f.bind()
-    for (let index = 0; index < 40; index += 1) {
-      f.canonicalProofs.push({ record: { execution: repeatExecutionIdentity(f.execution), session: f.session,
-        original: { type: 'history', history: { ...f.source.history, nativeTurnId: `earlier-turn-${index}` } } } })
-    }
-    f.canonicalProofs.push({ record: {
-      execution: repeatExecutionIdentity(f.execution), session: f.session, original: f.source,
-    } })
-    f.limitProofReads(1)
-    await f.sqlConnection.transaction(sql => f.producer.assertOriginal(sql, f.owner, original))
-    const ack = { version: 1, operationId: f.intent.operationId, receiptSequence: f.readout.receipt.sequence,
-      sourceDigest: original.sourceDigest, status: 'retired' }
-    f.request.mockResolvedValueOnce({ payload: ack })
-    await expect(f.producer.acknowledge(original)).resolves.toEqual(ack)
-  } finally { await f.sqlConnection.close() }
-})
 // Real private directories and original capability; SQL/carrier/process boundaries
 // are unit doubles. These fixtures never establish physical qualification.
 async function terminalFixture(harness: 'codex' = 'codex') {
@@ -358,15 +288,6 @@ describe('accepted physical session harness', () => {
       const original = await f.bind({ type: 'session_created', session: f.session })
       await f.sqlConnection.transaction(sql => f.producer.assertOriginal(sql, f.owner, original))
       expect(original.source).toEqual({ type: 'session_created', session: f.session })
-    } finally { await f.sqlConnection.close() }
-  })
-
-  it('verifies an observed native boundary that has no retained source proof', async () => {
-    const f = await physicalFixture({ harness: 'codex' })
-    try {
-      const original = await f.bind({ type: 'boundary' })
-      await expect(f.sqlConnection.transaction(sql => f.producer.assertOriginal(sql, f.owner, original))).resolves.toBeUndefined()
-      expect(original.source).toEqual({ type: 'boundary' })
     } finally { await f.sqlConnection.close() }
   })
 
@@ -615,7 +536,7 @@ describe('physical acknowledgment retry eligibility', () => {
         await expect(f.producer.acknowledge(original)).resolves.toEqual(ack)
         expect(f.request).toHaveBeenLastCalledWith({ method: 'physical-ack', intent: f.readout.receipt.intent,
           placement: f.placement, receiptSequence: f.readout.receipt.sequence, sourceDigest: original.sourceDigest,
-          ...(state === 'completed' ? { retire: true } : {}) }, { timeoutMs: deviceRequestTimeoutMs })
+          ...(state === 'completed' ? { retire: true } : {}) }, {})
       } finally { await f.sqlConnection.close() }
     },
   )
@@ -652,7 +573,7 @@ describe('physical acknowledgment retry eligibility', () => {
       f.request.mockResolvedValueOnce({ payload: ack })
       await expect(f.producer.acknowledge(original)).resolves.toEqual(ack)
       expect(f.request).toHaveBeenLastCalledWith({ method: 'physical-ack', intent: f.readout.receipt.intent,
-        placement: f.placement, receiptSequence: f.readout.receipt.sequence, sourceDigest: original.sourceDigest }, { timeoutMs: deviceRequestTimeoutMs })
+        placement: f.placement, receiptSequence: f.readout.receipt.sequence, sourceDigest: original.sourceDigest }, {})
     } finally { await f.sqlConnection.close() }
   })
 
@@ -667,118 +588,4 @@ describe('physical acknowledgment retry eligibility', () => {
       expect(f.request).toHaveBeenCalledOnce()
     } finally { await f.sqlConnection.close() }
   })
-})
-
-async function bindRemoteEvent(f: Awaited<ReturnType<typeof physicalFixture>>, source: WorkflowOriginalNativeSource) {
-  const prepared = await f.producer.prefetch(f.readout.receipt, f.placement, source)
-  let evidence: RemoteNativeSourceEvidence | undefined
-  await VerifiedRemoteEvidence.commit(f.readout.receipt, f.connection, { transaction: async (_operation, work) => work({
-    authority: async () => ({ intent: f.intent, placement: f.placement, originalConnection: f.connection,
-      originalIncarnationId: f.readout.receipt.workerIncarnationId, grantIsLive: true, lastSequence: 0, lastReceipt: null,
-      native: null, terminal: null }),
-    reject: async () => { throw new Error('Unit original receipt rejected') },
-    accept: async verified => {
-      f.originals.observe(verified, source, () => {})
-      evidence = f.originals.capture(f.execution.id, source)
-      f.producer.bind(f.originals.verify.read(evidence), prepared, f.owner, f.lifetime)
-    } }) })
-  if (!evidence) throw new Error('Expected private unit original-source evidence')
-  return evidence
-}
-
-describe('remote history publication under the Run lock', () => {
-  it('verifies every event of one remote history without repeating the shared binding reads per event', async () => {
-    const f = await physicalFixture()
-    try {
-      const events = Array.from({ length: 24 }, (_, sequence) => ({ sequence, type: 'item.completed',
-        occurredAt: f.execution.createdAt, payload: { index: sequence } }))
-      f.readout.history = { ...f.readout.history!, events }
-      const sources = events.map(event => ({ type: 'event' as const, event: { ...event, executionId: f.execution.id } }))
-      const evidences: RemoteNativeSourceEvidence[] = []
-      for (const source of sources) evidences.push(await bindRemoteEvent(f, source))
-      for (const source of sources) {
-        f.canonicalProofs.push({ record: { execution: repeatExecutionIdentity(f.execution), session: f.session, original: source as never } })
-      }
-      // The canonical writer verifies each capture, then checks it again before COMMIT.
-      const publish = async (count: number) => {
-        f.query.mockClear()
-        await f.sqlConnection.transaction(async sql => {
-          for (const evidence of evidences.slice(0, count)) {
-            const verify = () => assertRemoteNativeSourceLocked(sql, f.owner, f.execution,
-              f.originals.verify.read(evidence).source, evidence, f.originals.verify, f.producer)
-            await verify()
-            beforeGraphCommit(sql, verify)
-          }
-        })
-        return f.query.mock.calls.length
-      }
-      const one = await publish(1)
-      const all = await publish(events.length)
-      expect(all - one).toBeLessThanOrEqual((events.length - 1) * 6)
-      const last = f.originals.verify.read(evidences.at(-1)!)
-      const ack = { version: 1, operationId: f.intent.operationId, receiptSequence: f.readout.receipt.sequence,
-        sourceDigest: last.sourceDigest, status: 'retired' }
-      f.request.mockResolvedValueOnce({ payload: ack })
-      await expect(f.producer.acknowledge(last)).resolves.toEqual(ack)
-    } finally { await f.sqlConnection.close() }
-  })
-
-  it('still rejects at COMMIT when the shared binding changes after the first event was verified', async () => {
-    const f = await physicalFixture()
-    try {
-      const events = Array.from({ length: 3 }, (_, sequence) => ({ sequence, type: 'item.completed',
-        occurredAt: f.execution.createdAt, payload: { index: sequence } }))
-      f.readout.history = { ...f.readout.history!, events }
-      const evidences: RemoteNativeSourceEvidence[] = []
-      for (const event of events) evidences.push(await bindRemoteEvent(f, { type: 'event', event: { ...event, executionId: f.execution.id } }))
-      await expect(f.sqlConnection.transaction(async sql => {
-        for (const evidence of evidences) {
-          await assertRemoteNativeSourceLocked(sql, f.owner, f.execution,
-            f.originals.verify.read(evidence).source, evidence, f.originals.verify, f.producer)
-        }
-        f.closure.detached = true
-      })).rejects.toMatchObject({ code: 'REMOTE_NATIVE_PHYSICAL_UNAVAILABLE', details: { reason: 'closure_generation' } })
-    } finally { await f.sqlConnection.close() }
-  })
-})
-
-
-it('retains every remote frame and acknowledges a large reply with one grouped proof read', async () => {
-  const f = await physicalFixture()
-  try {
-    const events = Array.from({ length: 16 }, (_, sequence) => ({
-      connectionId: 'connection', sequence,
-      type: 'native.notification', occurredAt: f.execution.createdAt,
-      payload: { nativeMethod: 'item/agentMessage/delta', text: `frame ${sequence}` },
-    }))
-    f.readout.history!.events = events
-    const originals: Awaited<ReturnType<typeof f.bind>>[] = []
-    for (const event of events) {
-      const source = { type: 'event' as const, event: { ...event, executionId: f.execution.id } }
-      const original = await f.bind(source)
-      originals.push(original)
-      const record = workflowNativeSourceRecord({ ...f.lifetime, source, owner: f.owner, kind: 'live',
-        observedAt: event.occurredAt } as WorkflowNativeCapture,
-      { execution: f.execution, ref: { nodeId: f.execution.workflowNodeId, occurrence: null },
-        inputDigest: repeatDigest(f.execution.input) } as StoredRepeatExecution,
-      f.entry.reservation.scope, { ownerId: 'original-owner', fence: '1' })
-      f.canonicalProofs.push({ record })
-    }
-    const saved = structuredClone(f.canonicalProofs)
-    f.query.mockClear()
-    await f.sqlConnection.transaction(sql => f.producer.assertOriginals(sql, f.owner, originals))
-    expect(f.query.mock.calls.length).toBeLessThanOrEqual(25)
-    expect(f.canonicalProofs).toEqual(saved)
-    for (const original of originals) {
-      const ack = { version: 1, operationId: f.intent.operationId, receiptSequence: f.readout.receipt.sequence,
-        sourceDigest: original.sourceDigest, status: 'retired' }
-      f.request.mockResolvedValueOnce({ payload: ack })
-      await expect(f.producer.acknowledge(original)).resolves.toEqual(ack)
-    }
-    const sourceDigest = remoteWorkflowSourceDigest({ type: 'history', history: f.readout.history! as Parameters<typeof remoteWorkflowSourceDigest>[0] extends { history: infer H } ? H : never })
-    const replyAck = { version: 1, operationId: f.intent.operationId,
-      receiptSequence: f.readout.receipt.sequence, sourceDigest, status: 'retired' }
-    f.request.mockResolvedValueOnce({ payload: replyAck })
-    await expect(f.producer.acknowledgeReply(originals[0]!)).resolves.toEqual(replyAck)
-  } finally { await f.sqlConnection.close() }
 })

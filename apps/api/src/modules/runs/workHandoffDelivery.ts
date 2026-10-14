@@ -1,16 +1,15 @@
 import { z } from 'zod'
 import type { HarnessExecution } from '@foreman-code/contracts'
 import {
-  WorkReturnSchema, WorkNoticeSchema,
+  WorkRequestSchema, WorkReturnSchema, WorkNoticeSchema,
   canonicalGraphJson, type WorkHandoffResult, type WorkflowVersionV3,
 } from '@foreman-code/contracts/wave25'
 import type { GraphTransactionSql } from '../run-graph/connection.js'
-import { repeatConflict, repeatDigest, repeatId, type RepeatScope } from './repeatResolution.js'
+import { repeatConflict, repeatDigest, repeatId, sameRepeatValue, type RepeatScope } from './repeatResolution.js'
 import {
   availableWorkAlternativesLocked, createWorkLimitNotice, type WorkLimitNoticeInput,
 } from './workHandoffNotice.js'
 import { selectedWorkHandoffRoutes } from './workHandoffRouting.js'
-import { parseWorkResultLocked, readWorkReturnRequestLocked } from './workReturnValidation.js'
 
 interface DeliveryContext {
   sql: GraphTransactionSql; scope: RepeatScope; version: WorkflowVersionV3; now: string
@@ -37,10 +36,16 @@ async function assertNoticeFits(context: DeliveryContext, input: WorkLimitNotice
 
 async function assertReturnFits(context: DeliveryContext, execution: HarnessExecution,
   activationId: string, result: WorkHandoffResult): Promise<void> {
-  const routing = (await parseWorkResultLocked(context, execution, activationId)).routing
+  const routing = result.routing
   if (routing.kind !== 'return') return repeatConflict('WORK_RETURN_RESULT_CONFLICT')
-  const request = await readWorkReturnRequestLocked(context, activationId, routing.requestId)
-  if (request.destinationNodeId !== execution.workflowNodeId) return repeatConflict('WORK_RETURN_ANCESTRY_CONFLICT')
+  const row = (await context.sql.query<{ record: unknown; parent_id: string | null }>(
+    `select record,work_parent_request($1,$3) as parent_id
+      from run_work_requests where run_id=$1 and request_id=$2 for share`,
+    [context.scope.runId, routing.requestId, activationId])).rows[0]
+  if (!row) return repeatConflict('WORK_RETURN_REQUEST_MISSING')
+  const request = WorkRequestSchema.parse(row.record)
+  if (row.parent_id !== request.requestId || request.destinationNodeId !== execution.workflowNodeId
+    || !sameRepeatValue(request.scope, context.scope)) return repeatConflict('WORK_RETURN_ANCESTRY_CONFLICT')
   const returnId = repeatId('work-return', execution.id)
   const continuationActivationId = routing.outcome === 'needs_changes' ? repeatId('work-activation', returnId) : undefined
   const returned = WorkReturnSchema.parse({ scope: context.scope, returnId, requestId: request.requestId,

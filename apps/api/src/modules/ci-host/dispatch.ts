@@ -1,17 +1,33 @@
 import type pg from 'pg'
-import { isDeepStrictEqual } from 'node:util'
 import { CiRunRecordSchema, type CiHostRequest, type CiRunRecord } from '@foreman-code/contracts'
 import type { HostCiComputer } from './service.js'
-import type { SqlQuery } from '../../infrastructure/transaction.js'
+import { withTransaction, type SqlQuery } from '../../infrastructure/transaction.js'
+import { ExecutionLimiter } from '../runs/limiter.js'
 import { sanitizeCiText, serializeCiJson } from './text.js'
-export { withCiTicketLock, type CiTicketSql } from './ticketLock.js'
 
+const dispatchLimits = new WeakMap<pg.Pool, ExecutionLimiter>()
+const dispatchSignal = new AbortController().signal
 export const CI_START_ACK_TIMEOUT_MS = 120_000
 export const CI_START_MAX_ATTEMPTS = 3
 
+/** Serialize remote entry and closure across Main processes without blocking cancellation intent writes. */
+export async function withCiTicketLock<T>(pool: pg.Pool, ticketId: string, work: (client: pg.PoolClient) => Promise<T>) {
+  let limit = dispatchLimits.get(pool)
+  if (!limit) {
+    // Remote endpoint validation also reads the pool; leave connections available for it and cancellation intent.
+    limit = new ExecutionLimiter(Math.max(1, pool.options.max - 2))
+    dispatchLimits.set(pool, limit)
+  }
+  return limit.run(dispatchSignal, () => withTransaction(pool, async client => {
+    const row = (await client.query<{ acquired: boolean }>(
+      'select pg_try_advisory_xact_lock(hashtextextended($1,0)) as acquired', [`ci-dispatch:${ticketId}`])).rows[0]
+    if (!row?.acquired) return undefined
+    return work(client)
+  }))
+}
+
 /** A stale planning or queue snapshot may only replace the same unassigned queued record. */
 export async function saveQueuedCiRun(pool: pg.Pool, previous: CiRunRecord, next: CiRunRecord) {
-  if (isDeepStrictEqual(previous, next)) return false
   const saved = await pool.query(`update ci_runs set state=$2, host_key=$3, record=$4::jsonb
     where id=$1 and state='queued' and host_key is null and record=$5::jsonb`,
   [previous.id, next.state, null, serializeCiJson(next), JSON.stringify(previous)])
@@ -35,12 +51,11 @@ export async function claimCiDispatch(pool: SqlQuery, run: CiRunRecord, computer
 /** Uncertain host deliveries retain dispatchHostKey for same-computer retries. */
 export async function releaseCiDispatch(sql: SqlQuery, run: CiRunRecord, computer: HostCiComputer, message: string,
   options: { clearRetry?: boolean } = {}) {
-  if (run.state !== 'starting') return false
   const next = CiRunRecordSchema.parse({ ...run, state: 'queued', computer: null, step: null,
     startedAt: null, finishedAt: null,
     dispatchHostKey: options.clearRetry ? undefined : run.dispatchHostKey ?? computer.key,
     dispatchAttempts: options.clearRetry ? undefined : run.dispatchAttempts ?? 1,
-    dispatchRequest: undefined, dispatchedAt: undefined, ...ciMessages(run, sanitizeCiText(message)) })
+    dispatchRequest: undefined, dispatchedAt: undefined, message: sanitizeCiText(message).slice(0, 2000) })
   const saved = await sql.query(`update ci_runs set state=$2, host_key=null, record=$4::jsonb
     where id=$1 and state='starting' and host_key=$3 and record=$5::jsonb`,
   [run.id, next.state, computer.key, serializeCiJson(next), JSON.stringify(run)])

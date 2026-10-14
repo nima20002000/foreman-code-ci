@@ -1,5 +1,4 @@
 import { sourceStorageCapacityFixture } from './sourceStorageCapacityFixture.js'
-import { withTransaction } from '../../src/infrastructure/transaction.js'
 import { PrivateSourceMaterializer } from '../../src/modules/sources/materialization.js'
 import { randomUUID } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
@@ -8,8 +7,7 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
 import { expect, vi } from 'vitest'
 import { ManagementActionSchema } from '@foreman-code/contracts/management'
 import { SourceRootRecordSchema } from '@foreman-code/contracts/source-admission'
-import { SourceReservationReclamationResponseSchema, type SourceReservationReclamation,
-  type SourceStorageCapacity } from '@foreman-code/contracts/source-operations'
+import { SourceReservationReclamationResponseSchema, type SourceReservationReclamation } from '@foreman-code/contracts/source-operations'
 import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
 import { buildApp } from '../../src/app.js'
 import type { OperatorServices } from '../../src/mcp/operator/types.js'
@@ -25,7 +23,7 @@ import { qualifyApprovedRootAllowlist } from '../../src/modules/sources/rootAtte
 import { buildQueueFixture } from './buildComputerFixture.js'
 import { agent3Database } from './wave25Agent3.js'
 
-export async function setupMaterializationReservationCleanup(storageCapacity: Partial<SourceStorageCapacity> = {}) {
+export async function setupMaterializationReservationCleanup() {
   const database = await agent3Database()
   const pool = database.pool
   const access = new PostgresAccessService(pool)
@@ -85,9 +83,18 @@ export async function setupMaterializationReservationCleanup(storageCapacity: Pa
   let nativeClosed = true
   const worker = new SourceOperationWorkerService({ authenticate: async () => {}, approvedRoots: async () => allowlist,
     currentOwner: unused,
-    currentReclamation: (reservationId, reclamationId) => withTransaction(pool,
-      sql => cleanup.authorize(sql, reservationId, reclamationId)),
-    reclamationNativeClosed: async () => nativeClosed })
+    currentReclamation: async (reservationId, reclamationId) => {
+      const sql = await pool.connect()
+      try {
+        await sql.query('begin')
+        const grant = await cleanup.authorize(sql, reservationId, reclamationId)
+        await sql.query('commit')
+        return grant
+      } catch (error) {
+        await sql.query('rollback')
+        throw error
+      } finally { sql.release() }
+    }, reclamationNativeClosed: async () => nativeClosed })
   const reclaim = vi.fn(async (grant: SourceReservationReclamation) => {
     if (!reachable) throw new DomainError('SOURCE_REMOTE_UNAVAILABLE', 'Worker is offline.', 409)
     const response = SourceReservationReclamationResponseSchema.parse(await worker.handle({ version: 1,
@@ -98,7 +105,7 @@ export async function setupMaterializationReservationCleanup(storageCapacity: Pa
   })
   const cleanup = new MaterializationReservationCleanup(pool, reclaim)
   const reservations = new PostgresSourceReservations(async () => sourceStorageCapacityFixture({
-    totalBytes: 256 * 2 ** 30, availableBytes: 256 * 2 ** 30, ...storageCapacity,
+    totalBytes: 256 * 2 ** 30, availableBytes: 256 * 2 ** 30,
   }))
   const materializer = new PrivateSourceMaterializer({ read: async () => bytes }, async () => {})
   function attempt(operationId: string) {
@@ -111,15 +118,21 @@ export async function setupMaterializationReservationCleanup(storageCapacity: Pa
     const operationId = randomUUID()
     const ownerAttempt = attempt(operationId)
     const receipt = await materializer.prepare({ binding: root.binding, manifest, attempt: ownerAttempt, ...options })
-    return withTransaction(pool, async sql => {
+    const sql = await pool.connect()
+    try {
+      await sql.query('begin')
       const reservation = await reservations.reserve(sql, { scopeId, ownerKind: 'materialization',
         ownerId: operationId, reservedBytes: computer.candidate.sourceReservation.reservedBytes,
         preparation: { identity: { operationId, ownerPrincipalId: writer.principal.id,
           expiresAt: writer.principal.expiresAt }, root, source: root.source, attempt: ownerAttempt,
           record: null, physicalClosureConfirmed: false } })
       if (state === 'owned') await reservations.retain(sql, reservation, 'owned')
+      await sql.query('commit')
       return { reservation, receipt, attempt: ownerAttempt }
-    })
+    } catch (error) {
+      await sql.query('rollback')
+      throw error
+    } finally { sql.release() }
   }
   let app: ReturnType<typeof buildApp> | undefined
   let address: string | undefined

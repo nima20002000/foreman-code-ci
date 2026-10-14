@@ -6,10 +6,8 @@ import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { expect, it } from 'vitest'
 import { buildApp } from '../src/app.js'
 import { BugReportService } from '../src/modules/bug-reports/service.js'
-import { HostCiService } from '../src/modules/ci-host/service.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { PostgresAppInteractionService } from '../src/modules/interactions/app.js'
-import { RunCiAuthority } from '../src/modules/jobs/ciAuthority.js'
 import { intervalRuntime } from './helpers/intervalRuntime.js'
 
 it('reports an idle running execution after every CI ticket ends, without stopping it, through authenticated MCP',
@@ -17,24 +15,16 @@ it('reports an idle running execution after every CI ticket ends, without stoppi
     const { runtime, f, watcher, worker, checkStarted, checkGate, workerGate } = await intervalRuntime()
     const commands = new PostgresCommandCoordinator(runtime.db.pool)
     const bugs = new BugReportService(runtime.db.pool, commands)
-    const ci = new HostCiService(runtime.db.pool, commands, new RunCiAuthority(runtime.db.pool), {
-      capabilities: async () => ({ parts: true, integrationPartitions: true, affected: true }),
-      resolve: async () => { throw new Error('This fixture does not publish CI commits.') },
-    }, {
-      computers: async () => [],
-      request: async () => { throw new Error('This fixture does not dispatch CI jobs.') },
-    })
     const app = buildApp({
       logger: false,
       readiness: { database: { ping: async () => {} }, checkpoints: { ping: async () => {} } },
-      operator: { access: runtime.access, services: { commands, ci, bugReports: bugs } as never },
+      operator: { access: runtime.access, services: { commands, bugReports: bugs } as never },
       appMcp: { access: runtime.access, commands, bugReports: bugs,
         interactions: new PostgresAppInteractionService(runtime.db.pool, runtime.repository, commands) },
     })
     const clients: Client[] = []
-    let finished: Promise<unknown> | undefined
     try {
-      finished = Promise.allSettled([runtime.engine.start(f.run.id)])
+      const finished = runtime.engine.start(f.run.id)
       const checkId = await checkStarted.promise
       const executionRow = (await runtime.db.pool.query<{ record: unknown }>(
         'select record from harness_executions where run_id=$1 and workflow_node_id=$2',
@@ -120,10 +110,6 @@ it('reports an idle running execution after every CI ticket ends, without stoppi
 
       const credential = await runtime.credentials.issueForExecution(checkId)
       const checker = await connect(credential.environment.variables.GRAPHQL_MCP_TOKEN!)
-      const catalog = await checker.listTools()
-      expect(catalog.tools.map(tool => tool.name)).toEqual(expect.arrayContaining([
-        'run_status_get', 'ci_run', 'ci_get', 'ci_computers_list', 'ci_cancel', 'ci_logs_read',
-      ]))
       const result = await checker.callTool({ name: 'run_status_get', arguments: {} })
       expect(result.isError).not.toBe(true)
       const status = AgentRunStatusSchema.parse(decodeMcpToolResult(result))
@@ -139,18 +125,11 @@ it('reports an idle running execution after every CI ticket ends, without stoppi
       await runtime.credentials.revoke(credential)
       checkGate.resolve()
       workerGate.resolve()
-      await runtime.stop()
-      await runtime.engine.cancel(f.run.id)
       await finished
       expect(await restarted.detectStuckExecutions(idleMs, detectionAt)).toBe(0)
     } finally {
       checkGate.resolve()
       workerGate.resolve()
-      if (finished) {
-        await runtime.stop()
-        await runtime.engine.cancel(f.run.id)
-        await finished
-      }
       await Promise.allSettled(clients.map(client => client.close()))
       await app.close()
       await runtime.close()

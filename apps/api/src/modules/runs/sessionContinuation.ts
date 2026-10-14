@@ -7,14 +7,10 @@ import type { GraphTransactionSql } from '../run-graph/connection.js'
 import { readWorkflowClosure } from '../interactions/workflowClosure.js'
 import { readDispatchIntent, readExecutionPlacement } from '../placement/persistence.js'
 import type { AcceptedNodePlacement } from '@foreman-code/contracts/node-placement'
-import { repeatTickIndex } from './repeatResolution.js'
 
 export function canContinueWorkflowSession(previous: HarnessExecution, execution: HarnessExecution,
   placements: { previous?: Pick<AcceptedNodePlacement, 'bindingHash'> | undefined;
     current?: Pick<AcceptedNodePlacement, 'bindingHash'> | undefined } = {}): boolean {
-  // Retryable or canceled attempts start fresh; a deliberate failure keeps its context for routed retries.
-  if (previous.result?.error?.retryable === true || previous.result?.outcome === 'canceled') return false
-  if (repeatTickIndex(previous.input) !== undefined && previous.result?.outcome !== 'succeeded') return false
   return previous.id !== execution.id && previous.runId === execution.runId
     && previous.workflowNodeId === execution.workflowNodeId && previous.agentId === execution.agentId
     && previous.agentConfigurationVersionId === execution.agentConfigurationVersionId

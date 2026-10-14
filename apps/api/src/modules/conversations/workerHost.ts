@@ -590,7 +590,6 @@ export class WorkerConversationHost {
         const turn = record.turns.find(turn => turn.correlationId === request.correlationId)
         const running = request.correlationId !== undefined
           && this.running.has(`${request.binding.owner.conversationId}:${request.correlationId}`)
-        const submitted = Boolean(turn?.nativeTurnId || turn?.nativeSubmission)
         if (request.method === 'conversation.reconcile' && turn?.nativeSubmission
           && !['completed', 'rejected'].includes(turn.status)) {
           await resident.allocation.recoverClaudeAuthority?.(request, turn.nativeSubmission, signal)
@@ -607,9 +606,6 @@ export class WorkerConversationHost {
           history = { events: [], pendingInteractions: [], nonSubmission: {
             nativeSessionId: request.session.nativeSessionId, clientCorrelationId: turn.correlationId, result: turn.result,
           } }
-        } else if (request.afterSequence !== undefined && request.correlationId
-          && (!running || submitted) && manager.reconcileHistoryPage) {
-          history = await manager.reconcileHistoryPage(request.session, request.correlationId, request.afterSequence, signal)
         } else if (turn && request.correlationId && !running) {
           history = await manager.reconcile(request.session, request.correlationId, signal)
         } else {
@@ -618,10 +614,6 @@ export class WorkerConversationHost {
         }
         if (request.correlationId && !running && record.turns.some(turn => turn.correlationId === request.correlationId)) {
           await this.finish(request.binding, request.correlationId, history)
-        }
-        if (request.afterSequence !== undefined) {
-          const after = request.afterSequence
-          history = { ...history, events: history.events.filter(event => event.sequence > after) }
         }
         return { history, context: manager.contextSnapshot?.(request.session) ?? null,
           receipt: await this.ports.journal.read(request.binding) }

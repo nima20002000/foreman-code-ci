@@ -2,11 +2,11 @@ import { createHash } from 'node:crypto'
 import { mkdir, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, it } from 'vitest'
-import { createWorkerArtifactExtension, readWorkerBundleIdentity } from '../src/modules/computers/workerArtifacts.js'
+import { createWorkerArtifactExtension } from '../src/modules/computers/workerArtifacts.js'
 import { privateFixtureDirectory } from './helpers/privateFixtureDirectory.js'
 import { remoteReviewWorkerArtifacts } from './helpers/remoteReviewWorkerArtifacts.js'
 
-it('retains cached Worker manifests through symlinked cache ancestors without advertising unpublished bundles', async () => {
+it('serves the cached Worker release through a symlinked cache ancestor after fixture cleanup', async () => {
   const root = await privateFixtureDirectory('remote-review-artifacts-')
   try {
     const fixture = join(root, 'fixture')
@@ -32,10 +32,6 @@ it('retains cached Worker manifests through symlinked cache ancestors without ad
     ])
     expect(directory).toBe(reused)
     expect(directory).toBe(await realpath(directory))
-    const published = await remoteReviewWorkerArtifacts(release, cache, { publication: 'published' })
-    await expect(readWorkerBundleIdentity({ directory: published, version: manifest.version }, target))
-      .resolves.toMatchObject({ version: manifest.version, target,
-        manifestSha256: createHash('sha256').update(bytes).digest('hex') })
     await rm(fixture, { recursive: true })
     const extension = createWorkerArtifactExtension({ directory, version: manifest.version })
     const context = {
@@ -50,10 +46,12 @@ it('retains cached Worker manifests through symlinked cache ancestors without ad
       signal: new AbortController().signal,
     }
     const manifestSha256 = createHash('sha256').update(bytes).digest('hex')
-    await expect(extension.handle!({ operation: 'release', target }, context))
-      .rejects.toMatchObject({ code: 'WORKER_RELEASE_ASSET_UNAVAILABLE' })
-    await expect(extension.handle!({ operation: 'chunk', manifestSha256, path: 'src/cli.mjs', offset: 0 }, context))
-      .rejects.toThrow()
+    expect((await extension.handle!({ operation: 'release', target }, context)).payload).toEqual({
+      operation: 'release', release: { version: manifest.version, manifestSha256, manifest },
+    })
+    const chunk = await extension.handle!({ operation: 'chunk', manifestSha256,
+      path: 'src/cli.mjs', offset: 0 }, context)
+    expect(chunk.bytes).toEqual(content)
     expect(await readFile(join(directory, manifestSha256, 'manifest.json'))).toEqual(bytes)
   } finally {
     await rm(root, { recursive: true, force: true })

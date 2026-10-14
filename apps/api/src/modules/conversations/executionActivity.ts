@@ -9,7 +9,6 @@ import { z } from 'zod'
 import { nativePersistenceRedactor } from '../interactions/nativePersistence.js'
 import { operatorActivity } from './operatorActivity.js'
 import { executionItemsSql } from './executionActivitySql.js'
-import { DomainError } from '../errors.js'
 
 const MAX_EXECUTIONS = 20
 const PAGE_BYTES = 256 * 1024
@@ -67,11 +66,8 @@ function parseCursor(value: string | undefined): Record<string, CursorEntry> | u
       if (entry.n === '0') entry.n = '-1'
     }
     return legacy
-  } catch (cause) {
-    const error = new DomainError('EXECUTION_ACTIVITY_CURSOR_INVALID',
-      'Execution activity cursor is invalid. Read again without a cursor.', 400)
-    error.cause = cause
-    throw error
+  } catch {
+    return undefined
   }
 }
 function prefix(value: string, bytes: number) {

@@ -8,7 +8,7 @@ import { RunActivitiesPageSchema, SavedRunDetailsSchema,
   type RunActivityPublic, type SavedRunDetails } from '@foreman-code/contracts/wave25'
 import { expect } from 'vitest'
 import { z } from 'zod'
-import { callCiTool, callCiToolResult, toolErrorCode, type PreparedCiWorkflow } from './crossComputerCiSetup.js'
+import { callCiTool, toolErrorCode, type PreparedCiWorkflow } from './crossComputerCiSetup.js'
 import { ciTerminal, readAgentCiReport, type AgentCiReport, type CiReadback } from './crossComputerCiReadback.js'
 
 export type RunningCiWorkflow = PreparedCiWorkflow & { runId: string }
@@ -60,8 +60,8 @@ async function captureWorkflowActivity(client: Client, workflow: RunningCiWorkfl
     expect(page.scope.workflowVersionId).toBe(workflow.saved.version.id)
     for (const item of page.items) {
       items.set(item.id, item)
-      if (item.kind === 'job_work' && item.refs.ciTicketId) {
-        candidate(observation, workflow.runId, item.refs.ciTicketId)
+      if (item.kind === 'job_work' && item.refs.jobExecutionId) {
+        candidate(observation, workflow.runId, item.refs.jobExecutionId)
       }
     }
     observation.activities.set(workflow.runId, items)
@@ -170,9 +170,9 @@ async function observeWorkflow(client: Client, workflow: RunningCiWorkflow, obse
   for (const ticketId of ids) {
     const known = observation.tickets.get(ticketId)
     if (known && groups.has(known.latest.groupId)) continue
-    const result = await callCiToolResult(client, 'ci_get', {
+    const result = await client.callTool({ name: 'ci_get', arguments: {
       workspaceId: workflow.workspace.workspaceId, ticketId,
-    })
+    } }, { timeout: 180_000 })
     // Computer inventory includes other workspaces; a scoped CI read must reject those IDs.
     if (result.isError && toolErrorCode(result) === 'CI_RUN_NOT_FOUND') {
       expect(observation.candidates.get(workflow.runId)?.has(ticketId)).not.toBe(true)

@@ -1,4 +1,3 @@
-import { optionalCommandId } from './commands.js'
 import { z } from 'zod'
 import { PromptTextSchema, PromptSettingSnapshotSchema } from '../prompts.js'
 export {
@@ -11,7 +10,7 @@ export const ManagedPromptSettingSchema = PromptSettingSnapshotSchema
 export const PromptSettingUpdateInputSchema = z.object({
   value: PromptTextSchema,
   expectedRevision: z.number().int().nonnegative().optional().describe('Omit for last write wins; supply to reject a stale revision.'),
-  commandId: optionalCommandId(z.string().trim().min(8).max(200)),
+  commandId: z.string().trim().min(8).max(200),
 }).strict()
 
 export const PromptSettingUpdateResultSchema = z.object({

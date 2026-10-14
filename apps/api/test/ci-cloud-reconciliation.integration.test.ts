@@ -11,14 +11,13 @@ import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { HostCiService, type HostCiComputer } from '../src/modules/ci-host/service.js'
 import { RunCiAuthority, CI_GET_ACTIONS } from '../src/modules/jobs/ciAuthority.js'
 import { cloudCiLookupFixture } from './helpers/cloudCiLookupFixture.js'
-import { ciReadWhen } from './helpers/ciReadWhen.js'
 import { migratedDatabase } from './helpers/migratedDatabase.js'
 
 let database: Awaited<ReturnType<typeof migratedDatabase>>
 beforeAll(async () => { database = await migratedDatabase() }, 60_000)
 afterAll(async () => { await database?.close() }, 60_000)
 
-it.each(['starting', 'running'] as const)('retains transient CircleCI ownership and persists automatic requeue through authenticated MCP from %s', async state => {
+it.each(['starting', 'running'] as const)('exposes persisted unreadable CircleCI ownership through authenticated MCP from %s', async state => {
   const f = await cloudCiLookupFixture(state)
   const pool = database.pool
   const workspaceId = randomUUID()
@@ -57,7 +56,6 @@ it.each(['starting', 'running'] as const)('retains transient CircleCI ownership 
     return client
   }
   try {
-    f.advance(120_000)
     f.control.error = 'permission denied'
     const reader = await connect(CI_GET_ACTIONS)
     const denied = await connect(['workspaces:read'])
@@ -70,35 +68,15 @@ it.each(['starting', 'running'] as const)('retains transient CircleCI ownership 
     const result = await reader.callTool({ name: 'ci_get', arguments: { workspaceId, ticketId: record.id } })
     expect(result.isError).not.toBe(true)
     expect(CiGetOutputSchema.parse(decodeMcpToolResult(result)).run).toMatchObject({ state, finishedAt: null,
-      computer: { hostRef: computer.hostRef }, message: expect.stringContaining('Retrying lookup'),
-      observation: { status: 'available', consecutiveFailures: 0, lastError: null } })
+      computer: { hostRef: computer.hostRef }, message: expect.stringContaining('Operator cancellation is required') })
     expect((await denied.callTool({ name: 'ci_get', arguments: { workspaceId, ticketId: record.id } })).isError).toBe(true)
     expect((await pool.query('select host_key,record from ci_runs where id=$1', [record.id])).rows[0])
-      .toMatchObject({ host_key: computer.key, record: { state, message: expect.stringContaining('permission denied'),
-        observation: { status: 'available', consecutiveFailures: 0, lastError: null } } })
+      .toMatchObject({ host_key: computer.key, record: { state, message: expect.stringContaining('permission denied') } })
     const reads = f.control.reads
-    expect(f.control.canceled).toEqual([])
-    f.advance(75_000)
+    f.advance(120_000)
     await ci.dispatch()
-    const recovered = await ciReadWhen(pool, async () => CiGetOutputSchema.parse(decodeMcpToolResult(
-      await reader.callTool({ name: 'ci_get', arguments: { workspaceId, ticketId: record.id } }),
-    )), output => output.run.state === 'queued')
-    const requeued = { state: 'queued', computer: null, startedAt: null, finishedAt: null, exitCode: null,
-      unstartedProviders: ['circleci'],
-      messageHistory: expect.arrayContaining([expect.stringContaining('queued for another computer')]) }
-    expect(recovered.run).toMatchObject(requeued)
-    expect((await pool.query('select host_key,record from ci_runs where id=$1', [record.id])).rows[0])
-      .toMatchObject({ host_key: null, record: requeued })
-    expect(f.control.reads).toBeGreaterThan(reads)
-    expect(f.control.canceled).toEqual(['pipeline-1'])
-    const restarted = create()
-    try {
-      await restarted.dispatch()
-      const readback = await reader.callTool({ name: 'ci_get', arguments: { workspaceId, ticketId: record.id } })
-      expect(readback.isError).not.toBe(true)
-      expect(CiGetOutputSchema.parse(decodeMcpToolResult(readback)).run).toMatchObject(requeued)
-      expect(f.control.canceled).toEqual(['pipeline-1'])
-    } finally { await restarted.close() }
+    expect(f.control.reads).toBe(reads)
+    expect(f.control.canceled).toEqual([])
   } finally {
     await Promise.all(clients.map(client => client.close()))
     await ci.close()

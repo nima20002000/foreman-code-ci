@@ -102,11 +102,11 @@ async function rawRequest(path: string, context: ReturnType<typeof requestContex
   } catch (error) {
     context.check()
     if (error instanceof Error && error.name === 'AbortError') throw error
-    throw new ApiError({ code: 'NETWORK_ERROR', message: 'The file request could not be completed.' }, undefined, { cause: error })
+    throw new ApiError({ code: 'NETWORK_ERROR', message: 'The file request could not be completed.' })
   }
   context.check()
   if (!response.ok) {
-    const parsed = ApiErrorResponseSchema.safeParse(await response.json().catch(() => /* ignore: a body that is not JSON fails the schema */ undefined))
+    const parsed = ApiErrorResponseSchema.safeParse(await response.json().catch(() => undefined))
     context.check()
     if (parsed.success) reloadChangedInstallation(parsed.data.error.code)
     throw new ApiError(parsed.success ? parsed.data.error
@@ -161,7 +161,7 @@ export function createWorkflowFilesHttpClient(): WorkflowFilesClient {
       const ref = { fileId: allocated.file.fileId, revisionId: allocated.revision.revisionId }
       const response = await rawRequest(path, context, { method: 'PUT', body: bytes,
         headers: { Accept: 'application/json', 'Content-Type': 'application/octet-stream' } })
-      const payload: unknown = await response.json().catch(() => /* ignore: a body that is not JSON fails validation below */ undefined)
+      const payload: unknown = await response.json().catch(() => undefined)
       context.check()
       const staged = validate(payload, ref)
       if (staged.file.state === 'ready') return staged
@@ -210,7 +210,7 @@ export function createWorkflowFilesHttpClient(): WorkflowFilesClient {
           received += value.byteLength
         }
       } finally {
-        await reader.cancel().catch(() => /* ignore: the stream is already closed or failed */ undefined)
+        await reader.cancel().catch(() => undefined)
         reader.releaseLock()
       }
       if (received !== bytes.byteLength || await sha256(bytes.buffer) !== row.revision.sha256) throw invalidResponse()
