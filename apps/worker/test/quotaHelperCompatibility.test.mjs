@@ -46,7 +46,6 @@ for (const name of targets) {
     const image = `docker.io/library/ubuntu:${manifest.target.osRelease}`;
     if (!images.has(image)) {
       const pull = podman(['pull', image], 120_000);
-      if (pull.error) t.diagnostic(pull.stderr);
       assert.ifError(pull.error);
       assert.equal(pull.status, 0, pull.stderr);
       images.add(image);
