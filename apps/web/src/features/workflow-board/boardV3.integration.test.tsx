@@ -12,6 +12,7 @@ import { routeTree } from '../../app/router'
 import { server } from '../../mocks/server'
 import { createCurrentBoardMock } from '../../shared/mocks/currentBoard'
 import { useGraphDraftStore } from '../graph/store'
+import { installFlowLayout } from '../run-board/testFlowLayout'
 import { nextDraftKey, nextDraftDirty } from '../graph/nextDraft/state'
 import { readBoardStart } from './startOutbox'
 import { readBoardStop } from './stopOutbox'
@@ -38,6 +39,7 @@ const recordUnhandled = ({ request }: { request: Request }) => {
 const authoring = () => screen.getByRole('region', { name: 'Workflow authoring' })
 const controls = () => within(authoring()).getByRole('group', { name: 'Workflow controls' })
 const control = (name: string) => within(controls()).getByRole('button', { name })
+const workflowNameButton = (name: string) => within(authoring()).getByRole('button', { name })
 const saveButton = () => within(screen.getByRole('region', { name: 'Workflow authoring' }))
   .getByRole('button', { name: /^Save changes$/ })
 let fixtureNumber = 0
@@ -57,16 +59,7 @@ configure({ asyncUtilTimeout: 5000 })
 beforeEach(() => {
   unhandledRequests.length = 0; server.events.on('request:unhandled', recordUnhandled)
   useGraphDraftStore.getState().clearAllDrafts(); localStorage.clear(); localStorage.setItem('graphql.chat-instance-binding', `${mockRuntimeIdentity.checkoutId}:${mockRuntimeIdentity.installationId}`); sessionStorage.clear(); locks()
-  // DOM infrastructure only; never stub a Board/editor/React Flow component.
-  vi.stubGlobal('ResizeObserver', class {
-    constructor(private readonly notify: ResizeObserverCallback) {}
-    observe(target: Element) { queueMicrotask(() => this.notify([{ target, contentRect: target.getBoundingClientRect() } as ResizeObserverEntry], this as unknown as ResizeObserver)) }
-    unobserve() {} disconnect() {}
-  })
-  if (!globalThis.DOMMatrixReadOnly) vi.stubGlobal('DOMMatrixReadOnly', class { m11 = 1; m22 = 1; m41 = 0; m42 = 0 })
-  vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(1000)
-  vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(720)
-  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(() => ({ x: 0, y: 0, left: 0, top: 0, right: 1000, bottom: 720, width: 1000, height: 720, toJSON: () => ({}) }))
+  installFlowLayout(1000, 720)
 })
 afterEach(() => {
   cleanup(); clients.splice(0).forEach((client) => client.clear())
@@ -339,7 +332,7 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     await user.click(within(authoring()).getByRole('button', { name: 'S3 mounted workflow' }))
     await user.keyboard('Renamed board{Enter}')
     await user.click(within(await screen.findByRole('dialog', { name: 'Rename workflow?' })).getByRole('button', { name: 'Rename' }))
-    expect(screen.getByRole('button', { name: 'Renamed board' })).toBeVisible()
+    expect(workflowNameButton('Renamed board')).toBeVisible()
     const actions = within(screen.getByRole('group', { name: 'Draft actions' }))
     expect(actions.getByRole('button', { name: 'Save changes' })).toBeVisible()
     expect(within(controls()).getByRole('button', { name: 'Workflow actions' })).toBeVisible()
@@ -416,8 +409,8 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     await waitFor(() => expect(useGraphDraftStore.getState().nextDrafts[key]!.graph.nodes).toHaveLength(2))
     await user.click(within(picker).getByRole('button', { name: 'Close node picker' }))
     stageShape(key, 'sequential', mock)
-    act(() => useGraphDraftStore.getState().changeNextDraft(key, (graph) => ({ ...graph, edges: [] })))
     const canvas = within(screen.getByLabelText('Editable workflow graph'))
+    act(() => useGraphDraftStore.getState().changeNextDraft(key, (graph) => ({ ...graph, edges: [] })))
     fireEvent.click(canvas.getByRole('button', { name: new RegExp(`^${mock.agents[0]!.name},`) }))
     await waitFor(() => expect(canvas.getByRole('button', { name: new RegExp(`^${mock.agents[0]!.name},`) })).toHaveAttribute('aria-pressed', 'true'))
     fireEvent.click(canvas.getByRole('button', { name: new RegExp(`^${mock.agents[1]!.name},`) }))

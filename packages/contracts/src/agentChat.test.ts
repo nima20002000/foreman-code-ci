@@ -1,9 +1,16 @@
 import { describe, expect, it } from "vitest";
 
-import { AgentChatStateSchema, SendAgentChatMessageRequestSchema, agentChatFixtures } from "./agentChat.js";
+import { AgentChatSourceTranscriptSchema, AgentChatStateSchema, SendAgentChatMessageRequestSchema, agentChatFixtures } from "./agentChat.js";
 import { ReadSelectedRunChatResponseSchema } from './selectedRunChat.js';
 
 describe("agent chat contract", () => {
+  it.each(['-1', '01', '1.5', 'invalid'])('rejects transcript revision %s', revision => {
+    expect(AgentChatSourceTranscriptSchema.safeParse({
+      executionId: 'source-execution', state: 'starting', revision,
+      messages: [], hasEarlierMessages: false,
+    }).success).toBe(false);
+  });
+
   it.each(['starting', 'running', 'completed'] as const)('accepts an empty %s source transcript at revision zero', state => {
     const context = { ...agentChatFixtures.empty.context, runId: 'source-run' };
     const sourceTranscript = { executionId: 'source-execution', state, revision: '0',
