@@ -83,6 +83,7 @@ it('RH-02 keeps new, in-steer replay and ordinary replay responses on the explic
         sequence: '1', revision: '1' }] : [] }
     }
     if (sql.includes('operator_conversation_activit')) return { rows: [] }
+    if (sql.includes('from harness_native_events')) return { rows: [] }
     throw new Error(`Unexpected SQL in RH-02 fixture: ${sql}`)
   })
   const client = { query, release: vi.fn() } as unknown as pg.PoolClient
