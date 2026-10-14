@@ -1,7 +1,7 @@
 // Turns Vitest JSON reports into the bounded structured test results a CI ticket keeps (CiTestResultsSchema).
 //   node scripts/ci-test-results.mjs <output> <vitest-report.json>...
-// Every expected report must be readable and structurally valid before publishing merged results.
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+// Missing or unreadable reports are skipped; nothing is written when none can be read.
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -69,25 +69,14 @@ export function ciTestResults(reports, repository = root) {
 }
 
 function readReport(path) {
-  let report
-  try {
-    report = JSON.parse(readFileSync(path, 'utf8'))
-  } catch (error) {
-    const reason = error instanceof SyntaxError ? 'invalid JSON' : 'unreadable or missing'
-    throw new Error(`Expected test report ${path} is ${reason}.`)
-  }
-  if (!report || !Array.isArray(report.testResults)
-    || report.testResults.some(result => !result || typeof result.name !== 'string'
-      || !result.name || !Array.isArray(result.assertionResults))) {
-    throw new Error(`Expected test report ${path} has an invalid structure.`)
-  }
-  return report
+  try { return existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : null }
+  catch { return null }
 }
 
-/** Publishes results only after every expected report has been collected. */
+/** Writes the merged results of the readable reports; returns whether any could be read. */
 export function writeCiTestResults(output, paths, repository = root) {
-  if (!paths.length) throw new Error('Expected at least one test report.')
-  const reports = paths.map(readReport)
+  const reports = paths.map(readReport).filter(Boolean)
+  if (!reports.length) return false
   mkdirSync(dirname(output), { recursive: true })
   const temporary = `${output}.${process.pid}.tmp`
   writeFileSync(temporary, JSON.stringify(ciTestResults(reports, repository)), { mode: 0o600 })

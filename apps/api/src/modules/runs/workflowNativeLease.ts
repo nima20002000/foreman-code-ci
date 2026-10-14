@@ -1,5 +1,4 @@
-import { assertGraphTransaction, type GraphTransactionSql } from '../run-graph/connection.js'
-import { memoizeNativeRead, nativeCommitCheck } from '../run-graph/nativeBatch.js'
+import { beforeGraphCommit, assertGraphTransaction, type GraphTransactionSql } from '../run-graph/connection.js'
 import type { WorkflowNativeCapture } from '../interactions/workflowNativeCapture.js'
 import type { RunOwnership } from './ownership.js'
 import { DomainError } from '../errors.js'
@@ -41,21 +40,16 @@ export function holdWorkflowNativePublicationLease(sql: GraphTransactionSql, own
   lanes.set(lane.id, { owner, token: lane.token, generation: lane.connectionGeneration,
     leaseOwner: locked.lease_owner, agentId: capture.execution.agentId, harness: capture.session.harness,
     sessionId: capture.session.nativeSessionId, leaseMs: locked.lease_ms, expiresAt: locked.expires_at })
-  nativeCommitCheck(sql, `lease-renew:${lane.id}`, () => renewWorkflowNativePublicationLease(sql, owner, lane.id))
+  beforeGraphCommit(sql, () => renewWorkflowNativePublicationLease(sql, owner, lane.id))
 }
 
-/** The row remains locked continuously; renew the same fence that independent heartbeats cannot reach.
- * Inside a native batch the lease renews once after it is registered, not once per frame. */
+/** The row remains locked continuously; renew the same fence that independent heartbeats cannot reach. */
 export async function renewWorkflowNativePublicationLease(sql: GraphTransactionSql, owner: RunOwnership,
   laneId: string): Promise<void> {
   assertGraphTransaction(sql)
   const lane = lockedLanes.get(sql)?.get(laneId)
   if (!lane) return
   if (lane.owner !== owner) return lost()
-  await memoizeNativeRead(sql, `lease-renew:${laneId}`, () => renewLocked(sql, owner, laneId, lane))
-}
-
-async function renewLocked(sql: GraphTransactionSql, owner: RunOwnership, laneId: string, lane: LockedLane): Promise<void> {
   await owner.readOneShotFence(sql)
   const renewed = await sql.query<{ expires_at: string }>(`update native_session_lanes set revision=revision+1,updated_at=clock_timestamp(),
     record=jsonb_set(jsonb_set(record,'{revision}',to_jsonb((revision+1)::bigint)),

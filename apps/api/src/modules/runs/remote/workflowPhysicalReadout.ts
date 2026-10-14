@@ -17,8 +17,6 @@ import { pageJsonContinuation, readJsonContinuation } from './jsonContinuation.j
 import type { WorkflowOriginalNativeSource } from '../../interactions/workflowNativeCapture.js'
 import type { NativeLaunchObservation, NativeProcessRegistry } from '../../harnesses/recovery/processRegistry.js'
 import { DomainError } from '../../errors.js'
-import { deviceApplicationFailure } from '../../devices/deviceApplicationError.js'
-import { DeviceConnectionError } from '../../devices/deviceWire.js'
 import type { ApprovedRootAllowlist } from '@foreman-code/contracts/workspace-root-policies'
 import { anchored,identity,openChildDirectory,openPrivateRoot } from '../../sources/privateFilesystem.js'
 import { sourcePath } from '../../sources/manifest.js'
@@ -26,11 +24,9 @@ import { sourceCwdAttestationDigest } from '../../sources/workingDirectory.js'
 import { RuntimeLeafAttestationSchema,assertRuntimeLeafPath } from './runtimeLeaf.js'
 import type { NativeHistory } from '../../harnesses/port.js'
 import { encodeResultCopies, decodeResultCopies, physicalResultPaths, historyResultPaths } from './executionResultCodec.js'
-import { WorkflowPhysicalReadoutSnapshots, type PhysicalReadoutSelector } from './workflowPhysicalReadoutSnapshots.js'
 
 const unavailable = (): never => { throw new DomainError('REMOTE_NATIVE_PHYSICAL_UNAVAILABLE', 'The original installed native source and physical observations are unavailable.', 409) }
 const physicalRetentionLimit = DEVICE_JSON_CONTINUATION_LIMIT * 4
-const physicalReadoutLifetimeMs = 60_000
 export function pagePhysicalReadout(readout: RemoteWorkflowPhysicalReadout, metadata?: DeviceJsonContinuationRequest) {
   if (!metadata && Buffer.byteLength(JSON.stringify(readout)) <= DEVICE_HISTORY_PAGE_BYTES) return readout
   const dictionary = encodeResultCopies(readout, physicalResultPaths(readout))
@@ -153,22 +149,12 @@ export async function assertOriginalPhysicalDirectories(input:{source:RemoteWork
     await authorize()}
   catch(error){if(error instanceof DomainError)throw error;input.signal.throwIfAborted();return unavailable()}
 }
-/** Admission, backpressure, timeout and link failures say nothing about the original reply, so it must stay retained for the retry. */
-function transientAuthorizationFailure(error: unknown): boolean {
-  return deviceApplicationFailure(error).class !== 'permanent' || error instanceof DeviceConnectionError
-}
 interface Retained {
-  key: string
-  /** Insertion order; eviction takes the oldest evictable reply first. */
-  order: number
-  /** Until then Main may still read or acknowledge this reply; 0 means Main never read it. */
-  protectedUntil: number
-  released: boolean
   receipt: RemoteOperationReceipt
   placement: AcceptedNodePlacement
   source: WorkflowOriginalNativeSource
   readout: RemoteWorkflowPhysicalReadout
-  readoutExpiresAt: number
+  expiresAt: number
   bytes: number
   resultDigests: readonly string[]
   aliases: readonly {key:string;source:WorkflowOriginalNativeSource}[]
@@ -179,34 +165,18 @@ interface Retained {
   waitForSettlement?: (signal: AbortSignal) => Promise<void>
 }
 /** Only the installed original host remembers its own replies. Request selectors
- * locate those immutable originals; they can never supply or reconstruct proof.
- *
- * Retention rule: Main reads a reply right after it arrives (events of a streamed history as it yields them) and can
- * ACK it only inside the observation window it was served. A reply Main never read (an empty streaming poll) or whose
- * served window has passed can no longer be needed, so it yields its slot, oldest first, when retention is full.
- * Replies Main may still read or ACK are never evicted; a store full of them refuses the new reply loudly. */
+ * locate those immutable originals; they can never supply or reconstruct proof. */
 export class InstalledWorkflowPhysicalReadouts {
-  private readonly snapshots = new WorkflowPhysicalReadoutSnapshots()
   private readonly originals = new Map<string, Map<string, Retained>>()
   private readonly events=new Map<string,Map<string,{retained:Retained;source:WorkflowOriginalNativeSource}>>()
   private byteSize = 0
-  private order = 0
   private readonly results = new Map<string, {
     value: RemoteResultDictionary['results'][number]
     bytes: number
     references: number
   }>()
   private key(sequence: number, sourceDigest: string) { return `${sequence}:${sourceDigest}` }
-  /** Removes a reply and its event indexes; releasing its bytes happens exactly once whoever gets there first. */
-  private drop(retained: Retained) {
-    const operationId = retained.receipt.intent.operationId
-    const entries = this.originals.get(operationId), events = this.events.get(operationId)
-    if (entries?.get(retained.key) === retained) entries.delete(retained.key)
-    for (const alias of retained.aliases) if (events?.get(alias.key)?.retained === retained) events.delete(alias.key)
-    if (entries && !entries.size) this.originals.delete(operationId)
-    if (events && !events.size) this.events.delete(operationId)
-    if (retained.released) return
-    retained.released = true
+  private release(retained: Retained) {
     this.byteSize -= retained.bytes
     for (const digest of retained.resultDigests) {
       const result = this.results.get(digest)!
@@ -217,29 +187,27 @@ export class InstalledWorkflowPhysicalReadouts {
       }
     }
   }
-  private evictOldest(except: Retained | undefined, operationId?: string) {
-    const now = Date.now()
-    let oldest: Retained | undefined
+  private purgeExpired() {
     for (const [operation, entries] of this.originals) {
-      if (operationId !== undefined && operation !== operationId) continue
-      for (const retained of entries.values()) {
-        if (retained !== except && retained.protectedUntil <= now && (!oldest || retained.order < oldest.order)) oldest = retained
+      for (const [key, retained] of entries) if (retained.expiresAt <= Date.now()) {
+        entries.delete(key);this.release(retained)
+        for(const alias of retained.aliases)if(this.events.get(operation)?.get(alias.key)?.retained===retained)this.events.get(operation)?.delete(alias.key)
       }
+      if (!entries.size) this.originals.delete(operation)
+      if(!this.events.get(operation)?.size)this.events.delete(operation)
     }
-    if (!oldest) throw new DomainError('REMOTE_NATIVE_PHYSICAL_BACKPRESSURE',
-      'Original physical source retention is full of replies Main may still read or acknowledge.', 503)
-    this.drop(oldest)
   }
   purge(operationId: string) {
-    this.snapshots.purge(operationId)
-    for (const retained of [...this.originals.get(operationId)?.values() ?? []]) this.drop(retained)
+    const entries = this.originals.get(operationId)
+    if (entries) for (const retained of entries.values()) this.release(retained)
     this.originals.delete(operationId)
     this.events.delete(operationId)
   }
-  clear() { this.originals.clear();this.events.clear();this.results.clear();this.snapshots.clear(); this.byteSize = 0 }
+  clear() { this.originals.clear();this.events.clear();this.results.clear(); this.byteSize = 0 }
   remember(input: { readout: RemoteWorkflowPhysicalReadout; placement: AcceptedNodePlacement; source: WorkflowOriginalNativeSource;
     leaseExpiresAt: string; assertOwnerCurrent(): Promise<void>; assertCurrent(): Promise<void>; observe(): NativeLaunchObservation; closure(): NativeLaunchObservation | null;
     waitForSettlement?: (signal: AbortSignal) => Promise<void> }): void {
+    this.purgeExpired()
     const parsed = RemoteWorkflowPhysicalReadoutSchema.parse(input.readout)
     canonicalGraphJson(input.source, REMOTE_NATIVE_SOURCE_LIMIT)
     const paths = physicalResultPaths(parsed, ['readout'])
@@ -258,11 +226,10 @@ export class InstalledWorkflowPhysicalReadouts {
     if (!receipt.native || readout.session.nativeSessionId !== receipt.native.sessionId) return unavailable()
     const source = freezeTree(decoded.source)
     const placement=freezeTree(decoded.placement)
-    const readoutExpiresAt = Math.min(Date.parse(readout.expiresAt), Date.parse(input.leaseExpiresAt),
-      Date.now() + physicalReadoutLifetimeMs)
-    if (!Number.isFinite(readoutExpiresAt) || readoutExpiresAt <= Date.now()) return unavailable()
-    const key = this.key(receipt.sequence, remoteWorkflowSourceDigest(source)), operationId = receipt.intent.operationId
-    const previous = this.originals.get(operationId)?.get(key)
+    const expiresAt = Math.min(Date.parse(readout.expiresAt),Date.parse(input.leaseExpiresAt), Date.now() + 60_000)
+    if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) return unavailable()
+    const key = this.key(receipt.sequence, remoteWorkflowSourceDigest(source)), entries = this.originals.get(receipt.intent.operationId) ?? new Map<string, Retained>()
+    const previous = entries.get(key)
     if (previous) {
       if (!isDeepStrictEqual(previous.receipt,receipt)||!isDeepStrictEqual(previous.source, source)
         ||!isDeepStrictEqual(previous.readout.launch,readout.launch)||!isDeepStrictEqual(previous.readout.runtimeLeaf,readout.runtimeLeaf)
@@ -276,66 +243,58 @@ export class InstalledWorkflowPhysicalReadouts {
     const resultDigests = payloads.map(payload => payload.digest)
     const bytes = Buffer.byteLength(canonicalGraphJson({ ...dictionary, results: resultDigests, aliases },
       REMOTE_PHYSICAL_CONTINUATION_LIMIT))
-    const count = (digests: readonly string[], digest: string) => digests.filter(value => value === digest).length
-    const projectedSize = () => {
-      let size = this.byteSize - (previous?.bytes ?? 0) + bytes
-      for (const digest of new Set([...previous?.resultDigests ?? [], ...resultDigests])) {
-        const original = this.results.get(digest)
-        const references = (original?.references ?? 0) - count(previous?.resultDigests ?? [], digest) + count(resultDigests, digest)
-        if (original && references === 0) size -= original.bytes
-        if (!original && references > 0) size += payloads.find(payload => payload.digest === digest)!.bytes
-      }
-      return size
+    let nextByteSize = this.byteSize - (previous?.bytes ?? 0) + bytes
+    const changes = new Set([...(previous?.resultDigests ?? []), ...resultDigests])
+    for (const digest of changes) {
+      const original = this.results.get(digest)
+      const references = (original?.references ?? 0) - (previous?.resultDigests.includes(digest) ? 1 : 0)
+        + (resultDigests.includes(digest) ? 1 : 0)
+      if (original && references === 0) nextByteSize -= original.bytes
+      if (!original && references > 0) nextByteSize += payloads.find(payload => payload.digest === digest)!.bytes
     }
-    while (!previous && (this.originals.get(operationId)?.size ?? 0) >= 128) this.evictOldest(undefined, operationId)
-    while (projectedSize() > physicalRetentionLimit) this.evictOldest(previous)
-    if (previous) this.drop(previous)
+    if ((!previous && entries.size >= 128) || nextByteSize > physicalRetentionLimit) {
+      throw new DomainError('REMOTE_NATIVE_PHYSICAL_BACKPRESSURE', 'Original physical source retention is full.', 503)
+    }
+    if (previous) this.release(previous)
     for (const payload of payloads) {
       const original = this.results.get(payload.digest)
       if (original) original.references++
-      else {
-        this.results.set(payload.digest, { value: freezeTree(payload.value), bytes: payload.bytes, references: 1 })
-        this.byteSize += payload.bytes
-      }
+      else this.results.set(payload.digest, { value: freezeTree(payload.value), bytes: payload.bytes, references: 1 })
     }
-    this.byteSize += bytes
-    const retained:Retained={ key, order: ++this.order, protectedUntil: previous?.protectedUntil ?? 0, released: false,
-      receipt, placement, source, readout, readoutExpiresAt, bytes,aliases,resultDigests,
+    const retained:Retained={ receipt, placement, source, readout, expiresAt, bytes,aliases,resultDigests,
       assertOwnerCurrent: input.assertOwnerCurrent, assertCurrent: input.assertCurrent, observe: input.observe, closure: input.closure,
       ...(input.waitForSettlement ? { waitForSettlement: input.waitForSettlement } : {}) }
-    const entries = this.originals.get(operationId) ?? new Map<string, Retained>()
     entries.set(key,retained)
-    this.originals.set(operationId, entries)
-    const events=this.events.get(operationId)??new Map<string,{retained:Retained;source:WorkflowOriginalNativeSource}>()
+    this.originals.set(receipt.intent.operationId, entries); this.byteSize = nextByteSize
+    const events=this.events.get(receipt.intent.operationId)??new Map<string,{retained:Retained;source:WorkflowOriginalNativeSource}>()
     // Each fresh, authenticated history refreshes its exact event observations.
     for(const alias of aliases)events.set(alias.key,{retained,source:alias.source})
-    if(events.size)this.events.set(operationId,events)
+    if(events.size)this.events.set(receipt.intent.operationId,events)
   }
-  async read(input: PhysicalReadoutSelector & { metadata?: DeviceJsonContinuationRequest | undefined },
+  async read(input: { intent: DispatchIntent; placement: AcceptedNodePlacement; receiptSequence: number; sourceDigest: string },
     signal?: AbortSignal): Promise<RemoteWorkflowPhysicalReadout> {
     signal?.throwIfAborted()
     const key=this.key(input.receiptSequence,input.sourceDigest)
+    const previous = this.originals.get(input.intent.operationId)?.get(key)
+      ?? this.events.get(input.intent.operationId)?.get(key)?.retained
+    this.purgeExpired()
     const retained = this.originals.get(input.intent.operationId)?.get(key)??this.events.get(input.intent.operationId)?.get(key)?.retained
-    if (!retained) throw new DomainError(input.metadata ? 'transfer-expired' : 'REMOTE_NATIVE_PHYSICAL_UNAVAILABLE',
+    if (!retained) throw new DomainError('REMOTE_NATIVE_PHYSICAL_UNAVAILABLE',
       'The original physical reply is no longer retained.', 409,
-      { reason: 'not_retained',
+      { reason: previous && previous.expiresAt <= Date.now() ? 'expired_reply' : 'not_retained',
         operationId: input.intent.operationId,
         receiptSequence: input.receiptSequence, sourceDigest: input.sourceDigest })
     if (!isDeepStrictEqual(retained.receipt.intent, input.intent)
       || !isDeepStrictEqual(retained.placement, input.placement)) throw new DomainError(
-      input.metadata ? 'conflict' : 'REMOTE_NATIVE_PHYSICAL_UNAVAILABLE', 'The original physical reply selector changed.', 409,
+      'REMOTE_NATIVE_PHYSICAL_UNAVAILABLE', 'The original physical reply selector changed.', 409,
       { reason: 'selector_changed', operationId: input.intent.operationId, receiptSequence: input.receiptSequence })
-    // Main is using this reply: keep it through a settlement wait, then through the window it is served below.
-    retained.protectedUntil = Math.max(retained.protectedUntil, Date.now() + 2 * physicalReadoutLifetimeMs)
-    try { await retained.assertCurrent() } catch (error) {
-      if (!transientAuthorizationFailure(error)) this.purge(input.intent.operationId)
-      throw error
-    }
-    if (input.metadata) return this.snapshots.read(input, input.metadata.digest)
+    try { await retained.assertCurrent() } catch (error) { this.purge(input.intent.operationId); throw error }
     let observation = retained.observe()
     let closure = retained.closure()
     if (!closure && observation.lifecycle !== 'active' && retained.waitForSettlement) {
-      const expiry = AbortSignal.timeout(physicalReadoutLifetimeMs)
+      const remaining = retained.expiresAt - Date.now()
+      if (remaining <= 0) return unavailable()
+      const expiry = AbortSignal.timeout(remaining)
       await retained.waitForSettlement(signal ? AbortSignal.any([signal, expiry]) : expiry)
       signal?.throwIfAborted()
       await retained.assertCurrent()
@@ -344,47 +303,29 @@ export class InstalledWorkflowPhysicalReadouts {
     }
     if (closure && (!hasNativeClosure(observation) || !isDeepStrictEqual(observation,closure))) return unavailable()
     if (!closure && observation.lifecycle !== 'active') return unavailable()
-    // Retention ends at ACK; a late read gets fresh physical checks and a fresh verification window.
-    if (retained.readoutExpiresAt <= Date.now()) retained.readoutExpiresAt = Date.now() + physicalReadoutLifetimeMs
-    // Main can ACK until the served expiry; one more window absorbs link latency and clock skew.
-    retained.protectedUntil = Math.max(retained.protectedUntil, retained.readoutExpiresAt + physicalReadoutLifetimeMs)
-    const readout = RemoteWorkflowPhysicalReadoutSchema.parse({ ...retained.readout,
-      expiresAt: new Date(retained.readoutExpiresAt).toISOString(), observation,
+    if (retained.expiresAt <= Date.now()) return unavailable()
+    return RemoteWorkflowPhysicalReadoutSchema.parse({ ...retained.readout,expiresAt:new Date(retained.expiresAt).toISOString(), observation,
       ...(closure ? {closure:{ownerClosed:true,launch:closure}} : {}) })
-    if (Buffer.byteLength(JSON.stringify(readout)) > DEVICE_HISTORY_PAGE_BYTES) {
-      // Start paging with a full window even when the original reply is nearly expired.
-      retained.readoutExpiresAt = Date.now() + physicalReadoutLifetimeMs
-      readout.expiresAt = new Date(retained.readoutExpiresAt).toISOString()
-      retained.protectedUntil = Math.max(retained.protectedUntil, retained.readoutExpiresAt + physicalReadoutLifetimeMs)
-    }
-    freezeTree(readout)
-    const page = pagePhysicalReadout(readout)
-    if ('kind' in page) this.snapshots.remember(input, readout, page.metadata)
-    return readout
   }
   /** An exact original reply selector retires its derived event indexes too.
    * Main sends this only after their durable canonical publication; this class
    * never writes an execution/journal outcome or treats an ACK as success. */
   async ack(input:{intent:DispatchIntent;placement:AcceptedNodePlacement;receiptSequence:number;sourceDigest:string}):Promise<RemoteWorkflowPhysicalAck> {
-    const key=this.key(input.receiptSequence,input.sourceDigest),operationId=input.intent.operationId
-    const matches=(retained:Retained)=>isDeepStrictEqual(retained.receipt.intent,input.intent)&&isDeepStrictEqual(retained.placement,input.placement)
-    const found=this.originals.get(operationId)?.get(key)??this.events.get(operationId)?.get(key)?.retained
-    if(found) {
-      if(!matches(found))return unavailable()
+    this.purgeExpired()
+    const key=this.key(input.receiptSequence,input.sourceDigest),entries=this.originals.get(input.intent.operationId)
+    const direct=entries?.get(key),event=this.events.get(input.intent.operationId)?.get(key),retained=direct??event?.retained
+    if(retained) {
+      if(!isDeepStrictEqual(retained.receipt.intent,input.intent)||!isDeepStrictEqual(retained.placement,input.placement))return unavailable()
       // ACK only retires in-memory observations; physical checks still gate reads.
-      try {await found.assertOwnerCurrent()}catch(error){if(!transientAuthorizationFailure(error))this.purge(operationId);throw error}
+      try {await retained.assertOwnerCurrent()}catch(error){this.purge(input.intent.operationId);throw error}
+      if(direct) {
+        entries!.delete(key);this.release(retained)
+        for(const alias of retained.aliases)if(this.events.get(input.intent.operationId)?.get(alias.key)?.retained===retained)this.events.get(input.intent.operationId)?.delete(alias.key)
+      } else this.events.get(input.intent.operationId)?.delete(key)
+      if(!entries?.size)this.originals.delete(input.intent.operationId)
+      if(!this.events.get(input.intent.operationId)?.size)this.events.delete(input.intent.operationId)
     }
-    // A purge, eviction or fresh copy of this reply may have landed during authorization: retire what is current now.
-    const direct=this.originals.get(operationId)?.get(key),event=this.events.get(operationId)?.get(key)
-    const retired=found!==undefined&&(direct??event?.retained)!==undefined&&matches((direct??event?.retained)!)
-    if(retired&&direct)this.drop(direct)
-    else if(retired) {
-      const events=this.events.get(operationId)!
-      events.delete(key)
-      if(!events.size)this.events.delete(operationId)
-    }
-    this.snapshots.forget(input)
     return RemoteWorkflowPhysicalAckSchema.parse({version:1,operationId:input.intent.operationId,receiptSequence:input.receiptSequence,
-      sourceDigest:input.sourceDigest,status:retired?'retired':'not_retained'})
+      sourceDigest:input.sourceDigest,status:retained?'retired':'not_retained'})
   }
 }

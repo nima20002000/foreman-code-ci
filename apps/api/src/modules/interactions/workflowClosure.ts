@@ -56,7 +56,7 @@ export interface UnboundWorkflowClosure {
   durableGeneration: string
 }
 
-export interface ClosureRow {
+interface ClosureRow {
   generation: string
   execution_identity: unknown
   expected_reference: unknown | null
@@ -107,13 +107,6 @@ export async function readWorkflowClosure(sql: Sql, execution: HarnessExecution)
     return recovered?.session ? { execution: { ...executionIdentity(execution), nativeSessionId: recovered.session.nativeSessionId },
       session: recovered.session, durableGeneration: recovered.generation } : undefined
   }
-  return closedWorkflowSession(row, execution)
-}
-
-/** Validate a closed lifetime read alongside other executions on the same SQL cut. */
-export function closedWorkflowSession(row: ClosureRow & { record: unknown; reference: unknown },
-  execution: HarnessExecution): ClosedWorkflowSession {
-  if (!row.closed || row.detached || row.closed_without_session || row.prior_unclosed !== false) return conflict()
   const current = HarnessExecutionSchema.parse(row.record)
   const session = NativeSessionReferenceSchema.parse(row.reference)
   if (!isDeepStrictEqual(executionIdentity(current), executionIdentity(execution))
@@ -427,7 +420,7 @@ async function readRecoveredWorkflowClosure(sql: Sql, execution: HarnessExecutio
   return { generation: row.generation, session }
 }
 
-type WorkflowRecoveryPurpose = 'cleanup' | 'terminal' | 'failed_attempt'
+type WorkflowRecoveryPurpose = 'cleanup' | 'terminal'
 
 async function recoveryTarget(sql: GraphTransactionSql, owner: RunOwnership, execution: HarnessExecution,
   purpose: WorkflowRecoveryPurpose) {
@@ -446,17 +439,12 @@ async function recoveryTarget(sql: GraphTransactionSql, owner: RunOwnership, exe
   const parsed = HarnessExecutionSchema.parse(current.record)
   if (!isDeepStrictEqual(executionIdentity(parsed), executionIdentity(execution))
     || parsed.nativeSessionId !== execution.nativeSessionId) return conflict()
-  // Terminals retain their accepted result; failed attempts carry their own cleanup
-  // cause. Other lifetimes require the Run's committed Stop/cleanup fence.
+  // Physical recovery of a durable terminal does not request negative Run
+  // settlement. It may only re-enter the normal terminal/ACK acceptance gate.
+  // Every other recovery still needs the committed Stop/cleanup fence.
   if (purpose === 'terminal' && (!isDeepStrictEqual(parsed, execution) || parsed.state !== 'completed' || !parsed.result
     || !parsed.finishedAt || !parsed.nativeSessionId)) return conflict()
-  if (purpose === 'failed_attempt') {
-    const failedAttempt = await sql.query(`select 1 from harness_executions e
-      join approval_execution_state b on b.execution_id=e.id
-      where e.id=$1 and e.run_id=$2 and b.failure_result is not null`,
-    [execution.id, owner.runId])
-    if (failedAttempt.rowCount !== 1) return conflict()
-  } else if (run.fenced !== true && purpose !== 'terminal') return conflict()
+  if (run.fenced !== true && purpose !== 'terminal') return conflict()
   if (!execution.nativeSessionId) {
     const entry = (await sql.query<{ phase: string }>(
       'select phase from workflow_native_entries where execution_id=$1 and run_id=$2', [execution.id, owner.runId])).rows[0]
@@ -505,7 +493,7 @@ export async function recoverWorkflowNativeClosure(owner: RunOwnership, executio
   if (!target) return
   owner.assertOwned(); signal.throwIfAborted()
   if (!closeProcesses || !await closeProcesses(execution.id, signal, owner)) throw new DomainError(
-    'REPEAT_CLEANUP_PENDING', 'The original native process has no positive closure receipt yet.', 409)
+    'REPEAT_CLEANUP_PENDING', 'The original native process has no positive closure receipt. It was not resubmitted.', 409)
   owner.assertOwned(); signal.throwIfAborted()
   await owner.oneShotConnection().transaction(async (sql) => {
     const current = await recoveryTarget(sql, owner, execution, purpose)

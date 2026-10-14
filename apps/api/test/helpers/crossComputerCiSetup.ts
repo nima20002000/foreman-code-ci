@@ -44,14 +44,6 @@ export function toolErrorCode(result: Awaited<ReturnType<Client['callTool']>>): 
 }
 
 export async function callCiTool(client: Pick<Client, 'callTool'>, name: string, args: Record<string, unknown>) {
-  const result = await callCiToolResult(client, name, args)
-  const code = result.isError ? toolErrorCode(result) : null
-  const detail = result.isError ? JSON.stringify(result.structuredContent ?? result.content).slice(0, 2000) : ''
-  expect(result.isError, `Public MCP operation ${name} failed${code ? ` (${code})` : ''}: ${detail}`).not.toBe(true)
-  return decodeMcpToolResult(result)
-}
-
-export async function callCiToolResult(client: Pick<Client, 'callTool'>, name: string, args: Record<string, unknown>) {
   const pendingDeadline = Date.now() + 5 * 60_000
   for (let attempt = 0; attempt < 5; attempt++) {
     const result = await client.callTool({ name, arguments: args }, { timeout: 180_000 })
@@ -60,31 +52,15 @@ export async function callCiToolResult(client: Pick<Client, 'callTool'>, name: s
       await delay(10)
       continue
     }
-    // A loaded Main may time out a read; the error is marked retryable and reads are side-effect free.
-    // A busy device answers with a retryable DEVICE_BUSY; the same request is safe to send again.
-    if (code === 'DEVICE_BUSY' && Date.now() < pendingDeadline) {
-      await delay(2_000)
-      attempt--
-      continue
-    }
-    if (code === 'DATABASE_READ_TIMEOUT' && /_(get|list|read)(_v\d+)?$/.test(name) && Date.now() < pendingDeadline) {
-      await delay(1_000)
-      attempt--
-      continue
-    }
-    // Command deadlines are retryable by contract with the original input.
-    if ((code === 'COMMAND_DATABASE_TIMEOUT' || code === 'COMMAND_LOCK_TIMEOUT') && Date.now() < pendingDeadline) {
-      await delay(1_000)
-      attempt--
-      continue
-    }
     // A reconnected Worker rechecks its Agent profiles first; Start retries the same command meanwhile.
     if (code === 'HARNESS_PROFILE_CHECK_PENDING' && name === 'run_start' && Date.now() < pendingDeadline) {
       await delay(100)
       attempt--
       continue
     }
-    return result
+    const detail = result.isError ? JSON.stringify(result.structuredContent ?? result.content).slice(0, 2000) : ''
+    expect(result.isError, `Public MCP operation ${name} failed${code ? ` (${code})` : ''}: ${detail}`).not.toBe(true)
+    return decodeMcpToolResult(result)
   }
   throw new Error('The activity read retry budget was exhausted.')
 }

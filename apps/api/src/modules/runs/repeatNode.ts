@@ -1,12 +1,10 @@
-import { HarnessExecutionSchema, type ExecutionResult, type HarnessExecution } from '@foreman-code/contracts'
-import { AcceptedCurrentNodeResultSchema, NodeResolutionSchema, parseRepeatExitResultV1,
+import { HarnessExecutionSchema, type HarnessExecution } from '@foreman-code/contracts'
+import { AcceptedCurrentNodeResultSchema, NodeResolutionSchema, parseRepeatExitResultV1, parseWorkHandoffResult,
   type WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
 
 import { ExecutionLimiter } from './limiter.js'
-import { waitBeforeRetry } from './executionRetryPolicy.js'
 import { assertRepeatNativeUpdate } from '../interactions/repeatNativeEvidence.js'
 import { parseCurrentChoiceResult } from './currentRouting.js'
-import { parseWorkResultForInput } from './workHandoffResult.js'
 import {
   assertRepeatExecution, blockForNode, repeatConflict, repeatDigest, repeatExecutionIdentity, repeatTickIndex,
   type RepeatNodeRef, type RepeatResolution, type RepeatScope,
@@ -35,18 +33,12 @@ export interface RepeatGraphState {
   executionIds: Record<string, { executionId: string; occurrenceId: string | null }>
 }
 
-export interface RepeatTerminalOptions {
-  workResultRepair?: boolean
-  /** Precomputed by workflowDeliverableFailure on the same transaction. */
-  deliverableFailure?: ExecutionResult | undefined
-}
-
 /** MUST run before the native coordinator's FIRST durable terminal observation.
  * Already-written/accepted evidence must instead be checked, never normalized in place.
  * The shared parser accepts only the exact native text carrier, without changing
  * stored result bytes or accepting mixed carriers, prose or Markdown. */
 export function normalizeRepeatTerminal(version: WorkflowVersionV3, scope: RepeatScope,
-  ref: RepeatNodeRef, value: HarnessExecution, options: RepeatTerminalOptions = {}): HarnessExecution {
+  ref: RepeatNodeRef, value: HarnessExecution, options: { workResultRepair?: boolean } = {}): HarnessExecution {
   const execution = HarnessExecutionSchema.parse(value)
   assertRepeatExecution(version, scope, ref, execution)
   if (execution.state !== 'completed') return execution
@@ -57,19 +49,15 @@ export function normalizeRepeatTerminal(version: WorkflowVersionV3, scope: Repea
     return version.definition.handoffs && options.workResultRepair && execution.result.outcome === 'failed'
       ? invalidWorkResult(execution) : execution
   }
-  // A well-formed envelope whose deliverable still fails its output contract after repair fails loudly.
-  const deliverable = (accepted: HarnessExecution) => options.deliverableFailure
-    ? HarnessExecutionSchema.parse({ ...accepted, result: options.deliverableFailure }) : accepted
   if (version.definition.handoffs) {
-    try { parseWorkResultForInput(execution.result, execution.input) }
+    try { parseWorkHandoffResult(execution.result); return execution }
     catch {
       return invalidWorkResult(execution)
     }
-    return deliverable(execution)
   }
   try {
     repeatTerminalResolution(version, scope, ref, execution)
-    return deliverable(execution)
+    return execution
   } catch {
     return HarnessExecutionSchema.parse({ ...execution, result: { outcome: 'failed', error: {
       code: 'REPEAT_RESULT_INVALID', message: 'The complete result did not satisfy its pinned bounded result contract.', retryable: false,
@@ -90,7 +78,7 @@ function invalidWorkResult(execution: HarnessExecution): HarnessExecution {
  * Do not use this on raw provider-event storage or result acceptance/replay. */
 export function prepareRepeatNativeUpdate(version: WorkflowVersionV3, scope: RepeatScope,
   ref: RepeatNodeRef, previousValue: HarnessExecution, incomingValue: HarnessExecution,
-  options: RepeatTerminalOptions = {}): HarnessExecution {
+  options: { workResultRepair?: boolean } = {}): HarnessExecution {
   const previous = HarnessExecutionSchema.parse(previousValue)
   const incoming = HarnessExecutionSchema.parse(incomingValue)
   assertRepeatExecution(version, scope, ref, previous)
@@ -164,13 +152,12 @@ export function repeatNodeAction(input: {
       } else await input.limiter.run(input.signal, async () => {
         input.signal.throwIfAborted()
         await input.driver.observe(execution, input.signal)
-      }, execution)
+      })
       input.signal.throwIfAborted()
       const accepted = await input.store.acceptTerminal(execution.id, (attempt) => input.driver.candidate(ref, attempt))
       if (accepted.kind !== 'retry') return checkpointResolution(accepted.resolution)
       // Technical attempts keep the same slot and frozen input. The repository
       // checked retry policy, exact negative evidence, cleanup and budget at COMMIT.
-      await waitBeforeRetry(execution, accepted.execution, input.signal)
       execution = accepted.execution
     }
   }

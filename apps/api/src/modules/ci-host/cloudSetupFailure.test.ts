@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { expect, it } from 'vitest'
 import { fixture } from './cloud.testSupport.js'
-import { expectCliRunMessage } from './cloudAssertions.testSupport.js'
 
 it.each((['github', 'circleci'] as const).flatMap(provider => [
   { provider, testsStarted: false },
@@ -19,12 +18,12 @@ it.each((['github', 'circleci'] as const).flatMap(provider => [
   f.circle.outcome = 'failed'
   f.circle.watchdogFailure = f.github.watchdogFailure
   const request = { operation: 'read' as const, runId, afterOffset: 0, maxBytes: 1024 }
-  for (const cloud of [f.cloud, f.reopen()]) {
-    const reply = await cloud.handle(request)
-    expect(reply).toMatchObject({ run: { state: 'failed', testsStarted: options.testsStarted } })
-    if (reply.operation !== 'read') throw new Error('Expected a read reply')
-    expectCliRunMessage(reply.run, message)
-  }
+  expect(await f.cloud.handle(request)).toMatchObject({
+    run: { state: 'failed', message, testsStarted: options.testsStarted },
+  })
+  expect(await f.reopen().handle(request)).toMatchObject({
+    run: { state: 'failed', message, testsStarted: options.testsStarted },
+  })
 })
 
 it.each(['github', 'circleci'] as const)('reports %s setup failure when the Suite step never ran', async provider => {

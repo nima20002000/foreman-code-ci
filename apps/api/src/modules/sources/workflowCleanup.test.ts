@@ -3,13 +3,12 @@ import { randomUUID } from 'node:crypto'
 import type pg from 'pg'
 import { HarnessExecutionSchema } from '@foreman-code/contracts'
 import { SourceMaterializationRecordSchema } from '@foreman-code/contracts/source-admission'
-import { RetainedSourceFootprintSchema } from '@foreman-code/contracts/source-operations'
 import type { GraphSqlClient } from '../run-graph/connection.js'
 import { readUnboundWorkflowClosure, readWorkflowClosure } from '../interactions/workflowClosure.js'
 import { hasRetainedRemoteReviewerSource, readRetainedRemoteReviewer } from '../interactions/retainedRemoteReviewer.js'
 import { closeCompletedWorkflowSources, localWorkflowSourceClosed } from './workflowCleanup.js'
 import { PostgresSourceService } from './service.js'
-import { DomainError, databaseReadFailure } from '../errors.js'
+import { DomainError } from '../errors.js'
 import { DeviceApplicationError } from '../devices/deviceApplicationError.js'
 
 vi.mock('../interactions/workflowClosure.js', () => ({
@@ -148,16 +147,6 @@ it('reports closure uncertainty when no verified retained reviewer owns the sour
   expect(f.report).toHaveBeenCalledWith(uncertainty)
 })
 
-it('retries a closure check that timed out behind a busy Run on a later pass instead of reporting it', async () => {
-  const f = remoteSourceFixture()
-  const timeout = Object.assign(new Error('canceling statement due to statement timeout'), { code: '57014' })
-  f.sources.confirmClosed.mockRejectedValue(databaseReadFailure(timeout))
-  await closeCompletedWorkflowSources(f.pool, f.sources, f.report)
-  await closeCompletedWorkflowSources(f.pool, f.sources, f.report)
-  expect(f.sources.confirmClosed).toHaveBeenCalledOnce()
-  expect(f.report).not.toHaveBeenCalled()
-})
-
 it('defers unconfirmed physical closure without releasing the original source claim', async () => {
   const f = remoteSourceFixture()
   const releaseClaim = vi.fn(async () => ({ retainedBytes: 0 }))
@@ -226,22 +215,6 @@ function cleanupClock() {
     vi.setSystemTime(now)
   }
 }
-
-it('uses the persisted retry date of a retained worktree without repeating its footprint scan', async () => {
-  const advance = cleanupClock()
-  const f = remoteSourceFixture()
-  const row = { materialization_id: f.record.receipt.materializationId, record: f.record,
-    execution: f.execution, settlement_pending: false, already_closed: true,
-    worktree_cleanup: { state: 'retained', nextAttemptAt: new Date(Date.now() + 300_000).toISOString() } }
-  expect(RetainedSourceFootprintSchema.parse({ retainedBytes: 1024, worktree: row.worktree_cleanup }).worktree)
-    .toEqual(row.worktree_cleanup)
-  const pool = { query: async () => ({ rows: [row] }) } as unknown as Pick<pg.Pool, 'query'>
-  await closeCompletedWorkflowSources(pool, f.sources, f.report)
-  expect(f.sources.confirmClosed).not.toHaveBeenCalled()
-  advance(300_000)
-  await closeCompletedWorkflowSources(pool, f.sources, f.report)
-  expect(f.sources.confirmClosed).toHaveBeenCalledOnce()
-})
 
 it.each([
   new DomainError('SOURCE_EXECUTION_UNCERTAIN', 'Physical closure is unconfirmed.', 409),

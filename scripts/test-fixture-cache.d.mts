@@ -12,8 +12,4 @@ export function cachedWorkerRelease(
   commit: string,
   identityParts: readonly (string | Buffer)[],
   build: (directory: string) => Promise<void>,
-  options?: { onCacheStatus?: (status: {
-    status: 'hit' | 'miss' | 'invalid'; lastError: string | null
-    missCount: number; rebuildCount: number
-  }) => void },
 ): Promise<string>

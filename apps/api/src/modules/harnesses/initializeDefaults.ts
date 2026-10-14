@@ -12,7 +12,6 @@ import { DomainError } from '../errors.js'
 import { detectedClaudeProfilePath } from './claudeSdk/productionMetadata.js'
 import { UNAVAILABLE_HARNESS_DEFAULTS_KEY } from '../settings/postgres.js'
 import { ClaudeFullAccessConfigurationSchema } from '@foreman-code/contracts/claude'
-import { logIgnoredError } from '../diagnostics/ignoredError.js'
 
 const missingModel = (value: unknown) => typeof asRecord(value).model !== 'string' || !String(asRecord(value).model).trim()
 const liveUnavailableDefaults = (value: unknown) => UnavailableHarnessDefaultsSchema.parse(
@@ -50,8 +49,7 @@ export async function initializeNativeDefaults(input: {
     let options: HarnessOptions
     try {
       options = await input.options(harness)
-    } catch (error) {
-      logIgnoredError('harness', 'discover native defaults', error, { harness })
+    } catch {
       // An absent or unauthenticated installation remains unconfigured.
       return
     }
