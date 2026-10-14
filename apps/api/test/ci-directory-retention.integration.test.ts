@@ -41,7 +41,7 @@ it.each(['main', 'device', 'github', 'circleci'] as const)(
     const endpoint = new ProductionHostCiEndpoint(database.pool, mainId, () => ({
       capabilities: () => [], request: async (_id, _namespace, request) => ({ payload: await runner.handle(request) }),
     }), runner, hostRef.kind === 'cloud' ? [cloud] : [])
-    const records = []
+    const records: ReturnType<typeof CiRunRecordSchema.parse>[] = []
     for (let index = 0; index < 208; index++) {
       const id = randomUUID()
       const time = new Date(Date.parse('2026-10-01T00:00:00Z') + index * 1000).toISOString()
@@ -77,6 +77,7 @@ it.each(['main', 'device', 'github', 'circleci'] as const)(
       repository: 'fixture/site', mirror: 'fixture/mirror', commit: 'a'.repeat(40), suite: 'lint', state: 'passed',
       cleaned: true, startedAt: '2026-10-01T00:00:00Z', finishedAt: '2026-10-01T00:00:00Z',
       exitCode: 0, message: null, providerRunId: null }))
+    await writeFile(join(root, 'runs', unknown, 'log'), 'Untracked executor output')
     try {
       await endpoint.request(computer, { operation: 'status' })
       // There are 207 terminal records; the recent and pending records also count toward the newest 200.

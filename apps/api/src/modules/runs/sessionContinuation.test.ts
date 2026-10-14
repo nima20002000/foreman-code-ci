@@ -29,6 +29,19 @@ describe('workflow session continuity', () => {
     expect(execution.runtimeDirectory).not.toBe(previous.runtimeDirectory)
   })
 
+  it.each(['CODEX_APP_SERVER_DISCONNECTED', 'EXECUTION_INTERRUPTED', 'NATIVE_EXECUTION_FAILED'])(
+    'starts a fresh session after an abandoned %s attempt', async code => {
+      const failed = HarnessExecutionSchema.parse({ ...previous, result: { outcome: 'failed',
+        error: { code, message: 'The original native connection was lost.', retryable: true } } })
+      const retry = { ...execution, attempt: 2 }
+      expect(canContinueWorkflowSession(failed, retry)).toBe(false)
+      const query = vi.fn(async () => ({ rows: [{ record: failed, configuration: {} }] }))
+      const closure = vi.spyOn(closures, 'readWorkflowClosure')
+      expect(await readWorkflowSessionContinuation({ query } as unknown as GraphTransactionSql, retry)).toBeUndefined()
+      expect(closure).not.toHaveBeenCalled()
+    },
+  )
+
   it.each([
     { runId: 'other-run' }, { workflowNodeId: 'other-node' }, { agentId: 'other-agent' },
     { agentConfigurationVersionId: 'other-configuration' }, { workingDirectory: '/other-project' },
@@ -40,6 +53,12 @@ describe('workflow session continuity', () => {
     expect(canContinueWorkflowSession({ ...previous, state: 'running' }, execution)).toBe(false)
     expect(canContinueWorkflowSession({ ...previous, nativeSessionId: undefined }, execution)).toBe(false)
     expect(canContinueWorkflowSession({ ...previous, workingDirectory: undefined }, execution)).toBe(false)
+  })
+
+  it.each(['failed', 'canceled'] as const)('starts a fresh native session after a %s attempt', outcome => {
+    const abandoned = HarnessExecutionSchema.parse({ ...previous, result: { outcome,
+      ...(outcome === 'failed' ? { error: { code: '08006', message: 'Connection lost.', retryable: true } } : {}) } })
+    expect(canContinueWorkflowSession(abandoned, { ...execution, attempt: 2 })).toBe(false)
   })
 
   it('starts fresh when the execution host or placement changes', () => {

@@ -232,6 +232,9 @@ export function repeatNativeObserver(context: RepeatNativeObserverContext):
       await native.observeExact({ ...common, execution, store, signal })
       return
     }
+    // Failed profiles must be rejected before waiting for startup capacity.
+    const placement = await context.preparePlacement?.(execution)
+    check()
     const node = context.version.definition.nodes.find((item) => item.id === execution.workflowNodeId)
     const hostKey = await context.executionHostKey?.(execution) ?? (node && node.kind !== 'job'
       && node.placement?.hostRef.kind === 'device' ? `device:${node.placement.hostRef.deviceId}` : 'main')
@@ -242,8 +245,6 @@ export function repeatNativeObserver(context: RepeatNativeObserverContext):
         await native.observeExact({ ...common, execution, store, signal })
         return
       }
-      const placement = await context.preparePlacement?.(execution)
-      check()
       const configuration = await retryDatabaseOperation(
         () => context.workflows.getAgentConfiguration(execution.agentConfigurationVersionId),
         (error) => isDatabaseTimeout(error) || isDatabasePoolTimeout(error), { signal, check },
@@ -495,7 +496,12 @@ async function waitForIntervalRun(input: Parameters<typeof startIntervalChecks>[
         throw new DomainError('GRAPH_STOP_CONFLICT', 'The Run has a Stop or cleanup request.', 409)
       }
       if (current.executionState !== 'running') return
-      await delay(1_000, undefined, { signal: input.signal })
+      try {
+        await delay(1_000, undefined, { signal: input.signal })
+      } catch (error) {
+        input.signal.throwIfAborted()
+        throw error
+      }
     }
   } finally { stopChecks() }
 }

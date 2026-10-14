@@ -19,11 +19,6 @@ import { splitUnavailableGateParts } from './gateFallback.js'
 import { CiRunRecordSchema } from '@foreman-code/contracts'
 
 const roots: string[] = []
-vi.mock('@foreman-code/contracts', async original => {
-  const host = await import('../../../../../packages/contracts/src/ciHost.js')
-  return { ...await original<typeof import('@foreman-code/contracts')>(),
-    CiRunRecordSchema: host.CiRunRecordSchema, CiHostReplySchema: host.CiHostReplySchema }
-})
 afterEach(async () => {
   vi.restoreAllMocks()
   await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })))
@@ -95,7 +90,7 @@ it('keeps the terminal parent result and reports unavailable job details', async
 })
 
 it('marks skipped step logs in the returned text', async () => {
-  const bytes = await packEntries([{ name: 'Suite/1_First.txt', kind: 'file', bytes: Buffer.from('first\n') }], new Budget())
+  const bytes = await packEntries([{ name: 'Suite/1_First.txt', bytes: Buffer.from('first\n') }], new Budget())
   const jobs = [{ id: 1, name: 'Suite', conclusion: 'success', steps: [
     { number: 1, name: 'First' }, { number: 2, name: 'Second' },
   ] }]
