@@ -101,7 +101,7 @@ async function fixture() {
         rootPolicyRevision: '1', locationRevision: '1' },
       registration: null, ownerPrincipalId: 'operator', authorizedByPrincipalId: 'operator',
       attestationId: randomUUID(), attestationDigest: 'a'.repeat(64), boundAt: new Date().toISOString() }
-    return { pool, dispose, ports, binding, root, manifest, materializer, sources, bytes }
+    return { pool, dispose, ports, binding, root, manifest, materializer, sources }
   } catch (error) {
     await dispose()
     throw error
@@ -150,7 +150,7 @@ it('defers automatic Main source reclamation until the original native owner con
     const copy = await addOccurrence(f, 'completed', false)
     const executionId = copy.record.receipt.executionId
     await f.pool.query(`
-      alter table runs add column workspace_id text, add column stop_requested_at timestamptz;
+      alter table runs add column workspace_id text;
       alter table source_execution_materializations add column operation_id text;
       alter table source_preparation_reconciliations
         add column owner jsonb, add column principal_id text, add column command_id text,
@@ -160,7 +160,6 @@ it('defers automatic Main source reclamation until the original native owner con
       create table job_preparations (operation_id text, workspace_id text);
       create table workflow_job_preparations (run_id text, preparation jsonb);
       create table execution_dispatch_intents (operation_id text, run_id text);
-      create table run_cleanup_intents (run_id text, pending boolean);
       create table execution_native_recoveries
         (execution_id text, generation bigint, execution_identity jsonb, reference jsonb);
       create table application_installation (singleton boolean, id uuid);
@@ -189,7 +188,7 @@ it('defers automatic Main source reclamation until the original native owner con
     expect(reclaim).not.toHaveBeenCalled()
     expect((await f.pool.query('select state,reserved_bytes from source_storage_reservations where reservation_id=$1',
       [reservation.reservationId])).rows[0]).toEqual({ state: 'owned', reserved_bytes: String(reservation.reservedBytes) })
-    expect(await readFile(join(copy.workingDirectory, f.manifest.entries[0]!.path))).toEqual(f.bytes)
+    expect(await readFile(join(copy.workingDirectory, 'app.ts'), 'utf8')).toBe('approved source\n')
 
     await f.pool.query('update execution_native_closures set closed_at=clock_timestamp() where execution_id=$1',
       [executionId])
@@ -234,7 +233,7 @@ it('releases finished Loop copies while preserving live ownership, dirty work an
     for (const active of [live, settling]) {
       expect(rows.find(row => row.execution_id === active.record.receipt.executionId))
         .toMatchObject({ state: 'prepared', reservation_state: 'owned' })
-      expect(await readFile(join(active.workingDirectory, f.manifest.entries[0]!.path))).toEqual(f.bytes)
+      expect(await readFile(join(active.workingDirectory, 'app.ts'), 'utf8')).toBe('approved source\n')
     }
     await expect(stat(clean.workingDirectory)).rejects.toMatchObject({ code: 'ENOENT' })
     expect(git(f.ports.cloneDirectory('fixture/project'), 'rev-parse', clean.record.receipt.worktree!.branch))
@@ -353,7 +352,7 @@ it('cleans reconciled sessionless worktrees only after positive closure and retr
     await expect(stat(dirty.workingDirectory)).rejects.toMatchObject({ code: 'ENOENT' })
     expect(git(f.ports.cloneDirectory('fixture/project'), 'rev-parse', dirty.record.receipt.worktree!.branch))
       .toBe(resultCommit)
-    expect(await readFile(join(live.workingDirectory, f.manifest.entries[0]!.path))).toEqual(f.bytes)
+    expect(await readFile(join(live.workingDirectory, 'app.ts'), 'utf8')).toBe('approved source\n')
     const stored = (await f.pool.query('select worktree_cleanup from source_execution_materializations where materialization_id=$1',
       [dirty.record.receipt.materializationId])).rows[0]
     expect(stored.worktree_cleanup).toEqual({ state: 'removed' })

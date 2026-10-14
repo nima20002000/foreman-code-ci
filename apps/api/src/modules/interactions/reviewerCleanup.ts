@@ -3,7 +3,6 @@ import type { NativeSessionReference, PendingNativeInteraction, ReviewCleanup, R
 
 import type { NativeHistory } from '../harnesses/port.js'
 import { reviewTurnEvidence } from './reviewerEvidence.js'
-import { logIgnoredError } from '../diagnostics/ignoredError.js'
 
 
 /** A permission's message identity is not necessarily its root user turn identity. */
@@ -58,8 +57,7 @@ export async function settleReviewCleanup(input: ReviewCleanupAttempt): Promise<
       const result = await work()
       await input.check()
       return result
-    } catch (error) {
-      logIgnoredError('engine', 'observe review cleanup', error)
+    } catch {
       // A timeout/provider failure is recoverable. A lost lease is NOT permission
       // to continue with another side effect, including credential cleanup.
       await input.check()

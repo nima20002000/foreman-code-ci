@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { expect } from 'vitest'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { SavedRunDetailsSchema } from '@foreman-code/contracts/wave25'
-import { startWhenReady } from './harnessInstallationUpdate.js'
+import { startWhenReady, completedRun } from './harnessInstallationUpdate.js'
 import { expectMcpAccessDenied } from './deniedMcpTool.js'
 import { remoteReviewProduction } from './remoteReviewProduction.js'
 import { readUntil } from './observableCondition.js'
@@ -18,8 +18,6 @@ export async function assertIntervalRestart(executionHost: 'main' | 'worker'): P
     const started = (await startWhenReady(fixture))!
     const admittedIds = new Set<string>()
     const before = await readUntil(async () => {
-      // This fixture has no server reconciliation timer to resume pending native settlement.
-      await fixture.reconcile()
       const details = await fixture.details(started.run.id)
       const calls = await fixture.provider.calls()
       for (const execution of details.executions) {
@@ -36,8 +34,6 @@ export async function assertIntervalRestart(executionHost: 'main' | 'worker'): P
       return admitted ? details : undefined
     }, details => details !== undefined, {
       timeoutMs: 180_000, description: 'active graph work and interval check',
-      minimumReadIntervalMs: 1_000,
-      subscribe: fixture.subscribeNativeChanges,
     })
     if (!before) throw new Error('Expected both native turns to be admitted')
     expect(before.executions).toHaveLength(3)
@@ -84,18 +80,7 @@ export async function assertIntervalRestart(executionHost: 'main' | 'worker'): P
     }
     await fixture.provider.releaseWorkflowTurns()
     blocked = false
-    await readUntil(async () => {
-      await fixture.reconcile()
-      return fixture.details(started.run.id)
-    }, details => details.executions.every(execution => execution.state === 'completed'),
-      { timeoutMs: 60_000, description: 'settled graph work and interval check' })
-    const stop = await fixture.call('run_stop', { workspaceId: started.run.workspaceId,
-      runId: started.run.id, commandId: randomUUID() })
-    expect(stop.isError).not.toBe(true)
-    const finished = await readUntil(() => fixture.details(started.run.id),
-      details => details.run.executionState === 'completed',
-      { timeoutMs: 60_000, description: 'stopped interval Run' })
-    expect(finished.run.outcome).toBe('canceled')
+    const finished = await completedRun(fixture, started.run.id)
     expect(finished.executions.map(execution => execution.id).sort())
       .toEqual(before.executions.map(execution => execution.id).sort())
     for (const execution of active) {

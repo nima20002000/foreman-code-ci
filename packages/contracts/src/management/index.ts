@@ -1,5 +1,4 @@
 import { GRAPHQL_OPERATOR_TOOLS } from '../graphqlMcpTools.js'
-import { OperationalFailureSchema } from '../operationalFailures.js'
 import { NativeInteractionSupportSchema } from '../nativeInteractionSupport.js'
 import { ClaudeFullAccessConfigurationSchema, ClaudeHarnessConfigurationSchema } from '../claude.js';
 import { RunStartV3InputSchema } from '../wave25/startRequest.js'
@@ -64,7 +63,7 @@ export const ManagementHarnessDefaultsSchema = z.object({
   claude: ClaudeHarnessConfigurationSchema.optional(),
 }).strict();
 
-import { optionalCommandId, CommandIdSchema, ExpectedRevisionSchema } from './commands.js';
+import { CommandIdSchema, ExpectedRevisionSchema } from './commands.js';
 export { CommandIdSchema, ExpectedRevisionSchema } from './commands.js';
 const ManagementPageInputSchema = z
   .object({
@@ -116,7 +115,7 @@ export const ManagedWorkflowCommandResultSchema = z.object({ value: ManagedWorkf
 const WorkspaceScopeSchema = z.object({ workspaceId: IdSchema }).strict();
 const WorkflowScopeSchema = z.object({ workspaceId: IdSchema, workflowId: IdSchema }).strict();
 const DraftScopeSchema = z.object({ workspaceId: IdSchema, workflowId: IdSchema, draftId: IdSchema }).strict();
-const MutationFields = { commandId: optionalCommandId(CommandIdSchema) } as const;
+const MutationFields = { commandId: CommandIdSchema } as const;
 const RevisionMutationFields = { ...MutationFields, expectedRevision: ExpectedRevisionSchema } as const;
 
 export const WorkspaceListInputSchema = ManagementPageInputSchema;
@@ -454,11 +453,6 @@ export const HarnessCatalogEntrySchema = z.object({
   defaultsRevision: ExpectedRevisionSchema,
   capability: HarnessQualificationSchema.nullable(),
   discoveryError: z.object({ code: z.string(), message: z.string() }).strict().nullable(),
-  observation: z.object({
-    checkedAt: TimestampSchema.nullable(), stale: z.boolean(), refreshing: z.boolean(),
-    refreshCount: z.number().int().nonnegative(), failureCount: z.number().int().nonnegative(),
-    staleReadCount: z.number().int().nonnegative(), lastError: z.string().nullable(),
-  }).strict().optional(),
   interactionSupport: z.array(NativeInteractionSupportSchema).optional(),
 }).strict();
 export const HarnessCatalogSchema = z.array(HarnessCatalogEntrySchema);
@@ -659,7 +653,6 @@ export const RunStopResultSchema = z.object({
 }).strict();
 export const RunEventsPageSchema = z.object({ items: z.array(RunActivitySchema), pageInfo: ManagementPageInfoSchema }).strict();
 export const OperatorCapabilitiesSchema = z.object({
-  operationalFailures: z.array(OperationalFailureSchema).optional(),
   endpoint: z.literal("/mcp"), audience: z.literal("operator"), protocol: z.literal("2026-07-28"),
   tools: z.array(OperatorToolNameSchema),
   principal: z.object({id: IdSchema, name: z.string(), expiresAt: TimestampSchema.describe(

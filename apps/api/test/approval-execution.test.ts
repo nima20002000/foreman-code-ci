@@ -6,7 +6,7 @@ import type {
   ExecutionResult, HarnessExecution, HarnessExecutionRequest, HarnessNativeEvent, McpDetection,
   NativeHarnessCapabilities, NativeHarnessEvent, NativeSessionReference, PendingNativeInteraction,
 } from '@foreman-code/contracts'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import type pg from 'pg'
 import { ExclusiveGraphConnection } from '../src/modules/run-graph/connection.js'
 import { nativeLanes } from './helpers/nativeLanes.js'
@@ -20,14 +20,13 @@ import { ApprovalExecutionCoordinator } from '../src/modules/interactions/execut
 import type { Wave25InteractionRepository as PostgresInteractionRepository } from '../src/modules/interactions/wave25/repository.js'
 import { createWorkflowNativeCaptureChannel } from '../src/modules/interactions/workflowNativeCapture.js'
 import type { RepeatNativeObservationStore } from '../src/modules/interactions/repeatObservation.js'
-import type { UnboundWorkflowClosure, WorkflowClosureStore } from '../src/modules/interactions/workflowClosure.js'
+import type { WorkflowClosureStore } from '../src/modules/interactions/workflowClosure.js'
 import type { RepeatNativeEvidence } from '../src/modules/runs/repeatNativeRepository.js'
 import { nativeApprovalContext } from '../src/modules/interactions/nativeApprovalContext.js'
 import { ExecutionScopedNativeSessionManagerResolver } from '../src/modules/interactions/runtimePorts.js'
 import type { RunOwnership } from '../src/modules/runs/ownership.js'
 import type { PostgresRunRepository } from '../src/modules/runs/postgres.js'
 import { makeCurrentWorkflowFixture, WorkflowVersionV3Schema } from '@foreman-code/contracts/wave25'
-import { referencesCreatedByExecution, workflowDeliverableContract, workflowDeliverableFailure } from '../src/modules/runs/workflowDeliverable.js'
 import { normalizeRepeatTerminal } from '../src/modules/runs/repeatNode.js'
 import { currentInitialPrompt } from '../src/modules/runs/currentRouting.js'
 
@@ -46,7 +45,6 @@ class ScriptedManager implements NativeHarnessSessionManager {
   readonly observed: NativeSessionReference[] = []
   readonly closed: NativeSessionReference[] = []
   readonly canceled: NativeSessionReference[] = []
-  disposals = 0
   responses = 0
   createError: Error | undefined
   attachError: Error | undefined
@@ -100,14 +98,13 @@ class ScriptedManager implements NativeHarnessSessionManager {
     return { ...history, correlationId, nativeTurnId: 'workflow-turn', ...(history.terminalResult ? { terminalTurn: { correlationId, providerId: 'workflow-turn', result: history.terminalResult } } : {}) }
   }
   async close(session: NativeSessionReference) { this.closed.push(session) }
-  async dispose() { this.disposals += 1 }
 }
 
 it('rejects unsupported Claude configuration before allocating the approval fixture', () => {
   assert.throws(() => fixture('claude'), /supports only Codex/)
 })
 
-function fixture(harness: AgentHarness = 'codex', options: { remote?: boolean } = {}) {
+function fixture(harness: AgentHarness = 'codex') {
   if (harness === 'claude') throw new Error('Approval execution fixture supports only Codex')
   const configuration: AgentConfigurationVersion = {
     id: 'configuration-pinned', workspaceId: 'workspace-1', agentId: 'agent-1', version: 1,
@@ -144,7 +141,6 @@ function fixture(harness: AgentHarness = 'codex', options: { remote?: boolean } 
   let cancelPendingCalls = 0
   let stopRequested = false, cleanupPending = false
   const negativeSettlements: Array<{ id: string; canceled: boolean }> = []
-  const failures = new Map<string, ExecutionResult>()
   // The owner-only Stop pass now re-reads a physical receipt even after the
   // original resident manager closed. Model ONLY that exact persisted close;
   // no SQL arm fabricates recovery evidence from a missing manager.
@@ -164,16 +160,6 @@ function fixture(harness: AgentHarness = 'codex', options: { remote?: boolean } 
       assert.deepEqual(values, [candidate.id, candidate.runId])
       return result([{ record: executions.get(candidate.id) }])
     }
-    if (q.startsWith('select 1 from harness_executions e join approval_execution_state b')) {
-      assert.deepEqual(values, [candidate.id, candidate.runId])
-      return result(failures.has(candidate.id) ? [{}] : [])
-    }
-    if (q === 'select phase from workflow_native_entries where execution_id=$1 and run_id=$2') {
-      assert.deepEqual(values, [candidate.id, candidate.runId])
-      assert.equal(manager.creates.length, 0)
-      assert.equal(manager.attaches.length, 0)
-      return result([{ phase: 'reserved' }])
-    }
     if (q.startsWith('select generation::text,execution_identity,')) {
       assert.deepEqual(values, [candidate.id])
       assert.ok(closed, 'the original manager must commit its close before cold cleanup')
@@ -192,41 +178,21 @@ function fixture(harness: AgentHarness = 'codex', options: { remote?: boolean } 
     throw new Error(`Unscripted approval execution recovery SQL: ${q}`)
   } } as unknown as pg.ClientBase, () => owner.assertOwned())
   connections.push(connection)
-  const owner = { runId: candidate.runId, assertOwned() {}, retain: () => async () => {}, client: {}, oneShotConnection: () => connection,
+  const owner = { runId: candidate.runId, assertOwned() {}, client: {}, oneShotConnection: () => connection,
     readOneShotFence: async () => { owner.assertOwned(); return { ownerId: 'approval-unit-owner', fence: '1' } },
   } as unknown as RunOwnership
   const runs = {
     async getRepeatSnapshot() { return { run: { executionState: 'running' }, stopRequested, cleanupPending } },
     async requestCleanup() { cleanupPending = true },
     async *executionPages() { yield [...executions.values()] },
-    async recordExecutionFailure(actualOwner: RunOwnership, id: string, failure: ExecutionResult) {
-      assert.equal(actualOwner, owner)
-      actualOwner.assertOwned()
-      assert.ok(executions.has(id))
-      failures.set(id, structuredClone(failure))
-    },
-    async repeat() {
-      return {
-        readExecution: (id: string) => store.readExecution(id),
-        async settleNegativeExecution(id: string, canceled: boolean) {
-          const failure = failures.get(id)
-          if (failure) {
-            assert.equal(canceled, false)
-            assert.ok(closed || unbound || !lifetimeStarted,
-              'an entered native lifetime must confirm closure before failure settlement')
-            if (!lifetimeStarted) {
-              assert.equal(manager.creates.length, 0)
-              assert.equal(manager.attaches.length, 0)
-            }
-            executions.set(id, { ...executions.get(id)!, state: 'completed', result: failure, finishedAt: now })
-          }
-          // Repeated cleanup cannot change an already recorded disposition.
-          const prior = negativeSettlements.find((receipt) => receipt.id === id)
-          if (prior) assert.deepEqual(prior, { id, canceled })
-          else negativeSettlements.push({ id, canceled })
-        },
-      }
-    },
+    async repeat() { return { async settleNegativeExecution(id: string, canceled: boolean) {
+      // This recording repository port models idempotent disposition receipts,
+      // not native evidence or the production execution/result SQL writer.
+      // A later caller cannot silently change an already recorded disposition.
+      const prior = negativeSettlements.find((receipt) => receipt.id === id)
+      if (prior) assert.deepEqual(prior, { id, canceled })
+      else negativeSettlements.push({ id, canceled })
+    } } },
     async ensureExecution(input: HarnessExecution) {
       const existing = [...executions.values()].find((item) => item.runId === input.runId
         && item.workflowNodeId === input.workflowNodeId && item.attempt === input.attempt)
@@ -317,22 +283,14 @@ function fixture(harness: AgentHarness = 'codex', options: { remote?: boolean } 
   const manager = new ScriptedManager(harness)
   const resolver = new ExecutionScopedNativeSessionManagerResolver(() => manager)
   let closed: Awaited<ReturnType<WorkflowClosureStore['read']>>
-  let unbound: UnboundWorkflowClosure | undefined
-  let lifetimeStarted = false
   const closures: WorkflowClosureStore = {
     async recoverDetached() { return undefined },
-    async begin() { lifetimeStarted = true; closed = undefined; unbound = undefined; return '1' },
+    async begin() { closed = undefined; return '1' },
     async record(execution, session, durableGeneration, check) { check(); closed = { execution, session, durableGeneration }; return closed },
     async read() { return closed },
     async recordDetached(_execution, _session, _generation, check) { check() },
-    async recordUnbound(execution, durableGeneration, check) {
-      check()
-      assert.ok(manager.disposals > 0, 'the original manager must confirm disposal')
-      unbound = { execution: { ...execution, workingDirectory: execution.workingDirectory!,
-        runtimeDirectory: execution.runtimeDirectory! }, durableGeneration }
-      return unbound
-    },
-    async readUnbound() { return unbound },
+    async recordUnbound(execution, durableGeneration, check) { check(); return { execution: { ...execution, workingDirectory: execution.workingDirectory!, runtimeDirectory: execution.runtimeDirectory! }, durableGeneration } },
+    async readUnbound() { return undefined },
   }
   let launch = true
   const store: RepeatNativeObservationStore = {
@@ -356,8 +314,7 @@ function fixture(harness: AgentHarness = 'codex', options: { remote?: boolean } 
     undefined, closures, undefined, { capture(input) {
       capturedSourceKinds.push(input.source.type)
       return captures.capture.capture(input)
-    } }, undefined, undefined, undefined, options.remote ? async context => ({ ...context,
-      acceptedPlacement: { hostRef: { kind: 'device' } } as NonNullable<typeof context.acceptedPlacement> }) : undefined)
+    } })
   const controller = new AbortController()
   const input = { execution: candidate, store, request, approval: { handler: 'user' as const }, workflowId: 'workflow-1',
     graphThreadId: candidate.runId, owner, signal: controller.signal }
@@ -394,31 +351,19 @@ it('captures complete native history only when needed for a pending request or t
   assert.equal(f.capturedSourceKinds.filter((kind) => kind === 'history').length, 1)
 })
 
-/** ciRuns stands in for ci_runs rows this execution initiated, by run ID. */
-function workResultFixture(results: ExecutionResult[], outputSchema?: Record<string, unknown>, ciRuns = new Set<string>(), options: { remote?: boolean } = {}) {
-  const f = fixture('codex', options)
+function workResultFixture(results: ExecutionResult[]) {
+  const f = fixture()
   const pinned = makeCurrentWorkflowFixture('result-repair')
   const version = WorkflowVersionV3Schema.parse({ ...pinned.version,
-    definition: { ...pinned.version.definition, handoffs: { contractVersion: 1 },
-      nodes: pinned.version.definition.nodes.map((item, index) => index === 0 && outputSchema ? { ...item, outputSchema } : item) } })
+    definition: { ...pinned.version.definition, handoffs: { contractVersion: 1 } } })
   const node = version.definition.nodes[0]!
   if (node.kind === 'job') throw new Error('The repair fixture requires an Agent node')
-  const ciRunsDb = { query: async (_text: string, values: unknown[]) => {
-    const ids = values[0] === null ? [...ciRuns] : values[0] as string[]
-    return { rows: ids.filter(id => ciRuns.has(id) && values[1] === version.workspaceId
-      && values[2] === f.candidate.id).map(id => ({ id })) }
-  } }
-  const pinnedExecution = (execution: HarnessExecution) => ({
-    ...execution, runId: pinned.run.id, workflowNodeId: node.id, agentId: node.agentId,
-    agentConfigurationVersionId: version.agentConfigurationVersionIds[node.agentId]!,
-  })
-  const deliverable = workflowDeliverableContract(version, pinnedExecution(f.candidate),
-    (kind, values) => referencesCreatedByExecution(ciRunsDb, kind, values, version.workspaceId, f.candidate.id))
   const update = f.runs.updateExecution.bind(f.runs)
   f.runs.updateExecution = async (execution, owner, evidence) => {
-    const deliverableFailure = await workflowDeliverableFailure(ciRunsDb, version, pinnedExecution(execution))
-    const normalized = normalizeRepeatTerminal(version, pinned.scope, { nodeId: node.id, occurrence: null },
-      pinnedExecution(execution), { workResultRepair: f.manager.turns.length > 1, deliverableFailure })
+    const normalized = normalizeRepeatTerminal(version, pinned.scope, { nodeId: node.id, occurrence: null }, {
+      ...execution, runId: pinned.run.id, workflowNodeId: node.id, agentId: node.agentId,
+      agentConfigurationVersionId: version.agentConfigurationVersionIds[node.agentId]!,
+    }, { workResultRepair: f.manager.turns.length > 1 })
     await update({ ...execution, ...(normalized.result ? { result: normalized.result } : {}) }, owner, evidence)
   }
   const reservations = new Set<string>()
@@ -452,7 +397,7 @@ function workResultFixture(results: ExecutionResult[], outputSchema?: Record<str
     return { ...history, correlationId, nativeTurnId: providerId,
       terminalTurn: { correlationId, providerId, result: history.terminalResult! } }
   }
-  return { ...f, reservations, input: { ...f.input, workHandoffContract: currentInitialPrompt({}, false, true)!, deliverable } }
+  return { ...f, reservations, input: { ...f.input, workHandoffContract: currentInitialPrompt({}, false, true)! } }
 }
 
 const workData = { latestDeliverable: { summary: 'Done' }, remainingFindings: [] }
@@ -749,23 +694,17 @@ it('persists native failure despite repeated database timeouts before releasing 
   assert.equal(f.manager.turns.length, 1)
 })
 
-it('closes an attempt with no launch permit without replaying a start', async () => {
+it('fails closed for an existing attempt with no durable native identity rather than replaying a start', async () => {
   const f = fixture()
   f.loseLaunch()
   await assert.rejects(f.coordinator.observeExact(f.input), { code: 'NATIVE_SESSION_START_UNCERTAIN' })
   assert.equal(f.manager.creates.length, 0)
   assert.equal(f.manager.turns.length, 0)
-  expect(await f.runs.getExecution(f.candidate.id)).toMatchObject({
-    state: 'completed', result: { outcome: 'failed', error: {
-      code: 'NATIVE_SESSION_START_UNCERTAIN', retryable: true,
-    } },
-  })
-  assert.deepEqual(f.negativeSettlements, [{ id: f.candidate.id, canceled: false }])
-  assert.equal((await f.runs.getRepeatSnapshot(f.candidate.runId)).cleanupPending, false)
+  assert.equal(f.executions.get(f.candidate.id)?.result, undefined)
 })
 
 for (const failure of ['prepare', 'create', 'turn', 'activity', 'budget'] as const) {
-  it(`closes only the failed attempt after a ${failure} transport or persistence failure`, async () => {
+  it(`preserves uncertain execution after a ${failure} transport or persistence failure`, async () => {
     const f = fixture()
     const error = new Error(`${failure} failed`)
     f.snapshot('request-a')
@@ -775,36 +714,12 @@ for (const failure of ['prepare', 'create', 'turn', 'activity', 'budget'] as con
     if (failure === 'activity') f.failActivity(error)
     if (failure === 'budget') f.failBudget(error)
     await assert.rejects(f.coordinator.observeExact(f.input), error)
-    expect(await f.runs.getExecution(f.candidate.id)).toMatchObject({
-      state: 'completed', finishedAt: now, result: { outcome: 'failed', error: {
-        code: 'NATIVE_EXECUTION_FAILED', message: error.message, retryable: true,
-      } },
-    })
-    assert.deepEqual(f.negativeSettlements, [{ id: f.candidate.id, canceled: false }])
-    assert.equal((await f.runs.getRepeatSnapshot(f.candidate.runId)).cleanupPending, false)
-    assert.equal(f.manager.creates.length, ['create', 'turn', 'activity'].includes(failure) ? 1 : 0)
-    assert.equal(f.manager.turns.length, ['turn', 'activity'].includes(failure) ? 1 : 0)
-    assert.equal(f.manager.attaches.length, 0)
-    assert.ok(f.revoked.includes(f.candidate.id))
+    assert.notEqual(f.executions.get(f.candidate.id)?.state, 'completed')
+    assert.equal(f.negativeSettlements.length, 0)
+    assert.equal(f.executions.get(f.candidate.id)?.finishedAt, undefined)
+    assert.equal(f.revoked.length, 0)
   })
 }
-
-it('returns the settled transient failure on reobservation without replaying native work', async () => {
-  const f = fixture()
-  const error = new Error('native transport failed')
-  f.manager.turnError = error
-  await assert.rejects(f.coordinator.observeExact(f.input), error)
-  const completed = await f.coordinator.observeExact(f.input)
-  expect(completed).toMatchObject({ state: 'completed', result: {
-    outcome: 'failed', error: { code: 'NATIVE_EXECUTION_FAILED', retryable: true },
-  } })
-  assert.equal(f.manager.creates.length, 1)
-  assert.equal(f.manager.turns.length, 1)
-  assert.equal(f.manager.attaches.length, 0)
-  assert.deepEqual(f.manager.canceled, [f.manager.session])
-  assert.deepEqual(f.manager.closed, [f.manager.session])
-  assert.deepEqual(f.negativeSettlements, [{ id: f.candidate.id, canceled: false }])
-})
 
 it('settles resumed history failure using the durable identity and preserves the native failure code', async () => {
   const f = fixture()
@@ -827,19 +742,11 @@ it('does not return an old delivered interaction when cold attachment fails', as
   f.resolver.release({ harness: f.manager.harness, executionId: f.candidate.id, agentId: f.candidate.agentId,
     workingDirectory: f.candidate.workingDirectory!, configuration: f.configuration })
   f.manager.attachError = new Error('native session unavailable')
-  await assert.rejects(f.coordinator.observeExact(f.input), (error: unknown) => {
-    assert.ok(error instanceof AggregateError)
-    assert.equal((error.cause as Error).message, 'native session unavailable')
-    assert.ok(error.errors.some(failure => failure instanceof Error
-      && failure.cause instanceof DomainError && failure.cause.code === 'NATIVE_WORKFLOW_CLOSURE_CONFLICT'))
-    return true
-  })
+  await assert.rejects(f.coordinator.observeExact(f.input), /native session unavailable/)
   assert.notEqual(f.executions.get(f.candidate.id)?.state, 'completed')
   assert.equal(f.executions.get(f.candidate.id)?.result, undefined)
   assert.equal(f.manager.creates.length, 1)
   assert.equal(f.manager.turns.length, 1)
-  assert.equal(f.negativeSettlements.length, 0)
-  assert.equal([...f.records.values()].find(row => row.nativeRequestId === 'request-a')?.status, 'delivered')
 })
 
 it('handles cancellation during post-approval observation without replay', async () => {
@@ -1054,8 +961,7 @@ it('does not stop the shared budget or revoke replacement credentials after owne
   assert.equal(f.stops.length, 0)
   assert.equal(f.revoked.length, 0)
   assert.equal(f.manager.canceled.length, 0)
-  assert.deepEqual(f.manager.closed, [f.manager.session])
-  assert.deepEqual(f.coordinator.residentRunIds(), [])
+  assert.equal(f.manager.closed.length, 0)
 })
 
 it.each([undefined, 3_600_000])('initializes an execution budget from the workflow or server default (%s)', async (override) => {
@@ -1147,77 +1053,3 @@ for (const boundary of ['terminal result', 'approval source', 'native error'] as
     }
   })
 }
-
-describe('workflow Agent deliverable contract', () => {
-  const ticket = '7d1c9a52-3f0e-4c41-9a43-3c7a8f1f2b10'
-  const outputSchema = {
-    type: 'object', required: ['status', 'summary', 'ticket'],
-    properties: {
-      status: { type: 'string', minLength: 1 }, summary: { type: 'string', minLength: 1 },
-      ticket: { type: 'string', 'x-foreman-reference': 'ciTicket' },
-    },
-  }
-  // A handoff workflow's final answer: the deliverable sits in data.latestDeliverable of the native text.
-  const answer = (value: unknown): ExecutionResult => ({ outcome: 'succeeded',
-    output: { text: JSON.stringify({ routing: { kind: 'finish' }, data: { latestDeliverable: value, remainingFindings: [] } }) } })
-  const valid = answer({ status: 'done', summary: 'Shipped.', ticket })
-
-  it('sends valid ticket IDs in the native repair turn and waits for an explicit corrected result', async () => {
-    const mistyped = ticket.replace('2b10', '2b01')
-    const wrong = answer({ status: 'done', summary: 'Shipped.', ticket: mistyped })
-    const f = workResultFixture([wrong, valid], outputSchema, new Set([ticket]))
-    expect(await f.coordinator.observeExact(f.input)).toMatchObject({ state: 'completed', result: valid })
-    expect(f.manager.turns).toHaveLength(2)
-    expect(f.manager.turns[1]!.session).toEqual(f.manager.turns[0]!.session)
-    expect(f.manager.turns[1]!.input.prompt)
-      .toContain(`Valid ciTicket IDs (closest match first): ${JSON.stringify([ticket])}`)
-    expect(f.manager.turns[1]!.input.prompt).toContain(mistyped)
-    expect(f.executions.get(f.candidate.id)?.result).toEqual(valid)
-    expect(wrong).toEqual(answer({ status: 'done', summary: 'Shipped.', ticket: mistyped }))
-  })
-
-  it('sends one same-session repair turn listing the exact issues, then accepts the corrected deliverable', async () => {
-    const f = workResultFixture([answer({ status: 'done' }), valid], outputSchema, new Set([ticket]))
-    const result = await f.coordinator.observeExact(f.input)
-    expect(result).toMatchObject({ state: 'completed', result: valid })
-    expect(f.manager.turns).toHaveLength(2)
-    expect(f.manager.turns[1]!.input.prompt).toContain('Validation issues:')
-    expect(f.manager.turns[1]!.input.prompt).toContain('"path":"/summary"')
-    expect(f.manager.turns[1]!.input.clientCorrelationId).toBe(`execution:${f.candidate.id}:result-repair:1`)
-    expect(f.executions.get(f.candidate.id)?.result).toEqual(valid)
-  })
-
-  it('fails a remote schema mismatch without reserving or submitting a repair turn', async () => {
-    const f = workResultFixture([answer({ status: 'done' })], outputSchema, new Set(), { remote: true })
-    const result = await f.coordinator.observeExact(f.input)
-    expect(result).toMatchObject({ state: 'completed', result: { outcome: 'failed',
-      error: { code: 'OUTPUT_SCHEMA_MISMATCH', retryable: false } } })
-    expect(f.manager.turns).toHaveLength(1)
-    expect(f.reservations.size).toBe(0)
-  })
-
-  it('fails the attempt with OUTPUT_SCHEMA_MISMATCH after two invalid corrections', async () => {
-    const f = workResultFixture([answer({ status: 'done' })], outputSchema)
-    await f.coordinator.observeExact(f.input)
-    expect(f.manager.turns).toHaveLength(3)
-    expect(f.reservations.size).toBe(2)
-    expect(f.executions.get(f.candidate.id)?.result).toMatchObject({ outcome: 'failed',
-      error: { code: 'OUTPUT_SCHEMA_MISMATCH', retryable: false } })
-  })
-
-  it('fails with OUTPUT_REFERENCE_UNKNOWN when the CI ticket was not created by this execution', async () => {
-    const f = workResultFixture([valid], outputSchema)
-    await f.coordinator.observeExact(f.input)
-    expect(f.manager.turns).toHaveLength(3)
-    expect(f.manager.turns[1]!.input.prompt).toContain('OUTPUT_REFERENCE_UNKNOWN')
-    expect(f.executions.get(f.candidate.id)?.result).toMatchObject({ outcome: 'failed',
-      error: { code: 'OUTPUT_REFERENCE_UNKNOWN', retryable: false } })
-  })
-
-  it('repairs a null latestDeliverable without a declared schema', async () => {
-    const f = workResultFixture([answer(null), answer({ summary: 'Done.' })])
-    await f.coordinator.observeExact(f.input)
-    expect(f.manager.turns).toHaveLength(2)
-    expect(f.executions.get(f.candidate.id)?.result).toEqual(answer({ summary: 'Done.' }))
-  })
-})

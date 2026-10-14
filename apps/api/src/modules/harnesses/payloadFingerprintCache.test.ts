@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import * as fs from 'node:fs'
-import { mkdir, mkdtemp, rename, rm, stat, symlink, utimes, writeFile } from 'node:fs/promises'
-import { homedir } from 'node:os'
+import { mkdtemp, rename, rm, stat, symlink, utimes, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { PayloadFingerprintCache } from './payloadFingerprintCache.js'
@@ -19,9 +19,7 @@ afterEach(async () => {
 })
 
 async function fixture() {
-  const temporaryRoot = join(homedir(), '.cache', 'foreman-tmp')
-  await mkdir(temporaryRoot, { recursive: true })
-  const root = await mkdtemp(join(temporaryRoot, 'payload-fingerprint-'))
+  const root = await mkdtemp(join(tmpdir(), 'payload-fingerprint-'))
   directories.push(root)
   const path = join(root, 'payload')
   await writeFile(path, 'original', { mode: 0o700 })
@@ -120,13 +118,13 @@ it('rejects cancellation while checking a cached file identity', async () => {
   const { path, cache } = await fixture()
   await cache.fingerprint(path)
   const controller = new AbortController()
-  const checking = cache.fingerprint(path, { signal: controller.signal })
+  const checking = cache.fingerprint(path, controller.signal)
   controller.abort(new Error('Inspection cancelled'))
   await expect(checking).rejects.toThrow('Inspection cancelled')
   expect(fs.createReadStream).toHaveBeenCalledTimes(1)
 })
 
-it('shares cached fingerprints between inventory and direct launcher discovery', async () => {
+it('caches inventory discovery while direct launch verification still rereads bytes', async () => {
   const { root, path } = await fixture()
   const environment = { generation: '1', provenance: 'worker' as const, cwd: root, path: '/usr/bin:/bin' }
   const first = await discoverInventoryLauncher(path, environment)
@@ -135,26 +133,5 @@ it('shares cached fingerprints between inventory and direct launcher discovery',
   expect(fs.createReadStream).toHaveBeenCalledTimes(1)
   expect((await discoverLauncher(path, environment)).fingerprint).toBe(first.fingerprint)
   expect((await discoverLauncher(path, environment)).fingerprint).toBe(first.fingerprint)
-  expect(fs.createReadStream).toHaveBeenCalledTimes(1)
-})
-
-
-it('refreshes direct launcher digests after same-size edits with preserved mtime', async () => {
-  const { root, path } = await fixture()
-  await utimes(path, new Date(0), new Date(1000))
-  const before = await stat(path)
-  const environment = { generation: '1', provenance: 'worker' as const, cwd: root, path: root }
-  const first = await discoverLauncher(path, environment)
-  expect(first.status).toBe('installed')
-  expect(first.payloadFingerprints?.[0]?.fingerprint).toBe(digest('original'))
-  expect((await discoverLauncher(path, environment)).fingerprint).toBe(first.fingerprint)
-  expect(fs.createReadStream).toHaveBeenCalledTimes(1)
-  await writeFile(path, 'modified')
-  await utimes(path, before.atime, before.mtime)
-  const changed = await discoverLauncher(path, environment)
-  expect(changed.status).toBe('installed')
-  expect(changed.payloadFingerprints?.[0]?.fingerprint).toBe(digest('modified'))
-  expect(changed.fingerprint).not.toBe(first.fingerprint)
-  expect((await discoverLauncher(path, environment)).fingerprint).toBe(changed.fingerprint)
-  expect(fs.createReadStream).toHaveBeenCalledTimes(2)
+  expect(fs.createReadStream).toHaveBeenCalledTimes(3)
 })

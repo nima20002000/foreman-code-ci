@@ -9,6 +9,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { promisify } from 'node:util'
 import { readProductEnvironment, resolveProductEnvironment } from '../packages/contracts/src/productEnvironment.mjs'
 import { productionMaintenanceKey } from '../packages/contracts/src/productionMaintenance.mjs'
+import { isBackwardCompatibleSchema } from './production-schema.mjs'
 
 export function parseRunWaitMinutes(value) {
   const minutes = value === undefined ? 120 : Number(value)
@@ -84,11 +85,7 @@ export async function withProductionSourceSnapshot(repository, directory, action
   const { stdout } = await git(['rev-parse', 'HEAD'])
   const commit = stdout.trim()
   const { stdout: origin } = await git(['remote', 'get-url', 'origin'])
-  const present = await lstat(source).then(() => true, error => {
-    if (error.code === 'ENOENT') return false
-    throw error
-  })
-  const reusable = present && await git(['rev-parse', '--git-dir'], source).then(() => true)
+  const reusable = await git(['rev-parse', '--git-dir'], source).then(() => true, () => false)
   if (!reusable) {
     await rm(source, { recursive: true, force: true })
     await git(['clone', '--quiet', '--shared', '--no-checkout', repository, source])
@@ -98,8 +95,7 @@ export async function withProductionSourceSnapshot(repository, directory, action
     const { stdout: changes } = await git(['diff', '--name-only', '-z', 'HEAD'], source)
     if (changes) await git(['reset', '--hard', '--quiet', 'HEAD'], source)
   }
-  await git(['clean', '-ffdxq', '-e', 'node_modules', '-e', 'dist', '-e', '*.tsbuildinfo',
-    '-e', '.logs/heavy-build-web.json'], source)
+  await git(['clean', '-ffdxq', '-e', 'node_modules', '-e', 'dist', '-e', '*.tsbuildinfo'], source)
   // Forced checkout rewrites unchanged files and invalidates incremental build timestamps.
   await git(['checkout', '--quiet', '--detach', commit], source)
   await git(['remote', 'set-url', 'origin', origin.trim()], source)
@@ -108,34 +104,34 @@ export async function withProductionSourceSnapshot(repository, directory, action
   return action({ source, commit })
 }
 
-export async function measureProductionStep(step, action, log = console.log) {
-  const started = performance.now()
+// CI owns the web typecheck; production needs only emitted server code and browser assets.
+export async function buildProductionSource(run) {
+  await run('corepack', ['pnpm', '--filter', '@foreman-code/contracts', 'build'])
+  await run('corepack', ['pnpm', '--filter', '@foreman-code/api', 'build'])
+  await run('corepack', ['pnpm', '--filter', '@foreman-code/web', 'exec', 'vite', 'build'])
+}
+
+export async function backupDatabase({ archive, database, run }) {
+  const file = await open(archive, 'wx', 0o600)
   try {
-    return await action()
+    // lz4 halves the stopped-API window against the default gzip level, which is CPU-bound on large tables.
+    await run('pg_dump', ['--format=custom', '--compress=lz4', '--create', '--dbname', database],
+      { stdio: ['ignore', file.fd, 'inherit'] })
+    await file.sync()
   } finally {
-    log(JSON.stringify({ operation: 'production deploy', step, elapsedMs: Math.round(performance.now() - started) }))
+    await file.close()
   }
 }
 
-// The full API check overlaps emission, browser bundling and staging, and gates activation.
-export async function buildProductionSource(run, { stage = async () => undefined } = {}) {
-  await run('corepack', ['pnpm', '--filter', '@foreman-code/contracts', 'build'])
-  const results = await Promise.allSettled([
-    measureProductionStep('API full check', () => run('corepack', ['pnpm', '--filter', '@foreman-code/api',
-      'exec', 'tsc', '-p', 'tsconfig.build.json', '--noEmit', '--isolatedModules',
-      '--tsBuildInfoFile', 'node_modules/.cache/tsc/production-check.tsbuildinfo'])),
-    (async () => {
-      await measureProductionStep('API emit', () => run('node', ['scripts/emit-production-api.mjs']))
-      await run('corepack', ['pnpm', '--filter', '@foreman-code/api', 'exec', 'node', '../../scripts/copy-api-runtime.mjs'])
-      await run('corepack', ['pnpm', '--filter', '@foreman-code/api', 'exec', 'node', 'dist/cli/harnessCompatibility.js'])
-      await measureProductionStep('web bundle', () => run('node', ['scripts/heavy-job.mjs', '--build', 'web', '--',
-        'corepack', 'pnpm', '--filter', '@foreman-code/web', 'exec', 'vite', 'build']))
-      return stage()
-    })(),
-  ])
-  const failed = results.find(result => result.status === 'rejected')
-  if (failed) throw failed.reason
-  return results[1].value
+export async function restoreDatabase({ archive, run }) {
+  const file = await open(archive, 'r')
+  try {
+    // Recreate the database so objects introduced by a failed migration are removed too.
+    await run('pg_restore', ['--clean', '--if-exists', '--create', '--exit-on-error', '--dbname', 'postgres'],
+      { stdio: [file.fd, 'inherit', 'inherit'] })
+  } finally {
+    await file.close()
+  }
 }
 
 export async function findPendingMigrations({ migrations, query }) {
@@ -175,13 +171,19 @@ async function saveDeployment(stateFile, state, phase) {
 export async function recoverReleaseCutover({ stateFile, steps }) {
   const state = await readDeployment(stateFile)
   if (!state || ['ready', 'recovered'].includes(state.phase)) return
-  if (state.apiMayHaveStopped === false) {
+  if (state.apiMayHaveStopped === false && !state.schemaMayHaveChanged) {
     await saveDeployment(stateFile, state, 'recovered')
     return
   }
   try {
     await saveDeployment(stateFile, state, 'recovering')
     await steps.stop()
+    if (state.schemaMayHaveChanged && !(state.migrationComplete && state.backwardCompatible)) {
+      if (!state.backupComplete) throw new Error('No complete pre-migration database backup is available.')
+      await steps.restore(state.backupFile)
+      state.schemaMayHaveChanged = false
+      await saveDeployment(stateFile, state, 'database-restored')
+    }
     await steps.activate(state.previousRelease)
     if (state.previousRelease) {
       await steps.start()
@@ -203,12 +205,13 @@ export async function recoverReleaseCutover({ stateFile, steps }) {
   }
 }
 
-export async function runReleaseCutover({ release, previousRelease, stateFile, steps }) {
-  const state = { release, previousRelease, apiMayHaveStopped: false }
+export async function runReleaseCutover({ release, previousRelease, stateFile, backupFile, steps }) {
+  const state = { release, previousRelease, backupFile, backupComplete: false, schemaMayHaveChanged: false,
+    migrationComplete: false, backwardCompatible: false, apiMayHaveStopped: false }
   let recoveryAttempted = false
   const perform = async (phase, action) => {
     await saveDeployment(stateFile, state, phase)
-    await measureProductionStep(phase, action)
+    await action()
   }
   const rollback = async error => {
     recoveryAttempted = true
@@ -223,11 +226,23 @@ export async function runReleaseCutover({ release, previousRelease, stateFile, s
   }
   try {
     await saveDeployment(stateFile, state, 'checking-migrations')
-    const pendingMigrations = await measureProductionStep('checking-migrations', () => steps.pendingMigrations(release))
+    const pendingMigrations = await steps.pendingMigrations(release)
+    let schemaBefore
     state.apiMayHaveStopped = true
     await perform('stopping', steps.stop)
     if (pendingMigrations.length) {
+      await perform('backing-up', () => steps.backup(backupFile))
+      state.backupComplete = true
+      await saveDeployment(stateFile, state, 'backed-up')
+      schemaBefore = await steps.schema?.(release)
+    }
+    if (pendingMigrations.length) {
+      state.schemaMayHaveChanged = true
       await perform('migrating', () => steps.migrate(release))
+      state.migrationComplete = true
+      if (schemaBefore) {
+        state.backwardCompatible = isBackwardCompatibleSchema(schemaBefore, await steps.schema(release))
+      }
       await saveDeployment(stateFile, state, 'migrated')
     }
     await perform('upgrading-launcher', () => steps.upgradeLauncher(release))
@@ -238,12 +253,13 @@ export async function runReleaseCutover({ release, previousRelease, stateFile, s
       await saveDeployment(stateFile, state, 'checking-readiness')
     }
     if (steps.checkReady) {
-      await measureProductionStep('start-and-readiness', () => steps.checkReady(release, { start, rollback }))
+      await steps.checkReady(release, { start, rollback })
     } else {
       await start()
-      await measureProductionStep('checking-readiness', () => steps.ready(release))
+      await steps.ready(release)
     }
     await saveDeployment(stateFile, state, 'ready')
+    await rm(backupFile, { force: true })
   } catch (error) {
     if (!recoveryAttempted) await rollback(error)
     throw error
@@ -298,7 +314,6 @@ Environment=FOREMAN_CODE_WORKER_ARTIFACT_DIRECTORY=@APP@/current/worker-artifact
 Environment=PATH=@PATH@
 ExecStart=@NODE@ @APP@/current/apps/api/dist/server.js
 ExecStartPost=@NODE@ @APP@/current/scripts/local-production.mjs health
-ExecStartPost=/usr/bin/systemctl --user --no-block restart foreman-worker-publish.service
 Restart=always
 RestartSec=3
 TimeoutStartSec=120
@@ -515,25 +530,10 @@ export async function pruneApiDependencies(root, releases, { removeInBackground 
   return removed
 }
 
-async function runDependencyCommand(run, args) {
-  const timeout = 5 * 60_000
-  try {
-    return await run('corepack', ['pnpm', ...args], { timeout, killSignal: 'SIGKILL' })
-  } catch (cause) {
-    throw new Error(`Production dependency command "corepack pnpm ${args.join(' ')}" failed `
-      + `(${timeout} ms timeout): ${cause.message}`, { cause })
-  }
-}
-
-export async function installProductionDependencies(run) {
-  await runDependencyCommand(run, ['install', '--frozen-lockfile'])
-}
-
 async function deployApiPackage(run, destination) {
   const failures = []
   try {
-    // Shared-lockfile deployment keeps resolved versions and their supply-chain checks.
-    await runDependencyCommand(run, ['--filter', '@foreman-code/api', 'deploy', '--prod', destination])
+    await run('corepack', ['pnpm', '--filter', '@foreman-code/api', 'deploy', '--prod', '--legacy', destination])
     // Freeze mutable workspace files; pnpm already isolates installed dependencies.
     const contracts = await realpath(join(destination, 'node_modules/@foreman-code/contracts'))
     for (const packageDirectory of [destination, contracts]) {
@@ -554,17 +554,15 @@ async function deployApiPackage(run, destination) {
   } catch (error) {
     failures.push(error)
   }
-  // Subsequent build commands use the complete workspace, including development dependencies.
+  // Legacy deployment records production-only settings in the source workspace.
+  // Restore them through pnpm before another workspace command checks its dependencies.
   try {
-    await installProductionDependencies(run)
+    await run('corepack', ['pnpm', 'install', '--frozen-lockfile'])
   } catch (error) {
     failures.push(error)
   }
   if (failures.length === 1) throw failures[0]
-  if (failures.length) {
-    throw new AggregateError(failures, 'Production deployment and workspace restoration failed: '
-      + failures.map(error => error.message).join('; '))
-  }
+  if (failures.length) throw new AggregateError(failures, 'Production deployment and workspace restoration failed.')
 }
 
 export async function removeUninstalledRelease(release, current) {
@@ -750,6 +748,14 @@ export async function readActiveRuns(release, databaseUrl, wait) {
 export async function withRunStartMaintenance(pool, action, { timeoutMs = 30_000, pollMs = 100 } = {}) {
   const client = await pool.connect()
   const closed = new Promise(resolve => client.once('end', resolve))
+  let released = false
+  const release = () => {
+    if (released) return closed
+    released = true
+    // Destroy the session so database recreation is possible during recovery.
+    client.release(true)
+    return closed
+  }
   try {
     const deadline = Date.now() + timeoutMs
     for (;;) {
@@ -761,11 +767,9 @@ export async function withRunStartMaintenance(pool, action, { timeoutMs = 30_000
       if (Date.now() >= deadline) throw new Error('Run publication is still in progress. Retry installation later.')
       await delay(Math.min(pollMs, Math.max(0, deadline - Date.now())))
     }
-    return await action(text => client.query(text))
+    return await action(text => client.query(text), release)
   } finally {
-    // Destroy the session to release the maintenance lock before installation completes.
-    client.release(true)
-    await closed
+    await release()
   }
 }
 
@@ -803,14 +807,6 @@ export async function pruneReleases(releasesDirectory, keep,
     if (error.code !== 'ENOENT') throw error
   }
   const kept = new Set(await Promise.all(retained.map(path => realpath(path))))
-  // Retry detached removals left behind by an interrupted installer or remover.
-  const parent = dirname(directory)
-  for (const entry of await readdir(parent, { withFileTypes: true })) {
-    if (!entry.isDirectory() || !entry.name.startsWith('.pruned-releases-')) continue
-    const abandoned = join(parent, entry.name)
-    const inUse = [...kept].some(path => path === abandoned || path.startsWith(`${abandoned}/`))
-    if (!inUse) await removeInBackground(abandoned)
-  }
   const removed = []
   const candidates = []
   for (const name of await readdir(directory)) {
@@ -845,15 +841,8 @@ export async function readProductionIdentity(release, databaseUrl) {
 
 export async function waitForProductionReady(options) {
   try {
-    const controller = new AbortController()
-    const start = Promise.resolve().then(() => options.start?.()).catch(error => {
-      controller.abort(error)
-      throw error
-    })
-    // systemctl's start job also checks health; polling concurrently avoids a second serialized readiness wait.
-    const results = await Promise.allSettled([start, pollProductionReady({ ...options, signal: controller.signal })])
-    const failed = results.find(result => result.status === 'rejected')
-    if (failed) throw failed.reason
+    await options.start?.()
+    await pollProductionReady(options)
     await options.smoke?.()
   } catch (error) {
     try { await options.rollback?.(error) }
@@ -862,32 +851,31 @@ export async function waitForProductionReady(options) {
   }
 }
 
-async function pollProductionReady({ origin, expected, timeoutMs = 90_000, signal }) {
+async function pollProductionReady({ origin, expected, timeoutMs = 90_000 }) {
   const deadline = Date.now() + timeoutMs
   let failure = 'API has not responded.'
   const identityMatches = async () => {
-    const response = await fetch(`${origin}/health/identity`, { signal: AbortSignal.any([signal, AbortSignal.timeout(2000)]) })
+    const response = await fetch(`${origin}/health/identity`, { signal: AbortSignal.timeout(2000) })
     const actual = await response.json()
     return response.ok && ['installationId', 'databaseId', 'checkoutId'].every(key => actual[key] === expected[key])
   }
   while (Date.now() < deadline) {
-    signal.throwIfAborted()
     try {
       if (!await identityMatches()) {
         throw new Error('Port 3041 is serving a different database installation or release.')
       }
-      const response = await fetch(`${origin}/health/ready`, { signal: AbortSignal.any([signal, AbortSignal.timeout(2000)]) })
+      const response = await fetch(`${origin}/health/ready`, { signal: AbortSignal.timeout(2000) })
       const health = await response.json()
       if (response.ok && health.service === 'graphql-api' && health.checks?.database === 'ok'
         && health.checks?.checkpoints === 'ok') {
-        const web = await fetch(`${origin}/workspaces`, { signal: AbortSignal.any([signal, AbortSignal.timeout(2000)]) })
+        const web = await fetch(`${origin}/workspaces`, { signal: AbortSignal.timeout(2000) })
         if (web.ok && (await web.text()).includes('/assets/') && await identityMatches()) return
         failure = 'The compiled dashboard is unavailable.'
       } else failure = `Readiness returned HTTP ${response.status}.`
     } catch (error) {
       failure = error.message
     }
-    await delay(Math.min(500, Math.max(0, deadline - Date.now())), undefined, { signal })
+    await delay(Math.min(500, Math.max(0, deadline - Date.now())))
   }
   throw new Error(`${failure} Inspect journalctl --user -u graphql-operator-api.service.`)
 }

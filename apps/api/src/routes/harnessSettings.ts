@@ -79,10 +79,8 @@ export function registerHarnessSettingsRoutes(app: FastifyInstance, services: Op
     return CodexPluginChangeResultSchema.parse(await plugins.change(requirePrincipal(request), CodexPluginChangeInputSchema.parse(request.body)))
   })
   app.get('/api/management/harnesses/:harness/mcp', async (request) => {
-    const query = request.query as { hostRef?: string }
-    const { harness, hostRef } = HarnessMcpListInputSchema.parse({ ...request.params as object,
-      ...(query.hostRef ? { hostRef: JSON.parse(query.hostRef) } : {}) })
-    return HarnessMcpListResultSchema.parse(await settings().mcp.list(requirePrincipal(request), harness, hostRef))
+    const { harness } = HarnessMcpListInputSchema.parse(request.params)
+    return HarnessMcpListResultSchema.parse(await settings().mcp.list(requirePrincipal(request), harness))
   })
   app.get('/api/management/harnesses/:harness/mcp/plans', async (request) => {
     const { harness } = HarnessMcpListInputSchema.parse(request.params)

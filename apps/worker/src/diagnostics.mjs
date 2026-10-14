@@ -3,21 +3,7 @@ import { accessSync, constants } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 
 export class WorkerError extends Error {
-  constructor(code, message = code, options) { super(message, options); this.code = code; }
-}
-
-export function workerUpdateErrorMessage(error, depth = 0) {
-  const message = error instanceof Error ? error.message : String(error);
-  const details = [message.slice(-600)];
-  if (typeof error?.stderr === 'string' && error.stderr.trim()) details.push(error.stderr.trim().slice(-1200));
-  if (depth < 2) {
-    if (error instanceof AggregateError) {
-      details.push(...error.errors.slice(0, 3).map(value => workerUpdateErrorMessage(value, depth + 1)));
-    } else if (error?.cause && error.cause !== error) {
-      details.push(workerUpdateErrorMessage(error.cause, depth + 1));
-    }
-  }
-  return details.join('; ').slice(-1800);
+  constructor(code) { super(code); this.code = code; }
 }
 
 export function persistentFilesystems(mountInfo, home) {
@@ -59,17 +45,11 @@ export async function hostFacts(home, storagePaths = []) {
   const os = await readFile('/etc/os-release', 'utf8');
   const values = Object.fromEntries(os.split('\n').filter((line) => /^[A-Z_]+=/.test(line)).map((line) => { const i = line.indexOf('='); return [line.slice(0, i), line.slice(i + 1).replace(/^"|"$/g, '')]; }));
   const mounts = await readFile('/proc/self/mountinfo', 'utf8');
-  const inspectionErrors = [];
-  const [homePersistent, ...storagePersistent] = await Promise.all([home, ...storagePaths].map(async (path, index) => {
+  const [homePersistent, ...storagePersistent] = await Promise.all([home, ...storagePaths].map(async (path) => {
     try { return persistentFilesystems(mounts, await physicalStoragePath(path)).homePersistent; }
-    catch (error) {
-      const lastError = typeof error.code === 'string' ? error.code : 'STORAGE_INSPECTION_FAILED';
-      inspectionErrors.push({ operation: index === 0 ? 'home storage' : 'state storage', lastError, failureCount: 1 });
-      console.warn(JSON.stringify({ operation: 'inspect storage persistence', lastError, failureCount: 1 }));
-      return false;
-    }
+    catch { return false; }
   }));
-  return { os: values.ID, osRelease: values.VERSION_ID, arch: process.arch, libc: processLibc(), node: process.version, ...persistentFilesystems(mounts, '/'), homePersistent, storagePersistent: storagePersistent.every(Boolean), inspectionErrors };
+  return { os: values.ID, osRelease: values.VERSION_ID, arch: process.arch, libc: processLibc(), node: process.version, ...persistentFilesystems(mounts, '/'), homePersistent, storagePersistent: storagePersistent.every(Boolean) };
 }
 
 export async function requirePrivateDirectory(path) {
@@ -78,25 +58,12 @@ export async function requirePrivateDirectory(path) {
 }
 
 export function executableAvailability(path) {
-  const inspectionErrors = [];
-  const available = Object.fromEntries(['node', 'git', 'codex', 'claude', 'systemctl'].map(name => [name,
-    path.split(':').filter(directory => directory.startsWith('/')).some(directory => {
-      try { accessSync(join(directory, name), constants.X_OK); return true; }
-      catch (error) {
-        if (error.code === 'ENOENT' || error.code === 'ENOTDIR') return false;
-        const lastError = typeof error.code === 'string' ? error.code : 'EXECUTABLE_INSPECTION_FAILED';
-        inspectionErrors.push({ operation: `inspect ${name} executable`, lastError, failureCount: 1 });
-        console.warn(JSON.stringify({ operation: `inspect ${name} executable`, status: 'degraded', lastError, failureCount: 1 }));
-        return false;
-      }
-    })]));
-  return { ...available, inspectionErrors };
+  return Object.fromEntries(['node', 'git', 'codex', 'claude', 'systemctl'].map((name) => [name, path.split(':').filter((p) => p.startsWith('/')).some((p) => { try { accessSync(join(p, name), constants.X_OK); return true; } catch { return false; } })]));
 }
 
 // Explicit projection: errors, credentials, process arguments and arbitrary metadata never cross this boundary.
 export function doctorReport({ facts, identity, connection, service, executables, errors = [] }) {
   return {
-    inspectionErrors: [...(facts.inspectionErrors ?? []), ...(executables.inspectionErrors ?? [])],
     versions: { os: facts.os, osRelease: facts.osRelease, arch: facts.arch, libc: facts.libc, node: facts.node,
       app: /^\d+\.\d+\.\d+$/.test(facts.appVersion) ? facts.appVersion : null,
       protocol: Number.isSafeInteger(facts.protocolVersion) ? facts.protocolVersion : null,
@@ -113,4 +80,4 @@ export function doctorReport({ facts, identity, connection, service, executables
   };
 }
 
-const SAFE_ERRORS = new Set(['worker_status_unavailable', 'manifest_missing', 'manifest_unreadable', 'manifest_invalid', 'nonpersistent_root', 'nonpersistent_home', 'private_directory_required', 'identity_invalid', 'identity_read_only', 'systemd_user_manager_missing', 'connection_unavailable', 'service_not_running', 'authentication', 'permission', 'wrong-main', 'incompatible-protocol', 'malformed-frame', 'backpressure', 'timeout', 'transport']);
+const SAFE_ERRORS = new Set(['nonpersistent_root', 'nonpersistent_home', 'private_directory_required', 'identity_invalid', 'identity_read_only', 'systemd_user_manager_missing', 'connection_unavailable', 'service_not_running', 'authentication', 'permission', 'wrong-main', 'incompatible-protocol', 'malformed-frame', 'backpressure', 'timeout', 'transport']);

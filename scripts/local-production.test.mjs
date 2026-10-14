@@ -463,11 +463,9 @@ async function cutoverFixture(t, pendingMigrations) {
   const events = []
   const release = join(directory, 'candidate')
   const previousRelease = join(directory, 'previous')
-  const current = join(directory, 'current')
   const stateFile = join(directory, 'deployment.json')
-  await mkdir(release)
-  await mkdir(previousRelease)
-  await symlink(previousRelease, current)
+  const backupFile = join(directory, 'database.dump')
+  let selected = previousRelease
   let running = true
   let data = 'before migration'
   const steps = {
@@ -477,113 +475,108 @@ async function cutoverFixture(t, pendingMigrations) {
       events.push('pending migrations')
       return pendingMigrations
     },
-    backup: async () => { assert.fail('Cutover must never run pg_dump') },
-    restore: async () => { assert.fail('Cutover must never run pg_restore') },
+    backup: async archive => {
+      events.push(running ? 'online backup' : 'offline backup')
+      await writeFile(archive, data)
+    },
     stop: async () => { events.push('stop'); running = false },
+    schema: async () => { events.push('schema'); return [tableSchema, columnSchema] },
     migrate: async () => { events.push('migrate'); data = 'after migration' },
     upgradeLauncher: async () => { events.push('launcher') },
-    activate: async value => {
-      events.push('activate')
-      await rm(current)
-      if (value) await symlink(value, current)
-    },
+    activate: async value => { events.push('activate'); selected = value },
     enable: async () => { events.push('enable') },
     start: async () => { events.push('start'); running = true },
     ready: async value => {
       events.push('ready')
       assert.equal(running, true)
-      assert.equal(await production.readReleaseSelection(current), value)
+      assert.equal(selected, value)
     },
+    restore: async archive => { events.push('restore'); data = await readFile(archive, 'utf8') },
   }
-  return { release, previousRelease, current, stateFile, steps, events,
-    running: () => running, data: () => data }
+  return { release, previousRelease, stateFile, backupFile, steps, events,
+    selected: () => selected, running: () => running, data: () => data }
 }
 
-for (const pending of [[], [3]]) {
-  test(`cutover never dumps or restores with ${pending.length} pending migrations`, async t => {
-    const fixture = await cutoverFixture(t, pending)
-    await production.runReleaseCutover(fixture)
-    assert.deepEqual(fixture.events, ['pending migrations', 'stop', ...(pending.length ? ['migrate'] : []),
-      'launcher', 'activate', 'enable', 'start', 'ready'])
-    assert.equal(await production.readReleaseSelection(fixture.current), fixture.release)
-    assert.equal(fixture.running(), true)
-    assert.equal(fixture.data(), pending.length ? 'after migration' : 'before migration')
-    assert.equal(JSON.parse(await readFile(fixture.stateFile, 'utf8')).phase, 'ready')
-  })
-}
+test('cutover without pending migrations skips the dump and database work during the API stop window', async t => {
+  const fixture = await cutoverFixture(t, [])
+  await production.runReleaseCutover(fixture)
+  assert.deepEqual(fixture.events, ['pending migrations', 'stop', 'launcher', 'activate', 'enable', 'start', 'ready'])
+  assert.equal(fixture.selected(), fixture.release)
+  assert.equal(fixture.running(), true)
+  assert.equal(fixture.data(), 'before migration')
+  await assert.rejects(stat(fixture.backupFile), { code: 'ENOENT' })
+  const state = JSON.parse(await readFile(fixture.stateFile, 'utf8'))
+  assert.equal(state.backupComplete, false)
+  assert.equal(state.schemaMayHaveChanged, false)
+})
 
-test('a failed transactional migration keeps the previous release and saved data without a dump or restore', async t => {
+test('cutover with pending migrations captures its recovery dump after stopping the API', async t => {
   const fixture = await cutoverFixture(t, [3])
-  fixture.steps.migrate = async () => {
-    fixture.events.push('migrate')
-    // A rejected migration transaction leaves committed data unchanged.
-    throw new Error('migration failed')
+  await production.runReleaseCutover(fixture)
+  assert.deepEqual(fixture.events, ['pending migrations', 'stop', 'offline backup', 'schema', 'migrate',
+    'schema', 'launcher', 'activate', 'enable', 'start', 'ready'])
+  assert.equal(fixture.data(), 'after migration')
+  assert.equal(fixture.selected(), fixture.release)
+  assert.equal(fixture.running(), true)
+  await assert.rejects(stat(fixture.backupFile), { code: 'ENOENT' })
+})
+
+test('a failed migration restores the stopped-API dump before restarting the previous release', async t => {
+  const fixture = await cutoverFixture(t, [3])
+  const migrate = fixture.steps.migrate
+  fixture.steps.migrate = async () => { await migrate(); throw new Error('migration failed') }
+  fixture.steps.ready = async value => {
+    assert.equal(value, fixture.previousRelease)
+    assert.equal(fixture.data(), 'before migration')
+    assert.equal(fixture.running(), true)
   }
   await assert.rejects(production.runReleaseCutover(fixture), /migration failed/)
-  assert.deepEqual(fixture.events, ['pending migrations', 'stop', 'migrate', 'stop', 'activate', 'start', 'ready'])
-  assert.equal(await production.readReleaseSelection(fixture.current), fixture.previousRelease)
+  assert.deepEqual(fixture.events, ['pending migrations', 'stop', 'offline backup', 'schema', 'migrate',
+    'stop', 'restore', 'activate', 'start'])
+  assert.equal(fixture.selected(), fixture.previousRelease)
   assert.equal(fixture.data(), 'before migration')
-  assert.equal(fixture.running(), true)
   assert.equal(JSON.parse(await readFile(fixture.stateFile, 'utf8')).phase, 'recovered')
 })
 
-for (const pending of [[], [3]]) {
-  for (const failure of ['launcher', 'readiness', 'smoke']) {
-    test(`rolls back code only after ${failure} failure with ${pending.length} pending migrations`, async t => {
-      const fixture = await cutoverFixture(t, pending)
-      if (failure === 'launcher') {
-        fixture.steps.upgradeLauncher = async () => { throw new Error('launcher failed') }
-      } else if (failure === 'readiness') {
-        const ready = fixture.steps.ready
-        fixture.steps.ready = async value => {
-          if (value === fixture.release) throw new Error('readiness failed')
-          await ready(value)
-        }
-      } else {
-        fixture.steps.checkReady = async (_release, { start, rollback }) => {
-          await start()
-          const error = new Error('smoke failed')
-          await rollback(error)
-          throw error
-        }
+for (const failure of ['launcher', 'readiness']) {
+  test(`rollback without pending migrations switches releases without restoring data after ${failure} failure`, async t => {
+    const fixture = await cutoverFixture(t, [])
+    if (failure === 'launcher') {
+      fixture.steps.upgradeLauncher = async () => { throw new Error('launcher failed') }
+    } else {
+      fixture.steps.ready = async value => {
+        if (value === fixture.release) throw new Error('readiness failed')
       }
-      await assert.rejects(production.runReleaseCutover(fixture), new RegExp(`${failure} failed`))
-      assert.equal(await production.readReleaseSelection(fixture.current), fixture.previousRelease)
-      assert.equal(fixture.running(), true)
-      assert.equal(fixture.data(), pending.length ? 'after migration' : 'before migration')
-      const state = JSON.parse(await readFile(fixture.stateFile, 'utf8'))
-      assert.equal(state.phase, 'recovered')
-      assert.equal(state.failure, `${failure} failed`)
-    })
-  }
+    }
+    await assert.rejects(production.runReleaseCutover(fixture), new RegExp(`${failure} failed`))
+    assert.equal(fixture.selected(), fixture.previousRelease)
+    assert.equal(fixture.running(), true)
+    assert.equal(fixture.data(), 'before migration')
+    assert.equal(fixture.events.some(event => event.includes('backup') || event === 'restore' || event === 'migrate'), false)
+    assert.equal(JSON.parse(await readFile(fixture.stateFile, 'utf8')).phase, 'recovered')
+  })
 }
 
-test('restart recovery before the API stop does not interrupt the running release', async t => {
+test('a stopped-API backup failure restarts the previous release without restoring data', async t => {
   const fixture = await cutoverFixture(t, [3])
-  await writeFile(fixture.stateFile, JSON.stringify({ phase: 'checking-migrations',
-    previousRelease: fixture.previousRelease, apiMayHaveStopped: false }))
+  fixture.steps.backup = async () => { throw new Error('dump failed') }
+  await assert.rejects(production.runReleaseCutover(fixture), /dump failed/)
+  assert.deepEqual(fixture.events, ['pending migrations', 'stop', 'stop', 'activate', 'start', 'ready'])
+  assert.equal(fixture.data(), 'before migration')
+  assert.equal(fixture.running(), true)
+  assert.equal(fixture.selected(), fixture.previousRelease)
+  assert.equal(JSON.parse(await readFile(fixture.stateFile, 'utf8')).phase, 'recovered')
+})
+
+test('restart recovery of an interrupted online backup does not stop the running API', async t => {
+  const fixture = await cutoverFixture(t, [3])
+  await writeFile(fixture.stateFile, JSON.stringify({ phase: 'backing-up',
+    previousRelease: fixture.previousRelease, apiMayHaveStopped: false, schemaMayHaveChanged: false }))
   await production.recoverReleaseCutover(fixture)
   assert.deepEqual(fixture.events, [])
   assert.equal(fixture.running(), true)
   assert.equal(JSON.parse(await readFile(fixture.stateFile, 'utf8')).phase, 'recovered')
 })
-
-for (const phase of ['migrating', 'migrated', 'checking-readiness']) {
-  test(`restart recovery during ${phase} reactivates the previous code without a dump or restore`, async t => {
-    const fixture = await cutoverFixture(t, [3])
-    await fixture.steps.migrate()
-    await fixture.steps.activate(fixture.release)
-    await writeFile(fixture.stateFile, JSON.stringify({ phase,
-      previousRelease: fixture.previousRelease, apiMayHaveStopped: true }))
-    fixture.events.length = 0
-    await production.recoverReleaseCutover(fixture)
-    assert.deepEqual(fixture.events, ['stop', 'activate', 'start', 'ready'])
-    assert.equal(await production.readReleaseSelection(fixture.current), fixture.previousRelease)
-    assert.equal(fixture.running(), true)
-    assert.equal(fixture.data(), 'after migration')
-    assert.equal(JSON.parse(await readFile(fixture.stateFile, 'utf8')).phase, 'recovered')
-  })
-}
 
 test('pending migrations compare each release version with applied versions rather than the latest id', async () => {
   const migrations = [{ version: 1 }, { version: 3 }, { version: 2 }]
@@ -602,10 +595,116 @@ test('a database without migration bookkeeping has every release migration pendi
   assert.equal(queries, 1)
 })
 
-for (const failure of ['stop', 'application migration', 'checkpoint setup',
+const tableSchema = { key: 'table:public.records', definition: { kind: 'r' }, additive: true }
+const columnSchema = { key: 'column:public.records.id', parent: tableSchema.key,
+  definition: { type: 'text', nullable: false, default: null }, additive: false }
+
+for (const change of ['unchanged', 'nullable column', 'defaulted column', 'new table', 'removed column',
+  'changed column', 'required column', 'new constraint']) {
+  test(`smoke rollback restores the database only for incompatible schema changes: ${change}`, async t => {
+    const directory = await installFixture(t)
+    const current = join(directory, 'current')
+    const release = join(directory, 'candidate')
+    const previousRelease = join(directory, 'previous')
+    const stateFile = join(directory, 'deployment.json')
+    const backupFile = join(directory, 'database.dump')
+    await mkdir(release)
+    await mkdir(previousRelease)
+    await symlink(previousRelease, current)
+    const before = [tableSchema, columnSchema]
+    let after = structuredClone(before)
+    if (change === 'removed column') after.pop()
+    if (change === 'changed column') after[1].definition.type = 'integer'
+    if (change.includes('column') && !['removed column', 'changed column'].includes(change)) {
+      after.push({ key: 'column:public.records.description', parent: tableSchema.key,
+        definition: { type: 'text', nullable: change === 'nullable column',
+          default: change === 'defaulted column' ? 'empty' : null }, additive: change !== 'required column' })
+    }
+    if (change === 'new table') {
+      after.push({ key: 'table:public.notes', definition: { kind: 'r' }, additive: true },
+        { key: 'column:public.notes.id', parent: 'table:public.notes',
+          definition: { type: 'text', nullable: false, default: null }, additive: false })
+    }
+    if (change === 'new constraint') {
+      after.push({ key: 'constraint:public.records.required', parent: tableSchema.key,
+        definition: 'check description is present', additive: false })
+    }
+    let schema = before
+    const commands = []
+    let selected = previousRelease
+    let service = 'running'
+    const steps = {
+      pendingMigrations: async () => [3],
+      stop: async () => { service = 'stopped' },
+      backup: async () => { await writeFile(backupFile, 'backup') },
+      schema: async () => schema,
+      migrate: async () => { schema = after },
+      upgradeLauncher: async () => {},
+      activate: async value => {
+        selected = value
+        await rm(current)
+        await symlink(value, current)
+      },
+      enable: async () => {},
+      start: async () => { service = 'running' },
+      ready: async value => { assert.equal(selected, value); assert.equal(service, 'running') },
+      checkReady: async (_release, { start, rollback }) => {
+        await start()
+        try { throw new Error('post-deploy smoke failed') }
+        catch (error) { await rollback(error); throw error }
+      },
+      restore: async archive => {
+        await production.restoreDatabase({ archive, run: async command => { commands.push(command) } })
+        schema = before
+      },
+    }
+    await assert.rejects(production.runReleaseCutover({ release, previousRelease, stateFile, backupFile, steps }),
+      /post-deploy smoke failed/)
+    const compatible = ['unchanged', 'nullable column', 'defaulted column', 'new table'].includes(change)
+    assert.deepEqual(commands, compatible ? [] : ['pg_restore'])
+    assert.deepEqual(schema, compatible ? after : before)
+    assert.equal(await production.readReleaseSelection(current), previousRelease)
+    assert.equal(service, 'running')
+    const state = JSON.parse(await readFile(stateFile, 'utf8'))
+    assert.equal(state.phase, 'recovered')
+    assert.equal(state.migrationComplete, true)
+    assert.equal(state.backwardCompatible, compatible)
+    assert.equal(state.failure, 'post-deploy smoke failed')
+  })
+}
+
+test('restart recovery preserves a successful compatible migration without invoking pg_restore', async t => {
+  const directory = await installFixture(t)
+  const stateFile = join(directory, 'deployment.json')
+  const previousRelease = join(directory, 'previous')
+  await writeFile(stateFile, JSON.stringify({ phase: 'checking-readiness', previousRelease,
+    backupComplete: true, schemaMayHaveChanged: true, migrationComplete: true, backwardCompatible: true }))
+  const calls = []
+  await production.recoverReleaseCutover({ stateFile, steps: {
+    stop: async () => { calls.push('stop') },
+    restore: async () => { calls.push('pg_restore') },
+    activate: async selected => { assert.equal(selected, previousRelease); calls.push('activate') },
+    start: async () => { calls.push('start') },
+    ready: async () => { calls.push('ready') },
+  } })
+  assert.deepEqual(calls, ['stop', 'activate', 'start', 'ready'])
+  assert.equal(JSON.parse(await readFile(stateFile, 'utf8')).phase, 'recovered')
+})
+
+for (const failure of ['stop', 'backup', 'application migration', 'checkpoint setup',
   'launcher upgrade', 'activation', 'enable', 'start', 'readiness']) {
-  test(`recovers the previous service after a ${failure} failure and can retry cutover`, async t => {
-    const fixture = await cutoverFixture(t, [3])
+  test(`recovers the previous service and schema after a ${failure} failure`, async t => {
+    const directory = await installFixture(t)
+    const previousRelease = join(directory, 'release-previous')
+    const release = join(directory, 'release-candidate')
+    const current = join(directory, 'current')
+    const stateFile = join(directory, 'deployment.json')
+    const backupFile = join(directory, 'database.dump')
+    await mkdir(previousRelease)
+    await mkdir(release)
+    await symlink(previousRelease, current)
+    let service = 'running'
+    let schema = 'previous'
     let injected = false
     const inject = name => {
       if (name === failure && !injected) {
@@ -613,50 +712,89 @@ for (const failure of ['stop', 'application migration', 'checkpoint setup',
         throw new Error(`Injected ${name} failure`)
       }
     }
-    for (const [step, name] of [['stop', 'stop'], ['upgradeLauncher', 'launcher upgrade'],
-      ['activate', 'activation'], ['enable', 'enable'], ['start', 'start'], ['ready', 'readiness']]) {
-      const action = fixture.steps[step]
-      fixture.steps[step] = async (...args) => { await action(...args); inject(name) }
+    const steps = {
+      pendingMigrations: async () => [3],
+      stop: async () => { service = 'stopped'; inject('stop') },
+      backup: async () => { inject('backup'); await writeFile(backupFile, schema) },
+      migrate: async () => {
+        inject('application migration')
+        schema = 'application migrated'
+        inject('checkpoint setup')
+        schema = 'application and checkpoints migrated'
+      },
+      upgradeLauncher: async () => { inject('launcher upgrade') },
+      activate: async selected => {
+        await rm(current)
+        await symlink(selected, current)
+        inject('activation')
+      },
+      enable: async () => { inject('enable') },
+      start: async () => { service = 'running'; inject('start') },
+      ready: async selected => {
+        assert.equal(service, 'running')
+        assert.equal(await production.readReleaseSelection(current), selected)
+        if (selected === release) inject('readiness')
+        else assert.equal(schema, 'previous')
+      },
+      restore: async () => { schema = await readFile(backupFile, 'utf8') },
     }
-    const migrate = fixture.steps.migrate
-    fixture.steps.migrate = async () => {
-      inject('application migration')
-      inject('checkpoint setup')
-      await migrate()
-    }
-    await assert.rejects(production.runReleaseCutover(fixture), new RegExp(`Injected ${failure} failure`))
-    assert.equal(fixture.running(), true)
-    const migrated = !['stop', 'application migration', 'checkpoint setup'].includes(failure)
-    assert.equal(fixture.data(), migrated ? 'after migration' : 'before migration')
-    assert.equal(await production.readReleaseSelection(fixture.current), fixture.previousRelease)
-    assert.equal(JSON.parse(await readFile(fixture.stateFile, 'utf8')).phase, 'recovered')
-    assert.equal((await stat(fixture.release)).isDirectory(), true)
-    await production.runReleaseCutover(fixture)
-    assert.equal(await production.readReleaseSelection(fixture.current), fixture.release)
-    assert.equal(fixture.data(), 'after migration')
-    assert.equal(fixture.running(), true)
-    assert.equal(JSON.parse(await readFile(fixture.stateFile, 'utf8')).phase, 'ready')
+    await assert.rejects(production.runReleaseCutover({
+      release, previousRelease, stateFile, backupFile, steps,
+    }), new RegExp(`Injected ${failure} failure`))
+    assert.equal(service, 'running')
+    assert.equal(schema, 'previous')
+    assert.equal(await production.readReleaseSelection(current), previousRelease)
+    assert.equal(JSON.parse(await readFile(stateFile, 'utf8')).phase, 'recovered')
+    assert.equal((await stat(release)).isDirectory(), true)
+    await production.runReleaseCutover({ release, previousRelease, stateFile, backupFile, steps })
+    assert.equal(await production.readReleaseSelection(current), release)
+    assert.equal(schema, 'application and checkpoints migrated')
+    assert.equal(service, 'running')
+    assert.equal(JSON.parse(await readFile(stateFile, 'utf8')).phase, 'ready')
   })
 }
 
-test('retains interrupted deployment details until code recovery succeeds on retry', async t => {
-  const fixture = await cutoverFixture(t, [3])
-  fixture.steps.migrate = async () => { throw new Error('migration failed') }
-  const activate = fixture.steps.activate
-  fixture.steps.activate = async () => { throw new Error('previous release unavailable') }
-  await assert.rejects(production.runReleaseCutover(fixture), /recovery failed/i)
-  const interrupted = JSON.parse(await readFile(fixture.stateFile, 'utf8'))
+test('retains an interrupted deployment and backup until recovery succeeds on retry', async t => {
+  const directory = await installFixture(t)
+  const previousRelease = join(directory, 'release-previous')
+  const release = join(directory, 'release-candidate')
+  const stateFile = join(directory, 'deployment.json')
+  const backupFile = join(directory, 'database.dump')
+  await mkdir(release)
+  let selected = previousRelease
+  let service = 'running'
+  let schema = 'previous'
+  let restoreFails = true
+  const steps = {
+    pendingMigrations: async () => [3],
+    stop: async () => { service = 'stopped' },
+    backup: async () => { await writeFile(backupFile, schema) },
+    migrate: async () => { schema = 'changed'; throw new Error('checkpoint setup failed') },
+    restore: async () => {
+      if (restoreFails) throw new Error('restore unavailable')
+      schema = await readFile(backupFile, 'utf8')
+    },
+    activate: async value => { selected = value },
+    start: async () => { service = 'running' },
+    ready: async () => { assert.equal(schema, 'previous') },
+  }
+  await assert.rejects(production.runReleaseCutover({
+    release, previousRelease, stateFile, backupFile, steps,
+  }), /recovery failed/i)
+  const interrupted = JSON.parse(await readFile(stateFile, 'utf8'))
   assert.equal(interrupted.phase, 'recovery-failed')
-  assert.match(interrupted.failure, /migration failed/)
-  assert.match(interrupted.recoveryFailure, /previous release unavailable/)
-  assert.equal(fixture.running(), false)
-  assert.equal((await stat(fixture.release)).isDirectory(), true)
-  fixture.steps.activate = activate
-  await production.recoverReleaseCutover(fixture)
-  assert.equal(await production.readReleaseSelection(fixture.current), fixture.previousRelease)
-  assert.equal(fixture.running(), true)
-  assert.equal(fixture.data(), 'before migration')
-  assert.equal(JSON.parse(await readFile(fixture.stateFile, 'utf8')).phase, 'recovered')
+  assert.equal(interrupted.schemaMayHaveChanged, true)
+  assert.match(interrupted.failure, /checkpoint setup failed/)
+  assert.match(interrupted.recoveryFailure, /restore unavailable/)
+  assert.equal(service, 'stopped')
+  assert.equal(await readFile(backupFile, 'utf8'), 'previous')
+  assert.equal((await stat(release)).isDirectory(), true)
+  restoreFails = false
+  await production.recoverReleaseCutover({ stateFile, steps })
+  assert.equal(selected, previousRelease)
+  assert.equal(service, 'running')
+  assert.equal(schema, 'previous')
+  assert.equal(JSON.parse(await readFile(stateFile, 'utf8')).phase, 'recovered')
 })
 
 test('a failed first installation retries startup defaults independently of configuration publication', async t => {
@@ -960,81 +1098,14 @@ test('source snapshots keep unchanged source timestamps and API build info acros
   })
 })
 
-test('production builds check the API separately from JavaScript emit and browser bundling', async () => {
+test('production builds compile contracts and API then bundle web without a web typecheck', async () => {
   const calls = []
   await production.buildProductionSource(async (command, args) => { calls.push([command, args]) })
   assert.deepEqual(calls, [
     ['corepack', ['pnpm', '--filter', '@foreman-code/contracts', 'build']],
-    ['corepack', ['pnpm', '--filter', '@foreman-code/api', 'exec', 'tsc', '-p', 'tsconfig.build.json',
-      '--noEmit', '--isolatedModules', '--tsBuildInfoFile', 'node_modules/.cache/tsc/production-check.tsbuildinfo']],
-    ['node', ['scripts/emit-production-api.mjs']],
-    ['corepack', ['pnpm', '--filter', '@foreman-code/api', 'exec', 'node', '../../scripts/copy-api-runtime.mjs']],
-    ['corepack', ['pnpm', '--filter', '@foreman-code/api', 'exec', 'node', 'dist/cli/harnessCompatibility.js']],
-    ['node', ['scripts/heavy-job.mjs', '--build', 'web', '--',
-      'corepack', 'pnpm', '--filter', '@foreman-code/web', 'exec', 'vite', 'build']],
+    ['corepack', ['pnpm', '--filter', '@foreman-code/api', 'build']],
+    ['corepack', ['pnpm', '--filter', '@foreman-code/web', 'exec', 'vite', 'build']],
   ])
-})
-
-test('production staging overlaps the full API check and cannot finish before it passes', async () => {
-  let passCheck
-  const checked = new Promise(resolve => { passCheck = resolve })
-  let staged = false
-  let finished = false
-  const build = production.buildProductionSource(async (_command, args) => {
-    if (args.includes('--noEmit')) await checked
-  }, { stage: async () => { staged = true; return 'staged release' } })
-    .then(value => { finished = true; return value })
-  await new Promise(resolve => setImmediate(resolve))
-  assert.equal(staged, true)
-  assert.equal(finished, false)
-  passCheck()
-  assert.equal(await build, 'staged release')
-})
-
-test('a failed API check settles staging before rejecting the installation', async () => {
-  let finishStaging
-  const staging = new Promise(resolve => { finishStaging = resolve })
-  let staged = false
-  let failed = false
-  const build = production.buildProductionSource(async (_command, args) => {
-    if (args.includes('--noEmit')) throw new Error('Invalid API types')
-  }, { stage: async () => { await staging; staged = true } })
-  const rejected = build.then(() => { failed = true; return undefined }, error => { failed = true; return error })
-  await new Promise(resolve => setImmediate(resolve))
-  assert.equal(failed, false)
-  finishStaging()
-  assert.match((await rejected).message, /Invalid API types/)
-  assert.equal(staged, true)
-})
-
-test('readiness polls while the service start command is waiting and smoke waits for both', async t => {
-  const expected = { installationId: 'installation', checkoutId: 'release', databaseId: 'database' }
-  let finishStart
-  const starting = new Promise(resolve => { finishStart = resolve })
-  let observed = false
-  let smoked = false
-  const server = createServer((request, response) => {
-    observed = true
-    if (request.url === '/health/identity') response.end(JSON.stringify(expected))
-    else if (request.url === '/health/ready') response.end(JSON.stringify({ service: 'graphql-api',
-      checks: { database: 'ok', checkpoints: 'ok' } }))
-    else response.end('<script src="/assets/dashboard.js"></script>')
-  })
-  server.listen(0, '127.0.0.1')
-  await once(server, 'listening')
-  t.after(() => new Promise(resolve => server.close(resolve)))
-  const ready = waitForProductionReady({ origin: `http://127.0.0.1:${server.address().port}`, expected,
-    timeoutMs: 1000, start: () => starting, smoke: async () => { smoked = true } })
-  // Release start even on assertion failure so no request or server survives the test.
-  try {
-    await new Promise(resolve => setTimeout(resolve, 100))
-    assert.equal(observed, true)
-    assert.equal(smoked, false)
-  } finally {
-    finishStart()
-    await ready
-  }
-  assert.equal(smoked, true)
 })
 
 for (const input of ['pnpm-lock.yaml', 'apps/api/package.json', 'packages/contracts/package.json',
@@ -1071,34 +1142,4 @@ test('dependency pruning retains cache entries used by older symlinked releases'
   await production.pruneApiDependencies(root, [release], { removeInBackground: path => removed.push(path) })
   assert.deepEqual(removed, [])
   assert.equal(await readFile(join(release, 'apps/api/node_modules/value'), 'utf8'), 'installed dependency')
-})
-
-
-test('pruning retries abandoned removals even when every release is retained', async t => {
-  const parent = await installFixture(t)
-  const releases = join(parent, 'releases')
-  const abandoned = join(parent, '.pruned-releases-abandoned')
-  const retained = join(releases, 'release-now')
-  await mkdir(retained, { recursive: true })
-  await mkdir(abandoned)
-  await writeFile(join(abandoned, 'old-dependency'), 'old')
-  const removals = []
-  await pruneReleases(releases, [retained], { removeInBackground: path => removals.push(path) })
-  assert.deepEqual(removals, [abandoned])
-  assert.equal(await readFile(join(abandoned, 'old-dependency'), 'utf8'), 'old')
-  assert.deepEqual(await readdir(releases), ['release-now'])
-})
-
-test('pruning preserves a selected release inside an abandoned removal directory', async t => {
-  const parent = await installFixture(t)
-  const releases = join(parent, 'releases')
-  const abandoned = join(parent, '.pruned-releases-selected')
-  const selected = join(abandoned, 'release-selected')
-  await mkdir(releases)
-  await mkdir(selected, { recursive: true })
-  await symlink(selected, join(parent, 'current'))
-  const removals = []
-  await pruneReleases(releases, [], { removeInBackground: path => removals.push(path) })
-  assert.deepEqual(removals, [])
-  assert.equal(await realpath(join(parent, 'current')), selected)
 })

@@ -103,7 +103,7 @@ export class JobService {
       if(error instanceof DomainError)throw error
       componentLogger('jobs').error({ err: error, executionId: execution.id }, 'Job dispatch or reconciliation failed')
       throw new DomainError('JOB_DISPATCH_PENDING','The accepted Job could not be delivered or reconciled. Read its persisted state and retry the original command; execution may have begun.',503,
-        {retryable:true,executionId:execution.id,attemptId:execution.attemptId,operationId:execution.operationId}, { cause: error })
+        {retryable:true,executionId:execution.id,attemptId:execution.attemptId,operationId:execution.operationId})
     }
   }
   private async authorize(sql: pg.PoolClient, principal: ManagementPrincipal, workspaceId: string,

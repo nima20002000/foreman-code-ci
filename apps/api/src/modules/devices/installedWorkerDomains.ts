@@ -1,6 +1,3 @@
-import { isWorkerAdmission, requiresWorkerBundle } from './workerAdmission.js'
-import { createInstalledWorkerManagedMcp } from '../harnesses/installedWorkerManagedMcp.js'
-import { createWorkerManagedMcpExtension } from '../harnesses/workerManagedMcp.js'
 import { createInstalledWorkerAccounts } from '../provider-accounts/installedWorkerAccounts.js'
 import { createProviderAccountWorkerExtension, workerProviderAccountResolver, type WorkerAccountOperationPorts } from '../provider-accounts/workerOperations.js'
 import { inventoryPayloadFingerprints } from '../harnesses/payloadFingerprintCache.js'
@@ -30,7 +27,6 @@ import { createWorkerJobOutputCollector } from '../runs/remote/workerJobOutputs.
 import { createInstalledJobOutputRsync } from '../runs/remote/installedJobOutputRsync.js'
 import { createInstalledJobInputRsync } from '../runs/remote/installedJobInputRsync.js'
 import { DeviceConnectionError } from './deviceWire.js'
-import { sameDeviceInstallation } from './deviceReconnect.js'
 import type { RemoteJobExecutionHost, RemoteJobExecutionHostPorts } from '../runs/remote/jobExecutionHost.js'
 import { RemoteOperationJournal } from '../runs/remote/operationJournal.js'
 import { NativeProcessRegistry } from '../harnesses/recovery/processRegistry.js'
@@ -88,11 +84,10 @@ import { createWorkerResourceTelemetryExtension } from '../resource-telemetry/in
 import { createLinuxResourceCollector } from '../resource-telemetry/collector/ports.js'
 import { createInstalledWorkerConversations } from '../conversations/installedWorkerConversations.js'
 import { WORKER_MCP_EXTENSION } from '@foreman-code/contracts/worker-mcp-relay'
-import { WORKER_UPDATE_DRAIN_TIMEOUT_MS } from '@foreman-code/contracts/worker-update'
+import { fallbackOnError } from '../diagnostics/ignoredError.js'
 
 interface InstalledWorkerInput {
   stateDirectory: string
-  launcherSource?: URL
   pairing: WorkerPairingConfiguration
   bootId: string
   /** The packaged Worker's existing exclusive state socket remains held during journal recovery. */
@@ -103,20 +98,17 @@ interface InstalledWorkerInput {
   jobConfiguration?: InstalledRuntimeConfigurationLocation | null
   jobReports?: Pick<RemoteJobExecutionHostPorts, 'prepareOutputs' | 'preparePublication'>
   approvedRoots(): Promise<ApprovedRootAllowlist | null>
-  connection(): (Pick<DeviceConnectionSupervisor, 'currentBinding' | 'captureRequest' | 'mainNow'>
-    & Partial<Pick<DeviceConnectionSupervisor, 'linkLostAt'>>) | undefined
+  connection(): Pick<DeviceConnectionSupervisor, 'currentBinding' | 'captureRequest' | 'mainNow'> | undefined
   codexSuiteRevision: string
   providerAccounts?: Omit<WorkerAccountOperationPorts, 'current'>
   /** Installed original source/output, canonical acknowledgement and stopped-writer ports. */
   rsync?: InstalledRsyncProviders
   workerUpdate?: NonNullable<MaintenancePorts['workerUpdate']>
   ciStartupPending?: () => boolean | Promise<boolean>
-  assertBundleReady?(context: DeviceExtensionContext): Promise<void>
 }
 
 interface InstalledWorkerComposition {
   input: InstalledWorkerInput
-  managedMcp: ReturnType<typeof createInstalledWorkerManagedMcp>
   lifetime: AbortController
   configuration: InstalledWorkflowConfigurationLocation | null
   configurationLocation: InstalledWorkflowConfigurationLocation
@@ -175,8 +167,8 @@ export async function createInstalledWorkerDomains(input: InstalledWorkerInput) 
     extensions: composition.tracked,
     rsyncAvailable: composition.rsync.kind === 'configured',
     rsyncMissing: composition.rsync.missing,
-    async drainForUpdate(signal?: AbortSignal) {
-      await composition.updateDrain.run(signal)
+    async drainForUpdate() {
+      await composition.updateDrain.run()
     },
     resumeAfterUpdate() {
       composition.updateDrain.resume()
@@ -263,12 +255,6 @@ async function configureWorkerTransfers(composition: InstalledWorkerComposition)
     return ApprovedRootAllowlistSchema.parse(value)
   }
   const approved = composition.approved = await input.approvedRoots()
-  composition.managedMcp = createInstalledWorkerManagedMcp({ stateDirectory: input.stateDirectory,
-    configuration: composition.configurationLocation, availableConfiguration: () => composition.configuration,
-    registry, launcherSource: input.launcherSource })
-  if (approved) await composition.managedMcp.ensureReady({ signal: lifetime.signal }).catch(error => {
-    componentLogger('devices').warn({ operation: 'repair managed MCP mount', err: error }, 'Managed Foreman Code MCP setup needs repair')
-  })
   composition.profileChecks = approved ? await createInstalledWorkerProfileChecks({ stateDirectory: input.stateDirectory,
     configuration: composition.configuration, pairing: input.pairing, current, registry }) : null
   const sourceAcknowledgement = input.rsync && createWorkerSourceRsyncAcknowledgement({
@@ -341,12 +327,7 @@ async function configureWorkerSources(composition: InstalledWorkerComposition) {
       accepted: rsync.kind === 'configured' ? input.rsync!.accepted : sourceTransfersOnMain(request, current),
       ...(rsync.kind === 'configured' ? { receiver: input.rsync!.receiver } : {}) })
     const sources = new SourceOperationWorkerService({
-      authenticate: async context => {
-        if (!sameDeviceInstallation(current(), context.binding)) {
-          throw new DomainError('SOURCE_CONNECTION_CONFLICT',
-            'Source operation belongs to a different Worker boot or installation.', 409)
-        }
-      },
+      authenticate: async context => { if (!isDeepStrictEqual(current(), context.binding)) throw new DomainError('SOURCE_CONNECTION_CONFLICT', 'Source operation is not on the actual original worker generation.', 409) },
       approvedRoots: roots,
       async quotaPoolFor(binding) {
         const pool = await installedSourceQuotaPool(input.jobConfiguration ?? null, binding)
@@ -439,7 +420,6 @@ async function configureWorkerSources(composition: InstalledWorkerComposition) {
     const createWorkflow = (location: InstalledWorkflowConfigurationLocation | null) =>
       createInstalledWorkflowHost({ stateDirectory: input.stateDirectory, pairing: input.pairing, bootId: input.bootId,
       configuration: location, currentBinding: () => input.connection()?.currentBinding(),
-      linkLostAt: () => input.connection()?.linkLostAt?.(),
       captureRequest: namespace => input.connection()?.captureRequest(namespace), sources, approvedRoots: roots,
       ...(input.nativeOutputs ? { nativeOutputs: input.nativeOutputs } : {}),
       codexSuiteRevision: input.codexSuiteRevision,
@@ -462,7 +442,6 @@ async function configureWorkerSources(composition: InstalledWorkerComposition) {
 }
 
 async function configureWorkerComputers(composition: InstalledWorkerComposition) {
-  composition.extensions.push(createWorkerManagedMcpExtension(composition.managedMcp.worker, composition.current))
   const {
     input,
     lifetime,
@@ -534,6 +513,7 @@ async function configureWorkerComputers(composition: InstalledWorkerComposition)
         throw new DomainError('COMPUTER_ACCOUNTS_STALE', 'Account facts require the actual authenticated worker channel.', 409)
       }
       const selected = await readInstalledWorkflowConfiguration(composition.configuration)
+        .catch(fallbackOnError(null, 'devices', 'read installed workflow configuration'))
       const binaries = { ...(selected?.codexBinary ? { codex: selected.codexBinary } : {}),
         ...(selected?.claude ? { claude: selected.claude.binary } : {}) }
       return { payload: await probeComputerAccounts(systemPorts(process.env, binaries),
@@ -548,7 +528,7 @@ async function configureWorkerComputers(composition: InstalledWorkerComposition)
         throw new DomainError('COMPUTER_MAINTENANCE_STALE', 'Computer maintenance requires the actual authenticated worker channel.', 409)
       }
       composition.maintenance ??= readInstalledWorkflowConfiguration(composition.configuration)
-        .then(selected => {
+        .catch(fallbackOnError(null, 'devices', 'read installed workflow configuration')).then(selected => {
         // Maintenance reads the binaries this Worker actually runs; an update moves the Codex selection with it.
         const binaries: Record<string, string> = { ...(selected?.codexBinary ? { codex: selected.codexBinary } : {}),
           ...(selected?.claude ? { claude: selected.claude.binary } : {}) }
@@ -679,7 +659,6 @@ async function configureWorkerExecution(composition: InstalledWorkerComposition)
       await readInstalledWorkflowConfiguration(location)
       lifetime.signal.throwIfAborted()
       composition.configuration = location
-      await composition.managedMcp.ensureReady()
       await composition.openWorkflow?.(location)
       composition.profileChecks ??= await createInstalledWorkerProfileChecks({ stateDirectory: input.stateDirectory,
         configuration: composition.configuration, pairing: input.pairing, current, registry })
@@ -759,26 +738,19 @@ async function configureWorkerDrain(composition: InstalledWorkerComposition) {
       .filter(namespace => namespace !== COMPUTER_MAINTENANCE_NAMESPACE))],
     active: () => [...active].filter(([, namespace]) => namespace !== COMPUTER_MAINTENANCE_NAMESPACE)
       .map(([task]) => task),
-    drainJobs: async signal => {
+    drainJobs: async () => {
       await Promise.all([
         drainStage('host-ci-preparation', () => hostCi.beginDrain()),
         drainStage('ci-runtime-preparation', () => ciRuntime.beginDrain()),
       ])
-      signal.throwIfAborted()
       if (composition.jobOpening) {
         const opening = composition.jobOpening
-        await drainStage('jobs', async () => {
-          const jobs = await opening
-          signal.throwIfAborted()
-          await jobs.beginDrain()
-        })
+        await drainStage('jobs', async () => { await (await opening).beginDrain() })
       }
-      signal.throwIfAborted()
       if (composition.native?.kind === 'configured') {
         const workflow = composition.native
         await drainStage('workflow-turns', () => workflow.drainForUpdate())
       }
-      signal.throwIfAborted()
       if (composition.conversations) {
         const conversationHost = composition.conversations
         await drainStage('conversation-tasks', () => conversationHost.drainForUpdate())
@@ -786,7 +758,7 @@ async function configureWorkerDrain(composition: InstalledWorkerComposition) {
     },
     drainQualifications: async () => { await composition.qualification?.drain() },
     drainMaintenance: async () => { if (composition.maintenance) await (await composition.maintenance).drainForWorkerUpdate() },
-    quiescent: async signal => {
+    quiescent: async () => {
       updateWaits.clear()
       if (!hostCi.isUpdateIdle()) {
         updateWaits.add('host-ci-preparation')
@@ -821,7 +793,7 @@ async function configureWorkerDrain(composition: InstalledWorkerComposition) {
       if (rsync.kind === 'configured') {
         updateWaits.add('rsync-writers')
         const transfers = await Promise.allSettled(rsync.ownership.inventory().map(intent =>
-          rsync.ownership.quiescent(intent, signal)))
+          rsync.ownership.quiescent(intent, lifetime.signal)))
         if (transfers.some(result => result.status === 'rejected')) return false
         updateWaits.delete('rsync-writers')
       }
@@ -829,16 +801,11 @@ async function configureWorkerDrain(composition: InstalledWorkerComposition) {
     } })
   composition.tracked = extensions.map(extension => ({ ...extension, ...(extension.handle ? { handle: (payload: unknown, context: DeviceExtensionContext) => {
     lifetime.signal.throwIfAborted()
-    const task = (async () => {
-      if (requiresWorkerBundle(extension.namespace, payload)) await composition.input.assertBundleReady?.(context)
+    try {
       updateDrain.assertAdmission(extension.namespace, payload)
-      if (extension.namespace === 'execution-v1' && payload && typeof payload === 'object'
-        && 'method' in payload && ['inspect-mcp', 'conversation.inspect-mcp'].includes(String(payload.method))) {
-        await composition.managedMcp.ensureReady({ signal: AbortSignal.any([context.signal, lifetime.signal,
-          ...(context.connectionSignal ? [context.connectionSignal] : [])]) })
-      }
-      return extension.handle!(payload, { ...context, signal: AbortSignal.any([context.signal, lifetime.signal]) })
-    })()
+    }
+    catch (error) { return Promise.reject(error) }
+    const task = extension.handle!(payload, { ...context, signal: AbortSignal.any([context.signal, lifetime.signal]) })
     active.set(task, extension.namespace)
     void task.then(() => active.delete(task), () => active.delete(task))
     return task
@@ -848,20 +815,15 @@ async function configureWorkerDrain(composition: InstalledWorkerComposition) {
 export function createWorkerRuntimeDrain(ports: {
   signal: AbortSignal
   active(): Promise<unknown>[]
-  drainJobs(signal: AbortSignal): Promise<void>
+  drainJobs(): Promise<void>
   drainQualifications(): Promise<void>
   drainMaintenance(): Promise<void>
-  quiescent(signal: AbortSignal): Promise<boolean>
+  quiescent(): Promise<boolean>
   waitingOn?(): string[]
 }) {
   let draining = false
-  let cleanupPaused = false
-  let attempt: AbortController | undefined
   return {
-    async run(requestSignal?: AbortSignal) {
-      const controller = new AbortController()
-      attempt = controller
-      const signal = AbortSignal.any([ports.signal, controller.signal, ...(requestSignal ? [requestSignal] : [])])
+    async run() {
       draining = true
       const startedAt = Date.now()
       let stage = 'dispatches'
@@ -870,58 +832,24 @@ export function createWorkerRuntimeDrain(ports: {
           waitingOn: ports.waitingOn?.() ?? [] }, 'Worker runtime update is still draining')
       }, 30_000)
       diagnostics.unref()
-      const deadline = setTimeout(() => controller.abort(new DomainError('WORKER_UPDATE_DRAIN_DEADLINE_EXCEEDED',
-        `Worker update drain exceeded ${WORKER_UPDATE_DRAIN_TIMEOUT_MS} ms while waiting for ${stage}.`, 503)),
-      WORKER_UPDATE_DRAIN_TIMEOUT_MS)
-      let abort!: () => void
-      const aborted = new Promise<never>((_resolve, reject) => {
-        abort = () => reject(signal.reason)
-        signal.addEventListener('abort', abort, { once: true })
-      })
-      const runStage = async <T>(operation: () => Promise<T>): Promise<T> => {
-        signal.throwIfAborted()
-        const result = await Promise.race([operation(), aborted])
-        signal.throwIfAborted()
-        return result
-      }
       try {
         // In-flight dispatches finish admission before the Job host stops accepting work.
-        await runStage(() => Promise.allSettled(ports.active()))
+        await Promise.allSettled(ports.active())
         stage = 'jobs'
-        await runStage(() => ports.drainJobs(signal))
+        await ports.drainJobs()
         stage = 'qualifications'
-        await runStage(() => ports.drainQualifications())
+        await ports.drainQualifications()
         stage = 'maintenance'
-        await runStage(() => ports.drainMaintenance())
+        await ports.drainMaintenance()
         stage = 'quiescence'
-        while (true) {
-          const idle = await runStage(() => ports.quiescent(signal))
-          // Keep cleanup available until it has closed native processes and transfers.
-          if (idle) cleanupPaused = true
-          if (idle && ports.active().length === 0) break
-          await runStage(() => wait(100, undefined, { signal }))
-        }
-        signal.throwIfAborted()
-      } catch (error) {
-        draining = false
-        cleanupPaused = false
-        throw error
-      } finally {
-        clearInterval(diagnostics)
-        clearTimeout(deadline)
-        signal.removeEventListener('abort', abort)
-        if (attempt === controller) attempt = undefined
-      }
+        while (!await ports.quiescent()) await wait(100, undefined, { signal: ports.signal })
+        ports.signal.throwIfAborted()
+      } finally { clearInterval(diagnostics) }
     },
-    resume() {
-      attempt?.abort(new DomainError('WORKER_UPDATE_DRAIN_ABANDONED', 'Worker update drain was abandoned.', 409))
-      draining = false
-      cleanupPaused = false
-    },
+    resume() { draining = false },
     isDraining() { return draining },
     assertAdmission(namespace: string, payload: unknown) {
-      if (draining && (isWorkerAdmission(namespace, payload)
-        || cleanupPaused && isWorkerSourceCleanup(namespace, payload))) {
+      if (draining && isWorkerAdmission(namespace, payload)) {
         throw new DomainError('WORKER_RUNTIME_DRAINING',
           'This computer is waiting for active work to finish before updating its runtime.', 409)
       }
@@ -929,9 +857,27 @@ export function createWorkerRuntimeDrain(ports: {
   }
 }
 
-function isWorkerSourceCleanup(namespace: string, payload: unknown): boolean {
-  return namespace === SOURCE_OPERATION_EXTENSION.namespace && payload !== null && typeof payload === 'object'
-    && 'operation' in payload && [
-      'sources.reclaim-reservation', 'sources.reconcile-preparation', 'sources.release',
-    ].includes(String(payload.operation))
+function isWorkerAdmission(namespace: string, payload: unknown): boolean {
+  if (namespace === 'harness-discovery-v1' || namespace === 'host-harness-check-v1') return true
+  if (!payload || typeof payload !== 'object') return false
+  if (namespace === REMOTE_PREPARATION_EXTENSION.namespace && 'method' in payload) {
+    return payload.method === 'prepare'
+  }
+  if (namespace === 'execution-v1' && 'method' in payload) {
+    return ['job-dispatch', 'prepare', 'prepare-review', 'start-turn', 'session-compact', 'capabilities', 'inspect-mcp',
+      'conversation.open', 'conversation.initial-turn', 'conversation.start-turn', 'conversation.compact',
+      'conversation.capabilities', 'conversation.inspect-mcp', 'conversation.inspect-entry', 'conversation.compact-read',
+      'conversation.file-copy']
+      .includes(String(payload.method))
+  }
+  if (namespace === 'byte-transfer-v1' && 'method' in payload) return payload.method === 'start'
+  if (namespace === 'rsync-stage-v1' && 'method' in payload) {
+    return ['source-prepare', 'receiver-prepare', 'writer-prepare', 'writer-activate'].includes(String(payload.method))
+  }
+  if (!('operation' in payload)) return false
+  return namespace === SOURCE_OPERATION_EXTENSION.namespace && payload.operation === 'sources.prepare'
+    || namespace === COMPUTER_MAINTENANCE_NAMESPACE && payload.operation === 'start'
+    || namespace === 'job-runtime-qualification-v1' && ['start', 'run'].includes(String(payload.operation))
+    || namespace === CI_RUNTIME_NAMESPACE && payload.operation === 'prepare'
+    || namespace === CI_HOST_NAMESPACE && payload.operation === 'start'
 }

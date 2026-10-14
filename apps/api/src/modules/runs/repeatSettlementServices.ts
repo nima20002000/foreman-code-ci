@@ -1,11 +1,11 @@
 import { isDeepStrictEqual } from 'node:util'
 import { AcceptedWorkflowRunV3Schema, GraphIdSchema, type AcceptedWorkflowRunV3 } from '@foreman-code/contracts/wave25'
 import { assertGraphTransaction, beforeGraphCommit, poisonGraphTransaction, type GraphTransactionSql } from '../run-graph/connection.js'
-import { settleRepeatNativeExecutionsWithProofLocked } from '../interactions/repeatNativeSettlementBatch.js'
+import { settleRepeatNativeExecutionWithProofLocked } from '../interactions/repeatNativeSettlement.js'
 import { repeatNativePending } from '../interactions/repeatNativeEvidence.js'
 import type { RunOwnership } from './ownership.js'
 import type { RepeatRepositoryServices } from './repeatRepositoryHost.js'
-import { readRepeatExecutionsLocked, type StoredRepeatExecution } from './repeatExecutionRead.js'
+import { readRepeatExecutionLocked, type StoredRepeatExecution } from './repeatPostgres.js'
 import { readAcceptedRepeatRunLocked } from './repeatStartRead.js'
 
 /** Shared current settlement proof. Every ordinary attempt and actual repeat
@@ -43,18 +43,20 @@ export async function assertSettlementLocked(sql: GraphTransactionSql, suppliedR
     const fence = structuredClone(await owner.readOneShotFence(sql))
     const snapshot = await readAcceptedRepeatRunLocked(sql, run.id)
     if (!isDeepStrictEqual(snapshot.run, run)) return repeatNativePending('RUN_PIN_CONFLICT')
-    const executions = await readRepeatExecutionsLocked(sql, snapshot, ids)
     const captured: unknown[] = []
-    for (const [index, stored] of executions.entries()) {
+    for (const id of ids) {
       // This reader verifies the exact ref, occurrence ancestry, configuration,
       // immutable input binding AND its canonical input.bind receipt on G1.
-      if (stored.execution.id !== ids[index] || stored.execution.runId !== run.id) {
+      const stored = await readRepeatExecutionLocked(sql, snapshot, id)
+      if (stored.execution.id !== id || stored.execution.runId !== run.id) {
         return repeatNativePending('REPEAT_NATIVE_IDENTITY_CONFLICT')
       }
       captured.push(structuredClone(executionPins(stored)))
+      // Includes exact requester/reviewer generations, original native approval
+      // proof, revoked resource bindings and canonical receipt finalizers.
+      // The helper enlists its own exact-generation recheck before COMMIT.
+      await settleRepeatNativeExecutionWithProofLocked(sql, run.id, stored.execution)
     }
-    // Native settlement retains its generation checks until commit.
-    await settleRepeatNativeExecutionsWithProofLocked(sql, run.id, executions.map(stored => stored.execution))
     const checkOwner = async () => {
       owner.assertOwned()
       if (owner.runId !== run.id || !isDeepStrictEqual(fence, await owner.readOneShotFence(sql))) {
@@ -68,8 +70,8 @@ export async function assertSettlementLocked(sql: GraphTransactionSql, suppliedR
         await checkOwner()
         const final = await readAcceptedRepeatRunLocked(sql, run.id)
         if (!isDeepStrictEqual(immutableRun(final.run), immutableRun(run))) return repeatNativePending('RUN_PIN_CONFLICT')
-        const current = await readRepeatExecutionsLocked(sql, final, ids)
-        for (const [index, stored] of current.entries()) {
+        for (const [index, id] of ids.entries()) {
+          const stored = await readRepeatExecutionLocked(sql, final, id)
           if (!isDeepStrictEqual(executionPins(stored), captured[index])) {
             return repeatNativePending('REPEAT_NATIVE_IDENTITY_CONFLICT')
           }
