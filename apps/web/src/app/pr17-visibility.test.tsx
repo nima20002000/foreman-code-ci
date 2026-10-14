@@ -33,7 +33,7 @@ function success(enabled = true) {
   defaults = { data: { value: { operator: { uiEnabled: enabled } } }, error: null, failureReason: null,
     isSuccess: true, isError: false, failureCount: 0, dataUpdatedAt: Date.now() }
 }
-describe('Operator last-known visibility', () => {
+describe('PR17 authorized last-known visibility', () => {
   it('retains enabled UI on a failed background refresh and shows a warning', () => {
     success()
     const view = mountShell()
