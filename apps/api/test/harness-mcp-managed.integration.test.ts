@@ -109,8 +109,11 @@ it('requests exact Foreman Code and Linear presets through authenticated MCP, th
     expect(decisionHttp.statusCode).toBe(200)
     expect(HarnessMcpPlanSchema.parse(decisionHttp.json()).status).toBe('applied')
     expect((await listed('codex')).servers).toEqual(expect.arrayContaining([
-      expect.objectContaining({ name: 'example', endpoint: 'https://example.test/mcp' }),
+      expect.objectContaining({ name: 'example', label: 'https://example.test', transport: 'remote',
+        enabled: true, origin: 'user', editable: true }),
     ]))
+    expect((await listed('codex')).servers.find((server) => server.name === 'example')?.endpoint).toBeUndefined()
+    expect(JSON.parse(await readFile(file, 'utf8')).example.url).toBe('https://example.test/mcp')
     const reconcileInput = { planId: genericPlan.id, commandId: randomUUID() }
     const reconcileHttp = await app.inject({ method: 'POST', url: '/api/management/harnesses/mcp/reconcile',
       headers: { authorization: `Bearer ${delegated.token}` }, payload: reconcileInput })
@@ -269,7 +272,7 @@ it('requests exact Foreman Code and Linear presets through authenticated MCP, th
     expect(recovered.servers[0]?.enabled).toBe(false)
     const audits = await pool.query<{ principal_id: string; source: string }>("select principal_id,source from management_audit where action='harness.mcp.apply'")
     expect(audits.rows.length).toBeGreaterThan(0)
-    expect(new Set(audits.rows.map((row) => `${row.principal_id}:${row.source}`))).toEqual(new Set([`${delegated.principal.id}:mcp`]))
+    expect(new Set(audits.rows.map((row) => `${row.principal_id}:${row.source}`))).toEqual(new Set([`${delegated.principal.id}:mcp`, `${delegated.principal.id}:http`]))
     vi.restoreAllMocks()
     const removal = HarnessMcpPlanSchema.parse(decodeMcpToolResult((await client.callTool({ name: 'harness_mcp_managed_request', arguments: {
       harness: 'codex', preset: 'graphql', installed: false, expectedRevision: recovered.revision, commandId: randomUUID(),
