@@ -85,11 +85,7 @@ export async function withProductionSourceSnapshot(repository, directory, action
   const { stdout } = await git(['rev-parse', 'HEAD'])
   const commit = stdout.trim()
   const { stdout: origin } = await git(['remote', 'get-url', 'origin'])
-  const present = await lstat(source).then(() => true, error => {
-    if (error.code === 'ENOENT') return false
-    throw error
-  })
-  const reusable = present && await git(['rev-parse', '--git-dir'], source).then(() => true)
+  const reusable = await git(['rev-parse', '--git-dir'], source).then(() => true, () => false)
   if (!reusable) {
     await rm(source, { recursive: true, force: true })
     await git(['clone', '--quiet', '--shared', '--no-checkout', repository, source])
@@ -318,7 +314,6 @@ Environment=FOREMAN_CODE_WORKER_ARTIFACT_DIRECTORY=@APP@/current/worker-artifact
 Environment=PATH=@PATH@
 ExecStart=@NODE@ @APP@/current/apps/api/dist/server.js
 ExecStartPost=@NODE@ @APP@/current/scripts/local-production.mjs health
-ExecStartPost=/usr/bin/systemctl --user --no-block restart foreman-worker-publish.service
 Restart=always
 RestartSec=3
 TimeoutStartSec=120
@@ -538,8 +533,7 @@ export async function pruneApiDependencies(root, releases, { removeInBackground 
 async function deployApiPackage(run, destination) {
   const failures = []
   try {
-    // Shared-lockfile deployment keeps resolved versions and their supply-chain checks.
-    await run('corepack', ['pnpm', '--filter', '@foreman-code/api', 'deploy', '--prod', destination])
+    await run('corepack', ['pnpm', '--filter', '@foreman-code/api', 'deploy', '--prod', '--legacy', destination])
     // Freeze mutable workspace files; pnpm already isolates installed dependencies.
     const contracts = await realpath(join(destination, 'node_modules/@foreman-code/contracts'))
     for (const packageDirectory of [destination, contracts]) {
@@ -560,7 +554,8 @@ async function deployApiPackage(run, destination) {
   } catch (error) {
     failures.push(error)
   }
-  // Subsequent build commands use the complete workspace, including development dependencies.
+  // Legacy deployment records production-only settings in the source workspace.
+  // Restore them through pnpm before another workspace command checks its dependencies.
   try {
     await run('corepack', ['pnpm', 'install', '--frozen-lockfile'])
   } catch (error) {
@@ -812,14 +807,6 @@ export async function pruneReleases(releasesDirectory, keep,
     if (error.code !== 'ENOENT') throw error
   }
   const kept = new Set(await Promise.all(retained.map(path => realpath(path))))
-  // Retry detached removals left behind by an interrupted installer or remover.
-  const parent = dirname(directory)
-  for (const entry of await readdir(parent, { withFileTypes: true })) {
-    if (!entry.isDirectory() || !entry.name.startsWith('.pruned-releases-')) continue
-    const abandoned = join(parent, entry.name)
-    const inUse = [...kept].some(path => path === abandoned || path.startsWith(`${abandoned}/`))
-    if (!inUse) await removeInBackground(abandoned)
-  }
   const removed = []
   const candidates = []
   for (const name of await readdir(directory)) {

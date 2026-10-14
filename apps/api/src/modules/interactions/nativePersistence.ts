@@ -31,24 +31,13 @@ export function nativePersistenceRedactor(secrets: readonly string[]) {
   }
   const error = (input: unknown): unknown => {
     if (input instanceof AggregateError) return new AggregateError([...input.errors].map(error), text(input.message))
-    if (input instanceof DomainError) {
-      const sanitized = new DomainError(text(input.code), text(input.message), input.status, value(input.details))
-      if (input.cause !== undefined) sanitized.cause = error(input.cause)
-      return sanitized
-    }
+    if (input instanceof DomainError) return new DomainError(text(input.code), text(input.message), input.status, value(input.details))
     if (input instanceof HarnessExecutionError) return new HarnessExecutionError(
       text(input.result.error?.code ?? 'NATIVE_EXECUTION_FAILED'), text(input.message), input.result.error?.retryable,
     )
     // Do not forward a raw provider stack or enumerable environment/error fields.
-    if (input instanceof Error) {
-      const sanitized = input.cause === undefined ? new Error(text(input.message))
-        : new Error(text(input.message), { cause: error(input.cause) })
-      const { code, retryable } = input as Error & { code?: unknown; retryable?: unknown }
-      if (typeof code === 'string') Object.assign(sanitized, { code: text(code) })
-      else if (typeof code === 'number') Object.assign(sanitized, { code })
-      if (typeof retryable === 'boolean') Object.assign(sanitized, { retryable })
-      return sanitized
-    }
+    if (input instanceof Error) return input.cause === undefined ? new Error(text(input.message))
+      : new Error(text(input.message), { cause: error(input.cause) })
     return value(input)
   }
   return { value, text, error }

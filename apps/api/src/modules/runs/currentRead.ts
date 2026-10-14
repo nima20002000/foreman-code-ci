@@ -12,7 +12,6 @@ import { DomainError, databaseReadFailure } from '../errors.js'
 import { withExclusiveGraphConnection, type GraphTransactionSql } from '../run-graph/connection.js'
 import { readAcceptedRepeatRunLocked, readRecordedRepeatRunSnapshot, type AcceptedRepeatRunSnapshot } from './repeatStartRead.js'
 import { readRepeatExecutionLocked } from './repeatPostgres.js'
-import { readExecutionQueueReason } from './executionQueue.js'
 
 /** Readback uses one unlocked snapshot; mutation callers retain admission locks. */
 export async function withCurrentRunRead<T>(pool: pg.Pool, principal: ManagementPrincipal,
@@ -58,9 +57,7 @@ export function readCurrentRunDetails(pool: pg.Pool, principal: ManagementPrinci
       // Reuse A's exact readback, including physical node/Agent/configuration,
       // occurrence/attempt/input identity and its existing canonical source
       // receipt. A loose JSON execution parser cannot qualify current readback.
-      const execution = (await readRepeatExecutionLocked(sql, snapshot, id)).execution
-      const queueReason = readExecutionQueueReason(execution)
-      executions.push(queueReason ? { ...execution, queueReason } : execution)
+      executions.push((await readRepeatExecutionLocked(sql, snapshot, id)).execution)
     }
     const activityRows = (await sql.query<{ sequence: string; source: string; kind: string; harness_execution_id: string | null;
       occurred_at: Date; payload: Record<string, unknown> }>(

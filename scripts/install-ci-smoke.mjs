@@ -13,8 +13,7 @@ function httpClient(origin, signal, requestTimeoutMs, token, log = console.log) 
     const timeout = AbortSignal.timeout(timeoutMs)
     try {
       const response = await fetch(`${origin}${path}`, { ...options,
-        headers: { origin, ...(options.body ? { 'content-type': 'application/json' } : {}),
-          ...(token ? { authorization: `Bearer ${token}` } : {}) },
+        headers: { origin, 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
         signal: AbortSignal.any([signal, timeout]) })
       const body = await response.text()
       if (!response.ok) throw new Error(`${method} ${path}: HTTP ${response.status}: ${body}`)
@@ -52,7 +51,7 @@ function smokeTargets(computers) {
 }
 
 export async function runInstallCiSmoke({ origin, workspaceId, commit, token, probeDurationMs = 30_000,
-  timeoutMs = 240_000, requestTimeoutMs = 5000, admissionTimeoutMs = 60_000, pollMs = 1000, log = console.log }) {
+  timeoutMs = 165_000, requestTimeoutMs = 5000, admissionTimeoutMs = 60_000, pollMs = 1000, log = console.log }) {
   const controller = new AbortController()
   const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(timeoutMs)])
   const request = httpClient(origin, signal, requestTimeoutMs, token, log)
@@ -68,38 +67,17 @@ export async function runInstallCiSmoke({ origin, workspaceId, commit, token, pr
     } while (Date.now() < until || !ciFinished)
   }
   const admit = async selection => {
-    const body = JSON.stringify({ suite: selection.smokeComputer ? 'integration' : 'unit', scope: 'affected', commit,
-      commandId: randomUUID(), priority: 'high', noSupersede: true, ...selection })
-    let result
-    while (true) {
-      try {
-        result = await request(root, { method: 'POST', timeoutMs: admissionTimeoutMs, step: `admission ${++admissionCount}`, body })
-        break
-      } catch (error) {
-        // A Worker still reconnecting after the restart is retried; the smoke deadline bounds the wait.
-        if (signal.aborted || !/HTTP 503: .*"retryable":true/.test(error.message)) throw error
-        log(error.message)
-        await delay(pollMs, undefined, { signal })
-      }
-    }
+    const result = await request(root, { method: 'POST', timeoutMs: admissionTimeoutMs,
+      step: `admission ${++admissionCount}`, body: JSON.stringify({
+      suite: selection.smokeComputer ? 'integration' : 'unit', scope: 'affected', commit, commandId: randomUUID(), priority: 'high',
+      noSupersede: true, ...selection }) })
     for (const part of result.partitions ?? [result]) tickets.add(part.ticketId)
     if (result.partitions) throw new Error(`CI smoke unexpectedly split into ${result.partitions.length} jobs.`)
     return result.ticketId
   }
-  // A slow read right after a restart is retried; the smoke deadline still bounds every retry.
-  const read = async (path, step) => {
-    while (true) {
-      try {
-        return await request(path, { step })
-      } catch (error) {
-        if (signal.aborted || !/timed out/.test(error.message)) throw error
-        log(error.message)
-      }
-    }
-  }
   const wait = async (ticketId, computer) => {
     while (true) {
-      const result = await read(`${root}/${ticketId}`, `ticket ${ticketId}`)
+      const result = await request(`${root}/${ticketId}`, { step: `ticket ${ticketId}` })
       if (result.run.state === 'passed' && result.run.exitCode === 0) {
         if (computer) {
           if (!isDeepStrictEqual(result.run.computer?.hostRef, computer.hostRef)) {
@@ -127,7 +105,7 @@ export async function runInstallCiSmoke({ origin, workspaceId, commit, token, pr
     const second = await admit({ files: [] })
     await wait(first)
     await wait(second)
-    const targets = smokeTargets((await read(`${root}/computers`, 'computer discovery')).computers)
+    const targets = smokeTargets((await request(`${root}/computers`, { step: 'computer discovery' })).computers)
     if (!targets.length) throw new Error('CI smoke has no ready executor. Configure CI or explicitly opt out.')
     const jobs = []
     for (const computer of targets) {

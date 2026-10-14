@@ -1,4 +1,3 @@
-import { optionalCommandId } from './management/commands.js'
 import { z } from 'zod'
 import { HarnessModelOptionSchema, HarnessOptionsResultSchema } from './harnessOptions.js'
 import { DeviceProvisioningTargetSchema } from './deviceResources.js'
@@ -83,7 +82,7 @@ export const ProviderAccountsSnapshotSchema = z.object({
   }
 })
 export const ProviderAccountCommandInputSchema = z.object({
-  commandId: optionalCommandId(z.string().trim().min(8).max(200)),
+  commandId: z.string().trim().min(8).max(200),
   expectedRevision: z.number().int().nonnegative(),
   target: DeviceProvisioningTargetSchema.optional(),
 }).strict()
@@ -130,7 +129,7 @@ const ProviderAccountAuthenticationStateSchema = z.enum([
 ])
 export const ProviderAccountAuthenticationOperationSchema = z.object({
   id: z.uuid(),
-  commandId: ProviderAccountCommandInputSchema.shape.commandId.removeDefault(),
+  commandId: ProviderAccountCommandInputSchema.shape.commandId,
   inputHash: z.string().regex(/^sha256:[a-f0-9]{64}$/),
   binding: ProviderAccountBindingSchema,
   intent: z.enum(['sign-in', 'sign-out']),

@@ -1,4 +1,3 @@
-import { logIgnoredError } from '../diagnostics/ignoredError.js'
 import type { NativeSessionReference, PendingNativeInteraction } from '@foreman-code/contracts'
 
 /** Read-only exact-request inquiry. Inspection must not attach, start, auto-reply or reconcile a response. */
@@ -42,10 +41,7 @@ export async function inspectNativeResponse(manager: ResponseAvailabilityInspect
   if (!manager.inspectResponseAvailability) return unavailableNativeResponse(session, query, 'unsupported')
   let result: NativeResponseAvailability
   try { result = await manager.inspectResponseAvailability(session, query, input.signal) }
-  catch (error) {
-    logIgnoredError('harness', 'inspect native response availability', error)
-    return unavailableNativeResponse(session, query, 'callback_lost')
-  }
+  catch { return unavailableNativeResponse(session, query, 'callback_lost') }
   if (!input.isCurrent() || input.signal?.aborted) return unavailableNativeResponse(session, query, 'session_closed')
   return normalizeResponseAvailability(session, query, result)
 }

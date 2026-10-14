@@ -7,9 +7,6 @@ import { readAcceptedRepeatRunLocked, readRecordedRepeatRunSnapshot } from '../s
 import { readRepeatExecutionLocked } from '../src/modules/runs/repeatPostgres.js'
 import { RUN_ACTIVITIES_BOUNDS_SQL, RUN_ACTIVITIES_PAGE_SQL } from '../src/modules/runs/activitiesSql.js'
 import { RUN_NATIVE_ACTIVITY_FACTS_SQL } from '../src/modules/runs/nativeActivitySnapshot.js'
-import { RunnerAdmission } from '../src/modules/runs/runnerAdmission.js'
-import { ExecutionLimiter } from '../src/modules/runs/limiter.js'
-import { compactRunDetails } from '../src/mcp/operator/runSummary.js'
 
 // The immutable publication readers are ports here; live grants, transaction
 // ownership, bounded queries and public redaction run their real implementations.
@@ -18,17 +15,15 @@ vi.mock('../src/modules/runs/repeatPostgres.js', async (importOriginal) => ({
   ...await importOriginal<typeof import('../src/modules/runs/repeatPostgres.js')>(), readRepeatExecutionLocked: vi.fn() }))
 beforeEach(() => vi.resetAllMocks())
 
-function fixture(queued = false) {
+function fixture() {
   const f = makeCurrentWorkflowFixture('history', 'single')
   const run = AcceptedWorkflowRunV3Schema.parse({ ...f.run, authorizationPrincipalId: 'private-authority',
-    ...(queued ? { executionState: 'running', outcome: 'pending' } : {
-      executionState: 'completed', outcome: 'succeeded', result: { outcome: 'succeeded', output: { text: 'saved-result' } },
-      finishedAt: f.createdAt }), executionLocation: { runnerId: 'runner', rootPath: '/private/project', locationRevision: 1,
+    executionState: 'completed', outcome: 'succeeded', result: { outcome: 'succeeded', output: { text: 'saved-result' } },
+    finishedAt: f.createdAt, executionLocation: { runnerId: 'runner', rootPath: '/private/project', locationRevision: 1,
       identityHash: `sha256:${'1'.repeat(64)}` } })
   const { executionId, ...identity } = f.identities[0]!
   const execution = { ...identity, id: executionId, runId: run.id,
-    input: {}, createdAt: f.createdAt,
-    ...(queued ? { state: 'queued' as const } : { state: 'completed' as const, result: run.result, finishedAt: f.createdAt }),
+    input: {}, state: 'completed' as const, result: run.result, createdAt: f.createdAt, finishedAt: f.createdAt,
     workingDirectory: '/private/project', runtimeDirectory: '/private/runtime' }
   const worktree: RunWorktree = { workingDirectory: '/private/worktree', branch: 'run-branch',
     baseCommit: 'a'.repeat(40), state: 'retained' }
@@ -42,13 +37,8 @@ function fixture(queued = false) {
   vi.mocked(readRepeatExecutionLocked).mockResolvedValue({ execution, ref: { nodeId: execution.workflowNodeId, occurrence: null },
     slotId: 'history-slot', input: { executionSemanticsVersion: 3, runInput: {}, occurrence: null, entry: null, predecessors: [] },
     inputDigest: `sha256:${'1'.repeat(64)}`, accepted: true })
-  let transactionOutcome = 'open'
   const query = vi.fn(async (sql: string, values?: unknown[]) => {
-    if (/^(begin|commit|rollback)/.test(sql)) {
-      if (sql === 'commit') transactionOutcome = 'committed'
-      if (sql === 'rollback') transactionOutcome = 'rolled_back'
-      return { rows: [] }
-    }
+    if (/^(begin|commit|rollback)/.test(sql)) return { rows: [] }
     if (sql.startsWith('select workspace_id,workflow_id from runs')) {
       expect(values).toEqual([run.id, run.workspaceId])
       return { rows: [{ workspace_id: run.workspaceId, workflow_id: run.workflowId }] }
@@ -66,8 +56,7 @@ function fixture(queued = false) {
     }
     if (sql.startsWith('select e.id,e.attempt,e.activity_record_revision')) {
       expect(values).toEqual([run.id, run.workspaceId])
-      const outcome = 'result' in execution ? execution.result?.outcome : undefined
-      return { rows: [{ id: execution.id, attempt: 1, revision: '1', state: execution.state, outcome,
+      return { rows: [{ id: execution.id, attempt: 1, revision: '1', state: execution.state, outcome: execution.result?.outcome,
         created_at: f.createdAt, started_at: null, native_session_id: null, harness: null, native_revision: '0' }] }
     }
     if (sql.includes('from workflow_job_executions')) { expect(values).toEqual([run.id, run.workspaceId, run.workflowId, run.workflowVersionId]); return { rows: [] } }
@@ -85,60 +74,11 @@ function fixture(queued = false) {
   const release = vi.fn()
   const pool = { connect: async () => ({ query, release, on() {}, removeListener() {} }) } as unknown as pg.Pool
   return { ...f, run, execution, worktree, principal, query, release,
-    transactionOutcome: () => transactionOutcome,
     read: () => readCurrentRunDetails(pool, principal, run.workspaceId, run.id),
     grants: (value: ManagementGrant[]) => { liveGrants = value }, revoke: () => { revoked = true } }
 }
 
 describe('saved current Run read', () => {
-  it('reports a live host-capacity wait and clears it when the execution is admitted', async () => {
-    const f = fixture(true)
-    const gate = new RunnerAdmission(1)
-    let release!: () => void
-    const held = gate.run('blocking-run', new AbortController().signal,
-      () => new Promise<void>(resolve => { release = resolve }))
-    const queued = gate.run(f.run.id, new AbortController().signal, async () => undefined,
-      { execution: f.execution })
-    try {
-      expect((await f.read()).executions[0]).toMatchObject({ queueReason: {
-        kind: 'host_capacity', hostKey: 'main', limit: 1, since: expect.any(String),
-      } })
-      expect(compactRunDetails(await f.read()).executions[0]).toMatchObject({ queueReason: {
-        kind: 'host_capacity', hostKey: 'main', limit: 1,
-      } })
-      f.grants([])
-      await expect(f.read()).rejects.toMatchObject({ code: 'ACCESS_DENIED' })
-    } finally {
-      release()
-      await Promise.all([held, queued])
-    }
-    f.grants(f.principal.grants)
-    expect((await f.read()).executions[0]).not.toHaveProperty('queueReason')
-  })
-
-  it('reports the saved workflow concurrency limit and clears a canceled wait', async () => {
-    const f = fixture(true)
-    const limiter = new ExecutionLimiter(1)
-    let release!: () => void
-    const held = limiter.run(new AbortController().signal,
-      () => new Promise<void>(resolve => { release = resolve }))
-    const stop = new AbortController()
-    const queued = limiter.run(stop.signal, async () => undefined, f.execution)
-    const canceled = expect(queued).rejects.toThrow('Stopped while queued')
-    try {
-      expect((await f.read()).executions[0]).toMatchObject({ queueReason: {
-        kind: 'workflow_parallelism', limit: 1, since: expect.any(String),
-      } })
-      stop.abort(new Error('Stopped while queued'))
-      await canceled
-      expect((await f.read()).executions[0]).not.toHaveProperty('queueReason')
-    } finally {
-      if (!stop.signal.aborted) stop.abort(new Error('Stopped while queued'))
-      release()
-      await Promise.all([held, canceled])
-    }
-  })
-
   it('returns the exact V3 Run and accepted execution without exposing private location or authority', async () => {
     const f = fixture()
     const value = await f.read()
@@ -150,7 +90,7 @@ describe('saved current Run read', () => {
     expect(value).not.toHaveProperty('worktrees')
     expect(readRepeatExecutionLocked).toHaveBeenCalledWith(expect.objectContaining({ transaction: true }),
       expect.objectContaining({ run: f.run }), f.execution.id)
-    expect(f.transactionOutcome()).toBe('committed')
+    expect(f.query).toHaveBeenCalledWith('commit')
     expect(f.release).toHaveBeenCalledOnce()
   })
 
@@ -171,7 +111,7 @@ describe('saved current Run read', () => {
     await expect(f.read()).rejects.toMatchObject({ status: 403 })
     expect(readRecordedRepeatRunSnapshot).not.toHaveBeenCalled()
     expect(readRepeatExecutionLocked).not.toHaveBeenCalled()
-    expect(f.transactionOutcome()).toBe('rolled_back')
+    expect(f.query).toHaveBeenCalledWith('rollback')
     expect(f.release).toHaveBeenCalledOnce()
   })
 
@@ -189,6 +129,7 @@ describe('saved current Run read', () => {
     const f = fixture()
     vi.mocked(readRepeatExecutionLocked).mockRejectedValue(new Error('execution pin changed'))
     await expect(f.read()).rejects.toThrow('execution pin changed')
-    expect(f.transactionOutcome()).toBe('rolled_back')
+    expect(f.query).not.toHaveBeenCalledWith('commit')
+    expect(f.query).toHaveBeenCalledWith('rollback')
   })
 })

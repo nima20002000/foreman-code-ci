@@ -40,12 +40,7 @@ export function readAgentCiReport(output: unknown): AgentCiReport {
   const value: unknown = typeof raw === 'string' ? JSON.parse(raw) : raw
   // Workflow Agents return their deliverable inside the routed workflow output.
   const routed = z.object({ data: z.object({ latestDeliverable: z.unknown() }) }).safeParse(value)
-  const deliverable = routed.success ? routed.data.data.latestDeliverable : value
-  // The top-level ticketId only names the group handle; Agents sometimes omit it while reporting every ticket.
-  const first = z.object({ tickets: z.array(z.object({ ticketId: z.string() })).min(1) }).safeParse(deliverable)
-  const omitted = first.success && typeof deliverable === 'object' && deliverable !== null && !('ticketId' in deliverable)
-  return AgentCiReportSchema.parse(omitted
-    ? { ...deliverable, ticketId: first.data.tickets[0]!.ticketId } : deliverable)
+  return AgentCiReportSchema.parse(routed.success ? routed.data.data.latestDeliverable : value)
 }
 
 export function ciTerminal(state: string): boolean {

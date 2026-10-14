@@ -87,10 +87,7 @@ describe.runIf(postgresEnabled)('interval execution inspection', () => {
         } else if (state === 'running') {
           checkGate.resolve()
           workerGate.resolve()
-          await vi.waitFor(async () => expect((await runtime.runs.getExecution(executionId))?.state).toBe('completed'))
-          await runtime.stop()
-          await runtime.engine.cancel(f.run.id)
-          await Promise.allSettled([finished])
+          await finished
         } else {
           const ordinary = page.items.find(item => item.workflowNodeId === watcher.id && item.tickIndex === undefined)
           expect(ordinary).toBeDefined()
@@ -112,11 +109,7 @@ describe.runIf(postgresEnabled)('interval execution inspection', () => {
       checkGate.resolve()
       workerGate.resolve()
       admission.mockRestore()
-      if (finished) {
-        await runtime.stop()
-        await runtime.engine.cancel(f.run.id)
-        await Promise.allSettled([finished])
-      }
+      await finished
       await Promise.allSettled(clients.map(client => client.close()))
       await app.close()
       await runtime.close()

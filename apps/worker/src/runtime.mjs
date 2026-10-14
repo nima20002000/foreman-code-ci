@@ -9,32 +9,15 @@ function socketName(stateDirectory) {
 }
 
 export async function readWorkerStatus(stateDirectory) {
-  const canonical = await realpath(stateDirectory).catch(error => {
-    if (error.code === 'ENOENT') return null;
-    throw error;
-  });
+  const canonical = await realpath(stateDirectory).catch(() => { /* ignore: an unresolvable state directory reads as no running worker */ return null; });
   if (!canonical) return null;
-  return new Promise((accept, reject) => {
+  return new Promise((accept) => {
     const socket = connect(socketName(canonical));
     let bytes = '';
-    const fail = error => { socket.destroy(); reject(error); };
-    socket.setTimeout(1000, () => fail(new WorkerError('worker_status_timeout', 'Worker status timed out.')));
-    socket.on('error', error => {
-      socket.destroy();
-      if (error.code === 'ECONNREFUSED' || error.code === 'ENOENT') accept(null);
-      else reject(error);
-    });
-    socket.on('data', chunk => {
-      bytes += chunk;
-      if (Buffer.byteLength(bytes) > 2048) fail(new WorkerError('worker_status_oversized', 'Worker status exceeds the size limit.'));
-    });
-    socket.on('end', () => {
-      try {
-        const status = JSON.parse(bytes);
-        if (!status || typeof status !== 'object' || status.active !== true) throw new Error('Invalid status');
-        accept(status);
-      } catch (cause) { fail(new WorkerError('worker_status_invalid', 'Worker status is invalid.', { cause })); }
-    });
+    socket.setTimeout(1000, () => { socket.destroy(); accept(null); });
+    socket.on('error', () => { socket.destroy(); accept(null); });
+    socket.on('data', (chunk) => { bytes += chunk; if (bytes.length > 2048) { socket.destroy(); accept(null); } });
+    socket.on('end', () => { try { accept(JSON.parse(bytes)); } catch { accept(null); } });
   });
 }
 

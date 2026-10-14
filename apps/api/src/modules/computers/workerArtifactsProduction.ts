@@ -1,10 +1,8 @@
 import type pg from 'pg'
-import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { readProductEnvironment } from '@foreman-code/contracts/product-environment'
 import { readProductVersion } from '../../infrastructure/productVersion.js'
-import { createWorkerArtifactExtension, readWorkerManifestSha256s, readWorkerContentSha256s,
-  readWorkerReleasePublication } from './workerArtifacts.js'
+import { createWorkerArtifactExtension, readWorkerManifestSha256s } from './workerArtifacts.js'
 
 interface ProductionWorkerArtifactOptions {
   environment: NodeJS.ProcessEnv
@@ -24,25 +22,9 @@ export function readProductionWorkerManifestSha256s(options: ProductionWorkerArt
   return readWorkerManifestSha256s(artifactLocation(options))
 }
 
-export function readProductionWorkerContentSha256s(options: ProductionWorkerArtifactOptions) {
-  return readWorkerContentSha256s(artifactLocation(options))
-}
-
-export function readProductionWorkerReleasePublication(options: ProductionWorkerArtifactOptions) {
-  return readWorkerReleasePublication(artifactLocation(options))
-}
-
 export function createProductionWorkerArtifactExtension(options: ProductionWorkerArtifactOptions) {
   return createWorkerArtifactExtension({
     ...artifactLocation(options),
-    ciSmoke: async () => {
-      try {
-        return JSON.parse(await readFile(join(options.releaseDirectory, 'ci-smoke.json'), 'utf8')) as unknown
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
-        throw error
-      }
-    },
     buildEnabled: async binding => {
       if (!options.pool) return false
       const result = await options.pool.query(`select 1 from build_computer_preferences

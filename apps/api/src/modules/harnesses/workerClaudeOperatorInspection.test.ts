@@ -14,7 +14,6 @@ import type { ClaudeSdkClient, ClaudeSdkUserMessage } from './claudeSdk/port.js'
 import type { AcceptedClaudeProfile } from './instanceSettings/acceptedProfile.js'
 import type { NativeProcessRegistry } from './recovery/processRegistry.js'
 import { CLAUDE_PROFILE_CHECK_REVISION } from './claudeSdk/profileRevision.js'
-import { previousWorkerHarnessGeneration } from '../../../test/support/previousWorkerHarness.js'
 
 vi.mock('./installedClaudeInspection.js', () => ({ inspectInstalledClaude: vi.fn() }))
 vi.mock('./claudeSdk/official.js', () => ({ loadOfficialClaudeSdk: vi.fn() }))
@@ -114,22 +113,6 @@ function fixture() {
   }
 }
 
-it('inspects a previous Worker using its persisted session-scoped profile without rewriting the wire proof', async () => {
-  const f = fixture()
-  const generation = previousWorkerHarnessGeneration(f.binding)
-  f.accepted.persistedProof.connectionGeneration = generation
-  f.accepted.currentBinding.connectionGeneration = generation
-  f.request.mockImplementation(async payload => {
-    expect((payload as { proof: { connectionGeneration: string } }).proof.connectionGeneration).toBe(generation)
-    return { payload: { status: 'configured', harness: 'claude', endpoint: f.endpointUrl, routing: 'fixed',
-      checkedAt: new Date().toISOString() } }
-  })
-  expect(await f.inspect()).toMatchObject({ status: 'configured', harness: 'claude', endpoint: f.endpointUrl })
-  expect(f.request).toHaveBeenCalledOnce()
-  f.replaceConnection()
-  await expect(f.inspect()).rejects.toMatchObject({ code: 'HARNESS_INVENTORY_STALE' })
-})
-
 it('routes setup through the selected Worker SDK with zero model input and deny-all tool callbacks', async () => {
   const f = fixture()
   try {
@@ -162,7 +145,7 @@ it('rejects a changed Worker connection before sending its inspection request', 
     f.replaceConnection()
     await expect(f.inspect()).rejects.toMatchObject({ code: 'HARNESS_INVENTORY_STALE' })
     expect(f.request).not.toHaveBeenCalled()
-    expect(f.queries.length).toBe(0)
+    expect(f.queries).toEqual([])
   } finally { await f.inspection.close() }
 })
 
@@ -171,7 +154,7 @@ it('rejects an installed Worker SDK that differs from the saved native proof', a
   try {
     f.replaceSdk()
     await expect(f.inspect()).rejects.toMatchObject({ code: 'HARNESS_PROFILE_UNAVAILABLE' })
-    expect(f.queries.length).toBe(0)
+    expect(f.queries).toEqual([])
   } finally { await f.inspection.close() }
 })
 
@@ -228,6 +211,6 @@ it('keeps qualification requests separate from read-only configuration inspectio
       { binding: f.binding, signal: new AbortController().signal })
     expect(result.payload.qualified).toBe(true)
     expect(f.qualify).toHaveBeenCalledOnce()
-    expect(f.queries.length).toBe(0)
+    expect(f.queries).toEqual([])
   } finally { await f.inspection.close() }
 })

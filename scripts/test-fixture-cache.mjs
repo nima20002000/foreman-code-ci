@@ -90,7 +90,7 @@ export async function cachedTestFixture(root, namespace, inputs, populate) {
 
 /** A cached release is a donor when its recorded source snapshot is still the committed content and it was
  * built for the same target and host. Only the files the release really bundled define it. */
-async function releaseDonor(parent, repository, commit, identity, status) {
+async function releaseDonor(parent, repository, commit, identity) {
   for (const name of await readdir(parent)) {
     if (name.endsWith('.lock') || name.includes('.pending-')) continue
     const directory = join(parent, name)
@@ -107,9 +107,8 @@ async function releaseDonor(parent, repository, commit, identity, status) {
       }))
       if (files.every(file => current.get(file.path) === file.gitBlobSha1)) return directory
     } catch (error) {
+      // ignore: an incomplete or foreign entry is not a donor.
       if (error.code !== 'ENOENT' && !(error instanceof SyntaxError) && !(error instanceof TypeError)) throw error
-      status.status = 'invalid'
-      status.lastError = 'Release donor metadata is invalid or incomplete.'
     }
   }
   return null
@@ -117,24 +116,14 @@ async function releaseDonor(parent, repository, commit, identity, status) {
 
 /** Worker release cache. The exact-input key finds a direct hit; otherwise an earlier release whose bundled
  * files are unchanged is copied under the new key instead of rebuilt, so later jobs hit directly. */
-export async function cachedWorkerRelease(root, repository, commit, identityParts, build, options = {}) {
+export async function cachedWorkerRelease(root, repository, commit, identityParts, build) {
   const inputs = await workerFixtureInputs(repository, commit)
   const identity = createHash('sha256').update(JSON.stringify(identityParts.map(String))).digest('hex')
-  const status = { status: 'hit', lastError: null, missCount: 0, rebuildCount: 0 }
-  const directory = await cachedTestFixture(root, 'worker-artifacts', [inputs, ...identityParts.map(String)], async temporary => {
-    status.status = 'miss'
-    status.missCount++
+  return cachedTestFixture(root, 'worker-artifacts', [inputs, ...identityParts.map(String)], async temporary => {
     const parent = await realpath(join(root, 'worker-artifacts'))
-    const donor = await releaseDonor(parent, repository, commit, identity, status)
-    status.rebuildCount = donor ? 0 : 1
-    options.onCacheStatus?.({ ...status })
-    if (status.lastError) console.warn('Release cache unavailable', JSON.stringify(status))
+    const donor = await releaseDonor(parent, repository, commit, identity)
     if (donor) await cp(join(donor, 'release'), join(temporary, 'release'), { recursive: true, preserveTimestamps: true })
-    else {
-      await build(temporary)
-    }
+    else await build(temporary)
     await writeFile(join(temporary, 'identity'), identity, { mode: 0o600 })
   })
-  if (status.status === 'hit') options.onCacheStatus?.({ ...status })
-  return directory
 }

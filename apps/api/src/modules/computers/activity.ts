@@ -1,5 +1,4 @@
 import type pg from 'pg'
-import type { ReadObservation } from '@foreman-code/contracts'
 import { withTransaction } from '../../infrastructure/transaction.js'
 import { z } from 'zod'
 import {
@@ -21,7 +20,6 @@ const agentRow = z.object({ target: DeviceProvisioningTargetSchema, activity: Co
 /** A cloud CI service as Main's CI dispatcher sees it. */
 export interface CloudCiService {
   readonly provider: { readonly id: CloudCiActivity['provider']; readonly label: string; readonly slots: number }
-  readonly readinessObservation?: ReadObservation | undefined
   ready(): Promise<boolean>
 }
 
@@ -106,13 +104,11 @@ async function readCloud(sql: pg.PoolClient, mainId: string, clouds: readonly Cl
   const running = new Map(counts.rows.map(row => [row.provider, row.running]))
   const listed: CloudCiActivity[] = []
   for (const cloud of clouds) {
-    const ready = await cloud.ready()
-    const observation = cloud.readinessObservation
+    const ready = await cloud.ready().catch(() => false)
     const count = running.get(cloud.provider.id) ?? 0
     // A service Main is not logged in to and that runs nothing is not part of this installation.
-    if (ready || count > 0 || observation?.status === 'unavailable') listed.push({
-      provider: cloud.provider.id, name: cloud.provider.label, ready,
-      slots: cloud.provider.slots, running: count, ...(observation ? { observation } : {}) })
+    if (ready || count > 0) listed.push({ provider: cloud.provider.id, name: cloud.provider.label, ready,
+      slots: cloud.provider.slots, running: count })
   }
   return listed
 }

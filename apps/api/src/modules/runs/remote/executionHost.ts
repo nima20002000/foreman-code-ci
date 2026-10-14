@@ -65,7 +65,6 @@ export class RemoteExecutionHost {
   private readonly inspections = new Map<string, Set<AbortController>>()
   private readonly launchControllers = new Map<string, AbortController>()
   private readonly pendingEntries = new Map<string, Set<Promise<unknown>>>()
-  private readonly inFlightPreparations = new Map<string, { raw: WorkflowPreparation; task: Promise<unknown> }>()
   private readonly bindings = new Map<string, { intent: DispatchIntent; placement: AcceptedNodePlacement }>()
   private readonly residents = new Map<string, Resident>()
   constructor(private readonly ports: RemoteExecutionHostPorts) {}
@@ -226,7 +225,7 @@ export class RemoteExecutionHost {
     if (frame.method === 'receipt-continuation') throw new Error('Receipt continuations require the installed response owner.')
     if (frame.method === 'get-application-access') throw new Error('Application lease recovery requires the installed physical owner')
     if (frame.method === 'history') {
-      const result = await this.read(frame.intent.operationId, 'history', frame.correlationId, frame.afterSequence) as {
+      const result = await this.read(frame.intent.operationId, 'history', frame.correlationId) as {
         history: NativeHistory; context: ContextSnapshot | null;
         status: Awaited<ReturnType<RemoteOperationJournal['status']>>
       }
@@ -264,18 +263,13 @@ export class RemoteExecutionHost {
   }
   prepare(raw: WorkflowPreparation) {
     const intent = DispatchIntentSchema.parse(raw.intent)
-    // Main replays the same prepare when a dropped device link lost its reply; the replay joins the original.
-    const inFlight = this.inFlightPreparations.get(intent.operationId)
-    if (inFlight && isDeepStrictEqual(inFlight.raw, raw)) return inFlight.task
     const task = this.track(() => this.prepareOwned(raw))
-    this.inFlightPreparations.set(intent.operationId, { raw, task })
     const entries = this.pendingEntries.get(intent.operationId) ?? new Set<Promise<unknown>>()
     entries.add(task)
     this.pendingEntries.set(intent.operationId, entries)
     const completed = () => {
       entries.delete(task)
       if (!entries.size) this.pendingEntries.delete(intent.operationId)
-      if (this.inFlightPreparations.get(intent.operationId)?.task === task) this.inFlightPreparations.delete(intent.operationId)
     }
     void task.then(completed, completed)
     return task
@@ -576,8 +570,7 @@ export class RemoteExecutionHost {
     await resident.manager.cancel(resident.session)
     await this.settle(resident, `execution:${resident.intent.executionId}`)
   }
-  async read(operationId: string, method: 'history' | 'pending' | 'capabilities' | 'inspectMcp',
-    correlationId?: string, afterSequence?: number) {
+  async read(operationId: string, method: 'history' | 'pending' | 'capabilities' | 'inspectMcp', correlationId?: string) {
     const resident = await this.resident(operationId, 'read')
     if (correlationId && correlationId !== `execution:${resident.intent.executionId}`) {
       await this.ports.journal.loadReviewTurn(operationId, correlationId)
@@ -605,9 +598,7 @@ export class RemoteExecutionHost {
         if (archived) history = archived
         else if (resident.settlementHistory) history = structuredClone(resident.settlementHistory)
         else {
-          history = afterSequence !== undefined && resident.manager.reconcileHistoryPage
-            ? await resident.manager.reconcileHistoryPage(resident.session, correlation, afterSequence)
-            : await resident.manager.reconcile(resident.session, correlation)
+          history = await resident.manager.reconcile(resident.session, correlation)
           context = resident.manager.contextSnapshot?.(resident.session) ?? null
         }
       }
@@ -647,11 +638,7 @@ export class RemoteExecutionHost {
       return this.ports.journal.status(command.operationId)
     }
     const delivery = await this.ports.journal.controlDelivery(command)
-    if (delivery === 'acknowledged' && command.action.kind === 'stop') {
-      await this.settle(resident, `execution:${resident.intent.executionId}`)
-      return this.ports.journal.status(command.operationId)
-    }
-    if (command.action.kind !== 'stop' && (delivery === 'entered' || delivery === 'acknowledged')) {
+    if (delivery === 'entered' || delivery === 'acknowledged') {
       return this.ports.journal.status(command.operationId)
     }
     if (command.action.kind === 'respond') {
@@ -665,14 +652,9 @@ export class RemoteExecutionHost {
       await this.ports.journal.interaction(command.operationId, { interactionId: command.action.interactionId, interactionRevision: command.action.interactionRevision, nativeInteractionId: command.action.nativeInteractionId, native: command.native! })
     }
     const recorded = await this.ports.journal.control(command)
-    if (recorded.receipt.terminal || !recorded.dispatch && delivery !== 'reserved'
-      && !(command.action.kind === 'stop' && delivery === 'entered')) {
-      return this.ports.journal.status(command.operationId)
-    }
+    if (!recorded.dispatch && delivery !== 'reserved') return this.ports.journal.status(command.operationId)
     await this.ports.authorize(resident.intent, resident.placement, action)
-    if (delivery !== 'entered' && !await this.ports.journal.enterControlDelivery(command)) {
-      return this.ports.journal.status(command.operationId)
-    }
+    if (!await this.ports.journal.enterControlDelivery(command)) return this.ports.journal.status(command.operationId)
     try {
       if (command.action.kind === 'stop') { resident.controller.abort(); resident.manager.stopAutomaticResponses?.(resident.session); await resident.manager.cancel(resident.session, undefined, remoteActiveNative(recorded.receipt)?.turnId) }
       else await resident.manager.respond(resident.session, command.action.nativeInteractionId, ApprovalResponseOptionSchema.parse(command.action.response))

@@ -3,24 +3,6 @@ import { RemoteApplicationAccessSchema, type RemoteApplicationAccess } from '@fo
 import { WORKER_MCP_EXTENSION, decodeWorkerMcpResult, WorkerMcpRelayAuthorizationSchema, WorkerMcpRelayRequestSchema, WorkerMcpRelayResponseSchema } from '@foreman-code/contracts/worker-mcp-relay'
 import type { ChildProcessEnvironment } from '../../harnesses/port.js'
 import type { DeviceConnectionSupervisor } from '../../devices/connectionSupervisor.js'
-import { deviceRequestTimeoutMs, retryDeviceRequest } from '../../devices/deviceRequestRetry.js'
-import { DeviceApplicationError } from '../../devices/deviceApplicationError.js'
-import { APP_MCP_TIMEOUTS } from '../../harnesses/appMcpLauncher.js'
-
-/** The native client's tool deadline starts before any device admission wait. The relay answers first with a
- * retryable timeout, so the client never has to report its own deadline as a cancellation. */
-const relayDeadlineMs = APP_MCP_TIMEOUTS.tool_timeout_sec * 1000 - 20_000
-
-async function withRelayDeadline<T>(run: (signal: AbortSignal) => Promise<T>, signal?: AbortSignal): Promise<T> {
-  const deadline = new AbortController()
-  const timer = setTimeout(() => deadline.abort(), relayDeadlineMs)
-  const expired = new Promise<never>((_resolve, reject) => {
-    deadline.signal.addEventListener('abort', () => reject(new DeviceApplicationError('timeout')), { once: true })
-  })
-  try {
-    return await Promise.race([run(signal ? AbortSignal.any([signal, deadline.signal]) : deadline.signal), expired])
-  } finally { clearTimeout(timer) }
-}
 
 /** Main reauthorizes the original lease on every request, including after owner renewal. */
 export async function prepareWorkerApplicationAccess(channel: Pick<DeviceConnectionSupervisor, 'request'>,
@@ -37,10 +19,9 @@ export async function prepareWorkerApplicationAccess(channel: Pick<DeviceConnect
   let expiresAt: string
   const refresh = async (refreshSignal = signal) => {
     refreshSignal?.throwIfAborted()
-    const payload = WorkerMcpRelayRequestSchema.parse({ ...envelope(), operation: 'worker-mcp.authorize' })
-    const authorized = await retryDeviceRequest(() => channel.request(WORKER_MCP_EXTENSION.namespace,
-      payload, { ...(refreshSignal ? { signal: refreshSignal } : {}), timeoutMs: deviceRequestTimeoutMs }),
-    { retry: 'idempotent', signal: refreshSignal })
+    const authorized = await channel.request(WORKER_MCP_EXTENSION.namespace,
+      WorkerMcpRelayRequestSchema.parse({ ...envelope(), operation: 'worker-mcp.authorize' }),
+      refreshSignal ? { signal: refreshSignal } : {})
     if (authorized.bytes !== undefined) throw new Error('Application lease authorization cannot contain binary bytes')
     const lease = WorkerMcpRelayAuthorizationSchema.parse(authorized.payload)
     if (lease.mainId !== intent.mainId || lease.agentId !== applicationAccess.agentId
@@ -58,11 +39,10 @@ export async function prepareWorkerApplicationAccess(channel: Pick<DeviceConnect
   return { environment, get expiresAt() { return expiresAt }, refresh,
     async request(body: unknown, protocolVersion?: string, requestSignal?: AbortSignal) {
     requestSignal?.throwIfAborted()
-    const payload = WorkerMcpRelayRequestSchema.parse({ ...envelope(), operation: 'worker-mcp.request', body,
-      ...(protocolVersion ? { protocolVersion } : {}) })
-    const response = await withRelayDeadline(relaySignal => retryDeviceRequest(() => channel.request(WORKER_MCP_EXTENSION.namespace,
-      payload, { signal: relaySignal, timeoutMs: deviceRequestTimeoutMs }),
-    { retry: 'admission', signal: relaySignal }), requestSignal)
+    const response = await channel.request(WORKER_MCP_EXTENSION.namespace,
+      WorkerMcpRelayRequestSchema.parse({ ...envelope(), operation: 'worker-mcp.request', body,
+        ...(protocolVersion ? { protocolVersion } : {}) }),
+      requestSignal ? { signal: requestSignal } : {})
     requestSignal?.throwIfAborted()
     return WorkerMcpRelayResponseSchema.parse(decodeWorkerMcpResult(response))
   } }
