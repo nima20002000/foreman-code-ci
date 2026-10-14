@@ -1,4 +1,3 @@
-import { optionalCommandId } from './management/commands.js'
 import { z } from 'zod'
 import { DeviceDigestSchema, DeviceSafeIntegerSchema } from './deviceResources.js'
 import { JobTargetSchema, JobComputerSelectionSchema, JobRuntimeLimitsSchema,
@@ -18,7 +17,7 @@ const JobPlacementIntentSchema = z.discriminatedUnion('kind', [
 ])
 export type JobPlacementIntent = z.infer<typeof JobPlacementIntentSchema>
 export const JobQueuedStartSchema = z.object({
-  commandId: optionalCommandId(IdSchema),
+  commandId: IdSchema,
   definitionId: IdSchema,
   expectedRevision: PositiveInteger,
   placementOverride: JobPlacementIntentSchema.optional(),
@@ -180,7 +179,7 @@ export const JobAdmissionResultSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('retained-execution'), execution: JobExecutionRecordSchema }).strict(),
 ])
 export const JobQueueCancelSchema = z.object({
-  commandId: optionalCommandId(IdSchema), ticketId: z.uuid(), expectedRevision: PositiveInteger,
+  commandId: IdSchema, ticketId: z.uuid(), expectedRevision: PositiveInteger,
 }).strict()
 
 export const JobQueueListInputSchema = z.object({

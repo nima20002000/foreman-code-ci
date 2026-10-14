@@ -145,8 +145,7 @@ export async function reviewInProgress(fixture: Fixture) {
   expect(fixture.profiles[1]!.configuration).toEqual(withAdvancedDefaults(configuration.harness))
   const started = await fixture.start()
   const location = RunExecutionLocationV3Schema.parse(started.run.executionLocation)
-  expect(workspace.executionLocation).not.toBeNull()
-  expect(location).toMatchObject(workspace.executionLocation!)
+  expect(location.runnerId).toBe(fixture.profiles[0]!.target.applicationInstallationId)
   expect((await fixture.details(started.run.id)).run.executionLocation).toEqual(location)
   // The execution edge starts the requester only after the reviewer's workflow turn settles.
   await waitForRemoteReview(async () => {

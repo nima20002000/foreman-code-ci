@@ -3,13 +3,12 @@ import type { CanonicalMachineReference } from '@foreman-code/contracts/device-i
 import { HarnessInstallationMonitor } from './installationMonitor.js'
 import type { AutomaticHostProfileCheck } from './instanceSettings/profileChecks.js'
 import { DomainError } from '../errors.js'
-import { DeviceApplicationAdmissionError, DeviceApplicationError, deviceApplicationFailure } from '../devices/deviceApplicationError.js'
-import { qualificationError } from './qualificationErrors.js'
+import { DeviceApplicationError, deviceApplicationFailure } from '../devices/deviceApplicationError.js'
 
 it.each(['HARNESS_INVENTORY_STALE', 'HARNESS_QUALIFICATION_TARGET_CHANGED'])(
   'preserves the retryable Worker qualification failure %s across the application channel', code => {
     expect(deviceApplicationFailure(new DomainError(code, 'Installation changed.', 409)))
-      .toEqual({ code, class: 'transient', retryable: true })
+      .toEqual({ code, retryable: true })
   },
 )
 
@@ -167,109 +166,4 @@ it('refreshes Main independently of a slow unused Worker and cancels only a requ
     await background
     await monitor.close()
   }
-})
-
-it('backs off pressured discovery exponentially, skips busy devices, and resumes after success', async () => {
-  vi.useFakeTimers()
-  const hostRef = { kind: 'device' as const, mainId: 'main', deviceId: 'worker' }
-  let busy = false
-  const request = vi.fn().mockRejectedValue(new DeviceApplicationAdmissionError())
-  const collectWorker = vi.fn().mockResolvedValue(undefined)
-  const report = vi.fn()
-  const registry = { installations: { list: () => [{ hostRef }] }, observeInstallations: () => {} }
-  const monitor = new HarnessInstallationMonitor(registry as never, {} as never,
-    () => ({ captureRequest: () => ({ binding: {}, request, get busy() { return busy } }) }) as never,
-    collectWorker, async () => {}, report)
-  try {
-    await monitor.refresh()
-    expect(request).toHaveBeenCalledTimes(1)
-    await vi.advanceTimersByTimeAsync(15_000)
-    await monitor.refresh()
-    expect(request).toHaveBeenCalledTimes(1)
-    await vi.advanceTimersByTimeAsync(15_000)
-    await monitor.refresh()
-    expect(request).toHaveBeenCalledTimes(2)
-    await vi.advanceTimersByTimeAsync(30_000)
-    await monitor.refresh()
-    expect(request).toHaveBeenCalledTimes(2)
-    await vi.advanceTimersByTimeAsync(30_000)
-    busy = true
-    await monitor.refresh()
-    expect(request).toHaveBeenCalledTimes(2)
-    busy = false
-    request.mockResolvedValue({ payload: { discovered: true } })
-    await monitor.refresh()
-    await monitor.refresh()
-    expect(request).toHaveBeenCalledTimes(4)
-    expect(collectWorker).toHaveBeenCalledTimes(2)
-    expect(report).toHaveBeenCalledTimes(2)
-  } finally {
-    await monitor.close()
-    vi.useRealTimers()
-  }
-})
-
-it('defers automatic qualification while busy and retries its unchanged generation after pressure', async () => {
-  vi.useFakeTimers()
-  const hostRef = { kind: 'device' as const, mainId: 'main', deviceId: 'worker' }
-  let busy = true
-  let listener: ((host: CanonicalMachineReference, installationId: string) => void) | undefined
-  const recheckInstallation = vi.fn().mockRejectedValueOnce(
-    new AggregateError([qualificationError(new DeviceApplicationAdmissionError())], 'Automatic check failed.'))
-    .mockResolvedValue(undefined)
-  const registry = {
-    observeInstallations: (value: typeof listener) => { listener = value },
-    installations: { list: () => [{ hostRef, harnessInstallationId: 'launcher',
-      installationFingerprint: 'payload', driverId: 'codex', driverRevision: '1',
-      protocolRevision: 'protocol', environmentGeneration: 'environment', connectionGeneration: 'connection',
-      installed: true }] },
-    refreshMain: async () => {},
-  }
-  const monitor = new HarnessInstallationMonitor(registry as never, { recheckInstallation } as never,
-    () => ({ captureRequest: () => ({ binding: {}, get busy() { return busy },
-      request: async () => ({ payload: {} }) }) }) as never,
-    async () => { listener?.(hostRef, 'installation') }, async () => {}, vi.fn())
-  try {
-    monitor.start('main')
-    monitor.workerReady({ mainId: 'main', deviceId: 'worker', workerInstallationId: 'installation' } as never,
-      new AbortController().signal)
-    expect(recheckInstallation).not.toHaveBeenCalled()
-    busy = false
-    await monitor.refresh()
-    expect(recheckInstallation).toHaveBeenCalledTimes(1)
-    await vi.advanceTimersByTimeAsync(15_000)
-    await monitor.refresh()
-    expect(recheckInstallation).toHaveBeenCalledTimes(1)
-    await vi.advanceTimersByTimeAsync(15_000)
-    await monitor.refresh()
-    expect(recheckInstallation).toHaveBeenCalledTimes(2)
-    await monitor.refresh()
-    expect(recheckInstallation).toHaveBeenCalledTimes(2)
-  } finally {
-    await monitor.close()
-    vi.useRealTimers()
-  }
-})
-
-
-it('retries discovery for a connected Worker whose first inventory was unavailable', async () => {
-  const binding = { mainId: 'main', deviceId: 'worker', workerInstallationId: 'installation' }
-  const workerLifetime = new AbortController()
-  const request = vi.fn(async () => ({ payload: { installations: [] } }))
-  const collect = vi.fn(async () => {})
-  const registry = { observeInstallations: () => {}, installations: { list: () => [] }, refreshMain: async () => {} }
-  const endpoint = { captureRequest: () => ({ binding, request }) }
-  const monitor = new HarnessInstallationMonitor(registry as never,
-    { recheckInstallation: async () => {} } as never, () => endpoint as never,
-    collect, async () => {}, vi.fn())
-  try {
-    monitor.start('main')
-    monitor.workerReady(binding as never, workerLifetime.signal)
-    await monitor.refresh()
-    expect(request).toHaveBeenCalledOnce()
-    expect(collect).toHaveBeenCalledWith(binding, { installations: [] })
-    workerLifetime.abort()
-    await monitor.refresh()
-    expect(request).toHaveBeenCalledOnce()
-  } finally { await monitor.close() }
 })

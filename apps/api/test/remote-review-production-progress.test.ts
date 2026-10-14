@@ -4,8 +4,7 @@ import { DurableInteractionSchema, HarnessExecutionSchema, NATIVE_INTERACTION_FI
 import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { deliveredReview, reviewInProgress } from './helpers/remoteReviewProductionCases.js'
 
-it.each(['fixture-worker', 'runner-local'])(
-  'observes remote review progress with workspace runner %s', async runnerId => {
+it('observes reviewer completion before bounding the subsequent requester startup', async () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] })
   try {
     const startedAt = performance.now()
@@ -31,7 +30,7 @@ it.each(['fixture-worker', 'runner-local'])(
       nativeSessionId: reviewer.nativeSessionId, providerTurnOrMessageId: 'review-turn',
       correlationId: 'review-correlation', createdAt: seed.createdAt, updatedAt: seed.createdAt,
     })
-    const location = { runnerId, rootPath: '/project', locationRevision: 1,
+    const location = { runnerId: 'fixture-runner', rootPath: '/project', locationRevision: 1,
       identityHash: `sha256:${'a'.repeat(64)}` }
     const run = { ...seed.run, executionState: 'running', executionLocation: location }
     const details = async () => ({ run, executions: elapsed() >= 60_000 ? [reviewer] : [], activity: [] })
@@ -39,15 +38,15 @@ it.each(['fixture-worker', 'runner-local'])(
       version: seed.version, repositoryName: 'fixture/project',
       sourceManifest: { capturePolicy: 'git-tree-v1', git: { repository: 'fixture/project' } },
       profiles: seed.configurations.map(configuration => ({
-        target: { applicationInstallationId: 'fixture-worker' },
+        target: { applicationInstallationId: location.runnerId },
         configuration: withAdvancedDefaults(configuration.harness),
       })),
       provider: { startupActivity: async () => [] }, start: async () => ({ run }), details,
       async value() {
         return { workspace: { id: seed.run.workspaceId, name: 'Fixture',
           repository: { provider: 'github', owner: 'fixture', name: 'project', defaultBranch: 'main' } },
-        revision: 1, archivedAt: null, executionLocation: { runnerId, rootPath: location.rootPath },
-        locationRevision: 1, locationValidation: { status: 'ready', checkedAt: seed.createdAt } }
+        revision: 1, archivedAt: null, executionLocation: null, locationRevision: 1,
+        locationValidation: { status: 'unconfigured' } }
       },
       reconcileReviews: async () => {}, pending: async () => elapsed() >= 120_000 ? [interaction] : [],
       subscribeNativeChanges: () => () => {},

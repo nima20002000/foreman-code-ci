@@ -1,5 +1,4 @@
-import { executionQueueReasonLabel, type ExecutionQueueReason, type ActivitySnapshotV1,
-  type CiActivity, type DurableInteraction } from '@foreman-code/contracts'
+import type { ActivitySnapshotV1, CiActivity, DurableInteraction } from '@foreman-code/contracts'
 import type { RepeatGraphCurrentV3 } from '@foreman-code/contracts/wave25'
 import type { RunIntervalCheck } from '@foreman-code/contracts/run-snapshots'
 import type { AgentNodeState } from '../../../shared/ui/nocturne'
@@ -41,14 +40,9 @@ export function interactionWaits(record: RepeatGraphCurrentV3 | undefined, inter
  * (from the current cut, or the Run read's live check state); otherwise the lifecycle view stands, with the
  * next check time while one is due. */
 export function liveNodeView(base: View, wait: InteractionWait | undefined, ci: CiActivity | undefined,
-  check?: RunIntervalCheck, checking?: { check: number; queued: boolean }, queueReason?: ExecutionQueueReason): View {
+  check?: RunIntervalCheck, checking?: { check: number; queued: boolean }): View {
   if (wait) return { state: 'waiting', label: wait.label }
   if (ci && isActiveCi(ci)) return { state: 'waiting', label: `Waiting for ${ciNodePresentation(ci).label}` }
-  if (queueReason) {
-    const reason = executionQueueReasonLabel(queueReason)
-    const label = checking ? `Loop ${checking.check} queued · ${reason}` : reason
-    return { state: 'queued', label }
-  }
   if (checking) return checkingView(checking.check, checking.queued)
   if (check?.running) return checkingView(check.checks)
   const view = ci ? { ...base, label: `${base.label} · ${ciNodePresentation(ci).label}` } : base

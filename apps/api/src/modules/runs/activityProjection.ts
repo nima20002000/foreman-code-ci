@@ -50,19 +50,6 @@ function activityWorkResult(raw: unknown): RunActivityPublic['workResult'] {
   })
 }
 
-function recordedResultActivity(raw: unknown): Pick<RunActivityPublic, 'status' | 'summary' | 'detail' | 'workResult'> {
-  const result = ExecutionResultSchema.safeParse(raw)
-  if (result.success && result.data.outcome === 'failed') {
-    const error = result.data.error
-    const detail = error ? nativePersistenceRedactor([]).text(`${error.code}: ${error.message}`).slice(0, 500)
-      : undefined
-    return { status: 'failed', summary: error?.retryable ? 'Attempt failed with a retryable error' : 'Work failed',
-      ...(detail ? { detail } : {}) }
-  }
-  const workResult = activityWorkResult(raw)
-  return { status: 'completed', summary: 'Work result recorded', ...(workResult ? { workResult } : {}) }
-}
-
 function toolLabel(native: Record<string, unknown>): string | undefined {
   const item = string(native.itemType), part = string(native.partTool)
   if (item === 'commandExecution' && native.commandName) {
@@ -165,10 +152,6 @@ function nativeOutputActivity(native: Record<string, unknown>, runId: string): A
   } else if (native.type === 'turn.capacity_wait') {
     status = 'pending'
     summary = 'Waiting for model capacity'
-  } else if (native.type === 'turn.mcp_startup_retry') {
-    kind = 'recovery'
-    status = 'pending'
-    summary = 'Retrying Foreman Code MCP startup'
   } else if (native.type === 'thread.started') {
     summary = 'Native session created'
   } else if (native.type === 'thread.reconciled') {
@@ -239,27 +222,6 @@ function reviewActivity(state: string | undefined, reviewJobId: string | undefin
   return { kind: 'review', status, summary }
 }
 
-function skippedEventsActivity(payload: Record<string, unknown>): ActivityView {
-  const from = count(payload.fromSequence)
-  const to = count(payload.toSequence)
-  const skipped = from !== undefined && to !== undefined && to >= from ? to - from + 1 : undefined
-  const summary = skipped === undefined ? 'Events skipped' : `${skipped} ${skipped === 1 ? 'event' : 'events'} skipped`
-  const detail = to === undefined ? undefined
-    : `Activity observation resumed at event ${to + 1}. The Agent kept running.`
-  return { kind: 'recovery', status: 'recorded', summary, detail }
-}
-
-function ciActivity(ci: RunActivityPublic['ci']): ActivityView {
-  if (!ci) {
-    return { kind: 'job_work', status: 'unknown', summary: 'CI activity details unavailable' }
-  }
-  const statuses: Record<typeof ci.state, RunActivityPublic['status']> = {
-    queued: 'queued', starting: 'starting', running: 'running', passed: 'completed',
-    failed: 'failed', canceled: 'canceled', lost: 'unknown',
-  }
-  return { kind: 'job_work', status: statuses[ci.state], summary: `CI ${ci.suite} ${ci.state}` }
-}
-
 /** Project typed activity details and recorded work results; exclude native provider bodies. */
 export function publicRunActivity(row: ActivityReadRow, version: WorkflowVersionV3,
   runId: string, runOutcome: string): RunActivityPublic {
@@ -271,8 +233,7 @@ export function publicRunActivity(row: ActivityReadRow, version: WorkflowVersion
   const actorKind = new Set(['node_scheduled','node_state_changed','harness_session_started',
     'harness_output','harness_session_finished','result_recorded','work_result_accepted',
     'work_handoff_accepted','work_handoff_returned','work_handoff_denied','work_rerouted','ci_state_changed',
-    'interaction_pending','interaction_decided','interaction_delivery_state','interaction_resolved','interaction_worker_ack',
-    'native_events_skipped'])
+    'interaction_pending','interaction_decided','interaction_delivery_state','interaction_resolved','interaction_worker_ack'])
   const jobActor = node?.kind === 'job' && row.job_execution_id && row.node_execution_id === row.job_execution_id
     && row.job_definition_id === node.jobDefinitionId && row.job_definition_revision === node.jobDefinitionRevision
     && row.job_definition_version_id === node.jobDefinitionVersionId
@@ -339,12 +300,21 @@ export function publicRunActivity(row: ActivityReadRow, version: WorkflowVersion
   let detail: string | undefined
   let workResult: RunActivityPublic['workResult']
   switch (row.kind) {
-    case 'native_events_skipped':
-      ({ kind, status, summary, detail } = skippedEventsActivity(payload))
+    case 'ci_state_changed': {
+      kind = 'job_work'
+      if (!ci) {
+        status = 'unknown'
+        summary = 'CI activity details unavailable'
+        break
+      }
+      const statuses: Record<typeof ci.state, RunActivityPublic['status']> = {
+        queued: 'queued', starting: 'starting', running: 'running', passed: 'completed',
+        failed: 'failed', canceled: 'canceled', lost: 'unknown',
+      }
+      status = statuses[ci.state]
+      summary = `CI ${ci.suite} ${ci.state}`
       break
-    case 'ci_state_changed':
-      ({ kind, status, summary } = ciActivity(ci))
-      break
+    }
     case 'run_state_changed': {
       kind = 'run'
       const state = string(payload.executionState)
@@ -360,9 +330,7 @@ export function publicRunActivity(row: ActivityReadRow, version: WorkflowVersion
     case 'run_stop_requested': kind = 'stop'; status = 'pending'; summary = 'Stop requested'; break
     case 'run_cleanup_checked':
       kind = 'recovery'; status = payload.failed === true ? 'failed' : 'completed'
-      summary = payload.code === 'RUN_CLEANUP_DEADLINE_EXCEEDED'
-        ? 'Cleanup deadline exceeded; native cleanup is unconfirmed and ownership is retained'
-        : payload.failed === true ? 'Native cleanup remains pending' : 'Native cleanup verified'
+      summary = payload.failed === true ? 'Native cleanup remains pending' : 'Native cleanup verified'
       break
     case 'node_scheduled': case 'work_activation_queued':
       status = 'queued'; summary = 'Work turn queued'; break
@@ -389,7 +357,9 @@ export function publicRunActivity(row: ActivityReadRow, version: WorkflowVersion
       ({ kind, status, summary, detail } = nativeOutputActivity(native, runId))
       break
     case 'result_recorded': case 'work_result_accepted':
-      ({ status, summary, detail, workResult } = recordedResultActivity(row.work_result))
+      status = 'completed'
+      summary = 'Work result recorded'
+      workResult = activityWorkResult(row.work_result)
       break
     case 'work_handoff_accepted':
       kind = 'work_request'; status = refs.requestId ? 'accepted' : 'unknown'

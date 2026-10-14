@@ -20,7 +20,6 @@ export const buildComputerTools = [
     enabled: s => !!s.computerActivity,
     description: 'Read current computer presence, running CI Jobs and placed workflow agent executions, and the cloud '
       + 'CI services Main is logged in to with how many of their machines run CI now. '
-      + 'Failed cloud readiness checks stay visible with observation.lastError and failure counts. '
       + 'Requires global settings:read. Job and agent names are filtered by jobs:read and runs:read scopes. '
       + 'Read-only, at most 101 computers and 200 entries per activity kind; truncated and activityComplete '
       + 'describe coverage. No telemetry permissions are implied; use resource_telemetry tools for utilization.',
@@ -56,19 +55,8 @@ export const buildComputerTools = [
       + 'to select one retained task independently of the limit. '
       + 'Paired Workers also report current and target application versions, update state and the last update error, '
       + 'including rollback. '
-      + 'workerPublication reports the matching Main release\'s GitHub publication state and failure reason, even for offline computers. '
-      + 'Pending publication past its deadline reads as failed with WORKER_PUBLICATION_DEADLINE_EXCEEDED. '
-      + 'status.services lists each background loop of that computer (CI dispatch and observation, state-deadline sweeper, '
-      + 'run reconciliation, enrollment, schedules, telemetry collector, Worker publication unit, fleet sync) with '
-      + 'lastStartedAt, lastSuccessAt, lastError, nextDueAt, inFlightSince and status ok, idle, failing or stalled; stalled '
-      + 'means in flight past its deadline or past its next due time. Running tasks older than 60 minutes fail with '
-      + 'MAINTENANCE_TASK_DEADLINE_EXCEEDED. '
-      + 'workerReadiness reports WORKER_VERSION_SKEW, WORKER_BUNDLE_UNPUBLISHED or WORKER_UPDATING, with expected/running '
-      + 'bundle identities, updatePhase and publicationError. New work requires the published bundle for that Worker target. '
       + 'Requires global settings:read. Supply target to read one current installation independently. '
-      + 'Successful settled status is cached for 20 seconds unless refresh is true; pending probes are shared. '
-      + 'Failed observations report null status with observation.status unavailable, lastError, failedAt, lastSuccess and '
-      + 'consecutiveFailures. Failed observations are retried on the next read.',
+      + 'Settled status is cached for 20 seconds unless refresh is true; pending probes are shared. An offline computer reports null status.',
     inputSchema: ComputerMaintenanceOperatorListInputSchema, outputSchema: ComputerMaintenanceOperatorListSchema,
     annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: false },
     run: async (context, input) => {
@@ -88,9 +76,7 @@ export const buildComputerTools = [
       + 'paired computers; other tasks select Main and every paired computer: '
       + 'update-harnesses (install or update Codex/Claude to the latest version), update-system (sudo apt-get update and a '
       + 'non-interactive upgrade with new dependencies, respecting phased rollout and explicit holds; re-reads pending updates), '
-      + 'update-worker (download only from GitHub with backoff after Main verifies publication of every release asset; '
-      + 'unpublished targets and unavailable GitHub assets fail visibly with WORKER_RELEASE_ASSET_UNAVAILABLE; '
-      + 'verify checksums, drain active work, install the matching Main version, then restart through the Worker supervisor; '
+      + 'update-worker (drain active work, verify and install the matching Main version, then restart through the Worker supervisor; '
       + 'enabled build computers must pass a tiny integration CI smoke within 160 seconds after readiness; '
       + 'failed releases roll back and report the error; Main uses production:install), restart (sudo reboot; targets are required), '
       + 'sync-mcp (add Main\'s user-level Codex and Claude MCP '

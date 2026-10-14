@@ -2,6 +2,7 @@ import type { Client } from '@modelcontextprotocol/client'
 import { CiGetOutputSchema, CiLogsOutputSchema, CiRunRecordSchema } from '@foreman-code/contracts'
 import { expect } from 'vitest'
 import { z } from 'zod'
+import { CiComputerHostSchema } from './crossComputerCiInput.js'
 import { callCiTool } from './crossComputerCiSetup.js'
 
 const TerminalStateSchema = CiRunRecordSchema.shape.state.extract(['passed', 'failed', 'canceled', 'lost'])
@@ -13,9 +14,22 @@ export const AgentCiReportSchema = z.object({
   outcome: TerminalStateSchema,
   repository: CiRunRecordSchema.shape.repository,
   branch: z.string().min(1).max(255),
-  logLine: z.string().trim().min(1).max(2000),
-  // Per-ticket facts come from ci_get; copying dozens of IDs only measured the Agent's transcription.
-  observedStates: z.array(CiRunRecordSchema.shape.state).min(1).max(7),
+  tickets: z.array(z.object({
+    ticketId: CiRunRecordSchema.shape.id,
+    part: CiRunRecordSchema.shape.part,
+    partition: CiRunRecordSchema.shape.partition,
+    computer: CiComputerHostSchema,
+    commit: CiRunRecordSchema.shape.commit,
+    outcome: TerminalStateSchema,
+    exitCode: CiRunRecordSchema.shape.exitCode,
+    logLine: z.string().trim().min(1).max(2000),
+    observedStates: z.array(CiRunRecordSchema.shape.state).min(1).max(7),
+  })).min(1).max(66),
+}).superRefine((report, context) => {
+  const ids = report.tickets.map(ticket => ticket.ticketId)
+  if (new Set(ids).size !== ids.length || !ids.includes(report.ticketId)) {
+    context.addIssue({ code: 'custom', message: 'Report every returned ticket exactly once, including the first.' })
+  }
 })
 export type AgentCiReport = z.infer<typeof AgentCiReportSchema>
 export type CiReadback = z.infer<typeof CiGetOutputSchema>
@@ -57,8 +71,7 @@ export function requireCiStateOrder(states: readonly string[]) {
   for (const [index, state] of states.entries()) {
     const position = ciTerminal(state) ? 3 : order.indexOf(state)
     expect(position, 'CI state must be recognized').toBeGreaterThanOrEqual(0)
-    if (state === 'queued') previous = -1
-    expect(position, 'CI lifecycle must not regress within an attempt').toBeGreaterThanOrEqual(previous)
+    expect(position, 'CI lifecycle must not regress').toBeGreaterThanOrEqual(previous)
     if (ciTerminal(states[index - 1] ?? '')) expect(state).toBe(states[index - 1])
     previous = position
   }

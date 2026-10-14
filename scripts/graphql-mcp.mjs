@@ -5,7 +5,6 @@ import { readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createInterface } from 'node:readline'
-import { setTimeout as wait } from 'node:timers/promises'
 
 const token = process.env.FOREMAN_CODE_MCP_TOKEN ?? process.env.GRAPHQL_MCP_TOKEN
 const tokenConflict = process.env.FOREMAN_CODE_MCP_TOKEN !== undefined && process.env.GRAPHQL_MCP_TOKEN !== undefined
@@ -57,70 +56,33 @@ function bridgeError(error, deliveryStage) {
     data: { kind: 'transport' } }
 }
 
-// ci_get is a read, so a group wait retries every transient failure, including a Main restart, until its budget ends.
-const GROUP_WAIT_RETRYABLE = ['service_unavailable', 'transport', 'route_unavailable', 'timeout', 'indeterminate_delivery',
-  'invalid_response']
-
-function isRetryableToolFailure(result) {
-  if (result?.isError !== true) return false
-  const text = result.content?.find(block => block.type === 'text')?.text
-  if (typeof text !== 'string') return false
-  let failure
-  try {
-    failure = JSON.parse(text)?.error
-  } catch (error) {
-    if (error instanceof SyntaxError) return false
-    throw error
-  }
-  if (failure?.code === 'ACCESS_DENIED'
-    || typeof failure?.code === 'string' && failure.code.startsWith('AUTH_')) return false
-  return failure?.details?.retryable === true
-}
-
-/** The requested group wait budget; each native call is also bounded by its client deadline. */
-function groupWaitBudgetMs(message) {
-  if (!Object.hasOwn(message, 'id') || message.method !== 'tools/call' || message.params?.name !== 'ci_get') return undefined
-  const args = message.params.arguments
-  return args?.waitUntil === 'group-terminal' && args.waitSeconds > 0 ? args.waitSeconds * 1000 : undefined
-}
-
-async function readRoute() {
-  if (tokenConflict) throw new BridgeFailure('configuration',
-    'FOREMAN_CODE_MCP_TOKEN conflicts with GRAPHQL_MCP_TOKEN. Supply one credential or matching credentials.')
-  if (!token) throw new BridgeFailure('authentication', 'The MCP credential is missing. Refresh the owning app credential.')
-  const key = createHash('sha256').update(token).digest('hex')
-  let route
-  try {
-    route = JSON.parse(await readFile(join(directory, `${key}.json`), 'utf8'))
-  } catch {
-    throw new BridgeFailure('route_unavailable',
-      'The owning app MCP route is unavailable. Open the owning app to refresh this credential’s connection.')
-  }
-  if (typeof route.renewalFailure === 'string' && Date.parse(route.expiresAt) <= Date.now()) {
-    throw new BridgeFailure('renewal_failed',
-      `The owning app MCP route expired because its renewal failed: ${route.renewalFailure.slice(0, 500)}`)
-  }
-  const url = new URL(route.endpoint)
-  if (url.protocol !== 'http:' || !['127.0.0.1', '[::1]', 'localhost'].includes(url.hostname)
-    || url.pathname !== '/mcp' || url.username || url.password || url.search || url.hash
-    || !Number.isInteger(route.pid) || route.pid <= 0 || Date.parse(route.expiresAt) <= Date.now()
-    || !Number.isFinite(Date.parse(route.expiresAt))) throw new BridgeFailure('route_unavailable',
-      'The owning app MCP route is invalid or expired. Open the owning app to refresh this credential’s connection.')
-  return route
-}
-
-async function forwardAttempt(message, controller, timeoutMs, emit = output) {
+async function forward(message, controller) {
   let requestSignal
   let deliveryStage = 'preflight'
   let terminalReceived = false
   const expectsReply = Object.hasOwn(message, 'id')
   try {
-    const route = await readRoute()
+    if (tokenConflict) throw new BridgeFailure('configuration',
+      'FOREMAN_CODE_MCP_TOKEN conflicts with GRAPHQL_MCP_TOKEN. Supply one credential or matching credentials.')
+    if (!token) throw new BridgeFailure('authentication', 'The MCP credential is missing. Refresh the owning app credential.')
+    const key = createHash('sha256').update(token).digest('hex')
+    let route
+    try {
+      route = JSON.parse(await readFile(join(directory, `${key}.json`), 'utf8'))
+    } catch {
+      throw new BridgeFailure('route_unavailable',
+        'The owning app MCP route is unavailable. Open the owning app to refresh this credential’s connection.')
+    }
     const url = new URL(route.endpoint)
+    if (url.protocol !== 'http:' || !['127.0.0.1', '[::1]', 'localhost'].includes(url.hostname)
+      || url.pathname !== '/mcp' || url.username || url.password || url.search || url.hash
+      || !Number.isInteger(route.pid) || route.pid <= 0 || Date.parse(route.expiresAt) <= Date.now()
+      || !Number.isFinite(Date.parse(route.expiresAt))) throw new BridgeFailure('route_unavailable',
+        'The owning app MCP route is invalid or expired. Open the owning app to refresh this credential’s connection.')
     // The owning API's host PID is not visible inside a harness PID namespace.
     // Each request proves access through the endpoint's scoped credential authentication.
-    requestSignal = controller ? AbortSignal.any([controller.signal, AbortSignal.timeout(timeoutMs)])
-      : AbortSignal.timeout(timeoutMs)
+    requestSignal = controller ? AbortSignal.any([controller.signal, AbortSignal.timeout(120_000)])
+      : AbortSignal.timeout(120_000)
     deliveryStage = 'dispatched'
     const response = await fetch(url, { method: 'POST', redirect: 'error',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json',
@@ -139,13 +101,8 @@ async function forwardAttempt(message, controller, timeoutMs, emit = output) {
       if (controller?.signal.aborted || terminalReceived) return
       const terminal = expectsReply && value?.id === message.id
         && (Object.hasOwn(value, 'result') || Object.hasOwn(value, 'error'))
-      if (terminal && message.method === 'tools/list' && Object.hasOwn(value, 'result')
-        && (!Array.isArray(value.result?.tools) || value.result.tools.length === 0)) {
-        throw new BridgeFailure('invalid_response',
-          'Foreman Code MCP tool discovery returned an invalid or empty catalog. Retry the activation.')
-      }
       if (message.method === 'initialize' && value.result?.protocolVersion) protocolVersion = value.result.protocolVersion
-      emit(value)
+      output(value)
       if (terminal) terminalReceived = true
     }
     if (response.headers.get('content-type')?.includes('application/json')) publish(await response.json())
@@ -166,89 +123,9 @@ async function forwardAttempt(message, controller, timeoutMs, emit = output) {
     }
     if (expectsReply && !terminalReceived) throw new Error('Missing terminal MCP response.')
   } catch (error) {
-    if (terminalReceived || controller?.signal.aborted && controller.signal.reason?.name !== 'TimeoutError') return
-    if (expectsReply) return bridgeError(requestSignal?.aborted ? requestSignal.reason : error, deliveryStage)
-  }
-}
-
-/** Re-resolves the ticket across bounded chunks and Main restarts, leaving time to deliver the native reply. */
-async function forwardGroupWait(message, controller, budgetMs) {
-  const started = Date.now()
-  const route = await readRoute()
-  if (!Number.isFinite(route.toolTimeoutMs) || route.toolTimeoutMs <= 0) {
-    throw new BridgeFailure('route_unavailable', 'The MCP route has no client tool timeout. Refresh the owning app route.')
-  }
-  const claudeTimeoutMs = Number(process.env.MCP_TOOL_TIMEOUT)
-  const toolTimeoutMs = Math.min(route.toolTimeoutMs, claudeTimeoutMs > 0 ? claudeTimeoutMs : Infinity)
-  const deadline = started + Math.min(budgetMs, toolTimeoutMs * 0.9)
-  let stillRunning
-  let lastFailure
-  for (let failures = 0; ;) {
-    const remainingMs = Math.max(0, deadline - Date.now())
-    if (!remainingMs && (stillRunning || lastFailure)) {
-      output(stillRunning ?? lastFailure)
-      return
-    }
-    const waitSeconds = remainingMs / 1000
-    const chunk = { ...message, params: { ...message.params, arguments: { ...message.params.arguments, waitSeconds } } }
-    let reply
-    const timeoutMs = Math.max(1, Math.ceil(Math.min(120_000, remainingMs)))
-    const error = await forwardAttempt(chunk, controller, timeoutMs, (value) => { reply = value })
-    if (controller.signal.aborted) return
-    let retryable
-    if (error) {
-      retryable = GROUP_WAIT_RETRYABLE.includes(error.data.kind)
-    } else if (reply?.error) {
-      retryable = reply.error.data?.retryable === true
-    } else {
-      retryable = isRetryableToolFailure(reply?.result)
-    }
-    if (error || reply?.error || reply?.result?.isError === true) {
-      const failureReply = error ? { jsonrpc: '2.0', id: message.id, error } : reply
-      lastFailure = failureReply
-      if (!retryable || Date.now() >= deadline) {
-        output(stillRunning && retryable ? stillRunning : failureReply)
-        return
-      }
-      failures++
-    } else {
-      if (reply?.result?.structuredContent?.wait?.status !== 'still-running' || Date.now() >= deadline) {
-        output(reply)
-        return
-      }
-      stillRunning = reply
-      failures = 0
-    }
-    if (failures) await wait(Math.min(1_000 * 2 ** (failures - 1), 15_000, Math.max(0, deadline - Date.now())),
-      undefined, { signal: controller.signal })
-  }
-}
-
-async function forward(message, controller) {
-  const startup = message.method === 'initialize' || message.method === 'tools/list'
-  // Leave time for a slow database read while staying below the native 60-second startup timeout.
-  const signal = startup ? AbortSignal.any([AbortSignal.timeout(55_000),
-    ...(controller ? [controller.signal] : [])]) : controller?.signal
-  const attemptController = signal ? { signal } : undefined
-  const budgetMs = groupWaitBudgetMs(message)
-  try {
-    if (budgetMs !== undefined) return await forwardGroupWait(message, controller, budgetMs)
-    for (let attempt = 0; ; attempt++) {
-      const error = await forwardAttempt(message, attemptController, startup ? 45_000 : 120_000)
-      if (!error || controller?.signal.aborted) return
-      const retryable = startup && ['service_unavailable', 'timeout'].includes(error.data.kind)
-      if (retryable) error.data.retryable = true
-      if (!retryable || attempt === 2 || signal?.aborted) {
-        output({ jsonrpc: '2.0', id: message.id, error })
-        return
-      }
-      await wait(1_000 * 2 ** attempt, undefined, { signal })
-    }
-  } catch (error) {
-    if (controller?.signal.aborted) return
-    const failure = bridgeError(signal?.aborted ? signal.reason : error, 'preflight')
-    if (startup && failure.data.kind === 'timeout') failure.data.retryable = true
-    if (Object.hasOwn(message, 'id')) output({ jsonrpc: '2.0', id: message.id, error: failure })
+    if (controller?.signal.aborted || terminalReceived) return
+    if (expectsReply) output({ jsonrpc: '2.0', id: message.id,
+      error: bridgeError(requestSignal?.aborted ? requestSignal.reason : error, deliveryStage) })
   } finally {
     if (controller && pending.get(message.id) === controller) pending.delete(message.id)
   }

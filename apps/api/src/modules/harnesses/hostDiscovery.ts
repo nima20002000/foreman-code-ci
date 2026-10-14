@@ -1,4 +1,4 @@
-import { constants } from 'node:fs'
+import { constants, createReadStream } from 'node:fs'
 import { access, lstat, open, realpath, stat } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { isAbsolute, join, resolve } from 'node:path'
@@ -25,7 +25,7 @@ export interface LauncherEvidence {
 }
 
 /** Empty/relative PATH components are deliberately ignored: no project cwd lookup. */
-export async function discoverLauncher(requested: string, environment: TargetEnvironment, payloadPaths: readonly string[] = [], signal?: AbortSignal, fingerprintCache: PayloadFingerprintCache = inventoryPayloadFingerprints): Promise<LauncherEvidence> {
+export async function discoverLauncher(requested: string, environment: TargetEnvironment, payloadPaths: readonly string[] = [], signal?: AbortSignal, fingerprintCache?: PayloadFingerprintCache): Promise<LauncherEvidence> {
   signal?.throwIfAborted()
   const diagnostics: string[] = []
   const directories = environment.path.split(':').filter((entry) => {
@@ -38,24 +38,13 @@ export async function discoverLauncher(requested: string, environment: TargetEnv
     signal?.throwIfAborted()
     let symbolicLink: boolean
     try { symbolicLink = (await lstat(candidate)).isSymbolicLink() } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-        evidence.status = 'unreadable'
-        logIgnoredError('harness', 'inspect launcher candidate', error)
-      }
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') evidence.status = 'unreadable'
       continue
     }
     let resolved: string
-    try { resolved = await realpath(candidate) } catch (error) {
-      logIgnoredError('harness', 'resolve launcher candidate', error, {}, ['ENOENT'])
-      evidence.status = symbolicLink ? 'broken-symlink' : 'unreadable'
-      continue
-    }
+    try { resolved = await realpath(candidate) } catch { evidence.status = symbolicLink ? 'broken-symlink' : 'unreadable'; continue }
     try { await access(resolved, constants.X_OK); if (!(await stat(resolved)).isFile()) throw new Error('Not a file') }
-    catch (error) {
-      logIgnoredError('harness', 'inspect launcher access', error, {}, ['ENOENT'])
-      evidence.status = 'not-executable'
-      continue
-    }
+    catch { evidence.status = 'not-executable'; continue }
     try {
       const file = await open(resolved, 'r')
       const prefix = Buffer.alloc(4096)
@@ -75,12 +64,12 @@ export async function discoverLauncher(requested: string, environment: TargetEnv
             if (!command || command.startsWith('-')) throw new Error('Unsupported env shebang options')
             let found: string | null = null
             for (const directory of directories) {
-              try { const path = await realpath(join(directory, command)); await access(path, constants.X_OK); if ((await stat(path)).isFile()) { found = path; break } } catch (error) { logIgnoredError('harness', 'inspect target interpreter candidate', error, {}, ['ENOENT', 'ENOTDIR']) }
+              try { const path = await realpath(join(directory, command)); await access(path, constants.X_OK); if ((await stat(path)).isFile()) { found = path; break } } catch { /* ignore: try the next target PATH entry. */ }
             }
             if (!found) throw new Error('Missing env interpreter')
             evidence.interpreter = found
           }
-        } catch (error) { logIgnoredError('harness', 'inspect launcher interpreter', error, {}, ['ENOENT']); evidence.status = 'missing-interpreter'; evidence.diagnostics.push(`Unavailable shebang interpreter: ${interpreter}`); continue }
+        } catch { evidence.status = 'missing-interpreter'; evidence.diagnostics.push(`Unavailable shebang interpreter: ${interpreter}`); continue }
       }
       evidence.resolvedLauncher = resolved
       const fingerprints = []
@@ -88,20 +77,22 @@ export async function discoverLauncher(requested: string, environment: TargetEnv
         const path = await realpath(payloadPath)
         // The launcher must execute; payloads may be readable SDK/modules loaded by it.
         await access(path, constants.R_OK)
-        const observation = await stat(path, { bigint: true })
-        if (!observation.isFile()) throw new Error('Payload is not a file')
-        const fingerprint = await fingerprintCache.fingerprint(path, { signal, observation })
+        if (!(await stat(path)).isFile()) throw new Error('Payload is not a file')
+        let fingerprint: string
+        if (fingerprintCache) {
+          fingerprint = await fingerprintCache.fingerprint(path, signal)
+        } else {
+          const hash = createHash('sha256')
+          for await (const chunk of createReadStream(path, { ...(signal ? { signal } : {}) })) hash.update(chunk)
+          fingerprint = hash.digest('hex')
+        }
         fingerprints.push({ path, fingerprint })
       }
       evidence.payloadFingerprints = fingerprints
       evidence.fingerprint = createHash('sha256').update(JSON.stringify(fingerprints)).digest('hex')
       evidence.status = 'installed'
       return evidence
-    } catch (error) {
-      signal?.throwIfAborted()
-      logIgnoredError('harness', 'read launcher payload', error)
-      evidence.status = 'unreadable'
-    }
+    } catch { signal?.throwIfAborted(); evidence.status = 'unreadable' }
   }
   return evidence
 }

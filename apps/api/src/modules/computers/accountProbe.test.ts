@@ -55,16 +55,19 @@ it('separates missing tools, signed-out tools and unreadable sign-in state', asy
   const signedOut = await probeComputerAccounts(ports(['claude'], {
     'claude auth status': { code: 1, stdout: 'Invalid API key · Please run /login' } }))
   expect(signedOut.accounts.find(value => value.tool === 'claude')?.signedIn).toBe(false)
-  await expect(probeComputerAccounts(ports(['codex', 'claude', 'gh'], {
+  const result = await probeComputerAccounts(ports(['codex', 'claude', 'gh'], {
     'claude auth status': { stdout: 'not json' },
     'gh auth status --active --hostname github.com --json hosts': { code: 1, stderr: 'You are not logged into any GitHub hosts.' },
-  }))).rejects.toMatchObject({ code: 'COMPUTER_ACCOUNT_UNAVAILABLE' })
+  }))
+  expect(result.accounts.map(value => [value.tool, value.installed, value.signedIn])).toEqual([
+    ['codex', true, null], ['claude', true, null], ['github', true, false],
+  ])
 })
 
 it.each(['missing', 'unreadable', 'malformed'] as const)(
-  'distinguishes missing Codex credentials from unreadable or malformed credentials: %s', async state => {
+  'keeps installed Codex sign-in unknown when its auth file is %s', async state => {
     const run = vi.fn<AccountProbePorts['run']>()
-    const result = probeComputerAccounts({
+    const result = await probeComputerAccounts({
       ...ports(['codex'], {}),
       run,
       readText: async () => {
@@ -72,13 +75,9 @@ it.each(['missing', 'unreadable', 'malformed'] as const)(
         return state === 'missing' ? null : 'not json'
       },
     })
-    if (state === 'missing') {
-      expect((await result).accounts.find(account => account.tool === 'codex')).toEqual({
-        tool: 'codex', installed: true, signedIn: null, account: null, details: [],
-      })
-    } else {
-      await expect(result).rejects.toMatchObject({ code: 'COMPUTER_ACCOUNT_UNAVAILABLE' })
-    }
+    expect(result.accounts.find(account => account.tool === 'codex')).toEqual({
+      tool: 'codex', installed: true, signedIn: null, account: null, details: [],
+    })
     expect(run).not.toHaveBeenCalled()
   },
 )
@@ -91,10 +90,10 @@ it('distinguishes unavailable Codex from an installed tool with unknown sign-in'
 })
 
 it('reports an installed Claude that cannot start', async () => {
-  await expect(probeComputerAccounts({ ...ports(['claude'], {}),
-    run: async () => ({ code: null, stdout: '', stderr: '' }) })).rejects.toMatchObject({
-    code: 'COMPUTER_ACCOUNT_UNAVAILABLE',
-  })
+  const result = await probeComputerAccounts({ ...ports(['claude'], {}),
+    run: async () => ({ code: null, stdout: '', stderr: '' }) })
+  expect(result.accounts.find(account => account.tool === 'claude')).toEqual({ tool: 'claude', installed: true, signedIn: null,
+    account: null, details: ['cannot start'] })
 })
 
 
@@ -114,9 +113,9 @@ it.each([
   { code: 1, stdout: '', stderr: 'network timeout' },
   { code: 0, stdout: 'unreadable', stderr: '' },
   { code: 0, stdout: JSON.stringify({ hosts: { 'github.com': [{ active: true, login: 'owner', state: 'timeout' }] } }), stderr: '' },
-])('reports failed or unreadable GitHub status as a typed error', async output => {
-  await expect(probeComputerAccounts({ ...ports(['gh'], {}), run: async () => output }))
-    .rejects.toMatchObject({ code: 'GITHUB_STATUS_UNKNOWN' })
+])('keeps failed or unreadable GitHub status unknown', async output => {
+  const result = await probeComputerAccounts({ ...ports(['gh'], {}), run: async () => output })
+  expect(result.accounts.find(value => value.tool === 'github')?.signedIn).toBeNull()
 })
 
 it('uses text status when JSON is unsupported and selects the active account', async () => {
@@ -235,7 +234,7 @@ it('does not reuse an installed account when its executable disappears', async (
   expect((await f.read()).accounts[1]?.installed).toBe(false)
   f.installed(true)
   await rm(f.binary)
-  await expect(f.read()).rejects.toMatchObject({ code: 'COMPUTER_ACCOUNT_UNAVAILABLE' })
+  expect((await f.read()).accounts[1]?.signedIn).toBeNull()
   await writeFile(f.binary, 'restored', { mode: 0o700 })
   f.account('restored')
   expect((await f.read()).accounts[1]?.account).toBe('restored')
@@ -245,7 +244,7 @@ it('does not reuse an installed account when its executable disappears', async (
 it('retries a failed process probe and shares concurrent successful probes', async () => {
   const f = await cachedProbeFixture()
   f.run.mockRejectedValueOnce(new Error('probe failed'))
-  await expect(f.read()).rejects.toMatchObject({ code: 'COMPUTER_ACCOUNT_UNAVAILABLE' })
+  expect((await f.read()).accounts[1]?.signedIn).toBeNull()
   const values = await Promise.all([f.read(), f.read()])
   expect(values.every(value => value.accounts[1]?.account === 'first')).toBe(true)
   expect(f.run).toHaveBeenCalledTimes(2)

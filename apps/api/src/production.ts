@@ -1,5 +1,3 @@
-import { MANAGED_MCP_NAMESPACE } from '@foreman-code/contracts/managed-mcp-channel'
-import { DeviceManagedMcp } from './modules/harnesses/deviceManagedMcp.js'
 import { RunWorktrees } from './modules/runs/runWorktrees.js'
 import { withTransaction } from './infrastructure/transaction.js'
 import { ComputerActivityService } from './modules/computers/activity.js'
@@ -11,8 +9,6 @@ import {
 import { snapshotAgentWorktree } from './modules/sources/agentSnapshot.js'
 import { CiRuntimeProvisioner } from './modules/jobs/ciRuntimeProvisioner.js'
 import { CiEnrollment } from './modules/jobs/ciEnrollment.js'
-import { startStateDeadlineSweeper } from './modules/diagnostics/stateDeadlines.js'
-import { reportServiceFailure, trackService } from './modules/diagnostics/serviceHealth.js'
 import { ProductionCiEnrollmentInventory } from './modules/jobs/ciEnrollmentInventory.js'
 import { CI_HOST_NAMESPACE, CI_RUNTIME_NAMESPACE, DEFAULT_STUCK_EXECUTION_IDLE_MS } from '@foreman-code/contracts'
 import { HostCiService } from './modules/ci-host/service.js'
@@ -27,10 +23,7 @@ import { systemGitWorktreePorts } from './modules/sources/gitWorktree.js'
 import { registerComputerAccountsRoutes } from './routes/computerAccounts.js'
 import { registerComputerMaintenanceRoutes } from './routes/computerMaintenance.js'
 import { FleetMaintenanceService } from './modules/computers/fleet.js'
-import { startWorkerPublicationSync } from './modules/computers/workerPublicationSync.js'
-import { createProductionWorkerArtifactExtension, readProductionWorkerManifestSha256s,
-  readProductionWorkerContentSha256s, readProductionWorkerReleasePublication,
-  workerArtifactLocation } from './modules/computers/workerArtifactsProduction.js'
+import { createProductionWorkerArtifactExtension, readProductionWorkerManifestSha256s } from './modules/computers/workerArtifactsProduction.js'
 import { ComputerMaintenance, claudeUserMcpServers, installedPlugins, pluginMarketplaces, systemMaintenancePorts } from './modules/computers/maintenance.js'
 import { ComputerGitHubService } from './modules/computers/github.js'
 import { COMPUTER_MAINTENANCE_NAMESPACE, COMPUTER_MAINTENANCE_VERSION } from '@foreman-code/contracts/computer-maintenance'
@@ -625,8 +618,6 @@ function configureDeviceRuntime(composition: ProductionComposition) {
     remoteTelemetry,
   } = composition
   const deviceRuntime = composition.deviceRuntime = new ProductionDeviceRuntime(database.pool, infrastructure?.deviceListener, {
-    workerArtifacts: workerArtifactLocation({ environment: process.env,
-      releaseDirectory: fileURLToPath(new URL('../../../', import.meta.url)) }),
     extensions: [
       remoteTelemetry.extension,
       ...rsync.extensions.map(extension => ({ ...extension, role: 'duplex' as const, async handle(raw: unknown, context: import('./modules/devices/deviceApplicationChannel.js').DeviceExtensionContext) {
@@ -704,7 +695,6 @@ function configureDeviceRuntime(composition: ProductionComposition) {
         releaseDirectory: fileURLToPath(new URL('../../../', import.meta.url)),
       }),
       { namespace: COMPUTER_GITHUB_NAMESPACE, version: 1, role: 'client', maxJsonBytes: 16_384, maxBinaryBytes: 0 },
-      { namespace: MANAGED_MCP_NAMESPACE, version: 1, role: 'client', maxJsonBytes: 1_048_576, maxBinaryBytes: 0 },
       { namespace: COMPUTER_SYNC_NAMESPACE, version: 1, role: 'client', maxJsonBytes: 1_048_576, maxBinaryBytes: 0 },
       { namespace: AGENT_SNAPSHOT_NAMESPACE, version: 1, role: 'client', maxJsonBytes: AGENT_SNAPSHOT_JSON_BYTES, maxBinaryBytes: 0 },
       { namespace: CI_RUNTIME_NAMESPACE, version: 1, role: 'client', maxJsonBytes: 1_048_576, maxBinaryBytes: 0 },
@@ -834,8 +824,6 @@ function configureProviderAccounts(composition: ProductionComposition) {
     if (!composition.remoteWorkflow) throw new DomainError('REMOTE_WORKFLOW_UNAVAILABLE', 'The actual original native physical composition is unavailable.', 503)
     return composition.remoteWorkflow.assertPhysical(sql, owner, capture)
   }, async (sql, evidence, proof) => {
-    // Event file contexts are admitted at turn start; artifact results arrive in captured history.
-    if (proof.original.type === 'event' && proof.original.event.type !== 'turn.started') return
     if (!composition.admitWorkflowFileContext) throw new DomainError('NATIVE_ARTIFACT_CONTEXT_UNAVAILABLE', 'The original Main file-context composition is unavailable.', 503)
     await composition.admitWorkflowFileContext(sql, evidence, proof)
     if (await workflowArtifactsAreLocal(sql, proof.scope.runId, proof.ref.nodeId)) {
@@ -1190,9 +1178,7 @@ function configureHarnessProfiles(composition: ProductionComposition) {
     if (hostRef.kind !== 'main' || !binding.installation.installationFingerprint) throw new DomainError('CLAUDE_INSTALLATION_UNAVAILABLE', 'The actual local Claude installation is unavailable.', 409)
     return { hostRef, applicationInstallationId: hostRef.mainId, harnessInstallationId: binding.selection.harnessInstallationId,
       installationFingerprint: binding.installation.installationFingerprint }
-  }, accountConfigurations, value => hostProfileChecks.checkAutomatically(
-    value, harnessRegistry.pinOverride(value).installation,
-  ))
+  }, accountConfigurations)
   accountConfigurations.bindProfiles(harnessInstances)
   composition.installationMonitor = new HarnessInstallationMonitor(harnessRegistry, hostProfileChecks,
     () => deviceRuntime.endpointForDomains(), async (binding, inventory) => {
@@ -2131,18 +2117,7 @@ function configureOperatorServices(composition: ProductionComposition) {
     placementChoices: new NodePlacementChoicesService(database.pool, new ProductionPlacementChoiceDiscovery(
       database.pool, () => {
         if (!composition.jobRuntime) throw new DomainError('PLACEMENT_CHOICES_UNAVAILABLE', 'Computer choices are not initialized.', 503)
-        const runtime = composition.jobRuntime
-        return { roots: runtime.policies, sources: runtime.sources, profiles: hostSettings, registry: harnessRegistry,
-          ensureProfileReady: profile => composition.harnessInstances.ensureReady(profile),
-          provisionRoot: (...args: Parameters<ProductionCiEnrollmentInventory['root']>) => {
-            const workspaceRoots = composition.runtimeServices.workspaceRoots
-            if (!workspaceRoots) throw new DomainError('PLACEMENT_CHOICES_UNAVAILABLE', 'Workspace roots are not initialized.', 503)
-            const inventory = new ProductionCiEnrollmentInventory(database.pool, runtime.sources,
-              () => deviceRuntime.endpointForDomains(), () => runtime.mainCiRuntime, workerExecution,
-              new ManagedWorkspaceRootService(commands, workspaceRoots, runtime.policies))
-            return inventory.root(...args)
-          },
-        }
+        return { roots: composition.jobRuntime.policies, sources: composition.jobRuntime.sources, profiles: hostSettings, registry: harnessRegistry }
       },
     )),
   }
@@ -2321,7 +2296,6 @@ function configureRuntimeLifecycle(composition: ProductionComposition) {
       { name: 'initialization', run: () => composition.initialization?.then(() => undefined, () => undefined) },
       { name: 'native defaults initialization', run: () => composition.nativeDefaultsInitialization?.then(() => undefined, () => undefined) },
       { name: 'reconciliation', run: () => composition.reconciliation },
-      { name: 'source reservation reclamation', run: () => composition.jobRuntime?.drainMaterializationReservationReconciliation() },
     ],
     dispose: [
       { name: 'computer maintenance tasks', run: () => runtimeServices.computerMaintenance?.drain() },
@@ -2481,10 +2455,10 @@ function configureRuntimeHooks(composition: ProductionComposition) {
   composition.reconcile = (report: (error: unknown) => void): Promise<void> => {
     if (composition.closing) return Promise.resolve()
     if (composition.reconciliation) return composition.reconciliation
-    composition.reconciliation = trackService('run-reconciliation', { cadenceMs: 5_000, deadlineMs: 10 * 60_000 }, async () => {
+    composition.reconciliation = (async () => {
       await bugReports.detectStuckExecutions(config.stuckExecutionIdleMs ?? DEFAULT_STUCK_EXECUTION_IDLE_MS)
       if (composition.jobRuntime) await composition.jobRuntime.reconcileFailedCaptures(report)
-      composition.jobRuntime?.startMaterializationReservationReconciliation(report)
+      if (composition.jobRuntime) await composition.jobRuntime.reconcileMaterializationReservations(report)
       if (composition.jobRuntime) await closeCompletedWorkflowSources(database.pool, composition.jobRuntime.sources, report)
       // Age-based release is not urgent; storage pressure still releases on demand during approval and preparation.
       if (composition.jobRuntime && Date.now() - lastSnapshotRelease >= SNAPSHOT_RELEASE_INTERVAL_MS) {
@@ -2509,7 +2483,7 @@ function configureRuntimeHooks(composition: ProductionComposition) {
         for (const failure of page.errors) report(new Error(`Interaction ${failure.interactionId}: ${failure.error}`))
         afterId = page.nextCursor ?? undefined
       } while (afterId)
-    }).finally(() => { composition.reconciliation = undefined })
+    })().finally(() => { composition.reconciliation = undefined })
     return composition.reconciliation
   }
   app.addHook('preClose', async () => {
@@ -2690,7 +2664,7 @@ async function initializeWorkflowArtifacts(composition: ProductionComposition, m
     remoteWorkflow,
     harnessRegistry,
     selectedSuites,
-    harnessInstances,
+    hostProfileChecks,
     installationMonitor,
     app,
     mountArtifacts,
@@ -2702,10 +2676,8 @@ async function initializeWorkflowArtifacts(composition: ProductionComposition, m
   if (selectedSuites) {
     composition.agentPlacement = new AgentPlacementProducer(database.pool, machine.installationId, jobRuntime.sources, jobRuntime.policies,
       harnessRegistry, { codex: selectedSuites.codex.revision },
-      workerExecution, profile => harnessInstances.ensureReady(profile),
-      (hosts, signal) => installationMonitor.refreshHosts(hosts, signal), providerAccounts, async host => {
-        if (host.kind === 'device') await deviceRuntime.endpointForDomains().assertWorkerBundleReady(host.deviceId)
-      })
+      workerExecution, profile => hostProfileChecks.assertReady(profile),
+      (hosts, signal) => installationMonitor.refreshHosts(hosts, signal), providerAccounts)
     composition.agentPreparation = new AgentExecutionPreparation(jobRuntime.sources, composition.agentPlacement)
     composition.executionAuthority = createExecutionAuthorityExtension(database.pool, locations, composition.agentPlacement)
   }
@@ -2798,10 +2770,6 @@ async function initializeComputerServices(composition: ProductionComposition, ma
     () => deviceRuntime.endpointForDomains(), commands, new ComputerMaintenance(maintenancePorts), {
       workerManifestSha256s: () => readProductionWorkerManifestSha256s({ environment: process.env,
         releaseDirectory: fileURLToPath(new URL('../../../', import.meta.url)) }),
-      workerContentSha256s: () => readProductionWorkerContentSha256s({ environment: process.env,
-        releaseDirectory: fileURLToPath(new URL('../../../', import.meta.url)) }),
-      workerPublication: () => readProductionWorkerReleasePublication({ environment: process.env,
-        releaseDirectory: fileURLToPath(new URL('../../../', import.meta.url)) }),
       codexUserMcpServers: () => harnessSettings.mcp.userServers('codex'),
       claudeUserMcpServers: () => claudeUserMcpServers(maintenancePorts),
       claudePlugins: async () => await maintenancePorts.find('claude')
@@ -2823,21 +2791,17 @@ async function initializeComputerServices(composition: ProductionComposition, ma
   if (composition.closing) runtimeServices.computerMaintenance.stopAdmission()
   // Keep harnesses current and Main's MCP servers and plugins on every computer. Never under the test runners.
   if (!process.env.VITEST && process.env.NODE_ENV !== 'test' && process.env.FOREMAN_CODE_COMPUTER_UPKEEP !== '0') {
-    const upkeep = () => { void trackService('computer-upkeep', { cadenceMs: 6 * 60 * 60_000, deadlineMs: 2 * 60 * 60_000 },
-      () => runtimeServices.computerMaintenance!.keepCurrent()).catch(error => app.log.warn({ err: error }, 'Computer upkeep failed')) }
+    const upkeep = () => { void runtimeServices.computerMaintenance!.keepCurrent().catch(error => app.log.warn({ err: error }, 'Computer upkeep failed')) }
     const firstUpkeep = setTimeout(upkeep, 120_000)
     const upkeepTimer = setInterval(upkeep, 6 * 60 * 60_000)
     // MCP server and plugin changes on Main reach the other computers within about a minute.
-    const stopSourceSync = startWorkerPublicationSync(workerArtifactLocation({ environment: process.env,
-      releaseDirectory: fileURLToPath(new URL('../../../', import.meta.url)) }),
-    () => trackService('fleet-source-sync', { cadenceMs: 60_000, deadlineMs: 30 * 60_000 },
-      () => runtimeServices.computerMaintenance!.syncChangedSources()),
-    error => app.log.warn({ err: error }, 'Fleet MCP and plugin sync failed'))
-    firstUpkeep.unref(); upkeepTimer.unref()
+    const sourceSync = setInterval(() => { void runtimeServices.computerMaintenance!.syncChangedSources()
+      .catch(error => app.log.warn({ err: error }, 'Fleet MCP and plugin sync failed')) }, 60_000)
+    firstUpkeep.unref(); upkeepTimer.unref(); sourceSync.unref()
     composition.stopComputerTimers = () => {
       clearTimeout(firstUpkeep)
       clearInterval(upkeepTimer)
-      stopSourceSync()
+      clearInterval(sourceSync)
     }
     if (composition.closing) composition.stopComputerTimers()
   }
@@ -2852,8 +2816,7 @@ async function initializeComputerServices(composition: ProductionComposition, ma
     })
   registerComputerSyncRoutes(app, runtimeServices.computerSync)
   const syncTimer = setInterval(() => {
-    void trackService('computer-sync', { cadenceMs: 30_000, deadlineMs: 10 * 60_000 },
-      () => runtimeServices.computerSync!.poll()).catch(error => {
+    void runtimeServices.computerSync!.poll().catch(error => {
       app.log.warn({ err: error }, 'Shared file sync setup is pending')
     })
   }, 30_000)
@@ -2907,11 +2870,6 @@ async function initializeCiServices(
     agentSnapshots(database.pool, readAgentFiles), { reservedCloudSlots: configuredReservedCloudSlots() })
   composition.hostCi.start()
   app.addHook('onClose', async () => { await composition.hostCi?.close() })
-  const stopDeadlineSweeper = startStateDeadlineSweeper(database.pool, {
-    ciRuns: now => composition.hostCi!.expireOverdueRuns(now),
-    workerPublication: () => readProductionWorkerReleasePublication({ environment: process.env,
-      releaseDirectory: fileURLToPath(new URL('../../../', import.meta.url)) }) })
-  app.addHook('onClose', async () => { stopDeadlineSweeper() })
   runtimeServices.ci = composition.hostCi
   runtimeServices.jobRuntimeProfiles = jobRuntime.profiles
   runtimeServices.ciRuntime = new CiRuntimeProvisioner(database.pool, jobRuntime.profiles, jobRuntime.sources,
@@ -2967,8 +2925,6 @@ async function initializeHarnessServices(composition: ProductionComposition, mac
     database,
   } = composition
 
-  harnessSettings.mcp.configureDevices(new DeviceManagedMcp(database.pool, machine.installationId,
-    () => deviceRuntime.endpointForDomains(), commands))
   await startupDatabase(() => harnessRegistry.initialize(machine.installationId))
   assertOpen()
   if (processRegistry instanceof NativeProcessRegistry) {
@@ -2998,9 +2954,7 @@ async function initializeHarnessServices(composition: ProductionComposition, mac
       record: (principalId, source, selectorKey) => commands.recordDenied(principalId, source, 'resource_telemetry_selector_get', selectorKey),
     })
     void composition.telemetry.completion.then(result => {
-      if (result.kind !== 'failed') return
-      reportServiceFailure('telemetry-collector', result.error)
-      app.log.error({ err: result.error }, 'passive resource telemetry collector failed')
+      if (result.kind === 'failed') app.log.error({ err: result.error }, 'passive resource telemetry collector failed')
     })
     assertOpen()
   }

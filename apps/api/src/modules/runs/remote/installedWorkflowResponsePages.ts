@@ -7,7 +7,6 @@ import { RemoteOperationReceiptSchema } from '@foreman-code/contracts/remote-exe
 import { RemoteReceiptPageSchema, type RemoteReceiptPage,
   type RemoteExecutionRpcRequest } from '@foreman-code/contracts/remote-execution-rpc'
 import { pageJsonContinuationBytes, readJsonContinuation } from './jsonContinuation.js'
-import { DomainError } from '../../errors.js'
 
 type Response = Record<string, unknown>
 type Continuation = Extract<RemoteExecutionRpcRequest, { method: 'receipt-continuation' }>
@@ -59,7 +58,6 @@ export class InstalledWorkflowResponsePages {
     const bytes = Buffer.from(JSON.stringify(receipt))
     const metadata = pageJsonContinuationBytes(bytes)
     for (const [id, transfer] of this.transfers) if (transfer.expiresAt <= Date.now()) this.remove(id)
-    // Least recently read first: a transfer that is still being read stays retained.
     while (this.retainedBytes + bytes.byteLength > retainedBytesLimit || this.transfers.size >= 128) {
       this.remove(this.transfers.keys().next().value!)
     }
@@ -74,18 +72,12 @@ export class InstalledWorkflowResponsePages {
 
   read(frame: Continuation, binding: Readonly<DeviceSessionBinding>): RemoteReceiptPage {
     const retained = this.transfers.get(frame.transferId)
-    if (!retained || retained.expiresAt <= Date.now()) {
-      throw new DomainError('transfer-expired', 'Receipt transfer owner or revision changed: snapshot expired.', 409)
-    }
-    if (!isDeepStrictEqual(retained.binding, binding) || !isDeepStrictEqual(retained.intent, frame.intent)
+    if (!retained || retained.expiresAt <= Date.now()
+      || !isDeepStrictEqual(retained.binding, binding) || !isDeepStrictEqual(retained.intent, frame.intent)
       || !isDeepStrictEqual(retained.placement, frame.placement) || retained.sequence !== frame.receiptSequence) {
-      throw new DomainError('conflict', 'Receipt transfer owner or revision changed', 409)
+      throw new Error('Receipt transfer owner or revision changed')
     }
     const metadata = pageJsonContinuationBytes(retained.bytes, frame.metadata)
-    // A served page is reader progress: renew the retention and evict idle transfers before this one.
-    retained.expiresAt = Date.now() + retentionMs
-    this.transfers.delete(frame.transferId)
-    this.transfers.set(frame.transferId, retained)
     return RemoteReceiptPageSchema.parse({ kind: 'receipt-page', transferId: frame.transferId,
       receiptSequence: retained.sequence, metadata })
   }

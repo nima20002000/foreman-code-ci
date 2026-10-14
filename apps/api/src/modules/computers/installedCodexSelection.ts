@@ -18,23 +18,14 @@ function nativeCodexScope(home: string) {
 async function installedNativeCodex(home: string): Promise<string> {
   const scope = nativeCodexScope(home)
   const candidates: string[] = []
-  const absent = (error: unknown): string[] => {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
-    throw error
-  }
-  for (const entry of await readdir(scope).catch(absent)) {
+  for (const entry of await readdir(scope).catch(() => [])) {
     if (!entry.startsWith('codex-')) continue
     const vendor = join(scope, entry, 'vendor')
-    for (const triple of await readdir(vendor).catch(absent)) candidates.push(join(vendor, triple, 'bin', 'codex'))
+    for (const triple of await readdir(vendor).catch(() => [])) candidates.push(join(vendor, triple, 'bin', 'codex'))
   }
   const executable = (await Promise.all(candidates.map(candidate =>
-    access(candidate, constants.X_OK).then(() => candidate, error => {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
-      throw error
-    })))).filter((value): value is string => value !== null)
-  if (executable.length !== 1) {
-    throw new Error(`The updated Codex binary could not be located: ${executable.length} executable candidates from ${candidates.length} paths.`)
-  }
+    access(candidate, constants.X_OK).then(() => candidate, () => null)))).filter((value): value is string => value !== null)
+  if (executable.length !== 1) throw new Error('The updated Codex binary could not be located on this computer.')
   return executable[0]!
 }
 

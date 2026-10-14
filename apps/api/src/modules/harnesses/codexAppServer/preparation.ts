@@ -52,13 +52,11 @@ export abstract class CodexManagerPreparation extends CodexManagerBase {
     const environment = this.dependencies.environment()
     const qualified = await this.dependencies.qualify(this.binary, workingDirectory, environment, true, signal)
     await this.validateMcpPolicies(parsed.data, qualified.binary, workingDirectory, environment, signal)
-    const modelFacts = await this.dependencies.qualifyModel(parsed.data, qualified.binary, workingDirectory, environment, signal,
+    await this.dependencies.qualifyModel(parsed.data, qualified.binary, workingDirectory, environment, signal,
       undefined, { qualified, assertUnchanged: this.dependencies.assertUnchanged,
         runCommand: this.dependencies.runCommand,
         transportFactory: (...args) => this.ownTransport(this.dependencies.transport(...args)) })
-    return { ...nativeQualification(parsed.data, qualified.providerVersion),
-      ...(typeof modelFacts === 'object' && modelFacts.modelCatalogSource
-        ? { modelCatalogSource: modelFacts.modelCatalogSource } : {}) }
+    return nativeQualification(parsed.data, qualified.providerVersion)
   }
 
   async discoverModels(workingDirectory: string, signal?: AbortSignal) {

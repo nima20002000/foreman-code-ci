@@ -1,6 +1,5 @@
 import { HarnessExecutionSchema } from '@foreman-code/contracts'
 import { SourceMaterializationRecordSchema } from '@foreman-code/contracts/source-admission'
-import type { RetainedSourceFootprint } from '@foreman-code/contracts/source-operations'
 import type pg from 'pg'
 import type { GraphSqlClient } from '../run-graph/connection.js'
 import { readUnboundWorkflowClosure, readWorkflowClosure } from '../interactions/workflowClosure.js'
@@ -27,7 +26,6 @@ interface CompletedSource {
   execution: unknown
   settlement_pending: boolean
   preparation_closed: boolean
-  worktree_cleanup?: RetainedSourceFootprint['worktree']
 }
 
 const cleanupPageSize = 100
@@ -46,8 +44,7 @@ function deferSourceClosure(
   report: (error: unknown) => void,
 ): boolean {
   const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined
-  // A read that timed out behind a busy Run proves nothing either way; try again on a later pass.
-  if (code !== 'SOURCE_EXECUTION_UNCERTAIN' && code !== 'ENOENT' && code !== 'DATABASE_READ_TIMEOUT') {
+  if (code !== 'SOURCE_EXECUTION_UNCERTAIN' && code !== 'ENOENT') {
     retries.delete(materializationId)
     return false
   }
@@ -69,7 +66,7 @@ function deferSourceClosure(
 
 async function completedSourcePage(pool: Pick<pg.Pool, 'query'>, after: CompletedSource | undefined) {
   return pool.query<CompletedSource>(`select m.materialization_id,m.state='closed' as already_closed,
-      m.record,m.worktree_cleanup,e.record as execution,
+      m.record,e.record as execution,
       exists(select 1 from source_preparation_reconciliations c
         where c.operation_id::text=m.record->>'operationId' and c.status='closed') as preparation_closed,
       (r.execution_state in ('running','waiting')
@@ -120,8 +117,6 @@ export async function closeCompletedWorkflowSources(
       unseen.delete(row.materialization_id)
       const retry = retries.get(row.materialization_id)
       if (retry && retry.nextAttemptAt > Date.now()) continue
-      if (row.already_closed && row.worktree_cleanup?.state === 'retained'
-        && Date.parse(row.worktree_cleanup.nextAttemptAt ?? '') > Date.now()) continue
       try {
         // A successful result can be published before its native closure commits.
         if (row.settlement_pending) continue
