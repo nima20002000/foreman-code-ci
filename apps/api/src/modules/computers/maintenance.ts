@@ -1,6 +1,4 @@
 import { errorMessage } from '../../shared/errorMessage.js'
-import { readOperationalFailures } from '../diagnostics/logger.js'
-import { readServiceHealth } from '../diagnostics/serviceHealth.js'
 import { readClaudePlugins, claudeCliResult } from './claudePlugins.js'
 import { isCodexStagingRenameError, removeCodexStagingDirectories } from './npmStaging.js'
 import { syncFingerprint } from './syncFingerprint.js'
@@ -8,7 +6,6 @@ import { MaintenanceTaskStore } from './maintenanceTaskStore.js'
 import { MaintenanceCommandStore } from './maintenanceCommandStore.js'
 import type { MaintenancePorts } from './maintenancePorts.js'
 import { DomainError } from '../errors.js'
-import { executableUnavailable } from './executableError.js'
 import { z } from 'zod'
 import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
@@ -23,6 +20,7 @@ import {
   type MaintenanceTaskStart, type SyncedMarketplace, type SyncedMcpServer,
   type WorkerUpdateStatus,
 } from '@foreman-code/contracts/computer-maintenance'
+import { fallbackOnError } from '../diagnostics/ignoredError.js'
 
 export type { MaintenancePorts }
 
@@ -31,8 +29,6 @@ const PACKAGES: Record<MaintainedHarness, string> = { codex: '@openai/codex', cl
 const LABELS: Record<MaintainedHarness, string> = { codex: 'Codex', claude: 'Claude' }
 const LATEST_MS = 60 * 60_000
 const LONG_MS = 20 * 60_000
-/** Steps stop after LONG_MS and a Worker update attempt after 45 minutes; a task never stays running longer. */
-const TASK_DEADLINE_MS = 60 * 60_000
 const APT = ['env', 'LC_ALL=C', 'DEBIAN_FRONTEND=noninteractive', 'NEEDRESTART_MODE=a', 'apt-get', '-y', '-q',
   '-o', 'Dpkg::Options::=--force-confdef', '-o', 'Dpkg::Options::=--force-confold']
 
@@ -109,21 +105,6 @@ export class ComputerMaintenance {
     }
   }
 
-  /** Fails tasks past their maximum age; the step or update they wait for is not reported as stopped. */
-  private async expireOverdueTasks(tasks: readonly MaintenanceTask[] = this.tasks): Promise<void> {
-    const now = this.ports.now().getTime()
-    for (const task of tasks.filter(task => task.state === 'running')) {
-      const age = now - Date.parse(task.startedAt)
-      if (age <= TASK_DEADLINE_MS) continue
-      let phase = 'running'
-      if (task.workerTargetVersion !== undefined) phase = 'worker-restart'
-      else if (task.summary.startsWith('Waiting')) phase = 'waiting'
-      await this.finish(task, 'failed', `MAINTENANCE_TASK_DEADLINE_EXCEEDED: phase ${phase}, age ${Math.round(age / 60_000)} min, `
-        + `over the ${TASK_DEADLINE_MS / 60_000} min limit. Cause: ${task.summary} Its work was not confirmed stopped; `
-        + 'check this computer before retrying.')
-    }
-  }
-
   private async observe(signal: AbortSignal): Promise<MaintenanceStatus> {
     const worker = await this.ports.workerUpdate?.status()
     if (worker) {
@@ -134,7 +115,6 @@ export class ComputerMaintenance {
           outcome.lastError ?? `Worker ${outcome.currentVersion} is current.`)
       }
     }
-    await this.expireOverdueTasks()
     const home = this.ports.environment.HOME ?? homedir()
     const [versions, latest, packageUpdates, rebootRequired, sudo, disk] = await Promise.all([
       Promise.all((['codex', 'claude'] as const).map(harness => this.installedVersion(harness, signal))),
@@ -145,8 +125,6 @@ export class ComputerMaintenance {
       this.ports.disk(home).then(value => value && { path: home, ...value }),
     ])
     return MaintenanceStatusSchema.parse({
-      operationalFailures: readOperationalFailures(),
-      services: readServiceHealth(),
       harnesses: (['codex', 'claude'] as const).map((harness, index) => ({ harness, installed: versions[index] !== undefined,
         version: versions[index] ?? null, latest: latest[harness] ?? null })),
       system: { packageUpdates: packageUpdates?.pending ?? null, rebootRequired, sudo, disk },
@@ -157,10 +135,8 @@ export class ComputerMaintenance {
 
   private async workerTaskOutcome(task: MaintenanceTask, worker: WorkerUpdateStatus) {
     if (task.workerTargetVersion === undefined) return null
-    const deadline = Date.parse(task.startedAt) + TASK_DEADLINE_MS
-    const retained = await this.ports.workerUpdate?.outcome?.(task, new Date(deadline).toISOString())
+    const retained = await this.ports.workerUpdate?.outcome?.(task)
     if (retained) return retained
-    if (this.ports.now().getTime() > deadline) return null
     const matching = worker.state === 'current' ? worker.currentVersion === task.workerTargetVersion
       : worker.targetVersion === task.workerTargetVersion
     return matching && ['current', 'failed', 'rolled-back'].includes(worker.state) ? worker : null
@@ -231,15 +207,14 @@ export class ComputerMaintenance {
       return structuredClone(retained)
     }
     this.assertOpen()
-    const previous = this.tasks.findLast(task => task.kind === request.kind
-      && (task.state === 'running' || this.activeTasks.has(task.id)))
-    if (previous?.state === 'running' && this.activeTasks.get(previous.id)?.requestHash === requestHash) {
+    const previous = this.tasks.findLast(task => task.state === 'running' && task.kind === request.kind)
+    if (previous && this.activeTasks.get(previous.id)?.requestHash === requestHash) {
       await this.taskStore.flushed()
       await this.bindCommand(commandId, requestHash, previous)
       return structuredClone(previous)
     }
     if (this.tasks.length === 20) {
-      const oldestFinished = this.tasks.findIndex(task => task.state !== 'running' && !this.activeTasks.has(task.id))
+      const oldestFinished = this.tasks.findIndex(task => task.state !== 'running')
       if (oldestFinished < 0) throw new Error('The maintenance queue is full. Wait for a task to finish before retrying.')
       this.tasks.splice(oldestFinished, 1)
     }
@@ -254,12 +229,9 @@ export class ComputerMaintenance {
     const predecessor = previous ? this.activeTasks.get(previous.id)?.completion : undefined
     const completion = saved.then(async () => {
       await predecessor
-      await this.expireOverdueTasks([task])
-      if (task.state !== 'running') return
       task.summary = 'Running…'
       return this.perform(request, task)
     }).then(async summary => {
-      if (summary === undefined || task.state !== 'running') return
       if (request.kind === 'update-worker') {
         const worker = await this.ports.workerUpdate?.status()
         if (worker?.state === 'restarting' && worker.targetVersion) {
@@ -278,7 +250,6 @@ export class ComputerMaintenance {
     },
       (error: unknown) => this.finish(task, 'failed', maintenanceError(error, 'Maintenance failed.')))
       .catch((error: unknown) => { this.storageFailure = new Error(maintenanceError(error, 'Maintenance storage failed.')) })
-      .finally(() => { this.activeTasks.delete(task.id) })
     this.activeTasks.set(task.id, { requestHash, completion })
     await saved
     return MaintenanceTaskSchema.parse(structuredClone(task))
@@ -321,8 +292,6 @@ export class ComputerMaintenance {
   }
 
   private async finish(task: MaintenanceTask, state: 'succeeded' | 'failed', summary: string) {
-    // A task failed by its deadline keeps that result when its work ends later.
-    if (task.state !== 'running') return
     task.state = state
     task.summary = summary.slice(0, 2000)
     task.finishedAt = this.ports.now().toISOString()
@@ -332,6 +301,7 @@ export class ComputerMaintenance {
       await this.commandStore.save(commandId, requestHash, task)
     }
     this.taskCommands.delete(task.id)
+    this.activeTasks.delete(task.id)
   }
 
   private async perform(request: MaintenanceTaskStart, task: MaintenanceTask): Promise<string> {
@@ -686,24 +656,19 @@ export class ComputerMaintenance {
     const binary = await this.ports.find(harness)
     if (!binary) return undefined
     const result = await this.ports.run(binary, ['--version'], { signal, timeoutMs: 15_000 })
-    const version = result.code === 0 ? versionOf(result.stdout) : null
-    if (!version) throw new DomainError('COMPUTER_HARNESS_VERSION_UNAVAILABLE',
-      `${harness} version inspection failed (exit ${result.code}).`, 503)
-    return version
+      .catch(fallbackOnError(null, 'lifecycle', 'read harness version', { harness }))
+    return result?.code === 0 ? versionOf(result.stdout) : null
   }
 
   private latestVersions(signal: AbortSignal) {
     if (this.latest && Date.now() - this.latest.at < LATEST_MS) return this.latest.value
     const value = (async () => {
       const npm = await this.ports.find('npm')
-      if (!npm) throw new DomainError('COMPUTER_LATEST_VERSION_UNAVAILABLE',
-        'Latest version inspection is unavailable: npm is not installed.', 503)
+      if (!npm) return {}
       const entries = await Promise.all((['codex', 'claude'] as const).map(async harness => {
         const result = await this.ports.run(npm, ['view', PACKAGES[harness], 'version'], { signal, timeoutMs: 20_000 })
-        const version = result.code === 0 ? versionOf(result.stdout.trim()) : null
-        if (!version) throw new DomainError('COMPUTER_LATEST_VERSION_UNAVAILABLE',
-          `Latest ${harness} version inspection failed (exit ${result.code}).`, 503)
-        return [harness, version] as const
+          .catch(fallbackOnError(null, 'lifecycle', 'read latest harness version', { harness }))
+        return [harness, result?.code === 0 ? result.stdout.trim() || null : null] as const
       }))
       return Object.fromEntries(entries)
     })()
@@ -717,19 +682,17 @@ export class ComputerMaintenance {
     if (!apt) return null
     const result = await this.ports.run(apt, ['-s', '-o', 'Debug::NoLocking=1', '--with-new-pkgs', 'upgrade'],
       { signal, timeoutMs: 60_000 })
-    if (result.code !== 0) throw new DomainError('COMPUTER_PACKAGE_UPDATES_UNAVAILABLE',
-      `Package updates inspection failed (exit ${result.code}).`, 503)
+      .catch(fallbackOnError(null, 'lifecycle', 'read pending package updates'))
+    if (result?.code !== 0) return null
     const counts = result.stdout.match(/(\d+) upgraded, (\d+) newly installed, \d+ to remove and (\d+) not upgraded\./u)
-    if (!counts) throw new DomainError('COMPUTER_PACKAGE_UPDATES_UNAVAILABLE',
-      'Package updates inspection returned invalid output.', 503)
+    if (!counts) return null
     return { pending: Number(counts[1]) + Number(counts[3]), installable: Number(counts[1]) + Number(counts[2]) }
   }
 
   private async sudo(signal: AbortSignal): Promise<boolean> {
     const result = await this.ports.run('sudo', ['-n', 'true'], { signal, timeoutMs: 10_000 })
-    if (result.code === 0) return true
-    if (result.code === 1 && /a password is required|not allowed to execute|not in the sudoers/iu.test(result.stderr)) return false
-    throw new DomainError('COMPUTER_PRIVILEGE_CHECK_UNAVAILABLE', `Sudo inspection failed (exit ${result.code}).`, 503)
+      .catch(fallbackOnError(null, 'lifecycle', 'check sudo availability'))
+    return result?.code === 0
   }
 
   private async requireSudo(signal: AbortSignal) {
@@ -790,35 +753,21 @@ export function systemMaintenancePorts(environment: NodeJS.ProcessEnv = process.
     environment,
     async find(name) {
       const selected = binaries[name]
-      const candidates = selected ? [selected] : directories.map(directory => join(directory, name))
-      for (const candidate of candidates) {
-        try {
-          await access(candidate, constants.X_OK)
-        } catch (error) {
-          if (!selected) continue
-          const code = (error as NodeJS.ErrnoException).code ?? 'ACCESS_FAILED'
-          throw executableUnavailable(name, candidate, home, code)
-        }
+      if (selected) { try { await access(selected, constants.X_OK); return selected } catch { /* ignore: fall back to PATH */ } }
+      let firstExecutable: string | null = null
+      for (const directory of directories) {
+        const candidate = join(directory, name)
+        try { await access(candidate, constants.X_OK) } catch { continue }
+        firstExecutable ??= candidate
         if (name !== 'codex' && name !== 'claude') return candidate
-        let probe
-        try {
-          probe = await run(candidate, ['--version'], { signal: AbortSignal.timeout(15_000), timeoutMs: 15_000 })
-        } catch {
-          throw executableUnavailable(name, candidate, home, 'version probe failed or timed out')
-        }
+        // npm can leave an executable launcher whose optional native package is incomplete.
+        const probe = await run(candidate, ['--version'], { signal: AbortSignal.timeout(15_000), timeoutMs: 15_000 })
         if (probe.code === 0 && versionOf(probe.stdout)) return candidate
-        throw executableUnavailable(name, candidate, home, 'version probe failed; the installation may be incomplete')
       }
-      return null
+      return firstExecutable
     },
     run,
-    exists: async target => {
-      try { await access(target); return true }
-      catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false
-        throw error
-      }
-    },
+    exists: async target => { try { await access(target); return true } catch { return false } },
     readText: async target => {
       try {
         return await readFile(target, 'utf8')
@@ -841,8 +790,8 @@ export function systemMaintenancePorts(environment: NodeJS.ProcessEnv = process.
       }
     },
     disk: async target => {
-      const value = await statfs(target)
-      return { freeBytes: value.bavail * value.bsize, totalBytes: value.blocks * value.bsize }
+      try { const value = await statfs(target); return { freeBytes: value.bavail * value.bsize, totalBytes: value.blocks * value.bsize } }
+      catch { return null }
     },
     later: (fn, ms) => { setTimeout(fn, ms).unref() },
     now: () => new Date(),

@@ -22,26 +22,12 @@ import {
   assertGraphTransaction, beforeGraphCommit, beforeGraphCommitChecks, didGraphTransactionCommit, poisonGraphTransaction,
   type ExclusiveGraphConnection, type GraphTransactionSql,
 } from './connection.js'
-import { activeNativeBatch, memoizeNativeRead, nativeCommitCollect, seedNativeRead } from './nativeBatch.js'
 import { RunGraphError } from './errors.js'
 import { DomainError } from '../errors.js'
 import type { RunOwnership } from '../runs/ownership.js'
 import { workflowJobGraphSourceChangesLocked } from './workflowJobProjection.js'
-import { componentLogger } from '../diagnostics/logger.js'
-import { ZodError } from 'zod'
 
 export { graphSourceDigest } from './graphDigest.js'
-
-function throwPublicationFailure(error: unknown, runId: string): never {
-  if (error instanceof RunGraphError || error instanceof DomainError) throw error
-  componentLogger('engine').error({ err: error, runId, operation: 'publish run graph' },
-    'Run graph publication failed')
-  if (error instanceof Error && error.message === 'GRAPH_JSON_LIMIT') {
-    throw new RunGraphError('GRAPH_TRANSACTION_LIMIT', { cause: error })
-  }
-  if (error instanceof ZodError) throw new RunGraphError('GRAPH_INVALID_FACT', { cause: error })
-  throw error
-}
 
 /** Digest-only receipt for the complete ordered envelope, in the EXISTING
  * source table. Per-source digests alone cannot prove source-group ordering.
@@ -106,51 +92,6 @@ export async function readRepeatRunSourceLocked(sql: GraphTransactionSql, input:
     head: head.head_sequence, fact, semanticDigest, replayed,
     evidence: { sourceKind: 'run' as const, sourceId: scope.runId, sourceRevision: revision },
     sourceDigest: replayed ? latest!.source_digest : sourceDigest }
-}
-
-export interface RetainSourceRow { proof_id: string; record: unknown; source_digest: string;
-  saved_digest: string | null; semantic_digest: string | null; sequence: string }
-function retainRowKey(runId: string, proofId: string): string { return `retain-row:${runId}:${proofId}` }
-
-async function queryRetainRows(sql: GraphTransactionSql, runId: string, proofIds: readonly string[]): Promise<Map<string, RetainSourceRow>> {
-  const rows = await sql.query<RetainSourceRow>(
-    `select p.proof_id,p.record,p.source_digest,s.source_digest as saved_digest,s.semantic_digest,
-      h.head_sequence::text as sequence from workflow_native_proofs p
-      join run_graph_heads h on h.run_id=p.run_id
-      left join run_graph_sources s on s.run_id=p.run_id and s.source_kind='native_event'
-        and s.source_id=p.proof_id and s.source_revision=1
-      where p.run_id=$1 and p.proof_id=any($2::text[]) for share of p`, [runId, [...proofIds]])
-  return new Map(rows.rows.map((row) => [row.proof_id, row]))
-}
-
-/** Once per group, after its proofs are persisted: the retention rows for every proof, locked for share. */
-export async function seedRetainRows(sql: GraphTransactionSql, runId: string, proofIds: readonly string[]): Promise<void> {
-  const rows = await queryRetainRows(sql, runId, proofIds)
-  for (const proofId of proofIds) seedNativeRead(sql, retainRowKey(runId, proofId), rows.get(proofId) ?? null)
-}
-
-/** Retained-source rows: the group's seeded rows when present, otherwise one locked read. */
-async function readRetainRows(sql: GraphTransactionSql, runId: string, proofIds: readonly string[]): Promise<Map<string, RetainSourceRow>> {
-  const batch = activeNativeBatch(sql)
-  if (batch && proofIds.every((proofId) => batch.reads.has(retainRowKey(runId, proofId)))) {
-    const rows = await Promise.all(proofIds.map((proofId) => batch.reads.get(retainRowKey(runId, proofId))!))
-    return new Map(rows.filter((row): row is RetainSourceRow => row !== null).map((row) => [row.proof_id, row]))
-  }
-  return queryRetainRows(sql, runId, proofIds)
-}
-
-export function graphSourceRowKey(runId: string, sourceKind: string, sourceId: string, sourceRevision: string): string {
-  return `graph-source:${runId}:${sourceKind}:${sourceId}:${sourceRevision}`
-}
-
-/** The persisted source row, read once per batch; staged sources are checked by the caller first. */
-export function readGraphSourceRow(sql: GraphTransactionSql, runId: string, sourceKind: string, sourceId: string,
-  sourceRevision: string): Promise<{ source_digest: string; semantic_digest: string } | undefined> {
-  return memoizeNativeRead(sql, graphSourceRowKey(runId, sourceKind, sourceId, sourceRevision), async () => (await sql.query<{
-    source_digest: string; semantic_digest: string }>(
-    `select source_digest,semantic_digest from run_graph_sources
-     where run_id=$1 and source_kind=$2 and source_id=$3 and source_revision=$4::bigint`,
-    [runId, sourceKind, sourceId, sourceRevision])).rows[0])
 }
 
 export interface GraphSourceChange {
@@ -250,9 +191,13 @@ export class RunGraphPublication<S extends CanonicalRunGraphScope = RunGraphScop
         this.assertSame(staged, sourceDigest, semanticDigest)
         return { replayed: true }
       }
-      const existing = await readGraphSourceRow(this.sql, this.scope.runId, evidence.sourceKind, evidence.sourceId, evidence.sourceRevision)
-      if (existing) {
-        this.assertSame({ sourceDigest: existing.source_digest, semanticDigest: existing.semantic_digest }, sourceDigest, semanticDigest)
+      const existing = await this.sql.query<{ source_digest: string; semantic_digest: string }>(
+        `select source_digest,semantic_digest from run_graph_sources
+         where run_id=$1 and source_kind=$2 and source_id=$3 and source_revision=$4::bigint`,
+        [this.scope.runId, evidence.sourceKind, evidence.sourceId, evidence.sourceRevision],
+      )
+      if (existing.rows[0]) {
+        this.assertSame({ sourceDigest: existing.rows[0].source_digest, semanticDigest: existing.rows[0].semantic_digest }, sourceDigest, semanticDigest)
         return { replayed: true }
       }
       const bytes = Buffer.byteLength(canonicalGraphJson({ evidence, sourceDigest, semanticDigest, events }, RUN_GRAPH_LIMITS.transactionBytes))
@@ -310,14 +255,15 @@ export class RunGraphPublication<S extends CanonicalRunGraphScope = RunGraphScop
       return { replayed: false, value }
     } catch (error) {
       poisonGraphTransaction(this.sql)
-      if (error instanceof RunGraphError || error instanceof DomainError) throw error
+      if (error instanceof RunGraphError) throw error
       if (typeof error === 'object' && error !== null && 'code' in error) {
-        if (error.code === 'PGR01') throw new RunGraphError('GRAPH_STOP_CONFLICT', { cause: error })
-        if (error.code === 'PGR02') throw new RunGraphError('GRAPH_TERMINAL_CONFLICT', { cause: error })
+        if (error.code === 'PGR01') throw new RunGraphError('GRAPH_STOP_CONFLICT')
+        if (error.code === 'PGR02') throw new RunGraphError('GRAPH_TERMINAL_CONFLICT')
       }
       const code = RunGraphErrorCodeSchema.safeParse(error instanceof Error ? error.message : undefined)
-      if (code.success) throw new RunGraphError(code.data, { cause: error })
-      return throwPublicationFailure(error, this.scope.runId)
+      if (code.success) throw new RunGraphError(code.data)
+      if (error instanceof Error && error.message === 'GRAPH_JSON_LIMIT') throw new RunGraphError('GRAPH_TRANSACTION_LIMIT')
+      throw new RunGraphError('GRAPH_INVALID_FACT')
     } finally { if (entered) this.#busy = false }
   }
   /** Verify a source already staged by this branded G1 or durably committed.
@@ -362,7 +308,15 @@ export class RunGraphPublication<S extends CanonicalRunGraphScope = RunGraphScop
       owner.assertOwned()
       if (owner.runId !== this.scope.runId) throw new RunGraphError('GRAPH_SCOPE_MISMATCH')
       const fence = await owner.readOneShotFence(this.sql)
-      const originals = await readRetainRows(this.sql, owner.runId, proofIds)
+      const rows = await this.sql.query<{ proof_id: string; record: unknown; source_digest: string;
+        saved_digest: string | null; semantic_digest: string | null; sequence: string }>(
+        `select p.proof_id,p.record,p.source_digest,s.source_digest as saved_digest,s.semantic_digest,
+          h.head_sequence::text as sequence from workflow_native_proofs p
+          join run_graph_heads h on h.run_id=p.run_id
+          left join run_graph_sources s on s.run_id=p.run_id and s.source_kind='native_event'
+            and s.source_id=p.proof_id and s.source_revision=1
+          where p.run_id=$1 and p.proof_id=any($2::text[]) for share of p`, [owner.runId, [...proofIds]])
+      const originals = new Map(rows.rows.map((row) => [row.proof_id, row]))
       const receipts = proofIds.map((proofId) => {
         const row = originals.get(proofId)
         if (!row || graphSourceDigest(row.record) !== row.source_digest) throw new RunGraphError('GRAPH_SOURCE_CONFLICT')
@@ -384,21 +338,18 @@ export class RunGraphPublication<S extends CanonicalRunGraphScope = RunGraphScop
         }
         return { evidence, sourceDigest, semanticDigest }
       })
-      // Every retained call shares one live COMMIT read; each call's receipts and fence are still verified.
-      nativeCommitCollect(this.sql, 'retained-native-sources', { owner, fence, proofIds, receipts }, async (checks) => {
+      beforeGraphCommit(this.sql, async () => {
         owner.assertOwned()
         const current = await owner.readOneShotFence(this.sql)
         const latest = await this.sql.query<{ proof_id: string; record: unknown; source_digest: string }>(
           'select proof_id,record,source_digest from workflow_native_proofs where run_id=$1 and proof_id=any($2::text[])',
-          [owner.runId, [...new Set(checks.flatMap((check) => check.proofIds))]])
+          [owner.runId, [...proofIds]])
         const persisted = new Map(latest.rows.map((row) => [row.proof_id, row]))
-        for (const check of checks) {
-          if (current.ownerId !== check.fence.ownerId || current.fence !== check.fence.fence
-            || check.receipts.some(({ evidence, sourceDigest }) => {
-              const row = persisted.get(evidence.sourceId)
-              return !row || row.source_digest !== sourceDigest || graphSourceDigest(row.record) !== sourceDigest
-            })) throw new RunGraphError('GRAPH_SOURCE_CONFLICT')
-        }
+        if (current.ownerId !== fence.ownerId || current.fence !== fence.fence
+          || receipts.some(({ evidence, sourceDigest }) => {
+            const row = persisted.get(evidence.sourceId)
+            return !row || row.source_digest !== sourceDigest || graphSourceDigest(row.record) !== sourceDigest
+          })) throw new RunGraphError('GRAPH_SOURCE_CONFLICT')
       })
       return receipts
     } catch (error) { poisonGraphTransaction(this.sql); throw error }
@@ -697,7 +648,9 @@ export class RunGraphPublication<S extends CanonicalRunGraphScope = RunGraphScop
       return { replayed, semanticDigest, ...(!replayed && value !== undefined ? { value } : {}) }
     } catch (error) {
       poisonGraphTransaction(this.sql)
-      return throwPublicationFailure(error, this.scope.runId)
+      if (error instanceof RunGraphError || error instanceof DomainError) throw error
+      if (error instanceof Error && error.message === 'GRAPH_JSON_LIMIT') throw new RunGraphError('GRAPH_TRANSACTION_LIMIT')
+      throw new RunGraphError('GRAPH_INVALID_FACT')
     } finally { if (entered) this.#busy = false }
   }
   private assertSame(existing: { sourceDigest: string; semanticDigest: string }, sourceDigest: string, semanticDigest: string) {

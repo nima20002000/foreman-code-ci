@@ -20,7 +20,7 @@ async function verifyTickets(client: Client, workflow: RunningCiWorkflow, execut
   const runs = readback.partitions ?? [readback.run]
   expect(readback.group).toEqual({ groupId: report.groupId, state: report.outcome })
   expect(report.outcome).toBe('passed')
-  expect(runs.map(run => run.id)).toContain(report.ticketId)
+  expect(runs.map(run => run.id).sort()).toEqual(report.tickets.map(ticket => ticket.ticketId).sort())
   const owned = [...observation.tickets.values()].filter(ticket => ticket.initiatingExecutionId === executionId)
   expect(owned.map(ticket => ticket.ticketId).sort()).toEqual(runs.map(run => run.id).sort())
   if (workflow.workspace.project === 'demo') {
@@ -28,15 +28,9 @@ async function verifyTickets(client: Client, workflow: RunningCiWorkflow, execut
     expect(runs).toHaveLength(1)
     expect(runs[0]).toMatchObject({ part: null, partition: null })
   } else if (report.suite === 'integration') {
-    // Placement sizes the parts from free slots; each tier must still be one complete partition set.
-    expect(runs.length).toBeGreaterThanOrEqual(2)
-    expect(runs.every(run => run.part === null && run.partition)).toBe(true)
-    for (const tier of new Set(runs.map(run => run.partition?.tier))) {
-      const shards = runs.filter(run => run.partition?.tier === tier)
-      expect(shards.map(run => run.partition!.index).sort((left, right) => left - right))
-        .toEqual(Array.from({ length: shards.length }, (_, index) => index))
-      expect(shards.every(run => run.partition!.count === shards.length)).toBe(true)
-    }
+    expect(runs).toHaveLength(2)
+    expect(runs.map(run => run.partition?.index).sort()).toEqual([0, 1])
+    expect(runs.every(run => run.part === null && run.partition?.count === 2)).toBe(true)
   } else {
     expect(runs.length).toBeGreaterThanOrEqual(2)
     expect(runs.every(run => run.part?.startsWith(`${report.suite}-`))).toBe(true)
@@ -73,17 +67,17 @@ async function verifyTickets(client: Client, workflow: RunningCiWorkflow, execut
     expect(run.finishedAt).not.toBeNull()
     expect(Date.parse(run.finishedAt!)).toBeGreaterThanOrEqual(Date.parse(run.startedAt!))
     requireCiStateOrder(observed.timeline.map(sample => sample.run.state))
-    if (run.id === report.ticketId) {
-      requireCiStateOrder(report.observedStates)
-      expect(report.observedStates.at(-1)).toBe(run.state)
-    }
+    const claimed = report.tickets.find(ticket => ticket.ticketId === run.id)!
+    expect(claimed).toMatchObject({ part: run.part, partition: run.partition, computer: run.computer!.hostRef,
+      commit: run.commit, outcome: run.state, exitCode: run.exitCode })
+    expect(new Set(claimed.observedStates).size).toBe(claimed.observedStates.length)
+    requireCiStateOrder(claimed.observedStates)
+    expect(claimed.observedStates.at(-1)).toBe(run.state)
     expect(groupLogs.parts!.find(part => part.run.id === run.id)!.run).toEqual(run)
     observed.log = await readCiLog(client, { workspaceId: workflow.workspace.workspaceId, ticketId: run.id })
     expect(observed.log.logBytes).toBeGreaterThan(0)
-    if (run.id === report.ticketId) {
-      expect(observed.log.text.split('\n').some(line => line.trim() === report.logLine),
-        'Agent quotes a line from its top-level ticket log').toBe(true)
-    }
+    expect(observed.log.text.split('\n').some(line => line.trim() === claimed.logLine),
+      'Agent quotes a line from that ticket’s own log').toBe(true)
   }
 }
 
@@ -118,17 +112,12 @@ function verifyWorkflowActivity(workflow: RunningCiWorkflow, observation: Scenar
 async function verifyWorkflow(client: Client, workflow: RunningCiWorkflow, observation: ScenarioObservation) {
   const details = observation.runs.get(workflow.runId)!
   expect(details.run.outcome).toBe('succeeded')
-  // A retryable failure (e.g. a transient database timeout) adds an attempt; each Agent still succeeds exactly once.
-  const succeeded = details.executions.filter(value => value.result?.outcome === 'succeeded')
-  expect(succeeded).toHaveLength(workflow.assignments.length)
-  for (const retried of details.executions.filter(value => value.result?.outcome !== 'succeeded')) {
-    expect(retried.result?.error?.retryable, `Execution ${retried.id} failed without a retry`).toBe(true)
-  }
+  expect(details.executions).toHaveLength(workflow.assignments.length)
   const scope = { workspaceId: workflow.workspace.workspaceId, runId: workflow.runId }
   const executions = RunExecutionsPageSchema.parse(await callCiTool(client, 'run_executions_list', { ...scope, limit: 100 }))
   expect(executions.pageInfo.nextCursor).toBeNull()
   for (const assignment of workflow.assignments) {
-    const execution = succeeded.find(value => value.agentId === assignment.agentId)!
+    const execution = details.executions.find(value => value.agentId === assignment.agentId)!
     expect(execution.state).toBe('completed')
     expect(execution.result?.outcome).toBe('succeeded')
     const worktree = executions.items.find(value => value.executionId === execution.id)?.worktree

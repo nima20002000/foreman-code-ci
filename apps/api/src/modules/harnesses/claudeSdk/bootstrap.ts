@@ -1,4 +1,3 @@
-import { logIgnoredError } from '../../diagnostics/ignoredError.js'
 import { inventoryPayloadFingerprints } from '../payloadFingerprintCache.js'
 import { createRequire } from 'node:module'
 import { realpath } from 'node:fs/promises'
@@ -37,10 +36,7 @@ async function sdkNativeExecutable(entrypoint: string): Promise<string | undefin
     : [`${process.platform}-${process.arch}`]
   for (const target of packages) {
     try { return await realpath(requireSdk.resolve(`@anthropic-ai/claude-agent-sdk-${target}/claude${suffix}`)) }
-    catch (error) {
-      if (!['MODULE_NOT_FOUND', 'ENOENT'].includes((error as NodeJS.ErrnoException).code ?? '')) throw error
-      logIgnoredError('harness', 'select Claude native package', error)
-    }
+    catch { /* ignore: only the pinned SDK's alternative native package is considered. */ }
   }
   return undefined
 }

@@ -7,19 +7,19 @@ import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { promisify } from 'node:util'
 import { runProductionCiSmoke } from './install-ci-smoke.mjs'
+import { readMigrationSchema } from './production-schema.mjs'
 import { readProductEnvironment } from '../packages/contracts/src/productEnvironment.mjs'
 import { renderUserService } from '../apps/worker/src/service.mjs'
 import { workerPath } from '../apps/worker/src/harnessPath.mjs'
-import { buildWorkerReleaseArtifacts, workerPublicationServiceTemplate } from './worker-release-artifacts.mjs'
+import { buildWorkerReleaseArtifacts } from './worker-release-artifacts.mjs'
 import {
   copyVerificationRuntime, deployProductionApi, desktopLaunchEnvironment, localProductionEnvironment, preserveOperatorConfiguration, publish, readEnvironment,
-  pruneApiDependencies, pruneReleases, removeUninstalledRelease, readActiveRuns, readProductionIdentity, waitForIdleRuns, renderEnvironment, waitForProductionReady, withInstallationLock,
+  pruneApiDependencies, pruneReleases, startBackground, removeUninstalledRelease, readActiveRuns, readProductionIdentity, waitForIdleRuns, renderEnvironment, waitForProductionReady, withInstallationLock,
   shouldOpenDashboardAfterInstall,
   productionIntegrationPaths, publishDesktopIntegration, enableProductionServices, apiServiceTemplate,
   launchProduction, launchBrowser, parseRunWaitMinutes, readReleaseSelection,
   needsStartupConfiguration, recordStartupConfiguration, withProductionSourceSnapshot, buildProductionSource,
-  readPendingMigrations, runReleaseCutover, recoverReleaseCutover,
-  measureProductionStep, installProductionDependencies,
+  backupDatabase, restoreDatabase, readPendingMigrations, runReleaseCutover, recoverReleaseCutover,
 } from './local-production-runtime.mjs'
 
 const source = fileURLToPath(new URL('../', import.meta.url))
@@ -77,7 +77,7 @@ async function configureEnvironment(buildSource) {
   return environment
 }
 
-async function stageRelease({ source: buildSource, commit }, runBuild, previousRelease) {
+async function stageRelease({ source: buildSource, commit }, runBuild) {
   const releases = join(app, 'releases')
   await mkdir(releases, { recursive: true, mode: 0o700 })
   const release = await mkdtemp(join(releases, 'release-'))
@@ -88,7 +88,7 @@ async function stageRelease({ source: buildSource, commit }, runBuild, previousR
     await cp(join(buildSource, 'apps/web/dist'), join(release, 'apps/web/dist'), { recursive: true })
     await mkdir(join(release, 'scripts'), { recursive: true })
     for (const name of ['local-production.mjs', 'local-production-runtime.mjs', 'graphql-mcp.mjs',
-      'worker-release-artifacts.mjs', 'worker-artifact-files.mjs', 'install-ci-smoke.mjs']) {
+      'worker-release-artifacts.mjs', 'worker-artifact-files.mjs', 'install-ci-smoke.mjs', 'production-schema.mjs']) {
       await copyFile(join(buildSource, 'scripts', name), join(release, 'scripts', name))
     }
     await copyVerificationRuntime(buildSource, release)
@@ -107,10 +107,10 @@ async function stageRelease({ source: buildSource, commit }, runBuild, previousR
     await publish(join(release, 'ci-smoke.json'), JSON.stringify({ commit, repository }))
     await copyFile(process.execPath, join(release, 'node'))
     await chmod(join(release, 'node'), 0o700)
-    // Devices wait for the background publisher to verify GitHub assets before selecting this Worker target.
-    await measureProductionStep('Worker artifacts', () => buildWorkerReleaseArtifacts({ repository: buildSource, expectedCommit: commit,
+    // GitHub publishing runs after the cutover (publishWorkerArtifactsLater) so the upload never delays an install.
+    await buildWorkerReleaseArtifacts({ repository: buildSource, expectedCommit: commit,
       directory: join(release, 'worker-artifacts'), productManifestPath: join(release, 'package.json'),
-      previousDirectory: previousRelease ? join(previousRelease, 'worker-artifacts') : undefined, run: runBuild }))
+      run: runBuild })
     const provenance = { api: commit, web: commit, contracts: commit, worker: commit }
     await publish(join(release, 'source.json'), JSON.stringify(provenance) + '\n')
     return release
@@ -150,7 +150,6 @@ UMask=0077
 WantedBy=default.target
 `))
   await publish(join(directory, units.api), service(apiServiceTemplate(units.database)))
-  await publish(join(directory, 'foreman-worker-publish.service'), service(workerPublicationServiceTemplate()))
 }
 
 async function installDesktop(firstInstall, buildSource) {
@@ -221,10 +220,21 @@ async function activateRelease(release) {
   }
 }
 
-function cutoverSteps(environment, { firstInstall = false } = {}) {
+function cutoverSteps(environment, { firstInstall = false, releaseMaintenance = () => {} } = {}) {
+  const databaseCommand = async (command, args, options) => {
+    if (!environment) throw new Error('Restore production.env before recovering this deployment.')
+    await run('/usr/bin/docker', ['compose', '--project-name', 'graphql-local-production',
+      '--file', join(app, 'compose.production.yaml'), 'exec', '-T', '-e', 'PGPASSWORD', '-e', 'PGUSER',
+      'postgres', command, ...args], {
+      ...options, env: { ...process.env, ...environment,
+        PGUSER: 'graphql_production', PGPASSWORD: readProductEnvironment(environment, 'PRODUCTION_DB_PASSWORD') },
+    })
+  }
   return {
     pendingMigrations: release => readPendingMigrations(release, environment.DATABASE_URL),
     stop: () => run('/usr/bin/systemctl', ['--user', 'stop', units.api]),
+    backup: archive => backupDatabase({ archive, database: 'graphql_production', run: databaseCommand }),
+    schema: release => readMigrationSchema(release, environment.DATABASE_URL),
     migrate: release => run(join(release, 'node'), ['dist/cli/migrate.js'], {
       cwd: join(release, 'apps/api'), env: { ...process.env, ...environment },
     }),
@@ -239,6 +249,11 @@ function cutoverSteps(environment, { firstInstall = false } = {}) {
     ready: release => waitForReady({ selectedRelease: release }),
     checkReady: (release, { start, rollback }) => waitForReady({ selectedRelease: release,
       start, smoke: () => runAuthenticatedCiSmoke(release, environment), rollback }),
+    restore: async archive => {
+      // The API is stopped; close the maintenance connection before recreating its database.
+      await releaseMaintenance()
+      await restoreDatabase({ archive, run: databaseCommand })
+    },
   }
 }
 
@@ -253,18 +268,10 @@ async function install(timeoutMs) {
   const firstInstall = await needsStartupConfiguration(startupFile, { previousRelease })
   await withProductionSourceSnapshot(source, join(state, 'builds'), async snapshot => {
     const runBuild = (command, args, options = {}) => run(command, args, { cwd: snapshot.source, ...options })
-    await installProductionDependencies(runBuild)
-    let release
-    let environment
-    try {
-      await buildProductionSource(runBuild, { stage: async () => {
-        release = await stageRelease(snapshot, runBuild, previousRelease)
-      } })
-      environment = await configureEnvironment(snapshot.source)
-    } catch (error) {
-      if (release) await removeUninstalledRelease(release, current)
-      throw error
-    }
+    await runBuild('corepack', ['pnpm', 'install', '--frozen-lockfile'])
+    await buildProductionSource(runBuild)
+    const environment = await configureEnvironment(snapshot.source)
+    const release = await stageRelease(snapshot, runBuild)
     await finishInstallation({ release, previousRelease, firstInstall, environment, snapshot, timeoutMs })
   })
 }
@@ -278,18 +285,19 @@ async function finishInstallation({ release, previousRelease, firstInstall, envi
     await installDesktop(firstInstall, snapshot.source)
     await run('/usr/bin/systemctl', ['--user', 'daemon-reload'])
     await run('/usr/bin/systemctl', ['--user', 'start', units.database])
-    const cutover = async () => {
+    const cutover = async (releaseMaintenance = () => {}) => {
       cutoverBegan = true
       await runReleaseCutover({ release, previousRelease, stateFile: deploymentFile,
-        steps: cutoverSteps(environment, { firstInstall }) })
+        backupFile: join(release, 'database.dump'), steps: cutoverSteps(environment, { firstInstall, releaseMaintenance }) })
     }
     if (previousRelease) {
-      await readActiveRuns(release, environment.DATABASE_URL, async query => {
+      await readActiveRuns(release, environment.DATABASE_URL, async (query, releaseMaintenance) => {
         await waitForIdleRuns({ query, timeoutMs, interrupt: process.env.FOREMAN_INSTALL_INTERRUPT_RUNS === '1' })
-        await cutover()
+        await cutover(releaseMaintenance)
       })
     } else await cutover()
     await recordStartupConfiguration(startupFile)
+    await publishWorkerArtifactsLater(release)
     const pruned = await pruneReleases(join(app, 'releases'), [release, previousRelease])
     if (pruned.length) console.log(`Removed ${pruned.length} old release(s); kept the current and previous release.`)
     const kept = (await readdir(join(app, 'releases'))).filter(name => name.startsWith('release-')).map(name => join(app, 'releases', name))
@@ -304,6 +312,15 @@ async function finishInstallation({ release, previousRelease, firstInstall, envi
   } finally {
     if (!cutoverBegan) await removeUninstalledRelease(release, current)
   }
+}
+
+// Paired Workers download through Main until this detached upload records the GitHub release in the index.
+async function publishWorkerArtifactsLater(release) {
+  const { commit, repository } = JSON.parse(await readFile(join(release, 'ci-smoke.json'), 'utf8'))
+  startBackground('foreman-worker-publish', join(release, 'node'), [join(release, 'scripts/worker-release-artifacts.mjs'),
+    'publish', join(release, 'worker-artifacts'), repository, commit],
+  { logFile: join(state, 'logs', 'worker-artifact-publish.log') })
+  console.log(`Publishing Worker artifacts to GitHub in the background (log: ${state}/logs/worker-artifact-publish.log).`)
 }
 
 async function handoffDashboard() {
