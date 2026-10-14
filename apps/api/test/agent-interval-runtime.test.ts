@@ -52,10 +52,8 @@ function intervalRun(options: { maxParallelism: number; observeCheck(check: Harn
       : h.input.driver.candidate(ref, attempt),
     observe: async (execution, signal) => {
       if (!execution.id.startsWith('check-')) return h.input.driver.observe(execution, signal)
-      if (execution.state === 'completed') return
       observed.push(execution.id)
       await options.observeCheck(execution, signal)
-      execution.state = 'completed'
     },
   }
   const lifecycle = {
@@ -70,27 +68,24 @@ function intervalRun(options: { maxParallelism: number; observeCheck(check: Harn
   return { h, run, lifecycle, checks, settledIds, observed, events, workerStarted, workerRelease }
 }
 
-it('keeps graph work running after a check startup failure and retries the same check through settlement', async () => {
+it('ends an interval Run after startup failure and retries its cleanup intent before cancellation', async () => {
   const failure = new DomainError('EXECUTION_START_INTERRUPTED', 'Execution startup failed.', 409)
-  let attempts = 0
-  const t = intervalRun({ maxParallelism: 2, observeCheck: async () => {
-    if (++attempts === 1) throw failure
+  const t = intervalRun({ maxParallelism: 2, observeCheck: async () => { throw failure } })
+  const timeout = new Error('Query read timeout')
+  t.lifecycle.requestCleanup.mockRejectedValueOnce(timeout).mockRejectedValueOnce(timeout)
+  t.lifecycle.cancelNativeAndRequestCleanup.mockImplementation(async () => {
+    expect(t.lifecycle.requestCleanup.mock.calls.length).toBeGreaterThanOrEqual(3)
+    return true
+  })
+  await expect(t.run()).rejects.toBe(failure)
+  expect(t.lifecycle.requestCleanup).toHaveBeenCalledWith({ outcome: 'failed', error: {
+    code: failure.code, message: failure.message, retryable: false,
   } })
-  const running = t.run()
-  try {
-    await vi.waitFor(() => expect(t.settledIds).toContain('check-1'), { timeout: 10_000, interval: 50 })
-    expect(t.lifecycle.requestCleanup).not.toHaveBeenCalled()
-    expect(t.lifecycle.cancelNativeAndRequestCleanup).not.toHaveBeenCalled()
-    expect(t.lifecycle.settleRun).not.toHaveBeenCalled()
-  } finally {
-    t.workerRelease.resolve()
-    t.h.controller.abort(new DomainError('RUN_STOPPED', 'Stop requested.', 409))
-    await expect(running).rejects.toMatchObject({ code: 'RUN_STOPPED' })
-  }
-  expect(t.observed).toEqual(['check-1', 'check-1'])
-  expect(t.h.completeCalls).toBe(0)
-  expect(t.lifecycle.settleRun).toHaveBeenCalledWith(true, false)
-}, 20_000)
+  expect(t.lifecycle.cancelNativeAndRequestCleanup).toHaveBeenCalledOnce()
+  expect(t.lifecycle.settleRun).toHaveBeenCalledWith(false, false)
+  expect(t.checks).toHaveLength(1)
+  expect(t.observed).toEqual(['check-1'])
+})
 
 it('settles a Stop through bounded cleanup while a running check ignores cancellation', async () => {
   const checkStarted = deferred()
@@ -107,7 +102,7 @@ it('settles a Stop through bounded cleanup while a running check ignores cancell
   expect(t.checks).toHaveLength(1)
 }, 15_000)
 
-it('checks beside graph work with one parallelism slot and keeps the idle Run until Stop', async () => {
+it('checks beside graph work with one parallelism slot and completes after the in-flight check', async () => {
   const checkStarted = deferred()
   const checkRelease = deferred()
   const t = intervalRun({ maxParallelism: 1, observeCheck: async () => {
@@ -126,13 +121,11 @@ it('checks beside graph work with one parallelism slot and keeps the idle Run un
   expect(t.h.completeCalls).toBe(0)
   expect(t.lifecycle.finishCleanup).not.toHaveBeenCalled()
   checkRelease.resolve()
-  await vi.waitFor(() => expect(t.events).toContain('check:end'))
-  t.h.controller.abort(new DomainError('RUN_STOPPED', 'Stop requested.', 409))
-  await expect(running).rejects.toMatchObject({ code: 'RUN_STOPPED' })
+  await running
   expect(t.events).toEqual(['worker:start', 'check:start', 'worker:end', 'check:end'])
-  expect(t.h.completeCalls).toBe(0)
+  expect(t.h.completeCalls).toBe(1)
   expect(t.checks).toHaveLength(1)
-  expect(t.lifecycle.settleRun).toHaveBeenCalledWith(true, false)
+  expect(t.lifecycle.finishCleanup).toHaveBeenCalledTimes(1)
 }, 15_000)
 
 it('re-observes a check whose cleanup failed before admitting another', async () => {
@@ -143,37 +136,8 @@ it('re-observes a check whose cleanup failed before admitting another', async ()
   const running = t.run()
   await vi.waitFor(() => expect(t.settledIds).toContain('check-1'), { timeout: 10_000, interval: 50 })
   t.workerRelease.resolve()
-  await vi.waitFor(() => expect(t.events).toContain('worker:end'))
-  t.h.controller.abort(new DomainError('RUN_STOPPED', 'Stop requested.', 409))
-  await expect(running).rejects.toMatchObject({ code: 'RUN_STOPPED' })
+  await running
   expect(t.observed).toEqual(['check-1', 'check-1'])
   expect(t.checks).toHaveLength(1)
   expect(t.settledIds.slice(0, 3)).toEqual([null, null, 'check-1'])
 }, 20_000)
-
-it.each(['RUN_STOPPED', 'ENGINE_RESTART'])(
-  'preserves the %s reason when cancellation interrupts an idle interval wait', async code => {
-    const t = intervalRun({ maxParallelism: 1, observeCheck: async () => undefined })
-    const running = t.run()
-    const result = Promise.allSettled([running])
-    try {
-      t.workerRelease.resolve()
-      await vi.waitFor(() => expect(t.lifecycle.currentState).toHaveBeenCalled(), { timeout: 10_000 })
-      const reason = new DomainError(code, 'Interval wait canceled.', 409)
-      t.h.controller.abort(reason)
-      expect(await result).toEqual([{ status: 'rejected', reason }])
-      expect(t.h.completeCalls).toBe(0)
-      if (code === 'ENGINE_RESTART') {
-        expect(t.lifecycle.requestCleanup).not.toHaveBeenCalled()
-        expect(t.lifecycle.cancelNativeAndRequestCleanup).not.toHaveBeenCalled()
-        expect(t.lifecycle.settleRun).not.toHaveBeenCalled()
-      } else {
-        expect(t.lifecycle.cancelNativeAndRequestCleanup).toHaveBeenCalledTimes(1)
-        expect(t.lifecycle.settleRun).toHaveBeenCalledWith(true, false)
-      }
-    } finally {
-      t.h.controller.abort(new DomainError('ENGINE_RESTART', 'Test cleanup.', 409))
-      await result
-    }
-  }, 15_000,
-)

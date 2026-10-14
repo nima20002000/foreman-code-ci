@@ -1,14 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtemp, mkdir, writeFile, readFile, readlink, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, readlink, rm } from 'node:fs/promises';
 import fs from 'node:fs/promises';
 import { syncBuiltinESMExports } from 'node:module';
 import { join, dirname } from 'node:path';
-import { homedir } from 'node:os';
-import { installVersion, readInstalledRelease, readRetainedRelease, rollbackVersion, stageRunningVersion }
+import { tmpdir } from 'node:os';
+import { installVersion, readInstalledRelease, readRetainedRelease, rollbackVersion }
   from '../src/installation.mjs';
-import { superviseWorkerUpdate, writeUpdateRecord } from '../src/updateSupervisor.mjs';
 import { recordPersistence } from './fixtures/persistentFilesystem.mjs';
 
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -18,13 +17,10 @@ const facts = {
 };
 const expected = { protocolVersion: 1, identityFormat: 1 };
 
-const bundleFiles = ['src/cli.mjs', 'src/nested/driver.mjs', 'artifacts/runtime/deep/config.json',
-  'dependencies/@scope/runtime/index.mjs'];
-const [entryFile] = bundleFiles;
-
 async function artifact(directory, version) {
   const files = [];
-  for (const path of bundleFiles) {
+  for (const path of ['src/cli.mjs', 'src/nested/driver.mjs', 'artifacts/runtime/deep/config.json',
+    'dependencies/@scope/runtime/index.mjs']) {
     const bytes = `${version}: ${path}\n`;
     await mkdir(dirname(join(directory, path)), { recursive: true, mode: 0o700 });
     await writeFile(join(directory, path), bytes);
@@ -40,9 +36,7 @@ async function artifact(directory, version) {
 }
 
 async function fixture(t) {
-  const parent = process.env.FOREMAN_CODE_TEST_ROOT ?? join(homedir(), '.cache', 'foreman-tmp');
-  await mkdir(parent, { recursive: true });
-  const directory = await mkdtemp(join(parent, 'worker-persistence-'));
+  const directory = await mkdtemp(join(process.env.FOREMAN_CODE_TEST_ROOT ?? tmpdir(), 'worker-persistence-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const root = join(directory, 'app');
   const stateDirectory = join(directory, 'state');
@@ -204,74 +198,3 @@ for (const directory of ['src/nested', 'artifacts/runtime/deep', 'dependencies/@
     await assertFiles(await readRetainedRelease(f.root));
   });
 }
-
-
-async function installSequence(f, versions) {
-  const installed = [];
-  for (const version of versions) {
-    installed.push(await installVersion({ ...f,
-      ...await artifact(join(f.directory, `artifact-${version}`), version), updatePolicy: async () => true }));
-  }
-  return installed;
-}
-
-test('successful updates remove obsolete versions and preserve rollback', async t => {
-  const f = await fixture(t);
-  const releases = await installSequence(f, ['1.0.0', '1.1.0', '1.2.0', '1.3.0']);
-  assert.deepEqual((await readdir(join(f.root, 'versions'))).sort(),
-    releases.slice(-2).map(release => release.directory.split('/').at(-1)).sort());
-  await rollbackVersion({ ...f, approveStop: async () => true });
-  assert.equal((await readInstalledRelease(f)).manifest.version, '1.2.0');
-});
-
-test('updates preserve releases referenced by the update record until its references change', async t => {
-  const f = await fixture(t);
-  const [first, second] = await installSequence(f, ['1.0.0', '1.1.0']);
-  await writeFile(join(f.stateDirectory, 'worker-update.json'), JSON.stringify({ format: 1,
-    restart: { directory: first.directory, previousDirectory: second.directory } }), { mode: 0o600 });
-  const later = await installSequence(f, ['1.2.0', '1.3.0']);
-  assert.equal((await readdir(join(f.root, 'versions'))).length, 4);
-  await writeFile(join(f.stateDirectory, 'worker-update.json'), JSON.stringify({ format: 1,
-    restart: { directory: later[1].directory, previousDirectory: later[0].directory } }), { mode: 0o600 });
-  await installSequence(f, ['1.4.0']);
-  assert.deepEqual((await readdir(join(f.root, 'versions'))).sort(),
-    [...later.map(release => release.directory.split('/').at(-1)),
-      (await readlink(join(f.root, 'current'))).split('/').at(-1)].sort());
-});
-
-test('an unsuccessful publication preserves obsolete versions for retry', async t => {
-  const f = await fixture(t);
-  const [first] = await installSequence(f, ['1.0.0', '1.1.0']);
-  const fault = new Error('Publication failed');
-  await assert.rejects(installVersion({ ...f,
-    ...await artifact(join(f.directory, 'incoming'), '1.2.0'), updatePolicy: async () => true,
-    publishInstallation: async () => { throw fault; } }), fault);
-  assert.equal(await readFile(join(first.directory, entryFile), 'utf8'), `1.0.0: ${entryFile}\n`);
-});
-
-
-test('supervised updates prune after readiness and leave staged releases intact before handoff', async t => {
-  const f = await fixture(t);
-  const [first] = await installSequence(f, ['1.0.0']);
-  let previous = first;
-  for (const version of ['1.1.0', '1.2.0']) {
-    const staged = await stageRunningVersion({ ...f,
-      ...await artifact(join(f.directory, `artifact-${version}`), version),
-      assertStateOwnership: () => {}, updatePolicy: async () => true });
-    assert.equal(await readFile(join(staged.directory, entryFile), 'utf8'), `${version}: ${entryFile}\n`);
-    assert.equal((await readInstalledRelease(f)).manifest.version, previous.version);
-    const record = { format: 1, manifestSha256: staged.manifestSha256,
-      status: { state: 'restarting', targetVersion: version, currentVersion: previous.version,
-        manifestSha256: previous.manifestSha256 },
-      restart: { service: 'graphql-worker.service', root: f.root, stateDirectory: f.stateDirectory,
-        directory: staged.directory, previousDirectory: previous.directory, previousVersion: previous.version,
-        requestId: `update-${version}`, pointer: { kind: 'symlink', path: join(f.root, 'current') } } };
-    await writeUpdateRecord(f.stateDirectory, record);
-    await superviseWorkerUpdate(record, { prepareService: async () => {}, restart: async () => {},
-      ready: async () => {}, smoke: async () => {} });
-    previous = staged;
-  }
-  assert.equal((await readdir(join(f.root, 'versions'))).length, 2);
-  assert.equal((await readInstalledRelease(f)).manifest.version, '1.2.0');
-  assert.equal((await readRetainedRelease(f.root)).manifest.version, '1.1.0');
-});

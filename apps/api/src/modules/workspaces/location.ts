@@ -88,7 +88,7 @@ export class WorkspaceLocationService {
     } catch (error) {
       if (error instanceof DomainError) throw error
       if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
-        throw new DomainError('WORKSPACE_FOLDER_EXISTS', 'A folder with this name already exists. Choose another name or location.', 409, undefined, { cause: error })
+        throw new DomainError('WORKSPACE_FOLDER_EXISTS', 'A folder with this name already exists. Choose another name or location.', 409)
       }
       throw locationError(error, path)
     }
@@ -327,13 +327,8 @@ export class WorkspaceLocationService {
       const { principal } = await currentOperatorAuthority(client ?? this.pool, principalId, atCommit)
       requireAuthorization(principal, 'runs:start', { workspaceId, workflowId })
       requireAuthorization(principal, 'workspace_locations:read', { workspaceId })
-    } catch (error) {
-      const denied = error instanceof DomainError && (error.status === 401 || error.status === 403)
-        && (error.code.startsWith('AUTH_') || error.code === 'ACCESS_DENIED')
-      if (!denied) {
-        throw error
-      }
-      throw new DomainError('RUN_AUTHORIZATION_REVOKED', 'The authority that accepted this Run is no longer valid.', 403, undefined, { cause: error })
+    } catch {
+      throw new DomainError('RUN_AUTHORIZATION_REVOKED', 'The authority that accepted this Run is no longer valid.', 403)
     }
   }
 
@@ -377,8 +372,7 @@ export class WorkspaceLocationService {
         if (!this.rootPolicies) throw new DomainError('ROOT_CONFIGURATION_UNAVAILABLE', 'Computer root inspection is unavailable.', 503)
         const policies = await this.rootPolicies.read(sql, principal, workspaceId)
         const current = policies.filter(policy => policy.bindingPurpose !== 'ci-enrollment'
-          && policy.locationRevision === String(locationRevision)
-          && (policy.hostRef.kind === 'main' ? this.runnerId : policy.applicationInstallationId) === executionLocation.runnerId)
+          && policy.locationRevision === String(locationRevision))
         const policy = current[0]
         if (current.length !== 1 || !policy || policy.canonicalProjectRoot !== executionLocation.rootPath
           || (policy.hostRef.kind === 'main' ? this.runnerId : policy.applicationInstallationId) !== executionLocation.runnerId

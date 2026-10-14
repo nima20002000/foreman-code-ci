@@ -1,5 +1,5 @@
 import { beginRuntimeTiming, runtimeTimingChannel, timeRuntimeOperation } from '../../infrastructure/runtimeTiming.js'
-import { beginTransaction, commitTransaction, finishTransactionTiming } from '../../infrastructure/transaction.js'
+import { beginTransaction, commitTransaction } from '../../infrastructure/transaction.js'
 import { recoverGraphRollback } from './rollbackRecovery.js'
 import { ignoreError } from '../diagnostics/ignoredError.js'
 import { AsyncLocalStorage } from 'node:async_hooks'
@@ -17,17 +17,13 @@ interface GraphConnectionClient extends pg.ClientBase {
 }
 const adoptedClients = new WeakSet<pg.ClientBase>()
 const leases = new WeakMap<GraphSqlClient, {
-  live: boolean; failed: boolean; committed: boolean; finalizing: boolean; readOnly: boolean; finalizers: (() => Promise<void>)[]
+  live: boolean; failed: boolean; committed: boolean; readOnly: boolean; finalizers: (() => Promise<void>)[]
 }>()
 export function isReadOnlyGraphTransaction(sql: GraphSqlClient): boolean {
   return leases.get(sql)?.readOnly === true
 }
 export function didGraphTransactionCommit(sql: GraphTransactionSql): boolean {
   return leases.get(sql)?.committed === true
-}
-/** True while the COMMIT checks run: the transaction's own writes are done, so a check here is its final check. */
-export function isGraphTransactionFinalizing(sql: GraphTransactionSql): boolean {
-  return leases.get(sql)?.finalizing === true
 }
 
 export function poisonGraphTransaction(sql: GraphTransactionSql): void {
@@ -135,10 +131,9 @@ export class ExclusiveGraphConnection implements GraphSqlClient {
     }, 'query')
   }
   transaction<T>(work: (sql: GraphTransactionSql) => Promise<T>, readOnly = false): Promise<T> {
-    const origin = new Error('transaction caller')
     return this.enqueue(async () => {
       const state = {
-        live: true, failed: false, committed: false, finalizing: false, readOnly, finalizers: [] as (() => Promise<void>)[],
+        live: true, failed: false, committed: false, readOnly, finalizers: [] as (() => Promise<void>)[],
       }
       let pending: Promise<unknown> | undefined
       const sql: GraphTransactionSql = {
@@ -165,10 +160,8 @@ export class ExclusiveGraphConnection implements GraphSqlClient {
       let committing = false
       try {
         await timeRuntimeOperation('db', 'sql.begin', () => beginTransaction(this.#client,
-          readOnly ? { isolation: 'repeatable read', readOnly: true, operation: 'graph.read' }
-            : { isolation: 'read committed', operation: 'graph.write' }, origin))
+          readOnly ? { isolation: 'repeatable read', readOnly: true } : { isolation: 'read committed' }))
         const result = await work(sql)
-        state.finalizing = true
         for (const finalize of state.finalizers) { assertGraphTransaction(sql); await finalize() }
         if (pending) { state.failed = true; await pending.catch(() => { /* ignore: the owner awaits the original promise; this observer prevents a duplicate unhandled rejection. */ }) }
         assertGraphTransaction(sql)
@@ -199,10 +192,7 @@ export class ExclusiveGraphConnection implements GraphSqlClient {
           }
         }
         throw error
-      } finally {
-        state.live = false
-        finishTransactionTiming(this.#client, 'failed')
-      }
+      } finally { state.live = false }
     }, 'transaction')
   }
   async close(): Promise<void> {

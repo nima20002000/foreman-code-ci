@@ -1,4 +1,3 @@
-import { optionalCommandId } from './commands.js'
 import { z } from 'zod'
 import { WORKER_EXECUTION_STARTUP_VARIABLE } from './workerExecution.js'
 
@@ -72,7 +71,7 @@ export const ManagedRemoteExecutionSettingsSchema = RemoteExecutionSettingSnapsh
 export const RemoteExecutionSettingsUpdateInputSchema = z.object({
   value: RemoteExecutionSettingsSchema,
   expectedRevision: z.number().int().nonnegative().optional().describe('Omit for last write wins; supply to reject a stale revision.'),
-  commandId: optionalCommandId(z.string().trim().min(8).max(200)),
+  commandId: z.string().trim().min(8).max(200),
 }).strict()
 
 export const RemoteExecutionSettingsUpdateResultSchema = z.object({

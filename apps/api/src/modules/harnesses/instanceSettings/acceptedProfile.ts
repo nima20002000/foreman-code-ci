@@ -79,8 +79,7 @@ export class AcceptedHarnessProfileAdmission<Owner> {
     const selected = freeze(structuredClone(selector))
     return this.settings.readAuthorized(async client => {
       await this.authority.authorize(owner, selected, client)
-      // Readers share placement's lock; settings appends still exclude both.
-      await this.settings.lockRevision(client, selected.instanceId, { mode: 'shared' })
+      await this.settings.lockRevision(client, selected.instanceId)
       const value = options.purpose === 'observation'
         ? await this.settings.savedRevision(client, selected.instanceId, selected.instanceRevision, { target: selected.target })
         : await this.settings.latest(client, selected.instanceId)

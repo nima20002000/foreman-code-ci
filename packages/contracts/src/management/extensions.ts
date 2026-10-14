@@ -1,6 +1,4 @@
-import { optionalCommandId } from './commands.js'
 import { z } from "zod";
-import { DeviceProvisioningHostReferenceSchema } from "../deviceResources.js";
 import { WorkflowVersionV3Schema } from "../wave25/workflowSchemas.js";
 import {
   AgentSchema, AgentConfigurationVersionSchema,
@@ -14,11 +12,11 @@ const Command = z.string().trim().min(8).max(200);
 const Page = { cursor: z.string().trim().min(1).optional(), limit: z.number().int().min(1).max(100).default(50) };
 const Workspace = { workspaceId: IdSchema };
 const Workflow = { ...Workspace, workflowId: IdSchema };
-const Mutation = { commandId: optionalCommandId(Command), expectedRevision: Revision };
+const Mutation = { commandId: Command, expectedRevision: Revision };
 const Configuration = SupportedHarnessConfigurationSchema;
 
 export const AgentCreateInputSchema = z.object({
-  ...Workspace, commandId: optionalCommandId(Command), agentId: IdSchema,
+  ...Workspace, commandId: Command, agentId: IdSchema,
   name: z.string().trim().min(1).max(200),
   productRole: z.enum(["coder", "orchestrator"]).default("coder"),
   description: z.string().max(10_000).optional(),
@@ -43,7 +41,7 @@ export const AgentUpdateInputSchema = z.object({
 }).strict().refine((value) => [value.name, value.description, value.role, value.configuration,
   value.prompt, value.assignedSkills, value.graphqlTools, value.nativeTools, value.harnessProfileSelection].some((item) => item !== undefined), "At least one editable field is required");
 export const AgentCloneInputSchema = z.object({
-  ...Workspace, commandId: optionalCommandId(Command), agentId: IdSchema, sourceAgentId: IdSchema,
+  ...Workspace, commandId: Command, agentId: IdSchema, sourceAgentId: IdSchema,
   expectedSourceRevision: Revision, expectedSourceConfigurationVersionId: IdSchema,
   name: z.string().trim().min(1).max(200),
 }).strict();
@@ -64,7 +62,7 @@ export const HarnessOptionsRefreshInputSchema = z.object({
 export { HarnessModelOptionSchema, HarnessOptionsResultSchema } from "../harnessOptions.js";
 import { HarnessOptionsResultSchema } from "../harnessOptions.js";
 export type HarnessOptions = z.infer<typeof HarnessOptionsResultSchema>;
-export const HarnessMcpDetectionInputSchema = z.object({ ...Workspace, harness: z.enum(["codex", "claude"]), hostRef: DeviceProvisioningHostReferenceSchema.optional() }).strict();
+export const HarnessMcpDetectionInputSchema = z.object({ ...Workspace, harness: z.enum(["codex", "claude"]) }).strict();
 export const HarnessMcpDetectionResultSchema = ScopedMcpDetectionSchema;
 export const NativeConfigurationCheckInputSchema = z.object({ configuration: Configuration }).strict();
 export const NativeConfigurationCheckResultSchema = z.object({
@@ -94,7 +92,7 @@ export const LifecycleResultSchema = z.object({
   value: z.object({ id: IdSchema, revision: Revision, archived: z.boolean() }).strict(), replayed: z.boolean(),
 }).strict();
 export const LocationClearInputSchema = z.object({
-  ...Workspace, commandId: optionalCommandId(Command), expectedLocationRevision: Revision,
+  ...Workspace, commandId: Command, expectedLocationRevision: Revision,
 }).strict();
 export const LocationClearResultSchema = z.object({
   value: z.object({ workspaceId: IdSchema, executionLocation: z.null(), locationRevision: Revision }).strict(), replayed: z.boolean(),
@@ -105,7 +103,7 @@ export const RunnerListResultSchema = z.object({ items: z.array(z.object({
   supportsRemoteDispatch: z.literal(false), supportsProvisioning: z.boolean(),
 }).strict()) }).strict();
 export const LocationProvisionInputSchema = z.object({
-  ...Workspace, commandId: optionalCommandId(Command), expectedLocationRevision: Revision,
+  ...Workspace, commandId: Command, expectedLocationRevision: Revision,
 }).strict();
 export const LocationProvisionResultSchema = z.object({
   value: z.object({ workspaceId: IdSchema, executionLocation: z.object({runnerId: IdSchema, rootPath: z.string()}).strict(),
@@ -156,7 +154,7 @@ export const SkillVersionPageSchema = z.object({
   items: z.array(SkillVersionSummarySchema),
   pageInfo: z.object({ nextCursor: z.string().nullable() }).strict(),
 }).strict();
-export const SkillCreateInputSchema = z.object({ ...Workspace, commandId: optionalCommandId(Command), ...SkillContent }).strict();
+export const SkillCreateInputSchema = z.object({ ...Workspace, commandId: Command, ...SkillContent }).strict();
 export const SkillUpdateInputSchema = z.object({ ...SkillId, ...Mutation, ...SkillContent }).strict();
 export const SkillArchiveInputSchema = z.object({ ...SkillId, ...Mutation, archived: z.boolean() }).strict();
 export const SkillMutationResultSchema = z.object({
@@ -174,7 +172,7 @@ export const SkillUsageSchema = z.object({
 }).strict();
 /** Retains the head and consumers before updating through normal Agent/workflow saves. The same command
  * resumes that plan or replays its result; use a new command for newer heads or consumers. */
-export const SkillUsersUpdateInputSchema = z.object({ ...SkillId, commandId: optionalCommandId(Command) }).strict();
+export const SkillUsersUpdateInputSchema = z.object({ ...SkillId, commandId: Command }).strict();
 export const SkillUsersUpdateResultSchema = z.object({
   headVersion: SkillVersionLabel,
   agents: z.array(z.object({ agentId: IdSchema, configurationVersionId: IdSchema }).strict()),
@@ -205,7 +203,7 @@ export const WorkflowTriggerUpdateInputSchema = z.object({
   trigger: WorkflowTriggerSchema, enabled: z.boolean(),
 }).strict();
 
-export const RunRetryInputSchema = z.object({ ...Workspace, runId: IdSchema, commandId: optionalCommandId(Command),
+export const RunRetryInputSchema = z.object({ ...Workspace, runId: IdSchema, commandId: Command,
   workflowVersionId: IdSchema, expectedLocationRevision: Revision,
 }).strict();
 

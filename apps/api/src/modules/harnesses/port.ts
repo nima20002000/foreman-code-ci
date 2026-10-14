@@ -115,17 +115,12 @@ export interface NativeTurnInput {
   onSettingsApplied?(): Promise<void>
   sessionPreferences?: SessionPreferences
   prompt: string
-  /** Native structured output for this turn when the harness supports it (Codex). Claude ignores it;
-   * Foreman validates every deliverable either way. */
-  outputSchema?: Record<string, unknown> | undefined
   clientCorrelationId: string
   /** Await persistence of the provider identity immediately after submission acknowledgement. */
   onSubmitted?(nativeTurnId: string): Promise<void>
   /** Release the failed attempt's writer identity before a confirmed capacity retry.
    * Callers that persist turn IDs must supply this to enable retry. */
   onRetry?(nativeTurnId: string): Promise<void>
-  /** Observer history loss does not change the provider's turn result. */
-  onEventsSkipped?(gap: DeviceHistoryGap): Promise<void>
   onMessageSubmitted?(identity: NativeMessageSubmission): Promise<void>
   /** Save the matched native result before publishing completion or releasing its runtime. */
   onTerminal?(observation: NativeTerminalObservation): Promise<void>
@@ -260,9 +255,6 @@ export interface NativeHarnessSessionManager extends ResponseAvailabilityInspect
   /** Refresh authenticated remote ownership before a coordinator boundary check. */
   observeBoundary?(session: NativeSessionReference, signal?: AbortSignal): Promise<void>
   reconcile(session: NativeSessionReference, correlationId: string, signal?: AbortSignal): Promise<NativeHistory>
-  /** Read chronological retained events without applying the recent observation window. */
-  reconcileHistoryPage?(session: NativeSessionReference, correlationId: string,
-    afterSequence: number, signal?: AbortSignal): Promise<NativeHistory>
   /** Release resident turn resources after the caller commits its result and history. */
   retireTurn?(session: NativeSessionReference, correlationId: string): Promise<void>
   /** Read-only recovery of the exact response; missing evidence remains uncertain. */

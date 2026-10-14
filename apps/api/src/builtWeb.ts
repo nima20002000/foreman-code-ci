@@ -9,8 +9,7 @@ export async function registerBuiltWeb(app: FastifyInstance, root: string): Prom
   await access(join(root, 'index.html'))
   void app.register(fastifyStatic, {
     root,
-    // Resolve files per request so directory discovery cannot exhaust pluginTimeout under load.
-    wildcard: true,
+    wildcard: false,
     index: false,
     cacheControl: false,
     setHeaders(response, path) {

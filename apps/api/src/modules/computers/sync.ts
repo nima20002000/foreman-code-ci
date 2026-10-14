@@ -1,4 +1,3 @@
-import { logIgnoredError } from '../diagnostics/ignoredError.js'
 import type pg from 'pg'
 import { COMPUTER_SYNC_NAMESPACE, ComputerSyncReadInputSchema, ComputerSyncStatusSchema, ComputerSyncUpdateInputSchema,
   SyncComputerStateSchema, SyncIdentitySchema, type ComputerSyncStatus, type SyncComputerRequest,
@@ -104,11 +103,7 @@ export class ComputerSyncService {
   }
 
   poll(): Promise<void> {
-    if (this.lifetime.signal.aborted || this.queued) return Promise.resolve()
-    return this.reconcile().catch(error => {
-      logIgnoredError('lifecycle', 'synchronize shared files', error, { nextRetryMs: 30_000 })
-      throw error
-    })
+    return this.lifetime.signal.aborted || this.queued ? Promise.resolve() : this.reconcile()
   }
 
   private synchronize(target?: DeviceProvisioningTarget): Promise<unknown[]> {

@@ -1,7 +1,3 @@
-import { activityHistoryIndexesMigration } from './activityHistoryIndexesMigration.js'
-import { artifactTransferLookupMigration } from './artifactTransferLookupMigration.js'
-import { jobInputTransferLookupMigration } from './jobInputTransferLookupMigration.js'
-import { deviceManagedMcpMigration } from './deviceManagedMcpMigration.js'
 import { workflowAuthoringMigration } from './workflowAuthoringMigration.js'
 import { ciGrantMigration } from './ciGrantMigration.js'
 import { runWorktreesMigration } from './runWorktreesMigration.js'
@@ -18,8 +14,6 @@ import { bugReportLifecycleMigration } from './bugReportLifecycleMigration.js'
 import { hostCiRunsMigration } from './hostCiRunsMigration.js'
 import { ciHostSlotsMigration } from './ciHostSlotsMigration.js'
 import { hostCiActivityMigration } from './hostCiActivityMigration.js'
-import { ciActivityRunLockMigration } from './ciActivityRunLockMigration.js'
-import { ciDispatchClaimsMigration } from './ciDispatchClaimsMigration.js'
 import { agentIntervalMigration } from './agentIntervalMigration.js'
 import { ciTestResultsMigration } from './ciTestResultsMigration.js'
 import { ciLogTailMigration } from './ciLogTailMigration.js'
@@ -28,10 +22,6 @@ import { databaseHotQueriesMigration } from './databaseHotQueriesMigration.js'
 import { workflowOrderMigration } from './workflowOrderMigration.js'
 import { ciFileDurationsMigration } from './ciFileDurationsMigration.js'
 import { ciResultCacheMigration } from './ciResultCacheMigration.js'
-import { ciTicketChangesMigration } from './ciTicketChangesMigration.js'
-import { ciGroupWaitMigration } from './ciGroupWaitMigration.js'
-import { ciRecoveryIndexesMigration } from './ciRecoveryIndexesMigration.js'
-import { stateDeadlinesMigration } from './stateDeadlinesMigration.js'
 import { sessionControlsMigration } from './sessionControlsMigration.js'
 import { workerConversationBindingMigration } from './workerConversationBindingMigration.js'
 import { workDeliverySettlementMigration } from './workDeliverySettlementMigration.js'
@@ -43,7 +33,6 @@ import { workUnresolvedRoutesMigration } from './workUnresolvedRoutesMigration.j
 import { workJoinDispatchMigration } from './workJoinDispatchMigration.js'
 import { workJoinDispositionMigration } from './workJoinDispositionMigration.js'
 import { workParentRequestMigration } from './workParentRequestMigration.js'
-import { workReturnRequestMigration } from './workReturnRequestMigration.js'
 import { compactCommandActivityMigration } from './compactCommandActivityMigration.js'
 import { workflowPresentationMigration } from './workflowPresentationMigration.js'
 import { operatorTerminalMigration } from './operatorTerminalMigration.js'
@@ -104,7 +93,6 @@ import { workspaceRootPoliciesMigration } from '../modules/sources/rootPoliciesM
 import { sourcePreparationReconciliationMigration } from './sourcePreparationReconciliationMigration.js'
 import { workflowTerminalRecoveryMigration } from './workflowTerminalRecoveryMigration.js'
 import { workflowRestartRecoveryMigration } from './workflowRestartRecoveryMigration.js'
-import { workflowFailedAttemptRecoveryMigration } from './workflowFailedAttemptRecoveryMigration.js'
 import { runInspectionMigration } from './runInspectionMigration.js'
 import { currentApprovalAckMigration } from './currentApprovalAckMigration.js'
 import { reviewCleanupEntryReceiptMigration, workflowNativeLifecycleMigration } from './workflowNativeLifecycleMigration.js'
@@ -946,20 +934,8 @@ export const migrations = [
   ciHostSlotsMigration,
   checkpointOwnerMigration,
   ciResultCacheMigration,
-  ciTicketChangesMigration,
   workflowAuthoringMigration,
   ciGrantMigration,
-  deviceManagedMcpMigration,
-  workflowFailedAttemptRecoveryMigration,
-  artifactTransferLookupMigration,
-  ciActivityRunLockMigration,
-  ciDispatchClaimsMigration,
-  ciGroupWaitMigration,
-  ciRecoveryIndexesMigration,
-  activityHistoryIndexesMigration,
-  jobInputTransferLookupMigration,
-  stateDeadlinesMigration,
-  workReturnRequestMigration,
 ] as const
 
 export function assertMigrationVersions(entries: readonly { version: number }[]): void {
@@ -973,8 +949,6 @@ export function assertMigrationVersions(entries: readonly { version: number }[])
 export async function applyApplicationMigrations(pool: pg.Pool): Promise<void> {
   assertMigrationVersions(migrations)
   return withTransaction(pool, async (client) => {
-    // One-time migrations can exceed the pool's request deadline.
-    await client.query('set local statement_timeout = 0')
     const schema = (await client.query<{ schema: string | null }>('select current_schema() as schema')).rows[0]?.schema
     if (!schema) throw new Error('Application migrations require a current PostgreSQL schema.')
     // Independent test schemas can migrate together; retain the established
