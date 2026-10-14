@@ -7,8 +7,6 @@ import type { ComputerAccount, ComputerAccounts } from '@foreman-code/contracts/
 import { computerDisplayName, type ComputerActivity } from '@foreman-code/contracts/computer-activity'
 import { useBuildComputers } from '../../shared/api/buildComputers'
 import { computerKey, useComputerActivity } from '../../shared/api/computerActivity'
-import { useDeviceMcp } from '../../shared/api/deviceMcp'
-import type { HarnessMcpList } from '@foreman-code/contracts/management'
 import { useComputerAccounts } from '../../shared/api/computerAccounts'
 import { useComputerMaintenance, useStartMaintenance } from '../../shared/api/computerMaintenance'
 import type { ComputerMaintenanceStartInput, MaintenanceStatus } from '@foreman-code/contracts/computer-maintenance'
@@ -42,7 +40,6 @@ export function ComputerCards({ mainId, devices, onSelectComputer, only }: {
   const activity = useComputerActivity()
   const accounts = useComputerAccounts(visibleTargets)
   const maintenance = useComputerMaintenance(visibleTargets)
-  const mcp = useDeviceMcp(visibleTargets)
   const start = useStartMaintenance()
   const observedFresh = useComputerActivityFreshness(activity.dataUpdatedAt, activity.fetchStatus)
   const fresh = observedFresh && !activity.isError
@@ -84,8 +81,6 @@ export function ComputerCards({ mainId, devices, onSelectComputer, only }: {
         return <li key={computerKey(card.target)}>
           <ComputerCard card={card} observed={observed} fresh={fresh}
             activityComplete={activity.data?.activityComplete === true && !activity.data.truncated}
-            codexMcp={mcp[index * 2]?.isError ? undefined : mcp[index * 2]?.data}
-            claudeMcp={mcp[index * 2 + 1]?.isError ? undefined : mcp[index * 2 + 1]?.data}
             accounts={accountRead.isError ? undefined : accountRead.data} maintenance={maintenanceRead.data?.status}
             tasksOmitted={maintenanceRead.data?.tasksOmitted ?? 0}
             maintenanceError={maintenanceRead.isError} onRetryMaintenance={() => { void maintenanceRead.refetch() }}
@@ -111,9 +106,8 @@ export function ComputerCards({ mainId, devices, onSelectComputer, only }: {
 }
 
 type Task = ComputerMaintenanceStartInput['task']
-function ComputerCard({ card, observed, fresh, activityComplete, codexMcp, claudeMcp, accounts, maintenance, maintenanceError, tasksOmitted,
+function ComputerCard({ card, observed, fresh, activityComplete, accounts, maintenance, maintenanceError, tasksOmitted,
   onRetryMaintenance, onMaintain, maintaining, buildPosition, buildCount, onOpen }: {
-  codexMcp: HarnessMcpList | undefined; claudeMcp: HarnessMcpList | undefined
   card: Card; observed: ComputerActivity | undefined; fresh: boolean; accounts: ComputerAccounts | null | undefined
   activityComplete: boolean; maintenanceError: boolean; onRetryMaintenance(): void
   maintenance: MaintenanceStatus | null | undefined; onMaintain(task: Task): void; maintaining: boolean
@@ -143,10 +137,6 @@ function ComputerCard({ card, observed, fresh, activityComplete, codexMcp, claud
         <WorkerState worker={maintenance?.worker} busy={maintaining || maintenanceError}
           onUpdate={() => onMaintain({ kind: 'update-worker' })} />
       </dd></div> : null}
-      {card.target.hostRef.kind === 'device' ? <div><dt>Foreman Code MCP</dt><dd>
-        <span>Codex · {mcpState(codexMcp?.presets?.graphql)}</span>{' · '}
-        <span>Claude · {mcpState(claudeMcp?.presets?.graphql)}</span>
-      </dd></div> : null}
       <div><dt>GitHub</dt><dd><GitHubState account={account('github')} computer={name} known={Boolean(accounts)} /></dd></div>
       <div><dt>Builds</dt><dd>{buildSummary(card, buildPosition, buildCount)}
         {card.build?.state === 'setup-required' ? <Badge tone="warning">Setup needed</Badge> : null}</dd></div>
@@ -175,14 +165,6 @@ function ComputerCard({ card, observed, fresh, activityComplete, codexMcp, claud
       <Button size="sm" variant="ghost" onClick={() => askOperator(`On ${name}: `, { send: false })}>Ask Operator to change…</Button>
     </footer>
   </article>
-}
-
-function mcpState(state: NonNullable<HarnessMcpList['presets']>['graphql'] | undefined) {
-  if (state === 'installed') return 'Installed'
-  if (state === 'disabled') return 'Disabled'
-  if (state === 'missing') return 'Setup needed'
-  if (state) return 'Needs repair'
-  return 'State unavailable'
 }
 
 function HarnessChip({ label, account, computer, known, version, busy, onInstall }: {

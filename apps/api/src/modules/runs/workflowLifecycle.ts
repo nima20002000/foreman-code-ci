@@ -50,11 +50,9 @@ export async function settleWorkForRestart(owner: RunOwnership, approvals?: Work
           where n.execution_id=e.id and n.run_id=e.run_id and n.phase='reserved')
           or exists(select 1 from run_graph_effects f where f.run_id=e.run_id
             and f.effect_kind='execution.launch' and f.entity_id=e.id))
-        or e.record#>>'{result,outcome}'='succeeded' and (e.accepted and case
-          when e.work_activation_id is null then not exists(
-            select 1 from run_repeat_results x where x.run_id=e.run_id and x.execution_id=e.id)
-          else not exists(select 1 from run_work_results x where x.run_id=e.run_id and x.execution_id=e.id
-            and x.activation_id=e.work_activation_id) end
+        or e.record#>>'{result,outcome}'='succeeded' and (e.accepted and not exists(
+          select 1 from run_work_results x where x.run_id=e.run_id and x.execution_id=e.id
+            and x.activation_id=e.work_activation_id)
           or not e.accepted and not exists(select 1 from workflow_native_proofs p
             where p.run_id=e.run_id and p.execution_id=e.id
               and p.record#>>'{original,type}'='history'
@@ -294,35 +292,6 @@ export async function hasWorkDirectionWait(owner: RunOwnership): Promise<boolean
       and r.workflow_version_id=d.workflow_version_id and r.stop_requested_at is null`,
   [owner.runId])
   return row.rowCount === 1
-}
-
-/** Retain the launch failure without fencing sibling handoffs or claiming closure. */
-export async function recordWorkflowExecutionFailure(owner: RunOwnership, executionId: string,
-  failure: ExecutionResult): Promise<void> {
-  const result = ExecutionResultSchema.parse(failure)
-  if (result.outcome !== 'failed' || !result.error || result.error.retryable) return fail('RUN_FAILURE_CAUSE_INVALID')
-  await owner.oneShotConnection().transaction(async sql => {
-    const { publication, snapshot } = await openWorkflowLifecycleLocked(sql, owner.runId)
-    await retainOwner(sql, owner)
-    if (!snapshot.version.definition.handoffs || snapshot.stopRequested || snapshot.cleanupPending
-      || !['running', 'waiting'].includes(snapshot.run.executionState)) {
-      return fail('GRAPH_STOP_CONFLICT')
-    }
-    const stored = await readRepeatExecutionLocked(sql, snapshot, executionId)
-    if (!stored.workActivationId || stored.execution.nativeSessionId
-      || !['queued', 'starting'].includes(stored.execution.state)) return fail('RUN_FAILURE_CAUSE_INVALID')
-    const budget = (await sql.query<{ failure_result: unknown }>(
-      'select failure_result from approval_execution_state where execution_id=$1 for update', [executionId])).rows[0]
-    if (!budget) return fail('RUN_FAILURE_CAUSE_INVALID')
-    if (budget.failure_result) {
-      if (!sameRepeatValue(budget.failure_result, result)) return fail('RUN_FAILURE_CAUSE_INVALID')
-      return
-    }
-    await lifecycleSource(publication, { kind: 'execution_failure_recorded', executionId, result }, async () => {
-      await sql.query('update approval_execution_state set failure_result=$2::jsonb where execution_id=$1',
-        [executionId, canonicalGraphJson(result)])
-    })
-  })
 }
 
 /** A negative cleanup intent is not success/closure. It only fences new work.

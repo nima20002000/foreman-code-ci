@@ -1,4 +1,3 @@
-import { optionalCommandId } from './management/commands.js'
 import { TextTruncationSchema } from './activityText.js';
 import { NativeToolsSchema } from './nativeTools.js';
 export * from './nativeTools.js';
@@ -405,7 +404,6 @@ export const HarnessQualificationSchema = z
     authenticated: z.boolean(),
     ready: z.boolean(),
     structuredEvents: z.boolean(),
-    modelCatalogSource: z.enum(['native', 'cached']).optional(),
     supportsResume: z.boolean(),
     supportsCancellation: z.boolean(),
     supportsWorkingDirectory: z.boolean(),
@@ -1008,7 +1006,6 @@ export const ActivityKindSchema = z.enum([
   "ci_state_changed",
   "harness_session_started",
   "harness_output",
-  "native_events_skipped",
   "harness_session_finished",
   "result_recorded",
   "interaction_pending",
@@ -1462,7 +1459,7 @@ export const ListOperatorConversationSummariesResponseSchema = z.object({
 }).strict();
 
 export const CreateOperatorConversationRequestSchema = z.object({
-  commandId: optionalCommandId(IdSchema),
+  commandId: IdSchema.optional(),
   title: z.string().trim().min(1).optional(),
 }).strict();
 export const DeleteOperatorConversationResponseSchema = z.object({
@@ -1472,7 +1469,7 @@ export const DeleteOperatorConversationResponseSchema = z.object({
 }).strict();
 export const OperatorConversationDeletionInputSchema = z.object({
   conversationId: IdSchema,
-  commandId: optionalCommandId(IdSchema),
+  commandId: IdSchema,
 }).strict();
 export const CreateOperatorConversationResponseSchema = z.object({ conversation: ConversationSchema }).strict();
 export const ListOperatorConversationsResponseSchema = z.object({ conversations: z.array(ConversationSchema) }).strict();

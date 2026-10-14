@@ -1,4 +1,3 @@
-import { optionalCommandId } from './management/commands.js'
 import { z } from 'zod'
 import { JobExecutionRecordSchema } from './jobVerification.js'
 import { DeviceRegistrationSchema } from './deviceIdentity.js'
@@ -21,7 +20,7 @@ const JobCancellationFilesystemSchema = z.union([
   BackingJobCancellationFilesystemSchema, ProjectJobCancellationFilesystemSchema,
 ])
 export const JobCancellationProposalInputSchema = z.object({
-  workspaceId: z.string().min(1), executionId: z.string().min(1), commandId: optionalCommandId(z.string().min(8).max(200)),
+  workspaceId: z.string().min(1), executionId: z.string().min(1), commandId: z.string().min(8).max(200),
   journalSha256: z.string().regex(/^[a-f0-9]{64}$/),
   filesystemRecovery: JobCancellationFilesystemSchema.optional(),
 }).strict()
@@ -66,7 +65,7 @@ export const JobCancellationRecoveryApplySchema = z.object({
   recoveryId: z.uuid(), closure: SignedJobCancellationClosureSchema,
 }).strict()
 export const JobCancelInputSchema = z.object({
-  commandId: optionalCommandId(z.string().min(1)), recovery: JobCancellationRecoveryApplySchema.optional(),
+  commandId: z.string().min(1), recovery: JobCancellationRecoveryApplySchema.optional(),
 }).strict()
 type JobCancellationGrant = z.infer<typeof JobCancellationGrantSchema>
 type JobCancellationClosure = z.infer<typeof JobCancellationClosureSchema>

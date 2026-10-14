@@ -29,13 +29,7 @@ describe.runIf(postgresEnabled)('saved Board read consistency', () => {
           interleaved = true
           checkGate.resolve()
           workerGate.resolve()
-          await vi.waitFor(async () => {
-            const details = await runtime.runs.getDetails(f.run.workspaceId, f.run.id)
-            expect(details?.executions.every(execution => execution.state === 'completed')).toBe(true)
-          }, { timeout: 10_000 })
-          await runtime.stop()
-          await runtime.engine.cancel(f.run.id)
-          if (finished) await Promise.allSettled([finished])
+          await finished
         }
         return result
       }) as pg.PoolClient['query']
@@ -88,9 +82,7 @@ describe.runIf(postgresEnabled)('saved Board read consistency', () => {
       snapshot.mockRestore()
       checkGate.resolve()
       workerGate.resolve()
-      await runtime.stop()
-      await runtime.engine.cancel(f.run.id)
-      if (finished) await Promise.allSettled([finished])
+      await finished
       await Promise.allSettled(clients.map(client => client.close()))
       await app.close()
       await runtime.close()
