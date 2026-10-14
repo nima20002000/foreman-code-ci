@@ -13,7 +13,6 @@ import { copyApiRuntime } from '../../../../scripts/copy-api-runtime.mjs'
 import { createRuntimeBuildIdentity } from '@foreman-code/contracts/runtime-build-identity-node'
 import { readUntil } from './observableCondition.js'
 import { removeRestartUnit } from '../../../../scripts/test-restart-units.mjs'
-import { testFixtureCacheRoot } from '../../../../scripts/test-fixture-cache.mjs'
 import { ownedTestPath } from './testResources.js'
 
 const execute = promisify(execFile)
@@ -23,18 +22,8 @@ const workerRequire = createRequire(new URL('../../../worker/package.json', impo
 const { build } = workerRequire('esbuild') as {
   build(options: {
     entryPoints: string[]
-    outdir?: string
-    outfile?: string
-    outbase?: string
-    bundle?: boolean
-    packages?: 'external'
-    plugins?: Array<{
-      name: string
-      setup(builder: {
-        onResolve(options: { filter: RegExp },
-          callback: (args: { path: string }) => { path: string; external: boolean }): void
-      }): void
-    }>
+    outdir: string
+    outbase: string
     platform: 'node'
     format: 'esm'
     target: string
@@ -80,9 +69,6 @@ export async function installedRestartService(directory: string, configuration: 
   await cp(join(repository, 'packages/contracts'), join(deployment, 'packages/contracts'), {
     recursive: true, filter: path => path !== join(repository, 'packages/contracts/node_modules'),
   })
-  // The installer's shared dependency tree is deployed once per lockfile, not copied again for every fixture.
-  // The installed API's own modules are transformed below.
-  await mkdir(join(deployment, 'apps/api/dist'), { recursive: true })
   await deployProductionApi(async (command: string, args: string[]) => {
     // The disposable deployment workspace is discarded, so it needs no dependency restoration.
     if (args.includes('install')) return
@@ -94,7 +80,7 @@ export async function installedRestartService(directory: string, configuration: 
       throw new Error(`${output.message} (code ${output.code}, signal ${output.signal})\n`
         + `${output.stderr ?? ''}\n${output.stdout ?? ''}`, { cause: error })
     }
-  }, api, { dependencies: { root: join(testFixtureCacheRoot(), 'api-dependencies'), source: deployment } })
+  }, api)
   await mkdir(join(api, 'test/helpers'), { recursive: true })
   await copyFile(join(repository, 'apps/api/test/helpers/testPool.mjs'), join(api, 'test/helpers/testPool.mjs'))
   const source = join(repository, 'apps/api/src')
@@ -116,25 +102,9 @@ export async function installedRestartService(directory: string, configuration: 
   await copyFile(join(repository, 'package.json'), join(release, 'package.json'))
   await copyFile(process.execPath, join(release, 'node'))
   await cp(environment.FOREMAN_CODE_WORKER_ARTIFACT_DIRECTORY!, join(release, 'worker-artifacts'), { recursive: true })
-  await build({
-    entryPoints: [fileURLToPath(new URL('../fixtures/remote-review-main.mjs', import.meta.url))],
-    outfile: join(api, 'dist/restart-fixture.js'),
-    bundle: true,
-    packages: 'external',
-    platform: 'node',
-    format: 'esm',
-    target: 'es2022',
-    logLevel: 'silent',
-    plugins: [{
-      name: 'installed-api-imports',
-      setup(builder) {
-        builder.onResolve({ filter: /^\.\.\/\.\.\/src\/.*\.ts$/ }, ({ path }) => ({
-          path: path.replace('../../src/', './').replace(/\.ts$/, '.js'),
-          external: true,
-        }))
-      },
-    }],
-  })
+  const fixture = await readFile(new URL('../fixtures/remote-review-main.mjs', import.meta.url), 'utf8')
+  await writeFile(join(api, 'dist/restart-fixture.js'),
+    fixture.replaceAll('../../src/', './').replaceAll('.ts\'', '.js\''))
   const readyFile = join(directory, 'service-ready.json')
   const preservingFile = `${readyFile}.preserving`
   const unit = `graphql-restart-${randomUUID()}.service`
