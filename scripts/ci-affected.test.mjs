@@ -90,7 +90,8 @@ test('runs every selected web test with its configured fast or heavy profile', t
   { mode: 0o755 })
   const result = spawnSync(process.execPath, [new URL('./ci-affected-run.mjs', import.meta.url).pathname,
     'unit', '--files-from', selection], { cwd: root, encoding: 'utf8', env: { ...process.env,
-    PATH: `${root}:${process.env.PATH}`, FOREMAN_WEB_TEST_PHASE: 'heavy' } })
+    PATH: `${root}:${process.env.PATH}`, FOREMAN_WEB_TEST_PHASE: 'heavy',
+    CI_PROGRESS_FILE: '', TEST_RESULTS_OUTPUT: '' } })
   assert.equal(result.status, 0, result.stderr)
   const calls = result.stdout.trim().split('\n').map(line => JSON.parse(line))
   assert.deepEqual(calls, [
