@@ -150,14 +150,7 @@ export async function recoverEnteredLaunch(
   database: CrashCutDatabase, form: WorkflowForm, finish: 'stop' | 'reconcile',
 ) {
   const fixture = makeCurrentWorkflowFixture(randomUUID(), form)
-  // The retried node continues the workflow, so the repeat exit needs a valid result.
-  const exitOutput = { routing: { outcome: 'pass' }, data: {
-    latestDeliverable: { node: fixture.version.definition.nodes[1]!.id }, remainingFindings: [],
-  } }
-  const t = await checkpointRuntimeFixture(1, 1, { database, fixture, approvalNodeIds: [],
-    outputFor: (nodeId) => nodeId === fixture.version.definition.nodes[1]!.id && form === 'repeat'
-      ? exitOutput : { node: nodeId },
-  })
+  const t = await checkpointRuntimeFixture(1, 1, { database, fixture, approvalNodeIds: [] })
   const interrupted = new DomainError('ENGINE_RESTART', 'Injected abrupt API restart at entered COMMIT.', 409)
   const barrier = holdCrashCut<string>(interrupted)
   let launchSignal: AbortSignal | undefined
@@ -219,13 +212,15 @@ export async function recoverEnteredLaunch(
     expect(outcome).toMatchObject({ status: 'rejected', reason: { code: 'ENGINE_RESTART' } })
     if (outcome.status === 'rejected') expect(outcome.reason).toBe(launchSignal?.reason)
     expect(barrier.visits).toBe(1)
-    // Graceful shutdown abandons only the undispatched attempt; the Run keeps running
-    // so its node retries after restart. No dispatch happened, so nothing was replayed.
-    const abandoned = await t.runs.getExecution(cut)
-    expect(abandoned).toMatchObject({ id: original.id, attempt: 1, input: original.input, state: 'completed',
-      result: { outcome: 'failed', error: { code: 'EXECUTION_INTERRUPTED', retryable: true } } })
-    expect(await t.runs.hasPendingCleanup(t.f.run.id)).toBe(false)
-    expect(t.provider.counts).toEqual({ sessions: 0, starts: 0, responses: 0, attaches: 0 })
+    expect(await t.runs.getExecution(cut)).toEqual(original)
+    expect((await t.db.pool.query('select closed_at from execution_native_closures where execution_id=$1', [cut])).rows)
+      .toEqual([{ closed_at: null }])
+    expect((await t.db.pool.query('select 1 from execution_native_recoveries where execution_id=$1', [cut])).rowCount).toBe(0)
+    // Graceful shutdown commits a negative reentry fence even when the
+    // entered native reservation never dispatched. Only original registry
+    // recovery plus terminal settlement below may clear that obligation.
+    expect(await t.runs.hasPendingCleanup(t.f.run.id)).toBe(true)
+    expect((await t.db.pool.query('select pending from run_cleanup_intents where run_id=$1', [t.f.run.id])).rows).toEqual([{ pending: true }])
     restore()
     const next = t.compose()
     const recover = vi.fn((id: string, signal: AbortSignal) => registry.closeOwner(`execution:${id}`, signal))
@@ -235,23 +230,21 @@ export async function recoverEnteredLaunch(
       expect(await next.engine.cancel(t.f.run.id)).toBe(true)
     } else await next.engine.start(t.f.run.id)
     const run = await next.runs.get(t.f.run.id)
-    expect(run).toMatchObject({ executionState: 'completed', outcome: finish === 'stop' ? 'canceled' : 'succeeded' })
+    expect(run).toMatchObject({ executionState: 'completed', outcome: finish === 'stop' ? 'canceled' : 'failed' })
     expect(await next.runs.hasPendingCleanup(t.f.run.id)).toBe(false)
-    expect(await next.runs.getExecution(original.id)).toEqual(abandoned)
-    const retries = (await executions(t)).filter((item) => item.workflowNodeId === original.workflowNodeId && item.id !== cut)
-    if (finish === 'stop') {
-      expect(retries.every((item) => item.result?.outcome !== 'succeeded')).toBe(true)
-      expect(t.provider.counts.starts).toBe(0)
-    } else {
-      expect(retries).toEqual([expect.objectContaining({ attempt: 2, input: original.input,
-        state: 'completed', result: expect.objectContaining({ outcome: 'succeeded' }) })])
-      expect((await effects(t, 'execution.launch')).length).toBeGreaterThan(launchReceipts.length)
-    }
-    expect(await occurrenceCount(t)).toBeGreaterThanOrEqual(occurrences)
-    expect(recover).not.toHaveBeenCalled()
+    const recovered = await next.runs.getExecution(original.id)
+    expect(recovered).toMatchObject({ id: original.id, attempt: 1, input: original.input,
+      agentConfigurationVersionId: original.agentConfigurationVersionId,
+      workflowNodeId: original.workflowNodeId, runtimeDirectory: original.runtimeDirectory,
+      state: 'completed', result: { outcome: finish === 'stop' ? 'canceled' : 'failed' } })
+    expect((await t.db.pool.query('select generation from execution_native_recoveries where execution_id=$1', [cut])).rows).toHaveLength(1)
+    expect(await effects(t, 'execution.launch')).toEqual(launchReceipts)
+    expect(await occurrenceCount(t)).toBe(occurrences)
+    expect(t.provider.counts).toEqual({ sessions: 0, starts: 0, responses: 0, attaches: 0 })
+    expect(recover).toHaveBeenCalledTimes(1)
     await next.engine.start(t.f.run.id)
+    expect(recover).toHaveBeenCalledTimes(1)
     expect(await next.runs.hasPendingCleanup(t.f.run.id)).toBe(false)
-    expect(await next.runs.get(t.f.run.id)).toEqual(run)
   } finally {
     try { await stopOld() } finally { restore(); await t.close() }
   }
