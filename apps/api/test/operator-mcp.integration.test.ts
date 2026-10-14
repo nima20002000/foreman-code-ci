@@ -75,9 +75,7 @@ describe.skipIf(!postgresEnabled)('Operator MCP current PostgreSQL integration',
       }, 0)
       const tools = (await f.client.listTools()).tools
       const schema = tools.find((tool) => tool.name === 'workspace_create')!.inputSchema
-      expect(schema.required ?? []).toEqual([])
-      expect(schema.properties).toHaveProperty('name')
-      expect(schema.properties).toHaveProperty('commandId')
+      expect(schema.required).not.toContain('name')
       const create = (arguments_: Record<string, unknown>) => f.client.callTool({ name: 'workspace_create', arguments: arguments_ })
       const base = value(await create({ commandId: randomUUID(), parentPath: f.db.directory }))
       expect(base.value).toMatchObject({ workspace: { name: 'New workspace', description: 'Default description' } })

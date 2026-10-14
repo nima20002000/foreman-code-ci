@@ -9,7 +9,7 @@ import { currentOperatorIntegration } from './helpers/currentOperatorIntegration
 import { readUntil } from './helpers/observableCondition.js'
 import { agent3Database } from './helpers/wave25Agent3.js'
 import { retryDatabaseTimeout } from '../src/infrastructure/databaseTimeout.js'
-import { renewOwnedLeases } from '../src/modules/leases/ownerLeases.js'
+import { maintainCredential } from '../src/modules/harnesses/credentialHeartbeat.js'
 import { deferred } from './helpers/deferred.js'
 
 it.each(['canceling statement due to user request', 'Native event persistence was interrupted.'])(
@@ -21,14 +21,14 @@ it.each(['canceling statement due to user request', 'Native event persistence wa
     vi.useFakeTimers()
     const check = vi.fn().mockRejectedValue(error)
     const onFailure = vi.fn()
-    const stop = renewOwnedLeases({
-      leases: [{ name: 'execution credential', renewWithinMs: 60_000, remainingMs: () => 600_000, renew: async () => {} }],
-      check, signal: new AbortController().signal, onFailure,
+    const stop = maintainCredential({
+      expiresAt: () => new Date(Date.now() + 600_000).toISOString(),
+      check, refresh: async () => {}, signal: new AbortController().signal, onFailure,
     })
     try {
       await vi.advanceTimersByTimeAsync(1_000)
       expect(check).toHaveBeenCalledTimes(1)
-      expect(onFailure).toHaveBeenCalledWith(error, 'check')
+      expect(onFailure).toHaveBeenCalledWith(error)
     } finally {
       await stop()
       vi.useRealTimers()
@@ -95,7 +95,7 @@ it('keeps graph work and an interval Agent alive through database timeouts and r
   try {
     running = f.engine.start(f.f.run.id)
     // Observe failures without an unhandled rejection while the timing gates remain closed.
-    void running.catch(() => { /* ignore: the finally block settles and asserts the Run; this only avoids an unhandled rejection */ })
+    void running.catch(() => {})
     await readUntil(async () => held.size, count => count === 2,
       { timeoutMs: 30_000, description: 'running graph Agent and interval Agent' })
     const before = await f.runs.getDetails(f.f.run.workspaceId, f.f.run.id)
@@ -129,15 +129,10 @@ it('keeps graph work and an interval Agent alive through database timeouts and r
     await readUntil(async () => persisted.size, count => count === 2,
       { timeoutMs: 10_000, description: 'original native publications retried successfully' })
     finish.resolve()
-    await readUntil(() => f.runs.getDetails(f.f.run.workspaceId, f.f.run.id),
-      details => details?.executions.every(execution => execution.state === 'completed') === true,
-      { timeoutMs: 10_000, description: 'settled original native executions' })
-    const stopped = await f.client.callTool({ name: 'run_stop', arguments: { ...scopes, commandId: randomUUID() } })
-    expect(stopped.isError).not.toBe(true)
-    await Promise.allSettled([running])
+    await running
     const readback = await f.client.callTool({ name: 'run_get', arguments: { ...scopes, detail: 'full' } })
     expect(readback.isError).not.toBe(true)
-    expect(decodeMcpToolResult(readback)).toMatchObject({ run: { executionState: 'completed', outcome: 'canceled' } })
+    expect(decodeMcpToolResult(readback)).toMatchObject({ run: { executionState: 'completed', outcome: 'succeeded' } })
     const after = await f.runs.getDetails(f.f.run.workspaceId, f.f.run.id)
     expect(after!.executions.map(execution => execution.id).sort())
       .toEqual(before!.executions.map(execution => execution.id).sort())
@@ -152,8 +147,8 @@ it('keeps graph work and an interval Agent alive through database timeouts and r
     databaseReady = true
     flush.resolve()
     finish.resolve()
+    await running?.catch(() => {})
     await f.close()
-    if (running) await Promise.allSettled([running])
     vi.restoreAllMocks()
   }
 }, 60_000)
@@ -244,12 +239,7 @@ it('closes the original session when authenticated MCP Stop interrupts active da
   } finally {
     flush.resolve()
     finish.resolve()
-    await readUntil(() => f.runs.getDetails(f.f.run.workspaceId, f.f.run.id),
-      details => details?.executions.every(execution => execution.state === 'completed') === true,
-      { timeoutMs: 10_000, description: 'settled original native executions' })
-    const stopped = await f.client.callTool({ name: 'run_stop', arguments: { workspaceId: f.f.run.workspaceId, runId: f.f.run.id, commandId: randomUUID() } })
-    expect(stopped.isError).not.toBe(true)
-    await Promise.allSettled([running])
+    await running
     await f.close()
     vi.restoreAllMocks()
   }

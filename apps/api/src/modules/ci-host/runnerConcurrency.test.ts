@@ -71,9 +71,7 @@ async function computer(beforeGithub?: () => Promise<void>, cpuCount = 8, isolat
         await beforeCheckout?.()
         const source = args.at(-2)!
         await mkdir(source, { recursive: true })
-        await writeFile(join(source, 'package.json'), JSON.stringify({
-          scripts: { lint: 'fixture', unit: 'fixture', integration: 'fixture' },
-        }))
+        await writeFile(join(source, 'package.json'), JSON.stringify({ scripts: { lint: 'fixture', unit: 'fixture' } }))
       }
       if (file === 'systemd-run') {
         launches.push({ args })
@@ -94,62 +92,6 @@ async function computer(beforeGithub?: () => Promise<void>, cpuCount = 8, isolat
 }
 
 describe('host CI runner concurrent starts', () => {
-  it('starts a warm repository while another repository fetch is stalled and retains the reserved slot', async () => {
-    const fetch = barrier()
-    const { runner, request, launches, ports } = await computer(undefined, 16, true, undefined, fetch.pause)
-    const command = ports.run
-    ports.run = async (file, args, options) => {
-      if (file === 'git' && args.includes('cat-file') && args.includes(`${'b'.repeat(40)}^{commit}`)) {
-        return { code: 0, stdout: '', stderr: '' }
-      }
-      return command(file, args, options)
-    }
-    const first = runner.handle(request)
-    let warm: ReturnType<HostCiRunner['handle']> | undefined
-    let retry: ReturnType<HostCiRunner['handle']> | undefined
-    try {
-      await fetch.entered
-      retry = runner.handle(request)
-      const warmRequest = { ...request, runId: randomUUID(), repository: 'octo/other', commit: 'b'.repeat(40) }
-      warm = runner.handle(warmRequest)
-      await vi.waitFor(() => expect(launches).toHaveLength(1), { timeout: 1000 })
-      await expect(warm).resolves.toMatchObject({ run: { runId: warmRequest.runId } })
-      await expect(runner.status()).resolves.toMatchObject({ slotsUsed: 2,
-        runs: expect.arrayContaining([expect.objectContaining({ runId: request.runId, state: 'starting' })]) })
-      await expect(runner.handle({ ...request, runId: randomUUID() })).rejects.toMatchObject({ code: 'CI_HOST_BUSY' })
-    } finally {
-      fetch.release()
-      await Promise.all([first, warm, retry])
-    }
-    await vi.waitFor(() => expect(launches).toHaveLength(2))
-  })
-
-  it('coordinates concurrent repository fetches after reserving distinct slots', async () => {
-    const fetch = barrier()
-    let fetches = 0
-    const { runner, request, launches } = await computer(undefined, 16, true, undefined, async () => {
-      fetches++
-      await fetch.pause()
-    })
-    const first = runner.handle(request)
-    let second: ReturnType<HostCiRunner['handle']> | undefined
-    try {
-      await fetch.entered
-      second = runner.handle({ ...request, runId: randomUUID(), commit: 'b'.repeat(40) })
-      await vi.waitFor(async () => {
-        await expect(runner.status()).resolves.toMatchObject({ slotsUsed: 2 })
-      }, { timeout: 1000 })
-      expect(fetches).toBe(1)
-    } finally {
-      fetch.release()
-      await Promise.all([first, second])
-    }
-    await vi.waitFor(() => expect(launches).toHaveLength(2))
-    expect(fetches).toBe(2)
-    expect(new Set(launches.map(launch => launch.args.find(arg => arg.startsWith('--working-directory=')))).size)
-      .toBe(2)
-  })
-
   it('keeps database suites exclusive for commits without isolated database support', async () => {
     const { runner, request, launches } = await computer(undefined, 16)
     const unit = { ...request, suite: 'unit' }
@@ -159,75 +101,6 @@ describe('host CI runner concurrent starts', () => {
     await expect(runner.status()).resolves.toMatchObject({ slotsUsed: 1, slotsTotal: 1 })
     await vi.waitFor(() => expect(launches).toHaveLength(1))
     expect(launches[0]!.args).toContain('--property=CPUQuota=1600%')
-  })
-
-  it.each(['unit', 'integration'] as const)(
-    'releases a rejected %s preparation and retries the same run when exclusive capacity is free', async suite => {
-      const { runner, request, launches, root, ports } = await computer(undefined, 16)
-      await runner.handle(request)
-      await vi.waitFor(() => expect(launches).toHaveLength(1))
-      const waiting = { ...request, runId: randomUUID(), suite }
-      await expect(runner.handle(waiting)).rejects.toMatchObject({ code: 'CI_HOST_BUSY' })
-      await expect(runner.status()).resolves.toMatchObject({ slotsUsed: 1,
-        runs: expect.arrayContaining([expect.objectContaining({ runId: waiting.runId, state: 'queued',
-          exitCode: null, finishedAt: null, message: expect.stringContaining('exclusive database capacity') })]) })
-      expect(launches).toHaveLength(1)
-      await runner.cancel(request.runId)
-      await expect(runner.status()).resolves.toMatchObject({ slotsUsed: 0 })
-      const restarted = new HostCiRunner(root, ports)
-      await expect(restarted.handle(waiting)).resolves.toMatchObject({ run: { runId: waiting.runId } })
-      await vi.waitFor(async () => {
-        await expect(restarted.handle({ operation: 'read', runId: waiting.runId, afterOffset: 0, maxBytes: 1 }))
-          .resolves.toMatchObject({ run: { state: 'running', exitCode: null, finishedAt: null } })
-      })
-      expect(launches).toHaveLength(2)
-    })
-
-  it('requeues a preparation when memory capacity drops after reservation', async () => {
-    const { runner, request, ports, launches } = await computer(undefined, 16, true)
-    await runner.handle(request)
-    await vi.waitFor(() => expect(launches).toHaveLength(1))
-    let memory = 16 * 2 ** 30
-    ports.availableMemoryBytes = () => memory
-    const command = ports.run
-    ports.run = async (file, args, options) => {
-      if (file === 'git' && args.includes('show')) memory = 1
-      return command(file, args, options)
-    }
-    const waiting = { ...request, runId: randomUUID(), suite: 'unit' }
-    await expect(runner.handle(waiting)).rejects.toMatchObject({ code: 'CI_HOST_BUSY' })
-    await expect(runner.status()).resolves.toMatchObject({ slotsUsed: 1,
-      runs: expect.arrayContaining([expect.objectContaining({ runId: waiting.runId, state: 'queued',
-        exitCode: null, finishedAt: null })]) })
-    expect(launches).toHaveLength(1)
-  })
-
-  it('cancels a queued preparation and prevents a later start from launching it', async () => {
-    const { runner, request, launches } = await computer(undefined, 16)
-    await runner.handle(request)
-    await vi.waitFor(() => expect(launches).toHaveLength(1))
-    const waiting = { ...request, runId: randomUUID(), suite: 'unit' }
-    await expect(runner.handle(waiting)).rejects.toMatchObject({ code: 'CI_HOST_BUSY' })
-    await expect(runner.handle({ operation: 'cancel', runId: waiting.runId }))
-      .resolves.toMatchObject({ run: { state: 'canceled' } })
-    await runner.cancel(request.runId)
-    await expect(runner.handle(waiting)).resolves.toMatchObject({ run: { state: 'canceled' } })
-    expect(launches).toHaveLength(1)
-  })
-
-  it('keeps repository command failures terminal and releases their slot', async () => {
-    const { runner, request, ports, launches } = await computer()
-    const command = ports.run
-    ports.run = async (file, args, options) => {
-      if (file === 'git' && args.includes('cat-file')) return { code: 1, stdout: '', stderr: '' }
-      if (file === 'git' && args.includes('fetch')) return { code: 1, stdout: '', stderr: 'Fetch failed' }
-      return command(file, args, options)
-    }
-    await expect(runner.handle(request)).rejects.toThrow('Fetch failed')
-    await expect(runner.status()).resolves.toMatchObject({ slotsUsed: 0,
-      runs: [expect.objectContaining({ runId: request.runId, state: 'failed',
-        message: expect.stringContaining('Fetch failed') })] })
-    expect(launches).toHaveLength(0)
   })
 
   it('releases the slot of a canceled run only after preparation has stopped', async () => {
@@ -268,18 +141,16 @@ describe('host CI runner concurrent starts', () => {
     await expect(runner.status()).resolves.toMatchObject({ slotsUsed: 2, slotsTotal: 2 })
   })
 
-  it('reports an empty exit status and settles when the complete status arrives', async () => {
+  it('waits for a complete exit status before settling a failing suite', async () => {
     const { root, runner, request } = await computer()
     await runner.handle(request)
     const read = { operation: 'read', runId: request.runId, afterOffset: 0, maxBytes: 1 }
     await vi.waitFor(async () => {
       await expect(runner.handle(read)).resolves.toMatchObject({ run: { state: 'running' } })
     })
-    await runner.beginDrain()
     const exit = join(root, 'runs', request.runId, 'exit')
     await writeFile(exit, '')
-    await expect(runner.handle(read)).rejects.toMatchObject({ code: 'CI_EXIT_STATUS_INVALID' })
-    await writeFile(join(root, 'runs', request.runId, 'log'), 'Lint failed')
+    await expect(runner.handle(read)).resolves.toMatchObject({ run: { state: 'running', exitCode: null } })
     await writeFile(exit, '3\n')
     await expect(runner.handle(read)).resolves.toMatchObject({ run: { state: 'failed', exitCode: 3 } })
   })
@@ -369,32 +240,4 @@ it('persists cancellation before delayed start delivery and rejects native entry
   const restarted = new HostCiRunner(root, ports)
   await expect(restarted.handle(request)).resolves.toMatchObject({ run: { state: 'canceled' } })
   expect(launches).toHaveLength(0)
-})
-
-it('returns a log page while native launch is waiting for acknowledgement', async () => {
-  const launch = barrier()
-  const { root, runner, request, ports } = await computer()
-  const command = ports.run
-  ports.run = async (file, args, options) => {
-    const result = await command(file, args, options)
-    if (file === 'systemd-run') await launch.pause()
-    return result
-  }
-  let timeout: ReturnType<typeof setTimeout> | undefined
-  let reading: ReturnType<HostCiRunner['handle']> | undefined
-  try {
-    await runner.handle(request)
-    await launch.entered
-    await writeFile(join(root, 'runs', request.runId, 'log'), 'Launching the suite.\n')
-    reading = runner.handle({ operation: 'read', runId: request.runId, afterOffset: 0, maxBytes: 100 })
-    const result = await Promise.race([reading,
-      new Promise<'blocked'>(resolve => { timeout = setTimeout(() => resolve('blocked'), 1000) })])
-    expect(result).toMatchObject({ operation: 'read', text: 'Launching the suite.\n',
-      run: { runId: request.runId, state: 'running', exitCode: null, finishedAt: null } })
-  } finally {
-    clearTimeout(timeout)
-    launch.release()
-    await reading
-    await runner.beginDrain()
-  }
 })

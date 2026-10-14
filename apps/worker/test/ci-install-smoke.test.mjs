@@ -2,8 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CiHostRequestSchema } from '@foreman-code/contracts';
 import { runCiInstallSmoke } from '../src/ciInstallSmoke.mjs';
+import { gateIntegrationShards } from '../../../apps/api/src/modules/ci-host/capacity.ts';
 
-test('update smoke waits for busy capacity and uses a valid focused integration start', async () => {
+test('update smoke waits for busy capacity and uses a valid exclusive integration start', async () => {
   const requests = [];
   let starts = 0;
   const runner = { handle: async request => {
@@ -12,8 +13,8 @@ test('update smoke waits for busy capacity and uses a valid focused integration 
     if (request.operation === 'start') {
       CiHostRequestSchema.parse(request);
       if (++starts < 3) throw Object.assign(new Error('Existing CI is still running.'), { code: 'CI_HOST_BUSY' });
-      assert.equal(request.scope, 'affected');
-      assert.equal(request.gate, undefined);
+      assert.equal(request.scope, 'full');
+      assert.equal(request.gate, true);
       return {};
     }
     if (request.operation === 'cancel') return {};
@@ -45,6 +46,7 @@ for (const { capacity, cpuCount, memoryGiB } of [
   { capacity: 'CPU-limited', cpuCount: 8, memoryGiB: 32 },
   { capacity: 'memory-limited', cpuCount: 16, memoryGiB: 4 },
 ]) {
+  const integrationShards = gateIntegrationShards(cpuCount, Math.floor(memoryGiB * 2 ** 30 * 0.9));
   for (const outcome of ['passed', 'failed', 'no-tests', 'timeout']) {
     test(`Worker install CI smoke uses ${capacity} setup and handles ${outcome}`, async () => {
       const requests = [];
@@ -68,9 +70,8 @@ for (const { capacity, cpuCount, memoryGiB } of [
       }
       const start = requests.find(request => request.operation === 'start');
       assert.equal(start.suite, 'integration');
-      assert.equal(start.scope, 'affected');
-      assert.equal(start.gate, undefined);
-      assert.equal(start.integrationShards, undefined);
+      assert.equal(start.gate, true);
+      assert.equal(start.integrationShards, integrationShards);
       assert.deepEqual(start.files, ['apps/api/test/ci-smoke.integration.test.ts']);
       assert.equal(requests.some(request => request.operation === 'cancel'), outcome !== 'passed');
     });
@@ -101,24 +102,3 @@ test('Worker readiness waits for first-upgrade CI smoke and exposes its original
   assert.equal(failed.failure, 'ERR_PNPM_NO_OFFLINE_META');
   assert.deepEqual(workerCiStartupStatus(connected, { pending: false, error: null }), connected);
 })
-
-
-test('a single-file update smoke can start alongside unrelated CI when a slot is free', async () => {
-  let started = false;
-  const runner = { handle: async request => {
-    if (request.operation === 'status') return { ready: true, cpuCount: 16, memoryBytes: 32 * 2 ** 30 };
-    if (request.operation === 'start') {
-      CiHostRequestSchema.parse(request);
-      if (request.gate) throw Object.assign(new Error('Another CI job is active.'), { code: 'CI_HOST_BUSY' });
-      started = true;
-      return {};
-    }
-    if (request.operation === 'cancel') return {};
-    return { run: { state: 'passed', exitCode: 0 }, text: '', testResults: {
-      summary: { passed: 1, failed: 0 }, files: [{ file: 'apps/api/test/ci-smoke.integration.test.ts',
-        tests: [{ status: 'passed' }] }] } };
-  } };
-  await runCiInstallSmoke({ repository: 'fixture/project', commit: 'a'.repeat(40) },
-    { runner, timeoutMs: 100, capacityTimeoutMs: 50, pollMs: 1 });
-  assert.equal(started, true);
-});

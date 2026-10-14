@@ -7,7 +7,6 @@ import type { PostgresCommandCoordinator } from '../src/modules/commands/postgre
 import type { HarnessInstanceSettingsRepository } from '../src/modules/harnesses/instanceSettings/repository.js'
 import type { HostHarnessProfileEvidenceRepository } from '../src/modules/harnesses/instanceSettings/profileRepository.js'
 import { HostHarnessInstanceProfileChecks, nativeProfileCheckId } from '../src/modules/harnesses/instanceSettings/profileChecks.js'
-import { DomainError } from '../src/modules/errors.js'
 import { assertDeviceHostInstallation } from '../src/modules/devices/hostAuthorization.js'
 import { harnessConnectionGeneration } from '../src/modules/harnesses/hostConnectionGeneration.js'
 import type { HarnessInstallationRecord } from '../src/modules/harnesses/installationRegistry.js'
@@ -74,14 +73,6 @@ describe('explicit exact-host native profile checks', () => {
     await expect(f.service.check(principal, 'mcp', f.input)).rejects.toMatchObject({ code: 'HARNESS_PROFILE_EVIDENCE_MISMATCH' })
     f.qualify.mockImplementationOnce(async value => { f.change(); return f.proof(value) })
     await expect(f.service.check(principal, 'mcp', f.input)).rejects.toMatchObject({ code: 'REVISION_CONFLICT' })
-    expect(f.append).not.toHaveBeenCalled()
-    await f.service.close()
-  })
-  it('returns Worker contention to explicit callers without retrying or recording a failure', async () => {
-    const f = fixture()
-    f.qualify.mockRejectedValue(new DomainError('DEVICE_BUSY', 'The device is busy.', 503))
-    await expect(f.service.check(principal, 'mcp', f.input)).rejects.toMatchObject({ code: 'DEVICE_BUSY' })
-    expect(f.qualify).toHaveBeenCalledTimes(1)
     expect(f.append).not.toHaveBeenCalled()
     await f.service.close()
   })
@@ -152,98 +143,6 @@ describe('automatic installation profile checks', () => {
       installation: () => installation }
     return { ...f, saved, installation, request }
   }
-  it.each(['requested', 'installation'] as const)(
-    'keeps a %s check pending through repeated Worker contention, then persists qualification', async mode => {
-      const f = updatedFixture()
-      let busy = true
-      f.qualify.mockImplementation(async value => {
-        if (busy) throw new DomainError('DEVICE_BUSY', 'The device is busy.', 503)
-        return f.proof(value)
-      })
-      const task = (mode === 'requested'
-        ? f.service.checkAutomatically(f.saved, f.installation)
-        : f.service.recheckInstallation(f.request)).then(() => null, error => error)
-      try {
-        await vi.waitFor(() => expect(f.qualify.mock.calls.length).toBeGreaterThanOrEqual(2))
-        const selected = f.qualify.mock.calls[0]![0]
-        expect(f.service.pending(selected)).toBe(true)
-        expect(await f.service.failure(selected)).toBeUndefined()
-        expect(f.append).not.toHaveBeenCalled()
-        busy = false
-        expect(await task).toBeNull()
-        expect(f.append).toHaveBeenCalledTimes(1)
-        expect(f.append.mock.calls[0]![3]).toMatchObject({ qualified: true })
-        expect(f.service.pending(selected)).toBe(false)
-      } finally {
-        busy = false
-        await f.service.close()
-        await task
-      }
-    })
-  it('cancels an automatic busy retry on shutdown without persisting a qualification failure', async () => {
-    const f = updatedFixture()
-    f.qualify.mockRejectedValue(new DomainError('DEVICE_BUSY', 'The device is busy.', 503))
-    const task = f.service.checkAutomatically(f.saved, f.installation).then(() => null, error => error)
-    try {
-      await vi.waitFor(() => expect(f.qualify.mock.calls.length).toBeGreaterThanOrEqual(2))
-      expect(f.service.pending(f.saved)).toBe(true)
-      await f.service.close()
-      expect(await task).toBeInstanceOf(Error)
-      expect(f.append).not.toHaveBeenCalled()
-      expect(f.service.pending(f.saved)).toBe(false)
-    } finally {
-      await f.service.close()
-      await task
-    }
-  })
-  it('revalidates the profile revision before retrying a busy automatic check', async () => {
-    const f = updatedFixture()
-    f.qualify.mockImplementationOnce(async () => {
-      f.change()
-      throw new DomainError('DEVICE_BUSY', 'The device is busy.', 503)
-    })
-    try {
-      await expect(f.service.checkAutomatically(f.saved, f.installation))
-        .rejects.toMatchObject({ code: 'REVISION_CONFLICT' })
-      expect(f.qualify).toHaveBeenCalledTimes(1)
-      expect(f.append).not.toHaveBeenCalled()
-    } finally {
-      await f.service.close()
-    }
-  })
-  it('deduplicates requested automatic checks per instance revision and persists their result', async () => {
-    const f = updatedFixture()
-    let release!: () => void
-    const waiting = new Promise<void>(resolve => { release = resolve })
-    f.qualify.mockImplementation(async value => {
-      await waiting
-      return f.proof(value)
-    })
-    const task = f.service.checkAutomatically(f.saved, f.installation)
-    expect(f.service.checkAutomatically(f.saved, f.installation)).toBe(task)
-    expect(f.service.pending(f.saved)).toBe(true)
-    const explicit = f.service.check(principal, 'mcp', f.input)
-    release()
-    await task
-    expect((await explicit).value.proof.qualified).toBe(true)
-    expect(f.qualify).toHaveBeenCalledTimes(1)
-    expect(f.append).toHaveBeenCalledTimes(1)
-    expect(f.service.pending(f.saved)).toBe(false)
-    const changed = { ...f.saved, revision: 2, instanceRevision: '2' }
-    f.setOverride(changed)
-    await f.service.checkAutomatically(changed, f.installation)
-    expect(f.qualify).toHaveBeenCalledTimes(2)
-    await f.service.close()
-  })
-  it('persists the real reason when a requested automatic check throws', async () => {
-    const f = updatedFixture()
-    f.qualify.mockRejectedValueOnce(new DomainError('CODEX_MODEL_UNAVAILABLE', 'Model unavailable.', 422))
-    await expect(f.service.checkAutomatically(f.saved, f.installation))
-      .rejects.toMatchObject({ code: 'CODEX_MODEL_UNAVAILABLE' })
-    expect(await f.service.failure(f.saved)).toEqual({ code: 'CODEX_MODEL_UNAVAILABLE', message: 'Model unavailable.' })
-    expect(f.service.pending(f.saved)).toBe(false)
-    await f.service.close()
-  })
   it('leaves qualified Codex profiles and their proofs unchanged after a Claude installation update', async () => {
     const f = updatedFixture()
     const beforeChecks = vi.fn(async () => {})
@@ -338,22 +237,6 @@ describe('automatic installation profile checks', () => {
 })
 
 describe('Worker reconnect profile checks', () => {
-  it('retries a busy reconnect check until the Worker can qualify the profile', async () => {
-    const f = workerFixture()
-    f.seed(f.proof(f.override))
-    f.qualify.mockRejectedValueOnce(new DomainError('DEVICE_BUSY', 'The device is busy.', 503))
-    try {
-      await f.service.recheckWorker(f.binding, new AbortController().signal, () => f.binding)
-      expect(f.qualify).toHaveBeenCalledTimes(2)
-      expect(f.append).toHaveBeenCalledTimes(1)
-      expect(f.append.mock.calls[0]![3]).toMatchObject({
-        qualified: true, connectionGeneration: harnessConnectionGeneration(f.binding),
-      })
-      expect(f.service.pending(f.override)).toBe(false)
-    } finally {
-      await f.service.close()
-    }
-  })
   it('checks at most two profiles at once and admits each completed revision independently', async () => {
     const f = workerFixture()
     const profiles = [f.override, ...Array.from({ length: 3 }, () => ({ ...f.override, instanceId: randomUUID() }))]
@@ -433,12 +316,12 @@ describe('Worker reconnect profile checks', () => {
     await f.service.close()
   })
 
-  it('discards a successful native result when the Worker restarts before persistence', async () => {
+  it('discards a successful native result when the connection changes before persistence', async () => {
     const f = workerFixture()
     f.seed(f.proof(f.override))
     let current = f.binding
     f.qualify.mockImplementationOnce(async selected => {
-      current = { ...current, bootId: randomUUID(), connectionGeneration: 3 }
+      current = { ...current, connectionGeneration: 3 }
       return { ...f.proof(selected), connectionGeneration: harnessConnectionGeneration(f.binding) }
     })
     await expect(f.service.recheckWorker(f.binding, new AbortController().signal, () => current))

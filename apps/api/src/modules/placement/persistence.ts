@@ -41,22 +41,6 @@ export async function readAcceptedPlacement(sql: Pick<GraphTransactionSql, 'quer
   return pin
 }
 
-/** Read only the selected nodes; unrelated placements cannot affect this batch. */
-export async function readAcceptedPlacements(sql: Pick<GraphTransactionSql, 'query'>,
-  runId: string, nodeIds: readonly string[]): Promise<Map<string, AcceptedNodePlacement>> {
-  const rows = await sql.query<{ node_id: string; binding_hash: string; record: unknown }>(
-    'select node_id,binding_hash,record from run_node_placements where run_id=$1 and node_id=any($2::text[])',
-    [runId, [...new Set(nodeIds)]])
-  const result = new Map<string, AcceptedNodePlacement>()
-  for (const row of rows.rows) {
-    const pin = readPlacement(row.record)
-    if (pin.runId !== runId || pin.nodeId !== row.node_id || pin.bindingHash !== row.binding_hash
-      || result.has(row.node_id)) conflict()
-    result.set(row.node_id, pin)
-  }
-  return result
-}
-
 export async function readRunAcceptedPlacements(sql: Pick<GraphTransactionSql, 'query'>,
   runId: string): Promise<AcceptedNodePlacement[]> {
   const rows = await sql.query<{ node_id: string; binding_hash: string; record: unknown }>(
@@ -123,26 +107,6 @@ export async function readDispatchIntent(sql: Pick<GraphTransactionSql, 'query'>
 export async function readExecutionPlacement(sql: Pick<GraphTransactionSql, 'query'>, executionId: string): Promise<AcceptedNodePlacement | undefined> {
   const intent = await readDispatchIntent(sql, executionId)
   return intent ? readAcceptedPlacement(sql, intent.runId, intent.nodeId) : undefined
-}
-
-export async function readExecutionPlacements(sql: Pick<GraphTransactionSql, 'query'>,
-  executionIds: readonly string[]): Promise<Map<string, AcceptedNodePlacement>> {
-  const rows = await sql.query<{ operation_id: string; execution_id: string; run_id: string; node_id: string;
-    binding_hash: string; attempt_id: string; record: unknown; placement: unknown }>(`
-    select i.operation_id,i.execution_id,i.run_id,i.node_id,i.binding_hash,i.attempt_id,i.record,p.record as placement
-    from execution_dispatch_intents i left join run_node_placements p on p.run_id=i.run_id and p.node_id=i.node_id
-    where i.execution_id=any($1::text[]) order by i.execution_id`, [[...executionIds]])
-  const result = new Map<string, AcceptedNodePlacement>()
-  for (const row of rows.rows) {
-    const intent = DispatchIntentSchema.parse(row.record)
-    const placement = readPlacement(row.placement)
-    if (result.has(row.execution_id) || intent.operationId !== row.operation_id || intent.executionId !== row.execution_id
-      || intent.runId !== row.run_id || intent.nodeId !== row.node_id || intent.bindingHash !== row.binding_hash
-      || intent.attemptId !== row.attempt_id || placement.runId !== intent.runId || placement.nodeId !== intent.nodeId
-      || placement.bindingHash !== intent.bindingHash || placement.mainId !== intent.mainId) conflict()
-    result.set(row.execution_id, placement)
-  }
-  return result
 }
 
 export async function readNativePlacement(sql: Pick<GraphTransactionSql, 'query'>, executionId: string) {

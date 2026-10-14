@@ -71,9 +71,7 @@ async function executable(binary: string, cwd: string, environment: NodeJS.Proce
         ? (environment.PATHEXT ?? '.EXE;.COM').split(';').map((extension) => base + extension.toLowerCase()) : [base]
     })
   for (const candidate of paths) {
-    try { await access(candidate, constants.X_OK); return await realpath(candidate) } catch (error) {
-      if (!['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? '')) throw error
-    }
+    try { await access(candidate, constants.X_OK); return await realpath(candidate) } catch { /* ignore: next PATH entry, never another harness. */ }
   }
   throw unavailable()
 }
@@ -210,7 +208,7 @@ export function nativeCompatibilityProbe(binaries: Record<CompatibilityHarness, 
           if (error instanceof CompatibilityCheckError && error.code === 'CLI_CHECK_REJECTED') {
             const contract = 'app-server generate-json-schema --experimental'
             throw new CompatibilityCheckError(error.code,
-              `${harness} ${installation.version} could not complete the required ${contract} schema export contract.`, { cause: error })
+              `${harness} ${installation.version} could not complete the required ${contract} schema export contract.`)
           }
           throw error
         }
@@ -232,7 +230,7 @@ export function nativeCompatibilityProbe(binaries: Record<CompatibilityHarness, 
           if (signal.aborted || (error instanceof CompatibilityCheckError
             && !['CLI_UNAVAILABLE', 'CLI_CHECK_REJECTED'].includes(error.code))) throw error
           throw new CompatibilityCheckError('CHECKER_UNAVAILABLE',
-            'The application schema checker could not finish. Rebuild the API and retry; do not switch harnesses to work around this error.', { cause: error })
+            'The application schema checker could not finish. Rebuild the API and retry; do not switch harnesses to work around this error.')
         }
         if (result && typeof result === 'object' && 'ok' in result && result.ok === false) {
           throw new CompatibilityCheckError('PROTOCOL_SETTINGS_UNSUPPORTED',

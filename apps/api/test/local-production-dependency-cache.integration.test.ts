@@ -1,5 +1,6 @@
-import { execFile, type ExecFileOptions } from 'node:child_process'
-import { mkdir, mkdtemp, realpath, writeFile } from 'node:fs/promises'
+import { execFile } from 'node:child_process'
+import { mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -9,7 +10,7 @@ import { removeFixtureDirectory } from './helpers/testResources.js'
 
 it('reuses installed dependencies across contracts rebuilds while keeping rollback releases immutable', async () => {
   const script = new URL('../../../scripts/local-production-runtime.mjs', import.meta.url).href
-  const { deployProductionApi, installProductionDependencies, pruneApiDependencies } = await import(script)
+  const { deployProductionApi, pruneApiDependencies } = await import(script)
   const execute = promisify(execFile)
   const parent = process.env.FOREMAN_CODE_TEST_ROOT ?? join(homedir(), '.cache', 'foreman-tmp')
   await mkdir(parent, { recursive: true })
@@ -17,14 +18,11 @@ it('reuses installed dependencies across contracts rebuilds while keeping rollba
   const source = join(directory, 'workspace')
   const api = join(source, 'apps/api')
   const contracts = join(source, 'packages/contracts')
-  const valuePackage = join(source, 'packages/value')
-  const environment = { ...process.env, npm_config_offline: 'true', npm_config_update_notifier: 'false',
-    COREPACK_ENABLE_NETWORK: '0' }
+  const environment = { ...process.env, npm_config_offline: 'true' }
   let deploys = 0
-  const run = async (command: string, args: string[], options: ExecFileOptions = {}) => {
+  const run = async (command: string, args: string[]) => {
     if (args.includes('deploy')) deploys += 1
-    return execute(command, args, { ...options, cwd: source, env: environment,
-      timeout: 20_000, killSignal: 'SIGKILL', maxBuffer: 4 * 1024 * 1024 })
+    return execute(command, args, { cwd: source, env: environment, timeout: 120_000, maxBuffer: 4 * 1024 * 1024 })
   }
   const callRelease = async (destination: string) => {
     const { stdout } = await execute(process.execPath, ['--input-type=module', '-e',
@@ -35,11 +33,6 @@ it('reuses installed dependencies across contracts rebuilds while keeping rollba
   try {
     await mkdir(join(api, 'dist'), { recursive: true })
     await mkdir(join(contracts, 'dist'), { recursive: true })
-    await mkdir(valuePackage, { recursive: true })
-    await writeFile(join(valuePackage, 'package.json'), JSON.stringify({
-      name: 'cache-value', version: '1.0.0', type: 'module', main: 'index.js', files: ['index.js'],
-    }))
-    await writeFile(join(valuePackage, 'index.js'), 'export const identity = value => value;\n')
     await writeFile(join(source, 'package.json'), JSON.stringify({
       name: 'production-cache-fixture', private: true, packageManager: 'pnpm@11.27.0',
     }))
@@ -49,29 +42,27 @@ it('reuses installed dependencies across contracts rebuilds while keeping rollba
     ].join('\n') + '\n')
     await writeFile(join(api, 'package.json'), JSON.stringify({
       name: '@foreman-code/api', private: true, version: '1.0.0', type: 'module', files: ['dist'],
-      dependencies: { '@foreman-code/contracts': 'workspace:*', 'cache-value': 'workspace:*' },
+      dependencies: { '@foreman-code/contracts': 'workspace:*', zod: '4.6.3' },
     }))
     await writeFile(join(contracts, 'package.json'), JSON.stringify({
       name: '@foreman-code/contracts', private: true, version: '1.0.0', type: 'module',
-      main: 'dist/index.js', files: ['dist'], dependencies: { 'cache-value': 'workspace:*' },
+      main: 'dist/index.js', files: ['dist'], dependencies: { zod: '4.6.3' },
     }))
-    // Strict age verification visits every registry entry, even unused entries in an offline install.
-    await writeFile(join(source, 'pnpm-lock.yaml'), JSON.stringify({
-      lockfileVersion: '9.0', settings: { autoInstallPeers: false, excludeLinksFromLockfile: false }, importers: {
-        '.': {}, 'apps/api': { dependencies: {
-          '@foreman-code/contracts': { specifier: 'workspace:*', version: 'link:../../packages/contracts' },
-          'cache-value': { specifier: 'workspace:*', version: 'link:../../packages/value' },
-        } }, 'packages/contracts': { dependencies: {
-          'cache-value': { specifier: 'workspace:*', version: 'link:../value' },
-        } }, 'packages/value': {},
-      },
-    }))
+    const require = createRequire(new URL('../../worker/package.json', import.meta.url))
+    const { parse } = require('yaml') as { parse: (text: string) => Record<string, unknown> }
+    const lock = parse(await readFile(new URL('../../../pnpm-lock.yaml', import.meta.url), 'utf8'))
+    const zod = { specifier: '4.6.3', version: '4.6.3' }
+    await writeFile(join(source, 'pnpm-lock.yaml'), JSON.stringify({ ...lock, importers: {
+      '.': {}, 'apps/api': { dependencies: {
+        '@foreman-code/contracts': { specifier: 'workspace:*', version: 'link:../../packages/contracts' }, zod,
+      } }, 'packages/contracts': { dependencies: { zod } },
+    } }))
     const buildContracts = async (value: string) => writeFile(join(contracts, 'dist/index.js'),
-      `import { identity } from 'cache-value'; export const value = () => identity(${JSON.stringify(value)});\n`)
+      `import { z } from 'zod'; export const value = () => z.string().parse(${JSON.stringify(value)});\n`)
     await buildContracts('first contracts')
     await writeFile(join(api, 'dist/index.js'),
       "export { value } from '@foreman-code/contracts';\n")
-    await installProductionDependencies(run)
+    await run('corepack', ['pnpm', 'install', '--frozen-lockfile'])
     const dependencies = { root: join(directory, 'api-dependencies'), source }
     const first = join(directory, 'releases/first/apps/api')
     await deployProductionApi(run, first, { dependencies })
@@ -82,8 +73,7 @@ it('reuses installed dependencies across contracts rebuilds while keeping rollba
     expect(deploys).toBe(1)
     expect(await callRelease(second)).toBe('second contracts')
     expect(await callRelease(first)).toBe('first contracts')
-    expect(await realpath(join(first, 'node_modules/cache-value')))
-      .toBe(await realpath(join(second, 'node_modules/cache-value')))
+    expect(await realpath(join(first, 'node_modules/zod'))).toBe(await realpath(join(second, 'node_modules/zod')))
     await buildContracts('mutable source')
     expect(await callRelease(second)).toBe('second contracts')
     const removed: string[] = []

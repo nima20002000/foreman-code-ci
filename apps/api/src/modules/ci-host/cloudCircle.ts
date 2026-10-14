@@ -2,7 +2,6 @@ import { writeFile } from 'node:fs/promises'
 import { DomainError } from '../errors.js'
 import { CloudHttp } from './cloudHttp.js'
 import { circleJobLog, renderTerminal } from './cloudLog.js'
-import { logIgnoredError } from '../diagnostics/ignoredError.js'
 
 interface Workflow { id: string; status: string; stopped_at?: string }
 interface JobRef { id: string; job_number?: number }
@@ -28,11 +27,8 @@ function lifecycle(status: string) {
 }
 
 export class CircleRest {
+  private readonly jobs = new Map<string, number>()
   constructor(private readonly http: CloudHttp) {}
-
-  get transport() { return this.http.transport }
-
-  available() { return this.http.available() }
 
   private async read(path: string, args: string[], timeoutMs: number) {
     const response = await this.http.request(path, { timeoutMs })
@@ -49,7 +45,7 @@ export class CircleRest {
         : `CircleCI did not accept circleci ${args[0]} ${args[1]}: ${detail}`)
     } catch (error) {
       if (lookupDenied && error instanceof DomainError && error.code === 'CI_CLOUD_FAILED') {
-        throw new DomainError('CI_CLOUD_RUN_UNREADABLE', error.message, error.status, undefined, { cause: error })
+        throw new DomainError('CI_CLOUD_RUN_UNREADABLE', error.message, error.status)
       }
       throw error
     }
@@ -79,17 +75,17 @@ export class CircleRest {
     const workflows = await this.list<Workflow>(`/api/v2/pipeline/${id}/workflow`, args, timeoutMs)
     if (!workflows) return null
     const mapped = await Promise.all(workflows.map(async workflow => {
-      const jobs = await this.list<JobRef>(`/api/v2/workflow/${workflow.id}/job`, args, timeoutMs).catch(error => {
-        // A workflow can be visible before CircleCI serves its jobs; the pipeline still exists.
-        if (error instanceof DomainError && error.code === 'CI_CLOUD_RUN_NOT_FOUND') return []
-        throw error
-      })
+      const jobs = await this.list<JobRef>(`/api/v2/workflow/${workflow.id}/job`, args, timeoutMs)
       if (!jobs) return null
+      for (const job of jobs) {
+        if (job.job_number !== undefined) this.jobs.set(job.id, job.job_number)
+        if (this.jobs.size > 1000) this.jobs.delete(this.jobs.keys().next().value!)
+      }
       return { ...lifecycle(workflow.status), stopped_at: workflow.stopped_at, jobs }
     }))
     if (mapped.some(workflow => workflow === null)) return null
     const complete = workflows.length > 0 && workflows.every(workflow => lifecycle(workflow.status).phase === 'ended')
-    return { state: pipeline.state, phase: complete ? 'ended' : 'started', errors: pipeline.errors, workflows: mapped }
+    return { phase: complete ? 'ended' : 'started', errors: pipeline.errors, workflows: mapped }
   }
 
   private async job(id: string, args: string[], timeoutMs: number): Promise<CircleJob | null> {
@@ -143,8 +139,7 @@ export class CircleRest {
     options: { allowMissing?: boolean; execution?: number; raw?: boolean } = {}) {
     const execution = options.execution ?? 0
     const responses = await Promise.all(['stdout', 'stderr'].map(stream =>
-      this.http.request(`/api/v3/jobs/${id}/${stream}?filter%5Bexecution%5D=${execution}&filter%5Bstep_num%5D=${step}`,
-        { timeoutMs })))
+      this.http.request(`/api/v3/jobs/${id}/${stream}?execution=${execution}&step_num=${step}`, { timeoutMs })))
     if (responses.some(response => response === null)) return null
     let text = ''
     for (const response of responses) {
@@ -164,21 +159,16 @@ export class CircleRest {
       return await this.http.operation(timeoutMs, () => this.stepOutput(id, step, timeoutMs))
     } catch (error) {
       // Live output is best-effort, matching the CLI path; rate limits still pause polling.
-      if (error instanceof DomainError && error.code === 'CI_CLOUD_FAILED') {
-        logIgnoredError('jobs', 'read CircleCI live output', error, { jobId: id, step })
-        return { ok: false, text: '' }
-      }
+      if (error instanceof DomainError && error.code === 'CI_CLOUD_FAILED') return { ok: false, text: '' }
       throw error
     }
   }
 
-  async artifacts(id: string): Promise<string | null> {
-    const artifacts = await this.http.operation(60_000, async () => {
-      const response = await this.read(`/api/v3/jobs/${id}/artifacts`, ['job', 'artifact'], 60_000)
-      if (!response) return null
-      return (await this.http.json<{ data: { attributes: { path: string; url: string } }[] }>(response))
-        .data.map(item => item.attributes)
-    })
+  async artifacts(mirror: string, id: string): Promise<string | null> {
+    const number = this.jobs.get(id)
+    if (number === undefined) return null
+    const artifacts = await this.http.operation(60_000, () => this.list<{ path: string; url: string }>(
+      `/api/v2/project/gh/${mirror}/job/${number}/artifacts`, ['job', 'artifact'], 60_000))
     return artifacts ? JSON.stringify(artifacts) : null
   }
 

@@ -1,4 +1,3 @@
-import { logIgnoredError, settleObserved } from '../diagnostics/ignoredError.js'
 import { errorMessage } from '../../shared/errorMessage.js'
 import { assertClaudeFullAccess } from './nativeWorkflowConfiguration.js'
 import { isDeepStrictEqual } from 'node:util'
@@ -32,15 +31,10 @@ export class HarnessCatalogService {
 
   /** Run once after native runtime ownership is acquired. No model turn is created. */
   async warmup(): Promise<void> {
-    const managed = await this.settings.getManagedHarnessDefaults().catch(error => {
-      logIgnoredError('harness', 'load harness prewarm defaults', error)
-      throw error
-    })
+    const managed = await this.settings.getManagedHarnessDefaults()
     const unavailable = new Set(managed.unavailable ?? [])
-    await Promise.all((['codex', 'claude'] as const).flatMap(harness =>
-      managed.defaults[harness] && !unavailable.has(harness)
-        ? [settleObserved('harness', `warm ${harness} harness discovery`, [this.currentStatus(managed.defaults[harness]!)])]
-        : []))
+    await Promise.allSettled((['codex', 'claude'] as const).flatMap((harness) =>
+      managed.defaults[harness] && !unavailable.has(harness) ? [this.currentStatus(managed.defaults[harness]!)] : []))
   }
 
   private currentStatus(value: HarnessConfiguration,
@@ -123,15 +117,10 @@ export class HarnessCatalogService {
     }
     try {
       const capability = (await this.currentStatus(configuration)).qualification
-      const observation = this.statuses.observation(canonicalJson(withAdvancedDefaults(configuration)))
-      const discoveryError = observation.stale ? { code: 'HARNESS_STATUS_REFRESHING',
-        message: `Readiness was last checked at ${observation.checkedAt}. A fresh check is still running.` } : null
-      return { harness, defaults: configuration, defaultsRevision: revision, capability, discoveryError,
-        observation, ...support }
+      return { harness, defaults: configuration, defaultsRevision: revision, capability, discoveryError: null, ...support }
     } catch (error) {
       return {
         harness, defaults: configuration, defaultsRevision: revision, capability: null, ...support,
-        observation: this.statuses.observation(canonicalJson(withAdvancedDefaults(configuration))),
         discoveryError: { code: error instanceof DomainError ? error.code : 'HARNESS_DISCOVERY_UNAVAILABLE', message: errorMessage(error, 'Harness discovery failed.') },
       }
     }

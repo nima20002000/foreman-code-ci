@@ -11,7 +11,7 @@ import {
   ProviderAccountTargetsSchema, ProviderAccountProfilesSchema, ProviderAccountEligibilitySchema,
   ProviderAccountAuthenticationListInputSchema, ProviderAccountAuthenticationPageSchema, ProviderAccountHumanHandoffSchema,
   type ProviderAccountCreateInput, type ProviderAccountRenameInput,
-  type ProviderAccountCommandInput,
+  type ProviderAccountCommandInput, type ProviderAccountApiKeyInput,
 } from '@foreman-code/contracts/provider-accounts'
 import { apiClient, type RequestOptions } from '../../shared/api/client'
 
@@ -111,7 +111,7 @@ export const providerAccountsClient = {
       method: 'POST', body: schema.parse(input),
     })
   },
-  apiKey(accountId: string, input: z.input<typeof ProviderAccountApiKeyInputSchema>) {
+  apiKey(accountId: string, input: ProviderAccountApiKeyInput) {
     return apiClient.request(`${root}/${encodeURIComponent(accountId)}/api-key`, ProviderAccountUpdateResultSchema, {
       method: 'POST', body: ProviderAccountApiKeyInputSchema.parse(input),
     })

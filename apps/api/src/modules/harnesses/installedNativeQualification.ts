@@ -7,7 +7,6 @@ import { CompletedNativeQualificationSchema, HostHarnessProfileEvidenceSchema, H
   type HostHarnessOverride, type HostHarnessProfileEvidence } from '@foreman-code/contracts/harness-registry'
 import { HarnessQualificationSchema, type HarnessQualification } from '@foreman-code/contracts/harness-qualification'
 import { HarnessExecutionError } from './errors.js'
-import { qualificationError } from './qualificationErrors.js'
 import { DomainError } from '../errors.js'
 import { harnessConnectionGeneration } from './hostConnectionGeneration.js'
 import type { InstalledHarnessInspection, CurrentInstalledHarnessTarget } from './installedCodexInspection.js'
@@ -128,10 +127,7 @@ export function createInstalledNativeQualifier(input: {
                 profileResult = await runWithQualificationProfile({ harness, version: version!,
                   binarySha256: target.binarySha256, target: target.target,
                   profile: QUALIFICATION_TARGET_PROFILE[harness], checks: result.checks },
-                async () => {
-                  await scope.assertInstallation!(signal)
-                  return input.checkConfiguration(value, directory, signal, scope.processRecovery!, scope.assertInstallation!)
-                })
+                () => input.checkConfiguration(value, directory, signal, scope.processRecovery!, scope.assertInstallation!))
               }
               catch (error) {
                 signal.throwIfAborted()
@@ -139,14 +135,12 @@ export function createInstalledNativeQualifier(input: {
                   : error instanceof HarnessExecutionError && error.result.outcome === 'failed' ? error.result.error?.code : undefined
                 if (!code || !/^(?:CODEX_(?:SETTING|MODEL|MCP|REQUIRED_MCP|APP_SERVER_AUTH|AUTH_REQUIRED|CONFIGURATION))/.test(code)) throw error
                 profileFailure = code
-                failureReason = qualificationError(error).message
+                failureReason = 'The selected host profile did not pass its native configuration checks.'
               }
               await scope.assertInstallation(signal)
               const selected = Boolean(profileResult && profileResult.harness === harness && normalizeHarnessVersion(profileResult.version) === version
                 && profileResult.ready && profileResult.authenticated && profileResult.structuredEvents)
-              const detail = profileFailure ?? (profileResult?.modelCatalogSource === 'cached'
-                ? 'modelCatalogSource:cached' : null)
-              result.checks.push({ id: 'selected-profile', passed: selected, detail })
+              result.checks.push({ id: 'selected-profile', passed: selected, detail: profileFailure })
             }
             return result
           } }
@@ -174,12 +168,7 @@ export function createInstalledNativeQualifier(input: {
         protocolRevision: target.installation.protocolRevision, suiteRevision: `${harness}-profile-check-v1`,
         environmentGeneration: target.installation.environmentGeneration, connectionGeneration: harnessConnectionGeneration(binding),
         authenticated: profileResult?.authenticated ?? null, compatible: checks.some(check => check.id === 'static-compatibility' && !check.passed) ? false : profileResult?.structuredEvents ?? null,
-        qualified: passed, checkedAt,
-        ...(profileResult?.modelCatalogSource ? { modelCatalogSource: profileResult.modelCatalogSource } : {}),
-        ...(passed ? {} : { failure: {
-          code: checks.find(check => check.id === 'selected-profile' && !check.passed)?.detail ?? 'HARNESS_UNQUALIFIED',
-          message: record.failureReason!,
-        } }), completedNativeQualification: { purpose: 'explicit-host-qualification', checkId,
+        qualified: passed, checkedAt, ...(passed ? {} : { failure: { code: 'HARNESS_UNQUALIFIED', message: record.failureReason! } }), completedNativeQualification: { purpose: 'explicit-host-qualification', checkId,
           binding, target: value.target, binarySha256: target.binarySha256, record } })
     } finally {
       if (!owned.size) for (const directory of localDirectories) { await rm(directory, { recursive: true, force: true }); directories.delete(directory) }
