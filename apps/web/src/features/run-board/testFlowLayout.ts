@@ -5,16 +5,6 @@ import { vi } from 'vitest'
  * This is NOT a substitute for the 320px browser verification in the handoff.
  */
 export function installFlowLayout(width = 320, height = 480) {
-  if (!document.elementFromPoint) {
-    Object.defineProperty(document, 'elementFromPoint', {
-      configurable: true,
-      value: (x: number, y: number) => [...document.querySelectorAll<HTMLElement>('.react-flow__handle.connectable')]
-        .reverse().find((handle) => {
-          const bounds = handle.getBoundingClientRect()
-          return x >= bounds.left && x <= bounds.right && y >= bounds.top && y <= bounds.bottom
-        }) ?? null,
-    })
-  }
   const observers = new Set<Observer>()
   const dimensions = (element: HTMLElement) => {
     if (element.classList.contains('react-flow__handle')) return { width: 8, height: 8 }
