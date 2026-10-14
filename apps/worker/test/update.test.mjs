@@ -6,10 +6,9 @@ import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
 import { persistentFixtureRoot } from './fixtureStorage.mjs';
-import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { setTimeout as wait } from 'node:timers/promises';
-import { WorkerUpdater, downloadWorkerArtifact } from '../src/update.mjs';
+import { WorkerUpdater, downloadWorkerArtifact, fetchGitHubAsset } from '../src/update.mjs';
 import { installVersion, readInstalledRelease, readRetainedRelease } from '../src/installation.mjs';
 import { startWorker, acquireWorkerLock } from '../src/runtime.mjs';
 import { WorkerError } from '../src/diagnostics.mjs';
@@ -17,6 +16,7 @@ import { readUpdateRecord, superviseWorkerUpdate, waitForWorkerReady, locateWork
   launchUpdateSupervisor } from '../src/updateSupervisor.mjs';
 import { recoverPendingWorkerUpdate, writeUpdateRecord, migrateWorkerService } from '../src/updateSupervisor.mjs';
 import { renderUserService } from '../src/service.mjs';
+import { workerArtifactContentSha256 } from '../../../packages/contracts/src/workerArtifactContentNode.mjs';
 import { DeviceConnectionError } from '../../../apps/api/src/modules/devices/deviceWire.ts';
 import { DeviceApplicationError } from '../../../apps/api/src/modules/devices/deviceApplicationError.ts';
 import { COMPUTER_MAINTENANCE_NAMESPACE } from '@foreman-code/contracts/computer-maintenance';
@@ -54,7 +54,8 @@ async function artifact(base, version) {
     files: [{ path: 'src/cli.mjs', sha256: hash(bytes), size: bytes.length }] };
   const manifestBytes = Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`);
   await writeFile(join(directory, 'manifest.json'), manifestBytes, { mode: 0o600 });
-  return { directory, release: { version, manifestSha256: hash(manifestBytes), manifest } };
+  return { directory, release: { version, manifestSha256: hash(manifestBytes), manifest,
+    github: { repository: 'example/product', tag: `worker-${manifest.commit}` } } };
 }
 
 async function fixture(t, targetVersion = '1.1.0') {
@@ -92,10 +93,7 @@ async function fixture(t, targetVersion = '1.1.0') {
     requests.push(payload);
     if (payload.operation === 'release') return { payload: { operation: 'release', release: incoming.release } };
     if (payload.operation === 'ci-smoke') return { payload: { operation: 'ci-smoke', ciSmoke: null } };
-    assert.equal(payload.manifestSha256, incoming.release.manifestSha256);
-    const bytes = (await readFile(join(incoming.directory, payload.path))).subarray(payload.offset,
-      payload.offset + 262_144);
-    return { payload: { ...payload, byteSize: bytes.length }, bytes };
+    throw new Error(`Unexpected Main request: ${payload.operation}`);
   };
   const launch = { root, stateDirectory, service: 'graphql-worker.service',
     pointer: { kind: 'symlink', path: join(root, 'current') },
@@ -112,6 +110,11 @@ async function fixture(t, targetVersion = '1.1.0') {
   const options = { stateDirectory, version: '1.0.0', manifestSha256: previous.release.manifestSha256,
     releaseDirectory: launch.previousDirectory, workerInstallationId, facts,
     assertStateOwnership: () => assertStateOwnership(), connection: () => ({ captureRequest: () => ({ request }) }),
+    fetchAsset: async ({ destination, signal }) => {
+      signal?.throwIfAborted();
+      const result = spawnSync('tar', ['-czf', destination, '-C', incoming.directory, '.']);
+      assert.equal(result.status, 0, result.stderr.toString());
+    },
     drain: async () => {}, resume: () => {}, locateLaunch: async () => launch,
     launchSupervisor: async () => {} };
   return { base, root, stateDirectory, previous, incoming, requests, options, connections, prepareService,
@@ -161,7 +164,7 @@ test('update supervision allows bounded capacity drain and smoke before rolling 
 });
 
 test('downloads a release from its GitHub release asset and still verifies every byte against the manifest', async t => {
-  const base = await mkdtemp(join(tmpdir(), 'worker-github-'));
+  const base = await mkdtemp(join(persistentFixtureRoot, 'worker-github-'));
   t.after(() => rm(base, { recursive: true, force: true }));
   const built = await artifact(base, '1.2.0');
   const archive = join(base, 'asset.tar.gz');
@@ -175,15 +178,125 @@ test('downloads a release from its GitHub release asset and still verifies every
   const request = async () => { throw new Error('No chunk may come through Main.'); };
   const release = { ...built.release, github };
   const installed = join(base, 'installed');
-  const manifest = await downloadWorkerArtifact({ release, request, directory: installed, facts, fetchAsset });
+  let completion;
+  const manifest = await downloadWorkerArtifact({ release, request, directory: installed, facts, fetchAsset,
+    onDownloadComplete: async details => { completion = details; },
+  });
+  assert.deepEqual(completion, { source: 'github' });
   assert.deepEqual(requested, [{ github, asset: `${built.release.manifestSha256}.tar.gz` }]);
   assert.equal(manifest.version, '1.2.0');
-  assert.equal(await readFile(join(installed, 'src/cli.mjs'), 'utf8'), "console.log('1.2.0');\n");
+  assert.equal(spawnSync(process.execPath, [join(installed, 'src/cli.mjs')], { encoding: 'utf8' }).stdout, '1.2.0\n');
 
   await writeFile(join(built.directory, 'src/cli.mjs'), "console.log('2.1.0');\n");
   spawnSync('tar', ['-czf', archive, '-C', built.directory, '.']);
   await assert.rejects(downloadWorkerArtifact({ release, request, directory: join(base, 'tampered'), facts, fetchAsset }),
     { code: 'artifact_checksum_mismatch' });
+});
+
+test('a stalled GitHub asset fails visibly without draining or requesting Main bundle bytes', async t => {
+  const f = await fixture(t);
+  const binaries = join(f.base, 'bin');
+  await mkdir(binaries);
+  await writeFile(join(binaries, 'gh'),
+    `#!/bin/sh\nexec node -e 'process.stderr.write("fixture GitHub stalled\\n"); setInterval(() => {}, 1000);'\n`,
+    { mode: 0o700 });
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${binaries}:${originalPath}`;
+  t.after(() => { process.env.PATH = originalPath; });
+  const scheduleTimeout = globalThis.setTimeout;
+  t.mock.method(globalThis, 'setTimeout', (callback, delay, ...args) =>
+    scheduleTimeout(callback, delay >= 5000 && delay <= 60000 ? 100 : delay, ...args));
+  let drained = false;
+  const updater = await new WorkerUpdater({ ...f.options, fetchAsset: fetchGitHubAsset,
+    downloadTimeoutMs: 1000, drain: async () => { drained = true; } }).initialize();
+  t.after(() => updater.close());
+  await assert.rejects(updater.start(), { code: 'WORKER_RELEASE_ASSET_UNAVAILABLE' });
+  assert.deepEqual(f.requests.map(payload => payload.operation), ['release']);
+  const status = await updater.status();
+  assert.equal(status.state, 'failed');
+  assert.match(status.lastError, /stall|no bytes/i);
+  assert.equal(drained, false);
+});
+
+test('a temporarily unavailable GitHub asset is retried without Main bytes, with each phase logged', async t => {
+  const f = await fixture(t);
+  f.incoming.release.github = { repository: 'example/product', tag: `worker-${'a'.repeat(40)}` };
+  const archive = join(f.base, 'asset.tar.gz');
+  spawnSync('tar', ['-czf', archive, '-C', f.incoming.directory, '.']);
+  const binaries = join(f.base, 'bin');
+  const attempts = join(f.base, 'gh-attempts');
+  await mkdir(binaries);
+  // A transient GitHub lookup failure recovers on the next download attempt.
+  await writeFile(join(binaries, 'gh'), `#!/bin/sh\necho attempt >> '${attempts}'\n`
+    + `if [ "$(wc -l < '${attempts}')" -eq 1 ]; then echo 'release not found' >&2; exit 1; fi\n`
+    + `exec cat '${archive}'\n`, { mode: 0o700 });
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${binaries}:${originalPath}`;
+  t.after(() => { process.env.PATH = originalPath; });
+  const scheduleTimeout = globalThis.setTimeout;
+  // Keep production retry spacing while letting the fixture observe several retries quickly.
+  t.mock.method(globalThis, 'setTimeout', (callback, delay, ...args) =>
+    scheduleTimeout(callback, delay >= 5_000 && delay <= 60_000 ? 20 : delay, ...args));
+  const logged = [];
+  const updater = await new WorkerUpdater({ ...f.options, fetchAsset: fetchGitHubAsset, downloadTimeoutMs: 3000,
+    log: (msg, fields = {}) => logged.push({ msg, ...fields }) }).initialize();
+  t.after(() => updater.close());
+
+  assert.equal(await updater.start(), 'Worker 1.1.0 restart is scheduled.');
+  const record = await readUpdateRecord(f.stateDirectory);
+  assert.equal(record.status.state, 'restarting');
+  assert.equal(record.downloadSource, 'github');
+  assert.equal(f.requests.some(payload => payload.operation === 'chunk'), false);
+  for (const file of f.incoming.release.manifest.files) {
+    assert.deepEqual(await readFile(join(record.restart.directory, file.path)),
+      await readFile(join(f.incoming.directory, file.path)));
+  }
+  const phases = logged.filter(entry => entry.phase).map(entry => entry.phase);
+  assert.deepEqual(phases.filter((phase, index) => phases.indexOf(phase) === index),
+    ['release', 'downloading', 'smoke configuration', 'draining', 'installing', 'restarting']);
+  assert.ok(logged.some(entry => /GitHub/.test(entry.msg) && /release not found/.test(entry.error ?? '')));
+});
+
+test('GitHub recovery still rejects a file that does not match its announced checksum', async t => {
+  const f = await fixture(t);
+  await writeFile(join(f.incoming.directory, 'src/cli.mjs'), 'corrupted bytes');
+  let completed = false;
+  let attempts = 0;
+  const scheduleTimeout = globalThis.setTimeout;
+  t.mock.method(globalThis, 'setTimeout', (callback, delay, ...args) =>
+    scheduleTimeout(callback, delay === 5000 ? 1 : delay, ...args));
+  await assert.rejects(downloadWorkerArtifact({ release: f.incoming.release, facts,
+    directory: join(f.base, 'corrupt-github'), fetchAsset: async options => {
+      if (++attempts === 1) throw new WorkerError('worker_update_github_unavailable', 'GitHub unavailable');
+      await f.options.fetchAsset(options);
+    }, onDownloadComplete: async () => { completed = true; },
+  }), { code: 'artifact_file_size_mismatch' });
+  assert.equal(attempts, 2);
+  assert.equal(completed, false);
+  assert.deepEqual(f.requests, []);
+});
+
+test('GitHub retries use the original download deadline after a failed attempt', async t => {
+  const f = await fixture(t);
+  const scheduleTimeout = globalThis.setTimeout;
+  let deadlineTimers = 0;
+  t.mock.method(globalThis, 'setTimeout', (callback, delay, ...args) => {
+    if (delay === 100) deadlineTimers++;
+    return scheduleTimeout(callback, delay, ...args);
+  });
+  await assert.rejects(downloadWorkerArtifact({ release: f.incoming.release, facts,
+    directory: join(f.base, 'bounded-github'), timeoutMs: 100,
+    fetchAsset: async () => {
+      await wait(20);
+      throw new WorkerError('worker_update_github_unavailable', 'GitHub unavailable');
+    },
+  }), error => {
+    assert.equal(error.code, 'WORKER_RELEASE_ASSET_UNAVAILABLE');
+    assert.match(error.message, /GitHub unavailable/);
+    return true;
+  });
+  assert.equal(deadlineTimers, 1);
+  assert.deepEqual(f.requests, []);
 });
 
 test('authenticated-ready check detects Main version mismatch, installs and reconnects at the matching version', async t => {
@@ -204,8 +317,10 @@ test('authenticated-ready check detects Main version mismatch, installs and reco
   assert.equal((await readInstalledRelease({ root: f.root, facts, expected })).manifest.version, '1.1.0');
   assert.equal((await readRetainedRelease(f.root)).manifest.version, '1.0.0');
   const restarted = await new WorkerUpdater({ ...f.options, version: '1.1.0',
+    releaseDirectory: (await readInstalledRelease({ root: f.root, facts, expected })).directory,
     manifestSha256: f.incoming.release.manifestSha256 }).initialize();
   assert.deepEqual(await restarted.status(), { currentVersion: '1.1.0', targetVersion: '1.1.0',
+    contentSha256: workerArtifactContentSha256(f.incoming.release.manifest),
     manifestSha256: f.incoming.release.manifestSha256,
     state: 'current', lastError: null });
   restarted.close();
@@ -222,10 +337,12 @@ test('concurrent status polling preserves saved update transitions and metadata'
   const drainingStatus = updater.status();
   await Promise.all([pending, draining]);
   assert.deepEqual(await pendingStatus, { currentVersion: '1.0.0', targetVersion: '1.1.0',
+    contentSha256: workerArtifactContentSha256(f.previous.release.manifest),
     manifestSha256: f.previous.release.manifestSha256,
     state: 'pending', lastError: null });
   const status = await drainingStatus;
   assert.deepEqual(status, { currentVersion: '1.0.0', targetVersion: '1.1.0',
+    contentSha256: workerArtifactContentSha256(f.previous.release.manifest),
     manifestSha256: f.previous.release.manifestSha256,
     state: 'draining', lastError: null });
   const retained = await readUpdateRecord(f.stateDirectory);
@@ -246,7 +363,8 @@ test('busy work drains naturally after the verified download and before installa
   });
   const update = updater.start();
   await until(async () => (await updater.status()).state === 'draining');
-  assert.ok(f.requests.some(request => request.operation === 'chunk'));
+  assert.equal(f.requests.some(request => request.operation === 'chunk'), false);
+  assert.equal((await readUpdateRecord(f.stateDirectory)).downloadSource, 'github');
   assert.equal(resumed, 0);
   assert.equal((await readInstalledRelease({ root: f.root, facts, expected })).manifest.version, '1.0.0');
   finishWork();
@@ -255,30 +373,26 @@ test('busy work drains naturally after the verified download and before installa
   assert.equal(resumed, 0);
 });
 
-test('an idle Worker keeps admitting work while its update downloads slowly through Main', async t => {
+test('an idle Worker keeps admitting work while its update downloads slowly from GitHub', async t => {
   const f = await fixture(t);
   const drain = createWorkerRuntimeDrain({ signal: new AbortController().signal,
     active: () => [], drainJobs: async () => {}, drainQualifications: async () => {},
     drainMaintenance: async () => {}, quiescent: async () => true });
-  // Before Main publishes the GitHub release asset, every artifact chunk crosses the device channel.
   let finishDownload;
   const downloaded = new Promise(resolve => { finishDownload = resolve; });
-  let chunkWaiting = false;
-  const original = f.options.connection().captureRequest().request;
+  let downloadWaiting = false;
   const updater = await new WorkerUpdater({ ...f.options, drain: () => drain.run(), resume: () => drain.resume(),
-    connection: () => ({ captureRequest: () => ({ request: async payload => {
-      if (payload.operation === 'chunk') {
-        chunkWaiting = true;
-        await downloaded;
-      }
-      return original(payload);
-    } }) }) }).initialize();
+    fetchAsset: async options => {
+      downloadWaiting = true;
+      await downloaded;
+      await f.options.fetchAsset(options);
+    } }).initialize();
   t.after(() => {
     finishDownload();
     return updater.close();
   });
   const update = updater.start();
-  await until(() => chunkWaiting);
+  await until(() => downloadWaiting);
   assert.equal((await updater.status()).state, 'downloading');
   assert.doesNotThrow(() => drain.assertAdmission('harness-discovery-v1', {}));
   assert.doesNotThrow(() => drain.assertAdmission('execution-v1', { method: 'prepare' }));
@@ -290,7 +404,8 @@ test('an idle Worker keeps admitting work while its update downloads slowly thro
 for (const path of ['manifest.json', 'src/cli.mjs']) {
   test(`rejects changed ${path} bytes and keeps the running release admitting work`, async t => {
     const f = await fixture(t);
-    await writeFile(join(f.incoming.directory, path), 'corrupt bytes');
+    const originalBytes = await readFile(join(f.incoming.directory, path));
+    await writeFile(join(f.incoming.directory, path), Buffer.alloc(originalBytes.length, 7));
     const current = await readlink(join(f.root, 'current'));
     let drained = 0;
     let resumed = 0;
@@ -323,9 +438,12 @@ test('failed new startup restores the previous pointer and persists rollback acr
   assert.deepEqual(f.connections, ['1.0.0', '1.1.0', '1.0.0']);
   assert.equal((await readInstalledRelease({ root: f.root, facts, expected })).manifest.version, '1.0.0');
   const restarted = await new WorkerUpdater(f.options).initialize();
-  assert.deepEqual(await restarted.status(), { currentVersion: '1.0.0', targetVersion: '1.1.0',
-    manifestSha256: f.previous.release.manifestSha256,
-    state: 'rolled-back', lastError: 'worker_update_startup_timeout' });
+  const { lastError, ...status } = await restarted.status();
+  assert.deepEqual(status, { currentVersion: '1.0.0', targetVersion: '1.1.0',
+    contentSha256: workerArtifactContentSha256(f.previous.release.manifest),
+    manifestSha256: f.previous.release.manifestSha256, state: 'rolled-back' });
+  assert.match(lastError, /worker_update_startup_timeout/);
+  assert.match(lastError, /authenticating/);
   await restarted.start();
   assert.equal(restarts, 2);
   restarted.close();
@@ -490,6 +608,7 @@ test('manual retry clears an earlier failure when Main now serves the already ru
   f.incoming.release = f.previous.release;
   assert.equal(await updater.start({ retry: true }), 'Worker 1.0.0 is current.');
   assert.deepEqual(await updater.status(), { currentVersion: '1.0.0', targetVersion: '1.0.0',
+    contentSha256: workerArtifactContentSha256(f.previous.release.manifest),
     manifestSha256: f.previous.release.manifestSha256,
     state: 'current', lastError: null });
 });
@@ -508,7 +627,7 @@ test('an update interrupted by Main restart retries the saved target on the reco
       if (!available) return undefined;
       captures++;
       return { request: async payload => {
-        if (payload.operation === 'chunk' && disconnect) {
+        if (payload.operation === 'ci-smoke' && disconnect) {
           disconnect = false;
           available = false;
           throw new DeviceConnectionError('transport');
@@ -522,7 +641,7 @@ test('an update interrupted by Main restart retries the saved target on the reco
   const interrupted = await readUpdateRecord(f.stateDirectory);
   assert.equal(interrupted.manifestSha256, f.incoming.release.manifestSha256);
   assert.equal(interrupted.status.lastError, 'worker_update_channel_unavailable');
-  // The chunk download precedes the drain, so admissions were never fenced.
+  // Download and smoke configuration precede the drain, so admissions were never fenced.
   assert.equal(resumed, 0);
   assert.equal(launched, 0);
   assert.equal(await updater.start(), 'Worker update is unavailable on this Main connection.');
@@ -588,7 +707,9 @@ test('application channel loss retries without classifying permission or revocat
       }).initialize();
       t.after(() => updater.close());
       await assert.rejects(updater.start(), { code: expected });
-      assert.equal((await readUpdateRecord(f.stateDirectory)).status.lastError, expected);
+      const lastError = (await readUpdateRecord(f.stateDirectory)).status.lastError;
+      assert.match(lastError, new RegExp(expected));
+      if (expected === 'worker_update_failed') assert.match(lastError, new RegExp(error.code));
       assert.equal(launched, 0);
       if (expected === 'worker_update_channel_unavailable') {
         connected = true;
@@ -718,6 +839,7 @@ test('terminal maintenance outcomes identify the release running after success o
       assert.deepEqual(await updater.maintenanceOutcome({ workerTargetVersion: '1.1.0', startedAt }), {
         currentVersion: installed.manifest.version,
         manifestSha256: installed.manifestSha256,
+        contentSha256: workerArtifactContentSha256(installed.manifest),
         targetVersion: '1.1.0',
         state: rollback ? 'rolled-back' : 'current',
         lastError: rollback ? 'CI smoke failed' : null,
@@ -741,12 +863,14 @@ test('consecutive releases retain the first terminal maintenance outcome without
   f.incoming.directory = next.directory;
   f.incoming.release = next.release;
   const second = await new WorkerUpdater({ ...f.options, version: '1.1.0', manifestSha256: release.manifestSha256,
+    releaseDirectory: release.directory,
     locateLaunch: async () => ({ ...await f.options.locateLaunch(), previousDirectory: release.directory }),
     launchSupervisor }).initialize();
   await second.start();
   assert.equal((await readUpdateRecord(f.stateDirectory)).status.currentVersion, '1.2.0');
   assert.deepEqual(await second.maintenanceOutcome({ workerTargetVersion: '1.1.0', startedAt }), {
     currentVersion: '1.1.0', manifestSha256: release.manifestSha256,
+    contentSha256: workerArtifactContentSha256(release.manifest),
     targetVersion: '1.1.0', state: 'current', lastError: null,
   });
   await second.close();
@@ -810,4 +934,127 @@ test('Worker update persists authenticated CI smoke configuration and rolls back
   await updater.start();
   assert.equal((await readInstalledRelease({ root: f.root, facts, expected })).manifest.version, '1.0.0');
   assert.equal((await readUpdateRecord(f.stateDirectory)).status.lastError, 'CI setup: missing offline package metadata');
+});
+
+
+test('update failure retains the failed phase and child stderr in persisted status', async t => {
+  const f = await fixture(t);
+  const failure = Object.assign(new Error('staging process exited with code 1'), {
+    stderr: 'diagnostic padding\n'.repeat(400) + 'Cannot find package dependency-helper\n',
+  });
+  const updater = await new WorkerUpdater({ ...f.options, stage: async () => { throw failure; } }).initialize();
+  t.after(() => updater.close());
+  await assert.rejects(updater.start(), error => {
+    assert.equal(error.code, 'worker_update_failed');
+    assert.match(error.message, /installing/);
+    assert.match(error.message, /Cannot find package dependency-helper/);
+    return true;
+  });
+  const status = (await readUpdateRecord(f.stateDirectory)).status;
+  assert.equal(status.state, 'failed');
+  assert.match(status.lastError, /staging process exited with code 1/);
+  assert.match(status.lastError, /Cannot find package dependency-helper/);
+  assert.ok(status.lastError.length <= 2000);
+});
+
+test('a stalled GitHub download times out, cancels its request and retries on the next check', async t => {
+  const f = await fixture(t);
+  let downloadSignal;
+  let stalled = true;
+  const options = { ...f.options, downloadTimeoutMs: 50,
+    fetchAsset: input => {
+      if (!stalled) return f.options.fetchAsset(input);
+      downloadSignal = input.signal;
+      return new Promise((_resolve, reject) => {
+        input.signal.addEventListener('abort', () => reject(input.signal.reason), { once: true });
+      });
+    } };
+  const updater = await new WorkerUpdater(options).initialize();
+  t.after(() => updater.close());
+  const outcome = updater.start().then(() => 'completed', error => error);
+  const failure = await Promise.race([outcome, wait(1000).then(() => 'still downloading')]);
+  assert.equal(failure.code, 'WORKER_RELEASE_ASSET_UNAVAILABLE');
+  assert.equal(downloadSignal.aborted, true);
+  assert.match((await updater.status()).lastError, /download.*timed out/i);
+  stalled = false;
+  options.downloadTimeoutMs = 5000;
+  updater.scheduleCheck();
+  await until(async () => (await updater.status()).state === 'restarting');
+  assert.equal((await readUpdateRecord(f.stateDirectory)).status.lastError, null);
+});
+
+test('GitHub download keeps its overall deadline when an attempt takes too long', async t => {
+  const f = await fixture(t);
+  const outcome = downloadWorkerArtifact({ release: f.incoming.release, facts,
+    directory: join(f.base, 'bounded-download'), timeoutMs: 15,
+    fetchAsset: async options => { await wait(25); await f.options.fetchAsset(options); },
+  }).then(() => 'completed', error => error);
+  assert.equal((await outcome).code, 'WORKER_RELEASE_ASSET_UNAVAILABLE');
+});
+
+test('startup timeout retains the last observed readiness phase and failure', async () => {
+  await assert.rejects(waitForWorkerReady({ stateDirectory: '/fixture/state', version: '1.1.0',
+    workerInstallationId: randomUUID(), timeoutMs: 5, pollMs: 1,
+    readStatus: async () => ({ active: true, phase: 'backoff', failure: 'authentication', appVersion: '1.1.0' }),
+  }), error => {
+    assert.equal(error.code, 'worker_update_startup_timeout');
+    assert.match(error.message, /backoff/);
+    assert.match(error.message, /authentication/);
+    return true;
+  });
+});
+
+test('supervisor preserves restart stderr and both update and rollback readiness failures', async t => {
+  const f = await fixture(t);
+  const updater = await new WorkerUpdater(f.options).initialize();
+  t.after(() => updater.close());
+  await updater.start();
+  const record = await readUpdateRecord(f.stateDirectory);
+  let attempts = 0;
+  await assert.rejects(superviseWorkerUpdate(record, {
+    prepareService: async () => {}, switchPointer: async () => {},
+    restart: async () => {
+      if (++attempts === 1) throw Object.assign(new Error('restart exited 1'), { stderr: 'runtime library missing' });
+    },
+    ready: async () => { throw new Error('rollback authentication failed'); },
+  }), { code: 'worker_update_rollback_failed' });
+  const status = (await readUpdateRecord(f.stateDirectory)).status;
+  assert.equal(status.state, 'failed');
+  assert.match(status.lastError, /runtime library missing/);
+  assert.match(status.lastError, /rollback authentication failed/);
+});
+
+
+test('GitHub asset download reports the command stderr tail', async t => {
+  const f = await fixture(t);
+  const binary = join(f.base, 'gh');
+  await writeFile(binary, '#!/bin/sh\nprintf "release asset not found\\n" >&2\nexit 1\n', { mode: 0o700 });
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${f.base}:${originalPath}`;
+  t.after(() => { process.env.PATH = originalPath; });
+  await assert.rejects(fetchGitHubAsset({ github: { repository: 'example/product', tag: `worker-${'a'.repeat(40)}` },
+    asset: 'artifact.tar.gz', destination: join(f.base, 'download.tar.gz'), maxBytes: 1024,
+  }), error => {
+    assert.equal(error.code, 'worker_update_github_unavailable');
+    assert.match(error.message, /release asset not found/);
+    return true;
+  });
+});
+
+test('supervisor readiness failure captures startup stderr before rollback', async t => {
+  const f = await fixture(t);
+  const updater = await new WorkerUpdater(f.options).initialize();
+  t.after(() => updater.close());
+  await updater.start();
+  let readinessChecks = 0;
+  let logReads = 0;
+  await superviseWorkerUpdate(await readUpdateRecord(f.stateDirectory), {
+    prepareService: async () => {}, switchPointer: async () => {}, restart: async () => {},
+    ready: async () => { if (++readinessChecks === 1) throw new WorkerError('worker_update_startup_timeout'); },
+    readStartupFailure: async () => { logReads++; return 'Cannot find module startup-helper'; },
+  });
+  assert.equal(logReads, 1);
+  const status = (await readUpdateRecord(f.stateDirectory)).status;
+  assert.equal(status.state, 'rolled-back');
+  assert.match(status.lastError, /Cannot find module startup-helper/);
 });

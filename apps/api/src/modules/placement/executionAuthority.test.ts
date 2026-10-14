@@ -137,16 +137,29 @@ describe('remote cleanup authorization', () => {
 })
 
 describe('authenticated original execution reconnection', () => {
-  it('allows existing-owner control on a replacement channel without authorizing new entry', async () => {
+  it('keeps the original owner authority on a transport-only replacement channel of the same boot', async () => {
     const f = fixture()
     const replacement = { ...f.connection, connectionGeneration: 2 }
     await expect(f.authorize('read', replacement)).resolves.toBeUndefined()
     await expect(f.authorize('control', replacement)).resolves.toBeUndefined()
     expect(f.pins.mock.calls.at(-1)?.[4]).toEqual({ purpose: 'resident' })
+    await expect(f.authorize('start', replacement)).resolves.toBeUndefined()
     f.state.cleanup = true
     await expect(f.authorize('stop', replacement)).resolves.toEqual({ cleanupOnly: true })
-    await expect(f.authorize('start', replacement)).rejects.toMatchObject({ code: 'REMOTE_AUTHORITY_DENIED' })
     expect(f.receipt.connection).toEqual(f.connection)
+  })
+
+  it('keeps an unacknowledged preparation authorized after the same Worker boot reconnects', async () => {
+    const f = fixture()
+    f.state.receipt = false
+    const replacement = { ...f.connection, connectionGeneration: 2 }
+    await expect(f.authorize('start', replacement)).resolves.toBeUndefined()
+    await expect(f.authorize('control', replacement)).resolves.toBeUndefined()
+    expect(f.pins.mock.calls.at(-1)?.[4]).toBeUndefined()
+    const restarted = { ...replacement, bootId: randomUUID() }
+    for (const action of ['start', 'control'] as const) {
+      await expect(f.authorize(action, restarted)).rejects.toMatchObject({ code: 'REMOTE_AUTHORITY_DENIED' })
+    }
   })
 
   it.each(['native', 'owner', 'origin'])('requires retained original %s evidence before reconnecting control', async defect => {
@@ -175,10 +188,10 @@ describe('authenticated original execution reconnection', () => {
     await expect(f.authorize('read', restarted)).rejects.toMatchObject({ code: 'REMOTE_AUTHORITY_DENIED' })
   })
 
-  it('can consult the original worker journal when Main lost the preparation acknowledgment', async () => {
+  it('can consult the original worker journal from a restarted Worker when Main lost the preparation acknowledgment', async () => {
     const f = fixture()
     f.state.receipt = false
-    const replacement = { ...f.connection, connectionGeneration: 2 }
+    const replacement = { ...f.connection, bootId: randomUUID(), connectionGeneration: 2 }
     f.pins.mockRejectedValue(new Error('This channel cannot qualify a new launch'))
     await expect(f.authorize('read', replacement)).resolves.toBeUndefined()
     expect(f.locations.revalidateRunAuthorization).toHaveBeenCalled()

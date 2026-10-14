@@ -1,3 +1,4 @@
+import { deviceManagedMcpMigration } from './deviceManagedMcpMigration.js'
 import { workflowAuthoringMigration } from './workflowAuthoringMigration.js'
 import { ciGrantMigration } from './ciGrantMigration.js'
 import { runWorktreesMigration } from './runWorktreesMigration.js'
@@ -22,6 +23,7 @@ import { databaseHotQueriesMigration } from './databaseHotQueriesMigration.js'
 import { workflowOrderMigration } from './workflowOrderMigration.js'
 import { ciFileDurationsMigration } from './ciFileDurationsMigration.js'
 import { ciResultCacheMigration } from './ciResultCacheMigration.js'
+import { ciTicketChangesMigration } from './ciTicketChangesMigration.js'
 import { sessionControlsMigration } from './sessionControlsMigration.js'
 import { workerConversationBindingMigration } from './workerConversationBindingMigration.js'
 import { workDeliverySettlementMigration } from './workDeliverySettlementMigration.js'
@@ -93,6 +95,7 @@ import { workspaceRootPoliciesMigration } from '../modules/sources/rootPoliciesM
 import { sourcePreparationReconciliationMigration } from './sourcePreparationReconciliationMigration.js'
 import { workflowTerminalRecoveryMigration } from './workflowTerminalRecoveryMigration.js'
 import { workflowRestartRecoveryMigration } from './workflowRestartRecoveryMigration.js'
+import { workflowFailedAttemptRecoveryMigration } from './workflowFailedAttemptRecoveryMigration.js'
 import { runInspectionMigration } from './runInspectionMigration.js'
 import { currentApprovalAckMigration } from './currentApprovalAckMigration.js'
 import { reviewCleanupEntryReceiptMigration, workflowNativeLifecycleMigration } from './workflowNativeLifecycleMigration.js'
@@ -934,8 +937,11 @@ export const migrations = [
   ciHostSlotsMigration,
   checkpointOwnerMigration,
   ciResultCacheMigration,
+  ciTicketChangesMigration,
   workflowAuthoringMigration,
   ciGrantMigration,
+  deviceManagedMcpMigration,
+  workflowFailedAttemptRecoveryMigration,
 ] as const
 
 export function assertMigrationVersions(entries: readonly { version: number }[]): void {

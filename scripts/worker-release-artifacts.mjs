@@ -31,6 +31,7 @@ export function readCommittedWorkerTargets(repository, commit) {
 
 async function verifyArtifact(directory, target, version, commit) {
   const { validateManifest } = await import('../apps/worker/src/installation.mjs')
+  const { workerArtifactContentSha256 } = await import('../packages/contracts/src/workerArtifactContentNode.mjs')
   const bytes = await readFile(join(directory, 'manifest.json'))
   if (bytes.length > 1_048_576 - 4096) throw new Error('Worker manifest is too large for the device channel')
   const manifest = JSON.parse(bytes)
@@ -48,7 +49,20 @@ async function verifyArtifact(directory, target, version, commit) {
       throw new Error(`Worker artifact checksum mismatch: ${file.path}`)
     }
   }
-  return sha256(bytes)
+  return { manifestSha256: sha256(bytes), contentSha256: workerArtifactContentSha256(manifest) }
+}
+
+async function verifyGitHubAssets({ assets, staging, tag, name, run, cwd }) {
+  for (const asset of assets) {
+    const filename = asset.slice(asset.lastIndexOf('/') + 1)
+    const downloaded = join(staging, `downloaded-${filename}`)
+    await rm(downloaded, { force: true })
+    await run('gh', ['release', 'download', tag, '--repo', name, '--pattern', filename,
+      '--output', downloaded], { cwd })
+    if (sha256(await readFile(downloaded)) !== sha256(await readFile(asset))) {
+      throw new Error(`GitHub Worker asset checksum mismatch: ${filename}`)
+    }
+  }
 }
 
 /** Uploads each artifact as <manifestSha256>.tar.gz to the GitHub release worker-<commit>, so paired Workers download
@@ -71,17 +85,24 @@ export async function publishWorkerArtifactsToGitHub({ repository, name: knownNa
     for (let attempt = 0; ; attempt++) {
       try {
         const exists = await run('gh', ['release', 'view', tag, '--repo', name], { cwd: repository ?? directory })
-          .then(() => true, () => false)
+          .then(() => true, error => {
+            if (/HTTP 404|release not found/iu.test(`${error.message ?? ''} ${error.stderr ?? ''}`)) return false
+            throw error
+          })
         if (!exists) {
           await run('gh', ['release', 'create', tag, '--repo', name, '--prerelease',
             '--title', `Worker ${commit.slice(0, 12)}`,
             '--notes', `Foreman Code Worker artifacts built from ${commit}.`], { cwd: repository ?? directory })
         }
         await run('gh', ['release', 'upload', tag, ...assets, '--repo', name, '--clobber'], { cwd: repository ?? directory })
+        await verifyGitHubAssets({ assets, staging, tag, name, run, cwd: repository ?? directory })
         return { repository: name, tag }
       } catch (error) {
         // GitHub can briefly hide a release after creation, including from asset uploads.
-        if (attempt === backoff.length) throw error
+        const reason = `${error.message ?? ''} ${error.stderr ?? ''}`
+        if (attempt === backoff.length || !/HTTP (?:404|429|5\d\d)|release not found|ECONNRESET|ETIMEDOUT|timed out/iu.test(reason)) throw error
+        console.warn(JSON.stringify({ operation: 'publish Worker release', attempt: attempt + 1,
+          nextRetryMs: backoff[attempt], lastError: 'GITHUB_RELEASE_TEMPORARILY_UNAVAILABLE' }))
         await wait(backoff[attempt])
       }
     }
@@ -113,16 +134,17 @@ export async function buildWorkerReleaseArtifacts({
         cwd: repository,
         env: { ...process.env, FOREMAN_CODE_WORKER_BUILD_COMMIT: commit },
       })
-      const manifestSha256 = await verifyArtifact(staging, target, version, commit)
+      const identity = await verifyArtifact(staging, target, version, commit)
       await chmod(staging, 0o700)
-      await rename(staging, join(directory, manifestSha256))
-      return { target, manifestSha256 }
+      await rename(staging, join(directory, identity.manifestSha256))
+      return { target, ...identity }
     }))
     const failed = builds.find(build => build.status === 'rejected')
     if (failed) throw failed.reason
     const artifacts = builds.map(build => build.value)
     const github = publish ? await publish({ repository, directory, commit, artifacts, run }) : undefined
-    const index = { format: 1, version, ...(github ? { github } : {}), artifacts }
+    const index = { format: 1, version, ...(github ? { github } : {}), artifacts,
+      publication: { state: github ? 'published' : 'pending', lastError: null } }
     await writeFile(join(directory, 'index.json'), `${JSON.stringify(index, null, 2)}\n`, { flag: 'wx', mode: 0o600 })
     await writeFile(productManifestPath, productManifest, { flag: 'wx', mode: 0o600 })
     return index
@@ -132,28 +154,55 @@ export async function buildWorkerReleaseArtifacts({
   }
 }
 
-/** Installs publish after the cutover so the ~78 s upload never delays them: until the index names the GitHub
- * release, paired Workers download their update through Main. The index is replaced atomically. */
+async function writeArtifactIndex(directory, index) {
+  const temporary = join(directory, '.index.json.publishing')
+  await writeFile(temporary, `${JSON.stringify(index, null, 2)}\n`, { mode: 0o600 })
+  await rename(temporary, join(directory, 'index.json'))
+}
+
+export async function recordWorkerPublicationFailure(directory, error) {
+  const index = JSON.parse(await readFile(join(directory, 'index.json'), 'utf8'))
+  const reason = error instanceof Error ? error.message : String(error)
+  const publication = { state: 'failed', lastError: `WORKER_RELEASE_ASSET_UNAVAILABLE: ${reason}`.slice(0, 2000) }
+  await writeArtifactIndex(directory, { ...index, publication })
+}
+
+/** The device target advances only when all GitHub release assets pass download verification. */
 export async function publishInstalledWorkerArtifacts({ directory, repositoryName, commit, run,
   publish = publishWorkerArtifactsToGitHub }) {
   const path = join(directory, 'index.json')
   const index = JSON.parse(await readFile(path, 'utf8'))
-  if (index.github) return index
-  const github = await publish({ name: repositoryName, directory, commit, artifacts: index.artifacts, run })
-  const published = { ...index, github }
-  const temporary = join(directory, '.index.json.publishing')
-  await writeFile(temporary, `${JSON.stringify(published, null, 2)}\n`, { mode: 0o600 })
-  await rename(temporary, path)
-  return published
+  if (index.github && index.publication?.state === 'published') return index
+  try {
+    await writeArtifactIndex(directory, { ...index, publication: { state: 'pending', lastError: null } })
+    const github = await publish({ name: repositoryName, directory, commit, artifacts: index.artifacts, run })
+    const published = { ...index, github, publication: { state: 'published', lastError: null } }
+    await writeArtifactIndex(directory, published)
+    return published
+  } catch (error) {
+    await recordWorkerPublicationFailure(directory, error)
+    throw error
+  }
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url) && process.argv[2] === 'publish') {
   const [directory, repositoryName, commit] = process.argv.slice(3)
   const run = (command, args, options = {}) => new Promise((resolve, reject) => {
-    const child = spawn(command, args, { stdio: 'inherit', ...options })
+    const child = spawn(command, args, { ...options, stdio: ['ignore', 'inherit', 'pipe'] })
+    let stderr = ''
+    child.stderr.on('data', chunk => {
+      process.stderr.write(chunk)
+      stderr = (stderr + chunk.toString()).slice(-1500)
+    })
     child.once('error', reject)
-    child.once('exit', code => code === 0 ? resolve() : reject(new Error(`${command} failed (${code}).`)))
+    child.once('close', code => code === 0 ? resolve()
+      : reject(new Error(`${command} failed (${code}): ${stderr.trim()}`)))
   })
-  await publishInstalledWorkerArtifacts({ directory, repositoryName, commit, run })
-  console.log(`Worker artifacts published to GitHub for ${commit}.`)
+  try {
+    await publishInstalledWorkerArtifacts({ directory, repositoryName, commit, run })
+    console.log(`Worker artifacts published and verified on GitHub for ${commit}.`)
+  } catch (error) {
+    console.error(`WORKER_RELEASE_ASSET_UNAVAILABLE: Worker publication failed: ${error.message}`)
+    process.exitCode = 1
+  }
 }

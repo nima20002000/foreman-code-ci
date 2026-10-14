@@ -13,6 +13,7 @@ import { qualificationError } from './qualificationErrors.js'
 import { requireClaudeProductionCredentialDelivery } from './claudeSdk/productionCredentials.js'
 import { CLAUDE_PROFILE_CHECK_REVISION } from './claudeSdk/profileRevision.js'
 import type { ProviderAccountResolver } from '../provider-accounts/service.js'
+import type { DeviceRequestPriority } from '@foreman-code/contracts/device-application'
 
 /** Explicit profile checks enter through real role-isolated adapters. A saved
  * config, filesystem inventory, worker heartbeat or fixture never grants trust. */
@@ -21,7 +22,9 @@ export class ProductionHostHarnessProfileQualifier implements HostHarnessProfile
     private readonly endpoint: () => DeviceEndpoint, private readonly workingDirectory: string,
     private readonly claude?: HostHarnessProfileQualifier,
     private readonly workerExecution = new WorkerExecutionPolicy(), private readonly accounts?: ProviderAccountResolver) {}
-  async qualify(value: HostHarnessOverride, input: { checkId: string; signal: AbortSignal }): Promise<HostHarnessProfileEvidence> {
+  async qualify(value: HostHarnessOverride, input: {
+    checkId: string; signal: AbortSignal; priority?: DeviceRequestPriority
+  }): Promise<HostHarnessProfileEvidence> {
     this.workerExecution.requireEnabled(value.target.hostRef)
     input.signal.throwIfAborted()
     if (commandInputHash(withAdvancedDefaults(value.configuration)) !== value.configurationFingerprint) {
@@ -39,7 +42,8 @@ export class ProductionHostHarnessProfileQualifier implements HostHarnessProfile
       }
       const binding = this.registry.pinOverride(value)
       const result = await endpoint.request(value.target.hostRef.deviceId, 'host-harness-check-v1',
-        { checkId: input.checkId, override: value }, { signal: input.signal, timeoutMs: 240_000 })
+        { checkId: input.checkId, override: value },
+        { signal: input.signal, timeoutMs: 240_000, priority: input.priority ?? 'foreground' })
       input.signal.throwIfAborted()
       this.registry.installations.assertCurrent(binding)
       const proof = HostHarnessProfileEvidenceSchema.parse(result.payload)
@@ -68,6 +72,7 @@ export class ProductionHostHarnessProfileQualifier implements HostHarnessProfile
     let authenticated: boolean | null = null
     let compatible: boolean | null = null
     let qualified = false
+    let modelCatalogSource: HostHarnessProfileEvidence['modelCatalogSource']
     let failure: { code: string; message: string } | undefined
     try {
       this.factories.admitAuxiliary(allocation.manager)
@@ -75,6 +80,7 @@ export class ProductionHostHarnessProfileQualifier implements HostHarnessProfile
       if (allocation.harness === 'codex' && configuration.harness === 'codex') {
         const checked = await allocation.manager.qualifyConfiguration(configuration, this.workingDirectory, input.signal)
         authenticated = checked.authenticated; compatible = checked.structuredEvents
+        modelCatalogSource = checked.modelCatalogSource
         qualified = checked.ready && harnessProfile('codex', checked.version) !== null
       }
       await this.factories.assertInstallationUnchanged(binding, input.signal)
@@ -98,6 +104,6 @@ export class ProductionHostHarnessProfileQualifier implements HostHarnessProfile
       driverRevision: binding.installation.driverRevision, protocolRevision: binding.installation.protocolRevision,
       suiteRevision, environmentGeneration: binding.installation.environmentGeneration,
       connectionGeneration: binding.installation.connectionGeneration, authenticated, compatible, qualified, ...(failure ? { failure } : {}),
-      checkedAt: new Date().toISOString() })
+      ...(modelCatalogSource ? { modelCatalogSource } : {}), checkedAt: new Date().toISOString() })
   }
 }

@@ -127,6 +127,17 @@ function dispatchFixture(settlementError?: Error) {
   return { ...f, active, queued, records, output }
 }
 
+it('refreshes CI observations with background priority through the public dispatcher', async () => {
+  const f = dispatchFixture()
+  f.records.splice(1, 1)
+  const service = f.create()
+  try {
+    await service.dispatch()
+    expect(f.endpoint.request).toHaveBeenCalledWith(computer,
+      expect.objectContaining({ operation: 'read', runId: f.active.id }), { priority: 'background' })
+  } finally { await service.close() }
+})
+
 it.each(['github', 'circleci'] as const)(
   'releases a stale %s dispatch with no provider run after Main restarts', async provider => {
     const f = dispatchFixture()
@@ -320,6 +331,38 @@ it('keeps assigned running ticket ids visible when the computer is offline', asy
   expect(await f.create().computers(caller, { workspaceId: 'workspace' })).toMatchObject({ computers: [{
     ready: false, reasons: ['Build computer unavailable'], running: [f.read().record.id],
   }] })
+})
+
+it('reads every computer status concurrently when listing computers', async () => {
+  const f = fixture()
+  const fleet = Array.from({ length: 3 }, (_, index) => ({ ...computer, key: `host-${index}`, label: `Host ${index}` }))
+  vi.mocked(f.endpoint.computers).mockResolvedValue(fleet)
+  let pending = 0
+  let release!: () => void
+  const allAsked = new Promise<void>(resolve => { release = resolve })
+  vi.mocked(f.endpoint.request).mockImplementation(async (_target, input) => {
+    if (input.operation !== 'status') throw new Error('Unexpected request')
+    // Each status reply waits until every computer was asked: a one-by-one listing never completes.
+    if (++pending === fleet.length) release()
+    await allAsked
+    return { operation: 'status', ready: true, reasons: [], cpuCount: 8, memoryBytes: 16 * 2 ** 30, runs: [], slotsTotal: 2, slotsUsed: 0 }
+  })
+  const listing = f.create().computers(caller, { workspaceId: 'workspace' })
+  await expect.poll(() => pending, { timeout: 1000 }).toBe(fleet.length)
+  const listed = await listing
+  expect(listed.computers.map(value => value?.label)).toEqual(['Host 0', 'Host 1', 'Host 2'])
+})
+
+it('reuses fresh computer statuses across repeated computer listings', async () => {
+  const f = fixture()
+  vi.mocked(f.endpoint.request).mockImplementation(async (_target, input) => {
+    if (input.operation !== 'status') throw new Error('Unexpected request')
+    return { operation: 'status', ready: true, reasons: [], cpuCount: 8, memoryBytes: 16 * 2 ** 30, runs: [], slotsTotal: 2, slotsUsed: 0 }
+  })
+  const ci = f.create()
+  await ci.computers(caller, { workspaceId: 'workspace' })
+  expect((await ci.computers(caller, { workspaceId: 'workspace' })).computers).toMatchObject([{ label: 'Builder', ready: true }])
+  expect(vi.mocked(f.endpoint.request).mock.calls.filter(([, input]) => input.operation === 'status')).toHaveLength(1)
 })
 
 it('refreshes submitted CI in the background without status reads and stops on close', async () => {
@@ -542,7 +585,7 @@ it('retries an unacknowledged gate on its assigned computer without releasing ow
     state: 'passed', exitCode: 0, computer: { hostRef: computer.hostRef },
   })
   expect(f.endpoint.request).toHaveBeenCalledWith(computer,
-    expect.objectContaining({ operation: 'read', runId: f.queued.id }))
+    expect.objectContaining({ operation: 'read', runId: f.queued.id }), { priority: 'background' })
   expect(starts).toEqual([
     { hostKey: computer.key, runId: f.queued.id }, { hostKey: computer.key, runId: f.queued.id },
   ])

@@ -96,12 +96,18 @@ export const CiWatchdogFailureSchema = z.object({
   message: z.string().max(2000), testsStarted: z.boolean().optional(),
 }).strict()
 
+export const CiMirrorRepairSchema = z.object({
+  count: z.number().int().positive(), reason: z.string(), repository: CiRepositorySchema,
+  sourceCommit: CommitSchema, elapsedMs: z.number().nonnegative(),
+}).strict()
+export type CiMirrorRepair = z.infer<typeof CiMirrorRepairSchema>
 export const CiMirrorPublicationSchema = z.object({
   state: z.enum(['pending', 'ready', 'failed']),
   startedAt: TimestampSchema,
   finishedAt: TimestampSchema.nullable(),
   snapshotCommit: CommitSchema.optional(),
   reusedSnapshot: CommitSchema.optional(),
+  repair: CiMirrorRepairSchema.optional(),
   timings: z.object({ queueMs: z.number().nonnegative(), sourceMs: z.number().nonnegative(), fetchMs: z.number().nonnegative(),
     guardMs: z.number().nonnegative(), snapshotMs: z.number().nonnegative(),
     pushMs: z.number().nonnegative(), totalMs: z.number().nonnegative() }).strict().optional(),
@@ -132,7 +138,9 @@ const CiHostStartSchema = z.object({
   'Gate jobs require full integration scope, assigned files and a shard count; other selections require affected scope.')
   .refine(validCiPart, 'The part and partition must belong to the requested suite.')
 export const CiHostRequestSchema = z.discriminatedUnion('operation', [
-  z.object({ operation: z.literal('status') }).strict(),
+  z.object({ operation: z.literal('status'),
+    /** Main selects expired terminal directories from persisted tickets. */
+    cleanupRunIds: z.array(CiHostRunIdSchema).max(1000).optional() }).strict(),
   CiHostStartSchema,
   // `durations: true` asks a finished test run for the file durations it measured, `testResults: true` for its
   // test results. Results are opt-in so a Worker never sends them to a Main whose reply schema predates them.
@@ -148,11 +156,21 @@ export const CiCollectionSchema = z.enum(['pending', 'complete', 'unsupported'])
 export const CiProvenanceSchema = z.object({
   sourceCommit: CommitSchema, workflowCommit: CommitSchema, workflowRef: z.string().min(1).max(200),
 }).strict()
+export const CiObservationSchema = z.object({
+  status: z.enum(['available', 'unavailable']), lastSuccessAt: TimestampSchema.nullable(),
+  lastError: z.string().max(300).nullable(), consecutiveFailures: z.number().int().nonnegative(),
+  nextAttemptAt: TimestampSchema.nullable(),
+}).strict()
+export const CiTransportSchema = z.object({
+  source: z.enum(['rest', 'cli']), reason: z.string().max(300).nullable(),
+  lastError: z.string().max(300).nullable(), fallbackCount: z.number().int().nonnegative(),
+}).strict()
 const CiHostRunSchema = z.object({
   runId: CiHostRunIdSchema, state: CiHostRunStateSchema, step: z.string().max(80).nullable(),
   exitCode: z.number().int().nullable(), startedAt: TimestampSchema, finishedAt: TimestampSchema.nullable(),
   logBytes: z.number().int().nonnegative(), message: z.string().max(2000).nullable(),
   collection: CiCollectionSchema.optional(), provenance: CiProvenanceSchema.optional(),
+  transport: CiTransportSchema.optional(),
   mirrorPublication: CiMirrorPublicationSchema.optional(),
   /** Absent when the executor cannot establish whether a test case ran. */
   testsStarted: z.boolean().optional(),
@@ -164,6 +182,9 @@ export const CiHostStatusSchema = z.object({
   operation: z.literal('status'), ready: z.boolean(), reasons: z.array(z.string().max(300)).max(10),
   /** Start protocol 3 enforces the saved CPU and memory build allowance on host starts. */
   startProtocolVersion: z.number().int().positive().optional(),
+  /** Supports bounded directory cleanup selected from Main's persisted terminal tickets. */
+  cleanupSupported: z.boolean().optional(),
+  removedRunIds: z.array(CiHostRunIdSchema).max(1000).optional(),
   cpuCount: z.number().int().positive(), memoryBytes: z.number().int().positive(),
   availableMemoryBytes: z.number().int().nonnegative().optional(),
   slotsUsed: z.number().int().nonnegative().optional(), slotsTotal: z.number().int().positive().optional(),
@@ -202,6 +223,9 @@ export const CiRunRecordSchema = z.object({
   dispatchRequest: CiHostStartSchema.optional(),
   /** Kept until the assigned executor confirms cancellation or another terminal result. */
   cancellation: CiCancellationSchema.optional(),
+  observation: CiObservationSchema.optional(),
+  reassignment: z.object({ count: z.number().int().positive(), previousHostKey: z.string(),
+    lastError: z.string(), at: TimestampSchema }).strict().optional(),
   providerMessage: z.string().max(2000).nullable().optional(),
   messageHistory: z.array(z.string().max(2000)).max(8).optional(),
   scope: CiScopeSchema.default('full'), files: CiSelectedFilesSchema.default([]),
@@ -222,6 +246,7 @@ export const CiRunRecordSchema = z.object({
     label: z.string() }).strict().nullable(),
   step: z.string().nullable(), exitCode: z.number().int().nullable(), message: z.string().nullable(),
   collection: CiCollectionSchema.optional(), provenance: CiProvenanceSchema.optional(),
+  transport: CiTransportSchema.optional(),
   mirrorPublication: CiMirrorPublicationSchema.optional(),
   queuedAt: TimestampSchema, startedAt: TimestampSchema.nullable(), finishedAt: TimestampSchema.nullable(),
   initiator: z.object({ principalId: IdSchema, executionId: IdSchema.nullable() }).strict(),

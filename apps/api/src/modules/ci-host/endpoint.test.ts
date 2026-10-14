@@ -1,5 +1,7 @@
 import type pg from 'pg'
+import type { CiHostRequest } from '@foreman-code/contracts'
 import { expect, it } from 'vitest'
+import { deferred } from '../../../test/helpers/deferred.js'
 import { ProductionHostCiEndpoint } from './endpoint.js'
 import type { HostCiComputer } from './service.js'
 
@@ -26,4 +28,47 @@ it('lists computers without waiting for a slow cloud recovery sweep', async () =
   const listed = await Promise.race([endpoint.computers(),
     new Promise<'blocked'>(resolve => setTimeout(() => resolve('blocked'), 1000))])
   expect(listed).toEqual(cloud.computers())
+})
+
+it('answers a status request without waiting for a slow directory retention sweep', async () => {
+  const computer: HostCiComputer = { key: 'fixture:main', hostRef: { kind: 'main', mainId: 'fixture-main' },
+    label: 'Main computer', priority: 60 }
+  const status = { operation: 'status' as const, ready: true, reasons: [], cpuCount: 8, memoryBytes: 16 * 2 ** 30,
+    runs: [], startProtocolVersion: 3, cleanupSupported: true }
+  const sweeping = deferred()
+  const release = deferred()
+  const completed = deferred()
+  const cleanupRequests: CiHostRequest[] = []
+  const pool = { query: async () => {
+    return { rows: [{ run_id: 'old-run', state: 'passed', finished_at: '2026-01-01T00:00:00Z',
+      collection: null, rank: '500' }] }
+  } } as unknown as pg.Pool
+  const endpoint = new ProductionHostCiEndpoint(pool, 'fixture-main', () => undefined, {
+    handle: async request => {
+      if (request.operation === 'status' && request.cleanupRunIds) {
+        cleanupRequests.push(request)
+        sweeping.resolve()
+        await release.promise
+        completed.resolve()
+        return { ...status, removedRunIds: request.cleanupRunIds }
+      }
+      return status
+    },
+  })
+  const pending = endpoint.request(computer, { operation: 'status' })
+  await sweeping.promise
+  let timeout: ReturnType<typeof setTimeout> | undefined
+  try {
+    const result = await Promise.race([pending,
+      new Promise<'blocked'>(resolve => { timeout = setTimeout(() => resolve('blocked'), 1000) })])
+    expect(result).toMatchObject({ operation: 'status', ready: true })
+    const second = await endpoint.request(computer, { operation: 'status' })
+    expect(second).toMatchObject({ operation: 'status', ready: true })
+    expect(cleanupRequests).toEqual([{ operation: 'status', cleanupRunIds: ['old-run'] }])
+  } finally {
+    clearTimeout(timeout)
+    release.resolve()
+    await pending
+    await completed.promise
+  }
 })

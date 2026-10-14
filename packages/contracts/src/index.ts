@@ -1,3 +1,5 @@
+import { optionalCommandId } from './management/commands.js'
+import { ExecutionQueueReasonSchema } from './executionQueue.js';
 import { TextTruncationSchema } from './activityText.js';
 import { NativeToolsSchema } from './nativeTools.js';
 export * from './nativeTools.js';
@@ -404,6 +406,7 @@ export const HarnessQualificationSchema = z
     authenticated: z.boolean(),
     ready: z.boolean(),
     structuredEvents: z.boolean(),
+    modelCatalogSource: z.enum(['native', 'cached']).optional(),
     supportsResume: z.boolean(),
     supportsCancellation: z.boolean(),
     supportsWorkingDirectory: z.boolean(),
@@ -880,6 +883,9 @@ export const ExecutionResultSchema = z
   });
 export type ExecutionResult = z.infer<typeof ExecutionResultSchema>;
 
+export { ExecutionQueueReasonSchema, ExecutionQueueEntrySchema, executionQueueReasonLabel } from './executionQueue.js';
+export type { ExecutionQueueReason, ExecutionQueueEntry } from './executionQueue.js';
+
 export const HarnessExecutionStateSchema = z.enum([
   "queued",
   "starting",
@@ -908,6 +914,8 @@ export const HarnessExecutionSchema = z
     runtimeDirectory: z.string().min(1).optional(),
     input: z.json(),
     state: HarnessExecutionStateSchema,
+    /** Live process-local capacity wait, added by authorized reads only. */
+    queueReason: ExecutionQueueReasonSchema.optional(),
     result: ExecutionResultSchema.optional(),
     createdAt: TimestampSchema,
     startedAt: TimestampSchema.optional(),
@@ -1006,6 +1014,7 @@ export const ActivityKindSchema = z.enum([
   "ci_state_changed",
   "harness_session_started",
   "harness_output",
+  "native_events_skipped",
   "harness_session_finished",
   "result_recorded",
   "interaction_pending",
@@ -1459,7 +1468,7 @@ export const ListOperatorConversationSummariesResponseSchema = z.object({
 }).strict();
 
 export const CreateOperatorConversationRequestSchema = z.object({
-  commandId: IdSchema.optional(),
+  commandId: optionalCommandId(IdSchema),
   title: z.string().trim().min(1).optional(),
 }).strict();
 export const DeleteOperatorConversationResponseSchema = z.object({
@@ -1469,7 +1478,7 @@ export const DeleteOperatorConversationResponseSchema = z.object({
 }).strict();
 export const OperatorConversationDeletionInputSchema = z.object({
   conversationId: IdSchema,
-  commandId: IdSchema,
+  commandId: optionalCommandId(IdSchema),
 }).strict();
 export const CreateOperatorConversationResponseSchema = z.object({ conversation: ConversationSchema }).strict();
 export const ListOperatorConversationsResponseSchema = z.object({ conversations: z.array(ConversationSchema) }).strict();
@@ -1674,3 +1683,5 @@ export * from './sessionCommands.js'
 
 export * from './worktreeSettings.js';
 export * from './workspaceGit.js';
+export * from './readObservation.js'
+export * from './operationalFailures.js'

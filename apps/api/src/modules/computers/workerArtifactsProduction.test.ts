@@ -1,11 +1,12 @@
 import { createHash } from 'node:crypto'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { homedir } from 'node:os'
+import type pg from 'pg'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { WorkerArtifactReplySchema } from '@foreman-code/contracts/computer-maintenance'
-import { createWorkerArtifactExtension } from '../src/modules/computers/workerArtifacts.js'
-import { createProductionWorkerArtifactExtension } from '../src/modules/computers/workerArtifactsProduction.js'
+import { createWorkerArtifactExtension } from './workerArtifacts.js'
+import { createProductionWorkerArtifactExtension } from './workerArtifactsProduction.js'
 
 const target = { os: 'ubuntu', osRelease: '24.04', arch: 'x64', libc: 'glibc-2.39', node: 'v22.23.3' }
 const context = { binding: {
@@ -20,7 +21,9 @@ afterEach(async () => {
 })
 
 async function release() {
-  const directory = await mkdtemp(join(tmpdir(), 'worker-production-release-'))
+  const storage = process.env.FOREMAN_CODE_TEST_ROOT ?? join(homedir(), '.cache', 'foreman-tmp')
+  await mkdir(storage, { recursive: true })
+  const directory = await mkdtemp(join(storage, 'worker-production-release-'))
   directories.push(directory)
   const artifacts = join(directory, 'worker-artifacts')
   await mkdir(artifacts, { mode: 0o700 })
@@ -37,7 +40,9 @@ async function release() {
   await mkdir(join(artifacts, manifestSha256, 'src'), { mode: 0o700, recursive: true })
   await writeFile(join(artifacts, manifestSha256, 'src/cli.mjs'), content)
   await writeFile(join(artifacts, manifestSha256, 'manifest.json'), manifestBytes)
-  const index = { format: 1, version: manifest.version, artifacts: [{ target, manifestSha256 }] }
+  const index = { format: 1, version: manifest.version, artifacts: [{ target, manifestSha256 }],
+    github: { repository: 'example/worker', tag: `worker-${manifest.commit}` },
+    publication: { state: 'published', lastError: null } }
   await writeFile(join(artifacts, 'index.json'), JSON.stringify(index))
   return { directory, artifacts, manifest, manifestSha256, index }
 }
@@ -48,7 +53,7 @@ describe('production Worker artifact composition', () => {
     const extension = createProductionWorkerArtifactExtension({ environment: {}, releaseDirectory: f.directory })
     const reply = WorkerArtifactReplySchema.parse((await extension.handle!({ operation: 'release', target }, context)).payload)
     expect(reply).toEqual({ operation: 'release', release: {
-      version: '0.0.56', manifestSha256: f.manifestSha256, manifest: f.manifest,
+      version: '0.0.56', manifestSha256: f.manifestSha256, manifest: f.manifest, github: f.index.github,
     } })
   })
 
@@ -106,4 +111,31 @@ it('keeps release announcements readable by retained Workers before updating the
   expect(payload).toEqual({ operation: 'release', release: {
     version: f.manifest.version, manifestSha256: f.manifestSha256, manifest: f.manifest, github,
   } })
+})
+
+
+it('withholds release and CI smoke while the GitHub asset remains unpublished', async () => {
+  const f = await release()
+  await writeFile(join(f.artifacts, 'index.json'), JSON.stringify({ ...f.index, github: undefined,
+    publication: { state: 'pending', lastError: null } }))
+  const smoke = { repository: 'example/product', commit: f.manifest.commit }
+  await writeFile(join(f.directory, 'ci-smoke.json'), JSON.stringify(smoke))
+  const pool = { query: async () => ({ rows: [{}] }) } as unknown as pg.Pool
+  const extension = createProductionWorkerArtifactExtension({ environment: {}, releaseDirectory: f.directory, pool })
+  for (const request of [{ operation: 'release', target },
+    { operation: 'ci-smoke', manifestSha256: f.manifestSha256 }]) {
+    await expect(extension.handle!(request, context))
+      .rejects.toMatchObject({ code: 'WORKER_RELEASE_ASSET_UNAVAILABLE' })
+  }
+})
+
+it('reports missing smoke configuration concretely and never skips smoke for enabled build computers', async () => {
+  const f = await release()
+  const pool = { query: async () => ({ rows: [{}] }) } as unknown as pg.Pool
+  const extension = createProductionWorkerArtifactExtension({ environment: {}, releaseDirectory: f.directory, pool })
+  await expect(extension.handle!({ operation: 'ci-smoke', manifestSha256: f.manifestSha256 }, context))
+    .rejects.toMatchObject({ code: 'WORKER_UPDATE_SMOKE_UNAVAILABLE' })
+  await writeFile(join(f.directory, 'ci-smoke.json'), JSON.stringify({ repository: 'example/product', commit: 'c'.repeat(40) }))
+  await expect(extension.handle!({ operation: 'ci-smoke', manifestSha256: f.manifestSha256 }, context))
+    .rejects.toMatchObject({ code: 'WORKER_UPDATE_SMOKE_UNAVAILABLE' })
 })

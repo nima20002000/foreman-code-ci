@@ -2,6 +2,7 @@ import { writeFile } from 'node:fs/promises'
 import { DomainError } from '../errors.js'
 import { CloudHttp } from './cloudHttp.js'
 import { circleJobLog, renderTerminal } from './cloudLog.js'
+import { logIgnoredError } from '../diagnostics/ignoredError.js'
 
 interface Workflow { id: string; status: string; stopped_at?: string }
 interface JobRef { id: string; job_number?: number }
@@ -29,6 +30,10 @@ function lifecycle(status: string) {
 export class CircleRest {
   private readonly jobs = new Map<string, number>()
   constructor(private readonly http: CloudHttp) {}
+
+  get transport() { return this.http.transport }
+
+  available() { return this.http.available() }
 
   private async read(path: string, args: string[], timeoutMs: number) {
     const response = await this.http.request(path, { timeoutMs })
@@ -85,7 +90,7 @@ export class CircleRest {
     }))
     if (mapped.some(workflow => workflow === null)) return null
     const complete = workflows.length > 0 && workflows.every(workflow => lifecycle(workflow.status).phase === 'ended')
-    return { phase: complete ? 'ended' : 'started', errors: pipeline.errors, workflows: mapped }
+    return { state: pipeline.state, phase: complete ? 'ended' : 'started', errors: pipeline.errors, workflows: mapped }
   }
 
   private async job(id: string, args: string[], timeoutMs: number): Promise<CircleJob | null> {
@@ -159,7 +164,10 @@ export class CircleRest {
       return await this.http.operation(timeoutMs, () => this.stepOutput(id, step, timeoutMs))
     } catch (error) {
       // Live output is best-effort, matching the CLI path; rate limits still pause polling.
-      if (error instanceof DomainError && error.code === 'CI_CLOUD_FAILED') return { ok: false, text: '' }
+      if (error instanceof DomainError && error.code === 'CI_CLOUD_FAILED') {
+        logIgnoredError('jobs', 'read CircleCI live output', error, { jobId: id, step })
+        return { ok: false, text: '' }
+      }
       throw error
     }
   }
