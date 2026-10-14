@@ -111,7 +111,7 @@ int main(int argc, char **argv) {
     },
     hideModels: () => writeFile(join(directory, 'hide-models'), '', { mode: 0o600 }),
     showModels: () => rm(join(directory, 'hide-models')),
-    blockModels: (options?: { workingDirectory: string }) => writeFile(join(directory, 'block-models'),
+    blockModels: (options?: { workingDirectory: string; includeDescendants?: boolean }) => writeFile(join(directory, 'block-models'),
       options ? JSON.stringify(options) : '', { mode: 0o600 }),
     allowModelDirectories: async (directories: string[]) => {
       const destination = join(directory, 'allowed-model-directories')
