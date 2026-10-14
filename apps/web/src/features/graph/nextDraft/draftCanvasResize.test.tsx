@@ -62,8 +62,8 @@ it('keeps the edge remove button mounted while crossing to its controls', async 
   render(<style>{canvasStyles}</style>)
   const view = mount()
   const remove = await screen.findByLabelText(/Remove handoff/)
-  const control = remove.closest('[data-visible]')!
-  const edge = control.closest('g')!
+  const control = remove.closest('foreignObject')!
+  const edge = control.parentElement!
   vi.useFakeTimers()
   expect(remove).not.toBeVisible()
   fireEvent.pointerEnter(edge)
