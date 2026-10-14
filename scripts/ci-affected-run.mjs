@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
 import { lstatSync, readFileSync, rmSync } from 'node:fs'
-import { matchesGlob, posix, resolve } from 'node:path'
+import { posix, resolve } from 'node:path'
 import { repositoryFileList, selectByIndexes } from './ci-files.mjs'
 import { writeCiTestResults } from './ci-test-results.mjs'
 
@@ -36,22 +36,8 @@ export function affectedCommands(suite, files) {
       // Only API tests use the disposable PostgreSQL server, which CI starts for the unit and unit-api parts alone.
       const database = project === 'apps/api' ? [process.execPath, 'scripts/test-command.mjs', '--'] : []
       if (nodeFiles.length) commands.push([...database, process.execPath, '--test', ...nodeFiles])
-      if (vitestFiles.length) {
-        const command = [...database, 'corepack', 'pnpm', '--dir', project, 'exec', 'vitest', 'run']
-        const localFiles = vitestFiles.map(file => file.slice(project.length + 1))
-        if (project === 'apps/web') {
-          const heavy = JSON.parse(readFileSync(new URL('../apps/web/heavy-tests.json', import.meta.url), 'utf8'))
-          for (const phase of ['fast', 'heavy']) {
-            const phaseFiles = localFiles.filter(file => {
-              const isHeavy = heavy.files.some(pattern => matchesGlob(file, pattern))
-              return phase === 'heavy' ? isHeavy : !isHeavy
-            })
-            if (phaseFiles.length) {
-              commands.push(['env', `FOREMAN_WEB_TEST_PHASE=${phase}`, ...command, ...phaseFiles])
-            }
-          }
-        } else commands.push([...command, ...localFiles])
-      }
+      if (vitestFiles.length) commands.push([...database, 'corepack', 'pnpm', '--dir', project, 'exec', 'vitest', 'run',
+        ...vitestFiles.map(file => file.slice(project.length + 1))])
     } else throw new Error(`Unsupported affected suite: ${suite}`)
   }
   return commands
@@ -67,7 +53,6 @@ async function run(command) {
   delete environment.CI_PARTITION
   delete environment.CI_DURATIONS
   delete environment.TEST_RESULTS_OUTPUT
-  delete environment.FOREMAN_WEB_TEST_PHASE
   const child = spawn(command[0], command.slice(1), { stdio: 'inherit', env: environment })
   return new Promise((resolve, reject) => {
     child.once('error', reject)
