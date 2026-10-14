@@ -72,6 +72,7 @@ export const runTools = [
       + 'Includes persisted Host CI lifecycle states with ciTicketId, ciGroupId, originating Agent execution, part, partition and computer. '
       + 'Native summaries identify messages, reasoning, commands, file edits and tool calls; details include safe counts, message phase and command exit code. '
       + 'Work result and needs-direction activities include redacted latestDeliverable, remainingFindings and outcome. '
+      + 'Failed executions include their redacted failure code and reason in activity details. '
       + 'Pages may return fewer items than limit to fit the 128 KiB public-page budget; follow the returned cursors. '
       + 'Use run_get for execution and normalized activity snapshots. '
       + 'Use nextCursor for incremental catch-up and olderCursor for earlier retained history; '
@@ -90,12 +91,18 @@ export const runTools = [
       + 'repeat. Default Codex Agents use approvalPolicy never and need no routed workflow approval handler; sandbox restrictions '
       + 'still apply. Pin 3 plus the current workflow revision, exact Agent configuration map and location revision. In '
       + 'mixed-computer workflows, Agents without a saved computer choice resolve to the authorized Main source, '
-      + 'root and matching qualified harness; all accepted placements are persisted in the Run. For a GitHub '
+      + 'root and matching qualified harness. Saved computer choices name a host, root policy, harness instance '
+      + 'and cwd; Start resolves their current revisions and rebinds a stale root to its current approved source. '
+      + 'The same enabled instance on the same host uses its current revision. Each Run retains its exact resolved '
+      + 'placement facts. For a GitHub '
       + 'workspace, Start fetches the configured default branch once, approves its tracked tree, and persists that '
-      + 'source for every Agent in this Run. Unchanged commits reuse an approval. This additionally requires '
+      + 'source for every Agent in this Run. Unchanged commits reuse an approval. '
+      + 'Concurrent captures wait separately from SQL query deadlines. COMMAND_LOCK_TIMEOUT and '
+      + 'COMMAND_DATABASE_TIMEOUT are retryable; retain the original commandId and input. This requires '
       + 'workspace-scoped sources:approve, sources:read, source_roots:bind and source_roots:read; it does not '
       + 'grant those permissions. Start refreshes only the Agent execution hosts required by this version. '
-      + 'Installation recovery can return HARNESS_PROFILE_CHECK_PENDING; retry the same command after the profiles '
+      + 'Start automatically checks enabled profiles with missing or stale results. '
+      + 'Checks can return HARNESS_PROFILE_CHECK_PENDING; retry the same command after the profiles '
       + 'selected by this Run finish checking. Other profiles on the same computer do not block Start. '
       + 'Production installation rejects new Starts with RUN_START_MAINTENANCE; retry the same command '
       + 'after installation. Verified receipt readback remains available. Concurrent Starts share a 30-second '
@@ -125,7 +132,7 @@ export const runTools = [
     name: 'run_stop',
     requires: [['runs:stop', 'resource']],
     enabled: s => !!s.runs,
-    description: 'Stop an authorized Run, including recovery after an API or worker restart when the original native lifetime has positive closure evidence. Live or unconfirmed owners remain fenced. If cleanup cannot be confirmed, retry the same commandId and input using the returned domain error. Every non-terminal CI ticket its Agents created and its assigned provider run is canceled with audit under runs:stop; failed CI cleanup remains pending for retry. A receipt or terminal record is not process-exit proof; processStopped remains false.', inputSchema: RunStopInputSchema,
+    description: 'commandId is optional and generated when omitted; supply the same ID and input for replay. Stop an authorized Run, including recovery after an API or worker restart when the original native lifetime has positive closure evidence. Live or unconfirmed owners remain fenced. If cleanup cannot be confirmed, retry the same commandId and input using the returned domain error. Every non-terminal CI ticket its Agents created and its assigned provider run is canceled with audit under runs:stop; failed CI cleanup remains pending for retry. A receipt or terminal record is not process-exit proof; processStopped remains false.', inputSchema: RunStopInputSchema,
     outputSchema: RunStopResultSchema,
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     run: (context, input) => context.services.runs.stop(context.principal, 'mcp', input),

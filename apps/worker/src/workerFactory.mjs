@@ -122,7 +122,7 @@ export async function startConfiguredWorker({ stateDirectory, extensions = [], e
         workerInstallationId: pairing.workerInstallationId, releaseDirectory, facts, assertStateOwnership,
         connection: () => connection, drain: () => installed.drainForUpdate(),
         resume: () => installed.resumeAfterUpdate(),
-        reportError: error => process.stderr.write(`Worker update: ${error.code ?? 'worker_update_failed'}\n`),
+        reportError: error => process.stderr.write(`Worker update: ${error.message ?? error.code ?? 'worker_update_failed'}\n`),
       }).initialize();
     }
     const rootExtensions = managedSetup?.state === 'failed' ? []
@@ -148,6 +148,7 @@ export async function startConfiguredWorker({ stateDirectory, extensions = [], e
       const jobConfigurationPath = join(stateDirectory, 'job-runtime.json');
       const jobSelection = await lstat(jobConfigurationPath).catch(error => { if (error.code === 'ENOENT') return null; throw error; });
       installed = await createInstalledWorkerDomains({ stateDirectory, pairing, bootId, assertStateOwnership,
+        launcherSource: new URL('../artifacts/graphql-mcp.mjs', import.meta.url),
         ciStartupPending: async () => startupCi.pending || (await updater?.status())?.state === 'restarting',
         ...(updater ? { workerUpdate: { status: () => updater.status(), start: () => updater.start({ retry: true }),
           outcome: task => updater.maintenanceOutcome(task) } } : {}),
