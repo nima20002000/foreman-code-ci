@@ -42,20 +42,26 @@ export const GRAPHQL_AGENT_TOOLS = {
     label: "Run CI",
     description: "Run install, typecheck, lint, unit, build or integration on a build computer. "
       + "Tests the requested commit, the Agent's current files published to GitHub, or the default branch head. "
+      + "Edited Agent files use snapshot bundles up to 32 MiB before publication. "
       + "Scope defaults to affected. Omit files for runner selection against the workspace default branch merge-base; "
+      + "Priority defaults to normal; callers authorized for ci can request high. CI-only commits are automatically high. "
       + "caller files remain supported with an explicit commit. Missing selectors, shared infrastructure changes and "
       + "the default branch head run the full suite and report the reason. Scope full always runs everything. "
-      + "Retry the same commandId and payload. Integration supports 2–32 partitions on separate computers.",
+      + "Retry the same commandId and payload. Integration automatically sizes duration-balanced parts to free CI slots; "
+      + "partitions caps the count (2–64). Requires the ci action. Newer descendant commits supersede active work of the same "
+      + "suite and requester on the same branch or Agent execution. Main and noSupersede=true tickets are kept.",
     roles: ["operator", "orchestrator", "coder"],
   },
-  ci_get: { label: "Read CI result", description: "Read CI run state, current step, computer, exit code and bounded log tail by ticketId.", roles: ["operator", "orchestrator", "coder"] },
-  ci_computers_list: { label: "List CI computers", description: "Read authorized build computers with readiness, GitHub login, size and running CI runs.", roles: ["operator", "orchestrator", "coder"] },
+  ci_get: { label: "Read CI result", description: "Read CI run state, priority, queue position and waiting reason, current step, computer, exit code and bounded log tail by ticketId. Superseded tickets report supersededBy and a replacement ticket message.", roles: ["operator", "orchestrator", "coder"] },
+  ci_computers_list: { label: "List CI computers", description: "Read authorized build computers with readiness, Worker protocol/update readiness reasons, GitHub login, size, used/total CI slots, running CI runs and authorized queued tickets with priority, position and reason.", roles: ["operator", "orchestrator", "coder"] },
   ci_cancel: { label: "Cancel CI", description: "Cancel a queued or running CI run by ticketId. Requires jobs:cancel. Poll ci_get to confirm the outcome.", roles: ["operator", "orchestrator", "coder"] },
   ci_logs_read: { label: "Read CI logs", description: "Read CI log text by ticketId. Omit afterOffset for the last maxBytes, or continue with nextOffset.", roles: ["operator", "orchestrator", "coder"] },
   run_status_get: {
     label: "Read own Run status",
     description: "Read-only, bounded status of this Agent's own Run: Run state, each node's latest execution state, "
-      + "the Run's latest CI tickets and recent errors. Available only on workflow nodes with interval checks enabled.",
+      + "the Run's latest CI tickets and recent errors, including AGENT_EXECUTION_STUCK warnings for idle running "
+      + "executions whose CI tickets are all terminal. Warnings do not stop executions. "
+      + "Available only on workflow nodes with a loop enabled.",
     roles: ["orchestrator", "coder"],
   },
 } as const satisfies Record<string, { label: string; description: string; roles: readonly GraphqlMcpRole[] }>;

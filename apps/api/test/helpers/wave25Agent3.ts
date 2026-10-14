@@ -1,3 +1,4 @@
+import { migratedDatabase } from './migratedDatabase.js'
 import { createFixtureSchema, dropFixtureSchema, removeFixtureDirectory } from './testResources.js'
 import { agentWorkflowVersion } from './agentWorkflowFixture.js'
 import { randomUUID } from 'node:crypto'
@@ -34,6 +35,7 @@ export async function agent3Database(databaseUrl = process.env.TEST_DATABASE_URL
   if (!['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname) || !parsed.pathname.toLowerCase().includes('test')) {
     throw new Error('Use a loopback PostgreSQL database explicitly named for tests')
   }
+  if (url === process.env.TEST_DATABASE_URL) return migratedDatabase()
   const schema = `wave25_a3_${randomUUID().replaceAll('-', '')}`
   const started = performance.now()
   const admin = new pg.Pool({ connectionString: url, max: 1 })
@@ -56,7 +58,7 @@ export async function agent3Database(databaseUrl = process.env.TEST_DATABASE_URL
     })
   }
   return {
-    pool, schema, directory,
+    pool, databaseUrl: url, schema, directory,
     async close() {
       await pool.end()
       try {
@@ -98,7 +100,7 @@ export async function seedAgent3(pool: pg.Pool, directory: string, fixture = mak
   const saved = (await workflows.current.save(writer.principal, 'http', JSON.parse(JSON.stringify({
     workspaceId: fixture.scope.workspaceId, workflowId: created.workflow.id,
     commandId: randomUUID(), executionSemanticsVersion: 3, expectedRevision: created.revision,
-    expectedWorkflowVersionId: null, expectedLocationRevision: location.locationRevision,
+    expectedWorkflowVersionId: null,
     expectedAgentConfigurationVersionIds: fixture.version.agentConfigurationVersionIds,
     graph: { ...fixture.version.definition, id: created.workflow.id, version: created.workflow.version,
       createdAt: created.workflow.createdAt, updatedAt: created.workflow.updatedAt },
@@ -153,13 +155,6 @@ export async function terminalAgent3(_pool: pg.Pool, store: RepeatRunRepository,
 
 export async function graphHead(pool: pg.Pool, runId: string): Promise<string> {
   return (await pool.query<{ head: string }>('select head_sequence::text as head from run_graph_heads where run_id=$1', [runId])).rows[0]!.head
-}
-
-export function deferred<T = void>() {
-  let resolve!: (value: T | PromiseLike<T>) => void
-  let reject!: (reason?: unknown) => void
-  const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail })
-  return { promise, resolve, reject }
 }
 
 export function setFixtureVersion(fixture: Agent3Fixture, version: WorkflowVersionV3): Agent3Fixture {

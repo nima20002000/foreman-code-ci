@@ -1,3 +1,5 @@
+import { OperatorRuntimeOwner } from '../infrastructure/operatorRuntimeOwner.js'
+import { errorMessage } from '../shared/errorMessage.js'
 import { loadProductEnvFile } from '@foreman-code/contracts/product-environment-node'
 
 import type { ManagementGrant } from '@foreman-code/contracts/management'
@@ -16,8 +18,13 @@ async function main() {
   }
   const config = loadConfig(process.env)
   const database = createDatabase(config.database)
+  const lifetime = new AbortController()
+  const maintenance = new OperatorRuntimeOwner(config.database.connectionString, error => lifetime.abort(error))
   try {
+    await maintenance.acquire()
+    lifetime.signal.throwIfAborted()
     await database.migrate()
+    lifetime.signal.throwIfAborted()
     const access = new PostgresAccessService(database.pool)
     if (input.command === 'revoke') {
       const { principalId } = input
@@ -25,20 +32,24 @@ async function main() {
       process.stdout.write(`Revoked ${principalId}\n`)
       return
     }
-    const { name, audience, days, workspaceId, computerMetrics } = input
+    const { name, audience, days, workspaceId } = input
     const grant: ManagementGrant = {
-      actions: credentialActions(input.access),
+      actions: credentialActions(input.access, input.grant),
       scope: workspaceId ? { workspaceIds: [workspaceId] } : {},
     }
     const issued = await access.issue({
-      // Computer reads need their own unscoped grant, even beside a workspace-scoped one.
-      name, audience, grants: computerMetrics ? [grant, { actions: ['devices:metrics:read'], scope: {} }] : [grant], expiresAt: new Date(Date.now() + days * 86_400_000),
+      name,
+      audience,
+      grants: [grant],
+      ...(days !== null ? { expiresAt: new Date(Date.now() + days * 86_400_000) } : {}),
     })
     process.stdout.write(`Principal: ${issued.principal.id}\nAudience: ${issued.principal.audience}\nExpires: ${issued.principal.expiresAt}\nToken (shown once): ${issued.token}\n`)
-  } finally { await database.close() }
+  } finally {
+    try { await database.close() } finally { await maintenance.close() }
+  }
 }
 
 main().catch((error: unknown) => {
-  process.stderr.write(`${error instanceof Error ? error.message : 'Credential command failed.'}\n`)
+  process.stderr.write(`${errorMessage(error, 'Credential command failed.')}\n`)
   process.exitCode = 1
 })

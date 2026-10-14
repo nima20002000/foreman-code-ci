@@ -8,6 +8,7 @@ import { HostHarnessOverrideSchema, HostHarnessProfileEvidenceSchema,
 import { HarnessQualificationSchema } from '@foreman-code/contracts/harness-qualification'
 import { CurrentWorkflowSaveResultSchema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
+import { withTransaction } from '../../src/infrastructure/transaction.js'
 import { buildApp } from '../../src/app.js'
 import { HarnessInstanceRegistry, localHarnessDrivers } from '../../src/modules/harnesses/instanceRegistry.js'
 import { HarnessInstallationRegistry, type HarnessInstallationRecord } from '../../src/modules/harnesses/installationRegistry.js'
@@ -150,19 +151,11 @@ export async function sourceWorktreeMcpFixture() {
       locations: base.locations, mainId, runtimeRoot,
       endpoint: () => { throw new Error('Main source preparation cannot call a remote endpoint') },
       dispatch: () => { throw new Error('Agent source preparation cannot create a Job') } })
-    const sql = await base.db.pool.connect()
-    try {
-      await sql.query('begin')
+    await withTransaction(base.db.pool, async sql => {
       await production.policies.publishApprovedHostConfiguration(sql, allowlist, { mainId, hostRef,
         applicationInstallationId: mainId, configurationRevision: '1',
         configurationDigest: sourceSha256(Buffer.from(JSON.stringify(allowlist))) })
-      await sql.query('commit')
-    } catch (error) {
-      await sql.query('rollback')
-      throw error
-    } finally {
-      sql.release()
-    }
+    })
     base.locations.setRootPolicies(production.policies)
     const roots = new WorkspaceBoundLocationService(base.db.pool, base.commands, production.policies,
       base.locations.runnerId)
@@ -179,7 +172,7 @@ export async function sourceWorktreeMcpFixture() {
     })
     const approved = (await production.sources.approve(base.writer.principal, 'mcp', {
       workspaceId: base.f.scope.workspaceId, commandId: randomUUID(), expectedLocationRevision: located.locationRevision,
-      commit, approvedPaths: ['app.txt'], executablePolicy: 'strip',
+      commit, executablePolicy: 'strip',
     })).value
     const source = { approvedSourceId: approved.manifest.approvedSourceId,
       snapshotId: approved.manifest.snapshotId, manifestDigest: approved.manifest.manifestDigest }
@@ -255,7 +248,7 @@ export async function sourceWorktreeMcpFixture() {
     const savedResponse = await client.callTool({ name: 'workflow_save_v3', arguments: {
       workspaceId: base.f.scope.workspaceId, workflowId: base.f.scope.workflowId, commandId: randomUUID(),
       executionSemanticsVersion: 3, expectedRevision: workflow.revision,
-      expectedWorkflowVersionId: base.f.version.id, expectedLocationRevision: located.locationRevision,
+      expectedWorkflowVersionId: base.f.version.id,
       expectedAgentConfigurationVersionIds: base.f.version.agentConfigurationVersionIds, graph,
     } })
     expect(savedResponse.isError, JSON.stringify(savedResponse)).not.toBe(true)

@@ -1,8 +1,8 @@
 import { once } from 'node:events'
 import { execFileSync, spawn } from 'node:child_process'
-import { mkdir, mkdtemp, readFile, rm, writeFile, chmod, readdir } from 'node:fs/promises'
-import { existsSync } from 'node:fs'
+import { mkdir, mkdtemp, readFile, copyFile, rm, writeFile, chmod, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
+import { homedir } from 'node:os'
 import { randomUUID } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { gitFixtureEnvironment } from '../../../test/helpers/gitFixture.js'
@@ -23,29 +23,43 @@ afterEach(async () => {
 
 /** A computer with a real git origin standing in for GitHub, gh and corepack shims, and a systemd-run that runs the
  * unit's script as a child process the way the user manager would. */
-async function computer(options: { github?: boolean; suiteExit?: number; pause?: boolean
+async function computer(options: { github?: boolean; suiteExit?: number; watchdogReason?: string; pause?: boolean
   measured?: Record<string, number>; databaseExit?: number; selector?: boolean;
-  change?: 'source' | 'infrastructure' | 'docs'; defaultBranch?: string } = {}) {
-  const root = await mkdtemp(join(process.env.FOREMAN_CODE_TEST_ROOT ?? '/tmp', 'host-ci-'))
+  change?: 'source' | 'infrastructure' | 'docs'; defaultBranch?: string; cpuCount?: number; hostSlots?: boolean
+  affectedUnitTests?: number; inspectSource?: boolean } = {}) {
+  const temporaryRoot = process.env.FOREMAN_CODE_TEST_ROOT ?? join(homedir(), '.cache', 'foreman-tmp')
+  await mkdir(temporaryRoot, { recursive: true })
+  const root = await mkdtemp(join(temporaryRoot, 'host-ci-'))
   roots.push(root)
   const environment = gitFixtureEnvironment()
   const origin = join(root, 'origin')
   const git = (...args: string[]) => execFileSync('git', args, { cwd: origin, env: environment, encoding: 'utf8' }).trim()
   await mkdir(join(origin, 'apps/api/test'), { recursive: true })
-  await writeFile(join(origin, 'package.json'), JSON.stringify({ name: 'fixture', scripts: {
-    typecheck: 'tsc', lint: 'eslint', build: 'tsc -b', test: 'vitest', 'test:integration': 'node scripts/test-integration.mjs', 'db:up': 'node db.mjs' } }))
+  await writeFile(join(origin, 'package.json'), JSON.stringify({ name: 'fixture',
+    ...(options.hostSlots ? { foremanCi: { hostSlots: 1 } } : {}), scripts: {
+    typecheck: 'tsc', lint: 'eslint', build: 'tsc -b', test: 'vitest',
+    'test:integration': 'node scripts/test-integration.mjs', 'db:up': 'node db.mjs',
+    'test:scripts': 'node --test scripts/fixture.test.mjs' } }))
+  if (options.inspectSource) {
+    await writeFile(join(origin, 'program.mjs'), 'process.stdout.write(JSON.stringify({value: 1}))\n')
+  }
   await writeFile(join(origin, 'pnpm-lock.yaml'), '')
   for (const name of ['a', 'b', 'c', 'd']) await writeFile(join(origin, `apps/api/test/${name}.integration.test.ts`), '')
   await mkdir(join(origin, 'scripts'))
+  await mkdir(join(origin, 'apps/worker/test'), { recursive: true })
+  await writeFile(join(origin, 'apps/worker/test/fixture.test.mjs'), '')
+  await writeFile(join(origin, 'scripts/fixture.test.mjs'), '')
   await writeFile(join(origin, 'scripts/integration-durations.json'), JSON.stringify({
     'apps/api/test/a.integration.test.ts': 400, 'apps/api/test/b.integration.test.ts': 300,
     'apps/api/test/c.integration.test.ts': 200, 'apps/api/test/d.integration.test.ts': 100 }))
   await mkdir(join(origin, 'apps/web/src'), { recursive: true })
   await writeFile(join(origin, 'apps/web/heavy-tests.json'), JSON.stringify({ files: [] }))
-  await writeFile(join(origin, 'scripts/ci-unit-files.mjs'),
-    await readFile(new URL('../../../../../scripts/ci-unit-files.mjs', import.meta.url), 'utf8'))
-  for (const file of ['ci-affected-run.mjs', 'ci-files.mjs', 'ci-suite.sh', 'ci-test-results.mjs']) {
-    await writeFile(join(origin, 'scripts', file), await readFile(new URL(`../../../../../scripts/${file}`, import.meta.url), 'utf8'))
+  await copyFile(new URL('../../../../../scripts/ci-unit-files.mjs', import.meta.url),
+    join(origin, 'scripts/ci-unit-files.mjs'))
+  const suiteFiles = ['ci-affected-run.mjs', 'ci-files.mjs', 'ci-suite.sh',
+    'ci-test-results.mjs', 'ci-node-test-reporter.mjs', 'ci-typecheck-cache.mjs']
+  for (const file of suiteFiles) {
+    await copyFile(new URL(`../../../../../scripts/${file}`, import.meta.url), join(origin, 'scripts', file))
   }
   await writeFile(join(origin, 'scripts/test-command.mjs'),
     "import { spawnSync } from 'node:child_process'; const [, command, ...args] = process.argv.slice(2);"
@@ -54,12 +68,18 @@ async function computer(options: { github?: boolean; suiteExit?: number; pause?:
     'apps/web/src/first.test.tsx', 'apps/web/src/second.test.tsx']
   for (const file of unitFiles) await writeFile(join(origin, file), '')
   if (options.selector) {
-    await writeFile(join(origin, 'scripts/ci-affected.mjs'),
-      await readFile(new URL('../../../../../scripts/ci-affected.mjs', import.meta.url), 'utf8'))
+    await copyFile(new URL('../../../../../scripts/ci-affected.mjs', import.meta.url),
+      join(origin, 'scripts/ci-affected.mjs'))
+    await mkdir(join(origin, 'packages/contracts/src'), { recursive: true })
+    await copyFile(new URL('../../../../../packages/contracts/src/ciImportGraph.mjs', import.meta.url),
+      join(origin, 'packages/contracts/src/ciImportGraph.mjs'))
     await mkdir(join(origin, 'apps/api/src'), { recursive: true })
     await writeFile(join(origin, 'apps/api/src/feature.ts'), 'export const value = 1')
     await writeFile(join(origin, unitFiles[0]!), "import '../src/feature.js'")
     await writeFile(join(origin, 'apps/api/test/a.integration.test.ts'), "import '../src/feature.js'")
+    for (let index = 0; index < (options.affectedUnitTests ?? 0); index++) {
+      await writeFile(join(origin, `apps/api/test/many-${index}.test.ts`), "import '../src/feature.js'")
+    }
   }
   await writeFile(join(origin, 'scripts/unit-durations.json'), JSON.stringify(Object.fromEntries(
     unitFiles.map((file, index) => [file, 100 + index * 10]))))
@@ -87,13 +107,19 @@ async function computer(options: { github?: boolean; suiteExit?: number; pause?:
     if (output) fs.writeFileSync(output.slice("--outputFile.json=".length), JSON.stringify({ testResults:
       args.filter(arg => /\\.test\\.tsx?$/.test(arg)).map(file => ({ name: path.resolve(args[1] === "--dir" ? args[2] : ".", file), status: "passed", startTime: 1, endTime: 6,
       assertionResults: [{ fullName: path.basename(file) + " works", status: "passed", duration: 4 }] })) }));' "$@"\n`
-  await writeFile(join(bin, 'corepack'), `#!/bin/bash\necho "corepack $*"\n${integration}${unitReport}`
+  await writeFile(join(bin, 'corepack'), '#!/bin/bash\necho "corepack $*"\n'
+    + 'echo "CI shard ceiling $FOREMAN_CODE_CI_INTEGRATION_SHARDS"\n'
+    + 'echo "CI budget $FOREMAN_CODE_CI_CPU_COUNT $FOREMAN_CODE_CI_MEMORY_BYTES $FOREMAN_CODE_VERIFICATION_UNIT_WORKERS"\n'
+    + 'echo "CI database $FOREMAN_CODE_CI_DATABASE_CPUS $FOREMAN_CODE_CI_DATABASE_MEMORY_BYTES"\n'
+    + `${integration}${unitReport}`
+    + (options.inspectSource ? 'if [ "$2" = typecheck ]; then node program.mjs; fi\n' : '')
     + `if [ "$2" = db:up ]; then code=${options.databaseExit ?? 0};`
     + ' if [ "$code" = 0 ]; then touch "$TMPDIR/database-ready"; fi; exit "$code"; fi\n'
     + 'if [ "$2" = test ] || [ "$2" = test:integration ]'
     + ' || { [ "$2" = --dir ] && [ "$3" = apps/api ] && [ "$5" = vitest ]; }; then\n'
     + '  [ -f "$TMPDIR/database-ready" ] || exit 11\nfi\n'
     + 'if [ "$*" = "pnpm --filter @foreman-code/contracts build" ]; then exit 0; fi\n'
+    + (options.watchdogReason ? `if [ -n "\${CI_WATCHDOG_MESSAGE_FILE:-}" ]; then printf '%s' '${JSON.stringify({ message: options.watchdogReason })}' > "$CI_WATCHDOG_MESSAGE_FILE"; echo '[ci-watchdog] ${options.watchdogReason}'; fi\n` : '')
     + 'if [ "$2" != install ] && [ "$2" != db:up ]; then '
     + `${options.pause ? 'read -r pauseInput; ' : ''}exit ${options.suiteExit ?? 0}; fi\n`)
   await chmod(join(bin, 'corepack'), 0o755)
@@ -104,10 +130,11 @@ async function computer(options: { github?: boolean; suiteExit?: number; pause?:
   const unitStarted = new Promise<void>(resolve => { notifyUnitStarted = resolve })
   const units = new Map<string, ReturnType<typeof spawn>>()
   const system = systemHostCiPorts()
-  const ports: HostCiPorts = { ...system, cpus: 8, memoryBytes: 16 * 2 ** 30,
+  const ports: HostCiPorts = { ...system, cpus: options.cpuCount ?? 8, memoryBytes: 16 * 2 ** 30,
+    availableMemoryBytes: () => 16 * 2 ** 30,
     run: async (file, args, runOptions = {}) => {
       if (file === 'gh') return { code: options.github === false ? 1 : 0, stdout: '', stderr: '' }
-      if (file === 'git' && args.includes('clone')) {
+      if (file === 'git' && args.some(value => value.startsWith('https://github.com/'))) {
         return system.run('git', args.map(value => value.startsWith('https://github.com/') ? origin : value), runOptions)
       }
       if (file === 'systemd-run') {
@@ -145,6 +172,55 @@ async function computer(options: { github?: boolean; suiteExit?: number; pause?:
 }
 
 describe('host CI runner', () => {
+  it.each([false, true])('honors saved build allowances for integration starts with gate=%s', async gate => {
+    const f = await computer({ cpuCount: 16, hostSlots: true })
+    const runId = randomUUID()
+    await f.runner.handle({ operation: 'start', runId, repository: 'example/project', commit: f.commit,
+      suite: 'integration', scope: 'full', buildAllowancePercent: 50,
+      ...(gate ? { gate: true, integrationShards: 32, files: ['apps/api/test/a.integration.test.ts'] } : {}) })
+    const done = await f.settle(runId)
+    expect(done.run.state).toBe('passed')
+    const databaseCpus = gate ? 1 : 2
+    const suiteMemoryGiB = 7 - databaseCpus
+    expect(done.text).toContain(`CI database ${databaseCpus} ${databaseCpus * 2 ** 30}`)
+    expect(done.text).toContain(`CI budget ${8 - databaseCpus} ${suiteMemoryGiB * 2 ** 30} ${suiteMemoryGiB}`)
+    if (gate) expect(done.text).toContain('CI shard ceiling 4')
+  })
+
+  it('sizes the isolated integration database for the shards that share it', async () => {
+    const f = await computer({ cpuCount: 16, hostSlots: true })
+    const runId = randomUUID()
+    await f.runner.handle({ operation: 'start', runId, repository: 'example/project', commit: f.commit,
+      suite: 'integration', scope: 'full', gate: true, integrationShards: 16, files: ['apps/api/test/a.integration.test.ts'] })
+    const done = await f.settle(runId)
+    expect(done.run.state).toBe('passed')
+    // Eight memory-limited shards share the database's unchanged per-shard CPU and memory limits.
+    expect(done.text).toContain(`CI database 2 ${2 * 2 ** 30}`)
+    expect(done.text).toContain('CI shard ceiling 8')
+    expect(done.text).toContain('CI budget 14 ')
+  })
+
+  it('keeps the exclusive database fallback within the saved build allowance', async () => {
+    const f = await computer({ cpuCount: 16 })
+    const runId = randomUUID()
+    await f.runner.handle({ operation: 'start', runId, repository: 'example/project', commit: f.commit,
+      suite: 'integration', scope: 'full', buildAllowancePercent: 50 })
+    const done = await f.settle(runId)
+    expect(done.run.state).toBe('passed')
+    expect(done.text).toContain(`CI budget 8 ${7 * 2 ** 30} 7`)
+  })
+
+  it('passes the admitted slot share to integration sizing and Vitest workers', async () => {
+    const f = await computer({ cpuCount: 16, hostSlots: true })
+    const runId = randomUUID()
+    await f.runner.handle({ operation: 'start', runId, repository: 'example/project', commit: f.commit,
+      suite: 'integration', scope: 'full' })
+    const done = await f.settle(runId)
+    expect(done.run.state).toBe('passed')
+    expect(done.text).toContain(`CI budget 6 ${Math.floor(16 * 2 ** 30 * 0.9 / 2) - 2 * 2 ** 30} 5`)
+    expect(done.text).toContain('corepack pnpm db:down')
+  })
+
   it('selects changes since an explicit base even when the resolved commit is the default branch head', async () => {
     const f = await computer({ selector: true, change: 'source' })
     f.git('update-ref', 'refs/heads/main', f.commit)
@@ -193,6 +269,18 @@ describe('host CI runner', () => {
     expect(done.text).not.toContain('second.test.ts')
     expect(done.text).not.toContain('apps/web')
   })
+
+  it('preserves affected selections with more than 2000 files', async () => {
+    const f = await computer({ selector: true, change: 'source', affectedUnitTests: 2001 })
+    const runId = randomUUID()
+    await f.runner.handle({ operation: 'start', runId, repository: 'example/project', commit: f.commit,
+      suite: 'unit', part: 'unit-api' })
+    const done = await f.settle(runId)
+    expect(done.run).toMatchObject({ state: 'passed' })
+    expect(done.run.message).toBe('Selected 2002 affected files for unit-api.')
+    expect(done.text).toContain('many-2000.test.ts')
+    expect(done.text).not.toContain('Running full suite:')
+  }, 30_000)
 
   it.each(['docs', 'source'] as const)('passes an empty affected unit shard after a %s change without running the suite', async change => {
     const f = await computer({ selector: true, change })
@@ -245,7 +333,7 @@ describe('host CI runner', () => {
   })
   it.each([
     ['unit', undefined, true], ['unit', 'unit-api', true], ['integration', undefined, true],
-    ['unit', 'unit-web', false], ['unit', 'unit-web-heavy', false], ['unit', 'unit-other', false],
+    ['unit', 'unit-web', false], ['unit', 'unit-web-heavy', false], ['unit', 'unit-other', true],
     ['lint', 'lint-api', false], ['typecheck', 'typecheck-api', false], ['build', 'build-api', false],
   ])('prepares the database for %s/%s only when needed', async (suite, part, databaseRequired) => {
     const f = await computer()
@@ -254,6 +342,11 @@ describe('host CI runner', () => {
       suite, ...(part ? { part } : {}) })
     const done = await f.settle(runId)
     expect(done.run.state).toBe('passed')
+    if (part === 'unit-other') {
+      expect(done.text).toContain('corepack pnpm --filter @foreman-code/contracts test')
+      expect(done.text).toContain('--test-reporter=spec')
+      expect(done.text).toContain('scripts/**/*.test.mjs')
+    }
     const database = done.text.indexOf('corepack pnpm db:up')
     if (databaseRequired) {
       expect(database).toBeGreaterThan(done.text.indexOf('corepack pnpm install --frozen-lockfile'))
@@ -269,7 +362,7 @@ describe('host CI runner', () => {
     await f.runner.handle({ operation: 'start', runId, repository: 'example/project', commit: f.commit,
       suite: 'unit', part: 'unit-api' })
     const done = await f.settle(runId)
-    expect(done.run).toMatchObject({ state: 'failed', exitCode: 9, step: 'unit-api' })
+    expect(done.run).toMatchObject({ state: 'failed', exitCode: 9, step: 'prepare' })
     expect(done.text).toContain('corepack pnpm db:up')
     expect(done.text).not.toContain('corepack pnpm test')
   })
@@ -343,7 +436,25 @@ describe('host CI runner', () => {
     expect(done.text).not.toContain('test/second.test.ts')
   })
 
-  it('fetches the commit, installs and runs the suite in its own worktree, then frees the worktree', async () => {
+  it('executes the accepted commit after the original checkout changes', async () => {
+    const f = await computer({ inspectSource: true })
+    const origin = join(f.root, 'origin')
+    await writeFile(join(origin, 'dependency.mjs'), 'export const value = 2\n')
+    await writeFile(join(origin, 'program.mjs'),
+      "import {value} from './dependency.mjs'; process.stdout.write(JSON.stringify({value}))\n")
+    const runId = randomUUID()
+    await f.runner.handle({ operation: 'start', runId, repository: 'example/project',
+      commit: f.commit, suite: 'typecheck', scope: 'full' })
+    const done = await f.settle(runId)
+    expect(done.run).toMatchObject({ state: 'passed', exitCode: 0 })
+    expect(done.text).toContain('{"value":1}')
+    expect(done.text).not.toContain('{"value":2}')
+    expect(f.git('rev-parse', 'HEAD')).toBe(f.commit)
+    const current = execFileSync(process.execPath, ['program.mjs'], { cwd: origin, encoding: 'utf8' })
+    expect(JSON.parse(current)).toEqual({ value: 2 })
+  })
+
+  it('fetches the commit, installs and runs the suite in its own checkout, then frees its slot', async () => {
     const f = await computer()
     const runId = randomUUID()
     const started = await f.runner.handle({ operation: 'start', runId, repository: 'octo/site', commit: f.commit, suite: 'unit' })
@@ -352,7 +463,7 @@ describe('host CI runner', () => {
     expect(done.run).toMatchObject({ state: 'passed', exitCode: 0, step: 'unit' })
     expect(done.text).toContain('corepack pnpm install --frozen-lockfile')
     expect(done.text).toContain('corepack pnpm test')
-    expect(existsSync(join(f.root, 'ci/runs', runId, 'src'))).toBe(false)
+    expect(await f.runner.status()).toMatchObject({ slotsUsed: 0 })
     // A retried start returns the same run instead of starting it again.
     expect(await f.runner.handle({ operation: 'start', runId, repository: 'octo/site', commit: f.commit, suite: 'unit' }))
       .toMatchObject({ run: { runId, state: 'passed' } })
@@ -371,7 +482,9 @@ describe('host CI runner', () => {
     for (const index of [0, 1]) {
       const runId = randomUUID()
       await f.runner.handle({ operation: 'start', runId, repository: 'octo/site', commit: f.commit, suite: 'integration',
-        partition: { index, count: 2 } })
+        partition: { index, count: 2 }, durations: {
+          'apps/api/test/a.integration.test.ts': 400, 'apps/api/test/b.integration.test.ts': 300,
+          'apps/api/test/c.integration.test.ts': 200, 'apps/api/test/d.integration.test.ts': 100 } })
       const done = await f.settle(runId)
       expect(done.run.state).toBe('passed')
       expect(done.text).toContain('corepack pnpm db:up')
@@ -384,9 +497,9 @@ describe('host CI runner', () => {
   it('splits and times integration files by Main\'s learned durations and reports the durations it measured', async () => {
     const measured = { 'apps/api/test/d.integration.test.ts': 870 }
     const f = await computer({ measured })
-    // Learned: d became the slowest file and a the fastest; c keeps its committed duration.
+    // The database snapshot makes d the slowest file and a the fastest.
     const durations = { 'apps/api/test/a.integration.test.ts': 50, 'apps/api/test/b.integration.test.ts': 300,
-      'apps/api/test/d.integration.test.ts': 900 }
+      'apps/api/test/c.integration.test.ts': 200, 'apps/api/test/d.integration.test.ts': 900 }
     const slices: string[][] = []
     for (const index of [0, 1]) {
       const runId = randomUUID()
@@ -398,7 +511,7 @@ describe('host CI runner', () => {
       const command = done.text.split('\n').find(line => line.startsWith('corepack pnpm test:integration'))!
       slices.push([...command.matchAll(/apps\/api\/test\/(\w)\.integration/g)].map(match => match[1]!).sort())
       const expected = JSON.parse(done.text.split('\n').find(line => line.startsWith('expected '))!.slice('expected '.length))
-      expect(expected).toEqual({ ...durations, 'apps/api/test/c.integration.test.ts': 200 })
+      expect(expected).toEqual(durations)
       expect(await f.runner.handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 1, durations: true }))
         .toMatchObject({ operation: 'read', durations: measured })
     }
@@ -434,6 +547,22 @@ describe('host CI runner', () => {
     await f.unitStarted
     await Promise.all([...f.units.values()].map(stopUnit))
     expect((await f.settle(runId)).run).toMatchObject({ state: 'lost', exitCode: null })
-    expect(await readFile(join(f.root, 'ci/runs', runId, 'meta.json'), 'utf8')).toContain('"cleaned":true')
+    expect(await f.runner.handle({ operation: 'status' }))
+      .toMatchObject({ slotsUsed: 0, runs: [expect.objectContaining({ runId, state: 'lost' })] })
   })
+})
+
+
+it('returns the saved watchdog reason with the failed build-computer ticket and logs', async () => {
+  const reason = 'CI hang watchdog: no test progress for 60000 ms; running: loop.test.ts > planner never returns'
+  const f = await computer({ suiteExit: 1, watchdogReason: reason })
+  const runId = randomUUID()
+  await f.runner.handle({ operation: 'start', runId, repository: 'example/project', commit: f.commit,
+    suite: 'typecheck', expectedDurationMs: 150_000 })
+  const result = await f.settle(runId)
+  expect(result.run).toMatchObject({ state: 'failed', exitCode: 1, message: reason })
+  expect(result.text).toContain(reason)
+  const reopened = new HostCiRunner(join(f.root, 'ci'))
+  expect(await reopened.handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 65_536 }))
+    .toMatchObject({ run: { state: 'failed', message: reason } })
 })

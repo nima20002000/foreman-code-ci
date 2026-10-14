@@ -26,9 +26,9 @@ import { CI_SERVER_NODE_ID, ciServerFlowNode, ciServerSummary } from '../../work
 import '@xyflow/react/dist/style.css'
 
 export type OpenAgentPanel = { nodeId: string; panel: AgentPanel }
-export type AgentPanels = { chat: ReactNode; settings: ReactNode; info: ReactNode }
+export type AgentPanels = { chatHasHeader?: boolean; chat: ReactNode; settings: ReactNode; info: ReactNode }
 /** A selected Run supplies its pinned identity, including nodes no longer present in the draft. */
-export type PinnedPanelNode = {kind?:'agent';agentId:string;name:string}|{kind:'job';jobDefinitionId:string;jobDefinitionRevision:number;jobDefinitionVersionId:string;name:string;workflowExecution?:JobWorkflowAdmissionReference}
+export type PinnedPanelNode = {kind?:'agent';agentId:string;name:string;role?:string;runLabel?:string}|{kind:'job';jobDefinitionId:string;jobDefinitionRevision:number;jobDefinitionVersionId:string;name:string;workflowExecution?:JobWorkflowAdmissionReference}
 export type AgentPanelRenderer = (nodeId: string, pinned?: PinnedPanelNode) => AgentPanels
 type Canvas = {
   draftKey: string
@@ -51,7 +51,7 @@ const DraftAgent = memo(function DraftAgent({ id, data, selected, width, height 
   const runSelected = Boolean(useWorkflowBoard()?.run)
   const run = { label: 'Draft', state: 'idle' as const }
   const facts = agentNodeFacts(data.agent)
-  const meta = data.intervalSeconds ? [{ label: 'Checks', value: intervalLabel(data.intervalSeconds) }, ...facts.meta].slice(0, 2) : facts.meta
+  const meta = data.intervalSeconds ? [{ label: 'Loop', value: intervalLabel(data.intervalSeconds) }, ...facts.meta].slice(0, 2) : facts.meta
   const core = useRef<HTMLButtonElement>(null)
   const panel = open?.nodeId === id ? open.panel : undefined
   const select = () => inspect(() => { presentation.getState().setFocusedNodeId(id); presentation.getState().setFocusedEdgeId(undefined) })
@@ -238,7 +238,7 @@ export const DraftCanvas = forwardRef<DraftCanvasHandle, {
         isValidConnection={(connection) => connection.source !== connection.target}
         onConnectStart={() => setConnecting(true)} onConnectEnd={() => setConnecting(false)}
         onClickConnectStart={() => setConnecting(true)} onClickConnectEnd={() => setConnecting(false)}
-        onNodeClick={(_, node) => { if (node.id !== CI_SERVER_NODE_ID) selectNode(node.id) }}
+        onNodeClick={(_, node) => { if (node.type !== 'ciServer') selectNode(node.id) }}
         onPaneClick={() => inspect(() => { setOpen(undefined); presentation.getState().setFocusedNodeId(undefined); presentation.getState().setFocusedEdgeId(undefined) })}
         onConnect={(connection) => {
           connectNodes(connection.source, connection.target)

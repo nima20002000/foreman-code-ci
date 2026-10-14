@@ -10,7 +10,7 @@ export const RUN_CI_JOBS_SQL = `select c.record,c.test_results->'summary' as tes
   from harness_executions e join runs r on r.id=e.run_id and r.workspace_id=$1
   join ci_runs c on c.workspace_id=r.workspace_id and c.record#>>'{initiator,executionId}'=e.id
   left join workflow_versions v on v.id=r.workflow_version_id
-  where e.run_id=$2 order by c.created_at desc,c.id desc limit ${CI_RUN_JOBS_LIMIT + 1}`
+  where e.run_id=$2 and ($3::text is null or e.id=$3) order by c.created_at desc,c.id desc limit ${CI_RUN_JOBS_LIMIT + 1}`
 
 export interface RunCiJobRow { record: unknown; tests: unknown; execution_id: string; agent_id: string; node_id: string; node_name: string }
 
@@ -30,8 +30,8 @@ export function runCiJob(row: RunCiJobRow): CiRunJob {
     tests: tests.success ? tests.data : null }
 }
 
-/** Stored results limited to tests with the given statuses. Files keep their own status; a file whose tests were
- * left out by the bounds is kept when its own status matches. The summary still counts every test. */
+/** Stored results limited to tests with the given statuses. A file is also kept when its own status matches,
+ * even without matching assertions. The summary still counts every test. */
 export function storedCiTestResults(stored: unknown, statuses?: readonly CiTestStatus[]): CiTestResults | null {
   const parsed = stored ? CiTestResultsSchema.safeParse(stored) : null
   if (!parsed?.success) return null
@@ -39,7 +39,7 @@ export function storedCiTestResults(stored: unknown, statuses?: readonly CiTestS
   const wanted = new Set(statuses)
   const files = parsed.data.files.flatMap(file => {
     const tests = file.tests.filter(test => wanted.has(test.status))
-    return tests.length || (!file.tests.length && wanted.has(file.status)) ? [{ ...file, tests }] : []
+    return tests.length || wanted.has(file.status) ? [{ ...file, tests }] : []
   })
   return { ...parsed.data, files }
 }

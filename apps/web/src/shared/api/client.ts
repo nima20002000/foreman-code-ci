@@ -1,10 +1,10 @@
+import { installationHeaders, reloadChangedInstallation } from './sessionBoundary'
 import {
   CurrentWorkspaceDetailsSchema, CurrentGetWorkflowResponseSchema, CurrentRunDetailsSchema, CurrentManagedWorkflowCommandResultSchema, CurrentManagedWorkflowPageSchema, RunStartV3InputSchema, RunStartV3ResultSchema, CurrentWorkflowCreateInputSchema, 
   type CurrentWorkspaceDetails, type CurrentGetWorkflowResponse, type CurrentRunDetails, type CurrentWorkflowCreateInput,
 } from '@foreman-code/contracts/wave25'
 import {
   ApiErrorResponseSchema,
-  GetHarnessDefaultsResponseSchema,
   GetInteractionResponseSchema,
   ListInteractionsRequestSchema,
   ListInteractionsResponseSchema,
@@ -26,10 +26,7 @@ import {
   CancelOperatorTurnResponseSchema,
   CancelOperatorTurnRequestSchema,
   RespondOperatorInteractionRequestSchema,
-  SaveHarnessDefaultsRequestSchema,
-  SaveHarnessDefaultsResponseSchema,
   WorkspaceDetailsRequestSchema,
-  type GetHarnessDefaultsResponse,
   type GetRunRequest,
   type GetWorkflowRequest,
   type ListAgentsRequest,
@@ -37,8 +34,6 @@ import {
   type ListVisibleResourcesRequest,
   type ListVisibleResourcesResponse,
   type OperatorConversationState,
-  type SaveHarnessDefaultsRequest,
-  type SaveHarnessDefaultsResponse,
   type WorkspaceDetailsRequest,
 } from '@foreman-code/contracts'
 import { z } from 'zod'
@@ -122,6 +117,16 @@ export class ApiError extends Error {
   }
 }
 
+function isGatewayStatus(status: number): boolean {
+  return status === 502 || status === 503 || status === 504
+}
+
+/** The API is restarting or unreachable: no response, or a gateway status without an API error body. */
+export function isApiRestartError(error: unknown): boolean {
+  return ApiError.is(error)
+    && (error.code === 'NETWORK_ERROR' || (error.code === 'HTTP_ERROR' && isGatewayStatus(error.status)))
+}
+
 type FetchLike = typeof fetch
 
 export interface ApiClientOptions {
@@ -168,12 +173,19 @@ function resolveRequestUrl(baseUrl: string, path: string): string {
 export class ApiClient {
   private readonly baseUrl: string
   private readonly fetchImpl?: FetchLike
+  private runtimeCompatibility?: () => boolean
 
   constructor(options: ApiClientOptions = {}) {
     this.baseUrl = options.baseUrl ?? ''
     // Do not bind the global fetch at module construction time: the unit-test
     // interceptor starts during the setup hook after modules load.
     this.fetchImpl = options.fetch
+  }
+
+  /** Query remains the owner of build facts; the client reads them at the request boundary. */
+  bindRuntimeCompatibility(check: () => boolean): () => void {
+    this.runtimeCompatibility = check
+    return () => { if (this.runtimeCompatibility === check) this.runtimeCompatibility = undefined }
   }
 
   async request<T>(
@@ -206,9 +218,14 @@ export class ApiClient {
     options: RequestOptions & { method?: string; body?: unknown }): Promise<T> {
     const { body, method = 'GET', headers, signal, ...init } = options
     const generation = sessionGeneration()
+    const identityRead = path === '/api/runtime/identity' || path === '/api/runtime/build-identity/v1' || path === '/api/local-human'
+    if (!identityRead && this.runtimeCompatibility?.() === false) {
+      throw new ApiError({ code: 'APP_UPDATED', message: 'The app has updated. Your pending changes are kept until the app can reload.' }, 409)
+    }
     if (sessionIsSwitching()) throw new SessionChangedError()
     const requestSignal = signal ? AbortSignal.any([signal, sessionSignal()]) : sessionSignal()
-    const requestHeaders = new Headers(headers)
+    const bootstrap = path === '/api/runtime/identity' || path === '/api/local-human'
+    const requestHeaders = bootstrap ? new Headers(headers) : installationHeaders(headers)
     requestHeaders.set('Accept', 'application/json')
     if (body !== undefined) requestHeaders.set('Content-Type', 'application/json')
 
@@ -228,7 +245,7 @@ export class ApiClient {
       if (isAbortError(error)) throw error
       throw new ApiError({
         code: 'NETWORK_ERROR',
-        message: 'The API request could not be completed.',
+        message: 'Updating — reconnecting…',
         details: { cause: error instanceof Error ? error.message : String(error) },
       })
     }
@@ -247,11 +264,17 @@ export class ApiClient {
     requestSignal.throwIfAborted()
     if (!response.ok) {
       const parsedError = ApiErrorResponseSchema.safeParse(payload)
-      if (parsedError.success) throw new ApiError(parsedError.data.error, response.status)
+      if (parsedError.success) {
+        reloadChangedInstallation(parsedError.data.error.code)
+        // The API answered with its own error: a domain failure its owner shows, never a restart.
+        throw new ApiError(parsedError.data.error, response.status)
+      }
       throw new ApiError(
         {
           code: 'HTTP_ERROR',
-          message: `The API request failed with status ${response.status}.`,
+          // A gateway status without an API error body means the API is restarting or unreachable.
+          message: isGatewayStatus(response.status)
+            ? 'Updating — reconnecting…' : `The API request failed with status ${response.status}.`,
         },
         response.status,
       )
@@ -471,7 +494,7 @@ export class ApiClient {
 
   respondToInteraction(input: z.input<typeof RespondToInteractionRequestSchema>, options?: RequestOptions) {
     const request = parseRequest(RespondToInteractionRequestSchema, input)
-    return this.request(`/api/interactions/${toPath(request.interactionId)}/respond`, RespondToInteractionResponseSchema, {
+    return this.request(`/api/management/interactions/${toPath(request.interactionId)}/respond`, RespondToInteractionResponseSchema, {
       ...options, method: 'POST', body: request,
     })
   }
@@ -487,23 +510,6 @@ export class ApiClient {
 
   getWorkspace(input: WorkspaceDetailsRequest, options?: RequestOptions) {
     return this.getWorkspaceDetails(input, options)
-  }
-
-  getHarnessDefaults(options?: RequestOptions) {
-    return this.request<GetHarnessDefaultsResponse>(
-      '/api/settings/harnesses',
-      GetHarnessDefaultsResponseSchema,
-      options,
-    )
-  }
-
-  saveHarnessDefaults(input: SaveHarnessDefaultsRequest, options?: RequestOptions) {
-    const request = parseRequest(SaveHarnessDefaultsRequestSchema, input)
-    return this.request<SaveHarnessDefaultsResponse>(
-      '/api/settings/harnesses',
-      SaveHarnessDefaultsResponseSchema,
-      { ...options, method: 'PUT', body: request },
-    )
   }
 
   listAgents(input: ListAgentsRequest, options?: RequestOptions) {
@@ -575,8 +581,6 @@ export const apiClient = new ApiClient()
 
 export const getWorkspaceDetails = apiClient.getWorkspaceDetails.bind(apiClient)
 export const getWorkspace = apiClient.getWorkspace.bind(apiClient)
-export const getHarnessDefaults = apiClient.getHarnessDefaults.bind(apiClient)
-export const saveHarnessDefaults = apiClient.saveHarnessDefaults.bind(apiClient)
 export const listAgents = apiClient.listAgents.bind(apiClient)
 export const getWorkflow = apiClient.getWorkflow.bind(apiClient)
 export const getRun = apiClient.getRun.bind(apiClient)

@@ -4,7 +4,7 @@ import { ClaudeFullAccessConfigurationSchema, ClaudeHarnessConfigurationSchema }
 import { RunStartV3InputSchema } from '../wave25/startRequest.js'
 import { InteractionActivityProjectionSchema } from '../interaction-activity.js'
 import { z } from "zod";
-import { WorkflowDefinitionV3Schema, WorkflowVersionV3Schema, WorkflowRunV3Schema } from "../wave25/workflowSchemas.js";
+import { WorkflowDefinitionV3Schema} from "../wave25/workflowSchemas.js";
 import { AgentActiveTimeoutMsSchema, CurrentWorkflowNodeSchema, CurrentWorkflowRelationshipSchema } from "../wave25/workflowShape.js";
 
 export * from "./extensions.js";
@@ -27,7 +27,6 @@ import {
   HarnessQualificationSchema,
   HarnessConfigurationSchema,
   SupportedHarnessConfigurationSchema,
-  GetRunResponseSchema,
   ExecutionLocationSchema,
   RunActivitySchema,
   ReviewStatusSchema,
@@ -45,7 +44,7 @@ import {
 } from "../index.js";
 
 export * from './principals.js'
-import { ManagementActionSchema, ManagementGrantSchema, type ManagementAction } from './principals.js'
+import { ManagementActionSchema, ManagementGrantSchema } from './principals.js'
 
 /** The implicit local human's product permissions; contains no credentials. */
 export const LocalHumanAccessSchema = z.object({
@@ -55,7 +54,7 @@ export const LocalHumanAccessSchema = z.object({
   }).strict(),
 }).strict();
 
-export const ManagementHarnessConfigurationSchema = z.discriminatedUnion("harness", [
+const ManagementHarnessConfigurationSchema = z.discriminatedUnion("harness", [
   CodexHarnessConfigurationSchema,
   ClaudeHarnessConfigurationSchema,
 ]);
@@ -66,7 +65,7 @@ export const ManagementHarnessDefaultsSchema = z.object({
 
 import { CommandIdSchema, ExpectedRevisionSchema } from './commands.js';
 export { CommandIdSchema, ExpectedRevisionSchema } from './commands.js';
-export const ManagementPageInputSchema = z
+const ManagementPageInputSchema = z
   .object({
     cursor: z.string().trim().min(1).optional(),
     limit: z.number().int().min(1).max(100).default(50),
@@ -122,7 +121,7 @@ const RevisionMutationFields = { ...MutationFields, expectedRevision: ExpectedRe
 export const WorkspaceListInputSchema = ManagementPageInputSchema;
 export const WorkspaceGetInputSchema = WorkspaceScopeSchema;
 export const WorkspaceCreateInputSchema = z.object({
-  parentPath: z.string().trim().min(1).max(4096).refine((value) => !value.includes("\0"), "Invalid folder path").optional().describe("Existing parent folder on Local Runner. Pass workspace_defaults_get.value.parentPath to use the configured default; creates a new child named after the workspace. Omit only to leave execution location unconfigured."),
+  parentPath: z.string().min(1).max(4096).refine((value) => !value.includes("\0"), "Invalid folder path").optional().describe("Existing absolute parent folder on Local Runner; path whitespace is preserved. Pass workspace_defaults_get.value.parentPath to use the configured default; creates a new child named after the workspace. Omit only to leave execution location unconfigured."),
   ...MutationFields,
   name: z.string().trim().min(1).max(200).optional().describe("Omit to use the configured suggested name, adding (1), (2), etc. when a workspace name or project folder is already taken. An explicit name is used exactly and existing folders are rejected."),
   description: z.string().max(10_000).optional(),
@@ -152,7 +151,7 @@ export type WorkspaceBatchArchiveInput = z.infer<typeof WorkspaceBatchArchiveInp
 export const WorkspaceBatchArchiveResultSchema = z.object({
   value: z.object({ workspaceIds: z.array(IdSchema) }).strict(), replayed: z.boolean(),
 }).strict();
-export const WorkspaceLocationAccessModeSchema = z.enum(["read-only", "read-write"]);
+const WorkspaceLocationAccessModeSchema = z.enum(["read-only", "read-write"]);
 export type WorkspaceLocationAccessMode = z.infer<typeof WorkspaceLocationAccessModeSchema>;
 export const WorkspaceLocationValidateInputSchema = z.object({
   ...WorkspaceScopeSchema.shape,
@@ -232,11 +231,9 @@ export const WorkflowOrderSchema = z.object({
 export const WorkflowReorderResultSchema = z.object({
   value: WorkflowOrderSchema, replayed: z.boolean(),
 }).strict();
-export type WorkflowReorderResult = z.infer<typeof WorkflowReorderResultSchema>;
 export const WorkflowBatchArchiveResultSchema = z.object({
   value: z.object({ workflowIds: z.array(IdSchema) }).strict(), replayed: z.boolean(),
 }).strict();
-export type WorkflowCreateInput = z.infer<typeof WorkflowCreateInputSchema>;
 export type WorkflowUpdateInput = z.infer<typeof WorkflowUpdateInputSchema>;
 export type WorkflowArchiveInput = z.infer<typeof WorkflowArchiveInputSchema>;
 
@@ -399,10 +396,9 @@ export const GraphDraftOperationSchema = z.discriminatedUnion("type", [
   EdgeDisconnectOperationSchema,
   ExecutionLimitsOperationSchema,
 ]);
-export type GraphDraftOperation = z.infer<typeof GraphDraftOperationSchema>;
 
 export const StagedAgentSchema = z.object({ agent: AgentSchema, baseRevision: ExpectedRevisionSchema.nullable() }).strict();
-export const GraphDraftRecordFields = {
+const GraphDraftRecordFields = {
   id: IdSchema,
   workspaceId: IdSchema,
   workflowId: IdSchema,
@@ -417,58 +413,17 @@ export const GraphDraftRecordFields = {
   updatedAt: TimestampSchema,
 };
 export const GraphDraftSchema = z.object({ ...GraphDraftRecordFields, graph: WorkflowDefinitionV3Schema }).strict();
-export type GraphDraft = z.infer<typeof GraphDraftSchema>;
-export const GraphDraftEffectSchema = z.discriminatedUnion("code", [
-  z.object({
-    code: z.literal("ENTRY_NODE_CHANGED"),
-    previousEntryNodeId: IdSchema,
-    nextEntryNodeId: IdSchema.nullable(),
-  }).strict(),
-  z.object({
-    code: z.literal("SHARED_AGENT_CHANGED"),
-    agentId: IdSchema,
-    workflowIds: z.array(IdSchema).min(2),
-  }).strict(),
-]);
-export type GraphDraftEffect = z.infer<typeof GraphDraftEffectSchema>;
-export const GraphDraftApplyResultSchema = z.object({
-  draft: GraphDraftSchema,
-  effects: z.array(GraphDraftEffectSchema),
-  previousDraft: GraphDraftSchema.optional(),
-}).strict();
-export const GraphDraftCommandResultSchema = z.object({ value: GraphDraftApplyResultSchema, replayed: z.boolean() }).strict();
 
-export const GraphDraftOpenInputSchema = WorkflowScopeSchema;
-export const GraphDraftGetInputSchema = DraftScopeSchema;
 export const GraphDraftApplyInputSchema = z.object({
   ...DraftScopeSchema.shape,
   ...RevisionMutationFields,
   operations: z.array(GraphDraftOperationSchema).min(1).max(100),
 }).strict();
-export const GraphValidateInputSchema = DraftScopeSchema;
-export const GraphSaveInputSchema = z.object({ ...DraftScopeSchema.shape, ...RevisionMutationFields }).strict();
-export const GraphDraftDiscardInputSchema = z.object({ ...DraftScopeSchema.shape, ...RevisionMutationFields }).strict();
-export const GraphDraftLayoutInputSchema = z.object({
-  ...DraftScopeSchema.shape, ...MutationFields,
-  expectedLayoutRevision: ExpectedRevisionSchema,
-  nodeId: IdSchema,
-  position: NodeMoveOperationSchema.shape.position,
-}).strict();
-export const GraphDraftLayoutResultSchema = z.object({
-  value: z.object({ draftId: IdSchema, layoutRevision: ExpectedRevisionSchema,
-    nodeId: IdSchema, position: NodeMoveOperationSchema.shape.position }).strict(),
-  replayed: z.boolean(),
-}).strict();
-export const GraphDraftRevertAppliedInputSchema = z.object({
-  ...DraftScopeSchema.shape, ...RevisionMutationFields, applyCommandId: IdSchema,
-}).strict();
-export const GraphDraftRevertAppliedResultSchema = z.object({
-  value: z.object({ draft: GraphDraftSchema, revertedApplyCommandId: IdSchema,
-    priorRevision: ExpectedRevisionSchema }).strict(), replayed: z.boolean(),
-}).strict();
 
 export const HarnessDefaultsUpdateInputSchema = z.object({
-  ...RevisionMutationFields,
+  ...MutationFields,
+  expectedRevision: ExpectedRevisionSchema.optional()
+    .describe('Omit for last write wins; supply to reject a stale revision.'),
   defaults: ManagementHarnessDefaultsSchema.describe('Unchanged incomplete presets may be retained. New, edited or explicitly selected Claude presets require Full access and supported app MCP connections.'),
   /** Explicitly select a preset even when its template values did not change. */
   configure: AgentHarnessSchema.array().max(3).optional(),
@@ -514,7 +469,10 @@ export const ManagedWorkflowDefaultsSchema = z.object({
   value: WorkflowDefaultsSchema, revision: ExpectedRevisionSchema, versionId: IdSchema.nullable(),
 }).strict();
 export const AgentDefaultsUpdateInputSchema = z.object({
-  ...RevisionMutationFields, value: AgentDefaultsSchema.superRefine((value, context) => {
+  ...MutationFields,
+  expectedRevision: ExpectedRevisionSchema.optional()
+    .describe('Omit for last write wins; supply to reject a stale revision.'),
+  value: AgentDefaultsSchema.superRefine((value, context) => {
     for (const role of ['orchestrator', 'coder', 'operator'] as const) {
       const result = SupportedHarnessConfigurationSchema.safeParse(value[role].harness);
       if (!result.success) for (const issue of result.error.issues) context.addIssue({
@@ -524,7 +482,10 @@ export const AgentDefaultsUpdateInputSchema = z.object({
   }),
 }).strict();
 export const WorkflowDefaultsUpdateInputSchema = z.object({
-  ...RevisionMutationFields, value: WorkflowDefaultsSchema,
+  ...MutationFields,
+  expectedRevision: ExpectedRevisionSchema.optional()
+    .describe('Omit for last write wins; supply to reject a stale revision.'),
+  value: WorkflowDefaultsSchema,
 }).strict();
 export const AgentDefaultsUpdateResultSchema = z.object({ value: ManagedAgentDefaultsSchema, replayed: z.boolean() }).strict();
 export const WorkflowDefaultsUpdateResultSchema = z.object({ value: ManagedWorkflowDefaultsSchema, replayed: z.boolean() }).strict();
@@ -585,52 +546,20 @@ export const RepeatCapabilitiesResultSchema = z.object({
     reasons: z.tuple([z.literal("NATIVE_START_NOT_READY"), z.literal("REPEAT_EDIT_INTENT_NOT_READY")]),
   }).strict(),
 }).strict();
-export type RepeatCapabilitiesResult = z.infer<typeof RepeatCapabilitiesResultSchema>;
 
 export const REPEAT_OPERATOR_TOOL_NAMES = [
   "repeat_capabilities_get", "repeat_get", "repeat_update", "repeat_run_get",
 ] as const;
 export type RepeatOperatorToolName = typeof REPEAT_OPERATOR_TOOL_NAMES[number];
 
-/** API catalog/availability must consume these global requirements without implicitly granting them. */
-export const DEVICE_PROVISIONING_OPERATOR_TOOL_NAMES = [
-  "device_pairing_install_create", "device_readiness_get", "device_readiness_check", "device_repair_plan", "device_repair_start",
-  "device_provisioning_operation_get", "device_resources_get", "device_resources_update", "device_resources_apply_now",
-  "device_runtime_approval_get", "device_runtime_approval_request", "device_runtime_approval_revoke",
-] as const;
-export type DeviceProvisioningOperatorToolName = typeof DEVICE_PROVISIONING_OPERATOR_TOOL_NAMES[number];
-export const DEVICE_PROVISIONING_OPERATOR_METADATA = [
-  { name: "device_pairing_install_create", action: "create-install-pairing", actions: ["settings:update", "devices:provision"], scope: "global", readOnly: false, humanOnly: false, detail: "Create one short-lived single-use install/pair command; pairing grants no execution approval." },
-  { name: "device_readiness_get", action: "read-readiness", actions: ["settings:read"], scope: "global", readOnly: true, humanOnly: false, detail: "Read persisted summary and full readiness without probing or repairing the computer." },
-  { name: "device_readiness_check", action: "check-readiness", actions: ["settings:update", "devices:provision"], scope: "global", readOnly: false, humanOnly: false, detail: "Schedule bounded diagnostics for the exact device generation; never remote sudo." },
-  { name: "device_repair_plan", action: "plan-repair", actions: ["settings:read"], scope: "global", readOnly: true, humanOnly: false, detail: "Read a server-generated plan for advertised enum actions; no execution." },
-  { name: "device_repair_start", action: "start-repair", actions: ["settings:update", "devices:provision"], scope: "global", readOnly: false, humanOnly: false, detail: "Start the exact approved plan; local administrator and human steps remain unavailable to MCP." },
-  { name: "device_provisioning_operation_get", action: "read-operation", actions: ["settings:read"], scope: "global", readOnly: true, humanOnly: false, detail: "Read durable operation progress for this target." },
-  { name: "device_resources_get", action: "read-resource-limits", actions: ["settings:read"], scope: "global", readOnly: true, humanOnly: false, detail: "Read measured capacity and separate desired/effective revisions." },
-  { name: "device_resources_update", action: "update-resource-limits", actions: ["settings:update"], scope: "global", readOnly: false, humanOnly: false, detail: "Save exact revision/capacity-bound limits. stop-jobs-and-apply additionally requires jobs:cancel and explicit confirmation." },
-  { name: "device_resources_apply_now", action: "stop-jobs-and-apply", actions: ["settings:update", "jobs:cancel"], scope: "global", readOnly: false, humanOnly: false, detail: "Explicitly stop current Jobs and drain owned work before applying the already saved revision." },
-  { name: "device_runtime_approval_get", action: "read-runtime-approval", actions: ["settings:read"], scope: "global", readOnly: true, humanOnly: false, detail: "Read the revocable device-wide human runtime approval." },
-  { name: "device_runtime_approval_request", action: "request-runtime-approval", actions: ["settings:update"], scope: "global", readOnly: false, humanOnly: false, detail: "Request the once-per-device browser approval. MCP cannot grant it or substitute pairing." },
-  { name: "device_runtime_approval_revoke", action: "revoke-runtime-approval", actions: ["settings:update"], scope: "global", readOnly: false, humanOnly: false, detail: "Revoke the exact approval revision and fence new work." },
-] as const satisfies readonly { name: DeviceProvisioningOperatorToolName; action: string; actions: readonly ManagementAction[];
-  scope: "global"; readOnly: boolean; humanOnly: boolean; detail: string }[];
-export const DEVICE_PROVISIONING_OPERATOR_CONDITIONAL_REQUIREMENTS = [{
-  name: "device_resources_update", field: "applyMode", equals: "stop-jobs-and-apply", actions: ["jobs:cancel"], scope: "global",
-}] as const;
-export const DEVICE_PROVISIONING_HUMAN_LIMITS = [
-  { feature: "device-runtime-approval-grant", state: "protected", detail: "Only an authenticated human browser can grant once-per-device runtime approval; MCP may request, read and revoke it." },
-  { feature: "device-system-setup", state: "protected", detail: "System packages and quota setup require local administrator consent; MCP cannot execute sudo or alter host security." },
-] as const;
-
 export const OperatorToolNameSchema = z.enum([
-  'bug_report', 'bug_reports_list', 'bug_report_get', 'bug_report_update',
+  'bug_report', 'bug_reports_list', 'bug_report_get', 'bug_report_update', 'bug_reports_close',
   "ci_run", "ci_get", "ci_computers_list", "ci_cancel", "ci_logs_read", "ci_list",
   ...Object.keys(GRAPHQL_OPERATOR_TOOLS) as (keyof typeof GRAPHQL_OPERATOR_TOOLS)[],
-  ...DEVICE_PROVISIONING_OPERATOR_TOOL_NAMES,
   "source_list", "source_get", "source_approve", "source_root_bind", "source_root_get", "source_root_list", "source_preparation_get", "source_preparation_reconcile",
   "job_runtime_profile_list","job_runtime_profile_save","job_runtime_qualification_request","job_runtime_qualification_run","job_runtime_qualification_get","build_computer_prepare","build_computer_prepare_get",
   "ci_enrollment_get", "ci_enrollment_update",
-  "job_choices_get","job_workflow_execution_get","job_definition_list","job_definition_get","job_definition_version_get","job_definition_save","job_validate","job_launch_validate","job_start","job_queue_get","job_queue_list","job_queue_cancel","job_get","job_list","job_workflow_list","job_cancel","job_cancellation_recovery_propose","job_cancellation_recovery_get","job_logs_read","job_artifacts_list","job_artifact_read",
+  "job_choices_get","job_workflow_execution_get","job_definition_list","job_definition_get","job_definition_version_get","job_definition_save","job_validate","job_launch_validate","job_start","job_queue_get","job_queue_list","job_queue_cancel","job_get","job_list","job_workflow_list","job_cancel","job_cancellation_recovery_propose","job_cancellation_recovery_get","job_cancellation_recovery_approve","job_logs_read","job_artifacts_list","job_artifact_read",
   "build_computer_get", "build_computer_update", "build_computers_update", "computer_activity_list", "computer_accounts_list", "computers_maintenance_status", "computers_maintenance_start", "computer_github_login_start", "computer_github_login_status", "computer_github_logout", "computer_github_setup_git", "computer_sync_status", "computer_sync_update",
   "device_main_identity_get", "devices_list", "device_pairing_grant_create", "device_revoke",
   "device_setup_code_create",
@@ -704,7 +633,7 @@ export const OperatorToolNameSchema = z.enum([
   "workflow_list", "workflow_get", "workflow_create", "workflow_update", "workflow_reorder", "workflow_archive", "workflow_batch_archive",
   "agent_list", "agent_get", "graph_draft_open", "graph_draft_get", "graph_draft_apply",
   "graph_draft_layout", "graph_draft_revert_applied", "graph_validate", "graph_save", "graph_draft_discard", "run_list", "run_get", "run_current_get_v1", "run_history_get_v1",
-  "run_events_list", "run_handoffs_get_v1", "run_activities_get_v1", "run_node_placement_get", "workflow_node_placement_choices", "run_start", "run_stop",
+  "run_events_list", "run_handoffs_get_v1", "run_activities_get_v1", "run_node_placement_get", "workflow_node_placement_choices", "run_start", "run_start_resolve", "run_stop",
   "run_subagents_list_v1", "run_subagent_get_v1", "run_subagent_messages_list_v1", "run_subagent_tools_list_v1",
   "run_subagent_input_v1", "run_subagent_interrupt_v1", "run_subagent_respond_v1",
   "interaction_list", "interaction_get", "interaction_respond",
@@ -715,13 +644,6 @@ export const GraphValidationResultSchema = z.object({
   valid: z.boolean(),
   issues: z.array(z.object({ code: z.string().trim().min(1), message: z.string().trim().min(1) }).strict()),
 }).strict();
-export const GraphSaveResultSchema = z.object({
-  draft: GraphDraftSchema, version: WorkflowVersionV3Schema,
-  // Returned by the publication transaction, not an optional follow-up read.
-  agents: z.array(ManagedAgentSchema).default([]),
-}).strict();
-export const GraphSaveCommandResultSchema = z.object({ value: GraphSaveResultSchema, replayed: z.boolean() }).strict();
-export const RunStartResultSchema = z.object({ run: WorkflowRunV3Schema, accepted: z.literal(true), replayed: z.boolean() }).strict();
 export const RunStopResultSchema = z.object({
   runId: IdSchema,
   status: z.enum(["accepted", "already_terminal", "not_owner"]),
@@ -729,17 +651,13 @@ export const RunStopResultSchema = z.object({
   processStopped: z.boolean(),
   replayed: z.boolean(),
 }).strict();
-export const RunPageSchema = z.object({ items: z.array(WorkflowRunV3Schema), pageInfo: ManagementPageInfoSchema }).strict();
-export const RunDetailsSchema = GetRunResponseSchema;
 export const RunEventsPageSchema = z.object({ items: z.array(RunActivitySchema), pageInfo: ManagementPageInfoSchema }).strict();
-export const GraphDraftDiscardResultSchema = z.object({
-  value: z.object({ discarded: z.literal(true), draftId: IdSchema, revision: ExpectedRevisionSchema }).strict(),
-  replayed: z.boolean(),
-}).strict();
 export const OperatorCapabilitiesSchema = z.object({
   endpoint: z.literal("/mcp"), audience: z.literal("operator"), protocol: z.literal("2026-07-28"),
   tools: z.array(OperatorToolNameSchema),
-  principal: z.object({id: IdSchema, name: z.string(), expiresAt: TimestampSchema}).strict().optional(),
+  principal: z.object({id: IdSchema, name: z.string(), expiresAt: TimestampSchema.describe(
+    'Credential expiry; 9999-12-31T23:59:59.999Z means no expiry.',
+  )}).strict().optional(),
   grants: z.array(ManagementGrantSchema).optional(),
   requestedResource: z.object({workspaceId: IdSchema.optional(),workflowId: IdSchema.optional(),runId: IdSchema.optional()}).strict().optional(),
   requirements: z.array(z.object({name: OperatorToolNameSchema, actions: z.array(ManagementActionSchema), detail: z.string()}).strict()).optional(),

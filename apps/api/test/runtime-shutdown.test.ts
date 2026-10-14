@@ -1,17 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { RuntimeShutdown } from '../src/infrastructure/runtimeShutdown.js'
-
-function gate() {
-  let resolve!: () => void
-  const promise = new Promise<void>((done) => { resolve = done })
-  return { promise, resolve }
-}
+import { deferred } from './helpers/deferred.js'
 
 describe('runtime shutdown ownership barrier', () => {
   it('signals every runtime before waiting; drains producers, disposes, then releases', async () => {
-    const stop = gate(); const producer = gate(); const disposal = gate()
-    const disposing = gate(); const draining = gate()
+    const stop = deferred(); const producer = deferred(); const disposal = deferred()
+    const disposing = deferred(); const draining = deferred()
     const calls: string[] = []
     const releaseOwnership = vi.fn(async () => { calls.push('unlock') })
     const shutdown = new RuntimeShutdown({
@@ -40,6 +35,25 @@ describe('runtime shutdown ownership barrier', () => {
     expect(calls).toEqual(['signal chat', 'signal reviews', 'signal engine', 'drain', 'dispose', 'unlock'])
     await shutdown.finish()
     expect(releaseOwnership).toHaveBeenCalledTimes(1)
+  })
+
+  it('names the steps a stalled shutdown is still waiting for', async () => {
+    const stop = deferred(); const producer = deferred()
+    const shutdown = new RuntimeShutdown({
+      stop: [{ name: 'chat', run: () => stop.promise }, { name: 'engine', run: () => {} }],
+      drain: [{ name: 'recovery', run: () => producer.promise }],
+      dispose: [],
+      releaseOwnership: async () => {},
+    })
+    expect(shutdown.pending()).toEqual([])
+    const finished = shutdown.finish()
+    // A production stop sat at systemd's 60 s timeout with no record of what it waited for.
+    await vi.waitFor(() => expect(shutdown.pending()).toEqual(['chat']))
+    stop.resolve()
+    await vi.waitFor(() => expect(shutdown.pending()).toEqual(['recovery']))
+    producer.resolve()
+    await finished
+    expect(shutdown.pending()).toEqual([])
   })
 
   for (const failing of ['stop', 'drain', 'dispose'] as const) {

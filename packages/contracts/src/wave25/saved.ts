@@ -21,7 +21,7 @@ export const SavedWorkflowVersionSchema = WorkflowVersionV3Schema
 export const SavedWorkflowRunSchema = WorkflowRunV3Schema
 export type SavedWorkflowDefinition = z.infer<typeof SavedWorkflowDefinitionSchema>
 export type SavedWorkflowVersion = z.infer<typeof SavedWorkflowVersionSchema>
-export type SavedWorkflowRun = z.infer<typeof SavedWorkflowRunSchema>
+type SavedWorkflowRun = z.infer<typeof SavedWorkflowRunSchema>
 
 /** Public detail retains existing result authorization/redaction obligations.
  * This is NOT the content-free graph/occurrence metadata contract. A redacted
@@ -62,7 +62,9 @@ export const SavedManagedWorkflowCommandResultSchema = z.object({
 }).strict()
 export const SavedWorkspaceDetailsSchema = z.object({
   workspace: WorkspaceSchema, agents: z.array(AgentSchema), workflows: z.array(SavedWorkflowDefinitionSchema),
-  runs: z.array(WorkflowRunSummarySchema), resources: z.array(ResourceSummarySchema),
+  runs: z.array(WorkflowRunSummarySchema)
+    .describe('Newest 2000 eligible Runs; use paged Run reads for older Runs.'),
+  resources: z.array(ResourceSummarySchema),
   browserProfiles: z.array(BrowserProfileSummarySchema).optional(), runners: z.array(RunnerSummarySchema).optional(),
 }).strict()
 export const SavedWorkflowVersionPageSchema = z.object({
@@ -73,7 +75,7 @@ export const SavedRunPageSchema = z.object({ items: z.array(SavedWorkflowRunSche
 
 /** Loaded immutable snapshots only. No lookup of a moving workflow/Agent head.
  * The DB reader must additionally prove physical row identity and content hash. */
-export type SavedRunVersionSnapshot = { run: SavedWorkflowRun; version: SavedWorkflowVersion }
+type SavedRunVersionSnapshot = { run: SavedWorkflowRun; version: SavedWorkflowVersion }
 function validateSavedRunVersionSnapshot({ run, version }: SavedRunVersionSnapshot, context: z.RefinementCtx): void {
   if (run.executionSemanticsVersion !== version.executionSemanticsVersion || run.workflowVersionId !== version.id
     || run.workspaceId !== version.workspaceId || run.workflowId !== version.workflowId
@@ -94,12 +96,6 @@ export function assertSavedRunVersionSnapshot(snapshot: SavedRunVersionSnapshot)
   savedRunVersionPinsSchema.parse(snapshot)
 }
 
-export type RunDetailsV3 = z.infer<typeof RunDetailsV3Schema>
-export type SavedManagedWorkflowPage = z.infer<typeof SavedManagedWorkflowPageSchema>
-export type SavedManagedWorkflowCommandResult = z.infer<typeof SavedManagedWorkflowCommandResultSchema>
 export type SavedWorkspaceDetails = z.infer<typeof SavedWorkspaceDetailsSchema>
-export type SavedWorkflowVersionPage = z.infer<typeof SavedWorkflowVersionPageSchema>
-export type SavedWorkflowVersionDetail = z.infer<typeof SavedWorkflowVersionDetailSchema>
-export type SavedRunPage = z.infer<typeof SavedRunPageSchema>
 
 export const SavedWorkflowResponseSchema = z.object({ workflow: SavedWorkflowDefinitionSchema }).strict()

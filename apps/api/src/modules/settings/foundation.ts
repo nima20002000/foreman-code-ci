@@ -1,10 +1,9 @@
 import { realpath } from 'node:fs/promises'
-import { requireWorkspaceStoragePath, workspaceStorageRoot } from '../workspaces/storage.js'
+import { workspaceStorageRoot } from '../workspaces/storage.js'
 import { randomUUID } from 'node:crypto'
 
 import {
   AgentDefaultsSchema,
-  UpdateAgentDefaultsRequestSchema,
   DEFAULT_AGENT_DEFAULTS,
   WorkflowDefaultsSchema,
   withAdvancedDefaults,
@@ -12,7 +11,9 @@ import {
   type WorkflowDefaults,
 } from '@foreman-code/contracts'
 import type pg from 'pg'
-import { WorkspaceDefaultsSchema, DEFAULT_WORKSPACE_DEFAULTS, type WorkspaceDefaults } from '@foreman-code/contracts/management'
+import {
+  AgentDefaultsUpdateInputSchema, WorkspaceDefaultsSchema, DEFAULT_WORKSPACE_DEFAULTS, type WorkspaceDefaults,
+} from '@foreman-code/contracts/management'
 import { GeneralSettingsSchema, DEFAULT_GENERAL_SETTINGS, type GeneralSettings } from '@foreman-code/contracts/management'
 import {
   PromptTextSchema, DEFAULT_PROMPT_TEXT, type PromptText, type PromptSettingSnapshot,
@@ -21,7 +22,7 @@ import {
 import { RemoteExecutionSettingsSchema, DEFAULT_REMOTE_EXECUTION_SETTINGS,
   type RemoteExecutionSettings } from '@foreman-code/contracts/management'
 
-import { inTransaction } from '../../infrastructure/transaction.js'
+import { inTransaction, withTransaction } from '../../infrastructure/transaction.js'
 
 import { DomainError } from '../errors.js'
 import type { GraphSqlClient } from '../run-graph/connection.js'
@@ -56,7 +57,7 @@ export class PostgresFoundationSettingsRepository {
     return readSystemPromptSetting(client ?? this.pool)
   }
 
-  updateSystemPrompt(value: PromptText, expectedRevision: number, client: pg.ClientBase) {
+  updateSystemPrompt(value: PromptText, expectedRevision: number | undefined, client: pg.ClientBase) {
     return this.write('system-prompt', PromptTextSchema.parse(value), expectedRevision, client)
   }
 
@@ -64,7 +65,7 @@ export class PostgresFoundationSettingsRepository {
     return this.read('operator-initial-prompt', PromptTextSchema, DEFAULT_PROMPT_TEXT, client)
   }
 
-  updateOperatorInitialPrompt(value: PromptText, expectedRevision: number, client: pg.ClientBase) {
+  updateOperatorInitialPrompt(value: PromptText, expectedRevision: number | undefined, client: pg.ClientBase) {
     return this.write('operator-initial-prompt', PromptTextSchema.parse(value), expectedRevision, client)
   }
 
@@ -72,7 +73,7 @@ export class PostgresFoundationSettingsRepository {
     return this.read('remote-execution-settings', RemoteExecutionSettingsSchema, DEFAULT_REMOTE_EXECUTION_SETTINGS, client)
   }
 
-  updateRemoteExecutionSettings(value: RemoteExecutionSettings, expectedRevision: number, client: pg.ClientBase) {
+  updateRemoteExecutionSettings(value: RemoteExecutionSettings, expectedRevision: number | undefined, client: pg.ClientBase) {
     return this.write('remote-execution-settings', RemoteExecutionSettingsSchema.parse(value), expectedRevision, client)
   }
 
@@ -80,7 +81,7 @@ export class PostgresFoundationSettingsRepository {
     return this.read('general-settings', GeneralSettingsSchema, DEFAULT_GENERAL_SETTINGS, client)
   }
 
-  updateGeneralSettings(value: GeneralSettings, expectedRevision: number, client: pg.ClientBase) {
+  updateGeneralSettings(value: GeneralSettings, expectedRevision: number | undefined, client: pg.ClientBase) {
     return this.write('general-settings', GeneralSettingsSchema.parse(value), expectedRevision, client)
   }
 
@@ -102,7 +103,6 @@ export class PostgresFoundationSettingsRepository {
         if (this.projectRoot) {
           try {
             parentPath = await realpath(parentPath)
-            requireWorkspaceStoragePath(await realpath(this.projectRoot), parentPath)
           }
           catch { parentPath = this.projectRoot }
         }
@@ -110,15 +110,14 @@ export class PostgresFoundationSettingsRepository {
       })
   }
 
-  async updateWorkspaceDefaults(value: WorkspaceDefaults, expectedRevision: number, client?: pg.ClientBase): Promise<VersionedSetting<WorkspaceDefaults>> {
-    if (!client) return inTransaction(this.pool, undefined, (transaction) => this.updateWorkspaceDefaults(value, expectedRevision, transaction))
+  async updateWorkspaceDefaults(value: WorkspaceDefaults, expectedRevision: number | undefined, client?: pg.ClientBase): Promise<VersionedSetting<WorkspaceDefaults>> {
+    if (!client) return withTransaction(this.pool, (transaction) => this.updateWorkspaceDefaults(value, expectedRevision, transaction))
     await client.query('select pg_advisory_xact_lock(hashtext($1))', ['workspace-folder-lifecycle'])
     const accepted = WorkspaceDefaultsSchema.parse(value)
     if (this.projectRoot && accepted.parentPath) {
       accepted.parentPath = await realpath(accepted.parentPath)
       await client.query('select pg_advisory_xact_lock(hashtext($1))', [`workspace-folder:${accepted.parentPath}`])
       accepted.parentPath = await realpath(accepted.parentPath)
-      requireWorkspaceStoragePath(await realpath(this.projectRoot), accepted.parentPath)
     }
     return this.write(KEYS.workspaces, accepted, expectedRevision, client)
   }
@@ -127,20 +126,20 @@ export class PostgresFoundationSettingsRepository {
     return this.read(KEYS.workflows, WorkflowDefaultsSchema, LEGACY_WORKFLOW_DEFAULTS, client)
   }
 
-  updateAgentDefaults(value: AgentDefaults, expectedRevision: number, client?: pg.ClientBase) {
-    const accepted = UpdateAgentDefaultsRequestSchema.parse({ value, expectedRevision }).value
+  updateAgentDefaults(value: AgentDefaults, expectedRevision: number | undefined, client?: pg.ClientBase) {
+    const accepted = AgentDefaultsUpdateInputSchema.shape.value.parse(value)
     return this.write(KEYS.agents, accepted, expectedRevision, client)
   }
 
-  updateWorkflowDefaults(value: WorkflowDefaults, expectedRevision: number, client?: pg.ClientBase) {
+  updateWorkflowDefaults(value: WorkflowDefaults, expectedRevision: number | undefined, client?: pg.ClientBase) {
     return this.write(KEYS.workflows, WorkflowDefaultsSchema.parse(value), expectedRevision, client)
   }
 
-  updateManagedAgentDefaults(client: pg.PoolClient, value: AgentDefaults, expectedRevision: number) {
+  updateManagedAgentDefaults(client: pg.PoolClient, value: AgentDefaults, expectedRevision: number | undefined) {
     return this.updateAgentDefaults(value, expectedRevision, client)
   }
 
-  updateManagedWorkflowDefaults(client: pg.PoolClient, value: WorkflowDefaults, expectedRevision: number) {
+  updateManagedWorkflowDefaults(client: pg.PoolClient, value: WorkflowDefaults, expectedRevision: number | undefined) {
     return this.updateWorkflowDefaults(value, expectedRevision, client)
   }
 
@@ -148,8 +147,8 @@ export class PostgresFoundationSettingsRepository {
     return readSetting(client ?? this.pool, key, schema, fallback)
   }
 
-  private async write<T>(key: string, value: T, expectedRevision: number, supplied?: pg.ClientBase): Promise<VersionedSetting<T>> {
-    if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0) {
+  private async write<T>(key: string, value: T, expectedRevision: number | undefined, supplied?: pg.ClientBase): Promise<VersionedSetting<T>> {
+    if (expectedRevision !== undefined && (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0)) {
       throw new DomainError('REVISION_INVALID', 'Expected revision must be a nonnegative integer.', 400)
     }
     return inTransaction(this.pool, supplied, async (client) => {
@@ -158,7 +157,7 @@ export class PostgresFoundationSettingsRepository {
         'select revision from application_settings where key = $1 for update', [key],
       )
       const revision = Number(current.rows[0]?.revision ?? 0)
-      if (revision !== expectedRevision) throw new DomainError('REVISION_CONFLICT', 'Defaults changed since they were read.', 409, { currentRevision: revision })
+      if (expectedRevision !== undefined && revision !== expectedRevision) throw new DomainError('REVISION_CONFLICT', 'Defaults changed since they were read.', 409, { currentRevision: revision })
       const nextRevision = revision + 1
       const versionId = `${key}-v${nextRevision}-${randomUUID()}`
       await client.query(

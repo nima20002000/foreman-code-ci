@@ -17,6 +17,7 @@ import { agentChatKey, type AgentConversationRow, PostgresAgentChatRepository } 
 import type { PostgresOperatorConversationRepository } from '../src/modules/conversations/operatorChatRepository.js'
 import { HarnessExecutionError, NativeDeliveryError } from '../src/modules/harnesses/errors.js'
 import type { NativeHarnessSessionManager, NativeHistory, NativeSessionStart, NativeTurnInput } from '../src/modules/harnesses/port.js'
+import { deferred } from './helpers/deferred.js'
 
 // Isolated service regressions. SQL persistence and provider I/O are deliberately substituted here.
 // The existing authenticated HTTP/MCP PostgreSQL suite remains a separate integration gate.
@@ -24,11 +25,6 @@ const principal: ManagementPrincipal = { id: 'f3-reader', name: 'F3 fixture', au
   expiresAt: '2099-01-01T00:00:00.000Z', grants: [{ scope: {}, actions: ['agent_chat:read', 'agent_chat:write', 'agent_chat:cancel', 'agent_chat:respond'] }] }
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
-function deferred<T>() {
-  let resolve!: (value: T) => void
-  const promise = new Promise<T>((done) => { resolve = done })
-  return { promise, resolve }
-}
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve))
 
 class MemoryConversations {
@@ -172,7 +168,14 @@ async function setup(options: { ephemeral?: boolean; stored?: boolean; origin?: 
   let allocations = 0, sourceReads = 0
   const factory: AgentChatManagerFactory = Object.assign((id: string) => { allocations++; owners.set(id, native); return native },
     { release: (id: string) => { owners.delete(id) } })
-  const source: HarnessExecution[] = []
+  const source: HarnessExecution[] = origin.kind === 'run_execution' ? [{
+    id: origin.executionId, runId: origin.runId, workflowNodeId: node.id, agentId: node.agentId,
+    agentConfigurationVersionId: configuration.id, attempt: fixture.identities[0]!.attempt,
+    state: 'completed', result: { outcome: 'succeeded' }, nativeSessionId: origin.sourceNativeSessionId,
+    workingDirectory: '/fixture-read-only', createdAt: fixture.createdAt, finishedAt: fixture.createdAt,
+    input: { executionSemanticsVersion: 3, occurrence: { identity: { scope: fixture.scope,
+      blockId: 'repair', occurrenceId: 'occ-1', occurrenceIndex: 1 } } },
+  }] : []
   const runs = { getForWorkspace: async () => ({ ...fixture.run, executionState: 'completed' as const, outcome: 'succeeded' as const }),
     getExecution: async (id: string) => source.find(item => item.id === id),
     async *executionPages() { sourceReads++; for (const execution of source) yield [execution] } }
@@ -195,6 +198,13 @@ async function setup(options: { ephemeral?: boolean; stored?: boolean; origin?: 
       return { rows: origin?.kind === 'run_execution' && values[0] === origin.executionId && values[1] === origin.runId
         ? [{ reference: { harness: native.harness, providerVersion: (await native.capabilities()).providerVersion,
           nativeSessionId: origin.sourceNativeSessionId } }] : [] }
+    }
+    if (sql.includes('from harness_native_events')) {
+      const execution = source.find(item => item.id === values[0] && item.runId === values[1]
+        && item.workflowNodeId === values[2] && item.agentId === values[3])
+      return { rows: execution ? [{ item_key: 'source-reply', role: 'assistant',
+        content: `Transcript for ${execution.id}`, original_bytes: 0, complete: true,
+        sequence: '1', revision: '1' }] : [] }
     }
     throw new Error(`Unscripted F3 SQL: ${sql}`)
   }
@@ -343,9 +353,11 @@ describe('F3 native availability and ownership', () => {
     f.source.push(execution(f, 1, 9, 'z-older-nine'), execution(f, 2, 2, 'a-newer-two'), execution(f, 2, 1, 'm-newer-one'))
     const before = structuredClone(f.source), context = { ...f.context, runId: f.fixture.run.id }
     for (let pass = 0; pass < 2; pass++) {
-      const resolution = await f.chat['resolve'](context)
-      assert.deepEqual(resolution.create?.origin, { kind: 'run_execution', runId: f.fixture.run.id,
-        executionId: 'a-newer-two', sourceNativeSessionId: 'source-a-newer-two' })
+      const state = await f.chat.read(principal, context.workspaceId, context)
+      assert.equal(state.availability.canSend, true)
+      assert.equal(state.conversation, null)
+      assert.equal(state.sourceTranscript?.executionId, 'a-newer-two')
+      assert.equal(state.sourceTranscript?.messages[0]?.content, 'Transcript for a-newer-two')
       f.source.reverse()
     }
     assert.deepEqual(f.source, before)
@@ -372,14 +384,19 @@ describe('F3 native availability and ownership', () => {
   })
   it('A-R19: persisted conversation origin stays pinned and malformed occurrence scope is rejected', async () => {
     const f = await setup({ repeat: true, origin })
-    assert.deepEqual((await f.chat['resolve'](f.context)).row?.record.origin, origin)
+    const state = await f.chat.readConversation(principal, f.context.workspaceId, f.repository.row!.id)
+    assert.deepEqual(state.conversation?.origin, origin)
+    assert.equal(state.sourceTranscript?.executionId, origin.executionId)
     assert.equal(f.sourceReads(), 0)
     f.repository.row = undefined
     const bad = execution(f, 2, 1, 'wrong-scope')
     bad.input = { occurrence: { identity: { scope: { ...f.fixture.scope, runId: 'other-run' }, blockId: 'repair', occurrenceId: 'occ-2', occurrenceIndex: 2 } } }
     f.source.push(bad)
-    const resolution = await f.chat['resolve']({ ...f.context, runId: f.fixture.run.id })
-    assert.equal(resolution.blocked?.reason, 'context_stale'); assert.equal(f.allocations(), 0)
+    const rejected = await f.chat.read(principal, f.context.workspaceId, { ...f.context, runId: f.fixture.run.id })
+    assert.equal(rejected.availability.canSend, false)
+    assert.equal(rejected.availability.reason, 'context_stale')
+    assert.equal(rejected.sourceTranscript, undefined)
+    assert.equal(f.allocations(), 0)
   })
 
   it('A-R01/A-R13: durable unavailability records the reason without altering the origin', async () => {

@@ -12,16 +12,16 @@ export const BuildComputerPreferenceSchema = z.object({
 }).strict()
 export const BuildComputerReadSchema = z.object({ target: DeviceProvisioningTargetSchema }).strict()
 export const BuildComputerUpdateSchema = BuildComputerReadSchema.extend({
-  commandId: DeviceCommandIdSchema,
+  commandId: DeviceCommandIdSchema.optional().describe('Optional retry identity; generated server-side when omitted.'),
   expectedRevision: DeviceSafeIntegerSchema,
   buildEnabled: z.boolean(),
   buildPriority: z.number().int().min(0).max(100),
   /** Omitted fields keep their saved values. */
   buildAllowancePercent: BuildComputerAllowanceSchema.optional(),
 }).strict()
-export const BuildComputerChangeSchema = BuildComputerUpdateSchema.omit({ commandId: true })
+const BuildComputerChangeSchema = BuildComputerUpdateSchema.omit({ commandId: true })
 export const BuildComputerBatchUpdateSchema = z.object({
-  commandId: DeviceCommandIdSchema,
+  commandId: DeviceCommandIdSchema.optional().describe('Optional retry identity; generated server-side when omitted.'),
   updates: z.array(BuildComputerChangeSchema).min(1),
 }).strict().superRefine(({ updates }, context) => {
   const keys = new Set<string>()
@@ -43,8 +43,6 @@ export const BuildComputerStatusSchema = z.object({
 }).strict()
 export const BuildComputerBatchResultSchema = z.object({ computers: z.array(BuildComputerStatusSchema).min(1) }).strict()
 export type BuildComputerPreference = z.infer<typeof BuildComputerPreferenceSchema>
-export type BuildComputerUpdate = z.infer<typeof BuildComputerUpdateSchema>
 export type BuildComputerStatus = z.infer<typeof BuildComputerStatusSchema>
 export type BuildComputerChange = z.infer<typeof BuildComputerChangeSchema>
-export type BuildComputerBatchUpdate = z.infer<typeof BuildComputerBatchUpdateSchema>
 export type BuildComputerBatchResult = z.infer<typeof BuildComputerBatchResultSchema>

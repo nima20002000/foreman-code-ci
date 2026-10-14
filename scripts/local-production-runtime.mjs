@@ -1,10 +1,270 @@
-import { spawn } from 'node:child_process'
-import { chmod, copyFile, cp, mkdir, mkdtemp, open, readFile, readdir, realpath, rename, rm, writeFile } from 'node:fs/promises'
+import { createHash, randomBytes } from 'node:crypto'
+import { execFile, spawn } from 'node:child_process'
+import { chmod, copyFile, cp, lstat, mkdir, mkdtemp, open, readFile, readdir, readlink, realpath, rename, rm, symlink, writeFile } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
 import { dirname, isAbsolute, join } from 'node:path'
 import { createRequire } from 'node:module'
 import { pathToFileURL } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
+import { promisify } from 'node:util'
 import { readProductEnvironment, resolveProductEnvironment } from '../packages/contracts/src/productEnvironment.mjs'
+import { productionMaintenanceKey } from '../packages/contracts/src/productionMaintenance.mjs'
+import { isBackwardCompatibleSchema } from './production-schema.mjs'
+
+export function parseRunWaitMinutes(value) {
+  const minutes = value === undefined ? 120 : Number(value)
+  const timeoutMs = minutes * 60_000
+  if ((value !== undefined && !value.trim()) || !Number.isFinite(timeoutMs) || minutes < 0) {
+    throw new Error('FOREMAN_INSTALL_RUN_WAIT_MINUTES must be a finite, nonnegative number of minutes.')
+  }
+  return timeoutMs
+}
+
+export async function readReleaseSelection(current) {
+  try {
+    return await realpath(current)
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error
+    return undefined
+  }
+}
+
+export async function needsStartupConfiguration(stateFile, { previousRelease } = {}) {
+  try {
+    return !JSON.parse(await readFile(stateFile, 'utf8')).startupConfigured
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error
+    await publish(stateFile, JSON.stringify({ startupConfigured: Boolean(previousRelease) }) + '\n')
+    return !previousRelease
+  }
+}
+
+export async function recordStartupConfiguration(stateFile) {
+  await publish(stateFile, JSON.stringify({ startupConfigured: true }) + '\n')
+}
+
+// Compiled output whose source file no longer exists; tsc --incremental never removes it.
+const typeScriptOutputs = [['apps/api/dist', 'apps/api/src'], ['packages/contracts/dist', 'packages/contracts/src']]
+const outputSuffix = /(\.d)?\.(?:m?js|ts|mts)(\.map)?$/
+
+async function pruneStaleTypeScriptOutput(source, trackedSources) {
+  for (const [output, input] of typeScriptOutputs) {
+    const visit = async relative => {
+      let entries
+      try {
+        entries = await readdir(join(source, output, relative), { withFileTypes: true })
+      } catch (error) {
+        if (error.code === 'ENOENT') return
+        throw error
+      }
+      for (const entry of entries) {
+        const path = join(relative, entry.name)
+        if (entry.isDirectory()) {
+          await visit(path)
+          continue
+        }
+        if (!outputSuffix.test(entry.name)) continue
+        const stem = path.replace(outputSuffix, '')
+        const hasSource = ['.ts', '.tsx', '.mts', '.mjs', '.js']
+          .some(extension => trackedSources.has(join(input, stem + extension)))
+        if (!hasSource) await rm(join(source, output, path), { force: true })
+      }
+    }
+    await visit('')
+  }
+}
+
+// One persistent build tree per installation keeps installed dependencies and incremental TypeScript output
+// between installs; every tracked file is reset to the exact commit and every other untracked file is removed.
+export async function withProductionSourceSnapshot(repository, directory, action) {
+  await mkdir(directory, { recursive: true, mode: 0o700 })
+  const source = join(directory, 'source')
+  const environment = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')))
+  const execute = promisify(execFile)
+  const git = (args, cwd = repository) => execute('git', args, { cwd, env: environment, maxBuffer: 16 * 1024 * 1024 })
+  const { stdout } = await git(['rev-parse', 'HEAD'])
+  const commit = stdout.trim()
+  const { stdout: origin } = await git(['remote', 'get-url', 'origin'])
+  const reusable = await git(['rev-parse', '--git-dir'], source).then(() => true, () => false)
+  if (!reusable) {
+    await rm(source, { recursive: true, force: true })
+    await git(['clone', '--quiet', '--shared', '--no-checkout', repository, source])
+  }
+  // The shared clone reads the repository's objects, so any commit it has is available without a fetch.
+  if (reusable) {
+    const { stdout: changes } = await git(['diff', '--name-only', '-z', 'HEAD'], source)
+    if (changes) await git(['reset', '--hard', '--quiet', 'HEAD'], source)
+  }
+  await git(['clean', '-ffdxq', '-e', 'node_modules', '-e', 'dist', '-e', '*.tsbuildinfo'], source)
+  // Forced checkout rewrites unchanged files and invalidates incremental build timestamps.
+  await git(['checkout', '--quiet', '--detach', commit], source)
+  await git(['remote', 'set-url', 'origin', origin.trim()], source)
+  const { stdout: files } = await git(['ls-files', '-z', '--', ...typeScriptOutputs.map(([, input]) => input)], source)
+  await pruneStaleTypeScriptOutput(source, new Set(files.split('\0')))
+  return action({ source, commit })
+}
+
+// CI owns the web typecheck; production needs only emitted server code and browser assets.
+export async function buildProductionSource(run) {
+  await run('corepack', ['pnpm', '--filter', '@foreman-code/contracts', 'build'])
+  await run('corepack', ['pnpm', '--filter', '@foreman-code/api', 'build'])
+  await run('corepack', ['pnpm', '--filter', '@foreman-code/web', 'exec', 'vite', 'build'])
+}
+
+export async function backupDatabase({ archive, database, run }) {
+  const file = await open(archive, 'wx', 0o600)
+  try {
+    // lz4 halves the stopped-API window against the default gzip level, which is CPU-bound on large tables.
+    await run('pg_dump', ['--format=custom', '--compress=lz4', '--create', '--dbname', database],
+      { stdio: ['ignore', file.fd, 'inherit'] })
+    await file.sync()
+  } finally {
+    await file.close()
+  }
+}
+
+export async function restoreDatabase({ archive, run }) {
+  const file = await open(archive, 'r')
+  try {
+    // Recreate the database so objects introduced by a failed migration are removed too.
+    await run('pg_restore', ['--clean', '--if-exists', '--create', '--exit-on-error', '--dbname', 'postgres'],
+      { stdio: [file.fd, 'inherit', 'inherit'] })
+  } finally {
+    await file.close()
+  }
+}
+
+export async function findPendingMigrations({ migrations, query }) {
+  const { rows } = await query("select to_regclass('application_migrations') is not null as present")
+  if (!rows[0].present) return migrations.map(migration => migration.version)
+  const applied = await query('select version from application_migrations')
+  const appliedVersions = new Set(applied.rows.map(row => row.version))
+  return migrations.filter(migration => !appliedVersions.has(migration.version)).map(migration => migration.version)
+}
+
+export async function readPendingMigrations(release, databaseUrl) {
+  const { migrations } = await import(pathToFileURL(join(release, 'apps/api/dist/infrastructure/migrations.js')))
+  const require = createRequire(join(release, 'apps/api/package.json'))
+  const { Pool } = require('pg')
+  const pool = new Pool({ connectionString: databaseUrl, max: 1, connectionTimeoutMillis: 5000, query_timeout: 5000 })
+  try {
+    return await findPendingMigrations({ migrations, query: text => pool.query(text) })
+  } finally {
+    await pool.end()
+  }
+}
+
+async function readDeployment(stateFile) {
+  try {
+    return JSON.parse(await readFile(stateFile, 'utf8'))
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error
+    return undefined
+  }
+}
+
+async function saveDeployment(stateFile, state, phase) {
+  state.phase = phase
+  await publish(stateFile, JSON.stringify(state, null, 2) + '\n')
+}
+
+export async function recoverReleaseCutover({ stateFile, steps }) {
+  const state = await readDeployment(stateFile)
+  if (!state || ['ready', 'recovered'].includes(state.phase)) return
+  if (state.apiMayHaveStopped === false && !state.schemaMayHaveChanged) {
+    await saveDeployment(stateFile, state, 'recovered')
+    return
+  }
+  try {
+    await saveDeployment(stateFile, state, 'recovering')
+    await steps.stop()
+    if (state.schemaMayHaveChanged && !(state.migrationComplete && state.backwardCompatible)) {
+      if (!state.backupComplete) throw new Error('No complete pre-migration database backup is available.')
+      await steps.restore(state.backupFile)
+      state.schemaMayHaveChanged = false
+      await saveDeployment(stateFile, state, 'database-restored')
+    }
+    await steps.activate(state.previousRelease)
+    if (state.previousRelease) {
+      await steps.start()
+      await steps.ready(state.previousRelease)
+    }
+    await saveDeployment(stateFile, state, 'recovered')
+  } catch (error) {
+    state.recoveryFailure = error.message
+    let stopFailure
+    try {
+      await steps.stop()
+    } catch (stopError) {
+      stopFailure = stopError
+      state.stopFailure = stopError.message
+    }
+    await saveDeployment(stateFile, state, 'recovery-failed')
+    if (stopFailure) throw new AggregateError([error, stopFailure], 'Recovery and stopping the API failed.')
+    throw error
+  }
+}
+
+export async function runReleaseCutover({ release, previousRelease, stateFile, backupFile, steps }) {
+  const state = { release, previousRelease, backupFile, backupComplete: false, schemaMayHaveChanged: false,
+    migrationComplete: false, backwardCompatible: false, apiMayHaveStopped: false }
+  let recoveryAttempted = false
+  const perform = async (phase, action) => {
+    await saveDeployment(stateFile, state, phase)
+    await action()
+  }
+  const rollback = async error => {
+    recoveryAttempted = true
+    state.failure = error.message
+    await saveDeployment(stateFile, state, state.phase)
+    try {
+      await recoverReleaseCutover({ stateFile, steps })
+    } catch (recoveryError) {
+      throw new AggregateError([error, recoveryError],
+        `Release cutover and recovery failed. Retained deployment details: ${stateFile}`, { cause: error })
+    }
+  }
+  try {
+    await saveDeployment(stateFile, state, 'checking-migrations')
+    const pendingMigrations = await steps.pendingMigrations(release)
+    let schemaBefore
+    state.apiMayHaveStopped = true
+    await perform('stopping', steps.stop)
+    if (pendingMigrations.length) {
+      await perform('backing-up', () => steps.backup(backupFile))
+      state.backupComplete = true
+      await saveDeployment(stateFile, state, 'backed-up')
+      schemaBefore = await steps.schema?.(release)
+    }
+    if (pendingMigrations.length) {
+      state.schemaMayHaveChanged = true
+      await perform('migrating', () => steps.migrate(release))
+      state.migrationComplete = true
+      if (schemaBefore) {
+        state.backwardCompatible = isBackwardCompatibleSchema(schemaBefore, await steps.schema(release))
+      }
+      await saveDeployment(stateFile, state, 'migrated')
+    }
+    await perform('upgrading-launcher', () => steps.upgradeLauncher(release))
+    await perform('activating', () => steps.activate(release))
+    const start = async () => {
+      await perform('configuring-startup', steps.enable)
+      await perform('starting', steps.start)
+      await saveDeployment(stateFile, state, 'checking-readiness')
+    }
+    if (steps.checkReady) {
+      await steps.checkReady(release, { start, rollback })
+    } else {
+      await start()
+      await steps.ready(release)
+    }
+    await saveDeployment(stateFile, state, 'ready')
+    await rm(backupFile, { force: true })
+  } catch (error) {
+    if (!recoveryAttempted) await rollback(error)
+    throw error
+  }
+}
 
 export function shouldOpenDashboardAfterInstall({ previousRelease, stdin, stdout }) {
   return !previousRelease && stdin.isTTY === true && stdout.isTTY === true
@@ -168,7 +428,109 @@ export function localProductionEnvironment(desktopHome, password) {
   }
 }
 
-export async function deployProductionApi(run, destination) {
+// Installed dependencies are immutable; contracts build output belongs to each release.
+async function apiDependencyKey(source) {
+  const hash = createHash('sha256')
+  hash.update(`${process.platform}\0${process.arch}\0${process.versions.modules}\0`)
+  const inputs = ['pnpm-lock.yaml', 'apps/api/package.json', 'packages/contracts/package.json',
+    'pnpm-workspace.yaml', '.npmrc']
+  for (const path of inputs) {
+    hash.update(`${path}\0`)
+    try {
+      const bytes = await readFile(join(source, path))
+      hash.update(`${bytes.length}\0`).update(bytes)
+    } catch (error) {
+      if (error.code !== 'ENOENT' || inputs.indexOf(path) < 3) throw error
+      hash.update('absent\0')
+    }
+  }
+  return hash.digest('hex').slice(0, 32)
+}
+
+async function linkReleaseDependencies(shared, destination, source) {
+  const installed = join(shared, 'api/node_modules')
+  const modules = join(destination, 'node_modules')
+  await mkdir(join(modules, '@foreman-code'), { recursive: true })
+  for (const name of await readdir(installed)) {
+    if (name === '@foreman-code') continue
+    await symlink(join(installed, name), join(modules, name))
+  }
+  for (const name of await readdir(join(installed, '@foreman-code'))) {
+    if (name === 'contracts') continue
+    await symlink(join(installed, '@foreman-code', name), join(modules, '@foreman-code', name))
+  }
+  const contracts = await realpath(join(installed, '@foreman-code/contracts'))
+  const releaseContracts = join(modules, '@foreman-code/contracts')
+  await cp(contracts, releaseContracts, { recursive: true, verbatimSymlinks: true,
+    filter: path => path !== join(contracts, 'node_modules') && path !== join(contracts, 'dist') })
+  await copyFile(join(source, 'packages/contracts/package.json'), join(releaseContracts, 'package.json'))
+  await cp(join(source, 'packages/contracts/dist'), join(releaseContracts, 'dist'), { recursive: true })
+  // pnpm places a workspace package's dependencies beside its scope in the virtual store.
+  const nested = join(contracts, 'node_modules')
+  const dependencies = existsSync(nested) ? nested : dirname(dirname(contracts))
+  await symlink(dependencies, join(releaseContracts, 'node_modules'))
+  await symlink(installed, join(modules, '.production-dependencies'))
+}
+
+export async function deployProductionApi(run, destination, { dependencies } = {}) {
+  if (!dependencies) return deployApiPackage(run, destination)
+  await mkdir(dependencies.root, { recursive: true, mode: 0o700 })
+  const shared = join(dependencies.root, await apiDependencyKey(dependencies.source))
+  const ready = await lstat(join(shared, 'api')).then(() => true, error => { if (error.code === 'ENOENT') return false; throw error })
+  if (!ready) {
+    const staging = await mkdtemp(join(dependencies.root, '.staging-'))
+    try {
+      await deployApiPackage(run, join(staging, 'api'))
+      await rename(staging, shared)
+    } catch (error) {
+      await rm(staging, { recursive: true, force: true })
+      // Another install finished the same tree first; it is identical.
+      if (error.code !== 'ENOTEMPTY' && error.code !== 'EEXIST') throw error
+    }
+  }
+  await mkdir(destination, { recursive: true })
+  for (const name of await readdir(join(shared, 'api'))) {
+    if (name === 'node_modules' || name === 'dist') continue
+    await cp(join(shared, 'api', name), join(destination, name), { recursive: true, verbatimSymlinks: true })
+  }
+  // The API's own build output always comes from this build.
+  await cp(join(dependencies.source, 'apps/api/dist'), join(destination, 'dist'), { recursive: true, verbatimSymlinks: true })
+  await linkReleaseDependencies(shared, destination, dependencies.source)
+}
+
+/** Removes shared dependency trees that none of `releases` (release directories) links to. */
+export async function pruneApiDependencies(root, releases, { removeInBackground = removeDetached } = {}) {
+  const used = new Set()
+  for (const release of releases) {
+    const modules = join(release, 'apps/api/node_modules')
+    const info = await lstat(modules).catch(error => {
+      if (error.code === 'ENOENT') return undefined
+      throw error
+    })
+    if (!info) continue
+    const link = await readlink(info.isSymbolicLink() ? modules : join(modules, '.production-dependencies'))
+      .catch(error => {
+        // Older releases carry their own node_modules instead of using the shared cache.
+        if (error.code === 'ENOENT' && info.isDirectory()) return undefined
+        throw error
+      })
+    if (link) used.add(dirname(dirname(link)))
+  }
+  let entries
+  try { entries = await readdir(root) } catch (error) { if (error.code === 'ENOENT') return []; throw error }
+  const removed = []
+  let pruned
+  for (const name of entries) {
+    if (name.startsWith('.') || used.has(join(root, name))) continue
+    pruned ??= await mkdtemp(join(root, '.pruned-'))
+    await rename(join(root, name), join(pruned, name))
+    removed.push(join(root, name))
+  }
+  if (pruned) removeInBackground(pruned)
+  return removed
+}
+
+async function deployApiPackage(run, destination) {
   const failures = []
   try {
     await run('corepack', ['pnpm', '--filter', '@foreman-code/api', 'deploy', '--prod', '--legacy', destination])
@@ -357,6 +719,7 @@ export function renderEnvironment(environment) {
  * Install therefore waits until no Run is queued, running or waiting, unless the operator accepts the interruption.
  */
 export async function waitForIdleRuns({ query, timeoutMs, pollMs = 15_000, interrupt = false, log = console.log, sleep = delay }) {
+  if (!Number.isFinite(timeoutMs) || timeoutMs < 0) throw new Error('Run idle-wait timeout must be finite and nonnegative.')
   if (interrupt) return
   const deadline = Date.now() + timeoutMs
   for (;;) {
@@ -376,22 +739,90 @@ export async function readActiveRuns(release, databaseUrl, wait) {
   const { Pool } = require('pg')
   const pool = new Pool({ connectionString: databaseUrl, max: 1, connectionTimeoutMillis: 5000, query_timeout: 5000 })
   try {
-    await wait((text) => pool.query(text))
+    return await withRunStartMaintenance(pool, wait)
   } finally {
     await pool.end()
   }
 }
 
+export async function withRunStartMaintenance(pool, action, { timeoutMs = 30_000, pollMs = 100 } = {}) {
+  const client = await pool.connect()
+  const closed = new Promise(resolve => client.once('end', resolve))
+  let released = false
+  const release = () => {
+    if (released) return closed
+    released = true
+    // Destroy the session so database recreation is possible during recovery.
+    client.release(true)
+    return closed
+  }
+  try {
+    const deadline = Date.now() + timeoutMs
+    for (;;) {
+      const result = await client.query(
+        'select pg_try_advisory_lock(hashtext($1), hashtext(current_schema())) as locked',
+        [productionMaintenanceKey],
+      )
+      if (result.rows[0]?.locked === true) break
+      if (Date.now() >= deadline) throw new Error('Run publication is still in progress. Retry installation later.')
+      await delay(Math.min(pollMs, Math.max(0, deadline - Date.now())))
+    }
+    return await action(text => client.query(text), release)
+  } finally {
+    await release()
+  }
+}
+
 /** Each install stages a full release (~1 GB). Keep the running one and the previous one for rollback; remove the rest. */
-export async function pruneReleases(releasesDirectory, keep) {
-  const kept = new Set(keep.filter(Boolean))
+// Deleting a release's dependency tree takes ~20 s; installs move it aside and let a detached process delete it.
+/**
+ * Starts work that must outlive this install. A detached child still dies with the install's systemd unit (the
+ * unit's control group is killed when it ends), so the work gets its own transient user unit when systemd-run exists.
+ */
+export function startBackground(name, command, args, { logFile, systemdRun = existsSync('/usr/bin/systemd-run')
+  ? '/usr/bin/systemd-run' : null, spawnProcess = spawn } = {}) {
+  if (!systemdRun) {
+    spawnProcess(command, args, { detached: true, stdio: 'ignore' }).unref()
+    return
+  }
+  spawnProcess(systemdRun, ['--user', '--collect', '--quiet', `--unit=${name}-${randomBytes(4).toString('hex')}`,
+    `--setenv=PATH=${process.env.PATH}`,
+    ...(logFile ? [`--property=StandardOutput=append:${logFile}`, `--property=StandardError=append:${logFile}`] : []),
+    command, ...args], { detached: true, stdio: 'ignore' }).unref()
+}
+
+function removeDetached(directory) {
+  startBackground('foreman-remove-release', 'rm', ['-rf', '--', directory])
+}
+
+export async function pruneReleases(releasesDirectory, keep,
+  { current = join(dirname(releasesDirectory), 'current'), removeInBackground = removeDetached } = {}) {
+  const directory = await realpath(releasesDirectory)
+  const retained = keep.filter(Boolean)
+  try {
+    // A missing selection is valid before first activation; a dangling link is not.
+    await lstat(current)
+    retained.push(current)
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error
+  }
+  const kept = new Set(await Promise.all(retained.map(path => realpath(path))))
   const removed = []
-  for (const name of await readdir(releasesDirectory)) {
+  const candidates = []
+  for (const name of await readdir(directory)) {
+    if (!name.startsWith('release-')) continue
     const path = join(releasesDirectory, name)
-    if (!name.startsWith('release-') || kept.has(path)) continue
-    await rm(path, { recursive: true, force: true })
+    candidates.push({ path, identity: await realpath(path) })
+  }
+  let pruned
+  for (const { path, identity } of candidates) {
+    if (kept.has(identity)) continue
+    // A rename within the installation is atomic, so the releases directory never shows a half-deleted release.
+    pruned ??= await mkdtemp(join(dirname(directory), '.pruned-releases-'))
+    await rename(path, join(pruned, path.slice(path.lastIndexOf('/') + 1)))
     removed.push(path)
   }
+  if (pruned) removeInBackground(pruned)
   return removed
 }
 
@@ -408,7 +839,19 @@ export async function readProductionIdentity(release, databaseUrl) {
   }
 }
 
-export async function waitForProductionReady({ origin, expected, timeoutMs = 90_000 }) {
+export async function waitForProductionReady(options) {
+  try {
+    await options.start?.()
+    await pollProductionReady(options)
+    await options.smoke?.()
+  } catch (error) {
+    try { await options.rollback?.(error) }
+    catch (failure) { throw new Error(`${error.message}\nRollback failed: ${failure.message}`, { cause: error }) }
+    throw error
+  }
+}
+
+async function pollProductionReady({ origin, expected, timeoutMs = 90_000 }) {
   const deadline = Date.now() + timeoutMs
   let failure = 'API has not responded.'
   const identityMatches = async () => {
@@ -438,7 +881,9 @@ export async function waitForProductionReady({ origin, expected, timeoutMs = 90_
 }
 
 export async function copyVerificationRuntime(source, release) {
-  const paths = ['scripts/verification-runner.mjs', 'scripts/verification-reports.mjs',
+  const paths = ['scripts/ci-watchdog.mjs', 'scripts/ci-progress-reporter.mjs',
+    'scripts/ci-test-results.mjs', 'scripts/dense-resources.mjs',
+    'scripts/verification-runner.mjs', 'scripts/verification-reports.mjs',
     'scripts/integration-process.mjs', 'scripts/integration-capabilities.mjs',
     'apps/worker/src/diagnostics.mjs', 'packages/contracts/src/verificationEnvironment.mjs',
     'packages/contracts/src/integrationScheduling.mjs']

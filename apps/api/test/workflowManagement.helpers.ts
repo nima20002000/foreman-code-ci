@@ -56,7 +56,7 @@ export function useWorkflowManagementFixture() {
       actions: ManagementActionSchema.options.filter((action) => action !== 'capabilities:read'), scope: { workspaceIds: [f.scope.workspaceId] },
     }])
     const workflows = new WorkflowManagementService(db.pool, commands)
-    const locations = new WorkspaceLocationService(db.pool, commands, db.directory, 'runner-local', db.directory)
+    const locations = new WorkspaceLocationService(db.pool, commands, db.directory, 'runner-local')
     const workflowRepository = new PostgresWorkflowRepository(db.pool)
     const repository = new PostgresRunRepository(db.pool, workflowRepository, locations, { runtimeRoot: db.directory,
       ...createWorkflowRepositoryServices(createWorkflowNativeCaptureChannel().verify) })
@@ -84,7 +84,7 @@ export function useWorkflowManagementFixture() {
     const input = CurrentWorkflowSaveInputSchema.parse({ workspaceId: f.scope.workspaceId, workflowId: managed.workflow.id,
       commandId: randomUUID(), executionSemanticsVersion: 3, expectedRevision: managed.revision,
       expectedWorkflowVersionId: null, expectedAgentConfigurationVersionIds: Object.fromEntries(configurations.map((config) => [config.agentId, config.id])),
-      expectedLocationRevision: 1, graph })
+      graph })
     const url = `/api/management/workspaces/${input.workspaceId}/workflows/${input.workflowId}/definition`
     const call = async (name: string, args: unknown, token = writer.token) => graphRpc(app, token, 'tools/call', { name, arguments: args })
     return { app, input, url, writer, access, credential, commands, workflows, call, f, configurations, start, cancel }

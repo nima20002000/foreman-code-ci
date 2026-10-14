@@ -21,6 +21,7 @@ import {
 import { sourceSha256 } from '../../sources/manifest.js'
 import { DEVICE_APPLICATION_JSON_BYTES } from '@foreman-code/contracts/device-application'
 import { remoteWorkflowSourceDigest } from './workflowPhysicalReadout.js'
+import { MainClock } from '../../devices/workerClock.js'
 import {
   journals,
   directory,
@@ -216,6 +217,84 @@ describe('positive installed native closure consumption',()=>{
 })
 
 describe('installed host resident execution continuity', () => {
+  it.each([-90_000, 50_000, 90_000])(
+    'closes a retained reviewer at Main expiry through disconnect and a %s ms worker offset', async offset => {
+      const mainTime = Date.now()
+      let elapsed = 0
+      const mainClock = new MainClock(() => elapsed)
+      mainClock.observe(mainTime)
+      const wallClock = vi.spyOn(Date, 'now').mockReturnValue(mainTime + offset)
+      const f = await runningInstalledFixture('generation', {
+        retainReviewer: true, mainNow: () => mainClock.now(),
+      })
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+      try {
+        f.finish('succeeded')
+        await vi.waitFor(async () => expect(await f.journal.status(f.intent.operationId))
+          .toMatchObject({ receipt: { retainedReviewer: { agentId: 'agent' } } }))
+        await vi.waitFor(() => expect(vi.getTimerCount()).toBe(1))
+        f.disconnect()
+        wallClock.mockReturnValue(mainTime + 300_000)
+        elapsed = 10_000
+        await vi.advanceTimersByTimeAsync(10_000)
+        await vi.waitFor(() => expect(vi.getTimerCount()).toBe(1))
+        expect(await f.journal.status(f.intent.operationId)).toMatchObject({ receipt: {
+          retainedReviewer: { expiresAt: new Date(mainTime + 60_000).toISOString() },
+        } })
+        expect(f.cancel).not.toHaveBeenCalled()
+        wallClock.mockReturnValue(mainTime - 300_000)
+        elapsed = 60_000
+        await vi.advanceTimersByTimeAsync(10_000)
+        await vi.waitFor(async () => expect(await f.journal.status(f.intent.operationId))
+          .toMatchObject({ receipt: { terminal: { kind: 'cancelled' } } }))
+        expect(f.cancel).toHaveBeenCalledOnce()
+      } finally {
+        vi.useRealTimers()
+        wallClock.mockRestore()
+        f.reconnect(f.context.binding)
+        f.cleanup()
+        await f.stop()
+        await f.host.close()
+      }
+    },
+  )
+
+  it('extends the reviewer deadline on successful Main renewal before a disconnection', async () => {
+    const mainTime = Date.now()
+    let elapsed = 0
+    const mainClock = new MainClock(() => elapsed)
+    mainClock.observe(mainTime)
+    const f = await runningInstalledFixture('generation', { retainReviewer: true, mainNow: () => mainClock.now() })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      f.finish('succeeded')
+      await vi.waitFor(async () => expect(await f.journal.status(f.intent.operationId))
+        .toMatchObject({ receipt: { retainedReviewer: { agentId: 'agent' } } }))
+      await vi.waitFor(() => expect(vi.getTimerCount()).toBe(1))
+      elapsed = 40_000
+      await vi.advanceTimersByTimeAsync(10_000)
+      await vi.waitFor(async () => expect(await f.journal.status(f.intent.operationId))
+        .toMatchObject({ receipt: { retainedReviewer: {
+          expiresAt: new Date(mainTime + 100_000).toISOString(),
+        } } }))
+      f.disconnect()
+      elapsed = 60_000
+      await vi.advanceTimersByTimeAsync(10_000)
+      await vi.waitFor(() => expect(vi.getTimerCount()).toBe(1))
+      expect(f.cancel).not.toHaveBeenCalled()
+      elapsed = 100_000
+      await vi.advanceTimersByTimeAsync(10_000)
+      await vi.waitFor(async () => expect(await f.journal.status(f.intent.operationId))
+        .toMatchObject({ receipt: { terminal: { kind: 'cancelled' } } }))
+    } finally {
+      vi.useRealTimers()
+      f.reconnect(f.context.binding)
+      f.cleanup()
+      await f.stop()
+      await f.host.close()
+    }
+  })
+
   it.each(['status', 'reattach'] as const)(
     'reads the original retained reviewer through %s before App rebinding', async method => {
       const f = await runningInstalledFixture('generation', { retainReviewer: true })
@@ -223,14 +302,14 @@ describe('installed host resident execution continuity', () => {
         f.finish('succeeded')
         await f.retained
         f.denyMcp()
-        const appRequests = f.requests.filter(request => request.namespace === 'worker-mcp-v1').length
+        const appRequests = f.requests.filter(request => request.namespace === 'worker-mcp-v2').length
         const reply = await f.call(method, method === 'reattach'
           ? { request: f.request, session: { harness: 'codex', providerVersion: '0.132.0', nativeSessionId: 'original-session' } }
           : {})
         expect(reply.payload).toMatchObject(method === 'reattach'
           ? { session: { nativeSessionId: 'original-session' }, status: { receipt: { retainedReviewer: { agentId: 'agent' } } } }
           : { receipt: { retainedReviewer: { agentId: 'agent' } } })
-        expect(f.requests.filter(request => request.namespace === 'worker-mcp-v1')).toHaveLength(appRequests)
+        expect(f.requests.filter(request => request.namespace === 'worker-mcp-v2')).toHaveLength(appRequests)
         expect(f.create).toHaveBeenCalledOnce()
         expect(f.attach).not.toHaveBeenCalled()
         await expect(f.call('history')).rejects.toThrow('App binding requires recovery')
@@ -249,6 +328,33 @@ describe('installed host resident execution continuity', () => {
       await f.retained
       f.revokeRetention()
       await expect(f.call('status')).rejects.toThrow('Reviewer retention revoked')
+    } finally {
+      f.cleanup()
+      await f.stop()
+      await f.host.close()
+    }
+  })
+
+  it.each(['status', 'reattach'] as const)('reads %s during committed cleanup without renewing the reviewer', async method => {
+    const f = await runningInstalledFixture('generation', { retainReviewer: true })
+    try {
+      f.finish('succeeded')
+      await f.retained
+      f.cleanup()
+      f.revokeRetention()
+      const before = f.requests.length
+      const fields = method === 'reattach' ? { session: f.session, request: f.request } : {}
+      const reply = await f.call(method, fields)
+      expect(reply.payload).toMatchObject(method === 'reattach'
+        ? { session: f.session, status: { status: 'known' } } : { status: 'known' })
+      expect(f.requests.slice(before).filter(request => request.namespace === 'execution-authority-v1'
+        && (request.payload as { action: string }).action === 'retain-reviewer')).toHaveLength(0)
+      await f.stop()
+      await f.settled
+      expect(await f.journal.status(f.intent.operationId)).toMatchObject({
+        status: 'known', receipt: { phase: 'confirmed_terminal', stopFence: true },
+      })
+      expect(f.closeOwner).toHaveBeenCalled()
     } finally {
       f.cleanup()
       await f.stop()
@@ -341,6 +447,52 @@ describe('installed host resident execution continuity', () => {
       expect(f.create).toHaveBeenCalledOnce()
     } finally {
       f.finish('canceled')
+      await f.host.close()
+    }
+  })
+
+  it('waits for original terminal settlement when reconnecting during native closure', async () => {
+    const f = await runningInstalledFixture()
+    const closeOwner = f.closeOwner.getMockImplementation()!
+    let closed!: () => void
+    let release!: () => void
+    const physicallyClosed = new Promise<void>(resolve => { closed = resolve })
+    const continueSettlement = new Promise<void>(resolve => { release = resolve })
+    f.closeOwner.mockImplementation(async owner => {
+      const result = await closeOwner(owner)
+      closed()
+      await continueSettlement
+      return result
+    })
+    try {
+      f.disconnect()
+      f.finish('succeeded')
+      await physicallyClosed
+      expect(await f.journal.status(f.intent.operationId)).toMatchObject({
+        status: 'known', receipt: { phase: 'running' },
+      })
+      const replacement = { ...f.context.binding,
+        connectionGeneration: f.context.binding.connectionGeneration + 1, connectionEpoch: randomUUID() }
+      f.reconnect(replacement)
+      let readSettled = false
+      const outcome = f.call('history').then(response => ({ response }), (error: unknown) => ({ error }))
+        .then(result => {
+          readSettled = true
+          return result
+        })
+      // Let reconnection inspect the closed process while its terminal commit is still blocked.
+      await new Promise<void>(resolve => setImmediate(resolve))
+      expect(readSettled).toBe(false)
+      release()
+      expect(await outcome).toMatchObject({ response: { payload: {
+        history: f.history, status: { receipt: { terminal: { kind: 'completed' } } },
+      } } })
+      expect(f.create).toHaveBeenCalledOnce()
+      expect(f.turns).toHaveBeenCalledOnce()
+      expect(f.attach).not.toHaveBeenCalled()
+      expect(f.cancel).not.toHaveBeenCalled()
+    } finally {
+      release()
       await f.host.close()
     }
   })

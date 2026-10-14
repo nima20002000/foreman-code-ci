@@ -51,7 +51,7 @@ const PinnedRunNode = memo(function PinnedRunNode({ id, data, selected, width, h
   const ui = useContext(RunAgentPanels), anchor = useRef<HTMLButtonElement>(null)
   const panel = ui?.open?.nodeId === id ? ui.open.panel : undefined
   const meta = [...(data.blockId ? [{ label: 'Repeat', value: data.blockId }] : []),
-    ...(data.kind === 'agent' && data.intervalSeconds ? [{ label: 'Checks', value: intervalLabel(data.intervalSeconds) }] : []),
+    ...(data.kind === 'agent' && data.intervalSeconds ? [{ label: 'Loop', value: intervalLabel(data.intervalSeconds) }] : []),
     ...data.facts.meta].slice(0, 2)
   return <><AgentNodeView ref={anchor} className="pinned-run-node" name={data.label} harness={data.facts.harness} harnessLabel={data.facts.harnessLabel}
     model={data.facts.model} icon={data.facts.icon} statusLabel={data.status} state={data.state} transition={data.transition} transitionKey={data.transitionKey} meta={meta}
@@ -65,7 +65,7 @@ const PinnedRunNode = memo(function PinnedRunNode({ id, data, selected, width, h
     {panel && ui?.panels && data.kind==='agent' ? <AgentPopover open anchor={anchor} title={data.label} subtitle={`Selected Run · ${data.recorded}`}
       harness={data.facts.harness} icon={data.facts.icon} panel={panel}
       onClose={() => ui.setOpen(undefined)}
-      {...ui.panels(id,{agentId:data.agentId,name:data.label})} /> : null}
+      {...ui.panels(id,{agentId:data.agentId,name:data.label,role:data.facts.roleLabel,runLabel:data.status})} /> : null}
   </>
 })
 // Pulses and traces are timed once per canvas, so an edge remount never replays a handoff.
@@ -115,10 +115,6 @@ export function SelectedRunCanvas({ scope, panels, layout, geometry }: {
   scope: RepeatGraphScopeV3; panels?: AgentPanelRenderer
   layout?: readonly Pick<WorkflowNodeV3, 'id' | 'position' | 'width' | 'height'>[]; geometry?: (changes: GraphGeometryChange[]) => void
 }) {
-  const [adapter] = useState(() => createGraphGeometryAdapter<RunNode>([]))
-  const [canvasNodes, setCanvasNodes] = useState<RunNode[]>([])
-  // Node selection is local presentation, like the draft canvas; it never changes the Run.
-  const [picked, setPicked] = useState<ReadonlySet<string>>(() => new Set())
   const [open, setOpen] = useState<OpenAgentPanel>()
   const board = useWorkflowBoard()!
   const query = useRunVersionQuery(scope)
@@ -158,13 +154,20 @@ export function SelectedRunCanvas({ scope, panels, layout, geometry }: {
     refetchInterval: (query) => isRunAccessError(query.state.error) ? false
       : live || query.state.data?.jobs.some(isActiveCiJob) ? 1500 : false,
   })
-  const ciRunJobs = ciList.data?.runId === scope.runId ? ciList.data.jobs : undefined
-  const cis = useMemo(() => ciNodeActivities(ciRunJobs ?? []), [ciRunJobs])
+  const ciDenied = useProtectedAccessError(ciList)
+  const ciRunJobs = !ciDenied && ciList.data?.runId === scope.runId ? ciList.data.jobs : undefined
+  const cis = useMemo(() => ciNodeActivities(ciList.isError ? [] : ciRunJobs ?? []), [ciRunJobs, ciList.isError])
   // Shown with the Agents from the first render, so the first fit includes it; unknown until its first read.
-  const ciUnavailable = ciList.isError && !ciRunJobs
-  const ciSummary = useMemo(() => ciRunJobs ? ciServerSummary(ciRunJobs) : { ...ciServerSummary([]), state: 'unavailable' as const,
-    label: ciUnavailable ? 'CI unavailable' : 'Loading CI' }, [ciRunJobs, ciUnavailable])
-  const transfers = useCiTransfers(ciRunJobs, useReducedMotion())
+  const ciUnavailable = Boolean(ciDenied || ciList.isError && !ciRunJobs)
+  const ciSummary = useMemo(() => {
+    if (!ciRunJobs) return { ...ciServerSummary([]), state: 'unavailable' as const,
+      label: ciUnavailable ? 'CI unavailable' : 'Loading CI' }
+    const summary = ciServerSummary(ciRunJobs)
+    return ciList.isError ? { ...summary, state: 'unavailable' as const, label: `Last read: ${summary.label}` } : summary
+  }, [ciRunJobs, ciUnavailable, ciList.isError])
+  const ciFlights = useCiTransfers(ciList.isError ? undefined : ciRunJobs, useReducedMotion())
+  const transfers = useMemo(() => ciDenied || ciList.isError ? new Map<string, EdgePulse[]>() : ciFlights,
+    [ciDenied, ciList.isError, ciFlights])
   const ciDialogKey = JSON.stringify(['ci-server', scope.runId])
   const ciDialogOpen = useInspectionPresentation((state) => !!state.open[ciDialogKey])
   const setCiDialogOpen = (value: boolean) => useInspectionPresentation.getState().setOpen(ciDialogKey, value)
@@ -254,6 +257,85 @@ export function SelectedRunCanvas({ scope, panels, layout, geometry }: {
     previous.current = next
     return result
   }, [topology, states, record, recordLoading, facts, jobExecutions, board.inspection.runNodeId, choreography.nodes, cis, waits, checks, checking])
+  const { canvasNodes, presentedNodes, onNodesChange, beginResize, resize, finishResize } =
+    useRunCanvasGeometry({ nodes, layout, version, geometry })
+  const ciServerNode = useMemo(() => ciServerFlowNode(canvasNodes, ciSummary,
+    () => useInspectionPresentation.getState().setOpen(ciDialogKey, true)), [ciSummary, canvasNodes, ciDialogKey])
+  const flowNodes = useMemo(() => ciServerNode ? [...canvasNodes, ciServerNode] : canvasNodes, [canvasNodes, ciServerNode])
+  const edges = useMemo<RunEdge[]>(() => {
+    const counts = new Map<string, number>()
+    return lines.lines.map((edge) => {
+      const pair = JSON.stringify([edge.source, edge.target].sort()), count = counts.get(pair) ?? 0
+      counts.set(pair, count + 1)
+      return { id: edge.id, source: edge.source, target: edge.target, type: 'pinnedRunEdge',
+        sourceHandle: 'right', targetHandle: 'left',
+        selected: edge.members.some((member) => member.id === board.inspection.runRelationshipId),
+        ariaLabel: `${edge.kind} relationship ${edge.id} from ${edge.source} to ${edge.target}`,
+        data: { kind: edge.kind, bend: edgeBend(count, edge.source < edge.target),
+          handoffs: Boolean(version?.definition.handoffs && edge.kind === 'execution'),
+          limit: edge.maxWorkHandoffsPerRun,
+          used: handoffs?.connections.find((item) => item.relationshipId === edge.id)?.used } }
+    })
+  }, [lines, board.inspection.runRelationshipId, version?.definition.handoffs, handoffs?.connections])
+  // A light per Agent while its CI request or result travels; no lasting line to the server.
+  const flowEdges = useMemo<(RunEdge | CiTransferFlowEdge)[]>(() => ciServerNode && transfers.size ? [...edges,
+    ...[...transfers].filter(([nodeId]) => presentedNodes.some((node) => node.id === nodeId)).map(([nodeId, pulses]) => ({
+      id: `ci-transfer:${nodeId}`, type: 'ciTransfer' as const, source: nodeId, target: CI_SERVER_NODE_ID,
+      sourceHandle: 'right', targetHandle: 'left', selectable: false, focusable: false, deletable: false, data: { pulses } }))]
+    : edges, [edges, transfers, ciServerNode, presentedNodes])
+  const missingNode = !!version && !!board.inspection.runNodeId
+    && !version.definition.nodes.some((node) => node.id === board.inspection.runNodeId)
+  return <section className="next-draft-canvas board-draft-canvas pinned-run-canvas" aria-label="Selected Run pinned topology">
+    {/* Seen, the Run is just this Board; the small Run tag names it. Assistive tech still gets the exact pins. */}
+    <h2 className="visually-hidden">{version?.definition.name ?? 'Selected Run'} · Run {scope.runId} · version {scope.workflowVersionId}</h2>
+    {query.isPaused ? <p role="status">Pinned topology refresh is paused. Any retained topology is a previously verified saved version.</p>
+      : query.isPending ? <p role="status">Loading this Run’s exact saved topology…</p> : null}
+    {query.isError || denied || canonicalDenied ? <Alert tone="warning" title="The selected Run topology is unavailable.">
+      The current draft is not shown as historical fact.
+      {!denied && !canonicalDenied ? <Button size="sm" onClick={() => void query.refetch()}>Retry pinned topology</Button> : null}
+    </Alert> : null}
+    {missingNode ? <Alert tone="warning" title="The linked node is not in this Run’s saved version.">
+      <Button size="sm" onClick={() => board.selectInspection({})}>Clear missing node selection</Button>
+    </Alert> : null}
+    {version ? <div className="pinned-run-flow">
+      <ReactFlowProvider><RunAgentPanels.Provider value={{ panels, open, setOpen, beginResize, resize, finishResize }}><Choreography.Provider value={motion}><ReactFlow<RunNode | CiServerFlowNode, RunEdge | CiTransferFlowEdge> nodes={flowNodes} edges={flowEdges} nodeTypes={nodeTypes} edgeTypes={edgeTypes}
+        onNodesChange={onNodesChange} nodesDraggable={Boolean(geometry)} nodesConnectable={false} nodesFocusable edgesFocusable
+        elementsSelectable deleteKeyCode={null} onlyRenderVisibleElements
+        fitView fitViewOptions={fitViewOptions} proOptions={proOptions} minZoom={0.1} maxZoom={1.6}
+        aria-label="Run graph canvas">
+        <SelectedRunSubagents key={scope.runId} scope={scope} nodes={canvasNodes} />
+        <Background color="var(--border)" gap={24} size={1} />
+      </ReactFlow></Choreography.Provider></RunAgentPanels.Provider></ReactFlowProvider>
+    </div> : null}
+    <CiServerDialog open={ciDialogOpen} onOpenChange={setCiDialogOpen} scope={scope} jobs={ciRunJobs ?? []} names={names}
+      truncated={!ciDenied && (ciList.data?.truncated ?? false)} error={Boolean(ciDenied || ciList.isError)} loading={ciList.isPending} />
+  </section>
+}
+
+function SelectedRunSubagents({ scope, nodes: flowNodes }: { scope: RepeatGraphScopeV3; nodes: RunNode[] }) {
+  const initialized = useNodesInitialized()
+  const flow = useReactFlow<RunNode>()
+  const nodes: SubagentLayoutNode[] = flowNodes.flatMap((node) => {
+    const measured = initialized ? flow.getInternalNode(node.id)?.measured : undefined
+    // A resized node carries its size explicitly; React Flow may not re-measure it.
+    const width = measured?.width ?? node.width
+    const height = measured?.height ?? node.height
+    if (!width || !height) return []
+    return [{ id: node.id, kind: node.data.kind, position: node.position, size: { width, height } }]
+  })
+  return <RunSubagentsOverlay scope={scope} nodes={nodes} />
+}
+
+function useRunCanvasGeometry({ nodes, layout, version, geometry }: {
+  nodes: RunNode[]
+  layout: Parameters<typeof SelectedRunCanvas>[0]['layout']
+  version: NonNullable<ReturnType<typeof useRunVersionQuery>['data']>['version'] | undefined
+  geometry: Parameters<typeof SelectedRunCanvas>[0]['geometry']
+}) {
+  const [adapter] = useState(() => createGraphGeometryAdapter<RunNode>([]))
+  const [canvasNodes, setCanvasNodes] = useState<RunNode[]>([])
+  // Node selection is local presentation, like the draft canvas; it never changes the Run.
+  const [picked, setPicked] = useState<ReadonlySet<string>>(() => new Set())
   const layoutById = useMemo(() => new Map(layout?.map((node) => [node.id, node])), [layout])
   const pinnedById = useMemo(() => new Map(version?.definition.nodes.map((node) => [node.id, node])), [version])
   const presented = useRef(new Map<string, { source: RunNode; node: RunNode }>())
@@ -302,73 +384,9 @@ export function SelectedRunCanvas({ scope, panels, layout, geometry }: {
     ])
     setCanvasNodes(result.nodes)
   }
-  const ciServerNode = useMemo(() => ciServerFlowNode(canvasNodes, ciSummary,
-    () => useInspectionPresentation.getState().setOpen(ciDialogKey, true)), [ciSummary, canvasNodes, ciDialogKey])
-  const flowNodes = useMemo(() => ciServerNode ? [...canvasNodes, ciServerNode] : canvasNodes, [canvasNodes, ciServerNode])
   const finishResize = (change: GraphGeometryChange) => {
     setCanvasNodes(adapter.finishResize(change.id, change.width!, change.height!, change.position))
     flushGeometry()
   }
-  const edges = useMemo<RunEdge[]>(() => {
-    const counts = new Map<string, number>()
-    return lines.lines.map((edge) => {
-      const pair = JSON.stringify([edge.source, edge.target].sort()), count = counts.get(pair) ?? 0
-      counts.set(pair, count + 1)
-      return { id: edge.id, source: edge.source, target: edge.target, type: 'pinnedRunEdge',
-        sourceHandle: 'right', targetHandle: 'left',
-        selected: edge.members.some((member) => member.id === board.inspection.runRelationshipId),
-        ariaLabel: `${edge.kind} relationship ${edge.id} from ${edge.source} to ${edge.target}`,
-        data: { kind: edge.kind, bend: edgeBend(count, edge.source < edge.target),
-          handoffs: Boolean(version?.definition.handoffs && edge.kind === 'execution'),
-          limit: edge.maxWorkHandoffsPerRun,
-          used: handoffs?.connections.find((item) => item.relationshipId === edge.id)?.used } }
-    })
-  }, [lines, board.inspection.runRelationshipId, version?.definition.handoffs, handoffs?.connections])
-  // A light per Agent while its CI request or result travels; no lasting line to the server.
-  const flowEdges = useMemo<(RunEdge | CiTransferFlowEdge)[]>(() => ciServerNode && transfers.size ? [...edges,
-    ...[...transfers].filter(([nodeId]) => presentedNodes.some((node) => node.id === nodeId)).map(([nodeId, pulses]) => ({
-      id: `ci-transfer:${nodeId}`, type: 'ciTransfer' as const, source: nodeId, target: CI_SERVER_NODE_ID,
-      sourceHandle: 'right', targetHandle: 'left', selectable: false, focusable: false, deletable: false, data: { pulses } }))]
-    : edges, [edges, transfers, ciServerNode, presentedNodes])
-  const missingNode = !!version && !!board.inspection.runNodeId
-    && !version.definition.nodes.some((node) => node.id === board.inspection.runNodeId)
-  return <section className="next-draft-canvas board-draft-canvas pinned-run-canvas" aria-label="Selected Run pinned topology">
-    {/* Seen, the Run is just this Board; the small Run tag names it. Assistive tech still gets the exact pins. */}
-    <h2 className="visually-hidden">{version?.definition.name ?? 'Selected Run'} · Run {scope.runId} · version {scope.workflowVersionId}</h2>
-    {query.isPaused ? <p role="status">Pinned topology refresh is paused. Any retained topology is a previously verified saved version.</p>
-      : query.isPending ? <p role="status">Loading this Run’s exact saved topology…</p> : null}
-    {query.isError || denied || canonicalDenied ? <Alert tone="warning" title="The selected Run topology is unavailable.">
-      The current draft is not shown as historical fact.
-      {!denied && !canonicalDenied ? <Button size="sm" onClick={() => void query.refetch()}>Retry pinned topology</Button> : null}
-    </Alert> : null}
-    {missingNode ? <Alert tone="warning" title="The linked node is not in this Run’s saved version.">
-      <Button size="sm" onClick={() => board.selectInspection({})}>Clear missing node selection</Button>
-    </Alert> : null}
-    {version ? <div className="pinned-run-flow">
-      <ReactFlowProvider><RunAgentPanels.Provider value={{ panels, open, setOpen, beginResize: adapter.beginResize, resize, finishResize }}><Choreography.Provider value={motion}><ReactFlow<RunNode | CiServerFlowNode, RunEdge | CiTransferFlowEdge> nodes={flowNodes} edges={flowEdges} nodeTypes={nodeTypes} edgeTypes={edgeTypes}
-        onNodesChange={onNodesChange} nodesDraggable={Boolean(geometry)} nodesConnectable={false} nodesFocusable edgesFocusable
-        elementsSelectable deleteKeyCode={null} onlyRenderVisibleElements
-        fitView fitViewOptions={fitViewOptions} proOptions={proOptions} minZoom={0.1} maxZoom={1.6}
-        aria-label="Run graph canvas">
-        <SelectedRunSubagents key={scope.runId} scope={scope} nodes={canvasNodes} />
-        <Background color="var(--border)" gap={24} size={1} />
-      </ReactFlow></Choreography.Provider></RunAgentPanels.Provider></ReactFlowProvider>
-    </div> : null}
-    <CiServerDialog open={ciDialogOpen} onOpenChange={setCiDialogOpen} scope={scope} jobs={ciRunJobs ?? []} names={names}
-      truncated={ciList.data?.truncated ?? false} error={ciList.isError} loading={ciList.isPending} />
-  </section>
-}
-
-function SelectedRunSubagents({ scope, nodes: flowNodes }: { scope: RepeatGraphScopeV3; nodes: RunNode[] }) {
-  const initialized = useNodesInitialized()
-  const flow = useReactFlow<RunNode>()
-  const nodes: SubagentLayoutNode[] = flowNodes.flatMap((node) => {
-    const measured = initialized ? flow.getInternalNode(node.id)?.measured : undefined
-    // A resized node carries its size explicitly; React Flow may not re-measure it.
-    const width = measured?.width ?? node.width
-    const height = measured?.height ?? node.height
-    if (!width || !height) return []
-    return [{ id: node.id, kind: node.data.kind, position: node.position, size: { width, height } }]
-  })
-  return <RunSubagentsOverlay scope={scope} nodes={nodes} />
+  return { canvasNodes, presentedNodes, onNodesChange, beginResize: adapter.beginResize, resize, finishResize }
 }

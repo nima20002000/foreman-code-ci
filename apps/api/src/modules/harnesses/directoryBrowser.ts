@@ -1,3 +1,5 @@
+import { homedir } from 'node:os'
+import { errorMessage } from '../../shared/errorMessage.js'
 import type pg from 'pg'
 import { mkdir, opendir, readdir, realpath, rename, rmdir, lstat } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path'
@@ -6,13 +8,14 @@ import { requireAuthorization } from '../access/policy.js'
 import { PostgresCommandCoordinator } from '../commands/postgres.js'
 import { DomainError } from '../errors.js'
 import { WorkspaceFolderDeleteInputSchema, type WorkspaceFolderDeleteInput } from '@foreman-code/contracts/management'
+import { ignoreError } from '../diagnostics/ignoredError.js'
 
 export function isInside(root: string, path: string): boolean {
   const rel = relative(root, path)
   return rel === '' || (!isAbsolute(rel) && rel !== '..' && !rel.startsWith(`..${sep}`))
 }
 
-/** Folder operations stay inside configured roots and never change harness permissions. */
+/** Selection follows filesystem access; deletion stays inside configured storage roots. */
 export class HarnessDirectoryBrowser {
   constructor(private readonly configuredRoots: readonly string[], private readonly pool: pg.Pool) {}
   async create(principal: ManagementPrincipal, source: 'http' | 'mcp', input: WorkspaceFolderCreateInput) {
@@ -27,9 +30,8 @@ export class HarnessDirectoryBrowser {
         try { parent = await realpath(accepted.parentPath) } catch {
           throw new DomainError('DIRECTORY_UNAVAILABLE', 'The parent folder is unavailable.', 404)
         }
-        const roots = await Promise.all(this.configuredRoots.map((root) => realpath(root)))
-        if (!isAbsolute(accepted.parentPath) || !roots.some((root) => isInside(root, parent))) {
-          throw new DomainError('DIRECTORY_OUTSIDE_ROOT', 'Choose a parent inside an allowed location.', 403)
+        if (!isAbsolute(accepted.parentPath)) {
+          throw new DomainError('DIRECTORY_PATH_INVALID', 'Choose an absolute folder path.', 400)
         }
         for (let index = 1; index <= 10_000; index++) {
           const name = accepted.name ?? (index === 1 ? 'New folder' : `New folder (${index})`)
@@ -74,9 +76,8 @@ export class HarnessDirectoryBrowser {
         if (previous.rows[0]?.operation === 'workspace.folder.undo') throw new DomainError('DIRECTORY_ALREADY_UNDONE', 'Folder creation has been undone.', 409)
         sourcePath = previous.rows[0]?.result.path ?? created.path
         }
-        const roots = await Promise.all(this.configuredRoots.map((root) => realpath(root)))
-        const current = sourcePath && await realpath(sourcePath).catch(() => undefined)
-        if (!current || current !== sourcePath || !roots.some((root) => current !== root && isInside(root, current))) {
+        const current = sourcePath && await realpath(sourcePath).catch(ignoreError('harness', 'resolve directory browser source', {}, ['ENOENT', 'ENOTDIR']))
+        if (!current || current !== sourcePath) {
           throw new DomainError('DIRECTORY_UNAVAILABLE', 'The created folder is no longer available at its original location.', 409)
         }
         await client.query('select pg_advisory_xact_lock(hashtext($1))', [`workspace-folder:${current}`])
@@ -92,7 +93,7 @@ export class HarnessDirectoryBrowser {
           throw new DomainError('DIRECTORY_RENAME_FAILED', 'The folder could not be renamed.', 422)
         }
         try { await rename(current, target) } catch {
-          await rmdir(target).catch(() => undefined)
+          await rmdir(target).catch(ignoreError('harness', 'remove rename reservation', { commandId: accepted.commandId, creationCommandId: accepted.creationCommandId }))
           throw new DomainError('DIRECTORY_RENAME_FAILED', 'The folder could not be renamed.', 422)
         }
         return { path: target, name: accepted.name, creationCommandId: accepted.creationCommandId }
@@ -121,7 +122,7 @@ export class HarnessDirectoryBrowser {
           "select result from management_command_receipts where principal_id=$1 and operation='workspace.folder.rename' and result->>'creationCommandId'=$2 order by created_at desc limit 1", [principal.id, accepted.creationCommandId])
         const path = named.rows[0]?.result.path ?? created.path
         const roots = await Promise.all(this.configuredRoots.map((root) => realpath(root)))
-        if (await realpath(path).catch(() => undefined) !== path || !roots.some((root) => path !== root && isInside(root, path))) {
+        if (await realpath(path).catch(ignoreError('harness', 'resolve created directory', {}, ['ENOENT', 'ENOTDIR'])) !== path || !roots.some((root) => path !== root && isInside(root, path))) {
           throw new DomainError('DIRECTORY_UNAVAILABLE', 'The created folder is no longer available.', 409)
         }
         await client.query('select pg_advisory_xact_lock(hashtext($1))', [`workspace-folder:${path}`])
@@ -176,7 +177,7 @@ export class HarnessDirectoryBrowser {
             const code = (error as NodeJS.ErrnoException).code
             failed.push({ path, message: ['ENOTEMPTY', 'EEXIST'].includes(code ?? '')
               ? 'This folder contains files. Only empty folders can be deleted.'
-              : code ? 'This folder could not be deleted.' : error instanceof Error ? error.message : 'This folder could not be deleted.' })
+              : code ? 'This folder could not be deleted.' : errorMessage(error, 'This folder could not be deleted.') })
           }
         }
         return { deleted, failed }
@@ -191,34 +192,49 @@ export class HarnessDirectoryBrowser {
   }) {
     requireAuthorization(principal, 'harnesses:read')
     requireAuthorization(principal, 'workspace_locations:read')
-    const roots = await Promise.all(this.configuredRoots.map(async (path, index) => {
+    const browseRoots = [...new Set([...this.configuredRoots, homedir()])]
+    const roots = await Promise.all(browseRoots.map(async (path, index) => {
       let canonical: string
-      try { canonical = await realpath(path) } catch { throw new DomainError('DIRECTORY_ROOT_UNAVAILABLE', 'An allowed folder is unavailable. Ask the server administrator to check its configured roots.', 503) }
-      return { id: String(index), label: this.configuredRoots.length === 1 ? 'Workspaces' : basename(canonical) || canonical, path: canonical }
+      try { canonical = await realpath(path) } catch { throw new DomainError('DIRECTORY_ROOT_UNAVAILABLE', 'A browse location is unavailable.', 503) }
+      let label = basename(canonical) || canonical
+      if (path === homedir()) label = 'Home'
+      else if (this.configuredRoots.length === 1) label = 'Workspaces'
+      return { id: String(index), label, path: canonical }
     }))
-    if (!roots.length) return { roots, rootId: null, path: null, parent: null, directories: [], nextCursor: null }
     const root = input.rootId ? roots.find((item) => item.id === input.rootId) : roots[0]
-    if (!root) throw new DomainError('DIRECTORY_ROOT_INVALID', 'Select one of the allowed server locations.', 400)
+    if (!root) throw new DomainError('DIRECTORY_ROOT_INVALID', 'Select a browse location.', 400)
     const requested = input.path ?? root.path
-    if (!isAbsolute(requested) || !isInside(root.path, resolve(requested))) throw new DomainError('DIRECTORY_OUTSIDE_ROOT', 'That folder is outside the allowed location.', 403)
+    if (!isAbsolute(requested)) throw new DomainError('DIRECTORY_PATH_INVALID', 'Choose an absolute folder path.', 400)
     let path: string
     try { path = await realpath(requested) } catch { throw new DomainError('DIRECTORY_UNAVAILABLE', 'That folder is unavailable.', 404) }
-    if (!isInside(root.path, path)) throw new DomainError('DIRECTORY_OUTSIDE_ROOT', 'That link leaves the allowed location.', 403)
     if (!(await lstat(path)).isDirectory()) throw new DomainError('DIRECTORY_REQUIRED', 'Select a folder.', 400)
     let directory
     try { directory = await opendir(path) } catch { throw new DomainError('DIRECTORY_UNAVAILABLE', 'That folder cannot be opened by this runner.', 403) }
     const candidates: { name: string; path: string }[] = []
     let scanned = 0
+    let truncated = false
     for await (const entry of directory) {
-      if (++scanned > 20_000) throw new DomainError('DIRECTORY_TOO_LARGE', 'This folder is too large to browse. Select a more specific approved root.', 422)
-      // Symlink targets are not selectable. Native admission must still revalidate accepted roots.
-      if (!entry.isDirectory() || entry.name.startsWith('.')) continue
-      candidates.push({ name: entry.name, path: resolve(path, entry.name) })
+      if (++scanned > 20_000) {
+        truncated = true
+        break
+      }
+      if (entry.name.startsWith('.')) continue
+      const entryPath = resolve(path, entry.name)
+      if (!entry.isDirectory()) {
+        if (!entry.isSymbolicLink()) continue
+        try {
+          if (!(await lstat(await realpath(entryPath))).isDirectory()) continue
+        } catch (error) {
+          if (['ENOENT', 'ENOTDIR', 'EACCES', 'EPERM', 'ELOOP'].includes((error as NodeJS.ErrnoException).code ?? '')) continue
+          throw error
+        }
+      }
+      candidates.push({ name: entry.name, path: entryPath })
     }
     candidates.sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0)
     const after = candidates.filter((item) => !input.cursor || item.name > input.cursor)
     const directories = after.slice(0, 100)
     return { roots, rootId: root.id, path, parent: path === root.path ? null : dirname(path), directories,
-      nextCursor: after.length > directories.length ? directories.at(-1)!.name : null }
+      nextCursor: after.length > directories.length ? directories.at(-1)!.name : null, truncated }
   }
 }

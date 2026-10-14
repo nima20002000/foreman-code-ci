@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { persistentFixtureRoot } from '../../../test/helpers/fixtureStorage.js'
 import { mkdtemp, mkdir, chmod, writeFile, readFile, readdir, rename, symlink, rm } from 'node:fs/promises'
 import { deflateSync } from 'node:zlib'
 import { join } from 'node:path'
@@ -32,11 +33,11 @@ afterEach(async () => {
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true })
 })
 async function fixture() {
-  const root = await mkdtemp('/tmp/w09-source-'); roots.push(root); await chmod(root, 0o700)
+  const root = await mkdtemp(join(persistentFixtureRoot, 'source-materialization-')); roots.push(root); await chmod(root, 0o700)
   const bytes = Buffer.from('accepted source\n')
   const manifest = createSourceManifest({ version: 1, snapshotId: randomUUID(), approvedSourceId: randomUUID(),
     capturePolicy: 'exclusive-explicit-bytes-v1', executablePolicy: 'strip',
-    entries: [{ path: 'src/app.ts', kind: 'file', byteSize: bytes.length, sha256: sourceSha256(bytes), executable: false }], deletions: [] })
+    entries: [{ path: 'src/app.txt', kind: 'file', byteSize: bytes.length, sha256: sourceSha256(bytes), executable: false }], deletions: [] })
   const handle = await openPrivateRoot(root), fs = await identity(handle); await handle.close()
   const binding: RootBinding = { version: 1, mainId: randomUUID(), deviceId: randomUUID(), workerInstallationId: randomUUID(), workspaceId: randomUUID(), rootId: randomUUID(),
     bindingRevision: 1, locationRevision: 1, canonicalPath: root, filesystem: fs, accessMode: 'exclusive-write', snapshotId: manifest.snapshotId, manifestDigest: manifest.manifestDigest }
@@ -55,7 +56,7 @@ it('retains an uncertain claim without activating a receipt when the filesystem 
   const directories = await readdir(f.root, { withFileTypes: true })
   const reservation = directories.find(entry => entry.isDirectory())!
   expect(await readdir(join(f.root, reservation.name))).toEqual(['staging'])
-  expect(await readFile(join(f.root, reservation.name, 'staging/src/app.ts'))).toEqual(f.bytes)
+  expect(await readFile(join(f.root, reservation.name, 'staging/src/app.txt'))).toEqual(f.bytes)
   diskState.syncFailure = false
   await expect(materializer.prepare(f)).rejects.toMatchObject({ code: 'SOURCE_MATERIALIZATION_UNCERTAIN' })
 })
@@ -116,7 +117,7 @@ describe('private materialization', () => {
       release()
       if (elapsed < 300_000) {
         const receipt = await prepared
-        expect(await readFile(join(f.root, receipt.materializationId, 'tree/src/app.ts'))).toEqual(f.bytes)
+        expect(await readFile(join(f.root, receipt.materializationId, 'tree/src/app.txt'))).toEqual(f.bytes)
       } else {
         await expect(prepared).rejects.toThrow('Source copy deadline exceeded.')
       }
@@ -130,8 +131,8 @@ describe('private materialization', () => {
   it('verifies complete bytes in a distinct local root and detects later mutation', async () => {
     const f = await fixture(), service = new PrivateSourceMaterializer({ async read() { return f.bytes } }, async () => {})
     const receipt = await service.prepare(f), path = await service.resolve(receipt, f)
-    expect(await readFile(join(path, 'src/app.ts'))).toEqual(f.bytes)
-    await writeFile(join(path, 'src/app.ts'), 'later source')
+    expect(await readFile(join(path, 'src/app.txt'))).toEqual(f.bytes)
+    await writeFile(join(path, 'src/app.txt'), 'later source')
     await expect(service.resolve(receipt, f)).rejects.toThrow()
   })
   it('rejects corrupt bytes without activating a tree', async () => {
@@ -223,9 +224,9 @@ describe('capture semantics', () => {
     await qualifiedGit(f.root, ['add', '.']); await qualifiedGit(f.root, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'source'])
     const commit = (await qualifiedGit(f.root, ['rev-parse', 'HEAD'])).toString().trim()
     await writeFile(join(f.root, 'hidden.txt'), 'dirty bytes')
-    const target = sink(), manifest = await captureGitSource({ root: f.root, approvedSourceId: randomUUID(), commit, approvedPaths: ['.gitattributes', 'hidden.txt'], executablePolicy: 'strip', sink: target })
+    const target = sink(), manifest = await captureGitSource({ root: f.root, approvedSourceId: randomUUID(), commit, executablePolicy: 'strip', sink: target })
     expect(target.content.get('hidden.txt')?.toString()).toBe('exact git bytes'); expect(manifest.git?.commit).toBe(commit)
-    await expect(captureGitSource({ root: f.root, approvedSourceId: randomUUID(), commit: 'HEAD', approvedPaths: [], executablePolicy: 'strip', sink: sink() })).rejects.toThrow('exact Git commit')
+    await expect(captureGitSource({ root: f.root, approvedSourceId: randomUUID(), commit: 'HEAD', executablePolicy: 'strip', sink: sink() })).rejects.toThrow('exact Git commit')
   })
   it('captures the complete approved Git tree including credential implementation code', async () => {
     const f = await fixture(); await qualifiedGit(f.root, ['init', '--template='])
@@ -235,24 +236,25 @@ describe('capture semantics', () => {
     await writeFile(join(f.root, modulePath), code); await writeFile(join(f.root, 'README.md'), 'complete fixture tree\n')
     await qualifiedGit(f.root, ['add', '.']); await qualifiedGit(f.root, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'source'])
     const commit = (await qualifiedGit(f.root, ['rev-parse', 'HEAD'])).toString().trim(), target = sink()
-    const manifest = await captureGitSource({ root: f.root, approvedSourceId: randomUUID(), commit, approvedPaths: [modulePath, 'README.md'], executablePolicy: 'strip', sink: target })
+    const manifest = await captureGitSource({ root: f.root, approvedSourceId: randomUUID(), commit, executablePolicy: 'strip', sink: target })
     expect(manifest.entries.map(entry => entry.path)).toEqual(['README.md', modulePath])
     expect(target.content.get(modulePath)).toEqual(code); expect(target.committed).toEqual([manifest])
-    const incomplete = sink()
-    await expect(captureGitSource({ root: f.root, approvedSourceId: randomUUID(), commit, approvedPaths: [modulePath], executablePolicy: 'strip', sink: incomplete })).rejects.toThrow('Every exact tree entry must be explicitly approved')
-    expect(incomplete.committed).toEqual([]); expect(incomplete.content.size).toBe(0)
+    const repeated = sink()
+    const recaptured = await captureGitSource({ root: f.root, approvedSourceId: randomUUID(), commit, executablePolicy: 'strip', sink: repeated })
+    expect(recaptured.entries).toEqual(manifest.entries)
+    expect(repeated.committed).toEqual([recaptured])
   })
   it('rejects missing objects, LFS pointers and unqualified submodules', async () => {
     const f = await fixture(); await qualifiedGit(f.root, ['init', '--template='])
     await writeFile(join(f.root, 'asset.bin'), 'version https://git-lfs.github.com/spec/v1\noid sha256:' + 'a'.repeat(64) + '\nsize 99\n')
     await qualifiedGit(f.root, ['add', '.']); await qualifiedGit(f.root, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'source'])
     const commit = (await qualifiedGit(f.root, ['rev-parse', 'HEAD'])).toString().trim()
-    await expect(captureGitSource({ root: f.root, approvedSourceId: randomUUID(), commit: 'f'.repeat(40), approvedPaths: ['asset.bin'], executablePolicy: 'strip', sink: sink() })).rejects.toThrow()
-    await expect(captureGitSource({ root: f.root, approvedSourceId: randomUUID(), commit, approvedPaths: ['asset.bin'], executablePolicy: 'strip', sink: sink() })).rejects.toThrow('LFS')
+    await expect(captureGitSource({ root: f.root, approvedSourceId: randomUUID(), commit: 'f'.repeat(40), executablePolicy: 'strip', sink: sink() })).rejects.toThrow()
+    await expect(captureGitSource({ root: f.root, approvedSourceId: randomUUID(), commit, executablePolicy: 'strip', sink: sink() })).rejects.toThrow('LFS')
     await qualifiedGit(f.root, ['update-index', '--add', '--cacheinfo', '160000', commit, 'module'])
     await qualifiedGit(f.root, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'submodule'])
     const subCommit = (await qualifiedGit(f.root, ['rev-parse', 'HEAD'])).toString().trim()
-    await expect(captureGitSource({ root: f.root, approvedSourceId: randomUUID(), commit: subCommit, approvedPaths: ['asset.bin', 'module'], executablePolicy: 'strip', sink: sink() })).rejects.toThrow()
+    await expect(captureGitSource({ root: f.root, approvedSourceId: randomUUID(), commit: subCommit, executablePolicy: 'strip', sink: sink() })).rejects.toThrow()
   })
   it('rejects corrupted Git objects even when the object filename still matches the accepted ref', async () => {
     const f = await fixture(); await qualifiedGit(f.root, ['init', '--template=']); await writeFile(join(f.root, 'data.txt'), 'good')
@@ -260,13 +262,13 @@ describe('capture semantics', () => {
     const commit = (await qualifiedGit(f.root, ['rev-parse', 'HEAD'])).toString().trim(), object = (await qualifiedGit(f.root, ['rev-parse', 'HEAD:data.txt'])).toString().trim()
     const path = join(f.root, '.git', 'objects', object.slice(0, 2), object.slice(2))
     await chmod(path, 0o600); await writeFile(path, deflateSync(Buffer.from('blob 4\0evil')))
-    await expect(captureGitSource({ root: f.root, approvedSourceId: randomUUID(), commit, approvedPaths: ['data.txt'], executablePolicy: 'strip', sink: sink() })).rejects.toThrow('Git object bytes')
+    await expect(captureGitSource({ root: f.root, approvedSourceId: randomUUID(), commit, executablePolicy: 'strip', sink: sink() })).rejects.toThrow('Git object bytes')
   })
   it('rejects tracked secrets and missing explicit inclusion rather than omitting them', async () => {
     const f = await fixture(); await qualifiedGit(f.root, ['init', '--template=']); await writeFile(join(f.root, '.env'), 'secret')
     await qualifiedGit(f.root, ['add', '.']); await qualifiedGit(f.root, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'source'])
     const commit = (await qualifiedGit(f.root, ['rev-parse', 'HEAD'])).toString().trim()
-    await expect(captureGitSource({ root: f.root, approvedSourceId: randomUUID(), commit, approvedPaths: ['.env'], executablePolicy: 'strip', sink: sink() })).rejects.toThrow('credential')
+    await expect(captureGitSource({ root: f.root, approvedSourceId: randomUUID(), commit, executablePolicy: 'strip', sink: sink() })).rejects.toThrow('credential')
   })
   it('aborts complete-tree capture for tracked credential data even when it is not approved', async () => {
     const f = await fixture(); await qualifiedGit(f.root, ['init', '--template='])
@@ -274,7 +276,7 @@ describe('capture semantics', () => {
     await writeFile(join(f.root, 'credentials.json'), '{"token":"synthetic-placeholder"}\n')
     await qualifiedGit(f.root, ['add', '.']); await qualifiedGit(f.root, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'source'])
     const commit = (await qualifiedGit(f.root, ['rev-parse', 'HEAD'])).toString().trim(), target = sink()
-    await expect(captureGitSource({ root: f.root, approvedSourceId: randomUUID(), commit, approvedPaths: ['credentials.ts'], executablePolicy: 'strip', sink: target })).rejects.toThrow('credential')
+    await expect(captureGitSource({ root: f.root, approvedSourceId: randomUUID(), commit, executablePolicy: 'strip', sink: target })).rejects.toThrow('credential')
     expect(target.committed).toEqual([]); expect(target.content.size).toBe(0)
   })
 })
@@ -304,7 +306,7 @@ describe('canonical source namespace and private repository', () => {
       operationId: randomUUID(), reservationId: randomUUID(), sourceBindingHash: f.attempt.placementHash,
       finalDispatchBindingHash: null, state: 'prepared' }
     const repository = await hosts.privateRepository(record, f.manifest)
-    expect((await qualifiedGit(repository.gitDirectory, ['show', 'HEAD:src/app.ts'])).toString()).toBe(f.bytes.toString())
+    expect((await qualifiedGit(repository.gitDirectory, ['show', 'HEAD:src/app.txt'])).toString()).toBe(f.bytes.toString())
     expect(await hosts.verify(record)).toBe(repository.workTree)
     expect(await hosts.privateRepository(record, f.manifest)).toEqual(repository)
     authorized = false
@@ -315,7 +317,7 @@ describe('canonical source namespace and private repository', () => {
     const f = await fixture(), materializer = new PrivateSourceMaterializer({ async read() { return f.bytes } }, async () => {})
     const receipt = await materializer.prepare(f)
     const repository = await createPrivateSourceRepository({ receipt, manifest: f.manifest, materializer, attempt: f.attempt })
-    expect((await qualifiedGit(repository.gitDirectory, ['show', 'HEAD:src/app.ts'])).toString()).toBe(f.bytes.toString())
+    expect((await qualifiedGit(repository.gitDirectory, ['show', 'HEAD:src/app.txt'])).toString()).toBe(f.bytes.toString())
     expect(await readFile(join(repository.gitDirectory, 'config'), 'utf8')).not.toContain('credential')
     await expect(readFile(join(repository.gitDirectory, 'hooks', 'pre-commit'))).rejects.toThrow()
     await expect(readFile(join(repository.workTree, '.git'))).rejects.toThrow()

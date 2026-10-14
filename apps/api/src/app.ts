@@ -1,21 +1,22 @@
+import { registerRuntimeInstallationSecurity } from './infrastructure/runtimeIdentity.js'
 import { randomUUID } from 'node:crypto'
+import type { Socket } from 'node:net'
 import { scheduleDispatchLog } from './modules/schedules/dispatchErrors.js'
 
 import {
   ApiErrorResponseSchema,
   ServiceHealthSchema,
   type ServiceHealth,
-  type RuntimeIdentity,
+  type RuntimeIdentity, type RuntimeBuildIdentity, RuntimeBuildIdentitySchema, frozenRuntimeIdentity,
 } from '@foreman-code/contracts'
 import Fastify, { LogController, type FastifyBaseLogger, type FastifyInstance } from 'fastify'
-import { localhostHostValidation, localhostOriginValidation } from '@modelcontextprotocol/fastify'
 import type pg from 'pg'
 import { z } from 'zod'
 
 import type { AppMcpServices } from './mcp/app/types.js'
 import { registerGraphqlMcp, type GraphqlMcpServices } from './mcp/unified/transport.js'
 import type { OperatorServices } from './mcp/operator/types.js'
-import { registerOperatorHttpSecurity } from './modules/access/http.js'
+import { registerOperatorHttpSecurity, requireLocalRequest } from './modules/access/http.js'
 import type { PostgresAccessService } from './modules/access/postgres.js'
 import type { LocalHumanAccess } from './modules/access/localHuman.js'
 import { DomainError } from './modules/errors.js'
@@ -37,6 +38,7 @@ export interface ReadinessDependencies {
 
 export interface BuildAppOptions {
   runtimeIdentity?: () => Promise<RuntimeIdentity>
+  runtimeBuildIdentity?: () => RuntimeBuildIdentity
   localHuman?: LocalHumanAccess
   browserOrigin?: string
   readiness: ReadinessDependencies
@@ -47,6 +49,7 @@ export interface BuildAppOptions {
   workerArtifacts?: GraphqlMcpServices['workerArtifacts']
   mcpDetection?: { pool: pg.Pool; service: McpDetectionService }
   logger?: boolean | FastifyBaseLogger
+  closeInfrastructure?: () => Promise<void>
 }
 
 type DependencyStatus = 'ok' | 'unavailable'
@@ -121,6 +124,28 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     // Fastify's per-request lines are replaced by one line whose level says whether it matters.
     logController: new LogController({ disableRequestLogging: true }),
   })
+  // Fetch pools can replace aborted streams with connections that have no HTTP request yet.
+  const unusedConnections = new Set<Socket>()
+  let httpClosing = false
+  app.server.on('connection', socket => {
+    if (httpClosing) {
+      socket.destroy()
+      return
+    }
+    unusedConnections.add(socket)
+    socket.once('close', () => unusedConnections.delete(socket))
+  })
+  app.server.on('request', request => unusedConnections.delete(request.socket))
+  app.addHook('preClose', async () => {
+    httpClosing = true
+    for (const socket of unusedConnections) socket.destroy()
+    unusedConnections.clear()
+  })
+  const closeInfrastructure = options.closeInfrastructure
+  if (closeInfrastructure) {
+    // Fastify closes hooks in reverse order; infrastructure outlives every runtime hook.
+    app.addHook('onClose', async () => { await closeInfrastructure() })
+  }
   // Timed delivery is an API lifecycle, never a browser or HTTP-request timer.
   app.addHook('onReady', async () => {
     options.operator?.services.runs?.startScheduleDispatcher?.((error, context) => {
@@ -136,8 +161,7 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     request.log[level]({ method: request.method, path: request.url.split('?')[0], statusCode, responseTimeMs }, 'request completed')
   })
   if (options.operator || options.appMcp) {
-    app.addHook('onRequest', localhostHostValidation())
-    app.addHook('onRequest', localhostOriginValidation())
+    app.addHook('onRequest', async request => { requireLocalRequest(request) })
   }
   const checkDatabase = createDependencyCheck(
     (signal) => options.readiness.database.ping(signal), timeoutMs,
@@ -147,8 +171,16 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
   )
 
   if (options.runtimeIdentity) {
-    app.get('/health/identity', async (_request, reply) => { reply.header('cache-control', 'no-store'); return options.runtimeIdentity!() })
-    app.get('/api/runtime/identity', async (_request, reply) => { reply.header('cache-control', 'no-store'); return options.runtimeIdentity!() })
+    registerRuntimeInstallationSecurity(app, options.runtimeIdentity)
+    app.get('/health/identity', async (_request, reply) => { reply.header('cache-control', 'no-store'); return frozenRuntimeIdentity(await options.runtimeIdentity!()) })
+    app.get('/api/runtime/identity', async (_request, reply) => { reply.header('cache-control', 'no-store'); return frozenRuntimeIdentity(await options.runtimeIdentity!()) })
+  }
+
+  if (options.runtimeBuildIdentity) {
+    app.get('/api/runtime/build-identity/v1', async (_request, reply) => {
+      reply.header('cache-control', 'no-store')
+      return RuntimeBuildIdentitySchema.parse(options.runtimeBuildIdentity!())
+    })
   }
 
   app.get('/health/live', async () => ServiceHealthSchema.parse({ status: 'ok', service: 'graphql-api' }))
@@ -177,7 +209,7 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
   }
   if (options.operator?.services.agentChat) registerAgentChatRoutes(app, options.operator.services.agentChat)
   if (options.operator && options.product?.interactions) registerUserInteractions(app, options.product.interactions)
-  if (options.product) registerProductRoutes(app, options.product, Boolean(options.operator), options.operator?.services)
+  if (options.product) registerProductRoutes(app, options.product, options.operator?.services)
   const bugReports = options.appMcp?.bugReports ?? options.operator?.services.bugReports
   const commands = options.appMcp?.commands ?? options.operator?.services.commands
   if (options.operator || options.appMcp) registerGraphqlMcp(app, {

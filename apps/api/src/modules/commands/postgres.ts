@@ -1,17 +1,38 @@
+import { randomUUID } from 'node:crypto'
 import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
+import { beginTransaction, commitTransaction, rollbackTransaction } from '../../infrastructure/transaction.js'
 export { commandInputHash } from '@foreman-code/contracts/command-identity-node'
 
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import pg from 'pg'
+import { setTimeout as delay } from 'node:timers/promises'
 
 import { DomainError } from '../errors.js'
 import type { GraphSqlClient } from '../run-graph/connection.js'
+import { ignoreError } from '../diagnostics/ignoredError.js'
 
 function commitWasRejected(error: unknown): boolean {
   if (!(error instanceof pg.DatabaseError) || !error.code) return false
   // SQLSTATE is not localized. This is used only after a successful rollback;
   // connection failures and unknown completion still leave COMMIT ambiguous.
   return !error.code.startsWith('08') && error.code !== '40003'
+}
+
+/** Wait outside SQL transactions without a blocking statement that can time out. */
+async function acquireSessionLock(client: pg.PoolClient, key: string): Promise<void> {
+  for (;;) {
+    const result = await client.query<{ locked: boolean }>(
+      'select pg_try_advisory_lock(hashtext($1)) as locked', [key])
+    if (result.rows[0]!.locked) return
+    await delay(25)
+  }
+}
+
+interface PreparedMutation {
+  /** Serialize only the prepared database mutation, leaving preparation concurrent. */
+  resourceLock: string
+  /** Retry preparation when concurrent mutations changed its database inputs. */
+  validate(client: pg.PoolClient): Promise<boolean>
 }
 
 export class PostgresCommandCoordinator {
@@ -21,7 +42,7 @@ export class PostgresCommandCoordinator {
     principal: ManagementPrincipal
     source: 'http' | 'mcp' | 'device'
     operation: string
-    commandId: string
+    commandId?: string | undefined
     targetKey: string
     payload: unknown
     /** Serialize local external effects through transaction rollback and compensation. */
@@ -37,11 +58,13 @@ export class PostgresCommandCoordinator {
     /** Prepare immutable bytes or installed metadata outside SQL under retained
      * command ownership. Admission and its receipt then share one transaction. */
     prepare?(): Promise<void>
+    preparedMutation?: PreparedMutation
     /** Explicit compatibility boundary for historical receipts, never new commands. */
     replayResult?(result: unknown): T
     /** Resume an unfinished external operation under its original command lock. */
     shouldResumeReceipt?(client: pg.PoolClient): Promise<boolean>
   }): Promise<{ value: T; replayed: boolean }> {
+    const commandId = input.commandId ?? randomUUID()
     const inputHash = commandInputHash(input.payload)
     const dedicatedConnection = input.dedicatedConnection || input.prepare !== undefined
     const commandPool = dedicatedConnection
@@ -53,28 +76,34 @@ export class PostgresCommandCoordinator {
     let releaseError: Error | undefined
     let inTransaction = false
     let lifecycleLock = false
-    let resourceLocked = false
+    let resourceLockRequested = false
     let committing = false
     let performing = false
-    const commandLock = `command:${input.principal.id}:${input.operation}:${input.commandId}`
+    const commandLock = `command:${input.principal.id}:${input.operation}:${commandId}`
+    const resourceLock = input.preparedMutation?.resourceLock ?? input.resourceLock
     try {
-      await client.query('begin')
+      if (input.preparedMutation) {
+        lifecycleLock = true
+        await acquireSessionLock(client, commandLock)
+      }
+      await beginTransaction(client)
       inTransaction = true
-      if (dedicatedConnection) {
+      if (dedicatedConnection && !lifecycleLock) {
         await client.query('select pg_advisory_lock(hashtext($1))', [commandLock])
         lifecycleLock = true
-      } else {
+      } else if (!lifecycleLock) {
         await client.query('select pg_advisory_xact_lock(hashtext($1))', [commandLock])
       }
       if (input.resourceLock) {
+        // A lost query reply can leave a session lock held even though acquisition throws.
+        resourceLockRequested = true
         await client.query('select pg_advisory_lock(hashtext($1))', [input.resourceLock])
-        resourceLocked = true
       }
       await input.authorize?.(client)
       const existing = await client.query<{ input_hash: string; target_key: string; result: unknown }>(
         `select input_hash, target_key, result from management_command_receipts
          where principal_id = $1 and operation = $2 and command_id = $3`,
-        [input.principal.id, input.operation, input.commandId],
+        [input.principal.id, input.operation, commandId],
       )
       const receipt = existing.rows[0]
       let resumingReceipt = false
@@ -85,7 +114,9 @@ export class PostgresCommandCoordinator {
         resumingReceipt = await input.shouldResumeReceipt?.(client) ?? false
         if (!resumingReceipt) {
           const value = input.replayResult ? input.replayResult(receipt.result) : receipt.result as T
-          await client.query('commit')
+          committing = true
+          await commitTransaction(client)
+          committing = false
           inTransaction = false
           return { value, replayed: true }
         }
@@ -95,42 +126,55 @@ export class PostgresCommandCoordinator {
       // Keep its command identity serialized by the session advisory lock, but
       // do not retain row locks while the idempotent callback runs.
       if (dedicatedConnection) {
-        await client.query('commit')
+        committing = true
+        await commitTransaction(client)
+        committing = false
         inTransaction = false
       }
       if (input.prepare) {
-        await input.prepare()
-        await client.query('begin')
-        inTransaction = true
-        await input.authorize?.(client)
+        for (;;) {
+          await input.prepare()
+          if (input.preparedMutation) {
+            resourceLockRequested = true
+            await acquireSessionLock(client, input.preparedMutation.resourceLock)
+          }
+          await beginTransaction(client)
+          inTransaction = true
+          await input.authorize?.(client)
+          if (!input.preparedMutation || await input.preparedMutation.validate(client)) break
+          await rollbackTransaction(client)
+          inTransaction = false
+          await client.query('select pg_advisory_unlock(hashtext($1))', [resourceLock])
+          resourceLockRequested = false
+        }
       }
       performing = true
       const value = await input.perform(client)
       if (dedicatedConnection && !input.prepare) {
-        await client.query('begin')
+        await beginTransaction(client)
         inTransaction = true
       }
       if (resumingReceipt) {
         await client.query(
           `update management_command_receipts set result=$4::jsonb
            where principal_id=$1 and operation=$2 and command_id=$3`,
-          [input.principal.id, input.operation, input.commandId, JSON.stringify(value)],
+          [input.principal.id, input.operation, commandId, JSON.stringify(value)],
         )
       } else {
         await client.query(
           `insert into management_command_receipts
           (principal_id, operation, command_id, target_key, input_hash, result)
          values ($1, $2, $3, $4, $5, $6::jsonb)`,
-          [input.principal.id, input.operation, input.commandId, input.targetKey, inputHash, JSON.stringify(value)],
+          [input.principal.id, input.operation, commandId, input.targetKey, inputHash, JSON.stringify(value)],
         )
       }
       await client.query(
         `insert into management_audit (principal_id, source, action, target_key, outcome, details)
          values ($1, $2, $3, $4, 'succeeded', $5::jsonb)`,
-        [input.principal.id, input.source, input.operation, input.targetKey, JSON.stringify({ commandId: input.commandId })],
+        [input.principal.id, input.source, input.operation, input.targetKey, JSON.stringify({ commandId })],
       )
       committing = true
-      await client.query('commit')
+      await commitTransaction(client)
       inTransaction = false
       return { value, replayed: false }
     } catch (error) {
@@ -138,7 +182,7 @@ export class PostgresCommandCoordinator {
       let rolledBack = false
       if (inTransaction) {
         try {
-          await client.query('rollback')
+          await rollbackTransaction(client)
           inTransaction = false
           rolledBack = true
         } catch (rollbackError) {
@@ -153,29 +197,32 @@ export class PostgresCommandCoordinator {
         } catch (cleanupError) {
           failure = new AggregateError([error, cleanupError], 'The command and rollback cleanup failed.')
           try {
-            await client.query('rollback')
+            await rollbackTransaction(client)
           } catch (rollbackError) {
             releaseError = rollbackError instanceof Error ? rollbackError : new Error('Command cleanup rollback failed.')
           }
         }
       }
+      const commitUncertain = committing && !(rolledBack && commitWasRejected(error))
+      let failureCode = failure instanceof DomainError ? failure.code : 'INTERNAL_ERROR'
+      if (commitUncertain) failureCode = 'COMMAND_COMMIT_UNCERTAIN'
       if (!releaseError) {
         // Reuse this now-idle client. Asking the pool for a second connection
         // while retaining the first deadlocks a saturated pool.
         await client.query(
           `insert into management_audit (principal_id, source, action, target_key, outcome, details)
-           values ($1, $2, $3, $4, 'failed', $5::jsonb)`,
-          [input.principal.id, input.source, input.operation, input.targetKey, JSON.stringify({
-            commandId: input.commandId,
-            code: failure instanceof DomainError ? failure.code : 'INTERNAL_ERROR',
+           values ($1, $2, $3, $4, $5, $6::jsonb)`,
+          [input.principal.id, input.source, input.operation, input.targetKey, commitUncertain ? 'uncertain' : 'failed', JSON.stringify({
+            commandId,
+            code: failureCode,
             ...(failure !== error ? { cleanupFailed: true } : {}),
           })],
-        ).catch(() => undefined)
+        ).catch(ignoreError('db', 'record failed command audit', { commandId, command: input.operation }))
       }
       throw failure
     } finally {
-      if (resourceLocked && !releaseError) {
-        await client.query('select pg_advisory_unlock(hashtext($1))', [input.resourceLock]).catch((error: unknown) => {
+      if (resourceLockRequested && !releaseError) {
+        await client.query('select pg_advisory_unlock(hashtext($1))', [resourceLock]).catch((error: unknown) => {
           releaseError = error instanceof Error ? error : new Error('Command resource unlock failed.')
         })
       }

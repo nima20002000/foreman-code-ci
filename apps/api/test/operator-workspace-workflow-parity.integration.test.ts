@@ -5,8 +5,7 @@ import { createFixtureSchema, dropFixtureSchema, removeFixtureDirectory } from '
 import { randomUUID } from 'node:crypto'
 import { agentWorkflowNode } from './helpers/agentWorkflowFixture.js'
 import { mkdtemp, mkdir, readdir, rename } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import pg from 'pg'
 import { z } from 'zod'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
@@ -33,13 +32,17 @@ it.skipIf(!process.env.TEST_DATABASE_URL)('provides authenticated Operator MCP p
   if (!['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname) || !parsed.pathname.includes('test')) throw new Error('Use a disposable loopback test database')
   const schema = 'mcp_parity_' + randomUUID().replaceAll('-', '')
   const admin = new pg.Pool({ connectionString })
-  const parentPath = await mkdtemp(join(tmpdir(), 'mcp-parity-'))
+  const directory = await mkdtemp(join(process.env.FOREMAN_CODE_TEST_ROOT!, 'mcp-parity-'))
+  const parentPath = join(directory, 'workspaces')
+  const outsideParent = join(directory, 'outside')
+  await mkdir(parentPath)
+  await mkdir(outsideParent)
   await createFixtureSchema(admin, schema)
   const pool = new pg.Pool({ connectionString, options: `-c search_path=${schema}` })
   const clients: Client[] = []
   const access = new PostgresAccessService(pool)
   const commands = new PostgresCommandCoordinator(pool)
-  const locations = new WorkspaceLocationService(pool, commands, undefined, 'runner-local', parentPath)
+  const locations = new WorkspaceLocationService(pool, commands, undefined, 'runner-local')
   const settings = new FoundationSettingsManagementService(new PostgresFoundationSettingsRepository(pool, parentPath), commands)
   const services = {
     harnessSettings: { directories: new HarnessDirectoryBrowser([parentPath], pool), mcp: {} },
@@ -87,16 +90,20 @@ it.skipIf(!process.env.TEST_DATABASE_URL)('provides authenticated Operator MCP p
     const workspaceId = workspace.workspace.id
     expect(workspace.executionLocation?.rootPath).toBe(join(parentPath, 'MCP Project'))
     expect(workspace.locationValidation.status).toBe('ready')
-    const outside = await client.callTool({ name: 'workspace_location_set', arguments: {
-      workspaceId, commandId: randomUUID(), expectedLocationRevision: workspace.locationRevision,
-      runnerId: 'runner-local', rootPath: tmpdir(),
-    } })
-    expect(outside.isError).toBe(true)
-    const outsideDefault = await client.callTool({ name: 'workspace_defaults_update', arguments: {
+    const selectedParent = dirname(parentPath)
+    const outside = await call('workspace_location_validate', c.WorkspaceLocationValidationSchema, {
+      workspaceId, runnerId: 'runner-local', rootPath: selectedParent,
+    })
+    expect(outside.location.rootPath).toBe(selectedParent)
+    const outsideDefault = await call('workspace_defaults_update', c.WorkspaceDefaultsUpdateResultSchema, {
       commandId: randomUUID(), expectedRevision: savedDefaults.revision,
-      value: { ...savedDefaults.value, parentPath: tmpdir() },
-    } })
-    expect(outsideDefault.isError).toBe(true)
+      value: { ...savedDefaults.value, parentPath: selectedParent },
+    })
+    expect((await call('workspace_defaults_get', c.ManagedWorkspaceDefaultsSchema)).value.parentPath).toBe(selectedParent)
+    const restoredDefault = await call('workspace_defaults_update', c.WorkspaceDefaultsUpdateResultSchema, {
+      commandId: randomUUID(), expectedRevision: outsideDefault.value.revision, value: savedDefaults.value,
+    })
+    savedDefaults.revision = restoredDefault.value.revision
 
     const overview = await call('workspace_list', c.ManagedWorkspacePageSchema, { detail: 'full' })
     expect(overview.items.find((item) => item.workspace.id === workspaceId)?.executionLocation).toEqual(workspace.executionLocation)
@@ -116,7 +123,11 @@ it.skipIf(!process.env.TEST_DATABASE_URL)('provides authenticated Operator MCP p
     expect(folder.value.path).toBe(join(parentPath, 'Picker folder'))
     expect((await call('workspace_folder_create', c.WorkspaceFolderCreateResultSchema, folderInput)).replayed).toBe(true)
     expect((await client.callTool({ name: 'workspace_folder_create', arguments: { ...folderInput, commandId: randomUUID() } })).isError).toBe(true)
-    expect((await client.callTool({ name: 'workspace_folder_create', arguments: { ...folderInput, parentPath: tmpdir(), commandId: randomUUID() } })).isError).toBe(true)
+    const outsideFolder = await call('workspace_folder_create', c.WorkspaceFolderCreateResultSchema, {
+      ...folderInput, parentPath: outsideParent, commandId: randomUUID(),
+    })
+    expect(outsideFolder.value.path).toBe(join(outsideParent, folderInput.name))
+    expect(await readdir(outsideParent)).toEqual([folderInput.name])
     expect((await client.callTool({ name: 'workspace_folder_create', arguments: { ...folderInput, name: '../escape', commandId: randomUUID() } })).isError).toBe(true)
     expect((await call('workspace_folders_list', c.HarnessDirectoryBrowseResultSchema)).directories.map((entry) => entry.name)).toContain('Picker folder')
     const automaticInput = { parentPath, commandId: randomUUID() }
@@ -226,10 +237,9 @@ it.skipIf(!process.env.TEST_DATABASE_URL)('provides authenticated Operator MCP p
     expect(agent.graphqlTools).toEqual(['context_get'])
     expect((await pool.query<{ tools: unknown }>(`select record->'graphqlTools' as tools from agent_configuration_versions where id=$1`,
       [agent.configurationVersionId])).rows[0]?.tools).toEqual(['context_get'])
-    const location = await call('workspace_get', c.ManagedWorkspaceSchema, { workspaceId })
     const saveInput = { workspaceId, workflowId, executionSemanticsVersion: 3, commandId: randomUUID(),
       expectedRevision: renamedWorkflow.revision, expectedWorkflowVersionId: null,
-      expectedAgentConfigurationVersionIds: { [agent.id]: agent.configurationVersionId }, expectedLocationRevision: location.locationRevision,
+      expectedAgentConfigurationVersionIds: { [agent.id]: agent.configurationVersionId },
       graph: { ...renamedWorkflow.workflow, entryNodeId: 'parity-node', nodes: [{ id: 'parity-node', agentId: agent.id, name: 'Coder',
         graphqlTools: { add: ['interaction_list'], remove: [] } }],
         edges: [], approval: { handler: 'user' }, executionCondition: { kind: 'manual', description: 'Operator managed' },
@@ -274,6 +284,6 @@ it.skipIf(!process.env.TEST_DATABASE_URL)('provides authenticated Operator MCP p
     await Promise.all(clients.map((client) => client.close()))
     await app.close(); await pool.end()
     await dropFixtureSchema(admin, schema); await admin.end()
-    await removeFixtureDirectory(parentPath)
+    await removeFixtureDirectory(directory)
   }
 }, 30_000)

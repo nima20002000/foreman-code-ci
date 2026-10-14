@@ -15,7 +15,7 @@ const endpoint = z.string().trim().max(2048).refine(value => {
   }
 }, 'Use a reachable WSS URL ending in /device/connect.')
 
-export const DeviceListenerSettingsSchema = z.object({
+const DeviceListenerSettingsSchema = z.object({
   enabled: z.boolean(),
   host: z.string().trim().min(1).max(253).regex(/^[^\s/\\]+$/).nullable(),
   port: z.number().int().min(1).max(65535).nullable(),
@@ -43,7 +43,7 @@ export const DEFAULT_REMOTE_EXECUTION_SETTINGS = RemoteExecutionSettingsSchema.p
   },
 })
 
-export const RemoteExecutionSettingSnapshotSchema = z.object({
+const RemoteExecutionSettingSnapshotSchema = z.object({
   value: RemoteExecutionSettingsSchema,
   revision: z.number().int().nonnegative(),
   versionId: z.string().min(1).nullable(),
@@ -55,7 +55,7 @@ export const RemoteExecutionEnvironmentVariableSchema = z.enum([
   'DEVICE_LISTENER_TLS_KEY_FILE', 'DEVICE_LISTENER_ADVERTISED_ENDPOINT', 'DEVICE_LISTENER_TLS_TRUST_CERT_FILE',
 ])
 
-export const RemoteExecutionRuntimeStatusSchema = z.object({
+const RemoteExecutionRuntimeStatusSchema = z.object({
   listenerEnabled: z.boolean(),
   listenerEndpoint: z.string().nullable(),
   restartRequired: z.boolean(),
@@ -70,7 +70,7 @@ export const ManagedRemoteExecutionSettingsSchema = RemoteExecutionSettingSnapsh
 
 export const RemoteExecutionSettingsUpdateInputSchema = z.object({
   value: RemoteExecutionSettingsSchema,
-  expectedRevision: z.number().int().nonnegative(),
+  expectedRevision: z.number().int().nonnegative().optional().describe('Omit for last write wins; supply to reject a stale revision.'),
   commandId: z.string().trim().min(8).max(200),
 }).strict()
 

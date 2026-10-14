@@ -1,3 +1,4 @@
+import { errorMessage } from '../../shared/errorMessage.js'
 import { captureVerificationInventory } from '../../../../../scripts/verification-runner.mjs'
 import { constants } from 'node:fs'
 import { mkdir, open, readFile, readlink, rm, statfs, writeFile } from 'node:fs/promises'
@@ -17,7 +18,7 @@ import { JobVerificationQualificationCandidateSchema, JobVerificationRepositoryC
   from '@foreman-code/contracts/job-verification-runtime'
 import { readInstalledVerificationConfiguration } from './installedVerificationRuntime.js'
 import { readProtectedRuntimeFile,
-  type InstalledRuntimeConfigurationLocation } from './installedRuntimeHost.js'
+  type InstalledRuntimeConfigurationLocation } from './installedRuntimeConfiguration.js'
 import { podmanIsolationCreateArgv, ensureEmptyPodmanHooks, type PodmanIsolationInput } from './executorPodman.js'
 import { assertJobRuntimeEntryContext, jobQualificationFingerprint, runQualificationCommand,
   validateVerificationIsolationObservation, type JobQualificationAuthority, type QualificationNativeOwner }
@@ -427,7 +428,7 @@ export async function qualifyVerificationRuntime(input: {
     if (!closed) {
       try { closed = await owner.close() }
       catch (error) {
-        const message = error instanceof Error ? error.message : 'Qualification closure failed.'
+        const message = errorMessage(error, 'Qualification closure failed.')
         denial = new Error(`${denial?.message ?? 'Qualification failed.'} Closure failed: ${message}`.slice(0, 500),
           { cause: error })
       }

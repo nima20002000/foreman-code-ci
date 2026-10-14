@@ -30,7 +30,7 @@ import {
  */
 
 /** How a new input relates to work already in the conversation. */
-export const AgentChatIntentSchema = z.enum([
+const AgentChatIntentSchema = z.enum([
   /** Run after the current turn finishes (or immediately when idle). */
   "next_turn",
   /** Add text to the active turn. Attachments require a new turn; capabilities.steer must be available. */
@@ -45,22 +45,20 @@ export type AgentChatIntent = z.infer<typeof AgentChatIntentSchema>;
  * model consumed the input. `unknown` means acceptance could not be proven; it is reconciled from
  * native history and never blindly resubmitted.
  */
-export const AgentChatDeliveryStateSchema = z.enum([
+const AgentChatDeliveryStateSchema = z.enum([
   "queued", "submitting", "accepted", "completed", "failed", "canceled", "unknown",
 ]);
-export type AgentChatDeliveryState = z.infer<typeof AgentChatDeliveryStateSchema>;
 
 /** Steering support of the installed provider version, qualified by the backend. */
-export const AgentChatSteerSupportSchema = z.enum([
+const AgentChatSteerSupportSchema = z.enum([
   /** Codex app-server `turn/steer` with an expectedTurnId precondition. */
   "native_expected_turn",
   /** Provider consumes extra input at its next processing step; no active-turn precondition. */
   "cooperative_next_step",
   "unavailable",
 ]);
-export type AgentChatSteerSupport = z.infer<typeof AgentChatSteerSupportSchema>;
 
-export const AgentChatCapabilitiesSchema = z.object({
+const AgentChatCapabilitiesSchema = z.object({
   harness: RecordedAgentHarnessSchema,
   providerVersion: z.string().trim().min(1).nullable(),
   steer: AgentChatSteerSupportSchema,
@@ -88,7 +86,7 @@ export const AgentChatContextSchema = z.object({
 }).strict();
 export type AgentChatContext = z.infer<typeof AgentChatContextSchema>;
 
-export const AgentChatOriginSchema = z.discriminatedUnion("kind", [
+const AgentChatOriginSchema = z.discriminatedUnion("kind", [
   /** New native session from the Agent's current accepted configuration. */
   z.object({ kind: z.literal("fresh") }).strict(),
   /** Native fork of a finished Run execution's session. The Run and its native history stay unchanged. */
@@ -123,7 +121,7 @@ export const AgentConversationSchema = z.object({
 }).strict();
 export type AgentConversation = z.infer<typeof AgentConversationSchema>;
 
-export const AgentChatSessionStateSchema = z.enum([
+const AgentChatSessionStateSchema = z.enum([
   /** No conversation yet; the first message creates exactly one native session. */
   "none",
   "creating",
@@ -140,7 +138,7 @@ export const AgentChatSessionStateSchema = z.enum([
 export type AgentChatSessionState = z.infer<typeof AgentChatSessionStateSchema>;
 
 /** Why sending is blocked. Absent when `availability.canSend` is true. */
-export const AgentChatBlockedReasonSchema = z.enum([
+const AgentChatBlockedReasonSchema = z.enum([
   "run_active",
   "agent_missing",
   "harness_unavailable",
@@ -169,15 +167,89 @@ export const AgentChatTurnSchema = z.object({
 }).strict();
 export type AgentChatTurn = z.infer<typeof AgentChatTurnSchema>;
 
+const NativeSequenceSchema = z.string().regex(/^(0|[1-9][0-9]{0,18})$/);
 /** Public text from the workflow execution, separate from its follow-up conversation. */
 export const AgentChatSourceTranscriptSchema = z.object({
   executionId: IdSchema,
   state: HarnessExecutionSchema.shape.state,
-  revision: OperatorActivityCursorSchema,
+  /** Latest public native message revision; "0" when no messages have been recorded. */
+  revision: NativeSequenceSchema,
   messages: z.array(MessageSchema.omit({ conversationId: true })).max(100),
   hasEarlierMessages: z.boolean(),
 }).strict();
 export type AgentChatSourceTranscript = z.infer<typeof AgentChatSourceTranscriptSchema>;
+
+/** One public entry of a workflow execution: a message or a tool, file, MCP, plan, reasoning-summary or subagent step. */
+const AgentChatExecutionItemSchema = z.object({
+  executionId: IdSchema,
+  /** Stable within the execution; a later page with the same id replaces the entry. */
+  id: z.string().min(1).max(1024),
+  /** First native event of the entry: chronological order within its execution. */
+  sequence: NativeSequenceSchema,
+  /** Native item revision plus persisted execution revision; state-only transitions also change this value. */
+  revision: NativeSequenceSchema,
+  occurredAt: TimestampSchema.optional(),
+  entry: z.discriminatedUnion("kind", [
+    z.object({ kind: z.literal("message"), message: MessageSchema.omit({ conversationId: true }) }).strict(),
+    z.object({ kind: z.literal("activity"),
+      activity: OperatorActivitySchema.pick({ id: true, kind: true, title: true, status: true, input: true, output: true, truncated: true }) }).strict(),
+  ]),
+}).strict();
+export type AgentChatExecutionItem = z.infer<typeof AgentChatExecutionItemSchema>;
+
+const AgentChatExecutionSummarySchema = z.object({
+  executionId: IdSchema,
+  /** Human label: Execution, Attempt n, Loop n or Occurrence n. */
+  label: z.string().min(1).max(120),
+  attempt: z.number().int().positive(),
+  tickIndex: z.number().int().positive().optional(),
+  state: HarnessExecutionSchema.shape.state,
+  createdAt: TimestampSchema,
+  startedAt: TimestampSchema.optional(),
+  finishedAt: TimestampSchema.optional(),
+  /** Latest native event sequence plus persisted execution revision. */
+  revision: NativeSequenceSchema,
+  /** Present when this page holds the execution's newest window: older entries exist before it. */
+  hasEarlierItems: z.boolean().optional(),
+}).strict();
+export type AgentChatExecutionSummary = z.infer<typeof AgentChatExecutionSummarySchema>;
+
+/**
+ * GET /api/workspaces/:workspaceId/agent-chat/execution-activity — live public activity of every
+ * execution of the selected Run Agent (newest 20 executions, including interval checks and retries).
+ * Without cursor: newest window of each execution. With cursor: only entries changed since it.
+ * executionId+before: older entries of one execution. executionId+itemId: one entry with full bodies.
+ * Bodies and pages are bounded in UTF-8 bytes and report truncation. Cursors are opaque and include execution-state changes.
+ */
+export const AgentChatExecutionActivityQuerySchema = AgentChatContextSchema.omit({ workspaceId: true }).extend({
+  runId: IdSchema,
+  cursor: z.string().max(4096).optional(),
+  executionId: IdSchema.optional(),
+  before: NativeSequenceSchema.optional(),
+  itemId: z.string().min(1).max(1024).optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(200),
+}).strict().superRefine((value, context) => {
+  if ((value.before !== undefined || value.itemId !== undefined) && !value.executionId) {
+    context.addIssue({ code: "custom", path: ["executionId"], message: "before and itemId require executionId" });
+  }
+  if (value.before !== undefined && value.itemId !== undefined) {
+    context.addIssue({ code: "custom", path: ["itemId"], message: "Use before or itemId, not both" });
+  }
+});
+export type AgentChatExecutionActivityQuery = z.input<typeof AgentChatExecutionActivityQuerySchema>;
+
+export const AgentChatExecutionActivityPageSchema = z.object({
+  mode: z.enum(["snapshot", "changes", "earlier", "item"]),
+  executions: z.array(AgentChatExecutionSummarySchema).max(20),
+  hasEarlierExecutions: z.boolean(),
+  /** Ordered by execution creation, then sequence. Changes and earlier pages merge by executionId and id. */
+  items: z.array(AgentChatExecutionItemSchema).max(200),
+  /** Pass to the next read to receive only changes. Absent for earlier and item pages. */
+  cursor: z.string().max(4096).optional(),
+  /** More changes are ready now; read again with cursor without waiting. */
+  hasMoreChanges: z.boolean(),
+}).strict();
+export type AgentChatExecutionActivityPage = z.infer<typeof AgentChatExecutionActivityPageSchema>;
 
 export const AgentChatStateSchema = z.object({
   responseAvailability: NativeInteractionResponseAvailabilitySchema.optional(),
@@ -217,12 +289,15 @@ export const AgentChatQuerySchema = AgentChatContextSchema.omit({ workspaceId: t
 export type AgentChatQuery = z.infer<typeof AgentChatQuerySchema>;
 
 /** POST /api/workspaces/:workspaceId/agent-chat/messages */
+export const AGENT_CHAT_MAX_MESSAGE_CHARACTERS = 1_048_576
+// JSON can encode each character as a six-byte escape, plus request metadata.
+export const AGENT_CHAT_MESSAGE_BODY_LIMIT_BYTES = 6 * AGENT_CHAT_MAX_MESSAGE_CHARACTERS + 64 * 1024
 export const SendAgentChatMessageRequestSchema = z.object({
   /** Idempotency key. A replay with the same key and input returns the stored receipt; never re-sends. */
   requestId: IdSchema,
   ...MessageAttachmentFields,
   context: AgentChatQuerySchema,
-  content: z.string().trim().max(32000),
+  content: z.string().trim().max(AGENT_CHAT_MAX_MESSAGE_CHARACTERS).describe('Message text, up to 1,048,576 characters.'),
   sessionMode: z.enum(['regular', 'plan']).optional()
     .describe('Selects the mode for a new turn. Steering may only retain the active applied mode; mode changes and /plan tasks require next_turn or interrupt_and_send.'),
   intent: AgentChatIntentSchema.default("next_turn")
@@ -239,7 +314,7 @@ export const SendAgentChatMessageRequestSchema = z.object({
 export type SendAgentChatMessageRequest = Omit<z.infer<typeof SendAgentChatMessageRequestSchema>, "attachments">
   & { attachments?: z.input<typeof MessageAttachmentFields.attachments> };
 /** Legacy urgent receipts did not retain the original target. This is readback, not target verification. */
-export const AgentChatReplayWarningSchema = z.object({
+const AgentChatReplayWarningSchema = z.object({
   code: z.literal("AGENT_CHAT_LEGACY_TARGET_UNVERIFIABLE"),
   message: z.string().min(1),
 }).strict();
@@ -292,10 +367,17 @@ export const ReadAgentChatRequestSchema = z.object({
   query: AgentChatQuerySchema,
   history: AgentChatReadbackQuerySchema.optional(),
   receipts: AgentChatReadbackQuerySchema.optional(),
+  /** Live execution activity of a Run Agent (query.runId required); same page as the HTTP execution-activity read. */
+  executionActivity: z.object({
+    cursor: z.string().max(4096).optional(), executionId: IdSchema.optional(),
+    before: NativeSequenceSchema.optional(), itemId: z.string().min(1).max(1024).optional(),
+    limit: z.number().int().min(1).max(200).optional(),
+  }).strict().optional(),
 }).strict();
 export const ReadAgentChatResponseSchema = AgentChatStateSchema.extend({
   history: AgentChatHistoryPageSchema.optional(),
   receipts: AgentChatTurnPageSchema.optional(),
+  executionActivity: AgentChatExecutionActivityPageSchema.optional(),
 }).strict();
 
 /**
@@ -313,6 +395,5 @@ export const AgentChatStreamEventSchema = z.object({
 }).strict();
 export type AgentChatStreamEvent = z.infer<typeof AgentChatStreamEventSchema>;
 
-export {
-  agentChatFixtureContext, agentChatFixtures, codexChatCapabilities, claudeChatCapabilities, steerUnavailableCapabilities,
+export { agentChatFixtures, codexChatCapabilities, claudeChatCapabilities,
 } from "./agentChatFixtures.js";

@@ -39,7 +39,7 @@ export interface AcceptedProfileAuthority<Owner> {
     pin?: ClaudeQualificationPin
   }>
   assertCurrent(binding: RegistryHarnessSelection): void
-  assertReady?(host: HostHarnessOverride['target']['hostRef']): void
+  assertReady?(profile: HostHarnessOverride): void
 }
 function freeze<T>(value: T): T {
   if (value && typeof value === 'object') {
@@ -58,7 +58,17 @@ export class AcceptedHarnessProfileAdmission<Owner> {
     private readonly authority: AcceptedProfileAuthority<Owner>,
   ) {}
   async admit(owner: Owner, selector: AcceptedProfileSelector): Promise<AcceptedHarnessProfile> {
-    return this.readProfile(owner, selector, { purpose: 'execution' })
+    const selected = structuredClone(selector)
+    try {
+      return await this.readProfile(owner, selected, { purpose: 'execution' })
+    } catch (error) {
+      if (error instanceof DomainError && error.code === 'HARNESS_PROFILE_UNAVAILABLE') {
+        // Qualification can start or complete while the authorized read awaits IO; the reread asserts the
+        // selected profile's readiness and picks up a proof the completed check replaced.
+        return this.readProfile(owner, selected, { purpose: 'execution' })
+      }
+      throw error
+    }
   }
   async admitObservation(owner: Owner, selector: AcceptedProfileSelector): Promise<AcceptedHarnessProfile> {
     return this.readProfile(owner, selector, { purpose: 'observation' })
@@ -84,7 +94,7 @@ export class AcceptedHarnessProfileAdmission<Owner> {
           || original.target.applicationInstallationId !== value.target.applicationInstallationId
           || original.driverId !== value.driverId) return unavailable()
       }
-      if (options.purpose === 'execution') this.authority.assertReady?.(value.target.hostRef)
+      if (options.purpose === 'execution') this.authority.assertReady?.(value)
       const proof = await this.proofs.latest(value.instanceId, value.revision, client)
       if (!proof || !proof.qualified || proof.authenticated !== true || proof.compatible !== true ) return unavailable()
       const current = await this.authority.current(owner, value, client)
@@ -124,7 +134,9 @@ export class AcceptedHarnessProfileAdmission<Owner> {
     const current = await this.admit(owner, {
       instanceId: accepted.override.instanceId, instanceRevision: accepted.override.instanceRevision, target: accepted.override.target,
     })
-    if (!isDeepStrictEqual(current, accepted)) unavailable()
+    // Rechecks replace proof metadata even when the admitted runtime binding is unchanged.
+    if (!isDeepStrictEqual(current.override, accepted.override)
+      || !isDeepStrictEqual(current.currentBinding, accepted.currentBinding)) unavailable()
   }
   async revalidateObservation(owner: Owner, accepted: AcceptedHarnessProfile): Promise<void> {
     const current = await this.admitObservation(owner, {

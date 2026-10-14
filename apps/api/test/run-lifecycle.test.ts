@@ -13,6 +13,7 @@ import { executeRepeatRuntime } from '../src/modules/runs/repeatRuntime.js'
 import { compileRepeatLayout } from '../src/modules/runs/repeatResolution.js'
 import { currentUnitSnapshot } from './helpers/currentUnitSnapshot.js'
 import { syntheticCurrentWorkflow } from './helpers/currentSynthetic.js'
+import { deferred } from './helpers/deferred.js'
 
 type EngineArguments = ConstructorParameters<typeof LangGraphWorkflowEngine>
 type Internals = {
@@ -26,6 +27,7 @@ interface EnginePorts {
   consume(items: readonly DurableInteraction[]): Promise<object | undefined>
   enter(context: RepeatEngineStartContext): Promise<void>
   settle(): Promise<boolean>
+  settleForRestart(): Promise<boolean>
 }
 const ports = vi.hoisted(() => ({ owners: new WeakMap<object, EnginePorts>(), savers: new WeakMap<object, EnginePorts>() }))
 // Real engine scheduling/ownership, recording SQL-composition ports. Never patch
@@ -51,6 +53,12 @@ vi.mock('../src/modules/runs/workflowLifecycle.js', async (original) => ({
   settleWorkflowRun: async (owner: RunOwnership) => {
     const host = ports.owners.get(owner); assert.ok(host); return host.settle()
   },
+  settleWorkForRestart: async (owner: RunOwnership) => {
+    owner.assertOwned()
+    const host = ports.owners.get(owner)
+    assert.ok(host)
+    return host.settleForRestart()
+  },
 }))
 vi.mock('../src/modules/runs/approvalCheckpointResume.js', async (original) => ({
   ...await original<typeof import('../src/modules/runs/approvalCheckpointResume.js')>(),
@@ -58,11 +66,6 @@ vi.mock('../src/modules/runs/approvalCheckpointResume.js', async (original) => (
     const host = ports.owners.get(owner); assert.ok(host); return host.consume(items)
   },
 }))
-function deferred() {
-  let resolve!: () => void
-  const promise = new Promise<void>((done) => { resolve = done })
-  return { promise, resolve }
-}
 function fixture() {
   const f = currentUnitSnapshot('run-lifecycle', 'parallel'), saver = new MemorySaver()
   const run = { ...f.run, executionState: 'waiting' as typeof f.run.executionState }
@@ -108,6 +111,8 @@ function fixture() {
       return {}
     },
     enter: async (context) => { calls.entries.push(context); await control.work(context) },
+    // Active fixture work requires restart cleanup rather than being preserved as settled.
+    settleForRestart: async () => false,
     settle: async () => {
       assert.ok(control.stopRequested || control.cleanupPending)
       calls.settled++
@@ -137,7 +142,7 @@ function fixture() {
     requestCleanup: async () => { control.cleanupPending = true },
     finishCleanup: async (_id: string, pending: boolean) => { control.cleanupPending = pending },
   }
-  const native = { shareRunOwner: () => () => {}, cancelRun: async () => { calls.cancel++ }, finishRun: async () => { calls.finish++ },
+  const native = { adoptRunOwner: () => undefined, shareRunOwner: () => () => {}, cancelRun: async () => { calls.cancel++ }, finishRun: async () => { calls.finish++ },
     preserveActiveForRestart: async () => false,
     reconcileReviews: async () => undefined, closeForRestart: async () => undefined, requestColdRunCleanup: async () => false,
     nativeBoundaryEvidence: async () => { throw new Error('No native evidence is fabricated in engine port tests') } }
@@ -416,6 +421,42 @@ it('shutdown drains the active resume and rejects queued work without another ow
   await f.engine.shutdown(); await Promise.all([first, second])
   assert.equal(f.calls.entries.length, 1); assert.equal(f.calls.owners, 0); assert.equal(f.calls.cancel, 0); assert.equal(f.calls.settled, 0)
   assert.equal(f.internals.activeRuns.size, 0); assert.equal(f.internals.resumeTasks.size, 0)
+})
+it('shutdown records restart cleanup before closing unsettled work and retains the pending result', async () => {
+  const f = fixture()
+  const entered = deferred()
+  f.run.executionState = 'queued'
+  f.control.work = async (context) => {
+    entered.resolve()
+    await new Promise<void>((_resolve, reject) => {
+      context.signal.addEventListener('abort', () => reject(context.signal.reason), { once: true })
+    })
+  }
+  let cleanupRequested = false
+  let closedForRestart = false
+  f.runs.requestCleanup = async () => {
+    assert.equal(f.calls.owners, 1)
+    cleanupRequested = true
+    f.control.cleanupPending = true
+  }
+  f.native.closeForRestart = async () => {
+    assert.equal(cleanupRequested, true)
+    assert.equal(f.control.cleanupPending, true)
+    assert.equal(f.calls.owners, 1)
+    closedForRestart = true
+  }
+  const start = assert.rejects(f.engine.start(f.run.id), { code: 'ENGINE_RESTART' })
+  await entered.promise
+  await f.engine.shutdown()
+  await start
+  assert.equal(cleanupRequested, true)
+  assert.equal(closedForRestart, true)
+  assert.equal(f.run.outcome, 'pending')
+  assert.equal(f.control.stopRequested, false)
+  assert.equal(f.calls.cancel, 0)
+  assert.equal(f.calls.settled, 0)
+  assert.equal(f.calls.releases, 1)
+  assert.equal(f.calls.owners, 0)
 })
 it('a checkpoint identity rejection propagates before consumption without replacing saved native IDs', async () => {
   const f = fixture(), item = f.addInteraction(1, true); f.waiting(item)

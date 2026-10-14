@@ -1,5 +1,5 @@
 import { CiListOutputSchema, CiLogsOutputSchema, CiTestsOutputSchema,
-  type CiActivity, type CiPlacement, type CiRunJob, type CiTestStatus } from '@foreman-code/contracts'
+  type CiActivity, type OperatorCiListInput, type CiPlacement, type CiRunJob, type CiTestStatus } from '@foreman-code/contracts'
 import { apiClient, type RequestOptions } from '../../../shared/api/client'
 import type { AgentNodeState } from '../../../shared/ui/nocturne'
 import type { CiServerFlowNode } from './CiServer'
@@ -8,8 +8,11 @@ const ciPath = (workspaceId: string) => `/api/management/workspaces/${encodeURIC
 
 /** The Board's reads of a Run's CI: the same service as the Operator's ci_list, ci_get testStatus and ci_logs_read. */
 export const runCiApi = {
-  list: (input: { workspaceId: string; runId: string }, options?: RequestOptions) =>
-    apiClient.request(`${ciPath(input.workspaceId)}?${new URLSearchParams({ runId: input.runId })}`, CiListOutputSchema, options),
+  list: (input: OperatorCiListInput, options?: RequestOptions) => {
+    const query = new URLSearchParams({ runId: input.runId })
+    if (input.executionId) query.set('executionId', input.executionId)
+    return apiClient.request(`${ciPath(input.workspaceId)}?${query}`, CiListOutputSchema, options)
+  },
   tests: (input: { workspaceId: string; ticketId: string; status?: readonly CiTestStatus[] }, options?: RequestOptions) =>
     apiClient.request(`${ciPath(input.workspaceId)}/${encodeURIComponent(input.ticketId)}/tests${input.status
       ? `?${new URLSearchParams({ status: input.status.join(',') })}` : ''}`, CiTestsOutputSchema, options),
@@ -36,7 +39,8 @@ export function ciNodeActivities(jobs: readonly CiRunJob[]): Map<string, CiActiv
 
 /** The CI server tower on the Board; edges meet its box-shaped border. */
 export const CI_SERVER_SIZE = { width: 184, height: 212 } as const
-export const CI_SERVER_NODE_ID = 'ci-server'
+// Slashes and @ are outside the shared persisted-ID alphabet. Saved node and Run IDs stay unchanged.
+export const CI_SERVER_NODE_ID = '@presentation/ci-server'
 
 /** The CI server stands below the Board's nodes, centered under them, so it adds no width; it is not part of the saved graph.
  * Every Board shows it automatically; it can be opened, never selected, dragged or added by hand. */

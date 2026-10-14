@@ -46,7 +46,7 @@ export async function sch11Fixture(database: Sch11Database, initialNow = '2030-0
   const commands = new PostgresCommandCoordinator(database.pool)
   const workflows = new WorkflowManagementService(database.pool, commands)
   const service = new WorkflowScheduleService(database.pool, commands, clock)
-  const locations = new WorkspaceLocationService(database.pool, commands, runtimeRoot, LOCAL_RUNNER_ID, projectRoot)
+  const locations = new WorkspaceLocationService(database.pool, commands, runtimeRoot, LOCAL_RUNNER_ID)
   const issue = (actions: ManagementGrant['actions'], workspaceId = scope.workspaceId) => access.issue({
     name: 'SCH-11 synthetic human', audience: 'operator', expiresAt: new Date(Date.now() + 3_600_000),
     grants: [{ actions, scope: { workspaceIds: [workspaceId] } }],
@@ -86,7 +86,7 @@ export type Sch11Fixture = Awaited<ReturnType<typeof sch11Fixture>>
  * Called only after agent3Database validated TEST_DATABASE_URL. */
 export function sch11Pool(database: Sch11Database) {
   const name = `sch11_${randomUUID().replaceAll('-', '')}`
-  const pool = new pg.Pool({ connectionString: process.env.TEST_DATABASE_URL!, max: 1,
+  const pool = new pg.Pool({ connectionString: database.databaseUrl, max: 1,
     application_name: name,
     options: `-c search_path=${database.schema} -c statement_timeout=15000 -c lock_timeout=10000` })
   return { pool, name }

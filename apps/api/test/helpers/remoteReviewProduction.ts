@@ -46,6 +46,7 @@ import { waitForChildReady } from './remoteReviewReadiness.js'
 import { measureIntegrationPhase, reportIntegrationPhase } from './integrationPhase.js'
 import { remoteReviewWorkerArtifacts } from './remoteReviewWorkerArtifacts.js'
 import { remoteReviewChanges } from './remoteReviewChanges.js'
+import { remoteReviewReconciliation } from './remoteReviewReconciliation.js'
 import { installedRestartService } from './installedRestartService.js'
 import type { RuntimeTimingRecord } from '../../src/modules/diagnostics/runtimeTiming.js'
 
@@ -54,7 +55,12 @@ const tsxLoader = createRequire(import.meta.url).resolve('tsx')
 
 export async function waitForRemoteReview<T>(read: () => Promise<T>, accept: (value: T) => boolean,
   description: string, subscribe?: (changed: () => void) => () => void): Promise<T> {
-  return readUntil(read, accept, { timeoutMs: 90_000, description, ...(subscribe ? { subscribe } : {}) })
+  return readUntil(read, accept, {
+    timeoutMs: 90_000,
+    description,
+    minimumReadIntervalMs: 1_000,
+    ...(subscribe ? { subscribe } : {}),
+  })
 }
 
 async function freePort() {
@@ -111,8 +117,18 @@ export async function remoteReviewProduction(options: {
     phaseStarted = performance.now()
   }
   const closes: Array<() => Promise<void>> = []
-  const close = async () => {
-    const errors: unknown[] = []
+  const mcpClients = new Set<Client>()
+  let closing: Promise<void> | undefined
+  const close = (): Promise<void> => {
+    closing ??= Promise.resolve().then(cleanup)
+    return closing
+  }
+  const cleanup = async () => {
+    // Client streams must release their HTTP requests before Main drains its listener.
+    const clientClosures = await Promise.allSettled([...mcpClients].map(client => client.close()))
+    mcpClients.clear()
+    const errors: unknown[] = clientClosures.flatMap(result =>
+      result.status === 'rejected' ? [result.reason] : [])
     while (closes.length) {
       try { await closes.pop()!() } catch (error) { errors.push(error) }
     }
@@ -167,7 +183,6 @@ export async function remoteReviewProduction(options: {
     const workerRuntime = join(directory, 'worker-runtime')
     const claudeProfile = join(directory, 'claude-profile')
     const logEnvironment = remoteReviewEnvironment(claudeDirectory, claudeProfile, launcher)
-    if (options.reportPhase) logEnvironment.LOG_LEVEL = 'debug'
     const workerEnvironment = remoteReviewEnvironment(join(directory, 'worker-home'), claudeProfile, launcher,
       logEnvironment)
     for (const path of [project, runtime, stateDirectory, workerProject, workerRuntime, claudeProfile]) {
@@ -226,8 +241,8 @@ export async function remoteReviewProduction(options: {
     const access = new PostgresAccessService(db.pool)
     const writer = await access.issue({ name: 'Remote review owner', audience: 'operator',
       expiresAt: new Date(Date.now() + 900_000), grants: [{ actions: ManagementActionSchema.options, scope: {} }] })
-    const devicePort = await freePort()
-    const deviceEndpoint = `wss://127.0.0.1:${devicePort}/device/connect`
+    let devicePort = await freePort()
+    let deviceEndpoint = `wss://127.0.0.1:${devicePort}/device/connect`
     const infrastructure = { mode: 'native' as const,
       installationRefreshIntervalMs: options.installationRefreshIntervalMs,
       deviceListener: { ...tls, host: '127.0.0.1', port: devicePort, advertisedEndpoint: deviceEndpoint } }
@@ -344,7 +359,24 @@ export async function remoteReviewProduction(options: {
         () => `Production Main exited: ${mainFailure}`)
     }
     beginPhase('Main startup')
-    await startMain()
+    for (let attempt = 0; ; attempt++) {
+      try {
+        await startMain()
+        break
+      } catch (error) {
+        if (mainService || attempt >= 2 || main?.exitCode === null || !mainFailure.includes('EADDRINUSE')) {
+          throw error
+        }
+        // Port probes release their sockets before the child binds; another listener can win that race.
+        config.port = await freePort()
+        devicePort = await freePort()
+        deviceEndpoint = `wss://127.0.0.1:${devicePort}/device/connect`
+        infrastructure.deviceListener.port = devicePort
+        infrastructure.deviceListener.advertisedEndpoint = deviceEndpoint
+        await writeFile(mainConfiguration,
+          JSON.stringify({ config, infrastructure, claudeInventory: claudeInventory?.sdk }), { mode: 0o600 })
+      }
+    }
     beginPhase('startup model catalog')
     const clients = new Map<string, Promise<Client>>()
     let startupCatalog: ReturnType<typeof HarnessOptionsResultSchema.parse> | undefined
@@ -361,7 +393,7 @@ export async function remoteReviewProduction(options: {
       if (!connected) {
         // One SDK counter per credential keeps parallel calls distinct on the stateless endpoint.
         const client = new Client({ name: 'Production remote review integration', version: '1' })
-        closes.push(() => client.close())
+        mcpClients.add(client)
         connected = client.connect(new StreamableHTTPClientTransport(new URL('/mcp', origin), {
           authProvider: { token: async () => token },
         })).then(() => client)
@@ -417,7 +449,7 @@ export async function remoteReviewProduction(options: {
       const approved = SourceApproveResultSchema.parse(await value('source_approve', {
         workspaceId: saved.scope.workspaceId, commandId: randomUUID(),
         expectedLocationRevision: mainLocation.locationRevision, commit,
-        approvedPaths: ['README.md'], executablePolicy: 'strip',
+        executablePolicy: 'strip',
       })).value
       return { mainLocation, approved }
     }
@@ -639,7 +671,7 @@ export async function remoteReviewProduction(options: {
     }
     const version = CurrentWorkflowSaveResultSchema.parse(await value(CURRENT_WORKFLOW_TOOLS.save, {
       ...workflowScope, commandId: randomUUID(), executionSemanticsVersion: 3, expectedRevision: before.revision,
-      expectedWorkflowVersionId: before.version.id, expectedLocationRevision: location.locationRevision,
+      expectedWorkflowVersionId: before.version.id,
       expectedAgentConfigurationVersionIds: before.version.agentConfigurationVersionIds, graph,
     })).value.version
     async function start() {
@@ -698,7 +730,8 @@ export async function remoteReviewProduction(options: {
       if (!response.ok) throw new Error(`Installed API reconciliation failed: ${await response.text()}`)
     }
     const reconcile = () => mainService ? serviceReconciliation('reconcile') : requestReconciliation('reconcile')
-    const reconcileReviews = () => mainService ? serviceReconciliation('reconcile-reviews') : requestReconciliation('reconcile-reviews')
+    const reconcileReviews = remoteReviewReconciliation(() => mainService
+      ? serviceReconciliation('reconcile-reviews') : requestReconciliation('reconcile-reviews'))
     async function details(runId: string) {
       const response = await fetch(`${origin}/api/management/workspaces/${saved.scope.workspaceId}/runs/${runId}`, {
         headers: { authorization: `Bearer ${writer.token}` } })
@@ -706,7 +739,6 @@ export async function remoteReviewProduction(options: {
       return SavedRunDetailsSchema.parse(await response.json())
     }
     const registry = new NativeProcessRegistry(join(stateDirectory, 'workflow-native-processes'))
-    closes.push(() => stopMain())
     reportPhase(phase, performance.now() - phaseStarted)
     return { db, directory, stateDirectory, provider, claudeInventory, access, writer, repositoryName,
       sourceManifest: approved.manifest,

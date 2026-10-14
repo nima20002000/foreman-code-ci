@@ -7,10 +7,10 @@ import { WorkflowRunSummarySchema, type WorkflowRunSummary } from '@foreman-code
 import { WorkflowRunV3Schema } from '@foreman-code/contracts/wave25'
 import { server } from '../../mocks/server'
 import { currentWorkflowFixture } from '../../shared/mocks/currentWorkflow'
-import { deferred } from '../runs-selector/testFixtures'
 import { WorkflowBoardContext } from './context'
 import { boardRunListKey } from './keys'
 import { RunActivityPanel } from './RunActivityPanel'
+import { deferred } from '../../test/deferred'
 
 const fixture = currentWorkflowFixture('activity-list')
 const { workspaceId, workflowId } = fixture.scope
@@ -195,4 +195,23 @@ describe('Run activity list summary freshness', () => {
     await screen.findByText('You don’t have access to this workflow’s runs.')
     expect(screen.queryByRole('button', { name: /Open Run|Inspect run-/ })).toBeNull()
   })
+})
+
+
+it('keeps a refreshed terminal Run above stale active workspace details, including a later stale refresh', async () => {
+  let completed = false
+  server.use(http.get(listRoute, () => HttpResponse.json({
+    items: [completed ? completedRun : { ...fixture.run, executionState: 'running', startedAt: fixture.createdAt }],
+    pageInfo: { nextCursor: null },
+  })))
+  const active = summary({ ...fixture.run, executionState: 'running', startedAt: fixture.createdAt })
+  const mounted = mount([active])
+  await screen.findByRole('button', { name: `Open Run ${fixture.run.id} · running · pending` })
+  completed = true
+  await userEvent.click(screen.getByRole('button', { name: 'Refresh Runs' }))
+  const row = await screen.findByRole('button', { name: `Open Run ${fixture.run.id} · completed · succeeded` })
+  expect(row).toHaveTextContent('Past Run')
+  mounted.update([{ ...active }])
+  expect(screen.getByRole('button', { name: `Open Run ${fixture.run.id} · completed · succeeded` })).toBeVisible()
+  expect(screen.queryByRole('button', { name: `Open Run ${fixture.run.id} · running · pending` })).toBeNull()
 })

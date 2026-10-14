@@ -7,13 +7,15 @@ export const WORKER_UPDATE_MAX_BINARY_BYTES = 262_144
 
 export const WorkerUpdateStatusSchema = z.object({
   currentVersion: z.string().min(1).max(128),
+  /** Hash of the running release, independently of a pending or failed update target. */
+  manifestSha256: z.string().regex(/^[a-f0-9]{64}$/u).optional(),
   targetVersion: z.string().min(1).max(128).nullable(),
   state: z.enum(['current', 'pending', 'draining', 'downloading', 'installing', 'restarting', 'rolled-back', 'failed']),
   lastError: z.string().max(2000).nullable(),
 }).strict()
 export type WorkerUpdateStatus = z.infer<typeof WorkerUpdateStatusSchema>
 
-export const WorkerArtifactTargetSchema = z.object({
+const WorkerArtifactTargetSchema = z.object({
   os: z.string().min(1).max(100),
   osRelease: z.string().min(1).max(100),
   arch: z.string().min(1).max(100),
@@ -48,7 +50,7 @@ export const WorkerArtifactManifestSchema = z.object({
 export type WorkerArtifactManifest = z.infer<typeof WorkerArtifactManifestSchema>
 
 /** Where Workers download a release: a GitHub release asset per artifact, named <manifestSha256>.tar.gz. */
-export const WorkerArtifactGitHubSchema = z.object({
+const WorkerArtifactGitHubSchema = z.object({
   repository: z.string().regex(/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/[A-Za-z0-9._-]{1,100}$/u),
   tag: z.string().regex(/^worker-[a-f0-9]{12,64}$/u),
 }).strict()
@@ -65,8 +67,11 @@ export const WorkerArtifactIndexSchema = z.object({
 export const WorkerArtifactRequestSchema = z.discriminatedUnion('operation', [
   z.object({ operation: z.literal('release'), target: WorkerArtifactTargetSchema }).strict(),
   z.object({ operation: z.literal('chunk'), manifestSha256: digest, path: artifactPath, offset }).strict(),
+  z.object({ operation: z.literal('ci-smoke'), manifestSha256: digest }).strict(),
 ])
-export type WorkerArtifactRequest = z.infer<typeof WorkerArtifactRequestSchema>
+
+const WorkerCiSmokeSchema = z.object({ repository: WorkerArtifactGitHubSchema.shape.repository,
+  commit: z.string().regex(/^[a-f0-9]{40}$/u) }).strict()
 
 export const WorkerArtifactReplySchema = z.discriminatedUnion('operation', [
   z.object({
@@ -78,6 +83,7 @@ export const WorkerArtifactReplySchema = z.discriminatedUnion('operation', [
       github: WorkerArtifactGitHubSchema.optional(),
     }).strict().nullable(),
   }).strict(),
+  z.object({ operation: z.literal('ci-smoke'), ciSmoke: WorkerCiSmokeSchema.nullable() }).strict(),
   z.object({
     operation: z.literal('chunk'),
     manifestSha256: digest,
@@ -86,4 +92,3 @@ export const WorkerArtifactReplySchema = z.discriminatedUnion('operation', [
     byteSize: z.number().int().nonnegative().max(WORKER_UPDATE_MAX_BINARY_BYTES),
   }).strict(),
 ])
-export type WorkerArtifactReply = z.infer<typeof WorkerArtifactReplySchema>

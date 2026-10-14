@@ -1,8 +1,10 @@
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { chmod, mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { artifactFiles, validateWorkerTarget, workerReleaseVersion } from './worker-artifact-files.mjs'
+import { fileURLToPath } from 'node:url'
+import { setTimeout as sleep } from 'node:timers/promises'
+import { artifactFiles, validateWorkerTarget, workerReleaseVersion, assertWorkerUpdateToolchain } from './worker-artifact-files.mjs'
 
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex')
 
@@ -51,9 +53,10 @@ async function verifyArtifact(directory, target, version, commit) {
 
 /** Uploads each artifact as <manifestSha256>.tar.gz to the GitHub release worker-<commit>, so paired Workers download
  * their update from GitHub with their own login instead of through Main. */
-export async function publishWorkerArtifactsToGitHub({ repository, directory, commit, artifacts, run }) {
-  const origin = execFileSync('git', ['remote', 'get-url', 'origin'], { cwd: repository, encoding: 'utf8' }).trim()
-  const name = /github\.com[:/]([^/]+\/[^/]+?)(?:\.git)?$/u.exec(origin)?.[1]
+export async function publishWorkerArtifactsToGitHub({ repository, name: knownName, directory, commit, artifacts, run,
+  sleep: wait = sleep }) {
+  const origin = knownName ? '' : execFileSync('git', ['remote', 'get-url', 'origin'], { cwd: repository, encoding: 'utf8' }).trim()
+  const name = knownName ?? /github\.com[:/]([^/]+\/[^/]+?)(?:\.git)?$/u.exec(origin)?.[1]
   if (!name) throw new Error('Worker artifacts publish to GitHub: the repository origin is not a GitHub repository.')
   const tag = `worker-${commit}`
   const staging = await mkdtemp(join(directory, '.publish-'))
@@ -61,28 +64,48 @@ export async function publishWorkerArtifactsToGitHub({ repository, directory, co
     const assets = []
     for (const { manifestSha256 } of artifacts) {
       const asset = join(staging, `${manifestSha256}.tar.gz`)
-      await run('tar', ['-czf', asset, '-C', join(directory, manifestSha256), '.'], { cwd: repository })
+      await run('tar', ['-czf', asset, '-C', join(directory, manifestSha256), '.'], { cwd: repository ?? directory })
       assets.push(asset)
     }
-    const exists = await run('gh', ['release', 'view', tag, '--repo', name], { cwd: repository }).then(() => true, () => false)
-    await run('gh', exists ? ['release', 'upload', tag, ...assets, '--repo', name, '--clobber']
-      : ['release', 'create', tag, ...assets, '--repo', name, '--prerelease', '--title', `Worker ${commit.slice(0, 12)}`,
-        '--notes', `Foreman Code Worker artifacts built from ${commit}.`], { cwd: repository })
-    return { repository: name, tag }
+    const backoff = [5000, 10000, 20000, 25000]
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const exists = await run('gh', ['release', 'view', tag, '--repo', name], { cwd: repository ?? directory })
+          .then(() => true, () => false)
+        if (!exists) {
+          await run('gh', ['release', 'create', tag, '--repo', name, '--prerelease',
+            '--title', `Worker ${commit.slice(0, 12)}`,
+            '--notes', `Foreman Code Worker artifacts built from ${commit}.`], { cwd: repository ?? directory })
+        }
+        await run('gh', ['release', 'upload', tag, ...assets, '--repo', name, '--clobber'], { cwd: repository ?? directory })
+        return { repository: name, tag }
+      } catch (error) {
+        // GitHub can briefly hide a release after creation, including from asset uploads.
+        if (attempt === backoff.length) throw error
+        await wait(backoff[attempt])
+      }
+    }
   } finally {
     await rm(staging, { recursive: true, force: true })
   }
 }
 
-export async function buildWorkerReleaseArtifacts({ repository, directory, productManifestPath, run, publish }) {
+export async function buildWorkerReleaseArtifacts({
+  repository, directory, productManifestPath, run, publish, expectedCommit,
+}) {
   const commit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repository, encoding: 'utf8' }).trim()
+  if (expectedCommit !== undefined && commit !== expectedCommit) {
+    throw new Error('Worker source differs from the captured release commit.')
+  }
   const productManifest = committedBytes(repository, commit, 'package.json')
-  const version = workerReleaseVersion(JSON.parse(productManifest))
+  const product = JSON.parse(productManifest)
+  assertWorkerUpdateToolchain(product)
+  const version = workerReleaseVersion(product)
   const targets = readCommittedWorkerTargets(repository, commit)
   await mkdir(directory, { mode: 0o700 })
   try {
-    const artifacts = []
-    for (const { path, target } of targets) {
+    // Targets build independently; all of them settle before a failure removes the shared storage.
+    const builds = await Promise.allSettled(targets.map(async ({ path, target }) => {
       const staging = await mkdtemp(join(directory, '.build-'))
       // The builder requires a fresh directory that it creates itself.
       await rm(staging, { recursive: true })
@@ -93,8 +116,11 @@ export async function buildWorkerReleaseArtifacts({ repository, directory, produ
       const manifestSha256 = await verifyArtifact(staging, target, version, commit)
       await chmod(staging, 0o700)
       await rename(staging, join(directory, manifestSha256))
-      artifacts.push({ target, manifestSha256 })
-    }
+      return { target, manifestSha256 }
+    }))
+    const failed = builds.find(build => build.status === 'rejected')
+    if (failed) throw failed.reason
+    const artifacts = builds.map(build => build.value)
     const github = publish ? await publish({ repository, directory, commit, artifacts, run }) : undefined
     const index = { format: 1, version, ...(github ? { github } : {}), artifacts }
     await writeFile(join(directory, 'index.json'), `${JSON.stringify(index, null, 2)}\n`, { flag: 'wx', mode: 0o600 })
@@ -104,4 +130,30 @@ export async function buildWorkerReleaseArtifacts({ repository, directory, produ
     await rm(directory, { recursive: true, force: true })
     throw error
   }
+}
+
+/** Installs publish after the cutover so the ~78 s upload never delays them: until the index names the GitHub
+ * release, paired Workers download their update through Main. The index is replaced atomically. */
+export async function publishInstalledWorkerArtifacts({ directory, repositoryName, commit, run,
+  publish = publishWorkerArtifactsToGitHub }) {
+  const path = join(directory, 'index.json')
+  const index = JSON.parse(await readFile(path, 'utf8'))
+  if (index.github) return index
+  const github = await publish({ name: repositoryName, directory, commit, artifacts: index.artifacts, run })
+  const published = { ...index, github }
+  const temporary = join(directory, '.index.json.publishing')
+  await writeFile(temporary, `${JSON.stringify(published, null, 2)}\n`, { mode: 0o600 })
+  await rename(temporary, path)
+  return published
+}
+
+if (process.argv[1] === fileURLToPath(import.meta.url) && process.argv[2] === 'publish') {
+  const [directory, repositoryName, commit] = process.argv.slice(3)
+  const run = (command, args, options = {}) => new Promise((resolve, reject) => {
+    const child = spawn(command, args, { stdio: 'inherit', ...options })
+    child.once('error', reject)
+    child.once('exit', code => code === 0 ? resolve() : reject(new Error(`${command} failed (${code}).`)))
+  })
+  await publishInstalledWorkerArtifacts({ directory, repositoryName, commit, run })
+  console.log(`Worker artifacts published to GitHub for ${commit}.`)
 }

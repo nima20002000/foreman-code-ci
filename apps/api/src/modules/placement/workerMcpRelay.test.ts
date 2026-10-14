@@ -1,6 +1,5 @@
-import { createHash, randomUUID } from 'node:crypto'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { randomUUID } from 'node:crypto'
+import { rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Socket } from 'node:net'
 import type pg from 'pg'
@@ -10,9 +9,11 @@ import { freezePlacement, deriveDispatch } from './binding.js'
 import Fastify from 'fastify'
 import { MainWorkerMcpRelay, selectedMainMcpForward, type SelectedMainMcpForward } from './workerMcpRelay.js'
 import { isAuthorized } from '../access/policy.js'
-import { deferred } from '../../../test/helpers/wave25Agent3.js'
 import { createWorkerMcpEndpoint } from '../runs/remote/workerMcpEndpoint.js'
 import { prepareWorkerApplicationAccess } from '../runs/remote/workerApplicationAccess.js'
+import { encodeWorkerMcpResult, decodeWorkerMcpResult, WORKER_MCP_EXTENSION } from '@foreman-code/contracts/worker-mcp-relay'
+import { privateFixtureDirectory } from '../../../test/helpers/privateFixtureDirectory.js'
+import { rejectableDeferred } from '../../../test/helpers/deferred.js'
 
 const ports = vi.hoisted(() => ({ intent: vi.fn(), placement: vi.fn(), host: vi.fn(), owner: vi.fn() }))
 vi.mock('../runs/remote/persistence.js', () => ({ readReconciledDispatchIntent: ports.intent }))
@@ -88,7 +89,7 @@ describe('Main worker MCP relay with original binding doubles and real worker sc
 
   it('keeps the original authenticated worker endpoint through Main restart and owner reconciliation', async () => {
     const f = fixture()
-    const root = await mkdtemp(join(tmpdir(), 'worker-mcp-restart-'))
+    const root = await privateFixtureDirectory('worker-mcp-restart-')
     let intent = f.request.intent
     let selectedMain = f.relay
     let main = Fastify()
@@ -112,8 +113,7 @@ describe('Main worker MCP relay with original binding doubles and real worker sc
       const environment = relay.environment
       endpoint = await createWorkerMcpEndpoint({ relay, launcher: join(root, 'graphql-mcp.mjs'),
         signal: new AbortController().signal })
-      const route = join(root, 'routes', `${createHash('sha256').update(f.request.applicationAccess.token).digest('hex')}.json`)
-      const originalRoute = JSON.parse(await readFile(route, 'utf8'))
+      const originalEndpoint = endpoint.endpoint
       const requestWorker = (token = f.request.applicationAccess.token) => fetch(endpoint!.endpoint, {
         method: 'POST', headers: { authorization: `Bearer ${token}` },
         body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
@@ -134,7 +134,10 @@ describe('Main worker MCP relay with original binding doubles and real worker sc
       expect(await recovered.json()).toMatchObject({ result: { tools: [] } })
       expect(relay.environment).toBe(environment)
       expect(environment.variables.GRAPHQL_MCP_TOKEN).toBe(f.request.applicationAccess.token)
-      expect(JSON.parse(await readFile(route, 'utf8'))).toEqual(originalRoute)
+      expect(endpoint.endpoint).toBe(originalEndpoint)
+      const repeated = await requestWorker()
+      expect(repeated.status).toBe(200)
+      expect(await repeated.json()).toMatchObject({ result: { tools: [] } })
 
       f.forward.mockClear()
       expect((await requestWorker('foreign-worker-token')).status).toBe(401)
@@ -238,7 +241,7 @@ describe('Main worker MCP relay with original binding doubles and real worker sc
 
 it('passes cancellation of the authenticated worker request to the original Main call', async () => {
   const f = fixture()
-  const entered = deferred<AbortSignal>()
+  const entered = rejectableDeferred<AbortSignal>()
   f.forward.mockImplementation(async (_body, _token, _protocol, signal) => new Promise<never>((_resolve, reject) => {
     if (!signal) throw new Error('Missing original request signal')
     signal.addEventListener('abort', () => reject(signal.reason), { once: true })
@@ -266,8 +269,8 @@ it('rejects an already cancelled request before forwarding any worker effect', a
 describe('selected Main fixed artifact tool routing', () => {
   it('closes the authenticated Main HTTP request when its worker request is cancelled', async () => {
     const app = Fastify()
-    const entered = deferred<void>()
-    const disconnected = deferred<void>()
+    const entered = rejectableDeferred<void>()
+    const disconnected = rejectableDeferred<void>()
     app.post('/mcp', (request, reply) => {
       expect(request.headers.authorization).toBe('Bearer original-worker-bearer')
       reply.hijack()
@@ -327,4 +330,49 @@ describe('selected Main fixed artifact tool routing', () => {
       await expect(forward.request({}, 'worker-token')).rejects.toMatchObject({ code: 'WORKER_MCP_RESPONSE_INVALID' })
     } finally { await app.close() }
   })
+})
+
+it('relays a quote-heavy authenticated CI read within the complete device envelope without replay', async () => {
+  const f = fixture()
+  const app = Fastify()
+  const result = { jsonrpc: '2.0', id: 1, result: { structuredContent: {
+    ticketId: 'ticket', state: 'passed', testStatus: { message: '\\"'.repeat(220_000) },
+  } } }
+  const body = JSON.stringify(result)
+  expect(Buffer.byteLength(body)).toBeLessThan(1_000_000)
+  expect(Buffer.byteLength(JSON.stringify({ statusCode: 200, contentType: 'application/json', body })))
+    .toBeGreaterThan(WORKER_MCP_EXTENSION.maxJsonBytes)
+  let calls = 0
+  app.post('/mcp', (request, reply) => {
+    expect(request.headers.authorization).toBe(`Bearer ${f.request.applicationAccess.token}`)
+    calls++
+    return reply.type('application/json').send(body)
+  })
+  try {
+    await app.listen({ host: '127.0.0.1', port: 0 })
+    f.forward.mockImplementation(selectedMainMcpForward(app).request)
+    const relay = await prepareWorkerApplicationAccess({ request: async (_namespace, raw, options) => {
+      const carrier = encodeWorkerMcpResult(await f.relay.handle(raw, f.connection, options?.signal))
+      expect(Buffer.byteLength(JSON.stringify(carrier.payload))).toBeLessThanOrEqual(WORKER_MCP_EXTENSION.maxJsonBytes)
+      expect(carrier.bytes?.byteLength ?? 0).toBeLessThanOrEqual(WORKER_MCP_EXTENSION.maxBinaryBytes)
+      return carrier
+    } }, f.request.intent, f.request.placement, f.request.applicationAccess)
+    const response = await relay.request({ jsonrpc: '2.0', id: 1, method: 'tools/call',
+      params: { name: 'ci_get', arguments: { ticketId: 'ticket', testStatus: true } } })
+    expect(response).toEqual({ statusCode: 200, contentType: 'application/json', body })
+    expect(calls).toBe(1)
+    f.principal.revokedAt = new Date().toISOString()
+    await expect(relay.request({ method: 'tools/list' })).rejects.toMatchObject({ status: 403 })
+    expect(calls).toBe(1)
+  } finally { await app.close() }
+})
+
+it('preserves binary response boundaries, SSE and HTTP status and rejects altered carrier lengths', () => {
+  const response = { statusCode: 409, contentType: 'text/event-stream' as const,
+    body: '"'.repeat(1_000_000) }
+  const carrier = encodeWorkerMcpResult(response)
+  expect(carrier.bytes?.byteLength).toBe(1_000_000)
+  expect(decodeWorkerMcpResult(carrier)).toEqual(response)
+  expect(() => decodeWorkerMcpResult({ ...carrier, bytes: carrier.bytes!.subarray(1) })).toThrow()
+  expect(() => encodeWorkerMcpResult({ ...response, body: '"'.repeat(1_000_001) })).toThrow()
 })

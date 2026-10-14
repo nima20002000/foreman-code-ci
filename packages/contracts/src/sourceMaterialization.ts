@@ -2,15 +2,25 @@ import { AgentBranchPrefixSchema } from './worktreeSettings.js'
 import { z } from 'zod'
 import { IdSchema } from './schemaPrimitives.js'
 
+/** Shared Git objects have their own filesystem budget, independent of approved source roots. */
+export const SOURCE_GIT_CACHE_LIMITS = Object.freeze({
+  bytes: 64 * 2 ** 30,
+  maximumFileBytes: 256 * 2 ** 20,
+  transferBytes: 1024 * 2 ** 20,
+  diskMarginBytes: 2 ** 30,
+})
 /** Tracked files one approved source snapshot may hold; the manifest's 2 MiB metadata budget still applies. */
 export const SOURCE_ENTRY_LIMIT = 8192
+export const SOURCE_MANIFEST_MAX_BYTES = 2 * 1024 * 1024
+/** Space for the receipt, root binding and optional snapshot reference in addition to a full manifest. */
+export const SOURCE_MATERIALIZATION_RECORD_MAX_BYTES = SOURCE_MANIFEST_MAX_BYTES + 64 * 1024
 export const SourceHashSchema = z.string().regex(/^[a-f0-9]{64}$/)
-export const SourceEntrySchema = z.object({
+const SourceEntrySchema = z.object({
   path: z.string().min(1).max(1024), kind: z.literal('file'),
   byteSize: z.number().int().nonnegative().max(16 * 1024 * 1024),
   sha256: SourceHashSchema, executable: z.boolean(),
 }).strict()
-export const SourceGitMetadataSchema = z.object({
+const SourceGitMetadataSchema = z.object({
   byteSize: z.number().int().positive().max(16 * 1024 * 1024), sha256: SourceHashSchema,
 }).strict()
 export const SourceManifestSchema = z.object({
@@ -39,6 +49,15 @@ export const RootBindingSchema = z.object({
   accessMode: z.enum(['read-only', 'exclusive-write']), snapshotId: z.uuid(), manifestDigest: SourceHashSchema,
 }).strict()
 export type RootBinding = z.infer<typeof RootBindingSchema>
+export const GitCacheStorageSchema = z.object({
+  version: z.literal(1), filesystem: RootBindingSchema.shape.filesystem,
+  retainedBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  reservedBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  limitBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  availableBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  observedAt: z.string().datetime(),
+}).strict()
+export type GitCacheStorage = z.infer<typeof GitCacheStorageSchema>
 export const SourceProjectQuotaSlotSchema = z.object({
   namespace: z.uuid(), projectId: z.number().int().min(1).max(4294967295),
   hardLimitBytes: z.number().int().positive(), hardInodes: z.number().int().positive(),
@@ -100,11 +119,15 @@ export function sourceMaterializationParent(receipt: MaterializationReceipt): st
 
 /** Main asks an Agent's computer for its current files as its base commit when unchanged, or a git bundle when changed. */
 export const AGENT_SNAPSHOT_NAMESPACE = 'agent-snapshot-v1'
+export const AGENT_SNAPSHOT_MAX_BYTES = 32 * 1024 * 1024
+const AGENT_SNAPSHOT_BASE64_BYTES = Math.ceil(AGENT_SNAPSHOT_MAX_BYTES / 3) * 4
+/** Includes the commit and JSON envelope alongside the base64 bundle. */
+export const AGENT_SNAPSHOT_JSON_BYTES = AGENT_SNAPSHOT_BASE64_BYTES + 1024
 export const AgentSnapshotRequestSchema = z.object({
   path: z.string().startsWith('/').max(4096),
   baseCommit: z.string().regex(/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/),
 }).strict()
 export const AgentSnapshotResultSchema = z.object({
   commit: z.string().regex(/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/),
-  bundleBase64: z.string().max(960 * 1024).nullable(),
+  bundleBase64: z.string().max(AGENT_SNAPSHOT_BASE64_BYTES).nullable(),
 }).strict()

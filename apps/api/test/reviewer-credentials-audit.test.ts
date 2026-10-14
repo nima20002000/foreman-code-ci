@@ -8,7 +8,8 @@ import type { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { WorkerCredentialService, type IssuedWorkerCredential } from '../src/modules/access/workerCredentials.js'
 import { DomainError } from '../src/modules/errors.js'
 import type { NativeHarnessSessionManager } from '../src/modules/harnesses/port.js'
-import { deferred, historicalSecret, now, providerId, reviewerFixture, secret, session, until } from './helpers/reviewerAudit.js'
+import { historicalSecret, now, providerId, reviewerFixture, secret, session, until } from './helpers/reviewerAudit.js'
+import { rejectableDeferred } from './helpers/deferred.js'
 
 it('F8: a silent 75-second review renews its one-minute credential without rotating token or native work', async () => {
   vi.useFakeTimers(); vi.setSystemTime(new Date(now))
@@ -156,7 +157,7 @@ it('F8: a delayed renewal cannot update the local credential after maintenance s
   try {
     const fixture = await reviewerFixture()
     const attached = await fixture.attach()
-    const renewal = deferred<string>()
+    const renewal = rejectableDeferred<string>()
     fixture.hooks.renew = () => renewal.promise
     const maintenance = await fixture.runtime.maintainReviewCredential(fixture.execution.id, session, new AbortController().signal, async () => {})
     await vi.advanceTimersByTimeAsync(1)
@@ -217,21 +218,41 @@ it('F8: an expired resident reviewer token is never renewed or replaced in a sti
   } finally { vi.useRealTimers() }
 })
 
-it('F8: credential renewal SQL binds exact execution/principal and refuses expired reviewer principals', async () => {
-  let query = ''; let parameters: unknown[] = []
-  const pool = { async query(sql: string, values: unknown[]) {
-    query = sql; parameters = values
-    return { rows: [{ expires_at: new Date(Date.now() + 60_000) }] }
-  } } as unknown as pg.Pool
+it('credential renewal returns database expiry and a monotonic deadline despite API clock skew', async () => {
+  const databaseNow = new Date('2026-10-01T00:00:00.000Z')
+  const expiresAt = new Date(databaseNow.getTime() + 60_000)
+  const pool = { query: async () => ({ rows: [{ expires_at: expiresAt, database_now: databaseNow }] }) } as unknown as pg.Pool
   const service = new WorkerCredentialService(pool, {} as PostgresAccessService, 60_000)
-  await service.renewForExecution('execution-reviewer', { principalId: 'principal-reviewer-exact' })
-  assert.deepEqual(parameters.slice(0, 2), ['principal-reviewer-exact', 'execution-reviewer'])
-  assert.match(query, /b\.purpose='reviewer' and p\.expires_at > clock_timestamp\(\)/)
-  assert.match(query, /p\.id=\$1 and b\.principal_id=p\.id and b\.execution_id=\$2/)
-  assert.match(query, /designatedOrchestratorAgentId/)
-  assert.match(query, /workflow_finalized_at is not null/)
-  assert.match(query, /worker_credentials_closed_at is null/)
-  assert.match(query, /p\.revoked_at is null and b\.revoked_at is null/)
+  const credential: Pick<IssuedWorkerCredential, 'principalId' | 'renewalDeadline'> = {
+    principalId: 'principal-reviewer',
+  }
+  const monotonic = vi.spyOn(performance, 'now').mockReturnValue(1_000)
+  const wallClock = vi.spyOn(Date, 'now').mockReturnValue(databaseNow.getTime() + 120_000)
+  try {
+    assert.equal(await service.renewForExecution('execution-reviewer', credential), expiresAt.toISOString())
+    assert.equal(credential.renewalDeadline, 61_000)
+  } finally {
+    monotonic.mockRestore()
+    wallClock.mockRestore()
+  }
+})
+
+it('credential renewal returns the database expiry and a monotonic deadline', async () => {
+  const databaseNow = new Date('2026-09-16T00:00:00.000Z')
+  const expiresAt = new Date(databaseNow.getTime() + 60_000)
+  const pool = {
+    async query() {
+      return { rows: [{ expires_at: expiresAt, database_now: databaseNow }] }
+    },
+  } as unknown as pg.Pool
+  const service = new WorkerCredentialService(pool, {} as PostgresAccessService, 60_000)
+  const credential: Pick<IssuedWorkerCredential, 'principalId' | 'renewalDeadline'> = {
+    principalId: 'principal-reviewer',
+  }
+  const requestedAt = performance.now()
+  assert.equal(await service.renewForExecution('execution-reviewer', credential), expiresAt.toISOString())
+  assert.ok(credential.renewalDeadline! >= requestedAt + 59_999)
+  assert.ok(credential.renewalDeadline! <= performance.now() + 60_000)
 })
 
 it('F8: hung initial authority validation fails before credential expiry instead of waiting forever', async () => {
@@ -239,7 +260,7 @@ it('F8: hung initial authority validation fails before credential expiry instead
   try {
     const fixture = await reviewerFixture()
     await fixture.attach()
-    const blocked = deferred()
+    const blocked = rejectableDeferred()
     fixture.hooks.validate = () => blocked.promise
     const task = fixture.runtime.maintainReviewCredential(fixture.execution.id, session, new AbortController().signal, async () => {})
     await vi.advanceTimersByTimeAsync(55_001)

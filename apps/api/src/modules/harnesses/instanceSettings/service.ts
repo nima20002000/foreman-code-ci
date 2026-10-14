@@ -5,17 +5,21 @@ import { HarnessProfileSelectionSchema, type HarnessProfileSelection } from '@fo
 import { RETIRED_OPENCODE_MESSAGE, withAdvancedDefaults } from '@foreman-code/contracts'
 import { HostHarnessOverrideListInputSchema, HostHarnessOverrideSaveSchema, type HostHarnessOverride, type HostHarnessOverrideListInput, type HostHarnessOverrideSave, type HostHarnessInstanceCheckInput } from '@foreman-code/contracts/harness-registry'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
-import type { CanonicalMachineReference } from '@foreman-code/contracts/device-identity'
 import { DomainError } from '../../errors.js'
 import { requireAuthorization } from '../../access/policy.js'
 import { commandInputHash, type PostgresCommandCoordinator } from '../../commands/postgres.js'
 import type { HostHarnessInstanceProfileChecks } from './profileChecks.js'
 import { harnessHostKey, type HarnessInstanceSettingsRepository } from './repository.js'
 import { nativeProfileCheckId } from './profileChecks.js'
-import type { ProviderAccountConfigurationService } from '../providerAccountConfiguration.js'
+import type { HostHarnessOverrideAuthority } from './authority.js'
+import type { GraphSqlClient } from '../../run-graph/connection.js'
+import { fallbackOnError } from '../../diagnostics/ignoredError.js'
 
-export interface HostHarnessOverrideAuthority {
-  authorize(principal: ManagementPrincipal, action: 'harnesses:read' | 'harnesses:update', hostRef: CanonicalMachineReference, applicationInstallationId: string, client?: pg.PoolClient): Promise<void>
+export type { HostHarnessOverrideAuthority }
+/** Account resolution port, implemented by ProviderAccountConfigurationService. */
+export interface HarnessAccountConfigurationResolver {
+  resolve(configuration: HarnessConfiguration, selection?: HarnessProfileSelection,
+    options?: { sql: GraphSqlClient }): Promise<HarnessConfiguration>
 }
 export interface HostHarnessOverrideEvidence {
   /** Resolver must match current driver/protocol/suite and authorized connection generations. */
@@ -33,7 +37,7 @@ export class HostHarnessOverrideService {
     private readonly evidence: (value: HostHarnessOverride, client?: pg.PoolClient) => Promise<HostHarnessOverrideEvidence | null>,
     private readonly profileChecks?: HostHarnessInstanceProfileChecks,
     private readonly configurationTarget?: (configuration: HarnessConfiguration) => HostHarnessOverride['target'],
-    private readonly accountConfigurations?: ProviderAccountConfigurationService,
+    private readonly accountConfigurations?: HarnessAccountConfigurationResolver,
   ) {}
   get qualificationSupported(): boolean { return Boolean(this.profileChecks) }
   async closeChecks(): Promise<void> { await this.profileChecks?.close() }
@@ -52,9 +56,9 @@ export class HostHarnessOverrideService {
       ...value, qualification: 'retired', retirementMessage: RETIRED_OPENCODE_MESSAGE,
     }
     if (!value.enabled) return { ...value, qualification: 'disabled' }
-    if (this.profileChecks?.pending(value.target.hostRef)) return { ...value, qualification: 'qualifying' }
+    if (this.profileChecks?.pending(value)) return { ...value, qualification: 'qualifying' }
     // Missing/remote failed evidence remains unavailable, never substitutes local discovery.
-    const evidence = await this.evidence(value, client).catch(() => null)
+    const evidence = await this.evidence(value, client).catch(fallbackOnError(null, 'harness', 'read harness qualification evidence'))
     const qualification = !evidence ? 'unqualified' : harnessHostKey(evidence.target.hostRef) !== harnessHostKey(value.target.hostRef)
       || evidence.target.applicationInstallationId !== value.target.applicationInstallationId
       || evidence.target.harnessInstallationId !== value.target.harnessInstallationId
@@ -146,12 +150,14 @@ export class HostHarnessOverrideService {
       targetKey: `harness-instance:${input.instanceId}`, payload: input,
       authorize: client => this.authority.authorize(principal, 'harnesses:update', input.target.hostRef, input.target.applicationInstallationId, client),
       perform: async client => {
+        await this.repository.lockRevision(client, input.instanceId)
+        const previous = await this.repository.latest(client, input.instanceId)
         const requested = this.accountConfigurations ? await this.accountConfigurations.resolve(input.configuration,
-          { instanceId: input.instanceId, instanceRevision: String(input.expectedRevision), target: input.target },
+          { instanceId: input.instanceId, instanceRevision: previous?.instanceRevision ?? '0', target: input.target },
           { sql: client }) : input.configuration
         const configuration = withAdvancedDefaults(requested)
         const configurationFingerprint = commandInputHash(configuration)
-        const revision = input.expectedRevision + 1
+        const revision = (previous?.revision ?? 0) + 1
         const value: HostHarnessOverride = { instanceId: input.instanceId, revision, instanceRevision: String(revision),
           target: input.target, presetId: input.presetId, enabled: input.enabled, driverId: configuration.harness,
           configuration, configurationFingerprint, qualification: input.enabled ? 'unqualified' : 'disabled' }
