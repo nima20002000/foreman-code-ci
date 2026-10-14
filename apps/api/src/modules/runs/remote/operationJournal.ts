@@ -805,23 +805,16 @@ export class RemoteOperationJournal {
     launches: readonly NativeLaunchObservation[] = []): Promise<boolean> {
     await this.tail
     if (this.faulted) throw new Error('Journal durability uncertain: recovery required')
-    // An update preserves retry records; full runtime retirement still requires their settlement.
-    const qualificationPending = this.data.qualificationReceipts.some(receipt => conversations === 'closed'
-      ? receipt.phase !== 'closed' || !receipt.result || receipt.quotaClaims.length
-      : receipt.launches.some(launch => !launch.closed)
-        || receipt.container && !receipt.creationAbsent && receipt.container.certificate?.lifecycle !== 'closed')
-    const executionPending = conversations === 'closed' && this.data.receipts.some(receipt =>
-      receipt.phase !== 'confirmed_terminal'
+    const qualificationPending = this.data.qualificationReceipts.some(receipt =>
+      receipt.phase !== 'closed' || !receipt.result || receipt.quotaClaims.length)
+    const executionPending = this.data.receipts.some(receipt => receipt.phase !== 'confirmed_terminal'
       || 'kind' in receipt && receipt.publication !== 'complete'
         && !(receipt.publication === 'failed' && this.data.jobOwners.some(owner =>
           owner.operationId === receipt.intent.operationId && owner.sourceReclamation)))
     const nativePending = this.data.jobOwners.some(owner => owner.launches.some(launch => !launch.closed)
       || owner.container && owner.container.certificate?.lifecycle !== 'closed'
         && !(owner.nonEntryConfirmed && jobContainerNonEntryObserved(owner))
-      || conversations === 'closed' && owner.verification
-        && !owner.verification.finalizedAt && !owner.sourceReclamation)
-    const launchesPending = launches.some(launch =>
-      launch.lifecycle !== 'closed' && !launch.owner.startsWith('conversation:'))
+      || owner.verification && !owner.verification.finalizedAt && !owner.sourceReclamation)
     const conversationPending = this.data.conversations.some(receipt => {
       if (receipt.closed) return false
       if (conversations === 'closed') return true
@@ -838,7 +831,7 @@ export class RemoteOperationJournal {
         workerConversationProcessDigest(receipt.binding, launch) === nativeOwner.processIdentityDigest)
       return !nativeClosed
     })
-    return !qualificationPending && !executionPending && !nativePending && !launchesPending && !conversationPending
+    return !qualificationPending && !executionPending && !nativePending && !conversationPending
   }
   async qualificationStatus(operationId: string): Promise<QualificationReceipt | null> {
     await this.tail

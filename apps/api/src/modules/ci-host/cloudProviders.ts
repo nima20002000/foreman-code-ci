@@ -3,7 +3,6 @@ import { basename, join } from 'node:path'
 import type { CiHostRequest, CiDurations, CiExecutionSuite, CiHostRun, CiPart, CiScope, CiSuite, CiTestResults, CiUserSystemd } from '@foreman-code/contracts'
 import { DomainError } from '../errors.js'
 import type { HostCiPorts } from './runner.js'
-import { logIgnoredError } from '../diagnostics/ignoredError.js'
 import { providerCommand } from './providerPoll.js'
 import { CloudHttp, type CloudRestOptions } from './cloudHttp.js'
 import { GitHubRest } from './cloudGithub.js'
@@ -14,11 +13,10 @@ export interface CloudRun {
   runId: string; repository: string; mirror: string; commit: string; suite: CiSuite; startedAt: string
   providerRunId: string | null; state: CiHostRun['state']; finishedAt: string | null; exitCode: number | null
   message: string | null; durations?: CiDurations; testResults?: CiTestResults
-  transport?: CiHostRun['transport']
   testsStarted?: boolean
   scope?: CiScope; files?: string[]; part?: CiPart; baseCommit?: string
   dispatch?: { input: CloudDispatchInput; attempts: number; at: string }
-  reconciliation?: { attempts: number; at: string; since?: string; previousMessage: string | null }
+  reconciliation?: { attempts: number; at: string; previousMessage: string | null }
   publicationRequest?: Extract<CiHostRequest, { operation: 'start' }>
   mirrorPublication?: CiHostRun['mirrorPublication']
   mirrorBranch?: string
@@ -52,7 +50,6 @@ export interface CloudDispatchInput {
 export interface CloudProvider {
   readonly id: 'github' | 'circleci'
   readonly label: string
-  readonly transport?: CiHostRun['transport']
   /** Longest accepted pipeline parameter value, when the provider caps it. */
   readonly parameterLimit?: number
   /** Jobs the service runs at once for a public repository on its free plan, less a few kept for retries. */
@@ -102,15 +99,12 @@ async function executeCommand(ports: HostCiPorts, label: string, file: string, a
     const noCircleArtifacts = file === 'circleci' && args[0] === 'job' && args[1] === 'artifact'
       && /\bartifacts\.not_found\b/.test(result.stderr)
     if (noCircleArtifacts) return '[]'
-    const completedGitHubRun = file === 'gh' && args[0] === 'run' && args[1] === 'cancel'
-      && /\bCannot cancel a workflow run that is completed\b/i.test(result.stderr)
-    if (completedGitHubRun) return ''
     const noActiveWorkflows = file === 'circleci' && args[0] === 'run'
       && (args[1] === 'get' || args[1] === 'cancel') && /\bno active workflows\b/i.test(result.stderr)
     if (noActiveWorkflows) {
       if (args[1] === 'cancel') return ''
-      throw new DomainError('CI_CLOUD_RUN_UNREADABLE',
-        'CircleCI reports no active workflows; the final outcome is not visible yet.', 502)
+      throw new DomainError('CI_CLOUD_RUN_ENDED',
+        'CircleCI reports no active workflows; the final outcome is unknown.', 502)
     }
     const missingRun = file === 'circleci' && args[0] === 'run' && args[1] === 'get'
       && /\brun\.not_found\b/.test(result.stderr)
@@ -172,8 +166,6 @@ export class GitHubActionsProvider implements CloudProvider {
   private readonly jobsCache = new Map<string, { etag: string; jobs: GitHubJob[] }>()
 
   private readonly rest: GitHubRest
-
-  get transport() { return this.rest.transport }
 
   constructor(private readonly ports: HostCiPorts, options: CloudRestOptions = {}) {
     this.rest = new GitHubRest(new CloudHttp(ports, 'github', options))
@@ -299,13 +291,6 @@ export class GitHubActionsProvider implements CloudProvider {
   async cancel(run: CloudRun) { await this.gh(['run', 'cancel', run.providerRunId!, '-R', run.mirror]) }
 }
 
-function circleConclusion(outcome: string | undefined): 'success' | 'failure' | 'cancelled' | null {
-  if (outcome === 'succeeded') return 'success'
-  if (outcome === 'canceled') return 'cancelled'
-  const failures = ['failed', 'errored', 'unauthorized', 'not_run', 'skipped', 'infrastructure_fail', 'timedout']
-  return failures.includes(outcome ?? '') ? 'failure' : null
-}
-
 /** Large Linux machines (4 vCPUs, 15 GB); the free plan runs 30 jobs at once and open-source Linux builds are free. */
 export class CircleCiProvider implements CloudProvider {
   readonly id = 'circleci' as const
@@ -320,8 +305,6 @@ export class CircleCiProvider implements CloudProvider {
 
   private readonly rest: CircleRest
 
-  get transport() { return this.rest.transport }
-
   constructor(private readonly ports: HostCiPorts, options: CloudRestOptions = {}) {
     this.rest = new CircleRest(new CloudHttp(ports, 'circleci', options))
   }
@@ -333,10 +316,7 @@ export class CircleCiProvider implements CloudProvider {
     })
   }
 
-  async ready() {
-    await this.rest.available()
-    return (await this.ports.run('circleci', ['auth', 'me'], { timeoutMs: 15_000 })).code === 0
-  }
+  async ready() { return (await this.ports.run('circleci', ['auth', 'me'], { timeoutMs: 15_000 })).code === 0 }
 
   async dispatch(input: CloudDispatchInput) {
     validateProviderParameters(this, input)
@@ -354,22 +334,25 @@ export class CircleCiProvider implements CloudProvider {
 
   async find(run: CloudRun) {
     if (!run.providerRunId) return null
-    const view = await this.pipeline(run, 15_000)
-    const terminal = view.phase === 'ended' && circleConclusion(view.outcome ?? view.current_outcome) !== null
-    return view.workflows?.length || terminal ? run.providerRunId : null
+    try {
+      const view = await this.pipeline(run, 15_000)
+      return view.workflows?.length || view.phase === 'ended' || view.current_outcome === 'not_run'
+        ? run.providerRunId : null
+    } catch (error) {
+      const elapsed = this.ports.now().getTime() - Date.parse(run.dispatch?.at ?? run.startedAt)
+      // Accepted pipelines can take a few polls to appear in CircleCI's run lookup.
+      if (error instanceof DomainError && error.code === 'CI_CLOUD_RUN_NOT_FOUND'
+        && !run.workflowStarted && elapsed >= 0 && elapsed < CLOUD_START_TIMEOUT_MS) return null
+      throw error
+    }
   }
 
   private async pipeline(run: CloudRun, timeoutMs?: number) {
     const view = JSON.parse(await this.circleci(['run', 'get', run.providerRunId!, '--json'], timeoutMs)) as {
-      state?: string; phase?: string; outcome?: string; current_outcome?: string; stopped_at?: string
+      phase?: string; outcome?: string; current_outcome?: string; stopped_at?: string
       errors?: { type: string; message: string }[]
       workflows?: { phase?: string; outcome?: string; stopped_at?: string; jobs?: { id: string }[] }[]
     }
-    // A CLI placeholder outcome cannot finish a pipeline that is still waiting for workflows.
-    const pendingState = [view.state, view.phase].some(state => state === 'created' || state === 'setup-pending')
-    const notStarted = (view.outcome ?? view.current_outcome) === 'not_run' && !view.errors?.length
-    const waiting = !view.workflows?.length && (pendingState || notStarted)
-    if (waiting) return { ...view, phase: 'started', outcome: undefined, current_outcome: undefined }
     if (view.errors?.length && (view.phase === 'ended' || view.current_outcome === 'not_run')) {
       const message = view.errors.map(error => `${error.type}: ${error.message}`).join('; ')
       throw new DomainError('CI_CLOUD_PIPELINE_FAILED', `${this.label} pipeline failed: ${message}`, 502,
@@ -386,7 +369,7 @@ export class CircleCiProvider implements CloudProvider {
   async status(run: CloudRun): Promise<CloudStatus> {
     const view = await this.pipeline(run)
     const workflows = view.workflows ?? []
-    const pipelineEnded = view.phase === 'ended'
+    const pipelineEnded = view.phase === 'ended' || view.current_outcome === 'not_run'
     const workflowsEnded = workflows.length > 0 && workflows.every(workflow => workflow.phase === 'ended')
     const ended = pipelineEnded || workflowsEnded
     let finalOutcomes: (string | undefined)[] = []
@@ -411,10 +394,7 @@ export class CircleCiProvider implements CloudProvider {
       })))
     } catch (error) {
       // The parent outcome still settles a finished pipeline when its step details are unavailable.
-      if (ended && hasFinalOutcome) {
-        logIgnoredError('jobs', 'read CircleCI job details', error, { runId: run.runId })
-        return this.completed(finalOutcomes, stopped, [])
-      }
+      if (ended && hasFinalOutcome) return this.completed(finalOutcomes, stopped, [])
       throw error
     }
     const raw = jobs.flatMap(job => job.detail.executions?.flatMap(execution =>
@@ -440,8 +420,6 @@ export class CircleCiProvider implements CloudProvider {
       if (result.code !== 0) {
         const limited = rateLimited(this.label, result.stderr)
         if (limited) throw limited
-        logIgnoredError('jobs', 'read CircleCI live output', new DomainError('CI_CLOUD_OUTPUT_UNAVAILABLE',
-          `CircleCI live output exited ${result.code}.`, 502), { runId: run.runId })
         return { done: false, steps }
       }
       return { done: false, steps, output: { key: key(current), text: result.stdout } }
@@ -455,13 +433,13 @@ export class CircleCiProvider implements CloudProvider {
   }
 
   private completed(outcomes: (string | undefined)[], stopped: string | undefined, steps: CloudStep[]): CloudStatus {
-    const conclusions = outcomes.map(circleConclusion)
-    const failed = conclusions.includes('failure')
-    if (!failed && (!conclusions.length || conclusions.includes(null))) return { done: false, steps }
+    const unknown = !outcomes.length || outcomes.some(outcome => outcome === undefined)
+    const failed = unknown || outcomes.some(outcome => !['succeeded', 'canceled'].includes(outcome ?? ''))
     let conclusion: 'success' | 'failure' | 'cancelled' = 'success'
     if (failed) conclusion = 'failure'
-    else if (conclusions.includes('cancelled')) conclusion = 'cancelled'
-    return { done: true, finishedAt: stopped ?? this.ports.now().toISOString(), steps, conclusion }
+    else if (outcomes.includes('canceled')) conclusion = 'cancelled'
+    return { done: true, finishedAt: stopped ?? this.ports.now().toISOString(), steps, conclusion,
+      ...(unknown ? { message: 'CircleCI execution ended, but its final outcome is unknown.' } : {}) }
   }
 
   async log(run: CloudRun) {
@@ -486,7 +464,7 @@ export class CircleCiProvider implements CloudProvider {
     const { job } = await this.job(run)
     if (!job) return noArtifacts
     // Read result metadata, not the per-slot logs and archives, which can outlast the download timeout.
-    const listed = await this.rest.artifacts(job.id)
+    const listed = await this.rest.artifacts(run.mirror, job.id)
       ?? await this.circleci(['job', 'artifact', job.id, '--json'], 60_000)
     const finishedAt = Date.parse(run.finishedAt ?? '')
     if ((JSON.parse(listed) as unknown[]).length === 0 && run.state === 'passed'
@@ -517,14 +495,15 @@ export class CircleCiProvider implements CloudProvider {
   async cancel(run: CloudRun) {
     let view: { phase?: string; workflows?: unknown[] } | null
     try {
-      view = JSON.parse(await this.circleci(['run', 'get', run.providerRunId!, '--json'], 15_000)) as typeof view
+      view = JSON.parse(await this.circleci(['run', 'get', run.providerRunId!, '--json'])) as typeof view
     } catch (error) {
+      if (error instanceof DomainError && error.code === 'CI_CLOUD_RUN_ENDED') return
       if (!(error instanceof DomainError
         && ['CI_CLOUD_RUN_NOT_FOUND', 'CI_CLOUD_RUN_UNREADABLE'].includes(error.code))) throw error
       // Cancellation of the known pipeline does not require a successful status lookup.
       view = null
     }
     if (view?.phase === 'ended' && !view.workflows?.length) return
-    await this.circleci(['run', 'cancel', run.providerRunId!, '--force'], 15_000)
+    await this.circleci(['run', 'cancel', run.providerRunId!, '--force'])
   }
 }

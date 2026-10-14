@@ -20,8 +20,8 @@ import type { RepeatRepositoryServices } from './repeatRepositoryHost.js'
 import type { RunOwnership } from './ownership.js'
 import { visitRepeatNativeAttemptsLocked } from './repeatNativeAttempts.js'
 import { hasWorkflowExecutionCapacityLocked } from './workflowExecutionBudget.js'
-import { assertRestartAttemptsLocked } from './workflowRestartSettlement.js'
-import { EXECUTION_MAX_ATTEMPTS, isTransientExecutionResult } from './executionRetryPolicy.js'
+import { readWorkflowNativeEntryLocked, workflowNativeReservation } from './workflowNativeEntry.js'
+import { readWorkflowTerminalReceiptLocked } from './workflowTerminalReceipt.js'
 import type { ApprovalPostgresSaver } from '../../infrastructure/approvalCheckpointSaver.js'
 import { lockInteraction } from '../interactions/wave25/context.js'
 import { assertSavedPendingApprovalOriginalLocked } from '../interactions/nativeApprovalProof.js'
@@ -82,9 +82,9 @@ export function createWorkflowRepositoryServices(captures: WorkflowNativeVerific
   return { services, native }
 }
 
-/** A failed attempt retries when its provider marked the failure retryable or
- * the shared policy classifies its cause as infrastructure. The repository has
- * already settled the attempt. A canceled/invalid result is not retryable.
+/** Only a failed ORIGINAL native terminal can use the pinned technical policy.
+ * The repository has already established exact negative physical settlement.
+ * A canceled/invalid result or coordinator disposal is not a retryable result.
  * A retry keeps the same slot, business occurrence and byte-identical input. */
 export async function allowTechnicalRetryLocked(sql: GraphTransactionSql, run: AcceptedWorkflowRunV3,
   version: WorkflowVersionV3, supplied: HarnessExecution): Promise<boolean> {
@@ -100,10 +100,8 @@ export async function allowTechnicalRetryLocked(sql: GraphTransactionSql, run: A
     // A technical retry consumes the shared Run execution budget and may
     // replace one failed attempt at most; it never creates an occurrence.
     const budget = version.definition.executionPolicy?.maxNodeExecutions
-    if (!budget || execution.attempt >= EXECUTION_MAX_ATTEMPTS) return false
+    if (!budget || execution.attempt >= 2) return false
     if (!await hasWorkflowExecutionCapacityLocked(sql, run.id, version)) return false
-    // An abandoned attempt carries its recorded infrastructure cause, not a provider terminal.
-    if (isTransientExecutionResult(execution.result)) return true
     // A result-bearing source receipt, not a terminal enum, distinguishes a real
     // provider failure from Stop/disposal/first-result validation failure.
     const row = (await sql.query<{ record: WorkflowNativeProofRecord; source_digest: string }>(`select p.record,p.source_digest from workflow_native_proofs p
@@ -140,10 +138,8 @@ export async function assertWorkflowRunSettlementLocked(sql: GraphTransactionSql
   if (approvals && intent !== 'restart') return conflict('GRAPH_INTERRUPT_INVALID')
   const retained = approvals ? await assertRestartApprovalsLocked(sql, run, approvals) : []
   const retainedPrincipals: string[] = []
-  if (intent === 'restart') {
-    await assertRestartAttemptsLocked(sql, run, owner, retained)
-  } else {
-    await visitRepeatNativeAttemptsLocked(sql, run.id, { kind: 'run' }, async ids => {
+  await visitRepeatNativeAttemptsLocked(sql, run.id, { kind: 'run' }, async (ids) => {
+    if (intent !== 'restart') {
       await assertSettlementLocked(sql, run, ids, owner)
       if (intent === 'success') {
         const snapshot = await readAcceptedRepeatRunLocked(sql, run.id)
@@ -153,8 +149,44 @@ export async function assertWorkflowRunSettlementLocked(sql: GraphTransactionSql
           if (reviewer) retainedPrincipals.push(reviewer.principalId)
         }
       }
-    })
-  }
+      return
+    }
+    const settled: string[] = []
+    for (const id of ids) {
+      const snapshot = await readAcceptedRepeatRunLocked(sql, run.id)
+      const stored = await readRepeatExecutionLocked(sql, snapshot, id)
+      if (retained.includes(id)) continue
+      if (stored.execution.state !== 'queued') {
+        if (stored.execution.result?.outcome === 'succeeded' && !stored.accepted) {
+          await readWorkflowTerminalReceiptLocked(sql, snapshot, stored)
+        }
+        settled.push(id)
+        continue
+      }
+      const reservation = workflowNativeReservation({ workspaceId: run.workspaceId, workflowId: run.workflowId,
+        workflowVersionId: run.workflowVersionId, runId: run.id, executionSemanticsVersion: 3 },
+      stored.ref, stored.execution, stored.inputDigest)
+      const check = async () => {
+        const current = await readRepeatExecutionLocked(sql, await readAcceptedRepeatRunLocked(sql, run.id), id)
+        if (!sameRepeatValue(current, stored)) return conflict('REPEAT_CLEANUP_PENDING')
+        const entry = await readWorkflowNativeEntryLocked(sql, reservation)
+        const launched = await sql.query(`select 1 from run_graph_effects
+          where run_id=$1 and effect_kind='execution.launch' and entity_id=$2`, [run.id, id])
+        if (entry.phase !== 'reserved' || entry.transition !== null || entry.source_id !== null
+          || entry.source_digest !== null || launched.rowCount || stored.execution.nativeSessionId || stored.accepted) {
+          return conflict('REPEAT_CLEANUP_PENDING')
+        }
+      }
+      await check()
+      beforeGraphCommit(sql, check)
+    }
+    if (settled.length) {
+      await assertSettlementLocked(sql, run, settled, owner)
+      if (retained.length) {
+        for (const id of settled) await assertApprovalTerminalSettlement(sql, run.id, id)
+      }
+    }
+  })
   if (intent !== 'cleanup' && !retained.length) await assertApprovalTerminalSettlement(sql, run.id)
   const pending = (await sql.query<{ pending: boolean }>(`select (
     exists(select 1 from durable_interactions i where i.run_id=$1 and i.status not in ('delivered','canceled')

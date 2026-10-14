@@ -5,13 +5,6 @@ import type { NativeProcessRecovery } from './recovery/processRegistry.js'
 import { inheritedAgentEnvironment } from './secrets.js'
 import { APP_MCP_SERVER_NAME, chatExcludedAppMcpServerNames } from './appMcpLauncher.js'
 import { runCommand } from './process.js'
-import { logIgnoredError } from '../diagnostics/ignoredError.js'
-
-function reportRefreshFailure(): void {
-  logIgnoredError('harness', 'refresh native model catalog',
-    Object.assign(new Error('Native model refresh failed; using its validated cached catalog.'),
-      { code: 'NATIVE_MODEL_REFRESH_FAILED' }), { dataAgeMs: null })
-}
 
 const MAX_MODELS = 10_000
 const REFRESH_FAILURE = 'failed to refresh available models:'
@@ -70,6 +63,8 @@ export async function readNativeCodexModelCatalog(
       const page = await codexRequest(transport, 'model/list', {
         includeHidden: true, limit: 100, ...(cursor ? { cursor } : {}),
       }, signal)
+      if (refreshFailed) throw new HarnessExecutionError('CODEX_MODEL_CATALOG_UNAVAILABLE',
+        'Codex could not refresh the native model catalog. Retry when native discovery is available.', true)
       for (const model of page.data) {
         if (!isObject(model) || typeof model.model !== 'string' || !Array.isArray(model.supportedReasoningEfforts)
           || !model.supportedReasoningEfforts.every(level => isObject(level)
@@ -100,21 +95,22 @@ export async function readNativeCodexModelCatalog(
   }
   if (failed) throw failure
   signal?.throwIfAborted()
-  if (refreshFailed) reportRefreshFailure()
-  return { ...catalog!, ...(refreshFailed ? { modelCatalogSource: 'cached' } : {}) }
+  if (refreshFailed) throw new HarnessExecutionError('CODEX_MODEL_CATALOG_UNAVAILABLE',
+    'Codex could not refresh the native model catalog. Retry when native discovery is available.', true)
+  return catalog!
 }
 
 function invalid(): never {
   throw new HarnessExecutionError('CODEX_MODEL_CATALOG_INVALID', 'Codex returned an invalid model catalog.')
 }
 
-/** Remote refresh warnings do not invalidate a successfully returned native catalog. */
+/** A successful CLI exit can still contain fallback data after failed remote discovery. */
 export function parseCodexModelCatalog(result: {
   exitCode: number | null
   stdout: string
   stderr: string
 }): JsonObject & { models: JsonObject[] } {
-  if (result.exitCode !== 0) {
+  if (result.exitCode !== 0 || result.stderr.includes(REFRESH_FAILURE)) {
     throw new HarnessExecutionError('CODEX_MODEL_CATALOG_UNAVAILABLE',
       'Codex could not read the native model catalog. Retry after native discovery is available.', true)
   }
@@ -137,7 +133,5 @@ export function parseCodexModelCatalog(result: {
     ids.add(model.slug)
     models.push(model)
   }
-  if (result.stderr.includes(REFRESH_FAILURE)) reportRefreshFailure()
-  return { ...catalog, models,
-    ...(result.stderr.includes(REFRESH_FAILURE) ? { modelCatalogSource: 'cached' } : {}) }
+  return { ...catalog, models }
 }

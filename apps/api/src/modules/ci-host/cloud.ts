@@ -1,6 +1,3 @@
-import { updateOperationalFailure } from '../diagnostics/operationalFailures.js'
-import { failedReadObservation, successfulReadObservation } from '../diagnostics/readObservation.js'
-import type { ReadObservation } from '@foreman-code/contracts'
 import { mkdir, mkdtemp, open, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { homedir, hostname, userInfo } from 'node:os'
@@ -8,7 +5,7 @@ import { delimiter, join, resolve } from 'node:path'
 import type pg from 'pg'
 import { CiWatchdogFailureSchema, CiDurationsSchema, CiHostReplySchema, CiHostRequestSchema, CiTestResultsSchema, WorkspaceSchema,
   integrationPartition, requiresUserSystemd,
-  type CiDurations, type CiHostReply, type CiHostRequest, type CiHostRun, type CiPartition, type CiMirrorRepair } from '@foreman-code/contracts'
+  type CiDurations, type CiHostReply, type CiHostRequest, type CiHostRun, type CiPartition } from '@foreman-code/contracts'
 import { canonicalJson } from '@foreman-code/contracts/canonical-json'
 import { DomainError } from '../errors.js'
 import { componentLogger } from '../diagnostics/logger.js'
@@ -20,13 +17,11 @@ import { CLOUD_START_TIMEOUT_MS, CircleCiProvider, GitHubActionsProvider, valida
   type CloudDispatchInput, type CloudProvider, type CloudRun, type CloudStatus } from './cloudProviders.js'
 import { runsOnCircleCi } from './parts.js'
 import { pruneMirrorBranches, type ActiveCiRuns } from './mirrorBranches.js'
-import { logIgnoredError } from '../diagnostics/ignoredError.js'
+import { fallbackOnError } from '../diagnostics/ignoredError.js'
 import { readCloudRun, saveCloudRun } from './cloudJournal.js'
 import { ciLogPage } from './logPage.js'
 import { sanitizeCiText } from './text.js'
 import { withProviderPoll } from './providerPoll.js'
-import { sweepCiRunDirectories } from './directoryRetention.js'
-import { readFleetIdentityInventory } from './fleetIdentityInventory.js'
 
 const LOG_LIMIT = 4 * 1024 * 1024
 const MAX_DISPATCH_ATTEMPTS = 3
@@ -93,17 +88,13 @@ export async function activeCiRuns(pool: pg.Pool): Promise<ActiveCiRuns> {
 export class CloudCi {
   private activeRuns: (() => Promise<ActiveCiRuns>) | undefined
   private checked: { at: number; ready: boolean } | undefined
-  private readinessObserved: ReadObservation | undefined
-  get readinessObservation(): ReadObservation | undefined {
-    return this.readinessObserved && { ...this.readinessObserved }
-  }
   private reconciling: Promise<void> | undefined
   private readonly polled = new Map<string, number>()
   private reconcileCursor = 0
   private backoff = { until: 0, ms: 0 }
   private following = 0
   private readonly waiting: { run: CloudRun; resume: () => void }[] = []
-  private readonly reading = new Map<string, number>()
+  private readonly reading = new Set<string>()
 
   constructor(private readonly mainId: string, readonly provider: CloudProvider, private readonly mirrors: Mirrors,
     private readonly root = join(homedir(), '.local/share/foreman-code/ci-cloud', provider.id),
@@ -143,32 +134,19 @@ export class CloudCi {
   async handle(raw: unknown): Promise<CiHostReply> {
     const request = CiHostRequestSchema.parse(raw)
     if (request.operation === 'status') {
-      const removedRunIds = request.cleanupRunIds ? await sweepCiRunDirectories({
-        root: this.root, runIds: request.cleanupRunIds,
-        isInUse: runId => this.reading.has(runId) || pendingPublications.has(`${this.root}\n${runId}`),
-        withRun: (runId, work) => this.serializeRun(runId, work),
-      }) : undefined
-      for (const runId of removedRunIds ?? []) this.polled.delete(runId)
       // Recovery of an old ticket must not delay readiness for every slot of this provider.
       void this.reconcile().catch(error => {
-        log.warn({ operation: 'recover cloud CI tickets', err: error, provider: this.provider.id }, 'Cloud CI recovery sweep failed')
+        log.warn({ err: error, provider: this.provider.id }, 'Cloud CI recovery sweep failed')
       })
       const ready = await this.ready()
-      const transport = this.provider.transport
-      const reason = this.readinessObserved?.status === 'unavailable' ? this.readinessObserved.lastError : this.provider.loginHint
-      const reasons = ready ? [] : [reason]
-      if (transport?.source === 'cli') {
-        reasons.push(`CLI transport: ${transport.reason} (fallback count ${transport.fallbackCount}).`)
-      }
-      return CiHostReplySchema.parse({ operation: 'status', ready, reasons,
-        cpuCount: this.provider.cpus, memoryBytes: this.provider.memoryBytes, cleanupSupported: true,
-        userSystemd: this.provider.userSystemd, runs: [],
-        ...(removedRunIds ? { removedRunIds } : {}) })
+      return CiHostReplySchema.parse({ operation: 'status', ready, reasons: ready ? [] : [this.provider.loginHint],
+        cpuCount: this.provider.cpus, memoryBytes: this.provider.memoryBytes,
+        userSystemd: this.provider.userSystemd, runs: [] })
     }
     if (request.operation === 'read' && (this.reading.has(request.runId)
       || pendingPublications.has(`${this.root}\n${request.runId}`))) {
       // Publication and provider work answer reads from the journal while they continue in the background.
-      return this.withRead(request.runId, async () => this.answer(request, await this.read(request.runId)))
+      return this.answer(request, await this.read(request.runId))
     }
     return this.serializeRun(request.runId, () => this.handleRun(request))
   }
@@ -198,31 +176,19 @@ export class CloudCi {
       this.schedulePrune(canceled, canceled.runId)
       return CiHostReplySchema.parse({ operation: 'cancel', run: this.view(canceled, 0) })
     }
-    return this.withRead(request.runId, async () => this.answer(request, await this.refresh(request.runId)))
-  }
-
-  private async withRead<T>(runId: string, read: () => Promise<T>): Promise<T> {
-    this.reading.set(runId, (this.reading.get(runId) ?? 0) + 1)
-    try { return await read() }
-    finally {
-      const remaining = this.reading.get(runId)! - 1
-      if (remaining) this.reading.set(runId, remaining)
-      else this.reading.delete(runId)
+    this.reading.add(request.runId)
+    try {
+      return await this.answer(request, await this.refresh(request.runId))
+    } finally {
+      this.reading.delete(request.runId)
     }
   }
 
   private async answer(request: Extract<CiHostRequest, { operation: 'read' }>, run: CloudRun) {
-    const page = await this.logPage(run.runId, request.afterOffset, request.maxBytes).catch(error => {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-      const retainedOutput = run.collection?.log || (run.live?.bytes ?? 0) > 0
-      const awaitingOutput = ['queued', 'starting', 'running', 'canceled'].includes(run.state)
-        || run.collection?.log === false
-        || run.mirrorPublication?.state === 'failed' && !run.providerRunId
-      if (retainedOutput || !awaitingOutput) {
-        throw new DomainError('CI_LOG_UNAVAILABLE', 'The retained CI log is missing.', 503)
-      }
-      return { text: '', nextOffset: request.afterOffset, logBytes: 0 }
-    })
+    const page = await this.logPage(run.runId, request.afterOffset, request.maxBytes).catch(fallbackOnError(
+      { text: '', nextOffset: request.afterOffset, logBytes: 0 },
+      'jobs', 'read CI log', { runId: run.runId }, ['ENOENT'],
+    ))
     if (!['starting', 'running', 'queued'].includes(run.state)) this.schedulePrune(run, run.runId)
     const view = this.view(run, page.logBytes)
     if (request.testResults && view.collection === 'complete' && !run.testResults) view.collection = 'unsupported'
@@ -250,17 +216,8 @@ export class CloudCi {
   /** Main's login for the service works; checked at most once a minute. */
   async ready() {
     if (this.checked && Date.now() - this.checked.at < 60_000) return this.checked.ready
-    let ready: boolean
-    try { ready = await this.provider.ready() }
-    catch (error) {
-      logIgnoredError('jobs', 'check CI provider readiness', error, { provider: this.provider.id })
-      this.readinessObserved = failedReadObservation(this.readinessObserved, error,
-        `${this.provider.label} readiness check failed`)
-      this.checked = undefined
-      return false
-    }
+    const ready = await this.provider.ready().catch(() => false)
     this.checked = { at: Date.now(), ready }
-    this.readinessObserved = successfulReadObservation()
     return ready
   }
 
@@ -271,8 +228,7 @@ export class CloudCi {
   }
 
   private save(run: CloudRun) {
-    const transport = this.provider.transport ?? run.transport
-    return saveCloudRun(this.path(run.runId, 'meta.json'), { ...run, ...(transport ? { transport } : {}) })
+    return saveCloudRun(this.path(run.runId, 'meta.json'), run)
   }
 
   private view(run: CloudRun, logBytes: number): CiHostRun {
@@ -280,13 +236,8 @@ export class CloudCi {
     if (run.state === 'running' && run.live?.step) step = run.live.step
     if (run.state === 'starting') step = run.mirrorPublication?.state === 'pending' ? 'publish mirror' : 'dispatch'
     if (run.state === 'queued') step = null
-    const transport = this.provider.transport ?? run.transport
-    const message = transport?.source === 'cli'
-      ? [`CLI transport: ${transport.reason} (fallback count ${transport.fallbackCount}).`, run.message]
-        .filter(Boolean).join(' ').slice(0, 2000) : run.message
     return { runId: run.runId, state: run.state, step,
-      ...(transport ? { transport } : {}),
-      exitCode: run.exitCode, startedAt: run.startedAt, finishedAt: run.finishedAt, logBytes, message: message === null ? null : sanitizeCiText(message),
+      exitCode: run.exitCode, startedAt: run.startedAt, finishedAt: run.finishedAt, logBytes, message: run.message === null ? null : sanitizeCiText(run.message),
       ...(run.provenance ? { provenance: run.provenance } : {}),
       ...(run.mirrorPublication ? { mirrorPublication: run.mirrorPublication } : {}),
       ...(run.testsStarted !== undefined ? { testsStarted: run.testsStarted } : {}),
@@ -442,11 +393,9 @@ export class CloudCi {
       try {
         if (await this.provider.find(run)) run = await this.save({ ...run, state: 'running', workflowStarted: true })
       } catch (error) {
-        if (error instanceof DomainError && error.code === 'CI_CLOUD_PIPELINE_FAILED') {
+        if (error instanceof DomainError
+          && ['CI_CLOUD_PIPELINE_FAILED', 'CI_CLOUD_RUN_ENDED'].includes(error.code)) {
           run = await this.failPipeline(run, { message: error.message, configError: error.details?.configError === true })
-        } else if (error instanceof DomainError
-          && ['CI_CLOUD_RUN_NOT_FOUND', 'CI_CLOUD_RUN_UNREADABLE'].includes(error.code)) {
-          run = await this.reconcileLookupFailure(run, error)
         } else {
           // The trigger was accepted, so a lookup failure must not dispatch the ticket to another computer.
           log.warn({ err: error, runId: run.runId }, 'Cloud CI workflow lookup failed; dispatch remains pending')
@@ -592,7 +541,7 @@ export class CloudCi {
           return result.stdout.trim()
         } })
     } catch (error) {
-      log.warn({ operation: 'clean retained CI mirror branches', err: error, mirror: run.mirror }, 'CI mirror branch cleanup failed; next ticket read will retry')
+      log.warn({ err: error, mirror: run.mirror }, 'CI mirror branch cleanup failed; next ticket read will retry')
     }
   }
 
@@ -664,22 +613,13 @@ export class CloudCi {
     const base = 'refs/remotes/origin/main'
     // Fetch without source alternates: their shallow refs are not negotiation haves the mirror clone can walk.
     const fetch = () => run(['fetch', '--quiet', '--no-tags', 'origin', `+main:${base}`], {})
-    let repair: CiMirrorRepair | undefined
     await fetch().catch(async (error: unknown) => {
       if (!(error instanceof DomainError) || !/could not read|failed to traverse|did not send all necessary objects|bad object|corrupt/i
         .test(error.message)) throw error
-      const repairing = performance.now()
-      log.warn({ operation: 'repair CI mirror clone', err: error, mirror, commit, attempt: 1 },
-        'CI mirror clone is unreadable; rebuilding it once')
-      try {
-        await rm(mirrorClone, { recursive: true, force: true })
-        await ensureClone(this.git, mirror, signal)
-        await fetch()
-      } finally {
-        const elapsedMs = performance.now() - repairing
-        updateOperationalFailure('jobs', 'repair CI mirror clone', { elapsedMs })
-        repair = { count: 1, reason: 'CI_MIRROR_CORRUPT', repository: mirror, sourceCommit: commit, elapsedMs }
-      }
+      log.warn({ err: error, mirror }, 'CI mirror clone is unreadable; rebuilding it once')
+      await rm(mirrorClone, { recursive: true, force: true })
+      await ensureClone(this.git, mirror, signal)
+      await fetch()
     })
     const reusedSnapshot = await git(['rev-parse', base])
     let fetchMs = performance.now() - fetching
@@ -786,7 +726,6 @@ export class CloudCi {
     const mirrorPublication: NonNullable<CiHostRun['mirrorPublication']> = {
       state: 'ready', startedAt, finishedAt: this.ports.now().toISOString(), snapshotCommit: snapshot,
       reusedSnapshot, timings,
-      ...(repair ? { repair } : {}),
     }
     log.info({ commit, mirror, timings }, 'CI mirror snapshot published')
     return { git: read, branch, snapshot, workflowRef, mirrorPublication, workflows: entries.map(entry => entry.split('\t')[1]!),
@@ -839,14 +778,18 @@ export class CloudCi {
     const fixed = new Set<string>([this.identity.home]), words = new Set<string>([this.identity.user])
     const word = (value: string) => { const first = value.toLowerCase().split(/[^a-z0-9]/)[0] ?? ''; if (first.length >= 3) words.add(first) }
     word(this.identity.host)
-    const parsed = await readFleetIdentityInventory(this.ports)
-    for (const peer of [parsed.Self, ...Object.values(parsed.Peer ?? {})]) {
-      for (const address of peer.TailscaleIPs) if (address.includes('.')) fixed.add(address)
-      fixed.add(peer.HostName)
-      word(peer.HostName)
+    const status = await this.ports.run('tailscale', ['status', '--json'], { timeoutMs: 15_000 }).catch(fallbackOnError(null, 'jobs', 'read tailscale status'))
+    if (status?.code === 0) {
+      const parsed = JSON.parse(status.stdout) as { Self?: Peer; Peer?: Record<string, Peer>; MagicDNSSuffix?: string
+        User?: Record<string, { LoginName?: string }> }
+      for (const peer of [parsed.Self, ...Object.values(parsed.Peer ?? {})]) {
+        if (!peer) continue
+        for (const address of peer.TailscaleIPs ?? []) if (address.includes('.')) fixed.add(address)
+        if (peer.HostName) { fixed.add(peer.HostName); word(peer.HostName) }
+      }
+      if (parsed.MagicDNSSuffix) fixed.add(parsed.MagicDNSSuffix)
+      for (const user of Object.values(parsed.User ?? {})) if (user.LoginName?.includes('@')) fixed.add(user.LoginName)
     }
-    if (parsed.MagicDNSSuffix) fixed.add(parsed.MagicDNSSuffix)
-    for (const user of Object.values(parsed.User ?? {})) if (user.LoginName?.includes('@')) fixed.add(user.LoginName)
     const found: string[] = []
     for (const [mode, values] of [[['-F'], fixed], [['-w', '-F'], words]] as const) {
       const patterns = [...values].filter(value => value.length >= 3).flatMap(value => ['-e', value])
@@ -879,7 +822,8 @@ export class CloudCi {
     const pendingCollection = run.collection && (!run.collection.log || !run.collection.artifacts)
     if (!['starting', 'running'].includes(run.state) && !run.cancellation && !pendingCollection) return run
     const now = this.ports.now().getTime()
-    if (run.reconciliation && now - Date.parse(run.reconciliation.at) < POLL_MS) return run
+    if (run.reconciliation && (run.reconciliation.attempts >= MAX_DISPATCH_ATTEMPTS && !this.stalled(run)
+      || now - Date.parse(run.reconciliation.at) < POLL_MS)) return run
     if (now < this.backoff.until) return run
     const interval = this.expectedEnd(run) - now <= FINISH_WINDOW_MS ? FINISH_POLL_MS : POLL_MS
     if ((run.cancellation || pendingCollection || run.state === 'running' && run.workflowStarted)
@@ -905,7 +849,8 @@ export class CloudCi {
         return next
       })
     } catch (error) {
-      if (error instanceof DomainError && error.code === 'CI_CLOUD_PIPELINE_FAILED') {
+      if (error instanceof DomainError
+        && ['CI_CLOUD_PIPELINE_FAILED', 'CI_CLOUD_RUN_ENDED'].includes(error.code)) {
         return this.failPipeline(run, { message: error.message, configError: error.details?.configError === true })
       }
       if (error instanceof DomainError && ['CI_CLOUD_RUN_NOT_FOUND', 'CI_CLOUD_RUN_UNREADABLE'].includes(error.code)) {
@@ -926,42 +871,14 @@ export class CloudCi {
   }
 
   private async reconcileLookupFailure(run: CloudRun, error: unknown): Promise<CloudRun> {
-    const now = this.ports.now()
-    const since = run.reconciliation?.since ?? run.reconciliation?.at ?? now.toISOString()
-    if (['starting', 'running'].includes(run.state) && now.getTime() - Date.parse(since) >= CLOUD_START_TIMEOUT_MS) {
-      return this.requeueUnreadable(run, error)
-    }
-    const attempts = Math.min(MAX_DISPATCH_ATTEMPTS, (run.reconciliation?.attempts ?? 0) + 1)
+    const attempts = (run.reconciliation?.attempts ?? 0) + 1
     const message = `${this.provider.label} execution could not be reconciled: `
       + (error instanceof Error ? error.message : String(error)).slice(0, 500)
-      + ' Retrying lookup for up to 75 seconds before moving to another computer.'
+      + (attempts >= MAX_DISPATCH_ATTEMPTS ? ' Automatic recovery stopped; Operator cancellation is required.'
+        : ` Ownership retained; recovery attempt ${attempts}/${MAX_DISPATCH_ATTEMPTS}.`)
     log.warn({ err: error, runId: run.runId, attempts }, 'Cloud CI execution needs reconciliation')
-    return this.save({ ...run, message, reconciliation: { attempts, at: now.toISOString(), since,
+    return this.save({ ...run, message, reconciliation: { attempts, at: this.ports.now().toISOString(),
       previousMessage: run.reconciliation ? run.reconciliation.previousMessage : run.message } })
-  }
-
-  private async requeueUnreadable(run: CloudRun, error: unknown): Promise<CloudRun> {
-    let cancellationFailed = false
-    const attempts = run.dispatchHistory?.map(attempt => attempt.providerRunId) ?? []
-    const ids = new Set([run.providerRunId, ...attempts])
-    for (const providerRunId of ids) {
-      if (!providerRunId) continue
-      try {
-        await this.provider.cancel({ ...run, providerRunId })
-      } catch (cancelError) {
-        cancellationFailed = true
-        log.warn({ err: cancelError, runId: run.runId, providerRunId }, 'Unreadable cloud CI cancellation failed')
-      }
-    }
-    const detail = (error instanceof Error ? error.message : String(error)).slice(0, 500)
-    const cancellation = cancellationFailed ? 'Cancellation could not be confirmed.' : 'Cancellation requested.'
-    const message = sanitizeCiText(`${this.provider.label} execution stayed unreadable past the 75-second window: `
-      + `${detail} ${cancellation} Automatic recovery queued for another computer.`)
-    await writeFile(this.path(run.runId, 'log'), `${message}\n`, { flag: 'a', mode: 0o600 })
-    const recovered: CloudRun = { ...run, state: 'queued', providerRunId: null, finishedAt: null,
-      exitCode: null, message }
-    delete recovered.reconciliation
-    return this.save(recovered)
   }
 
   /** Writes the steps the run has started, and new output of the running step, to its log. */
@@ -1020,9 +937,7 @@ export class CloudCi {
       const runId = ids[(this.reconcileCursor + offset) % ids.length]!
       try {
         const run = await this.read(runId)
-        if (run.publicationRequest && run.state === 'starting' || this.stalled(run)
-          || run.reconciliation && ['starting', 'running'].includes(run.state)
-          || run.cancellation || run.collection && (!run.collection.log || !run.collection.artifacts)) {
+        if (run.publicationRequest && run.state === 'starting' || this.stalled(run) || run.cancellation || run.collection && (!run.collection.log || !run.collection.artifacts)) {
           await this.handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 1 })
         }
       } catch (error) {
@@ -1039,7 +954,7 @@ export class CloudCi {
       discovered = await this.provider.find(run)
     } catch (error) {
       if (!(error instanceof DomainError
-        && ['CI_CLOUD_RUN_NOT_FOUND', 'CI_CLOUD_RUN_UNREADABLE'].includes(error.code))) throw error
+        && ['CI_CLOUD_RUN_NOT_FOUND', 'CI_CLOUD_RUN_UNREADABLE', 'CI_CLOUD_RUN_ENDED'].includes(error.code))) throw error
       log.warn({ err: error, runId: run.runId }, 'Cloud CI discovery unavailable; canceling known pipelines')
     }
     const attempts = run.dispatchHistory?.map(attempt => attempt.providerRunId) ?? []
@@ -1146,3 +1061,4 @@ export function cloudCis(mainId: string, mirrors: Mirrors,
   })
 }
 
+interface Peer { HostName?: string; TailscaleIPs?: string[] }

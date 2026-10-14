@@ -6,9 +6,6 @@ import { dirname, join, relative, resolve } from 'node:path';
 export function workerPath(home, node) {
   const directories = [dirname(node), '/usr/bin', '/bin'];
   const uid = process.getuid();
-  const optionalAbsence = error => {
-    if (error.code !== 'ENOENT' && error.code !== 'ENOTDIR') throw error;
-  };
   function owned(path, directory, owner = uid) {
     const info = lstatSync(path);
     const writable = owner === 0 ? 0o022 : 0o002;
@@ -34,10 +31,10 @@ export function workerPath(home, node) {
           if (!trusted(launcher, false, root, owner)) return false;
           accessSync(launcher, constants.X_OK);
           return true;
-        } catch (error) { optionalAbsence(error); return false; }
+        } catch { return false; }
       });
       if (installed) directories.push(directory);
-    } catch (error) { optionalAbsence(error); }
+    } catch { /* ignore: missing or untrusted installations do not extend PATH. */ }
   }
   add('/usr/local/bin', '/usr', 0);
   let canonicalHome;
@@ -46,7 +43,7 @@ export function workerPath(home, node) {
       && /^[/a-zA-Z0-9_.-]+$/.test(home) && owned(home, true)) {
       canonicalHome = realpathSync(home);
     }
-  } catch (error) { optionalAbsence(error); }
+  } catch { /* ignore: missing or untrusted homes do not extend PATH. */ }
   if (canonicalHome && /^[/a-zA-Z0-9_.-]+$/.test(canonicalHome)) {
     // Resolve ancestors before checking installations; the home itself cannot be a symlink.
     home = canonicalHome;
@@ -56,7 +53,7 @@ export function workerPath(home, node) {
       if (trusted(versions)) {
         for (const entry of readdirSync(versions, { withFileTypes: true }).filter((entry) => entry.isDirectory() && /^v\d+\.\d+\.\d+$/.test(entry.name)).sort((a, b) => b.name.localeCompare(a.name, 'en', { numeric: true }))) add(join(versions, entry.name, 'bin'));
       }
-    } catch (error) { optionalAbsence(error); }
+    } catch { /* ignore: NVM is optional. */ }
   }
   return [...new Set(directories)].join(':');
 }

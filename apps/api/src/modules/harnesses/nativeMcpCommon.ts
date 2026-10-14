@@ -1,4 +1,4 @@
-import { APP_MCP_PATH, APP_MCP_SERVER_NAME, APP_MCP_TOKEN, APP_MCP_TIMEOUTS, LEGACY_APP_MCP_SERVER_NAMES, appLauncherConnection, appLauncherPath, appLauncherTokenName, isAppLauncher, isManagedLauncherCommand, isStaleAppLauncher, isSupportedAppMcpServerName, isSupportedAppMcpTokenName } from './appMcpLauncher.js'
+import { APP_MCP_PATH, APP_MCP_SERVER_NAME, APP_MCP_TIMEOUTS, LEGACY_APP_MCP_SERVER_NAMES, appLauncherConnection, appLauncherPath, isAppLauncher, isManagedLauncherCommand, isStaleAppLauncher, isSupportedAppMcpServerName, isSupportedAppMcpTokenName } from './appMcpLauncher.js'
 import { APP_MCP_SERVER_NAMES } from '@foreman-code/contracts/product'
 import { createHash } from 'node:crypto'
 import { basename, dirname, join } from 'node:path'
@@ -9,7 +9,7 @@ export type JsonObject = Record<string, unknown>
 export const record = (value: unknown): JsonObject => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as JsonObject : {}
 export const fingerprint = (value: unknown): string => `sha256:${createHash('sha256').update(canonicalJsonNumericKeysFirstLegacy(value)).digest('hex')}`
 export interface NativeMcpSnapshot {
-  harness: 'codex' | 'claude'; revision: string; effective: JsonObject; user: JsonObject
+  harness: 'codex'; revision: string; effective: JsonObject; user: JsonObject
   userConfig: JsonObject; version: string; file: string
   /** False means that the effective member has another native configuration source. */
   ownership?: Readonly<Record<string, boolean>>
@@ -49,12 +49,6 @@ function configuredManagedName(snapshot: NativeMcpSnapshot, preset: HarnessMcpMa
   if (preset !== 'graphql') return managedName(preset)
   const names = APP_MCP_SERVER_NAMES.filter((name) => Object.hasOwn(snapshot.user, name) || Object.hasOwn(snapshot.effective, name))
   return names[0] ?? APP_MCP_SERVER_NAME
-}
-export function appMcpNeedsMigration(snapshot: NativeMcpSnapshot): boolean {
-  const name = configuredManagedName(snapshot, 'graphql')
-  const entry = record(snapshot.user[name])
-  return userOwnsMcpEntry(snapshot, name) && isAppLauncher(entry)
-    && (name !== APP_MCP_SERVER_NAME || appLauncherTokenName(entry) !== APP_MCP_TOKEN)
 }
 function assertNoAppCollision(snapshot: NativeMcpSnapshot): void {
   const names = APP_MCP_SERVER_NAMES.filter((name) => Object.hasOwn(snapshot.user, name) || Object.hasOwn(snapshot.effective, name))
@@ -199,9 +193,9 @@ export function assertManagedChange(snapshot: NativeMcpSnapshot, change: Harness
     throw new DomainError('MCP_SERVER_PROTECTED', 'Application credential-bearing connections cannot be changed as a Linear preset.', 403)
   }
   const status = managedStatus(snapshot, preset, endpoint)
-  const migrate = preset === 'graphql' && appMcpNeedsMigration(snapshot)
+  const rename = preset === 'graphql' && configuredManagedName(snapshot, preset) !== APP_MCP_SERVER_NAME
   if (change.kind === 'add' && status !== 'missing' && status !== 'mismatch' && status !== 'legacy'
-    && !(migrate && (status === 'installed' || status === 'disabled'))) {
+    && !(rename && (status === 'installed' || status === 'disabled'))) {
     throw new DomainError('MCP_SERVER_EXISTS', 'This MCP server already has a native configuration. Inspect it before changing the preset.', 409)
   }
   if (change.kind === 'add') managedNativeConnection(snapshot, preset)
@@ -274,14 +268,14 @@ export function applyMcpEdits(user: JsonObject, edits: readonly { name: string; 
   return next
 }
 export function mcpUserFingerprint(snapshot: NativeMcpSnapshot): string {
-  const key = snapshot.harness === 'claude' ? 'mcpServers' : 'mcp_servers'
+  const key = 'mcp_servers'
   return fingerprint({ ...snapshot.userConfig, [key]: snapshot.user })
 }
 /** Opaque durable evidence; the raw native configuration never enters a receipt. */
 export function expectedMcpUserFingerprint(snapshot: NativeMcpSnapshot, change: HarnessMcpChange,
   managed?: { preset: HarnessMcpManagedPreset; endpoint: string }): string {
   const user = applyMcpEdits(snapshot.user, mcpEdits(snapshot, change, managed))
-  const key = snapshot.harness === 'claude' ? 'mcpServers' : 'mcp_servers'
+  const key = 'mcp_servers'
   return fingerprint({ ...snapshot.userConfig, [key]: user })
 }
 export function publicMcpList(snapshot: NativeMcpSnapshot): HarnessMcpList {

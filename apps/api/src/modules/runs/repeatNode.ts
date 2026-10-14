@@ -3,7 +3,6 @@ import { AcceptedCurrentNodeResultSchema, NodeResolutionSchema, parseRepeatExitR
   type WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
 
 import { ExecutionLimiter } from './limiter.js'
-import { waitBeforeRetry } from './executionRetryPolicy.js'
 import { assertRepeatNativeUpdate } from '../interactions/repeatNativeEvidence.js'
 import { parseCurrentChoiceResult } from './currentRouting.js'
 import {
@@ -153,13 +152,12 @@ export function repeatNodeAction(input: {
       } else await input.limiter.run(input.signal, async () => {
         input.signal.throwIfAborted()
         await input.driver.observe(execution, input.signal)
-      }, execution)
+      })
       input.signal.throwIfAborted()
       const accepted = await input.store.acceptTerminal(execution.id, (attempt) => input.driver.candidate(ref, attempt))
       if (accepted.kind !== 'retry') return checkpointResolution(accepted.resolution)
       // Technical attempts keep the same slot and frozen input. The repository
       // checked retry policy, exact negative evidence, cleanup and budget at COMMIT.
-      await waitBeforeRetry(execution, accepted.execution, input.signal)
       execution = accepted.execution
     }
   }

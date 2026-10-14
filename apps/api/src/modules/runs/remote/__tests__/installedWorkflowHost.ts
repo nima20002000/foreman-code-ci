@@ -515,10 +515,9 @@ export async function constructionFixture(fixtureOptions: {
       qualified: true, checkedAt: timestamp,
     } } })
   // Main, installed-binary and native-process observations are unit doubles; the host, journal and source guards are real.
-  // Inspection reports the authenticated session it was asked about, as the installed inspection does.
-  const inspect = vi.spyOn(installedInspection, 'inspectInstalledCodex').mockImplementation(async ({ binding: live }) => ({
+  const inspect = vi.spyOn(installedInspection, 'inspectInstalledCodex').mockImplementation(async () => ({
     inventory: { instances: [], installations: [facts.harness.installation] },
-    currentTarget: { binding: live, target, installation: facts.harness.installation,
+    currentTarget: { binding, target, installation: facts.harness.installation,
       binarySha256: 'a'.repeat(64), expectedVersion: version },
   }))
   let authorized = true
@@ -546,8 +545,7 @@ export async function constructionFixture(fixtureOptions: {
   const journal = await RemoteOperationJournal.open(join(f.root, 'construction-journal'), { initializeNewInstallation: true })
   journals.push(journal)
   const n = nativeFixture()
-  const currentBinding = vi.fn<() => typeof binding | undefined>(() => binding)
-  const linkLostAt = vi.fn<() => number | undefined>(() => undefined)
+  const currentBinding = vi.fn(() => binding)
   const openJournal = vi.fn(async () => journal)
   let applicationChannel: DeviceApplicationChannel | undefined
   const options: InstalledWorkflowHostOptions = { stateDirectory: f.root, bootId: binding.bootId,
@@ -555,11 +553,8 @@ export async function constructionFixture(fixtureOptions: {
       workerInstallationId: binding.workerInstallationId, keyRevision: binding.keyRevision,
       authorizationRevision: binding.authorizationRevision, endpoint: 'wss://unit.invalid/device',
       mainPublicKeyFingerprint: 'a'.repeat(64), credential: 'b'.repeat(64), expiresAt: '2099-01-01T00:00:00.000Z' },
-    configuration: { path: file, ownerUid: process.getuid!() }, currentBinding, linkLostAt,
-    captureRequest: namespace => {
-      const live = currentBinding()
-      return applicationChannel?.captureRequest(namespace) ?? (live && { binding: live, request: readMain })
-    },
+    configuration: { path: file, ownerUid: process.getuid!() }, currentBinding,
+    captureRequest: namespace => applicationChannel?.captureRequest(namespace) ?? { binding: currentBinding(), request: readMain },
     sources: f.sources, approvedRoots: async () => f.approvedRoots,
     codexSuiteRevision: 'codex-live-4',
     signal: new AbortController().signal, registry: n.registry, journal: openJournal }
@@ -567,7 +562,7 @@ export async function constructionFixture(fixtureOptions: {
   if (host.kind !== 'configured') throw new Error('Expected configured installed host')
   const handler = host.extensions[0]!.handle!
   return { ...f, registry: n.registry, session: n.session, launch: n.launch, snapshot: n.snapshot,
-    host, handler, journal, readMain, inspect, currentBinding, linkLostAt, openJournal,
+    host, handler, journal, readMain, inspect, currentBinding, openJournal,
     setApplicationChannel: (channel: DeviceApplicationChannel) => { applicationChannel = channel },
     deny: () => { authorized = false } }
 }

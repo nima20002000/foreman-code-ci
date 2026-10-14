@@ -15,7 +15,7 @@ export async function collectCiResults(pool: pg.Pool, endpoint: HostCiEndpoint, 
   let collection: CiHostRun['collection'] = 'pending'
   try {
     const fetched = await endpoint.request(computer, { operation: 'read', runId: ciExecutionRunId(run),
-      afterOffset: 0, maxBytes: 1, testResults: true, durations: true }, { priority: 'background' })
+      afterOffset: 0, maxBytes: 1, testResults: true, durations: true })
     if (fetched.operation === 'read') {
       results = fetched
       if (fetched.testResults) {

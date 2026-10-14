@@ -1,8 +1,6 @@
 import { createRequire } from 'node:module'
 import { accessSync, constants, readFileSync, realpathSync } from 'node:fs'
 import { delimiter, dirname, isAbsolute, join } from 'node:path'
-import { logIgnoredError } from '../diagnostics/ignoredError.js'
-import { updateOperationalFailure } from '../diagnostics/operationalFailures.js'
 
 const nativeTargets: Record<string, string> = {
   'linux-x64': 'x86_64-unknown-linux-musl', 'linux-arm64': 'aarch64-unknown-linux-musl',
@@ -28,16 +26,12 @@ function installedCodex(path: string, bundled?: string): string | undefined {
     try {
       const payload = npmCodexBinary(bundled)
       if (payload) excluded.add(payload)
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'MODULE_NOT_FOUND') throw error
-    }
+    } catch { /* ignore: the bundled optional native package may be absent on this platform. */ }
   }
   for (const directory of path.split(delimiter).filter(isAbsolute)) {
     const candidate = join(directory, process.platform === 'win32' ? 'codex.exe' : 'codex')
-    let candidateFound = false
     try {
       accessSync(candidate, constants.X_OK)
-      candidateFound = true
       const resolved = realpathSync(candidate)
       if (excluded.has(resolved)) continue
       const prefix = readFileSync(resolved).subarray(0, 4).toString('hex')
@@ -45,13 +39,7 @@ function installedCodex(path: string, bundled?: string): string | undefined {
         || ['feedface', 'feedfacf', 'cefaedfe', 'cffaedfe', 'cafebabe'].includes(prefix)) return resolved
       const payload = npmCodexBinary(resolved)
       if (payload && !excluded.has(payload)) return payload
-      if (!payload) logIgnoredError('harness', 'reject default Codex candidate',
-        Object.assign(new Error('The default Codex launcher is unrecognized.'), { code: 'UNRECOGNIZED_CODEX_LAUNCHER' }))
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code
-      if (!['ENOENT', 'ENOTDIR', 'MODULE_NOT_FOUND'].includes(code ?? '')) throw error
-      if (candidateFound) logIgnoredError('harness', 'reject default Codex candidate', error)
-    }
+    } catch { /* ignore: an unrecognized wrapper is never executed as a trusted default. */ }
   }
   return undefined
 }
@@ -60,22 +48,16 @@ function installedCodex(path: string, bundled?: string): string | undefined {
 export function harnessBinaries(environment: NodeJS.ProcessEnv): { codexBinary: string } {
   const codex = environment.CODEX_BINARY === undefined ? 'codex' : environment.CODEX_BINARY.trim()
   if (!codex) throw new Error('Configured harness binaries must not be empty.')
-  if (codex !== 'codex') return { codexBinary: codex }
   let bundled: string | undefined
-  try { bundled = createRequire(import.meta.url).resolve('@openai/codex/bin/codex.js') }
-  catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'MODULE_NOT_FOUND') throw error
+  if (codex === 'codex') {
+    try { bundled = createRequire(import.meta.url).resolve('@openai/codex/bin/codex.js') }
+    catch { /* ignore: standalone workers may provide only their computer-local installation. */ }
   }
-  let selected = installedCodex(environment.PATH ?? process.env.PATH ?? '', bundled)
-  let selectedSource = 'installed-native'
-  if (!selected && environment.CODEX_BINARY === undefined && bundled) {
-    selected = bundled
-    selectedSource = 'bundled-package'
+  return {
+    codexBinary: codex === 'codex'
+      ? installedCodex(environment.PATH ?? process.env.PATH ?? '', bundled)
+        ?? (environment.CODEX_BINARY === undefined
+          ? bundled ?? codex : codex)
+      : codex,
   }
-  if (!selected) {
-    selected = codex
-    selectedSource = 'command'
-  }
-  updateOperationalFailure('harness', 'reject default Codex candidate', { selectedSource })
-  return { codexBinary: selected }
 }

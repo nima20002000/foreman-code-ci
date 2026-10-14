@@ -5,7 +5,6 @@ import { readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createInterface } from 'node:readline'
-import { setTimeout as wait } from 'node:timers/promises'
 
 const token = process.env.FOREMAN_CODE_MCP_TOKEN ?? process.env.GRAPHQL_MCP_TOKEN
 const tokenConflict = process.env.FOREMAN_CODE_MCP_TOKEN !== undefined && process.env.GRAPHQL_MCP_TOKEN !== undefined
@@ -57,7 +56,7 @@ function bridgeError(error, deliveryStage) {
     data: { kind: 'transport' } }
 }
 
-async function forwardAttempt(message, controller, timeoutMs) {
+async function forward(message, controller) {
   let requestSignal
   let deliveryStage = 'preflight'
   let terminalReceived = false
@@ -82,8 +81,8 @@ async function forwardAttempt(message, controller, timeoutMs) {
         'The owning app MCP route is invalid or expired. Open the owning app to refresh this credential’s connection.')
     // The owning API's host PID is not visible inside a harness PID namespace.
     // Each request proves access through the endpoint's scoped credential authentication.
-    requestSignal = controller ? AbortSignal.any([controller.signal, AbortSignal.timeout(timeoutMs)])
-      : AbortSignal.timeout(timeoutMs)
+    requestSignal = controller ? AbortSignal.any([controller.signal, AbortSignal.timeout(120_000)])
+      : AbortSignal.timeout(120_000)
     deliveryStage = 'dispatched'
     const response = await fetch(url, { method: 'POST', redirect: 'error',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json',
@@ -124,33 +123,9 @@ async function forwardAttempt(message, controller, timeoutMs) {
     }
     if (expectsReply && !terminalReceived) throw new Error('Missing terminal MCP response.')
   } catch (error) {
-    if (terminalReceived || controller?.signal.aborted && controller.signal.reason?.name !== 'TimeoutError') return
-    if (expectsReply) return bridgeError(requestSignal?.aborted ? requestSignal.reason : error, deliveryStage)
-  }
-}
-
-async function forward(message, controller) {
-  const startup = message.method === 'initialize' || message.method === 'tools/list'
-  const signal = startup ? AbortSignal.any([AbortSignal.timeout(35_000),
-    ...(controller ? [controller.signal] : [])]) : controller?.signal
-  const attemptController = signal ? { signal } : undefined
-  try {
-    for (let attempt = 0; ; attempt++) {
-      const error = await forwardAttempt(message, attemptController, startup ? 10_000 : 120_000)
-      if (!error || controller?.signal.aborted) return
-      const retryable = startup && ['service_unavailable', 'timeout'].includes(error.data.kind)
-      if (retryable) error.data.retryable = true
-      if (!retryable || attempt === 2 || signal?.aborted) {
-        output({ jsonrpc: '2.0', id: message.id, error })
-        return
-      }
-      await wait(1_000 * 2 ** attempt, undefined, { signal })
-    }
-  } catch (error) {
-    if (controller?.signal.aborted) return
-    const failure = bridgeError(signal?.aborted ? signal.reason : error, 'preflight')
-    if (startup && failure.data.kind === 'timeout') failure.data.retryable = true
-    if (Object.hasOwn(message, 'id')) output({ jsonrpc: '2.0', id: message.id, error: failure })
+    if (controller?.signal.aborted || terminalReceived) return
+    if (expectsReply) output({ jsonrpc: '2.0', id: message.id,
+      error: bridgeError(requestSignal?.aborted ? requestSignal.reason : error, deliveryStage) })
   } finally {
     if (controller && pending.get(message.id) === controller) pending.delete(message.id)
   }

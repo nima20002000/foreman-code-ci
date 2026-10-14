@@ -1,5 +1,3 @@
-import { logIgnoredError } from '../diagnostics/ignoredError.js'
-import type { ReadObservation } from '@foreman-code/contracts'
 import { errorMessage } from '../../shared/errorMessage.js'
 import { RETIRED_OPENCODE_MESSAGE } from '@foreman-code/contracts'
 import type { ChatResponseAcknowledgment } from '@foreman-code/contracts/interaction-activity'
@@ -83,7 +81,7 @@ export class OperatorConversationEvents {
   publish(conversationId: string, type: OperatorConversationStreamEvent['type'], data: Record<string, unknown>) {
     const event = OperatorConversationStreamEventSchema.parse({ id: this.sequence++, conversationId, type, data })
     for (const listener of this.listeners.get(conversationId) ?? []) {
-      try { listener(event) } catch (error) { logIgnoredError('engine', 'publish conversation event', error) }
+      try { listener(event) } catch { /* ignore: a disconnected subscriber cannot fail a native turn. */ }
     }
   }
   subscribe(id: string, listener: (event: OperatorConversationStreamEvent) => void) {
@@ -169,7 +167,6 @@ function definiteCreationFailure(error: unknown): boolean {
 }
 
 export class OperatorChatService {
-  private readonly activityObservations = new Map<string, ReadObservation>()
   readonly events = new OperatorConversationEvents()
   private readonly runtimes = new Map<string, Runtime>()
   private readonly tasks = new Map<string, { requestId: string; controller: AbortController; promise: Promise<void> }>()
@@ -339,8 +336,7 @@ export class OperatorChatService {
     const qualifiedResponse = responseAvailability && !isAuthorized(finalPrincipal, 'operator_chat:respond')
       ? { ...responseAvailability, available: false, status: 'unavailable' as const, path: null,
         reason: 'unauthorized' as const, message: 'Your current grants do not allow responding to this interaction.' } : responseAvailability
-    const activitySnapshot = { ...qualifyChatActivity(state.activitySnapshot, qualifiedResponse),
-      ...(this.activityObservations.has(id) ? { observation: this.activityObservations.get(id) } : {}) }
+    const activitySnapshot = qualifyChatActivity(state.activitySnapshot, qualifiedResponse)
     return { ...state, activitySnapshot, ...(qualifiedResponse ? { responseAvailability: qualifiedResponse } : {}),
       qualificationKey: commandInputHash({ principal: finalPrincipal, revision: state.revision, sourceRevisions: state.activitySnapshot.sourceRevisions,
         responseAvailability: qualifiedResponse ?? null }).slice(7) }
@@ -647,27 +643,6 @@ export class OperatorChatService {
     return runtime
   }
 
-  /** The tracked control queue owns cancellation delivery after the submission callback returns. */
-  private deliverRequestedCancellation(id: string, requestId: string, runtime: Runtime) {
-    void this.control(id, async () => {
-      const current = await this.repository.active(id)
-      if (!current || current.active_request_id !== requestId || !current.cancel_requested) return
-      try {
-        await this.interrupt(id, current, runtime)
-        await this.observe(id, requestId, runtime, AbortSignal.timeout(5_000))
-      } catch (error) {
-        await this.repository.uncertain(id, requestId,
-          errorMessage(error, 'Cancellation delivery is uncertain.'))
-        this.events.publish(id, 'error', { requestId, turnState: 'uncertain' })
-      } finally {
-        // Native completion was checked above. Detach a silent SSE reader
-        // so an unproven result remains recoverable by durable reconciliation.
-        const task = this.tasks.get(id)
-        if (task && task.requestId === requestId) task.controller.abort()
-      }
-    }).catch(ignoreError('harness', 'deliver cancellation to native turn', { chatId: id, requestId })) // Persistence failure leaves the accepted request fenced.
-  }
-
   private async runTurn(id: string, input: SendOperatorMessageRequest, configuration: OperatorConfigurationVersion, ownerId: string, signal: AbortSignal) {
     let creating = false
     let submitting = false
@@ -826,7 +801,23 @@ export class OperatorChatService {
             // Persist identity before acknowledging submission, but NEVER await
             // a native operation here. The tracked control queue owns delivery
             // after this callback returns and releases that native lock.
-            this.deliverRequestedCancellation(id, input.requestId, runtime)
+            void this.control(id, async () => {
+              const current = await this.repository.active(id)
+              if (!current || current.active_request_id !== input.requestId || !current.cancel_requested) return
+              try {
+                await this.interrupt(id, current, runtime)
+                await this.observe(id, input.requestId, runtime, AbortSignal.timeout(5_000))
+              } catch (error) {
+                await this.repository.uncertain(id, input.requestId,
+                  errorMessage(error, 'Cancellation delivery is uncertain.'))
+                this.events.publish(id, 'error', { requestId: input.requestId, turnState: 'uncertain' })
+              } finally {
+                // Native completion was checked above. Detach a silent SSE reader
+                // so an unproven result remains recoverable by durable reconciliation.
+                const task = this.tasks.get(id)
+                if (task && task.requestId === input.requestId) task.controller.abort()
+              }
+            }).catch(ignoreError('harness', 'deliver cancellation to native turn', { chatId: id, requestId: input.requestId })) // Persistence failure leaves the accepted request fenced.
           }
         },
       }, signal)) {
@@ -854,7 +845,13 @@ export class OperatorChatService {
       submitted = true
       await this.control(id, () => this.observe(id, input.requestId, runtime))
     } catch (error) {
-      logOperatorTurnFailure(error)
+      const code = failure(error).error?.code
+      componentLogger('harness').error({
+        errorType: error instanceof Error ? error.constructor.name : typeof error,
+        ...(code && /^[A-Za-z0-9_-]{1,64}$/.test(code) ? { errorCode: code } : {}),
+        stackFrames: error instanceof Error
+          ? error.stack?.split('\n').filter(frame => /^\s+at\s/.test(frame)).slice(0, 8) ?? [] : [],
+      }, 'Operator native turn failed')
       if (signal.aborted) textStream?.dispose(); else textStream?.flush()
       if (submitted || (submitting && !definitePromptRejection(error)) || (creating && !definiteCreationFailure(error))) {
         await this.repository.uncertain(id, input.requestId, errorMessage(error, 'Native delivery is uncertain.'))
@@ -1231,8 +1228,6 @@ export class OperatorChatService {
 
   private async reconcile() {
     await reconcileKnownActivities({ kind: 'operator', activity: this.repository.activity,
-      observations: this.activityObservations,
-      onObservation: id => this.events.publish(id, 'state', { snapshotRequired: true }),
       signal: AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(5_000)]),
       runtimeFor: (id) => {
         const runtime = this.runtimes.get(id)
@@ -1354,14 +1349,4 @@ export class OperatorChatService {
     })()
     return this.shutdownTask
   }
-}
-
-function logOperatorTurnFailure(error: unknown) {
-  const code = failure(error).error?.code
-  componentLogger('harness').error({
-    errorType: error instanceof Error ? error.constructor.name : typeof error,
-    ...(code && /^[A-Za-z0-9_-]{1,64}$/.test(code) ? { errorCode: code } : {}),
-    stackFrames: error instanceof Error
-      ? error.stack?.split('\n').filter(frame => /^\s+at\s/.test(frame)).slice(0, 8) ?? [] : [],
-  }, 'Operator native turn failed')
 }

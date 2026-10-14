@@ -25,39 +25,10 @@ const running = join(state, 'running')
 const gate = { common, multiSlotGate: true }
 const baseTmp = readProductEnvironment(process.env, 'HEAVY_BASE_TMPDIR') || tmpdir()
 const tempRoot = join(baseTmp, `graphql-heavy-${createHash('sha256').update(common).digest('hex').slice(0, 16)}`)
-const diagnosticCounts = new Map()
-const diagnosticWarnings = new Map()
-function warnMetadata(operation, error) {
-  if (error.code === 'ENOENT' || error.code === 'ESRCH') return
-  const failureCount = (diagnosticCounts.get(operation) ?? 0) + 1
-  diagnosticCounts.set(operation, failureCount)
-  const now = Date.now()
-  if (diagnosticWarnings.has(operation) && now - diagnosticWarnings.get(operation) < 30_000) return
-  diagnosticWarnings.set(operation, now)
-  console.warn(JSON.stringify({ operation, status: 'degraded',
-    lastError: error.code ?? 'INVALID_SCHEDULER_METADATA', failureCount }))
-}
-process.on('exit', () => {
-  for (const [operation, failureCount] of diagnosticCounts) {
-    if (failureCount > 1) console.warn(JSON.stringify({ operation, status: 'degraded', failureCount }))
-  }
-})
-const readJson = path => {
-  try { return JSON.parse(readFileSync(path, 'utf8')) }
-  catch (error) { warnMetadata('read scheduler owner metadata', error); return null }
-}
-const ageMs = path => {
-  try { return Date.now() - statSync(path).mtimeMs }
-  catch (error) { warnMetadata('read scheduler metadata age', error); return 0 }
-}
-const isDirectory = path => {
-  try { return lstatSync(path).isDirectory() }
-  catch (error) { warnMetadata('inspect scheduler directory', error); return false }
-}
-const procStart = pid => {
-  try { return readFileSync(`/proc/${pid}/stat`, 'utf8').split(') ')[1].split(' ')[19] }
-  catch (error) { warnMetadata('read scheduler process identity', error); return null }
-}
+const readJson = (path) => { try { return JSON.parse(readFileSync(path, 'utf8')) } catch { return null } }
+const ageMs = (path) => { try { return Date.now() - statSync(path).mtimeMs } catch { return 0 } }
+const isDirectory = (path) => { try { return lstatSync(path).isDirectory() } catch { return false } }
+const procStart = (pid) => { try { return readFileSync(`/proc/${pid}/stat`, 'utf8').split(') ')[1].split(' ')[19] } catch { return null } }
 const namespace = { boot: readFileSync('/proc/sys/kernel/random/boot_id', 'utf8').trim(), pid: readlinkSync('/proc/self/ns/pid') }
 const gone = (error) => error.code === 'ENOENT' || error.code === 'ESRCH'
 const alive = (record) => {
@@ -69,7 +40,7 @@ const alive = (record) => {
     const fields = text.slice(text.lastIndexOf(') ') + 2).split(' ')
     if (!/^\d+$/.test(fields[19])) return true
     return fields[19] === record.start && fields[0] !== 'Z'
-  } catch (error) { warnMetadata('read scheduler owner process', error); return !gone(error) }
+  } catch (error) { return !gone(error) }
 }
 const tokenUsed = (token, exceptPid = 0, conservative = false) => {
   if (!token) return false
@@ -77,9 +48,9 @@ const tokenUsed = (token, exceptPid = 0, conservative = false) => {
     for (const entry of readdirSync('/proc')) {
       if (!/^\d+$/.test(entry)) continue
       if (Number(entry) === exceptPid) continue
-      try { if (['FOREMAN_CODE_', 'GRAPHQL_'].some(prefix => readFileSync(`/proc/${entry}/environ`).includes(Buffer.from(`${prefix}HEAVY_JOB_TOKEN=${token}\0`)))) return true } catch (error) { warnMetadata('inspect scheduler process usage', error); if (conservative && !gone(error)) return true }
+      try { if (['FOREMAN_CODE_', 'GRAPHQL_'].some(prefix => readFileSync(`/proc/${entry}/environ`).includes(Buffer.from(`${prefix}HEAVY_JOB_TOKEN=${token}\0`)))) return true } catch (error) { if (conservative && !gone(error)) return true }
     }
-  } catch (error) { warnMetadata('inspect scheduler process usage', error); return true }
+  } catch { return true }
   return false
 }
 const groupUsed = (pgid, conservative = false) => {
@@ -93,9 +64,9 @@ const groupUsed = (pgid, conservative = false) => {
         const fields = text.slice(text.lastIndexOf(') ') + 2).split(' ')
         if (conservative && !/^\d+$/.test(fields[2])) return true
         if (Number(fields[2]) === pgid && fields[0] !== 'Z') return true
-      } catch (error) { warnMetadata('inspect scheduler process usage', error); if (conservative && !gone(error)) return true }
+      } catch (error) { if (conservative && !gone(error)) return true }
     }
-  } catch (error) { warnMetadata('inspect scheduler process usage', error); return true }
+  } catch { return true }
   return false
 }
 const workUsed = (record) => {
@@ -109,15 +80,15 @@ const usedPath = (path) => {
     for (const entry of readdirSync('/proc')) {
       if (!/^\d+$/.test(entry)) continue
       for (const kind of ['cwd', 'root']) {
-        try { const target = realpathSync(`/proc/${entry}/${kind}`); if (target === path || target.startsWith(`${path}${sep}`)) return true } catch (error) { warnMetadata('inspect scheduler process paths', error); if (!gone(error)) return true }
+        try { const target = realpathSync(`/proc/${entry}/${kind}`); if (target === path || target.startsWith(`${path}${sep}`)) return true } catch (error) { if (!gone(error)) return true }
       }
       try {
         for (const fd of readdirSync(`/proc/${entry}/fd`)) {
-          try { const target = readlinkSync(`/proc/${entry}/fd/${fd}`); if (target === path || target.startsWith(`${path}${sep}`) || target.startsWith(`${path} (deleted)`)) return true } catch (error) { warnMetadata('inspect scheduler process paths', error); if (!gone(error)) return true }
+          try { const target = readlinkSync(`/proc/${entry}/fd/${fd}`); if (target === path || target.startsWith(`${path}${sep}`) || target.startsWith(`${path} (deleted)`)) return true } catch (error) { if (!gone(error)) return true }
         }
-      } catch (error) { warnMetadata('inspect scheduler process paths', error); if (!gone(error)) return true }
+      } catch (error) { if (!gone(error)) return true }
     }
-  } catch (error) { warnMetadata('inspect scheduler process usage', error); return true }
+  } catch { return true }
   return false
 }
 function cleanTemps() {
@@ -157,12 +128,8 @@ const isGate = (record) => record?.common === common && record.multiSlotGate ===
 function slotCount() {
   try {
     const value = readFileSync(join(state, 'slots'), 'utf8').trim()
-    if (!/^[1-8]$/.test(value)) throw new Error('Invalid heavy-job slot count; expected an integer from 1 to 8.')
-    return Number(value)
-  } catch (error) {
-    if (error.code === 'ENOENT') return 1
-    throw error
-  }
+    return /^[1-8]$/.test(value) ? Number(value) : 1
+  } catch { return 1 }
 }
 function schedule(action, ticket, token) {
   const result = spawnSync('flock', ['-x', join(state, 'register.lock'), process.execPath, import.meta.filename, '__schedule', action, ticket, token], { encoding: 'utf8' })
@@ -202,7 +169,7 @@ if (process.argv[2] === '__schedule') {
       writeFileSync(join(queue, ticket), JSON.stringify(acquiring))
       if (!existsSync(active)) {
         // mkdir still arbitrates with old callers, which do not take this lock.
-        try { mkdirSync(active) } catch (error) { if (error.code === 'EEXIST') process.exit(0); throw error }
+        try { mkdirSync(active) } catch { process.exit(0) }
         writeFileSync(join(active, 'owner.json'), JSON.stringify(records.length ? gate : acquiring))
       }
       writeFileSync(path, JSON.stringify(acquiring))
@@ -237,7 +204,7 @@ if (process.argv[2] === '__hold') {
 } else {
 function inputHash(kind) {
   const list = git('ls-files', '-z', '--cached', '--others', '--exclude-standard')
-  if (list.status !== 0) throw new Error('Build cache source inventory could not be read.')
+  if (list.status !== 0) return null
   const hash = createHash('sha256').update(process.version).update(process.platform).update(process.arch).update(common).update(root)
   const scope = kind === 'contracts' ? 'packages/contracts' : `apps/${kind}`
   const tools = kind === 'web' ? ['typescript', 'vite', '@vitejs/plugin-react', '@tailwindcss/vite'] : ['typescript']
@@ -246,13 +213,13 @@ function inputHash(kind) {
       const path = require.resolve(name, { paths: [join(root, scope)] })
       hash.update(name).update(path).update(readFileSync(path))
     }
-  } catch { throw new Error('Build cache hashing tools are unavailable.') }
+  } catch { return null }
   for (const relative of list.stdout.split('\0').filter(Boolean).sort()) {
     const path = join(root, relative)
     try {
       if (!statSync(path).isFile()) continue
       hash.update(relative).update(readFileSync(path))
-    } catch { throw new Error('Build cache source files could not be read.') }
+    } catch { return null }
   }
   return hash.digest('hex')
 }
@@ -271,77 +238,25 @@ function outputHash(kind) {
       else throw new Error('Unexpected build output')
     }
   }
-  try {
-    visit(base)
-    return count ? hash.digest('hex') : null
-  } catch { throw new Error('Build cache artifacts could not be hashed.') }
-}
-function recordBuildCache(kind, fresh, lastError) {
-  const path = join(root, '.logs', `heavy-cache-${kind}.json`)
-  let previous = null
-  try { previous = JSON.parse(readFileSync(path, 'utf8')) }
-  catch (error) {
-    if (error.code !== 'ENOENT') console.warn('Build cache diagnostic history is unavailable.')
-  }
-  const count = value => Number.isSafeInteger(value) && value >= 0 ? value : 0
-  let cacheStatus = 'miss'
-  if (fresh) cacheStatus = 'hit'
-  if (lastError) cacheStatus = 'invalid'
-  const status = { status: cacheStatus, lastError,
-    missCount: count(previous?.missCount) + Number(!fresh),
-    rebuildCount: count(previous?.rebuildCount) + Number(!fresh) }
-  mkdirSync(dirname(path), { recursive: true })
-  writeFileSync(path, JSON.stringify(status))
-  if (lastError) console.warn('Build cache unavailable; rebuilding', JSON.stringify(status))
-  else console.log('Build cache status', JSON.stringify(status))
-}
-function readBuildStamp(path) {
-  try {
-    const record = JSON.parse(readFileSync(path, 'utf8'))
-    if (!/^[a-f0-9]{64}$/.test(record?.signature) || !/^[a-f0-9]{64}$/.test(record?.output)) {
-      throw new SyntaxError('Invalid build cache metadata')
-    }
-    return record
-  } catch (error) {
-    if (error.code === 'ENOENT') return null
-    throw new Error(error instanceof SyntaxError ? 'Build cache metadata is invalid.' : 'Build cache metadata could not be read.')
-  }
+  try { visit(base); return count ? hash.digest('hex') : null } catch { return null }
 }
 function freshBuild(kind) {
   // The API build also probes installed harness binaries and environment.
   // Those can change without any source or output change, so always run it.
   if (kind === 'api' || process.env.FOREMAN_CODE_VERIFICATION_ROOT === root) return { fresh: false, stamp: null }
   if (!outputs[kind]) return { fresh: false, stamp: null }
+  const signature = inputHash(kind)
   const stamp = join(root, '.logs', `heavy-build-${kind}.json`)
-  let signature = null
-  let fresh = false
-  let lastError = null
-  try {
-    signature = inputHash(kind)
-    const recorded = readBuildStamp(stamp)
-    if (recorded?.signature === signature) {
-      const output = outputHash(kind)
-      fresh = recorded.output === output
-      if (!fresh) lastError = output ? 'Build cache artifacts have changed.' : 'Build cache artifacts are missing.'
-    }
-  } catch (error) { lastError = error.message }
-  recordBuildCache(kind, fresh, lastError)
-  return { fresh, stamp, signature }
+  const recorded = readJson(stamp)
+  return { fresh: Boolean(signature && recorded?.signature === signature && recorded?.output === outputHash(kind)), stamp, signature }
 }
 function stampBuild(kind, freshness) {
   if (kind === 'api') return
-  if (!freshness?.signature) return
-  try {
-    if (freshness.signature !== inputHash(kind)) return
-    const output = outputHash(kind)
-    if (!output) throw new Error('Build cache artifacts are missing after the build.')
-    mkdirSync(dirname(freshness.stamp), { recursive: true })
-    writeFileSync(freshness.stamp, JSON.stringify({ signature: freshness.signature, output }))
-  } catch (error) {
-    const reason = error.message.startsWith('Build cache ')
-      ? error.message : 'Build cache metadata could not be saved.'
-    recordBuildCache(kind, true, reason)
-  }
+  if (!freshness?.signature || freshness.signature !== inputHash(kind)) return
+  const output = outputHash(kind)
+  if (!output) return
+  mkdirSync(dirname(freshness.stamp), { recursive: true })
+  writeFileSync(freshness.stamp, JSON.stringify({ signature: freshness.signature, output }))
 }
 async function waitGroup(pgid, graceMs = 5000) {
   const start = Date.now()

@@ -1,5 +1,4 @@
 import type { CiHostRequest, CiHostReply, CiHostRun, CiRunRecord, CiUserSystemd } from '@foreman-code/contracts'
-import type { DeviceRequestPriority } from '@foreman-code/contracts/device-application'
 import type { CiRepositoryCapabilities } from './repository.js'
 import type { CiIntegrationInventory } from './integrationParts.js'
 import type { CiUnitInventory } from './parts.js'
@@ -18,8 +17,7 @@ export type CiMirrorInput = Pick<Extract<CiHostRequest, { operation: 'start' }>,
 export interface HostCiEndpoint {
   /** Paired computers that serve host CI now. */
   computers(): Promise<HostCiComputer[]>
-  request(computer: HostCiComputer, request: CiHostRequest,
-    options?: { priority: DeviceRequestPriority }): Promise<CiHostReply>
+  request(computer: HostCiComputer, request: CiHostRequest): Promise<CiHostReply>
   publishMirror?(input: CiMirrorInput): Promise<void>
 }
 /** Resolves the commit to test and makes sure GitHub has it, so build computers can fetch it. */

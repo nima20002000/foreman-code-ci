@@ -172,29 +172,8 @@ export async function sealWorkflowNativeEntryLocked(sql: GraphTransactionSql, ow
   if (record.phase !== 'not_submitted' || record.reservation.scope.runId !== owner.runId) return conflict()
   const allowed = await sql.query(`select 1 from runs r where r.id=$1 and (
     r.stop_requested_at is not null or r.execution_state in ('completed','interrupted')
-    or exists(select 1 from run_cleanup_intents c where c.run_id=r.id and c.pending)
-    or exists(select 1 from harness_executions e join approval_execution_state b on b.execution_id=e.id
-      where e.id=$2 and e.run_id=r.id and b.failure_result is not null))`,
-  [owner.runId, record.reservation.execution.executionId])
+    or exists(select 1 from run_cleanup_intents c where c.run_id=r.id and c.pending))`, [owner.runId])
   if (allowed.rowCount !== 1) return conflict()
-  await sealNativeEntryLocked(sql, owner, record, receipt)
-}
-
-/** A failed preparation can close only the still-reserved entry, before launch. */
-export async function sealWorkflowPreparationFailureLocked(sql: GraphTransactionSql, owner: Owner,
-  record: WorkflowNativeEntryRecord, receipt: RepeatCanonicalReceipt): Promise<void> {
-  assertGraphTransaction(sql)
-  owner.assertOwned()
-  const previous = await readWorkflowNativeEntryLocked(sql, record.reservation)
-  if (previous.phase !== 'reserved' || record.launchDigest !== null) return conflict()
-  await sealNativeEntryLocked(sql, owner, record, receipt)
-}
-
-async function sealNativeEntryLocked(sql: GraphTransactionSql, owner: Owner,
-  record: WorkflowNativeEntryRecord, receipt: RepeatCanonicalReceipt): Promise<void> {
-  assertGraphTransaction(sql)
-  owner.assertOwned()
-  if (record.phase !== 'not_submitted' || record.reservation.scope.runId !== owner.runId) return conflict()
   const previous = await readWorkflowNativeEntryLocked(sql, record.reservation)
   if (!['reserved', 'prepared'].includes(previous.phase)) return conflict()
   if (previous.phase === 'prepared') {

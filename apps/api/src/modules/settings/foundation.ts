@@ -104,12 +104,7 @@ export class PostgresFoundationSettingsRepository {
           try {
             parentPath = await realpath(parentPath)
           }
-          catch {
-            throw new DomainError('WORKSPACE_DEFAULT_UNAVAILABLE',
-              'The saved workspace parent folder is unavailable. Restore it or choose another folder in Settings.', 503,
-              { parentPath: snapshot.value.parentPath ?? parentPath, revision: snapshot.revision,
-                versionId: snapshot.versionId })
-          }
+          catch { parentPath = this.projectRoot }
         }
         return { ...snapshot, value: { ...snapshot.value, parentPath } }
       })

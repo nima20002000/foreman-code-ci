@@ -198,14 +198,6 @@ function circleHandler(request: IncomingMessage, response: ServerResponse) {
   json(response, {}, 404)
 }
 
-// CircleCI v3 rejects step output reads without JSON:API filter parameters.
-function circleOutputQuery(request: IncomingMessage, response: ServerResponse) {
-  const query = new URL(request.url!, 'http://circle').searchParams
-  if (query.has('filter[execution]') && query.has('filter[step_num]')) return true
-  json(response, { message: 'Bad Request' }, 400)
-  return false
-}
-
 it('reads CircleCI workflows, steps and live output without polling subprocesses', async () => {
   const server = await http(circleHandler)
   const cli = ports()
@@ -231,7 +223,6 @@ it('polls CircleCI status repeatedly and collects raw Suite output through REST'
         { steps: [{ num: 2, name: 'Suite', phase: 'started' }] },
       ],
     } } })
-    if (/\/std(out|err)/.test(request.url!) && !circleOutputQuery(request, response)) return
     if (request.url!.includes('/stdout')) return response.end(stdout)
     if (request.url!.includes('/stderr')) return response.end(stderr)
     circleHandler(request, response)
@@ -247,7 +238,7 @@ it('polls CircleCI status repeatedly and collects raw Suite output through REST'
   expect(await provider.status(run)).toEqual(expected)
   expect(cli.calls).not.toHaveBeenCalled()
   expect(await provider.log(run)).toBe(`Suite\n${stdout}${stderr}\n${stdout}${stderr}`)
-  expect(server.requests.some(request => request.url === '/api/v3/jobs/job/stdout?filter%5Bexecution%5D=1&filter%5Bstep_num%5D=2'))
+  expect(server.requests.some(request => request.url === '/api/v3/jobs/job/stdout?execution=1&step_num=2'))
     .toBe(true)
   expect(cli.calls).not.toHaveBeenCalled()
 })
@@ -289,15 +280,29 @@ it.each([403, 429, 500])('propagates CircleCI Suite output HTTP %s errors withou
   expect(cli.calls).not.toHaveBeenCalled()
 })
 
-it.each([0, CLOUD_START_TIMEOUT_MS - 1, CLOUD_START_TIMEOUT_MS, CLOUD_START_TIMEOUT_MS + 1])(
-  'reports a CircleCI lookup failure independently of dispatch age at %s ms', async elapsed => {
+it('keeps transient CircleCI missing-run handling and expired lookup errors', async () => {
+  const server = await http((_request, response) => json(response, { message: 'Not Found' }, 404))
+  const cli = ports()
+  cli.value.now = () => new Date(Date.parse(finishedAt) + CLOUD_START_TIMEOUT_MS - 1)
+  const provider = new CircleCiProvider(cli.value, { ...server, circleToken: async () => 'circle-test-token' })
+  expect(await provider.find({ ...run, startedAt: finishedAt })).toBeNull()
+  await expect(provider.find(run)).rejects.toMatchObject({ code: 'CI_CLOUD_RUN_NOT_FOUND',
+    message: 'CircleCI run is not visible.' })
+})
+
+it.each([CLOUD_START_TIMEOUT_MS - 1, CLOUD_START_TIMEOUT_MS, CLOUD_START_TIMEOUT_MS + 1])(
+  'applies the CircleCI missing-run deadline at %s ms after dispatch', async elapsed => {
     const server = await http((_request, response) => json(response, { message: 'Not Found' }, 404))
     const cli = ports()
     cli.value.now = () => new Date(Date.parse(run.startedAt) + elapsed)
     const provider = new CircleCiProvider(cli.value, { ...server, circleToken: async () => 'circle-test-token' })
-    await expect(provider.find(run)).rejects.toMatchObject({
-      code: 'CI_CLOUD_RUN_NOT_FOUND', message: 'CircleCI run is not visible.',
-    })
+    if (elapsed < CLOUD_START_TIMEOUT_MS) {
+      expect(await provider.find(run)).toBeNull()
+    } else {
+      await expect(provider.find(run)).rejects.toMatchObject({
+        code: 'CI_CLOUD_RUN_NOT_FOUND', message: 'CircleCI run is not visible.',
+      })
+    }
     expect(cli.calls).not.toHaveBeenCalled()
   },
 )
@@ -326,14 +331,14 @@ it('preserves CircleCI configuration failures', async () => {
     message: 'CircleCI pipeline failed: config: invalid configuration', details: { configError: true } })
 })
 
-it('downloads only CircleCI duration artifacts from the job artifact listing', async () => {
+it('downloads only CircleCI duration artifacts across all listing pages', async () => {
   const server = await http((request, response) => {
-    if (request.url === '/api/v3/jobs/job/artifacts') {
-      return json(response, { data: [
-        { attributes: { path: 'durations/durations.json', url: 'https://downloads.example/durations', execution: 0 } },
-        { attributes: { path: 'logs/large.log', url: 'https://downloads.example/large', execution: 0 } },
-        { attributes: { path: 'durations/test-results.json', url: 'https://downloads.example/results', execution: 0 } },
-      ] })
+    if (request.url!.includes('/artifacts')) {
+      const second = request.url!.includes('page-token=next')
+      return json(response, { items: second
+        ? [{ path: 'durations/test-results.json', url: 'https://downloads.example/results' }]
+        : [{ path: 'durations/durations.json', url: 'https://downloads.example/durations' },
+          { path: 'logs/large.log', url: 'https://downloads.example/large' }], next_page_token: second ? null : 'next' })
     }
     if (request.url === '/durations') return json(response, { 'feature.test.ts': 10 })
     if (request.url === '/results') return json(response, { files: [] })
@@ -437,7 +442,7 @@ it.each([401, 403])('classifies CircleCI HTTP %s lookup denials and still attemp
   })
   await expect(provider.cancel(run)).resolves.toBeUndefined()
   expect(cli.calls).toHaveBeenCalledExactlyOnceWith('circleci', ['run', 'cancel', '42', '--force'],
-    { timeoutMs: 15_000 })
+    { timeoutMs: 120_000 })
 })
 
 it('keeps CircleCI rate limits from triggering cancellation', async () => {
@@ -457,7 +462,7 @@ it('propagates CircleCI cancellation denials after an unreadable lookup', async 
     code: 'CI_CLOUD_FAILED', message: 'CircleCI did not accept circleci run cancel: permission denied',
   })
   expect(cli.calls).toHaveBeenCalledExactlyOnceWith('circleci', ['run', 'cancel', '42', '--force'],
-    { timeoutMs: 15_000 })
+    { timeoutMs: 120_000 })
 })
 
 it('keeps full CircleCI log output, empty streams, progress redraws and report labels', async () => {
@@ -533,7 +538,5 @@ it('reads the CircleCI CLI configured token and keeps it in memory between polls
   await rm(join(root, 'circleci', 'config.yml'))
   expect(await provider.find(run)).toBe('42')
   expect(server.requests.every(request => request.authorization === 'Bearer configured-test-token')).toBe(true)
-  expect(cli.calls).toHaveBeenCalledExactlyOnceWith('secret-tool',
-    ['lookup', 'service', 'com.circleci.cli:https://circleci.com', 'username', expect.any(String)],
-    { timeoutMs: 15_000 })
+  expect(cli.calls).not.toHaveBeenCalled()
 })

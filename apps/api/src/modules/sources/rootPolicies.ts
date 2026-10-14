@@ -189,13 +189,12 @@ export class PostgresWorkspaceRootPolicies implements WorkspaceRootPolicyPort {
     if (this.actors.get(root)?.id !== principal.id) throw new DomainError('ROOT_AUTHORIZATION_MISSING', 'Root binding belongs to another scoped caller.', 403)
     const live = await this.authorizeWorkspace(sql, principal, root.selection.workspaceId, true)
     requireAuthorization(principal, 'workspace_locations:update', { workspaceId: root.selection.workspaceId }); requireAuthorization(live.principal, 'workspace_locations:update', { workspaceId: root.selection.workspaceId })
-    const expectedRevision = root.selection.expectedLocationRevision
-      + (location.kind === 'location' && root.selection.hostRef.kind === 'main' ? 1 : 0)
-    if (location.locationRevision < 0 || location.locationRevision !== expectedRevision
+    const expectedRevision = root.selection.expectedLocationRevision + (location.kind === 'location' ? 1 : 0)
+    if (location.locationRevision < 1 || location.locationRevision !== expectedRevision
       || live.locationRevision !== location.locationRevision)
       throw new DomainError('LOCATION_REVISION_CONFLICT', 'The workspace location changed during root binding.', 409)
     const configuration = await this.configuration(sql, root.selection.hostRef)
-    if (!isDeepStrictEqual(configuration, root.allowlist)) throw new DomainError('ROOT_CONFIGURATION_CONFLICT', 'The accepted root configuration changed.', 409)
+    if (!isDeepStrictEqual(configuration, root.allowlist) || live.ownerId !== root.ownerPrincipalId) throw new DomainError('ROOT_CONFIGURATION_CONFLICT', 'The accepted root owner/configuration changed.', 409)
     const registration = await this.hosts.authorize(sql, live.principal, root.selection.hostRef, configuration.applicationInstallationId)
     if (!isDeepStrictEqual(registration, root.registration)) throw new DomainError('ROOT_DEVICE_CONFLICT', 'The host registration changed during attestation.', 409)
     const attestation = this.validateAttestation(root, raw)

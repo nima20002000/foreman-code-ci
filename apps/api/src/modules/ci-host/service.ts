@@ -16,8 +16,8 @@ import { componentLogger } from '../diagnostics/logger.js'
 import { planCiParts, runsOnCircleCi, unitPartOf } from './parts.js'
 import { planIntegrationParts } from './integrationParts.js'
 import { readCiSlots } from './planningCapacity.js'
-import { CiPlanningSnapshot } from './planningSnapshot.js'
 import { HostCiReads, retryRead } from './readQueries.js'
+import { fallbackOnError } from '../diagnostics/ignoredError.js'
 import { CI_QUEUE_ORDER, ciQueueReason, compareCiQueue } from './priority.js'
 import { prepareCiSupersession, validateCiSupersession, supersedeCiRuns } from './supersession.js'
 import { gatePartStealer, gateQueueBlock, planCiGate, readCiComputerStatus } from './gate.js'
@@ -82,7 +82,6 @@ export class HostCiService {
   private timer: NodeJS.Timeout | undefined
   private stoppingRuns = 0
   private readonly endpoint: HostCiEndpoint
-  private readonly planningEndpoint: CiPlanningSnapshot
   /** Cloud slots kept free for non-gate tickets while a gate is queued or running. */
   private readonly reservedCloudSlots: number
   private readonly reads: HostCiReads
@@ -91,38 +90,21 @@ export class HostCiService {
     private readonly authority: CiAuthority, private readonly commits: CiCommits,
     endpoint: HostCiEndpoint, private readonly snapshots?: AgentSnapshots, options: { reservedCloudSlots?: number } = {}) {
     this.reservedCloudSlots = options.reservedCloudSlots ?? 0
-    this.planningEndpoint = new CiPlanningSnapshot(endpoint)
     this.endpoint = {
-      computers: async () => {
-        const computers = await endpoint.computers()
-        this.planningEndpoint.observeComputers(computers)
-        return computers
-      },
+      computers: () => endpoint.computers(),
       ...(endpoint.publishMirror ? { publishMirror: endpoint.publishMirror.bind(endpoint) } : {}),
-      request: async (computer, request, options) => {
-        const send = () => options ? endpoint.request(computer, request, options) : endpoint.request(computer, request)
+      request: async (computer, request) => {
         if (request.operation !== 'status' || computer.hostRef.kind === 'cloud') {
-          try {
-            const reply = await send()
-            this.planningEndpoint.observeStatus(computer, reply)
-            return reply
-          } catch (error) {
-            this.planningEndpoint.invalidate(computer)
-            throw error
-          }
+          return endpoint.request(computer, request)
         }
         const assigned = (await this.pool.query<{ record: unknown; host_key: string }>(
           `select record,host_key from ci_runs where state in ('starting','running')`)).rows
           .filter(row => row.host_key === computer.key)
         let status: CiHostStatus | null = null
         try {
-          const reply = await send()
+          const reply = await endpoint.request(computer, request)
           if (reply.operation === 'status') status = reply
-          this.planningEndpoint.observeStatus(computer, reply)
           return reply
-        } catch (error) {
-          this.planningEndpoint.invalidate(computer)
-          throw error
         } finally {
           for (const row of assigned) {
             await this.reconcileHostStart(CiRunRecordSchema.parse(row.record), computer, status)
@@ -145,12 +127,7 @@ export class HostCiService {
     void this.dispatch()
   }
 
-  close() {
-    clearInterval(this.timer)
-    this.timer = undefined
-    this.reads.close()
-    return this.dispatching
-  }
+  close() { clearInterval(this.timer); this.timer = undefined; return this.dispatching }
 
   async run(caller: ManagementPrincipal, input: CiRunInput & { workspaceId?: string | undefined }, source: 'mcp' | 'http' = 'mcp') {
     const started = performance.now()
@@ -289,15 +266,9 @@ export class HostCiService {
     if (!workspace.repository) throw new DomainError('SOURCE_REPOSITORY_REQUIRED',
       'CI runs on build computers from GitHub. Set the workspace GitHub repository (workspace_update).', 409)
     const smokeTarget = input.smokeComputer
-      ? (await this.planningEndpoint.computers()).find(computer => isDeepStrictEqual(computer.hostRef, input.smokeComputer))
+      ? (await this.endpoint.computers()).find(computer => isDeepStrictEqual(computer.hostRef, input.smokeComputer))
       : undefined
     if (input.smokeComputer && !smokeTarget) {
-      // An enabled computer drops out of the list while its Worker reconnects, for example after an API restart.
-      const enabled = (await this.pool.query<{ build_enabled: boolean }>(
-        "select build_enabled from build_computer_preferences where target->'hostRef'=$1::jsonb",
-        [JSON.stringify(input.smokeComputer)])).rows[0]?.build_enabled
-      if (enabled) throw new DomainError('CI_SMOKE_COMPUTER_UNAVAILABLE',
-        'The smoke computer is not connected yet. Retry shortly.', 503, { retryable: true })
       throw new DomainError('CI_SMOKE_COMPUTER_UNAVAILABLE', 'The smoke computer is disabled or unavailable.', 409)
     }
     const repository = `${workspace.repository.owner}/${workspace.repository.name}`
@@ -385,22 +356,17 @@ export class HostCiService {
       : [{ part: null, partition: null, files: selection.files ?? [] }]
     let smokeShards: number | undefined
     if (smokeTarget && input.suite === 'integration') {
-      const status = await this.planningEndpoint.request(smokeTarget, { operation: 'status' }).catch(error => {
-        if (error instanceof DomainError) throw error
-        // A Worker that is still reconnecting after a restart is temporarily unavailable, not an API failure.
-        throw new DomainError('CI_SMOKE_COMPUTER_UNAVAILABLE', 'The smoke computer is not reachable yet. Retry shortly.', 503,
-          { retryable: true })
-      })
+      const status = await this.endpoint.request(smokeTarget, { operation: 'status' })
       if (status.operation !== 'status' || !status.ready) {
         throw new DomainError('CI_SMOKE_COMPUTER_UNAVAILABLE', 'The smoke computer is not ready.', 409)
       }
       smokeShards = buildComputerIntegrationShards(status, smokeTarget.buildAllowancePercent)
-      const fleet = await this.planningEndpoint.computers()
+      const fleet = await this.endpoint.computers()
       if (integration && fleet.some(computer => computer.hostRef.kind !== 'cloud')
         && fleet.some(computer => computer.hostRef.kind === 'cloud')) {
         const smokeUnit = await this.commits.unitInventory?.(repository, commit)
         if (smokeUnit) {
-          try { await planCiGate(input, integration, smokeUnit, unitDurations, this.planningEndpoint, new Map(), this.reservedCloudSlots) }
+          try { await planCiGate(input, integration, smokeUnit, unitDurations, this.endpoint, new Map(), this.reservedCloudSlots) }
           catch (error) {
             if (!(error instanceof DomainError) || error.code !== 'CI_GATE_CAPACITY_REQUIRED') throw error
             log.info({ reason: error.message }, 'CI smoke has no complete ready gate fleet')
@@ -409,17 +375,17 @@ export class HostCiService {
       }
       parts = [{ part: null, partition: null, files: input.files! }]
     } else if (input.gate) {
-      const speeds = await readExecutorSpeeds(this.pool, this.planningEndpoint)
+      const speeds = await readExecutorSpeeds(this.pool, this.endpoint)
       timing.mark('speedsMs')
-      const slots = await readCiSlots(this.pool, this.planningEndpoint)
+      const slots = await readCiSlots(this.pool, this.endpoint)
       timing.mark('slotsMs')
-      parts = await planCiGate(input, { ...integration!, durations: durations! }, inventory!, unitDurations, this.planningEndpoint,
+      parts = await planCiGate(input, { ...integration!, durations: durations! }, inventory!, unitDurations, this.endpoint,
         speeds, this.reservedCloudSlots, slots.ordinary, slots.usedByComputer)
     } else if (integration) {
-      parts = planIntegrationParts(selection, { ...integration, durations: durations! }, await readCiSlots(this.pool, this.planningEndpoint))
+      parts = planIntegrationParts(selection, { ...integration, durations: durations! }, await readCiSlots(this.pool, this.endpoint))
     }
     if (!input.gate && input.suite === 'unit' && split) {
-      parts = planCiParts(selection, unitDurations, inventory, (await readCiSlots(this.pool, this.planningEndpoint)).ordinary)
+      parts = planCiParts(selection, unitDurations, inventory, (await readCiSlots(this.pool, this.endpoint)).ordinary)
     }
     timing.mark('planMs')
     log.info({ gate: input.gate === true, suite: input.suite, ...timing.phases }, 'CI run preparation timing')
@@ -495,8 +461,8 @@ export class HostCiService {
     return CiRunRecordSchema.parse(row.record)
   }
 
-  get(caller: ManagementPrincipal, input: Parameters<HostCiReads['get']>[1], signal?: AbortSignal) {
-    return this.reads.get(caller, input, signal)
+  get(caller: ManagementPrincipal, input: Parameters<HostCiReads['get']>[1]) {
+    return this.reads.get(caller, input)
   }
 
   tests(caller: ManagementPrincipal, input: Parameters<HostCiReads['tests']>[1]) {
@@ -653,14 +619,10 @@ export class HostCiService {
       const active = (await this.pool.query<{ id: string; host_key: string; record: unknown }>(
         `select id,host_key,record from ci_runs where state in ('starting','running') and host_key is not null
           order by created_at,id`)).rows
-      // Ask every computer at once: one slow or offline host must not serialize the whole listing.
-      // Build participation is live; planning can still reuse bounded readiness snapshots.
-      const result = await Promise.all((await this.endpoint.computers()).map(async computer => {
+      const result = []
+      for (const computer of await this.endpoint.computers()) {
         const assigned = active.filter(run => run.host_key === computer.key)
-        // A starting ticket needs a live status: it can acknowledge a start whose reply was lost.
-        const starting = assigned.some(run => CiRunRecordSchema.parse(run.record).state === 'starting')
-        const status = await (starting ? this.endpoint : this.planningEndpoint).request(computer, { operation: 'status' })
-          .catch(error => error as Error)
+        const status = await this.endpoint.request(computer, { operation: 'status' }).catch(error => error as Error)
         const running = []
         for (const row of assigned) {
           const previous = CiRunRecordSchema.parse(row.record)
@@ -668,20 +630,17 @@ export class HostCiService {
             ? await this.read(row.id, previous.workspaceId) : previous
           if (['starting', 'running'].includes(current.state)) running.push(row.id)
         }
-        return status instanceof Error
+        result.push(status instanceof Error
           ? { label: computer.label, hostRef: computer.hostRef, priority: computer.priority,
-            buildAllowancePercent: computer.buildAllowancePercent ?? 100,
             ready: false, reasons: [status.message], running, slotsUsed: running.length,
             slotsTotal: Math.max(1, running.length) }
           : status.operation === 'status' ? { label: computer.label, hostRef: computer.hostRef, priority: computer.priority,
-            buildAllowancePercent: status.buildAllowancePercent ?? computer.buildAllowancePercent ?? 100,
-            allowedCpuCount: status.cpuCount,
             ready: status.ready, reasons: status.reasons, cpuCount: status.cpuCount, memoryBytes: status.memoryBytes,
             availableMemoryBytes: status.availableMemoryBytes,
             ...(status.userSystemd ? { userSystemd: status.userSystemd } : {}),
             slotsUsed: Math.max(running.length, status.slotsUsed ?? 0), slotsTotal: status.slotsTotal ?? 1,
-            running } : null
-      }))
+            running } : null)
+      }
       return { computers: result.filter(Boolean), queue, queueTruncated: queued.length > 500 }
     })
   }
@@ -707,10 +666,8 @@ export class HostCiService {
   private async settle(run: CiRunRecord, computer: HostCiComputer, state: { state: string; step: string | null
     exitCode: number | null; startedAt: string | null; finishedAt: string | null; message: string | null
     collection?: CiHostRun['collection']; provenance?: CiHostRun['provenance'];
-    mirrorPublication?: CiHostRun['mirrorPublication']; testsStarted?: CiHostRun['testsStarted'];
-    transport?: CiHostRun['transport'] },
-    options: { logTail?: string | undefined; audit?: CiCancellation | undefined;
-      client?: pg.PoolClient | undefined; observation?: CiRunRecord['observation'] } = {}) {
+    mirrorPublication?: CiHostRun['mirrorPublication']; testsStarted?: CiHostRun['testsStarted'] },
+    options: { logTail?: string | undefined; audit?: CiCancellation | undefined; client?: pg.PoolClient | undefined } = {}) {
     const { logTail, audit, client } = options
     const setupRequeue = computer.hostRef.kind === 'cloud' && state.state === 'failed'
       && state.testsStarted === false && !run.setupRetry && !run.cancellation && !run.supersededBy
@@ -732,8 +689,6 @@ export class HostCiService {
       finishedAt: state.finishedAt, ...messages, dispatchRequest: undefined,
       dispatchedAt: undefined, dispatchHostKey: undefined,
       setupRetry,
-      ...(options.observation ? { observation: options.observation } : {}),
-      ...(state.transport ? { transport: state.transport } : {}),
       ...(setupRequeue ? { dispatchAttempts: undefined, collection: undefined, provenance: undefined,
         mirrorPublication: undefined } : {}),
       cancellation: terminal ? undefined : run.cancellation,
@@ -795,15 +750,13 @@ export class HostCiService {
 
   private async refreshRun(row: { record: unknown; host_key: string | null }, computers: HostCiComputer[]) {
     const run = CiRunRecordSchema.parse(row.record)
-    if (!run.cancellation && run.observation?.nextAttemptAt
-      && Date.now() < Date.parse(run.observation.nextAttemptAt)) return
     let computer = computers.find(value => value.key === row.host_key)
       ?? computers.find(value => run.collection === 'pending' && run.computer
         && value.hostRef.kind === run.computer.hostRef.kind && value.hostRef.mainId === run.computer.hostRef.mainId
         && value.hostRef.deviceId === run.computer.hostRef.deviceId && value.hostRef.provider === run.computer.hostRef.provider
         && value.hostRef.slot === run.computer.hostRef.slot)
       ?? (run.computer ? await this.computer(run.computer.hostRef) : null)
-    if (!computer) throw new DomainError('CI_COMPUTER_OFFLINE', 'The CI executor is unavailable.', 503)
+    if (!computer) return
     if (row.host_key) computer = { ...computer, key: row.host_key }
     if (run.cancellation) {
       await this.cancelTicket(run.workspaceId, run.id, run.cancellation)
@@ -820,46 +773,34 @@ export class HostCiService {
     const request: CiHostRequest = { operation: 'read', runId: ciExecutionRunId(run), afterOffset: 0, maxBytes: 32_768,
       ...(['integration', 'unit'].includes(run.suite) ? { durations: true } : {}) }
     const reply = await (computer.hostRef.kind === 'cloud'
-      ? requestCloud(this.endpoint, computer, request)
-      : this.endpoint.request(computer, request, { priority: 'background' }))
+      ? requestCloud(this.endpoint, computer, request) : this.endpoint.request(computer, request))
+      .catch(fallbackOnError(null, 'jobs', 'read CI run from computer', { runId: run.id }))
     if (computer.hostRef.kind === 'cloud' && run.state === 'starting') {
       const recovered = await expireCloudDispatch(this.endpoint, computer, run,
         reply?.operation === 'read' ? reply.run : undefined)
-      if (recovered && !['queued', 'starting', 'running'].includes(recovered.state)) {
+      if (recovered?.state === 'lost') {
         await this.settle(run, computer, recovered)
         return
       }
     }
-    if (reply.operation !== 'read') {
-      throw new DomainError('CI_HOST_REPLY_INVALID', 'Expected a CI run observation.', 502)
-    }
-    let logError: unknown
-    let logTail: string | undefined = reply.text
+    if (reply?.operation !== 'read') return
+    let logTail = reply.text
     if (reply.run.logBytes > 32_768) {
       const tail = await this.endpoint.request(computer, { operation: 'read', runId: ciExecutionRunId(run),
-        afterOffset: reply.run.logBytes - 32_768, maxBytes: 32_768 }, { priority: 'background' }).catch(error => {
-          logError = error
+        afterOffset: reply.run.logBytes - 32_768, maxBytes: 32_768 }).catch(error => {
+          log.warn({ err: error, runId: run.id }, 'CI log tail not refreshed; retrying')
           return null
         })
-      if (tail?.operation === 'read') logTail = tail.text
-      else {
-        logTail = undefined
-        logError ??= new DomainError('CI_HOST_REPLY_INVALID', 'Expected a CI log tail.', 502)
-      }
+      if (tail?.operation !== 'read') return
+      logTail = tail.text
     }
-    const observation: CiRunRecord['observation'] = logError ? undefined : { status: 'available',
-      lastSuccessAt: new Date().toISOString(), lastError: null, consecutiveFailures: 0, nextAttemptAt: null }
     if (computer.hostRef.kind === 'cloud' && reply.run.state === 'failed') {
       if (reply.run.testsStarted === false && !run.setupRetry && !run.cancellation && !run.supersededBy) {
-        await this.settle(run, computer, reply.run, { logTail, observation })
-        if (logError) throw logError
+        await this.settle(run, computer, reply.run, { logTail })
         return
       }
       // Wait for the failure metadata before deciding whether this attempt used its setup retry.
-      if (reply.run.testsStarted === undefined && reply.run.collection === 'pending') {
-        if (logError) throw logError
-        return
-      }
+      if (reply.run.testsStarted === undefined && reply.run.collection === 'pending') return
     }
     const terminal = !['queued', 'starting', 'running'].includes(reply.run.state)
     let collected = { run: reply.run, durations: reply.durations }
@@ -883,26 +824,7 @@ export class HostCiService {
         log.warn({ err: error, runId: run.id }, 'CI result cache recording remains pending')
       }
     }
-    await this.settle(run, computer, collected.run, { logTail, observation })
-    if (logError) throw logError
-  }
-
-  private async recordObservationFailure(id: string, workspaceId: string, error: unknown) {
-    const run = await this.read(id, workspaceId)
-    const consecutiveFailures = (run.observation?.consecutiveFailures ?? 0) + 1
-    const code = error && typeof error === 'object' && 'code' in error
-      && typeof error.code === 'string' && /^[A-Z0-9_]{1,80}$/.test(error.code) ? ` (${error.code})` : ''
-    const lastError = `CI observation unavailable${code}; ownership retained.`
-    const delayMs = Math.min(60_000, 1000 * 2 ** Math.min(consecutiveFailures - 1, 6))
-    const observation: CiRunRecord['observation'] = { status: 'unavailable',
-      lastSuccessAt: run.observation?.lastSuccessAt ?? null, lastError, consecutiveFailures,
-      nextAttemptAt: new Date(Date.now() + delayMs).toISOString() }
-    const next = CiRunRecordSchema.parse({ ...run, observation,
-      message: lastError })
-    log.warn({ runId: id, observation }, 'CI observation unavailable; retry scheduled')
-    await this.pool.query(`update ci_runs set record=$4::jsonb
-      where id=$1 and state=$2 and workspace_id=$3 and record=$5::jsonb`,
-    [run.id, run.state, workspaceId, serializeCiJson(next), JSON.stringify(run)])
+    await this.settle(run, computer, collected.run, { logTail })
   }
 
   private async refreshActiveRuns(active: { id: string; record: unknown; host_key: string | null }[],
@@ -911,11 +833,7 @@ export class HostCiService {
       try {
         await this.refreshRun(row, computers)
       } catch (error) {
-        try {
-          await this.recordObservationFailure(row.id, CiRunRecordSchema.parse(row.record).workspaceId, error)
-        } catch {
-          log.warn({ runId: row.id }, 'CI observation failed and its status could not be persisted')
-        }
+        log.warn({ err: error, runId: row.id }, 'CI run refresh failed; retrying')
       }
     }
     const cloud = active.filter(row => CiRunRecordSchema.parse(row.record).computer?.hostRef.kind === 'cloud')
@@ -934,8 +852,7 @@ export class HostCiService {
     await this.cancelSuperseded()
     const computers = await this.endpoint.computers()
     const active = (await this.pool.query<{ id: string; record: unknown; host_key: string | null }>(
-      `select id,record,host_key from ci_runs where state in ('starting','running') or record->>'collection'='pending'
-        or (state in ('passed','failed','canceled','lost') and record#>>'{observation,status}'='unavailable')`)).rows
+      `select id,record,host_key from ci_runs where state in ('starting','running') or record->>'collection'='pending'`)).rows
     await this.refreshActiveRuns(active, computers)
     const busyRows = (await this.pool.query<{ host_key: string; record: unknown }>(
       `select host_key,record from ci_runs where state in ('starting','running')`)).rows
