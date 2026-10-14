@@ -27,6 +27,7 @@ export interface AutomaticHostProfileCheck {
   signal: AbortSignal
   authorize(client: pg.PoolClient): Promise<void>
   installation(value: HostHarnessOverride): HarnessInstallationRecord | undefined
+  currentEvidence(value: HostHarnessOverride): Promise<HostHarnessProfileEvidence | null>
   beforeChecks?: () => Promise<void>
 }
 
@@ -147,6 +148,8 @@ export class HostHarnessInstanceProfileChecks {
       input.signal.throwIfAborted()
       if (!value.enabled || value.driverId !== input.driverId
         || value.driverId === 'opencode' || value.configuration.harness === 'opencode') continue
+      // Main's process restart keeps the installation and environment binding unchanged.
+      if (input.host.kind === 'main' && value.driverId === 'codex' && await input.currentEvidence(value)) continue
       if (await this.proofs.previouslyQualified(value)) qualified.push(value)
     }
     batch.pendingProfiles = new Set(qualified.map(profileKey))

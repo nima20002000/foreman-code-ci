@@ -94,6 +94,7 @@ export class HarnessInstallationMonitor {
     void this.checks.recheckInstallation({ host, driverId, applicationInstallationId: installationId, generation,
       signal, authorize,
       installation: value => this.registry.currentInstallation(value),
+      currentEvidence: value => this.registry.profileEvidence(value),
       ...(host.kind === 'main' && driverId === 'codex' ? { beforeChecks: this.qualifyMain } : {}),
     }).catch(error => {
       if (this.stopping.signal.aborted) return
