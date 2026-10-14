@@ -218,7 +218,11 @@ export abstract class CodexManagerPreparation extends CodexManagerBase {
         runCommand: io.runCommand,
         transportFactory: (...args) => {
           args[9] = [...new Set([...(args[9] ?? []), ...disabledMcpServerNames])]
-          args[11] = { ...args[11], nativeApps, mcpTransportOverrides }
+          args[11] = {
+            ...args[11],
+            nativeApps,
+            mcpTransportOverrides: { ...args[11]?.mcpTransportOverrides, ...mcpTransportOverrides },
+          }
           return this.ownTransport(this.dependencies.transport(...args))
         } })
     if (this.nativeOutputs) {
