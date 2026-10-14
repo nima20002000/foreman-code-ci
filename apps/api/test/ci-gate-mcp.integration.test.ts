@@ -552,7 +552,8 @@ it.each([50, 10])('persists and dispatches a gate within a %i percent build allo
 
 it('rechecks the build allowance when dispatching an already planned gate through MCP', async () => {
   const occupiedKeys = new Set(['builder-main', 'builder-paired'])
-  const files = ['apps/api/test/first.integration.test.ts', 'apps/api/test/second.integration.test.ts']
+  // Exclusive files cannot share parallel lanes, so the plan uses both builders.
+  const files = ['apps/api/test/dev-startup.integration.test.ts', 'apps/api/test/ci-postgres-setup.integration.test.ts']
   const f = await fixture({ occupiedKeys, cloudSlots: 2, files })
   try {
     const admitted = CiRunOutputSchema.parse(await f.value('ci_run', {
@@ -563,8 +564,10 @@ it('rechecks the build allowance when dispatching an already planned gate throug
     const resources = { cpuCount: 16, memoryBytes: 16 * 2 ** 30 }
     const planned = queued.partitions!.filter(run => run.suite === 'integration'
       && run.plannedHostKey?.startsWith('builder-'))
+    expect(planned.map(run => run.plannedHostKey).sort()).toEqual(['builder-main', 'builder-paired'])
     expect(planned).toHaveLength(2)
     for (const host of planned) {
+      expect(host.files).toHaveLength(1)
       expect(host).toMatchObject({ state: 'queued', integrationShards: buildComputerIntegrationShards(resources) })
     }
     for (const computer of f.computers.filter(computer => computer.hostRef.kind !== 'cloud')) {
@@ -575,6 +578,7 @@ it('rechecks the build allowance when dispatching an already planned gate throug
     const read = CiGetOutputSchema.parse(await f.value('ci_get', { ticketId: admitted.ticketId }))
     const hosts = read.partitions!.filter(run => run.suite === 'integration' && run.plannedHostKey?.startsWith('builder-'))
     expect(hosts).toHaveLength(2)
+    expect(hosts.map(host => host.id).sort()).toEqual(planned.map(host => host.id).sort())
     for (const host of hosts) {
       expect(host).toMatchObject({ state: 'running', integrationShards: buildComputerIntegrationShards(resources) })
       expect(f.started.find(item => item.request.operation === 'start' && item.request.runId === host.id)?.request)
