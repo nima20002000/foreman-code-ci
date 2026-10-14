@@ -11,7 +11,6 @@ let defaults: {
 vi.mock('@tanstack/react-router', () => ({ Outlet: () => null, useLocation: () => ({ pathname: '/workspaces' }), useBlocker: () => undefined }))
 // These tests isolate Operator visibility; the connection boundary has separate tests.
 vi.mock('./AppConnectionBoundary', () => ({ AppConnectionBoundary: ({ children }: { children: ReactNode }) => children }))
-vi.mock('./RuntimeInstanceBoundary', () => ({ ReleaseAutoReload: () => null }))
 vi.mock('../shared/ui/AppNavigationHistory', () => ({ AppNavigationHistoryProvider: ({ children }: { children: ReactNode }) => children }))
 vi.mock('../shared/api/query', () => ({ useAgentDefaultsQuery: () => defaults }))
 // Theme sync reads shared settings; it is unrelated to Operator visibility.
@@ -33,7 +32,7 @@ function success(enabled = true) {
   defaults = { data: { value: { operator: { uiEnabled: enabled } } }, error: null, failureReason: null,
     isSuccess: true, isError: false, failureCount: 0, dataUpdatedAt: Date.now() }
 }
-describe('Operator last-known visibility', () => {
+describe('PR17 authorized last-known visibility', () => {
   it('retains enabled UI on a failed background refresh and shows a warning', () => {
     success()
     const view = mountShell()
