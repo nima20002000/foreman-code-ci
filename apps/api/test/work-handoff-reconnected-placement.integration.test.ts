@@ -1,10 +1,7 @@
-import { afterAll, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { handoffPlacementFixture } from './helpers/handoffPlacementFixture.js'
 import { readUntil } from './helpers/observableCondition.js'
 import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'
-
-vi.hoisted(() => { vi.stubEnv('LOG_LEVEL', 'warn') })
-afterAll(() => vi.unstubAllEnvs())
 
 describe('handed-off node placement after a Worker reconnect', () => {
   it('runs the coordinator and all three Agents after requalification and reads success through MCP', async () => {
@@ -13,7 +10,7 @@ describe('handed-off node placement after a Worker reconnect', () => {
       const accepted = await f.start()
       const finished = await readUntil(f.details, details => details.run.executionState === 'completed',
         { timeoutMs: 30_000, description: 'all three handed-off Agents finish' })
-      expect(finished.run, JSON.stringify(finished.run.result)).toMatchObject({ outcome: 'succeeded' })
+      expect(finished.run).toMatchObject({ outcome: 'succeeded' })
       expect(finished.executions).toHaveLength(4)
       expect(finished.executions.every(execution => execution.result?.outcome === 'succeeded')).toBe(true)
       expect(new Set(f.base.provider.startedNodes)).toEqual(new Set([f.coordinator.id, ...f.workers.map(node => node.id)]))

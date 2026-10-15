@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -61,23 +61,34 @@ it('retains periodic recovery checks and stops them on shutdown', async () => {
   }
 })
 
-it('starts before Worker artifacts exist and keeps periodic synchronization active', async () => {
-  const f = await fixture()
-  f.stop()
-  await rm(f.directory, { recursive: true })
-  f.reportError.mockClear()
-  vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+it('starts before the first Worker artifact directory exists and synchronizes its later publication', async () => {
+  const storage = join(homedir(), '.cache', 'foreman-tmp')
+  await mkdir(storage, { recursive: true })
+  const root = await mkdtemp(join(storage, 'worker-first-publication-'))
+  cleanup.push(() => rm(root, { recursive: true, force: true }))
+  const directory = join(root, 'worker-artifacts')
+  const publications: string[] = []
+  const sync = vi.fn(async () => {
+    const index = JSON.parse(await readFile(join(directory, 'index.json'), 'utf8'))
+    publications.push(index.publication.state)
+  })
+  const reportError = vi.fn()
+  vi.useFakeTimers()
   try {
-    const stop = startWorkerPublicationSync({ directory: f.directory, version: '1.0.0' }, f.sync, f.reportError)
+    const stop = startWorkerPublicationSync({ directory, version: '1.0.0' }, sync, reportError)
     cleanup.push(stop)
-    await mkdir(f.directory)
-    await f.write('published')
+    expect(sync).not.toHaveBeenCalled()
+    await mkdir(directory)
+    await writeFile(join(directory, 'index.json'), JSON.stringify({
+      format: 1, version: '1.0.0', artifacts: [], publication: { state: 'published', lastError: null },
+    }))
     await vi.advanceTimersByTimeAsync(60_000)
-    expect(f.sync).toHaveBeenCalledOnce()
-    expect(f.reportError).not.toHaveBeenCalled()
+    await vi.waitFor(() => expect(publications).toEqual(['published']))
+    expect(sync).toHaveBeenCalledOnce()
+    expect(reportError).not.toHaveBeenCalled()
     stop()
     await vi.advanceTimersByTimeAsync(60_000)
-    expect(f.sync).toHaveBeenCalledOnce()
+    expect(sync).toHaveBeenCalledOnce()
   } finally {
     vi.useRealTimers()
   }
