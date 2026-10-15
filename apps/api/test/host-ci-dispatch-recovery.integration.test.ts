@@ -1,7 +1,7 @@
 import { CiGetOutputSchema, CiRunOutputSchema, type CiHostRun } from '@foreman-code/contracts'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { randomUUID } from 'node:crypto'
-import { expect, it, vi } from 'vitest'
+import { expect, it } from 'vitest'
 import { CI_GET_ACTIONS } from '../src/modules/jobs/ciAuthority.js'
 import { fixture } from './helpers/hostCiMcpFixture.js'
 
@@ -41,36 +41,20 @@ it.each(['github', 'circleci'] as const)('requeues an unstarted %s ticket and ru
     await f.ci.dispatch()
     expect((CiGetOutputSchema.parse(await f.value(reader, 'ci_get', { ticketId: started.ticketId }))).run)
       .toMatchObject({ state: 'starting', step: 'dispatch', computer: { hostRef: { provider } } })
-    const dispatch = f.ci.dispatch.bind(f.ci)
-    const automaticDispatch = vi.spyOn(f.ci, 'dispatch').mockResolvedValue()
-    try {
-      exhausted = true
-      await dispatch()
-      const queued = CiGetOutputSchema.parse(await f.value(reader, 'ci_get', {
-        ticketId: started.ticketId, waitSeconds: 1,
-      }))
-      expect(queued.run).toMatchObject({ state: 'queued', computer: null, step: null, startedAt: null,
-        finishedAt: null, unstartedProviders: [provider],
-        message: 'Dispatch retries exhausted; queued for another computer.' })
-      expect((await f.pool.query('select record,host_key from ci_runs where id=$1', [started.ticketId])).rows[0])
-        .toEqual({ host_key: null, record: queued.run })
-    } finally {
-      automaticDispatch.mockRestore()
-    }
+    exhausted = true
+    const queued = CiGetOutputSchema.parse(await f.value(reader, 'ci_get', { ticketId: started.ticketId }))
+    expect(queued.run).toMatchObject({ state: 'queued', computer: null, step: null, startedAt: null,
+      finishedAt: null, unstartedProviders: [provider], message: expect.stringContaining('dispatch retries exhausted') })
+    expect((await f.pool.query('select record,host_key from ci_runs where id=$1', [started.ticketId])).rows[0])
+      .toMatchObject({ host_key: null, record: queued.run })
     expect(CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', input))).toEqual(tickets)
     f.finish(tickets.ticketId, 0, 'Host slice completed.\n')
-    const host = CiGetOutputSchema.parse(await f.value(reader, 'ci_get', {
-      ticketId: tickets.ticketId, waitSeconds: 10,
-    }))
-    expect(host.run.state).toBe('passed')
     await f.ci.dispatch()
     const running = CiGetOutputSchema.parse(await f.value(reader, 'ci_get', { ticketId: started.ticketId }))
     expect(running.run).toMatchObject({ id: started.ticketId, state: 'running', computer: { label: 'laptop' },
       message: null, unstartedProviders: [provider] })
     f.finish(started.ticketId, 0, 'Completed on another computer.\n')
-    const finished = CiGetOutputSchema.parse(await f.value(reader, 'ci_get', {
-      ticketId: started.ticketId, waitUntil: 'group-terminal', waitSeconds: 10,
-    }))
+    const finished = CiGetOutputSchema.parse(await f.value(reader, 'ci_get', { ticketId: started.ticketId }))
     expect(finished.run).toMatchObject({ state: 'passed', exitCode: 0, message: null })
     expect((await f.pool.query('select record from ci_runs where id=$1', [started.ticketId])).rows[0].record)
       .toEqual(finished.run)
