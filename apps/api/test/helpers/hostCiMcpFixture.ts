@@ -5,7 +5,7 @@ import type { CiUnitInventory } from '../../src/modules/ci-host/parts.js'
 import { randomUUID } from 'node:crypto'
 import type pg from 'pg'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
-import { type CiHostRequest, type CiHostReply, type CiHostRun } from '@foreman-code/contracts'
+import { CiGetOutputSchema, type CiHostRequest, type CiHostReply, type CiHostRun } from '@foreman-code/contracts'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { afterAll, afterEach, beforeAll, beforeEach, expect, vi } from 'vitest'
 import { buildApp } from '../../src/app.js'
@@ -27,7 +27,9 @@ import { withExclusiveGraphConnection } from '../../src/modules/run-graph/connec
 import { repeatStartPublication } from '../../src/modules/run-graph/repeatStartPublication.js'
 import { insertRepeatRun } from '../../src/modules/runs/repeatStartAdmission.js'
 import { PostgresAccessService } from '../../src/modules/access/postgres.js'
+import { BugReportService } from '../../src/modules/bug-reports/service.js'
 import { migratedDatabase } from './migratedDatabase.js'
+import { ciReadWhen } from './ciReadWhen.js'
 import { onlyCiInfrastructure } from '../../src/modules/ci-host/priority.js'
 
 let database: Awaited<ReturnType<typeof migratedDatabase>>
@@ -139,10 +141,11 @@ export async function fixture(options: { repository?: boolean; github?: Record<s
       [workspaceId, JSON.stringify({ id: workspaceId, name: 'CI workspace' })])
   }
   if (options.repository !== false) {
-    const settings = { repository: { provider: 'github', owner: 'octo', name: 'site', defaultBranch: 'main' },
-      ...(options.cloud ? { ciMirror: { provider: 'github', owner: 'octo', name: 'site-ci' } } : {}) }
     await db.pool.query('update workspaces set record=record || $2::jsonb where id=$1',
-      [workspaceId, JSON.stringify(settings)])
+      [workspaceId, JSON.stringify({
+        repository: { provider: 'github', owner: 'octo', name: 'site', defaultBranch: 'main' },
+        ciMirror: { provider: 'github', owner: 'octo', name: 'site-ci' },
+      })])
   }
   const published: string[] = []
   const inventory = options.unitInventory
@@ -168,7 +171,8 @@ export async function fixture(options: { repository?: boolean; github?: Record<s
   const app = buildApp({ logger: false, readiness: { database: { ping: async () => {} }, checkpoints: { ping: async () => {} } },
     operator: { access, services: { commands, ci } as unknown as OperatorServices },
     ...(runtime ? { appMcp: { access, commands,
-      interactions: new PostgresAppInteractionService(db.pool, runtime.repository, commands) } } : {}) })
+      interactions: new PostgresAppInteractionService(db.pool, runtime.repository, commands),
+      bugReports: new BugReportService(db.pool, commands) } } : {}) })
   const address = await app.listen({ host: '127.0.0.1', port: 0 })
   const clients: Client[] = []
   const credential = (actions: ManagementAction[]) => access.issue({ name: 'CI HTTP caller', audience: 'operator',
@@ -248,7 +252,11 @@ export async function fixture(options: { repository?: boolean; github?: Record<s
     expect(result.isError, JSON.stringify(result.content)).not.toBe(true)
     return decodeMcpToolResult(result)
   }
-  return { ...computers, ci, app, credential, workspaceId, operator, agent,
+  const waitFor = (client: Client, ticketId: string, matches: Parameters<typeof ciReadWhen>[2]) =>
+    ciReadWhen(db.pool, async () => CiGetOutputSchema.parse(decodeMcpToolResult(await client.callTool({
+      name: 'ci_get', arguments: { workspaceId, ticketId },
+    }))), matches)
+  return { ...computers, ci, app, credential, workspaceId, operator, agent, waitFor,
     authorizationPrincipalId: runtime?.authorizationPrincipalId,
     connect, connectAgent, call, value, published, pool: db.pool, close }
 }
