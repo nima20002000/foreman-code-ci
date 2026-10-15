@@ -28,21 +28,18 @@ export type ScenarioAgent = {
   placement?: SavedNodePlacement
 }
 
-const ciTicketId = { type: 'string', minLength: 1, 'x-foreman-reference': 'ciTicket' }
 const terminalOutcome = { enum: ['passed', 'failed', 'canceled', 'lost'] }
 
-/** The app enforces this report shape and checks that the ticket id was created by this Agent. */
+/** The app enforces the judgments; identifiers come from product readback. */
 export function ciReportOutputSchema(suite: ScenarioSuite) {
   return {
     type: 'object',
-    required: ['ticketId', 'groupId', 'suite', 'outcome', 'repository', 'branch', 'logLine', 'observedStates'],
+    required: ['suite', 'outcome', 'repository', 'logLine', 'observedStates'],
+    additionalProperties: false,
     properties: {
-      ticketId: ciTicketId,
-      groupId: { type: 'string', minLength: 1 },
       suite: { const: suite },
       outcome: terminalOutcome,
       repository: { type: 'string', minLength: 1 },
-      branch: { type: 'string', minLength: 1 },
       logLine: { type: 'string', minLength: 1 },
       observedStates: { type: 'array', minItems: 1, items: { type: 'string' } },
     },
@@ -55,7 +52,7 @@ function agentPrompt(suite: ScenarioSuite | null): string {
       + 'The workflow will then start all CI Agents in parallel. Do not request CI or change files.'
   }
   return 'Use only Foreman Code MCP tools. Do not use shell, filesystem, network or browser tools. '
-    + 'Read context_get and retain your own repository and branch. Read ci_computers_list. '
+    + 'Read context_get and ci_computers_list. '
     + `Call ci_run exactly once for suite ${suite}, scope full, with a fresh commandId, `
     + 'and no commit override; this must publish your current worktree files to GitHub. '
     + 'Retain that commandId for an uncertain response and retry only that same request. '
@@ -66,11 +63,13 @@ function agentPrompt(suite: ScenarioSuite | null): string {
     + 'Record the top-level ticket’s observed state changes in order from the ci_run and ci_get results you read. '
     + 'Then read ci_logs_read for the top-level ticket and choose one nonempty line from it. '
     + 'Report only observed facts. Your final answer must be one JSON object, without markdown: '
-    + '{"ticketId":"the ci_run top-level ticketId","groupId":"run.groupId","suite":"' + suite + '",'
-    + '"outcome":"group.state","repository":"run.repository","branch":"your context_get worktree branch",'
+    + '{"suite":"' + suite + '",'
+    + '"outcome":"group.state","repository":"run.repository",'
     + '"logLine":"actual line from the top-level ticket log",'
-    + '"observedStates":["queued","running","passed"]}. '
-    + 'Repository is the owner/repository string from run.repository, and branch is your own worktree branch. '
+    + '"observedStates":["queued","passed"]}. '
+    + 'Include only states you observed; starting and running may be missed. '
+    + 'Do not copy ticket IDs, group IDs or branch names into your report. '
+    + 'Repository is the owner/repository string from run.repository. '
     + 'If CI fails, report its actual outcome instead of claiming success. Do not edit or commit any files.'
 }
 
