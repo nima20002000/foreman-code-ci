@@ -45,7 +45,6 @@ import { configureRemoteReviewGitHub } from './remoteReviewGitHub.js'
 import { waitForChildReady } from './remoteReviewReadiness.js'
 import { measureIntegrationPhase, reportIntegrationPhase } from './integrationPhase.js'
 import { remoteReviewWorkerArtifacts } from './remoteReviewWorkerArtifacts.js'
-import { testFixtureCacheRoot } from '../../../../scripts/test-fixture-cache.mjs'
 import { remoteReviewChanges } from './remoteReviewChanges.js'
 import { remoteReviewReconciliation } from './remoteReviewReconciliation.js'
 import { installedRestartService } from './installedRestartService.js'
@@ -254,8 +253,7 @@ export async function remoteReviewProduction(options: {
     if (release.status === 'rejected') throw release.reason
     const workerRelease = release.value
     logEnvironment.FOREMAN_CODE_WORKER_ARTIFACT_DIRECTORY = await measureIntegrationPhase(
-      'Worker update artifacts', () => remoteReviewWorkerArtifacts(workerRelease, testFixtureCacheRoot(),
-        { publication: 'published' }))
+      'Worker update artifacts', () => remoteReviewWorkerArtifacts(workerRelease))
     workerEnvironment.FOREMAN_CODE_WORKER_ARTIFACT_DIRECTORY = logEnvironment.FOREMAN_CODE_WORKER_ARTIFACT_DIRECTORY
     let main: ChildProcess | undefined
     const mainService = options.installedMainService

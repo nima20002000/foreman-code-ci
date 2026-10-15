@@ -5,17 +5,12 @@ import { decodeMcpToolResult, OperatorRunCompactSchema } from '@foreman-code/con
 import { RunExecutionsPageSchema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { HarnessExecutionError } from '../src/modules/harnesses/errors.js'
 import { DomainError } from '../src/modules/errors.js'
-import { EXECUTION_INFRASTRUCTURE_RETRY_WINDOW_MS } from '../src/modules/runs/executionRetryPolicy.js'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'
 
-afterEach(() => {
-  vi.restoreAllMocks()
-  vi.unstubAllEnvs()
-})
+afterEach(() => vi.restoreAllMocks())
 
-it.each([false, true])('retains each lost native connection when the next attempt exceeds the infrastructure retry window (settlement initially unavailable: %s)', async retry => {
-  vi.stubEnv('FOREMAN_EXECUTION_RETRY_BACKOFF_MS', `0,0,${EXECUTION_INFRASTRUCTURE_RETRY_WINDOW_MS}`)
+it.each([false, true])('retains each lost native connection after retry exhaustion (settlement initially unavailable: %s)', async retry => {
   const fixture = makeCurrentWorkflowFixture(randomUUID(), 'sequential')
   const f = await currentOperatorIntegration({ fixture, approvalNodeIds: [] })
   const secret = `opm_${'x'.repeat(43)}`

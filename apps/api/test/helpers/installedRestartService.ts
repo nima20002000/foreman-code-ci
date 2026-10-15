@@ -75,7 +75,6 @@ export async function installedRestartService(directory: string, configuration: 
   for (const name of ['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml']) {
     await copyFile(join(repository, name), join(deployment, name))
   }
-  await cp(join(repository, 'patches'), join(deployment, 'patches'), { recursive: true })
   await copyFile(join(repository, 'scripts/require-pnpm.mjs'), join(deployment, 'scripts/require-pnpm.mjs'))
   for (const name of ['api', 'web', 'worker']) {
     await mkdir(join(deployment, 'apps', name), { recursive: true })
@@ -165,7 +164,7 @@ export async function installedRestartService(directory: string, configuration: 
     .replace('Wants=\nAfter=\n', '')
     .replaceAll('@HOME@/.config/graphql-production/production.env', envFile)
     .replace('apps/api/dist/server.js', `apps/api/dist/restart-fixture.js ${configuration}`)
-    .replace(/^ExecStartPost=.*\n/gm, '')
+    .replace(/^ExecStartPost=.*\n/m, '')
     .replace('Restart=always', 'Restart=no')
   const service = renderUserService(template, { node: join(release, 'node'), app,
     state: directory, home: serviceUser.homedir, path: environment.PATH ?? '/usr/bin:/bin' })
