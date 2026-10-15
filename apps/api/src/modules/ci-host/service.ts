@@ -165,9 +165,18 @@ export class HostCiService {
     this.timer = undefined
     this.stoppingRuns += 1
     this.reads.close()
-    await this.dispatching
-    await this.superseding
-    await Promise.all([...this.observingRuns.values(), ...this.observingComputers.values()])
+    await this.drain()
+  }
+
+  /** Resolves when dispatch, superseded cleanup, observations and readiness reads have finished, including work they start. */
+  async drain() {
+    for (;;) {
+      const pending = [this.dispatching, this.superseding,
+        ...this.observingRuns.values(), ...this.observingComputers.values()]
+        .filter((work): work is Promise<void> => work !== undefined)
+      if (!pending.length) return
+      await Promise.allSettled(pending)
+    }
   }
 
   async run(caller: ManagementPrincipal, input: CiRunInput & { workspaceId?: string | undefined }, source: 'mcp' | 'http' = 'mcp') {
@@ -799,7 +808,7 @@ export class HostCiService {
         await trackService('ci-dispatch', { cadenceMs: 1000, deadlineMs: CI_DISPATCH_PASS_MS },
           () => withCiDispatchDeadline(() => withProviderPoll(() => this.dispatchOnce())))
       }
-    })().catch(error => log.warn({ err: error }, 'CI dispatch failed'))
+    })().catch(error => { console.error('DBG dispatch failed', error); log.warn({ err: error }, 'CI dispatch failed') })
       .finally(() => { this.dispatching = undefined })
     return this.dispatching
   }
@@ -1047,6 +1056,7 @@ export class HostCiService {
       .finally(() => { this.superseding = undefined })
     const computers = await this.endpoint.computers()
     const { parsed, durations } = await readQueuedCiRuns(this.pool)
+    console.error('DBG pass', computers.length, parsed.length, computers.map(c => JSON.stringify(this.planningEndpoint.status(c))?.slice(0, 80)))
     this.dispatchRejections.retain(parsed)
     this.refreshComputerStatuses(computers)
     const active = (await this.pool.query<{ id: string; record: unknown; host_key: string | null }>(
@@ -1162,6 +1172,7 @@ export class HostCiService {
           || right.priority - left.priority)
         const computer = order.shift()!
         const status = this.planningEndpoint.status(computer)
+        if (!run.partition || run.partition.index === 0 && !run.partition.hostIndexes) console.error('DBG try', run.id, computer.key, status?.ready, rejectedDbg(this, run, computer, status))
         const rejected = this.dispatchRejections.reason(run.id, computer, status)
         const notReady = status?.ready ? undefined
           : status?.reasons.join('; ') || unavailable.get(computer.key) || 'CI status unavailable'
@@ -1245,4 +1256,5 @@ export class HostCiService {
   }
 }
 
+function rejectedDbg(self: any, run: any, computer: any, status: any) { return self.dispatchRejections.reason(run.id, computer, status) }
 export { CI_HOST_NAMESPACE }
