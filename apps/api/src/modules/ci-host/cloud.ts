@@ -12,7 +12,7 @@ import { CiWatchdogFailureSchema, CiDurationsSchema, CiHostReplySchema, CiHostRe
 import { canonicalJson } from '@foreman-code/contracts/canonical-json'
 import { DomainError } from '../errors.js'
 import { componentLogger } from '../diagnostics/logger.js'
-import { ensureClone, ensureCommit, fetchRepositoryBranch, systemGitWorktreePorts, type GitWorktreePorts } from '../sources/gitWorktree.js'
+import { deepenUntilConnected, ensureClone, ensureCommit, fetchRepositoryBranch, systemGitWorktreePorts, type GitWorktreePorts } from '../sources/gitWorktree.js'
 import { systemHostCiPorts, type HostCiPorts } from './runner.js'
 import type { HostCiComputer } from './service.js'
 import type { CiMirrorInput } from './serviceTypes.js'
@@ -34,6 +34,8 @@ const POLL_MS = 4_000
 const FINISH_POLL_MS = 2_000
 const FINISH_WINDOW_MS = 3_000
 const COLLECTION_RECOVERY_MS = 10 * 60_000
+/** A read waits this long for the provider's final log; a slower download carries on in the background. */
+const FINAL_LOG_WAIT_MS = 10_000
 const MAX_BACKOFF_MS = 10 * 60_000
 const MIN_STALL_MS = 15 * 60_000
 const EXPECTED_DURATION_MULTIPLIER = 3
@@ -58,6 +60,8 @@ type Mirrors = (workspaceId: string) => Promise<string | null>
 const mirrorPushes = new Map<string, Promise<unknown>>()
 const pendingPublications = new Map<string, Promise<void>>()
 const cloudOperations = new Map<string, Promise<unknown>>()
+/** Final provider log downloads by run; null once a download has failed. */
+const finalLogs = new Map<string, Promise<string | null>>()
 const publishingBranches = new Map<string, Set<string>>()
 interface Publication {
   git: (args: string[]) => Promise<string>
@@ -288,6 +292,7 @@ export class CloudCi {
   private view(run: CloudRun, logBytes: number): CiHostRun {
     let step: string | null = run.part ?? run.suite
     if (run.state === 'running' && run.live?.step) step = run.live.step
+    if (run.state === 'running' && run.providerQueuedAt) step = 'queued'
     if (run.state === 'starting') step = run.mirrorPublication?.state === 'pending' ? 'publish mirror' : 'dispatch'
     if (run.state === 'queued') step = null
     let collection: CiHostRun['collection']
@@ -621,8 +626,11 @@ export class CloudCi {
       const queued = (mirrorPushes.get(mirror) ?? Promise.resolve()).catch(() => { /* ignore: the previous caller receives its failure; the queue must still admit the next operation. */ })
       const queuedAt = performance.now()
       const startedAt = this.ports.now().toISOString()
+      // Only the mirror clone and its refs are shared; the commit's source fetch need not wait behind another push.
+      const source = ensureCommit(this.git, repository, commit, AbortSignal.timeout(600_000))
+      source.catch(() => { /* ignore: the push awaits the source and reports its failure */ })
       const pushed = queued.then(() => this.push(repository, mirror, commit, defaultBranch, baseCommit, durations,
-        { queuedAt, startedAt }))
+        { queuedAt, startedAt, source }))
       published = pushed
       mirrorPushes.set(mirror, pushed)
       void pushed.catch(() => { /* ignore: the push failure is reported to the caller awaiting it; this only clears the queue entry */ }).then(() => { if (mirrorPushes.get(mirror) === pushed) mirrorPushes.delete(mirror) })
@@ -641,12 +649,12 @@ export class CloudCi {
   }
 
   private async push(repository: string, mirror: string, commit: string, defaultBranch: string | undefined,
-    baseCommit: string | undefined, durations: CiDurations, queued: { queuedAt: number; startedAt: string }) {
+    baseCommit: string | undefined, durations: CiDurations, queued: { queuedAt: number; startedAt: string; source: Promise<string> }) {
     const startedAt = queued.startedAt
     const started = performance.now()
     const queueMs = started - queued.queuedAt
     const signal = AbortSignal.timeout(600_000)
-    const clone = await ensureCommit(this.git, repository, commit, signal)
+    const clone = await queued.source
     const objects = await this.git.git(['rev-parse', '--git-path', 'objects'], { cwd: clone, signal })
     if (objects.code !== 0) throw new DomainError('CI_CLOUD_FAILED', 'Could not read source objects.', 502)
     const sourceMs = performance.now() - started
@@ -760,8 +768,9 @@ export class CloudCi {
     let runnerBaseCommit: string | undefined
     let head: string | undefined
     if (baseCommit) {
-      const ancestor = await this.git.git(['merge-base', '--is-ancestor', baseCommit, commit], { cwd: clone, signal })
-      if (ancestor.code === 0) {
+      const isAncestor = async () => (await this.git.git(['merge-base', '--is-ancestor', baseCommit, commit],
+        { cwd: clone, signal })).code === 0
+      if (await isAncestor() || await deepenUntilConnected(this.git, clone, [commit, baseCommit], isAncestor, signal)) {
         const checking = performance.now()
         await this.guard(clone, baseCommit, signal)
         guardMs += performance.now() - checking
@@ -770,10 +779,15 @@ export class CloudCi {
       }
     } else if (defaultBranch) {
       const branchFetching = performance.now()
-      head = await fetchRepositoryBranch(this.git, clone, repository, defaultBranch, signal)
+      const branchHead = await fetchRepositoryBranch(this.git, clone, repository, defaultBranch, signal)
+      head = branchHead
       branchFetchMs = performance.now() - branchFetching
       fetchMs += branchFetchMs
-      const mergeBase = await this.git.git(['merge-base', commit, head], { cwd: clone, signal })
+      const findMergeBase = () => this.git.git(['merge-base', commit, branchHead], { cwd: clone, signal })
+      let mergeBase = await findMergeBase()
+      if (mergeBase.code !== 0) {
+        await deepenUntilConnected(this.git, clone, [commit, branchHead], async () => (mergeBase = await findMergeBase()).code === 0, signal)
+      }
       if (mergeBase.code === 0) {
         const sourceBase = mergeBase.stdout.trim()
         // Publish only checked trees; the source repository's private commit history stays private.
@@ -933,9 +947,7 @@ export class CloudCi {
         return this.reconcileLookupFailure(run, error)
       }
       if (!(error instanceof DomainError && error.code === 'CI_CLOUD_RATE_LIMITED')) throw error
-      const ms = Math.min(MAX_BACKOFF_MS, Math.max(30_000, this.backoff.ms * 2))
-      this.backoff = { until: this.ports.now().getTime() + ms, ms, generation: this.backoff.generation + 1 }
-      log.warn({ runId, provider: this.provider.id, backoffMs: ms }, 'Cloud CI rate limited; polling paused')
+      this.pausePolling(runId)
       return this.read(runId)
     } finally {
       // The slot passes straight to the next waiting poll.
@@ -944,6 +956,12 @@ export class CloudCi {
       if (next) next.resume()
       else this.following--
     }
+  }
+
+  private pausePolling(runId: string) {
+    const ms = Math.min(MAX_BACKOFF_MS, Math.max(30_000, this.backoff.ms * 2))
+    this.backoff = { until: this.ports.now().getTime() + ms, ms, generation: this.backoff.generation + 1 }
+    log.warn({ runId, provider: this.provider.id, backoffMs: ms }, 'Cloud CI rate limited; polling paused')
   }
 
   private async reconcileLookupFailure(run: CloudRun, error: unknown): Promise<CloudRun> {
@@ -975,9 +993,17 @@ export class CloudCi {
       }
     }
     const detail = (error instanceof Error ? error.message : String(error)).slice(0, 500)
-    const cancellation = cancellationFailed ? 'Cancellation could not be confirmed.' : 'Cancellation requested.'
+    if (cancellationFailed) {
+      // The provider job may still run: keep this executor's ownership and retry the cancellation on the next poll.
+      const now = this.ports.now().toISOString()
+      return this.save({ ...run, message: sanitizeCiText(`${this.provider.label} execution stayed unreadable past the `
+        + `75-second window: ${detail} Cancellation could not be confirmed; retrying before another computer takes over.`),
+      reconciliation: { attempts: Math.min(MAX_DISPATCH_ATTEMPTS, (run.reconciliation?.attempts ?? 0) + 1), at: now,
+        since: run.reconciliation?.since ?? run.reconciliation?.at ?? now,
+        previousMessage: run.reconciliation ? run.reconciliation.previousMessage : run.message } })
+    }
     const message = sanitizeCiText(`${this.provider.label} execution stayed unreadable past the 75-second window: `
-      + `${detail} ${cancellation} Automatic recovery queued for another computer.`)
+      + `${detail} Cancellation requested. Automatic recovery queued for another computer.`)
     await writeFile(this.path(run.runId, 'log'), `${message}\n`, { flag: 'a', mode: 0o600 })
     const recovered: CloudRun = { ...run, state: 'queued', providerRunId: null, finishedAt: null,
       exitCode: null, message }
@@ -1089,21 +1115,6 @@ export class CloudCi {
     const delayMs = Math.min(60_000, POLL_MS * 2 ** Math.min(attempts - 1, 4))
     const collection = { ...run.collection! }
     try {
-      if (!collection.log) {
-        try {
-          const full = Buffer.from(await this.provider.log(run)).subarray(-CLOUD_LOG_LIMIT)
-          let contents = full
-          if (run.live?.bytes) {
-            const live = (await readFile(this.path(run.runId, 'log'))).subarray(0, run.live.bytes)
-            contents = Buffer.concat([live, Buffer.from(`--- ${this.provider.label} log ---\n`), full])
-          }
-          await writeFile(this.path(run.runId, 'log'), contents, { mode: 0o600 })
-          collection.log = true
-        } catch (error) {
-          if (error instanceof DomainError && error.code === 'CI_CLOUD_RATE_LIMITED') throw error
-          log.warn({ err: error, runId: run.runId }, 'Final CI log remains pending')
-        }
-      }
       if (!collection.artifacts) {
         try {
           const artifacts = await this.provider.artifacts(run, join(this.root, 'runs', run.runId, 'artifact'))
@@ -1131,6 +1142,20 @@ export class CloudCi {
           log.warn({ err: error, runId: run.runId }, 'Final CI artifacts remain pending')
         }
       }
+      // The provider's log is only needed when the artifacts did not carry the suite log, and its download may be slow:
+      // it continues in the background while this pass answers.
+      if (!collection.log) {
+        const text = await this.finalLog(run)
+        if (text !== undefined) {
+          let contents = Buffer.from(text).subarray(-CLOUD_LOG_LIMIT)
+          if (run.live?.bytes) {
+            const live = (await readFile(this.path(run.runId, 'log'))).subarray(0, run.live.bytes)
+            contents = Buffer.concat([live, Buffer.from(`--- ${this.provider.label} log ---\n`), contents])
+          }
+          await writeFile(this.path(run.runId, 'log'), contents, { mode: 0o600 })
+          collection.log = true
+        }
+      }
     } finally {
       this.polled.set(run.runId, this.ports.now().getTime())
       if (collection.log && collection.artifacts) delete collection.retry
@@ -1139,6 +1164,51 @@ export class CloudCi {
       run = await this.save({ ...run, collection })
     }
     return run
+  }
+
+  /** The provider's final log, or undefined while its download is still running or after it failed. */
+  private async finalLog(run: CloudRun): Promise<string | undefined> {
+    const key = `${this.root}\n${run.runId}`
+    let download = finalLogs.get(key)
+    if (!download) {
+      download = (async () => this.provider.log(run))().catch((error: unknown) => {
+        if (error instanceof DomainError && error.code === 'CI_CLOUD_RATE_LIMITED') this.pausePolling(run.runId)
+        else log.warn({ err: error, runId: run.runId }, 'Final CI log remains pending')
+        return null
+      })
+      finalLogs.set(key, download)
+    }
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const waited = await Promise.race([download,
+      new Promise<undefined>(resolve => { timer = setTimeout(() => resolve(undefined), FINAL_LOG_WAIT_MS) })])
+    clearTimeout(timer)
+    if (waited === undefined) return undefined
+    finalLogs.delete(key)
+    return waited ?? undefined
+  }
+
+  /** A workflow the provider holds in its own queue is not running; after the start window it is canceled, and only
+   * once that is confirmed does the ticket go to another computer. */
+  private async waitInProviderQueue(run: CloudRun): Promise<CloudRun> {
+    const now = this.ports.now()
+    const since = run.providerQueuedAt ?? now.toISOString()
+    if (now.getTime() - Date.parse(since) < CLOUD_START_TIMEOUT_MS) {
+      return run.providerQueuedAt ? run : this.save({ ...run, providerQueuedAt: since })
+    }
+    try {
+      await this.provider.cancel(run)
+    } catch (error) {
+      if (error instanceof DomainError && error.code === 'CI_CLOUD_RATE_LIMITED') throw error
+      return this.reconcileLookupFailure(run, error)
+    }
+    const message = `${this.provider.label} kept the workflow queued for 75 seconds without starting a job. `
+      + 'Canceled; queued for another computer.'
+    await writeFile(this.path(run.runId, 'log'), `${message}\n`, { flag: 'a', mode: 0o600 })
+    const requeued: CloudRun = { ...run, state: 'queued', finishedAt: null, exitCode: null, message,
+      providerRunId: null, cancellation: { at: now.toISOString(), canceledIds: [run.providerRunId!] } }
+    delete requeued.providerQueuedAt
+    delete requeued.reconciliation
+    return this.save(requeued)
   }
 
   /** Follows the provider's run; once it finishes, keeps its log, measured durations and test results. */
@@ -1156,6 +1226,12 @@ export class CloudCi {
     }
     const status = await this.provider.status(run)
     this.polled.set(runId, this.ports.now().getTime())
+    if (!status.done && status.queued) return this.waitInProviderQueue(run)
+    if (run.providerQueuedAt) {
+      run = { ...run }
+      delete run.providerQueuedAt
+      run = await this.save(run)
+    }
     run = await this.progress(run, status)
     if (!status.done) return run
     this.polled.delete(runId)

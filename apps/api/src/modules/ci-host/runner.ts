@@ -276,7 +276,10 @@ export class HostCiRunner {
     const runs = []
     const directory = join(this.root, 'runs')
     const names = existsSync(directory) ? (await readdir(directory)).sort() : []
-    for (const runId of names) runs.push(await this.refresh(runId))
+    for (const runId of names) {
+      const run = await this.refreshRetained(runId)
+      if (run) runs.push(run)
+    }
     const active: RunMeta[] = []
     for (const run of runs) {
       if (run && ['starting', 'running'].includes(run.state)) active.push(await this.readMeta(run.runId))
@@ -332,10 +335,20 @@ export class HostCiRunner {
     if (!existsSync(directory)) return []
     const active = []
     for (const runId of await readdir(directory)) {
-      const run = await this.refresh(runId)
+      const run = await this.refreshRetained(runId)
       if (run && ['starting', 'running'].includes(run.state)) active.push(await this.readMeta(runId))
     }
     return active
+  }
+
+  /** One incomplete or damaged retained run must not abort status and admission for the rest of the computer. */
+  private async refreshRetained(runId: string): Promise<CiHostRun | null> {
+    try {
+      return await this.refresh(runId)
+    } catch (error) {
+      log.warn({ err: error, runId }, 'Skipping an incomplete or damaged CI run record')
+      return null
+    }
   }
 
   private start(request: StartRequest) {
@@ -550,8 +563,9 @@ export class HostCiRunner {
     const history = (request.scope ?? 'affected') === 'affected' && request.files === undefined
     const missing = (await this.ports.run('git', ['cat-file', '-e', `${request.commit}^{commit}`],
       { cwd: clone, env: this.environment })).code !== 0
-    if (missing || history) {
-      const shallow = history && (await this.git(['rev-parse', '--is-shallow-repository'], clone)).trim() === 'true'
+    // A complete clone that already holds the commit has its history: parts of one commit fetch it once.
+    const shallow = history && (await this.git(['rev-parse', '--is-shallow-repository'], clone)).trim() === 'true'
+    if (missing || shallow) {
       let depth = ['--depth=1']
       if (history) depth = shallow ? ['--unshallow'] : []
       await this.git(['fetch', '--quiet', '--no-tags', ...depth, 'origin', request.commit], clone)
@@ -786,7 +800,7 @@ export class HostCiRunner {
         // Only test suites report per-test progress; typecheck, lint and build can stay silent for minutes.
         + (['unit', 'integration'].includes(meta.suite) ? ` node ${quote(watchdog)} --` : '') + ` bash -c ${quote(command)}`
     return ['#!/bin/bash', 'set -o pipefail', `exec >>${quote(join(run, 'log'))} 2>&1`,
-      `export TMPDIR=${quote(join(run, 'tmp'))} CI=true NODE_OPTIONS=--max-old-space-size=${heapMb}`
+      `export TMPDIR=${quote(join(run, 'tmp'))} FOREMAN_CODE_CI_DATABASE_STATE=${quote(join(run, 'tmp'))} CI=true NODE_OPTIONS=--max-old-space-size=${heapMb}`
         + ` FOREMAN_CODE_CI_CONTRACTS_CACHE=${quote(join(cache, 'contracts'))}`
         + ` FOREMAN_CODE_CI_TYPECHECK_CACHE=${quote(join(source, '..', 'typecheck-cache'))}`
         + ` FOREMAN_CODE_CI_CPU_COUNT=${Math.max(1, Math.floor(resources.cpuCount))}`
@@ -796,7 +810,7 @@ export class HostCiRunner {
         // The repository's suite hook writes structured test results here; integration has its own setting.
         + (capabilities.parts ? ` CI_HOST_RUNNER=1 FOREMAN_CODE_CI_DEDICATED=1`
           + (meta.suite === 'integration' ? '' : ` TEST_RESULTS_OUTPUT=${quote(join(run, 'test-results.json'))}`)
-          + ` FOREMAN_CODE_VITEST_CACHE=${quote(join(run, 'vitest-cache'))}` : '') + integrationEnvironment,
+          + ` FOREMAN_CODE_VITEST_CACHE=${quote(join(source, '..', 'vitest-cache'))}` : '') + integrationEnvironment,
       ...(database ? [`export FOREMAN_CODE_CI_HOST_RUN_ID=${quote(meta.runId)}`
         + ` FOREMAN_CODE_CI_DATABASE_CPUS=${databaseResources.cpuCount}`
         + ` FOREMAN_CODE_CI_DATABASE_MEMORY_BYTES=${databaseResources.memoryBytes}`] : []),
