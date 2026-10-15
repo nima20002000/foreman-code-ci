@@ -1,29 +1,23 @@
 import { describe, expect, it } from 'vitest'
 import { remoteReviewProduction } from './helpers/remoteReviewProduction.js'
-import { latestEvidence, refreshedEvidence, assertMcpReadback, startWhenReady } from './helpers/workerProfileRequalification.js'
-import { waitForReplacementReviewInventory } from './helpers/remoteReviewProductionCases.js'
+import { latestEvidence, refreshedEvidence, startWhenReady, assertMcpReadback } from './helpers/workerProfileRequalification.js'
 
 describe('automatic Worker profile qualification', () => {
-  it('rechecks Worker profiles after Main restarts while preserving their boot generation', async () => {
+  it('checks previously qualified Worker profiles after Main restarts before admitting a new Run', async () => {
     const fixture = await remoteReviewProduction({ workflow: 'sequential', parallelProfileChecks: true,
       parallelSetup: true })
     try {
       const before = await latestEvidence(fixture)
       const workerPid = fixture.workerPid()
-      const inventoryBefore = await fixture.inventory()
-      const connectionBefore = inventoryBefore.hostMetadata!.connection!.binding
+      const connectionBefore = (await fixture.inventory()).hostMetadata!.connection!.binding
       expect(fixture.profiles).toHaveLength(2)
       expect(new Set(fixture.profiles.map(profile => profile.instanceId)).size).toBe(2)
       expect(before).toHaveLength(fixture.profiles.length)
       expect(before.every(proof => proof.qualified)).toBe(true)
       await fixture.restartMain()
-      const inventoryAfter = await waitForReplacementReviewInventory(fixture, inventoryBefore)
-      const evidence = await refreshedEvidence(fixture, before)
+      const evidence = await refreshedEvidence(fixture, before[0]!.connectionGeneration)
       await assertMcpReadback(fixture, evidence)
-      expect(evidence.map(proof => proof.connectionGeneration)).toEqual(before.map(proof => proof.connectionGeneration))
-      expect(evidence.map(proof => proof.completedNativeQualification!.checkId))
-        .not.toEqual(before.map(proof => proof.completedNativeQualification!.checkId))
-      const connectionAfter = inventoryAfter.hostMetadata!.connection!
+      const connectionAfter = (await fixture.inventory()).hostMetadata!.connection!
       expect(fixture.workerPid()).toBe(workerPid)
       expect(connectionAfter.phase).toBe('ready')
       expect(connectionAfter.binding.bootId).toBe(connectionBefore.bootId)

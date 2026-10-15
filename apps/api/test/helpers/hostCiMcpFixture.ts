@@ -5,12 +5,11 @@ import type { CiUnitInventory } from '../../src/modules/ci-host/parts.js'
 import { randomUUID } from 'node:crypto'
 import type pg from 'pg'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
-import { CiGetOutputSchema, type CiHostRequest, type CiHostReply, type CiHostRun } from '@foreman-code/contracts'
+import { type CiHostRequest, type CiHostReply, type CiHostRun } from '@foreman-code/contracts'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { afterAll, afterEach, beforeAll, beforeEach, expect, vi } from 'vitest'
 import { buildApp } from '../../src/app.js'
 import { PostgresCommandCoordinator } from '../../src/modules/commands/postgres.js'
-import { BugReportService } from '../../src/modules/bug-reports/service.js'
 import { RunCiAuthority, CI_GET_ACTIONS, CI_RUN_ACTIONS } from '../../src/modules/jobs/ciAuthority.js'
 import {
   HostCiService, type CiCommits, type HostCiComputer, type HostCiEndpoint,
@@ -29,7 +28,6 @@ import { repeatStartPublication } from '../../src/modules/run-graph/repeatStartP
 import { insertRepeatRun } from '../../src/modules/runs/repeatStartAdmission.js'
 import { PostgresAccessService } from '../../src/modules/access/postgres.js'
 import { migratedDatabase } from './migratedDatabase.js'
-import { ciReadWhen } from './ciReadWhen.js'
 import { onlyCiInfrastructure } from '../../src/modules/ci-host/priority.js'
 
 let database: Awaited<ReturnType<typeof migratedDatabase>>
@@ -124,7 +122,6 @@ export async function fixture(options: { repository?: boolean; github?: Record<s
   integrationInventory?: CiIntegrationInventory
   cloud?: boolean | { github: number; circleci: number }; agent?: boolean; hostSlots?: number; cloudSystemd?: boolean
   changedFiles?: string[]
-  databasePool?: (databaseUrl: string) => pg.Pool
   supersession?: { branch(commit: string): string | null; isAncestor(ancestor: string, commit: string): boolean }
   repositoryRunner?: { commits: CiCommits; endpoint: HostCiEndpoint } } = {}) {
   const saved = options.agent ? makeCurrentWorkflowFixture(randomUUID()) : undefined
@@ -134,8 +131,7 @@ export async function fixture(options: { repository?: boolean; github?: Record<s
         'ci_computers_list' as const] }))
   }
   const runtime = saved ? await codexApprovalRuntime('user', { fixture: saved, database }) : undefined
-  const ownedPool = options.databasePool?.(database.databaseUrl)
-  const db = runtime?.db ?? { ...database, pool: ownedPool ?? database.pool }
+  const db = runtime?.db ?? database
   const access = runtime?.access ?? new PostgresAccessService(db.pool)
   const workspaceId = runtime?.f.scope.workspaceId ?? randomUUID()
   if (!runtime) {
@@ -143,11 +139,8 @@ export async function fixture(options: { repository?: boolean; github?: Record<s
       [workspaceId, JSON.stringify({ id: workspaceId, name: 'CI workspace' })])
   }
   if (options.repository !== false) {
-    await db.pool.query('update workspaces set record=record || $2::jsonb where id=$1',
-      [workspaceId, JSON.stringify({
-        repository: { provider: 'github', owner: 'octo', name: 'site', defaultBranch: 'main' },
-        ...(options.cloud ? { ciMirror: { provider: 'github', owner: 'octo', name: 'site-ci' } } : {}),
-      })])
+    await db.pool.query(`update workspaces set record=record || '{"repository":{"provider":"github","owner":"octo","name":"site","defaultBranch":"main"}}'::jsonb where id=$1`,
+      [workspaceId])
   }
   const published: string[] = []
   const inventory = options.unitInventory
@@ -168,15 +161,12 @@ export async function fixture(options: { repository?: boolean; github?: Record<s
   } }
   const computers = fakeComputers(options.github, options.cloud, options.hostSlots, options.cloudSystemd)
   const commands = new PostgresCommandCoordinator(db.pool)
-  const bugReports = new BugReportService(db.pool, commands)
   const ci = new HostCiService(db.pool, commands, new RunCiAuthority(db.pool), commits,
     options.repositoryRunner?.endpoint ?? computers.endpoint)
   const app = buildApp({ logger: false, readiness: { database: { ping: async () => {} }, checkpoints: { ping: async () => {} } },
-    operator: { access, services: {
-      commands, ci, bugReports: new BugReportService(db.pool, commands),
-    } as unknown as OperatorServices },
+    operator: { access, services: { commands, ci } as unknown as OperatorServices },
     ...(runtime ? { appMcp: { access, commands,
-      interactions: new PostgresAppInteractionService(db.pool, runtime.repository, commands), bugReports } } : {}) })
+      interactions: new PostgresAppInteractionService(db.pool, runtime.repository, commands) } } : {}) })
   const address = await app.listen({ host: '127.0.0.1', port: 0 })
   const clients: Client[] = []
   const credential = (actions: ManagementAction[]) => access.issue({ name: 'CI HTTP caller', audience: 'operator',
@@ -196,7 +186,6 @@ export async function fixture(options: { repository?: boolean; github?: Record<s
     await ci.close()
     await app.close()
     await runtime?.close()
-    await ownedPool?.end()
   }
   let agent: Client | undefined
   let connectAgent: (() => Promise<Client>) | undefined
@@ -257,11 +246,7 @@ export async function fixture(options: { repository?: boolean; github?: Record<s
     expect(result.isError, JSON.stringify(result.content)).not.toBe(true)
     return decodeMcpToolResult(result)
   }
-  const waitFor = (client: Client, ticketId: string, matches: Parameters<typeof ciReadWhen>[2]) =>
-    ciReadWhen(db.pool, async () => CiGetOutputSchema.parse(decodeMcpToolResult(await client.callTool({
-      name: 'ci_get', arguments: { workspaceId, ticketId },
-    }))), matches)
-  return { ...computers, ci, app, credential, workspaceId, operator, agent, waitFor,
+  return { ...computers, ci, app, credential, workspaceId, operator, agent,
     authorizationPrincipalId: runtime?.authorizationPrincipalId,
     connect, connectAgent, call, value, published, pool: db.pool, close }
 }

@@ -27,17 +27,14 @@ describe('Operator database read deadlines', () => {
     },
   )
 
-  it('classifies a mutation deadline without replaying the mutation', async () => {
+  it('does not mark a mutation with an unknown outcome as a safe read retry', async () => {
     const { request } = context()
-    const work = vi.fn(async () => {
+    const result = await invokeOperatorTool(request, 'run_start', async () => {
       throw Object.assign(new Error('private statement'), { code: '57014' })
-    })
-    const result = await invokeOperatorTool(request, 'run_start', work, operatorTool('run_start')!.requires[0][0])
+    }, operatorTool('run_start')!.requires[0][0])
     expect(result.content).toEqual([{ type: 'text', text: JSON.stringify({ error: {
-      code: 'DATABASE_READ_TIMEOUT', message: 'The database read exceeded its deadline. Retry the request.',
-      details: { retryable: true, reason: 'query_canceled', sqlState: '57014' },
+      code: 'INTERNAL_ERROR', message: 'The Operator service could not complete the request.',
     } }) }])
-    expect(work).toHaveBeenCalledOnce()
   })
 
   it('preserves and audits access denial', async () => {

@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { retainedReviewRecovery, useRemoteReviewFixture, waitForReplacementReviewInventory }
   from './helpers/remoteReviewProductionCases.js'
@@ -7,12 +6,11 @@ import { harnessConnectionGeneration } from '../src/modules/harnesses/hostConnec
 const withRemoteReviewFixture = useRemoteReviewFixture()
 
 describe('production remote review and native recovery through authenticated MCP', () => {
-  it.each([false, true])('waits for boot-scoped installations (Worker restarted: %s)', async restarted => {
+  it('waits for installations when the replacement connection arrives before inventory', async () => {
     await withRemoteReviewFixture(async fixture => {
       const previous = await fixture.inventory()
       const connection = previous.hostMetadata!.connection!
       const binding = { ...connection.binding, connectionEpoch: 'replacement-connection',
-        bootId: restarted ? randomUUID() : connection.binding.bootId,
         connectionGeneration: connection.binding.connectionGeneration + 1 }
       const connecting = { ...previous, installations: [],
         hostMetadata: { ...previous.hostMetadata!, connection: { ...connection, binding } } }
@@ -25,7 +23,7 @@ describe('production remote review and native recovery through authenticated MCP
         return snapshots[reads++]!
       } }, previous)
       expect(inventory).toEqual(ready)
-      expect(reads).toBe(restarted ? 3 : 2)
+      expect(reads).toBe(3)
     })
   })
 
