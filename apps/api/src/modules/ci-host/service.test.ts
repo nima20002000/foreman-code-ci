@@ -87,8 +87,21 @@ function dispatchFixture(settlementError?: Error) {
   })
   const records: CiRunRecord[] = [active, queued]
   const tails = new Map<string, string>()
+  /** One live owner per ticket, like the database claim table: a contender is refused until the owner releases. */
+  const claims = new Map<string, string>()
   const query = async (sql: string, parameters?: unknown[]) => {
-    if (sql.startsWith('select pg_try_advisory_xact_lock')) return { rows: [{ acquired: true }] }
+    if (sql.includes('insert into ci_dispatch_claims')) {
+      if (claims.has(parameters![0] as string)) return { rows: [], rowCount: 0 }
+      claims.set(parameters![0] as string, parameters![1] as string)
+      return { rows: [{ ticket_id: parameters![0] }], rowCount: 1 }
+    }
+    if (sql.includes('delete from ci_dispatch_claims')) {
+      if (claims.get(parameters![0] as string) === parameters![1]) claims.delete(parameters![0] as string)
+      return { rows: [], rowCount: 1 }
+    }
+    if (sql.includes('ci_dispatch_claims')) {
+      return { rows: [], rowCount: claims.get(parameters![0] as string) === parameters![1] ? 1 : 0 }
+    }
     if (sql.startsWith('update ci_runs')) {
       const next = CiRunRecordSchema.parse(JSON.parse(parameters![3] as string))
       if (next.id === active.id && settlementError) throw settlementError
@@ -117,20 +130,23 @@ function dispatchFixture(settlementError?: Error) {
   }
   vi.mocked(f.pool.query).mockImplementation(query as unknown as pg.Pool['query'])
   const output = { text: 'finished\n', message: 'Done.' }
+  /** Runs the host keeps executing: their reads report running instead of the passed outcome. */
+  const keepRunning = new Set<string>()
   vi.mocked(f.endpoint.request).mockImplementation(async (_computer, request) => {
     if (request.operation === 'status') {
       return { operation: 'status', ready: true, reasons: [], cpuCount: 8,
         memoryBytes: 16 * 2 ** 30, runs: [], slotsTotal: 2, slotsUsed: 0 }
     }
     if (request.operation !== 'read' && request.operation !== 'start') throw new Error('Unexpected request')
-    const run: CiHostRun = { runId: request.runId, state: request.operation === 'read' ? 'passed' : 'running',
-      step: 'lint', exitCode: request.operation === 'read' ? 0 : null,
-      startedAt: active.startedAt!, finishedAt: request.operation === 'read' ? '2026-10-12T00:01:00.000Z' : null,
+    const finished = request.operation === 'read' && !keepRunning.has(request.runId)
+    const run: CiHostRun = { runId: request.runId, state: finished ? 'passed' : 'running',
+      step: 'lint', exitCode: finished ? 0 : null,
+      startedAt: active.startedAt!, finishedAt: finished ? '2026-10-12T00:01:00.000Z' : null,
       message: output.message, logBytes: Buffer.byteLength(output.text) }
     if (request.operation === 'start') return { operation: 'start', run }
     return { operation: 'read', run, text: output.text, nextOffset: Buffer.byteLength(output.text) }
   })
-  return { ...f, active, queued, records, output }
+  return { ...f, active, queued, records, output, keepRunning }
 }
 
 it('refreshes CI observations with background priority through the public dispatcher', async () => {
@@ -164,7 +180,7 @@ it.each(['github', 'circleci'] as const)(
       throw new Error('Unexpected cloud status request')
     })
     for (let attempt = 0; attempt < 3; attempt++) {
-      await f.create().dispatch()
+      await dispatchSettled(f.create())
       const record = f.records[0]!
       if (record.state === 'starting') f.records[0] = { ...record,
         dispatchedAt: new Date(Date.now() - 75_000).toISOString() }
@@ -192,7 +208,7 @@ it.each(['missing-request', 'unavailable-provider'] as const)(
       if (failure === 'missing-request') throw new DomainError('CI_RUN_UNKNOWN', 'No cloud run exists.', 404)
       throw new Error('Cloud provider unavailable')
     })
-    await f.create().dispatch()
+    await dispatchSettled(f.create())
     expect((await f.create().get(caller, { ticketId: f.queued.id })).run)
       .toMatchObject(failure === 'missing-request'
         ? { state: 'queued', startedAt: null }
@@ -235,7 +251,7 @@ it('retains an unacknowledged Worker assignment when incompatible status omits t
       cpuCount: 8, memoryBytes: 16 * 2 ** 30, runs: [] }
   })
   const service = f.create()
-  await service.dispatch()
+  await dispatchSettled(service)
   const result = await service.get(caller, { ticketId: f.queued.id })
   expect(result.run).toMatchObject({ state: 'starting', computer: { hostRef: worker.hostRef },
     dispatchHostKey: worker.key, dispatchAttempts: 3, dispatchRequest: { runId: f.queued.id },
@@ -257,7 +273,7 @@ it('releases a first start rejected by an incompatible Worker before execution',
     return request(target, input)
   })
   const service = f.create()
-  await service.dispatch()
+  await dispatchSettled(service)
   const result = await service.get(caller, { ticketId: f.queued.id })
   expect(result.run).toMatchObject({ state: 'queued', computer: null, startedAt: null,
     message: expect.stringContaining('Update the Worker CI protocol.') })
@@ -271,7 +287,8 @@ it.each(['lint', 'typecheck'] as const)('dispatches an ordinary queued $suite ch
   const f = dispatchFixture()
   f.records.splice(0, 1)
   f.records[0] = CiRunRecordSchema.parse({ ...f.queued, suite })
-  await f.create().dispatch()
+  f.keepRunning.add(f.queued.id)
+  await dispatchSettled(f.create())
   expect((await f.create().get(caller, { ticketId: f.queued.id })).run).toMatchObject({
     id: f.queued.id, suite, state: 'running', computer: { hostRef: computer.hostRef },
   })
@@ -282,7 +299,8 @@ it.each(['lint', 'typecheck'] as const)('dispatches an ordinary queued $suite ch
 
 it('dispatches a queued ticket after settling ordinary output', async () => {
   const f = dispatchFixture()
-  await f.create().dispatch()
+  f.keepRunning.add(f.queued.id)
+  await dispatchSettled(f.create())
   expect((await f.create().get(caller, { ticketId: f.active.id })).run.state).toBe('passed')
   expect((await f.create().get(caller, { ticketId: f.queued.id })).run.state).toBe('running')
   expect(f.endpoint.request).toHaveBeenCalledWith(computer, expect.objectContaining({
@@ -298,7 +316,8 @@ it.each([
 ])('settles invalid log text and dispatches a queued ticket in the same pass: $cleanMessage', async output => {
   const f = dispatchFixture()
   Object.assign(f.output, output)
-  await f.create().dispatch()
+  f.keepRunning.add(f.queued.id)
+  await dispatchSettled(f.create())
   const result = await f.create().get(caller, { ticketId: f.active.id })
   expect(result.run).toMatchObject({ state: 'passed', message: output.cleanMessage })
   expect(result.logTail).toBe(output.cleanText)
@@ -314,7 +333,7 @@ it('continues refreshing later batches and dispatching after one settlement writ
     id: `55555555-5555-4555-8555-${String(index).padStart(12, '0')}`,
   }))
   f.records.push(...later)
-  await f.create().dispatch()
+  await dispatchSettled(f.create())
   expect((await f.create().get(caller, { ticketId: f.active.id })).run.state).toBe('running')
   for (const run of later) {
     expect((await f.create().get(caller, { ticketId: run.id })).run.state).toBe('passed')
@@ -539,6 +558,7 @@ it('retries a CI read once after a statement timeout, then reports a retryable e
 it('retries an unknown start reply on the assigned executor without requeueing', async () => {
   const f = dispatchFixture()
   f.records.splice(0, 1)
+  f.keepRunning.add(f.queued.id)
   const request = vi.mocked(f.endpoint.request).getMockImplementation()!
   const starts: { computer: HostCiComputer; runId: string }[] = []
   vi.mocked(f.endpoint.request).mockImplementation(async (computer, input) => {
@@ -627,6 +647,7 @@ it('bounds a hanging start and retains its assignment while status is unavailabl
   vi.useFakeTimers()
   const f = dispatchFixture()
   f.records.splice(0, 1)
+  f.keepRunning.add(f.queued.id)
   const request = vi.mocked(f.endpoint.request).getMockImplementation()!
   let acknowledge!: () => void
   const delayed = new Promise<void>(resolve => { acknowledge = resolve })
