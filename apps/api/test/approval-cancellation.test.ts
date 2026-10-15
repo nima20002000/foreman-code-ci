@@ -421,7 +421,6 @@ function engineFixture(approvals: ApprovalExecutionCoordinator) {
   const owner = { runId: run.id, client: {}, oneShotConnection: () => connection, assertOwned() { if (!owned) throw new Error('ownership lost') },
     release: async () => { calls.push('release-owner') } } as unknown as RunOwnership
   const runs = {
-    abandonedExecutionStart: async () => undefined,
     repeatRepositoryFactory() { return {} }, acquireOwnership: async () => owner,
     getRepeatSnapshot: async () => ({ run, version: f.version, configurations: f.configurations, stopRequested, cleanupPending }),
     requestCleanup: async () => { owner.assertOwned(); cleanupPending = true; calls.push('request-cleanup') },
@@ -527,7 +526,7 @@ it('shutdown captures original restart closure before abort and drains it before
     // A failed ordering assertion must not strand the engine drain until its
     // cleanup deadline and obscure the actual assertion with a test timeout.
     closure.resolve(); task.resolve()
-    await shutdown.catch(() => undefined)
+    await shutdown.catch(() => { /* ignore: a failed assertion above is the real report; shutdown errors are cleanup noise */ })
   }
 })
 

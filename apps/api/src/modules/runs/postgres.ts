@@ -10,16 +10,18 @@ import type { WorkspaceLocationService } from '../workspaces/location.js'
 import { assertSameRepeatExecution } from '../interactions/repeatObservation.js'
 import { beforeGraphCommit, withExclusiveGraphConnection, type GraphTransactionSql } from '../run-graph/connection.js'
 import { openRepeatCanonicalPublicationLocked } from '../run-graph/repeatPublication.js'
+import { withNativeGraphProjectionBatch } from '../run-graph/nativeIngestion.js'
 import { RunOwnership } from './ownership.js'
 import type { RepeatRepositoryActivation, RepositoryExecutionSemantics, RepositoryWorkflowRun, RunStateUpdate } from './port.js'
 import { runStartSemantics } from './repeatStartDispatch.js'
 import { RepeatRepositoryFactory } from './repeatRepositoryHost.js'
 import { readRepeatExecutionLocked, readRepeatAcceptedResultLocked } from './repeatPostgres.js'
+import { readRepeatExecutionsLocked } from './repeatExecutionRead.js'
 import { readAcceptedRepeatRunSnapshot, type AcceptedRepeatRunSnapshot } from './repeatStartRead.js'
 import { captureRepeatNativeEvidence, type RepeatLaunchPaths, type RepeatNativeBoundaryEvidence, type RepeatNativeEvidence } from './repeatNativeRepository.js'
 import { sameRepeatValue, type RepeatNodeRef } from './repeatResolution.js'
 import { markRepeatRunRunning, requestRepeatRunStop, openWorkflowLifecycleLocked, type AuthorizeWorkflowStop } from './repeatLifecycle.js'
-import { requestWorkflowCleanup, finishWorkflowCleanup, settleWorkflowRun } from './workflowLifecycle.js'
+import { requestWorkflowCleanup, finishWorkflowCleanup, settleWorkflowRun, recordWorkflowExecutionFailure } from './workflowLifecycle.js'
 import type { WorkflowResumePermit } from './approvalCheckpointResume.js'
 import type { WorkflowNativeLease, WorkflowApprovalCorrelation, WorkflowContinuationProof } from './workflowNativeGraph.js'
 import { WorkflowNativeProofServices } from './workflowNativeProof.js'
@@ -94,7 +96,9 @@ export class PostgresRunRepository {
   repeatRepositoryFactory(): RepeatRepositoryFactory { return this.factory }
   async repeat(owner: RunOwnership) {
     owner.assertOwned()
-    return this.factory.forOwner(owner, (await this.getRepeatSnapshot(owner.runId, owner)).version)
+    // Every store transaction checks its immutable version against the locked Run.
+    return this.factory.existingForOwner(owner)
+      ?? this.factory.forOwner(owner, (await this.getRepeatSnapshot(owner.runId, owner)).version)
   }
   acquireOwnership(runId: string, onLost: () => void) { return RunOwnership.acquire(this.pool, runId, onLost) }
   async get(runId: string, owner?: RunOwnership): Promise<RepositoryWorkflowRun | undefined> {
@@ -169,6 +173,8 @@ export class PostgresRunRepository {
     const original = HarnessNativeEventSchema.parse(structuredClone(event)), evidence = captureRepeatNativeEvidence(suppliedEvidence)
     owner.assertOwned()
     await owner.oneShotConnection().transaction(async (sql) => {
+      if (approval === undefined && continuation === undefined && await this.nativeProof.tryAppendTranscriptsLocked(sql,
+        [{ event: original, evidence }], owner, lease)) return
       const { snapshot } = await openWorkflowLifecycleLocked(sql, owner.runId)
       await this.nativeProof.appendEventLocked(sql, snapshot.run, original, evidence, owner, lease, approval, continuation)
     })
@@ -184,8 +190,9 @@ export class PostgresRunRepository {
     }))
     owner.assertOwned()
     await owner.oneShotConnection().transaction(async (sql) => {
+      if (await this.nativeProof.tryAppendTranscriptsLocked(sql, frames, owner, lease)) return
       const { snapshot } = await openWorkflowLifecycleLocked(sql, owner.runId)
-      await this.nativeProof.appendEventsLocked(sql, snapshot.run, frames, owner, lease)
+      await withNativeGraphProjectionBatch(sql, owner.runId, () => this.nativeProof.appendEventsLocked(sql, snapshot.run, frames, owner, lease))
     })
     for (const { evidence } of frames) await this.nativeCommitted?.(evidence)
   }
@@ -197,6 +204,10 @@ export class PostgresRunRepository {
   }
   async hasRequestedStop(runId: string, owner?: RunOwnership): Promise<boolean> { return (await this.getRepeatSnapshot(runId, owner)).stopRequested }
   async hasPendingCleanup(runId: string, owner?: RunOwnership): Promise<boolean> { return (await this.getRepeatSnapshot(runId, owner)).cleanupPending }
+  /** Record one attempt's own failure cause without fencing its Run. */
+  async recordExecutionFailure(owner: RunOwnership, executionId: string, failure: ExecutionResult): Promise<void> {
+    await recordWorkflowExecutionFailure(this.requireOwner(owner.runId, owner), executionId, failure)
+  }
   async requestCleanup(runId: string, owner?: RunOwnership, failure?: ExecutionResult,
     options?: { executionId: string }): Promise<void> {
     await requestWorkflowCleanup(this.pool, runId, owner, failure, options)
@@ -217,9 +228,7 @@ export class PostgresRunRepository {
     if (!Number.isInteger(limit) || limit < 1 || limit > 1000 || typeof afterId !== 'string') throw new DomainError('REPEAT_READ_BOUND_INVALID', 'Use an execution-ID cursor and a limit from 1 to 1000.', 409)
     return this.read(runId, owner, async (sql, snapshot) => {
       const ids = (await sql.query<{ id: string }>('select id from harness_executions where run_id=$1 and id>$2 order by id limit $3', [runId, afterId, limit])).rows
-      const rows = []
-      for (const { id } of ids) rows.push(await readRepeatExecutionLocked(sql, snapshot, id))
-      return rows
+      return readRepeatExecutionsLocked(sql, snapshot, ids.map(({ id }) => id))
     })
   }
   async *executionPages(runId: string, owner?: RunOwnership): AsyncGenerator<HarnessExecution[]> {
@@ -231,20 +240,7 @@ export class PostgresRunRepository {
       after = page[page.length - 1]!.id
     }
   }
-  async abandonedExecutionStart(owner: RunOwnership): Promise<string | undefined> {
-    this.requireOwner(owner.runId, owner)
-    // Acquiring the Run lock excludes a live start owner. Unclaimed queued work remains runnable.
-    const row = (await owner.client.query<{ id: string }>(`select e.id from harness_executions e
-      where e.run_id=$1 and e.record->>'nativeSessionId' is null and (
-        e.record->>'state'='starting' or e.record->>'state'='queued' and exists (
-          select 1 from run_graph_effects f where f.run_id=e.run_id
-            and f.effect_kind='execution.launch' and f.entity_id=e.id))
-      order by e.id limit 1`, [owner.runId])).rows[0]
-    owner.assertOwned()
-    return row?.id
-  }
-
-  async reconciliationCandidates(afterId = '', limit = 100): Promise<RepositoryWorkflowRun[]> {
+  async reconciliationCandidates(afterId = '', limit = 100): Promise<{ id: string }[]> {
     if (!Number.isInteger(limit) || limit < 1 || limit > 1000) throw new DomainError('RUN_READ_LIMIT', 'Use a bounded Run cursor.', 409)
     // Failed Main-local Runs can outlive their detached runtime. Selection still requires physical closure in cleanup.
     const rows = (await this.pool.query<{ id: string }>(`select id from runs where id>$1 and
@@ -259,9 +255,7 @@ export class PostgresRunRepository {
               and not exists(select 1 from run_node_placements p where p.run_id=e.run_id
                 and p.node_id=e.workflow_node_id and p.record#>>'{hostRef,kind}'='device'))))
       order by id limit $2`, [afterId, limit])).rows
-    const result = []
-    for (const { id } of rows) result.push((await this.getRepeatSnapshot(id)).run)
-    return result
+    return rows
   }
   async remainingApprovalTime(runId: string, executionIds: string[], owner: RunOwnership): Promise<number> {
     this.requireOwner(runId, owner)
@@ -279,8 +273,8 @@ export class PostgresRunRepository {
     return this.read(runId, undefined, async (sql, snapshot) => {
       const ids = (await sql.query<{ id: string }>('select id from harness_executions where run_id=$1 order by id limit 1001', [runId])).rows
       if (ids.length > 1000) throw new DomainError('RUN_DETAIL_LIMIT', 'Use the paged history/occurrence detail APIs for this Run.', 409)
-      const executions = []
-      for (const { id } of ids) executions.push((await readRepeatExecutionLocked(sql, snapshot, id)).execution)
+      const stored = await readRepeatExecutionsLocked(sql, snapshot, ids.map(({ id }) => id))
+      const executions = stored.map(item => item.execution)
       const activity = await this.activityLocked(sql, runId)
       const details = { run: snapshot.run, executions, activity, cleanupPending: snapshot.cleanupPending }
       try { canonicalGraphJson(details, 4 * 1024 * 1024) } catch { throw new DomainError('RUN_DETAIL_LIMIT', 'Use paged history for this Run.', 409) }
