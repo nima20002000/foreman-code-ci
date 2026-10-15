@@ -5,6 +5,7 @@ import { readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createInterface } from 'node:readline'
+import { setTimeout as wait } from 'node:timers/promises'
 
 const token = process.env.FOREMAN_CODE_MCP_TOKEN ?? process.env.GRAPHQL_MCP_TOKEN
 const tokenConflict = process.env.FOREMAN_CODE_MCP_TOKEN !== undefined && process.env.GRAPHQL_MCP_TOKEN !== undefined
@@ -56,7 +57,7 @@ function bridgeError(error, deliveryStage) {
     data: { kind: 'transport' } }
 }
 
-async function forward(message, controller) {
+async function forwardAttempt(message, controller, timeoutMs) {
   let requestSignal
   let deliveryStage = 'preflight'
   let terminalReceived = false
@@ -81,8 +82,8 @@ async function forward(message, controller) {
         'The owning app MCP route is invalid or expired. Open the owning app to refresh this credential’s connection.')
     // The owning API's host PID is not visible inside a harness PID namespace.
     // Each request proves access through the endpoint's scoped credential authentication.
-    requestSignal = controller ? AbortSignal.any([controller.signal, AbortSignal.timeout(120_000)])
-      : AbortSignal.timeout(120_000)
+    requestSignal = controller ? AbortSignal.any([controller.signal, AbortSignal.timeout(timeoutMs)])
+      : AbortSignal.timeout(timeoutMs)
     deliveryStage = 'dispatched'
     const response = await fetch(url, { method: 'POST', redirect: 'error',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json',
@@ -101,6 +102,11 @@ async function forward(message, controller) {
       if (controller?.signal.aborted || terminalReceived) return
       const terminal = expectsReply && value?.id === message.id
         && (Object.hasOwn(value, 'result') || Object.hasOwn(value, 'error'))
+      if (terminal && message.method === 'tools/list' && Object.hasOwn(value, 'result')
+        && (!Array.isArray(value.result?.tools) || value.result.tools.length === 0)) {
+        throw new BridgeFailure('invalid_response',
+          'Foreman Code MCP tool discovery returned an invalid or empty catalog. Retry the activation.')
+      }
       if (message.method === 'initialize' && value.result?.protocolVersion) protocolVersion = value.result.protocolVersion
       output(value)
       if (terminal) terminalReceived = true
@@ -123,9 +129,34 @@ async function forward(message, controller) {
     }
     if (expectsReply && !terminalReceived) throw new Error('Missing terminal MCP response.')
   } catch (error) {
-    if (controller?.signal.aborted || terminalReceived) return
-    if (expectsReply) output({ jsonrpc: '2.0', id: message.id,
-      error: bridgeError(requestSignal?.aborted ? requestSignal.reason : error, deliveryStage) })
+    if (terminalReceived || controller?.signal.aborted && controller.signal.reason?.name !== 'TimeoutError') return
+    if (expectsReply) return bridgeError(requestSignal?.aborted ? requestSignal.reason : error, deliveryStage)
+  }
+}
+
+async function forward(message, controller) {
+  const startup = message.method === 'initialize' || message.method === 'tools/list'
+  // Leave time for a slow database read while staying below the native 60-second startup timeout.
+  const signal = startup ? AbortSignal.any([AbortSignal.timeout(55_000),
+    ...(controller ? [controller.signal] : [])]) : controller?.signal
+  const attemptController = signal ? { signal } : undefined
+  try {
+    for (let attempt = 0; ; attempt++) {
+      const error = await forwardAttempt(message, attemptController, startup ? 45_000 : 120_000)
+      if (!error || controller?.signal.aborted) return
+      const retryable = startup && ['service_unavailable', 'timeout'].includes(error.data.kind)
+      if (retryable) error.data.retryable = true
+      if (!retryable || attempt === 2 || signal?.aborted) {
+        output({ jsonrpc: '2.0', id: message.id, error })
+        return
+      }
+      await wait(1_000 * 2 ** attempt, undefined, { signal })
+    }
+  } catch (error) {
+    if (controller?.signal.aborted) return
+    const failure = bridgeError(signal?.aborted ? signal.reason : error, 'preflight')
+    if (startup && failure.data.kind === 'timeout') failure.data.retryable = true
+    if (Object.hasOwn(message, 'id')) output({ jsonrpc: '2.0', id: message.id, error: failure })
   } finally {
     if (controller && pending.get(message.id) === controller) pending.delete(message.id)
   }

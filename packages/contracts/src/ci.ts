@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { BuildComputerAllowanceSchema } from './buildComputers.js'
 import { CI_LOG_MAX_BYTES, CI_MAX_RUN_TICKETS, CiCachedFileSchema, CiComputerRefSchema, CiActivitySchema, CiRunRecordSchema, CiSuiteSchema, CiScopeSchema, CiSelectedFilesSchema,
   CiTestResultsSchema, CiPrioritySchema, CiPriorityReasonSchema,
   CiTestStatusSchema, CiTestSummarySchema, CiUserSystemdSchema, validCiSelection } from './ciHost.js'
@@ -69,9 +70,14 @@ const CiTicketInputSchema = z.object({ ticketId: IdSchema }).strict()
 /** Statuses to include; the results' summary always counts every test. */
 export const CiTestStatusFilterSchema = z.array(CiTestStatusSchema).min(1).max(3)
 export const CiGetInputSchema = CiTicketInputSchema.extend({
+  waitSeconds: z.number().min(0).max(300).optional().describe('Defaults to 0. Wait up to 300 seconds for the ticket’s '
+    + 'state or step to change; terminal tickets return immediately. The wait ends when the MCP request is canceled.'),
+  logTail: z.boolean().optional().describe('Defaults to true. Set false to omit the 32 KiB log tail while waiting; '
+    + 'read logs once at the end with ci_logs_read.'),
   testStatus: CiTestStatusFilterSchema.optional().describe('Include the ticket’s structured test results, limited to '
     + 'tests with these statuses (passed, failed, skipped). tests is null until a finished unit or integration run reports them.'),
 }).strict()
+export type CiGetInput = z.infer<typeof CiGetInputSchema>
 export const CI_FAILURE_HISTORY_LIMITS = { entries: 50, runs: 20, days: 14 } as const
 export const CiFailureHistorySchema = z.object({ file: z.string().min(1), test: z.string().min(1).nullable(),
   failedRuns: z.number().int().nonnegative(), runs: z.number().int().nonnegative() }).strict()
@@ -80,7 +86,7 @@ export const OperatorCiGetInputSchema = CiGetInputSchema.extend({ workspaceId: I
 export const CiGetOutputSchema = z.object({
   run: CiRunRecordSchema,
   partitions: z.array(CiRunRecordSchema).optional().describe('Run records ordered by suite, part and numeric shard index.'),
-  logTail: z.string(),
+  logTail: z.string().optional(),
   queue: z.object({ position: z.number().int().positive(), reason: z.string() }).strict().nullable().optional(),
   group: z.object({ groupId: CiRunRecordSchema.shape.groupId, state: CiRunRecordSchema.shape.state }).strict().optional(),
   tests: CiTestResultsSchema.nullable().optional(),
@@ -156,6 +162,8 @@ export const CiComputersOutputSchema = z.object({
   computers: z.array(z.object({
   label: z.string(), hostRef: CiRunRecordSchema.shape.computer.unwrap().shape.hostRef,
   priority: z.number().int(), ready: z.boolean(), reasons: z.array(z.string()),
+  buildAllowancePercent: BuildComputerAllowanceSchema.optional(),
+  allowedCpuCount: z.number().int().positive().optional(),
   cpuCount: z.number().int().positive().optional(), memoryBytes: z.number().int().positive().optional(),
   availableMemoryBytes: z.number().int().nonnegative().optional(),
   userSystemd: CiUserSystemdSchema.optional(),
@@ -174,10 +182,16 @@ const CiPreparationLimitsSchema = z.object({
   cpuCount: z.number().positive(), memoryBytes: z.number().int().positive(),
 }).strict()
 export type CiPreparationLimits = z.infer<typeof CiPreparationLimitsSchema>
+export const CiCacheStatusSchema = z.object({
+  status: z.enum(['hit', 'miss', 'invalid']), lastError: z.string().max(500).nullable(),
+  missCount: z.number().int().nonnegative(), rebuildCount: z.number().int().nonnegative(),
+}).strict()
+export type CiCacheStatus = z.infer<typeof CiCacheStatusSchema>
 export const PreparedCiRuntimeSchema = z.object({
   commit: CommitSchema, imageId: z.string().regex(/^sha256:[a-f0-9]{64}$/), imageManifestDigest: z.string().min(1).max(200),
   seedReceiptPath: AbsolutePathSchema, contextReceiptPath: AbsolutePathSchema, qualificationSource: AbsolutePathSchema,
   reusedImage: z.boolean().optional(),
+  cache: CiCacheStatusSchema.optional(),
   unitCodex: z.object({ executable: AbsolutePathSchema, sourceExecutable: AbsolutePathSchema, version: z.string().min(1).max(200),
     binarySha256: z.string().regex(/^[a-f0-9]{64}$/) }).strict().optional(),
 }).strict()
@@ -191,6 +205,7 @@ export const CiRuntimeRequestSchema = z.discriminatedUnion('operation', [
     resources: JobResourceRequestSchema }).strict(),
 ])
 export const CiRuntimeWorkerStateSchema = z.object({
+  cache: CiCacheStatusSchema.optional(),
   managedSetup: CiManagedSetupSchema.optional(),
   preparationLimits: CiPreparationLimitsSchema.optional(),
   installedStorage: CiInstalledStorageSchema.nullable().optional(),
@@ -205,6 +220,7 @@ export const BuildComputerPrepareInputSchema = z.object({ workspaceId: IdSchema,
 }).strict()
 export const BuildComputerPrepareGetInputSchema = z.object({ workspaceId: IdSchema, profileId: IdSchema }).strict()
 export const BuildComputerPrepareStatusSchema = z.object({
+  cache: CiCacheStatusSchema.optional(),
   preparationLimits: CiPreparationLimitsSchema.optional(),
   failureCount: z.number().int().nonnegative().optional(), retryAt: z.string().datetime().optional(),
   profileId: IdSchema, deviceId: IdSchema.nullable(),

@@ -1,4 +1,5 @@
 import { errorMessage } from '../../shared/errorMessage.js'
+import { readOperationalFailures } from '../diagnostics/logger.js'
 import { readClaudePlugins, claudeCliResult } from './claudePlugins.js'
 import { isCodexStagingRenameError, removeCodexStagingDirectories } from './npmStaging.js'
 import { syncFingerprint } from './syncFingerprint.js'
@@ -6,6 +7,7 @@ import { MaintenanceTaskStore } from './maintenanceTaskStore.js'
 import { MaintenanceCommandStore } from './maintenanceCommandStore.js'
 import type { MaintenancePorts } from './maintenancePorts.js'
 import { DomainError } from '../errors.js'
+import { executableUnavailable } from './executableError.js'
 import { z } from 'zod'
 import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
@@ -20,7 +22,6 @@ import {
   type MaintenanceTaskStart, type SyncedMarketplace, type SyncedMcpServer,
   type WorkerUpdateStatus,
 } from '@foreman-code/contracts/computer-maintenance'
-import { fallbackOnError } from '../diagnostics/ignoredError.js'
 
 export type { MaintenancePorts }
 
@@ -125,6 +126,7 @@ export class ComputerMaintenance {
       this.ports.disk(home).then(value => value && { path: home, ...value }),
     ])
     return MaintenanceStatusSchema.parse({
+      operationalFailures: readOperationalFailures(),
       harnesses: (['codex', 'claude'] as const).map((harness, index) => ({ harness, installed: versions[index] !== undefined,
         version: versions[index] ?? null, latest: latest[harness] ?? null })),
       system: { packageUpdates: packageUpdates?.pending ?? null, rebootRequired, sudo, disk },
@@ -656,19 +658,24 @@ export class ComputerMaintenance {
     const binary = await this.ports.find(harness)
     if (!binary) return undefined
     const result = await this.ports.run(binary, ['--version'], { signal, timeoutMs: 15_000 })
-      .catch(fallbackOnError(null, 'lifecycle', 'read harness version', { harness }))
-    return result?.code === 0 ? versionOf(result.stdout) : null
+    const version = result.code === 0 ? versionOf(result.stdout) : null
+    if (!version) throw new DomainError('COMPUTER_HARNESS_VERSION_UNAVAILABLE',
+      `${harness} version inspection failed (exit ${result.code}).`, 503)
+    return version
   }
 
   private latestVersions(signal: AbortSignal) {
     if (this.latest && Date.now() - this.latest.at < LATEST_MS) return this.latest.value
     const value = (async () => {
       const npm = await this.ports.find('npm')
-      if (!npm) return {}
+      if (!npm) throw new DomainError('COMPUTER_LATEST_VERSION_UNAVAILABLE',
+        'Latest version inspection is unavailable: npm is not installed.', 503)
       const entries = await Promise.all((['codex', 'claude'] as const).map(async harness => {
         const result = await this.ports.run(npm, ['view', PACKAGES[harness], 'version'], { signal, timeoutMs: 20_000 })
-          .catch(fallbackOnError(null, 'lifecycle', 'read latest harness version', { harness }))
-        return [harness, result?.code === 0 ? result.stdout.trim() || null : null] as const
+        const version = result.code === 0 ? versionOf(result.stdout.trim()) : null
+        if (!version) throw new DomainError('COMPUTER_LATEST_VERSION_UNAVAILABLE',
+          `Latest ${harness} version inspection failed (exit ${result.code}).`, 503)
+        return [harness, version] as const
       }))
       return Object.fromEntries(entries)
     })()
@@ -682,17 +689,19 @@ export class ComputerMaintenance {
     if (!apt) return null
     const result = await this.ports.run(apt, ['-s', '-o', 'Debug::NoLocking=1', '--with-new-pkgs', 'upgrade'],
       { signal, timeoutMs: 60_000 })
-      .catch(fallbackOnError(null, 'lifecycle', 'read pending package updates'))
-    if (result?.code !== 0) return null
+    if (result.code !== 0) throw new DomainError('COMPUTER_PACKAGE_UPDATES_UNAVAILABLE',
+      `Package updates inspection failed (exit ${result.code}).`, 503)
     const counts = result.stdout.match(/(\d+) upgraded, (\d+) newly installed, \d+ to remove and (\d+) not upgraded\./u)
-    if (!counts) return null
+    if (!counts) throw new DomainError('COMPUTER_PACKAGE_UPDATES_UNAVAILABLE',
+      'Package updates inspection returned invalid output.', 503)
     return { pending: Number(counts[1]) + Number(counts[3]), installable: Number(counts[1]) + Number(counts[2]) }
   }
 
   private async sudo(signal: AbortSignal): Promise<boolean> {
     const result = await this.ports.run('sudo', ['-n', 'true'], { signal, timeoutMs: 10_000 })
-      .catch(fallbackOnError(null, 'lifecycle', 'check sudo availability'))
-    return result?.code === 0
+    if (result.code === 0) return true
+    if (result.code === 1 && /a password is required|not allowed to execute|not in the sudoers/iu.test(result.stderr)) return false
+    throw new DomainError('COMPUTER_PRIVILEGE_CHECK_UNAVAILABLE', `Sudo inspection failed (exit ${result.code}).`, 503)
   }
 
   private async requireSudo(signal: AbortSignal) {
@@ -753,21 +762,35 @@ export function systemMaintenancePorts(environment: NodeJS.ProcessEnv = process.
     environment,
     async find(name) {
       const selected = binaries[name]
-      if (selected) { try { await access(selected, constants.X_OK); return selected } catch { /* ignore: fall back to PATH */ } }
-      let firstExecutable: string | null = null
-      for (const directory of directories) {
-        const candidate = join(directory, name)
-        try { await access(candidate, constants.X_OK) } catch { continue }
-        firstExecutable ??= candidate
+      const candidates = selected ? [selected] : directories.map(directory => join(directory, name))
+      for (const candidate of candidates) {
+        try {
+          await access(candidate, constants.X_OK)
+        } catch (error) {
+          if (!selected) continue
+          const code = (error as NodeJS.ErrnoException).code ?? 'ACCESS_FAILED'
+          throw executableUnavailable(name, candidate, home, code)
+        }
         if (name !== 'codex' && name !== 'claude') return candidate
-        // npm can leave an executable launcher whose optional native package is incomplete.
-        const probe = await run(candidate, ['--version'], { signal: AbortSignal.timeout(15_000), timeoutMs: 15_000 })
+        let probe
+        try {
+          probe = await run(candidate, ['--version'], { signal: AbortSignal.timeout(15_000), timeoutMs: 15_000 })
+        } catch {
+          throw executableUnavailable(name, candidate, home, 'version probe failed or timed out')
+        }
         if (probe.code === 0 && versionOf(probe.stdout)) return candidate
+        throw executableUnavailable(name, candidate, home, 'version probe failed; the installation may be incomplete')
       }
-      return firstExecutable
+      return null
     },
     run,
-    exists: async target => { try { await access(target); return true } catch { return false } },
+    exists: async target => {
+      try { await access(target); return true }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false
+        throw error
+      }
+    },
     readText: async target => {
       try {
         return await readFile(target, 'utf8')
@@ -790,8 +813,8 @@ export function systemMaintenancePorts(environment: NodeJS.ProcessEnv = process.
       }
     },
     disk: async target => {
-      try { const value = await statfs(target); return { freeBytes: value.bavail * value.bsize, totalBytes: value.blocks * value.bsize } }
-      catch { return null }
+      const value = await statfs(target)
+      return { freeBytes: value.bavail * value.bsize, totalBytes: value.blocks * value.bsize }
     },
     later: (fn, ms) => { setTimeout(fn, ms).unref() },
     now: () => new Date(),

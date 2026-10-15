@@ -1,4 +1,7 @@
 import { errorMessage } from '../../shared/errorMessage.js'
+import type { ReadObservation } from '@foreman-code/contracts'
+import { componentLogger } from '../diagnostics/logger.js'
+import { failedReadObservation, successfulReadObservation } from '../diagnostics/readObservation.js'
 import type pg from 'pg'
 import { randomUUID } from 'node:crypto'
 import { APP_MCP_SERVER_NAMES } from '@foreman-code/contracts/product'
@@ -8,6 +11,7 @@ import {
   ComputerMaintenanceStartResultSchema, ComputerMaintenanceDispatchSchema, MaintenanceReplySchema, SyncedMcpServerSchema,
   type ComputerMaintenanceList, type ComputerMaintenanceStartInput, type ComputerMaintenanceStartResult,
   type MaintenanceStatus, type MaintenanceTask, type MaintenanceTaskStart, type SyncedMarketplace, type SyncedMcpServer,
+  type WorkerReleasePublication,
 } from '@foreman-code/contracts/computer-maintenance'
 import { DeviceRegistrationSchema } from '@foreman-code/contracts/device-identity'
 import { sameDeviceProvisioningTarget, type DeviceProvisioningTarget } from '@foreman-code/contracts/device-resources'
@@ -20,7 +24,7 @@ import type { ClaudePluginCatalog } from './claudePlugins.js'
 import type { ComputerMaintenance } from './maintenance.js'
 import { syncFingerprint } from './syncFingerprint.js'
 import { assertComputerTarget } from './target.js'
-import { ignoreError, fallbackOnError } from '../diagnostics/ignoredError.js'
+import { ignoreError, logIgnoredError } from '../diagnostics/ignoredError.js'
 
 export interface MaintenanceEndpoint {
   capabilities(deviceId: string): readonly { namespace: string; mainCanRequest: boolean }[]
@@ -34,6 +38,18 @@ export interface FleetSources {
   codexMarketplaces(): Promise<SyncedMarketplace[]>
   claudePlugins(): Promise<ClaudePluginCatalog>
   workerManifestSha256s?(): Promise<readonly string[]>
+  workerContentSha256s?(): Promise<readonly string[]>
+  workerPublication?(): Promise<WorkerReleasePublication>
+}
+
+interface WorkerArtifactIdentities {
+  manifests: readonly string[]
+  contents: readonly string[]
+}
+
+interface MaintenanceObservation {
+  status: MaintenanceStatus | null
+  observation: ReadObservation
 }
 
 const CACHE_MS = 20_000
@@ -87,7 +103,8 @@ export class FleetMaintenanceService {
   private closing = false
   private readonly backgroundTasks = new Set<Promise<void>>()
   private readonly cache = new Map<string, {
-    at: number; pending: boolean; running?: boolean; value: Promise<MaintenanceStatus | null>
+    at: number; pending: boolean; running?: boolean; observation?: ReadObservation;
+    value: Promise<MaintenanceObservation>
   }>()
   constructor(
     private readonly pool: pg.Pool,
@@ -105,8 +122,9 @@ export class FleetMaintenanceService {
       throw error
     }
     const targets = await this.targets(principal, 'settings:read')
+    const workerPublication = await this.sources.workerPublication?.()
     return ComputerMaintenanceListSchema.parse({ computers: await Promise.all(targets.map(async target =>
-      ({ target, status: await this.status(target, refresh) }))) })
+      ({ target, ...await this.observeStatus(target, refresh), ...(workerPublication ? { workerPublication } : {}) }))) })
   }
 
   async start(principal: ManagementPrincipal, source: 'http' | 'mcp', raw: ComputerMaintenanceStartInput): Promise<ComputerMaintenanceStartResult> {
@@ -166,8 +184,10 @@ export class FleetMaintenanceService {
       requireAuthorization(await readLiveManagementPrincipal(sql, principal.id), 'settings:read')
       await assertComputerTarget(sql, this.mainId, input.target)
     } finally { sql.release() }
+    const workerPublication = await this.sources.workerPublication?.()
     return ComputerMaintenanceListSchema.parse({
-      computers: [{ target: input.target, status: await this.status(input.target, input.refresh === true) }],
+      computers: [{ target: input.target, ...await this.observeStatus(input.target, input.refresh === true),
+        ...(workerPublication ? { workerPublication } : {}) }],
     })
   }
 
@@ -197,16 +217,16 @@ export class FleetMaintenanceService {
 
   private async keepCurrentNow(): Promise<void> {
     const targets = await this.allTargets()
-    const manifests = await this.workerManifests()
+    const artifacts = await this.workerArtifacts()
     const sync = await Promise.allSettled([this.taskFor({ kind: 'sync-mcp' }), this.taskFor({ kind: 'sync-plugins' })])
     await Promise.all(targets.map(async target => {
       const status = await this.status(target, true)
       if (!status) return
       const behind = status.harnesses.filter(entry => entry.latest && entry.version !== entry.latest).map(entry => entry.harness)
       if (behind.length) await this.startOn(target, { kind: 'update-harnesses', harnesses: behind })
-        .catch(ignoreError('lifecycle', 'start harness update on computer', { host: target.hostRef }))
+        .catch(ignoreError('lifecycle', 'start harness update on computer', { host: target.hostRef, nextRetryMs: 60_000 }))
       if (target.hostRef.kind === 'main') return
-      await this.syncWorkerUpdate(target, status, manifests)
+      await this.syncWorkerUpdate(target, status, artifacts)
       for (const task of sync) {
         if (task.status === 'fulfilled') await this.syncSource(target, task.value, status)
       }
@@ -234,10 +254,10 @@ export class FleetMaintenanceService {
   private async syncChangedSourcesNow(): Promise<void> {
     const sources = await Promise.allSettled([this.taskFor({ kind: 'sync-mcp' }), this.taskFor({ kind: 'sync-plugins' })])
     const targets = (await this.allTargets()).filter(target => target.hostRef.kind !== 'main')
-    const manifests = await this.workerManifests()
+    const artifacts = await this.workerArtifacts()
     await Promise.all(targets.map(async target => {
       const status = await this.status(target, true)
-      await this.syncWorkerUpdate(target, status, manifests)
+      await this.syncWorkerUpdate(target, status, artifacts)
       await Promise.all(sources.map(async source => {
         if (source.status === 'fulfilled') await this.syncSource(target, source.value, status)
       }))
@@ -247,25 +267,30 @@ export class FleetMaintenanceService {
   }
 
   private syncWorkerUpdate(target: DeviceProvisioningTarget, status: MaintenanceStatus | null,
-    manifests: readonly string[]): Promise<void> {
+    artifacts: WorkerArtifactIdentities): Promise<void> {
     const key = `${this.key(target)}:update-worker`
     const active = this.syncing.get(key)
     if (active) return active
-    const task = this.deliverWorkerUpdate(target, status, manifests).finally(() => this.syncing.delete(key))
+    const task = this.deliverWorkerUpdate(target, status, artifacts).finally(() => this.syncing.delete(key))
     this.syncing.set(key, task)
     return task
   }
 
-  private async workerManifests(): Promise<readonly string[]> {
-    return await this.sources.workerManifestSha256s?.()
-      .catch(fallbackOnError([], 'lifecycle', 'read available Worker manifests')) ?? []
+  private async workerArtifacts(): Promise<WorkerArtifactIdentities> {
+    const [manifests, contents] = await Promise.all([
+      this.sources.workerManifestSha256s?.() ?? [],
+      this.sources.workerContentSha256s?.() ?? [],
+    ])
+    return { manifests, contents }
   }
 
   private async deliverWorkerUpdate(target: DeviceProvisioningTarget, status: MaintenanceStatus | null,
-    manifests: readonly string[]): Promise<void> {
+    artifacts: WorkerArtifactIdentities): Promise<void> {
+    const { manifests, contents } = artifacts
     if (!status?.worker || !manifests.length || target.hostRef.kind !== 'device') return
     if (!this.endpoint()?.capabilities(target.hostRef.deviceId).some(value => value.namespace === WORKER_UPDATE_NAMESPACE)) return
     if (status.worker.manifestSha256 && manifests.includes(status.worker.manifestSha256)) return
+    if (status.worker.contentSha256 && contents.includes(status.worker.contentSha256)) return
     if (!['current', 'rolled-back', 'failed'].includes(status.worker.state)
       || status.tasks.some(task => task.kind === 'update-worker' && task.state === 'running')) return
     const key = this.key(target)
@@ -279,7 +304,7 @@ export class FleetMaintenanceService {
       await this.startOn(target, { kind: 'update-worker' }, commandId)
       delivery.pending = false
     } catch (error) {
-      ignoreError('lifecycle', 'prompt Worker manifest update', { host: target.hostRef })(error)
+      ignoreError('lifecycle', 'prompt Worker manifest update', { host: target.hostRef, nextRetryMs: Math.max(0, delivery.retryAt - this.now()) })(error)
     }
   }
 
@@ -335,6 +360,11 @@ export class FleetMaintenanceService {
       let retryAt = this.now() + Math.max(0, delay - elapsed)
       if (delivery?.taskId === latest.id && delivery.state === 'failed') {
         retryAt = Math.min(retryAt, delivery.retryAt)
+      }
+      if (delivery?.taskId !== latest.id || delivery.state !== 'failed') {
+        logIgnoredError('lifecycle', 'retry fleet configuration sync',
+          Object.assign(new Error('Fleet configuration task failed; its original delivery will retry.'),
+            { code: 'FLEET_SYNC_FAILED' }), { attempt: failures, nextRetryMs: Math.max(0, retryAt - this.now()) })
       }
       this.deliveries.set(key, { fingerprint, taskId: latest.id, state: 'failed', retryAt })
       if (this.now() < retryAt) return
@@ -431,6 +461,11 @@ export class FleetMaintenanceService {
       return this.local.start(task, commandId)
     }
     if (task.kind === 'update-worker') {
+      const publication = await this.sources.workerPublication?.()
+      if (publication && publication.state !== 'published') {
+        throw new DomainError('WORKER_RELEASE_ASSET_UNAVAILABLE', publication.lastError
+          ?? `Worker ${publication.version} is waiting for GitHub publication and verification.`, 503)
+      }
       const capabilities = this.endpoint()?.capabilities(target.hostRef.deviceId) ?? []
       const maintenanceAvailable = capabilities.some(value =>
         value.namespace === COMPUTER_MAINTENANCE_NAMESPACE && value.mainCanRequest)
@@ -445,23 +480,39 @@ export class FleetMaintenanceService {
     return reply.task
   }
 
-  private status(target: DeviceProvisioningTarget, refresh: boolean): Promise<MaintenanceStatus | null> {
+  private async status(target: DeviceProvisioningTarget, refresh: boolean): Promise<MaintenanceStatus | null> {
+    return (await this.observeStatus(target, refresh)).status
+  }
+
+  private observeStatus(target: DeviceProvisioningTarget, refresh: boolean): Promise<MaintenanceObservation> {
     const key = this.key(target)
     const cached = this.cache.get(key)
     // A running task's progress is read again within seconds; settled status is reused longer.
     const ttl = cached?.running ? RUNNING_CACHE_MS : CACHE_MS
-    if (cached && (cached.pending || (!refresh && this.now() - cached.at < ttl))) return cached.value
+    if (cached && (cached.pending || (!refresh && cached.observation?.status === 'available'
+      && this.now() - cached.at < ttl))) return cached.value
     // A bounded shared observation survives one reader canceling so other readers can still use it.
-    const value = (async () => {
+    const read = (async () => {
       if (target.hostRef.kind === 'main') return this.local.status(AbortSignal.timeout(90_000))
       const reply = MaintenanceReplySchema.parse((await this.request(target.hostRef.deviceId, { operation: 'status' })).payload)
-      return reply.operation === 'status' ? reply.status : null
-    })().catch(fallbackOnError(null, 'lifecycle', 'read computer maintenance status', { host: target.hostRef }))
-    const entry = { at: this.now(), pending: true, running: false, value }
+      if (reply.operation !== 'status') {
+        throw new DomainError('COMPUTER_MAINTENANCE_INVALID', 'The computer returned an unexpected reply.', 502)
+      }
+      return reply.status
+    })()
+    const value = read.then(status => ({ status, observation: successfulReadObservation(this.now()) }), error => {
+      const observation = failedReadObservation(cached?.observation, error, 'Maintenance observation failed', this.now())
+      componentLogger('lifecycle').warn({ host: target.hostRef, ...observation }, 'Computer maintenance observation unavailable')
+      return { status: null, observation }
+    })
+    const entry: NonNullable<ReturnType<typeof this.cache.get>> = {
+      at: this.now(), pending: true, running: false, value,
+    }
     this.cache.set(key, entry)
-    void value.then(status => {
+    void value.then(({ status, observation }) => {
       entry.pending = false
       entry.at = this.now()
+      entry.observation = observation
       const workerUpdating = status?.worker && !['current', 'rolled-back', 'failed'].includes(status.worker.state)
       entry.running = status?.tasks.some(task => task.state === 'running') || Boolean(workerUpdating)
     })

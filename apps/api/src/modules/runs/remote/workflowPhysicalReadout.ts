@@ -17,6 +17,8 @@ import { pageJsonContinuation, readJsonContinuation } from './jsonContinuation.j
 import type { WorkflowOriginalNativeSource } from '../../interactions/workflowNativeCapture.js'
 import type { NativeLaunchObservation, NativeProcessRegistry } from '../../harnesses/recovery/processRegistry.js'
 import { DomainError } from '../../errors.js'
+import { DeviceApplicationAdmissionError, DeviceApplicationError } from '../../devices/deviceApplicationError.js'
+import { DeviceConnectionError } from '../../devices/deviceWire.js'
 import type { ApprovedRootAllowlist } from '@foreman-code/contracts/workspace-root-policies'
 import { anchored,identity,openChildDirectory,openPrivateRoot } from '../../sources/privateFilesystem.js'
 import { sourcePath } from '../../sources/manifest.js'
@@ -27,6 +29,7 @@ import { encodeResultCopies, decodeResultCopies, physicalResultPaths, historyRes
 
 const unavailable = (): never => { throw new DomainError('REMOTE_NATIVE_PHYSICAL_UNAVAILABLE', 'The original installed native source and physical observations are unavailable.', 409) }
 const physicalRetentionLimit = DEVICE_JSON_CONTINUATION_LIMIT * 4
+const physicalReadoutLifetimeMs = 60_000
 export function pagePhysicalReadout(readout: RemoteWorkflowPhysicalReadout, metadata?: DeviceJsonContinuationRequest) {
   if (!metadata && Buffer.byteLength(JSON.stringify(readout)) <= DEVICE_HISTORY_PAGE_BYTES) return readout
   const dictionary = encodeResultCopies(readout, physicalResultPaths(readout))
@@ -149,12 +152,17 @@ export async function assertOriginalPhysicalDirectories(input:{source:RemoteWork
     await authorize()}
   catch(error){if(error instanceof DomainError)throw error;input.signal.throwIfAborted();return unavailable()}
 }
+/** Admission, backpressure, timeout and link failures say nothing about the original reply, so it must stay retained for the retry. */
+function transientAuthorizationFailure(error: unknown): boolean {
+  return error instanceof DeviceApplicationAdmissionError || error instanceof DeviceConnectionError
+    || error instanceof DeviceApplicationError && ['timeout', 'cancelled', 'transport', 'DATABASE_READ_TIMEOUT'].includes(error.code)
+}
 interface Retained {
   receipt: RemoteOperationReceipt
   placement: AcceptedNodePlacement
   source: WorkflowOriginalNativeSource
   readout: RemoteWorkflowPhysicalReadout
-  expiresAt: number
+  readoutExpiresAt: number
   bytes: number
   resultDigests: readonly string[]
   aliases: readonly {key:string;source:WorkflowOriginalNativeSource}[]
@@ -187,16 +195,6 @@ export class InstalledWorkflowPhysicalReadouts {
       }
     }
   }
-  private purgeExpired() {
-    for (const [operation, entries] of this.originals) {
-      for (const [key, retained] of entries) if (retained.expiresAt <= Date.now()) {
-        entries.delete(key);this.release(retained)
-        for(const alias of retained.aliases)if(this.events.get(operation)?.get(alias.key)?.retained===retained)this.events.get(operation)?.delete(alias.key)
-      }
-      if (!entries.size) this.originals.delete(operation)
-      if(!this.events.get(operation)?.size)this.events.delete(operation)
-    }
-  }
   purge(operationId: string) {
     const entries = this.originals.get(operationId)
     if (entries) for (const retained of entries.values()) this.release(retained)
@@ -207,7 +205,6 @@ export class InstalledWorkflowPhysicalReadouts {
   remember(input: { readout: RemoteWorkflowPhysicalReadout; placement: AcceptedNodePlacement; source: WorkflowOriginalNativeSource;
     leaseExpiresAt: string; assertOwnerCurrent(): Promise<void>; assertCurrent(): Promise<void>; observe(): NativeLaunchObservation; closure(): NativeLaunchObservation | null;
     waitForSettlement?: (signal: AbortSignal) => Promise<void> }): void {
-    this.purgeExpired()
     const parsed = RemoteWorkflowPhysicalReadoutSchema.parse(input.readout)
     canonicalGraphJson(input.source, REMOTE_NATIVE_SOURCE_LIMIT)
     const paths = physicalResultPaths(parsed, ['readout'])
@@ -226,8 +223,9 @@ export class InstalledWorkflowPhysicalReadouts {
     if (!receipt.native || readout.session.nativeSessionId !== receipt.native.sessionId) return unavailable()
     const source = freezeTree(decoded.source)
     const placement=freezeTree(decoded.placement)
-    const expiresAt = Math.min(Date.parse(readout.expiresAt),Date.parse(input.leaseExpiresAt), Date.now() + 60_000)
-    if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) return unavailable()
+    const readoutExpiresAt = Math.min(Date.parse(readout.expiresAt), Date.parse(input.leaseExpiresAt),
+      Date.now() + physicalReadoutLifetimeMs)
+    if (!Number.isFinite(readoutExpiresAt) || readoutExpiresAt <= Date.now()) return unavailable()
     const key = this.key(receipt.sequence, remoteWorkflowSourceDigest(source)), entries = this.originals.get(receipt.intent.operationId) ?? new Map<string, Retained>()
     const previous = entries.get(key)
     if (previous) {
@@ -261,7 +259,7 @@ export class InstalledWorkflowPhysicalReadouts {
       if (original) original.references++
       else this.results.set(payload.digest, { value: freezeTree(payload.value), bytes: payload.bytes, references: 1 })
     }
-    const retained:Retained={ receipt, placement, source, readout, expiresAt, bytes,aliases,resultDigests,
+    const retained:Retained={ receipt, placement, source, readout, readoutExpiresAt, bytes,aliases,resultDigests,
       assertOwnerCurrent: input.assertOwnerCurrent, assertCurrent: input.assertCurrent, observe: input.observe, closure: input.closure,
       ...(input.waitForSettlement ? { waitForSettlement: input.waitForSettlement } : {}) }
     entries.set(key,retained)
@@ -275,26 +273,24 @@ export class InstalledWorkflowPhysicalReadouts {
     signal?: AbortSignal): Promise<RemoteWorkflowPhysicalReadout> {
     signal?.throwIfAborted()
     const key=this.key(input.receiptSequence,input.sourceDigest)
-    const previous = this.originals.get(input.intent.operationId)?.get(key)
-      ?? this.events.get(input.intent.operationId)?.get(key)?.retained
-    this.purgeExpired()
     const retained = this.originals.get(input.intent.operationId)?.get(key)??this.events.get(input.intent.operationId)?.get(key)?.retained
     if (!retained) throw new DomainError('REMOTE_NATIVE_PHYSICAL_UNAVAILABLE',
       'The original physical reply is no longer retained.', 409,
-      { reason: previous && previous.expiresAt <= Date.now() ? 'expired_reply' : 'not_retained',
+      { reason: 'not_retained',
         operationId: input.intent.operationId,
         receiptSequence: input.receiptSequence, sourceDigest: input.sourceDigest })
     if (!isDeepStrictEqual(retained.receipt.intent, input.intent)
       || !isDeepStrictEqual(retained.placement, input.placement)) throw new DomainError(
       'REMOTE_NATIVE_PHYSICAL_UNAVAILABLE', 'The original physical reply selector changed.', 409,
       { reason: 'selector_changed', operationId: input.intent.operationId, receiptSequence: input.receiptSequence })
-    try { await retained.assertCurrent() } catch (error) { this.purge(input.intent.operationId); throw error }
+    try { await retained.assertCurrent() } catch (error) {
+      if (!transientAuthorizationFailure(error)) this.purge(input.intent.operationId)
+      throw error
+    }
     let observation = retained.observe()
     let closure = retained.closure()
     if (!closure && observation.lifecycle !== 'active' && retained.waitForSettlement) {
-      const remaining = retained.expiresAt - Date.now()
-      if (remaining <= 0) return unavailable()
-      const expiry = AbortSignal.timeout(remaining)
+      const expiry = AbortSignal.timeout(physicalReadoutLifetimeMs)
       await retained.waitForSettlement(signal ? AbortSignal.any([signal, expiry]) : expiry)
       signal?.throwIfAborted()
       await retained.assertCurrent()
@@ -303,21 +299,22 @@ export class InstalledWorkflowPhysicalReadouts {
     }
     if (closure && (!hasNativeClosure(observation) || !isDeepStrictEqual(observation,closure))) return unavailable()
     if (!closure && observation.lifecycle !== 'active') return unavailable()
-    if (retained.expiresAt <= Date.now()) return unavailable()
-    return RemoteWorkflowPhysicalReadoutSchema.parse({ ...retained.readout,expiresAt:new Date(retained.expiresAt).toISOString(), observation,
+    // Retention ends at ACK; a late read gets fresh physical checks and a fresh verification window.
+    if (retained.readoutExpiresAt <= Date.now()) retained.readoutExpiresAt = Date.now() + physicalReadoutLifetimeMs
+    return RemoteWorkflowPhysicalReadoutSchema.parse({ ...retained.readout,
+      expiresAt: new Date(retained.readoutExpiresAt).toISOString(), observation,
       ...(closure ? {closure:{ownerClosed:true,launch:closure}} : {}) })
   }
   /** An exact original reply selector retires its derived event indexes too.
    * Main sends this only after their durable canonical publication; this class
    * never writes an execution/journal outcome or treats an ACK as success. */
   async ack(input:{intent:DispatchIntent;placement:AcceptedNodePlacement;receiptSequence:number;sourceDigest:string}):Promise<RemoteWorkflowPhysicalAck> {
-    this.purgeExpired()
     const key=this.key(input.receiptSequence,input.sourceDigest),entries=this.originals.get(input.intent.operationId)
     const direct=entries?.get(key),event=this.events.get(input.intent.operationId)?.get(key),retained=direct??event?.retained
     if(retained) {
       if(!isDeepStrictEqual(retained.receipt.intent,input.intent)||!isDeepStrictEqual(retained.placement,input.placement))return unavailable()
       // ACK only retires in-memory observations; physical checks still gate reads.
-      try {await retained.assertOwnerCurrent()}catch(error){this.purge(input.intent.operationId);throw error}
+      try {await retained.assertOwnerCurrent()}catch(error){if(!transientAuthorizationFailure(error))this.purge(input.intent.operationId);throw error}
       if(direct) {
         entries!.delete(key);this.release(retained)
         for(const alias of retained.aliases)if(this.events.get(input.intent.operationId)?.get(alias.key)?.retained===retained)this.events.get(input.intent.operationId)?.delete(alias.key)

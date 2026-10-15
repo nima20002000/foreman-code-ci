@@ -1,5 +1,4 @@
 import { beginRuntimeTiming, runtimeTimingPoint, withRuntimeTimingContext } from '../../infrastructure/runtimeTiming.js'
-import { retryDatabaseTimeout } from '../../infrastructure/databaseTimeout.js'
 import { resolve } from 'node:path'
 import type { BaseCheckpointSaver } from '@langchain/langgraph-checkpoint'
 import type { DurableInteraction } from '@foreman-code/contracts'
@@ -18,7 +17,7 @@ import { requiredLocationAccess, type WorkspaceLocationService } from '../worksp
 import { executeRepeatEngineStart } from './repeatStartComposition.js'
 import { repeatSettlementPending } from './repeatRuntime.js'
 import { readWorkflowCheckpoint } from './repeatGraph.js'
-import { hasWorkDirectionWait, persistWorkDirectionWait,
+import { hasWorkDirectionWait, persistWorkDirectionWait, recordWorkflowExecutionFailure,
   persistWorkflowApprovalWait, settleWorkForRestart, settleWorkflowRun } from './workflowLifecycle.js'
 import { consumeDeliveredApprovals, type WorkflowResumePermit } from './approvalCheckpointResume.js'
 import type { AuthorizeWorkflowStop } from './repeatLifecycle.js'
@@ -182,17 +181,6 @@ export class LangGraphWorkflowEngine {
       }
       if (!['queued', 'running', 'waiting'].includes(snapshot.run.executionState)) throw new DomainError(
         'RUN_NOT_RESUMABLE', 'This Run requires Stop settlement or a separately authorized new Run.', 409)
-      const abandonedStart = await retryDatabaseTimeout(() => this.runs.abandonedExecutionStart(owner), {
-        signal: controller.signal, check: () => owner.assertOwned(),
-      })
-      if (abandonedStart) {
-        await retryDatabaseTimeout(() => this.runs.requestCleanup(runId, owner, {
-          outcome: 'failed', error: { code: 'EXECUTION_START_INTERRUPTED',
-            message: 'Execution startup lost its owner before a native session was saved.', retryable: false },
-        }), { check: () => owner.assertOwned() })
-        await this.cleanupOwned(owner)
-        return
-      }
       if (snapshot.run.executionState === 'waiting' && snapshot.version.definition.handoffs
         && await hasWorkDirectionWait(owner)) {
         await persistWorkDirectionWait(owner, this.locations)
@@ -285,6 +273,7 @@ export class LangGraphWorkflowEngine {
             return waiting
           },
           persistDirectionWait: () => persistWorkDirectionWait(owner, this.locations),
+          recordExecutionFailure: (executionId, failure) => recordWorkflowExecutionFailure(owner, executionId, failure),
           cancelNativeAndRequestCleanup: async () => {
             await this.runs.requestCleanup(runId, owner)
             try { await this.nativeExecutions.cancelRun(runId, owner); return true } catch { return false }
@@ -298,7 +287,9 @@ export class LangGraphWorkflowEngine {
       if ((await this.runs.getRepeatSnapshot(runId, owner)).run.executionState === 'completed') await this.finishOwned(owner)
     } catch (error) {
       owner.assertOwned(); controller.signal.throwIfAborted()
-      if (runtimeEntered && error instanceof DomainError && error.code === 'GRAPH_STOP_CONFLICT') {
+      // A selected node that failed after its settlement is the Run's failed outcome, not a start error.
+      if (runtimeEntered && error instanceof DomainError
+        && ['GRAPH_STOP_CONFLICT', 'WORKFLOW_SELECTED_EXECUTION_FAILED'].includes(error.code)) {
         const current = await this.runs.getRepeatSnapshot(runId, owner)
         if (current.run.executionState === 'completed') {
           await this.cleanupOwned(owner)
@@ -434,6 +425,8 @@ export class LangGraphWorkflowEngine {
           }).catch(error => {
             // A retained reviewer can own the Run between engine passes; retry on the next sweep.
             if (error instanceof DomainError && error.code === 'RUN_ALREADY_OWNED') return
+            // A joined drive ends this way on Stop; the Stop and cleanup path settles the Run.
+            if (error instanceof DomainError && error.code === 'GRAPH_STOP_CONFLICT') return
             if (this.closing && error instanceof DomainError && error.code === 'ENGINE_RESTART') return
             const delayMs = Math.min((retry?.delayMs ?? 500) * 2, 60_000)
             this.reconciliationRetries.set(candidate.id, { delayMs, retryAt: Date.now() + delayMs })

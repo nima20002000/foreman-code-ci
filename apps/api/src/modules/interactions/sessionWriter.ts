@@ -1,3 +1,4 @@
+import { logIgnoredError } from '../diagnostics/ignoredError.js'
 import { beginRuntimeTiming, timeRuntimeOperation, runtimeTimingPoint } from '../../infrastructure/runtimeTiming.js'
 import type { ResponseAvailabilityInspector } from '../harnesses/responseAvailability.js'
 import { randomUUID } from 'node:crypto'
@@ -5,9 +6,12 @@ import { nativeEventBatches } from './nativeEventBatches.js'
 import { reviewPreflightIdentity } from './reviewPolicy.js'
 import { setImmediate as yieldToEventLoop } from 'node:timers/promises'
 import { componentLogger } from '../diagnostics/logger.js'
-import { isDatabaseTimeout, retryDatabaseTimeout } from '../../infrastructure/databaseTimeout.js'
+import { isDatabaseTimeout, retryDatabaseTimeout, retryDatabaseOperation } from '../../infrastructure/databaseTimeout.js'
+import { isTransactionConflict } from '../../infrastructure/transaction.js'
+import { isRetryableLaneRenewal } from './laneRenewal.js'
 
 import type { NativeHarnessEvent, NativeSessionLane, NativeSessionReference } from '@foreman-code/contracts'
+import type { DeviceHistoryGap } from '@foreman-code/contracts/device-application'
 
 import { DomainError } from '../errors.js'
 import type { NativeHarnessSessionManager, NativeHistory, NativeSessionStart, NativeTurnInput, NativeInitialTurnInput } from '../harnesses/port.js'
@@ -67,11 +71,13 @@ export class LeaseGuard {
         }).catch((error: unknown) => {
           if (this.stopped || this.signal.aborted) return
           if (error instanceof DomainError && error.code === this.lostCode
-            || this.recover && !isDatabaseTimeout(error)) {
+            || this.recover && !isRetryableLaneRenewal(error)) {
             this.controller.abort(error)
             return
           }
-          componentLogger('harness').warn({ err: error }, 'Lease renewal is awaiting database confirmation.')
+          if (!(error instanceof DomainError && error.code === 'SESSION_LANE_RENEWAL_BUSY')) {
+            componentLogger('harness').warn({ err: error }, 'Lease renewal is awaiting database confirmation.')
+          }
           scheduleRenewal(retryMs)
         })
       }, delayMs)
@@ -104,10 +110,11 @@ export class LeaseGuard {
   async check(): Promise<void> {
     this.checkExpiry()
     try {
-      await retryDatabaseTimeout(() => timeRuntimeOperation('harness', 'lease.check', () => this.confirmOwnership()), {
-        signal: this.signal,
-        check: () => this.checkExpiry(),
-      })
+      await retryDatabaseOperation(() => timeRuntimeOperation('harness', 'lease.check', () => this.confirmOwnership()),
+        isRetryableLaneRenewal, {
+          signal: this.signal,
+          check: () => this.checkExpiry(),
+        })
     } catch (cause) {
       this.checkExpiry()
       const error = new DomainError(this.lostCode, 'The lease could not be confirmed.', 409)
@@ -501,6 +508,17 @@ export class SingleWriterSessionManager implements NativeHarnessSessionManager {
       : evidence.acknowledged || evidence.nativeBusy ? 'busy' : 'uncertain'
   }
 
+  private async recordSkippedEvents(lease: SessionWriteLease, input: NativeTurnInput, gap: DeviceHistoryGap) {
+    await lease.guard.check()
+    await retryDatabaseOperation(
+      () => this.coordination.recordSkippedEvents(lease.fence, input.clientCorrelationId, gap),
+      error => isDatabaseTimeout(error) || isTransactionConflict(error),
+      { signal: lease.guard.signal },
+    )
+    await input.onEventsSkipped?.(gap)
+    await lease.guard.check()
+  }
+
   private async *initialTurn(start: NativeSessionStart, input: NativeInitialTurnInput,
     signal?: AbortSignal): AsyncIterable<NativeHarnessEvent> {
     for await (const batch of this.initialTurnBatches(start, input, signal, individualEvents)) yield* batch
@@ -523,6 +541,10 @@ export class SingleWriterSessionManager implements NativeHarnessSessionManager {
       input.onTurnOffered?.()
       const events = this.manager.startInitialTurn(start, {
         prompt: input.prompt, clientCorrelationId: input.clientCorrelationId,
+        onEventsSkipped: async gap => {
+          if (!lease) throw new DomainError('NATIVE_SESSION_IDENTITY_CONFLICT', 'Observation recovery requires an owned session.', 409)
+          await this.recordSkippedEvents(lease, input, gap)
+        },
         onSessionObserved: async (observed) => {
           session = observed
           if (observed.harness !== this.harness) throw new DomainError('NATIVE_SESSION_IDENTITY_CONFLICT', 'Observed session has a different provider.', 409)
@@ -606,6 +628,7 @@ export class SingleWriterSessionManager implements NativeHarnessSessionManager {
       onTurnOffered?.()
       const events = this.manager.startTurn(session, {
         ...nativeInput,
+        onEventsSkipped: gap => this.recordSkippedEvents(lease, input, gap),
         onRetry: async (providerId) => {
           await lease.guard.check()
           if (session.harness !== 'codex' || lease.providerId !== providerId || !evidence.snapshot().terminal) {
@@ -704,9 +727,9 @@ export class SingleWriterSessionManager implements NativeHarnessSessionManager {
           try {
             const history = await lease.guard.wait(this.manager.reconcile(session, lease.previous.correlationId, lease.guard.signal))
             this.observe(session, history, lease.previous.correlationId, lease)
-          } catch {
-            // The native action was acknowledged. A failed observation cannot
-            // erase that receipt, but lost ownership still fails closed.
+          } catch (error) {
+            logIgnoredError('harness', 'observe acknowledged native control', error)
+            // A failed observation preserves the acknowledged action; the lease check below still fences ownership.
             lease.observedStatus = 'uncertain'
           }
           await lease.guard.check()

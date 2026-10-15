@@ -2,15 +2,30 @@ import type { DeviceApplicationFailure } from '@foreman-code/contracts/device-ap
 
 const retryability: Readonly<Record<string, boolean>> = {
   'extension-rejected': false,
+  WORKER_UPDATE_SMOKE_UNAVAILABLE: true,
+  WORKER_RELEASE_ASSET_UNAVAILABLE: true,
   CI_HOST_BUSY: true,
+  MCP_INSPECTION_CONTEXT_MISMATCH: false,
+  MCP_PRESET_UNAVAILABLE: false,
+  MCP_PRESET_CUSTOMIZED: false,
+  MCP_SERVER_EXISTS: false,
+  MCP_RECONCILIATION_REQUIRED: false,
+  MCP_RECONCILIATION_MISMATCH: false,
+  MCP_PLAN_NOT_FOUND: false,
+  COMMAND_ID_CONFLICT: false,
+  REVISION_CONFLICT: false,
   SYNC_UNAVAILABLE: true,
   COMPUTER_GITHUB_REQUIRED: false,
+  COMPUTER_ACCOUNT_UNAVAILABLE: true,
+  GITHUB_STATUS_UNKNOWN: true,
   CI_RUN_UNKNOWN: false,
   GITHUB_ACCOUNT_CHANGED: false,
   unavailable: true,
   backpressure: true,
+  DEVICE_BUSY: true,
   timeout: true,
   transport: true,
+  DATABASE_READ_TIMEOUT: true,
   cancelled: false,
   'payload-too-large': false,
   authentication: false,
@@ -33,6 +48,7 @@ const retryability: Readonly<Record<string, boolean>> = {
   REVIEWER_BINDING_REBIND_REQUIRED: true,
   REMOTE_CONTROL_UNAVAILABLE: false,
   REMOTE_DISPATCH_UNAVAILABLE: true,
+  DEVICE_LINK_DROPPED: true,
   REMOTE_BINDING_CONFLICT: false,
   REMOTE_OBSERVATION_NOT_AUTHENTICATED: false,
   REMOTE_NATIVE_PHYSICAL_UNAVAILABLE: false,
@@ -73,6 +89,7 @@ const retryability: Readonly<Record<string, boolean>> = {
   ELOOP: false,
   ENOENT: false,
   ENOTDIR: false,
+  SOURCE_CLAIM_MISSING: false,
   SOURCE_CAPACITY: false,
   SOURCE_DISK_CAPACITY: false,
   SOURCE_REPOSITORY_TIMEOUT: true,
@@ -89,6 +106,10 @@ const retryability: Readonly<Record<string, boolean>> = {
 }
 
 export function deviceApplicationFailure(error: unknown): DeviceApplicationFailure {
+  // A handler whose own deadline fired (Node's TimeoutError has a numeric code) is transient, not a rejection.
+  if (error && typeof error === 'object' && (error as { name?: unknown }).name === 'TimeoutError') {
+    return { code: 'timeout', retryable: true }
+  }
   const proposed = error && typeof error === 'object' ? (error as { code?: unknown }).code : undefined
   const code = typeof proposed === 'string' && Object.hasOwn(retryability, proposed) ? proposed : 'extension-rejected'
   return { code, retryable: retryability[code]! }
@@ -101,5 +122,15 @@ export class DeviceApplicationError extends Error {
     super(code)
     this.code = code
     this.retryable = deviceApplicationFailure({ code }).retryable
+  }
+}
+
+/** The request was refused before its domain handler could run. */
+export class DeviceApplicationAdmissionError extends DeviceApplicationError {
+  readonly reason: string
+
+  constructor(reason = 'backpressure') {
+    super('backpressure')
+    this.reason = reason
   }
 }

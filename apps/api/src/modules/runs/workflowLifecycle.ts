@@ -10,7 +10,7 @@ import { graphSourceDigest } from '../run-graph/publication.js'
 import { requireRepeatCanonicalReceiptBeforeCommit } from '../run-graph/repeatReceipts.js'
 import { readAcceptedRepeatRunLocked } from './repeatStartRead.js'
 import { openWorkflowLifecycleLocked } from './repeatLifecycle.js'
-import { sameRepeatValue, compileRepeatLayout } from './repeatResolution.js'
+import { sameRepeatValue, compileRepeatLayout, repeatTickIndex } from './repeatResolution.js'
 import { assertWorkflowRunSettlementLocked, type WorkflowRestartApprovals } from './workflowRepositoryServices.js'
 import type { RunOwnership } from './ownership.js'
 import type { WorkspaceLocationService } from '../workspaces/location.js'
@@ -50,9 +50,11 @@ export async function settleWorkForRestart(owner: RunOwnership, approvals?: Work
           where n.execution_id=e.id and n.run_id=e.run_id and n.phase='reserved')
           or exists(select 1 from run_graph_effects f where f.run_id=e.run_id
             and f.effect_kind='execution.launch' and f.entity_id=e.id))
-        or e.record#>>'{result,outcome}'='succeeded' and (e.accepted and not exists(
-          select 1 from run_work_results x where x.run_id=e.run_id and x.execution_id=e.id
-            and x.activation_id=e.work_activation_id)
+        or e.record#>>'{result,outcome}'='succeeded' and (e.accepted and case
+          when e.work_activation_id is null then not exists(
+            select 1 from run_repeat_results x where x.run_id=e.run_id and x.execution_id=e.id)
+          else not exists(select 1 from run_work_results x where x.run_id=e.run_id and x.execution_id=e.id
+            and x.activation_id=e.work_activation_id) end
           or not e.accepted and not exists(select 1 from workflow_native_proofs p
             where p.run_id=e.run_id and p.execution_id=e.id
               and p.record#>>'{original,type}'='history'
@@ -294,6 +296,42 @@ export async function hasWorkDirectionWait(owner: RunOwnership): Promise<boolean
   return row.rowCount === 1
 }
 
+/** Retain an execution failure without fencing sibling work or claiming closure. */
+export async function recordWorkflowExecutionFailure(owner: RunOwnership, executionId: string,
+  failure: ExecutionResult): Promise<void> {
+  const result = ExecutionResultSchema.parse(failure)
+  if (result.outcome !== 'failed' || !result.error) return fail('RUN_FAILURE_CAUSE_INVALID')
+  // A retryable cause abandons one attempt so its node can start a fresh one.
+  const abandoned = result.error.retryable === true
+  await owner.oneShotConnection().transaction(async sql => {
+    const { publication, snapshot } = await openWorkflowLifecycleLocked(sql, owner.runId)
+    await retainOwner(sql, owner)
+    if (snapshot.stopRequested || snapshot.cleanupPending
+      || !['running', 'waiting'].includes(snapshot.run.executionState)) {
+      return fail('GRAPH_STOP_CONFLICT')
+    }
+    const stored = await readRepeatExecutionLocked(sql, snapshot, executionId)
+    const intervalCheck = repeatTickIndex(stored.execution.input) !== undefined
+    if (!intervalCheck && !abandoned && (!snapshot.version.definition.handoffs || !stored.workActivationId
+      || stored.execution.nativeSessionId || !['queued', 'starting'].includes(stored.execution.state))) {
+      return fail('RUN_FAILURE_CAUSE_INVALID')
+    }
+    if (stored.execution.state === 'completed') return
+    const budget = (await sql.query<{ failure_result: unknown }>(
+      'select failure_result from approval_execution_state where execution_id=$1 for update', [executionId])).rows[0]
+    if (!budget) return fail('RUN_FAILURE_CAUSE_INVALID')
+    if (budget.failure_result) {
+      // The first recorded cause wins.
+      if (!intervalCheck && !abandoned && !sameRepeatValue(budget.failure_result, result)) return fail('RUN_FAILURE_CAUSE_INVALID')
+      return
+    }
+    await lifecycleSource(publication, { kind: 'execution_failure_recorded', executionId, result }, async () => {
+      await sql.query('update approval_execution_state set failure_result=$2::jsonb where execution_id=$1',
+        [executionId, canonicalGraphJson(result)])
+    })
+  })
+}
+
 /** A negative cleanup intent is not success/closure. It only fences new work.
  * Ownerless calls are restricted to an already authorized Stop or terminal Run;
  * active-run cancellation must use its actual existing owner. */
@@ -376,17 +414,20 @@ export async function settleWorkflowRun(owner: RunOwnership, interrupted = false
       'select failure_result from run_cleanup_intents where run_id=$1', [run.id])).rows[0]
     const failure = cleanup?.failure_result ? ExecutionResultSchema.parse(cleanup.failure_result) : undefined
     if (failure && failure.outcome !== 'failed') return fail('RUN_FAILURE_CAUSE_INVALID')
-    let interruptedResult: ExecutionResult | undefined
+    let executionFailure: ExecutionResult | undefined
     if (!snapshot.stopRequested && !failure) {
+      // An interrupted Run keeps its interruption cause. Otherwise the most recent
+      // failed selected execution is the cause, even when cleanup never received it
+      // (a restart reads a preparation failure that was already recorded).
       const execution = (await sql.query<{ result: unknown }>(`
         select record->'result' as result from harness_executions
         where run_id=$1 and tick_index is null and record->>'state'='completed'
           and record#>>'{result,outcome}'='failed'
-          and record#>>'{result,error,code}'='EXECUTION_INTERRUPTED'
-        order by created_at,id limit 1`, [run.id])).rows[0]
-      if (execution) interruptedResult = ExecutionResultSchema.parse(execution.result)
+          and ($2::boolean or record#>>'{result,error,code}'='EXECUTION_INTERRUPTED')
+        order by ${interrupted ? 'created_at,id' : 'created_at desc,id desc'} limit 1`, [run.id, !interrupted])).rows[0]
+      if (execution) executionFailure = ExecutionResultSchema.parse(execution.result)
     }
-    const result: ExecutionResult = snapshot.stopRequested ? { outcome: 'canceled' } : failure ?? interruptedResult ?? { outcome: 'failed', error: {
+    const result: ExecutionResult = snapshot.stopRequested ? { outcome: 'canceled' } : failure ?? executionFailure ?? { outcome: 'failed', error: {
       code: interrupted ? 'EXECUTION_INTERRUPTED' : 'WORKFLOW_SELECTED_EXECUTION_FAILED',
       message: interrupted ? 'The owned execution was interrupted and physically settled; native work was not replayed.'
         : 'A selected execution did not complete successfully.', retryable: false,
@@ -396,6 +437,10 @@ export async function settleWorkflowRun(owner: RunOwnership, interrupted = false
     await lifecycleSource(publication, { kind: 'negative_terminal', previous: run, next, stopped: snapshot.stopRequested }, async () => {
       await sql.query('update runs set execution_state=$2,record=$3::jsonb where id=$1', [run.id, next.executionState, canonicalGraphJson(next)])
       await assertWorkflowRunSettlementLocked(sql, next, owner, 'cleanup')
+      if (snapshot.version.definition.handoffs) {
+        await sql.query(`update run_work_activations set state='completed'
+          where run_id=$1 and state<>'completed'`, [run.id])
+      }
     })
     beforeGraphCommit(sql, async () => {
       const final = await readAcceptedRepeatRunLocked(sql, run.id)

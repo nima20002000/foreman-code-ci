@@ -1,30 +1,12 @@
 import type pg from 'pg'
 import { CiRunRecordSchema, type CiHostRequest, type CiRunRecord } from '@foreman-code/contracts'
 import type { HostCiComputer } from './service.js'
-import { withTransaction, type SqlQuery } from '../../infrastructure/transaction.js'
-import { ExecutionLimiter } from '../runs/limiter.js'
+import type { SqlQuery } from '../../infrastructure/transaction.js'
 import { sanitizeCiText, serializeCiJson } from './text.js'
+export { withCiTicketLock, type CiTicketSql } from './ticketLock.js'
 
-const dispatchLimits = new WeakMap<pg.Pool, ExecutionLimiter>()
-const dispatchSignal = new AbortController().signal
 export const CI_START_ACK_TIMEOUT_MS = 120_000
 export const CI_START_MAX_ATTEMPTS = 3
-
-/** Serialize remote entry and closure across Main processes without blocking cancellation intent writes. */
-export async function withCiTicketLock<T>(pool: pg.Pool, ticketId: string, work: (client: pg.PoolClient) => Promise<T>) {
-  let limit = dispatchLimits.get(pool)
-  if (!limit) {
-    // Remote endpoint validation also reads the pool; leave connections available for it and cancellation intent.
-    limit = new ExecutionLimiter(Math.max(1, pool.options.max - 2))
-    dispatchLimits.set(pool, limit)
-  }
-  return limit.run(dispatchSignal, () => withTransaction(pool, async client => {
-    const row = (await client.query<{ acquired: boolean }>(
-      'select pg_try_advisory_xact_lock(hashtextextended($1,0)) as acquired', [`ci-dispatch:${ticketId}`])).rows[0]
-    if (!row?.acquired) return undefined
-    return work(client)
-  }))
-}
 
 /** A stale planning or queue snapshot may only replace the same unassigned queued record. */
 export async function saveQueuedCiRun(pool: pg.Pool, previous: CiRunRecord, next: CiRunRecord) {

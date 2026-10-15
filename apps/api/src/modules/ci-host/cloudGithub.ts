@@ -4,6 +4,7 @@ import { DomainError } from '../errors.js'
 import { Budget } from '../files/archives/policy.js'
 import { decodeEntry, parseZip } from '../files/archives/zip.js'
 import { CloudHttp } from './cloudHttp.js'
+import { logIgnoredError } from '../diagnostics/ignoredError.js'
 
 interface Job {
   id: number; name: string; status: string; conclusion?: string
@@ -13,6 +14,8 @@ const failedRead = (action: string) => (detail: string) => `GitHub Actions did n
 
 export class GitHubRest {
   constructor(private readonly http: CloudHttp) {}
+
+  get transport() { return this.http.transport }
 
   list(mirror: string, branch: string) {
     return this.http.operation(15_000, () => this.listRuns(mirror, branch))
@@ -127,6 +130,8 @@ export class GitHubRest {
         let output: string
         if (entry) output = (await decodeEntry(bytes, entry, budget)).toString('utf8')
         else {
+          logIgnoredError('jobs', 'read GitHub job log', new DomainError('CI_LOG_ARCHIVE_INCOMPLETE',
+            'The archive has no log for this job; requesting its log separately.', 502), { jobId: job.id })
           if (++missing > 25) {
             throw new DomainError('CI_CLOUD_FAILED', 'GitHub Actions did not accept gh run view: '
               + 'too many API requests needed to fetch logs; try narrowing down to a specific job with the `--job` option', 502)
@@ -139,7 +144,13 @@ export class GitHubRest {
         continue
       }
       for (const { step, entry } of stepEntries.sort((left, right) => left.step.number - right.step.number)) {
-        if (!entry) continue
+        if (!entry) {
+          if (step.conclusion === 'skipped') continue
+          logIgnoredError('jobs', 'read GitHub step log', new DomainError('CI_STEP_LOG_UNAVAILABLE',
+            'The archive has no log for this step.', 502), { jobId: job.id, step: step.number })
+          text += `[Log unavailable: ${job.name} / ${step.name}]\n`
+          continue
+        }
         const output = (await decodeEntry(bytes, entry, budget)).toString('utf8')
         text += prefixLog(output, job.name, step.name)
       }

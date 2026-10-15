@@ -1,8 +1,11 @@
+import { ReadObservationSchema } from './readObservation.js'
+import { OperationalFailureSchema } from './operationalFailures.js'
+import { optionalCommandId } from './management/commands.js'
 import { z } from 'zod'
 import { DeviceProvisioningTargetSchema } from './deviceResources.js'
 import { HarnessMcpArgumentSchema, HarnessMcpEndpointSchema } from './management/harnessSettings.js'
 import { PluginMarketplaceSourceSchema } from './management/claudePlugins.js'
-import { WorkerUpdateStatusSchema } from './workerUpdate.js'
+import { WorkerUpdateStatusSchema, WorkerReleasePublicationSchema } from './workerUpdate.js'
 export * from './workerUpdate.js'
 
 /** Device channel namespace: Main asks a paired computer for maintenance status and starts maintenance tasks. */
@@ -104,6 +107,7 @@ const HarnessVersionSchema = z.object({
 }).strict()
 
 export const MaintenanceStatusSchema = z.object({
+  operationalFailures: z.array(OperationalFailureSchema).optional(),
   worker: WorkerUpdateStatusSchema.optional(),
   harnesses: z.array(HarnessVersionSchema).max(2),
   system: z.object({
@@ -127,9 +131,11 @@ export const MaintenanceReplySchema = z.discriminatedUnion('operation', [
   z.object({ operation: z.literal('start'), task: MaintenanceTaskSchema }).strict(),
 ])
 
-/** Main-side readback across computers. null status: the computer is offline or did not answer in time. */
+/** Main-side readback across computers; observation explains unavailable status. */
 export const ComputerMaintenanceListSchema = z.object({
   computers: z.array(z.object({ target: DeviceProvisioningTargetSchema, status: MaintenanceStatusSchema.nullable(),
+    observation: ReadObservationSchema.optional(),
+    workerPublication: WorkerReleasePublicationSchema.optional(),
     tasksOmitted: z.number().int().nonnegative().default(0) }).strict()).max(101),
 }).strict()
 export type ComputerMaintenanceList = z.infer<typeof ComputerMaintenanceListSchema>
@@ -148,6 +154,8 @@ export const ComputerMaintenanceOperatorListSchema = z.object({
   computers: z.array(z.object({
     target: DeviceProvisioningTargetSchema,
     status: z.union([MaintenanceStatusSchema, CompactMaintenanceStatusSchema]).nullable(),
+    observation: ReadObservationSchema.optional(),
+    workerPublication: WorkerReleasePublicationSchema.optional(),
     tasksOmitted: z.number().int().nonnegative().default(0),
   }).strict()).max(101),
 }).strict()
@@ -167,7 +175,7 @@ export const ComputerMaintenanceReadInputSchema = z.object({
 
 /** Start one maintenance task on the selected computers (all paired computers and Main when omitted). */
 export const ComputerMaintenanceStartInputSchema = z.object({
-  commandId: z.uuid(),
+  commandId: optionalCommandId(z.uuid()),
   task: z.discriminatedUnion('kind', [
     z.object({ kind: z.literal('update-harnesses'), harnesses: HarnessSelectionSchema }).strict(),
     z.object({ kind: z.literal('update-worker') }).strict(),

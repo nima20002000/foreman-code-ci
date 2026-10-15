@@ -25,8 +25,8 @@ export interface RepeatEngineStartContext {
   configuredParallelism: number
   runtimeRoot: string
   factory: RepeatRepositoryFactory
-  native: Pick<ApprovalExecutionCoordinator, 'observeExact' | 'assertResume'>
-  workflows: Pick<PostgresWorkflowRepository, 'getAgentConfiguration'>
+  native: Pick<ApprovalExecutionCoordinator, 'observeExact' | 'assertResume' | 'failIntervalCheck' | 'abandonAttempt'>
+  workflows: Pick<PostgresWorkflowRepository, 'getAgentConfiguration' | 'resolveNodeSkills' | 'referenceCreatedByExecution'>
   locations: Pick<WorkspaceLocationService, 'revalidateRunAuthorization' | 'revalidateSnapshot'>
   jobs?: (owner: RunOwnership, version: import('@foreman-code/contracts/wave25').WorkflowVersionV3) => {
     store: import('../jobs/workflowNode.js').WorkflowJobNodeStore; driver: import('../jobs/workflowRuntimePorts.js').WorkflowJobDriver }
@@ -159,11 +159,19 @@ export async function executeRepeatEngineStart(input: RepeatEngineStartContext):
   const observeExact = repeatNativeObserver({ run: snapshot.run, version: snapshot.version, owner: input.owner,
     store: boundary.store, native: input.native, admission: input.admission, workflows: input.workflows,
     locations: input.locations, directory: boundary.directory,
+    executionHostKey: execution => input.factory.executionHostKey(input.owner, execution),
     preparePlacement: execution => input.factory.preparePlacementExecution(input.owner, snapshot.run, execution) })
   const scope = { runId: snapshot.run.id, workspaceId: snapshot.run.workspaceId, workflowId: snapshot.run.workflowId,
     workflowVersionId: snapshot.version.id, executionSemanticsVersion: 3 as const }
   const driver = repeatExecutionDriver({ scope, version: snapshot.version, owner: input.owner, store, observeExact,
-    requestStartCleanup: (failure) => input.lifecycle.requestCleanup(failure),
+    abandonAttempt: async (executionId, failure) => {
+      const { execution } = await store.readExecution(executionId)
+      await input.native.abandonAttempt(input.owner, execution, failure)
+    },
+    failIntervalCheck: async (executionId, failure) => {
+      const { execution } = await store.readExecution(executionId)
+      await input.native.failIntervalCheck(input.owner, execution, failure)
+    },
     reconcileArtifacts: (execution, signal) =>
       input.factory.reconcileWorkflowArtifacts(input.owner, snapshot.run, execution, signal) })
   // Capture the lifecycle object, rather than reading mutable context properties
@@ -175,6 +183,7 @@ export async function executeRepeatEngineStart(input: RepeatEngineStartContext):
     || snapshot.version.definition.handoffs && typeof lifecycle.persistDirectionWait !== 'function') {
     throw new DomainError('REPEAT_NATIVE_HOST_REQUIRED', 'Repeat lifecycle proof writers are required.', 409)
   }
+  const recordExecutionFailure = lifecycle.recordExecutionFailure?.bind(lifecycle)
   await executeRepeatRuntime({ runId: snapshot.run.id, version: snapshot.version, owner: input.owner,
     checkpointOwnerGeneration: input.owner.checkpointGeneration,
     signal: input.signal, store, driver, ...(input.jobs ? { jobs: input.jobs(input.owner, snapshot.version) } : {}), checkpointer: input.checkpointer, configuredParallelism: input.configuredParallelism,
@@ -183,6 +192,7 @@ export async function executeRepeatEngineStart(input: RepeatEngineStartContext):
       currentState: () => lifecycle.currentState(),
       persistWait: (checkpoint) => lifecycle.persistWait(checkpoint),
       ...(lifecycle.persistDirectionWait ? { persistDirectionWait: () => lifecycle.persistDirectionWait!() } : {}),
+      ...(recordExecutionFailure ? { recordExecutionFailure } : {}),
       cancelNativeAndRequestCleanup: () => lifecycle.cancelNativeAndRequestCleanup(),
       settleRun: (stopped, interrupted) => lifecycle.settleRun(stopped, interrupted),
       requestCleanup: (failure) => lifecycle.requestCleanup(failure),

@@ -327,7 +327,12 @@ export class WorkspaceLocationService {
       const { principal } = await currentOperatorAuthority(client ?? this.pool, principalId, atCommit)
       requireAuthorization(principal, 'runs:start', { workspaceId, workflowId })
       requireAuthorization(principal, 'workspace_locations:read', { workspaceId })
-    } catch {
+    } catch (error) {
+      const denied = error instanceof DomainError && (error.status === 401 || error.status === 403)
+        && (error.code.startsWith('AUTH_') || error.code === 'ACCESS_DENIED')
+      if (!denied) {
+        throw error
+      }
       throw new DomainError('RUN_AUTHORIZATION_REVOKED', 'The authority that accepted this Run is no longer valid.', 403)
     }
   }
@@ -372,7 +377,8 @@ export class WorkspaceLocationService {
         if (!this.rootPolicies) throw new DomainError('ROOT_CONFIGURATION_UNAVAILABLE', 'Computer root inspection is unavailable.', 503)
         const policies = await this.rootPolicies.read(sql, principal, workspaceId)
         const current = policies.filter(policy => policy.bindingPurpose !== 'ci-enrollment'
-          && policy.locationRevision === String(locationRevision))
+          && policy.locationRevision === String(locationRevision)
+          && (policy.hostRef.kind === 'main' ? this.runnerId : policy.applicationInstallationId) === executionLocation.runnerId)
         const policy = current[0]
         if (current.length !== 1 || !policy || policy.canonicalProjectRoot !== executionLocation.rootPath
           || (policy.hostRef.kind === 'main' ? this.runnerId : policy.applicationInstallationId) !== executionLocation.runnerId

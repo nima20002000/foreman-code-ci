@@ -1,4 +1,6 @@
+import { optionalCommandId } from './commands.js'
 import { z } from 'zod'
+import { DeviceProvisioningHostReferenceSchema } from '../deviceResources.js'
 
 // This module deliberately has no runtime import from management/index.ts.
 const Harness = z.enum(['codex'])
@@ -41,29 +43,31 @@ export type HarnessMcpManagedPreset = z.infer<typeof HarnessMcpManagedPresetSche
 const HarnessMcpPlanPresetSchema = z.enum(['graphql', 'linear', 'operator', 'worker'])
 /** `legacy`: old graphql-app/graphql-operator entries remain; applying the preset replaces them. */
 const HarnessMcpPresetStatus = z.enum(['missing', 'installed', 'disabled', 'mismatch', 'inherited', 'legacy'])
-const HarnessMcpManagedBase = z.object({ harness: Harness, preset: HarnessMcpManagedPresetSchema,
-  commandId: CommandId, expectedRevision: Revision.optional().describe('Omit for last write wins; supply to reject a stale revision.') })
+const ManagedHarness = z.enum(['codex', 'claude'])
+const HostRef = DeviceProvisioningHostReferenceSchema.optional()
+const HarnessMcpManagedBase = z.object({ harness: ManagedHarness, hostRef: HostRef, preset: HarnessMcpManagedPresetSchema,
+  commandId: optionalCommandId(CommandId), expectedRevision: Revision.optional().describe('Omit for last write wins; supply to reject a stale revision.') })
 export const HarnessMcpManagedInputSchema = z.union([
   HarnessMcpManagedBase.extend({ installed: z.boolean() }).strict(),
   HarnessMcpManagedBase.extend({ enabled: z.boolean() }).strict(),
 ])
 export type HarnessMcpManagedInput = z.infer<typeof HarnessMcpManagedInputSchema>
-export const HarnessMcpListInputSchema = z.object({ harness: Harness }).strict()
+export const HarnessMcpListInputSchema = z.object({ harness: ManagedHarness, hostRef: HostRef }).strict()
 const HarnessMcpServerSummarySchema = z.object({
   name: z.string(), transport: z.enum(['remote', 'stdio', 'unknown']), label: z.string(), enabled: z.boolean(),
   endpoint: z.string().url().optional(),
   origin: z.enum(['user', 'inherited']), protected: z.boolean(), editable: z.boolean(),
 }).strict()
 export const HarnessMcpListResultSchema = z.object({
-  harness: Harness, revision: Revision, servers: z.array(HarnessMcpServerSummarySchema),
+  harness: ManagedHarness, hostRef: HostRef, revision: Revision, servers: z.array(HarnessMcpServerSummarySchema),
   presets: z.object({ graphql: HarnessMcpPresetStatus, linear: HarnessMcpPresetStatus.exclude(['legacy']) }).strict().optional(),
   checkedAt: z.string().datetime({ offset: true }), scope: z.literal('native-user'),
 }).strict()
 export type HarnessMcpList = z.infer<typeof HarnessMcpListResultSchema>
-export const HarnessMcpPlanInputSchema = z.object({ harness: Harness, commandId: CommandId, expectedRevision: Revision.optional().describe('Omit for last write wins; supply to reject a stale revision.'), change: HarnessMcpChangeSchema }).strict()
+export const HarnessMcpPlanInputSchema = z.object({ harness: Harness, commandId: optionalCommandId(CommandId), expectedRevision: Revision.optional().describe('Omit for last write wins; supply to reject a stale revision.'), change: HarnessMcpChangeSchema }).strict()
 export type HarnessMcpPlanInput = z.infer<typeof HarnessMcpPlanInputSchema>
 export const HarnessMcpPlanSchema = z.object({
-  id: z.string().uuid(), harness: z.enum(['codex', 'opencode']), revision: Revision, change: HarnessMcpChangeSchema,
+  id: z.string().uuid(), harness: z.enum(['codex', 'claude', 'opencode']), hostRef: HostRef, revision: Revision, change: HarnessMcpChangeSchema,
   managedPreset: HarnessMcpPlanPresetSchema.nullable().optional(),
   requestedBy: z.string(), status: z.enum(['pending', 'submitting', 'applied', 'rejected', 'failed', 'uncertain', 'reconciled']),
   createdAt: z.string().datetime({ offset: true }), expiresAt: z.string().datetime({ offset: true }),
@@ -76,7 +80,7 @@ export const HarnessMcpPlanGetInputSchema = z.object({ planId: z.string().uuid()
 export const HarnessMcpDecisionInputSchema = z.object({ planId: z.string().uuid(), approve: z.boolean() }).strict()
 /** Reconciliation reads native state without repeating the write. */
 export const HarnessMcpReconcileInputSchema = z.object({
-  planId: z.string().uuid(), commandId: CommandId, expectedRevision: Revision.optional().describe('Omit for last write wins; supply to reject a stale revision.'),
+  planId: z.string().uuid(), commandId: optionalCommandId(CommandId), expectedRevision: Revision.optional().describe('Omit for last write wins; supply to reject a stale revision.'),
   acceptObservedState: z.boolean().default(false),
 }).strict()
 export type HarnessMcpReconcileInput = z.infer<typeof HarnessMcpReconcileInputSchema>
@@ -97,7 +101,7 @@ export const WorkspaceFolderNameSchema = z.string().trim().min(1).max(200)
 export const WorkspaceFolderCreateInputSchema = z.object({
   parentPath: Path,
   name: WorkspaceFolderNameSchema.optional().describe("Omit to create an available New folder name automatically."),
-  commandId: CommandId,
+  commandId: optionalCommandId(CommandId),
 }).strict()
 export type WorkspaceFolderCreateInput = z.infer<typeof WorkspaceFolderCreateInputSchema>
 export const WorkspaceFolderCreateResultSchema = z.object({
@@ -107,14 +111,14 @@ export const WorkspaceFolderRenameInputSchema = z.object({
   creationCommandId: CommandId.optional(),
   path: Path.optional(),
   name: WorkspaceFolderNameSchema,
-  commandId: CommandId,
+  commandId: optionalCommandId(CommandId),
 }).strict().refine((value) => Boolean(value.creationCommandId) !== Boolean(value.path), 'Provide a creation command or a folder path.')
 export type WorkspaceFolderRenameInput = z.infer<typeof WorkspaceFolderRenameInputSchema>
 export const WorkspaceFolderRenameResultSchema = WorkspaceFolderCreateResultSchema
 
 export const WorkspaceFolderUndoInputSchema = z.object({
   creationCommandId: CommandId,
-  commandId: CommandId,
+  commandId: optionalCommandId(CommandId),
 }).strict()
 export type WorkspaceFolderUndoInput = z.infer<typeof WorkspaceFolderUndoInputSchema>
 export const WorkspaceFolderUndoResultSchema = z.object({
@@ -123,7 +127,7 @@ export const WorkspaceFolderUndoResultSchema = z.object({
 
 export const WorkspaceFolderDeleteInputSchema = z.object({
   paths: z.array(Path).min(1).max(100).refine((paths) => new Set(paths).size === paths.length, 'Choose each folder once.'),
-  commandId: CommandId,
+  commandId: optionalCommandId(CommandId),
 }).strict()
 export type WorkspaceFolderDeleteInput = z.infer<typeof WorkspaceFolderDeleteInputSchema>
 export const WorkspaceFolderDeleteResultSchema = z.object({
