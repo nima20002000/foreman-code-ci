@@ -4,31 +4,23 @@ import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { expect, it, vi } from 'vitest'
 
 import { buildApp } from '../src/app.js'
-import { BugReportService } from '../src/modules/bug-reports/service.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { PostgresAppInteractionService } from '../src/modules/interactions/app.js'
-import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { RunHistoryService } from '../src/modules/runs/history.js'
 import { intervalRuntime } from './helpers/intervalRuntime.js'
 
 it('re-activates a looping node with its loop prompt in its own session without routing and keeps the settled Run idle until Stop', async () => {
   const { runtime, f, watcher, worker, checkStarted, checkGate, workerGate } = await intervalRuntime('Check the deploy log for errors.')
   const commands = new PostgresCommandCoordinator(runtime.db.pool)
-  // The Agent's default tools include bug reporting and CI, so discovery needs those services composed.
-  const bugReports = new BugReportService(runtime.db.pool, commands)
-  const services = { commands, bugReports, ci: {} } as unknown as OperatorServices
   const app = buildApp({
     logger: false,
     readiness: { database: { ping: async () => {} }, checkpoints: { ping: async () => {} } },
-    operator: { access: runtime.access, services },
-    appMcp: { access: runtime.access, commands, bugReports,
+    appMcp: { access: runtime.access, commands,
       interactions: new PostgresAppInteractionService(runtime.db.pool, runtime.repository, commands) },
   })
   const clients: Client[] = []
-  let finished: Promise<void> | undefined
-  let stopped = false
   try {
-    finished = runtime.engine.start(f.run.id)
+    const finished = runtime.engine.start(f.run.id)
     const checkId = await checkStarted.promise
     const executions = async () => (await runtime.db.pool.query<{ id: string; node: string; tick: number | null
       state: string; continued: string | null }>(`select id,workflow_node_id as node,tick_index as tick,record->>'state' as state,
@@ -93,7 +85,6 @@ it('re-activates a looping node with its loop prompt in its own session without 
     expect((await runtime.runs.get(f.run.id))?.executionState).toBe('running')
     await runtime.stop()
     await runtime.engine.cancel(f.run.id)
-    stopped = true
     await Promise.allSettled([finished])
     const after = await executions()
     expect(after.filter(row => row.node === worker.id)).toHaveLength(1)
@@ -115,10 +106,6 @@ it('re-activates a looping node with its loop prompt in its own session without 
       && prompt.includes('run_status_get'))).toBe(true)
   } finally {
     checkGate.resolve(); workerGate.resolve()
-    // A failed assertion must not leave the loop Run active: closing the runtime would then fail its
-    // restart cleanup and replace the assertion with a database cleanup error.
-    if (!stopped) await Promise.allSettled([runtime.stop().then(() => runtime.engine.cancel(f.run.id))])
-    await Promise.allSettled([finished])
     await Promise.allSettled(clients.map(client => client.close()))
     await app.close()
     await runtime.close()

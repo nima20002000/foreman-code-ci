@@ -1,7 +1,8 @@
+import { isDatabaseTimeout } from '../../infrastructure/transientErrors.js'
 import { WORKER_CREDENTIAL_EXPIRY_MARGIN_MS } from '../access/credentialLifetime.js'
 import { DomainError } from '../errors.js'
 import { deviceApplicationFailure } from '../devices/deviceApplicationError.js'
-import { explicitFailureClass, isDatabaseTimeout } from '@foreman-code/contracts/failure'
+import { explicitFailureClass } from '@foreman-code/contracts/failure'
 
 /** A renewal may be retried after database, socket or device loss, unless the failure states otherwise. A non-503
  * domain refusal is final. */

@@ -42,10 +42,8 @@ it('answers while a slow provider log downloads and keeps the collected results'
   f.artifacts.mockResolvedValue({ durations: null, testResults: results })
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
   let first: Awaited<ReturnType<typeof f.cloud.handle>> | undefined
-  let settled = false
-  const pending = f.cloud.handle(f.read).then(reply => { first = reply }).finally(() => { settled = true })
-  // Provider and journal work run on real I/O, so the log wait starts after an unbounded number of turns.
-  while (!settled) {
+  const pending = f.cloud.handle(f.read).then(reply => { first = reply })
+  for (let turn = 0; turn < 200 && !first; turn++) {
     await vi.advanceTimersByTimeAsync(1_000)
     await new Promise<void>(resolve => setImmediate(resolve))
   }

@@ -1,7 +1,6 @@
 import type { DeviceApplicationFailure } from '@foreman-code/contracts/device-application'
-import {
-  explicitFailureClass, isTransientDatabaseOrSocketError, type FailureClass,
-} from '@foreman-code/contracts/failure'
+import { explicitFailureClass, type FailureClass } from '@foreman-code/contracts/failure'
+import { isTransientDatabaseOrSocketError } from '../../infrastructure/transientErrors.js'
 import { WorkerBundleReadinessSchema, type WorkerBundleReadiness } from '@foreman-code/contracts/computer-maintenance'
 
 /** The class of each code a device peer may send; it is authoritative over what the error states about itself. */
@@ -142,12 +141,9 @@ export class DeviceApplicationError extends Error {
   readonly code: string
   readonly class: FailureClass
   readonly retryable: boolean
-  readonly details: WorkerBundleReadiness | undefined
-  // Plain fields, not parameter properties: Worker code loads this file through Node's type stripping.
-  constructor(code: string, details?: WorkerBundleReadiness, options?: ErrorOptions & { class?: FailureClass }) {
+  constructor(code: string, readonly details?: WorkerBundleReadiness, options?: ErrorOptions & { class?: FailureClass }) {
     super(code, options)
     this.code = code
-    this.details = details
     this.class = options?.class ?? deviceApplicationFailure({ code }).class
     this.retryable = this.class === 'transient'
   }

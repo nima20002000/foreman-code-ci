@@ -128,15 +128,8 @@ export async function runInstallCiSmoke({ origin, workspaceId, commit, token,
     await wait(first)
     await wait(second)
     let targets
-    let lastUnready
     while (true) {
-      let computers
-      try {
-        ({ computers } = await read(`${root}/computers`, 'computer discovery'))
-      } catch (cause) {
-        // A deadline that lands inside a later discovery must still name the computer that stayed unready.
-        throw lastUnready && signal.aborted ? new Error(lastUnready, { cause }) : cause
-      }
+      const { computers } = await read(`${root}/computers`, 'computer discovery')
       const unready = computers.find(computer => !computer.ready && computer.hostRef.kind !== 'cloud')
       if (!unready) {
         targets = smokeTargets(computers)
@@ -144,7 +137,6 @@ export async function runInstallCiSmoke({ origin, workspaceId, commit, token,
       }
       const message = `CI smoke enabled computer ${JSON.stringify(unready.hostRef)} is not ready: `
         + unready.reasons.join('; ')
-      lastUnready = message
       log(message)
       try {
         await delay(pollMs, undefined, { signal })
