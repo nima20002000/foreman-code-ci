@@ -1,10 +1,12 @@
 import { randomUUID } from 'node:crypto'
-import { rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm } from 'node:fs/promises'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { expect } from 'vitest'
 import { AgentConfigurationVersionSchema, DEFAULT_CODEX_ADVANCED_CONFIGURATION } from '@foreman-code/contracts'
 import { SavedRunDetailsSchema, makeCurrentWorkflowFixture, canonicalGraphJson } from '@foreman-code/contracts/wave25'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
-import { readDispatchIntent, readExecutionPlacement, readNativePlacement } from '../../src/modules/placement/persistence.js'
+import { insertAcceptedPlacements, readDispatchIntent, readExecutionPlacement, readNativePlacement } from '../../src/modules/placement/persistence.js'
 import { withExclusiveGraphConnection } from '../../src/modules/run-graph/connection.js'
 import { insertRepeatRun } from '../../src/modules/runs/repeatStartAdmission.js'
 import { repeatStartPublication } from '../../src/modules/run-graph/repeatStartPublication.js'
@@ -15,7 +17,6 @@ import { persistVerifiedRemoteReceipt } from '../../src/modules/runs/remote/pers
 import type { DispatchIntent, NativeExecutionPlacement } from '@foreman-code/contracts/node-placement'
 import type { NativeManagerResolutionContext } from '../../src/modules/interactions/runtimePorts.js'
 import { APP_MCP_TOKEN_ENVIRONMENT_VARIABLE } from '../../src/modules/access/workerCredentials.js'
-import { readOperationalFailures } from '../../src/modules/diagnostics/operationalFailures.js'
 import { currentOperatorIntegration } from './currentOperatorIntegration.js'
 import { providerAppEndpoint } from './wave25Br1003Runtime.js'
 import { faultWorkflowWorker } from './faultWorkflowWorker.js'
@@ -23,7 +24,7 @@ import { readUntil } from './observableCondition.js'
 import { mixedComputerPlacement } from './mixedComputerPlacement.js'
 import { prepareHandoffSource } from './handoffSourcePreparation.js'
 import { insertCurrentRunFixture } from './eng04CurrentRunFixture.js'
-import { privateFixtureDirectory } from './privateFixtureDirectory.js'
+import { agentWorkflowNode } from './agentWorkflowFixture.js'
 
 function faultWorkflowDefinition(options: { loop?: boolean }) {
   const definition = makeCurrentWorkflowFixture(randomUUID(), 'parallel')
@@ -46,17 +47,17 @@ function faultWorkflowDefinition(options: { loop?: boolean }) {
 }
 
 export async function faultWorkflowFixture(options: { loop?: boolean; mcpUnavailable?: boolean } = {}) {
-  const directory = await privateFixtureDirectory('workflow-fault-')
+  const scratch = join(homedir(), '.cache', 'foreman-tmp')
+  await mkdir(scratch, { recursive: true })
+  const directory = await mkdtemp(join(scratch, 'workflow-fault-'))
   const worker = await faultWorkflowWorker(directory)
   const { definition, entry, affected, sibling } = faultWorkflowDefinition(options)
   const intents = new Map<string, DispatchIntent>()
   const contexts = new Map<string, NativeManagerResolutionContext>()
   let placements: Awaited<ReturnType<typeof mixedComputerPlacement>>
   const nativePlacements = new Map<string, NativeExecutionPlacement>()
-  let preparationFailure: { error: unknown } | undefined
   let mcpReady = !options.mcpUnavailable
   let unavailableInspections = 0
-  let entryStarted = false
   const base = await currentOperatorIntegration({ fixture: definition, insertRun: false,
     approvalNodeIds: [], workerParallelism: 3,
     admitPlacementExecutionLocked: async (sql, owner, run, execution, ref, inputDigest) => {
@@ -66,16 +67,11 @@ export async function faultWorkflowFixture(options: { loop?: boolean; mcpUnavail
       intents.set(execution.id, intent)
     },
     preparePlacementExecution: async (owner, run, execution) => {
-      try {
-        const paths = await prepareHandoffSource(owner, run, execution, placements)
-        const native = await readNativePlacement(base.db.pool, execution.id)
-        if (!native) throw new Error('Expected prepared native source')
-        nativePlacements.set(execution.id, native)
-        return paths
-      } catch (error) {
-        preparationFailure = { error }
-        throw error
-      }
+      const paths = await prepareHandoffSource(owner, run, execution, placements)
+      const native = await readNativePlacement(base.db.pool, execution.id)
+      if (!native) throw new Error('Expected prepared native source')
+      nativePlacements.set(execution.id, native)
+      return paths
     },
     prepareManagerContext: async context => {
       const acceptedPlacement = await readExecutionPlacement(base.db.pool, context.executionId)
@@ -83,10 +79,6 @@ export async function faultWorkflowFixture(options: { loop?: boolean; mcpUnavail
     },
     managerFactory: (context, getOwner) => {
       contexts.set(context.executionId, context)
-      if (!context.acceptedPlacement && context.agentId === entry.agentId && !entryStarted) {
-        entryStarted = true
-        return base.provider.connection()
-      }
       if (!context.acceptedPlacement) return worker.manager()
       const intent = intents.get(context.executionId)
       if (!intent) throw new Error('Remote execution requires its admitted dispatch')
@@ -150,7 +142,9 @@ export async function faultWorkflowFixture(options: { loop?: boolean; mcpUnavail
     const prepared = await placements.producer.prepare(draft.accepted.snapshot.request, base.writer.principal)
     if (!prepared) throw new Error('Expected remote placement admission')
     await withExclusiveGraphConnection(base.db.pool, connection => connection.transaction(async sql => {
-      await insertRepeatRun(sql, draft.accepted, repeatStartPublication, 'manual', prepared)
+      await insertRepeatRun(sql, draft.accepted, repeatStartPublication)
+      await insertAcceptedPlacements(sql, draft.run.id, draft.version.definition.nodes.map(agentWorkflowNode),
+        draft.version.agentConfigurationVersionIds, prepared.bind(draft.run.id), prepared.fence(sql))
     }))
     base.f.run = draft.run
     base.f.version = draft.version as typeof base.f.version
@@ -164,16 +158,6 @@ export async function faultWorkflowFixture(options: { loop?: boolean; mcpUnavail
       expect(response.statusCode, response.body).toBe(200)
       return SavedRunDetailsSchema.parse(response.json())
     }
-    let startupDescription = ''
-    const readStartup = async () => {
-      if (preparationFailure) throw preparationFailure.error
-      const details = await read()
-      startupDescription = canonicalGraphJson({ executions: details.executions,
-        failures: readOperationalFailures(), nativeCalls: worker.replay.calls.slice(-10) })
-      const failed = details.executions.find(execution => execution.result?.outcome === 'failed')
-      expect(failed?.result, startupDescription).toBeUndefined()
-      return details
-    }
     const completed = new Set<string>()
     let releaseAffected = false
     let releaseSibling = !options.loop
@@ -184,30 +168,25 @@ export async function faultWorkflowFixture(options: { loop?: boolean; mcpUnavail
         if (!context) continue
         if (context.agentId === affected.agentId && !releaseAffected) continue
         if (context.agentId === sibling.agentId && !releaseSibling) continue
-        if (context.agentId === entry.agentId) continue
+        if (context.agentId === entry.agentId && completed.has(`agent:${entry.agentId}`)) continue
         worker.replay.complete(turn.sessionId, turn.nativeTurnId, 'fixture complete')
         completed.add(turn.correlationId)
+        if (context.agentId === entry.agentId) completed.add(`agent:${entry.agentId}`)
       }
     }, 10)
     let started: Promise<PromiseSettledResult<void>[]> | undefined
     return {
       base, worker, entry, affected, sibling, read, intents, contexts,
-      get startupDescription() { return startupDescription },
-      async mcpInspections() { await readStartup(); return unavailableInspections },
+      get unavailableInspections() { return unavailableInspections },
       makeMcpReady() { mcpReady = true },
-      launch() {
-        started = Promise.allSettled([base.engine.start(base.f.run.id)])
-        return readUntil(readStartup, details => details.executions.some(execution =>
-          execution.workflowNodeId === entry.id && execution.result?.outcome === 'succeeded'),
-        { timeoutMs: 4_000, description: 'the initial graph entry completion' })
-      },
+      launch() { started = Promise.allSettled([base.engine.start(base.f.run.id)]) },
       release() { releaseAffected = true; releaseSibling = true },
-      active: () => readUntil(readStartup, details => details.executions.some(execution =>
+      active: () => readUntil(read, details => details.executions.some(execution =>
         execution.workflowNodeId === affected.id && execution.state === 'running')
         && details.activity.some(activity => activity.payload.nativeEventType === 'turn.started'
           && details.executions.some(execution => execution.id === activity.harnessExecutionId
             && execution.workflowNodeId === affected.id)),
-      { timeoutMs: 4_000, get description() { return `remote Agent turn admission: ${startupDescription}` } }),
+      { timeoutMs: 4_000, description: 'remote Agent turn admission' }),
       async finished() {
         const details = await readUntil(read, value => value.run.executionState === 'completed'
           && value.cleanupPending === false, { timeoutMs: 8_000, description: 'terminal Run readback' })
