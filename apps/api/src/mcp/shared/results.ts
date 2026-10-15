@@ -1,8 +1,9 @@
 import type { CallToolResult } from '@modelcontextprotocol/server'
 import { ZodError } from 'zod'
 
-import { DomainError } from '../../modules/errors.js'
+import { DomainError, databaseReadFailure, publicFailureClass } from '../../modules/errors.js'
 import { FileTransferError } from '../../modules/files/tools/transfers.js'
+import { deviceBusyFailure } from '../../modules/devices/deviceBusyError.js'
 
 export function toolResult(value: unknown): CallToolResult {
   const structuredContent = value && typeof value === 'object' && !Array.isArray(value)
@@ -17,6 +18,7 @@ export function toolResult(value: unknown): CallToolResult {
 export const TEXT_MIRROR_BYTES = 256 * 1024
 
 export function toolFailure(error: unknown, internalMessage = 'The Operator service could not complete the request.'): CallToolResult {
+  error = databaseReadFailure(deviceBusyFailure(error))
   // Only this explicitly public, static executable-validation issue is safe
   // to disclose. Other schema failures can contain private stored evidence and
   // retain their existing generic error. Match HTTP's INVALID_REQUEST shape.
@@ -28,9 +30,11 @@ export function toolFailure(error: unknown, internalMessage = 'The Operator serv
     })
   }
   if (error instanceof FileTransferError) error = new DomainError(error.code, error.message, 409)
+  const failureClass = publicFailureClass(error)
+  const classified = failureClass ? { class: failureClass } : {}
   const body = error instanceof DomainError
-    ? { error: { code: error.code, message: error.message, ...(error.details ? { details: error.details } : {}) } }
-    : { error: { code: 'INTERNAL_ERROR', message: internalMessage } }
+    ? { error: { code: error.code, message: error.message, ...(error.details ? { details: error.details } : {}), ...classified } }
+    : { error: { code: 'INTERNAL_ERROR', message: internalMessage, ...classified } }
   // No structuredContent: it must match the tool's success outputSchema, and
   // Clients may validate it even on isError, masking the error.
   return { isError: true, content: [{ type: 'text', text: JSON.stringify(body) }] }

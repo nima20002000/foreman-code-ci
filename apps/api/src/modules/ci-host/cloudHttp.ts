@@ -1,42 +1,33 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
-import { readFile } from 'node:fs/promises'
-import { homedir } from 'node:os'
-import { join } from 'node:path'
-import { parse } from 'yaml'
+import type { CiHostRun } from '@foreman-code/contracts'
+import { componentLogger } from '../diagnostics/logger.js'
 import { DomainError } from '../errors.js'
 import type { HostCiPorts } from './runner.js'
+import { configuredCircleToken } from './circleCredentials.js'
 
 export interface CloudRestOptions {
   fetch?: typeof fetch
   circleToken?: () => Promise<string | null>
 }
 type Provider = 'github' | 'circleci'
-type TokenCache = Map<Provider, Promise<string | null>>
+interface TokenEntry {
+  pending: Promise<string | null>
+  expiresAt: number
+  lastError: string | null
+}
+type TokenCache = Map<Provider, TokenEntry>
+const TOKEN_RETRY_MS = 30_000
+const log = componentLogger('jobs')
 const deadlines = new AsyncLocalStorage<AbortSignal>()
 const credentials = new WeakMap<HostCiPorts, TokenCache>()
-
-/** Reads the CLI's existing configuration; secure-store-only logins retain the CLI fallback. */
-async function configuredCircleToken(): Promise<string | null> {
-  const environmentToken = process.env.CIRCLE_TOKEN || process.env.CIRCLE_CLI_TOKEN
-  if (environmentToken) return environmentToken
-  const paths = [join(process.env.XDG_CONFIG_HOME || join(homedir(), '.config'), 'circleci', 'config.yml'),
-    join(homedir(), '.circleci', 'cli.yml')]
-  for (const path of paths) {
-    try {
-      const config = parse(await readFile(path, 'utf8')) as { token?: unknown } | null
-      if (typeof config?.token === 'string' && config.token.trim()) return config.token.trim()
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue
-      // ignore: unreadable CLI credentials use the CLI's own credential resolution.
-      return null
-    }
-  }
-  return null
-}
 
 export class CloudHttp {
   private readonly cache: TokenCache
   private readonly fetch: typeof fetch
+  private observedTransport: CiHostRun['transport']
+  private fallbackCount = 0
+
+  get transport() { return this.observedTransport }
 
   constructor(private readonly ports: HostCiPorts, private readonly provider: Provider,
     private readonly options: CloudRestOptions = {}) {
@@ -50,28 +41,70 @@ export class CloudHttp {
   }
 
   private token() {
-    let pending = this.cache.get(this.provider)
-    if (!pending) {
-      pending = this.loadToken()
-      this.cache.set(this.provider, pending)
+    let entry = this.cache.get(this.provider)
+    if (entry && entry.expiresAt <= Date.now()) {
+      this.cache.delete(this.provider)
+      entry = undefined
     }
-    return pending
+    if (!entry) {
+      const next: TokenEntry = { pending: Promise.resolve(null), expiresAt: Infinity, lastError: null }
+      next.pending = this.loadToken(next).then(token => {
+        if (!token) next.expiresAt = Date.now() + TOKEN_RETRY_MS
+        return token
+      }, error => {
+        if (this.cache.get(this.provider) === next) this.cache.delete(this.provider)
+        throw error
+      })
+      this.cache.set(this.provider, next)
+      entry = next
+    }
+    return entry.pending
   }
 
-  private async loadToken(): Promise<string | null> {
+  private async loadToken(entry: TokenEntry): Promise<string | null> {
+    if (this.provider === 'circleci') {
+      try {
+        const token = await (this.options.circleToken
+          ? this.options.circleToken() : configuredCircleToken(this.ports))
+        if (!token) entry.lastError = `${this.label} REST credential resolution failed.`
+        return token
+      } catch {
+        throw new DomainError('CI_CLOUD_CREDENTIALS_UNAVAILABLE', 'CircleCI credential configuration could not be read.', 503)
+      }
+    }
     try {
-      if (this.provider === 'circleci') return await (this.options.circleToken ?? configuredCircleToken)()
       const result = await this.ports.run('gh', ['auth', 'token', '--hostname', 'github.com'], { timeoutMs: 15_000 })
-      return result.code === 0 && result.stdout.trim() ? result.stdout.trim() : null
+      if (result.code === 0 && result.stdout.trim()) return result.stdout.trim()
     } catch {
-      // ignore: unavailable credentials retain the provider CLI path without exposing credential errors.
+      entry.lastError = `${this.label} REST credential resolution failed.`
       return null
+    }
+    entry.lastError = `${this.label} REST credential resolution failed.`
+    return null
+  }
+
+  private observeTransport(token: string | null) {
+    const previous = this.observedTransport?.source
+    const lastError = token ? null : this.cache.get(this.provider)?.lastError ?? null
+    if (token) {
+      this.observedTransport = { source: 'rest', reason: null, lastError: null, fallbackCount: this.fallbackCount }
+      if (previous === 'cli') {
+        log.info({ provider: this.provider, transport: this.observedTransport }, 'Cloud CI is using REST transport')
+      }
+      return
+    }
+    this.fallbackCount++
+    const reason = lastError ?? 'REST token unavailable; using CLI credential resolution.'
+    this.observedTransport = { source: 'cli', reason, lastError, fallbackCount: this.fallbackCount }
+    if (previous !== 'cli') {
+      log.warn({ provider: this.provider, transport: this.observedTransport }, 'Cloud CI is using CLI transport')
     }
   }
 
   async request(path: string, options: { timeoutMs?: number; headers?: Record<string, string> } = {}) {
-    const pending = this.token()
-    const token = await pending
+    const token = await this.token()
+    const pending = this.cache.get(this.provider)
+    this.observeTransport(token)
     if (!token) return null
     const base = this.provider === 'github' ? 'https://api.github.com' : 'https://circleci.com'
     const timeout = AbortSignal.timeout(options.timeoutMs ?? 120_000)
@@ -91,13 +124,15 @@ export class CloudHttp {
         // A concurrent rejected request must share the same credential refresh.
         if (this.cache.get(this.provider) === pending) this.cache.delete(this.provider)
         const refreshed = await this.token()
+        this.observeTransport(refreshed)
         if (!refreshed) return null
         response = await send(refreshed)
       }
       return response
-    } catch {
+    } catch (error) {
+      if (error instanceof DomainError) throw error
       // Transport errors must not expose a token, signed URL, or credential-file path.
-      throw new DomainError('CI_CLOUD_FAILED', `${this.label} HTTPS request failed.`, 502)
+      throw new DomainError('CI_CLOUD_FAILED', `${this.label} HTTPS request failed.`, 502, undefined, { cause: error })
     }
   }
 
@@ -106,7 +141,7 @@ export class CloudHttp {
       return await deadlines.run(AbortSignal.timeout(timeoutMs), operation)
     } catch (error) {
       if (error instanceof DomainError) throw error
-      throw new DomainError('CI_CLOUD_FAILED', `${this.label} HTTPS request failed.`, 502)
+      throw new DomainError('CI_CLOUD_FAILED', `${this.label} HTTPS request failed.`, 502, undefined, { cause: error })
     }
   }
 
@@ -118,7 +153,11 @@ export class CloudHttp {
     }
   }
 
-  async available() { return await this.token() !== null }
+  async available() {
+    const token = await this.token()
+    this.observeTransport(token)
+    return token !== null
+  }
 
   get label() { return this.provider === 'github' ? 'GitHub Actions' : 'CircleCI' }
 
@@ -162,7 +201,7 @@ export class CloudHttp {
       return Buffer.from(await response.arrayBuffer())
     } catch (error) {
       if (error instanceof DomainError) throw error
-      throw new DomainError('CI_CLOUD_FAILED', `${this.label} artifacts could not be downloaded.`, 502)
+      throw new DomainError('CI_CLOUD_FAILED', `${this.label} artifacts could not be downloaded.`, 502, undefined, { cause: error })
     }
   }
 }
