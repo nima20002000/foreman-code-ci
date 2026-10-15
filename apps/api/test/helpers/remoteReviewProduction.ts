@@ -45,7 +45,6 @@ import { configureRemoteReviewGitHub } from './remoteReviewGitHub.js'
 import { waitForChildReady } from './remoteReviewReadiness.js'
 import { measureIntegrationPhase, reportIntegrationPhase } from './integrationPhase.js'
 import { remoteReviewWorkerArtifacts } from './remoteReviewWorkerArtifacts.js'
-import { testFixtureCacheRoot } from '../../../../scripts/test-fixture-cache.mjs'
 import { remoteReviewChanges } from './remoteReviewChanges.js'
 import { remoteReviewReconciliation } from './remoteReviewReconciliation.js'
 import { installedRestartService } from './installedRestartService.js'
@@ -254,8 +253,7 @@ export async function remoteReviewProduction(options: {
     if (release.status === 'rejected') throw release.reason
     const workerRelease = release.value
     logEnvironment.FOREMAN_CODE_WORKER_ARTIFACT_DIRECTORY = await measureIntegrationPhase(
-      'Worker update artifacts', () => remoteReviewWorkerArtifacts(workerRelease, testFixtureCacheRoot(),
-        { publication: 'published' }))
+      'Worker update artifacts', () => remoteReviewWorkerArtifacts(workerRelease))
     workerEnvironment.FOREMAN_CODE_WORKER_ARTIFACT_DIRECTORY = logEnvironment.FOREMAN_CODE_WORKER_ARTIFACT_DIRECTORY
     let main: ChildProcess | undefined
     const mainService = options.installedMainService
@@ -313,6 +311,9 @@ export async function remoteReviewProduction(options: {
           const code = event.err?.code ?? event.code ?? event.errorCode
             ?? (event.msg === 'Device extension request failed' ? 'DEVICE_EXTENSION_FAILED' : undefined)
             ?? (event.msg === 'Operator tool failed' ? 'OPERATOR_TOOL_FAILED' : undefined)
+          if (event.msg === 'Worker conversation callback differs from its admitted request') {
+            console.error('Worker callback mismatch', parsed)
+          }
           if (!['warn', 'error', 'fatal'].includes(String(event.level)) || typeof code !== 'string' || !/^[A-Za-z][A-Za-z0-9_-]{1,127}$/.test(code)) continue
           const frames = Array.isArray(event.stackFrames)
             ? event.stackFrames.filter((frame): frame is string => typeof frame === 'string').slice(0, 2) : []
