@@ -36,10 +36,22 @@ if [ "${1:-}" = start ] || [ "${1:-}" = prepare ]; then
   case "$SUITE" in unit|unit-*|integration) ;; *) exit 0 ;; esac
   clis="npm install --global --silent --before=$(date -u -d '-2 days' +%Y-%m-%dT%H:%M:%SZ) @openai/codex @anthropic-ai/claude-code"
   if [ "$1" = prepare ]; then
-    corepack pnpm db:up
+    mkdir -p "$state"
+    prepare_one() {
+      local name="$1" code=0
+      shift
+      "$@" > "$state/$name.log" 2>&1 || code=$?
+      cat "$state/$name.log"
+      echo "$code" > "$state/$name.exit"
+      return "$code"
+    }
+    prepare_one db corepack pnpm db:up
     case "$SUITE" in unit|unit-api|integration)
       if ! command -v codex >/dev/null || ! command -v claude >/dev/null; then
-        bash -c "$clis"
+        prepare_one clis bash -c "$clis"
+      else
+        : > "$state/clis.log"
+        echo 0 > "$state/clis.exit"
       fi ;;
     esac
     exit 0
@@ -63,15 +75,15 @@ delegate_cgroup() {
 }
 
 ready() {
-  [ -d "$state" ] || return 0
-  [ -f "$state/$1.log" ] || return 0
+  [ "${CI_PREREQUISITES_UNTRACKED:-0}" != 1 ] || return 0
+  [ -d "$state" ] && [ -f "$state/$1.log" ] || { echo "Prerequisite $1 startup status is missing" >&2; exit 1; }
   until [ -f "$state/$1.exit" ]; do sleep 0.5; done
   [ "$(cat "$state/$1.exit")" = 0 ] || { cat "$state/$1.log"; echo "$1 failed to start"; exit 1; }
 }
 
 record_tests() {
   [ -n "$test_results" ] || return 0
-  node scripts/ci-test-results.mjs "$test_results" "$@" || echo 'Test results were not recorded.'
+  node scripts/ci-test-results.mjs "$test_results" "$@"
 }
 
 unit_slice() {
@@ -91,7 +103,7 @@ unit_slice() {
   if [ -f "$output.vitest.json" ]; then
     node scripts/ci-unit-files.mjs record "$suite" "$output.vitest.json" "$output"
   fi
-  record_tests "$output.vitest.json"
+  record_tests "$output.vitest.json" || { if [ "$code" = 0 ]; then code=1; fi; }
   return "$code"
 }
 
@@ -124,7 +136,7 @@ unit_other() {
   status=0
   node_tests "$reports/scripts.json" 'scripts/**/*.test.mjs' || status=$?
   if [ "$code" = 0 ]; then code="$status"; fi
-  record_tests "$reports/contracts.json" "$reports/worker.json" "$reports/scripts.json"
+  record_tests "$reports/contracts.json" "$reports/worker.json" "$reports/scripts.json" || { if [ "$code" = 0 ]; then code=1; fi; }
   return "$code"
 }
 
@@ -202,7 +214,7 @@ case "$SUITE" in
     mkdir -p "$state"; heavy_report="$(realpath -m "$state/unit-web-heavy.vitest.json")"; progress_reporter="$PWD/scripts/ci-progress-reporter.mjs"; code=0
     (cd apps/web && FOREMAN_WEB_TEST_PHASE=heavy pnpm exec vitest run ${SLICE:+--shard=$SLICE} \
       --reporter=default --reporter=json "--reporter=$progress_reporter" "--outputFile.json=$heavy_report") || code=$?
-    record_tests "$heavy_report"; exit "$code" ;;
+    record_tests "$heavy_report" || { if [ "$code" = 0 ]; then code=1; fi; }; exit "$code" ;;
   unit-other) ready db; unit_other ;;
   lint-api) build_contracts && pnpm --filter @foreman-code/api lint ;;
   lint-other) build_contracts \

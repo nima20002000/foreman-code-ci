@@ -10,26 +10,33 @@ const log = componentLogger('jobs')
 
 export async function collectCiResults(pool: pg.Pool, endpoint: HostCiEndpoint, computer: HostCiComputer,
   run: CiRunRecord, reply: Extract<CiHostReply, { operation: 'read' }>) {
-  if (!['unit', 'integration'].includes(run.suite)) return { run: reply.run, durations: reply.durations }
+  if (!['unit', 'integration'].includes(run.suite)) {
+    return { run: reply.run, durations: reply.durations, error: undefined }
+  }
   let results: Extract<CiHostReply, { operation: 'read' }> | undefined
   let collection: CiHostRun['collection'] = 'pending'
+  let collectionError: unknown
   try {
     const fetched = await endpoint.request(computer, { operation: 'read', runId: ciExecutionRunId(run),
-      afterOffset: 0, maxBytes: 1, testResults: true, durations: true })
+      afterOffset: 0, maxBytes: 1, testResults: true, durations: true }, { priority: 'background' })
     if (fetched.operation === 'read') {
       results = fetched
       if (fetched.testResults) {
         await pool.query('update ci_runs set test_results=$2::jsonb where id=$1', [run.id, serializeCiJson(fetched.testResults)])
         collection = fetched.run.collection === 'pending' ? 'pending' : 'complete'
-      } else if (fetched.run.collection === 'unsupported') {
-        collection = 'unsupported'
+      } else if (fetched.run.collection === 'unsupported' || fetched.run.collection === 'failed') {
+        collection = fetched.run.collection
       }
     }
   } catch (error) {
     const unsupported = error instanceof DomainError && (error.code === 'CI_TEST_RESULTS_UNSUPPORTED'
       || error.status === 400 && /testResults/.test(error.message))
     if (unsupported) collection = 'unsupported'
-    else log.warn({ err: error, runId: run.id }, 'CI result collection remains pending')
+    else {
+      collectionError = error
+      log.warn({ err: error, runId: run.id }, 'CI result collection remains pending')
+    }
   }
-  return { run: { ...reply.run, collection }, durations: results?.durations ?? reply.durations }
+  return { run: { ...reply.run, collection }, durations: results?.durations ?? reply.durations,
+    error: collectionError }
 }

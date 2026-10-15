@@ -1,3 +1,4 @@
+import { logIgnoredError } from '../../diagnostics/ignoredError.js'
 /** Session creation, attachment, original residency, closure, login control and shutdown. */
 import { isWorkflowStart, sessionStartDirectory, sessionStartCorrelation, sessionStartSystemPrompt } from '../sessionStart.js'
 import { NativeSessionReferenceSchema, type ApprovalResponseOption, type NativeSessionReference } from '@foreman-code/contracts'
@@ -142,8 +143,10 @@ export abstract class CodexManagerSessions extends CodexManagerTurns {
             creation.rejection = error
             await candidate!.transport.close()
           } else await publish(value)
-        })().catch(() => {
-          void candidate!.transport.close().catch(() => {
+        })().catch(error => {
+          logIgnoredError('harness', 'handle late native session response', error)
+          void candidate!.transport.close().catch(cleanupError => {
+            logIgnoredError('harness', 'clean up Codex turn resources', cleanupError)
             // ignore: late-response cleanup stays owned for shutdown to retry.
           })
         })
@@ -158,7 +161,8 @@ export abstract class CodexManagerSessions extends CodexManagerTurns {
           creation.status = 'uncertain'
           // Keep a bounded late-response window. Expiry never authorizes a retry.
           expiration = this.dependencies.schedule(() => {
-            void candidate!.transport.close().catch(() => {
+            void candidate!.transport.close().catch(cleanupError => {
+              logIgnoredError('harness', 'clean up Codex turn resources', cleanupError)
               // ignore: late-response cleanup stays owned for shutdown to retry.
             })
           }, 300_000)
@@ -294,6 +298,10 @@ export abstract class CodexManagerSessions extends CodexManagerTurns {
         return structuredClone(loaded.session)
       }
       const detached = this.processRecovery && hasDetachedStdioProcess(this.processRecovery)
+      if (this.processRecovery && isWorkflowStart(input) && !input.sessionContinuation && !detached) {
+        throw new HarnessExecutionError('EXECUTION_INTERRUPTED',
+          'The original workflow native process exited before it produced an accepted result.', true)
+      }
       const prepared = detached
         ? await this.dependencies.withDiagnostics({ binary: this.binary, cwd: sessionStartDirectory(input),
           configurationIdentity: canonicalJsonNumericKeysFirstLegacy(configuration(input)),
@@ -451,13 +459,15 @@ export abstract class CodexManagerSessions extends CodexManagerTurns {
         async (request) => { await transport.reject(request.id, -32601, 'Execution requests are not supported by the login transport.') },
         (method) => {
           if (method === 'account/login/completed') {
-            void this.closeLoginControl().catch(() => {
+            void this.closeLoginControl().catch(cleanupError => {
+              logIgnoredError('harness', 'clean up Codex login', cleanupError)
               // ignore: failed cleanup retains the login control for explicit close or shutdown.
             })
           }
         },
         () => {
-          void this.closeLoginControl().catch(() => {
+          void this.closeLoginControl().catch(cleanupError => {
+            logIgnoredError('harness', 'clean up Codex login', cleanupError)
             // ignore: failed cleanup retains the login control for explicit close or shutdown.
           })
         },
@@ -471,14 +481,16 @@ export abstract class CodexManagerSessions extends CodexManagerTurns {
         if (!this.loginControl) throw new HarnessExecutionError('CODEX_LOGIN_DISCONNECTED', 'The login transport disconnected.')
         this.loginControl.loginId = loginId
         this.loginControl.timer = this.dependencies.schedule(() => {
-          void this.closeLoginControl().catch(() => {
+          void this.closeLoginControl().catch(cleanupError => {
+            logIgnoredError('harness', 'clean up Codex login', cleanupError)
             // ignore: failed cleanup retains the login control for explicit close or shutdown.
           })
         }, 15 * 60_000)
         this.loginControl.timer.unref()
         return response
       } catch (error) {
-        await this.closeLoginControl().catch(() => {
+        await this.closeLoginControl().catch(cleanupError => {
+          logIgnoredError('harness', 'clean up Codex login', cleanupError)
           // ignore: preserve the login failure; explicit close or shutdown retries cleanup.
         })
         throw error

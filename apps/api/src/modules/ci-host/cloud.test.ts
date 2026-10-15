@@ -8,6 +8,7 @@ import { executionSelection } from '../../../../../scripts/ci-selection.mjs'
 import { cloudService } from './cloudService.testSupport.js'
 
 import { fixture } from './cloud.testSupport.js'
+import { expectCliRunMessage } from './cloudAssertions.testSupport.js'
 
 it.each([false, true])('keeps a first-pass CircleCI file failure in Main when its retest passes: report=%s', async reported => {
   const f = await fixture({}, { provider: 'circleci' })
@@ -123,7 +124,7 @@ it.each(['pipeline', 'workflow'] as const)('uses an ended CircleCI %s despite st
     .toMatchObject({ run: { state: ended === 'pipeline' ? 'failed' : 'canceled', exitCode: 1 } })
 })
 
-it.each(['unknown outcome', 'no active workflows'] as const)('fails an ended CircleCI run with %s clearly', async reason => {
+it.each(['unknown outcome', 'no active workflows'] as const)('keeps a CircleCI run with %s pending until success', async reason => {
   const f = await fixture({}, { provider: 'circleci' })
   const runId = randomUUID()
   await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId, repository: 'octo/site',
@@ -131,9 +132,16 @@ it.each(['unknown outcome', 'no active workflows'] as const)('fails an ended Cir
   if (reason === 'unknown outcome') f.circle.runView = { phase: 'ended', workflows: [] }
   else f.circle.lookupError = 'error: Run run-1 has no active workflows'
   expect(await f.cloud.handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 1024 }))
-    .toMatchObject({ run: { state: 'failed', exitCode: 1, message: expect.stringContaining('final outcome is unknown') } })
+    .toMatchObject({ run: { state: 'running', exitCode: null, finishedAt: null } })
   expect(await f.reopen().handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 1 }))
-    .toMatchObject({ run: { state: 'failed' } })
+    .toMatchObject({ run: { state: 'running', exitCode: null, finishedAt: null } })
+  f.circle.lookupError = ''
+  f.circle.runView = null
+  f.circle.outcome = 'succeeded'
+  f.circle.durations = { 'apps/api/test/a.integration.test.ts': 90 }
+  f.advance(4_001)
+  expect(await f.reopen().handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 1 }))
+    .toMatchObject({ run: { state: 'passed', exitCode: 0 } })
   expect(f.circle.triggered).toHaveLength(1)
 })
 
@@ -147,7 +155,7 @@ it.each([false, true])('settles CircleCI cancellation when nothing is active, lo
   expect(await f.cloud.handle({ operation: 'cancel', runId }))
     .toMatchObject({ operation: 'cancel', run: { state: 'canceled', finishedAt: expect.any(String) } })
   expect(await f.reopen().handle({ operation: 'cancel', runId })).toMatchObject({ run: { state: 'canceled' } })
-  expect(f.circle.canceled).toHaveLength(lookupEnded ? 0 : 1)
+  expect(f.circle.canceled).toHaveLength(1)
   expect(f.circle.triggered).toHaveLength(1)
 })
 
@@ -326,14 +334,20 @@ describe('GitHub Actions CI on a public mirror', () => {
       const runId = randomUUID()
       const started = await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId, repository: 'octo/site', commit: f.commit,
         baseCommit, suite: 'integration', scope: 'affected' })
-      expect(started.operation === 'start' && started.run.message)
-        .toBe('Running full suite: baseCommit is unavailable or is not an ancestor of the resolved commit.')
+      if (started.operation !== 'start') throw new Error('Expected a start reply')
+      const reason = 'Running full suite: baseCommit is unavailable or is not an ancestor of the resolved commit.'
+      if (provider === 'github' && baseCommit === 'f'.repeat(40)) {
+        expect(started.run.message).toBe(reason)
+        expect(started.run.transport).toBeUndefined()
+      } else {
+        expectCliRunMessage(started.run, reason)
+      }
       const command = (provider === 'github' ? f.dispatched : f.circle.triggered).at(-1)!
       expect(command).toContain('scope=full')
       expect(command.some(value => value.startsWith('base_commit='))).toBe(false)
       const read = await f.reopen().handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 1024 })
-      expect(read.operation === 'read' && read.run.message)
-        .toBe('Running full suite: baseCommit is unavailable or is not an ancestor of the resolved commit.')
+      if (read.operation !== 'read') throw new Error('Expected a read reply')
+      expectCliRunMessage(read.run, reason)
     }
   })
 
@@ -718,38 +732,39 @@ describe('GitHub Actions CI on a public mirror', () => {
       .toMatchObject({ run: { state: 'starting' } })
     expect(f.circle.triggered).toHaveLength(1)
     f.circle.lookupError = ''
+    f.advance(4_000)
     expect(await f.cloud.handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 1 }))
       .toMatchObject({ run: { state: 'running' } })
   })
 
-  it('ends an unrecoverable unstarted CircleCI ticket as lost and releases its Main slot', async () => {
+  it('requeues an unreadable unstarted CircleCI ticket and releases its Main slot', async () => {
     const f = await fixture({}, { provider: 'circleci' })
     f.circle.lookupError = 'run.not_found'
     const runId = randomUUID()
-    const started = await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId, repository: 'octo/site', commit: f.commit,
-      suite: 'integration', scope: 'full' })
+    const started = await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId,
+      repository: 'octo/site', commit: f.commit, suite: 'integration', scope: 'full' })
     if (started.operation !== 'start') throw new Error('Expected a start reply')
     const main = cloudService(f.cloud, started.run, f.commit)
     const read = { operation: 'read', runId, afterOffset: 0, maxBytes: 65_536 }
-    let now = Date.parse(started.run.startedAt!)
-    const clock = vi.spyOn(Date, 'now').mockImplementation(() => now)
-    try {
-      for (let attempt = 0; attempt < 3; attempt++) {
-        now += 75_000
-        f.advance(75_000)
-        await f.reopen().handle(read)
-        await main.service.dispatch()
-      }
-    } finally {
-      clock.mockRestore()
-    }
-    expect(await main.read()).toMatchObject({ run: { state: 'lost', computer: { label: 'CircleCI' },
-      finishedAt: expect.any(String), message: expect.stringContaining('slot was released') } })
+    await main.service.dispatch()
+    expect(await main.read()).toMatchObject({ run: { state: 'starting', computer: { label: 'CircleCI' } } })
+    f.advance(70_000)
+    await main.service.dispatch()
+    expect(await main.read()).toMatchObject({ run: { state: 'starting', computer: { label: 'CircleCI' } } })
+    expect(f.circle.canceled).toEqual([])
+    f.advance(5_000)
+    await main.service.dispatch()
+    expect(await main.read()).toMatchObject({ run: { state: 'queued', computer: null,
+      startedAt: null, finishedAt: null, exitCode: null, unstartedProviders: ['circleci'],
+      messageHistory: expect.arrayContaining([expect.stringContaining('queued for another computer')]) } })
     expect(f.circle.triggered).toHaveLength(1)
     expect(f.circle.canceled).toEqual(['run-1'])
-    expect(await f.reopen().handle({ operation: 'cancel', runId })).toMatchObject({ run: { state: 'canceled' } })
+    expect(await f.reopen().handle(read)).toMatchObject({ run: { state: 'queued',
+      message: expect.stringContaining('queued for another computer') } })
     await main.service.dispatch()
-    expect(await main.read()).toMatchObject({ run: { state: 'lost' } })
+    expect(await main.read()).toMatchObject({ run: { state: 'queued', computer: null } })
+    expect(f.circle.triggered).toHaveLength(1)
+    expect(f.circle.canceled).toEqual(['run-1'])
   })
 
   it('recovers a transiently missing CircleCI lookup before its reconciliation budget is spent', async () => {
@@ -759,9 +774,12 @@ describe('GitHub Actions CI on a public mirror', () => {
     await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId, repository: 'octo/site', commit: f.commit,
       suite: 'integration', scope: 'full' })
     const read = { operation: 'read', runId, afterOffset: 0, maxBytes: 1024 }
-    f.advance(75_000)
+    f.advance(40_000)
     expect(await f.reopen().handle(read)).toMatchObject({ run: { state: 'starting', finishedAt: null,
       message: expect.stringContaining('could not be reconciled') } })
+    f.advance(30_000)
+    expect(await f.reopen().handle(read)).toMatchObject({ run: { state: 'starting', finishedAt: null } })
+    expect(f.circle.canceled).toEqual([])
     f.circle.lookupError = ''
     f.circle.outcome = 'failed'
     f.advance(4_000)
@@ -783,8 +801,10 @@ describe('GitHub Actions CI on a public mirror', () => {
       f.advance(75_000)
       const read = { operation: 'read', runId, afterOffset: 0, maxBytes: 1024 }
       expect(await f.reopen().handle(read)).toMatchObject({ run: { state, finishedAt: null } })
-      expect(await f.reopen().handle({ operation: 'cancel', runId }))
-        .toMatchObject({ operation: 'cancel', run: { state: 'canceled', message: 'Canceled.' } })
+      const canceled = await f.reopen().handle({ operation: 'cancel', runId })
+      expect(canceled).toMatchObject({ operation: 'cancel', run: { state: 'canceled' } })
+      if (canceled.operation !== 'cancel') throw new Error('Expected a cancel reply')
+      expectCliRunMessage(canceled.run, 'Canceled.')
       expect(f.circle.canceled).toEqual(['run-1'])
       expect(await f.reopen().handle({ operation: 'cancel', runId }))
         .toMatchObject({ run: { state: 'canceled' } })
@@ -795,7 +815,7 @@ describe('GitHub Actions CI on a public mirror', () => {
     },
   )
 
-  it('retains ownership and exposes bounded reconciliation when a started CircleCI pipeline disappears', async () => {
+  it('retains ownership within the visibility window and requeues a disappeared CircleCI pipeline', async () => {
     const f = await fixture({}, { provider: 'circleci' })
     const runId = randomUUID()
     await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId, repository: 'octo/site', commit: f.commit,
@@ -808,10 +828,13 @@ describe('GitHub Actions CI on a public mirror', () => {
         message: expect.stringContaining('could not be reconciled') } })
     }
     expect(await f.reopen().handle(read)).toMatchObject({ run: { state: 'running',
-      message: expect.stringContaining('Operator cancellation is required') } })
+      message: expect.stringContaining('Retrying lookup') } })
     expect(f.circle.triggered).toHaveLength(1)
     expect(f.circle.canceled).toEqual([])
-    expect(await f.reopen().handle({ operation: 'cancel', runId })).toMatchObject({ run: { state: 'canceled' } })
+    f.advance(75_000)
+    expect(await f.reopen().handle(read)).toMatchObject({ run: { state: 'queued', finishedAt: null } })
+    expect(f.circle.canceled).toEqual(['run-1'])
+    expect(f.circle.triggered).toHaveLength(1)
   })
 
   it('does not suppress CircleCI permission failures', async () => {
@@ -1005,8 +1028,12 @@ it.each((['github', 'circleci'] as const).flatMap(provider => [
   f.circle.log = f.circle.output
   f.circle.watchdogFailure = { message: reason }
   const result = await f.cloud.handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 65_536 })
-  expect(result).toMatchObject({ run: { state: 'failed', message: expected }, text: expect.stringContaining(expected) })
-  expect(result.operation === 'read' && result.text).not.toContain('\0')
-  expect(await f.reopen().handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 65_536 }))
-    .toMatchObject({ run: { state: 'failed', message: expected }, text: expect.stringContaining(expected) })
+  expect(result).toMatchObject({ run: { state: 'failed' }, text: expect.stringContaining(expected) })
+  if (result.operation !== 'read') throw new Error('Expected a read reply')
+  expectCliRunMessage(result.run, expected)
+  expect(result.text).not.toContain('\0')
+  const readback = await f.reopen().handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 65_536 })
+  expect(readback).toMatchObject({ run: { state: 'failed' }, text: expect.stringContaining(expected) })
+  if (readback.operation !== 'read') throw new Error('Expected a read reply')
+  expectCliRunMessage(readback.run, expected)
 })

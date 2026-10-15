@@ -1,3 +1,4 @@
+import { optionalCommandId } from './management/commands.js'
 import { ClaudeQualificationProofSchema } from './claudeQualification.js'
 import { z } from 'zod'
 import { HarnessConfigurationSchema, SupportedHarnessConfigurationSchema, type HarnessConfiguration } from './index.js'
@@ -81,7 +82,7 @@ function validateHostEnvironment(configuration: HarnessConfiguration, context: z
 
 
 export const HostHarnessOverrideSaveSchema = z.object({
-  commandId: z.uuid(), instanceId: z.uuid(), expectedRevision: z.number().int().nonnegative().optional().describe('Omit for last write wins; supply to reject a stale revision.'),
+  commandId: optionalCommandId(z.uuid()), instanceId: z.uuid(), expectedRevision: z.number().int().nonnegative().optional().describe('Omit for last write wins; supply to reject a stale revision.'),
   target: HostHarnessOverrideTargetSchema, presetId: Identity, enabled: z.boolean(),
   configuration: z.lazy(() => SupportedHarnessConfigurationSchema),
 }).strict().superRefine((value, context) => validateHostEnvironment(value.configuration, context, ['configuration']))
@@ -106,7 +107,7 @@ export const HARNESS_DISCOVERY_NAMESPACE = 'harness-discovery-v1' as const
 export const HarnessDiscoveryRequestSchema = z.object({ operation: z.literal('discover'), refreshId: z.uuid() }).strict()
 
 export const HostHarnessInstanceCheckInputSchema = z.object({
-  commandId: z.uuid(), instanceId: z.uuid(), expectedRevision: z.number().int().positive(), target: HostHarnessOverrideTargetSchema,
+  commandId: optionalCommandId(z.uuid()), instanceId: z.uuid(), expectedRevision: z.number().int().positive(), target: HostHarnessOverrideTargetSchema,
 }).strict()
 export type HostHarnessInstanceCheckInput = z.infer<typeof HostHarnessInstanceCheckInputSchema>
 export const CompletedNativeQualificationSchema = z.object({
@@ -121,6 +122,7 @@ export const HostHarnessProfileEvidenceSchema = z.object({
   driverId: Identity, driverRevision: Identity, protocolRevision: Identity, suiteRevision: Identity,
   environmentGeneration: Identity, connectionGeneration: Identity,
   authenticated: z.boolean().nullable(), compatible: z.boolean().nullable(), qualified: z.boolean(), checkedAt: z.string().datetime(),
+  modelCatalogSource: z.enum(['native', 'cached']).optional(),
   failure: z.object({ code: Identity, message: z.string().min(1).max(500) }).strict().optional(),
   /** Native-produced provider checks stored in this same exact-host profile proof. */
   claudeProof: ClaudeQualificationProofSchema.optional(),

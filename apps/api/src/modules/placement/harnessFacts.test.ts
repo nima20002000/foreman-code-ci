@@ -11,8 +11,10 @@ import { qualificationIdentity } from '../harnesses/qualification/identity.js'
 import { readPlacementHarnessFacts } from './harnessFacts.js'
 import { placementDigest } from './binding.js'
 
-function fixture(driver: 'codex' | 'claude' = 'codex') {
-  const hostRef = { kind: 'main' as const, mainId: randomUUID() }
+function fixture(driver: 'codex' | 'claude' = 'codex', hostKind: 'main' | 'device' = 'main') {
+  const mainId = randomUUID()
+  const hostRef = hostKind === 'main' ? { kind: 'main' as const, mainId }
+    : { kind: 'device' as const, mainId, deviceId: randomUUID() }
   const instanceId = randomUUID()
   const fingerprint = 'a'.repeat(64)
   const suiteRevision = 'codex-live-fixture'
@@ -22,7 +24,8 @@ function fixture(driver: 'codex' | 'claude' = 'codex') {
   const installation: HarnessInstallationRecord = {
     hostRef, harnessInstallationId: 'installed-codex', installationFingerprint: fingerprint,
     driverId: driver, driverRevision: '1', protocolRevision: 'codex-native-adapter-v1',
-    environmentGeneration: 'environment', connectionGeneration: 'connection', observedVersion: null,
+    environmentGeneration: 'environment', connectionGeneration: 'connection',
+    observedVersion: hostKind === 'device' ? '0.154.0' : null,
     installed: true, authenticated: null, compatible: null, qualified: null,
     launcher: { requested: '/installed/codex', resolvedLauncher: '/installed/codex', fingerprint,
       payloadFingerprints: [{ path: '/installed/codex', fingerprint }], status: 'installed', interpreter: null,
@@ -56,7 +59,9 @@ function fixture(driver: 'codex' | 'claude' = 'codex') {
       return { rows: (sql.includes('limit 1') ? selected.slice(0, 1) : selected).map(record => ({ record })) }
     }
     if (sql.includes('from harness_instance_profile_evidence')) {
-      return { rows: (proofRecords.get(Number(values?.[1])) ?? []).map(record => ({ record })) }
+      const revisions = Array.isArray(values?.[1]) ? values[1] : [values?.[1]]
+      return { rows: revisions.flatMap(revision => (proofRecords.get(Number(revision)) ?? [])
+        .map(record => ({ instance_revision: Number(revision), record }))) }
     }
     if (sql.includes('from host_harness_measurements')) return { rows: records.map(row => ({
       evidence: row.evidence, qualification: { harness: row.harness, version: row.version, binarySha256: row.binary_sha256,
@@ -74,6 +79,72 @@ function fixture(driver: 'codex' | 'claude' = 'codex') {
     { query } as unknown as GraphSqlClient, placement, installations, { codex: suiteRevision }, options)
   return { read, installations, records, proof, evidence, override, placement, query, settingsRecords, proofRecords }
 }
+
+async function reconnectedWorker() {
+  const f = fixture('codex', 'device')
+  if (f.placement.payload.kind !== 'agent' || f.placement.hostRef.kind !== 'device') {
+    throw new Error('Expected a Worker Agent placement.')
+  }
+  const initial = await f.read()
+  if (!initial.qualification) throw new Error('Expected native Worker qualification.')
+  f.proof.completedNativeQualification = { purpose: 'explicit-host-qualification', checkId: randomUUID(),
+    target: f.override.target, binarySha256: initial.qualification.binarySha256!, record: initial.qualification,
+    binding: { mainId: f.placement.hostRef.mainId, deviceId: f.placement.hostRef.deviceId,
+      workerInstallationId: f.override.target.applicationInstallationId, keyRevision: 1, authorizationRevision: 1,
+      bootId: randomUUID(), connectionEpoch: randomUUID(), connectionGeneration: 1 },
+  }
+  const accepted = await f.read()
+  f.placement.payload.profileProofDigest = placementDigest(accepted.profileProof)
+  f.placement.payload.qualificationDigest = placementDigest(accepted.qualification)
+  const original = structuredClone(f.placement)
+  const refreshed: HostHarnessProfileEvidence = { ...f.proof, connectionGeneration: 'replacement-channel',
+    checkedAt: new Date(Date.parse(f.proof.checkedAt) + 1_000).toISOString() }
+  f.proofRecords.set(1, [refreshed, f.proof])
+  f.installations.refresh(f.installations.list().map(installation => ({
+    ...installation, connectionGeneration: refreshed.connectionGeneration,
+  })))
+  return { ...f, accepted, original, refreshed }
+}
+
+it('launches an unstarted Worker with its requalified connection and retains the accepted Run facts', async () => {
+  const f = await reconnectedWorker()
+  const launched = await f.read()
+  expect(launched.profileProof).toEqual(f.refreshed)
+  expect(launched.qualification).toEqual(f.accepted.qualification)
+  expect(f.placement).toEqual(f.original)
+  expect((await f.read({ purpose: 'resident' })).profileProof).toEqual(f.accepted.profileProof)
+})
+
+it('uses the completed native qualification from the reconnected Worker check', async () => {
+  const f = await reconnectedWorker()
+  if (f.placement.hostRef.kind !== 'device' || !f.accepted.qualification) {
+    throw new Error('Expected a qualified Worker placement.')
+  }
+  const qualification = { ...f.accepted.qualification, checkedAt: f.refreshed.checkedAt }
+  f.refreshed.completedNativeQualification = { purpose: 'explicit-host-qualification', checkId: randomUUID(),
+    target: f.override.target, binarySha256: qualification.binarySha256!, record: qualification,
+    binding: { mainId: f.placement.hostRef.mainId, deviceId: f.placement.hostRef.deviceId,
+      workerInstallationId: f.override.target.applicationInstallationId, keyRevision: 1, authorizationRevision: 1,
+      bootId: randomUUID(), connectionEpoch: randomUUID(), connectionGeneration: 2 },
+  }
+  expect((await f.read()).qualification).toEqual(qualification)
+  expect(f.placement).toEqual(f.original)
+})
+
+it.each(['missing-check', 'failed-check', 'environment', 'configuration', 'binary'] as const)(
+  'rejects an unstarted reconnected Worker with a %s', async defect => {
+    const f = await reconnectedWorker()
+    if (defect === 'missing-check') f.proofRecords.set(1, [f.proof])
+    if (defect === 'failed-check') f.refreshed.qualified = false
+    if (defect === 'environment') f.refreshed.environmentGeneration = 'replacement-environment'
+    if (defect === 'configuration') f.refreshed.configurationFingerprint = 'different-configuration'
+    if (defect === 'binary') f.installations.refresh(f.installations.list().map(installation => ({
+      ...installation, installationFingerprint: 'b'.repeat(64),
+    })))
+    await expect(f.read()).rejects.toMatchObject({ code: 'HARNESS_PROFILE_UNAVAILABLE' })
+    expect(f.placement).toEqual(f.original)
+  },
+)
 
 it('admits passive inventory only with its exact measured binary and qualified profile', async () => {
   const f = fixture()
@@ -242,5 +313,25 @@ it('admits Main Claude by its exact qualified profile check, which is its native
   expect(facts.profileProof).toMatchObject({ authenticated: true, compatible: true, qualified: true })
   expect(facts.qualification).toBeUndefined()
   f.proof.qualified = false
-  await expect(f.read()).rejects.toMatchObject({ code: 'HARNESS_PROFILE_UNAVAILABLE', details: { reason: 'profile_binding_changed' } })
+  await expect(f.read()).rejects.toMatchObject({ code: 'HARNESS_PROFILE_UNAVAILABLE',
+    message: 'The native check for the selected harness profile did not pass.',
+    details: { reason: 'profile_check_failed' } })
+})
+
+
+it('resolves a pinned profile across a large settings history with bounded database reads', async () => {
+  const f = fixture()
+  const accepted = await f.read()
+  if (f.placement.payload.kind !== 'agent') throw new Error('Expected an Agent placement.')
+  f.placement.payload.profileProofDigest = placementDigest(accepted.profileProof)
+  f.placement.payload.qualificationDigest = placementDigest(accepted.qualification)
+  for (let revision = 2; revision <= 80; revision++) {
+    f.settingsRecords.push({ ...f.override, revision })
+    f.proofRecords.set(revision, [{ ...f.proof, checkedAt: new Date(Date.parse(f.proof.checkedAt) + revision).toISOString() }])
+  }
+  const before = structuredClone({ settings: f.settingsRecords, proofs: [...f.proofRecords], placement: f.placement })
+  f.query.mockClear()
+  expect(await f.read()).toEqual(accepted)
+  expect({ settings: f.settingsRecords, proofs: [...f.proofRecords], placement: f.placement }).toEqual(before)
+  expect(f.query.mock.calls.length).toBeLessThanOrEqual(4)
 })

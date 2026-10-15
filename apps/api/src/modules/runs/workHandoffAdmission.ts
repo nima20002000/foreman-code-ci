@@ -10,6 +10,8 @@ import type { RepeatLockedHooks } from './repeatPostgres.js'
 import { repeatConflict, repeatDigest, repeatId, sameRepeatValue, type RepeatScope } from './repeatResolution.js'
 import { frozenWorkNotice, persistWorkLimitNoticeLocked, readWorkLimitNoticeLocked } from './workHandoffNotice.js'
 import { assertWorkflowExecutionCapacityLocked } from './workflowExecutionBudget.js'
+import { parseWorkResultForInput } from './workHandoffResult.js'
+import { readWorkReturnRequestLocked } from './workReturnValidation.js'
 
 async function assertAcceptedWorkResult(sql: GraphTransactionSql, scope: RepeatScope,
   execution: ReturnType<typeof HarnessExecutionSchema.parse>, activationId: string): Promise<void> {
@@ -91,7 +93,8 @@ export async function readWorkActivationInputLocked(context: AdmissionContext, a
     if (!accepted || accepted.result_digest !== returned.acceptedResultDigest) return repeatConflict('WORK_RETURN_RESULT_CONFLICT')
     const acceptedSourceResult = AcceptedCurrentNodeResultSchema.parse(JSON.parse(accepted.result_json))
     const response = parseWorkHandoffResult(acceptedSourceResult)
-    if (response.routing.kind !== 'return' || response.routing.requestId !== returned.requestId
+    if (response.routing.kind !== 'return'
+      || response.routing.requestId !== undefined && response.routing.requestId !== returned.requestId
       || response.routing.outcome !== returned.outcome
       || !sameRepeatValue(response.data.latestDeliverable, returned.latestDeliverable)
       || !sameRepeatValue(response.data.remainingFindings, returned.remainingFindings)) {
@@ -235,7 +238,7 @@ export async function recordUnresolvedWorkLocked(context: AdmissionContext,
   if (!row?.accepted || !row.work_activation_id) return repeatConflict('WORK_SOURCE_NOT_ACCEPTED')
   const execution = HarnessExecutionSchema.parse(row.record)
   await assertAcceptedWorkResult(sql, scope, execution, row.work_activation_id)
-  const result = parseWorkHandoffResult(execution.result)
+  const result = parseWorkResultForInput(execution.result!, execution.input)
   const node = version.definition.nodes.find((item) => item.id === execution.workflowNodeId)
   if (!node) return repeatConflict('WORKFLOW_NODE_NOT_FOUND')
   if (node.kind === 'job') return repeatConflict('WORK_POLICY_PIN_CONFLICT')
@@ -329,15 +332,8 @@ export async function ensureWorkEntryLocked(context: AdmissionContext): Promise<
   return activationId
 }
 
-/** Called only inside RepeatRunRepository's owner-fenced, Run-locked transaction.
- * This is an admission receipt; native launch still uses the original one-use
- * claim, authorization, session and possible-submission boundary. */
-export async function admitWorkHandoffLocked(context: AdmissionContext, sourceExecutionId: string,
-  selectedRelationshipId?: string): Promise<WorkRequestAdmission> {
-  const { sql, scope, version, hooks } = context
-  if (!version.definition.handoffs || version.definition.repeat
-    || version.definition.nodes.some((node) => node.kind === 'job')) return repeatConflict('WORK_POLICY_PIN_CONFLICT')
-  await hooks.assertAuthorityLocked(sql)
+async function readAcceptedWorkSourceLocked(context: AdmissionContext, sourceExecutionId: string) {
+  const { sql, scope, version } = context
   const row = (await sql.query<{ record: unknown; accepted: boolean; work_activation_id: string | null }>(
     `select record,accepted,work_activation_id from harness_executions
       where id=$1 and run_id=$2 for share`, [sourceExecutionId, scope.runId])).rows[0]
@@ -349,12 +345,25 @@ export async function admitWorkHandoffLocked(context: AdmissionContext, sourceEx
     return repeatConflict('WORK_SOURCE_PIN_CONFLICT')
   }
   await assertAcceptedWorkResult(sql, scope, execution, row.work_activation_id)
+  return { execution, activationId: row.work_activation_id }
+}
+
+/** Called only inside RepeatRunRepository's owner-fenced, Run-locked transaction.
+ * This is an admission receipt; native launch still uses the original one-use
+ * claim, authorization, session and possible-submission boundary. */
+export async function admitWorkHandoffLocked(context: AdmissionContext, sourceExecutionId: string,
+  selectedRelationshipId?: string): Promise<WorkRequestAdmission> {
+  const { sql, scope, version, hooks } = context
+  if (!version.definition.handoffs || version.definition.repeat
+    || version.definition.nodes.some((node) => node.kind === 'job')) return repeatConflict('WORK_POLICY_PIN_CONFLICT')
+  await hooks.assertAuthorityLocked(sql)
+  const { execution, activationId: sourceActivationId } = await readAcceptedWorkSourceLocked(context, sourceExecutionId)
   const source = (await sql.query<{ record: unknown; workflow_node_id: string }>(
     'select record,workflow_node_id from run_work_activations where activation_id=$1 and run_id=$2 for share',
-    [row.work_activation_id, scope.runId])).rows[0]
+    [sourceActivationId, scope.runId])).rows[0]
   if (!source || source.workflow_node_id !== execution.workflowNodeId) return repeatConflict('WORK_SOURCE_ACTIVATION_CONFLICT')
   const activation = WorkActivationIdentitySchema.parse(source.record)
-  if (!sameRepeatValue(activation.scope, scope) || activation.activationId !== row.work_activation_id) {
+  if (!sameRepeatValue(activation.scope, scope) || activation.activationId !== sourceActivationId) {
     return repeatConflict('WORK_SOURCE_ACTIVATION_CONFLICT')
   }
   const result = WorkHandoffResultSchema.parse(parseWorkHandoffResult(execution.result))
@@ -561,14 +570,11 @@ export async function returnWorkHandoffLocked(context: AdmissionContext, sourceE
   if (!sameRepeatValue(activation.scope, scope) || activation.workflowNodeId !== execution.workflowNodeId) {
     return repeatConflict('WORK_RETURN_SOURCE_PIN_CONFLICT')
   }
-  const request = await readParentWorkRequestLocked(context, activation.activationId)
-  if (!request) return repeatConflict('WORK_RETURN_REQUEST_MISSING')
-  if (request.destinationNodeId !== execution.workflowNodeId) return repeatConflict('WORK_RETURN_ANCESTRY_CONFLICT')
-  const result = parseWorkHandoffResult(execution.result)
+  const result = parseWorkResultForInput(execution.result, execution.input)
   const routing = result.routing
-  if (routing.kind !== 'return' || routing.requestId !== request.requestId) {
-    return repeatConflict('WORK_RETURN_RESULT_CONFLICT')
-  }
+  if (routing.kind !== 'return') return repeatConflict('WORK_RETURN_RESULT_CONFLICT')
+  const request = await readWorkReturnRequestLocked(context, activation.activationId, routing.requestId)
+  if (request.destinationNodeId !== execution.workflowNodeId) return repeatConflict('WORK_RETURN_ANCESTRY_CONFLICT')
   const resultDigest = repeatDigest(execution.result, 64 * 1024)
   const prior = (await sql.query<{ record: unknown }>(
     'select record from run_work_returns where run_id=$1 and request_id=$2', [scope.runId, request.requestId])).rows[0]

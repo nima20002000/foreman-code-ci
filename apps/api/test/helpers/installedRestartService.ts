@@ -1,11 +1,13 @@
 import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
+import { existsSync } from 'node:fs'
 import { copyFile, cp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { userInfo } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
+import { parse } from 'yaml'
 import { apiServiceTemplate, deployProductionApi, publish }
   from '../../../../scripts/local-production-runtime.mjs'
 import { renderUserService } from '../../../worker/src/service.mjs'
@@ -15,6 +17,7 @@ import { readUntil } from './observableCondition.js'
 import { removeRestartUnit } from '../../../../scripts/test-restart-units.mjs'
 import { testFixtureCacheRoot } from '../../../../scripts/test-fixture-cache.mjs'
 import { ownedTestPath } from './testResources.js'
+import { measureIntegrationPhase } from './integrationPhase.js'
 
 const execute = promisify(execFile)
 const repository = fileURLToPath(new URL('../../../..', import.meta.url))
@@ -66,7 +69,7 @@ export async function installedRestartService(directory: string, configuration: 
   await mkdir(dirname(api), { recursive: true, mode: 0o700 })
   await cp(join(repository, 'scripts'), join(release, 'scripts'), { recursive: true })
   await cp(join(repository, 'packages/contracts/src'), join(release, 'packages/contracts/src'), { recursive: true })
-  // Legacy pnpm deployment changes its source workspace's dependency selection.
+  // Package from a disposable workspace so fixture setup cannot change the installed source.
   const deployment = join(directory, 'deployment-source')
   await mkdir(join(deployment, 'scripts'), { recursive: true, mode: 0o700 })
   for (const name of ['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml']) {
@@ -83,18 +86,32 @@ export async function installedRestartService(directory: string, configuration: 
   // The installer's shared dependency tree is deployed once per lockfile, not copied again for every fixture.
   // The installed API's own modules are transformed below.
   await mkdir(join(deployment, 'apps/api/dist'), { recursive: true })
-  await deployProductionApi(async (command: string, args: string[]) => {
+  const { storeDir } = parse(await readFile(join(repository, 'node_modules/.modules.yaml'), 'utf8')) as {
+    storeDir: string
+  }
+  const ciMetadataCache = join(repository, '.logs/pnpm-metadata')
+  // Test homes are private; use the host or cloud install's cache for release-age verification.
+  const metadataCache = process.env.npm_config_cache_dir
+    || (existsSync(ciMetadataCache) ? ciMetadataCache : join(serviceUser.homedir, '.cache/pnpm'))
+  const deploy = async (command: string, args: string[]) => {
     // The disposable deployment workspace is discarded, so it needs no dependency restoration.
     if (args.includes('install')) return
     try {
-      await execute(command, args, { cwd: deployment, maxBuffer: 4 * 1024 * 1024,
-        env: { ...process.env, CI: 'true', npm_config_offline: 'true' } })
+      // Deploy rechecks release age; allow missing full metadata while reusing installed packages.
+      await execute(command, [...args, '--prefer-offline', '--store-dir', storeDir, '--cache-dir', metadataCache], {
+        cwd: deployment, maxBuffer: 4 * 1024 * 1024, timeout: 300_000,
+        env: { ...process.env, CI: 'true' },
+      })
     } catch (error) {
       const output = error as Error & { stdout?: string; stderr?: string; code?: unknown; signal?: unknown }
-      throw new Error(`${output.message} (code ${output.code}, signal ${output.signal})\n`
+      throw new Error(`Installed API fixture deployment failed (prefer-offline; 300 s command limit): ${output.message}`
+        + ` (code ${output.code}, signal ${output.signal})\n`
         + `${output.stderr ?? ''}\n${output.stdout ?? ''}`, { cause: error })
     }
-  }, api, { dependencies: { root: join(testFixtureCacheRoot(), 'api-dependencies'), source: deployment } })
+  }
+  await measureIntegrationPhase('Installed API dependencies', () => deployProductionApi(deploy, api, {
+    dependencies: { root: join(testFixtureCacheRoot(), 'api-dependencies'), source: deployment },
+  }))
   await mkdir(join(api, 'test/helpers'), { recursive: true })
   await copyFile(join(repository, 'apps/api/test/helpers/testPool.mjs'), join(api, 'test/helpers/testPool.mjs'))
   const source = join(repository, 'apps/api/src')
