@@ -1,4 +1,5 @@
 import type { CiHostRequest, CiHostReply, CiHostRun, CiRunRecord, CiUserSystemd } from '@foreman-code/contracts'
+import type { DeviceRequestPriority } from '@foreman-code/contracts/device-application'
 import type { CiRepositoryCapabilities } from './repository.js'
 import type { CiIntegrationInventory } from './integrationParts.js'
 import type { CiUnitInventory } from './parts.js'
@@ -17,7 +18,8 @@ export type CiMirrorInput = Pick<Extract<CiHostRequest, { operation: 'start' }>,
 export interface HostCiEndpoint {
   /** Paired computers that serve host CI now. */
   computers(): Promise<HostCiComputer[]>
-  request(computer: HostCiComputer, request: CiHostRequest): Promise<CiHostReply>
+  request(computer: HostCiComputer, request: CiHostRequest,
+    options?: { priority: DeviceRequestPriority }): Promise<CiHostReply>
   publishMirror?(input: CiMirrorInput): Promise<void>
 }
 /** Resolves the commit to test and makes sure GitHub has it, so build computers can fetch it. */
@@ -29,7 +31,7 @@ export interface CiCommits {
   integrationInventory?(repository: string, commit: string): Promise<CiIntegrationInventory>
   unitInventory?(repository: string, commit: string): Promise<CiUnitInventory>
   /** The commit's files and their blobs, for result cache keys; without it every selected file runs. */
-  testTree?(repository: string, commit: string): Promise<CiTestTree>
+  testTree?(repository: string, commit: string, signal?: AbortSignal): Promise<CiTestTree>
   resolve(repository: string, defaultBranch: string, commit: string | undefined,
     snapshot: { baseCommit: string; commit: string; bundle: Buffer | null } | null): Promise<string>
 }

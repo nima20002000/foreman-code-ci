@@ -1,3 +1,4 @@
+import { diagnosticWarning } from './diagnostic-warning.mjs'
 import { exclusiveIntegrationFiles, integrationCpuCost,
   requirements } from '../packages/contracts/src/integrationScheduling.mjs'
 import { readProductEnvironment } from '../packages/contracts/src/productEnvironment.mjs'
@@ -10,7 +11,8 @@ import { createRequire } from 'node:module'
 import { availableParallelism, freemem } from 'node:os'
 import { delimiter, dirname, join, posix, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { cleanupTestResources, createTestDatabase, createTestRoot, dropTestDatabase, removeTestRoot, requireTestServerUrl,
+import { cleanupTestResources, createTestDatabase, createTestRoot, dropTestDatabase, recoverAbandonedTestRoots,
+  removeTestRoot, requireTestServerUrl,
   resetTestDatabase, settleTestResources, testAdminPool, testEnvironment } from './test-resources.mjs'
 import { createTestDatabaseTemplate, dropTestDatabaseTemplate } from './test-database-template.mjs'
 import { ciTemplateCacheDirectory } from './ci-postgres-cache.mjs'
@@ -51,7 +53,10 @@ export function isRegularIntegrationFile(base, file) {
       if (lstatSync(path).isSymbolicLink()) return false
     }
     return lstatSync(path).isFile()
-  } catch { return false }
+  } catch (error) {
+    if (error.code === 'ENOENT' || error.code === 'ENOTDIR') return false
+    throw error
+  }
 }
 
 export function discoverFiles() {
@@ -326,10 +331,16 @@ export async function readIntegrationResources(admin, host = {
       (current_setting('superuser_reserved_connections')::integer
         + coalesce(current_setting('reserved_connections', true), '0')::integer) as "reservedConnections",
       (select count(*)::integer from pg_stat_activity where backend_type = 'client backend') as "activeConnections"`)
-    return { ...host, ...rows[0] }
-  } catch {
-    // Missing database settings retain the fallback; connection details stay out of logs.
-    return { ...host }
+    const capacity = rows[0]
+    if (!capacity || !Number.isSafeInteger(capacity.maxConnections) || capacity.maxConnections < 1
+      || !Number.isSafeInteger(capacity.reservedConnections) || capacity.reservedConnections < 0
+      || !Number.isSafeInteger(capacity.activeConnections) || capacity.activeConnections < 0) {
+      throw new Error('PostgreSQL capacity discovery returned invalid limits.')
+    }
+    return { ...host, ...capacity }
+  } catch (error) {
+    const code = typeof error?.code === 'string' && /^[A-Z0-9]{5}$/.test(error.code) ? ` (${error.code})` : ''
+    throw new Error(`PostgreSQL capacity discovery failed${code}; integration shards cannot be planned.`)
   }
 }
 
@@ -458,7 +469,7 @@ export async function scheduleIntegrationQueue(files, slots, {
   })
 }
 
-export function integrationTimeouts(environment) {
+export function integrationTimeouts(environment, timeoutScale = 1) {
   const timeouts = { ...integrationProcessLimits }
   for (const [setting, variable] of [
     ['idleTimeoutMs', 'FOREMAN_CODE_INTEGRATION_IDLE_TIMEOUT_MS'],
@@ -472,6 +483,8 @@ export function integrationTimeouts(environment) {
     }
     timeouts[setting] = value
   }
+  timeouts.idleTimeoutMs = Math.ceil(timeouts.idleTimeoutMs * Math.max(1, timeoutScale))
+  timeouts.fileTimeoutMs = Math.ceil(timeouts.fileTimeoutMs * Math.max(1, timeoutScale))
   return timeouts
 }
 
@@ -491,7 +504,11 @@ export function integrationProgressLine({ phase, total, passed, failed, active, 
 }
 
 function procStart(pid) {
-  try { return readFileSync(`/proc/${pid}/stat`, 'utf8').split(') ')[1].split(' ')[19] } catch { return null }
+  try { return readFileSync(`/proc/${pid}/stat`, 'utf8').split(') ')[1].split(' ')[19] }
+  catch (error) {
+    if (error.code !== 'ENOENT' && error.code !== 'ESRCH') diagnosticWarning('read integration process identity', error)
+    return null
+  }
 }
 
 export function hasActiveHeavyJobToken(environment, common, owner) {
@@ -503,7 +520,7 @@ export function hasActiveHeavyJobToken(environment, common, owner) {
 export function hasHeavyJobAdmission(environment, common) {
   const state = join(common, 'graphql-heavy-jobs')
   const paths = [join(state, 'active', 'owner.json')]
-  try { paths.push(...readdirSync(join(state, 'running')).map((name) => join(state, 'running', name))) } catch { /* no secondary slots */ }
+  try { paths.push(...readdirSync(join(state, 'running')).map((name) => join(state, 'running', name))) } catch (error) { if (error.code !== 'ENOENT') throw error }
   return paths.some((path) => {
     try {
       const owner = JSON.parse(readFileSync(path, 'utf8'))
@@ -560,6 +577,15 @@ export async function runIntegration(argv = [], {
   extraItems = [], executeExtra, reportDirectory, profilePath, env = process.env, contractsBuilt = false,
 } = {}) {
   const { startAt, failedFrom, files } = options(argv, env)
+  const recoveryAdmin = await testAdminPool()
+  try {
+    const recovered = await recoverAbandonedTestRoots(recoveryAdmin)
+    console.log(`[integration] disposable recovery: ${recovered.removed.length} removed;`
+      + ` ${recovered.retained.length} retained.`)
+    for (const retained of recovered.retained) {
+      console.log(`[integration] retained ${retained.directory}: ${retained.reason}`)
+    }
+  } finally { await recoveryAdmin.end() }
   const gate = integrationGate(env) || extraItems.length > 0
   if (!contractsBuilt) {
     const contractsBuild = spawnSync('corepack', ['pnpm', '--dir', 'packages/contracts', 'build'],
@@ -769,12 +795,13 @@ export async function runIntegration(argv = [], {
       const metricsTracker = child.pid ? startProcessMetrics(child.pid) : null
       let metrics
       let result
-      const fileTimeoutMs = timeouts.fileTimeoutMs
+      const scaledTimeouts = integrationTimeouts(env, timeoutScale)
+      const fileTimeoutMs = scaledTimeouts.fileTimeoutMs
       const expectedMs = expectedDurations[file]
       const deadlineMs = adaptiveDeadlineMs(expectedMs, fileTimeoutMs, timeoutScale)
       try {
-        result = await superviseIntegrationProcess(child, { log, progress, ...timeouts,
-          idleTimeoutMs: Math.min(fileTimeoutMs, Math.ceil(timeouts.idleTimeoutMs * timeoutScale)),
+        result = await superviseIntegrationProcess(child, { log, progress, ...scaledTimeouts,
+          idleTimeoutMs: Math.min(fileTimeoutMs, scaledTimeouts.idleTimeoutMs),
           fileTimeoutMs, deadlineMs,
           onTimeout: (reason) => console.error(`[integration] ${label}TIMEOUT ${file} (slot ${slot.index}): ${reason.message}`),
           cleanupAfterExit: () => settleTestResources(admin, slot),
@@ -907,7 +934,7 @@ export async function runIntegration(argv = [], {
             mkdirSync(dirname(saved), { recursive: true })
             copyFileSync(log, saved)
             retained = saved
-          } catch { /* report the file failure even if log retention also fails */ }
+          } catch (error) { diagnosticWarning('retain failed unit log', error) }
         }
         console.error(`[integration] ${isRetest ? 'RETEST ' : ''}FAIL ${file} (slot ${slot.index}, exit 1); log: ${retained}`)
         recordFileAttempt(isRetest ? retestReports : firstPass, file,

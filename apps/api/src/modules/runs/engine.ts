@@ -1,5 +1,4 @@
 import { beginRuntimeTiming, runtimeTimingPoint, withRuntimeTimingContext } from '../../infrastructure/runtimeTiming.js'
-import { retryDatabaseTimeout } from '../../infrastructure/databaseTimeout.js'
 import { resolve } from 'node:path'
 import type { BaseCheckpointSaver } from '@langchain/langgraph-checkpoint'
 import type { DurableInteraction } from '@foreman-code/contracts'
@@ -18,7 +17,7 @@ import { requiredLocationAccess, type WorkspaceLocationService } from '../worksp
 import { executeRepeatEngineStart } from './repeatStartComposition.js'
 import { repeatSettlementPending } from './repeatRuntime.js'
 import { readWorkflowCheckpoint } from './repeatGraph.js'
-import { hasWorkDirectionWait, persistWorkDirectionWait,
+import { hasWorkDirectionWait, persistWorkDirectionWait, recordWorkflowExecutionFailure,
   persistWorkflowApprovalWait, settleWorkForRestart, settleWorkflowRun } from './workflowLifecycle.js'
 import { consumeDeliveredApprovals, type WorkflowResumePermit } from './approvalCheckpointResume.js'
 import type { AuthorizeWorkflowStop } from './repeatLifecycle.js'
@@ -30,6 +29,7 @@ import { isAtomicApprovalCheckpointSaver } from '../../infrastructure/approvalCh
 import type { WorkflowRestartApprovals } from './workflowRepositoryServices.js'
 import { readRunAcceptedPlacements } from '../placement/persistence.js'
 import { ignoreError } from '../diagnostics/ignoredError.js'
+import { isTransientExecutionError } from './executionRetryPolicy.js'
 
 /** One engine, Run owner, checkpoint thread and repository for all current V3
  * graphs. Optional bounded blocks are compiled into this same LangGraph; an
@@ -182,17 +182,6 @@ export class LangGraphWorkflowEngine {
       }
       if (!['queued', 'running', 'waiting'].includes(snapshot.run.executionState)) throw new DomainError(
         'RUN_NOT_RESUMABLE', 'This Run requires Stop settlement or a separately authorized new Run.', 409)
-      const abandonedStart = await retryDatabaseTimeout(() => this.runs.abandonedExecutionStart(owner), {
-        signal: controller.signal, check: () => owner.assertOwned(),
-      })
-      if (abandonedStart) {
-        await retryDatabaseTimeout(() => this.runs.requestCleanup(runId, owner, {
-          outcome: 'failed', error: { code: 'EXECUTION_START_INTERRUPTED',
-            message: 'Execution startup lost its owner before a native session was saved.', retryable: false },
-        }), { check: () => owner.assertOwned() })
-        await this.cleanupOwned(owner)
-        return
-      }
       if (snapshot.run.executionState === 'waiting' && snapshot.version.definition.handoffs
         && await hasWorkDirectionWait(owner)) {
         await persistWorkDirectionWait(owner, this.locations)
@@ -285,6 +274,7 @@ export class LangGraphWorkflowEngine {
             return waiting
           },
           persistDirectionWait: () => persistWorkDirectionWait(owner, this.locations),
+          recordExecutionFailure: (executionId, failure) => recordWorkflowExecutionFailure(owner, executionId, failure),
           cancelNativeAndRequestCleanup: async () => {
             await this.runs.requestCleanup(runId, owner)
             try { await this.nativeExecutions.cancelRun(runId, owner); return true } catch { return false }
@@ -298,7 +288,9 @@ export class LangGraphWorkflowEngine {
       if ((await this.runs.getRepeatSnapshot(runId, owner)).run.executionState === 'completed') await this.finishOwned(owner)
     } catch (error) {
       owner.assertOwned(); controller.signal.throwIfAborted()
-      if (runtimeEntered && error instanceof DomainError && error.code === 'GRAPH_STOP_CONFLICT') {
+      // A selected node that failed after its settlement is the Run's failed outcome, not a start error.
+      if (runtimeEntered && error instanceof DomainError
+        && ['GRAPH_STOP_CONFLICT', 'WORKFLOW_SELECTED_EXECUTION_FAILED'].includes(error.code)) {
         const current = await this.runs.getRepeatSnapshot(runId, owner)
         if (current.run.executionState === 'completed') {
           await this.cleanupOwned(owner)
@@ -343,7 +335,10 @@ export class LangGraphWorkflowEngine {
       const snapshot = await this.runs.getRepeatSnapshot(owner.runId, owner)
       if (!snapshot.stopRequested && !snapshot.cleanupPending && snapshot.run.executionState !== 'completed') throw new DomainError(
         'GRAPH_STOP_CONFLICT', 'Cleanup requires the committed negative or terminal fence.', 409)
-      await this.runs.requestCleanup(owner.runId, owner)
+      // A queued resume can outlive successful cleanup; do not reopen its intent.
+      if (snapshot.cleanupPending || snapshot.stopRequested || snapshot.run.outcome !== 'succeeded') {
+        await this.runs.requestCleanup(owner.runId, owner)
+      }
       try {
         if (snapshot.run.executionState !== 'completed' || snapshot.stopRequested || snapshot.run.outcome !== 'succeeded') {
           await this.nativeExecutions.cancelRun(owner.runId, owner)
@@ -405,7 +400,10 @@ export class LangGraphWorkflowEngine {
 
   /** Bounded current recovery. Never reset an existing checkpoint to initial state. */
   private reconcileCursor = ''
-  private readonly reconciliationRetries = new Map<string, { delayMs: number; retryAt: number }>()
+  private readonly reconciliationRetries = new Map<string, { delayMs: number; retryAt: number; failures: number }>()
+  /** Transient recovery failures retry forever with backoff. After this many permanent ones the Run gets a failed
+   * cleanup request carrying the real cause, and the next sweep settles it through the ordinary cleanup path. */
+  private static readonly permanentReconciliationFailures = 10
   reconcile(onError: (error: unknown) => void = (error) => componentLogger('engine').error({ err: error }, 'run reconciliation failed')): Promise<void> {
     runtimeTimingPoint('engine', 'reconcile.request', { reused: this.reconciliation !== undefined })
     if (this.reconciliation) return this.reconciliation
@@ -434,10 +432,18 @@ export class LangGraphWorkflowEngine {
           }).catch(error => {
             // A retained reviewer can own the Run between engine passes; retry on the next sweep.
             if (error instanceof DomainError && error.code === 'RUN_ALREADY_OWNED') return
+            // A joined drive ends this way on Stop; the Stop and cleanup path settles the Run.
+            if (error instanceof DomainError && error.code === 'GRAPH_STOP_CONFLICT') return
             if (this.closing && error instanceof DomainError && error.code === 'ENGINE_RESTART') return
             const delayMs = Math.min((retry?.delayMs ?? 500) * 2, 60_000)
-            this.reconciliationRetries.set(candidate.id, { delayMs, retryAt: Date.now() + delayMs })
+            const permanent = !repeatSettlementPending(error) && !isTransientExecutionError(error)
+              && !(error instanceof DomainError && error.status >= 500)
+            const failures = (retry?.failures ?? 0) + (permanent ? 1 : 0)
+            this.reconciliationRetries.set(candidate.id, { delayMs, retryAt: Date.now() + delayMs, failures })
             onError(error)
+            if (permanent && failures % LangGraphWorkflowEngine.permanentReconciliationFailures === 0) {
+              return this.failUnrecoverable(candidate.id, error).catch(onError)
+            }
           })
         }
         if (page.length < 100) {
@@ -449,6 +455,17 @@ export class LangGraphWorkflowEngine {
     })().finally(() => { finished(); if (this.reconciliation === task) this.reconciliation = undefined })
     this.reconciliation = task
     return task
+  }
+
+  private async failUnrecoverable(runId: string, error: unknown): Promise<void> {
+    const owner = await this.runs.acquireOwnership(runId, () => undefined)
+    if (!owner) return
+    try {
+      await this.runs.requestCleanup(runId, owner, { outcome: 'failed', error: {
+        code: error instanceof DomainError ? error.code : 'RUN_RECOVERY_FAILED',
+        message: (error instanceof Error && error.message ? error.message : 'Run recovery failed.').slice(0, 2_000),
+        retryable: false } })
+    } finally { await owner.release() }
   }
 
   /** Graceful restart is NOT Stop. Original transport close receipts precede

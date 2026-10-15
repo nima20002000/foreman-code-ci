@@ -40,27 +40,65 @@ export function workerArchiveLimits(manifest) {
   return { directories, members, contentBytes, expandedBytes, compressedBytes };
 }
 
-export async function fetchGitHubAsset({ github, asset, destination, signal, maxBytes }) {
+export async function fetchGitHubAsset({ signal, ...options }) {
+  const { maxBytes } = options;
   if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) throw new WorkerError('artifact_archive_size_mismatch');
+  const deadline = AbortSignal.timeout(600_000);
+  signal?.throwIfAborted();
+  await downloadGitHubAssetAttempt({ ...options, signal, deadline });
+}
+
+async function downloadGitHubAssetAttempt({ github, asset, destination, signal, deadline, maxBytes }) {
   const controller = new AbortController();
-  const combined = AbortSignal.any([controller.signal, AbortSignal.timeout(600_000), ...(signal ? [signal] : [])]);
+  const combined = AbortSignal.any([controller.signal, deadline, ...(signal ? [signal] : [])]);
   const child = spawn('gh', ['release', 'download', github.tag, '--repo', github.repository,
-    '--pattern', asset, '--output', '-'], { signal: combined, stdio: ['ignore', 'pipe', 'ignore'] });
+    '--pattern', asset, '--output', '-'], { signal: combined, stdio: ['ignore', 'pipe', 'pipe'] });
+  let stalled = false;
+  let stallTimer;
+  const receivedBytes = chunk => {
+    if (chunk && chunk.length === 0) return;
+    clearTimeout(stallTimer);
+    stallTimer = setTimeout(() => {
+      stalled = true;
+      controller.abort();
+    }, 60_000);
+  };
+  receivedBytes();
+  child.stdout.on('data', receivedBytes);
+  let stderr = '';
+  child.stderr.on('data', chunk => { stderr = (stderr + chunk.toString()).slice(-1200); });
+  const closed = new Promise(resolve => child.once('close', resolve));
+  let launchError;
   const exited = new Promise((resolve, reject) => {
-    child.once('error', () => reject(new WorkerError('worker_update_github_unavailable')));
+    child.once('error', error => {
+      launchError = error;
+      reject(new WorkerError('worker_update_github_unavailable', error.message));
+    });
     child.once('close', code => code === 0 ? resolve() : reject(new WorkerError('worker_update_github_unavailable')));
   });
   const copied = pipeline(child.stdout, new ByteLimit(maxBytes, 'artifact_archive_size_mismatch'),
     createWriteStream(destination, { flags: 'wx', mode: 0o600 }), { signal: combined });
   try {
     await Promise.all([copied, exited]);
+    return true;
   } catch (error) {
     controller.abort();
-    await Promise.allSettled([copied, exited]);
+    await Promise.allSettled([copied, exited, closed]);
     await rm(destination, { force: true });
     signal?.throwIfAborted();
-    if (error instanceof WorkerError) throw error;
-    throw new WorkerError('worker_update_github_unavailable');
+    if (error instanceof WorkerError && error.code !== 'worker_update_github_unavailable') throw error;
+    const reason = stalled ? 'GitHub download stalled: no bytes received for 60000 ms.' : error.message;
+    const detail = stalled && stderr.trim() ? `${reason} ${stderr.trim()}` : stderr.trim() || reason;
+    const rateLimited = /rate limit|abuse detection/i.test(detail);
+    const denied = /HTTP (?:401|403)\b|gh auth login|bad credentials|authentication (?:required|failed)|permission denied/i
+      .test(detail);
+    const permanent = ['ENOENT', 'EACCES'].includes(launchError?.code) || child.exitCode === 4
+      || denied && !rateLimited;
+    const code = permanent ? 'worker_update_github_configuration' : 'worker_update_github_unavailable';
+    throw new WorkerError(code, `${code}: ${detail}`, { cause: error });
+  } finally {
+    clearTimeout(stallTimer);
+    child.stdout.removeListener('data', receivedBytes);
   }
 }
 
@@ -219,7 +257,7 @@ export async function extractWorkerArchive(options) {
   } catch (error) {
     signal?.throwIfAborted();
     if (error instanceof WorkerError) throw error;
-    throw new WorkerError('artifact_archive_invalid');
+    throw new WorkerError('artifact_archive_invalid', undefined, { cause: error });
   } finally {
     source.destroy();
     expanded.destroy();

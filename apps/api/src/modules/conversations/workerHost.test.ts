@@ -134,6 +134,20 @@ function receipt(value: unknown) {
   return WorkerConversationReceiptSchema.parse((value as { receipt: unknown }).receipt)
 }
 
+it('returns only events after the requested sequence while preserving terminal metadata', async () => {
+  const f = await setup()
+  await f.request(f.open)
+  const history: NativeHistory = { events: [1, 2, 3].map(sequence => ({ sequence,
+    type: 'event', occurredAt: '2026-10-05T00:00:00.000Z', payload: {} })),
+    pendingInteractions: [], firstRetainedSequence: 1, nextSequence: 4,
+    terminalTurn: { correlationId: 'finished', providerId: 'finished-turn', result: { outcome: 'succeeded' } } }
+  vi.spyOn(f.manager, 'history').mockResolvedValue(history)
+  const result = await f.request({ method: 'conversation.history', session: f.session, afterSequence: 2 })
+  expect(result).toMatchObject({ history: { events: [history.events[2]],
+    firstRetainedSequence: 1, nextSequence: 4, terminalTurn: history.terminalTurn } })
+  expect(history.events).toHaveLength(3)
+})
+
 it.each(['first message', 'continuation'])('reads a %s before Worker reservation without changing native ownership', async phase => {
   const f = await setup()
   await f.request(f.open)
@@ -589,6 +603,48 @@ it('forks independently, keeps its source untouched and carries real initial-mes
     nativeSessionId: initial.session.nativeSessionId, nativeMessageId: 'observed-message' })
 })
 
+it('reads fork history during preparation and reconciles the message after native submission', async () => {
+  const f = await setup()
+  const source = { ...f.session, nativeSessionId: 'historical-source-session' }
+  await f.request({ ...f.open, mode: 'fork', source })
+  let began!: () => void
+  const preparing = new Promise<void>(resolve => { began = resolve })
+  let release!: () => void
+  const preparation = new Promise<void>(resolve => { release = resolve })
+  let completed!: () => void
+  const completion = new Promise<void>(resolve => { completed = resolve })
+  const startTurn = f.manager.startTurn.bind(f.manager)
+  vi.spyOn(f.manager, 'startTurn').mockImplementation(async function* (session, input) {
+    began()
+    await preparation
+    yield* startTurn(session, input)
+    completed()
+  })
+  const retained = { events: [{ sequence: 1, type: 'thread.forked',
+    occurredAt: '2026-10-05T00:00:00.000Z', payload: {} }], pendingInteractions: [] }
+  vi.spyOn(f.manager, 'history').mockResolvedValue(retained)
+  const readPage = vi.fn((session: NativeSessionReference, correlationId: string) =>
+    f.manager.reconcile(session, correlationId))
+  Object.assign(f.manager, { reconcileHistoryPage: readPage })
+  const correlationId = 'fork-follow-up'
+  try {
+    await f.request({ method: 'conversation.start-turn', session: f.session,
+      prompt: 'Continue the saved task', correlationId })
+    await preparing
+    const request = { method: 'conversation.history', session: f.session, correlationId, afterSequence: -1 }
+    expect(await f.request(request)).toMatchObject({ history: retained })
+    expect(readPage).not.toHaveBeenCalled()
+    expect((await f.journal.conversations.read(f.binding))?.turns[0]).toHaveProperty('nativeTurnId', null)
+    release()
+    await completion
+    expect(await f.request(request)).toMatchObject({ history: { correlationId, nativeTurnId: 'fixture-turn-1' } })
+    expect(readPage).toHaveBeenCalledOnce()
+  } finally {
+    release()
+    await f.host.shutdown()
+  }
+})
+
 it('routes chats on execution-v1 without entering the workflow handler', async () => {
   const f = await setup()
   const workflow = vi.fn(async () => { throw new Error('A chat must not enter workflow dispatch.') })
@@ -654,7 +710,9 @@ it('carries conversation operations on the paired channel and applies Main denia
     signal: lifetime.signal, extensions, registrations: [workerRegistration] })
   const readers = [main.run(mainSocket.messages[Symbol.asyncIterator](), 10_000),
     worker.run(workerSocket.messages[Symbol.asyncIterator](), 10_000)]
-  for (const task of readers) void task.catch(() => {})
+  for (const task of readers) void task.catch(() => {
+    // ignore: shutdown awaits both channel readers below.
+  })
   try {
     const result = await main.request('execution-v1', { ...f.open, binding: f.binding })
     expect(receipt(result.payload).session).toEqual(f.session)

@@ -1,10 +1,12 @@
 import { createHash } from 'node:crypto'
+import type { JobLogChunk } from '@foreman-code/contracts/jobs'
 import { componentLogger } from '../../diagnostics/logger.js'
 import { isDeepStrictEqual } from 'node:util'
 import { JobExecutionRecordSchema, type JobExecutionRecord } from '@foreman-code/contracts/job-verification'
 import { canonicalGraphJson } from '@foreman-code/contracts/wave25'
 import { RemoteJobExecutionRpcRequestRecordSchema, type RemoteJobDispatchIntent, type RemoteJobConnectionIdentity,
-  type RemoteJobOwnerControl, type RemoteJobOperationReceiptRecord, type RemoteJobTerminalEvidence } from '@foreman-code/contracts/remote-job-execution'
+  type RemoteJobOwnerControl, type RemoteJobOperationReceiptRecord, type RemoteJobOperationStatusRecord,
+  type RemoteJobTerminalEvidence } from '@foreman-code/contracts/remote-job-execution'
 import { JobOutputCollectionError } from '../../jobs/executorOutputs.js'
 import { executeJob, executeVerificationJob, jobSupervisorIdentity, type JobExecutorPorts,
   type JobExecutorResult, type JobSupervisor, type VerificationExecution, type VerificationJobExecutorPorts } from '../../jobs/executor.js'
@@ -12,6 +14,7 @@ import type { PodmanJobSupervisor } from '../../jobs/executorPodman.js'
 import type { RemoteOperationJournal } from './operationJournal.js'
 import { jobContainerNonEntryObserved } from '../../jobs/executorJournal.js'
 import { logIgnoredError } from '../../diagnostics/ignoredError.js'
+import { isTransientExecutionError } from '../executionRetryPolicy.js'
 
 const digest = (value: unknown) => createHash('sha256').update(canonicalGraphJson(value)).digest('hex')
 type RuntimeSupervisor = JobSupervisor<JobExecutionRecord>
@@ -70,11 +73,15 @@ export class RemoteJobExecutionHost {
         || connection.keyRevision !== target.registration.keyRevision || connection.authorizationRevision !== target.registration.authorizationRevision) throw new Error('Job worker registration mismatch')
     } else if (!('kind' in connection) || connection.kind !== 'main' || connection.mainInstallationId !== target.mainInstallationId) throw new Error('Job main installation mismatch')
   }
-  /** Worker startup rearms only the original local watchdogs, without Main IO or relaunch. */
+  /** Worker startup closes abandoned preparation and rearms original local watchdogs. */
   async recover(): Promise<void> {
     for (const receipt of await this.ports.journal.jobOperations()) {
-      if (!receipt.entryAttempted || receipt.terminal) continue
+      if (receipt.terminal) continue
       this.validate(receipt.intent, receipt.execution)
+      if (!receipt.entryAttempted) {
+        await this.closeAbandonedPreparation(receipt)
+        continue
+      }
       if (await this.retainConfirmedNonEntry(receipt)) continue
       const observed = await this.reconcileSupervisor(receipt)
       if (!observed) await this.ports.journal.jobUncertain(receipt.intent.operationId, 'Original OCI supervisor absent during worker recovery')
@@ -106,11 +113,24 @@ export class RemoteJobExecutionHost {
         recoveryRequired: false, logError: true, logsTruncated: false, outputCollectionError: false }, true))
     }
   }
-  async handle(raw: unknown) {
+  async handle(raw: unknown): Promise<RemoteJobOperationStatusRecord> {
     const frame = RemoteJobExecutionRpcRequestRecordSchema.parse(raw)
     if (frame.method === 'job-dispatch') return this.deliver(frame.intent, frame.execution)
     const status = await this.ports.journal.jobStatus(frame.intent.operationId)
-    if (status.status !== 'known') return status
+    if (status.status !== 'known') {
+      if (frame.method !== 'job-control' || !frame.execution) return status
+      this.validate(frame.intent, frame.execution)
+      await this.ports.authorize(frame.intent, frame.execution, 'control')
+      await Promise.allSettled([...this.admissions])
+      if ((await this.ports.journal.jobStatus(frame.intent.operationId)).status === 'known') return this.handle(raw)
+      const receipt = await this.ports.journal.jobCancelBeforeEntry(frame.intent, frame.execution,
+        this.ports.connection, this.ports.incarnationId, frame.command,
+        this.preparationTerminal(frame.execution, 'cancelled'))
+      return this.useOperation(frame.execution, async () => {
+        await this.publish(receipt)
+        return this.ports.journal.jobStatus(frame.intent.operationId)
+      })
+    }
     return this.useOperation(status.receipt.execution, async () => {
       if (!isDeepStrictEqual(status.receipt.intent, frame.intent)) throw new Error('Stale job RPC owner')
       this.validate(frame.intent, status.receipt.execution)
@@ -124,7 +144,7 @@ export class RemoteJobExecutionHost {
       return this.reconcile(status.receipt)
     })
   }
-  deliver(intent: RemoteJobDispatchIntent, raw: JobExecutionRecord) {
+  deliver(intent: RemoteJobDispatchIntent, raw: JobExecutionRecord): Promise<RemoteJobOperationStatusRecord> {
     if (this.draining) return Promise.reject(new Error('Worker Job admissions are draining for runtime refresh.'))
     const task = this.accept(intent, raw)
     this.admissions.add(task)
@@ -151,7 +171,13 @@ export class RemoteJobExecutionHost {
     const controller = new AbortController()
     const task = this.useOperation(execution, () => this.execute(intent, execution, controller.signal)).catch(async error => {
       componentLogger('jobs').error({ err: error, operationId: intent.operationId }, 'Job execution or publication needs reconciliation')
-      try { await this.ports.journal.jobUncertain(intent.operationId, 'Original OCI execution requires reconciliation') } catch (journalError) { logIgnoredError('jobs', 'record uncertain job execution', journalError, { operationId: intent.operationId }) } // A faulted journal already blocks new entry.
+      try {
+        const latest = await this.ports.journal.jobStatus(intent.operationId)
+        if (latest.status === 'known' && !latest.receipt.entryAttempted && isTransientExecutionError(error)) return
+        await this.ports.journal.jobUncertain(intent.operationId, 'Original OCI execution requires reconciliation')
+      } catch (journalError) {
+        logIgnoredError('jobs', 'record uncertain job execution', journalError, { operationId: intent.operationId })
+      }
     })
     this.tasks.set(intent.operationId, { controller, task })
     void task.finally(() => { if (this.tasks.get(intent.operationId)?.task === task) this.tasks.delete(intent.operationId) }).catch(() => { /* ignore: the owner awaits the original promise; this observer prevents a duplicate unhandled rejection. */ })
@@ -173,7 +199,12 @@ export class RemoteJobExecutionHost {
           await this.ports.journal.jobAcknowledgeLaunch(intent.operationId, { containerId, supervisorIdentity: name,
             processIdentityDigest: digest({ executionId: execution.id, attemptId: execution.attemptId, operationId: execution.operationId, containerId, supervisorIdentity: name }), startedAt: new Date().toISOString() })
         },
-      }, source: this.ports.source, inputs: this.ports.inputs, supervisor, appendLog: async chunk => { await this.ports.journal.jobAppendLog(intent.operationId, chunk); try { await this.flushLogs(intent.operationId) } catch { /* ignore: durable spool remains pending across transport loss. */ } },
+      }, source: this.ports.source, inputs: this.ports.inputs, supervisor,
+      appendLog: async chunk => {
+        await this.ports.journal.jobAppendLog(intent.operationId, chunk)
+        try { await this.flushLogs(intent.operationId) }
+        catch { /* ignore: flushLogs reports the retained spool failure. */ }
+      },
       collectOutputs: async () => {},
       ...(this.ports.prepareOutputs ? { prepareOutputs: this.ports.prepareOutputs } : {}),
     }
@@ -244,7 +275,11 @@ export class RemoteJobExecutionHost {
     const owner = receipt.execution.schemaVersion === 2 ? await this.ports.journal.jobNativeOwner(receipt.intent.operationId) : null
     if (receipt.entryAttempted && (receipt.native || owner?.nonEntryConfirmed && owner.verification)) {
       try { await this.ports.authorize(receipt.intent, receipt.execution, 'publish') }
-      catch { await this.observeReceipt(await this.ports.journal.jobPublication(receipt.intent.operationId, 'failed')); return }
+      catch (error) {
+        if (isTransientExecutionError(error)) throw error
+        await this.observeReceipt(await this.ports.journal.jobPublication(receipt.intent.operationId, 'failed'))
+        return
+      }
       if (receipt.publication !== 'collecting') receipt = await this.ports.journal.jobPublication(receipt.intent.operationId, 'collecting')
       await this.observeReceipt(receipt)
       // A collector may have published before losing its ACK. Keep collecting; W09's
@@ -263,9 +298,21 @@ export class RemoteJobExecutionHost {
     await this.observeReceipt(await this.ports.journal.jobPublication(receipt.intent.operationId, 'complete'))
   }
   private async flushLogs(operationId: string) {
-    for (const chunk of await this.ports.journal.jobPendingLogs(operationId)) {
-      await this.ports.appendLog(chunk)
-      await this.ports.journal.jobAcknowledgeLog(operationId, chunk.sequence)
+    let pending: JobLogChunk[] | undefined
+    let acknowledged = 0
+    try {
+      pending = await this.ports.journal.jobPendingLogs(operationId)
+      for (const chunk of pending) {
+        await this.ports.appendLog(chunk)
+        await this.ports.journal.jobAcknowledgeLog(operationId, chunk.sequence)
+        acknowledged++
+      }
+    } catch (error) {
+      const retained = pending?.slice(acknowledged)
+      logIgnoredError('jobs', 'flush remote job log spool', error, { operationId,
+        pendingBytes: retained ? retained.reduce((sum, chunk) => sum + chunk.byteSize, 0) : null,
+        pendingSince: retained?.[0]?.createdAt ?? null })
+      throw error
     }
   }
   private terminalEvidence(result: JobExecutorResult, logGapPossible: boolean): RemoteJobTerminalEvidence {
@@ -275,13 +322,15 @@ export class RemoteJobExecutionHost {
       processStopped: true, resultDigest: digest(result), logGapPossible, logsTruncated: result.logsTruncated, outputCollectionError: result.outputCollectionError, artifactDigests: [] }
   }
   private async reconcile(receipt: RemoteJobOperationReceiptRecord) {
-    try { await this.flushLogs(receipt.intent.operationId) } catch { /* ignore: explicit durable pending log cursor remains. */ }
+    try { await this.flushLogs(receipt.intent.operationId) }
+    catch { /* ignore: flushLogs reports the retained spool failure. */ }
     if (this.tasks.has(receipt.intent.operationId)) return this.ports.journal.jobStatus(receipt.intent.operationId)
     if (receipt.terminal) { await this.publish(receipt); return this.ports.journal.jobStatus(receipt.intent.operationId) }
     if (!receipt.entryAttempted) {
-      if (receipt.stopFence) await this.publish(await this.ports.journal.jobTerminal(receipt.intent.operationId, this.terminalEvidence({
-        outcome: 'cancelled', exitCode: null, signal: null, processStopped: true, supervisorIdentity: jobSupervisorIdentity(receipt.execution),
-        containerId: null, recoveryRequired: false, logError: false, logsTruncated: false, outputCollectionError: false }, false)))
+      if (this.admissions.size > 0) return this.ports.journal.jobStatus(receipt.intent.operationId)
+      if (!receipt.stopFence && receipt.phase === 'received') return this.deliver(receipt.intent, receipt.execution)
+      const closed = await this.closeAbandonedPreparation(receipt)
+      if (closed) await this.publish(closed)
       return this.ports.journal.jobStatus(receipt.intent.operationId)
     }
     await this.ports.authorize(receipt.intent, receipt.execution, 'read')
@@ -313,6 +362,20 @@ export class RemoteJobExecutionHost {
       supervisorIdentity: jobSupervisorIdentity(receipt.execution), containerId: observed.containerId, recoveryRequired: false, logError: true, logsTruncated: false, outputCollectionError: false }, true)
     await this.publish(await this.ports.journal.jobTerminal(receipt.intent.operationId, evidence))
     return this.ports.journal.jobStatus(receipt.intent.operationId)
+  }
+  private preparationTerminal(execution: JobExecutionRecord, outcome: 'cancelled' | 'preparation_failed') {
+    return this.terminalEvidence({ outcome, exitCode: null, signal: null, processStopped: true,
+      supervisorIdentity: jobSupervisorIdentity(execution), containerId: null, recoveryRequired: false,
+      logError: false, logsTruncated: false, outputCollectionError: false }, false)
+  }
+  private async closeAbandonedPreparation(receipt: RemoteJobOperationReceiptRecord) {
+    const owner = await this.ports.journal.jobNativeOwner(receipt.intent.operationId)
+    if (owner && !await (await this.supervisor(receipt.execution)).stopExecution(receipt.execution, 0)) {
+      await this.ports.journal.jobUncertain(receipt.intent.operationId, 'Original Job preparation closure remains unconfirmed')
+      return null
+    }
+    return this.ports.journal.jobTerminal(receipt.intent.operationId,
+      this.preparationTerminal(receipt.execution, receipt.stopFence ? 'cancelled' : 'preparation_failed'))
   }
   private async retainConfirmedNonEntry(receipt: RemoteJobOperationReceiptRecord): Promise<boolean> {
     const retained = await this.ports.journal.jobNativeOwner(receipt.intent.operationId)

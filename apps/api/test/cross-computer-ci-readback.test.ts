@@ -5,38 +5,30 @@ import { AgentCiReportSchema, readAgentCiReport, readCiLog,
 
 function report() {
   const ticketId = randomUUID()
-  return { ticketId, groupId: randomUUID(), suite: 'build', outcome: 'passed', repository: 'example/project',
-    branch: 'foreman/ci-agent', tickets: [{ ticketId, part: 'build-api', partition: null,
-      computer: { kind: 'cloud', mainId: randomUUID(), provider: 'github', slot: 1 },
-      commit: 'a'.repeat(40), outcome: 'passed', exitCode: 0, logLine: 'Build passed',
-      observedStates: ['queued', 'running', 'passed'] }] }
+  return { ticketId, suite: 'build', outcome: 'passed', repository: 'example/project',
+    logLine: 'Build passed', observedStates: ['queued', 'running', 'passed'] }
 }
 
-it('reads a complete cloud and physical-computer Agent report from a native text envelope', () => {
+it('reads a complete Agent report from a native text envelope', () => {
   const value = report()
-  value.tickets.push({ ...value.tickets[0]!, ticketId: randomUUID(), part: 'build-other' })
   expect(readAgentCiReport({ text: JSON.stringify(value) })).toEqual(value)
   expect(readAgentCiReport(value)).toEqual(value)
   expect(readAgentCiReport({ text: JSON.stringify({ routing: { kind: 'finish' }, data: { latestDeliverable: value } }) }))
     .toEqual(value)
-  const physical = { ...value, tickets: value.tickets.map(ticket => ({ ...ticket,
-    computer: { kind: 'device', mainId: ticket.computer.mainId, deviceId: randomUUID() } })) }
-  expect(AgentCiReportSchema.safeParse(physical).success).toBe(true)
 })
 
-it('rejects duplicate tickets, a missing root ticket and incomplete cloud identities', () => {
+it('rejects a missing top-level ticket, empty observed states and a blank log line', () => {
   const value = report()
-  expect(AgentCiReportSchema.safeParse({ ...value, tickets: [value.tickets[0], value.tickets[0]] }).success).toBe(false)
-  expect(AgentCiReportSchema.safeParse({ ...value, ticketId: randomUUID() }).success).toBe(false)
-  const computer = { kind: 'cloud', mainId: randomUUID(), provider: 'github' }
-  expect(AgentCiReportSchema.safeParse({ ...value, tickets: [{ ...value.tickets[0], computer }] }).success).toBe(false)
+  expect(AgentCiReportSchema.safeParse({ ...value, ticketId: undefined }).success).toBe(false)
+  expect(AgentCiReportSchema.safeParse({ ...value, observedStates: [] }).success).toBe(false)
+  expect(AgentCiReportSchema.safeParse({ ...value, logLine: ' ' }).success).toBe(false)
 })
 
-it('requires a terminal CI lifecycle and rejects regression to queued work', () => {
+it('requires a terminal CI lifecycle and rejects regression within an attempt', () => {
   expect(() => requireCiStateOrder(['queued', 'starting', 'running', 'passed'])).not.toThrow()
   expect(() => requireCiStateOrder(['starting', 'failed'])).not.toThrow()
   expect(() => requireCiStateOrder(['queued', 'running'])).toThrow()
-  expect(() => requireCiStateOrder(['running', 'queued', 'passed'])).toThrow()
+  expect(() => requireCiStateOrder(['running', 'starting', 'passed'])).toThrow()
   expect(() => requireCiStateOrder(['unknown', 'passed'])).toThrow()
   expect(() => requireCiStateOrder(['failed', 'passed'])).toThrow()
 })
@@ -60,4 +52,21 @@ it('fails when a log reader stops advancing before the log is complete', async (
     workspaceId: 'workspace', ticketId: randomUUID(),
   })).rejects.toThrow('advance')
   expect(callTool).toHaveBeenCalledTimes(1)
+})
+
+it.each([
+  ['queued', 'starting', 'running', 'queued', 'starting', 'running', 'passed'],
+  ['running', 'queued', 'passed'],
+  ['starting', 'queued', 'running', 'passed'],
+])('accepts a recovered CI lifecycle: %j', (...states) => {
+  expect(() => requireCiStateOrder(states)).not.toThrow()
+})
+
+it.each([
+  ['passed', 'queued', 'passed'],
+  ['failed', 'queued', 'passed'],
+  ['canceled', 'running', 'passed'],
+  ['lost', 'starting', 'passed'],
+])('rejects changes after terminal CI state: %j', (...states) => {
+  expect(() => requireCiStateOrder(states)).toThrow()
 })

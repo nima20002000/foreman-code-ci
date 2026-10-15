@@ -1,25 +1,13 @@
 import { setTimeout as delay } from 'node:timers/promises'
 import { componentLogger } from '../modules/diagnostics/logger.js'
 
-export function isDatabaseTimeout(error: unknown): boolean {
-  const seen = new Set<object>()
-  while (error && typeof error === 'object' && !seen.has(error)) {
-    seen.add(error)
-    const code = 'code' in error ? error.code : undefined
-    // 57014 also covers explicit cancellation; only a statement timeout is transient.
-    if (code === '57014') return error instanceof Error && /time(d)? ?out/i.test(error.message)
-    if (code === 'DATABASE_READ_TIMEOUT') return true
-    if (code !== undefined && code !== 'GRAPH_TRANSACTION_FAILED') return false
-    if (error instanceof Error && error.message === 'Query read timeout') return true
-    if (error instanceof Error && error.message === 'Connection terminated due to connection timeout') return true
-    error = 'cause' in error ? error.cause : undefined
-  }
-  return false
-}
+import { isDatabaseTimeout } from './transientErrors.js'
+export { isDatabaseTimeout }
 
 export interface DatabaseRetryOptions {
   signal?: AbortSignal | undefined
   check?(): void
+  timeoutMs?: number
 }
 
 /** Retry only replay-safe bookkeeping. Native submissions are never passed here. */
@@ -33,6 +21,10 @@ export async function retryDatabaseOperation<T>(
   options: DatabaseRetryOptions = {},
 ): Promise<T> {
   let waitMs = 100
+  const startedAt = Date.now()
+  const timeoutMs = options.timeoutMs ?? 30_000
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new Error('Database retry timeout must be positive.')
+  let attempt = 0
   for (;;) {
     options.signal?.throwIfAborted()
     options.check?.()
@@ -45,10 +37,16 @@ export async function retryDatabaseOperation<T>(
       options.signal?.throwIfAborted()
       options.check?.()
       if (!isRetryable(error)) throw error
-      if (waitMs === 100) {
-        componentLogger('engine').warn('Database operation is temporarily unavailable; retrying.')
+      attempt += 1
+      const elapsedMs = Date.now() - startedAt
+      componentLogger('engine').warn({ operation: 'retry database operation', err: error, attempt, elapsedMs,
+        nextRetryMs: Math.min(waitMs, Math.max(0, timeoutMs - elapsedMs)) },
+      'Database operation is temporarily unavailable; retrying.')
+      if (elapsedMs >= timeoutMs) {
+        throw Object.assign(new Error('Database operation retry deadline exceeded.', { cause: error }),
+          { code: 'DATABASE_RETRY_DEADLINE_EXCEEDED', attempts: attempt, elapsedMs })
       }
-      await delay(waitMs, undefined, { signal: options.signal })
+      await delay(Math.min(waitMs, timeoutMs - elapsedMs), undefined, { signal: options.signal })
       waitMs = Math.min(1_000, waitMs * 2)
     }
   }
