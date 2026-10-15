@@ -26,12 +26,13 @@ export function startWorkerPublicationSync(
       // The publisher replaces index.json atomically, so watch its directory rather than its inode.
       if (filename === null || filename === 'index.json') check()
     })
+    watcher.on('error', reportError)
   } catch (error) {
-    // Source checkouts can start without release artifacts; periodic synchronization still runs.
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    // Source checkouts can start before any Worker bundle is installed; periodic synchronization remains available.
+    reportError(error)
   }
-  watcher?.on('error', reportError)
-  if (watcher) check()
+  check()
   const timer = setInterval(() => { void sync().catch(reportError) }, 60_000)
   timer.unref()
   return () => {
