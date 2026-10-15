@@ -42,9 +42,7 @@ describe('Run Git isolation', () => {
     const upstream = await repository()
     git(upstream, 'branch', '-m', 'trunk')
     const root = join(upstream, 'clone')
-    // The Run Git cache accepts only roots that exclude other writers, whatever umask the host gives fixtures.
-    execFileSync('/bin/sh', ['-c', 'umask 077 && exec git "$@"', 'git', 'clone', '--no-hardlinks', upstream, root],
-      { env: environment })
+    git(upstream, 'clone', '--no-hardlinks', upstream, root)
     git(root, 'checkout', '-b', 'feature')
     await writeFile(join(upstream, 'file.txt'), 'latest default')
     git(upstream, 'add', 'file.txt')
