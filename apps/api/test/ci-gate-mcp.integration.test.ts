@@ -7,6 +7,7 @@ import { afterAll, beforeAll, beforeEach, expect, it, vi } from 'vitest'
 import pg from 'pg'
 import { buildApp } from '../src/app.js'
 import { createPool } from '../src/infrastructure/pool.js'
+import { createTestPool } from './helpers/testPool.mjs'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
@@ -156,7 +157,10 @@ async function fixture(options: { cloudSlots?: number; files?: string[]; offline
   cloudProvider?: 'github' | 'circleci';
   readCloud?: (computer: HostCiComputer, request: Extract<CiHostRequest, { operation: 'read' }>)
     => Promise<CiHostReply | undefined> } = {}) {
-  const pool = options.pool ?? database.pool
+  // Observation concurrency is half the pool, so a fleet of this size needs a pool that observes it in one pass.
+  const ownedPool = options.pool ? undefined : createTestPool({ connectionString: database.databaseUrl, max: 64,
+    options: '-c search_path=public -c statement_timeout=10000 -c lock_timeout=5000' })
+  const pool = options.pool ?? ownedPool!
   const workspaceId = randomUUID()
   await database.pool.query('insert into workspaces(id,record) values($1,$2::jsonb)', [workspaceId,
     JSON.stringify({ id: workspaceId, name: 'Gate workspace', repository: {
@@ -254,6 +258,7 @@ async function fixture(options: { cloudSlots?: number; files?: string[]; offline
     await Promise.all(clients.map(client => client.close()))
     await ci.close()
     await app.close()
+    await ownedPool?.end()
   } }
 }
 
@@ -465,7 +470,7 @@ it('keeps a draining build gate off cloud until the grace expires, then persists
     const read = CiGetOutputSchema.parse(await f.value('ci_get', { ticketId: root.id }))
     expect(read.partitions!.length).toBeGreaterThan(4)
     expect(read.partitions!.flatMap(run => run.files).sort()).toEqual([...files].sort())
-    expect(f.started).toHaveLength(4)
+    expect(f.started, JSON.stringify(read.partitions!.map(r => [r.state, r.plannedHostKey, (r.message ?? '').slice(0, 400)]))).toHaveLength(4)
     for (const run of read.partitions!) {
       expect(run).toMatchObject({ gate: true, groupId: root.groupId, integrationShards: 4,
         plannedHostKey: expect.stringMatching(/^cloud-/), partition: null })
@@ -637,7 +642,7 @@ it('runs cloud checks before systemd integration overflow even when checks move 
     const read = CiGetOutputSchema.parse(await f.value('ci_get', { ticketId: admitted.ticketId }))
     const overflow = read.partitions!.filter(run => run.suite === 'integration'
       && run.plannedHostKey?.startsWith('cloud-'))
-    expect(overflow.length).toBeGreaterThan(0)
+    expect(overflow.length, JSON.stringify(read.partitions!.map(r => [r.suite, r.state, r.plannedHostKey, (r.message ?? '').slice(0, 300)]))).toBeGreaterThan(0)
     for (const run of overflow) {
       const checks = read.partitions!.filter(check => check.suite !== 'integration'
         && check.plannedHostKey === run.plannedHostKey)
