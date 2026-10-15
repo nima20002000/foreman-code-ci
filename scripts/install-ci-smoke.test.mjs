@@ -7,7 +7,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 
-async function fixture(t, failure, token, { firstAdmissionDelayMs = 0 } = {}) {
+async function fixture(t, failure, token, { firstAdmissionDelayMs = 0, slowTicketPolls = 0, slowDiscoveries = 0, unreachableSmokes = 0, updatingDiscoveries = 0 } = {}) {
   const computers = [
     { hostRef: { kind: 'device', mainId: 'main', deviceId: 'first' }, ready: true },
     { hostRef: { kind: 'device', mainId: 'main', deviceId: 'second' }, ready: true },
@@ -46,19 +46,49 @@ async function fixture(t, failure, token, { firstAdmissionDelayMs = 0 } = {}) {
     } else if (request.url.endsWith('/tests')) {
       response.end(JSON.stringify({ tests: { summary: { passed: 1, failed: 0, skipped: 0 },
         files: [{ file: 'apps/api/test/ci-smoke.integration.test.ts', tests: [{ status: 'passed' }] }] } }))
-    } else if (request.url.endsWith('/computers')) response.end(JSON.stringify({ computers }))
+    } else if (request.url.endsWith('/computers')) {
+      if (slowDiscoveries > 0) {
+        slowDiscoveries--
+        await delay(200)
+      }
+      const observed = computers.map(computer => ({ ...computer }))
+      if (updatingDiscoveries > 0) {
+        updatingDiscoveries--
+        observed[1] = { ...observed[1], ready: false, reasons: ['Worker bundle update is in progress'] }
+      }
+      response.end(JSON.stringify({ computers: observed }))
+    }
     else if (request.method === 'POST') {
       let body = ''
       for await (const chunk of request) body += chunk
       const input = JSON.parse(body)
+      if (input.smokeComputer && unreachableSmokes > 0) {
+        unreachableSmokes--
+        response.statusCode = 503
+        response.end(JSON.stringify({ error: { code: 'CI_SMOKE_COMPUTER_UNAVAILABLE',
+          message: 'The smoke computer is not reachable yet. Retry shortly.', details: { retryable: true } } }))
+        return
+      }
       admissions.push(input)
       if (failure === 'lock' && admissions.length === 2) return
       if (admissions.length === 1) await delay(firstAdmissionDelayMs)
       response.end(JSON.stringify({ ticketId: `ticket-${admissions.length}` }))
     } else if (request.method === 'DELETE') {
+      let body = ''
+      for await (const chunk of request) body += chunk
+      // Like the API, a JSON content type needs a JSON body.
+      if (request.headers['content-type']?.includes('application/json') && !body) {
+        response.statusCode = 400
+        response.end(JSON.stringify({ error: { code: 'INVALID_REQUEST', message: 'The request body must contain valid JSON.' } }))
+        return
+      }
       canceled.push(request.url)
       response.end('{}')
     } else {
+      if (slowTicketPolls > 0) {
+        slowTicketPolls--
+        await delay(200)
+      }
       const input = admissions[Number(request.url.split('-').at(-1)) - 1]
       const failed = ['setup', 'credential-echo'].includes(failure) && input?.smokeComputer?.deviceId === 'second'
       let state = failed ? 'failed' : 'passed'
@@ -77,7 +107,7 @@ async function fixture(t, failure, token, { firstAdmissionDelayMs = 0 } = {}) {
     probes: () => probes }
 }
 
-const options = { workspaceId: 'workspace', commit: 'a'.repeat(40), probeDurationMs: 80,
+const options = { workspaceId: 'workspace', commit: 'a'.repeat(40),
   timeoutMs: 1000, requestTimeoutMs: 60, admissionTimeoutMs: 60, pollMs: 10 }
 
 test('production smoke allows the first commit admission to take longer than five seconds', async t => {
@@ -86,7 +116,7 @@ test('production smoke allows the first commit admission to take longer than fiv
   const f = await fixture(t, undefined, token, { firstAdmissionDelayMs: 5200 })
   const messages = []
   await runProductionCiSmoke({ origin: f.origin, release: await releaseFixture(t), token,
-    probeDurationMs: 80, timeoutMs: 15_000, pollMs: 25, log: message => messages.push(message) })
+    timeoutMs: 15_000, pollMs: 25, log: message => messages.push(message) })
   assert.equal(f.admissions.length, 6)
   assert.ok(f.probes() > 3, 'Health probes continue while commit resolution is in progress')
   assert.ok(messages.some(message => /admission 1.*POST.*\/ci.*\d+ ms/.test(message)))
@@ -111,7 +141,7 @@ test('a stuck admission has its own bounded timeout and identifies the slow step
 
 test('CI smoke probes repeatedly, makes consecutive admissions and tests each ready executor', async t => {
   const { runInstallCiSmoke } = await import('./install-ci-smoke.mjs')
-  const f = await fixture(t)
+  const f = await fixture(t, undefined, undefined, { firstAdmissionDelayMs: 50 })
   await runInstallCiSmoke({ ...options, origin: f.origin })
   assert.deepEqual(f.admissions.slice(0, 2).map(input => input.files), [[], []])
   assert.notEqual(f.admissions[0].commandId, f.admissions[1].commandId)
@@ -133,6 +163,27 @@ for (const failure of ['setup', 'lock', 'stall']) {
     assert.ok(f.canceled.length > 0)
   })
 }
+
+test('a slow ticket poll is retried until the smoke deadline instead of failing the smoke', async t => {
+  const { runInstallCiSmoke } = await import('./install-ci-smoke.mjs')
+  const f = await fixture(t, undefined, undefined, { slowTicketPolls: 1 })
+  await runInstallCiSmoke({ ...options, origin: f.origin })
+  assert.equal(f.admissions.filter(input => input.smokeComputer).length, 4)
+})
+
+test('a slow computer discovery is retried until the smoke deadline instead of failing the smoke', async t => {
+  const { runInstallCiSmoke } = await import('./install-ci-smoke.mjs')
+  const f = await fixture(t, undefined, undefined, { slowDiscoveries: 1 })
+  await runInstallCiSmoke({ ...options, origin: f.origin })
+  assert.equal(f.admissions.filter(input => input.smokeComputer).length, 4)
+})
+
+test('a smoke computer that is still reconnecting is admitted again within the smoke deadline', async t => {
+  const { runInstallCiSmoke } = await import('./install-ci-smoke.mjs')
+  const f = await fixture(t, undefined, undefined, { unreachableSmokes: 1 })
+  await runInstallCiSmoke({ ...options, origin: f.origin })
+  assert.equal(f.admissions.filter(input => input.smokeComputer).length, 4)
+})
 
 test('CI smoke fails for an enabled build computer that became unready', async t => {
   const { runInstallCiSmoke } = await import('./install-ci-smoke.mjs')
@@ -202,4 +253,21 @@ test('smoke failure diagnostics redact the application token echoed by an execut
     assert.ok(!error.message.includes(token))
     return true
   })
+})
+
+
+test('deploy smoke waits for updating Workers before admitting every local computer', async t => {
+  const { runInstallCiSmoke } = await import('./install-ci-smoke.mjs')
+  const f = await fixture(t, undefined, undefined, { updatingDiscoveries: 3 })
+  await runInstallCiSmoke({ ...options, origin: f.origin })
+  assert.deepEqual(f.admissions.filter(input => input.smokeComputer).map(input => input.smokeComputer),
+    [f.computers[0], f.computers[1], f.computers[2], f.computers[4]].map(computer => computer.hostRef))
+})
+
+test('deploy smoke completes once CI and health checks pass without a minimum soak', async t => {
+  const { runInstallCiSmoke } = await import('./install-ci-smoke.mjs')
+  const f = await fixture(t)
+  await runInstallCiSmoke({ ...options, origin: f.origin, timeoutMs: 500 })
+  assert.equal(f.admissions.length, 6)
+  assert.ok(f.probes() > 0)
 })
