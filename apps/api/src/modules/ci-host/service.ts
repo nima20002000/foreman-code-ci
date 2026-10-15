@@ -165,9 +165,18 @@ export class HostCiService {
     this.timer = undefined
     this.stoppingRuns += 1
     this.reads.close()
-    await this.dispatching
-    await this.superseding
-    await Promise.all([...this.observingRuns.values(), ...this.observingComputers.values()])
+    await this.drain()
+  }
+
+  /** Resolves when dispatch, superseded cleanup, observations and readiness reads have finished, including work they start. */
+  async drain() {
+    for (;;) {
+      const pending = [this.dispatching, this.superseding,
+        ...this.observingRuns.values(), ...this.observingComputers.values()]
+        .filter((work): work is Promise<void> => work !== undefined)
+      if (!pending.length) return
+      await Promise.allSettled(pending)
+    }
   }
 
   async run(caller: ManagementPrincipal, input: CiRunInput & { workspaceId?: string | undefined }, source: 'mcp' | 'http' = 'mcp') {
@@ -1062,6 +1071,7 @@ export class HostCiService {
       return [run.id, { groupId: run.groupId, computerKey: row.host_key }]
     }))
     const { gate, reservedHosts } = await readCiGateReservation(this.pool)
+    console.error('DBG pass', Date.now(), 'queued', parsed.length, 'statuses', computers.map(c => c.key + ':' + (this.planningEndpoint.status(c) ? (this.planningEndpoint.status(c)!.ready ? 'r' : 'n') : 'u')).join(','))
     const totals = new Map<string, number>()
     const unavailable = new Map<string, string>()
     const gateShards = new Map<string, number>()
@@ -1240,6 +1250,7 @@ export class HostCiService {
           : 'Waiting for a build computer: this integration slice needs one'
       }
       const message = sanitizeCiText(`${prefix}; ${reasons.join('; ') || 'no eligible computers'}`.slice(0, 2000))
+      if (run.gate) console.error('DBG gate-msg', run.part ?? run.suite, run.plannedHostKey, message.slice(0, 300))
       if (message !== run.message) await saveQueuedCiRun(this.pool, run, { ...run, message })
     })
   }
