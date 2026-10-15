@@ -116,10 +116,7 @@ const ready = setInterval(() => {
 }, 25)
 `)
     await writeFile(join(directory, databaseUnit), '[Service]\nType=oneshot\nExecStart=/usr/bin/true\nRemainAfterExit=yes\n')
-    // This fixture owns the API lifetime, not the installation's Worker publisher.
-    const template = apiServiceTemplate(databaseUnit)
-      .replace(/^ExecStartPost=.*foreman-worker-publish\.service\n/m, '')
-    await writeFile(unitPath, renderUserService(template, {
+    await writeFile(unitPath, renderUserService(apiServiceTemplate(databaseUnit), {
       node: process.execPath, app, state: directory, home: directory, path: '/usr/bin:/bin',
     }))
     await systemctl('--runtime', 'link', unitPath, join(directory, databaseUnit))
