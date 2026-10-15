@@ -605,6 +605,7 @@ async function configureWorkerComputers(composition: InstalledWorkerComposition)
       const refreshed = input.refreshWorkflowConfiguration
         ? await input.refreshWorkflowConfiguration(signal) : input.configuration
       if (!isDeepStrictEqual(current(), context.binding)) throw new DomainError('HARNESS_INVENTORY_STALE', 'The installed inventory generation changed.', 409)
+      if (refreshed && approved) await composition.activateWorkflowConfiguration(refreshed)
       if (!isDeepStrictEqual(current(), context.binding)) throw new DomainError('HARNESS_INVENTORY_STALE', 'The installed inventory generation changed.', 409)
       const inspected = await inspectInstalledCodex({ binding: context.binding, configuration: refreshed,
         fingerprintCache: inventoryPayloadFingerprints, environment: process.env, cwd: input.stateDirectory,
@@ -613,18 +614,9 @@ async function configureWorkerComputers(composition: InstalledWorkerComposition)
         fingerprintCache: inventoryPayloadFingerprints, environment: process.env, cwd: input.stateDirectory,
         signal: AbortSignal.any([context.signal, lifetime.signal]) })
       if (!isDeepStrictEqual(current(), context.binding)) throw new DomainError('HARNESS_INVENTORY_STALE', 'The installed inventory generation changed.', 409)
-      const installations = [...inspected.inventory.installations, ...claude.inventory.installations]
-      if (refreshed && approved) {
-        try {
-          await composition.activateWorkflowConfiguration(refreshed)
-        } catch (error) {
-          // Setup needs the selected payload; an unavailable one is reported below instead of hiding the inventory.
-          if (installations.every(installation => installation.installed)) throw error
-          componentLogger('devices').warn({ err: error }, 'Workflow activation waits for an unavailable installation')
-        }
-        if (!isDeepStrictEqual(current(), context.binding)) throw new DomainError('HARNESS_INVENTORY_STALE', 'The installed inventory generation changed.', 409)
-      }
-      return { payload: { ...inspected.inventory, installations } }
+      return { payload: { ...inspected.inventory,
+        installations: [...inspected.inventory.installations,
+          ...claude.inventory.installations] } }
     },
   })
 }
