@@ -62,7 +62,6 @@ export async function checkpointRuntimeFixture(branches: 1 | 2 = 1, pendingPerEx
     managerFactory?: (context: NativeManagerResolutionContext,
       owner: () => RunOwnership | undefined) => NativeHarnessSessionManager;
     prepareManagerContext?: ConstructorParameters<typeof ApprovalExecutionCoordinator>[13];
-    validateContinuation?: ReturnType<typeof continuationValidator>;
     mcpInspector?: (manager: NativeHarnessSessionManager) => NativeMcpInspector } = {}) {
   const db = options.database ?? await agent3Database(options.databaseUrl)
   const engines: LangGraphWorkflowEngine[] = []
@@ -125,15 +124,14 @@ export async function checkpointRuntimeFixture(branches: 1 | 2 = 1, pendingPerEx
       const credentials = new Wave25WorkerCredentialService(db.pool, access, options.credentialTtlMs)
       // This helper's external provider is deterministic. Its configuration
       // inspector is the same explicit synthetic boundary as its transport.
-      const validate = options.validateContinuation ?? continuationValidator(db.pool, locations)
       const launchCredentials = providerLaunchCredentials(runs, locations, managers, credentials, options.mcpInspector ?? (() => ({
         async inspect(input) { return { harness: input.harness, providerVersion: '0.154.0',
           runnerId: input.runnerId, workingDirectory: input.workingDirectory, inspectedAt: new Date().toISOString(),
           entry: { name: input.serverName, transport: 'streamable-http', endpoint: providerAppEndpoint,
             enabled: true, credentialEnvironmentVariable: APP_MCP_TOKEN_ENVIRONMENT_VARIABLE, status: 'connected' } } },
-      })), db.pool, { prepareContext: options.prepareManagerContext, validateContinuation: validate })
+      })), db.pool)
       const native = new ApprovalExecutionCoordinator(runs, repository, budgets, managers, 600000,
-        launchCredentials, validate,
+        launchCredentials, continuationValidator(db.pool, locations),
         new PostgresWorkflowClosureStore(db.pool), new PostgresRepeatReviewerBindings(db.pool),
         workflowCapture.capture, reviewCapture.capture, options.recoverNativeProcesses,
         undefined, options.prepareManagerContext)
@@ -206,12 +204,8 @@ export async function insertProviderRun(pool: pg.Pool, fixture: ReturnType<typeo
 /** Production credential validation and issuance with a provider-specific inspector. */
 export function providerLaunchCredentials(runs: PostgresRunRepository, locations: WorkspaceLocationService,
   managers: ExecutionScopedNativeSessionManagerResolver, credentials: Wave25WorkerCredentialService,
-  inspector: (manager: NativeHarnessSessionManager) => NativeMcpInspector, pool: pg.Pool,
-  options: {
-    prepareContext?: ((context: NativeManagerResolutionContext) => Promise<NativeManagerResolutionContext>) | undefined
-    validateContinuation?: ReturnType<typeof continuationValidator> | undefined
-  } = {}): ExecutionCredentialProvider {
-  const validate = options.validateContinuation ?? continuationValidator(pool, locations)
+  inspector: (manager: NativeHarnessSessionManager) => NativeMcpInspector, pool: pg.Pool): ExecutionCredentialProvider {
+  const validate = continuationValidator(pool, locations)
   return {
     async prepare(input) {
       await validate(input.executionId, input.signal)
@@ -223,10 +217,9 @@ export function providerLaunchCredentials(runs: PostgresRunRepository, locations
       if (!configuration || configuration.agentId !== execution.agentId || configuration.harness.harness !== input.harness
         || !run?.executionLocation || run.executionLocation.runnerId !== LOCAL_RUNNER_ID) throw new DomainError(
         'WORKER_EXECUTION_IDENTITY_INVALID', 'Credential preflight requires the pinned local execution.', 409)
-      const context: NativeManagerResolutionContext = { executionId: execution.id, agentId: execution.agentId,
+      const { manager } = managers.resolve({ executionId: execution.id, agentId: execution.agentId,
         harness: input.harness, workingDirectory: input.workingDirectory, configuration,
-        runId: execution.runId, attempt: execution.attempt, ...(input.purpose ? { purpose: input.purpose } : {}) }
-      const { manager } = managers.resolve(options.prepareContext ? await options.prepareContext(context) : context)
+        runId: execution.runId, attempt: execution.attempt, ...(input.purpose ? { purpose: input.purpose } : {}) })
       return new WorkerLaunchCredentialService(new McpDetectionService(inspector(manager), providerAppEndpoint),
         credentials, run.executionLocation.runnerId, Math.min(300_000, credentials.ttlMs - 30_000)).prepare(input)
     },
