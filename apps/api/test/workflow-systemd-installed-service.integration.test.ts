@@ -71,7 +71,6 @@ describe('installed API fixture packaging', () => {
     for (const name of ['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', '.npmrc', 'scripts/require-pnpm.mjs']) {
       await copyFile(join(repository, name), join(directory, name))
     }
-    await cp(join(repository, 'patches'), join(directory, 'patches'), { recursive: true })
     for (const name of ['api', 'web', 'worker']) {
       await mkdir(join(directory, 'apps', name), { recursive: true })
       await copyFile(join(repository, 'apps', name, 'package.json'), join(directory, 'apps', name, 'package.json'))
@@ -132,9 +131,8 @@ describe('installed API fixture packaging', () => {
       const deploy = deployProductionApi(async (command, args) => {
         // This disposable workspace needs no post-deploy installation restoration.
         if (args.includes('install')) return
-        // This disposable copy needs no inode isolation, and hardlinking the store keeps each case fast.
-        await execute(command, [...args, '--package-import-method', 'hardlink', '--prefer-offline',
-          '--store-dir', storeDir, '--cache-dir', cache, '--registry', registryUrl], {
+        await execute(command, [...args, '--prefer-offline', '--store-dir', storeDir,
+          '--cache-dir', cache, '--registry', registryUrl], {
           cwd: directory, env: { ...process.env, CI: 'true' }, timeout: 300_000,
         })
       }, destination)
