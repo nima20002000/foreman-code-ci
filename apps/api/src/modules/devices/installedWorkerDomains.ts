@@ -368,19 +368,19 @@ async function configureWorkerSources(composition: InstalledWorkerComposition) {
         const retained = await jobJournal()
         const status = await retained.jobStatus(operationId)
         if (status.status === 'known' && (!status.receipt.terminal?.processStopped
-          || !['complete', 'failed'].includes(status.receipt.publication))) return false
+          || !['complete', 'failed'].includes(status.receipt.publication))) { componentLogger('engine').warn({ code: 'DIAGjob-1' }, 'diag'); return false }
         const jobOwner = await retained.jobNativeOwner(operationId)
         if (jobOwner) {
           if (jobOwner.connection.bootId !== input.bootId || status.status !== 'known' || !status.receipt.terminal?.processStopped
             || !['complete', 'failed'].includes(status.receipt.publication)
-            || jobOwner.launches.some(launch => !launch.closed)) return false
+            || jobOwner.launches.some(launch => !launch.closed)) { componentLogger('engine').warn({ code: 'DIAGjob-2' }, 'diag'); return false }
           const certificate = jobOwner.container?.certificate
           if (!jobOwner.nonEntryConfirmed || !jobContainerNonEntryObserved(jobOwner)) {
             if (!certificate || certificate.lifecycle !== 'closed'
               || certificate.scope.subject.operationId !== operationId
               || certificate.scope.bootId !== input.bootId || !await proveOCIBoundaryEmpty(certificate.boundary)
               || !(await Promise.all(certificate.helpers.map(helper => helper.boundary
-                ? proveOCIBoundaryEmpty(helper.boundary) : Promise.resolve(false)))).every(Boolean)) return false
+                ? proveOCIBoundaryEmpty(helper.boundary) : Promise.resolve(false)))).every(Boolean)) { componentLogger('engine').warn({ code: 'DIAGjob-3' }, 'diag'); return false }
           }
         }
         if (composition.native?.kind === 'configured') {
@@ -389,7 +389,7 @@ async function configureWorkerSources(composition: InstalledWorkerComposition) {
         }
         // Removing a runtime selection does not erase protected operation or process records.
         if ([...registry.snapshot().launches, ...jobRegistry.snapshot().launches]
-          .some(launch => launch.lifecycle !== 'closed')) return false
+          .some(launch => launch.lifecycle !== 'closed')) { componentLogger('engine').warn({ code: 'DIAGjob-4' }, 'diag'); return false }
         const workflow = await (await journal()).status(operationId)
         if (workflow.status === 'known') {
           return hasPositiveRemoteEntryClosure(workflow.receipt) || hasPositiveRemoteNonEntryClosure(workflow.receipt)

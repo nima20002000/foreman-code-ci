@@ -13,6 +13,7 @@ import { ExecutionResultSchema, RETIRED_OPENCODE_MESSAGE,
 import { randomUUID } from 'node:crypto'
 import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
 import type { DeviceConnectionIdentity } from '@foreman-code/contracts/device-identity'
+const diagNo = (reason: string, owner: { attempt: { executionId: string } }, extra: Record<string, unknown>) => { componentLogger('engine').warn({ code: `DIAGprep-${reason}-${Object.entries(extra).map(([k, v]) => `${k}${String(v)}`).join('-')}`.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 120), executionId: owner.attempt.executionId }, 'diag preparation closed false'); return false }
 import {
   DeviceConnectionIdentitySchema,
   WorkerPairingConfigurationSchema,
@@ -1014,7 +1015,7 @@ class InstalledWorkflowHostRuntime {
   })()
 
   private readonly preparationClosed = async (owner: SourceOperationOwner): Promise<boolean> => {
-    if (owner.preparationKind !== 'workflow' || owner.preparationClosed !== true) return false
+    if (owner.preparationKind !== 'workflow' || owner.preparationClosed !== true) return diagNo('L1017', owner, { owned: Boolean(this.operations.get(owner.attempt.executionId)) })
     // A failed fact lookup may still leave an owner that needs cleanup.
     const pending = this.construction.get(owner.attempt.executionId)
     if (pending) await Promise.allSettled([pending.task])
@@ -1025,15 +1026,15 @@ class InstalledWorkflowHostRuntime {
     const launches = () => this.registry.snapshot().launches.filter(launch => launch.owner === processOwner)
     if (status.status === 'unknown') {
       const entry = this.recovery.readEntry(owner.identity.operationId)
-      if (!entry) return !owned && launches().length === 0
+      if (!entry) return !owned && launches().length === 0 ? true : diagNo('unknownNoEntry', owner, { owned: Boolean(owned), launches: launches().length })
       if (entry.intent.executionId !== owner.attempt.executionId || entry.intent.attemptId !== owner.attempt.attemptId
-        || owner.preparationNativeSession) return false
+        || owner.preparationNativeSession) return diagNo('L1030', owner, { owned: Boolean(this.operations.get(owner.attempt.executionId)) })
       if (owned) {
         owned.launchDisabled = true
         await owned.manager?.dispose?.()
         await this.registry.abandonReservedLaunch(owned.scope)
       }
-      if (!await this.registry.closeOwner(entry.owner)) return false
+      if (!await this.registry.closeOwner(entry.owner)) return diagNo('L1036', owner, { owned: Boolean(this.operations.get(owner.attempt.executionId)) })
       componentLogger('engine').warn({ executionId: owner.attempt.executionId }, 'Source preparation closed an unentered workflow owner')
       await owned?.mcp?.close()
       return true
@@ -1044,16 +1045,17 @@ class InstalledWorkflowHostRuntime {
       if (owned) await this.closeResidentPreparation(owned, 'source_preparation_closed_before_entry')
       else await this.recovery.closePendingEntry(receipt, log, this.signal)
       const closed = await log.status(receipt.intent.operationId)
-      if (closed.status !== 'known') return false
+      if (closed.status !== 'known') return diagNo('L1047', owner, { owned: Boolean(this.operations.get(owner.attempt.executionId)) })
       receipt = closed.receipt
     }
+    componentLogger('engine').warn({ code: `DIAGprepstate-owned${Boolean(owned)}-terminal${receipt.terminal?.kind ?? 'none'}-native${Boolean(receipt.native)}-entry${receipt.entryAttempted}-posclosure${hasPositiveRemoteEntryClosure(receipt)}-pns${Boolean(owner.preparationNativeSession)}-ownedNativeEq${owned?.native ? isDeepStrictEqual(owned.native.native, receipt.native) : 'na'}-sessEq${owned?.session ? owned.session.nativeSessionId === receipt.native?.sessionId : 'na'}-idEq${receipt.intent.executionId === owner.attempt.executionId && receipt.intent.attemptId === owner.attempt.attemptId}`.slice(0, 127) }, 'diag preparation state')
     if (receipt.intent.executionId !== owner.attempt.executionId || receipt.intent.attemptId !== owner.attempt.attemptId
       || owner.preparationNativeSession && (!['codex', 'opencode'].includes(owner.preparationNativeSession.harness)
         || owner.preparationNativeSession.nativeSessionId !== receipt.native?.sessionId)
       || receipt.entryAttempted && !receipt.native && !hasPositiveRemoteEntryClosure(receipt)
       || owned?.native && !hasPositiveRemoteEntryClosure(receipt) && !isDeepStrictEqual(owned.native.native, receipt.native)
       || owned?.session && !hasPositiveRemoteEntryClosure(receipt)
-        && owned.session.nativeSessionId !== receipt.native?.sessionId) return false
+        && owned.session.nativeSessionId !== receipt.native?.sessionId) return diagNo('L1056', owner, { owned: Boolean(this.operations.get(owner.attempt.executionId)) })
     if (await log.isRetired(receipt.intent.operationId)) {
       await this.releaseSettled(receipt.intent)
       return true
@@ -1069,13 +1071,13 @@ class InstalledWorkflowHostRuntime {
     }
     await log.revokeFence(owner.identity.operationId)
     if (owned?.manager) {
-      if (!owned.manager.dispose) return false
+      if (!owned.manager.dispose) return diagNo('L1072', owner, { owned: Boolean(this.operations.get(owner.attempt.executionId)) })
       await owned.manager.dispose()
     }
     // A Run stopped before entry keeps this live process as the reservation's parent,
     // so only its explicit abandonment can prove that no native process started.
     if (owned?.scope.launchId) await this.registry.abandonReservedLaunch(owned.scope)
-    if ((receipt.native || launches().length) && !await this.registry.closeOwner(processOwner)) return false
+    if ((receipt.native || launches().length) && !await this.registry.closeOwner(processOwner)) return diagNo('L1078', owner, { owned: Boolean(this.operations.get(owner.attempt.executionId)) })
     componentLogger('engine').warn({ executionId: owner.attempt.executionId, terminal: Boolean(receipt.terminal) },
       'Source preparation closed a workflow owner')
     await owned?.mcp?.close()

@@ -12,6 +12,7 @@ import type { SourceReclamationResult } from './reclaimSourceReservation.js'
 import { PostgresSourceReservations, type SourceReservation } from './reservations.js'
 import { withSourceOperationExclusion } from './sourceOperationExclusion.js'
 import { localWorkflowSourceClosed } from './workflowCleanup.js'
+import { componentLogger } from '../diagnostics/logger.js'
 
 async function hasActiveAdmission(sql: GraphSqlClient, operationId: string): Promise<boolean> {
   const active = await sql.query(`select 1 from job_executions e where e.operation_id=$1
@@ -217,7 +218,13 @@ export class MaterializationReservationCleanup {
         await this.defer(candidate.reservation_id, candidate.retry?.failures ?? 0)
         return false
       }
-      const result = await this.reclaim(grant)
+      const diagRun = (await this.pool.query<{ s: string }>(`select concat(r.execution_state,'-stop',(r.stop_requested_at is not null)::text,'-',coalesce(r.record->>'outcome','none'),'-dev',($2::text is not null)::text) as s from harness_executions e join runs r on r.id=e.run_id where e.id=$1`, [grant.owner?.attempt.executionId ?? '', grant.roots[0]?.binding.deviceId ?? null])).rows[0]?.s ?? 'norun'
+      componentLogger('engine').warn({ code: `DIAGsend-${diagRun}`.replace(/[^A-Za-z0-9_-]/g, '_'), executionId: grant.owner?.attempt.executionId }, 'diag reclaim send')
+      const result = await this.reclaim(grant).catch((error: unknown) => {
+        componentLogger('engine').warn({ code: `DIAGfail-${diagRun}`.replace(/[^A-Za-z0-9_-]/g, '_') }, 'diag reclaim failed')
+        throw error
+      })
+      componentLogger('engine').warn({ code: `DIAGok-${diagRun}`.replace(/[^A-Za-z0-9_-]/g, '_') }, 'diag reclaim ok')
       await this.transaction(async sql => {
         await sql.query('select pg_advisory_xact_lock(hashtext($1))', [`source-reconcile:${grant.operationId}`])
         await sql.query('select pg_advisory_xact_lock(hashtext($1))', [`source-storage:${grant.scopeId}`])
