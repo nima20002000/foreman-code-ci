@@ -217,7 +217,7 @@ export class PostgresInteractionRepository {
       if (input.principal) {
         const target = await client.query<{ run_id: string }>('select run_id from durable_interactions where id=$1', [input.id])
         targetRunId = target.rows[0]?.run_id
-        principal = await lockActiveWorkerPrincipal(client, input.principal, targetRunId)
+        principal = await lockActiveWorkerPrincipal(client, input.principal, targetRunId, 'update')
       }
       const found = await client.query<{ record: unknown }>('select record from durable_interactions where id=$1 for update', [input.id])
       const current = found.rows[0] ? DurableInteractionSchema.parse(found.rows[0].record) : undefined
@@ -264,7 +264,7 @@ export class PostgresInteractionRepository {
     } catch (error) {
       releaseError = await rollbackAfterFailure(client)
       if (committing) {
-        throw new DomainError('INTERACTION_DECISION_STATUS_UNKNOWN', 'Decision commit could not be confirmed. Read the interaction before retrying; the decision may already have committed.', 503)
+        throw new DomainError('INTERACTION_DECISION_STATUS_UNKNOWN', 'Decision commit could not be confirmed. Read the interaction before retrying; the decision may already have committed.', 503, undefined, { cause: error })
       }
       throw error
     } finally { client.release(releaseError) }

@@ -3,10 +3,9 @@ import type { HarnessExecution } from '@foreman-code/contracts'
 import { canonicalGraphJson, sameWorkflowValue } from '@foreman-code/contracts/wave25'
 import { REMOTE_NATIVE_SOURCE_LIMIT } from '@foreman-code/contracts/remote-workflow-physical'
 import { VerifiedRemoteEvidence } from '../runs/remote/resultBridge.js'
-import { readReconciledDispatchIntent } from '../runs/remote/persistence.js'
 import type { RunOwnership } from '../runs/ownership.js'
 import type { GraphTransactionSql } from '../run-graph/connection.js'
-import { beforeGraphCommit } from '../run-graph/connection.js'
+import { beforeGraphCommit, isGraphTransactionFinalizing } from '../run-graph/connection.js'
 import type { WorkflowOriginalNativeSource } from '../interactions/workflowNativeCapture.js'
 import { DomainError } from '../errors.js'
 
@@ -21,9 +20,15 @@ export interface RemoteNativeSourceVerification { read(evidence: RemoteNativeSou
 export interface RemoteNativePhysicalVerification {
   /** Main SQL-only consumer of actual W11 original process/session/turn/closure
    * and W09 result/artifact attestations. A receipt digest or main control lane
-   * is not physical proof; an absent verifier cannot authorize publication. */
+   * is not physical proof; an absent verifier cannot authorize publication.
+   * It locks the current dispatch and requires it to equal the original receipt's intent. */
   assertOriginal(sql: GraphTransactionSql, owner: RunOwnership, original: VerifiedRemoteOriginalSource): Promise<void>
 }
+export interface RemoteNativeBatchPhysicalVerification extends RemoteNativePhysicalVerification {
+  assertOriginals(sql: GraphTransactionSql, owner: RunOwnership,
+    originals: readonly VerifiedRemoteOriginalSource[]): Promise<void>
+}
+
 const digest = (source: WorkflowOriginalNativeSource) => createHash('sha256')
   .update(canonicalGraphJson(source, REMOTE_NATIVE_SOURCE_LIMIT)).digest('hex')
 const conflict = (): never => { throw new DomainError('REMOTE_NATIVE_SOURCE_NOT_CAPTURED', 'Native source must originate in the configured authenticated remote producer.', 409) }
@@ -94,11 +99,51 @@ export async function assertRemoteNativeSourceLocked(sql: GraphTransactionSql, o
     || receipt.intent.nodeId !== execution.workflowNodeId || !sameWorkflowValue(original.source, source)
     || receipt.native?.sessionId !== execution.nativeSessionId && source.type !== 'session_created') return conflict()
   const fence = await owner.readOneShotFence(sql)
+  // assertOriginal reads the locked current dispatch and requires it to equal this original receipt's intent.
   const verify = async () => {
     owner.assertOwned(); original.assertCurrent()
-    if (!sameWorkflowValue(fence, await owner.readOneShotFence(sql))
-      || !sameWorkflowValue(await readReconciledDispatchIntent(sql, receipt.intent.operationId, true), receipt.intent)) return conflict()
+    if (!sameWorkflowValue(fence, await owner.readOneShotFence(sql))) return conflict()
     await physical.assertOriginal(sql, owner, original)
   }
-  await verify(); if (registerCommitFence) beforeGraphCommit(sql, verify)
+  await verify()
+  // One COMMIT check per original and transaction. A call made by a COMMIT check is already final.
+  if (!registerCommitFence || isGraphTransactionFinalizing(sql)) return
+  let fenced = commitFences.get(sql)
+  if (!fenced) commitFences.set(sql, fenced = new WeakSet())
+  if (fenced.has(original)) return
+  fenced.add(original)
+  beforeGraphCommit(sql, verify)
+}
+const commitFences = new WeakMap<GraphTransactionSql, WeakSet<VerifiedRemoteOriginalSource>>()
+
+
+/** Share the owner read and original-source readback across one native frame group. */
+export async function assertRemoteNativeSourcesLocked(sql: GraphTransactionSql, owner: RunOwnership,
+  captures: readonly { execution: HarnessExecution; source: WorkflowOriginalNativeSource;
+    evidence: RemoteNativeSourceEvidence }[], verification: RemoteNativeSourceVerification,
+  physical: RemoteNativeBatchPhysicalVerification): Promise<void> {
+  if (!captures.length) return
+  const originals = captures.map(({ execution, source, evidence }) => {
+    const original = verification.read(evidence)
+    const receipt = original.verified.receipt
+    if (owner.runId !== execution.runId || receipt.intent.runId !== owner.runId
+      || receipt.intent.executionId !== execution.id || receipt.intent.nodeId !== execution.workflowNodeId
+      || !sameWorkflowValue(original.source, source)
+      || receipt.native?.sessionId !== execution.nativeSessionId && source.type !== 'session_created') return conflict()
+    return original
+  })
+  const fence = await owner.readOneShotFence(sql)
+  const verify = async (sources: readonly VerifiedRemoteOriginalSource[]) => {
+    owner.assertOwned()
+    for (const original of sources) original.assertCurrent()
+    if (!sameWorkflowValue(fence, await owner.readOneShotFence(sql))) return conflict()
+    await physical.assertOriginals(sql, owner, sources)
+  }
+  await verify(originals)
+  if (isGraphTransactionFinalizing(sql)) return
+  let fenced = commitFences.get(sql)
+  if (!fenced) commitFences.set(sql, fenced = new WeakSet())
+  const pending = originals.filter(original => !fenced.has(original))
+  for (const original of pending) fenced.add(original)
+  if (pending.length) beforeGraphCommit(sql, () => verify(pending))
 }

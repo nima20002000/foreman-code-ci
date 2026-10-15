@@ -22,9 +22,19 @@ const reply = (id, result) => send({ id, result })
 const notify = (method, params) => send({ method, params })
 const mcpName = 'foreman-code'
 const disabled = args.some((value, index) => value === '-c' && args[index + 1] === `mcp_servers.${mcpName}.enabled=false`)
+const nativeConfigFile = join(process.env.CODEX_HOME ?? join(root, 'codex-home'), 'config.toml')
+const defaultMcp = { command: process.execPath, args: [settings.launcher],
+  env_vars: ['FOREMAN_CODE_MCP_TOKEN'], enabled: true, required: true }
+// The external fixture stores its native configuration as JSON in the user file.
+const readNativeConfig = () => {
+  const text = existsSync(nativeConfigFile) ? readFileSync(nativeConfigFile, 'utf8').trim() : ''
+  return text ? JSON.parse(text) : { mcp_servers: { [mcpName]: defaultMcp } }
+}
+const configVersion = config => createHash('sha256').update(JSON.stringify(config)).digest('hex')
+const nativeMcp = readNativeConfig().mcp_servers[mcpName]
 const mcp = {
-  name: mcpName, enabled: !disabled, required: true,
-  transport: { type: 'stdio', command: process.execPath, args: [settings.launcher], env_vars: ['FOREMAN_CODE_MCP_TOKEN'] },
+  name: mcpName, enabled: !disabled && nativeMcp?.enabled !== false, required: true,
+  transport: { type: 'stdio', ...nativeMcp },
 }
 startup({ nativeCommand: { pid: process.pid, command: args[0] ?? null, subcommand: args[1] ?? null } })
 
@@ -83,7 +93,7 @@ const configuration = params => {
   const write = config.sandbox_workspace_write ?? {}
   return { model: params.model ?? 'test-model', modelProvider: 'openai', cwd: params.cwd ?? process.cwd(),
     reasoningEffort: config.model_reasoning_effort ?? 'low', serviceTier: params.serviceTier === 'fast' ? 'fast' : null,
-    approvalPolicy: params.approvalPolicy ?? 'on-request', approvalsReviewer: params.approvalsReviewer ?? 'user',
+    approvalPolicy: params.approvalPolicy ?? 'never', approvalsReviewer: params.approvalsReviewer ?? 'user',
     instructionSources: [], sandbox: params.sandbox === 'workspace-write'
       ? { type: 'workspaceWrite', writableRoots: write.writable_roots ?? [], networkAccess: write.network_access ?? false,
         excludeTmpdirEnvVar: write.exclude_tmpdir_env_var ?? false, excludeSlashTmp: write.exclude_slash_tmp ?? false }
@@ -185,8 +195,15 @@ async function started(turn, prompt) {
     const block = join(root, 'block-workflow-turns')
     const position = readFileSync(join(root, 'calls.jsonl'), 'utf8').split('\n')
       .filter(line => line && JSON.parse(line).workflowTurn).length
-    while (existsSync(block)) {
-      const contents = readFileSync(block, 'utf8')
+    for (;;) {
+      let contents
+      try {
+        contents = readFileSync(block, 'utf8')
+      } catch (error) {
+        // Unlinking this file releases turns, including between a check and an open.
+        if (error.code === 'ENOENT') break
+        throw error
+      }
       if (contents && position <= JSON.parse(contents).allowFirst) break
       await new Promise(resolve => setTimeout(resolve, 20))
     }
@@ -276,8 +293,26 @@ createInterface({ input: process.stdin, crlfDelay: Infinity }).on('line', async 
     reply(message.id, {})
     if (turn?.status === 'inProgress') complete(turn, 'Interrupted', 'interrupted')
   } else if (message.method === 'config/read') {
+    const user = readNativeConfig()
     reply(message.id, { config: { approval_policy: thread?.settings.approvalPolicy ?? 'on-request',
-      mcp_servers: { [mcpName]: { ...mcp.transport, enabled: mcp.enabled, required: true } } }, origins: {}, layers: [] })
+      mcp_servers: { ...user.mcp_servers,
+        [mcpName]: { ...user.mcp_servers[mcpName], enabled: mcp.enabled } } }, origins: {},
+      layers: [{ name: { type: 'user', file: nativeConfigFile }, version: configVersion(user), config: user }] })
+  } else if (message.method === 'config/batchWrite') {
+    const user = readNativeConfig()
+    if (params.filePath !== nativeConfigFile || params.expectedVersion !== configVersion(user)) {
+      send({ id: message.id, error: { code: -32602, message: 'Native configuration changed' } })
+      return
+    }
+    for (const edit of params.edits) {
+      const name = edit.keyPath.slice('mcp_servers.'.length)
+      if (edit.value === null) delete user.mcp_servers[name]
+      else user.mcp_servers[name] = edit.value
+    }
+    mkdirSync(dirname(nativeConfigFile), { recursive: true })
+    writeFileSync(nativeConfigFile, JSON.stringify(user), { mode: 0o600 })
+    mcp.enabled = !disabled && user.mcp_servers[mcpName]?.enabled !== false
+    reply(message.id, { status: 'ok', version: configVersion(user), filePath: nativeConfigFile })
   } else if (message.method === 'mcpServerStatus/list') {
     const workflowAdmission = thread?.instructions.includes('fixture-work-handoff') && thread.turns.length === 0
     if (workflowAdmission && existsSync(join(root, 'block-workflow-admission'))) {
@@ -324,6 +359,9 @@ createInterface({ input: process.stdin, crlfDelay: Infinity }).on('line', async 
         return cwd === workingDirectory || cwd.startsWith(`${workingDirectory}/`)
       }
       while (blocked()) await new Promise(resolve => setTimeout(resolve, 20))
+      if (existsSync(join(root, 'fail-model-refresh'))) {
+        process.stderr.write('failed to refresh available models: fixture remote discovery unavailable\n')
+      }
       reply(message.id, { data: existsSync(join(root, 'hide-models')) ? [] : models, nextCursor: null })
     }
     void respond()
