@@ -1,23 +1,19 @@
 import { createHash } from 'node:crypto'
-import { constants, type BigIntStats } from 'node:fs'
-import { lstat, open, realpath, type FileHandle } from 'node:fs/promises'
+import { constants } from 'node:fs'
+import { lstat, open, realpath } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
+import { workerArtifactContentSha256 } from '@foreman-code/contracts/worker-artifact-content-node'
 import {
-  WORKER_UPDATE_MAX_BINARY_BYTES, WORKER_UPDATE_MAX_JSON_BYTES, WORKER_UPDATE_NAMESPACE, WORKER_UPDATE_VERSION,
-  WorkerArtifactIndexSchema, WorkerArtifactManifestSchema, WorkerArtifactRequestSchema,
-  type WorkerArtifactManifest, type WorkerArtifactTarget,
+  WORKER_PUBLICATION_DEADLINE_MS, WORKER_UPDATE_MAX_BINARY_BYTES, WORKER_UPDATE_MAX_JSON_BYTES, WORKER_UPDATE_NAMESPACE, WORKER_UPDATE_VERSION,
+  WorkerArtifactIndexSchema, WorkerArtifactManifestSchema, WorkerArtifactRequestSchema, WorkerCiSmokeSchema,
+  type WorkerArtifactManifest, type WorkerArtifactTarget, type WorkerReleasePublication, type WorkerBundleIdentity,
 } from '@foreman-code/contracts/computer-maintenance'
 import { DeviceApplicationError } from '../devices/deviceApplicationError.js'
 import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
 import type { DeviceExtensionRegistration } from '../devices/deviceApplicationChannel.js'
+import { DomainError } from '../errors.js'
 
 const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex')
-type ArtifactFile = WorkerArtifactManifest['files'][number]
-interface VerifiedFile { identity: string; verification: Promise<void> }
-
-function fileIdentity(info: BigIntStats) {
-  return [info.dev, info.ino, info.size, info.mtimeNs, info.ctimeNs].join(':')
-}
 
 function sameTarget(left: WorkerArtifactTarget, right: WorkerArtifactTarget) {
   return left.os === right.os && left.osRelease === right.osRelease && left.arch === right.arch
@@ -38,68 +34,13 @@ async function readRegularFile(root: string, path: string, maximum: number) {
     if (!info.isFile() || info.size > BigInt(maximum)) throw new DeviceApplicationError('extension-rejected')
     const bytes = await file.readFile()
     const after = await file.stat({ bigint: true })
-    if (BigInt(bytes.byteLength) !== info.size || fileIdentity(info) !== fileIdentity(after)) {
+    if (BigInt(bytes.byteLength) !== info.size || info.dev !== after.dev || info.ino !== after.ino
+      || info.size !== after.size || info.mtimeNs !== after.mtimeNs || info.ctimeNs !== after.ctimeNs) {
       throw new DeviceApplicationError('extension-rejected')
     }
     return bytes
   } finally {
     await file.close()
-  }
-}
-
-async function verifyArtifactFile(handle: FileHandle, file: ArtifactFile, identity: string) {
-  const hash = createHash('sha256')
-  const buffer = Buffer.alloc(Math.min(file.size, WORKER_UPDATE_MAX_BINARY_BYTES))
-  let position = 0
-  while (position < file.size) {
-    const length = Math.min(buffer.length, file.size - position)
-    const { bytesRead } = await handle.read(buffer, 0, length, position)
-    if (bytesRead === 0) throw new DeviceApplicationError('extension-rejected')
-    hash.update(buffer.subarray(0, bytesRead))
-    position += bytesRead
-  }
-  const after = await handle.stat({ bigint: true })
-  if (fileIdentity(after) !== identity || hash.digest('hex') !== file.sha256) {
-    throw new DeviceApplicationError('extension-rejected')
-  }
-}
-
-async function readArtifactChunk(directory: string, file: ArtifactFile, offset: number,
-  verifiedFiles: Map<string, VerifiedFile>) {
-  if (offset > file.size) throw new DeviceApplicationError('extension-rejected')
-  const handle = await openArtifactFile(directory, file.path)
-  try {
-    const before = await handle.stat({ bigint: true })
-    if (!before.isFile() || before.size !== BigInt(file.size)) throw new DeviceApplicationError('extension-rejected')
-    const identity = fileIdentity(before)
-    const key = join(directory, file.path)
-    let cached = verifiedFiles.get(key)
-    if (!cached || cached.identity !== identity) {
-      cached = { identity, verification: verifyArtifactFile(handle, file, identity) }
-      verifiedFiles.set(key, cached)
-    }
-    try {
-      await cached.verification
-    } catch (error) {
-      if (verifiedFiles.get(key) === cached) verifiedFiles.delete(key)
-      throw error
-    }
-    if (fileIdentity(await handle.stat({ bigint: true })) !== identity) {
-      throw new DeviceApplicationError('extension-rejected')
-    }
-    const bytes = Buffer.alloc(Math.min(file.size - offset, WORKER_UPDATE_MAX_BINARY_BYTES))
-    let received = 0
-    while (received < bytes.length) {
-      const { bytesRead } = await handle.read(bytes, received, bytes.length - received, offset + received)
-      if (bytesRead === 0) throw new DeviceApplicationError('extension-rejected')
-      received += bytesRead
-    }
-    if (fileIdentity(await handle.stat({ bigint: true })) !== identity) {
-      throw new DeviceApplicationError('extension-rejected')
-    }
-    return bytes
-  } finally {
-    await handle.close()
   }
 }
 
@@ -115,28 +56,90 @@ async function artifactIndex(directory: string, version: string) {
   return { root, index }
 }
 
-async function artifactManifest(root: string, manifestSha256: string, version: string) {
+async function artifactManifest(root: string, manifestSha256: string) {
   const directory = join(root, manifestSha256)
   if (!(await lstat(directory)).isDirectory()) throw new DeviceApplicationError('extension-rejected')
   const bytes = await readRegularFile(directory, 'manifest.json', WORKER_UPDATE_MAX_JSON_BYTES)
   if (sha256(bytes) !== manifestSha256) throw new DeviceApplicationError('extension-rejected')
   const value: unknown = JSON.parse(bytes.toString('utf8'))
-  const parsed = WorkerArtifactManifestSchema.parse(value)
-  if (parsed.version !== version || !bytes.equals(Buffer.from(`${JSON.stringify(value, null, 2)}\n`))) {
+  WorkerArtifactManifestSchema.parse(value)
+  if (!bytes.equals(Buffer.from(`${JSON.stringify(value, null, 2)}\n`))) {
     throw new DeviceApplicationError('extension-rejected')
   }
   const manifest = value as WorkerArtifactManifest
-  return { directory, manifest, bytes }
+  return { manifest }
 }
 
-/** Registered only on the paired, authenticated device channel. */
+async function publishedArtifactIndex(options: { directory: string; version: string }) {
+  const result = await artifactIndex(options.directory, options.version)
+  const { index } = result
+  if (!index.github || index.publication?.state !== 'published' || !index.artifacts.length) {
+    const publicationError = index.publication?.lastError ?? 'Worker release assets have not been published.'
+    throw new DomainError('WORKER_BUNDLE_UNPUBLISHED', publicationError, 503, { publicationError })
+  }
+  return result
+}
+
 export async function readWorkerManifestSha256s(options: { directory: string; version: string }): Promise<string[]> {
-  const { index } = await artifactIndex(options.directory, options.version)
+  const { index } = await publishedArtifactIndex(options)
   return index.artifacts.map(artifact => artifact.manifestSha256)
 }
 
-export function createWorkerArtifactExtension(options: { directory: string; version: string; buildEnabled?: (binding: DeviceSessionBinding) => Promise<boolean> }): DeviceExtensionRegistration {
-  const verifiedFiles = new Map<string, VerifiedFile>()
+export async function readWorkerContentSha256s(options: { directory: string; version: string }): Promise<string[]> {
+  const { root, index } = await publishedArtifactIndex(options)
+  return Promise.all(index.artifacts.map(async artifact => {
+    const { manifest } = await artifactManifest(root, artifact.manifestSha256)
+    if (!sameTarget(manifest.target, artifact.target)) throw new DeviceApplicationError('extension-rejected')
+    const contentSha256 = workerArtifactContentSha256(manifest)
+    if (artifact.contentSha256 && artifact.contentSha256 !== contentSha256) {
+      throw new DeviceApplicationError('extension-rejected')
+    }
+    return contentSha256
+  }))
+}
+
+export async function readWorkerBundleIdentity(options: { directory: string; version: string },
+  target?: WorkerArtifactTarget): Promise<WorkerBundleIdentity> {
+  const { root, index } = await publishedArtifactIndex(options)
+  if (!target) return { version: options.version, target: null, manifestSha256: null, contentSha256: null }
+  const artifact = index.artifacts.find(entry => sameTarget(entry.target, target))
+  if (!artifact) {
+    throw new DomainError('WORKER_BUNDLE_UNPUBLISHED', 'No published Worker bundle matches this target.', 503,
+      { publicationError: 'No published Worker bundle matches this target.' })
+  }
+  const { manifest } = await artifactManifest(root, artifact.manifestSha256)
+  const contentSha256 = workerArtifactContentSha256(manifest)
+  if (!sameTarget(manifest.target, target) || artifact.contentSha256 && artifact.contentSha256 !== contentSha256) {
+    throw new DeviceApplicationError('extension-rejected')
+  }
+  return { version: manifest.version, target, manifestSha256: artifact.manifestSha256, contentSha256 }
+}
+
+export async function readWorkerReleasePublication(options: {
+  directory: string; version: string; now?: number
+}): Promise<WorkerReleasePublication> {
+  const { index } = await artifactIndex(options.directory, options.version)
+  const publication = index.publication ?? { state: 'pending' as const, lastError: null }
+  const startedAt = publication.startedAt ? Date.parse(publication.startedAt) : null
+  const deadline = publication.deadlineAt ? Date.parse(publication.deadlineAt)
+    : startedAt === null ? null : startedAt + WORKER_PUBLICATION_DEADLINE_MS
+  const now = options.now ?? Date.now()
+  if (publication.state !== 'pending' || deadline === null || startedAt === null || now <= deadline) {
+    return { version: index.version, ...publication }
+  }
+  // The publication unit records its own failures; a pending record past its deadline means it stopped reporting.
+  return { version: index.version, ...publication, state: 'failed',
+    lastError: `WORKER_PUBLICATION_DEADLINE_EXCEEDED: phase publishing, age ${Math.round((now - startedAt) / 60_000)} min, `
+      + `over the ${Math.round((deadline - startedAt) / 60_000)} min limit. Cause: the publication unit stopped reporting `
+      + 'progress; check the foreman-worker-publish service.' }
+}
+
+export function createWorkerArtifactExtension(options: {
+  directory: string
+  version: string
+  buildEnabled?: (binding: DeviceSessionBinding) => Promise<boolean>
+  ciSmoke?: () => Promise<unknown>
+}): DeviceExtensionRegistration {
   return {
     namespace: WORKER_UPDATE_NAMESPACE,
     version: WORKER_UPDATE_VERSION,
@@ -148,6 +151,9 @@ export function createWorkerArtifactExtension(options: { directory: string; vers
       if (context.bytes?.byteLength) throw new DeviceApplicationError('extension-rejected')
       const request = WorkerArtifactRequestSchema.parse(raw)
       const { root, index } = await artifactIndex(options.directory, options.version)
+      if (!index.github || index.publication?.state !== 'published') {
+        throw new DeviceApplicationError('WORKER_RELEASE_ASSET_UNAVAILABLE')
+      }
       const artifact = request.operation === 'release'
         ? index.artifacts.find(entry => sameTarget(entry.target, request.target))
         : index.artifacts.find(entry => entry.manifestSha256 === request.manifestSha256)
@@ -155,30 +161,24 @@ export function createWorkerArtifactExtension(options: { directory: string; vers
         if (request.operation === 'release') return { payload: { operation: 'release', release: null } }
         throw new DeviceApplicationError('extension-rejected')
       }
-      const { directory, manifest, bytes: manifestBytes } = await artifactManifest(
-        root, artifact.manifestSha256, options.version,
-      )
+      const { manifest } = await artifactManifest(root, artifact.manifestSha256)
       if (!sameTarget(manifest.target, artifact.target)) throw new DeviceApplicationError('extension-rejected')
       if (request.operation === 'ci-smoke') {
         const enabled = await options.buildEnabled?.(context.binding) ?? false
-        if (enabled && !index.github) throw new DeviceApplicationError('extension-rejected')
-        return { payload: { operation: 'ci-smoke', ciSmoke: enabled
-          ? { repository: index.github!.repository, commit: manifest.commit } : null } }
+        if (!enabled) return { payload: { operation: 'ci-smoke', ciSmoke: null } }
+        const configuration: unknown = options.ciSmoke
+          ? await options.ciSmoke()
+          : { repository: index.github.repository, commit: index.commit ?? manifest.commit }
+        const smoke = WorkerCiSmokeSchema.safeParse(configuration)
+        if (!smoke.success || smoke.data.commit !== (index.commit ?? manifest.commit)) {
+          throw new DeviceApplicationError('WORKER_UPDATE_SMOKE_UNAVAILABLE')
+        }
+        return { payload: { operation: 'ci-smoke', ciSmoke: smoke.data } }
       }
-      if (request.operation === 'release') {
-        return { payload: { operation: 'release', release: {
-          version: options.version, manifestSha256: artifact.manifestSha256, manifest,
-          ...(index.github ? { github: index.github } : {}),
-        } } }
-      }
-      const file = manifest.files.find(entry => entry.path === request.path)
-      if (!file && request.path !== 'manifest.json') throw new DeviceApplicationError('extension-rejected')
-      if (!file && request.offset > manifestBytes.length) throw new DeviceApplicationError('extension-rejected')
-      const bytes = file
-        ? await readArtifactChunk(directory, file, request.offset, verifiedFiles)
-        : manifestBytes.subarray(request.offset, request.offset + WORKER_UPDATE_MAX_BINARY_BYTES)
-      context.signal.throwIfAborted()
-      return { payload: { ...request, byteSize: bytes.byteLength }, bytes }
+      return { payload: { operation: 'release', release: {
+        version: manifest.version, manifestSha256: artifact.manifestSha256, manifest,
+        github: artifact.github ?? index.github,
+      } } }
     },
   }
 }

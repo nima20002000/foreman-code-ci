@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events'
+import { DEVICE_BUFFER_BYTES } from '@foreman-code/contracts/device-connection'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   DEVICE_APPLICATION_BUFFER_BYTES, DEVICE_APPLICATION_CHUNK_WINDOW, DEVICE_APPLICATION_JSON_BYTES,
@@ -78,6 +79,72 @@ function setup(handler: NonNullable<DeviceExtensionRegistration['handle']>, limi
 }
 afterEach(() => vi.useRealTimers())
 describe('authenticated namespace carrier mechanics', () => {
+  it('queues foreground work behind occupied slots while Stop remains available', async () => {
+    const releases: Array<() => void> = []
+    const handled = vi.fn(async (payload: unknown) => {
+      if (payload === 'occupied') await new Promise<void>(resolve => { releases.push(resolve) })
+      return { payload }
+    })
+    const pair = setup(handled)
+    const occupied = Array.from({ length: 8 }, () => pair.main.request('execution-v1', 'occupied'))
+    const queued = pair.main.request('execution-v1', 'queued')
+    try {
+      await flush()
+      expect(releases).toHaveLength(8)
+      expect(handled).toHaveBeenCalledTimes(8)
+      const stop = stopRequest()
+      await expect(pair.main.request('execution-v1', stop)).resolves.toEqual({ payload: stop })
+      expect(handled).toHaveBeenCalledTimes(9)
+      releases[0]!()
+      await expect(queued).resolves.toEqual({ payload: 'queued' })
+      expect(handled.mock.calls.filter(([payload]) => payload === 'queued')).toHaveLength(1)
+      expect(pair.rawMain.closed).toBe(false)
+    } finally {
+      for (const release of releases) release()
+      await pair.close()
+      await Promise.allSettled([...occupied, queued])
+    }
+  })
+
+  it('waits for transient socket backpressure without entering the handler twice', async () => {
+    vi.useFakeTimers()
+    const handled = vi.fn(async () => ({ payload: 'started' }))
+    const pair = setup(handled)
+    pair.rawMain.bufferedAmount = DEVICE_BUFFER_BYTES
+    try {
+      const response = pair.main.request('execution-v1', { operationId: 'start' }, { timeoutMs: 120_000 })
+      const checked = expect(response).resolves.toEqual({ payload: 'started' })
+      void checked.catch(() => {
+        // ignore: the original assertion is awaited after the socket drains.
+      })
+      await vi.advanceTimersByTimeAsync(250)
+      expect(handled).not.toHaveBeenCalled()
+      pair.rawMain.bufferedAmount = 0
+      await Promise.allSettled([checked, vi.advanceTimersByTimeAsync(2_000)])
+      await checked
+      expect(handled).toHaveBeenCalledOnce()
+    } finally { await pair.close() }
+  })
+
+  it('honors the longer request budget when a chunk receipt takes more than ten seconds', async () => {
+    vi.useFakeTimers()
+    const handled = vi.fn(async () => ({ payload: 'started' }))
+    const pair = setup(handled)
+    const send = pair.rawWorker.send.bind(pair.rawWorker)
+    pair.rawWorker.send = text => {
+      if (JSON.parse(text).type === 'application-ack') setTimeout(() => send(text), 12_000)
+      else send(text)
+    }
+    try {
+      const response = pair.main.request('execution-v1', { operationId: 'start' }, { timeoutMs: 120_000 })
+      const checked = expect(response).resolves.toEqual({ payload: 'started' })
+      await Promise.allSettled([checked, vi.advanceTimersByTimeAsync(25_000)])
+      await checked
+      expect(handled).toHaveBeenCalledOnce()
+      expect(pair.rawMain.closed).toBe(false)
+    } finally { await pair.close(); await vi.runOnlyPendingTimersAsync() }
+  })
+
   it('transfers multi-megabyte agent snapshots without enlarging other namespace limits', async () => {
     const maxJsonBytes = Math.ceil(32 * 1024 * 1024 / 3) * 4 + 1024
     const limits = { maxJsonBytes, maxBinaryBytes: 0 }
@@ -204,7 +271,7 @@ describe('authenticated namespace carrier mechanics', () => {
     ['AUTH_REVOKED', false],
     ['AUTH_RUN_ENDED', false],
     ['REMOTE_NATIVE_PHYSICAL_BACKPRESSURE', true],
-    ['REMOTE_NATIVE_PHYSICAL_UNAVAILABLE', false],
+    ['REMOTE_NATIVE_PHYSICAL_UNAVAILABLE', true],
     ['NATIVE_ARTIFACT_CONTEXT_PENDING', true],
     ['NATIVE_ARTIFACT_AUTHORITY_DENIED', false],
     ['WORKER_WORKFLOW_UNAVAILABLE', false],
@@ -230,7 +297,7 @@ describe('authenticated namespace carrier mechanics', () => {
       const chunks = pair.rawWorker.frames.map(frame => JSON.parse(frame) as { type: string; data?: string })
         .filter(frame => frame.type === 'application-chunk')
       const reply = JSON.parse(Buffer.concat(chunks.map(frame => Buffer.from(frame.data!, 'base64'))).toString())
-      expect(reply).toEqual({ code, retryable })
+      expect(reply).toEqual({ code, class: retryable ? 'transient' : 'permanent', retryable })
       expect(JSON.stringify(reply)).not.toContain(secret)
       expect(pair.rawMain.closed).toBe(false)
     } finally { await pair.close() }
@@ -246,23 +313,23 @@ describe('authenticated namespace carrier mechanics', () => {
       const chunks = pair.rawMain.frames.map(frame => JSON.parse(frame) as { type: string; data?: string })
         .filter(frame => frame.type === 'application-chunk')
       const reply = JSON.parse(Buffer.concat(chunks.map(frame => Buffer.from(frame.data!, 'base64'))).toString())
-      expect(reply).toEqual({ code: 'SOURCE_RECLAMATION_UNCONFIRMED', retryable: false })
+      expect(reply).toEqual({ code: 'SOURCE_RECLAMATION_UNCONFIRMED', class: 'permanent', retryable: false })
     } finally { await pair.close() }
   })
   it.each([
-    { code: 'private_secret_token', message: 'secret', retryable: true },
-    { code: 'UNKNOWN_PROVIDER_FAILURE', details: { token: 'secret' } },
-    new Error('secret'),
-  ])('redacts unsupported exception codes and contents', async error => {
+    { error: { code: 'private_secret_token', message: 'secret', retryable: true },
+      reply: { code: 'unavailable', class: 'transient', retryable: true } },
+    { error: { code: 'UNKNOWN_PROVIDER_FAILURE', details: { token: 'secret' } },
+      reply: { code: 'extension-rejected', class: 'permanent', retryable: false } },
+    { error: new Error('secret'), reply: { code: 'extension-rejected', class: 'permanent', retryable: false } },
+  ])('redacts unsupported exception codes and contents but keeps their class %#', async ({ error, reply: expected }) => {
     const pair = setup(async () => { throw error })
     try {
-      await expect(pair.main.request('execution-v1', {})).rejects.toMatchObject({
-        code: 'extension-rejected', retryable: false,
-      })
+      await expect(pair.main.request('execution-v1', {})).rejects.toMatchObject(expected)
       const chunks = pair.rawWorker.frames.map(frame => JSON.parse(frame) as { type: string; data?: string })
         .filter(frame => frame.type === 'application-chunk')
       const reply = JSON.parse(Buffer.concat(chunks.map(frame => Buffer.from(frame.data!, 'base64'))).toString())
-      expect(reply).toEqual({ code: 'extension-rejected', retryable: false })
+      expect(reply).toEqual(expected)
     } finally { await pair.close() }
   })
   it('validates received error codes instead of trusting arbitrary worker error payloads', async () => {
@@ -346,7 +413,7 @@ describe('authenticated namespace carrier mechanics', () => {
     const send = pair.rawWorker.send.bind(pair.rawWorker)
     pair.rawWorker.send = (text) => { if (JSON.parse(text).type !== 'application-ack') send(text) }
     try {
-      const pending = pair.main.request('execution-v1', { dispatch: true })
+      const pending = pair.main.request('execution-v1', { dispatch: true }, { timeoutMs: 10_000 })
       void pending.catch(() => {
         // ignore: attach before advancing timers; the original timeout rejection is asserted below.
       })
@@ -355,13 +422,16 @@ describe('authenticated namespace carrier mechanics', () => {
       expect(await pair.main.request('execution-v1', { dispatch: true })).toEqual({ payload: 'receipt' })
     } finally { await pair.close(); expect(vi.getTimerCount()).toBe(0) }
   })
-  it('bounds concurrent requests even across awaited live authorization', async () => {
+  it('bounds background admission even across awaited live authorization', async () => {
     const pair = setup(async () => new Promise(() => {}))
     const requests = Array.from({ length: 8 }, () => pair.main.request('execution-v1', {}))
     for (const request of requests) void request.catch(() => {
       // ignore: the original requests are awaited below or joined after channel cancellation.
     })
-    await flush(); await expect(pair.main.request('execution-v1', {})).rejects.toThrow('backpressure'); await pair.close(); await Promise.allSettled(requests)
+    await flush()
+    await expect(pair.main.request('execution-v1', {}, { priority: 'background' })).rejects.toThrow('backpressure')
+    await pair.close()
+    await Promise.allSettled(requests)
   })
   it('delivers exact-owner Stop with all ordinary outgoing slots occupied', async () => {
     const releases: Array<() => void> = []
@@ -381,7 +451,7 @@ describe('authenticated namespace carrier mechanics', () => {
     try {
       await flush()
       expect(releases).toHaveLength(8)
-      await expect(pair.main.request('execution-v1', 'ordinary')).rejects.toThrow('backpressure')
+      await expect(pair.main.request('execution-v1', 'ordinary', { priority: 'background' })).rejects.toThrow('backpressure')
       const stop = stopRequest()
       await expect(pair.main.request('execution-v1', stop)).resolves.toEqual({ payload: 'stopped' })
       expect(stopped).toHaveBeenCalledExactlyOnceWith(stop)
@@ -414,7 +484,7 @@ describe('authenticated namespace carrier mechanics', () => {
       await vi.advanceTimersByTimeAsync(21)
       for (const request of requests) await expect(request).rejects.toThrow('timeout')
       expect(signals.every(signal => signal.aborted)).toBe(true)
-      await expect(pair.main.request('execution-v1', 'ordinary')).rejects.toThrow('backpressure')
+      await expect(pair.main.request('execution-v1', 'ordinary', { priority: 'background' })).rejects.toThrow('backpressure')
       await expect(pair.main.request('execution-v1', stopRequest())).resolves.toEqual({ payload: 'stopped' })
       expect(entered).toHaveBeenCalledTimes(9)
       expect(pair.rawMain.closed).toBe(false)
@@ -466,7 +536,8 @@ describe('authenticated namespace carrier mechanics', () => {
       await flush()
       const stop = stopRequest()
       await expect(pair.main.request('execution-v1', { ...stop,
-        command: { ...stop.command, owner: { ...stop.command.owner, epoch: '2' } } })).rejects.toThrow('backpressure')
+        command: { ...stop.command, owner: { ...stop.command.owner, epoch: '2' } },
+      }, { priority: 'background' })).rejects.toThrow('backpressure')
     } finally { await pair.close(); await Promise.allSettled(requests) }
   })
   it('delivers Stop with every declared output key at its admitted size while ordinary requests are full', async () => {
@@ -555,7 +626,7 @@ describe('authenticated namespace carrier mechanics', () => {
     })
     try {
       await flush(); expect(entered).toHaveBeenCalledTimes(8)
-      await expect(caller.request('execution-v1', {})).rejects.toThrow('backpressure')
+      await expect(caller.request('execution-v1', {}, { priority: 'background' })).rejects.toThrow('backpressure')
       await expect(occupied.request('execution-v1', {})).resolves.toEqual({ payload: 'reply' })
       await expect(occupied.request('execution-v1', 'deny')).rejects.toThrow('forbidden')
       expect(pair.rawMain.closed).toBe(false); expect(pair.rawWorker.closed).toBe(false)
@@ -564,7 +635,7 @@ describe('authenticated namespace carrier mechanics', () => {
     } finally { await pair.close(); await Promise.allSettled(requests) }
   })
   it.each(['main', 'worker'] as const)(
-    'rejects duplex replies on saturated %s without losing heartbeat, Stop, or reusable capacity',
+    'queues duplex replies on saturated %s without losing heartbeat, Stop, or reusable capacity',
     async side => {
       vi.useFakeTimers()
       const handled = vi.fn(async (payload: unknown) => {
@@ -610,16 +681,15 @@ describe('authenticated namespace carrier mechanics', () => {
         }).filter(frame => frame.type === 'application-open' && uploadIds.has(frame.id))
         expect(opens.reduce((total, frame) => total + frame.jsonBytes + frame.binaryBytes, 0))
           .toBe(DEVICE_APPLICATION_BUFFER_BYTES - DEVICE_APPLICATION_STOP_BYTES)
-        await expect(uploader.request('execution-v1', 'overflow')).rejects.toThrow('backpressure')
-        for (const request of ['reply', 'deny', 'large-reply']) {
-          await expect(caller.request('execution-v1', request)).rejects.toMatchObject({
-            code: 'backpressure', retryable: true,
-          })
-        }
+        await expect(uploader.request('execution-v1', 'overflow', { priority: 'background' })).rejects.toThrow('backpressure')
+        const replies = Promise.allSettled(['reply', 'deny', 'large-reply']
+          .map(request => caller.request('execution-v1', request)))
+        let settled = false
+        void replies.then(() => { settled = true })
+        await flush()
         expect(handled.mock.calls.map(([request]) => request)).toEqual(['reply', 'deny', 'large-reply'])
-        const rejections = rawUploader.frames.filter(text => JSON.parse(text).type === 'application-reject')
-        expect(rejections).toHaveLength(3)
-        expect(rejections.every(text => Buffer.byteLength(text) < 256)).toBe(true)
+        expect(settled).toBe(false)
+        expect(rawUploader.frames.filter(text => JSON.parse(text).type === 'application-reject')).toHaveLength(0)
         const pongs = pair.rawMain.frames.filter(text => JSON.parse(text).type === 'pong').length
         await vi.advanceTimersByTimeAsync(450)
         expect(pair.rawMain.frames.filter(text => JSON.parse(text).type === 'pong').length).toBeGreaterThan(pongs)
@@ -630,7 +700,13 @@ describe('authenticated namespace carrier mechanics', () => {
         expect(pair.rawWorker.closed).toBe(false)
         abort.abort()
         for (const upload of uploads) await expect(upload).rejects.toThrow('cancelled')
-        await flush()
+        await vi.advanceTimersByTimeAsync(2_000)
+        expect(await replies).toEqual([
+          { status: 'fulfilled', value: { payload: 'reply' } },
+          { status: 'rejected', reason: expect.objectContaining({ code: 'forbidden' }) },
+          { status: 'rejected', reason: expect.objectContaining({ code: 'payload-too-large' }) },
+        ])
+        expect(handled.mock.calls.filter(([request]) => request === 'reply')).toHaveLength(1)
         await expect(caller.request('execution-v1', 'recovered')).resolves.toEqual({ payload: 'reply' })
         await expect(uploader.request('execution-v1', 'recovered')).resolves.toEqual({ payload: 'reply' })
       } finally {

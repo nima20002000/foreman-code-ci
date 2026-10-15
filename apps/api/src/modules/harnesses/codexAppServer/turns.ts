@@ -1,15 +1,18 @@
+import { logIgnoredError } from '../../diagnostics/ignoredError.js'
 /** Turn submission, streaming, steering, cancellation, history and native interaction responses. */
 import { runtimeTimingPoint } from '../../diagnostics/runtimeTiming.js'
+import { DEVICE_HISTORY_PAGE_BYTES } from '@foreman-code/contracts/device-application'
 import { isWorkflowStart } from '../sessionStart.js'
 import { SessionPreferencesSchema, type ApprovalResponseOption, type NativeHarnessEvent, type NativeSessionReference,
   type PendingNativeInteraction, isSessionNativeInteraction } from '@foreman-code/contracts'
 import { codexCollaborationMode } from '../codexSessionControls.js'
-import { requireCodexAppMcp } from '../codexMcpReadiness.js'
+import { retryCodexAppMcp } from '../codexMcpReadiness.js'
 import { DomainError } from '../../errors.js'
 import { HarnessExecutionError, NativeDeliveryError, NativeTurnNotActiveError } from '../errors.js'
 import { CodexRuntimeFileTurn, type CodexChatFiles } from '../codexFiles/runtime.js'
 import { CodexFilePreparationCleanupError } from '../codexFiles/turn.js'
 import { codexChatFileTools } from '../codexFiles/declarations.js'
+import type { JsonValue } from '../codexMethodTypes.js'
 import { CodexRuntimeNativeOutputTurn, type CodexNativeOutputs } from '../codexNativeOutput.js'
 import type { NativeHistory, NativeSteerInput, NativeSteerReceipt, NativeTurnInput } from '../port.js'
 import { codexRequest } from '../codexProtocol.js'
@@ -107,11 +110,13 @@ export abstract class CodexManagerTurns extends CodexManagerControls {
       const restarting = signal?.reason instanceof DomainError && signal.reason.code === 'ENGINE_RESTART'
       if (!restarting) starting.cancelRequested = true
       starting.preparationController.abort(signal?.reason)
-      void this.finishTurnResources(runtime).catch(() => {
-        // ignore: resources stay owned for the next admission or explicit close to retry.
+      void this.finishTurnResources(runtime).catch(cleanupError => {
+        logIgnoredError('harness', 'clean up Codex turn resources', cleanupError)
+        // Resources stay owned for the next admission or explicit close to retry.
       })
       if (!restarting && runtime.activeTurnId && !runtime.terminalResult) {
-        void this.interrupt(runtime).catch(() => {
+        void this.interrupt(runtime).catch(cleanupError => {
+          logIgnoredError('harness', 'interrupt aborted Codex turn', cleanupError)
           // ignore: abort cannot await delivery; interrupt records uncertainty for reconciliation.
         })
       }
@@ -133,8 +138,22 @@ export abstract class CodexManagerTurns extends CodexManagerControls {
         const preparationSignal = AbortSignal.any([starting.preparationController.signal, this.shutdownController.signal, subscriberSignal, ...(signal ? [signal] : [])])
         preparationSignal.throwIfAborted()
         if (isWorkflowStart(runtime.input) && this.appMcpAccess === 'scoped') {
-          await requireCodexAppMcp(runtime.transport, session.nativeSessionId,
-            runtime.approvedAppMcpServerName ?? this.appMcpServerName, preparationSignal)
+          const serverName = runtime.approvedAppMcpServerName ?? this.appMcpServerName
+          const retries = retryCodexAppMcp(runtime.transport, session.nativeSessionId, serverName,
+            preparationSignal, this.dependencies, async retrySignal => {
+              await deadline(this.dependencies.assertUnchanged(runtime.qualified),
+                retrySignal, 120_000, this.dependencies)
+              retrySignal.throwIfAborted()
+              await runtime.transport.request('config/mcpServer/reload', undefined, retrySignal)
+            })
+          for await (const retry of retries) {
+            this.record(runtime, 'turn.mcp_startup_retry', { threadId: session.nativeSessionId, serverName, ...retry })
+            for (const event of runtime.events.filter(event => event.sequence >= cursor)) {
+              cursor = event.sequence + 1
+              runtime.streamCursor = cursor
+              yield structuredClone(event)
+            }
+          }
         }
         if (this.chatFiles) {
           starting.filePreparation = this.prepareTurnFiles(this.chatFiles, runtime, session, input, starting, preparationSignal)
@@ -159,13 +178,15 @@ export abstract class CodexManagerTurns extends CodexManagerControls {
         const result = await codexRequest(runtime.transport, 'turn/start', {
           threadId: session.nativeSessionId, clientUserMessageId: input.clientCorrelationId,
           input: nativeInput,
+          ...(input.outputSchema ? { outputSchema: input.outputSchema as JsonValue } : {}),
           ...(input.sessionMode ? { collaborationMode: codexCollaborationMode(input.sessionMode, runtime.configuration.model, runtime.configuration.reasoningEffort) } : {}),
           serviceTierForTurn: runtime.configuration.serviceTier === 'priority' ? 'fast' : 'default',
         }, AbortSignal.any([subscriberSignal, ...(signal ? [signal] : [])]), (value, error) => {
           if (runtime.starting !== starting || runtime.disposed) return
           if (error instanceof CodexRpcError && !error.uncertain) this.rejectStartedTurn(runtime, starting)
           else if (error) runtime.phase = 'uncertain'
-          else void this.acceptStartedTurn(runtime, starting, value).catch(() => {
+          else void this.acceptStartedTurn(runtime, starting, value).catch(error => {
+            logIgnoredError('harness', 'accept late native turn response', error)
             runtime.phase = 'uncertain'
             this.record(runtime, 'turn.start_uncertain', { correlationId: starting.correlationId })
           })
@@ -185,9 +206,18 @@ export abstract class CodexManagerTurns extends CodexManagerControls {
         await input.onSettingsApplied?.()
         while (!signal?.aborted && !subscriberSignal.aborted) {
           const firstSequence = runtime.events[0]?.sequence ?? runtime.sequence
-          if (cursor < firstSequence) throw new HarnessExecutionError('NATIVE_HISTORY_GAP', 'The in-memory event window was exceeded; reload durable history.')
+          if (cursor < firstSequence) {
+            await input.onEventsSkipped?.({ fromSequence: cursor, toSequence: firstSequence - 1, reason: 'retention' })
+            cursor = firstSequence
+            runtime.streamCursor = cursor
+            continue
+          }
           const available = runtime.events.filter((event) => event.sequence >= cursor)
-          for (const event of available) { cursor = event.sequence + 1; yield structuredClone(event); runtime.streamCursor = cursor }
+          for (const event of available) {
+            cursor = event.sequence + 1
+            runtime.streamCursor = cursor
+            yield structuredClone(event)
+          }
           // The consumer can suspend at yield while more events (including terminal
           // events) arrive. Drain them before returning or registering a waiter.
           if (runtime.events.some((event) => event.sequence >= cursor)) continue
@@ -318,7 +348,7 @@ export abstract class CodexManagerTurns extends CodexManagerControls {
       }, signal)
     } catch (error) {
       // Codex enforces expectedTurnId. A definite RPC rejection accepted no input.
-      if (error instanceof CodexRpcError && !error.uncertain) throw new NativeTurnNotActiveError(`Codex rejected the steer: ${error.nativeMessage ?? error.message}`)
+      if (error instanceof CodexRpcError && !error.uncertain) throw new NativeTurnNotActiveError(`Codex rejected the steer: ${error.nativeMessage ?? error.message}`, { cause: error })
       throw error
     }
     const turnId = object(result, 'CODEX_TURN_STEER_INVALID').turnId
@@ -391,7 +421,10 @@ export abstract class CodexManagerTurns extends CodexManagerControls {
     if (this.shutdownController.signal.aborted) return unavailable('session_closed')
     if (session.harness !== 'codex') return unavailable('unqualified')
     const child = this.childRuntimes.get(session.nativeSessionId)
-    try { child?.assertCurrent() } catch { return unavailable('session_closed') }
+    try { child?.assertCurrent() } catch (error) {
+      logIgnoredError('harness', 'verify native child response evidence', error, {}, ['SUBAGENT_OWNER_STALE'])
+      return unavailable('session_closed')
+    }
     const runtime = this.runtimes.get(session.nativeSessionId) ?? child?.runtime
     if (!runtime) return unavailable('callback_lost')
     if (runtime.session.providerVersion !== session.providerVersion) return unavailable('identity_mismatch')
@@ -471,8 +504,9 @@ export abstract class CodexManagerTurns extends CodexManagerControls {
     if (runtime.starting) {
       runtime.starting.cancelRequested = true
       runtime.starting.preparationController.abort()
-      void this.finishTurnResources(runtime).catch(() => {
-        // ignore: resources stay owned for the next admission or explicit close to retry.
+      void this.finishTurnResources(runtime).catch(cleanupError => {
+        logIgnoredError('harness', 'clean up Codex turn resources', cleanupError)
+        // Resources stay owned for the next admission or explicit close to retry.
       })
       const id = await deadline(runtime.starting.nativeIdentity, signal, undefined, this.dependencies)
       if (!id) return false
@@ -621,5 +655,26 @@ export abstract class CodexManagerTurns extends CodexManagerControls {
           }
         : history
     })
+  }
+
+  async reconcileHistoryPage(session: NativeSessionReference, correlationId: string,
+    afterSequence: number, signal?: AbortSignal): Promise<NativeHistory> {
+    const history = await this.reconcile(session, correlationId, signal)
+    const runtime = this.requireRuntime(session)
+    const events: NativeHarnessEvent[] = []
+    let bytes = 0
+    for (let index = 0; index < runtime.events.length; index++) {
+      const event = runtime.events[index]!
+      if (event.sequence <= afterSequence) continue
+      const size = runtime.eventSizes[index]!
+      if (events.length && (events.length >= 1024 || bytes + size > DEVICE_HISTORY_PAGE_BYTES)) break
+      events.push(event)
+      bytes += size
+    }
+    // The recent snapshot can contain a protected terminal frame separated by a gap.
+    // Cursor pages use the contiguous retained window instead.
+    delete history.gap
+    return { ...history, events: structuredClone(events),
+      firstRetainedSequence: runtime.events[0]?.sequence ?? runtime.sequence, nextSequence: runtime.sequence }
   }
 }

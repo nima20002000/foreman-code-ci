@@ -29,7 +29,8 @@ import { PostgresApprovalBudgetRepository } from '../../src/modules/interactions
 import { ApprovalExecutionCoordinator } from '../../src/modules/interactions/execution.js'
 import { InteractionService } from '../../src/modules/interactions/service.js'
 import { Wave25InteractionRepository } from '../../src/modules/interactions/wave25/repository.js'
-import { ExecutionScopedNativeSessionManagerResolver } from '../../src/modules/interactions/runtimePorts.js'
+import { ExecutionScopedNativeSessionManagerResolver, type NativeManagerResolutionContext } from '../../src/modules/interactions/runtimePorts.js'
+import type { RunOwnership } from '../../src/modules/runs/ownership.js'
 import { LangGraphWorkflowEngine } from '../../src/modules/runs/engine.js'
 import { PostgresRunRepository } from '../../src/modules/runs/postgres.js'
 import { continuationValidator } from '../../src/modules/runs/continuation.js'
@@ -45,7 +46,7 @@ import { approvalFixture } from './wave25ApprovalFixture.js'
  * registration are retained. Only provider transport and filesystem identity
  * qualification are synthetic. This is not a buildProductionApp/HTTP test. */
 export async function checkpointRuntimeFixture(branches: 1 | 2 = 1, pendingPerExecution: 1 | 2 = 1,
-  options: { databaseUrl?: string;
+  options: { databaseUrl?: string; statementTimeoutMs?: number | undefined;
     /** A suite-owned database; the caller closes it after all runtimes shut down. */
     database?: Awaited<ReturnType<typeof agent3Database>>;
     acknowledgeStarts?: boolean; disconnectAfterStart?: boolean; fixture?: ReturnType<typeof makeCurrentWorkflowFixture>;
@@ -57,8 +58,13 @@ export async function checkpointRuntimeFixture(branches: 1 | 2 = 1, pendingPerEx
     admitPlacementExecutionLocked?: RepeatRepositoryServices['admitPlacementExecutionLocked'];
     preparePlacementExecution?: RepeatRepositoryServices['preparePlacementExecution'];
     /** Exact physical closure port; omitted unless a fixture supplies native lifetimes. */
-    recoverNativeProcesses?: ConstructorParameters<typeof ApprovalExecutionCoordinator>[11] } = {}) {
-  const db = options.database ?? await agent3Database(options.databaseUrl)
+    recoverNativeProcesses?: ConstructorParameters<typeof ApprovalExecutionCoordinator>[11];
+    managerFactory?: (context: NativeManagerResolutionContext,
+      owner: () => RunOwnership | undefined) => NativeHarnessSessionManager;
+    prepareManagerContext?: ConstructorParameters<typeof ApprovalExecutionCoordinator>[13];
+    validateContinuation?: ReturnType<typeof continuationValidator>;
+    mcpInspector?: (manager: NativeHarnessSessionManager) => NativeMcpInspector } = {}) {
+  const db = options.database ?? await agent3Database(options.databaseUrl, { statementTimeoutMs: options.statementTimeoutMs })
   const engines: LangGraphWorkflowEngine[] = []
   try {
     const f = options.fixture ?? makeCurrentWorkflowFixture(randomUUID())
@@ -114,20 +120,23 @@ export async function checkpointRuntimeFixture(branches: 1 | 2 = 1, pendingPerEx
             ? { admitPlacementExecutionLocked: options.admitPlacementExecutionLocked } : {}) } },
         options.nativeCommitted)
       const repository = new Wave25InteractionRepository(db.pool, new ReviewNativeProofServices(reviewCapture.verify)), budgets = new PostgresApprovalBudgetRepository(db.pool)
-      const managers = new ExecutionScopedNativeSessionManagerResolver(() => provider.connection())
+      const managers = new ExecutionScopedNativeSessionManagerResolver((context, owner) =>
+        options.managerFactory ? options.managerFactory(context, owner) : provider.connection())
       const credentials = new Wave25WorkerCredentialService(db.pool, access, options.credentialTtlMs)
       // This helper's external provider is deterministic. Its configuration
       // inspector is the same explicit synthetic boundary as its transport.
-      const launchCredentials = providerLaunchCredentials(runs, locations, managers, credentials, () => ({
+      const validate = options.validateContinuation ?? continuationValidator(db.pool, locations)
+      const launchCredentials = providerLaunchCredentials(runs, locations, managers, credentials, options.mcpInspector ?? (() => ({
         async inspect(input) { return { harness: input.harness, providerVersion: '0.154.0',
           runnerId: input.runnerId, workingDirectory: input.workingDirectory, inspectedAt: new Date().toISOString(),
           entry: { name: input.serverName, transport: 'streamable-http', endpoint: providerAppEndpoint,
             enabled: true, credentialEnvironmentVariable: APP_MCP_TOKEN_ENVIRONMENT_VARIABLE, status: 'connected' } } },
-      }), db.pool)
+      })), db.pool, { prepareContext: options.prepareManagerContext, validateContinuation: validate })
       const native = new ApprovalExecutionCoordinator(runs, repository, budgets, managers, 600000,
-        launchCredentials, continuationValidator(db.pool, locations),
+        launchCredentials, validate,
         new PostgresWorkflowClosureStore(db.pool), new PostgresRepeatReviewerBindings(db.pool),
-        workflowCapture.capture, reviewCapture.capture, options.recoverNativeProcesses)
+        workflowCapture.capture, reviewCapture.capture, options.recoverNativeProcesses,
+        undefined, options.prepareManagerContext)
       const engine = new LangGraphWorkflowEngine(runs, workflows, native, checkpointer, db.directory,
         locations, launchCredentials, repository, options.onRunTerminal,
         { workerParallelism: options.workerParallelism ?? 2 })
@@ -197,8 +206,12 @@ export async function insertProviderRun(pool: pg.Pool, fixture: ReturnType<typeo
 /** Production credential validation and issuance with a provider-specific inspector. */
 export function providerLaunchCredentials(runs: PostgresRunRepository, locations: WorkspaceLocationService,
   managers: ExecutionScopedNativeSessionManagerResolver, credentials: Wave25WorkerCredentialService,
-  inspector: (manager: NativeHarnessSessionManager) => NativeMcpInspector, pool: pg.Pool): ExecutionCredentialProvider {
-  const validate = continuationValidator(pool, locations)
+  inspector: (manager: NativeHarnessSessionManager) => NativeMcpInspector, pool: pg.Pool,
+  options: {
+    prepareContext?: ((context: NativeManagerResolutionContext) => Promise<NativeManagerResolutionContext>) | undefined
+    validateContinuation?: ReturnType<typeof continuationValidator> | undefined
+  } = {}): ExecutionCredentialProvider {
+  const validate = options.validateContinuation ?? continuationValidator(pool, locations)
   return {
     async prepare(input) {
       await validate(input.executionId, input.signal)
@@ -210,9 +223,10 @@ export function providerLaunchCredentials(runs: PostgresRunRepository, locations
       if (!configuration || configuration.agentId !== execution.agentId || configuration.harness.harness !== input.harness
         || !run?.executionLocation || run.executionLocation.runnerId !== LOCAL_RUNNER_ID) throw new DomainError(
         'WORKER_EXECUTION_IDENTITY_INVALID', 'Credential preflight requires the pinned local execution.', 409)
-      const { manager } = managers.resolve({ executionId: execution.id, agentId: execution.agentId,
+      const context: NativeManagerResolutionContext = { executionId: execution.id, agentId: execution.agentId,
         harness: input.harness, workingDirectory: input.workingDirectory, configuration,
-        runId: execution.runId, attempt: execution.attempt, ...(input.purpose ? { purpose: input.purpose } : {}) })
+        runId: execution.runId, attempt: execution.attempt, ...(input.purpose ? { purpose: input.purpose } : {}) }
+      const { manager } = managers.resolve(options.prepareContext ? await options.prepareContext(context) : context)
       return new WorkerLaunchCredentialService(new McpDetectionService(inspector(manager), providerAppEndpoint),
         credentials, run.executionLocation.runnerId, Math.min(300_000, credentials.ttlMs - 30_000)).prepare(input)
     },
