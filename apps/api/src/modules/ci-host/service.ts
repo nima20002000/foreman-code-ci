@@ -88,9 +88,13 @@ export class HostCiService {
   private dispatchRequested = false
   private superseding: Promise<void> | undefined
   private readonly observingRuns = new Map<string, Promise<void>>()
+  /** Observed runs whose execution is settled and whose logs and results are still being collected. */
+  private readonly collectingRuns = new Set<string>()
   private observationOffset = 0
   private readonly observingComputers = new Map<string, Promise<void>>()
   private readonly mirrorPublications = new Map<string, { settled: boolean }>()
+  /** Computers that still had a free slot after the last dispatch pass: where a canceled provider-queued ticket can go. */
+  private spareComputers: HostCiComputer[] = []
   private readonly dispatchRejections = new CiDispatchRejections()
   private timer: NodeJS.Timeout | undefined
   private stoppingRuns = 0
@@ -764,7 +768,10 @@ export class HostCiService {
     }
     const requeued = state.state === 'queued'
     const unstartedProviders = new Set(run.unstartedProviders ?? [])
-    if (requeued && !setupRequeue && computer.hostRef.provider) unstartedProviders.add(computer.hostRef.provider)
+    // A workflow the provider only queued is moved when another computer has room; that does not rule the provider out.
+    if (requeued && !setupRequeue && computer.hostRef.provider && run.step !== 'queued') {
+      unstartedProviders.add(computer.hostRef.provider)
+    }
     const messages = ciMessages(run, state.message === null ? null : sanitizeCiText(state.message))
     const terminal = !['queued', 'starting', 'running'].includes(state.state)
     const next = CiRunRecordSchema.parse({ ...run, state: state.state, step: state.step, exitCode: state.exitCode,
@@ -849,9 +856,16 @@ export class HostCiService {
     })
   }
 
+  private spareElsewhere(run: CiRunRecord, computer: HostCiComputer) {
+    return this.spareComputers.some(spare => spare.key !== computer.key
+      && (spare.hostRef.kind !== 'cloud' || !run.unstartedProviders?.includes(spare.hostRef.provider!))
+      && (spare.hostRef.provider !== 'circleci' || runsOnCircleCi(run))
+      && (!needsSystemdExecutor(run) || supportsUserSystemd(spare)))
+  }
+
   private async refreshRun(row: { record: unknown; host_key: string | null }, computers: HostCiComputer[],
-    options: { observeOnly?: boolean } = {}) {
-    const run = CiRunRecordSchema.parse(row.record)
+    options: { observeOnly?: boolean; onCollecting?: () => void } = {}) {
+    let run = CiRunRecordSchema.parse(row.record)
     if (!options.observeOnly && !run.cancellation && run.observation?.nextAttemptAt
       && Date.now() < Date.parse(run.observation.nextAttemptAt)) return
     let computer = computers.find(value => value.key === row.host_key)
@@ -880,7 +894,9 @@ export class HostCiService {
       return
     }
     const request: CiHostRequest = { operation: 'read', runId: ciExecutionRunId(run), afterOffset: 0, maxBytes: 32_768,
-      ...(['integration', 'unit'].includes(run.suite) ? { durations: true } : {}) }
+      ...(['integration', 'unit'].includes(run.suite) ? { durations: true } : {}),
+      ...(computer.hostRef.kind === 'cloud' && run.step === 'queued' && this.spareElsewhere(run, computer)
+        ? { reassign: true } : {}) }
     const reply = await (computer.hostRef.kind === 'cloud'
       ? requestCloud(this.endpoint, computer, request)
       : this.endpoint.request(computer, request, { priority: 'background' }))
@@ -894,6 +910,19 @@ export class HostCiService {
     }
     if (reply.operation !== 'read') {
       throw new DomainError('CI_HOST_REPLY_INVALID', 'Expected a CI run observation.', 502)
+    }
+    const finished = !['queued', 'starting', 'running'].includes(reply.run.state)
+    const awaitsSetupDecision = computer.hostRef.kind === 'cloud' && reply.run.state === 'failed'
+      && (reply.run.testsStarted === false || reply.run.testsStarted === undefined && reply.run.collection === 'pending')
+    if (finished && !awaitsSetupDecision) {
+      // The execution outcome settles first, releasing the executor slot; logs and results follow without
+      // holding an observation slot, so slow collection cannot delay tracking of other tickets.
+      if (['unit', 'integration'].includes(run.suite) && ['queued', 'starting', 'running'].includes(run.state)
+        && await this.settle(run, computer, { ...reply.run, collection: 'pending' })) {
+        run = await this.read(run.id, run.workspaceId)
+        void this.dispatch()
+      }
+      options.onCollecting?.()
     }
     let logError: unknown
     let logTail: string | undefined = reply.text
@@ -1002,7 +1031,8 @@ export class HostCiService {
       try {
         // An observation that finished after this pass listed the ticket has rewritten it, including its backoff.
         const previous = await this.read(listed.id, workspaceId)
-        await this.refreshRun({ ...listed, record: previous }, computers)
+        await this.refreshRun({ ...listed, record: previous }, computers,
+          { onCollecting: () => { this.collectingRuns.add(listed.id) } })
         const current = await this.read(listed.id, workspaceId)
         if (['starting', 'running'].includes(previous.state) && !['starting', 'running'].includes(current.state)
           || previous.deadlineExceeded?.executor === 'retained' && current.deadlineExceeded?.executor === 'released') {
@@ -1015,6 +1045,8 @@ export class HostCiService {
         } catch {
           log.warn({ runId: listed.id }, 'CI observation failed and its status could not be persisted')
         }
+      } finally {
+        this.collectingRuns.delete(listed.id)
       }
     }
     const cloud = active.filter(row => CiRunRecordSchema.parse(row.record).computer?.hostRef.kind === 'cloud')
@@ -1033,7 +1065,7 @@ export class HostCiService {
     const offset = this.observationOffset % Math.max(1, rows.length)
     let pendingCloud = cloud.filter(row => this.observingRuns.has(row.id)).length
     let pendingLocal = local.filter(row => this.observingRuns.has(row.id)).length
-    for (let visited = 0; visited < rows.length && this.observingRuns.size < limit; visited++) {
+    for (let visited = 0; visited < rows.length && this.observingRuns.size - this.collectingRuns.size < limit; visited++) {
       const index = (offset + visited) % rows.length
       const row = rows[index]!
       if (this.observingRuns.has(row.id)) continue
@@ -1302,6 +1334,7 @@ export class HostCiService {
       const message = sanitizeCiText(`${prefix}; ${reasons.join('; ') || 'no eligible computers'}`.slice(0, 2000))
       if (message !== run.message) await saveQueuedCiRun(this.pool, run, { ...run, message })
     })
+    this.spareComputers = computers.filter(computer => freeSlots(computer) > 0)
   }
 }
 
