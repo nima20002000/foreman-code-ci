@@ -1,5 +1,6 @@
+import { randomUUID } from 'node:crypto'
 import { expect, it } from 'vitest'
-import { integrationPartition, userSystemdIntegrationFiles } from '@foreman-code/contracts'
+import { CI_MAX_RUN_TICKETS, CiRunOutputSchema, integrationPartition, userSystemdIntegrationFiles } from '@foreman-code/contracts'
 import { planIntegrationParts } from './integrationParts.js'
 
 const files = Array.from({ length: 20 }, (_, index) => `apps/api/test/example-${index}.integration.test.ts`)
@@ -61,35 +62,67 @@ it('preserves separate host-only slices when hosts are busy and leaves ordinary 
 it('uses the measured median for unknown files and sizes runner-derived selections conservatively', () => {
   const parts = planIntegrationParts({ suite: 'integration', commandId: 'derived' },
     { files, durations: { [files[0]!]: 120_000 } }, { host: 0, ordinary: 44 })
-  // The one measured slow file forms the deferred slow tier; unmeasured files are estimated at the median.
-  const fast = parts.filter(part => !part.deferred)
+  // The one measured slow file forms a separate tier; unmeasured files are estimated at the median.
+  const fast = parts.filter(part => part.partition?.tier !== 'slow')
   expect(fast).toHaveLength(10)
   expect(fast.every(part => part.expectedDurationMs <= 330_000)).toBe(true)
-  expect(parts.filter(part => part.deferred)).toHaveLength(1)
+  expect(parts.filter(part => part.partition?.tier === 'slow')).toHaveLength(1)
 })
 
-it('runs slow files in a deferred tier that no fast part contains', () => {
+it('plans separate slow parts that no fast part contains', () => {
   const quick = files.slice(0, 8)
   const slow = files.slice(8, 11)
   const measured = { ...Object.fromEntries(quick.map(file => [file, 20_000])),
     ...Object.fromEntries(slow.map(file => [file, 90_000])) }
   const parts = planIntegrationParts(input, { files: [...quick, ...slow], durations: measured }, { host: 0, ordinary: 44 })
   const slices = parts.map(part => integrationPartition([...quick, ...slow], measured, part.partition!))
-  const fastSlices = slices.filter((_, index) => !parts[index]!.deferred)
-  const slowSlices = slices.filter((_, index) => parts[index]!.deferred)
+  const fastSlices = slices.filter((_, index) => parts[index]!.partition?.tier === 'fast')
+  const slowSlices = slices.filter((_, index) => parts[index]!.partition?.tier === 'slow')
   expect(fastSlices.flat().sort()).toEqual([...quick].sort())
   expect(slowSlices.flat().sort()).toEqual([...slow].sort())
   // Each slow file gets its own part, so the slow tier lasts as long as its slowest file.
   expect(slowSlices.every(slice => slice.length === 1)).toBe(true)
-  expect(parts.filter(part => part.deferred).every(part => part.partition?.tier === 'slow')).toBe(true)
+})
+
+it.each([2, 3])('balances measured tier durations across %i parts including the systemd slice', partitions => {
+  const hostFiles = [...userSystemdIntegrationFiles]
+  const ordinary = Array.from({ length: 707 }, (_, index) => `apps/api/test/ordinary-${index}.integration.test.ts`)
+  const slow = Array.from({ length: 12 }, (_, index) => `apps/api/test/slow-${index}.integration.test.ts`)
+  const fastFiles = [...hostFiles.slice(0, 3), ...ordinary]
+  const slowFiles = [...hostFiles.slice(3), ...slow]
+  const selected = [...fastFiles, ...slowFiles]
+  const measured = Object.fromEntries([
+    ...hostFiles.slice(0, 3).map(file => [file, 1_000]),
+    ...ordinary.map((file, index) => [file, 10_000 + (index % 5) * 10_000]),
+    ...slowFiles.map((file, index) => [file, 60_000 + (index % 3) * 10_000]),
+  ])
+  const parts = planIntegrationParts({ ...input, partitions }, { files: selected, durations: measured },
+    { host: 1, ordinary: 44 })
+
+  for (const [tier, tierFiles] of [['fast', fastFiles], ['slow', slowFiles]] as const) {
+    const tierParts = parts.filter(part => part.partition?.tier === tier)
+    expect(tierParts).toHaveLength(partitions)
+    const slices = tierParts.map(part => integrationPartition(selected, measured, part.partition!))
+    expect(slices.flat().sort()).toEqual([...tierFiles].sort())
+    const loads = slices.map(slice => slice.reduce((sum, file) => sum + measured[file]!, 0))
+    expect(Math.max(...loads) - Math.min(...loads)).toBeLessThanOrEqual(
+      Math.max(...tierFiles.map(file => measured[file]!)))
+    for (const [index, part] of tierParts.entries()) {
+      expect(part.partition!.weights).toEqual(Array(partitions).fill(1))
+      expect(part.expectedDurationMs).toBe(90_000 + loads[index]!)
+      expect(part.requiresBuildComputer).toBe(index === 0)
+      expect(slices[index]!.filter(file => hostFiles.includes(file)))
+        .toEqual(index === 0 ? tierFiles.filter(file => hostFiles.includes(file)) : [])
+    }
+  }
 })
 
 it('keeps a request with only fast or only slow files in one tier', () => {
   const quick = Object.fromEntries(files.map(file => [file, 20_000]))
   expect(planIntegrationParts(input, { files, durations: quick }, { host: 0, ordinary: 44 })
-    .some(part => part.deferred || part.partition?.tier)).toBe(false)
+    .some(part => part.partition?.tier)).toBe(false)
   expect(planIntegrationParts(input, { files, durations }, { host: 0, ordinary: 44 })
-    .some(part => part.deferred || part.partition?.tier)).toBe(false)
+    .some(part => part.partition?.tier)).toBe(false)
 })
 
 
@@ -100,4 +133,40 @@ it('allows a single ordinary full slice to run on cloud without changing host-on
   const host = planIntegrationParts(input, { files: [hostFile], durations: { [hostFile]: 120_000 } },
     { host: 1, ordinary: 44 })
   expect(host[0]).toMatchObject({ partition: null, requiresBuildComputer: true })
+})
+
+it.each([[44, 24], [64, 64]])('keeps %i fast and %i slow requested parts within the response ticket limit',
+  (fastCount, slowCount) => {
+    const quick = Array.from({ length: fastCount * 8 }, (_, index) => `apps/api/test/quick-${index}.integration.test.ts`)
+    const slow = Array.from({ length: slowCount }, (_, index) => `apps/api/test/slow-${index}.integration.test.ts`)
+    const selected = [...quick, ...slow]
+    const measured = Object.fromEntries([
+      ...quick.map(file => [file, 30_000]),
+      ...slow.map(file => [file, 90_000]),
+    ])
+    const parts = planIntegrationParts(input, { files: selected, durations: measured }, { host: 0, ordinary: fastCount })
+    const tickets = parts.map(() => ({ ticketId: randomUUID() }))
+    expect(CiRunOutputSchema.safeParse({ ticketId: tickets[0]!.ticketId, partitions: tickets }).success).toBe(true)
+    expect(parts.length).toBeLessThanOrEqual(CI_MAX_RUN_TICKETS)
+    for (const tier of ['fast', 'slow']) {
+      const tierParts = parts.filter(part => part.partition?.tier === tier)
+      expect(tierParts.length).toBeGreaterThan(0)
+      expect(tierParts.length).toBeLessThanOrEqual(64)
+    }
+    const slices = parts.map(part => integrationPartition(selected, measured, part.partition!))
+    expect(slices.flat().sort()).toEqual([...selected].sort())
+  })
+
+it('reserves host-only parts before sharing local capacity with ordinary files', () => {
+  const hostFiles = [...userSystemdIntegrationFiles].slice(0, 2)
+  const selected = [...hostFiles, ...files]
+  const measured = { ...durations, ...Object.fromEntries(hostFiles.map(file => [file, 120_000])) }
+  const parts = planIntegrationParts(input, { files: selected, durations: measured }, { host: 3, ordinary: 4 })
+  expect(parts).toHaveLength(4)
+  expect(parts[0]!.partition!.hostIndexes).toEqual([0, 1])
+  const slices = parts.map(part => integrationPartition(selected, measured, part.partition!))
+  expect(slices.flat().sort()).toEqual([...selected].sort())
+  for (const [index, slice] of slices.entries()) {
+    expect(slice.some(file => hostFiles.includes(file))).toBe(index < 2)
+  }
 })

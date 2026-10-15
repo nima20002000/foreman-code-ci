@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { randomUUID } from 'node:crypto'
 import { describe, expect, it, vi } from 'vitest'
 import type { GraphTransactionSql } from '../run-graph/connection.js'
@@ -5,11 +6,16 @@ import type { AgentPlacementProducer } from './agentProducer.js'
 import { deriveDispatch, freezePlacement } from './binding.js'
 import { approvalFixture } from '../../../test/helpers/wave25ApprovalFixture.js'
 import type { RemoteOperationReceipt } from '@foreman-code/contracts/remote-execution'
-import { assertRemoteExecutionAuthority } from './executionAuthority.js'
+import type pg from 'pg'
+import { ExecutionFactsResultSchema } from '@foreman-code/contracts/execution-authority'
+import { configurationWithNodeSkills } from '../skills/nodeSkills.js'
+import { assertRemoteExecutionAuthority, createExecutionAuthorityExtension } from './executionAuthority.js'
 
-const ports = vi.hoisted(() => ({ intent: vi.fn(), placement: vi.fn(), installation: vi.fn(), principal: vi.fn() }))
+type ExecutionFactsResult = ReturnType<typeof ExecutionFactsResultSchema.parse>
+
+const ports = vi.hoisted(() => ({ intent: vi.fn(), placement: vi.fn(), native: vi.fn(), installation: vi.fn(), principal: vi.fn() }))
 vi.mock('../runs/remote/persistence.js', () => ({ readReconciledDispatchIntent: ports.intent }))
-vi.mock('./persistence.js', () => ({ readExecutionPlacement: ports.placement, readNativePlacement: vi.fn(async () => ({})) }))
+vi.mock('./persistence.js', () => ({ readExecutionPlacement: ports.placement, readNativePlacement: ports.native }))
 vi.mock('../devices/hostAuthorization.js', () => ({ assertDeviceHostInstallation: ports.installation }))
 vi.mock('../access/liveManagementPrincipal.js', () => ({ readLiveManagementPrincipal: ports.principal }))
 
@@ -32,14 +38,26 @@ function fixture() {
   if (placement.hostRef.kind !== 'device') throw new Error('Expected device placement')
   const connection = { mainId, deviceId: placement.hostRef.deviceId, ...registration,
     bootId: randomUUID(), connectionGeneration: 1 }
-  const state = { grant: true, origin: connection, cleanup: false, stopped: false, receipt: true, reviewer: undefined as unknown, reviewsPending: false }
+  const state = { grant: true, origin: connection, cleanup: false, stopped: false, receipt: true, reviewer: undefined as unknown, reviewsPending: false, configuration: undefined as ExecutionFactsResult['configuration'] | undefined,
+    harness: undefined as ExecutionFactsResult['harness'] | undefined, version: approvalFixture().version }
   const receipt: RemoteOperationReceipt = { schemaVersion: 1, intent, connection, workerIncarnationId: randomUUID(), sequence: 4,
     phase: 'running', entryAttempted: true, turnEntryAttempted: true, stopFence: false, controls: [],
     turnInput: { correlationId: 'execution:execution', promptDigest: digest, sessionMode: 'regular' },
     native: { sessionId: 'native-session', turnId: 'original-turn', processIdentityDigest: digest } }
+  let reads = 0
   const sql = { query: async (text: string) => {
+    reads++
+    if (text.includes('source_preparation_reconciliations')) return { rows: [], rowCount: 0 }
+    if (text.startsWith('select i.record as dispatch')) return { rows: [{ dispatch: intent, transition: null,
+      placement, operation_id: intent.operationId, execution_id: intent.executionId, run_id: intent.runId,
+      node_id: intent.nodeId, binding_hash: intent.bindingHash, attempt_id: intent.attemptId,
+      authorization_principal_id: 'principal', workspace_id: 'workspace', workflow_id: 'workflow',
+      execution_state: 'running', stopped: state.stopped, cleanup: state.cleanup, granted: state.grant,
+      connection: state.origin, receipt: state.receipt ? receipt : null, receipt_present: state.receipt, entered: true }], rowCount: 1 }
     if (text.startsWith('select r.record as run')) return { rows: state.reviewer ? [state.reviewer] : [],
       rowCount: state.reviewer ? 1 : 0 }
+    if (text.includes('agent_configuration_versions')) return { rows: [{ record: state.configuration, version: state.version }], rowCount: 1 }
+    if (text.includes('workflow_versions')) return { rows: [{ record: state.version }], rowCount: 1 }
     if (text.startsWith('select 1 from review_jobs')) return { rows: state.reviewsPending ? [{}] : [],
       rowCount: state.reviewsPending ? 1 : 0 }
     if (text.includes('from runs r')) return { rows: [{ authorization_principal_id: 'principal', workspace_id: 'workspace',
@@ -51,14 +69,23 @@ function fixture() {
   } } as unknown as GraphTransactionSql
   const locations = { revalidateRunAuthorization: vi.fn(async () => {}) }
   const pins = vi.fn<AgentPlacementProducer['assertPinsCurrent']>(async () => {})
-  const producer = { assertPinsCurrent: pins } as unknown as AgentPlacementProducer
+  const producer = { assertPinsCurrent: pins, harnessFacts: async () => state.harness } as unknown as AgentPlacementProducer
   ports.intent.mockResolvedValue(intent)
   ports.placement.mockResolvedValue(placement)
+  ports.native.mockResolvedValue({})
   ports.installation.mockResolvedValue(registration)
   ports.principal.mockResolvedValue({ id: 'principal' })
   const authorize = (action: 'start' | 'read' | 'control' | 'stop', authenticated = connection) =>
     assertRemoteExecutionAuthority(sql, locations, { version: 1, intent, placement, action }, authenticated, producer)
-  return { authorize, state, locations, pins, connection, intent, receipt }
+  const client = { query: sql.query, on() {}, removeListener() {}, release() {} }
+  const extension = createExecutionAuthorityExtension({ connect: async () => client } as unknown as pg.Pool,
+    locations, producer)
+  const request = (action: 'read' | 'control' = 'read') => extension.handle!(
+    { version: 1, intent, placement, action }, { binding: connection } as Parameters<NonNullable<typeof extension.handle>>[1])
+  const readFacts = () => extension.handle!({ method: 'read-facts',
+    authorization: { version: 1, intent, placement, action: 'read' } },
+  { binding: connection } as Parameters<NonNullable<typeof extension.handle>>[1])
+  return { authorize, state, locations, pins, connection, intent, placement, receipt, request, readFacts, reads: () => reads }
 }
 
 
@@ -137,16 +164,29 @@ describe('remote cleanup authorization', () => {
 })
 
 describe('authenticated original execution reconnection', () => {
-  it('allows existing-owner control on a replacement channel without authorizing new entry', async () => {
+  it('keeps the original owner authority on a transport-only replacement channel of the same boot', async () => {
     const f = fixture()
     const replacement = { ...f.connection, connectionGeneration: 2 }
     await expect(f.authorize('read', replacement)).resolves.toBeUndefined()
     await expect(f.authorize('control', replacement)).resolves.toBeUndefined()
     expect(f.pins.mock.calls.at(-1)?.[4]).toEqual({ purpose: 'resident' })
+    await expect(f.authorize('start', replacement)).resolves.toBeUndefined()
     f.state.cleanup = true
     await expect(f.authorize('stop', replacement)).resolves.toEqual({ cleanupOnly: true })
-    await expect(f.authorize('start', replacement)).rejects.toMatchObject({ code: 'REMOTE_AUTHORITY_DENIED' })
     expect(f.receipt.connection).toEqual(f.connection)
+  })
+
+  it('keeps an unacknowledged preparation authorized after the same Worker boot reconnects', async () => {
+    const f = fixture()
+    f.state.receipt = false
+    const replacement = { ...f.connection, connectionGeneration: 2 }
+    await expect(f.authorize('start', replacement)).resolves.toBeUndefined()
+    await expect(f.authorize('control', replacement)).resolves.toBeUndefined()
+    expect(f.pins.mock.calls.at(-1)?.[4]).toBeUndefined()
+    const restarted = { ...replacement, bootId: randomUUID() }
+    for (const action of ['start', 'control'] as const) {
+      await expect(f.authorize(action, restarted)).rejects.toMatchObject({ code: 'REMOTE_AUTHORITY_DENIED' })
+    }
   })
 
   it.each(['native', 'owner', 'origin'])('requires retained original %s evidence before reconnecting control', async defect => {
@@ -175,10 +215,10 @@ describe('authenticated original execution reconnection', () => {
     await expect(f.authorize('read', restarted)).rejects.toMatchObject({ code: 'REMOTE_AUTHORITY_DENIED' })
   })
 
-  it('can consult the original worker journal when Main lost the preparation acknowledgment', async () => {
+  it('can consult the original worker journal from a restarted Worker when Main lost the preparation acknowledgment', async () => {
     const f = fixture()
     f.state.receipt = false
-    const replacement = { ...f.connection, connectionGeneration: 2 }
+    const replacement = { ...f.connection, bootId: randomUUID(), connectionGeneration: 2 }
     f.pins.mockRejectedValue(new Error('This channel cannot qualify a new launch'))
     await expect(f.authorize('read', replacement)).resolves.toBeUndefined()
     expect(f.locations.revalidateRunAuthorization).toHaveBeenCalled()
@@ -191,3 +231,95 @@ describe('authenticated original execution reconnection', () => {
     await expect(f.authorize('read', replacement)).rejects.toMatchObject({ code: 'REMOTE_AUTHORITY_DENIED' })
   })
 })
+
+
+describe('remote execution authority reads', () => {
+  it('returns the original persisted authority with a bounded number of database reads', async () => {
+    const f = fixture()
+    const before = structuredClone(f.receipt)
+    const result = await f.request()
+    expect(result).toEqual({ payload: { version: 1, action: 'read', operationId: f.intent.operationId,
+      attemptId: f.intent.attemptId, bindingHash: f.intent.bindingHash, owner: f.intent.owner } })
+    expect(f.receipt).toEqual(before)
+    // Includes transaction open and close plus two fresh authority snapshots.
+    expect(f.reads()).toBeLessThanOrEqual(4)
+  })
+
+  it('rejects a grant revoked between the initial read and the commit check', async () => {
+    const f = fixture()
+    f.pins.mockImplementationOnce(async () => { f.state.grant = false })
+    await expect(f.request()).rejects.toMatchObject({ code: 'REMOTE_AUTHORITY_DENIED' })
+  })
+
+  it('preserves cleanup-only reads without accepting revoked owner grants', async () => {
+    const f = fixture()
+    f.state.cleanup = true
+    expect(await f.request()).toMatchObject({ payload: { cleanupOnly: true } })
+    expect(f.pins).not.toHaveBeenCalled()
+    f.state.grant = false
+    await expect(f.request()).rejects.toMatchObject({ code: 'REMOTE_AUTHORITY_DENIED' })
+  })
+})
+
+
+it('returns the same effective node skill configuration that the execution sends to the Worker', async () => {
+  const f = fixture()
+  const facts = factsFixture(f)
+  f.state.harness = facts.harness
+  ports.native.mockResolvedValue(facts.executionPlacement)
+  const pinned = { ...facts.configuration, assignedSkills: [{ skillId: 'base-skill', version: '1' }],
+    resolvedSkills: [{ skillId: 'base-skill', version: '1', name: 'Base', instructions: 'Base instructions.',
+      contentHash: `sha256:${createHash('sha256').update('Base instructions.').digest('hex')}` }] }
+  const skills = { remove: ['base-skill'] }
+  f.state.configuration = pinned
+  f.state.version.entryNodeId = f.intent.nodeId
+  f.state.version.definition.entryNodeId = f.intent.nodeId
+  f.state.version.definition.nodes = [{ id: f.intent.nodeId, agentId: pinned.agentId, name: 'Worker', skills }]
+  f.state.version.definition.edges = []
+  f.state.version.agentConfigurationVersionIds = { [pinned.agentId]: pinned.id }
+  const expected = configurationWithNodeSkills(pinned, skills)
+  const response = await f.readFacts()
+  expect(ExecutionFactsResultSchema.parse(response.payload).configuration).toEqual(expected)
+  expect(pinned.assignedSkills).toHaveLength(1)
+})
+
+function factsFixture(f: ReturnType<typeof fixture>): ExecutionFactsResult {
+  const at = '2026-10-01T00:00:00.000Z'
+  const hash = 'a'.repeat(64)
+  const filesystem = { device: '1', inode: '2', mountId: '3' }
+  const configuration = { ...approvalFixture().configurations[0]!, id: 'configuration', agentId: 'agent' }
+  const target = { hostRef: f.placement.hostRef, applicationInstallationId: f.connection.workerInstallationId,
+    harnessInstallationId: 'harness', installationFingerprint: hash }
+  const materializationId = randomUUID()
+  return ExecutionFactsResultSchema.parse({ version: 1, intent: f.intent, placement: f.placement, configuration,
+    executionPlacement: { version: 1, acceptedBindingHash: f.placement.bindingHash, bindingHash: hash,
+      runId: f.intent.runId, nodeId: f.intent.nodeId, executionId: f.intent.executionId,
+      attemptId: f.intent.attemptId, operationId: f.intent.operationId,
+      materialization: { rootPolicyId: 'policy', rootPolicyRevision: '1', operationId: f.intent.operationId,
+        reservationId: randomUUID(), sourceBindingHash: hash, finalDispatchBindingHash: hash, state: 'prepared',
+        receipt: { version: 1, materializationId, placementHash: hash,
+          executionId: f.intent.executionId, attemptId: f.intent.attemptId, keyRevision: 1, authorizationRevision: 1,
+          verifiedManifestDigest: hash, verifiedEntries: 0, verifiedBytes: 0, verifiedAt: at, localTreeIdentity: filesystem,
+          binding: { version: 1, mainId: f.connection.mainId, deviceId: f.connection.deviceId,
+            workerInstallationId: f.connection.workerInstallationId, workspaceId: configuration.workspaceId,
+            rootId: randomUUID(), bindingRevision: 1, locationRevision: 1, canonicalPath: '/project', filesystem,
+            accessMode: 'read-only', snapshotId: randomUUID(), manifestDigest: hash } } },
+      workingTree: { materializationId, materializationDigest: hash, canonicalProjectRoot: '/project',
+        canonicalCwd: '/project', directoryIdentityHash: hash, filesystem, accessMode: 'read-only', privateGit: null } },
+    harness: {
+      override: { instanceId: randomUUID(), revision: 1, instanceRevision: '1', target, presetId: 'fixture',
+        enabled: true, driverId: 'codex', configuration: configuration.harness,
+        configurationFingerprint: hash, qualification: 'qualified' },
+      profileProof: { target, instanceRevision: '1', configurationFingerprint: hash, driverId: 'codex',
+        driverRevision: '1', protocolRevision: '1', suiteRevision: 'fixture', environmentGeneration: '1',
+        connectionGeneration: '1', authenticated: true, compatible: true, qualified: true, checkedAt: at },
+      qualification: { harness: 'codex', version: '0.154.0', binarySha256: hash, status: 'qualified',
+        profile: 'codex-0.154', suiteRevision: 'fixture', checks: [], failureReason: null, startedAt: at, checkedAt: at },
+      installation: { hostRef: f.placement.hostRef, harnessInstallationId: 'harness', installationFingerprint: hash,
+        driverId: 'codex', driverRevision: '1', protocolRevision: '1', environmentGeneration: '1', connectionGeneration: '1',
+        observedVersion: '0.154.0', installed: true, authenticated: true, compatible: true, qualified: true,
+        launcher: { requested: '/installed/codex', resolvedLauncher: '/installed/codex', fingerprint: hash,
+          payloadFingerprints: [], status: 'installed', interpreter: null, diagnostics: [], checkedAt: at,
+          environment: { generation: '1', provenance: 'worker', cwd: '/project', path: '/usr/bin' } } },
+    } })
+}

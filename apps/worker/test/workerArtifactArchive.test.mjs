@@ -3,9 +3,12 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { mkdtemp, readFile, writeFile, readdir, rm, lstat, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import { homedir } from 'node:os';
+import { setImmediate as nextTurn } from 'node:timers/promises';
 import { gzipSync } from 'node:zlib';
 import { downloadWorkerArtifact, fetchGitHubAsset } from '../src/update.mjs';
-import { persistentFixtureRoot } from './fixtureStorage.mjs';
+
+const fixtureRoot = join(homedir(), '.cache', 'foreman-tmp');
 
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const facts = { os: 'ubuntu', osRelease: '24.04', arch: 'x64', libc: 'glibc-2.39', node: 'v22.23.2',
@@ -29,7 +32,8 @@ function tarEntry(path, bytes, type = '0', declaredSize = bytes.length) {
 }
 
 async function fixture(t) {
-  const base = await mkdtemp(join(persistentFixtureRoot, 'worker-archive-'));
+  await mkdir(fixtureRoot, { recursive: true, mode: 0o700 });
+  const base = await mkdtemp(join(fixtureRoot, 'worker-archive-'));
   t.after(() => rm(base, { recursive: true, force: true }));
   const bytes = Buffer.from('release payload');
   const { os, osRelease, arch, libc, node } = facts;
@@ -43,7 +47,8 @@ async function fixture(t) {
   const directory = join(base, 'candidate');
   const download = entries => downloadWorkerArtifact({ release, directory, facts,
     request: async () => { throw new Error('GitHub carrier must not request chunks'); },
-    fetchAsset: async ({ destination, maxBytes }) => {
+    fetchAsset: async ({ github, destination, maxBytes }) => {
+      assert.deepEqual(github, release.github);
       assert.ok(Number.isSafeInteger(maxBytes) && maxBytes > 0 && maxBytes < 2 * 1024 * 1024,
         'The carrier must receive a manifest-derived compressed byte limit');
       await writeFile(destination, gzipSync(Buffer.concat([
@@ -58,6 +63,121 @@ test('streams the announced files and keeps their authenticated manifest', async
   assert.deepEqual(await f.download([tarEntry('src/cli.mjs', f.bytes)]), f.manifest);
   assert.deepEqual(await readFile(join(f.directory, f.manifest.files[0].path)), f.bytes);
   assert.equal(hash(await readFile(join(f.directory, 'manifest.json'))), f.release.manifestSha256);
+});
+
+async function waitForDownload(predicate) {
+  const deadline = performance.now() + 5000;
+  while (performance.now() < deadline) {
+    if (await predicate()) return;
+    await nextTurn();
+  }
+  assert.fail('The fake downloader did not reach the expected state.');
+}
+
+async function stalledDownloader(t, { partial = false, alwaysStall = false } = {}) {
+  const previousPath = process.env.PATH;
+  const controller = new AbortController();
+  let outcome;
+  t.after(async () => {
+    controller.abort(new Error('Fixture closed'));
+    await outcome;
+    if (previousPath === undefined) delete process.env.PATH;
+    else process.env.PATH = previousPath;
+  });
+  const f = await fixture(t);
+  const manifestBytes = Buffer.from(`${JSON.stringify(f.manifest)}\n`);
+  const archive = gzipSync(Buffer.concat([
+    tarEntry('manifest.json', manifestBytes), tarEntry('src/cli.mjs', f.bytes), Buffer.alloc(1024),
+  ]));
+  await writeFile(join(f.base, 'asset.tar.gz'), archive);
+  await writeFile(join(f.base, 'attempts'), '0');
+  await writeFile(join(f.base, 'gh'), `#!/usr/bin/env node
+const { readFileSync, writeFileSync, existsSync } = require('node:fs');
+const { join } = require('node:path');
+const base = __dirname;
+const attempts = join(base, 'attempts');
+const attempt = Number(readFileSync(attempts, 'utf8')) + 1;
+const archive = readFileSync(join(base, 'asset.tar.gz'));
+if (attempt > 1 && !${alwaysStall}) {
+  process.stdout.end(archive);
+} else {
+  if (${partial}) process.stdout.write(archive.subarray(0, 10));
+  process.on('SIGTERM', () => {
+    writeFileSync(join(base, 'aborted-' + attempt), 'aborted');
+    process.exit(0);
+  });
+  let progressed = false;
+  setInterval(() => {
+    if (!progressed && existsSync(join(base, 'progress'))) {
+      progressed = true;
+      process.stdout.write(archive.subarray(10, 20));
+    }
+  }, 5);
+}
+writeFileSync(attempts, String(attempt));
+`, { mode: 0o700 });
+  process.env.PATH = `${f.base}:${previousPath ?? ''}`;
+  let retries = 0;
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  return { ...f,
+    attempts: async () => Number(await readFile(join(f.base, 'attempts'), 'utf8')),
+    received: async size => {
+      const scratch = (await readdir(f.base)).find(name => name.startsWith('.worker-github-'));
+      if (!scratch) return false;
+      return lstat(join(f.base, scratch, 'artifact.tar.gz')).then(info => info.size >= size, error => {
+        if (error.code === 'ENOENT') return false;
+        throw error;
+      });
+    },
+    retries: () => retries,
+    start: (timeoutMs = 600_000) => {
+      outcome = downloadWorkerArtifact({ release: f.release, directory: f.directory, facts,
+        signal: controller.signal, timeoutMs,
+        log: (_message, fields) => { if (fields.retryMs) retries++; },
+      }).then(manifest => ({ manifest }), error => ({ error }));
+      return outcome;
+    },
+  };
+}
+
+for (const partial of [false, true]) {
+  test(`retries a GitHub bundle after 60 seconds without bytes${partial ? ' following progress' : ''}`, async t => {
+    const f = await stalledDownloader(t, { partial });
+    const outcome = f.start();
+    await waitForDownload(async () => await f.attempts() === 1 && (!partial || await f.received(10)));
+    if (partial) {
+      t.mock.timers.tick(45_000);
+      await writeFile(join(f.base, 'progress'), 'send bytes');
+      await waitForDownload(() => f.received(20));
+    }
+    t.mock.timers.tick(59_999);
+    await nextTurn();
+    assert.equal(await f.attempts(), 1);
+    t.mock.timers.tick(1);
+    await waitForDownload(() => f.retries() === 1);
+    t.mock.timers.tick(5000);
+    await waitForDownload(async () => await f.attempts() === 2);
+    assert.deepEqual(await outcome, { manifest: f.manifest });
+    assert.equal(await readFile(join(f.base, 'aborted-1'), 'utf8'), 'aborted');
+    assert.deepEqual(await readFile(join(f.directory, f.manifest.files[0].path)), f.bytes);
+  });
+}
+
+test('stall retries retain the original bundle download deadline', async t => {
+  const f = await stalledDownloader(t, { alwaysStall: true });
+  const outcome = f.start(90_000);
+  await waitForDownload(async () => await f.attempts() === 1);
+  t.mock.timers.tick(60_000);
+  await waitForDownload(() => f.retries() === 1);
+  t.mock.timers.tick(5000);
+  await waitForDownload(async () => await f.attempts() === 2);
+  t.mock.timers.tick(25_000);
+  const { error } = await outcome;
+  assert.equal(error.code, 'WORKER_RELEASE_ASSET_UNAVAILABLE');
+  assert.match(error.message, /90000 ms/);
+  assert.equal(await f.attempts(), 2);
+  assert.equal(await readFile(join(f.base, 'aborted-2'), 'utf8'), 'aborted');
+  assert.equal((await readdir(f.base)).some(name => name.startsWith('.worker-github-')), false);
 });
 
 for (const [label, entries, code] of [
@@ -127,4 +247,47 @@ if (destination === '-') {
     if (previousPath === undefined) delete process.env.PATH;
     else process.env.PATH = previousPath;
   }
+});
+
+for (const { failure, script } of [
+  { failure: 'missing executable', script: null },
+  { failure: 'missing authentication', script: 'echo "Run gh auth login to authenticate" >&2\nexit 4\n' },
+  { failure: 'denied access', script: 'echo "HTTP 403: Resource not accessible by integration" >&2\nexit 1\n' },
+  { failure: 'invalid credentials', script: 'echo "HTTP 401: Bad credentials" >&2\nexit 1\n' },
+]) {
+  test(`GitHub download fails permanently for ${failure} without a retry wait`, async t => {
+    const f = await fixture(t);
+    const binaries = join(f.base, 'bin');
+    await mkdir(binaries);
+    if (script) await writeFile(join(binaries, 'gh'), `#!/bin/sh\n${script}`, { mode: 0o700 });
+    const previousPath = process.env.PATH;
+    process.env.PATH = binaries;
+    t.after(() => {
+      if (previousPath === undefined) delete process.env.PATH;
+      else process.env.PATH = previousPath;
+    });
+    const retries = [];
+    await assert.rejects(downloadWorkerArtifact({ release: f.release, directory: f.directory, facts,
+      timeoutMs: 150, log: (_message, fields) => { if (fields.retryMs) retries.push(fields.retryMs); },
+    }), { code: 'worker_update_github_configuration' });
+    assert.deepEqual(retries, []);
+    await assert.rejects(lstat(f.directory), { code: 'ENOENT' });
+  });
+}
+
+test('GitHub rate limiting remains a transient download failure', async t => {
+  const f = await fixture(t);
+  const binaries = join(f.base, 'bin');
+  await mkdir(binaries);
+  await writeFile(join(binaries, 'gh'),
+    '#!/bin/sh\necho "HTTP 403: API rate limit exceeded" >&2\nexit 1\n', { mode: 0o700 });
+  const previousPath = process.env.PATH;
+  process.env.PATH = binaries;
+  t.after(() => {
+    if (previousPath === undefined) delete process.env.PATH;
+    else process.env.PATH = previousPath;
+  });
+  await assert.rejects(fetchGitHubAsset({ github: f.release.github, asset: 'bundle.tar.gz',
+    destination: join(f.base, 'download.tar.gz'), maxBytes: 1024,
+  }), { code: 'worker_update_github_unavailable' });
 });
