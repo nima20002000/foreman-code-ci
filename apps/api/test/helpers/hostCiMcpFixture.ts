@@ -139,10 +139,8 @@ export async function fixture(options: { repository?: boolean; github?: Record<s
       [workspaceId, JSON.stringify({ id: workspaceId, name: 'CI workspace' })])
   }
   if (options.repository !== false) {
-    const settings = { repository: { provider: 'github', owner: 'octo', name: 'site', defaultBranch: 'main' },
-      ...(options.cloud ? { ciMirror: { provider: 'github', owner: 'octo', name: 'site-ci' } } : {}) }
-    await db.pool.query('update workspaces set record=record || $2::jsonb where id=$1',
-      [workspaceId, JSON.stringify(settings)])
+    await db.pool.query(`update workspaces set record=record || '{"repository":{"provider":"github","owner":"octo","name":"site","defaultBranch":"main"}}'::jsonb where id=$1`,
+      [workspaceId])
   }
   const published: string[] = []
   const inventory = options.unitInventory
