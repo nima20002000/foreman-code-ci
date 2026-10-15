@@ -70,7 +70,6 @@ describe('profile-scoped Start after a Worker harness installation update', () =
       const directories = [...new Set(checking.slice(callsBefore)
         .filter(call => call.method === 'model/list').map(call => call.workingDirectory as string))]
       expect(directories).toHaveLength(2)
-      console.log('DIAG allowed', JSON.stringify(directories))
       await expect(fixture.start()).rejects.toThrow('HARNESS_PROFILE_CHECK_PENDING')
       await fixture.provider.allowModelDirectories(directories)
       const mixed = await waitForRemoteReview(() => profiles(fixture), values =>
@@ -159,11 +158,7 @@ describe('profile-scoped Start after a Worker harness installation update', () =
       expect(replay.run.id).toBe(started.run.id)
       // The Run on the checked profile must finish before Main shuts down, or its source preparation races the shutdown.
       await completedRun(fixture, started.run.id)
-    } catch (error) {
-      console.log('DIAG body error', String(error).slice(0, 2000))
-      throw error
     } finally {
-      console.log('DIAG model calls', JSON.stringify((await fixture.provider.calls()).filter(call => call.method === 'model/list' || call.method === 'thread/start').map(call => [call.method, call.workingDirectory])))
       if (modelsBlocked) await fixture.provider.releaseModels()
       if (turnsBlocked) await fixture.provider.releaseWorkflowTurns()
       await fixture.close()
