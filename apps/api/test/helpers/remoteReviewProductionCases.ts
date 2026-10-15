@@ -145,7 +145,8 @@ export async function reviewInProgress(fixture: Fixture) {
   expect(fixture.profiles[1]!.configuration).toEqual(withAdvancedDefaults(configuration.harness))
   const started = await fixture.start()
   const location = RunExecutionLocationV3Schema.parse(started.run.executionLocation)
-  expect(location.runnerId).toBe(fixture.profiles[0]!.target.applicationInstallationId)
+  expect(workspace.executionLocation).not.toBeNull()
+  expect(location).toMatchObject(workspace.executionLocation!)
   expect((await fixture.details(started.run.id)).run.executionLocation).toEqual(location)
   // The execution edge starts the requester only after the reviewer's workflow turn settles.
   await waitForRemoteReview(async () => {
@@ -211,12 +212,14 @@ export async function deliveredReview(fixture: Fixture, interactionId: string) {
   }, value => value.state === 'completed', 'persisted completed remote review')
   // Retry the original MCP decision after its native terminal commits, without a global maintenance sweep.
   await fixture.provider.retryReview()
-  const interaction = await waitForRemoteReview(async () => {
+  // Graph resume and native acknowledgment advance the interaction revision after delivery.
+  const { interaction } = await waitForRemoteReview(async () => {
     const failure = (await fixture.provider.calls()).find(call => call.providerFailure !== undefined)
     if (failure) throw new Error(`Remote review provider failed: ${String(failure.providerFailure)}`)
     await fixture.reconcileReviews()
-    return readInteraction(fixture, interactionId)
-  }, value => value.deliveryState === 'delivered', 'persisted native decision delivery', fixture.subscribeNativeChanges)
+    return GetInteractionResponseSchema.parse(await fixture.value('interaction_get', { interactionId }))
+  }, value => value.interaction.deliveryState === 'delivered' && value.activity?.workerAcknowledgment === 'confirmed',
+  'persisted native decision delivery and worker acknowledgment', fixture.subscribeNativeChanges)
   expect(interaction.selectedSemantic).toBe('approve_once')
   expect(interaction.deliveredAt).toBeDefined()
   expect(job.providerTurnOrMessageId).toBeDefined()
@@ -324,8 +327,23 @@ export async function retainedReviewRecovery(fixture: Fixture, recovery: 'crash'
     }
   } })
   const inventory = await waitForReplacementReviewInventory(fixture, beforeInventory)
-  expect(inventory.installations[0]?.connectionGeneration)
-    .not.toBe(beforeInventory.installations[0]?.connectionGeneration)
+  const previousBinding = beforeInventory.hostMetadata?.connection?.binding
+  const replacementBinding = inventory.hostMetadata?.connection?.binding
+  expect(previousBinding).toBeDefined()
+  expect(replacementBinding).toBeDefined()
+  expect(replacementBinding!.connectionEpoch).not.toBe(previousBinding!.connectionEpoch)
+  expect(replacementBinding!.bootId).toBe(previousBinding!.bootId)
+  expect(replacementBinding!.connectionGeneration).toBeGreaterThan(previousBinding!.connectionGeneration)
+  for (const profile of fixture.profiles) {
+    const previous = beforeInventory.installations.find(installation =>
+      installation.harnessInstallationId === profile.target.harnessInstallationId)
+    const replacement = inventory.installations.find(installation =>
+      installation.harnessInstallationId === profile.target.harnessInstallationId)
+    expect(previous).toBeDefined()
+    expect(replacement).toBeDefined()
+    expect(replacement!.connectionGeneration).toBe(previous!.connectionGeneration)
+    expect(replacement!.connectionGeneration).toBe(harnessConnectionGeneration(replacementBinding!))
+  }
   expect(fixture.workerPid()).toBe(originalWorkerPid)
   const profileEvidence = new HostHarnessProfileEvidenceRepository(fixture.db.pool)
   // Inventory arrives before reconnect qualification; dispatching early incurs a retry backoff.

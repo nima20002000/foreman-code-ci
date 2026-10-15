@@ -2,6 +2,8 @@ import { pendingSessionControls } from '../../harnesses/sessionControlDefaults.j
 import { SessionPreferencesSchema } from '@foreman-code/contracts'
 import { createRemoteExecutionHandler } from './executionRouter.js'
 import { jobExecution } from '../../../../test/helpers/jobFixture.js'
+import { deferred } from '../../../../test/helpers/deferred.js'
+import { HarnessExecutionError } from '../../harnesses/errors.js'
 import type { RemoteJobDispatchIntent } from '@foreman-code/contracts/remote-job-execution'
 import { RemoteOwnerControlSchema } from '@foreman-code/contracts/remote-execution'
 import { createHash, randomUUID } from 'node:crypto'
@@ -465,11 +467,11 @@ describe('actual worker native-port adapter', () => {
         { sequence: 0, turnId: undefined, submitted: [] },
         { sequence: 1, turnId: 'native-turn', submitted: ['native-turn'] },
       ])
-      // The stream's own page aged past the 30s observation window, so it read once more before event 1.
-      expect(historyReads).toBe(3)
+      // The refreshed cursor page already owns event 1 for this receipt.
+      expect(historyReads).toBe(2)
       await stream.return(undefined)
-      await proxy.history(session)
-      expect(historyReads).toBe(4)
+      expect((await proxy.history(session)).events).toEqual(events)
+      expect(historyReads).toBe(3)
       expect(f.state.starts).toBe(1)
     } finally {
       await stream.return(undefined)
@@ -707,19 +709,29 @@ describe('actual worker native-port adapter', () => {
     expect(f.state.starts).toBe(1)
     expect(f.state.turns).toBe(1)
   })
-  it('does not repeat Stop after the native cancellation acknowledgement is lost', async () => {
+  it('retries Stop after a lost cancellation acknowledgement until physical closure is confirmed', async () => {
     const f = await setup()
     await f.host.prepare(f)
-    f.manager.cancel = async () => { f.state.cancels++; throw new Error('Lost acknowledgement') }
+    f.manager.cancel = async () => {
+      f.state.cancels++
+      if (f.state.cancels === 1) throw new Error('Lost acknowledgement')
+      return true
+    }
+    f.ports.settle = async () => f.state.cancels >= 2
+      ? { kind: 'cancelled', closureEvidenceDigest: 'a'.repeat(64) } : null
     const command = { schemaVersion: 1, protocolVersion: 1, commandId: 'stop',
       operationId: f.intent.operationId, attemptId: f.intent.attemptId,
       executionId: f.intent.executionId, bindingHash: f.intent.bindingHash,
       owner: f.intent.owner, action: { kind: 'stop' } }
     await f.host.control(command)
-    await f.host.control(command)
-    expect(f.state.cancels).toBe(1)
     expect(await f.journal.status(f.intent.operationId)).toMatchObject({
       status: 'known', receipt: { phase: 'uncertain', stopFence: true },
+    })
+    await f.host.control(command)
+    await f.host.control(command)
+    expect(f.state.cancels).toBe(2)
+    expect(await f.journal.status(f.intent.operationId)).toMatchObject({
+      status: 'known', receipt: { phase: 'confirmed_terminal', stopFence: true },
     })
   })
   it.each(['reserved', 'entered'] as const)('recovers a %s approval through the Main proxy without duplicate delivery', async phase => {
@@ -1010,4 +1022,36 @@ it('keeps the admitted mode in worker turn replay identity after journal restart
     sessionMode: 'regular',
   })).rejects.toThrow('Turn input binding conflict')
   expect(f.state.turns).toBe(1)
+})
+
+it('reports original startup events before the native turn is acknowledged', async () => {
+  const f = await setup()
+  const entered = deferred()
+  const ready = deferred()
+  const startup = { sequence: 0, type: 'turn.mcp_startup_retry', occurredAt: new Date().toISOString(),
+    payload: { serverName: 'graphql', attempt: 2, delayMs: 10_000 } }
+  f.manager.startTurn = async function* (_session, turn) {
+    yield startup
+    entered.resolve()
+    await ready.promise
+    await turn.onSubmitted?.('native-turn')
+  }
+  const history = vi.spyOn(f.manager, 'history').mockResolvedValue({ events: [startup], pendingInteractions: [] })
+  const reconcile = vi.spyOn(f.manager, 'reconcile').mockRejectedValue(new HarnessExecutionError(
+    'CODEX_RECONCILIATION_UNCERTAIN', 'The native turn has not been submitted.'))
+  try {
+    await f.host.prepare({ intent: f.intent, placement: f.placement, request: f.request })
+    await f.host.startTurn(f.intent.operationId, 'prompt', 'execution:execution')
+    await entered.promise
+    const response = await f.host.handle({ method: 'history', intent: f.intent, placement: f.placement,
+      correlationId: 'execution:execution', afterSequence: -1 })
+    expect(response).toMatchObject({ history: { events: [startup], pendingInteractions: [] },
+      status: { status: 'known', receipt: { phase: 'start_acknowledged' } },
+      page: { hasMore: false, nextAfterSequence: 0 } })
+    expect(history).toHaveBeenCalledWith(f.session)
+    expect(reconcile).not.toHaveBeenCalled()
+    expect(await f.journal.status(f.intent.operationId)).toMatchObject({
+      status: 'known', receipt: { native: { sessionId: f.session.nativeSessionId } },
+    })
+  } finally { ready.resolve() }
 })

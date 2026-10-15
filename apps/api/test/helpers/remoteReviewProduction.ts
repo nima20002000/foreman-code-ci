@@ -45,6 +45,7 @@ import { configureRemoteReviewGitHub } from './remoteReviewGitHub.js'
 import { waitForChildReady } from './remoteReviewReadiness.js'
 import { measureIntegrationPhase, reportIntegrationPhase } from './integrationPhase.js'
 import { remoteReviewWorkerArtifacts } from './remoteReviewWorkerArtifacts.js'
+import { testFixtureCacheRoot } from '../../../../scripts/test-fixture-cache.mjs'
 import { remoteReviewChanges } from './remoteReviewChanges.js'
 import { remoteReviewReconciliation } from './remoteReviewReconciliation.js'
 import { installedRestartService } from './installedRestartService.js'
@@ -253,7 +254,8 @@ export async function remoteReviewProduction(options: {
     if (release.status === 'rejected') throw release.reason
     const workerRelease = release.value
     logEnvironment.FOREMAN_CODE_WORKER_ARTIFACT_DIRECTORY = await measureIntegrationPhase(
-      'Worker update artifacts', () => remoteReviewWorkerArtifacts(workerRelease))
+      'Worker update artifacts', () => remoteReviewWorkerArtifacts(workerRelease, testFixtureCacheRoot(),
+        { publication: 'published' }))
     workerEnvironment.FOREMAN_CODE_WORKER_ARTIFACT_DIRECTORY = logEnvironment.FOREMAN_CODE_WORKER_ARTIFACT_DIRECTORY
     let main: ChildProcess | undefined
     const mainService = options.installedMainService
@@ -480,7 +482,9 @@ export async function remoteReviewProduction(options: {
     const { mainLocation, approved } = sourceResult.value
     const { identity, publicMain, paired } = pairingResult.value
     let denyReservedResponse = false
-    let pausedDiscovery: { entered(): void; release(): void; waiting: Promise<void> } | undefined
+    let pausedDiscovery: {
+      entered(): void; release(outcome?: 'cancel'): void; waiting: Promise<void | 'cancel'>
+    } | undefined
     const releaseWorkerDiscovery = async () => {
       pausedDiscovery?.release()
       pausedDiscovery = undefined
@@ -490,7 +494,7 @@ export async function remoteReviewProduction(options: {
     const transport = await createRemoteReviewTransport({ ...tls, endpoint: deviceEndpoint,
       beforeDiscovery: async () => {
         const paused = pausedDiscovery
-        if (paused) { paused.entered(); await paused.waiting }
+        if (paused) { paused.entered(); return paused.waiting }
       },
       beforeAuthorization: async authorization => {
         if (!denyReservedResponse || authorization.action !== 'control') return
@@ -769,10 +773,15 @@ export async function remoteReviewProduction(options: {
       blockWorkerDiscovery() {
         let entered!: () => void
         const discovering = new Promise<void>(resolve => { entered = resolve })
-        let release!: () => void
-        const waiting = new Promise<void>(resolve => { release = resolve })
+        let release!: (outcome?: 'cancel') => void
+        const waiting = new Promise<void | 'cancel'>(resolve => { release = resolve })
         pausedDiscovery = { entered, release, waiting }
         return discovering
+      },
+      cancelWorkerDiscovery() {
+        if (!pausedDiscovery) throw new Error('Worker discovery is not blocked.')
+        pausedDiscovery.release('cancel')
+        pausedDiscovery.waiting = Promise.resolve('cancel')
       },
       releaseWorkerDiscovery,
       denyNextReservedResponse: () => { denyReservedResponse = true },

@@ -19,7 +19,7 @@ import type { OperatorServices } from './mcp/operator/types.js'
 import { registerOperatorHttpSecurity, requireLocalRequest } from './modules/access/http.js'
 import type { PostgresAccessService } from './modules/access/postgres.js'
 import type { LocalHumanAccess } from './modules/access/localHuman.js'
-import { DomainError } from './modules/errors.js'
+import { DomainError, databaseReadFailure, publicFailureClass } from './modules/errors.js'
 import type { McpDetectionService } from './modules/harnesses/mcpDetection.js'
 import { registerUserInteractions } from './routes/userInteractions.js'
 import { registerRunGraphRoutes } from './routes/runGraph.js'
@@ -205,7 +205,8 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
   if (options.operator?.services.runGraph) registerRunGraphRoutes(app, options.operator.services.runGraph,
     (principalId, code, route) => options.operator!.services.commands.recordDenied(principalId, 'http', code, route))
   if (options.operator && options.mcpDetection) {
-    registerMcpDetectionRoute(app, options.operator.services.locations, options.mcpDetection.service)
+    registerMcpDetectionRoute(app, options.operator.services.locations, options.mcpDetection.service,
+      options.operator.services.harnessSettings?.mcp)
   }
   if (options.operator?.services.agentChat) registerAgentChatRoutes(app, options.operator.services.agentChat)
   if (options.operator && options.product?.interactions) registerUserInteractions(app, options.product.interactions)
@@ -222,7 +223,9 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
   })
 
   app.setErrorHandler(async (error, request, reply) => {
-    const domain = publicRequestError(error)
+    const failure = databaseReadFailure(error)
+    const domain = publicRequestError(failure)
+    const failureClass = publicFailureClass(failure)
     if (domain.status >= 500) request.log.error({ err: error }, domain.message)
     const mcpRequest = request.url.split('?')[0] === '/mcp'
     if (mcpRequest && domain.status >= 400 && domain.status < 500 && domain.status !== 401) {
@@ -240,6 +243,7 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
         code: domain.code,
         message: domain.message,
         ...(domain.details ? { details: domain.details } : {}),
+        ...(failureClass ? { class: failureClass } : {}),
         requestId: request.id,
       },
     })

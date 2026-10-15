@@ -18,12 +18,21 @@ describe.runIf(postgresEnabled)('interval execution inspection', () => {
     const { runtime, f, watcher, checkStarted, checkGate, workerGate } = await intervalRuntime()
     const queued = deferred<string>()
     const dispatch = deferred()
+    const completed = deferred()
+    let inspectedExecutionId: string | undefined
+    const observe = runtime.native.observeExact.bind(runtime.native)
+    const observation = vi.spyOn(runtime.native, 'observeExact').mockImplementation(async input => {
+      const result = await observe(input)
+      if (result.state === 'completed' && result.execution.id === inspectedExecutionId) completed.resolve()
+      return result
+    })
     const admit = RepeatRunRepository.prototype.admitTick
     const admission = vi.spyOn(RepeatRunRepository.prototype, 'admitTick').mockImplementation(async function (
       this: RepeatRunRepository, ...args
     ) {
       const result = await admit.apply(this, args)
       if (result.kind === 'admitted') {
+        inspectedExecutionId = result.execution.id
         queued.resolve(result.execution.id)
         await dispatch.promise
       }
@@ -87,7 +96,11 @@ describe.runIf(postgresEnabled)('interval execution inspection', () => {
         } else if (state === 'running') {
           checkGate.resolve()
           workerGate.resolve()
-          await finished
+          await completed.promise
+          expect((await runtime.runs.getExecution(executionId))?.state).toBe('completed')
+          await runtime.stop()
+          await runtime.engine.cancel(f.run.id)
+          await Promise.allSettled([finished])
         } else {
           const ordinary = page.items.find(item => item.workflowNodeId === watcher.id && item.tickIndex === undefined)
           expect(ordinary).toBeDefined()
@@ -109,7 +122,12 @@ describe.runIf(postgresEnabled)('interval execution inspection', () => {
       checkGate.resolve()
       workerGate.resolve()
       admission.mockRestore()
-      await finished
+      observation.mockRestore()
+      if (finished) {
+        await runtime.stop()
+        await runtime.engine.cancel(f.run.id)
+        await Promise.allSettled([finished])
+      }
       await Promise.allSettled(clients.map(client => client.close()))
       await app.close()
       await runtime.close()

@@ -1,5 +1,5 @@
 import { jobPlacementRequest } from './placementRequest.js'
-import { ciEnrollmentDisabled } from './ciEnrollmentState.js'
+import { disabledCiEnrollmentHosts } from './ciEnrollmentState.js'
 import { jobRuntimeProfileLimits, type JobRuntimeProfileRecord, type JobVerificationProfile } from '@foreman-code/contracts/job-verification-runtime'
 import { JOB_VERIFICATION_OWNER_CONFIGURATION } from '@foreman-code/contracts/job-verification-policy'
 import { JobComputerSelectionSchema } from '@foreman-code/contracts/jobs'
@@ -16,6 +16,7 @@ import { DEVICE_RESOURCE_CONTROL_RESERVE } from '@foreman-code/contracts/device-
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import type { BuildComputerPreference } from '@foreman-code/contracts/build-computers'
 import { type BuildComputerSettings, buildComputerKey, buildComputerTarget } from '../settings/buildComputers.js'
+import type { CanonicalMachineReference } from '@foreman-code/contracts/device-identity'
 import type { WorkerExecutionPolicy } from '../settings/workerExecution.js'
 import { DomainError } from '../errors.js'
 import { canonicalJson } from '@foreman-code/contracts/canonical-json'
@@ -186,7 +187,8 @@ export async function readJobComputerSelection(sql: JobSql, definition: JobDefin
 
 export class JobComputerSelection {
   constructor(private readonly settings: BuildComputerSettings, private readonly inventory: JobComputerInventory,
-    private readonly workerExecution: WorkerExecutionPolicy, private readonly availableMemory?: VerificationMemoryReader) {}
+    private readonly workerExecution: WorkerExecutionPolicy, private readonly availableMemory?: VerificationMemoryReader,
+    private readonly assertBundleReady?: (host: CanonicalMachineReference) => Promise<void>) {}
 
   async reserve(sql: JobSql, principal: ManagementPrincipal, definition: JobDefinitionRecord,
     identity: JobPreparationIdentity): Promise<ResolvedJobDefinitionSpecRecord> {
@@ -207,6 +209,7 @@ export class JobComputerSelection {
     const prior = (await sql.query('select 1 from job_computer_selections where execution_id=$1', [identity.executionId])).rowCount
     if (prior) {
       const spec = await readJobComputerSelection(sql, definition, identity)
+      await this.assertBundleReady?.(spec.target.hostRef)
       return { spec, compatibleTargetCount: 1, reasons: [], diagnosticCodes: [], waitingHosts: [],
         selectedHost: buildComputerKey(buildComputerTarget(spec.target)), exceedsMaximum: false }
     }
@@ -226,7 +229,9 @@ export class JobComputerSelection {
         reasons.push('remote_execution_disabled')
         continue
       }
-      const preference = await this.settings.requireEnabled(sql, buildComputerTarget(candidate.spec.target))
+      const preference = await this.settings.requireEnabled(sql, buildComputerTarget(candidate.spec.target),
+        { preference: candidate.preference })
+      await this.assertBundleReady?.(candidate.spec.target.hostRef)
       const hostKey = buildComputerKey(preference.target)
       waitingHosts.push(hostKey)
       if (options.excludedHosts?.has(hostKey)) {
@@ -270,19 +275,21 @@ export class JobComputerSelection {
       placementOverride ?? undefined, options)
     const enrolled: EnrolledCandidate[] = []
     const reasons: string[] = [...discovery.diagnosticCodes]
-    // Claim enrollment locks in host order, after build order and before capacity/source locks.
-    const candidates = options.lockEnrollment ? [...discovery.candidates].sort((left, right) =>
-      buildComputerKey(buildComputerTarget(left.spec.target)).localeCompare(
-        buildComputerKey(buildComputerTarget(right.spec.target)))) : discovery.candidates
-    for (const candidate of candidates) {
-      if (!compatibleJobComputer(candidate, request)
+    const candidates = discovery.candidates.filter(candidate => {
+      const incompatible = !compatibleJobComputer(candidate, request)
         || (placementOverride?.kind === 'explicit'
-          && canonicalJson(placedRoot(candidate.spec.target)) !== canonicalJson(placedRoot(placementOverride.target)))) {
-        reasons.push('incompatible')
-        continue
-      }
-      const preference = await this.settings.preference(sql, buildComputerTarget(candidate.spec.target))
-      if (await ciEnrollmentDisabled(sql, workspaceId, preference.target, { lock: options.lockEnrollment ?? false })) {
+          && canonicalJson(placedRoot(candidate.spec.target)) !== canonicalJson(placedRoot(placementOverride.target)))
+      if (incompatible) reasons.push('incompatible')
+      return !incompatible
+    })
+    const targets = candidates.map(candidate => buildComputerTarget(candidate.spec.target))
+    const preferences = await this.settings.preferences(sql, targets)
+    // Enrollment locks follow build order and precede capacity/source locks.
+    const disabledHosts = await disabledCiEnrollmentHosts(sql, workspaceId, targets,
+      { lock: options.lockEnrollment ?? false })
+    for (const [index, candidate] of candidates.entries()) {
+      const preference = preferences[index]!
+      if (disabledHosts.has(buildComputerKey(preference.target))) {
         reasons.push('disabled')
         continue
       }
@@ -388,6 +395,7 @@ export class JobComputerSelection {
   async prepare(sql: JobSql, definition: JobDefinitionRecord, identity: JobPreparationIdentity): Promise<ResolvedJobDefinitionSpecRecord> {
     const spec = await readJobComputerSelection(sql, definition, identity)
     this.workerExecution.requireEnabled(spec.target.hostRef)
+    await this.assertBundleReady?.(spec.target.hostRef)
     await this.settings.requireEnabled(sql, buildComputerTarget(spec.target))
     const row = (await sql.query<{ released_at: Date | null }>(
       'select released_at from job_computer_selections where execution_id=$1', [identity.executionId])).rows[0]
@@ -403,6 +411,7 @@ export class JobComputerSelection {
   async validateFixed(sql: JobSql, spec: ResolvedJobDefinitionSpecRecord) {
     try {
       this.workerExecution.requireEnabled(spec.target.hostRef)
+      await this.assertBundleReady?.(spec.target.hostRef)
       await this.settings.requireEnabled(sql, buildComputerTarget(spec.target))
       return { valid: true, reasons: [], sideEffects: false as const }
     } catch (error) {

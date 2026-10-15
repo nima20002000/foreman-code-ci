@@ -28,34 +28,47 @@ export type ScenarioAgent = {
   placement?: SavedNodePlacement
 }
 
+const ciTicketId = { type: 'string', minLength: 1, 'x-foreman-reference': 'ciTicket' }
+const terminalOutcome = { enum: ['passed', 'failed', 'canceled', 'lost'] }
+
+/** The app enforces this report shape and checks that the ticket id was created by this Agent. */
+export function ciReportOutputSchema(suite: ScenarioSuite) {
+  return {
+    type: 'object',
+    required: ['ticketId', 'suite', 'outcome', 'repository', 'logLine', 'observedStates'],
+    properties: {
+      ticketId: ciTicketId,
+      suite: { const: suite },
+      outcome: terminalOutcome,
+      repository: { type: 'string', minLength: 1 },
+      logLine: { type: 'string', minLength: 1 },
+      observedStates: { type: 'array', minItems: 1, items: { type: 'string' } },
+    },
+  }
+}
+
 function agentPrompt(suite: ScenarioSuite | null): string {
   if (suite === null) {
     return 'Use context_get to read your own worktree and branch, then finish successfully with a short ready message. '
       + 'The workflow will then start all CI Agents in parallel. Do not request CI or change files.'
   }
   return 'Use only Foreman Code MCP tools. Do not use shell, filesystem, network or browser tools. '
-    + 'Read context_get and retain your own repository and branch. Read ci_computers_list. '
+    + 'Read context_get and ci_computers_list. '
     + `Call ci_run exactly once for suite ${suite}, scope full, with a fresh commandId, `
-    + (suite === 'integration' ? 'partitions 2, ' : '')
     + 'and no commit override; this must publish your current worktree files to GitHub. '
     + 'Retain that commandId for an uncertain response and retry only that same request. '
     + 'Placement is automatic: do not supply a computer or placementOverride. '
-    + 'Retain every ticketId in the ci_run partitions array, or the single ticketId when it is absent. '
-    + 'Poll ci_get for EVERY ticket until ALL run.state values are passed, failed, canceled or lost. '
-    + 'The first ticket is only one part; group.state can fail before the other parts finish. '
-    + 'Record each ticket’s distinct observed states in order. Keep polling queued, starting or running tickets. '
-    + 'Once all are terminal, read ci_get again and ci_logs_read for EVERY ticket. '
-    + 'Choose one nonempty log line per ticket, reading additional pages from nextOffset if necessary. '
+    + 'Wait with ONE ci_get call on any ticket: waitUntil "group-terminal", waitSeconds 1800 and logTail false. '
+    + 'Repeat that same call only while its wait.status is still-running; do not poll tickets one by one. '
+    + 'When wait.status is settled, its partitions (or run, for a single ticket) hold every ticket’s final state. '
+    + 'Record the top-level ticket’s observed state changes in order from the ci_run and ci_get results you read. '
+    + 'Then read ci_logs_read for the top-level ticket and choose one nonempty line from it. '
     + 'Report only observed facts. Your final answer must be one JSON object, without markdown: '
-    + '{"ticketId":"the ci_run top-level ticketId","groupId":"run.groupId","suite":"' + suite + '",'
-    + '"outcome":"group.state","repository":"run.repository","branch":"your context_get worktree branch",'
-    + '"tickets":[{"ticketId":"run.id","part":null,"partition":null,"computer":{},'
-    + '"commit":"run.commit","outcome":"run.state","exitCode":0,"logLine":"actual log line",'
-    + '"observedStates":["queued","running","passed"]}]}. '
-    + 'Include every part/partition exactly once. Copy part, partition (including weights), exitCode and computer '
-    + 'from the terminal run; computer is run.computer.hostRef (not its label or plannedHostKey). '
-    + 'A cloud computer has kind cloud, mainId, provider and slot; a Worker has kind device, mainId and deviceId. '
-    + 'Repository is the owner/repository string from run.repository, and branch is your own worktree branch. '
+    + '{"ticketId":"the ci_run top-level ticketId","suite":"' + suite + '",'
+    + '"outcome":"group.state","repository":"run.repository",'
+    + '"logLine":"actual line from the top-level ticket log",'
+    + '"observedStates":["queued","running","passed"]}. '
+    + 'Repository is the owner/repository string from run.repository. '
     + 'If CI fails, report its actual outcome instead of claiming success. Do not edit or commit any files.'
 }
 
@@ -99,6 +112,7 @@ export function buildCrossComputerCiGraph(
       agentId: assignment.agentId,
       name: assignment.name,
       initialPrompt: agentPrompt(assignment.suite),
+      ...(assignment.suite ? { outputSchema: ciReportOutputSchema(assignment.suite) } : {}),
       position: { x: index === 0 ? 0 : 320, y: index * 180 },
       ...(assignment.placement ? { placement: assignment.placement } : {}),
     })),

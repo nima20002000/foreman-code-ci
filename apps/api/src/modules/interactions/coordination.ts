@@ -1,4 +1,6 @@
+import { renewNativeLane } from './laneRenewal.js'
 import { withTransaction, inTransaction } from '../../infrastructure/transaction.js'
+import { DeviceHistoryGapSchema, type DeviceHistoryGap } from '@foreman-code/contracts/device-application'
 import { DurableInteractionSchema, type DurableInteraction, IdSchema, TimestampSchema, NativeSessionLaneSchema, NativeSessionReferenceSchema, ReviewJobSchema, type NativeHarnessEvent, type NativeSessionReference, type NativeSessionLane, type ReviewJob } from '@foreman-code/contracts'
 import type pg from 'pg'
 
@@ -425,6 +427,27 @@ export class PostgresInteractionCoordinationRepository {
     throw new DomainError('NATIVE_TURN_IDENTITY_CONFLICT', 'The acknowledged turn differs from the owned writer.', 409)
   }
 
+  async recordSkippedEvents(fence: WriterFence, correlationId: string, gap: DeviceHistoryGap): Promise<void> {
+    const payload = { ...DeviceHistoryGapSchema.parse(gap), correlationId: IdSchema.parse(correlationId) }
+    await this.assertLaneLease(fence.id, fence.token)
+    // Observation loss belongs to activity, not the provider's source-sequence namespace.
+    // Lock the Run before its activity trigger takes the per-Run advisory lock.
+    await this.queryConnection.query(`insert into run_activity(run_id,source,kind,harness_execution_id,occurred_at,payload)
+      select e.run_id,'backend','native_events_skipped',e.id,clock_timestamp(),$4::jsonb
+      from native_session_lanes l
+      join execution_native_sessions s on s.reference->>'nativeSessionId'=l.native_session_id
+        and s.reference->>'harness'=l.harness and s.workflow_finalized_at is null
+      join harness_executions e on e.id=s.execution_id
+      join runs r on r.id=e.run_id
+      where l.id=$1 and l.record->>'leaseToken'=$2 and l.record->>'correlationId'=$3
+        and (l.record->>'leaseExpiresAt')::timestamptz > clock_timestamp()
+        and not exists(select 1 from run_activity a where a.run_id=e.run_id and a.harness_execution_id=e.id
+          and a.kind='native_events_skipped' and a.payload=$4::jsonb)
+      for key share of r`,
+    [fence.id, fence.token, correlationId, JSON.stringify(payload)])
+    await this.assertLaneLease(fence.id, fence.token)
+  }
+
   async assertLaneLease(id: string, token: string, ownership?: LaneLeaseOwnership): Promise<void> {
     const result = await this.queryConnection.query(
       `select id from native_session_lanes where id=$1 and record->>'leaseToken'=$2
@@ -437,21 +460,7 @@ export class PostgresInteractionCoordinationRepository {
   }
 
   async renewLane(id: string, token: string, leaseMs: number, ownership?: LaneLeaseOwnership): Promise<string> {
-    // The token and captured owner/generation fence recovery against a concurrent claim or reattachment.
-    const result = await this.queryConnection.query<{ expires_at: string }>(
-      `update native_session_lanes set revision=revision+1, updated_at=clock_timestamp(),
-       record=jsonb_set(jsonb_set(record, '{revision}', to_jsonb((revision+1)::bigint)),
-         '{leaseExpiresAt}', to_jsonb(to_char(
-           (clock_timestamp()+($3 * interval '1 millisecond')) at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')))
-       where id=$1 and record->>'leaseToken'=$2
-       and ($4::text is not null or (record->>'leaseExpiresAt')::timestamptz > clock_timestamp())
-       and ($4::text is null or (record->>'leaseOwner'=$4
-         and (record->>'connectionGeneration')::bigint=$5))
-       returning record->>'leaseExpiresAt' as expires_at`,
-      [id, token, leaseMs, ownership?.owner ?? null, ownership?.connectionGeneration ?? null],
-    )
-    if (result.rowCount !== 1) throw new DomainError('SESSION_LANE_LEASE_LOST', 'The native writer lease is no longer owned.', 409)
-    return result.rows[0]!.expires_at
+    return renewNativeLane(this.queryConnection, id, token, leaseMs, ownership)
   }
 
   async releaseLane(id: string, leaseToken: string, observed: {
