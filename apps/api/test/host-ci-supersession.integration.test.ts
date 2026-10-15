@@ -6,12 +6,6 @@ import { DomainError } from '../src/modules/errors.js'
 import { fixture } from './helpers/hostCiMcpFixture.js'
 import { rejectableDeferred } from './helpers/deferred.js'
 
-/** Dispatch passes hand observations and follow-up passes to background work; settle waits for all of it. */
-async function settle(service: { dispatch(): Promise<void>; drain(): Promise<void> }) {
-  await service.dispatch()
-  await service.drain()
-}
-
 it('supersedes every queued and running part through MCP and preserves the replacement across retries', async () => {
   const oldCommit = 'a'.repeat(40)
   const nextCommit = 'b'.repeat(40)
@@ -42,8 +36,6 @@ it('supersedes every queued and running part through MCP and preserves the repla
         observation: { status: 'available', lastSuccessAt: expect.any(String), lastError: null,
           consecutiveFailures: 0, nextAttemptAt: null } } : run))
     const next = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', input))
-    // Superseded executor cleanup runs in the background dispatch pass.
-    await f.ci.drain()
     const read = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: old.ticketId }))
     expect(read.partitions).toHaveLength(2)
     for (const part of read.partitions!) {
@@ -133,7 +125,7 @@ it('retries superseded running cleanup before releasing its computer slot', asyn
     const old = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', {
       suite: 'install', commit: 'a'.repeat(40), commandId: 'cleanup-old',
     }))
-    await settle(f.ci)
+    await f.ci.dispatch()
     offline = true
     const next = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', {
       suite: 'install', commit: 'b'.repeat(40), commandId: 'cleanup-next',
@@ -146,7 +138,7 @@ it('retries superseded running cleanup before releasing its computer slot', asyn
     expect(f.started).toHaveLength(1)
     offline = false
     await replacementStarted.promise
-    await settle(f.ci)
+    await f.ci.dispatch()
     expect((await read(old.ticketId)).run)
       .toMatchObject({ state: 'canceled', message: `superseded by ${next.ticketId}` })
     expect((await read(next.ticketId)).run.state)
