@@ -1,10 +1,9 @@
-import { rejectableDeferred } from '../../../test/helpers/deferred.js'
 import { setImmediate } from 'node:timers/promises'
 import { expect, it } from 'vitest'
 import { observationFixture } from './observationConcurrency.testSupport.js'
 
 it('leaves half the shared pool available while a full fleet is being observed', async () => {
-  const gate = rejectableDeferred<void>()
+  const gate = Promise.withResolvers<void>()
   const f = observationFixture({ cloud: 48, local: 8, poolSize: 8, beforeRead: () => gate.promise })
   try {
     await f.warm()

@@ -11,7 +11,6 @@ import { PostgresRunRepository } from './postgres.js'
 import type { RunOwnership } from './ownership.js'
 import { WorkflowNativeProofServices } from './workflowNativeProof.js'
 import { currentRepositoryFixture, unavailableRuntime } from '../../../test/eng04-runtime-repository-fixture.js'
-import { rejectableDeferred } from '../../../test/helpers/deferred.js'
 
 afterEach(() => vi.restoreAllMocks())
 
@@ -23,9 +22,9 @@ function fixture() {
   const workerExecution = { ...execution, id: 'worker-execution' }
   const session = { harness: 'codex' as const, nativeSessionId: 'session', providerVersion: 'fixture' }
   const channel = createWorkflowNativeCaptureChannel()
-  const entered = rejectableDeferred<void>()
-  const resume = rejectableDeferred<void>()
-  const unlocked = rejectableDeferred<void>()
+  const entered = Promise.withResolvers<void>()
+  const resume = Promise.withResolvers<void>()
+  const unlocked = Promise.withResolvers<void>()
   const committed: HarnessNativeEvent[] = []
   const notified: number[] = []
   let staged: HarnessNativeEvent[] = []
