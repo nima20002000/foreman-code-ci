@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest'
 import { HostHarnessOverrideListSchema } from '@foreman-code/contracts/harness-registry'
 import { HarnessQualificationListSchema } from '@foreman-code/contracts/harness-qualification'
 import { remoteReviewProduction, waitForRemoteReview } from './helpers/remoteReviewProduction.js'
-import { latestEvidence, reportProfileCheckState } from './helpers/workerProfileRequalification.js'
+import { latestEvidence } from './helpers/workerProfileRequalification.js'
 import { privateFixtureDirectory } from './helpers/privateFixtureDirectory.js'
 
 const execute = promisify(execFile)
@@ -37,7 +37,7 @@ describe('automatic Worker profile qualification', () => {
       expect(before).toHaveLength(fixture.profiles.length)
       expect(before.every(proof => proof.qualified)).toBe(true)
       await fixture.provider.hideModels()
-      await fixture.restartWorker(undefined, { newBoot: true })
+      await fixture.restartWorker()
       const evidence = await waitForRemoteReview(() => latestEvidence(fixture), proofs =>
         proofs.length === fixture.profiles.length && proofs.every(proof =>
           proof.connectionGeneration !== before[0]!.connectionGeneration && !proof.qualified),
@@ -70,9 +70,6 @@ describe('automatic Worker profile qualification', () => {
       expect((await fixture.db.pool.query('select id from runs')).rows).toEqual([])
       expect(qualifications.qualifications.some(record => record.status === 'failed'
         && evidence.some(proof => proof.checkedAt === record.checkedAt))).toBe(true)
-    } catch (error) {
-      await reportProfileCheckState(fixture, 'Failed automatic check state', error)
-      throw error
     } finally { await fixture.close() }
   }, 240_000)
 })
