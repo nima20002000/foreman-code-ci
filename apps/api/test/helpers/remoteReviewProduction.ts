@@ -277,7 +277,7 @@ export async function remoteReviewProduction(options: {
       await new Promise<void>((resolve, reject) => {
         stopped.once('error', reject)
         stopped.once('exit', code => {
-          if (signal === 'SIGTERM' && code !== 0) reject(new Error(`Production Main cleanup failed: ${mainFailure}\nNative failure codes: ${JSON.stringify(failures.slice(-32))}`))
+          if (signal === 'SIGTERM' && code !== 0) reject(new Error(`Production Main cleanup failed: ${mainFailure}\nNative failure codes: ${JSON.stringify(failures.slice(-8))}`))
           else resolve()
         })
         stopped.kill(signal)
@@ -318,6 +318,7 @@ export async function remoteReviewProduction(options: {
             ? event.stackFrames.filter((frame): frame is string => typeof frame === 'string').slice(0, 2) : []
           const sourceMessage = event.err?.message
           const errorDetail = code === 'source-reconciliation-unconfirmed' && typeof sourceMessage === 'string'
+            && /^Process \d+ (?:still |could not be inspected|exceeded )/.test(sourceMessage)
             ? sourceMessage.slice(0, 200) : undefined
           failures.push({ code, phase: event.phase, errorType: event.errorType ?? event.err?.type,
             errorDetail,
