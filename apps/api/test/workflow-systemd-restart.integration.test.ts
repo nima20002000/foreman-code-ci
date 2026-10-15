@@ -18,27 +18,20 @@ describe('queued workflow preparation across engine restart', () => {
       throw preparationError
     } })
     try {
-      console.log('DBG start', Date.now())
       await expect(fixture.engine.start(fixture.f.run.id)).rejects.toMatchObject({
         code: 'EXECUTION_PREPARATION_UNAVAILABLE', cause: preparationError,
       })
-      console.log('DBG started', Date.now())
       const before = await fixture.runs.getDetails(fixture.f.scope.workspaceId, fixture.f.run.id)
       if (!before) throw new Error('Expected the saved Run before restart.')
       expect(before.executions).toHaveLength(1)
       expect(before.executions[0]).toMatchObject({ state: 'queued', attempt: 1 })
-      console.log('DBG before-shutdown', Date.now())
       await fixture.engine.shutdown()
-      console.log('DBG shutdown-done', Date.now())
       preparationError = failure
       const restarted = fixture.compose()
-      console.log('DBG composed', Date.now())
       await restarted.engine.reconcile()
-      console.log('DBG reconciled', Date.now())
       const finished = await readUntil(() => fixture.runs.getDetails(fixture.f.scope.workspaceId, fixture.f.run.id),
         details => details?.run.executionState === 'completed',
         { timeoutMs: 30_000, description: 'queued preparation failure settlement after restart' })
-      console.log('DBG finished', Date.now())
       expect(finished!.run).toMatchObject({ outcome: 'failed', result: {
         outcome: 'failed', error: { code: failure.code, message: failure.message, retryable: false },
       } })
