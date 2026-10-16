@@ -39,6 +39,7 @@ import { invalidateExecutorSpeeds, readExecutorSpeeds } from './executorSpeed.js
 import { readCiGateReservation, readQueuedCiRuns } from './queuedRuns.js'
 import { expireCloudDispatch, requestCloud } from './cloudDispatch.js'
 import { claimCiSlot, reservedCloudSlotKeys } from './cloudSlots.js'
+import { cloudCiId } from './cloudProviders.js'
 import { cancelAssignedCiTicket } from './assignedCancellation.js'
 import { ciExecutionRunId } from './executionAttempt.js'
 import { CI_BUSY_TICKET, expireOverdueCiRuns } from './deadlines.js'
@@ -92,8 +93,6 @@ export class HostCiService {
   private readonly collectingRuns = new Set<string>()
   private observationOffset = 0
   private readonly observingComputers = new Map<string, Promise<void>>()
-  /** Worker starts by ticket: an assigned start prepares its repository outside the dispatch pass that claimed it. */
-  private readonly startingRuns = new Map<string, Promise<void>>()
   private readonly mirrorPublications = new Map<string, { settled: boolean }>()
   /** Computers that still had a free slot after the last dispatch pass: where a canceled provider-queued ticket can go. */
   private spareComputers: HostCiComputer[] = []
@@ -180,8 +179,8 @@ export class HostCiService {
   /** Resolves when dispatch, superseded cleanup, observations and readiness reads have finished, including work they start. */
   async drain() {
     for (;;) {
-      const pending = [this.dispatching, this.superseding, ...this.observingRuns.values(),
-        ...this.observingComputers.values(), ...this.startingRuns.values()]
+      const pending = [this.dispatching, this.superseding,
+        ...this.observingRuns.values(), ...this.observingComputers.values()]
         .filter((work): work is Promise<void> => work !== undefined)
       if (!pending.length) return
       await Promise.allSettled(pending)
@@ -189,8 +188,7 @@ export class HostCiService {
   }
 
   async run(caller: ManagementPrincipal, input: CiRunInput & { workspaceId?: string | undefined }, source: 'mcp' | 'http' = 'mcp') {
-    // Admission authorizes and prepares on the application pool; the dispatch reserve stays for short dispatch work.
-    return withoutCiDatabasePriority(() => this.admit(caller, input, source))
+    return withCiDatabasePriority(() => this.admit(caller, input, source))
   }
 
   private async admit(caller: ManagementPrincipal, input: CiRunInput & { workspaceId?: string | undefined },
@@ -221,16 +219,14 @@ export class HostCiService {
         throw error
       })
       authorized = true
-      const result = await this.enqueue(caller, input, source, scope, actions, markPhase, async tickets => {
+      const result = await this.enqueue(caller, input, source, scope, actions, markPhase, async () => {
+        if (pausedDispatch) return
         // Drain an active start only when admission can supersede its ticket.
-        if (!pausedDispatch) {
-          pausedDispatch = true
-          this.stoppingRuns += 1
-        }
+        pausedDispatch = true
+        this.stoppingRuns += 1
         markPhase('dispatchWaitMs')
         try {
           await this.dispatching
-          await this.startsSettled(tickets)
         } finally {
           markPhase('prepareMs')
         }
@@ -254,7 +250,7 @@ export class HostCiService {
 
   private async enqueue(caller: ManagementPrincipal, input: CiRunInput,
     source: 'mcp' | 'http', scope: Awaited<ReturnType<CiAuthority['resolve']>>, actions: ManagementAction[],
-    markPhase: (phase: CiRunPhase) => void, pauseDispatch: (tickets: string[]) => Promise<void>) {
+    markPhase: (phase: CiRunPhase) => void, pauseDispatch: () => Promise<void>) {
     const commandId = input.commandId ?? randomUUID()
     let prepared: PreparedCiRuns | undefined
     let supersession: Map<string, boolean> | undefined
@@ -268,8 +264,7 @@ export class HostCiService {
           prepared ??= await this.prepareRuns(caller, input, scope)
           supersession = input.gate ? undefined
             : await prepareCiSupersession(this.pool, this.commits, prepared.runs[0]!)
-          const superseded = [...supersession?.entries() ?? []].filter(([, replaced]) => replaced).map(([id]) => id)
-          if (superseded.length) await pauseDispatch(superseded)
+          if (supersession && [...supersession.values()].some(Boolean)) await pauseDispatch()
         } finally {
           markPhase('insertMs')
         }
@@ -587,13 +582,12 @@ export class HostCiService {
     if (!intent) return
     this.stoppingRuns += 1
     try {
-      // Drain dispatch before selecting tickets, then the starts of those tickets still awaiting their reply.
+      // Drain dispatch before selecting tickets, including starts awaiting their provider reply.
       await this.dispatching
       const tickets = (await this.pool.query<{ id: string }>(`select c.id from ci_runs c
         join harness_executions e on e.id=c.record#>>'{initiator,executionId}'
         where e.run_id=$1 and c.workspace_id=$2 and c.state in ('queued','starting','running')
         order by c.id`, [runId, intent.workspace_id])).rows
-      await this.startsSettled(tickets.map(ticket => ticket.id))
       const audit: CiCancellation = {
         principalId: intent.record.principalId,
         source: intent.record.source,
@@ -751,8 +745,9 @@ export class HostCiService {
         label: `Computer ${hostRef.deviceId.slice(0, 8)}`, priority: 0 }
     }
     if (hostRef.kind === 'cloud' && hostRef.provider) {
-      return { key: `${hostRef.mainId}:cloud:${hostRef.provider}:${hostRef.slot ?? 0}`, hostRef,
-        label: hostRef.provider === 'github' ? 'GitHub Actions' : 'CircleCI', priority: 0 }
+      const account = hostRef.account ? { owner: hostRef.account } : undefined
+      return { key: `${hostRef.mainId}:cloud:${cloudCiId({ id: hostRef.provider, account })}:${hostRef.slot ?? 0}`, hostRef,
+        label: hostRef.provider === 'github' ? 'GitHub Actions' : account ? `CircleCI ${account.owner}` : 'CircleCI', priority: 0 }
     }
     throw new DomainError('CI_COMPUTER_OFFLINE', 'The build computer running this CI run is offline.', 409)
   }
@@ -826,7 +821,7 @@ export class HostCiService {
   dispatch(): Promise<void> {
     this.dispatchRequested = true
     if (this.stoppingRuns) return this.dispatching ?? Promise.resolve()
-    const pass = this.dispatching ??= (async () => {
+    this.dispatching ??= (async () => {
       while (this.dispatchRequested && !this.stoppingRuns) {
         this.dispatchRequested = false
         await trackService('ci-dispatch', { cadenceMs: 1000, deadlineMs: CI_DISPATCH_PASS_MS },
@@ -834,31 +829,7 @@ export class HostCiService {
       }
     })().catch(error => log.warn({ err: error }, 'CI dispatch failed'))
       .finally(() => { this.dispatching = undefined })
-    // Callers that await dispatch also see the Worker starts it handed off settle.
-    return pass.then(() => this.startsSettled())
-  }
-
-  private async startsSettled(tickets?: readonly string[]) {
-    const starts = tickets ? tickets.flatMap(id => this.startingRuns.get(id) ?? []) : [...this.startingRuns.values()]
-    await Promise.allSettled(starts)
-  }
-
-  /** A Worker start can spend seconds preparing its repository. It runs after the assignment is persisted, outside
-   * the pass's deadline; the ticket claim, acknowledgement deadline and start reconciliation still apply. */
-  private startAssigned(run: CiRunRecord, computer: HostCiComputer, status: CiHostStatus | undefined) {
-    const start = withoutCiDatabasePriority(async () => {
-      const outcome = await this.sendDispatch(run, computer)
-      if (outcome === 'pending') return
-      const current = await this.read(run.id, run.workspaceId)
-      if (current.state !== 'queued') return
-      if (outcome === 'busy' || outcome === 'rejected') {
-        this.dispatchRejections.record(run.id, computer, status, current.providerMessage ?? current.message ?? outcome)
-      }
-      void this.dispatch()
-    }).catch(error => log.warn({ err: error, runId: run.id, computer: computer.key },
-      'CI start failed; start reconciliation retries it'))
-      .finally(() => { this.startingRuns.delete(run.id) })
-    this.startingRuns.set(run.id, start)
+    return this.dispatching
   }
 
   private dispatchServices() {
@@ -905,6 +876,7 @@ export class HostCiService {
       ?? computers.find(value => run.collection === 'pending' && run.computer
         && value.hostRef.kind === run.computer.hostRef.kind && value.hostRef.mainId === run.computer.hostRef.mainId
         && value.hostRef.deviceId === run.computer.hostRef.deviceId && value.hostRef.provider === run.computer.hostRef.provider
+        && value.hostRef.account === run.computer.hostRef.account
         && value.hostRef.slot === run.computer.hostRef.slot)
       ?? (run.computer ? await this.computer(run.computer.hostRef) : null)
     if (!computer) throw new DomainError('CI_COMPUTER_OFFLINE', 'The CI executor is unavailable.', 503)
@@ -1361,10 +1333,6 @@ export class HostCiService {
           assignments.delete(run.id)
           releaseSlot(computer)
           if (usesGitHubIntegration) integrationOnGitHub.delete(computer.key)
-          return
-        }
-        if (computer.hostRef.kind !== 'cloud') {
-          this.startAssigned(assigned, computer, status)
           return
         }
         const outcome = await this.sendDispatch(assigned, computer)
