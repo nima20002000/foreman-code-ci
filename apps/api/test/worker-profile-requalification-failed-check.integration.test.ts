@@ -1,5 +1,4 @@
-import { execFile, spawn } from 'node:child_process'
-import { cpus } from 'node:os'
+import { execFile } from 'node:child_process'
 import { rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -32,7 +31,6 @@ describe('automatic Worker profile qualification', () => {
 
   it('persists a failed automatic check and refuses Start without borrowing the previous installation', async () => {
     const fixture = await installationUpdateFixture({ workflow: 'sequential' })
-    const burners = Array.from({ length: cpus().length * 2 }, () => spawn(process.execPath, ['-e', 'for(;;);'], { stdio: 'ignore' }))
     try {
       const before = await latestEvidence(fixture)
       expect(before).toHaveLength(fixture.profiles.length)
@@ -71,6 +69,6 @@ describe('automatic Worker profile qualification', () => {
       expect((await fixture.db.pool.query('select id from runs')).rows).toEqual([])
       expect(qualifications.qualifications.some(record => record.status === 'failed'
         && evidence.some(proof => proof.checkedAt === record.checkedAt))).toBe(true)
-    } finally { for (const b of burners) b.kill('SIGKILL'); await fixture.close() }
+    } finally { await fixture.close() }
   }, 240_000)
 })
