@@ -1,11 +1,9 @@
 import { setTimeout as delay } from 'node:timers/promises'
 import type { ExecutionResult, HarnessExecution } from '@foreman-code/contracts'
-import { SourceCapacityErrorDetailsSchema } from '@foreman-code/contracts'
 import {
   failureClass, isDatabasePoolTimeout, isDatabaseTimeout, isTransientDatabaseOrSocketError, type FailureClass,
 } from '@foreman-code/contracts/failure'
 import { ZodError } from 'zod'
-import { DomainError } from '../errors.js'
 import { componentLogger } from '../diagnostics/logger.js'
 import { isTransientExecutionCode } from '../../shared/executionFailureCodes.js'
 export { isTransientExecutionCode } from '../../shared/executionFailureCodes.js'
@@ -68,10 +66,7 @@ export function transientExecutionFailure(error: unknown, fallbackCode = 'EXECUT
   const code = errorCode(error)
   const message = error instanceof Error && error.message ? error.message.slice(0, 2_000)
     : 'The attempt stopped before it produced an accepted result.'
-  const details = error instanceof DomainError && error.code === 'SOURCE_CAPACITY' && error.details
-    ? SourceCapacityErrorDetailsSchema.parse(error.details) : undefined
-  return { outcome: 'failed', error: { code: code ?? fallbackCode, message, retryable: true,
-    ...(details ? { details } : {}) } }
+  return { outcome: 'failed', error: { code: code ?? fallbackCode, message, retryable: true } }
 }
 
 export function isTransientExecutionResult(result: ExecutionResult | undefined): boolean {

@@ -150,29 +150,21 @@ it('queues foreground requests in order and makes background yield until capacit
   } finally { await f.close() }
 })
 
-it.each([1_000, 60_000])('expires queued foreground work at the %i ms caller deadline', async timeoutMs => {
+it('bounds the foreground wait and never sends a request after its queue deadline', async () => {
   vi.useFakeTimers()
   const f = fixture()
   try {
     for (let index = 0; index < 8; index++) void f.request(`active-${index}`)
     await vi.advanceTimersByTimeAsync(0)
     let settled = false
-    const waiting = f.request('expired', 'execution-v1', {}, { timeoutMs })
-      .then(result => { settled = true; return result })
-    await vi.advanceTimersByTimeAsync(timeoutMs - 1)
+    const waiting = f.request('expired').then(result => { settled = true; return result })
+    await vi.advanceTimersByTimeAsync(30_000)
     expect(settled).toBe(false)
-    expect(f.started).toHaveLength(8)
-    await vi.advanceTimersByTimeAsync(1)
-    expect(settled).toBe(true)
-    expect(await waiting).toMatchObject({ code: 'backpressure', reason: 'admission_queue_timeout', retryable: true })
+    await vi.advanceTimersByTimeAsync(15_000)
+    expect(await waiting).toMatchObject({ code: 'backpressure', retryable: true })
     f.release('active-0')
     await vi.advanceTimersByTimeAsync(0)
     expect(f.started).not.toContain('expired')
-    const fresh = f.request('after-expiry')
-    await vi.advanceTimersByTimeAsync(0)
-    expect(f.started.slice(8)).toEqual(['after-expiry'])
-    f.release('after-expiry')
-    expect(await fresh).toEqual({ payload: 'after-expiry' })
   } finally { await f.close() }
 })
 

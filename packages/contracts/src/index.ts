@@ -1,7 +1,5 @@
 import { optionalCommandId } from './management/commands.js'
 import { FailureClassSchema } from './failure.js'
-import { SourceCapacityErrorDetailsSchema } from './sourceCapacity.js'
-export { SourceCapacityErrorDetailsSchema, type SourceCapacityErrorDetails } from './sourceCapacity.js'
 import { ExecutionQueueReasonSchema } from './executionQueue.js';
 import { TextTruncationSchema } from './activityText.js';
 import { NativeToolsSchema } from './nativeTools.js';
@@ -863,7 +861,6 @@ export const ExecutionResultSchema = z
         code: z.string().trim().min(1),
         message: z.string().trim().min(1),
         retryable: z.boolean(),
-        details: SourceCapacityErrorDetailsSchema.optional(),
       })
       .strict()
       .optional(),

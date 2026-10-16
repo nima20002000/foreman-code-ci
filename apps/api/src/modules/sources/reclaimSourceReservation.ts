@@ -26,27 +26,6 @@ export type SourceReclamationResult = {
   retained?: RetainedSourceFootprint
 }
 
-async function removeRetainedCopy(directory: FileHandle, owner: SourceOperationOwner,
-  signal: AbortSignal, authorize: () => Promise<void>, git?: GitWorktreePorts): Promise<RetainedSourceFootprint | undefined> {
-  const receipt = owner.record?.receipt
-  if (!receipt || receipt.quota || receipt.sharedTree && !receipt.worktree) {
-    throw new SourceError('SOURCE_RECLAMATION_UNCONFIRMED', 'Retained cleanup requires a disposable execution copy.')
-  }
-  if (receipt.sharedTree) {
-    await preparationChildrenClosed(`${receipt.binding.canonicalPath}/${receipt.sharedTree.id}`, signal)
-    await authorize()
-    const worktree = await closeSourceWorktree(receipt, signal, git)
-    if (worktree?.state !== 'removed') {
-      return { ...await measureRetainedMaterializationFootprint(receipt), ...(worktree ? { worktree } : {}) }
-    }
-    await authorize()
-    await removeSourceDirectory(directory, receipt.sharedTree.id, receipt, signal)
-  }
-  await authorize()
-  await removeSourceDirectory(directory, receipt.materializationId, receipt, signal)
-  return undefined
-}
-
 async function retainedWorkingTree(directory: FileHandle, root: SourceRootRecord,
   owner: SourceOperationOwner, materializationId: string, reclamationId: string, signal: AbortSignal,
   authorize: () => Promise<void>, git?: GitWorktreePorts): Promise<RetainedSourceFootprint | null> {
@@ -272,14 +251,12 @@ export async function reclaimSourceReservation(grant: SourceReservationReclamati
           if (!isDeepStrictEqual(await identity(directory), root.binding.filesystem)) {
             throw new SourceError('SOURCE_ROOT_CHANGED', 'The original source cleanup root changed.')
           }
-          const footprint = await withPrivateDirectoryLock(directory, () => grant.removeRetained
-            ? removeRetainedCopy(directory, owner, signal, ports.authorize, ports.git)
-            : retainedWorkingTree(directory, root, owner, closure.materializationId!, grant.reclamationId,
-              signal, ports.authorize, ports.git), { signal })
+          const footprint = await withPrivateDirectoryLock(directory, () => retainedWorkingTree(
+            directory, root, owner, closure.materializationId!, grant.reclamationId, signal, ports.authorize, ports.git), { signal })
           if (footprint) {
             if (retained) throw new SourceError('SOURCE_CLAIM_CONFLICT', 'Multiple retained working trees need reconciliation.')
             retained = footprint
-          } else if (!grant.removeRetained) {
+          } else {
             await removeSourceDirectory(directory, closure.materializationId, { binding: root.binding }, signal)
           }
         } finally { await directory.close() }

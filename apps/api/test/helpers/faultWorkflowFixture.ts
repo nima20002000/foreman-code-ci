@@ -96,11 +96,7 @@ function faultWorkflowDefinition(options: { loop?: boolean }) {
   return { definition, entry, affected, sibling }
 }
 
-export async function faultWorkflowFixture(options: {
-  loop?: boolean
-  mcpUnavailable?: boolean
-  database?: Awaited<ReturnType<typeof currentOperatorIntegration>>['db']
-} = {}) {
+export async function faultWorkflowFixture(options: { loop?: boolean; mcpUnavailable?: boolean } = {}) {
   const directory = await privateFixtureDirectory('workflow-fault-')
   const worker = await faultWorkflowWorker(directory, { mcpUnavailable: options.mcpUnavailable })
   const { definition, entry, affected, sibling } = faultWorkflowDefinition(options)
@@ -116,7 +112,6 @@ export async function faultWorkflowFixture(options: {
   const nativePlacements = new Map<string, NativeExecutionPlacement>()
   let preparationFailure: { error: unknown } | undefined
   const base = await currentOperatorIntegration({ fixture: definition, insertRun: false,
-    ...(options.database ? { database: options.database } : {}),
     approvalNodeIds: [], workerParallelism: 3,
     nativeCommitted: async () => {
       if (sessionCommitted) return

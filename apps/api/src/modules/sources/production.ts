@@ -185,8 +185,7 @@ export async function createProductionSources(input: ProductionSourcesInput) {
         } finally { sql.release() }
       })
     },
-  }, { reclaimRetained: scopeId => reclamations.reclaimOldestRetained(scopeId),
-    adopted: input.transferAcknowledged ? async record => {
+  }, { adopted: input.transferAcknowledged ? async record => {
     const deviceId = record.receipt.binding.deviceId
     if (!deviceId) return
     const channel = input.endpoint().captureRequest(deviceId, RSYNC_STAGE_EXTENSION.namespace)
@@ -224,7 +223,6 @@ export async function createProductionSources(input: ProductionSourcesInput) {
     return reclaimSourceReservation(grant, { authorize,
       operationClosed: async () => { await authorize(); return true },
       nativeClosed: async owner => {
-        if (grant.removeRetained && owner.record) return confirmedClosed(input.pool, owner.record)
         const workflow = await input.pool.query('select 1 from execution_dispatch_intents where operation_id=$1',
           [owner.identity.operationId])
         if (workflow.rowCount) return localWorkflowPreparationClosed(input.pool,
