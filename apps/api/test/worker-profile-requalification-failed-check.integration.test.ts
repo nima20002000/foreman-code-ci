@@ -37,20 +37,10 @@ describe('automatic Worker profile qualification', () => {
       expect(before.every(proof => proof.qualified)).toBe(true)
       await fixture.provider.hideModels()
       await fixture.provider.updatePayload()
-      const t0 = Date.now()
-      let evidence: Awaited<ReturnType<typeof latestEvidence>>
-      try {
-        evidence = await waitForRemoteReview(() => latestEvidence(fixture), proofs =>
-          proofs.length === fixture.profiles.length && proofs.every(proof =>
-            proof.target.installationFingerprint !== before[0]!.target.installationFingerprint && !proof.qualified),
-        'persisted failed automatic profile checks')
-      } catch (error) {
-        const rows = await fixture.db.pool.query(`select instance_id,instance_revision,created_at,record->'target'->>'installationFingerprint' fp,record->>'qualified' q,record->'failure'->>'code' code from harness_instance_profile_evidence order by created_at`)
-        const settings = await fixture.db.pool.query(`select instance_id,revision,record->'target'->>'installationFingerprint' fp from harness_instance_settings order by instance_id,revision`)
-        const audit = await fixture.db.pool.query(`select sequence,action,outcome,details from management_audit where action like 'harness.%' order by sequence`)
-        throw new Error(`DIAG ${JSON.stringify({ rows: rows.rows, settings: settings.rows, audit: audit.rows, before: before.map(b => b.target.installationFingerprint) })} ${String(error)}`)
-      }
-      console.log(`DIAG failed evidence after ${Date.now() - t0} ms`)
+      const evidence = await waitForRemoteReview(() => latestEvidence(fixture), proofs =>
+        proofs.length === fixture.profiles.length && proofs.every(proof =>
+          proof.target.installationFingerprint !== before[0]!.target.installationFingerprint && !proof.qualified),
+      'persisted failed automatic profile checks')
       expect(evidence.every(proof => proof.failure !== undefined)).toBe(true)
       // Drain independent readbacks before fixture cleanup can stop the Worker.
       const results = await Promise.allSettled([
