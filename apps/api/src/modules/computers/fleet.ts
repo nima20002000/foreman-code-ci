@@ -105,7 +105,7 @@ export class FleetMaintenanceService {
   private closing = false
   private readonly backgroundTasks = new Set<Promise<void>>()
   private readonly cache = new Map<string, {
-    at: number; pending: boolean; running?: boolean; observation?: ReadObservation; status?: MaintenanceStatus | null;
+    at: number; pending: boolean; running?: boolean; observation?: ReadObservation;
     value: Promise<MaintenanceObservation>
   }>()
   constructor(
@@ -487,8 +487,7 @@ export class FleetMaintenanceService {
   }
 
   private async status(target: DeviceProvisioningTarget, refresh: boolean): Promise<MaintenanceStatus | null> {
-    const { status, observation } = await this.observeStatus(target, refresh)
-    return observation.status === 'available' ? status : null
+    return (await this.observeStatus(target, refresh)).status
   }
 
   private async observeComputer(target: DeviceProvisioningTarget, refresh: boolean) {
@@ -517,7 +516,7 @@ export class FleetMaintenanceService {
     const value = read.then(status => ({ status, observation: successfulReadObservation(this.now()) }), error => {
       const observation = failedReadObservation(cached?.observation, error, 'Maintenance observation failed', this.now())
       componentLogger('lifecycle').warn({ host: target.hostRef, ...observation }, 'Computer maintenance observation unavailable')
-      return { status: cached?.status ?? null, observation }
+      return { status: null, observation }
     })
     const entry: NonNullable<ReturnType<typeof this.cache.get>> = {
       at: this.now(), pending: true, running: false, value,
@@ -527,7 +526,6 @@ export class FleetMaintenanceService {
       entry.pending = false
       entry.at = this.now()
       entry.observation = observation
-      entry.status = status
       const workerUpdating = status?.worker && !['current', 'rolled-back', 'failed'].includes(status.worker.state)
       entry.running = status?.tasks.some(task => task.state === 'running') || Boolean(workerUpdating)
     })
