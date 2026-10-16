@@ -106,7 +106,6 @@ export async function activeCiRuns(pool: pg.Pool): Promise<ActiveCiRuns> {
 export class CloudCi {
   private activeRuns: (() => Promise<ActiveCiRuns>) | undefined
   private checked: { at: number; ready: boolean } | undefined
-  private readinessProbe: Promise<boolean> | undefined
   private readinessObserved: ReadObservation | undefined
   get readinessObservation(): ReadObservation | undefined {
     return this.readinessObserved && { ...this.readinessObserved }
@@ -262,22 +261,17 @@ export class CloudCi {
     }
   }
 
-  /** Main's login for the service works; checked at most once a minute, by one probe shared between callers.
-   * A probe that fails to run keeps the last good answer and is retried on the next call. */
-  ready(): Promise<boolean> {
-    if (this.checked && Date.now() - this.checked.at < 60_000) return Promise.resolve(this.checked.ready)
-    this.readinessProbe ??= this.probeReadiness().finally(() => { this.readinessProbe = undefined })
-    return this.readinessProbe
-  }
-
-  private async probeReadiness() {
+  /** Main's login for the service works; checked at most once a minute. */
+  async ready() {
+    if (this.checked && Date.now() - this.checked.at < 60_000) return this.checked.ready
     let ready: boolean
     try { ready = await this.provider.ready() }
     catch (error) {
       logIgnoredError('jobs', 'check CI provider readiness', error, { provider: this.provider.id })
       this.readinessObserved = failedReadObservation(this.readinessObserved, error,
         `${this.provider.label} readiness check failed`)
-      return this.checked?.ready ?? false
+      this.checked = undefined
+      return false
     }
     this.checked = { at: Date.now(), ready }
     this.readinessObserved = successfulReadObservation()

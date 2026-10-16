@@ -1,5 +1,4 @@
-import { execFile, spawn } from 'node:child_process'
-import { cpus } from 'node:os'
+import { execFile } from 'node:child_process'
 import { rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -32,29 +31,16 @@ describe('automatic Worker profile qualification', () => {
 
   it('persists a failed automatic check and refuses Start without borrowing the previous installation', async () => {
     const fixture = await installationUpdateFixture({ workflow: 'sequential' })
-    const burners = Array.from({ length: cpus().length * 2 }, () => spawn(process.execPath, ['-e', 'for(;;);'], { stdio: 'ignore' }))
     try {
       const before = await latestEvidence(fixture)
       expect(before).toHaveLength(fixture.profiles.length)
       expect(before.every(proof => proof.qualified)).toBe(true)
       await fixture.provider.hideModels()
       await fixture.provider.updatePayload()
-      const t0 = Date.now()
-      let evidence: Awaited<ReturnType<typeof latestEvidence>>
-      try {
-        evidence = await waitForRemoteReview(() => latestEvidence(fixture), proofs =>
-          proofs.length === fixture.profiles.length && proofs.every(proof =>
-            proof.target.installationFingerprint !== before[0]!.target.installationFingerprint && !proof.qualified),
-        'persisted failed automatic profile checks')
-      } catch (error) {
-        const rows = await fixture.db.pool.query(`select instance_id,instance_revision,created_at,record->'target'->>'installationFingerprint' fp,record->>'qualified' q,record->'failure'->>'code' code from harness_instance_profile_evidence order by created_at`)
-        const settings = await fixture.db.pool.query(`select instance_id,revision,record->'target'->>'installationFingerprint' fp from harness_instance_settings order by instance_id,revision`)
-        const audit = await fixture.db.pool.query(`select sequence,action,outcome,details from management_audit where action like 'harness.%' order by sequence`)
-        const inv = await fixture.inventory().then(v => v.installations.map(i => [i.driverId, i.installationFingerprint, i.installed, i.observedVersion, i.connectionGeneration]), e => String(e))
-        const profs = await fixture.value('harness_instances_list', { hostRef: fixture.hostRef, applicationInstallationId: fixture.profiles[0]!.target.applicationInstallationId }).then(v => JSON.stringify(v).slice(0, 1500), e => String(e))
-        throw new Error(`DIAG ${JSON.stringify({ failures: fixture.failures(), inv, profs, rows: rows.rows, settings: settings.rows, audit: audit.rows, before: before.map(b => b.target.installationFingerprint) })} ${String(error)}`)
-      }
-      console.log(`DIAG failed evidence after ${Date.now() - t0} ms`)
+      const evidence = await waitForRemoteReview(() => latestEvidence(fixture), proofs =>
+        proofs.length === fixture.profiles.length && proofs.every(proof =>
+          proof.target.installationFingerprint !== before[0]!.target.installationFingerprint && !proof.qualified),
+      'persisted failed automatic profile checks')
       expect(evidence.every(proof => proof.failure !== undefined)).toBe(true)
       // Drain independent readbacks before fixture cleanup can stop the Worker.
       const results = await Promise.allSettled([
@@ -83,6 +69,6 @@ describe('automatic Worker profile qualification', () => {
       expect((await fixture.db.pool.query('select id from runs')).rows).toEqual([])
       expect(qualifications.qualifications.some(record => record.status === 'failed'
         && evidence.some(proof => proof.checkedAt === record.checkedAt))).toBe(true)
-    } finally { for (const b of burners) b.kill('SIGKILL'); await fixture.close() }
+    } finally { await fixture.close() }
   }, 240_000)
 })
