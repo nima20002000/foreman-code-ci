@@ -15,12 +15,6 @@ async function tickets(f: Awaited<ReturnType<typeof fixture>>, workspaceId = f.w
 
 it('lets identical concurrent requests share one ticket group and read the same result through MCP', async () => {
   const f = await fixture()
-  const request = f.endpoint.request.bind(f.endpoint)
-  f.endpoint.request = async (computer, input) => {
-    const reply = await request(computer, input)
-    if (input.operation === 'start') f.finish(input.runId, 0, `${input.part ?? input.suite} passed\n`)
-    return reply
-  }
   try {
     const tools = await f.operator.listTools()
     expect(tools.tools.find(tool => tool.name === 'ci_run')?.description).toMatch(/joined/)
@@ -46,8 +40,10 @@ it('lets identical concurrent requests share one ticket group and read the same 
 
     await f.ci.dispatch()
     await f.ci.drain()
-    await f.ci.dispatch()
-    await f.ci.drain()
+    expect(f.started).toHaveLength(persisted.length)
+    for (const { request } of f.started) {
+      if (request.operation === 'start') f.finish(request.runId, 0, `${request.part ?? request.suite} passed\n`)
+    }
     const wait = { ticketId: first!.ticketId, waitUntil: 'group-terminal', waitSeconds: 5, logTail: false }
     const [own, joined] = await Promise.all([f.value(f.operator, 'ci_get', wait), f.value(other, 'ci_get', wait)])
       .then(outputs => outputs.map(output => CiGetOutputSchema.parse(output)))
