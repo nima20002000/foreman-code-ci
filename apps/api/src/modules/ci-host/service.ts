@@ -39,7 +39,6 @@ import { readExecutorSpeeds } from './executorSpeed.js'
 import { readCiGateReservation, readQueuedCiRuns } from './queuedRuns.js'
 import { expireCloudDispatch, requestCloud } from './cloudDispatch.js'
 import { claimCiSlot, reservedCloudSlotKeys } from './cloudSlots.js'
-import { cloudCiId } from './cloudProviders.js'
 import { cancelAssignedCiTicket } from './assignedCancellation.js'
 import { ciExecutionRunId } from './executionAttempt.js'
 import { CI_BUSY_TICKET, expireOverdueCiRuns } from './deadlines.js'
@@ -744,9 +743,8 @@ export class HostCiService {
         label: `Computer ${hostRef.deviceId.slice(0, 8)}`, priority: 0 }
     }
     if (hostRef.kind === 'cloud' && hostRef.provider) {
-      const account = hostRef.account ? { owner: hostRef.account } : undefined
-      return { key: `${hostRef.mainId}:cloud:${cloudCiId({ id: hostRef.provider, account })}:${hostRef.slot ?? 0}`, hostRef,
-        label: hostRef.provider === 'github' ? 'GitHub Actions' : account ? `CircleCI ${account.owner}` : 'CircleCI', priority: 0 }
+      return { key: `${hostRef.mainId}:cloud:${hostRef.provider}:${hostRef.slot ?? 0}`, hostRef,
+        label: hostRef.provider === 'github' ? 'GitHub Actions' : 'CircleCI', priority: 0 }
     }
     throw new DomainError('CI_COMPUTER_OFFLINE', 'The build computer running this CI run is offline.', 409)
   }
@@ -874,7 +872,6 @@ export class HostCiService {
       ?? computers.find(value => run.collection === 'pending' && run.computer
         && value.hostRef.kind === run.computer.hostRef.kind && value.hostRef.mainId === run.computer.hostRef.mainId
         && value.hostRef.deviceId === run.computer.hostRef.deviceId && value.hostRef.provider === run.computer.hostRef.provider
-        && value.hostRef.account === run.computer.hostRef.account
         && value.hostRef.slot === run.computer.hostRef.slot)
       ?? (run.computer ? await this.computer(run.computer.hostRef) : null)
     if (!computer) throw new DomainError('CI_COMPUTER_OFFLINE', 'The CI executor is unavailable.', 503)
@@ -1164,7 +1161,7 @@ export class HostCiService {
     const unavailable = new Map<string, string>()
     const gateShards = new Map<string, number>()
     for (const computer of computers) {
-      const status = this.planningEndpoint.status(computer)
+      const status = this.planningEndpoint.dispatchStatus(computer)
       const slots = computer.hostRef.kind === 'cloud' ? 1 : status?.slotsTotal ?? 1
       totals.set(computer.key, status?.ready ? slots : 0)
       if (!status?.ready) unavailable.set(computer.key, status?.reasons.join('; ') || 'Worker CI status unavailable')
