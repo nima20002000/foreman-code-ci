@@ -1309,7 +1309,7 @@ export class HostCiService {
           || right.priority - left.priority)
         const computer = order.shift()!
         // The same bounded snapshot that counted this computer's free slots decides whether it can take the ticket.
-        const status = this.planningEndpoint.status(computer)
+        const status = this.planningEndpoint.dispatchStatus(computer)
         const rejected = this.dispatchRejections.reason(run.id, computer, status)
         const notReady = status?.ready ? undefined
           : status?.reasons.join('; ') || unavailable.get(computer.key) || 'CI status unavailable'
@@ -1343,8 +1343,7 @@ export class HostCiService {
         const start = this.startRequest(run, { ...selection, ...shards }, durations.get(run.id))
         // A cloud slot is claimed only once the shared mirror snapshot is on GitHub; build computers need no snapshot.
         if (computer.hostRef.kind === 'cloud') {
-          if (!mirrorReady.has(run.id)) mirrorReady.set(run.id, this.mirrorPublished(start))
-          if (!mirrorReady.get(run.id)) {
+          if (!this.mirrorPublished(start)) {
             reasons.push(`${computer.label}: publishing the CI mirror snapshot`)
             continue
           }
