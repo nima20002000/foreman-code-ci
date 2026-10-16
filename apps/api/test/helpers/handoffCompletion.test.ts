@@ -1,4 +1,3 @@
-import { deferred } from './deferred.js'
 import { afterEach, expect, it, vi } from 'vitest'
 import { SavedRunDetailsSchema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { waitForHandoffCompletion } from './handoffCompletion.js'
@@ -26,7 +25,7 @@ function runDetails() {
 it('reads full MCP details once, after the engine finishes, without polling during execution', async () => {
   vi.useFakeTimers()
   const { running, completed } = runDetails()
-  const terminal = deferred<void>()
+  const terminal = Promise.withResolvers<void>()
   let current = running
   const fixture = { finished: terminal.promise, details: vi.fn(async () => current) }
   const waiting = waitForHandoffCompletion(fixture, 'handed-off Agents')
@@ -65,7 +64,7 @@ it('rejects a terminal notification when MCP still reports a nonterminal Run', a
 it('keeps the completion deadline and reports the Run and unfinished Agent states', async () => {
   vi.useFakeTimers()
   const { running } = runDetails()
-  const terminal = deferred<void>()
+  const terminal = Promise.withResolvers<void>()
   const fixture = { finished: terminal.promise, details: vi.fn(async () => running) }
   const waiting = waitForHandoffCompletion(fixture, 'handed-off Agents')
   const outcome = waiting.catch((error: unknown) => error)
