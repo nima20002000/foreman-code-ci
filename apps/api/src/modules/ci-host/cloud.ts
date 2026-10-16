@@ -242,7 +242,7 @@ export class CloudCi {
       let run = await this.read(request.runId)
       if (['queued', 'starting', 'running'].includes(run.state)) {
         run = await this.save({ ...run, message: 'Cancellation requested; waiting for the provider to stop.',
-          cancellation: { ...run.cancellation ?? { at: this.ports.now().toISOString(), canceledIds: [] }, requeue: false } })
+          cancellation: run.cancellation ?? { at: this.ports.now().toISOString(), canceledIds: [] } })
       }
       const canceled = cancellationPending(run) && run.mirrorPublication?.state !== 'pending'
         ? await this.cancelAttempts(run) : run
@@ -565,16 +565,6 @@ export class CloudCi {
   }
 
   private async adoptSubmission(run: CloudRun): Promise<CloudRun> {
-    if (this.provider.id === 'github' && run.dispatch?.uncertain) {
-      const providerRunId = run.providerRunId ?? await this.provider.find(run)
-      if (!providerRunId) return run
-      const history = [...run.dispatchHistory ?? []]
-      if (!history.some(attempt => attempt.providerRunId === providerRunId)) {
-        history.push({ at: run.dispatch.at, providerRunId })
-      }
-      return this.save({ ...run, providerRunId, dispatch: { ...run.dispatch, uncertain: false },
-        dispatchHistory: history })
-    }
     if (this.provider.id !== 'circleci' || run.providerRunId || !run.dispatch?.attempts
       || run.dispatch.uncertain === false) return run
     const discovered = await this.provider.discover!(run)
@@ -1053,15 +1043,12 @@ export class CloudCi {
       if (error instanceof DomainError && error.code === 'CI_CLOUD_PIPELINE_FAILED') {
         return this.failPipeline(run, { message: error.message, configError: error.details?.configError === true })
       }
-      if (error instanceof DomainError && error.code === 'CI_CLOUD_RATE_LIMITED') {
-        this.pausePolling(runId)
-        return this.read(runId)
+      if (error instanceof DomainError && ['CI_CLOUD_RUN_NOT_FOUND', 'CI_CLOUD_RUN_UNREADABLE'].includes(error.code)) {
+        return this.reconcileLookupFailure(await this.read(runId), error)
       }
-      const latest = await this.read(runId)
-      const lookupFailed = error instanceof DomainError
-        && ['CI_CLOUD_RUN_NOT_FOUND', 'CI_CLOUD_RUN_UNREADABLE'].includes(error.code)
-      if (lookupFailed || latest.cancellation?.requeue) return this.reconcileLookupFailure(latest, error)
-      throw error
+      if (!(error instanceof DomainError && error.code === 'CI_CLOUD_RATE_LIMITED')) throw error
+      this.pausePolling(runId)
+      return this.read(runId)
     } finally {
       // The slot passes straight to the next waiting poll.
       this.waiting.sort((left, right) => this.expectedEnd(left.run) - this.expectedEnd(right.run))
@@ -1087,7 +1074,7 @@ export class CloudCi {
     const attempts = Math.min(MAX_DISPATCH_ATTEMPTS, (run.reconciliation?.attempts ?? 0) + 1)
     const message = `${this.provider.label} execution could not be reconciled: `
       + (error instanceof Error ? error.message : String(error)).slice(0, 500)
-      + (cancellationPending(run) ? ' Cancellation could not be confirmed; ownership retained while status reads retry.'
+      + (cancellationPending(run) ? ' Cancellation is unconfirmed; ownership retained while status reads retry.'
         : ' Retrying lookup for up to 75 seconds before moving to another computer.')
     log.warn({ err: error, runId: run.runId, attempts }, 'Cloud CI execution needs reconciliation')
     return this.save({ ...run, message, reconciliation: { attempts, at: now.toISOString(), since,
@@ -1095,17 +1082,37 @@ export class CloudCi {
   }
 
   private async requeueUnreadable(run: CloudRun, error: unknown): Promise<CloudRun> {
-    const detail = (error instanceof Error ? error.message : String(error)).slice(0, 500)
-    const pending = await this.save({ ...run,
-      message: sanitizeCiText(`${this.provider.label} execution stayed unreadable past the 75-second window: `
-        + `${detail} Cancellation requested; ownership retained until termination is confirmed.`),
-      cancellation: { at: this.ports.now().toISOString(), canceledIds: [], requeue: true } })
-    try {
-      return await this.cancelAttempts(pending)
-    } catch (cancelError) {
-      if (cancelError instanceof DomainError && cancelError.code === 'CI_CLOUD_RATE_LIMITED') this.pausePolling(run.runId)
-      return this.reconcileLookupFailure(await this.read(run.runId), cancelError)
+    let cancellationFailed = false
+    const attempts = run.dispatchHistory?.map(attempt => attempt.providerRunId) ?? []
+    const ids = new Set([run.providerRunId, ...attempts])
+    for (const providerRunId of ids) {
+      if (!providerRunId) continue
+      try {
+        await this.provider.cancel({ ...run, providerRunId })
+      } catch (cancelError) {
+        cancellationFailed = true
+        log.warn({ err: cancelError, runId: run.runId, providerRunId }, 'Unreadable cloud CI cancellation failed')
+      }
     }
+    const detail = (error instanceof Error ? error.message : String(error)).slice(0, 500)
+    if (cancellationFailed) {
+      // The provider job may still run: keep this executor's ownership and retry the cancellation on the next poll.
+      const now = this.ports.now().toISOString()
+      return this.save({ ...run, message: sanitizeCiText(`${this.provider.label} execution stayed unreadable past the `
+        + `75-second window: ${detail} Cancellation could not be confirmed; retrying before another computer takes over.`),
+      reconciliation: { attempts: Math.min(MAX_DISPATCH_ATTEMPTS, (run.reconciliation?.attempts ?? 0) + 1), at: now,
+        since: run.reconciliation?.since ?? run.reconciliation?.at ?? now,
+        previousMessage: run.reconciliation ? run.reconciliation.previousMessage : run.message } })
+    }
+    const message = sanitizeCiText(`${this.provider.label} execution stayed unreadable past the 75-second window: `
+      + `${detail} Cancellation requested. Automatic recovery queued for another computer.`)
+    await writeFile(this.path(run.runId, 'log'), `${message}\n`, { flag: 'a', mode: 0o600 })
+    const recovered: CloudRun = { ...run, state: 'queued', providerRunId: null, finishedAt: null,
+      exitCode: null, message }
+    delete recovered.reconciliation
+    delete recovered.providerQueuedAt
+    delete recovered.queueCancelRequested
+    return this.save(recovered)
   }
 
   /** Writes the steps the run has started, and new output of the running step, to its log. */
@@ -1182,10 +1189,6 @@ export class CloudCi {
     const canceled = new Set(run.cancellation!.canceledIds)
     const discovered = this.provider.id === 'github'
       ? await this.provider.discover!(run) : []
-    if (this.provider.id === 'github' && run.dispatch?.uncertain && discovered.length) {
-      run = { ...run, providerRunId: run.providerRunId ?? discovered[0]!,
-        dispatch: { ...run.dispatch, uncertain: false } }
-    }
     const history = [...run.dispatchHistory ?? []]
     for (const providerRunId of discovered) {
       if (!history.some(attempt => attempt.providerRunId === providerRunId)) {
@@ -1209,16 +1212,6 @@ export class CloudCi {
     }
     this.polled.set(run.runId, this.ports.now().getTime())
     const now = this.ports.now().toISOString()
-    if (stopped && run.cancellation!.requeue) {
-      const message = `${this.provider.label} cancellation confirmed; queued for another computer.`
-      const requeued: CloudRun = { ...run, state: 'queued', providerRunId: null, finishedAt: null, exitCode: null, message,
-        cancellation: { ...run.cancellation!, canceledIds: [...canceled], completedAt: now } }
-      delete requeued.reconciliation
-      delete requeued.providerQueuedAt
-      delete requeued.queueCancelRequested
-      await writeFile(this.path(run.runId, 'log'), `${message}\n`, { flag: 'a', mode: 0o600 })
-      return this.save(requeued)
-    }
     return this.save({ ...run,
       ...(stopped ? { state: run.state === 'queued' ? 'queued' : 'canceled',
         finishedAt: run.state === 'queued' ? null : now, message: 'Canceled.' } : {}),

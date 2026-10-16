@@ -21,7 +21,6 @@ import { NativeProcessObservationSchema } from '@foreman-code/contracts/remote-e
 import { existingPrivateDirectory, privateDirectory, readRecord, recordObject, syncDirectory, writeRecord } from './storage.js'
 import { archivedClosure, archivedRetirement } from './registryArchive.js'
 import { prepareRegistryRetirement, pruneClosedObservation } from './registryRetirement.js'
-import { NativeRegistryRetention } from './nativeRetention.js'
 
 export interface NativeProcessRecovery {
   root: string
@@ -309,9 +308,7 @@ function inventory(directory: string, owner: string): string[] {
 
 /** Backend-owned registry. An empty registry is NOT evidence about pre-upgrade processes. */
 export class NativeProcessRegistry {
-  private readonly retention: NativeRegistryRetention
   constructor(private readonly root: string) {
-    this.retention = new NativeRegistryRetention(root)
     if (process.platform === 'linux') prepareRegistryRetirement(resolve(root), directory => {
       const intent = readRecord(join(directory, 'intent.json'))
       if (intent === undefined && !existingPrivateDirectory(directory)) return
@@ -327,10 +324,6 @@ export class NativeProcessRegistry {
     })
   }
   snapshot(): NativeRegistrySnapshot { return nativeRegistryProjection(this.root).snapshot() }
-  pruneSettled(isSettled: (owner: string) => Promise<boolean>, now = Date.now()): Promise<number> {
-    return this.retention.prune(isSettled, now)
-  }
-  closeRetention(): void { this.retention.close() }
   revision(): string { return nativeRegistryProjection(this.root).revision() }
   changes(afterRevision: string, signal: AbortSignal): AsyncIterable<NativeRegistryChange> {
     return nativeRegistryProjection(this.root).changes(afterRevision, signal)
