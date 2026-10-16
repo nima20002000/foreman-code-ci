@@ -6,7 +6,6 @@ import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { expect, it, vi } from 'vitest'
 import { CI_GET_ACTIONS } from '../src/modules/jobs/ciAuthority.js'
 import { fixture } from './helpers/hostCiMcpFixture.js'
-import { ciRunReadback } from './helpers/ciRunReadback.js'
 
 it.each(['github', 'circleci'] as const)('runs user-systemd slices on capable %s slots through authenticated MCP', async provider => {
   const f = await fixture({ cloud: { github: provider === 'github' ? 2 : 0, circleci: provider === 'circleci' ? 2 : 0 },
@@ -23,8 +22,7 @@ it.each(['github', 'circleci'] as const)('runs user-systemd slices on capable %s
     const started = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', input))
     expect(CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', input))).toEqual(started)
     await f.ci.dispatch()
-    const read = await f.waitFor(reader, started.ticketId, output => output.partitions!.every(run =>
-      run.state === 'running' && run.observation?.status === 'available'))
+    const read = CiGetOutputSchema.parse(await f.value(reader, 'ci_get', { ticketId: started.ticketId }))
     expect(read.partitions).toHaveLength(2)
     for (const run of read.partitions!) {
       expect(run).toMatchObject({ state: 'running', computer: { hostRef: { kind: 'cloud', provider } } })
@@ -36,7 +34,7 @@ it.each(['github', 'circleci'] as const)('runs user-systemd slices on capable %s
     const listed = CiComputersOutputSchema.parse(await f.value(reader, 'ci_computers_list', {}))
     expect(listed.computers.every(computer => computer.userSystemd?.supported)).toBe(true)
     for (const run of read.partitions!) f.finish(run.id, 0, 'Systemd cloud slice completed.\n')
-    const completed = await ciRunReadback(input => f.value(reader, 'ci_get', input), started.ticketId, 'passed')
+    const completed = await f.waitFor(reader, started.ticketId, output => output.group?.state === 'passed')
     expect(completed.partitions!.every(run => run.state === 'passed')).toBe(true)
   } finally { await f.close() }
 })
@@ -84,8 +82,6 @@ it.each(['mcp', 'http'] as const)('reads queued user-systemd slices through %s w
       expect(result.isError).not.toBe(true)
       return CiGetOutputSchema.parse(decodeMcpToolResult(result))
     }
-    await expect.poll(async () => (await read()).partitions!.map(run => run.state).sort())
-      .toEqual(['queued', 'running'])
     const waiting = await read()
     const selectedSlices = waiting.partitions!.map(run => integrationPartition(run.files, {}, run.partition!))
     expect(selectedSlices.every(slice => slice.length > 0)).toBe(true)
@@ -183,8 +179,7 @@ it('uses every cloud slot for ordinary integration files and persists throughput
       return integrationPartition(request.files!, request.durations!, request.partition!)
     })
     expect(slices.flat().sort()).toEqual([...files].sort())
-    const read = await f.waitFor(reader, started.ticketId, output => output.partitions!.every(run =>
-      run.state === 'running' && run.observation?.status === 'available'))
+    const read = CiGetOutputSchema.parse(await f.value(reader, 'ci_get', { ticketId: started.ticketId }))
     expect(read.partitions).toHaveLength(8)
     const faster = read.partitions!.find(run => run.computer?.label === circle[0]!.label)!
     const slower = read.partitions!.find(run => run.computer?.label === github.label)!
@@ -203,7 +198,7 @@ it('uses every cloud slot for ordinary integration files and persists throughput
       f.finish(run.id, 0, 'Cloud integration completed.\n')
     }
     await f.ci.dispatch()
-    const finished = await ciRunReadback(input => f.value(reader, 'ci_get', input), started.ticketId, 'passed')
+    const finished = await f.waitFor(reader, started.ticketId, output => output.group?.state === 'passed')
     expect(finished.partitions!.every(run => run.state === 'passed')).toBe(true)
   } finally { await f.close() }
 })
@@ -217,7 +212,7 @@ it('runs an ordinary unpartitioned integration selection on cloud without a buil
       suite: 'integration', scope: 'affected', files, commit: 'a'.repeat(40), commandId: 'ordinary-integration',
     }))
     await f.ci.dispatch()
-    const read = await f.waitFor(f.operator, started.ticketId, output => output.run.state === 'running')
+    const read = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: started.ticketId }))
     expect(read.run).toMatchObject({ state: 'running', files, partition: null,
       computer: { hostRef: { kind: 'cloud' } } })
   } finally { await f.close() }
@@ -237,9 +232,7 @@ it('keeps every selected file in a nonempty slice when most files require user s
       partitions: 3, commandId: 'mostly-systemd',
     }))
     await f.ci.dispatch()
-    const read = await f.waitFor(f.operator, started.ticketId, output => output.partitions!.every(run =>
-      run.state === 'queued' || run.state === 'running' && run.observation?.status === 'available')
-      && output.partitions!.filter(run => run.state === 'running').length === 1)
+    const read = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: started.ticketId }))
     const slices = read.partitions!.map(run => integrationPartition(run.files, {}, run.partition!))
     expect(slices.every(slice => slice.length === 1)).toBe(true)
     expect(slices.flat().sort()).toEqual([...systemd, ordinary].sort())

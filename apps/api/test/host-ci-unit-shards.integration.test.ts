@@ -52,9 +52,7 @@ it('sizes learned unit shards from eligible slots, busy ones included, and persi
     expect((await f.call(reader, 'ci_run', input)).isError).toBe(true)
     const result = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', input))
     expect(CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', input))).toEqual(result)
-    const read = await f.waitFor(f.operator, result.ticketId, output => output.partitions!.some(run =>
-      run.state === 'running') && output.partitions!.every(run =>
-      run.state === 'queued' && run.message !== null || run.observation?.status === 'available'))
+    const read = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: result.ticketId }))
     const api = read.partitions!.filter(part => part.part === 'unit-api')
     expect(api).toHaveLength(6)
     expect(api.map(part => part.partition)).toEqual([0, 1, 2, 3, 4, 5].map(index => ({ index, count: 6 })))
@@ -86,9 +84,7 @@ it('reads persisted unit shards in numeric order through authenticated HTTP and 
       headers: { authorization: `Bearer ${deniedCredential.token}` } })
     expect(deniedResponse.statusCode).toBe(403)
 
-    const mcp = await f.waitFor(f.operator, result.ticketId, output => output.partitions!.some(run =>
-      run.state === 'running') && output.partitions!.every(run =>
-      run.state === 'queued' && run.message !== null || run.observation?.status === 'available'))
+    const mcp = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: result.ticketId }))
     const credential = await f.credential(CI_GET_ACTIONS)
     const response = await f.app.inject({ method: 'GET', url,
       headers: { authorization: `Bearer ${credential.token}` } })

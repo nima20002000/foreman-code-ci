@@ -3,7 +3,6 @@ import { expect, it } from 'vitest'
 import { CI_GET_ACTIONS, CI_RUN_ACTIONS } from '../src/modules/jobs/ciAuthority.js'
 import { genericCiRepository } from './helpers/genericCiRepository.js'
 import { fixture } from './helpers/hostCiMcpFixture.js'
-import { ciRunReadback } from './helpers/ciRunReadback.js'
 
 it.each([
   ['pnpm-lock.yaml', 'corepack pnpm'], ['package-lock.json', 'npm'], ['yarn.lock', 'corepack yarn'],
@@ -20,7 +19,9 @@ it.each([
       const started = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', input))
       expect(started.partitions).toBeUndefined()
       expect(CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', input))).toEqual(started)
-      const read = await ciRunReadback(input => f.value(f.operator, 'ci_get', input), started.ticketId, 'passed')
+      await expect.poll(async () => CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get',
+        { ticketId: started.ticketId })).run.state, { timeout: 10_000 }).toBe('passed')
+      const read = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: started.ticketId }))
       expect(read.run).toMatchObject({ suite, part: null, partition: null, scope: 'full', files: [],
         state: 'passed', exitCode: 0, commit: repository.commit, computer: { hostRef: { kind: 'main' } } })
       expect(read.partitions).toBeUndefined()
@@ -53,7 +54,9 @@ it.each([0, 1250])(
     await f.ci.dispatch()
     expect((await repository.waitForCompletion(started.ticketId)).code).toBe(0)
     await f.ci.dispatch()
-    const read = await ciRunReadback(input => f.value(f.operator, 'ci_get', input), started.ticketId, 'passed')
+    const read = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', {
+      ticketId: started.ticketId, waitUntil: 'group-terminal', waitSeconds: 10,
+    }))
     expect(read.run).toMatchObject({ part: null, partition: null, state: 'passed',
       computer: { hostRef: { kind: 'main' } } })
     expect(read.logTail).toContain('npm run integration')
@@ -94,7 +97,7 @@ it.each([
     await f.ci.dispatch()
     expect((await repository.waitForCompletion(started.ticketId)).code).toBe(0)
     await f.ci.dispatch()
-    await ciRunReadback(input => f.value(f.operator, 'ci_get', input), started.ticketId, 'passed')
+    await f.value(f.operator, 'ci_get', { ticketId: started.ticketId, waitUntil: 'group-terminal', waitSeconds: 10 })
     const read = await f.app.inject({ method: 'GET', url: `${url}/${started.ticketId}`, headers })
     expect(read.statusCode).toBe(200)
     const result = CiGetOutputSchema.parse(read.json())

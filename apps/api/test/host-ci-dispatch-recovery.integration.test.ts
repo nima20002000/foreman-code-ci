@@ -50,11 +50,12 @@ it.each(['github', 'circleci'] as const)('requeues an unstarted %s ticket and ru
       exhausted = true
       releaseRead()
       await dispatch()
-      const requeued = await f.waitFor(reader, started.ticketId, output => output.run.state === 'queued')
+      const requeued = CiGetOutputSchema.parse(await f.value(reader, 'ci_get', {
+        ticketId: started.ticketId, waitSeconds: 1,
+      }))
       expect(requeued.run.state).toBe('queued')
       await dispatch()
-      const queued = await f.waitFor(reader, started.ticketId, output => output.run.message?.includes(
-        'all CI slots in use (1/1)') === true)
+      const queued = CiGetOutputSchema.parse(await f.value(reader, 'ci_get', { ticketId: started.ticketId }))
       expect(queued.run).toMatchObject({ state: 'queued', computer: null, step: null, startedAt: null,
         finishedAt: null, unstartedProviders: [provider],
         providerMessage: 'Dispatch retries exhausted; queued for another computer.',
@@ -68,10 +69,12 @@ it.each(['github', 'circleci'] as const)('requeues an unstarted %s ticket and ru
     }
     expect(CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', input))).toEqual(tickets)
     f.finish(tickets.ticketId, 0, 'Host slice completed.\n')
-    const host = await f.waitFor(reader, tickets.ticketId, output => output.run.state === 'passed')
+    const host = CiGetOutputSchema.parse(await f.value(reader, 'ci_get', {
+      ticketId: tickets.ticketId, waitSeconds: 10,
+    }))
     expect(host.run.state).toBe('passed')
     await f.ci.dispatch()
-    const running = await f.waitFor(reader, started.ticketId, output => output.run.state === 'running')
+    const running = CiGetOutputSchema.parse(await f.value(reader, 'ci_get', { ticketId: started.ticketId }))
     expect(running.run).toMatchObject({ id: started.ticketId, state: 'running', computer: { label: 'laptop' },
       message: null, unstartedProviders: [provider] })
     f.finish(started.ticketId, 0, 'Completed on another computer.\n')

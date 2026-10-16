@@ -4,7 +4,6 @@ import { expect, it } from 'vitest'
 import { CI_GET_ACTIONS } from '../src/modules/jobs/ciAuthority.js'
 import { activeCiRuns } from '../src/modules/ci-host/cloud.js'
 import { fixture } from './helpers/hostCiMcpFixture.js'
-import { ciRunReadback } from './helpers/ciRunReadback.js'
 
 it('indexes only active Main tickets after authenticated MCP writes and persisted completion', async () => {
   const f = await fixture()
@@ -18,7 +17,8 @@ it('indexes only active Main tickets after authenticated MCP writes and persiste
     await expect.poll(async () => CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get',
       { ticketId: started.ticketId })).run.state).toBe('running')
     f.finish(started.ticketId, 0, 'finished')
-    await ciRunReadback(input => f.value(reader, 'ci_get', input), started.ticketId, 'passed')
+    await expect.poll(async () => CiGetOutputSchema.parse(await f.value(reader, 'ci_get',
+      { ticketId: started.ticketId })).run.state).toBe('passed')
     expect((await activeCiRuns(f.pool)).ids.has(started.ticketId)).toBe(false)
   } finally { await f.close() }
 })
