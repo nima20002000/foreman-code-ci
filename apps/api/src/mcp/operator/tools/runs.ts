@@ -29,6 +29,7 @@ export const runTools = [
     enabled: s => !!s.runs,
     description: 'Read an authorized Run, including Git worktree paths, branches and retained-change status when workspace location read is granted, from one backend snapshot. Defaults to compact status and the latest 25 executions and activities. '
       + 'Omission counts cover this snapshot; use run_activities_get_v1 for paged history. Pass detail: "full" for input, result, execution bodies and the full snapshot. '
+      + 'Source capacity failures include error.details with the host/filesystem scope, exhausted limits, usage, measurements and retryability. '
       + 'Current execution semantics 3 only; compact metadata is available from run_graph_snapshot_v1 (graph protocol 1). '
       + 'Native activity summaries identify messages, reasoning, commands, file edits and tool calls without exposing bodies or arguments. '
       + 'Execution summaries include continuedFromExecutionId when a node resumes a closed native session in this Run. '
@@ -88,6 +89,8 @@ export const runTools = [
     requires: [['runs:start', 'workflow'], ['workspace_locations:read', 'workspace']],
     enabled: s => !!s.runs,
     description: 'Request one Run of the explicit saved version. Accepted Run authority survives starter-token expiry; '
+      + 'Source admission reclaims eligible closed copies from completed Runs when byte capacity is full. '
+      + 'Active writer pressure retries with backoff; run_get exposes persisted capacity diagnostics. '
       + 'owner revocation, current scopes, Stop and completion still apply. Every new workflow uses semantics 3, with or without '
       + 'repeat. Default Codex Agents use approvalPolicy never and need no routed workflow approval handler; sandbox restrictions '
       + 'still apply. Pin 3 plus the current workflow revision, exact Agent configuration map and location revision. In '
