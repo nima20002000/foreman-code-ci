@@ -1,4 +1,5 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { GraphPresentationProvider } from '../GraphPresentation'
 import { useGraphDraftStore } from '../store'
@@ -31,7 +32,6 @@ it.each([
   ['an empty Board', { ...context.draft.graph, nodes: [], edges: [] }],
 ])('shows the CI server on %s and explains that no Run is selected', async (_name, graph) => {
   mount(graph)
-  // fireEvent: a real pointer press would start React Flow's zoom drag, which jsdom cannot host.
-  fireEvent.click(await screen.findByRole('button', { name: /^CI server, .*Open CI jobs/ }))
+  await userEvent.click(await screen.findByRole('button', { name: /^CI server, .*Open CI jobs/ }))
   expect(await screen.findByText('No Run selected')).toBeVisible()
 })
