@@ -5,7 +5,7 @@ function normalizeLabel(label: string): string {
 }
 
 describe('normalizeLabel', () => {
-  it('returns an empty string for empty and whitespace-only labels', () => {
+  it('returns an empty label for empty or whitespace-only input', () => {
     expect(normalizeLabel('')).toBe('')
     expect(normalizeLabel(' \t\n ')).toBe('')
   })
