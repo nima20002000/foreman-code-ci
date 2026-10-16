@@ -30,7 +30,7 @@ const ports = vi.hoisted(() => {
     },
   }
   return { connection, intent, placement, authority: vi.fn(), prefetch: vi.fn(), closed: vi.fn(),
-    persist: vi.fn(), reject: vi.fn() }
+    persist: vi.fn(), reject: vi.fn(), acknowledge: vi.fn() }
 })
 vi.mock('./persistence.js', () => ({
   readDispatchIntent: async () => ports.intent,
@@ -49,7 +49,7 @@ vi.mock('../runs/remote/persistence.js', () => ({
 }))
 vi.mock('./executionAuthority.js', () => ({ assertRemoteExecutionAuthority: ports.authority }))
 vi.mock('../runs/remote/workflowPhysicalVerification.js', () => ({
-  createRemoteWorkflowPhysicalVerification: () => ({ prefetch: ports.prefetch, confirmedClosed: ports.closed }),
+  createRemoteWorkflowPhysicalVerification: () => ({ prefetch: ports.prefetch, confirmedClosed: ports.closed, acknowledgeClosed: ports.acknowledge }),
 }))
 import { createProductionRemoteWorkflow } from './productionRemoteWorkflow.js'
 
@@ -57,6 +57,7 @@ beforeEach(() => {
   vi.resetAllMocks()
   ports.prefetch.mockResolvedValue({ kind: 'original-remote-physical' })
   ports.closed.mockReturnValue(true)
+  ports.acknowledge.mockResolvedValue({})
 })
 
 function fixture() {
@@ -112,6 +113,65 @@ function runningFixture() {
   f.state.session = { harness: 'codex', providerVersion: 'fixture', nativeSessionId: f.receipt.native!.sessionId }
   return f
 }
+
+it.each(['initial turn', 'retried turn'] as const)(
+  'reconciles a Worker acknowledgement missing from Main before stopping its %s', async turn => {
+    const f = runningFixture()
+    if (turn === 'retried turn') {
+      f.state.stored!.native!.turnId = 'previous-turn'
+      f.receipt.nativeTurnRetries = [{ previousTurnId: 'previous-turn', turnId: 'worker-turn' }]
+    }
+    f.receipt.native!.turnId = 'worker-turn'
+    f.receipt.turnEntryAttempted = true
+    f.receipt.sequence++
+    const acknowledged = structuredClone(f.receipt)
+    f.request.mockImplementation(async payload => {
+      if ((payload as { method: string }).method === 'control') {
+        expect(f.state.stored).toEqual(acknowledged)
+        f.receipt.phase = 'confirmed_terminal'
+        f.receipt.stopFence = true
+        f.receipt.sequence++
+        f.receipt.terminal = { kind: 'cancelled', closureEvidenceDigest: 'd'.repeat(64) }
+      }
+      return { payload: { status: 'known', receipt: structuredClone(f.receipt) } }
+    })
+    try {
+      await expect(f.composition.confirmClosedExecution('execution', new AbortController().signal, f.owner))
+        .resolves.toBe(true)
+      expect(f.request.mock.calls.map(call => (call[0] as { method: string }).method)).toEqual(['status', 'control'])
+      expect(f.request.mock.calls[1]![0]).toMatchObject({ command: {
+        operationId: acknowledged.intent.operationId, attemptId: acknowledged.intent.attemptId,
+        owner: acknowledged.intent.owner, native: acknowledged.native, action: { kind: 'stop' },
+      } })
+      expect(ports.persist.mock.calls.map(call => call[2].receipt)).toEqual([acknowledged, f.receipt])
+      expect(f.state.stored).toEqual(f.receipt)
+      expect(ports.closed).toHaveBeenCalled()
+    } finally { await f.close() }
+  },
+)
+
+it.each(['owner', 'device', 'process'] as const)(
+  'does not reconcile a newer turn from a different %s before cold Stop', async changed => {
+    const f = runningFixture()
+    const saved = structuredClone(f.state.stored)
+    f.receipt.native!.turnId = 'worker-turn'
+    f.receipt.turnEntryAttempted = true
+    f.receipt.sequence++
+    if (changed === 'owner') f.receipt.intent = { ...f.receipt.intent, owner: { grantId: 'different-owner', epoch: '2' } }
+    if (changed === 'device') f.receipt.connection = { ...f.receipt.connection,
+      deviceId: '77777777-7777-4777-8777-777777777777' }
+    if (changed === 'process') f.receipt.native!.processIdentityDigest = 'e'.repeat(64)
+    try {
+      const result = await f.composition.confirmClosedExecution('execution', new AbortController().signal, f.owner)
+        .catch((error: unknown) => error)
+      if (changed === 'owner') expect(result).toBe(false)
+      else expect(result).toBeInstanceOf(DomainError)
+      expect(f.request).toHaveBeenCalledTimes(1)
+      expect(f.state.stored).toEqual(saved)
+      expect(ports.persist).not.toHaveBeenCalled()
+    } finally { await f.close() }
+  },
+)
 
 it('sends the same fenced Stop after cold restart until physical closure is confirmed', async () => {
   const f = runningFixture()
@@ -273,5 +333,16 @@ it('keeps revoked execution authority from publishing cold closure', async () =>
       .rejects.toMatchObject({ code: 'REMOTE_CLOSURE_RECEIPT_REJECTED' })
     expect(f.state.stored).toBeUndefined()
     expect(ports.reject).toHaveBeenCalled()
+  } finally { await f.close() }
+})
+
+it('releases the actual cached binding after successful cold cleanup', async () => {
+  const f = fixture()
+  try {
+    await f.composition.prepare('execution')
+    expect(f.composition.binding('execution')).toBeDefined()
+    expect(await f.composition.confirmClosedExecution('execution', new AbortController().signal, f.owner)).toBe(true)
+    expect(f.composition.binding('execution')).toBeUndefined()
+    expect(f.composition.isRemote('execution')).toBe(false)
   } finally { await f.close() }
 })

@@ -1,3 +1,4 @@
+import { requireRsyncTransferOwner } from './modules/byte-transfer/rsyncTransferOwner.js'
 import { MANAGED_MCP_NAMESPACE } from '@foreman-code/contracts/managed-mcp-channel'
 import { DeviceManagedMcp } from './modules/harnesses/deviceManagedMcp.js'
 import { RunWorktrees } from './modules/runs/runWorktrees.js'
@@ -203,6 +204,7 @@ import { postgresCodexChatFiles } from './modules/harnesses/codexFiles/chatAdmis
 import { codexChatHostDirectory, localCodexChatHost } from './modules/harnesses/codexFiles/localHost.js'
 import { productionFileTools } from './modules/files/tools/production.js'
 import { FileRetentionService } from './modules/files/retention.js'
+import { PostgresCommandReceiptRetention } from './modules/commands/receiptRetention.js'
 import { registerFileRetentionRoutes } from './routes/fileRetention.js'
 import { createOperatorExtensions } from './mcp/operator/extensions.js'
 import { NativeConfigurationService } from './modules/harnesses/nativeConfiguration.js'
@@ -566,14 +568,7 @@ function configureMainTransport(composition: ProductionComposition) {
       if (!composition.jobRuntime) throw new DomainError('RSYNC_COMPOSITION_UNAVAILABLE', 'Original Main source and Job transfer services have not initialized.', 503)
       if (!isDeepStrictEqual(composition.deviceRuntime.endpointForDomains().captureRequest(binding.deviceId, RSYNC_STAGE_EXTENSION.namespace)?.binding, binding))
         throw new DomainError('RSYNC_CONNECTION_CONFLICT', 'Transfer lookup requires the actual current rsync channel.', 403)
-      const owners = (await database.pool.query<{ operation: string }>(`select operation from management_command_receipts
-        where operation in ('source.package.admit','job.output.admit') and result->'intent'->>'transferId'=$1
-        union all
-        select operation from management_command_receipts
-        where operation='job.inputs.bind' and result->'transfers' @> $2::jsonb`,
-      [id, JSON.stringify([{ intent: { transferId: id } }])])).rows
-      if (owners.length !== 1) throw new DomainError('RSYNC_TRANSFER_DENIED', 'Exactly one original source or Job admission must own the transfer.', 403)
-      const operation = owners[0]!.operation
+      const operation = await requireRsyncTransferOwner(database.pool, id)
       if (operation === 'source.package.admit') return composition.jobRuntime.transfers.intent(id, binding)
       if (operation === 'job.inputs.bind') {
         return composition.jobRuntime.inputs.main.authorizedTransfer(id, transferContextForBinding(binding))
@@ -2481,6 +2476,8 @@ function configureRuntimeHooks(composition: ProductionComposition) {
   } = composition
   const SNAPSHOT_RELEASE_INTERVAL_MS = 10 * 60_000
   let lastSnapshotRelease = 0
+  const commandReceiptRetention = new PostgresCommandReceiptRetention(database.pool)
+  let lastReceiptCleanup = 0
   composition.reconcile = (report: (error: unknown) => void): Promise<void> => {
     if (composition.closing) return Promise.resolve()
     if (composition.reconciliation) return composition.reconciliation
@@ -2498,6 +2495,10 @@ function configureRuntimeHooks(composition: ProductionComposition) {
       if (composition.closing) return
       await runWorktrees.cleanup(report)
       if (composition.closing) return
+      if (Date.now() - lastReceiptCleanup >= SNAPSHOT_RELEASE_INTERVAL_MS) {
+        lastReceiptCleanup = Date.now()
+        try { await commandReceiptRetention.prune() } catch (error) { report(error) }
+      }
       if (composition.initialized) {
         await appRoutes.refresh()
         if (composition.closing) return
