@@ -172,12 +172,6 @@ const GITHUB_QUEUED = new Set(['queued', 'waiting', 'requested', 'pending'])
 interface GitHubJob { id: number; status: string; steps?: { number: number; name: string; status: string; conclusion: string | null }[] }
 
 /** Standard public-repository runners: 4 vCPUs and 16 GB; a free account runs 20 jobs at once. */
-/** A timed out probe is a failed check, not proof that the login is gone. */
-function loginProbe(result: { code: number; timedOut?: boolean }, command: string) {
-  if (result.timedOut) throw new Error(`${command} timed out`)
-  return result.code === 0
-}
-
 export class GitHubActionsProvider implements CloudProvider {
   readonly id = 'github' as const
   readonly label = 'GitHub Actions'
@@ -210,7 +204,7 @@ export class GitHubActionsProvider implements CloudProvider {
   }
 
   async ready() {
-    return loginProbe(await this.ports.run('gh', ['auth', 'status', '--hostname', 'github.com'], { timeoutMs: 15_000 }), 'gh auth status')
+    return (await this.ports.run('gh', ['auth', 'status', '--hostname', 'github.com'], { timeoutMs: 15_000 })).code === 0
   }
 
   async dispatch(input: CloudDispatchInput) {
@@ -357,7 +351,7 @@ export class CircleCiProvider implements CloudProvider {
 
   async ready() {
     await this.rest.available()
-    return loginProbe(await this.ports.run('circleci', ['auth', 'me'], { timeoutMs: 15_000 }), 'circleci auth me')
+    return (await this.ports.run('circleci', ['auth', 'me'], { timeoutMs: 15_000 })).code === 0
   }
 
   async dispatch(input: CloudDispatchInput) {
