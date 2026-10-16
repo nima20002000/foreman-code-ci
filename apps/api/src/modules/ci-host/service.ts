@@ -44,8 +44,6 @@ import { cancelAssignedCiTicket } from './assignedCancellation.js'
 import { ciExecutionRunId } from './executionAttempt.js'
 import { CI_BUSY_TICKET, expireOverdueCiRuns } from './deadlines.js'
 import { ciCachedNotice, planCachedSelection, recordCiResultCache, type CachedSelection } from './resultCacheStore.js'
-import { ciRequestKey, joinCiRequest, registerCiRequest, releaseCiRequester, releaseStoppedRun,
-  spareSharedSupersession } from './requestSharing.js'
 import type { AgentSnapshots, CiCommits, CiMirrorInput, HostCiComputer, HostCiEndpoint, HostRef } from './serviceTypes.js'
 
 export type { AgentSnapshots, CiCommits, HostCiComputer, HostCiEndpoint } from './serviceTypes.js'
@@ -95,8 +93,6 @@ export class HostCiService {
   private readonly collectingRuns = new Set<string>()
   private observationOffset = 0
   private readonly observingComputers = new Map<string, Promise<void>>()
-  /** Worker starts by ticket: an assigned start prepares its repository outside the dispatch pass that claimed it. */
-  private readonly startingRuns = new Map<string, Promise<void>>()
   private readonly mirrorPublications = new Map<string, { settled: boolean }>()
   /** Computers that still had a free slot after the last dispatch pass: where a canceled provider-queued ticket can go. */
   private spareComputers: HostCiComputer[] = []
@@ -183,8 +179,8 @@ export class HostCiService {
   /** Resolves when dispatch, superseded cleanup, observations and readiness reads have finished, including work they start. */
   async drain() {
     for (;;) {
-      const pending = [this.dispatching, this.superseding, ...this.observingRuns.values(),
-        ...this.observingComputers.values(), ...this.startingRuns.values()]
+      const pending = [this.dispatching, this.superseding,
+        ...this.observingRuns.values(), ...this.observingComputers.values()]
         .filter((work): work is Promise<void> => work !== undefined)
       if (!pending.length) return
       await Promise.allSettled(pending)
@@ -192,8 +188,7 @@ export class HostCiService {
   }
 
   async run(caller: ManagementPrincipal, input: CiRunInput & { workspaceId?: string | undefined }, source: 'mcp' | 'http' = 'mcp') {
-    // Admission authorizes and prepares on the application pool; the dispatch reserve stays for short dispatch work.
-    return withoutCiDatabasePriority(() => this.admit(caller, input, source))
+    return withCiDatabasePriority(() => this.admit(caller, input, source))
   }
 
   private async admit(caller: ManagementPrincipal, input: CiRunInput & { workspaceId?: string | undefined },
@@ -224,16 +219,14 @@ export class HostCiService {
         throw error
       })
       authorized = true
-      const result = await this.enqueue(caller, input, source, scope, actions, markPhase, async tickets => {
+      const result = await this.enqueue(caller, input, source, scope, actions, markPhase, async () => {
+        if (pausedDispatch) return
         // Drain an active start only when admission can supersede its ticket.
-        if (!pausedDispatch) {
-          pausedDispatch = true
-          this.stoppingRuns += 1
-        }
+        pausedDispatch = true
+        this.stoppingRuns += 1
         markPhase('dispatchWaitMs')
         try {
           await this.dispatching
-          await this.startsSettled(tickets)
         } finally {
           markPhase('prepareMs')
         }
@@ -257,7 +250,7 @@ export class HostCiService {
 
   private async enqueue(caller: ManagementPrincipal, input: CiRunInput,
     source: 'mcp' | 'http', scope: Awaited<ReturnType<CiAuthority['resolve']>>, actions: ManagementAction[],
-    markPhase: (phase: CiRunPhase) => void, pauseDispatch: (tickets: string[]) => Promise<void>) {
+    markPhase: (phase: CiRunPhase) => void, pauseDispatch: () => Promise<void>) {
     const commandId = input.commandId ?? randomUUID()
     let prepared: PreparedCiRuns | undefined
     let supersession: Map<string, boolean> | undefined
@@ -271,8 +264,7 @@ export class HostCiService {
           prepared ??= await this.prepareRuns(caller, input, scope)
           supersession = input.gate ? undefined
             : await prepareCiSupersession(this.pool, this.commits, prepared.runs[0]!)
-          const superseded = [...supersession?.entries() ?? []].filter(([, replaced]) => replaced).map(([id]) => id)
-          if (superseded.length) await pauseDispatch(superseded)
+          if (supersession && [...supersession.values()].some(Boolean)) await pauseDispatch()
         } finally {
           markPhase('insertMs')
         }
@@ -306,25 +298,11 @@ export class HostCiService {
       authorize: async () => { await this.authority.resolve(caller, scope.workspaceId, actions) },
       perform: async client => {
         const { runs, durations, cacheKeys, logTail } = prepared!
-        const { groupId, commit, priority, priorityReason, cachedFiles, initiator } = runs[0]!
-        // An identical request already queued or running in this workspace is joined instead of queueing tickets.
-        const requestKey = runs[0]!.state === 'queued' ? ciRequestKey(input, runs[0]!) : null
-        const shared = requestKey ? await joinCiRequest(client, scope.workspaceId, requestKey, initiator, commandId) : null
-        const result = shared?.output ?? CiRunOutputSchema.parse({ ticketId: runs[0]!.id,
+        const { groupId, commit, priority, priorityReason, cachedFiles } = runs[0]!
+        const result = CiRunOutputSchema.parse({ ticketId: runs[0]!.id,
           ...(runs.length > 1 ? { partitions: runs.map(run => ({ ticketId: run.id })) } : {}),
           ...(cachedFiles?.length ? { cachedFiles } : {}) })
-        if (!input.gate) {
-          await supersedeCiRuns(client, { ...runs[0]!, id: result.ticketId },
-            await spareSharedSupersession(client, superseded, initiator), { source, commandId })
-        }
-        if (shared) {
-          await client.query(`insert into management_audit(principal_id,source,action,target_key,outcome,details)
-            values($1,$2,'ci.join',$3,'succeeded',$4::jsonb)`, [caller.id, source, scope.workspaceId,
-            JSON.stringify({ commandId, groupId: shared.groupId, ticketId: result.ticketId })])
-          markPhase('postMs')
-          return result
-        }
-        if (requestKey) await registerCiRequest(client, scope.workspaceId, groupId, requestKey, result)
+        if (!input.gate) await supersedeCiRuns(client, runs[0]!, superseded, { source, commandId })
         for (const run of runs) {
           await client.query(`insert into ci_runs(id,workspace_id,group_id,state,record,durations,result_cache_keys,log_tail)
             values($1,$2,$3,$6,$4::jsonb,$5::jsonb,$7::jsonb,$8)`, [run.id, run.workspaceId, groupId, serializeCiJson(run),
@@ -582,15 +560,9 @@ export class HostCiService {
 
   async cancel(caller: ManagementPrincipal,
     input: { workspaceId?: string | undefined; ticketId: string; commandId?: string | undefined },
-    source: 'http' | 'mcp' = 'mcp'): Promise<{ run: CiRunRecord; detached?: { remainingRequesters: number } }> {
+    source: 'http' | 'mcp' = 'mcp'): Promise<{ run: CiRunRecord }> {
     const scope = await this.authority.resolve(caller, input.workspaceId, CI_RUN_ACTIONS)
     const run = await this.read(input.ticketId, scope.workspaceId)
-    if (['queued', 'starting', 'running'].includes(run.state)) {
-      // A requester of a group that identical requests share only leaves it while others still need it.
-      const remainingRequesters = await releaseCiRequester(this.pool, run,
-        { principalId: caller.id, executionId: scope.executionId ?? null })
-      if (remainingRequesters) return { run, detached: { remainingRequesters } }
-    }
     this.stoppingRuns += 1
     try {
       // Persist intent before trying the executor lock, even while its start reply is pending.
@@ -610,14 +582,12 @@ export class HostCiService {
     if (!intent) return
     this.stoppingRuns += 1
     try {
-      // Drain dispatch before selecting tickets, then the starts of those tickets still awaiting their reply.
+      // Drain dispatch before selecting tickets, including starts awaiting their provider reply.
       await this.dispatching
-      // Groups other requesters still share keep running; the Run's Agents only leave them.
-      const groups = await releaseStoppedRun(this.pool, runId, intent.workspace_id)
-      const tickets = groups.length ? (await this.pool.query<{ id: string }>(`select id from ci_runs
-        where workspace_id=$1 and group_id=any($2::uuid[]) and state in ('queued','starting','running')
-        order by id`, [intent.workspace_id, groups])).rows : []
-      await this.startsSettled(tickets.map(ticket => ticket.id))
+      const tickets = (await this.pool.query<{ id: string }>(`select c.id from ci_runs c
+        join harness_executions e on e.id=c.record#>>'{initiator,executionId}'
+        where e.run_id=$1 and c.workspace_id=$2 and c.state in ('queued','starting','running')
+        order by c.id`, [runId, intent.workspace_id])).rows
       const audit: CiCancellation = {
         principalId: intent.record.principalId,
         source: intent.record.source,
@@ -841,7 +811,7 @@ export class HostCiService {
         savedLogTail,
         run.supersededBy ?? null, run.state, JSON.stringify(run), setupRequeue],
       next, run.cancellation ?? audit, client)
-    if (terminal && run.gate && run.suite === 'integration') invalidateExecutorSpeeds(this.pool)
+    if (terminal && run.gate && run.suite === 'integration') invalidateExecutorSpeeds(this.planningEndpoint)
     if (requeued && saved.rowCount) log.warn({ runId: run.id, provider: computer.hostRef.provider, message: messages.message },
       'CI ticket queued for another computer')
     return Boolean(saved.rowCount)
@@ -851,7 +821,7 @@ export class HostCiService {
   dispatch(): Promise<void> {
     this.dispatchRequested = true
     if (this.stoppingRuns) return this.dispatching ?? Promise.resolve()
-    const pass = this.dispatching ??= (async () => {
+    this.dispatching ??= (async () => {
       while (this.dispatchRequested && !this.stoppingRuns) {
         this.dispatchRequested = false
         await trackService('ci-dispatch', { cadenceMs: 1000, deadlineMs: CI_DISPATCH_PASS_MS },
@@ -859,31 +829,7 @@ export class HostCiService {
       }
     })().catch(error => log.warn({ err: error }, 'CI dispatch failed'))
       .finally(() => { this.dispatching = undefined })
-    // Callers that await dispatch also see the Worker starts it handed off settle.
-    return pass.then(() => this.startsSettled())
-  }
-
-  private async startsSettled(tickets?: readonly string[]) {
-    const starts = tickets ? tickets.flatMap(id => this.startingRuns.get(id) ?? []) : [...this.startingRuns.values()]
-    await Promise.allSettled(starts)
-  }
-
-  /** A Worker start can spend seconds preparing its repository. It runs after the assignment is persisted, outside
-   * the pass's deadline; the ticket claim, acknowledgement deadline and start reconciliation still apply. */
-  private startAssigned(run: CiRunRecord, computer: HostCiComputer, status: CiHostStatus | undefined) {
-    const start = withoutCiDatabasePriority(async () => {
-      const outcome = await this.sendDispatch(run, computer)
-      if (outcome === 'pending') return
-      const current = await this.read(run.id, run.workspaceId)
-      if (current.state !== 'queued') return
-      if (outcome === 'busy' || outcome === 'rejected') {
-        this.dispatchRejections.record(run.id, computer, status, current.providerMessage ?? current.message ?? outcome)
-      }
-      void this.dispatch()
-    }).catch(error => log.warn({ err: error, runId: run.id, computer: computer.key },
-      'CI start failed; start reconciliation retries it'))
-      .finally(() => { this.startingRuns.delete(run.id) })
-    this.startingRuns.set(run.id, start)
+    return this.dispatching
   }
 
   private dispatchServices() {
@@ -1127,11 +1073,15 @@ export class HostCiService {
     // Slow provider polls may hold all but one permit, so Worker tickets can always release their slots.
     const cloudLimit = limit > 1 ? limit - 1 : limit
     let observingCloud = cloud.filter(row => this.observingRuns.has(row.id) && !this.collectingRuns.has(row.id)).length
+    // The first cloud ticket left waiting for a permit is where the next pass resumes, even if this pass goes on to
+    // start Worker tickets that wrap around to the front of the rotation.
+    let resumeAt: number | undefined
     for (let visited = 0; visited < rows.length && this.observingRuns.size - this.collectingRuns.size < limit; visited++) {
       const index = (offset + visited) % rows.length
       const row = rows[index]!
       if (this.observingRuns.has(row.id)) continue
       const isCloud = CiRunRecordSchema.parse(row.record).computer?.hostRef.kind === 'cloud'
+      if (isCloud && pendingCloud < 48 && observingCloud >= cloudLimit) resumeAt ??= index
       if (isCloud ? pendingCloud >= 48 || observingCloud >= cloudLimit : pendingLocal >= 8) continue
       if (isCloud) {
         pendingCloud++
@@ -1141,7 +1091,7 @@ export class HostCiService {
         trackService('ci-observation', { cadenceMs: 1000, deadlineMs: 5 * 60_000 },
           () => refresh(row))).finally(() => { this.observingRuns.delete(row.id) })
       this.observingRuns.set(row.id, observation)
-      this.observationOffset = (index + 1) % rows.length
+      this.observationOffset = resumeAt ?? (index + 1) % rows.length
     }
   }
 
@@ -1387,10 +1337,6 @@ export class HostCiService {
           assignments.delete(run.id)
           releaseSlot(computer)
           if (usesGitHubIntegration) integrationOnGitHub.delete(computer.key)
-          return
-        }
-        if (computer.hostRef.kind !== 'cloud') {
-          this.startAssigned(assigned, computer, status)
           return
         }
         const outcome = await this.sendDispatch(assigned, computer)
