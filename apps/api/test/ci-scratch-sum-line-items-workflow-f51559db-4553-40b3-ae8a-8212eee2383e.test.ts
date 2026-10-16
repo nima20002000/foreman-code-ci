@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
-function sumLineItems(items: { quantity: number; price: number }[]): number {
+function sumLineItems(items: Array<{ quantity: number; price: number }>): number {
   return items.reduce((total, item) => total + item.quantity * item.price, 0)
 }
 
 describe('sumLineItems', () => {
-  it('returns zero for empty items', () => {
+  it('returns zero for an empty list', () => {
     expect(sumLineItems([])).toBe(0)
   })
 
