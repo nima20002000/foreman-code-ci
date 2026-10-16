@@ -82,29 +82,28 @@ interface SpeedRow {
 }
 interface SpeedCache { at: number; pending?: Promise<Map<string, number | ExecutorThroughput>> | undefined
   speeds?: Map<string, number | ExecutorThroughput> }
-/** One estimate per planner (its endpoint): a service shares it across passes, never with another service. */
-const caches = new WeakMap<HostCiEndpoint, SpeedCache>()
+const caches = new WeakMap<pg.Pool, SpeedCache>()
 
-/** Forget the planner's cached estimate; a finished gate integration part changes the measurements. */
-export function invalidateExecutorSpeeds(endpoint: HostCiEndpoint) {
-  caches.delete(endpoint)
+/** Forget the cached estimate; a finished gate integration part changes the measurements. */
+export function invalidateExecutorSpeeds(pool: pg.Pool) {
+  caches.delete(pool)
 }
 
 /** Reads recent passed gate integration parts and estimates each current executor's speed. Concurrent callers
  * share one read and later ones reuse it until a gate part finishes. */
 export async function readExecutorSpeeds(pool: pg.Pool, endpoint: HostCiEndpoint)
   : Promise<Map<string, number | ExecutorThroughput>> {
-  const cached = caches.get(endpoint)
+  const cached = caches.get(pool)
   if (cached?.pending) return cached.pending
   if (cached?.speeds && Date.now() - cached.at < CACHE_MS) return cached.speeds
   const entry: SpeedCache = { at: Date.now() }
-  caches.set(endpoint, entry)
+  caches.set(pool, entry)
   entry.pending = loadExecutorSpeeds(pool, endpoint).then(speeds => {
     entry.speeds = speeds
     entry.at = Date.now()
     return speeds
   }).catch(error => {
-    if (caches.get(endpoint) === entry) caches.delete(endpoint)
+    if (caches.get(pool) === entry) caches.delete(pool)
     throw error
   }).finally(() => { entry.pending = undefined })
   return entry.pending
