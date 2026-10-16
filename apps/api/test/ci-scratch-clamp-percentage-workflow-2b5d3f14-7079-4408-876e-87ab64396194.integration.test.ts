@@ -9,7 +9,7 @@ describe('clampPercentage', () => {
     expect(clampPercentage(-25)).toBe(0)
   })
 
-  it.each([0, 25, 50.5, 100])('preserves the in-range value %s', value => {
+  it.each([0, 25, 50.5, 100])('preserves %s within the bounds', (value) => {
     expect(clampPercentage(value)).toBe(value)
   })
 
