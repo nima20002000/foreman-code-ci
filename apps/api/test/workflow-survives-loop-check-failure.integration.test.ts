@@ -28,10 +28,8 @@ describe.runIf(postgresEnabled)('workflow resilience to a failed loop check', ()
   }
   let before: Awaited<ReturnType<typeof fixture.active>>
   beforeAll(async () => { fixture = await faultWorkflowFixture({ loop: true }) }, 10_000)
-  // Startup has two observable milestones, each with its own budget: the entry Agent finishing, then
-  // the remote sibling's native session running. The first loop check is due one 10 second interval
-  // after the entry finishes, so setup time spent after that point shortens the case's wait for it.
-  beforeAll(async () => { await fixture.prepareEntry() }, 10_000)
+  // The first check is due one 10 second interval after the entry node finishes, so launching the Run
+  // in setup keeps that unavoidable wait from sharing the case's budget with startup.
   beforeAll(async () => {
     await fixture.launch()
     before = await fixture.active()
