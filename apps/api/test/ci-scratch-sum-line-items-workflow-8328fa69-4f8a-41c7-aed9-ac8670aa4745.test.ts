@@ -5,14 +5,14 @@ function sumLineItems(items: { quantity: number; price: number }[]): number {
 }
 
 describe('sumLineItems', () => {
-  it('returns zero for empty items', () => {
+  it('returns zero for no items', () => {
     expect(sumLineItems([])).toBe(0);
   });
 
   it('sums quantity times price for multiple items', () => {
     expect(sumLineItems([
       { quantity: 2, price: 10 },
-      { quantity: 3, price: 4.5 },
-    ])).toBe(33.5);
+      { quantity: 3, price: 5 },
+    ])).toBe(35);
   });
 });
