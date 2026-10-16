@@ -424,6 +424,10 @@ export class HostCiService {
     if (smokeTarget && !supportsSelection) {
       throw new DomainError('CI_SMOKE_UNSUPPORTED', 'CI smoke requires a repository with affected test selection.', 409)
     }
+    if (!supportsSelection && (input.scope === 'affected' || input.files !== undefined)) {
+      throw new DomainError('CI_SELECTION_UNSUPPORTED',
+        'This repository has no affected test selection. Request scope full and omit files.', 409)
+    }
     const selectionScope = supportsSelection ? input.scope ?? 'affected' : 'full'
     const deriveFiles = selectionScope === 'affected' && input.files === undefined
     const selection = { ...input, scope: selectionScope, files: selectionScope === 'affected' ? input.files : [] }
@@ -802,6 +806,8 @@ export class HostCiService {
         message: `Queued once on another slot after setup failure: ${reason}`.slice(0, 2000) }
     }
     const requeued = state.state === 'queued'
+    let executionRunId = run.executionRunId
+    if (requeued) executionRunId = setupRequeue ? setupRetry!.runId : randomUUID()
     const unstartedProviders = new Set(run.unstartedProviders ?? [])
     // A workflow the provider only queued is moved when another computer has room; that does not rule the provider out.
     if (requeued && !setupRequeue && computer.hostRef.provider && run.step !== 'queued') {
@@ -816,6 +822,7 @@ export class HostCiService {
       dispatchedAt: state.state === 'starting' ? run.dispatchedAt ?? run.startedAt ?? run.queuedAt : undefined,
       dispatchHostKey: undefined,
       setupRetry,
+      executionRunId,
       ...(options.observation ? { observation: options.observation } : {}),
       ...(state.transport ? { transport: state.transport } : {}),
       ...(setupRequeue ? { dispatchAttempts: undefined, collection: undefined, provenance: undefined,

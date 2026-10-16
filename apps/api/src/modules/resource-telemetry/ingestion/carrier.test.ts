@@ -162,14 +162,19 @@ describe('authenticated W07 passive telemetry carrier', () => {
     const worker = new DeviceApplicationChannel({ side: 'worker', binding, socket: workerSocket, signal: s.lifetime.signal,
       extensions, registrations: [s.worker.extension] })
     const tasks = [main.run(mainSocket.messages[Symbol.asyncIterator](), 10000), worker.run(workerSocket.messages[Symbol.asyncIterator](), 5000)]
-    for (const task of tasks) void task.catch(() => undefined)
+    for (const task of tasks) void task.catch(() => { /* ignore: closing the test channels ends both run loops. */ })
     try {
       const c = await s.challenge(), response = await main.request('resource-telemetry', { operation: 'collect', challenge: c })
       expect(response.payload).toEqual(batch(c))
       await expect(s.service.ingest(remoteTelemetryContext(binding), JSON.stringify(response.payload), s.lifetime.signal)).resolves.toMatchObject({ status: 'accepted' })
       expect(revalidate).toHaveBeenCalled()
       granted = false
-      await expect(main.request('resource-telemetry', { operation: 'collect', challenge: c })).rejects.toThrow('permission')
+      // Channels reuse a successful authorization for two minutes; the next request after that rechecks it.
+      const now = Date.now()
+      const clock = vi.spyOn(Date, 'now').mockReturnValue(now + 120_000)
+      try {
+        await expect(main.request('resource-telemetry', { operation: 'collect', challenge: c })).rejects.toThrow('permission')
+      } finally { clock.mockRestore() }
       expect(s.createCollector).toHaveBeenCalledTimes(1)
     } finally {
       s.lifetime.abort(); main.close(); worker.close(); await Promise.allSettled(tasks)
@@ -186,6 +191,44 @@ describe('authenticated W07 passive telemetry carrier', () => {
     await vi.advanceTimersByTimeAsync(1999); expect(s.request).toHaveBeenCalledTimes(1)
     s.lifetime.abort(); await session.close(); await s.worker.close(); await s.service.close()
     expect(s.collectors[0]!.close).toHaveBeenCalledTimes(1)
+  })
+  it.each(['challenge', 'ingest'] as const)('recovers from a transient database timeout during %s with a fresh sample', async phase => {
+    vi.useFakeTimers()
+    const s = setup()
+    const original = s.service.ports.sessions.active
+    const active = vi.spyOn(s.service.ports.sessions, 'active')
+    let calls = 0
+    active.mockImplementation(async (...args) => {
+      calls++
+      // Handshake, challenge authorization, then ingestion authorization.
+      if (calls === (phase === 'challenge' ? 2 : 3)) {
+        throw Object.assign(new Error('statement timeout'), { code: '57014' })
+      }
+      return original(...args)
+    })
+    const session = await startRemoteTelemetrySession({ service: s.service, binding,
+      signal: s.lifetime.signal, request: s.request })
+    const failures: unknown[] = []
+    void session.completion.catch(error => { failures.push(error) })
+    try {
+      await vi.advanceTimersByTimeAsync(0)
+      expect(s.request).toHaveBeenCalledTimes(phase === 'challenge' ? 0 : 1)
+      await vi.advanceTimersByTimeAsync(2000)
+      expect(s.request).toHaveBeenCalledTimes(phase === 'challenge' ? 1 : 2)
+      const challenges = s.request.mock.calls.map(([payload]) => (payload as { challenge: CollectionChallenge }).challenge.challengeId)
+      expect(new Set(challenges).size).toBe(challenges.length)
+      expect(failures).toEqual([])
+      expect(await s.service.availableComputerMemory({
+        hostRef: { kind: 'device', mainId: binding.mainId, deviceId: binding.deviceId },
+        applicationInstallationId: binding.workerInstallationId, bootId: binding.bootId,
+        keyRevision: binding.keyRevision, authorizationRevision: binding.authorizationRevision,
+      }, s.lifetime.signal)).toBe(1)
+    } finally {
+      s.lifetime.abort()
+      await session.close()
+      await s.worker.close()
+      await s.service.close()
+    }
   })
   it('keeps collecting after a busy channel times out one sample', async () => {
     vi.useFakeTimers(); const s = setup()

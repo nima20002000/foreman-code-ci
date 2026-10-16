@@ -58,57 +58,7 @@ export function createRemoteAccountServices(input: {
   const scope = async (principal: ManagementPrincipal, target: DeviceProvisioningTarget) => {
     if (target.hostRef.kind !== 'device') throw new DomainError('PROVIDER_ACCOUNT_TARGET_CONFLICT', 'Select a paired Worker.', 409)
     const request = (value: Parameters<ProviderAccountWorkerCarrier['request']>[2]) => carrier.request(principal, target, value)
-    const binding = (account: Parameters<NonNullable<ProviderAccountOperationNativePort['observeAccount']>>[0]['account']) => {
-      if (!account.binding) throw new DomainError('PROVIDER_ACCOUNT_BINDING_UNAVAILABLE', 'The saved Worker slot is unavailable.', 409)
-      return account.binding
-    }
-    const native: ProviderAccountOperationNativePort = {
-      async discover(_target, provider) {
-        return ProviderAccountNativeDiscoverySchema.parse(await request({ kind: 'discover', ...(provider ? { provider } : {}) }))
-      },
-      async provisionAccount(account) { await request({ kind: 'provision', account }) },
-      async registerProfile(value) {
-        if (!value.authMode) throw new DomainError('ACCOUNT_AUTH_MODE_MISMATCH', 'Select the qualified profile authentication mode.', 409)
-        const result = await request({ kind: 'register', provider: value.provider, authMode: value.authMode, profileRef: value.profileRef,
-          qualificationId: value.qualificationId })
-        return { profileRef: (result as { profileRef: string }).profileRef }
-      },
-      async status(value) {
-        const observed = ProviderAccountObservationSchema.parse(await request({ kind: 'status', binding: binding(value.account) }))
-        return { status: observed.status, identity: observed.identity, subject: observed.subject }
-      },
-      async observeAccount(value) {
-        return ProviderAccountObservationSchema.parse(await request({ kind: 'status', binding: binding(value.account) }))
-      },
-      async models(value) {
-        return ProviderAccountModelsSchema.parse(await request({ kind: 'models', binding: binding(value.account) }))
-      },
-      async authenticationGeneration(value) {
-        const observed = ProviderAccountObservationSchema.parse(await request({ kind: 'status', binding: binding(value.account) }))
-        return observed.generation
-      },
-      async requireRuntimeAccount(value) {
-        const observed = ProviderAccountObservationSchema.parse(await request({ kind: 'status', binding: binding(value.account) }))
-        if (observed.readiness === 'qualification-required' || observed.readiness === 'unavailable') {
-          throw new DomainError('PROVIDER_ACCOUNT_UNQUALIFIED', 'The owning Worker slot is unavailable.', 409)
-        }
-      },
-      async prepareAuthentication(value) {
-        return ProviderAccountNativeAuthenticationObservationSchema.parse(await request({ kind: 'prepare', operation: value.operation }))
-      },
-      async observeAuthentication(value) {
-        return ProviderAccountNativeAuthenticationObservationSchema.parse(await request({ kind: 'observe', operation: value.operation }))
-      },
-      async cancelAuthentication(value) {
-        return ProviderAccountNativeAuthenticationObservationSchema.parse(await request({ kind: 'cancel', operation: value.operation }))
-      },
-      // The carrier resolves native paths on the Worker. Main never holds a remote filesystem path.
-      async resolveProfile() { return { homePath: '', userHome: '' } },
-      async login() { throw new DomainError('PROVIDER_OPERATION_REQUIRED', 'Use the persisted authentication operation.', 409) },
-      async logout() { throw new DomainError('PROVIDER_OPERATION_REQUIRED', 'Use the persisted authentication operation.', 409) },
-      async cancelLogin() { throw new DomainError('PROVIDER_OPERATION_REQUIRED', 'Cancel the original operation.', 409) },
-      async close() {},
-    }
+    const native = workerNativePort(request)
     const unsupported = async (): Promise<never> => { throw new DomainError('PROVIDER_ACCOUNT_LOCAL_HUMAN_REQUIRED',
       'API-key provisioning must be performed by a human on the owning computer.', 403) }
     const credentials: ProviderAccountCredentials = {
@@ -176,7 +126,8 @@ export function createRemoteAccountServices(input: {
       const account = (await repository(binding.target).read(sql)).accounts.find(value => value.id === accountId)
       return account?.binding ? { ...account.binding, subject: account.observation?.subject ?? account.binding.subject } : undefined
     },
-    async resolve(binding: ProviderAccountBinding, sql?: GraphSqlClient) {
+    async resolve(binding: ProviderAccountBinding, sql?: GraphSqlClient, signal?: AbortSignal) {
+      signal?.throwIfAborted()
       const reader = sql ?? input.pool
       const store = repository(binding.target)
       const snapshot = sql ? await store.lock(sql) : await store.read(reader)
@@ -213,7 +164,8 @@ export function createRemoteAccountServices(input: {
         const request = ProviderAccountWorkerRequestSchema.parse({ version: 1, target: binding.target, connection,
           request: { kind: 'status', binding } })
         // Admission and recovery read only the accepted slot over its authenticated runtime channel.
-        const result = await channel.request(request)
+        const result = await channel.request(request, signal ? { signal } : undefined)
+        signal?.throwIfAborted()
         const current = input.endpoint().captureRequest(device.deviceId, PROVIDER_ACCOUNT_WORKER_NAMESPACE)
         if (!current || !isDeepStrictEqual(current.binding, captured) || result.bytes !== undefined) {
           throw new DomainError('PROVIDER_ACCOUNT_TARGET_CONFLICT', 'The owning Worker connection changed.', 409)
@@ -225,7 +177,9 @@ export function createRemoteAccountServices(input: {
           throw new DomainError('PROVIDER_ACCOUNT_PRINCIPAL_UNAVAILABLE', 'The accepted Worker principal is unproved or changed.', 409)
         }
         const reported = observation
+        signal?.throwIfAborted()
         observation = await withTransaction(input.pool, async (client) => {
+          signal?.throwIfAborted()
           const currentDevice = await assertDeviceHostInstallation(client, binding.target.hostRef, binding.target.applicationInstallationId)
           if (!currentDevice || currentDevice.keyRevision !== binding.target.keyRevision
             || currentDevice.authorizationRevision !== binding.target.authorizationRevision) {
@@ -249,5 +203,61 @@ export function createRemoteAccountServices(input: {
       return { accountId: account.id, homePath: '', authMode: account.authMode, binding,
         ...(observation ? { observation } : {}) }
     },
+  }
+}
+
+/** Native account operations are carried to the owning Worker; Main never touches remote paths. */
+function workerNativePort(request: (value: Parameters<ProviderAccountWorkerCarrier['request']>[2]) => Promise<unknown>,
+): ProviderAccountOperationNativePort {
+  const binding = (account: Parameters<NonNullable<ProviderAccountOperationNativePort['observeAccount']>>[0]['account']) => {
+    if (!account.binding) throw new DomainError('PROVIDER_ACCOUNT_BINDING_UNAVAILABLE', 'The saved Worker slot is unavailable.', 409)
+    return account.binding
+  }
+  return {
+    async discover(_target, provider) {
+      return ProviderAccountNativeDiscoverySchema.parse(await request({ kind: 'discover', ...(provider ? { provider } : {}) }))
+    },
+    async provisionAccount(account) { await request({ kind: 'provision', account }) },
+    async registerProfile(value) {
+      if (!value.authMode) throw new DomainError('ACCOUNT_AUTH_MODE_MISMATCH', 'Select the qualified profile authentication mode.', 409)
+      const result = await request({ kind: 'register', provider: value.provider, authMode: value.authMode, profileRef: value.profileRef,
+        qualificationId: value.qualificationId })
+      return { profileRef: (result as { profileRef: string }).profileRef }
+    },
+    async status(value) {
+      const observed = ProviderAccountObservationSchema.parse(await request({ kind: 'status', binding: binding(value.account) }))
+      return { status: observed.status, identity: observed.identity, subject: observed.subject }
+    },
+    async observeAccount(value) {
+      return ProviderAccountObservationSchema.parse(await request({ kind: 'status', binding: binding(value.account) }))
+    },
+    async models(value) {
+      return ProviderAccountModelsSchema.parse(await request({ kind: 'models', binding: binding(value.account) }))
+    },
+    async authenticationGeneration(value) {
+      const observed = ProviderAccountObservationSchema.parse(await request({ kind: 'status', binding: binding(value.account) }))
+      return observed.generation
+    },
+    async requireRuntimeAccount(value) {
+      const observed = ProviderAccountObservationSchema.parse(await request({ kind: 'status', binding: binding(value.account) }))
+      if (observed.readiness === 'qualification-required' || observed.readiness === 'unavailable') {
+        throw new DomainError('PROVIDER_ACCOUNT_UNQUALIFIED', 'The owning Worker slot is unavailable.', 409)
+      }
+    },
+    async prepareAuthentication(value) {
+      return ProviderAccountNativeAuthenticationObservationSchema.parse(await request({ kind: 'prepare', operation: value.operation }))
+    },
+    async observeAuthentication(value) {
+      return ProviderAccountNativeAuthenticationObservationSchema.parse(await request({ kind: 'observe', operation: value.operation }))
+    },
+    async cancelAuthentication(value) {
+      return ProviderAccountNativeAuthenticationObservationSchema.parse(await request({ kind: 'cancel', operation: value.operation }))
+    },
+    // The carrier resolves native paths on the Worker. Main never holds a remote filesystem path.
+    async resolveProfile() { return { homePath: '', userHome: '' } },
+    async login() { throw new DomainError('PROVIDER_OPERATION_REQUIRED', 'Use the persisted authentication operation.', 409) },
+    async logout() { throw new DomainError('PROVIDER_OPERATION_REQUIRED', 'Use the persisted authentication operation.', 409) },
+    async cancelLogin() { throw new DomainError('PROVIDER_OPERATION_REQUIRED', 'Cancel the original operation.', 409) },
+    async close() {},
   }
 }
