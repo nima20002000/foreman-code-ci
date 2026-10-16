@@ -45,10 +45,48 @@ describe.runIf(postgresEnabled)('workflow resilience to a failed loop check', ()
       state: 'running', attempt: 1, nativeSessionId: remote.nativeSessionId,
     })
     fixture.release()
-    await readUntil(fixture.readExecutions, executions =>
-      [fixture.affected.id, fixture.sibling.id].every(nodeId => executions.some(execution =>
-        execution.workflowNodeId === nodeId && execution.result?.outcome === 'succeeded')),
-    { timeoutMs: 2_000, minimumReadIntervalMs: 250, description: 'successful sibling work after the failed check' })
+    const releasedAt = performance.now()
+    const recs: { phase: string; at: number; ms: number; ex?: string | undefined; op?: string | undefined }[] = []
+    const { runtimeTimingChannel } = await import('../src/modules/diagnostics/runtimeTiming.js')
+    const sub = (m: unknown) => { const r = m as { phase: string; startedAt: string; durationMs: number; executionId?: string; operation?: string }
+      recs.push({ phase: r.phase, at: Date.parse(r.startedAt) - releasedWall, ms: Math.round(r.durationMs), ex: r.executionId?.slice(0, 4), op: r.operation }) }
+    const releasedWall = Date.now()
+    runtimeTimingChannel.subscribe(sub)
+    const times: Record<string, number> = {}
+    const aff = [...fixture.intents.values()].find(v => v.nodeId === fixture.affected.id)!
+    for (;;) {
+      if (!('journal' in times)) {
+        const st = await fixture.worker.journal.status(aff.operationId)
+        if (st.status === 'known' && st.receipt.terminal) times.journal = Math.round(performance.now() - releasedAt)
+      }
+      if (!('native' in times)) {
+        const turn = fixture.worker.replay.starts.find(t => t.correlationId === `execution:${aff.executionId}`)!
+        const nt = fixture.worker.replay.threads.get(turn.sessionId)!.turns.find(i => i.id === turn.nativeTurnId)!
+        if (nt.status !== 'inProgress') times.native = Math.round(performance.now() - releasedAt)
+      }
+      const now = await fixture.readExecutions()
+      for (const [label, id] of [['affected', fixture.affected.id], ['sibling', fixture.sibling.id]] as const) {
+        if (!(label in times) && now.some(e => e.workflowNodeId === id && e.result?.outcome === 'succeeded')) times[label] = Math.round(performance.now() - releasedAt)
+      }
+      if (['affected','sibling','journal','native'].every(k => k in times) || performance.now() - releasedAt > 5000) break
+      await new Promise(r => setTimeout(r, 20))
+    }
+    runtimeTimingChannel.unsubscribe(sub)
+    const affId = aff.executionId.slice(0, 4)
+    expect(JSON.stringify(times) + '\n' + affId + '\n' + recs.filter(r => r.ms >= 15 && r.ex === affId).sort((a, b) => a.at - b.at).map(r => `${r.at}+${r.ms} ${r.phase}`).join('\n')).toBe('x')
+    try {
+      await readUntil(fixture.readExecutions, executions =>
+        [fixture.affected.id, fixture.sibling.id].every(nodeId => executions.some(execution =>
+          execution.workflowNodeId === nodeId && execution.result?.outcome === 'succeeded')),
+      { timeoutMs: 2_000, minimumReadIntervalMs: 250, description: 'successful sibling work after the failed check' })
+    } catch (error) {
+      const executions = await fixture.readExecutions()
+      throw new Error(`${(error as Error).message} after ${Math.round(performance.now() - releasedAt)}ms: ${JSON.stringify(
+        executions.map(execution => ({ node: execution.workflowNodeId, state: execution.state,
+          outcome: execution.result?.outcome, code: execution.result?.error?.code })))}`, { cause: error })
+    }
+    const dbg = (await fixture.readExecutions()).map(e => `${e.workflowNodeId.slice(0,6)}:${e.finishedAt}`)
+    expect(`${Math.round(performance.now() - releasedAt)}ms ${JSON.stringify(dbg)}`).toBe('x')
     const details = await fixture.read()
     expect(details.run).toMatchObject({ executionState: 'running', outcome: 'pending' })
     expect(details.executions.filter(execution => execution.result?.outcome === 'failed').map(execution => execution.id))
