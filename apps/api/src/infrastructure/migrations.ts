@@ -32,6 +32,7 @@ import { ciTicketChangesMigration } from './ciTicketChangesMigration.js'
 import { ciGroupWaitMigration } from './ciGroupWaitMigration.js'
 import { ciRecoveryIndexesMigration } from './ciRecoveryIndexesMigration.js'
 import { ciRequestSharingMigration } from './ciRequestSharingMigration.js'
+import { ciDirectoryRetentionMigration } from './ciDirectoryRetentionMigration.js'
 import { ciSharedActivityMigration } from './ciSharedActivityMigration.js'
 import { ciRequesterHistoryMigration } from './ciRequesterHistoryMigration.js'
 import { stateDeadlinesMigration } from './stateDeadlinesMigration.js'
@@ -61,6 +62,7 @@ import { activityCommandSourcesMigration } from './activityCommandSourcesMigrati
 import { harnessInstanceSettingsMigration } from '../modules/harnesses/instanceSettings/migration.js'
 import { harnessInstanceProfileEvidenceMigration } from '../modules/harnesses/instanceSettings/profileMigration.js'
 import { computerSyncMigration } from './computerSyncMigration.js'
+import { computerSyncIdentityMigration } from './computerSyncIdentityMigration.js'
 import { buildComputersMigration } from './buildComputersMigration.js'
 import { ciRuntimePreparationMigration } from './ciRuntimePreparationMigration.js'
 import { ciRuntimeMainComputerMigration } from './ciRuntimeMainComputerMigration.js'
@@ -917,6 +919,7 @@ export const migrations = [
   jobRuntimeCaptureWithoutApprovalMigration,
   buildComputerRoleMigration,
   computerSyncMigration,
+  computerSyncIdentityMigration,
   ciRuntimePreparationMigration,
   buildComputerPriorityMigration,
   retiredHarnessCredentialsMigration,
@@ -966,6 +969,7 @@ export const migrations = [
   ciRequestSharingMigration,
   ciRequesterHistoryMigration,
   ciSharedActivityMigration,
+  ciDirectoryRetentionMigration,
 ] as const
 
 export function assertMigrationVersions(entries: readonly { version: number }[]): void {
