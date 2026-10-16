@@ -81,9 +81,6 @@ interface MirrorMaintenance {
 }
 const mirrorPublications = new Map<string, Map<string, Promise<Publication>>>()
 const mirrorMaintenance = new Map<string, MirrorMaintenance>()
-// Every publication force-pushes main, so a minute-old base only changes the snapshot parent, never the pushed tree.
-const MIRROR_FETCH_REUSE_MS = 60_000
-const mirrorFetchedAt = new Map<string, number>()
 
 /** The public mirror belonging to this workspace, if any. */
 export function workspaceMirrors(pool: pg.Pool): Mirrors {
@@ -109,7 +106,6 @@ export async function activeCiRuns(pool: pg.Pool): Promise<ActiveCiRuns> {
 export class CloudCi {
   private activeRuns: (() => Promise<ActiveCiRuns>) | undefined
   private checked: { at: number; ready: boolean } | undefined
-  private readinessProbe: Promise<boolean> | undefined
   private readinessObserved: ReadObservation | undefined
   get readinessObservation(): ReadObservation | undefined {
     return this.readinessObserved && { ...this.readinessObserved }
@@ -265,22 +261,17 @@ export class CloudCi {
     }
   }
 
-  /** Main's login for the service works; checked at most once a minute, by one probe shared between callers.
-   * A probe that fails to run keeps the last good answer and is retried on the next call. */
-  ready(): Promise<boolean> {
-    if (this.checked && Date.now() - this.checked.at < 60_000) return Promise.resolve(this.checked.ready)
-    this.readinessProbe ??= this.probeReadiness().finally(() => { this.readinessProbe = undefined })
-    return this.readinessProbe
-  }
-
-  private async probeReadiness() {
+  /** Main's login for the service works; checked at most once a minute. */
+  async ready() {
+    if (this.checked && Date.now() - this.checked.at < 60_000) return this.checked.ready
     let ready: boolean
     try { ready = await this.provider.ready() }
     catch (error) {
       logIgnoredError('jobs', 'check CI provider readiness', error, { provider: this.provider.id })
       this.readinessObserved = failedReadObservation(this.readinessObserved, error,
         `${this.provider.label} readiness check failed`)
-      return this.checked?.ready ?? false
+      this.checked = undefined
+      return false
     }
     this.checked = { at: Date.now(), ready }
     this.readinessObserved = successfulReadObservation()
@@ -697,26 +688,22 @@ export class CloudCi {
     // Fetch without source alternates: their shallow refs are not negotiation haves the mirror clone can walk.
     const fetch = () => run(['fetch', '--quiet', '--no-tags', 'origin', `+main:${base}`], {})
     let repair: CiMirrorRepair | undefined
-    const fetchedAt = mirrorFetchedAt.get(mirrorClone)
-    if (fetchedAt === undefined || this.ports.now().getTime() - fetchedAt >= MIRROR_FETCH_REUSE_MS) {
-      await fetch().catch(async (error: unknown) => {
-        if (!(error instanceof DomainError) || !/could not read|failed to traverse|did not send all necessary objects|bad object|corrupt/i
-          .test(error.message)) throw error
-        const repairing = performance.now()
-        log.warn({ operation: 'repair CI mirror clone', err: error, mirror, commit, attempt: 1 },
-          'CI mirror clone is unreadable; rebuilding it once')
-        try {
-          await rm(mirrorClone, { recursive: true, force: true })
-          await ensureClone(this.git, mirror, signal)
-          await fetch()
-        } finally {
-          const elapsedMs = performance.now() - repairing
-          updateOperationalFailure('jobs', 'repair CI mirror clone', { elapsedMs })
-          repair = { count: 1, reason: 'CI_MIRROR_CORRUPT', repository: mirror, sourceCommit: commit, elapsedMs }
-        }
-      })
-      mirrorFetchedAt.set(mirrorClone, this.ports.now().getTime())
-    }
+    await fetch().catch(async (error: unknown) => {
+      if (!(error instanceof DomainError) || !/could not read|failed to traverse|did not send all necessary objects|bad object|corrupt/i
+        .test(error.message)) throw error
+      const repairing = performance.now()
+      log.warn({ operation: 'repair CI mirror clone', err: error, mirror, commit, attempt: 1 },
+        'CI mirror clone is unreadable; rebuilding it once')
+      try {
+        await rm(mirrorClone, { recursive: true, force: true })
+        await ensureClone(this.git, mirror, signal)
+        await fetch()
+      } finally {
+        const elapsedMs = performance.now() - repairing
+        updateOperationalFailure('jobs', 'repair CI mirror clone', { elapsedMs })
+        repair = { count: 1, reason: 'CI_MIRROR_CORRUPT', repository: mirror, sourceCommit: commit, elapsedMs }
+      }
+    })
     const reusedSnapshot = await git(['rev-parse', base])
     let fetchMs = performance.now() - fetching
     const workflow = this.provider.id === 'github' ? '.github/workflows/ci.yml' : '.circleci/config.yml'
@@ -865,24 +852,14 @@ export class CloudCi {
 
   private indexSpec(files: string[], selected: Set<string>) {
     const indexes = files.flatMap((file, index) => selected.has(file) ? [index] : [])
-    const ranges: Array<[number, number]> = []
+    const ranges: string[] = []
     for (let start = 0; start < indexes.length;) {
       let end = start
       while (end + 1 < indexes.length && indexes[end + 1] === indexes[end]! + 1) end++
-      ranges.push([indexes[start]!, indexes[end]!])
+      ranges.push(start === end ? `${indexes[start]}` : `${indexes[start]}-${indexes[end]}`)
       start = end + 1
     }
-    // Runners of older commits only know "s:", so it stays the form whenever it fits a short parameter.
-    const plain = `s:${ranges.map(([first, last]) => first === last ? `${first}` : `${first}-${last}`).join(',')}`
-    if (plain.length <= 400) return plain
-    // "d:" lists each range as its base-36 gap from the previous range's end, plus ".<length - 1>" for runs
-    // (decoded by selectByIndexes in scripts/ci-files.mjs).
-    let next = 0
-    return `d:${ranges.map(([first, last]) => {
-      const gap = (first - next).toString(36)
-      next = last + 1
-      return last === first ? gap : `${gap}.${(last - first).toString(36)}`
-    }).join(',')}`
+    return `s:${ranges.join(',')}`
   }
 
   /** Refuses to publish files that name this fleet: Main's home path and user, and every Tailscale computer's
