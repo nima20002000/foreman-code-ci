@@ -1109,7 +1109,7 @@ export class HostCiService {
       const row = rows[index]!
       if (this.observingRuns.has(row.id)) continue
       const isCloud = CiRunRecordSchema.parse(row.record).computer?.hostRef.kind === 'cloud'
-      if (isCloud ? pendingCloud >= 48 || observingCloud >= cloudLimit : pendingLocal >= 8) continue
+      if (isCloud ? pendingCloud >= 48 : pendingLocal >= 8) continue
       if (isCloud) {
         pendingCloud++
         observingCloud++
