@@ -226,15 +226,14 @@ export class DeviceApplicationChannel {
     const priority = effectiveDeviceRequestPriority(namespace, payload, options.priority)
     const bulk = deviceRequestIsBulk(namespace, payload, options.bytes !== undefined)
     const observation = options.bytes === undefined && deviceRequestIsObservation(namespace, payload)
-    const timeoutMs = Math.min(900_000, Math.max(1, options.timeoutMs ?? 30_000))
-    const deadline = Date.now() + timeoutMs
     const release = await this.requestQueue.acquire({
-      priority, stop, bulk, observation, namespace, signal: options.signal, timeoutMs,
+      priority, stop, bulk, observation, namespace, signal: options.signal,
     }).catch((error: unknown) => {
       if (error instanceof DeviceApplicationAdmissionError) this.reportSaturation(namespace, error.reason)
       throw error
     })
     try {
+      const deadline = Date.now() + deviceForegroundWaitMs
       const signal = AbortSignal.any([this.abort.signal, ...(options.signal ? [options.signal] : [])])
       let backoff = 50
       while (true) {
@@ -243,11 +242,8 @@ export class DeviceApplicationChannel {
         await this.options.beforeRequest?.(namespace, payload)
         if (options.signal?.aborted) throw new DeviceApplicationError('cancelled')
         this.current()
-        const remaining = deadline - Date.now()
-        if (remaining <= 0) throw new DeviceApplicationError('timeout')
         try {
-          return await this.sendRequest(namespace, payload, extension.version,
-            { ...options, timeoutMs: remaining }, { stop, observation, priority })
+          return await this.sendRequest(namespace, payload, extension.version, options, { stop, observation, priority })
         } catch (error) {
           const remaining = deadline - Date.now()
           if (priority !== 'foreground' || !(error instanceof DeviceApplicationAdmissionError)
