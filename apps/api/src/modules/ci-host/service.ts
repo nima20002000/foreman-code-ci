@@ -1109,7 +1109,7 @@ export class HostCiService {
       const row = rows[index]!
       if (this.observingRuns.has(row.id)) continue
       const isCloud = CiRunRecordSchema.parse(row.record).computer?.hostRef.kind === 'cloud'
-      if (isCloud ? pendingCloud >= 48 : pendingLocal >= 8) continue
+      if (isCloud ? pendingCloud >= 48 || observingCloud >= cloudLimit : pendingLocal >= 8) continue
       if (isCloud) {
         pendingCloud++
         observingCloud++
@@ -1309,7 +1309,7 @@ export class HostCiService {
           || right.priority - left.priority)
         const computer = order.shift()!
         // The same bounded snapshot that counted this computer's free slots decides whether it can take the ticket.
-        const status = this.planningEndpoint.dispatchStatus(computer)
+        const status = this.planningEndpoint.status(computer)
         const rejected = this.dispatchRejections.reason(run.id, computer, status)
         const notReady = status?.ready ? undefined
           : status?.reasons.join('; ') || unavailable.get(computer.key) || 'CI status unavailable'
