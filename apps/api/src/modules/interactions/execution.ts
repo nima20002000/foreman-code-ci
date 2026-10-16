@@ -2898,6 +2898,9 @@ export class ApprovalExecutionCoordinator {
           && observed.correlationId === observation.workflowCorrelation && Boolean(providerId)
           && observed.terminalTurn.providerId === providerId
           && !observed.pendingInteraction && observed.pendingInteractions.length === 0
+        if (!exactTerminal) console.error('PROBE-RECONCILE', JSON.stringify({ t: Date.now(), idleDelayMs, exec: observation.execution.id.slice(0, 6),
+          term: observed.terminalTurn ? { c: observed.terminalTurn.correlationId, p: observed.terminalTurn.providerId } : null,
+          corr: observed.correlationId, providerId, wf: observation.workflowCorrelation, pend: observed.pendingInteractions.length }))
         if (exactTerminal) {
           lane.providerId = observed.terminalTurn!.providerId
         } else if (observed.correlationId === observation.workflowCorrelation && providerId) {
