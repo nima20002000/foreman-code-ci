@@ -1,7 +1,7 @@
 import pg from 'pg'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createDatabase } from '../../infrastructure/database.js'
-import { withCiDatabasePriority } from '../../infrastructure/ciDatabasePriority.js'
+import { withCiDatabasePriority, withoutCiDatabaseReservation } from '../../infrastructure/ciDatabasePriority.js'
 import type { PostgresCommandCoordinator } from '../commands/postgres.js'
 import type { CiAuthority } from '../jobs/ciAuthority.js'
 import { claimCiSlot } from './cloudSlots.js'
@@ -9,6 +9,7 @@ import { ticketStore } from './ciTicketStore.testSupport.js'
 import { queuedTicket, readyStatus } from './dispatchFleet.testSupport.js'
 import { HostCiService, type CiCommits, type HostCiComputer, type HostCiEndpoint } from './service.js'
 import { deferred } from '../../../test/helpers/deferred.js'
+import { ProductionHostCiEndpoint } from './endpoint.js'
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -181,6 +182,67 @@ it('keeps the dispatch deadline and refuses a late executor acknowledgement afte
   } finally {
     reply.resolve()
     await service.close()
+    await db.close()
+  }
+})
+
+it('delivers tickets with every shared connection held and releases reserved connections before executor I/O', async () => {
+  vi.useFakeTimers()
+  const records = [queuedTicket(), queuedTicket()]
+  const db = database(records)
+  const held = await Promise.all(Array.from({ length: 4 }, () => db.pool.connect()))
+  const release = deferred()
+  const starts: string[] = []
+  const computers = [executor(0), executor(1)]
+  const endpoint: HostCiEndpoint = {
+    computers: async () => computers,
+    request: async (_computer, request) => {
+      if (request.operation === 'status') return readyStatus()
+      if (request.operation !== 'start') throw new Error('Unexpected executor request')
+      starts.push(request.runId)
+      await release.promise
+      return { operation: 'start', run: { runId: request.runId, state: 'running', step: 'build',
+        startedAt: new Date().toISOString(), finishedAt: null, exitCode: null, message: null, logBytes: 0 } }
+    },
+  }
+  const service = new HostCiService(db.pool, {} as PostgresCommandCoordinator,
+    {} as CiAuthority, {} as CiCommits, endpoint)
+  try {
+    const dispatch = service.dispatch()
+    await vi.advanceTimersByTimeAsync(2500)
+    expect(starts.sort()).toEqual(records.map(run => run.id).sort())
+    const reserved = await withCiDatabasePriority(() => Promise.all([db.pool.connect(), db.pool.connect()]))
+    for (const client of reserved) client.release()
+    release.resolve()
+    await vi.advanceTimersByTimeAsync(0)
+    await dispatch
+    for (const run of records) expect(db.read(run.id).record.state).toBe('running')
+  } finally {
+    release.resolve()
+    for (const client of held) client.release()
+    await vi.advanceTimersByTimeAsync(3001)
+    await service.close()
+    await db.close()
+  }
+})
+
+it('keeps persisted build validation independent of shared-pool saturation', async () => {
+  vi.useFakeTimers()
+  const run = queuedTicket()
+  const db = database([run])
+  const held = await Promise.all(Array.from({ length: 4 }, () => db.pool.connect()))
+  const endpoint = new ProductionHostCiEndpoint(db.pool, 'main', () => undefined, {
+    handle: async () => { throw new Error('Disabled computers cannot enter the executor') },
+  })
+  try {
+    const reply = Promise.allSettled([withCiDatabasePriority(() => withoutCiDatabaseReservation(() =>
+      endpoint.request(executor(0), startRequest(run))))])
+    await vi.advanceTimersByTimeAsync(1100)
+    expect(await reply).toEqual([{ status: 'rejected', reason: expect.objectContaining({
+      code: 'BUILD_COMPUTER_DISABLED',
+    }) }])
+  } finally {
+    for (const client of held) client.release()
     await db.close()
   }
 })
