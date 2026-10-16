@@ -7,7 +7,6 @@ import { vi } from 'vitest'
 import { mainIdentityProofMessage } from '@foreman-code/contracts/device-identity-node'
 import { workerArtifactContentSha256 } from '@foreman-code/contracts/worker-artifact-content-node'
 import { COMPUTER_MAINTENANCE_NAMESPACE } from '@foreman-code/contracts/computer-maintenance'
-import type { DeviceApplicationResult } from '@foreman-code/contracts/device-application'
 import { DeviceEndpoint } from '../../src/modules/devices/deviceEndpoint.js'
 import { DeviceConnectionSupervisor } from '../../src/modules/devices/connectionSupervisor.js'
 import { adaptDeviceSocket } from '../../src/modules/devices/deviceWire.js'
@@ -55,17 +54,6 @@ export async function workerBundleFixture() {
     worker: { currentVersion: manifest.version, target, manifestSha256: 'd'.repeat(64), contentSha256: 'e'.repeat(64),
       targetVersion: null, state: 'current', lastError: null } }
   const handled = vi.fn(async (payload: unknown) => ({ payload }))
-  // A real Worker's full status runs slow version, registry and package inspections; only its bundle facts are fast.
-  let fullStatus: Promise<void> | undefined
-  let statusFailure: Error | undefined
-  const bundleStatus = vi.fn(async (): Promise<DeviceApplicationResult> => ({ payload: { operation: 'worker', worker: status.worker } }))
-  const maintenance = async (payload: { operation?: string; scope?: string }) => {
-    if (payload.operation !== 'status') return handled(payload)
-    if (statusFailure) throw statusFailure
-    if (payload.scope === 'worker') return bundleStatus()
-    await fullStatus
-    return { payload: { operation: 'status', status } }
-  }
   const keys = generateKeyPairSync('ed25519')
   const mainPublicKey = keys.publicKey.export({ type: 'spki', format: 'pem' }).toString()
   const mainPublicKeyFingerprint = sha256(keys.publicKey.export({ type: 'spki', format: 'der' }))
@@ -87,7 +75,8 @@ export async function workerBundleFixture() {
   const worker = new DeviceConnectionSupervisor({ identity, appVersion: manifest.version, mainPublicKeyFingerprint,
     extensions: descriptors.map(descriptor => ({ ...descriptor, role: 'server',
       handle: async (payload: unknown) => descriptor.namespace === COMPUTER_MAINTENANCE_NAMESPACE
-        ? maintenance(payload as { operation?: string; scope?: string }) : handled(payload) })),
+        && (payload as { operation?: string }).operation === 'status'
+        ? { payload: { operation: 'status', status } } : handled(payload) })),
     reconcile: async () => {}, random: () => 0,
     connect: async () => {
       const main = new Socket()
@@ -105,15 +94,7 @@ export async function workerBundleFixture() {
     if (worker.status().phase !== 'ready') throw new Error('Worker connection is not ready')
   }
   const request = (namespace: string, payload: unknown) => endpoint.request(identity.deviceId, namespace, payload)
-  return { endpoint, identity, expected, status, index, publish, handled, bundleStatus, request,
-    /** Holds full maintenance status until the returned release runs. */
-    holdFullStatus() {
-      let release!: () => void
-      fullStatus = new Promise<void>(resolve => { release = resolve })
-      return release
-    },
-    /** Every maintenance status read fails with this Worker-side error. */
-    failStatus(error: Error) { statusFailure = error },
+  return { endpoint, identity, expected, status, index, publish, handled, request,
     match() { Object.assign(status.worker, { manifestSha256: expected.manifestSha256, contentSha256: expected.contentSha256 }) },
     async reconnect() {
       const generation = worker.status().generation
