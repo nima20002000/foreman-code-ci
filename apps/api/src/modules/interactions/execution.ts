@@ -1542,20 +1542,9 @@ export class ApprovalExecutionCoordinator {
     const ready = await this.runs.getRepeatSnapshot(owner.runId, owner)
     if (ready.stopRequested || ready.cleanupPending || ready.run.executionState === 'completed') return false
     owner.assertOwned()
-    const waiting = new Set<string>()
-    for (const execution of executionsToPreserve) {
-      try { await this.budgets.beginWait(execution.id) }
-      catch (error) {
-        // An execution that finished after it was listed has nothing left to preserve.
-        if (!(error instanceof DomainError && error.code === 'EXECUTION_NOT_WAITABLE')
-          || (await this.runs.getExecution(execution.id, owner))?.state !== 'completed') throw error
-        continue
-      }
-      waiting.add(execution.id)
-    }
+    for (const execution of executionsToPreserve) await this.budgets.beginWait(execution.id)
     owner.assertOwned()
-    if (!waiting.size && !retried) return false
-    for (const owned of active.filter(item => waiting.has(item.execution.id))) {
+    for (const owned of active) {
       try { await this.renewForRestart(owned, owner) }
       catch (error) {
         if (isCredentialAuthorityLost(error)) return false
