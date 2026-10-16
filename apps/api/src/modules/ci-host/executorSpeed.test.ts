@@ -192,7 +192,7 @@ function plannedPartitionFixture() {
   return { builder, cloud, queued, pool }
 }
 
-it('plans partition weights without waiting for a Worker whose status is slow', async () => {
+it('plans partition weights after a bounded wait for a Worker whose status is slow', async () => {
   const { builder, cloud, queued, pool } = plannedPartitionFixture()
   const requested: string[] = []
   const snapshot = new CiPlanningSnapshot({
@@ -206,7 +206,8 @@ it('plans partition weights without waiting for a Worker whose status is slow', 
     memoryBytes: 32 * 2 ** 30, slotsUsed: 0, slotsTotal: 1, runs: [] })
   const outcome = await Promise.race([
     weighCiPartitions(pool, snapshot, queued, [builder, cloud], async id => queued.find(run => run.id === id)!),
-    new Promise<'blocked'>(resolve => setTimeout(() => resolve('blocked'), 1000)),
+    // A status read that never answers delays planning by about a second, not indefinitely.
+    new Promise<'blocked'>(resolve => setTimeout(() => resolve('blocked'), 3000)),
   ])
   expect(outcome).not.toBe('blocked')
   const planned = outcome as CiRunRecord[]
@@ -258,4 +259,18 @@ it('reuses one speed estimate between planning passes until a gate ticket finish
   invalidateExecutorSpeeds(pool)
   await readExecutorSpeeds(pool, fleet)
   expect(historyLoads).toBe(2)
+})
+
+it('does not reuse another planner\'s speed estimate from the same database pool', async () => {
+  const builder = computers[0]!
+  const files = ['apps/api/test/a.integration.test.ts']
+  let rows: unknown[] = []
+  const pool = { query: async () => ({ rows }) } as unknown as pg.Pool
+  const planner = (): HostCiEndpoint => ({ computers: async () => [builder],
+    request: async () => { throw new Error('unused') } })
+  expect((await readExecutorSpeeds(pool, planner())).get(builder.key)).toBeUndefined()
+  rows = [{ record: gatePart(builder, builder.key, 100_000, 200_000, { files }),
+    test_results: { files: [{ file: files[0], durationMs: 40_000 }] } }]
+  // A new service plans with its own endpoint and measures the history that exists when it starts.
+  expect((await readExecutorSpeeds(pool, planner())).get(builder.key)).toMatchObject({ throughput: 40_000 / 200_000 })
 })
