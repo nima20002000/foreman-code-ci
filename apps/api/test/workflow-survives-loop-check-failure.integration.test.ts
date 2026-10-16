@@ -45,10 +45,18 @@ describe.runIf(postgresEnabled)('workflow resilience to a failed loop check', ()
       state: 'running', attempt: 1, nativeSessionId: remote.nativeSessionId,
     })
     fixture.release()
-    await readUntil(fixture.readExecutions, executions =>
-      [fixture.affected.id, fixture.sibling.id].every(nodeId => executions.some(execution =>
-        execution.workflowNodeId === nodeId && execution.result?.outcome === 'succeeded')),
-    { timeoutMs: 2_000, minimumReadIntervalMs: 250, description: 'successful sibling work after the failed check' })
+    const releasedAt = performance.now()
+    try {
+      await readUntil(fixture.readExecutions, executions =>
+        [fixture.affected.id, fixture.sibling.id].every(nodeId => executions.some(execution =>
+          execution.workflowNodeId === nodeId && execution.result?.outcome === 'succeeded')),
+      { timeoutMs: 2_000, minimumReadIntervalMs: 250, description: 'successful sibling work after the failed check' })
+    } catch (error) {
+      const executions = await fixture.readExecutions()
+      throw new Error(`${(error as Error).message} after ${Math.round(performance.now() - releasedAt)}ms: ${JSON.stringify(
+        executions.map(execution => ({ node: execution.workflowNodeId, state: execution.state,
+          outcome: execution.result?.outcome, code: execution.result?.error?.code })))}`)
+    }
     const details = await fixture.read()
     expect(details.run).toMatchObject({ executionState: 'running', outcome: 'pending' })
     expect(details.executions.filter(execution => execution.result?.outcome === 'failed').map(execution => execution.id))
