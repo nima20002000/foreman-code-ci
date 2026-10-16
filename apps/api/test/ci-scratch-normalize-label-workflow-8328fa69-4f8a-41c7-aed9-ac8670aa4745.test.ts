@@ -12,6 +12,6 @@ describe('normalizeLabel', () => {
 
   it('trims and collapses whitespace in spaced labels', () => {
     expect(normalizeLabel('  Project   label  ')).toBe('Project label')
-    expect(normalizeLabel('\tProject\n\tlabel\n')).toBe('Project label')
+    expect(normalizeLabel('\tProject\n\tlabel\r\n ')).toBe('Project label')
   })
 })
