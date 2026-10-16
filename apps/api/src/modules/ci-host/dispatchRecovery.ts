@@ -62,7 +62,7 @@ async function sendAssignedDispatch(services: DispatchServices, run: CiRunRecord
     }
     reply = response
   } catch (error) {
-    if (!rejectedCiStart(error) || (run.dispatchAttempts ?? 1) > 1) {
+    if (!rejectedCiStart(error)) {
       const message = error instanceof Error ? error.message : String(error)
       await retainDispatch(client, run, computer, `${message} Ownership retained until execution is reconciled.`)
       log.warn({ err: error, runId: run.id, computer: computer.key }, 'CI start reply unknown; retaining executor')
