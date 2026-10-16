@@ -67,8 +67,9 @@ async function fixture() {
     if(text.includes("result #>> '{input,executionId}'"))return {rows:[...records.values()].filter(r=>r.input.executionId===args[1]&&r.input.attemptId===args[2]&&r.input.path===args[3])}
     return {rows:[],rowCount:0}
   })
-  const pool={query,connect:async()=>({query,release:()=>{}})} as unknown as pg.Pool
-  vi.spyOn(pg,'Pool').mockImplementation(class { constructor(){return pool} } as unknown as typeof pg.Pool)
+  const pool=new pg.Pool()
+  vi.spyOn(pg.Pool.prototype,'query').mockImplementation(query as never)
+  vi.spyOn(pg.Pool.prototype,'connect').mockResolvedValue({query,release:()=>{}} as never)
   const authority=new JobPublicationAuthority({require:async()=>{if(!liveOwner)throw new DomainError('JOB_OWNERSHIP_LOST','Modeled owner lost.',409)}},{revalidateAccepted:async()=>undefined} as never)
   const endpoint={currentBinding:()=>ready?Object.freeze({...binding}):undefined}
   const reserve=vi.fn<(input:JobOutputPublicationInput,source:FileMutationSource)=>Promise<FileWithRevision>>(async()=>({file:{fileId,currentRevisionId:revisionId,scope:{kind:'job_execution' as const,workspaceId:job.workspaceId,jobExecutionId:job.id},state:'pending' as const,createdAt:job.createdAt,retentionDurationSeconds:7200,expiresAt:expires.toISOString()},revision:{byteClass:'ci-output' as const,fileId,revisionId,filename:'result.json',mediaType:'application/json' as const,byteSize:11,sha256:digest('{"ok":true}'),origin:'job_output' as const,createdAt:job.createdAt}}))
@@ -77,6 +78,19 @@ async function fixture() {
   return {admission,input,binding,job,records,reserve,query,pool,authority,receipt,clock:()=>now,endpoint,loseGrant:()=>{liveGrant=false},revoked:()=>{revoked=true},loseOwner:()=>{liveOwner=false},rebind:()=>{binding.connectionEpoch=randomUUID()},offline:()=>{ready=false},expire:()=>{now=new Date(expires)},rootChange:()=>{rootRevision++},revokeRoot:()=>{rootRevoked=true},advance:()=>{now=new Date(now.getTime()+3600_001)},finalize:(state='ready',allocation='finalized')=>{canonicalState=state;allocationState=allocation}}
 }
 describe('main-owned job output admission and actual byte receiver',()=>{
+  it('retries a failed canonical reservation and persists one original output admission',async()=>{
+    const f=await fixture()
+    f.reserve.mockRejectedValueOnce(new Error('Canonical reservation unavailable'))
+    await expect(f.admission.admit(f.input)).rejects.toThrow('Canonical reservation unavailable')
+    expect(f.records.size).toBe(0)
+    const created=await f.admission.admit(f.input)
+    await expect(f.admission.admit(f.input,'mcp')).resolves.toEqual(created)
+    const stored=await f.admission.requireAdmission(f.input)
+    expect(stored.intent).toEqual(created)
+    expect(stored.input).toEqual(f.input)
+    expect(f.records.size).toBe(1)
+    expect(f.reserve).toHaveBeenCalledTimes(2)
+  })
   it('issues original main IDs once, rejects caller IDs/changed payload and resolves current scoped context',async()=>{
     const f=await fixture(),first=await f.admission.onAuthenticatedChannel(f.binding,()=>f.admission.admit(f.input))
     const again=await f.admission.onAuthenticatedChannel(f.binding,()=>f.admission.admit(f.input,'mcp'))
