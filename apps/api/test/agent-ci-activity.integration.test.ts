@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { setImmediate } from 'node:timers/promises'
 import type pg from 'pg'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { CiGetOutputSchema, CiLogsOutputSchema, CiCancelOutputSchema, CiListOutputSchema, OperatorCiListInputSchema, CiRunOutputSchema, CiRunRecordSchema, CiTestsOutputSchema,
+import { HarnessExecutionSchema, CiGetOutputSchema, CiLogsOutputSchema, CiCancelOutputSchema, CiListOutputSchema, OperatorCiListInputSchema, CiRunOutputSchema, CiRunRecordSchema, CiTestsOutputSchema,
   type CiHostRun, type CiRunInput, type CiTestResults } from '@foreman-code/contracts'
 import { RunBoardSnapshotGetResultSchema } from '@foreman-code/contracts/run-snapshots'
 import { AcceptedRepeatStartV1Schema, RunActivitiesPageSchema, makeCurrentWorkflowFixture,
@@ -15,6 +15,9 @@ import { HostCiService, type HostCiComputer, type HostCiEndpoint } from '../src/
 import { databaseHotQueriesMigration } from '../src/infrastructure/databaseHotQueriesMigration.js'
 import { CI_GET_ACTIONS, RunCiAuthority } from '../src/modules/jobs/ciAuthority.js'
 import { RunManagementService } from '../src/modules/runs/management.js'
+import { RepeatRepositoryFactory, repeatRuntimeDirectory } from '../src/modules/runs/repeatRepositoryHost.js'
+import { createWorkflowRepositoryServices } from '../src/modules/runs/workflowRepositoryServices.js'
+import { createWorkflowNativeCaptureChannel } from '../src/modules/interactions/workflowNativeCapture.js'
 import { WorkspaceLocationService } from '../src/modules/workspaces/location.js'
 import { PostgresAppInteractionService } from '../src/modules/interactions/app.js'
 import { BugReportService } from '../src/modules/bug-reports/service.js'
@@ -24,7 +27,7 @@ import { applyApplicationMigrations } from '../src/infrastructure/migrations.js'
 import { hostCiActivityMigration } from '../src/infrastructure/hostCiActivityMigration.js'
 import { ciActivityRunLockMigration } from '../src/infrastructure/ciActivityRunLockMigration.js'
 import { ciSharedActivityMigration } from '../src/infrastructure/ciSharedActivityMigration.js'
-import { changeRunState, graphFixture, graphRpc, graphRpcValue } from './eng04-graph-composition-fixture.js'
+import { changeRunState, graphFixture, graphRpc, graphRpcValue, ownedGraph } from './eng04-graph-composition-fixture.js'
 import { agentWorkflowNode } from './helpers/agentWorkflowFixture.js'
 import { insertCurrentRunFixture } from './helpers/eng04CurrentRunFixture.js'
 import { acceptRunAuthority, bindRunAuthority } from '../src/modules/access/runAuthority.js'
@@ -65,7 +68,23 @@ async function fixture(options: { deferMigration?: number | number[]; form?: Cur
     agentId: executionNode.agentId, attempt: 1,
     agentConfigurationVersionId: graph.version.agentConfigurationVersionIds[executionNode.agentId],
     state: 'starting', input: {}, createdAt: graph.run.createdAt })])
-  await insertExecution(executionId, graph.run.id)
+  await ownedGraph(database, graph, async owner => {
+    const locations = new WorkspaceLocationService(database.pool, graph.commands)
+    const factory = new RepeatRepositoryFactory(locations, database.directory,
+      createWorkflowRepositoryServices(createWorkflowNativeCaptureChannel().verify).services)
+    const store = factory.forOwner(owner, graph.version)
+    const admitted = await store.admit({ nodeId: node.id, occurrence: null }, () => HarnessExecutionSchema.parse({
+      id: executionId, runId: graph.run.id, workflowNodeId: node.id, agentId: node.agentId, attempt: 1,
+      agentConfigurationVersionId: graph.version.agentConfigurationVersionIds[node.agentId],
+      state: 'queued', input: {}, createdAt: graph.run.createdAt,
+    }))
+    if (admitted.kind !== 'admitted') throw new Error('Expected the CI fixture execution to be admitted')
+    const starting = await store.claimLaunch(executionId, {
+      workingDirectory: database.directory,
+      runtimeDirectory: repeatRuntimeDirectory(database.directory, graph.scope, admitted.execution),
+    })
+    if (!starting) throw new Error('Expected the CI fixture execution to start')
+  })
   await database.pool.query(`update workspaces set record=record||$2::jsonb where id=$1`,
     [graph.scope.workspaceId, JSON.stringify({ repository: { provider: 'github', owner: 'example',
       name: 'project', defaultBranch: 'main' } })])
@@ -431,17 +450,19 @@ describe.skipIf(!postgresEnabled)('Agent Host CI in public Run activity', () => 
     try {
       const ticket = await f.submit({ suite: 'install' })
       // Other Runs' finished tickets accumulate in the workspace: every full integration run adds a hundred.
-      await f.database.pool.query(`insert into ci_runs(id,workspace_id,group_id,state,record,log_tail)
+      const unrelated = await f.database.pool.query(`insert into ci_runs(id,workspace_id,group_id,state,record,log_tail)
         select u.id,t.workspace_id,u.id,'canceled',t.record||jsonb_build_object('id',u.id::text,'groupId',u.id::text,
             'state','canceled','initiator',t.record->'initiator'||jsonb_build_object('executionId','unrelated-'||u.id::text)),
           (select string_agg(md5(u.id::text||g::text),'') from generate_series(1,40) g)
         from ci_runs t cross join (select gen_random_uuid() as id from generate_series(1,3000)) u where t.id=$1`,
       [ticket.ticketId])
+      expect(unrelated.rowCount).toBe(3000)
       await f.database.pool.query('analyze ci_runs')
       const measured = measuredCiPages(f.database.pool)
       const runs = new RunManagementService(measured.pool, f.graph.commands, {} as never, {} as never,
         new WorkspaceLocationService(f.database.pool, f.graph.commands))
       const details = await runs.get(f.reader.principal, f.graph.scope.workspaceId, f.graph.run.id)
+      expect(details.executions).toContainEqual(expect.objectContaining({ id: f.executionId, runId: f.graph.run.id }))
       expect(details.activitySnapshot?.queued).toContainEqual(ciRef(ticket.ticketId, f.executionId))
       // The unrelated tickets span hundreds of heap pages; the Run's own ticket needs a handful.
       expect(measured.pages.max).toBeLessThan(100)
