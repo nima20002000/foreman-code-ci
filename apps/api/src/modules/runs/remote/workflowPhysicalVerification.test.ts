@@ -620,25 +620,15 @@ describe('physical acknowledgment retry eligibility', () => {
     },
   )
 
-  it('acknowledges a committed observation after Main outlasts its original window', async () => {
+  it.each(['expired', 'replaced-connection'] as const)('retires an %s observation without sending an ACK', async reason => {
     const f = await physicalFixture()
     try {
       const original = await publishPhysicalObservation(f)
-      vi.spyOn(Date, 'now').mockReturnValue(Date.parse(f.readout.expiresAt) + 1)
-      const ack = { version: 1, operationId: f.intent.operationId,
-        receiptSequence: f.readout.receipt.sequence, sourceDigest: original.sourceDigest, status: 'retired' }
-      f.request.mockResolvedValue({ payload: ack })
-      await expect(f.producer.acknowledge(original)).resolves.toEqual(ack)
-      await expect(f.producer.acknowledgeReply(original)).resolves.toEqual(ack)
-      expect(f.request).toHaveBeenCalledTimes(3)
-    } finally { await f.sqlConnection.close() }
-  })
-
-  it('retires an observation after connection replacement without sending an ACK', async () => {
-    const f = await physicalFixture()
-    try {
-      const original = await publishPhysicalObservation(f)
-      f.currentBinding.mockReturnValue({ ...f.context.binding, connectionGeneration: 4 })
+      if (reason === 'expired') {
+        vi.spyOn(Date, 'now').mockReturnValue(Date.parse(f.readout.expiresAt) + 1)
+      } else {
+        f.currentBinding.mockReturnValue({ ...f.context.binding, connectionGeneration: 4 })
+      }
       await expect(f.producer.acknowledge(original)).rejects.toMatchObject({ code: 'REMOTE_NATIVE_ACK_OBSOLETE' })
       await expect(f.producer.acknowledgeReply(original)).rejects.toMatchObject({ code: 'REMOTE_NATIVE_ACK_OBSOLETE' })
       expect(f.request).toHaveBeenCalledOnce()
