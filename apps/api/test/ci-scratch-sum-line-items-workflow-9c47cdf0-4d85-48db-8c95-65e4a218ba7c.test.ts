@@ -11,8 +11,8 @@ describe('sumLineItems', () => {
 
   it('sums quantity times price for multiple items', () => {
     expect(sumLineItems([
-      { quantity: 2, price: 10 },
-      { quantity: 3, price: 2.5 },
-    ])).toBe(27.5)
+      { quantity: 2, price: 12.5 },
+      { quantity: 3, price: 4 },
+    ])).toBe(37)
   })
 })
