@@ -21,7 +21,6 @@ import { COMPUTER_ACCOUNTS_NAMESPACE, ComputerAccountsListSchema, type ComputerA
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
-import { CircleStandby } from '../src/modules/ci-host/circleStandby.js'
 
 const mainId = '11111111-1111-4111-8111-111111111111'
 const deviceId = '22222222-2222-4222-8222-222222222222'
@@ -205,40 +204,6 @@ it('lists the cloud CI services Main is logged in to or running CI on through HT
     f.cloudRunning.set('circleci', 2)
     expect(await read()).toEqual([{ provider: 'github', name: 'GitHub Actions', ready: true, slots: 16, running: 3 },
       { provider: 'circleci', name: 'CircleCI', ready: false, slots: 24, running: 2 }])
-    const denied = await f.connect('denied')
-    expect((await denied.callTool({ name: 'computer_activity_list', arguments: {} })).isError).toBe(true)
-  } finally { await f.close() }
-})
-
-it('reads separate account roles and running counts without hiding a draining legacy executor', async () => {
-  const selector = new CircleStandby(async () => [
-    { owner: 'alpha', circleAccountId: 'default', role: 'primary', ready: true, mirrorNames: new Set(['site-ci']) },
-    { owner: 'delta', circleAccountId: 'reserve', role: 'standby', ready: true, mirrorNames: new Set(['site-ci']) },
-  ], { reading: async organization => ({ credits: { total: 400_000,
-    used: organization === 'alpha' ? 380_000 : 100_000, remaining: organization === 'alpha' ? 20_000 : 300_000,
-    asOf: '2026-10-17T12:00:00Z' } }) })
-  const clouds: CloudCiService[] = [
-    { provider: { id: 'circleci', label: 'Primary alpha', slots: 30, account: { owner: 'alpha' } },
-      ready: async () => true, schedulingReading: () => selector.reading('alpha') },
-    { provider: { id: 'circleci', label: 'Reserve delta', slots: 30, circleAccountId: 'reserve', account: { owner: 'delta' } },
-      ready: async () => true, schedulingReading: () => selector.reading('delta', 'reserve') },
-    { provider: { id: 'circleci', label: 'Legacy', slots: 30, recoveryOnly: true }, ready: async () => true },
-  ]
-  const f = await fixture({ clouds })
-  try {
-    f.cloudRunning.set('circleci@alpha', 2)
-    f.cloudRunning.set('circleci~reserve@delta', 3)
-    f.cloudRunning.set('circleci', 1)
-    const client = await f.connect('owner')
-    const result = ComputerActivityListSchema.parse(decodeMcpToolResult(await client.callTool({
-      name: 'computer_activity_list', arguments: {},
-    })))
-    expect(result.cloud).toMatchObject([
-      { account: 'alpha', schedulingRole: 'exhausted', ready: true, running: 2, credits: { remaining: 20_000 } },
-      { account: 'delta', circleAccountId: 'reserve', schedulingRole: 'active', ready: true, running: 3,
-        credits: { remaining: 300_000 } },
-      { name: 'Legacy', slots: 0, running: 1 },
-    ])
     const denied = await f.connect('denied')
     expect((await denied.callTool({ name: 'computer_activity_list', arguments: {} })).isError).toBe(true)
   } finally { await f.close() }

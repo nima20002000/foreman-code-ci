@@ -41,11 +41,11 @@ const actionTools: Array<[ManagementAction, OperatorToolName[]]> = [
   ['runs:read', ['run_activities_get_v1', 'run_events_list', 'run_get', 'run_list']],
   ['runs:stop', ['run_stop']],
   ['settings:read', [
-    'agent_defaults_get', 'circle_accounts_list', 'circle_credit_allowance_get', 'general_settings_get', 'operator_initial_prompt_get',
+    'agent_defaults_get', 'circle_credit_allowance_get', 'general_settings_get', 'operator_initial_prompt_get',
     'system_prompt_get', 'workflow_defaults_get', 'workspace_defaults_get',
   ]],
   ['settings:update', [
-    'agent_defaults_update', 'circle_account_add', 'circle_account_remove', 'circle_credit_allowance_update', 'general_settings_update', 'operator_initial_prompt_update',
+    'agent_defaults_update', 'circle_credit_allowance_update', 'general_settings_update', 'operator_initial_prompt_update',
     'system_prompt_update', 'workflow_defaults_update', 'workspace_defaults_update',
   ]],
   ['workflows:read', ['workflow_get', 'workflow_list']],
@@ -67,7 +67,7 @@ function context(grants: ManagementGrant[] = []): OperatorRequestContext {
       expiresAt: '2099-01-01T00:00:00.000Z', revokedAt: null, grants,
     },
     // No service callback is executed in these registration-only tests.
-    services: { settings: {}, circleAccounts: {}, interactions: {}, runs: {}, workflows: {}, bugReports: {} },
+    services: { settings: {}, interactions: {}, runs: {}, workflows: {}, bugReports: {} },
   } as unknown as OperatorRequestContext
 }
 
@@ -224,7 +224,6 @@ describe('Operator tool registration permissions', () => {
   it('does not register tools for absent optional services', () => {
     const candidate = context([{ actions: ['settings:read', 'settings:update', 'interactions:read', 'interactions:respond'], scope: {} }])
     delete candidate.services.settings
-    delete candidate.services.circleAccounts
     delete candidate.services.interactions
     expect(registered(candidate)).toEqual([])
   })
@@ -236,13 +235,4 @@ describe('Operator tool registration permissions', () => {
     Reflect.deleteProperty(candidate.services, 'runs')
     expect(registered(candidate)).toEqual([])
   })
-})
-
-
-it('hides CircleCI registration tools when the account service is unavailable', () => {
-  const candidate = context([{ actions: ['settings:read', 'settings:update'], scope: {} }])
-  delete candidate.services.circleAccounts
-  expect(registered(candidate)).not.toContain('circle_accounts_list')
-  expect(registered(candidate)).not.toContain('circle_account_add')
-  expect(registered(candidate)).not.toContain('circle_account_remove')
 })

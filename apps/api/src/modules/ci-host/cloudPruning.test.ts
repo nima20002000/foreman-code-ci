@@ -1,25 +1,8 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, it, vi } from 'vitest'
 import { confirmCancellation, fixture } from './cloud.testSupport.js'
-
-it('protects a live branch journaled under a recovered secondary account root', async () => {
-  const f = await fixture({}, { provider: 'circleci' })
-  const branch = 'ci/protected-execution'
-  f.mirrorGit('update-ref', `refs/heads/${branch}`, 'main')
-  const runId = randomUUID()
-  const directory = join(f.root, 'circleci~reserve@delta', 'runs', runId)
-  await mkdir(directory, { recursive: true })
-  await writeFile(join(directory, 'meta.json'), JSON.stringify({ runId, mirror: 'octo/site-ci', commit: f.commit,
-    state: 'running', startedAt: new Date().toISOString(), mirrorBranch: branch, circleAccountId: 'reserve' }))
-  const startedId = randomUUID()
-  await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId: startedId,
-    repository: 'octo/site', commit: f.commit, suite: 'lint', scope: 'full' })
-  await confirmCancellation(f, startedId)
-  await f.cloud.waitForMirrorCleanup('octo/site', 'octo/site-ci')
-  expect(f.mirrorGit('for-each-ref', '--format=%(refname)', `refs/heads/${branch}`)).toBe(`refs/heads/${branch}`)
-})
 
 it.each(['github', 'circleci'] as const)(
   'waits for cancellation cleanup queued during an active %s sweep', async provider => {
