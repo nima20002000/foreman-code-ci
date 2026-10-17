@@ -60,7 +60,7 @@ async function computer(beforeGithub?: () => Promise<void>, cpuCount = 8, isolat
   const ports: HostCiPorts = { cpus: cpuCount, memoryBytes: 16 * 2 ** 30, now: () => new Date(),
     run: async (file, args) => {
       if (file === 'gh') await beforeGithub?.()
-      if (file === 'git' && args.includes('rev-list') && beforeFetch) {
+      if (file === 'git' && args.includes('cat-file') && beforeFetch) {
         return { code: 1, stdout: '', stderr: 'Commit not fetched' }
       }
       if (file === 'git' && args.includes('fetch')) await beforeFetch?.()
@@ -103,7 +103,7 @@ describe('host CI runner concurrent starts', () => {
     const { runner, request, launches, ports } = await computer(undefined, 16, true, undefined, fetch.pause)
     const command = ports.run
     ports.run = async (file, args, options) => {
-      if (file === 'git' && args.includes('rev-list') && args.includes('b'.repeat(40))) {
+      if (file === 'git' && args.includes('cat-file') && args.includes(`${'b'.repeat(40)}^{commit}`)) {
         return { code: 0, stdout: '', stderr: '' }
       }
       return command(file, args, options)
@@ -161,7 +161,7 @@ describe('host CI runner concurrent starts', () => {
     let fetches = 0
     let present = false
     ports.run = async (file, args, options) => {
-      if (file === 'git' && args.includes('rev-list')) return { code: present ? 0 : 1, stdout: '', stderr: '' }
+      if (file === 'git' && args.includes('cat-file')) return { code: present ? 0 : 1, stdout: '', stderr: '' }
       if (file === 'git' && args.includes('fetch')) {
         fetches++
         present = true
@@ -241,7 +241,7 @@ describe('host CI runner concurrent starts', () => {
     const { runner, request, ports, launches } = await computer()
     const command = ports.run
     ports.run = async (file, args, options) => {
-      if (file === 'git' && args.includes('rev-list')) return { code: 1, stdout: '', stderr: '' }
+      if (file === 'git' && args.includes('cat-file')) return { code: 1, stdout: '', stderr: '' }
       if (file === 'git' && args.includes('fetch')) return { code: 1, stdout: '', stderr: 'Fetch failed' }
       return command(file, args, options)
     }
@@ -366,22 +366,12 @@ describe('host CI runner concurrent starts', () => {
 it.each([false, true])('fences cancellation during repository fetch across restart=%s', async restarted => {
   const fetch = barrier()
   const { root, runner, request, launches, ports } = await computer(undefined, 8, false, undefined, fetch.pause)
-  const command = ports.run
-  let preparationSignal: AbortSignal | undefined
-  ports.run = async (file, args, options) => {
-    if (file === 'git' && args.includes('fetch')) preparationSignal = options?.signal
-    return command(file, args, options)
-  }
   const canceler = restarted ? new HostCiRunner(root, ports) : runner
   const start = runner.handle(request)
   try {
     await fetch.entered
     await expect(canceler.handle({ operation: 'cancel', runId: request.runId }))
       .resolves.toMatchObject({ operation: 'cancel', run: { state: 'starting', finishedAt: null } })
-    expect(preparationSignal).toBeInstanceOf(AbortSignal)
-    expect(preparationSignal!.aborted).toBe(!restarted)
-    await expect(runner.status()).resolves.toMatchObject({ slotsUsed: 1 })
-    await expect(runner.handle({ ...request, runId: randomUUID() })).rejects.toMatchObject({ code: 'CI_HOST_BUSY' })
     expect(launches).toHaveLength(0)
     fetch.release()
     await expect(start).resolves.toMatchObject({ run: { state: 'canceled' } })

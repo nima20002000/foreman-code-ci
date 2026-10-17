@@ -2,7 +2,7 @@ import { updateOperationalFailure } from '../diagnostics/operationalFailures.js'
 import { failedReadObservation, successfulReadObservation } from '../diagnostics/readObservation.js'
 import type { ReadObservation } from '@foreman-code/contracts'
 import { mkdir, mkdtemp, open, readFile, readdir, rm, writeFile } from 'node:fs/promises'
-import { createHash, randomUUID } from 'node:crypto'
+import { createHash } from 'node:crypto'
 import { homedir, hostname, userInfo } from 'node:os'
 import { delimiter, dirname, join, resolve } from 'node:path'
 import type pg from 'pg'
@@ -60,19 +60,6 @@ type Mirrors = (workspaceId: string) => Promise<string | null>
 /** Pushes to one mirror, across both services, run one at a time: concurrent force-pushes of the mirror's main fail
  * the remote's old-value check ("incorrect old value provided"), and concurrent fetches race on its local ref. */
 const mirrorPushes = new Map<string, Promise<unknown>>()
-const mirrorOperations = new Map<string, Promise<unknown>>()
-
-async function serializeMirror<T>(mirror: string, work: () => Promise<T>): Promise<T> {
-  const previous = mirrorOperations.get(mirror) ?? Promise.resolve()
-  const operation = previous.then(work, work)
-  mirrorOperations.set(mirror, operation)
-  try {
-    return await operation
-  } finally {
-    if (mirrorOperations.get(mirror) === operation) mirrorOperations.delete(mirror)
-  }
-}
-
 /** The snapshot Main last pushed as each mirror's main. Main is the mirrors' only writer of main, so the next publication
  * builds on it instead of fetching it back from GitHub. */
 const pushedMains = new Map<string, string>()
@@ -82,8 +69,7 @@ const cloudOperations = new Map<string, Promise<unknown>>()
 const finalLogs = new Map<string, Promise<string | null>>()
 const publishingBranches = new Map<string, Set<string>>()
 interface Publication {
-  git: (args: string[], env?: Record<string, string>) => Promise<string>
-  guard: (commit: string) => Promise<void>
+  git: (args: string[]) => Promise<string>
   branch: string
   snapshot: string
   workflowRef: string
@@ -166,23 +152,8 @@ export class CloudCi {
   async publishMirror(input: CiMirrorInput): Promise<void> {
     const mirror = this.accountMirror(input.mirror)
     if (!mirror) return
-    const branch = input.baseCommit ? `ci/${input.commit}-${input.baseCommit}` : `ci/${input.commit}`
-    const reservations = publishingBranches.get(mirror) ?? new Set<string>()
-    const reservation = `${randomUUID()}\n${branch}`
-    reservations.add(reservation)
-    publishingBranches.set(mirror, reservations)
-    const maintenance = mirrorMaintenance.get(this.mirrorKey(input.repository, mirror))
-    if (maintenance?.cleanup) {
-      maintenance.keep.add(branch)
-      maintenance.keep.add(`ci-default/${input.commit}`)
-    }
-    try {
-      await this.publish(input.repository, mirror, input.commit,
-        input.defaultBranch, input.baseCommit, input.durations ?? {}, false)
-    } finally {
-      reservations.delete(reservation)
-      if (!reservations.size) publishingBranches.delete(mirror)
-    }
+    await this.publish(input.repository, mirror, input.commit,
+      input.defaultBranch, input.baseCommit, input.durations ?? {}, false)
   }
 
   /** This org's copy of a workspace mirror: the same repository name under the org's GitHub owner; null when the org
@@ -533,20 +504,16 @@ export class CloudCi {
       ...(durations && durations.length <= limit ? { durations } : {}) }
     if (this.provider.id === 'circleci') {
       input.workflowRef = `ci/${request.commit}-${request.runId}`
-      if ([input.slice, input.files, input.partition].some(value => value && value.length > limit)) {
-        input.workflowCommit = await this.dispatchSnapshot(publication, input)
-      }
       await pushMirror(() => git(['push', '--quiet', `https://github.com/${mirror}.git`,
-        `${input.workflowCommit}:refs/heads/${input.workflowRef}`]), { mirror, commit: request.commit })
+        `${snapshot}:refs/heads/${input.workflowRef}`]), { mirror, commit: request.commit })
     }
     validateProviderParameters(this.provider, input)
     let run = await this.save({ mirrorBranch: branch, runId: request.runId, repository: request.repository, mirror, commit: request.commit,
       suite: request.suite, ...(request.part ? { part: request.part } : {}), startedAt: this.ports.now().toISOString(), providerRunId: null, state: 'starting',
       scope, ...(request.files !== undefined ? { files: request.files } : {}),
       ...(request.baseCommit ? { baseCommit: request.baseCommit } : {}),
-      provenance: { sourceCommit: request.commit, workflowCommit: input.workflowCommit!, workflowRef: input.workflowRef! },
-      finishedAt: null, exitCode: null, message,
-      mirrorPublication: { ...mirrorPublication, snapshotCommit: input.workflowCommit! },
+      provenance: { sourceCommit: request.commit, workflowCommit: snapshot, workflowRef: input.workflowRef! },
+      finishedAt: null, exitCode: null, message, mirrorPublication,
       dispatch: { input, attempts: 0, at: this.ports.now().toISOString() } })
     run = await this.trigger(run, input)
     if (run.providerRunId) {
@@ -567,35 +534,6 @@ export class CloudCi {
     return this.view(run, 0)
   }
 
-  private async dispatchSnapshot(publication: Publication, input: CloudDispatchInput) {
-    const { git, snapshot } = publication
-    const data = canonicalJson({ commit: snapshot, slice: input.slice,
-      files: input.files ?? '', partition: input.partition ?? '' })
-    const hash = createHash('sha256').update(data).digest('hex')
-    await mkdir(this.root, { recursive: true, mode: 0o700 })
-    const directory = await mkdtemp(join(this.root, 'dispatch-'))
-    try {
-      const path = join(directory, 'inputs.json')
-      await writeFile(path, data, { mode: 0o600 })
-      const blob = await git(['hash-object', '-w', path])
-      const env = { GIT_INDEX_FILE: join(directory, 'index') }
-      await git(['read-tree', snapshot], env)
-      await git(['update-index', '--add', '--cacheinfo', `100644,${blob},ci-dispatch-inputs.json`], env)
-      const tree = await git(['write-tree'], env)
-      const date = await git(['show', '-s', '--format=%cI', snapshot])
-      const identity = { GIT_AUTHOR_NAME: 'CI', GIT_AUTHOR_EMAIL: 'ci@example.invalid', GIT_AUTHOR_DATE: date,
-        GIT_COMMITTER_NAME: 'CI', GIT_COMMITTER_EMAIL: 'ci@example.invalid', GIT_COMMITTER_DATE: date }
-      const commit = await git(['commit-tree', tree, '-p', snapshot, '-m', 'CI dispatch inputs'], identity)
-      await publication.guard(commit)
-      input.slice = ''
-      delete input.files
-      input.partition = `sha256:${hash}`
-      return commit
-    } finally {
-      await rm(directory, { recursive: true, force: true })
-    }
-  }
-
   private async trigger(run: CloudRun, input: CloudDispatchInput) {
     const pending = await this.save({ ...run, state: 'starting', providerRunId: null,
       dispatch: { input, attempts: (run.dispatch?.attempts ?? 0) + 1, at: this.ports.now().toISOString(),
@@ -607,14 +545,7 @@ export class CloudCi {
       })
       if (failed) return this.failPipeline(pending, { message: failed.message! })
     }
-    let providerRunId: string | null
-    try {
-      providerRunId = await this.provider.dispatch(input)
-    } catch (error) {
-      if (!(error instanceof DomainError && error.code === 'CI_CLOUD_DISPATCH_NOT_SENT')) throw error
-      return this.save({ ...pending, message: sanitizeCiText(error.message),
-        dispatch: { ...pending.dispatch!, uncertain: false, notSent: true } })
-    }
+    const providerRunId = await this.provider.dispatch(input)
     return this.save({ ...pending, providerRunId, dispatch: { ...pending.dispatch!, uncertain: false }, dispatchHistory: [...pending.dispatchHistory ?? [],
       { at: pending.dispatch!.at, providerRunId }] })
   }
@@ -668,26 +599,13 @@ export class CloudCi {
     if (this.ports.now().getTime() - Date.parse(dispatchedAt) < CLOUD_START_TIMEOUT_MS) return run
     // Retire the pipeline before retrying so it cannot acquire a workflow later.
     if (run.providerRunId) {
-      if (!run.dispatch?.cancelAccepted) {
-        let accepted: boolean
-        try {
-          accepted = await this.provider.cancel(run) !== false
-        } catch (error) {
-          if (error instanceof DomainError && error.code === 'CI_CLOUD_RATE_LIMITED') throw error
-          return this.reconcileLookupFailure(run, error)
-        }
-        if (accepted && run.dispatch) {
-          run = await this.save({ ...run, dispatch: { ...run.dispatch, cancelAccepted: true } })
-        }
+      try {
+        await this.provider.cancel(run)
+      } catch (error) {
+        if (error instanceof DomainError && error.code === 'CI_CLOUD_RATE_LIMITED') throw error
+        return this.reconcileLookupFailure(run, error)
       }
-      const status = await this.provider.status(run)
-      if (!status.done) {
-        return this.save({ ...run,
-          message: `${this.provider.label} cancellation is unconfirmed; waiting before retrying dispatch.` })
-      }
-      if (status.conclusion !== 'cancelled') {
-        return this.save({ ...run, state: 'running', workflowStarted: true })
-      }
+      if (await this.provider.find(run)) return this.save({ ...run, state: 'running', workflowStarted: true })
     }
     const retry = run.dispatch && run.dispatch.attempts < MAX_DISPATCH_ATTEMPTS
     const message = `${this.provider.label} created no workflow within 75 seconds. `
@@ -758,18 +676,22 @@ export class CloudCi {
         activeRuns = { ...activeRuns, ids }
       }
       const publications = this.publications(run.repository, run.mirror)
+      const publicationKeys = new Map<string, string[]>()
+      for (const key of publications.keys()) {
+        const [commit, , baseCommit] = key.split('\n')
+        const branch = baseCommit ? `ci/${commit}-${baseCommit}` : `ci/${commit}`
+        const keys = publicationKeys.get(branch) ?? []
+        keys.push(key)
+        publicationKeys.set(branch, keys)
+      }
       const reserved = mirrorMaintenance.get(this.mirrorKey(run.repository, run.mirror))!.keep
       await pruneMirrorBranches({ mirror: run.mirror, activeRuns,
         roots: [this.root, join(this.root, '..', 'github'), join(this.root, '..', 'circleci')],
         // Starts during this sweep stay protected even after their reservation becomes a persisted ticket.
         keep: () => reserved,
-        withRemovalLock: remove => serializeMirror(run.mirror, remove),
         beforeRemove: branches => {
-          const removed = new Set(branches)
-          for (const key of publications.keys()) {
-            const [commit, , baseCommit] = key.split('\n')
-            const branch = baseCommit ? `ci/${commit}-${baseCommit}` : `ci/${commit}`
-            if (removed.has(branch) || removed.has(`ci-default/${commit}`)) publications.delete(key)
+          for (const branch of branches) {
+            for (const key of publicationKeys.get(branch) ?? []) publications.delete(key)
           }
         },
         git: async args => {
@@ -786,12 +708,6 @@ export class CloudCi {
    * that splits its files on the runner (`exact`) needs a snapshot with exactly its learned durations; any other start
    * only orders its files by them, so it reuses whichever snapshot of the commit is already there. */
   private async publish(repository: string, mirror: string, commit: string, defaultBranch: string | undefined,
-    baseCommit: string | undefined, durations: CiDurations, exact: boolean) {
-    return serializeMirror(mirror, () => this.publishLocked(repository, mirror, commit,
-      defaultBranch, baseCommit, durations, exact))
-  }
-
-  private async publishLocked(repository: string, mirror: string, commit: string, defaultBranch: string | undefined,
     baseCommit: string | undefined, durations: CiDurations, exact: boolean) {
     const prefix = `${commit}\n${defaultBranch ?? ''}\n${baseCommit ?? ''}\n`
     const key = `${prefix}${canonicalJson(durations)}`
@@ -857,6 +773,8 @@ export class CloudCi {
       }
       return result.stdout.trim()
     }
+    const read = (args: string[]) =>
+      run(args, { GIT_ALTERNATE_OBJECT_DIRECTORIES: [snapshotObjects, sourceObjects].join(delimiter) })
     const git = (args: string[], env?: Record<string, string>) => run(args, { GIT_OBJECT_DIRECTORY: snapshotObjects,
       GIT_ALTERNATE_OBJECT_DIRECTORIES: [resolve(mirrorClone, '.git', 'objects'), sourceObjects].join(delimiter), ...env })
     const base = 'refs/remotes/origin/main'
@@ -1002,10 +920,7 @@ export class CloudCi {
       ...(repair ? { repair } : {}),
     }
     log.info({ commit, mirror, timings }, 'CI mirror snapshot published')
-    return { git, guard: (commit: string) => this.guard(mirrorClone, commit, AbortSignal.timeout(600_000),
-      { GIT_OBJECT_DIRECTORY: snapshotObjects,
-        GIT_ALTERNATE_OBJECT_DIRECTORIES: [resolve(mirrorClone, '.git', 'objects'), sourceObjects].join(delimiter) }),
-      branch, snapshot, workflowRef, mirrorPublication, workflows: entries.map(entry => entry.split('\t')[1]!),
+    return { git: read, branch, snapshot, workflowRef, mirrorPublication, workflows: entries.map(entry => entry.split('\t')[1]!),
       ...(comparison ? { defaultBranch: comparison.branch } : {}),
       ...(runnerBaseCommit ? { baseCommit: runnerBaseCommit } : {}) }
   }
@@ -1030,8 +945,7 @@ export class CloudCi {
   }
 
   private async selectedIndexes(git: (args: string[]) => Promise<string>, commit: string, selected: string[]) {
-    const files = (await git(['ls-tree', '-r', '--name-only', commit])).split('\n')
-      .filter(file => file !== 'ci-dispatch-inputs.json').sort()
+    const files = (await git(['ls-tree', '-r', '--name-only', commit])).split('\n').sort()
     if (selected.some(file => !files.includes(file))) {
       throw new DomainError('CI_CLOUD_FAILED', 'Selected files are absent from the commit.', 409)
     }
@@ -1062,7 +976,7 @@ export class CloudCi {
 
   /** Refuses to publish files that name this fleet: Main's home path and user, and every Tailscale computer's
    * name, address and tailnet domain. Only the commit's files are published, so only they are checked. */
-  private async guard(clone: string, commit: string, signal: AbortSignal, env?: Record<string, string>) {
+  private async guard(clone: string, commit: string, signal: AbortSignal) {
     const fixed = new Set<string>([this.identity.home]), words = new Set<string>([this.identity.user])
     const word = (value: string) => { const first = value.toLowerCase().split(/[^a-z0-9]/)[0] ?? ''; if (first.length >= 3) words.add(first) }
     word(this.identity.host)
@@ -1079,7 +993,7 @@ export class CloudCi {
       const patterns = [...values].filter(value => value.length >= 3).flatMap(value => ['-e', value])
       if (!patterns.length) continue
       const result = await this.git.git(['grep', '-I', '-n', '-i', '--no-color', ...mode, ...patterns, commit, '--'],
-        { cwd: clone, signal, ...(env ? { env } : {}) })
+        { cwd: clone, signal })
       if (result.code > 1) throw new DomainError('CI_CLOUD_FAILED', 'Main could not check the files for the CI mirror.', 502)
       found.push(...result.stdout.split('\n').filter(Boolean).map(line => line.split(':').slice(1, 3).join(':')))
     }
@@ -1285,14 +1199,12 @@ export class CloudCi {
     const ids = new Set([run.providerRunId, ...attempts, ...discovered].filter((id): id is string => Boolean(id)))
     const discoveryComplete = !run.dispatch?.attempts
       || this.ports.now().getTime() - Date.parse(run.cancellation!.at) >= CLOUD_START_TIMEOUT_MS
-    const neverSubmitted = run.dispatch?.notSent && !history.length
-    let stopped = discoveryComplete && !run.dispatch?.uncertain
-      && (ids.size > 0 || !run.dispatch?.attempts || neverSubmitted)
+    let stopped = discoveryComplete && !run.dispatch?.uncertain && (ids.size > 0 || !run.dispatch?.attempts)
     for (const providerRunId of ids) {
       const attempt = { ...run, providerRunId }
       if (!canceled.has(providerRunId)) {
-        const accepted = await this.provider.cancel(attempt)
-        if (accepted !== false) canceled.add(providerRunId)
+        await this.provider.cancel(attempt)
+        canceled.add(providerRunId)
         run = await this.save({ ...run, cancellation: { ...run.cancellation!, canceledIds: [...canceled] } })
       }
       if (!(await this.provider.status(attempt)).done) stopped = false
@@ -1407,7 +1319,7 @@ export class CloudCi {
     if (!run.providerQueuedAt) run = await this.save({ ...run, providerQueuedAt: since })
     if (!reassign || run.queueCancelRequested || now.getTime() - Date.parse(since) < CLOUD_START_TIMEOUT_MS) return run
     try {
-      if (await this.provider.cancel(run) === false) return run
+      await this.provider.cancel(run)
     } catch (error) {
       if (error instanceof DomainError && error.code === 'CI_CLOUD_RATE_LIMITED') throw error
       return this.reconcileLookupFailure(run, error)

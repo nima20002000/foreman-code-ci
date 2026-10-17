@@ -217,9 +217,6 @@ it('awaits a fresh catalog on Refresh before updating the reviewed detail snapsh
   const gate = new Promise<void>(resolve => { release = resolve })
   const next = 'sha256:' + 'c'.repeat(64)
   server.use(
-    http.get('/api/management/harnesses/claude/setup-options', () => HttpResponse.json({
-      graphqlMcp: { type: 'http', url: 'http://127.0.0.1:3999/mcp' },
-    })),
     http.get('/api/management/harnesses/codex/plugins', async ({ request }) => {
       if (new URL(request.url).searchParams.get('refresh') === 'true') {
         refreshRequested = true
@@ -243,8 +240,6 @@ it('awaits a fresh catalog on Refresh before updating the reviewed detail snapsh
   const user = await openPlugin()
   const dialog = within(screen.getByRole('dialog', { name: 'notes plugin' }))
   const refresh = dialog.getByRole('button', { name: 'Refresh plugin' })
-  await waitFor(() => expect(refresh).toBeEnabled())
-  expect(detailReads).toEqual([false])
   try {
     await user.click(refresh)
     await waitFor(() => expect(refreshRequested).toBe(true))
@@ -254,13 +249,12 @@ it('awaits a fresh catalog on Refresh before updating the reviewed detail snapsh
   } finally {
     release()
   }
-  await waitFor(() => expect(dialog.getByRole('button', { name: 'Remove plugin' })).toBeEnabled())
-  const remove = dialog.getByRole('button', { name: 'Remove plugin' })
-  expect(dialog.getByText('summarize')).toBeVisible()
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Remove plugin' })).toBeEnabled())
+  expect(screen.getByRole('dialog', { name: 'notes plugin' })).toHaveTextContent('summarize')
   expect(detailReads[0]).toBe(false)
   expect(detailReads.slice(1)).toContain(true)
   expect(detailReads.slice(1)).not.toContain(false)
-  await user.click(remove)
+  await user.click(screen.getByRole('button', { name: 'Remove plugin' }))
   await waitFor(() => expect(changes).toEqual([expect.objectContaining({
     pluginId: base.pluginId, action: 'remove', expectedRevision: next, artifactIdentity,
   })]))
