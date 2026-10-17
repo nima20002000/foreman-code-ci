@@ -4,13 +4,11 @@ import { responseValueDigest, type NativeResponseDeliveryEvidence } from '../int
 import type { NativeHistory } from './port.js'
 import { isObject, type JsonObject } from './codexStdioTransport.js'
 
-/** Approval delivery uses the provider acknowledgement; questions additionally verify their result. */
-export function codexResponseDeliveryEvidence(pending: PendingNativeInteraction, option: ApprovalResponseOption,
+/** Resolution can also mean cancellation. Verify consumption through a result or an unchanged native turn read. */
+export function codexInputDeliveryEvidence(pending: PendingNativeInteraction, option: ApprovalResponseOption,
   nativeResponse: JsonObject, history: NativeHistory): NativeResponseDeliveryEvidence | undefined {
   const request = pending.request
-  const approval = ['item/commandExecution/requestApproval', 'item/fileChange/requestApproval',
-    'item/permissions/requestApproval'].includes(pending.nativeRequestType)
-  if (!isObject(request) || !approval && !['item/tool/requestUserInput', 'mcpServer/elicitation/request']
+  if (!isObject(request) || !['item/tool/requestUserInput', 'mcpServer/elicitation/request']
     .includes(pending.nativeRequestType)) return undefined
   const requestId = pending.turn.nativeRequestId
   const events = history.events
@@ -21,24 +19,11 @@ export function codexResponseDeliveryEvidence(pending: PendingNativeInteraction,
   if (!submitted?.connectionId) return undefined
   const reserved = events.find(event => event.connectionId === submitted.connectionId
     && event.type === 'interaction.submitting' && event.payload.nativeRequestId === requestId
-    && event.payload.optionId === option.optionId
     && event.sequence < submitted.sequence)
   const resolved = events.find(event => event.connectionId === submitted.connectionId
     && event.type === 'interaction.resolved' && event.payload.nativeRequestId === requestId
     && event.payload.submittedOptionId === option.optionId && reserved && event.sequence > reserved.sequence)
   if (!reserved || !resolved) return undefined
-  if (approval) {
-    const offered = events.find(event => event.connectionId === submitted.connectionId
-      && event.type === 'interaction.pending' && event.payload.nativeRequestId === requestId
-      && event.payload.nativeRequestType === pending.nativeRequestType
-      && event.payload.turnId === pending.turn.nativeTurnId && event.sequence < reserved.sequence)
-    if (!offered || resolved.payload.evidence !== 'serverRequest/resolved') return undefined
-    // Codex resolves these RPCs after receiving the response, without echoing the decision.
-    // Item outcomes may be absent or declined; this acknowledges delivery, not a successful grant or operation.
-    return { source: 'provider_acknowledgement', ...pending.session, nativeRequestId: requestId!,
-      nativeRequestType: pending.nativeRequestType, optionId: option.optionId, semantic: option.semantic,
-      responseDigest: responseValueDigest(option.response) }
-  }
   const completed = events.filter(event => event.connectionId === submitted.connectionId
     && event.sequence > resolved.sequence && ['item.completed', 'item.snapshot'].includes(event.type)
     && event.payload.threadId === pending.session.nativeSessionId

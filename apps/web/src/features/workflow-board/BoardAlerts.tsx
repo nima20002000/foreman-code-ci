@@ -55,6 +55,7 @@ export function BoardAlerts({ scope, hints, validation, error, pending, updateFa
           }}>{issue.code === 'ENTRY_REQUIRED' && issue.message.startsWith('Add an agent') ? 'Add node' : 'Review setting'}</Button> : null}
         </div>
       </li>)}</ul>
+      {validation ? <p role="status">{validation.valid ? 'The last save passed all checks.' : 'The last save needs a few fixes.'}</p> : null}
     </Dialog>
   </div>
 }
