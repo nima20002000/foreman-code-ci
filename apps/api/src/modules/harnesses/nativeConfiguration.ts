@@ -129,7 +129,7 @@ export class NativeConfigurationService {
     }
     const request = HarnessOptionsDiscoveryRequestSchema.parse({ operation: 'options', harness, target, refresh,
       ...(accountBinding ? { accountBinding } : {}) })
-    const result = await channel.request(request, { signal: AbortSignal.timeout(60_000) })
+    const result = await channel.request(request, { signal: AbortSignal.timeout(60_000), timeoutMs: 60_000 })
     const current = endpoint.captureRequest(hostRef.deviceId, 'host-harness-check-v1')
     if (!current || !isDeepStrictEqual(current.binding, binding) || result.bytes !== undefined) throw new DomainError(
       'HARNESS_INVENTORY_STALE', 'The model discovery connection changed.', 409)
