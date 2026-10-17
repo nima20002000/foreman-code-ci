@@ -9,6 +9,28 @@ import { RemoteOwnerControlSchema, RemoteOwnerReconciliationSchema, RemoteApplic
   RemoteReviewerRequestSchema } from './remoteExecution.js'
 import { DeviceHistoryRequestFields, DeviceJsonContinuationRequestSchema, DeviceJsonContinuationSchema, DeviceHistoryPageSchema } from './deviceApplication.js'
 export * from './workerConversations.js'
+export const NativeResponseAvailabilityQuerySchema = z.object({
+  nativeRequestId: z.string().min(1),
+  nativeRequestType: z.string().min(1),
+  expectedNativeTurnId: z.string().min(1).optional(),
+  expectedNativeMessageId: z.string().min(1).optional(),
+  expectedGeneration: z.string().min(1).optional(),
+}).strict()
+export type NativeResponseAvailabilityQuery = z.infer<typeof NativeResponseAvailabilityQuerySchema>
+export const NativeResponseAvailabilitySchema = z.object({
+  nativeSessionId: z.string().min(1),
+  nativeRequestId: z.string().min(1),
+  nativeRequestType: z.string().min(1),
+  nativeTurnId: z.string().min(1).optional(),
+  nativeMessageId: z.string().min(1).optional(),
+  generation: z.string().min(1).optional(),
+  qualified: z.boolean(),
+  state: z.enum(['available', 'recovery_required', 'unavailable']),
+  path: z.enum(['live_callback', 'qualified_recovery']).nullable(),
+  reason: z.enum(['live_callback', 'qualified_recovery', 'request_consumed', 'callback_lost', 'session_closed',
+    'unqualified', 'identity_mismatch', 'response_in_flight', 'unsupported']),
+}).strict()
+export type NativeResponseAvailability = z.infer<typeof NativeResponseAvailabilitySchema>
 const binding = { intent: DispatchIntentSchema, placement: AcceptedNodePlacementSchema, executionPlacement: NativeExecutionPlacementSchema.optional() }
 export const RemoteReceiptPageSchema = z.object({
   kind: z.literal('receipt-page'), transferId: z.uuid(), receiptSequence: z.number().int().positive(),
@@ -46,6 +68,8 @@ export const RemoteExecutionRpcRequestSchema = z.discriminatedUnion('method', [
   z.object({ method: z.literal('history'), ...binding, ...DeviceHistoryRequestFields,
     correlationId: z.string().min(1).optional(), receiptSequence: z.number().int().positive().optional() }).strict(),
   z.object({ method: z.enum(['pending', 'status']), ...binding }).strict(),
+  z.object({ method: z.literal('inspect-response-availability'), ...binding,
+    session: z.lazy(() => NativeSessionReferenceSchema), query: NativeResponseAvailabilityQuerySchema }).strict(),
   z.object({ method: z.enum(['capabilities', 'inspect-mcp']), ...binding, configuration: z.lazy(() => AgentConfigurationVersionSchema) }).strict(),
   z.object({ method: z.literal('reconcile-response'), ...binding, downloadId: z.uuid().optional(), response: z.object({ nativeRequestId: z.string().min(1), nativeRequestType: z.string().min(1), option: z.lazy(() => ApprovalResponseOptionSchema) }).strict() }).strict(),
   z.object({ method: z.literal('session-controls-read'), ...binding, native: RemoteNativeIdentitySchema }).strict(),
