@@ -454,11 +454,7 @@ export class HostCiRunner {
       // At most one walk per 5 minutes, and only after a writer transition; external changes wait for the hourly scan.
       const revision = this.cacheRevision, elapsed = now - this.cacheSweepAt
       if (revision !== this.sweptCacheRevision && elapsed >= 5 * 60_000 || elapsed >= 60 * 60_000) {
-        await sweepHostCiCache(this.root, { activeRepositories, unitStates: async runIds => {
-          const units = runIds.map(runId => `${unitName(runId)}.service`)
-          const states = await readCiUnitStates(this.ports, units, this.environment, { timeoutMs: 2_000 })
-          return new Map(runIds.map((runId, index) => [runId, states.get(units[index]!)!] as const))
-        } })
+        await sweepHostCiCache(this.root, { activeRepositories })
         this.cacheSweepAt = now
         this.sweptCacheRevision = revision
       }
