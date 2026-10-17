@@ -809,6 +809,7 @@ export async function remoteReviewProduction(options: {
       deniedResponse: () => deniedResponse,
       deliveryReads: transport.deliveryReads,
       loseNextCompactionResponse: transport.loseNextCompactionResponse,
+      conversationRequests: transport.conversationRequests,
       async restoreOriginalResponseGrant() {
         const command = deniedResponse
         if (!command) throw new Error('No original reserved response was denied.')

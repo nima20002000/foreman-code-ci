@@ -56,6 +56,7 @@ it.each(['resident', 'unloaded'] as const)(
       expect(blocked.isError).toBe(true)
       expect(JSON.stringify(blocked.content)).toContain('SESSION_COMPACT_UNCONFIRMED')
       const beforeRead = (await fixture.provider.calls()).length
+      const requestsBeforeRead = fixture.conversationRequests.length
       const denied = await fixture.access.issue({ name: 'Denied compaction observer', audience: 'operator',
         expiresAt: new Date(Date.now() + 600_000), grants: [] })
       await expectMcpAccessDenied(fixture.call('agent_chat_controls_get', target, denied.token))
@@ -67,8 +68,10 @@ it.each(['resident', 'unloaded'] as const)(
           harness: { model: 'other-model', reasoningEffort: 'medium' } } })
       expect(identityAlive(original[0]!.provider!)).toBe(true)
       const recoveryCalls = (await fixture.provider.calls()).slice(beforeRead)
-      expect(recoveryCalls).toContainEqual(expect.objectContaining({ method: 'thread/read',
-        threadId: session.nativeSessionId }))
+      const recoveryRequests = fixture.conversationRequests.slice(requestsBeforeRead)
+      expect(recoveryRequests).toContainEqual(expect.objectContaining({ method: 'conversation.compact-read',
+        session: { harness: 'codex', ...session }, binding: expect.objectContaining({ profile: binding.profile }) }))
+      expect(recoveryRequests.filter(request => request.method === 'conversation.open')).toEqual([])
       expect(recoveryCalls.filter(call => ['thread/start', 'thread/resume', 'thread/fork', 'turn/start',
         'thread/compact/start'].includes(String(call.method)))).toEqual([])
       const replay = AgentChatControlsStateSchema.parse(await fixture.value('agent_chat_controls_update', {
