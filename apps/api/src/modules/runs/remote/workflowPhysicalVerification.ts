@@ -357,7 +357,9 @@ async function prefetchRemoteWorkflowPhysical(input: RemoteWorkflowPhysicalVerif
         assertRegisteredConnection()
         return response
       } catch (error) {
-        if (physicalReadoutLinkDropped(error)) throw error
+        const connected = same(input.endpoint().currentBinding(captured.binding.deviceId), captured.binding)
+        const unanswered = error instanceof DeviceConnectionError && ['timeout', 'backpressure'].includes(error.code)
+        if (physicalReadoutLinkDropped(error) && !(connected && unanswered)) throw error
         assertRegisteredConnection()
         const failure = deviceApplicationFailure(error)
         if (!failure.retryable || ['transport', 'DEVICE_LINK_DROPPED', 'REMOTE_NATIVE_PHYSICAL_UNAVAILABLE']
@@ -438,7 +440,7 @@ async function prefetchRemoteWorkflowPhysical(input: RemoteWorkflowPhysicalVerif
 }
 
 function physicalReadoutLinkDropped(error: unknown): boolean {
-  return isDeviceLinkDrop(error) || ['transport', 'DEVICE_LINK_DROPPED'].includes(deviceApplicationFailure(error).code)
+  return isDeviceLinkDrop(error) || deviceApplicationFailure(error).code === 'DEVICE_LINK_DROPPED'
 }
 
 /** Facts one remote binding check read from the Run's rows; shared by every original of the same capture. */

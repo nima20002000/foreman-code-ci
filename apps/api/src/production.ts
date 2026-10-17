@@ -1362,7 +1362,7 @@ function configureWorkflowManagers(composition: ProductionComposition) {
     return manager
   })
   composition.validateContinuation = placedContinuationValidator(database.pool, locations, remoteWorkflow, {
-    async assertCurrent(binding, signal) {
+    async assertCurrent(binding, signal, purpose) {
       signal?.throwIfAborted()
       const sql = interactionConnection.getStore() ?? database.pool
       if (!composition.agentPlacement) {
@@ -1374,7 +1374,9 @@ function configureWorkflowManagers(composition: ProductionComposition) {
           [binding.intent.operationId])).rows[0]
         const receipt = stored && RemoteOperationReceiptSchema.parse(stored.receipt)
         if (receipt?.native) {
-          const authenticated = deviceRuntime.endpointForDomains().currentBinding(binding.placement.hostRef.deviceId)
+          // Restart preserves Main's admitted lifetime; it does not authorize a new Worker operation.
+          const authenticated = purpose === 'restart' ? receipt.connection
+            : deviceRuntime.endpointForDomains().currentBinding(binding.placement.hostRef.deviceId)
           if (!authenticated) {
             throw new DomainError('REMOTE_DISPATCH_UNAVAILABLE', 'The authenticated execution connection is unavailable.', 503)
           }
@@ -1993,6 +1995,8 @@ function configureAgentChat(composition: ProductionComposition) {
     configuration.harness === 'opencode' ? []
       : (await composition.nativeConfigurations.options(configuration.harness)).models
   resolveAgentChatManager.release = (conversationId) => { agentChatManagers.delete(conversationId) }
+  resolveAgentChatManager.closeRetainedSession = (conversationId, configuration, principalId, signal) =>
+    workerChats!.closeRetainedSession(conversationId, configuration, principalId, signal)
   composition.agentChat = new AgentChatService(database.pool, agentConversations,
     new PostgresOperatorConversationRepository(database.pool, accountConfigurations), workflows, runs, resolveAgentChatManager, config.harnesses.workspaceRoot)
   composition.reviews = new AutomaticReviewService(database.pool, runs, approvals, locations, rollout,

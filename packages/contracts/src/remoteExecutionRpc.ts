@@ -50,7 +50,8 @@ export const RemoteHistoryContinuationSchema = z.object({
 }).strict()
 export const RemoteExecutionRpcRequestSchema = z.discriminatedUnion('method', [
   z.object({ method: z.literal('receipt-continuation'), ...binding, transferId: z.uuid(),
-    receiptSequence: z.number().int().positive(), metadata: DeviceJsonContinuationRequestSchema }).strict(),
+    receiptSequence: z.number().int().positive(), metadata: DeviceJsonContinuationRequestSchema,
+    forStop: z.literal(true).optional() }).strict(),
   z.object({ method: z.literal('physical-readout'), ...binding, receiptSequence: z.number().int().positive(),
     sourceDigest: z.string().regex(/^[a-f0-9]{64}$/), metadata: DeviceJsonContinuationRequestSchema.optional() }).strict(),
   z.object({ method: z.literal('physical-ack'), ...binding, receiptSequence: z.number().int().positive(),

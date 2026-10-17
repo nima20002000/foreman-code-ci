@@ -66,7 +66,30 @@ async function lockCacheEntry(handle, mode = 'exclusive', nonblocking = false) {
 const cacheLeases = new Map()
 const cacheRequests = new Map()
 
+async function removePendingEntries(parent, key) {
+  for (const name of await readdir(parent)) {
+    if (!name.startsWith(`${key}.pending-`)) continue
+    const directory = join(parent, name)
+    if (await cacheEntryExists(directory)) await rm(directory, { recursive: true, force: true })
+  }
+}
+
+async function prunePendingEntries(parent) {
+  const keys = new Set()
+  for (const name of await readdir(parent)) {
+    const pending = /^([a-f0-9]{64})\.pending-/.exec(name)
+    if (pending) keys.add(pending[1])
+  }
+  for (const key of keys) {
+    const handle = await open(join(parent, `${key}.lock`), 'a', 0o600)
+    try {
+      if (await lockCacheEntry(handle, 'exclusive', true)) await removePendingEntries(parent, key)
+    } finally { await handle.close() }
+  }
+}
+
 async function pruneFixtureEntries(parent) {
+  await prunePendingEntries(parent)
   const entries = []
   for (const name of await readdir(parent)) {
     if (!/^[a-f0-9]{64}$/.test(name)) continue
@@ -98,6 +121,8 @@ async function acquireFixture(parent, key, populate) {
       if (await cacheEntryExists(directory)) break
       if (!await lockCacheEntry(handle, 'exclusive', true)) continue
       if (!await cacheEntryExists(directory)) {
+        await removePendingEntries(parent, key)
+        await withTestFixtureCacheLock(parent, 'publication', () => prunePendingEntries(parent))
         const temporary = await mkdtemp(join(parent, `${key}.pending-`))
         try {
           await populate(temporary)

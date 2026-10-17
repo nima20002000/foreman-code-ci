@@ -384,6 +384,11 @@ it.each(['recorded', 'missing', 'foreign-session', 'broken-chain'] as const)(
         await expect(manager.sessionControlCapabilities(f.session)).resolves.toBeTruthy()
         expect(manager.appliedSessionPreferences(f.session)?.autoCompact).toBe('off')
       } else await expect(applying).rejects.toMatchObject({ code: 'WORKER_CONVERSATION_CONFLICT' })
-    } finally { await manager.dispose() }
+    } finally {
+      try {
+        if (variant === 'recorded') await manager.dispose()
+        else await expect(manager.dispose()).rejects.toMatchObject({ code: 'WORKER_CONVERSATION_CONFLICT' })
+      } finally { await bridge.close() }
+    }
   },
 )
