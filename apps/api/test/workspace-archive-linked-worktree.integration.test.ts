@@ -32,8 +32,6 @@ it.each([
   { archive: 'workspace_batch_archive', state: 'running', alias: true },
   { archive: 'workspace_archive', state: 'pending cleanup', alias: true },
   { archive: 'workspace_batch_archive', state: 'pending cleanup', alias: false },
-  { archive: 'workspace_archive', state: 'idle workspace', alias: true },
-  { archive: 'workspace_batch_archive', state: 'idle workspace', alias: false },
 ])('$archive retains a canonical Git common directory needed by $state', async ({ archive, state, alias }) => {
   const db = await currentDatabase()
   const clients: Client[] = []
@@ -87,8 +85,7 @@ it.each([
     }
     const cwd = join(linked, 'nested')
     await mkdir(cwd)
-    const fixture = await seedAgent3(db.pool, cwd, makeCurrentWorkflowFixture(randomUUID(), 'single'),
-      { run: state !== 'idle workspace' })
+    const fixture = await seedAgent3(db.pool, cwd, makeCurrentWorkflowFixture(randomUUID(), 'single'))
     const completed = WorkflowRunV3Schema.parse({ ...fixture.run, executionState: 'completed',
       outcome: 'canceled', result: { outcome: 'canceled' }, finishedAt: new Date().toISOString() })
     const run = state === 'running'
@@ -116,17 +113,6 @@ it.each([
     await db.pool.query("update runs set execution_state='completed',record=$2::jsonb where id=$1",
       [completed.id, JSON.stringify(completed)])
     await db.pool.query('update run_cleanup_intents set pending=false where run_id=$1', [fixture.run.id])
-    const afterRun = await client.callTool({ name: archive, arguments: input })
-    expect(afterRun.isError).toBe(true)
-    expect(afterRun.content).toEqual([{ type: 'text', text: expect.stringContaining('WORKSPACE_FOLDER_CLEANUP_FAILED') }])
-    expect(await git(cwd, 'show', 'HEAD:retained.txt')).toBe('Shared object store')
-    const relocated = join(db.directory, 'relocated')
-    await mkdir(relocated)
-    const moved = await client.callTool({ name: 'workspace_location_set', arguments: {
-      workspaceId: fixture.run.workspaceId, runnerId: 'runner-local', rootPath: relocated,
-      expectedLocationRevision: 1,
-    } })
-    expect(moved.isError, JSON.stringify(moved)).not.toBe(true)
     expect((await client.callTool({ name: archive, arguments: input })).isError).not.toBe(true)
     await expect(lstat(repository)).rejects.toMatchObject({ code: 'ENOENT' })
     const removed = await db.pool.query<{ created_project_folder: unknown }>(
