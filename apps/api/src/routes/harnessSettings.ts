@@ -32,19 +32,22 @@ export function registerHarnessSettingsRoutes(app: FastifyInstance, services: Op
   })
   app.get('/api/management/harnesses/:harness/options', async (request) => {
     requireAuthorization(requirePrincipal(request), 'harnesses:read')
-    const { harness } = HarnessOptionsInputSchema.parse(request.params)
+    const query = request.query as { hostRef?: string; accountBinding?: string }
+    const { harness, hostRef, accountBinding } = HarnessOptionsInputSchema.parse({ ...request.params as object,
+      ...(query.hostRef ? { hostRef: JSON.parse(query.hostRef) } : {}),
+      ...(query.accountBinding ? { accountBinding: JSON.parse(query.accountBinding) } : {}) })
     if (!services.extensions?.native) throw new DomainError('NATIVE_OPTIONS_UNAVAILABLE', 'Native model discovery is unavailable.', 503)
-    return HarnessOptionsResultSchema.parse(await services.extensions.native.options(harness))
+    return HarnessOptionsResultSchema.parse(await services.extensions.native.options(harness, accountBinding, hostRef))
   })
   app.post('/api/management/harnesses/:harness/refresh', async (request) => {
     const principal = requirePrincipal(request)
     requireAuthorization(principal, 'harnesses:read')
     const { harness } = HarnessOptionsInputSchema.parse(request.params)
-    const { refresh } = HarnessOptionsRefreshInputSchema.parse({ harness, ...(request.body as object ?? {}) })
+    const { refresh, hostRef } = HarnessOptionsRefreshInputSchema.parse({ harness, ...(request.body as object ?? {}) })
     if (refresh === 'upstream') requireAuthorization(principal, 'harnesses:update')
     services.harnesses.invalidateChecks()
     if (!services.extensions?.native) throw new DomainError('NATIVE_OPTIONS_UNAVAILABLE', 'Native discovery is unavailable.', 503)
-    return HarnessOptionsResultSchema.parse(await services.extensions.native.refreshOptions(harness, refresh))
+    return HarnessOptionsResultSchema.parse(await services.extensions.native.refreshOptions(harness, refresh, undefined, hostRef))
   })
   const settings = () => {
     if (!services.harnessSettings) throw new DomainError('HARNESS_SETTINGS_UNAVAILABLE', 'Native connection management is unavailable.', 503)

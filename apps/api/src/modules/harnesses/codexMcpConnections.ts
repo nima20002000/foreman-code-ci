@@ -26,7 +26,7 @@ export class CodexMcpConnections implements NativeMcpAdapter {
     const environment: NodeJS.ProcessEnv = { ...this.environment, NO_COLOR: '1' }
     for (const key of Object.keys(environment)) if (/^(?:GRAPHQL_|FOREMAN_CODE_|OPERATOR_|DATABASE_URL$|TEST_DATABASE_URL$|PGPASSWORD$)/.test(key)) delete environment[key]
     const binary = typeof this.binary === 'string' ? this.binary : this.binary()
-    const qualified = await qualifyCodex(binary, this.directory, environment, true, signal)
+    const qualified = await qualifyCodex(binary, this.directory, environment, false, signal)
     await assertCodexUnchanged(qualified)
     const transport = new CodexStdioTransport(qualified.binary, this.directory, environment, qualified.protocol,
       async () => { throw new DomainError('MCP_UNEXPECTED_INTERACTION', 'A configuration operation requested an unexpected interaction.', 409) },

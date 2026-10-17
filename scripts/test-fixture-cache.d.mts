@@ -17,5 +17,3 @@ export function cachedWorkerRelease(
     missCount: number; rebuildCount: number
   }) => void },
 ): Promise<string>
-
-export function withTestFixtureCacheLock<T>(root: string, namespace: string, work: () => Promise<T>): Promise<T>
