@@ -291,7 +291,8 @@ export class RepeatRepositoryFactory {
           const native = placement && await readNativePlacement(sql, execution.id)
           if (placement && !native) return repeatConflict('RUN_LOCATION_MISSING')
           const worktreeRow = !placement && (await sql.query<{ record: unknown }>(
-            'select record from run_worktrees where run_id=$1', [run.id])).rows[0]
+            `select record from run_worktrees where run_id=$1 and allocation_id in ($2,'')
+              order by (allocation_id=$2) desc limit 1`, [run.id, execution.id])).rows[0]
           const worktree = worktreeRow ? RunWorktreeSchema.parse(worktreeRow.record) : undefined
           if (worktree && worktree.state !== 'active') return repeatConflict('RUN_LOCATION_MISSING')
           if (paths.workingDirectory !== (native?.workingTree.canonicalCwd ?? worktree?.workingDirectory ?? run.executionLocation.rootPath)

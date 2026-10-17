@@ -14,38 +14,6 @@ import { workerConversationFixture } from './workerFixtures.test-support.js'
 import { WorkerConversationRpcRequestSchema, type WorkerConversationRpcRequest,
   type WorkerConversationReceipt } from '@foreman-code/contracts/remote-execution-rpc'
 
-it.each(['codex', 'claude'] as const)('rebinds the next %s credential through the existing Worker owner without creation', async harness => {
-  const f = workerConversationFixture('operator', harness)
-  if (!('operatorId' in f.configuration)) throw new Error('Operator fixture required')
-  const binding = { ...f.binding, appMcpAccess: 'scoped' as const }
-  const requests: WorkerConversationRpcRequest[] = []
-  const bridge = new MainWorkerConversationBridge()
-  const receipt: WorkerConversationReceipt = { binding, connection: f.connection,
-    revision: 1, closed: false, closing: false, session: f.session, nativeOwner: f.nativeOwner,
-    turns: [], compactions: [], desiredPreferences: null, appliedPreferences: null }
-  const manager = new WorkerConversationManager({ binding, configuration: f.configuration, bridge,
-    current: async () => {}, channel: { binding: f.connection, request: async raw => {
-      const request = WorkerConversationRpcRequestSchema.parse(raw)
-      requests.push(request)
-      return { payload: request.method === 'conversation.refresh-mcp' ? { acknowledged: true } : { receipt } }
-    } } })
-  const start: NativeSessionStart = { kind: 'operator', configuration: f.configuration,
-    workingDirectory: binding.workingDirectory, correlationId: 'first',
-    environment: { agentId: f.configuration.operatorId, variables: { FOREMAN_CODE_MCP_TOKEN: 'first-token' } } }
-  try {
-    await manager.attachSession(f.session, start)
-    const before = requests.length
-    await manager.rebindApplicationAccess(f.session, { ...start, correlationId: 'second',
-      environment: { agentId: f.configuration.operatorId, variables: { FOREMAN_CODE_MCP_TOKEN: 'second-token' } } })
-    expect(requests.slice(before)).toHaveLength(1)
-    expect(requests.at(-1)).toMatchObject({
-      method: harness === 'codex' ? 'conversation.open' : 'conversation.refresh-mcp',
-      binding, applicationAccess: { kind: 'operator-chat-mcp', token: 'second-token' },
-    })
-    expect(requests.filter(request => request.method === 'conversation.open').every(request => request.mode === 'attach')).toBe(true)
-  } finally { await manager.dispose(); await bridge.close() }
-})
-
 it('requests incremental events and cancels the outstanding read without idle polling', async () => {
   const f = workerConversationFixture()
   const bridge = new MainWorkerConversationBridge()

@@ -56,7 +56,8 @@ export function createRemoteNativeSourceChannel(): {
       const providerId = review ? review.providerId : native.turnId
       if (copy.type === 'session_created' && copy.session.nativeSessionId !== native.sessionId
         || copy.type === 'event' && copy.event.executionId !== id
-        || copy.type === 'history' && (correlation !== undefined && correlation !== `execution:${id}` && !review
+        || copy.type === 'history' && (correlation !== undefined
+          && correlation !== (verified.receipt.turnInput?.correlationId ?? `execution:${id}`) && !review
           || copy.history.nativeTurnId !== undefined && copy.history.nativeTurnId !== providerId)) return conflict()
       const entries = observations.get(id) ?? new Map<string, VerifiedRemoteOriginalSource>()
       const generation = generations.get(id) ?? Object.freeze({})
