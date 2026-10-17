@@ -13,7 +13,6 @@ import { pathsOverlap } from './filesystem.js'
 import { activeAgentChatDirectories } from '../conversations/activeAgentChats.js'
 import { WORKSPACE_FOLDER_LIFECYCLE_LOCK, continuingRunDirectories } from './projectFolderCleanup.js'
 import { lockWorkspaceFolders } from './folderLocks.js'
-import { withGitDirectoryDependencies } from './gitDirectoryDependencies.js'
 
 function identity(details: { dev: bigint; ino: bigint }): string {
   return 'sha256:' + createHash('sha256').update(`${details.dev}:${details.ino}`).digest('hex')
@@ -56,16 +55,8 @@ export class WorkspaceStorageFolders {
       ...await continuingRunDirectories(client, this.runnerId),
       ...await activeAgentChatDirectories(client),
     ]
-    const references = result.rows.filter(({ path }) => Boolean(path))
-    const dependencies: FolderReference[] = []
-    for (const reference of references) {
-      if (reference.kind === 'defaults') continue
-      const paths = await withGitDirectoryDependencies([reference.path])
-      dependencies.push(...paths.filter(path => path !== reference.path)
-        .map(path => ({ path, kind: reference.kind, registered: false })))
-    }
-    return [...references, ...dependencies,
-      ...directories.map(path => ({ path, kind: 'active_run' as const, registered: false }))]
+    return [...result.rows, ...directories.map(path => ({ path, kind: 'active_run' as const, registered: false }))]
+      .filter(({ path }) => Boolean(path))
   }
 
   async list(principal: ManagementPrincipal, raw: { cursor?: string | undefined; limit?: number | undefined }) {

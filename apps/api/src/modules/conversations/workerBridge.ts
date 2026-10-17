@@ -28,8 +28,7 @@ export interface WorkerConversationCallbacks {
 }
 export interface WorkerConversationChannel {
   binding: Readonly<DeviceSessionBinding>
-  request(payload: unknown, options?: { signal?: AbortSignal; timeoutMs?: number;
-    progressTimeoutMs?: number }): Promise<DeviceApplicationResult>
+  request(payload: unknown, options?: { signal?: AbortSignal; timeoutMs?: number }): Promise<DeviceApplicationResult>
 }
 interface Admission {
   request: WorkerConversationRpcRequest
@@ -44,8 +43,6 @@ interface Admission {
   files?: MainWorkerFiles
 }
 const NATIVE_REQUEST_TIMEOUT_MS = 120_000
-// A lost copy reply must leave time to retry within preparation's 30-second idle window.
-const FILE_COPY_REQUEST_TIMEOUT_MS = 15_000
 function denied(): never {
   throw new DomainError('WORKER_CONVERSATION_CALLBACK_DENIED', 'The original admitted worker chat request is unavailable.', 403)
 }
@@ -84,7 +81,7 @@ export class MainWorkerConversationBridge {
       admission.files = new MainWorkerFiles(admission.callbacks.files, async (copy, signal) => {
         await assertCurrent(signal)
         const reply = await admission.channel.request({ method: 'conversation.file-copy',
-          binding: request.binding, admissionId, copy }, { signal, timeoutMs: FILE_COPY_REQUEST_TIMEOUT_MS })
+          binding: request.binding, admissionId, copy }, { signal })
         await assertCurrent(signal)
         if (reply.bytes !== undefined) denied()
         return reply.payload
@@ -95,8 +92,7 @@ export class MainWorkerConversationBridge {
       async request(signal?: AbortSignal) {
         await assertCurrent(signal)
         // Opening a native session starts the harness on the Worker; the 30 s channel default is too short under load.
-        const reply = await admission.channel.request(request, { ...(signal ? { signal } : {}),
-          timeoutMs: NATIVE_REQUEST_TIMEOUT_MS, progressTimeoutMs: NATIVE_REQUEST_TIMEOUT_MS })
+        const reply = await admission.channel.request(request, { ...(signal ? { signal } : {}), timeoutMs: NATIVE_REQUEST_TIMEOUT_MS })
         await assertCurrent(signal)
         if (reply.bytes !== undefined) denied()
         return reply.payload

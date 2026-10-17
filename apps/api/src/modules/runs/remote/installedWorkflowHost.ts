@@ -228,7 +228,6 @@ type QualificationCapture=Awaited<ReturnType<QualificationReader['capture']>>
 export type { CapturedWorkflowMainRequest, InstalledWorkflowNativeOutputContext }
 export interface InstalledWorkflowHostOptions {
   stateDirectory:string
-  mainNow(): number
   pairing:WorkerPairingConfiguration
   bootId:string
   configuration:InstalledWorkflowConfigurationLocation|null
@@ -323,7 +322,7 @@ class InstalledWorkflowHostRuntime {
     this.payloadFingerprints = new PayloadFingerprintCache()
     this.operations = new Map<string, InstalledOperation>()
     this.hosts = new Map<string, RemoteExecutionHost>()
-    this.physical = new InstalledWorkflowPhysicalReadouts(input.mainNow)
+    this.physical = new InstalledWorkflowPhysicalReadouts()
     this.responsePages = new InstalledWorkflowResponsePages()
     this.recovery = new InstalledWorkflowRecovery(join(input.stateDirectory, 'workflow-recovery'), this.registry)
     this.active = new Set<Promise<unknown>>()
@@ -777,7 +776,7 @@ class InstalledWorkflowHostRuntime {
             unavailable('original_native_start_changed')
           }
           // Native MCP inspection accepts the managed launcher, which reads routes beside itself.
-          if (!actual.mcp) actual.mcp = await createWorkerMcpEndpoint({ relay, launcher, signal, now: this.input.mainNow })
+          if (!actual.mcp) actual.mcp = await createWorkerMcpEndpoint({ relay, launcher, signal })
           else await actual.mcp.bindRelay(relay)
           actual.applicationAccess = structuredClone(access)
           actual.relay = relay
@@ -1322,23 +1321,23 @@ class InstalledWorkflowHostRuntime {
               }
             }
             if (!reviewerObservationExpiresAt && !cleanupOnly && !receipt.stopFence && !resident.physicalClosure
-              && Date.parse(resident.leaseExpiresAt) - this.input.mainNow() <= WORKER_MCP_LEASE_RENEWAL_WINDOW_MS) {
+              && Date.parse(resident.leaseExpiresAt) - Date.now() <= WORKER_MCP_LEASE_RENEWAL_WINDOW_MS) {
               if (!resident.mcp) unavailable('original_main_lease_required')
               await renewLease(() => resident.mcp!.refreshLease())
             } else if (!reviewerObservationExpiresAt && !cleanupOnly && !receipt.stopFence
-              && Date.parse(resident.leaseExpiresAt) <= this.input.mainNow()) {
+              && Date.parse(resident.leaseExpiresAt) <= Date.now()) {
               if (!resident.relay) unavailable('original_main_lease_required')
               await renewLease(() => resident.relay!.refresh(this.signal))
             }
             // Cancellation readback uses cleanup authority; it does not extend the MCP credential.
             const observationExpiresAt = cleanupOnly || receipt.stopFence || leaseRefused
-              ? new Date(this.input.mainNow() + 60_000).toISOString() : reviewerObservationExpiresAt ?? resident.leaseExpiresAt
+              ? new Date(Date.now() + 60_000).toISOString() : reviewerObservationExpiresAt ?? resident.leaseExpiresAt
             const originalHistory = nativeHistoryPageSource(response) ?? value?.history
             const source:WorkflowOriginalNativeSource=value?.session?{type:'session_created',session:value.session}
               :originalHistory?{type:'history',history:originalHistory}:{type:'boundary'}
             const history = originalHistory ?? (resident.retainedHistory
               ? projectNativeHistory(resident.retainedHistory) : undefined)
-            const readout=RemoteWorkflowPhysicalReadoutSchema.parse({version:1,expiresAt:new Date(Math.min(Date.parse(observationExpiresAt),this.input.mainNow()+60_000)).toISOString(),
+            const readout=RemoteWorkflowPhysicalReadoutSchema.parse({version:1,expiresAt:new Date(Math.min(Date.parse(observationExpiresAt),Date.now()+60_000)).toISOString(),
               launchIntent: this.recovery.read(receipt)?.intent ?? resident.intent,
               receipt,session:resident.session,launch:resident.native.launch,
               observation:matchingOriginalRegistryLaunch(this.registry,resident.native.launch),runtimeLeaf:resident.runtimeLeaf,

@@ -267,19 +267,6 @@ export abstract class CodexManagerTurns extends CodexManagerControls {
     }
   }
 
-  async retireTurn(session: NativeSessionReference, correlationId: string): Promise<void> {
-    await this.exclusive(session.nativeSessionId, async () => {
-      const runtime = this.requireRuntime(session)
-      if (runtime.activeCorrelationId !== correlationId || !runtime.terminalResult) {
-        throw new HarnessExecutionError('CODEX_TURN_NOT_COMPLETED', 'Only the completed owned turn can be retired.')
-      }
-      if (runtime.phase !== 'idle' || runtime.starting || runtime.interactions.size > 0) {
-        throw new HarnessExecutionError('CODEX_SESSION_BUSY', 'Finish native work before retiring its turn resources.')
-      }
-      await this.finishTurnResources(runtime)
-    })
-  }
-
   /** Reserves the runtime for one starting turn and clears the previous turn's observations. */
   protected beginStartingTurn(runtime: Runtime, input: NativeTurnInput): StartingTurn {
     let resolveIdentity!: StartingTurn['resolveIdentity']
@@ -636,7 +623,7 @@ export abstract class CodexManagerTurns extends CodexManagerControls {
           result: structuredClone(rejected) } }
       const observedTerminal = runtime.activeCorrelationId === correlationId
         && runtime.activeTurnId !== undefined && runtime.terminalResult !== undefined
-      const restarted = runtime.closed && !observedTerminal
+      let restarted = runtime.closed && !observedTerminal
       if (restarted) await this.restart(runtime, signal)
       const locallyIdle = !runtime.attached && runtime.phase === 'idle' && runtime.activeCorrelationId === undefined
         && runtime.activeTurnId === undefined && runtime.interactions.size === 0
@@ -648,6 +635,7 @@ export abstract class CodexManagerTurns extends CodexManagerControls {
             && error.result.error?.code === 'CODEX_APP_SERVER_DISCONNECTED'
           if (!disconnected || !runtime.closed || restarted) throw error
           await this.restart(runtime, signal)
+          restarted = true
           await this.synchronize(runtime, correlationId, signal)
         }
       }
@@ -656,6 +644,11 @@ export abstract class CodexManagerTurns extends CodexManagerControls {
       if (lateRejection) return { ...await this.history(session), correlationId,
         nonSubmission: { nativeSessionId: session.nativeSessionId, clientCorrelationId: correlationId,
           result: structuredClone(lateRejection) } }
+      this.record(runtime, 'thread.reconciled', {
+        correlationId, restarted, threadId: session.nativeSessionId,
+        ...(runtime.activeTurnId ? { turnId: runtime.activeTurnId } : {}),
+        terminal: runtime.terminalResult?.outcome ?? null,
+      })
       const history = await this.history(session)
       return runtime.activeCorrelationId === correlationId && runtime.activeTurnId
         ? {
@@ -677,14 +670,6 @@ export abstract class CodexManagerTurns extends CodexManagerControls {
   async reconcileHistoryPage(session: NativeSessionReference, correlationId: string,
     afterSequence: number, signal?: AbortSignal): Promise<NativeHistory> {
     const history = await this.reconcile(session, correlationId, signal)
-    return this.historyPageFrom(session, history, afterSequence)
-  }
-
-  async historyPage(session: NativeSessionReference, afterSequence: number): Promise<NativeHistory> {
-    return this.historyPageFrom(session, await this.history(session), afterSequence)
-  }
-
-  private historyPageFrom(session: NativeSessionReference, history: NativeHistory, afterSequence: number): NativeHistory {
     const runtime = this.requireRuntime(session)
     const events: NativeHarnessEvent[] = []
     let bytes = 0
