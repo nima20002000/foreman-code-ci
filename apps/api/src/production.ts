@@ -1101,7 +1101,7 @@ function configureHarnessQualifications(composition: ProductionComposition) {
       await assertDeviceHostInstallation(client, selector.target.hostRef, selector.target.applicationInstallationId)
       binding.admissionSignal?.throwIfAborted()
     },
-    async current(binding, value, client) {
+    async current(binding, value, client, options) {
       if (value.driverId === 'claude') {
         await requireClaudeProductionCredentialDelivery(value.configuration, providerAccounts, value.target.hostRef,
           value.target.applicationInstallationId)
@@ -1113,11 +1113,12 @@ function configureHarnessQualifications(composition: ProductionComposition) {
           return { registry, pin, applicationInstallationId: value.target.applicationInstallationId,
             suiteRevision: CLAUDE_PROFILE_CHECK_REVISION }
         }
-        const current = infrastructure?.claudeCurrentProfile ?? (infrastructure?.mode === 'replay' ? undefined : claudeDiscovery.current)
+        const current: AcceptedProfileAuthority<ClaudeProfileOwner>['current'] | undefined = infrastructure?.claudeCurrentProfile
+          ?? (infrastructure?.mode === 'replay' ? undefined : claudeDiscovery.current)
         if (!current) throw new DomainError('HARNESS_REPLAY_INCOMPLETE', 'Claude replay requires its current installed profile metadata port.', 500)
-        return current(binding, value, client)
+        return current(binding, value, client, options)
       }
-      if (binding.kind !== 'operator-observation' && !await harnessRegistry.profileEvidence(value, client)) {
+      if (binding.kind !== 'operator-observation' && !await harnessRegistry.profileEvidence(value, client, options)) {
         throw new DomainError('HARNESS_PROFILE_UNAVAILABLE', 'The exact accepted native profile proof is stale.', 409)
       }
       return { registry: harnessRegistry.pinOverride(value), applicationInstallationId: value.target.applicationInstallationId,

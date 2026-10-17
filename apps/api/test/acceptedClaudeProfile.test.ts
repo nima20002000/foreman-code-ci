@@ -64,12 +64,12 @@ it('allows concurrent profile admission while another reader waits for its Run o
   const settings = new HarnessInstanceSettingsRepository(pool)
   vi.spyOn(settings, 'latest').mockImplementation(f.settings.latest)
   const current = vi.mocked(f.authority.current).getMockImplementation()!
-  vi.mocked(f.authority.current).mockImplementation(async (owner, value, client) => {
+  vi.mocked(f.authority.current).mockImplementation(async (owner, value, client, options) => {
     if (owner === 'first-owner') {
       reading.resolve()
       await resume.promise
     }
-    return current(owner, value, client)
+    return current(owner, value, client, options)
   })
   const admission = new AcceptedClaudeProfileAdmission(settings,
     f.proofs as unknown as HostHarnessProfileEvidenceRepository, f.authority)

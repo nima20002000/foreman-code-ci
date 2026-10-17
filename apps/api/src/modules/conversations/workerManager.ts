@@ -606,14 +606,28 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
     return z.object({ compaction: CompactionStateSchema }).parse(await this.request({
       method: 'conversation.compact-reconcile', session, state }, signal)).compaction
   }
+  private compactionReceipt(raw: unknown, session: NativeSessionReference, requestId: string) {
+    const { receipt } = z.object({ receipt: WorkerConversationReceiptSchema.optional() }).passthrough().parse(raw)
+    if (!receipt || !isDeepStrictEqual(receipt.binding, this.options.binding)
+      || !isDeepStrictEqual(receipt.session, session)
+      || !receipt.compactions.some(control => control.state.requestId === requestId
+        && control.state.nativeSessionId === session.nativeSessionId)) {
+      conflict('The persisted Worker compaction owner changed.')
+    }
+    for (const field of ['mainId', 'deviceId', 'workerInstallationId', 'keyRevision', 'authorizationRevision'] as const) {
+      if (receipt.connection[field] !== this.options.channel.binding[field]) conflict('The original Worker authority changed.')
+    }
+    return receipt
+  }
   async readCompaction(session: NativeSessionReference, start: NativeSessionStart, state: CompactionState, signal?: AbortSignal) {
     const fields = this.startFields(start)
-    const record = this.adopt(await this.request({ method: 'conversation.status' }, signal))
-    if (!record?.session || !isDeepStrictEqual(record.session, session)) conflict('The persisted worker session changed.')
+    const record = this.compactionReceipt(await this.request({ method: 'conversation.status' }, signal),
+      session, state.requestId)
     const result = z.object({ compaction: CompactionStateSchema, receipt: WorkerConversationReceiptSchema }).parse(
       await this.request({ method: 'conversation.compact-read', session, state,
         configuration: fields.configuration, correlationId: fields.operationId }, signal))
-    this.adopt(result)
+    const recovered = this.compactionReceipt(result, session, state.requestId)
+    if (recovered.revision < record.revision) conflict('The persisted Worker compaction result is stale.')
     if (result.compaction.requestId !== state.requestId || result.compaction.nativeSessionId !== session.nativeSessionId) {
       conflict('The worker returned another compaction request.')
     }
