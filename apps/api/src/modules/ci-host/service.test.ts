@@ -12,6 +12,7 @@ import { PostgresCommandCoordinator } from '../commands/postgres.js'
 import { DomainError } from '../errors.js'
 import { type CiAuthority, CI_GET_ACTIONS } from '../jobs/ciAuthority.js'
 import { HostCiService, type HostCiEndpoint, type HostCiComputer, type CiCommits } from './service.js'
+import { deferred } from '../../../test/helpers/deferred.js'
 
 const caller: ManagementPrincipal = {
   id: 'operator', name: 'Operator', audience: 'operator',
@@ -572,8 +573,8 @@ it('retries an unknown start reply on the assigned executor without requeueing',
   f.keepRunning.add(f.queued.id)
   const request = vi.mocked(f.endpoint.request).getMockImplementation()!
   const starts: { computer: HostCiComputer; runId: string }[] = []
-  const retryEntered = Promise.withResolvers<void>()
-  const acknowledge = Promise.withResolvers<void>()
+  const retryEntered = deferred()
+  const acknowledge = deferred()
   vi.mocked(f.endpoint.request).mockImplementation(async (computer, input) => {
     if (input.operation === 'start') {
       starts.push({ computer, runId: input.runId })
@@ -614,8 +615,8 @@ it('retries an unacknowledged gate on its assigned computer without releasing ow
     files: ['apps/api/test/workflow.integration.test.ts'] })
   const request = vi.mocked(f.endpoint.request).getMockImplementation()!
   const starts: { hostKey: string; runId: string }[] = []
-  const retryEntered = Promise.withResolvers<void>()
-  const acknowledge = Promise.withResolvers<void>()
+  const retryEntered = deferred()
+  const acknowledge = deferred()
   vi.mocked(f.endpoint.request).mockImplementation(async (target, input) => {
     if (input.operation === 'start') {
       starts.push({ hostKey: target.key, runId: input.runId })
