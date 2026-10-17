@@ -261,12 +261,12 @@ it('does not extend an expired observation into a later publication operation', 
   }
 })
 
-it.each(['timeout', 'backpressure', 'unavailable'] as const)(
+it.each(['timeout', 'unavailable'] as const)(
   'bounds unanswered physical RPCs reported as %s while the Worker stays connected', async code => {
     const f = await physicalFixture()
     const controller = new AbortController()
     vi.useFakeTimers()
-    const failure = code === 'unavailable' ? new DeviceApplicationError(code) : new DeviceConnectionError(code)
+    const failure = code === 'timeout' ? new DeviceConnectionError(code) : new DeviceApplicationError(code)
     f.request.mockImplementation(async (_payload, options) => {
       await waitForDeviceRetry(options!.timeoutMs!, controller.signal)
       throw failure
@@ -287,21 +287,6 @@ it.each(['timeout', 'backpressure', 'unavailable'] as const)(
     }
   },
 )
-
-it('recovers the same physical observation after the transport actually disconnects and reconnects', async () => {
-  const f = await physicalFixture()
-  const request = f.request.getMockImplementation()!
-  f.request.mockImplementationOnce(async () => {
-    f.currentBinding.mockReturnValue(undefined as never)
-    setTimeout(() => f.currentBinding.mockReturnValue(f.context.binding), 0)
-    throw new DeviceConnectionError('transport')
-  }).mockImplementation(request)
-  try {
-    await expect(f.producer.prefetch(f.readout.receipt, f.placement, f.source)).resolves.toBeTruthy()
-    expect(f.request).toHaveBeenCalledTimes(2)
-    expect(f.currentBinding()).toEqual(f.context.binding)
-  } finally { await f.sqlConnection.close() }
-})
 
 it.each(['denied', 'disconnected'] as const)('does not retry a %s physical authority check', async reason => {
   const failure = new DeviceApplicationError(reason === 'denied' ? 'AUTH_REVOKED' : 'transport')

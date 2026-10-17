@@ -345,16 +345,8 @@ export class NativeProcessRegistry {
     if (!owner.trim() || owner.length > 4096) throw new Error('Invalid process owner.')
     return { root: this.root, owner }
   }
-  closedRegistration(owner: string, launchId?: string): NativeLaunchObservation | undefined {
+  closedRegistration(owner: string, launchId: string): NativeLaunchObservation | undefined {
     const scope = this.scope(owner)
-    if (launchId === undefined) {
-      const directory = join(scope.root, key(owner))
-      const raw = readRecord(join(directory, 'retired.json')) ?? archivedRetirement(scope.root, key(owner))
-      if (raw === undefined) return undefined
-      const row = recordObject(raw)
-      if (row.format !== 2 || row.owner !== owner || typeof row.id !== 'string') throw new Error('Invalid native retirement receipt.')
-      launchId = row.id
-    }
     if (!/^[0-9a-f-]{36}$/.test(launchId)) throw new Error('Invalid native registration.')
     return closedObservation(join(scope.root, key(owner)), owner, launchId)
   }

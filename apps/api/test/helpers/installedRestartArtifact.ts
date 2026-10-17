@@ -16,7 +16,6 @@ import { measureIntegrationPhase } from './integrationPhase.js'
 const execute = promisify(execFile)
 const repository = fileURLToPath(new URL('../../../..', import.meta.url))
 const serviceUser = userInfo()
-const dependencyCacheNamespace = 'installed-api-restart-dependencies'
 const workerRequire = createRequire(new URL('../../../worker/package.json', import.meta.url))
 const compiler = workerRequire('esbuild') as {
   version: string
@@ -130,7 +129,7 @@ async function buildArtifact(directory: string) {
     }
   }
   await measureIntegrationPhase('Installed API dependencies', () => deployProductionApi(deploy, api, {
-    dependencies: { root: join(testFixtureCacheRoot(), dependencyCacheNamespace), source: deployment },
+    dependencies: { root: join(testFixtureCacheRoot(), 'api-dependencies'), source: deployment },
   }))
   await mkdir(join(api, 'test/helpers'), { recursive: true })
   await copyFile(join(repository, 'apps/api/test/helpers/testPool.mjs'), join(api, 'test/helpers/testPool.mjs'))
@@ -186,7 +185,7 @@ export async function installedRestartArtifact() {
     const releases = entries.filter(entry => entry.isDirectory() && /^[a-f0-9]{64}$/.test(entry.name))
       .map(entry => join(parent, entry.name, 'release'))
     // A retained release's module symlinks still depend on its shared tree.
-    await pruneApiDependencies(join(root, dependencyCacheNamespace), releases)
+    await pruneApiDependencies(join(root, 'api-dependencies'), releases)
     return join(cached, 'release')
   })
 }

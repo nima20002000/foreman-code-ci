@@ -13,8 +13,7 @@ export interface WorktreeRequest { repository: string; branch: string }
 export interface GitWorktreePorts {
   /** One clone per repository on this computer, outside every approved root. */
   cloneDirectory(repository: string): string
-  git(args: string[], options: { cwd?: string; signal: AbortSignal; env?: Record<string, string>;
-    lifetimeLockFd?: number }): Promise<{ code: number; stdout: string; stderr: string }>
+  git(args: string[], options: { cwd?: string; signal: AbortSignal; env?: Record<string, string> }): Promise<{ code: number; stdout: string; stderr: string }>
 }
 
 const REPOSITORY = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/[A-Za-z0-9._-]{1,100}$/u

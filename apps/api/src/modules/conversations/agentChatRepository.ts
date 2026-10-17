@@ -79,7 +79,6 @@ export interface AgentConversationRow {
     nativeNonSubmission?: NativeNonSubmission
     startupReceipt?: { requestId: string; nativeSessionId: string }
     sourceConfigurationVersionId?: string
-    workerGeneration?: string
     handoffContext?: string
   }
   created_at: Date
@@ -158,7 +157,6 @@ export interface AgentChatInterruptTarget {
 }
 
 export interface NewAgentConversation {
-  freshSession?: boolean
   context: AgentChatContext
   agentConfigurationVersionId: string
   harness: AgentHarness
@@ -227,7 +225,6 @@ export class PostgresAgentChatRepository {
           create.agentConfigurationVersionId,origin.kind === 'run_execution' ? origin.runId : null,
           origin.kind === 'run_execution' ? origin.executionId : null,create.harness,
           JSON.stringify({ origin, workingDirectory, runtimeDirectory,
-            ...(create.freshSession ? { freshSession: true } : {}),
             ...(directoryBinding ? { directoryBinding } : {}), ...(systemPrompt ? { systemPrompt } : {}) })])
         row = (await this.get(id, client))!
         await this.acceptAccount(client, row)
@@ -528,7 +525,6 @@ export class PostgresAgentChatRepository {
       if (options.directoryBinding) record.directoryBinding = options.directoryBinding
       if (row.origin_run_id) record.sourceConfigurationVersionId ??= row.agent_configuration_version_id
       if (options.replaceSession) {
-        if (row.native_session_id) record.workerGeneration = randomUUID()
         const history = await client.query<{ role: string; content: string }>(`select role,content
           from operator_conversation_messages where conversation_id=$1 and role in ('user','assistant')
           and sequence < (select sequence from operator_conversation_messages
@@ -549,7 +545,6 @@ export class PostgresAgentChatRepository {
         set agent_configuration_version_id=$3,harness=$4,record=$5::jsonb,
           native_session_id=case when $6 then null else native_session_id end,
           provider_version=case when $6 then null else provider_version end,
-          worker_conversation_binding=case when $6 then null else worker_conversation_binding end,
           revision=revision+1,updated_at=now()
         where id=$1 and active_request_id=$2 returning *`,
       [id, requestId, configuration.id, configuration.harness.harness, JSON.stringify(record), options.replaceSession])).rows[0]!

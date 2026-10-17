@@ -86,28 +86,6 @@ describe('Worker output validation', () => {
     } finally { await f.host.close() }
   })
 
-  it('accepts an output schema at the byte bound and rejects the next byte', async () => {
-    const f = await runningInstalledFixture('generation', { deferTurn: true })
-    const bounded = { ...outputSchema, description: '' }
-    bounded.description = 'x'.repeat(OUTPUT_SCHEMA_MAX_BYTES - Buffer.byteLength(JSON.stringify(bounded)))
-    try {
-      expect(Buffer.byteLength(JSON.stringify(bounded))).toBe(OUTPUT_SCHEMA_MAX_BYTES)
-      await expect(f.call('start-turn', { prompt: 'original prompt', correlationId: 'execution:execution',
-        outputSchema: { ...bounded, description: bounded.description + 'x' } })).rejects.toThrow('exceeds')
-      expect(f.turns).not.toHaveBeenCalled()
-      await f.call('start-turn', { prompt: 'original prompt', correlationId: 'execution:execution', outputSchema: bounded })
-      await readUntil(() => f.journal.status(f.intent.operationId),
-        value => value.status === 'known' && value.receipt.native?.turnId === 'original-turn',
-        { timeoutMs: 2000, description: 'bounded schema submission' })
-      expect(f.turns.mock.calls[0]![1].outputSchema).toEqual(bounded)
-      f.finish('succeeded')
-      await f.settled
-    } finally {
-      f.finish('succeeded')
-      await f.host.close()
-    }
-  })
-
   it('journals two corrective turns, deduplicates replay and refuses a third', async () => {
     const f = await runningInstalledFixture('generation', { deferTurn: true })
     let sequence = f.history.nextSequence!
