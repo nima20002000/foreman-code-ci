@@ -1,7 +1,8 @@
+import { InfoHint } from '../../shared/ui/InfoHint'
 import { useEffect, useId, useRef, type RefObject } from 'react'
 import { useStore } from 'zustand'
 import type { ScheduleGetInput } from '@foreman-code/contracts/schedules'
-import { Button, Dialog, Select, Switch, TextField, Tooltip } from '../../shared/ui/nocturne'
+import { Button, Dialog, Select, Switch, TextField } from '../../shared/ui/nocturne'
 import { useUnsavedChanges } from '../../shared/ui/unsavedChanges'
 import {
   buildScheduleCommand, draftIdentity, weeklyCalendarChanged,
@@ -102,6 +103,7 @@ export function ScheduleModal({ scope, store, returnFocusRef }: {
     : write.error && write.command?.input.expectedRevision === state.expectedRevision ? 'Not saved.' : null
 
   return <Dialog open={state.open} onOpenChange={(open) => { if (!open) close() }} title="Schedule" size="sm"
+    headerLeading={<InfoHint label="Schedule">Runs latest saved workflow</InfoHint>}
     className="schedule-dialog" closeLabel="Close schedule" busy={write.pending} dismissible={!write.unconfirmed}
     closeOnOutsideClick returnFocusRef={returnFocusRef}
     footer={<>
@@ -167,7 +169,6 @@ export function ScheduleModal({ scope, store, returnFocusRef }: {
       <p className="schedule-next" role="status">Next {query.isError ? 'unavailable' : nextAt
         ? <time dateTime={nextAt} title={nextLabel ?? undefined}>{nextLabel}</time>
         : query.isFetching && !query.data ? '…' : '—'}</p>
-      <Tooltip content="Runs latest saved workflow"><span className="schedule-policy" tabIndex={0}>Runs latest saved workflow</span></Tooltip>
       <ScheduleLastAttempt scope={scope} open={state.open} />
       {(failure || state.errors.form) && <div className="schedule-feedback"><p role="alert">{state.errors.form ?? failure}</p>
         {conflict && <Button size="sm" onClick={reload}>Reload</Button>}</div>}

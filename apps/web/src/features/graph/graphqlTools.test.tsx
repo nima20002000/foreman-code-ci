@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { DEFAULT_HARNESS_DEFAULTS } from '@foreman-code/contracts'
+import userEvent from '@testing-library/user-event'
+import { GRAPHQL_AGENT_TOOLS, DEFAULT_HARNESS_DEFAULTS } from '@foreman-code/contracts'
 import type { GraphqlAgentTool, GraphqlToolOverride } from '@foreman-code/contracts'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
@@ -27,7 +28,8 @@ describe('Foreman Code MCP tools in Agent settings', () => {
     expect(within(tools).getByText('Always available')).toBeVisible()
     expect(within(tools).queryByLabelText('Report a bug: Agent default')).not.toBeInTheDocument()
     expect(within(tools).queryByRole('group', { name: 'Report a bug: this workflow' })).not.toBeInTheDocument()
-    expect(tools).toHaveTextContent('Enabled in this workflow: Report a bug.')
+    expect(tools).not.toHaveTextContent('Enabled in this workflow:')
+    expect(within(tools).getByText('bug_report')).toBeVisible()
   })
 
   it('lists only the role tools, never Operator tools', () => {
@@ -44,7 +46,10 @@ describe('Foreman Code MCP tools in Agent settings', () => {
     fireEvent.click(within(tools).getByLabelText('Read run context: Agent default'))
     const group = within(tools).getByRole('group', { name: 'Read run context: this workflow' })
     fireEvent.click(within(group).getByLabelText('On'))
-    expect(tools).toHaveTextContent('Enabled in this workflow: Report a bug, List references, Read a reference, Read run context, List interactions, Create workflow output, Append workflow output, Seal workflow output, Publish workflow output, Run CI, Read CI result, List CI computers, Cancel CI, Read CI logs.')
+    expect(within(tools).getByLabelText('Read an interaction: Agent default')).not.toBeChecked()
+    expect(within(tools).getByLabelText('Read run context: Agent default')).not.toBeChecked()
+    expect(within(group).getByLabelText('On')).toBeChecked()
+    expect(within(tools).getByText('Always available')).toBeVisible()
     fireEvent.click(screen.getByRole('button', { name: 'Save agent settings' }))
     expect(onSave.mock.calls[0]![0].graphqlTools).toEqual(['bug_report', 'files.references_list', 'files.reference_read', 'interaction_list', 'files.native_output_create',
       'files.native_output_append', 'files.native_output_seal', 'files.native_output_publish', 'ci_run', 'ci_get',
@@ -69,4 +74,13 @@ describe('Foreman Code MCP tools in Agent settings', () => {
     expect(onSave.mock.calls[0]![0].graphqlTools).toBeUndefined()
     expect(onSave.mock.calls[0]![3]).toEqual({ add: [], remove: ['interaction_get'] })
   })
+})
+
+it('shows tool explanations on demand while retaining names, codes, and selections', async () => {
+  const { tools } = open('coder')
+  const explanation = GRAPHQL_AGENT_TOOLS.bug_report.description
+  expect(within(tools).queryByText(explanation)).not.toBeInTheDocument()
+  await userEvent.hover(within(tools).getByRole('button', { name: 'About Report a bug' }))
+  expect(screen.getByRole('tooltip')).toHaveTextContent(explanation)
+  expect(within(tools).getByText('bug_report')).toBeVisible()
 })
