@@ -1,4 +1,3 @@
-import { InfoHint } from '../../../shared/ui/InfoHint'
 import { useMemo } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { RepeatGraphScopeV3Schema } from '@foreman-code/contracts/wave25'
@@ -71,7 +70,7 @@ function SelectedRunActions({ selection, access }: {
     if (fresh.isError) throw fresh.error
     if (capabilities.isError) throw capabilities.error
     if (scope) await cache.invalidateQueries({ queryKey: currentRunKey(scope), exact: true }, { throwOnError: true })
-    return 'Client state refreshed.'
+    return 'Client state refreshed. This did not restart a provider, resume an execution, send a Start, or prove provider restart recovery.'
   } })
   return <section className="run-actions" aria-label="Selected Run actions">
     <h3>Actions for the selected Run</h3>
@@ -92,7 +91,9 @@ function SelectedRunActions({ selection, access }: {
         available={!capability.isError && capability.data?.stopAvailable === true} refresh={refresh} />
       <Approvals scope={scope} run={run} canRead={allowed('interactions:read')} canRespond={allowed('interactions:respond')} refresh={refresh} />
       <FailureDetails scope={scope} />
-      <section aria-label="Execution recovery availability"><h4>Execution recovery<InfoHint label="Execution recovery">No owned-execution Resume capability is advertised by the current Board API. Where supported, native reconciliation and approval resumption are backend-owned and ownership-fenced. A reconnect or successful refresh does not prove provider restart recovery.</InfoHint></h4>
+      <section aria-label="Execution recovery availability"><h4>Execution recovery</h4>
+        <p>No owned-execution Resume capability is advertised by the current Board API. Where supported, native reconciliation and approval resumption are backend-owned and ownership-fenced.
+          {' '}A reconnect or successful refresh does not prove provider restart recovery.</p>
         <button type="button" disabled title="A runs:resume grant or a schema name alone is not an advertised owned-execution recovery capability.">Resume execution — unavailable</button>
       </section>
       <StartControls scope={scope} run={run} permitted={allowed('runs:start', true)}

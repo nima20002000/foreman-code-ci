@@ -37,10 +37,7 @@ beforeEach(() => {
   const tails = new Map<string, Promise<unknown>>()
   Object.defineProperty(navigator, 'locks', { configurable: true, value: { request: (key: string, work: (() => unknown) | LockOptions, claim?: (lock: { name: string }) => unknown) => {
     if (typeof work !== 'function') return claim!({ name: key })
-    const task = (tails.get(key) ?? Promise.resolve()).then(work); tails.set(key, task.catch(() => {
-      // ignore: the caller receives the rejection; later lock requests must still run.
-      return undefined
-    })); return task
+    const task = (tails.get(key) ?? Promise.resolve()).then(work); tails.set(key, task.catch(() => undefined)); return task
   } } })
   vi.stubGlobal('ResizeObserver', class {
     constructor(private readonly notify: ResizeObserverCallback) {}
@@ -128,11 +125,9 @@ describe.each(forms)('ENG06-D %s Board recovery', (form) => {
     const selection = { ...mounted.router.state.location.search }
     expect(action('Review new full Run')).toBeDisabled()
     expect(actionRegion()).toHaveTextContent(`Recorded ${state}`)
-    expect(within(actionRegion()).queryByText(/A reconnect or successful refresh/)).not.toBeInTheDocument()
-    await user.hover(action('About Execution recovery'))
-    expect(screen.getByRole('tooltip')).toHaveTextContent('A reconnect or successful refresh does not prove provider restart recovery.')
+    expect(actionRegion()).toHaveTextContent('A reconnect or successful refresh does not prove provider restart recovery.')
     await user.click(action('Refresh / reconnect client state'))
-    await waitFor(() => expect(actionRegion()).toHaveTextContent('Client state refreshed.'))
+    await waitFor(() => expect(actionRegion()).toHaveTextContent('Client state refreshed. This did not restart a provider'))
     expect(writes(f)).toEqual(priorWrites)
     expect(f.mock.runs.size).toBe(1); expect(f.mock.versions.size).toBe(1)
     expect(mounted.router.state.location.search).toEqual(selection)
