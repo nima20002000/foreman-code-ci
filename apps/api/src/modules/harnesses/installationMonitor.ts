@@ -128,23 +128,20 @@ export class HarnessInstallationMonitor {
       }
     }
     try {
-      await this.refreshHosts(hosts, undefined, 'background')
+      await this.refreshHosts(hosts)
     } catch (error) {
       // Periodic discovery is best-effort; required-host callers receive the failure.
       if (!(error instanceof DomainError) || error.code !== 'HARNESS_INVENTORY_UNAVAILABLE') throw error
     }
   }
-  async refreshHosts(hosts: readonly CanonicalMachineReference[], signal?: AbortSignal,
-    priority: 'foreground' | 'background' = 'foreground'): Promise<void> {
+  async refreshHosts(hosts: readonly CanonicalMachineReference[], signal?: AbortSignal): Promise<void> {
     this.stopping.signal.throwIfAborted()
     signal?.throwIfAborted()
     const selected = new Map(hosts.map(host => [harnessHostKey(host), host]))
     const tasks = [...selected].map(([key, host]) => {
       const existing = this.hostRefreshes.get(key)
-      const task = existing ? existing.then(refreshed => {
-        if (refreshed || priority === 'background') return refreshed
-        return this.collectHost(host, priority)
-      }) : this.collectHost(host, priority)
+      if (existing) return existing
+      const task = this.collectHost(host)
       this.hostRefreshes.set(key, task)
       const cleanup = () => { if (this.hostRefreshes.get(key) === task) this.hostRefreshes.delete(key) }
       void task.then(cleanup, cleanup)
@@ -161,26 +158,26 @@ export class HarnessInstallationMonitor {
         error => { listener[Symbol.dispose](); reject(error) })
     })
   }
-  private async collectHost(host: CanonicalMachineReference, priority: 'foreground' | 'background'): Promise<boolean> {
+  private async collectHost(host: CanonicalMachineReference): Promise<boolean> {
     if (host.kind === 'main') {
       await this.registry.refreshMain(this.stopping.signal)
       return true
     }
-    if (priority === 'background' && this.backingOff(host)) return false
+    if (this.backingOff(host)) return false
     const captured = this.endpoint().captureRequest(host.deviceId, 'harness-discovery-v1')
-    if (!captured || priority === 'background' && captured.busy) return false
+    if (!captured || captured.busy) return false
     const signal = AbortSignal.any([this.stopping.signal, AbortSignal.timeout(30_000),
       ...(this.workerSignals.has(host.deviceId) ? [this.workerSignals.get(host.deviceId)!] : [])])
     try {
       const result = await captured.request({ operation: 'discover', refreshId: randomUUID() },
-        { signal, priority })
+        { signal, priority: 'background' })
       signal.throwIfAborted()
       await this.collectWorker(captured.binding, result.payload)
-      if (priority === 'background') this.succeeded(host, 'discovery')
+      this.succeeded(host, 'discovery')
       return true
     } catch (error) {
       this.stopping.signal.throwIfAborted()
-      if (priority === 'background' && deviceBackpressured(error)) this.backoff(host, 'discovery')
+      if (deviceBackpressured(error)) this.backoff(host, 'discovery')
       this.report(error)
       return false
     }

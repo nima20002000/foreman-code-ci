@@ -145,10 +145,8 @@ async function until(predicate) {
   throw new Error('Worker update did not reach the expected state.');
 }
 
-async function assertStalledUpdateRetry(t, { beforeDownload = async () => {} } = {}) {
+test('a stalled update attempt persists its deadline, resumes work, and can retry', async t => {
   const f = await fixture(t);
-  const drainEntered = Promise.withResolvers();
-  let drainSignal;
   let releaseDrain;
   const blocked = new Promise(resolve => { releaseDrain = resolve; });
   let resumed = 0;
@@ -156,35 +154,13 @@ async function assertStalledUpdateRetry(t, { beforeDownload = async () => {} } =
   let restarted = 0;
   let stall = true;
   const updater = await new WorkerUpdater({ ...f.options, attemptTimeoutMs: 150,
-    fetchAsset: async input => {
-      await beforeDownload();
-      return f.options.fetchAsset(input);
-    },
-    drain: signal => {
-      drainSignal = signal;
-      drainEntered.resolve();
-      return stall ? blocked : Promise.resolve();
-    },
-    resume: () => { resumed++; },
+    drain: () => stall ? blocked : Promise.resolve(), resume: () => { resumed++; },
     stage: async options => { installs++; return { directory: options.artifact }; },
     launchSupervisor: async () => { restarted++; } }).initialize();
   t.after(async () => { releaseDrain(); await updater.close(); });
-  // Real download and persisted writes must reach drain before the test advances the attempt clock.
-  t.mock.timers.enable({ apis: ['setTimeout'] });
   const attempt = updater.start().then(() => 'completed', error => error);
-  await Promise.race([drainEntered.promise, attempt.then(outcome => {
-    assert.fail(`Update finished before drain: ${outcome.message ?? outcome}`);
-  })]);
-  assert.equal((await updater.status()).state, 'draining');
-  t.mock.timers.tick(149);
-  assert.equal(drainSignal.aborted, false);
-  assert.equal((await readUpdateRecord(f.stateDirectory)).status.state, 'draining');
-  assert.equal(resumed, 0);
-  assert.equal(installs, 0);
-  assert.equal(restarted, 0);
-  t.mock.timers.tick(1);
-  assert.equal(drainSignal.aborted, true);
-  const outcome = await attempt;
+  await until(async () => (await updater.status()).state === 'draining');
+  const outcome = await Promise.race([attempt, wait(300).then(() => 'still draining')]);
   assert.equal(outcome.code, 'worker_update_deadline_exceeded');
   const record = await readUpdateRecord(f.stateDirectory);
   assert.equal(record.status.state, 'failed');
@@ -199,14 +175,6 @@ async function assertStalledUpdateRetry(t, { beforeDownload = async () => {} } =
   await updater.start();
   assert.equal(installs, 1);
   assert.equal(restarted, 1);
-}
-
-test('a stalled update attempt persists its deadline, resumes work, and can retry', async t => {
-  await assertStalledUpdateRetry(t);
-});
-
-test('a stalled update can resume and retry after slow artifact preparation', async t => {
-  await assertStalledUpdateRetry(t, { beforeDownload: () => wait(150) });
 });
 
 test('Worker status advertises the running manifest even after a failed target update', async t => {

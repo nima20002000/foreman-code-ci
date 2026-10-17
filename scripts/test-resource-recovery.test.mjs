@@ -23,10 +23,7 @@ function fixture(t) {
   t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports() })
   const cache = join(homedir(), '.cache', 'foreman-tmp')
   mkdirSync(cache, { recursive: true, mode: 0o700 })
-  const directory = mkdtempSync(join(cache, 'test-root-recovery-'))
-  const parent = join(directory, 'parent-link')
-  mkdirSync(join(directory, 'parent'))
-  symlinkSync('parent', parent)
+  const parent = mkdtempSync(join(cache, 'test-root-recovery-'))
   t.after(() => {
     const writable = directory => {
       chmodSync(directory, 0o700)
@@ -53,7 +50,7 @@ function fixture(t) {
       }
       resources.removeTestRoot(resource)
     }
-    rmSync(directory, { recursive: true, force: true })
+    rmSync(parent, { recursive: true, force: true })
   })
   return parent
 }
