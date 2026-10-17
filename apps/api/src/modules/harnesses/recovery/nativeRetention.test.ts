@@ -102,37 +102,3 @@ it('expires closed managed MCP owners without workflow retirement while retainin
     await journal.close()
   }
 })
-
-it.each(['catalog-authentication', 'model-catalog'])(
-  'expires confirmed-closed %s records without workflow settlement', async prefix => {
-    const directory = fixture()
-    const root = privateDirectory(join(directory, 'native-processes'))
-    const old = archive(root, `${prefix}:${randomUUID()}`, 2 * 86_400_000)
-    const ownerKey = createHash('sha256').update(old.observation.owner).digest('hex')
-    const summary = join(root, 'closed', `${ownerKey}.json`)
-    writeRecord(summary, { format: 2, owner: old.observation.owner,
-      id: old.observation.launchId, observation: old.observation })
-    const aged = new Date(Date.now() - 2 * 86_400_000)
-    utimesSync(summary, aged, aged)
-    const fresh = archive(root, `${prefix}:${randomUUID()}`, 60_000)
-    const unknown = archive(root, `unknown-inspection:${randomUUID()}`, 2 * 86_400_000)
-    const unfinished = archive(root, 'execution:unfinished', 2 * 86_400_000)
-    const registry = new NativeProcessRegistry(root)
-    const active = await registry.reserveLaunch(`${prefix}:${randomUUID()}`)
-    const journal = await RemoteOperationJournal.open(join(directory, 'operations.json'), { initializeNewInstallation: true })
-    try {
-      expect(await registry.pruneSettled(owner => journal.isNativeOwnerSettled(owner))).toBe(2)
-      expect(registry.closedRegistration(old.observation.owner, old.observation.launchId)).toBeUndefined()
-      expect(readRecord(summary)).toBeUndefined()
-      for (const record of [fresh, unknown, unfinished]) {
-        expect(registry.closedRegistration(record.observation.owner, record.observation.launchId)).toEqual(record.observation)
-      }
-      expect(registry.snapshot().launches).toEqual(expect.arrayContaining([
-        expect.objectContaining({ owner: active.owner, launchId: active.launchId, lifecycle: 'closure-unconfirmed' }),
-      ]))
-    } finally {
-      await registry.abandonReservedLaunch(active)
-      registry.closeRetention()
-      await journal.close()
-    }
-  })

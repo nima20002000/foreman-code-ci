@@ -269,44 +269,6 @@ it.each([false, true])('uses saved full native identity for live-text readiness 
   expect(screen.getByRole('status', { name: 'Operator is typing' })).toBeVisible()
 })
 
-it.each(['idle', 'error'] as const)('removes responding dots immediately on %s and keeps them gone across refetch', async turnState => {
-  const running = { ...states.a!, turnState: 'active' as const, activeRequestId: 'accepted-turn' }
-  states.a = running
-  mount()
-  expect(await screen.findByRole('status', { name: 'Operator is typing' })).toBeVisible()
-  await waitFor(() => expect(client.isFetching()).toBe(0))
-  const response = rejectableDeferred<OperatorConversationState>()
-  api.get.mockImplementationOnce(() => response.promise)
-  const refetch = client.invalidateQueries({ queryKey: ['operator-chat', 'conversation', 'a'] })
-  await waitFor(() => expect(client.isFetching()).toBeGreaterThan(0))
-  const listeners = api.subscribe.mock.calls[0]![1] as Parameters<typeof subscribeOperatorChat>[1]
-  try {
-    act(() => listeners.event({ id: 1, conversationId: 'a', type: 'state',
-      data: { requestId: 'accepted-turn', turnState } }))
-    expect(screen.queryByRole('status', { name: 'Operator is typing' })).not.toBeInTheDocument()
-  } finally {
-    await act(async () => { response.resolve(running); await refetch })
-  }
-  expect(screen.queryByRole('status', { name: 'Operator is typing' })).not.toBeInTheDocument()
-  states.a = { ...running, revision: 2, turnState, activeRequestId: null, messages: [
-    { id: 'final-answer', conversationId: 'a', requestId: 'accepted-turn', role: 'assistant', content: 'Finished reply' },
-  ] }
-  await act(async () => { await client.invalidateQueries({ queryKey: ['operator-chat', 'conversation', 'a'] }) })
-  expect(await screen.findByText('Finished reply')).toBeVisible()
-  expect(screen.queryByRole('status', { name: 'Operator is typing' })).not.toBeInTheDocument()
-  states.a = running
-  await act(async () => { await client.invalidateQueries({ queryKey: ['operator-chat', 'conversation', 'a'] }) })
-  expect(screen.queryByRole('status', { name: 'Operator is typing' })).not.toBeInTheDocument()
-  act(() => listeners.reconnect())
-  expect(screen.queryByRole('status', { name: 'Operator is typing' })).not.toBeInTheDocument()
-  states.a = { ...running, revision: 3, activeRequestId: 'next-turn' }
-  await act(async () => { await client.invalidateQueries({ queryKey: ['operator-chat', 'conversation', 'a'] }) })
-  expect(screen.getByRole('status', { name: 'Operator is typing' })).toBeVisible()
-  act(() => listeners.event({ id: 2, conversationId: 'a', type: 'state',
-    data: { requestId: 'accepted-turn', turnState } }))
-  expect(screen.getByRole('status', { name: 'Operator is typing' })).toBeVisible()
-})
-
 it.each(['event', 'reconnect', 'history'] as const)('settles an observed tool outside the recent window after %s', async trigger => {
   const running = { id: 'old-tool', requestId: 'accepted-turn', kind: 'tool' as const,
     title: 'Old command', status: 'running' as const, sequence: '1', revision: 1 }

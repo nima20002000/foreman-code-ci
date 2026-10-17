@@ -87,7 +87,6 @@ export const AgentChatReadToolInputSchema = ReadAgentChatRequestSchema.extend({
   selection: SelectedRunChatSelectionSchema.omit({ workspaceId: true }).optional(),
 }).superRefine((value, context) => {
   if (Boolean(value.query) === Boolean(value.selection)) context.addIssue({ code: "custom", message: "Supply exactly one of query or selection" });
-  if (value.conversationId && !value.query) context.addIssue({ code: 'custom', message: 'Historical conversationId requires query' });
 });
 
 export const AgentChatSendToolInputSchema = z.object({

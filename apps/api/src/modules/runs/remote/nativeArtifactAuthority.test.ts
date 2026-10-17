@@ -16,7 +16,6 @@ import { assertDeviceHostInstallation } from '../../devices/hostAuthorization.js
 import { freezePlacement, deriveDispatch } from '../../placement/binding.js'
 import { readNativeArtifactOutput } from './nativeArtifactOutputPostgres.js'
 import { PostgresArtifactPublicationAuthority, PostgresAcceptedArtifactAttemptFence } from './nativeArtifactAuthority.js'
-import { completeResultRepair } from './workflowRepair.test-support.js'
 
 vi.mock('../../placement/persistence.js', () => ({ readDispatchIntent: vi.fn(), readAcceptedPlacement: vi.fn(), readNativePlacement: vi.fn() }))
 vi.mock('./persistence.js', () => ({ readReconciledDispatchIntent: vi.fn() }))
@@ -99,31 +98,6 @@ function fixture() {
   return { mainId, placement, intent, execution, attempt, accepted, state, sql, ports, authority, fence, declarationsRequest }
 }
 describe('original accepted artifact authority', () => {
-  it('reads an earlier publishing context through the repair journal while keeping mutation authority on the active turn', async () => {
-    const t = fixture()
-    completeResultRepair(t.state.receipt, 'corrective-turn')
-    const original = structuredClone(t.accepted)
-    await expect(t.authority.authorize(original, t.sql)).rejects.toMatchObject({ code: 'NATIVE_ARTIFACT_AUTHORITY_DENIED' })
-    const caller = await t.authority.authorizePublication(original, t.sql)
-    expect(caller.context).toEqual(original.context)
-    expect(t.accepted).toEqual(original)
-    t.state.receipt.nativeTurnRetries = []
-    await expect(t.authority.authorizePublication(original, t.sql))
-      .rejects.toMatchObject({ code: 'NATIVE_ARTIFACT_AUTHORITY_DENIED' })
-  })
-  it.each(['revoked', 'foreign-turn', 'foreign-session', 'readonly-change'] as const)(
-    'keeps publication read authority checks for %s after a correction', async reason => {
-      const t = fixture()
-      completeResultRepair(t.state.receipt, 'corrective-turn')
-      if (reason === 'revoked') t.state.revoked = true
-      if (reason === 'foreign-turn') t.accepted.context.turnId = 'unrecorded-turn'
-      if (reason === 'foreign-session') t.accepted.context.nativeSessionId = 'foreign-session'
-      if (reason === 'readonly-change') t.state.configuration.harness = { ...DEFAULT_HARNESS_DEFAULTS.codex, sandbox: 'read-only' }
-      const code = reason === 'revoked' ? 'AUTH_REVOKED' : 'NATIVE_ARTIFACT_AUTHORITY_DENIED'
-      await expect(t.authority.authorizePublication(t.accepted, t.sql))
-        .rejects.toMatchObject({ code })
-    })
-
   it('accepts the actual authenticated W07 frame while preserving original connection identity', async () => {
     const t = fixture(), frame = { ...t.state.receipt.connection, connectionEpoch: randomUUID() }
     expect(await t.authority.authorizeNativeOutputDeclarations(t.declarationsRequest, frame, t.sql)).toMatchObject({ agentConfigurationVersionId: 'configuration' })
