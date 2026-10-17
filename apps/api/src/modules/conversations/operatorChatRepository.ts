@@ -83,7 +83,7 @@ export interface OperatorTerminal {
     requiresRuntimeClosure: boolean
     nativeSessionId: string | null
   }
-  closureState: 'observed' | 'retired' | 'pending' | 'closed'
+  closureState: 'observed' | 'pending' | 'closed'
   history?: NativeHistory
   historyPersisted: boolean
 }
@@ -902,19 +902,8 @@ export class PostgresOperatorConversationRepository {
   async closurePending(id: string, requestId: string): Promise<boolean> {
     return (await this.pool.query(`update operator_conversation_turns t set native_closure_state='pending'
       from operator_conversations c where c.id=t.conversation_id and c.active_request_id=t.request_id
-        and c.id=$1 and t.request_id=$2 and t.native_closure_state in ('observed','retired','pending')
+        and c.id=$1 and t.request_id=$2 and t.native_closure_state in ('observed','pending')
       returning t.request_id`, [id, requestId])).rowCount === 1
-  }
-
-  async turnRetired(id: string, requestId: string, nativeSessionId: string): Promise<boolean> {
-    return (await this.pool.query(`update operator_conversation_turns t set native_closure_state='retired'
-      from operator_conversations c where c.id=t.conversation_id and c.active_request_id=t.request_id
-        and c.id=$1 and t.request_id=$2 and c.native_session_id=$3
-        and t.terminal_observation->>'nativeSessionId'=$3
-        and t.terminal_observation->'result'->>'outcome'='succeeded'
-        and t.native_closure_state in ('observed','retired')
-        and (t.terminal_history is null or t.terminal_history_persisted)
-      returning t.request_id`, [id, requestId, nativeSessionId])).rowCount === 1
   }
 
   async closureProven(id: string, requestId: string): Promise<boolean> {
@@ -929,7 +918,7 @@ export class PostgresOperatorConversationRepository {
       const row = (await client.query<ConversationRow>('select * from operator_conversations where id=$1 for update', [id])).rows[0]
       if (!row || row.active_request_id !== requestId) return false
       const terminal = (await client.query<{ matches: boolean }>(`select
-        (terminal_observation is null and $6::text='accepted') or (native_closure_state in ('closed','retired')
+        (terminal_observation is null and $6::text='accepted') or (native_closure_state='closed'
           and (terminal_history is null or terminal_history_persisted)
           and terminal_observation->'result'=$3::jsonb
           and (terminal_observation->>'nativeMessageId') is not distinct from $4::text
