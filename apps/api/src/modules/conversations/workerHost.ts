@@ -33,7 +33,7 @@ export interface WorkerConversationAllocation {
   inspector?: NativeMcpInspector
   start(input: { correlationId: string; instructionsDelivered: boolean;
     applicationAccess?: { kind: 'operator-chat-mcp'; token: string } }): Promise<NativeSessionStart>
-  nativeOwner(session: NativeSessionReference, options?: { allowExited: true }): Promise<RemoteNativeIdentity>
+  nativeOwner(session: NativeSessionReference): Promise<RemoteNativeIdentity>
   close(): Promise<void>
   deliverClaudeCredential?(token: string, signal: AbortSignal): Promise<void>
   refreshApplicationAccess?(token: string, signal: AbortSignal): Promise<void>
@@ -265,15 +265,14 @@ export class WorkerConversationHost {
     return this.ports.recover(record, configuration, connection, signal, request)
   }
 
-  private async resident(request: WorkerConversationRpcRequest & { session: NativeSessionReference },
-    options?: { allowExited: true }) {
+  private async resident(request: WorkerConversationRpcRequest & { session: NativeSessionReference }) {
     let record = await this.ports.journal.read(request.binding)
     if (this.allocating.has(request.binding.owner.conversationId)) unavailable('The native conversation is busy.')
     const resident = this.residents.get(request.binding.owner.conversationId)
     if (!record || !isDeepStrictEqual(record.session, request.session) || !resident
       || record.applicationAccessChange?.state === 'reserved'
       || !isDeepStrictEqual(resident.binding, request.binding)) unavailable('The original chat session is not resident.')
-    const owner = sessionOwner(await resident.allocation.nativeOwner(request.session, options))
+    const owner = sessionOwner(await resident.allocation.nativeOwner(request.session))
     record = await this.ports.journal.read(request.binding)
     if (!record || !isDeepStrictEqual(record.nativeOwner, owner)) {
       unavailable('The original native chat process changed.')
@@ -921,7 +920,7 @@ export class WorkerConversationHost {
   private async releaseRuntime(request: WorkerConversationRpcRequest & { session: NativeSessionReference }) {
     const saved = await this.ports.journal.read(request.binding)
     if (saved?.runtimeReleased && isDeepStrictEqual(saved.session, request.session)) return { receipt: saved }
-    const { resident, record } = await this.resident(request, { allowExited: true })
+    const { resident, record } = await this.resident(request)
     const id = request.binding.owner.conversationId
     if (this.hasRunningOperation(id) || record.turns.some(turn => !['completed', 'rejected'].includes(turn.status))
       || record.compactions.some(control => compactionBlocksSend(control.state))) {
