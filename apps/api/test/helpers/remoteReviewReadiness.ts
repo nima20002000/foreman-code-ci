@@ -17,7 +17,7 @@ export function waitForChildReady(child: ChildProcess, ready: () => boolean, des
       if (child.exitCode !== null || child.signalCode !== null) exited()
       else if (ready()) finish()
     }
-    const timer = setTimeout(() => finish(new Error(`Timed out waiting for ${description}. ${exitMessage()}`)), 90_000)
+    const timer = setTimeout(() => finish(new Error(`Timed out waiting for ${description}.`)), 90_000)
     child.on('message', check)
     child.once('exit', exited)
     child.once('error', failed)
