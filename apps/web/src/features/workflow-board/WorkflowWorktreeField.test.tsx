@@ -128,15 +128,4 @@ describe('workflow default worktree', () => {
     expect(await screen.findByText(`Main · octo-owner/website · ${fixture.source.manifest.git!.commit.slice(0, 12)}`)).toBeVisible()
     expect(screen.getByText('foreman/historical')).toBeVisible()
   })
-
-  it('labels the worktree computer with its saved name', async () => {
-    const fixture = choicesFixture()
-    server.use(http.get('*/api/management/computers/activity', () => HttpResponse.json({
-      mainId: fixture.root.selection.hostRef.mainId, cloud: [], truncated: false, activityComplete: true,
-      computers: [{ target: { hostRef: fixture.root.selection.hostRef, applicationInstallationId: fixture.root.selection.hostRef.mainId,
-        keyRevision: null, authorizationRevision: null }, name: 'Studio PC', online: true, jobs: [], agents: [] }],
-    })))
-    renderWithRouter(<SavedWorkflowWorktree workspaceId="workspace-1" value={{ rootBinding: fixture.rootBinding }} />)
-    expect(await screen.findByText(`Studio PC · octo-owner/website · ${fixture.source.manifest.git!.commit.slice(0, 12)}`)).toBeVisible()
-  })
 })

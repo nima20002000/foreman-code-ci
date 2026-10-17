@@ -1,5 +1,4 @@
 import { operatorSummaryActivityMigration } from './operatorSummaryActivityMigration.js'
-import { computerNamesMigration } from './computerNamesMigration.js'
 import { ciFailureHistoryMigration } from './ciFailureHistoryMigration.js'
 import { ciGateSpeedIndexMigration } from './ciGateSpeedIndexMigration.js'
 import { commandReceiptRetentionMigration } from './commandReceiptRetentionMigration.js'
@@ -985,7 +984,6 @@ export const migrations = [
   runActivityCommitLockMigration,
   sourceSnapshotUsesMigration,
   operatorSummaryActivityMigration,
-  computerNamesMigration,
 ] as const
 
 export function assertMigrationVersions(entries: readonly { version: number }[]): void {

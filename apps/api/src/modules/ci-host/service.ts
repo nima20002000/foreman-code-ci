@@ -38,7 +38,6 @@ import { sanitizeCiText, serializeCiJson } from './text.js'
 import { isGitHubComputer, needsSystemdExecutor, supportsUserSystemd } from './computerCapabilities.js'
 import { weighCiPartitions } from './partitionPlanning.js'
 import { invalidateExecutorSpeeds, readExecutorSpeeds } from './executorSpeed.js'
-import { readComputerNames } from '../computers/names.js'
 import { readCiGateReservation, readQueuedCiRuns } from './queuedRuns.js'
 import { expireCloudDispatch, requestCloud } from './cloudDispatch.js'
 import { claimCiSlot, reservedCloudSlotKeys } from './cloudSlots.js'
@@ -817,13 +816,11 @@ export class HostCiService {
     if (computer) return computer
     // Disabling future builds does not prevent reading or cancelling an assigned run.
     if (hostRef.kind === 'main') {
-      const key = `${hostRef.mainId}:main`
-      return { key, hostRef, label: (await readComputerNames(this.pool, hostRef.mainId)).get(key) ?? 'Main computer', priority: 0 }
+      return { key: `${hostRef.mainId}:main`, hostRef, label: 'Main computer', priority: 0 }
     }
     if (hostRef.kind === 'device' && hostRef.deviceId) {
-      const key = `${hostRef.mainId}:${hostRef.deviceId}`
-      return { key, hostRef, priority: 0,
-        label: (await readComputerNames(this.pool, hostRef.mainId)).get(key) ?? `Computer ${hostRef.deviceId.slice(0, 8)}` }
+      return { key: `${hostRef.mainId}:${hostRef.deviceId}`, hostRef,
+        label: `Computer ${hostRef.deviceId.slice(0, 8)}`, priority: 0 }
     }
     if (hostRef.kind === 'cloud' && hostRef.provider) {
       const account = hostRef.account ? { owner: hostRef.account } : undefined

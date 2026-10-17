@@ -12,7 +12,6 @@ import { WorkerExecutionPolicy } from '../settings/workerExecution.js'
 import { DomainError } from '../errors.js'
 import type { DeviceProvisioningTarget } from '@foreman-code/contracts/device-resources'
 import { assertBuildComputerTarget } from '../settings/buildComputers.js'
-import { readComputerNames } from '../computers/names.js'
 import { DeviceAccessError } from '../devices/access.js'
 import { componentLogger } from '../diagnostics/logger.js'
 import type { DeviceRequestPriority } from '@foreman-code/contracts/device-application'
@@ -69,7 +68,6 @@ export class ProductionHostCiEndpoint implements HostCiEndpoint {
       build_enabled: boolean; build_priority: number; build_allowance_percent: number }>(
       'select host_key,target,build_enabled,build_priority,build_allowance_percent from build_computer_preferences')).rows
     const devices = this.devices()
-    const names = await readComputerNames(this.pool, this.mainId)
     const computers: HostCiComputer[] = []
     for (const row of rows) {
       const hostRef = row.target.hostRef
@@ -84,13 +82,13 @@ export class ProductionHostCiEndpoint implements HostCiEndpoint {
         throw error
       }
       if (hostRef.kind === 'main') {
-        computers.push({ key: row.host_key, hostRef, label: names.get(row.host_key) ?? 'Main computer', priority: row.build_priority,
+        computers.push({ key: row.host_key, hostRef, label: 'Main computer', priority: row.build_priority,
           buildAllowancePercent: row.build_allowance_percent })
         continue
       }
       if (hostRef.kind !== 'device' || !hostRef.deviceId) continue
       if (!devices?.capabilities(hostRef.deviceId).some(value => value.namespace === CI_HOST_NAMESPACE && value.mainCanRequest)) continue
-      computers.push({ key: row.host_key, hostRef, label: names.get(row.host_key) ?? `Computer ${hostRef.deviceId.slice(0, 8)}`, priority: row.build_priority,
+      computers.push({ key: row.host_key, hostRef, label: `Computer ${hostRef.deviceId.slice(0, 8)}`, priority: row.build_priority,
         buildAllowancePercent: row.build_allowance_percent })
     }
     return [...computers, ...this.clouds.flatMap(cloud => cloud.computers())]
