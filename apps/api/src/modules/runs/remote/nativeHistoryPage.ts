@@ -1,10 +1,9 @@
-import { DEVICE_HISTORY_PAGE_BYTES, DEVICE_JSON_CONTINUATION_BYTES, type DeviceHistoryPage,
-  type DeviceJsonContinuation, type DeviceJsonContinuationRequest } from '@foreman-code/contracts/device-application'
+import { DEVICE_HISTORY_PAGE_BYTES, type DeviceHistoryPage,
+  type DeviceJsonContinuationRequest } from '@foreman-code/contracts/device-application'
 import type { NativeHarnessEvent } from '@foreman-code/contracts'
 import type { NativeHistory } from '../../harnesses/port.js'
 import { DomainError } from '../../errors.js'
 import { HarnessExecutionError } from '../../harnesses/errors.js'
-import { deviceRequestTimeoutMs } from '../../devices/deviceRequestRetry.js'
 import { isDeepStrictEqual } from 'node:util'
 import { DEVICE_JSON_CONTINUATION_LIMIT } from '@foreman-code/contracts/device-application'
 import { createJsonContinuationPager } from './jsonContinuation.js'
@@ -12,21 +11,12 @@ import { encodeResultCopies, historyResultPaths } from './executionResultCodec.j
 
 const historySource = Symbol('original native history page')
 type HistoryFields = Omit<NativeHistory, 'events' | 'firstRetainedSequence' | 'nextSequence' | 'gap'>
-type MetadataTransfer = {
+const metadataTransfers = new Map<string, {
   fields: HistoryFields
   bytes: Buffer
   page: ReturnType<typeof createJsonContinuationPager>
-  /** A download Main is still reading; it stays retained until its last page or one Main request timeout. */
-  activeUntil: number
-}
-const metadataTransfers = new Map<string, MetadataTransfer>()
+}>()
 let retainedMetadataBytes = 0
-
-function servePage(transfer: MetadataTransfer, page: DeviceJsonContinuation) {
-  transfer.activeUntil = page.offset + DEVICE_JSON_CONTINUATION_BYTES >= page.byteSize ? 0
-    : Date.now() + deviceRequestTimeoutMs
-  return page
-}
 
 function metadataPage(fields: HistoryFields, request?: DeviceJsonContinuationRequest) {
   const retained = request && metadataTransfers.get(request.digest)
@@ -35,30 +25,30 @@ function metadataPage(fields: HistoryFields, request?: DeviceJsonContinuationReq
     { ...retained.fields, nextCursor: undefined },
     { ...fields, nextCursor: undefined },
   )) {
-    return servePage(retained, retained.page(request))
+    return retained.page(request)
   }
   const bytes = Buffer.from(JSON.stringify(encodeResultCopies(fields, historyResultPaths())))
   const pager = createJsonContinuationPager(bytes)
   const page = pager(request)
-  const existing = metadataTransfers.get(page.digest)
-  if (existing) return servePage(existing, page)
-  while (metadataTransfers.size >= 64
-    || retainedMetadataBytes + bytes.byteLength > DEVICE_JSON_CONTINUATION_LIMIT * 4) {
-    const now = Date.now()
-    const idle = [...metadataTransfers].find(([, transfer]) => transfer.activeUntil <= now)
-    if (!idle) throw new DomainError('backpressure', 'Native history downloads in progress fill their retention.', 503)
-    metadataTransfers.delete(idle[0])
-    retainedMetadataBytes -= idle[1].bytes.byteLength
+  if (!metadataTransfers.has(page.digest)) {
+    while (metadataTransfers.size >= 64
+      || retainedMetadataBytes + bytes.byteLength > DEVICE_JSON_CONTINUATION_LIMIT * 4) {
+      const oldest = metadataTransfers.entries().next().value
+      if (!oldest) break
+      metadataTransfers.delete(oldest[0])
+      retainedMetadataBytes -= oldest[1].bytes.byteLength
+    }
+    metadataTransfers.set(page.digest, {
+      fields: structuredClone(fields), bytes, page: pager,
+    })
+    retainedMetadataBytes += bytes.byteLength
   }
-  const transfer = { fields: structuredClone(fields), bytes, page: pager, activeUntil: 0 }
-  metadataTransfers.set(page.digest, transfer)
-  retainedMetadataBytes += bytes.byteLength
-  return servePage(transfer, page)
+  return page
 }
 export function readNativeHistoryMetadata(request: DeviceJsonContinuationRequest) {
   const retained = metadataTransfers.get(request.digest)
   if (!retained) throw new DomainError('transfer-expired', 'Native history metadata is no longer retained.', 409)
-  return servePage(retained, retained.page(request))
+  return retained.page(request)
 }
 
 export function nativeHistoryPageSource(reply: unknown): NativeHistory | undefined {
