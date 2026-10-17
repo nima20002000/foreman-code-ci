@@ -11,6 +11,18 @@ export function computerKey(target: Pick<DeviceProvisioningTarget, 'hostRef'>) {
   const host = target.hostRef
   return `${host.mainId}:${host.kind === 'main' ? 'main' : host.deviceId}`
 }
+/** Saved computer names by computerKey, for labels built outside a React tree. Without settings access the
+ * caller keeps its default labels. */
+export async function readComputerNames(signal?: AbortSignal): Promise<ReadonlyMap<string, string>> {
+  try {
+    const activity = await apiClient.request('/api/management/computers/activity', ComputerActivityListSchema, { signal })
+    return new Map(activity.computers.map(computer => [computerKey(computer.target), computer.name]))
+  } catch (error) {
+    if (signal?.aborted) throw error
+    // ignore: names need settings:read; an unreadable list only leaves the default computer labels.
+    return new Map()
+  }
+}
 export function useComputerActivity() {
   useHarnessSessionEpoch()
   return useQuery({ queryKey: ['computer-activity', sessionGeneration()], enabled: !sessionIsSwitching(),

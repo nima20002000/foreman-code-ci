@@ -68,7 +68,8 @@ export function ComputerCards({ mainId, devices, onSelectComputer, only }: {
     {start.isError ? <small role="alert">{start.error.message}</small> : null}
     {start.data?.flatMap(result => result.computers).filter(computer => computer.error).map((computer, index) =>
       <small role="alert" key={`${computerKey(computer.target)}:${index}`}>
-        {computerDisplayName(computer.target.hostRef)}: {computer.error}
+        {activity.data?.computers.find(known => computerKey(known.target) === computerKey(computer.target))?.name
+          ?? computerDisplayName(computer.target.hostRef)}: {computer.error}
       </small>)}
     <ul className="computer-card-grid" aria-label="Computers">
       {cards.filter(card => visibleTargets.includes(card.target)).map(card => {
