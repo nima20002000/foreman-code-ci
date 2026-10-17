@@ -718,6 +718,7 @@ export class WorkerConversationHost {
 
   private async dispatch(request: WorkerConversationRpcRequest, connection: Readonly<DeviceSessionBinding>,
     signal: AbortSignal): Promise<unknown> {
+    if (request.method === 'conversation.release-runtime') return this.releaseRuntime(request)
     if (request.method === 'conversation.status') return { receipt: await this.ports.journal.read(request.binding) }
     if (request.method === 'conversation.release-preparation') {
       const preparation = this.preparations.get(request.binding.owner.conversationId)
@@ -914,6 +915,27 @@ export class WorkerConversationHost {
         this.residents.delete(request.binding.owner.conversationId)
         return { receipt: await this.ports.journal.closeConfirmed(request.binding) }
     }
+  }
+
+  private async releaseRuntime(request: WorkerConversationRpcRequest & { session: NativeSessionReference }) {
+    const saved = await this.ports.journal.read(request.binding)
+    if (saved?.runtimeReleased && isDeepStrictEqual(saved.session, request.session)) return { receipt: saved }
+    const { resident, record } = await this.resident(request)
+    const id = request.binding.owner.conversationId
+    if (this.hasRunningOperation(id) || record.turns.some(turn => !['completed', 'rejected'].includes(turn.status))
+      || record.compactions.some(control => compactionBlocksSend(control.state))) {
+      unavailable('Finish the active operation before releasing its native process.')
+    }
+    if (this.allocating.has(id)) unavailable('The native conversation is busy.')
+    const closing = (async () => {
+      await resident.allocation.close()
+      await this.ports.journal.runtimeReleased(request.binding)
+      this.residents.delete(id)
+      return resident
+    })()
+    this.allocating.set(id, closing)
+    try { await closing } finally { if (this.allocating.get(id) === closing) this.allocating.delete(id) }
+    return { receipt: await this.ports.journal.read(request.binding) }
   }
 
   async drainForUpdate(): Promise<void> {

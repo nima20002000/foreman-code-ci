@@ -618,6 +618,10 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
     this.assertSession(session)
     this.adopt(await this.request({ method: 'conversation.close', session }))
   }
+  async closeForResume(session: NativeSessionReference) {
+    this.assertSession(session)
+    this.adopt(await this.request({ method: 'conversation.release-runtime', session }))
+  }
   async closeForRestart(session: NativeSessionReference) { this.assertSession(session); await this.dispose() }
   async dispose() {
     if (this.preparationActive && !this.session && !this.lifetime.signal.aborted) {
