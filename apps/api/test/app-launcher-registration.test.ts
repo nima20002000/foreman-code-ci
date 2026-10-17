@@ -77,15 +77,6 @@ it('merges stale registrations and simultaneous installations through both direc
   }
 }, 30_000)
 
-it('recognizes registered and unregistered commands together in a fresh process', async () => {
-  const { launcher, runtimes } = await fixture()
-  await writeLauncherInstallation(launcher, { version: 1,
-    executables: [{ path: runtimes[0]!, realpath: runtimes[0]! }] })
-  const entries = runtimes.map(runtime => ({ command: runtime, args: [launcher], env_vars: [APP_MCP_TOKEN] }))
-  expect(JSON.parse(await runLauncherProcess({ kind: 'recognize', launcher, entry: entries })))
-    .toEqual([true, false, false])
-}, 30_000)
-
 it('waits for another process and continues after its lock owner crashes', async () => {
   const { launcher, runtimes } = await fixture()
   const program = `

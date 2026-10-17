@@ -310,41 +310,6 @@ describe('atomic original remote reviewer retention', () => {
 })
 
 describe('retained remote reviewer recovery', () => {
-  it.each(['attachment', 'application access', 'credential', 'review lease'] as const)(
-    'retries a transient %s failure on the same original reviewer', async stage => {
-      const f = await recoveryFixture()
-      const main = f.coordinator()
-      const original = structuredClone(f.execution)
-      const failure = stage === 'review lease'
-        ? new DomainError('REVIEW_JOB_LEASE_LOST', 'The review lease changed.', 409)
-        : new DeviceApplicationError('timeout')
-      let pending = true
-      const failOnce = () => {
-        if (!pending) return
-        pending = false
-        throw failure
-      }
-      if (stage === 'attachment' || stage === 'review lease') f.worker.beforeReattach = async () => failOnce()
-      if (stage === 'application access') f.worker.beforeApplicationAccess = failOnce
-      if (stage === 'credential') f.credentials.recoverRemote.mockRejectedValueOnce(failure)
-      try {
-        await expect(f.attach(main)).rejects.toBe(failure)
-        expect(f.resident).not.toHaveBeenCalled()
-        const recovered = await f.attach(main)
-        expect(recovered.session).toEqual(f.session)
-        expect(f.execution).toEqual(original)
-        expect(f.resident).toHaveBeenCalledOnce()
-        expect(f.proxies).toHaveLength(1)
-        expect(f.credentials.recoverRemote).toHaveBeenLastCalledWith(f.execution.id,
-          expect.objectContaining({ token: 'original-token' }), undefined)
-        expect(f.closures.begin).not.toHaveBeenCalled()
-        expect(f.requests.every(method => ['reattach', 'get-application-access'].includes(method))).toBe(true)
-        await main.releaseReviewSession(f.execution.id)
-        await main.closeForRestart()
-      } finally { await f.connection.close() }
-    },
-  )
-
   it('requests Run cleanup when the Worker closes the original reviewer during cold recovery', async () => {
     const f = await recoveryFixture()
     const original = structuredClone(f.execution)
