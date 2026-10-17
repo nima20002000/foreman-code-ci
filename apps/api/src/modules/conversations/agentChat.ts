@@ -1,7 +1,5 @@
 import { logIgnoredError } from '../diagnostics/ignoredError.js'
 import type { ReadObservation } from '@foreman-code/contracts'
-import { failedReadObservation, successfulReadObservation } from '../diagnostics/readObservation.js'
-import { DeviceConnectionError } from '../devices/deviceWire.js'
 import { errorMessage } from '../../shared/errorMessage.js'
 import { RETIRED_OPENCODE_MESSAGE } from '@foreman-code/contracts'
 import type { ChatResponseAcknowledgment } from '@foreman-code/contracts/interaction-activity'
@@ -19,6 +17,7 @@ import { acceptedResponseControl } from './acceptedResponseControl.js'
 import { nativeNonSubmission } from './nativeNonSubmission.js'
 import { sessionStartConfiguration } from '../harnesses/sessionStart.js'
 import { harnessSessionChanged } from '../harnesses/providerAccountConfiguration.js'
+import { WorkerConversationBindingSchema } from '@foreman-code/contracts/remote-execution-rpc'
 import { pendingInteractionAfterHistory } from './pendingInteractionReadback.js'
 import { qualifyChatActivity } from './qualifiedActivity.js'
 import { reconcileKnownActivities } from './reconcileKnownActivities.js'
@@ -194,7 +193,6 @@ function intervalTick(execution: HarnessExecution): number {
 
 export class AgentChatService {
   private readonly activityObservations = new Map<string, ReadObservation>()
-  private readonly pendingObservations = new Map<string, ReadObservation>()
   readonly events = new AgentChatEvents()
   private readonly runtimes = new Map<string, Runtime>()
   private readonly tasks = new Map<string, Promise<void>>()
@@ -513,20 +511,9 @@ export class AgentChatService {
       let pending: Awaited<ReturnType<NativeHarnessSessionManager['pending']>>
       try {
         pending = await resident.manager.pending(resident.session)
-        this.pendingObservations.set(loaded.row.id, successfulReadObservation())
       } catch (error) {
-        const retired = error instanceof DomainError && error.code === 'NATIVE_MANAGER_DISPOSED'
-          && (resident.retiring || resident.disposal || this.runtimes.get(loaded.row.id) !== resident)
-        const offline = error instanceof DeviceConnectionError && ['transport', 'timeout', 'unavailable'].includes(error.code)
-          || error instanceof DomainError && error.code === 'WORKER_CONVERSATION_UNAVAILABLE'
-        if (!retired && !offline) throw error
-        if (offline) {
-          const observation = failedReadObservation(this.pendingObservations.get(loaded.row.id), error,
-            'The chat Worker is offline; pending interactions could not be refreshed')
-          this.pendingObservations.set(loaded.row.id, observation)
-          componentLogger('harness').warn({ conversationId: loaded.row.id, ...observation },
-            'Agent chat pending interaction refresh unavailable')
-        }
+        if (!(error instanceof DomainError && error.code === 'NATIVE_MANAGER_DISPOSED'
+          && (resident.retiring || resident.disposal || this.runtimes.get(loaded.row.id) !== resident))) throw error
       }
       if (pending && isSessionNativeInteraction(pending)) {
         await this.repository.pending(loaded.row.id, null, pending)
@@ -558,11 +545,8 @@ export class AgentChatService {
     const qualifiedResponse = responseAvailability && !isAuthorized(finalPrincipal, 'agent_chat:respond', { workspaceId: context.workspaceId, workflowId: context.workflowId, ...(context.runId ? { runId: context.runId } : {}) })
       ? { ...responseAvailability, available: false, status: 'unavailable' as const, path: null,
         reason: 'unauthorized' as const, message: 'Your current grants do not allow responding to this interaction.' } : responseAvailability
-    const pendingObservation = this.pendingObservations.get(row.id)
-    const observation = pendingObservation?.status === 'unavailable' ? pendingObservation
-      : this.activityObservations.get(row.id) ?? pendingObservation
     const activitySnapshot = { ...qualifyChatActivity(agentActivitySnapshot(loaded), qualifiedResponse),
-      ...(observation ? { observation } : {}) }
+      ...(this.activityObservations.has(row.id) ? { observation: this.activityObservations.get(row.id) } : {}) }
     const qualificationKey = commandInputHash({ principal: finalPrincipal, configurationId: resolution.configuration?.id ?? null,
       availability, capabilities, scope: activitySnapshot.scope, revision: activitySnapshot.revision,
       sourceRevisions: 'sourceRevisions' in activitySnapshot ? activitySnapshot.sourceRevisions : null,
@@ -585,6 +569,20 @@ export class AgentChatService {
   }
 
   private async harnessUnavailable(resolution: Resolution): Promise<Resolution['blocked']> {
+    const row = resolution.row
+    if (row?.origin_run_id && row.native_session_id && !row.record.sourceConfigurationVersionId) {
+      const agent = (await this.pool.query<{ current_configuration_version_id: string | null }>(
+        'select current_configuration_version_id from agents where workspace_id=$1 and id=$2 and archived_at is null',
+        [row.workspace_id, row.agent_id])).rows[0]
+      if (agent?.current_configuration_version_id
+        && agent.current_configuration_version_id !== row.agent_configuration_version_id) {
+        const configuration = await this.workflows.getAgentConfiguration(agent.current_configuration_version_id)
+        if (!configuration) {
+          throw new DomainError('AGENT_CHAT_CONFIGURATION_MISSING', 'The saved Agent configuration is unavailable.', 409)
+        }
+        return this.managers.unavailable?.(configuration, row.record.workingDirectory)
+      }
+    }
     const executionId = resolution.row?.record.sourceConfigurationVersionId
       ? undefined : resolution.executionId ?? resolution.row?.origin_execution_id
     const workingDirectory = resolution.row?.record.workingDirectory ?? resolution.create?.workingDirectory
@@ -1096,10 +1094,20 @@ export class AgentChatService {
     }
     const ephemeral = previous.harness.harness === 'codex'
       && previous.harness.advanced?.sessionPersistence === 'ephemeral'
-    const profileChanged = previous.harnessProfileSelection?.instanceId !== configuration.harnessProfileSelection?.instanceId
-      || previous.harnessProfileSelection?.target.harnessInstallationId
+    const previousProfile = row.worker_conversation_binding
+      ? WorkerConversationBindingSchema.parse(row.worker_conversation_binding).profile : previous.harnessProfileSelection
+    const profileChanged = previousProfile?.instanceId !== configuration.harnessProfileSelection?.instanceId
+      || previousProfile?.target.harnessInstallationId
         !== configuration.harnessProfileSelection?.target.harnessInstallationId
     const replaceSession = harnessSessionChanged(previous.harness, configuration.harness) || ephemeral || profileChanged
+    const runtime = this.runtimes.get(row.id)
+    if (runtime?.session && previousProfile?.target.hostRef.kind === 'device') {
+      if (!runtime.manager.closeForResume) {
+        throw new DomainError('NATIVE_RUNTIME_RELEASE_UNAVAILABLE',
+          'The Worker cannot confirm closure of its resumable process.', 409)
+      }
+      await runtime.manager.closeForResume(runtime.session)
+    }
     await this.release(row.id)
     return this.repository.applyConfiguration(row.id, row.active_request_id!, configuration, { replaceSession, directoryBinding })
   }
@@ -1245,11 +1253,12 @@ export class AgentChatService {
       let row = await this.repository.get(id)
       if (!row || row.active_request_id !== turn.requestId) return
       if (row.cancel_requested) { await this.settle(id, turn.requestId, { outcome: 'canceled' }); return }
+      const principalId = await this.repository.turnPrincipalId(id, turn.requestId)
+      if (principalId) this.runtimes.get(id)?.manager.setSessionControlPrincipal?.(principalId)
       row = await this.control(id, () => this.applyTurnConfiguration(row!))
       const configuration = await this.conversationConfiguration(row)
       if (!configuration) throw new DomainError('AGENT_CHAT_CONFIGURATION_MISSING', 'The pinned Agent configuration is unavailable.', 409)
       const selectedMode = await this.repository.turnSessionMode(id, turn.requestId)
-      const principalId = await this.repository.turnPrincipalId(id, turn.requestId)
       if (principalId) await this.sessionControls.read({ conversationId: id, principalId,
         defaultSubject: `${row.workspace_id}:${row.agent_id}`, profileKey: row.agent_configuration_version_id,
         ...(selectedMode ? { initialMode: selectedMode } : {}), busyReason: null })
@@ -1717,7 +1726,6 @@ export class AgentChatService {
       // Both maps retain ownership until cleanup positively succeeds.
       this.managers.release?.(id)
       this.runtimes.delete(id)
-      this.pendingObservations.delete(id)
     })
     try { await disposal } catch (error) {
       if (runtime.disposal === disposal) delete runtime.disposal
