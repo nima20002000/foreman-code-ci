@@ -1,6 +1,5 @@
 import { z } from 'zod'
 import { BuildComputerAllowanceSchema } from './buildComputers.js'
-import { circleCreditsShape } from './circleCredits.js'
 import { CI_LOG_MAX_BYTES, CI_MAX_RUN_TICKETS, CiCachedFileSchema, CiCollectionSchema, CiComputerRefSchema, CiActivitySchema, CiRunRecordSchema, CiSuiteSchema, CiScopeSchema, CiSelectedFilesSchema,
   CiTestResultsSchema, CiPrioritySchema, CiPriorityReasonSchema,
   CiTestStatusSchema, CiTestSummarySchema, CiUserSystemdSchema, validCiSelection } from './ciHost.js'
@@ -205,8 +204,6 @@ export const CiComputersOutputSchema = z.object({
   userSystemd: CiUserSystemdSchema.optional(),
   slotsUsed: z.number().int().nonnegative(), slotsTotal: z.number().int().nonnegative(),
   running: z.array(z.string()).optional(),
-  /** CircleCI accounts only: estimated monthly credits left. */
-  ...circleCreditsShape,
 }).strict()) }).strict()
 
 export * from './ciEnrollment.js'

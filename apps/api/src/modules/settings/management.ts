@@ -4,7 +4,6 @@ import { errorMessage } from '../../shared/errorMessage.js'
 import { AgentDefaultsSchema, withAdvancedDefaults, CodexSessionCompatibilitySchema, validateHarnessWorkflowCompatibility, type AgentDefaults, type WorkflowDefaults } from '@foreman-code/contracts'
 import { WorkspaceDefaultsUpdateInputSchema, type WorkspaceDefaultsUpdateInput, type ManagementPrincipal } from '@foreman-code/contracts/management'
 import { GeneralSettingsUpdateInputSchema, type GeneralSettingsUpdateInput } from '@foreman-code/contracts/management'
-import { CircleCreditAllowanceUpdateInputSchema, type CircleCreditAllowanceUpdateInput } from '@foreman-code/contracts/management'
 import { PromptSettingUpdateInputSchema, type PromptSettingUpdateInput } from '@foreman-code/contracts/management'
 import { isDeepStrictEqual } from 'node:util'
 
@@ -80,24 +79,6 @@ export class FoundationSettingsManagementService {
         requireAuthorization(await readLiveManagementPrincipal(client, principal.id), 'settings:update')
       },
       perform: client => this.settings.updateGeneralSettings(input.value, input.expectedRevision, client),
-    })
-  }
-
-  getCircleCreditAllowance(principal: ManagementPrincipal) {
-    requireAuthorization(principal, 'settings:read')
-    return this.settings.getCircleCreditAllowance()
-  }
-
-  updateCircleCreditAllowance(principal: ManagementPrincipal, source: 'http' | 'mcp', raw: CircleCreditAllowanceUpdateInput) {
-    requireAuthorization(principal, 'settings:update')
-    const input = CircleCreditAllowanceUpdateInputSchema.parse(raw)
-    return this.commands.execute({
-      principal, source, operation: 'circle.credit.allowance.update', commandId: input.commandId,
-      targetKey: 'circle-credit-allowance', payload: input,
-      authorize: async client => {
-        requireAuthorization(await readLiveManagementPrincipal(client, principal.id), 'settings:update')
-      },
-      perform: client => this.settings.updateCircleCreditAllowance(input.value, input.expectedRevision, client),
     })
   }
 
