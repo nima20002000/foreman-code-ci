@@ -63,7 +63,7 @@ interface OwnerRow {
   active_request_id: string | null; native_session_id: string | null; deleted_at: unknown
   harness: NativeSessionReference['harness']; provider_version: string | null
   record: { status?: string; directoryBinding?: unknown; systemPrompt?: PromptSettingSnapshot;
-    workerGeneration?: string;
+    workerGeneration?: string; workerSessionGeneration?: string;
     sourceConfigurationVersionId?: string;
     origin?: { kind: string; runId?: string; executionId?: string; sourceNativeSessionId?: string } }
   payload: { ownerPrincipalId?: string } | null
@@ -261,10 +261,11 @@ async function admitWorkerConversation(input: ProductionWorkerConversationsInput
     const previous = await input.operators.configuration(savedBinding.owner.configurationVersionId)
     executionConfiguration = workerExecutionConfiguration(savedBinding, configuration, previous)
   }
+  const sessionGeneration = savedBinding?.sessionGeneration ?? original.record.workerSessionGeneration
   const requestedBinding = WorkerConversationBindingSchema.parse({
     ...(original.kind === 'agent' && original.record.workerGeneration ? { generation: original.record.workerGeneration } : {}),
-    ...(original.kind === 'agent' && !original.record.workerGeneration && savedBinding?.sessionGeneration
-      ? { sessionGeneration: savedBinding.sessionGeneration } : {}),
+    ...(original.kind === 'agent' && !original.record.workerGeneration && sessionGeneration
+      ? { sessionGeneration } : {}),
     owner: { ...ownerFields,
     conversationId: options.conversationId, configurationVersionId: executionConfiguration.id,
     configurationHash: commandInputHash(executionConfiguration) }, harness: configuration.harness.harness,
