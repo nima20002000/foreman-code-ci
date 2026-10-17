@@ -65,7 +65,7 @@ function setup(read: () => NativeHistory, changeReply?: (reply: ReturnType<typeo
   const request = vi.fn<RemoteNativeTransport['request']>(async (method, raw) => {
     const frame = RemoteExecutionRpcRequestSchema.parse(raw)
     if (method === 'prepare') return { session, status }
-    if (method === 'start-turn') return status
+    if (method === 'start-turn' || method === 'settle-turn') return status
     if (frame.method !== 'history' && frame.method !== 'reconcile-response') throw new Error('Unexpected request')
     const afterSequence = frame.method === 'history' ? frame.afterSequence : undefined
     const metadata = frame.method === 'history' ? frame.metadata : undefined
@@ -101,6 +101,53 @@ function terminal(events: NativeHarnessEvent[]): NativeHistory {
 }
 
 describe('remote native history streaming', () => {
+  it('reads the settled turn through the history observation interface', async () => {
+    const history = terminal([event(0)])
+    const f = setup(() => history)
+    const session = await f.proxy.createSession(f.start)
+    f.receipt.phase = 'confirmed_terminal'
+    f.receipt.terminal = { kind: 'completed', closureEvidenceDigest: 'a'.repeat(64), result: history.terminalResult! }
+    f.receipt.sequence++
+    expect(await f.proxy.settleTurn(session, 'execution:execution')).toMatchObject({ terminalTurn: history.terminalTurn })
+    expect(f.observeOriginalSource).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'confirmed_terminal' }),
+      { type: 'history', history })
+  })
+
+  it.each([false, true])('waits for the corrective submission while startup has events=%s', async startupEvents => {
+    const submitted = vi.fn<(turnId: string) => Promise<void>>(async () => {})
+    const settings = vi.fn(async () => {})
+    const correlationId = 'execution:execution:result-repair:1'
+    let polls = 0
+    const f = setup(() => {
+      if (polls++ === 0) return { events: startupEvents ? [event(2)] : [], pendingInteractions: [],
+        correlationId, firstRetainedSequence: 0, nextSequence: startupEvents ? 3 : 2 }
+      expect(submitted).not.toHaveBeenCalled()
+      f.receipt.nativeTurnRetries = [{ previousTurnId: 'native-turn', turnId: 'corrective-turn' }]
+      f.receipt.native!.turnId = 'corrective-turn'
+      f.receipt.sequence++
+      f.receipt.phase = 'running'
+      const result = { outcome: 'succeeded' as const, output: { text: 'corrected' } }
+      const sequence = startupEvents ? 3 : 2
+      return { events: [{ ...event(sequence), type: 'turn.started',
+        payload: { clientCorrelationId: correlationId, turnId: 'corrective-turn' } }, event(sequence + 1)],
+      pendingInteractions: [], correlationId, nativeTurnId: 'corrective-turn', firstRetainedSequence: 0,
+      nextSequence: sequence + 2, terminalResult: result,
+      terminalTurn: { correlationId, providerId: 'corrective-turn', result } }
+    })
+    const session = await f.proxy.createSession(f.start)
+    f.receipt.resultRepairs = [{ previousInput: { ...f.receipt.turnInput!, deferSettlement: true },
+      previousTurnId: 'native-turn', afterSequence: 1 }]
+    f.receipt.turnInput = { ...f.receipt.turnInput!, correlationId, deferSettlement: true }
+    f.receipt.phase = 'start_acknowledged'
+    f.receipt.sequence++
+    for await (const frame of f.proxy.startTurn(session, { prompt: 'correct output', clientCorrelationId: correlationId,
+      onSubmitted: submitted, onSettingsApplied: settings, deferSettlement: true })) {
+      if (startupEvents && frame.sequence === 2) expect(submitted).not.toHaveBeenCalled()
+    }
+    expect(submitted).toHaveBeenCalledExactlyOnceWith('corrective-turn')
+    expect(settings).toHaveBeenCalledTimes(1)
+  })
+
   it('releases the lost initial snapshot when its replay observes changed metadata', async () => {
     let reads = 0
     const result = { outcome: 'succeeded' as const, output: { text: 'changed-snapshot' + 'x'.repeat(3 * 1024 * 1024) } }
@@ -496,6 +543,22 @@ describe('remote native history streaming', () => {
     expect(f.controlFor).not.toHaveBeenCalled()
   })
 
+  it('detaches the retained session for restart while its Worker is offline', async () => {
+    const f = setup(() => ({ events: [], pendingInteractions: [] }))
+    const session = await f.proxy.createSession(f.start)
+    expect(f.proxy.canDetachForRestart(session)).toBe(true)
+    f.request.mockRejectedValue(new DeviceApplicationError('transport'))
+
+    await expect(f.proxy.closeForRestart(session)).resolves.toBeUndefined()
+    await expect(f.proxy.dispose()).resolves.toBeUndefined()
+    await expect(f.proxy.closeForRestart(session)).resolves.toBeUndefined()
+    expect(f.request.mock.calls.map(([method]) => method)).toEqual(['prepare'])
+    expect(f.proxy.canDetachForRestart(session)).toBe(false)
+    expect(f.controlFor).not.toHaveBeenCalled()
+    expect(f.receipt.stopFence).toBe(false)
+    expect(f.receipt.terminal).toBeUndefined()
+  })
+
   it('still fails physical identity errors without refreshing the original source', async () => {
     const f = setup(() => terminal([event(0)]))
     const session = await f.proxy.createSession(f.start)
@@ -518,9 +581,21 @@ describe('remote native history streaming', () => {
     expect(f.controlFor).not.toHaveBeenCalled()
   })
 
-  it.each(['close', 'closeForRestart'] as const)('cancels the device request when %s reaches its deadline', async method => {
+  it.each(['close', 'closeForRestart'] as const)('honors the cancellation signal when %s closes the session', async method => {
     const f = setup(() => ({ events: [], pendingInteractions: [] }))
     const session = await f.proxy.createSession(f.start)
+    const controller = new AbortController()
+    const error = new Error('Cleanup deadline reached')
+    if (method === 'closeForRestart') {
+      controller.abort(error)
+      await expect(f.proxy.closeForRestart(session, controller.signal)).rejects.toBe(error)
+      expect(f.proxy.canDetachForRestart(session)).toBe(true)
+      expect(f.request).toHaveBeenCalledTimes(1)
+      await expect(f.proxy.closeForRestart(session)).resolves.toBeUndefined()
+      expect(f.proxy.canDetachForRestart(session)).toBe(false)
+      expect(f.request).toHaveBeenCalledTimes(1)
+      return
+    }
     let enteredSignal: AbortSignal | undefined
     f.request.mockImplementation(async (_method, _payload, signal) => {
       enteredSignal = signal
@@ -528,8 +603,6 @@ describe('remote native history streaming', () => {
         signal?.addEventListener('abort', () => reject(signal.reason), { once: true })
       })
     })
-    const controller = new AbortController()
-    const error = new Error('Cleanup deadline reached')
     const close = f.proxy[method] as (reference: typeof session, signal?: AbortSignal) => Promise<void>
     const result = close.call(f.proxy, session, controller.signal).catch((failure: unknown) => failure)
     await vi.waitFor(() => expect(f.request).toHaveBeenCalledTimes(2))
@@ -783,7 +856,7 @@ describe('remote native history streaming', () => {
 
     await f.proxy.closeForRestart(session)
     await f.proxy.dispose()
-    expect(f.request.mock.calls.map(([method]) => method)).toEqual(['prepare', 'history', 'history'])
+    expect(f.request.mock.calls.map(([method]) => method)).toEqual(['prepare', 'history'])
     expect(f.receipt.stopFence).toBe(false)
     expect(f.receipt.terminal).toBeUndefined()
     expect(f.observedReceipts.every(receipt => receipt.native?.sessionId === session.nativeSessionId)).toBe(true)
