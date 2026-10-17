@@ -119,6 +119,8 @@ export class SessionControlStore {
       if (recovered.requestId !== state.compaction.requestId || recovered.nativeSessionId !== state.compaction.nativeSessionId) {
         throw new DomainError('SESSION_CONTROL_TARGET_CHANGED', 'The recovered compaction belongs to another session.', 409)
       }
+      // Native history does not own Main's command attribution.
+      recovered.principalId = state.compaction.principalId
       if (JSON.stringify(recovered) !== JSON.stringify(state.compaction)) {
         state.compaction = recovered
         await this.save(state)
