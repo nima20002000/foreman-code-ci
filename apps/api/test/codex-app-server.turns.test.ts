@@ -37,6 +37,9 @@ import {
   setManager,
 } from './codex-app-server.test-support.js'
 
+// Fixture I/O uses wall time while transport deadlines stay frozen.
+const scheduleFixturePoll = setTimeout
+
 describe.skipIf(process.platform === 'win32')('Codex app-server regressions against the real manager', () => {
   useCodexFixture()
 
@@ -399,7 +402,11 @@ describe.skipIf(process.platform === 'win32')('Codex app-server regressions agai
     assert.equal((await manager.reconcile(session, 'recover')).terminalResult?.outcome, 'succeeded')
   })
 
-  it('F12: a late turn ID remains correlated after timeout and cancellation reaches it', async () => {
+  it.each([
+    { readiness: 'immediate', delayMs: 0 },
+    { readiness: 'slower than the RPC deadline', delayMs: 600 },
+    { readiness: 'slower than one second', delayMs: 1_200 },
+  ])('keeps a late turn correlated after timeout and cancellation with $readiness MCP readiness', async ({ delayMs }) => {
     setManager(makeManager({
       transport: (...args) => {
         args[7] = 500
@@ -409,9 +416,11 @@ describe.skipIf(process.platform === 'win32')('Codex app-server regressions agai
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     try {
       const session = await manager.createSession(source)
+      await json('mcp-status-delay-ms.json', delayMs)
       await flag('hold-turn-start')
       const events = collect(manager.startTurn(session, { prompt: 'wait', clientCorrelationId: 'late' }))
-      await vi.waitFor(async () => assert.equal((await wire('turn/start')).length, 1))
+      await until(async () => (await wire('turn/start')).length === 1, 20_000, scheduleFixturePoll)
+      assert.equal((await wire('config/mcpServer/reload')).length, 0)
       await vi.advanceTimersByTimeAsync(500)
       await assertCode(events, 'CODEX_APP_SERVER_TIMEOUT')
       vi.useRealTimers()
