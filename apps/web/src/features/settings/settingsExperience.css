@@ -13,6 +13,7 @@
 .settings-choice-heading { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
 .settings-choice-heading > span:nth-child(2) { display: grid; gap: var(--space-1); flex: 1; min-width: 0; }
 .settings-choice-heading strong { font-size: 15px; font-weight: 600; }
+.settings-choice-heading small { display: block; color: var(--n-muted); font-size: 12px; line-height: 1.5; }
 .settings-choice-icon { width: 40px; height: 40px; display: grid; place-items: center; background: var(--n-accent-subtle); color: var(--n-accent); border-radius: var(--radius-lg); flex: 0 0 40px; }
 .settings-choice-heading > svg { color: var(--n-faint); }
 .settings-choice-summary { display: grid; gap: var(--space-3); width: 100%; }

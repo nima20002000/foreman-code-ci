@@ -34,6 +34,7 @@ export function ClaudePluginSummary({ onClose, accessUnavailable = false }: {
     askOperator(content, { send: false })
   }
   return <section className="codex-plugins" aria-label="Claude plugins">
+    <p className="harness-muted">User plugins on Main. Ask the Operator to change them and sync them to your computers.</p>
     <div className="codex-plugins-controls">
       <div className="codex-plugins-tabs" role="group" aria-label="Plugin catalog view">
         <Button size="sm" aria-pressed={view === 'installed'} variant={view === 'installed' ? 'primary' : 'ghost'}

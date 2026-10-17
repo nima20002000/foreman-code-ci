@@ -5,10 +5,7 @@ import { Button, TextField, Select } from '../../../shared/ui/nocturne'
 import type { ComposerSessionControls } from './useSessionControls'
 import './sessionControls.css'
 
-// ignore: a failed control change is shown from the mutation error state.
-const ignoreRejection = () => undefined
-
-export function SessionContext({ controls }: { controls: ComposerSessionControls }) {
+export function SessionControls({ controls }: { controls: ComposerSessionControls }) {
   const state = controls.state
   const id = useId()
   const [open, setOpen] = useState(false)
@@ -35,7 +32,7 @@ export function SessionContext({ controls }: { controls: ComposerSessionControls
     setOpen(false)
     anchor.current?.focus()
   }
-  if (!state) return null
+  if (!state) return <span role="status">{!controls.conversationId ? 'No native context yet' : controls.query.isError ? 'Context unavailable' : 'Context loading…'}</span>
   const context = state.context
   const known = context?.usedTokens != null && context.capacityTokens != null
   const percentage = known ? Math.round(context.usedTokens! / context.capacityTokens! * 100) : null
@@ -45,9 +42,22 @@ export function SessionContext({ controls }: { controls: ComposerSessionControls
   const compactReason = state.busyReason ?? (compactionBlocksSend(state.compaction) ? 'Compaction is still unconfirmed. Refresh its status.'
     : state.capabilities.compact.reason)
   const pending = controls.mutation.isPending
-  const update = (preferences: SessionPreferences) => { void controls.change({ kind: 'preferences', preferences }).catch(ignoreRejection) }
+  const recoveryMessage = state.capabilities.plan.supported
+    ? 'Saved session controls. Your next message or control will resume the session.'
+    : 'Send a message to resume this session and refresh its controls.'
+  const update = (preferences: SessionPreferences) => { void controls.change({ kind: 'preferences', preferences }).catch(() => undefined) }
   const meterLabel = `${percentage === null ? 'Context unknown' : `${percentagePrefix}${percentage}% context`}${context?.stale ? ' · stale' : ''}`
-  return <div className="session-context">
+  const notes = [
+    state.desiredMode !== state.appliedMode ? <small key="mode">{state.desiredMode === 'plan' ? 'Plan mode' : 'Regular mode'} starts on the next turn.</small> : null,
+    state.nativeStatus === 'resume-required' ? <small key="resume" role="status">{recoveryMessage}</small> : null,
+    controls.mutation.isError ? <p key="error" role="alert">{controls.mutation.error?.message}</p> : null,
+  ].filter(Boolean)
+  return <div className="session-controls" aria-label="Native session controls">
+    <Select label="Conversation mode" className="session-mode" value={state.desiredMode} disabled={pending || !state.capabilities.plan.supported}
+      options={[{ value: 'regular', label: 'Regular' }, { value: 'plan', label: 'Plan' }]}
+      title={state.capabilities.plan.reason ?? undefined}
+      onChange={event => { void controls.change({ kind: 'mode', mode: event.target.value === 'plan' ? 'plan' : 'regular' }).catch(() => undefined) }} />
+    <div className="session-context">
       <Button ref={anchor} size="sm" variant="ghost" className="session-context-meter" aria-label={meterLabel} title={meterLabel}
         aria-expanded={open} aria-controls={`${id}-context`} data-stale={context?.stale ? 'true' : undefined}
         onClick={() => setOpen(value => !value)}>
@@ -104,39 +114,19 @@ export function SessionContext({ controls }: { controls: ComposerSessionControls
               const preferences = budgetEdited ? { ...state.desired, autoCompactTokens } : state.desired
               void controls.change({ kind: 'save-default', preferences }).then(() => {
                 setBudgetDraft(draft => draft?.owner === budgetOwner && draft.value === budget ? undefined : draft)
-              }).catch(ignoreRejection)
+              }).catch(() => undefined)
           }}>Save as default for future chats</Button>
         </details>
         {compactReason ? <p className="session-context-note">{compactReason}</p> : null}
         {state.compaction ? <p className="session-context-note" role="status">{state.compaction.message}</p> : null}
         <div className="session-context-actions">
           <Button size="sm" disabled={pending || !!compactReason} title={compactReason ?? undefined}
-            onClick={() => { void controls.change({ kind: 'compact' }).catch(ignoreRejection) }}>Compact context</Button>
+            onClick={() => { void controls.change({ kind: 'compact' }).catch(() => undefined) }}>Compact context</Button>
           <Button size="sm" variant="ghost" onClick={() => { void controls.query.refetch() }}>Refresh status</Button>
           <Button size="sm" variant="ghost" onClick={close}>Close context details</Button>
         </div>
       </div> : null}
     </div>
-}
-
-export function SessionControls({ controls, context = true }: { controls: ComposerSessionControls; context?: boolean }) {
-  const state = controls.state
-  if (!state) return context ? <span role="status">{!controls.conversationId ? 'No native context yet' : controls.query.isError ? 'Context unavailable' : 'Context loading…'}</span> : null
-  const pending = controls.mutation.isPending
-  const recoveryMessage = state.capabilities.plan.supported
-    ? 'Saved session controls. Your next message or control will resume the session.'
-    : 'Send a message to resume this session and refresh its controls.'
-  const notes = [
-    state.nativeStatus === 'resume-required' ? <small key="resume" role="status">{recoveryMessage}</small> : null,
-    controls.mutation.isError ? <p key="error" role="alert">{controls.mutation.error?.message}</p> : null,
-  ].filter(Boolean)
-  return <div className="session-controls" aria-label="Native session controls">
-    <Select label="Conversation mode" className="session-mode" value={state.desiredMode} disabled={pending || !state.capabilities.plan.supported}
-      options={[{ value: 'regular', label: 'Regular' }, { value: 'plan', label: 'Plan' }]}
-      title={state.capabilities.plan.reason ?? undefined}
-      data-mode-pending={state.desiredMode !== state.appliedMode ? 'true' : undefined}
-      onChange={event => { void controls.change({ kind: 'mode', mode: event.target.value === 'plan' ? 'plan' : 'regular' }).catch(ignoreRejection) }} />
-    {context ? <SessionContext controls={controls} /> : null}
     {notes.length ? <div className="session-controls-status">{notes}</div> : null}
   </div>
 }

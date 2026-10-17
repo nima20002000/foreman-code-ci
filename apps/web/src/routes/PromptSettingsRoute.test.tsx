@@ -76,12 +76,13 @@ afterEach(() => {
 
 it('opens the System prompt editor from Settings at a linkable route', async () => {
   const { router } = mount('/settings')
-  const link = await screen.findByRole('link', { name: 'System prompt' })
+  const link = await screen.findByRole('link', { name: /System prompt App-wide instructions/ })
   expect(link).toHaveAttribute('href', '/settings/system-prompt')
   await userEvent.click(link)
   expect(await screen.findByRole('textbox', { name: 'System prompt' }))
     .toHaveValue('Workflow and chat instructions')
   expect(router.state.location.pathname).toBe('/settings/system-prompt')
+  expect(screen.getByText(/The Operator is excluded/)).toBeVisible()
   const breadcrumbs = screen.getByRole('navigation', { name: 'Breadcrumbs' })
   expect(within(breadcrumbs).getAllByRole('listitem').map(item => item.textContent))
     .toEqual(['Settings', 'System prompt'])
