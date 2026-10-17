@@ -59,8 +59,6 @@ export function mergeChatMessages(...sources: readonly (readonly Message[])[]): 
   return order.map((id) => messages.get(id)!)
 }
 export function acceptAgentChatState(previous: AgentChatState | undefined, incoming: AgentChatState, source: 'read' | 'receipt' = 'receipt'): AgentChatState {
-  if (source === 'receipt' && previous?.conversation && incoming.conversation
-    && previous.conversation.id !== incoming.conversation.id) return previous
   const qualificationChanged = previous?.qualificationKey !== incoming.qualificationKey
   if (previous && sameAgentChatContext(previous.context, incoming.context) && source === 'receipt' && previous.qualificationKey !== incoming.qualificationKey) {
     incoming = { ...incoming, qualificationKey: previous.qualificationKey,
