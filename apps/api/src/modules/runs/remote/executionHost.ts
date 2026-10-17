@@ -20,6 +20,7 @@ import { HistoryObservationPages } from './historyObservationPages.js'
 import { startNativeHistoryDownload } from './nativeHistoryPage.js'
 import { DomainError } from '../../errors.js'
 import { logIgnoredError } from '../../diagnostics/ignoredError.js'
+import { inspectNativeResponse } from '../../harnesses/responseAvailability.js'
 
 function executableHarness(harness: RecordedAgentHarness): AgentHarness {
   if (harness === 'opencode') {
@@ -155,6 +156,14 @@ export class RemoteExecutionHost {
     }
     if (frame.method === 'prepare') return this.prepare(frame)
     if (frame.method === 'reattach') return this.reattach(frame)
+    if (frame.method === 'inspect-response-availability') {
+      const resident = await this.resident(frame.intent.operationId, 'read')
+      if (!isDeepStrictEqual(resident.session, frame.session)) throw new Error('Wrong native inspection session')
+      return inspectNativeResponse(resident.manager, resident.session, frame.query, {
+        signal: resident.controller.signal,
+        isCurrent: () => this.residents.get(frame.intent.operationId) === resident && !this.closing,
+      })
+    }
     if (frame.method === 'capabilities' || frame.method === 'inspect-mcp') return this.inspect(frame, frame.method === 'capabilities' ? 'capabilities' : 'inspectMcp')
     if (frame.method === 'session-controls-read' || frame.method === 'session-preferences-apply' || frame.method === 'session-compact' || frame.method === 'session-compact-reconcile') {
       const resident = await this.resident(frame.intent.operationId, ['session-compact', 'session-preferences-apply'].includes(frame.method) ? 'control' : 'read')
@@ -670,8 +679,16 @@ export class RemoteExecutionHost {
       return this.ports.journal.status(command.operationId)
     }
     if (command.action.kind === 'respond') {
-      const pending = await resident.manager.pending(resident.session)
-      if (!pending || pending.turn.nativeRequestId !== command.action.nativeInteractionId || pending.session.nativeSessionId !== command.native?.sessionId || pending.turn.nativeTurnId !== command.native?.turnId) throw new Error('Original native question no longer pending')
+      const history = await resident.manager.history(resident.session)
+      const requestId = command.action.nativeInteractionId
+      const pending = history.pendingInteractions.find(candidate => candidate.turn.nativeRequestId === requestId
+        && isDeepStrictEqual(candidate.session, resident.session)
+        && candidate.session.nativeSessionId === command.native?.sessionId
+        && candidate.turn.nativeTurnId === command.native?.turnId)
+      const requestDelivery = history.interactionDeliveries?.find(candidate => candidate.nativeRequestId === requestId)
+      if (!pending || requestDelivery && requestDelivery.state !== 'pending') {
+        throw new Error('Original native question no longer pending')
+      }
       const selectedOption = ApprovalResponseOptionSchema.parse(command.action.response)
       const offered = pending.responseOptions.find(option => option.optionId === selectedOption.optionId)
       if (!offered || !isDeepStrictEqual(withInteractionResponse(offered, selectedOption.response), selectedOption)) {
