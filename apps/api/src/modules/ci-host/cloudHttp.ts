@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
-import { CircleAccountIdSchema, DEFAULT_CIRCLE_ACCOUNT_ID, type CiHostRun } from '@foreman-code/contracts'
+import type { CiHostRun } from '@foreman-code/contracts'
 import { componentLogger } from '../diagnostics/logger.js'
 import { DomainError } from '../errors.js'
 import type { HostCiPorts } from './runner.js'
@@ -7,7 +7,6 @@ import { configuredCircleToken } from './circleCredentials.js'
 
 export interface CloudRestOptions {
   fetch?: typeof fetch
-  circleAccountId?: string
   circleToken?: () => Promise<string | null>
 }
 type Provider = 'github' | 'circleci'
@@ -16,7 +15,7 @@ interface TokenEntry {
   expiresAt: number
   lastError: string | null
 }
-type TokenCache = Map<string, TokenEntry>
+type TokenCache = Map<Provider, TokenEntry>
 const TOKEN_RETRY_MS = 30_000
 const log = componentLogger('jobs')
 const deadlines = new AsyncLocalStorage<AbortSignal>()
@@ -25,8 +24,6 @@ const credentials = new WeakMap<HostCiPorts, TokenCache>()
 export class CloudHttp {
   private readonly cache: TokenCache
   private readonly fetch: typeof fetch
-  private readonly credentialKey: string
-  private readonly responseTokens = new WeakMap<Response, string[]>()
   private observedTransport: CiHostRun['transport']
   private fallbackCount = 0
 
@@ -34,8 +31,6 @@ export class CloudHttp {
 
   constructor(private readonly ports: HostCiPorts, private readonly provider: Provider,
     private readonly options: CloudRestOptions = {}) {
-    const accountId = CircleAccountIdSchema.parse(options.circleAccountId ?? DEFAULT_CIRCLE_ACCOUNT_ID)
-    this.credentialKey = `${provider}:${provider === 'circleci' ? accountId : ''}`
     let cache = credentials.get(ports)
     if (!cache) {
       cache = new Map()
@@ -45,19 +40,10 @@ export class CloudHttp {
     this.fetch = options.fetch ?? globalThis.fetch
   }
 
-  invalidate(): void {
-    this.cache.delete(this.credentialKey)
-  }
-
-  /** The account adapter uses the same cached credential for CLI and REST. */
-  async withCredential<T>(operation: (token: string | null) => Promise<T>): Promise<T> {
-    return operation(await this.token())
-  }
-
   private token() {
-    let entry = this.cache.get(this.credentialKey)
+    let entry = this.cache.get(this.provider)
     if (entry && entry.expiresAt <= Date.now()) {
-      this.cache.delete(this.credentialKey)
+      this.cache.delete(this.provider)
       entry = undefined
     }
     if (!entry) {
@@ -66,10 +52,10 @@ export class CloudHttp {
         if (!token) next.expiresAt = Date.now() + TOKEN_RETRY_MS
         return token
       }, error => {
-        if (this.cache.get(this.credentialKey) === next) this.cache.delete(this.credentialKey)
+        if (this.cache.get(this.provider) === next) this.cache.delete(this.provider)
         throw error
       })
-      this.cache.set(this.credentialKey, next)
+      this.cache.set(this.provider, next)
       entry = next
     }
     return entry.pending
@@ -99,7 +85,7 @@ export class CloudHttp {
 
   private observeTransport(token: string | null) {
     const previous = this.observedTransport?.source
-    const lastError = token ? null : this.cache.get(this.credentialKey)?.lastError ?? null
+    const lastError = token ? null : this.cache.get(this.provider)?.lastError ?? null
     if (token) {
       this.observedTransport = { source: 'rest', reason: null, lastError: null, fallbackCount: this.fallbackCount }
       if (previous === 'cli') {
@@ -117,7 +103,7 @@ export class CloudHttp {
 
   async request(path: string, options: { timeoutMs?: number; headers?: Record<string, string>; method?: string; body?: string } = {}) {
     const token = await this.token()
-    const pending = this.cache.get(this.credentialKey)
+    const pending = this.cache.get(this.provider)
     this.observeTransport(token)
     if (!token) return null
     const base = this.provider === 'github' ? 'https://api.github.com' : 'https://circleci.com'
@@ -133,26 +119,22 @@ export class CloudHttp {
         ...options.headers,
       },
     })
-    const usedTokens = [token]
     try {
       let response = await send(token)
       if (response.status === 401) {
         await response.body?.cancel()
         // A concurrent rejected request must share the same credential refresh.
-        if (this.cache.get(this.credentialKey) === pending) this.cache.delete(this.credentialKey)
+        if (this.cache.get(this.provider) === pending) this.cache.delete(this.provider)
         const refreshed = await this.token()
         this.observeTransport(refreshed)
         if (!refreshed) return null
-        usedTokens.push(refreshed)
         response = await send(refreshed)
       }
-      this.responseTokens.set(response, usedTokens)
       return response
     } catch (error) {
       if (error instanceof DomainError) throw error
       // Transport errors must not expose a token, signed URL, or credential-file path.
-      throw new DomainError('CI_CLOUD_FAILED', `${this.label} HTTPS request failed.`, 502, undefined,
-        { cause: new Error('Cloud CI HTTPS transport failed.') })
+      throw new DomainError('CI_CLOUD_FAILED', `${this.label} HTTPS request failed.`, 502, undefined, { cause: error })
     }
   }
 
@@ -161,8 +143,7 @@ export class CloudHttp {
       return await deadlines.run(AbortSignal.timeout(timeoutMs), operation)
     } catch (error) {
       if (error instanceof DomainError) throw error
-      throw new DomainError('CI_CLOUD_FAILED', `${this.label} HTTPS request failed.`, 502, undefined,
-        { cause: new Error('Cloud CI HTTPS transport failed.') })
+      throw new DomainError('CI_CLOUD_FAILED', `${this.label} HTTPS request failed.`, 502, undefined, { cause: error })
     }
   }
 
@@ -196,10 +177,8 @@ export class CloudHttp {
     } catch {
       // ignore: non-JSON error bodies use the HTTP status description.
     }
-    const tokens = this.responseTokens.get(response) ?? [await this.token()]
-    for (const token of tokens) {
-      if (token) detail = detail.split(token).join('[redacted]')
-    }
+    const token = await this.token()
+    if (token) detail = detail.split(token).join('[redacted]')
     if (this.provider === 'github') detail = `gh: ${detail} (HTTP ${response.status})`
     throw new DomainError('CI_CLOUD_FAILED', message(detail.trim().slice(0, 300)), 502)
   }
@@ -224,8 +203,7 @@ export class CloudHttp {
       return Buffer.from(await response.arrayBuffer())
     } catch (error) {
       if (error instanceof DomainError) throw error
-      throw new DomainError('CI_CLOUD_FAILED', `${this.label} artifacts could not be downloaded.`, 502, undefined,
-        { cause: new Error('Cloud CI artifact transport failed.') })
+      throw new DomainError('CI_CLOUD_FAILED', `${this.label} artifacts could not be downloaded.`, 502, undefined, { cause: error })
     }
   }
 }

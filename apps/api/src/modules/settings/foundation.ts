@@ -19,7 +19,6 @@ import {
   PromptTextSchema, DEFAULT_PROMPT_TEXT, type PromptText, type PromptSettingSnapshot,
 } from '@foreman-code/contracts/management'
 
-import { CircleAccountsSchema, DEFAULT_CIRCLE_ACCOUNTS, type CircleAccounts } from '@foreman-code/contracts/management'
 import { CircleCreditAllowanceSchema, DEFAULT_CIRCLE_CREDIT_ALLOWANCE,
   type CircleCreditAllowance } from '@foreman-code/contracts/management'
 import { RemoteExecutionSettingsSchema, DEFAULT_REMOTE_EXECUTION_SETTINGS,
@@ -86,14 +85,6 @@ export class PostgresFoundationSettingsRepository {
 
   updateGeneralSettings(value: GeneralSettings, expectedRevision: number | undefined, client: pg.ClientBase) {
     return this.write('general-settings', GeneralSettingsSchema.parse(value), expectedRevision, client)
-  }
-
-  getCircleAccounts(client?: pg.ClientBase): Promise<VersionedSetting<CircleAccounts>> {
-    return this.read('circle-accounts', CircleAccountsSchema, DEFAULT_CIRCLE_ACCOUNTS, client)
-  }
-
-  updateCircleAccounts(value: CircleAccounts, expectedRevision: number | undefined, client: pg.ClientBase) {
-    return this.write('circle-accounts', CircleAccountsSchema.parse(value), expectedRevision, client)
   }
 
   getCircleCreditAllowance(client?: pg.ClientBase): Promise<VersionedSetting<CircleCreditAllowance>> {

@@ -1,4 +1,4 @@
-import { tmpdir } from 'node:os'
+import { persistentFixtureRoot } from '../../../../../test/helpers/fixtureStorage.js'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -78,7 +78,7 @@ export const roots:string[]=[],journals:RemoteOperationJournal[]=[]
 
 afterEach(async()=>{vi.restoreAllMocks();await Promise.all(journals.splice(0).map(journal=>journal.close()));await Promise.all(roots.splice(0).map(root=>rm(root,{recursive:true,force:true})))})
 
-export async function directory() {const root=await mkdtemp(join(tmpdir(), 'installed-workflow-'));roots.push(root);return root}
+export async function directory() {const root=await mkdtemp(join(persistentFixtureRoot, 'installed-workflow-'));roots.push(root);return root}
 
 export function nativeFixture() {
   const connection=DeviceConnectionIdentitySchema.parse({mainId:randomUUID(),deviceId:randomUUID(),workerInstallationId:randomUUID(),
@@ -294,7 +294,7 @@ export async function runningInstalledFixture(phase: 'generation' | 'approval wa
       return outputs
     })
   }
-  let expiresAt = new Date(Date.now() + 15 * 60_000).toISOString()
+  let expiresAt = new Date((fixtureOptions.mainNow?.() ?? Date.now()) + 15 * 60_000).toISOString()
   let launchDenied = false
   let cleanupOnly = false
   const retain = fixtureOptions.retainReviewer ?? false
@@ -303,6 +303,7 @@ export async function runningInstalledFixture(phase: 'generation' | 'approval wa
   let mcpLeaseRevoked = false
   const requests: Array<{ namespace: string; payload: unknown; binding: DeviceSessionBinding }> = []
   const options: InstalledWorkflowHostOptions = { stateDirectory: f.root, registry,
+    ...(fixtureOptions.mainNow ? { mainNow: fixtureOptions.mainNow } : {}),
     pairing: { formatVersion: 1, mainId: f.context.binding.mainId, deviceId: f.context.binding.deviceId,
       workerInstallationId: f.context.binding.workerInstallationId, keyRevision: 1, authorizationRevision: 1,
       endpoint: 'wss://unit.invalid/device', mainPublicKeyFingerprint: 'a'.repeat(64), credential: 'b'.repeat(64),
