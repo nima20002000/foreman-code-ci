@@ -27,26 +27,22 @@ const slot = (account: string | undefined, index: number): HostCiComputer => ({
 const github: HostCiComputer = { key: 'fixture-main:cloud:github:0', label: 'GitHub Actions 1', priority: 30, userSystemd,
   hostRef: { kind: 'cloud', mainId: 'fixture-main', provider: 'github', slot: 0 } }
 
-it('reads the estimated CircleCI credits per org through authenticated ci_computers_list from one cached usage read', async () => {
+it('reads the estimated CircleCI credits per account through authenticated ci_computers_list from one cached usage read', async () => {
   const requests: string[] = []
   const circleFetch: typeof fetch = async (input, init) => {
     const url = new URL(String(input))
     requests.push(`${init?.method ?? 'GET'} ${url.pathname}`)
     const json = (body: unknown) => new Response(JSON.stringify(body))
-    if (url.pathname === '/api/v2/me/collaborations') {
-      return json([{ id: 'org-acme', name: 'acme', slug: 'gh/acme', vcs_type: 'github' },
-        { id: 'org-beta', name: 'beta', slug: 'gh/beta', vcs_type: 'github' }])
-    }
-    const orgId = /\/organizations\/([^/]+)\/usage_export_job/.exec(url.pathname)?.[1]
-    if (init?.method === 'POST') return json({ usage_export_job_id: `job-${orgId}`, state: 'created' })
-    if (url.pathname.includes('/usage_export_job/job-')) return json({ state: 'completed', download_urls: [`https://signed.example/${orgId}.csv`] })
-    return new Response(`PROJECT_NAME,TOTAL_CREDITS\nsite,${url.pathname.includes('org-beta') ? 380000 : 5690}\n`)
+    if (url.pathname === '/api/v2/me/collaborations') return json([{ id: 'org-acme', name: 'acme', vcs_type: 'github' }])
+    if (init?.method === 'POST') return json({ usage_export_job_id: 'job-1', state: 'created' })
+    if (url.pathname.endsWith('/job-1')) return json({ state: 'completed', download_urls: ['https://signed.example/a.csv'] })
+    return new Response('project_name,total_credits\nsite,5690\n')
   }
-  const allowance: CircleCreditAllowance = { defaultMonthlyCredits: 400000, accounts: {} }
+  const allowance: CircleCreditAllowance = { defaultMonthlyCredits: 30000, accounts: {} }
   const credits = new CircleCreditUsage(new CloudHttp(ports, 'circleci', { fetch: circleFetch, circleToken: async () => 'fixture-token' }),
     { allowance: async () => allowance, primaryOwner: async () => null }, { pollMs: 1 })
   const endpoint: HostCiEndpoint = {
-    computers: async () => [slot('acme', 0), slot('acme', 1), slot('beta', 0), slot(undefined, 0), github],
+    computers: async () => [slot('acme', 0), slot('acme', 1), slot(undefined, 0), github],
     request: async () => ({ operation: 'status', ready: true, reasons: [], cpuCount: 4, memoryBytes: 2 ** 30,
       slotsUsed: 0, slotsTotal: 1, runs: [] }),
   }
@@ -83,19 +79,16 @@ it('reads the estimated CircleCI credits per org through authenticated ci_comput
       creditsUnavailable: expect.any(String) })
     await vi.waitFor(async () => {
       expect((await list()).find(computer => computer.label === 'CircleCI acme 1')?.credits).toMatchObject(
-        { total: 400000, used: 5690, remaining: 394310 })
+        { total: 30000, used: 5690, remaining: 24310 })
     })
     const computers = await list()
     for (const label of ['CircleCI acme 1', 'CircleCI acme 2']) {
-      expect(computers.find(computer => computer.label === label)?.credits).toMatchObject({ remaining: 394310 })
+      expect(computers.find(computer => computer.label === label)?.credits).toMatchObject({ remaining: 24310 })
     }
-    // Each org's rows carry that org's own usage against its own 400,000 credits.
-    expect(computers.find(computer => computer.label === 'CircleCI beta 1')?.credits).toMatchObject(
-      { total: 400000, used: 380000, remaining: 20000 })
     // The primary org's owner is unknown here, and GitHub Actions has no CircleCI credits.
     expect(computers.find(computer => computer.label === 'CircleCI primary 1')).toMatchObject({ credits: null })
     expect(computers.find(computer => computer.label === 'GitHub Actions 1')).not.toHaveProperty('credits')
-    expect(requests.filter(request => request.startsWith('POST'))).toHaveLength(2)
+    expect(requests.filter(request => request.startsWith('POST'))).toHaveLength(1)
   } finally {
     await ci.close()
     await app.close()

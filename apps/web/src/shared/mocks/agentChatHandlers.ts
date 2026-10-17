@@ -1,7 +1,7 @@
 import { http, HttpResponse } from 'msw'
 import {
   AgentChatContextSchema, AgentChatExecutionActivityPageSchema, AgentChatQuerySchema, AgentChatStateSchema, CancelQueuedAgentChatTurnRequestSchema,
-  EnsureAgentChatConversationRequestSchema, InterruptAgentChatRequestSchema, RespondAgentChatInteractionRequestSchema, SendAgentChatMessageRequestSchema,
+  InterruptAgentChatRequestSchema, RespondAgentChatInteractionRequestSchema, SendAgentChatMessageRequestSchema,
   SendAgentChatMessageResponseSchema, agentChatFixtures, type AgentChatContext, type AgentChatState,
   type AgentChatExecutionActivityPage, type AgentChatTurn,
 } from '@foreman-code/contracts/agent-chat'
@@ -110,19 +110,6 @@ export function createAgentChatMock(initial: AgentChatState = agentChatFixtures.
       const response = SendAgentChatMessageResponseSchema.parse({ state, turn, replayed: false })
       receipts.set(key, { input: JSON.stringify(input), conversationId: conversation.id })
       return HttpResponse.json(response)
-    }),
-    http.post(`${root}/conversation`, async ({ request, params }) => {
-      const input = EnsureAgentChatConversationRequestSchema.parse(await request.json()); record(request, input)
-      const context = AgentChatContextSchema.parse({ workspaceId: params.workspaceId, ...input.context })
-      const before = getState(context)
-      if (before.conversation) return HttpResponse.json({ state: before })
-      const { runId, ...identity } = context
-      const state = AgentChatStateSchema.parse({ ...before, sessionState: 'idle', revision: before.revision + 1,
-        conversation: { ...identity, id: `conversation-created-${++serial}`, agentConfigurationVersionId: `configuration-${context.agentId}`,
-          harness: before.capabilities.harness,
-          origin: runId ? { kind: 'run_execution' as const, runId, executionId: `execution-${runId}`, sourceNativeSessionId: `source-${runId}` } : { kind: 'fresh' as const },
-          nativeSession: null, createdAt: at, updatedAt: at } })
-      return commandState(state)
     }),
     http.post(`${root}/conversations/:id/interrupt`, async ({ request, params }) => {
       const input = InterruptAgentChatRequestSchema.parse(await request.json()); record(request, input)
