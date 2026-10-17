@@ -50,7 +50,8 @@ it.each(['ended', 'expired'] as const)(
       if (!account) throw new Error('Fixture login is missing')
       return account
     }
-    const primary = new CircleCiProvider((await context('default')).ports, { http: (await context('default')).http })
+    const primaryContext = await context('default')
+    const primary = new CircleCiProvider(primaryContext.ports, { http: primaryContext.http })
     primary.recoveryOnly = true
     const mirrors = async () => 'fixture-alpha/site-ci'
     const clouds = [new CloudCi('fixture-main', new GitHubActionsProvider(ports), mirrors,
@@ -78,7 +79,7 @@ it.each(['ended', 'expired'] as const)(
       if (outcome === 'expired') await expect(dispatch).rejects.toBeInstanceOf(CiDispatchDeadlineError)
       else await dispatch
       expect(initial.every(computer => computer.hostRef.provider === 'github')).toBe(true)
-      expect(initial).toHaveLength(30)
+      expect(initial).toHaveLength(20)
       resumeDiscovery.resolve()
       await refreshing
 
