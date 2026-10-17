@@ -5,15 +5,12 @@ import { sessionIsSwitching } from '../../shared/api/sessionBoundary'
 import { AgentConversation } from '../conversations/agentChat/AgentConversation'
 import { AgentChatHeader } from '../conversations/agentChat/AgentChatHeader'
 import { agentChatContextKey } from '../conversations/agentChat/model'
-import { useAgentChatWindowClose } from '../conversations/agentChat/agentChatWindows'
 import '../conversations/agentChat/agentChat.css'
 
-export function AgentChatPanel({ name, role, activity, running, runLabel, context, onClose: popoverClose, onNewConversation }: {
+export function AgentChatPanel({ name, role, activity, running, runLabel, context, onClose, onNewConversation }: {
   name: string; role?: string; activity?: string; running?: boolean; runLabel?: string
   context?: AgentChatContext; onClose?: () => void; onNewConversation?: () => void
 }) {
-  // Inside a floating chat window, the X closes that window.
-  const onClose = useAgentChatWindowClose() ?? popoverClose
   const generation = useHarnessSessionEpoch()
   if (sessionIsSwitching()) return null
   return <div className="agent-chat-panel">

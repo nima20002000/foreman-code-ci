@@ -39,7 +39,7 @@ beforeEach(() => {
 })
 afterEach(() => { cleanup(); clients.splice(0).forEach((client) => client.clear()); vi.unstubAllGlobals() })
 
-describe('PR17 Operator interaction regressions', () => {
+describe('Operator chat interactions', () => {
   it('polls attention while closed without downloading message histories', async () => {
     const client = renderChat()
     await waitFor(() => expect(listOperatorConversationSummaries).toHaveBeenCalled())
