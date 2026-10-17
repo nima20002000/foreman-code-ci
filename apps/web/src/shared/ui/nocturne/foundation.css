@@ -61,8 +61,7 @@
 .n-icon-button.n-button--lg { width: 44px; height: 44px; }
 /* Inputs */
 .n-field { display: grid; gap: 7px; min-width: 0; }
-.n-field > label, .n-field-label > label, .n-field .n-between > label, .n-radio-group legend { color: var(--n-text); font-size: 12px; font-weight: 500; }
-.n-field-label { display: flex; align-items: center; }
+.n-field > label, .n-field .n-between > label, .n-radio-group legend { color: var(--n-text); font-size: 12px; font-weight: 500; }
 .n-field-hint { display: block; color: var(--n-faint); font-size: 11px; line-height: 1.6; }
 .n-field-error { display: flex; gap: 6px; align-items: start; color: var(--n-danger); font-size: 12px; line-height: 1.6; }
 .n-field-error svg { margin-top: 2px; }
