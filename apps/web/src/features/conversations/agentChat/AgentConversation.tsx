@@ -1,4 +1,3 @@
-import { InfoHint } from '../../../shared/ui/InfoHint'
 import { errorMessage } from '../../../shared/errorMessage'
 import { useSessionControls } from '../sessionControls/useSessionControls'
 import { compactionBlocksSend, parseSessionCommand } from '@foreman-code/contracts'
@@ -24,8 +23,6 @@ import { useAgentChat } from './useAgentChat'
 import { ProviderAccountChip, ProviderAccountProblem } from '../../provider-accounts/ProviderAccountChip'
 import { SessionContext } from '../sessionControls/SessionControls'
 import { useAgentConversationComposer } from './useAgentConversationComposer'
-import { useFirstAttachment } from './useFirstAttachment'
-import { AgentChatSettings } from './AgentChatSettings'
 import './agentChat.css'
 import '../chatAttachments.css'
 
@@ -56,10 +53,7 @@ function AgentConversationContent({ context, name, role, activity, runLabel, onC
     ...(conversation.origin.kind === 'run_execution' ? { runId: conversation.origin.runId, executionId: conversation.origin.executionId } : {}),
   } } : null)
   const writeReason = retired ? 'Retired harness (OpenCode): read-only' : chat.blocked('agent_chat:write')
-  const firstAttachment = useFirstAttachment({ context, executionId: state?.sourceTranscript?.executionId,
-    hasConversation: !!conversation, ready: !!state && !writeReason, attachments, refresh: chat.refresh })
-  const attachmentDraft = firstAttachment.draft
-  const drop = useFileDrop({ disabled: !!writeReason || !attachmentDraft.canAdd, onFiles: attachmentDraft.addFiles })
+  const drop = useFileDrop({ disabled: !!writeReason || !attachments.canAdd, onFiles: attachments.addFiles })
   const draft = useConversationDraftStore((store) => store.drafts[chat.draftKey] ?? '')
   const { composer, sendAgain, setSendAgain, resendCommand, resendControl, resendPending,
     commandError, commandCompaction, focus, submit } = useAgentConversationComposer({ chat, state, sessionControls, attachments, draft })
@@ -118,7 +112,7 @@ function AgentConversationContent({ context, name, role, activity, runLabel, onC
   const controlError = commandError?.draftKey === chat.draftKey
     && (!commandCompaction || commandCompaction.status === 'failed')
     ? commandCompaction?.message ?? commandError.message : undefined
-  let attention = controlError ?? chat.localError ?? firstAttachment.error
+  let attention = controlError ?? chat.localError
   let attentionAction: ReactNode
   if (!attention && error) {
     attention = errorMessage(error, 'Delivery failed')
@@ -171,9 +165,8 @@ function AgentConversationContent({ context, name, role, activity, runLabel, onC
         pending={chat.pending} controlPending={sessionControls.mutation.isPending}
         hasAttachments={attachments.hasAttachments} canStop={canStop} stopReason={stopReason}
         onStop={() => { chat.stop(); focus() }} onSubmit={(content, mode) => { void submit('next_turn', content, mode) }}
-        attachmentControl={!composerDisabled ? <ChatAttachmentControl draft={attachmentDraft} disabled={!!writeReason} composerDrop={drop} /> : undefined}
+        attachmentControl={!composerDisabled ? <ChatAttachmentControl draft={attachments} disabled={!!writeReason} composerDrop={drop} /> : undefined}
         actions={!retired ? <>
-          <AgentChatSettings context={context} conversationVersionId={conversation?.agentConfigurationVersionId} disabled={!!writeReason} />
           {state.activeTurn && (state.capabilities.steer !== 'unavailable' || state.capabilities.unavailable.steer)
             ? <Tooltip content={steerReason ?? 'Steer the active turn'}>
               <IconButton size="sm" variant="ghost" label="Steer" title={steerReason ?? 'Steer the active turn'} disabled={!!steerReason || empty}
@@ -189,7 +182,7 @@ function AgentConversationContent({ context, name, role, activity, runLabel, onC
     <div className="n-sr-only" aria-live="polite" aria-atomic="true">{latestReply ? `New reply from ${name}: ${latestReply.content}` : ''}</div>
     <Dialog open={sendAgain !== undefined} onOpenChange={(open) => { if (!open) setSendAgain(undefined) }}
       title={resendControl ? 'Apply session command?' : 'Send again as a new message?'}
-      description={resendControl ? undefined
+      description={resendControl ? 'This applies the displayed command to this chat’s native session.'
         : 'The original message may already have been accepted. This creates a new message and can repeat work. It is not a retry or a resume.'}
       dismissible={!resendPending} busy={resendPending} role="alertdialog" size="sm">
       {sendAgain ? <div className="n-stack">
@@ -205,12 +198,12 @@ function AgentConversationContent({ context, name, role, activity, runLabel, onC
             }} />
         </> : null}
         {resendCommand.kind === 'plan-task' ? <p>Mode: Plan</p> : null}
-        {resendControl ? <p>Attached files will not be sent.</p> : <>
+        {resendControl ? <p>This command uses native session controls. Attached files will not be sent.</p> : <>
           <p>Only the original file pins below will be sent. Displayed output files are excluded.</p>
           {sendAgain.attachments?.length ? <>
           <CodeBlock label="Original file pins" language="json" code={JSON.stringify(sendAgain.attachments, null, 2)} />
           {resendFileClient ? <MessageFileCards attachments={sendAgain.attachments} files={resendFiles} client={resendFileClient} /> : null}
-          </> : <p>No original files.</p>}
+          </> : <p>No original files. This new message will contain text only.</p>}
         </>}
         {resendReason ? <p className="n-field-error" role="alert">{resendReason}</p> : null}
         <div className="n-actions"><Button disabled={resendPending} onClick={() => setSendAgain(undefined)}>Keep it</Button>
@@ -222,8 +215,7 @@ function AgentConversationContent({ context, name, role, activity, runLabel, onC
               }).then(sent => {
                 if (sent) setSendAgain(draft => draft === sendAgain ? undefined : draft)
               })
-          }}>{resendControl ? 'Apply session command' : 'Send as new message'}</Button>
-          {resendControl && <InfoHint label="Apply session command">This applies the displayed command to this chat’s native session. This command uses native session controls.</InfoHint>}</div>
+          }}>{resendControl ? 'Apply session command' : 'Send as new message'}</Button></div>
       </div> : null}
     </Dialog>
   </div>

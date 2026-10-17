@@ -26,10 +26,3 @@
 .computer-card-worker { display: grid; gap: .35rem; }
 .computer-card-worker .n-button { justify-self: start; }
 .computer-card-worker-error { color: var(--n-danger, var(--n-text)); }
-.computer-name { display: inline-flex; align-items: center; gap: .35rem; max-width: 100%; min-width: 0; padding: 0; border: 0; background: none;
-  color: inherit; font: inherit; cursor: text; }
-.computer-name > span { overflow: hidden; text-overflow: ellipsis; }
-.computer-name > svg { flex: 0 0 auto; color: var(--n-muted); opacity: 0; }
-.computer-name:hover > svg, .computer-name:focus-visible > svg { opacity: 1; }
-.computer-name-field { flex: 1; min-width: 0; }
-.computer-name-field > label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
