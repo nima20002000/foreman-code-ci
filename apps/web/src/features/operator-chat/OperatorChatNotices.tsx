@@ -2,6 +2,7 @@ import type { Dispatch, SetStateAction } from 'react'
 import type { OperatorConversationState } from '@foreman-code/contracts'
 import { Alert, Button, EmptyState, Icon, LoadingState } from '../../shared/ui/nocturne'
 import { identityEpoch } from '../../shared/api/protectedChatStorage'
+import { ChatNotice } from '../conversations/ChatNotice'
 import { OperatorSetupNotice } from './OperatorSetupNotice'
 import { useOperatorChatStore } from './operatorChatStore'
 import type { AppRequest } from './operatorChatShared'
@@ -32,9 +33,9 @@ export function OperatorChatNotices({ handoffNotice, setHandoffNotice, recovered
 }) {
   const select = useOperatorChatStore((state) => state.select)
   return <>
-    {handoffNotice && handoffNotice.epoch === identityEpoch() ? <p role="status">Your continued chat is ready. <Button size="sm" variant="ghost"
-      onClick={() => { select(handoffNotice.id); setHandoffNotice(undefined) }}>Open continued chat</Button></p> : null}
-    {recoveredSelection ? <p role="status">The previous conversation is no longer available. Start a new chat. Any saved draft or pending message has been kept on this device.</p> : null}
+    {handoffNotice && handoffNotice.epoch === identityEpoch() ? <ChatNotice tone="info" title="Your continued chat is ready."
+      action={<Button size="sm" variant="ghost" onClick={() => { select(handoffNotice.id); setHandoffNotice(undefined) }}>Open continued chat</Button>} /> : null}
+    {recoveredSelection ? <ChatNotice title="The previous conversation is no longer available.">Start a new chat. Any saved draft or pending message has been kept on this device.</ChatNotice> : null}
     {!missingSelection ? <OperatorSetupNotice data={shownSetup.data} checking={shownSetup.isFetching} failed={shownSetup.isError} onRetry={() => void shownSetup.refetch()} /> : null}
     {remove.error instanceof Error ? <Alert live tone="danger" title="Chat could not be deleted">{remove.error.message}</Alert> : null}
     {restore.error instanceof Error ? <Alert live tone="danger" title="Chat could not be restored">{restore.error.message}</Alert> : null}

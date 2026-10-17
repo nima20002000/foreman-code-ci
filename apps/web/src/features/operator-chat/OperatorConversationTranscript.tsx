@@ -2,7 +2,7 @@ import type { OperatorConversationState } from '@foreman-code/contracts'
 import { Alert, Button } from '../../shared/ui/nocturne'
 import { sessionGeneration } from '../../shared/api/sessionBoundary'
 import { ChatDecisionReceipts } from '../conversations/ChatDecisionReceipts'
-import { PinnedProviderAccount } from '../provider-accounts/PinnedProviderAccount'
+import { ProviderAccountProblem } from '../provider-accounts/ProviderAccountChip'
 import { OperatorTranscript } from './OperatorTranscript'
 import { OperatorApprovalCard } from './OperatorApprovalCard'
 import { useOperatorChatStore } from './operatorChatStore'
@@ -10,7 +10,7 @@ import type { PartialState } from './operatorChatShared'
 import type { useOperatorChatReadback } from './useOperatorChatReadback'
 import type { useOperatorConversationMutations } from './useOperatorConversationMutations'
 
-/** Pinned account, ended/handoff notices, the transcript and its pending approval card. */
+/** Account problems, ended/handoff notices, the transcript and its pending approval card. */
 export function OperatorConversationTranscript({ conversation, retired, archived, requestId, selectedId, partial, partialText, thinkingText,
   selected, respond }: {
   conversation: OperatorConversationState
@@ -26,7 +26,7 @@ export function OperatorConversationTranscript({ conversation, retired, archived
 }) {
   const select = useOperatorChatStore((state) => state.select)
   return <>
-    {!retired ? <PinnedProviderAccount binding={conversation.providerAccountBinding} /> : null}
+    {!retired ? <ProviderAccountProblem binding={conversation.providerAccountBinding} /> : null}
     {archived ? <Alert tone="warning" title="Conversation ended">This conversation is read-only. Its history and pending receipt remain available.</Alert> : null}
     {conversation.handoff ? <p className="operator-chat-handoff">Continued from <Button size="sm" variant="ghost" onClick={() => select(conversation.handoff!.parentConversationId)}>{conversation.handoff.sourceHarness} chat</Button>
       {conversation.handoff.omittedMessages ? ` · ${conversation.handoff.omittedMessages} older messages omitted from agent context` : ''}</p> : null}

@@ -10,8 +10,6 @@ export function ComputerSyncPanel({ target }: { target: DeviceProvisioningTarget
 function ComputerSyncContent({ state }: { state: ReturnType<typeof useComputerSync> }) {
   const { status, update, change, retry, uncertain, refresh } = state
   return <>
-      <p>Syncthing shares local workspace folders over Tailscale. Main connects the computers.
-        Turning sync off keeps local files. Turning it off on Main stops sharing that workspace.</p>
       {status.isPending && <LoadingState label="Reading sync status…" />}
       {status.isError && <Alert tone="danger" title={status.error.message} />}
       {status.data?.message && <Alert tone="warning" title={status.data.message} />}

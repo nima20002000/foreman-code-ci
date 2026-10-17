@@ -4,6 +4,7 @@ import type { ReactNode } from 'react'
 import { useProviderHarnessModels } from '../provider-accounts/useProviderHarnessModels'
 import { useHarnessDefaultsQuery } from '../../shared/api/query'
 import { Button, Icon, SearchField, SegmentedControl, Slider, Switch } from '../../shared/ui/nocturne'
+import { useFloatingSurface } from '../../shared/ui/nocturne/useFloatingSurface'
 import { harnessNames } from '../settings/settingsPresentation'
 import { supportedEfforts } from '../settings/harnessModelSelection'
 import { ProviderAccountSelect } from '../provider-accounts/ProviderAccountSelect'
@@ -19,6 +20,7 @@ export function OperatorComposerSettings({ value, onChange, disabled, access }: 
   const [search, setSearch] = useState('')
   const root = useRef<HTMLDivElement>(null)
   const trigger = useRef<HTMLButtonElement>(null)
+  const panel = useRef<HTMLDivElement>(null)
   const restoreFocus = useRef<HTMLElement | null>(null)
   const id = useId()
   const models = catalog.data?.models ?? []
@@ -28,6 +30,8 @@ export function OperatorComposerSettings({ value, onChange, disabled, access }: 
     : (model?.reasoningEfforts ?? []).filter((effort) => ClaudeEffortSchema.safeParse(effort).success)
   const effort = value.harness === 'codex' ? value.reasoningEffort : value.harness === 'claude' ? value.effort ?? '' : ''
   const fastSupported = model?.serviceTiers.includes('priority') === true
+  // A native top-layer surface placed from the trigger, so it can never open outside the viewport or be clipped by the chat.
+  useFloatingSurface(open, trigger, panel, 288, 'end')
   useEffect(() => {
     if (!open) return
     const close = (event: PointerEvent) => { if (event.target instanceof Node && !root.current?.contains(event.target)) setOpen(false) }
@@ -70,7 +74,7 @@ export function OperatorComposerSettings({ value, onChange, disabled, access }: 
       onClick={() => { setOpen(!open); setChoosingModel(false) }}>
       <span>{modelName}</span>{value.harness !== 'claude' || effort ? <small>{effort || 'default'}</small> : null}{value.harness === 'codex' && value.serviceTier === 'priority' ? <small className="operator-fast-indicator">Fast</small> : null}<Icon name="down" size={13} />
     </button>
-    {open ? <div className="operator-agent-panel" id={id} role="dialog" aria-label="Agent settings">
+    {open ? <div ref={panel} popover="manual" className="operator-agent-panel" id={id} role="dialog" aria-label="Agent settings">
       {choosingModel ? <>
         <Button size="sm" variant="ghost" leading={<Icon name="chevron" className="operator-chat-previous" size={14} />} onClick={() => setChoosingModel(false)}>Agent settings</Button>
         <SearchField autoFocus label="Search models" placeholder="Model name or ID" value={search} onChange={(event) => setSearch(event.target.value)} />
