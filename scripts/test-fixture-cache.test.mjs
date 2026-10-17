@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { execFile, spawn } from 'node:child_process'
 import { once } from 'node:events'
-import { appendFile, chmod, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises'
+import { appendFile, chmod, mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, symlink, utimes, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -203,7 +203,7 @@ test('failed population releases the lock without publishing partial output', as
   assert.equal(await readFile(join(complete, 'payload'), 'utf8'), 'complete')
 })
 
-function cacheProcess(t, root) {
+function cacheProcess(t, root, options = {}) {
   const source = `
     import { appendFile, writeFile } from 'node:fs/promises';
     import { join } from 'node:path';
@@ -211,16 +211,18 @@ function cacheProcess(t, root) {
     const root = process.argv[1];
     const released = new Promise(resolve => process.once('message', resolve));
     process.send({ kind: 'requested' });
-    const directory = await cachedTestFixture(root, 'worker', ['shared-input'], async directory => {
+    const directory = await cachedTestFixture(root, process.argv[2], [process.argv[3]], async directory => {
       await appendFile(join(root, 'builds'), 'build\\n');
       process.send({ kind: 'building' });
       await released;
       await writeFile(join(directory, 'payload'), 'complete');
     });
     process.send({ kind: 'complete', directory });
+    if (process.argv[4] === 'hold') await new Promise(resolve => process.once('message', resolve));
     process.disconnect();
   `
-  const child = spawn(process.execPath, ['--input-type=module', '-e', source, root], {
+  const child = spawn(process.execPath, ['--input-type=module', '-e', source, root, options.namespace ?? 'worker',
+    options.input ?? 'shared-input', options.hold ? 'hold' : 'close'], {
     stdio: ['ignore', 'ignore', 'pipe', 'ipc'],
   })
   let stderr = ''
@@ -278,4 +280,43 @@ test('an interrupted builder releases its OS lock for the next slot', { timeout:
   })
   assert.equal(await readFile(join(root, 'builds'), 'utf8'), 'build\nreplacement\n')
   assert.equal(await readFile(join(complete, 'payload'), 'utf8'), 'complete')
+})
+
+async function publishCacheEntry(t, root, input, options = {}) {
+  const process = cacheProcess(t, root, { ...options, input })
+  await process.message('building')
+  process.child.send({ kind: 'release' })
+  const { directory } = await process.message('complete')
+  if (!options.hold) assert.deepEqual(await process.closed, [0, null])
+  return { ...process, directory }
+}
+
+test('publishing a fixture keeps only the newest two entries of its kind', async t => {
+  const root = await fixtureCache(t)
+  const other = await publishCacheEntry(t, root, 'other', { namespace: 'schemas' })
+  const first = await publishCacheEntry(t, root, 'first')
+  await utimes(first.directory, new Date(1000), new Date(1000))
+  const second = await publishCacheEntry(t, root, 'second')
+  const third = await publishCacheEntry(t, root, 'third')
+  await assert.rejects(stat(first.directory), { code: 'ENOENT' })
+  for (const entry of [other, second, third]) {
+    assert.equal(await readFile(join(entry.directory, 'payload'), 'utf8'), 'complete')
+  }
+  const entries = await readdir(join(root, 'worker'), { withFileTypes: true })
+  assert.equal(entries.filter(entry => entry.isDirectory()).length, 2)
+})
+
+test('eviction skips a returned fixture while another process uses it and reclaims it after exit', async t => {
+  const root = await fixtureCache(t)
+  const first = await publishCacheEntry(t, root, 'first', { hold: true })
+  await utimes(first.directory, new Date(1000), new Date(1000))
+  await publishCacheEntry(t, root, 'second')
+  await publishCacheEntry(t, root, 'third')
+  assert.equal(await readFile(join(first.directory, 'payload'), 'utf8'), 'complete')
+  first.child.send({ kind: 'finished' })
+  assert.deepEqual(await first.closed, [0, null])
+  await publishCacheEntry(t, root, 'fourth')
+  await assert.rejects(stat(first.directory), { code: 'ENOENT' })
+  const entries = await readdir(join(root, 'worker'), { withFileTypes: true })
+  assert.equal(entries.filter(entry => entry.isDirectory()).length, 2)
 })

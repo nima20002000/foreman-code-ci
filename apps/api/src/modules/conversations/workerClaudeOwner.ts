@@ -20,17 +20,10 @@ export function createWorkerClaudeOwner(input: {
   const unavailable = (): never => {
     throw new DomainError('WORKER_CONVERSATION_UNAVAILABLE', 'The original Claude process is unavailable or changed.', 409)
   }
-  const currentLaunch = (options?: { allowExited: true }) => {
-    const rows = input.registry.snapshot().launches.filter(row => row.owner === input.owner
-      && (row.lifecycle === 'active' || options?.allowExited
-        && (row.lifecycle === 'ended' || row.lifecycle === 'closed' && row.closureEvidence)))
-    let current = rows.length === 1 ? rows[0] : undefined
-    if (launch && options?.allowExited) {
-      current = rows.find(row => row.launchId === launch!.launchId)
-        ?? input.registry.closedRegistration(input.owner, launch.launchId)
-    }
+  const currentLaunch = () => {
+    const rows = input.registry.snapshot().launches.filter(row => row.owner === input.owner && row.lifecycle === 'active')
+    const current = rows.length === 1 ? rows[0] : undefined
     if (!current?.guardian || !current.provider || !current.boundary) return unavailable()
-    if (current.lifecycle !== 'active' && rows.some(row => row.lifecycle === 'active' && row.launchId !== current.launchId)) unavailable()
     return current
   }
   const identity = (reference: NativeSessionReference, process: NativeLaunchObservation) => ({
@@ -43,11 +36,10 @@ export function createWorkerClaudeOwner(input: {
       changing = new Promise<void>(resolve => { complete = resolve })
       return () => { changing = undefined; complete() }
     },
-    async nativeOwner(reference: NativeSessionReference, options?: { allowExited: true }) {
+    async nativeOwner(reference: NativeSessionReference) {
       await changing
-      const current = currentLaunch(options)
-      if (launch && !isDeepStrictEqual(identity(reference, current), identity(reference, launch))
-        || session && !isDeepStrictEqual(reference, session)) unavailable()
+      const current = currentLaunch()
+      if (launch && !isDeepStrictEqual(current, launch) || session && !isDeepStrictEqual(reference, session)) unavailable()
       launch ??= current
       session ??= structuredClone(reference)
       return identity(reference, current)
