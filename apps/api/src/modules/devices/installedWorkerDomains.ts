@@ -718,6 +718,7 @@ async function configureWorkerExecution(composition: InstalledWorkerComposition)
       await readInstalledWorkflowConfiguration(location)
       lifetime.signal.throwIfAborted()
       composition.configuration = location
+      await composition.managedMcp.ensureReady()
       await composition.openWorkflow?.(location)
       composition.profileChecks ??= await createInstalledWorkerProfileChecks({ stateDirectory: input.stateDirectory,
         configuration: composition.configuration, pairing: input.pairing, current, registry,
