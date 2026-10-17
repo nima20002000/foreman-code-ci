@@ -125,7 +125,7 @@ async function fixture() {
   nativePlacement.materialization.finalDispatchBindingHash = nativePlacement.bindingHash
   const owner: SourceOperationOwner = { identity: { operationId: intent.operationId, ownerPrincipalId: 'operator', expiresAt: '2099-01-01T00:00:00.000Z' },
     root: sourceRoot, attempt, source, record: nativePlacement.materialization, physicalClosureConfirmed: false }
-  const workerSources = new SourceOperationWorkerService({ authenticate: async () => undefined, approvedRoots: async () => approvedRoots,
+  const workerSources = new SourceOperationWorkerService({mainNow:()=>Date.now(), authenticate: async () => undefined, approvedRoots: async () => approvedRoots,
     currentOwner: async () => owner })
   const verify = vi.spyOn(workerSources, 'handle')
   const request = { executionId: execution.id, runId: f.run.id, workspaceId: version.workspaceId, workflowNodeId: node.id,

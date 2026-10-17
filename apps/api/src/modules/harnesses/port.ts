@@ -120,8 +120,6 @@ export interface NativeTurnInput {
   /** Native structured output for this turn when the harness supports it (Codex). Claude ignores it;
    * Foreman validates every deliverable either way. */
   outputSchema?: Record<string, unknown> | undefined
-  /** Keep a Worker session resident while Main validates and, if needed, corrects its output. */
-  deferSettlement?: true | undefined
   clientCorrelationId: string
   /** Await persistence of the provider identity immediately after submission acknowledgement. */
   onSubmitted?(nativeTurnId: string): Promise<void>
@@ -264,8 +262,6 @@ export interface NativeHarnessSessionManager extends ResponseAvailabilityInspect
   /** Refresh authenticated remote ownership before a coordinator boundary check. */
   observeBoundary?(session: NativeSessionReference, signal?: AbortSignal): Promise<void>
   reconcile(session: NativeSessionReference, correlationId: string, signal?: AbortSignal): Promise<NativeHistory>
-  /** Finish Main's output validation and read the Worker's physically settled result. */
-  settleTurn?(session: NativeSessionReference, correlationId: string, signal?: AbortSignal): Promise<NativeHistory>
   /** Read chronological retained events without applying the recent observation window. */
   reconcileHistoryPage?(session: NativeSessionReference, correlationId: string,
     afterSequence: number, signal?: AbortSignal): Promise<NativeHistory>
