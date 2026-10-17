@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, expect, it } from 'vitest'
+import userEvent from '@testing-library/user-event'
 import type { WorkflowExecutionPolicy } from '@foreman-code/contracts'
 import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { AgentActiveTimeField } from './AgentActiveTimeField'
@@ -8,7 +9,7 @@ import { LocalWorkflowFormSchema } from './localGraph'
 
 afterEach(cleanup)
 
-it('edits seconds, preserves other limits, and clears the override to inherit the default', () => {
+it('edits seconds, preserves other limits, and clears the override to inherit the default', async () => {
   const changes: WorkflowExecutionPolicy[] = []
   function Form() {
     const [policy, setPolicy] = useState<WorkflowExecutionPolicy>({ maxParallelism: 2, maxNodeExecutions: 8 })
@@ -18,7 +19,9 @@ it('edits seconds, preserves other limits, and clears the override to inherit th
   render(<Form />)
   const field = screen.getByRole('spinbutton', { name: 'Agent active-time budget (seconds)' })
   expect(field).toHaveValue(null)
-  expect(screen.getByText(/server default \(600 seconds\)/)).toBeInTheDocument()
+  expect(screen.queryByText(/server default \(600 seconds\)/)).not.toBeInTheDocument()
+  await userEvent.setup().hover(screen.getByRole('button', { name: 'About Agent active-time budget (seconds)' }))
+  expect(screen.getByRole('tooltip')).toHaveTextContent(/server default \(600 seconds\)/)
   fireEvent.change(field, { target: { value: '3600' } })
   expect(field).toHaveValue(3600)
   expect(changes.at(-1)).toEqual({ maxParallelism: 2, maxNodeExecutions: 8, agentActiveTimeoutMs: 3_600_000 })
@@ -29,10 +32,12 @@ it('edits seconds, preserves other limits, and clears the override to inherit th
   expect(changes.at(-1)).toEqual({ maxParallelism: 2, maxNodeExecutions: 8 })
 })
 
-it('describes default inheritance before capabilities finish loading', () => {
+it('describes default inheritance before capabilities finish loading', async () => {
   render(<AgentActiveTimeField policy={{ maxParallelism: 2, maxNodeExecutions: 8 }}
     defaultMs={undefined} onChange={() => {}} />)
-  expect(screen.getByText(/Leave blank to use the server default\./)).toBeVisible()
+  expect(screen.queryByText(/Leave blank to use the server default\./)).not.toBeInTheDocument()
+  await userEvent.setup().hover(screen.getByRole('button', { name: 'About Agent active-time budget (seconds)' }))
+  expect(screen.getByRole('tooltip')).toHaveTextContent(/Leave blank to use the server default\./)
   expect(screen.getByRole('spinbutton', { name: 'Agent active-time budget (seconds)' })).toHaveValue(null)
 })
 
