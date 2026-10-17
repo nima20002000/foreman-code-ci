@@ -8,7 +8,7 @@ import { readProductEnvironment } from '@foreman-code/contracts/product-environm
 import { APP_MCP_TOKEN_NAMES } from '@foreman-code/contracts/product'
 import type { NativeMessageSubmission } from '@foreman-code/contracts/claude'
 import {
-  compactionBlocksSend, CompactionStateSchema, ContextSnapshotSchema, McpDetectionSchema, NativeHarnessCapabilitiesSchema,
+  CompactionStateSchema, ContextSnapshotSchema, McpDetectionSchema, NativeHarnessCapabilitiesSchema,
   PendingNativeInteractionSchema, SessionControlCapabilitiesSchema, SessionPreferencesSchema,
   type CompactionState, type ContextSnapshot, type NativeSessionReference, type SessionPreferences,
 } from '@foreman-code/contracts'
@@ -624,12 +624,6 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
   }
   async closeForRestart(session: NativeSessionReference) { this.assertSession(session); await this.dispose() }
   async dispose() {
-    if (!this.lifetime.signal.aborted && this.session && this.receipt && !this.receipt.closed
-      && !this.receipt.closing && !this.receipt.runtimeReleased
-      && this.receipt.turns.every(turn => ['completed', 'rejected'].includes(turn.status))
-      && this.receipt.compactions.every(control => !compactionBlocksSend(control.state))) {
-      await this.closeForResume(this.session)
-    }
     if (this.preparationActive && !this.session && !this.lifetime.signal.aborted) {
       await this.request({ method: 'conversation.release-preparation' })
       this.preparationActive = false

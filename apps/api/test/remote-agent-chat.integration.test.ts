@@ -5,7 +5,6 @@ import { SessionControlStateSchema, type HarnessConfiguration } from '@foreman-c
 import { AgentMutationResultSchema } from '@foreman-code/contracts/management'
 import { remoteAgentConversation } from './helpers/remoteAgentConversation.js'
 import { workerConversationFixture } from '../src/modules/conversations/workerFixtures.test-support.js'
-import { assertAgentNewConversation } from './helpers/agentNewConversation.js'
 
 function changedSettings(configuration: HarnessConfiguration, field: 'model' | 'effort' | 'account'): HarnessConfiguration {
   if (configuration.harness === 'opencode') throw new Error('Supported chat harness required')
@@ -109,13 +108,19 @@ it.each(['codex', 'claude'] as const)(
   }, 30_000)
 
 it.each(['codex', 'claude'] as const)(
-  'starts a fresh remote %s Agent conversation with /new and retains history', async harness => {
+  'rejects Agent chat /new before it reaches the remote %s harness', async harness => {
     const f = await remoteAgentConversation(harness)
+    const id = f.conversation.id
     try {
-      await assertAgentNewConversation(f)
-      const openMethod = harness === 'codex' ? 'conversation.open' : 'conversation.initial-turn'
-      expect(f.frames.filter(frame => frame.method === openMethod)).toHaveLength(2)
-      expect(f.frames.some(frame => frame.method === 'conversation.release-runtime')).toBe(true)
+      await f.send('Establish the remote session')
+      const read = AgentChatStateSchema.parse(await f.value('agent_chat_read', { query: f.context }))
+      const beforeNew = f.provider.prompts.length
+      const rejectedNew = await f.call('agent_chat_send', { request: { requestId: randomUUID(), content: '/new',
+        intent: 'next_turn', expectedConversationId: id, context: f.context } })
+      expect(rejectedNew.error || rejectedNew.result?.isError).toBeTruthy()
+      expect(JSON.stringify(rejectedNew)).toContain('SESSION_COMMAND_ROUTE_REQUIRED')
+      expect(f.provider.prompts).toHaveLength(beforeNew)
+      expect((await f.repository.get(id))?.native_session_id).toBe(read.conversation?.nativeSession?.nativeSessionId)
     } finally { await f.close() }
   }, 30_000)
 
