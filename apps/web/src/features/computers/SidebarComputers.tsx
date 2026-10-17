@@ -1,20 +1,25 @@
-import { useEffect, useMemo, useRef, type ReactNode } from 'react'
+import { useMemo, type ReactNode } from 'react'
 import { SidebarNavigationButton } from '../../shared/ui/SidebarNavigationButton'
 import { Cloud, Laptop, Monitor } from 'lucide-react'
 import type { CloudCiActivity, ComputerActivity } from '@foreman-code/contracts/computer-activity'
+import { DEFAULT_CIRCLE_ACCOUNT_ID } from '@foreman-code/contracts/management'
 import { computerKey, useComputerActivity } from '../../shared/api/computerActivity'
 import { useComputerMaintenance } from '../../shared/api/computerMaintenance'
 import { useHostHarnessRegistryQuery } from '../../shared/api/computerSettings'
 import { SidebarHoverCardHeader as CardHeader } from '../../shared/ui/SidebarHoverCardHeader'
 import { useSidebarHoverCard } from '../../shared/ui/useSidebarHoverCard'
+import { Badge } from '../../shared/ui/nocturne'
 import { presentationFor } from '../settings/computerPresenceModel'
 import { ComputerUtilization } from './ComputerUtilization'
 import { computerLoad, LOAD_LABELS, type ComputerLoadLevel } from './computerLoad'
 import { useComputerActivityFreshness } from './useComputerActivityFreshness'
 import { useComputerReadings } from './useComputerReadings'
+import { useComputerFleetReadings } from './useComputerFleetReadings'
+import { SidebarComputeGroup } from './SidebarComputeGroup'
+import { CloudComputeTotals, PhysicalComputeTotals } from './SidebarComputeTotals'
 import './computers.css'
 
-/** Every paired computer and cloud CI service as one icon-only button colored by load; hover or focus shows its details. */
+/** Two fleet icons open lists; each computer keeps its existing detail card one level deeper. */
 export function SidebarComputers() {
   const query = useComputerActivity()
   // A failed refresh keeps the last list; without a fresh observation nothing is presented as current.
@@ -24,55 +29,113 @@ export function SidebarComputers() {
   if (computers.length + clouds.length === 0) return null
   const complete = query.data?.activityComplete === true && !query.data.truncated
   return <ul className="sidebar-computers" aria-label="Computers">
-    {computers.map(computer => <ComputerRow key={computerKey(computer.target)} computer={computer} fresh={fresh} complete={complete} />)}
-    {clouds.map(cloud => <CloudRow key={`${cloud.provider}@${cloud.account ?? ''}`} cloud={cloud} fresh={fresh} />)}
+    {computers.length > 0 && <PhysicalComputers computers={computers} fresh={fresh} complete={complete} />}
+    {clouds.length > 0 && <CloudComputers clouds={clouds} fresh={fresh} />}
   </ul>
+}
+
+function fleetLoad(levels: ComputerLoadLevel[]): ComputerLoadLevel {
+  const order: ComputerLoadLevel[] = ['offline', 'unknown', 'calm', 'busy', 'heavy', 'saturated']
+  return levels.reduce((highest, level) => order.indexOf(level) > order.indexOf(highest) ? level : highest, 'offline')
+}
+
+function PhysicalComputers({ computers, fresh, complete }: {
+  computers: ComputerActivity[]; fresh: boolean; complete: boolean
+}) {
+  const readings = useComputerFleetReadings(computers, fresh)
+  const active = computers.filter(computer => fresh && computer.online)
+  const runningCount = active.reduce((count, computer) => count + computer.agents.length + computer.jobs.length, 0)
+  const activityIds = useMemo(() => computers.filter(computer => fresh && computer.online).flatMap(computer => [
+    ...computer.agents.map(agent => `${computerKey(computer.target)}:agent:${agent.id}`),
+    ...computer.jobs.map(job => `${computerKey(computer.target)}:job:${job.id}`),
+  ]), [computers, fresh])
+  return <SidebarComputeGroup name="Computers" icon={<Monitor size={16} />} level={fleetLoad(readings.map(reading => reading.level))}
+    runningCount={runningCount} activityIds={activityIds}>
+    <PhysicalComputeTotals readings={readings} />
+    <ul className="sidebar-compute-list" aria-label="Physical computers">
+      {computers.map(computer => <ComputerRow key={computerKey(computer.target)} computer={computer} fresh={fresh} complete={complete} />)}
+    </ul>
+  </SidebarComputeGroup>
+}
+
+function cloudLoad(cloud: CloudCiActivity, fresh: boolean) {
+  return computerLoad({ online: fresh ? cloud.ready : null, cpuPercent: null, memoryPercent: null, diskUsedPercent: null,
+    ciSlotsPercent: cloud.running / cloud.slots * 100, workloads: 0 })
+}
+
+function CloudComputers({ clouds, fresh }: { clouds: CloudCiActivity[]; fresh: boolean }) {
+  const runningCount = clouds.reduce((count, cloud) => count + (fresh && cloud.ready ? cloud.running : 0), 0)
+  // Totals use readiness for available capacity; roles also limit new starts without changing account health.
+  const capacity = clouds.map(cloud => ({ ...cloud, ready: cloud.ready && acceptsNewWork(cloud) }))
+  const draining = clouds.filter(cloud => !acceptsNewWork(cloud)).reduce((count, cloud) => count + cloud.running, 0)
+  return <SidebarComputeGroup name="Cloud CI" icon={<Cloud size={16} />} level={fleetLoad(clouds.map(cloud => cloudLoad(cloud, fresh)))}
+    runningCount={runningCount}>
+    <CloudComputeTotals clouds={capacity} fresh={fresh} />
+    {fresh && draining > 0 && <p className="sidebar-hover-note">
+      {draining} {draining === 1 ? 'job' : 'jobs'} draining on standby or exhausted orgs.
+    </p>}
+    <ul className="sidebar-compute-list" aria-label="Cloud runner groups">
+      {clouds.map(cloud => <CloudRow
+        key={`${cloud.provider}~${cloud.circleAccountId ?? DEFAULT_CIRCLE_ACCOUNT_ID}@${cloud.account?.toLowerCase() ?? ''}`}
+        cloud={cloud} fresh={fresh} />)}
+    </ul>
+  </SidebarComputeGroup>
+}
+
+function acceptsNewWork(cloud: CloudCiActivity) {
+  return cloud.schedulingRole === undefined || cloud.schedulingRole === 'active'
 }
 
 function ComputerRow({ computer, fresh, complete }: { computer: ComputerActivity; fresh: boolean; complete: boolean }) {
   const online = fresh && computer.online
   const readings = useComputerReadings(computer.target, online)
   const workloads = computer.agents.length + computer.jobs.length
-  const activityIds = useMemo(() => [
-    ...computer.agents.map(agent => `agent:${agent.id}`),
-    ...computer.jobs.map(job => `job:${job.id}`),
-  ], [computer.agents, computer.jobs])
   const level = computerLoad({ online: fresh ? computer.online : null, cpuPercent: readings.cpu, memoryPercent: readings.memory,
     diskUsedPercent: readings.storageUsedPercent, workloads })
   const main = computer.target.hostRef.kind === 'main'
   const hostRef = computer.target.hostRef
   return <HoverRow level={level} label={`${computer.name}, ${main ? 'Main' : 'Worker'}, ${LOAD_LABELS[level]}`}
-    runningCount={online ? workloads : 0} activityIds={activityIds}
-    icon={main ? <Monitor size={16} /> : <Laptop size={16} />}
+    runningCount={online ? workloads : 0} name={computer.name}
     link={hostRef.kind === 'device' ? { to: '/settings/computers/$deviceId', params: { deviceId: hostRef.deviceId } } : { to: '/settings/computers' }}
     card={<ComputerDetails computer={computer} online={online} fresh={fresh} complete={complete} level={level} />} />
 }
 
 function CloudRow({ cloud, fresh }: { cloud: CloudCiActivity; fresh: boolean }) {
-  const level = computerLoad({ online: fresh ? cloud.ready : null, cpuPercent: null, memoryPercent: null, diskUsedPercent: null,
-    ciSlotsPercent: cloud.running / cloud.slots * 100, workloads: 0 })
-  const state = !fresh ? LOAD_LABELS.unknown : !cloud.ready ? 'Not logged in on Main' : `${cloud.running} of ${cloud.slots} CI machines in use`
-  return <HoverRow level={level} label={`${cloud.name}, Cloud CI, ${!fresh || cloud.ready ? LOAD_LABELS[level] : state}`}
+  const level = cloudLoad(cloud, fresh)
+  let state = LOAD_LABELS.unknown
+  if (fresh) {
+    state = cloud.ready ? `${cloud.running} of ${cloud.slots} CI machines in use` : 'Not logged in on Main'
+  }
+  const role = fresh && cloud.provider === 'circleci' && cloud.schedulingRole
+    ? CIRCLE_ROLE_LABELS[cloud.schedulingRole] : undefined
+  const health = !fresh || cloud.ready ? LOAD_LABELS[level] : state
+  return <HoverRow level={level} label={`${cloud.name}, Cloud CI, ${role ? `${role}, ` : ''}${health}`}
     runningCount={fresh && cloud.ready ? cloud.running : 0}
-    icon={<Cloud size={16} />}
+    name={cloud.name} status={role}
     link={{ to: '/settings/computers' }}
     card={<div className="sidebar-hover-body">
       <CardHeader icon={<Cloud size={16} />} name={cloud.name} role="Cloud CI" />
+      {role && <Badge>{role}</Badge>}
       <p className="sidebar-hover-state" data-load={level}>{state}</p>
+      {fresh && cloud.schedulingReason && <p className="sidebar-hover-note">{cloud.schedulingReason}</p>}
       <CircleCredits cloud={cloud} />
     </div>} />
 }
 
 const NUMBER = new Intl.NumberFormat('en-US')
+const CIRCLE_ROLE_LABELS: Record<NonNullable<CloudCiActivity['schedulingRole']>, string> = {
+  active: 'Active',
+  standby: 'Standby',
+  exhausted: 'Out of credits',
+}
 
-/** CircleCI has no plan-balance API: the credits are the configured allowance minus this month's usage, so an estimate. */
+/** CircleCI has no plan-balance API: the credits are the configured allowance minus this month's usage, so an estimate. One row is one CircleCI org. */
 function CircleCredits({ cloud }: { cloud: CloudCiActivity }) {
   if (cloud.provider !== 'circleci' || cloud.credits === undefined && cloud.creditsUnavailable === undefined) return null
   const { credits } = cloud
-  if (!credits) return <>
-    <p className="sidebar-hover-note">Credits unavailable</p>
-    {cloud.creditsUnavailable && <p className="sidebar-hover-note">{cloud.creditsUnavailable}</p>}
-  </>
+  if (!credits) return <p className="sidebar-hover-note">
+    Credits unavailable{cloud.creditsUnavailable ? ` (${cloud.creditsUnavailable})` : ''}
+  </p>
   return <p className="sidebar-hover-note">
     ≈ {NUMBER.format(credits.remaining)} of {NUMBER.format(credits.total)} credits left · updated {ago(Date.parse(credits.asOf))}
   </p>
@@ -80,48 +143,22 @@ function CircleCredits({ cloud }: { cloud: CloudCiActivity }) {
 
 type RowLink = { to: '/settings/computers' } | { to: '/settings/computers/$deviceId'; params: { deviceId: string } }
 
-function HoverRow({ level, label, icon, link, card, runningCount, activityIds }: {
-  level: ComputerLoadLevel; label: string; icon: ReactNode; link: RowLink; card: ReactNode
-  runningCount: number; activityIds?: string[]
+function HoverRow({ level, label, name, status, link, card, runningCount }: {
+  level: ComputerLoadLevel; label: string; name: string; link: RowLink; card: ReactNode; runningCount: number
+  status?: string | undefined
 }) {
   const hover = useSidebarHoverCard()
   const countLabel = `${runningCount} running ${runningCount === 1 ? 'Agent or CI job' : 'Agents and CI jobs'}`
   return <li data-load={level}>
-    <SidebarNavigationButton {...hover.anchorProps} {...link} className="sidebar-computer"
+    <SidebarNavigationButton {...hover.anchorProps} {...link} className="sidebar-compute-row"
       aria-label={runningCount > 0 ? `${label}, ${countLabel}` : label}>
-      <ComputerIcon icon={icon} runningCount={runningCount} activityIds={activityIds} />
+      <span className="sidebar-compute-status" aria-hidden="true" />
+      <span className="sidebar-compute-name">{name}</span>
+      {status && <Badge>{status}</Badge>}
+      {runningCount > 0 && <span className="sidebar-compute-running" aria-hidden="true">{runningCount > 9 ? '9+' : runningCount}</span>}
     </SidebarNavigationButton>
     {hover.card(card)}
   </li>
-}
-
-function ComputerIcon({ icon, runningCount, activityIds }: {
-  icon: ReactNode; runningCount: number; activityIds: string[] | undefined
-}) {
-  const glyph = useRef<HTMLSpanElement>(null)
-  const previous = useRef({ runningCount, activityIds })
-  useEffect(() => {
-    const started = activityIds
-      ? activityIds.some(id => !previous.current.activityIds?.includes(id))
-      : runningCount > previous.current.runningCount
-    previous.current = { runningCount, activityIds }
-    if (!started || runningCount === 0) return
-    const motion = window.matchMedia('(prefers-reduced-motion: reduce)')
-    if (motion.matches) return
-    const animation = glyph.current?.animate([
-      { transform: 'scale(1)' }, { transform: 'scale(1.08)' }, { transform: 'scale(1)' },
-    ], { duration: 300, easing: 'ease-out' })
-    function stopMotion() { if (motion.matches) animation?.cancel() }
-    motion.addEventListener('change', stopMotion)
-    return () => {
-      animation?.cancel()
-      motion.removeEventListener('change', stopMotion)
-    }
-  }, [activityIds, runningCount])
-  return <span className="sidebar-computer-icon" data-running={runningCount > 0 ? '' : undefined} aria-hidden="true">
-    <span ref={glyph} className="sidebar-computer-glyph">{icon}</span>
-    {runningCount > 0 && <span className="sidebar-computer-count">{runningCount > 9 ? '9+' : runningCount}</span>}
-  </span>
 }
 
 const SHOWN_ITEMS = 3

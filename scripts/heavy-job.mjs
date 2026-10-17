@@ -201,6 +201,10 @@ async function cleanQueue() {
     }
   }
   const held = readJson(join(active, 'owner.json'))
+  // Allow an older caller time to publish its owner after creating the directory.
+  if (!held && isDirectory(active) && ageMs(active) > 10_000) {
+    rmSync(active, { recursive: true, force: true })
+  }
   if (held?.common === common && (reaped.has(held.token) || await reapDeletedWorktree(held)
     || held.phase === 'running' && !alive(held)
     || ageMs(active) > 10_000 && !alive(held) && !workUsed(held))) {
