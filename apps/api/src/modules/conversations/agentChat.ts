@@ -1056,9 +1056,8 @@ export class AgentChatService {
     const agent = (await this.pool.query<{ current_configuration_version_id: string | null }>(
       'select current_configuration_version_id from agents where workspace_id=$1 and id=$2 and archived_at is null',
       [row.workspace_id, row.agent_id])).rows[0]
-    if (!agent?.current_configuration_version_id) {
-      throw new DomainError('AGENT_CHAT_CONFIGURATION_MISSING', 'The Agent has no saved configuration.', 409)
-    }
+    // Retained conversations can outlive their editable Agent catalog entry.
+    if (!agent?.current_configuration_version_id) return row
     if (agent.current_configuration_version_id === row.agent_configuration_version_id) return row
     const configuration = await this.workflows.getAgentConfiguration(agent.current_configuration_version_id)
     const previous = await this.conversationConfiguration(row)
