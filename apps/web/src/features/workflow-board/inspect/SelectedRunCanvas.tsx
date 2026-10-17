@@ -10,6 +10,8 @@ import type { AgentPanelRenderer, OpenAgentPanel } from '../../graph/nextDraft/D
 import { CircularNodeResizer } from '../../graph/CircularNodeResizer'
 import { createGraphGeometryAdapter, type GraphGeometryChange } from '../../graph/geometry'
 import { AgentHandles } from '../../graph/AgentHandles'
+import { GRAPH_NODE_DEFAULT_SIZE } from '../../graph/mapper'
+import { layoutHierarchy } from '../../graph/hierarchyLayout'
 import { SignalEdgeShape } from '../../graph/SignalEdgeShape'
 import { intervalLabel } from '../../graph/nextDraft/intervalLabel'
 import { agentNodeFacts, edgeBend, relationshipLines, useFloatingCurve } from '../../graph/signalEdge'
@@ -59,7 +61,7 @@ const PinnedRunNode = memo(function PinnedRunNode({ id, data, selected, width, h
     onAction={ui?.panels && data.kind==='agent' ? (next) => ui.setOpen(panel === next ? undefined : { nodeId: id, panel: next }) : undefined}>
     <AgentHandles name={data.label} connectable={false} />
     {data.kind === 'agent' && data.resizable ? <CircularNodeResizer id={id} name={data.label}
-      width={width ?? 212} height={height ?? 212} onStart={ui?.beginResize} onResize={ui?.resize} onFinish={ui?.finishResize} /> : null}
+      width={width ?? GRAPH_NODE_DEFAULT_SIZE} height={height ?? GRAPH_NODE_DEFAULT_SIZE} onStart={ui?.beginResize} onResize={ui?.resize} onFinish={ui?.finishResize} /> : null}
   </AgentNodeView>
     {panel && ui?.panels && data.kind==='job'?<Dialog open className="job-dialog" title={data.label} description={`Selected Run · ${data.recorded}`} onOpenChange={value=>{if(!value)ui.setOpen(undefined)}}>{ui.panels(id,{kind:'job',jobDefinitionId:data.jobDefinitionId,jobDefinitionRevision:data.jobDefinitionRevision,jobDefinitionVersionId:data.jobDefinitionVersionId,name:data.label,workflowExecution:data.workflowExecution}).info}</Dialog>:null}
     {panel && ui?.panels && data.kind==='agent' ? <AgentPopover open anchor={anchor} title={data.label} subtitle={`Selected Run · ${data.recorded}`}
@@ -76,7 +78,7 @@ type RunEdge = Edge<{ kind: WorkflowRelationship['kind']; bend: number;
   handoffs: boolean; limit?: number; used?: number }>
 const PinnedRunEdge = memo(function PinnedRunEdge({ id, source, target, data, selected }: EdgeProps<RunEdge>) {
   const { pulses } = useContext(Choreography)
-  const curve = useFloatingCurve(source, target, data?.bend ?? 28)
+  const curve = useFloatingCurve(source, target, data?.bend ?? 0)
   const { hovered, onPointerEnter, onPointerLeave } = useHoverControls()
   const [expanded, setExpanded] = useState(false)
   if (!curve) return null
@@ -303,7 +305,7 @@ export function SelectedRunCanvas({ scope, panels, layout, geometry }: {
     </Alert> : null}
     {version ? <div className="pinned-run-flow">
       <ReactFlowProvider><RunAgentPanels.Provider value={{ panels, open, setOpen, beginResize, resize, finishResize }}><Choreography.Provider value={motion}><ReactFlow<RunNode | CiServerFlowNode, RunEdge | CiTransferFlowEdge> nodes={flowNodes} edges={flowEdges} nodeTypes={nodeTypes} edgeTypes={edgeTypes}
-        onNodesChange={onNodesChange} nodesDraggable={Boolean(geometry)} nodesConnectable={false} nodesFocusable edgesFocusable
+        onNodesChange={onNodesChange} nodesDraggable={false} nodesConnectable={false} nodesFocusable edgesFocusable
         elementsSelectable deleteKeyCode={null} onlyRenderVisibleElements
         fitView fitViewOptions={fitViewOptions} proOptions={proOptions} minZoom={0.1} maxZoom={1.6}
         aria-label="Run graph canvas">
@@ -343,23 +345,28 @@ function useRunCanvasGeometry({ nodes, layout, version, geometry }: {
   const layoutById = useMemo(() => new Map(layout?.map((node) => [node.id, node])), [layout])
   const pinnedById = useMemo(() => new Map(version?.definition.nodes.map((node) => [node.id, node])), [version])
   const presented = useRef(new Map<string, { source: RunNode; node: RunNode }>())
-  const presentedNodes = useMemo(() => nodes.map((node) => {
-    const saved = layoutById.get(node.id)
-    const pinned = pinnedById.get(node.id)
-    const placement = saved ?? pinned
-    const width = placement?.width ?? 212
-    const height = placement?.height ?? 212
-    const position = placement?.position ?? node.position
-    const resizable = Boolean(saved && geometry)
-    const cached = presented.current.get(node.id)
-    if (cached && cached.source === node && cached.node.width === width && cached.node.height === height
-      && cached.node.position.x === position.x && cached.node.position.y === position.y
-      && cached.node.data.resizable === resizable) return cached.node
-    const result = { ...node, draggable: resizable, position, width, height, style: { width, height },
-      data: { ...node.data, resizable } }
-    presented.current.set(node.id, { source: node, node: result })
-    return result
-  }), [nodes, layoutById, pinnedById, geometry])
+  const presentedNodes = useMemo(() => {
+    const sizes = new Map(nodes.map((node) => {
+      const placement = layoutById.get(node.id) ?? pinnedById.get(node.id)
+      return [node.id, { width: placement?.width ?? GRAPH_NODE_DEFAULT_SIZE, height: placement?.height ?? GRAPH_NODE_DEFAULT_SIZE }] as const
+    }))
+    // The Run draws the same hierarchy the Board does, from its own pinned edges.
+    const placed = layoutHierarchy(nodes.map((node) => ({ id: node.id, ...sizes.get(node.id)! })),
+      version?.definition.edges ?? [], version?.entryNodeId)
+    return nodes.map((node) => {
+      const { width, height } = sizes.get(node.id)!
+      const position = placed.get(node.id) ?? node.position
+      const resizable = Boolean(layoutById.has(node.id) && geometry)
+      const cached = presented.current.get(node.id)
+      if (cached && cached.source === node && cached.node.width === width && cached.node.height === height
+        && cached.node.position.x === position.x && cached.node.position.y === position.y
+        && cached.node.data.resizable === resizable) return cached.node
+      const result = { ...node, draggable: false, position, width, height, style: { width, height },
+        data: { ...node.data, resizable } }
+      presented.current.set(node.id, { source: node, node: result })
+      return result
+    })
+  }, [nodes, layoutById, pinnedById, geometry, version])
   useLayoutEffect(() => {
     const selected = new Set([...picked, ...presentedNodes.filter((node) => node.data.selected).map((node) => node.id)])
     setCanvasNodes(adapter.reconcile(presentedNodes, selected))
