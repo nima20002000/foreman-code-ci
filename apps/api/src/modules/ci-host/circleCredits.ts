@@ -67,9 +67,8 @@ export function sumTotalCredits(csv: string): number {
 }
 
 /**
- * Remaining CircleCI credits per org, estimated as the configured monthly allowance (400,000 open-source Linux credits
- * per org on the Free plan unless overridden) minus this month's usage from CircleCI's usage export (CircleCI has no
- * API for the plan balance). One export per account at most every ten
+ * Remaining CircleCI credits per account, estimated as the configured monthly allowance minus this month's usage
+ * from CircleCI's usage export (CircleCI has no API for the plan balance). One export per account at most every ten
  * minutes, shared by every reader; readers only ever see the cached value.
  */
 export class CircleCreditUsage {
