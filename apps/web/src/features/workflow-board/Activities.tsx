@@ -1,3 +1,4 @@
+import { InfoHint } from '../../shared/ui/InfoHint'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { defaultStringifySearch, useLocation, useRouter } from '@tanstack/react-router'
@@ -197,9 +198,8 @@ function ActivityFeed({ scope, selection, address, focusAgentId }: { scope: RunA
     && (!agentId || item.actor && 'agentId' in item.actor && item.actor.agentId === agentId
       || item.subject && 'agentId' in item.subject && item.subject.agentId === agentId))
   return <section className="board-activities" aria-label="Activities" data-run-id={scope.runId}>
-    <header><h3>Activities</h3><Button size="sm" variant="ghost" disabled={feed.isFetching && !older.isPending}
+    <header><h3>Activities<InfoHint label="Activities">Recorded actions for this Run, in server order. Pending approvals stay in the approval inbox. Latest 1,000 public events at most; earlier events may have expired.</InfoHint></h3><Button size="sm" variant="ghost" disabled={feed.isFetching && !older.isPending}
       onClick={refresh} aria-label="Refresh Activities">{selection ? 'Refresh' : 'Refresh Activities'}</Button></header>
-    {!selection && !focusAgentId ? <p>Recorded actions for this Run, in server order. Pending approvals stay in the approval inbox.</p> : null}
     {denied ? <Alert tone="warning" title="Activities access was withdrawn." /> : error ?
       <Alert tone="warning" title={errorTitle}>
         {errorHint}
@@ -225,7 +225,6 @@ function ActivityFeed({ scope, selection, address, focusAgentId }: { scope: RunA
           <ActivityRow key={item.id} item={item} count={count} showActor={!focusAgentId} />)}</ol>}
       {feed.data?.olderCursor ? <Button size="sm" disabled={feed.isFetching || older.isPending} onClick={() => void loadOlder()}>
         {older.isPending ? 'Loading…' : selection ? 'More' : 'Load older Activities'}</Button> : null}
-      {!selection && !focusAgentId ? <p className="board-activities-bound">Latest 1,000 public events at most; earlier events may have expired.</p> : null}
     </> : null}
   </section>
 }
