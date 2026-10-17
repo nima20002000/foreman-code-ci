@@ -188,8 +188,7 @@ export class ProductionHostCiEndpoint implements HostCiEndpoint {
     if (computer.hostRef.kind === 'main') return this.local.handle(request)
     if (computer.hostRef.kind === 'cloud') {
       const cloud = this.clouds.find(value => value.provider.id === computer.hostRef.provider
-        && value.provider.account?.owner.toLowerCase() === computer.hostRef.account?.toLowerCase()
-        && (value.provider.circleAccountId ?? 'default') === (computer.hostRef.circleAccountId ?? 'default'))
+        && value.provider.account?.owner === computer.hostRef.account)
       if (!cloud) throw new Error('This cloud CI service is off.')
       return cloud.handle(request)
     }
