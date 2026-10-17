@@ -394,10 +394,11 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
           this.checkRejection(input.clientCorrelationId)
           if (!this.session) { await delay(100, undefined, { signal: pollSignal }); continue }
         }
+        const readStarted = performance.now()
         const value = z.object({ history: WorkerConversationHistorySchema, context: ContextSnapshotSchema.nullable(),
           receipt: WorkerConversationReceiptSchema }).parse(await this.request({ method: 'conversation.history',
           session: this.session, correlationId: input.clientCorrelationId,
-          afterSequence: sequence ?? -1 }, pollSignal))
+          afterSequence: sequence ?? -1, waitForEvents: true }, pollSignal))
         this.adopt(value)
         this.checkRejection(input.clientCorrelationId)
         this.context = value.context
@@ -414,7 +415,9 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
           && (value.history.nextSequence === undefined || (sequence ?? -1) >= value.history.nextSequence - 1)) return
         if (turn?.status === 'uncertain') conflict('The original worker turn needs native recovery; input was not replayed.')
         pollDelayMs = sequence === previousSequence ? Math.min(2000, pollDelayMs * 2) : 100
-        await delay(pollDelayMs, undefined, { signal: pollSignal })
+        // The event wait consumes the read interval; bursts still obey the existing request rate limit.
+        const remainingDelay = pollDelayMs - (performance.now() - readStarted)
+        if (remainingDelay > 0) await delay(remainingDelay, undefined, { signal: pollSignal })
       }
     } finally { await this.release(lease) }
   }

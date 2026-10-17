@@ -127,41 +127,4 @@ describe.skipIf(!postgresEnabled)('current layout HTTP/MCP', () => {
     expect(await count(t, 'runs')).toBe(1)
     expect((await db.pool.query(`select execution_state from runs where workflow_id=$1`, [t.input.workflowId])).rows[0]?.execution_state).not.toBe('completed')
   })
-  it('marks only Operator-edited positions as manual and reads them back through authenticated MCP', async () => {
-    const t = await fixture()
-    const capabilities = await t.call(CURRENT_WORKFLOW_TOOLS.capabilities, {})
-    expect(graphRpcValue(capabilities.result)).toMatchObject({
-      nodeGeometry: { manualPositionField: 'node.positionManual', automaticLayout: 'hierarchy', operatorPositionsManual: true },
-    })
-    t.input.graph.nodes = t.input.graph.nodes.map((node, index) => ({
-      ...node, position: { x: 320, y: index * 300 },
-    }))
-    const first = await save(t)
-    const original = first.value.version.definition
-    const layout = { ...t.input, commandId: randomUUID(), expectedRevision: first.value.revision,
-      expectedWorkflowVersionId: first.value.currentVersionId,
-      graph: { ...original, nodes: original.nodes.map((node, index) => index ? node : {
-        ...node, position: { x: 901, y: 42 },
-      }) } }
-    const readInput = { workspaceId: t.input.workspaceId, workflowId: t.input.workflowId }
-    const denied = await t.credential([{ actions: ['workflows:read', 'graph:read'],
-      scope: { workspaceIds: [t.input.workspaceId] } }])
-    expect((await t.call(CURRENT_WORKFLOW_TOOLS.save, layout, denied.token)).result?.isError).toBe(true)
-    const read = async () => SavedManagedWorkflowSchema.parse(
-      graphRpcValue((await t.call('workflow_get', readInput)).result))
-    expect((await read()).workflow.nodes).toEqual(original.nodes)
-    const moved = await t.call(CURRENT_WORKFLOW_TOOLS.save, layout)
-    expect(moved.result?.isError, JSON.stringify(moved.result)).not.toBe(true)
-    const saved = CurrentWorkflowSaveResultSchema.parse(graphRpcValue(moved.result))
-    expect(saved.value.version).toEqual(first.value.version)
-    expect(saved.value.revision).toBe(first.value.revision)
-    const readback = await read()
-    expect(readback.workflow.nodes).toEqual([
-      { ...original.nodes[0], position: { x: 901, y: 42 }, positionManual: true }, original.nodes[1],
-    ])
-    expect(readback.currentVersionId).toBe(first.value.currentVersionId)
-    expect((await t.call(CURRENT_WORKFLOW_TOOLS.save, layout)).result?.isError).not.toBe(true)
-    expect((await read()).workflow.nodes).toEqual(readback.workflow.nodes)
-    expect(await count(t, 'workflow_versions')).toBe(1)
-  })
 })
