@@ -24,6 +24,10 @@ declare module '../../../../../scripts/test-integration.mjs' {
 }
 
 const roots: string[] = []
+vi.mock('node:child_process', async original => {
+  const actual = await original<typeof import('node:child_process')>()
+  return { ...actual, spawn: vi.fn(actual.spawn) }
+})
 const children = new Set<ReturnType<typeof spawn>>()
 async function stopUnit(child: ReturnType<typeof spawn>) {
   if (child.exitCode !== null || child.signalCode !== null) return
@@ -41,7 +45,8 @@ afterEach(async () => {
 async function computer(options: { github?: boolean; suiteExit?: number; watchdogReason?: string; pause?: boolean
   measured?: Record<string, number>; databaseExit?: number; selector?: boolean;
   change?: 'source' | 'infrastructure' | 'docs'; defaultBranch?: string; cpuCount?: number; hostSlots?: boolean
-  affectedUnitTests?: number; inspectSource?: boolean; memoryBytes?: number } = {}) {
+  affectedUnitTests?: number; inspectSource?: boolean; memoryBytes?: number;
+  beforeCheckout?: () => Promise<void> } = {}) {
   const temporaryRoot = process.env.FOREMAN_CODE_TEST_ROOT ?? join(homedir(), '.cache', 'foreman-tmp')
   await mkdir(temporaryRoot, { recursive: true })
   const root = await mkdtemp(join(temporaryRoot, 'host-ci-'))
@@ -156,6 +161,7 @@ async function computer(options: { github?: boolean; suiteExit?: number; watchdo
       if (file === 'git' && args.some(value => value.startsWith('https://github.com/'))) {
         return system.run('git', args.map(value => value.startsWith('https://github.com/') ? origin : value), runOptions)
       }
+      if (file === 'git' && args.includes('worktree') && args.includes('add')) await options.beforeCheckout?.()
       if (file === 'systemd-run') {
         const name = args.find(value => value.startsWith('--unit='))!.slice('--unit='.length)
         const env = Object.fromEntries(args.filter(value => value.startsWith('--setenv='))
@@ -190,11 +196,38 @@ async function computer(options: { github?: boolean; suiteExit?: number; watchdo
       throw new Error('The run did not settle.')
     }
     return reply
-  }, { interval: 5, timeout: 10_000 })
+  }, { interval: 50, timeout: 10_000 })
   return { root, runner, commit, baseCommit, git, settle, units, unitStarted }
 }
 
 describe('host CI runner', () => {
+  it('reads a locally preparing run without competing for its reconciliation lock', async () => {
+    let entered!: () => void
+    let release!: () => void
+    const preparing = new Promise<void>(resolve => { entered = resolve })
+    const released = new Promise<void>(resolve => { release = resolve })
+    const f = await computer({ beforeCheckout: async () => {
+      entered()
+      await released
+    } })
+    const runId = randomUUID()
+    const started = f.runner.handle({ operation: 'start', runId, repository: 'octo/site', commit: f.commit,
+      suite: 'unit', part: 'unit-api', partition: { index: 0, count: 2 } })
+    try {
+      await preparing
+      const lockStarts = () => vi.mocked(spawn).mock.calls.filter(([file]) => file === '/usr/bin/flock').length
+      const beforeReads = lockStarts()
+      const replies = await Promise.all(Array.from({ length: 8 }, () =>
+        f.runner.handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 65_536 })))
+      for (const reply of replies) expect(reply).toMatchObject({ operation: 'read', run: { runId, state: 'starting' } })
+      expect(lockStarts() - beforeReads).toBe(0)
+    } finally {
+      release()
+      await started
+      expect((await f.settle(runId)).run).toMatchObject({ state: 'passed', step: 'unit-api' })
+    }
+  })
+
   it.each(['integration', 'unit'] as const)('passes each concurrent %s ticket its allowed slot share', async suite => {
     const gib = 2 ** 30
     const f = await computer({ cpuCount: 16, memoryBytes: 32 * gib, hostSlots: true, pause: true })
