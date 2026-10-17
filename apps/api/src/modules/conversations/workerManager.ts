@@ -394,11 +394,10 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
           this.checkRejection(input.clientCorrelationId)
           if (!this.session) { await delay(100, undefined, { signal: pollSignal }); continue }
         }
-        const readStarted = performance.now()
         const value = z.object({ history: WorkerConversationHistorySchema, context: ContextSnapshotSchema.nullable(),
           receipt: WorkerConversationReceiptSchema }).parse(await this.request({ method: 'conversation.history',
           session: this.session, correlationId: input.clientCorrelationId,
-          afterSequence: sequence ?? -1, waitForEvents: true }, pollSignal))
+          afterSequence: sequence ?? -1 }, pollSignal))
         this.adopt(value)
         this.checkRejection(input.clientCorrelationId)
         this.context = value.context
@@ -415,9 +414,7 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
           && (value.history.nextSequence === undefined || (sequence ?? -1) >= value.history.nextSequence - 1)) return
         if (turn?.status === 'uncertain') conflict('The original worker turn needs native recovery; input was not replayed.')
         pollDelayMs = sequence === previousSequence ? Math.min(2000, pollDelayMs * 2) : 100
-        // The event wait consumes the read interval; bursts still obey the existing request rate limit.
-        const remainingDelay = pollDelayMs - (performance.now() - readStarted)
-        if (remainingDelay > 0) await delay(remainingDelay, undefined, { signal: pollSignal })
+        await delay(pollDelayMs, undefined, { signal: pollSignal })
       }
     } finally { await this.release(lease) }
   }
@@ -437,22 +434,11 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
   async history(session: NativeSessionReference, signal?: AbortSignal): Promise<NativeHistory> {
     return this.readHistory(session, signal)
   }
-  async rebindApplicationAccess(session: NativeSessionReference, start: NativeSessionStart, signal?: AbortSignal) {
-    this.assertSession(session)
-    const fields = this.startFields(start)
-    if (!fields.applicationAccess) conflict('A fresh scoped application credential is required.')
-    if (this.harness === 'claude') {
-      await this.deliverClaudeCredential(fields.applicationAccess.token, signal ?? new AbortController().signal)
-    } else {
-      await this.open(start, 'attach', session, signal)
-    }
-  }
   async retireTurn(session: NativeSessionReference, correlationId: string) {
     this.assertSession(session)
     if (this.receipt?.creation?.operationId === correlationId
       && !this.receipt.turns.some(turn => turn.correlationId === correlationId)) return
     this.adopt(await this.request({ method: 'conversation.retire-turn', session, correlationId }))
-    if (this.receipt?.runtimeReleased) return { runtimeReleased: true as const }
   }
   private async readHistory(session: NativeSessionReference, signal?: AbortSignal): Promise<NativeHistory> {
     this.assertSession(session)
@@ -628,10 +614,6 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
   async close(session: NativeSessionReference) {
     this.assertSession(session)
     this.adopt(await this.request({ method: 'conversation.close', session }))
-  }
-  async closeForResume(session: NativeSessionReference) {
-    this.assertSession(session)
-    this.adopt(await this.request({ method: 'conversation.release-runtime', session }))
   }
   async closeForRestart(session: NativeSessionReference) { this.assertSession(session); await this.dispose() }
   async dispose() {

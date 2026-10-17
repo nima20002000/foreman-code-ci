@@ -7,42 +7,6 @@ import type { WorkerConversationBinding, WorkerConversationConfiguration } from 
 import { configurationWithNodeSkills } from '../skills/nodeSkills.js'
 import { verifiedSkills } from '../skills/instructions.js'
 import { DomainError } from '../errors.js'
-import { harnessSessionChanged } from '../harnesses/providerAccountConfiguration.js'
-
-export function validWorkerConfigurationTransition(previous: WorkerConversationBinding, next: WorkerConversationBinding,
-  base: WorkerConversationConfiguration, effective: WorkerConversationConfiguration) {
-  if (validRunChatSkillsTransition(previous, next, base, effective)) return true
-  if (previous.owner.kind !== 'agent' || next.owner.kind !== 'agent' || !('agentId' in base) || !('agentId' in effective)
-    || base.id === effective.id || base.id !== previous.owner.configurationVersionId
-    || effective.id !== next.owner.configurationVersionId
-    || base.agentId !== previous.owner.agentId || effective.agentId !== next.owner.agentId
-    || base.workspaceId !== previous.owner.workspaceId || effective.workspaceId !== next.owner.workspaceId
-    || commandInputHash(base) !== previous.owner.configurationHash
-    || commandInputHash(effective) !== next.owner.configurationHash
-    || harnessSessionChanged(base.harness, effective.harness)
-    || !isDeepStrictEqual(previous.profile.target, next.profile.target)
-    || !isDeepStrictEqual({ ...previous, owner: next.owner, profile: next.profile,
-      directoryBinding: next.directoryBinding }, { ...next, directoryBinding: next.directoryBinding })
-    || !isDeepStrictEqual({ ...previous.owner, configurationVersionId: next.owner.configurationVersionId,
-      configurationHash: next.owner.configurationHash }, next.owner)) return false
-  if (base.harness.harness === 'claude' && effective.harness.harness === 'claude'
-    && base.harness.configDirectory !== effective.harness.configDirectory) return false
-  verifiedSkills(base)
-  verifiedSkills(effective)
-  return true
-}
-
-export async function readAgentChatConfigurationTransition(pool: pg.Pool,
-  previous: WorkerConversationBinding, next: WorkerConversationBinding, configuration: WorkerConversationConfiguration) {
-  if (previous.owner.kind !== 'agent' || next.owner.kind !== 'agent'
-    || previous.owner.configurationVersionId === next.owner.configurationVersionId) return undefined
-  const found = (await pool.query<{ record: unknown }>(
-    'select record from agent_configuration_versions where id=$1', [previous.owner.configurationVersionId])).rows[0]
-  const base = AgentConfigurationVersionSchema.parse(found?.record)
-  if (!validWorkerConfigurationTransition(previous, next, base, configuration)) throw new DomainError(
-    'WORKER_CONVERSATION_UNAVAILABLE', 'The saved Agent chat configuration transition changed.', 409)
-  return base
-}
 
 export function sameRunChatBinding(previous: WorkerConversationBinding, next: WorkerConversationBinding) {
   return previous.owner.kind === 'agent' && next.owner.kind === 'agent'
