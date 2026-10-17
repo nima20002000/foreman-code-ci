@@ -9,7 +9,6 @@ import { useGraphDraftStore } from './store'
 import { editIntentCommandKey } from './nextDraft/useGraphEditIntent'
 import type { BoardUpdateFailure } from '../workflow-board/BoardAlerts'
 import { useWorkflowBoard } from '../workflow-board/context'
-import { BoardLoading } from '../workflow-board/BoardLoading'
 
 /** Persisted execution tags are explicit. No default, conversion, complexity
  * selector or fallback can open an executable editor for a retired record. */
@@ -48,7 +47,7 @@ function AuthoringBoundary({ workspaceId, workflowId, updateFailures = [] }: { w
           message: 'Draft updates unavailable. Running requires a fresh saved read.', pending: source.isFetching, retry: () => void source.refetch() }] : [])]} />
     </>
   }
-  if (source.isPending) return <BoardLoading />
+  if (source.isPending) return <section role="status">Loading workflow…</section>
   return <section role="alert"><p>Authoring could not be opened. No saved data was reinterpreted.</p>
     <button type="button" onClick={() => void source.refetch()}>Retry authoring</button></section>
 }
