@@ -1,7 +1,6 @@
 import { CompactionStateSchema, SessionModeSchema, SessionPreferencesSchema } from './sessionControls.js'
 import { RemoteOperationReceiptSchema, RemoteNativeIdentitySchema } from './remoteExecution.js'
 import { z } from 'zod'
-import { OutputSchemaSchema } from './wave25/outputContract.js'
 import { DeviceExecutionAdmissionFields } from './deviceResources.js'
 import { AgentConfigurationVersionSchema, HarnessExecutionRequestSchema, ApprovalResponseOptionSchema,
   NativeSessionReferenceSchema, WorkflowSessionContinuationSchema } from './index.js'
@@ -65,10 +64,7 @@ export const RemoteExecutionRpcRequestSchema = z.discriminatedUnion('method', [
   z.object({ method: z.literal('get-application-access'), ...binding, session: z.lazy(() => NativeSessionReferenceSchema) }).strict(),
   z.object({ method: z.literal('start-turn'), ...binding, prompt: z.string().min(1).max(1_000_000),
     correlationId: z.string().min(1), review: RemoteReviewerRequestSchema.optional(),
-    sessionMode: SessionModeSchema.optional(), outputSchema: OutputSchemaSchema.optional(),
-    deferSettlement: z.literal(true).optional() }).strict(),
-  z.object({ method: z.literal('settle-turn'), ...binding,
-    correlationId: z.string().min(1), nativeTurnId: z.string().min(1) }).strict(),
+    sessionMode: SessionModeSchema.optional() }).strict(),
   z.object({ method: z.literal('history'), ...binding, ...DeviceHistoryRequestFields,
     correlationId: z.string().min(1).optional(), receiptSequence: z.number().int().positive().optional() }).strict(),
   z.object({ method: z.enum(['pending', 'status']), ...binding }).strict(),
