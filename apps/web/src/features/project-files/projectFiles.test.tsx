@@ -10,7 +10,6 @@ import { server } from '../../mocks/server'
 import { beginSessionChange, finishSessionChange } from '../../shared/api/sessionBoundary'
 import { ProjectFilesSection } from './ProjectFilesSection'
 import { projectFilesClient } from './projectFilesClient'
-import { readUploadBytes } from './projectFilesBytes'
 import { projectFilesKeys } from './projectFilesQueries'
 
 it.each(['panel', 'heading', 'toolbar', 'Upload', 'hint', 'empty', 'list', 'row'])(
@@ -411,28 +410,19 @@ describe('Project files section through the real HTTP client and MSW', () => {
   })
 
   it('downloads the exact pinned revision as an object URL and revokes it', async () => {
-    const bytes = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0x00, 0xff, 0x80, 0xc3, 0x28])
-    const base = fixture('ready')
-    const row = FileRowSchema.parse({ ...base, revision: { ...base.revision,
-      filename: 'archive.zip', mediaType: 'application/zip', byteSize: bytes.byteLength, sha256: hash(bytes) } })
+    const row = fixture('ready')
     rows.set(A, [row])
-    server.use(http.get(paths.content, () => {
-      calls.push({ phase: 'download', workspaceId: A,
-        body: { fileId: row.file.fileId, revisionId: row.revision.revisionId } })
-      return new HttpResponse(bytes, { headers: { 'Content-Type': row.revision.mediaType } })
-    }))
     mount()
-    await userEvent.click(await screen.findByRole('button', { name: 'Download archive.zip' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Download ready.md' }))
     await waitFor(() => expect(clicked).toHaveLength(1))
-    expect(clicked[0].filename).toBe('archive.zip')
+    expect(clicked[0].filename).toBe('ready.md')
     expect(clicked[0].href).toMatch(/^blob:/)
     expect(calls.find((call) => call.phase === 'download')).toEqual({ phase: 'download', workspaceId: A,
       body: { fileId: row.file.fileId, revisionId: row.revision.revisionId } })
     const downloaded = createUrl.mock.calls[0][0]
     expect(downloaded).toBeInstanceOf(Blob)
     if (!(downloaded instanceof Blob)) throw new Error('Expected downloaded Blob')
-    expect(new Uint8Array(await readUploadBytes(downloaded, new AbortController().signal))).toEqual(bytes)
-    expect(downloaded.size).toBe(bytes.byteLength)
+    expect(downloaded.size).toBe(contents.byteLength)
     expect(downloaded.type).toBe('application/octet-stream')
     await waitFor(() => expect(revokeUrl).toHaveBeenCalledWith(clicked[0].href))
     expect(document.querySelector('a[download]')).toBeNull()

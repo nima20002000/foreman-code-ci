@@ -17,7 +17,7 @@ import { readCurrentRunDetails, withCurrentRunRead } from './currentRead.js'
 import {
   readAcceptedRepeatRunLocked, readAcceptedRepeatRunSnapshot, readRecordedRepeatRunSnapshot,
 } from './repeatStartRead.js'
-import { admitRepeatRun, type RepeatStartOptions } from './repeatStartAdmission.js'
+import { admitRepeatRun } from './repeatStartAdmission.js'
 import { resolveRunStart } from './startResolution.js'
 import { hasAction, isAuthorized, requireAuthorization } from '../access/policy.js'
 import { intersectGrants } from '../access/operatorDelegation.js'
@@ -188,9 +188,7 @@ export class RunManagementService {
     this.currentProduction.assertStopReady()
   }
 
-  async start(principal: ManagementPrincipal, source: 'http' | 'mcp',
-    raw: RunStartV3Input & { triggerJobId?: string | undefined },
-    options: Pick<RepeatStartOptions, 'continuation'> = {}) {
+  async start(principal: ManagementPrincipal, source: 'http' | 'mcp', raw: RunStartV3Input & { triggerJobId?: string | undefined }) {
     // No absent/retired/unknown tag can choose another execution path.
     if (raw.executionSemanticsVersion !== 3) throw new DomainError('EXECUTION_SEMANTICS_UNSUPPORTED',
       'Current execution requires explicit semantics 3.', 409)
@@ -207,7 +205,7 @@ export class RunManagementService {
       return production.startPublication.initializeLocked(...args)
     } } : undefined
     const execution = await admitRepeatRun(this.pool, this.locations, principal, source, input, publication,
-      { ...options, ...(triggerJobId === undefined ? {} : { triggerJobId }) })
+      triggerJobId === undefined ? {} : { triggerJobId })
     if (!execution.replayed) {
       // Only a KNOWN admission COMMIT reaches dispatch. This is the existing
       // configured engine entry for every current graph, not a repeat engine.
