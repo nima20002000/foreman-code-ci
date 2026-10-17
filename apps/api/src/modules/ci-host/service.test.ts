@@ -572,30 +572,21 @@ it('retries an unknown start reply on the assigned executor without requeueing',
   f.keepRunning.add(f.queued.id)
   const request = vi.mocked(f.endpoint.request).getMockImplementation()!
   const starts: { computer: HostCiComputer; runId: string }[] = []
-  const retryEntered = Promise.withResolvers<void>()
-  const acknowledge = Promise.withResolvers<void>()
   vi.mocked(f.endpoint.request).mockImplementation(async (computer, input) => {
     if (input.operation === 'start') {
       starts.push({ computer, runId: input.runId })
       if (starts.length === 1) throw new Error('Start reply lost')
-      retryEntered.resolve()
-      await acknowledge.promise
     }
     return request(computer, input)
   })
   const service = f.create()
-  const dispatching = service.dispatch()
-  try {
-    await retryEntered.promise
-    expect((await service.get(caller, { ticketId: f.queued.id })).run).toMatchObject({
-      state: 'starting', computer: { hostRef: computer.hostRef },
-      dispatchRequest: { operation: 'start', runId: f.queued.id },
-    })
-  } finally {
-    acknowledge.resolve()
-    await dispatching
-    await service.drain()
-  }
+  await dispatchSettled(service)
+  expect((await service.get(caller, { ticketId: f.queued.id })).run).toMatchObject({
+    state: 'starting', computer: { hostRef: computer.hostRef },
+    dispatchRequest: { operation: 'start', runId: f.queued.id },
+  })
+  expect(starts).toEqual([{ computer, runId: f.queued.id }])
+  await dispatchSettled(service)
   expect((await service.get(caller, { ticketId: f.queued.id })).run).toMatchObject({
     state: 'running', computer: { hostRef: computer.hostRef },
   })
@@ -608,34 +599,21 @@ it('retries an unknown start reply on the assigned executor without requeueing',
 it('retries an unacknowledged gate on its assigned computer without releasing ownership', async () => {
   const f = dispatchFixture()
   f.records.splice(0, 1)
-  f.keepRunning.add(f.queued.id)
   f.records[0] = CiRunRecordSchema.parse({ ...f.queued, suite: 'integration', gate: true,
     plannedHostKey: computer.key, integrationShards: 8, requiresBuildComputer: false,
     files: ['apps/api/test/workflow.integration.test.ts'] })
   const request = vi.mocked(f.endpoint.request).getMockImplementation()!
   const starts: { hostKey: string; runId: string }[] = []
-  const retryEntered = Promise.withResolvers<void>()
-  const acknowledge = Promise.withResolvers<void>()
   vi.mocked(f.endpoint.request).mockImplementation(async (target, input) => {
     if (input.operation === 'start') {
       starts.push({ hostKey: target.key, runId: input.runId })
       if (starts.length === 1) throw new Error('Start reply lost during reconnect')
-      retryEntered.resolve()
-      await acknowledge.promise
     }
     return request(target, input)
   })
-  const service = f.create()
-  const dispatching = service.dispatch()
-  try {
-    await retryEntered.promise
-    expect((await service.get(caller, { ticketId: f.queued.id })).run)
-      .toMatchObject({ state: 'starting', startedAt: null, step: 'dispatch' })
-  } finally {
-    acknowledge.resolve()
-    await dispatching
-    await service.drain()
-  }
+  await dispatchSettled(f.create())
+  expect((await f.create().get(caller, { ticketId: f.queued.id })).run)
+    .toMatchObject({ state: 'starting', startedAt: null, step: 'dispatch' })
 
   await f.create().computers(caller, { workspaceId: 'workspace' })
   expect((await f.create().get(caller, { ticketId: f.queued.id })).run)
@@ -644,7 +622,6 @@ it('retries an unacknowledged gate on its assigned computer without releasing ow
     key: 'device:replacement', hostRef: { kind: 'device', mainId: 'main', deviceId: 'replacement' },
     label: 'Replacement builder', priority: 100,
   }])
-  f.keepRunning.delete(f.queued.id)
   await dispatchSettled(f.create())
   expect((await f.create().get(caller, { ticketId: f.queued.id })).run).toMatchObject({
     state: 'passed', exitCode: 0, computer: { hostRef: computer.hostRef },
@@ -718,7 +695,6 @@ it('bounds a hanging start and retains its assignment while status is unavailabl
 it('accepts computer status as acknowledgement without sending a duplicate start', async () => {
   const f = dispatchFixture()
   f.records.splice(0, 1)
-  f.keepRunning.add(f.queued.id)
   const request = vi.mocked(f.endpoint.request).getMockImplementation()!
   let known = false
   let starts = 0
