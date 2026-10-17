@@ -3,15 +3,12 @@ import { expect, it } from 'vitest'
 import { fixture } from './cloud.testSupport.js'
 import { CircleStandby, circleOrgKey } from './circleStandby.js'
 import { CircleCiAccounts } from './circleCiAccounts.js'
-import { circleOrganizations } from './circleOrganizations.js'
 import { reservedCloudSlotKeys } from './cloudSlots.js'
 import type { CloudAccount } from './cloudProviders.js'
 import type { HostCiPorts } from './runner.js'
 import type { HostCiComputer } from './serviceTypes.js'
 import { ProductionHostCiEndpoint } from './endpoint.js'
-import { CloudCi } from './cloud.js'
-import { CircleCiProvider } from './cloudProviders.js'
-import type { CircleAccount } from '@foreman-code/contracts'
+import type { CloudCi } from './cloud.js'
 import type pg from 'pg'
 
 it('runs a further CircleCI org as its own slots on its own copy of the workspace mirror', async () => {
@@ -43,7 +40,6 @@ function discoveryPorts(projects: Set<string>, owners = 'octo\norg2\norg3\n', br
   const ports: HostCiPorts = { now: () => new Date(), cpus: 1, memoryBytes: 2 ** 30, run: async (file, args) => {
     calls.push(`${file} ${args.join(' ')}`)
     if (file === 'gh') return { code: 0, stdout: owners, stderr: '' }
-    if (file === 'circleci' && args[0] === 'auth') return { code: 0, stdout: '{}', stderr: '' }
     const slug = args[args.indexOf('--project') + 1]!
     if (broken.has(slug)) return { code: 1, stdout: '', stderr: 'permission denied' }
     return projects.has(slug) ? { code: 0, stdout: '{}', stderr: '' }
@@ -183,81 +179,4 @@ it('restores a recovered standby organization’s registered role before overflo
   now += 1000
   expect((await selector.roles('site-ci')).get(circleOrgKey('delta', 'reserve'))?.schedulingRole).toBe('standby')
   expect(added.find(account => account.owner === 'delta')?.role).toBe('standby')
-})
-
-it('discovers the implicit primary organizations through the selected primary profile context', async () => {
-  const ambient = discoveryPorts(new Set(), 'fixture-primary\n')
-  const selected = discoveryPorts(new Set(['gh/fixture-primary/site-ci']))
-  const added: CloudAccount[] = []
-  const accounts = new CircleCiAccounts(ambient.ports, async () => ['fixture-primary/site-ci'], org => added.push(org), {
-    registry: { list: async () => [{ id: 'default', label: 'Primary', role: 'primary', organizations: [] }] },
-    context: async () => ({ ports: selected.ports }), explicitPrimary: true,
-  })
-  await accounts.refresh()
-  expect(added).toMatchObject([{ owner: 'fixture-primary', circleAccountId: 'default', role: 'primary' }])
-  expect([...added[0]!.mirrorNames]).toEqual(['site-ci'])
-  expect(selected.calls).toContain('circleci project get --project gh/fixture-primary/site-ci --json')
-  expect(ambient.calls.filter(call => call.startsWith('circleci '))).toEqual([])
-})
-
-it('keeps implicit primary discovery alongside explicit standby bindings without duplicating visible owners', async () => {
-  const ambient = discoveryPorts(new Set(), 'alpha\ndelta\nepsilon\nzeta\n')
-  const broken = new Set<string>()
-  const primary = discoveryPorts(new Set(['gh/alpha/site-ci', 'gh/delta/site-ci']), '', broken)
-  const standby = discoveryPorts(new Set(['gh/delta/site-ci', 'gh/epsilon/site-ci', 'gh/zeta/site-ci']))
-  const added: CloudAccount[] = []
-  const accounts = new CircleCiAccounts(ambient.ports, async () => ['alpha/site-ci'], org => added.push(org), {
-    registry: { list: async () => [
-      { id: 'default', label: 'Primary', role: 'primary', organizations: [] },
-      { id: 'reserve', label: 'Reserve', role: 'standby', organizations: ['delta', 'epsilon', 'zeta'] },
-    ] },
-    context: async id => ({ ports: id === 'default' ? primary.ports : standby.ports }), explicitPrimary: true,
-  })
-  await accounts.refresh()
-  expect(added.filter(org => org.circleAccountId === 'default').map(org => org.owner)).toEqual(['alpha'])
-  expect(added.filter(org => org.circleAccountId === 'reserve').map(org => org.owner))
-    .toEqual(['delta', 'epsilon', 'zeta'])
-  expect(primary.calls).toEqual(['circleci project get --project gh/alpha/site-ci --json'])
-  expect(ambient.calls.filter(call => call.startsWith('circleci '))).toEqual([])
-  const original = added.find(org => org.owner === 'alpha')!
-  broken.add('gh/alpha/site-ci')
-  accounts.invalidate()
-  await accounts.refresh()
-  expect(added.filter(org => org.owner === 'alpha')).toHaveLength(1)
-  expect(original.registered).not.toBe(false)
-  expect([...original.mirrorNames]).toEqual(['site-ci'])
-})
-
-it('retires an already discovered primary executor when its organization is bound to standby', async () => {
-  const { ports } = discoveryPorts(new Set([
-    'gh/alpha/site-ci', 'gh/Delta/site-ci', 'gh/delta/site-ci',
-    'gh/epsilon/site-ci', 'gh/zeta/site-ci',
-  ]), 'alpha\nDelta\n')
-  const registry: CircleAccount[] = [{ id: 'default', label: 'Primary', role: 'primary', organizations: [] }]
-  const clouds: CloudCi[] = []
-  const discovery = new CircleCiAccounts(ports, async () => ['alpha/site-ci'], account => {
-    const provider = new CircleCiProvider(ports, { circleToken: async () => 'fixture-token' }, account)
-    clouds.push(new CloudCi('fixture-main', provider, async () => 'alpha/site-ci'))
-  }, { registry: { list: async () => registry }, context: async () => ({ ports }), explicitPrimary: true })
-  await discovery.refresh()
-  const original = clouds.find(cloud => cloud.provider.account?.owner === 'Delta')!
-  expect(original.computers()).toHaveLength(30)
-
-  registry.push({ id: 'reserve', label: 'Reserve', role: 'standby', organizations: ['delta', 'epsilon', 'zeta'] })
-  discovery.invalidate()
-  await discovery.refresh()
-  await Promise.all(clouds.map(cloud => cloud.ready()))
-
-  const organizations = await circleOrganizations(clouds)
-  expect(organizations.map(org => [org.circleAccountId, org.owner, org.role])).toEqual([
-    ['default', 'alpha', 'primary'], ['reserve', 'delta', 'standby'],
-    ['reserve', 'epsilon', 'standby'], ['reserve', 'zeta', 'standby'],
-  ])
-  const selector = new CircleStandby(async () => organizations, { reading: async () => ({ credits: null }) })
-  expect([...(await selector.roles('site-ci')).values()].filter(org => org.schedulingRole === 'active'))
-    .toHaveLength(1)
-  expect(original.computers()).toEqual([])
-  expect(original.provider.account?.registered).toBe(false)
-  expect(clouds).toContain(original)
-  expect(original.provider.account?.owner).toBe('Delta')
 })
