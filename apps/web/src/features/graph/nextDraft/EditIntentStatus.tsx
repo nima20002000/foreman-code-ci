@@ -13,7 +13,7 @@ export function EditIntentStatus({ data }: { data: GraphEditReadResultV3 }) {
   return <Alert tone={tone} title={title}>
     <div className="board-edit-intent" aria-label="Retained edits and affected Runs">
       {intent.state === 'saved' ? <p>Stopped runs were not restarted.</p>
-        : intent.state === 'discarded' ? <p>Nothing was stopped by discarding.</p>
+        : intent.state === 'discarded' ? null
           : <p>Your changes are kept until every affected run has fully stopped and cleaned up.</p>}
       {intent.error ? <p role="alert">{intent.error.message}</p> : null}
       {data.affectedSetChanged ? <p role="alert">New runs started with these agents. Discard this save and try again.</p> : null}

@@ -1,3 +1,4 @@
+import { InfoHint } from '../../shared/ui/InfoHint'
 import { retiredHarnessLabel } from './settingsPresentation'
 import { useId, useState } from 'react'
 import { changeCodexSandbox, type CodexHarnessConfiguration, type HarnessConfiguration } from '@foreman-code/contracts'
@@ -10,6 +11,7 @@ import { useProviderHarnessModels } from '../provider-accounts/useProviderHarnes
 import { ProviderAccountSelect } from '../provider-accounts/ProviderAccountSelect'
 import type { DeviceProvisioningTarget } from '@foreman-code/contracts/device-resources'
 import './harnessModelFields.css'
+import './settingsHelp.css'
 
 type Props = { value: HarnessConfiguration; onChange(value: HarnessConfiguration): void; issues?: readonly FieldIssue[] }
 function EditableHarnessBasicFields({ value, onChange, issues = [], includeSandbox = true, qualified, checking = false, checkError, accountHost }: Props & { includeSandbox?: boolean; qualified?: boolean; checking?: boolean; checkError?: string; accountHost?: DeviceProvisioningTarget['hostRef'] | undefined }) {
@@ -40,19 +42,19 @@ function EditableHarnessBasicFields({ value, onChange, issues = [], includeSandb
     {missingModel}
     <div className="harness-model-settings">
       <div className="harness-model-fields">
-        <Combobox label="Model" value={value.model} options={models} error={fieldMessage(issues, 'model')}
+        <div className="settings-field-help"><Combobox label="Model" value={value.model} options={models} error={fieldMessage(issues, 'model')}
           onValueChange={id => {
             const model = query.data?.models.find(item => item.id === id)
             if (!model) return
             onChange(selectNativeModel(value, model))
           }} />
+          {value.accountId ? <InfoHint label="Model">Options come from this account. Check the configuration before running.</InfoHint> : null}</div>
         {value.harness === 'codex' ? <Select label="Effort" disabled={!query.isSuccess} value={value.reasoningEffort} aria-label="Effort" error={fieldMessage(issues, 'reasoningEffort')}
           options={nativeOptionsWithSaved(supportedEfforts(selected), value.reasoningEffort)}
           onChange={(event) => onChange({ ...value, reasoningEffort: event.target.value as typeof value.reasoningEffort })} /> : null}
       </div>
       <div className="harness-model-toggles"><HarnessModelOptions accountHost={accountHost} value={value} onChange={onChange} issues={issues} /></div>
     </div>
-    {value.accountId ? <p>Options come from this account. Check the configuration before running.</p> : null}
     {query.isPending ? <span className="harness-status" role="status">Loading native models…</span> : null}
     {query.isError || refresh.isError ? <Alert live tone="danger" title={(refresh.error ?? query.error)?.message ?? 'Model discovery failed.'}
       action={<Button size="sm" disabled={refresh.isPending} onClick={() => {
