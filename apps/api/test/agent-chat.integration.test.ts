@@ -445,8 +445,8 @@ describe('selected-Agent chat service', { timeout: 60_000 }, () => {
           configuration: { versionId: saved.value.agent.configurationVersionId,
             harness: { model: 'saved-after-compaction' } } })
         expect(dispatched).toBe(1)
-        expect(reconciled).toBe(residency === 'resident' ? 1 : 0)
-        expect(recoveredProfiles).toEqual(residency === 'unloaded' ? [appliedConfiguration.id] : [])
+        expect(reconciled).toBe(0)
+        expect(recoveredProfiles).toEqual([appliedConfiguration.id])
         const sent = await client.callTool({ name: 'agent_chat_send', arguments: { workspaceId,
           request: { requestId: randomUUID(), context, expectedConversationId: id,
             intent: 'next_turn', content: 'Continue after recovered compaction.' } } })

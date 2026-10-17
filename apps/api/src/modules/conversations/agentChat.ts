@@ -629,7 +629,7 @@ export class AgentChatService {
     const pending = await this.pendingConfiguration(row)
     const recoveringCompaction = pending !== undefined && await this.sessionControls.hasPendingCompaction(id)
     const configuration = pending && !recoveringCompaction ? pending : await this.conversationConfiguration(row)
-    const nativeAvailable = recoveringCompaction || (!pending && state.sessionState !== 'unavailable')
+    const nativeAvailable = !pending && state.sessionState !== 'unavailable'
     let runtime = nativeAvailable ? this.runtimes.get(id) : undefined
     if (nativeAvailable && write && !row.active_request_id && row.native_session_id && configuration) {
       runtime = await this.runtime(row, configuration, `session-control:${id}`, this.lifetime.signal, principal.id)
@@ -644,7 +644,7 @@ export class AgentChatService {
       get manager() {
         return runtime && !runtime.disposal && !runtime.retiring ? runtime.manager : undefined
       },
-      ...(nativeAvailable && session && configuration && this.managers.recoverCompaction ? {
+      ...((nativeAvailable || recoveringCompaction) && session && configuration && this.managers.recoverCompaction ? {
         recoverCompaction: (state: import('@foreman-code/contracts').CompactionState) => this.managers.recoverCompaction!(
           configuration, id, session, this.startInput(row, configuration, `session-control:${id}`, true),
           state, principal.id, this.lifetime.signal),
