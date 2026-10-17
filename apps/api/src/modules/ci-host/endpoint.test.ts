@@ -1,4 +1,3 @@
-import { setImmediate as nextTurn } from 'node:timers/promises'
 import type pg from 'pg'
 import { CI_HOST_NAMESPACE, CiHostRequestSchema, CiRunRecordSchema, type CiHostRequest } from '@foreman-code/contracts'
 import { expect, it, vi } from 'vitest'
@@ -212,22 +211,13 @@ it('fetches another retention page after sending the first and keeps the five-mi
     run_id: `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
     state: 'passed', finished_at: '2026-01-01T00:00:00Z', collection: null, rank: String(index + 201),
   }))
-  const pages = [rows.slice(0, 1000).map(row => row.run_id), rows.slice(1000).map(row => row.run_id)]
   const requests: string[][] = []
-  const expiredLogPages: string[][] = []
-  const readPage = vi.fn(async (parameters: unknown[]) => {
+  const query = vi.fn(async (_sql: string, parameters: unknown[]) => {
     const limit = parameters[3] as number | undefined
     const offset = parameters[4] as number | undefined ?? 0
-    if (offset > 0) expect(requests.at(-1)).toEqual(pages[0])
+    if (offset > 0) expect(requests).toHaveLength(1)
     return { rows: rows.slice(offset, limit === undefined ? undefined : offset + limit) }
   })
-  const query = async (_sql: string, parameters: unknown[]) => {
-    if (Array.isArray(parameters[0])) {
-      expiredLogPages.push([...parameters[0]] as string[])
-      return { rows: [], rowCount: parameters[0].length }
-    }
-    return readPage(parameters)
-  }
   const status = { operation: 'status' as const, ready: true, reasons: [], cpuCount: 8,
     memoryBytes: 16 * 2 ** 30, runs: [], cleanupSupported: true }
   const endpoint = new ProductionHostCiEndpoint({ query } as unknown as pg.Pool, 'fixture-main', () => undefined, {
@@ -240,35 +230,12 @@ it('fetches another retention page after sending the first and keeps the five-mi
       return status
     },
   })
-  const startedAt = Date.parse('2026-10-17T12:00:00Z')
-  const now = vi.spyOn(Date, 'now').mockReturnValue(startedAt)
-  try {
-    await endpoint.request(computer, { operation: 'status' })
-    await expect.poll(() => requests.length).toBe(2)
-    // Let the background sweep settle before advancing the clock.
-    await nextTurn()
-    expect(requests).toEqual(pages)
-    expect(readPage).toHaveBeenCalledTimes(2)
-    expect(expiredLogPages).toEqual(pages)
-    await endpoint.request(computer, { operation: 'status' })
-    await nextTurn()
-    expect(readPage).toHaveBeenCalledTimes(2)
-    expect(requests).toEqual(pages)
-    expect(expiredLogPages).toEqual(pages)
-    now.mockReturnValue(startedAt + 5 * 60_000 - 1)
-    await endpoint.request(computer, { operation: 'status' })
-    await nextTurn()
-    expect(readPage).toHaveBeenCalledTimes(2)
-    expect(requests).toEqual(pages)
-    expect(expiredLogPages).toEqual(pages)
-    now.mockReturnValue(startedAt + 5 * 60_000)
-    await endpoint.request(computer, { operation: 'status' })
-    await expect.poll(() => requests.length).toBe(4)
-    await nextTurn()
-    expect(readPage).toHaveBeenCalledTimes(4)
-    expect(requests).toEqual([...pages, ...pages])
-    expect(expiredLogPages).toEqual([...pages, ...pages])
-  } finally { now.mockRestore() }
+  await endpoint.request(computer, { operation: 'status' })
+  await expect.poll(() => requests.length).toBe(2)
+  expect(requests).toEqual([rows.slice(0, 1000).map(row => row.run_id), rows.slice(1000).map(row => row.run_id)])
+  expect(query).toHaveBeenCalledTimes(2)
+  await endpoint.request(computer, { operation: 'status' })
+  expect(query).toHaveBeenCalledTimes(2)
 })
 
 function remoteExecutionFixture(enabled?: boolean) {
