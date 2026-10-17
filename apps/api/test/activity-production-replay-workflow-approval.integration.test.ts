@@ -75,11 +75,12 @@ describe.skipIf(!postgresEnabled)('Production activity replay: workflow-approval
     (value) => value.activitySnapshot!.pendingInteractions.length > 0)
     const interaction = detail.activitySnapshot!.pendingInteractions[0]!
     // Request publication precedes the checkpoint binding, which advances its public revision.
-    const view = await eventually(async () => {
+    const read = async () => {
       const response = await f.http('GET', `/api/user/interactions/${interaction.id}`, undefined, '')
       expect(response.statusCode, response.body).toBe(200)
       return GetInteractionResponseSchema.parse(response.json())
-    }, (value) => !!value.interaction.graphInterruptId)
+    }
+    const view = await eventually(read, (value) => !!value.interaction.graphInterruptId)
     const current = view.interaction
     expect(current.revision).toBeGreaterThan(0)
     expect(view).toMatchObject({ canRespond: true, activity: { phase: 'needs_answer', answerRecorded: false,
@@ -97,21 +98,35 @@ describe.skipIf(!postgresEnabled)('Production activity replay: workflow-approval
     const authoritative = (await f.db.pool.query<{ revision: string; graph_interrupt_id: string }>(`
       select revision::text,record->>'graphInterruptId' as graph_interrupt_id from durable_interactions where id=$1`, [interaction.id])).rows[0]!
     expect(authoritative).toEqual({ revision: String(current.revision), graph_interrupt_id: current.graphInterruptId })
-    const answer = await f.http('POST', `/api/user/interactions/${interaction.id}/respond`, {
-      interactionId: interaction.id, expectedRevision: current.revision, optionId: choice.optionId,
-    }, '')
-    expect(answer.statusCode, answer.body).toBe(200)
-    expect(answer.json().interaction.deliveryState).not.toBe('delivered')
-    expect(f.replay.responses).toHaveLength(1)
-    const recorded = await f.http('GET', `/api/user/interactions/${interaction.id}`, undefined, '')
-    expect(recorded.json().activity.answerRecorded).toBe(true)
-    expect(recorded.json().activity.workerAcknowledgment).toBe('unknown')
-    expect(recorded.json().activity.response.available).toBe(false)
     const nativeSessionId = current.nativeSessionId
     const nativeTurnId = f.replay.starts.find((entry) => entry.sessionId === nativeSessionId)!.nativeTurnId
-    f.replay.commandCompleted(nativeSessionId, nativeTurnId)
-    f.replay.complete(nativeSessionId, nativeTurnId, 'recorded post-approval final')
+    f.replay.nextResponse = 'unacknowledged'
+    const [answer] = await Promise.all([
+      f.http('POST', `/api/user/interactions/${interaction.id}/respond`, {
+        interactionId: interaction.id, expectedRevision: current.revision, optionId: choice.optionId,
+      }, ''),
+      (async () => {
+        const recorded = await eventually(read, (value) => value.activity?.answerRecorded === true
+          && f.replay.responses.length === 1)
+        expect(recorded.interaction.deliveryState).not.toBe('delivered')
+        expect(recorded.activity).toMatchObject({ answerRecorded: true, workerAcknowledgment: 'unknown',
+          response: { available: false } })
+        expect(f.replay.responses).toHaveLength(1)
+        f.replay.channels.get(nativeSessionId)!.notify('serverRequest/resolved', {
+          threadId: nativeSessionId, requestId: current.nativeRequestId,
+        })
+        const delivered = await eventually(read, (value) => value.interaction.deliveryState === 'delivered')
+        expect(delivered.activity).toMatchObject({ answerRecorded: true, nativeDelivery: 'delivered',
+          workerAcknowledgment: 'unknown', response: { available: false } })
+        f.replay.commandCompleted(nativeSessionId, nativeTurnId)
+        f.replay.complete(nativeSessionId, nativeTurnId, 'recorded post-approval final')
+      })(),
+    ])
+    expect(answer.statusCode, answer.body).toBe(200)
+    expect(answer.json().interaction.deliveryState).toBe('delivered')
+    expect(f.replay.responses).toHaveLength(1)
     await f.reconcile()
+    await eventually(read, (value) => value.activity?.workerAcknowledgment === 'confirmed')
     const persisted = (await f.db.pool.query('select record from durable_interactions where id=$1', [interaction.id])).rows[0]!.record
     expect(persisted.id).toBe(current.id)
     expect(persisted.nativeSessionId).toBe(nativeSessionId)
