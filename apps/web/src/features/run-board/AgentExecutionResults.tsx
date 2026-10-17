@@ -1,4 +1,3 @@
-import { InfoHint } from '../../shared/ui/InfoHint'
 import { useState } from 'react'
 import { createStore, useStore } from 'zustand'
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query'
@@ -51,10 +50,11 @@ export function AgentExecutionResults({ selection, scope, execution, name, accep
   if (!selection.isCurrent(selection.generation) || sessionIsSwitching()) return null
   const tickets = new Map((ci.data?.pages.flatMap(page => page.tickets) ?? []).map(ticket => [ticket.id, ticket]))
   return <>
-    <section aria-label="Agent output and artifacts"><h3>Agent output and artifacts<InfoHint label="Agent output">Follow-up messages appear in Agent chat. They do not change this execution’s output.</InfoHint></h3>
+    <section aria-label="Agent output and artifacts"><h3>Agent output and artifacts</h3>
       {acceptedResult.status === 'accepted'
         ? <JsonValue label={`Accepted output from ${name}`} value={acceptedResult.value.output ?? null} />
         : <p>No accepted Agent output recorded.</p>}
+      <p>Follow-up messages appear in Agent chat. They do not change this execution’s output.</p>
     </section>
     <AgentHostCiResults selection={selection} scope={scope} execution={execution} />
     <section aria-label="Agent Job results"><h3>Job executions</h3>

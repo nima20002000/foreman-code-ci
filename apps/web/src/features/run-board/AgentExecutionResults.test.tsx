@@ -1,4 +1,3 @@
-import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
@@ -98,9 +97,6 @@ it('keeps accepted execution output and artifacts separate from later follow-up 
     const output = screen.getByRole('region', { name: 'Agent output and artifacts' })
     expect(output).toHaveTextContent('Original execution answer')
     expect(output).toHaveTextContent('Original artifact')
-    expect(screen.queryByText('Follow-up messages appear in Agent chat. They do not change this execution’s output.')).not.toBeInTheDocument()
-    await userEvent.hover(within(output).getByRole('button', { name: 'About Agent output' }))
-    expect(screen.getByRole('tooltip')).toHaveTextContent('Follow-up messages appear in Agent chat. They do not change this execution’s output.')
     await screen.findByRole('button', { name: 'View result' })
     view.rerender(content)
     await act(async () => { await client.invalidateQueries({ queryKey: ['agent-chat'] }) })
