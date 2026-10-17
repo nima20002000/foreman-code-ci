@@ -1,4 +1,3 @@
-import { RetryBackoff } from '../../infrastructure/retryBackoff.js'
 import type pg from 'pg'
 import { withClientTransaction } from '../../infrastructure/transaction.js'
 import type { GraphSqlClient } from '../run-graph/connection.js'
@@ -7,7 +6,6 @@ import type { PrivateSourceSnapshotStore } from './store.js'
 import { removeAbandonedRunSourceUses } from './runSourceUse.js'
 
 export const SOURCE_RETENTION_SECONDS = 3600
-const SNAPSHOT_SCAN_BATCH_SIZE = 50
 type SnapshotStore = Pick<PrivateSourceSnapshotStore, 'remove' | 'withCaptureLock'>
 
 /** Pressure can shorten retention, but cannot release a source that is still in use. */
@@ -196,13 +194,7 @@ async function scanUnusedSourceSnapshots(pool: pg.Pool,
     where a.state='approved' and r.state='retained' and r.scope_id=$1 order by a.created_at`, [scopeId])
   if (!candidates.rows.length) return []
   // Scan without the storage lock; only eligible snapshots need a locked recheck.
-  const releasable = new Set<string>()
-  for (let offset = 0; offset < candidates.rows.length; offset += SNAPSHOT_SCAN_BATCH_SIZE) {
-    const batch = candidates.rows.slice(offset, offset + SNAPSHOT_SCAN_BATCH_SIZE)
-    for (const id of await releasableSnapshots(pool, batch.map(row => row.snapshot_id), underPressure)) {
-      releasable.add(id)
-    }
-  }
+  const releasable = await releasableSnapshots(pool, candidates.rows.map(row => row.snapshot_id), underPressure)
   const errors: unknown[] = []
   for (const candidate of candidates.rows) {
     if (!releasable.has(candidate.snapshot_id)) continue
@@ -217,20 +209,10 @@ async function scanUnusedSourceSnapshots(pool: pg.Pool,
 
 type ReleaseScan = { pressure: { requested: boolean }; result: Promise<unknown[]> }
 const releaseScans = new WeakMap<pg.Pool, Map<string, ReleaseScan>>()
-const releaseRetries = new WeakMap<pg.Pool, Map<string, RetryBackoff>>()
 
 export async function releaseUnusedSourceSnapshots(pool: pg.Pool,
   store: SnapshotStore, scopeId: string,
   report?: (error: unknown) => void, underPressure = false): Promise<void> {
-  let retries = releaseRetries.get(pool)
-  if (!retries) {
-    retries = new Map()
-    releaseRetries.set(pool, retries)
-  }
-  const retry = retries.get(scopeId) ?? new RetryBackoff({ initialMs: 10 * 60_000, maxMs: 60 * 60_000 })
-  retries.set(scopeId, retry)
-  // Maintenance reports failures for later retry; direct callers propagate errors and may retry immediately.
-  if (report !== undefined && !underPressure && !retry.ready()) return
   let scopes = releaseScans.get(pool)
   if (!scopes) {
     scopes = new Map()
@@ -249,12 +231,7 @@ export async function releaseUnusedSourceSnapshots(pool: pg.Pool,
         if (!underPressure && pressure.requested) {
           errors.push(...await scanUnusedSourceSnapshots(pool, store, scopeId, true))
         }
-        if (errors.length) retry.fail()
-        else retry.reset()
         return errors
-      } catch (error) {
-        retry.fail()
-        return [error]
       } finally {
         activeScopes.delete(scopeId)
       }

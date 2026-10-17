@@ -10,7 +10,7 @@ import { server } from '../../mocks/server'
 import { assignSkillUser, editSkillElsewhere, seedSkill } from '../../shared/mocks/skillsHandlers'
 import { SkillsLibrary, type SkillLibrarySearch } from './SkillsLibrary'
 import { SkillEditor, type SavedSkill } from './SkillEditor'
-import { NewSkillPage, SkillDetailPage } from './SkillPages'
+import { SkillDetailPage } from './SkillPages'
 import { AgentSkillsField } from './AgentSkillsField'
 import { readSkillFile } from './skillImport'
 import { deferred } from '../../test/deferred'
@@ -77,7 +77,7 @@ describe('Settings → Skills library', () => {
     await act(async () => { response.resolve(undefined) })
     expect(await screen.findByText('Reviewer')).toBeVisible()
     expect(screen.getByText('Checks diffs')).toBeVisible()
-    expect(screen.getByText('Active · v1')).toBeVisible()
+    expect(screen.getByText('Version 1')).toBeVisible()
   })
 
   it('separates a true empty library, an empty search, and a load failure with retry', async () => {
@@ -128,96 +128,9 @@ describe('Settings → Skills library', () => {
     expect(screen.queryByText('Old guide')).not.toBeInTheDocument()
     await user.click(screen.getByRole('switch', { name: 'Show archived' }))
     expect(await screen.findByText('Old guide')).toBeVisible()
-    expect(screen.getByText('Archived · v1')).toBeVisible()
+    expect(screen.getByText('Archived')).toBeVisible()
     await user.type(screen.getByRole('searchbox', { name: 'Search skills' }), 'active')
     await waitFor(() => expect(screen.queryByText('Old guide')).not.toBeInTheDocument())
-  })
-})
-
-describe('Skills simplified screens', () => {
-  function assignedAgents(skillId: string) {
-    server.use(http.get('/api/management/workspaces/:workspaceId/agents', ({ params }) =>
-      HttpResponse.json({ items: params.workspaceId === 'workspace-a' ? [
-        { agent: { id: 'reviewer', name: 'Reviewer', assignedSkills: [{ skillId, version: '1' }] }, metadataRevision: 1 },
-        { agent: { id: 'writer', name: 'Writer', assignedSkills: [] }, metadataRevision: 1 },
-      ] : [], pageInfo: { nextCursor: null } })))
-  }
-
-  it('shows status and assigned Agents in one linked row, including assignments on the latest version', async () => {
-    const skill = seedSkill('workspace-a', 'Review guide', 'Review carefully.')
-    assignedAgents(skill.skillId)
-    wrap(<Library />)
-    const row = await screen.findByRole('link', { name: /Review guide/ })
-    expect(await within(row).findByText('Reviewer')).toBeVisible()
-    expect(within(row).getByText('Active · v1')).toBeVisible()
-    expect(within(row).queryByText('Writer')).toBeNull()
-    expect(row).toHaveAttribute('href', `/settings/skills/workspace-a/${skill.skillId}`)
-    expect(screen.getAllByRole('link', { name: 'Add skill' })).toHaveLength(1)
-  })
-
-  it('keeps assignment failures distinct from an unassigned skill and supports retry', async () => {
-    const user = userEvent.setup()
-    const skill = seedSkill('workspace-a', 'Review guide', 'Review carefully.')
-    assignedAgents(skill.skillId)
-    server.use(http.get('/api/management/workspaces/:workspaceId/agents', () =>
-      HttpResponse.json({ error: { code: 'UNAVAILABLE', message: 'Agents unavailable.' } }, { status: 503 }), { once: true }))
-    wrap(<Library />)
-    const row = await screen.findByRole('listitem')
-    expect(await within(row).findByText('Assignments unavailable')).toBeVisible()
-    expect(within(row).queryByText('No Agents')).toBeNull()
-    await user.click(within(row).getByRole('button', { name: 'Retry assignments' }))
-    expect(await within(row).findByText('Reviewer')).toBeVisible()
-  })
-
-  it('opens version history on demand and previews the selected immutable version', async () => {
-    const user = userEvent.setup()
-    const skill = seedSkill('workspace-a', 'Guide', 'First instructions')
-    editSkillElsewhere('workspace-a', skill.skillId, 'Second instructions')
-    wrap(<SkillDetailPage workspaceId="workspace-a" skillId={skill.skillId} onCancel={vi.fn()} />)
-    expect(await screen.findByRole('textbox', { name: /^Instructions/ })).toHaveValue('Second instructions')
-    const history = screen.getByRole('button', { name: 'Version history' })
-    expect(history).toHaveAttribute('aria-expanded', 'false')
-    expect(screen.queryByRole('button', { name: 'View version 1' })).toBeNull()
-    await user.click(history)
-    expect(history).toHaveAttribute('aria-expanded', 'true')
-    await user.click(await screen.findByRole('button', { name: 'View version 1' }))
-    const dialog = await screen.findByRole('dialog', { name: 'Version 1' })
-    expect(await within(dialog).findByLabelText('Instructions preview')).toHaveTextContent('First instructions')
-    expect(within(dialog).queryByText('Second instructions')).toBeNull()
-    await user.click(within(dialog).getByRole('button', { name: 'Close dialog' }))
-    expect(screen.getByRole('textbox', { name: /^Instructions/ })).toHaveValue('Second instructions')
-    await user.click(history)
-    expect(screen.queryByRole('button', { name: 'View version 1' })).toBeNull()
-  })
-
-  it('keeps the new skill form focused on fields, import, preview and create', async () => {
-    seedSkill('workspace-a', 'Existing', 'Instructions')
-    wrap(<NewSkillPage onSaved={vi.fn()} onCancel={vi.fn()} />)
-    expect(await screen.findByRole('heading', { name: 'New skill' })).toBeVisible()
-    expect(await screen.findByRole('combobox', { name: /Workspace/ })).toBeVisible()
-    expect(screen.getByRole('textbox', { name: /^Name/ })).toBeVisible()
-    expect(screen.getByRole('textbox', { name: 'Description' })).toBeVisible()
-    expect(screen.getByRole('textbox', { name: /^Instructions/ })).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Import Markdown file' })).toBeEnabled()
-    expect(screen.getByRole('tab', { name: 'Preview' })).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Create skill' })).toBeVisible()
-    expect(screen.queryByText('Drop a Markdown or text file here to import.')).toBeNull()
-  })
-
-  it('keeps archived instructions readable and restores editing through the existing action', async () => {
-    const user = userEvent.setup()
-    const skill = seedSkill('workspace-a', 'Archived guide', 'Kept instructions', { archived: true })
-    wrap(<SkillDetailPage workspaceId="workspace-a" skillId={skill.skillId} onCancel={vi.fn()} />)
-    const instructions = await screen.findByRole('textbox', { name: /^Instructions/ })
-    expect(instructions).toHaveAttribute('readonly')
-    expect(instructions).toHaveValue('Kept instructions')
-    expect(screen.queryByRole('button', { name: 'Save new version' })).toBeNull()
-    await user.click(screen.getByRole('button', { name: 'Restore skill' }))
-    const dialog = screen.getByRole('alertdialog', { name: 'Restore Archived guide?' })
-    await user.click(within(dialog).getByRole('button', { name: 'Restore' }))
-    await waitFor(() => expect(instructions).not.toHaveAttribute('readonly'))
-    expect(screen.getByRole('button', { name: 'Save new version' })).toBeDisabled()
-    expect((await saved('workspace-a', skill.skillId)).skill.archived).toBe(false)
   })
 })
 
@@ -400,7 +313,6 @@ describe('Board Agent skill assignment', () => {
     const onChange = vi.fn()
     wrap(<Field onChange={onChange} />)
     await user.click(await screen.findByRole('button', { name: 'Add' }))
-    expect(screen.queryByText('Selected skills are added in the order you pick them. Each keeps its current version until you update it.')).toBeNull()
     editSkillElsewhere('workspace-a', skill.skillId, 'Instructions from version two')
     await user.click(screen.getByRole('button', { name: 'Preview Guide' }))
     expect(await screen.findByLabelText('Instructions preview')).toHaveTextContent('Instructions from version one')

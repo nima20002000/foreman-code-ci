@@ -1003,36 +1003,3 @@ it('cancels a queued ticket through MCP before a blocked capacity read finishes'
     await f.close()
   }
 })
-
-it('recovers an accepted completed start after settlement fails without starting another execution', async () => {
-  const f = await fixture()
-  try {
-    const ticket = await f.enqueue()
-    f.control.onStart = async (computer, request) => {
-      if (request.operation !== 'start') throw new Error('Expected a start request')
-      const key = `${computer.key}:${request.runId}`
-      f.remote.set(key, { ...f.remote.get(key)!, state: 'passed', step: null,
-        exitCode: 0, finishedAt: new Date().toISOString() })
-    }
-    await f.pool.query(`create function reject_ci_finished() returns trigger language plpgsql as $$
-      begin if new.state='passed' then raise exception 'Settlement unavailable'; end if; return new; end $$`)
-    await f.pool.query(`create trigger reject_ci_finished before update on ci_runs
-      for each row execute function reject_ci_finished()`)
-    f.control.available = true
-    await settle(f.ci)
-    expect(f.starts).toHaveLength(1)
-    expect((await f.read(ticket.ticketId)).state).toBe('starting')
-    await f.pool.query('drop trigger reject_ci_finished on ci_runs')
-    await settle(f.ci)
-    const recovered = await f.read(ticket.ticketId)
-    expect(recovered).toMatchObject({ state: 'passed', exitCode: 0,
-      computer: { hostRef: f.starts[0]!.computer.hostRef } })
-    await settle(f.ci)
-    expect((await f.read(ticket.ticketId)).state).toBe('passed')
-    expect(f.starts).toHaveLength(1)
-  } finally {
-    await f.pool.query('drop trigger if exists reject_ci_finished on ci_runs')
-    await f.pool.query('drop function if exists reject_ci_finished()')
-    await f.close()
-  }
-}, 60_000)

@@ -39,7 +39,7 @@ async function actionReadFailure() {
   return { ...mounted, scope, key, wire }
 }
 
-describe('contextual action recovery on the mounted Board', () => {
+describe('ENG05-D contextual action recovery on the mounted Board', () => {
   it('regression: retries bounded contextual status after a transient failure without a user click', async () => {
     const { key, wire, cache } = await actionReadFailure()
     const before = wire.executions('1').length
@@ -63,7 +63,7 @@ describe('contextual action recovery on the mounted Board', () => {
     const historyBefore = wire.executions().length
     await userEvent.setup().click(within(controls).getByRole('button', { name: 'Refresh / reconnect client state' }))
     await waitFor(() => expect(cache.getQueryState(key)).toMatchObject({ status: 'success', fetchStatus: 'idle' }))
-    await within(controls).findByText('Client state refreshed.')
+    await within(controls).findByText(/Client state refreshed\. This did not restart a provider/)
     expect(wire.executions('1')).toHaveLength(before + 1)
     expect(wire.executions()).toHaveLength(historyBefore)
     expect(within(controls).getByRole('button', { name: 'Resume execution — unavailable' })).toBeDisabled()

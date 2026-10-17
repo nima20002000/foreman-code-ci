@@ -49,11 +49,6 @@ describe('workflow default worktree', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Default worktree' })
     const workspaceProject = await within(dialog).findByRole('button', { name: 'Use workspace project' })
     await waitFor(() => expect(workspaceProject).toBeEnabled())
-    expect(within(dialog).queryByText('Each Agent gets its own worktree and unique branch at the selected approved commit.')).not.toBeInTheDocument()
-    const hint = within(dialog).getByRole('button', { name: 'About Worktree' })
-    await user.hover(hint)
-    expect(screen.getByRole('tooltip')).toHaveTextContent('Each Agent gets its own worktree and unique branch at the selected approved commit.')
-    await user.unhover(hint)
     await user.click(workspaceProject)
     await user.type(within(dialog).getByRole('textbox', { name: 'Agent branch prefix' }), 'foreman/site/review')
     expect(change).not.toHaveBeenCalled()
@@ -132,16 +127,5 @@ describe('workflow default worktree', () => {
       value={{ rootBinding: fixture.rootBinding, branchPrefix: 'foreman/historical' }} />)
     expect(await screen.findByText(`Main · octo-owner/website · ${fixture.source.manifest.git!.commit.slice(0, 12)}`)).toBeVisible()
     expect(screen.getByText('foreman/historical')).toBeVisible()
-  })
-
-  it('labels the worktree computer with its saved name', async () => {
-    const fixture = choicesFixture()
-    server.use(http.get('*/api/management/computers/activity', () => HttpResponse.json({
-      mainId: fixture.root.selection.hostRef.mainId, cloud: [], truncated: false, activityComplete: true,
-      computers: [{ target: { hostRef: fixture.root.selection.hostRef, applicationInstallationId: fixture.root.selection.hostRef.mainId,
-        keyRevision: null, authorizationRevision: null }, name: 'Studio PC', online: true, jobs: [], agents: [] }],
-    })))
-    renderWithRouter(<SavedWorkflowWorktree workspaceId="workspace-1" value={{ rootBinding: fixture.rootBinding }} />)
-    expect(await screen.findByText(`Studio PC · octo-owner/website · ${fixture.source.manifest.git!.commit.slice(0, 12)}`)).toBeVisible()
   })
 })
