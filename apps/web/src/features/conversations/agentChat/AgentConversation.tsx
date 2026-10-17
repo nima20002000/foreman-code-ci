@@ -24,6 +24,8 @@ import { useAgentChat } from './useAgentChat'
 import { ProviderAccountChip, ProviderAccountProblem } from '../../provider-accounts/ProviderAccountChip'
 import { SessionContext } from '../sessionControls/SessionControls'
 import { useAgentConversationComposer } from './useAgentConversationComposer'
+import { useFirstAttachment } from './useFirstAttachment'
+import { AgentChatSettings } from './AgentChatSettings'
 import './agentChat.css'
 import '../chatAttachments.css'
 
@@ -54,7 +56,10 @@ function AgentConversationContent({ context, name, role, activity, runLabel, onC
     ...(conversation.origin.kind === 'run_execution' ? { runId: conversation.origin.runId, executionId: conversation.origin.executionId } : {}),
   } } : null)
   const writeReason = retired ? 'Retired harness (OpenCode): read-only' : chat.blocked('agent_chat:write')
-  const drop = useFileDrop({ disabled: !!writeReason || !attachments.canAdd, onFiles: attachments.addFiles })
+  const firstAttachment = useFirstAttachment({ context, executionId: state?.sourceTranscript?.executionId,
+    hasConversation: !!conversation, ready: !!state && !writeReason, attachments, refresh: chat.refresh })
+  const attachmentDraft = firstAttachment.draft
+  const drop = useFileDrop({ disabled: !!writeReason || !attachmentDraft.canAdd, onFiles: attachmentDraft.addFiles })
   const draft = useConversationDraftStore((store) => store.drafts[chat.draftKey] ?? '')
   const { composer, sendAgain, setSendAgain, resendCommand, resendControl, resendPending,
     commandError, commandCompaction, focus, submit } = useAgentConversationComposer({ chat, state, sessionControls, attachments, draft })
@@ -113,7 +118,7 @@ function AgentConversationContent({ context, name, role, activity, runLabel, onC
   const controlError = commandError?.draftKey === chat.draftKey
     && (!commandCompaction || commandCompaction.status === 'failed')
     ? commandCompaction?.message ?? commandError.message : undefined
-  let attention = controlError ?? chat.localError
+  let attention = controlError ?? chat.localError ?? firstAttachment.error
   let attentionAction: ReactNode
   if (!attention && error) {
     attention = errorMessage(error, 'Delivery failed')
@@ -161,13 +166,14 @@ function AgentConversationContent({ context, name, role, activity, runLabel, onC
         sessionMode: parseSessionCommand(content).kind === 'plan-task' ? 'plan' : mode })} />
       : <ConversationViewport revision="loading">{() => <LoadingState label="Loading conversation…" rows={1} />}</ConversationViewport>}
     {state ? <div className="agent-chat-composer-controls" role="group" aria-label="Chat actions" {...drop.dropTargetProps}>
-      <AgentChatComposer name={name} draftKey={chat.draftKey} inputRef={composer} sessionControls={sessionControls}
+      <AgentChatComposer name={name} draftKey={chat.draftKey} inputRef={composer}
         disabled={composerDisabled} reason={composerReason} controlReason={controlReason}
         pending={chat.pending} controlPending={sessionControls.mutation.isPending}
         hasAttachments={attachments.hasAttachments} canStop={canStop} stopReason={stopReason}
         onStop={() => { chat.stop(); focus() }} onSubmit={(content, mode) => { void submit('next_turn', content, mode) }}
-        attachmentControl={!composerDisabled ? <ChatAttachmentControl draft={attachments} disabled={!!writeReason} composerDrop={drop} /> : undefined}
+        attachmentControl={!composerDisabled ? <ChatAttachmentControl draft={attachmentDraft} disabled={!!writeReason} composerDrop={drop} /> : undefined}
         actions={!retired ? <>
+          <AgentChatSettings context={context} conversationVersionId={conversation?.agentConfigurationVersionId} disabled={!!writeReason} />
           {state.activeTurn && (state.capabilities.steer !== 'unavailable' || state.capabilities.unavailable.steer)
             ? <Tooltip content={steerReason ?? 'Steer the active turn'}>
               <IconButton size="sm" variant="ghost" label="Steer" title={steerReason ?? 'Steer the active turn'} disabled={!!steerReason || empty}

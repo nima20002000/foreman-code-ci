@@ -65,14 +65,13 @@ function CloudRow({ cloud, fresh }: { cloud: CloudCiActivity; fresh: boolean }) 
 
 const NUMBER = new Intl.NumberFormat('en-US')
 
-/** CircleCI has no plan-balance API: the credits are the configured allowance minus this month's usage, so an estimate. */
+/** CircleCI has no plan-balance API: the credits are the configured allowance minus this month's usage, so an estimate. One row is one CircleCI org. */
 function CircleCredits({ cloud }: { cloud: CloudCiActivity }) {
   if (cloud.provider !== 'circleci' || cloud.credits === undefined && cloud.creditsUnavailable === undefined) return null
   const { credits } = cloud
-  if (!credits) return <>
-    <p className="sidebar-hover-note">Credits unavailable</p>
-    {cloud.creditsUnavailable && <p className="sidebar-hover-note">{cloud.creditsUnavailable}</p>}
-  </>
+  if (!credits) return <p className="sidebar-hover-note">
+    Credits unavailable{cloud.creditsUnavailable ? ` (${cloud.creditsUnavailable})` : ''}
+  </p>
   return <p className="sidebar-hover-note">
     ≈ {NUMBER.format(credits.remaining)} of {NUMBER.format(credits.total)} credits left · updated {ago(Date.parse(credits.asOf))}
   </p>
