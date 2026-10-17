@@ -83,7 +83,7 @@
 .board-empty { position: absolute; z-index: 2; inset: 0; display: grid; place-items: center; pointer-events: none; }
 .board-empty > * { pointer-events: auto; }
 .board-side-panel {
-  position: absolute; z-index: 7; top: 72px; right: var(--space-4); bottom: var(--space-4); width: min(24rem, calc(100% - 2rem));
+  position: absolute; top: 72px; right: var(--space-4); bottom: var(--space-4); width: min(24rem, calc(100% - 2rem));
   display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-lg);
   background: var(--surface-raised); box-shadow: var(--shadow-popover);
 }
@@ -93,8 +93,6 @@
 .board-keyboard-list { position: absolute; z-index: 8; bottom: var(--space-4); left: 64px; display: flex; flex-wrap: wrap; gap: var(--space-1);
   max-width: calc(100% - 8rem); padding: var(--space-2); border: 1px solid var(--border-strong); border-radius: var(--radius-md); background: var(--surface-raised); }
 .board-keyboard-list:not(:focus-within) { width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); border: 0; }
-.board-new-agent { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); }
-.board-new-agent .n-button { justify-content: flex-start; min-height: 44px; }
 .board-hints { display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
 .board-hints li { display: grid; grid-template-columns: auto 1fr; gap: var(--space-2); color: var(--text); }
 .board-hints svg { margin-top: 3px; color: var(--warning); }
@@ -125,13 +123,18 @@
 .agent-settings-panel-embedded .agent-settings-footer .n-button { white-space: nowrap; }
 
 .board-control-cluster { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); }
-.board-agent-picker { position: absolute; z-index: 7; top: 72px; right: var(--space-4); width: min(340px, calc(100% - 2rem)); max-height: calc(100% - 88px); overflow: auto; border: 1px solid var(--border-strong); border-radius: var(--radius-lg); background: var(--surface-raised); box-shadow: var(--shadow-popover); }
+.board-agent-picker { position: absolute; top: 72px; right: var(--space-4); width: min(340px, calc(100% - 2rem)); max-height: calc(100% - 88px); overflow: auto; border: 1px solid var(--border-strong); border-radius: var(--radius-lg); background: var(--surface-raised); box-shadow: var(--shadow-popover); }
 .board-agent-picker > header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--border); }
 .board-agent-picker h2 { flex: 1; margin: 0; font: var(--type-body-strong); }
 .board-agent-picker h2 button { width: 100%; padding: var(--space-2) 0; border: 0; color: var(--text-strong); background: transparent; font: inherit; text-align: left; cursor: grab; touch-action: none; user-select: none; }
 .board-agent-picker h2 button:active { cursor: grabbing; }
 .board-agent-picker-content > fieldset { display: grid; gap: var(--space-4); min-width: 0; margin: 0; padding: var(--space-4); border: 0; }
 .board-agent-picker .next-draft-hint { display: none; }
+.board-agent-picker-list { display: grid; gap: var(--space-1); margin: 0; padding: 0; list-style: none; }
+.board-agent-picker-list > li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: var(--space-2); padding: var(--space-1) 0; }
+.board-agent-picker-name { overflow: hidden; color: var(--text-strong); text-overflow: ellipsis; white-space: nowrap; }
+.board-agent-picker-role { color: var(--text-muted); font: var(--type-caption); }
+.board-agent-picker-empty { margin: 0; color: var(--text-muted); }
 .board-title .board-name { display: grid; min-width: 0; max-width: min(24rem, 40vw); }
 .board-name > * { grid-area: 1 / 1; min-width: 0; }
 .board-name-sizing { visibility: hidden; padding: 4px 0; }
