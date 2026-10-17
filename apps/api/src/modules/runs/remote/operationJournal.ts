@@ -17,7 +17,7 @@ import { JobLogChunkSchema, type JobLogChunk } from '@foreman-code/contracts/job
 import { JobExecutionRecordSchema, type JobExecutionRecord } from '@foreman-code/contracts/job-verification'
 import { SourcePreparationClosureSchema, type SourcePreparationClosure } from '@foreman-code/contracts/source-admission'
 import type { DeviceConnectionIdentity } from '@foreman-code/contracts/device-identity'
-import { WorkerConversationReceiptSchema } from '@foreman-code/contracts/remote-execution-rpc'
+import { WorkerConversationReceiptSchema, workerConversationGeneration } from '@foreman-code/contracts/remote-execution-rpc'
 import { DomainError } from '../../errors.js'
 import { WorkerConversationArchive } from '../../conversations/workerConversationArchive.js'
 import { WorkerConversationJournal } from '../../conversations/workerJournal.js'
@@ -102,17 +102,17 @@ export class RemoteOperationJournal {
         await this.tail
         if (this.closed || this.faulted) throw new Error('Journal unavailable: recovery required')
         const retained = this.data.conversations.find(record => record.binding.owner.conversationId === conversationId
-          && record.binding.generation === generation)
+          && workerConversationGeneration(record.binding) === generation)
         const record = retained ?? await this.conversationArchive.read(conversationId, generation)
         return record ? [structuredClone(record)] : []
       },
       change: (conversationId, apply, generation) => this.change(async data => {
         if (data.conversations.some(record => record.binding.owner.conversationId === conversationId
-          && record.binding.generation === generation)) {
+          && workerConversationGeneration(record.binding) === generation)) {
           return apply(data.conversations)
         }
         const ancestors = await this.conversationArchive.readAll(conversationId)
-        const archived = ancestors.find(record => record.binding.generation === generation)
+        const archived = ancestors.find(record => workerConversationGeneration(record.binding) === generation)
         if (!archived) {
           const frozen = structuredClone(ancestors)
           const records = [...data.conversations, ...ancestors]
