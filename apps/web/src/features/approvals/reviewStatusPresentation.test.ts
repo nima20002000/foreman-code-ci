@@ -56,3 +56,10 @@ describe('review failure and retry presentation', () => {
     assert.equal(view.retryMessage.includes('Invalid Date'), false)
   })
 })
+
+it('does not repeat a pending review title as an explanation', () => {
+  const view = reviewStatusPresentation({ state: 'submitted', attempt: 1, updatedAt: new Date(now).toISOString() }, pending, now)
+  assert.equal(view.title, 'Orchestrator reviewing')
+  assert.equal(view.visible, true)
+  assert.equal(view.retryMessage, undefined)
+})
