@@ -11,47 +11,6 @@ import { allocateClaudeNativeHarness } from '../../src/modules/harnesses/claudeS
 import { ActivityProductionReplay } from './activityProductionReplay.js'
 import { deferred, type Deferred } from './deferred.js'
 
-async function emitClaudeReply(input: {
-  frames: ClaudeBoundedQueue<unknown>; sessionId: string; promptUuid: string;
-  gates: readonly (Deferred<void> | undefined)[];
-}) {
-  const transcript: Record<string, unknown>[] = []
-  let parentUuid = input.promptUuid
-  for (const [round, gate] of input.gates.entries()) {
-    const messageId = randomUUID()
-    const common = { session_id: input.sessionId, parent_tool_use_id: null }
-    const echo = round === 0 ? { user_message_uuid: input.promptUuid } : {}
-    const text = input.gates.length === 1 ? 'Remote streamed answer' : `Remote tool round ${round + 1}`
-    const stream = (event: Record<string, unknown>, fields: Record<string, unknown> = {}) =>
-      input.frames.offer({ ...common, type: 'stream_event', uuid: randomUUID(), event, ...fields })
-    await stream({ type: 'message_start', message: { id: messageId, role: 'assistant', content: [] } }, echo)
-    await stream({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } })
-    await stream({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text } })
-    await gate?.promise
-    const content: Record<string, unknown>[] = [{ type: 'text', text }]
-    const toolId = randomUUID()
-    if (round < input.gates.length - 1) {
-      const tool = { type: 'tool_use', id: toolId, name: 'Read', input: { file_path: '/recorded/file' } }
-      await stream({ type: 'content_block_start', index: 1, content_block: tool })
-      content.push(tool)
-    }
-    const assistant = { ...common, type: 'assistant', uuid: randomUUID(), parentUuid, ...echo,
-      message: { id: messageId, role: 'assistant', content } }
-    await input.frames.offer(assistant)
-    transcript.push(assistant)
-    parentUuid = assistant.uuid
-    await stream({ type: 'message_stop' })
-    if (round < input.gates.length - 1) {
-      const result = { ...common, type: 'user', uuid: randomUUID(), parentUuid,
-        message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: toolId, content: 'Recorded tool output' }] } }
-      await input.frames.offer(result)
-      transcript.push(result)
-      parentUuid = result.uuid
-    }
-  }
-  return transcript
-}
-
 /** Only provider I/O is recorded. Both native adapters and the remote conversation stack are real. */
 export async function remoteChatProvider(harness: 'codex' | 'claude', directory: string, options: {
   codexFiles?: CodexChatFiles
@@ -63,8 +22,6 @@ export async function remoteChatProvider(harness: 'codex' | 'claude', directory:
   const calls: string[] = []
   let compactions = 0
   let reply: Deferred<void> | undefined
-  let claudeToolRounds: Deferred<void>[] | undefined
-  const claudeTranscript: Record<string, unknown>[] = []
   let holdCompactionNotifications = false
   const compactionNotifications: Array<() => void> = []
   let manager: NativeHarnessSessionManager
@@ -122,15 +79,13 @@ export async function remoteChatProvider(harness: 'codex' | 'claude', directory:
     await writeFile(transcriptPath, '')
     const sdk: ClaudeSdkClient = {
       sdkVersion: '0.3.284', getSessionInfo: async sessionId => ({ sessionId }),
-      getSessionMessages: async (_sessionId, page) =>
-        claudeTranscript.slice(page.offset ?? 0, (page.offset ?? 0) + (page.limit ?? 256)),
+      getSessionMessages: async () => [],
       forkSession: async () => { throw new Error('This chat fixture does not fork') },
       query(input) {
         const frames = new ClaudeBoundedQueue<unknown>(32)
         const consume = (async () => {
           for await (const message of input.prompt) {
             prompts.push(message.message.content)
-            claudeTranscript.push({ ...message, session_id: nativeId })
             await frames.offer({ type: 'system', subtype: 'init', session_id: nativeId,
               claude_code_version: '2.1.284', cwd: directory, slash_commands: ['compact'] })
             if (message.message.content === '/compact') {
@@ -141,8 +96,22 @@ export async function remoteChatProvider(harness: 'codex' | 'claude', directory:
               await frames.offer({ type: 'system', subtype: 'compact_boundary', session_id: nativeId,
                 uuid: randomUUID(), compact_metadata: { trigger: 'manual', pre_tokens: 100 } })
             } else {
-              claudeTranscript.push(...await emitClaudeReply({ frames, sessionId: nativeId,
-                promptUuid: message.uuid, gates: claudeToolRounds ?? [reply] }))
+              const messageId = randomUUID()
+              await frames.offer({ type: 'stream_event', session_id: nativeId, uuid: randomUUID(),
+                user_message_uuid: message.uuid, parent_tool_use_id: null,
+                event: { type: 'message_start', message: { id: messageId, role: 'assistant', content: [] } } })
+              await frames.offer({ type: 'stream_event', session_id: nativeId, uuid: randomUUID(),
+                user_message_uuid: message.uuid, parent_tool_use_id: null,
+                event: { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } } })
+              await frames.offer({ type: 'stream_event', session_id: nativeId, uuid: randomUUID(),
+                user_message_uuid: message.uuid, parent_tool_use_id: null,
+                event: { type: 'content_block_delta', index: 0,
+                  delta: { type: 'text_delta', text: 'Remote streamed answer' } } })
+              await reply?.promise
+              await frames.offer({ type: 'assistant', session_id: nativeId, uuid: randomUUID(),
+                user_message_uuid: message.uuid, parent_tool_use_id: null,
+                message: { id: messageId, role: 'assistant',
+                  content: [{ type: 'text', text: 'Remote streamed answer' }] } })
               await options.claudeMessage?.(nativeId, message.uuid)
             }
             await frames.offer({ type: 'result', session_id: nativeId, uuid: randomUUID(),
@@ -177,14 +146,6 @@ export async function remoteChatProvider(harness: 'codex' | 'claude', directory:
       for (const notify of compactionNotifications.splice(0)) notify()
     },
     holdReply() { reply = deferred() },
-    holdClaudeToolRounds() { claudeToolRounds = Array.from({ length: 3 }, () => deferred()) },
-    releaseClaudeToolRound(round: number) { claudeToolRounds?.[round]?.resolve() },
-    get persistedClaudeReplies() { return claudeTranscript.filter(frame => frame.type === 'assistant').length },
-    releaseReply() {
-      reply?.resolve()
-      reply = undefined
-      for (const gate of claudeToolRounds ?? []) gate.resolve()
-      claudeToolRounds = undefined
-    },
+    releaseReply() { reply?.resolve(); reply = undefined },
   }
 }
