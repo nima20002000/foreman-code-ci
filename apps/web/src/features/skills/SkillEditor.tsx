@@ -153,12 +153,13 @@ export function SkillEditor({ saved, workspaceOptions, initialWorkspace, onSaved
         {importError ? <p className="n-field-error" role="alert">{importError}</p> : null}
         {drop.dropError ? <p className="n-field-error" role="alert">{drop.dropError}</p> : null}
         {importing && <p className="n-field-hint" role="status">Reading file…</p>}
-        {!readOnly && <p className="n-field-hint">{drop.isDragging ? 'Drop to preview imported instructions.' : 'Drop a Markdown or text file here to import.'}</p>}
+        {/* // InfoHint: Import previews one Markdown or text file before replacing the draft. */}
+        {drop.isDragging ? <p className="n-field-hint" role="status">Drop to import</p> : null}
         <Tabs label="Instructions view" value={view} onValueChange={setView} items={[
           { value: 'write', label: 'Write', content: <Textarea label="Instructions" className="skill-instructions-input" required rows={18}
             maxLength={MAX_SKILL_INSTRUCTIONS_CHARS} value={draft.instructions} readOnly={readOnly} disabled={uncertain} spellCheck={false}
             placeholder={'# When reviewing code\n\n- Check tests first\n- Explain each finding'} error={fieldMessage(issues, 'instructions')}
-            hint={`${draft.instructions.length.toLocaleString()} / ${MAX_SKILL_INSTRUCTIONS_CHARS.toLocaleString()} characters.`}
+            hint={`${draft.instructions.length.toLocaleString()} / ${MAX_SKILL_INSTRUCTIONS_CHARS.toLocaleString()} characters`}
             onChange={(event) => change({ instructions: event.target.value })} /> },
           { value: 'preview', label: 'Preview', content: <SkillTextPreview text={draft.instructions} /> },
         ]} />
@@ -166,7 +167,7 @@ export function SkillEditor({ saved, workspaceOptions, initialWorkspace, onSaved
     </div>
     {/* Save outcomes sit beside the Save button, where the user is looking. */}
     {conflict !== undefined ? <Alert tone="warning" live title="This skill changed since you opened it. Nothing was saved.">
-      <p>Your edits are still here. Load the latest version to review it, or save your edits as a new version on top of it.</p>
+      {/* // InfoHint: Load the saved version or publish these edits on top of it. */}
       <div className="skill-editor-actions-inline">
         <Button size="sm" disabled={!newer} onClick={() => { if (newer) { setBase(newer); setDraft(draftOf(newer)) } setConflict(undefined) }}>Discard my edits and load latest</Button>
         <Button size="sm" variant="primary" onClick={() => void save(conflict)}>Save my edits as a new version</Button>
@@ -182,7 +183,7 @@ export function SkillEditor({ saved, workspaceOptions, initialWorkspace, onSaved
         leading={<Icon name="check" size={14} />}>{uncertain ? 'Retry save' : base ? 'Save new version' : 'Create skill'}</Button>
     </footer>}
     <Dialog open={Boolean(imported)} onOpenChange={(open) => { if (!open) setImported(undefined) }} title="Use imported instructions?" size="lg"
-      description="Review the file text. Using it replaces the instructions in this editor; nothing is saved until you click Save."
+      // InfoHint: Imported text replaces the draft; save separately to publish it.
       footer={<div className="n-actions"><Button onClick={() => setImported(undefined)}>Cancel</Button>
         <Button variant="primary" onClick={() => {
           if (imported) change({ instructions: imported.text, ...(draft.name.trim() ? {} : { name: imported.name }) })

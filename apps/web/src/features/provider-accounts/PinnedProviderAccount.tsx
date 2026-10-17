@@ -11,7 +11,7 @@ export function PinnedProviderAccount({ binding, label = 'Saved account' }: {
   const denied = useProtectedAccessError(query)
   const account = query.isError || denied ? undefined : query.data
   if (!binding) return <p className="pinned-provider-account">{label}: not recorded.
-    Historical provider identity is unknown. The saved native profile is retained.</p>
+    Historical provider identity is unknown.</p>
   if (binding.kind === 'legacy-profile') return <p className="pinned-provider-account">{label}: legacy {binding.provider} profile.
     Historical provider identity is unknown.{binding.profileRef ? ` Profile ${binding.profileRef}.` : ''}</p>
   const target = binding.target
