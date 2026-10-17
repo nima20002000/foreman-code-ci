@@ -1247,8 +1247,7 @@ export class HostCiRunner {
     const settled = !['queued', 'starting', 'running'].includes(meta.state)
     if (settled) this.trackCacheWriter(runId)
     else this.trackCacheWriter(runId, meta.repository)
-    // Local preparation owns reconciliation until it releases the run directory.
-    const reconciled = settled || !preparing && await withHostCiRunLock(directory, async () => {
+    const reconciled = settled || await withHostCiRunLock(directory, async () => {
       await this.reconcile(await this.readMeta(runId), preparing, unitStates)
       return true
     }, { nonBlocking: true })
