@@ -430,10 +430,7 @@ readline.createInterface({ input: process.stdin, crlfDelay: Infinity }).on('line
       toolsError: null, resources: [], resourceTemplates: [], authStatus: 'bearerToken',
     }], nextCursor: null })
     const pages = read('mcp-status-pages.json', {})
-    const reply = () => result(message.id, pages[message.params?.cursor] || page)
-    const delayMs = read('mcp-status-delay-ms.json', 0)
-    if (delayMs) setTimeout(reply, delayMs)
-    else reply()
+    result(message.id, pages[message.params?.cursor] || page)
   }
   else if (message.method === 'model/list') {
     if (flag('models-refresh-failed')) console.error('failed to refresh available models: fixture refresh failure')

@@ -7,8 +7,9 @@ import type pg from 'pg'
 import {
   CompactionStateSchema, SessionControlRequestSchema, SessionControlStateSchema, SessionPreferencesSchema,
   compactionBlocksSend, unavailableSessionControls,
-  type SessionControlState, type SessionControlRequest,
+  type SessionControlState, type SessionControlRequest, type NativeSessionReference,
 } from '@foreman-code/contracts'
+import type { NativeHarnessSessionManager } from '../../harnesses/port.js'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { DomainError } from '../../errors.js'
 import { NativeConversationControlCommands } from '../nativeControlCommands.js'
@@ -111,14 +112,7 @@ export class SessionControlStore {
         if (!isNativeReadUnavailable(error, session, { binding, manager })) throw error
         manager = undefined
       }
-      if (reconciled && (reconciled.requestId !== state.compaction.requestId
-        || reconciled.nativeSessionId !== session.nativeSessionId)) {
-        throw new DomainError('SESSION_CONTROL_TARGET_CHANGED', 'The native compaction result belongs to a different request or session.', 409)
-      }
-      if (reconciled && JSON.stringify(reconciled) !== JSON.stringify(state.compaction)) {
-        state.compaction = { ...state.compaction, ...reconciled, principalId: state.compaction.principalId }
-        await this.save(state)
-      }
+      if (reconciled) await this.saveReconciledCompaction(state, reconciled, session)
     }
     if (state.compaction && compactionBlocksSend(state.compaction) && !manager && binding.recoverCompaction) {
       const recovered = CompactionStateSchema.parse(await binding.recoverCompaction(state.compaction))
@@ -172,6 +166,41 @@ export class SessionControlStore {
     state.nativeStatus = 'not-started'
     if (session) state.nativeStatus = native ? 'loaded' : 'resume-required'
     return state
+  }
+
+  async reconcileForRetirement(conversationId: string, manager: NativeHarnessSessionManager,
+    session: NativeSessionReference, signal: AbortSignal): Promise<void> {
+    const result = await this.pool.query<{ record: unknown }>(
+      'select record from conversation_session_controls where conversation_id=$1', [conversationId])
+    if (!result.rows[0]) return
+    const state = SessionControlStateSchema.parse(result.rows[0].record)
+    if (!state.compaction) return
+    const principalId = state.compaction.principalId
+    if (compactionBlocksSend(state.compaction)) {
+      if (state.compaction.nativeSessionId !== session.nativeSessionId) {
+        throw new DomainError('SESSION_CONTROL_TARGET_CHANGED', 'The compaction belongs to a different native session.', 409)
+      }
+      if (principalId) manager.setSessionControlPrincipal?.(principalId)
+      if (manager.reconcileCompaction) {
+        const reconciled = CompactionStateSchema.parse(await manager.reconcileCompaction(session, state.compaction, signal))
+        await this.saveReconciledCompaction(state, reconciled, session)
+      }
+      if (compactionBlocksSend(state.compaction)) {
+        throw new DomainError('SESSION_COMPACT_UNCONFIRMED', 'Native compaction is unconfirmed; chat cleanup remains owned.', 409)
+      }
+    }
+    await this.reconcileReceipt({ conversationId, principalId }, state)
+  }
+
+  private async saveReconciledCompaction(state: SessionControlState,
+    reconciled: NonNullable<SessionControlState['compaction']>, session: NativeSessionReference) {
+    if (reconciled.requestId !== state.compaction!.requestId || reconciled.nativeSessionId !== session.nativeSessionId) {
+      throw new DomainError('SESSION_CONTROL_TARGET_CHANGED', 'The native compaction result belongs to a different request or session.', 409)
+    }
+    if (JSON.stringify(reconciled) !== JSON.stringify(state.compaction)) {
+      state.compaction = { ...state.compaction, ...reconciled, principalId: state.compaction!.principalId }
+      await this.save(state)
+    }
   }
 
   async execute(principal: ManagementPrincipal, source: 'http' | 'mcp', raw: SessionControlRequest,
@@ -376,7 +405,7 @@ export class SessionControlStore {
     state.revision = saved.revision
   }
 
-  private async reconcileReceipt(binding: SessionControlBinding, state: SessionControlState) {
+  private async reconcileReceipt(binding: { conversationId: string; principalId: string | undefined }, state: SessionControlState) {
     const compaction = state.compaction!
     await this.pool.query(`with settled as (
       update management_command_receipts set result=result || jsonb_build_object('status','completed','state',$5::jsonb)

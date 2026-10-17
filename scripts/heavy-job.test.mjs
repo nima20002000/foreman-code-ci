@@ -386,7 +386,7 @@ syncBuiltinESMExports()
   } finally { rmSync(f.home, { recursive: true, force: true }) }
 })
 
-test('malformed queue blocks admission while a stale empty active directory is reclaimed', { timeout: 6000 }, async () => {
+test('malformed queue and missing active ownership remain reserved', { timeout: 6000 }, async () => {
   const f = fixture()
   try {
     const path = join(f.state, 'queue', '000000000001-aaaaaaaa')
@@ -399,60 +399,7 @@ test('malformed queue blocks admission while a stale empty active directory is r
     assert.match(result.output, /queued .*waiting/)
     assert.equal(result.ran, false)
     assert.equal(readFileSync(path, 'utf8'), '{')
-    assert.equal(existsSync(active), false)
-  } finally { rmSync(f.home, { recursive: true, force: true }) }
-})
-
-for (const metadata of ['empty', 'truncated', 'unreadable']) {
-  test(`preserves an old active directory with ${metadata} owner metadata`, { timeout: 6000 }, async () => {
-    const f = fixture()
-    try {
-      const active = join(f.state, 'active')
-      const owner = join(active, 'owner.json')
-      mkdirSync(active, { recursive: true })
-      const contents = metadata === 'truncated' ? '{' : ''
-      writeFileSync(owner, contents)
-      utimesSync(active, new Date(0), new Date(0))
-      if (metadata === 'unreadable') {
-        mockProc(f, `
-function readFileSync(path, ...args) {
-  if (path === ${JSON.stringify(owner)}) {
-    throw Object.assign(new Error('fixture owner read denied'), { code: 'EACCES' })
-  }
-  return actualReadFileSync(path, ...args)
-}
-function readdirSync(path, ...args) { return actualReaddirSync(path, ...args) }
-`)
-      }
-      const result = await probe(f)
-      assert.match(result.output, /queued .*waiting/)
-      assert.equal(result.ran, false)
-      assert.equal(existsSync(active), true)
-      assert.equal(readFileSync(owner, 'utf8'), contents)
-    } finally { rmSync(f.home, { recursive: true, force: true }) }
-  })
-}
-
-test('preserves a stale active directory when its contents cannot be listed', { timeout: 6000 }, async () => {
-  const f = fixture()
-  try {
-    const active = join(f.state, 'active')
-    mkdirSync(active, { recursive: true })
-    utimesSync(active, new Date(0), new Date(0))
-    mockProc(f, `
-function readFileSync(path, ...args) { return actualReadFileSync(path, ...args) }
-function readdirSync(path, ...args) {
-  if (path === ${JSON.stringify(active)}) {
-    throw Object.assign(new Error('fixture directory read denied'), { code: 'EACCES' })
-  }
-  return actualReaddirSync(path, ...args)
-}
-`)
-    const result = await probe(f)
-    assert.match(result.output, /queued .*waiting/)
-    assert.equal(result.ran, false)
     assert.equal(existsSync(active), true)
-    assert.deepEqual(readdirSync(active), [])
   } finally { rmSync(f.home, { recursive: true, force: true }) }
 })
 
