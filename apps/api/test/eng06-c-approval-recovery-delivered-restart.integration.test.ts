@@ -23,14 +23,7 @@ for (const form of ['ordinary', 'repeat'] as const) {
         await gate.entered
         expect(await t.f.receipts()).toHaveLength(0)
         await t.assertNoNativeAcknowledgement(pending.id)
-        expect(await t.closureRows()).toEqual([...detached, expect.objectContaining({
-          execution_id: pending.executionId,
-          execution_identity: expect.objectContaining({ id: pending.executionId, runId: t.runId }),
-          expected_reference: { harness: pending.harness, providerVersion: pending.providerVersion,
-            nativeSessionId: pending.nativeSessionId },
-          closed_at: null, closed_reference: null, closed_without_session: false,
-          detached_at: null, detached_reference: null,
-        })])
+        expect(await t.closureRows()).toEqual(detached)
       } finally { gate.release() }
       await resuming
       expect(await t.runtime.repository.get(pending.id)).toMatchObject({ deliveryState: 'delivered',
