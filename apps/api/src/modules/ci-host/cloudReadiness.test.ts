@@ -5,6 +5,20 @@ import { expect, it, vi } from 'vitest'
 import { fixture } from './cloud.testSupport.js'
 import { GitHubActionsProvider } from './cloudProviders.js'
 import { systemHostCiPorts, type HostCiPorts } from './runner.js'
+import { CircleStandby } from './circleStandby.js'
+
+it('keeps authenticated standby readiness separate from its scheduling role', async () => {
+  const f = await fixture({}, { provider: 'circleci', account: 'reserve-org' })
+  f.cloud.setCircleStandby(new CircleStandby(async () => [
+    { owner: 'primary-org', circleAccountId: 'default', role: 'primary', ready: true, mirrorNames: new Set(['site-ci']) },
+    { owner: 'reserve-org', circleAccountId: 'default', role: 'standby', ready: true, mirrorNames: new Set(['site-ci']) },
+  ], { reading: async () => ({ credits: { total: 400_000, used: 0, remaining: 400_000, asOf: new Date().toISOString() } }) }))
+  expect(await f.cloud.handle({ operation: 'status' })).toMatchObject({ ready: true })
+  await expect(f.cloud.handle({ operation: 'start', runId: randomUUID(), workspaceId: 'ci-workspace',
+    repository: 'octo/site', commit: f.commit, suite: 'lint', scope: 'full' }))
+    .rejects.toMatchObject({ code: 'CI_CLOUD_UNAVAILABLE', message: expect.stringMatching(/standby/i) })
+  expect(f.circle.triggered).toEqual([])
+})
 
 it.each(['github', 'circleci'] as const)(
   'answers every %s slot readiness while one recovery sweep is blocked', async provider => {
