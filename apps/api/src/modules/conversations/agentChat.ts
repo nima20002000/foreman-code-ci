@@ -88,8 +88,6 @@ export interface AgentChatManagerFactory extends ChatModelCatalog {
     session: NativeSessionReference, start: NativeSessionStart,
     state: import('@foreman-code/contracts').CompactionState, principalId: string, signal: AbortSignal):
     Promise<import('@foreman-code/contracts').CompactionState>
-  closeRetainedSession?(conversationId: string, configuration: AgentConfigurationVersion,
-    principalId: string, signal: AbortSignal): Promise<void>
   release?(conversationId: string): void
   unavailable?(configuration: AgentConfigurationVersion, workingDirectory: string, executionId?: string):
     Promise<{ reason: AgentChatBlockedReason; message: string } | undefined>
@@ -514,26 +512,23 @@ export class AgentChatService {
     if (!loaded) throw new DomainError('CONVERSATION_NOT_FOUND', 'Conversation was not found.', 404)
     const resident = this.runtimes.get(loaded.row.id)
     resident?.manager.setSessionControlPrincipal?.(livePrincipal.id)
-    if (!blocked && !loaded.row.active_request_id && !loaded.row.pending_interaction && resident?.session
-      && !resident.retiring && !resident.disposal) {
+    if (!blocked && resident?.configuration.id === loaded.row.agent_configuration_version_id
+      && !loaded.row.active_request_id && !loaded.row.pending_interaction && resident?.session
+      && !resident.retiring && !resident.disposal
+      && !await this.pendingConfiguration(loaded.row)) {
       let pending: Awaited<ReturnType<NativeHarnessSessionManager['pending']>>
       try {
         pending = await resident.manager.pending(resident.session)
         this.pendingObservations.set(loaded.row.id, successfulReadObservation())
       } catch (error) {
-        const retired = (resident.retiring || resident.disposal || this.runtimes.get(loaded.row.id) !== resident)
-          && error instanceof DomainError
-          && ['NATIVE_MANAGER_DISPOSED', 'ENGINE_RESTART', 'WORKER_CONVERSATION_CALLBACK_DENIED'].includes(error.code)
+        const retired = error instanceof DomainError && error.code === 'NATIVE_MANAGER_DISPOSED'
+          && (resident.retiring || resident.disposal || this.runtimes.get(loaded.row.id) !== resident)
         const offline = error instanceof DeviceConnectionError && ['transport', 'timeout', 'unavailable'].includes(error.code)
           || error instanceof DomainError && error.code === 'WORKER_CONVERSATION_UNAVAILABLE'
-        const profileUnavailable = error instanceof DomainError && error.code === 'HARNESS_PROFILE_UNAVAILABLE'
-        if (!retired && !offline && !profileUnavailable) throw error
-        if (offline || profileUnavailable) {
-          const message = profileUnavailable
-            ? 'The saved harness profile is unavailable; pending interactions could not be refreshed'
-            : 'The chat Worker is offline; pending interactions could not be refreshed'
+        if (!retired && !offline) throw error
+        if (offline) {
           const observation = failedReadObservation(this.pendingObservations.get(loaded.row.id), error,
-            message)
+            'The chat Worker is offline; pending interactions could not be refreshed')
           this.pendingObservations.set(loaded.row.id, observation)
           componentLogger('harness').warn({ conversationId: loaded.row.id, ...observation },
             'Agent chat pending interaction refresh unavailable')
@@ -598,19 +593,8 @@ export class AgentChatService {
   private async harnessUnavailable(resolution: Resolution): Promise<Resolution['blocked']> {
     if (!this.managers.unavailable) return undefined
     const row = resolution.row
-    if (row?.origin_run_id && row.native_session_id && !row.record.sourceConfigurationVersionId) {
-      const agent = (await this.pool.query<{ current_configuration_version_id: string | null }>(
-        'select current_configuration_version_id from agents where workspace_id=$1 and id=$2 and archived_at is null',
-        [row.workspace_id, row.agent_id])).rows[0]
-      if (agent?.current_configuration_version_id
-        && agent.current_configuration_version_id !== row.agent_configuration_version_id) {
-        const configuration = await this.workflows.getAgentConfiguration(agent.current_configuration_version_id)
-        if (!configuration) {
-          throw new DomainError('AGENT_CHAT_CONFIGURATION_MISSING', 'The saved Agent configuration is unavailable.', 409)
-        }
-        return this.managers.unavailable?.(configuration, row.record.workingDirectory)
-      }
-    }
+    const pending = row ? await this.pendingConfiguration(row) : undefined
+    if (pending) return this.managers.unavailable?.(pending, row!.record.workingDirectory)
     const executionId = resolution.row?.record.sourceConfigurationVersionId
       ? undefined : resolution.executionId ?? resolution.row?.origin_execution_id
     const workingDirectory = resolution.row?.record.workingDirectory ?? resolution.create?.workingDirectory
@@ -642,20 +626,25 @@ export class AgentChatService {
     const row = await this.conversation(workspaceId, id, principal, write ? 'agent_chat:write' : 'agent_chat:read')
     this.runtimes.get(id)?.manager.setSessionControlPrincipal?.(principal.id)
     const state = await this.readConversation(principal, workspaceId, id)
-    const configuration = await this.conversationConfiguration(row)
-    const runtime = write && !row.active_request_id && row.native_session_id && configuration
-      ? await this.runtime(row, configuration, `session-control:${id}`, this.lifetime.signal, principal.id) : this.runtimes.get(id)
+    const pending = await this.pendingConfiguration(row)
+    const recoveringCompaction = pending !== undefined && await this.sessionControls.hasPendingCompaction(id)
+    const configuration = pending && !recoveringCompaction ? pending : await this.conversationConfiguration(row)
+    const nativeAvailable = !pending && state.sessionState !== 'unavailable'
+    let runtime = nativeAvailable ? this.runtimes.get(id) : undefined
+    if (nativeAvailable && write && !row.active_request_id && row.native_session_id && configuration) {
+      runtime = await this.runtime(row, configuration, `session-control:${id}`, this.lifetime.signal, principal.id)
+    }
     const session = runtime?.session ?? (row.native_session_id ? {
       harness: row.harness, providerVersion: row.provider_version ?? 'unknown', nativeSessionId: row.native_session_id,
     } : undefined)
-    return { conversationId: id, principalId: principal.id, defaultSubject: `${workspaceId}:${row.agent_id}`, profileKey: row.agent_configuration_version_id,
+    return { conversationId: id, principalId: principal.id, defaultSubject: `${workspaceId}:${row.agent_id}`, profileKey: configuration?.id ?? row.agent_configuration_version_id,
       busyReason: row.active_request_id || row.pending_interaction || state.turns.some(turn => turn.delivery === 'queued')
         ? 'Wait for the active and queued turns and their approvals to finish.' : null,
       session,
       get manager() {
         return runtime && !runtime.disposal && !runtime.retiring ? runtime.manager : undefined
       },
-      ...(session && configuration && this.managers.recoverCompaction ? {
+      ...((nativeAvailable || recoveringCompaction) && session && configuration && this.managers.recoverCompaction ? {
         recoverCompaction: (state: import('@foreman-code/contracts').CompactionState) => this.managers.recoverCompaction!(
           configuration, id, session, this.startInput(row, configuration, `session-control:${id}`, true),
           state, principal.id, this.lifetime.signal),
@@ -1178,17 +1167,25 @@ export class AgentChatService {
       : configuration
   }
 
-  private async applyTurnConfiguration(row: AgentConversationRow): Promise<AgentConversationRow> {
-    if (row.origin_run_id && !row.native_session_id && !row.record.startupDelivered) return row
+  private async pendingConfiguration(row: AgentConversationRow) {
+    if (row.origin_run_id && !row.native_session_id && !row.record.startupDelivered) return undefined
     const agent = (await this.pool.query<{ current_configuration_version_id: string | null }>(
       'select current_configuration_version_id from agents where workspace_id=$1 and id=$2 and archived_at is null',
       [row.workspace_id, row.agent_id])).rows[0]
-    // Retained conversations can outlive their editable Agent catalog entry.
-    if (!agent?.current_configuration_version_id) return row
-    if (agent.current_configuration_version_id === row.agent_configuration_version_id) return row
+    if (!agent?.current_configuration_version_id
+      || agent.current_configuration_version_id === row.agent_configuration_version_id) return undefined
     const configuration = await this.workflows.getAgentConfiguration(agent.current_configuration_version_id)
+    if (!configuration) {
+      throw new DomainError('AGENT_CHAT_CONFIGURATION_MISSING', 'The saved Agent configuration is unavailable.', 409)
+    }
+    return configuration
+  }
+
+  private async applyTurnConfiguration(row: AgentConversationRow): Promise<AgentConversationRow> {
+    const configuration = await this.pendingConfiguration(row)
+    if (!configuration) return row
     const previous = await this.conversationConfiguration(row)
-    if (!configuration || !previous) {
+    if (!previous) {
       throw new DomainError('AGENT_CHAT_CONFIGURATION_MISSING', 'The saved Agent configuration is unavailable.', 409)
     }
     let directoryBinding = row.record.directoryBinding
@@ -1218,15 +1215,7 @@ export class AgentChatService {
         throw new DomainError('NATIVE_RUNTIME_RELEASE_UNAVAILABLE',
           'The Worker cannot confirm closure of its resumable process.', 409)
       }
-      if (replaceSession) await runtime.manager.close(runtime.session)
-      else await runtime.manager.closeForResume(runtime.session)
-    } else if (replaceSession && row.native_session_id && row.worker_conversation_binding) {
-      const principalId = await this.repository.turnPrincipalId(row.id, row.active_request_id!)
-      if (!principalId || !this.managers.closeRetainedSession) {
-        throw new DomainError('NATIVE_RUNTIME_RELEASE_UNAVAILABLE',
-          'The previous Worker session cannot be closed with its saved owner.', 409)
-      }
-      await this.managers.closeRetainedSession(row.id, previous, principalId, this.lifetime.signal)
+      await runtime.manager.closeForResume(runtime.session)
     }
     await this.release(row.id)
     return this.repository.applyConfiguration(row.id, row.active_request_id!, configuration, { replaceSession, directoryBinding })
@@ -1384,7 +1373,7 @@ export class AgentChatService {
         defaultSubject: `${row.workspace_id}:${row.agent_id}`, profileKey: row.agent_configuration_version_id,
         ...(selectedMode ? { initialMode: selectedMode } : {}), busyReason: null })
       creatingSession = !row.native_session_id
-      runtime = await this.runtime(row, configuration, correlationId, signal, principalId)
+      runtime = await this.runtime(row, configuration, correlationId, signal)
       creatingSession = !runtime.session
       let session = runtime.session
       const content = await this.repository.turnContent(id, turn.requestId)
@@ -1531,9 +1520,9 @@ export class AgentChatService {
           }
           await this.release(id)
         }
+        await this.settle(id, turn.requestId, current?.cancel_requested ? { outcome: 'canceled' } : failure(error))
         if (unavailable || error && typeof error === 'object'
           && 'deliveryState' in error && error.deliveryState === 'not-delivered') await this.release(id)
-        await this.settle(id, turn.requestId, current?.cancel_requested ? { outcome: 'canceled' } : failure(error))
       } else {
         await this.repository.abandon(id, turn.requestId, errorMessage(error, 'Native delivery is unconfirmed.'))
         // Retain the manager: it may still own a late acknowledgement or a live native turn.
@@ -1726,7 +1715,7 @@ export class AgentChatService {
     this.lifetime.signal.throwIfAborted()
     if (this.runtimes.get(row.id) !== runtime || runtime.retiring || runtime.disposal) return false
     runtime.session = session
-    if (row.harness === 'claude' && row.record.origin.kind === 'fresh') {
+    if (row.harness === 'claude' && !source) {
       await this.repository.bindSession(row.id, session.providerVersion, session.nativeSessionId)
       await this.observe(row.id, requestId, runtime, agentChatCorrelation(row.id, requestId), true)
       return true
@@ -1792,9 +1781,7 @@ export class AgentChatService {
         const configuration = await this.conversationConfiguration(row)
         if (!configuration) throw new Error('The pinned Agent configuration is unavailable.')
         const binding = requestId ? row : { ...row, active_native_turn_id: target!.targetNativeTurnId }
-        const principalId = await this.repository.turnPrincipalId(id, recoveryRequestId)
-        const runtime = await this.runtime(binding, configuration, correlationId,
-          AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(60_000)]), principalId)
+        const runtime = await this.runtime(binding, configuration, correlationId, AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(60_000)]))
         if (requestId) await this.observe(id, requestId, runtime, correlationId, true)
         if (steers.length) {
           const identities = steers.flatMap((entry) => entry.targetNativeTurnId

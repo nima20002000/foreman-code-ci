@@ -83,9 +83,8 @@ describe('production without an authorized Claude credential source', () => {
       deviceId: '00000000-0000-4000-8000-000000000002' }
     const calls = resolve.mock.calls.length
     await expect(requireClaudeProductionCredentialDelivery(configuration, { resolve }, host))
-      .rejects.toMatchObject({ code: 'PROVIDER_ACCOUNT_TARGET_CONFLICT' })
-    expect(resolve).toHaveBeenCalledTimes(calls + 1)
-    expect(resolve).toHaveBeenLastCalledWith('claude', configuration.accountId)
+      .rejects.toMatchObject({ code: 'PROVIDER_ACCOUNT_LOCAL_ONLY' })
+    expect(resolve).toHaveBeenCalledTimes(calls)
   })
 
   it('refuses launch-ready defaults qualification before querying a native factory', async () => {

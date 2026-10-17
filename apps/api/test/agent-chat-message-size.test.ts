@@ -12,15 +12,15 @@ it.each(['regular', 'selected'] as const)('admits a full-sized pasted log throug
     authenticate: async () => localHumanPrincipal,
   } as unknown as PostgresAccessService)
   const received: string[] = []
-  const sendCommand = vi.fn(async (_principal: unknown, _workspaceId: string, input: { content: string }) => {
+  const send = vi.fn(async (_principal: unknown, _workspaceId: string, input: { content: string }) => {
     received.push(input.content)
     throw new Error('Message reached the service')
   })
-  const sendSelectedRunCommand = vi.fn(async (_principal: unknown, input: { message: { content: string } }) => {
+  const sendSelectedRun = vi.fn(async (_principal: unknown, input: { message: { content: string } }) => {
     received.push(input.message.content)
     throw new Error('Message reached the service')
   })
-  registerAgentChatRoutes(app, { sendCommand, sendSelectedRunCommand } as unknown as AgentChatService)
+  registerAgentChatRoutes(app, { send, sendSelectedRun } as unknown as AgentChatService)
   try {
     const content = '\u0001'.repeat(1_048_576)
     const message = { requestId: 'large-log', content, expectedConversationId: null }

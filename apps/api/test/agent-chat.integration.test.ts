@@ -13,9 +13,9 @@ import pg from 'pg'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   AgentConfigurationVersionSchema, CODEX_APPROVAL_OPTIONS_FIXTURE, NativeHarnessEventSchema,
-  type ExecutionResult, type HarnessExecution, type NativeSessionReference,
+  type AgentConfigurationVersion, type CompactionState, type ExecutionResult, type HarnessExecution, type NativeSessionReference,
 } from '@foreman-code/contracts'
-import { AgentChatHistoryPageSchema, AgentChatStateSchema, type AgentChatState, type SendAgentChatMessageRequest } from '@foreman-code/contracts/agent-chat'
+import { AgentChatControlsStateSchema, AgentChatHistoryPageSchema, AgentChatStateSchema, type AgentChatState, type SendAgentChatMessageRequest } from '@foreman-code/contracts/agent-chat'
 import { ManagementActionSchema, type ManagementPrincipal } from '@foreman-code/contracts/management'
 import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 
@@ -23,12 +23,12 @@ import { buildApp } from '../src/app.js'
 import { applyApplicationMigrations } from '../src/infrastructure/migrations.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
-import { AgentChatService } from '../src/modules/conversations/agentChat.js'
+import { AgentChatService, type AgentChatManagerFactory } from '../src/modules/conversations/agentChat.js'
 import { agentChatCorrelation, agentChatKey, PostgresAgentChatRepository } from '../src/modules/conversations/agentChatRepository.js'
 import { PostgresOperatorConversationRepository } from '../src/modules/conversations/operatorChatRepository.js'
 import { HarnessExecutionError, NativeDeliveryError, NativeTurnNotActiveError } from '../src/modules/harnesses/errors.js'
 import { DomainError } from '../src/modules/errors.js'
-import type { NativeHarnessSessionManager, NativeHistory, NativeSessionStart, NativeSteerInput, NativeTurnInput } from '../src/modules/harnesses/port.js'
+import type { NativeCompactInput, NativeHarnessSessionManager, NativeHistory, NativeInitialTurnInput, NativeSessionStart, NativeSteerInput, NativeTurnInput } from '../src/modules/harnesses/port.js'
 import { PostgresWorkflowRepository } from '../src/modules/workflows/postgres.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { seedAgent3 } from './helpers/wave25Agent3.js'
@@ -158,13 +158,16 @@ let runState = 'completed'
 let runSourceFixture: ReturnType<typeof makeCurrentWorkflowFixture>
 const runReads: string[] = []
 
-function makeService() {
+function makeService(options: { native?: (harness: 'codex' | 'claude') => FakeNative;
+  recoverCompaction?: AgentChatManagerFactory['recoverCompaction'] } = {}) {
   const managers = new Map<string, FakeNative>()
   const factory = Object.assign((id: string, configuration: { harness: { harness: 'codex' | 'claude' } }) => {
     const harness = configuration.harness.harness
-    const manager = managers.get(id) ?? new FakeNative(harness)
-    managers.set(id, manager); return manager
-  }, { release: (id: string) => { managers.delete(id) } })
+    const manager = managers.get(id) ?? (options.native ? options.native(harness) : new FakeNative(harness))
+    managers.set(id, manager)
+    return manager
+  }, { release: (id: string) => { managers.delete(id) },
+    ...(options.recoverCompaction ? { recoverCompaction: options.recoverCompaction } : {}) })
   const runs = {
     // Read-only fake Run store for the Run-origin path. The service has no write port to it.
     getForWorkspace: async (_workspaceId: string, runId: string) => {
@@ -252,6 +255,210 @@ describe('selected-Agent chat service', { timeout: 60_000 }, () => {
       await app.close()
     } }
   }
+
+  it.each(['reconnect', 'restart'] as const)(
+    'settles a Run-derived Claude replacement after a lost initial response and %s without resend', async recovery => {
+      const seeded = await seedAgent3(pool, root, makeCurrentWorkflowFixture(randomUUID().slice(0, 8), 'sequential'))
+      seeded.run = { ...seeded.run, executionState: 'completed', outcome: 'succeeded', finishedAt: seeded.createdAt }
+      await pool.query('update runs set execution_state=$2,record=$3::jsonb where id=$1',
+        [seeded.run.id, 'completed', JSON.stringify(seeded.run)])
+      runSourceFixture = seeded
+      const node = seeded.version.definition.nodes[0]!
+      const workspaceId = seeded.scope.workspaceId
+      const execution: HarnessExecution = { id: randomUUID(), runId: seeded.run.id, workflowNodeId: node.id,
+        agentId: node.agentId, agentConfigurationVersionId: seeded.version.agentConfigurationVersionIds[node.agentId]!,
+        attempt: 1, nativeSessionId: 'source-native-session', workingDirectory: root, input: {}, state: 'completed',
+        result: { outcome: 'succeeded' }, createdAt: seeded.createdAt, finishedAt: seeded.createdAt }
+      await pool.query(`insert into harness_executions(id,run_id,workflow_node_id,agent_id,attempt,record)
+        values($1,$2,$3,$4,1,$5::jsonb)`,
+      [execution.id, execution.runId, node.id, node.agentId, JSON.stringify(execution)])
+      runExecutions = [execution]
+      const sourceRows = () => pool.query(`select
+        (select record from runs where id=$1) as run,
+        (select record from harness_executions where id=$2) as execution`, [execution.runId, execution.id])
+      const sourceBefore = (await sourceRows()).rows
+      const native = new FakeNative('claude')
+      let observed: NativeSessionReference | undefined
+      let available = false
+      let detached = 0
+      Object.assign(native, {
+        dispose: async () => { detached++ },
+        startInitialTurn: async function* (start: NativeSessionStart, input: NativeInitialTurnInput) {
+          observed = await native.createSession(start)
+          const events = []
+          for await (const event of native.startTurn(observed, {
+            prompt: input.prompt, clientCorrelationId: input.clientCorrelationId,
+          })) events.push(event)
+          const history = await native.reconcile(observed, input.clientCorrelationId)
+          history.events = [...history.events, ...events]
+          yield* []
+          throw new Error('The Worker completed the message, but its response was lost.')
+        },
+        reconcileSessionCreation: async () => {
+          if (!available) throw new Error('The Worker is disconnected.')
+          return observed!
+        },
+      })
+      const options = { native: (harness: 'codex' | 'claude') => harness === 'claude' ? native : new FakeNative(harness) }
+      let { service } = makeService(options)
+      let transport = await settingsTransport(service)
+      const repository = new PostgresAgentChatRepository(pool)
+      const context = { workflowId: seeded.scope.workflowId, workflowNodeId: node.id, agentId: node.agentId,
+        runId: execution.runId }
+      try {
+        let client = await transport.connect(writerToken)
+        const firstRequest = { requestId: randomUUID(), context, expectedConversationId: null,
+          intent: 'next_turn', content: 'Remember the launch color is amber.' }
+        await client.callTool({ name: 'agent_chat_send', arguments: { workspaceId, request: firstRequest } })
+        const first = await settled(service, () => service.read(writer, workspaceId, context))
+        const id = first.conversation!.id
+        const before = ManagedAgentDetailSchema.parse(decodeMcpToolResult(await client.callTool({
+          name: 'agent_get', arguments: { workspaceId, agentId: node.agentId },
+        })))
+        const update = await client.callTool({ name: 'agent_update', arguments: { workspaceId, agentId: node.agentId,
+          commandId: randomUUID(), expectedRevision: before.metadataRevision,
+          expectedConfigurationVersionId: before.agent.configurationVersionId, configuration: claudeConfiguration } })
+        expect(update.isError, JSON.stringify(update)).not.toBe(true)
+        const message = { requestId: randomUUID(), context, expectedConversationId: id,
+          intent: 'next_turn', content: 'Finish in Claude.' }
+        const sent = await client.callTool({ name: 'agent_chat_send', arguments: { workspaceId, request: message } })
+        expect(sent.isError).not.toBe(true)
+        await readUntil(() => repository.turn(id, message.requestId), turn => turn?.delivery === 'unknown',
+          { timeoutMs: 30_000, description: 'unconfirmed Claude creation after response loss' })
+        expect((await repository.get(id))?.native_session_id).toBeNull()
+        expect(native.created).toHaveLength(1)
+        expect(native.prompts).toHaveLength(1)
+        expect(native.prompts[0]).toContain(firstRequest.content)
+        if (recovery === 'restart') {
+          await service.shutdown()
+          expect(detached).toBe(1)
+          await transport.close()
+          service = makeService(options).service
+          transport = await settingsTransport(service)
+          client = await transport.connect(writerToken)
+        }
+        available = true
+        await service.recover()
+        const turn = await repository.turn(id, message.requestId)
+        expect(turn?.delivery).toBe('completed')
+        expect(turn?.nativeSubmission).toMatchObject({ kind: 'message', nativeSessionId: observed!.nativeSessionId,
+          clientCorrelationId: agentChatCorrelation(id, message.requestId) })
+        const recovered = await service.read(writer, workspaceId, context)
+        expect(recovered.conversation).toMatchObject({ id, harness: 'claude', origin: { kind: 'run_execution' },
+          nativeSession: { nativeSessionId: observed!.nativeSessionId, providerVersion: observed!.providerVersion } })
+        expect(recovered.lastResult?.outcome).toBe('succeeded')
+        expect(recovered.messages.filter(message => message.role === 'assistant').at(-1)?.content).toContain('Finish in Claude.')
+        const replay = await client.callTool({ name: 'agent_chat_send', arguments: { workspaceId, request: message } })
+        expect(replay.isError).not.toBe(true)
+        expect(decodeMcpToolResult(replay)).toMatchObject({ replayed: true })
+        expect(native.created).toHaveLength(1)
+        expect(native.prompts).toHaveLength(1)
+        expect((await sourceRows()).rows).toEqual(sourceBefore)
+      } finally { await transport.close(); await service.shutdown() }
+    },
+  )
+
+  it.each(['resident', 'unloaded'] as const)(
+    'recovers dispatched compaction on the applied profile after a settings save with a %s session', async residency => {
+      const seeded = await seedAgent3(pool, root,
+        makeCurrentWorkflowFixture(randomUUID().slice(0, 8), 'sequential'), { run: false })
+      const node = seeded.version.definition.nodes[0]!
+      const workspaceId = seeded.scope.workspaceId
+      const context = { workflowId: seeded.scope.workflowId, workflowNodeId: node.id, agentId: node.agentId }
+      const appliedConfiguration = seeded.configurations[0]!
+      const native = new FakeNative('codex')
+      let finished = false
+      let dispatched = 0
+      let reconciled = 0
+      const recoveredProfiles: string[] = []
+      const completion = (state: CompactionState): CompactionState => finished
+        ? { ...state, status: 'completed', nativeOperationId: 'original-compaction', observedAt: new Date().toISOString() }
+        : state
+      Object.assign(native, {
+        sessionControlCapabilities: async () => ({ ...unavailableSessionControls('fixture'),
+          compact: { supported: true, reason: null } }),
+        compactSession: async (_session: NativeSessionReference, input: NativeCompactInput) => {
+          dispatched++
+          expect(input.onDispatch).toBeTypeOf('function')
+          await input.onDispatch!()
+          throw new Error('The dispatched compaction response was lost.')
+        },
+        reconcileCompaction: async (_session: NativeSessionReference, state: CompactionState) => {
+          reconciled++
+          return completion(state)
+        },
+      })
+      const options = { native: () => native,
+        recoverCompaction: async (configuration: AgentConfigurationVersion, _id: string,
+          session: NativeSessionReference, _start: NativeSessionStart, state: CompactionState) => {
+          expect(session.nativeSessionId).toBe(state.nativeSessionId)
+          recoveredProfiles.push(configuration.id)
+          return completion(state)
+        } }
+      let { service } = makeService(options)
+      let transport = await settingsTransport(service)
+      try {
+        let client = await transport.connect(writerToken)
+        await service.send(writer, workspaceId, { requestId: randomUUID(), context, expectedConversationId: null,
+          intent: 'next_turn', content: 'Initial task.' })
+        const first = await settled(service, () => service.read(writer, workspaceId, context))
+        const id = first.conversation!.id
+        const target = { workspaceId, conversationId: id }
+        const controls = AgentChatControlsStateSchema.parse(decodeMcpToolResult(await client.callTool({
+          name: 'agent_chat_controls_get', arguments: target,
+        })))
+        const requestId = randomUUID()
+        const compact = await client.callTool({ name: 'agent_chat_controls_update', arguments: { ...target,
+          request: { kind: 'compact', requestId, expectedRevision: controls.revision } } })
+        expect(compact.isError).not.toBe(true)
+        expect(decodeMcpToolResult(compact)).toMatchObject({ compaction: {
+          requestId, status: 'uncertain', dispatchPhase: 'dispatched',
+        } })
+        const before = ManagedAgentDetailSchema.parse(decodeMcpToolResult(await client.callTool({
+          name: 'agent_get', arguments: { workspaceId, agentId: node.agentId },
+        })))
+        const updated = await client.callTool({ name: 'agent_update', arguments: { workspaceId, agentId: node.agentId,
+          commandId: randomUUID(), expectedRevision: before.metadataRevision,
+          expectedConfigurationVersionId: before.agent.configurationVersionId,
+          configuration: { ...appliedConfiguration.harness, model: 'saved-after-compaction' } } })
+        expect(updated.isError).not.toBe(true)
+        const saved = AgentMutationResultSchema.parse(decodeMcpToolResult(updated))
+        const blocked = await client.callTool({ name: 'agent_chat_send', arguments: { workspaceId,
+          request: { requestId: randomUUID(), context, expectedConversationId: id,
+            intent: 'next_turn', content: 'Blocked while compaction is uncertain.' } } })
+        expect(blocked.isError).toBe(true)
+        expect(JSON.stringify(blocked.content)).toContain('SESSION_COMPACT_UNCONFIRMED')
+        expect(native.prompts).toHaveLength(1)
+        if (residency === 'unloaded') {
+          await service.shutdown()
+          await transport.close()
+          service = makeService(options).service
+          transport = await settingsTransport(service)
+          client = await transport.connect(writerToken)
+        }
+        finished = true
+        reconciled = 0
+        const read = await client.callTool({ name: 'agent_chat_controls_get', arguments: target })
+        expect(read.isError, JSON.stringify(read)).not.toBe(true)
+        expect(decodeMcpToolResult(read)).toMatchObject({ profileKey: appliedConfiguration.id,
+          compaction: { requestId, status: 'completed', nativeSessionId: first.conversation!.nativeSession!.nativeSessionId },
+          configuration: { versionId: saved.value.agent.configurationVersionId,
+            harness: { model: 'saved-after-compaction' } } })
+        expect(dispatched).toBe(1)
+        expect(reconciled).toBe(0)
+        expect(recoveredProfiles).toEqual([appliedConfiguration.id])
+        const sent = await client.callTool({ name: 'agent_chat_send', arguments: { workspaceId,
+          request: { requestId: randomUUID(), context, expectedConversationId: id,
+            intent: 'next_turn', content: 'Continue after recovered compaction.' } } })
+        expect(sent.isError).not.toBe(true)
+        const result = await settled(service, () => service.read(writer, workspaceId, context))
+        expect(result.conversation).toMatchObject({ id, nativeSession: first.conversation!.nativeSession,
+          agentConfigurationVersionId: saved.value.agent.configurationVersionId })
+        expect(native.prompts).toEqual(['Initial task.', 'Continue after recovered compaction.'])
+        expect(dispatched).toBe(1)
+      } finally { await transport.close(); await service.shutdown() }
+    },
+  )
 
   it.each(['model and effort', 'account', 'harness'] as const)(
     'applies a saved %s change on the next turn of the same conversation', async change => {
@@ -399,8 +606,7 @@ describe('selected-Agent chat service', { timeout: 60_000 }, () => {
     }
   })
 
-  it.each(['NATIVE_MANAGER_DISPOSED', 'WORKER_CONVERSATION_CALLBACK_DENIED'] as const)(
-    'reads saved Agent controls when a retiring pending-interaction read fails with %s', async code => {
+  it('reads saved Agent controls while a native owner retires during the pending-interaction read', async () => {
     const { service } = makeService()
     const workspaceId = fixture.scope.workspaceId
     const app = buildApp({ logger: false,
@@ -430,7 +636,7 @@ describe('selected-Agent chat service', { timeout: 60_000 }, () => {
       const retirement = new Promise<void>(resolve => { ownerRetired = resolve; releasePendingRead = resolve })
       let firstPending = true
       let disposed = false
-      const disposedError = new DomainError(code, 'The native allocation is disposed.', 409)
+      const disposedError = new DomainError('NATIVE_MANAGER_DISPOSED', 'The native allocation is disposed.', 409)
       const pending = vi.fn(async () => {
         if (firstPending) {
           firstPending = false
@@ -488,20 +694,6 @@ describe('selected-Agent chat service', { timeout: 60_000 }, () => {
       await app.close()
       await service.shutdown()
     }
-  })
-
-  it('preserves a live Worker callback denial during the pending-interaction read', async () => {
-    const { service } = makeService()
-    const workspaceId = fixture.scope.workspaceId
-    try {
-      await service.send(writer, workspaceId, request(codexNode, 'Complete a native turn', null))
-      await settled(service, () => service.read(writer, workspaceId, query(codexNode)))
-      const denial = new DomainError('WORKER_CONVERSATION_CALLBACK_DENIED', 'The live callback was denied.', 403)
-      Object.assign(FakeNative.all[0]!, { pending: async () => { throw denial } })
-      await expect(service.read(writer, workspaceId, query(codexNode))).rejects.toMatchObject({
-        code: 'WORKER_CONVERSATION_CALLBACK_DENIED', message: 'The live callback was denied.', status: 403,
-      })
-    } finally { await service.shutdown() }
   })
 
   it.each(['codex', 'claude'] as const)('reads saved %s Agent controls through HTTP and MCP after unload and restart', async harness => {

@@ -1,7 +1,4 @@
 import { randomUUID } from 'node:crypto'
-import { execFileSync } from 'node:child_process'
-import { readFile, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
 import { expect, vi } from 'vitest'
 import { HarnessExecutionSchema } from '@foreman-code/contracts'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
@@ -25,14 +22,10 @@ import { approvalResponse } from './approvalResponse.js'
 import { codexApprovalRuntime } from './codexApprovalRuntime.js'
 import { br1002At } from './wave25Br1002Cuts.js'
 import { rejectableDeferred } from './deferred.js'
-import { RunWorktrees } from '../../src/modules/runs/runWorktrees.js'
-import { repeatRuntimeDirectory } from '../../src/modules/runs/repeatRepositoryHost.js'
-import { systemGitWorktreePorts } from '../../src/modules/sources/gitWorktree.js'
-import { gitFixtureEnvironment } from './gitFixture.js'
 
 type Fixture = Awaited<ReturnType<typeof codexApprovalRuntime>>
 
-async function fixture(worktrees: boolean) {
+async function fixture() {
   const definition = makeCurrentWorkflowFixture(randomUUID())
   definition.version.definition.handoffs = { contractVersion: 1 }
   definition.version.definition.executionPolicy = { maxParallelism: 1, maxNodeExecutions: 8 }
@@ -42,43 +35,10 @@ async function fixture(worktrees: boolean) {
   } }] }
   let revision = 0
   const revisions = new Map<string, number>()
-  const environment = gitFixtureEnvironment()
-  const git = (cwd: string, ...args: string[]) => execFileSync('git', args,
-    { cwd, env: environment, encoding: 'utf8' }).trim()
-  const files = new Map<string, { directory: string; head: string; contents: string }>()
-  const observedFiles: Array<{ directory: string; head: string; contents: string }> = []
-  let trees: RunWorktrees
   const f: Fixture = await codexApprovalRuntime('user', { fixture: definition,
-    ...(worktrees ? { sandbox: 'workspace-write' as const,
-      preparePlacementExecution: async (_owner, run, execution) => {
-        const tree = (await trees.prepare(run, AbortSignal.timeout(30_000), execution.id))!
-        return { workingDirectory: tree.workingDirectory,
-          runtimeDirectory: repeatRuntimeDirectory(f.db.directory, { ...f.f.scope, executionSemanticsVersion: 3 }, execution),
-          revalidate: () => trees.verify(tree) }
-      } } : {}),
     async workflowOutput(executionId) {
       const execution = await f.runs.getExecution(executionId)
       if (!execution) throw new Error('Missing execution')
-      if (worktrees) {
-        const directory = execution.workingDirectory!
-        const previous = files.get(execution.workflowNodeId)
-        if (previous) {
-          let contents: string
-          try { contents = await readFile(join(directory, 'notes.txt'), 'utf8') }
-          catch (error) {
-            if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-            contents = 'missing'
-          }
-          observedFiles.push({ directory, head: git(directory, 'rev-parse', 'HEAD'), contents })
-        } else {
-          await writeFile(join(directory, 'committed.txt'), execution.workflowNodeId)
-          git(directory, 'add', 'committed.txt')
-          git(directory, 'commit', '-m', 'Agent work')
-          const contents = `Uncommitted work for ${execution.workflowNodeId}`
-          await writeFile(join(directory, 'notes.txt'), contents)
-          files.set(execution.workflowNodeId, { directory, head: git(directory, 'rev-parse', 'HEAD'), contents })
-        }
-      }
       const work = WorkActivationInputSchema.parse(execution.input).work
       if (execution.workflowNodeId === definition.version.entryNodeId) {
         const value = revisions.get(executionId) ?? ++revision
@@ -95,20 +55,11 @@ async function fixture(worktrees: boolean) {
       data: { latestDeliverable: { revision: value }, remainingFindings: value === 1 ? ['Fix the result'] : [] } })
     },
   })
-  if (worktrees) {
-    git(f.db.directory, 'init', '-b', 'main')
-    await writeFile(join(f.db.directory, 'project.txt'), 'project')
-    git(f.db.directory, 'add', 'project.txt')
-    git(f.db.directory, 'commit', '-m', 'Project')
-    trees = new RunWorktrees(f.db.pool, join(f.db.directory, 'managed'), systemGitWorktreePorts(environment))
-  }
-  return { ...f, files, observedFiles }
+  return f
 }
 
-export async function assertWorkflowSessionContinuation({ restart, worktrees = false }: {
-  restart: boolean; worktrees?: boolean
-}) {
-  const f = await fixture(worktrees)
+export async function assertWorkflowSessionContinuation({ restart }: { restart: boolean }) {
+  const f = await fixture()
   let runtime: ReturnType<Fixture['compose']> = f
   let app: ReturnType<typeof buildApp> | undefined
   const cut = rejectableDeferred<void>()
@@ -167,10 +118,6 @@ export async function assertWorkflowSessionContinuation({ restart, worktrees = f
       'select record from harness_executions where run_id=$1 order by created_at,id', [f.f.run.id]))
       .rows.map(row => HarnessExecutionSchema.parse(row.record))
     expect(executions).toHaveLength(4)
-    if (worktrees) {
-      expect(f.observedFiles).toHaveLength(2)
-      expect(f.observedFiles).toEqual(expect.arrayContaining([...f.files.values()]))
-    }
     for (const node of f.f.version.definition.nodes) {
       const activations = executions.filter(execution => execution.workflowNodeId === node.id)
       expect(new Set(activations.map(execution => execution.nativeSessionId)).size).toBe(1)

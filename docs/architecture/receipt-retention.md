@@ -53,11 +53,8 @@ identity lookup; it does not change data or retention settings.
 
 
 Source approval and project capture responses use the same 30-day retry window.
-They become candidates only after the snapshot referenced by the approval
-response is unavailable. A project capture resolves the same command's approval
-response or its original approval row. Reused snapshots need no new approval row;
-their approval response stays until the capture response has expired, so page
-boundaries cannot strand the capture. Retained snapshots and unresolved captures
+They become candidates only after their command's `source_approvals` row identifies
+an unavailable snapshot. Retained snapshots and captures without an approval
 remain protected. Snapshot metadata, root bindings, approval records and audit
 identities remain. An expired approval still returns `SOURCE_UNAVAILABLE`; an
 expired project capture is fenced by its successful command audit rather than
