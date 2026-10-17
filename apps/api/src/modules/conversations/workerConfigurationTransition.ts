@@ -9,8 +9,8 @@ import { configurationWithNodeSkills } from '../skills/nodeSkills.js'
 import { definedProperties } from '../definedProperties.js'
 import { validRunChatSkillsTransition } from './workerRunChatBinding.js'
 
-/** A qualified settings change keeps the same Agent, Worker, account, folder and native session. */
-export function validAgentConfigurationTransition(previous: WorkerConversationBinding, next: WorkerConversationBinding,
+/** Run lineage and the working folder outlive changes to the selected native session. */
+function validAgentConfigurationChange(previous: WorkerConversationBinding, next: WorkerConversationBinding,
   base: WorkerConversationConfiguration, configuration: WorkerConversationConfiguration): boolean {
   if (previous.owner.kind !== 'agent' || next.owner.kind !== 'agent'
     || !('agentId' in base) || !('agentId' in configuration)
@@ -20,11 +20,9 @@ export function validAgentConfigurationTransition(previous: WorkerConversationBi
     || configuration.workspaceId !== base.workspaceId
     || commandInputHash(base) !== previous.owner.configurationHash
     || commandInputHash(configuration) !== next.owner.configurationHash
-    || base.harness.harness !== configuration.harness.harness || previous.harness !== next.harness
-    || base.harness.harness === 'opencode' || configuration.harness.harness === 'opencode'
-    || base.harness.accountId !== configuration.harness.accountId
-    || previous.profile.instanceId !== next.profile.instanceId
-    || !isDeepStrictEqual(previous.profile.target, next.profile.target)
+    || base.harness.harness !== previous.harness || configuration.harness.harness !== next.harness
+    || !isDeepStrictEqual(previous.profile.target.hostRef, next.profile.target.hostRef)
+    || previous.profile.target.applicationInstallationId !== next.profile.target.applicationInstallationId
     || !isDeepStrictEqual(configuration.harnessProfileSelection, next.profile)) return false
   const owner = { ...previous.owner, configurationVersionId: next.owner.configurationVersionId,
     configurationHash: next.owner.configurationHash }
@@ -35,7 +33,24 @@ export function validAgentConfigurationTransition(previous: WorkerConversationBi
   const sourceConfigurationVersionId = previous.sourceExecution
     ? previous.sourceConfigurationVersionId ?? previous.owner.configurationVersionId : undefined
   return isDeepStrictEqual(definedProperties({ ...previous, owner, profile: next.profile,
+    harness: next.harness, accountBinding: next.accountBinding,
     directoryBinding, sourceConfigurationVersionId }), next)
+}
+
+export function validAgentSessionReplacement(previous: WorkerConversationBinding, next: WorkerConversationBinding,
+  base: WorkerConversationConfiguration, configuration: WorkerConversationConfiguration): boolean {
+  return validAgentConfigurationChange(previous, next, base, configuration)
+}
+
+export function validAgentConfigurationTransition(previous: WorkerConversationBinding, next: WorkerConversationBinding,
+  base: WorkerConversationConfiguration, configuration: WorkerConversationConfiguration): boolean {
+  return base.harness.harness !== 'opencode' && configuration.harness.harness !== 'opencode'
+    && base.harness.harness === configuration.harness.harness
+    && base.harness.accountId === configuration.harness.accountId
+    && previous.profile.instanceId === next.profile.instanceId
+    && isDeepStrictEqual(previous.profile.target, next.profile.target)
+    && isDeepStrictEqual(previous.accountBinding, next.accountBinding)
+    && validAgentConfigurationChange(previous, next, base, configuration)
 }
 
 export function validWorkerConfigurationTransition(previous: WorkerConversationBinding, next: WorkerConversationBinding,
@@ -63,5 +78,5 @@ export async function readAgentConfigurationTransition(pool: pg.Pool, previous: 
       base = configurationWithNodeSkills(base, node.skills, version.nodeSkillSnapshots?.[node.id])
     }
   }
-  return validAgentConfigurationTransition(previous, next, base, configuration) ? base : undefined
+  return validAgentSessionReplacement(previous, next, base, configuration) ? base : undefined
 }
