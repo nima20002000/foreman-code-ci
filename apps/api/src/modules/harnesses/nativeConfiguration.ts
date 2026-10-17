@@ -1,3 +1,7 @@
+import { isDeepStrictEqual } from 'node:util'
+import type { CanonicalMachineReference } from '@foreman-code/contracts/device-identity'
+import { HarnessOptionsDiscoveryRequestSchema } from '@foreman-code/contracts/harness-registry'
+import type { DeviceEndpoint } from '../devices/deviceEndpoint.js'
 import { logIgnoredError } from '../diagnostics/ignoredError.js'
 import type { ProviderAccountBinding } from '@foreman-code/contracts/provider-accounts'
 import { RETIRED_OPENCODE_MESSAGE } from '@foreman-code/contracts'
@@ -25,7 +29,10 @@ export class NativeConfigurationService {
     private readonly claude?: ClaudeNativeConfigurationPort & {
       discoverAccount?(directory: string, signal: AbortSignal, binding: ProviderAccountBinding):
         ReturnType<ClaudeNativeConfigurationPort['discover']>
-    }, private readonly accounts?: ProviderAccountResolver) {
+    }, private readonly accounts?: ProviderAccountResolver, private readonly hosts?: {
+      mainId(): string | Promise<string>
+      endpoint(): DeviceEndpoint
+    }) {
     this.factories = factories ?? new NativeHarnessFactories({ codexBinary })
   }
 
@@ -61,7 +68,14 @@ export class NativeConfigurationService {
     return this.claude
   }
 
-  async options(harness: AgentHarness, accountBinding?: ProviderAccountBinding) {
+  async options(harness: AgentHarness, accountBinding?: ProviderAccountBinding, hostRef?: CanonicalMachineReference) {
+    if (hostRef) {
+      if (!this.hosts || hostRef.mainId !== await this.hosts.mainId()) throw new DomainError(
+        'HARNESS_HOST_MISMATCH', 'The model catalog computer belongs to another installation.', 409)
+      if (hostRef.kind === 'device') return this.remoteOptions(harness, hostRef, accountBinding)
+      if (accountBinding && !isDeepStrictEqual(accountBinding.target.hostRef, hostRef)) throw new DomainError(
+        'PROVIDER_ACCOUNT_TARGET_CONFLICT', 'The selected account belongs to another computer.', 409)
+    }
     try {
       if (accountBinding && accountBinding.provider !== harness) throw new DomainError(
         'PROVIDER_ACCOUNT_BINDING_CONFLICT', 'The requested catalog names another harness.', 409)
@@ -81,7 +95,14 @@ export class NativeConfigurationService {
   }
 
   async refreshOptions(harness: AgentHarness, refresh: 'catalog' | 'upstream' = 'catalog',
-    accountBinding?: ProviderAccountBinding) {
+    accountBinding?: ProviderAccountBinding, hostRef?: CanonicalMachineReference) {
+    if (hostRef?.kind === 'device') {
+      if (refresh !== 'catalog') throw new DomainError('HARNESS_MODEL_REFRESH_UNSUPPORTED',
+        'This computer supports catalog refresh only.', 422)
+      if (!this.hosts || hostRef.mainId !== await this.hosts.mainId()) throw new DomainError(
+        'HARNESS_HOST_MISMATCH', 'The model catalog computer belongs to another installation.', 409)
+      return this.remoteOptions(harness, hostRef, accountBinding, true)
+    }
     try {
       try {
         if (refresh === 'upstream') {
@@ -89,8 +110,33 @@ export class NativeConfigurationService {
           throw new HarnessExecutionError('CODEX_MODEL_REFRESH_UNSUPPORTED', 'Codex has no upstream catalog refresh command.')
         }
       } finally { this.invalidateOptions() }
-      return await this.options(harness, accountBinding)
+      return await this.options(harness, accountBinding, hostRef)
     } catch (error) { throw qualificationError(error) }
+  }
+
+  private async remoteOptions(harness: AgentHarness, hostRef: Extract<CanonicalMachineReference, { kind: 'device' }>,
+    accountBinding?: ProviderAccountBinding, refresh = false) {
+    const endpoint = this.hosts!.endpoint()
+    const channel = endpoint.captureRequest(hostRef.deviceId, 'host-harness-check-v1')
+    if (!channel || channel.binding.mainId !== hostRef.mainId || channel.binding.deviceId !== hostRef.deviceId) {
+      throw new DomainError('HARNESS_REMOTE_OPTIONS_UNAVAILABLE', 'The selected computer is disconnected.', 409)
+    }
+    const binding = structuredClone(channel.binding)
+    const target = { hostRef, applicationInstallationId: binding.workerInstallationId,
+      keyRevision: binding.keyRevision, authorizationRevision: binding.authorizationRevision }
+    if (accountBinding && (!isDeepStrictEqual(accountBinding.target, target) || accountBinding.provider !== harness)) {
+      throw new DomainError('PROVIDER_ACCOUNT_TARGET_CONFLICT', 'The selected account belongs to another installation.', 409)
+    }
+    const request = HarnessOptionsDiscoveryRequestSchema.parse({ operation: 'options', harness, target, refresh,
+      ...(accountBinding ? { accountBinding } : {}) })
+    const result = await channel.request(request, { signal: AbortSignal.timeout(60_000), timeoutMs: 60_000 })
+    const current = endpoint.captureRequest(hostRef.deviceId, 'host-harness-check-v1')
+    if (!current || !isDeepStrictEqual(current.binding, binding) || result.bytes !== undefined) throw new DomainError(
+      'HARNESS_INVENTORY_STALE', 'The model discovery connection changed.', 409)
+    const options = HarnessOptionsResultSchema.parse(result.payload)
+    if (options.harness !== harness) throw new DomainError('HARNESS_CONFIGURATION_MISMATCH',
+      'The model catalog belongs to another harness.', 409)
+    return options
   }
 
   private async discoverOptions(harness: AgentHarness, accountBinding?: ProviderAccountBinding) {

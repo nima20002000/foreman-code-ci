@@ -1,6 +1,7 @@
 import { CompactionStateSchema, SessionModeSchema, SessionPreferencesSchema } from './sessionControls.js'
 import { RemoteOperationReceiptSchema, RemoteNativeIdentitySchema } from './remoteExecution.js'
 import { z } from 'zod'
+import { OutputSchemaSchema } from './wave25/outputContract.js'
 import { DeviceExecutionAdmissionFields } from './deviceResources.js'
 import { AgentConfigurationVersionSchema, HarnessExecutionRequestSchema, ApprovalResponseOptionSchema,
   NativeSessionReferenceSchema, WorkflowSessionContinuationSchema } from './index.js'
@@ -49,7 +50,8 @@ export const RemoteHistoryContinuationSchema = z.object({
 }).strict()
 export const RemoteExecutionRpcRequestSchema = z.discriminatedUnion('method', [
   z.object({ method: z.literal('receipt-continuation'), ...binding, transferId: z.uuid(),
-    receiptSequence: z.number().int().positive(), metadata: DeviceJsonContinuationRequestSchema }).strict(),
+    receiptSequence: z.number().int().positive(), metadata: DeviceJsonContinuationRequestSchema,
+    forStop: z.literal(true).optional() }).strict(),
   z.object({ method: z.literal('physical-readout'), ...binding, receiptSequence: z.number().int().positive(),
     sourceDigest: z.string().regex(/^[a-f0-9]{64}$/), metadata: DeviceJsonContinuationRequestSchema.optional() }).strict(),
   z.object({ method: z.literal('physical-ack'), ...binding, receiptSequence: z.number().int().positive(),
@@ -64,10 +66,14 @@ export const RemoteExecutionRpcRequestSchema = z.discriminatedUnion('method', [
   z.object({ method: z.literal('get-application-access'), ...binding, session: z.lazy(() => NativeSessionReferenceSchema) }).strict(),
   z.object({ method: z.literal('start-turn'), ...binding, prompt: z.string().min(1).max(1_000_000),
     correlationId: z.string().min(1), review: RemoteReviewerRequestSchema.optional(),
-    sessionMode: SessionModeSchema.optional() }).strict(),
+    sessionMode: SessionModeSchema.optional(), outputSchema: OutputSchemaSchema.optional(),
+    deferSettlement: z.literal(true).optional() }).strict(),
+  z.object({ method: z.literal('settle-turn'), ...binding,
+    correlationId: z.string().min(1), nativeTurnId: z.string().min(1) }).strict(),
   z.object({ method: z.literal('history'), ...binding, ...DeviceHistoryRequestFields,
     correlationId: z.string().min(1).optional(), receiptSequence: z.number().int().positive().optional() }).strict(),
-  z.object({ method: z.enum(['pending', 'status']), ...binding }).strict(),
+  z.object({ method: z.literal('pending'), ...binding }).strict(),
+  z.object({ method: z.literal('status'), ...binding, forStop: z.literal(true).optional() }).strict(),
   z.object({ method: z.literal('inspect-response-availability'), ...binding,
     session: z.lazy(() => NativeSessionReferenceSchema), query: NativeResponseAvailabilityQuerySchema }).strict(),
   z.object({ method: z.enum(['capabilities', 'inspect-mcp']), ...binding, configuration: z.lazy(() => AgentConfigurationVersionSchema) }).strict(),

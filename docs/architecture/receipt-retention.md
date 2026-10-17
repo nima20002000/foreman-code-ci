@@ -50,3 +50,15 @@ In particular, `workspace.location.set` results remain recovery data: repository
 imports can adopt a committed location after a crash before their journal save.
 The additive migration contains indexes for bounded receipt selection and audit
 identity lookup; it does not change data or retention settings.
+
+
+Source approval and project capture responses use the same 30-day retry window.
+They become candidates only after the snapshot referenced by the approval
+response is unavailable. A project capture resolves the same command's approval
+response or its original approval row. Reused snapshots need no new approval row;
+their approval response stays until the capture response has expired, so page
+boundaries cannot strand the capture. Retained snapshots and unresolved captures
+remain protected. Snapshot metadata, root bindings, approval records and audit
+identities remain. An expired approval still returns `SOURCE_UNAVAILABLE`; an
+expired project capture is fenced by its successful command audit rather than
+capturing the source again. File retention preferences do not change this window.
