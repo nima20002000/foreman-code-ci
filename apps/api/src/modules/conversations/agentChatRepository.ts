@@ -23,8 +23,8 @@ import { assertConversationCursor, withConversationPageRead } from './activityCu
 import { readActivityCommands } from './activityCommands.js'
 import { readConversationPublicationReceipts, type ConversationPublicationReceipt } from './messagePublications.js'
 import { PostgresOperatorActivityRepository } from './operatorActivityRepository.js'
-import { OPERATOR_SNAPSHOT_MESSAGE_BYTES, OPERATOR_HISTORY_PAGE_BYTES, HANDOFF_MESSAGE_LIMIT, handoffContext } from './operatorChatRepository.js'
-import { AgentConfigurationVersionSchema, type AgentConfigurationVersion } from '@foreman-code/contracts'
+import { OPERATOR_SNAPSHOT_MESSAGE_BYTES, OPERATOR_HISTORY_PAGE_BYTES } from './operatorChatRepository.js'
+import { AgentConfigurationVersionSchema } from '@foreman-code/contracts'
 import { legacyProviderAccountBinding, readProviderAccountBinding, type AcceptedProviderAccountBindings }
   from '../provider-accounts/acceptedBindings.js'
 import type { AcceptedProviderAccountBinding } from '@foreman-code/contracts/provider-accounts'
@@ -44,7 +44,6 @@ export function agentActivityScope(loaded: Pick<State, 'row' | 'selection'>): Ac
 
 /** Agent rows in the shared conversation table. Operator columns stay null. */
 export interface AgentConversationRow {
-  worker_conversation_binding?: unknown
   providerAccountBinding?: AcceptedProviderAccountBinding
   id: string
   agent_key: string
@@ -67,9 +66,6 @@ export interface AgentConversationRow {
   pending_interaction: PendingNativeInteraction | null
   last_result: ExecutionResult | null
   record: {
-    previousConversationId?: string
-    archived?: boolean
-    freshSession?: boolean
     origin: AgentChatOrigin; workingDirectory: string; runtimeDirectory: string; startupDelivered?: boolean; sessionUnavailable?: string
     directoryBinding?: AgentChatDirectoryBinding
     systemPrompt?: PromptSettingSnapshot
@@ -78,8 +74,6 @@ export interface AgentConversationRow {
     sessionCreation?: { requestId: string }
     nativeNonSubmission?: NativeNonSubmission
     startupReceipt?: { requestId: string; nativeSessionId: string }
-    sourceConfigurationVersionId?: string
-    handoffContext?: string
   }
   created_at: Date
   updated_at: Date
@@ -128,8 +122,6 @@ export function agentConversation(row: AgentConversationRow): AgentConversation 
     id: row.id, workspaceId: row.workspace_id, workflowId: row.workflow_id, workflowNodeId: row.workflow_node_id,
     agentId: row.agent_id, agentConfigurationVersionId: row.agent_configuration_version_id, harness: row.harness,
     origin: row.record.origin,
-    ...(row.record.previousConversationId ? { previousConversationId: row.record.previousConversationId } : {}),
-    ...(row.record.archived ? { archived: true } : {}),
     ...(row.providerAccountBinding ? { providerAccountBinding: row.providerAccountBinding } : {}),
     ...(row.record.systemPrompt ? { systemPrompt: row.record.systemPrompt } : {}),
     nativeSession: row.native_session_id && row.provider_version
@@ -208,8 +200,8 @@ export class PostgresAgentChatRepository {
       `select * from operator_conversations where kind='agent' and agent_key=$1 and deleted_at is null`, [key])).rows[0])
   }
   async ensureForControls(key: string, create: NewAgentConversation,
-    authorize: (client: pg.PoolClient) => Promise<void>, client?: pg.PoolClient): Promise<AgentConversationRow> {
-    const ensure = async (client: pg.PoolClient) => {
+    authorize: (client: pg.PoolClient) => Promise<void>): Promise<AgentConversationRow> {
+    return withTransaction(this.pool, async (client) => {
       await client.query('select pg_advisory_xact_lock(hashtext($1))', [`agent-chat:${key}`])
       await authorize(client)
       let row = await this.byKey(key, client)
@@ -230,36 +222,12 @@ export class PostgresAgentChatRepository {
         await this.acceptAccount(client, row)
       }
       return row
-    }
-    return client ? ensure(client) : withTransaction(this.pool, ensure)
+    })
   }
 
   async get(id: string, query: Queryable = this.pool): Promise<AgentConversationRow | undefined> {
     return this.accountReadback(query, (await query.query<AgentConversationRow>(
       `select * from operator_conversations where kind='agent' and id=$1 and deleted_at is null`, [id])).rows[0])
-  }
-
-  async replaceConversation(client: pg.PoolClient, row: AgentConversationRow): Promise<string> {
-    await client.query('select pg_advisory_xact_lock(hashtext($1))', [`agent-chat:${row.agent_key}`])
-    const current = (await client.query<AgentConversationRow>(
-      "select * from operator_conversations where id=$1 and kind='agent' and deleted_at is null for update", [row.id])).rows[0]
-    if (!current || current.agent_key !== row.agent_key || current.record.archived) {
-      throw new DomainError('AGENT_CHAT_CONTEXT_STALE', 'Refresh before starting a new conversation.', 409)
-    }
-    const id = randomUUID()
-    const { origin, workingDirectory, directoryBinding, systemPrompt, sourceConfigurationVersionId } = current.record
-    await client.query(`update operator_conversations set agent_key=$2,
-      record=record || '{"archived":true}'::jsonb,revision=revision+1 where id=$1`, [row.id, `history:${row.id}`])
-    await client.query(`insert into operator_conversations
-      (id,kind,agent_key,workspace_id,workflow_id,workflow_node_id,agent_id,agent_configuration_version_id,
-       origin_run_id,origin_execution_id,harness,record)
-      values($1,'agent',$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb)`,
-    [id,current.agent_key,current.workspace_id,current.workflow_id,current.workflow_node_id,current.agent_id,
-      current.agent_configuration_version_id,current.origin_run_id,current.origin_execution_id,current.harness,
-      JSON.stringify({ origin, workingDirectory, runtimeDirectory: '', directoryBinding, systemPrompt,
-        sourceConfigurationVersionId, previousConversationId: row.id, freshSession: true })])
-    await this.acceptAccount(client, (await this.get(id, client))!)
-    return id
   }
   /** Conversations with an in-flight or queued turn, oldest first. */
   async open(): Promise<AgentConversationRow[]> {
@@ -508,52 +476,6 @@ export class PostgresAgentChatRepository {
         revision=revision+1,updated_at=now()
       where id=$1 and kind='agent' and active_request_id=$2 and native_session_id is null
         and not (record ? 'sessionCreation')`, [id, requestId])).rowCount === 1
-  }
-
-  async applyConfiguration(id: string, requestId: string, configuration: AgentConfigurationVersion,
-    options: { replaceSession: boolean; directoryBinding?: AgentChatDirectoryBinding | undefined }): Promise<AgentConversationRow> {
-    return withTransaction(this.pool, async client => {
-      const row = (await client.query<AgentConversationRow>(
-        `select * from operator_conversations where id=$1 and kind='agent' for update`, [id])).rows[0]
-      if (!row || row.active_request_id !== requestId || row.active_native_turn_id || row.cancel_requested) {
-        throw new DomainError('AGENT_CHAT_CONFIGURATION_CONFLICT', 'The active chat turn changed before applying settings.', 409)
-      }
-      if (configuration.workspaceId !== row.workspace_id || configuration.agentId !== row.agent_id) {
-        throw new DomainError('AGENT_CHAT_CONFIGURATION_CONFLICT', 'The configuration belongs to another Agent.', 409)
-      }
-      const record = { ...row.record }
-      if (options.directoryBinding) record.directoryBinding = options.directoryBinding
-      if (row.origin_run_id) record.sourceConfigurationVersionId ??= row.agent_configuration_version_id
-      if (options.replaceSession) {
-        const history = await client.query<{ role: string; content: string }>(`select role,content
-          from operator_conversation_messages where conversation_id=$1 and role in ('user','assistant')
-          and sequence < (select sequence from operator_conversation_messages
-            where conversation_id=$1 and client_request_id=$2)
-          order by sequence desc limit $3`, [id, requestId, HANDOFF_MESSAGE_LIMIT])
-        const count = await client.query<{ count: string }>(`select count(*)::text as count
-          from operator_conversation_messages where conversation_id=$1 and role in ('user','assistant')
-          and sequence < (select sequence from operator_conversation_messages
-            where conversation_id=$1 and client_request_id=$2)`, [id, requestId])
-        record.handoffContext = handoffContext(null, 0, history.rows, Number(count.rows[0]!.count), 'Agent').text
-        record.startupDelivered = false
-        delete record.startupReceipt
-        delete record.sessionCreation
-        delete record.nativeNonSubmission
-        await client.query(`delete from provider_account_accepted_bindings where owner_kind='agent-conversation' and owner_id=$1`, [id])
-      }
-      const updated = (await client.query<AgentConversationRow>(`update operator_conversations
-        set agent_configuration_version_id=$3,harness=$4,record=$5::jsonb,
-          native_session_id=case when $6 then null else native_session_id end,
-          provider_version=case when $6 then null else provider_version end,
-          revision=revision+1,updated_at=now()
-        where id=$1 and active_request_id=$2 returning *`,
-      [id, requestId, configuration.id, configuration.harness.harness, JSON.stringify(record), options.replaceSession])).rows[0]!
-      if (options.replaceSession && this.accountBindings) {
-        await this.accountBindings.accept(client, 'agent-conversation', id, configuration.harness,
-          configuration.harnessProfileSelection)
-      }
-      return (await this.accountReadback(client, updated))!
-    })
   }
 
   recordNonSubmission(id: string, requestId: string, operation: NativeNonSubmission['operation'],

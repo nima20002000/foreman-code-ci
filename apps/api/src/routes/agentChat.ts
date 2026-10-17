@@ -4,8 +4,8 @@ import type { FastifyInstance } from 'fastify'
 
 import {
   AGENT_CHAT_MESSAGE_BODY_LIMIT_BYTES, AgentChatExecutionActivityPageSchema, AgentChatExecutionActivityQuerySchema, AgentChatHistoryPageSchema, AgentChatTurnPageSchema, AgentChatReadbackQuerySchema, AgentChatQuerySchema, AgentChatStateResponseSchema, AgentChatStateSchema, CancelQueuedAgentChatTurnRequestSchema,
-  EnsureAgentChatConversationRequestSchema, InterruptAgentChatRequestSchema, RespondAgentChatInteractionRequestSchema, SendAgentChatMessageRequestSchema,
-  AgentChatSendResponseSchema, type AgentChatStreamEvent,
+  InterruptAgentChatRequestSchema, RespondAgentChatInteractionRequestSchema, SendAgentChatMessageRequestSchema,
+  SendAgentChatMessageResponseSchema, type AgentChatStreamEvent,
 } from '@foreman-code/contracts/agent-chat'
 
 import { requirePrincipal } from '../modules/access/http.js'
@@ -55,17 +55,9 @@ export function registerAgentChatRoutes(app: FastifyInstance, chat: AgentChatSer
       query, { cursor, executionId, before, itemId, limit }))
   })
   app.post<{ Params: WorkspaceParams; Body: unknown }>(`${root}/messages`, { bodyLimit: AGENT_CHAT_MESSAGE_BODY_LIMIT_BYTES }, async (request, reply) => {
-    const result = await chat.sendCommand(requirePrincipal(request), request.params.workspaceId, SendAgentChatMessageRequestSchema.parse(request.body))
+    const result = await chat.send(requirePrincipal(request), request.params.workspaceId, SendAgentChatMessageRequestSchema.parse(request.body))
     reply.code(result.replayed ? 200 : 202)
-    return AgentChatSendResponseSchema.parse(result)
-  })
-  app.get<{ Params: ConversationParams }>(`${root}/conversations/:conversationId`, async request =>
-    AgentChatStateSchema.parse(await chat.readConversation(requirePrincipal(request),
-      request.params.workspaceId, request.params.conversationId)))
-  app.post<{ Params: WorkspaceParams; Body: unknown }>(`${root}/conversation`, async (request) => {
-    const { context, executionId } = EnsureAgentChatConversationRequestSchema.parse(request.body)
-    return AgentChatStateResponseSchema.parse({ state: await chat.ensureConversation(requirePrincipal(request),
-      { workspaceId: request.params.workspaceId, ...context }, executionId) })
+    return SendAgentChatMessageResponseSchema.parse(result)
   })
   app.post<{ Params: ConversationParams; Body: unknown }>(`${root}/conversations/:conversationId/interrupt`, async (request) => {
     const input = InterruptAgentChatRequestSchema.parse(request.body)

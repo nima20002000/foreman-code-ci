@@ -4,14 +4,13 @@ import type { SavedNodePlacement } from '@foreman-code/contracts/node-placement'
 import type { AgentConfigurationVersion } from '@foreman-code/contracts'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { SourceRootRecordSchema, type SourceRootRecord } from '@foreman-code/contracts/source-admission'
-import type { SourceRootReference, WorkflowWorktreeSettings, WorktreeComputerSelection } from '@foreman-code/contracts/worktree-settings'
+import type { SourceRootReference, WorkflowWorktreeSettings } from '@foreman-code/contracts/worktree-settings'
 import { sameWorkflowValue, type WorkflowDefinitionV3 } from '@foreman-code/contracts/wave25'
 import type { PostgresSourceService } from '../sources/service.js'
 import type { WorkspaceRootPolicyPort } from '../sources/rootPolicyPorts.js'
 import { requireAuthorization } from '../access/policy.js'
 import { requiredLocationAccess } from '../workspaces/locationAccess.js'
 import { DomainError } from '../errors.js'
-import { assertWorktreeComputers } from './worktreeComputers.js'
 
 export interface WorkflowWorktreeServices {
   readyRoot(principal: ManagementPrincipal, workspaceId: string,
@@ -102,7 +101,6 @@ export async function validateWorkflowWorktrees(input: {
     assertGitSource(repository)
     if (definition.defaultWorktree.branchPrefix) assertWritableBranch(root)
   }
-  const computers: WorktreeComputerSelection[] = []
   for (const node of definition.nodes) {
     if (node.kind === 'job') continue
     const configured = node.worktree || definition.defaultWorktree || node.placement?.source || node.placement?.rootBinding
@@ -122,12 +120,9 @@ export async function validateWorkflowWorktrees(input: {
       }) || node.placement.projectRoot !== policy.canonicalProjectRoot || !validRelativeCwd(node.placement))) {
       throw new DomainError('WORKTREE_BINDING_CONFLICT', 'The Agent placement does not match its approved root.', 409)
     }
-    const branchPrefix = node.worktree?.branchPrefix ?? definition.defaultWorktree?.branchPrefix
-    if (branchPrefix) {
+    if (node.worktree?.branchPrefix ?? definition.defaultWorktree?.branchPrefix) {
       assertGitSource(repository)
       assertWritableBranch(root)
-      computers.push({ branchPrefix, agentName: node.name ?? node.label ?? node.agentId,
-        hostRef: root.selection.hostRef })
     }
     const configuration = input.configurations?.find(item => item.agentId === node.agentId)
     if (configuration && requiredLocationAccess([configuration]) === 'read-write'
@@ -135,7 +130,6 @@ export async function validateWorkflowWorktrees(input: {
       throw new DomainError('WORKTREE_ACCESS_CONFLICT', 'This Agent requires a writable approved root.', 409)
     }
   }
-  await assertWorktreeComputers(sql, computers)
 }
 
 function assertGitSource(repository: string | undefined): void {
