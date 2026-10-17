@@ -627,9 +627,7 @@ export class ApprovalExecutionCoordinator {
     private readonly managers: NativeSessionManagerResolver,
     private readonly activeTimeoutMs: number,
     private readonly credentials?: ExecutionCredentialProvider,
-    private readonly validateContinuation?: ((executionId: string, signal?: AbortSignal) => Promise<void>) & {
-      forRestart?(executionId: string): Promise<void>
-    },
+    private readonly validateContinuation?: (executionId: string, signal?: AbortSignal) => Promise<void>,
     private readonly workflowClosures?: WorkflowClosureStore,
     private readonly repeatReviewerBindings?: RepeatReviewerBindings,
     private readonly nativeCaptures?: WorkflowNativeCapturePort,
@@ -1620,8 +1618,7 @@ export class ApprovalExecutionCoordinator {
         owner?.assertOwned()
         if (this.ownedSessions.get(owned.execution.id) !== owned || owned.failed || owned.cleanup)
           throw new DomainError('NATIVE_CREDENTIAL_RECOVERY_REQUIRED', 'The native process no longer owns its lease.', 409)
-        if (this.validateContinuation?.forRestart) await this.validateContinuation.forRestart(owned.execution.id)
-        else await this.validateContinuation?.(owned.execution.id)
+        await this.validateContinuation?.(owned.execution.id)
         owner?.assertOwned()
       },
     })
