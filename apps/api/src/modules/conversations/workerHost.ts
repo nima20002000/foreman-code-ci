@@ -24,7 +24,6 @@ import { unavailableNativeResponse } from '../harnesses/responseAvailability.js'
 import { sameConversationForAppAccess } from './conversationAppAccess.js'
 import { readWorkerConversationResults } from './workerConversationResults.js'
 import { validRunChatSkillsTransition } from './workerRunChatBinding.js'
-import { WorkerEventWait } from './workerEventWait.js'
 
 export interface WorkerConversationAllocation {
   observationOnly?: true
@@ -105,7 +104,6 @@ export class WorkerConversationHost {
   private readonly tasks = new Set<Promise<void>>()
   private readonly running = new Map<string, Readonly<DeviceSessionBinding>>()
   private readonly runningCompactions = new Set<string>()
-  private readonly eventWait = new WorkerEventWait()
   private readonly lifetime = new AbortController()
   private readonly log = componentLogger('harness')
   private closing = false
@@ -531,10 +529,7 @@ export class WorkerConversationHost {
       try {
         await this.authorize(request, connection, this.lifetime.signal)
         streamStarted = true
-        for await (const event of stream()) {
-          void event
-          this.eventWait.publish(resident.binding.owner.conversationId)
-        }
+        for await (const event of stream()) void event
         const record = await this.ports.journal.read(resident.binding)
         if (!record?.session) unavailable('The native session was never observed.')
         const history = await resident.allocation.manager.reconcile(record.session, request.correlationId, this.lifetime.signal)
@@ -548,8 +543,6 @@ export class WorkerConversationHost {
         if (notDelivered) await this.reject(resident.binding, request, error)
         else await this.ports.journal.finishTurn(resident.binding, request.correlationId)
         this.log.error({ err: error, conversationId: resident.binding.owner.conversationId }, 'Worker chat needs native recovery')
-      } finally {
-        this.eventWait.publish(resident.binding.owner.conversationId)
       }
     })()
     const key = `${resident.binding.owner.conversationId}:${request.correlationId}`
@@ -668,7 +661,7 @@ export class WorkerConversationHost {
       return WorkerConversationResponsePageSchema.parse({ kind: 'conversation-response-page',
         transferId: request.transferId, metadata })
     }
-    const response = await this.readEvents(request, connection, signal)
+    const response = await this.dispatch(request, connection, signal)
     if (response === undefined) return response
     const bytes = Buffer.from(JSON.stringify(response))
     if (bytes.byteLength <= DEVICE_APPLICATION_JSON_BYTES) return response
@@ -688,32 +681,6 @@ export class WorkerConversationHost {
     if (!transfer) return
     this.responseBytes -= transfer.byteSize
     this.responseTransfers.delete(id)
-  }
-
-  private async readEvents(request: WorkerConversationRpcRequest, connection: Readonly<DeviceSessionBinding>,
-    signal: AbortSignal): Promise<unknown> {
-    if (request.method !== 'conversation.history' || !request.waitForEvents) {
-      return this.dispatch(request, connection, signal)
-    }
-    if (!request.correlationId || request.afterSequence === undefined) {
-      unavailable('An event subscription requires its turn correlation and sequence cursor.')
-    }
-    const subscription = this.eventWait.subscribe(request.binding.owner.conversationId,
-      AbortSignal.any([signal, this.lifetime.signal]))
-    try {
-      const response = await this.dispatch(request, connection, signal) as {
-        history: NativeHistory; receipt: WorkerConversationReceipt
-      }
-      const turn = response.receipt.turns.find(turn => turn.correlationId === request.correlationId)
-      if (response.history.events.length || !turn || ['completed', 'rejected', 'uncertain'].includes(turn.status)) {
-        return response
-      }
-      await subscription.ready
-      await this.authorize(request, connection, signal)
-      return this.dispatch(request, connection, signal)
-    } finally {
-      subscription.dispose()
-    }
   }
 
   private async dispatch(request: WorkerConversationRpcRequest, connection: Readonly<DeviceSessionBinding>,
