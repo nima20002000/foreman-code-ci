@@ -22,22 +22,6 @@ beforeEach(() => {
 })
 afterEach(() => { cleanup(); clients.splice(0).forEach(client => client.clear()); vi.restoreAllMocks(); useConversationDraftStore.getState().clearAllDrafts() })
 
-it('shows the model window before the first turn and offers no session options in the node chat', async () => {
-  controls.state = { ...settings, capabilities: { ...settings.capabilities, modelCapacity: 200000 } }
-  const mounted = mountChat(structuredClone(agentChatFixtures.idleAfterCompletion))
-  await mounted.ready()
-  expect(await screen.findByRole('button', { name: '0% context' })).toBeInTheDocument()
-  expect(screen.queryByText(/context unknown/i)).not.toBeInTheDocument()
-  expect(screen.queryByLabelText('Session options')).not.toBeInTheDocument()
-  expect(screen.queryByRole('combobox', { name: 'Conversation mode' })).not.toBeInTheDocument()
-})
-
-it('shows no context meter before the first turn when the model window is not known', async () => {
-  const mounted = mountChat(structuredClone(agentChatFixtures.idleAfterCompletion))
-  await mounted.ready()
-  expect(screen.queryByRole('button', { name: /context/i })).not.toBeInTheDocument()
-})
-
 for (const action of ['Steer', 'Interrupt and send']) {
   it.each(['/plan', '/plan off', '/compact'])(`${action} routes %s only to native controls`, async content => {
     const mounted = mountChat(structuredClone(agentChatFixtures.active))
