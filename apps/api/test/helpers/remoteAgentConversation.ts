@@ -38,8 +38,6 @@ import { graphHeaders, graphRpc, graphRpcValue } from '../eng04-graph-compositio
 import { agent3Database, seedAgent3 } from './wave25Agent3.js'
 import { remoteChatProvider } from './remoteChatProvider.js'
 import { deferred } from './deferred.js'
-import { recordedConversationRuntime } from './recordedConversationRuntime.js'
-import { DomainError } from '../../src/modules/errors.js'
 
 export async function remoteAgentConversation(harness: 'codex' | 'claude', location: 'worker' | 'main' = 'worker') {
   const db = await agent3Database()
@@ -52,7 +50,6 @@ export async function remoteAgentConversation(harness: 'codex' | 'claude', locat
   const seeded = await seedAgent3(db.pool, db.directory, fixture, { run: false })
   const node = seeded.version.definition.nodes[0]!
   const configuration = seeded.configurations.find(value => value.agentId === node.agentId)!
-  if (configuration.harness.harness === 'opencode') throw new Error('Supported chat harness required')
   const context = { workspaceId: configuration.workspaceId, workflowId: seeded.scope.workflowId,
     workflowNodeId: node.id, agentId: configuration.agentId }
   const access = new PostgresAccessService(db.pool)
@@ -116,33 +113,28 @@ export async function remoteAgentConversation(harness: 'codex' | 'claude', locat
   })
   const providers = [provider]
   const nativeManagers = new Map([[conversation.id, provider.manager]])
-  const providerSources = new Map([[conversation.id, { provider, harness, accountId: configuration.harness.accountId }]])
-  const nativeManager = async (conversationId: string, selected = configuration) => {
-    if (selected.harness.harness === 'opencode') throw new Error('Supported chat harness required')
+  const nativeManager = async (conversationId: string) => {
     const existing = nativeManagers.get(conversationId)
     if (existing) return existing
-    const previous = providerSources.get(conversationId)
-    if (previous?.harness === selected.harness.harness && previous.accountId === selected.harness.accountId) {
-      const manager = previous.provider.createManager()
-      nativeManagers.set(conversationId, manager)
-      return manager
-    }
-    const created = await remoteChatProvider(selected.harness.harness, db.directory)
+    const created = await remoteChatProvider(harness, db.directory)
     providers.push(created)
-    providerSources.set(conversationId, { provider: created, harness: selected.harness.harness,
-      accountId: selected.harness.accountId })
     nativeManagers.set(conversationId, created.manager)
     return created.manager
   }
   const host = new WorkerConversationHost({ ...callbacks, currentBinding: () => recorded.connection,
     journal: journal.conversations, authorize: callbacks.authorize,
-    ...recordedConversationRuntime({ connection: recorded.connection, journal: journal.conversations,
-      authorize: callbacks.authorize,
-      manager: async (binding, accepted) => {
-        if (!('agentId' in accepted)) throw new Error('Agent configuration required')
-        return nativeManager(binding.owner.conversationId, accepted)
-      }, released: id => { nativeManagers.delete(id) },
-    }) })
+    allocate: async (binding, accepted) => {
+      const manager = await nativeManager(binding.owner.conversationId)
+      return { manager,
+      start: async ({ correlationId, instructionsDelivered }) => {
+        if (binding.owner.kind !== 'agent' || !('agentId' in accepted)) throw new Error('Agent fixture required')
+        return { kind: 'agent-chat', configuration: accepted, conversationId: binding.owner.conversationId,
+          workflowId: binding.owner.workflowId, workflowNodeId: binding.owner.workflowNodeId,
+          workingDirectory: binding.workingDirectory, correlationId, instructionsDelivered,
+          ...(binding.systemPrompt ? { systemPrompt: binding.systemPrompt } : {}) }
+      }, nativeOwner: async session => ({ ...recorded.nativeOwner, sessionId: session.nativeSessionId }),
+      close: async () => { await manager.dispose?.() },
+    } } })
   const channel = { binding: recorded.connection, request: async (raw: unknown) => {
     const request = WorkerConversationRpcRequestSchema.parse(raw)
     frames.push(request)
@@ -150,16 +142,11 @@ export async function remoteAgentConversation(harness: 'codex' | 'claude', locat
     if (request.method === 'conversation.initial-turn' || request.method === 'conversation.start-turn') source = request
     return { payload: await host.handle(request, recorded.connection) }
   } }
-  let profileRevision = 0
   const profiles = { admit: async () => {
     const current = (await repository.get(conversation.id))!
     const selected = (await workflows.getAgentConfiguration(current.agent_configuration_version_id))!
-    return { override: { configuration: selected.harness, target: recorded.binding.profile.target }, profileRevision }
-  }, revalidate: async (_owner: unknown, accepted: { profileRevision: number }) => {
-    if (accepted.profileRevision !== profileRevision) {
-      throw new DomainError('HARNESS_PROFILE_UNAVAILABLE', 'The recorded harness profile changed.', 409)
-    }
-  } }
+    return { override: { configuration: selected.harness, target: recorded.binding.profile.target } }
+  }, revalidate: async () => {} }
   // Installed-profile qualification is a fixture boundary; conversation authorization and persistence are real.
   const workerChats = createProductionWorkerConversations({ pool: db.pool,
     endpoint: () => ({ captureRequest: () => channel }), profiles, claudeProfiles: profiles,
@@ -173,13 +160,12 @@ export async function remoteAgentConversation(harness: 'codex' | 'claude', locat
         return productionCodexChatFiles(() => app, conversationId, admissions).prepare(turn)
       },
   } as unknown as Parameters<typeof createProductionWorkerConversations>[0])
-  const createChat = () => new AgentChatService(db.pool, repository, messages, workflows, {
+  const chat = new AgentChatService(db.pool, repository, messages, workflows, {
     getForWorkspace: async () => { throw new Error('Fresh Agent chat must not select a Run') },
     getExecution: async () => { throw new Error('Fresh Agent chat must not select an execution') },
     executionPages() { throw new Error('Fresh Agent chat must not select an execution') },
   }, (conversationId, selected, workingDirectory) => location === 'main' ? nativeManager(conversationId)
     : workerChats.create({ conversationId, configuration: selected, workingDirectory, appMcpAccess: 'none' }), db.directory)
-  let chat = createChat()
   const commands = new PostgresCommandCoordinator(db.pool)
   const profileRepository = new HarnessInstanceSettingsRepository(db.pool)
   const profileService = new HostHarnessOverrideService(profileRepository, commands, {
@@ -197,7 +183,7 @@ export async function remoteAgentConversation(harness: 'codex' | 'claude', locat
       configuration: withAdvancedDefaults(selected), configurationFingerprint: commandInputHash(withAdvancedDefaults(selected)),
       qualification: 'unqualified',
     })
-  }).then(saved => { profileRevision++; return saved })
+  })
   await saveProfile(configuration.harness)
   const agents = new OperatorAgentMutationService(db.pool, commands, {
     qualifyConfiguration: async selected => ({ harness: selected.harness, version: 'recorded',
@@ -205,15 +191,13 @@ export async function remoteAgentConversation(harness: 'codex' | 'claude', locat
       supportsCancellation: true, supportsWorkingDirectory: true, supportsStartupPrompt: true,
       supportedNativeTools: [], supportedSettings: [], unsupportedCapabilities: [] }),
   }, profileService)
-  const createApp = () => buildApp({ logger: false,
+  const app = buildApp({ logger: false,
     readiness: { database: { ping: async () => {} }, checkpoints: { ping: async () => {} } },
     operator: { access, services: { agentChat: chat, commands, extensions: { agents } } as never } })
-  let app = createApp()
-  const registerStorage = () => registerProductionFileStorage(app, db.pool, {
+  const storage = registerProductionFileStorage(app, db.pool, {
     fileStorageRoot: join(db.directory, 'vault'), workspaceStorageRoot: join(db.directory, 'workspaces'),
     harnesses: { workspaceRoot: join(db.directory, 'runtime') },
   } as ApiConfig)
-  let storage = registerStorage()
   const call = async (name: string, args: Record<string, unknown>, token = writer.token) =>
     graphRpc(app, token, 'tools/call', { name, arguments: { workspaceId: context.workspaceId, ...args } })
   const value = async (name: string, args: Record<string, unknown>) => {
@@ -242,22 +226,9 @@ export async function remoteAgentConversation(harness: 'codex' | 'claude', locat
       return { requestId, turn, events }
     } finally { unsubscribe() }
   }
-  return { db, provider, providers, configuration, context, conversation, repository, frames,
-    get chat() { return chat }, get app() { return app },
+  return { db, provider, providers, configuration, context, conversation, repository, frames, chat, app,
     journal, writer, reader, call, value, send, receivedAttachments,
     drainWorker: () => host.drainForUpdate(),
-    async restartMain() {
-      await host.drainForUpdate()
-      await chat.shutdown()
-      await app.close()
-      chat = createChat()
-      app = createApp()
-      storage = registerStorage()
-    },
-    async chatConfiguration() {
-      const row = (await repository.get(conversation.id))!
-      return workflows.getAgentConfiguration(row.agent_configuration_version_id)
-    },
     async snapshot() {
       const row = (await repository.get(conversation.id))!
       const native = row.native_session_id && row.provider_version ? await provider.manager.history({
