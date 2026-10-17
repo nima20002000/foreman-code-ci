@@ -39,9 +39,8 @@ import type { PrepareWorkerFiles } from './mainWorkerFiles.js'
 import { createMainWorkerClaudeFiles } from './mainWorkerClaudeFiles.js'
 import type { AgentFileToolService } from '../files/tools/service.js'
 import { sameConversationForAppAccess } from './conversationAppAccess.js'
-import { sameOperatorExecutionConfiguration, workerExecutionConfiguration } from './workerExecutionConfiguration.js'
+import { workerExecutionConfiguration } from './workerExecutionConfiguration.js'
 import { readRunChatSkillsTransition } from './workerRunChatBinding.js'
-import { readAgentConfigurationTransition } from './workerConfigurationTransition.js'
 import { definedProperties } from '../definedProperties.js'
 import { readExecutionPlacement, readNativePlacement } from '../placement/persistence.js'
 import type { WorkerConversationBinding } from '@foreman-code/contracts/remote-execution-rpc'
@@ -61,7 +60,6 @@ interface OwnerRow {
   operator_configuration_version_id: string | null; agent_configuration_version_id: string | null
   active_request_id: string | null; native_session_id: string | null; deleted_at: unknown
   record: { status?: string; directoryBinding?: unknown; systemPrompt?: PromptSettingSnapshot;
-    sourceConfigurationVersionId?: string;
     origin?: { kind: string; runId?: string; executionId?: string; sourceNativeSessionId?: string } }
   payload: { ownerPrincipalId?: string } | null
   worker_conversation_binding: unknown
@@ -198,14 +196,11 @@ async function admitWorkerConversation(input: ProductionWorkerConversationsInput
     kind: 'operator' | 'agent'
     bridge: MainWorkerConversationBridge
     caller(): string | undefined
-    row(conversationId: string, method?: WorkerConversationRpcRequest['method']): Promise<OwnerRow>
+    row(conversationId: string): Promise<OwnerRow>
   }, signal: AbortSignal) {
   const { configuration, selector, owner, profiles, kind, bridge, row } = context
   const original = await row(options.conversationId)
-  const retained = original.worker_conversation_binding
-    ? WorkerConversationBindingSchema.parse(original.worker_conversation_binding) : undefined
   const sourceExecution = options.sourceExecution
-    ?? (original.record.sourceConfigurationVersionId ? retained?.sourceExecution : undefined)
   const assertSource = (live: OwnerRow) => assertConversationSource(input.pool, sourceExecution, live)
   await assertSource(original)
   const directoryBinding = original.kind === 'agent' && original.record.directoryBinding
@@ -258,8 +253,6 @@ async function admitWorkerConversation(input: ProductionWorkerConversationsInput
       ?? legacyProviderAccountBinding(executionConfiguration.harness, executionConfiguration.harnessProfileSelection),
     ...(original.kind === 'agent' && original.record.systemPrompt ? { systemPrompt: original.record.systemPrompt } : {}),
     ...(sourceExecution ? { sourceExecution } : {}),
-    ...(sourceExecution && original.record.sourceConfigurationVersionId
-      ? { sourceConfigurationVersionId: original.record.sourceConfigurationVersionId } : {}),
     ...(directoryBinding ? { directoryBinding } : {}) })
   if (requestedBinding.owner.kind === 'operator') {
     const rootChannel = input.endpoint().captureRequest(host.deviceId, WORKSPACE_ROOT_EXTENSION.namespace)
@@ -284,7 +277,6 @@ async function admitWorkerConversation(input: ProductionWorkerConversationsInput
     && sameConversationForAppAccess(originalBinding, requestedBinding)
   const previousConfiguration = await readRunChatSkillsTransition(input.pool, original,
     originalBinding, requestedBinding, configuration)
-    ?? await readAgentConfigurationTransition(input.pool, originalBinding, requestedBinding, configuration)
   const changingSkills = previousConfiguration !== undefined
   if (!changingAccess && !changingSkills
     && !isDeepStrictEqual(options.observationPrincipalId ? observationBinding : originalBinding, requestedBinding)) {
@@ -292,16 +284,11 @@ async function admitWorkerConversation(input: ProductionWorkerConversationsInput
   }
   const binding = changingAccess || changingSkills ? requestedBinding : originalBinding
   const requestCallers = new WeakMap<WorkerConversationRpcRequest, string>()
-  const current = async (request: WorkerConversationRpcRequest, effectSignal?: AbortSignal, caller = context.caller()) => {
-    const cleanup = request.method === 'conversation.release-runtime'
-    const live = await row(options.conversationId, request.method)
+  const current = async (request: WorkerConversationRpcRequest, effectSignal?: AbortSignal) => {
+    const live = await row(options.conversationId)
     await assertSource(live)
     const configurationId = live.kind === 'operator' ? live.operator_configuration_version_id : live.agent_configuration_version_id
-    const savedConfiguration = !cleanup && configurationId !== configuration.id && live.kind === 'operator'
-      ? await input.operators.configuration(configurationId!) : undefined
-    const presentationChange = savedConfiguration && 'operatorId' in configuration
-      && sameOperatorExecutionConfiguration(configuration, savedConfiguration)
-    if (live.kind !== kind || !cleanup && configurationId !== configuration.id && !presentationChange
+    if (live.kind !== kind || configurationId !== configuration.id
       || 'agentId' in configuration && (live.workspace_id !== configuration.workspaceId || live.agent_id !== configuration.agentId)) {
       unavailable('The original conversation configuration changed.')
     }
@@ -319,12 +306,11 @@ async function admitWorkerConversation(input: ProductionWorkerConversationsInput
       await revalidateAgentChatDirectory(input.pool, configuration, directoryBinding, binding.workingDirectory)
     }
     const currentCaller = await authorizeWorkerConversationRequest(input.pool, live, request, {
-      caller, requestCallers, changingAccess, originalBinding,
+      caller: context.caller(), requestCallers, changingAccess, originalBinding,
     })
     const observation = { ...owner, observationPrincipalId: currentCaller,
       ...(effectSignal ? { admissionSignal: effectSignal } : {}) }
-    // Closing a settled owner does not launch or reconfigure its executable.
-    if (!cleanup) await profiles.revalidate(observation, accepted)
+    await profiles.revalidate(observation, accepted)
     currentChannel()
   }
   const claudeFiles = configuration.harness.harness === 'claude' && input.fileService
@@ -332,7 +318,6 @@ async function admitWorkerConversation(input: ProductionWorkerConversationsInput
       allowMutation: configuration.harness.sandbox !== 'read-only' }) : undefined
   const manager = new WorkerConversationManager({ binding, configuration: executionConfiguration,
     channel, currentChannel, bridge, current,
-    currentForDisposal: (request, effectSignal) => current(request, effectSignal, principalId),
     ...(executionConfiguration !== configuration && 'operatorId' in configuration
       ? { acceptedConfiguration: configuration } : {}),
     ...(changingAccess || changingSkills ? { previousBinding: originalBinding } : {}),
@@ -394,14 +379,11 @@ export function createProductionWorkerConversations(input: ProductionWorkerConve
   const inspectors = new WeakMap<NativeHarnessSessionManager, NativeMcpInspector>()
   const credentials = new WeakMap<NativeHarnessSessionManager, (
     token: string, signal: AbortSignal) => Promise<unknown>>()
-  const row = async (conversationId: string, method?: WorkerConversationRpcRequest['method']) => {
+  const row = async (conversationId: string) => {
     const result = (await input.pool.query<OwnerRow>(`select c.*,t.payload from operator_conversations c
       left join operator_conversation_turns t on t.conversation_id=c.id and t.request_id=c.active_request_id
       where c.id=$1`, [conversationId])).rows[0]
-    const cleanup = method === 'conversation.release-runtime'
-    if (!result || !cleanup && (result.deleted_at || result.record.status === 'archived')) {
-      unavailable('The addressed chat is no longer open.')
-    }
+    if (!result || result.deleted_at || result.record.status === 'archived') unavailable('The addressed chat is no longer open.')
     return result
   }
   const create = (options: WorkerConversationOptions) => {
