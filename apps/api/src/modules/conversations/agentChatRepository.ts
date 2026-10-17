@@ -157,7 +157,6 @@ export interface AgentChatInterruptTarget {
 }
 
 export interface NewAgentConversation {
-  freshSession?: boolean
   context: AgentChatContext
   agentConfigurationVersionId: string
   harness: AgentHarness
@@ -226,7 +225,6 @@ export class PostgresAgentChatRepository {
           create.agentConfigurationVersionId,origin.kind === 'run_execution' ? origin.runId : null,
           origin.kind === 'run_execution' ? origin.executionId : null,create.harness,
           JSON.stringify({ origin, workingDirectory, runtimeDirectory,
-            ...(create.freshSession ? { freshSession: true } : {}),
             ...(directoryBinding ? { directoryBinding } : {}), ...(systemPrompt ? { systemPrompt } : {}) })])
         row = (await this.get(id, client))!
         await this.acceptAccount(client, row)
