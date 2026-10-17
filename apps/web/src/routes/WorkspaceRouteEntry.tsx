@@ -6,7 +6,6 @@ import { boardSearchForInspection, type WorkspaceBoardInspection, boardSearchFor
 import { Button, ErrorState } from '../shared/ui/nocturne'
 import { PersistedWorkflowBoundary } from '../features/graph/PersistedWorkflowBoundary'
 import { WorkflowBoard } from '../features/workflow-board/WorkflowBoard'
-import { BoardLoading } from '../features/workflow-board/BoardLoading'
 import { useProtectedAccessError } from '../shared/api/useProtectedAccessError'
 import { clearCurrentRunAccess, revokeCurrentRunWorkspace } from '../features/workflow-board/currentRunQuery'
 import { ApiError } from '../shared/api/client'
@@ -125,7 +124,7 @@ function WorkspaceBoardRoute({ selection }: { selection: WorkflowBoardLocation }
     } })
   }, [workflowId, workspaceId, location.pathname, navigate])
 
-  if (workspace.isPending && !details) return <WorkspaceSelection workspaceId={workspaceId} state="loading" slots={{ graph: <BoardLoading /> }} />
+  if (workspace.isPending && !details) return <WorkspaceSelection workspaceId={workspaceId} state="loading" />
   if (!details) {
     const notFound = ApiError.is(workspace.error) && workspace.error.status === 404
     return <WorkspaceSelection workspaceId={workspaceId} state={notFound ? 'not-found' : 'error'}
@@ -199,8 +198,7 @@ export function BoardHistoryNavigationBoundary({ children }: { children: ReactNo
       || from.board.workflowId !== to.board.workflowId || from.runId === to.runId) return false
     // hidden/inert cannot cover body portals. Keep navigation put until their
     // own Close/Save/Discard guard settles them; never force-dismiss an editor.
-    // The read-only selection action inside the existing Runs drawer is allowed.
-    const portal = document.querySelector<HTMLElement>('dialog[open]:not(.workflow-board-runs-dialog), .n-agent-popover')
+    const portal = document.querySelector<HTMLElement>('dialog[open], .n-agent-popover')
     if (portal) { portal.querySelector<HTMLElement>('button')?.focus(); return true }
     const ids = [...editors.current].filter(([, entry]) => entry.current.busy || entry.current.uncertain
       || entry.current.scope === 'surface' && entry.current.dirty).map(([id]) => id)
