@@ -9,6 +9,8 @@ import { WorkerConversationHost } from './workerHost.js'
 import { WorkerConversationManager } from './workerManager.js'
 import { MainWorkerConversationBridge } from './workerBridge.js'
 import { workerConversationFixture } from './workerFixtures.test-support.js'
+import { ClaudeBoundedQueue } from '../harnesses/claudeSdk/queue.js'
+import type { NativeHarnessEvent } from '@foreman-code/contracts'
 
 it('reads oversized native events and terminal records within the unchanged channel limit', async () => {
   const f = workerConversationFixture()
@@ -77,4 +79,78 @@ it('drains completed output through the snapshot sequence boundary', async () =>
     for await (const event of manager.startTurn(f.session, { prompt: 'Continue', clientCorrelationId: 'turn' })) observed.push(event)
     expect(observed).toEqual(events)
   } finally { await manager.dispose(); await bridge.close() }
+})
+
+it.each(['codex', 'claude'] as const)('delivers the first %s reply when the Worker produces it, without a polling delay', async harness => {
+  vi.useFakeTimers()
+  const startedAt = Date.now()
+  const f = workerConversationFixture('operator', harness)
+  const records: WorkerConversationReceipt[] = []
+  const journal = new WorkerConversationJournal({ read: async () => structuredClone(records),
+    change: async (_id, apply) => structuredClone(apply(records)) }, 8)
+  const output = new ClaudeBoundedQueue<NativeHarnessEvent>(8)
+  const history: NativeHistory = { events: [], pendingInteractions: [], nextSequence: 0 }
+  let producedAt: number | undefined
+  let receivedAt: number | undefined
+  const native = {
+    harness, createSession: async () => f.session, close: async () => output.close(),
+    history: async () => structuredClone(history), reconcile: async () => structuredClone(history),
+    async *startTurn(_session, input) {
+      history.correlationId = input.clientCorrelationId
+      if (harness === 'claude') {
+        history.nativeSubmission = { kind: 'message', nativeSessionId: f.session.nativeSessionId,
+          nativeMessageId: 'input-message', clientCorrelationId: input.clientCorrelationId }
+        await input.onMessageSubmitted?.(history.nativeSubmission)
+      } else {
+        history.nativeTurnId = 'native-turn'
+        await input.onSubmitted?.('native-turn')
+      }
+      for await (const event of output) yield event
+    },
+  } satisfies Partial<NativeHarnessSessionManager>
+  const host = new WorkerConversationHost({ journal, currentBinding: () => f.connection,
+    authorize: async () => {}, observeSession: async () => {}, observeSubmission: async () => {},
+    allocate: async () => ({ manager: native as NativeHarnessSessionManager,
+      nativeOwner: async () => f.nativeOwner, close: async () => output.close(),
+      start: async () => ({ kind: 'operator', configuration: f.configuration,
+        workingDirectory: f.binding.workingDirectory }) as NativeSessionStart }) })
+  const bridge = new MainWorkerConversationBridge()
+  const manager = new WorkerConversationManager({ binding: f.binding, configuration: f.configuration,
+    bridge, current: async () => {}, channel: { binding: f.connection,
+      request: async payload => ({ payload: await host.handle(payload, f.connection) }) } })
+  let reading: Promise<void> | undefined
+  try {
+    await manager.createSession({ kind: 'operator', configuration: f.configuration,
+      workingDirectory: f.binding.workingDirectory, correlationId: 'creation' } as NativeSessionStart)
+    reading = (async () => {
+      for await (const event of manager.startTurn(f.session, { prompt: 'Reply once', clientCorrelationId: 'turn' })) {
+        expect(event.payload.text).toBe('First reply')
+        receivedAt = Date.now() - startedAt
+      }
+    })()
+    setTimeout(() => {
+      producedAt = Date.now() - startedAt
+      const event = { sequence: 0, type: 'assistant.delta', occurredAt: new Date().toISOString(),
+        payload: { text: 'First reply' } }
+      history.events.push(event)
+      history.nextSequence = 1
+      const result = { outcome: 'succeeded' as const, output: 'First reply' }
+      history.terminalResult = result
+      history.terminalTurn = { correlationId: 'turn', providerId: history.nativeSubmission?.nativeMessageId ?? 'native-turn', result }
+      void output.offer(event).then(() => output.close())
+    }, 1_000)
+    await vi.advanceTimersByTimeAsync(2_000)
+    await reading
+    console.info('Worker first reply timing', { harness, producedAt, receivedAt,
+      deliveryDelayMs: receivedAt! - producedAt! })
+    expect(producedAt).toBe(1_000)
+    expect(receivedAt).toBe(producedAt)
+  } finally {
+    output.close()
+    await reading
+    await manager.dispose()
+    await bridge.close()
+    await host.shutdown()
+    vi.useRealTimers()
+  }
 })
