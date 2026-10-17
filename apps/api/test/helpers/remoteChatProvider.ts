@@ -10,7 +10,7 @@ import { createClaudeSdkRunner } from '../../src/modules/harnesses/claudeSdk/run
 import { allocateClaudeNativeHarness } from '../../src/modules/harnesses/claudeSdk/composition.js'
 import { ActivityProductionReplay } from './activityProductionReplay.js'
 import { deferred, type Deferred } from './deferred.js'
-import { DEFAULT_HARNESS_DEFAULTS } from '@foreman-code/contracts'
+import { HarnessExecutionError } from '../../src/modules/harnesses/errors.js'
 
 /** Only provider I/O is recorded. Both native adapters and the remote conversation stack are real. */
 export async function remoteChatProvider(harness: 'codex' | 'claude', directory: string, options: {
@@ -25,10 +25,10 @@ export async function remoteChatProvider(harness: 'codex' | 'claude', directory:
   let reply: Deferred<void> | undefined
   let holdCompactionNotifications = false
   const compactionNotifications: Array<() => void> = []
+  let manager: NativeHarnessSessionManager
   let createManager: () => NativeHarnessSessionManager
   if (harness === 'codex') {
-    const replay = new ActivityProductionReplay(`remote-chat-${randomUUID()}`,
-      ['test-model', 'changed-model', DEFAULT_HARNESS_DEFAULTS.codex.model])
+    const replay = new ActivityProductionReplay(`remote-chat-${randomUUID()}`)
     const infrastructure = replay.infrastructure()
     if (infrastructure.mode !== 'replay') throw new Error('Recorded provider infrastructure required')
     const dependencies = { ...infrastructure.codex,
@@ -61,7 +61,7 @@ export async function remoteChatProvider(harness: 'codex' | 'claude', directory:
             modes.push(mode?.mode ?? 'default')
             const turn = replay.starts.at(-1)!
             setImmediate(async () => {
-              const itemId = randomUUID()
+              const itemId = `answer-${turn.nativeTurnId}`
               replay.append(turn.sessionId, turn.nativeTurnId, 'Remote streamed answer', itemId)
               await reply?.promise
               replay.complete(turn.sessionId, turn.nativeTurnId, 'Remote streamed answer', itemId)
@@ -72,9 +72,9 @@ export async function remoteChatProvider(harness: 'codex' | 'claude', directory:
       } }
     createManager = () => new CodexAppServerSessionManager('/recorded-no-native-codex', undefined, undefined,
       undefined, 'none', options.codexFiles, dependencies)
+    manager = createManager()
   } else {
     const nativeId = randomUUID()
-    const messages: unknown[] = []
     const profilePath = join(directory, 'claude-profile')
     const transcriptDirectory = join(profilePath, 'projects', 'recorded')
     await mkdir(transcriptDirectory, { recursive: true })
@@ -82,17 +82,13 @@ export async function remoteChatProvider(harness: 'codex' | 'claude', directory:
     await writeFile(transcriptPath, '')
     const sdk: ClaudeSdkClient = {
       sdkVersion: '0.3.284', getSessionInfo: async sessionId => ({ sessionId }),
-      getSessionMessages: async (_sessionId, options) => {
-        const offset = options.offset ?? 0
-        return messages.slice(offset, offset + (options.limit ?? 256))
-      },
+      getSessionMessages: async () => [],
       forkSession: async () => { throw new Error('This chat fixture does not fork') },
       query(input) {
         const frames = new ClaudeBoundedQueue<unknown>(32)
         const consume = (async () => {
           for await (const message of input.prompt) {
             prompts.push(message.message.content)
-            messages.push({ ...structuredClone(message), session_id: nativeId })
             await frames.offer({ type: 'system', subtype: 'init', session_id: nativeId,
               claude_code_version: '2.1.284', cwd: directory, slash_commands: ['compact'] })
             if (message.message.content === '/compact') {
@@ -145,8 +141,25 @@ export async function remoteChatProvider(harness: 'codex' | 'claude', directory:
       scope: { deviceId: 'recorded-device', profilePath, configRevision: 'recorded', cwd: directory },
       sdkOptions: { includePartialMessages: true }, qualification: { sdkVersion: '0.3.284', cliVersion: '2.1.284',
         basicTurns: true, resume: true, fork: false, history: true } }).manager
+    manager = createManager()
   }
-  return { manager: createManager(), createManager, modes, prompts, calls, get compactions() { return compactions },
+  let loseCreationResponse = false
+  const observeCreation = (native: NativeHarnessSessionManager) => {
+    const createSession = native.createSession.bind(native)
+    native.createSession = async (...args) => {
+      const session = await createSession(...args)
+      if (loseCreationResponse) {
+        loseCreationResponse = false
+        throw new HarnessExecutionError('CODEX_SESSION_CREATION_UNCERTAIN', 'The recorded native creation response was lost.')
+      }
+      return session
+    }
+    return native
+  }
+  manager = observeCreation(manager)
+  return { get manager() { return manager }, modes, prompts, calls, get compactions() { return compactions },
+    restartManager() { manager = observeCreation(createManager()); return manager },
+    loseNextCreationResponse() { loseCreationResponse = true },
     holdCompactionNotifications() { holdCompactionNotifications = true },
     releaseCompactionNotifications() {
       holdCompactionNotifications = false

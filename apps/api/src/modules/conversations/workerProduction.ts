@@ -61,7 +61,6 @@ interface OwnerRow {
   operator_configuration_version_id: string | null; agent_configuration_version_id: string | null
   active_request_id: string | null; native_session_id: string | null; deleted_at: unknown
   record: { status?: string; directoryBinding?: unknown; systemPrompt?: PromptSettingSnapshot;
-    workerSessionGeneration?: string;
     sourceConfigurationVersionId?: string;
     origin?: { kind: string; runId?: string; executionId?: string; sourceNativeSessionId?: string } }
   payload: { ownerPrincipalId?: string } | null
@@ -252,7 +251,6 @@ async function admitWorkerConversation(input: ProductionWorkerConversationsInput
   const requestedBinding = WorkerConversationBindingSchema.parse({ owner: { ...ownerFields,
     conversationId: options.conversationId, configurationVersionId: executionConfiguration.id,
     configurationHash: commandInputHash(executionConfiguration) }, harness: configuration.harness.harness,
-    ...(original.record.workerSessionGeneration ? { sessionGeneration: original.record.workerSessionGeneration } : {}),
     profile: selector, workingDirectory: options.workingDirectory, appMcpAccess: options.appMcpAccess,
     accountBinding: await readProviderAccountBinding(input.pool,
       original.kind === 'agent' ? 'agent-conversation' : 'operator-command',

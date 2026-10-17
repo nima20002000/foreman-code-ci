@@ -14,6 +14,7 @@ export async function createRemoteReviewTransport(input: {
   privateKeyFile: string
   beforeAuthorization(request: ReturnType<typeof ExecutionAuthorityRequestSchema.parse>): Promise<void>
   beforeDiscovery?(): Promise<void | 'cancel'>
+  onHandshake?(frame: { type: string; extensions: unknown; capabilities: unknown; code: unknown }): void
 }) {
   const [cert, key] = await Promise.all([readFile(input.certificateFile), readFile(input.privateKeyFile)])
   const server = createServer({ cert, key })
@@ -35,6 +36,11 @@ export async function createRemoteReviewTransport(input: {
     const trace = new Map<string, { bytes: number; chunks: Buffer[]; received: number }>()
     const observe = (data: RawData, direction: 'to-worker' | 'to-main') => {
       const frame = JSON.parse(data.toString()) as DeviceApplicationFrame
+      if (['hello', 'welcome', 'blocked'].includes(frame.type)) {
+        const handshake = frame as unknown as Record<string, unknown>
+        input.onHandshake?.({ type: String(handshake.type), extensions: handshake.extensions,
+          capabilities: handshake.capabilities, code: handshake.code })
+      }
       const key = `${direction}:${'id' in frame ? frame.id : ''}`
       if (frame.type === 'application-open' && frame.namespace === 'execution-v1') {
         trace.set(key, { bytes: frame.jsonBytes, chunks: [], received: 0 })
