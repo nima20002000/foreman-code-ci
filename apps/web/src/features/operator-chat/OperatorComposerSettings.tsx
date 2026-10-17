@@ -10,11 +10,9 @@ import { harnessNames } from '../settings/settingsPresentation'
 import { supportedEfforts } from '../settings/harnessModelSelection'
 import { ProviderAccountSelect } from '../provider-accounts/ProviderAccountSelect'
 
-export function OperatorComposerSettings({ value, onChange, disabled, access, hideThinking = false }: {
+export function OperatorComposerSettings({ value, onChange, disabled, access }: {
   value: OperatorChatSettings; onChange(value: OperatorChatSettings): void; disabled: boolean;
   access?: ReactNode;
-  /** Agent chats have no thinking display setting. */
-  hideThinking?: boolean;
 }) {
   const catalog = useProviderHarnessModels(value.harness, value.accountId)
   const defaults = useHarnessDefaultsQuery()
@@ -126,7 +124,7 @@ export function OperatorComposerSettings({ value, onChange, disabled, access, hi
         <Switch label="Fast mode" checked={value.harness === 'codex' && value.serviceTier === 'priority'}
           disabled={disabled || !catalog.isSuccess || value.harness !== 'codex' || (!fastSupported && value.serviceTier !== 'priority')}
           onChange={(event) => { if (value.harness === 'codex') update({ ...value, serviceTier: event.target.checked ? 'priority' : 'standard' }) }} />
-        {hideThinking ? null : <Switch label="Show thinking" checked={value.showThinking} disabled={disabled} onChange={(event) => update({ ...value, showThinking: event.target.checked })} />}
+        <Switch label="Show thinking" checked={value.showThinking} disabled={disabled} onChange={(event) => update({ ...value, showThinking: event.target.checked })} />
         </div>
         {catalog.isPending ? <small role="status">Loading models…</small> : null}
         {catalog.isError || defaults.isError ? <div role="alert">Settings unavailable. <Button size="sm" onClick={() => { void catalog.refetch(); void defaults.refetch() }}>Retry</Button></div> : null}

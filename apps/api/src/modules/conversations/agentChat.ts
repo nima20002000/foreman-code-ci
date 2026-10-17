@@ -648,35 +648,25 @@ export class AgentChatService {
       busyReason: resolved.blocked?.message ?? null })
   }
 
-  /** The stored conversation record for this context, created when absent. It starts no native session. */
-  private async ensureContextConversation(principal: ManagementPrincipal, context: AgentChatContext, executionId?: string,
-    expectedRevision = 0) {
+  async changeContextControls(principal: ManagementPrincipal, context: AgentChatContext,
+    input: SessionControlRequest, source: 'http' | 'mcp' = 'http', executionId?: string) {
     this.authorize(principal, 'agent_chat:write', context)
     this.authorize(principal, 'agent_chat:read', context)
     const resolved = await this.resolveControlContext(principal, context, executionId)
     if (resolved.blocked || !resolved.configuration) {
       throw new DomainError('AGENT_CHAT_UNAVAILABLE', resolved.blocked?.message ?? 'This node has no chat configuration.', 409)
     }
-    if (resolved.row) return resolved.row
-    if (!resolved.create || expectedRevision !== 0) staleRunChat()
-    return this.repository.ensureForControls(resolved.key ?? agentChatKey(context),
-      { ...resolved.create, context }, async client => {
-        const current = await readLiveManagementPrincipal(client, principal.id)
-        this.authorize(current, 'agent_chat:read', context)
-        this.authorize(current, 'agent_chat:write', context)
-      })
-  }
-
-  async changeContextControls(principal: ManagementPrincipal, context: AgentChatContext,
-    input: SessionControlRequest, source: 'http' | 'mcp' = 'http', executionId?: string) {
-    const row = await this.ensureContextConversation(principal, context, executionId, input.expectedRevision)
+    let row = resolved.row
+    if (!row) {
+      if (!resolved.create || input.expectedRevision !== 0) staleRunChat()
+      row = await this.repository.ensureForControls(resolved.key ?? agentChatKey(context),
+        { ...resolved.create, context }, async client => {
+          const current = await readLiveManagementPrincipal(client, principal.id)
+          this.authorize(current, 'agent_chat:read', context)
+          this.authorize(current, 'agent_chat:write', context)
+        })
+    }
     return this.changeSessionControls(principal, context.workspaceId, row.id, input, source)
-  }
-
-  /** Files attach to an existing conversation, so the first attachment creates the record (not a native session) first. */
-  async ensureConversation(principal: ManagementPrincipal, context: AgentChatContext, executionId?: string): Promise<AgentChatState> {
-    const row = await this.ensureContextConversation(principal, context, executionId)
-    return this.readConversation(principal, context.workspaceId, row.id)
   }
 
   async readSessionControls(principal: ManagementPrincipal, workspaceId: string, id: string) {
