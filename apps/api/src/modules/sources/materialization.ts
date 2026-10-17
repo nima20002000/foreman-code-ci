@@ -341,7 +341,7 @@ export async function releaseMaterializationClaim(receipt: MaterializationReceip
     return reclaimMaterializationQuota(receipt, quotaPool, reconcile, signal)
   }
   await archiveMaterializationClaim(receipt, { filesystem: receipt.binding.filesystem, signal }, reconcile)
-  if (!receipt.sharedTree || receipt.binding.deviceId !== null) return
+  if (!receipt.sharedTree && receipt.binding.deviceId === null) return
   const root = await openPrivateRoot(receipt.binding.canonicalPath)
   try {
     if (!equal(await identity(root), receipt.binding.filesystem)) {
@@ -351,7 +351,7 @@ export async function releaseMaterializationClaim(receipt: MaterializationReceip
       if (await reconcile() !== 'released') throw new SourceError('SOURCE_ROOT_OWNED', 'Execution closure changed.')
       const directory = await materializationDirectory(root, receipt)
       try {
-        // The Agent writes its separate shared tree; keep the receipt for idempotent closure.
+        // Keep the receipt for idempotent closure and any separate shared working tree.
         await removeSourceDirectory(directory, 'tree', receipt, signal)
       } finally { await directory.close() }
     }, { signal })

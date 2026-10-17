@@ -21,6 +21,7 @@ import { readJsonContinuation } from './jsonContinuation.js'
 import { readRemoteReceiptResponse } from './installedWorkflowResponsePages.js'
 import { decodeResultCopies } from './executionResultCodec.js'
 import { DeviceApplicationError } from '../../devices/deviceApplicationError.js'
+import { DomainError } from '../../errors.js'
 import { retryDeviceRequest } from '../../devices/deviceRequestRetry.js'
 import { preparationStop } from './preparationCleanup.js'
 import { randomUUID } from 'node:crypto'
@@ -30,7 +31,7 @@ import { normalizeResponseAvailability, type NativeResponseAvailabilityQuery } f
 export interface RemoteNativeTransport {
   request(method: 'prepare' | 'reattach' | 'prepare-review' | 'get-application-access' | 'start-turn'
     | 'history' | 'pending' | 'capabilities' | 'inspect-mcp' | 'inspect-response-availability' | 'control' | 'control-delivery'
-    | 'status' | 'reconcile-response' | 'renew-owner' | 'receipt-continuation'
+    | 'status' | 'reconcile-response' | 'renew-owner' | 'receipt-continuation' | 'settle-turn'
     | 'session-controls-read' | 'session-compact' | 'session-compact-reconcile' | 'session-preferences-apply',
   payload: unknown, signal?: AbortSignal): Promise<unknown>
   /** Waits for the same Worker boot to reconnect after `error` dropped its link; false when `error` is no link drop. */
@@ -342,7 +343,7 @@ export class RemoteNativeSessionManager implements NativeHarnessSessionManager {
     const receipt = await this.status(reply, value.status)
     const review = receipt.reviewTurns?.find(turn => turn.assignment.correlationId === input.correlationId
       && (input.nativeTurnId === undefined || turn.providerId === input.nativeTurnId))
-    if (input.correlationId !== `execution:${this.intent.executionId}` && !review)
+    if (input.correlationId !== (receipt.turnInput?.correlationId ?? `execution:${this.intent.executionId}`) && !review)
       throw new Error('Remote session execution mismatch')
     if (!isDeepStrictEqual(value.session, session) || receipt.native?.sessionId !== session.nativeSessionId || session.harness !== this.harness) throw new Error('Original remote session recovery required')
     await this.observeSource(receipt, { type: 'session_created', session }, signal)
@@ -353,12 +354,17 @@ export class RemoteNativeSessionManager implements NativeHarnessSessionManager {
   async *startTurn(session: NativeSessionReference, input: NativeTurnInput, signal?: AbortSignal) {
     this.assertSession(session)
     const review = input.clientCorrelationId === this.review?.correlationId ? this.review : undefined
-    if (!review && input.clientCorrelationId !== `execution:${this.intent.executionId}`) throw new Error('Unassigned remote review correlation')
+    const workflowCorrelations = [0, 1, 2].map(attempt => `execution:${this.intent.executionId}`
+      + (attempt ? `:result-repair:${attempt}` : ''))
+    if (!review && !workflowCorrelations.includes(input.clientCorrelationId)) throw new Error('Unassigned remote review correlation')
     await this.status(await this.request('start-turn', { prompt: input.prompt, correlationId: input.clientCorrelationId,
-      ...(review ? { review } : {}), ...(input.sessionMode ? { sessionMode: input.sessionMode } : {}) }, signal))
+      ...(review ? { review } : {}), ...(input.sessionMode ? { sessionMode: input.sessionMode } : {}),
+      ...(input.outputSchema ? { outputSchema: input.outputSchema } : {}),
+      ...(input.deferSettlement ? { deferSettlement: input.deferSettlement } : {}) }, signal))
     this.historyCorrelation = input.clientCorrelationId
     this.streamHistory = undefined
-    let sequence = review ? this.receipt?.reviewTurns?.find(turn => turn.assignment.jobId === review.jobId)?.afterSequence ?? -1 : -1
+    let sequence = review ? this.receipt?.reviewTurns?.find(turn => turn.assignment.jobId === review.jobId)?.afterSequence ?? -1
+      : this.receipt?.resultRepairs?.at(-1)?.afterSequence ?? -1
     let submitted = false
     let providerId: string | undefined
     let expiredReplies = 0
@@ -494,7 +500,8 @@ export class RemoteNativeSessionManager implements NativeHarnessSessionManager {
     correlationId: string, receipt: RemoteOperationReceipt) {
     const terminal = history.terminalTurn
     const submission = history.nativeSubmission
-    const providerId = correlationId === `execution:${this.intent.executionId}` ? receipt.native?.turnId
+    const workflow = correlationId === (receipt.turnInput?.correlationId ?? `execution:${this.intent.executionId}`)
+    const providerId = workflow ? receipt.native?.turnId
       : receipt.reviewTurns?.find(turn => turn.assignment.correlationId === correlationId)?.providerId
     const wrongCorrelation = history.correlationId !== undefined && history.correlationId !== correlationId
       || terminal !== undefined && terminal.correlationId !== correlationId
@@ -503,7 +510,7 @@ export class RemoteNativeSessionManager implements NativeHarnessSessionManager {
     const wrongTerminal = terminal !== undefined && (terminal.providerId !== providerId
       || history.nativeTurnId !== terminal.providerId
       || history.terminalResult !== undefined && !isDeepStrictEqual(history.terminalResult, terminal.result))
-    const wrongSavedResult = terminal !== undefined && correlationId === `execution:${this.intent.executionId}`
+    const wrongSavedResult = terminal !== undefined && workflow
       && receipt.terminal?.kind === 'completed' && !isDeepStrictEqual(receipt.terminal.result, terminal.result)
     if (wrongCorrelation || wrongSubmission || wrongTerminal || wrongSavedResult) {
       throw new HarnessExecutionError('NATIVE_HISTORY_IDENTITY_CONFLICT', 'Remote history does not match the owned native turn.')
@@ -534,7 +541,7 @@ export class RemoteNativeSessionManager implements NativeHarnessSessionManager {
   async cancel(session: NativeSessionReference, signal?: AbortSignal, nativeTurnId?: string) {
     this.assertSession(session)
     // A reconnect can recover a turn acknowledgment that this proxy has not observed.
-    const receipt = await this.status(await this.request('status', {}, signal))
+    const receipt = await this.status(await this.request('status', { forStop: true }, signal))
     const native = remoteActiveNative(receipt)
     if (!native || nativeTurnId && nativeTurnId !== native.turnId) throw new Error('Wrong remote cancel turn')
     if (!receipt.terminal) {
@@ -548,9 +555,10 @@ export class RemoteNativeSessionManager implements NativeHarnessSessionManager {
     return this.receipt?.phase === 'confirmed_terminal' && this.receipt.terminal?.kind === 'cancelled'
   }
   async history(session: NativeSessionReference, signal?: AbortSignal): Promise<NativeHistory> {
-    return this.readHistory(session, this.historyCorrelation, signal)
+    return (await this.readHistoryObservation(session, this.historyCorrelation, signal)).history
   }
-  private async readHistory(session: NativeSessionReference, correlationId?: string, signal?: AbortSignal): Promise<NativeHistory> {
+  private async readHistoryObservation(session: NativeSessionReference, correlationId?: string, signal?: AbortSignal)
+    : Promise<{ history: NativeHistory; receipt: RemoteOperationReceipt }> {
     for (let attempt = 0; ; attempt++) {
       this.assertSession(session)
       signal?.throwIfAborted()
@@ -560,7 +568,7 @@ export class RemoteNativeSessionManager implements NativeHarnessSessionManager {
           && Date.now() - streamed.observedAt < 30_000 && isDeepStrictEqual(streamed.receipt, this.receipt)) {
           const history = this.projectHistory(streamed.value)
           await this.observeSource(streamed.receipt, { type: 'history', history }, signal)
-          return history
+          return { history, receipt: streamed.receipt }
         }
         const { value, receipt } = await this.readHistoryResponse({
           ...(correlationId ? { correlationId } : {}),
@@ -572,7 +580,7 @@ export class RemoteNativeSessionManager implements NativeHarnessSessionManager {
           afterSequence: streamed.afterSequence, page: value.page }
         const history = this.projectHistory(value.history)
         await this.observeSource(receipt, { type: 'history', history }, signal)
-        return history
+        return { history, receipt }
       } catch (error) {
         if (!expiredPhysicalReply(error) || attempt >= 4) throw error
         this.streamHistory = undefined
@@ -602,7 +610,21 @@ export class RemoteNativeSessionManager implements NativeHarnessSessionManager {
       ...(history.canceledRequestIds === undefined ? {} : { canceledRequestIds: history.canceledRequestIds }) }
   }
   async reconcile(session: NativeSessionReference, correlationId: string, signal?: AbortSignal) {
-    return this.readHistory(session, correlationId, signal)
+    const { history, receipt } = await this.readHistoryObservation(session, correlationId, signal)
+    if (receipt.phase === 'confirmed_terminal' && receipt.terminal?.kind === 'cancelled'
+      && !receipt.terminal.result) {
+      throw new DomainError('EXECUTION_INTERRUPTED',
+        'The computer closed this attempt before it produced a result.', 503)
+    }
+    return history
+  }
+  async settleTurn(session: NativeSessionReference, correlationId: string, signal?: AbortSignal) {
+    this.assertSession(session)
+    const nativeTurnId = this.receipt?.native?.turnId
+    if (!nativeTurnId) throw new Error('Original native turn is unavailable')
+    await this.status(await this.request('settle-turn', { correlationId, nativeTurnId }, signal))
+    this.streamHistory = undefined
+    return (await this.readHistoryObservation(session, correlationId, signal)).history
   }
   async reconcileResponse(session: NativeSessionReference, response: Parameters<NonNullable<NativeHarnessSessionManager['reconcileResponse']>>[1], signal?: AbortSignal) {
     this.assertSession(session)
@@ -648,8 +670,9 @@ export class RemoteNativeSessionManager implements NativeHarnessSessionManager {
   }
   async closeForRestart(session: NativeSessionReference, signal?: AbortSignal) {
     this.assertSession(session)
+    signal?.throwIfAborted()
     if (this.detached) return
-    await this.history(session, signal)
+    // Main's saved lifetime retains the Worker identity for reconciliation after startup.
     this.detached = true
   }
 }
