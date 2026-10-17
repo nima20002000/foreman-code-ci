@@ -8,9 +8,12 @@ import { workerSettingsChat } from './helpers/agentChatWorkerSettings.js'
 import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'
 import { identityAlive } from '../src/modules/harnesses/recovery/linuxIdentity.js'
 import { waitForRemoteReview } from './helpers/remoteReviewProduction.js'
+import { HarnessInstanceSettingsRepository } from '../src/modules/harnesses/instanceSettings/repository.js'
+import { HostHarnessProfileEvidenceRepository } from '../src/modules/harnesses/instanceSettings/profileRepository.js'
+import { harnessConnectionGeneration } from '../src/modules/harnesses/hostConnectionGeneration.js'
 
-it.each(['resident', 'unloaded'] as const)(
-  'recovers Worker compaction after its profile is superseded with a %s Main session', async residency => {
+it.each(['resident', 'unloaded', 'previous-boot-proof'] as const)(
+  'recovers Worker compaction with %s recovery after its profile is superseded', async residency => {
     await historicalChatPlacement(async fixture => {
       const chat = await workerSettingsChat(fixture)
       const target = { workspaceId: chat.workspaceId, conversationId: chat.id }
@@ -40,6 +43,25 @@ it.each(['resident', 'unloaded'] as const)(
       const saved = await chat.save({ model: 'other-model', reasoningEffort: 'medium' })
       expect(saved.update.harnessProfileSelection.instanceId).toBe(binding.profile.instanceId)
       expect(saved.update.harnessProfileSelection.instanceRevision).not.toBe(binding.profile.instanceRevision)
+      if (residency === 'previous-boot-proof') {
+        const settings = new HarnessInstanceSettingsRepository(fixture.db.pool)
+        const proofs = new HostHarnessProfileEvidenceRepository(fixture.db.pool)
+        await settings.readAuthorized(async client => {
+          const profile = await settings.savedRevision(client, binding.profile.instanceId,
+            binding.profile.instanceRevision, { target: binding.profile.target })
+          if (!profile) throw new Error('The original Worker profile is missing.')
+          const proof = await proofs.latest(profile.instanceId, profile.revision, client)
+          if (!proof) throw new Error('The original Worker qualification is missing.')
+          expect(proof.connectionGeneration).toBe(harnessConnectionGeneration(connection))
+          const previousBoot = { ...connection, bootId: randomUUID() }
+          await proofs.append(client, randomUUID(), profile, { ...proof,
+            connectionGeneration: harnessConnectionGeneration(previousBoot),
+            ...(proof.completedNativeQualification ? { completedNativeQualification: {
+              ...proof.completedNativeQualification, binding: previousBoot,
+            } } : {}),
+          })
+        })
+      }
       if (residency === 'unloaded') {
         await fixture.restartMain()
         const selected = saved.update.harnessProfileSelection
