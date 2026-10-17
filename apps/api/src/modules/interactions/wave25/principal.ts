@@ -58,6 +58,18 @@ export async function lockPrincipal(sql: GraphTransactionSql, snapshot: Manageme
       and l.record->>'correlationId'=j.record->>'correlationId'
       and (l.record->>'leaseExpiresAt')::timestamptz>clock_timestamp()
       and l.owner_agent_id=$3`, [interaction.id, reviewer.id, reviewer.agentId, binding.approval_connection_generation, binding.approval_review_job_id, binding.approval_review_lease_fence])
-  if (active.rowCount !== 1) return fail('REVIEWER_AUTHORITY_LOST')
+  if (active.rowCount !== 1) {
+    const state = (await sql.query(`select j.state,j.lease_fence,
+      j.lease_expires_at,clock_timestamp() as observed_at,
+      j.approval_connection_generation as job_generation,j.record->>'correlationId' as correlation,
+      l.owner_agent_id,l.record as writer from review_jobs j left join native_session_lanes l
+      on l.harness=j.record->>'provider' and l.native_session_id=j.record->>'nativeSessionId'
+      where j.id=$1`, [binding.approval_review_job_id])).rows
+    return fail('REVIEWER_AUTHORITY_LOST', JSON.stringify({
+      executionId: reviewer.id, agentId: reviewer.agentId,
+      jobId: binding.approval_review_job_id, fence: binding.approval_review_lease_fence,
+      generation: binding.approval_connection_generation, state,
+    }))
+  }
   return principal
 }
