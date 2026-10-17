@@ -180,7 +180,3 @@
 }
 .board-undo-notice > svg { flex: none; color: var(--text-muted); }
 .board-undo-notice > span { min-width: 0; overflow-wrap: anywhere; }
-
-/* Loading shape of the Board: the editor's footprint with node-sized placeholders in the canvas. */
-.board-loading .board-loading-nodes { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: var(--space-6); padding-top: 4rem; }
-.board-loading .board-control-cluster { display: flex; }
