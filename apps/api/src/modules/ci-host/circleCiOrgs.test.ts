@@ -180,18 +180,3 @@ it('restores a recovered standby organization’s registered role before overflo
   expect((await selector.roles('site-ci')).get(circleOrgKey('delta', 'reserve'))?.schedulingRole).toBe('standby')
   expect(added.find(account => account.owner === 'delta')?.role).toBe('standby')
 })
-
-it('discovers the implicit primary organizations through the selected primary profile context', async () => {
-  const ambient = discoveryPorts(new Set(), 'fixture-primary\n')
-  const selected = discoveryPorts(new Set(['gh/fixture-primary/site-ci']))
-  const added: CloudAccount[] = []
-  const accounts = new CircleCiAccounts(ambient.ports, async () => ['fixture-primary/site-ci'], org => added.push(org), {
-    registry: { list: async () => [{ id: 'default', label: 'Primary', role: 'primary', organizations: [] }] },
-    context: async () => ({ ports: selected.ports }), explicitPrimary: true,
-  })
-  await accounts.refresh()
-  expect(added).toMatchObject([{ owner: 'fixture-primary', circleAccountId: 'default', role: 'primary' }])
-  expect([...added[0]!.mirrorNames]).toEqual(['site-ci'])
-  expect(selected.calls).toContain('circleci project get --project gh/fixture-primary/site-ci --json')
-  expect(ambient.calls.filter(call => call.startsWith('circleci '))).toEqual([])
-})

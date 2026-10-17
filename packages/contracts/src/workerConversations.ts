@@ -30,6 +30,7 @@ const WorkerConversationOwnerSchema = z.discriminatedUnion('kind', [
     workflowId: id, workflowNodeId: id }).strict(),
 ])
 export const WorkerConversationBindingSchema = z.object({
+  sessionGeneration: id.optional(),
   accountBinding: AcceptedProviderAccountBindingSchema.optional(),
   owner: WorkerConversationOwnerSchema,
   directoryBinding: AgentChatDirectoryBindingSchema.optional(),
