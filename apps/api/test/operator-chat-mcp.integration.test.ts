@@ -4,7 +4,8 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { GetOperatorConversationResponseSchema, OperatorActivityPageSchema,
   CreateOperatorConversationResponseSchema, ListOperatorConversationsResponseSchema,
-  OperatorChatSetupSchema, SendOperatorMessageResponseSchema } from '@foreman-code/contracts'
+  OperatorChatSetupSchema, SendOperatorMessageResponseSchema,
+  ListOperatorConversationSummariesResponseSchema } from '@foreman-code/contracts'
 import { OperatorConversationHistoryPageSchema } from '@foreman-code/contracts/operator-chat'
 import type { ManagementAction, ManagementScope } from '@foreman-code/contracts/management'
 import { buildApp } from '../src/app.js'
@@ -318,19 +319,67 @@ describe.skipIf(!postgresEnabled)('Authenticated Operator conversation tools', (
     expect((await repository.history(conversation.id))?.entries).toHaveLength(40)
   })
 
-  it('rediscovers empty owned conversations and recovers creation after response loss without duplicates', async () => {
+  it('keeps MCP and HTTP drafts hidden until the first send while preserving saved readback and access checks', async () => {
+    const owner = await issue(['operator_chat:read', 'operator_chat:write'])
+    const reader = await issue(['operator_chat:read'])
+    const created = await owner.client.callTool({ name: 'operator_chat_create', arguments: {} })
+    expect(created.isError).not.toBe(true)
+    const conversation = CreateOperatorConversationResponseSchema.parse(decodeMcpToolResult(created)).conversation
+    const abandoned = await chat.create(owner.principal, 'Abandoned draft')
+    const list = async () => ListOperatorConversationsResponseSchema.parse(decodeMcpToolResult(
+      await owner.client.callTool({ name: 'operator_chat_list', arguments: {} })))
+    const summaries = async () => {
+      const response = await fetch(new URL('/api/operator/conversations/summaries?limit=1', address), {
+        headers: { authorization: `Bearer ${owner.token}` },
+      })
+      expect(response.status).toBe(200)
+      return ListOperatorConversationSummariesResponseSchema.parse(await response.json())
+    }
+    expect((await list()).conversations).toEqual([])
+    expect(await summaries()).toMatchObject({ conversations: [], hasMore: false, attention: [] })
+    const draft = await owner.client.callTool({ name: 'operator_chat_get', arguments: { conversationId: conversation.id } })
+    expect(GetOperatorConversationResponseSchema.parse(decodeMcpToolResult(draft))).toMatchObject({
+      conversation, messages: [],
+    })
+    await denied(reader.client, 'operator_chat_create', {})
+    await denied(reader.client, 'operator_chat_send', {
+      conversationId: conversation.id, request: { requestId: randomUUID(), content: 'Denied message' },
+    })
+    expect((await repository.get(conversation.id))?.messages).toEqual([])
+    const content = 'Plan the workspace'
+    const request = { requestId: randomUUID(), content }
+    const sent = await owner.client.callTool({ name: 'operator_chat_send', arguments: {
+      conversationId: conversation.id, request,
+    } })
+    expect(sent.isError).not.toBe(true)
+    expect(SendOperatorMessageResponseSchema.parse(decodeMcpToolResult(sent)).state.messages)
+      .toContainEqual(expect.objectContaining({ role: 'user', content, requestId: request.requestId }))
+    expect((await list()).conversations).toEqual([{ ...conversation, title: content }])
+    expect(await summaries()).toMatchObject({
+      conversations: [{ conversationId: conversation.id, title: content }], hasMore: false,
+    })
+    const persisted = await new PostgresOperatorConversationRepository(database.pool).get(conversation.id)
+    expect(persisted?.conversation.title).toBe(content)
+    expect(persisted?.messages).toContainEqual(expect.objectContaining({ role: 'user', content }))
+    expect((await repository.get(abandoned.id))?.messages).toEqual([])
+    const otherList = await reader.client.callTool({ name: 'operator_chat_list', arguments: {} })
+    expect(ListOperatorConversationsResponseSchema.parse(decodeMcpToolResult(otherList)).conversations).toEqual([])
+  })
+
+  it('hides empty owned drafts and recovers creation after response loss without duplicates', async () => {
     const owner = await issue(['operator_chat:read', 'operator_chat:write', 'capabilities:read'])
     const command = { commandId: randomUUID(), title: 'Recover this empty conversation' }
     const create = () => owner.client.callTool({ name: 'operator_chat_create', arguments: command })
-    // Discard the creation response; discovery must recover an empty conversation.
+    // Recover a lost creation response by replaying its command.
     expect((await create()).isError).not.toBe(true)
     const discovery = await owner.client.callTool({ name: 'operator_chat_list', arguments: {} })
     const listed = ListOperatorConversationsResponseSchema.parse(decodeMcpToolResult(discovery))
-    expect(listed.conversations).toHaveLength(1)
-    const original = listed.conversations[0]!
+    expect(listed.conversations).toEqual([])
+    const recovered = await create()
+    const original = CreateOperatorConversationResponseSchema.parse(decodeMcpToolResult(recovered)).conversation
     expect(original.title).toBe(command.title)
     expect((await repository.get(original.id))?.messages).toEqual([])
-    expect((await chat.summaries(owner.principal)).map(item => item.conversationId)).toEqual([original.id])
+    expect(await chat.summaries(owner.principal)).toEqual([])
     const initial = await operators.ensure()
     const defaults = new PostgresFoundationSettingsRepository(database.pool)
     const snapshot = await defaults.getAgentDefaults()
@@ -364,6 +413,8 @@ describe.skipIf(!postgresEnabled)('Authenticated Operator conversation tools', (
     const independent = await another.client.callTool({ name: 'operator_chat_create', arguments: command })
     const other = CreateOperatorConversationResponseSchema.parse(decodeMcpToolResult(independent)).conversation
     expect(other.id).not.toBe(original.id)
+    await repository.beginTurn(original.id, { requestId: randomUUID(), content: 'First saved message' }, owner.principal.id)
+    await repository.beginTurn(other.id, { requestId: randomUUID(), content: 'Another saved message' }, another.principal.id)
     const ownList = await owner.client.callTool({ name: 'operator_chat_list', arguments: {} })
     expect(ListOperatorConversationsResponseSchema.parse(decodeMcpToolResult(ownList)).conversations).toEqual([original])
     const otherList = await another.client.callTool({ name: 'operator_chat_list', arguments: {} })
