@@ -55,6 +55,24 @@ function setControlPrincipal(binding: ClaudeDomainBinding, principalId: string):
   if (binding.kind === 'operator' || binding.kind === 'agent') binding.controlPrincipalId = principalId
 }
 
+function bindOperatorCredentialRefresh(manager: ClaudeNativeSessionManager) {
+  manager.rebindApplicationAccess = async (session, start, signal) => {
+    if (start.kind !== 'operator' || start.configuration.harness.harness !== 'claude') {
+      throw new DomainError('HARNESS_ROLE_AUTHORITY_INVALID', 'Credential rebinding requires the accepted Claude Operator.', 403)
+    }
+    const servers = start.configuration.harness.mcpServers
+    const serverName = appMcpServerName(servers)
+    const configured = servers[serverName]
+    const token = readProductEnvironment(start.environment?.variables ?? {}, 'MCP_TOKEN')
+    if (configured?.type !== 'http' || !token) {
+      throw new DomainError('OPERATOR_MCP_SETUP_REQUIRED', 'The accepted HTTP credential arrangement is unavailable.', 409)
+    }
+    await manager.refreshSessionCredentials(session, start, { ...servers,
+      [serverName]: { ...configured, headers: { ...configured.headers, Authorization: `Bearer ${token}` } },
+    }, signal)
+  }
+}
+
 export function productionClaudeManager(input: {
   pool: pg.Pool
   factories: NativeHarnessFactories
@@ -224,8 +242,10 @@ export function productionClaudeManager(input: {
   // Factory initialization remains lazy; the admitted allocator's exact instance
   // is captured in the construction callback rather than selected by harness ID.
   const refresh = result.manager.refreshInspectionCredentials.bind(result.manager)
+  const refreshSession = result.manager.refreshSessionCredentials.bind(result.manager)
   let refreshingMcp = false
-  result.manager.refreshInspectionCredentials = async (start, servers, signal) => {
+  const refreshOwnedCredentials = async (start: NativeSessionStart, servers: Readonly<Record<string, unknown>>,
+    signal?: AbortSignal, session?: NativeSessionReference) => {
     if (refreshingMcp) throw new DomainError('CLAUDE_MCP_CONTROL_CONFLICT', 'An MCP credential refresh is already in progress.', 409)
     refreshingMcp = true
     try {
@@ -237,7 +257,8 @@ export function productionClaudeManager(input: {
         throw new DomainError('CLAUDE_MCP_SCOPE_CONFLICT', 'The local file server cannot be replaced during credential refresh.', 409)
       }
       const acceptedServers = { ...servers, ...(fileServer ? { 'graphql-files': fileServer.server } : {}) }
-      const snapshot = await refresh(start, acceptedServers, signal)
+      const snapshot = session ? await refreshSession(session, start, acceptedServers, signal)
+        : await refresh(start, acceptedServers, signal)
       const manifests = input.appMcpAccess === 'none' ? [] : await acceptedClaudeAppTools({
         configuration: input.configuration, servers: acceptedServers,
         token: readProductEnvironment(start.environment?.variables ?? {}, 'MCP_TOKEN'),
@@ -250,6 +271,9 @@ export function productionClaudeManager(input: {
       refreshingMcp = false
     }
   }
+  result.manager.refreshInspectionCredentials = (start, servers, signal) => refreshOwnedCredentials(start, servers, signal)
+  result.manager.refreshSessionCredentials = (session, start, servers, signal) => refreshOwnedCredentials(start, servers, signal, session)
+  if (input.role === 'operator' && input.appMcpAccess === 'scoped') bindOperatorCredentialRefresh(result.manager)
   const dispose = result.manager.dispose!.bind(result.manager)
   result.manager.dispose = async () => {
     try { await dispose() } finally {

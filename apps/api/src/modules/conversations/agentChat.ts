@@ -568,20 +568,6 @@ export class AgentChatService {
   }
 
   private async harnessUnavailable(resolution: Resolution): Promise<Resolution['blocked']> {
-    const row = resolution.row
-    if (row?.origin_run_id && row.native_session_id && !row.record.sourceConfigurationVersionId) {
-      const agent = (await this.pool.query<{ current_configuration_version_id: string | null }>(
-        'select current_configuration_version_id from agents where workspace_id=$1 and id=$2 and archived_at is null',
-        [row.workspace_id, row.agent_id])).rows[0]
-      if (agent?.current_configuration_version_id
-        && agent.current_configuration_version_id !== row.agent_configuration_version_id) {
-        const configuration = await this.workflows.getAgentConfiguration(agent.current_configuration_version_id)
-        if (!configuration) {
-          throw new DomainError('AGENT_CHAT_CONFIGURATION_MISSING', 'The saved Agent configuration is unavailable.', 409)
-        }
-        return this.managers.unavailable?.(configuration, row.record.workingDirectory)
-      }
-    }
     const executionId = resolution.row?.record.sourceConfigurationVersionId
       ? undefined : resolution.executionId ?? resolution.row?.origin_execution_id
     const workingDirectory = resolution.row?.record.workingDirectory ?? resolution.create?.workingDirectory

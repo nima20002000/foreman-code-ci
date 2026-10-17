@@ -247,7 +247,7 @@ createInterface({ input: process.stdin, crlfDelay: Infinity }).on('line', async 
     return
   }
   const params = message.params ?? {}
-  log({ method: message.method, threadId: params.threadId, correlationId: params.clientUserMessageId, model: params.model,
+  log({ method: message.method, threadId: params.threadId, correlationId: params.clientUserMessageId,
     ...(message.method === 'model/list' ? { workingDirectory: process.cwd() } : {}) })
   if (message.method === 'initialize') {
     reply(message.id, { userAgent: `codex-cli ${cliVersion}`, platformFamily: 'unix', platformOs: 'linux', codexHome: root })
@@ -334,7 +334,6 @@ createInterface({ input: process.stdin, crlfDelay: Infinity }).on('line', async 
       description: 'External protocol fixture', hidden: false, isDefault: true, defaultReasoningEffort: 'low',
       supportedReasoningEfforts: [{ reasoningEffort: 'low', description: 'Low' },
         { reasoningEffort: 'medium', description: 'Medium' }] }]
-    models.push({ ...models[0], id: 'other-model', model: 'other-model', displayName: 'Other model', isDefault: false })
     const respond = async () => {
       const blocked = () => {
         const allowedFile = join(root, 'allowed-model-directories')

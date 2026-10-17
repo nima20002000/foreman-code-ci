@@ -23,7 +23,7 @@ import { recoverPersistedClaudeCompaction } from '../harnesses/claudeSdk/recover
 import { unavailableNativeResponse } from '../harnesses/responseAvailability.js'
 import { sameConversationForAppAccess } from './conversationAppAccess.js'
 import { readWorkerConversationResults } from './workerConversationResults.js'
-import { validWorkerConfigurationTransition } from './workerConfigurationTransition.js'
+import { validRunChatSkillsTransition } from './workerRunChatBinding.js'
 import { WorkerEventWait } from './workerEventWait.js'
 
 export interface WorkerConversationAllocation {
@@ -33,7 +33,7 @@ export interface WorkerConversationAllocation {
   inspector?: NativeMcpInspector
   start(input: { correlationId: string; instructionsDelivered: boolean;
     applicationAccess?: { kind: 'operator-chat-mcp'; token: string } }): Promise<NativeSessionStart>
-  nativeOwner(session: NativeSessionReference): Promise<RemoteNativeIdentity>
+  nativeOwner(session: NativeSessionReference, options?: { allowExited: true }): Promise<RemoteNativeIdentity>
   close(): Promise<void>
   deliverClaudeCredential?(token: string, signal: AbortSignal): Promise<void>
   refreshApplicationAccess?(token: string, signal: AbortSignal): Promise<void>
@@ -265,14 +265,15 @@ export class WorkerConversationHost {
     return this.ports.recover(record, configuration, connection, signal, request)
   }
 
-  private async resident(request: WorkerConversationRpcRequest & { session: NativeSessionReference }) {
+  private async resident(request: WorkerConversationRpcRequest & { session: NativeSessionReference },
+    options?: { allowExited: true }) {
     let record = await this.ports.journal.read(request.binding)
     if (this.allocating.has(request.binding.owner.conversationId)) unavailable('The native conversation is busy.')
     const resident = this.residents.get(request.binding.owner.conversationId)
     if (!record || !isDeepStrictEqual(record.session, request.session) || !resident
       || record.applicationAccessChange?.state === 'reserved'
       || !isDeepStrictEqual(resident.binding, request.binding)) unavailable('The original chat session is not resident.')
-    const owner = sessionOwner(await resident.allocation.nativeOwner(request.session))
+    const owner = sessionOwner(await resident.allocation.nativeOwner(request.session, options))
     record = await this.ports.journal.read(request.binding)
     if (!record || !isDeepStrictEqual(record.nativeOwner, owner)) {
       unavailable('The original native chat process changed.')
@@ -308,7 +309,7 @@ export class WorkerConversationHost {
     connection: Readonly<DeviceSessionBinding>, signal: AbortSignal) {
     validateConfiguration(request.binding, request.configuration)
     if (request.mode !== 'create' && !request.source) unavailable('Native attachment or fork requires its source session.')
-    if (request.previousConfiguration) return this.changeConfiguration(request, connection, signal)
+    if (request.previousConfiguration) return this.changeNodeSkills(request, connection, signal)
     if (request.previousBinding) return this.changeApplicationAccess(request, connection, signal)
     const record = await this.ports.journal.receive(request.binding, connection)
     const resident = await this.allocate(request, connection, signal)
@@ -390,17 +391,17 @@ export class WorkerConversationHost {
     for (const state of recoveredCompactions) await this.ports.journal.compactProgress(record.binding, state)
   }
 
-  private async changeConfiguration(request: Extract<WorkerConversationRpcRequest, { method: 'conversation.open' }>,
+  private async changeNodeSkills(request: Extract<WorkerConversationRpcRequest, { method: 'conversation.open' }>,
     connection: Readonly<DeviceSessionBinding>, signal: AbortSignal) {
     const previous = request.previousBinding
     if (request.mode !== 'attach' || !request.source || !previous || !request.previousConfiguration
-      || !validWorkerConfigurationTransition(previous, request.binding, request.previousConfiguration, request.configuration)) {
-      unavailable('The configuration change must keep the Agent, Worker, account, folder and native session.')
+      || !validRunChatSkillsTransition(previous, request.binding, request.previousConfiguration, request.configuration)) {
+      unavailable('A Run chat skills change keeps the original configuration, profile and session.')
     }
     const id = request.binding.owner.conversationId
     if (this.allocating.has(id) || this.hasRunningOperation(id)) unavailable('The native conversation is busy.')
     const task = (async () => {
-      let record = await this.ports.journal.inspectConfigurationTransition(previous, request.binding,
+      let record = await this.ports.journal.inspectSkillsTransition(previous, request.binding,
         request.previousConfiguration!, request.configuration)
       if (!record?.session || !isDeepStrictEqual(record.session, request.source)
         || record.closed || record.closing) unavailable('The original Run chat session is unavailable.')
@@ -920,7 +921,7 @@ export class WorkerConversationHost {
   private async releaseRuntime(request: WorkerConversationRpcRequest & { session: NativeSessionReference }) {
     const saved = await this.ports.journal.read(request.binding)
     if (saved?.runtimeReleased && isDeepStrictEqual(saved.session, request.session)) return { receipt: saved }
-    const { resident, record } = await this.resident(request)
+    const { resident, record } = await this.resident(request, { allowExited: true })
     const id = request.binding.owner.conversationId
     if (this.hasRunningOperation(id) || record.turns.some(turn => !['completed', 'rejected'].includes(turn.status))
       || record.compactions.some(control => compactionBlocksSend(control.state))) {
