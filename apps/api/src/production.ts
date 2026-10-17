@@ -1954,7 +1954,8 @@ function configureAgentChat(composition: ProductionComposition) {
     if (!row || row.agent_configuration_version_id !== configuration.id) {
       throw new DomainError('PLACEMENT_BINDING_CONFLICT', 'The chat configuration changed.', 409)
     }
-    const executionId = row.record.origin.kind === 'run_execution' ? row.record.origin.executionId : undefined
+    const executionId = row.record.origin.kind === 'run_execution' && !row.record.sourceConfigurationVersionId
+      ? row.record.origin.executionId : undefined
     const selected = await agentChatProfileSelection(configuration, sessionStartDirectory(start), executionId)
     return recoverChatCompaction(configuration, conversationId, session, start, state, principalId, signal,
       selected.profileSelection, selected.sourceExecution)
