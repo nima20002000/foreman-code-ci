@@ -36,8 +36,7 @@ export class PrivateSourceMaterializer {
     private readonly authorize: (binding: RootBinding, attempt: MaterializationAttempt) => Promise<void>,
     private readonly quotaPool?: SourceQuotaPool,
     private readonly git: GitWorktreePorts = systemGitWorktreePorts()) {}
-  async prepare(input: { manifest: SourceManifest; binding: RootBinding; attempt: MaterializationAttempt; signal?: AbortSignal;
-    sharedWritableTree?: true; sharedReadOnlyTree?: true
+  async prepare(input: { manifest: SourceManifest; binding: RootBinding; attempt: MaterializationAttempt; signal?: AbortSignal; sharedWritableTree?: true
     /** Workflow agents in a GitHub workspace get their own worktree and branch instead of the shared copy. */
     worktree?: WorktreeRequest }): Promise<MaterializationReceipt> {
     const bytes = this.bytes
@@ -58,9 +57,6 @@ export class PrivateSourceMaterializer {
     }
     if (input.worktree && (binding.accessMode !== 'exclusive-write' || !input.sharedWritableTree)) {
       throw new SourceError('SOURCE_READ_ONLY', 'Agent branches require a writable workflow source.')
-    }
-    if (input.sharedReadOnlyTree && binding.accessMode !== 'read-only') {
-      throw new SourceError('SOURCE_READ_ONLY', 'Shared read-only checkouts require a read-only source binding.')
     }
     const attempt = input.attempt
     // Parse every accepted attempt pin before any I/O; the authorization port
@@ -200,7 +196,7 @@ export class PrivateSourceMaterializer {
         manifest, reference: tree, request: input.worktree, ports: this.git, signal,
         authorize: () => this.authorize(binding, attempt),
       }) : undefined
-      const shared = worktree ?? (writable || input.sharedReadOnlyTree
+      const shared = worktree ?? (writable
         ? await withClaimLock(root, () => prepareSharedWorkingTree({
           root: root!, binding, primary: reservation!, materializationId: id, attempt, manifest,
           reference: tree!, signal, authorize: () => this.authorize(binding, attempt),

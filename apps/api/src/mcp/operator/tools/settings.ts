@@ -39,8 +39,9 @@ export const settingsTools = [
     name: 'circle_accounts_list',
     requires: [['settings:read', 'global']],
     enabled: services => !!services.circleAccounts,
-    description: 'Read the primary and standby CircleCI login registrations, explicit GitHub organization bindings, '
-      + 'credential setup status, per-org scheduling role and estimated credits. Usage exports are sampled at most '
+    description: 'Read primary and standby CircleCI logins, organization status, observed authentication/readiness, '
+      + 'per-org scheduling role and estimated credits from the dispatch fleet. organizations contains saved bindings; '
+      + 'orgs includes automatically discovered primary organizations. Usage exports are sampled at most '
       + 'every three hours and readings are usable for four hours from their export window end. '
       + 'Local human setup provisions API tokens in private CLI profiles outside Foreman; no credentials are returned.',
     inputSchema: z.object({}).strict(), outputSchema: ManagedCircleAccountsSchema,

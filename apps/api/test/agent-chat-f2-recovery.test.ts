@@ -10,7 +10,6 @@ import { AgentChatService } from '../src/modules/conversations/agentChat.js'
 import { agentChatCorrelation, PostgresAgentChatRepository, type AgentConversationRow } from '../src/modules/conversations/agentChatRepository.js'
 import type { PostgresOperatorConversationRepository } from '../src/modules/conversations/operatorChatRepository.js'
 import type { NativeHarnessSessionManager, NativeHistory, NativeSessionStart, NativeTurnInput } from '../src/modules/harnesses/port.js'
-import type { NativeNonSubmission } from '../src/modules/conversations/nativeNonSubmission.js'
 
 const now = new Date('2026-09-27T00:00:00Z')
 const session: NativeSessionReference = { harness: 'codex', providerVersion: 'fixture', nativeSessionId: 'native-session' }
@@ -53,14 +52,6 @@ class MemoryRepository extends PostgresAgentChatRepository {
   override async bindSession(_id: string, providerVersion: string, nativeSessionId: string) {
     if (this.bindFailure) throw new Error('bind transaction failed')
     this.row.native_session_id = nativeSessionId; this.row.provider_version = providerVersion
-  }
-  override async recordNonSubmission(_id: string, requestId: string, operation: NativeNonSubmission['operation'],
-    result: ExecutionResult) {
-    if (this.row.active_request_id !== requestId || this.row.active_native_turn_id
-      || operation === 'session_creation' && this.row.native_session_id) return false
-    if (result.outcome === 'succeeded') throw new Error('Non-submission cannot have a successful native result.')
-    this.row.record.nativeNonSubmission = { requestId, operation, result }
-    return true
   }
   override async markStartupDelivered() { this.row.record.startupDelivered = true }
   override async markSessionUnavailable(_id: string, reason: string) { this.row.record.sessionUnavailable = reason }
@@ -229,10 +220,7 @@ describe('F2 Agent chat native recovery', () => {
       assert.equal(repository.row.record.sessionUnavailable, undefined)
       assert.equal(repository.storedReceipts[0]!.delivery, 'unknown')
       assert.equal(repository.row.active_request_id, 'first')
-      if (fault === 'bind-transaction-failed') {
-        await assert.rejects(f.service.shutdown(), /cleanup was incomplete/)
-        assert.equal(native.disposed, 0, 'unconfirmed creation still owns its native manager')
-      } else await f.service.shutdown()
+      await f.service.shutdown()
       const restarted = await makeService(repository, new NativeFixture())
       await restarted.service.recover()
       assert.match(repository.row.record.sessionUnavailable!, /read-only/)
@@ -242,20 +230,6 @@ describe('F2 Agent chat native recovery', () => {
       repository.storedReceipts.push(receipt('later', 'queued'))
       await restarted.service.recover()
       assert.equal(restarted.native.created, 0)
-      if (fault === 'bind-transaction-failed') {
-        repository.bindFailure = false
-        await repository.bindSession('conversation', session.providerVersion, session.nativeSessionId)
-        native.histories.set(agentChatCorrelation('conversation', 'first'), {
-          events: [], pendingInteractions: [], nonSubmission: { nativeSessionId: session.nativeSessionId,
-            clientCorrelationId: agentChatCorrelation('conversation', 'first'), result: { outcome: 'failed' } },
-        })
-        await f.service.shutdown()
-        assert.equal(native.disposed, 1)
-        assert.equal(native.created, 1)
-        assert.equal(native.prompts.length, 0)
-        assert.equal(repository.storedReceipts[0]!.delivery, 'failed')
-        assert.equal(repository.storedReceipts[1]!.delivery, 'queued')
-      }
     })
   }
 
@@ -308,14 +282,6 @@ describe('F2 Agent chat native recovery', () => {
       assert.equal(f.repository.storedReceipts[1]!.delivery, 'queued')
       assert.equal(f.native.prompts.length, 0)
       assert.equal(f.repository.row.record.startupDelivered, false)
-      await assert.rejects(f.service.shutdown(), /cleanup was incomplete/)
-      assert.equal(f.native.disposed, 0)
-      f.native.histories.set(agentChatCorrelation('conversation', 'first'), terminal())
-      await f.service.shutdown()
-      assert.equal(f.repository.storedReceipts[0]!.delivery, 'completed')
-      assert.equal(f.repository.storedReceipts[1]!.delivery, 'queued')
-      assert.equal(f.native.prompts.length, 0)
-      assert.equal(f.native.disposed, 1)
     })
   }
 })

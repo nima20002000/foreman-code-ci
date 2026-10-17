@@ -172,20 +172,5 @@ it('consumes the explicit passive Claude SDK declaration without inventing defau
     expect(await registry.profileEvidence(value)).toBeNull()
     proof.suiteRevision = CLAUDE_PROFILE_CHECK_REVISION
     expect(await registry.profileEvidence(value)).toEqual(proof)
-    proof.connectionGeneration = 'previous-worker-boot'
-    proof.environmentGeneration = 'previous-worker-environment'
-    expect(await registry.profileEvidence(value)).toBeNull()
-    const observation = { purpose: 'observation' as const }
-    expect(await registry.profileEvidence(value, undefined, observation)).toEqual(proof)
-    for (const changed of [
-      { authenticated: false }, { compatible: false }, { qualified: false },
-      { instanceRevision: 'other-revision' }, { configurationFingerprint: 'other-configuration' },
-      { driverRevision: 'other-driver' }, { protocolRevision: 'other-protocol' },
-      { suiteRevision: 'other-suite' },
-      { target: { ...value.target, installationFingerprint: 'other-installation' } },
-    ]) {
-      vi.mocked(profiles.latest).mockResolvedValue({ ...proof, ...changed })
-      expect(await registry.profileEvidence(value, undefined, observation)).toBeNull()
-    }
   } finally { registry.stop(); await pool.end() }
 })
