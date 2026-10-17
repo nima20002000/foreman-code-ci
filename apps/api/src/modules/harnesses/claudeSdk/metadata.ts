@@ -40,16 +40,13 @@ export async function discoverClaudeMetadata(input: {
       const model = asRecord(raw)
       const id = typeof model.resolvedModel === 'string' && model.resolvedModel ? model.resolvedModel : model.value
       if (typeof id !== 'string' || !id) continue
-      const contextWindow = Number.isSafeInteger(model.contextWindow) && Number(model.contextWindow) > 0
-        ? Number(model.contextWindow) : undefined
       const existing = models.find(row => row.id === id)
       if (existing) {
         // Keep native default preference, but show its actual versioned name.
         if (model.value !== 'default' && typeof model.displayName === 'string') existing.name = model.displayName
-        if (existing.contextWindow === undefined && contextWindow !== undefined) existing.contextWindow = contextWindow
         continue
       }
-      models.push({ id, ...(contextWindow === undefined ? {} : { contextWindow }), ...(typeof model.displayName === 'string' ? { name: model.displayName } : {}),
+      models.push({ id, ...(typeof model.displayName === 'string' ? { name: model.displayName } : {}),
         reasoningEfforts: Array.isArray(model.supportedEffortLevels) ? model.supportedEffortLevels.filter((value): value is string => typeof value === 'string') : [],
         variants: [], serviceTiers: [], defaultPriority: model.value === 'default' ? -1 : index })
     }

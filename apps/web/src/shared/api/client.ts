@@ -72,9 +72,6 @@ import {
   WorkspaceLocationValidationSchema,
   WorkflowArchiveInputSchema,
   WorkflowUpdateInputSchema,
-  AgentUpdateInputSchema,
-  AgentMutationResultSchema,
-  type AgentUpdateInput,
   type WorkspaceArchiveInput,
   type WorkspaceCreateInput,
   type WorkspaceUpdateInput,
@@ -427,13 +424,6 @@ export class ApiClient {
     ), options?.signal)
   }
 
-  /** Revision-checked Agent edit. Creates a new Agent configuration version, like the Board save and agent_update. */
-  updateManagedAgent(input: AgentUpdateInput, options?: RequestOptions) {
-    const request = parseRequest(AgentUpdateInputSchema, input)
-    return this.request(`/api/management/workspaces/${toPath(request.workspaceId)}/agents/${toPath(request.agentId)}`,
-      AgentMutationResultSchema, { ...options, method: 'PATCH', body: request })
-  }
-
   startManagedRun(input: z.input<typeof RunStartV3InputSchema>, options?: RequestOptions) {
     const request = parseRequest(RunStartV3InputSchema, input)
     return this.request(
@@ -613,7 +603,6 @@ export const createManagedWorkflow = apiClient.createManagedWorkflow.bind(apiCli
 export const updateManagedWorkflow = apiClient.updateManagedWorkflow.bind(apiClient)
 export const archiveManagedWorkflow = apiClient.archiveManagedWorkflow.bind(apiClient)
 export const listManagedAgents = apiClient.listManagedAgents.bind(apiClient)
-export const updateManagedAgent = apiClient.updateManagedAgent.bind(apiClient)
 export const startManagedRun = apiClient.startManagedRun.bind(apiClient)
 export const stopManagedRun = apiClient.stopManagedRun.bind(apiClient)
 export const getManagedHarnessCatalog = apiClient.getManagedHarnessCatalog.bind(apiClient)

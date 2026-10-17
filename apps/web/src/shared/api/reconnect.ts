@@ -1,25 +1,11 @@
 import { useEffect, useRef, useSyncExternalStore } from 'react'
-import { onlineManager, useQuery, useQueryClient, type Query } from '@tanstack/react-query'
-import { RuntimeIdentitySchema } from '@foreman-code/contracts'
-import { ApiError, apiClient, isApiRestartError } from './client'
-import { isTransientReadError } from './readFailure'
-import { sessionGeneration, sessionIsSwitching } from './sessionBoundary'
+import { useQueryClient, type Query } from '@tanstack/react-query'
+import { isApiRestartError } from './client'
 
 export const reconnectingMessage = 'Updating — reconnecting…'
-const reconnectIntervalMs = 1_000
 
 function needsReconnect(query: Query): boolean {
   return query.isActive() && (isApiRestartError(query.state.error) || isApiRestartError(query.state.fetchFailureReason))
-}
-
-function isRecoverableError(error: unknown): boolean {
-  return isApiRestartError(error)
-    || ApiError.is(error) && error.status >= 500 && isTransientReadError(error)
-}
-
-function needsRecovery(query: Query): boolean {
-  return query.isActive()
-    && (isRecoverableError(query.state.error) || isRecoverableError(query.state.fetchFailureReason))
 }
 
 /** Request failures stay in Query; recovery refreshes the other mounted reads too. */
@@ -30,44 +16,9 @@ export function useApiReconnect(): boolean {
     listener => cache.subscribe(listener),
     () => cache.getAll().some(needsReconnect),
   )
-  const recovering = useSyncExternalStore(
-    listener => cache.subscribe(listener),
-    () => cache.getAll().some(needsRecovery),
-  )
-  const online = useSyncExternalStore(
-    listener => onlineManager.subscribe(listener),
-    () => onlineManager.isOnline(),
-  )
-  const probeFailed = useRef(false)
-  // Probe independently of paused reads and identity retries waiting in backoff.
-  useQuery({
-    queryKey: ['workbench', 'api-reachability', sessionGeneration()],
-    enabled: (recovering || !online) && !sessionIsSwitching(),
-    networkMode: 'always', retry: false, staleTime: 0, gcTime: 0,
-    refetchInterval: reconnectIntervalMs, refetchIntervalInBackground: true,
-    refetchOnReconnect: false, meta: { refetchOnApiReconnect: false },
-    queryFn: async ({ signal }) => {
-      let identity
-      try {
-        identity = await apiClient.request('/api/runtime/identity', RuntimeIdentitySchema, { signal })
-      } catch (error) {
-        probeFailed.current = true
-        throw error
-      }
-      onlineManager.setOnline(true)
-      if (probeFailed.current) {
-        probeFailed.current = false
-        void client.invalidateQueries({
-          refetchType: 'active',
-          predicate: query => query.meta?.refetchOnApiReconnect !== false,
-        })
-      }
-      return identity
-    },
-  })
   const wasReconnecting = useRef(false)
   useEffect(() => {
-    if (!recovering && online) {
+    if (!reconnecting) {
       if (wasReconnecting.current) void client.invalidateQueries({
         refetchType: 'active',
         predicate: query => query.meta?.refetchOnApiReconnect !== false,
@@ -76,11 +27,10 @@ export function useApiReconnect(): boolean {
       return
     }
     wasReconnecting.current = true
-    if (!online) return
     const timer = window.setInterval(() => {
-      void client.refetchQueries({ predicate: needsRecovery, type: 'active' }, { cancelRefetch: false })
-    }, reconnectIntervalMs)
+      void client.refetchQueries({ predicate: needsReconnect, type: 'active' }, { cancelRefetch: false })
+    }, 1000)
     return () => window.clearInterval(timer)
-  }, [client, recovering, online])
-  return reconnecting || !online
+  }, [client, reconnecting])
+  return reconnecting
 }
