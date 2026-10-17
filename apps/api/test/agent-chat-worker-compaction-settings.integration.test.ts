@@ -6,6 +6,7 @@ import { historicalChatPlacement } from './helpers/historicalChatPlacement.js'
 import { workerSettingsChat } from './helpers/agentChatWorkerSettings.js'
 import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'
 import { identityAlive } from '../src/modules/harnesses/recovery/linuxIdentity.js'
+import { waitForRemoteReview } from './helpers/remoteReviewProduction.js'
 
 it.each(['resident', 'unloaded'] as const)(
   'recovers Worker compaction after its profile is superseded with a %s Main session', async residency => {
@@ -18,6 +19,7 @@ it.each(['resident', 'unloaded'] as const)(
       const original = fixture.registry.snapshot().launches.filter(launch =>
         launch.owner === `conversation:${chat.id}` && launch.lifecycle === 'active' && launch.provider)
       expect(original).toHaveLength(1)
+      const connection = (await fixture.inventory()).hostMetadata!.connection!.binding
       fixture.loseNextCompactionResponse()
       const request = { kind: 'compact', requestId: randomUUID(), expectedRevision: controls.revision }
       const compacted = AgentChatControlsStateSchema.parse(await fixture.value('agent_chat_controls_update', {
@@ -26,6 +28,10 @@ it.each(['resident', 'unloaded'] as const)(
       expect(compacted.compaction).toMatchObject({ requestId: request.requestId, status: 'uncertain',
         dispatchPhase: 'dispatched', nativeSessionId: session.nativeSessionId })
       expect(identityAlive(original[0]!.provider!)).toBe(true)
+      await waitForRemoteReview(fixture.inventory, inventory => {
+        const replacement = inventory.hostMetadata?.connection
+        return replacement?.phase === 'ready' && replacement.binding.connectionEpoch !== connection.connectionEpoch
+      }, 'Worker reconnect after compaction response loss', fixture.subscribeNativeChanges)
       const binding = WorkerConversationBindingSchema.parse((await fixture.db.pool.query<{
         worker_conversation_binding: unknown
       }>('select worker_conversation_binding from operator_conversations where id=$1', [chat.id]))
@@ -58,7 +64,8 @@ it.each(['resident', 'unloaded'] as const)(
       const replay = AgentChatControlsStateSchema.parse(await fixture.value('agent_chat_controls_update', {
         ...target, request,
       }))
-      expect(replay.compaction).toMatchObject({ requestId: request.requestId, status: 'completed' })
+      expect(replay.completedRequestId).toBe(request.requestId)
+      expect(replay.compactions).toContainEqual(recovered.compaction)
       const persisted = AgentChatControlsStateSchema.parse(await fixture.value('agent_chat_controls_get', target))
       expect(persisted.compactions).toContainEqual(recovered.compaction)
       const continued = await chat.send('Continue with the saved settings after compaction.')
