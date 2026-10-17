@@ -83,10 +83,10 @@ button.computer-account:focus-visible { outline: 2px solid var(--n-focus); outli
 /* Sidebar: one icon-only button per computer and cloud CI service, colored by load; the hover card carries the details. */
 .sidebar-computers { list-style: none; margin: 0; padding: 4px 0; display: flex; flex-flow: row wrap; gap: 2px; }
 .sidebar-computers > li { --load-color: var(--load-offline); }
-.sidebar-computers li[data-load='calm'] { --load-color: var(--load-calm); }
-.sidebar-computers li[data-load='busy'] { --load-color: var(--load-busy); }
-.sidebar-computers li[data-load='heavy'] { --load-color: var(--load-heavy); }
-.sidebar-computers li[data-load='saturated'] { --load-color: var(--load-saturated); }
+.sidebar-computers > li[data-load='calm'] { --load-color: var(--load-calm); }
+.sidebar-computers > li[data-load='busy'] { --load-color: var(--load-busy); }
+.sidebar-computers > li[data-load='heavy'] { --load-color: var(--load-heavy); }
+.sidebar-computers > li[data-load='saturated'] { --load-color: var(--load-saturated); }
 .sidebar-computer { display: grid; place-items: center; width: 32px; height: 32px; padding: 0;
   border-radius: 6px; color: var(--text-muted); text-decoration: none; }
 .sidebar-computer:hover { color: var(--text); background: var(--surface-hover); }
@@ -118,16 +118,3 @@ button.computer-account:focus-visible { outline: 2px solid var(--n-focus); outli
   .sidebar-computer-icon[data-running]::before { animation: computer-activity-spin 1.2s linear infinite; }
 }
 @keyframes computer-activity-spin { to { transform: rotate(360deg); } }
-
-.sidebar-compute-title { font-size: 13px; }
-.sidebar-compute-totals { display: grid; gap: 4px; color: var(--n-muted); font-variant-numeric: tabular-nums; }
-.sidebar-compute-totals p { margin: 0; }
-.sidebar-compute-list { display: grid; gap: 2px; list-style: none; padding: 8px 0 0; margin: 0; border-top: 1px solid var(--n-border); }
-.sidebar-compute-list > li { --load-color: var(--load-offline); }
-.sidebar-compute-row { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 32px; padding: 6px 8px;
-  border-radius: var(--radius-sm); color: var(--n-text); text-align: start; }
-.sidebar-compute-row:hover, .sidebar-compute-row:focus-visible { background: var(--n-hover); }
-.sidebar-compute-row:focus-visible { outline: 2px solid var(--n-focus); outline-offset: -2px; }
-.sidebar-compute-status { flex: 0 0 7px; width: 7px; height: 7px; border-radius: 50%; background: var(--load-color); }
-.sidebar-compute-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sidebar-compute-running { margin-inline-start: auto; color: var(--n-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
