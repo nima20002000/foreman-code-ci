@@ -92,7 +92,6 @@ export function ComingSoonRouteEntry({ section, label }: { section: WorkspaceSec
             <EmptyState
               icon="clock"
               title={label}
-              description="This destination is part of the workspace plan, but it is not implemented yet."
               action={<Badge tone="neutral">Coming soon</Badge>}
             />
           </div>
@@ -120,7 +119,6 @@ export function GlobalComingSoonRouteEntry({
             <EmptyState
               icon="clock"
               title={label}
-              description="This destination is not implemented yet."
               action={<Badge tone="neutral">Coming soon</Badge>}
             />
           </div>

@@ -297,7 +297,6 @@ export function SelectedRunCanvas({ scope, panels, layout, geometry }: {
     {query.isPaused ? <p role="status">Pinned topology refresh is paused. Any retained topology is a previously verified saved version.</p>
       : query.isPending ? <p role="status">Loading this Run’s exact saved topology…</p> : null}
     {query.isError || denied || canonicalDenied ? <Alert tone="warning" title="The selected Run topology is unavailable.">
-      The current draft is not shown as historical fact.
       {!denied && !canonicalDenied ? <Button size="sm" onClick={() => void query.refetch()}>Retry pinned topology</Button> : null}
     </Alert> : null}
     {missingNode ? <Alert tone="warning" title="The linked node is not in this Run’s saved version.">
