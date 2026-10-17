@@ -519,8 +519,9 @@ export class AgentChatService {
         pending = await resident.manager.pending(resident.session)
         this.pendingObservations.set(loaded.row.id, successfulReadObservation())
       } catch (error) {
-        const retired = error instanceof DomainError && error.code === 'NATIVE_MANAGER_DISPOSED'
-          && (resident.retiring || resident.disposal || this.runtimes.get(loaded.row.id) !== resident)
+        const retired = (resident.retiring || resident.disposal || this.runtimes.get(loaded.row.id) !== resident)
+          && error instanceof DomainError
+          && ['NATIVE_MANAGER_DISPOSED', 'ENGINE_RESTART', 'WORKER_CONVERSATION_CALLBACK_DENIED'].includes(error.code)
         const offline = error instanceof DeviceConnectionError && ['transport', 'timeout', 'unavailable'].includes(error.code)
           || error instanceof DomainError && error.code === 'WORKER_CONVERSATION_UNAVAILABLE'
         if (!retired && !offline) throw error
@@ -589,6 +590,7 @@ export class AgentChatService {
   }
 
   private async harnessUnavailable(resolution: Resolution): Promise<Resolution['blocked']> {
+    if (!this.managers.unavailable) return undefined
     const row = resolution.row
     if (row?.origin_run_id && row.native_session_id && !row.record.sourceConfigurationVersionId) {
       const agent = (await this.pool.query<{ current_configuration_version_id: string | null }>(
@@ -1210,7 +1212,8 @@ export class AgentChatService {
         throw new DomainError('NATIVE_RUNTIME_RELEASE_UNAVAILABLE',
           'The Worker cannot confirm closure of its resumable process.', 409)
       }
-      await runtime.manager.closeForResume(runtime.session)
+      if (replaceSession) await runtime.manager.close(runtime.session)
+      else await runtime.manager.closeForResume(runtime.session)
     }
     await this.release(row.id)
     return this.repository.applyConfiguration(row.id, row.active_request_id!, configuration, { replaceSession, directoryBinding })
@@ -1368,7 +1371,7 @@ export class AgentChatService {
         defaultSubject: `${row.workspace_id}:${row.agent_id}`, profileKey: row.agent_configuration_version_id,
         ...(selectedMode ? { initialMode: selectedMode } : {}), busyReason: null })
       creatingSession = !row.native_session_id
-      runtime = await this.runtime(row, configuration, correlationId, signal)
+      runtime = await this.runtime(row, configuration, correlationId, signal, principalId)
       creatingSession = !runtime.session
       let session = runtime.session
       const content = await this.repository.turnContent(id, turn.requestId)
@@ -1776,7 +1779,9 @@ export class AgentChatService {
         const configuration = await this.conversationConfiguration(row)
         if (!configuration) throw new Error('The pinned Agent configuration is unavailable.')
         const binding = requestId ? row : { ...row, active_native_turn_id: target!.targetNativeTurnId }
-        const runtime = await this.runtime(binding, configuration, correlationId, AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(60_000)]))
+        const principalId = await this.repository.turnPrincipalId(id, recoveryRequestId)
+        const runtime = await this.runtime(binding, configuration, correlationId,
+          AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(60_000)]), principalId)
         if (requestId) await this.observe(id, requestId, runtime, correlationId, true)
         if (steers.length) {
           const identities = steers.flatMap((entry) => entry.targetNativeTurnId

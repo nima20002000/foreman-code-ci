@@ -570,7 +570,6 @@ export async function remoteReviewProduction(options: {
     const startWorker = async () => {
       ready = false
       workerFailure = ''
-      let previousPhase: unknown
       const started = spawn(process.execPath, [workerEntrypoint, stateDirectory, workerRelease], {
         cwd: fileURLToPath(new URL('../../../..', import.meta.url)),
         stdio: ['ignore', 'pipe', 'pipe', 'ipc'], env: workerEnvironment,
@@ -581,11 +580,6 @@ export async function remoteReviewProduction(options: {
       started.on('message', message => {
         if (message && typeof message === 'object' && 'view' in message) {
           const view = message.view
-          if (view !== null && typeof view === 'object' && 'phase' in view && view.phase !== previousPhase) {
-            previousPhase = view.phase
-            process.stdout.write(`[worker-startup] ${JSON.stringify({ phase: view.phase,
-              failure: 'failure' in view ? view.failure : null })}\n`)
-          }
           ready = view !== null && typeof view === 'object' && 'phase' in view && view.phase === 'ready'
           if (!ready) workerStateRevision++
         }

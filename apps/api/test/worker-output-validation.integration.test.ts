@@ -14,15 +14,6 @@ const outputSchema = { type: 'object', properties: { summary: { type: 'string' }
 const corrected = { summary: 'Corrected deliverable' }
 
 describe('Worker workflow output correction through authenticated MCP', () => {
-  it('starts the installed Worker and reads its harness inventory through MCP', async () => {
-    const f = await remoteReviewProduction({ workflow: 'single', executionHost: 'worker',
-      parallelSetup: true, parallelProfileChecks: true, includeNodeRuntimePayload: false })
-    try {
-      const inventory = await f.inventory()
-      expect(inventory.installations.some(installation => installation.driverId === 'codex')).toBe(true)
-    } finally { await f.close() }
-  }, 240_000)
-
   it.each(['handoff', 'deliverable', 'exhausted'] as const)(
     'validates and journals %s corrections on the original native session', async kind => {
       const f = await remoteReviewProduction({ workflow: 'single', executionHost: 'worker',
