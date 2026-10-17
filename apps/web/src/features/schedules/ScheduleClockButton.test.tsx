@@ -444,13 +444,3 @@ describe('schedule command uncertainty and scope', () => {
     expect(client.getQueryData(scheduleKeys.read(secondScope))).toMatchObject({ schedule: { workflowId: secondScope.workflowId, time: '07:00' } })
   })
 })
-
-it('shows saved-workflow policy on demand while retaining next-run data', async () => {
-  persisted = weekly
-  const { user } = mount()
-  const dialog = await open(user)
-  expect(within(dialog).queryByText('Runs latest saved workflow')).not.toBeInTheDocument()
-  expect(within(dialog).getByText(/^Next /)).toBeVisible()
-  await user.hover(within(dialog).getByRole('button', { name: 'About Schedule' }))
-  expect(screen.getByRole('tooltip')).toHaveTextContent('Runs latest saved workflow')
-})

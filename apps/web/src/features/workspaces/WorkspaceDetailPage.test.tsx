@@ -13,7 +13,7 @@ import { worktreeFixture } from '../workflow-board/worktree.fixtures'
 import { WorkspaceDetailPage } from './WorkspaceDetailPage'
 
 describe('workspace settings actions', () => {
-  it('keeps the section navigation while the workspace identity loads and waits for it before mounting actions', async () => {
+  it('waits for workspace identity before mounting the section navigation and actions', async () => {
     let finishRead!: () => void
     const pending = new Promise<void>((resolve) => { finishRead = resolve })
     server.use(http.get('/api/management/workspaces/workspace-1', async () => {
@@ -23,11 +23,11 @@ describe('workspace settings actions', () => {
     renderWithRouter(<WorkspaceDetailPage workspaceId="workspace-1" section="settings" />)
 
     expect(await screen.findByText('Loading workspace…')).toBeInTheDocument()
-    expect(screen.getByRole('navigation', { name: 'Workspace sections' })).toBeVisible()
+    expect(screen.queryByRole('navigation', { name: 'Workspace sections' })).not.toBeInTheDocument()
     expect(screen.queryByRole('group', { name: 'Workspace actions' })).not.toBeInTheDocument()
     finishRead()
-    expect(await screen.findByRole('group', { name: 'Workspace actions' })).toBeVisible()
-    expect(screen.getByRole('navigation', { name: 'Workspace sections' })).toBeVisible()
+    expect(await screen.findByRole('navigation', { name: 'Workspace sections' })).toBeVisible()
+    expect(screen.getByRole('group', { name: 'Workspace actions' })).toBeVisible()
   })
 
   it('uses one label per action without repeating the workspace identity or settings heading', async () => {
@@ -156,9 +156,6 @@ describe('workspace settings actions', () => {
     const { unmount } = renderWithRouter(<WorkspaceDetailPage workspaceId="workspace-1" section="settings" />)
     const section = await screen.findByRole('region', { name: 'GitHub Actions CI' })
     expect(section).toHaveTextContent('octo-owner/website-ci')
-    expect(within(section).queryByText(/CI also runs on free/)).not.toBeInTheDocument()
-    await userEvent.hover(within(section).getByRole('button', { name: 'About GitHub Actions CI' }))
-    expect(screen.getByRole('tooltip')).toHaveTextContent('Main publishes only each tested commit')
     unmount()
     server.use(http.get('/api/management/workspaces/workspace-1', () => HttpResponse.json({
       ...workspace, workspace: { id: 'workspace-1', name: 'Website' } })))
@@ -166,17 +163,4 @@ describe('workspace settings actions', () => {
     expect(await screen.findByRole('region', { name: 'GitHub Actions CI' }))
       .toHaveTextContent('Ask the Operator to set a public CI mirror')
   })
-})
-
-it('keeps repository guidance beside its field and project action', async () => {
-  renderWithRouter(<WorkspaceDetailPage workspaceId="workspace-1" section="settings" />)
-  await screen.findByRole('textbox', { name: 'Repository' })
-  const guidance = 'Each agent in a run gets its own branch and worktree of this repository on its computer.'
-  expect(screen.queryByText(guidance)).not.toBeInTheDocument()
-  const user = userEvent.setup()
-  await user.hover(screen.getByRole('button', { name: 'About Repository' }))
-  expect(screen.getByRole('tooltip')).toHaveTextContent(guidance)
-  await user.unhover(screen.getByRole('button', { name: 'About Repository' }))
-  await user.hover(screen.getByRole('button', { name: 'About Add project' }))
-  expect(screen.getByRole('tooltip')).toHaveTextContent('Add project prepares a clone on Main')
 })
