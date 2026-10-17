@@ -47,6 +47,7 @@ export interface DeviceApplicationRequestOptions {
 }
 export interface CapturedDeviceApplicationRequest {
   binding: Readonly<DeviceSessionBinding>
+  readonly stopReadAdmission?: true
   readonly busy?: boolean
   request(payload: unknown, options?: DeviceApplicationRequestOptions): Promise<DeviceApplicationResult>
 }
@@ -76,7 +77,7 @@ export function extensionDescriptors(registrations: DeviceExtensionRegistration[
     ...(registration.namespace === CI_HOST_NAMESPACE && registration.version === 1
       ? { ciStopAdmission: true as const } : {}),
     ...(registration.namespace === 'execution-v1' && registration.version === 1
-      ? { callbackAdmission: true as const } : {}),
+      ? { callbackAdmission: true as const, stopReadAdmission: true as const } : {}),
   })))
 }
 export function deviceNegotiationHash(extensions: DeviceNegotiatedExtension[]) {
@@ -143,9 +144,11 @@ export class DeviceApplicationChannel {
   currentBinding(): Readonly<DeviceSessionBinding> { this.current(); return this.binding }
   currentBindingForIncoming(namespace: string): Readonly<DeviceSessionBinding> { this.current(); this.negotiated(namespace, false); return this.binding }
   captureRequest(namespace: string): CapturedDeviceApplicationRequest {
-    this.current(); this.negotiated(namespace, true)
+    this.current()
+    const extension = this.negotiated(namespace, true)
     const { requestQueue } = this
     return Object.freeze({ binding: this.binding, get busy() { return requestQueue.busy },
+      ...(extension.stopReadAdmission ? { stopReadAdmission: true as const } : {}),
       request: (payload: unknown, options?: DeviceApplicationRequestOptions) => this.request(namespace, payload, options) })
   }
   confirmMainReady(): void {
@@ -224,8 +227,9 @@ export class DeviceApplicationChannel {
     }
     const parsed = RemoteExecutionRpcRequestSchema.safeParse(payload)
     if (!parsed.success) return false
-    if (parsed.data.method === 'status' && parsed.data.forStop) {
-      return this.stopPlacement(parsed.data.intent, parsed.data.placement)
+    if ((parsed.data.method === 'status' || parsed.data.method === 'receipt-continuation') && parsed.data.forStop) {
+      return this.extensions.some(extension => extension.namespace === namespace && extension.stopReadAdmission)
+        && this.stopPlacement(parsed.data.intent, parsed.data.placement)
     }
     if (parsed.data.method !== 'control' || parsed.data.command.action.kind !== 'stop') return false
     const { intent, placement, command } = parsed.data
