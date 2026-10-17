@@ -35,6 +35,10 @@ import { seedAgent3 } from './helpers/wave25Agent3.js'
 import { ApprovedRootAllowlistSchema, WorkspaceRootPolicySchema } from '@foreman-code/contracts/workspace-root-policies'
 import { SavedNodePlacementSchema } from '@foreman-code/contracts/node-placement'
 import { workspaceRootHostScope } from '../src/modules/sources/rootPolicies.js'
+import { AgentManagementService } from '../src/modules/workspaces/agents.js'
+import { OperatorAgentMutationService } from '../src/modules/workspaces/operatorAgents.js'
+import { AgentMutationResultSchema, ManagedAgentDetailSchema } from '@foreman-code/contracts/management'
+import { sessionStartConfiguration } from '../src/modules/harnesses/sessionStart.js'
 
 const claudeConfiguration = {
   harness: 'claude', model: 'fixture-model', effort: 'medium', authMode: 'subscription',
@@ -218,6 +222,132 @@ beforeEach(async () => {
 })
 
 describe('selected-Agent chat service', { timeout: 60_000 }, () => {
+  async function settingsTransport(service: AgentChatService) {
+    const commands = new PostgresCommandCoordinator(pool)
+    const agents = new AgentManagementService(pool)
+    const mutations = new OperatorAgentMutationService(pool, commands, {
+      qualifyConfiguration: async configuration => ({
+        harness: configuration.harness, version: 'fixture', authenticated: true, ready: true,
+        structuredEvents: true, supportsResume: true, supportsCancellation: true,
+        supportsWorkingDirectory: true, supportsStartupPrompt: true,
+        supportedNativeTools: [], supportedSettings: [], unsupportedCapabilities: [],
+      }),
+    })
+    const app = buildApp({ logger: false,
+      readiness: { database: { ping: async () => {} }, checkpoints: { ping: async () => {} } },
+      operator: { access, services: { agentChat: service, commands, agents,
+        extensions: { agents: mutations } } as unknown as OperatorServices } })
+    const address = await app.listen({ host: '127.0.0.1', port: 0 })
+    const clients: Client[] = []
+    const connect = async (token: string) => {
+      const client = new Client({ name: 'chat-settings', version: '1' })
+      clients.push(client)
+      await client.connect(new StreamableHTTPClientTransport(new URL('/mcp', address), {
+        authProvider: { token: async () => token },
+      }))
+      return client
+    }
+    return { connect, close: async () => {
+      for (const client of clients) await client.close()
+      await app.close()
+    } }
+  }
+
+  it.each(['model and effort', 'account', 'harness'] as const)(
+    'applies a saved %s change on the next turn of the same conversation', async change => {
+      const seeded = await seedAgent3(pool, root,
+        makeCurrentWorkflowFixture(randomUUID().slice(0, 8), 'sequential'), { run: false })
+      const node = seeded.version.definition.nodes[0]!
+      const workspaceId = seeded.scope.workspaceId
+      const context = { workflowId: seeded.scope.workflowId, workflowNodeId: node.id, agentId: node.agentId }
+      const { service } = makeService()
+      const transport = await settingsTransport(service)
+      try {
+        const client = await transport.connect(writerToken)
+        const read = () => service.read(writer, workspaceId, context)
+        const send = async (content: string, conversationId: string | null) => {
+          await service.send(writer, workspaceId, { requestId: randomUUID(), context,
+            expectedConversationId: conversationId, intent: 'next_turn', content })
+          return settled(service, read)
+        }
+        const first = await send('Remember the launch color is amber', null)
+        const conversation = first.conversation!
+        const get = await client.callTool({ name: 'agent_get', arguments: { workspaceId, agentId: node.agentId } })
+        const before = ManagedAgentDetailSchema.parse(decodeMcpToolResult(get))
+        const configuration = change === 'harness' ? claudeConfiguration
+          : { ...seeded.configurations[0]!.harness, model: 'changed-model', reasoningEffort: 'high',
+            ...(change === 'account' ? { accountId: randomUUID() } : {}) }
+        const result = await client.callTool({ name: 'agent_update', arguments: {
+          workspaceId, agentId: node.agentId, commandId: randomUUID(), expectedRevision: before.metadataRevision,
+          expectedConfigurationVersionId: before.agent.configurationVersionId, configuration,
+        } })
+        expect(result.isError, JSON.stringify(result)).not.toBe(true)
+        const saved = AgentMutationResultSchema.parse(decodeMcpToolResult(result))
+        const second = await send('What is the launch color?', conversation.id)
+        expect(second.conversation!.id).toBe(conversation.id)
+        expect(second.turns.at(-1)?.delivery).toBe('completed')
+        expect(second.conversation!.agentConfigurationVersionId).toBe(saved.value.agent.configurationVersionId)
+        const native = FakeNative.all.at(-1)!
+        if (change === 'model and effort') {
+          expect(second.conversation!.nativeSession!.nativeSessionId).toBe(conversation.nativeSession!.nativeSessionId)
+          expect(native.attached).toHaveLength(1)
+          expect(sessionStartConfiguration(native.attached[0]!).harness).toMatchObject(configuration)
+        } else {
+          expect(second.conversation!.nativeSession!.nativeSessionId).not.toBe(conversation.nativeSession!.nativeSessionId)
+          expect(native.created).toHaveLength(1)
+          expect(sessionStartConfiguration(native.created[0]!).harness).toMatchObject(configuration)
+          expect(native.prompts[0]).toContain('Remember the launch color is amber')
+          expect(native.prompts[0]).toContain(first.messages.find(message => message.role === 'assistant')!.content)
+          expect(native.prompts[0]).toContain('What is the launch color?')
+        }
+        expect(second.messages.filter(message => message.role === 'user').map(message => message.content))
+          .toEqual(['Remember the launch color is amber', 'What is the launch color?'])
+      } finally { await transport.close(); await service.shutdown() }
+    },
+  )
+
+  it('updates and reads back Agent configuration through authenticated chat controls and denies a reader', async () => {
+    const seeded = await seedAgent3(pool, root,
+      makeCurrentWorkflowFixture(randomUUID().slice(0, 8), 'sequential'), { run: false })
+    const node = seeded.version.definition.nodes[0]!
+    const workspaceId = seeded.scope.workspaceId
+    const context = { workflowId: seeded.scope.workflowId, workflowNodeId: node.id, agentId: node.agentId }
+    const { service } = makeService()
+    const transport = await settingsTransport(service)
+    try {
+      const client = await transport.connect(writerToken)
+      const reader = await transport.connect(readOnlyToken)
+      const target = { workspaceId, context }
+      const get = await client.callTool({ name: 'agent_get', arguments: { workspaceId, agentId: node.agentId } })
+      const before = ManagedAgentDetailSchema.parse(decodeMcpToolResult(get))
+      const configuration = { ...seeded.configurations[0]!.harness, model: 'chat-selected-model', reasoningEffort: 'high' }
+      const control = { ...target, request: { kind: 'configuration', requestId: randomUUID(),
+        expectedRevision: before.metadataRevision, expectedConfigurationVersionId: before.agent.configurationVersionId,
+        configuration } }
+      await expectMcpAccessDenied(reader.callTool({ name: 'agent_chat_controls_update', arguments: control }))
+      const saved = await client.callTool({ name: 'agent_chat_controls_update', arguments: control })
+      expect(saved.isError).not.toBe(true)
+      const replay = await client.callTool({ name: 'agent_chat_controls_update', arguments: control })
+      expect(replay.isError).not.toBe(true)
+      const persisted = await client.callTool({ name: 'agent_chat_controls_get', arguments: target })
+      expect(decodeMcpToolResult(persisted)).toMatchObject({ configuration: {
+        harness: configuration, metadataRevision: before.metadataRevision + 1,
+      } })
+      const agent = ManagedAgentDetailSchema.parse(decodeMcpToolResult(await client.callTool({
+        name: 'agent_get', arguments: { workspaceId, agentId: node.agentId },
+      })))
+      expect(agent.agent.harnessConfiguration).toMatchObject(configuration)
+      expect(agent.metadataRevision).toBe(before.metadataRevision + 1)
+      await expectMcpAccessDenied(reader.callTool({ name: 'agent_chat_controls_update', arguments: {
+        ...control, request: { ...control.request, requestId: randomUUID(),
+          expectedRevision: agent.metadataRevision, expectedConfigurationVersionId: agent.agent.configurationVersionId,
+          configuration: { ...configuration, model: 'denied-model' } },
+      } }))
+      expect(decodeMcpToolResult(await client.callTool({ name: 'agent_chat_controls_get', arguments: target })))
+        .toMatchObject({ configuration: { harness: configuration, metadataRevision: agent.metadataRevision } })
+    } finally { await transport.close(); await service.shutdown() }
+  })
+
   it('binds an authenticated reader before checking a completed native session through HTTP and MCP', async () => {
     const { service } = makeService()
     const app = buildApp({ logger: false,
@@ -269,7 +399,8 @@ describe('selected-Agent chat service', { timeout: 60_000 }, () => {
     }
   })
 
-  it('reads saved Agent controls while a native owner retires during the pending-interaction read', async () => {
+  it.each(['NATIVE_MANAGER_DISPOSED', 'WORKER_CONVERSATION_CALLBACK_DENIED'] as const)(
+    'reads saved Agent controls when a retiring pending-interaction read fails with %s', async code => {
     const { service } = makeService()
     const workspaceId = fixture.scope.workspaceId
     const app = buildApp({ logger: false,
@@ -299,7 +430,7 @@ describe('selected-Agent chat service', { timeout: 60_000 }, () => {
       const retirement = new Promise<void>(resolve => { ownerRetired = resolve; releasePendingRead = resolve })
       let firstPending = true
       let disposed = false
-      const disposedError = new DomainError('NATIVE_MANAGER_DISPOSED', 'The native allocation is disposed.', 409)
+      const disposedError = new DomainError(code, 'The native allocation is disposed.', 409)
       const pending = vi.fn(async () => {
         if (firstPending) {
           firstPending = false
@@ -357,6 +488,20 @@ describe('selected-Agent chat service', { timeout: 60_000 }, () => {
       await app.close()
       await service.shutdown()
     }
+  })
+
+  it('preserves a live Worker callback denial during the pending-interaction read', async () => {
+    const { service } = makeService()
+    const workspaceId = fixture.scope.workspaceId
+    try {
+      await service.send(writer, workspaceId, request(codexNode, 'Complete a native turn', null))
+      await settled(service, () => service.read(writer, workspaceId, query(codexNode)))
+      const denial = new DomainError('WORKER_CONVERSATION_CALLBACK_DENIED', 'The live callback was denied.', 403)
+      Object.assign(FakeNative.all[0]!, { pending: async () => { throw denial } })
+      await expect(service.read(writer, workspaceId, query(codexNode))).rejects.toMatchObject({
+        code: 'WORKER_CONVERSATION_CALLBACK_DENIED', message: 'The live callback was denied.', status: 403,
+      })
+    } finally { await service.shutdown() }
   })
 
   it.each(['codex', 'claude'] as const)('reads saved %s Agent controls through HTTP and MCP after unload and restart', async harness => {
@@ -660,6 +805,30 @@ describe('selected-Agent chat service', { timeout: 60_000 }, () => {
       expect(FakeNative.all[0]!.modes).toEqual(['plan'])
       expect(FakeNative.all[0]!.prompts).toEqual(['First planned task'])
     } finally { await service.shutdown() }
+  })
+
+  it('creates the stored conversation for a first attachment without a native session and refuses a read-only caller', async () => {
+    const { service } = makeService()
+    const workspaceId = fixture.scope.workspaceId
+    const app = buildApp({ logger: false, readiness: { database: { ping: async () => {} }, checkpoints: { ping: async () => {} } },
+      operator: { access, services: { agentChat: service, commands: new PostgresCommandCoordinator(pool) } as unknown as OperatorServices } })
+    const url = `/api/workspaces/${workspaceId}/agent-chat/conversation`
+    const post = (token: string) => app.inject({ method: 'POST', url, headers: { authorization: `Bearer ${token}` },
+      payload: { context: query(codexNode) } })
+    try {
+      expect((await post(readOnlyToken)).statusCode).toBe(403)
+      expect((await service.read(writer, workspaceId, query(codexNode))).conversation).toBeNull()
+      const created = await post(writerToken)
+      expect(created.statusCode).toBe(200)
+      const state = AgentChatStateSchema.parse(created.json().state)
+      expect(state.conversation).toMatchObject({ workspaceId, agentId: codexNode.agentId, workflowNodeId: codexNode.id, nativeSession: null })
+      expect(FakeNative.all).toHaveLength(0)
+      expect(AgentChatStateSchema.parse((await post(writerToken)).json().state).conversation?.id).toBe(state.conversation!.id)
+      expect((await service.read(writer, workspaceId, query(codexNode))).conversation?.id).toBe(state.conversation!.id)
+      await service.send(writer, workspaceId, request(codexNode, 'First message after the attachment', state.conversation!.id))
+      await settled(service, () => service.read(writer, workspaceId, query(codexNode)))
+      expect(FakeNative.all[0]!.prompts).toEqual(['First message after the attachment'])
+    } finally { await app.close(); await service.shutdown() }
   })
 
   it('isolates native controls for two nodes using the same Agent and enforces authenticated MCP grants', async () => {
