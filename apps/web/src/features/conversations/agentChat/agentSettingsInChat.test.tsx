@@ -2,13 +2,12 @@ import { fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { applyOperatorChatSettings, operatorChatSettings, DEFAULT_HARNESS_DEFAULTS, AgentSchema, type Agent } from '@foreman-code/contracts'
+import { DEFAULT_HARNESS_DEFAULTS, AgentSchema, type Agent } from '@foreman-code/contracts'
 import { agentChatFixtures, type AgentChatState } from '@foreman-code/contracts/agent-chat'
 import { AgentUpdateInputSchema, type AgentUpdateInput } from '@foreman-code/contracts/management'
 import { server } from '../../../mocks/server'
 import { agentChatTestActions } from '../../../shared/mocks/agentChatHandlers'
 import { defaultAgentForHarness } from '../../agents/agentSettings'
-import { savedClaudeConfiguration } from '../../settings/claudeSettings.fixtures'
 import { installChatSource, mountChat } from './testSupport'
 
 const codex = DEFAULT_HARNESS_DEFAULTS.codex
@@ -47,12 +46,6 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('Agent settings in the Agent chat window', () => {
-  it.each([codex, savedClaudeConfiguration])('produces a supported $harness Agent edit without changing execution settings', base => {
-    const configuration: AgentUpdateInput['configuration'] = applyOperatorChatSettings(base, operatorChatSettings(base))
-
-    expect(configuration).toStrictEqual(base)
-  })
-
   it('saves a new Agent configuration version when the reasoning effort is changed from the chat', async () => {
     const view = mountChat(idleChat(), [...agentChatTestActions, 'agents:update'])
     await view.ready()

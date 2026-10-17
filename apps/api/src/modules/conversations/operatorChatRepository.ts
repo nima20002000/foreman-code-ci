@@ -186,9 +186,7 @@ export class PostgresOperatorConversationRepository {
 
   async list(ownerId: string): Promise<Conversation[]> {
     const result = await this.pool.query<ConversationRow>(
-      `select c.* from operator_conversations c where c.deleted_at is null and c.owner_principal_id=$1
-        and exists(select 1 from operator_conversation_messages m where m.conversation_id=c.id)
-        order by c.updated_at desc,c.id`, [ownerId])
+      `select c.* from operator_conversations c where c.deleted_at is null and c.owner_principal_id=$1 order by c.updated_at desc,c.id`, [ownerId])
     return result.rows.map(conversation)
   }
 
@@ -205,7 +203,6 @@ export class PostgresOperatorConversationRepository {
         when exists(select 1 from operator_conversation_activity a where a.conversation_id=c.id
         and a.record->>'kind'<>'thinking' and a.record->>'status' in ('pending','running')) then 'running' else null end as background_activity
       from operator_conversations c where c.deleted_at is null and c.owner_principal_id=$1
-        and exists(select 1 from operator_conversation_messages m where m.conversation_id=c.id)
         and (not $3::boolean or (pending_interaction is not null
           and response_delivery='offered' and not cancel_requested and record->>'status'='open'))
         order by (select max(m.sequence) from operator_conversation_messages m where m.conversation_id=c.id) desc nulls last,

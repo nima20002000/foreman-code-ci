@@ -6,7 +6,7 @@ import type { ChatResponseAcknowledgment } from '@foreman-code/contracts/interac
 import { withInteractionResponse, isSessionNativeInteraction } from '@foreman-code/contracts'
 import { resolveAgentChatDirectory, revalidateAgentChatDirectory } from './agentChatDirectory.js'
 import type { SessionControlRequest } from '@foreman-code/contracts'
-import { pendingSessionControls, type ChatModelCatalog } from '../harnesses/sessionControlDefaults.js'
+import { pendingSessionControls } from '../harnesses/sessionControlDefaults.js'
 import { readRunChatTranscript } from './runChatTranscript.js'
 import { ExecutionActivityReader, type ExecutionActivityRequest } from './executionActivity.js'
 import { SessionControlStateSchema } from '@foreman-code/contracts'
@@ -78,7 +78,7 @@ import {
 import { ignoreError } from '../diagnostics/ignoredError.js'
 
 /** One native manager per conversation; its process is owned by this service, never by a UI connection. */
-export interface AgentChatManagerFactory extends ChatModelCatalog {
+export interface AgentChatManagerFactory {
   (conversationId: string, configuration: AgentConfigurationVersion, workingDirectory: string,
     accountSource?: { executionId: string }): NativeHarnessSessionManager | Promise<NativeHarnessSessionManager>
   recoverCompaction?(configuration: AgentConfigurationVersion, conversationId: string,
@@ -612,8 +612,7 @@ export class AgentChatService {
           configuration, id, session, this.startInput(row, configuration, `session-control:${id}`, true),
           state, principal.id, this.lifetime.signal),
       } : {}),
-      ...(configuration ? { pendingCapabilities: pendingSessionControls(configuration.harness,
-        !session ? await this.managers.modelOptions?.(configuration.harness) : undefined) } : {}) }
+      ...(configuration ? { pendingCapabilities: pendingSessionControls(configuration.harness) } : {}) }
   }
 
   private async resolveControlContext(principal: ManagementPrincipal, context: AgentChatContext, executionId?: string) {
@@ -647,8 +646,7 @@ export class AgentChatService {
     return SessionControlStateSchema.parse({ conversationId: null, revision: 0,
       profileKey: resolved.configuration.id, desiredMode: 'regular', appliedMode: null,
       defaults, desired: defaults, applied: null, applicability: 'next-turn',
-      capabilities: pendingSessionControls(resolved.configuration.harness,
-        await this.managers.modelOptions?.(resolved.configuration.harness)), context: null,
+      capabilities: pendingSessionControls(resolved.configuration.harness), context: null,
       nativeSessionId: null, nativeProviderVersion: null, compaction: null, compactions: [],
       busyReason: resolved.blocked?.message ?? null })
   }
