@@ -207,12 +207,9 @@ async function started(turn, prompt) {
       if (contents && position <= JSON.parse(contents).allowFirst) break
       await new Promise(resolve => setTimeout(resolve, 20))
     }
-    const answersFile = join(root, 'workflow-answers.json')
-    const answers = existsSync(answersFile) ? JSON.parse(readFileSync(answersFile, 'utf8')) : undefined
-    let output = thread.instructions.includes('fixture-work-handoff')
+    const output = thread.instructions.includes('fixture-work-handoff')
       ? JSON.stringify({ routing: { kind: 'finish' }, data: { latestDeliverable: 'fixture complete', remainingFindings: [] } })
       : 'fixture complete'
-    if (answers) output = answers[Math.min(thread.turns.length - 1, answers.length - 1)]
     complete(turn, output)
     log({ workflowCompleted: { pid: process.pid, sessionId: thread.id, turnId: turn.id } })
     return
@@ -250,9 +247,7 @@ createInterface({ input: process.stdin, crlfDelay: Infinity }).on('line', async 
     return
   }
   const params = message.params ?? {}
-  log({ method: message.method, threadId: params.threadId, correlationId: params.clientUserMessageId, model: params.model,
-    reasoningEffort: params.config?.model_reasoning_effort,
-    ...(message.method === 'turn/start' ? { outputSchema: params.outputSchema } : {}),
+  log({ method: message.method, threadId: params.threadId, correlationId: params.clientUserMessageId,
     ...(message.method === 'model/list' ? { workingDirectory: process.cwd() } : {}) })
   if (message.method === 'initialize') {
     reply(message.id, { userAgent: `codex-cli ${cliVersion}`, platformFamily: 'unix', platformOs: 'linux', codexHome: root })
@@ -339,7 +334,6 @@ createInterface({ input: process.stdin, crlfDelay: Infinity }).on('line', async 
       description: 'External protocol fixture', hidden: false, isDefault: true, defaultReasoningEffort: 'low',
       supportedReasoningEfforts: [{ reasoningEffort: 'low', description: 'Low' },
         { reasoningEffort: 'medium', description: 'Medium' }] }]
-    models.push({ ...models[0], id: 'other-model', model: 'other-model', displayName: 'Other model', isDefault: false })
     const respond = async () => {
       const blocked = () => {
         const allowedFile = join(root, 'allowed-model-directories')

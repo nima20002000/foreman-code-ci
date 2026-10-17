@@ -3,7 +3,6 @@ import { isDeepStrictEqual } from 'node:util'
 import type pg from 'pg'
 import { CiRunRecordSchema, type CiHostRequest, type CiHostStatus, type CiRunRecord } from '@foreman-code/contracts'
 import type { PostgresCommandCoordinator } from '../commands/postgres.js'
-import type { CircleStandby } from './circleStandby.js'
 import type { CiAuthority } from '../jobs/ciAuthority.js'
 import { HostCiService, type CiCommits, type HostCiComputer, type HostCiEndpoint } from './service.js'
 
@@ -28,7 +27,6 @@ export function readyStatus(overrides: Partial<CiHostStatus> = {}): CiHostStatus
 export function dispatchFleet(computers: HostCiComputer[], records: CiRunRecord[], options: {
   status?: (computer: HostCiComputer) => Promise<CiHostStatus>
   publishMirror?: HostCiEndpoint['publishMirror']
-  circleStandby?: CircleStandby
 } = {}) {
   const started: { computer: HostCiComputer; request: Extract<CiHostRequest, { operation: 'start' }> }[] = []
   const pool = { options: { max: 10 }, query: async (sql: string, parameters?: unknown[]) => {
@@ -66,7 +64,6 @@ export function dispatchFleet(computers: HostCiComputer[], records: CiRunRecord[
     },
   }
   if (options.publishMirror) endpoint.publishMirror = options.publishMirror
-  const service = new HostCiService(pool, {} as PostgresCommandCoordinator, {} as CiAuthority, {} as CiCommits, endpoint,
-    undefined, options.circleStandby ? { circleStandby: options.circleStandby } : {})
+  const service = new HostCiService(pool, {} as PostgresCommandCoordinator, {} as CiAuthority, {} as CiCommits, endpoint)
   return { service, started, endpoint }
 }
