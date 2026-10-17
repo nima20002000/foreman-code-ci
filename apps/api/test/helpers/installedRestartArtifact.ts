@@ -7,9 +7,9 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { parse } from 'yaml'
-import { deployProductionApi, pruneApiDependencies } from '../../../../scripts/local-production-runtime.mjs'
+import { deployProductionApi } from '../../../../scripts/local-production-runtime.mjs'
 import { copyApiRuntime } from '../../../../scripts/copy-api-runtime.mjs'
-import { cachedTestFixture, testFixtureCacheRoot, withTestFixtureCacheLock } from '../../../../scripts/test-fixture-cache.mjs'
+import { cachedTestFixture, testFixtureCacheRoot } from '../../../../scripts/test-fixture-cache.mjs'
 import { createRuntimeBuildIdentity } from '@foreman-code/contracts/runtime-build-identity-node'
 import { measureIntegrationPhase } from './integrationPhase.js'
 
@@ -174,18 +174,9 @@ async function buildArtifact(directory: string) {
 
 /** Cache only immutable packaging output; each service receives its own release copy. */
 export async function installedRestartArtifact() {
-  const root = testFixtureCacheRoot()
-  return withTestFixtureCacheLock(root, 'installed-api-restart', async () => {
-    const inputs = await measureIntegrationPhase('installed restart artifact inputs', artifactInputs)
-    const cached = await measureIntegrationPhase('installed restart artifact', () => cachedTestFixture(
-      root, 'installed-api-restart', inputs, buildArtifact,
-    ))
-    const parent = join(root, 'installed-api-restart')
-    const entries = await readdir(parent, { withFileTypes: true })
-    const releases = entries.filter(entry => entry.isDirectory() && /^[a-f0-9]{64}$/.test(entry.name))
-      .map(entry => join(parent, entry.name, 'release'))
-    // A retained release's module symlinks still depend on its shared tree.
-    await pruneApiDependencies(join(root, 'api-dependencies'), releases)
-    return join(cached, 'release')
-  })
+  const inputs = await measureIntegrationPhase('installed restart artifact inputs', artifactInputs)
+  const cached = await measureIntegrationPhase('installed restart artifact', () => cachedTestFixture(
+    testFixtureCacheRoot(), 'installed-api-restart', inputs, buildArtifact,
+  ))
+  return join(cached, 'release')
 }

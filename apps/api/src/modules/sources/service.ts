@@ -715,7 +715,7 @@ export class PostgresSourceService implements SourceAdmissionPort {
         await this.reservations.reclaimed(sql, reservation, async () => quotaReclaimed
           && await this.closure.confirmedClosed(record))
       } else {
-        if (record.receipt.sharedTree || record.receipt.binding.deviceId !== null) {
+        if (record.receipt.sharedTree && record.receipt.binding.deviceId === null) {
           reservation.referenceReclaimed = true
         }
         await this.reservations.retainMaterialization(sql, reservation, { ...footprint, retainedBytes })
