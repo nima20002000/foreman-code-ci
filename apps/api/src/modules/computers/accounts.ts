@@ -83,7 +83,8 @@ export class ComputerAccountsService {
     })
   }
 
-  private read(target: DeviceProvisioningTarget, refresh: boolean): Promise<ComputerAccounts | null> {
+  /** Cached probe without authorization; callers must authorize first. */
+  read(target: DeviceProvisioningTarget, refresh: boolean): Promise<ComputerAccounts | null> {
     const key = `${target.applicationInstallationId}:${target.authorizationRevision ?? 0}`
     refresh ||= this.refreshRequired.has(key)
     const cached = this.cache.get(key)

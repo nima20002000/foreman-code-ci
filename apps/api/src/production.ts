@@ -30,6 +30,7 @@ import { agentSnapshots, type ReadAgentFiles } from './modules/ci-host/agentSnap
 import { registerComputerAccountsRoutes } from './routes/computerAccounts.js'
 import { registerComputerMaintenanceRoutes } from './routes/computerMaintenance.js'
 import { FleetMaintenanceService } from './modules/computers/fleet.js'
+import { computerConnectionsReader } from './modules/computers/connections.js'
 import { startWorkerPublicationSync } from './modules/computers/workerPublicationSync.js'
 import { createProductionWorkerArtifactExtension, readProductionWorkerManifestSha256s,
   readProductionWorkerContentSha256s, readProductionWorkerReleasePublication,
@@ -2818,6 +2819,7 @@ async function initializeComputerServices(composition: ProductionComposition, ma
         releaseDirectory: fileURLToPath(new URL('../../../', import.meta.url)) }),
       workerPublication: () => readProductionWorkerReleasePublication({ environment: process.env,
         releaseDirectory: fileURLToPath(new URL('../../../', import.meta.url)) }),
+      connections: computerConnectionsReader(runtimeServices.computerAccounts, harnessSettings.mcp),
       codexUserMcpServers: () => harnessSettings.mcp.userServers('codex'),
       claudeUserMcpServers: () => claudeUserMcpServers(maintenancePorts),
       claudePlugins: async () => await maintenancePorts.find('claude')
