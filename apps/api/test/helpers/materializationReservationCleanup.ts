@@ -83,7 +83,7 @@ export async function setupMaterializationReservationCleanup(storageCapacity: Pa
   const unused = async (): Promise<never> => { throw new Error('No native execution or byte transfer in this fixture') }
   let reachable = true
   let nativeClosed = true
-  const worker = new SourceOperationWorkerService({ mainNow: () => Date.now(), authenticate: async () => {}, approvedRoots: async () => allowlist,
+  const worker = new SourceOperationWorkerService({ authenticate: async () => {}, approvedRoots: async () => allowlist,
     currentOwner: unused,
     currentReclamation: (reservationId, reclamationId) => withTransaction(pool,
       sql => cleanup.authorize(sql, reservationId, reclamationId)),

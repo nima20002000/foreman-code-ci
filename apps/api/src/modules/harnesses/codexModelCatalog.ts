@@ -1,6 +1,3 @@
-import { readFile } from 'node:fs/promises'
-import { homedir } from 'node:os'
-import { join } from 'node:path'
 import { HarnessExecutionError } from './errors.js'
 import { CodexStdioTransport, isObject, type JsonObject } from './codexStdioTransport.js'
 import { assertCodexUnchanged, codexRequest, type QualifiedCodex } from './codexProtocol.js'
@@ -22,7 +19,6 @@ const REFRESH_FAILURE = 'failed to refresh available models:'
 export interface CodexModelInspection {
   qualified: QualifiedCodex
   assertUnchanged?: typeof assertCodexUnchanged
-  readCachedModels?: (environment: NodeJS.ProcessEnv) => Promise<JsonObject[]>
   runCommand?: typeof runCommand
   transportFactory?: (...args: ConstructorParameters<typeof CodexStdioTransport>) =>
     Pick<CodexStdioTransport, 'start' | 'request' | 'close' | 'reject'>
@@ -78,13 +74,10 @@ export async function readNativeCodexModelCatalog(
         if (!isObject(model) || typeof model.model !== 'string' || !Array.isArray(model.supportedReasoningEfforts)
           || !model.supportedReasoningEfforts.every(level => isObject(level)
             && typeof level.reasoningEffort === 'string')) invalid()
-        const contextWindow = 'contextWindow' in model ? model.contextWindow : undefined
         models.push({ slug: model.model, display_name: model.displayName,
           visibility: model.hidden ? 'hide' : 'list', priority: models.length,
           supported_reasoning_levels: model.supportedReasoningEfforts.map(level => ({ effort: level.reasoningEffort })),
-          additional_speed_tiers: model.additionalSpeedTiers,
-          ...(Number.isSafeInteger(contextWindow) && Number(contextWindow) > 0
-            ? { context_window: Number(contextWindow) } : {}) })
+          additional_speed_tiers: model.additionalSpeedTiers })
       }
       if (models.length > MAX_MODELS || page.nextCursor && (!page.data.length || cursors.has(page.nextCursor))) invalid()
       cursor = page.nextCursor ?? undefined
@@ -107,29 +100,8 @@ export async function readNativeCodexModelCatalog(
   }
   if (failed) throw failure
   signal?.throwIfAborted()
-  if (catalog!.models.some(model => model.context_window === undefined)) {
-    const cached = await (inspection.readCachedModels ?? readCachedCodexModels)(metadataEnvironment)
-    for (const model of catalog!.models) {
-      const window = cached.find(entry => entry.slug === model.slug)?.context_window
-      if (model.context_window === undefined && Number.isSafeInteger(window) && Number(window) > 0) {
-        model.context_window = Number(window)
-      }
-    }
-  }
   if (refreshFailed) reportRefreshFailure()
   return { ...catalog!, ...(refreshFailed ? { modelCatalogSource: 'cached' } : {}) }
-}
-
-async function readCachedCodexModels(environment: NodeJS.ProcessEnv): Promise<JsonObject[]> {
-  const directory = environment.CODEX_HOME ?? join(homedir(), '.codex')
-  let stdout: string
-  try {
-    stdout = await readFile(join(directory, 'models_cache.json'), 'utf8')
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
-    throw error
-  }
-  return parseCodexModelCatalog({ exitCode: 0, stdout, stderr: '' }).models
 }
 
 function invalid(): never {
