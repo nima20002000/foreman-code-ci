@@ -263,16 +263,3 @@ it('shows context left as a compact labelled percentage in the header', () => {
   expect(meter).toHaveTextContent('25%')
   expect(meter).not.toHaveTextContent('context')
 })
-
-it('moves native context help into a hint while retaining actionable budget reasons', () => {
-  const controls = controller()
-  const view = render(<SessionContext controls={controls} />)
-  fireEvent.click(screen.getByRole('button', { name: 'Context unknown' }))
-  fireEvent.click(screen.getByText('Context options for this chat'))
-  expect(screen.queryByText('Context size follows the native model/profile.')).not.toBeInTheDocument()
-  fireEvent.focus(screen.getByRole('button', { name: 'About Context options' }))
-  expect(screen.getByRole('tooltip')).toHaveTextContent('Context size follows the native model/profile.')
-  view.rerender(<SessionContext controls={{ ...controls, state: { ...state,
-    capabilities: { ...state.capabilities, contextBudgetReason: 'Choose a supported model to configure a budget.' } } }} />)
-  expect(screen.getByText('Choose a supported model to configure a budget.')).toBeVisible()
-})

@@ -1,6 +1,5 @@
-import { InfoHint } from '../../shared/ui/InfoHint'
 import { useEffect, useRef, useState } from 'react'
-import { Button, Checkbox, TextField, Icon, Alert } from '../../shared/ui/nocturne'
+import { Button, Checkbox, SearchField, Alert } from '../../shared/ui/nocturne'
 import { useJobLogs } from './query'
 import { jobAccessLost, jobError, plainLog } from './model'
 import { isTransientReadError } from '../../shared/api/readFailure'
@@ -31,15 +30,15 @@ export function JobLogs({ workspaceId, executionId, attemptId, enabled }: { work
   }, [enabled, follow, blocked, retryable, isError, isFetching, hasNextPage, fetchNextPage, refetch])
   const pages = query.pages
   return <section aria-label="Job logs" className="job-logs">
-    <h2>Logs<InfoHint label="Logs">Older chunks leave this bounded window as new pages load.</InfoHint></h2>
+    <h2>Logs</h2>
     <div className="job-toolbar">
-      <TextField type="search" leading={<Icon name="search" size={16} />} label="Search loaded logs" value={search} onChange={event => setSearch(event.target.value)} labelHint={<InfoHint label="Search loaded logs">Searches only the loaded window, up to 250 chunks.</InfoHint>} />
+      <SearchField label="Search loaded logs" value={search} onChange={event => setSearch(event.target.value)} hint="Searches only the loaded window, up to 250 chunks." />
       <Checkbox label="Follow tail" checked={follow} onChange={event => setFollow(event.target.checked)} />
       <Button disabled={!query.hasNextPage || query.isFetching || !enabled} onClick={() => { void query.fetchNextPage() }}>Load next log page</Button>
       <Button disabled={query.isFetching || !enabled || jobAccessLost(query.error)} onClick={() => { void query.refetch() }}>Refresh logs</Button>
       <Button disabled={!chunks.length} onClick={() => { void (navigator.clipboard?.writeText(filtered.map(chunk => `[${chunk.stream} #${chunk.sequence}] ${chunk.text}`).join('\n')) ?? Promise.reject(new Error('Copy unavailable'))).then(() => setCopyNotice('Loaded text copied.'), () => setCopyNotice('Copy unavailable. Select the log text to copy.')) }}>Copy loaded text</Button>
     </div>
-    <p role="status">{copyNotice || `${chunks.length} loaded chunks.`}</p>
+    <p role="status">{copyNotice || `${chunks.length} loaded chunks. Older chunks leave this bounded window as new pages load.`}</p>
     {Boolean(query.error) && <Alert title={chunks.length ? "Logs refresh failed" : "Logs unavailable"} tone="warning">{jobError(query.error)}</Alert>}
     {pages.some(page => page.truncated) && <Alert title="Logs truncated" tone="warning">Logs were truncated under the accepted log policy. This is not the full output.</Alert>}
     {pages.flatMap((page, index) => page.gap ? [<Alert title="Log gap" tone="warning" key={index}>Log gap: sequences {page.gap.from}–{page.gap.to} unavailable.</Alert>] : [])}
