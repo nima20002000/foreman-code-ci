@@ -109,3 +109,27 @@ it('publishes the workspace mirror without waiting for a further CircleCI org to
   await endpoint.publishMirror({ repository: 'octo/site', mirror: 'octo/site-ci', commit: 'a'.repeat(40) })
   expect(published.sort()).toEqual(['org2', 'primary'])
 })
+
+it('discovers explicitly bound standby projects without consulting primary GitHub memberships', async () => {
+  const commands: string[] = []
+  const primary = discoveryPorts(new Set())
+  const reserve: HostCiPorts = { ...primary.ports, run: async (file, args) => {
+    commands.push(`${file} ${args.join(' ')}`)
+    return { code: 0, stdout: '{}', stderr: '' }
+  } }
+  const added: CloudAccount[] = []
+  const discovery = new CircleCiAccounts(primary.ports, async () => ['alpha/site-ci'], org => added.push(org), {
+    registry: { list: async () => [
+      { id: 'default', label: 'Primary', role: 'primary', organizations: ['alpha', 'beta', 'gamma'] },
+      { id: 'reserve', label: 'Reserve', role: 'standby', organizations: ['delta', 'epsilon', 'zeta'] },
+    ] },
+    context: async id => ({ ports: id === 'reserve' ? reserve : primary.ports }),
+    runningOrganizations: async () => [{ owner: 'retired', circleAccountId: 'reserve' }],
+  })
+  await discovery.refresh()
+  expect(added.filter(org => org.circleAccountId === 'reserve').map(org => org.owner))
+    .toEqual(['retired', 'delta', 'epsilon', 'zeta'])
+  expect(commands.filter(command => command.includes('project get'))).toHaveLength(3)
+  expect(primary.calls.some(command => command.startsWith('gh '))).toBe(false)
+  expect(new Set(added.map(org => `${org.circleAccountId ?? 'default'}:${org.owner.toLowerCase()}`)).size).toBe(7)
+})

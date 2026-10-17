@@ -2803,7 +2803,8 @@ async function initializeComputerServices(composition: ProductionComposition, ma
   const cloudOptions = { activeRuns: () => activeCiRuns(database.pool) }
   const clouds = cloudCis(machine.installationId, workspaceMirrors(database.pool), cloudOptions)
   const circleOrgs = circleCiOrgs(clouds, machine.installationId, workspaceMirrors(database.pool),
-    workspaceMirrorList(database.pool), { ...cloudOptions, runningOwners: runningCircleCiOwners(database.pool) })
+    workspaceMirrorList(database.pool), { ...cloudOptions,
+      runningOrganizations: runningCircleCiOwners(database.pool, machine.installationId) })
   const discoverClouds = () => circleOrgs.refresh()
   const circleCredits = new CircleCreditUsage(new CloudHttp(systemHostCiPorts(), 'circleci'), {
     allowance: async () => (await composition.foundationSettings.getCircleCreditAllowance()).value,
