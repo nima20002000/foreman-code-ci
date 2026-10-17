@@ -1083,3 +1083,25 @@ it.each([false, true])('recovers an unadopted capture after restart (expired cal
     expect((await f.read(source)).manifest).toEqual(manifest)
   }
 }, 60_000)
+
+it('keeps maintenance backoff while allowing a direct cleanup retry to reclaim unavailable bytes', async () => {
+  fixture = await setup()
+  const f = fixture
+  const approved = await f.approve(SOURCE_RETENTION_SECONDS * 3)
+  const error = new Error('Injected snapshot deletion failure')
+  const remove = vi.spyOn(f.store, 'remove').mockRejectedValueOnce(error)
+  const report = vi.fn()
+  await f.sources.releaseUnusedSnapshots(report)
+  expect(report).toHaveBeenCalledExactlyOnceWith(error)
+  expect((await f.reservation(approved.source)).state).toBe('retained')
+  await f.sources.releaseUnusedSnapshots(report)
+  expect(remove).toHaveBeenCalledTimes(1)
+  expect(report).toHaveBeenCalledTimes(1)
+  await f.sources.releaseUnusedSnapshots()
+  expect(remove).toHaveBeenCalledTimes(2)
+  expect((await f.reservation(approved.source)).state).toBe('reclaimed')
+  expect(await f.store.retainedCaptureBytes(approved.source.manifest.snapshotId)).toBe(0)
+  const retry = await f.client.callTool({ name: 'source_approve', arguments: approved.input })
+  expect(retry.isError).toBe(true)
+  expect(JSON.stringify(retry.content)).toContain('SOURCE_UNAVAILABLE')
+}, 60_000)

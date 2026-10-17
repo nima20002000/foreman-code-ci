@@ -26,7 +26,7 @@ export class ActivityProductionReplay {
   private counter = 0
   private readonly inFlight = new Set<Promise<void>>()
   private readonly auxiliary = new Set<string>()
-  nextResponse: 'acknowledged' | 'uncertain' = 'acknowledged'
+  nextResponse: 'acknowledged' | 'uncertain' | 'unacknowledged' = 'acknowledged'
   nextStart: 'active' | 'complete' | 'approval' | 'reject' | 'uncertain' = 'active'
 
   constructor(private readonly threadIdPrefix = 'recorded-thread') {}
@@ -115,6 +115,10 @@ export class ActivityProductionReplay {
         }
         const fileReply = this.toolReplies.get(rpcId)
         if (fileReply) this.fileReplyWaiters.get(rpcId)?.(fileReply)
+        if (this.nextResponse === 'unacknowledged') {
+          this.nextResponse = 'acknowledged'
+          return
+        }
         // Recorded provider confirmation is distinct from writing the transport reply.
         channel.notify('serverRequest/resolved', { threadId: sessionId, requestId: rpcId })
       },
