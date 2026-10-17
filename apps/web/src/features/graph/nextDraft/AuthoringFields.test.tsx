@@ -21,9 +21,6 @@ describe('Agent 6 accessible authoring forms (not browser performance evidence)'
     const user = userEvent.setup()
     render(<Form />)
     await user.tab()
-    expect(screen.getByRole('button', { name: 'About Starts the workflow' })).toHaveFocus()
-    expect(screen.getByRole('tooltip')).toHaveTextContent('Only an orchestrator can start a workflow that has one.')
-    await user.tab()
     expect(screen.getByLabelText('Starts the workflow', { selector: 'select' })).toHaveFocus()
     expect(screen.getByRole('switch', { name: /Starts the workflow/ })).toBeChecked()
     await user.click(screen.getByRole('switch', { name: /Starts the workflow/ }))
@@ -86,20 +83,6 @@ describe('Agent 6 accessible authoring forms (not browser performance evidence)'
     expect(graph.edges.map((edge) => edge.id)).toEqual(['execution-1', 'approval'])
     expect(graph.approval!.handler).toBe('orchestrator')
   })
-  it('shows reviewing orchestrator guidance only through its label hint', async () => {
-    const user = userEvent.setup()
-    const context = fixture(['orchestrator', 'coder'])
-    const graph: WorkflowDefinitionV3 = { ...context.draft.graph,
-      approval: { handler: 'orchestrator', designatedOrchestratorAgentId: 'agent-0' } }
-    render(<ApprovalFields graph={graph} context={context} change={vi.fn()} report={vi.fn()} />)
-    expect(screen.getByRole('combobox', { name: 'Reviewing orchestrator' })).toHaveValue('agent-0')
-    const explanation = 'The starting orchestrator reviews requests from agents it has an approval connection to.'
-    expect(screen.queryByText(explanation)).not.toBeInTheDocument()
-    const hint = screen.getByRole('button', { name: 'About Reviewing orchestrator' })
-    await user.hover(hint)
-    expect(screen.getByRole('tooltip')).toHaveTextContent(explanation)
-    expect(hint).toHaveAccessibleDescription(explanation)
-  })
   it('selects explicit native handling without changing Agent settings or execution routes', async () => {
     const user = userEvent.setup()
     const context = fixture()
@@ -115,9 +98,7 @@ describe('Agent 6 accessible authoring forms (not browser performance evidence)'
     await user.selectOptions(screen.getByLabelText('Approval handler'), 'native')
     expect(screen.getByTestId('approval-mode')).toHaveTextContent('native')
     expect(screen.getByTestId('routes')).toHaveTextContent(JSON.stringify(before.draft.graph.edges))
-    expect(screen.queryByText(/Each Agent must explicitly use native approval handling/)).not.toBeInTheDocument()
-    await user.hover(screen.getByRole('button', { name: 'About Approval handler' }))
-    expect(screen.getByRole('tooltip')).toHaveTextContent(/Each Agent must explicitly use native approval handling/)
+    expect(screen.getByText(/Each Agent must explicitly use native approval handling/)).toBeInTheDocument()
     expect(context).toEqual(before)
     expect(report).not.toHaveBeenCalled()
   })

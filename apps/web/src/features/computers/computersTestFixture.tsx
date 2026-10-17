@@ -4,8 +4,8 @@ import { http, HttpResponse, type HttpHandler } from 'msw'
 import type { DeviceRegistration } from '@foreman-code/contracts/device-identity'
 import type { BuildComputerStatus } from '@foreman-code/contracts/build-computers'
 import type { ComputerActivityList } from '@foreman-code/contracts/computer-activity'
-import type { ComputerAccounts } from '@foreman-code/contracts/computer-accounts'
-import type { ComputerConnections, ComputerMaintenanceListSchema } from '@foreman-code/contracts/computer-maintenance'
+import type { ComputerAccountsList } from '@foreman-code/contracts/computer-accounts'
+import type { ComputerMaintenanceListSchema } from '@foreman-code/contracts/computer-maintenance'
 import type { z } from 'zod'
 import type { DeviceProvisioningTarget } from '@foreman-code/contracts/device-resources'
 import { server } from '../../mocks/server'
@@ -22,22 +22,15 @@ export const mainTarget = { hostRef: { kind: 'main' as const, mainId }, applicat
 export const deviceTarget = { hostRef: { kind: 'device' as const, mainId, deviceId },
   applicationInstallationId: registration.workerInstallationId, keyRevision: 1, authorizationRevision: 1 }
 
-export function computerReadHandler(_kind: 'maintenance', result: z.input<typeof ComputerMaintenanceListSchema>) {
-  return http.post('*/api/management/computers/maintenance/read', async ({ request }) => {
+export function computerReadHandler(kind: 'accounts' | 'maintenance',
+  result: ComputerAccountsList | z.input<typeof ComputerMaintenanceListSchema>) {
+  return http.post(`*/api/management/computers/${kind}/read`, async ({ request }) => {
     const { target } = await request.json() as { target: DeviceProvisioningTarget }
     const computer = result.computers.find(value => computerKey(value.target) === computerKey(target))
-      ?? { target, status: null }
+      ?? { target, [kind === 'accounts' ? 'accounts' : 'status']: null }
     return HttpResponse.json({ computers: [computer] })
   })
 }
-
-/** Provider accounts as the Main computer reports them. */
-export const mainAccounts: ComputerAccounts = { observedAt: new Date().toISOString(), accounts: [
-  { tool: 'codex', installed: true, signedIn: true, account: 'coder@example.com', details: ['ChatGPT'] },
-  { tool: 'claude', installed: true, signedIn: false, account: null, details: [] },
-  { tool: 'github', installed: true, signedIn: true, account: 'octo-owner', details: [] },
-] }
-export const mainConnections: ComputerConnections = { accounts: mainAccounts, mcp: { codex: 'installed', claude: 'installed' } }
 
 export function computersFixture(children: React.ReactNode, handlers: HttpHandler[] = []) {
   const statuses = new Map<string, BuildComputerStatus>([mainTarget, deviceTarget].map((target, index) => [
@@ -48,16 +41,28 @@ export function computersFixture(children: React.ReactNode, handlers: HttpHandle
   const activity: ComputerActivityList = { mainId, activityComplete: true, truncated: false, cloud: [],
     computers: [mainTarget, deviceTarget].map((target, index) => ({ target, name: index ? deviceName : 'Main PC',
       online: !index, jobs: [], agents: [] })) }
+  const accounts: ComputerAccountsList = { computers: [
+    { target: mainTarget, accounts: { observedAt: new Date().toISOString(), accounts: [
+      { tool: 'codex', installed: true, signedIn: true, account: 'coder@example.com', details: ['ChatGPT'] },
+      { tool: 'claude', installed: true, signedIn: false, account: null, details: [] },
+      { tool: 'github', installed: true, signedIn: true, account: 'octo-owner', details: [] },
+    ] } },
+    { target: deviceTarget, accounts: null },
+  ] }
   server.use(...handlers,
     http.post('*/api/management/settings/build-computers/read', async ({ request }) => {
       const { target } = await request.json() as { target: typeof mainTarget }
       return HttpResponse.json(statuses.get(computerKey(target)))
     }),
+    http.get('*/api/management/harnesses/:harness/mcp', ({ params, request }) => {
+      const hostRef = JSON.parse(new URL(request.url).searchParams.get('hostRef') ?? 'null')
+      return HttpResponse.json({ harness: params.harness, hostRef, revision: `sha256:${'a'.repeat(64)}`,
+        servers: [], presets: { graphql: 'installed', linear: 'missing' },
+        checkedAt: new Date().toISOString(), scope: 'native-user' })
+    }),
     http.get('*/api/management/computers/activity', () => HttpResponse.json(activity)),
-    computerReadHandler('maintenance', { computers: [
-      { target: mainTarget, status: null, connections: mainConnections },
-      { target: deviceTarget, status: null, connections: { accounts: null, mcp: { codex: 'installed', claude: 'missing' } } },
-    ] }),
+    computerReadHandler('accounts', accounts),
+    computerReadHandler('maintenance', { computers: [] }),
     http.post('*/api/management/computers/sync/status', async ({ request }) => {
       const { target } = await request.json() as { target: typeof mainTarget }
       return HttpResponse.json({ target, installed: false, running: false, message: null, folders: [] })
