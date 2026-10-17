@@ -38,6 +38,7 @@ describe.skipIf(!postgresEnabled)('destination sync through authenticated Operat
     Object.assign(fixture.sources, main.sources)
     fixture.sources.codexUserMcpServers = async () => ({
       local: { command: 'node', args: ['/opt/fixture-tools/server.mjs'] },
+      docs: { url: 'https://docs.example/mcp' },
     })
     const commands = new PostgresCommandCoordinator(database.pool)
     const fleet = new FleetMaintenanceService(database.pool, mainId, () => fixture.endpoint, commands,
@@ -77,7 +78,7 @@ describe.skipIf(!postgresEnabled)('destination sync through authenticated Operat
       const first = await start()
       expect(await read(first.id)).toMatchObject({ state: kind === 'sync-mcp' ? 'failed' : 'succeeded' })
       if (kind === 'sync-mcp') {
-        expect([...worker.codexMcp]).toEqual([])
+        expect([...worker.codexMcp]).toEqual(['docs'])
         worker.ports.exists = async path => path === '/opt/fixture-tools/server.mjs'
         const find = worker.ports.find
         worker.ports.find = async name => name === 'node' ? '/fake/node' : find(name)
@@ -88,9 +89,22 @@ describe.skipIf(!postgresEnabled)('destination sync through authenticated Operat
       }
       const repaired = await start()
       expect(await read(repaired.id)).toMatchObject({ state: 'succeeded' })
-      if (kind === 'sync-mcp') expect([...worker.codexMcp]).toEqual(['local'])
+      if (kind === 'sync-mcp') expect([...worker.codexMcp].sort()).toEqual(['docs', 'local'])
       else {
         expect(repaired.sourceFingerprint).not.toBe(first.sourceFingerprint)
+        expect(worker.versions.codex.get(fleetPluginId)).toBe('2.0.0')
+        expect(worker.versions.claude.get(fleetPluginId)).toBe('2.0.0')
+        main.versions.codex.set(fleetPluginId, '3.0.0')
+        main.versions.claude.set(fleetPluginId, '3.0.0')
+        worker.publish('4.0.0')
+        const unavailable = await start()
+        expect(await read(unavailable.id)).toMatchObject({ state: 'failed' })
+        expect(worker.versions.codex.get(fleetPluginId)).toBe('2.0.0')
+        expect(worker.versions.claude.get(fleetPluginId)).toBe('2.0.0')
+        worker.publish('3.0.0')
+        worker.failAcquisition()
+        const downloadFailed = await start()
+        expect(await read(downloadFailed.id)).toMatchObject({ state: 'failed' })
         expect(worker.versions.codex.get(fleetPluginId)).toBe('2.0.0')
         expect(worker.versions.claude.get(fleetPluginId)).toBe('2.0.0')
       }
