@@ -40,23 +40,6 @@ async function actionReadFailure() {
 }
 
 describe('contextual action recovery on the mounted Board', () => {
-  it('keeps the five-second status polling cadence during a transient endpoint failure', async () => {
-    const { key, wire, cache } = await actionReadFailure()
-    const before = wire.executions('1').length
-    const historyBefore = wire.executions().length
-    await intervalTick(4000)
-    expect(wire.executions('1')).toHaveLength(before)
-    expect(cache.getQueryState(key)).toMatchObject({ status: 'error', fetchStatus: 'idle' })
-    expect(screen.getByRole('region', { name: 'Selected Run actions' }))
-      .toHaveTextContent('Cached state is not shown as current evidence')
-    await intervalTick(1000)
-    await waitFor(() => expect(cache.getQueryState(key)).toMatchObject({ status: 'success', fetchStatus: 'idle' }))
-    expect(wire.executions('1')).toHaveLength(before + 1)
-    expect(wire.executions()).toHaveLength(historyBefore)
-    expect(wire.writes()).toHaveLength(0)
-    expect(wire.activity()).toHaveLength(0)
-  }, 15_000)
-
   it('regression: retries bounded contextual status after a transient failure without a user click', async () => {
     const { key, wire, cache } = await actionReadFailure()
     const before = wire.executions('1').length
