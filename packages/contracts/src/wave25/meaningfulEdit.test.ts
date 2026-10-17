@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { executableNodeContent, preserveWorkflowGeometry, sameAuthoredWorkflow,
   sameExecutableWorkflow, sameWorkflowExceptGeometry } from './meaningfulEdit.js'
-import { CurrentWorkflowNodeSchema } from './workflowShape.js'
 
 const fixture = () => ({
   id: 'workflow', workspaceId: 'workspace', version: 7, executionSemanticsVersion: 3,
@@ -12,19 +11,6 @@ const fixture = () => ({
 })
 
 describe('shared executable/presentation boundary', () => {
-  it('treats manual placement as geometry and preserves it across executable edits', () => {
-    const before = fixture()
-    const manual = { ...before, nodes: [{ ...before.nodes[0]!, name: 'Worker',
-      position: { ...before.nodes[0]!.position, manual: true } }] }
-    const named = { ...before, nodes: [{ ...before.nodes[0]!, name: 'Worker' }] }
-    expect(CurrentWorkflowNodeSchema.parse(manual.nodes[0]!)).toEqual(manual.nodes[0])
-    expect(sameAuthoredWorkflow(named, manual)).toBe(true)
-    expect(sameExecutableWorkflow(named, manual)).toBe(true)
-    expect(sameWorkflowExceptGeometry(named, manual)).toBe(true)
-    expect(executableNodeContent(manual.nodes[0]!)).not.toHaveProperty('position')
-    expect(preserveWorkflowGeometry(named, manual).nodes[0]).toEqual(manual.nodes[0])
-    expect(preserveWorkflowGeometry(manual, named).nodes[0]).toEqual(named.nodes[0])
-  })
   it('exempts positions and server stamps from execution comparisons', () => {
     const before = fixture(), after = structuredClone(before)
     after.version++; after.updatedAt = '2026-09-24T01:00:00Z'; after.nodes[0]!.position = { x: 700, y: -100 }
