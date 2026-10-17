@@ -1,4 +1,4 @@
-import { persistentFixtureRoot } from '../../../../../test/helpers/fixtureStorage.js'
+import { tmpdir } from 'node:os'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -78,7 +78,7 @@ export const roots:string[]=[],journals:RemoteOperationJournal[]=[]
 
 afterEach(async()=>{vi.restoreAllMocks();await Promise.all(journals.splice(0).map(journal=>journal.close()));await Promise.all(roots.splice(0).map(root=>rm(root,{recursive:true,force:true})))})
 
-export async function directory() {const root=await mkdtemp(join(persistentFixtureRoot, 'installed-workflow-'));roots.push(root);return root}
+export async function directory() {const root=await mkdtemp(join(tmpdir(), 'installed-workflow-'));roots.push(root);return root}
 
 export function nativeFixture() {
   const connection=DeviceConnectionIdentitySchema.parse({mainId:randomUUID(),deviceId:randomUUID(),workerInstallationId:randomUUID(),
@@ -148,7 +148,7 @@ export async function sourceFixture(relativeCwd='', options: {
   const nativePlacement=bindNativeExecution(placement,intent,record,workingTree)
   nativePlacement.materialization.finalDispatchBindingHash=nativePlacement.bindingHash
   const owner:SourceOperationOwner={identity:{operationId:intent.operationId,ownerPrincipalId:'owner',expiresAt:'2099-01-01T00:00:00.000Z'},root:sourceRoot,attempt,source,record:nativePlacement.materialization,physicalClosureConfirmed:false}
-  const sources=new SourceOperationWorkerService({mainNow:()=>Date.now(),authenticate:async()=>undefined,approvedRoots:async()=>approvedRoots,currentOwner:async()=>owner})
+  const sources=new SourceOperationWorkerService({authenticate:async()=>undefined,approvedRoots:async()=>approvedRoots,currentOwner:async()=>owner})
   const configuration:AgentConfigurationVersion={id:'configuration',agentId:'agent',workspaceId:'workspace',version:1,prompt:{system:'Unit workflow instructions.'},assignedSkills:[],harness:DEFAULT_HARNESS_DEFAULTS[harness],contentHash:'fixture',createdAt:new Date().toISOString()}
   const request={executionId:intent.executionId,runId:intent.runId,workspaceId:'workspace',workflowNodeId:intent.nodeId,workingDirectory:workingTree.canonicalCwd,
     runtimeDirectory:join(runtime,'workflow-runs',intent.executionId,intent.attemptId),configuration,input}
@@ -294,7 +294,7 @@ export async function runningInstalledFixture(phase: 'generation' | 'approval wa
       return outputs
     })
   }
-  let expiresAt = new Date((fixtureOptions.mainNow?.() ?? Date.now()) + 15 * 60_000).toISOString()
+  let expiresAt = new Date(Date.now() + 15 * 60_000).toISOString()
   let launchDenied = false
   let cleanupOnly = false
   const retain = fixtureOptions.retainReviewer ?? false
@@ -303,7 +303,6 @@ export async function runningInstalledFixture(phase: 'generation' | 'approval wa
   let mcpLeaseRevoked = false
   const requests: Array<{ namespace: string; payload: unknown; binding: DeviceSessionBinding }> = []
   const options: InstalledWorkflowHostOptions = { stateDirectory: f.root, registry,
-    mainNow: fixtureOptions.mainNow ?? (() => Date.now()),
     pairing: { formatVersion: 1, mainId: f.context.binding.mainId, deviceId: f.context.binding.deviceId,
       workerInstallationId: f.context.binding.workerInstallationId, keyRevision: 1, authorizationRevision: 1,
       endpoint: 'wss://unit.invalid/device', mainPublicKeyFingerprint: 'a'.repeat(64), credential: 'b'.repeat(64),
@@ -467,7 +466,7 @@ export async function restartedInstalledFixture(captureOptions: { accepted?: boo
   await writeFile(file, JSON.stringify({ schemaVersion: 1, codexBinary: '/unit/codex', appMcpLauncher: '/unit/launcher.mjs',
     expectedVersion: '0.154.0', payloadPaths: [] }), { mode: 0o600 })
   let authorized = true
-  const options: InstalledWorkflowHostOptions = { stateDirectory: f.root, mainNow: () => Date.now(), bootId: f.context.binding.bootId,
+  const options: InstalledWorkflowHostOptions = { stateDirectory: f.root, bootId: f.context.binding.bootId,
     pairing: { formatVersion: 1, mainId: f.context.binding.mainId, deviceId: f.context.binding.deviceId,
       workerInstallationId: f.context.binding.workerInstallationId, keyRevision: 1, authorizationRevision: 1,
       endpoint: 'wss://unit.invalid/device', mainPublicKeyFingerprint: 'a'.repeat(64), credential: 'b'.repeat(64),
@@ -563,7 +562,7 @@ export async function constructionFixture(fixtureOptions: {
   const linkLostAt = vi.fn<() => number | undefined>(() => undefined)
   const openJournal = vi.fn(async () => journal)
   let applicationChannel: DeviceApplicationChannel | undefined
-  const options: InstalledWorkflowHostOptions = { stateDirectory: f.root, mainNow: () => Date.now(), bootId: binding.bootId,
+  const options: InstalledWorkflowHostOptions = { stateDirectory: f.root, bootId: binding.bootId,
     pairing: { formatVersion: 1, mainId: binding.mainId, deviceId: binding.deviceId,
       workerInstallationId: binding.workerInstallationId, keyRevision: binding.keyRevision,
       authorizationRevision: binding.authorizationRevision, endpoint: 'wss://unit.invalid/device',
