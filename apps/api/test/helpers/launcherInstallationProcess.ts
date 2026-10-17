@@ -5,7 +5,7 @@ type LauncherOperation =
   | { kind: 'install'; launcher: string }
   | { kind: 'older-install'; launcher: string; snapshot?: LauncherInstallation }
   | { kind: 'register'; launcher: string; installation: LauncherInstallation }
-  | { kind: 'recognize'; launcher: string; entry: Record<string, unknown> }
+  | { kind: 'recognize'; launcher: string; entry: Record<string, unknown> | Record<string, unknown>[] }
   | { kind: 'upgrade'; home: string }
 
 const launcherModule = new URL('../../src/modules/harnesses/appMcpLauncher.ts', import.meta.url).href
@@ -17,7 +17,6 @@ const program = `
   import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
   import { dirname } from 'node:path';
   import { installManagedLauncher, isAppLauncher, writeLauncherInstallation } from ${JSON.stringify(launcherModule)};
-  import { upgradeProductionMcpLauncher } from ${JSON.stringify(upgradeModule)};
   const operation = JSON.parse(process.argv[1]);
   const source = new URL(${JSON.stringify(source)});
   if (operation.kind === 'older-install') {
@@ -55,11 +54,14 @@ const program = `
   } else if (operation.kind === 'register') {
     await writeLauncherInstallation(operation.launcher, operation.installation);
   } else if (operation.kind === 'upgrade') {
+    const { upgradeProductionMcpLauncher } = await import(${JSON.stringify(upgradeModule)});
     await upgradeProductionMcpLauncher(operation.home);
   } else if (operation.kind === 'recognize') {
     delete process.env.GRAPHQL_APP_MCP_DIRECTORY;
     process.env.FOREMAN_CODE_APP_MCP_DIRECTORY = dirname(operation.launcher);
-    console.log(JSON.stringify(isAppLauncher(operation.entry)));
+    const recognized = Array.isArray(operation.entry)
+      ? operation.entry.map(entry => isAppLauncher(entry)) : isAppLauncher(operation.entry);
+    console.log(JSON.stringify(recognized));
   } else {
     throw new Error('Unknown launcher operation');
   }

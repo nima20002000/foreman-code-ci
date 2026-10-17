@@ -1233,13 +1233,25 @@ describe('workflow Agent deliverable contract', () => {
     expect(f.executions.get(f.candidate.id)?.result).toEqual(valid)
   })
 
-  it('fails a remote schema mismatch without reserving or submitting a repair turn', async () => {
+  it('bounds remote schema correction to two reserved same-session repair turns', async () => {
     const f = workResultFixture([answer({ status: 'done' })], outputSchema, new Set(), { remote: true })
     const result = await f.coordinator.observeExact(f.input)
     expect(result).toMatchObject({ state: 'completed', result: { outcome: 'failed',
       error: { code: 'OUTPUT_SCHEMA_MISMATCH', retryable: false } } })
-    expect(f.manager.turns).toHaveLength(1)
-    expect(f.reservations.size).toBe(0)
+    expect(f.manager.turns).toHaveLength(3)
+    expect(f.reservations.size).toBe(2)
+    for (const turn of f.manager.turns) expect(turn.session).toEqual(f.manager.turns[0]!.session)
+    expect(f.manager.turns.slice(1).map(turn => turn.input.clientCorrelationId)).toEqual([
+      `execution:${f.candidate.id}:result-repair:1`, `execution:${f.candidate.id}:result-repair:2`,
+    ])
+  })
+
+  it('accepts a corrected remote deliverable from its reserved same-session turn', async () => {
+    const f = workResultFixture([answer({ status: 'done' }), valid], outputSchema, new Set([ticket]), { remote: true })
+    expect(await f.coordinator.observeExact(f.input)).toMatchObject({ state: 'completed', result: valid })
+    expect(f.manager.turns).toHaveLength(2)
+    expect(f.reservations.size).toBe(1)
+    expect(f.manager.turns[1]!.session).toEqual(f.manager.turns[0]!.session)
   })
 
   it('fails the attempt with OUTPUT_SCHEMA_MISMATCH after two invalid corrections', async () => {
