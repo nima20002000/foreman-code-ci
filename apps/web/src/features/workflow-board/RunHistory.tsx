@@ -1,3 +1,4 @@
+import { InfoHint } from '../../shared/ui/InfoHint'
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query'
 import type { RepeatGraphScopeV3 } from '@foreman-code/contracts/wave25'
 import { sessionGeneration } from '../../shared/api/sessionBoundary'
@@ -28,9 +29,8 @@ export function RunHistory({ scope }: { scope: RepeatGraphScopeV3 }) {
     page.items.map((item) => [item.id, item] as const)) ?? []).values()]
   return <details className="board-history" open={open}
     onToggle={(event) => useInspectionPresentation.getState().setOpen(disclosure, event.currentTarget.open)}>
-    <summary>Run activity history</summary>
+    <summary>Run activity history<InfoHint label="History">Recorded activity for this Run only. History does not refresh with the live canvas. The five most recently loaded pages are retained. Refresh starts at the first page.</InfoHint></summary>
     {open ? denied ? <p role="alert">History access is unavailable.</p> : <>
-      <p>Recorded activity for this Run only. History does not refresh with the live canvas.</p>
       {history.isPaused ? <p role="status">History refresh is paused. Loaded pages are recorded history.</p> : history.isPending ? <p role="status">Loading history…</p> : null}
       {history.isError ? <p role="alert">History could not be loaded. Previously loaded activity is withheld.
         <Button size="sm" variant="ghost" onClick={() => void refreshFirstInspectionPage(cache, key)}>Retry history</Button></p> : null}
@@ -42,7 +42,6 @@ export function RunHistory({ scope }: { scope: RepeatGraphScopeV3 }) {
       {history.hasNextPage && !history.isError ? <Button size="sm" disabled={history.isFetching}
         onClick={() => void history.fetchNextPage()}>Load more activity</Button> : null}
       <Button size="sm" variant="ghost" disabled={history.isFetching} onClick={() => void refreshFirstInspectionPage(cache, key)}>Refresh activity</Button>
-      {history.data?.pages.length === 5 ? <p>The five most recently loaded pages are retained. Refresh starts at the first page.</p> : null}
     </> : null}
   </details>
 }

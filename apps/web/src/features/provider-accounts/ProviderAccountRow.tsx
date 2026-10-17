@@ -1,3 +1,4 @@
+import { InfoHint } from '../../shared/ui/InfoHint'
 import { useRef, useState } from 'react'
 import type { ProviderAccount } from '@foreman-code/contracts/provider-accounts'
 import { CommandAttempt } from '../../shared/api/commandAttempt'
@@ -55,7 +56,8 @@ export function ProviderAccountRow({ account, revision, defaultRevision, scope, 
           target.hostRef.kind === 'main' ? target.hostRef.mainId : target.hostRef.deviceId}` : 'Ownership not recorded'}</dd></div>
         <div><dt>Installation</dt><dd>{target?.applicationInstallationId ?? 'Unknown'}</dd></div>
         <div><dt>Sign-in</dt><dd>{statusLabels[observation?.status ?? account.status]}</dd></div>
-        <div><dt>Identity</dt><dd>{identity ?? 'Unknown'}</dd></div>
+        <div><dt>Identity{!observation?.subject && identity ? <InfoHint label="Identity">Display identity only; provider identity is unproved.</InfoHint> : null}
+          {account.possibleDuplicateAccountIds?.length ? <InfoHint label="Account history">Accounts and their history remain separate.</InfoHint> : null}</dt><dd>{identity ?? 'Unknown'}</dd></div>
         <div><dt>Readiness</dt><dd>{observation && scope.generation !== undefined
           && observation.generation !== scope.generation ? 'Awaiting a fresh observation'
           : readinessLabels[observation?.readiness ?? 'unknown']}</dd></div>
@@ -63,11 +65,8 @@ export function ProviderAccountRow({ account, revision, defaultRevision, scope, 
           {new Date(observation.observedAt).toLocaleString()}</time> : 'Not observed'}</dd></div>
         <div><dt>Authentication</dt><dd>{account.authMode === 'api-key' ? 'API key' : 'Subscription'}</dd></div>
       </dl>
-      {!observation?.subject ? <p className="provider-account-note">{identity
-        ? 'Display identity only; provider identity is unproved.' : 'Provider identity is unknown.'}</p> : null}
-      {account.possibleDuplicateAccountIds?.length ? <p role="status">This may be the same provider identity as another account.
-        Accounts and their history remain separate.</p> : null}
-      {account.removedAt ? <p role="status">Removed from selection. Saved Runs, chats and native history retain this account.</p> : null}
+      {account.possibleDuplicateAccountIds?.length ? <p role="status">This may be the same provider identity as another account.</p> : null}
+      {account.removedAt ? <p role="status">Removed from selection. <InfoHint label="Removed account">Saved Runs, chats and native history retain this account.</InfoHint></p> : null}
     </div>
     <div className="provider-account-actions">
       <Button size="sm" disabled={unavailable} onClick={onConfigure}>Configure</Button>

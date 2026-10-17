@@ -1,3 +1,4 @@
+import { RetryBackoff } from '../../infrastructure/retryBackoff.js'
 import { isDeepStrictEqual } from 'node:util'
 import { randomUUID } from 'node:crypto'
 import { inTransaction, type SqlQuery } from '../../infrastructure/transaction.js'
@@ -5,7 +6,7 @@ import type pg from 'pg'
 import { canonicalJson } from '@foreman-code/contracts/canonical-json'
 import { waitForCiDispatch, withCiDatabasePriority, withoutCiDatabaseDeadline,
   withoutCiDatabasePriority } from '../../infrastructure/ciDatabasePriority.js'
-import { CI_DISPATCH_PASS_MS, withCiDispatchDeadline } from './dispatchDeadline.js'
+import { CI_DISPATCH_PASS_MS, CiDispatchDeadlineError, withCiDispatchDeadline } from './dispatchDeadline.js'
 import { withProviderPoll } from './providerPoll.js'
 import { CI_HOST_NAMESPACE, CiComputerRefSchema, CiRunRecordSchema, CiRunOutputSchema,
   WorkspaceSchema,
@@ -38,6 +39,7 @@ import { sanitizeCiText, serializeCiJson } from './text.js'
 import { isGitHubComputer, needsSystemdExecutor, supportsUserSystemd } from './computerCapabilities.js'
 import { weighCiPartitions } from './partitionPlanning.js'
 import { invalidateExecutorSpeeds, readExecutorSpeeds } from './executorSpeed.js'
+import { readComputerNames } from '../computers/names.js'
 import { readCiGateReservation, readQueuedCiRuns } from './queuedRuns.js'
 import { expireCloudDispatch, requestCloud } from './cloudDispatch.js'
 import { claimCiSlot, reservedCloudSlotKeys } from './cloudSlots.js'
@@ -99,10 +101,12 @@ export class HostCiService {
   private readonly collectingRuns = new Set<string>()
   private observationOffset = 0
   private readonly observingComputers = new Map<string, Promise<void>>()
+  private readonly computerStatusRetries = new Map<string, RetryBackoff>()
   private readonly mirrorPublications = new Map<string, { settled: boolean }>()
   /** Computers that still had a free slot after the last dispatch pass: where a canceled provider-queued ticket can go. */
   private spareComputers: HostCiComputer[] = []
   private readonly dispatchRejections = new CiDispatchRejections()
+  private readonly dispatchRetry = new RetryBackoff({ initialMs: 1000, maxMs: 300_000 })
   private timer: NodeJS.Timeout | undefined
   private stoppingRuns = 0
   private readonly endpoint: HostCiEndpoint
@@ -816,11 +820,13 @@ export class HostCiService {
     if (computer) return computer
     // Disabling future builds does not prevent reading or cancelling an assigned run.
     if (hostRef.kind === 'main') {
-      return { key: `${hostRef.mainId}:main`, hostRef, label: 'Main computer', priority: 0 }
+      const key = `${hostRef.mainId}:main`
+      return { key, hostRef, label: (await readComputerNames(this.pool, hostRef.mainId)).get(key) ?? 'Main computer', priority: 0 }
     }
     if (hostRef.kind === 'device' && hostRef.deviceId) {
-      return { key: `${hostRef.mainId}:${hostRef.deviceId}`, hostRef,
-        label: `Computer ${hostRef.deviceId.slice(0, 8)}`, priority: 0 }
+      const key = `${hostRef.mainId}:${hostRef.deviceId}`
+      return { key, hostRef, priority: 0,
+        label: (await readComputerNames(this.pool, hostRef.mainId)).get(key) ?? `Computer ${hostRef.deviceId.slice(0, 8)}` }
     }
     if (hostRef.kind === 'cloud' && hostRef.provider) {
       const account = hostRef.account ? { owner: hostRef.account } : undefined
@@ -910,6 +916,7 @@ export class HostCiService {
 
   /** Refresh running runs and dispatch queued work, retaining wake-ups during an active pass. */
   dispatch(): Promise<void> {
+    if (!this.dispatchRetry.ready()) return Promise.resolve()
     this.dispatchRequested = true
     if (this.stoppingRuns) return this.dispatching ?? Promise.resolve()
     this.dispatching ??= (async () => {
@@ -917,8 +924,13 @@ export class HostCiService {
         this.dispatchRequested = false
         await trackService('ci-dispatch', { cadenceMs: 1000, deadlineMs: CI_DISPATCH_PASS_MS },
           () => withCiDispatchDeadline(() => withProviderPoll(() => this.dispatchOnce())))
+        this.dispatchRetry.reset()
       }
-    })().catch(error => log.warn({ err: error }, 'CI dispatch failed'))
+    })().catch(error => {
+      // Slow work has already spent the pass budget; other errors still need an increasing retry delay.
+      const nextRetryMs = error instanceof CiDispatchDeadlineError ? 0 : this.dispatchRetry.fail()
+      log.warn({ err: error, nextRetryMs }, 'CI dispatch failed; retry scheduled')
+    })
       .finally(() => { this.dispatching = undefined })
     return this.dispatching
   }
@@ -1195,9 +1207,18 @@ export class HostCiService {
   private refreshComputerStatuses(computers: HostCiComputer[]) {
     for (const computer of computers) {
       if (this.planningEndpoint.status(computer) || this.observingComputers.has(computer.key)) continue
+      const retry = this.computerStatusRetries.get(computer.key)
+        ?? new RetryBackoff({ initialMs: 5000, maxMs: 300_000 })
+      this.computerStatusRetries.set(computer.key, retry)
+      if (!retry.ready()) continue
       // Readiness belongs to dispatch; collecting running tickets uses the shared pool.
       const observation = withCiDatabasePriority(() => readCiComputerStatus(this.endpoint, computer)).then(status => {
-        if (status) void this.dispatch()
+        if (status) {
+          retry.reset()
+          void this.dispatch()
+        } else {
+          retry.fail()
+        }
       }).finally(() => { this.observingComputers.delete(computer.key) })
       this.observingComputers.set(computer.key, observation)
     }

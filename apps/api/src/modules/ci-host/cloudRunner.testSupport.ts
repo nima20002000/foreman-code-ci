@@ -40,6 +40,8 @@ appendFileSync(process.env.CALLS_FILE, JSON.stringify(process.argv.slice(2)) + '
 `)
   const run = () => spawnSync('bash', ['scripts/ci-suite.sh'], { cwd: checkout, encoding: 'utf8', env: {
     ...process.env, ...environment, PATH: `${bin}:${process.env.PATH}`, CALLS_FILE: calls,
+    // Enclosing CI shell startup can prepend the real toolchain ahead of the recording boundary.
+    BASH_ENV: '',
     CI_HOST_RUNNER: '1', CI_PREREQUISITES_UNTRACKED: '1', CI_USER_SYSTEMD: '0',
     CI_EXPECTED_DURATION_MS: '', TEST_RESULTS_OUTPUT: '', CI_STATE: join(checkout, 'state'),
     DURATIONS_OUTPUT: join(checkout, 'durations.json'),

@@ -1,3 +1,4 @@
+import { InfoHint } from '../../../shared/ui/InfoHint'
 import { errorMessage } from '../../../shared/errorMessage'
 import { useSessionControls } from '../sessionControls/useSessionControls'
 import { compactionBlocksSend, parseSessionCommand } from '@foreman-code/contracts'
@@ -160,7 +161,7 @@ function AgentConversationContent({ context, name, role, activity, runLabel, onC
         sessionMode: parseSessionCommand(content).kind === 'plan-task' ? 'plan' : mode })} />
       : <ConversationViewport revision="loading">{() => <LoadingState label="Loading conversation…" rows={1} />}</ConversationViewport>}
     {state ? <div className="agent-chat-composer-controls" role="group" aria-label="Chat actions" {...drop.dropTargetProps}>
-      <AgentChatComposer name={name} draftKey={chat.draftKey} inputRef={composer} sessionControls={sessionControls}
+      <AgentChatComposer name={name} draftKey={chat.draftKey} inputRef={composer}
         disabled={composerDisabled} reason={composerReason} controlReason={controlReason}
         pending={chat.pending} controlPending={sessionControls.mutation.isPending}
         hasAttachments={attachments.hasAttachments} canStop={canStop} stopReason={stopReason}
@@ -182,7 +183,7 @@ function AgentConversationContent({ context, name, role, activity, runLabel, onC
     <div className="n-sr-only" aria-live="polite" aria-atomic="true">{latestReply ? `New reply from ${name}: ${latestReply.content}` : ''}</div>
     <Dialog open={sendAgain !== undefined} onOpenChange={(open) => { if (!open) setSendAgain(undefined) }}
       title={resendControl ? 'Apply session command?' : 'Send again as a new message?'}
-      description={resendControl ? 'This applies the displayed command to this chat’s native session.'
+      description={resendControl ? undefined
         : 'The original message may already have been accepted. This creates a new message and can repeat work. It is not a retry or a resume.'}
       dismissible={!resendPending} busy={resendPending} role="alertdialog" size="sm">
       {sendAgain ? <div className="n-stack">
@@ -198,12 +199,12 @@ function AgentConversationContent({ context, name, role, activity, runLabel, onC
             }} />
         </> : null}
         {resendCommand.kind === 'plan-task' ? <p>Mode: Plan</p> : null}
-        {resendControl ? <p>This command uses native session controls. Attached files will not be sent.</p> : <>
+        {resendControl ? <p>Attached files will not be sent.</p> : <>
           <p>Only the original file pins below will be sent. Displayed output files are excluded.</p>
           {sendAgain.attachments?.length ? <>
           <CodeBlock label="Original file pins" language="json" code={JSON.stringify(sendAgain.attachments, null, 2)} />
           {resendFileClient ? <MessageFileCards attachments={sendAgain.attachments} files={resendFiles} client={resendFileClient} /> : null}
-          </> : <p>No original files. This new message will contain text only.</p>}
+          </> : <p>No original files.</p>}
         </>}
         {resendReason ? <p className="n-field-error" role="alert">{resendReason}</p> : null}
         <div className="n-actions"><Button disabled={resendPending} onClick={() => setSendAgain(undefined)}>Keep it</Button>
@@ -215,7 +216,8 @@ function AgentConversationContent({ context, name, role, activity, runLabel, onC
               }).then(sent => {
                 if (sent) setSendAgain(draft => draft === sendAgain ? undefined : draft)
               })
-          }}>{resendControl ? 'Apply session command' : 'Send as new message'}</Button></div>
+          }}>{resendControl ? 'Apply session command' : 'Send as new message'}</Button>
+          {resendControl && <InfoHint label="Apply session command">This applies the displayed command to this chat’s native session. This command uses native session controls.</InfoHint>}</div>
       </div> : null}
     </Dialog>
   </div>
