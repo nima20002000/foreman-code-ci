@@ -7,6 +7,7 @@ import type { PrivateSourceSnapshotStore } from './store.js'
 import { removeAbandonedRunSourceUses } from './runSourceUse.js'
 
 export const SOURCE_RETENTION_SECONDS = 3600
+const SNAPSHOT_SCAN_BATCH_SIZE = 50
 type SnapshotStore = Pick<PrivateSourceSnapshotStore, 'remove' | 'withCaptureLock'>
 
 /** Pressure can shorten retention, but cannot release a source that is still in use. */
@@ -195,7 +196,13 @@ async function scanUnusedSourceSnapshots(pool: pg.Pool,
     where a.state='approved' and r.state='retained' and r.scope_id=$1 order by a.created_at`, [scopeId])
   if (!candidates.rows.length) return []
   // Scan without the storage lock; only eligible snapshots need a locked recheck.
-  const releasable = await releasableSnapshots(pool, candidates.rows.map(row => row.snapshot_id), underPressure)
+  const releasable = new Set<string>()
+  for (let offset = 0; offset < candidates.rows.length; offset += SNAPSHOT_SCAN_BATCH_SIZE) {
+    const batch = candidates.rows.slice(offset, offset + SNAPSHOT_SCAN_BATCH_SIZE)
+    for (const id of await releasableSnapshots(pool, batch.map(row => row.snapshot_id), underPressure)) {
+      releasable.add(id)
+    }
+  }
   const errors: unknown[] = []
   for (const candidate of candidates.rows) {
     if (!releasable.has(candidate.snapshot_id)) continue
