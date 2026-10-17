@@ -9,7 +9,7 @@ import { DomainError } from '../errors.js'
 import { installedHarnessSelection, readInstalledWorkflowConfiguration,
   type InstalledWorkflowConfigurationLocation } from '../runs/remote/installedWorkflowConfiguration.js'
 import { CodexAppServerSessionManager, safeEnvironment } from './codexAppServer.js'
-import { detectedClaudeProfilePath } from './claudeSdk/productionMetadata.js'
+import { detectedClaudeProfilePath } from './claudeSdk/profilePath.js'
 import { discoverClaudeMetadata } from './claudeSdk/metadata.js'
 import { claudeSettingSupport } from './claudeSdk/nativeConfiguration.js'
 import { runOwnedClaudeOperation } from './claudeSdk/ownedOperation.js'
