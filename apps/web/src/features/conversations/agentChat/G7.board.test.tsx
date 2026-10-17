@@ -56,8 +56,8 @@ describe('mounted Board chat window action area', () => {
     expect(transcript).not.toContainElement(actions)
     expect(actions.parentElement).toBe(transcript.closest('.conversation-viewport')!.parentElement)
     expect(within(transcript).getByRole('status', { name: `${fixture.first.name!} is working` })).toBeInTheDocument()
-    // Plan mode is entered only by typing /plan, so the action area has no session options.
-    expect(within(dialog).queryByLabelText('Session options')).not.toBeInTheDocument()
+    // Native session controls (context usage and its popover) sit between Attach and Queue in the same action area.
+    expect(actions).toContainElement(await within(dialog).findByLabelText('Session options'))
     for (const name of ['Attach files', 'Queue message', 'Steer', 'Interrupt and send', 'Stop chat']) {
       expect(within(actions).getByRole('button', { name })).toBeEnabled()
     }
