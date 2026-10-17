@@ -33,6 +33,8 @@ import { readLocalMainRoot, readPlacementRootBinding, resolveBoundRootPlacement,
 import { prepareRunRoots, type SelectedRunRoot } from './runRoots.js'
 import { bindGeneratedWorktreeRun, generatedWorktreePrefix } from '../sources/worktreeRequest.js'
 import type { SourceRootRecord } from '@foreman-code/contracts/source-admission'
+import type { WorktreeComputerSelection } from '@foreman-code/contracts/worktree-settings'
+import { assertWorktreeComputers } from '../workflows/worktreeComputers.js'
 
 function refreshSourcePlacement(
   saved: SavedNodePlacement, roots: ReadonlyMap<string, SourceRootRecord>,
@@ -242,6 +244,7 @@ export class AgentPlacementProducer implements RunPlacementAdmissionPort {
         'select record from workspaces where id=$1', [input.workspaceId])).rows[0]
       const repository = workspace && WorkspaceSchema.parse(workspace.record).repository
       const selected = new Map<string, SelectedRunRoot>()
+      const computers: WorktreeComputerSelection[] = []
       let inheritedRoot = root
       for (const node of version.definition.nodes) {
         if (node.kind === 'job' || !node.placement && !root && !repository && !options.includeImplicitMain) continue
@@ -261,7 +264,11 @@ export class AgentPlacementProducer implements RunPlacementAdmissionPort {
         const policy = await resolvePlacementRootPolicy({ sql: connection, principal,
           workspaceId: input.workspaceId, selection: selectedRoot.selection, roots: this.roots })
         selected.set(selectedRoot.binding.rootId, { root: selectedRoot, policy })
+        const branchPrefix = node.worktree?.branchPrefix ?? version.definition.defaultWorktree?.branchPrefix
+        if (branchPrefix) computers.push({ branchPrefix, agentName: node.name ?? node.label ?? node.agentId,
+          hostRef: selectedRoot.selection.hostRef })
       }
+      await assertWorktreeComputers(connection, computers)
       return { version, root, repository, selected, inheritedRoot }
     })
   }
