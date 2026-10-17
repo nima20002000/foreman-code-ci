@@ -1,3 +1,4 @@
+import { InfoHint } from '../../shared/ui/InfoHint'
 import { useRef, useState } from 'react'
 import {
   ProviderAccountApiKeyInputSchema, type AccountProvider, type ProviderAccount,
@@ -104,8 +105,7 @@ export function ProviderAccountEditor({ provider, account, revision, onClose, sc
   }
   const configureTitle = accountId ? `Configure ${account?.name ?? 'saved account'}` : undefined
   return <Dialog open title={configureTitle ?? `Add ${provider === 'codex' ? 'Codex' : 'Claude'} account`}
-    description={accountId ? "Changes apply to this account on its owning computer."
-      : "Add a fresh isolated account on the selected computer. Adding it does not sign in or qualify its profile."}
+    headerLeading={accountId ? <InfoHint label="Account settings">Changes apply to this account on its owning computer.</InfoHint> : undefined}
     busy={write.isPending} onOpenChange={open => { if (!open) close() }} size="sm"
     footer={<>
       <Button disabled={write.isPending || uncertain} onClick={close}>Cancel</Button>
@@ -118,7 +118,7 @@ export function ProviderAccountEditor({ provider, account, revision, onClose, sc
     <div className="provider-account-form">
       <TextField label="Account name" value={name} maxLength={100} disabled={locked}
         onChange={event => { setName(event.target.value); setValidation(undefined) }} />
-      {!accountId ? <Select label="Account setup" value={setup} disabled={locked}
+      {!accountId ? <Select label="Account setup" labelHint={<InfoHint label="Account setup">Add a fresh isolated account on the selected computer. Adding it does not sign in or qualify its profile.</InfoHint>} value={setup} disabled={locked}
         options={[{ value: 'fresh', label: 'Fresh isolated account', disabled: !canCreate },
           { value: 'existing-profile', label: 'Existing qualified profile', disabled: !canRegister }]}
         onChange={event => { setSetup(event.target.value); setValidation(undefined) }} /> : null}
@@ -137,11 +137,11 @@ export function ProviderAccountEditor({ provider, account, revision, onClose, sc
           provider === 'codex' ? 'ChatGPT subscription login' : 'Claude subscription login' },
           ...(account?.authMode === 'api-key' ? [{ value: 'api-key', label: 'Saved API key · unavailable here', disabled: true }] : [])] : [
           { value: 'subscription', label: 'Claude subscription login' }, { value: 'api-key', label: 'API key · separate billing' },
-        ]} hint={accountId ? 'Authentication is chosen when the account is added.' : undefined}
+        ]} labelHint={accountId ? <InfoHint label="Authentication">Authentication is chosen when the account is added.</InfoHint> : undefined}
         onChange={event => setAuthMode(event.target.value as ProviderAccountAuthMode)} />}
       {account && authMode === 'api-key' && scope.target?.hostRef.kind === 'main' ? <>
         <TextField ref={keyField} label="New API key" type="password" value={apiKey} autoComplete="off" spellCheck={false}
-          disabled={locked} maxLength={4096} hint="Write-only. The saved key is never shown or returned."
+          disabled={locked} maxLength={4096} labelHint={<InfoHint label="New API key">Write-only. The saved key is never shown or returned.</InfoHint>}
           onChange={event => { setApiKey(event.target.value); setValidation(undefined) }} />
         <Button disabled={!canManage || !access.canManage || write.isPending || nameAttempt.unresolved || !apiKey.trim()}
           onClick={() => void saveKey()}>{keyAttempt.unresolved ? 'Retry original key save' : 'Save API key'}</Button>
