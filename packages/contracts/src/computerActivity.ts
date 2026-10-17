@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { DeviceCommandIdSchema, DeviceProvisioningTargetSchema } from './deviceResources.js'
 import { HarnessExecutionStateSchema, IdSchema, TimestampSchema } from './index.js'
 import { JobProcessStateSchema } from './jobs.js'
-import { circleCreditsShape } from './circleCredits.js'
+import { circleCreditsShape, circleSchedulingShape, CircleAccountIdSchema } from './circleCredits.js'
 import { ReadObservationSchema } from './readObservation.js'
 
 export const COMPUTER_ACTIVITY_LIMIT = 200
@@ -51,6 +51,7 @@ const CloudCiActivitySchema = z.object({
   provider: z.enum(['github', 'circleci']),
   /** The GitHub owner of this CircleCI org; absent for the workspace mirror's own owner. */
   account: z.string().min(1).optional(),
+  circleAccountId: CircleAccountIdSchema.optional(),
   name: z.string(),
   /** Main's login for the service works, so runs can start there. */
   ready: z.boolean(),
@@ -60,7 +61,9 @@ const CloudCiActivitySchema = z.object({
   running: z.number().int().nonnegative(),
   /** CircleCI accounts only: estimated monthly credits left, or null with the reason it is unavailable. */
   ...circleCreditsShape,
-}).strict()
+  ...circleSchedulingShape,
+}).strict().refine(value => value.circleAccountId === undefined || value.provider === 'circleci',
+  'CircleCI login identity is only valid for CircleCI.')
 export const ComputerActivityListSchema = z.object({
   mainId: z.uuid(),
   computers: z.array(ComputerActivitySchema).max(101),
