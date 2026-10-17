@@ -24,10 +24,12 @@ import { DeviceApplicationError } from '../../devices/deviceApplicationError.js'
 import { retryDeviceRequest } from '../../devices/deviceRequestRetry.js'
 import { preparationStop } from './preparationCleanup.js'
 import { randomUUID } from 'node:crypto'
+import { NativeResponseAvailabilitySchema } from '@foreman-code/contracts/remote-execution-rpc'
+import { normalizeResponseAvailability, type NativeResponseAvailabilityQuery } from '../../harnesses/responseAvailability.js'
 
 export interface RemoteNativeTransport {
   request(method: 'prepare' | 'reattach' | 'prepare-review' | 'get-application-access' | 'start-turn'
-    | 'history' | 'pending' | 'capabilities' | 'inspect-mcp' | 'control' | 'control-delivery'
+    | 'history' | 'pending' | 'capabilities' | 'inspect-mcp' | 'inspect-response-availability' | 'control' | 'control-delivery'
     | 'status' | 'reconcile-response' | 'renew-owner' | 'receipt-continuation'
     | 'session-controls-read' | 'session-compact' | 'session-compact-reconcile' | 'session-preferences-apply',
   payload: unknown, signal?: AbortSignal): Promise<unknown>
@@ -517,6 +519,12 @@ export class RemoteNativeSessionManager implements NativeHarnessSessionManager {
     const reply = await this.request('pending', { operationId: this.intent.operationId }, signal)
     return reply.value == null ? undefined : PendingNativeInteractionSchema.parse(reply.value)
   }
+  async inspectResponseAvailability(session: NativeSessionReference, query: NativeResponseAvailabilityQuery,
+    signal?: AbortSignal) {
+    this.assertSession(session)
+    const reply = await this.request('inspect-response-availability', { session, query }, signal)
+    return normalizeResponseAvailability(session, query, NativeResponseAvailabilitySchema.parse(reply.value))
+  }
   async respond(session: NativeSessionReference, nativeRequestId: string, option: Parameters<NativeHarnessSessionManager['respond']>[2], signal?: AbortSignal) {
     this.assertSession(session)
     if (!this.receipt?.native) throw new Error('Original remote native ownership missing')
@@ -608,8 +616,10 @@ export class RemoteNativeSessionManager implements NativeHarnessSessionManager {
         phase: z.enum(['unknown', 'reserved', 'entered', 'acknowledged']), status: StatusSchema,
       }).strict().parse(reply.value)
       const receipt = await this.status(reply, delivery.status)
-      if (delivery.phase === 'reserved' && !receipt.terminal && !receipt.stopFence) {
-        if (!this.options.authorizeResponseRetry) throw new Error('Reserved response retry authorization is unavailable')
+      // 'unknown' is the original Worker confirming it never reserved this command, so the
+      // admitted command was lost in transit. Only entered commands stay observation-only.
+      if ((delivery.phase === 'reserved' || delivery.phase === 'unknown') && !receipt.terminal && !receipt.stopFence) {
+        if (!this.options.authorizeResponseRetry) throw new Error('Unentered response retry authorization is unavailable')
         await this.options.authorizeResponseRetry(command)
         await this.status(await this.request('control', { command }, signal))
       }

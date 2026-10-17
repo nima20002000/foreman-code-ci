@@ -3,14 +3,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SessionControlStateSchema } from '@foreman-code/contracts'
 import { OperatorComposer } from '../../operator-chat/OperatorComposer'
 import { ConversationComposer } from '../ConversationComposer'
-import { SessionContext, SessionControls } from './SessionControls'
+import { SessionContext } from './SessionControls'
 import type { ComposerSessionControls } from './useSessionControls'
 import { useConversationDraftStore } from '../conversationDraftStore'
 
 const state = SessionControlStateSchema.parse({ conversationId: 'chat', revision: 1, profileKey: 'profile',
   desiredMode: 'regular', appliedMode: 'regular', defaults: {}, desired: {}, applied: {}, applicability: 'applied',
   context: null, nativeSessionId: null, nativeProviderVersion: null, compaction: null, compactions: [], busyReason: null,
-  capabilities: { profileKey: 'profile', model: 'model', modelCapacity: null, contextBudgets: [], contextProfiles: [],
+  capabilities: { profileKey: 'profile', model: 'model', modelCapacity: 200000, contextBudgets: [], contextProfiles: [],
     compact: { supported: true, reason: null }, plan: { supported: true, reason: null },
     autoCompact: { supported: true, reason: null }, autoCompactBudget: { supported: false, reason: 'Capacity unknown' } } })
 function controller() {
@@ -101,15 +101,23 @@ for (const role of ['Operator', 'node'] as const) describe(`${role} composer nat
     expect(controls.command).not.toHaveBeenCalled()
   })
 })
-it('shows unknown context honestly and the popover invokes the compact operation', async () => {
+it('shows the model window with nothing used before the first turn and the popover invokes the compact operation', async () => {
   const controls = controller()
-  render(<SessionControls controls={controls} />)
-  fireEvent.click(screen.getByRole('button', { name: 'Context unknown' }))
-  expect(screen.getByText('Current usage unknown')).toBeInTheDocument()
+  render(<SessionContext controls={controls} />)
+  fireEvent.click(screen.getByRole('button', { name: '0% context' }))
+  expect(screen.getByText('0 tokens in context / 200,000 native context window')).toBeInTheDocument()
   expect(screen.queryByText(/Native default window:/)).not.toBeInTheDocument()
   expect(screen.getByText('Automatic compaction: default')).toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: 'Compact context' }))
   await waitFor(() => expect(controls.change).toHaveBeenCalledWith({ kind: 'compact' }))
+})
+
+it('shows no context meter before the first turn when the model window is not known yet', () => {
+  const controls = controller()
+  controls.state = { ...state, capabilities: { ...state.capabilities, modelCapacity: null } }
+  render(<SessionContext controls={controls} />)
+  expect(screen.queryByRole('button', { name: /context/i })).not.toBeInTheDocument()
+  expect(screen.queryByText(/unknown/i)).not.toBeInTheDocument()
 })
 
 it('labels estimated occupancy and separates current, configured, default and lifetime values', () => {
@@ -121,7 +129,7 @@ it('labels estimated occupancy and separates current, configured, default and li
       observedAt: '2026-10-06T00:00:00.000Z', source: 'claude', accuracy: 'estimated',
       usedTokens: 50000, capacityTokens: 100000, lifetimeTokens: 800000, cost: null, stale: false },
   })
-  const view = render(<SessionControls controls={controls} />)
+  const view = render(<SessionContext controls={controls} />)
   fireEvent.click(screen.getByRole('button', { name: 'About 50% context' }))
   expect(screen.getByText('Estimated usage: 50,000 tokens in context / 100,000 native context window')).toBeInTheDocument()
   expect(screen.getByText('Configured budget: 100,000')).toBeInTheDocument()
@@ -130,20 +138,20 @@ it('labels estimated occupancy and separates current, configured, default and li
   expect(screen.getByText('Total processed: 800,000')).toBeInTheDocument()
 
   controls.state = { ...controls.state!, context: { ...controls.state!.context!, accuracy: 'native' } }
-  view.rerender(<SessionControls controls={controls} />)
+  view.rerender(<SessionContext controls={controls} />)
   expect(screen.getByRole('button', { name: '50% context' })).toBeInTheDocument()
   expect(screen.getByText('50,000 tokens in context / 100,000 native context window')).toBeInTheDocument()
   expect(screen.queryByText(/Estimated usage:/)).not.toBeInTheDocument()
 })
 
 it('closes context details with Escape and restores focus to the meter', () => {
-  render(<SessionControls controls={controller()} />)
-  const meter = screen.getByRole('button', { name: 'Context unknown' })
+  render(<SessionContext controls={controller()} />)
+  const meter = screen.getByRole('button', { name: '0% context' })
   fireEvent.click(meter)
   const close = screen.getByRole('button', { name: 'Close context details' })
   close.focus()
   fireEvent.keyDown(close, { key: 'Escape' })
-  expect(screen.queryByText('Current usage unknown')).not.toBeInTheDocument()
+  expect(screen.queryByText(/native context window/)).not.toBeInTheDocument()
   expect(meter).toHaveFocus()
 })
 
@@ -151,8 +159,8 @@ it('renders the shared numeric budget field and submits a plain token value', as
   const controls = controller()
   controls.state = { ...state, capabilities: { ...state.capabilities, modelCapacity: 200000,
     autoCompactBudget: { supported: true, reason: null } } }
-  render(<SessionControls controls={controls} />)
-  fireEvent.click(screen.getByRole('button', { name: 'Context unknown' }))
+  render(<SessionContext controls={controls} />)
+  fireEvent.click(screen.getByRole('button', { name: '0% context' }))
   fireEvent.click(screen.getByText('Context options for this chat'))
   const input = screen.getByRole('spinbutton', { name: 'Auto-compaction budget' })
   fireEvent.change(input, { target: { value: '150000' } })
@@ -165,15 +173,15 @@ it('refreshes the budget from persisted readback and ignores an untouched blur',
   const controls = controller()
   controls.state = { ...state, desired: { ...state.desired, autoCompactTokens: 150000 },
     capabilities: { ...state.capabilities, modelCapacity: 200000, autoCompactBudget: { supported: true, reason: null } } }
-  const view = render(<SessionControls controls={controls} />)
-  fireEvent.click(screen.getByRole('button', { name: 'Context unknown' }))
+  const view = render(<SessionContext controls={controls} />)
+  fireEvent.click(screen.getByRole('button', { name: '0% context' }))
   let input = screen.getByRole('spinbutton', { name: 'Auto-compaction budget' })
   fireEvent.change(input, { target: { value: '160000' } })
   fireEvent.blur(input)
   expect(controls.change).toHaveBeenCalledTimes(1)
   vi.mocked(controls.change).mockClear()
   controls.state = { ...controls.state!, desired: { ...state.desired, autoCompactTokens: 180000 } }
-  view.rerender(<SessionControls controls={controls} />)
+  view.rerender(<SessionContext controls={controls} />)
   input = screen.getByRole('spinbutton', { name: 'Auto-compaction budget' })
   expect(input).toHaveValue(180000)
   fireEvent.focus(input)
@@ -188,8 +196,8 @@ it('saves the edited budget as defaults without a competing blur write', () => {
   const controls = controller()
   controls.state = { ...state, capabilities: { ...state.capabilities, modelCapacity: 200000,
     autoCompactBudget: { supported: true, reason: null } } }
-  render(<SessionControls controls={controls} />)
-  fireEvent.click(screen.getByRole('button', { name: 'Context unknown' }))
+  render(<SessionContext controls={controls} />)
+  fireEvent.click(screen.getByRole('button', { name: '0% context' }))
   const input = screen.getByRole('spinbutton', { name: 'Auto-compaction budget' })
   fireEvent.change(input, { target: { value: '150000' } })
   const save = screen.getByRole('button', { name: 'Save as default for future chats' })
@@ -204,15 +212,15 @@ it('keeps an unsaved budget through polling and resets it when the chat changes'
   const controls = controller()
   controls.state = { ...state, capabilities: { ...state.capabilities, modelCapacity: 200000,
     autoCompactBudget: { supported: true, reason: null } } }
-  const view = render(<SessionControls controls={controls} />)
-  fireEvent.click(screen.getByRole('button', { name: 'Context unknown' }))
+  const view = render(<SessionContext controls={controls} />)
+  fireEvent.click(screen.getByRole('button', { name: '0% context' }))
   fireEvent.change(screen.getByRole('spinbutton', { name: 'Auto-compaction budget' }), { target: { value: '150000' } })
   controls.state = { ...controls.state!, revision: 2, desired: { ...state.desired, autoCompactTokens: 180000 } }
-  view.rerender(<SessionControls controls={controls} />)
+  view.rerender(<SessionContext controls={controls} />)
   expect(screen.getByRole('spinbutton', { name: 'Auto-compaction budget' })).toHaveValue(150000)
   controls.state = { ...controls.state!, conversationId: 'other-chat', desired: { ...state.desired, autoCompactTokens: 190000 } }
-  view.rerender(<SessionControls controls={controls} />)
-  fireEvent.click(screen.getByRole('button', { name: 'Context unknown' }))
+  view.rerender(<SessionContext controls={controls} />)
+  fireEvent.click(screen.getByRole('button', { name: '0% context' }))
   expect(screen.getByRole('spinbutton', { name: 'Auto-compaction budget' })).toHaveValue(190000)
 })
 
@@ -221,20 +229,20 @@ it('resets an unsaved budget when switching nodes before either conversation exi
   controls.state = { ...state, conversationId: null,
     capabilities: { ...state.capabilities, modelCapacity: 200000,
       autoCompactBudget: { supported: true, reason: null } } }
-  const view = render(<SessionControls controls={controls} />)
-  fireEvent.click(screen.getByRole('button', { name: 'Context unknown' }))
+  const view = render(<SessionContext controls={controls} />)
+  fireEvent.click(screen.getByRole('button', { name: '0% context' }))
   fireEvent.change(screen.getByRole('spinbutton', { name: 'Auto-compaction budget' }), {
     target: { value: '150000' },
   })
   controls.scope = 'second-node'
-  view.rerender(<SessionControls controls={controls} />)
-  fireEvent.click(screen.getByRole('button', { name: 'Context unknown' }))
+  view.rerender(<SessionContext controls={controls} />)
+  fireEvent.click(screen.getByRole('button', { name: '0% context' }))
   expect(screen.getByRole('spinbutton', { name: 'Auto-compaction budget' })).toHaveValue(null)
   fireEvent.click(screen.getByRole('button', { name: 'Save as default for future chats' }))
   expect(controls.change).toHaveBeenCalledExactlyOnceWith({ kind: 'save-default', preferences: state.desired })
 })
 
-it('keeps the Operator composer compact: attach inline with the input, options below, no mode sentence', () => {
+it('keeps the Operator composer compact: attach inline with the input, only agent settings below, no session options', () => {
   const controls = controller()
   controls.state = { ...state, desiredMode: 'plan', appliedMode: 'regular',
     context: { nativeSessionId: 'native-chat', model: 'model', generation: 'runtime', sequence: 3,
@@ -247,8 +255,8 @@ it('keeps the Operator composer compact: attach inline with the input, options b
     .toEqual(['Attach files', 'Send message'])
   const options = input.nextElementSibling!
   expect(Array.from(options.querySelectorAll('button, select')).map(element => element.getAttribute('aria-label') ?? element.textContent?.trim() ?? ''))
-    .toEqual(['Agent settings: model', 'RegularPlan'])
-  expect(screen.getByRole('combobox', { name: 'Conversation mode' })).toHaveValue('plan')
+    .toEqual(['Agent settings: model'])
+  expect(screen.queryByRole('combobox', { name: 'Conversation mode' })).not.toBeInTheDocument()
   expect(screen.queryByRole('button', { name: /context/ })).not.toBeInTheDocument()
   expect(screen.queryByText(/starts on the next turn/)).not.toBeInTheDocument()
 })
@@ -262,4 +270,17 @@ it('shows context left as a compact labelled percentage in the header', () => {
   const meter = screen.getByRole('button', { name: '25% context' })
   expect(meter).toHaveTextContent('25%')
   expect(meter).not.toHaveTextContent('context')
+})
+
+it('moves native context help into a hint while retaining actionable budget reasons', () => {
+  const controls = controller()
+  const view = render(<SessionContext controls={controls} />)
+  fireEvent.click(screen.getByRole('button', { name: '0% context' }))
+  fireEvent.click(screen.getByText('Context options for this chat'))
+  expect(screen.queryByText('Context size follows the native model/profile.')).not.toBeInTheDocument()
+  fireEvent.focus(screen.getByRole('button', { name: 'About Context options' }))
+  expect(screen.getByRole('tooltip')).toHaveTextContent('Context size follows the native model/profile.')
+  view.rerender(<SessionContext controls={{ ...controls, state: { ...state,
+    capabilities: { ...state.capabilities, contextBudgetReason: 'Choose a supported model to configure a budget.' } } }} />)
+  expect(screen.getByText('Choose a supported model to configure a budget.')).toBeVisible()
 })

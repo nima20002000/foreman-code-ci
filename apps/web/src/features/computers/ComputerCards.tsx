@@ -4,25 +4,22 @@ import { ChevronRight, Monitor } from 'lucide-react'
 import type { DeviceRegistration } from '@foreman-code/contracts/device-identity'
 import { sameDeviceProvisioningTarget, type DeviceProvisioningTarget } from '@foreman-code/contracts/device-resources'
 import type { BuildComputerStatus } from '@foreman-code/contracts/build-computers'
-import type { ComputerAccount, ComputerAccounts } from '@foreman-code/contracts/computer-accounts'
 import { computerDisplayName, type ComputerActivity } from '@foreman-code/contracts/computer-activity'
 import { useBuildComputers } from '../../shared/api/buildComputers'
 import { computerKey, useComputerActivity } from '../../shared/api/computerActivity'
-import { useDeviceMcp } from '../../shared/api/deviceMcp'
-import type { HarnessMcpList } from '@foreman-code/contracts/management'
-import { useComputerAccounts } from '../../shared/api/computerAccounts'
 import { useComputerMaintenance, useStartMaintenance } from '../../shared/api/computerMaintenance'
-import type { ComputerMaintenanceStartInput, MaintenanceStatus, WorkerBundleReadiness, WorkerReleasePublication } from '@foreman-code/contracts/computer-maintenance'
-import { Badge, Button, IconButton } from '../../shared/ui/nocturne'
+import type { ComputerConnections, ComputerMaintenanceStartInput, MaintenanceStatus, MaintenanceTask, WorkerBundleReadiness, WorkerReleasePublication } from '@foreman-code/contracts/computer-maintenance'
+import { Badge, Button, IconButton, Tooltip } from '../../shared/ui/nocturne'
 import { UnsavedEditorGuard } from '../../shared/ui/unsavedChanges'
 import { askOperator } from '../operator-chat/operatorChatStore'
 import { MainRuntimeSetup } from '../runtime-qualification/MainRuntimeSetup'
+import { ComputerName } from './ComputerName'
 import { ComputerUtilization } from './ComputerUtilization'
+import { ComputerStatusChips } from './ComputerStatusChips'
+import { deriveStatusChips, workerBehind } from './statusChips'
+import { humanizeMaintenanceText, newestTaskPerKind, taskLabel } from './maintenanceText'
 import { useComputerActivityFreshness } from './useComputerActivityFreshness'
 import './computerCards.css'
-
-/** Harnesses this app runs: Codex and Claude. */
-const HARNESSES = [{ tool: 'codex', label: 'Codex' }, { tool: 'claude', label: 'Claude' }] as const
 
 type Card = { target: DeviceProvisioningTarget; build: BuildComputerStatus | undefined; buildError: boolean }
 
@@ -41,9 +38,7 @@ export function ComputerCards({ mainId, devices, onSelectComputer, only }: {
   const reads = useBuildComputers(targets)
   const visibleTargets = targets.filter(target => !only || target.hostRef.kind === 'device' && target.hostRef.deviceId === only)
   const activity = useComputerActivity()
-  const accounts = useComputerAccounts(visibleTargets)
   const maintenance = useComputerMaintenance(visibleTargets)
-  const mcp = useDeviceMcp(visibleTargets)
   const start = useStartMaintenance()
   const observedFresh = useComputerActivityFreshness(activity.dataUpdatedAt, activity.fetchStatus)
   const fresh = observedFresh && !activity.isError
@@ -73,28 +68,27 @@ export function ComputerCards({ mainId, devices, onSelectComputer, only }: {
     {start.isError ? <small role="alert">{start.error.message}</small> : null}
     {start.data?.flatMap(result => result.computers).filter(computer => computer.error).map((computer, index) =>
       <small role="alert" key={`${computerKey(computer.target)}:${index}`}>
-        {computerDisplayName(computer.target.hostRef)}: {computer.error}
+        {activity.data?.computers.find(known => computerKey(known.target) === computerKey(computer.target))?.name
+          ?? computerDisplayName(computer.target.hostRef)}: {computer.error}
       </small>)}
     <ul className="computer-card-grid" aria-label="Computers">
       {cards.filter(card => visibleTargets.includes(card.target)).map(card => {
         const index = visibleTargets.indexOf(card.target)
-        const accountRead = accounts[index]!
         const maintenanceRead = maintenance[index]!
         const observed = activity.data?.mainId === mainId
           ? activity.data.computers.find(computer => sameDeviceProvisioningTarget(computer.target, card.target)) : undefined
         return <li key={computerKey(card.target)}>
           <ComputerCard card={card} observed={observed} fresh={fresh}
             activityComplete={activity.data?.activityComplete === true && !activity.data.truncated}
-            codexMcp={mcp[index * 2]?.isError ? undefined : mcp[index * 2]?.data}
-            claudeMcp={mcp[index * 2 + 1]?.isError ? undefined : mcp[index * 2 + 1]?.data}
-            accounts={accountRead.isError ? undefined : accountRead.data} maintenance={maintenanceRead.data?.status}
+            connections={maintenanceRead.data?.connections} maintenance={maintenanceRead.data?.status}
             workerPublication={maintenanceRead.data?.workerPublication}
             workerReadiness={maintenanceRead.data?.workerReadiness}
             maintenanceObservation={maintenanceRead.data?.observation}
-            tasksOmitted={maintenanceRead.data?.tasksOmitted ?? 0}
             maintenanceError={maintenanceRead.isError || maintenanceRead.data?.observation?.status === 'unavailable'}
             onRetryMaintenance={() => { void maintenanceRead.refetch() }}
-            onMaintain={task => start.mutate({ task, targets: [card.target] })} maintaining={start.isPending || start.unresolved}
+            onMaintain={tasks => start.mutate(tasks.map(task => ({ task, targets: [card.target] })))}
+            starting={start.isPending && [start.variables ?? []].flat().some(input => !input.targets || input.targets.some(target => sameDeviceProvisioningTarget(target, card.target)))}
+            maintaining={start.isPending || start.unresolved}
             buildPosition={ranksKnown ? builders.indexOf(card) + 1 : undefined} buildCount={builders.length}
             onOpen={card.target.hostRef.kind === 'device' && onSelectComputer
               ? () => { if (card.target.hostRef.kind === 'device') onSelectComputer(card.target.hostRef.deviceId) } : undefined} />
@@ -115,56 +109,48 @@ export function ComputerCards({ mainId, devices, onSelectComputer, only }: {
 }
 
 type Task = ComputerMaintenanceStartInput['task']
-function ComputerCard({ card, observed, fresh, activityComplete, codexMcp, claudeMcp, accounts, maintenance, workerPublication, workerReadiness, maintenanceObservation, maintenanceError, tasksOmitted,
-  onRetryMaintenance, onMaintain, maintaining, buildPosition, buildCount, onOpen }: {
-  codexMcp: HarnessMcpList | undefined; claudeMcp: HarnessMcpList | undefined
-  card: Card; observed: ComputerActivity | undefined; fresh: boolean; accounts: ComputerAccounts | null | undefined
+function ComputerCard({ card, observed, fresh, activityComplete, connections, maintenance, workerPublication, workerReadiness, maintenanceObservation, maintenanceError,
+  onRetryMaintenance, onMaintain, starting, maintaining, buildPosition, buildCount, onOpen }: {
+  card: Card; observed: ComputerActivity | undefined; fresh: boolean; connections: ComputerConnections | undefined
   activityComplete: boolean; maintenanceError: boolean; onRetryMaintenance(): void
-  maintenance: MaintenanceStatus | null | undefined; onMaintain(task: Task): void; maintaining: boolean
+  maintenance: MaintenanceStatus | null | undefined; onMaintain(tasks: Task[]): void; starting: boolean; maintaining: boolean
   workerPublication: WorkerReleasePublication | undefined
   workerReadiness: WorkerBundleReadiness | undefined
   maintenanceObservation: ReadObservation | undefined
-  tasksOmitted: number
   buildPosition: number | undefined; buildCount: number; onOpen: (() => void) | undefined
 }) {
   const name = observed?.name ?? computerDisplayName(card.target.hostRef)
-  const tasks = maintenance?.tasks ?? []
+  const tasks = newestTaskPerKind(maintenance?.tasks ?? [])
   const online = fresh && observed?.online === true
   const workflows = new Set(observed?.agents.map(agent => agent.workflowId) ?? []).size
-  const account = (tool: ComputerAccount['tool']) => accounts?.accounts.find(value => value.tool === tool)
+  const chips = deriveStatusChips({ accounts: connections?.accounts, connections, status: maintenance,
+    readiness: workerReadiness, starting })
+  const publicationBlocked = Boolean(workerPublication && workerPublication.state !== 'published')
+  const updateTasks = pendingUpdates(card.target, maintenance, workerReadiness, publicationBlocked)
+  const updateState = chips.find(chip => chip.id === 'update')!.state
   return <article className="computer-card" aria-label={name}>
     <header className="computer-card-header">
       <Monitor size={20} aria-hidden="true" />
-      <h3>{name}</h3>
+      <ComputerName name={name} target={card.target} />
       <Badge tone={online ? 'success' : 'neutral'} dot>{presenceLabel(observed, fresh)}</Badge>
       <Badge>Agent host</Badge>
       {card.build?.preference.buildEnabled ? <Badge>CI</Badge> : null}
       {onOpen ? <IconButton label={`Open ${name}`} variant="ghost" size="sm" onClick={onOpen}><ChevronRight size={16} /></IconButton> : null}
     </header>
+    <ComputerStatusChips chips={chips} computer={name}
+      onSignIn={tool => askOperator(tool === 'GitHub' ? `Sign GitHub in on ${name} and set up git to use it.` : `Sign ${tool} in on ${name}.`)} />
     <ComputerUtilization target={card.target} online={online} />
     <dl className="computer-card-facts">
-      <div><dt>Harnesses</dt><dd className="computer-card-chips">
-        {HARNESSES.map(({ tool, label }) => <HarnessChip key={tool} label={label} account={account(tool)} computer={name} known={Boolean(accounts)}
-          version={maintenance?.harnesses.find(entry => entry.harness === tool)} busy={maintaining || maintenanceError}
-          onInstall={() => onMaintain({ kind: 'update-harnesses', harnesses: [tool] })} />)}
-      </dd></div>
       {card.target.hostRef.kind === 'device' ? <div><dt>Worker</dt><dd>
-        <WorkerState worker={maintenance?.worker} readiness={workerReadiness} busy={maintaining || maintenanceError
-          || Boolean(workerPublication && workerPublication.state !== 'published')}
-          onUpdate={() => onMaintain({ kind: 'update-worker' })} />
+        <WorkerState worker={maintenance?.worker} readiness={workerReadiness} />
       </dd></div> : null}
-      {workerPublication && workerPublication.state !== 'published' ? <div><dt>Worker release</dt><dd>
-        <p role={workerPublication.state === 'failed' ? 'alert' : 'status'}>
-          Worker {workerPublication.version} {workerPublication.state === 'failed'
+      {publicationBlocked ? <div><dt>Worker release</dt><dd>
+        <p role={workerPublication!.state === 'failed' ? 'alert' : 'status'}>
+          Worker {workerPublication!.version} {workerPublication!.state === 'failed'
             ? 'publication failed' : 'is waiting for GitHub publication and verification'}.
-          {workerPublication.lastError ? <small>{workerPublication.lastError}</small> : null}
+          {workerPublication!.lastError ? <small>{workerPublication!.lastError}</small> : null}
         </p>
       </dd></div> : null}
-      {card.target.hostRef.kind === 'device' ? <div><dt>Foreman Code MCP</dt><dd>
-        <span>Codex · {mcpState(codexMcp?.presets?.graphql)}</span>{' · '}
-        <span>Claude · {mcpState(claudeMcp?.presets?.graphql)}</span>
-      </dd></div> : null}
-      <div><dt>GitHub</dt><dd><GitHubState account={account('github')} computer={name} known={Boolean(accounts)} /></dd></div>
       <div><dt>Builds</dt><dd>{buildSummary(card, buildPosition, buildCount)}
         {card.build?.state === 'setup-required' ? <Badge tone="warning">Setup needed</Badge> : null}</dd></div>
       <div><dt>Activity</dt><dd>{observed ? <>
@@ -175,9 +161,6 @@ function ComputerCard({ card, observed, fresh, activityComplete, codexMcp, claud
       </> : 'Activity unknown'}</dd></div>
       {card.target.hostRef.kind === 'main' && card.build ? <div><dt>Worker execution</dt><dd>
         {card.build.remoteExecutionEnabled ? 'On' : 'Off'}</dd></div> : null}
-      <div><dt>System</dt><dd><SystemState status={maintenance} busy={maintaining || maintenanceError}
-        onMaintain={onMaintain} agents={observed?.agents.length ?? 0} jobs={observed?.jobs.length ?? 0}
-        activityComplete={Boolean(observed) && fresh && activityComplete} /></dd></div>
       <div><dt>Disk</dt><dd>{maintenance?.system.disk ? `${bytes(maintenance.system.disk.freeBytes)} free of ${bytes(maintenance.system.disk.totalBytes)}` : '—'}</dd></div>
     </dl>
     {maintenanceError ? <div role="alert" className="computer-card-note">
@@ -189,46 +172,43 @@ function ComputerCard({ card, observed, fresh, activityComplete, codexMcp, claud
       </p> : null}
       <Button size="sm" variant="ghost" onClick={onRetryMaintenance}>Retry maintenance</Button>
     </div> : null}
-    {tasks.map(task => <p key={task.id} className="computer-card-task" data-state={task.state} role="status">
-      {maintenanceError ? 'Last confirmed: ' : null}
-      {task.state === 'running' ? `${taskLabel(task.kind)}…` : `${taskLabel(task.kind)}: ${task.summary}`}</p>)}
-    {tasksOmitted > 0 ? <p className="computer-card-note">{count(tasksOmitted, 'older maintenance task')} not shown.</p> : null}
+    {tasks.map(task => <TaskLine key={task.id} task={task} stale={maintenanceError} />)}
     <footer className="computer-card-footer">
+      {maintenance?.system.rebootRequired ? <Badge tone="warning">Restart needed</Badge> : null}
+      <RestartButton status={maintenance} busy={maintaining || maintenanceError} onRestart={() => onMaintain([{ kind: 'restart' }])}
+        agents={observed?.agents.length ?? 0} jobs={observed?.jobs.length ?? 0} activityComplete={Boolean(observed) && fresh && activityComplete} />
       <Button size="sm" variant="ghost" onClick={() => askOperator(`On ${name}: `, { send: false })}>Ask Operator to change…</Button>
+      <Button size="sm" disabled={maintaining || maintenanceError || !maintenance || updateState === 'running' || updateTasks.length === 0}
+        title={updateTasks.length === 0 && maintenance ? 'Nothing to update' : undefined}
+        onClick={() => onMaintain(updateTasks)}>Update</Button>
     </footer>
   </article>
 }
 
-function mcpState(state: NonNullable<HarnessMcpList['presets']>['graphql'] | undefined) {
-  if (state === 'installed') return 'Installed'
-  if (state === 'disabled') return 'Disabled'
-  if (state === 'missing') return 'Setup needed'
-  if (state) return 'Needs repair'
-  return 'State unavailable'
+/** What one Update click runs: only the parts that need it, plus any part whose last attempt failed. */
+function pendingUpdates(target: DeviceProvisioningTarget, status: MaintenanceStatus | null | undefined,
+  readiness: WorkerBundleReadiness | undefined, publicationBlocked: boolean): Task[] {
+  if (!status) return []
+  const failed = new Set(newestTaskPerKind(status.tasks).filter(task => task.state === 'failed').map(task => task.kind))
+  const harnesses = status.harnesses.filter(entry => !entry.installed
+    || Boolean(entry.latest && entry.version !== entry.latest)).map(entry => entry.harness)
+  const tasks: Task[] = []
+  if (harnesses.length || failed.has('update-harnesses')) {
+    tasks.push({ kind: 'update-harnesses', harnesses: harnesses.length ? harnesses : ['codex', 'claude'] })
+  }
+  if (status.system.sudo && ((status.system.packageUpdates ?? 0) > 0 || failed.has('update-system'))) tasks.push({ kind: 'update-system' })
+  const workerUpdateNeeded = workerBehind(status, readiness) || failed.has('update-worker')
+  if (target.hostRef.kind === 'device' && !publicationBlocked && workerUpdateNeeded) tasks.push({ kind: 'update-worker' })
+  return tasks
 }
 
-function HarnessChip({ label, account, computer, known, version, busy, onInstall }: {
-  label: string; account: ComputerAccount | undefined; computer: string; known: boolean
-  version: { installed: boolean; version: string | null; latest: string | null } | undefined; busy: boolean; onInstall(): void
-}) {
-  const installed = version ? version.installed : account?.installed
-  if ((!known && !version) || installed === undefined) return <Badge>{label} · account unknown</Badge>
-  if (!installed) return <span className="computer-card-chip">
-    <Badge tone="warning">{label} · not installed</Badge>
-    <Button size="sm" variant="ghost" disabled={busy} onClick={onInstall}>Install</Button>
-  </span>
-  const named = version?.version ? `${label} ${version.version}` : label
-  const summary = account?.signedIn == null ? `${named} · account unknown` : named
-  if (version?.latest && version.version && version.latest !== version.version) return <span className="computer-card-chip">
-    <Badge tone="warning">{summary} · {version.latest} available</Badge>
-    <Button size="sm" variant="ghost" disabled={busy} onClick={onInstall}>Update</Button>
-  </span>
-  if (account?.signedIn === false) return <span className="computer-card-chip">
-    <Badge tone="warning">{named} · signed out</Badge>
-    <Button size="sm" variant="ghost" onClick={() => askOperator(`Sign ${label} in on ${computer}.`)}>Sign in</Button>
-  </span>
-  if (account?.signedIn == null) return <Badge>{summary}</Badge>
-  return <Badge tone="success">{named}</Badge>
+/** One line per task kind. Codes such as EDQUOT read as plain words; the raw text is in the tooltip. */
+function TaskLine({ task, stale }: { task: MaintenanceTask; stale: boolean }) {
+  const { text, raw } = humanizeMaintenanceText(task.summary)
+  const body = task.state === 'running' ? `${taskLabel(task.kind)}…` : `${taskLabel(task.kind)}: ${text}`
+  return <p className="computer-card-task" data-state={task.state} role="status">
+    {stale ? 'Last confirmed: ' : null}
+    {raw && task.state !== 'running' ? <Tooltip content={raw}><span tabIndex={0}>{body}</span></Tooltip> : body}</p>
 }
 
 type WorkerStatus = NonNullable<MaintenanceStatus['worker']>
@@ -243,33 +223,29 @@ const WORKER_STATE_LABELS: Record<WorkerStatus['state'], string> = {
   failed: 'Update failed',
 }
 
-function WorkerState({ worker, readiness, busy, onUpdate }: {
-  worker: MaintenanceStatus['worker']; readiness: WorkerBundleReadiness | undefined; busy: boolean; onUpdate(): void
-}) {
+function WorkerState({ worker, readiness }: { worker: MaintenanceStatus['worker']; readiness: WorkerBundleReadiness | undefined }) {
   const retry = worker?.state === 'failed' || worker?.state === 'rolled-back'
-  const updating = worker !== undefined && worker.state !== 'current' && !retry
   let label = worker ? WORKER_STATE_LABELS[worker.state] : 'Status unavailable'
   if (worker?.state === 'current' && readiness?.ready === false) {
     if (readiness.code === 'WORKER_VERSION_SKEW') label = 'Worker update required'
     if (readiness.code === 'WORKER_BUNDLE_UNPUBLISHED') label = 'Worker bundle unavailable'
     if (readiness.code === 'WORKER_UPDATING') label = 'Worker update in progress'
   }
+  const error = retry && worker.lastError ? humanizeMaintenanceText(worker.lastError) : undefined
   return <span className="computer-card-worker">
     {worker ? <>
       <span>Current {worker.currentVersion}</span>
       <span>Target {worker.targetVersion ?? 'not reported'}</span>
       <span role="status"><Badge tone={retry || readiness?.ready === false ? 'warning' : 'neutral'}>{label}</Badge></span>
-      {worker.lastError ? <small className="computer-card-worker-error">Last error: {worker.lastError}</small> : null}
+      {error ? <small className="computer-card-worker-error">Last error: {error.raw
+        ? <Tooltip content={error.raw}><span tabIndex={0}>{error.text}</span></Tooltip> : error.text}</small> : null}
     </> : <span>Status unavailable</span>}
-    <Button size="sm" variant="ghost" disabled={busy || !worker || updating} onClick={onUpdate}>
-      {retry ? 'Retry Worker update' : 'Update Worker'}
-    </Button>
   </span>
 }
 
-/** OS updates and restart. Restart asks once more because it stops what is running on that computer. */
-function SystemState({ status, busy, onMaintain, agents, jobs, activityComplete }: {
-  status: MaintenanceStatus | null | undefined; busy: boolean; onMaintain(task: Task): void
+/** Restart asks once more because it stops what is running on that computer. */
+function RestartButton({ status, busy, onRestart, agents, jobs, activityComplete }: {
+  status: MaintenanceStatus | null | undefined; busy: boolean; onRestart(): void
   agents: number; jobs: number; activityComplete: boolean
 }) {
   const [confirming, setConfirming] = useState(false)
@@ -278,17 +254,11 @@ function SystemState({ status, busy, onMaintain, agents, jobs, activityComplete 
     const timer = setTimeout(() => setConfirming(false), 6_000)
     return () => clearTimeout(timer)
   }, [confirming])
-  if (!status) return <>—</>
-  const updates = status.system.packageUpdates
-  return <span className="computer-card-chip">
-    {updates === null ? 'Updates unknown' : updates ? `${count(updates, 'pending update')}` : 'Up to date'}
-    {updates ? <Button size="sm" variant="ghost" disabled={busy || !status.system.sudo} title={status.system.sudo ? undefined : 'Needs passwordless sudo'}
-      onClick={() => onMaintain({ kind: 'update-system' })}>Update</Button> : null}
-    {status.system.rebootRequired ? <Badge tone="warning">Restart needed</Badge> : null}
-    <Button size="sm" variant={confirming ? 'danger' : 'ghost'} disabled={busy || !status.system.sudo}
-      onClick={() => { if (confirming) { setConfirming(false); onMaintain({ kind: 'restart' }) } else setConfirming(true) }}>
-      {confirming ? restartConfirmation(agents, jobs, activityComplete) : 'Restart'}</Button>
-  </span>
+  if (!status) return null
+  return <Button size="sm" variant={confirming ? 'danger' : 'ghost'} disabled={busy || !status.system.sudo}
+    title={status.system.sudo ? undefined : 'Needs passwordless sudo'}
+    onClick={() => { if (confirming) { setConfirming(false); onRestart() } else setConfirming(true) }}>
+    {confirming ? restartConfirmation(agents, jobs, activityComplete) : 'Restart'}</Button>
 }
 
 function presenceLabel(observed: ComputerActivity | undefined, fresh: boolean) {
@@ -312,19 +282,7 @@ function restartConfirmation(agents: number, jobs: number, complete: boolean) {
   return work ? `Restart and stop ${work}?` : 'Confirm restart'
 }
 
-const TASK_LABELS: Record<string, string> = { 'update-harnesses': 'Harness update', 'update-system': 'System update', restart: 'Restart',
-  'sync-mcp': 'MCP sync', 'sync-plugins': 'Plugin sync', 'update-worker': 'Worker update' }
-function taskLabel(kind: string) { return TASK_LABELS[kind] ?? kind }
 function bytes(value: number) { return value >= 1e12 ? `${(value / 1e12).toFixed(1)} TB` : `${Math.round(value / 1e9)} GB` }
-
-function GitHubState({ account, computer, known }: { account: ComputerAccount | undefined; computer: string; known: boolean }) {
-  if (!known || !account) return <>Account unknown</>
-  if (!account.installed) return <>GitHub CLI not installed</>
-  if (account.signedIn === null) return <>Account unknown</>
-  if (account.signedIn === true) return <>{account.account ?? 'Signed in'}</>
-  return <span className="computer-card-chip">Signed out
-    <Button size="sm" variant="ghost" onClick={() => askOperator(`Sign GitHub in on ${computer} and set up git to use it.`)}>Sign in</Button></span>
-}
 
 function ordinal(value: number) {
   const suffix = value % 10 === 1 && value % 100 !== 11 ? 'st' : value % 10 === 2 && value % 100 !== 12 ? 'nd' : value % 10 === 3 && value % 100 !== 13 ? 'rd' : 'th'

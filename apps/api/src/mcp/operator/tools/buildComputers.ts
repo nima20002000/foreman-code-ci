@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { ComputerActivityListSchema } from '@foreman-code/contracts/computer-activity'
+import { ComputerActivityListSchema, ComputerRenameInputSchema, ComputerRenameResultSchema } from '@foreman-code/contracts/computer-activity'
 import { ComputerMaintenanceOperatorListSchema, ComputerMaintenanceOperatorListInputSchema, ComputerMaintenanceStartInputSchema,
   ComputerMaintenanceStartResultSchema } from '@foreman-code/contracts/computer-maintenance'
 import { ComputerAccountsListInputSchema, ComputerAccountsListSchema, ComputerSyncReadInputSchema,
@@ -27,6 +27,18 @@ export const buildComputerTools = [
     inputSchema: z.object({}).strict(), outputSchema: ComputerActivityListSchema,
     annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: false },
     run: (context) => context.services.computerActivity!.list(context.principal, 'mcp'),
+  }),
+  defineOperatorTool({
+    name: 'computer_rename',
+    requires: [['settings:update', 'global']],
+    enabled: s => !!s.computerActivity,
+    description: 'Give Main or a paired computer a new name. The name is trimmed, 1 to 60 characters, and shows everywhere '
+      + 'computers are listed: the sidebar, Settings → Computers, CI computer labels and execution-location choices. '
+      + 'Requires global settings:update. Supply target exactly as devices_list and computer_activity_list report it. '
+      + 'Last write wins; reuse commandId for an uncertain save. Read the persisted name back from computer_activity_list.',
+    inputSchema: ComputerRenameInputSchema, outputSchema: ComputerRenameResultSchema,
+    annotations: { readOnlyHint: false, idempotentHint: true, destructiveHint: false, openWorldHint: false },
+    run: (context, input) => context.services.computerActivity!.rename(context.principal, 'mcp', input),
   }),
   defineOperatorTool({
     name: 'computer_accounts_list',
@@ -65,6 +77,10 @@ export const buildComputerTools = [
       + 'MAINTENANCE_TASK_DEADLINE_EXCEEDED. '
       + 'workerReadiness reports WORKER_VERSION_SKEW, WORKER_BUNDLE_UNPUBLISHED or WORKER_UPDATING, with expected/running '
       + 'bundle identities, updatePhase and publicationError. New work requires the published bundle for that Worker target. '
+      + 'connections gives the same sign-in and MCP facts the Computers page shows as chips: connections.accounts lists '
+      + 'Codex, Claude and GitHub CLI with installed and signedIn (null when unreadable or the computer did not answer), and '
+      + 'connections.mcp.codex / connections.mcp.claude give the Foreman Code MCP state on that harness (installed, missing, '
+      + 'disabled, mismatch, inherited or legacy; null when the caller lacks harnesses:read or the configuration is unreadable). '
       + 'Requires global settings:read. Supply target to read one current installation independently. '
       + 'Successful settled status is cached for 20 seconds unless refresh is true; pending probes are shared. '
       + 'Failed observations report null status with observation.status unavailable, lastError, failedAt, lastSuccess and '

@@ -32,7 +32,7 @@ export function OperatorDecisionArea({ conversation, selectedId, requestId, reti
     || (respondVariables?.id === selectedId && respond.error) || (cancelVariables?.id === selectedId && cancel.error))) return null
   return <div className="operator-chat-decision-area">
     {conversation.pendingInteraction && !conversation.responseAvailability?.available ? <p role="status">{conversation.responseAvailability?.message ?? 'Refresh this conversation to check reply availability.'}</p> : null}
-    {conversation.pendingInteraction && conversation.responseDelivery !== 'offered' ? <Alert tone="warning" title="Response delivery is being reconciled">It will not be sent twice.</Alert> : null}
+    {conversation.pendingInteraction && conversation.responseDelivery !== 'offered' ? <Alert tone="warning" title="Response delivery is being reconciled" /> : null}
     <div className="operator-chat-feedback">
       {conversation.error ? <Alert live tone="danger" title="Operator turn failed">{conversation.error}</Alert> : null}
       {respondVariables && respondVariables.id === selectedId && respondVariables.input.requestId === requestId && respond.error instanceof Error ? <Alert live tone="danger" title="Approval response failed">{respond.error.message}</Alert> : null}

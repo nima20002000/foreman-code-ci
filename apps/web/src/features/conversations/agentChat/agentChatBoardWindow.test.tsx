@@ -12,13 +12,17 @@ import { inspectionBoardFixture } from '../../workflow-board/inspect/inspectionF
 import { useConversationDraftStore } from '../conversationDraftStore'
 import { providerFixture } from './f7.testSupport'
 import { installChatSource } from './testSupport'
+import { useChatWindowsStore } from './agentChatWindows'
 
 installBoardTestLifecycle()
-afterEach(() => useConversationDraftStore.getState().clearAllDrafts())
+afterEach(() => {
+  useConversationDraftStore.getState().clearAllDrafts()
+  useChatWindowsStore.setState({ open: {}, frames: {}, focus: {} })
+})
 
-/** Actual Board route/editor/canvas/popover with MSW. JSDOM has no layout engine: the viewport
+/** Actual Board route/editor/canvas/chat window with MSW. JSDOM has no layout engine: the viewport
  * dimensions below exercise placement branches and structure, NOT real pixel visibility. */
-describe('G7 T-03/T-06/T-08/RISK-01 mounted Board action area', () => {
+describe('mounted Board chat window action area', () => {
   it.each([[1400, 812], [320, 568], [390, 844]])('keeps actions outside transcript scrolling at %ix%i', async (width, height) => {
     vi.stubGlobal('innerWidth', width); vi.stubGlobal('innerHeight', height); installChatSource()
     const viewport = Object.assign(new EventTarget(), { width, height, offsetTop: 0, offsetLeft: 0 })
@@ -42,6 +46,7 @@ describe('G7 T-03/T-06/T-08/RISK-01 mounted Board action area', () => {
     await userEvent.click(trigger)
     const dialog = await screen.findByRole('dialog', { name: `${fixture.first.name!} chat` })
     expect(dialog).toHaveAttribute('data-panel', 'chat')
+    expect(dialog).toHaveAttribute('aria-modal', 'false')
     const input = await within(dialog).findByRole('textbox', { name: 'Message' })
     await waitFor(() => expect(input).toHaveFocus())
     fireEvent.change(input, { target: { value: 'Control input at a narrow width' } })
@@ -51,8 +56,8 @@ describe('G7 T-03/T-06/T-08/RISK-01 mounted Board action area', () => {
     expect(transcript).not.toContainElement(actions)
     expect(actions.parentElement).toBe(transcript.closest('.conversation-viewport')!.parentElement)
     expect(within(transcript).getByRole('status', { name: `${fixture.first.name!} is working` })).toBeInTheDocument()
-    // Native session controls (context usage and its popover) sit between Attach and Queue in the same action area.
-    expect(actions).toContainElement(await within(dialog).findByLabelText('Session options'))
+    // Plan mode is entered only by typing /plan, so the action area has no session options.
+    expect(within(dialog).queryByLabelText('Session options')).not.toBeInTheDocument()
     for (const name of ['Attach files', 'Queue message', 'Steer', 'Interrupt and send', 'Stop chat']) {
       expect(within(actions).getByRole('button', { name })).toBeEnabled()
     }
@@ -60,8 +65,10 @@ describe('G7 T-03/T-06/T-08/RISK-01 mounted Board action area', () => {
       await userEvent.tab()
     }
     expect(within(actions).getByRole('button', { name: 'Stop chat' })).toHaveFocus()
-    // Inspecting/scrolling history must not move controls into it or dismiss the popover.
+    // Inspecting history or clicking the Board keeps the non-modal chat window open.
     fireEvent.scroll(transcript, { target: { scrollTop: 10 } })
+    fireEvent.click(document.querySelector<HTMLElement>('.pinned-run-canvas .react-flow__pane')!)
+    fireEvent.mouseDown(document.body)
     expect(within(actions).getByRole('button', { name: 'Stop chat' })).toBeInTheDocument()
     expect(screen.getByRole('dialog', { name: `${fixture.first.name!} chat` })).toBe(dialog)
     await waitFor(() => expect((dialog as HTMLElement).style.getPropertyValue('--agent-chat-viewport-height')).toBe(`${height}px`))
