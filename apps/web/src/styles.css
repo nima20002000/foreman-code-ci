@@ -85,12 +85,18 @@ a {
 }
 
 button:focus-visible,
-a:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+/* Text fields: a crisp accent border, no offset halo. */
 textarea:focus-visible,
 input:focus-visible,
 select:focus-visible {
-  outline: 2px solid var(--color-focus);
-  outline-offset: 2px;
+  border-color: var(--color-focus);
+  outline: 1px solid var(--color-focus);
+  outline-offset: 0;
 }
 
 .panel-kicker,
@@ -742,6 +748,12 @@ h1 {
 .settings-card-copy strong {
   font-size: 13px;
   font-weight: 600;
+}
+
+.settings-card-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
 }
 
 .settings-card-copy small {
