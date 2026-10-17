@@ -354,18 +354,27 @@ async function prefetchRemoteWorkflowPhysical(input: RemoteWorkflowPhysicalVerif
       }
     }
   }
-  assertRegisteredConnection()
-  const reply = await request({ method: 'physical-readout', intent: receipt.intent, placement,
-    receiptSequence: receipt.sequence, sourceDigest: remoteWorkflowSourceDigest(source) })
-  if (reply.bytes !== undefined) return unavailable('readout_binary')
-  const readout = await readPhysicalReadout(reply.payload, async metadata => {
+  let readout: RemoteWorkflowPhysicalReadout
+  for (let attempt = 0; ; attempt++) {
     assertRegisteredConnection()
-    const next = await request({ method: 'physical-readout', intent: receipt.intent, placement,
-      receiptSequence: receipt.sequence, sourceDigest: remoteWorkflowSourceDigest(source), metadata })
-    assertRegisteredConnection()
-    if (next.bytes !== undefined) return unavailable('readout_binary')
-    return next.payload
-  }, signal)
+    try {
+      const reply = await request({ method: 'physical-readout', intent: receipt.intent, placement,
+        receiptSequence: receipt.sequence, sourceDigest: remoteWorkflowSourceDigest(source) })
+      if (reply.bytes !== undefined) return unavailable('readout_binary')
+      readout = await readPhysicalReadout(reply.payload, async metadata => {
+        assertRegisteredConnection()
+        const next = await request({ method: 'physical-readout', intent: receipt.intent, placement,
+          receiptSequence: receipt.sequence, sourceDigest: remoteWorkflowSourceDigest(source), metadata })
+        assertRegisteredConnection()
+        if (next.bytes !== undefined) return unavailable('readout_binary')
+        return next.payload
+      }, signal)
+      break
+    } catch (error) {
+      // Expired pages require a fresh observation; bytes from different snapshots cannot be combined.
+      if (deviceApplicationFailure(error).code !== 'transfer-expired' || attempt >= 4) throw error
+    }
+  }
   const expiresAt = Math.min(Date.now() + 60_000, Date.parse(readout.expiresAt))
   if (!same(readout.receipt, receipt)) return unavailable('readout_receipt')
   assertSource(readout, source, placement)
