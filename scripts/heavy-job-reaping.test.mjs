@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
 import { once } from 'node:events'
 import { randomUUID } from 'node:crypto'
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
@@ -57,6 +57,59 @@ function fixture(t, pathKind = 'direct') {
     { cwd: root, env, encoding: 'utf8', timeout: 4000, killSignal: 'SIGKILL' })
   return { root, common, state, env, record, occupy, hook, run }
 }
+
+test('reaps an empty active directory older than the ownership grace and admits the next job', t => {
+  const f = fixture(t)
+  const active = join(f.state, 'active')
+  mkdirSync(active)
+  const earlier = new Date(Date.now() - 20_000)
+  utimesSync(active, earlier, earlier)
+
+  const result = f.run()
+  assert.equal(result.status, 0, result.stderr || result.error?.message)
+  assert.match(result.stdout, /replacement admitted/)
+  assert.equal(existsSync(active), false, 'the replacement did not release its active directory')
+})
+
+test('waits for a fresh empty active directory within the ownership grace', t => {
+  const f = fixture(t)
+  const active = join(f.state, 'active')
+  mkdirSync(active)
+
+  const result = f.run()
+  assert.equal(result.error?.code, 'ETIMEDOUT', result.stderr)
+  assert.match(result.stdout, /waiting for project test\/build slot/)
+  assert.doesNotMatch(result.stdout, /replacement admitted/)
+  assert.equal(existsSync(active), true)
+  assert.deepEqual(readdirSync(active), [])
+})
+
+test('preserves a readable legacy owner after the ownership grace', t => {
+  const f = fixture(t)
+  const active = join(f.state, 'active')
+  mkdirSync(active)
+  const owner = { common: f.common, pid: process.pid, token: 'legacy-owner' }
+  writeFileSync(join(active, 'owner.json'), JSON.stringify(owner))
+  const earlier = new Date(Date.now() - 20_000)
+  utimesSync(active, earlier, earlier)
+
+  const result = f.run()
+  assert.equal(result.error?.code, 'ETIMEDOUT', result.stderr)
+  assert.match(result.stdout, /waiting for project test\/build slot/)
+  assert.doesNotMatch(result.stdout, /replacement admitted/)
+  assert.deepEqual(JSON.parse(readFileSync(join(active, 'owner.json'), 'utf8')), owner)
+})
+
+test('release removes the active directory and allows another job to run', t => {
+  const f = fixture(t)
+  for (let job = 0; job < 2; job++) {
+    const result = f.run()
+    assert.equal(result.status, 0, result.stderr || result.error?.message)
+    assert.match(result.stdout, /replacement admitted/)
+    assert.equal(existsSync(join(f.state, 'active')), false)
+    for (const folder of ['queue', 'running']) assert.deepEqual(readdirSync(join(f.state, folder)), [])
+  }
+})
 
 for (const slots of ['active only', 'running and active']) {
   test(`reaps a previous boot's held slot and admits the next job (${slots})`, t => {

@@ -20,7 +20,10 @@ function ports(overrides: { versions?: Record<string, string | null>; sudo?: boo
   const versions: Record<string, string | null> = { codex: 'codex-cli 0.160.0', claude: '2.1.19 (Claude Code)', ...overrides.versions }
   const value: MaintenancePorts = {
     environment: { HOME: '/home/owner' },
-    find: async name => name in versions && versions[name] === null ? null : ['codex', 'claude', 'npm', 'apt-get'].includes(name) ? `/usr/bin/${name}` : null,
+    find: async name => {
+      if (name in versions && versions[name] === null) return null
+      return ['codex', 'claude', 'npm', 'apt-get', 'npx'].includes(name) ? `/usr/bin/${name}` : null
+    },
     run: async (binary, args) => {
       runs.push({ binary, args })
       if (overrides.fail?.({ binary, args })) return { code: 1, stdout: '', stderr: 'boom' }

@@ -1,8 +1,6 @@
-import { join } from 'node:path'
-import { ProviderAccountIdSchema, ProviderAccountSchema, type ProviderAccountBinding } from '@foreman-code/contracts/provider-accounts'
+import { type ProviderAccountBinding } from '@foreman-code/contracts/provider-accounts'
 import type { ProviderAccountResolver } from '../provider-accounts/service.js'
-import { assertWorkerProviderAccountBinding } from '../provider-accounts/workerOperations.js'
-import { readRecord } from './recovery/storage.js'
+import { readInstalledWorkerAccountBinding } from './installedWorkerAccountBinding.js'
 import { pinnedCodexAccountEnvironment } from './providerAccountRuntime.js'
 import { isDeepStrictEqual } from 'node:util'
 import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
@@ -19,6 +17,7 @@ import { createInstalledNativeQualifier } from './installedNativeQualification.j
 import type { NativeProcessRegistry } from './recovery/processRegistry.js'
 import { createInstalledClaudeQualifier } from './installedClaudeQualification.js'
 import { createInstalledClaudeOperatorInspection } from './installedClaudeOperatorInspection.js'
+import { createInstalledWorkerHarnessOptions } from './installedWorkerHarnessOptions.js'
 import { PayloadFingerprintCache } from './payloadFingerprintCache.js'
 
 export async function createInstalledWorkerProfileChecks(input: {
@@ -35,10 +34,12 @@ export async function createInstalledWorkerProfileChecks(input: {
   const qualifiers = new Set<ReturnType<typeof createInstalledNativeQualifier>>()
   const claude = createInstalledClaudeQualifier(input)
   const claudeInspection = createInstalledClaudeOperatorInspection(input)
+  const options = createInstalledWorkerHarnessOptions(input)
   let closing = false
   const extension = createHostHarnessProfileCheckExtension({
     hostRef: { kind: 'device', mainId: input.pairing.mainId, deviceId: input.pairing.deviceId },
     applicationInstallationId: input.pairing.workerInstallationId,
+    discoverOptions: (request, context) => options.discover(request, context),
     inspectConfiguration: async (request, context) => {
       if (closing) throw new DomainError('HARNESS_INVENTORY_STALE', 'Worker configuration inspections are stopping.', 409)
       return claudeInspection.inspect(request, context)
@@ -55,14 +56,9 @@ export async function createInstalledWorkerProfileChecks(input: {
       const accounts = input.accounts?.()
       let accountBinding: ProviderAccountBinding | undefined
       if (accountId) {
-        ProviderAccountIdSchema.parse(accountId)
-        const raw = readRecord(join(input.stateDirectory, 'provider-account-slots', `${accountId}.json`))
-        const account = raw === undefined ? undefined : ProviderAccountSchema.parse(raw)
-        if (!account || account.id !== accountId || account.provider !== 'codex' || account.removedAt
-          || !account.binding || !accounts) throw new DomainError(
-          'PROVIDER_ACCOUNT_UNAVAILABLE', 'The selected Worker account is unavailable.', 409)
-        accountBinding = account.binding
-        assertWorkerProviderAccountBinding(accountBinding, input.current())
+        if (!accounts) throw new DomainError('PROVIDER_ACCOUNT_UNAVAILABLE',
+          'The selected Worker account resolver is unavailable.', 409)
+        accountBinding = readInstalledWorkerAccountBinding({ ...input, provider: 'codex', accountId })
       }
       const accountEnvironment = pinnedCodexAccountEnvironment(accounts, accountId,
         undefined, undefined, accountBinding)
@@ -119,7 +115,7 @@ export async function createInstalledWorkerProfileChecks(input: {
   return { extension, async close() {
     closing = true
     const results = await Promise.allSettled([
-      claude.close(), claudeInspection.close(), ...[...qualifiers].map(qualifier => qualifier.close()),
+      options.close(), claude.close(), claudeInspection.close(), ...[...qualifiers].map(qualifier => qualifier.close()),
     ])
     const errors = results.flatMap(result => result.status === 'rejected' ? [result.reason] : [])
     if (errors.length) throw new AggregateError(errors, 'Worker profile checks did not close.')

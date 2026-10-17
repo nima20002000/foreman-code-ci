@@ -111,14 +111,18 @@ it('sets identity safely when Agents allocate worktrees concurrently in one repo
 
 it('sets identity on a Main Run worktree and repairs it when the persisted worktree is reused', async () => {
   const f = await fixture()
-  let persisted: { repository_root: string; record: unknown } | undefined
+  let persisted: { repository_root: string; record: unknown; checkout_root: string; cleanup_attempts: number } | undefined
   const sql = {
     query: vi.fn(async (statement: string, values?: unknown[]) => {
       if (statement.startsWith('select pg_try_advisory_lock')) return { rows: [{ locked: true }] }
       if (statement.startsWith('select repository_root,record')) return { rows: persisted ? [persisted] : [] }
       if (statement.startsWith('select execution_state')) return { rows: [{ execution_state: 'running' }] }
       if (statement.startsWith('insert into run_worktrees')) {
-        persisted = { repository_root: values![1] as string, record: JSON.parse(values![2] as string) }
+        persisted = { repository_root: values![1] as string, record: JSON.parse(values![2] as string),
+          checkout_root: values![4] as string, cleanup_attempts: 0 }
+      }
+      if (statement.startsWith('update run_worktrees') && persisted) {
+        persisted.record = JSON.parse(values![1] as string)
       }
       return { rows: [] }
     }),
