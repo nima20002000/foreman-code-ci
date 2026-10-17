@@ -35,7 +35,7 @@ PASS combined predecessor (historical syntax check; split files have not been ch
   apps/api/test/sch06-agent-chat-schedule.integration.test.ts
   apps/api/test/sch06-agent-chat-historical.integration.test.ts
   apps/api/test/sch06-agent-chat-query.integration.test.ts
-PASS apps/api/test/sch06-agent-chat.test.ts
+PASS apps/api/test/historical-agent-chat-identity.test.ts
 PASS packages/contracts/src/selectedRunChat.ts
 PASS packages/contracts/test/selected-run-chat.test.ts
 Files: 9; syntax errors: 0. NOT semantic typechecking.

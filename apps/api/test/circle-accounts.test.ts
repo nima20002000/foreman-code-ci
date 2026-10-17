@@ -13,6 +13,10 @@ import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { CircleAccountDirectory } from '../src/modules/ci-host/circleAccounts.js'
 import { CircleAccountsManagementService } from '../src/modules/settings/circleAccounts.js'
 import { PostgresFoundationSettingsRepository } from '../src/modules/settings/foundation.js'
+import { deferred } from './helpers/deferred.js'
+import type { CircleAccountStatusReader } from '../src/modules/ci-host/circleAccounts.js'
+import { claimCiSlot } from '../src/modules/ci-host/cloudSlots.js'
+import { CiRunRecordSchema } from '@foreman-code/contracts'
 import { migratedDatabase } from './helpers/migratedDatabase.js'
 
 const cleanups: (() => Promise<void>)[] = []
@@ -33,13 +37,13 @@ async function fixture() {
     await mkdir(directory, { recursive: true, mode: 0o700 })
     await writeFile(join(directory, 'config.yml'), `host: https://circleci.com\ntoken: ${canary}\n`, { mode: 0o600 })
   }
-  async function app() {
+  async function app(status?: CircleAccountStatusReader) {
     const repository = new PostgresFoundationSettingsRepository(db.pool)
     const commands = new PostgresCommandCoordinator(db.pool)
     const directory = new CircleAccountDirectory({ run: vi.fn(), now: () => new Date(), cpus: 4, memoryBytes: 2 ** 30 },
       { list: async () => (await repository.getCircleAccounts()).value.accounts },
       { configRoot: credentials, environment: { CIRCLE_TOKEN: 'fixture-primary' } })
-    const circleAccounts = new CircleAccountsManagementService(repository, commands, directory, async id => {
+    const circleAccounts = new CircleAccountsManagementService(repository, commands, status ?? directory, async id => {
       expect((await repository.getCircleAccounts()).revision).toBeGreaterThan(0)
       directory.invalidate(id)
       changes.push(id)
@@ -194,4 +198,67 @@ it('blocks removal for assigned and collecting current, smoke, retry and history
   const history = await f.db.pool.query('select state, record from ci_runs')
   expect(history.rows).toHaveLength(references.length)
   expect(history.rows.every(row => row.state === 'passed' && row.record.collection === 'complete')).toBe(true)
+})
+
+it.each(['add', 'remove'] as const)('releases the account registry lock before enriching %s status', async operation => {
+  const f = await fixture()
+  const owner = await f.issue(['settings:read', 'settings:update'])
+  const normal = await f.app()
+  await add(await normal.connect(owner.token))
+  const entered = deferred()
+  const release = deferred()
+  const blocked = await f.app({ read: async () => {
+    entered.resolve()
+    await release.promise
+    return { tokenConfigured: false, ready: false, reasons: [], orgs: [] }
+  } })
+  const client = await blocked.connect(owner.token)
+  const mutation = client.callTool({ name: operation === 'add' ? 'circle_account_add' : 'circle_account_remove',
+    arguments: operation === 'add' ? { account: { ...reserve, label: 'Renamed' } } : { id: 'reserve' },
+  })
+  let claim: ReturnType<typeof claimCiSlot> | undefined
+  try {
+    await entered.promise
+    await f.db.pool.query("insert into workspaces(id,record) values('fixture-workspace','{}'::jsonb)")
+    const run = CiRunRecordSchema.parse({ id: randomUUID(), workspaceId: 'fixture-workspace', groupId: randomUUID(),
+      suite: 'lint', commit: 'a'.repeat(40), repository: 'fixture/source', ciMirror: 'fixture-delta/ci-mirror',
+      partition: null, state: 'queued', computer: null, step: null, exitCode: null, message: null,
+      queuedAt: new Date().toISOString(), startedAt: null, finishedAt: null,
+      initiator: { principalId: owner.principal.id, executionId: null },
+    })
+    await f.db.pool.query('insert into ci_runs(id,workspace_id,group_id,state,record) values($1,$2,$3,$4,$5)',
+      [run.id, run.workspaceId, run.groupId, run.state, JSON.stringify(run)])
+    const hostRef = { kind: 'cloud' as const, mainId: 'fixture-main', provider: 'circleci' as const,
+      circleAccountId: 'reserve', account: 'fixture-delta', slot: 0 }
+    let settled = false
+    claim = claimCiSlot(f.db.pool, run, { key: 'fixture-main:cloud:circleci~reserve@fixture-delta:0',
+      label: 'Fixture standby', priority: 1, hostRef }, { operation: 'start', runId: run.id,
+      repository: run.repository, ciMirror: run.ciMirror, commit: run.commit, suite: run.suite, scope: run.scope,
+    }).then(result => { settled = true; return result })
+    await expect.poll(() => settled).toBe(true)
+    if (operation === 'add') expect(await claim).toMatchObject({ computer: { hostRef } })
+    else expect(await claim).toBeNull()
+  } finally {
+    release.resolve()
+    expect((await mutation).isError).not.toBe(true)
+    await claim
+  }
+})
+
+it('refreshes mutation replay status while receipts retain only committed registration metadata', async () => {
+  const f = await fixture()
+  const owner = await f.issue(['settings:read', 'settings:update'])
+  const app = await f.app()
+  const client = await app.connect(owner.token)
+  const commandId = randomUUID()
+  const saved = await add(client, reserve, { commandId })
+  const receipts = await f.db.pool.query('select result from management_command_receipts where command_id=$1', [commandId])
+  expect(receipts.rows[0].result.value.accounts).toContainEqual(reserve)
+  expect(receipts.rows[0].result.value.accounts[0]).not.toHaveProperty('tokenConfigured')
+  await f.profile()
+  const restarted = await f.app()
+  const replay = await add(await restarted.connect(owner.token), reserve, { commandId })
+  expect(replay).toMatchObject({ replayed: true, value: { revision: saved.value.revision,
+    versionId: saved.value.versionId, value: { accounts: [expect.any(Object),
+      expect.objectContaining({ id: 'reserve', tokenConfigured: true })] } } })
 })

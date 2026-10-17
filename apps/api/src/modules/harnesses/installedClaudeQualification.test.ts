@@ -15,7 +15,7 @@ vi.mock('./installedClaudeInspection.js', () => ({ inspectInstalledClaude: nativ
 vi.mock('./claudeSdk/currentPin.js', () => ({ createClaudeCurrentPinResolver: () => native.resolve }))
 vi.mock('./claudeSdk/nativeProfileQualification.js', () => ({ qualifyClaudeNativeProfile: native.qualify }))
 
-it.each([[true, undefined], [false, undefined], [true, 'api-key']] as const)(
+it.each([[true, undefined], [false, undefined], [true, 'api-key'], [true, 'subscription']] as const)(
   'uses native behavior qualification for newer Claude versions (compatible: %s, account: %s)', async (compatible, authMode) => {
   const cache = join(homedir(), '.cache/foreman-tmp')
   await mkdir(cache, { recursive: true })
@@ -78,7 +78,11 @@ it.each([[true, undefined], [false, undefined], [true, 'api-key']] as const)(
     if (authMode) {
       expect(resolve).toHaveBeenCalledWith('claude', accountId,
         expect.objectContaining({ acceptedBinding: binding, allowDefault: false }))
-      expect(native.qualify).toHaveBeenLastCalledWith(expect.objectContaining({ apiKey: 'fixture-key' }))
+      if (authMode === 'api-key') {
+        expect(native.qualify).toHaveBeenLastCalledWith(expect.objectContaining({ apiKey: 'fixture-key' }))
+      } else {
+        expect(native.qualify.mock.calls.at(-1)?.[0].apiKey).toBeUndefined()
+      }
     }
   } finally { await qualifier.close(); await rm(directory, { recursive: true, force: true }) }
 })

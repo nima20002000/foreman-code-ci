@@ -3,10 +3,16 @@
 Fixture caches keep the newest two complete entries per fixture kind when a new
 entry is published. Builders hold exclusive kernel locks; returned paths hold
 shared locks for the caller's process lifetime. Older locked entries remain until
-a later publication can reclaim them. Lock files remain so concurrent openers
+a later publication can reclaim them. Before population and publication,
+abandoned pending directories are removed only while holding their content key's
+exclusive lock; active builders keep their pending bytes. Lock files remain so concurrent openers
 always coordinate on the same inode. Installed API fixture creation also removes
 shared dependency trees unreferenced by the retained installed fixtures, under the
-same builder lock. A retained fixture's dependency symlinks must remain valid.
+same builder lock. Restart fixtures own a separate dependency namespace;
+independent deployment tests keep dependencies inside their invocation-owned
+fixture directories. A retained fixture's dependency symlinks must remain valid.
+Previously shared dependency trees remain untouched because older consumers may
+still be using them.
 
 CI executor directories and Main's fallback log tails share the existing
 three-day window and newest-200-per-computer floor. Main clears a tail only after

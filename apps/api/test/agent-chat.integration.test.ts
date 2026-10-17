@@ -399,7 +399,8 @@ describe('selected-Agent chat service', { timeout: 60_000 }, () => {
     }
   })
 
-  it('reads saved Agent controls while a native owner retires during the pending-interaction read', async () => {
+  it.each(['NATIVE_MANAGER_DISPOSED', 'WORKER_CONVERSATION_CALLBACK_DENIED'] as const)(
+    'reads saved Agent controls when a retiring pending-interaction read fails with %s', async code => {
     const { service } = makeService()
     const workspaceId = fixture.scope.workspaceId
     const app = buildApp({ logger: false,
@@ -429,7 +430,7 @@ describe('selected-Agent chat service', { timeout: 60_000 }, () => {
       const retirement = new Promise<void>(resolve => { ownerRetired = resolve; releasePendingRead = resolve })
       let firstPending = true
       let disposed = false
-      const disposedError = new DomainError('NATIVE_MANAGER_DISPOSED', 'The native allocation is disposed.', 409)
+      const disposedError = new DomainError(code, 'The native allocation is disposed.', 409)
       const pending = vi.fn(async () => {
         if (firstPending) {
           firstPending = false
@@ -487,6 +488,20 @@ describe('selected-Agent chat service', { timeout: 60_000 }, () => {
       await app.close()
       await service.shutdown()
     }
+  })
+
+  it('preserves a live Worker callback denial during the pending-interaction read', async () => {
+    const { service } = makeService()
+    const workspaceId = fixture.scope.workspaceId
+    try {
+      await service.send(writer, workspaceId, request(codexNode, 'Complete a native turn', null))
+      await settled(service, () => service.read(writer, workspaceId, query(codexNode)))
+      const denial = new DomainError('WORKER_CONVERSATION_CALLBACK_DENIED', 'The live callback was denied.', 403)
+      Object.assign(FakeNative.all[0]!, { pending: async () => { throw denial } })
+      await expect(service.read(writer, workspaceId, query(codexNode))).rejects.toMatchObject({
+        code: 'WORKER_CONVERSATION_CALLBACK_DENIED', message: 'The live callback was denied.', status: 403,
+      })
+    } finally { await service.shutdown() }
   })
 
   it.each(['codex', 'claude'] as const)('reads saved %s Agent controls through HTTP and MCP after unload and restart', async harness => {
