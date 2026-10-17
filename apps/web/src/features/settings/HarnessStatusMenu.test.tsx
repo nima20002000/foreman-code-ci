@@ -135,12 +135,7 @@ describe('HarnessStatusMenu', () => {
       )
       open.mockRestore()
       expect(link.querySelector('.harness-status-light')).toHaveClass(`harness-status-light--${state}`)
-      await expectDetails(link, new RegExp(`${name}.*${label}`))
-      const help = screen.getByRole('button', { name: 'About Harness' })
-      expect(screen.queryByText('Sign-in and profile qualification are checked separately before execution.')).not.toBeInTheDocument()
-      act(() => help.focus())
-      expect(help).toHaveAccessibleDescription('Sign-in and profile qualification are checked separately before execution.')
-      act(() => help.blur())
+      await expectDetails(link, new RegExp(`${name}.*${label}.*profile qualification are checked separately`))
       act(() => link.blur())
     }
   })
