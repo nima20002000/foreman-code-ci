@@ -20,6 +20,7 @@ async function fixture(options: { installed?: boolean; checksum?: string; failSt
   const binary = join(home, '.local', 'bin', 'syncthing')
   const config = join(home, '.local', 'state', 'foreman-code', 'syncthing', 'config.xml')
   let running = false
+  let healthy = true
   let failStart = options.failStart ?? false
   const calls: { file: string; args: string[] }[] = []
   mock.ports = {
@@ -43,6 +44,7 @@ async function fixture(options: { installed?: boolean; checksum?: string; failSt
       if (args.includes('enable')) {
         code = failStart ? 1 : 0
         running = !failStart
+        healthy = !failStart
       }
       return { code, stdout, stderr: code ? 'user service failed' : '' }
     },
@@ -53,6 +55,7 @@ async function fixture(options: { installed?: boolean; checksum?: string; failSt
   const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
     if (url.startsWith('http://127.0.0.1:8385/')) {
       expect(new Headers(init?.headers).get('X-API-Key')).toBe(/<apikey>([^<]+)<\/apikey>/u.exec(await readFile(config, 'utf8'))?.[1])
+      if (url.endsWith('/rest/system/status') && !healthy) return new Response('unavailable', { status: 503 })
       if (url.endsWith('/rest/config/options')) {
         settings.push(JSON.parse(init?.body as string) as unknown)
         return new Response('null')
@@ -66,13 +69,16 @@ async function fixture(options: { installed?: boolean; checksum?: string; failSt
   })
   vi.stubGlobal('fetch', fetcher)
   return { home, binary, config, calls, downloaded, settings, ports: systemSyncthingPorts({ HOME: home }),
-    allowStart: () => { failStart = false }, stop: () => { running = false } }
+    allowStart: () => { failStart = false }, stop: () => { running = false },
+    failHealth: () => { healthy = false } }
 }
 
 it('installs checksum-verified Syncthing, starts its user service and configures Tailscale through local REST', async () => {
   const f = await fixture()
   const identity = await f.ports.prepare()
   expect(identity).toEqual({ deviceId: mainSyncId, address: '100.64.0.1', rootPath: join(f.home, '.local/share/foreman-code/shared-files') })
+  expect(f.calls.filter(call => call.args.includes('daemon-reload'))).toHaveLength(1)
+  expect(f.calls.filter(call => call.args.includes('enable'))).toHaveLength(1)
   expect(await readFile(f.binary, 'utf8')).toBe('installed binary')
   expect((await stat(f.binary)).mode & 0o777).toBe(0o755)
   expect(await f.ports.available()).toEqual({ installed: true, running: true })
@@ -155,7 +161,7 @@ it('reuses unchanged preparation while checking service liveness and refreshes a
   expect(f.calls).toEqual([{ file: 'systemctl', args: ['--user', 'is-active', 'foreman-syncthing.service'] }])
   vi.advanceTimersByTime(30_000)
   expect(await f.ports.prepare()).toEqual(first)
-  expect(f.calls.some(call => call.args.includes('daemon-reload'))).toBe(true)
+  expect(f.calls.some(call => call.file === 'tailscale')).toBe(true)
 })
 
 it.each(['binary', 'config', 'unit', 'stopped'] as const)('reprepares after %s changes', async changed => {
@@ -173,7 +179,9 @@ it.each(['binary', 'config', 'unit', 'stopped'] as const)('reprepares after %s c
   if (changed === 'unit') await writeFile(join(f.home, '.config', 'systemd', 'user', 'foreman-syncthing.service'), 'changed')
   if (changed === 'stopped') f.stop()
   expect(await f.ports.prepare()).toEqual(first)
-  expect(f.calls.some(call => call.args.includes('daemon-reload'))).toBe(true)
+  expect(f.calls.some(call => call.file === 'tailscale')).toBe(true)
+  expect(f.calls.filter(call => call.args.includes('daemon-reload'))).toHaveLength(changed === 'unit' ? 1 : 0)
+  expect(f.calls.filter(call => call.args.includes('enable'))).toHaveLength(changed === 'stopped' ? 1 : 0)
   expect((await f.ports.available()).running).toBe(true)
 })
 
@@ -184,7 +192,7 @@ it('refreshes preparation after the clock moves backwards', async () => {
   f.calls.length = 0
   vi.setSystemTime(Date.now() - 1000)
   expect(await f.ports.prepare()).toEqual(first)
-  expect(f.calls.some(call => call.args.includes('daemon-reload'))).toBe(true)
+  expect(f.calls.some(call => call.file === 'tailscale')).toBe(true)
 })
 
 it('invalidates cached availability when preparation restarts the service', async () => {
@@ -199,4 +207,45 @@ it('invalidates cached availability when preparation restarts the service', asyn
   expect(await f.ports.available()).toEqual({ installed: true, running: true })
   await f.ports.available()
   expect(f.calls.filter(call => call.args.includes('is-active'))).toHaveLength(1)
+})
+
+
+it.each(['expired', 'fresh instance'] as const)('keeps an unchanged healthy install untouched after %s', async cache => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  const f = await fixture()
+  const first = await f.ports.prepare()
+  const unit = join(f.home, '.config', 'systemd', 'user', 'foreman-syncthing.service')
+  const before = await stat(unit, { bigint: true })
+  f.calls.length = 0
+  vi.advanceTimersByTime(30_000)
+  const ports = cache === 'expired' ? f.ports : systemSyncthingPorts({ HOME: f.home })
+  expect(await ports.prepare()).toEqual(first)
+  expect(f.calls.filter(call => call.args.includes('daemon-reload'))).toEqual([])
+  expect(f.calls.filter(call => call.args.includes('enable'))).toEqual([])
+  const after = await stat(unit, { bigint: true })
+  expect(after.mtimeNs).toBe(before.mtimeNs)
+  expect(after.ctimeNs).toBe(before.ctimeNs)
+})
+
+it('reloads a changed unit and preserves a healthy running service', async () => {
+  const f = await fixture()
+  const first = await f.ports.prepare()
+  const unit = join(f.home, '.config', 'systemd', 'user', 'foreman-syncthing.service')
+  const original = await readFile(unit, 'utf8')
+  await writeFile(unit, 'outdated unit')
+  f.calls.length = 0
+  expect(await f.ports.prepare()).toEqual(first)
+  expect(await readFile(unit, 'utf8')).toBe(original)
+  expect(f.calls.filter(call => call.args.includes('daemon-reload'))).toHaveLength(1)
+  expect(f.calls.filter(call => call.args.includes('enable'))).toEqual([])
+})
+
+it('retries startup when an active service fails its REST health check', async () => {
+  const f = await fixture()
+  const first = await f.ports.prepare()
+  f.failHealth()
+  f.calls.length = 0
+  expect(await f.ports.prepare()).toEqual(first)
+  expect(f.calls.filter(call => call.args.includes('enable'))).toHaveLength(1)
+  expect(f.calls.filter(call => call.args.includes('daemon-reload'))).toEqual([])
 })
