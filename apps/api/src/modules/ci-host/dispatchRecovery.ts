@@ -85,8 +85,14 @@ async function sendAssignedDispatch(services: DispatchServices, run: CiRunRecord
     services.rejected?.(run, computer, error)
     return (error as DomainError).code === 'CI_HOST_BUSY' ? 'busy' : 'rejected'
   }
-  await services.settle(run, computer, reply.run, { client })
-  return 'settled'
+  try {
+    await services.settle(run, computer, reply.run, { client })
+    return 'settled'
+  } catch (error) {
+    log.warn({ operation: 'settle accepted CI start', err: error, runId: run.id, computer: computer.key },
+      'CI start accepted; retaining its assignment until settlement is reconciled')
+    return 'pending'
+  }
 }
 
 export async function reconcileCiHostStart(services: DispatchServices, run: CiRunRecord,
