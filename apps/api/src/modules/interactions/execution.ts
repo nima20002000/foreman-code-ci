@@ -134,7 +134,6 @@ interface OwnedNativeSession {
   stopWaitingRenewal?: () => Promise<void>
   stopReviewerRenewal?: () => Promise<void>
   reviewerRenewal?: Promise<void>
-  reviewerRecoveryPending?: boolean
   pendingApprovalRestoration?: boolean
   retainedObservationError?: unknown
 }
@@ -628,7 +627,9 @@ export class ApprovalExecutionCoordinator {
     private readonly managers: NativeSessionManagerResolver,
     private readonly activeTimeoutMs: number,
     private readonly credentials?: ExecutionCredentialProvider,
-    private readonly validateContinuation?: (executionId: string, signal?: AbortSignal) => Promise<void>,
+    private readonly validateContinuation?: ((executionId: string, signal?: AbortSignal) => Promise<void>) & {
+      forRestart?(executionId: string): Promise<void>
+    },
     private readonly workflowClosures?: WorkflowClosureStore,
     private readonly repeatReviewerBindings?: RepeatReviewerBindings,
     private readonly nativeCaptures?: WorkflowNativeCapturePort,
@@ -1401,7 +1402,7 @@ export class ApprovalExecutionCoordinator {
     if (existing) {
       if (existing.failed) throw new DomainError('REVIEWER_AUTHORITY_LOST',
         'The original remote reviewer recovery did not complete.', 409)
-      if (!existing.reviewerRecoveryPending) return existing.manager.retainsReviewerSession
+      return existing.manager.retainsReviewerSession
     }
     if (execution.state !== 'completed' || execution.result?.outcome !== 'succeeded' || !execution.nativeSessionId)
       return false
@@ -1419,10 +1420,9 @@ export class ApprovalExecutionCoordinator {
     if (!retained) return false
     const request = await this.workflowRequest(execution, configuration, run, owner)
     const resolved = this.resolveManager({ ...context, workflowRequest: request }, owner)
-    if (!existing) resolved.beginStart?.()
+    resolved.beginStart?.()
     const owned = this.ownSession(execution,
       { ...context, workflowRequest: request, purpose: 'reviewer' }, resolved.manager)
-    owned.reviewerRecoveryPending = true
     owned.runOwner = owner
     const signal = AbortSignal.any([owned.controller.signal, ...(parentSignal ? [parentSignal] : [])])
     owned.closureRegistration = Promise.resolve(retained.generation)
@@ -1477,13 +1477,9 @@ export class ApprovalExecutionCoordinator {
       await owner.oneShotConnection().transaction(assertRetainedReviewer)
       resolved.markResident?.()
       this.maintainRetainedReviewer(owned)
-      delete owned.reviewerRecoveryPending
       return true
     } catch (error) {
       if (isRestartCancellation(error, signal)) throw error
-      const attemptCanceled = parentSignal?.aborted && !owned.controller.signal.aborted
-      if (attemptCanceled || isTransientRefreshFailure(error) || isLeaseLost(error)
-        || error instanceof DomainError && error.code === 'SESSION_LANE_BUSY') throw error
       resolved.markFailed?.()
       owned.failed = true
       throw error
@@ -1624,7 +1620,8 @@ export class ApprovalExecutionCoordinator {
         owner?.assertOwned()
         if (this.ownedSessions.get(owned.execution.id) !== owned || owned.failed || owned.cleanup)
           throw new DomainError('NATIVE_CREDENTIAL_RECOVERY_REQUIRED', 'The native process no longer owns its lease.', 409)
-        await this.validateContinuation?.(owned.execution.id)
+        if (this.validateContinuation?.forRestart) await this.validateContinuation.forRestart(owned.execution.id)
+        else await this.validateContinuation?.(owned.execution.id)
         owner?.assertOwned()
       },
     })
