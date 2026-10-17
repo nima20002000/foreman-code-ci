@@ -1,8 +1,13 @@
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
+import { gzipSync } from 'node:zlib'
+import { mkdir, mkdtemp, rm } from 'node:fs/promises'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { DEFAULT_CIRCLE_CREDIT_ALLOWANCE, type CircleCreditAllowance } from '@foreman-code/contracts/management'
 import { CircleCreditUsage } from './circleCredits.js'
 import { CloudHttp } from './cloudHttp.js'
 import type { HostCiPorts } from './runner.js'
+import { CircleCreditCache } from './circleCreditCache.js'
 
 // A CloudHttp keeps its credential per ports object, so every fixture gets its own.
 const newPorts = (): HostCiPorts => ({ run: async () => ({ code: 1, stdout: '', stderr: '' }), now: () => new Date(),
@@ -61,7 +66,7 @@ it('estimates credits left from the month usage export and reads CircleCI only o
   await f.usage.reading('acme')
   await settled()
   expect(f.calls).toHaveLength(requests)
-  f.clock.now += 2 * 60_000
+  f.clock.now += 171 * 60_000
   await f.usage.reading('acme')
   await settled()
   expect(f.calls.filter(call => call.method === 'POST')).toHaveLength(2)
@@ -80,7 +85,7 @@ it('gives each CircleCI org its own usage against its own 400,000 open-source cr
 })
 
 it('applies the saved allowance to the cached usage without another CircleCI read', async () => {
-  const f = circle({ states: ['processing', 'completed'] })
+  const f = circle()
   await f.usage.reading('acme')
   await settled()
   f.allowance.accounts = { ACME: 1500 }
@@ -94,7 +99,7 @@ it('reports credits unavailable with the reason instead of a made-up number', as
   await failed.usage.reading('acme')
   await settled()
   expect(await failed.usage.reading('acme')).toEqual({ credits: null,
-    creditsUnavailable: 'CircleCI usage export failed: query failed' })
+    creditsUnavailable: 'CircleCI usage export failed.' })
   const loggedOut = circle({ token: null })
   await loggedOut.usage.reading()
   await settled()
@@ -112,4 +117,79 @@ it('drops a reading from an earlier month', async () => {
   expect((await f.usage.reading('acme')).credits).not.toBeNull()
   f.clock.now = Date.parse('2026-11-01T00:05:00Z')
   expect((await f.usage.reading('acme')).credits).toBeNull()
+})
+
+it('shares implicit and explicit primary owner reads without an unnamed bucket', async () => {
+  const f = circle()
+  await Promise.all([f.usage.reading(), f.usage.reading('ACME'), f.usage.reading('acme')])
+  await settled()
+  expect(f.calls.filter(call => call.method === 'POST')).toHaveLength(1)
+  expect((await f.usage.reading()).credits).toEqual((await f.usage.reading('acme')).credits)
+})
+
+it('expires usage four hours from the export end, rather than from a delayed download', async () => {
+  const f = circle()
+  await f.usage.reading('acme')
+  await settled()
+  f.clock.now += 4 * 60 * 60_000 + 1
+  expect((await f.usage.reading('acme')).credits).toBeNull()
+})
+
+it('keeps exports account scoped, sums all compressed parts, and preserves an intentional saved allowance', async () => {
+  const calls: string[] = []
+  const http = (id: string) => new CloudHttp(newPorts(), 'circleci', { circleToken: async () => 'fixture-token',
+    fetch: async (input, init) => {
+      const path = new URL(String(input)).pathname
+      calls.push(`${id}:${init?.method ?? 'GET'}:${path}`)
+      if (path.endsWith('collaborations')) return Response.json([{ id: 'org', name: 'acme' }])
+      if (init?.method === 'POST') return Response.json({ usage_export_job_id: 'job' })
+      if (path.endsWith('/job')) return Response.json({ state: 'completed', download_urls: [
+        'https://signed.example/first', 'https://signed.example/second',
+      ] })
+      const credits = id === 'default' ? 100 : 200
+      return new Response(new Uint8Array(gzipSync(`TOTAL_CREDITS\n${credits}\n`)))
+    } })
+  const clients = new Map(['default', 'reserve'].map(id => [id, http(id)]))
+  const usage = new CircleCreditUsage(id => clients.get(id)!, {
+    allowance: async () => ({ defaultMonthlyCredits: 30_000, accounts: { acme: 45_000 } }), primaryOwner: async () => 'acme',
+  })
+  await Promise.all([usage.reading('acme'), usage.reading('ACME', 'reserve')])
+  await settled()
+  expect((await usage.reading('acme')).credits).toMatchObject({ total: 45_000, used: 200, remaining: 44_800 })
+  expect((await usage.reading('acme', 'reserve')).credits).toMatchObject({ total: 45_000, used: 400, remaining: 44_600 })
+  expect(calls.filter(call => call.includes(':POST:'))).toHaveLength(2)
+})
+
+it('persists creation attempts and pending jobs across readers and recreation without another POST', async () => {
+  const parent = process.env.FOREMAN_CODE_TEST_ROOT ?? join(homedir(), '.cache', 'foreman-tmp')
+  await mkdir(parent, { recursive: true })
+  const directory = await mkdtemp(join(parent, 'circle-usage-'))
+  try {
+    let now = Date.parse('2026-10-17T12:00:00Z')
+    let completed = false
+    let posts = 0
+    const http = new CloudHttp(newPorts(), 'circleci', { circleToken: async () => 'fixture-token', fetch: async (input, init) => {
+      const path = new URL(String(input)).pathname
+      if (path.endsWith('collaborations')) return Response.json([{ id: 'org', name: 'acme' }])
+      if (init?.method === 'POST') { posts++; return Response.json({ usage_export_job_id: 'job' }) }
+      if (path.endsWith('/job')) return Response.json({ state: completed ? 'completed' : 'processing',
+        download_urls: completed ? ['https://signed.example/usage'] : null })
+      return new Response('TOTAL_CREDITS\n380000\n')
+    } })
+    const create = () => new CircleCreditUsage(http, {
+      allowance: async () => ({ defaultMonthlyCredits: 400_000, accounts: {} }), primaryOwner: async () => 'acme',
+    }, { now: () => now, waitMs: 0, cache: new CircleCreditCache(join(directory, 'usage.json')) })
+    await Promise.all([create().reading('acme'), create().reading('ACME')])
+    await vi.waitFor(() => { expect(posts).toBe(1) })
+    completed = true
+    now += 6_000
+    const restarted = create()
+    await restarted.reading('acme')
+    await vi.waitFor(async () => {
+      expect((await restarted.reading('acme')).credits).toMatchObject({ used: 380_000, remaining: 20_000 })
+    })
+    expect(posts).toBe(1)
+    now = Date.parse('2026-11-01T00:00:00Z')
+    expect((await restarted.reading('acme')).credits).toBeNull()
+  } finally { await rm(directory, { recursive: true, force: true }) }
 })
