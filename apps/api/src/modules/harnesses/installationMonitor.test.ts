@@ -297,8 +297,7 @@ it('refreshes a required host with foreground admission while background discove
 })
 
 
-it.each([new DeviceApplicationError('timeout'), new DeviceApplicationAdmissionError()])(
-  'does not retry failed shared discovery after a required-host caller cancels its wait (%s)', async failure => {
+it('does not retry failed shared discovery after a required-host caller cancels its wait', async () => {
   const hostRef = { kind: 'device' as const, mainId: 'main', deviceId: 'worker' }
   let failDiscovery!: (error: Error) => void
   const discovery = new Promise<never>((_resolve, reject) => { failDiscovery = reject })
@@ -316,7 +315,7 @@ it.each([new DeviceApplicationError('timeout'), new DeviceApplicationAdmissionEr
     const canceled = new Error('Start preparation canceled')
     controller.abort(canceled)
     expect(await waiting).toEqual({ error: canceled })
-    failDiscovery(failure)
+    failDiscovery(new DeviceApplicationError('timeout'))
     await background
     expect(request).toHaveBeenCalledOnce()
     expect(collectWorker).not.toHaveBeenCalled()
@@ -326,48 +325,3 @@ it.each([new DeviceApplicationError('timeout'), new DeviceApplicationAdmissionEr
     await monitor.close()
   }
 })
-
-
-it.each([
-  { failure: new DeviceApplicationAdmissionError(), retries: true },
-  { failure: new DeviceApplicationError('timeout'), retries: false },
-  { failure: undefined, retries: false },
-])('shares discovery and retries only background capacity refusals for live foreground waiters ($failure)',
-  async ({ failure, retries }) => {
-    const hostRef = { kind: 'device' as const, mainId: 'main', deviceId: 'worker' }
-    let release!: () => void
-    const waiting = new Promise<void>(resolve => { release = resolve })
-    const request = vi.fn().mockImplementationOnce(async () => {
-      await waiting
-      if (failure) throw failure
-      return { payload: { installations: [] } }
-    }).mockResolvedValue({ payload: { installations: [] } })
-    const collectWorker = vi.fn(async () => {})
-    const registry = { installations: { list: () => [{ hostRef }] }, observeInstallations: () => {} }
-    const monitor = new HarnessInstallationMonitor(registry as never, {} as never,
-      () => ({ captureRequest: () => ({ binding: {}, request }) }) as never,
-      collectWorker, async () => {}, vi.fn())
-    const background = monitor.refresh()
-    const starts = Promise.allSettled([monitor.refreshHosts([hostRef]), monitor.refreshHosts([hostRef])])
-    try {
-      expect(request).toHaveBeenCalledOnce()
-      release()
-      await background
-      const results = await starts
-      expect(results.map(result => result.status)).toEqual(failure && !retries
-        ? ['rejected', 'rejected'] : ['fulfilled', 'fulfilled'])
-      expect(request).toHaveBeenCalledTimes(retries ? 2 : 1)
-      expect(request.mock.calls[0]![1]).toMatchObject({ priority: 'background' })
-      if (retries) expect(request.mock.calls[1]![1]).toMatchObject({ priority: 'foreground' })
-      expect(collectWorker).toHaveBeenCalledTimes(failure && !retries ? 0 : 1)
-      if (retries) {
-        await monitor.refresh()
-        expect(request).toHaveBeenCalledTimes(2)
-      }
-    } finally {
-      release()
-      await background
-      await starts
-      await monitor.close()
-    }
-  })

@@ -16,7 +16,6 @@ import type { NativeHarnessSessionManager, NativeHistory, ChildProcessEnvironmen
 import { assertRuntimeLeafPath, assertRuntimeLeafBinding, type RuntimeLeafAttestation } from './runtimeLeaf.js'
 import { readPlacement } from '../../placement/binding.js'
 import type { RemoteOperationJournal } from './operationJournal.js'
-import { HistoryObservationPages } from './historyObservationPages.js'
 import { pageNativeHistory } from './nativeHistoryPage.js'
 import { DomainError } from '../../errors.js'
 import { logIgnoredError } from '../../diagnostics/ignoredError.js'
@@ -56,7 +55,6 @@ interface WorkflowPreparation {
 }
 /** Worker-only authenticated extension handler. No DB, scheduler, HTTP server or production composition. */
 export class RemoteExecutionHost {
-  private readonly historyPages = new HistoryObservationPages()
   private closing = false
   private shutdownTask: Promise<void> | undefined
   private readonly preparations = new Set<Promise<unknown>>()
@@ -214,8 +212,7 @@ export class RemoteExecutionHost {
         if (!resident.manager.reconcileResponse) throw new Error('Exact native response recovery unavailable')
         history = await resident.manager.reconcileResponse(resident.session, frame.response)
       }
-      return this.historyPages.remember({ ...pageNativeHistory(history),
-        status: await this.ports.journal.status(frame.intent.operationId) }, frame.intent, frame.placement)
+      return { ...pageNativeHistory(history), status: await this.ports.journal.status(frame.intent.operationId) }
     }
     if (frame.method === 'control') return this.control(frame.command, frame)
     if (frame.method === 'prepare-review') {
@@ -229,15 +226,14 @@ export class RemoteExecutionHost {
     if (frame.method === 'receipt-continuation') throw new Error('Receipt continuations require the installed response owner.')
     if (frame.method === 'get-application-access') throw new Error('Application lease recovery requires the installed physical owner')
     if (frame.method === 'history') {
-      if (frame.metadata) return this.historyPages.read(frame)
       const result = await this.read(frame.intent.operationId, 'history', frame.correlationId, frame.afterSequence) as {
         history: NativeHistory; context: ContextSnapshot | null;
         status: Awaited<ReturnType<RemoteOperationJournal['status']>>
       }
       const after = result.status.status === 'known' && frame.correlationId
         ? result.status.receipt.reviewTurns?.find(turn => turn.assignment.correlationId === frame.correlationId)?.afterSequence : undefined
-      return this.historyPages.remember({ ...pageNativeHistory(result.history, frame.afterSequence ?? after),
-        context: result.context, status: result.status }, frame.intent, frame.placement)
+      return { ...pageNativeHistory(result.history, frame.afterSequence ?? after, frame.metadata),
+        context: result.context, status: result.status }
     }
     return this.read(frame.intent.operationId, frame.method)
   }

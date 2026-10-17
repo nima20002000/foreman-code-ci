@@ -6,7 +6,6 @@ import { createServer, type ServerResponse } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
-import { APP_MCP_TIMEOUTS } from '../../src/modules/harnesses/appMcpLauncher.js'
 
 export interface LauncherMessage {
   id?: string | number
@@ -38,8 +37,7 @@ export async function mcpLauncherFixture(
   const token = 'launcher-test-credential'
   await mkdir(join(directory, 'routes'))
   await writeFile(join(directory, 'routes', `${createHash('sha256').update(token).digest('hex')}.json`),
-    JSON.stringify({ endpoint, pid: process.pid, expiresAt: new Date(Date.now() + 60_000).toISOString(),
-      toolTimeoutMs: APP_MCP_TIMEOUTS.tool_timeout_sec * 1000 }))
+    JSON.stringify({ endpoint, pid: process.pid, expiresAt: new Date(Date.now() + 60_000).toISOString() }))
   if (options.unavailableEndpoint) await new Promise<void>((resolve) => server.close(() => resolve()))
   const args = [launcher]
   if (options.preload) {

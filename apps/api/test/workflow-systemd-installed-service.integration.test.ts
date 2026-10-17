@@ -2,20 +2,18 @@ import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { RuntimeBuildIdentitySchema } from '@foreman-code/contracts'
 import { createRuntimeBuildIdentity } from '@foreman-code/contracts/runtime-build-identity-node'
 import { execFile } from 'node:child_process'
-import { createReadStream } from 'node:fs'
 import { createServer } from 'node:http'
 import { createRequire } from 'node:module'
 import { promisify } from 'node:util'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { copyFile, cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { delimiter, dirname, join } from 'node:path'
-import { parse, stringify } from 'yaml'
+import { parse } from 'yaml'
 import { deployProductionApi } from '../../../scripts/local-production-runtime.mjs'
 import { installedRestartService } from './helpers/installedRestartService.js'
 import { privateFixtureDirectory } from './helpers/privateFixtureDirectory.js'
 import { installationUpdateFixture } from './helpers/harnessInstallationUpdate.js'
 import { useInstalledRestartFixture } from './helpers/installedRestartFixture.js'
-import { lockedPackageTarballs, type PackagingLockfile } from './helpers/lockedPackageTarballs.js'
 
 describe('installed Main-local workflows across systemd restart', () => {
   let fixture: Awaited<ReturnType<typeof installationUpdateFixture>> | undefined
@@ -57,18 +55,16 @@ describe('installed API fixture packaging', () => {
     { age: 'recent', modified: new Date().toISOString(), publication: undefined, succeeds: true },
     { age: 'unknown', modified: undefined, publication: undefined, succeeds: true },
     { age: 'too young', modified: new Date().toISOString(), publication: new Date().toISOString(), succeeds: false },
-    { age: 'old with an empty store', modified: '2000-01-01T00:00:00.000Z', publication: undefined,
-      succeeds: true, emptyStore: true },
   ])('deploys locked packages with $age abbreviated metadata without bypassing release age', async ({
-    age, modified, publication, succeeds, emptyStore,
+    age, modified, publication, succeeds,
   }) => {
     const directory = await privateFixtureDirectory('locked-packaging-')
     const repository = fileURLToPath(new URL('../../../', import.meta.url))
     const { storeDir } = parse(await readFile(join(repository, 'node_modules/.modules.yaml'), 'utf8')) as {
       storeDir: string
     }
-    const lockfile: PackagingLockfile = parse(await readFile(join(repository, 'pnpm-lock.yaml'), 'utf8'))
-    const dependency = lockfile.importers['apps/api']!.dependencies.yaml!
+    const lockfile = parse(await readFile(join(repository, 'pnpm-lock.yaml'), 'utf8'))
+    const dependency = lockfile.importers['apps/api'].dependencies.yaml
     const cache = join(directory, 'metadata')
     const destination = join(directory, 'deployed')
     await mkdir(join(directory, 'scripts'), { recursive: true })
@@ -83,15 +79,6 @@ describe('installed API fixture packaging', () => {
     await cp(join(repository, 'packages/contracts'), join(directory, 'packages/contracts'), {
       recursive: true, filter: path => path !== join(repository, 'packages/contracts/node_modules'),
     })
-    const workspace = parse(await readFile(join(repository, 'pnpm-workspace.yaml'), 'utf8')) as {
-      patchedDependencies: Record<string, string>
-    }
-    const tarballs = await lockedPackageTarballs({
-      lockfile, repository, directory: join(directory, 'tarballs'),
-      patches: Object.fromEntries(Object.entries(workspace.patchedDependencies).map(([key, path]) =>
-        [key, join(repository, path)])),
-    })
-    await writeFile(join(directory, 'pnpm-lock.yaml'), stringify(lockfile))
     // Each registry response has locked artifacts and an optional modified date, but no publication-time map.
     const packageVersions = new Map<string, Record<string, {
       name: string; version: string; dist: { integrity: string; tarball: string }
@@ -111,29 +98,8 @@ describe('installed API fixture packaging', () => {
       packageVersions.set(name, versions)
     }
     let metadataRequests = 0
-    let tarballRequests = 0
-    const tarballPaths = new Map<string, string>()
-    for (const [key, path] of tarballs) {
-      const separator = key.lastIndexOf('@')
-      const name = key.slice(0, separator)
-      const version = key.slice(separator + 1)
-      tarballPaths.set(`${name}/-/${name.split('/').at(-1)}-${version}.tgz`, path)
-    }
     const registry = createServer((request, response) => {
       const name = decodeURIComponent(new URL(request.url!, 'http://localhost').pathname.slice(1))
-      if (name.endsWith('.tgz')) {
-        tarballRequests++
-        const archive = tarballPaths.get(name)
-        if (!archive) {
-          response.writeHead(404).end(`Fixture tarball is unavailable: ${name}`)
-          return
-        }
-        response.setHeader('content-type', 'application/octet-stream')
-        const stream = createReadStream(archive)
-        stream.on('error', error => response.destroy(error))
-        stream.pipe(response)
-        return
-      }
       const versions = packageVersions.get(name)
       if (!versions) {
         response.writeHead(404).end()
@@ -156,9 +122,6 @@ describe('installed API fixture packaging', () => {
     const metadata = join(cache, `v11/metadata/http%3A+127.0.0.1+${address.port}`)
     try {
       for (const [name, versions] of packageVersions) {
-        for (const artifact of Object.values(versions)) {
-          artifact.dist.tarball = new URL(new URL(artifact.dist.tarball).pathname.slice(1), registryUrl).href
-        }
         const metadataPath = join(metadata, `${name}.jsonl`)
         await mkdir(dirname(metadataPath), { recursive: true })
         await writeFile(metadataPath, `${JSON.stringify({ modified })}\n${JSON.stringify({
@@ -171,8 +134,7 @@ describe('installed API fixture packaging', () => {
         if (args.includes('install')) return
         // This disposable copy needs no inode isolation, and hardlinking the store keeps each case fast.
         await execute(command, [...args, '--package-import-method', 'hardlink', '--prefer-offline',
-          '--store-dir', emptyStore ? join(directory, 'store') : storeDir,
-          '--cache-dir', cache, '--registry', registryUrl, '--fetch-retries', '0'], {
+          '--store-dir', storeDir, '--cache-dir', cache, '--registry', registryUrl], {
           cwd: directory, env: { ...process.env, CI: 'true' }, timeout: 300_000,
         })
       }, destination)
@@ -183,7 +145,6 @@ describe('installed API fixture packaging', () => {
         return
       }
       await deploy
-      if (emptyStore) expect(tarballRequests).toBeGreaterThan(0)
       if (age !== 'old') {
         expect(metadataRequests).toBeGreaterThan(0)
       }

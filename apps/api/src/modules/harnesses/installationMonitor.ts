@@ -14,17 +14,12 @@ import { harnessHostKey } from './instanceSettings/repository.js'
 import type { HostHarnessInstanceProfileChecks } from './instanceSettings/profileChecks.js'
 import type { ProductionHarnessRegistry } from './productionRegistry.js'
 
-type DiscoveryPriority = 'foreground' | 'background'
-type DiscoveryResult = 'refreshed' | 'capacity-refused' | 'unavailable'
-
 /** Passive inventory changes schedule owned qualification; they never qualify an installation themselves. */
 export class HarnessInstallationMonitor {
   private readonly stopping = new AbortController()
   private readonly generations = new Map<string, Map<string, string>>()
   private readonly workerSignals = new Map<string, AbortSignal>()
-  private readonly hostRefreshes = new Map<string, {
-    priority: DiscoveryPriority; task: Promise<DiscoveryResult>
-  }>()
+  private readonly hostRefreshes = new Map<string, Promise<boolean>>()
   private readonly backoffs = new Map<string, {
     failures: number; retryAt: number; operation: 'discovery' | 'qualification'
   }>()
@@ -140,13 +135,21 @@ export class HarnessInstallationMonitor {
     }
   }
   async refreshHosts(hosts: readonly CanonicalMachineReference[], signal?: AbortSignal,
-    priority: DiscoveryPriority = 'foreground'): Promise<void> {
+    priority: 'foreground' | 'background' = 'foreground'): Promise<void> {
     this.stopping.signal.throwIfAborted()
     signal?.throwIfAborted()
     const selected = new Map(hosts.map(host => [harnessHostKey(host), host]))
-    const tasks = [...selected.values()].map(host => this.refreshHost(host, priority, signal))
+    const tasks = [...selected].map(([key, host]) => {
+      const existing = this.hostRefreshes.get(key)
+      if (existing) return existing
+      const task = this.collectHost(host, priority)
+      this.hostRefreshes.set(key, task)
+      const cleanup = () => { if (this.hostRefreshes.get(key) === task) this.hostRefreshes.delete(key) }
+      void task.then(cleanup, cleanup)
+      return task
+    })
     const completed = Promise.all(tasks).then(refreshed => {
-      if (refreshed.some(result => result !== 'refreshed')) throw new DomainError('HARNESS_INVENTORY_UNAVAILABLE',
+      if (refreshed.includes(false)) throw new DomainError('HARNESS_INVENTORY_UNAVAILABLE',
         'Harness installation inventory could not be refreshed on a required computer.', 503)
     })
     if (!signal) return completed
@@ -156,34 +159,14 @@ export class HarnessInstallationMonitor {
         error => { listener[Symbol.dispose](); reject(error) })
     })
   }
-  private async refreshHost(host: CanonicalMachineReference, priority: DiscoveryPriority,
-    signal?: AbortSignal): Promise<DiscoveryResult> {
-    this.stopping.signal.throwIfAborted()
-    signal?.throwIfAborted()
-    const key = harnessHostKey(host)
-    const existing = this.hostRefreshes.get(key)
-    if (existing) {
-      const result = await existing.task
-      if (priority === 'foreground' && existing.priority === 'background' && result === 'capacity-refused') {
-        return this.refreshHost(host, priority, signal)
-      }
-      return result
-    }
-    const refresh = { priority, task: this.collectHost(host, priority) }
-    this.hostRefreshes.set(key, refresh)
-    const cleanup = () => { if (this.hostRefreshes.get(key) === refresh) this.hostRefreshes.delete(key) }
-    void refresh.task.then(cleanup, cleanup)
-    return refresh.task
-  }
-  private async collectHost(host: CanonicalMachineReference, priority: DiscoveryPriority): Promise<DiscoveryResult> {
+  private async collectHost(host: CanonicalMachineReference, priority: 'foreground' | 'background'): Promise<boolean> {
     if (host.kind === 'main') {
       await this.registry.refreshMain(this.stopping.signal)
-      return 'refreshed'
+      return true
     }
-    if (priority === 'background' && this.backingOff(host)) return 'capacity-refused'
+    if (priority === 'background' && this.backingOff(host)) return false
     const captured = this.endpoint().captureRequest(host.deviceId, 'harness-discovery-v1')
-    if (!captured) return 'unavailable'
-    if (priority === 'background' && captured.busy) return 'capacity-refused'
+    if (!captured || priority === 'background' && captured.busy) return false
     const signal = AbortSignal.any([this.stopping.signal, AbortSignal.timeout(30_000),
       ...(this.workerSignals.has(host.deviceId) ? [this.workerSignals.get(host.deviceId)!] : [])])
     try {
@@ -192,13 +175,12 @@ export class HarnessInstallationMonitor {
       signal.throwIfAborted()
       await this.collectWorker(captured.binding, result.payload)
       if (priority === 'background') this.succeeded(host, 'discovery')
-      return 'refreshed'
+      return true
     } catch (error) {
       this.stopping.signal.throwIfAborted()
-      const refused = priority === 'background' && deviceBackpressured(error)
-      if (refused) this.backoff(host, 'discovery')
+      if (priority === 'background' && deviceBackpressured(error)) this.backoff(host, 'discovery')
       this.report(error)
-      return refused ? 'capacity-refused' : 'unavailable'
+      return false
     }
   }
   private backingOff(host: CanonicalMachineReference): boolean {
@@ -219,6 +201,6 @@ export class HarnessInstallationMonitor {
     this.registry.observeInstallations(undefined)
     this.stopping.abort(new Error('Harness installation monitoring is stopping.'))
     if (this.refreshTask) await Promise.allSettled([this.refreshTask])
-    await Promise.allSettled([...this.hostRefreshes.values()].map(refresh => refresh.task))
+    await Promise.allSettled([...this.hostRefreshes.values()])
   }
 }

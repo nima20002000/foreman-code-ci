@@ -17,7 +17,6 @@ import { WorkerExecutionPolicy } from '../../settings/workerExecution.js'
 import { input } from '../../../../test/fixtures/codex-test-helpers.js'
 import { InstalledWorkflowResponsePages, readRemoteReceiptResponse } from './installedWorkflowResponsePages.js'
 import { RemoteOperationJournal } from './operationJournal.js'
-import { HistoryObservationPages } from './historyObservationPages.js'
 import { pageNativeHistory } from './nativeHistoryPage.js'
 import type { RemoteResultCommitPort } from './resultBridge.js'
 
@@ -82,7 +81,6 @@ function fixture() {
 
 function carrier(f: ReturnType<typeof fixture>, journal: RemoteOperationJournal) {
   const pages = new InstalledWorkflowResponsePages()
-  const historyPages = new HistoryObservationPages()
   const methods: string[] = []
   let captures = 0
   const rawMain = new Socket()
@@ -99,8 +97,7 @@ function carrier(f: ReturnType<typeof fixture>, journal: RemoteOperationJournal)
       const status = await journal.status(frame.intent.operationId)
       let payload: unknown = status
       if (frame.method === 'prepare' || frame.method === 'reattach') payload = { session: f.session, status }
-      if (frame.method === 'history') payload = frame.metadata ? historyPages.read(frame)
-        : historyPages.remember({ ...pageNativeHistory(f.history, frame.afterSequence), status }, frame.intent, frame.placement)
+      if (frame.method === 'history') payload = { ...pageNativeHistory(f.history, frame.afterSequence, frame.metadata), status }
       return { payload: pages.page(payload, frame, context.binding) }
     } }
   const client: DeviceExtensionRegistration = { namespace: 'execution-v1', version: 1, role: 'client',
