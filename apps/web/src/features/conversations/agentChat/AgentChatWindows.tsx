@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from 'react'
 import { Icon, IconButton } from '../../../shared/ui/nocturne'
+import { useFloatingZ } from '../../../shared/ui/floatingStack'
 import {
   WindowCloseContext, chatWindowKey, clampFrame, defaultFrame, resizeFrame, useChatWindowsStore,
   type ChatWindowAnchor, type ChatWindowBounds, type ChatWindowFrame, type ResizeEdge,
@@ -63,6 +64,7 @@ function AgentChatWindow({ scope, nodeId, index, bounds, locate, content }: {
 }) {
   const key = chatWindowKey(scope, nodeId)
   const stored = useChatWindowsStore((state) => state.frames[key])
+  const zIndex = useFloatingZ(key)
   const focusTick = useChatWindowsStore((state) => state.focus[key])
   const { setFrame, raise, closeWindow } = useChatWindowsStore.getState()
   const root = useRef<HTMLElement>(null)
@@ -140,7 +142,7 @@ function AgentChatWindow({ scope, nodeId, index, bounds, locate, content }: {
     if (!bar || !event.currentTarget.contains(bar) || event.target.closest(INTERACTIVE)) return
     track(event, (dx, dy, start) => clampFrame({ ...start, x: start.x + dx, y: start.y + dy }, bounds))
   }
-  const style: CSSProperties = { left: frame.x, top: frame.y, width: frame.width, height: frame.height, zIndex: index + 1 }
+  const style: CSSProperties = { left: frame.x, top: frame.y, width: frame.width, height: frame.height, zIndex }
   return <WindowCloseContext.Provider value={close}>
     <section ref={root} tabIndex={-1} className="agent-chat-window" role="dialog" aria-modal="false" aria-label={`${content.name} chat`}
       data-panel="chat" data-harness={content.harness === 'codex' || content.harness === 'claude' ? content.harness : 'neutral'}

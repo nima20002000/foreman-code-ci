@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { useIsMutating, useQuery } from '@tanstack/react-query'
 import { WorkflowDefinitionV3Schema } from '@foreman-code/contracts/wave25'
 import { useProtectedAccessError } from '../../shared/api/useProtectedAccessError'
@@ -34,6 +35,13 @@ function AuthoringBoundary({ workspaceId, workflowId, updateFailures = [] }: { w
     enabled: authoringActive, staleTime: 3000, refetchInterval: authoringActive ? 3000 : false,
     refetchOnWindowFocus: authoringActive, retry: false,
   })
+  const [updatesUnavailable, setUpdatesUnavailable] = useState(false)
+  useEffect(() => {
+    setUpdatesUnavailable(false)
+    if (!source.isError) return
+    const timer = window.setTimeout(() => setUpdatesUnavailable(true), 5_000)
+    return () => window.clearTimeout(timer)
+  }, [key, source.isError])
   const denied = useProtectedAccessError(source)
   if (denied) return <section role="alert">Draft access is unavailable. Retained local edits have not been replaced or discarded.</section>
   // Polling only reports drift. It never installs a server graph over local work.
@@ -44,7 +52,7 @@ function AuthoringBoundary({ workspaceId, workflowId, updateFailures = [] }: { w
     return <>
       {changed ? <p role="status">The shared draft changed elsewhere. Your local edits and original revision are retained; reload explicitly before overwriting anything.</p> : null}
       <NextDraftEditor key={key} workspaceId={workspaceId} workflowId={workflowId} initialContext={source.data}
-        updateFailures={[...updateFailures, ...(source.isError ? [{ id: 'DRAFT_UPDATES_UNAVAILABLE',
+        updateFailures={[...updateFailures, ...(source.isError && updatesUnavailable ? [{ id: 'DRAFT_UPDATES_UNAVAILABLE',
           message: 'Draft updates unavailable. Running requires a fresh saved read.', pending: source.isFetching, retry: () => void source.refetch() }] : [])]} />
     </>
   }

@@ -1,6 +1,5 @@
 import { errorMessage } from '../../shared/errorMessage'
 import { parseSessionCommand, type SessionMode } from '@foreman-code/contracts'
-import { SessionControls } from './sessionControls/SessionControls'
 import { useSlashCommandMenu } from './sessionControls/useSlashCommandMenu'
 import type { ComposerSessionControls } from './sessionControls/useSessionControls'
 import { useRef, useState, type ReactNode, type RefObject } from 'react'
@@ -78,7 +77,7 @@ export function ConversationComposer({
     content => { void submit(content) })
   return (
     <MessageComposer
-      footerControl={<>{attachmentControl}{sessionControls ? <SessionControls controls={sessionControls} /> : null}</>}
+      footerControl={attachmentControl}
       commandMenu={menu.menu}
       commandInputProps={menu.inputProps}
       onInputKeyDown={menu.onKeyDown}
