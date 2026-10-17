@@ -75,15 +75,22 @@ it('rechecks standby eligibility after saving submission ownership and before a 
   }
 })
 
-it('rejects conflicting saved login ownership without searching another journal root', async () => {
+it.each(['run', 'configuration failure'])('rejects conflicting saved login ownership in a %s journal', async kind => {
   const f = await fixture({}, { provider: 'circleci' })
   const runId = randomUUID()
-  await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId, repository: 'octo/site',
-    commit: f.commit, suite: 'lint', scope: 'full' })
-  const path = join(f.root, 'ci-cloud', 'runs', runId, 'meta.json')
+  const start = { operation: 'start', workspaceId: 'ci-workspace', runId, repository: 'octo/site',
+    commit: f.commit, suite: 'lint', scope: 'full' }
+  if (kind === 'configuration failure') f.circle.runView = { phase: 'ended', current_outcome: 'not_run',
+    errors: [{ type: 'config', message: 'Invalid fixture configuration.' }], workflows: [] }
+  await f.cloud.handle(start)
+  const errors = join(f.root, 'ci-cloud', 'config-errors')
+  const path = kind === 'run' ? join(f.root, 'ci-cloud', 'runs', runId, 'meta.json')
+    : join(errors, (await fs.readdir(errors))[0]!)
   const run = JSON.parse(await fs.readFile(path, 'utf8'))
   await fs.writeFile(path, JSON.stringify({ ...run, circleAccountId: 'reserve' }))
-  await expect(f.reopen().handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 100 }))
+  const request = kind === 'run' ? { operation: 'read', runId, afterOffset: 0, maxBytes: 100 }
+    : { ...start, runId: randomUUID() }
+  await expect(f.reopen().handle(request))
     .rejects.toMatchObject({ code: 'CI_CLOUD_ACCOUNT_MISMATCH' })
   expect(f.circle.triggered).toHaveLength(1)
 })
