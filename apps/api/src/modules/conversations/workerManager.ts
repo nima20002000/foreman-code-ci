@@ -146,7 +146,12 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
     current?: ManagerOptions['current']
   } = {}): ReturnType<MainWorkerConversationBridge['capture']> {
     const channel = this.options.channel
-    const captured = this.options.bridge.capture({ request: frame, channel,
+    let requested = false
+    const observedChannel: WorkerConversationChannel = { binding: channel.binding, request: async (...args) => {
+      requested = true
+      return channel.request(...args)
+    } }
+    const captured = this.options.bridge.capture({ request: frame, channel: observedChannel,
       callbacks: { ...(this.options.profile ? { profile: this.options.profile } : {}),
         ...(this.options.files ? { files: this.options.files } : {}),
         ...(this.options.claudeAuthority ? { claudeAuthority: this.options.claudeAuthority } : {}), ...options.callbacks },
@@ -160,12 +165,13 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
         }
       } })
     const lease = { ...captured, request: async (signal?: AbortSignal) => {
+      requested = false
       let raw: unknown
       try {
         raw = await captured.request(signal)
       } catch (error) {
         // A failed process change does not acquire its replacement owner.
-        if (['conversation.preferences', 'conversation.open', 'conversation.initial-turn', 'conversation.start-turn']
+        if (requested && ['conversation.preferences', 'conversation.open', 'conversation.initial-turn', 'conversation.start-turn']
           .includes(frame.method)) this.runtimeAcquired = false
         throw error
       }
