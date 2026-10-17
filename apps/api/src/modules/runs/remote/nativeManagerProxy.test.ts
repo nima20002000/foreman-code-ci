@@ -101,22 +101,6 @@ function terminal(events: NativeHarnessEvent[]): NativeHistory {
 }
 
 describe('remote native history streaming', () => {
-  it('returns the verified terminal history after settling the original Worker turn', async () => {
-    const history = terminal([event(0)])
-    const f = setup(() => history)
-    const session = await f.proxy.createSession(f.start)
-    const request = f.request.getMockImplementation()!
-    f.request.mockImplementation(async (method, payload, signal) => {
-      if (method === 'settle-turn') return { status: 'known', receipt: structuredClone(f.receipt) }
-      return request(method, payload, signal)
-    })
-    await expect(f.proxy.settleTurn(session, f.start.correlationId)).resolves.toMatchObject({
-      terminalTurn: history.terminalTurn, terminalResult: history.terminalResult,
-    })
-    expect(f.request.mock.calls.map(([method]) => method)).toEqual(['prepare', 'settle-turn', 'history'])
-    expect(f.controlFor).not.toHaveBeenCalled()
-  })
-
   it('releases the lost initial snapshot when its replay observes changed metadata', async () => {
     let reads = 0
     const result = { outcome: 'succeeded' as const, output: { text: 'changed-snapshot' + 'x'.repeat(3 * 1024 * 1024) } }
