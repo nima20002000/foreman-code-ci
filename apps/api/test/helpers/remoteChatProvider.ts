@@ -24,7 +24,7 @@ export async function remoteChatProvider(harness: 'codex' | 'claude', directory:
   let reply: Deferred<void> | undefined
   let manager: NativeHarnessSessionManager
   if (harness === 'codex') {
-    const replay = new ActivityProductionReplay(`remote-chat-${randomUUID()}`)
+    const replay = new ActivityProductionReplay('remote-chat')
     const infrastructure = replay.infrastructure()
     if (infrastructure.mode !== 'replay') throw new Error('Recorded provider infrastructure required')
     const dependencies = { ...infrastructure.codex,

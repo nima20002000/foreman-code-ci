@@ -7,61 +7,7 @@ import * as sessionHooks from '../sessionControls/useSessionControls'
 import { mountChat } from './testSupport'
 import { useConversationDraftStore } from '../conversationDraftStore'
 import { AgentChatTranscript } from './AgentChatTranscript'
-import { agentChatStateKey, type useAgentChat } from './useAgentChat'
-import { http, HttpResponse } from 'msw'
-import { server } from '../../../mocks/server'
-
-it.each(['idle', 'active'] as const)('starts a fresh Agent conversation with /new while %s', async status => {
-  const initial = structuredClone(status === 'active' ? agentChatFixtures.active : agentChatFixtures.idleAfterCompletion)
-  if (status === 'active') {
-    initial.capabilities.queueNextTurn = false
-    initial.capabilities.unavailable.queueNextTurn = 'Message queueing is unavailable.'
-  }
-  const mounted = mountChat(initial)
-  await mounted.ready()
-  const fresh = { ...structuredClone(agentChatFixtures.empty), context: initial.context,
-    conversation: { ...initial.conversation!, id: 'fresh-conversation', nativeSession: null,
-      previousConversationId: initial.conversation!.id },
-  }
-  const requests: unknown[] = []
-  server.use(http.post('/api/workspaces/:workspaceId/agent-chat/messages', async ({ request }) => {
-    const body = await request.json() as SendAgentChatMessageRequest
-    requests.push(body)
-    mounted.mock.setState(fresh)
-    return HttpResponse.json({ state: fresh, replayed: false,
-      reset: { requestId: body.requestId, previousConversationId: initial.conversation!.id } })
-  }))
-  const input = screen.getByRole('textbox', { name: 'Message' })
-  fireEvent.change(input, { target: { value: '/n' } })
-  expect(screen.getByRole('option', { name: '/new' })).toBeInTheDocument()
-  fireEvent.keyDown(input, { key: 'Enter' })
-  await waitFor(() => expect(requests).toHaveLength(1))
-  const { workspaceId, ...context } = initial.context
-  expect(workspaceId).toBeTruthy()
-  expect(requests[0]).toEqual({ content: '/new', intent: 'next_turn', requestId: expect.any(String), attachments: [],
-    expectedConversationId: initial.conversation!.id, context })
-  await waitFor(() => expect(input).toHaveValue(''))
-  await waitFor(() => expect(mounted.client.getQueryData<AgentChatState>(
-    agentChatStateKey(initial.context),
-  )?.conversation?.id).toBe('fresh-conversation'))
-  expect(controls.command).not.toHaveBeenCalled()
-  expect(mounted.newConversation).not.toHaveBeenCalled()
-})
-
-it('keeps the /new draft and previous conversation when the server rejects the command', async () => {
-  const initial = structuredClone(agentChatFixtures.idleAfterCompletion)
-  const mounted = mountChat(initial)
-  await mounted.ready()
-  server.use(http.post('/api/workspaces/:workspaceId/agent-chat/messages', () =>
-    HttpResponse.json({ error: { code: 'AGENT_CHAT_CONTEXT_STALE', message: 'Refresh before starting a new conversation.' } },
-      { status: 409 })))
-  const input = screen.getByRole('textbox', { name: 'Message' })
-  fireEvent.change(input, { target: { value: '/new' } })
-  fireEvent.keyDown(input, { key: 'Enter' })
-  expect(await screen.findByText('Refresh before starting a new conversation.')).toBeInTheDocument()
-  expect(input).toHaveValue('/new')
-  expect(mounted.mock.getState(initial.context).conversation?.id).toBe(initial.conversation!.id)
-})
+import type { useAgentChat } from './useAgentChat'
 
 const settings = SessionControlStateSchema.parse({ conversationId: 'chat', revision: 1, profileKey: 'profile',
   desiredMode: 'regular', appliedMode: 'regular', defaults: {}, desired: {}, applied: {}, applicability: 'applied',

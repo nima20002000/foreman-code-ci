@@ -39,14 +39,14 @@ import { agent3Database, seedAgent3 } from './wave25Agent3.js'
 import { remoteChatProvider } from './remoteChatProvider.js'
 import { deferred } from './deferred.js'
 
-export async function remoteAgentConversation(harness: 'codex' | 'claude', location: 'worker' | 'main' = 'worker') {
+export async function remoteAgentConversation(harness: 'codex' | 'claude') {
   const db = await agent3Database()
   const recorded = workerConversationFixture('agent', harness)
   const fixture = makeCurrentWorkflowFixture(randomUUID(), 'sequential')
   fixture.configurations = fixture.configurations.map(value => AgentConfigurationVersionSchema.parse({ ...value,
     harness: { ...recorded.configuration.harness, model: 'test-model',
       ...(harness === 'claude' ? { configDirectory: join(db.directory, 'claude-profile') } : {}) },
-    harnessProfileSelection: location === 'worker' ? recorded.binding.profile : undefined }))
+    harnessProfileSelection: recorded.binding.profile }))
   const seeded = await seedAgent3(db.pool, db.directory, fixture, { run: false })
   const node = seeded.version.definition.nodes[0]!
   const configuration = seeded.configurations.find(value => value.agentId === node.agentId)!
@@ -78,9 +78,9 @@ export async function remoteAgentConversation(harness: 'codex' | 'claude', locat
   let attached: MessageAttachmentRef | undefined
   const receivedAttachments: string[] = []
   const provider = await remoteChatProvider(harness, db.directory, {
-    ...(location === 'worker' ? { codexFiles: workerFiles.adapter({ source: () => source,
+    codexFiles: workerFiles.adapter({ source: () => source,
       host: () => localCodexChatHost(join(db.directory, 'worker-copies')),
-      assertCurrent: async () => {}, signal: lifetime.signal }) } : {}),
+      assertCurrent: async () => {}, signal: lifetime.signal }),
     codexInput: async input => {
       for (const item of input as Array<{ type: string; text?: string }>) {
         for (const line of (item.text ?? '').split('\n').filter(line => line.startsWith('{"filename"'))) {
@@ -111,21 +111,9 @@ export async function remoteAgentConversation(harness: 'codex' | 'claude', locat
       receivedAttachments.push(Buffer.from(result.contentBase64, 'base64').toString('utf8'))
     },
   })
-  const providers = [provider]
-  const nativeManagers = new Map([[conversation.id, provider.manager]])
-  const nativeManager = async (conversationId: string) => {
-    const existing = nativeManagers.get(conversationId)
-    if (existing) return existing
-    const created = await remoteChatProvider(harness, db.directory)
-    providers.push(created)
-    nativeManagers.set(conversationId, created.manager)
-    return created.manager
-  }
   const host = new WorkerConversationHost({ ...callbacks, currentBinding: () => recorded.connection,
     journal: journal.conversations, authorize: callbacks.authorize,
-    allocate: async (binding, accepted) => {
-      const manager = await nativeManager(binding.owner.conversationId)
-      return { manager,
+    allocate: async (binding, accepted) => ({ manager: provider.manager,
       start: async ({ correlationId, instructionsDelivered }) => {
         if (binding.owner.kind !== 'agent' || !('agentId' in accepted)) throw new Error('Agent fixture required')
         return { kind: 'agent-chat', configuration: accepted, conversationId: binding.owner.conversationId,
@@ -133,8 +121,8 @@ export async function remoteAgentConversation(harness: 'codex' | 'claude', locat
           workingDirectory: binding.workingDirectory, correlationId, instructionsDelivered,
           ...(binding.systemPrompt ? { systemPrompt: binding.systemPrompt } : {}) }
       }, nativeOwner: async session => ({ ...recorded.nativeOwner, sessionId: session.nativeSessionId }),
-      close: async () => { await manager.dispose?.() },
-    } } })
+      close: async () => { await provider.manager.dispose?.() },
+    }) })
   const channel = { binding: recorded.connection, request: async (raw: unknown) => {
     const request = WorkerConversationRpcRequestSchema.parse(raw)
     frames.push(request)
@@ -164,8 +152,8 @@ export async function remoteAgentConversation(harness: 'codex' | 'claude', locat
     getForWorkspace: async () => { throw new Error('Fresh Agent chat must not select a Run') },
     getExecution: async () => { throw new Error('Fresh Agent chat must not select an execution') },
     executionPages() { throw new Error('Fresh Agent chat must not select an execution') },
-  }, (conversationId, selected, workingDirectory) => location === 'main' ? nativeManager(conversationId)
-    : workerChats.create({ conversationId, configuration: selected, workingDirectory, appMcpAccess: 'none' }), db.directory)
+  }, (conversationId, selected, workingDirectory) => workerChats.create({ conversationId,
+    configuration: selected, workingDirectory, appMcpAccess: 'none' }), db.directory)
   const commands = new PostgresCommandCoordinator(db.pool)
   const profileRepository = new HarnessInstanceSettingsRepository(db.pool)
   const profileService = new HostHarnessOverrideService(profileRepository, commands, {
@@ -206,12 +194,11 @@ export async function remoteAgentConversation(harness: 'codex' | 'claude', locat
     expect(response.error, JSON.stringify(response)).toBeUndefined()
     return graphRpcValue(response.result)
   }
-  const send = async (content: string, delivery: 'completed' | 'failed' = 'completed',
-    attachments: MessageAttachmentRef[] = [], conversationId = conversation.id) => {
+  const send = async (content: string, delivery: 'completed' | 'failed' = 'completed', attachments: MessageAttachmentRef[] = []) => {
     const requestId = randomUUID()
     const terminal = deferred()
     const events: Parameters<Parameters<typeof chat.events.subscribe>[1]>[0][] = []
-    const unsubscribe = chat.events.subscribe(conversationId, event => {
+    const unsubscribe = chat.events.subscribe(conversation.id, event => {
       events.push(event)
       if (event.data.requestId === requestId && ['completed', 'failed', 'canceled'].includes(String(event.data.delivery))) {
         terminal.resolve()
@@ -219,14 +206,14 @@ export async function remoteAgentConversation(harness: 'codex' | 'claude', locat
     })
     try {
       await value('agent_chat_send', { request: { requestId, content, intent: 'next_turn',
-        expectedConversationId: conversationId, context, attachments } })
+        expectedConversationId: conversation.id, context, attachments } })
       await terminal.promise
-      const turn = await repository.turn(conversationId, requestId)
+      const turn = await repository.turn(conversation.id, requestId)
       expect(turn?.delivery, JSON.stringify(turn)).toBe(delivery)
       return { requestId, turn, events }
     } finally { unsubscribe() }
   }
-  return { db, provider, providers, configuration, context, conversation, repository, frames, chat, app,
+  return { db, provider, configuration, context, conversation, repository, frames, chat, app,
     journal, writer, reader, call, value, send, receivedAttachments,
     async snapshot() {
       const row = (await repository.get(conversation.id))!
@@ -280,8 +267,7 @@ export async function remoteAgentConversation(harness: 'codex' | 'claude', locat
       try { await chat.shutdown() }
       finally {
         try {
-          await workerChats.close(); await host.shutdown()
-          for (const current of providers) await current.manager.dispose?.()
+          await workerChats.close(); await host.shutdown(); await provider.manager.dispose?.()
           lifetime.abort(); await workerFiles.close(); await journal.close()
         }
         finally { try { await app.close() } finally { await db.close() } }
