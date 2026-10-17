@@ -10,6 +10,7 @@ import { createClaudeSdkRunner } from '../../src/modules/harnesses/claudeSdk/run
 import { allocateClaudeNativeHarness } from '../../src/modules/harnesses/claudeSdk/composition.js'
 import { ActivityProductionReplay } from './activityProductionReplay.js'
 import { deferred, type Deferred } from './deferred.js'
+import { HarnessExecutionError } from '../../src/modules/harnesses/errors.js'
 
 /** Only provider I/O is recorded. Both native adapters and the remote conversation stack are real. */
 export async function remoteChatProvider(harness: 'codex' | 'claude', directory: string, options: {
@@ -139,7 +140,18 @@ export async function remoteChatProvider(harness: 'codex' | 'claude', directory:
       sdkOptions: { includePartialMessages: true }, qualification: { sdkVersion: '0.3.284', cliVersion: '2.1.284',
         basicTurns: true, resume: true, fork: false, history: true } }).manager
   }
+  let loseCreationResponse = false
+  const createSession = manager.createSession.bind(manager)
+  manager.createSession = async (...args) => {
+    const session = await createSession(...args)
+    if (loseCreationResponse) {
+      loseCreationResponse = false
+      throw new HarnessExecutionError('CODEX_SESSION_CREATION_UNCERTAIN', 'The recorded native creation response was lost.')
+    }
+    return session
+  }
   return { manager, modes, prompts, calls, get compactions() { return compactions },
+    loseNextCreationResponse() { loseCreationResponse = true },
     holdCompactionNotifications() { holdCompactionNotifications = true },
     releaseCompactionNotifications() {
       holdCompactionNotifications = false
