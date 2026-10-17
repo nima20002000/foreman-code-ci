@@ -8,6 +8,7 @@ import { SavedNodePlacementSchema } from './nodePlacement.js';
 import { WorkspaceRootPolicySchema } from './workspaceRootPolicies.js';
 import { PromptSettingSnapshotSchema } from './prompts.js';
 import { AcceptedProviderAccountBindingSchema } from './providerAccounts.js';
+import { SessionControlRequestSchema, SessionControlStateSchema } from './sessionControls.js';
 
 export const AgentChatDirectoryBindingSchema = z.object({ workflowVersionId: z.string().min(1),
   placement: SavedNodePlacementSchema, policy: WorkspaceRootPolicySchema,
@@ -16,8 +17,19 @@ export type AgentChatDirectoryBinding = z.infer<typeof AgentChatDirectoryBinding
 
 import {
   RecordedAgentHarnessSchema, HarnessExecutionSchema, ExecutionResultSchema, IdSchema, MessageSchema, OperatorActivityCursorSchema,
-  OperatorActivitySchema, PendingNativeInteractionSchema, TimestampSchema,
+  OperatorActivitySchema, PendingNativeInteractionSchema, TimestampSchema, SupportedHarnessConfigurationSchema,
 } from "./index.js";
+
+export const AgentChatControlsStateSchema = SessionControlStateSchema.extend({
+  configuration: z.object({ versionId: IdSchema, metadataRevision: z.number().int().nonnegative(),
+    harness: SupportedHarnessConfigurationSchema }).strict().optional(),
+});
+export const AgentChatControlsUpdateRequestSchema = z.union([
+  SessionControlRequestSchema,
+  z.object({ kind: z.literal('configuration'), requestId: z.string().min(8).max(200),
+    expectedRevision: z.number().int().nonnegative(), expectedConfigurationVersionId: IdSchema,
+    configuration: SupportedHarnessConfigurationSchema }).strict(),
+]);
 
 /**
  * FEAT-15 selected-Agent chat (NIM-2682 frozen seam).
@@ -100,6 +112,8 @@ const AgentChatOriginSchema = z.discriminatedUnion("kind", [
 export type AgentChatOrigin = z.infer<typeof AgentChatOriginSchema>;
 
 export const AgentConversationSchema = z.object({
+  previousConversationId: IdSchema.optional(),
+  archived: z.boolean().optional(),
   providerAccountBinding: AcceptedProviderAccountBindingSchema.optional(),
   id: IdSchema,
   workspaceId: IdSchema,
@@ -297,7 +311,7 @@ export const SendAgentChatMessageRequestSchema = z.object({
   requestId: IdSchema,
   ...MessageAttachmentFields,
   context: AgentChatQuerySchema,
-  content: z.string().trim().max(AGENT_CHAT_MAX_MESSAGE_CHARACTERS).describe('Message text, up to 1,048,576 characters.'),
+  content: z.string().trim().max(AGENT_CHAT_MAX_MESSAGE_CHARACTERS).describe('Message text, up to 1,048,576 characters. Bare /new starts a separate Agent conversation and returns a reset response without a model turn.'),
   sessionMode: z.enum(['regular', 'plan']).optional()
     .describe('Selects the mode for a new turn. Steering may only retain the active applied mode; mode changes and /plan tasks require next_turn or interrupt_and_send.'),
   intent: AgentChatIntentSchema.default("next_turn")
@@ -330,6 +344,16 @@ export const SendAgentChatMessageResponseSchema = z.object({
 }).strict();
 export type SendAgentChatMessageResponse = z.infer<typeof SendAgentChatMessageResponseSchema>;
 
+/** /new creates a conversation without admitting a model turn. */
+export const AgentChatResetResponseSchema = z.object({
+  state: AgentChatStateSchema,
+  reset: z.object({ requestId: IdSchema, previousConversationId: IdSchema.nullable() }).strict(),
+  replayed: z.boolean(),
+}).strict();
+export const AgentChatSendResponseSchema = z.union([
+  SendAgentChatMessageResponseSchema, AgentChatResetResponseSchema,
+]);
+
 /** POST /api/workspaces/:workspaceId/agent-chat/conversations/:conversationId/interrupt */
 export const InterruptAgentChatRequestSchema = z.object({
   requestId: IdSchema,
@@ -343,6 +367,11 @@ export const RespondAgentChatInteractionRequestSchema = z.object({
   response: z.json().optional(),
 }).strict();
 export const AgentChatStateResponseSchema = z.object({ state: AgentChatStateSchema }).strict();
+/** POST /api/workspaces/:workspaceId/agent-chat/conversation — the stored conversation record, created when absent (no native session). Files attach to it. */
+export const EnsureAgentChatConversationRequestSchema = z.object({
+  context: AgentChatQuerySchema, executionId: IdSchema.optional(),
+}).strict();
+export type EnsureAgentChatConversationRequest = z.infer<typeof EnsureAgentChatConversationRequestSchema>;
 
 /** GET .../conversations/:conversationId/history?before&limit — older messages. */
 export const AgentChatHistoryPageSchema = z.object({
@@ -364,6 +393,8 @@ export const AgentChatTurnPageSchema = z.object({
 /** agent_chat_read retains its ordinary state response; explicit page requests add readback fields. */
 export const ReadAgentChatRequestSchema = z.object({
   workspaceId: IdSchema,
+  /** Read a retained conversation in this exact Agent context. */
+  conversationId: IdSchema.optional(),
   query: AgentChatQuerySchema,
   history: AgentChatReadbackQuerySchema.optional(),
   receipts: AgentChatReadbackQuerySchema.optional(),

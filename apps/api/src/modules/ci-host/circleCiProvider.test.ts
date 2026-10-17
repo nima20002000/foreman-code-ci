@@ -9,6 +9,36 @@ import { fixture } from './cloud.testSupport.js'
 import { cloudService } from './cloudService.testSupport.js'
 import { CircleCiProvider, type CloudDispatchInput } from './cloudProviders.js'
 import { systemHostCiPorts } from './runner.js'
+import { CloudHttp } from './cloudHttp.js'
+
+it('keeps readiness, trigger, status, live output, final output, artifacts and cancel on one selected context', async () => {
+  const f = await fixture({}, { provider: 'circleci' })
+  const calls: string[][] = []
+  const ports = { ...f.ports, run: async (...args: Parameters<typeof f.ports.run>) => {
+    calls.push([args[0], ...args[1]])
+    return f.ports.run(...args)
+  } }
+  const provider = new CircleCiProvider(ports, { http: new CloudHttp(ports, 'circleci', { circleToken: async () => null }) },
+    { owner: 'delta', circleAccountId: 'reserve', mirrorNames: new Set(['site-ci']) })
+  const run = { runId: randomUUID(), repository: 'octo/site', mirror: 'delta/site-ci', commit: f.commit,
+    suite: 'lint' as const, startedAt: new Date().toISOString(), providerRunId: 'run-1', state: 'running' as const,
+    finishedAt: null, exitCode: null, message: null, circleAccountId: 'reserve' }
+  expect(await provider.ready()).toBe(true)
+  expect(await provider.dispatch({ mirror: run.mirror, branch: 'main', runId: run.runId, suite: 'lint', slice: '' })).toBe('run-1')
+  f.circle.steps = [{ num: 1, name: 'Suite', phase: 'started' }]
+  f.circle.output = 'progress'
+  expect(await provider.status(run)).toMatchObject({ done: false, output: { text: 'progress' } })
+  expect(await provider.log(run)).toContain('progress')
+  expect(await provider.artifacts(run, join(f.root, 'results'))).toMatchObject({ durations: null })
+  await provider.cancel(run)
+  expect(calls.some(call => call[1] === 'auth')).toBe(true)
+  expect(calls.some(call => call[1] === 'run' && call[2] === 'trigger')).toBe(true)
+  expect(calls.some(call => call[1] === 'job' && call[2] === 'output')).toBe(true)
+  expect(calls.some(call => call[1] === 'job' && call[2] === 'artifact')).toBe(true)
+  expect(f.circle.canceled).toEqual(['run-1'])
+  expect(calls.flat()).not.toContain('fixture-token')
+  expect(provider.circleAccountId).toBe('reserve')
+})
 
 it.each([undefined, 221366])('sends declared CircleCI pipeline parameters with compatible types: %s', async duration => {
   const config = parse(await readFile(new URL('../../../../../.circleci/config.yml', import.meta.url), 'utf8')) as {
