@@ -20,7 +20,7 @@ afterEach(() => {
   useChatWindowsStore.setState({ open: {}, frames: {}, focus: {} })
 })
 
-/** The mounted Board route with MSW: an Agent node's chat action opens floating chat windows. */
+/** The mounted Board route with MSW: selecting an Agent node on the canvas opens floating chat windows. */
 async function mountDraftBoard(suffix: string) {
   installChatSource()
   const fixture = await inspectionBoardFixture(suffix), saved = fixture.runs.before.scope
@@ -40,16 +40,14 @@ async function mountDraftBoard(suffix: string) {
   const names = { first: first!.name!, second: second!.name! }
   // fireEvent: user-event's mousedown has no window view, which React Flow's node drag handler requires.
   const node = (name: string) => screen.findByRole('button', { name: new RegExp(`^${name},`) })
-  // The node's chat action is the only way a chat opens; selecting the node does not.
-  const chatAction = (name: string) => screen.findByRole('button', { name: `Open ${name} chat` })
   const windowNamed = (name: string) => screen.findByRole('dialog', { name: `${name} chat` })
-  return { names, node, chatAction, windowNamed, chat, contexts }
+  return { names, node, windowNamed, chat, contexts }
 }
 const px = (element: HTMLElement, property: 'left' | 'top' | 'width' | 'height') => parseFloat(element.style[property])
 
 describe('floating Agent chat windows on the Board', () => {
   it.each(['window', 'board'] as const)('loads the composer without stealing focus from the %s', async (focusTarget) => {
-    const { names, node, chatAction, windowNamed, chat, contexts } = await mountDraftBoard(`chatwin-loading-${focusTarget}`)
+    const { names, node, windowNamed, chat, contexts } = await mountDraftBoard(`chatwin-loading-${focusTarget}`)
     let release!: () => void
     const pending = new Promise<void>((resolve) => { release = resolve })
     server.use(http.get('/api/workspaces/:workspaceId/agent-chat', async () => {
@@ -57,7 +55,7 @@ describe('floating Agent chat windows on the Board', () => {
       return HttpResponse.json(chat.getState(contexts[0]!))
     }))
     const selectedNode = await node(names.first)
-    fireEvent.click(await chatAction(names.first))
+    fireEvent.click(selectedNode)
     const chatWindow = await windowNamed(names.first)
     await waitFor(() => expect(chatWindow).toHaveFocus())
     if (focusTarget === 'board') await act(async () => selectedNode.focus())
@@ -69,26 +67,26 @@ describe('floating Agent chat windows on the Board', () => {
     await waitFor(() => expect(focusTarget === 'window' ? input : selectedNode).toHaveFocus())
   }, 30_000)
 
-  it('opens that Agent chat from its chat action and keeps several windows open', async () => {
-    const { names, chatAction, windowNamed } = await mountDraftBoard('chatwin-open')
-    fireEvent.click(await chatAction(names.first))
+  it('opens that Agent chat when a node is selected and keeps several windows open', async () => {
+    const { names, node, windowNamed } = await mountDraftBoard('chatwin-open')
+    fireEvent.click(await node(names.first))
     const first = await windowNamed(names.first)
     expect(await within(first).findByRole('textbox', { name: 'Message' })).toBeEnabled()
-    fireEvent.click(await chatAction(names.second))
+    fireEvent.click(await node(names.second))
     const second = await windowNamed(names.second)
     expect(within(second).getByTestId('agent-conversation')).not.toBe(within(first).getByTestId('agent-conversation'))
     expect(screen.getAllByRole('dialog', { name: /chat$/ })).toHaveLength(2)
-    // Using the chat action of an open Agent again focuses and raises its window instead of opening another.
-    fireEvent.click(await chatAction(names.first))
+    // Selecting an open Agent again focuses and raises its window instead of opening another.
+    fireEvent.click(await node(names.first))
     expect(screen.getAllByRole('dialog', { name: /chat$/ })).toHaveLength(2)
     await waitFor(() => expect(first.contains(document.activeElement)).toBe(true))
     expect(Number(first.style.zIndex)).toBeGreaterThan(Number(second.style.zIndex))
   }, 30_000)
 
   it('stays open when the Board background is clicked and closes only through its own X', async () => {
-    const { names, chatAction, windowNamed } = await mountDraftBoard('chatwin-close')
-    fireEvent.click(await chatAction(names.first))
-    fireEvent.click(await chatAction(names.second))
+    const { names, node, windowNamed } = await mountDraftBoard('chatwin-close')
+    fireEvent.click(await node(names.first))
+    fireEvent.click(await node(names.second))
     const first = await windowNamed(names.first), second = await windowNamed(names.second)
     fireEvent.click(document.querySelector<HTMLElement>('.react-flow__pane')!)
     fireEvent.mouseDown(document.body)
@@ -99,8 +97,8 @@ describe('floating Agent chat windows on the Board', () => {
   }, 30_000)
 
   it('moves by its header and resizes by its handle, and a reselected window keeps its place', async () => {
-    const { names, chatAction, windowNamed } = await mountDraftBoard('chatwin-frame')
-    fireEvent.click(await chatAction(names.first))
+    const { names, node, windowNamed } = await mountDraftBoard('chatwin-frame')
+    fireEvent.click(await node(names.first))
     const chat = await windowNamed(names.first)
     const left = px(chat, 'left'), top = px(chat, 'top'), width = px(chat, 'width'), height = px(chat, 'height')
     const title = within(chat).getByRole('heading', { name: names.first })
@@ -122,16 +120,16 @@ describe('floating Agent chat windows on the Board', () => {
     expect(px(chat, 'height')).toBe(height + 20); expect(px(chat, 'width')).toBe(width + 30)
     await userEvent.click(within(chat).getByRole('button', { name: `Close ${names.first}` }))
     await waitFor(() => expect(chat).not.toBeInTheDocument())
-    fireEvent.click(await chatAction(names.first))
+    fireEvent.click(await node(names.first))
     const reopened = await windowNamed(names.first)
     expect([px(reopened, 'left'), px(reopened, 'top'), px(reopened, 'width'), px(reopened, 'height')])
       .toEqual([left - 70, top + 30, width + 30, height + 20])
   }, 30_000)
 
   it('raises a window when it is clicked and closes the focused one with Escape', async () => {
-    const { names, chatAction, windowNamed } = await mountDraftBoard('chatwin-raise')
-    fireEvent.click(await chatAction(names.first))
-    fireEvent.click(await chatAction(names.second))
+    const { names, node, windowNamed } = await mountDraftBoard('chatwin-raise')
+    fireEvent.click(await node(names.first))
+    fireEvent.click(await node(names.second))
     const first = await windowNamed(names.first), second = await windowNamed(names.second)
     expect(Number(second.style.zIndex)).toBeGreaterThan(Number(first.style.zIndex))
     fireEvent.pointerDown(within(first).getByRole('heading', { name: names.first }), { pointerId: 1, button: 0, clientX: 1, clientY: 1 })
@@ -143,11 +141,11 @@ describe('floating Agent chat windows on the Board', () => {
   }, 30_000)
 
   it('brings a window to front when keyboard focus enters its composer', async () => {
-    const { names, chatAction, windowNamed } = await mountDraftBoard('chatwin-keyboard-focus')
-    fireEvent.click(await chatAction(names.first))
+    const { names, node, windowNamed } = await mountDraftBoard('chatwin-keyboard-focus')
+    fireEvent.click(await node(names.first))
     const first = await windowNamed(names.first)
     const firstInput = await within(first).findByRole('textbox', { name: 'Message' })
-    fireEvent.click(await chatAction(names.second))
+    fireEvent.click(await node(names.second))
     const second = await windowNamed(names.second)
     const secondInput = await within(second).findByRole('textbox', { name: 'Message' })
     await act(async () => secondInput.focus())
@@ -160,32 +158,21 @@ describe('floating Agent chat windows on the Board', () => {
     expect(screen.getAllByRole('dialog', { name: /chat$/ })).toHaveLength(2)
   }, 30_000)
 
-  it('does not open a chat when an Agent node is selected or clicked', async () => {
-    const { names, node } = await mountDraftBoard('chatwin-select-only')
-    const first = await node(names.first)
-    fireEvent.click(first)
-    await waitFor(() => expect(first).toHaveAttribute('aria-pressed', 'true'))
-    fireEvent.click(await node(names.second))
-    fireEvent.click(document.querySelector<HTMLElement>('.react-flow__pane')!)
-    expect(screen.queryByRole('dialog', { name: /chat$/ })).not.toBeInTheDocument()
-    expect(screen.queryByTestId('agent-conversation')).not.toBeInTheDocument()
-  }, 30_000)
-
   it('opens a new window beside the selected Agent instead of covering it, then keeps the person\'s position', async () => {
-    const { names, chatAction, windowNamed } = await mountDraftBoard('chatwin-placement')
+    const { names, node, windowNamed } = await mountDraftBoard('chatwin-placement')
     // The test Board is 1000x720; put the Agent where the window would normally open (right side).
     const rect = (left: number, top: number, width: number, height: number) =>
       ({ x: left, y: top, left, top, right: left + width, bottom: top + height, width, height, toJSON: () => ({}) })
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
       return this.matches('.react-flow__node') ? rect(640, 160, 200, 200) : rect(0, 0, 1000, 720)
     })
-    fireEvent.click(await chatAction(names.first))
+    fireEvent.click(await node(names.first))
     const chat = await windowNamed(names.first)
     const frame = { left: px(chat, 'left'), top: px(chat, 'top'), width: px(chat, 'width'), height: px(chat, 'height') }
     const separated = frame.left + frame.width <= 640 || frame.left >= 840 || frame.top + frame.height <= 160 || frame.top >= 360
     expect(separated).toBe(true)
     await userEvent.click(within(chat).getByRole('button', { name: `Close ${names.first}` }))
-    fireEvent.click(await chatAction(names.first))
+    fireEvent.click(await node(names.first))
     const reopened = await windowNamed(names.first)
     expect([px(reopened, 'left'), px(reopened, 'top')]).toEqual([frame.left, frame.top])
   }, 30_000)

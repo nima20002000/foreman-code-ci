@@ -38,40 +38,15 @@ function fixture() {
         occurredAt: f.createdAt, payload: { threadId: 'session', turnId: 'turn', status: 'completed' } }] } },
   } as WorkflowNativeProofRecord
   const row = { record: proof, source_digest: repeatDigest(proof, 4 * 1024 * 1024) }
-  const state = { repairAttempt: 0, rows: [row] }
-  const connection = new ExclusiveGraphConnection({ query: async (text: string) => ({
-    rows: text.includes('from execution_work_result_repairs') ? [{ attempt: state.repairAttempt }] : state.rows,
-    rowCount: state.rows.length,
-  }) } as unknown as pg.ClientBase, () => {})
+  const connection = new ExclusiveGraphConnection({ query: async () => ({ rows: [row], rowCount: 1 }) } as unknown as pg.ClientBase, () => {})
   const snapshot = { run, version: f.version, configurations: f.configurations,
     stopRequested: false, cleanupPending: false } satisfies AcceptedRepeatRunSnapshot
   const stored = { execution, ref: proof.ref, slotId: 'slot', input, inputDigest: proof.inputDigest, accepted: false } satisfies StoredRepeatExecution
   const read = () => connection.transaction((sql) => readWorkflowTerminalReceiptLocked(sql, snapshot, stored))
-  return { proof, row, read, state }
+  return { proof, row, read }
 }
 
 describe('committed native terminal before business acceptance', () => {
-  it.each([1, 2])('recovers the final receipt after %s corrections while retaining rejected native results', async count => {
-    const f = fixture()
-    const final = structuredClone(f.proof)
-    if (final.original.type !== 'history' || f.proof.original.type !== 'history') throw new Error('Expected terminal history')
-    const correlationId = `execution:execution:result-repair:${count}`
-    const turnId = `corrective-${count}`
-    final.proofId = 'corrected-proof'
-    final.original.history.correlationId = correlationId
-    final.original.history.nativeTurnId = turnId
-    final.original.history.terminalTurn = { ...final.original.history.terminalTurn!, correlationId, providerId: turnId }
-    final.original.history.events[0]!.payload = { threadId: 'session', turnId, clientCorrelationId: correlationId, status: 'completed' }
-    final.lane!.providerId = turnId
-    f.proof.original.history.terminalTurn!.result = { outcome: 'succeeded', output: { text: 'rejected original envelope' } }
-    f.row.source_digest = repeatDigest(f.proof, 4 * 1024 * 1024)
-    f.state.repairAttempt = count
-    f.state.rows.push({ record: final, source_digest: repeatDigest(final, 4 * 1024 * 1024) })
-    const original = structuredClone(f.row)
-    expect(await f.read()).toEqual({ proof: final, sourceDigest: repeatDigest(final, 4 * 1024 * 1024) })
-    expect(f.row).toEqual(original)
-  })
-
   it('retains the original receipt on repeat reads before business acceptance', async () => {
     receipts.assert.mockReset()
     receipts.retain.mockReset()

@@ -29,9 +29,7 @@ export function mountProductionWorkflowArtifacts(input: Parameters<typeof create
   commands: Pick<PostgresCommandCoordinator, 'recordDenied'>
 }) {
   const receiver = createWorkflowArtifactReceiver(input)
-  const artifacts = createProductionDistributedArtifacts({ ...input, authority: input.authority,
-    readAuthority: { authorize: (accepted, sql) => input.authority.authorizePublication(accepted, sql) },
-    transfers: receiver.reader })
+  const artifacts = createProductionDistributedArtifacts({ ...input, authority: input.authority, transfers: receiver.reader })
   // onRequest, the shared handler and the extension may all resample authority.
   // One denied request retains one audit, without copying its credential.
   const audited = new WeakSet<FastifyRequest>()

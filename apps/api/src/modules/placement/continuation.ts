@@ -11,13 +11,12 @@ import type { AcceptedExecutionBinding } from './nativeComposition.js'
  * implementation performs destination-native checks; main filesystem checks
  * must never be substituted for a remote root. No native launch occurs here. */
 export interface AcceptedDestinationContinuation {
-  assertCurrent(binding: AcceptedExecutionBinding, signal?: AbortSignal, purpose?: 'restart'): Promise<void>
+  assertCurrent(binding: AcceptedExecutionBinding, signal?: AbortSignal): Promise<void>
 }
 export function placedContinuationValidator(pool: pg.Pool, locations: WorkspaceLocationService,
   managers: { prepare(executionId: string): Promise<AcceptedExecutionBinding | null> }, destination: AcceptedDestinationContinuation) {
   const local = continuationValidator(pool, locations)
-  const validate = async (executionId: string, options: { signal?: AbortSignal; purpose?: 'restart' }): Promise<void> => {
-    const { signal, purpose } = options
+  return async (executionId: string, signal?: AbortSignal): Promise<void> => {
     const binding = await managers.prepare(executionId)
     if (!binding) return local(executionId, signal)
     const client = interactionConnection.getStore() ?? pool
@@ -42,11 +41,7 @@ export function placedContinuationValidator(pool: pg.Pool, locations: WorkspaceL
       throw new DomainError('WORKER_EXECUTION_IDENTITY_INVALID', 'Native continuation requires the exact accepted host/configuration identity.', 409)
     }
     await locations.revalidateRunAuthorization(run.authorizationPrincipalId, run.workspaceId, run.workflowId, client)
-    await destination.assertCurrent(binding, signal, purpose)
+    await destination.assertCurrent(binding, signal)
     signal?.throwIfAborted()
   }
-  return Object.assign((executionId: string, signal?: AbortSignal) =>
-    validate(executionId, signal ? { signal } : {}), {
-    forRestart: (executionId: string) => validate(executionId, { purpose: 'restart' }),
-  })
 }

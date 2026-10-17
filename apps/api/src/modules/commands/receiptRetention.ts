@@ -16,27 +16,8 @@ const retrySnapshotOperations = [
   'workspace.location.clear', 'workspace.location.provision',
   'workspace.root.configuration.adopt', 'workspace.root.managed.bind',
   'computer_sync_update', 'ci_enrollment_update',
-  'source.approve', 'source.project.capture',
 ]
 const retrySnapshots = new Set(retrySnapshotOperations)
-// A reused capture has no approval row of its own. Keep its approval response
-// until the capture response is gone, so later pages can still resolve its snapshot.
-const sourceResponseReleased = `(r.operation not in ('source.approve','source.project.capture') or exists (
-  select 1 from management_command_receipts response
-  left join management_command_receipts approved on approved.principal_id=response.principal_id
-    and approved.command_id=response.command_id and approved.operation='source.approve'
-  left join source_approvals approval on approval.requested_by=response.principal_id
-    and approval.command_id=response.command_id
-  join source_snapshots snapshot on snapshot.snapshot_id=(case when r.operation='source.approve'
-    then response.result#>>'{manifest,snapshotId}'
-    else coalesce(approved.result#>>'{manifest,snapshotId}',approval.snapshot_id::text) end)::uuid
-  where response.principal_id=r.principal_id and response.operation=r.operation and response.command_id=r.command_id
-    and snapshot.availability='unavailable'
-    and (r.operation<>'source.approve' or approval.snapshot_id=snapshot.snapshot_id or not exists (
-      select 1 from management_command_receipts capture where capture.principal_id=r.principal_id
-        and capture.command_id=r.command_id and capture.operation='source.project.capture'
-    ))
-))`
 
 export function expiredCommandResult(): DomainError {
   return new DomainError('COMMAND_RESULT_EXPIRED',
@@ -95,7 +76,7 @@ export class PostgresCommandReceiptRetention {
         const rows = (await this.pool.query<{
           principal_id: string; operation: string; command_id: string; created_at: Date;
           created_at_key: string; completed_at: Date | null;
-          revision: string; status: string | null; has_control: boolean; has_ack: boolean; source_released: boolean;
+          revision: string; status: string | null; has_control: boolean; has_ack: boolean;
         }>(`with candidates as materialized (
           select principal_id,operation,command_id,created_at,activity_record_revision,
             activity_status,activity_control,activity_acknowledgment from management_command_receipts
@@ -105,8 +86,7 @@ export class PostgresCommandReceiptRetention {
         ) select r.principal_id,r.operation,r.command_id,r.created_at,r.created_at::text as created_at_key,
           a.occurred_at as completed_at,
           r.activity_record_revision::text as revision,r.activity_status as status,
-          r.activity_control is not null as has_control,r.activity_acknowledgment is not null as has_ack,
-          ${sourceResponseReleased} as source_released
+          r.activity_control is not null as has_control,r.activity_acknowledgment is not null as has_ack
           from candidates r
           left join lateral (select occurred_at from management_audit
             where principal_id=r.principal_id and action=r.operation and details->>'commandId'=r.command_id
@@ -118,16 +98,15 @@ export class PostgresCommandReceiptRetention {
         const last = rows.at(-1)
         if (last) nextCursor = { operation: last.operation, createdAt: last.created_at_key,
           principalId: last.principal_id, commandId: last.command_id }
-        return rows.flatMap(row => row.completed_at === null || !row.source_released ? [] : [{
+        return rows.flatMap(row => row.completed_at === null ? [] : [{
           principalId: row.principal_id, operation: row.operation, commandId: row.command_id,
           createdAt: row.created_at.getTime(), completedAt: row.completed_at.getTime(), revision: row.revision,
           status: row.status, hasAcceptedControl: row.has_control, hasAcknowledgment: row.has_ack,
         }])
       },
       remove: async row => {
-        const deleted = await this.pool.query(`delete from management_command_receipts r
-          where principal_id=$1 and operation=$2 and command_id=$3 and activity_record_revision=$4
-            and ${sourceResponseReleased}`,
+        const deleted = await this.pool.query(`delete from management_command_receipts
+          where principal_id=$1 and operation=$2 and command_id=$3 and activity_record_revision=$4`,
         [row.principalId, row.operation, row.commandId, row.revision])
         return deleted.rowCount === 1
       },

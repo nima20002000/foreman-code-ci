@@ -28,5 +28,3 @@ export function waitForIdleRuns(options: {
   log?: (message: string) => void
   sleep?: (milliseconds: number) => Promise<void>
 }): Promise<void>
-
-export function pruneApiDependencies(root: string, releases: readonly string[]): Promise<string[]>
