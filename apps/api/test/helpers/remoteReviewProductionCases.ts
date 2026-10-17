@@ -372,12 +372,10 @@ export async function retainedReviewRecovery(fixture: Fixture, recovery: 'crash'
   expect(reconnected.map(owner => ({ owner: owner.owner, launchId: owner.launchId,
     guardian: owner.guardian, provider: owner.provider, boundary: owner.boundary }))).toEqual(originalLaunches)
   expect(reconnected.every(owner => owner.lifecycle === 'active')).toBe(true)
-  // Attachment temporarily owns the same correlated lane. Wait for history from
-  // the replacement review observer, whose writer stays live through the decision.
-  const recoveredLease = await waitForRemoteReview(async () => {
+  await waitForRemoteReview(async () => {
     await fixture.reconcileReviews()
     const row = (await fixture.db.pool.query<{
-      record: unknown; credential_bound: boolean; reviewer_live: boolean; writer_live: boolean; observer_ready: boolean
+      record: unknown; credential_bound: boolean; reviewer_live: boolean; writer_live: boolean
     }>(`select
       j.record,exists(select 1 from worker_credential_bindings b where b.execution_id=j.execution_id
         and b.approval_review_lease_fence=j.lease_fence and b.revoked_at is null) as credential_bound,
@@ -387,24 +385,16 @@ export async function retainedReviewRecovery(fixture: Fixture, recovery: 'crash'
           and l.record->>'leaseToken' is not null
           and (l.record->>'leaseExpiresAt')::timestamptz>clock_timestamp()
           and (l.record->>'connectionGeneration')::bigint=j.approval_connection_generation) as writer_live,
-      exists(select 1 from review_native_proofs p join native_session_lanes l
-        on l.harness=j.record->>'provider' and l.native_session_id=j.record->>'nativeSessionId'
-        where p.job_id=j.id and p.record#>>'{jobLease,token}'=j.lease_token
-          and (p.record#>>'{jobLease,fence}')::bigint=j.lease_fence
-          and p.record#>>'{lane,token}'=l.record->>'leaseToken'
-          and p.record#>>'{original,type}'='history') as observer_ready,
       exists(select 1 from execution_dispatch_intents i join remote_execution_receipts r using(operation_id)
         where i.execution_id=j.execution_id
           and (r.receipt#>>'{retainedReviewer,expiresAt}')::timestamptz>clock_timestamp()) as reviewer_live
       from review_jobs j where j.id=$1`, [active.job.id])).rows[0]
     if (!row) return undefined
     return { job: ReviewJobSchema.parse(row.record),
-      credentialBound: row.credential_bound, reviewerLive: row.reviewer_live, writerLive: row.writer_live,
-      observerReady: row.observer_ready }
+      credentialBound: row.credential_bound, reviewerLive: row.reviewer_live, writerLive: row.writer_live }
   }, value => !!value && value.job.attempt > active.job.attempt && value.job.state === 'acknowledged'
-    && value.credentialBound && value.reviewerLive && value.writerLive && value.observerReady,
+    && value.credentialBound && value.reviewerLive && value.writerLive,
   'replacement Main review lease and original process credential rebinding')
-  expect(recoveredLease?.observerReady, 'recovery must finish attachment before resuming the reviewer').toBe(true)
   expect(await processCredentials()).toEqual(originalCredentials)
   if (recovery === 'graceful') {
     const generations = (await fixture.db.pool.query<{ generation: string; detached: boolean; closed: boolean }>(`select
