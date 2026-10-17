@@ -40,10 +40,8 @@ export function selectedInteractionResponse(interaction: DurableInteraction) {
   return withInteractionResponse(offered, object(interaction.nativeResponse)?.response)
 }
 
-/** Codex 0.154 has no response ACK, but its retained history can prove that the
- * exact locally submitted permission response was consumed: the provider resolves
- * that request and then executes the same gated command item on the same turn and
- * connection. Resolution or command completion alone is deliberately insufficient. */
+/** Retained command history can also qualify delivery when no adapter receipt is available.
+ * This path requires both the resolved submission and execution of the gated item. */
 function matchingCodexCommandExecution(
   interaction: DurableInteraction,
   session: NativeSessionReference,

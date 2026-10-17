@@ -75,7 +75,6 @@ function DraftLoader({ draftKey, workspaceId, workflowId, initialContext, update
   if (edit) return <EditorForm draftKey={draftKey} edit={edit} updateFailures={updateFailures} />
   if (storageError || source.isError) return <section className="workflow-graph-state" role="alert">
     <h2>Authoring unavailable</h2><p>{storageError ?? source.error?.message}</p>
-    <p>No retained command was deleted, retagged or replaced.</p>
     {!storageError ? <Button onClick={() => void source.refetch()}>Try again</Button> : null}
   </section>
   return <BoardLoading />
