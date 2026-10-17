@@ -6,6 +6,7 @@ import { WorkflowRelationshipSchema, type WorkflowDefinitionV3, type WorkflowRel
 import type { Agent } from '@foreman-code/contracts'
 import { AgentNodeView, AgentPopover, Dialog, IconButton, Icon, type AgentPanel } from '../../../shared/ui/nocturne'
 import { createGraphTopologyProjector } from '../topology'
+import { GRAPH_NODE_DEFAULT_SIZE } from '../mapper'
 import { createGraphGeometryAdapter, type GraphGeometryChange } from '../geometry'
 import { CircularNodeResizer } from '../CircularNodeResizer'
 import { useGraphDraftStore } from '../store'
@@ -66,7 +67,7 @@ const DraftAgent = memo(function DraftAgent({ id, data, selected, width, height 
         setOpen(panel === next ? undefined : { nodeId: id, panel: next })
       })}>
       <AgentHandles name={data.label} />
-      <CircularNodeResizer id={id} name={data.label} width={width ?? 212} height={height ?? 212}
+      <CircularNodeResizer id={id} name={data.label} width={width ?? GRAPH_NODE_DEFAULT_SIZE} height={height ?? GRAPH_NODE_DEFAULT_SIZE}
         onStart={beginResize} onResize={resize}
         onFinish={(change) => finishResize?.(id, change.width!, change.height!, change.position)} />
     </AgentNodeView>
@@ -81,7 +82,7 @@ type DraftEdge = Edge<{ kind: WorkflowRelationship['kind']; bend: number;
   workPolicy: boolean; maxWorkHandoffsPerRun?: number; draftChanged: boolean; disabled: boolean;
   onApplyLimit?: (value?: number) => void }>
 const TypedEdge = memo(function TypedEdge({ id, source, target, data, selected }: EdgeProps<DraftEdge>) {
-  const curve = useFloatingCurve(source, target, data?.bend ?? 28)
+  const curve = useFloatingCurve(source, target, data?.bend ?? 0)
   const { hovered, onPointerEnter, onPointerLeave } = useHoverControls()
   const [editing, setEditing] = useState(false)
   const [focused, setFocused] = useState(false)
@@ -231,7 +232,7 @@ export const DraftCanvas = forwardRef<DraftCanvasHandle, {
     <div ref={responsive.containerRef} className={`next-draft-canvas board-draft-canvas${connecting ? ' is-connecting' : ''}`} style={selectedRun ? { display: 'none' } : undefined} aria-hidden={!!selectedRun} inert={!!selectedRun} aria-label="Editable workflow graph">
       {/* While a Run is shown, the draft's data stays mounted but its flow does not: a hidden
           flow measures a zero-size box and would come back empty on Return to draft. */}
-      {selectedRun ? null : <ReactFlow<GraphNode | CiServerFlowNode, DraftEdge> nodes={flowNodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes}
+      {selectedRun ? null : <ReactFlow<GraphNode | CiServerFlowNode, DraftEdge> nodes={flowNodes} nodesDraggable={false} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes}
         onNodesChange={onNodesChange} connectionMode={ConnectionMode.Loose} connectionRadius={120} deleteKeyCode={null}
         fitView fitViewOptions={fitViewOptions} proOptions={proOptions} minZoom={RESPONSIVE_MIN_ZOOM} maxZoom={1.6} onInit={responsive.onInit}
         onMove={responsive.onMove}

@@ -114,24 +114,27 @@ describe('ENG05-D mounted historical identity and keyboard regressions', () => {
     const { router } = await mountMeasuredBoard(boardHref(fixture.runs.repeated.scope))
     const trigger = await screen.findByRole('button', { name: 'Activities' })
     trigger.focus(); await user.keyboard('{Enter}')
-    const close = await screen.findByRole('button', { name: 'Close Activities' })
+    const close = await screen.findByRole('button', { name: 'Close runs' })
     close.focus(); await user.tab()
+    expect(document.activeElement).not.toBe(close)
     expect(document.activeElement).not.toBe(document.body)
+    await user.tab({ shift: true })
+    expect(close).toHaveFocus()
     await user.keyboard('{Escape}')
-    await waitFor(() => expect(screen.queryByRole('button', { name: 'Close Activities' })).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Close runs' })).not.toBeInTheDocument())
     await waitFor(() => expect(trigger).toHaveFocus())
     // Open from a node that is not present in the next selected Run. The drawer
     // may trap focus while open; Escape and its named Close must always exit.
     // Activities opens from the toolbar; an agent card itself only opens its own rim panels.
     const node = await within(pinned()).findByRole('button', { name: 'Inspect Run node Worker 1' })
     node.focus(); await user.keyboard('{Enter}')
-    expect(screen.queryByRole('button', { name: 'Close Activities' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Close runs' })).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Activities' }))
-    await screen.findByRole('button', { name: 'Close Activities' })
+    await screen.findByRole('button', { name: 'Close runs' })
     await act(async () => { await router.navigate({ to: '/workspaces/$workspaceId', params: { workspaceId: fixture.mock.workspaceId },
       search: boardSearchForRun({}, fixture.after.workflowId, fixture.runs.after.scope) }) })
     await waitFor(() => expect(pinned()).toHaveTextContent('After repeat removed'))
-    await user.click(screen.getByRole('button', { name: 'Close Activities' }))
+    await user.click(screen.getByRole('button', { name: 'Close runs' }))
     // Stable Details survives all Run selections even if the original node's DOM does not.
     await waitFor(() => expect(screen.getByRole('button', { name: 'Activities' })).toHaveFocus())
     expect(wire.writes()).toHaveLength(0)
