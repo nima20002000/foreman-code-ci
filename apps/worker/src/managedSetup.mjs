@@ -138,7 +138,6 @@ export async function ensurePairedManagedSetup({ stateDirectory, pairing, home =
   assertStateOwnership, inspectInstallation }) {
   await requirePrivateDirectory(stateDirectory);
   stateDirectory = await realpath(stateDirectory);
-  home = await realpath(home);
   let unlock;
   if (!assertStateOwnership) {
     unlock = await acquireWorkerLock(stateDirectory);
