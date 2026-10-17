@@ -915,7 +915,7 @@ function configureWorkflowRepositories(composition: ProductionComposition) {
       if (!configuration) throw new DomainError('AGENT_CONFIGURATION_NOT_FOUND', 'The accepted Agent configuration is unavailable.', 409)
       const access = requiredLocationAccess([configuration])
       await locations.revalidateSnapshot(run.workspaceId, run.executionLocation, access)
-      const tree = await runWorktrees.prepare(run)
+      const tree = await runWorktrees.prepare(run, AbortSignal.timeout(60_000), execution.id)
       if (!tree) return undefined
       return { workingDirectory: tree.workingDirectory,
         runtimeDirectory: repeatRuntimeDirectory(config.harnesses.workspaceRoot, { workspaceId: run.workspaceId,
@@ -2841,7 +2841,7 @@ async function initializeComputerServices(composition: ProductionComposition, ma
           installedPlugins(maintenancePorts, mainCodex.binary, AbortSignal.timeout(120_000)),
           pluginMarketplaces(maintenancePorts, mainCodex.binary, AbortSignal.timeout(60_000))])
         const local = new Set(marketplaces.filter(marketplace => marketplace.local).map(marketplace => marketplace.name))
-        return plugins.filter(plugin => !local.has(plugin.pluginId.split('@').at(-1)!))
+        return plugins.filter(pluginId => !local.has(pluginId.split('@').at(-1)!))
       },
       codexMarketplaces: async () => await maintenancePorts.find('codex')
         ? (await pluginMarketplaces(maintenancePorts, mainCodex.binary, AbortSignal.timeout(60_000)))
