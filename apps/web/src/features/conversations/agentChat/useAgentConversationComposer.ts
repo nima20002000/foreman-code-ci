@@ -1,16 +1,12 @@
 import { useSessionControls } from '../sessionControls/useSessionControls'
 import { compactionBlocksSend, parseSessionCommand, type SessionMode } from '@foreman-code/contracts'
 import { useEffect, useRef, useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
 import type { AgentChatIntent, SendAgentChatMessageRequest } from '@foreman-code/contracts/agent-chat'
 import { useConversationAttachments } from '../../attachments'
 
 import { prepareChatAttachments } from '../chatAttachmentAttempt'
 
-import { agentChatStateKey, useAgentChat } from './useAgentChat'
-import { agentChatApi } from '../../../shared/api/agentChat'
-import { assertSession, sessionGeneration } from '../../../shared/api/sessionBoundary'
-import { useConversationDraftStore } from '../conversationDraftStore'
+import { useAgentChat } from './useAgentChat'
 
 export function useAgentConversationComposer({ chat, state, sessionControls, attachments, draft }: {
   chat: ReturnType<typeof useAgentChat>
@@ -27,27 +23,6 @@ export function useAgentConversationComposer({ chat, state, sessionControls, att
   const resendControl = resendCommand.kind === 'compact' || resendCommand.kind === 'mode'
   const resendPending = chat.pending || resendControl && sessionControls.mutation.isPending
   const [commandError, setCommandError] = useState<{ draftKey: string; content: string; message: string }>()
-  const client = useQueryClient()
-  const generation = sessionGeneration()
-  const startNew = useMutation({
-    mutationKey: ['agent-chat-new', generation, chat.draftKey], retry: false, networkMode: 'always',
-    mutationFn: async (input: { requestId: string; expectedConversationId: string | null }) => {
-      assertSession(generation)
-      if (!state) throw new Error('Refresh this conversation before starting a new one.')
-      const result = await agentChatApi.startNew(state.context, input.expectedConversationId, input.requestId)
-      assertSession(generation)
-      if (result.reset.requestId !== input.requestId
-        || result.reset.previousConversationId !== input.expectedConversationId) {
-        throw new Error('The response did not confirm the new conversation.')
-      }
-      const key = agentChatStateKey(state.context, generation)
-      await client.cancelQueries({ queryKey: key, exact: true })
-      client.setQueryData(key, result.state)
-      useConversationDraftStore.getState().clearDraft(chat.draftKey, '/new')
-      chat.refresh()
-      return result
-    },
-  })
   const commandCompaction = sessionControls.commandFeedback?.draft.content === commandError?.content
     ? sessionControls.commandFeedback?.compaction : undefined
   useEffect(() => {
@@ -71,16 +46,7 @@ export function useAgentConversationComposer({ chat, state, sessionControls, att
       if (command.kind === 'compact' || command.kind === 'mode') {
         return await sessionControls.command(content, resend ? `${chat.draftKey}:resend` : chat.draftKey)
       }
-      if (command.kind === 'new') {
-        if (chat.pending || startNew.isPending) return false
-        const denied = chat.blocked('agent_chat:write')
-        if (denied) throw new Error(denied)
-        const expectedConversationId = state?.conversation?.id ?? null
-        const retry = startNew.isError && startNew.variables?.expectedConversationId === expectedConversationId
-          ? startNew.variables : undefined
-        await startNew.mutateAsync(retry ?? { requestId: crypto.randomUUID(), expectedConversationId })
-        return true
-      }
+      if (command.kind === 'new') throw new Error('/new is available in Operator chat.')
       const mode = command.kind === 'plan-task' ? 'plan' : sessionMode ?? sessionControls.state?.desiredMode
       if (intent === 'steer' && mode === 'plan') return false
       if (compactionBlocksSend(sessionControls.state?.compaction ?? null)) return false
@@ -95,5 +61,5 @@ export function useAgentConversationComposer({ chat, state, sessionControls, att
     }
   }
   return { composer, sendAgain, setSendAgain, resendCommand, resendControl, resendPending,
-    commandError, commandCompaction, newPending: startNew.isPending, focus, submit }
+    commandError, commandCompaction, focus, submit }
 }
