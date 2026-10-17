@@ -16,7 +16,6 @@ import { SessionControlStore } from './sessionControls/store.js'
 import { acceptedResponseControl } from './acceptedResponseControl.js'
 import { nativeNonSubmission } from './nativeNonSubmission.js'
 import { sessionStartConfiguration } from '../harnesses/sessionStart.js'
-import { harnessSessionChanged } from '../harnesses/providerAccountConfiguration.js'
 import { pendingInteractionAfterHistory } from './pendingInteractionReadback.js'
 import { qualifyChatActivity } from './qualifiedActivity.js'
 import { reconcileKnownActivities } from './reconcileKnownActivities.js'
@@ -86,7 +85,7 @@ export interface AgentChatManagerFactory {
     state: import('@foreman-code/contracts').CompactionState, principalId: string, signal: AbortSignal):
     Promise<import('@foreman-code/contracts').CompactionState>
   release?(conversationId: string): void
-  unavailable?(configuration: AgentConfigurationVersion, workingDirectory: string, executionId?: string):
+  unavailable?(configuration: AgentConfigurationVersion, workingDirectory: string, executionId: string):
     Promise<{ reason: AgentChatBlockedReason; message: string } | undefined>
 }
 
@@ -344,7 +343,7 @@ export class AgentChatService {
       if (configuration.harness.harness === 'opencode') {
         return { ...sourceResolution, configuration, blocked: { reason: 'harness_unavailable', message: RETIRED_OPENCODE_MESSAGE } }
       }
-      if ((row?.record.sourceConfigurationVersionId ?? configuration.id) !== source.agentConfigurationVersionId || configuration.agentId !== context.agentId
+      if (configuration.id !== source.agentConfigurationVersionId || configuration.agentId !== context.agentId
         || row && row.harness !== configuration.harness.harness) staleRunChat()
       if (source.state !== 'completed') {
         return { ...sourceResolution, configuration, blocked: { reason: 'run_active',
@@ -568,11 +567,9 @@ export class AgentChatService {
   }
 
   private async harnessUnavailable(resolution: Resolution): Promise<Resolution['blocked']> {
-    const executionId = resolution.row?.record.sourceConfigurationVersionId
-      ? undefined : resolution.executionId ?? resolution.row?.origin_execution_id
+    const executionId = resolution.executionId ?? resolution.row?.origin_execution_id
     const workingDirectory = resolution.row?.record.workingDirectory ?? resolution.create?.workingDirectory
-    if ((!executionId && !resolution.row?.record.sourceConfigurationVersionId)
-      || !workingDirectory || !resolution.configuration) return undefined
+    if (!executionId || !workingDirectory || !resolution.configuration) return undefined
     return this.managers.unavailable?.(resolution.configuration, workingDirectory, executionId)
   }
 
@@ -651,45 +648,29 @@ export class AgentChatService {
       busyReason: resolved.blocked?.message ?? null })
   }
 
-  /** The stored conversation record for this context, created when absent. It starts no native session. */
-  private async ensureContextConversation(principal: ManagementPrincipal, context: AgentChatContext, executionId?: string,
-    expectedRevision = 0) {
+  async changeContextControls(principal: ManagementPrincipal, context: AgentChatContext,
+    input: SessionControlRequest, source: 'http' | 'mcp' = 'http', executionId?: string) {
     this.authorize(principal, 'agent_chat:write', context)
     this.authorize(principal, 'agent_chat:read', context)
     const resolved = await this.resolveControlContext(principal, context, executionId)
     if (resolved.blocked || !resolved.configuration) {
       throw new DomainError('AGENT_CHAT_UNAVAILABLE', resolved.blocked?.message ?? 'This node has no chat configuration.', 409)
     }
-    if (resolved.row) return resolved.row
-    if (!resolved.create || expectedRevision !== 0) staleRunChat()
-    return this.repository.ensureForControls(resolved.key ?? agentChatKey(context),
-      { ...resolved.create, context }, async client => {
-        const current = await readLiveManagementPrincipal(client, principal.id)
-        this.authorize(current, 'agent_chat:read', context)
-        this.authorize(current, 'agent_chat:write', context)
-      })
-  }
-
-  async changeContextControls(principal: ManagementPrincipal, context: AgentChatContext,
-    input: SessionControlRequest, source: 'http' | 'mcp' = 'http', executionId?: string) {
-    const row = await this.ensureContextConversation(principal, context, executionId, input.expectedRevision)
+    let row = resolved.row
+    if (!row) {
+      if (!resolved.create || input.expectedRevision !== 0) staleRunChat()
+      row = await this.repository.ensureForControls(resolved.key ?? agentChatKey(context),
+        { ...resolved.create, context }, async client => {
+          const current = await readLiveManagementPrincipal(client, principal.id)
+          this.authorize(current, 'agent_chat:read', context)
+          this.authorize(current, 'agent_chat:write', context)
+        })
+    }
     return this.changeSessionControls(principal, context.workspaceId, row.id, input, source)
-  }
-
-  /** Files attach to an existing conversation, so the first attachment creates the record (not a native session) first. */
-  async ensureConversation(principal: ManagementPrincipal, context: AgentChatContext, executionId?: string): Promise<AgentChatState> {
-    const row = await this.ensureContextConversation(principal, context, executionId)
-    return this.readConversation(principal, context.workspaceId, row.id)
   }
 
   async readSessionControls(principal: ManagementPrincipal, workspaceId: string, id: string) {
     return this.command(async () => this.sessionControls.read(await this.sessionControlBinding(principal, workspaceId, id)))
-  }
-
-  async configurationContext(principal: ManagementPrincipal, workspaceId: string, id: string): Promise<AgentChatQuery> {
-    const row = await this.conversation(workspaceId, id, principal, 'agent_chat:read')
-    return { workflowId: row.workflow_id, workflowNodeId: row.workflow_node_id, agentId: row.agent_id,
-      ...(row.origin_run_id ? { runId: row.origin_run_id } : {}) }
   }
 
   changeSessionControls(principal: ManagementPrincipal, workspaceId: string, id: string,
@@ -1049,43 +1030,6 @@ export class AgentChatService {
       : configuration
   }
 
-  private async applyTurnConfiguration(row: AgentConversationRow): Promise<AgentConversationRow> {
-    if (row.origin_run_id && !row.native_session_id && !row.record.startupDelivered) return row
-    const agent = (await this.pool.query<{ current_configuration_version_id: string | null }>(
-      'select current_configuration_version_id from agents where workspace_id=$1 and id=$2 and archived_at is null',
-      [row.workspace_id, row.agent_id])).rows[0]
-    if (!agent?.current_configuration_version_id) {
-      throw new DomainError('AGENT_CHAT_CONFIGURATION_MISSING', 'The Agent has no saved configuration.', 409)
-    }
-    if (agent.current_configuration_version_id === row.agent_configuration_version_id) return row
-    const configuration = await this.workflows.getAgentConfiguration(agent.current_configuration_version_id)
-    const previous = await this.conversationConfiguration(row)
-    if (!configuration || !previous) {
-      throw new DomainError('AGENT_CHAT_CONFIGURATION_MISSING', 'The saved Agent configuration is unavailable.', 409)
-    }
-    let directoryBinding = row.record.directoryBinding
-    if (directoryBinding) {
-      const profile = configuration.harnessProfileSelection
-      const placement = profile ? { ...directoryBinding.placement, instanceId: profile.instanceId,
-        instanceRevision: profile.instanceRevision, harnessInstallationId: profile.target.harnessInstallationId }
-        : directoryBinding.placement
-      const directory = await resolveAgentChatDirectory({ sql: this.pool, configuration,
-        workflowVersionId: directoryBinding.workflowVersionId, placement })
-      if (directory.workingDirectory !== row.record.workingDirectory) {
-        throw new DomainError('AGENT_CHAT_DIRECTORY_UNAVAILABLE', 'The chat settings changed its saved working folder.', 409)
-      }
-      directoryBinding = directory.directoryBinding
-    }
-    const ephemeral = previous.harness.harness === 'codex'
-      && previous.harness.advanced?.sessionPersistence === 'ephemeral'
-    const profileChanged = previous.harnessProfileSelection?.instanceId !== configuration.harnessProfileSelection?.instanceId
-      || previous.harnessProfileSelection?.target.harnessInstallationId
-        !== configuration.harnessProfileSelection?.target.harnessInstallationId
-    const replaceSession = harnessSessionChanged(previous.harness, configuration.harness) || ephemeral || profileChanged
-    await this.release(row.id)
-    return this.repository.applyConfiguration(row.id, row.active_request_id!, configuration, { replaceSession, directoryBinding })
-  }
-
   private async runtime(row: AgentConversationRow, configuration: AgentConfigurationVersion, correlationId: string, signal: AbortSignal, controlPrincipalId?: string): Promise<Runtime> {
     this.assertOpen()
     const unavailable = this.sessionUnavailable(row, configuration)
@@ -1102,8 +1046,7 @@ export class AgentChatService {
     await mkdir(this.runtimeDirectory(row.id), { recursive: true })
     this.assertOpen()
     signal.throwIfAborted()
-    const accountSource = row.record.origin.kind === 'run_execution' && !row.record.sourceConfigurationVersionId
-      ? { executionId: row.record.origin.executionId } : undefined
+    const accountSource = row.record.origin.kind === 'run_execution' ? { executionId: row.record.origin.executionId } : undefined
     const runtime: Runtime = existing ?? { manager: await this.managers(row.id, configuration, row.record.workingDirectory,
       accountSource), configuration }
     try {
@@ -1136,7 +1079,7 @@ export class AgentChatService {
       }
       let creationRequested = false
       try {
-        if (row.record.origin.kind === 'run_execution' && !row.record.handoffContext) {
+        if (row.record.origin.kind === 'run_execution') {
           const origin = row.record.origin
           if (!runtime.manager.forkSession) throw new DomainError('AGENT_CHAT_FORK_UNAVAILABLE', 'This harness cannot continue a Run session in chat.', 409)
           const providerVersion = await this.sourceProviderVersion(origin, runtime)
@@ -1195,9 +1138,6 @@ export class AgentChatService {
 
   /** Earlier configurations send pinned skills with the first turn; native-v1 delivers them at session start. */
   private prompt(row: AgentConversationRow, configuration: AgentConfigurationVersion, content: string): { text: string; startup: boolean } {
-    if (row.record.handoffContext && !row.record.startupDelivered) {
-      content = `${row.record.handoffContext}\n\n${content}`
-    }
     if (row.record.origin.kind !== 'fresh' || row.record.startupDelivered) return { text: content, startup: false }
     if (configuration.instructionDelivery === 'native-v1') return { text: content, startup: true }
     const skills = legacySkillPrompt(configuration)
@@ -1224,10 +1164,9 @@ export class AgentChatService {
       prepared()
     }
     try {
-      let row = await this.repository.get(id)
+      const row = await this.repository.get(id)
       if (!row || row.active_request_id !== turn.requestId) return
       if (row.cancel_requested) { await this.settle(id, turn.requestId, { outcome: 'canceled' }); return }
-      row = await this.control(id, () => this.applyTurnConfiguration(row!))
       const configuration = await this.conversationConfiguration(row)
       if (!configuration) throw new DomainError('AGENT_CHAT_CONFIGURATION_MISSING', 'The pinned Agent configuration is unavailable.', 409)
       const selectedMode = await this.repository.turnSessionMode(id, turn.requestId)
@@ -1248,7 +1187,7 @@ export class AgentChatService {
       signal.throwIfAborted()
       const prompt = this.prompt(fresh, configuration, sessionTaskContent(content, selectedMode))
       if (!session) {
-        if (!runtime.manager.startInitialTurn || fresh.record.origin.kind !== 'fresh' && !fresh.record.handoffContext) throw new DomainError('AGENT_INITIAL_TURN_UNAVAILABLE', 'No admitted initial native lifecycle is available.', 409)
+        if (!runtime.manager.startInitialTurn || fresh.record.origin.kind !== 'fresh') throw new DomainError('AGENT_INITIAL_TURN_UNAVAILABLE', 'No admitted initial native lifecycle is available.', 409)
         initialOffered = true // A failure after offer is not a definite prompt rejection/create failure.
         initialStream = await primeInitialNativeStream(runtime.manager.startInitialTurn(this.startInput(fresh, configuration, correlationId, false), {
           ...await this.sessionControls.turnSettings(id, {
@@ -1539,7 +1478,7 @@ export class AgentChatService {
     if (!runtime) {
       const configuration = await this.conversationConfiguration(row)
       if (!configuration) return false
-      const accountSource = row.record.origin.kind === 'run_execution' && !row.record.sourceConfigurationVersionId
+      const accountSource = row.record.origin.kind === 'run_execution'
         ? { executionId: row.record.origin.executionId } : undefined
       const manager = await this.managers(row.id, configuration, row.record.workingDirectory, accountSource)
       if (!manager.reconcileSessionCreation) {
@@ -1558,7 +1497,7 @@ export class AgentChatService {
       || runtime.retiring || runtime.disposal) return false
     if (input.kind === 'operator' || input.correlationId !== agentChatCorrelation(row.id, requestId)
       || sessionStartConfiguration(input).id !== row.agent_configuration_version_id) return false
-    const source = row.record.origin.kind === 'run_execution' && !row.record.handoffContext
+    const source = row.record.origin.kind === 'run_execution'
       ? { harness: row.harness, providerVersion: await this.sourceProviderVersion(row.record.origin, runtime),
           nativeSessionId: row.record.origin.sourceNativeSessionId }
       : undefined
