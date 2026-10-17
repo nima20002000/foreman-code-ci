@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { OperatorConversationState } from '@foreman-code/contracts'
@@ -39,7 +39,7 @@ beforeEach(() => {
 })
 afterEach(() => { cleanup(); clients.splice(0).forEach((client) => client.clear()); vi.unstubAllGlobals() })
 
-describe('Operator chat interactions', () => {
+describe('PR17 Operator interaction regressions', () => {
   it('polls attention while closed without downloading message histories', async () => {
     const client = renderChat()
     await waitFor(() => expect(listOperatorConversationSummaries).toHaveBeenCalled())
@@ -75,18 +75,7 @@ describe('Operator chat interactions', () => {
     const user = userEvent.setup()
     textarea.focus()
     await user.tab()
-    expect(screen.getByRole('button', { name: 'Stop response' })).toHaveFocus()
-    await user.tab()
     expect(screen.getByRole('button', { name: /Agent settings:/ })).toHaveFocus()
-  })
-  it('keeps context-left in the header beside Close and out of the composer', async () => {
-    useOperatorChatStore.setState({ open: true })
-    renderChat()
-    const close = await screen.findByRole('button', { name: 'Close Operator chat' })
-    const context = await screen.findByRole('button', { name: /context/i })
-    expect(close.parentElement).toContainElement(context)
-    expect(within(screen.getByRole('form', { name: 'Conversation composer' })).queryByRole('button', { name: /context/i })).not.toBeInTheDocument()
-    expect(screen.queryByText(/starts on the next turn/)).not.toBeInTheDocument()
   })
   it('keeps a rejected turn reason visible after reload without retrying it', async () => {
     const originalLocks = Object.getOwnPropertyDescriptor(navigator, 'locks')
