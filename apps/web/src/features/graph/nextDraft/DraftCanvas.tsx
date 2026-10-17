@@ -66,7 +66,7 @@ const DraftAgent = memo(function DraftAgent({ id, data, selected, width, height 
     <AgentNodeView ref={core} name={data.label} harness={facts.harness} harnessLabel={facts.harnessLabel} model={facts.model}
       icon={facts.icon} statusLabel={run.label} state={run.state} meta={meta} entry={entry} selected={selected} openPanel={panel ?? (chatOpen ? 'chat' : undefined)}
       ariaLabel={`${data.label}, ${facts.roleLabel}${entry ? ', starts the workflow' : ''}, ${facts.harnessLabel}, ${run.label}`}
-      onSelect={(event) => { event.stopPropagation(); if (selectNode) selectNode(id); else select(); openChat?.(id) }}
+      onSelect={(event) => { event.stopPropagation(); if (selectNode) selectNode(id); else select() }}
       onAction={(next) => inspect(() => {
         presentation.getState().setFocusedNodeId(id); presentation.getState().setFocusedEdgeId(undefined)
         if (next === 'chat') openChat?.(id)
@@ -249,7 +249,7 @@ export const DraftCanvas = forwardRef<DraftCanvasHandle, {
     <div ref={responsive.containerRef} className={`next-draft-canvas board-draft-canvas${connecting ? ' is-connecting' : ''}`} style={selectedRun ? { display: 'none' } : undefined} aria-hidden={!!selectedRun} inert={!!selectedRun} aria-label="Editable workflow graph">
       {/* While a Run is shown, the draft's data stays mounted but its flow does not: a hidden
           flow measures a zero-size box and would come back empty on Return to draft. */}
-      {selectedRun ? null : <ReactFlow<GraphNode | CiServerFlowNode, DraftEdge> nodes={flowNodes} nodesDraggable={false} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes}
+      {selectedRun ? null : <ReactFlow<GraphNode | CiServerFlowNode, DraftEdge> nodes={flowNodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes}
         onNodesChange={onNodesChange} connectionMode={ConnectionMode.Loose} connectionRadius={120} deleteKeyCode={null}
         fitView fitViewOptions={fitViewOptions} proOptions={proOptions} minZoom={RESPONSIVE_MIN_ZOOM} maxZoom={1.6} onInit={responsive.onInit}
         onMove={responsive.onMove}
@@ -259,7 +259,6 @@ export const DraftCanvas = forwardRef<DraftCanvasHandle, {
         onNodeClick={(event, node) => {
           if (event.target instanceof Element && event.target.closest('.react-flow__handle')) return
           if (node.type !== 'ciServer') selectNode(node.id)
-          if (node.type === 'agent') openChat(node.id)
         }}
         onPaneClick={() => inspect(() => { setOpen(undefined); presentation.getState().setFocusedNodeId(undefined); presentation.getState().setFocusedEdgeId(undefined) })}
         onConnect={(connection) => {
