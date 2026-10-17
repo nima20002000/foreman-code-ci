@@ -1,11 +1,13 @@
 import { expect, it } from 'vitest'
+import { randomUUID } from 'node:crypto'
 import type pg from 'pg'
 import type { WorkerConversationReceipt, WorkerConversationRpcRequest } from '@foreman-code/contracts/remote-execution-rpc'
 import { legacyProviderAccountBinding } from '../provider-accounts/acceptedBindings.js'
 import { createProductionWorkerConversations } from './workerProduction.js'
 import { workerConversationFixture } from './workerFixtures.test-support.js'
+import { DomainError } from '../errors.js'
 
-it('uses the retained owner for disposal after a read-only reader, while user controls still require their caller', async () => {
+it.each([false, true])('uses the retained owner for disposal after a read-only reader (failed reconnect: %s)', async failedReconnect => {
   const f = workerConversationFixture('agent', 'claude')
   if (!('agentId' in f.configuration) || f.binding.owner.kind !== 'agent') throw new Error('Agent fixture required')
   const binding = { ...f.binding, owner: f.binding.owner,
@@ -28,13 +30,22 @@ it('uses the retained owner for disposal after a read-only reader, while user co
     nativeOwner: f.nativeOwner, revision: 1, closed: false, closing: false, turns: [], compactions: [],
     desiredPreferences: null, appliedPreferences: null }
   const methods: string[] = []
-  const channel = { binding: f.connection, request: async (raw: unknown) => {
+  let rejectReconnect = false
+  const request = async (raw: unknown) => {
     const request = raw as WorkerConversationRpcRequest
     methods.push(request.method)
+    if (request.method === 'conversation.open' && rejectReconnect) {
+      throw new DomainError('WORKER_CONVERSATION_UNAVAILABLE', 'The Worker reattachment failed.', 409)
+    }
     if (request.method === 'conversation.pending') return { payload: null }
-    if (request.method === 'conversation.release-runtime') { receipt.runtimeReleased = true; receipt.revision++ }
+    if (request.method === 'conversation.release-runtime') {
+      receipt.connection = channel.binding
+      receipt.runtimeReleased = true
+      receipt.revision++
+    }
     return { payload: { receipt } }
-  } }
+  }
+  let channel = { binding: f.connection, request }
   const profiles = { admit: async () => ({ override: { configuration: f.configuration.harness,
     target: binding.profile.target } }), revalidate: async () => {} }
   const production = createProductionWorkerConversations({ pool, endpoint: () => ({ captureRequest: () => channel }),
@@ -52,6 +63,15 @@ it('uses the retained owner for disposal after a read-only reader, while user co
     await expect(manager.pending(f.session)).resolves.toBeUndefined()
     await expect(manager.closeForResume!(f.session)).rejects.toMatchObject({ code: 'ACCESS_DENIED' })
     expect(methods.filter(method => method === 'conversation.release-runtime')).toHaveLength(0)
+    if (failedReconnect) {
+      channel = { binding: { ...f.connection, connectionGeneration: f.connection.connectionGeneration + 1,
+        connectionEpoch: randomUUID() }, request }
+      manager.setSessionControlPrincipal!(owner.id)
+      rejectReconnect = true
+      await expect(manager.pending(f.session)).rejects.toMatchObject({ code: 'WORKER_CONVERSATION_UNAVAILABLE' })
+      manager.setSessionControlPrincipal!(reader.id)
+      rejectReconnect = false
+    }
     await manager.dispose!()
     expect(receipt.runtimeReleased).toBe(true)
     expect(methods.filter(method => method === 'conversation.release-runtime')).toHaveLength(1)
