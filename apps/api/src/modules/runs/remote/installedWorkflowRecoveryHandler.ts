@@ -6,7 +6,7 @@ import type { NativeHistory } from '../../harnesses/port.js'
 import type { NativeProcessRegistry } from '../../harnesses/recovery/processRegistry.js'
 import type { RemoteOperationJournal } from './operationJournal.js'
 import type { InstalledWorkflowRecovery } from './installedWorkflowRecovery.js'
-import { pageNativeHistory, startNativeHistoryDownload, nativeHistoryPageSource } from './nativeHistoryPage.js'
+import { pageNativeHistory, nativeHistoryPageSource } from './nativeHistoryPage.js'
 import { assertOriginalPhysicalDirectories, matchingOriginalRegistryLaunch,
   type InstalledWorkflowPhysicalReadouts } from './workflowPhysicalReadout.js'
 import type { WorkflowOriginalNativeSource } from '../../interactions/workflowNativeCapture.js'
@@ -28,9 +28,7 @@ async function closedEntryReply(frame: RemoteExecutionRpcRequest, journal: Remot
     const history: NativeHistory = { events: [], pendingInteractions: [] }
     const metadata = frame.method === 'history' ? frame.metadata : undefined
     const afterSequence = frame.method === 'history' ? frame.afterSequence : undefined
-    const reply = metadata ? pageNativeHistory(history, afterSequence, metadata)
-      : startNativeHistoryDownload(history, { afterSequence, downloadId: frame.downloadId })
-    return { payload: { ...reply, status } }
+    return { payload: { ...pageNativeHistory(history, afterSequence, metadata), status } }
   }
   if (frame.method === 'pending') return { payload: null }
   return { payload: status }
@@ -160,8 +158,7 @@ export async function recoverInstalledWorkflowReply(input: {
     } : {}) }
   // Both history replies retain the exact paged source that Main verifies by digest.
   const historyReply = frame.method === 'history' || frame.method === 'reconcile-response'
-    ? startNativeHistoryDownload(history, { afterSequence: frame.method === 'history' ? frame.afterSequence : undefined,
-      downloadId: frame.downloadId }) : undefined
+    ? pageNativeHistory(history, frame.method === 'history' ? frame.afterSequence : undefined) : undefined
   if (capture && frame.method !== 'physical-readout' && frame.method !== 'physical-ack') {
     let source: WorkflowOriginalNativeSource = { type: 'boundary' }
     if (historyReply) source = { type: 'history', history: nativeHistoryPageSource(historyReply)! }

@@ -74,7 +74,6 @@ export const DeviceJsonContinuationSchema = z.object({
 }).strict()
 export type DeviceJsonContinuation = z.infer<typeof DeviceJsonContinuationSchema>
 export const DeviceHistoryRequestFields = {
-  downloadId: z.uuid().optional(),
   afterSequence: z.number().int().safe().min(-1).optional(),
   metadata: DeviceJsonContinuationRequestSchema.optional(),
 }
