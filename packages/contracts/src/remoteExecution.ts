@@ -104,6 +104,43 @@ export const RemoteOperationReceiptSchema = z.object({
     context.addIssue({ code: 'custom', message: 'Review turns retain distinct assignments on the original session.' })
 })
 export type RemoteOperationReceipt = z.infer<typeof RemoteOperationReceiptSchema>
+/** Resolve only submissions established by the original turn and its connected repair journal. */
+export function remoteWorkflowTurnId(receipt: RemoteOperationReceipt, correlationId: string): string | undefined {
+  const native = receipt.native
+  if (!native?.turnId) return undefined
+  const initial = `execution:${receipt.intent.executionId}`
+  const repairs = receipt.resultRepairs ?? []
+  if (!repairs.length) return correlationId === (receipt.turnInput?.correlationId ?? initial) ? native.turnId : undefined
+  if (repairs.some((repair, index) => repair.previousInput.correlationId !== initial
+    + (index ? `:result-repair:${index}` : '') || !repair.previousInput.deferSettlement)
+    || receipt.turnInput?.correlationId !== `${initial}:result-repair:${repairs.length}`) return undefined
+  const first = repairs[0]!.previousTurnId
+  const retries = receipt.nativeTurnRetries ?? []
+  const start = retries.findIndex(retry => retry.previousTurnId === first)
+  const submitted = [first]
+  for (const retry of retries.slice(start < 0 ? retries.length : start)) {
+    if (retry.previousTurnId !== submitted.at(-1) || submitted.includes(retry.turnId)) return undefined
+    submitted.push(retry.turnId)
+  }
+  if (submitted.at(-1) !== native.turnId) return undefined
+  let previous = -1
+  for (const repair of repairs) {
+    const index = submitted.indexOf(repair.previousTurnId)
+    if (index <= previous) return undefined
+    previous = index
+  }
+  const preceding = repairs.find(repair => repair.previousInput.correlationId === correlationId)
+  if (preceding) return preceding.previousTurnId
+  return receipt.turnInput.correlationId === correlationId && native.turnId !== repairs.at(-1)!.previousTurnId
+    ? native.turnId : undefined
+}
+
+export function remoteWorkflowHasTurn(receipt: RemoteOperationReceipt, sessionId: string, turnId: string): boolean {
+  if (receipt.native?.sessionId !== sessionId) return false
+  const initial = `execution:${receipt.intent.executionId}`
+  return [initial, ...(receipt.resultRepairs ?? []).map((_, index) => `${initial}:result-repair:${index + 1}`)]
+    .some(correlation => remoteWorkflowTurnId(receipt, correlation) === turnId)
+}
 export function remoteActiveNative(receipt: RemoteOperationReceipt): RemoteNativeIdentity | undefined {
   const turn = receipt.reviewTurns?.at(-1)
   if (!receipt.native || !turn) return receipt.native
