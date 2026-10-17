@@ -187,17 +187,6 @@ interface WorkflowObservationState {
   observePending(history: NativeHistory, sourceLease?: WorkflowNativeLease): Promise<ApprovalExecutionObservation | undefined>
 }
 
-/** Native dispatch never began, so the original request must still be pending natively. */
-function nativeDispatchNotStarted(interaction: DurableInteraction): boolean {
-  return ['not_started', 'pending', 'failed'].includes(interaction.deliveryState)
-}
-
-/** Cold restoration keeps the original session for unanswered, answered and delivered
- * approvals; delivery recovery and checkpoint consumption then settle them without resending. */
-function restorableApproval(interaction: DurableInteraction): boolean {
-  return interaction.status !== 'canceled'
-}
-
 /** Idempotent ensure/observe boundary called first on every LangGraph node entry. */
 export class ApprovalExecutionCoordinator {
   private readonly managerCredentials = new WeakMap<NativeHarnessSessionManager, IssuedWorkerCredential>()
@@ -2119,11 +2108,10 @@ export class ApprovalExecutionCoordinator {
       }, detached, { signal, restartOwner: owner })
       const history = await attached.manager.reconcile(detached, originals.correlationId, attached.signal)
       owner.assertOwned()
-      for (const [index, original] of originals.requests.entries()) {
+      for (const original of originals.requests) {
         const restored = history.pendingInteractions.find((request) =>
           request.turn.nativeRequestId === original.turn.nativeRequestId)
-        // A started or delivered answer may already have consumed the native request.
-        if (restored ? !isDeepStrictEqual(restored, original) : nativeDispatchNotStarted(pending[index]!)) throw new DomainError(
+        if (!isDeepStrictEqual(restored, original)) throw new DomainError(
           'NATIVE_SESSION_IDENTITY_MISMATCH', 'The restored session has no matching pending approval.', 409)
       }
       const owned = this.ownedSessions.get(execution.id)
@@ -2220,7 +2208,7 @@ export class ApprovalExecutionCoordinator {
     }
   }
 
-  /** Recover restart-detached turns and checkpoint-bound approvals, answered or not.
+  /** Recover restart-detached turns and checkpoint-bound pending approvals.
    * Other cold nonterminal lifetimes require physical cleanup before settlement. */
   async requestColdRunCleanup(owner: RunOwnership, approvals: readonly DurableInteraction[] = [],
     signal?: AbortSignal): Promise<boolean> {
@@ -2249,7 +2237,8 @@ export class ApprovalExecutionCoordinator {
           }
           if (resident.pendingApprovalRestoration) {
             const pending = approvals.filter(item => item.executionId === execution.id)
-            if (execution.state === 'waiting' && pending.length && pending.every(restorableApproval)
+            if (execution.state === 'waiting' && pending.length
+              && pending.every(item => item.status === 'pending' && item.deliveryState === 'not_started')
               && await this.restorePendingWorkflowApprovals(owner, execution, pending, signal)) continue
             await this.runs.requestCleanup(owner.runId, owner)
             return true
@@ -2261,7 +2250,8 @@ export class ApprovalExecutionCoordinator {
           && (await this.detachedWorkflowSession(owner, execution)
             ?? (await readRemoteWorkflowContinuation(owner, execution))?.session)) continue
         const pending = approvals.filter((item) => item.executionId === execution.id)
-        if (execution.state === 'waiting' && pending.length && pending.every(restorableApproval)) {
+        if (execution.state === 'waiting' && pending.length
+          && pending.every((item) => item.status === 'pending' && item.deliveryState === 'not_started')) {
           if (await this.restorePendingWorkflowApprovals(owner, execution, pending, signal)) continue
         }
         if (execution.state === 'waiting' && !pending.length && execution.nativeSessionId

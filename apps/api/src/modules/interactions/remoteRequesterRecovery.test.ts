@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import {
   DurableInteractionSchema,
-  type DurableInteraction,
   HarnessExecutionSchema,
   ReviewJobSchema,
   type PendingNativeInteraction,
@@ -36,10 +35,8 @@ vi.mock('../runs/repeatLifecycle.js', async importOriginal => ({
 beforeEach(() => vi.resetAllMocks())
 afterEach(() => vi.useRealTimers())
 
-type SavedAnswer = Pick<DurableInteraction, 'status' | 'deliveryState'>
-
 async function recoverRequester(detached: boolean, state: 'waiting' | 'running' = 'waiting',
-  options: { observeWithoutCleanup?: boolean; saved?: SavedAnswer[] } = {}) {
+  options: { observeWithoutCleanup?: boolean } = {}) {
   const base = makeCurrentWorkflowFixture('requester-recovery', 'approval')
   base.run.executionState = 'waiting'
   const configuration = base.configurations[1]!
@@ -67,13 +64,7 @@ async function recoverRequester(detached: boolean, state: 'waiting' | 'running' 
     nativeRequestType: interaction.nativeRequestType, request: interaction.request,
     responseOptions: interaction.responseOptions,
   }
-  const saved = options.saved ?? [{ status: 'pending', deliveryState: 'not_started' }]
-  const interactions = saved.map((answer, index) => index === 0 ? { ...interaction, ...answer } : {
-    ...interaction, ...answer, id: `pending-approval-${index}`, nativeRequestId: `original-request-${index}` })
-  const originals = interactions.map(item => ({ ...original, turn: { ...original.turn, nativeRequestId: item.nativeRequestId } }))
-  // Native dispatch consumes only answers whose delivery began.
-  const history = { events: [], pendingInteractions: originals.filter((_, index) =>
-    ['not_started', 'pending', 'failed'].includes(interactions[index]!.deliveryState)) }
+  const history = { events: [], pendingInteractions: [original] }
   const continuation = { session, generation: '1', principalId: 'original-principal', detached }
   vi.mocked(readDetachedWorkflowSession).mockResolvedValue(detached ? session : undefined)
   vi.mocked(readRemoteWorkflowContinuation).mockImplementation(async () => structuredClone(continuation))
@@ -83,7 +74,7 @@ async function recoverRequester(detached: boolean, state: 'waiting' | 'running' 
     ref: { nodeId: execution.workflowNodeId, occurrence: null },
     execution: repeatExecutionIdentity(execution), inputDigest: repeatDigest(execution.input),
     commandId: `execution:${execution.id}`, session,
-    original: { type: 'history', history: { events: [], pendingInteractions: originals } },
+    original: { type: 'history', history },
     observedAt: base.createdAt, ownerId: 'original-owner', ownerFence: '1',
     lifetimeGeneration: 1, closureGeneration: continuation.generation,
     lane: { id: 'original-lane', token: 'original-lane-token', connectionGeneration: 1,
@@ -99,9 +90,8 @@ async function recoverRequester(detached: boolean, state: 'waiting' | 'running' 
   const attach = vi.fn(async () => session)
   const create = vi.fn(async () => { throw new Error('A saved remote session cannot be replaced') })
   const startTurn = vi.fn(() => { throw new Error('A saved remote turn cannot be replayed') })
-  const respond = vi.fn(async () => { throw new Error('Cold restoration cannot resend a native response') })
   const manager = {
-    harness: 'codex', attachSession: attach, createSession: create, startTurn, respond, reconcile: async () => history,
+    harness: 'codex', attachSession: attach, createSession: create, startTurn, reconcile: async () => history,
     originalApplicationAccess: async () => ({ token: 'synthetic-token' }),
     closeForRestart: async () => {},
   }
@@ -149,7 +139,7 @@ async function recoverRequester(detached: boolean, state: 'waiting' | 'running' 
   const stopSharing = coordinator.shareRunOwner(owner)
   try {
     if (!options.observeWithoutCleanup) {
-      expect(await coordinator.requestColdRunCleanup(owner, state === 'running' ? [] : interactions)).toBe(false)
+      expect(await coordinator.requestColdRunCleanup(owner, state === 'running' ? [] : [interaction])).toBe(false)
       expect(requestCleanup).not.toHaveBeenCalled()
     }
   } finally {
@@ -168,28 +158,9 @@ async function recoverRequester(detached: boolean, state: 'waiting' | 'running' 
     } as unknown as RepeatNativeObservationStore,
   })
   return { coordinator, interaction, owner, acquireOwnership, attach, releaseRetention, coordination,
-    observeOriginal, begin, restore, continuation, create, startTurn, respond, beginWait, requestCleanup,
+    observeOriginal, begin, restore, continuation, create, startTurn, beginWait, requestCleanup,
     completeExecution: () => { execution = { ...execution, state: 'completed' } } }
 }
-
-it.each([
-  ['decided', [{ status: 'delivery_pending', deliveryState: 'pending' }]],
-  ['submitted', [{ status: 'delivery_pending', deliveryState: 'submitted' }]],
-  ['delivered', [{ status: 'delivered', deliveryState: 'delivered' }]],
-  ['mixed', [{ status: 'delivered', deliveryState: 'delivered' }, { status: 'pending', deliveryState: 'not_started' }]],
-] as const)('keeps the original remote session when Main restarts after a %s answer', async (_name, saved) => {
-  const f = await recoverRequester(false, 'waiting', { saved: saved.map(item => ({ ...item })) })
-  try {
-    expect(f.requestCleanup).not.toHaveBeenCalled()
-    expect(f.attach).toHaveBeenCalledOnce()
-    expect(f.restore).toHaveBeenCalledOnce()
-    expect(f.respond).not.toHaveBeenCalled()
-    expect(f.create).not.toHaveBeenCalled()
-    expect(f.startTurn).not.toHaveBeenCalled()
-  } finally {
-    await f.coordinator.closeForRestart()
-  }
-})
 
 it('keeps a live remote turn without a graceful detachment receipt after Main loses its owner', async () => {
   const f = await recoverRequester(false, 'running')
