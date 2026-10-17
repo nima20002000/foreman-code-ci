@@ -3,8 +3,7 @@ import { OperationalFailureSchema } from './operationalFailures.js'
 import { optionalCommandId } from './management/commands.js'
 import { z } from 'zod'
 import { DeviceProvisioningTargetSchema } from './deviceResources.js'
-import { HarnessMcpArgumentSchema, HarnessMcpEndpointSchema, HarnessMcpPresetStatus } from './management/harnessSettings.js'
-import { ComputerAccountsSchema } from './computerAccounts.js'
+import { HarnessMcpArgumentSchema, HarnessMcpEndpointSchema } from './management/harnessSettings.js'
 import { PluginMarketplaceSourceSchema } from './management/claudePlugins.js'
 import { WorkerUpdateStatusSchema, WorkerReleasePublicationSchema, WorkerBundleReadinessSchema } from './workerUpdate.js'
 export * from './workerUpdate.js'
@@ -139,17 +138,6 @@ export const MaintenanceStatusSchema = z.object({
 }).strict()
 export type MaintenanceStatus = z.infer<typeof MaintenanceStatusSchema>
 
-/**
- * Sign-in and Foreman Code MCP facts next to the maintenance facts, so one readback shows every chip of a computer.
- * accounts: Codex, Claude and GitHub CLI install and sign-in state (null when the computer did not answer).
- * mcp: the Foreman Code MCP preset per harness (null when that harness's MCP configuration could not be read).
- */
-export const ComputerConnectionsSchema = z.object({
-  accounts: ComputerAccountsSchema.nullable(),
-  mcp: z.object({ codex: HarnessMcpPresetStatus.nullable(), claude: HarnessMcpPresetStatus.nullable() }).strict(),
-}).strict()
-export type ComputerConnections = z.infer<typeof ComputerConnectionsSchema>
-
 export const DEFAULT_MAINTENANCE_TASK_LIMIT = 5
 const MaintenanceTaskLimitSchema = z.number().int().min(1).max(50)
 
@@ -165,7 +153,6 @@ export const ComputerMaintenanceListSchema = z.object({
     observation: ReadObservationSchema.optional(),
     workerPublication: WorkerReleasePublicationSchema.optional(),
     workerReadiness: WorkerBundleReadinessSchema.optional(),
-    connections: ComputerConnectionsSchema.optional(),
     tasksOmitted: z.number().int().nonnegative().default(0) }).strict()).max(101),
 }).strict()
 export type ComputerMaintenanceList = z.infer<typeof ComputerMaintenanceListSchema>
@@ -187,7 +174,6 @@ export const ComputerMaintenanceOperatorListSchema = z.object({
     observation: ReadObservationSchema.optional(),
     workerPublication: WorkerReleasePublicationSchema.optional(),
     workerReadiness: WorkerBundleReadinessSchema.optional(),
-    connections: ComputerConnectionsSchema.optional(),
     tasksOmitted: z.number().int().nonnegative().default(0),
   }).strict()).max(101),
 }).strict()

@@ -125,6 +125,7 @@ function WorkflowNavigationContent({ workspaceId, activeWorkflowId }: WorkflowNa
     >
       <NewWorkflowAction workspaceId={workspaceId} navigation />
       {selected ? <div className="workflow-navigation-selected">
+        <p className="workflow-navigation-state">Selected workflow</p>
         <ul className="nav-submenu workflow-navigation-list">
           <WorkflowNavigationItem item={selected} workspaceId={workspaceId} active pendingCount={pendingCount(selected.workflow.id)} />
         </ul>

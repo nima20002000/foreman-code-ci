@@ -1,4 +1,3 @@
-import { InfoHint } from '../../shared/ui/InfoHint'
 import { telemetrySelectorKey, type TelemetryReadResult, type TelemetrySample, type TelemetrySelector } from '@foreman-code/contracts/resource-telemetry'
 import { useResourceTelemetryQuery, type ReceivedTelemetry } from '../../shared/api/resourceTelemetry'
 import { Alert, Badge, Card, CardBody, CardHeader, MetricCard } from '../../shared/ui/nocturne'
@@ -63,7 +62,6 @@ function SampleBody({ sample, elapsedMs }: { sample: TelemetrySample; elapsedMs:
   return <>
     <div className="rt-badges">
       <Badge tone={sample.presence === 'online' ? 'success' : 'warning'}>{sample.presence === 'online' ? 'Worker online' : 'Worker offline'}</Badge>
-      {!current && sample.presence === 'offline' ? <InfoHint label="Worker offline">Offline is worker presence, not zero use or a finished execution.</InfoHint> : null}
       {sample.ownershipState !== 'active' && <Badge tone="neutral">{sample.ownershipState === 'closure-unconfirmed' ? 'Closure unconfirmed' : sample.ownershipState === 'ended' ? 'Execution ended' : 'Execution closed'}</Badge>}
       {coverage.shared && <Badge tone="info">Shared</Badge>}
       {coverage.partial && <Badge tone="warning">Partial</Badge>}
@@ -71,6 +69,7 @@ function SampleBody({ sample, elapsedMs }: { sample: TelemetrySample; elapsedMs:
     {coverage.reasons.length > 0 && <p className="rt-note">{coverage.reasons.join(' · ')}</p>}
     <div className="rt-metrics"><MetricBlock view={metricView('CPU', sample, elapsedMs)} /><MetricBlock view={metricView('RAM', sample, elapsedMs)} /></div>
     <Freshness sample={sample} elapsedMs={elapsedMs} />
+    {!current && sample.presence === 'offline' && <p className="rt-note">Offline is worker presence, not zero use or a finished execution.</p>}
     <IdentityDisclosure sample={sample} />
   </>
 }
@@ -107,8 +106,7 @@ export function ResourceTelemetryPanel({ scope, title, received, pending, error,
   const result: TelemetryReadResult | undefined = received?.result
   const displayElapsedMs = Math.max(0, elapsedMs) + (received?.requestDurationMs ?? 0)
   return <Card className="rt-card" data-scope={scope} role="region" aria-label={title}>
-    <CardHeader eyebrow={scope === 'computer' ? 'Whole computer' : 'This execution’s owned processes'} title={title} action={<><InfoHint label={title}>{scopeNote[scope]}</InfoHint>
-      <InfoHint label="Resource usage">Local processes only; cloud model inference is not measured.</InfoHint></>} />
+    <CardHeader eyebrow={scope === 'computer' ? 'Whole computer' : 'This execution’s owned processes'} title={title} description={scopeNote[scope]} />
     <CardBody>
       {error && <Alert title="Telemetry could not be refreshed" tone="warning" live>Showing only what the server’s freshness deadline still allows.</Alert>}
       {!result && !error && (pending ? <p className="rt-note" role="status">Waiting for the first reading…</p> : <p className="rt-note">No telemetry selection.</p>)}
@@ -118,6 +116,7 @@ export function ResourceTelemetryPanel({ scope, title, received, pending, error,
         <SampleBody sample={result.sample} elapsedMs={displayElapsedMs} />
         {!isCurrent(result.sample, displayElapsedMs) && result.lastKnown && <LastKnown sample={result.lastKnown} />}
       </>}
+      <p className="rt-note">Local processes only; cloud model inference is not measured.</p>
     </CardBody>
   </Card>
 }

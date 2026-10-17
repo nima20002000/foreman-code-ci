@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createHash } from 'node:crypto'
 import type { NativeSessionStart } from '../port.js'
-import type { NativeResponseAvailabilityQuery } from '../responseAvailability.js'
 import { claudePromptUuid, type ClaudeMessageTurnInput } from './sessionManager.js'
 import { qualification, start, fixture, workflowRequest, deferred, drain } from './__tests__/sessionManager.js'
 
@@ -20,14 +19,7 @@ describe('Claude native session manager admission', () => {
     const session = await f.manager.attachSession({ harness: f.manager.harness, providerVersion: '2.1.284', nativeSessionId: 'native-session' }, start)
     const subscriber = f.manager.startTurn(session, { prompt: 'one', clientCorrelationId: 'request-one' })[Symbol.asyncIterator]()
     const message = await f.nextMessage()
-    const commonQuery: NativeResponseAvailabilityQuery = {
-      nativeRequestId: 'native-request-one',
-      nativeRequestType: 'can_use_tool',
-      expectedNativeTurnId: undefined,
-      expectedNativeMessageId: undefined,
-      expectedGeneration: undefined,
-    }
-    const query: import('./callbackAvailability.js').ClaudeResponseAvailabilityQuery = commonQuery
+    const query: import('./callbackAvailability.js').ClaudeResponseAvailabilityQuery = { nativeRequestId: 'native-request-one', nativeRequestType: 'can_use_tool' }
     expect((await f.manager.inspectResponseAvailability!(session, query)).reason).toBe('callback_lost')
     void f.frames.offer({ type: 'assistant', session_id: session.nativeSessionId, uuid: 'root-frame', user_message_uuid: message.uuid,
       message: { id: 'api-one', content: [{ type: 'tool_use', id: 'root-tool-one', name: 'Bash', input: {} }] } })
