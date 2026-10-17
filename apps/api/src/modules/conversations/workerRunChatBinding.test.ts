@@ -20,7 +20,7 @@ import { configurationWithNodeSkills } from '../skills/nodeSkills.js'
 import { agentChatCorrelation } from './agentChatRepository.js'
 
 async function fixture(harness: 'codex' | 'claude', change: 'add' | 'remove' = 'add',
-  turnStatus: 'completed' | 'submitted' | 'uncertain' = 'completed') {
+  turnStatus: 'completed' | 'submitted' | 'uncertain' = 'completed', options?: { updatedSettings: true }) {
   const f = workerConversationFixture('agent', harness)
   let base = AgentConfigurationVersionSchema.parse(f.configuration)
   const skill = { skillId: 'node-skill', version: '1', instructions: 'Use the saved node instructions.',
@@ -29,9 +29,12 @@ async function fixture(harness: 'codex' | 'claude', change: 'add' | 'remove' = '
   if (change === 'remove') base = { ...base, assignedSkills: [reference], resolvedSkills: [skill] }
   const skills: NodeSkillOverride = change === 'remove' ? { remove: [skill.skillId] } : { add: [reference] }
   const snapshots = change === 'remove' ? [] : [skill]
-  const configuration = configurationWithNodeSkills(base, skills, snapshots)
+  const pinnedConfiguration = configurationWithNodeSkills(base, skills, snapshots)
+  const configuration = options?.updatedSettings
+    ? { ...pinnedConfiguration, id: randomUUID(), harness: { ...base.harness, model: 'changed-model' } }
+    : pinnedConfiguration
   const binding = WorkerConversationBindingSchema.parse({ ...f.binding,
-    owner: { ...f.binding.owner, configurationHash: commandInputHash(base) },
+    owner: { ...f.binding.owner, configurationHash: commandInputHash(options?.updatedSettings ? pinnedConfiguration : base) },
     accountBinding: legacyProviderAccountBinding(base.harness, base.harnessProfileSelection)! })
   const records: WorkerConversationReceipt[] = []
   const journal = new WorkerConversationJournal({ read: async () => structuredClone(records),
@@ -62,7 +65,7 @@ async function fixture(harness: 'codex' | 'claude', change: 'add' | 'remove' = '
     expires_at: new Date(Date.now() + 600_000), revoked_at: null }
   const conversation = { id: binding.owner.conversationId, kind: 'agent', workspace_id: base.workspaceId,
     workflow_id: 'workflow', workflow_node_id: 'node', agent_id: base.agentId,
-    agent_configuration_version_id: base.id, active_request_id: 'next-input', native_session_id: f.session.nativeSessionId,
+    agent_configuration_version_id: configuration.id, active_request_id: 'next-input', native_session_id: f.session.nativeSessionId,
     deleted_at: null, owner_principal_id: principal.id, payload: { ownerPrincipalId: principal.id },
     record: { status: 'open', origin: { kind: 'run_execution', runId: 'run', executionId: 'execution' } },
     worker_conversation_binding: binding }
@@ -87,7 +90,7 @@ async function fixture(harness: 'codex' | 'claude', change: 'add' | 'remove' = '
     return { rows: [conversation], rowCount: 1 }
   }) } as unknown as pg.Pool
   const frames: WorkerConversationRpcRequest[] = []
-  const profiles = { admit: async () => ({ override: { configuration: base.harness, target: binding.profile.target } }),
+  const profiles = { admit: async () => ({ override: { configuration: configuration.harness, target: binding.profile.target } }),
     revalidate: async () => {} }
   const production = createProductionWorkerConversations({ pool,
     endpoint: () => ({ captureRequest: () => ({ binding: f.connection, request: async (raw: unknown) => {
@@ -127,6 +130,22 @@ async function fixture(harness: 'codex' | 'claude', change: 'add' | 'remove' = '
     failPersistence: () => { failPersistence = true }, restorePersistence: () => { failPersistence = false },
     cleanup: async () => { await manager.dispose?.(); await host.shutdown(); await production.close() } }
 }
+
+it.each(['codex', 'claude'] as const)('%s keeps pinned Run node skills when an Agent settings version changes', async harness => {
+  const f = await fixture(harness, 'add', 'completed', { updatedSettings: true })
+  try {
+    await expect(f.manager.attachSession(f.session, f.start)).resolves.toEqual(f.session)
+    const saved = f.records[0]!
+    expect(saved.binding.owner.configurationVersionId).toBe(f.configuration.id)
+    expect(saved.binding.owner.configurationHash).toBe(commandInputHash(f.configuration))
+    expect(saved.session).toEqual(f.session)
+    expect(saved.turns).toEqual(f.before.turns)
+    expect(saved.creation).toEqual(f.before.creation)
+    expect(f.conversation.worker_conversation_binding).toEqual(saved.binding)
+    expect(f.attach).toHaveBeenCalledTimes(1)
+    expect(f.allocate).toHaveBeenCalledTimes(1)
+  } finally { await f.cleanup() }
+})
 
 it.each([['codex', 'add'], ['claude', 'add'], ['codex', 'remove'], ['claude', 'remove']] as const)(
   '%s reconnects a base-hashed Run chat with a saved skill %s and the same session', async (harness, change) => {
