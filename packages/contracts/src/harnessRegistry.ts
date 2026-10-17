@@ -143,3 +143,5 @@ export const HostHarnessConfigurationInspectionRequestSchema = z.object({
   endpoint: z.string().url(),
 }).strict().superRefine((value, context) => validateHostEnvironment(value.override.configuration, context, ['override', 'configuration']))
 export type HostHarnessConfigurationInspectionRequest = z.infer<typeof HostHarnessConfigurationInspectionRequestSchema>
+
+export { HarnessOptionsDiscoveryRequestSchema, type HarnessOptionsDiscoveryRequest } from './harnessOptionsDiscovery.js'
