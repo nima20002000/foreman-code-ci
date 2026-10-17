@@ -10,7 +10,6 @@ import { useBoardCiServer } from '../workflow-board/inspect/useBoardCiServer'
 import '../workflow-board/inspect/inspection.css'
 import { ciNodePresentation } from './ciPresentation'
 import { SignalEdgeShape } from '../graph/SignalEdgeShape'
-import { useFloatingCurve } from '../graph/signalEdge'
 import { useResponsiveGraphViewport } from '../graph/useResponsiveGraphViewport'
 import { isRunAccessError } from '../runs-selector/query'
 import { RunSubagentsOverlay } from '../run-subagents/RunSubagentsOverlay'
@@ -40,11 +39,8 @@ const SavedAgent = memo(function SavedAgent({ data }: NodeProps<SavedBoardNode>)
 })
 const SavedConnection = memo(function SavedConnection(props: EdgeProps<SavedBoardEdge>) {
   const edge = props.data?.snapshot
-  const lane = props.data?.lane ?? 0, loop = props.source === props.target
-  const floating = useFloatingCurve(props.source, props.target, lane * 44)
   if (!edge) return null
-  // Same lines as the Board: straight when aligned, leaning toward the target otherwise; only a self-loop keeps its own loop.
-  const curve = !loop && floating ? floating : savedEdgeCurve({ ...props, lane, loop })
+  const curve = savedEdgeCurve({ ...props, lane: props.data?.lane ?? 0, loop: props.source === props.target })
   return <g>
     <title>{edge.label || (edge.kind === 'approval' ? 'Approval' : 'Handoff')}</title>
     <SignalEdgeShape id={props.id} curve={curve} kind={edge.kind} />
@@ -82,7 +78,7 @@ export function RunBoardCanvas({ snapshot, activitySnapshot, onInspectNode }: {
     },
   })
   const names = useMemo(() => new Map(snapshot.nodes.map((node) => [node.id, node.name])), [snapshot.nodes])
-  const towerNodes = useMemo(() => nodes.map((node) => ({ position: node.position, width: node.initialWidth, height: node.initialHeight })), [nodes])
+  const towerNodes = useMemo(() => nodes.map((node) => ({ position: node.position, ...node.data.snapshot.size })), [nodes])
   const ci = useBoardCiServer({ nodes: towerNodes, names, scope, workflow: { workspaceId: scope.workspaceId, workflowId: scope.workflowId },
     jobs: ciList.data?.runId === scope.runId ? ciList.data.jobs : undefined,
     truncated: ciList.data?.truncated ?? false, error: ciList.isError, loading: ciList.isPending })
