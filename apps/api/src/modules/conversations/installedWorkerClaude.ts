@@ -30,6 +30,7 @@ import type { WorkerConversationAllocation } from './workerHost.js'
 import { createWorkerClaudeFiles } from './workerClaudeFiles.js'
 import type { NativeSessionStart } from '../harnesses/port.js'
 import type { WorkerConversationJournal } from './workerJournal.js'
+import { workerConversationAccountOwner } from './workerAccountSession.js'
 import { acceptedClaudeAppTools } from '../harnesses/claudeSdk/mcpPolicy.js'
 
 function workerClaudeSessionStart(binding: WorkerConversationBinding, configuration: WorkerConversationConfiguration,
@@ -70,8 +71,9 @@ export async function allocateInstalledWorkerClaude(input: {
   if (configuration.harness.harness !== 'claude' || binding.harness !== 'claude') throw new DomainError(
     'HARNESS_CONFIGURATION_MISMATCH', 'Claude allocation requires the saved Claude profile.', 409)
   assertWorkerProviderAccountBinding(binding.accountBinding, input.connection)
+  const accountOwner = await workerConversationAccountOwner(binding, input.journal, input.source())
   const account = await resolveRuntimeProviderAccount(input.accounts, 'claude', configuration.harness.accountId,
-    input.registry.scope(`conversation:${binding.owner.conversationId}`), undefined, binding.accountBinding)
+    input.registry.scope(accountOwner), undefined, binding.accountBinding)
   if (account && (account.homePath !== configuration.harness.configDirectory
     || account.authMode !== configuration.harness.authMode)) throw new DomainError(
       'PROVIDER_ACCOUNT_CONFIGURATION_CONFLICT', 'The accepted Worker Claude profile differs from its account.', 409)
@@ -221,7 +223,6 @@ export async function allocateInstalledWorkerClaude(input: {
       })
     },
     nativeOwner: nativeOwner.nativeOwner,
-    hasExited: nativeOwner.hasExited,
     async close() {
       await manager.dispose?.()
       authority.bridge.close()

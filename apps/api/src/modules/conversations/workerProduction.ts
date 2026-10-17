@@ -89,7 +89,6 @@ interface ProductionWorkerConversationsInput {
 interface WorkerConversationOptions {
   conversationId: string
   configuration: WorkerConversationConfiguration
-  lifecycle?: 'observer'
   workingDirectory: string
   appMcpAccess: 'scoped' | 'none'
   fileInputs?: boolean
@@ -293,7 +292,7 @@ async function admitWorkerConversation(input: ProductionWorkerConversationsInput
   }
   const binding = changingAccess || changingSkills ? requestedBinding : originalBinding
   const requestCallers = new WeakMap<WorkerConversationRpcRequest, string>()
-  const current = async (request: WorkerConversationRpcRequest, effectSignal?: AbortSignal, caller = context.caller()) => {
+  const current = async (request: WorkerConversationRpcRequest, effectSignal?: AbortSignal) => {
     const cleanup = request.method === 'conversation.release-runtime'
     const live = await row(options.conversationId, request.method)
     await assertSource(live)
@@ -320,7 +319,7 @@ async function admitWorkerConversation(input: ProductionWorkerConversationsInput
       await revalidateAgentChatDirectory(input.pool, configuration, directoryBinding, binding.workingDirectory)
     }
     const currentCaller = await authorizeWorkerConversationRequest(input.pool, live, request, {
-      caller, requestCallers, changingAccess, originalBinding,
+      caller: context.caller(), requestCallers, changingAccess, originalBinding,
     })
     const observation = { ...owner, observationPrincipalId: currentCaller,
       ...(effectSignal ? { admissionSignal: effectSignal } : {}) }
@@ -332,9 +331,7 @@ async function admitWorkerConversation(input: ProductionWorkerConversationsInput
     ? createMainWorkerClaudeFiles({ pool: input.pool, binding: owner, service: input.fileService,
       allowMutation: configuration.harness.sandbox !== 'read-only' }) : undefined
   const manager = new WorkerConversationManager({ binding, configuration: executionConfiguration,
-    ...(options.lifecycle ? { lifecycle: options.lifecycle } : {}),
     channel, currentChannel, bridge, current,
-    currentForDisposal: (request, effectSignal) => current(request, effectSignal, principalId),
     ...(executionConfiguration !== configuration && 'operatorId' in configuration
       ? { acceptedConfiguration: configuration } : {}),
     ...(changingAccess || changingSkills ? { previousBinding: originalBinding } : {}),

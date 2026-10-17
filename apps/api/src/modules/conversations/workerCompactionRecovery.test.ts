@@ -75,9 +75,6 @@ it.each(['completed', 'failed'] as const)(
     allowed = false
     await expect(manager.readCompaction(f.session, start, state)).rejects.toThrow('Read grant revoked')
     expect(allocations).toBe(0)
-    const retained = await journal.conversations.read(binding)
-    await manager.closeForRestart(f.session)
-    expect(await journal.conversations.read(binding)).toEqual(retained)
   } finally {
     await manager.dispose()
     await bridge.close()

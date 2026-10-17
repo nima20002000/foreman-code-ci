@@ -21,52 +21,13 @@ import { workerConversationCallbacks } from './workerCallbacks.js'
 import { workerConversationFixture } from './workerFixtures.test-support.js'
 import { recoverWorkerConversation } from './recoverWorkerConversation.js'
 
-function recordedConnection(f: ReturnType<typeof workerConversationFixture>) {
-  let state: 'connected' | 'unavailable' | 'transport' | 'stalled' | 'reattaching' = 'connected'
-  const waiting = new Set<() => void>()
-  return {
-    available: () => state !== 'unavailable',
-    disconnect: (next: Exclude<typeof state, 'connected'> = 'transport') => { state = next },
-    reconnect: () => { state = 'connected'; for (const resume of waiting) resume() },
-    hasWaiter: () => waiting.size > 0,
-    holdReconnect() {
-      f.connection = { ...f.connection, connectionGeneration: f.connection.connectionGeneration + 1,
-        connectionEpoch: randomUUID() }
-      state = 'reattaching'
-    },
-    async before(request: WorkerConversationRpcRequest, signal?: AbortSignal) {
-      if (state === 'transport') throw new DeviceConnectionError('transport')
-      const pending = state === 'stalled' && request.method === 'conversation.pending'
-      const attaching = state === 'reattaching' && request.method === 'conversation.open' && request.mode === 'attach'
-      if (!pending && !attaching) return
-      let resume!: () => void
-      const waitingForWorker = new Promise<void>((resolve, reject) => {
-        resume = resolve
-        const abort = () => reject(signal?.reason)
-        signal?.addEventListener('abort', abort, { once: true })
-        resume = () => { signal?.removeEventListener('abort', abort); resolve() }
-        if (signal?.aborted) abort()
-      })
-      waiting.add(resume)
-      try { await waitingForWorker } finally { waiting.delete(resume) }
-    },
-  }
-}
-
-interface RecordedObservers {
-  all: WorkerConversationManager[]
-  current?: WorkerConversationManager
-}
-
 function createRecordedObserver(f: ReturnType<typeof workerConversationFixture>, bridge: MainWorkerConversationBridge,
-  observers: RecordedObservers, connected: () => boolean, request: WorkerConversationChannel['request']) {
-  const channel = () => ({ binding: f.connection, request })
+  managers: WorkerConversationManager[], connected: () => boolean, request: WorkerConversationChannel['request']) {
   const observer = new WorkerConversationManager({ binding: f.binding, configuration: f.configuration, bridge,
-    observeSession: async () => { observers.current = observer },
     current: async () => {
       if (!connected()) throw new DomainError('WORKER_CONVERSATION_UNAVAILABLE', 'The selected paired worker channel is unavailable.', 409)
-    }, channel: channel(), currentChannel: channel })
-  observers.all.push(observer)
+    }, channel: { binding: f.connection, request } })
+  managers.push(observer)
   return observer
 }
 
@@ -74,6 +35,7 @@ async function sendRecordedMessage(manager: WorkerConversationManager, journal: 
   binding: ReturnType<typeof workerConversationFixture>['binding'], start: (id: string) => NativeSessionStart,
   correlationId: string) {
   const record = await journal.conversations.read(binding)
+  if (!manager.startInitialTurn) throw new Error('The Claude fixture requires atomic initial message admission.')
   const input = { prompt: correlationId, clientCorrelationId: correlationId, sessionMode: 'regular' as const,
     onMessageSubmitted: async () => {} }
   const stream = record?.session ? manager.startTurn(record.session, input)
@@ -103,7 +65,7 @@ export async function workerClaudeReplacementFixture(f = workerConversationFixtu
   const recoveries: { inputsBefore: number; inputsAfter: number }[] = []
   let coldHistory = false
   let source: WorkerConversationRpcRequest
-  const connection = recordedConnection(f)
+  let connectionState: 'connected' | 'unavailable' | 'transport' = 'connected'
   let denied = false
   let failStartup = false
   let failMode = false
@@ -255,23 +217,22 @@ export async function workerClaudeReplacementFixture(f = workerConversationFixtu
     },
   })
   let host = createHost()
-  const observers: RecordedObservers = { all: [] }
-  const createManager = () => createRecordedObserver(f, bridge, observers, connection.available, async (payload, options) => {
+  const managers: WorkerConversationManager[] = []
+  const createManager = () => createRecordedObserver(f, bridge, managers, () => connectionState !== 'unavailable', async payload => {
+    if (connectionState === 'transport') throw new DeviceConnectionError('transport')
     const request = WorkerConversationRpcRequestSchema.parse(payload)
-    await connection.before(request, options?.signal)
     if (request.method === 'conversation.initial-turn' || request.method === 'conversation.start-turn') source = request
-    return { payload: await host.handle(request, f.connection, options?.signal) }
+    return { payload: await host.handle(request, f.connection) }
   })
   let manager = createManager()
   const send = (correlationId: string) => sendRecordedMessage(manager, journal, f.binding, start, correlationId)
   return { ...f, get journal() { return journal }, get manager() { return manager }, createManager,
     get native() { return runtime.native }, get owners() { return runtime.owners },
     launches, offers, resumes, recoveries, send, start,
-    disconnect: connection.disconnect, reconnect: connection.reconnect,
-    holdReconnect: connection.holdReconnect, hasReconnectWaiter: connection.hasWaiter,
-    get observer() { return observers.current },
+    disconnect: (state: 'unavailable' | 'transport' = 'transport') => { connectionState = state },
+    reconnect: () => { connectionState = 'connected' },
     async coldRestart() {
-      for (const observer of observers.all) await observer.dispose()
+      for (const observer of managers) await observer.dispose()
       await host.shutdown()
       await journal.close()
       journal = await RemoteOperationJournal.open(journalPath)
@@ -287,7 +248,7 @@ export async function workerClaudeReplacementFixture(f = workerConversationFixtu
     hasResumeWaiter: () => Boolean(releaseResume), unconfirmedClosure: () => { closureConfirmed = false },
     async close() {
       releaseResume?.()
-      for (const observer of observers.all) await observer.dispose()
+      for (const observer of managers) await observer.dispose()
       await host.shutdown()
       await journal.close()
       await rm(root, { recursive: true, force: true })

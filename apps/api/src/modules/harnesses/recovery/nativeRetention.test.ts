@@ -44,7 +44,6 @@ it('keeps historical closed owners out of recovery snapshots while retaining dir
   const registry = new NativeProcessRegistry(root)
   expect(registry.snapshot().launches).toEqual([])
   expect(registry.closedRegistration(closed.observation.owner, closed.observation.launchId)).toEqual(closed.observation)
-  expect(registry.closedRegistration(closed.observation.owner)).toEqual(closed.observation)
 })
 
 it('deletes only old settled closures, keeps fresh and unsettled closures, and bounds each sweep', async () => {
