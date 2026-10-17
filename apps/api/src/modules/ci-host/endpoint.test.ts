@@ -9,6 +9,29 @@ import { rejectedCiStart } from './dispatch.js'
 import { reconcileCiHostStart } from './dispatchRecovery.js'
 import { CiPlanningSnapshot } from './planningSnapshot.js'
 import type { HostCiComputer } from './service.js'
+import { CloudCi } from './cloud.js'
+import { CircleCiProvider, cloudCiId } from './cloudProviders.js'
+import type { HostCiPorts } from './runner.js'
+
+it('routes an organization through its saved CircleCI login, with absent identity remaining primary', async () => {
+  const calls: string[] = []
+  const ports = (id: string): HostCiPorts => ({ now: () => new Date(), cpus: 4, memoryBytes: 2 ** 30,
+    run: async () => { calls.push(id); return { code: 0, stdout: '', stderr: '' } } })
+  const clouds = ['default', 'reserve'].map(id => new CloudCi('fixture-main',
+    new CircleCiProvider(ports(id), { circleToken: async () => null },
+      { owner: 'alpha', circleAccountId: id, mirrorNames: new Set(['site-ci']) }),
+    async () => 'alpha/site-ci'))
+  const endpoint = new ProductionHostCiEndpoint({ query: async () => ({ rows: [] }) } as unknown as pg.Pool,
+    'fixture-main', () => undefined, { handle: async () => { throw new Error('Unexpected local request') } }, clouds)
+  const primary = clouds[0]!.computers()[0]!
+  const reserve = clouds[1]!.computers()[0]!
+  expect(cloudCiId(clouds[0]!.provider)).toBe('circleci@alpha')
+  expect(reserve.key).toBe('fixture-main:cloud:circleci~reserve@alpha:0')
+  await endpoint.request(reserve, { operation: 'status' })
+  expect(calls).toEqual(['reserve'])
+  await endpoint.request(primary, { operation: 'status' })
+  expect(calls).toEqual(['reserve', 'default'])
+})
 
 it.each([undefined, 1, 2, 3])('derives Worker readiness from start protocol %s', async version => {
   const computer: HostCiComputer = { key: 'fixture:worker',
