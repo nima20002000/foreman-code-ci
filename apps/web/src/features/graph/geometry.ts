@@ -26,7 +26,7 @@ export function applyGraphGeometry<T extends { nodes: readonly { id: string; pos
     if (!change) return node
     const next = {
       ...node,
-      ...(change.position ? { position: { ...change.position, manual: true } } : {}),
+      ...(change.position ? { position: change.position } : {}),
       ...(change.width !== undefined ? { width: change.width } : {}),
       ...(change.height !== undefined ? { height: change.height } : {}),
     }
