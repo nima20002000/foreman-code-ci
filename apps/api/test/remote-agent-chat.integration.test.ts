@@ -8,14 +8,9 @@ import { remoteAgentConversation } from './helpers/remoteAgentConversation.js'
 import { workerConversationFixture } from '../src/modules/conversations/workerFixtures.test-support.js'
 import { assertAgentNewConversation } from './helpers/agentNewConversation.js'
 
-function changedSettings(configuration: HarnessConfiguration, field: 'model' | 'effort' | 'account',
-  models: readonly string[]): HarnessConfiguration {
+function changedSettings(configuration: HarnessConfiguration, field: 'model' | 'effort' | 'account'): HarnessConfiguration {
   if (configuration.harness === 'opencode') throw new Error('Supported chat harness required')
-  if (field === 'model') {
-    const model = models.find(value => value !== configuration.model)
-    if (!model) throw new Error('A second recorded model is required for the model change scenario')
-    return { ...configuration, model }
-  }
+  if (field === 'model') return { ...configuration, model: 'changed-model' }
   if (field === 'account') return { ...configuration, accountId: randomUUID() }
   if (configuration.harness === 'codex') return { ...configuration, reasoningEffort: 'high' }
   if (configuration.harness === 'claude') return { ...configuration, effort: 'high' }
@@ -193,7 +188,7 @@ it.each((['codex', 'claude'] as const).flatMap(harness =>
       const original = (await f.repository.get(f.conversation.id))!
       const originalBinding = await f.binding()
       const before = f.providers.reduce((count, provider) => count + provider.prompts.length, 0)
-      const changed = changedSettings(f.configuration.harness, field, f.provider.models)
+      const changed = changedSettings(f.configuration.harness, field)
       const denied = await f.call('agent_update', { agentId: f.context.agentId,
         commandId: randomUUID(), configuration: changed, expectedRevision: 1,
         expectedConfigurationVersionId: f.configuration.id }, f.reader.token)
@@ -222,7 +217,6 @@ it.each((['codex', 'claude'] as const).flatMap(harness =>
       expect(binding.owner.configurationHash).toBe(commandInputHash(await f.chatConfiguration()))
       expect(binding.profile.target).toEqual(originalBinding.profile.target)
       expect(saved.native_session_id).toBeTruthy()
-      if (field !== 'account') expect(binding.profile.instanceId).toBe(originalBinding.profile.instanceId)
       if (field === 'account') expect(saved.native_session_id).not.toBe(original.native_session_id)
       else expect(saved.native_session_id).toBe(original.native_session_id)
       expect(AgentChatStateSchema.parse(await f.value('agent_chat_read', { query: f.context })).conversation)

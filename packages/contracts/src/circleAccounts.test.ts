@@ -3,7 +3,7 @@ import { CiComputerRefSchema, CiRunRecordSchema } from './ciHost.js'
 import { ComputerActivityListSchema } from './computerActivity.js'
 import { CircleSchedulingRoleSchema } from './circleCredits.js'
 import { CircleAccountAddInputSchema, CircleAccountIdSchema, CircleAccountsSchema,
-  DEFAULT_CIRCLE_ACCOUNTS } from './management/circleAccounts.js'
+  CircleAccountReadSchema, DEFAULT_CIRCLE_ACCOUNTS } from './management/circleAccounts.js'
 
 const legacy = { kind: 'cloud', mainId: 'fixture-main', provider: 'circleci', account: 'fixture-org', slot: 0 }
 it('preserves old host references and saved run identities while separating login from org', () => {
@@ -53,4 +53,15 @@ it('accepts draining cloud aliases with zero schedulable slots while rejecting i
       ...activity, cloud: [{ ...activity.cloud[0], slots }],
     }).success).toBe(false)
   }
+})
+
+it.each([1, 2, 4])('reads %s discovered primary organizations while preserving explicit registration limits', count => {
+  const owners = Array.from({ length: count }, (_, index) => `fixture-org-${index}`)
+  const account = { id: 'default', label: 'Primary', role: 'primary', organizations: owners }
+  const reading = { ...account, tokenConfigured: true, ready: true, reasons: [], orgs: owners.map(owner => ({
+    account: owner, circleAccountId: 'default', ready: true, running: 0,
+    schedulingRole: 'active', schedulingReason: 'Primary capacity.', credits: null,
+  })) }
+  expect(CircleAccountReadSchema.parse(reading)).toEqual(reading)
+  expect(CircleAccountAddInputSchema.safeParse({ account }).success).toBe(false)
 })

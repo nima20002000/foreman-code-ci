@@ -5,12 +5,10 @@ import { ReadSelectedRunChatResponseSchema } from '@foreman-code/contracts/selec
 import { WorkerConversationBindingSchema } from '@foreman-code/contracts/remote-execution-rpc'
 import { remoteReviewProduction, waitForRemoteReview } from './remoteReviewProduction.js'
 import { measureIntegrationPhase } from './integrationPhase.js'
-import { waitForRequesterSession } from './remoteReviewEntryStartup.js'
 
 export async function historicalChatPlacement(
   scenario: (fixture: Awaited<ReturnType<typeof remoteReviewProduction>>) => Promise<void>,
-  options: Pick<NonNullable<Parameters<typeof remoteReviewProduction>[0]>,
-    'includeNodeRuntimePayload' | 'sourceAccessMode'> & { workflow?: 'single' | 'approval' } = {},
+  options: { includeNodeRuntimePayload?: boolean } = {},
 ) {
   const fixture = await remoteReviewProduction({
     workflow: 'single', parallelSetup: true,
@@ -26,26 +24,16 @@ export async function historicalChatPlacement(
   }
 }
 
-export async function historicalChatSource(fixture: Awaited<ReturnType<typeof remoteReviewProduction>>,
-  options: { parent?: 'active' | 'completed' } = {}) {
+export async function historicalChatSource(fixture: Awaited<ReturnType<typeof remoteReviewProduction>>) {
   const started = await measureIntegrationPhase('historical source Run start', () => fixture.start())
   // Native cleanup still changes the saved Run after it completes; fork against the settled record.
-  if (options.parent === 'active') {
-    await waitForRequesterSession({ entryNodeId: fixture.version.entryNodeId,
-      readExecutions: async () => (await fixture.details(started.run.id)).executions,
-      readCalls: fixture.provider.calls, reconcile: fixture.reconcileReviews,
-      subscribe: fixture.subscribeNativeChanges,
-    })
-  }
-  const before = options.parent === 'active' ? await fixture.details(started.run.id)
-    : await measureIntegrationPhase('historical source Run completion',
+  const before = await measureIntegrationPhase('historical source Run completion',
     () => waitForRemoteReview(async () => {
       await fixture.reconcile()
       return fixture.details(started.run.id)
     }, value => value.run.executionState === 'completed' && value.cleanupPending !== true,
     'completed source Run with settled cleanup', fixture.subscribeNativeChanges))
-  const execution = before.executions.find(value => value.workflowNodeId === fixture.version.entryNodeId)!
-  expect(execution.state).toBe('completed')
+  const execution = before.executions[0]!
   expect(execution.nativeSessionId).toBeTruthy()
   const workspaceId = fixture.version.workspaceId
   const selection = { workflowId: fixture.version.workflowId, runId: started.run.id,
