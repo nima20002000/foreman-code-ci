@@ -1,4 +1,3 @@
-import { InfoHint } from '../../shared/ui/InfoHint'
 import { UnsavedChangesContext, useUnsavedChanges } from '../../shared/ui/unsavedChanges'
 import { useContext, useEffect, useRef, useState } from 'react'
 import {
@@ -69,7 +68,7 @@ function ConnectionForm({ busy, disabled, onReview }: {
     {transport === 'remote' ? <>
       <TextField label="Server URL" type="url" placeholder="https://example.com/mcp" value={url} onChange={(event) => setUrl(event.target.value)} />
       <TextField label="Token environment variable (optional)" placeholder="MY_SERVICE_TOKEN" autoComplete="off" spellCheck={false} value={variable}
-        labelHint={<InfoHint label="Token environment variable">Enter the variable name, not the token.</InfoHint>} onChange={(event) => setVariable(event.target.value)} />
+        hint="Enter the variable name, not the token." onChange={(event) => setVariable(event.target.value)} />
     </> : <>
       <TextField label="Installed executable" value={executable} placeholder="/absolute/path/to/mcp-server" autoComplete="off" onChange={(event) => setExecutable(event.target.value)} />
       <Textarea label="Arguments · one per line" rows={3} value={argumentsText} spellCheck={false} onChange={(event) => setArgumentsText(event.target.value)} />
@@ -126,7 +125,7 @@ function useNativeMcpManager({ harness, accessUnavailable = false }: NativeMcpMa
     if (!selected || selected.status !== 'pending') return
     decision.mutate({ planId: selected.id, approve }, { onSuccess: (result) => {
       setCreated(result)
-      if (result.status === 'applied') { setFeedback('Connection settings saved.'); setActive(undefined) }
+      if (result.status === 'applied') { setFeedback('Connection settings saved. New sessions will use them.'); setActive(undefined) }
       if (result.status === 'rejected') setActive(undefined)
     } })
   }
@@ -187,7 +186,7 @@ function NativeMcpManager({ harness, accessUnavailable = false }: NativeMcpManag
     harness, accessUnavailable,
   })
   return <section className="harness-mcp-manager" aria-label={`${harness} MCP connections`}>
-    <div className="harness-section-heading"><div><h4>MCP servers <InfoHint label="Connections">New sessions will use them.</InfoHint></h4></div>
+    <div className="harness-section-heading"><div><h4>MCP servers</h4></div>
       <div className="harness-inline-actions"><Button size="sm" disabled={servers.isFetching} onClick={() => void servers.refetch()}>Refresh</Button>
         <Button size="sm" variant="primary" disabled={!serverData || servers.isError} onClick={() => { request.reset(); setAdding(true) }}>Add server</Button></div></div>
     {blocked ? <Alert tone="warning" title="Connection access is unavailable">Your connection draft is kept. Restore access before reviewing it.</Alert> : null}
@@ -201,7 +200,7 @@ function NativeMcpManager({ harness, accessUnavailable = false }: NativeMcpManag
       {managed.operation.plan ? <Button size="sm" disabled={blocked}
         onClick={() => { decision.reset(); setActive(managed.operation!.plan!.id) }}>Review original change</Button> : null}
     </Alert> : managed.isError ? <Alert live tone="danger" title="MCP change was not accepted">{managed.error.message}</Alert> : null}
-    {managed.data?.status === 'applied' ? <p role="status" className="harness-success">Connection settings saved.</p> : null}
+    {managed.data?.status === 'applied' ? <p role="status" className="harness-success">Connection settings saved. New sessions will use them.</p> : null}
     {feedback ? <p role="status" className="harness-success">{feedback}</p> : null}
     {presets ? <div className="harness-preset-actions" aria-label="Suggested MCP servers">
       {(['graphql', 'linear'] as const).map((preset) => {
@@ -210,23 +209,11 @@ function NativeMcpManager({ harness, accessUnavailable = false }: NativeMcpManag
         const label = preset === 'graphql' ? 'Foreman Code MCP' : 'Linear MCP'
         const actionable = status === 'missing' || status === 'legacy'
           || (status === 'mismatch' && (preset !== 'linear' || !serverData?.servers.find((server) => server.name === 'linear')?.protected))
-        let helpLabel = label
-        let helpText: string | undefined
-        let warning: string | undefined
-        if (status === 'missing') helpText = preset === 'graphql'
-          ? 'App tools for Operator chat and workflow agents, with automatic instance routing. Each agent’s role decides which tools it can call.'
-          : 'Read-only Linear connection; sign in with the harness after adding.'
-        else if (status === 'legacy') {
-          helpLabel = `Upgrade to ${label}`
-          helpText = 'Replaces the separate graphql-app and graphql-operator connections with one connection for every role.'
-        } else if (status === 'inherited') warning = 'Configured outside this user profile. Edit it at its source.'
-        else if (preset === 'graphql') {
-          helpLabel = `Repair ${label}`
-          helpText = 'Repair the connection while keeping its tool, approval, and disabled policies.'
-        } else warning = 'This is not the verified read-only preset. Conversion changes its endpoint; native sign-in remains separate.'
         return <div key={preset} className="harness-preset-row"><div><strong>{label}</strong>
-          {helpText ? <InfoHint label={helpLabel}>{helpText}</InfoHint> : null}
-          {warning ? <small>{warning}</small> : null}</div>
+          <small>{status === 'missing' ? preset === 'graphql' ? 'App tools for Operator chat and workflow agents, with automatic instance routing. Each agent’s role decides which tools it can call.' : 'Read-only Linear connection; sign in with the harness after adding.'
+            : status === 'legacy' ? 'Replaces the separate graphql-app and graphql-operator connections with one connection for every role.'
+            : status === 'inherited' ? 'Configured outside this user profile. Edit it at its source.'
+              : preset === 'graphql' ? 'Repair the connection while keeping its tool, approval, and disabled policies.' : 'This is not the verified read-only preset. Conversion changes its endpoint; native sign-in remains separate.'}</small></div>
           {actionable ? <Button size="sm" disabled={managedBusy || servers.isFetching || servers.isError} loading={managed.isPending && managed.variables?.preset === preset}
             onClick={() => manage(preset, { installed: true })}>{status === 'legacy' ? `Upgrade to ${label}` : status === 'mismatch' ? preset === 'linear' ? `Convert to read-only` : `Repair ${label}` : `Add ${label}`}</Button> : <StatusBadge tone="warning" label={status === 'inherited' ? 'Inherited' : 'Needs attention'} />}
         </div>
@@ -267,7 +254,6 @@ function NativeMcpManager({ harness, accessUnavailable = false }: NativeMcpManag
           <Button disabled={inspection.isFetching || reconciliation.isPending} onClick={() => void inspection.refetch()}>Refresh inspection</Button>
           <Button variant="primary" disabled={!inspection.data || inspection.isError || inspection.isFetching || reconciliation.isPending} onClick={reconcile}>
             {reconciliation.isPending ? 'Reconciling…' : 'Reconcile without rewriting'}</Button>
-          <InfoHint label="Reconcile">Reconciliation closes the old request without sending its native write again. It first checks the current configuration and any owned writer process.</InfoHint>
         </> : <Button onClick={() => setActive(undefined)}>Close</Button>}>
       {selected ? <div className="harness-form-stack"><p>Codex · native user configuration</p><ChangeDetails change={selected.change} />
         <p className="harness-access-warning">A server may run programs or send data to its endpoint. Only approve a connection you trust.</p>
@@ -275,6 +261,7 @@ function NativeMcpManager({ harness, accessUnavailable = false }: NativeMcpManag
         {selected.status !== 'pending' || expired ? <Alert tone={selected.status === 'applied' ? 'success' : 'warning'} title={expired && selected.status === 'pending' ? 'Request expired. Reject it before preparing a new request.' : `Change ${selected.status}`}>
           {selected.error ?? (selected.status === 'uncertain' ? 'The write may have completed. Reconcile it without rewriting; Refresh alone does not settle this request.' : null)}</Alert> : null}
         {selected && ['submitting', 'uncertain'].includes(selected.status) ? <>
+          <p>Reconciliation closes the old request without sending its native write again. It first checks the current configuration and any owned writer process.</p>
           <Checkbox label="Keep the current native configuration even if the original result cannot be proven" checked={acceptObservedState}
             disabled={Boolean(reconcileInput) || reconciliation.isPending} onChange={(event) => setObservedAcceptance((current) => ({ ...current, [selected.id]: event.target.checked }))} />
           {inspection.isError ? <Alert tone="danger" title={inspection.error.message} /> : null}
@@ -298,25 +285,26 @@ function NativeMcpManager({ harness, accessUnavailable = false }: NativeMcpManag
       </>}>
       {details ? <div className="harness-form-stack">
         {details.name === 'graphql' && detailsPreset === 'graphql' ? <div className="harness-form-stack">
+          <p>This supported connection can keep its native name. Renaming it preserves its policies and removes the old entry.</p>
           <Button size="sm" disabled={detailsBusy} onClick={() => manage('graphql', { installed: true })}>Rename to Foreman Code MCP</Button>
-          <InfoHint label="Rename to Foreman Code MCP">This supported connection can keep its native name. Renaming it preserves its policies and removes the old entry.</InfoHint>
         </div> : null}
         <StatusBadge tone={!details.enabled ? 'danger' : details.origin === 'inherited' || needsAttention(details.name, presets) ? 'warning' : 'success'}
           label={!details.enabled ? 'Disabled' : details.origin === 'inherited' ? 'Inherited' : needsAttention(details.name, presets) ? 'Needs attention' : 'Enabled'} />
-        <InfoHint label="Enabled">Enabled means the native configuration permits startup; a live tool call is needed to verify the connection.</InfoHint>
         <dl className="harness-change-details">
           <div><dt>Harness</dt><dd>{'Codex'}</dd></div>
           <div><dt>Native name</dt><dd><code>{details.name}</code></dd></div>
           <div><dt>Connection</dt><dd>{details.transport === 'remote' ? 'Remote MCP' : details.transport === 'stdio' ? 'Local program' : 'Native connection'}</dd></div>
-          <div><dt>{details.transport === 'remote' ? 'Host' : 'Program'}{details.transport === 'remote' && !details.endpoint ? <InfoHint label="Host">Only the host is shown here. Native URLs can contain private credentials; inspect their configuration source for the full address.</InfoHint> : null}</dt><dd>{details.label}</dd></div>
+          <div><dt>{details.transport === 'remote' ? 'Host' : 'Program'}</dt><dd>{details.label}</dd></div>
           {details.endpoint ? <div><dt>Endpoint</dt><dd><code>{details.endpoint}</code></dd></div> : null}
           <div><dt>Configuration</dt><dd>{details.origin === 'inherited' ? 'Inherited from another configuration source' : details.protected ? 'App-managed user configuration' : 'Native user configuration'}</dd></div>
         </dl>
+        {details.transport === 'remote' && !details.endpoint ? <p className="harness-muted">Only the host is shown here. Native URLs can contain private credentials; inspect their configuration source for the full address.</p> : null}
+        <p className="harness-muted">Enabled means the native configuration permits startup; a live tool call is needed to verify the connection.</p>
         {LEGACY_APP_SERVERS.includes(details.name) ? <p className="harness-muted">
           This retired connection is replaced by <code>foreman-code</code>, which serves Operator chat and workflow agents. Use Upgrade to Foreman Code MCP to remove it.
         </p> : !detailsRemovable ? <p className="harness-muted">{details.protected ? 'This app-managed connection is protected here. Change it in its owning app settings.' : 'This connection comes from another configuration source. Enable, disable, or remove it there.'}</p> : null}
         {details.name === 'linear' && detailsPreset === 'linear' ? <p className="harness-muted">
-          Sign in with <code>{'codex mcp login linear'}</code>. <InfoHint label="Remove Linear connection">Removing this connection keeps the harness’s saved sign-in.</InfoHint>
+          Sign in with <code>{'codex mcp login linear'}</code>. Removing this connection keeps the harness’s saved sign-in.
         </p> : null}
       </div> : <p role="status">This server is no longer in the native list. Refresh to see current connections.</p>}
     </Dialog>

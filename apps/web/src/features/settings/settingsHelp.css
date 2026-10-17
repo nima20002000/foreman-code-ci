@@ -1,6 +1,0 @@
-.settings-field-help {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
-  gap: var(--space-1);
-}

@@ -17,7 +17,7 @@ export interface ConversationHistoryProps {
 
 export function ConversationHistory({ messages, assistantName = 'Assistant', interleaved = [], renderBefore, renderAfter, renderStatus, renderActions }: ConversationHistoryProps) {
   if (messages.length === 0 && interleaved.length === 0) {
-    return <div data-testid="conversation-empty"><EmptyState icon="history" title="No conversation history yet" description="Messages will appear here after the conversation starts." /></div>
+    return <div data-testid="conversation-empty"><EmptyState icon="history" title="No conversation history yet" /></div>
   }
 
   const renderInterleaved = (item: (typeof interleaved)[number]) => <li key={`interleaved:${item.key}`} className="conversation-history-interleaved">{item.content}</li>
