@@ -72,8 +72,7 @@ export class CircleCiAccounts {
     for (const owner of owners) {
       const found = new Set<string>()
       try {
-        const ports = this.options.context ? (await this.options.context('default')).ports : this.ports
-        for (const name of names) if (await this.followed(owner, name, ports)) found.add(name)
+        for (const name of names) if (await this.followed(owner, name)) found.add(name)
       } catch (error) {
         log.warn({ operation: 'discover CircleCI org', owner, err: error }, 'CircleCI org lookup failed; its known state stays')
         continue

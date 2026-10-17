@@ -1,21 +1,16 @@
 import { ClaudeInputNotDeliveredError } from './port.js'
-import { readClaudeCompactionResult, saveClaudeCompactionResult, claudeCompactionResultMatches } from './compactionResults.js'
-import { readClaudeCompactionHistory } from './compactionHistory.js'
+import { saveClaudeCompactionResult, claudeCompactionResultMatches } from './compactionResults.js'
 import { ClaudeBoundedQueue } from './queue.js'
 import { isDeepStrictEqual } from 'node:util'
 import type {
-  ClaudeNativeObservation, ClaudePersistedSession, ClaudeSdkClient, ClaudeSdkOpenInput,
-  ClaudeSdkOutput, ClaudeSdkQuery, ClaudeSdkRunner, ClaudeSdkSession, ClaudeSdkUserMessage, ClaudeSessionScope,
+  ClaudeNativeObservation, ClaudeSdkClient, ClaudeSdkOpenInput,
+  ClaudeSdkOutput, ClaudeSdkQuery, ClaudeSdkRunner, ClaudeSdkSession, ClaudeSdkUserMessage,
 } from './port.js'
 import { ignoreError } from '../../diagnostics/ignoredError.js'
+import { assertClaudeSessionScope, claudeSessionHistory, readClaudeResponseOwner } from './runnerHistory.js'
+import { claudeQueryControls } from './queryControls.js'
 
-
-
-export function assertClaudeSessionScope(session: ClaudePersistedSession, scope: ClaudeSessionScope): void {
-  for (const key of ['deviceId', 'profilePath', 'configRevision', 'cwd'] as const) {
-    if (session[key] !== scope[key]) throw new Error(`Claude session ${key} mismatch`)
-  }
-}
+export { assertClaudeSessionScope } from './runnerHistory.js'
 
 function observationOf(raw: unknown): ClaudeNativeObservation | undefined {
   if (!raw || typeof raw !== 'object') return undefined
@@ -64,11 +59,12 @@ function responseObservations(continuation: (frame: Record<string, unknown>) => 
     if (echo && known && !isDeepStrictEqual(echo.promptUuids, known)) {
       throw new Error('Claude response identity was reused for another input')
     }
-    // New API messages require transcript ancestry; arrival order cannot establish ownership.
+    // Snapshots need ancestry; live message starts can continue an echoed response until its result.
     let promptUuids = echo?.promptUuids ?? (frame.type === 'result' ? undefined : known)
     if (!promptUuids && frame.type !== 'result') {
       promptUuids = frame.type === 'stream_event' && event?.type !== 'message_start'
         ? stream : await continuation(frame)
+      if (!promptUuids && frame.type === 'stream_event' && event?.type === 'message_start') promptUuids = response
     }
     if (echo?.kind === 'reply' && !known && !echo.promptUuids.some(uuid => finished.has(uuid))) {
       response = echo.promptUuids
@@ -86,7 +82,7 @@ function responseObservations(continuation: (frame: Record<string, unknown>) => 
     }
     if (frame.type === 'result') {
       for (const uuid of promptUuids ?? []) finished.add(uuid)
-      if (promptUuids && isDeepStrictEqual(promptUuids, response)) {
+      if (!promptUuids || isDeepStrictEqual(promptUuids, response)) {
         response = undefined
         stream = undefined
         streamMessageId = undefined
@@ -131,53 +127,7 @@ export function createClaudeSdkRunner(input: {
       void opening.then(() => openings.delete(opening), () => openings.delete(opening))
       return opening
     },
-    async fork(source, target, signal) {
-      signal?.throwIfAborted()
-      if (disposed) throw new Error('Claude runner disposed')
-      assertClaudeSessionScope(source, target)
-      const client = await input.loadClient()
-      signal?.throwIfAborted()
-      const info = await client.getSessionInfo(source.nativeSessionId, { dir: source.cwd })
-      if (!info || info.sessionId !== source.nativeSessionId) throw new Error('Exact Claude source session is unavailable')
-      signal?.throwIfAborted()
-      const fork = await client.forkSession(source.nativeSessionId, { dir: source.cwd })
-      if (!fork.sessionId || fork.sessionId === source.nativeSessionId) throw new Error('Claude fork did not return a new native session')
-      return { ...target, nativeSessionId: fork.sessionId }
-    },
-    async compactionOutcome(session, scope, promptUuid) {
-      assertClaudeSessionScope(session, scope)
-      return readClaudeCompactionResult(session, promptUuid)
-    },
-    async compactionHistory(session, scope, cursor, signal) {
-      assertClaudeSessionScope(session, scope)
-      return readClaudeCompactionHistory(session, cursor, signal)
-    },
-    async history(session, scope, signal, page) {
-      signal?.throwIfAborted()
-      assertClaudeSessionScope(session, scope)
-      const client = await input.loadClient()
-      signal?.throwIfAborted()
-      return client.getSessionMessages(session.nativeSessionId, { dir: session.cwd, limit: page?.limit ?? 256, offset: page?.offset ?? 0 })
-    },
-    async subagentHistory(session, scope, agentId, offset = 0, signal) {
-      signal?.throwIfAborted()
-      assertClaudeSessionScope(session, scope)
-      if (disposed) throw new Error('Claude runner disposed')
-      const client = await input.loadClient()
-      if (!client.listSubagents || !client.getSubagentMessages) throw new Error('The pinned SDK child read helper is unavailable')
-      const info = await client.getSessionInfo(session.nativeSessionId, { dir: scope.cwd })
-      if (info?.sessionId !== session.nativeSessionId) throw new Error('Exact parent history is unavailable')
-      const agentIds = [...new Set(await client.listSubagents(session.nativeSessionId, { dir: scope.cwd }))].sort()
-      signal?.throwIfAborted()
-      if (agentIds.length > 32 || agentIds.some(id => !id || id.length > 512)) throw new Error('Native child roster exceeds its bound')
-      const target = agentId ?? agentIds[0]
-      if (!target) return { agentIds, messages: [], hasMore: false }
-      if (!agentIds.includes(target)) throw new Error('Child transcript does not belong to this exact parent')
-      const messages = await client.getSubagentMessages(session.nativeSessionId, target, { dir: scope.cwd, limit: 51, offset })
-      signal?.throwIfAborted()
-      if (messages.length > 51) throw new Error('Native child transcript page exceeds its bound')
-      return { agentIds, agentId: target, messages: messages.slice(0, 50), hasMore: messages.length > 50 }
-    },
+    ...claudeSessionHistory({ loadClient: () => input.loadClient(), isDisposed: () => disposed }),
     async dispose() {
       disposed = true
       const result = await Promise.allSettled([...sessions].map((session) => session.close()))
@@ -201,46 +151,9 @@ export function createClaudeSdkRunner(input: {
     const receipts = new Map<string, ClaudeNativeObservation[]>()
     const offered = new Set<string>()
     let client: ClaudeSdkClient | undefined
-    const observeResponse = responseObservations(async frame => {
-      const messageId = (frame.message as { id?: unknown } | undefined)?.id
-        ?? ((frame.event as { message?: { id?: unknown } } | undefined)?.message?.id)
-      if (typeof messageId !== 'string' && typeof frame.uuid !== 'string') return undefined
-      let owner: string | undefined
-      const ancestry = new Map<string, string | undefined>()
-      // getSessionMessages returns the SDK's parentUuid-linked root conversation chain.
-      // Tool-result user records continue it; a new prompt creates a new input boundary.
-      for (let offset = 0; ; offset += 256) {
-        abort.signal.throwIfAborted()
-        const page = await client!.getSessionMessages(String(frame.session_id), { dir: options.scope.cwd, offset, limit: 256 })
-        for (const raw of page) {
-          if (!raw || typeof raw !== 'object') continue
-          const entry = raw as Record<string, unknown>
-          if (entry.session_id !== frame.session_id || entry.parent_tool_use_id != null) continue
-          const message = entry.message as { id?: unknown; content?: unknown } | undefined
-          const parentOwner = typeof entry.parentUuid === 'string' ? ancestry.get(entry.parentUuid) : owner
-          if (entry.type === 'user') {
-            const content = message?.content
-            const toolResult = Array.isArray(content) && content.some(block => block && typeof block === 'object'
-              && (block as { type?: unknown }).type === 'tool_result')
-            if (entry.isCompactSummary === true) {
-              // The SDK omits parentUuid after selecting its native ancestry chain.
-              owner = parentOwner
-            } else if (!toolResult) {
-              owner = typeof entry.uuid === 'string' ? entry.uuid : undefined
-            } else {
-              owner = parentOwner
-            }
-          } else {
-            owner = parentOwner
-          }
-          if (typeof entry.uuid === 'string') ancestry.set(entry.uuid, owner)
-          if (entry.type === 'assistant' && (entry.uuid === frame.uuid || messageId && message?.id === messageId)) {
-            return owner && offered.has(owner) ? [owner] : undefined
-          }
-        }
-        if (page.length < 256) return undefined
-      }
-    })
+    const observeResponse = responseObservations(frame => readClaudeResponseOwner({
+      frame, client: client!, scope: options.scope, offered, signal: abort.signal,
+    }))
     let compact: { promptUuid: string; boundary: boolean } | undefined
     let nativeSessionId: string | undefined
     let query: ClaudeSdkQuery | undefined
@@ -283,37 +196,7 @@ export function createClaudeSdkRunner(input: {
         abort.signal.throwIfAborted()
         return { state: 'queue-offered', promptUuid: message.promptUuid }
       },
-      async getContextUsage(options) {
-        abort.signal.throwIfAborted()
-        if (!query?.getContextUsage) throw new Error('Claude SDK context inspection is unavailable')
-        return query.getContextUsage(options)
-      },
-      async setPermissionMode(mode) {
-        abort.signal.throwIfAborted()
-        if (!query?.setPermissionMode) throw new Error('Claude SDK Plan control is unavailable')
-        await query.setPermissionMode(mode)
-      },
-      async interrupt() {
-        abort.signal.throwIfAborted()
-        if (!query) throw new Error('Claude SDK not initialized')
-        // This is a session-wide native interrupt, not expected-turn cancellation proof.
-        return query.interrupt()
-      },
-      async initializationResult() {
-        abort.signal.throwIfAborted()
-        if (!query?.initializationResult) throw new Error('Claude SDK initialization inspection is unavailable')
-        return query.initializationResult()
-      },
-      async mcpServerStatus() {
-        abort.signal.throwIfAborted()
-        if (!query?.mcpServerStatus) throw new Error('Claude SDK live MCP control inspection is unavailable')
-        return query.mcpServerStatus()
-      },
-      async setMcpServers(servers) {
-        abort.signal.throwIfAborted()
-        if (!query?.setMcpServers) throw new Error('Claude SDK scoped MCP control update is unavailable')
-        return query.setMcpServers(servers)
-      },
+      ...claudeQueryControls(() => query, abort.signal),
       reconcile(promptUuid) { return [...(receipts.get(promptUuid) ?? [])] },
       close() {
         if (closing) return closing
