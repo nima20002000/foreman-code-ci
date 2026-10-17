@@ -101,6 +101,41 @@ function terminal(events: NativeHarnessEvent[]): NativeHistory {
 }
 
 describe('remote native history streaming', () => {
+  it.each([false, true])('waits for the corrective submission while startup has events=%s', async startupEvents => {
+    const submitted = vi.fn<(turnId: string) => Promise<void>>(async () => {})
+    const settings = vi.fn(async () => {})
+    const correlationId = 'execution:execution:result-repair:1'
+    let polls = 0
+    const f = setup(() => {
+      if (polls++ === 0) return { events: startupEvents ? [event(2)] : [], pendingInteractions: [],
+        correlationId, firstRetainedSequence: 0, nextSequence: startupEvents ? 3 : 2 }
+      expect(submitted).not.toHaveBeenCalled()
+      f.receipt.nativeTurnRetries = [{ previousTurnId: 'native-turn', turnId: 'corrective-turn' }]
+      f.receipt.native!.turnId = 'corrective-turn'
+      f.receipt.sequence++
+      f.receipt.phase = 'running'
+      const result = { outcome: 'succeeded' as const, output: { text: 'corrected' } }
+      const sequence = startupEvents ? 3 : 2
+      return { events: [{ ...event(sequence), type: 'turn.started',
+        payload: { clientCorrelationId: correlationId, turnId: 'corrective-turn' } }, event(sequence + 1)],
+      pendingInteractions: [], correlationId, nativeTurnId: 'corrective-turn', firstRetainedSequence: 0,
+      nextSequence: sequence + 2, terminalResult: result,
+      terminalTurn: { correlationId, providerId: 'corrective-turn', result } }
+    })
+    const session = await f.proxy.createSession(f.start)
+    f.receipt.resultRepairs = [{ previousInput: { ...f.receipt.turnInput!, deferSettlement: true },
+      previousTurnId: 'native-turn', afterSequence: 1 }]
+    f.receipt.turnInput = { ...f.receipt.turnInput!, correlationId, deferSettlement: true }
+    f.receipt.phase = 'start_acknowledged'
+    f.receipt.sequence++
+    for await (const frame of f.proxy.startTurn(session, { prompt: 'correct output', clientCorrelationId: correlationId,
+      onSubmitted: submitted, onSettingsApplied: settings, deferSettlement: true })) {
+      if (startupEvents && frame.sequence === 2) expect(submitted).not.toHaveBeenCalled()
+    }
+    expect(submitted).toHaveBeenCalledExactlyOnceWith('corrective-turn')
+    expect(settings).toHaveBeenCalledTimes(1)
+  })
+
   it('releases the lost initial snapshot when its replay observes changed metadata', async () => {
     let reads = 0
     const result = { outcome: 'succeeded' as const, output: { text: 'changed-snapshot' + 'x'.repeat(3 * 1024 * 1024) } }
