@@ -19,23 +19,10 @@ const retrySnapshotOperations = [
   'source.approve', 'source.project.capture',
 ]
 const retrySnapshots = new Set(retrySnapshotOperations)
-// A reused capture has no approval row of its own. Keep its approval response
-// until the capture response is gone, so later pages can still resolve its snapshot.
 const sourceResponseReleased = `(r.operation not in ('source.approve','source.project.capture') or exists (
-  select 1 from management_command_receipts response
-  left join management_command_receipts approved on approved.principal_id=response.principal_id
-    and approved.command_id=response.command_id and approved.operation='source.approve'
-  left join source_approvals approval on approval.requested_by=response.principal_id
-    and approval.command_id=response.command_id
-  join source_snapshots snapshot on snapshot.snapshot_id=(case when r.operation='source.approve'
-    then response.result#>>'{manifest,snapshotId}'
-    else coalesce(approved.result#>>'{manifest,snapshotId}',approval.snapshot_id::text) end)::uuid
-  where response.principal_id=r.principal_id and response.operation=r.operation and response.command_id=r.command_id
+  select 1 from source_approvals approval join source_snapshots snapshot on snapshot.snapshot_id=approval.snapshot_id
+  where approval.requested_by=r.principal_id and approval.command_id=r.command_id
     and snapshot.availability='unavailable'
-    and (r.operation<>'source.approve' or approval.snapshot_id=snapshot.snapshot_id or not exists (
-      select 1 from management_command_receipts capture where capture.principal_id=r.principal_id
-        and capture.command_id=r.command_id and capture.operation='source.project.capture'
-    ))
 ))`
 
 export function expiredCommandResult(): DomainError {
