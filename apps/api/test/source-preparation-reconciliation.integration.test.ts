@@ -144,7 +144,7 @@ describe.skipIf(!postgresEnabled)('failed Job source preparation reconciliation'
       }))
     }
     const owners = new PostgresSourceOperationAuthority(database.pool, attempts, (_sql, record) => confirmedClosed(record))
-    worker = new SourceOperationWorkerService({mainNow:()=>Date.now(),authenticate:async context=>{expect(context.binding).toEqual(binding)},approvedRoots:async()=>approved,
+    worker = new SourceOperationWorkerService({authenticate:async context=>{expect(context.binding).toEqual(binding)},approvedRoots:async()=>approved,
       currentOwner:(operation,context)=>owners.resolve(operation,DeviceConnectionIdentitySchema.parse({mainId:context.binding.mainId,deviceId:context.binding.deviceId,
         workerInstallationId:context.binding.workerInstallationId,keyRevision:1,authorizationRevision:1,bootId:context.binding.bootId,connectionGeneration:1})),
       quotaPoolFor: async binding => {
