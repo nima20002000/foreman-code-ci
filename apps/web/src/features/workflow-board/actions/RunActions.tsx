@@ -39,6 +39,8 @@ function SelectedRunActions({ selection, access }: {
       }
       return value
     }, retry: false, gcTime: 0, staleTime: 1000, refetchOnWindowFocus: true, refetchOnReconnect: 'always',
+    // Contextual status owns bounded polling and explicit client refreshes.
+    meta: { refetchOnApiReconnect: false },
     refetchInterval: (query) => {
       // A transient read failure keeps bounded polling; authority, not-found and
       // scope/identity failures stop until an explicit refresh.
