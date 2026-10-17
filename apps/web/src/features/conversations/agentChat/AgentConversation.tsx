@@ -38,7 +38,7 @@ export function AgentConversation(props: AgentConversationProps) {
   return <ChatAttachmentBoundary><AgentConversationContent {...props} /></ChatAttachmentBoundary>
 }
 
-function AgentConversationContent({ context, name, role, activity, runLabel, onClose, onNewConversation }: AgentConversationProps) {
+function AgentConversationContent({ context, name, activity, runLabel, onClose, onNewConversation }: AgentConversationProps) {
   const chat = useAgentChat(context), state = chat.state
   const conversation = state?.conversation
   const retired = conversation?.harness === 'opencode' || state?.capabilities.harness === 'opencode'
@@ -64,7 +64,7 @@ function AgentConversationContent({ context, name, role, activity, runLabel, onC
   const { composer, sendAgain, setSendAgain, resendCommand, resendControl, resendPending,
     commandError, commandCompaction, focus, submit } = useAgentConversationComposer({ chat, state, sessionControls, attachments, draft })
   const stateLabel = agentChatStateLabel(state, runLabel)
-  const header = <AgentChatHeader name={name} role={role} state={stateLabel}
+  const header = <AgentChatHeader name={name} state={stateLabel}
     detail={[activity, state?.availability.message, state ? chatBackgroundWork(state.activitySnapshot)?.message : undefined]
       .filter(Boolean).join(' · ')} onClose={onClose}
     controls={<>

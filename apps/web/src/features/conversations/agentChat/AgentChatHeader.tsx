@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import { Icon, IconButton, Tooltip } from '../../../shared/ui/nocturne'
 
 export function AgentChatHeader({ name, state, detail, controls, onClose }: {
-  name: string; role?: string; state: string; detail?: string; controls?: ReactNode; onClose?: () => void
+  name: string; state: string; detail?: string; controls?: ReactNode; onClose?: () => void
 }) {
   const chip = <span className="agent-chat-session-label" data-state={state} role="status" aria-label="Agent state"
     tabIndex={detail ? 0 : undefined}>{state}</span>

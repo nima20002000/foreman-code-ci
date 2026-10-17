@@ -8,6 +8,7 @@ import { SavedNodePlacementSchema } from './nodePlacement.js';
 import { WorkspaceRootPolicySchema } from './workspaceRootPolicies.js';
 import { PromptSettingSnapshotSchema } from './prompts.js';
 import { AcceptedProviderAccountBindingSchema } from './providerAccounts.js';
+import { SessionControlRequestSchema, SessionControlStateSchema } from './sessionControls.js';
 
 export const AgentChatDirectoryBindingSchema = z.object({ workflowVersionId: z.string().min(1),
   placement: SavedNodePlacementSchema, policy: WorkspaceRootPolicySchema,
@@ -16,8 +17,19 @@ export type AgentChatDirectoryBinding = z.infer<typeof AgentChatDirectoryBinding
 
 import {
   RecordedAgentHarnessSchema, HarnessExecutionSchema, ExecutionResultSchema, IdSchema, MessageSchema, OperatorActivityCursorSchema,
-  OperatorActivitySchema, PendingNativeInteractionSchema, TimestampSchema,
+  OperatorActivitySchema, PendingNativeInteractionSchema, TimestampSchema, SupportedHarnessConfigurationSchema,
 } from "./index.js";
+
+export const AgentChatControlsStateSchema = SessionControlStateSchema.extend({
+  configuration: z.object({ versionId: IdSchema, metadataRevision: z.number().int().nonnegative(),
+    harness: SupportedHarnessConfigurationSchema }).strict().optional(),
+});
+export const AgentChatControlsUpdateRequestSchema = z.union([
+  SessionControlRequestSchema,
+  z.object({ kind: z.literal('configuration'), requestId: z.string().min(8).max(200),
+    expectedRevision: z.number().int().nonnegative(), expectedConfigurationVersionId: IdSchema,
+    configuration: SupportedHarnessConfigurationSchema }).strict(),
+]);
 
 /**
  * FEAT-15 selected-Agent chat (NIM-2682 frozen seam).
