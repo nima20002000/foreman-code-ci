@@ -23,7 +23,7 @@ export interface CanonicalNativeArtifactResult {
  * persisted command; worker paths, text output and transfer completion are not results. */
 export class CanonicalNativeArtifactResults {
   constructor(private readonly files: TemporaryFileService, private readonly ledger: DistributedPublicationLedger,
-    private readonly authority: ArtifactPublicationAuthority, private readonly clock: () => Date = () => new Date()) {}
+    private readonly authority: Pick<ArtifactPublicationAuthority, 'authorize'>, private readonly clock: () => Date = () => new Date()) {}
 
   async readAccepted(accepted: AcceptedArtifactPublication, commandId: string): Promise<CanonicalNativeArtifactResult> {
     const attempt = ArtifactAttemptSchema.parse(accepted.attempt)
