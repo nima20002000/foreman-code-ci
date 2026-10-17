@@ -24,3 +24,16 @@ export const circleCreditsShape = {
   credits: CircleCreditsSchema.nullable().optional(),
   creditsUnavailable: z.string().max(300).optional(),
 }
+
+/** Missing login identity on a saved reference always denotes the original primary login. */
+export const DEFAULT_CIRCLE_ACCOUNT_ID = 'default'
+export const CircleAccountIdSchema = z.string().regex(/^[a-z0-9][a-z0-9-]{0,31}$/,
+  'Use 1-32 lowercase letters, digits or dashes.')
+export const CircleAccountRoleSchema = z.enum(['primary', 'standby'])
+export const CircleSchedulingRoleSchema = z.enum(['active', 'standby', 'exhausted'])
+export type CircleAccountRole = z.infer<typeof CircleAccountRoleSchema>
+export type CircleSchedulingRole = z.infer<typeof CircleSchedulingRoleSchema>
+export const circleSchedulingShape = {
+  schedulingRole: CircleSchedulingRoleSchema.optional(),
+  schedulingReason: z.string().max(300).optional(),
+}
