@@ -33,7 +33,8 @@ export async function refreshCodexMarketplaceSnapshot(ports: Pick<MaintenancePor
       try { await rename(backup, destination) }
       catch (restoreError) {
         retainBackup = true
-        throw new AggregateError([error, restoreError], `Could not restore ${name}; the previous snapshot is retained at ${backup}.`)
+        throw new AggregateError([error, restoreError], `Could not restore ${name}; the previous snapshot is retained at ${backup}.`,
+          { cause: restoreError })
       }
       throw error
     }
