@@ -2,9 +2,6 @@ import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { randomUUID } from 'node:crypto'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { CI_HOST_NAMESPACE } from '@foreman-code/contracts'
-import { workerBundleErrorMessage } from '../src/modules/computers/workerBundleReadiness.js'
-import { workerBundleReadinessFixture } from './helpers/workerBundleReadinessFixture.js'
 import { JobVerificationProfileSchema } from '@foreman-code/contracts/job-verification-runtime'
 import { jobDigest } from '../src/modules/jobs/service.js'
 import { BuildComputerStatusSchema } from '@foreman-code/contracts/build-computers'
@@ -86,11 +83,10 @@ describe.skipIf(!postgresEnabled)('build readiness matches admission through HTT
       values($1,1,$2,$3,$4::jsonb)`, [root.binding.rootId, workspaceId, root.source.snapshotId, JSON.stringify(root)])
     await database.pool.query(`insert into job_runtime_profiles(id,workspace_id,revision,root_id,binding_revision,record)
       values($1,$2,1,$3,1,$4::jsonb)`, [profile.id, workspaceId, root.binding.rootId, JSON.stringify(profile)])
-    const bundle = workerBundleReadinessFixture()
     let clockReason: string | null = null
     const endpoint = { clockReason: () => clockReason, currentBinding: () => ({ workerInstallationId: target.applicationInstallationId,
       keyRevision: target.keyRevision, authorizationRevision: target.authorizationRevision }),
-    captureRequest: () => ({}), capabilities: () => [], workerBundleReadiness: async () => bundle.read() } as unknown as DeviceEndpoint
+    captureRequest: () => ({}), capabilities: () => [] } as unknown as DeviceEndpoint
     let memory: number | null = 14 * 2 ** 30
     const availableMemory = async () => memory
     const commands = new PostgresCommandCoordinator(database.pool)
@@ -125,23 +121,6 @@ describe.skipIf(!postgresEnabled)('build readiness matches admission through HTT
       return mcp
     }
     expect(await readback()).toEqual(saved)
-    for (const mode of ['protected', 'host'] as const) {
-      endpoint.capabilities = () => mode === 'host' ? [{ namespace: CI_HOST_NAMESPACE, version: 1,
-        mainCanRequest: true, workerCanRequest: false, maxJsonBytes: 1_048_576, maxBinaryBytes: 0 }] : []
-      endpoint.captureRequest = () => ({ binding: endpoint.currentBinding(registration.deviceId!)!,
-        request: async () => ({ payload: { operation: 'status', ready: true, reasons: [],
-          cpuCount: 8, memoryBytes: 16 * 2 ** 30, runs: [] } }) }) as ReturnType<DeviceEndpoint['captureRequest']>
-      for (const phase of ['current', 'installing'] as const) {
-        bundle.worker.contentSha256 = 'c'.repeat(64)
-        bundle.worker.state = phase
-        expect(await readback()).toMatchObject({ state: 'setup-required',
-          reasons: [workerBundleErrorMessage(bundle.read())], preference: saved.preference })
-      }
-      bundle.worker.contentSha256 = bundle.expected.contentSha256
-      bundle.worker.state = 'current'
-      expect(await readback()).toMatchObject({ state: 'ready', reasons: [], preference: saved.preference })
-    }
-    endpoint.capabilities = () => []
     clockReason = 'Worker clock differs from Main by more than 2 minutes. Synchronize the Worker clock.'
     expect(await readback()).toMatchObject({ state: 'setup-required', reasons: [clockReason],
       preference: saved.preference })

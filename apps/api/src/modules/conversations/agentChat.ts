@@ -17,6 +17,7 @@ import { acceptedResponseControl } from './acceptedResponseControl.js'
 import { nativeNonSubmission } from './nativeNonSubmission.js'
 import { sessionStartConfiguration } from '../harnesses/sessionStart.js'
 import { harnessSessionChanged } from '../harnesses/providerAccountConfiguration.js'
+import { WorkerConversationBindingSchema } from '@foreman-code/contracts/remote-execution-rpc'
 import { pendingInteractionAfterHistory } from './pendingInteractionReadback.js'
 import { qualifyChatActivity } from './qualifiedActivity.js'
 import { reconcileKnownActivities } from './reconcileKnownActivities.js'
@@ -568,6 +569,20 @@ export class AgentChatService {
   }
 
   private async harnessUnavailable(resolution: Resolution): Promise<Resolution['blocked']> {
+    const row = resolution.row
+    if (row?.origin_run_id && row.native_session_id && !row.record.sourceConfigurationVersionId) {
+      const agent = (await this.pool.query<{ current_configuration_version_id: string | null }>(
+        'select current_configuration_version_id from agents where workspace_id=$1 and id=$2 and archived_at is null',
+        [row.workspace_id, row.agent_id])).rows[0]
+      if (agent?.current_configuration_version_id
+        && agent.current_configuration_version_id !== row.agent_configuration_version_id) {
+        const configuration = await this.workflows.getAgentConfiguration(agent.current_configuration_version_id)
+        if (!configuration) {
+          throw new DomainError('AGENT_CHAT_CONFIGURATION_MISSING', 'The saved Agent configuration is unavailable.', 409)
+        }
+        return this.managers.unavailable?.(configuration, row.record.workingDirectory)
+      }
+    }
     const executionId = resolution.row?.record.sourceConfigurationVersionId
       ? undefined : resolution.executionId ?? resolution.row?.origin_execution_id
     const workingDirectory = resolution.row?.record.workingDirectory ?? resolution.create?.workingDirectory
@@ -1079,10 +1094,20 @@ export class AgentChatService {
     }
     const ephemeral = previous.harness.harness === 'codex'
       && previous.harness.advanced?.sessionPersistence === 'ephemeral'
-    const profileChanged = previous.harnessProfileSelection?.instanceId !== configuration.harnessProfileSelection?.instanceId
-      || previous.harnessProfileSelection?.target.harnessInstallationId
+    const previousProfile = row.worker_conversation_binding
+      ? WorkerConversationBindingSchema.parse(row.worker_conversation_binding).profile : previous.harnessProfileSelection
+    const profileChanged = previousProfile?.instanceId !== configuration.harnessProfileSelection?.instanceId
+      || previousProfile?.target.harnessInstallationId
         !== configuration.harnessProfileSelection?.target.harnessInstallationId
     const replaceSession = harnessSessionChanged(previous.harness, configuration.harness) || ephemeral || profileChanged
+    const runtime = this.runtimes.get(row.id)
+    if (runtime?.session && previousProfile?.target.hostRef.kind === 'device') {
+      if (!runtime.manager.closeForResume) {
+        throw new DomainError('NATIVE_RUNTIME_RELEASE_UNAVAILABLE',
+          'The Worker cannot confirm closure of its resumable process.', 409)
+      }
+      await runtime.manager.closeForResume(runtime.session)
+    }
     await this.release(row.id)
     return this.repository.applyConfiguration(row.id, row.active_request_id!, configuration, { replaceSession, directoryBinding })
   }
@@ -1228,11 +1253,12 @@ export class AgentChatService {
       let row = await this.repository.get(id)
       if (!row || row.active_request_id !== turn.requestId) return
       if (row.cancel_requested) { await this.settle(id, turn.requestId, { outcome: 'canceled' }); return }
+      const principalId = await this.repository.turnPrincipalId(id, turn.requestId)
+      if (principalId) this.runtimes.get(id)?.manager.setSessionControlPrincipal?.(principalId)
       row = await this.control(id, () => this.applyTurnConfiguration(row!))
       const configuration = await this.conversationConfiguration(row)
       if (!configuration) throw new DomainError('AGENT_CHAT_CONFIGURATION_MISSING', 'The pinned Agent configuration is unavailable.', 409)
       const selectedMode = await this.repository.turnSessionMode(id, turn.requestId)
-      const principalId = await this.repository.turnPrincipalId(id, turn.requestId)
       if (principalId) await this.sessionControls.read({ conversationId: id, principalId,
         defaultSubject: `${row.workspace_id}:${row.agent_id}`, profileKey: row.agent_configuration_version_id,
         ...(selectedMode ? { initialMode: selectedMode } : {}), busyReason: null })
