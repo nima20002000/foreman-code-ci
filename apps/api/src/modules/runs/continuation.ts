@@ -25,8 +25,7 @@ export function continuationValidator(pool: pg.Pool, locations: WorkspaceLocatio
     const run = AcceptedWorkflowRunV3Schema.parse(row.run)
     const configuration = AgentConfigurationVersionSchema.parse(row.configuration)
     const treeRow = (await client.query<{ record: unknown }>(
-      `select record from run_worktrees where run_id=$1 and allocation_id in ($2,'')
-        order by (allocation_id=$2) desc limit 1`, [run.id, execution.id])).rows[0]
+      'select record from run_worktrees where run_id=$1', [run.id])).rows[0]
     const tree = treeRow ? RunWorktreeSchema.parse(treeRow.record) : undefined
     if (tree && tree.state !== 'active') throw new DomainError('RUN_WORKTREE_CLOSED', 'The Run worktree is closed.', 409)
     if (row.stopped !== false || row.cleanup_pending !== false

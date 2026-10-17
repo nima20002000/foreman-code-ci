@@ -78,8 +78,8 @@ async function completedSourcePage(pool: Pick<pg.Pool, 'query'>, after: Complete
         s.state='retained' and (
           (s.record->>'referenceReclaimed' is distinct from 'true' and (
             s.reserved_bytes=(s.record->>'reservedBytes')::bigint
-            or m.record#>'{receipt,sharedTree}' is not null
-            or m.record#>>'{receipt,binding,deviceId}' is not null
+            or (m.record#>'{receipt,sharedTree}' is not null
+              and m.record#>>'{receipt,binding,deviceId}' is null)
           ))
           or (m.record#>'{receipt,worktree}' is not null
             and m.worktree_cleanup->>'state' is distinct from 'removed')

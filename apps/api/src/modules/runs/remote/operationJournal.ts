@@ -4,7 +4,7 @@ import { dirname } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
 import { createHash, randomUUID } from 'node:crypto'
 import { z } from 'zod'
-import { remoteActiveNative, RemoteWorkflowTurnInputSchema, RemoteReviewerAssignmentSchema, RemoteReviewerTurnSchema,
+import { remoteActiveNative, RemoteReviewerAssignmentSchema, RemoteReviewerTurnSchema,
   type RemoteReviewerAssignment } from '@foreman-code/contracts/remote-execution'
 import { canonicalGraphJson } from '@foreman-code/contracts/wave25'
 import { RemoteNativeHistorySchema, REMOTE_NATIVE_SOURCE_LIMIT,
@@ -98,19 +98,30 @@ export class RemoteOperationJournal {
     this.conversationArchive = new WorkerConversationArchive(path, byteLimit,
       (archivePath, value) => this.writeSnapshot(archivePath, value))
     this.conversations = new WorkerConversationJournal({
-      read: async conversationId => {
+      read: async (conversationId, generation) => {
         await this.tail
         if (this.closed || this.faulted) throw new Error('Journal unavailable: recovery required')
-        const retained = this.data.conversations.find(record => record.binding.owner.conversationId === conversationId)
-        const record = retained ?? await this.conversationArchive.read(conversationId)
+        const retained = this.data.conversations.find(record => record.binding.owner.conversationId === conversationId
+          && record.binding.generation === generation)
+        const record = retained ?? await this.conversationArchive.read(conversationId, generation)
         return record ? [structuredClone(record)] : []
       },
-      change: (conversationId, apply) => this.change(async data => {
-        if (data.conversations.some(record => record.binding.owner.conversationId === conversationId)) {
+      change: (conversationId, apply, generation) => this.change(async data => {
+        if (data.conversations.some(record => record.binding.owner.conversationId === conversationId
+          && record.binding.generation === generation)) {
           return apply(data.conversations)
         }
-        const archived = await this.conversationArchive.read(conversationId)
-        if (!archived) return apply(data.conversations)
+        const ancestors = await this.conversationArchive.readAll(conversationId)
+        const archived = ancestors.find(record => record.binding.generation === generation)
+        if (!archived) {
+          const frozen = structuredClone(ancestors)
+          const records = [...data.conversations, ...ancestors]
+          const result = apply(records)
+          if (!same(ancestors, frozen)) throw new DomainError(
+            'WORKER_CONVERSATION_CONFLICT', 'The retired conversation changed.', 409)
+          data.conversations = records.filter(record => !ancestors.includes(record))
+          return result
+        }
         const records = [structuredClone(archived)]
         const result = apply(records)
         if (!same(records, [archived])) {
@@ -494,58 +505,18 @@ export class RemoteOperationJournal {
       return receipt
     })
   }
-  reserveTurn(operationId: string, input: z.input<typeof RemoteWorkflowTurnInputSchema>, history?: NativeHistory) {
+  reserveTurn(operationId: string, input: { correlationId: string; promptDigest: string; sessionMode?: 'regular' | 'plan' }) {
     return this.change(async data => {
-      const turnInput = RemoteWorkflowTurnInputSchema.parse(input)
       const archived = await this.archivedReceipt(operationId)
       if (archived) {
-        if (archived.turnInput && !same(archived.turnInput, turnInput)) throw new Error('Turn input binding conflict')
+        if (archived.turnInput && !same(archived.turnInput, input)) throw new Error('Turn input binding conflict')
         return { reserved: false, receipt: archived }
       }
       const receipt = this.receipt(data, operationId)
-      if (receipt.turnInput && !same(receipt.turnInput, turnInput)) {
-        const prior = receipt.resultRepairs?.find(repair => repair.previousInput.correlationId === input.correlationId)
-        if (prior) {
-          if (!same(prior.previousInput, turnInput)) throw new Error('Turn input binding conflict')
-          return { reserved: false, receipt }
-        }
-        this.reserveResultRepair(receipt, turnInput, history)
-        return { reserved: true, receipt }
-      }
+      const turnInput = { ...input, sessionMode: input.sessionMode ?? 'regular' }
+      if (receipt.turnInput && !same(receipt.turnInput, turnInput)) throw new Error('Turn input binding conflict')
       if (receipt.stopFence || receipt.turnEntryAttempted || receipt.phase !== 'start_acknowledged') return { reserved: false, receipt }
       receipt.turnEntryAttempted = true; receipt.turnInput = turnInput; receipt.sequence++; return { reserved: true, receipt }
-    })
-  }
-  private reserveResultRepair(receipt: RemoteOperationReceipt,
-    input: z.infer<typeof RemoteWorkflowTurnInputSchema>, history: NativeHistory | undefined) {
-    const repairs = receipt.resultRepairs ?? []
-    const terminal = history?.terminalTurn
-    const expected = `execution:${receipt.intent.executionId}:result-repair:${repairs.length + 1}`
-    if (input.correlationId === receipt.turnInput?.correlationId) throw new Error('Turn input binding conflict')
-    if (repairs.length >= 2 || input.correlationId !== expected || !receipt.turnInput?.deferSettlement
-      || !input.deferSettlement || receipt.outputValidationComplete || receipt.stopFence || receipt.terminal
-      || !history || !terminal || terminal.correlationId !== receipt.turnInput.correlationId
-      || input.outputSchemaDigest !== receipt.turnInput.outputSchemaDigest
-      || terminal.providerId !== receipt.native?.turnId || terminal.result.outcome !== 'succeeded'
-      || history?.pendingInteraction || history?.pendingInteractions.length) throw new Error('Result repair requires the completed original turn')
-    const afterSequence = history.nextSequence === undefined
-      ? history.events.at(-1)?.sequence ?? -1 : history.nextSequence - 1
-    receipt.resultRepairs = [...repairs, { previousInput: receipt.turnInput,
-      previousTurnId: terminal.providerId, afterSequence }]
-    receipt.turnInput = input
-    receipt.phase = 'start_acknowledged'
-    receipt.sequence++
-  }
-  completeOutputValidation(operationId: string, correlationId: string, nativeTurnId: string) {
-    return this.change(data => {
-      const receipt = this.receipt(data, operationId)
-      if (receipt.turnInput?.correlationId !== correlationId || receipt.native?.turnId !== nativeTurnId)
-        throw new Error('Output validation turn binding conflict')
-      if (!receipt.outputValidationComplete) {
-        receipt.outputValidationComplete = true
-        receipt.sequence++
-      }
-      return receipt
     })
   }
   acknowledgeTurn(operationId: string, turnId: string, retry?: { previousTurnId: string }) {
