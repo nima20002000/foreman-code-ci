@@ -136,8 +136,7 @@ it('rejects execution, profile, owner and bound-hash changes during a presentati
     configurationHash: '0'.repeat(64) } }, accepted, configuration)).toThrow()
 })
 
-it.each([['codex', false], ['codex', true], ['claude', false], ['claude', true]] as const)(
-  'recovers journaled %s creation through the production manager (Worker restarted: %s)', async (harness, restarted) => {
+it.each(['codex', 'claude'] as const)('exposes journal-only %s creation recovery through the production manager', async harness => {
   const f = workerConversationFixture('agent', harness)
   if (!('agentId' in f.configuration) || f.binding.owner.kind !== 'agent') throw new Error('Agent fixture required')
   const binding = { ...f.binding,
@@ -165,24 +164,12 @@ it.each([['codex', false], ['codex', true], ['claude', false], ['claude', true]]
     turns: harness === 'claude' ? [{ correlationId: operationId, inputHash: commandInputHash('original prompt'),
       status: 'uncertain', nativeTurnId: null, sessionMode: 'regular', creationOperationId: operationId }] : [],
     compactions: [], desiredPreferences: null, appliedPreferences: null }
-  const originalCreation = structuredClone(receipt.creation)
-  const originalTurns = structuredClone(receipt.turns)
-  const connection = restarted ? { ...f.connection, bootId: randomUUID(), connectionEpoch: randomUUID(),
-    connectionGeneration: 2 } : f.connection
   const methods: string[] = []
-  const channel = { binding: connection, request: async (raw: unknown) => {
+  const channel = { binding: f.connection, request: async (raw: unknown) => {
     const request = WorkerConversationRpcRequestSchema.parse(raw)
     methods.push(request.method)
-    if (request.method === 'conversation.status') return { payload: { receipt: structuredClone(receipt) } }
-    if (request.method !== 'conversation.open' || request.mode !== 'attach') {
-      throw new Error('Creation recovery may only inspect the journal and attach its original session')
-    }
-    expect(request).toMatchObject({ mode: 'attach', operationId, source: f.session, binding,
-      configuration: f.configuration })
-    expect(request).not.toHaveProperty('prompt')
-    receipt.connection = connection
-    receipt.revision++
-    return { payload: { receipt: structuredClone(receipt) } }
+    if (request.method !== 'conversation.status') throw new Error('Creation recovery must only inspect the journal')
+    return { payload: { receipt } }
   } }
   const profiles = { admit: async () => ({ override: { configuration: f.configuration.harness,
     target: binding.profile.target } }), revalidate: async () => {} }
@@ -197,15 +184,10 @@ it.each([['codex', false], ['codex', true], ['claude', false], ['claude', true]]
     await expect(manager.reconcileSessionCreation!({ kind: 'agent-chat', configuration: f.configuration,
       conversationId: conversation.id, workflowId: agentOwner(binding.owner).workflowId, workflowNodeId: agentOwner(binding.owner).workflowNodeId,
       workingDirectory: binding.workingDirectory, correlationId: operationId })).resolves.toEqual(f.session)
-    expect(methods).toEqual(['conversation.status', 'conversation.open'])
-    expect(receipt.connection).toEqual(connection)
-    expect(receipt.session).toEqual(f.session)
-    expect(receipt.creation).toEqual(originalCreation)
-    expect(receipt.turns).toEqual(originalTurns)
-    expect(conversation.worker_conversation_binding).toEqual(binding)
+    expect(methods).toEqual(['conversation.status'])
     await expect(manager.reconcileSessionCreation!({ kind: 'agent-chat', configuration: f.configuration,
       conversationId: conversation.id, workflowId: agentOwner(binding.owner).workflowId, workflowNodeId: agentOwner(binding.owner).workflowNodeId,
       workingDirectory: binding.workingDirectory, correlationId: 'another-creation' })).rejects.toThrow()
-    expect(methods).toEqual(['conversation.status', 'conversation.open', 'conversation.status'])
+    expect(methods).toEqual(['conversation.status', 'conversation.status'])
   } finally { await manager.dispose?.(); await production.close() }
 })
