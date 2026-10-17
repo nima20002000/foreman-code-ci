@@ -9,13 +9,12 @@ import { ChatDecisionReceipts } from '../ChatDecisionReceipts'
 import { OperatorApprovalCard } from '../../operator-chat/OperatorApprovalCard'
 import { ConversationViewport } from '../ConversationViewport'
 import { HistoryWindowNotice } from '../HistoryWindowNotice'
-import { useChatTurnCompleted } from '../chatTurnCompletion'
 import { RunTranscript } from './RunTranscript'
 import { useExecutionActivity } from './executionActivity'
 import { AgentChatMessage } from './AgentChatMessage'
 import { AgentChatActivity } from './AgentChatActivity'
 import { ChatDeliveryState } from './ChatDeliveryState'
-import { approvalReplyAvailable, mergeChatMessages } from './model'
+import { approvalReplyAvailable, chatBusy, mergeChatMessages } from './model'
 import { confirmedCommandReceipt } from './commandRecords'
 import { applyCanonicalActivityItems } from './activityMerge'
 import { placeChatActivities } from './activityPlacement'
@@ -32,11 +31,6 @@ export function AgentChatTranscript({
   onSendAgain(content: string, attachments?: MessageAttachmentRef[], mode?: SessionMode): void
 }) {
   const id = state.conversation?.id
-  const turnCompleted = useChatTurnCompleted(id, state.activeTurn?.requestId)
-  const chatResponding = !turnCompleted && !state.pendingInteraction
-    && ['creating', 'active', 'interrupting'].includes(state.sessionState)
-  const executionResponding = state.sourceTranscript
-    && ['starting', 'running'].includes(state.sourceTranscript.state)
   const feed = useExecutionActivity(state.context)
   const sourceRevision = state.sourceTranscript?.revision
   const refetchFeed = feed.query.refetch
@@ -152,7 +146,7 @@ export function AgentChatTranscript({
           {delivery === 'failed' ? 'Retry' : 'Send again as new message'}
         </Button> : undefined} />
     })}
-    {chatResponding || executionResponding ? <div className="agent-chat-typing"
+    {(chatBusy(state) || state.sourceTranscript && state.sourceTranscript.state !== 'completed') ? <div className="agent-chat-typing"
       role="status" aria-label={`${name} is working`}><span /><span /><span /></div> : null}
     {!readOnly && state.pendingInteraction ? <OperatorApprovalCard actor="Agent" interaction={state.pendingInteraction}
       onBrowse={onBrowse} disabled={!!responseReason || !approvalReplyAvailable(state)} onSelect={onRespond} /> : null}
