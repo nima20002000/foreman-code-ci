@@ -143,7 +143,12 @@ it('reads discovered primary status and renames the account through MCP and HTTP
   }
   const account = await read()
   const { id, role, organizations } = account
-  const renamed = await add(client, { id, role, organizations, label: 'Renamed through MCP' })
+  const renameReply = await client.callTool({ name: 'circle_account_add', arguments: {
+    account: { id, role, organizations, label: 'Renamed through MCP' },
+  } })
+  const renameResult = decodeMcpToolResult(renameReply)
+  expect(renameReply.isError, JSON.stringify(renameResult)).not.toBe(true)
+  const renamed = CircleAccountsUpdateResultSchema.parse(renameResult)
   expect(renamed.value.value.accounts[0]).toMatchObject({ label: 'Renamed through MCP', organizations: [] })
   expect(account).toMatchObject({ id: 'default', role: 'primary', organizations: [],
     tokenConfigured: true, ready: true, reasons: [] })
