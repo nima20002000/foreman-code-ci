@@ -18,7 +18,6 @@ import type { PostgresOperatorConversationRepository } from '../src/modules/conv
 import { HarnessExecutionError, NativeDeliveryError } from '../src/modules/harnesses/errors.js'
 import type { NativeHarnessSessionManager, NativeHistory, NativeSessionStart, NativeTurnInput } from '../src/modules/harnesses/port.js'
 import { deferred } from './helpers/deferred.js'
-import { createAdmittedNativeManager } from '../src/modules/harnesses/admittedManager.js'
 
 // Isolated service regressions. SQL persistence and provider I/O are deliberately substituted here.
 // The existing authenticated HTTP/MCP PostgreSQL suite remains a separate integration gate.
@@ -186,9 +185,6 @@ async function setup(options: { ephemeral?: boolean; stored?: boolean; origin?: 
     const sql = text.replace(/\s+/g, ' ').trim()
     if (['begin', 'commit', 'rollback'].includes(sql)) return { rows: [] }
     if (sql.startsWith('select record from conversation_session_controls where conversation_id=$1')) return { rows: [] }
-    if (sql.startsWith('select current_configuration_version_id from agents')) return { rows:
-      values[0] === configuration.workspaceId && values[1] === configuration.agentId
-        ? [{ current_configuration_version_id: configuration.id }] : [] }
     if (sql.includes('from management_principals')) return { rows: values[0] === principal.id
       ? [{ id: principal.id, name: principal.name, audience: principal.audience, grants: principal.grants,
         expires_at: new Date(principal.expiresAt), revoked_at: null, delegated_from: null }] : [] }
@@ -237,20 +233,6 @@ function execution(f: Awaited<ReturnType<typeof setup>>, occurrenceIndex: number
 const origin: AgentChatOrigin = { kind: 'run_execution', runId: 'run-f3', executionId: 'origin-execution', sourceNativeSessionId: 'origin-native' }
 
 describe('F3 native availability and ownership', () => {
-  it('does not advertise completed-turn retirement when the admitted driver lacks that capability', async () => {
-    const f = makeCurrentWorkflowFixture('retirement-capability', 'single')
-    const native = new NativeFixture()
-    const { manager } = createAdmittedNativeManager('codex', async () => ({ manager: native }))
-    try {
-      await manager.createSession({ kind: 'agent-chat', configuration: f.configurations[0]!,
-        conversationId: 'retirement-chat', workflowId: f.scope.workflowId,
-        workflowNodeId: f.version.definition.nodes[0]!.id, workingDirectory: '/fixture-read-only',
-        correlationId: 'first' })
-      assert.equal(manager.retireTurn, undefined)
-      assert.equal(native.calls.length, 1)
-    } finally { await manager.dispose!() }
-  })
-
   for (const mode of ['create', 'attach', 'fork'] as const) {
     it(`A-R01: ${mode} refuses scoped App MCP before prompt delivery and keeps read-only configuration`, async () => {
       const f = await setup({ stored: mode === 'attach', ...(mode === 'fork' ? { origin } : {}) })

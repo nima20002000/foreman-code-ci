@@ -45,7 +45,7 @@ export function assertRunChatConversation(row: AgentConversationRow, context: Ag
     || origin.executionId !== row.origin_execution_id || executionId && origin.executionId !== executionId) staleRunChat()
   if (source && (source.id !== origin.executionId || source.runId !== context.runId
     || source.workflowNodeId !== context.workflowNodeId || source.agentId !== context.agentId
-    || source.agentConfigurationVersionId !== (row.record.sourceConfigurationVersionId ?? row.agent_configuration_version_id)
+    || source.agentConfigurationVersionId !== row.agent_configuration_version_id
     || source.nativeSessionId && source.nativeSessionId !== origin.sourceNativeSessionId)) staleRunChat()
 }
 
@@ -56,7 +56,6 @@ export async function findRunChatConversation(query: Queryable, context: AgentCh
   const rows = (await query.query<AgentConversationRow>(`
     select * from operator_conversations where kind='agent' and deleted_at is null
       and agent_key not like 'workflow-native-files:v1:%'
-      and not coalesce((record->>'archived')::boolean, false)
       and workspace_id=$1 and workflow_id=$2 and origin_run_id=$3 and workflow_node_id=$4
       and agent_id=$5 and origin_execution_id=$6 order by id limit 2`,
   [context.workspaceId, context.workflowId, context.runId, context.workflowNodeId, context.agentId, executionId])).rows

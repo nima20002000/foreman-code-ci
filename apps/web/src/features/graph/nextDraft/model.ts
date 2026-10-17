@@ -161,8 +161,8 @@ export function changeApprovalHandler(graph: WorkflowDefinitionV3, handler: Work
 export function attachAgent(graph: WorkflowDefinitionV3, record: CatalogAgent, nodeId: string): WorkflowDefinitionV3 {
   if (record.archivedAt || !record.agent.configurationVersionId || !['coder', 'orchestrator'].includes(record.agent.productRole ?? '')) throw new Error('A board Agent with an available product-role configuration pin is required.')
   if (graph.nodes.some((node) => node.id === nodeId)) throw new Error('A node identity can occur only once in this workflow definition.')
-  // No position: the Board places a new node in the hierarchy until the person drags it.
-  const node: DraftNode = { id: nodeId, agentId: record.agent.id, name: record.agent.name }
+  const node: DraftNode = { id: nodeId, agentId: record.agent.id, name: record.agent.name,
+    position: { x: 80 + (graph.nodes.length % 4) * 280, y: 80 + Math.floor(graph.nodes.length / 4) * 180 } }
   return { ...graph, nodes: [...graph.nodes, node], entryNodeId: graph.nodes.length === 0 ? nodeId : graph.entryNodeId }
 }
 
@@ -314,6 +314,6 @@ export function discardMeaningfulChanges(context: NextDraftContext, graph: Workf
 export function attachJob(graph:WorkflowDefinitionV3,definition:JobDefinitionRecord,nodeId:string):WorkflowDefinitionV3 {
   if(definition.workspaceId!==graph.workspaceId||graph.nodes.some(node=>node.id===nodeId))throw new Error('Choose a saved job in this workspace and a new node identity.')
   if(graph.handoffs)throw new Error('Job nodes require a DAG or finite repeat workflow.')
-  const node:DraftNode={kind:'job',id:nodeId,jobDefinitionId:definition.id,jobDefinitionRevision:definition.revision,jobDefinitionVersionId:definition.versionId,name:definition.name}
+  const node:DraftNode={kind:'job',id:nodeId,jobDefinitionId:definition.id,jobDefinitionRevision:definition.revision,jobDefinitionVersionId:definition.versionId,name:definition.name,position:{x:80+(graph.nodes.length%4)*280,y:80+Math.floor(graph.nodes.length/4)*180}}
   return {...graph,nodes:[...graph.nodes,node],entryNodeId:graph.nodes.length===0?nodeId:graph.entryNodeId}
 }
