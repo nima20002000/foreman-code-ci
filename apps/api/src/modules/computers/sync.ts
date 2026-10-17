@@ -1,3 +1,4 @@
+import { RetryBackoff } from '../../infrastructure/retryBackoff.js'
 import { isDeepStrictEqual } from 'node:util'
 import { logIgnoredError } from '../diagnostics/ignoredError.js'
 import type pg from 'pg'
@@ -25,6 +26,7 @@ export class ComputerSyncService {
   private readonly reconciliations = new Map<string, Promise<unknown[]>>()
   private readonly workspaceRequests = new Map<string, Promise<unknown[]>>()
   private queued = 0
+  private readonly pollRetry = new RetryBackoff({ initialMs: 30_000, maxMs: 300_000 })
   constructor(private readonly pool: pg.Pool, private readonly mainId: string,
     private readonly endpoint: () => ComputerAccountsEndpoint | undefined,
     private readonly commands: PostgresCommandCoordinator,
@@ -113,9 +115,12 @@ export class ComputerSyncService {
   }
 
   poll(): Promise<void> {
-    if (this.lifetime.signal.aborted || this.queued) return Promise.resolve()
-    return this.reconcile().catch(error => {
-      logIgnoredError('lifecycle', 'synchronize shared files', error, { nextRetryMs: 30_000 })
+    if (this.lifetime.signal.aborted || this.queued || !this.pollRetry.ready()) return Promise.resolve()
+    return this.reconcile().then(() => {
+      this.pollRetry.reset()
+    }).catch(error => {
+      const nextRetryMs = this.pollRetry.fail()
+      logIgnoredError('lifecycle', 'synchronize shared files', error, { nextRetryMs })
       throw error
     })
   }
@@ -139,14 +144,30 @@ export class ComputerSyncService {
       }
       const workspaces = (await this.repository.workspaces()).filter(workspace =>
         workspaceId === undefined || workspace.id === workspaceId)
-      const failures = await Promise.all(workspaces.map(workspace => {
-        const pending = this.workspaceRequests.get(workspace.id)
-        if (pending) return pending
-        const request = this.configureWorkspace(workspace).finally(() => this.workspaceRequests.delete(workspace.id))
-        this.workspaceRequests.set(workspace.id, request)
-        return request
-      }))
-      return failures.flat()
+      const failures: unknown[] = []
+      const computers = await this.repository.computers()
+      let nextWorkspace = 0
+      const configureNext = async () => {
+        while (nextWorkspace < workspaces.length) {
+          const workspace = workspaces[nextWorkspace++]!
+          try {
+            const pending = this.workspaceRequests.get(workspace.id)
+            if (pending) {
+              failures.push(...await pending)
+              continue
+            }
+            const request = this.configureWorkspace(workspace, computers)
+              .finally(() => this.workspaceRequests.delete(workspace.id))
+            this.workspaceRequests.set(workspace.id, request)
+            failures.push(...await request)
+          } catch (error) {
+            failures.push(error)
+          }
+        }
+      }
+      // A stalled peer occupies one task while healthy workspaces continue through the other.
+      await Promise.all(Array.from({ length: Math.min(2, workspaces.length) }, configureNext))
+      return failures
     })().finally(() => {
       this.queued--
       this.reconciliations.delete(key)
@@ -178,11 +199,11 @@ export class ComputerSyncService {
     }
   }
 
-  private async configureWorkspace(workspace: SyncWorkspace) {
+  private async configureWorkspace(workspace: SyncWorkspace, computers: DeviceProvisioningTarget[]) {
     this.assertOpen()
     const main = this.repository.mainTarget
     const mainEnabled = workspace.active && (await this.repository.preference(this.pool, workspace.id, main)).enabled
-    const members = await Promise.all((await this.repository.computers()).map(async target => ({ target,
+    const members = await Promise.all(computers.map(async target => ({ target,
       enabled: mainEnabled && workspace.targets.some(member => sameDeviceProvisioningTarget(member, target))
         && (await this.repository.preference(this.pool, workspace.id, target)).enabled })))
     const failures: unknown[] = []
@@ -261,7 +282,7 @@ export class ComputerSyncService {
     if (!endpoint?.capabilities(target.hostRef.deviceId).some(value => value.namespace === COMPUTER_SYNC_NAMESPACE
       && value.mainCanRequest)) throw new DomainError('COMPUTER_OFFLINE', 'This computer is offline or needs an app update.', 409)
     return (await endpoint.request(target.hostRef.deviceId, COMPUTER_SYNC_NAMESPACE, { target, request },
-      { signal, timeoutMs: 150_000 })).payload
+      { signal, timeoutMs: 150_000, priority: request.operation === 'status' ? 'foreground' : 'background' })).payload
   }
   private async assertTarget(sql: Pick<pg.Pool, 'query'>, target: DeviceProvisioningTarget) {
     if (target.hostRef.mainId !== this.mainId) throw new DomainError('COMPUTER_NOT_FOUND', 'Computer belongs to another Main.', 404)

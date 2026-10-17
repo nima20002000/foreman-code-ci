@@ -43,7 +43,7 @@ export function operatorTurnStatus(state: OperatorConversationState, connection:
   } else if (background) executionLabel = `${background.label}. ${background.message}`
   else executionLabel = state.lastResult ? '' : 'Ready for your message.'
   const delivery = state.pendingInteraction && state.responseDelivery !== 'offered'
-    ? 'Checking delivery of your decision. It will not be sent twice.' : undefined
+    ? 'Checking delivery of your decision.' : undefined
   const presentation = chatStatus({ phase, connection, snapshotFresh, hasConversation: true,
     ...(executionLabel !== undefined ? { executionLabel } : {}), ...(delivery ? { delivery } : {}) })
   return [presentation.connection, presentation.execution, presentation.delivery].filter(Boolean).join(' ')

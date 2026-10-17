@@ -1,3 +1,4 @@
+import { InfoHint } from '../../../shared/ui/InfoHint'
 import { useRef } from 'react'
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { DurableInteraction } from '@foreman-code/contracts'
@@ -88,10 +89,10 @@ export function Approvals({ scope, run, canRead, canRespond, refresh }: {
     maxPages: 1, retry: false, gcTime: 0, refetchOnWindowFocus: false, refetchOnReconnect: false })
   const rows = queue.isError ? [] : queue.data?.pages[0]?.items ?? []
   return <details onToggle={(event) => setOpen(event.currentTarget.open)}>
-    <summary>Human approvals for this Run</summary>
+    <summary>Human approvals for this Run<InfoHint label="Human approvals for this Run">Only human-handled interactions are listed. App/Orchestrator approvals are not reassigned to a human here.</InfoHint></summary>
     {open ? <section aria-label="Run human approvals">
       <h4 ref={pageHeading} tabIndex={-1}>Human approval page</h4>
-      <p>Only human-handled interactions for Run <code>{scope.runId}</code> are listed. App/Orchestrator approvals are not reassigned to a human here.</p>
+      <p>Run <code>{scope.runId}</code></p>
       {!canRead ? <p>Human approval read permission is unavailable for this exact Run.</p> : <>
         {queue.isPending ? <p role="status">Loading one bounded approval page…</p> : null}
         {queue.isError ? <p role="alert">Approval inbox is unavailable: {queue.error.message}</p> : null}

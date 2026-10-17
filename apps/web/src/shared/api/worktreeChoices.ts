@@ -5,6 +5,7 @@ import {
 import type { SourceRootReference } from '@foreman-code/contracts/worktree-settings'
 import { WorkspaceRootListResultSchema } from '@foreman-code/contracts/workspace-root-policies'
 import { ApiError, apiClient, getManagedWorkspace } from './client'
+import { computerKey, readComputerNames } from './computerActivity'
 import { useHarnessSessionEpoch } from './harnessSettings'
 import { assertSession, sessionGeneration, sessionIsSwitching } from './sessionBoundary'
 
@@ -39,10 +40,11 @@ export function useSourceRoots(workspaceId: string) {
 
 export async function readWorktreeChoices(workspaceId: string, signal?: AbortSignal): Promise<WorktreeOption[]> {
   const path = `/api/management/workspaces/${encodeURIComponent(workspaceId)}`
-  const [roots, locations, workspace] = await Promise.all([
+  const [roots, locations, workspace, names] = await Promise.all([
     apiClient.request(`${path}/source-roots`, SourceRootListResultSchema, { signal }),
     apiClient.request(`${path}/root-policies`, WorkspaceRootListResultSchema, { signal }),
     getManagedWorkspace(workspaceId, { signal }),
+    readComputerNames(signal),
   ])
   if (locations.workspaceId !== workspaceId || locations.policies.some(policy => policy.workspaceId !== workspaceId)
     || roots.items.some(root => root.binding.workspaceId !== workspaceId)) {
@@ -62,7 +64,7 @@ export async function readWorktreeChoices(workspaceId: string, signal?: AbortSig
     const policy = locations.policies.find(item => item.rootPolicyId === root.selection.rootPolicyId
       && JSON.stringify(item.hostRef) === JSON.stringify(root.selection.hostRef))
     const git = source?.manifest.git
-    const computer = root.selection.hostRef.kind === 'main' ? 'Main' : `Computer ${root.selection.hostRef.deviceId}`
+    const computer = names.get(computerKey(root.selection)) ?? (root.selection.hostRef.kind === 'main' ? 'Main' : `Computer ${root.selection.hostRef.deviceId}`)
     let unavailableReason: string | undefined
     if (!source) unavailableReason = 'Approved source could not be read.'
     else if (source.availability !== 'retained') unavailableReason = 'Approved source files are unavailable.'
@@ -95,10 +97,11 @@ export async function readWorktreeRoot(workspaceId: string, rootBinding: SourceR
 export async function readWorktreeDetails(workspaceId: string, rootBinding: SourceRootReference, signal?: AbortSignal) {
   const root = await readWorktreeRoot(workspaceId, rootBinding, signal)
   const path = `/api/management/workspaces/${encodeURIComponent(workspaceId)}`
-  const [source, locations] = await Promise.all([
+  const [source, locations, names] = await Promise.all([
     apiClient.request(`${path}/sources/get`, ApprovedSourceSchema,
       { method: 'POST', body: { workspaceId, ...root.source }, signal }),
     apiClient.request(`${path}/root-policies`, WorkspaceRootListResultSchema, { signal }),
+    readComputerNames(signal),
   ])
   if (source.workspaceId !== workspaceId || source.manifest.snapshotId !== root.source.snapshotId
     || source.manifest.manifestDigest !== root.source.manifestDigest || locations.workspaceId !== workspaceId
@@ -109,7 +112,7 @@ export async function readWorktreeDetails(workspaceId: string, rootBinding: Sour
     && item.rootPolicyRevision === root.selection.rootPolicyRevision
     && item.locationRevision === root.selection.locationRevision
     && JSON.stringify(item.hostRef) === JSON.stringify(root.selection.hostRef))
-  const computer = root.selection.hostRef.kind === 'main' ? 'Main' : `Computer ${root.selection.hostRef.deviceId}`
+  const computer = names.get(computerKey(root.selection)) ?? (root.selection.hostRef.kind === 'main' ? 'Main' : `Computer ${root.selection.hostRef.deviceId}`)
   const git = source.manifest.git
   return { rootBinding, computer, accessMode: root.binding.accessMode,
     label: `${computer} · ${git?.repository ?? 'Approved source'} · ${git?.commit.slice(0, 12) ?? 'Commit unavailable'}`,

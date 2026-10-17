@@ -14,6 +14,7 @@ import { isAuthorized, requireAuthorization } from '../access/policy.js'
 import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
 import type { PostgresCommandCoordinator } from '../commands/postgres.js'
 import { buildComputerKey } from '../settings/buildComputers.js'
+import { computerNameKey, readComputerNames, renameComputer } from './names.js'
 import { cloudCiId } from '../ci-host/cloudProviders.js'
 import { logIgnoredError } from '../diagnostics/ignoredError.js'
 import type { CircleCreditsReading } from '../ci-host/circleCredits.js'
@@ -40,6 +41,10 @@ export class ComputerActivityService {
     private readonly credits?: { reading(account?: string): Promise<CircleCreditsReading> },
   ) {}
 
+  rename(principal: ManagementPrincipal, source: 'http' | 'mcp', raw: unknown) {
+    return renameComputer(this.pool, this.commands, this.mainId, principal, source, raw)
+  }
+
   async list(principal: ManagementPrincipal, source: 'http' | 'mcp' = 'http'): Promise<ComputerActivityList> {
     try {
       requireAuthorization(principal, 'settings:read')
@@ -53,10 +58,11 @@ export class ComputerActivityService {
       requireAuthorization(live, 'settings:read')
       const registrations = await sql.query<{ record: unknown }>(`select record from device_registrations
         where main_id=$1 and record->>'status'='paired' order by id limit 101`, [this.mainId])
+      const names = await readComputerNames(sql, this.mainId)
       const computers: ComputerActivity[] = [{
         target: { hostRef: { kind: 'main', mainId: this.mainId }, applicationInstallationId: this.mainId,
           keyRevision: null, authorizationRevision: null },
-        name: computerDisplayName({ kind: 'main' }), online: true, jobs: [], agents: [],
+        name: names.get(computerNameKey(this.mainId)) ?? computerDisplayName({ kind: 'main' }), online: true, jobs: [], agents: [],
       }]
       for (const row of registrations.rows.slice(0, 100)) {
         const registration = DeviceRegistrationSchema.parse(row.record)
@@ -69,7 +75,8 @@ export class ComputerActivityService {
         computers.push({ target: { hostRef: { kind: 'device', mainId: this.mainId, deviceId: registration.deviceId },
           applicationInstallationId: registration.workerInstallationId, keyRevision: registration.keyRevision,
           authorizationRevision: registration.authorizationRevision },
-        name: computerDisplayName({ kind: 'device', deviceId: registration.deviceId }), online, jobs: [], agents: [] })
+        name: names.get(computerNameKey(this.mainId, registration.deviceId))
+          ?? computerDisplayName({ kind: 'device', deviceId: registration.deviceId }), online, jobs: [], agents: [] })
       }
       const byHost = new Map(computers.map(computer => [buildComputerKey(computer.target), computer]))
       const jobs = await readJobs(sql, this.mainId)
