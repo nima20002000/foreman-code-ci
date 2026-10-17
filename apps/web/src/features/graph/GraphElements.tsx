@@ -11,7 +11,7 @@ import { GraphGeometryContext, GraphNodeMenuContext } from './graphContexts'
 import { useGraphPresentation, useGraphPresentationStore } from './useGraphPresentation'
 import { useGraphNodeRuntime } from './useGraphNodeRuntime'
 import { presentGraphNodeRuntime } from './nodePresentation'
-import { agentNodeFacts, agentSettingRows, edgeBend, floatingCurve, useFloatingCurve } from './signalEdge'
+import { agentNodeFacts, agentSettingRows, edgeBend, floatingCurve, lineBend, useFloatingCurve } from './signalEdge'
 import { SignalEdgeShape } from './SignalEdgeShape'
 import type { AgentGraphNode, GraphNode, GraphEdge } from './types'
 import './graphRendering.css'
@@ -132,7 +132,8 @@ export const HandoffEdge = memo(function HandoffEdge({
   const active = !data?.departing && (hovered || focused)
   const receiver = useInternalNode<GraphNode>(target)
   const floating = useFloatingCurve(source, target, edgeBend(0, true))
-  const curve = floating ?? floatingCurve({ x: sourceX, y: sourceY }, { x: targetX, y: targetY }, edgeBend(0, true), 0)
+  const ends = [{ x: sourceX, y: sourceY }, { x: targetX, y: targetY }] as const
+  const curve = floating ?? floatingCurve(ends[0], ends[1], lineBend(ends[0], ends[1]) + edgeBend(0, true), 0)
   const receiverRuntime = useGraphNodeRuntime(receiver?.data.workflowNodeId ?? target, receiver?.data && 'agentId' in receiver.data?receiver.data.agentId:undefined)
   const receiverView = presentGraphNodeRuntime(receiverRuntime.activity, receiverRuntime.unavailable || !receiver)
   // Light only follows scoped runtime truth: a handoff is shown while its receiver is working.

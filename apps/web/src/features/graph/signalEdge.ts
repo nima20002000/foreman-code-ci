@@ -41,16 +41,40 @@ export function floatingCurve(source: Point, target: Point, bend: number, radius
   return { path: `M ${round(start.x)},${round(start.y)} Q ${round(control.x)},${round(control.y)} ${round(end.x)},${round(end.y)}`, mid: { ...mid, angle } }
 }
 
-/** Parallel connections between the same pair fan out instead of overlapping. */
+/** Parallel connections between the same pair fan out instead of overlapping. The first one adds no bend of its own. */
 export function edgeBend(index: number, forward: boolean) {
   const step = Math.ceil(index / 2) * (index % 2 ? 1 : -1)
-  return (28 + step * 44) * (forward ? 1 : -1)
+  return step * 44 * (forward ? 1 : -1)
+}
+
+const ALIGNED = 8
+const LEAN = 0.3
+const LEAN_MAX = 90
+const BACK_LEAN = 110
+/**
+ * The bend a line needs from where its two ends sit: none when they are aligned, otherwise a curve
+ * that leans to the side the target is on. A line that runs back up the hierarchy leans further, so a
+ * return never lies on top of the forward line between the same two nodes (which leans to the other side).
+ * The sign follows `floatingCurve`: the control point moves along (-dy, dx) by `bend`.
+ */
+export function lineBend(source: Point, target: Point): number {
+  const dx = target.x - source.x, dy = target.y - source.y, length = Math.hypot(dx, dy)
+  const vertical = Math.abs(dy) >= Math.abs(dx)
+  const across = vertical ? dx : dy
+  const back = vertical && dy < -ALIGNED
+  if (Math.abs(across) <= ALIGNED && !back) return 0
+  const side = across === 0 ? 1 : Math.sign(across)
+  const size = back ? Math.max(BACK_LEAN, Math.abs(across) * LEAN) : Math.min(LEAN_MAX, Math.abs(across) * LEAN)
+  // The perpendicular is (-dy, dx) / length: its x part decides a vertical line, its y part a horizontal one.
+  const normal = vertical ? -dy / length : dx / length
+  return size * side * Math.sign(normal)
 }
 
 export function useFloatingCurve(source: string, target: string, bend: number): FloatingCurve | undefined {
   const from = useInternalNode(source), to = useInternalNode(target)
   if (!from || !to) return undefined
-  return floatingCurve(center(from), center(to), bend, undefined, dimensions(from), dimensions(to))
+  const [start, end] = [center(from), center(to)]
+  return floatingCurve(start, end, lineBend(start, end) + bend, undefined, dimensions(from), dimensions(to))
 }
 
 const cap = (value: string) => value ? value[0]!.toUpperCase() + value.slice(1) : value

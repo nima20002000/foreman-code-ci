@@ -24,9 +24,8 @@ function task(kind: MaintenanceTask['kind'], state: MaintenanceTask['state']): M
     summary: state === 'failed' ? 'Package download failed' : 'Finished', outputTail: '' }
 }
 
-it('shows only the newest task of each kind from the shared maintenance response', async () => {
-  const tasks = Array.from({ length: 5 }, (_, index) => ({ ...task('sync-mcp', 'succeeded'), summary: `Sync ${index}`,
-    startedAt: new Date(Date.UTC(2026, 9, 17, 12, index)).toISOString() }))
+it('shows the returned recent history, active tasks and omitted count from the shared maintenance response', async () => {
+  const tasks = Array.from({ length: 5 }, (_, index) => ({ ...task('sync-mcp', 'succeeded'), summary: `Sync ${index}` }))
   tasks.push({ ...task('update-system', 'running') }, { ...task('sync-plugins', 'running') })
   let requestedLimit: unknown
   computersFixture(<ComputerCards mainId={mainId} devices={[registration]} only={registration.deviceId} />, [
@@ -37,10 +36,9 @@ it('shows only the newest task of each kind from the shared maintenance response
     }),
   ])
   const card = await screen.findByRole('article', { name: deviceName })
-  expect(await within(card).findByText('MCP sync: Sync 4')).toBeVisible()
+  expect(await within(card).findByText('11 older maintenance tasks not shown.')).toBeVisible()
   expect(requestedLimit).toBe(5)
-  for (let index = 0; index < 4; index++) expect(within(card).queryByText(`MCP sync: Sync ${index}`)).not.toBeInTheDocument()
-  expect(within(card).queryByText(/older maintenance task/)).not.toBeInTheDocument()
+  for (let index = 0; index < 5; index++) expect(within(card).getByText(`MCP sync: Sync ${index}`)).toBeVisible()
   expect(within(card).getByText('System update…')).toBeVisible()
   expect(within(card).getByText('Plugin sync…')).toBeVisible()
 })
@@ -123,29 +121,33 @@ it('reads healthy observations and releases acknowledged maintenance while anoth
   const slow = new Promise<void>(resolve => { release = resolve })
   const reads: string[] = []
   computersFixture(<ComputerCards mainId={mainId} devices={[registration]} />, [
+    http.post('*/api/management/computers/accounts/read', async ({ request }) => {
+      const { target } = await request.json() as { target: DeviceProvisioningTarget }
+      if (target.hostRef.kind === 'device') await slow
+      return HttpResponse.json({ computers: [{ target, accounts: { observedAt: new Date().toISOString(),
+        accounts: [{ tool: 'github', installed: true, signedIn: true, account: 'healthy-owner', details: [] }] } }] })
+    }),
     http.post('*/api/management/computers/maintenance/read', async ({ request }) => {
       const { target } = await request.json() as { target: DeviceProvisioningTarget }
       reads.push(computerKey(target))
       if (target.hostRef.kind === 'device') await slow
-      return HttpResponse.json({ computers: [{ target, status: status(),
-        connections: { mcp: { codex: 'installed', claude: 'installed' }, accounts: { observedAt: new Date().toISOString(),
-          accounts: [{ tool: 'github', installed: true, signedIn: true, account: 'healthy-owner', details: [] }] } } }] })
+      return HttpResponse.json({ computers: [{ target, status: status() }] })
     }),
     http.post('*/api/management/computers/maintenance/start', () => HttpResponse.json({ computers: [] })),
   ])
   try {
     const card = await screen.findByRole('article', { name: 'Main PC' })
-    expect(await within(card).findByRole('img', { name: 'GitHub: signed in' })).toBeVisible()
+    expect(await within(card).findByText('healthy-owner')).toBeVisible()
     await within(card).findByText('40 GB free of 100 GB')
     expect(reads).toContain(computerKey(deviceTarget))
-    await userEvent.click(within(card).getByRole('button', { name: 'Update' }))
+    await userEvent.click(within(card).getAllByRole('button', { name: 'Update' })[0]!)
     await waitFor(() => expect(screen.getByRole('button', { name: 'Update computers' })).toBeEnabled())
   } finally {
     await act(async () => { release(); await slow })
   }
 })
 
-it('withholds an incomplete fleet rank and reads only the selected detail maintenance', async () => {
+it('withholds an incomplete fleet rank and reads only the selected detail accounts and maintenance', async () => {
   let release!: () => void
   const slow = new Promise<void>(resolve => { release = resolve })
   const selectedReads: string[] = []
@@ -155,16 +157,16 @@ it('withholds an incomplete fleet rank and reads only the selected detail mainte
       if (target.hostRef.kind === 'main') await slow
       return HttpResponse.json(statuses.get(computerKey(target)))
     }),
-    http.post('*/api/management/computers/maintenance/read', async ({ request }) => {
+    ...(['accounts', 'maintenance'] as const).map(kind => http.post(`*/api/management/computers/${kind}/read`, async ({ request }) => {
       const { target } = await request.json() as { target: DeviceProvisioningTarget }
       selectedReads.push(computerKey(target))
-      return HttpResponse.json({ computers: [{ target, status: null }] })
-    }),
+      return HttpResponse.json({ computers: [{ target, [kind === 'accounts' ? 'accounts' : 'status']: null }] })
+    })),
   ])
   const card = await screen.findByRole('article', { name: deviceName })
   expect(await within(card).findByText('Fleet priority loading · up to 60% CPU and RAM')).toBeVisible()
   expect(within(card).queryByText(/1st of 1/)).not.toBeInTheDocument()
-  await waitFor(() => expect(selectedReads).toHaveLength(1))
+  await waitFor(() => expect(selectedReads).toHaveLength(2))
   expect(selectedReads.every(value => value === computerKey(deviceTarget))).toBe(true)
   await act(async () => { release(); await slow })
   expect(await within(card).findByText('2nd of 2 · up to 60% CPU and RAM')).toBeVisible()
