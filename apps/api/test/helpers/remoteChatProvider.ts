@@ -10,7 +10,6 @@ import { createClaudeSdkRunner } from '../../src/modules/harnesses/claudeSdk/run
 import { allocateClaudeNativeHarness } from '../../src/modules/harnesses/claudeSdk/composition.js'
 import { ActivityProductionReplay } from './activityProductionReplay.js'
 import { deferred, type Deferred } from './deferred.js'
-import { HarnessExecutionError } from '../../src/modules/harnesses/errors.js'
 
 /** Only provider I/O is recorded. Both native adapters and the remote conversation stack are real. */
 export async function remoteChatProvider(harness: 'codex' | 'claude', directory: string, options: {
@@ -26,7 +25,6 @@ export async function remoteChatProvider(harness: 'codex' | 'claude', directory:
   let holdCompactionNotifications = false
   const compactionNotifications: Array<() => void> = []
   let manager: NativeHarnessSessionManager
-  let createManager: () => NativeHarnessSessionManager
   if (harness === 'codex') {
     const replay = new ActivityProductionReplay(`remote-chat-${randomUUID()}`)
     const infrastructure = replay.infrastructure()
@@ -70,9 +68,8 @@ export async function remoteChatProvider(harness: 'codex' | 'claude', directory:
           return result
         } }
       } }
-    createManager = () => new CodexAppServerSessionManager('/recorded-no-native-codex', undefined, undefined,
+    manager = new CodexAppServerSessionManager('/recorded-no-native-codex', undefined, undefined,
       undefined, 'none', options.codexFiles, dependencies)
-    manager = createManager()
   } else {
     const nativeId = randomUUID()
     const profilePath = join(directory, 'claude-profile')
@@ -133,7 +130,7 @@ export async function remoteChatProvider(harness: 'codex' | 'claude', directory:
         }
       },
     }
-    createManager = () => allocateClaudeNativeHarness({ harness: 'claude', role: 'agent-chat', appMcpAccess: 'none',
+    manager = allocateClaudeNativeHarness({ harness: 'claude', role: 'agent-chat', appMcpAccess: 'none',
       workingDirectory: directory, ownerAgentId: 'recorded-agent',
       ownerForStart: start => ({ ownerId: start.kind === 'agent-chat' ? start.conversationId : 'recorded-owner',
         attemptId: start.correlationId ?? 'recorded-request', generation: 'recorded-query' }),
@@ -141,25 +138,8 @@ export async function remoteChatProvider(harness: 'codex' | 'claude', directory:
       scope: { deviceId: 'recorded-device', profilePath, configRevision: 'recorded', cwd: directory },
       sdkOptions: { includePartialMessages: true }, qualification: { sdkVersion: '0.3.284', cliVersion: '2.1.284',
         basicTurns: true, resume: true, fork: false, history: true } }).manager
-    manager = createManager()
   }
-  let loseCreationResponse = false
-  const observeCreation = (native: NativeHarnessSessionManager) => {
-    const createSession = native.createSession.bind(native)
-    native.createSession = async (...args) => {
-      const session = await createSession(...args)
-      if (loseCreationResponse) {
-        loseCreationResponse = false
-        throw new HarnessExecutionError('CODEX_SESSION_CREATION_UNCERTAIN', 'The recorded native creation response was lost.')
-      }
-      return session
-    }
-    return native
-  }
-  manager = observeCreation(manager)
-  return { get manager() { return manager }, modes, prompts, calls, get compactions() { return compactions },
-    restartManager() { manager = observeCreation(createManager()); return manager },
-    loseNextCreationResponse() { loseCreationResponse = true },
+  return { manager, modes, prompts, calls, get compactions() { return compactions },
     holdCompactionNotifications() { holdCompactionNotifications = true },
     releaseCompactionNotifications() {
       holdCompactionNotifications = false
