@@ -237,8 +237,7 @@ async function admitWorkerConversation(input: ProductionWorkerConversationsInput
   if (!principalId) unavailable('The chat has no admitted sender or control caller.')
   const profileOwner = { ...owner, ...(options.observationPrincipalId
     ? { observationPrincipalId: principalId } : { controlPrincipalId: principalId }), admissionSignal: signal }
-  const admissionMethod = options.observationPrincipalId ? 'admitObservation' : 'admit'
-  const accepted = await profiles[admissionMethod](profileOwner, selector)
+  const accepted = await profiles.admit(profileOwner, selector)
   if (!isDeepStrictEqual(withAdvancedDefaults(accepted.override.configuration), withAdvancedDefaults(configuration.harness))) {
     unavailable('The worker profile differs from this saved chat configuration.')
   }
@@ -344,9 +343,7 @@ async function admitWorkerConversation(input: ProductionWorkerConversationsInput
     const observation = { ...owner, observationPrincipalId: currentCaller,
       ...(effectSignal ? { admissionSignal: effectSignal } : {}) }
     // Closing a settled owner does not launch or reconfigure its executable.
-    if (!cleanup && options.observationPrincipalId && reads.has(request.method)) {
-      await profiles.revalidateObservation(observation, accepted)
-    } else if (!cleanup) await profiles.revalidate(observation, accepted)
+    if (!cleanup) await profiles.revalidate(observation, accepted)
     currentChannel()
   }
   const claudeFiles = configuration.harness.harness === 'claude' && input.fileService

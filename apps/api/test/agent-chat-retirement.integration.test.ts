@@ -23,9 +23,9 @@ import { readSystemPromptSetting } from '../src/modules/settings/foundation.js'
 import { PostgresWorkflowRepository } from '../src/modules/workflows/postgres.js'
 import { agent3Database, seedAgent3 } from './helpers/wave25Agent3.js'
 import { graphRpc, graphRpcValue } from './eng04-graph-composition-fixture.js'
-import { deferred } from './helpers/deferred.js'
+import { deferred, rejectableDeferred } from './helpers/deferred.js'
 
-it('reconciles an uncertain turn through service shutdown retirement and releases its Worker without replay', async () => {
+it.each([false, true])('reconciles an uncertain turn through shutdown without replay (Worker exits on completion: %s)', async exitsOnCompletion => {
   const db = await agent3Database()
   const f = workerConversationFixture('agent')
   const fixture = makeCurrentWorkflowFixture(randomUUID(), 'sequential')
@@ -59,6 +59,7 @@ it('reconciles an uncertain turn through service shutdown retirement and release
     let creates = 0
     let closes = 0
     let reconciles = 0
+    let exited = false
     const history = (): NativeHistory => ({ events: [], pendingInteractions: [],
       ...(correlation ? { correlationId: correlation, nativeTurnId: 'native-turn' } : {}),
       ...(result ? { terminalResult: result } : {}) })
@@ -83,6 +84,7 @@ it('reconciles an uncertain turn through service shutdown retirement and release
         signal?.throwIfAborted()
         expect(requested).toBe(correlation)
         reconciles++
+        if (result && exitsOnCompletion) exited = true
         return history()
       },
       pending: async () => undefined,
@@ -95,7 +97,7 @@ it('reconciles an uncertain turn through service shutdown retirement and release
       allocate: async () => ({ manager: native,
         start: async ({ correlationId }) => ({ kind: 'agent-chat', configuration, conversationId: conversation.id, correlationId,
           workflowId: context.workflowId, workflowNodeId: node.id, workingDirectory: db.directory }),
-        nativeOwner: async () => f.nativeOwner, close: async () => { closes++ } }) })
+        nativeOwner: async () => f.nativeOwner, hasExited: () => exited, close: async () => { closes++ } }) })
     chat = new AgentChatService(db.pool, repository, new PostgresOperatorConversationRepository(db.pool),
       new PostgresWorkflowRepository(db.pool), {
         getForWorkspace: async () => { throw new Error('Chat has no Run') },
@@ -131,7 +133,12 @@ it('reconciles an uncertain turn through service shutdown retirement and release
     expect((await repository.turn(conversation.id, 'original-input'))?.delivery).toBe('unknown')
     expect(closes).toBe(0)
     result = completed
-    await expect(chat.shutdown()).resolves.toBeUndefined()
+    const shutdown = rejectableDeferred()
+    const deadline = setTimeout(() => shutdown.reject(new Error('Shutdown did not finish after native completion')), 5_000)
+    try {
+      void chat.shutdown().then(shutdown.resolve, shutdown.reject)
+      await expect(shutdown.promise).resolves.toBeUndefined()
+    } finally { clearTimeout(deadline) }
     expect(reconciles).toBeGreaterThan(0)
     expect(inputs).toBe(1)
     expect(creates).toBe(1)
