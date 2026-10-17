@@ -24,7 +24,7 @@ const metadataTransfers = new Map<string, MetadataTransfer>()
 let retainedMetadataBytes = 0
 
 function servePage(transfer: MetadataTransfer, page: DeviceJsonContinuation,
-  request?: DeviceJsonContinuationRequest) {
+  request?: DeviceJsonContinuationRequest, initialDownloadId?: string) {
   const now = Date.now()
   for (const [id, download] of transfer.downloads) {
     if (download.expiresAt <= now) transfer.downloads.delete(id)
@@ -32,7 +32,7 @@ function servePage(transfer: MetadataTransfer, page: DeviceJsonContinuation,
   if (request && !request.downloadId) {
     throw new DomainError('conflict', 'Native history continuation requires its download identity.', 409)
   }
-  const downloadId = request?.downloadId ?? randomUUID()
+  const downloadId = request?.downloadId ?? initialDownloadId ?? randomUUID()
   let download = transfer.downloads.get(downloadId)
   if (request && !download) {
     throw new DomainError('transfer-expired', 'Native history download is no longer retained.', 409)
@@ -53,7 +53,7 @@ function metadataBytes(fields: HistoryFields) {
   return Buffer.from(JSON.stringify(encodeResultCopies(fields, historyResultPaths())))
 }
 
-function metadataPage(fields: HistoryFields, request?: DeviceJsonContinuationRequest) {
+function metadataPage(fields: HistoryFields, request?: DeviceJsonContinuationRequest, initialDownloadId?: string) {
   const retained = request && metadataTransfers.get(request.digest)
   // Live event cursors can advance while the original metadata bytes are still being read.
   if (retained && isDeepStrictEqual(
@@ -66,7 +66,13 @@ function metadataPage(fields: HistoryFields, request?: DeviceJsonContinuationReq
   const pager = createJsonContinuationPager(bytes)
   const page = pager(request)
   const existing = metadataTransfers.get(page.digest)
-  if (existing) return servePage(existing, page, request)
+  if (!request && initialDownloadId) {
+    // A replay can observe a newer snapshot; this reader no longer needs the lost reply's metadata.
+    for (const transfer of metadataTransfers.values()) {
+      if (transfer !== existing) transfer.downloads.delete(initialDownloadId)
+    }
+  }
+  if (existing) return servePage(existing, page, request, initialDownloadId)
   if (page.offset + DEVICE_JSON_CONTINUATION_BYTES >= page.byteSize) return page
   while (metadataTransfers.size >= 64
     || retainedMetadataBytes + bytes.byteLength > DEVICE_JSON_CONTINUATION_LIMIT * 4) {
@@ -81,7 +87,7 @@ function metadataPage(fields: HistoryFields, request?: DeviceJsonContinuationReq
   const transfer: MetadataTransfer = { fields: structuredClone(fields), bytes, page: pager, downloads: new Map() }
   metadataTransfers.set(page.digest, transfer)
   retainedMetadataBytes += bytes.byteLength
-  return servePage(transfer, page, request)
+  return servePage(transfer, page, request, initialDownloadId)
 }
 export function readNativeHistoryMetadata(request: DeviceJsonContinuationRequest) {
   const retained = metadataTransfers.get(request.digest)
@@ -98,6 +104,18 @@ export function nativeHistoryPageSource(reply: unknown): NativeHistory | undefin
 export function pageNativeHistory(history: NativeHistory, afterSequence?: number,
   metadataRequest?: DeviceJsonContinuationRequest) {
   return buildNativeHistoryPage(history, { afterSequence, metadataRequest, readMetadata: metadataPage })
+}
+
+export function startNativeHistoryDownload(history: NativeHistory, options: {
+  afterSequence?: number | undefined
+  downloadId?: string | undefined
+}) {
+  const reply = buildNativeHistoryPage(history, { afterSequence: options.afterSequence,
+    readMetadata: (fields, request) => metadataPage(fields, request, options.downloadId) })
+  if (!reply.page.metadata && options.downloadId) {
+    for (const transfer of metadataTransfers.values()) transfer.downloads.delete(options.downloadId)
+  }
+  return reply
 }
 
 /** Physical evidence uses the same event window without starting a metadata download. */
