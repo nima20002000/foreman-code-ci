@@ -157,7 +157,7 @@ export async function sourceFixture(relativeCwd='', options: {
 
 export async function runningInstalledFixture(phase: 'generation' | 'approval wait' = 'generation',
   fixtureOptions: { retainReviewer?: boolean; deferTurn?: boolean; artifactOutputKeys?: string[];
-    mainNow?: () => number; realMcp?: true;
+    mainNow?: () => number;
     authorizeReviewer?: () => Promise<void>;
     mcp?: { request: WorkerMcpRelay['request']; onSessionStart(input: NativeSessionStart): Promise<void> } } = {}) {
   const { artifactOutputKeys } = fixtureOptions
@@ -190,7 +190,7 @@ export async function runningInstalledFixture(phase: 'generation' | 'approval wa
   vi.spyOn(installedQualification, 'createInstalledCodexQualificationReader').mockReturnValue({
     capture: vi.fn(async () => capture), repository: { find: async () => null, list: async () => [] },
   })
-  if (!fixtureOptions.mcp && !fixtureOptions.realMcp) vi.spyOn(workerMcpEndpoint, 'createWorkerMcpEndpoint').mockImplementation(async ({ relay }) => {
+  if (!fixtureOptions.mcp) vi.spyOn(workerMcpEndpoint, 'createWorkerMcpEndpoint').mockImplementation(async ({ relay }) => {
     let closed = false
     return { endpoint: 'http://unit.invalid/mcp', close: vi.fn(async () => { closed = true }), bindRelay: async () => {},
       refreshLease: () => {
