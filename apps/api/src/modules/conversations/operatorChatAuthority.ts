@@ -1,6 +1,11 @@
 import { RETIRED_OPENCODE_MESSAGE } from '@foreman-code/contracts'
+import { randomBytes } from 'node:crypto'
+import { isDeepStrictEqual } from 'node:util'
 import { withTransaction } from '../../infrastructure/transaction.js'
-import { APP_MCP_SERVER_NAME, isSupportedAppMcpServerName, isSupportedAppMcpTokenName, registerAppRoute } from '../harnesses/appMcpLauncher.js'
+import { APP_MCP_SERVER_NAME, appLauncherPath, isSupportedAppMcpServerName, isSupportedAppMcpTokenName,
+  registerAppRoute } from '../harnesses/appMcpLauncher.js'
+import { requestAppMcp } from '../harnesses/appMcpHttp.js'
+import { createUnboundWorkerMcpEndpoint } from '../runs/remote/workerMcpEndpoint.js'
 import { APP_MCP_TOKEN_ENVIRONMENT_VARIABLE } from '../access/workerCredentials.js'
 import type pg from 'pg'
 import type { OperatorChatSetup, OperatorConfigurationVersion } from '@foreman-code/contracts'
@@ -17,8 +22,20 @@ import type { OperatorChatAuthority } from './operatorChat.js'
 
 export const OPERATOR_MCP_ENVIRONMENT_VARIABLE = APP_MCP_TOKEN_ENVIRONMENT_VARIABLE
 
+interface ConversationCredential {
+  environment: ChildProcessEnvironment
+  ownerId: string
+  configurationId: string
+  manager: NativeHarnessSessionManager
+  channel?: string
+  relay?: Awaited<ReturnType<typeof createUnboundWorkerMcpEndpoint>>
+  removeRoute?: () => Promise<void>
+  principalId?: string
+}
+
 export class PostgresOperatorChatAuthority implements OperatorChatAuthority {
-  private readonly credentials = new Map<string, { environment: ChildProcessEnvironment; ownerId: string; removeRoute: () => Promise<void> }>()
+  private readonly credentials = new Map<string, ConversationCredential>()
+  private readonly managedLaunchers = new WeakSet<NativeHarnessSessionManager>()
   constructor(private readonly pool: pg.Pool, private readonly access: PostgresAccessService,
     private readonly rollout: NativeRollout, private readonly directory: string, private readonly endpoint: string,
     private readonly inspectorFor?: (manager: NativeHarnessSessionManager) => NativeMcpInspector,
@@ -78,6 +95,9 @@ export class PostgresOperatorChatAuthority implements OperatorChatAuthority {
       && (automatic || paired || entry.endpoint === this.endpoint && entry.transport === 'streamable-http')
       && (manager.harness === 'claude' ? Boolean(this.deliverClaudeCredential)
         : isSupportedAppMcpTokenName(entry.credentialEnvironmentVariable))
+    if (configured && automatic && manager.harness === 'codex' && context.runnerId === 'runner-local') {
+      this.managedLaunchers.add(manager)
+    }
     return { ...result, status: configured ? 'configured' : 'setup_required', routing: automatic || paired ? 'automatic' : 'fixed' }
   }
 
@@ -86,12 +106,14 @@ export class PostgresOperatorChatAuthority implements OperatorChatAuthority {
     const principal = await this.current(principalId)
     requireAuthorization(principal, 'operator_chat:write')
     signal.throwIfAborted()
-    if ((await this.setup(manager, signal)).status !== 'configured') this.invalidSetup()
     const cached = this.credentials.get(conversationId)
     if (cached) {
-      if (cached.ownerId !== principalId) throw new DomainError('ACCESS_DENIED', 'A native credential cannot change owners.', 403)
-      return cached.environment
+      if (cached.ownerId !== principalId || cached.manager !== manager || cached.configurationId !== configuration.id) {
+        throw new DomainError('ACCESS_DENIED', 'A native credential cannot change its accepted owner or configuration.', 403)
+      }
+      if (cached.principalId) return cached.environment
     }
+    if (!cached && (await this.setup(manager, signal)).status !== 'configured') this.invalidSetup()
     this.assertConfiguration(configuration)
     signal.throwIfAborted()
     const issued = await withTransaction(this.pool, async (client) => {
@@ -113,32 +135,62 @@ export class PostgresOperatorChatAuthority implements OperatorChatAuthority {
       return issued
     })
     let removeRoute: (() => Promise<void>) | undefined
+    let relay = cached?.relay
     try {
       signal.throwIfAborted()
-      const environment = { agentId: configuration.operatorId, variables: { [OPERATOR_MCP_ENVIRONMENT_VARIABLE]: issued.token } }
-      removeRoute = await registerAppRoute(issued.token, this.endpoint, issued.principal.expiresAt)
+      const channel = cached?.channel ?? (this.managedLaunchers.has(manager) ? randomBytes(32).toString('base64url') : undefined)
+      const environment = channel && cached ? cached.environment : { agentId: configuration.operatorId,
+        variables: { [OPERATOR_MCP_ENVIRONMENT_VARIABLE]: channel ?? issued.token } }
+      if (channel) {
+        relay ??= await createUnboundWorkerMcpEndpoint({ launcher: appLauncherPath(), signal: new AbortController().signal })
+        await relay.bindRelay({ environment, expiresAt: issued.principal.expiresAt,
+          request: (body, protocol, signal) => requestAppMcp(this.endpoint, body, issued.token, protocol, signal) })
+      } else {
+        removeRoute = await registerAppRoute(issued.token, this.endpoint, issued.principal.expiresAt)
+      }
       signal.throwIfAborted()
-      if (manager.harness === 'claude') {
+      if (manager.harness === 'claude' && !cached) {
         if (!this.deliverClaudeCredential) this.invalidSetup()
         await this.deliverClaudeCredential(manager, configuration, environment, signal)
         signal.throwIfAborted()
       }
-      this.credentials.set(conversationId, { environment, ownerId: principalId, removeRoute })
+      this.credentials.set(conversationId, { environment, ownerId: principalId, configurationId: configuration.id,
+        manager, ...(channel ? { channel } : {}), ...(relay ? { relay } : {}),
+        ...(removeRoute ? { removeRoute } : {}), principalId: issued.principal.id })
       return environment
     } catch (error) {
-      try { await removeRoute?.() } finally { await this.access.revoke(issued.principal.id) }
+      try {
+        if (relay === cached?.relay) await relay?.unbindRelay()
+        else await relay?.close()
+        await removeRoute?.()
+      } finally { await this.access.revoke(issued.principal.id) }
       throw error
     }
+  }
+  async retireTurn(conversationId: string, environment: ChildProcessEnvironment): Promise<boolean> {
+    const credential = this.credentials.get(conversationId)
+    if (!credential || !isDeepStrictEqual(credential.environment, environment)
+      || !credential.channel && !credential.manager.rebindApplicationAccess) return false
+    await this.revokeCredentials(conversationId)
+    await credential.relay?.unbindRelay()
+    await credential.removeRoute?.()
+    delete credential.removeRoute
+    delete credential.principalId
+    return true
   }
   private invalidSetup(): never {
     throw new DomainError('OPERATOR_MCP_SETUP_REQUIRED', 'Install and enable Foreman Code MCP in the selected harness before chatting. Add it in Harness Settings for automatic app routing.', 409)
   }
   async release(conversationId: string): Promise<void> {
     const credential = this.credentials.get(conversationId)
+    await this.revokeCredentials(conversationId)
+    await credential?.relay?.close()
+    await credential?.removeRoute?.()
     this.credentials.delete(conversationId)
-    try { await credential?.removeRoute() } finally { await this.pool.query(`update management_principals set revoked_at=coalesce(revoked_at,now())
-      where id in (select principal_id from operator_chat_credentials where conversation_id=$1)`, [conversationId]) }
   }
+  private async revokeCredentials(conversationId: string) {
+    await this.pool.query(`update management_principals set revoked_at=coalesce(revoked_at,now())
+      where id in (select principal_id from operator_chat_credentials where conversation_id=$1)`, [conversationId]) }
   async revokeOrphanedCredentials(): Promise<void> {
     await this.pool.query(`update management_principals set revoked_at=coalesce(revoked_at,now())
       where revoked_at is null and id in (select principal_id from operator_chat_credentials)`)
