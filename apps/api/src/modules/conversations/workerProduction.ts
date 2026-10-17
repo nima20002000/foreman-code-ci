@@ -61,7 +61,6 @@ interface OwnerRow {
   operator_configuration_version_id: string | null; agent_configuration_version_id: string | null
   active_request_id: string | null; native_session_id: string | null; deleted_at: unknown
   record: { status?: string; directoryBinding?: unknown; systemPrompt?: PromptSettingSnapshot;
-    workerSessionGeneration?: string;
     sourceConfigurationVersionId?: string;
     origin?: { kind: string; runId?: string; executionId?: string; sourceNativeSessionId?: string } }
   payload: { ownerPrincipalId?: string } | null
@@ -252,7 +251,6 @@ async function admitWorkerConversation(input: ProductionWorkerConversationsInput
   const requestedBinding = WorkerConversationBindingSchema.parse({ owner: { ...ownerFields,
     conversationId: options.conversationId, configurationVersionId: executionConfiguration.id,
     configurationHash: commandInputHash(executionConfiguration) }, harness: configuration.harness.harness,
-    ...(original.record.workerSessionGeneration ? { sessionGeneration: original.record.workerSessionGeneration } : {}),
     profile: selector, workingDirectory: options.workingDirectory, appMcpAccess: options.appMcpAccess,
     accountBinding: await readProviderAccountBinding(input.pool,
       original.kind === 'agent' ? 'agent-conversation' : 'operator-command',
@@ -295,7 +293,7 @@ async function admitWorkerConversation(input: ProductionWorkerConversationsInput
   const binding = changingAccess || changingSkills ? requestedBinding : originalBinding
   const requestCallers = new WeakMap<WorkerConversationRpcRequest, string>()
   const current = async (request: WorkerConversationRpcRequest, effectSignal?: AbortSignal) => {
-    const cleanup = request.method === 'conversation.release-runtime' || request.method === 'conversation.close'
+    const cleanup = request.method === 'conversation.release-runtime'
     const live = await row(options.conversationId, request.method)
     await assertSource(live)
     const configurationId = live.kind === 'operator' ? live.operator_configuration_version_id : live.agent_configuration_version_id
@@ -399,7 +397,7 @@ export function createProductionWorkerConversations(input: ProductionWorkerConve
     const result = (await input.pool.query<OwnerRow>(`select c.*,t.payload from operator_conversations c
       left join operator_conversation_turns t on t.conversation_id=c.id and t.request_id=c.active_request_id
       where c.id=$1`, [conversationId])).rows[0]
-    const cleanup = method === 'conversation.release-runtime' || method === 'conversation.close'
+    const cleanup = method === 'conversation.release-runtime'
     if (!result || !cleanup && (result.deleted_at || result.record.status === 'archived')) {
       unavailable('The addressed chat is no longer open.')
     }
