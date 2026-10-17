@@ -201,11 +201,7 @@ interface Retained {
  * served window has passed can no longer be needed, so it yields its slot, oldest first, when retention is full.
  * Replies Main may still read or ACK are never evicted; a store full of them refuses the new reply loudly. */
 export class InstalledWorkflowPhysicalReadouts {
-  private readonly snapshots: WorkflowPhysicalReadoutSnapshots
-
-  constructor(private readonly now: () => number = () => Date.now()) {
-    this.snapshots = new WorkflowPhysicalReadoutSnapshots(now)
-  }
+  private readonly snapshots = new WorkflowPhysicalReadoutSnapshots()
   private readonly originals = new Map<string, Map<string, Retained>>()
   private readonly events=new Map<string,Map<string,{retained:Retained;source:WorkflowOriginalNativeSource}>>()
   private byteSize = 0
@@ -237,7 +233,7 @@ export class InstalledWorkflowPhysicalReadouts {
     }
   }
   private evictOldest(except: Retained | undefined, operationId?: string) {
-    const now = this.now()
+    const now = Date.now()
     let oldest: Retained | undefined
     for (const [operation, entries] of this.originals) {
       if (operationId !== undefined && operation !== operationId) continue
@@ -278,8 +274,8 @@ export class InstalledWorkflowPhysicalReadouts {
     const source = freezeTree(decoded.source)
     const placement=freezeTree(decoded.placement)
     const readoutExpiresAt = Math.min(Date.parse(readout.expiresAt), Date.parse(input.leaseExpiresAt),
-      this.now() + physicalReadoutLifetimeMs)
-    if (!Number.isFinite(readoutExpiresAt) || readoutExpiresAt <= this.now()) return unavailable()
+      Date.now() + physicalReadoutLifetimeMs)
+    if (!Number.isFinite(readoutExpiresAt) || readoutExpiresAt <= Date.now()) return unavailable()
     const key = this.key(receipt.sequence, remoteWorkflowSourceDigest(source)), operationId = receipt.intent.operationId
     const previous = this.originals.get(operationId)?.get(key)
     if (previous) {
@@ -349,7 +345,7 @@ export class InstalledWorkflowPhysicalReadouts {
       input.metadata ? 'conflict' : 'REMOTE_NATIVE_PHYSICAL_UNAVAILABLE', 'The original physical reply selector changed.', 409,
       { reason: 'selector_changed', operationId: input.intent.operationId, receiptSequence: input.receiptSequence })
     // Main is using this reply: keep it through a settlement wait, then through the window it is served below.
-    retained.protectedUntil = Math.max(retained.protectedUntil, this.now() + 2 * physicalReadoutLifetimeMs)
+    retained.protectedUntil = Math.max(retained.protectedUntil, Date.now() + 2 * physicalReadoutLifetimeMs)
     try { await retained.assertCurrent() } catch (error) {
       if (!transientAuthorizationFailure(error)) this.purge(input.intent.operationId)
       throw error
@@ -368,7 +364,7 @@ export class InstalledWorkflowPhysicalReadouts {
     if (closure && (!hasNativeClosure(observation) || !isDeepStrictEqual(observation,closure))) return unavailable()
     if (!closure && observation.lifecycle !== 'active') return unavailable()
     // Retention ends at ACK; a late read gets fresh physical checks and a fresh verification window.
-    if (retained.readoutExpiresAt <= this.now()) retained.readoutExpiresAt = this.now() + physicalReadoutLifetimeMs
+    if (retained.readoutExpiresAt <= Date.now()) retained.readoutExpiresAt = Date.now() + physicalReadoutLifetimeMs
     // Main can ACK until the served expiry; one more window absorbs link latency and clock skew.
     retained.protectedUntil = Math.max(retained.protectedUntil, retained.readoutExpiresAt + physicalReadoutLifetimeMs)
     const readout = RemoteWorkflowPhysicalReadoutSchema.parse({ ...retained.readout,
@@ -376,7 +372,7 @@ export class InstalledWorkflowPhysicalReadouts {
       ...(closure ? {closure:{ownerClosed:true,launch:closure}} : {}) })
     if (Buffer.byteLength(JSON.stringify(readout)) > DEVICE_HISTORY_PAGE_BYTES) {
       // Start paging with a full window even when the original reply is nearly expired.
-      retained.readoutExpiresAt = this.now() + physicalReadoutLifetimeMs
+      retained.readoutExpiresAt = Date.now() + physicalReadoutLifetimeMs
       readout.expiresAt = new Date(retained.readoutExpiresAt).toISOString()
       retained.protectedUntil = Math.max(retained.protectedUntil, retained.readoutExpiresAt + physicalReadoutLifetimeMs)
     }

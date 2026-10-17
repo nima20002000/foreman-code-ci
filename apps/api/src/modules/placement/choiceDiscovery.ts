@@ -3,7 +3,6 @@ import { withTransaction } from '../../infrastructure/transaction.js'
 import { AgentConfigurationVersionSchema, withAdvancedDefaults, type AgentConfigurationVersion } from '@foreman-code/contracts'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import type { HostHarnessOverride } from '@foreman-code/contracts/harness-registry'
-import type { CanonicalMachineReference } from '@foreman-code/contracts/device-identity'
 import type { NodePlacementChoice, NodePlacementChoicesInput } from '@foreman-code/contracts/placement-readback'
 import { SavedNodePlacementSchema } from '@foreman-code/contracts/node-placement'
 import { SourceRootRecordSchema, type SourceRootRecord } from '@foreman-code/contracts/source-admission'
@@ -20,7 +19,6 @@ import { computerNameKey, readComputerNames } from '../computers/names.js'
 type DiscoveryServices = PairedRootServices & {
   roots: WorkspaceRootPolicyPort
   sources: SourceAdmissionPort
-  ensureComputerReady?: (host: CanonicalMachineReference) => Promise<void>
 }
 
 type PlacementRootPolicy = Pick<WorkspaceRootPolicy, 'hostRef' | 'applicationInstallationId'
@@ -107,14 +105,6 @@ export class ProductionPlacementChoiceDiscovery implements PlacementChoiceDiscov
       source: root.source, rootBinding: { rootId: root.binding.rootId, bindingRevision: root.binding.bindingRevision } })
     let reason = rootUnavailableReason
     let pending = false
-    if (reason === null) {
-      try {
-        await services.ensureComputerReady?.(policy.hostRef)
-      } catch (error) {
-        if (!(error instanceof DomainError) || ![409, 503].includes(error.status)) throw error
-        reason = error.message
-      }
-    }
     if (reason === null) {
       const installed = services.registry.installations.list().some(installation => installation.installed
         && sameWorkflowValue(installation.hostRef, policy.hostRef)

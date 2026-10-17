@@ -5,15 +5,14 @@ import { createHash } from 'node:crypto'
 import { HarnessExecutionRequestSchema, AgentConfigurationVersionSchema, ApprovalResponseOptionSchema,
   RETIRED_OPENCODE_MESSAGE, withInteractionResponse, type NativeSessionReference, type HarnessExecutionRequest,
   type RecordedAgentHarness, type AgentHarness } from '@foreman-code/contracts'
-import { canonicalGraphJson, OutputSchemaSchema } from '@foreman-code/contracts/wave25'
-import { canonicalJson } from '@foreman-code/contracts/canonical-json'
+import { canonicalGraphJson } from '@foreman-code/contracts/wave25'
 import { DispatchIntentSchema, type AcceptedNodePlacement, type DispatchIntent, type NativeExecutionPlacement } from '@foreman-code/contracts/node-placement'
 import { RemoteOwnerControlSchema, RemoteReviewerAssignmentSchema, remoteActiveNative, type RemoteReviewerRequest,
   type RemoteNativeIdentity, type RemoteTerminalEvidence, type RemoteOperationReceipt, type RemoteOwnerReconciliation, type RemoteApplicationAccess } from '@foreman-code/contracts/remote-execution'
 import { RemoteExecutionRpcRequestSchema } from '@foreman-code/contracts/remote-execution-rpc'
 import type { DeviceConnectionIdentity } from '@foreman-code/contracts/device-identity'
 import type { NativeSessionManagerResolver, NativeManagerResolutionContext } from '../../interactions/runtimePorts.js'
-import type { NativeHarnessSessionManager, NativeHistory, NativeTurnInput, ChildProcessEnvironment } from '../../harnesses/port.js'
+import type { NativeHarnessSessionManager, NativeHistory, ChildProcessEnvironment } from '../../harnesses/port.js'
 import { assertRuntimeLeafPath, assertRuntimeLeafBinding, type RuntimeLeafAttestation } from './runtimeLeaf.js'
 import { readPlacement } from '../../placement/binding.js'
 import type { RemoteOperationJournal } from './operationJournal.js'
@@ -233,20 +232,7 @@ export class RemoteExecutionHost {
       await this.authorizeReview(resident, frame.review)
       return this.ports.journal.status(frame.intent.operationId)
     }
-    if (frame.method === 'start-turn') return this.startTurn(frame.intent.operationId, frame.prompt,
-      frame.correlationId, frame.review, frame.sessionMode, frame)
-    if (frame.method === 'settle-turn') {
-      const resident = await this.resident(frame.intent.operationId, 'start')
-      await resident.turn
-      const history = resident.settlementHistory
-        ?? await resident.manager.reconcile(resident.session, frame.correlationId)
-      if (history.terminalTurn?.correlationId !== frame.correlationId
-        || history.terminalTurn.providerId !== frame.nativeTurnId || history.pendingInteraction
-        || history.pendingInteractions.length) throw new Error('Output validation requires the completed original turn')
-      await this.ports.journal.completeOutputValidation(frame.intent.operationId, frame.correlationId, frame.nativeTurnId)
-      await this.settle(resident, frame.correlationId)
-      return this.ports.journal.status(frame.intent.operationId)
-    }
+    if (frame.method === 'start-turn') return this.startTurn(frame.intent.operationId, frame.prompt, frame.correlationId, frame.review, frame.sessionMode)
     if (frame.method === 'status') return this.status(frame.intent.operationId)
     if (frame.method === 'physical-readout' || frame.method === 'physical-ack') throw new Error('Actual installed physical readout is unavailable on this generic execution host.')
     if (frame.method === 'receipt-continuation') throw new Error('Receipt continuations require the installed response owner.')
@@ -496,41 +482,26 @@ export class RemoteExecutionHost {
     await this.ports.authorizeReview(resident.intent, resident.placement, review)
     await this.ports.journal.loadReviewTurn(resident.intent.operationId, review.correlationId)
   }
-  startTurn(operationId: string, prompt: string, correlationId: string, review?: RemoteReviewerRequest,
-    sessionMode?: SessionMode, output?: Pick<NativeTurnInput, 'outputSchema' | 'deferSettlement'>) {
-    return this.track(() => this.startTurnOwned(operationId, prompt, correlationId, review, sessionMode, output))
+  startTurn(operationId: string, prompt: string, correlationId: string, review?: RemoteReviewerRequest, sessionMode?: SessionMode) {
+    return this.track(() => this.startTurnOwned(operationId, prompt, correlationId, review, sessionMode))
   }
   private async startTurnOwned(operationId: string, prompt: string, correlationId: string, review?: RemoteReviewerRequest,
-    sessionMode?: SessionMode, output?: Pick<NativeTurnInput, 'outputSchema' | 'deferSettlement'>) {
+    sessionMode?: SessionMode) {
     const resident = await this.resident(operationId, review ? 'read' : 'start')
     if (review) return this.startReviewTurn(resident, prompt, correlationId, review)
-    if (!prompt || prompt.length > 1_000_000) throw new Error('Native turn correlation mismatch')
-    const before = await this.ports.journal.status(operationId)
-    if (before.status !== 'known') throw new Error('Original workflow turn is unavailable')
-    const correcting = before.receipt.turnInput !== undefined && before.receipt.turnInput.correlationId !== correlationId
-    if (!before.receipt.turnInput && correlationId !== `execution:${resident.intent.executionId}`)
-      throw new Error('Native turn correlation mismatch')
-    if (correcting) await resident.turn
-    const history = correcting ? await resident.manager.reconcile(resident.session, before.receipt.turnInput!.correlationId) : undefined
-    const outputSchema = output?.outputSchema ? OutputSchemaSchema.parse(output.outputSchema) : undefined
+    if (correlationId !== `execution:${resident.intent.executionId}` || !prompt || prompt.length > 1_000_000) throw new Error('Native turn correlation mismatch')
     const reserved = await this.ports.journal.reserveTurn(operationId, {
       correlationId, promptDigest: createHash('sha256').update(prompt).digest('hex'), sessionMode: sessionMode ?? 'regular',
-      ...(outputSchema ? { outputSchemaDigest: createHash('sha256').update(canonicalJson(outputSchema)).digest('hex') } : {}),
-      ...(output?.deferSettlement ? { deferSettlement: output.deferSettlement } : {}),
-    }, history)
+    })
     if (!reserved.reserved) return this.ports.journal.status(operationId)
-    delete resident.settlementHistory
-    delete resident.workflowHistory
     resident.turn = (async () => {
       try {
         await this.ports.authorize(resident.intent, resident.placement, 'start')
         const status = await this.ports.journal.status(operationId)
         if (status.status !== 'known' || status.receipt.stopFence) return
-        let retry: { previousTurnId: string } | undefined = correcting && before.receipt.native?.turnId
-          ? { previousTurnId: before.receipt.native.turnId } : undefined
+        let retry: { previousTurnId: string } | undefined
         for await (const event of resident.manager.startTurn(resident.session, {
           prompt, clientCorrelationId: correlationId, ...(sessionMode ? { sessionMode } : {}),
-          ...(outputSchema ? { outputSchema } : {}),
           onRetry: async previousTurnId => {
             await this.ports.authorize(resident.intent, resident.placement, 'start')
             const current = await this.ports.journal.status(operationId)
@@ -598,12 +569,10 @@ export class RemoteExecutionHost {
       const history = resident.settlementHistory ?? resident.workflowHistory ?? await resident.manager.reconcile(resident.session, correlationId)
       // Preserve the actual last provider snapshot before a closure producer removes its runtime.
       if (history.terminalTurn?.correlationId === correlationId || (history.correlationId === correlationId && history.terminalResult)) resident.settlementHistory = structuredClone(history)
-      if (status.status === 'known' && status.receipt.turnInput?.deferSettlement
-        && !status.receipt.outputValidationComplete && !status.receipt.stopFence) return
       const evidence = resident.settlementEvidence ?? await this.ports.settle(resident.intent, history, resident)
       const retained = await this.ports.journal.status(resident.intent.operationId)
       if (retained.status === 'known' && retained.receipt.retainedReviewer
-        && correlationId === retained.receipt.turnInput?.correlationId) resident.workflowHistory = structuredClone(history)
+        && correlationId === `execution:${resident.intent.executionId}`) resident.workflowHistory = structuredClone(history)
       if (evidence) {
         resident.settlementHistory = structuredClone(history)
         resident.settlementEvidence = structuredClone(evidence)
@@ -630,23 +599,20 @@ export class RemoteExecutionHost {
   async read(operationId: string, method: 'history' | 'pending' | 'capabilities' | 'inspectMcp',
     correlationId?: string, afterSequence?: number) {
     const resident = await this.resident(operationId, 'read')
-    const recorded = await this.ports.journal.status(operationId)
-    const workflowCorrelation = recorded.status === 'known'
-      ? recorded.receipt.turnInput?.correlationId ?? `execution:${resident.intent.executionId}` : `execution:${resident.intent.executionId}`
-    if (correlationId && correlationId !== workflowCorrelation) {
+    if (correlationId && correlationId !== `execution:${resident.intent.executionId}`) {
       await this.ports.journal.loadReviewTurn(operationId, correlationId)
     }
     const status = await this.ports.journal.status(operationId)
     const correlation = correlationId ?? (status.status === 'known'
-      ? status.receipt.reviewTurns?.at(-1)?.assignment.correlationId : undefined) ?? workflowCorrelation
-    if (correlation !== workflowCorrelation && (status.status !== 'known'
+      ? status.receipt.reviewTurns?.at(-1)?.assignment.correlationId : undefined) ?? `execution:${resident.intent.executionId}`
+    if (correlation !== `execution:${resident.intent.executionId}` && (status.status !== 'known'
       || !status.receipt.reviewTurns?.some(turn => turn.assignment.correlationId === correlation)))
       throw new Error('Unknown reviewer reconciliation correlation')
     if (resident.settlementEvidence) await this.settle(resident, `execution:${resident.intent.executionId}`)
     if (method === 'history') {
       const review = status.status === 'known'
         ? status.receipt.reviewTurns?.find(turn => turn.assignment.correlationId === correlation) : undefined
-      const workflow = correlation === workflowCorrelation && status.status === 'known'
+      const workflow = correlation === `execution:${resident.intent.executionId}` && status.status === 'known'
         ? status.receipt.retainedReviewer : undefined
       let history: NativeHistory
       // Context usage is observed only from a live provider runtime, before settlement closes it.
@@ -660,8 +626,7 @@ export class RemoteExecutionHost {
         else if (resident.settlementHistory) history = structuredClone(resident.settlementHistory)
         else {
           const starting = !review && status.status === 'known' && status.receipt.phase === 'start_acknowledged'
-            && (!status.receipt.native?.turnId || status.receipt.native.turnId === status.receipt.resultRepairs?.at(-1)?.previousTurnId)
-            && resident.turn !== undefined
+            && !status.receipt.native?.turnId && resident.turn !== undefined
           // MCP startup can emit events before there is a submitted native turn to reconcile.
           if (starting) history = await resident.manager.history(resident.session)
           else if (afterSequence !== undefined && resident.manager.reconcileHistoryPage) {
@@ -670,7 +635,7 @@ export class RemoteExecutionHost {
           context = resident.manager.contextSnapshot?.(resident.session) ?? null
         }
       }
-      if (!workflow && correlation === workflowCorrelation && history.terminalTurn?.correlationId === correlation)
+      if (!workflow && correlation === `execution:${resident.intent.executionId}` && history.terminalTurn?.correlationId === correlation)
         await this.settle(resident, correlation)
       if (review && history.correlationId === correlation && history.nativeTurnId) {
         await this.ports.journal.acknowledgeReviewTurn(operationId, correlation, history.nativeTurnId)

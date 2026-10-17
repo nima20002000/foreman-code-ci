@@ -84,7 +84,7 @@ it('keeps authenticated HTTP catalogs, calls and caller scopes fresh after warmi
     return workspace
   })
   const recordDenied = vi.fn(async () => undefined)
-  const services = { commands: { recordDenied }, circleAccounts: {}, workspaces: { get } } as unknown as OperatorServices
+  const services = { commands: { recordDenied }, workspaces: { get } } as unknown as OperatorServices
   const access = new PostgresAccessService({} as never)
   const authenticate = vi.spyOn(access, 'authenticate').mockImplementation(async token => {
     if (token !== 'synthetic-token') throw new DomainError('AUTH_REQUIRED', 'Invalid caller.', 401)
@@ -143,22 +143,6 @@ it('keeps authenticated HTTP catalogs, calls and caller scopes fresh after warmi
     const deniedCatalog = await rpc<ListToolsResult>('tools/list')
     expect(deniedCatalog.tools.map(tool => tool.name)).toContain('operator_tool_schema_get')
     expect(deniedCatalog.tools.map(tool => tool.name)).not.toContain('workspace_get')
-    caller = { ...principal, id: 'settings-reader', grants: [{ actions: ['settings:read'], scope: {} }] }
-    const settingsCatalog = await rpc<ListToolsResult>('tools/list')
-    expect(settingsCatalog.tools.map(tool => tool.name)).toContain('circle_accounts_list')
-    expect(settingsCatalog.tools.map(tool => tool.name)).not.toContain('circle_account_add')
-    caller = { ...caller, grants: [{ actions: ['settings:read', 'settings:update'], scope: {} }] }
-    const writerCatalog = await rpc<ListToolsResult>('tools/list')
-    expect(writerCatalog.tools.map(tool => tool.name)).toEqual(expect.arrayContaining([
-      'circle_accounts_list', 'circle_account_add', 'circle_account_remove',
-    ]))
-    caller = { ...caller, grants: [{ actions: ['settings:read', 'settings:update', 'capabilities:read'], scope: {} }] }
-    const schema = await rpc<CallToolResult>('tools/call', {
-      name: 'operator_tool_schema_get', arguments: { name: 'circle_account_add' },
-    })
-    expect(schema.isError).not.toBe(true)
-    expect(JSON.stringify(schema)).toContain('organizations')
-    caller = { ...principal, id: 'denied-reader', grants: [{ actions: ['capabilities:read'], scope: {} }] }
     const callsBeforeDenial = get.mock.calls.length
     const grantDenied = await rpc<CallToolResult>('tools/call', params)
     expect(grantDenied.isError).toBe(true)
