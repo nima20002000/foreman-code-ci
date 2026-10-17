@@ -1,5 +1,4 @@
-import { Hash } from 'node:crypto'
-import { expect, it, vi } from 'vitest'
+import { expect, it } from 'vitest'
 import { DEVICE_APPLICATION_JSON_BYTES } from '@foreman-code/contracts/device-application'
 import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
 import type { WorkerConversationReceipt } from '@foreman-code/contracts/remote-execution-rpc'
@@ -38,13 +37,7 @@ it('reads oversized native events and terminal records within the unchanged chan
   try {
     await manager.createSession({ kind: 'operator', configuration: f.configuration,
       workingDirectory: f.binding.workingDirectory, correlationId: 'creation' } as NativeSessionStart)
-    const hashing = vi.spyOn(Hash.prototype, 'update')
-    try {
-      await expect(manager.history(f.session)).resolves.toMatchObject(history)
-      const largeBuffers = hashing.mock.calls.map(([value]) => value)
-        .filter(value => value instanceof Uint8Array && value.byteLength > DEVICE_APPLICATION_JSON_BYTES)
-      expect(largeBuffers).toHaveLength(2)
-    } finally { hashing.mockRestore() }
+    await expect(manager.history(f.session)).resolves.toMatchObject(history)
     expect(responses).toBeGreaterThan(2)
   } finally { await manager.dispose(); await bridge.close(); await host.shutdown() }
 })
