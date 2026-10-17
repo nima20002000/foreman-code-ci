@@ -240,7 +240,9 @@ export class SourceOperationWorkerService {
         const receiptValue = await new PrivateSourceMaterializer(github.reader, reauthorize, quotaPool).prepare({ manifest,
           binding: owner.root.binding, attempt: owner.attempt, signal: context.signal,
           ...(owner.preparationKind === 'workflow' && owner.root.binding.accessMode === 'exclusive-write'
-            ? { sharedWritableTree: true, ...(request.worktree ? { worktree: request.worktree } : {}) } : {}) })
+            ? { sharedWritableTree: true, ...(request.worktree ? { worktree: request.worktree } : {}) } : {}),
+          ...(owner.preparationKind === 'workflow' && owner.root.binding.accessMode === 'read-only'
+            ? { sharedReadOnlyTree: true } : {}) })
         await reauthorize()
         assertWorktreeReceipt(receiptValue, owner.worktree, manifest.git?.commit)
         return SourceOperationResponseSchema.parse({ version: 1, operation: request.operation, receipt: receiptValue })

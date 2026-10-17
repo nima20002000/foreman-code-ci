@@ -90,7 +90,7 @@ export class CircleAccountsManagementService implements CircleAccountRegistry {
     const accounts = await Promise.all(snapshot.value.accounts.map(async saved => {
       const { id, label, role, organizations } = saved
       const account = { id, label, role, organizations }
-      return { ...await this.status.read(account), ...account }
+      return { ...account, ...await this.status.read(account) }
     }))
     return ManagedCircleAccountsSchema.parse({ ...snapshot, value: { accounts } })
   }

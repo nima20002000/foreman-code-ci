@@ -30,6 +30,8 @@ const WorkerConversationOwnerSchema = z.discriminatedUnion('kind', [
     workflowId: id, workflowNodeId: id }).strict(),
 ])
 export const WorkerConversationBindingSchema = z.object({
+  generation: z.uuid().optional(),
+  // Preview journals include this spelling in native ownership hashes. Keep those facts intact.
   sessionGeneration: id.optional(),
   accountBinding: AcceptedProviderAccountBindingSchema.optional(),
   owner: WorkerConversationOwnerSchema,
@@ -43,6 +45,12 @@ export const WorkerConversationBindingSchema = z.object({
   workingDirectory: directory,
   appMcpAccess: z.enum(['scoped', 'none']),
 }).strict().superRefine((value, context) => {
+  if ((value.generation || value.sessionGeneration) && value.owner.kind !== 'agent') {
+    context.addIssue({ code: 'custom', message: 'Replacement generations belong only to Agent chat.' })
+  }
+  if (value.generation && value.sessionGeneration) {
+    context.addIssue({ code: 'custom', message: 'A conversation has one generation identity.' })
+  }
   if (value.profile.target.hostRef.kind !== 'device') {
     context.addIssue({ code: 'custom', message: 'A worker conversation requires its selected device profile.' })
   }
@@ -66,14 +74,14 @@ export const WorkerConversationBindingSchema = z.object({
       || payload.agentId !== owner.agentId
       || payload.agentConfigurationVersionId !== (value.sourceConfigurationVersionId ?? owner.configurationVersionId)
       || value.sourceConfigurationVersionId === owner.configurationVersionId
-      || placement.nodeId !== owner.workflowNodeId || payload.driverId !== value.harness
-      || value.profile.instanceId !== payload.instanceId
-      || !value.sourceConfigurationVersionId && value.profile.instanceRevision !== payload.instanceRevision
+      || placement.nodeId !== owner.workflowNodeId
+      || !value.sourceConfigurationVersionId && (payload.driverId !== value.harness
+        || value.profile.instanceId !== payload.instanceId || value.profile.instanceRevision !== payload.instanceRevision
+        || target.harnessInstallationId !== payload.harnessInstallationId
+        || target.installationFingerprint !== payload.installationFingerprint)
       || host.kind !== 'device' || placement.hostRef.kind !== 'device'
       || host.mainId !== placement.hostRef.mainId || host.deviceId !== placement.hostRef.deviceId
-      || target.applicationInstallationId !== placement.registration?.workerInstallationId
-      || target.harnessInstallationId !== payload.harnessInstallationId
-      || target.installationFingerprint !== payload.installationFingerprint) {
+      || target.applicationInstallationId !== placement.registration?.workerInstallationId) {
       context.addIssue({ code: 'custom', message: 'The chat profile must match its accepted Agent execution placement.' })
     }
   }
@@ -82,6 +90,11 @@ export const WorkerConversationBindingSchema = z.object({
   }
 })
 export type WorkerConversationBinding = z.infer<typeof WorkerConversationBindingSchema>
+
+/** Normalize addressing without rewriting a persisted binding or its native ownership digest. */
+export function workerConversationGeneration(binding: WorkerConversationBinding): string | undefined {
+  return binding.generation ?? binding.sessionGeneration
+}
 const WorkerConversationConfigurationSchema = z.union([
   z.lazy(() => OperatorConfigurationVersionSchema), z.lazy(() => AgentConfigurationVersionSchema),
 ])
@@ -113,13 +126,14 @@ export const WorkerClaudeCallbackRecordSchema = z.object({
   selectedOptionId: id.optional(), state: z.enum(['submitted', 'uncertain']),
   acknowledged: z.boolean(), retired: z.boolean().optional(),
 }).strict()
-export const WorkerConversationReceiptSchema = z.object({
+const WorkerConversationSessionSchema = z.object({
   binding: WorkerConversationBindingSchema,
   connection: DeviceSessionBindingSchema,
   revision: z.number().int().positive(),
   closed: z.boolean(), closing: z.boolean(),
   closedAt: z.iso.datetime().optional(),
   runtimeReleased: z.boolean().optional(),
+  replacement: z.object({ operationId: id, inputHash: digest }).strict().optional(),
   creation: z.object({ operationId: id, inputHash: digest, status: z.literal('rejected').optional() }).strict().optional(),
   session: z.lazy(() => NativeSessionReferenceSchema).optional(),
   nativeOwner: RemoteNativeIdentitySchema.optional(),
@@ -133,6 +147,9 @@ export const WorkerConversationReceiptSchema = z.object({
   desiredPreferences: SessionPreferencesSchema.nullable(),
   appliedPreferences: SessionPreferencesSchema.nullable(),
   claudeCallbacks: z.record(digest, WorkerClaudeCallbackRecordSchema).optional(),
+}).strict()
+export const WorkerConversationReceiptSchema = WorkerConversationSessionSchema.extend({
+  sessionHistory: z.array(WorkerConversationSessionSchema).max(1000).optional(),
 }).strict()
 export type WorkerConversationReceipt = z.infer<typeof WorkerConversationReceiptSchema>
 
@@ -240,7 +257,10 @@ export const WorkerConversationRpcRequestSchema = z.discriminatedUnion('method',
     applicationAccess: applicationAccess.optional(),
   }).strict(),
   z.object({ method: z.literal('conversation.initial-turn'), ...binding, ...prompt, operationId: id,
-    configuration: WorkerConversationConfigurationSchema, applicationAccess: applicationAccess.optional() }).strict(),
+    configuration: WorkerConversationConfigurationSchema,
+    previousBinding: WorkerConversationBindingSchema.optional(),
+    previousConfiguration: WorkerConversationConfigurationSchema.optional(),
+    applicationAccess: applicationAccess.optional() }).strict(),
   z.object({ method: z.literal('conversation.start-turn'), ...native, ...prompt,
     fileInputs: z.boolean().optional() }).strict(),
   z.object({ method: z.literal('conversation.refresh-mcp'), ...binding,
@@ -281,16 +301,18 @@ export const WorkerConversationRpcRequestSchema = z.discriminatedUnion('method',
   z.object({ method: z.literal('conversation.reconcile-steers'), ...native,
     inputs: z.array(z.object({ clientCorrelationId: id, expectedTurnId: id }).strict()).max(1000) }).strict(),
 ]).superRefine((request, context) => {
-  if (request.method === 'conversation.open') {
-    const skillsChange = request.previousConfiguration !== undefined
-    if (request.previousBinding && (request.mode !== 'attach'
-      || (skillsChange ? request.binding.owner.kind !== 'agent' || request.previousBinding.owner.kind !== 'agent'
-        : request.binding.owner.kind !== 'operator' || request.previousBinding.owner.kind !== 'operator'
-          || request.previousBinding.appMcpAccess === request.binding.appMcpAccess))) {
-      context.addIssue({ code: 'custom', message: 'Binding changes attach an existing conversation of the same kind.' })
+  if (request.method === 'conversation.open' || request.method === 'conversation.initial-turn') {
+    const configurationChange = request.previousConfiguration !== undefined
+    if (configurationChange && (!request.previousBinding
+      || request.binding.owner.kind !== 'agent' || request.previousBinding.owner.kind !== 'agent'
+      || request.method === 'conversation.open' && request.mode === 'fork')) {
+      context.addIssue({ code: 'custom', message: 'A configuration transition requires its previous Agent binding.' })
     }
-    if (skillsChange && !request.previousBinding) {
-      context.addIssue({ code: 'custom', message: 'A skills transition requires the previous conversation binding.' })
+    if (request.previousBinding && !configurationChange && (request.method !== 'conversation.open'
+      || request.mode !== 'attach' || request.binding.owner.kind !== 'operator'
+      || request.previousBinding.owner.kind !== 'operator'
+      || request.previousBinding.appMcpAccess === request.binding.appMcpAccess)) {
+      context.addIssue({ code: 'custom', message: 'App MCP changes attach the same Operator conversation.' })
     }
   }
   if ('applicationAccess' in request && request.applicationAccess

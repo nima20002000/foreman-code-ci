@@ -8,14 +8,14 @@ import { optionalCommandId } from './commands.js'
 export { CircleAccountIdSchema, DEFAULT_CIRCLE_ACCOUNT_ID } from '../circleCredits.js'
 export const CircleOrganizationOwnerSchema = z.string().trim().min(1).max(39)
   .regex(/^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$/)
-const organizationOwners = z.array(CircleOrganizationOwnerSchema)
+const organizations = z.array(CircleOrganizationOwnerSchema).max(3)
   .refine(owners => new Set(owners.map(owner => owner.toLowerCase())).size === owners.length,
     'Organization owners must be unique.')
 export const CircleAccountSchema = z.object({
   id: CircleAccountIdSchema,
   label: z.string().trim().min(1).max(60),
   role: CircleAccountRoleSchema.default('standby'),
-  organizations: organizationOwners.max(3),
+  organizations,
 }).strict().refine(account => account.id === DEFAULT_CIRCLE_ACCOUNT_ID
   ? account.role === 'primary' && (account.organizations.length === 0 || account.organizations.length === 3)
   : account.role === 'standby' && account.organizations.length === 3,
@@ -40,12 +40,11 @@ export const CircleOrganizationReadSchema = z.object({
   schedulingReason: z.string().max(300),
   ...circleCreditsShape,
 }).strict()
-/** Observed org status can be partial; organizations retains the saved bindings. */
 export const CircleAccountReadSchema = CircleAccountSchema.safeExtend({
   tokenConfigured: z.boolean(),
   ready: z.boolean(),
   reasons: z.array(z.string().max(300)),
-  orgs: z.array(CircleOrganizationReadSchema),
+  orgs: z.array(CircleOrganizationReadSchema).max(3),
 }).strict()
 export const ManagedCircleAccountsSchema = z.object({
   value: z.object({ accounts: z.array(CircleAccountReadSchema).min(1).max(2) }).strict(),
