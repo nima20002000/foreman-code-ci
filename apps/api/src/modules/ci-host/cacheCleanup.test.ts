@@ -126,3 +126,49 @@ it.each(['git', 'slots'] as const)('reclaims idle %s storage even without a cach
       .rejects.toMatchObject({ code: 'ENOENT' })
   } finally { await rm(f.root, { recursive: true, force: true }) }
 })
+
+it.each(['{', 'null', '{}'])('reclaims idle storage despite damaged retained metadata %s', async metadata => {
+  const f = await repositoryStorage()
+  const run = join(f.root, 'runs/damaged')
+  await mkdir(run, { recursive: true })
+  await writeFile(join(run, 'meta.json'), metadata)
+  try {
+    await expect(sweepHostCiCache(f.root, { budgetBytes: 0, activeRepositories: () => new Set<string>() }))
+      .resolves.toContain(f.slot)
+    await expect(access(f.slot)).rejects.toMatchObject({ code: 'ENOENT' })
+    expect(await readFile(join(run, 'meta.json'), 'utf8')).toBe(metadata)
+  } finally { await rm(f.root, { recursive: true, force: true }) }
+})
+
+it('keeps uncertain storage while a damaged run still owns its preparation lock, then retries', async () => {
+  const f = await repositoryStorage()
+  const run = join(f.root, 'runs/damaged')
+  await mkdir(run, { recursive: true })
+  await writeFile(join(run, 'meta.json'), 'null')
+  const sweep = () => sweepHostCiCache(f.root, { budgetBytes: 0, activeRepositories: () => new Set<string>() })
+  try {
+    await withHostCiRunLock(run, async () => {
+      await sweep()
+      expect(await readFile(join(f.slot, 'src/node_modules/package'), 'utf8')).toBe('installed bytes')
+    })
+    await sweep()
+    await expect(access(f.slot)).rejects.toMatchObject({ code: 'ENOENT' })
+  } finally { await rm(f.root, { recursive: true, force: true }) }
+})
+
+it('isolates uncertain ownership to its recorded repository while reclaiming unrelated storage', async () => {
+  const f = await repositoryStorage()
+  const run = join(f.root, 'runs/damaged')
+  const busySlot = join(f.root, 'slots/fixture/busy/0/src')
+  await mkdir(run, { recursive: true })
+  await mkdir(busySlot, { recursive: true })
+  await writeFile(join(busySlot, 'package'), 'busy bytes')
+  await writeFile(join(run, 'meta.json'), JSON.stringify({ repository: 'fixture/busy', state: null }))
+  try {
+    await withHostCiRunLock(run, async () => {
+      await sweepHostCiCache(f.root, { budgetBytes: 0, activeRepositories: () => new Set<string>() })
+      await expect(access(f.slot)).rejects.toMatchObject({ code: 'ENOENT' })
+      expect(await readFile(join(busySlot, 'package'), 'utf8')).toBe('busy bytes')
+    })
+  } finally { await rm(f.root, { recursive: true, force: true }) }
+})
