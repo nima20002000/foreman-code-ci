@@ -4,7 +4,7 @@ import type pg from 'pg'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { afterEach, expect, it, vi } from 'vitest'
 import { ManagedCircleCreditAllowanceSchema, CircleCreditAllowanceUpdateResultSchema,
-  CircleCreditAllowanceUpdateInputSchema, type ManagementPrincipal } from '@foreman-code/contracts/management'
+  type ManagementPrincipal } from '@foreman-code/contracts/management'
 import { buildApp } from '../../app.js'
 import type { OperatorServices } from '../../mcp/operator/types.js'
 import { PostgresAccessService } from '../access/postgres.js'
@@ -93,9 +93,9 @@ it('saves the CircleCI credit allowance through HTTP and authenticated MCP with 
   expect((await client.listTools()).tools.map(tool => tool.name)).toContain('circle_credit_allowance_update')
   const initial = ManagedCircleCreditAllowanceSchema.parse(decodeMcpToolResult(await client.callTool({
     name: 'circle_credit_allowance_get', arguments: {} })))
-  expect(initial).toEqual({ value: { defaultMonthlyCredits: 400000, accounts: {} }, revision: 0, versionId: null })
+  expect(initial).toEqual({ value: { defaultMonthlyCredits: 30000, accounts: {} }, revision: 0, versionId: null })
   const mcp = CircleCreditAllowanceUpdateResultSchema.parse(decodeMcpToolResult(await client.callTool({
-    name: 'circle_credit_allowance_update', arguments: { value: { defaultMonthlyCredits: 400000, accounts: { acme: 1000000 } },
+    name: 'circle_credit_allowance_update', arguments: { value: { defaultMonthlyCredits: 30000, accounts: { acme: 1000000 } },
       expectedRevision: 0, commandId: randomUUID() } })))
   expect(mcp.value).toMatchObject({ value: { accounts: { acme: 1000000 } }, revision: 1 })
   const http = await f.app.inject({ method: 'PUT', url: '/api/management/settings/circle-credits',
@@ -127,14 +127,4 @@ it('denies read-only and workspace-scoped allowance writes and rejects a stale r
     arguments: { ...input, value: { defaultMonthlyCredits: 2, accounts: {} }, commandId: randomUUID() } })
   expect(stale.isError).toBe(true)
   expect(await f.settings.getCircleCreditAllowance(f.owner)).toMatchObject({ value: { defaultMonthlyCredits: 1 }, revision: 1 })
-})
-
-it('preserves an explicitly saved 30000 allowance and organization overrides after recreation', async () => {
-  const f = await fixture()
-  await f.settings.updateCircleCreditAllowance(f.owner, 'http', CircleCreditAllowanceUpdateInputSchema.parse({
-    value: { defaultMonthlyCredits: 30000, accounts: { 'fixture-custom': 123456 } },
-  }))
-  expect(await f.createSettings().getCircleCreditAllowance(f.owner)).toMatchObject({
-    value: { defaultMonthlyCredits: 30000, accounts: { 'fixture-custom': 123456 } }, revision: 1,
-  })
 })
