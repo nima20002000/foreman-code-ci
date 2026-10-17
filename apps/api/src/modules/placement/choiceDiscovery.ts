@@ -26,9 +26,7 @@ type PlacementRootPolicy = Pick<WorkspaceRootPolicy, 'hostRef' | 'applicationIns
 function matchesConfiguration(profile: HostHarnessOverride, configuration: AgentConfigurationVersion): boolean {
   const requested = configuration.harnessProfileSelection
   if (requested && (profile.instanceId !== requested.instanceId
-    || profile.instanceRevision !== requested.instanceRevision
-    || !sameWorkflowValue(profile.target.hostRef, requested.target.hostRef)
-    || profile.target.applicationInstallationId !== requested.target.applicationInstallationId)) {
+    || profile.instanceRevision !== requested.instanceRevision || !sameWorkflowValue(profile.target, requested.target))) {
     return false
   }
   return profile.enabled && sameWorkflowValue(
