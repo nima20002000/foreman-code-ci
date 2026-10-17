@@ -1692,7 +1692,8 @@ export class AgentChatService {
       const runtime = this.runtimes.get(id)
       if (runtime?.session) {
         const retirement = await runtime.manager.retireTurn?.(runtime.session, agentChatCorrelation(id, requestId))
-        if (retirement?.runtimeReleased) await this.release(id)
+        // Retirement may settle inside release(); its existing disposal owns the remaining cleanup.
+        if (retirement?.runtimeReleased && !runtime.disposal) await this.release(id)
       }
       const observer = runtime?.observer
       if (observer?.requestId === requestId) observer.controller.abort(new Error('Agent chat turn settled.'))

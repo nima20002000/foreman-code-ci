@@ -9,7 +9,7 @@ import { sameConversationForAppAccess } from './conversationAppAccess.js'
 import { validRunChatSkillsTransition } from './workerRunChatBinding.js'
 import { validWorkerConfigurationTransition } from './workerConfigurationTransition.js'
 import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
-import { WorkerClaudeCallbackRecordSchema } from '@foreman-code/contracts/remote-execution-rpc'
+import { WorkerClaudeCallbackRecordSchema, workerConversationGeneration } from '@foreman-code/contracts/remote-execution-rpc'
 import type { ClaudeCallbackJournal } from '../harnesses/claudeSdk/callbackJournal.js'
 import { definedProperties } from '../definedProperties.js'
 
@@ -22,7 +22,7 @@ function conflict(message: string): never {
 }
 function addressed(records: WorkerConversationReceipt[], binding: WorkerConversationBinding) {
   const record = records.find(value => value.binding.owner.conversationId === binding.owner.conversationId
-    && value.binding.generation === binding.generation)
+    && workerConversationGeneration(value.binding) === workerConversationGeneration(binding))
   if (!record || !isDeepStrictEqual(record.binding, binding)) return conflict('The original conversation binding changed.')
   return record
 }
@@ -41,15 +41,17 @@ export class WorkerConversationJournal {
     private readonly now: () => number = Date.now) {}
 
   async read(binding: WorkerConversationBinding) {
-    const record = (await this.store.read(binding.owner.conversationId, binding.generation)).find(value =>
-      value.binding.owner.conversationId === binding.owner.conversationId && value.binding.generation === binding.generation)
+    const record = (await this.store.read(binding.owner.conversationId, workerConversationGeneration(binding))).find(value =>
+      value.binding.owner.conversationId === binding.owner.conversationId
+      && workerConversationGeneration(value.binding) === workerConversationGeneration(binding))
     if (record && !isDeepStrictEqual(record.binding, binding)) conflict('The original conversation binding changed.')
     return record
   }
 
   async inspectBinding(binding: WorkerConversationBinding) {
-    const record = (await this.store.read(binding.owner.conversationId, binding.generation)).find(value =>
-      value.binding.owner.conversationId === binding.owner.conversationId && value.binding.generation === binding.generation)
+    const record = (await this.store.read(binding.owner.conversationId, workerConversationGeneration(binding))).find(value =>
+      value.binding.owner.conversationId === binding.owner.conversationId
+      && workerConversationGeneration(value.binding) === workerConversationGeneration(binding))
     if (record && !isDeepStrictEqual(record.binding, binding)
       && !sameConversationForAppAccess(record.binding, binding)) conflict('The original conversation binding changed.')
     return record
@@ -64,8 +66,9 @@ export class WorkerConversationJournal {
   async inspectConfigurationTransition(previous: WorkerConversationBinding, next: WorkerConversationBinding,
     base: WorkerConversationConfiguration, effective: WorkerConversationConfiguration) {
     if (!validWorkerConfigurationTransition(previous, next, base, effective)) conflict('The chat configuration transition changed.')
-    const record = (await this.store.read(next.owner.conversationId, next.generation)).find(value =>
-      value.binding.owner.conversationId === next.owner.conversationId && value.binding.generation === next.generation)
+    const record = (await this.store.read(next.owner.conversationId, workerConversationGeneration(next))).find(value =>
+      value.binding.owner.conversationId === next.owner.conversationId
+      && workerConversationGeneration(value.binding) === workerConversationGeneration(next))
     if (record && !isDeepStrictEqual(record.binding, previous) && !isDeepStrictEqual(record.binding, next)) {
       conflict('The original conversation binding changed.')
     }
@@ -116,7 +119,7 @@ export class WorkerConversationJournal {
     const inputHash = commandInputHash({ previous, next })
     return this.store.change(previous.owner.conversationId, records => {
       const record = records.find(value => value.binding.owner.conversationId === previous.owner.conversationId
-        && value.binding.generation === previous.generation)
+        && workerConversationGeneration(value.binding) === workerConversationGeneration(previous))
       if (!record || !sameConversationForAppAccess(previous, next) || previous.appMcpAccess === next.appMcpAccess
         || record.closed || record.closing || !isDeepStrictEqual(record.session, session) || !record.nativeOwner || unsettled(record)) {
         conflict('Only a settled Operator session can change its App MCP access.')
@@ -135,18 +138,18 @@ export class WorkerConversationJournal {
         next: next.appMcpAccess, state: 'reserved' }
       record.revision++
       return { applied: false, reserved: true, record }
-    }, previous.generation)
+    }, workerConversationGeneration(previous))
   }
 
   receive(binding: WorkerConversationBinding, connection: DeviceSessionBinding) {
     return this.store.change(binding.owner.conversationId, records => {
       const previous = records.filter(value => value.binding.owner.conversationId === binding.owner.conversationId)
-      const original = previous.find(value => value.binding.generation === binding.generation)
+      const original = previous.find(value => workerConversationGeneration(value.binding) === workerConversationGeneration(binding))
       if (original) {
         if (!isDeepStrictEqual(original.binding, binding)) conflict('The conversation already has another owner.')
         return original
       }
-      if (previous.length && (!binding.generation || previous.some(record => !record.closed || unsettled(record)
+      if (previous.length && (!workerConversationGeneration(binding) || previous.some(record => !record.closed || unsettled(record)
         || !isDeepStrictEqual({ ...record.binding.owner,
           configurationVersionId: binding.owner.configurationVersionId,
           configurationHash: binding.owner.configurationHash }, binding.owner)))) {
@@ -157,7 +160,7 @@ export class WorkerConversationJournal {
         turns: [], compactions: [], desiredPreferences: null, appliedPreferences: null }
       records.push(record)
       return record
-    }, binding.generation)
+    }, workerConversationGeneration(binding))
   }
 
   private change<T>(binding: WorkerConversationBinding, apply: (record: WorkerConversationReceipt) => T) {
@@ -166,7 +169,7 @@ export class WorkerConversationJournal {
       const result = apply(record)
       record.revision++
       return result
-    }, binding.generation)
+    }, workerConversationGeneration(binding))
   }
 
   reserveCreation(binding: WorkerConversationBinding, operationId: string, inputHash: string) {

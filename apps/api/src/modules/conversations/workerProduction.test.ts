@@ -138,11 +138,13 @@ it('rejects execution, profile, owner and bound-hash changes during a presentati
     configurationHash: '0'.repeat(64) } }, accepted, configuration)).toThrow()
 })
 
-it.each([['codex', false], ['codex', true], ['claude', false], ['claude', true]] as const)(
-  'recovers journaled %s creation through the production manager (Worker restarted: %s)', async (harness, restarted) => {
+it.each([['codex', false, false], ['codex', true, false], ['claude', false, false], ['claude', true, false],
+  ['codex', true, true]] as const)(
+  'recovers journaled %s creation through production (Worker restarted: %s, preview generation: %s)', async (harness, restarted, previewGeneration) => {
   const f = workerConversationFixture('agent', harness)
   if (!('agentId' in f.configuration) || f.binding.owner.kind !== 'agent') throw new Error('Agent fixture required')
   const binding = { ...f.binding,
+    ...(previewGeneration ? { sessionGeneration: 'preview-configuration' } : {}),
     accountBinding: legacyProviderAccountBinding(f.configuration.harness, f.configuration.harnessProfileSelection)! }
   const principal = { id: 'owner', name: 'Owner', audience: 'operator', delegated_from: null,
     grants: [{ actions: ['agent_chat:read', 'agent_chat:write'], scope: {} }],
@@ -151,7 +153,8 @@ it.each([['codex', false], ['codex', true], ['claude', false], ['claude', true]]
     workflow_id: agentOwner(binding.owner).workflowId, workflow_node_id: agentOwner(binding.owner).workflowNodeId,
     agent_id: f.configuration.agentId, agent_configuration_version_id: f.configuration.id,
     active_request_id: 'request', native_session_id: null, deleted_at: null,
-    owner_principal_id: principal.id, payload: { ownerPrincipalId: principal.id }, record: { status: 'open' },
+    owner_principal_id: principal.id, payload: { ownerPrincipalId: principal.id }, record: { status: 'open',
+      ...(previewGeneration ? { workerSessionGeneration: binding.sessionGeneration } : {}) },
     worker_conversation_binding: binding }
   const pool = { query: vi.fn(async (sql: string) => {
     if (sql.includes('from management_principals')) return { rows: [principal] }

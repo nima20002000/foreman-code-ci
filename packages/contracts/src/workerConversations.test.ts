@@ -16,6 +16,14 @@ function binding(kind: 'operator' | 'agent' = 'operator') {
     } } }
 }
 
+it('reads preview session generations without altering the binding used for native ownership', () => {
+  const target = { ...binding('agent'), sessionGeneration: 'preview-configuration' }
+  expect(WorkerConversationBindingSchema.parse(target)).toEqual(target)
+  expect(WorkerConversationBindingSchema.safeParse({ ...target, generation: randomUUID() }).success).toBe(false)
+  expect(WorkerConversationBindingSchema.safeParse({ ...binding('operator'), sessionGeneration: 'preview' }).success).toBe(false)
+  expect(WorkerConversationBindingSchema.safeParse({ ...binding('agent'), generation: 'invalid' }).success).toBe(false)
+})
+
 it('binds a historical follow-up to its execution profile while preserving the Agent default configuration', () => {
   const target = WorkerConversationBindingSchema.parse(binding('agent'))
   if (target.owner.kind !== 'agent' || target.profile.target.hostRef.kind !== 'device') throw new Error('Agent fixture required')
