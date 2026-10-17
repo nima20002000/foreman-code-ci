@@ -4,7 +4,6 @@ import { approvalResponse } from './helpers/eng06ApprovalFaults.js'
 import {
   createApprovalRecoverySetup,
   loseGraphAcknowledgement,
-  assertInterrupted,
   assertPredecessorsUnchanged,
 } from './helpers/approvalRecovery.js'
 
@@ -12,26 +11,48 @@ const setup = createApprovalRecoverySetup()
 
 for (const form of ['ordinary', 'repeat'] as const) {
   describe.skipIf(!postgresEnabled)(`Approval recovery ${form}: delivered restart`, () => {
-    it('retains proven delivery but does not consume a lost graph acknowledgement for a cold requester', async () => {
-      const t = await setup(form), { pending, delivered } = await loseGraphAcknowledgement(t)
+    it('recovers proven delivery once and waits for retained native evidence before acknowledging it', async () => {
+      const t = await setup(form)
+      const gate = t.faults.holdWorkerAcknowledgement()
+      const { pending, delivered } = await loseGraphAcknowledgement(t)
       const before = await readCurrentExecutions(t.runtime.runs, t.runId)
       await t.restart()
       const detached = await t.closureRows()
-      await t.runtime.engine.resume(t.runId)
-      await assertInterrupted(t, pending.executionId!)
+      const resuming = t.runtime.engine.resume(t.runId)
+      try {
+        await gate.entered
+        expect(await t.f.receipts()).toHaveLength(0)
+        await t.assertNoNativeAcknowledgement(pending.id)
+        expect(await t.closureRows()).toEqual(detached)
+      } finally { gate.release() }
+      await resuming
       expect(await t.runtime.repository.get(pending.id)).toMatchObject({ deliveryState: 'delivered',
         nativeSessionId: delivered.nativeSessionId, selectedOptionId: delivered.selectedOptionId })
-      expect(await t.f.receipts()).toHaveLength(0)
-      await t.assertNoNativeAcknowledgement(pending.id)
+      const receipts = await t.f.receipts()
+      expect(receipts).toEqual([expect.objectContaining({ entity_id: pending.id })])
+      const resumed = await t.resumeRows(pending.id)
+      expect(resumed).toEqual([expect.objectContaining({ state: 'resumed',
+        approval_native_ack_id: expect.any(String),
+        approval_native_ack_record: expect.objectContaining({
+          interaction: expect.objectContaining({ id: pending.id, executionId: pending.executionId,
+            nativeSessionId: pending.nativeSessionId, nativeRequestId: pending.nativeRequestId }),
+          nativeSource: expect.objectContaining({ sourceKind: 'native_event' }),
+        }),
+      })])
       await assertPredecessorsUnchanged(t, before)
-      expect(await t.closureRows()).toEqual(detached)
-      const receipts = await t.recoveryRows()
+      expect(await t.recoveryRows()).toEqual([])
       await t.runtime.engine.resumeInteraction(delivered)
-      expect(await t.recoveryRows()).toEqual(receipts)
-      await expect(t.runtime.service.respond(t.responder, approvalResponse(pending)))
-        .rejects.toMatchObject({ code: 'EXECUTION_STOPPED' })
-      expect(t.f.provider.counts).toMatchObject({ starts: 2, responses: 1, attaches: 0 })
-      await t.settled('failed')
+      await t.runtime.service.reconcile(delivered)
+      expect(await t.f.receipts()).toEqual(receipts)
+      expect(await t.resumeRows(pending.id)).toEqual(resumed)
+      expect(t.f.provider.counts).toMatchObject({ starts: form === 'ordinary' ? 2 : 4, responses: 1, attaches: 1 })
+      await t.finishApprovals()
+      await t.settled('succeeded')
+      expect((await t.f.receipts()).filter((receipt) => receipt.entity_id === pending.id)).toEqual(receipts)
+      expect(await t.resumeRows(pending.id)).toEqual(resumed)
+      expect(t.faults.responseWrites.filter((write) => write.requestId === pending.nativeRequestId))
+        .toEqual([{ sessionId: pending.nativeSessionId, requestId: pending.nativeRequestId,
+          optionId: approvalResponse(pending).optionId }])
     }, 90000)
   })
 }

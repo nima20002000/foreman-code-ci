@@ -2,19 +2,19 @@ import type { HarnessConfiguration } from '@foreman-code/contracts'
 import type { HarnessSettingsSection, SettingsAgentRole } from '@foreman-code/contracts/management'
 
 export const agentRoleOrder: readonly SettingsAgentRole[] = ['operator', 'orchestrator', 'coder']
-export const rolePresentation: Record<SettingsAgentRole, { title: string; description: string; scope: string }> = {
-  operator: { title: 'Operator', description: 'Your app-wide assistant.', scope: 'Shared with Operator chat. Changes apply to future chats and the next message; running responses keep their accepted settings.' },
-  orchestrator: { title: 'Orchestrator', description: 'Coordinates work and reviews requests.', scope: 'Used when creating Orchestrator agents. Existing agents and runs do not change.' },
-  coder: { title: 'Coder', description: 'Carries out tasks in your workflows.', scope: 'Used when creating Coder agents. Existing agents and runs do not change.' },
+export const rolePresentation: Record<SettingsAgentRole, { title: string }> = {
+  operator: { title: 'Operator' },
+  orchestrator: { title: 'Orchestrator' },
+  coder: { title: 'Coder' },
 }
-export const harnessSections: readonly { id: HarnessSettingsSection; label: string; description: string }[] = [
-  { id: 'model', label: 'Model & speed', description: 'Choose the model and how it reasons.' },
-  { id: 'permissions', label: 'Access & approvals', description: 'Control filesystem access and approval handling.' },
-  { id: 'session', label: 'Session', description: 'History, search, plugins, and context management.' },
-  { id: 'tools', label: 'Tool permissions', description: 'Choose how this configuration uses MCP tools.' },
-  { id: 'connections', label: 'MCP connections', description: 'Manage connections for this harness on the server.' },
-  { id: 'plugins', label: 'Plugins', description: 'Discover and manage plugins installed in Codex.' },
-  { id: 'workspace', label: 'App connection', description: 'Check Foreman Code MCP in a specific workspace.' },
+export const harnessSections: readonly { id: HarnessSettingsSection; label: string }[] = [
+  { id: 'model', label: 'Model & speed' },
+  { id: 'permissions', label: 'Access & approvals' },
+  { id: 'session', label: 'Session' },
+  { id: 'tools', label: 'Tool permissions' },
+  { id: 'connections', label: 'MCP connections' },
+  { id: 'plugins', label: 'Plugins' },
+  { id: 'workspace', label: 'App connection' },
 ]
 export function sectionForHarnessIssue(path: readonly (string | number)[]): HarnessSettingsSection {
   const field = path.join('.')
