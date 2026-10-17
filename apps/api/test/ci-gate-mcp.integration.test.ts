@@ -385,9 +385,10 @@ it.each(['cloud', 'build'] as const)('requeues a cloud setup failure once on ano
       computers.push(spare)
     }
     // Keep the failed slot available so the retry must explicitly exclude it.
+    // The build case asserts Main placement, so only Main can accept its retry.
     f.computers.splice(0, f.computers.length, ...f.computers.filter(computer =>
       computer.key === part.plannedHostKey || (destination === 'cloud'
-        ? computer.hostRef.kind === 'cloud' : computer.hostRef.kind !== 'cloud')))
+        ? computer.hostRef.kind === 'cloud' : computer.hostRef.kind === 'main')))
     await settle(f.ci)
     if (destination === 'build') {
       const waiting = CiGetOutputSchema.parse(await f.value('ci_get', { ticketId: part.id }))
