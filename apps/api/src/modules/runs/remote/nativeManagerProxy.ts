@@ -43,6 +43,7 @@ const HistoryResponseSchema = z.object({
 }).strict()
 function expiredPhysicalReply(error: unknown): boolean {
   return error instanceof DeviceApplicationError && error.code === 'REMOTE_NATIVE_PHYSICAL_REPLY_EXPIRED'
+    || error instanceof DomainError && error.code === 'REMOTE_CONNECTION_CONFLICT'
 }
 class RemoteHistorySnapshotChangedError extends Error {}
 interface RemoteReply {
@@ -156,6 +157,35 @@ export class RemoteNativeSessionManager implements NativeHarnessSessionManager {
     if (signal) return this.options.observeOriginalSource?.(receipt, source, signal)
     return this.options.observeOriginalSource?.(receipt, source)
   }
+  private async observeSession(receipt: RemoteOperationReceipt, session: NativeSessionReference,
+    input: NativeSessionStart, signal?: AbortSignal): Promise<void> {
+    if (!isWorkflowStart(input)) throw new Error('Remote proxy owns workflow execution only')
+    for (let attempt = 0; ; attempt++) {
+      try {
+        await this.observeSource(receipt, { type: 'session_created', session }, signal)
+        return
+      } catch (error) {
+        if (!expiredPhysicalReply(error) || attempt >= 4) throw error
+        const reply = await this.request('reattach', { request: input.request, session }, signal)
+        const value = z.object({ session: NativeSessionReferenceSchema, status: StatusSchema }).strict().parse(reply.value)
+        receipt = await this.status(reply, value.status)
+        if (!isDeepStrictEqual(value.session, session) || receipt.native?.sessionId !== session.nativeSessionId) {
+          throw new Error('Original remote session recovery required', { cause: error })
+        }
+      }
+    }
+  }
+  private async observeReceiptBoundary(receipt: RemoteOperationReceipt, signal?: AbortSignal): Promise<void> {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        await this.observeSource(receipt, { type: 'boundary' }, signal)
+        return
+      } catch (error) {
+        if (!expiredPhysicalReply(error) || attempt >= 4) throw error
+        receipt = await this.status(await this.request('status', {}, signal))
+      }
+    }
+  }
   private readReceipt(raw: unknown, intent: DispatchIntent, original?: RemoteOperationReceipt) {
     const status = StatusSchema.parse(raw)
     if (status.status !== 'known') throw new Error('Original worker journal requires reconciliation')
@@ -228,7 +258,7 @@ export class RemoteNativeSessionManager implements NativeHarnessSessionManager {
     const review: RemoteReviewerRequest = { jobId: job.id, interactionId: job.interactionId,
       reviewerAgentId: job.reviewerAgentId, correlationId: job.correlationId, session, leaseToken: job.leaseToken }
     await this.status(await this.request('prepare-review', { review }, signal))
-    await this.observeSource(this.receipt!, { type: 'boundary' }, signal)
+    await this.observeReceiptBoundary(this.receipt!, signal)
     this.review = review
     this.detached = false
     const recorded = this.receipt?.reviewTurns?.find(turn => turn.assignment.jobId === job.id)
@@ -330,7 +360,7 @@ export class RemoteNativeSessionManager implements NativeHarnessSessionManager {
     }
     if (this.receipt?.native?.sessionId !== value.session.nativeSessionId || value.session.harness !== this.harness) throw new Error('Original remote session recovery required')
     this.session = structuredClone(value.session)
-    await this.observeSource(this.receipt!, { type: 'session_created', session: value.session }, signal)
+    await this.observeSession(receipt, value.session, input, signal)
     return value.session
   }
   async attachSession(session: NativeSessionReference, input: NativeSessionStart, signal?: AbortSignal) {
@@ -346,7 +376,7 @@ export class RemoteNativeSessionManager implements NativeHarnessSessionManager {
     if (input.correlationId !== (receipt.turnInput?.correlationId ?? `execution:${this.intent.executionId}`) && !review)
       throw new Error('Remote session execution mismatch')
     if (!isDeepStrictEqual(value.session, session) || receipt.native?.sessionId !== session.nativeSessionId || session.harness !== this.harness) throw new Error('Original remote session recovery required')
-    await this.observeSource(receipt, { type: 'session_created', session }, signal)
+    await this.observeSession(receipt, session, input, signal)
     this.session = structuredClone(session)
     this.detached = false
     return structuredClone(session)
@@ -590,7 +620,7 @@ export class RemoteNativeSessionManager implements NativeHarnessSessionManager {
   async observeBoundary(session: NativeSessionReference, signal?: AbortSignal): Promise<void> {
     this.assertSession(session)
     const receipt = await this.status(await this.request('status', {}, signal))
-    await this.observeSource(receipt, { type: 'boundary' }, signal)
+    await this.observeReceiptBoundary(receipt, signal)
   }
   private projectHistory(history: z.infer<typeof RemoteNativeHistorySchema>): NativeHistory {
     return { events: history.events, pendingInteractions: history.pendingInteractions,
@@ -624,7 +654,7 @@ export class RemoteNativeSessionManager implements NativeHarnessSessionManager {
     if (!nativeTurnId) throw new Error('Original native turn is unavailable')
     await this.status(await this.request('settle-turn', { correlationId, nativeTurnId }, signal))
     this.streamHistory = undefined
-    return (await this.readHistoryObservation(session, correlationId, signal)).history
+    return this.reconcile(session, correlationId, signal)
   }
   async reconcileResponse(session: NativeSessionReference, response: Parameters<NonNullable<NativeHarnessSessionManager['reconcileResponse']>>[1], signal?: AbortSignal) {
     this.assertSession(session)
@@ -646,10 +676,16 @@ export class RemoteNativeSessionManager implements NativeHarnessSessionManager {
         await this.status(await this.request('control', { command }, signal))
       }
     }
-    const { value, receipt } = await this.readHistoryResponse({ response }, signal, 'reconcile-response')
-    const history = this.projectHistory(value.history)
-    await this.observeSource(receipt, { type: 'history', history }, signal)
-    return history
+    for (let attempt = 0; ; attempt++) {
+      const { value, receipt } = await this.readHistoryResponse({ response }, signal, 'reconcile-response')
+      const history = this.projectHistory(value.history)
+      try {
+        await this.observeSource(receipt, { type: 'history', history }, signal)
+        return history
+      } catch (error) {
+        if (!expiredPhysicalReply(error) || attempt >= 4) throw error
+      }
+    }
   }
   async close(session: NativeSessionReference, signal?: AbortSignal) {
     this.assertSession(session)
