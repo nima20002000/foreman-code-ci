@@ -82,6 +82,7 @@ export function AgentsDirectoryContent({
       <PageHeader
         eyebrow="Workspace directory"
         title="Agents"
+        description="Browse the reusable agents available to this workspace."
       />
 
       {agents.length > 0 ? (

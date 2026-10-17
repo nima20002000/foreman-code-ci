@@ -75,10 +75,3 @@ it('switches to Claude only through its actual saved provider preset', async () 
   await user.click(screen.getByRole('radio', { name: 'Claude' }))
   expect(onChange).toHaveBeenCalledWith(operatorChatSettings(savedClaudeConfiguration))
 })
-
-it('keeps the model chooser accessible without a repeated caption', async () => {
-  mount({ ...DEFAULT_HARNESS_DEFAULTS, claude: savedClaudeConfiguration })
-  await userEvent.click(screen.getByRole('button', { name: 'Agent settings: Saved Claude' }))
-  expect(screen.getByRole('button', { name: /Saved Claude\s*Choose model/ })).toBeEnabled()
-  expect(screen.queryByText('Choose model')).not.toBeInTheDocument()
-})

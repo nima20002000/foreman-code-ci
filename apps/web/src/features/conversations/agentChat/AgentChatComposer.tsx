@@ -73,9 +73,7 @@ export function AgentChatComposer({ name, draftKey, inputRef, sessionControls, d
         </IconButton>
       </Tooltip>}
     </div>
-    {/* A reason too long for the placeholder gets its own visible line, so a dead box always says why. */}
-    {reason && reason.length > 64 ? <p id={`${id}-hint`} className="agent-chat-reason" title={reason}>{reason}</p>
-      : <span id={`${id}-hint`} className="n-sr-only">{reason ?? 'Enter to send. Shift+Enter for a new line.'}</span>}
+    <span id={`${id}-hint`} className="n-sr-only">{reason ?? 'Enter to send. Shift+Enter for a new line.'}</span>
     <div className="agent-chat-composer-tools">
       {!disabled && sessionControls.state ? <details className="agent-chat-options">
         <summary aria-label="Session options" title="Session options"><SlidersHorizontal size={15} aria-hidden="true" /></summary>

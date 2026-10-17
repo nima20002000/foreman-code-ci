@@ -27,7 +27,7 @@ function ChangeList({ title, changes }: { title: string; changes: SettingsChange
   </details>
 }
 
-export function SettingsFormFeedback({ form, savedMessage }: {
+export function SettingsFormFeedback({ form, savedMessage = 'Changes are saved to the server.' }: {
   form: SettingsFormState; savedMessage?: string;
 }) {
   return <>
@@ -82,7 +82,7 @@ export function SettingsFormActions({ form, onSave, saveLabel = 'Save defaults',
         toasts.notify({ tone: 'danger', title: `Could not save ${subject}`, description: form.error })
       } else if (form.savedRevision !== undefined && form.savedRevision !== before.revision) {
         toasts.notify({ tone: 'success', title: `${subjectTitle} saved`,
-          ...(form.isDirty ? { description: 'Newer edits are still unsaved.' } : {}) })
+          description: form.isDirty ? 'Newer edits are still unsaved.' : 'Changes are saved to the server.' })
       }
     }
     previous.current = { revision: form.savedRevision, error: form.error, uncertain: form.uncertain,
