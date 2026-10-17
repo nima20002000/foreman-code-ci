@@ -218,6 +218,75 @@ it('shows the estimated credits left when hovering or focusing a CircleCI org', 
   expect(await card.findByText('Credits unavailable (CircleCI is not logged in on Main.)')).toBeInTheDocument()
 })
 
+it('shows server roles separately from account readiness on cloud rows and keyboard details', async () => {
+  const f = computersFixture(inRouter().element)
+  f.activity.cloud.push(
+    { provider: 'circleci', circleAccountId: 'default', account: 'acme', name: 'CircleCI Build pool / acme',
+      ready: true, slots: 30, running: 2, schedulingRole: 'active',
+      schedulingReason: 'Primary capacity is available.' },
+    { provider: 'circleci', circleAccountId: 'overflow', account: 'beta', name: 'CircleCI Overflow pool / beta',
+      ready: true, slots: 30, running: 0, schedulingRole: 'standby',
+      schedulingReason: 'Waiting for primary credit exhaustion.' },
+    { provider: 'circleci', circleAccountId: 'default', account: 'gamma', name: 'CircleCI Build pool / gamma',
+      ready: true, slots: 30, running: 1, schedulingRole: 'exhausted',
+      schedulingReason: 'Estimated credits are at the 20,000 reserve.' },
+  )
+  await act(() => f.client.invalidateQueries({ queryKey: ['computer-activity'] }))
+  const active = await findCloud(/^CircleCI Build pool \/ acme, Cloud CI, Active/)
+  expect(within(active).getByText('Active')).toBeVisible()
+  const standby = screen.getByRole('button', { name: /^CircleCI Overflow pool \/ beta, Cloud CI, Standby/ })
+  expect(within(standby).getByText('Standby')).toBeVisible()
+  const exhausted = screen.getByRole('button', { name: /^CircleCI Build pool \/ gamma, Cloud CI, Out of credits/ })
+  expect(within(exhausted).getByText('Out of credits')).toBeVisible()
+  const user = userEvent.setup()
+  act(() => standby.focus())
+  const details = await screen.findByRole('tooltip')
+  expect(within(details).getByText('Standby')).toBeVisible()
+  expect(within(details).getByText('Waiting for primary credit exhaustion.')).toBeVisible()
+  expect(within(details).queryByText(/Not logged in/)).not.toBeInTheDocument()
+  await user.keyboard('{Escape}')
+  expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+})
+
+it('keeps account and org row identity when recovered rows are reordered', async () => {
+  const f = computersFixture(inRouter().element)
+  f.activity.cloud.push(
+    { provider: 'circleci', circleAccountId: 'default', account: 'acme', name: 'CircleCI Build pool / acme',
+      ready: true, slots: 30, running: 1, schedulingRole: 'exhausted' },
+    { provider: 'circleci', circleAccountId: 'overflow', account: 'acme', name: 'CircleCI Overflow pool / acme',
+      ready: true, slots: 30, running: 0, schedulingRole: 'standby' },
+  )
+  await act(() => f.client.invalidateQueries({ queryKey: ['computer-activity'] }))
+  const primary = await findCloud(/^CircleCI Build pool \/ acme, Cloud CI/)
+  const standby = screen.getByRole('button', { name: /^CircleCI Overflow pool \/ acme, Cloud CI/ })
+  f.activity.cloud.reverse()
+  await act(() => f.client.invalidateQueries({ queryKey: ['computer-activity'] }))
+  await waitFor(() => {
+    const rows = within(screen.getByRole('list', { name: 'Cloud runner groups' })).getAllByRole('button')
+    expect(rows[0]).toHaveAccessibleName(/^CircleCI Overflow pool \/ acme, Cloud CI/)
+  })
+  expect(screen.getByRole('button', { name: /^CircleCI Build pool \/ acme, Cloud CI/ })).toBe(primary)
+  expect(screen.getByRole('button', { name: /^CircleCI Overflow pool \/ acme, Cloud CI/ })).toBe(standby)
+})
+
+it('retains a running legacy row alongside exhausted and replacement orgs', async () => {
+  const f = computersFixture(inRouter().element)
+  f.activity.cloud.push(
+    { provider: 'circleci', name: 'CircleCI', ready: true, slots: 30, running: 1 },
+    { provider: 'circleci', account: 'acme', name: 'CircleCI acme', ready: true, slots: 30, running: 1,
+      schedulingRole: 'exhausted' },
+    { provider: 'circleci', circleAccountId: 'overflow', account: 'beta', name: 'CircleCI beta',
+      ready: true, slots: 30, running: 2, schedulingRole: 'active' },
+  )
+  await act(() => f.client.invalidateQueries({ queryKey: ['computer-activity'] }))
+  const legacy = await findCloud(/^CircleCI, Cloud CI/)
+  expect(within(legacy).getByText('1')).toBeVisible()
+  expect(screen.getByRole('button', { name: /^CircleCI acme, Cloud CI, Out of credits/ }))
+    .toHaveAccessibleName(/1 running Agent or CI job/)
+  expect(screen.getByRole('button', { name: /^CircleCI beta, Cloud CI, Active/ }))
+    .toHaveAccessibleName(/2 running Agents and CI jobs/)
+})
+
 it('counts Agents and CI jobs, caps the badge, and pulses on starts including a replacement at the same count', async () => {
   const f = computersFixture(inRouter().element)
   const main = await findComputer('Main PC, Main, Plenty of capacity')
