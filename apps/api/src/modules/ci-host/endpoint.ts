@@ -1,7 +1,7 @@
 import type pg from 'pg'
 import { canonicalJson } from '@foreman-code/contracts/canonical-json'
 import { CiStartPreflightError } from './dispatch.js'
-import { CI_DIRECTORY_PAGE_SIZE, ciDirectoryCleanupCandidates, expireCiLogTails } from './directoryRetention.js'
+import { CI_DIRECTORY_PAGE_SIZE, ciDirectoryCleanupCandidates } from './directoryRetention.js'
 import { CI_HOST_NAMESPACE, CI_HOST_START_PROTOCOL_VERSION, CiHostReplySchema,
   type CiHostReply, type CiHostRequest } from '@foreman-code/contracts'
 import type { HostCiComputer, HostCiEndpoint } from './service.js'
@@ -165,9 +165,6 @@ export class ProductionHostCiEndpoint implements HostCiEndpoint {
         if (runIds.length) {
           const reply = await this.sendRequest(computer, { operation: 'status', cleanupRunIds: runIds })
           if (reply.operation !== 'status' || !reply.removedRunIds) throw new Error('Expected CI cleanup reply.')
-          const selected = new Set(runIds)
-          const removed = reply.removedRunIds.filter(id => selected.has(id))
-          await expireCiLogTails(this.pool, { hostRef: computer.hostRef, label: computer.label }, removed, now)
         }
         if (runIds.length < CI_DIRECTORY_PAGE_SIZE) break
       }
@@ -191,7 +188,8 @@ export class ProductionHostCiEndpoint implements HostCiEndpoint {
     if (computer.hostRef.kind === 'main') return this.local.handle(request)
     if (computer.hostRef.kind === 'cloud') {
       const cloud = this.clouds.find(value => value.provider.id === computer.hostRef.provider
-        && value.provider.account?.owner === computer.hostRef.account)
+        && value.provider.account?.owner.toLowerCase() === computer.hostRef.account?.toLowerCase()
+        && (value.provider.circleAccountId ?? 'default') === (computer.hostRef.circleAccountId ?? 'default'))
       if (!cloud) throw new Error('This cloud CI service is off.')
       return cloud.handle(request)
     }

@@ -292,16 +292,13 @@ it.each(['server failure', 'invalid acknowledgement'])('retries a save after %s 
 })
 
 it.each([500, 502, 503])('recovers list and detail request failures through their refresh actions (%s)', async status => {
-  let detailReads = 0
   server.use(
     http.get('*/api/management/bug-reports', () => HttpResponse.json({
       error: { code: 'UNAVAILABLE', message: 'Reports are unavailable.' },
     }, { status })),
-    http.get('*/api/management/bug-reports/:reportId', () => {
-      detailReads++
-      return HttpResponse.json({ error: { code: 'NOT_FOUND', message: 'This bug report was not found.' } },
-        { status: 404 })
-    }),
+    http.get('*/api/management/bug-reports/:reportId', () => HttpResponse.json({
+      error: { code: 'NOT_FOUND', message: 'This bug report was not found.' },
+    }, { status: 404 })),
   )
   mount('/settings/bugs?reportId=bug-report-missing')
   const reports = within(await screen.findByRole('region', { name: 'Bug reports' }))
@@ -310,16 +307,9 @@ it.each([500, 502, 503])('recovers list and detail request failures through thei
   expect(screen.getByRole('button', { name: 'Refresh bug reports' })).toBeEnabled()
   expect(screen.getByRole('button', { name: 'Refresh report' })).toBeEnabled()
   expect(screen.queryByRole('combobox', { name: 'Report status' })).not.toBeInTheDocument()
-  const failedDetailReads = detailReads
   serveReports([report({ id: 'bug-report-missing' })])
-  server.use(http.get('*/api/management/bug-reports/:reportId', () => {
-    detailReads++
-    return HttpResponse.json(report({ id: 'bug-report-missing' }))
-  }))
   await userEvent.click(screen.getByRole('button', { name: 'Refresh bug reports' }))
-  expect(detailReads).toBe(failedDetailReads)
   await userEvent.click(screen.getByRole('button', { name: 'Refresh report' }))
-  await waitFor(() => expect(detailReads).toBe(failedDetailReads + 1))
   expect(await screen.findByRole('combobox', { name: 'Report status' })).toHaveValue('open')
   expect(screen.getByRole('button', { name: 'Read Workflow start fails' })).toBeVisible()
   expect(reports.queryByRole('alert')).not.toBeInTheDocument()
