@@ -1,3 +1,4 @@
+import { requireHarnessOptionsAccountAccess } from '../../../modules/harnesses/harnessOptionsAccess.js'
 import { requireAuthorization } from '../../../modules/access/policy.js'
 import * as contracts from '@foreman-code/contracts/management'
 import { SavedWorkflowVersionPageSchema, SavedWorkflowVersionDetailSchema } from '@foreman-code/contracts/wave25'
@@ -19,25 +20,29 @@ export const extendedOperatorTools = [
   }),
   defineOperatorTool({
     name: 'harness_options_get',
+    permissionDetail: 'Managed accountBinding also requires provider_accounts:read on its owning target and account.',
     requires: [['harnesses:read', 'global']],
     enabled: s => !!s.extensions?.native,
-    description: "Discover authenticated native model IDs, release dates or native default preference, advertised context windows, supported efforts/variants, native Agents and field support. Claude uses an owned zero-input SDK control query without a model turn; installation and execution qualification remain separate. No secrets are returned.", inputSchema: contracts.HarnessOptionsInputSchema, outputSchema: contracts.HarnessOptionsResultSchema,
+    description: "Discover authenticated native model IDs, release dates or native default preference, advertised context windows, supported efforts/variants, native Agents and field support. Claude uses an owned zero-input SDK control query without a model turn; installation and execution qualification remain separate. Optional hostRef selects a connected Worker instead of Main; accountBinding selects its managed profile, otherwise its native login is used. No secrets are returned.", inputSchema: contracts.HarnessOptionsInputSchema, outputSchema: contracts.HarnessOptionsResultSchema,
     annotations: {readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false},
     run: async (context, input) => {
     requireAuthorization(context.principal, 'harnesses:read')
-    return context.services.extensions!.native.options(input.harness)
+    await requireHarnessOptionsAccountAccess(context.principal, input.accountBinding, context.services.providerAccounts)
+    return context.services.extensions!.native.options(input.harness, input.accountBinding, input.hostRef)
   },
   }),
   defineOperatorTool({
     name: 'harness_options_refresh',
+    permissionDetail: 'Managed accountBinding also requires provider_accounts:read on its owning target and account.',
     requires: [['harnesses:read', 'global']],
     enabled: s => !!s.extensions?.native,
-    description: "Reread the configured qualified CLI's model catalog without requesting a models.dev cache update. Requires harnesses:read.", inputSchema: contracts.HarnessOptionsInputSchema, outputSchema: contracts.HarnessOptionsResultSchema,
+    description: "Reread the configured qualified CLI's model catalog without requesting a models.dev cache update. Optional hostRef and accountBinding select the same computer and profile as harness_options_get. Requires harnesses:read.", inputSchema: contracts.HarnessOptionsInputSchema, outputSchema: contracts.HarnessOptionsResultSchema,
     annotations: {readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false},
     run: async (context, input) => {
     requireAuthorization(context.principal, 'harnesses:read')
+    await requireHarnessOptionsAccountAccess(context.principal, input.accountBinding, context.services.providerAccounts)
     context.services.harnesses.invalidateChecks()
-    return context.services.extensions!.native.refreshOptions(input.harness, 'catalog')
+    return context.services.extensions!.native.refreshOptions(input.harness, 'catalog', input.accountBinding, input.hostRef)
   },
   }),
   defineOperatorTool({

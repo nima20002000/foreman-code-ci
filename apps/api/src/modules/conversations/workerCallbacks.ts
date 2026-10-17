@@ -30,7 +30,10 @@ export function workerConversationCallbacks(input: {
     const channel = input.capture()
     if (!channel || !isDeepStrictEqual(channel.binding, current)) throw new DomainError('WORKER_CONVERSATION_UNAVAILABLE',
       'The original paired Main channel is unavailable.', 409)
-    const reply = await channel.request({ ...payload, binding: source.binding, admissionId: source.admissionId }, { signal })
+    const preparingFiles = payload.method === 'conversation.files'
+      && (payload.action as WorkerConversationFileAction).phase === 'prepare'
+    const reply = await channel.request({ ...payload, binding: source.binding, admissionId: source.admissionId },
+      { signal, ...(preparingFiles ? { progressTimeoutMs: 30_000 } : {}) })
     signal.throwIfAborted()
     if (reply.bytes !== undefined || !isDeepStrictEqual(input.currentBinding(), current)) {
       throw new DomainError('WORKER_CONVERSATION_UNAVAILABLE', 'The conversation callback channel changed.', 409)
