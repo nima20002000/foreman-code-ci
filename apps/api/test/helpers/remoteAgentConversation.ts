@@ -3,7 +3,9 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, vi } from 'vitest'
 import { z } from 'zod'
-import { AgentConfigurationVersionSchema, withAdvancedDefaults, type AgentConfigurationVersion } from '@foreman-code/contracts'
+import { AgentConfigurationVersionSchema, HarnessExecutionSchema, withAdvancedDefaults, type AgentConfigurationVersion } from '@foreman-code/contracts'
+import { runChatStorageKey } from '../../src/modules/conversations/selectedRunChat.js'
+import { createTestPool } from './testPool.mjs'
 import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
 import { ManagementActionSchema } from '@foreman-code/contracts/management'
 import { AgentFileReadResultSchema, FileWithRevisionSchema, type MessageAttachmentRef } from '@foreman-code/contracts/files'
@@ -39,7 +41,8 @@ import { agent3Database, seedAgent3 } from './wave25Agent3.js'
 import { remoteChatProvider } from './remoteChatProvider.js'
 import { deferred } from './deferred.js'
 
-export async function remoteAgentConversation(harness: 'codex' | 'claude', location: 'worker' | 'main' = 'worker') {
+export async function remoteAgentConversation(harness: 'codex' | 'claude', location: 'worker' | 'main' = 'worker',
+  options: { runAttempts?: number; poolSize?: number } = {}) {
   const db = await agent3Database()
   const recorded = workerConversationFixture('agent', harness)
   const fixture = makeCurrentWorkflowFixture(randomUUID(), 'sequential')
@@ -47,11 +50,22 @@ export async function remoteAgentConversation(harness: 'codex' | 'claude', locat
     harness: { ...recorded.configuration.harness, model: 'test-model',
       ...(harness === 'claude' ? { configDirectory: join(db.directory, 'claude-profile') } : {}) },
     harnessProfileSelection: location === 'worker' ? recorded.binding.profile : undefined }))
-  const seeded = await seedAgent3(db.pool, db.directory, fixture, { run: false })
+  const seeded = await seedAgent3(db.pool, db.directory, fixture, { run: !!options.runAttempts })
+  const constrainedPool = options.poolSize ? createTestPool({ connectionString: db.databaseUrl,
+    max: options.poolSize, connectionTimeoutMillis: 1000,
+    options: '-c statement_timeout=10000 -c lock_timeout=5000' }) : undefined
+  if (constrainedPool) db.pool = constrainedPool
   const node = seeded.version.definition.nodes[0]!
   const configuration = seeded.configurations.find(value => value.agentId === node.agentId)!
   const context = { workspaceId: configuration.workspaceId, workflowId: seeded.scope.workflowId,
-    workflowNodeId: node.id, agentId: configuration.agentId }
+    workflowNodeId: node.id, agentId: configuration.agentId, ...(options.runAttempts ? { runId: seeded.run.id } : {}) }
+  const executions = Array.from({ length: options.runAttempts ?? 0 }, (_, index) => HarnessExecutionSchema.parse({
+    id: randomUUID(), runId: seeded.run.id, workflowNodeId: node.id, agentId: configuration.agentId,
+    agentConfigurationVersionId: configuration.id, attempt: index + 1, state: 'completed',
+    input: {}, nativeSessionId: `run-session-${randomUUID()}`, workingDirectory: db.directory,
+    createdAt: seeded.createdAt, startedAt: seeded.createdAt, finishedAt: seeded.createdAt,
+    result: { outcome: 'succeeded' },
+  }))
   const access = new PostgresAccessService(db.pool)
   const writer = await access.issue({ name: 'Remote chat writer', audience: 'operator',
     expiresAt: new Date(Date.now() + 600_000), grants: [{ actions: ManagementActionSchema.options, scope: {} }] })
@@ -61,8 +75,11 @@ export async function remoteAgentConversation(harness: 'codex' | 'claude', locat
   const repository = new PostgresAgentChatRepository(db.pool)
   const workflows = new PostgresWorkflowRepository(db.pool)
   const messages = new PostgresOperatorConversationRepository(db.pool)
-  const conversation = await repository.ensureForControls(agentChatKey(context), { context,
-    agentConfigurationVersionId: configuration.id, harness, origin: { kind: 'fresh' },
+  const execution = executions[0]
+  const conversation = await repository.ensureForControls(execution ? runChatStorageKey(context, execution.id) : agentChatKey(context), { context,
+    agentConfigurationVersionId: configuration.id, harness, origin: execution
+      ? { kind: 'run_execution', runId: execution.runId, executionId: execution.id, sourceNativeSessionId: execution.nativeSessionId! }
+      : { kind: 'fresh' },
     workingDirectory: db.directory, runtimeDirectory: join(db.directory, 'chat') }, async () => {})
   const journal = await RemoteOperationJournal.open(join(db.directory, 'worker-operations.json'),
     { initializeNewInstallation: true })
@@ -121,6 +138,10 @@ export async function remoteAgentConversation(harness: 'codex' | 'claude', locat
     nativeManagers.set(conversationId, created.manager)
     return created.manager
   }
+  const prepareProvider = async (conversationId: string) => {
+    await nativeManager(conversationId)
+    return providers.at(-1)!
+  }
   const host = new WorkerConversationHost({ ...callbacks, currentBinding: () => recorded.connection,
     journal: journal.conversations, authorize: callbacks.authorize,
     allocate: async (binding, accepted) => {
@@ -161,9 +182,10 @@ export async function remoteAgentConversation(harness: 'codex' | 'claude', locat
       },
   } as unknown as Parameters<typeof createProductionWorkerConversations>[0])
   const chat = new AgentChatService(db.pool, repository, messages, workflows, {
-    getForWorkspace: async () => { throw new Error('Fresh Agent chat must not select a Run') },
-    getExecution: async () => { throw new Error('Fresh Agent chat must not select an execution') },
-    executionPages() { throw new Error('Fresh Agent chat must not select an execution') },
+    getForWorkspace: async (workspaceId, runId) => workspaceId === context.workspaceId && runId === seeded.run.id
+      ? { ...seeded.run, executionState: 'completed' as const } : undefined,
+    getExecution: async id => executions.find(item => item.id === id),
+    async *executionPages(runId) { if (runId === seeded.run.id) yield executions },
   }, (conversationId, selected, workingDirectory) => location === 'main' ? nativeManager(conversationId)
     : workerChats.create({ conversationId, configuration: selected, workingDirectory, appMcpAccess: 'none' }), db.directory)
   const commands = new PostgresCommandCoordinator(db.pool)
@@ -226,7 +248,7 @@ export async function remoteAgentConversation(harness: 'codex' | 'claude', locat
       return { requestId, turn, events }
     } finally { unsubscribe() }
   }
-  return { db, provider, providers, configuration, context, conversation, repository, frames, chat, app,
+  return { db, provider, providers, prepareProvider, executions, configuration, context, conversation, repository, frames, chat, app,
     journal, writer, reader, call, value, send, receivedAttachments,
     drainWorker: () => host.drainForUpdate(),
     async snapshot() {
@@ -285,7 +307,13 @@ export async function remoteAgentConversation(harness: 'codex' | 'claude', locat
           for (const current of providers) await current.manager.dispose?.()
           lifetime.abort(); await workerFiles.close(); await journal.close()
         }
-        finally { try { await app.close() } finally { await db.close() } }
+        finally {
+          try { await app.close() }
+          finally {
+            try { await constrainedPool?.end() }
+            finally { await db.close() }
+          }
+        }
       }
     } }
 }
