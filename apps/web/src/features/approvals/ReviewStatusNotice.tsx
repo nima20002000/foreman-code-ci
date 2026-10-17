@@ -20,7 +20,7 @@ export function ReviewStatusNotice({ review, interaction }: { review: ReviewStat
   if (!view.visible) return null
   return <Alert live tone={view.failed ? 'danger' : 'warning'} title={view.title}>
     {view.errorMessage ? <p>{view.errorMessage}</p> : null}
-    <p>{view.retryMessage}</p>
+    {view.retryMessage ? <p>{view.retryMessage}</p> : null}
     {review.reviewJobId ? <small>Review: {review.reviewJobId}</small> : null}
   </Alert>
 }

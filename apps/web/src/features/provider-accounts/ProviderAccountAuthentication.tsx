@@ -1,3 +1,4 @@
+import { InfoHint } from '../../shared/ui/InfoHint'
 import { useEffect, useRef, useState } from 'react'
 import type { ProviderAccount, ProviderAccountAuthenticationOperation } from '@foreman-code/contracts/provider-accounts'
 import { CommandAttempt } from '../../shared/api/commandAttempt'
@@ -112,7 +113,7 @@ export function ProviderAccountAuthentication({ account, revision, open, canMana
     .filter((item): item is ProviderAccountAuthenticationOperation => item !== null)
     .filter((item, index, all) => all.findIndex(other => other.id === item.id) === index) : []
   return <Dialog open={open} title={`Authentication for ${account.name}`} busy={busy}
-    description="Authentication continues on the owning computer when you hide this progress."
+    headerLeading={<InfoHint label="Authentication progress">Authentication continues on the owning computer when you hide this progress.</InfoHint>}
     onOpenChange={next => { if (!next && !busy && !uncertain) onClose() }}
     footer={<Button disabled={busy || uncertain} onClick={onClose}>Hide progress</Button>}>
     <div className="provider-account-form">
@@ -143,7 +144,7 @@ export function ProviderAccountAuthentication({ account, revision, open, canMana
           {operation.state === 'outcome-unknown' ? <p>Recheck this operation to find its result.</p> : null}
           {['expired', 'failed'].includes(operation.state) && !operation.nativeClosed ?
             <p>The provider may still be running. Recheck or cancel this operation before starting another.</p> : null}
-          {operation.state === 'completed' ? <p>Refresh the account to read its sign-in and readiness. Its default is unchanged.</p> : null}
+          {operation.state === 'completed' ? <p>Refresh the account to read its sign-in and readiness.</p> : null}
           {!operation.nativeClosed ? <Button disabled={!manage || busy || prepareAttempt.unresolved}
             onClick={() => void cancel()}>{cancelAttempt.unresolved ? 'Retry original cancel' : 'Cancel authentication'}</Button> : null}
           {operation.nativeClosed ? <Button disabled={!canPrepare || busy || uncertain}
@@ -152,7 +153,6 @@ export function ProviderAccountAuthentication({ account, revision, open, canMana
         <Button disabled={query.isFetching || busy} onClick={() => void query.refetch()}>Recheck original operation</Button>
       </> : <>
         {discovery.isPending ? <p role="status">Finding saved authentication operations…</p> : null}
-        <p>Choose an authentication action for this account.</p>
         <div className="provider-account-actions">
           <Button disabled={!manage || busy || uncertain || !capability?.actions.includes('sign-in')}
             aria-pressed={intent === 'sign-in'} onClick={() => setIntent('sign-in')}>Sign in</Button>

@@ -14,6 +14,7 @@ import type { SourceAdmissionPort } from '../sources/admissionPorts.js'
 import type { WorkspaceRootPolicyPort } from '../sources/rootPolicyPorts.js'
 import { provisionPairedAgentRoots, type PairedRootServices } from './pairedRoots.js'
 import type { PlacementChoiceDiscovery } from './choicesService.js'
+import { computerNameKey, readComputerNames } from '../computers/names.js'
 
 type DiscoveryServices = PairedRootServices & {
   roots: WorkspaceRootPolicyPort
@@ -128,7 +129,9 @@ export class ProductionPlacementChoiceDiscovery implements PlacementChoiceDiscov
         reason = 'The matching harness profile needs qualification on this computer.'
       }
     }
-    const hostLabel = policy.hostRef.kind === 'main' ? 'Main' : `Computer ${policy.hostRef.deviceId}`
+    const named = (await readComputerNames(sql, policy.hostRef.mainId)).get(computerNameKey(
+      policy.hostRef.mainId, policy.hostRef.kind === 'device' ? policy.hostRef.deviceId : undefined))
+    const hostLabel = named ?? (policy.hostRef.kind === 'main' ? 'Main' : `Computer ${policy.hostRef.deviceId}`)
     return { pending, choice: { id: commandInputHash(placement),
       label: `${hostLabel} · ${profile.driverId} · ${policy.canonicalProjectRoot}`,
       placement, availability: reason === null ? 'ready' : 'unavailable', reason } }
