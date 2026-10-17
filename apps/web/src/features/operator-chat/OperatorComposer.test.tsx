@@ -5,14 +5,14 @@ import { useConversationDraftStore } from '../conversations'
 
 afterEach(() => { cleanup(); useConversationDraftStore.getState().clearAllDrafts() })
 
-it('puts a single attachment action in the composer toolbar and preserves file-only send', () => {
+it('puts a single attachment action inline with the message input and preserves file-only send', () => {
   const send = vi.fn()
   render(<OperatorComposer conversationId="owned-attachment-chat" attachmentControl={<button type="button">Attach files</button>}
     hasAttachments onSubmit={send} onNewChat={vi.fn()} />)
   const composer = screen.getByRole('form', { name: 'Conversation composer' })
   expect(within(composer).queryByRole('button', { name: 'New chat' })).not.toBeInTheDocument()
   expect(within(composer).getAllByRole('button', { name: 'Attach files' })).toHaveLength(1)
-  expect(screen.getByRole('button', { name: 'Attach files' }).closest('.operator-composer-toolbar')).not.toBeNull()
+  expect(screen.getByRole('button', { name: 'Attach files' }).closest('.operator-composer-input')).toBe(screen.getByRole('textbox', { name: 'Message' }).parentElement)
   fireEvent.click(screen.getByRole('button', { name: 'Send message' }))
   expect(send).toHaveBeenCalledWith('')
 })

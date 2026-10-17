@@ -40,7 +40,7 @@ it.each(['user', 'native'])('retains %s approval selection, revision checks, and
   const user = userEvent.setup()
   const handler = await screen.findByRole('combobox', { name: 'Approval handler' })
   expect(handler).toHaveValue('orchestrator')
-  expect(screen.getByText('Choose who handles approval requests in new workflows.')).toBeVisible()
+  expect(screen.getByRole('heading', { name: 'Approval routing' })).toBeVisible()
   await user.selectOptions(handler, selection)
   await user.click(screen.getByRole('button', { name: 'Save workflow defaults' }))
   expect(await screen.findByText('Changes saved to the server')).toBeVisible()

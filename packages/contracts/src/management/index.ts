@@ -16,6 +16,7 @@ export * from "./codexPlugins.js";
 export * from "./claudePlugins.js";
 export * from "./settingsExperience.js";
 export * from './generalSettings.js';
+export * from './circleCreditAllowance.js';
 export * from './bugReports.js';
 export * from './promptSettings.js';
 export * from '../providerAccounts.js'
@@ -581,7 +582,7 @@ export const OperatorToolNameSchema = z.enum([
   "operator_chat_delete", "operator_chat_restore",
   "agent_chat_read", "agent_chat_send", "agent_chat_interrupt", "agent_chat_cancel_queued", "agent_chat_respond",
   "workspace_defaults_get",
-  'general_settings_get', 'general_settings_update',
+  'general_settings_get', 'general_settings_update', 'circle_credit_allowance_get', 'circle_credit_allowance_update',
   'provider_account_targets', 'provider_account_profiles', 'provider_account_eligibility', 'provider_account_auth_list',
   'provider_accounts_list', 'provider_account_create', 'provider_account_rename',
   'provider_account_default_set', 'provider_account_login', 'provider_account_logout', 'provider_account_refresh',

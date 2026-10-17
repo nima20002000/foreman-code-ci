@@ -90,7 +90,6 @@ export function CodexPluginManager({ accessUnavailable = false }: { accessUnavai
   const label = (item: NonNullable<typeof plugin>) => item.verification === 'unverified' ? 'Needs verification'
     : item.installed ? item.enabled ? 'Installed' : 'Disabled' : item.unavailableReason ? 'Unavailable' : 'Available'
   return <section className="codex-plugins" aria-label="Codex plugins">
-    <p className="harness-muted">Plugins use your Codex profile. New sessions use the updated bundle; service sign-in may still be required.</p>
     <div className="codex-plugins-controls">
       <div className="codex-plugins-tabs" role="group" aria-label="Plugin catalog view">
         <Button size="sm" variant={view === 'installed' ? 'primary' : 'ghost'} aria-pressed={view === 'installed'} onClick={() => move({ pluginView: 'installed', pluginOffset: 0 })}>Installed</Button>
