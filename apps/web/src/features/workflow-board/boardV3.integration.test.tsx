@@ -439,6 +439,8 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
       canvas.getByLabelText(`Connect to ${mock.agents[1]!.name}`))
     await waitFor(() => expect(useGraphDraftStore.getState().nextDrafts[key]!.graph.edges).toHaveLength(1))
     expect(useGraphDraftStore.getState().nextDrafts[key]!.graph.edges).toHaveLength(1)
+    expect(screen.queryByRole('dialog', { name: `${mock.agents[0]!.name} chat` })).not.toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: `${mock.agents[1]!.name} chat` })).not.toBeInTheDocument()
     await user.keyboard('{Control>}z{/Control}')
     await waitFor(() => expect(useGraphDraftStore.getState().nextDrafts[key]!.graph.edges).toHaveLength(0))
     await user.keyboard('{Control>}y{/Control}')
