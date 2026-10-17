@@ -27,6 +27,13 @@ export function createAdmittedNativeManager<T extends NativeHarnessSessionManage
         throw new DomainError('HARNESS_CONFIGURATION_MISMATCH', 'The admitted native adapter differs from its role configuration.', 409)
       }
       for (const session of stopped.values()) result.manager.stopAutomaticResponses?.(session)
+      if (result.manager.retireTurn) {
+        const retireTurn = result.manager.retireTurn.bind(result.manager)
+        manager.retireTurn = async (session, correlationId) => {
+          lifetime.signal.throwIfAborted()
+          await retireTurn(session, correlationId)
+        }
+      }
       return result
     })
     const result = await opening
@@ -114,6 +121,12 @@ export function createAdmittedNativeManager<T extends NativeHarnessSessionManage
       return current.inspectResponseAvailability ? current.inspectResponseAvailability(session, query, signal) : unavailableNativeResponse(session, query, 'unsupported')
     },
     close: async session => (await actual()).close(session),
+    closeForResume: async session => {
+      const current = await actual()
+      if (!current.closeForResume) throw new DomainError('NATIVE_RUNTIME_RELEASE_UNAVAILABLE',
+        'The admitted driver cannot release its process while retaining the conversation.', 409)
+      await current.closeForResume(session)
+    },
     closeForRestart: async session => {
       const current = await actual()
       if (!current.closeForRestart) throw new DomainError('HARNESS_RESTART_UNAVAILABLE', 'The admitted driver has no restart capability.', 409)
