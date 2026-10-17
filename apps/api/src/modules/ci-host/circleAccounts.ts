@@ -18,7 +18,8 @@ export interface CircleAccountRegistry {
   list(): Promise<CircleAccount[]>
 }
 export interface CircleAccountStatusReader {
-  read(account: CircleAccount): Promise<Pick<CircleAccountRead, 'tokenConfigured' | 'ready' | 'reasons' | 'orgs'>>
+  read(account: CircleAccount): Promise<Pick<CircleAccountRead, 'tokenConfigured' | 'ready' | 'reasons' | 'orgs'>
+    & Partial<Pick<CircleAccountRead, 'organizations'>>>
 }
 /** Called only after a committed registry change; consumers discard only this login's cached state. */
 export type CircleAccountRegistryChanged = (id: string) => void | Promise<void>
