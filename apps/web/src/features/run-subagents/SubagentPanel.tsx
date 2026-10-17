@@ -1,3 +1,4 @@
+import { InfoHint } from '../../shared/ui/InfoHint'
 import { useMemo, useState, type RefObject } from 'react'
 import { useMutation, useMutationState, useQueryClient } from '@tanstack/react-query'
 import { createStore, useStore } from 'zustand'
@@ -94,7 +95,7 @@ export function SubagentPanel({ scope, subagentId, anchor, onClose }: {
   const canSend = allowed('sendInput'), canInterrupt = allowed('interrupt')
   const footer = child && child.provider !== 'opencode' && (canSend || canInterrupt || receipt || commandError || pending) ? <div className="run-subagent-steer">
     {canSend && <Textarea label="Message to subagent" value={text} maxLength={SUBAGENT_LIMITS.text} rows={2}
-      hint={child.capabilities.inputTiming === 'idle' ? 'Delivered when the subagent is waiting for input.' : undefined}
+      labelHint={child.capabilities.inputTiming === 'idle' ? <InfoHint label="Message to subagent">Delivered when the subagent is waiting for input.</InfoHint> : undefined}
       disabled={pending || unsettled} onChange={(event) => ui.setState({ text: event.currentTarget.value })}
       onKeyDown={(event) => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) { event.preventDefault(); if (text.trim()) send('input') } }} />}
     <div className="run-subagent-steer-actions">
@@ -128,7 +129,6 @@ export function SubagentPanel({ scope, subagentId, anchor, onClose }: {
             && <p className="run-subagent-note">Controls are unavailable for this subagent right now.</p>}
         </section>
         {child.provider !== 'opencode' && record.pendingInteraction ? <section aria-label="Subagent request">
-          <p>This subagent needs your response.</p>
           {record.pendingInteraction.responseOptions.some(option => option.input)
             ? <NativeInteractionResponse key={record.pendingInteraction.turn.nativeRequestId}
               options={record.pendingInteraction.responseOptions}
@@ -150,7 +150,7 @@ export function SubagentPanel({ scope, subagentId, anchor, onClose }: {
             {messagesBlocked || messages.isError && !messages.data ? <ErrorState title="Couldn't load messages" description="Try again in a moment." onRetry={() => void messages.refetch()} retrying={messages.isFetching} />
               : messages.isPending ? <Spinner label="Loading messages" /> : <>
                 {messageItems.map((item) => <Message key={item.id} item={item} name={subagentName(child)} />)}
-                {!messageItems.length && <EmptyState title="No messages yet" description="Messages appear here as the subagent works." icon="chat" />}
+                {!messageItems.length && <EmptyState title="No messages yet" icon="chat" />}
                 {messages.hasNextPage && <Button size="sm" loading={messages.isFetchingNextPage} onClick={() => void messages.fetchNextPage()}>Load more messages</Button>}
               </>}
           </div> },
@@ -161,7 +161,7 @@ export function SubagentPanel({ scope, subagentId, anchor, onClose }: {
             {toolsBlocked || tools.isError && !tools.data ? <ErrorState title="Couldn't load tool calls" description="Try again in a moment." onRetry={() => void tools.refetch()} retrying={tools.isFetching} />
               : tools.isPending ? <Spinner label="Loading tool calls" /> : <>
                 {toolItems.map((item) => <Tool key={item.id} item={item} />)}
-                {!toolItems.length && <EmptyState title="No tool calls yet" description="Tools the subagent uses appear here." icon="terminal" />}
+                {!toolItems.length && <EmptyState title="No tool calls yet" icon="terminal" />}
                 {tools.hasNextPage && <Button size="sm" loading={tools.isFetchingNextPage} onClick={() => void tools.fetchNextPage()}>Load more tool calls</Button>}
               </>}
           </div> },

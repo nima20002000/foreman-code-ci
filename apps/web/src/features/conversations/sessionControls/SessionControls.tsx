@@ -1,3 +1,4 @@
+import { InfoHint } from '../../../shared/ui/InfoHint'
 import { useFloatingSurface } from '../../../shared/ui/nocturne/useFloatingSurface'
 import { useEffect, useId, useRef, useState } from 'react'
 import { compactionBlocksSend, type SessionPreferences } from '@foreman-code/contracts'
@@ -78,10 +79,15 @@ export function SessionContext({ controls }: { controls: ComposerSessionControls
         <p>Automatic compaction: {state.applied?.autoCompact ?? 'Native default'}</p>
         {state.applied?.autoCompactTokens ? <p>Automatic budget: {state.applied.autoCompactTokens.toLocaleString()}</p> : null}
         </div>
-        <details><summary>Context options for this chat</summary>
+        <details><summary>Context options for this chat
+          {!state.capabilities.contextBudgets.length && !state.capabilities.contextBudgetReason &&
+            <InfoHint label="Context options">Context size follows the native model/profile.</InfoHint>}
+          </summary>
           {state.capabilities.contextBudgets.length ? <Select label="Context budget" value={String(state.desired.contextBudget ?? '')}
             options={[{ value: '', label: 'Native default' }, ...state.capabilities.contextBudgets.map(value => ({ value: String(value), label: value.toLocaleString() }))]}
-            disabled={pending} onChange={event => update({ ...state.desired, contextBudget: event.target.value ? Number(event.target.value) : null })} /> : <p>{state.capabilities.contextBudgetReason ?? 'Context size follows the native model/profile.'}</p>}
+            disabled={pending} onChange={event => update({ ...state.desired, contextBudget: event.target.value ? Number(event.target.value) : null })} /> : null}
+          {!state.capabilities.contextBudgets.length && state.capabilities.contextBudgetReason
+            ? <p>{state.capabilities.contextBudgetReason}</p> : null}
           {state.capabilities.contextProfiles.length ? <Select label="Context profile" options={[{ value: '', label: 'Native default' }, ...state.capabilities.contextProfiles.map(profile => ({ value: profile.id, label: profile.label }))]} value={state.desired.contextProfile ?? ''} disabled={pending}
             onChange={event => update({ ...state.desired, contextProfile: event.target.value || null })} /> : null}
           {state.capabilities.autoCompact.supported ? <Select label="Auto compact" options={[{ value: 'default', label: 'Default' }, { value: 'on', label: 'On' }, { value: 'off', label: 'Off' }]} value={state.desired.autoCompact} disabled={pending}

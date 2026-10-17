@@ -1,3 +1,4 @@
+import { InfoHint } from '../../shared/ui/InfoHint'
 import { useEffect, useId, useRef, useState } from 'react'
 import { AgentHarnessSchema, AgentEffortSchema, ClaudeEffortSchema, operatorChatSettings, type OperatorChatSettings } from '@foreman-code/contracts'
 import type { ReactNode } from 'react'
@@ -103,9 +104,9 @@ export function OperatorComposerSettings({ value, onChange, disabled, access }: 
               update(settings)
             }
           }} /> : null}
-        <button className="operator-model-choice" type="button" disabled={disabled || !catalog.isSuccess} onClick={() => { setChoosingModel(true); setSearch('') }}>
-          <span>{modelName}<small>Choose model</small></span><Icon name="chevron" size={14} />
-        </button>
+        <div className="n-field-label"><button className="operator-model-choice" type="button" aria-label={`${modelName} Choose model`} disabled={disabled || !catalog.isSuccess} onClick={() => { setChoosingModel(true); setSearch('') }}>
+          <span>{modelName}</span><Icon name="chevron" size={14} />
+        </button>{value.accountId ? <InfoHint label="Model">Options come from this account. Check the configuration before running.</InfoHint> : null}</div>
         {value.harness !== 'claude' || efforts.length > 0 || Boolean(effort) ? <Slider label="Effort" min={0} max={Math.max(0, efforts.length - 1)} step={1}
           value={Math.max(0, efforts.indexOf(effort))} disabled={disabled || !catalog.isSuccess || efforts.length < 2}
           format={(index) => efforts.includes(effort) ? efforts[index] ?? 'Default' : effort || 'Default'}
@@ -125,7 +126,6 @@ export function OperatorComposerSettings({ value, onChange, disabled, access }: 
           onChange={(event) => { if (value.harness === 'codex') update({ ...value, serviceTier: event.target.checked ? 'priority' : 'standard' }) }} />
         <Switch label="Show thinking" checked={value.showThinking} disabled={disabled} onChange={(event) => update({ ...value, showThinking: event.target.checked })} />
         </div>
-        {value.accountId ? <p>Options come from this account. Check the configuration before running.</p> : null}
         {catalog.isPending ? <small role="status">Loading models…</small> : null}
         {catalog.isError || defaults.isError ? <div role="alert">Settings unavailable. <Button size="sm" onClick={() => { void catalog.refetch(); void defaults.refetch() }}>Retry</Button></div> : null}
       </>}
