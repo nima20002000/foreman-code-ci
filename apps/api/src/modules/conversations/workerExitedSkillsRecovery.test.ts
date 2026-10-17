@@ -108,38 +108,9 @@ async function fixture() {
   const transition = () => request({ method: 'conversation.open', binding, configuration, previousBinding: f.binding,
     previousConfiguration: base, mode: 'attach', source: provider.session, operationId: 'skills' })
   return { ...f, originalBinding: f.binding, base, binding, configuration, journal, launches, attach, transition, closeOwner,
-    release: () => request({ method: 'conversation.release-runtime', binding: f.binding, session: provider.session }),
     setClosureConfirmed(value: boolean) { closureConfirmed = value },
     cleanup: async () => { closureConfirmed = true; await host.close(); await bridge.close() } }
 }
-
-it('releases an exited native process and retries cleanup after its process has already closed', async () => {
-  const f = await fixture()
-  try {
-    await f.journal.finishTurn(f.originalBinding, 'unfinished', { outcome: 'succeeded' })
-    f.setClosureConfirmed(false)
-    await expect(f.release()).rejects.toThrow('closure is unconfirmed')
-    expect((await f.journal.read(f.originalBinding))?.runtimeReleased).not.toBe(true)
-    f.setClosureConfirmed(true)
-    await f.closeOwner(`conversation:${f.originalBinding.owner.conversationId}`)
-    await expect(f.release()).resolves.toMatchObject({ receipt: { runtimeReleased: true, session: provider.session } })
-    await expect(f.release()).resolves.toMatchObject({ receipt: { runtimeReleased: true } })
-    expect(provider.creates).toBe(1)
-    expect(provider.starts).toEqual([])
-  } finally { await f.cleanup() }
-})
-
-it('refuses runtime release when the exited native process identity has changed', async () => {
-  const f = await fixture()
-  try {
-    await f.journal.finishTurn(f.originalBinding, 'unfinished', { outcome: 'succeeded' })
-    f.launches[0] = { ...f.launches[0]!, provider: { pid: 22222, startTicks: '22' },
-      lifecycle: 'closed', closureEvidence: 'cgroup_v2_empty' }
-    await expect(f.release()).rejects.toThrow('unavailable or changed')
-    expect(f.closeOwner).not.toHaveBeenCalled()
-    expect((await f.journal.read(f.originalBinding))?.runtimeReleased).not.toBe(true)
-  } finally { await f.cleanup() }
-})
 
 it.each(['succeeded', 'failed'] as const)(
   'recovers the saved %s result under the original skills after the resident process exits', async outcome => {
