@@ -1,6 +1,5 @@
 import { useId, type ReactNode, type Ref, type KeyboardEventHandler, type TextareaHTMLAttributes } from 'react'
 import { Button } from './Button'
-import { InfoHint } from '../InfoHint'
 import { Avatar } from './Layout'
 import { Icon, type IconName } from './Icon'
 import { Badge } from './Feedback'
@@ -30,16 +29,14 @@ export function MessageComposer({ value, onValueChange, onSend, pending = false,
     <label className="n-sr-only" htmlFor={id}>{label}</label>
     <textarea {...commandInputProps} ref={inputRef} id={id} className="n-input" value={value} maxLength={limit} placeholder={placeholder} disabled={disabled}
       aria-invalid={Boolean(error) || value.length > limit || undefined}
-      aria-describedby={`${id}-hint ${id}-count${error ? ` ${id}-error` : ''}`}
+      aria-describedby={`${id}-hint${error ? ` ${id}-error` : ''}`}
       onChange={(event) => onValueChange(event.currentTarget.value)} onKeyDown={(event) => {
         onInputKeyDown?.(event)
         if (event.defaultPrevented) return
         if (event.key !== 'Enter' || event.shiftKey || event.altKey || event.ctrlKey || event.metaKey || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return
         event.preventDefault(); send()
       }} />
-    <footer><span><span id={`${id}-hint`} hidden>Enter to send · Shift + Enter for a new line</span>
-      <InfoHint label={label}>Enter to send · Shift + Enter for a new line</InfoHint>
-      <span id={`${id}-count`} className="n-composer-count">{value.length.toLocaleString()} / {limit.toLocaleString()}</span></span>
+    <footer><span id={`${id}-hint`}>Enter to send · Shift + Enter for a new line<span className="n-composer-count">{value.length.toLocaleString()} / {limit.toLocaleString()}</span></span>
       <div className="n-actions">{footerControl}{pending && onStop && <Button variant="secondary" disabled={disabled} leading={<Icon name="stop" size={14} />} onClick={onStop}>Stop</Button>}
         <Button type="submit" variant="primary" disabled={cannotSend} loading={pending} loadingLabel={pendingLabel} trailing={<Icon name="arrow" size={15} />}>{sendLabel}</Button></div>
     </footer>{error && <p className="n-field-error" id={`${id}-error`} role="alert">{error}</p>}

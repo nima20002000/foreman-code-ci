@@ -23,6 +23,6 @@ export function reviewStatusPresentation(review: ReviewStatus, interaction: Pick
         : 'Retry is due; waiting for the next backend check.'
         : completed ? 'This request is still pending. Correct the reviewer settings before starting a new Run.'
           : delivered ? 'The Worker decision was delivered. The native review still needs settlement; the decision will not be resent.'
-            : undefined
+            : 'The assigned Orchestrator has not made a decision yet.'
   return { visible, title, failed, errorMessage: review.error?.message, retryMessage, retryScheduled, retryAt }
 }
