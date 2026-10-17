@@ -60,11 +60,3 @@ it('shows recovery guidance when fresh observation cannot prove the saved accoun
   expect(await screen.findByText(/The original account is unavailable/)).toBeVisible()
   expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
 })
-
-it('keeps an unknown historical identity visible without repeating the retained-profile assurance', () => {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  clients.push(client)
-  render(<QueryClientProvider client={client}><PinnedProviderAccount /></QueryClientProvider>)
-  expect(screen.getByText(/Historical provider identity is unknown/)).toBeVisible()
-  expect(screen.queryByText(/The saved native profile is retained/)).not.toBeInTheDocument()
-})

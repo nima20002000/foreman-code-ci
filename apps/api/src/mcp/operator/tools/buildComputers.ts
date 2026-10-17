@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { ComputerActivityListSchema } from '@foreman-code/contracts/computer-activity'
+import { ComputerActivityListSchema, ComputerRenameInputSchema, ComputerRenameResultSchema } from '@foreman-code/contracts/computer-activity'
 import { ComputerMaintenanceOperatorListSchema, ComputerMaintenanceOperatorListInputSchema, ComputerMaintenanceStartInputSchema,
   ComputerMaintenanceStartResultSchema } from '@foreman-code/contracts/computer-maintenance'
 import { ComputerAccountsListInputSchema, ComputerAccountsListSchema, ComputerSyncReadInputSchema,
@@ -27,6 +27,18 @@ export const buildComputerTools = [
     inputSchema: z.object({}).strict(), outputSchema: ComputerActivityListSchema,
     annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: false },
     run: (context) => context.services.computerActivity!.list(context.principal, 'mcp'),
+  }),
+  defineOperatorTool({
+    name: 'computer_rename',
+    requires: [['settings:update', 'global']],
+    enabled: s => !!s.computerActivity,
+    description: 'Give Main or a paired computer a new name. The name is trimmed, 1 to 60 characters, and shows everywhere '
+      + 'computers are listed: the sidebar, Settings → Computers, CI computer labels and execution-location choices. '
+      + 'Requires global settings:update. Supply target exactly as devices_list and computer_activity_list report it. '
+      + 'Last write wins; reuse commandId for an uncertain save. Read the persisted name back from computer_activity_list.',
+    inputSchema: ComputerRenameInputSchema, outputSchema: ComputerRenameResultSchema,
+    annotations: { readOnlyHint: false, idempotentHint: true, destructiveHint: false, openWorldHint: false },
+    run: (context, input) => context.services.computerActivity!.rename(context.principal, 'mcp', input),
   }),
   defineOperatorTool({
     name: 'computer_accounts_list',

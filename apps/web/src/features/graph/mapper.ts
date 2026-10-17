@@ -8,8 +8,6 @@ import type {
 
 import type { XYPosition } from '@xyflow/react'
 
-import { layoutHierarchy } from './hierarchyLayout'
-
 import type {
   GraphEdge,
   GraphHandleSide,
@@ -20,15 +18,13 @@ import type {
 
 export const AGENT_HANDOFF_EDGE_TYPE = 'agentHandoff'
 
-export const GRAPH_NODE_MIN_WIDTH = 120
+export const GRAPH_NODE_MIN_WIDTH = 208
 export const GRAPH_NODE_MAX_WIDTH = 520
-export const GRAPH_NODE_MIN_HEIGHT = 120
+export const GRAPH_NODE_MIN_HEIGHT = 208
 export const GRAPH_NODE_MAX_HEIGHT = 320
-// Compact on purpose: a hierarchy of many Agents has to stay readable at a glance.
-export const GRAPH_NODE_DEFAULT_SIZE = 156
-const DEFAULT_NODE_WIDTH = GRAPH_NODE_DEFAULT_SIZE
-const DEFAULT_NODE_HEIGHT = GRAPH_NODE_DEFAULT_SIZE
-export const ORCHESTRATOR_NODE_SIZE = 188
+const DEFAULT_NODE_WIDTH = 212
+const DEFAULT_NODE_HEIGHT = 212
+export const ORCHESTRATOR_NODE_SIZE = 272
 const DEFAULT_NODE_GAP = 92
 const DEFAULT_NODE_Y = 120
 // Placement reserves the default circle plus room for rim actions and connections.
@@ -264,11 +260,6 @@ export function workflowToGraph(
       },
     }
   })
-
-  // The Board lays itself out from the graph: saved positions are not used to draw it.
-  const placed = layoutHierarchy(nodes.map((node) => ({ id: node.id, width: node.width ?? DEFAULT_NODE_WIDTH, height: node.height ?? DEFAULT_NODE_HEIGHT })),
-    workflow.edges, workflow.entryNodeId ?? undefined)
-  nodes.forEach((node, index) => { nodes[index] = { ...node, position: placed.get(node.id)! } as GraphNode })
 
   const nodeBoxes = new Map<string, NodeBox>(nodes.map((node) => [node.id, {
     position: node.position,

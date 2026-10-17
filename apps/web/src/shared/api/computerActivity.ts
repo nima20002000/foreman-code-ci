@@ -1,5 +1,5 @@
-import { useQuery } from '@tanstack/react-query'
-import { ComputerActivityListSchema } from '@foreman-code/contracts/computer-activity'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { ComputerActivityListSchema, ComputerRenameInputSchema, ComputerRenameResultSchema } from '@foreman-code/contracts/computer-activity'
 import type { DeviceProvisioningTarget } from '@foreman-code/contracts/device-resources'
 import { TELEMETRY_LIMITS, TelemetrySelectorResultSchema } from '@foreman-code/contracts/resource-telemetry'
 import { apiClient, ApiError } from './client'
@@ -16,6 +16,15 @@ export function useComputerActivity() {
   return useQuery({ queryKey: ['computer-activity', sessionGeneration()], enabled: !sessionIsSwitching(),
     retry: false, refetchInterval: 5_000,
     queryFn: ({ signal }) => apiClient.request('/api/management/computers/activity', ComputerActivityListSchema, { signal }) })
+}
+/** Saves a computer's name; every list refreshes from the activity readback. */
+export function useRenameComputer() {
+  const client = useQueryClient()
+  return useMutation({ retry: false,
+    mutationFn: (input: { target: DeviceProvisioningTarget; name: string }) => apiClient.request(
+      '/api/management/computers/rename', ComputerRenameResultSchema,
+      { method: 'POST', body: ComputerRenameInputSchema.parse(input) }),
+    onSettled: () => client.invalidateQueries({ queryKey: ['computer-activity'] }) })
 }
 export function useComputerUtilization(target: DeviceProvisioningTarget, online: boolean) {
   useHarnessSessionEpoch()

@@ -27,11 +27,9 @@ export function useAgentConversationComposer({ chat, state, sessionControls, att
     ? sessionControls.commandFeedback?.compaction : undefined
   useEffect(() => {
     if (!state || focused.current || !composer.current) return
-    const active = document.activeElement
-    const surface = composer.current.closest('.agent-chat-window, .n-agent-popover')
-    if (!active || active === document.body || active === surface
-      || active.matches('.n-agent-action--chat[aria-expanded="true"]')
-      || active.getAttribute('role') === 'tab' && surface?.contains(active)) {
+    const active = document.activeElement, popover = composer.current.closest('.n-agent-popover')
+    if (!active || active === document.body || active.matches('.n-agent-action--chat[aria-expanded="true"]')
+      || active.getAttribute('role') === 'tab' && popover?.contains(active)) {
       focused.current = true
       composer.current.focus({ preventScroll: true })
     }

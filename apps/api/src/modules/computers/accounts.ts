@@ -1,5 +1,4 @@
 import type pg from 'pg'
-import type { DeviceRequestPriority } from '@foreman-code/contracts/device-application'
 import { COMPUTER_ACCOUNTS_NAMESPACE, ComputerAccountsListSchema, ComputerAccountsReadInputSchema, ComputerAccountsSchema,
   type ComputerAccounts, type ComputerAccountsList } from '@foreman-code/contracts/computer-accounts'
 import { DeviceRegistrationSchema } from '@foreman-code/contracts/device-identity'
@@ -14,7 +13,7 @@ import { logIgnoredError } from '../diagnostics/ignoredError.js'
 
 export interface ComputerAccountsEndpoint {
   capabilities(deviceId: string): readonly { namespace: string; mainCanRequest: boolean }[]
-  request(deviceId: string, namespace: string, payload: unknown, options?: { signal?: AbortSignal; timeoutMs?: number; priority?: DeviceRequestPriority }): Promise<{ payload: unknown }>
+  request(deviceId: string, namespace: string, payload: unknown, options?: { signal?: AbortSignal; timeoutMs?: number }): Promise<{ payload: unknown }>
 }
 const CACHE_MS = 30_000
 
