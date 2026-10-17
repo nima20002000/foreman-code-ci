@@ -43,7 +43,7 @@ function nativeIdentity(accepted: AcceptedArtifactPublication) {
  * allocation or native completion is inferred from a worker response. */
 export class NativeArtifactOutputs {
   constructor(private readonly results: Pick<CanonicalNativeArtifactResults, 'readAccepted'>,
-    private readonly outputs: NativeArtifactOutputRepository, private readonly authority: Pick<ArtifactPublicationAuthority, 'authorize'>,
+    private readonly outputs: NativeArtifactOutputRepository, private readonly authority: ArtifactPublicationAuthority,
     private readonly edges: Pick<ArtifactEdgeService, 'pinAccepted'>) {}
   private record(accepted: AcceptedArtifactPublication, outputKey: string, commandId: string, result: CanonicalNativeArtifactResult) {
     if (!isDeepStrictEqual(result.attempt, accepted.attempt) || !isDeepStrictEqual(result.nativeIdentity, nativeIdentity(accepted))
@@ -77,11 +77,9 @@ export class NativeArtifactOutputs {
     if (!raw) throw new DomainError('NATIVE_ARTIFACT_OUTPUT_PENDING', 'The original native output has not been bound.', 409)
     const original = NativeArtifactOutputSchema.parse(raw)
     if (!isDeepStrictEqual(original.producer, producer) || original.outputKey !== outputKey) return conflict()
-    const publication = { ...accepted, context: { ...accepted.context, ...original.nativeIdentity } }
-    const current = this.record(publication, outputKey, original.commandId,
-      await this.results.readAccepted(publication, original.commandId))
+    const current = this.record(accepted, outputKey, original.commandId, await this.results.readAccepted(accepted, original.commandId))
     if (!isDeepStrictEqual(current, original)) return conflict()
-    await this.authorize(publication, original)
+    await this.authorize(accepted, original)
     return structuredClone(original)
   }
   async pinEdge(accepted: AcceptedArtifactPublication, edge: AcceptedNativeArtifactEdge): Promise<ArtifactEdgeBinding> {
