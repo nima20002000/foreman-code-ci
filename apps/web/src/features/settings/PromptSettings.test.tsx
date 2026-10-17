@@ -81,6 +81,11 @@ describe('Prompt settings', () => {
     await user.type(editor, 'Instructions for new sessions\nPreserve this line.')
     await user.click(screen.getByRole('button', { name: page.saveLabel }))
     expect(await screen.findByText('Prompt saved')).toBeVisible()
+    expect(screen.queryByText(/The (system|initial) prompt is saved/)).not.toBeInTheDocument()
+    await user.hover(screen.getByRole('button', { name: `About ${page.label}` }))
+    expect(screen.getByRole('tooltip')).toHaveTextContent(page.page === 'system-prompt'
+      ? 'Newly started Agent sessions will use this revision.' : 'New Operator conversations will use this revision.')
+    await user.unhover(screen.getByRole('button', { name: `About ${page.label}` }))
     expect(screen.getByText('Saved revision: 4')).toBeVisible()
     expect(writes).toHaveLength(1)
     expect(writes[0]).toMatchObject({ expectedRevision: 3,

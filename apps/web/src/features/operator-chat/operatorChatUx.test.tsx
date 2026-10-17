@@ -1,5 +1,6 @@
 import { savedClaudeConfiguration } from '../settings/claudeSettings.fixtures'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import userEvent from '@testing-library/user-event'
 import { act, cleanup, fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_AGENT_DEFAULTS, DEFAULT_HARNESS_DEFAULTS, operatorChatSettings, type HarnessConfiguration } from '@foreman-code/contracts'
@@ -325,7 +326,14 @@ describe('Operator chat UX', () => {
     expect(screen.queryByText('Access changes apply to new chats and harness handoffs. Existing chats keep their accepted access policy.')).not.toBeInTheDocument()
     expect(screen.queryByText('Access edits apply to new chats and harness handoffs. This chat keeps its pinned access policy.')).not.toBeInTheDocument()
     fireEvent.click(await screen.findByRole('button', { name: /Agent settings:/ }))
-    expect(within(screen.getByRole('group', { name: 'Operator access' })).getByText('Access changes apply to new chats and harness handoffs. Existing chats keep their accepted access policy.')).toBeVisible()
+    const user = userEvent.setup()
+    const access = within(screen.getByRole('group', { name: 'Operator access' }))
+    const guidance = 'Access changes apply to new chats and harness handoffs. Existing chats keep their accepted access policy.'
+    expect(screen.queryByText(guidance)).not.toBeInTheDocument()
+    const accessHint = access.getByRole('button', { name: 'About Operator access' })
+    await user.hover(accessHint)
+    expect(screen.getByRole('tooltip')).toHaveTextContent(guidance)
+    await user.unhover(accessHint)
     expect(screen.getByRole('combobox', { name: 'Sandbox' })).toHaveValue('danger-full-access')
     expect(screen.queryByText('Saved to Operator defaults for your next message and future chats.')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Operator access:/ })).not.toBeInTheDocument()
