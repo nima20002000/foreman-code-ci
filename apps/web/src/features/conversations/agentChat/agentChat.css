@@ -177,6 +177,7 @@
 .agent-chat-input-box .n-input::placeholder { color: var(--text-faint); }
 .agent-chat-input-box .n-input:disabled { cursor: default; }
 .agent-chat-send.n-button { position: absolute; right: var(--space-2); bottom: var(--space-2); width: 28px; height: 28px; min-height: 28px; padding: 0; border-radius: var(--radius-full); }
+.agent-chat-reason { margin: var(--space-1) 0 0; overflow: hidden; color: var(--text-muted); font: var(--type-caption); text-overflow: ellipsis; white-space: nowrap; }
 .agent-chat-composer-tools { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-1); margin-top: var(--space-1); }
 .agent-chat-composer-tools:empty { display: none; }
 .agent-chat-composer-tools .n-icon-button { width: 28px; height: 28px; min-height: 28px; padding: 0; }

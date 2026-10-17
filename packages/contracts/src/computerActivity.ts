@@ -2,7 +2,6 @@ import { z } from 'zod'
 import { DeviceProvisioningTargetSchema } from './deviceResources.js'
 import { HarnessExecutionStateSchema, IdSchema, TimestampSchema } from './index.js'
 import { JobProcessStateSchema } from './jobs.js'
-import { circleCreditsShape } from './circleCredits.js'
 import { ReadObservationSchema } from './readObservation.js'
 
 export const COMPUTER_ACTIVITY_LIMIT = 200
@@ -48,8 +47,6 @@ const CloudCiActivitySchema = z.object({
   slots: z.number().int().positive(),
   /** CI runs using one of its machines now. */
   running: z.number().int().nonnegative(),
-  /** CircleCI accounts only: estimated monthly credits left, or null with the reason it is unavailable. */
-  ...circleCreditsShape,
 }).strict()
 export const ComputerActivityListSchema = z.object({
   mainId: z.uuid(),
