@@ -58,7 +58,7 @@ const CloudCiActivitySchema = z.object({
   slots: z.number().int().positive(),
   /** CI runs using one of its machines now. */
   running: z.number().int().nonnegative(),
-  /** CircleCI accounts only: estimated monthly credits left per organization of the login plus their total, or null with the reason it is unavailable. */
+  /** CircleCI accounts only: estimated monthly credits left, or null with the reason it is unavailable. */
   ...circleCreditsShape,
 }).strict()
 export const ComputerActivityListSchema = z.object({
