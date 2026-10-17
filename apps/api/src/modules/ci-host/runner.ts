@@ -454,7 +454,11 @@ export class HostCiRunner {
       // At most one walk per 5 minutes, and only after a writer transition; external changes wait for the hourly scan.
       const revision = this.cacheRevision, elapsed = now - this.cacheSweepAt
       if (revision !== this.sweptCacheRevision && elapsed >= 5 * 60_000 || elapsed >= 60 * 60_000) {
-        await sweepHostCiCache(this.root, { activeRepositories })
+        await sweepHostCiCache(this.root, { activeRepositories, unitStates: async runIds => {
+          const units = runIds.map(runId => `${unitName(runId)}.service`)
+          const states = await readCiUnitStates(this.ports, units, this.environment, { timeoutMs: 2_000 })
+          return new Map(runIds.map((runId, index) => [runId, states.get(units[index]!)!] as const))
+        } })
         this.cacheSweepAt = now
         this.sweptCacheRevision = revision
       }
@@ -1247,8 +1251,7 @@ export class HostCiRunner {
     const settled = !['queued', 'starting', 'running'].includes(meta.state)
     if (settled) this.trackCacheWriter(runId)
     else this.trackCacheWriter(runId, meta.repository)
-    // Local preparation owns reconciliation until it releases the run directory.
-    const reconciled = settled || !preparing && await withHostCiRunLock(directory, async () => {
+    const reconciled = settled || await withHostCiRunLock(directory, async () => {
       await this.reconcile(await this.readMeta(runId), preparing, unitStates)
       return true
     }, { nonBlocking: true })
