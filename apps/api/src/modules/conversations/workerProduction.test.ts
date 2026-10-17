@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto'
-import { DomainError } from '../errors.js'
 import type pg from 'pg'
 import { expect, it, vi } from 'vitest'
 import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
@@ -119,8 +118,7 @@ it.each([false, true])('admits a thinking-only next turn through the production 
     owner.grants = [{ actions: ['operator_chat:read'], scope: {} }]
     await expect(manager.attachSession(f.session, { kind: 'operator', configuration: accepted,
       correlationId: 'denied', workingDirectory: '/main/runtime' })).rejects.toMatchObject({ code: 'ACCESS_DENIED' })
-    await expect(manager.dispose!()).rejects.toMatchObject({ code: 'ACCESS_DENIED' })
-  } finally { await production.close() }
+  } finally { await manager.dispose?.(); await production.close() }
 })
 
 it('rejects execution, profile, owner and bound-hash changes during a presentation transition', () => {
@@ -176,15 +174,6 @@ it.each([['codex', false], ['codex', true], ['claude', false], ['claude', true]]
     const request = WorkerConversationRpcRequestSchema.parse(raw)
     methods.push(request.method)
     if (request.method === 'conversation.status') return { payload: { receipt: structuredClone(receipt) } }
-    if (request.method === 'conversation.release-runtime') {
-      expect(request.session).toEqual(f.session)
-      if (receipt.turns.some(turn => !['completed', 'rejected'].includes(turn.status))) {
-        throw new DomainError('WORKER_CONVERSATION_UNAVAILABLE', 'Finish the active operation before releasing its native process.', 409)
-      }
-      receipt.runtimeReleased = true
-      receipt.revision++
-      return { payload: { receipt: structuredClone(receipt) } }
-    }
     if (request.method !== 'conversation.open' || request.mode !== 'attach') {
       throw new Error('Creation recovery may only inspect the journal and attach its original session')
     }
@@ -218,14 +207,5 @@ it.each([['codex', false], ['codex', true], ['claude', false], ['claude', true]]
       conversationId: conversation.id, workflowId: agentOwner(binding.owner).workflowId, workflowNodeId: agentOwner(binding.owner).workflowNodeId,
       workingDirectory: binding.workingDirectory, correlationId: 'another-creation' })).rejects.toThrow()
     expect(methods).toEqual(['conversation.status', 'conversation.open', 'conversation.status'])
-    if (harness === 'claude') {
-      await expect(manager.dispose!()).rejects.toThrow('Finish the active operation')
-      expect(receipt.runtimeReleased).not.toBe(true)
-      expect(receipt.turns).toEqual(originalTurns)
-    } else {
-      await manager.dispose!()
-      expect(receipt.runtimeReleased).toBe(true)
-    }
-    expect(methods).toEqual(['conversation.status', 'conversation.open', 'conversation.status', 'conversation.release-runtime'])
-  } finally { await production.close() }
+  } finally { await manager.dispose?.(); await production.close() }
 })

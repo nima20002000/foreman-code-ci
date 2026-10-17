@@ -624,7 +624,7 @@ export class RemoteNativeSessionManager implements NativeHarnessSessionManager {
     if (!nativeTurnId) throw new Error('Original native turn is unavailable')
     await this.status(await this.request('settle-turn', { correlationId, nativeTurnId }, signal))
     this.streamHistory = undefined
-    return (await this.readHistoryObservation(session, correlationId, signal)).history
+    return this.readHistory(session, correlationId, signal)
   }
   async reconcileResponse(session: NativeSessionReference, response: Parameters<NonNullable<NativeHarnessSessionManager['reconcileResponse']>>[1], signal?: AbortSignal) {
     this.assertSession(session)
