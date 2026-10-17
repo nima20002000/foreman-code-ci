@@ -38,6 +38,7 @@ import { graphHeaders, graphRpc, graphRpcValue } from '../eng04-graph-compositio
 import { agent3Database, seedAgent3 } from './wave25Agent3.js'
 import { remoteChatProvider } from './remoteChatProvider.js'
 import { deferred } from './deferred.js'
+import { recordedConversationRuntime } from './recordedConversationRuntime.js'
 
 export async function remoteAgentConversation(harness: 'codex' | 'claude', location: 'worker' | 'main' = 'worker') {
   const db = await agent3Database()
@@ -50,6 +51,7 @@ export async function remoteAgentConversation(harness: 'codex' | 'claude', locat
   const seeded = await seedAgent3(db.pool, db.directory, fixture, { run: false })
   const node = seeded.version.definition.nodes[0]!
   const configuration = seeded.configurations.find(value => value.agentId === node.agentId)!
+  if (configuration.harness.harness === 'opencode') throw new Error('Supported chat harness required')
   const context = { workspaceId: configuration.workspaceId, workflowId: seeded.scope.workflowId,
     workflowNodeId: node.id, agentId: configuration.agentId }
   const access = new PostgresAccessService(db.pool)
@@ -67,6 +69,7 @@ export async function remoteAgentConversation(harness: 'codex' | 'claude', locat
   const journal = await RemoteOperationJournal.open(join(db.directory, 'worker-operations.json'),
     { initializeNewInstallation: true })
   const frames: WorkerConversationRpcRequest[] = []
+  const rpcErrors: Array<{ method: string; message: string }> = []
   const callbacks = workerConversationCallbacks({ currentBinding: () => recorded.connection,
     capture: () => ({ binding: recorded.connection, request: async (payload, options) => ({
       payload: await workerChats.bridge.handle(payload, recorded.connection,
@@ -113,34 +116,44 @@ export async function remoteAgentConversation(harness: 'codex' | 'claude', locat
   })
   const providers = [provider]
   const nativeManagers = new Map([[conversation.id, provider.manager]])
-  const nativeManager = async (conversationId: string) => {
+  const providerSources = new Map([[conversation.id, { provider, harness, accountId: configuration.harness.accountId }]])
+  const nativeManager = async (conversationId: string, selected = configuration) => {
+    if (selected.harness.harness === 'opencode') throw new Error('Supported chat harness required')
     const existing = nativeManagers.get(conversationId)
     if (existing) return existing
-    const created = await remoteChatProvider(harness, db.directory)
+    const previous = providerSources.get(conversationId)
+    if (previous?.harness === selected.harness.harness && previous.accountId === selected.harness.accountId) {
+      const manager = previous.provider.createManager()
+      nativeManagers.set(conversationId, manager)
+      return manager
+    }
+    const created = await remoteChatProvider(selected.harness.harness, db.directory)
     providers.push(created)
+    providerSources.set(conversationId, { provider: created, harness: selected.harness.harness,
+      accountId: selected.harness.accountId })
     nativeManagers.set(conversationId, created.manager)
     return created.manager
   }
   const host = new WorkerConversationHost({ ...callbacks, currentBinding: () => recorded.connection,
     journal: journal.conversations, authorize: callbacks.authorize,
-    allocate: async (binding, accepted) => {
-      const manager = await nativeManager(binding.owner.conversationId)
-      return { manager,
-      start: async ({ correlationId, instructionsDelivered }) => {
-        if (binding.owner.kind !== 'agent' || !('agentId' in accepted)) throw new Error('Agent fixture required')
-        return { kind: 'agent-chat', configuration: accepted, conversationId: binding.owner.conversationId,
-          workflowId: binding.owner.workflowId, workflowNodeId: binding.owner.workflowNodeId,
-          workingDirectory: binding.workingDirectory, correlationId, instructionsDelivered,
-          ...(binding.systemPrompt ? { systemPrompt: binding.systemPrompt } : {}) }
-      }, nativeOwner: async session => ({ ...recorded.nativeOwner, sessionId: session.nativeSessionId }),
-      close: async () => { await manager.dispose?.() },
-    } } })
+    ...recordedConversationRuntime({ connection: recorded.connection, journal: journal.conversations,
+      authorize: callbacks.authorize,
+      manager: async (binding, accepted) => {
+        if (!('agentId' in accepted)) throw new Error('Agent configuration required')
+        return nativeManager(binding.owner.conversationId, accepted)
+      }, released: id => { nativeManagers.delete(id) },
+    }) })
   const channel = { binding: recorded.connection, request: async (raw: unknown) => {
     const request = WorkerConversationRpcRequestSchema.parse(raw)
     frames.push(request)
     if (request.method === 'conversation.file-copy') return { payload: await workerFiles.copy(request, lifetime.signal) }
     if (request.method === 'conversation.initial-turn' || request.method === 'conversation.start-turn') source = request
-    return { payload: await host.handle(request, recorded.connection) }
+    try {
+      return { payload: await host.handle(request, recorded.connection) }
+    } catch (error) {
+      rpcErrors.push({ method: request.method, message: error instanceof Error ? error.message : String(error) })
+      throw error
+    }
   } }
   const profiles = { admit: async () => {
     const current = (await repository.get(conversation.id))!
@@ -209,6 +222,11 @@ export async function remoteAgentConversation(harness: 'codex' | 'claude', locat
   const send = async (content: string, delivery: 'completed' | 'failed' = 'completed',
     attachments: MessageAttachmentRef[] = [], conversationId = conversation.id) => {
     const requestId = randomUUID()
+    const diagnostic = setTimeout(() => console.info('Pending recorded Agent input', JSON.stringify({
+      requestId, frames: frames.slice(-24).map(frame => frame.method),
+      providers: providers.map(value => ({ calls: value.calls.slice(-12), prompts: value.prompts.length })),
+      rpcErrors: rpcErrors.slice(-8), events: events.slice(-6),
+    })), 5000)
     const terminal = deferred()
     const events: Parameters<Parameters<typeof chat.events.subscribe>[1]>[0][] = []
     const unsubscribe = chat.events.subscribe(conversationId, event => {
@@ -224,11 +242,15 @@ export async function remoteAgentConversation(harness: 'codex' | 'claude', locat
       const turn = await repository.turn(conversationId, requestId)
       expect(turn?.delivery, JSON.stringify(turn)).toBe(delivery)
       return { requestId, turn, events }
-    } finally { unsubscribe() }
+    } finally { clearTimeout(diagnostic); unsubscribe() }
   }
   return { db, provider, providers, configuration, context, conversation, repository, frames, chat, app,
     journal, writer, reader, call, value, send, receivedAttachments,
     drainWorker: () => host.drainForUpdate(),
+    async chatConfiguration() {
+      const row = (await repository.get(conversation.id))!
+      return workflows.getAgentConfiguration(row.agent_configuration_version_id)
+    },
     async snapshot() {
       const row = (await repository.get(conversation.id))!
       const native = row.native_session_id && row.provider_version ? await provider.manager.history({

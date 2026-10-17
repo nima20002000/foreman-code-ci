@@ -80,7 +80,7 @@ it('preserves remote Claude cold recovery, ownership and non-delivery through au
       })
       try {
         const result = await call(writer.token, 'agent_chat_send', { request })
-        expect(result.result?.isError).not.toBe(true)
+        expect(result.result?.isError, JSON.stringify(result)).not.toBe(true)
         await terminal.promise
         expect((await repository.turn(id, request.requestId))?.delivery).toBe(delivery)
         return result
