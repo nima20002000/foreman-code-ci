@@ -113,7 +113,7 @@ async function agentAncestor(pid: number, parents: ReadonlySet<number>): Promise
     if (client.credential || agentCommand(client.executable ?? '', client.arguments)) return true
     hiddenProcess ||= client.hidden
     browserProcess ||= client.executable !== undefined
-      && browserExecutables.some(pattern => pattern.test(client.executable!.replace(/ \(deleted\)$/, '')))
+      && browserExecutables.some(pattern => pattern.test(client.executable!))
     if (parents.has(pid)) break
     pid = client.parent
     if (!Number.isInteger(pid) || pid < 0) return true

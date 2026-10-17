@@ -59,23 +59,7 @@ function CloudRow({ cloud, fresh }: { cloud: CloudCiActivity; fresh: boolean }) 
     card={<div className="sidebar-hover-body">
       <CardHeader icon={<Cloud size={16} />} name={cloud.name} role="Cloud CI" />
       <p className="sidebar-hover-state" data-load={level}>{state}</p>
-      <CircleCredits cloud={cloud} />
     </div>} />
-}
-
-const NUMBER = new Intl.NumberFormat('en-US')
-
-/** CircleCI has no plan-balance API: the credits are the configured allowance minus this month's usage, so an estimate. */
-function CircleCredits({ cloud }: { cloud: CloudCiActivity }) {
-  if (cloud.provider !== 'circleci' || cloud.credits === undefined && cloud.creditsUnavailable === undefined) return null
-  const { credits } = cloud
-  if (!credits) return <>
-    <p className="sidebar-hover-note">Credits unavailable</p>
-    {cloud.creditsUnavailable && <p className="sidebar-hover-note">{cloud.creditsUnavailable}</p>}
-  </>
-  return <p className="sidebar-hover-note">
-    ≈ {NUMBER.format(credits.remaining)} of {NUMBER.format(credits.total)} credits left · updated {ago(Date.parse(credits.asOf))}
-  </p>
 }
 
 type RowLink = { to: '/settings/computers' } | { to: '/settings/computers/$deviceId'; params: { deviceId: string } }

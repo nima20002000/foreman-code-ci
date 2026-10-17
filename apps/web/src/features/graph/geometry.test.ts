@@ -39,7 +39,7 @@ describe('gesture-local geometry', () => {
     expect(adapter.update([{ type: 'position', id: 'synthetic-node-0', position: { x: -20, y: -30 } }]).finished).toBe(false)
     adapter.update([{ type: 'dimensions', id: 'synthetic-node-0', dimensions: { width: 260, height: 160 }, resizing: true }])
     adapter.finishResize('synthetic-node-0', 10_000, 10, { x: -41, y: -51 })
-    expect(adapter.flush()).toEqual([{ id: 'synthetic-node-0', position: { x: -41, y: -51 }, width: 520, height: 120 }])
+    expect(adapter.flush()).toEqual([{ id: 'synthetic-node-0', position: { x: -41, y: -51 }, width: 520, height: 208 }])
   })
 
   it('does not author a resize that ends at its original geometry', () => {

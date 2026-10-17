@@ -19,6 +19,7 @@
 .computer-details { margin: .25rem 0 1rem; }
 .computer-details > summary { cursor: pointer; color: var(--n-muted); padding: .35rem 0; border-radius: var(--n-radius-sm); }
 .computer-details > summary:focus-visible { outline: 2px solid var(--n-focus, currentColor); outline-offset: 2px; }
+.computer-hint { color: var(--n-muted); margin: .25rem 0 .75rem; max-width: 60ch; }
 
 /* Page layout: bounded, compact, task-first. */
 .computers-page { max-width: 52rem; display: block; }

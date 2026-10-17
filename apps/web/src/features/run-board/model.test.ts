@@ -6,21 +6,20 @@ import { savedEdgeCurve } from './curve'
 import { runA, runB } from './testFixtures'
 
 describe('saved board projection', () => {
-  it('preserves exact nodes, names, configuration pins and order, and lays them out as a hierarchy', () => {
+  it('preserves exact nodes, names, configuration pins, order, coordinates and sizes', () => {
     const result = projectRunBoard(runA)
     expect(result.nodes.map((node) => node.id)).toEqual(runA.nodes.map((node) => node.id))
     for (const [index, node] of result.nodes.entries()) {
       const saved = nativeNode(runA.nodes[index]!)
       expect(node.data.snapshot).toBe(saved)
+      expect(node.position).toEqual(saved.position)
       expect(node.position).not.toBe(saved.position)
-      expect(node.style).toEqual({ width: node.initialWidth, height: node.initialHeight })
+      expect(node.style).toEqual({ width: saved.size.width, height: saved.size.height })
+      expect(node.initialWidth).toBe(saved.size.width)
+      expect(node.initialHeight).toBe(saved.size.height)
       expect(node.ariaLabel).toContain(saved.name)
       expect(node.domAttributes?.title).toContain(saved.agentConfigurationVersionId)
     }
-    // X hands to Y and Y to Z: each sits in its own layer below the one before, whatever was saved.
-    const [x, y, z] = result.nodes.map((node) => node.position)
-    expect(x!.y).toBeLessThan(y!.y)
-    expect(y!.y).toBeLessThan(z!.y)
     expect(projectRunBoard(runB).nodes.map((node) => node.id)).not.toContain('node-y')
   })
   it('never installs mutable canvas geometry into the frozen snapshot', () => {

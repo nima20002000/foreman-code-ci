@@ -33,7 +33,7 @@ function fixture() {
   const row = { policy, configuration: approved, revoked_at: null as Date | null }
   const query = vi.fn(async () => ({ rows: [row] }))
   const sql = { query } as unknown as Pick<pg.Pool, 'query'>
-  return { ...f, configuration: f.configuration, approved, policy, placement, row, sql, query,
+  return { ...f, configuration: f.configuration, approved, policy, placement, row, sql,
     input: { sql, configuration: f.configuration, placement, workflowVersionId: 'saved-version',
       location: { runnerId: 'runner-local', rootPath: '/main/workspace' } } }
 }
@@ -63,18 +63,14 @@ it('rejects a foreign profile, unsafe subdirectory, changed approved roots and u
     harness: { ...f.configuration.harness, sandbox: 'workspace-write' } } })).rejects.toThrow('approved host settings')
 })
 
-it('preserves an unplaced local chat folder and uses the device workspace folder for a selected device profile', async () => {
+it('preserves an unplaced local chat folder and rejects borrowing it for a selected device profile', async () => {
   const f = fixture()
   const local = { ...f.configuration }
   delete local.harnessProfileSelection
   const input = { sql: f.sql, configuration: local, workflowVersionId: 'saved-version',
     location: { runnerId: 'runner-local', rootPath: '/main/workspace' } }
   expect(await resolveAgentChatDirectory(input)).toEqual({ workingDirectory: '/main/workspace' })
-  const device = await resolveAgentChatDirectory({ ...input, configuration: f.configuration })
-  expect(device.workingDirectory).toBe('/worker/project')
-  expect(device.directoryBinding?.placement).toMatchObject({ hostRef: f.approved.hostRef, cwdPolicy: 'project-root', relativeCwd: '' })
-  f.query.mockResolvedValueOnce({ rows: [] })
-  await expect(resolveAgentChatDirectory({ ...input, configuration: f.configuration })).rejects.toThrow('no workspace folder')
+  await expect(resolveAgentChatDirectory({ ...input, configuration: f.configuration })).rejects.toThrow('another execution host')
 })
 
 it('requires an explicitly approved read-write root for the Claude profile', async () => {
