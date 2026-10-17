@@ -4,7 +4,9 @@ export interface MaintenancePorts {
   environment: NodeJS.ProcessEnv
   /** Absolute executable path, or null when not installed. */
   find(name: string): Promise<string | null>
-  run(binary: string, args: string[], options: { signal: AbortSignal; timeoutMs: number }): Promise<{ code: number | null; stdout: string; stderr: string }>
+  run(binary: string, args: string[], options: {
+    signal: AbortSignal; timeoutMs: number; environment?: NodeJS.ProcessEnv | undefined
+  }): Promise<{ code: number | null; stdout: string; stderr: string }>
   exists(path: string): Promise<boolean>
   readText(path: string): Promise<string | null>
   /** Writes a private (0600) file atomically, creating its directory. */
