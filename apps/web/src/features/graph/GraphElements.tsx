@@ -1,3 +1,4 @@
+import { InfoHint } from '../../shared/ui/InfoHint'
 import { useHoverControls } from '../../shared/ui/useHoverControls'
 import { memo, useCallback, useContext, useRef, useState, type ReactNode } from 'react'
 import { UnsavedChangesContext } from '../../shared/ui/unsavedChanges'
@@ -85,7 +86,7 @@ export const AgentNode = memo(function AgentNode({ data: staticData, isConnectab
         chat={<AgentChatPanel name={data.label} role={facts.roleLabel} activity={nodeView.actionLabel} running={nodeView.working}
           onClose={() => void (async () => { if (!guard || await guard.surfaces()) setMenuOpen(false) })()} />}
         settings={readOnly || !data.onSaveSettings ? <>
-          <p className="agent-panel-note">A Run keeps the settings it started with. Change them on the workflow board.</p>
+          <h3>Saved Run settings<InfoHint label="Saved Run settings">A Run keeps the settings it started with. Change them on the workflow board.</InfoHint></h3>
           <AgentFacts items={agentSettingRows(data.agent)} />
         </> : <AgentSettingsForm
           embedded

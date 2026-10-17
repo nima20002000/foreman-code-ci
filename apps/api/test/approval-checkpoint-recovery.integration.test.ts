@@ -5,7 +5,7 @@ import { productionFixtures, response, stageDelivered, checkpointCut, restart, e
 describe.skipIf(!postgresEnabled)('approval checkpoint recovery', () => {
   const fixture = productionFixtures()
 
-  it('a cold restart closes the delivered native lifetime and cannot create a graph receipt', async () => {
+  it('recovers a delivered answer after restart and consumes its checkpoint exactly once without resending', async () => {
     const f = await fixture()
     await f.engine.start(f.f.run.id)
     await stageDelivered(f)
@@ -14,11 +14,24 @@ describe.skipIf(!postgresEnabled)('approval checkpoint recovery', () => {
     const successor = await restart(f)
     expect(f.provider.closedSessions.has(interaction!.nativeSessionId)).toBe(true)
     await successor.engine.resume(f.f.run.id)
-    expect(await f.receipts()).toEqual([])
-    expect((await f.saver.getTuple(cut.config))?.pendingWrites).toEqual(cut.pendingWrites)
-    expect(f.provider.counts).toMatchObject({ sessions: before.sessions, starts: before.starts, responses: 1 })
-    expect((await successor.runs.get(f.f.run.id))?.outcome).toBe('failed')
-    expect((await successor.repository.get(interaction!.id))?.status).toBe('canceled')
+    const receipts = await f.receipts()
+    const committed = (await f.saver.getTuple(cut.config))?.pendingWrites
+    expect(receipts).toEqual([expect.objectContaining({ entity_id: interaction!.id })])
+    expect(committed?.filter((write) => write[1] === '__resume__')).toHaveLength(1)
+    expect((await successor.runs.get(f.f.run.id))?.outcome).toBe('succeeded')
+    expect(await successor.repository.get(interaction!.id)).toMatchObject({
+      status: 'delivered', deliveryState: 'delivered',
+      nativeSessionId: interaction!.nativeSessionId,
+    })
+    for (let n = 0; n < 3; n++) {
+      await successor.engine.resume(f.f.run.id)
+      await successor.engine.resumeInteraction((await successor.repository.get(interaction!.id))!)
+    }
+    expect(await f.receipts()).toEqual(receipts)
+    expect((await f.saver.getTuple(cut.config))?.pendingWrites).toEqual(committed)
+    expect(f.provider.counts).toMatchObject({
+      sessions: before.sessions, starts: before.starts, responses: 1, attaches: before.attaches + 1,
+    })
   }, 60000)
 
   it('rolls back real task writes, outbox completion and receipt when the SQL consumer fails', async () => {

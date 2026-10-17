@@ -605,9 +605,7 @@ export abstract class CodexManagerTurns extends CodexManagerControls {
       const observed = await this.history(session)
       if (observed.responseDeliveries?.some(proof => proof.nativeRequestId === response.nativeRequestId)) return observed
     }
-    // The pinned Codex protocol's serverRequest/resolved also covers cleared
-    // requests. It is NOT an acknowledgement of an exact permission choice.
-    // Keep that uncertainty visible; do not synthesize a receipt or replay.
+    // A transport write or terminal clearing alone cannot acknowledge delivery.
     this.record(this.requireRuntime(session), 'interaction.reconciliation_unconfirmed', {
       nativeRequestId: response.nativeRequestId, nativeRequestType: response.nativeRequestType,
       detail: 'The provider has not supplied an exact response-delivery receipt.',

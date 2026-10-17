@@ -88,10 +88,7 @@ async function openActivities() {
   const trigger = screen.getByLabelText('Activities', { selector: 'button' })
   expect(trigger).toBeVisible()
   await userEvent.click(trigger)
-  const dialog = screen.getByLabelText('Activities', { selector: 'dialog' })
-  await waitFor(() => expect(dialog).toHaveAttribute('open'))
-  expect(dialog).toHaveRole('dialog')
-  return dialog
+  return screen.findByRole('region', { name: 'Activities popover' })
 }
 
 function installNodeInspection() {
@@ -303,7 +300,17 @@ describe('Workspace Board route, editor and HTTP boundary', { timeout: 20_000 },
     await user.click(actions.getByLabelText('Open X before rename settings', { selector: 'button' }))
     const settings = await screen.findByLabelText('X before rename settings')
     expect(settings).toHaveRole('dialog')
-    expect(within(settings).getByText(/This is a saved Run Agent/)).toBeVisible()
+    expect(within(settings).queryByText(/This is a saved Run Agent/)).not.toBeInTheDocument()
+    const settingsHint = within(settings).getByRole('button', { name: 'About Settings' })
+    await user.hover(settingsHint)
+    expect(screen.getByRole('tooltip')).toHaveTextContent(
+      'This is a saved Run Agent. Return to the draft to edit settings for future work. Chat does not change this Run.',
+    )
+    await user.click(settingsHint)
+    expect(settingsHint).toHaveFocus()
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+    expect(settings).toBeVisible()
     await user.keyboard('{Escape}')
     await waitFor(() => expect(settings).not.toBeInTheDocument())
     await user.click(actions.getByLabelText('Open X before rename chat', { selector: 'button' }))
@@ -358,7 +365,7 @@ describe('Workspace Board route, editor and HTTP boundary', { timeout: 20_000 },
     expect(canvas).not.toBeVisible()
     const activities = await openActivities()
     expect(await within(activities).findByText('History for run-a')).toBeVisible()
-    await userEvent.click(within(activities).getByRole('button', { name: 'Close runs' }))
+    await userEvent.click(within(activities).getByRole('button', { name: 'Close Activities' }))
     fireEvent.keyDown(window, { key: 'z', ctrlKey: true })
     fireEvent.keyDown(window, { key: 'y', metaKey: true })
     expect(useGraphDraftStore.getState().nextDrafts[key]!.graph).toBe(graph)
@@ -378,20 +385,28 @@ describe('Workspace Board route, editor and HTTP boundary', { timeout: 20_000 },
     expect(screen.queryByRole('region', { name: 'Selected Run pinned topology' })).not.toBeInTheDocument()
   }, 20_000)
 
-  it('restores the URL-selected Run in a fresh Router and QueryClient, with back/forward selection', async () => {
+  it.each([0, 1_100])('restores the URL-selected Run in a fresh Router and QueryClient, with back/forward selection and %s ms context reads', async contextDelay => {
     const first = await mount()
     await authoring(); await choose('run-a'); await savedY()
     await act(async () => { first.router.history.back() })
     await waitFor(() => expect(screen.getByLabelText('Editable workflow graph')).toBeVisible())
     await act(async () => { first.router.history.forward() })
     await savedY()
+    await waitFor(() => expect(first.router.state.location.search.runId).toBe('run-a'))
     const href = first.router.history.location.href
     first.unmount(); first.client.clear(); useGraphDraftStore.getState().clearAllDrafts()
+    if (contextDelay) server.use(http.get('/api/management/workspaces/:workspaceId/agents', async () => {
+      await delay(contextDelay)
+    }))
     const refreshed = await mount(href)
+    await waitForBoardContext(refreshed.client)
     await savedY()
-    expect(refreshed.router.state.location.search.runId).toBe('run-a')
-    expect(screen.getByRole('region', { name: 'Workflow authoring' })).toBeVisible()
+    await waitFor(() => expect(refreshed.router.state.location.search).toMatchObject({
+      runId: 'run-a', workflowVersionId: 'version-a', executionSemanticsVersion: 3,
+    }))
+    expect(await screen.findByRole('region', { name: 'Workflow authoring' })).toBeVisible()
     expect(screen.getByLabelText('Editable workflow graph')).not.toBeVisible()
+    expect(writes).toEqual([])
   })
 
   it.each([3_200, 6_400])('refreshes the retained draft context without replacing local edits over %s ms while a Run is pinned', async (pollingTime) => {
@@ -502,14 +517,14 @@ describe('Workspace Board route, editor and HTTP boundary', { timeout: 20_000 },
     expect(router.state.location.pathname).toBe('/workspaces/workspace-1')
     expect(router.state.location.search).toMatchObject({ runId: 'run-a', workflowVersionId: 'version-a',
       executionSemanticsVersion: 3, runNodeId: 'node-x', agentId: 'agent-researcher' })
-    const linkedActivities = await screen.findByRole('dialog', { name: 'Activities' })
-    await userEvent.click(within(linkedActivities).getByRole('button', { name: 'Close runs' }))
+    const linkedActivities = await screen.findByRole('region', { name: 'Activities popover' })
+    await userEvent.click(within(linkedActivities).getByRole('button', { name: 'Close Activities' }))
     const hash = router.history.location.hash
     await choose('run-b')
     await screen.findByRole('button', { name: 'Inspect Run node X in B' })
     const activities = await openActivities()
     await within(activities).findByText('History for run-b')
-    await userEvent.click(within(activities).getByRole('button', { name: 'Close runs' }))
+    await userEvent.click(within(activities).getByRole('button', { name: 'Close Activities' }))
     expect(router.state.location.pathname).toBe('/workspaces/workspace-1')
     expect(router.state.location.search).toMatchObject({ workflowId: scope.workflowId, runId: 'run-b', workflowVersionId: 'version-b', executionSemanticsVersion: 3, agentId: 'agent-researcher' })
     expect(router.state.location.search.selectedRunId).toBeUndefined()
