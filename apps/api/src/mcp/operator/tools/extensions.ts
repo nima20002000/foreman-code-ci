@@ -21,7 +21,7 @@ export const extendedOperatorTools = [
     name: 'harness_options_get',
     requires: [['harnesses:read', 'global']],
     enabled: s => !!s.extensions?.native,
-    description: "Discover authenticated native model IDs, release dates or native default preference, advertised context windows, supported efforts/variants, native Agents and field support. Claude uses an owned zero-input SDK control query without a model turn; installation and execution qualification remain separate. No secrets are returned.", inputSchema: contracts.HarnessOptionsInputSchema, outputSchema: contracts.HarnessOptionsResultSchema,
+    description: "Discover authenticated native model IDs, release dates or native default preference, supported efforts/variants, native Agents and field support. Claude uses an owned zero-input SDK control query without a model turn; installation and execution qualification remain separate. No secrets are returned.", inputSchema: contracts.HarnessOptionsInputSchema, outputSchema: contracts.HarnessOptionsResultSchema,
     annotations: {readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false},
     run: async (context, input) => {
     requireAuthorization(context.principal, 'harnesses:read')

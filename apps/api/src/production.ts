@@ -1844,9 +1844,6 @@ function configureOperatorChat(composition: ProductionComposition) {
     if (binding) operatorAccountBindings.set(conversationId, binding)
     else operatorAccountBindings.delete(conversationId)
   }
-  resolveOperatorManager.modelOptions = async configuration =>
-    configuration.harness === 'opencode' ? []
-      : (await composition.nativeConfigurations.options(configuration.harness)).models
   resolveOperatorManager.recoverCompaction = recoverChatCompaction
   composition.chat = new OperatorChatService(
     operatorConversations, operators,
@@ -1975,9 +1972,6 @@ function configureAgentChat(composition: ProductionComposition) {
     }
     return undefined
   }
-  resolveAgentChatManager.modelOptions = async configuration =>
-    configuration.harness === 'opencode' ? []
-      : (await composition.nativeConfigurations.options(configuration.harness)).models
   resolveAgentChatManager.release = (conversationId) => { agentChatManagers.delete(conversationId) }
   composition.agentChat = new AgentChatService(database.pool, agentConversations,
     new PostgresOperatorConversationRepository(database.pool, accountConfigurations), workflows, runs, resolveAgentChatManager, config.harnesses.workspaceRoot)
@@ -2806,10 +2800,6 @@ async function initializeComputerServices(composition: ProductionComposition, ma
   const discoverClouds = () => circleOrgs.refresh()
   const circleCredits = new CircleCreditUsage(new CloudHttp(systemHostCiPorts(), 'circleci'), {
     allowance: async () => (await composition.foundationSettings.getCircleCreditAllowance()).value,
-    primaryOwner: async () => {
-      const owners = new Set((await workspaceMirrorList(database.pool)()).map(mirror => mirror.slice(0, mirror.indexOf('/')).toLowerCase()))
-      return owners.size === 1 ? [...owners][0]! : null
-    },
   })
   runtimeServices.computerActivity = new ComputerActivityService(database.pool, machine.installationId,
     id => deviceRuntime.presenceFor(id), commands, clouds, circleCredits)

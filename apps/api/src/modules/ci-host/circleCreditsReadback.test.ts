@@ -27,20 +27,24 @@ const slot = (account: string | undefined, index: number): HostCiComputer => ({
 const github: HostCiComputer = { key: 'fixture-main:cloud:github:0', label: 'GitHub Actions 1', priority: 30, userSystemd,
   hostRef: { kind: 'cloud', mainId: 'fixture-main', provider: 'github', slot: 0 } }
 
-it('reads the estimated CircleCI credits per account through authenticated ci_computers_list from one cached usage read', async () => {
+it('reads the estimated CircleCI credits per organization through authenticated ci_computers_list from one cached usage read', async () => {
   const requests: string[] = []
   const circleFetch: typeof fetch = async (input, init) => {
     const url = new URL(String(input))
     requests.push(`${init?.method ?? 'GET'} ${url.pathname}`)
     const json = (body: unknown) => new Response(JSON.stringify(body))
-    if (url.pathname === '/api/v2/me/collaborations') return json([{ id: 'org-acme', name: 'acme', vcs_type: 'github' }])
-    if (init?.method === 'POST') return json({ usage_export_job_id: 'job-1', state: 'created' })
-    if (url.pathname.endsWith('/job-1')) return json({ state: 'completed', download_urls: ['https://signed.example/a.csv'] })
-    return new Response('project_name,total_credits\nsite,5690\n')
+    if (url.pathname === '/api/v2/me/collaborations') {
+      return json([{ id: 'org-acme', name: 'acme', slug: 'gh/acme', vcs_type: 'github' },
+        { id: 'org-beta', name: 'beta', slug: 'gh/beta', vcs_type: 'github' }])
+    }
+    if (init?.method === 'POST') return json({ usage_export_job_id: `job-${url.pathname.split('/')[4]}`, state: 'created' })
+    if (url.pathname.includes('/usage_export_job/job-org-beta')) return json({ state: 'failed', error_reason: 'query failed' })
+    if (url.pathname.includes('/usage_export_job/')) return json({ state: 'completed', download_urls: ['https://signed.example/a.csv'] })
+    return new Response('PROJECT_NAME,TOTAL_CREDITS\nsite,5690\n')
   }
-  const allowance: CircleCreditAllowance = { defaultMonthlyCredits: 30000, accounts: {} }
+  const allowance: CircleCreditAllowance = { defaultMonthlyCredits: 400000, accounts: {} }
   const credits = new CircleCreditUsage(new CloudHttp(ports, 'circleci', { fetch: circleFetch, circleToken: async () => 'fixture-token' }),
-    { allowance: async () => allowance, primaryOwner: async () => null }, { pollMs: 1 })
+    { allowance: async () => allowance }, { pollMs: 1 })
   const endpoint: HostCiEndpoint = {
     computers: async () => [slot('acme', 0), slot('acme', 1), slot(undefined, 0), github],
     request: async () => ({ operation: 'status', ready: true, reasons: [], cpuCount: 4, memoryBytes: 2 ** 30,
@@ -78,17 +82,20 @@ it('reads the estimated CircleCI credits per account through authenticated ci_co
     expect(first.find(computer => computer.label === 'CircleCI acme 1')).toMatchObject({ credits: null,
       creditsUnavailable: expect.any(String) })
     await vi.waitFor(async () => {
-      expect((await list()).find(computer => computer.label === 'CircleCI acme 1')?.credits).toMatchObject(
-        { total: 30000, used: 5690, remaining: 24310 })
+      expect((await list()).find(computer => computer.label === 'CircleCI acme 1')?.credits?.total?.remaining).toBe(394310)
     })
+    const asOf = expect.any(String)
+    const expected = { orgs: [
+      { org: 'acme', credits: { total: 400000, used: 5690, remaining: 394310, asOf } },
+      { org: 'beta', credits: null, unavailable: 'CircleCI usage export failed: query failed' },
+    ], total: { total: 400000, used: 5690, remaining: 394310, asOf } }
     const computers = await list()
-    for (const label of ['CircleCI acme 1', 'CircleCI acme 2']) {
-      expect(computers.find(computer => computer.label === label)?.credits).toMatchObject({ remaining: 24310 })
+    // Every CircleCI entry reports the login's organizations; one that cannot be read is unavailable, not a number.
+    for (const label of ['CircleCI acme 1', 'CircleCI acme 2', 'CircleCI primary 1']) {
+      expect(computers.find(computer => computer.label === label)?.credits).toEqual(expected)
     }
-    // The primary org's owner is unknown here, and GitHub Actions has no CircleCI credits.
-    expect(computers.find(computer => computer.label === 'CircleCI primary 1')).toMatchObject({ credits: null })
     expect(computers.find(computer => computer.label === 'GitHub Actions 1')).not.toHaveProperty('credits')
-    expect(requests.filter(request => request.startsWith('POST'))).toHaveLength(1)
+    expect(requests.filter(request => request.startsWith('POST'))).toHaveLength(2)
   } finally {
     await ci.close()
     await app.close()
