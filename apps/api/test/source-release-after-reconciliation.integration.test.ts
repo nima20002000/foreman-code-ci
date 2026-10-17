@@ -8,6 +8,7 @@ import { PrivateSourceMaterializer, reconcileSourcePreparation, releaseMateriali
 import { createSourceManifest, sourceSha256 } from '../src/modules/sources/manifest.js'
 import { identity, openPrivateRoot } from '../src/modules/sources/privateFilesystem.js'
 import { sourceBindingHash } from '../src/modules/sources/bindingHash.js'
+import { sourceWorkingTreePath } from '../src/modules/sources/sourceTreePaths.js'
 
 const directories: string[] = []
 afterEach(async () => {
@@ -61,7 +62,10 @@ it('releases an acknowledged receipt after unacknowledged preparation reconcilia
   await expect(releaseMaterializationClaim(f.receipt, async () => 'released')).resolves.toBeUndefined()
   await expect(releaseMaterializationClaim(f.receipt, async () => 'released')).resolves.toBeUndefined()
   expect(await f.materializer.prepare(successorInput)).toEqual(successor)
-  expect(await readFile(join(f.root, f.receipt.materializationId, 'tree/app.txt'))).toEqual(f.bytes)
+  await expect(readFile(join(f.root, f.receipt.materializationId, 'tree/app.txt')))
+    .rejects.toMatchObject({ code: 'ENOENT' })
+  expect(await readFile(join(sourceWorkingTreePath(f.receipt), 'app.txt'))).toEqual(f.bytes)
+  expect(await readFile(join(sourceWorkingTreePath(successor), 'app.txt'))).toEqual(f.bytes)
   await releaseMaterializationClaim(successor, async () => 'released')
 })
 

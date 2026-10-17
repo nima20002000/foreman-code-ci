@@ -3,6 +3,7 @@ import {
   AgentChatContextSchema, AgentChatExecutionActivityPageSchema, AgentChatHistoryPageSchema, AgentChatQuerySchema, AgentChatStateSchema,
   AgentChatStateResponseSchema, CancelQueuedAgentChatTurnRequestSchema, EnsureAgentChatConversationRequestSchema, InterruptAgentChatRequestSchema,
   RespondAgentChatInteractionRequestSchema, SendAgentChatMessageRequestSchema, SendAgentChatMessageResponseSchema,
+  AgentChatResetResponseSchema,
   type AgentChatContext, type SendAgentChatMessageRequest,
 } from '@foreman-code/contracts/agent-chat'
 import { OperatorActivityCursorSchema } from '@foreman-code/contracts'
@@ -31,6 +32,16 @@ export const agentChatApi = {
   send(workspaceId: string, input: SendAgentChatMessageRequest, options?: RequestOptions) {
     return apiClient.request(`${agentChatRoot(workspaceId)}/messages`, SendAgentChatMessageResponseSchema,
       { ...options, method: 'POST', body: SendAgentChatMessageRequestSchema.parse(input) })
+  },
+  startNew(context: AgentChatContext, expectedConversationId: string | null, requestId: string) {
+    const { workspaceId, ...query } = AgentChatContextSchema.parse(context)
+    return apiClient.request(`${agentChatRoot(workspaceId)}/messages`, AgentChatResetResponseSchema, {
+      method: 'POST', body: SendAgentChatMessageRequestSchema.parse({ context: query, expectedConversationId,
+        requestId, content: '/new', intent: 'next_turn' }),
+    })
+  },
+  readConversation(workspaceId: string, conversationId: string, options?: RequestOptions) {
+    return apiClient.request(agentChatConversationPath(workspaceId, conversationId), AgentChatStateSchema, options)
   },
   /** The stored conversation record (no native session) that a first attachment needs to upload into. */
   async ensureConversation(context: AgentChatContext, executionId?: string, options?: RequestOptions) {

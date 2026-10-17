@@ -44,6 +44,7 @@ export function agentActivityScope(loaded: Pick<State, 'row' | 'selection'>): Ac
 
 /** Agent rows in the shared conversation table. Operator columns stay null. */
 export interface AgentConversationRow {
+  worker_conversation_binding?: unknown
   providerAccountBinding?: AcceptedProviderAccountBinding
   id: string
   agent_key: string
@@ -66,6 +67,10 @@ export interface AgentConversationRow {
   pending_interaction: PendingNativeInteraction | null
   last_result: ExecutionResult | null
   record: {
+    workerSessionGeneration?: string
+    previousConversationId?: string
+    archived?: boolean
+    freshSession?: boolean
     origin: AgentChatOrigin; workingDirectory: string; runtimeDirectory: string; startupDelivered?: boolean; sessionUnavailable?: string
     directoryBinding?: AgentChatDirectoryBinding
     systemPrompt?: PromptSettingSnapshot
@@ -75,7 +80,6 @@ export interface AgentConversationRow {
     nativeNonSubmission?: NativeNonSubmission
     startupReceipt?: { requestId: string; nativeSessionId: string }
     sourceConfigurationVersionId?: string
-    workerGeneration?: string
     handoffContext?: string
   }
   created_at: Date
@@ -125,6 +129,8 @@ export function agentConversation(row: AgentConversationRow): AgentConversation 
     id: row.id, workspaceId: row.workspace_id, workflowId: row.workflow_id, workflowNodeId: row.workflow_node_id,
     agentId: row.agent_id, agentConfigurationVersionId: row.agent_configuration_version_id, harness: row.harness,
     origin: row.record.origin,
+    ...(row.record.previousConversationId ? { previousConversationId: row.record.previousConversationId } : {}),
+    ...(row.record.archived ? { archived: true } : {}),
     ...(row.providerAccountBinding ? { providerAccountBinding: row.providerAccountBinding } : {}),
     ...(row.record.systemPrompt ? { systemPrompt: row.record.systemPrompt } : {}),
     nativeSession: row.native_session_id && row.provider_version
@@ -203,8 +209,8 @@ export class PostgresAgentChatRepository {
       `select * from operator_conversations where kind='agent' and agent_key=$1 and deleted_at is null`, [key])).rows[0])
   }
   async ensureForControls(key: string, create: NewAgentConversation,
-    authorize: (client: pg.PoolClient) => Promise<void>): Promise<AgentConversationRow> {
-    return withTransaction(this.pool, async (client) => {
+    authorize: (client: pg.PoolClient) => Promise<void>, client?: pg.PoolClient): Promise<AgentConversationRow> {
+    const ensure = async (client: pg.PoolClient) => {
       await client.query('select pg_advisory_xact_lock(hashtext($1))', [`agent-chat:${key}`])
       await authorize(client)
       let row = await this.byKey(key, client)
@@ -225,12 +231,36 @@ export class PostgresAgentChatRepository {
         await this.acceptAccount(client, row)
       }
       return row
-    })
+    }
+    return client ? ensure(client) : withTransaction(this.pool, ensure)
   }
 
   async get(id: string, query: Queryable = this.pool): Promise<AgentConversationRow | undefined> {
     return this.accountReadback(query, (await query.query<AgentConversationRow>(
       `select * from operator_conversations where kind='agent' and id=$1 and deleted_at is null`, [id])).rows[0])
+  }
+
+  async replaceConversation(client: pg.PoolClient, row: AgentConversationRow): Promise<string> {
+    await client.query('select pg_advisory_xact_lock(hashtext($1))', [`agent-chat:${row.agent_key}`])
+    const current = (await client.query<AgentConversationRow>(
+      "select * from operator_conversations where id=$1 and kind='agent' and deleted_at is null for update", [row.id])).rows[0]
+    if (!current || current.agent_key !== row.agent_key || current.record.archived) {
+      throw new DomainError('AGENT_CHAT_CONTEXT_STALE', 'Refresh before starting a new conversation.', 409)
+    }
+    const id = randomUUID()
+    const { origin, workingDirectory, directoryBinding, systemPrompt, sourceConfigurationVersionId } = current.record
+    await client.query(`update operator_conversations set agent_key=$2,
+      record=record || '{"archived":true}'::jsonb,revision=revision+1 where id=$1`, [row.id, `history:${row.id}`])
+    await client.query(`insert into operator_conversations
+      (id,kind,agent_key,workspace_id,workflow_id,workflow_node_id,agent_id,agent_configuration_version_id,
+       origin_run_id,origin_execution_id,harness,record)
+      values($1,'agent',$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb)`,
+    [id,current.agent_key,current.workspace_id,current.workflow_id,current.workflow_node_id,current.agent_id,
+      current.agent_configuration_version_id,current.origin_run_id,current.origin_execution_id,current.harness,
+      JSON.stringify({ origin, workingDirectory, runtimeDirectory: '', directoryBinding, systemPrompt,
+        sourceConfigurationVersionId, previousConversationId: row.id, freshSession: true })])
+    await this.acceptAccount(client, (await this.get(id, client))!)
+    return id
   }
   /** Conversations with an in-flight or queued turn, oldest first. */
   async open(): Promise<AgentConversationRow[]> {
@@ -496,7 +526,7 @@ export class PostgresAgentChatRepository {
       if (options.directoryBinding) record.directoryBinding = options.directoryBinding
       if (row.origin_run_id) record.sourceConfigurationVersionId ??= row.agent_configuration_version_id
       if (options.replaceSession) {
-        if (row.native_session_id) record.workerGeneration = randomUUID()
+        record.workerSessionGeneration = configuration.id
         const history = await client.query<{ role: string; content: string }>(`select role,content
           from operator_conversation_messages where conversation_id=$1 and role in ('user','assistant')
           and sequence < (select sequence from operator_conversation_messages

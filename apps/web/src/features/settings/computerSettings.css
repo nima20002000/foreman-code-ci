@@ -81,3 +81,21 @@
   border: 1px dashed var(--n-border-strong); border-radius: var(--n-radius-lg); background: var(--n-surface); font-size: .85rem; }
 .computer-action-card h2 { margin: 0; font-size: .9rem; font-weight: 600; }
 .computer-action-card p { margin: 0; color: var(--n-muted); }
+
+.circleci-summary { margin-top: 1.25rem; }
+.circleci-summary > .n-card { padding: 1rem; }
+.circleci-summary-header, .circleci-account > header, .circleci-org-heading {
+  display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .6rem;
+}
+.circleci-summary-header h2 { margin: 0; font-size: 1rem; }
+.circleci-summary-header > svg { color: var(--n-muted); }
+.circleci-accounts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.25rem; margin-top: 1rem; }
+.circleci-account h3 { margin: 0; }
+.circleci-account-label { margin: .35rem 0 .5rem; font-weight: 500; }
+.circleci-orgs { list-style: none; padding: 0; margin: 0; }
+.circleci-orgs > li { border-top: 1px solid var(--n-border); padding: .65rem 0; }
+.circleci-org-heading > strong { flex: 1 1 8rem; overflow-wrap: anywhere; }
+.circleci-orgs p { margin: .2rem 0 0; font-size: .85rem; }
+.circleci-summary .circleci-summary-note { color: var(--n-muted); font-size: .8rem; margin: .35rem 0 0; }
+.circleci-summary > .n-card > .circleci-summary-note { border-top: 1px solid var(--n-border); padding-top: .75rem; }
+@media (max-width: 640px) { .circleci-accounts { grid-template-columns: minmax(0, 1fr); gap: 1rem; } }

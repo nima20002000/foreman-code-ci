@@ -30,21 +30,19 @@ const WorkerConversationOwnerSchema = z.discriminatedUnion('kind', [
     workflowId: id, workflowNodeId: id }).strict(),
 ])
 export const WorkerConversationBindingSchema = z.object({
-  generation: z.uuid().optional(),
+  sessionGeneration: id.optional(),
   accountBinding: AcceptedProviderAccountBindingSchema.optional(),
   owner: WorkerConversationOwnerSchema,
   directoryBinding: AgentChatDirectoryBindingSchema.optional(),
   systemPrompt: PromptSettingSnapshotSchema.optional(),
   sourceExecution: z.object({ executionId: id, placement: z.lazy(() => AcceptedNodePlacementSchema),
     workingTree: VerifiedSourceWorkingTreeSchema }).strict().optional(),
+  sourceConfigurationVersionId: id.optional(),
   harness: z.lazy(() => AgentHarnessSchema),
   profile: HarnessProfileSelectionSchema,
   workingDirectory: directory,
   appMcpAccess: z.enum(['scoped', 'none']),
 }).strict().superRefine((value, context) => {
-  if (value.generation && value.owner.kind !== 'agent') {
-    context.addIssue({ code: 'custom', message: 'Replacement generations belong only to Agent chat.' })
-  }
   if (value.profile.target.hostRef.kind !== 'device') {
     context.addIssue({ code: 'custom', message: 'A worker conversation requires its selected device profile.' })
   }
@@ -65,9 +63,12 @@ export const WorkerConversationBindingSchema = z.object({
     const host = target.hostRef
     if (value.workingDirectory !== value.sourceExecution.workingTree.canonicalCwd
       || owner.kind !== 'agent' || payload.kind !== 'agent'
-      || payload.agentId !== owner.agentId || payload.agentConfigurationVersionId !== owner.configurationVersionId
+      || payload.agentId !== owner.agentId
+      || payload.agentConfigurationVersionId !== (value.sourceConfigurationVersionId ?? owner.configurationVersionId)
+      || value.sourceConfigurationVersionId === owner.configurationVersionId
       || placement.nodeId !== owner.workflowNodeId || payload.driverId !== value.harness
-      || value.profile.instanceId !== payload.instanceId || value.profile.instanceRevision !== payload.instanceRevision
+      || value.profile.instanceId !== payload.instanceId
+      || !value.sourceConfigurationVersionId && value.profile.instanceRevision !== payload.instanceRevision
       || host.kind !== 'device' || placement.hostRef.kind !== 'device'
       || host.mainId !== placement.hostRef.mainId || host.deviceId !== placement.hostRef.deviceId
       || target.applicationInstallationId !== placement.registration?.workerInstallationId
@@ -75,6 +76,9 @@ export const WorkerConversationBindingSchema = z.object({
       || target.installationFingerprint !== payload.installationFingerprint) {
       context.addIssue({ code: 'custom', message: 'The chat profile must match its accepted Agent execution placement.' })
     }
+  }
+  if (value.sourceConfigurationVersionId && !value.sourceExecution) {
+    context.addIssue({ code: 'custom', message: 'A continued configuration requires its original Run working tree.' })
   }
 })
 export type WorkerConversationBinding = z.infer<typeof WorkerConversationBindingSchema>
@@ -87,7 +91,7 @@ export type WorkerConversationConfiguration = z.infer<typeof WorkerConversationC
 export function workerConversationProfileSelection(binding: WorkerConversationBinding,
   configuration: WorkerConversationConfiguration) {
   const parsed = WorkerConversationBindingSchema.parse(binding)
-  return parsed.sourceExecution ? parsed.profile : configuration.harnessProfileSelection
+  return parsed.sourceExecution && !parsed.sourceConfigurationVersionId ? parsed.profile : configuration.harnessProfileSelection
 }
 
 const WorkerConversationTurnSchema = z.object({

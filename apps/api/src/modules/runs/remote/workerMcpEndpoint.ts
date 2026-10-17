@@ -78,16 +78,12 @@ export const WORKER_MCP_LEASE_RENEWAL_WINDOW_MS = 2 * 60_000
 interface WorkerMcpEndpointOptions {
   launcher: string
   signal: AbortSignal
+  /** Uses the relay expiry's clock domain; remote workflows supply sampled Main time. */
+  now?: () => number
   onArtifactPublication?(input: { transferId: string; publication: AgentFilePublishInput }, result: AgentFilePublishResult): void
 }
-export interface WorkerMcpEndpoint {
-  endpoint: string
-  bindRelay(relay: WorkerMcpRelay): Promise<void>
-  refreshLease(): Promise<string>
-  close(): Promise<void>
-}
 
-export async function createWorkerMcpEndpoint(input: WorkerMcpEndpointOptions & { relay: WorkerMcpRelay }): Promise<WorkerMcpEndpoint> {
+export async function createWorkerMcpEndpoint(input: WorkerMcpEndpointOptions & { relay: WorkerMcpRelay }) {
   const endpoint = await createUnboundWorkerMcpEndpoint(input)
   try { await endpoint.bindRelay(input.relay); return endpoint }
   catch (error) { await endpoint.close(); throw error }
@@ -96,6 +92,7 @@ export async function createWorkerMcpEndpoint(input: WorkerMcpEndpointOptions & 
 /** Inspection keeps a stable native URL; requests remain unauthorized until Main supplies its scoped lease. */
 export async function createUnboundWorkerMcpEndpoint(input: WorkerMcpEndpointOptions) {
   input.signal.throwIfAborted()
+  const now = input.now ?? (() => Date.now())
   const lifetime = new AbortController()
   const signal = AbortSignal.any([input.signal, lifetime.signal])
   const log = componentLogger('harness')
@@ -112,7 +109,7 @@ export async function createUnboundWorkerMcpEndpoint(input: WorkerMcpEndpointOpt
     const task = (async () => {
       response.setHeader('cache-control', 'no-store')
       const lease = bound
-      if (closing || signal.aborted || !lease || Date.parse(lease.expiresAt) <= Date.now()
+      if (closing || signal.aborted || !lease || Date.parse(lease.expiresAt) <= now()
         || !timingSafeEqual(lease.digest, createHash('sha256').update(request.headers.authorization ?? '').digest())) {
         response.writeHead(401); response.end(); return
       }
@@ -180,14 +177,14 @@ export async function createUnboundWorkerMcpEndpoint(input: WorkerMcpEndpointOpt
     const task = updates.then(async () => {
       signal.throwIfAborted()
       const token = readProductEnvironment(relay.environment.variables, 'MCP_TOKEN')
-      if (closing || !token || !Number.isFinite(Date.parse(relay.expiresAt)) || Date.parse(relay.expiresAt) <= Date.now()) {
+      if (closing || !token || !Number.isFinite(Date.parse(relay.expiresAt)) || Date.parse(relay.expiresAt) <= now()) {
         throw new Error('The original Main MCP lease is unavailable.')
       }
       renewal?.abort()
       bound = undefined
       await unregister?.()
       unregister = undefined
-      const release = await registerAppRoute(token, endpoint, relay.expiresAt, input.launcher)
+      const release = await registerAppRoute(token, endpoint, relay.expiresAt, input.launcher, { now })
       if (closing || signal.aborted) {
         await release()
         throw new Error('The private worker MCP listener closed.')
@@ -210,7 +207,7 @@ export async function createUnboundWorkerMcpEndpoint(input: WorkerMcpEndpointOpt
     const task = updates.then(async () => {
       const lease = bound
       if (closing || !lease?.relay.refresh) throw new Error('The original worker MCP endpoint is closing.')
-      if (Date.parse(lease.expiresAt) - Date.now() > WORKER_MCP_LEASE_RENEWAL_WINDOW_MS) return lease.expiresAt
+      if (Date.parse(lease.expiresAt) - now() > WORKER_MCP_LEASE_RENEWAL_WINDOW_MS) return lease.expiresAt
       // Main refused this lease for good (for example it ended the attempt and revoked the credential): asking
       // again cannot succeed, so later renewals report the logged refusal without another Main request.
       if (lease.refused) { repeatedRefusal = true; throw lease.refused }
@@ -221,11 +218,11 @@ export async function createUnboundWorkerMcpEndpoint(input: WorkerMcpEndpointOpt
       }
       signal.throwIfAborted()
       if (closing || bound !== lease) throw new Error('The original worker MCP endpoint is closing.')
-      if (!Number.isFinite(Date.parse(renewedExpiry)) || Date.parse(renewedExpiry) <= Date.now()) {
+      if (!Number.isFinite(Date.parse(renewedExpiry)) || Date.parse(renewedExpiry) <= now()) {
         throw new Error('The renewed Main MCP lease is unavailable.')
       }
       const token = readProductEnvironment(lease.relay.environment.variables, 'MCP_TOKEN')!
-      unregister = await registerAppRoute(token, endpoint, renewedExpiry, input.launcher)
+      unregister = await registerAppRoute(token, endpoint, renewedExpiry, input.launcher, { now })
       lease.expiresAt = renewedExpiry
       if (renewal?.signal.aborted) renewWhileBound(lease)
       log.debug({ agentId: lease.relay.environment.agentId, launcher: input.launcher, expiresAt: renewedExpiry },
@@ -249,7 +246,7 @@ export async function createUnboundWorkerMcpEndpoint(input: WorkerMcpEndpointOpt
     renewal = owner
     void renewOwnedLeases({ signal: AbortSignal.any([owner.signal, signal]),
       leases: [{ name: 'Worker MCP route', renewWithinMs: WORKER_MCP_LEASE_RENEWAL_WINDOW_MS,
-        remainingMs: () => bound === lease ? Date.parse(lease.expiresAt) - Date.now() : NaN,
+        remainingMs: () => bound === lease ? Date.parse(lease.expiresAt) - now() : NaN,
         renew: async () => { await refreshLease() } }],
       onFailure: error => {
         owner.abort()
@@ -265,23 +262,10 @@ export async function createUnboundWorkerMcpEndpoint(input: WorkerMcpEndpointOpt
     const task = updates.then(async () => {
       if (closing || bound !== lease || renewal !== owner) return
       const token = readProductEnvironment(lease.relay.environment.variables, 'MCP_TOKEN')!
-      unregister = await registerAppRoute(token, endpoint, lease.expiresAt, input.launcher, cause)
+      unregister = await registerAppRoute(token, endpoint, lease.expiresAt, input.launcher, { now, renewalFailure: cause })
     }).catch(failure => logFailure('report renewal failure', failure))
     updates = task
     return task
   }
-  const unbindRelay = () => {
-    const task = updates.then(async () => {
-      renewal?.abort()
-      bound = undefined
-      await unregister?.()
-      unregister = undefined
-    }).catch(error => {
-      logFailure('unbind', error)
-      throw error
-    })
-    updates = task.then(() => undefined, () => undefined)
-    return task
-  }
-  return { endpoint, bindRelay, unbindRelay, refreshLease, close }
+  return { endpoint, bindRelay, refreshLease, close }
 }
