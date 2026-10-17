@@ -509,6 +509,10 @@ export async function remoteReviewProduction(options: {
     closes.push(releaseWorkerDiscovery)
     let deniedResponse: ReturnType<typeof RemoteOwnerControlSchema.parse> | undefined
     const transport = await createRemoteReviewTransport({ ...tls, endpoint: deviceEndpoint,
+      beforeCompactionResponse: async () => {
+        await waitForRemoteReview(provider.calls, calls => calls.some(call => call.compactedSession),
+          'native compaction completion before acknowledgement loss')
+      },
       beforeDiscovery: async () => {
         const paused = pausedDiscovery
         if (paused) { paused.entered(); return paused.waiting }
@@ -804,6 +808,7 @@ export async function remoteReviewProduction(options: {
       denyNextReservedResponse: () => { denyReservedResponse = true },
       deniedResponse: () => deniedResponse,
       deliveryReads: transport.deliveryReads,
+      loseNextCompactionResponse: transport.loseNextCompactionResponse,
       async restoreOriginalResponseGrant() {
         const command = deniedResponse
         if (!command) throw new Error('No original reserved response was denied.')

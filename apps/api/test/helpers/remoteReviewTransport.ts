@@ -14,6 +14,7 @@ export async function createRemoteReviewTransport(input: {
   privateKeyFile: string
   beforeAuthorization(request: ReturnType<typeof ExecutionAuthorityRequestSchema.parse>): Promise<void>
   beforeDiscovery?(): Promise<void | 'cancel'>
+  beforeCompactionResponse?(): Promise<void>
 }) {
   const [cert, key] = await Promise.all([readFile(input.certificateFile), readFile(input.privateKeyFile)])
   const server = createServer({ cert, key })
@@ -23,6 +24,7 @@ export async function createRemoteReviewTransport(input: {
     socket.once('close', () => connections.delete(socket))
   })
   const sockets = new Set<WebSocket>()
+  let loseCompactionResponse = false
   const deliveryReads: Array<{ command: ReturnType<typeof RemoteOwnerControlSchema.parse>; phase: string }> = []
   const websocket = new WebSocketServer({ server, perMessageDeflate: false, maxPayload: 16384 })
   websocket.on('connection', (worker, request) => {
@@ -32,6 +34,7 @@ export async function createRemoteReviewTransport(input: {
     sockets.add(main)
     const assemblies = new Map<string, { bytes: number; chunks: Buffer[]; received: number }>()
     const readRequests = new Map<string, ReturnType<typeof RemoteOwnerControlSchema.parse>>()
+    const compactionRequests = new Set<string>()
     const trace = new Map<string, { bytes: number; chunks: Buffer[]; received: number }>()
     const observe = (data: RawData, direction: 'to-worker' | 'to-main') => {
       const frame = JSON.parse(data.toString()) as DeviceApplicationFrame
@@ -49,6 +52,15 @@ export async function createRemoteReviewTransport(input: {
       trace.delete(key)
       const payload = JSON.parse(Buffer.concat(assembly.chunks).toString('utf8')) as {
         method?: string; command?: unknown; phase?: string
+      }
+      if (direction === 'to-worker' && payload.method === 'conversation.compact'
+        && loseCompactionResponse) compactionRequests.add(frame.id)
+      if (direction === 'to-main' && compactionRequests.has(frame.id)) {
+        compactionRequests.delete(frame.id)
+        if (loseCompactionResponse) {
+          loseCompactionResponse = false
+          return true
+        }
       }
       if (direction === 'to-worker' && payload.method === 'control-delivery') {
         readRequests.set(frame.id, RemoteOwnerControlSchema.parse(payload.command))
@@ -94,7 +106,11 @@ export async function createRemoteReviewTransport(input: {
     worker.on('close', () => { sockets.delete(worker); main.close() })
     worker.on('message', (data, binary) => {
       const forward = async () => {
-        observe(data, 'to-main')
+        if (observe(data, 'to-main')) {
+          await input.beforeCompactionResponse?.()
+          fail()
+          return
+        }
         const frame = JSON.parse(data.toString()) as DeviceApplicationFrame
         if (frame.type === 'application-open' && frame.kind === 'request'
           && frame.namespace === EXECUTION_AUTHORITY_EXTENSION.namespace) {
@@ -127,6 +143,7 @@ export async function createRemoteReviewTransport(input: {
   const address = server.address()
   if (!address || typeof address === 'string') throw new Error('Expected a loopback transport fixture port.')
   return { endpoint: `wss://127.0.0.1:${address.port}/device/connect`, deliveryReads,
+    loseNextCompactionResponse: () => { loseCompactionResponse = true },
     close: async () => {
       const serverClosed = new Promise<void>((resolve, reject) => {
         server.close(error => error ? reject(error) : resolve())

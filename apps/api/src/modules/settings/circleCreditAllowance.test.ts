@@ -4,7 +4,7 @@ import type pg from 'pg'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { afterEach, expect, it, vi } from 'vitest'
 import { ManagedCircleCreditAllowanceSchema, CircleCreditAllowanceUpdateResultSchema,
-  type ManagementPrincipal } from '@foreman-code/contracts/management'
+  CircleCreditAllowanceUpdateInputSchema, type ManagementPrincipal } from '@foreman-code/contracts/management'
 import { buildApp } from '../../app.js'
 import type { OperatorServices } from '../../mcp/operator/types.js'
 import { PostgresAccessService } from '../access/postgres.js'
@@ -127,4 +127,14 @@ it('denies read-only and workspace-scoped allowance writes and rejects a stale r
     arguments: { ...input, value: { defaultMonthlyCredits: 2, accounts: {} }, commandId: randomUUID() } })
   expect(stale.isError).toBe(true)
   expect(await f.settings.getCircleCreditAllowance(f.owner)).toMatchObject({ value: { defaultMonthlyCredits: 1 }, revision: 1 })
+})
+
+it('preserves an explicitly saved 30000 allowance and organization overrides after recreation', async () => {
+  const f = await fixture()
+  await f.settings.updateCircleCreditAllowance(f.owner, 'http', CircleCreditAllowanceUpdateInputSchema.parse({
+    value: { defaultMonthlyCredits: 30000, accounts: { 'fixture-custom': 123456 } },
+  }))
+  expect(await f.createSettings().getCircleCreditAllowance(f.owner)).toMatchObject({
+    value: { defaultMonthlyCredits: 30000, accounts: { 'fixture-custom': 123456 } }, revision: 1,
+  })
 })
