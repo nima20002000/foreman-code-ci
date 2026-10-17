@@ -66,9 +66,12 @@ it.each([false, true])('uses the retained owner for disposal after a read-only r
     if (failedReconnect) {
       channel = { binding: { ...f.connection, connectionGeneration: f.connection.connectionGeneration + 1,
         connectionEpoch: randomUUID() }, request }
+      conversation.payload = { ownerPrincipalId: owner.id }
       manager.setSessionControlPrincipal!(owner.id)
       rejectReconnect = true
       await expect(manager.pending(f.session)).rejects.toMatchObject({ code: 'WORKER_CONVERSATION_UNAVAILABLE' })
+      expect(methods.filter(method => method === 'conversation.open')).toHaveLength(2)
+      conversation.payload = null
       manager.setSessionControlPrincipal!(reader.id)
       rejectReconnect = false
     }
