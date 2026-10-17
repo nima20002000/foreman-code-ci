@@ -19,6 +19,7 @@ import { NativeConfigurationService } from '../harnesses/nativeConfiguration.js'
 import { discoverClaudeMetadata } from '../harnesses/claudeSdk/metadata.js'
 import { claudeSettingSupport } from '../harnesses/claudeSdk/nativeConfiguration.js'
 import { DomainError } from '../errors.js'
+import type { ResolvedProviderAccount } from './service.js'
 import { LocalProviderCredentials } from './localCredentials.js'
 import { NativeProviderAccountCommands } from './nativeCommands.js'
 import { NativeProviderAccountOperations } from './nativeOperations.js'
@@ -31,6 +32,7 @@ export function createInstalledWorkerAccounts(input: {
   stateDirectory: string; configuration: InstalledWorkflowConfigurationLocation | null
   current(): Readonly<DeviceSessionBinding>
   registry: NativeProcessRegistry
+  prepareAccount?(account: ResolvedProviderAccount): Promise<void>
   target: import('@foreman-code/contracts/device-resources').DeviceProvisioningTarget
   request(namespace: string, payload: unknown): Promise<DeviceApplicationResult>
 }): Omit<WorkerAccountOperationPorts, 'current'> | undefined {
@@ -40,6 +42,7 @@ export function createInstalledWorkerAccounts(input: {
   const qualified = AccountIsolationQualificationsSchema.parse(raw).records
   if (!qualified.some(record => isDeepStrictEqual(record.target, input.target) && Date.parse(record.expiresAt) > Date.now())) return undefined
   const root = privateDirectory(join(input.stateDirectory, 'provider-account-slots'))
+  const journal = new NativeAccountJournal(join(root, 'operations'))
   const credentials = new LocalProviderCredentials(join(root, 'native'))
   const sdkEntrypoints = new Map<string, string>()
   const selections = new Map<string, RegistryHarnessSelection>()
@@ -125,22 +128,22 @@ export function createInstalledWorkerAccounts(input: {
       } else {
         options = await configurations.options('codex', binding)
       }
-      return { binding, generation: input.current().connectionGeneration, observedAt: options.checkedAt,
+      return { binding, generation: journal.accountGeneration(input.current()), observedAt: options.checkedAt,
         models: options.models.map(row => ({ ...row, name: row.name ?? row.id })), options }
     },
   })
   const workerSelection = { ...selection,
     async selected(value: Parameters<typeof selection.selected>[0]) {
       const selected = await selection.selected(value)
-      return selected ? { ...selected, generation: input.current().connectionGeneration } : null
+      return selected ? { ...selected, generation: journal.accountGeneration(input.current()) } : null
     },
     async discover(...value: Parameters<NonNullable<typeof selection.discover>>) {
       const discovered = await selection.discover!(...value)
-      return { ...discovered, generation: input.current().connectionGeneration }
+      return { ...discovered, generation: journal.accountGeneration(input.current()) }
     },
   }
   const native = new NativeProviderAccountOperations(new NativeProviderAccountCommands(workerSelection),
-    new NativeAccountJournal(join(root, 'operations')), input.registry, async value => {
+    journal, input.registry, async value => {
       const result = await input.request('provider-accounts-v1', { version: 1, kind: 'authorize', operation: value.operation })
       if (result.bytes !== undefined || !isDeepStrictEqual(result.payload, { allowed: true })) {
         throw new DomainError('ACCESS_DENIED', 'The original Main denied this authentication operation.', 403)
@@ -155,7 +158,8 @@ export function createInstalledWorkerAccounts(input: {
       throw new DomainError('PROVIDER_ACCOUNT_UNAVAILABLE', 'The original Main account binding is unavailable.', 409)
     }
   }
-  const accounts = workerProviderAccountResolver({ current: input.current, resolve, native, validate })
+  const accounts = workerProviderAccountResolver({ current: input.current, resolve, native, validate,
+    ...(input.prepareAccount ? { prepareAccount: input.prepareAccount } : {}) })
   const factories = new NativeHarnessFactories({ codexBinary: '', accounts, instances, installations, selectAccount: selection.selectAccount,
     auxiliaryRecovery: role => input.registry.scope(`${role}:${randomUUID()}`),
     admitRecovery: recovery => { Object.assign(recovery, input.registry.reserveLaunch(recovery.owner)) },
@@ -173,6 +177,7 @@ export function createInstalledWorkerAccounts(input: {
     if (failures.length) throw new AggregateError(failures, 'Worker account cleanup remains unconfirmed.')
   }
   return { native, resolve, validate,
+    ...(input.prepareAccount ? { prepareAccount: input.prepareAccount } : {}),
     async provision(raw) {
       const account = ProviderAccountSchema.parse(raw)
       if (!account.binding) throw new DomainError('PROVIDER_ACCOUNT_BINDING_UNAVAILABLE', 'The Worker slot binding is unavailable.', 409)
