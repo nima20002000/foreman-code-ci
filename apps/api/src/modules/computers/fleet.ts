@@ -94,14 +94,6 @@ export function syncableServers(
       candidate = { transport: 'stdio', name, command: entry.command, args: entry.args ?? [], envVars: [] }
     }
     const parsed = candidate ? SyncedMcpServerSchema.safeParse(candidate) : undefined
-    if (parsed?.success && parsed.data.transport === 'http') {
-      const hostname = new URL(parsed.data.url).hostname.toLowerCase().replace(/\.$/u, '')
-      if (hostname === 'localhost' || hostname.endsWith('.localhost')
-        || hostname.startsWith('127.') || ['[::1]', '[::]', '0.0.0.0'].includes(hostname)) {
-        skipped?.(name, 'uses a host-local endpoint; configure it separately on each computer')
-        continue
-      }
-    }
     if (parsed?.success) servers.push(parsed.data)
     else skipped?.(name)
   }
@@ -147,24 +139,23 @@ export class FleetMaintenanceService {
       throw new DomainError('COMPUTER_RESTART_TARGET_REQUIRED', 'Choose the computers to restart.', 400)
     }
     let dispatch: ReturnType<typeof ComputerMaintenanceDispatchSchema.parse> | undefined
-    const prepare = async () => {
-      const planned = await this.commands.execute({ principal, source, operation: 'computers.maintenance.plan',
-        commandId: input.commandId, targetKey: `computers-maintenance:${this.mainId}`, payload: input,
-        authorize: async sql => { requireAuthorization(await readLiveManagementPrincipal(sql, principal.id), 'settings:update') },
-        perform: async () => {
-          const selected = input.targets ?? await this.targets(principal, 'settings:update')
-          const workersOnly = ['sync-mcp', 'sync-plugins'].includes(input.task.kind)
-            || (input.task.kind === 'update-worker' && !input.targets)
-          const targets = workersOnly
-            ? selected.filter(target => target.hostRef.kind !== 'main') : selected
-          return ComputerMaintenanceDispatchSchema.parse({ targets, task: await this.taskFor(input.task) })
-        },
-      })
-      dispatch = ComputerMaintenanceDispatchSchema.parse(planned.value)
-    }
     const result = await this.commands.execute({ principal, source, operation: 'computers.maintenance.start', commandId: input.commandId,
       targetKey: `computers-maintenance:${this.mainId}`, payload: input,
-      prepare,
+      prepare: async () => {
+        const planned = await this.commands.execute({ principal, source, operation: 'computers.maintenance.plan',
+          commandId: input.commandId, targetKey: `computers-maintenance:${this.mainId}`, payload: input,
+          authorize: async sql => { requireAuthorization(await readLiveManagementPrincipal(sql, principal.id), 'settings:update') },
+          perform: async () => {
+            const selected = input.targets ?? await this.targets(principal, 'settings:update')
+            const workersOnly = ['sync-mcp', 'sync-plugins'].includes(input.task.kind)
+              || (input.task.kind === 'update-worker' && !input.targets)
+            const targets = workersOnly
+              ? selected.filter(target => target.hostRef.kind !== 'main') : selected
+            return ComputerMaintenanceDispatchSchema.parse({ targets, task: await this.taskFor(input.task) })
+          },
+        })
+        dispatch = ComputerMaintenanceDispatchSchema.parse(planned.value)
+      },
       authorize: async sql => { requireAuthorization(await readLiveManagementPrincipal(sql, principal.id), 'settings:update') },
       perform: async () => {
         const known = await this.targets(principal, 'settings:update')
@@ -181,9 +172,7 @@ export class FleetMaintenanceService {
       },
     })
     if (!result.replayed) return result.value
-    const saved = ComputerMaintenanceStartResultSchema.parse(result.value)
-    if (saved.computers.some(computer => !computer.task)) await prepare()
-    return this.readStartedTasks(principal, saved, input.commandId, dispatch)
+    return this.readStartedTasks(principal, ComputerMaintenanceStartResultSchema.parse(result.value))
   }
 
   async readTarget(principal: ManagementPrincipal, source: 'http' | 'mcp', raw: unknown): Promise<ComputerMaintenanceList> {
@@ -205,21 +194,12 @@ export class FleetMaintenanceService {
   }
 
   private async readStartedTasks(principal: ManagementPrincipal,
-    saved: ComputerMaintenanceStartResult, commandId: string,
-    dispatch?: ReturnType<typeof ComputerMaintenanceDispatchSchema.parse>): Promise<ComputerMaintenanceStartResult> {
+    saved: ComputerMaintenanceStartResult): Promise<ComputerMaintenanceStartResult> {
     const known = await this.targets(principal, 'settings:update')
     return ComputerMaintenanceStartResultSchema.parse({ computers: await Promise.all(saved.computers.map(async computer => {
+      if (!computer.task) return computer
       if (!known.some(target => sameDeviceProvisioningTarget(target, computer.target))) {
         return { ...computer, task: null, error: 'This computer is no longer paired with this Main.' }
-      }
-      if (!computer.task) {
-        try {
-          const task = await this.startOn(computer.target, dispatch!.task, commandId)
-          this.cache.delete(this.key(computer.target))
-          return { ...computer, task, error: null }
-        } catch (error) {
-          return { ...computer, error: errorMessage(error, 'The computer did not answer.') }
-        }
       }
       const taskId = computer.task.id
       const status = await this.status(computer.target, true)
@@ -514,16 +494,8 @@ export class FleetMaintenanceService {
   private async observeComputer(target: DeviceProvisioningTarget, refresh: boolean) {
     const observation = await this.observeStatus(target, refresh)
     const endpoint = this.endpoint()
-    if (!observation.status || observation.observation.status !== 'available'
-      || target.hostRef.kind !== 'device' || !endpoint?.workerBundleReadiness) return observation
-    try {
-      return { ...observation, workerReadiness: await endpoint.workerBundleReadiness(target.hostRef.deviceId) }
-    } catch (error) {
-      const unavailable = failedReadObservation(observation.observation, error,
-        'Worker readiness observation failed', this.now())
-      componentLogger('lifecycle').warn({ host: target.hostRef, ...unavailable }, 'Worker readiness unavailable')
-      return { status: observation.status, observation: unavailable }
-    }
+    if (!observation.status || target.hostRef.kind !== 'device' || !endpoint?.workerBundleReadiness) return observation
+    return { ...observation, workerReadiness: await endpoint.workerBundleReadiness(target.hostRef.deviceId) }
   }
 
   private observeStatus(target: DeviceProvisioningTarget, refresh: boolean): Promise<MaintenanceObservation> {

@@ -1,6 +1,6 @@
 import type { AcceptedNodePlacement, DispatchIntent } from '@foreman-code/contracts/node-placement'
 import { RemoteApplicationAccessSchema, type RemoteApplicationAccess } from '@foreman-code/contracts/remote-execution'
-import { WORKER_MCP_EXTENSION, decodeWorkerMcpResult, encodeWorkerMcpRequest, WorkerMcpRelayAuthorizationSchema, WorkerMcpRelayRequestSchema, WorkerMcpRelayResponseSchema } from '@foreman-code/contracts/worker-mcp-relay'
+import { WORKER_MCP_EXTENSION, decodeWorkerMcpResult, WorkerMcpRelayAuthorizationSchema, WorkerMcpRelayRequestSchema, WorkerMcpRelayResponseSchema } from '@foreman-code/contracts/worker-mcp-relay'
 import type { ChildProcessEnvironment } from '../../harnesses/port.js'
 import type { DeviceConnectionSupervisor } from '../../devices/connectionSupervisor.js'
 import { deviceRequestTimeoutMs, retryDeviceRequest } from '../../devices/deviceRequestRetry.js'
@@ -44,10 +44,8 @@ export async function prepareWorkerApplicationAccess(channel: Pick<DeviceConnect
     requestSignal?.throwIfAborted()
     const payload = WorkerMcpRelayRequestSchema.parse({ ...envelope(), operation: 'worker-mcp.request', body,
       ...(protocolVersion ? { protocolVersion } : {}) })
-    const carrier = encodeWorkerMcpRequest(payload)
     const response = await withWorkerMcpDeadline(relaySignal => retryDeviceRequest(() => channel.request(WORKER_MCP_EXTENSION.namespace,
-      carrier.payload, { signal: relaySignal, timeoutMs: deviceRequestTimeoutMs,
-        ...(carrier.bytes ? { bytes: carrier.bytes } : {}) }),
+      payload, { signal: relaySignal, timeoutMs: deviceRequestTimeoutMs }),
     { retry: 'admission', signal: relaySignal }), requestSignal)
     requestSignal?.throwIfAborted()
     return WorkerMcpRelayResponseSchema.parse(decodeWorkerMcpResult(response))
