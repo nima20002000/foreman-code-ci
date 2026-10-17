@@ -1,16 +1,16 @@
 import { z } from 'zod'
-import { CIRCLE_FREE_PLAN_MONTHLY_CREDITS } from '../circleCredits.js'
+import { CIRCLE_OPEN_SOURCE_MONTHLY_CREDITS } from '../circleCredits.js'
 import { optionalCommandId } from './commands.js'
 
 const credits = z.number().int().min(0).max(1_000_000_000)
-/** Monthly CircleCI credit allowance per account (GitHub owner of the CircleCI org); other accounts use the default. */
+/** Monthly CircleCI credit allowance per organization (GitHub owner of the CircleCI org); other organizations use the default. */
 export const CircleCreditAllowanceSchema = z.object({
   defaultMonthlyCredits: credits,
   accounts: z.record(z.string().trim().min(1).max(100), credits)
     .refine(value => Object.keys(value).length <= 64, 'Use at most 64 accounts.'),
 }).strict()
 export const DEFAULT_CIRCLE_CREDIT_ALLOWANCE = CircleCreditAllowanceSchema.parse({
-  defaultMonthlyCredits: CIRCLE_FREE_PLAN_MONTHLY_CREDITS, accounts: {},
+  defaultMonthlyCredits: CIRCLE_OPEN_SOURCE_MONTHLY_CREDITS, accounts: {},
 })
 export const ManagedCircleCreditAllowanceSchema = z.object({
   value: CircleCreditAllowanceSchema,

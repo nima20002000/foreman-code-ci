@@ -7,7 +7,7 @@ import process from 'node:process'
 // Keep the CI smoke entry, exercising the registered route and shared editor.
 test('saved workflows reopen and finite repeat removal persists through the Board', async () => {
   const child = spawn('corepack', ['pnpm', 'exec', 'vitest', 'run',
-    'src/features/workflow-board/boardV3.integration.test.tsx',
+    'src/features/workflow-board/currentBoardAuthoring.integration.test.tsx',
     '-t', 'removes finite repeat and reopens'], {
     cwd: new URL('../../../', import.meta.url),
     env: process.env,

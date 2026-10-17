@@ -166,7 +166,7 @@ function AgentConversationContent({ context, name, activity, runLabel, onClose, 
         sessionMode: parseSessionCommand(content).kind === 'plan-task' ? 'plan' : mode })} />
       : <ConversationViewport revision="loading">{() => <LoadingState label="Loading conversation…" rows={1} />}</ConversationViewport>}
     {state ? <div className="agent-chat-composer-controls" role="group" aria-label="Chat actions" {...drop.dropTargetProps}>
-      <AgentChatComposer name={name} draftKey={chat.draftKey} inputRef={composer} sessionControls={sessionControls}
+      <AgentChatComposer name={name} draftKey={chat.draftKey} inputRef={composer}
         disabled={composerDisabled} reason={composerReason} controlReason={controlReason}
         pending={chat.pending} controlPending={sessionControls.mutation.isPending}
         hasAttachments={attachments.hasAttachments} canStop={canStop} stopReason={stopReason}
