@@ -125,7 +125,7 @@ export async function mountMeasuredBoard(url: string) {
   return { ...view, cache, router, history }
 }
 export async function openRunDetails() {
-  if (!screen.queryByRole('button', { name: 'Close Activities' })) {
+  if (!screen.queryByRole('button', { name: 'Close runs' })) {
     await userEvent.setup().click(await screen.findByRole('button', { name: 'Activities' }))
   }
   return screen.findByRole('region', { name: 'Exact execution inputs and results' })
@@ -152,7 +152,7 @@ export function installBoardTestLifecycle() {
     Object.defineProperty(navigator, 'locks', { configurable: true, value: { request: (key: string, work: (() => unknown) | LockOptions, claim?: (lock: { name: string }) => unknown) => {
     if (typeof work !== 'function') return claim!({ name: key })
       const result = (queues.get(key) ?? Promise.resolve()).then(work)
-      queues.set(key, result.catch(() => { /* ignore: a failed lock holder must not block the next one */ })); return result
+      queues.set(key, result.catch(() => undefined)); return result
     } } })
     vi.stubGlobal('ResizeObserver', class {
       constructor(private readonly notify: ResizeObserverCallback) {}

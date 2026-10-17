@@ -39,6 +39,21 @@ export async function assertAgentChatDirectoryAvailable(sql: Pick<pg.Pool, 'quer
   unavailable('The conversation’s saved folder is unavailable. Restore it before sending another message.')
 }
 
+/** The workspace's current folder on the Agent's paired computer, as an implicit project-root node placement. */
+async function deviceWorkspacePlacement(sql: Pick<pg.Pool, 'query'>, workspaceId: string,
+  selector: NonNullable<AgentConfigurationVersion['harnessProfileSelection']>): Promise<SavedNodePlacement> {
+  const rows = (await sql.query<{ policy: unknown }>(`select p.record as policy from workspace_root_policy_heads h
+    join workspace_root_policies p on p.root_policy_id=h.root_policy_id and p.root_policy_revision=h.root_policy_revision
+    where h.workspace_id=$1 and h.host_scope=$2 and p.revoked_at is null`,
+  [workspaceId, workspaceRootHostScope(selector.target.hostRef)])).rows
+  if (rows.length !== 1) unavailable('This Agent runs on another computer that has no workspace folder for this workspace. Set one before chatting.')
+  const policy = WorkspaceRootPolicySchema.parse(rows[0]!.policy)
+  return SavedNodePlacementSchema.parse({ schemaVersion: 1, hostRef: policy.hostRef, rootPolicyId: policy.rootPolicyId,
+    rootPolicyRevision: policy.rootPolicyRevision, locationRevision: policy.locationRevision,
+    projectRoot: policy.canonicalProjectRoot, cwdPolicy: 'project-root', relativeCwd: '', instanceId: selector.instanceId,
+    instanceRevision: selector.instanceRevision, harnessInstallationId: selector.target.harnessInstallationId })
+}
+
 /** Called inside Agent-chat admission; reading the saved directory does not grant source-management access. */
 export async function resolveAgentChatDirectory(input: {
   sql: Pick<pg.Pool, 'query'>
@@ -49,9 +64,14 @@ export async function resolveAgentChatDirectory(input: {
 }): Promise<{ workingDirectory: string; directoryBinding?: AgentChatDirectoryBinding }> {
   const selector = input.configuration.harnessProfileSelection
   if (!input.placement) {
-    if (!input.location) unavailable('Set a workspace folder before chatting with this Agent.')
     const host = selector?.target.hostRef
     const expectedRunner = host?.kind === 'device' ? `device:${host.deviceId}` : 'runner-local'
+    if (selector && host?.kind === 'device' && input.location?.runnerId !== expectedRunner) {
+      // The Agent runs on its paired computer: chat in that computer's workspace folder, never Main's.
+      return resolveAgentChatDirectory({ ...input,
+        placement: await deviceWorkspacePlacement(input.sql, input.configuration.workspaceId, selector) })
+    }
+    if (!input.location) unavailable('Set a workspace folder before chatting with this Agent.')
     if (input.location.runnerId !== expectedRunner) unavailable('The workspace folder belongs to another execution host.')
     return { workingDirectory: input.location.rootPath }
   }
