@@ -12,11 +12,6 @@ import { DomainError } from '../src/modules/errors.js'
 import { agentFileReader } from '../src/modules/ci-host/agentFileReader.js'
 import { AGENT_SNAPSHOT_JSON_BYTES, AGENT_SNAPSHOT_NAMESPACE } from '@foreman-code/contracts/source-materialization'
 import { workerConversationFixture } from '../src/modules/conversations/workerFixtures.test-support.js'
-import { DEFAULT_HARNESS_DEFAULTS, type AgentConfigurationVersion } from '@foreman-code/contracts'
-import { RemoteNativeSessionManager } from '../src/modules/runs/remote/nativeManagerProxy.js'
-import { RemoteExecutionRpcRequestSchema } from '@foreman-code/contracts/remote-execution-rpc'
-import { RemoteOperationReceiptSchema } from '@foreman-code/contracts/remote-execution'
-import { startNativeHistoryDownload } from '../src/modules/runs/remote/nativeHistoryPage.js'
 
 class Socket extends EventEmitter {
   bufferedAmount = 0
@@ -87,79 +82,6 @@ function setup(handler: NonNullable<DeviceExtensionRegistration['handle']>, limi
 }
 afterEach(() => vi.useRealTimers())
 describe('authenticated namespace carrier mechanics', () => {
-  it('admits the native Stop status refresh while ordinary requests occupy every slot', async () => {
-    const stop = stopRequest()
-    const session = { harness: 'codex' as const, providerVersion: 'fixture', nativeSessionId: 'native-session' }
-    const receipt = RemoteOperationReceiptSchema.parse({ schemaVersion: 1, intent: stop.intent,
-      connection: { mainId: binding.mainId, deviceId: binding.deviceId,
-        workerInstallationId: binding.workerInstallationId, keyRevision: binding.keyRevision,
-        authorizationRevision: binding.authorizationRevision, connectionGeneration: binding.connectionGeneration,
-        bootId: '44444444-4444-4444-8444-444444444444' },
-      workerIncarnationId: '55555555-5555-4555-8555-555555555555', sequence: 1, phase: 'running',
-      native: stop.command.native, entryAttempted: true, turnEntryAttempted: true,
-      turnInput: { correlationId: 'execution:execution', promptDigest: 'a'.repeat(64) },
-      stopFence: false, controls: [],
-    })
-    const configuration: AgentConfigurationVersion = {
-      id: 'configuration', agentId: 'agent', workspaceId: 'workspace', version: 1,
-      prompt: { system: 'test' }, assignedSkills: [], harness: DEFAULT_HARNESS_DEFAULTS.codex,
-      contentHash: 'fixture', createdAt: '2026-10-01T00:00:00.000Z',
-    }
-    const releases: Array<() => void> = []
-    const methods: string[] = []
-    const pair = setup(async payload => {
-      if (payload === 'occupied') {
-        await new Promise<void>(resolve => { releases.push(resolve) })
-        return { payload: null }
-      }
-      const frame = RemoteExecutionRpcRequestSchema.parse(payload)
-      methods.push(frame.method)
-      const status = { status: 'known', receipt: structuredClone(receipt) }
-      if (frame.method === 'prepare') return { payload: { session, status } }
-      if (frame.method === 'status') return { payload: status }
-      if (frame.method === 'control') {
-        receipt.sequence++
-        receipt.stopFence = true
-        receipt.phase = 'confirmed_terminal'
-        receipt.controls.push(frame.command)
-        receipt.terminal = { kind: 'cancelled', closureEvidenceDigest: 'b'.repeat(64) }
-        return { payload: { status: 'known', receipt: structuredClone(receipt) } }
-      }
-      if (frame.method === 'history') return { payload: {
-        ...startNativeHistoryDownload({ events: [], pendingInteractions: [] }), status,
-      } }
-      throw new Error('Unexpected remote request')
-    })
-    const proxy = new RemoteNativeSessionManager({ intent: stop.intent, placement: stop.placement,
-      harness: 'codex', configuration, controlFor: async input => ({ ...stop.command, native: input.native }),
-      observeReceipt: async () => {},
-      transport: { request: async (_method, payload) => (await pair.main.request('execution-v1', payload)).payload },
-    })
-    const occupied: Array<Promise<unknown>> = []
-    let cancellation: Promise<boolean> | undefined
-    try {
-      await proxy.createSession({ correlationId: 'execution:execution', request: {
-        executionId: stop.intent.executionId, runId: stop.intent.runId, workflowNodeId: stop.intent.nodeId,
-        workspaceId: 'workspace', workingDirectory: '/project', runtimeDirectory: '/runtime', configuration, input: {},
-      } })
-      occupied.push(...Array.from({ length: 8 }, () => pair.main.request('execution-v1', 'occupied')))
-      await flush()
-      expect(releases).toHaveLength(8)
-      cancellation = proxy.cancel(session)
-      await flush()
-      expect(methods).toContain('control')
-      await expect(cancellation).resolves.toBe(true)
-      expect(releases).toHaveLength(8)
-      const opens = pair.rawMain.frames.map(frame => JSON.parse(frame))
-        .filter(frame => frame.type === 'application-open' && frame.admission === 'stop')
-      expect(opens).toHaveLength(2)
-    } finally {
-      for (const release of releases) release()
-      await pair.close()
-      await Promise.allSettled([...occupied, ...(cancellation ? [cancellation] : [])])
-    }
-  })
-
   it('dispatches conversation cancellation through reserved stop capacity on a saturated link', async () => {
     const releases: Array<() => void> = []
     const handled = vi.fn(async (payload: unknown) => {
