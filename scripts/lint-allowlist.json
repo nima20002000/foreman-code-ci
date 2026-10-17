@@ -597,8 +597,6 @@
     "5566c74c3b6dd32d5e1f9e3aa412d72a68dfca0d0760b4acdf323010a5d13116": "apps/web/src/features/conversations/agentChat/useAgentChat.ts",
     "93545148375a36358c61ce1eec52f31b8e8a5261b708a2e46a055fee28c5c1a0": "apps/web/src/features/conversations/chatAttachments.test.tsx",
     "91f7b8f4a4187a8e9a02e00655d0c205ae5442991de12d723b3b010e70420db1": "apps/web/src/features/conversations/conversationDraftStore.ts",
-    "08a794a779aeb68ac1230a47bdc478e867fb2c95fbaff9f2f8d6c322e18b3a9c": "apps/web/src/features/conversations/sessionControls/SessionControls.tsx",
-    "21b9265fc330bf12a27b724e40a9d3145eb8ccf061ae0d9c86c3921761d63d1a": "apps/web/src/features/conversations/sessionControls/useSessionControls.test.tsx",
     "1cf32cc79065c92485e77953480aca97d139f26cd2a8d495d3c26bfaeda0978e": "apps/web/src/features/file-cards/fileCardClient.ts",
     "f86fa7c1d5567095f20f5b0addeed3ad82871ac7c6faffc868f33326e95a3802": "apps/web/src/features/graph/AgentSettingsForm.tsx",
     "1f45b72f2dbf8685e2f817467bea82c6f95cd7b507fee39ffebac21e59229f42": "apps/web/src/features/graph/nextDraft/NextDraftEditor.tsx",
