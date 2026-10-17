@@ -29,8 +29,7 @@ export function ComputerSettings({ deviceId, onSelectComputer }: { deviceId?: st
       <Button onClick={() => void computers.refetch()}>Retry computers</Button></> : null
   const loading = !currentMain ? <LoadingState label="Loading Main PC…" /> : computers.isPending ? <LoadingState label="Loading computers…" /> : null
   return <section className="settings-editor-page computers-page" aria-label={deviceId ? 'Computer details' : 'Computers'}>
-    <header className="computers-header"><div className="settings-experience-heading"><h1>{deviceId ? 'Computer details' : 'Computers'}</h1>
-      <p>Builds and agents, across your computers. Ask the Operator to change any setting.</p></div>
+    <header className="computers-header"><div className="settings-experience-heading"><h1>{deviceId ? 'Computer details' : 'Computers'}</h1></div>
       {currentMain && !deviceId ? <Button variant="primary" aria-expanded={adding} aria-controls="computer-add-panel" onClick={() => toggleAdd(`${sessionGeneration()}:${currentMain.mainId}`)}>{adding ? 'Close' : 'Add computer'}</Button> : null}</header>
     {currentMain && !deviceId ? <div id="computer-add-panel" className="computers-panel" hidden={!adding}><ComputerPairingForm key={currentMain.mainId} mainId={currentMain.mainId} /></div> : null}
     {readFailure ?? loading ?? (deviceId
