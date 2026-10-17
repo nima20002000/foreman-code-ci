@@ -67,7 +67,6 @@ export interface AgentConversationRow {
   pending_interaction: PendingNativeInteraction | null
   last_result: ExecutionResult | null
   record: {
-    workerSessionGeneration?: string
     previousConversationId?: string
     archived?: boolean
     freshSession?: boolean
@@ -526,7 +525,6 @@ export class PostgresAgentChatRepository {
       if (options.directoryBinding) record.directoryBinding = options.directoryBinding
       if (row.origin_run_id) record.sourceConfigurationVersionId ??= row.agent_configuration_version_id
       if (options.replaceSession) {
-        record.workerSessionGeneration = configuration.id
         const history = await client.query<{ role: string; content: string }>(`select role,content
           from operator_conversation_messages where conversation_id=$1 and role in ('user','assistant')
           and sequence < (select sequence from operator_conversation_messages
@@ -547,7 +545,6 @@ export class PostgresAgentChatRepository {
         set agent_configuration_version_id=$3,harness=$4,record=$5::jsonb,
           native_session_id=case when $6 then null else native_session_id end,
           provider_version=case when $6 then null else provider_version end,
-          worker_conversation_binding=case when $6 then null else worker_conversation_binding end,
           revision=revision+1,updated_at=now()
         where id=$1 and active_request_id=$2 returning *`,
       [id, requestId, configuration.id, configuration.harness.harness, JSON.stringify(record), options.replaceSession])).rows[0]!
