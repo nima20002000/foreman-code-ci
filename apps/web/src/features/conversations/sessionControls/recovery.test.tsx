@@ -3,19 +3,19 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { SessionControlStateSchema, unavailableSessionControls } from '@foreman-code/contracts'
 import { OperatorComposer } from '../../operator-chat/OperatorComposer'
 import { ConversationComposer } from '../ConversationComposer'
-import { SessionContext, SessionControls } from './SessionControls'
+import { SessionContext } from './SessionControls'
 import { useConversationDraftStore } from '../conversationDraftStore'
 import type { ComposerSessionControls } from './useSessionControls'
 
-function controller(discovered = true) {
+function controller() {
   const capabilities = unavailableSessionControls('profile')
   const state = SessionControlStateSchema.parse({
     conversationId: 'chat', revision: 4, profileKey: 'profile', desiredMode: 'plan', appliedMode: 'plan',
     defaults: {}, desired: {}, applied: {}, applicability: 'applied', nativeSessionId: 'native',
     nativeProviderVersion: 'fixture-1', nativeStatus: 'resume-required',
     compaction: null, compactions: [], busyReason: null,
-    capabilities: discovered ? { ...capabilities, plan: { supported: true, reason: null },
-      compact: { supported: true, reason: null } } : capabilities,
+    capabilities: { ...capabilities, plan: { supported: true, reason: null },
+      compact: { supported: true, reason: null } },
     context: { nativeSessionId: 'native', model: 'model', generation: 'connection', sequence: 1,
       source: 'codex', accuracy: 'native', usedTokens: 50000, capacityTokens: 100000,
       lifetimeTokens: 80000, cost: null, observedAt: '2026-10-08T00:00:00.000Z', stale: true },
@@ -29,35 +29,25 @@ afterEach(() => {
   useConversationDraftStore.getState().clearAllDrafts()
 })
 
-it.each(['operator', 'agent'])('shows the saved Plan mode and recovery after reloading %s chat', role => {
+it.each(['operator', 'agent'])('shows the last known context after reloading %s chat and offers no session options', role => {
   const controls = controller()
   if (role === 'operator') {
     render(<><SessionContext controls={controls} /><OperatorComposer conversationId="chat" sessionControls={controls} onNewChat={vi.fn()} onSubmit={vi.fn()} /></>)
   } else {
-    render(<ConversationComposer conversationId="chat" sessionControls={controls} onSubmit={vi.fn()} />)
+    render(<><SessionContext controls={controls} /><ConversationComposer conversationId="chat" sessionControls={controls} onSubmit={vi.fn()} /></>)
   }
-  expect(screen.getByRole('combobox', { name: 'Conversation mode' })).toHaveValue('plan')
-  expect(screen.getByRole('combobox', { name: 'Conversation mode' })).toBeEnabled()
-  expect(screen.getByRole('status')).toHaveTextContent('Saved session controls. Your next message or control will resume the session.')
+  expect(screen.queryByRole('combobox', { name: 'Conversation mode' })).not.toBeInTheDocument()
+  expect(screen.queryByLabelText(/session options/i)).not.toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: '50% context · stale' }))
   expect(screen.getByText('Last known usage. Waiting for a native update.')).toBeInTheDocument()
   expect(screen.queryByText('Send a message to discover this native session’s controls.')).not.toBeInTheDocument()
 })
 
-it('explains recovery when the existing session has no saved capabilities', () => {
-  render(<ConversationComposer conversationId="chat" sessionControls={controller(false)} onSubmit={vi.fn()} />)
-  expect(screen.getByRole('combobox', { name: 'Conversation mode' })).toHaveValue('plan')
-  expect(screen.getByRole('combobox', { name: 'Conversation mode' })).toBeDisabled()
-  expect(screen.getByRole('status')).toHaveTextContent('Send a message to resume this session and refresh its controls.')
-})
-
-it('clears the recovery explanation after a native update loads the session', () => {
+it('drops the stale label once a native update loads the session', () => {
   const controls = controller()
-  const view = render(<SessionControls controls={controls} />)
-  expect(screen.getByRole('status')).toBeInTheDocument()
+  const view = render(<SessionContext controls={controls} />)
+  expect(screen.getByRole('button', { name: '50% context · stale' })).toBeInTheDocument()
   controls.state = { ...controls.state!, nativeStatus: 'loaded', context: { ...controls.state!.context!, stale: false } }
-  view.rerender(<SessionControls controls={controls} />)
-  expect(screen.queryByRole('status')).not.toBeInTheDocument()
+  view.rerender(<SessionContext controls={controls} />)
   expect(screen.getByRole('button', { name: '50% context' })).toBeInTheDocument()
-  expect(screen.getByRole('combobox', { name: 'Conversation mode' })).toHaveValue('plan')
 })

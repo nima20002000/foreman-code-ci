@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { IconButton, Icon } from '../../shared/ui/nocturne'
 import { useFloatingSurface } from '../../shared/ui/nocturne/useFloatingSurface'
+import { raiseFloating, useFloatingZ } from '../../shared/ui/floatingStack'
 import './activitiesPopover.css'
+
+const STACK_ID = 'board-activities'
 
 /** A small non-modal popover anchored to the toolbar's Activities button. Outside click, Escape or a second press on the button close it. */
 export function ActivitiesPopover({ open, onClose, findAnchor, children }: {
@@ -31,7 +34,9 @@ function PopoverSurface({ onClose, findAnchor, children }: { onClose(): void; fi
     watch.observe(document.body, { childList: true, subtree: true })
     return () => watch.disconnect()
   }, [])
-  useFloatingSurface(anchorEl !== null, anchor, surface, 420, 'end')
+  // Not a top-layer popover: Activities stacks with the other Board containers, newest or focused on top.
+  const zIndex = useFloatingZ(STACK_ID)
+  useFloatingSurface(anchorEl !== null, anchor, surface, 420, 'end', 'block', false)
   useEffect(() => {
     const onButton = (target: EventTarget | null) => target instanceof Node && !!find.current()?.contains(target)
     const outside = (event: PointerEvent) => {
@@ -62,7 +67,8 @@ function PopoverSurface({ onClose, findAnchor, children }: { onClose(): void; fi
       document.removeEventListener('click', toggle, true)
     }
   }, [])
-  return <section ref={surface} popover="manual" tabIndex={-1} aria-label="Activities popover" className="n-theme board-activities-popover">
+  return <section ref={surface} tabIndex={-1} aria-label="Activities popover" className="n-theme board-activities-popover" style={{ zIndex }}
+    onPointerDownCapture={() => raiseFloating(STACK_ID)} onFocusCapture={() => raiseFloating(STACK_ID)}>
     <header className="board-activities-popover-header">
       <h2>Activities</h2>
       <IconButton label="Close Activities" onClick={() => { close.current(); find.current()?.focus() }}><Icon name="close" size={14} /></IconButton>
