@@ -1,4 +1,7 @@
 import { randomUUID } from 'node:crypto'
+import { MainClock } from '../devices/workerClock.js'
+import { PostgresSourceReservations } from './reservations.js'
+import type { GraphSqlClient } from '../run-graph/connection.js'
 import type { SourceReservationReclamation } from '@foreman-code/contracts/source-operations'
 import { releaseMaterializationClaim } from './materialization.js'
 import { mkdtemp, mkdir, rm, readFile, rename, symlink, writeFile } from 'node:fs/promises'
@@ -27,7 +30,7 @@ import { persistentFixtureRoot } from '../../../test/helpers/fixtureStorage.js'
 import { deferred } from '../../../test/helpers/deferred.js'
 const directories: string[] = []
 afterEach(async () => { for (const directory of directories.splice(0)) await rm(directory, { recursive: true, force: true }) })
-async function fixture() {
+async function fixture(options: { mainNow?: () => number } = {}) {
   const directory = await mkdtemp(join(persistentFixtureRoot, 'source-rpc-')); directories.push(directory)
   const runtime = join(directory, 'runtime'), base = join(directory, 'projects'); await mkdir(runtime, { mode: 0o700 }); await mkdir(base, { mode: 0o700 })
   const binding: DeviceSessionBinding = { mainId: randomUUID(), deviceId: randomUUID(), workerInstallationId: randomUUID(), bootId: randomUUID(), keyRevision: 1, authorizationRevision: 1, connectionEpoch: randomUUID(), connectionGeneration: 1 }
@@ -72,7 +75,7 @@ async function fixture() {
     throw new Error('No reservation cleanup in this fixture')
   })
   const reclamationNativeClosed = vi.fn(async () => true)
-  const service = new SourceOperationWorkerService({ authenticate: async () => {}, approvedRoots: readRoots, currentOwner,
+  const service = new SourceOperationWorkerService({ mainNow: () => Date.now(), ...options, authenticate: async () => {}, approvedRoots: readRoots, currentOwner,
     git: { cloneDirectory: () => join(directory, 'worker-clone'), git },
     nativeOwnerFor, preparationNativeClosed, preparationTransfersClosed, preparationReconciled, quotaPoolFor,
     currentReclamation, reclamationNativeClosed })
@@ -104,6 +107,44 @@ it('measures only the authorized Worker filesystem without source writes or publ
   f.currentOwner.mockRejectedValueOnce(new Error('Allocation denied'))
   await expect(f.service.handle(request, f.context)).rejects.toThrow('Allocation denied')
 })
+
+it.each([-90_000, 5_000, 90_000])(
+  'reserves Worker capacity in Main time with a %s ms Worker offset', async offset => {
+    const mainTime = Date.now()
+    let elapsed = 0
+    const mainClock = new MainClock(() => elapsed)
+    mainClock.observe(mainTime)
+    const f = await fixture({ mainNow: () => mainClock.now() })
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      vi.setSystemTime(mainTime + offset)
+      elapsed = 2_000
+      const response = await f.service.handle({ version: 1, operation: 'sources.capacity', root: f.root,
+        attempt: f.owner.attempt, identity: f.owner.identity }, f.context)
+      if (response.operation !== 'sources.capacity') throw new Error('Expected capacity measurement')
+      vi.setSystemTime(mainClock.now())
+      const empty = { rows: [], rowCount: 0 }
+      const query = vi.fn().mockResolvedValue(empty)
+        .mockResolvedValueOnce(empty).mockResolvedValueOnce(empty)
+        .mockResolvedValueOnce({ rows: [{ bytes: '0', verification_bytes: '0', pending_bytes: '0',
+          retained_bytes: '0', verification_retained_bytes: '0', preparing: '0',
+          materializations: '0', verification_materializations: '0' }], rowCount: 1 })
+      const sql = { query } as unknown as GraphSqlClient
+      const reservation = new PostgresSourceReservations()
+      const request = { scopeId: randomUUID(), ownerKind: 'capture' as const,
+        ownerId: randomUUID(), reservedBytes: 4096 }
+      await expect(reservation.reserve(sql, request, { capacity: response.capacity }))
+        .resolves.toMatchObject({ ...request, storageCapacity: response.capacity })
+      expect(response.capacity.observedAt).toBe(new Date(mainTime + elapsed).toISOString())
+      vi.setSystemTime(mainClock.now() + 10_001)
+      await expect(reservation.reserve({ query: vi.fn().mockResolvedValue(empty) } as unknown as GraphSqlClient,
+        { ...request, ownerId: randomUUID() }, { capacity: response.capacity }))
+        .rejects.toMatchObject({ code: 'SOURCE_CAPACITY_UNAVAILABLE' })
+    } finally {
+      vi.useRealTimers()
+    }
+  },
+)
 
 it('rejects capacity readback when the source owner changes during measurement', async () => {
   const f = await fixture()
