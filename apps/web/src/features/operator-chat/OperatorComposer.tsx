@@ -61,24 +61,28 @@ export function OperatorComposer({ conversationId, context, attachmentControl, f
     onSubmit={event => { event.preventDefault(); void send() }}>
     {menu.menu}
     <label htmlFor={id} className="n-sr-only">Message</label>
-    {/* eslint-disable-next-line no-restricted-syntax -- combobox textarea uses the shared slash menu. */}
-    <textarea ref={input} id={id} rows={1} value={value} maxLength={16000} placeholder="Message the operator…" {...menu.inputProps}
-      onChange={event => { setDraft(conversationId, event.target.value); menu.reset(); setCommandError(undefined) }}
-      onKeyDown={event => {
-        if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229 || menu.onKeyDown(event)) return
-        if (event.key === 'Enter' && !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey) {
-          event.preventDefault(); void send()
-        }
-      }} />
-    {/* One row in reading order: attach, agent settings, session mode and context, then send at the end.
-        Attachment chips and session notes wrap onto their own full-width lines. */}
-    <div className="operator-composer-toolbar">
+    {/* One compact block: attach, message and send share a row; agent settings and session mode sit in a quiet row below.
+        Attachment chips wrap above the input row. */}
+    <div className="operator-composer-input">
       {attachmentControl}
+      {/* eslint-disable-next-line no-restricted-syntax -- combobox textarea uses the shared slash menu. */}
+      <textarea ref={input} id={id} rows={1} value={value} maxLength={16000} placeholder="Message the operator…" {...menu.inputProps}
+        onChange={event => { setDraft(conversationId, event.target.value); menu.reset(); setCommandError(undefined) }}
+        onKeyDown={event => {
+          if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229 || menu.onKeyDown(event)) return
+          if (event.key === 'Enter' && !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey) {
+            event.preventDefault(); void send()
+          }
+        }} />
+      <div className="operator-composer-actions">
+        <ChatPrimaryActions appearance="icon" stopLabel="Stop response" {...(onCancel ? { onStop: onCancel } : {})}>
+          <IconButton label="Send message" type="submit" disabled={cannotSend} className="operator-composer-send" loading={pending}><Icon name="arrow" className="operator-send-arrow" size={17} /></IconButton>
+        </ChatPrimaryActions>
+      </div>
+    </div>
+    <div className="operator-composer-options">
       <div className="operator-composer-model">{context}</div>
-      {sessionControls ? <SessionControls controls={sessionControls} /> : null}
-      <ChatPrimaryActions appearance="icon" stopLabel="Stop response" {...(onCancel ? { onStop: onCancel } : {})}>
-        <IconButton label="Send message" type="submit" disabled={cannotSend} className="operator-composer-send" loading={pending}><Icon name="arrow" className="operator-send-arrow" size={17} /></IconButton>
-      </ChatPrimaryActions>
+      {sessionControls ? <SessionControls controls={sessionControls} context={false} /> : null}
     </div>
     {commandError?.conversationId === conversationId && !recovered
       ? <p role="alert">{compaction?.message ?? commandError.message}</p> : null}

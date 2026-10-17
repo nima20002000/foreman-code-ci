@@ -187,14 +187,14 @@ describe('workspace section routes', () => {
     const { router } = renderRoute('/settings')
 
     expect(await screen.findByRole('heading', { name: 'Settings', level: 1 })).toBeVisible()
-    expect(screen.getByRole('link', { name: /Review Agent reports/ })).toHaveAttribute('href', '/settings/bugs')
-    expect(screen.getByRole('link', { name: /App-wide instructions/ })).toHaveAttribute('href', '/settings/system-prompt')
-    expect(screen.getByRole('link', { name: /Provider presets/ })).toHaveAttribute('href', '/settings/harnesses')
-    expect(screen.getByRole('link', { name: /Orchestrator, Coder and Operator templates/ })).toHaveAttribute('href', '/settings/agents')
-    expect(screen.getByRole('link', { name: /Defaults for new workflows/ })).toHaveAttribute('href', '/settings/workflows')
+    expect(screen.getByRole('link', { name: 'Bugs' })).toHaveAttribute('href', '/settings/bugs')
+    expect(screen.getByRole('link', { name: 'System prompt' })).toHaveAttribute('href', '/settings/system-prompt')
+    expect(screen.getByRole('link', { name: 'Harnesses' })).toHaveAttribute('href', '/settings/harnesses')
+    expect(screen.getByRole('link', { name: 'Agents' })).toHaveAttribute('href', '/settings/agents')
+    expect(screen.getByRole('link', { name: 'Workflows' })).toHaveAttribute('href', '/settings/workflows')
     expect(screen.queryByRole('link', { name: /Approval/i })).not.toBeInTheDocument()
 
-    await user.click(screen.getByRole('link', { name: /Orchestrator, Coder and Operator templates/ }))
+    await user.click(screen.getByRole('link', { name: 'Agents' }))
     await waitFor(() => expect(router.state.location.pathname).toBe('/settings/agents'))
     expect(await screen.findByRole('heading', { name: 'Agents', level: 1 })).toBeVisible()
     expect(screen.queryByRole('heading', { name: 'Settings', level: 1 })).not.toBeInTheDocument()
@@ -202,6 +202,36 @@ describe('workspace section routes', () => {
     await user.click(screen.getByRole('button', { name: 'Back' }))
     await waitFor(() => expect(router.state.location.pathname).toBe('/settings'))
     expect(await screen.findByRole('heading', { name: 'Settings', level: 1 })).toBeVisible()
+  })
+
+  it('summarizes each computer on a compact card with presence, role and running work', async () => {
+    const mainId = '11111111-1111-4111-8111-111111111111'
+    const deviceId = '22222222-2222-4222-8222-222222222222'
+    const main = { hostRef: { kind: 'main' as const, mainId }, applicationInstallationId: mainId, keyRevision: null, authorizationRevision: null }
+    const device = { hostRef: { kind: 'device' as const, mainId, deviceId }, applicationInstallationId: '33333333-3333-4333-8333-333333333333', keyRevision: 1, authorizationRevision: 1 }
+    const agent = { id: 'execution-1', workspaceId: 'workspace', workflowId: 'workflow', workflowName: 'Flow', runId: 'run-1', nodeId: 'node-1', agentName: 'Coder', state: 'running' }
+    server.use(
+      http.get('*/api/management/computers/activity', () => HttpResponse.json({ mainId, activityComplete: true, truncated: false, cloud: [],
+        computers: [{ target: main, name: 'Main PC', online: true, jobs: [], agents: [agent] }, { target: device, name: 'Laptop', online: false, jobs: [], agents: [] }] })),
+      http.post('*/api/management/settings/build-computers/read', async ({ request }) => {
+        const { target } = await request.json() as { target: typeof main }
+        return HttpResponse.json({ preference: { target, revision: 1, buildEnabled: target.hostRef.kind === 'main', buildPriority: 50, buildAllowancePercent: 60 },
+          state: 'ready', reasons: [], remoteExecutionEnabled: true })
+      }),
+    )
+    renderRoute('/settings')
+
+    const mainCard = await screen.findByRole('link', { name: /Main PC/ })
+    expect(mainCard).toHaveAttribute('href', '/settings/computers')
+    expect(await within(mainCard).findByText('CI')).toBeVisible()
+    expect(within(mainCard).getByText('Online')).toBeVisible()
+    expect(within(mainCard).getByText('Agent host')).toBeVisible()
+    expect(within(mainCard).getByText('1 agent running')).toBeVisible()
+    const laptopCard = screen.getByRole('link', { name: /Laptop/ })
+    expect(laptopCard).toHaveAttribute('href', `/settings/computers/${deviceId}`)
+    expect(within(laptopCard).getByText('Offline')).toBeVisible()
+    expect(within(laptopCard).queryByText('CI')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Listener|change via Operator|environment overrides/)).not.toBeInTheDocument()
   })
 
   it.each(['/account', '/account/', '/account?tab=sessions'])(
