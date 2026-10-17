@@ -38,10 +38,8 @@ export function SessionContext({ controls }: { controls: ComposerSessionControls
   }
   if (!state) return null
   const context = state.context
-  // Before the first turn nothing is used yet; the window is whatever the model advertises.
-  const capacity = context?.capacityTokens ?? state.capabilities.modelCapacity ?? state.capabilities.nativeDefaultCapacity ?? null
-  const used = context ? context.usedTokens : 0
-  const percentage = used !== null && capacity !== null ? Math.round(used / capacity * 100) : null
+  const known = context?.usedTokens != null && context.capacityTokens != null
+  const percentage = known ? Math.round(context.usedTokens! / context.capacityTokens! * 100) : null
   const estimated = context?.accuracy === 'estimated'
   const percentagePrefix = estimated ? 'About ' : ''
   const usagePrefix = estimated ? 'Estimated usage: ' : ''
@@ -49,28 +47,27 @@ export function SessionContext({ controls }: { controls: ComposerSessionControls
     : state.capabilities.compact.reason)
   const pending = controls.mutation.isPending
   const update = (preferences: SessionPreferences) => { void controls.change({ kind: 'preferences', preferences }).catch(ignoreRejection) }
-  // A window or usage that is not known yet shows nothing rather than an "unknown" meter.
-  if (percentage === null) return null
-  const meterLabel = `${percentagePrefix}${percentage}% context${context?.stale ? ' · stale' : ''}`
+  const meterLabel = `${percentage === null ? 'Context unknown' : `${percentagePrefix}${percentage}% context`}${context?.stale ? ' · stale' : ''}`
   return <div className="session-context">
       <Button ref={anchor} size="sm" variant="ghost" className="session-context-meter" aria-label={meterLabel} title={meterLabel}
         aria-expanded={open} aria-controls={`${id}-context`} data-stale={context?.stale ? 'true' : undefined}
         onClick={() => setOpen(value => !value)}>
         <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
           <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" opacity=".2" strokeWidth="2.5" />
-          <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="2.5"
-            strokeDasharray={`${Math.min(100, percentage) * .5655} 56.55`} transform="rotate(-90 12 12)" />
+          {percentage !== null ? <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="2.5"
+            strokeDasharray={`${Math.min(100, percentage) * .5655} 56.55`} transform="rotate(-90 12 12)" /> : null}
         </svg>
-        <span aria-hidden="true">{`${percentage}%`}</span>
+        <span aria-hidden="true">{percentage === null ? '—' : `${percentage}%`}</span>
       </Button>
       {open ? <div ref={surface} popover="manual" id={`${id}-context`} className="session-context-popover" onKeyDown={event => {
         if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close() }
       }}>
         <h3 className="session-context-title">Context</h3>
-        <div className="session-context-bar" aria-hidden="true"><span style={{ width: `${Math.min(100, percentage)}%` }} /></div>
+        {percentage !== null ? <div className="session-context-bar" aria-hidden="true"><span style={{ width: `${Math.min(100, percentage)}%` }} /></div> : null}
         <div className="session-context-facts">
-        <p>{`${usagePrefix}${used!.toLocaleString()} tokens in context`}
-          {` / ${capacity!.toLocaleString()} native context window`}</p>
+        <p>{context?.usedTokens == null ? 'Current usage unknown'
+          : `${usagePrefix}${context.usedTokens.toLocaleString()} tokens in context`}
+          {context?.capacityTokens != null ? ` / ${context.capacityTokens.toLocaleString()} native context window` : ''}</p>
         {state.applied?.contextBudget ? <p>Configured budget: {state.applied.contextBudget.toLocaleString()}</p> : null}
         {state.capabilities.modelCapacity !== null ? <p>Model capacity: {state.capabilities.modelCapacity.toLocaleString()}</p> : null}
         {state.capabilities.nativeDefaultCapacity != null ? <p>
@@ -126,4 +123,26 @@ export function SessionContext({ controls }: { controls: ComposerSessionControls
         </div>
       </div> : null}
     </div>
+}
+
+export function SessionControls({ controls, context = true }: { controls: ComposerSessionControls; context?: boolean }) {
+  const state = controls.state
+  if (!state) return context ? <span role="status">{!controls.conversationId ? 'No native context yet' : controls.query.isError ? 'Context unavailable' : 'Context loading…'}</span> : null
+  const pending = controls.mutation.isPending
+  const recoveryMessage = state.capabilities.plan.supported
+    ? 'Saved session controls. Your next message or control will resume the session.'
+    : 'Send a message to resume this session and refresh its controls.'
+  const notes = [
+    state.nativeStatus === 'resume-required' ? <small key="resume" role="status">{recoveryMessage}</small> : null,
+    controls.mutation.isError ? <p key="error" role="alert">{controls.mutation.error?.message}</p> : null,
+  ].filter(Boolean)
+  return <div className="session-controls" aria-label="Native session controls">
+    <Select label="Conversation mode" className="session-mode" value={state.desiredMode} disabled={pending || !state.capabilities.plan.supported}
+      options={[{ value: 'regular', label: 'Regular' }, { value: 'plan', label: 'Plan' }]}
+      title={state.capabilities.plan.reason ?? undefined}
+      data-mode-pending={state.desiredMode !== state.appliedMode ? 'true' : undefined}
+      onChange={event => { void controls.change({ kind: 'mode', mode: event.target.value === 'plan' ? 'plan' : 'regular' }).catch(ignoreRejection) }} />
+    {context ? <SessionContext controls={controls} /> : null}
+    {notes.length ? <div className="session-controls-status">{notes}</div> : null}
+  </div>
 }

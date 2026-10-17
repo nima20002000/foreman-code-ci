@@ -662,6 +662,30 @@ describe('selected-Agent chat service', { timeout: 60_000 }, () => {
     } finally { await service.shutdown() }
   })
 
+  it('creates the stored conversation for a first attachment without a native session and refuses a read-only caller', async () => {
+    const { service } = makeService()
+    const workspaceId = fixture.scope.workspaceId
+    const app = buildApp({ logger: false, readiness: { database: { ping: async () => {} }, checkpoints: { ping: async () => {} } },
+      operator: { access, services: { agentChat: service, commands: new PostgresCommandCoordinator(pool) } as unknown as OperatorServices } })
+    const url = `/api/workspaces/${workspaceId}/agent-chat/conversation`
+    const post = (token: string) => app.inject({ method: 'POST', url, headers: { authorization: `Bearer ${token}` },
+      payload: { context: query(codexNode) } })
+    try {
+      expect((await post(readOnlyToken)).statusCode).toBe(403)
+      expect((await service.read(writer, workspaceId, query(codexNode))).conversation).toBeNull()
+      const created = await post(writerToken)
+      expect(created.statusCode).toBe(200)
+      const state = AgentChatStateSchema.parse(created.json().state)
+      expect(state.conversation).toMatchObject({ workspaceId, agentId: codexNode.agentId, workflowNodeId: codexNode.id, nativeSession: null })
+      expect(FakeNative.all).toHaveLength(0)
+      expect(AgentChatStateSchema.parse((await post(writerToken)).json().state).conversation?.id).toBe(state.conversation!.id)
+      expect((await service.read(writer, workspaceId, query(codexNode))).conversation?.id).toBe(state.conversation!.id)
+      await service.send(writer, workspaceId, request(codexNode, 'First message after the attachment', state.conversation!.id))
+      await settled(service, () => service.read(writer, workspaceId, query(codexNode)))
+      expect(FakeNative.all[0]!.prompts).toEqual(['First message after the attachment'])
+    } finally { await app.close(); await service.shutdown() }
+  })
+
   it('isolates native controls for two nodes using the same Agent and enforces authenticated MCP grants', async () => {
     const twin = makeCurrentWorkflowFixture(randomUUID().slice(0, 8), 'sequential')
     const firstNode = twin.version.definition.nodes[0]!

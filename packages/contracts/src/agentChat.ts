@@ -343,6 +343,11 @@ export const RespondAgentChatInteractionRequestSchema = z.object({
   response: z.json().optional(),
 }).strict();
 export const AgentChatStateResponseSchema = z.object({ state: AgentChatStateSchema }).strict();
+/** POST /api/workspaces/:workspaceId/agent-chat/conversation — the stored conversation record, created when absent (no native session). Files attach to it. */
+export const EnsureAgentChatConversationRequestSchema = z.object({
+  context: AgentChatQuerySchema, executionId: IdSchema.optional(),
+}).strict();
+export type EnsureAgentChatConversationRequest = z.infer<typeof EnsureAgentChatConversationRequestSchema>;
 
 /** GET .../conversations/:conversationId/history?before&limit — older messages. */
 export const AgentChatHistoryPageSchema = z.object({
