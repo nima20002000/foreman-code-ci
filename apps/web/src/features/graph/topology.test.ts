@@ -68,14 +68,15 @@ describe('stable graph topology (reference assertions, not a renderer benchmark)
     expect(reordered.edges[0]).toBe(before.edges[2])
   })
 
-  it('updates incident inferred handles only after an authored geometry change', () => {
+  it('ignores saved positions: moving a node on paper leaves the drawn Board untouched', () => {
     const { workflow, agents } = makeScaleGraph(4)
     const reconcile = createGraphTopologyProjector()
     const before = reconcile(workflow, agents)
     const after = reconcile({ ...workflow, nodes: workflow.nodes.map((node, index) => index === 0
       ? { ...node, position: { x: 300, y: 500 } } : node) }, agents)
-    expect(after.edges[0].sourceHandle).toBe('top')
+    expect(after.edges[0]).toBe(before.edges[0])
     expect(after.edges[1]).toBe(before.edges[1])
+    expect(nativeNode(after.nodes[0]).position).toEqual(nativeNode(before.nodes[0]).position)
     expect(nativeNode(after.nodes[1])).toBe(nativeNode(before.nodes[1]))
   })
 })

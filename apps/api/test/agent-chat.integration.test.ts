@@ -561,6 +561,82 @@ describe('selected-Agent chat service', { timeout: 60_000 }, () => {
       await service.shutdown()
     }
   })
+  it('opens a fresh chat for an unplaced node on its Agent’s paired computer instead of Main’s workspace folder', async () => {
+    const nativeFixture = makeCurrentWorkflowFixture(randomUUID().slice(0, 8), 'single')
+    const mainId = (await pool.query<{ id: string }>('select id from application_installation where singleton=true')).rows[0]!.id
+    const installationId = randomUUID()
+    const instanceId = randomUUID()
+    const baseId = randomUUID()
+    const rootPolicyId = randomUUID()
+    const hostRef = { kind: 'device' as const, mainId, deviceId: randomUUID() }
+    const filesystem = { device: '1', inode: '2', mountId: '3' }
+    const configuration = AgentConfigurationVersionSchema.parse({ ...nativeFixture.configurations[0]!,
+      harnessProfileSelection: { instanceId, instanceRevision: '1', target: { hostRef,
+        applicationInstallationId: installationId, harnessInstallationId: 'recorded-installation', installationFingerprint: 'recorded-bytes' } } })
+    nativeFixture.configurations = [configuration]
+    expect(nativeFixture.version.definition.nodes[0]!.placement).toBeUndefined()
+    const seeded = await seedAgent3(pool, root, nativeFixture, { run: false })
+    const approved = ApprovedRootAllowlistSchema.parse({ schemaVersion: 1, hostRef,
+      applicationInstallationId: installationId, configurationRevision: '1',
+      bases: [{ baseId, canonicalPath: '/worker', filesystem, accessModes: ['read-only'] }],
+      managedRuntimeRoot: '/worker/runtime', runtimeFilesystem: filesystem })
+    const policy = WorkspaceRootPolicySchema.parse({ schemaVersion: 1, rootPolicyId, rootPolicyRevision: '1',
+      workspaceId: seeded.scope.workspaceId, hostRef, applicationInstallationId: installationId,
+      registration: { workerInstallationId: installationId, keyRevision: 1, authorizationRevision: 1 },
+      locationRevision: '1', ownerPrincipalId: writer.id, allowedBaseId: baseId, configurationRevision: '1',
+      relativePath: 'device-project', accessMode: 'read-only', canonicalProjectRoot: '/worker/device-project',
+      filesystem, directoryIdentityHash: 'a'.repeat(64), managedRuntimeRoot: approved.managedRuntimeRoot,
+      runtimeFilesystem: filesystem, attestationId: randomUUID(), attestationDigest: 'b'.repeat(64) })
+    const hostScope = workspaceRootHostScope(hostRef)
+    await pool.query(`insert into workspace_root_host_configurations
+      (host_scope,configuration_revision,main_id,application_installation_id,record,digest) values($1,1,$2,$3,$4::jsonb,$5)`,
+    [hostScope, mainId, installationId, JSON.stringify(approved), 'recorded-root-digest'])
+    await pool.query('insert into workspace_root_host_configuration_heads(host_scope,configuration_revision) values($1,1)', [hostScope])
+    await pool.query(`insert into workspace_root_policies
+      (root_policy_id,root_policy_revision,workspace_id,host_scope,location_revision,record) values($1,1,$2,$3,1,$4::jsonb)`,
+    [rootPolicyId, seeded.scope.workspaceId, hostScope, JSON.stringify(policy)])
+    await pool.query(`insert into workspace_root_policy_heads(workspace_id,host_scope,root_policy_id,root_policy_revision)
+      values($1,$2,$3,1)`, [seeded.scope.workspaceId, hostScope, rootPolicyId])
+    const { service } = makeService()
+    const app = buildApp({ logger: false,
+      readiness: { database: { ping: async () => undefined }, checkpoints: { ping: async () => undefined } },
+      operator: { access, services: { agentChat: service, commands: new PostgresCommandCoordinator(pool) } as unknown as OperatorServices } })
+    const client = new Client({ name: 'device-node-writer', version: '1' })
+    const reader = new Client({ name: 'device-node-reader', version: '1' })
+    try {
+      const address = await app.listen({ host: '127.0.0.1', port: 0 })
+      await client.connect(new StreamableHTTPClientTransport(new URL('/mcp', address), { authProvider: { token: async () => writerToken } }))
+      await reader.connect(new StreamableHTTPClientTransport(new URL('/mcp', address), { authProvider: { token: async () => readOnlyToken } }))
+      const node = seeded.version.definition.nodes[0]!
+      const context = { workflowId: seeded.scope.workflowId, workflowNodeId: node.id, agentId: configuration.agentId }
+      const target = { workspaceId: seeded.scope.workspaceId, context }
+      const opened = decodeMcpToolResult(await client.callTool({ name: 'agent_chat_read',
+        arguments: { workspaceId: seeded.scope.workspaceId, query: context } })) as { availability: { canSend: boolean; message?: string } }
+      expect(opened.availability).toMatchObject({ canSend: true })
+      expect(opened.availability.message ?? '').not.toContain('another execution host')
+      const control = { ...target, request: { kind: 'mode', mode: 'plan', requestId: randomUUID(), expectedRevision: 0 } }
+      const denied = await reader.callTool({ name: 'agent_chat_controls_update', arguments: control })
+      expect(denied.isError).toBe(true)
+      const updated = await client.callTool({ name: 'agent_chat_controls_update', arguments: control })
+      expect(updated.isError).not.toBe(true)
+      const controls = SessionControlStateSchema.parse(decodeMcpToolResult(updated))
+      expect(controls.conversationId).toBeTruthy()
+      expect(FakeNative.all).toHaveLength(0)
+      const row = await new PostgresAgentChatRepository(pool).get(controls.conversationId!)
+      expect(row?.record).toMatchObject({ workingDirectory: '/worker/device-project',
+        directoryBinding: { workflowVersionId: seeded.version.id, policy, placement: { hostRef, rootPolicyId,
+          projectRoot: '/worker/device-project', cwdPolicy: 'project-root', relativeCwd: '', instanceId } } })
+      const persisted = SessionControlStateSchema.parse(decodeMcpToolResult(await reader.callTool({
+        name: 'agent_chat_controls_get', arguments: target })))
+      expect(persisted.conversationId).toBe(controls.conversationId)
+      expect(persisted.desiredMode).toBe('plan')
+    } finally {
+      await Promise.all([client.close(), reader.close()])
+      await app.close()
+      await service.shutdown()
+    }
+  })
+
   it('creates only an application conversation for fresh control admission and applies Plan on the first message', async () => {
     const { service } = makeService()
     const context = { workspaceId: fixture.scope.workspaceId, ...query(codexNode) }
@@ -903,7 +979,7 @@ describe('selected-Agent chat service', { timeout: 60_000 }, () => {
       expect((await repository.state(id))!.messages).toEqual(state.messages)
       expect(native.prompts).toHaveLength(0)
     } finally {
-      await client.close().catch(() => undefined)
+      await client.close().catch(() => /* ignore: the client may already be closed; app and service shutdown still run. */ undefined)
       await app.close()
       await service.shutdown()
     }
