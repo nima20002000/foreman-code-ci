@@ -112,8 +112,6 @@ const AgentChatOriginSchema = z.discriminatedUnion("kind", [
 export type AgentChatOrigin = z.infer<typeof AgentChatOriginSchema>;
 
 export const AgentConversationSchema = z.object({
-  previousConversationId: IdSchema.optional(),
-  archived: z.boolean().optional(),
   providerAccountBinding: AcceptedProviderAccountBindingSchema.optional(),
   id: IdSchema,
   workspaceId: IdSchema,
@@ -311,7 +309,7 @@ export const SendAgentChatMessageRequestSchema = z.object({
   requestId: IdSchema,
   ...MessageAttachmentFields,
   context: AgentChatQuerySchema,
-  content: z.string().trim().max(AGENT_CHAT_MAX_MESSAGE_CHARACTERS).describe('Message text, up to 1,048,576 characters. Bare /new starts a separate Agent conversation and returns a reset response without a model turn.'),
+  content: z.string().trim().max(AGENT_CHAT_MAX_MESSAGE_CHARACTERS).describe('Message text, up to 1,048,576 characters.'),
   sessionMode: z.enum(['regular', 'plan']).optional()
     .describe('Selects the mode for a new turn. Steering may only retain the active applied mode; mode changes and /plan tasks require next_turn or interrupt_and_send.'),
   intent: AgentChatIntentSchema.default("next_turn")
@@ -343,16 +341,6 @@ export const SendAgentChatMessageResponseSchema = z.object({
   replayWarning: AgentChatReplayWarningSchema.optional(),
 }).strict();
 export type SendAgentChatMessageResponse = z.infer<typeof SendAgentChatMessageResponseSchema>;
-
-/** /new creates a conversation without admitting a model turn. */
-export const AgentChatResetResponseSchema = z.object({
-  state: AgentChatStateSchema,
-  reset: z.object({ requestId: IdSchema, previousConversationId: IdSchema.nullable() }).strict(),
-  replayed: z.boolean(),
-}).strict();
-export const AgentChatSendResponseSchema = z.union([
-  SendAgentChatMessageResponseSchema, AgentChatResetResponseSchema,
-]);
 
 /** POST /api/workspaces/:workspaceId/agent-chat/conversations/:conversationId/interrupt */
 export const InterruptAgentChatRequestSchema = z.object({
@@ -393,8 +381,6 @@ export const AgentChatTurnPageSchema = z.object({
 /** agent_chat_read retains its ordinary state response; explicit page requests add readback fields. */
 export const ReadAgentChatRequestSchema = z.object({
   workspaceId: IdSchema,
-  /** Read a retained conversation in this exact Agent context. */
-  conversationId: IdSchema.optional(),
   query: AgentChatQuerySchema,
   history: AgentChatReadbackQuerySchema.optional(),
   receipts: AgentChatReadbackQuerySchema.optional(),
