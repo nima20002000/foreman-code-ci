@@ -62,7 +62,6 @@ export async function workerClaudeReplacementFixture(f = workerConversationFixtu
   const offers: ClaudeSdkUserMessage[] = []
   const resumes: unknown[] = []
   const recoveries: { inputsBefore: number; inputsAfter: number }[] = []
-  let coldHistory = false
   let source: WorkerConversationRpcRequest
   let connectionState: 'connected' | 'unavailable' | 'transport' = 'connected'
   let denied = false
@@ -83,7 +82,6 @@ export async function workerClaudeReplacementFixture(f = workerConversationFixtu
   const sdk: ClaudeSdkClient = {
     sdkVersion: '0.3.284', getSessionInfo: async sessionId => ({ sessionId }),
     getSessionMessages: async (_sessionId, options) => {
-      if (!coldHistory) return []
       const rows = (await readFile(historyPath, 'utf8')).split('\n').filter(Boolean).map(line => JSON.parse(line) as unknown)
       const offset = options.offset ?? 0
       return rows.slice(offset, offset + (options.limit ?? 256))
@@ -170,6 +168,7 @@ export async function workerClaudeReplacementFixture(f = workerConversationFixtu
     return { owners, native }
   }
   let runtime = createRuntime()
+  let allocationClosed = false
   const bridge = new MainWorkerConversationBridge()
   const callbacks = workerConversationCallbacks({ currentBinding: () => f.connection,
     capture: () => ({ binding: f.connection, request: async payload => ({
@@ -194,9 +193,20 @@ export async function workerClaudeReplacementFixture(f = workerConversationFixtu
       if (input.kind === 'agent-chat') return { ...input, instructionsDelivered }
       return input
     },
-      nativeOwner: current.owners.nativeOwner, close: async () => { await current.native.dispose?.() } }
+      nativeOwner: current.owners.nativeOwner, close: async () => {
+        await current.native.dispose?.()
+        if (runtime === current) allocationClosed = true
+      } }
   }
   let allocation = createAllocation()
+  const liveAllocation = () => {
+    if (allocationClosed) {
+      runtime = createRuntime()
+      allocation = createAllocation()
+      allocationClosed = false
+    }
+    return allocation
+  }
   const authorize: WorkerConversationHostPorts['authorize'] =
     async (request, connection, signal) => {
       if (denied) throw new Error('Main denied the caller')
@@ -204,12 +214,12 @@ export async function workerClaudeReplacementFixture(f = workerConversationFixtu
     }
   const createHost = () => new WorkerConversationHost({
     ...callbacks, currentBinding: () => f.connection, journal: journal.conversations,
-    allocate: async () => allocation,
+    allocate: async () => liveAllocation(),
     authorize,
     recover: async (record, configuration, connection, signal, request) => {
       const inputsBefore = offers.length
       const recovered = await recoverWorkerConversation({ record, configuration, connection, signal, request,
-        registry, journal: journal.conversations, allocate: async () => allocation,
+        registry, journal: journal.conversations, allocate: async () => liveAllocation(),
         assertCurrent: () => authorize(request, connection, signal) })
       recoveries.push({ inputsBefore, inputsAfter: offers.length })
       return recovered
@@ -235,9 +245,9 @@ export async function workerClaudeReplacementFixture(f = workerConversationFixtu
       await host.shutdown()
       await journal.close()
       journal = await RemoteOperationJournal.open(journalPath)
-      coldHistory = true
       runtime = createRuntime()
       allocation = createAllocation()
+      allocationClosed = false
       host = createHost()
       manager = createManager()
     },
