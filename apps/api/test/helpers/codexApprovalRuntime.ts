@@ -10,7 +10,7 @@ import { createWorkflowRepositoryServices } from '../../src/modules/runs/workflo
 import { randomUUID } from 'node:crypto'
 import { vi } from 'vitest'
 import { AgentConfigurationVersionSchema, DEFAULT_CODEX_ADVANCED_CONFIGURATION,
-  DEFAULT_HARNESS_DEFAULTS, type ResolvedSkill, type CodexHarnessConfiguration } from '@foreman-code/contracts'
+  DEFAULT_HARNESS_DEFAULTS, type ResolvedSkill } from '@foreman-code/contracts'
 import { ExecutableWorkflowV3Schema, makeCurrentWorkflowFixture, WorkflowRunV3Schema } from '@foreman-code/contracts/wave25'
 import { ApprovalPostgresSaver } from '../../src/infrastructure/approvalCheckpointSaver.js'
 import { PostgresAccessService } from '../../src/modules/access/postgres.js'
@@ -30,7 +30,6 @@ import { PostgresWorkflowRepository } from '../../src/modules/workflows/postgres
 import { WorkspaceLocationService } from '../../src/modules/workspaces/location.js'
 import { CodexApprovalProvider, type ApprovalProviderOptions } from './codexApprovalProvider.js'
 import { agent3Database, seedAgent3 } from './wave25Agent3.js'
-import type { RepeatRepositoryServices } from '../../src/modules/runs/repeatRepositoryHost.js'
 
 /** Real SQL, workflow engine, Codex adapter, credentials and approval services with replayed provider IO. */
 export async function codexApprovalRuntime(handler: 'user' | 'orchestrator' = 'user',
@@ -39,8 +38,6 @@ export async function codexApprovalRuntime(handler: 'user' | 'orchestrator' = 'u
     approvalPolicy?: 'never'
     skills?: ResolvedSkill[]
     database?: Awaited<ReturnType<typeof agent3Database>>
-    sandbox?: CodexHarnessConfiguration['sandbox']
-    preparePlacementExecution?: RepeatRepositoryServices['preparePlacementExecution']
   } = {}) {
   const db = options.database ?? await agent3Database()
   let engine: LangGraphWorkflowEngine | undefined
@@ -54,7 +51,7 @@ export async function codexApprovalRuntime(handler: 'user' | 'orchestrator' = 'u
       productRole: handler === 'orchestrator' && c.agentId === entry.agentId ? 'orchestrator' : 'coder',
       harness: {
         ...DEFAULT_HARNESS_DEFAULTS.codex, model: 'test-model', reasoningEffort: 'low',
-        sandbox: options.sandbox ?? 'read-only', serviceTier: 'standard',
+        sandbox: 'read-only', serviceTier: 'standard',
         advanced: {
           ...structuredClone(DEFAULT_CODEX_ADVANCED_CONFIGURATION),
           approvalPolicy: options.approvalPolicy ?? 'on-request',
@@ -108,10 +105,8 @@ export async function codexApprovalRuntime(handler: 'user' | 'orchestrator' = 'u
       const workflowCapture = createWorkflowNativeCaptureChannel()
       const nativeCapture = { capture: workflowCapture.capture.capture.bind(workflowCapture.capture) }
       const reviewCapture = createReviewNativeCaptureChannel()
-      const repositoryServices = createWorkflowRepositoryServices(workflowCapture.verify)
       const runs = new PostgresRunRepository(db.pool, workflows, locations,
-        { runtimeRoot: db.directory, ...repositoryServices, services: { ...repositoryServices.services,
-          ...(options.preparePlacementExecution ? { preparePlacementExecution: options.preparePlacementExecution } : {}) } })
+        { runtimeRoot: db.directory, ...createWorkflowRepositoryServices(workflowCapture.verify) })
       const repository = new Wave25InteractionRepository(db.pool, new ReviewNativeProofServices(reviewCapture.verify)), budgets = new PostgresApprovalBudgetRepository(db.pool)
       const credentials = new Wave25WorkerCredentialService(db.pool, access)
       const launchCredentials = providerLaunchCredentials(runs, locations, managers, credentials, (manager) => {

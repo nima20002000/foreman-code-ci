@@ -133,6 +133,7 @@ int main(int argc, char **argv) {
     invalidateVersions: () => writeFile(join(directory, 'invalid-versions'), '', { mode: 0o600 }),
     restoreVersions: () => rm(join(directory, 'invalid-versions')),
     calls: () => readActivity('calls.jsonl'),
+    loseCompactionResponse: () => writeFile(join(directory, 'lose-compaction-response'), '', { mode: 0o600 }),
     startupActivity: () => readActivity('startup.jsonl'),
     releaseReview: () => writeFile(join(directory, 'release-review'), '', { mode: 0o600 }),
     blockWorkflowTurns: (options?: { allowFirst: number }) => writeFile(join(directory, 'block-workflow-turns'),

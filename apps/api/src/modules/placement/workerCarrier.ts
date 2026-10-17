@@ -19,7 +19,6 @@ import { isDeviceLinkDrop } from '../devices/deviceReconnect.js'
  * is not enough to bind native responses to their originating connection. */
 export interface AuthenticatedWorkerChannel {
   identity: DeviceConnectionIdentity
-  readonly stopReadAdmission?: true
   supports?(namespace: string): boolean
   request(namespace: string, payload: unknown, options?: { signal?: AbortSignal; timeoutMs?: number }): Promise<{ payload: unknown; bytes?: Uint8Array }>
 }
@@ -36,8 +35,7 @@ function selected(carrier: MainWorkerCarrier, host: { kind: 'main' | 'device'; m
     || identity.keyRevision !== registration.keyRevision || identity.authorizationRevision !== registration.authorizationRevision) {
     throw new DomainError('REMOTE_CONNECTION_CONFLICT', 'The authenticated carrier does not match the accepted device registration.', 409)
   }
-  return { identity, request: connection.request.bind(connection), supports: connection.supports?.bind(connection),
-    stopReadAdmission: connection.stopReadAdmission }
+  return { identity, request: connection.request.bind(connection), supports: connection.supports?.bind(connection) }
 }
 export function rootWorkerCarrier(carrier: MainWorkerCarrier): RootWorkerClient {
   return { async request(host, registration, raw) {
@@ -99,11 +97,6 @@ export function remoteNativeManager(context: NativeManagerResolutionContext, bin
         throw new DomainError('REMOTE_BINDING_CONFLICT', 'Native request cannot change its accepted operation or placement.', 409)
       }
       const connection = selected(options.carrier, binding.placement.hostRef, binding.placement.registration)
-      const stopping = request.method === 'status' && request.forStop
-        || request.method === 'receipt-continuation' && request.forStop
-        || request.method === 'control' && request.command.action.kind === 'stop'
-      if ((request.method === 'status' || request.method === 'receipt-continuation')
-        && request.forStop && !connection.stopReadAdmission) delete request.forStop
       reached = connection.identity
       const continuesSession = request.method === 'prepare' && request.sessionContinuation !== undefined
       const namespace = continuesSession ? REMOTE_PREPARATION_EXTENSION.namespace : REMOTE_EXECUTION_EXTENSION
@@ -120,7 +113,6 @@ export function remoteNativeManager(context: NativeManagerResolutionContext, bin
       const response = await readRemoteReceiptResponse(result.payload, request.intent, async continuation => {
         const next = await connection.request(REMOTE_EXECUTION_EXTENSION, {
           method: 'receipt-continuation', intent: request.intent, placement: request.placement, ...continuation,
-          ...(stopping && connection.stopReadAdmission ? { forStop: true } : {}),
         }, requestOptions)
         if (next.bytes !== undefined) {
           throw new DomainError('REMOTE_NATIVE_RESPONSE_INVALID', 'Native metadata responses cannot contain arbitrary bytes.', 409)
