@@ -37,7 +37,6 @@ vi.mock('node:fs/promises', async importOriginal => {
 vi.mock('../../../scripts/copy-api-runtime.mjs', () => ({ copyApiRuntime: vi.fn() }))
 vi.mock('../../../scripts/local-production-runtime.mjs', () => ({
   deployProductionApi: fixture.deploy,
-  pruneApiDependencies: fixture.prune,
   apiServiceTemplate: () => '[Service]\nExecStart=apps/api/dist/server.js\n',
   publish: async () => { throw new Error('Stopped before publishing fixture service') },
 }))
