@@ -22,9 +22,9 @@ it('summarizes each computer on one card in build order with harnesses, GitHub, 
   const cards = screen.getAllByRole('article')
   expect(cards.indexOf(main)).toBeLessThan(cards.indexOf(device))
   expect(within(main).getByText('Online')).toBeVisible()
-  expect(await within(main).findByRole('img', { name: 'GitHub: signed in' })).toBeVisible()
-  expect(within(main).getByRole('img', { name: 'Codex: signed in' })).toBeVisible()
-  expect(within(main).getByRole('img', { name: 'Claude: signed out' })).toBeVisible()
+  expect(await within(main).findByText('octo-owner')).toBeVisible()
+  expect(within(main).getByText('Codex')).toBeVisible()
+  expect(within(main).getByText('Claude · signed out')).toBeVisible()
   expect(within(main).queryByText(/OpenCode/)).not.toBeInTheDocument()
   expect(within(device).getByText('2nd of 2 · up to 60% CPU and RAM')).toBeVisible()
   expect(within(main).getByText('2 agents running · 1 workflow')).toBeVisible()
@@ -35,7 +35,7 @@ it('summarizes each computer on one card in build order with harnesses, GitHub, 
 it('asks the Operator to fix a signed-out harness and drafts a settings change without sending it', async () => {
   computersFixture(<ComputerCards mainId={mainTarget.hostRef.mainId} devices={[registration]} />)
   const main = await screen.findByRole('article', { name: 'Main PC' })
-  await userEvent.click(await within(main).findByRole('button', { name: 'Sign in to Claude' }))
+  await userEvent.click(await within(main).findByRole('button', { name: 'Sign in' }))
   expect(useOperatorChatStore.getState()).toMatchObject({ open: true, request: { content: 'Sign Claude in on Main PC.', send: true } })
   await userEvent.click(within(main).getByRole('button', { name: 'Ask Operator to change…' }))
   expect(useOperatorChatStore.getState().request).toMatchObject({ content: 'On Main PC: ', send: false })
@@ -45,35 +45,37 @@ it.each([
   { observation: 'null', version: '1.0' },
   { observation: 'absent', version: '1.0' },
   { observation: 'null', version: null },
-] as const)('shows unknown sign-in without sign-in prompts ($observation, $version)', async ({ observation, version }) => {
+] as const)('shows unknown accounts without sign-in prompts ($observation, $version)', async ({ observation, version }) => {
   const accounts = observation === 'absent' ? [] : (['codex', 'claude', 'github'] as const).map(tool => ({
     tool, installed: true, signedIn: null, account: null, details: [],
   }))
   computersFixture(<ComputerCards mainId={mainTarget.hostRef.mainId} devices={[registration]} />, [
+    computerReadHandler('accounts', { computers: [{ target: mainTarget,
+      accounts: { observedAt: new Date().toISOString(), accounts } }] }),
     computerReadHandler('maintenance', { computers: [{ target: mainTarget,
-      connections: { accounts: { observedAt: new Date().toISOString(), accounts }, mcp: { codex: 'installed', claude: 'installed' } },
       status: { observedAt: new Date().toISOString(), tasks: [],
         harnesses: (['codex', 'claude'] as const).map(harness => ({ harness, installed: true, version, latest: version })),
         system: { packageUpdates: null, rebootRequired: false, sudo: false, disk: null } } }] }),
   ])
   const card = await screen.findByRole('article', { name: 'Main PC' })
-  expect(await within(card).findByRole('img', { name: 'Codex: sign-in unknown' })).toBeVisible()
-  expect(within(card).getByRole('img', { name: 'Claude: sign-in unknown' })).toBeVisible()
-  expect(within(card).getByRole('img', { name: observation === 'absent' ? 'GitHub: unknown' : 'GitHub: sign-in unknown' })).toBeVisible()
-  expect(within(card).queryByRole('img', { name: /signed out/i })).not.toBeInTheDocument()
-  expect(within(card).queryByRole('button', { name: /Sign in/ })).not.toBeInTheDocument()
+  const versionLabel = version ? ` ${version}` : ''
+  expect(await within(card).findByText(`Codex${versionLabel} · account unknown`)).toBeVisible()
+  expect(within(card).getByText(`Claude${versionLabel} · account unknown`)).toBeVisible()
+  expect(within(card).getByText('Account unknown')).toBeVisible()
+  expect(within(card).queryByText(/signed out/i)).not.toBeInTheDocument()
+  expect(within(card).queryByRole('button', { name: 'Sign in' })).not.toBeInTheDocument()
 })
 
 it('offers GitHub sign-in for an explicit signed-out observation', async () => {
   computersFixture(<ComputerCards mainId={mainTarget.hostRef.mainId} devices={[registration]} />, [
-    computerReadHandler('maintenance', { computers: [{ target: mainTarget, status: null,
-      connections: { mcp: { codex: null, claude: null }, accounts: { observedAt: new Date().toISOString(), accounts: [
+    computerReadHandler('accounts', { computers: [{ target: mainTarget,
+      accounts: { observedAt: new Date().toISOString(), accounts: [
         { tool: 'github', installed: true, signedIn: false, account: null, details: [] },
-      ] } } }] }),
+      ] } }] }),
   ])
   const card = await screen.findByRole('article', { name: 'Main PC' })
-  expect(await within(card).findByRole('img', { name: 'GitHub: signed out' })).toBeVisible()
-  await userEvent.click(within(card).getByRole('button', { name: 'Sign in to GitHub' }))
+  expect(await within(card).findByText('Signed out')).toBeVisible()
+  await userEvent.click(within(card).getByRole('button', { name: 'Sign in' }))
   expect(useOperatorChatStore.getState().request).toMatchObject({
     content: 'Sign GitHub in on Main PC and set up git to use it.', send: true,
   })
@@ -97,28 +99,26 @@ it('shows versions, OS updates, restart need and disk, and starts maintenance on
     http.post('*/api/management/computers/maintenance/start', async ({ request }) => { started.push(await request.json()); return HttpResponse.json({ computers: [] }) }),
   ])
   const main = await screen.findByRole('article', { name: 'Main PC' })
-  expect(await within(main).findByRole('img', { name: 'Claude: not installed' })).toBeVisible()
-  expect(within(main).getByRole('img', { name: 'Update: 2 updates' })).toBeVisible()
+  expect(await within(main).findByText('Codex 0.160.0 · 0.161.0 available')).toBeVisible()
+  expect(within(main).getByText('3 pending updates')).toBeVisible()
   expect(within(main).getByText('Restart needed')).toBeVisible()
   expect(within(main).getByText('41 GB free of 193 GB')).toBeVisible()
   expect(within(main).getByRole('status')).toHaveTextContent('System update: 4 packages upgraded')
   expect(within(screen.getByRole('article', { name: deviceName })).queryByRole('button', { name: 'Restart' })).not.toBeInTheDocument()
-  await userEvent.click(within(main).getByRole('button', { name: 'Update' }))
-  await waitFor(() => expect(within(main).getByRole('button', { name: 'Restart' })).toBeEnabled())
+  await userEvent.click(within(main).getAllByRole('button', { name: 'Update' })[0]!)
+  await userEvent.click(within(main).getByRole('button', { name: 'Install' }))
   await userEvent.click(within(main).getByRole('button', { name: 'Restart' }))
   await userEvent.click(within(main).getByRole('button', { name: 'Confirm restart' }))
   await userEvent.click(screen.getByRole('button', { name: 'Update computers' }))
   await waitFor(() => expect(started).toHaveLength(5))
-  expect(started.slice(0, 2).map(value => (value as { task: unknown }).task)).toEqual(expect.arrayContaining([
-    { kind: 'update-harnesses', harnesses: ['codex', 'claude'] }, { kind: 'update-system' }]))
-  expect(started.slice(0, 2).every(value => (value as { targets?: unknown[] }).targets?.length === 1)).toBe(true)
-  expect(started.slice(2).map(value => (value as { task: unknown; targets?: unknown[] }))).toEqual([
+  expect(started.map(value => (value as { task: unknown; targets?: unknown[] }))).toEqual([
+    expect.objectContaining({ task: { kind: 'update-harnesses', harnesses: ['codex'] }, targets: [mainTarget] }),
+    expect.objectContaining({ task: { kind: 'update-harnesses', harnesses: ['claude'] }, targets: [mainTarget] }),
     expect.objectContaining({ task: { kind: 'restart' }, targets: [mainTarget] }),
     expect.objectContaining({ task: { kind: 'update-harnesses', harnesses: ['codex', 'claude'] } }),
     expect.objectContaining({ task: { kind: 'update-system' } }),
   ])
   expect((started[3] as { targets?: unknown }).targets).toBeUndefined()
-  expect((started[4] as { targets?: unknown }).targets).toBeUndefined()
 })
 
 it('reports unavailable computers from both update requests instead of silently succeeding', async () => {
