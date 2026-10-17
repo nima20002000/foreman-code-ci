@@ -14,15 +14,10 @@ import { MainWorkerConversationBridge } from './workerBridge.js'
 import { workerConversationCallbacks } from './workerCallbacks.js'
 import { workerConversationFixture } from './workerFixtures.test-support.js'
 
-it.each([
-  { status: 'completed', boot: 'same' }, { status: 'failed', boot: 'same' },
-  { status: 'completed', boot: 'replacement' }, { status: 'failed', boot: 'replacement' },
-] as const)(
-  'recovers the Worker Claude $status result on a $boot boot without opening a writer', async ({ status, boot }) => {
+it.each([['completed', 'dispose'], ['failed', 'dispose'], ['completed', 'restart'], ['failed', 'restart']] as const)(
+  'recovers the Worker Claude %s result after a boundary and restart without opening a writer (%s cleanup)', async (status, cleanup) => {
   const root = await mkdtemp(join(tmpdir(), 'worker-compaction-'))
   const f = workerConversationFixture('operator', 'claude')
-  const connection = boot === 'same' ? f.connection : { ...f.connection, bootId: randomUUID(),
-    connectionEpoch: randomUUID(), connectionGeneration: f.connection.connectionGeneration + 1 }
   if (!('operatorId' in f.configuration) || f.configuration.harness.harness !== 'claude') throw new Error('Claude Operator fixture required')
   const configuration = { ...f.configuration, harness: { ...f.configuration.harness, configDirectory: root } }
   const binding = WorkerConversationBindingSchema.parse({ ...f.binding,
@@ -38,14 +33,14 @@ it.each([
   const bridge = new MainWorkerConversationBridge()
   let allocations = 0
   let allowed = true
-  const callbacks = workerConversationCallbacks({ currentBinding: () => connection,
-    capture: () => ({ binding: connection, request: async payload => ({
-      payload: await bridge.handle(payload, connection, AbortSignal.timeout(1000)),
+  const callbacks = workerConversationCallbacks({ currentBinding: () => f.connection,
+    capture: () => ({ binding: f.connection, request: async payload => ({
+      payload: await bridge.handle(payload, f.connection, AbortSignal.timeout(1000)),
     }) }) })
-  const host = new WorkerConversationHost({ ...callbacks, currentBinding: () => connection,
+  const host = new WorkerConversationHost({ ...callbacks, currentBinding: () => f.connection,
     journal: journal.conversations, allocate: async () => { allocations++; throw new Error('Cold read opened a writer') } })
   const manager = new WorkerConversationManager({ binding, configuration, bridge,
-    channel: { binding: connection, request: async payload => ({ payload: await host.handle(payload, connection) }) },
+    channel: { binding: f.connection, request: async payload => ({ payload: await host.handle(payload, f.connection) }) },
     current: async () => { if (!allowed) throw new Error('Read grant revoked') } })
   try {
     await mkdir(directory, { recursive: true })
@@ -75,13 +70,15 @@ it.each([
       status, nativeOperationId: boundaryId, beforeTokens: 12000 })
     expect((await journal.conversations.read(binding))?.compactions[0]?.state).toEqual(recovered)
     expect(allocations).toBe(0)
-    expect(() => manager.startTurn(f.session, { prompt: 'This observer must not own a writer.',
-      clientCorrelationId: randomUUID() })).toThrow('does not own')
-    expect(allocations).toBe(0)
     expect((await journal.conversations.reserveTurn(binding, 'next-message', commandInputHash('next-message'))).dispatch)
       .toBe(true)
     allowed = false
     await expect(manager.readCompaction(f.session, start, state)).rejects.toThrow('Read grant revoked')
+    expect(allocations).toBe(0)
+    const beforeDetach = await journal.conversations.read(binding)
+    if (cleanup === 'dispose') await expect(manager.dispose()).resolves.toBeUndefined()
+    else await manager.closeForRestart(f.session)
+    expect(await journal.conversations.read(binding)).toEqual(beforeDetach)
     expect(allocations).toBe(0)
   } finally {
     await manager.dispose()

@@ -40,7 +40,7 @@ async function fixture(options: { existing?: boolean; stopDuringFetch?: boolean 
     if (text.includes('select 1 from runs r')) return { rows: stopped ? [{}] : [], rowCount: stopped ? 1 : 0 }
     if (text.includes('from runs')) return { rows: [{ execution_state: stopped ? 'completed' : 'running' }], rowCount: 1 }
     if (text.startsWith('insert into run_worktrees')) tree = JSON.parse(String(values[2]))
-    if (text.startsWith('update run_worktrees')) tree = JSON.parse(String(values[1]))
+    if (text.startsWith('update run_worktrees set record=')) tree = JSON.parse(String(values[1]))
     return { rows: [], rowCount: 1 }
   }
   const pool = { query, connect: async () => ({ query, release() {} }) } as unknown as pg.Pool
