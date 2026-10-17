@@ -1,4 +1,5 @@
 import { performance } from 'node:perf_hooks'
+import { randomUUID } from 'node:crypto'
 import { describe, expect, it, vi } from 'vitest'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import type { OperatorChatSettings, OperatorConversationState } from '@foreman-code/contracts'
@@ -141,13 +142,13 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('Operator warm Codex sessions', 
     const before = await f.readOperator(id)
     const result = await f.writer.callTool({ name: 'operator_chat_send', arguments: {
       conversationId: id, request: { requestId: 'account-change', content: 'Reply once',
-        settings: { ...f.settings, accountId: 'recorded-account' }, forkExpectedRevision: before.revision },
+        settings: { ...f.settings, accountId: randomUUID() }, forkExpectedRevision: before.revision },
     } })
     expect(result.isError, JSON.stringify(result)).not.toBe(true)
     const next = (decodeMcpToolResult(result) as { state: OperatorConversationState }).state
     expect(next.conversation.id).not.toBe(id)
     await idle(next.conversation.id)
-    await closed(original.pid)
+    expect((await calls(f.native.directory)).some(entry => entry.exited === original.pid)).toBe(true)
     expect(await processes()).toHaveLength(2)
     expect((await f.readOperator(id)).conversation.operatorConfigurationVersionId)
       .toBe(before.conversation.operatorConfigurationVersionId)
