@@ -4,7 +4,7 @@ import { useLocation, useRouter } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import type { WorkflowRunSummary } from '@foreman-code/contracts'
 import type { RepeatGraphScopeV3, WorkspaceBoardInspection } from '@foreman-code/contracts/wave25'
-import { Dialog, Drawer } from '../../shared/ui/nocturne'
+import { Dialog } from '../../shared/ui/nocturne'
 import { WorkspaceExecutionLocationSettings } from '../settings/WorkspaceExecutionLocationSettings'
 import { RunBoardSlot } from '../run-board'
 import { runsSelectorApi, useRunSummaries, useSelectedRun, useSelectedRunSnapshot } from '../runs-selector'
@@ -12,6 +12,7 @@ import { BoardNavigationControls } from './BoardNavigationControls'
 import { CurrentRunObserver } from './CurrentRunObserver'
 import { WorkflowBoardContext } from './context'
 import { boardLiveRunSnapshotKey } from './keys'
+import { ActivitiesPopover } from './ActivitiesPopover'
 import { RunActivityPanel } from './RunActivityPanel'
 import { shortRunId } from './runFacts'
 import { useInspectionPresentation } from './inspect/presentation'
@@ -92,15 +93,16 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
   const runsKey = JSON.stringify(['board-run-drawer', workspaceId, workflowId])
   const runsOpen = useInspectionPresentation((state) => !!state.open[runsKey])
   const toolbar = useRef<HTMLDivElement>(null)
+  const findActivitiesButton = useCallback(() => toolbar.current?.querySelector<HTMLButtonElement>('button[aria-label="Activities"]') ?? null, [])
   const setRunsOpen = useCallback((open: boolean) => {
     if (open && !currentRef.current) return
     useInspectionPresentation.getState().setOpen(runsKey, open)
     if (!open) setTimeout(() => {
       if (!document.activeElement || document.activeElement === document.body) {
-        toolbar.current?.querySelector<HTMLButtonElement>('button[aria-label="Activities"]')?.focus()
+        findActivitiesButton()?.focus()
       }
     }, 0)
-  }, [runsKey])
+  }, [runsKey, findActivitiesButton])
   const linkedInspection = legacyRun && (inspection.runNodeId || inspection.runRelationshipId || inspection.runExchangeKey)
     ? JSON.stringify([legacyRun, inspection]) : undefined
   useEffect(() => { if (linkedInspection) setRunsOpen(true) }, [linkedInspection, setRunsOpen])
@@ -147,10 +149,9 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
           {legacyRun ? <div className="board-run-tag" role="status">
             <RunContextLabel scope={legacyRun} />
           </div> : null}
-          <Drawer open={current && runsOpen} onOpenChange={setRunsOpen} title="Activities" className="workflow-board-runs-dialog"
-            closeLabel="Close runs" size="lg" closeOnOutsideClick>
+          <ActivitiesPopover open={current && runsOpen} onClose={() => setRunsOpen(false)} findAnchor={findActivitiesButton}>
             {current ? <RunActivityPanel summaries={summaries} summariesReadAt={summariesReadAt} /> : null}
-          </Drawer>
+          </ActivitiesPopover>
           <Dialog open={current && locationOpen} onOpenChange={setLocationOpen} title="Execution folder" closeLabel="Close execution folder"
             description="Where agents work on files. It applies to future runs; runs already started keep their folder.">
             <WorkspaceExecutionLocationSettings workspaceId={workspaceId} presentation="field" />

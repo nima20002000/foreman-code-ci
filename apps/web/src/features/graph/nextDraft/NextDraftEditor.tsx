@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { GraphDraftV3Schema, sameAuthoredWorkflow } from '@foreman-code/contracts/wave25'
 import { errorMessage } from '../../../shared/errorMessage'
-import { Button } from '../../../shared/ui/nocturne'
+import { Button, LoadingState } from '../../../shared/ui/nocturne'
 import { GraphPresentationProvider } from '../GraphPresentation'
 import { useGraphDraftStore } from '../store'
 import { hasLocalChanges } from './model'
@@ -11,7 +11,6 @@ import { nextDraftApi, type AuthoringContext } from './transport'
 import { claimEditTabOwnership, readEditSnapshot } from './editIntentStorage'
 import { type BoardUpdateFailure } from '../../workflow-board/BoardAlerts'
 import { boardDraftContextKey } from '../../workflow-board/keys'
-import { BoardLoading } from '../../workflow-board/BoardLoading'
 import { useDraftEditorController } from './useDraftEditorController'
 import { DraftEditorView } from './DraftEditorView'
 import '../graph.css'
@@ -78,7 +77,7 @@ function DraftLoader({ draftKey, workspaceId, workflowId, initialContext, update
     <p>No retained command was deleted, retagged or replaced.</p>
     {!storageError ? <Button onClick={() => void source.refetch()}>Try again</Button> : null}
   </section>
-  return <BoardLoading />
+  return <LoadingState label="Loading the current workflow draft…" rows={2} />
 }
 
 function EditorForm({ draftKey, edit, updateFailures }: { draftKey: string; edit: NextDraftEdit; updateFailures?: readonly BoardUpdateFailure[] }) {
