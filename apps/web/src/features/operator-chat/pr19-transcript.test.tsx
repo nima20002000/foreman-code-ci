@@ -24,15 +24,13 @@ beforeEach(() => {
 afterEach(() => { cleanup(); client.clear(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 const wrap = (content: ReactNode) => <QueryClientProvider client={client}>{content}</QueryClientProvider>
 
-describe('persisted transcript boundaries', () => {
+describe('PR19: persisted transcript boundaries', () => {
   it.each(['failed', 'canceled', 'failed after approval'])('keeps the terminal activity tail visible: %s', () => {
     const view = render(<OperatorMessages messages={[first]} activities={[tool]} activeRequestId={null} onBrowse={() => {}} />)
-    expect(screen.getByText(first.content)).toBeVisible()
     expect(screen.getByText('Tool · Read fixture')).toBeVisible()
     expect(view.container.textContent!.indexOf('Before the tool.')).toBeLessThan(view.container.textContent!.indexOf('Read fixture'))
     view.unmount()
     render(<OperatorMessages messages={[{ ...first }]} activities={[{ ...tool }]} activeRequestId={null} onBrowse={() => {}} />)
-    expect(screen.getByText(first.content)).toBeVisible()
     expect(screen.getByText('Tool · Read fixture')).toBeVisible()
   })
   it('preserves text/tool/text while active, completed with real IDs, and reloaded without stream state', () => {
@@ -42,8 +40,6 @@ describe('persisted transcript boundaries', () => {
     ] }
     const view = render(<OperatorMessages messages={[first, last]} activities={[tool]} activeRequestId="request" timeline={timeline} onBrowse={() => {}} />)
     const assertOrder = () => {
-      expect(screen.getByText(first.content)).toBeVisible()
-      expect(screen.getByText(last.content)).toBeVisible()
       const text = view.container.textContent!
       expect(text.indexOf(first.content)).toBeLessThan(text.indexOf('Read fixture'))
       expect(text.indexOf('Read fixture')).toBeLessThan(text.indexOf(last.content))

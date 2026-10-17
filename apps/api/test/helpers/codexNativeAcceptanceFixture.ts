@@ -1,4 +1,3 @@
-import { workerToolServices } from './workerMcpServices.js'
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
@@ -18,7 +17,7 @@ import { PostgresInteractionRepository } from '../../src/modules/interactions/po
 import { agent3Database, seedAgent3 } from './wave25Agent3.js'
 
 /** Real execution-bound credentials and authenticated MCP; no ambient token or authority is borrowed. */
-export async function codexNativeAcceptanceFixture(approvalPolicy: 'never' | 'on-request' = 'never') {
+export async function codexNativeAcceptanceFixture() {
   const database = await agent3Database(process.env.ENG03_A_TEST_DATABASE_URL)
   const { pool, directory } = database
   const workingDirectory = join(directory, 'work')
@@ -28,7 +27,7 @@ export async function codexNativeAcceptanceFixture(approvalPolicy: 'never' | 'on
     const content = { prompt: { system: 'Follow explicit shell instructions by using the native shell tool; never simulate tool results.' },
       assignedSkills: [], harness: { harness: 'codex', model: process.env.CODEX_MODEL ?? 'gpt-6-luna',
         reasoningEffort: 'medium', sandbox: 'read-only', serviceTier: 'standard',
-        advanced: { ...structuredClone(DEFAULT_CODEX_ADVANCED_CONFIGURATION), approvalPolicy } } }
+        advanced: structuredClone(DEFAULT_CODEX_ADVANCED_CONFIGURATION) } }
     return AgentConfigurationVersionSchema.parse({ ...base, ...content, contentHash: `sha256:${commandInputHash(content)}` })
   })
   let app: ReturnType<typeof buildApp> | undefined
@@ -64,10 +63,9 @@ export async function codexNativeAcceptanceFixture(approvalPolicy: 'never' | 'on
     const principal = await access.authenticate(issued.environment.variables.GRAPHQL_MCP_TOKEN, 'worker')
     assert.equal(principal.agentId, configuration.agentId)
     assert(principal.grants.every(grant => grant.actions.every(action => action === 'interactions:read')))
-    const commands = new PostgresCommandCoordinator(pool)
     app = buildApp({ logger: false, readiness: { database: { ping: async () => { await pool.query('select 1') } },
-      checkpoints: { ping: async () => {} } }, appMcp: workerToolServices(pool, commands).appMcp(access,
-      new PostgresAppInteractionService(pool, new PostgresInteractionRepository(pool), commands)) })
+      checkpoints: { ping: async () => {} } }, appMcp: { access,
+      interactions: new PostgresAppInteractionService(pool, new PostgresInteractionRepository(pool), new PostgresCommandCoordinator(pool)) } })
     const endpoint = `${await app.listen({ host: '127.0.0.1', port: 0 })}/mcp`
     await installAppLauncher()
     routes = new AppMcpRoutes(pool, endpoint)

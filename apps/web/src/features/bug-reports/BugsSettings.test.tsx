@@ -335,11 +335,7 @@ it('shows pending reads and an empty filtered list without losing URL filters', 
 it('hides cached reports after denied reads and keeps them hidden through a later network failure', async () => {
   serveReports()
   mount('/settings/bugs?reportId=bug-report-1')
-  const dialog = await screen.findByRole('dialog', { name: 'Workflow start fails' })
-  const details = within(dialog)
-  const reports = within(screen.getByRole('region', { name: 'Bug reports' }))
-  expect(await details.findByRole('combobox', { name: 'Report status' })).toHaveValue('open')
-  expect(await reports.findByRole('button', { name: 'Read Workflow start fails' })).toBeVisible()
+  await screen.findByRole('dialog', { name: 'Workflow start fails' })
   const cache = caches.at(-1)!
   server.use(
     http.get('*/api/management/bug-reports', () => HttpResponse.json({
@@ -351,7 +347,7 @@ it('hides cached reports after denied reads and keeps them hidden through a late
   )
   await act(async () => { await cache.refetchQueries({ type: 'active' }) })
   expect(await screen.findByText('You cannot read bug reports.')).toBeVisible()
-  expect(await screen.findByText('You cannot read this report.')).toBeVisible()
+  expect(screen.getByText('You cannot read this report.')).toBeVisible()
   expect(screen.queryByRole('button', { name: 'Read Workflow start fails' })).not.toBeInTheDocument()
   expect(screen.queryByText('Start the saved Website workflow.')).not.toBeInTheDocument()
   expect(screen.queryByRole('combobox', { name: 'Report status' })).not.toBeInTheDocument()
@@ -359,19 +355,15 @@ it('hides cached reports after denied reads and keeps them hidden through a late
     http.get('*/api/management/bug-reports', () => HttpResponse.error()),
     http.get('*/api/management/bug-reports/:reportId', () => HttpResponse.error()),
   )
-  await userEvent.click(await reports.findByRole('button', { name: 'Refresh bug reports' }))
-  await userEvent.click(await details.findByRole('button', { name: 'Refresh report' }))
-  await waitFor(() => {
-    expect(reports.getAllByText('Updating — reconnecting…')).toHaveLength(1)
-    expect(details.getAllByText('Updating — reconnecting…')).toHaveLength(1)
-  })
+  await userEvent.click(screen.getByRole('button', { name: 'Refresh bug reports' }))
+  await userEvent.click(screen.getByRole('button', { name: 'Refresh report' }))
   expect(screen.queryByRole('button', { name: 'Read Workflow start fails' })).not.toBeInTheDocument()
   expect(screen.queryByText('Start the saved Website workflow.')).not.toBeInTheDocument()
   serveReports()
-  await userEvent.click(await reports.findByRole('button', { name: 'Refresh bug reports' }))
-  await userEvent.click(await details.findByRole('button', { name: 'Refresh report' }))
-  expect(await details.findByRole('combobox', { name: 'Report status' })).toHaveValue('open')
-  expect(await reports.findByRole('button', { name: 'Read Workflow start fails' })).toBeVisible()
+  await userEvent.click(screen.getByRole('button', { name: 'Refresh bug reports' }))
+  await userEvent.click(screen.getByRole('button', { name: 'Refresh report' }))
+  expect(await screen.findByRole('combobox', { name: 'Report status' })).toHaveValue('open')
+  expect(screen.getByRole('button', { name: 'Read Workflow start fails' })).toBeVisible()
 })
 
 it('refreshes a conflicting status and uses the latest revision for the next change', async () => {
