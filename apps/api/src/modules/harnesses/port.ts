@@ -262,9 +262,7 @@ export interface NativeHarnessSessionManager extends ResponseAvailabilityInspect
   /** Refresh authenticated remote ownership before a coordinator boundary check. */
   observeBoundary?(session: NativeSessionReference, signal?: AbortSignal): Promise<void>
   reconcile(session: NativeSessionReference, correlationId: string, signal?: AbortSignal): Promise<NativeHistory>
-  /** Observe chronological retained output without native reconciliation or new output events. */
-  historyPage?(session: NativeSessionReference, afterSequence: number, signal?: AbortSignal): Promise<NativeHistory>
-  /** Reconcile ownership, then read chronological retained events without the recent observation window. */
+  /** Read chronological retained events without applying the recent observation window. */
   reconcileHistoryPage?(session: NativeSessionReference, correlationId: string,
     afterSequence: number, signal?: AbortSignal): Promise<NativeHistory>
   /** Release resident turn resources after the caller commits its result and history. */
@@ -272,8 +270,6 @@ export interface NativeHarnessSessionManager extends ResponseAvailabilityInspect
   /** Read-only recovery of the exact response; missing evidence remains uncertain. */
   reconcileResponse?(session: NativeSessionReference, response: NativeResponseIdentity, signal?: AbortSignal): Promise<NativeHistory>
   close(session: NativeSessionReference, signal?: AbortSignal): Promise<void>
-  /** Close an idle process while retaining the persisted session for a later cold resume. */
-  closeForResume?(session: NativeSessionReference): Promise<void>
   /** Detach the local runtime for process restart without canceling unresolved provider work. */
   closeForRestart?(session: NativeSessionReference, signal?: AbortSignal): Promise<void>
   /** Stop every owned transport, including creations without a known session identity. */

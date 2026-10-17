@@ -39,10 +39,7 @@ vi.mock('../harnesses/codexAppServer.js', async importOriginal => ({
       provider.starts.push(start)
       return session
     }
-    async history() { return structuredClone(provider.history) }
     async reconcile() { return structuredClone(provider.history) }
-    async pending() { return undefined }
-    async cancel() { return false }
     async dispose() {}
   },
 }))
@@ -110,7 +107,7 @@ async function fixture() {
     mode: 'attach', source: provider.session, operationId: 'reconnect' })
   const transition = () => request({ method: 'conversation.open', binding, configuration, previousBinding: f.binding,
     previousConfiguration: base, mode: 'attach', source: provider.session, operationId: 'skills' })
-  return { ...f, originalBinding: f.binding, base, binding, configuration, journal, launches, attach, transition, closeOwner, request,
+  return { ...f, originalBinding: f.binding, base, binding, configuration, journal, launches, attach, transition, closeOwner,
     setClosureConfirmed(value: boolean) { closureConfirmed = value },
     cleanup: async () => { closureConfirmed = true; await host.close(); await bridge.close() } }
 }
@@ -261,46 +258,5 @@ it('refuses a different exited process during ordinary attachment without closin
     expect(f.closeOwner).not.toHaveBeenCalled()
     expect(provider.starts).toHaveLength(0)
     expect((await f.journal.read(f.originalBinding))?.turns[0]?.status).toBe('uncertain')
-  } finally { await f.cleanup() }
-})
-
-for (const method of ['conversation.history', 'conversation.reconcile', 'conversation.pending', 'conversation.cancel'] as const) {
-  it(`recovers an exited owner during ${method} on the unchanged device connection`, async () => {
-    const f = await fixture()
-    try {
-      if (method === 'conversation.reconcile') {
-        await f.request({ method, binding: f.originalBinding, session: provider.session, correlationId: 'unfinished' })
-      } else {
-        await f.request({ method, binding: f.originalBinding, session: provider.session })
-      }
-      const saved = (await f.journal.read(f.originalBinding))!
-      expect(saved.session).toEqual(provider.session)
-      expect(saved.connection).toEqual(f.connection)
-      expect(saved.turns[0]).toMatchObject({ status: 'completed', nativeTurnId: 'native-turn',
-        result: provider.history.terminalResult })
-      expect(saved.ownerTransitions).toHaveLength(1)
-      expect(provider.starts.map(start => 'configuration' in start && start.configuration)).toEqual([f.base])
-      expect(provider.creates).toBe(1)
-      expect(f.launches[0]).toMatchObject({ lifecycle: 'closed', closureEvidence: 'cgroup_v2_empty' })
-      await f.request({ method: 'conversation.history', binding: f.originalBinding, session: provider.session,
-        correlationId: 'unfinished' })
-      expect(provider.starts).toHaveLength(1)
-    } finally { await f.cleanup() }
-  })
-}
-
-it('retries observation of an exited owner on the same connection after its closure is confirmed', async () => {
-  const f = await fixture()
-  const observe = () => f.request({ method: 'conversation.history', binding: f.originalBinding,
-    session: provider.session, correlationId: 'unfinished' })
-  try {
-    f.setClosureConfirmed(false)
-    await expect(observe()).rejects.toThrow('closure is unconfirmed')
-    expect((await f.journal.read(f.originalBinding))?.turns[0]?.status).toBe('uncertain')
-    expect(provider.starts).toHaveLength(0)
-    f.setClosureConfirmed(true)
-    await expect(observe()).resolves.toMatchObject({ receipt: { session: provider.session,
-      turns: [{ status: 'completed', nativeTurnId: 'native-turn', result: provider.history.terminalResult }] } })
-    expect(provider.creates).toBe(1)
   } finally { await f.cleanup() }
 })
