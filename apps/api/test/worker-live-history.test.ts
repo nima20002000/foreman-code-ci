@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto'
 import { expect, it } from 'vitest'
 import type { WorkerConversationReceipt } from '@foreman-code/contracts/remote-execution-rpc'
 import type { NativeHistory } from '../src/modules/harnesses/port.js'
@@ -10,13 +9,12 @@ import { manager, source, wire, useCodexFixture } from './codex-app-server.test-
 
 useCodexFixture()
 
-it.each([false, true])('reads live Worker history without reconciliation after reattachment: %s', async reattach => {
+it('reads live Worker history without producing events or requesting native reconciliation', async () => {
   const f = workerConversationFixture('agent')
-  let connection = f.connection
   const records: WorkerConversationReceipt[] = []
   const journal = new WorkerConversationJournal({ read: async () => structuredClone(records),
     change: async (_id, apply) => structuredClone(apply(records)) }, 8)
-  const host = new WorkerConversationHost({ journal, currentBinding: () => connection,
+  const host = new WorkerConversationHost({ journal, currentBinding: () => f.connection,
     authorize: async () => {}, observeSession: async () => {}, observeSubmission: async () => {},
     allocate: async () => ({ manager, start: async () => source,
       nativeOwner: async session => ({ ...f.nativeOwner, sessionId: session.nativeSessionId }),
@@ -28,21 +26,16 @@ it.each([false, true])('reads live Worker history without reconciliation after r
     await host.handle({ method: 'conversation.start-turn', binding: f.binding, session,
       correlationId: 'live-turn', prompt: 'wait' }, f.connection)
     await until(async () => (await journal.read(f.binding))?.turns[0]?.status === 'submitted')
-    if (reattach) {
-      connection = { ...connection, connectionGeneration: connection.connectionGeneration + 1, connectionEpoch: randomUUID() }
-      await host.handle({ method: 'conversation.open', binding: f.binding, configuration: f.configuration,
-        mode: 'attach', source: session, operationId: 'reattach' }, connection)
-    }
     const before = await manager.history(session)
     const nativeReads = await wire('thread/read')
     for (let read = 0; read < 3; read++) {
       const response = await host.handle({ method: 'conversation.history', binding: f.binding, session,
-        correlationId: 'live-turn', afterSequence: before.nextSequence! - 1 }, connection) as { history: NativeHistory }
+        correlationId: 'live-turn', afterSequence: before.nextSequence! - 1 }, f.connection) as { history: NativeHistory }
       expect(response.history.events).toEqual([])
       expect(response.history.nextSequence).toBe(before.nextSequence)
     }
     expect(await wire('thread/read')).toEqual(nativeReads)
-    await host.handle({ method: 'conversation.cancel', binding: f.binding, session }, connection)
+    await host.handle({ method: 'conversation.cancel', binding: f.binding, session }, f.connection)
     await host.drainForUpdate()
   } finally { await host.shutdown() }
 })

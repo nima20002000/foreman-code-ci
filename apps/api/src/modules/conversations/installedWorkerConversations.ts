@@ -36,7 +36,6 @@ import { localCodexChatHost } from '../harnesses/codexFiles/localHost.js'
 import { assertCodexChatHost } from '../harnesses/codexFiles/localHost.js'
 import { workerConversationProcessDigest } from './workerNativeOwner.js'
 import { recoverWorkerConversation } from './recoverWorkerConversation.js'
-import { closedWorkerConversationOwner } from './closedWorkerConversation.js'
 import { join } from 'node:path'
 
 function unavailable(message: string): never {
@@ -249,11 +248,6 @@ export async function createInstalledWorkerConversations(input: InstalledWorkerC
     journal: conversationJournal,
     allocate: (binding, configuration, connection) => allocate(binding, configuration, connection, 'chat'),
     prepare: (binding, configuration, connection) => allocate(binding, configuration, connection, 'preparation'),
-    closePersistedRuntime: async (record, _connection, signal) => {
-      const closed = input.registry.closedRegistration(`conversation:${record.binding.owner.conversationId}`)
-      const owner = closedWorkerConversationOwner(record, input.registry, closed)
-      if (!await input.registry.closeOwner(owner, signal)) unavailable('Native chat closure is unconfirmed.')
-    },
     recover: (record, configuration, connection, signal, request) => recoverWorkerConversation({
       record, configuration, connection, signal, request, registry: input.registry, journal: conversationJournal,
       allocate: () => {
