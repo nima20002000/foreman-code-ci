@@ -1,3 +1,4 @@
+import { InfoHint } from '../../shared/ui/InfoHint'
 import { errorMessage } from '../../shared/errorMessage'
 import { nativeToolsSummary } from '@foreman-code/contracts'
 import { sameWorkflowValue } from '@foreman-code/contracts/wave25'
@@ -212,7 +213,7 @@ function EditableAgentSettingsForm({ agent, initialPrompt, nodeGraphqlTools, cre
     </header> : null : <header className="agent-settings-heading">
       <div className="agent-settings-title">
         {view === 'advanced' ? <IconButton size="sm" variant="ghost" className="agent-settings-back" label="Back to general settings" onClick={() => setView('general')}><Icon name="chevron" size={15} /></IconButton> : null}
-        <strong>{view === 'advanced' ? 'Advanced settings' : 'Agent settings'}</strong>
+        <strong>{view === 'advanced' ? 'Advanced settings' : 'Agent settings'}<InfoHint label="Agent settings">Save updates this graph draft. Use Save graph to persist it.</InfoHint></strong>
       </div>
       <div className="agent-settings-header-actions">
       <Button size="sm" variant="primary" className="agent-settings-save" aria-label="Save agent settings" disabled={!isDirty} onClick={save} leading={<Icon name="check" size={13} />}>Save</Button>
@@ -255,25 +256,24 @@ function EditableAgentSettingsForm({ agent, initialPrompt, nodeGraphqlTools, cre
           }} />}
         <TextField label="Agent branch prefix" value={branchPrefix} placeholder={workflowWorktree?.branchPrefix ?? 'Generated automatically'}
           disabled={worktreeDisabled} error={fieldMessage(issues, 'branchPrefix')}
-          hint="Optional override. Each execution adds a unique suffix."
+          labelHint={<InfoHint label="Agent branch prefix">Optional override. Each execution adds a unique suffix.</InfoHint>}
           onChange={event => {
             if (onFormChange) changeForm({ branchPrefix: event.target.value })
             else setLocalPrefix(event.target.value)
             clearErrors()
           }} />
-        <p role="status">{branchPrefix ? 'Override' : 'Inherited from workflow'}: Agent branch prefix {branchPrefix
-          || workflowWorktree?.branchPrefix || 'generated automatically'}.</p>
       </section>}
       {workspaceId ? <AgentSkillsField workspaceId={workspaceId} value={skills} onChange={(next) => { setSkills(next); clearErrors() }} /> : null}
     </div> : <div className="agent-settings-advanced-view">
       <Textarea label="Agent instructions" className="agent-settings-prompt" rows={4} value={instructions}
-        hint="Given to this Agent before its skills on every turn. Not part of the task." onChange={(event) => { setInstructions(event.target.value); clearErrors() }} />
+        labelHint={<InfoHint label="Agent instructions">Given to this Agent before its skills on every turn. Not part of the task.</InfoHint>}
+        onChange={(event) => { setInstructions(event.target.value); clearErrors() }} />
       <Textarea label="Initial prompt" aria-label="Initial prompt" className="agent-settings-prompt" rows={3} value={prompt}
-        hint="The task this node starts with." onChange={(event) => { setPrompt(event.target.value); clearErrors() }} />
+        labelHint={<InfoHint label="Initial prompt">The task this node starts with.</InfoHint>}
+        onChange={(event) => { setPrompt(event.target.value); clearErrors() }} />
       <GraphqlToolsFields role={agent.productRole === 'orchestrator' ? 'orchestrator' : 'coder'} defaults={graphqlTools.defaults} override={graphqlTools.override}
         onChange={(defaults, override) => { setGraphqlTools({ ...(defaults ? { defaults } : {}), ...(override ? { override } : {}) }); clearErrors() }} />
       <HarnessConfigurationFields editor={editor} issues={issuesAt(issues, ['harness'])} onChange={(next) => { setEditor(next); clearErrors() }} allowHarnessChange={false} harnessDefaults={providerDefaults} workspaceId={workspaceId} routedApproval={Boolean(workflowApprovalHandler)} allowAutoReview={workflowApprovalHandler === 'orchestrator'} compact advancedOnly />
-      {embedded ? null : <p className="settings-help">Save updates this graph draft. Use Save graph to persist it.</p>}
     </div>}
     {error ? <Alert tone="danger" live title={error} /> : null}
     <footer className="agent-settings-footer">

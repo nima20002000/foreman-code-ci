@@ -1,3 +1,4 @@
+import { InfoHint } from '../../../shared/ui/InfoHint'
 import { memo, useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Handle, Position, type Edge, type EdgeProps, type Node, type NodeProps } from '@xyflow/react'
@@ -78,8 +79,9 @@ export function CiServerDialog({ open, onOpenChange, scope, workflow, jobs, name
   const agent = (job: CiRunJob) => names.get(job.requester.nodeId) ?? job.requester.nodeName
   const show = (job: CiRunJob) => { setSelectedId(job.ticketId); setTab('tests') }
   return <Dialog open={open} onOpenChange={onOpenChange} size="xl" className="ci-server-dialog" title="CI server"
-    closeLabel="Close CI server" description={scope ? 'CI jobs the Agents of this Run requested, on Host CI, GitHub Actions or CircleCI.'
-      : 'CI jobs that Agents request during a Run appear here, on Host CI, GitHub Actions or CircleCI.'}>
+    closeLabel="Close CI server" headerLeading={<InfoHint label="CI server">{scope
+      ? 'CI jobs the Agents of this Run requested, on Host CI, GitHub Actions or CircleCI.'
+      : 'CI jobs that Agents request during a Run appear here, on Host CI, GitHub Actions or CircleCI.'}</InfoHint>}>
     {/* The shared Dialog keeps its children while closed; nothing here may poll then. */}
     {open ? <>{error ? <Alert tone="warning" title="CI jobs could not be read.">
       {jobs.length ? 'The list shows the last jobs read.' : 'Reading CI needs the CI read grants for this workspace.'}</Alert> : null}
@@ -99,8 +101,7 @@ export function CiServerDialog({ open, onOpenChange, scope, workflow, jobs, name
 export function CiJobsTable({ jobs, agent, selectedId, truncated, onShow, run }: { jobs: readonly CiRunJob[]; agent(job: CiRunJob): string
   selectedId?: string | undefined; truncated: boolean; onShow(job: CiRunJob): void; run: boolean }) {
   if (!jobs.length) return <EmptyState icon="terminal" title={run ? 'No CI jobs in this Run yet' : 'No Run selected'}
-    description={run ? 'When an Agent runs CI, its jobs appear here with their test results.'
-      : 'Start or select a Run; when its Agents run CI, the jobs appear here with their test results.'} />
+    description={run ? undefined : 'Start or select a Run.'} />
   return <div className="n-table-scroll" role="region" aria-label="CI jobs" tabIndex={0}>
     <table className="n-table ci-jobs-table"><thead><tr>
       {['Job', 'Scope', 'Placement', 'State', 'Agent', 'Started', 'Duration'].map((name) => <th key={name} scope="col">{name}</th>)}
@@ -153,6 +154,7 @@ function CiJobTests({ scope, job, agent, statuses, onStatusesChange }: { scope: 
     ? statuses.filter((value) => value !== status) : [...statuses, status])
   return <div className="ci-server-tests">
     <CiJobHeader job={job} agent={agent} />
+    <h3>Tests<InfoHint label="Tests">Vitest unit and integration jobs report their tests when they finish; other jobs have only a log.</InfoHint></h3>
     <div className="ci-test-filters" role="group" aria-label="Show tests by status">
       {STATUSES.map((status) => <Button key={status} size="sm" variant={statuses.includes(status) ? 'secondary' : 'ghost'}
         aria-pressed={statuses.includes(status)} data-status={status} onClick={() => toggle(status)}>
@@ -165,7 +167,7 @@ function CiJobTests({ scope, job, agent, statuses, onStatusesChange }: { scope: 
       : !results ? <EmptyState icon="terminal" title="No test results for this job"
         description={isActiveCiJob(job) ? 'Results arrive when the job finishes.'
           : job.collection === 'pending' ? 'Collecting the finished job\'s results.'
-          : 'Vitest unit and integration jobs report their tests when they finish; other jobs have only a log.'} />
+          : undefined} />
       : <CiTestFiles files={results.files} truncated={results.truncated} />}
     {query.isError && results ? <Alert tone="warning" title="Test results could not be refreshed.">
       Showing the last test results read.</Alert> : null}
