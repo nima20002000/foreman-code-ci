@@ -1844,9 +1844,6 @@ function configureOperatorChat(composition: ProductionComposition) {
     if (binding) operatorAccountBindings.set(conversationId, binding)
     else operatorAccountBindings.delete(conversationId)
   }
-  resolveOperatorManager.modelOptions = async configuration =>
-    configuration.harness === 'opencode' ? []
-      : (await composition.nativeConfigurations.options(configuration.harness)).models
   resolveOperatorManager.recoverCompaction = recoverChatCompaction
   composition.chat = new OperatorChatService(
     operatorConversations, operators,
@@ -1975,9 +1972,6 @@ function configureAgentChat(composition: ProductionComposition) {
     }
     return undefined
   }
-  resolveAgentChatManager.modelOptions = async configuration =>
-    configuration.harness === 'opencode' ? []
-      : (await composition.nativeConfigurations.options(configuration.harness)).models
   resolveAgentChatManager.release = (conversationId) => { agentChatManagers.delete(conversationId) }
   composition.agentChat = new AgentChatService(database.pool, agentConversations,
     new PostgresOperatorConversationRepository(database.pool, accountConfigurations), workflows, runs, resolveAgentChatManager, config.harnesses.workspaceRoot)

@@ -1,13 +1,12 @@
 import { z } from 'zod'
 
 /**
- * CircleCI's Free plan grants each organization 400,000 credits per month for Linux open-source builds and refills
- * them at the start of the next month; CircleCI exposes no API for this balance:
- * https://circleci.com/docs/guides/plans-pricing/credits/
+ * CircleCI's Free plan grants 30,000 credits per month for personal (non-open-source) usage and refills them at
+ * the start of the next month: https://circleci.com/docs/guides/plans-pricing/credits/
  */
-export const CIRCLE_OPEN_SOURCE_MONTHLY_CREDITS = 400_000
+export const CIRCLE_FREE_PLAN_MONTHLY_CREDITS = 30_000
 
-/** An estimate: the organization's monthly allowance minus the credits CircleCI's usage export reports for this month. */
+/** An estimate: the account's monthly allowance minus the credits CircleCI's usage export reports for this month. */
 export const CircleCreditsSchema = z.object({
   /** The configured monthly allowance. */
   total: z.number().nonnegative(),

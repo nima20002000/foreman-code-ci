@@ -47,8 +47,10 @@ it('draws nodes that have no saved position as a hierarchy, not a column', async
   expect(children[0]!.y).toBeGreaterThan(entry.y)
 })
 
-it('keeps a node where it was saved and hierarchy-places only the nodes without a position', async () => {
-  mount(contextWith([false, true, false, false]))
+it('keeps a manually placed node and hierarchy-places the remaining nodes', async () => {
+  const context = contextWith([false, true, false, false])
+  Object.assign(context.draft.graph.nodes[1]!.position!, { manual: true })
+  mount(context)
   await screen.findByRole('button', { name: /^Node 3, / })
   expect(placed('node-1')).toEqual(stacked[1])
   expect(placed('node-2').y).toBe(placed('node-3').y)

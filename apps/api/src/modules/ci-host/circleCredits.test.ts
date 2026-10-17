@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { DEFAULT_CIRCLE_CREDIT_ALLOWANCE, type CircleCreditAllowance } from '@foreman-code/contracts/management'
+import type { CircleCreditAllowance } from '@foreman-code/contracts/management'
 import { CircleCreditUsage } from './circleCredits.js'
 import { CloudHttp } from './cloudHttp.js'
 import type { HostCiPorts } from './runner.js'
@@ -7,12 +7,11 @@ import type { HostCiPorts } from './runner.js'
 // A CloudHttp keeps its credential per ports object, so every fixture gets its own.
 const newPorts = (): HostCiPorts => ({ run: async () => ({ code: 1, stdout: '', stderr: '' }), now: () => new Date(),
   cpus: 4, memoryBytes: 2 ** 30 })
-/** CircleCI's real export names its columns in capitals. */
-const CSV = ['PROJECT_NAME,TOTAL_CREDITS,JOB_NAME', 'site,1000,unit',
+const CSV = ['project_name,total_credits,job_name', 'site,1000,unit',
   '"site, two",234.4,"quoted ""job"""', 'site,0.2,lint', ''].join('\r\n')
 
 /** CircleCI's HTTP at the cloud HTTP boundary: collaborations, usage export create/read, and the signed CSV link. */
-function circle(options: { states?: string[]; csv?: string; csvByOrg?: Record<string, string>; collaborations?: unknown[]; token?: string | null } = {}) {
+function circle(options: { states?: string[]; csv?: string; collaborations?: unknown[]; token?: string | null } = {}) {
   const calls: { method: string; path: string; authorization: string | undefined; body: string | undefined }[] = []
   const states = [...options.states ?? ['completed']]
   const fetchFake: typeof fetch = async (input, init) => {
@@ -25,18 +24,17 @@ function circle(options: { states?: string[]; csv?: string; csvByOrg?: Record<st
       return json(options.collaborations ?? [{ id: 'org-other', name: 'other', vcs_type: 'github' },
         { id: 'org-acme', name: 'Acme', slug: 'gh/acme', vcs_type: 'github' }])
     }
-    const orgId = /\/organizations\/([^/]+)\/usage_export_job/.exec(url.pathname)?.[1]
-    if (init?.method === 'POST') return json({ usage_export_job_id: `job-${orgId}`, state: 'created' }, 201)
-    if (url.pathname.includes('/usage_export_job/job-')) {
+    if (init?.method === 'POST') return json({ usage_export_job_id: 'job-1', state: 'created' }, 201)
+    if (url.pathname.endsWith('/usage_export_job/job-1')) {
       const state = states.length > 1 ? states.shift()! : states[0]!
-      return json({ usage_export_job_id: `job-${orgId}`, state, download_urls: state === 'completed' ? [`https://signed.example/${orgId}.csv`] : null,
+      return json({ usage_export_job_id: 'job-1', state, download_urls: state === 'completed' ? ['https://signed.example/part-0.csv'] : null,
         ...(state === 'failed' ? { error_reason: 'query failed' } : {}) })
     }
-    if (url.hostname === 'signed.example') return new Response(options.csvByOrg?.[url.pathname.slice(1, -4)] ?? options.csv ?? CSV)
+    if (url.hostname === 'signed.example') return new Response(options.csv ?? CSV)
     return json({ message: 'unexpected' }, 404)
   }
   const clock = { now: Date.parse('2026-10-17T12:00:00Z') }
-  const allowance: CircleCreditAllowance = structuredClone(DEFAULT_CIRCLE_CREDIT_ALLOWANCE)
+  const allowance: CircleCreditAllowance = { defaultMonthlyCredits: 30000, accounts: {} }
   const usage = new CircleCreditUsage(new CloudHttp(newPorts(), 'circleci', { fetch: fetchFake,
     circleToken: async () => options.token === undefined ? 'fixture-token' : options.token }),
   { allowance: async () => allowance, primaryOwner: async () => 'acme' },
@@ -50,7 +48,7 @@ it('estimates credits left from the month usage export and reads CircleCI only o
   expect((await f.usage.reading('acme')).credits).toBeNull()
   await settled()
   const reading = await f.usage.reading('acme')
-  expect(reading).toEqual({ credits: { total: 400000, used: 1235, remaining: 398765, asOf: '2026-10-17T12:00:00.000Z' } })
+  expect(reading).toEqual({ credits: { total: 30000, used: 1235, remaining: 28765, asOf: '2026-10-17T12:00:00.000Z' } })
   const create = f.calls.find(call => call.method === 'POST')!
   expect(JSON.parse(create.body!)).toEqual({ start: '2026-10-01T00:00:00.000Z', end: '2026-10-17T12:00:00.000Z' })
   expect(create.path).toBe('/api/v2/organizations/org-acme/usage_export_job')
@@ -65,18 +63,6 @@ it('estimates credits left from the month usage export and reads CircleCI only o
   await f.usage.reading('acme')
   await settled()
   expect(f.calls.filter(call => call.method === 'POST')).toHaveLength(2)
-})
-
-it('gives each CircleCI org its own usage against its own 400,000 open-source credits', async () => {
-  const f = circle({ collaborations: [{ id: 'org-acme', name: 'acme', slug: 'gh/acme', vcs_type: 'github' },
-    { id: 'org-beta', name: 'beta', slug: 'gh/beta', vcs_type: 'github' }],
-  csvByOrg: { 'org-acme': 'PROJECT_NAME,TOTAL_CREDITS\nsite,125000\n', 'org-beta': 'PROJECT_NAME,TOTAL_CREDITS\nsite,380000\n' } })
-  await f.usage.reading('acme')
-  await f.usage.reading('beta')
-  await settled()
-  const asOf = '2026-10-17T12:00:00.000Z'
-  expect(await f.usage.reading('acme')).toEqual({ credits: { total: 400000, used: 125000, remaining: 275000, asOf } })
-  expect(await f.usage.reading('beta')).toEqual({ credits: { total: 400000, used: 380000, remaining: 20000, asOf } })
 })
 
 it('applies the saved allowance to the cached usage without another CircleCI read', async () => {
