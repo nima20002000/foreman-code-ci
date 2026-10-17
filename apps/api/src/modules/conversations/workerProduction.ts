@@ -263,8 +263,6 @@ async function admitWorkerConversation(input: ProductionWorkerConversationsInput
   }
   const requestedBinding = WorkerConversationBindingSchema.parse({
     ...(original.kind === 'agent' && original.record.workerGeneration ? { generation: original.record.workerGeneration } : {}),
-    ...(original.kind === 'agent' && !original.record.workerGeneration && savedBinding?.sessionGeneration
-      ? { sessionGeneration: savedBinding.sessionGeneration } : {}),
     owner: { ...ownerFields,
     conversationId: options.conversationId, configurationVersionId: executionConfiguration.id,
     configurationHash: commandInputHash(executionConfiguration) }, harness: configuration.harness.harness,

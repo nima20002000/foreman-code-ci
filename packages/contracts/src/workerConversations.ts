@@ -31,8 +31,6 @@ const WorkerConversationOwnerSchema = z.discriminatedUnion('kind', [
 ])
 export const WorkerConversationBindingSchema = z.object({
   generation: z.uuid().optional(),
-  // Preview journals include this spelling in native ownership hashes. Keep those facts intact.
-  sessionGeneration: id.optional(),
   accountBinding: AcceptedProviderAccountBindingSchema.optional(),
   owner: WorkerConversationOwnerSchema,
   directoryBinding: AgentChatDirectoryBindingSchema.optional(),
@@ -45,11 +43,8 @@ export const WorkerConversationBindingSchema = z.object({
   workingDirectory: directory,
   appMcpAccess: z.enum(['scoped', 'none']),
 }).strict().superRefine((value, context) => {
-  if ((value.generation || value.sessionGeneration) && value.owner.kind !== 'agent') {
+  if (value.generation && value.owner.kind !== 'agent') {
     context.addIssue({ code: 'custom', message: 'Replacement generations belong only to Agent chat.' })
-  }
-  if (value.generation && value.sessionGeneration) {
-    context.addIssue({ code: 'custom', message: 'A conversation has one generation identity.' })
   }
   if (value.profile.target.hostRef.kind !== 'device') {
     context.addIssue({ code: 'custom', message: 'A worker conversation requires its selected device profile.' })
@@ -90,11 +85,6 @@ export const WorkerConversationBindingSchema = z.object({
   }
 })
 export type WorkerConversationBinding = z.infer<typeof WorkerConversationBindingSchema>
-
-/** Normalize addressing without rewriting a persisted binding or its native ownership digest. */
-export function workerConversationGeneration(binding: WorkerConversationBinding): string | undefined {
-  return binding.generation ?? binding.sessionGeneration
-}
 const WorkerConversationConfigurationSchema = z.union([
   z.lazy(() => OperatorConfigurationVersionSchema), z.lazy(() => AgentConfigurationVersionSchema),
 ])
