@@ -229,8 +229,7 @@ export async function releaseUnusedSourceSnapshots(pool: pg.Pool,
   }
   const retry = retries.get(scopeId) ?? new RetryBackoff({ initialMs: 10 * 60_000, maxMs: 60 * 60_000 })
   retries.set(scopeId, retry)
-  // Maintenance reports failures for later retry; direct callers propagate errors and may retry immediately.
-  if (report !== undefined && !underPressure && !retry.ready()) return
+  if (!underPressure && !retry.ready()) return
   let scopes = releaseScans.get(pool)
   if (!scopes) {
     scopes = new Map()
