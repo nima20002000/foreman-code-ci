@@ -18,8 +18,6 @@ export function buildComputerGatePart(run: CiRunRecord, computers: readonly Host
 
 interface FallbackCapacity {
   computers: HostCiComputer[]
-  /** Identifies the planned executor even when it is absent from the schedulable fleet. */
-  knownComputers?: readonly HostCiComputer[]
   shards: Map<string, number>
   durations: Map<string, CiDurations | null>
   reservedCloud: Set<string>
@@ -85,7 +83,7 @@ async function saveCloudParts(pool: pg.Pool, previous: CiRunRecord, parts: CiRun
 export async function splitUnavailableGateParts(pool: pg.Pool, queued: CiRunRecord[], capacity: FallbackCapacity) {
   const result: CiRunRecord[] = []
   for (const run of queued) {
-    const waiting = buildComputerGatePart(run, capacity.knownComputers ?? capacity.computers)
+    const waiting = buildComputerGatePart(run, capacity.computers)
       && !run.partition && !run.dispatchHostKey && !run.dispatchRequest && !run.cancellation
       && (!capacity.gate || capacity.gate.groupId === run.groupId)
       && Date.now() - Date.parse(run.queuedAt) > BUILD_WAIT_MS
