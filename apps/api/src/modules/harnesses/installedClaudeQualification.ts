@@ -5,6 +5,9 @@ import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
 import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
 import { HostHarnessProfileCheckRequestSchema, type HostHarnessOverride,
   type HostHarnessProfileEvidence } from '@foreman-code/contracts/harness-registry'
+import type { ProviderAccountResolver } from '../provider-accounts/service.js'
+import { readInstalledWorkerAccountBinding } from './installedWorkerAccountBinding.js'
+import { requireClaudeProductionCredentialDelivery } from './claudeSdk/productionCredentials.js'
 import { DomainError } from '../errors.js'
 import { createClaudeCurrentPinResolver } from './claudeSdk/currentPin.js'
 import { qualifyClaudeNativeProfile } from './claudeSdk/nativeProfileQualification.js'
@@ -22,6 +25,7 @@ export function createInstalledClaudeQualifier(input: {
   configuration: InstalledWorkflowConfigurationLocation | null
   current(): Readonly<DeviceSessionBinding>
   registry: NativeProcessRegistry
+  accounts?: () => ProviderAccountResolver | undefined
 }): HostHarnessProfileQualifier & { close(): Promise<void> } {
   const stopping = new AbortController()
   const flights = new Set<Promise<HostHarnessProfileEvidence>>()
@@ -51,8 +55,21 @@ export function createInstalledClaudeQualifier(input: {
       throw new DomainError('HARNESS_CONFIGURATION_MISMATCH', 'The saved Claude profile is invalid.', 409)
     }
     const configuration = value.configuration
+    const accountBinding = configuration.accountId ? readInstalledWorkerAccountBinding({
+      ...input, provider: 'claude', accountId: configuration.accountId,
+    }) : undefined
+    const accounts = accountBinding ? { resolve: (provider: 'codex' | 'claude', accountId?: string) => {
+      const resolver = input.accounts?.()
+      if (!resolver) throw new DomainError('PROVIDER_ACCOUNT_UNAVAILABLE',
+        'The selected Worker account resolver is unavailable.', 409)
+      return resolver.resolve(provider, accountId, { acceptedBinding: accountBinding, allowDefault: false, signal })
+    } } : undefined
+    const apiKey = await requireClaudeProductionCredentialDelivery(configuration, accounts)
     const original = await inspect()
-    const assertCurrent = async () => { await inspect(original) }
+    const assertCurrent = async () => {
+      await inspect(original)
+      await requireClaudeProductionCredentialDelivery(configuration, accounts)
+    }
     const resolver = createClaudeCurrentPinResolver({ sdk: original.sdk, ownedVersionProbe: async observation => {
       await assertCurrent()
       const recovery = await input.registry.reserveLaunch(`claude-profile-version:${request.checkId}`)
@@ -89,7 +106,7 @@ export function createInstalledClaudeQualifier(input: {
     return runOwnedClaudeOperation(async () => {
       return await qualifyClaudeNativeProfile({ value, checkId: request.checkId, binding, pin: current.pin,
         directory: join(input.stateDirectory, 'claude-native-qualification'), recovery, signal, assertCurrent,
-        sdkEntrypoint: original.sdk.entrypoint })
+        sdkEntrypoint: original.sdk.entrypoint, ...(apiKey ? { apiKey } : {}) })
     }, async () => {
       await input.registry.abandonReservedLaunch(recovery)
       if (!await input.registry.closeOwner(recovery.owner)) throw new DomainError(
