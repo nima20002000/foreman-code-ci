@@ -44,6 +44,7 @@ export function agentActivityScope(loaded: Pick<State, 'row' | 'selection'>): Ac
 
 /** Agent rows in the shared conversation table. Operator columns stay null. */
 export interface AgentConversationRow {
+  worker_conversation_binding?: unknown
   providerAccountBinding?: AcceptedProviderAccountBinding
   id: string
   agent_key: string
