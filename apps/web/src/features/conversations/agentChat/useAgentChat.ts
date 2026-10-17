@@ -16,7 +16,6 @@ import { useProtectedAccessError } from '../../../shared/api/useProtectedAccessE
 import { canUseBoardAction } from '../../workflow-board/permissions'
 import { useConversationDraftStore } from '../conversationDraftStore'
 import { messageAttachmentRefs, sameAttachmentRefs, type ChatAttachmentAttempt } from '../chatAttachmentAttempt'
-import { markChatTurnCompleted } from '../chatTurnCompletion'
 import { readEarlierChatHistory } from './historyReadback'
 import { claimDraftReadback, receiptForCommand } from './receiptReadback'
 import { forgetPendingCommand, rememberPendingCommand, restorePendingCommands } from './pendingCommands'
@@ -177,10 +176,34 @@ export function useAgentChat(inputContext: AgentChatContext) {
     client.setQueryData<AgentChatState>(key, (previous) => acceptAgentChatState(previous, incoming, source))
   }, [client, generation, key, matches])
   const refresh = useCallback(() => {
-    void client.invalidateQueries({ queryKey: key, exact: true }, { cancelRefetch: false })
+    void client.invalidateQueries({ queryKey: key, exact: true }, { cancelRefetch: false }).catch(() => undefined)
   }, [client, key])
-  useAgentChatStream({ client, key, workspaceId: context.workspaceId, conversationId: state?.conversation?.id,
-    enabled: canRead && !denial, accept, matches, readGeneration, setConnection })
+  const conversationId = state?.conversation?.id
+  useEffect(() => {
+    if (!conversationId || !canRead || denial) return
+    let disposed = false
+    const readback = createStreamReadback(async () => {
+      if (disposed) return
+      await client.cancelQueries({ queryKey: key, exact: true })
+      if (!disposed) await client.refetchQueries({ queryKey: key, exact: true })
+    })
+    const refetch = readback.request
+    const close = subscribeAgentChat(context.workspaceId, conversationId, {
+      snapshot: (incoming) => {
+        if (disposed) return
+        if (matches(incoming)) {
+          readGeneration.current++
+          void client.cancelQueries({ queryKey: key, exact: true }).catch(() => undefined)
+          accept(incoming, 'receipt'); refetch()
+        }
+        else refetch()
+      },
+      event: refetch,
+      refetch,
+      connection: (next) => { if (!disposed) setConnection(next) },
+    })
+    return () => { disposed = true; readback.dispose(); close() }
+  }, [client, key, context.workspaceId, conversationId, canRead, denial, accept, matches])
 
   const mutation = useAgentChatMutation({ commandKey, generation, context, matches, accept, draftKey,
     setLocalError, refresh, commandDenial, readGeneration, client, key })
@@ -192,9 +215,7 @@ export function useAgentChat(inputContext: AgentChatContext) {
       // Allocate exactly one requestId AFTER synchronous admission, not on each keystroke/click.
       const command = build()
       if (command.kind === 'send') rememberPendingCommand(draftKey, command)
-      void mutation.mutateAsync(command).catch(() => {
-        // ignore: useAgentChatMutation.onError retains and reports the command failure.
-      }).finally(() => { release(); retireAgentChatAcknowledgements(client) })
+      void mutation.mutateAsync(command).catch(() => undefined).finally(() => { release(); retireAgentChatAcknowledgements(client) })
       return true
     } catch (error) { release(); setLocalError(errorMessage(error, 'The command could not be prepared.')); return false }
   }
@@ -261,52 +282,6 @@ export function useAgentChat(inputContext: AgentChatContext) {
     },
   }, access, canRead, denial, online, pending, connection, commands, latestCommand, latestReceipt, currentReceipt, confirmedReceipt, localError, blocked,
     send, stop, cancelQueued, respond, refresh, draftKey }
-}
-
-function useAgentChatStream({ client, key, workspaceId, conversationId, enabled, accept, matches,
-  readGeneration, setConnection }: {
-  client: QueryClient
-  key: ReturnType<typeof agentChatStateKey>
-  workspaceId: string
-  conversationId: string | undefined
-  enabled: boolean
-  accept(state: AgentChatState, source: 'receipt'): void
-  matches(state: AgentChatState): boolean
-  readGeneration: RefObject<number>
-  setConnection: Dispatch<SetStateAction<AgentChatConnection>>
-}) {
-  useEffect(() => {
-    if (!conversationId || !enabled) return
-    let disposed = false
-    const readback = createStreamReadback(async () => {
-      if (disposed) return
-      await client.cancelQueries({ queryKey: key, exact: true })
-      if (!disposed) await client.refetchQueries({ queryKey: key, exact: true })
-    })
-    const refetch = readback.request
-    const close = subscribeAgentChat(workspaceId, conversationId, {
-      snapshot: (incoming) => {
-        if (disposed) return
-        if (matches(incoming)) {
-          readGeneration.current++
-          void client.cancelQueries({ queryKey: key, exact: true })
-          accept(incoming, 'receipt')
-          refetch()
-        } else refetch()
-      },
-      event: (event) => {
-        if (disposed) return
-        if (event.type === 'state' && typeof event.data.requestId === 'string'
-          && ['completed', 'failed', 'canceled'].includes(String(event.data.delivery))) {
-          markChatTurnCompleted(client, conversationId, event.data.requestId)
-        }
-        refetch()
-      },
-      refetch,
-      connection: (next) => { if (!disposed) setConnection(next) },
-    })
-    return () => { disposed = true; readback.dispose(); close() }
-  }, [client, key, workspaceId, conversationId, enabled, accept, matches, readGeneration, setConnection])
 }
 
 type AgentChatMutationOptions = {
