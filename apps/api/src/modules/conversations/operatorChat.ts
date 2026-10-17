@@ -8,7 +8,7 @@ import { publicOperatorConversation } from './operatorConversationRecord.js'
 import { APP_MCP_TOKEN } from '../harnesses/appMcpLauncher.js'
 import type { SessionControlRequest } from '@foreman-code/contracts'
 import { sessionTaskContent } from '@foreman-code/contracts'
-import { pendingSessionControls, type ChatModelCatalog } from '../harnesses/sessionControlDefaults.js'
+import { pendingSessionControls } from '../harnesses/sessionControlDefaults.js'
 import { validateSessionMessage } from './sessionControls/messageAdmission.js'
 import type { SessionControlStore } from './sessionControls/store.js'
 import { acceptedOperatorResponseControl } from './acceptedResponseControl.js'
@@ -93,7 +93,7 @@ export class OperatorConversationEvents {
   }
 }
 
-export interface NativeManagerResolver extends ChatModelCatalog {
+export interface NativeManagerResolver {
   (configuration: OperatorConfigurationVersion, conversationId: string, fileInputs?: boolean): NativeHarnessSessionManager
   prepareAccountBinding?(configuration: OperatorConfigurationVersion, conversationId: string): Promise<void>
   /** Resolve the accepted receipt, not the caller's current route or upload owner. */
@@ -371,8 +371,7 @@ export class OperatorChatService {
       ...(session && this.managers.recoverCompaction ? { recoverCompaction: (state: import('@foreman-code/contracts').CompactionState) =>
         this.managers.recoverCompaction!(configuration, id, session, { kind: 'operator',
           correlationId: `session-control:${id}`, configuration, workingDirectory: this.workingDirectory },
-        state, principal.id, this.lifetime.signal) } : {}), pendingCapabilities: pendingSessionControls(configuration.harness,
-        !session ? await this.managers.modelOptions?.(configuration.harness) : undefined) }
+        state, principal.id, this.lifetime.signal) } : {}), pendingCapabilities: pendingSessionControls(configuration.harness) }
   }
 
   async readSessionControls(id: string, principal: ManagementPrincipal) {
