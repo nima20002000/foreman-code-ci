@@ -21,30 +21,6 @@ import { workerConversationCallbacks } from './workerCallbacks.js'
 import { workerConversationFixture } from './workerFixtures.test-support.js'
 import { recoverWorkerConversation } from './recoverWorkerConversation.js'
 
-function recordedConnection() {
-  let state: 'connected' | 'unavailable' | 'transport' | 'stalled' = 'connected'
-  const waiting = new Set<() => void>()
-  return {
-    available: () => state !== 'unavailable',
-    disconnect: (next: Exclude<typeof state, 'connected'> = 'transport') => { state = next },
-    reconnect: () => { state = 'connected'; for (const resume of waiting) resume() },
-    async before(request: WorkerConversationRpcRequest, signal?: AbortSignal) {
-      if (state === 'transport') throw new DeviceConnectionError('transport')
-      if (state !== 'stalled' || request.method !== 'conversation.pending') return
-      let resume!: () => void
-      const pending = new Promise<void>((resolve, reject) => {
-        resume = resolve
-        const abort = () => reject(signal?.reason)
-        signal?.addEventListener('abort', abort, { once: true })
-        resume = () => { signal?.removeEventListener('abort', abort); resolve() }
-        if (signal?.aborted) abort()
-      })
-      waiting.add(resume)
-      try { await pending } finally { waiting.delete(resume) }
-    },
-  }
-}
-
 function createRecordedObserver(f: ReturnType<typeof workerConversationFixture>, bridge: MainWorkerConversationBridge,
   managers: WorkerConversationManager[], connected: () => boolean, request: WorkerConversationChannel['request']) {
   const observer = new WorkerConversationManager({ binding: f.binding, configuration: f.configuration, bridge,
@@ -88,7 +64,7 @@ export async function workerClaudeReplacementFixture(f = workerConversationFixtu
   const recoveries: { inputsBefore: number; inputsAfter: number }[] = []
   let coldHistory = false
   let source: WorkerConversationRpcRequest
-  const connection = recordedConnection()
+  let connectionState: 'connected' | 'unavailable' | 'transport' = 'connected'
   let denied = false
   let failStartup = false
   let failMode = false
@@ -241,18 +217,19 @@ export async function workerClaudeReplacementFixture(f = workerConversationFixtu
   })
   let host = createHost()
   const managers: WorkerConversationManager[] = []
-  const createManager = () => createRecordedObserver(f, bridge, managers, connection.available, async (payload, options) => {
+  const createManager = () => createRecordedObserver(f, bridge, managers, () => connectionState !== 'unavailable', async payload => {
+    if (connectionState === 'transport') throw new DeviceConnectionError('transport')
     const request = WorkerConversationRpcRequestSchema.parse(payload)
-    await connection.before(request, options?.signal)
     if (request.method === 'conversation.initial-turn' || request.method === 'conversation.start-turn') source = request
-    return { payload: await host.handle(request, f.connection, options?.signal) }
+    return { payload: await host.handle(request, f.connection) }
   })
   let manager = createManager()
   const send = (correlationId: string) => sendRecordedMessage(manager, journal, f.binding, start, correlationId)
   return { ...f, get journal() { return journal }, get manager() { return manager }, createManager,
     get native() { return runtime.native }, get owners() { return runtime.owners },
     launches, offers, resumes, recoveries, send, start,
-    disconnect: connection.disconnect, reconnect: connection.reconnect,
+    disconnect: (state: 'unavailable' | 'transport' = 'transport') => { connectionState = state },
+    reconnect: () => { connectionState = 'connected' },
     async coldRestart() {
       for (const observer of managers) await observer.dispose()
       await host.shutdown()
