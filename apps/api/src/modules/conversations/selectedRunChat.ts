@@ -45,7 +45,7 @@ export function assertRunChatConversation(row: AgentConversationRow, context: Ag
     || origin.executionId !== row.origin_execution_id || executionId && origin.executionId !== executionId) staleRunChat()
   if (source && (source.id !== origin.executionId || source.runId !== context.runId
     || source.workflowNodeId !== context.workflowNodeId || source.agentId !== context.agentId
-    || source.agentConfigurationVersionId !== row.agent_configuration_version_id
+    || source.agentConfigurationVersionId !== (row.record.sourceConfigurationVersionId ?? row.agent_configuration_version_id)
     || source.nativeSessionId && source.nativeSessionId !== origin.sourceNativeSessionId)) staleRunChat()
 }
 
