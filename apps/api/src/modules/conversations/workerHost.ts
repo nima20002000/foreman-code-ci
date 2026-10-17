@@ -266,7 +266,7 @@ export class WorkerConversationHost {
   }
 
   private async resident(request: WorkerConversationRpcRequest & { session: NativeSessionReference },
-    connection: Readonly<DeviceSessionBinding>, signal: AbortSignal) {
+    connection: Readonly<DeviceSessionBinding>, signal: AbortSignal, options: { purpose?: 'release' } = {}) {
     let record = await this.ports.journal.read(request.binding)
     if (this.allocating.has(request.binding.owner.conversationId)) unavailable('The native conversation is busy.')
     let resident = this.residents.get(request.binding.owner.conversationId)
@@ -274,6 +274,7 @@ export class WorkerConversationHost {
       || record.applicationAccessChange?.state === 'reserved'
       || !isDeepStrictEqual(resident.binding, request.binding)) unavailable('The original chat session is not resident.')
     if (resident.allocation.hasExited?.()) {
+      if (options.purpose === 'release') return { resident, record }
       const id = request.binding.owner.conversationId
       const original = resident
       const recovery = this.recoverResident(original, record, request, connection, signal)
@@ -758,7 +759,7 @@ export class WorkerConversationHost {
       history = { events: [], pendingInteractions: [], nonSubmission: {
         nativeSessionId: request.session.nativeSessionId, clientCorrelationId: turn.correlationId, result: turn.result,
       } }
-    } else if (request.afterSequence !== undefined && running && isDeepStrictEqual(running, connection)
+    } else if (request.method === 'conversation.history' && request.afterSequence !== undefined && running
       && manager.historyPage) {
       history = await manager.historyPage(request.session, request.afterSequence, signal)
     } else if (request.afterSequence !== undefined && request.correlationId
@@ -947,7 +948,7 @@ export class WorkerConversationHost {
     connection: Readonly<DeviceSessionBinding>, signal: AbortSignal) {
     const saved = await this.ports.journal.read(request.binding)
     if (saved?.runtimeReleased && isDeepStrictEqual(saved.session, request.session)) return { receipt: saved }
-    const { resident, record } = await this.resident(request, connection, signal)
+    const { resident, record } = await this.resident(request, connection, signal, { purpose: 'release' })
     const id = request.binding.owner.conversationId
     if (this.hasRunningOperation(id) || record.turns.some(turn => !['completed', 'rejected'].includes(turn.status))
       || record.compactions.some(control => compactionBlocksSend(control.state))) {

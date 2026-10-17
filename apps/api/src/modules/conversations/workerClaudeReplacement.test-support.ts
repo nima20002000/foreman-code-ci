@@ -21,6 +21,30 @@ import { workerConversationCallbacks } from './workerCallbacks.js'
 import { workerConversationFixture } from './workerFixtures.test-support.js'
 import { recoverWorkerConversation } from './recoverWorkerConversation.js'
 
+function recordedConnection() {
+  let state: 'connected' | 'unavailable' | 'transport' | 'stalled' = 'connected'
+  const waiting = new Set<() => void>()
+  return {
+    available: () => state !== 'unavailable',
+    disconnect: (next: Exclude<typeof state, 'connected'> = 'transport') => { state = next },
+    reconnect: () => { state = 'connected'; for (const resume of waiting) resume() },
+    async before(request: WorkerConversationRpcRequest, signal?: AbortSignal) {
+      if (state === 'transport') throw new DeviceConnectionError('transport')
+      if (state !== 'stalled' || request.method !== 'conversation.pending') return
+      let resume!: () => void
+      const pending = new Promise<void>((resolve, reject) => {
+        resume = resolve
+        const abort = () => reject(signal?.reason)
+        signal?.addEventListener('abort', abort, { once: true })
+        resume = () => { signal?.removeEventListener('abort', abort); resolve() }
+        if (signal?.aborted) abort()
+      })
+      waiting.add(resume)
+      try { await pending } finally { waiting.delete(resume) }
+    },
+  }
+}
+
 function createRecordedObserver(f: ReturnType<typeof workerConversationFixture>, bridge: MainWorkerConversationBridge,
   managers: WorkerConversationManager[], connected: () => boolean, request: WorkerConversationChannel['request']) {
   const observer = new WorkerConversationManager({ binding: f.binding, configuration: f.configuration, bridge,
@@ -62,8 +86,9 @@ export async function workerClaudeReplacementFixture(f = workerConversationFixtu
   const offers: ClaudeSdkUserMessage[] = []
   const resumes: unknown[] = []
   const recoveries: { inputsBefore: number; inputsAfter: number }[] = []
+  let coldHistory = false
   let source: WorkerConversationRpcRequest
-  let connectionState: 'connected' | 'unavailable' | 'transport' = 'connected'
+  const connection = recordedConnection()
   let denied = false
   let failStartup = false
   let failMode = false
@@ -82,6 +107,7 @@ export async function workerClaudeReplacementFixture(f = workerConversationFixtu
   const sdk: ClaudeSdkClient = {
     sdkVersion: '0.3.284', getSessionInfo: async sessionId => ({ sessionId }),
     getSessionMessages: async (_sessionId, options) => {
+      if (!coldHistory) return []
       const rows = (await readFile(historyPath, 'utf8')).split('\n').filter(Boolean).map(line => JSON.parse(line) as unknown)
       const offset = options.offset ?? 0
       return rows.slice(offset, offset + (options.limit ?? 256))
@@ -168,7 +194,6 @@ export async function workerClaudeReplacementFixture(f = workerConversationFixtu
     return { owners, native }
   }
   let runtime = createRuntime()
-  let allocationClosed = false
   const bridge = new MainWorkerConversationBridge()
   const callbacks = workerConversationCallbacks({ currentBinding: () => f.connection,
     capture: () => ({ binding: f.connection, request: async payload => ({
@@ -193,20 +218,9 @@ export async function workerClaudeReplacementFixture(f = workerConversationFixtu
       if (input.kind === 'agent-chat') return { ...input, instructionsDelivered }
       return input
     },
-      nativeOwner: current.owners.nativeOwner, close: async () => {
-        await current.native.dispose?.()
-        if (runtime === current) allocationClosed = true
-      } }
+      nativeOwner: current.owners.nativeOwner, close: async () => { await current.native.dispose?.() } }
   }
   let allocation = createAllocation()
-  const liveAllocation = () => {
-    if (allocationClosed) {
-      runtime = createRuntime()
-      allocation = createAllocation()
-      allocationClosed = false
-    }
-    return allocation
-  }
   const authorize: WorkerConversationHostPorts['authorize'] =
     async (request, connection, signal) => {
       if (denied) throw new Error('Main denied the caller')
@@ -214,12 +228,12 @@ export async function workerClaudeReplacementFixture(f = workerConversationFixtu
     }
   const createHost = () => new WorkerConversationHost({
     ...callbacks, currentBinding: () => f.connection, journal: journal.conversations,
-    allocate: async () => liveAllocation(),
+    allocate: async () => allocation,
     authorize,
     recover: async (record, configuration, connection, signal, request) => {
       const inputsBefore = offers.length
       const recovered = await recoverWorkerConversation({ record, configuration, connection, signal, request,
-        registry, journal: journal.conversations, allocate: async () => liveAllocation(),
+        registry, journal: journal.conversations, allocate: async () => allocation,
         assertCurrent: () => authorize(request, connection, signal) })
       recoveries.push({ inputsBefore, inputsAfter: offers.length })
       return recovered
@@ -227,27 +241,26 @@ export async function workerClaudeReplacementFixture(f = workerConversationFixtu
   })
   let host = createHost()
   const managers: WorkerConversationManager[] = []
-  const createManager = () => createRecordedObserver(f, bridge, managers, () => connectionState !== 'unavailable', async payload => {
-    if (connectionState === 'transport') throw new DeviceConnectionError('transport')
+  const createManager = () => createRecordedObserver(f, bridge, managers, connection.available, async (payload, options) => {
     const request = WorkerConversationRpcRequestSchema.parse(payload)
+    await connection.before(request, options?.signal)
     if (request.method === 'conversation.initial-turn' || request.method === 'conversation.start-turn') source = request
-    return { payload: await host.handle(request, f.connection) }
+    return { payload: await host.handle(request, f.connection, options?.signal) }
   })
   let manager = createManager()
   const send = (correlationId: string) => sendRecordedMessage(manager, journal, f.binding, start, correlationId)
   return { ...f, get journal() { return journal }, get manager() { return manager }, createManager,
     get native() { return runtime.native }, get owners() { return runtime.owners },
     launches, offers, resumes, recoveries, send, start,
-    disconnect: (state: 'unavailable' | 'transport' = 'transport') => { connectionState = state },
-    reconnect: () => { connectionState = 'connected' },
+    disconnect: connection.disconnect, reconnect: connection.reconnect,
     async coldRestart() {
       for (const observer of managers) await observer.dispose()
       await host.shutdown()
       await journal.close()
       journal = await RemoteOperationJournal.open(journalPath)
+      coldHistory = true
       runtime = createRuntime()
       allocation = createAllocation()
-      allocationClosed = false
       host = createHost()
       manager = createManager()
     },
