@@ -60,6 +60,7 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
   private credentialLease: ReturnType<MainWorkerConversationBridge['capture']> | undefined
   private readonly recoveredCallbacks = new Map<string, ReturnType<MainWorkerConversationBridge['capture']>>()
   private preparationActive = false
+  private runtimeAcquired = false
   private reconnecting: Promise<void> | undefined
   private readonly lifetime = new AbortController()
 
@@ -127,7 +128,15 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
         }
       } })
     const lease = { ...captured, request: async (signal?: AbortSignal) => {
-      const raw = await captured.request(signal)
+      let raw: unknown
+      try {
+        raw = await captured.request(signal)
+      } catch (error) {
+        // A failed process change leaves its native owner unconfirmed.
+        if (['conversation.preferences', 'conversation.open', 'conversation.initial-turn', 'conversation.start-turn']
+          .includes(frame.method)) this.runtimeAcquired = false
+        throw error
+      }
       if (frame.method === 'conversation.response-continuation') return raw
       const parsed = WorkerConversationResponsePageSchema.safeParse(raw)
       if (!parsed.success) return raw
@@ -158,14 +167,23 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
     const lease = await this.capture(this.frame(input), {}, signal)
     try { return await lease.request(signal) } finally { await this.release(lease) }
   }
-  private adopt(raw: unknown, attachment?: NativeSessionReference) {
+  private readReceipt(raw: unknown) {
     const value = z.object({ receipt: WorkerConversationReceiptSchema.optional() }).passthrough().parse(raw)
     const receipt = value.receipt
     if (!receipt) return undefined
     if (!isDeepStrictEqual(receipt.binding, this.options.binding)) conflict('The worker returned another conversation owner.')
-    for (const field of ['mainId', 'deviceId', 'workerInstallationId', 'keyRevision', 'authorizationRevision', 'bootId'] as const) {
+    for (const field of ['mainId', 'deviceId', 'workerInstallationId', 'keyRevision', 'authorizationRevision'] as const) {
       if (receipt.connection[field] !== this.options.channel.binding[field]) conflict('The original worker installation changed.')
     }
+    return receipt
+  }
+  private adopt(raw: unknown, attachment?: NativeSessionReference) {
+    const receipt = this.readReceipt(raw)
+    if (!receipt) return undefined
+    if (receipt.connection.bootId !== this.options.channel.binding.bootId) conflict('The original worker installation changed.')
+    return this.adoptReceipt(receipt, attachment)
+  }
+  private adoptReceipt(receipt: z.infer<typeof WorkerConversationReceiptSchema>, attachment?: NativeSessionReference) {
     const older = this.receipt && receipt.revision < this.receipt.revision
     const transitions = older ? this.receipt : receipt
     let transitioned = older ? receipt.nativeOwner : this.receipt?.nativeOwner
@@ -250,6 +268,7 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
         delete this.options.previousBinding
         delete this.options.previousConfiguration
       }
+      this.runtimeAcquired = true
       return receipt.session
     } finally { await this.release(lease) }
   }
@@ -386,6 +405,7 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
         sequence = (history.nextSequence ?? Math.max(-1, ...history.events.map(event => event.sequence)) + 1) - 1
       }
       this.adopt(await lease.request(pollSignal))
+      this.runtimeAcquired = true
       this.checkRejection(input.clientCorrelationId)
       while (true) {
         pollSignal.throwIfAborted()
@@ -618,13 +638,25 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
     this.assertSession(session)
     this.adopt(await this.request({ method: 'conversation.close', session }))
   }
+  async closeRetainedSession(session: NativeSessionReference, signal: AbortSignal) {
+    const record = this.readReceipt(await this.request({ method: 'conversation.status' }, signal))
+    if (!record?.session || !isDeepStrictEqual(record.session, session)) conflict('The persisted worker session changed.')
+    if (record.closed) return
+    if (record.connection.bootId !== this.options.channel.binding.bootId && !record.runtimeReleased) {
+      conflict('The previous Worker session has no confirmed process release.')
+    }
+    this.adoptReceipt(record)
+    const closed = this.adopt(await this.request({ method: 'conversation.close', session }, signal))
+    if (!closed?.closed) conflict('Closure of the persisted worker session is unconfirmed.')
+  }
   async closeForResume(session: NativeSessionReference) {
     this.assertSession(session)
     this.adopt(await this.request({ method: 'conversation.release-runtime', session }))
+    this.runtimeAcquired = false
   }
   async closeForRestart(session: NativeSessionReference) { this.assertSession(session); await this.dispose() }
   async dispose() {
-    if (!this.lifetime.signal.aborted && this.session && this.receipt && !this.receipt.closed
+    if (this.runtimeAcquired && !this.lifetime.signal.aborted && this.session && this.receipt && !this.receipt.closed
       && !this.receipt.closing && !this.receipt.runtimeReleased
       && this.receipt.turns.every(turn => ['completed', 'rejected'].includes(turn.status))
       && this.receipt.compactions.every(control => !compactionBlocksSend(control.state))) {
