@@ -1,7 +1,10 @@
 import type { NativeResponseAvailability, NativeResponseAvailabilityQuery } from '../responseAvailability.js'
 
 /** Optional fields mirror the common inspector seam; supplied expectations must match resident evidence. */
-export type ClaudeResponseAvailabilityQuery = NativeResponseAvailabilityQuery
+export interface ClaudeResponseAvailabilityQuery extends NativeResponseAvailabilityQuery {
+  expectedNativeMessageId?: string
+  expectedGeneration?: string
+}
 export interface ClaudeResponseAvailability extends NativeResponseAvailability {
   nativeMessageId?: string
 }

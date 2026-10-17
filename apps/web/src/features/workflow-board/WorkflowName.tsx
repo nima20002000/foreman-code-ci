@@ -1,4 +1,3 @@
-import { InfoHint } from '../../shared/ui/InfoHint'
 import { useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react'
 import { Button, Dialog, TextField } from '../../shared/ui/nocturne'
 
@@ -41,8 +40,7 @@ export function WorkflowName({ name, disabled, onRename, ref }: { name: string; 
     }} /> : <button ref={title} className="board-name-button" title="Rename workflow" disabled={disabled}
       onClick={begin}>{name}</button>}</h2>
     {confirming !== undefined ? <Dialog open title="Rename workflow?" closeLabel="Discard new name" returnFocusRef={title}
-      description={`Rename “${name}” to “${confirming}”?`}
-      headerLeading={<InfoHint label="Rename">You can undo it with Ctrl+Z; Save keeps it.</InfoHint>}
+      description={`Rename “${name}” to “${confirming}”? You can undo it with Ctrl+Z; Save keeps it.`}
       onOpenChange={(open) => { if (!open) decide(false) }}>
       <div className="n-actions">
         <Button onClick={() => decide(false)}>Discard</Button>
