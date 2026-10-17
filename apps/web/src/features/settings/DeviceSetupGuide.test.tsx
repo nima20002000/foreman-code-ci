@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { DeviceRegistration } from '@foreman-code/contracts/device-identity'
 import { ConnectionSetupStatus, DeviceSetupGuide } from './DeviceSetupGuide'
@@ -15,10 +15,8 @@ describe('device setup guidance', () => {
     render(<DeviceSetupGuide />)
     const steps = screen.getAllByRole('listitem').map(item => item.textContent ?? '')
     expect(steps[0]).toMatch(/Install the companion on the remote computer first/)
-    expect(steps[1]).toMatch(/Pairing never counts as that approval/)
-    expect(screen.queryByText(/Pairing lets the computer connect/)).not.toBeInTheDocument()
-    fireEvent.mouseEnter(screen.getByRole('button', { name: 'About Pairing' }))
-    expect(screen.getByRole('tooltip')).toHaveTextContent('It does not allow remote commands.')
+    expect(steps[1]).toMatch(/does not allow remote commands/)
+    expect(steps[2]).toMatch(/Pairing never counts as that approval/)
     expect(screen.getByText(/SSH and rsync must already be installed/)).toBeInTheDocument()
     expect(screen.getByText(/this page does not install it or change network settings/)).toBeInTheDocument()
   })

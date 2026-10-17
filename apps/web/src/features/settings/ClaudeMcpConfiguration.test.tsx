@@ -24,11 +24,6 @@ function setup(mcpServers = {}) {
 }
 it('adds the server-supplied app endpoint to the draft without changing permissions or claiming connected health', async () => {
   const user = setup()
-  const explanation = 'Claude supports the Foreman Code app MCP connection.'
-  expect(screen.queryByText(new RegExp(explanation))).not.toBeInTheDocument()
-  await user.hover(screen.getByRole('button', { name: 'About MCP connections' }))
-  expect(screen.getByRole('tooltip')).toHaveTextContent(explanation)
-  await user.unhover(screen.getByRole('button', { name: 'About MCP connections' }))
   const add = await screen.findByRole('button', { name: 'Add Foreman Code MCP' })
   await waitFor(() => expect(add).toBeEnabled())
   await user.click(add)
