@@ -35,8 +35,8 @@ import { localCodexChatHost } from '../harnesses/codexFiles/localHost.js'
 import { assertCodexChatHost } from '../harnesses/codexFiles/localHost.js'
 import { closeRecoveredWorkerSession, workerConversationProcessDigest } from './workerNativeOwner.js'
 import { recoverWorkerConversation } from './recoverWorkerConversation.js'
-import { closedWorkerConversationOwner } from './closedWorkerConversation.js'
 import { join } from 'node:path'
+import { workerConversationAccountOwner } from './workerAccountSession.js'
 
 function unavailable(message: string): never {
   throw new DomainError('WORKER_CONVERSATION_UNAVAILABLE', message, 409)
@@ -71,8 +71,9 @@ function createInstalledConversationAllocator(input: InstalledWorkerConversation
     if (harness !== 'codex') unavailable('The installed native selection does not support this driver.')
     if (configuration.harness.harness !== 'codex') unavailable('The selected Codex configuration changed.')
     assertWorkerProviderAccountBinding(binding.accountBinding, connection)
+    const accountOwner = await workerConversationAccountOwner(binding, conversationJournal, source())
     const account = await resolveRuntimeProviderAccount(input.accounts, 'codex', configuration.harness.accountId,
-      input.registry.scope(`conversation:${binding.owner.conversationId}`), undefined, binding.accountBinding)
+      input.registry.scope(accountOwner), undefined, binding.accountBinding)
     const environment = account ? managedProviderEnvironment(process.env, account, 'codex') : process.env
     const directory = await installedConversationDirectory({ binding, configuration, approvedRoots: input.approvedRoots })
     const reader = createInstalledConversationNativeReader({ binding, configuration, connection,
@@ -253,10 +254,9 @@ export async function createInstalledWorkerConversations(input: InstalledWorkerC
     journal: conversationJournal,
     allocate: (binding, configuration, connection) => allocate(binding, configuration, connection, 'chat'),
     prepare: (binding, configuration, connection) => allocate(binding, configuration, connection, 'preparation'),
-    closePersistedRuntime: async (record, _connection, signal) => {
-      const closed = input.registry.closedRegistration(`conversation:${record.binding.owner.conversationId}`)
-      const owner = closedWorkerConversationOwner(record, input.registry, closed)
-      if (!await input.registry.closeOwner(owner, signal)) unavailable('Native chat closure is unconfirmed.')
+    closePersistedRuntime: async (record, connection, signal) => {
+      if (!isDeepStrictEqual(input.current(), connection)) unavailable('The selected Worker connection changed.')
+      await closeRecoveredWorkerSession(record, input.registry, signal)
     },
     closeRecoveredSession: (record, signal) => closeRecoveredWorkerSession(record, input.registry, signal),
     recover: (record, configuration, connection, signal, request) => recoverWorkerConversation({

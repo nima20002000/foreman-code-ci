@@ -329,8 +329,19 @@ export class WorkerConversationHost {
     connection: Readonly<DeviceSessionBinding>, signal: AbortSignal) {
     validateConfiguration(request.binding, request.configuration)
     if (request.mode !== 'create' && !request.source) unavailable('Native attachment or fork requires its source session.')
-    if (request.previousConfiguration) return this.changeConfiguration(request, connection, signal)
-    if (request.previousBinding) return this.changeApplicationAccess(request, connection, signal)
+    if (request.previousConfiguration) {
+      if (request.mode === 'attach') {
+        if (!request.previousBinding) unavailable('The previous native binding is required.')
+        if (validWorkerConfigurationTransition(request.previousBinding, request.binding,
+          request.previousConfiguration, request.configuration)) return this.changeConfiguration(request, connection, signal)
+        const established = await this.ports.journal.inspectConfigurationTransition(request.previousBinding, request.binding,
+          request.previousConfiguration, request.configuration)
+        if (!established?.session || !isDeepStrictEqual(established.session, request.source)) {
+          unavailable('The replacement native session differs from its persisted creation.')
+        }
+      } else await this.replaceSession(request, connection, signal)
+    }
+    if (request.previousBinding && !request.previousConfiguration) return this.changeApplicationAccess(request, connection, signal)
     const record = await this.ports.journal.receive(request.binding, connection)
     const resident = await this.allocate(request, connection, signal)
     if (request.mode === 'fork' && !resident.allocation.manager.forkSession) {
@@ -843,6 +854,8 @@ export class WorkerConversationHost {
         : resident.allocation.manager.inspectMcp(signal)
     }
     if (request.method === 'conversation.initial-turn') {
+      validateConfiguration(request.binding, request.configuration)
+      if (request.previousConfiguration) await this.replaceSession(request, connection, signal)
       const resident = await this.allocate(request, connection, signal)
       const manager = resident.allocation.manager
       if (!manager.startInitialTurn) unavailable('The native driver does not use atomic initial message admission.')
@@ -1056,6 +1069,66 @@ export class WorkerConversationHost {
     this.allocating.set(id, closing)
     try { await closing } finally { if (this.allocating.get(id) === closing) this.allocating.delete(id) }
     return { receipt: await this.ports.journal.read(request.binding) }
+  }
+
+  private async releaseRecord(record: WorkerConversationReceipt, connection: Readonly<DeviceSessionBinding>,
+    signal: AbortSignal) {
+    const id = record.binding.owner.conversationId
+    if (this.hasRunningOperation(id) || record.turns.some(turn => !['completed', 'rejected'].includes(turn.status))
+      || record.compactions.some(control => compactionBlocksSend(control.state))) {
+      unavailable('Finish the active operation before releasing its native process.')
+    }
+    if (record.closed || record.closing || !record.session || !record.nativeOwner) {
+      unavailable('The original native conversation is unavailable.')
+    }
+    for (const field of ['mainId', 'deviceId', 'workerInstallationId', 'keyRevision', 'authorizationRevision'] as const) {
+      if (record.connection[field] !== connection[field]) unavailable('The original paired Worker authority changed.')
+    }
+    const resident = this.residents.get(id)
+    if (resident) {
+      if (!isDeepStrictEqual(resident.binding, record.binding)) unavailable('The native chat owner changed.')
+      if (!isDeepStrictEqual(record.nativeOwner,
+        sessionOwner(await resident.allocation.nativeOwner(record.session, { allowExited: true })))) {
+        unavailable('The original native process owner changed.')
+      }
+      await resident.allocation.close()
+      this.residents.delete(id)
+    } else if (!record.runtimeReleased) {
+      if (!this.ports.closeRecoveredSession) unavailable('The persisted native process cannot be closed.')
+      await this.ports.closeRecoveredSession(record, signal)
+    }
+    return this.ports.journal.runtimeReleased(record.binding, connection)
+  }
+
+  private async replaceSession(request: Extract<WorkerConversationRpcRequest,
+    { method: 'conversation.open' | 'conversation.initial-turn' }>,
+    connection: Readonly<DeviceSessionBinding>, signal: AbortSignal) {
+    if (!request.previousBinding || !request.previousConfiguration
+      || request.method === 'conversation.open' && request.mode !== 'create') {
+      unavailable('Native replacement requires its previous Agent configuration and binding.')
+    }
+    const id = request.binding.owner.conversationId
+    if (this.allocating.has(id) || this.hasRunningOperation(id)) unavailable('The native conversation is busy.')
+    const input = { ...request }
+    delete input.admissionId
+    const inputHash = commandInputHash(input)
+    const task = (async () => {
+      const record = await this.ports.journal.inspectReplacement(request.previousBinding!, request.binding,
+        request.previousConfiguration!, request.configuration, request.operationId, inputHash)
+      if (isDeepStrictEqual(record.binding, request.binding)) return
+      await this.releaseRecord(record, connection, signal)
+      const preparation = this.preparations.get(id)
+      if (preparation) {
+        await preparation.allocation.close()
+        this.preparations.delete(id)
+      }
+      await this.authorize(request, connection, signal)
+      await this.ports.journal.replaceSession(request.previousBinding!, request.binding,
+        connection, request.operationId, inputHash)
+    })()
+    const changing = task
+    this.allocating.set(id, changing)
+    try { await task } finally { if (this.allocating.get(id) === changing) this.allocating.delete(id) }
   }
 
   async drainForUpdate(): Promise<void> {

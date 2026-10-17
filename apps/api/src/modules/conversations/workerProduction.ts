@@ -63,7 +63,7 @@ interface OwnerRow {
   active_request_id: string | null; native_session_id: string | null; deleted_at: unknown
   harness: NativeSessionReference['harness']; provider_version: string | null
   record: { status?: string; directoryBinding?: unknown; systemPrompt?: PromptSettingSnapshot;
-    workerGeneration?: string; workerSessionGeneration?: string;
+    workerGeneration?: string;
     sourceConfigurationVersionId?: string;
     origin?: { kind: string; runId?: string; executionId?: string; sourceNativeSessionId?: string } }
   payload: { ownerPrincipalId?: string } | null
@@ -181,6 +181,19 @@ async function assertConversationSource(pool: pg.Pool,
       sourceExecution.workingTree)) unavailable('The original Run chat placement changed.')
 }
 
+async function readConversationSource(pool: pg.Pool, row: OwnerRow) {
+  if (!row.record.sourceConfigurationVersionId) return undefined
+  const retained = row.worker_conversation_binding
+    ? WorkerConversationBindingSchema.parse(row.worker_conversation_binding).sourceExecution : undefined
+  if (retained) return retained
+  const origin = row.record.origin
+  if (origin?.kind !== 'run_execution' || !origin.executionId) unavailable('The original Run chat source is unavailable.')
+  const placement = await readExecutionPlacement(pool, origin.executionId)
+  const native = await readNativePlacement(pool, origin.executionId)
+  if (!placement || !native) unavailable('The original Run chat placement is unavailable.')
+  return { executionId: origin.executionId, placement, workingTree: native.workingTree }
+}
+
 async function readWorkerConversationProfileFacts(input: ProductionWorkerConversationsInput,
   configuration: WorkerConversationConfiguration, accepted: AcceptedHarnessProfile) {
   const installation = input.registry.pinOverride(accepted.override).installation
@@ -222,10 +235,8 @@ async function admitWorkerConversation(input: ProductionWorkerConversationsInput
   }, signal: AbortSignal) {
   const { configuration, selector, owner, profiles, kind, bridge, row } = context
   const original = await row(options.conversationId)
-  const savedBinding = original.worker_conversation_binding
-    ? WorkerConversationBindingSchema.parse(original.worker_conversation_binding) : undefined
   const sourceExecution = options.sourceExecution
-    ?? (original.record.sourceConfigurationVersionId ? savedBinding?.sourceExecution : undefined)
+    ?? await readConversationSource(input.pool, original)
   const assertSource = (live: OwnerRow) => assertConversationSource(input.pool, sourceExecution, live)
   await assertSource(original)
   const directoryBinding = original.kind === 'agent' && original.record.directoryBinding
@@ -237,7 +248,8 @@ async function admitWorkerConversation(input: ProductionWorkerConversationsInput
   if (!principalId) unavailable('The chat has no admitted sender or control caller.')
   const profileOwner = { ...owner, ...(options.observationPrincipalId
     ? { observationPrincipalId: principalId } : { controlPrincipalId: principalId }), admissionSignal: signal }
-  const accepted = await profiles.admit(profileOwner, selector)
+  const admissionMethod = options.observationPrincipalId ? 'admitObservation' : 'admit'
+  const accepted = await profiles[admissionMethod](profileOwner, selector)
   if (!isDeepStrictEqual(withAdvancedDefaults(accepted.override.configuration), withAdvancedDefaults(configuration.harness))) {
     unavailable('The worker profile differs from this saved chat configuration.')
   }
@@ -253,17 +265,16 @@ async function admitWorkerConversation(input: ProductionWorkerConversationsInput
     ? { kind: 'operator', operatorId: configuration.operatorId }
     : { kind: 'agent', workspaceId: configuration.workspaceId, agentId: configuration.agentId,
       workflowId: original.workflow_id, workflowNodeId: original.workflow_node_id }
+  const savedBinding = original.worker_conversation_binding
+    ? WorkerConversationBindingSchema.parse(original.worker_conversation_binding) : undefined
   let executionConfiguration = configuration
   if (savedBinding && savedBinding.owner.configurationVersionId !== configuration.id
     && savedBinding.owner.kind === 'operator' && 'operatorId' in configuration) {
     const previous = await input.operators.configuration(savedBinding.owner.configurationVersionId)
     executionConfiguration = workerExecutionConfiguration(savedBinding, configuration, previous)
   }
-  const sessionGeneration = savedBinding?.sessionGeneration ?? original.record.workerSessionGeneration
   const requestedBinding = WorkerConversationBindingSchema.parse({
     ...(original.kind === 'agent' && original.record.workerGeneration ? { generation: original.record.workerGeneration } : {}),
-    ...(original.kind === 'agent' && !original.record.workerGeneration && sessionGeneration
-      ? { sessionGeneration } : {}),
     owner: { ...ownerFields,
     conversationId: options.conversationId, configurationVersionId: executionConfiguration.id,
     configurationHash: commandInputHash(executionConfiguration) }, harness: configuration.harness.harness,
@@ -344,7 +355,8 @@ async function admitWorkerConversation(input: ProductionWorkerConversationsInput
     const observation = { ...owner, observationPrincipalId: currentCaller,
       ...(effectSignal ? { admissionSignal: effectSignal } : {}) }
     // Closing a settled owner does not launch or reconfigure its executable.
-    if (!cleanup) await profiles.revalidate(observation, accepted)
+    if (!cleanup) await profiles[options.observationPrincipalId && reads.has(request.method)
+      ? 'revalidateObservation' : 'revalidate'](observation, accepted)
     currentChannel()
   }
   const claudeFiles = configuration.harness.harness === 'claude' && input.fileService
