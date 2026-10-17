@@ -59,7 +59,8 @@ export async function assertInteractionNativeDispatchLocked(sql: GraphTransactio
     || !await settled(sql, current)) return fail('GRAPH_SUBMISSION_NOT_REPLAYABLE')
   return { interaction: current, expiresAt }
 }
-/** Retries an existing remote reservation only after the worker proves non-entry. */
+/** Retries an admitted remote response only after its original Worker proves non-entry:
+ * the command is reserved but not entered, or was never reserved at all. */
 export async function assertInteractionReservedRetryLocked(sql: GraphTransactionSql,
   claim: InteractionDeliveryClaim): Promise<void> {
   const { current, attempt, expiresAt } = await ownAttempt(sql, claim)

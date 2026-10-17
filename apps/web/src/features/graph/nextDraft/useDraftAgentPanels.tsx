@@ -1,3 +1,4 @@
+import { InfoHint } from '../../../shared/ui/InfoHint'
 import type { PinnedPanelNode } from './DraftCanvas'
 import { JobNodePanel } from '../../jobs'
 import { AgentFacts, Button, EmptyState, type AgentPanel } from '../../../shared/ui/nocturne'
@@ -63,7 +64,7 @@ export function useDraftAgentPanels({ draftKey, edit, editIntent, core, board, r
         } else { setOpenNode(undefined); setPanel('agents') }
       }} />
     if (pinned) return { chat, chatHasHeader: true,
-      settings: <p className="agent-panel-note">This is a saved Run Agent. Return to the draft to edit settings for future work. Chat does not change this Run.</p>,
+      settings: <h3>Settings<InfoHint label="Settings">This is a saved Run Agent. Return to the draft to edit settings for future work. Chat does not change this Run.</InfoHint></h3>,
       info: <AgentInfoTabs scope={board?.run} agentId={node.agentId} details={<AgentFacts items={[{ label: 'Status', value: statusLabel },
         { label: 'Node', value: node.id, mono: true }, { label: 'Agent', value: node.agentId, mono: true },
         { label: 'Run', value: board?.run?.runId, mono: true }]} />} /> }

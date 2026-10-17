@@ -1,3 +1,4 @@
+import { InfoHint } from '../../shared/ui/InfoHint'
 import { useRef, useState } from 'react'
 import { useMutation, useQueryClient, type InfiniteData } from '@tanstack/react-query'
 import type { WorkspaceStorageFolder, WorkspaceStorageFolderDeleteInput } from '@foreman-code/contracts/management'
@@ -56,7 +57,7 @@ export function WorkspaceStorageFolderCard({ folder, selection }: { folder: Work
       onChange: () => selection.toggle(folderSelectionId(folder.path), { kind: 'folder', name: folder.name, path: folder.path, identity: folder.identity }),
     }}
     actions={<ResourceActionsMenu name={`folder ${folder.name}`} disabled={selection.locked} open={menuOpen} onOpenChange={setMenuOpen}>
-      <p className="resource-card-menu-note">Folder on disk without a workspace.</p>
+      <span>Folder<InfoHint label="Folder">Folder on disk without a workspace.</InfoHint></span>
       {folder.deletion.status === 'protected' ? <Alert tone="warning" title="This folder is protected.">{folder.deletion.message}</Alert> : null}
       <Button variant="danger" disabled={folder.deletion.status === 'protected'}
         onClick={() => { target.current = folder; setMenuOpen(false); setConfirming(true) }}>Delete folder</Button>

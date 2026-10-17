@@ -7,24 +7,32 @@ import { Badge, Button, EmptyState, ErrorState, Icon, LoadingState, SearchField,
 import { ProtectedAccessError } from '../../shared/ui/ProtectedAccessError'
 import { useProtectedAccessError } from '../../shared/api/useProtectedAccessError'
 import { useSkillPages } from './skillsApi'
+import { useSkillAssignments } from './skillAssignments'
 import './skills.css'
 
 export interface SkillLibrarySearch { workspace?: string | undefined; q?: string | undefined; archived?: boolean | undefined }
 
 function SkillRow({ skill, workspace }: { skill: SkillSummary; workspace: string }) {
-  return <li>
+  const { query, agents } = useSkillAssignments(skill.workspaceId, skill.skillId)
+  let assignments = agents.map((agent) => agent.name).join(', ') || 'No Agents'
+  if (query.isPending) assignments = 'Loading assignments…'
+  if (query.isError) assignments = 'Assignments unavailable'
+  return <li className="skill-list-item">
     <Link to="/settings/skills/$workspaceId/$skillId" params={{ workspaceId: skill.workspaceId, skillId: skill.skillId }} className="skill-row">
-      <span className="skill-row-icon" aria-hidden="true"><Icon name="code" size={16} /></span>
       <span className="skill-row-text">
         <strong>{skill.name}</strong>
         {skill.description ? <span className="skill-row-description">{skill.description}</span> : null}
+        <span className="skill-row-workspace">{workspace}</span>
       </span>
-      <span className="skill-row-meta">
-        <Badge>{workspace}</Badge>
-        <span>Version {skill.version}</span>
-        {skill.archived ? <Badge tone="warning">Archived</Badge> : null}
+      <span className="skill-row-status">
+        {skill.archived ? <Badge tone="warning">Archived · v{skill.version}</Badge> : `Active · v${skill.version}`}
+      </span>
+      <span className="skill-row-users" aria-label="Assigned Agents">
+        {assignments}
       </span>
     </Link>
+    {query.isError ? <Button size="sm" variant="ghost" disabled={query.isFetching}
+      onClick={() => void query.refetch()}>Retry assignments</Button> : null}
   </li>
 }
 
@@ -71,9 +79,9 @@ export function SkillsLibrary({ search, onSearchChange }: { search: SkillLibrary
           : <div className="skills-results" aria-busy={pages.isFetching && pages.isPlaceholderData}>
             {pages.isError ? <p role="alert" className="skills-inline-error">Could not refresh skills. Showing the last loaded list. <Button size="sm" onClick={() => void pages.refetch()}>Retry</Button></p> : null}
             {items.length === 0 ? filtered
-              ? <EmptyState icon="search" title="No skills match" description="Try another search, workspace or archive filter."
+              ? <EmptyState icon="search" title="No skills match"
                 action={<Button onClick={() => { setText(''); onSearchChange({}) }}>Clear filters</Button>} />
-              : <EmptyState icon="code" title="No skills yet" description="Create a skill with instructions you want Agents to follow." action={addSkill} />
+              : <EmptyState icon="code" title="No skills yet" />
               : <ul className="skills-list" aria-label="Skills">{items.map((skill) =>
                 <SkillRow key={`${skill.workspaceId}:${skill.skillId}`} skill={skill} workspace={name(skill.workspaceId)} />)}</ul>}
             <LoadMore label="skills" query={pages} />
