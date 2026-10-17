@@ -2,6 +2,7 @@ import { sourceStorageCapacityFixture } from './helpers/sourceStorageCapacityFix
 import {
   beginTransaction, commitTransaction, rollbackTransaction, withTransaction,
 } from '../src/infrastructure/transaction.js'
+import { PostgresCommandReceiptRetention } from '../src/modules/commands/receiptRetention.js'
 import { sourceStorageLimits } from '../src/modules/sources/storageCapacity.js'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { randomUUID } from 'node:crypto'
@@ -1104,4 +1105,35 @@ it('keeps maintenance backoff while allowing a direct cleanup retry to reclaim u
   const retry = await f.client.callTool({ name: 'source_approve', arguments: approved.input })
   expect(retry.isError).toBe(true)
   expect(JSON.stringify(retry.content)).toContain('SOURCE_UNAVAILABLE')
+}, 60_000)
+
+
+it('expires old unavailable source responses while preserving retained source retries and audit identities', async () => {
+  fixture = await setup()
+  const f = fixture
+  const expired = await f.approve(SOURCE_RETENTION_SECONDS * 3)
+  await f.sources.releaseUnusedSnapshots()
+  expect((await f.read(expired.source)).availability).toBe('unavailable')
+  const retained = await f.approve()
+  const old = new Date(Date.now() - 31 * 86_400_000)
+  await f.pool.query(`update management_command_receipts set created_at=$2
+    where operation='source.approve' and command_id=any($1::text[])`,
+  [[expired.input.commandId, retained.input.commandId], old])
+  await f.pool.query(`update management_audit set occurred_at=$2
+    where action='source.approve' and details->>'commandId'=any($1::text[])`,
+  [[expired.input.commandId, retained.input.commandId], old])
+  const retention = new PostgresCommandReceiptRetention(f.pool)
+  expect(await retention.prune()).toBe(1)
+  const rows = (await f.pool.query<{ command_id: string }>(
+    "select command_id from management_command_receipts where operation='source.approve'", [])).rows
+  expect(rows.map(row => row.command_id)).toEqual([retained.input.commandId])
+  expect((await f.pool.query(`select 1 from management_audit
+    where action='source.approve' and details->>'commandId'=$1 and outcome='succeeded'`,
+  [expired.input.commandId])).rowCount).toBe(1)
+  const retry = await f.client.callTool({ name: 'source_approve', arguments: expired.input })
+  expect(retry.isError).toBe(true)
+  expect(JSON.stringify(retry.content)).toContain('SOURCE_UNAVAILABLE')
+  const replay = await f.client.callTool({ name: 'source_approve', arguments: retained.input })
+  expect(replay.isError, JSON.stringify(replay.content)).not.toBe(true)
+  expect(SourceApproveResultSchema.parse(decodeMcpToolResult(replay)).replayed).toBe(true)
 }, 60_000)

@@ -59,7 +59,7 @@ it.each(['main', 'device', 'github', 'circleci'] as const)(
         finishedAt,
         ...(collecting ? { collection: 'pending' } : {}),
         initiator: { principalId: 'fixture-reader', executionId: null } })
-      await database.pool.query('insert into ci_runs(id,workspace_id,group_id,state,record) values($1,$2,$3,$4,$5::jsonb)',
+      await database.pool.query("insert into ci_runs(id,workspace_id,group_id,state,record,log_tail) values($1,$2,$3,$4,$5::jsonb,'retained log')",
         [id, workspaceId, record.groupId, record.state, JSON.stringify(record)])
       // The executor can already be settled while Main still needs its result.
       const directory = join(root, 'runs', id)
@@ -94,6 +94,13 @@ it.each(['main', 'device', 'github', 'circleci'] as const)(
         'select record from ci_runs where workspace_id=$1', [workspaceId])).rows.map(row => row.record)
       expect(saved).toEqual(expect.arrayContaining(records))
       expect(saved).toHaveLength(records.length)
+      await vi.waitFor(async () => {
+        const tails = (await database.pool.query<{ id: string; log_tail: string }>(
+          'select id::text,log_tail from ci_runs where workspace_id=$1', [workspaceId])).rows
+        const expired = new Set(records.slice(0, 7).map(record => record.id))
+        expect(tails.filter(row => row.log_tail === '').map(row => row.id).sort()).toEqual([...expired].sort())
+        expect(tails.filter(row => !expired.has(row.id)).every(row => row.log_tail === 'retained log')).toBe(true)
+      }, { timeout: 10_000 })
     } finally {
       if (hostRef.kind === 'cloud') await cloud.waitForMirrorCleanup('fixture/site', 'fixture/mirror')
     }

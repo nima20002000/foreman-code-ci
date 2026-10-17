@@ -23,8 +23,8 @@ import { assertConversationCursor, withConversationPageRead } from './activityCu
 import { readActivityCommands } from './activityCommands.js'
 import { readConversationPublicationReceipts, type ConversationPublicationReceipt } from './messagePublications.js'
 import { PostgresOperatorActivityRepository } from './operatorActivityRepository.js'
-import { OPERATOR_SNAPSHOT_MESSAGE_BYTES, OPERATOR_HISTORY_PAGE_BYTES, HANDOFF_MESSAGE_LIMIT, handoffContext } from './operatorChatRepository.js'
-import { AgentConfigurationVersionSchema, type AgentConfigurationVersion } from '@foreman-code/contracts'
+import { OPERATOR_SNAPSHOT_MESSAGE_BYTES, OPERATOR_HISTORY_PAGE_BYTES } from './operatorChatRepository.js'
+import { AgentConfigurationVersionSchema } from '@foreman-code/contracts'
 import { legacyProviderAccountBinding, readProviderAccountBinding, type AcceptedProviderAccountBindings }
   from '../provider-accounts/acceptedBindings.js'
 import type { AcceptedProviderAccountBinding } from '@foreman-code/contracts/provider-accounts'
@@ -74,8 +74,6 @@ export interface AgentConversationRow {
     sessionCreation?: { requestId: string }
     nativeNonSubmission?: NativeNonSubmission
     startupReceipt?: { requestId: string; nativeSessionId: string }
-    sourceConfigurationVersionId?: string
-    handoffContext?: string
   }
   created_at: Date
   updated_at: Date
@@ -478,52 +476,6 @@ export class PostgresAgentChatRepository {
         revision=revision+1,updated_at=now()
       where id=$1 and kind='agent' and active_request_id=$2 and native_session_id is null
         and not (record ? 'sessionCreation')`, [id, requestId])).rowCount === 1
-  }
-
-  async applyConfiguration(id: string, requestId: string, configuration: AgentConfigurationVersion,
-    options: { replaceSession: boolean; directoryBinding?: AgentChatDirectoryBinding | undefined }): Promise<AgentConversationRow> {
-    return withTransaction(this.pool, async client => {
-      const row = (await client.query<AgentConversationRow>(
-        `select * from operator_conversations where id=$1 and kind='agent' for update`, [id])).rows[0]
-      if (!row || row.active_request_id !== requestId || row.active_native_turn_id || row.cancel_requested) {
-        throw new DomainError('AGENT_CHAT_CONFIGURATION_CONFLICT', 'The active chat turn changed before applying settings.', 409)
-      }
-      if (configuration.workspaceId !== row.workspace_id || configuration.agentId !== row.agent_id) {
-        throw new DomainError('AGENT_CHAT_CONFIGURATION_CONFLICT', 'The configuration belongs to another Agent.', 409)
-      }
-      const record = { ...row.record }
-      if (options.directoryBinding) record.directoryBinding = options.directoryBinding
-      if (row.origin_run_id) record.sourceConfigurationVersionId ??= row.agent_configuration_version_id
-      if (options.replaceSession) {
-        const history = await client.query<{ role: string; content: string }>(`select role,content
-          from operator_conversation_messages where conversation_id=$1 and role in ('user','assistant')
-          and sequence < (select sequence from operator_conversation_messages
-            where conversation_id=$1 and client_request_id=$2)
-          order by sequence desc limit $3`, [id, requestId, HANDOFF_MESSAGE_LIMIT])
-        const count = await client.query<{ count: string }>(`select count(*)::text as count
-          from operator_conversation_messages where conversation_id=$1 and role in ('user','assistant')
-          and sequence < (select sequence from operator_conversation_messages
-            where conversation_id=$1 and client_request_id=$2)`, [id, requestId])
-        record.handoffContext = handoffContext(null, 0, history.rows, Number(count.rows[0]!.count), 'Agent').text
-        record.startupDelivered = false
-        delete record.startupReceipt
-        delete record.sessionCreation
-        delete record.nativeNonSubmission
-        await client.query(`delete from provider_account_accepted_bindings where owner_kind='agent-conversation' and owner_id=$1`, [id])
-      }
-      const updated = (await client.query<AgentConversationRow>(`update operator_conversations
-        set agent_configuration_version_id=$3,harness=$4,record=$5::jsonb,
-          native_session_id=case when $6 then null else native_session_id end,
-          provider_version=case when $6 then null else provider_version end,
-          revision=revision+1,updated_at=now()
-        where id=$1 and active_request_id=$2 returning *`,
-      [id, requestId, configuration.id, configuration.harness.harness, JSON.stringify(record), options.replaceSession])).rows[0]!
-      if (options.replaceSession && this.accountBindings) {
-        await this.accountBindings.accept(client, 'agent-conversation', id, configuration.harness,
-          configuration.harnessProfileSelection)
-      }
-      return (await this.accountReadback(client, updated))!
-    })
   }
 
   recordNonSubmission(id: string, requestId: string, operation: NativeNonSubmission['operation'],

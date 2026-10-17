@@ -19,7 +19,7 @@ export function AgentChatPanel({ name, role, activity, running, runLabel, contex
   return <div className="agent-chat-panel">
     {context ? <AgentConversation key={`${generation}:${agentChatContextKey(context)}`} context={context} name={name}
       role={role} activity={activity} runLabel={runLabel} onClose={onClose} onNewConversation={onNewConversation} />
-      : <><AgentChatHeader name={name} state={running ? 'Working' : 'Idle'} detail={activity} onClose={onClose} />
+      : <><AgentChatHeader name={name} role={role} state={running ? 'Working' : 'Idle'} detail={activity} onClose={onClose} />
         <EmptyState icon="info" title="Select a saved Agent to chat" /></>}
   </div>
 }

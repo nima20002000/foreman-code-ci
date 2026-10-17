@@ -12,13 +12,3 @@ it('retains Codex catalog and setting metadata after retiring another provider',
     'advanced.sessionPersistence', 'advanced.shellEnvironment', 'advanced.webSearch', 'advanced.mcpServers',
   ])
 })
-
-
-it('retains the context window advertised by the Codex catalog', () => {
-  const models = codexModelOptions({ models: [
-    { slug: 'selected-model', context_window: 272000 },
-    { slug: 'unknown-window' },
-  ] })
-  expect(models[0]).toMatchObject({ id: 'selected-model', contextWindow: 272000 })
-  expect(models[1]).not.toHaveProperty('contextWindow')
-})
