@@ -5,8 +5,6 @@ import { queueCiDatabaseWork } from '../../infrastructure/ciDatabasePriority.js'
 import { componentLogger } from '../diagnostics/logger.js'
 import { claimCiDispatch } from './dispatch.js'
 import { CI_BUSY_TICKET } from './deadlines.js'
-import { DomainError } from '../errors.js'
-import { PostgresFoundationSettingsRepository } from '../settings/foundation.js'
 import type { HostCiComputer } from './serviceTypes.js'
 
 const log = componentLogger('jobs')
@@ -32,7 +30,7 @@ export function reservedCloudSlotKeys(computers: readonly HostCiComputer[], coun
   const providers = new Map<string, HostCiComputer[]>()
   for (const computer of computers) {
     if (computer.hostRef.kind !== 'cloud') continue
-    const provider = `${computer.hostRef.provider ?? ''}~${computer.hostRef.circleAccountId ?? 'default'}@${computer.hostRef.account ?? ''}`
+    const provider = `${computer.hostRef.provider ?? ''}@${computer.hostRef.account ?? ''}`
     providers.set(provider, [...providers.get(provider) ?? [], computer])
   }
   const slots = [...providers.values()].map(list => [...list]
@@ -68,33 +66,6 @@ async function claimSlot(pool: pg.Pool, run: CiRunRecord, computer: HostCiComput
   request: Extract<CiHostRequest, { operation: 'start' }>): Promise<CiRunRecord | 'busy' | null> {
   if (computer.hostRef.kind !== 'cloud') return claimCiDispatch(pool, run, computer, request)
   return withTransaction(pool, async client => {
-    const host = computer.hostRef
-    if (host.provider === 'circleci') {
-      // Account removal checks dependencies under the same lock before changing registration.
-      await client.query('select pg_advisory_xact_lock(hashtext($1))', ['circle-accounts'])
-      const owner = (host.account ?? request.ciMirror?.split('/')[0])?.toLowerCase()
-      if (!owner) throw new DomainError('CI_CLOUD_UNAVAILABLE', 'The saved CircleCI mirror organization is unavailable.', 409)
-      const circleAccountId = host.circleAccountId ?? 'default'
-      const registry = await new PostgresFoundationSettingsRepository(pool).getCircleAccounts(client)
-      const account = registry.value.accounts.find(value => value.id === circleAccountId)
-      const bound = account?.organizations.some(value => value.toLowerCase() === owner)
-        || circleAccountId === 'default' && account?.organizations.length === 0
-      if (!bound) return null
-      const slot = host.slot ?? 0
-      const key = `${host.mainId}:circleci:${circleAccountId}:${owner}:${slot}`
-      await client.query('select pg_advisory_xact_lock(hashtextextended($1,0))', [`ci-cloud-slot:${key}`])
-      const assigned = await client.query(`select id from ci_runs where (${CI_BUSY_TICKET})
-        and record#>>'{computer,hostRef,kind}'='cloud'
-        and record#>>'{computer,hostRef,provider}'='circleci'
-        and record#>>'{computer,hostRef,mainId}'=$1
-        and coalesce(record#>>'{computer,hostRef,circleAccountId}','default')=$2
-        and coalesce(record#>>'{computer,hostRef,slot}','0')=$3
-        and (lower(coalesce(record#>>'{computer,hostRef,account}',split_part(record->>'ciMirror','/',1)))=$4
-          or record#>>'{computer,hostRef,account}' is null and record->>'ciMirror' is null)
-        limit 1`, [host.mainId, circleAccountId, String(slot), owner])
-      if (assigned.rows.length) return 'busy' as const
-      return claimCiDispatch(client, run, computer, request)
-    }
     await client.query('select pg_advisory_xact_lock(hashtextextended($1,0))', [`ci-cloud-slot:${computer.key}`])
     const assigned = (await client.query<{ host_key: string | null }>(`select host_key from ci_runs
       where host_key=$1 and (${CI_BUSY_TICKET}) limit 1`, [computer.key])).rows
