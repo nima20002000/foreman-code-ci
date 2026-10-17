@@ -257,3 +257,19 @@ it('rescans a cache on the next five-minute pass after its writer settles and pr
   await expect(access(oldest)).rejects.toMatchObject({ code: 'ENOENT' })
   await expect(access(newest)).resolves.toBeUndefined()
 })
+
+
+it('confirms removed directories through repeated cleanup and a restarted runner, preserving incomplete metadata', async () => {
+  const f = await fixture()
+  const terminal = await run(f.root)
+  const incomplete = await run(f.root)
+  await rm(join(incomplete.directory, 'meta.json'))
+  const request = { operation: 'status', cleanupRunIds: [terminal.runId, incomplete.runId] }
+  await expect(f.runner.handle(request)).resolves.toMatchObject({ removedRunIds: [terminal.runId] })
+  await expect(f.runner.handle(request)).resolves.toMatchObject({ removedRunIds: [terminal.runId] })
+  const restarted = new HostCiRunner(f.root, { cpus: 8, memoryBytes: 16 * 2 ** 30,
+    run: async () => ({ code: 0, stdout: 'active', stderr: '' }) }, {})
+  runners.push(restarted)
+  await expect(restarted.handle(request)).resolves.toMatchObject({ removedRunIds: [terminal.runId] })
+  await expect(readFile(join(incomplete.directory, 'log'), 'utf8')).resolves.toBe('retained log')
+})

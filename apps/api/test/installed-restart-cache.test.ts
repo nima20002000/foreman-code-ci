@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path'
 import { createTestRoot, removeTestRoot } from '../../../scripts/test-resources.mjs'
 import { installedRestartService } from './helpers/installedRestartService.js'
 
-const fixture = vi.hoisted(() => ({ build: vi.fn(), deploy: vi.fn(), lockfile: 'locked dependencies' }))
+const fixture = vi.hoisted(() => ({ build: vi.fn(), deploy: vi.fn(), lockfile: 'locked dependencies', cacheRoot: '' }))
 vi.mock('node:module', async importOriginal => {
   const actual = await importOriginal<typeof import('node:module')>()
   return {
@@ -24,7 +24,10 @@ vi.mock('node:fs/promises', async importOriginal => {
     ...actual,
     cp: vi.fn(async () => undefined),
     copyFile: vi.fn(async () => undefined),
-    readdir: vi.fn(async () => []),
+    readdir: vi.fn(async (...args: Parameters<typeof actual.readdir>) => {
+      if (fixture.cacheRoot && String(args[0]).startsWith(fixture.cacheRoot)) return actual.readdir(...args)
+      return []
+    }),
     readFile: vi.fn(async (path: string) => {
       if (String(path).endsWith('.modules.yaml')) return 'storeDir: /fixture-package-store\n'
       if (String(path).endsWith('pnpm-lock.yaml')) return fixture.lockfile
@@ -49,7 +52,8 @@ describe('installed restart artifact reuse', () => {
     root = createTestRoot(parent, 'restart-cache-')
     vi.stubEnv('FOREMAN_CODE_TEST_ROOT', root.directory)
     vi.stubEnv('FOREMAN_CODE_TEST_OWNER', root.token)
-    vi.stubEnv('FOREMAN_CODE_TEST_CACHE_ROOT', join(root.directory, 'cache'))
+    fixture.cacheRoot = join(root.directory, 'cache')
+    vi.stubEnv('FOREMAN_CODE_TEST_CACHE_ROOT', fixture.cacheRoot)
     fixture.lockfile = 'locked dependencies'
     fixture.deploy.mockReset()
     fixture.build.mockReset()
@@ -82,6 +86,17 @@ describe('installed restart artifact reuse', () => {
     expect(fixture.build).toHaveBeenCalledTimes(2)
     const [, , options] = fixture.deploy.mock.calls[0]!
     expect(options.dependencies.root).toBe(join(root.directory, 'cache/api-dependencies'))
+  })
+
+  it('preserves dependency bytes used by an independent deployment sharing the fixture cache', async () => {
+    const dependencies = join(fixture.cacheRoot, 'api-dependencies', 'a'.repeat(32), 'api')
+    await mkdir(dependencies, { recursive: true })
+    await writeFile(join(dependencies, 'package.json'), 'independent deployment bytes')
+    const modules = join(root.directory, 'independent/node_modules')
+    await mkdir(modules, { recursive: true })
+    await symlink(dependencies, join(modules, 'dependency'))
+    await prepare('restart')
+    expect(readFileSync(join(modules, 'dependency/package.json'), 'utf8')).toBe('independent deployment bytes')
   })
 
   it('rebuilds after a pinned dependency input changes', async () => {
