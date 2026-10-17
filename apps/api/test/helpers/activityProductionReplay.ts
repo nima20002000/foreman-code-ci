@@ -29,7 +29,8 @@ export class ActivityProductionReplay {
   nextResponse: 'acknowledged' | 'uncertain' | 'unacknowledged' = 'acknowledged'
   nextStart: 'active' | 'complete' | 'approval' | 'reject' | 'uncertain' = 'active'
 
-  constructor(private readonly threadIdPrefix = 'recorded-thread') {}
+  constructor(private readonly threadIdPrefix = 'recorded-thread',
+    private readonly models: readonly string[] = ['test-model']) {}
 
   private transport: NonNullable<Extract<CodexSessionDependencies, { mode: 'replay' }>['transport']> = (
     _binary, _cwd, _environment, _protocol, onRequest, onNotification, onDisconnect, _timeoutMs, _recovery, disabledMcpServerNames = [],
@@ -205,7 +206,9 @@ export class ActivityProductionReplay {
       }
       if (args[0] === 'mcp' && args[1] === 'list') return outcome(JSON.stringify([{ name: 'graphql',
         transport: { type: 'stdio', command: process.execPath, args: [appLauncherPath()], env_vars: ['GRAPHQL_MCP_TOKEN'] } }]))
-      if (args[0] === 'debug' && args[1] === 'models') return outcome(JSON.stringify({ models: [{ slug: 'test-model', supported_reasoning_levels: [{ effort: 'low' }, { effort: 'medium' }], additional_speed_tiers: ['fast'] }] }))
+      if (args[0] === 'debug' && args[1] === 'models') return outcome(JSON.stringify({ models: this.models.map(slug => ({
+        slug, supported_reasoning_levels: [{ effort: 'low' }, { effort: 'medium' }], additional_speed_tiers: ['fast'],
+      })) }))
       throw new Error(`Unexpected replay CLI operation: ${args.join(' ')}`)
     }
     const qualify: Extract<CodexSessionDependencies, { mode: 'replay' }>['qualify'] = async (binary) => {
@@ -221,7 +224,7 @@ export class ActivityProductionReplay {
     }
     const operations = { qualify, assertUnchanged: async () => {}, environment, runCommand: command,
       qualifyModel: async (configuration: Parameters<NonNullable<CodexSessionDependencies['qualifyModel']>>[0]) => {
-        if (configuration.model !== 'test-model') throw new Error('Unrecorded replay model qualification.')
+        if (!this.models.includes(configuration.model)) throw new Error('Unrecorded replay model qualification.')
       } }
     const codex: Extract<CodexSessionDependencies, { mode: 'replay' }> = { mode: 'replay', ...operations,
       transport: this.transport, id: randomUUID, now: () => new Date('2026-10-01T00:00:00Z'), schedule: setTimeout,
