@@ -5,16 +5,12 @@ import type { NativeHistory } from '../../harnesses/port.js'
 import { HarnessExecutionError } from '../../harnesses/errors.js'
 import { isDeepStrictEqual } from 'node:util'
 import { DEVICE_JSON_CONTINUATION_LIMIT } from '@foreman-code/contracts/device-application'
-import { createJsonContinuationPager } from './jsonContinuation.js'
+import { pageJsonContinuationBytes } from './jsonContinuation.js'
 import { encodeResultCopies, historyResultPaths } from './executionResultCodec.js'
 
 const historySource = Symbol('original native history page')
 type HistoryFields = Omit<NativeHistory, 'events' | 'firstRetainedSequence' | 'nextSequence' | 'gap'>
-const metadataTransfers = new Map<string, {
-  fields: HistoryFields
-  bytes: Buffer
-  page: ReturnType<typeof createJsonContinuationPager>
-}>()
+const metadataTransfers = new Map<string, { fields: HistoryFields; bytes: Buffer }>()
 let retainedMetadataBytes = 0
 
 function metadataPage(fields: HistoryFields, request?: DeviceJsonContinuationRequest) {
@@ -24,11 +20,10 @@ function metadataPage(fields: HistoryFields, request?: DeviceJsonContinuationReq
     { ...retained.fields, nextCursor: undefined },
     { ...fields, nextCursor: undefined },
   )) {
-    return retained.page(request)
+    return pageJsonContinuationBytes(retained.bytes, request)
   }
   const bytes = Buffer.from(JSON.stringify(encodeResultCopies(fields, historyResultPaths())))
-  const pager = createJsonContinuationPager(bytes)
-  const page = pager(request)
+  const page = pageJsonContinuationBytes(bytes, request)
   if (!metadataTransfers.has(page.digest)) {
     while (metadataTransfers.size >= 64
       || retainedMetadataBytes + bytes.byteLength > DEVICE_JSON_CONTINUATION_LIMIT * 4) {
@@ -38,7 +33,7 @@ function metadataPage(fields: HistoryFields, request?: DeviceJsonContinuationReq
       retainedMetadataBytes -= oldest[1].bytes.byteLength
     }
     metadataTransfers.set(page.digest, {
-      fields: structuredClone(fields), bytes, page: pager,
+      fields: structuredClone(fields), bytes,
     })
     retainedMetadataBytes += bytes.byteLength
   }
@@ -60,7 +55,7 @@ export function pageNativeHistory(history: NativeHistory, afterSequence?: number
   const nextSequence = history.nextSequence ?? (history.events.at(-1)?.sequence ?? -1) + 1
   const firstSequence = history.firstRetainedSequence ?? history.events[0]?.sequence ?? nextSequence
   let value: NativeHistory = { ...history, events, firstRetainedSequence: firstSequence, nextSequence }
-  let bytes = metadataRequest ? 0 : Buffer.byteLength(JSON.stringify(value))
+  let bytes = Buffer.byteLength(JSON.stringify(value))
   // Reserve space for the sequence and gap fields before adding any events.
   const limit = DEVICE_HISTORY_PAGE_BYTES - 256
   let metadata: DeviceHistoryPage['metadata']

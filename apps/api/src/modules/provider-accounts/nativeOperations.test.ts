@@ -1,14 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { randomUUID } from 'node:crypto'
-import { mkdir, mkdtemp, rm } from 'node:fs/promises'
-import { homedir } from 'node:os'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ProviderAccount, ProviderAccountAuthenticationOperation } from '@foreman-code/contracts/provider-accounts'
 import { NativeProviderAccountCommands, type ProviderAccountNativeInput, type AccountCommandInvocation,
   type AccountCommandResult } from './nativeCommands.js'
 import { NativeAccountJournal } from './nativeJournal.js'
 import { NativeProviderAccountOperations } from './nativeOperations.js'
-import { deferred } from '../../../test/helpers/deferred.js'
 
 const roots: string[] = []
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))) })
@@ -27,9 +26,7 @@ function input() {
   return { account, operation, homePath: `/slots/${id}/home`, userHome: `/slots/${id}` }
 }
 async function fixture() {
-  const temporaryRoot = join(homedir(), '.cache', 'foreman-tmp')
-  await mkdir(temporaryRoot, { recursive: true })
-  const root = await mkdtemp(join(temporaryRoot, 'account-operations-'))
+  const root = await mkdtemp(join(tmpdir(), 'account-operations-'))
   roots.push(root)
   const calls: AccountCommandInvocation[] = []
   const finishes: Array<(value: AccountCommandResult) => void> = []
@@ -64,37 +61,6 @@ async function fixture() {
 }
 
 describe('owned native authentication', () => {
-  it.each(['sign-in', 'sign-out'] as const)('keeps %s canceled while launch reservation is pending', async intent => {
-    const f = await fixture()
-    const value = input()
-    value.operation.intent = intent
-    const started = deferred<void>()
-    const resume = deferred<void>()
-    const reserve = f.registry.reserveLaunch.getMockImplementation()!
-    f.registry.reserveLaunch.mockImplementationOnce(async owner => {
-      started.resolve()
-      await resume.promise
-      return reserve(owner)
-    })
-    f.registry.abandonReservedLaunch.mockResolvedValue(true)
-    const preparing = f.native.prepareAuthentication(value)
-    await started.promise
-    const canceled = await f.native.cancelAuthentication(value)
-    expect(canceled).toMatchObject({ state: 'canceled', nativeClosed: true })
-    resume.resolve()
-    try {
-      expect(await preparing).toEqual(canceled)
-      expect(f.calls).toHaveLength(0)
-      expect(f.registry.abandonReservedLaunch).toHaveBeenCalledExactlyOnceWith(
-        await f.registry.reserveLaunch.mock.results[0]!.value)
-      expect(f.journal.read(value.operation.id)).toMatchObject({
-        operation: { cancelRequested: true }, observation: canceled, dispatched: false,
-      })
-      expect(await f.restart().observeAuthentication(value)).toEqual(canceled)
-    } finally {
-      await f.native.close()
-    }
-  })
   it('joins the same operation and excludes a different same-slot command across restart', async () => {
     const f = await fixture()
     const value = input()

@@ -6,12 +6,11 @@
 import { execFileSync, spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
-import { homedir, tmpdir } from 'node:os'
+import { homedir, tmpdir, userInfo } from 'node:os'
 import { join, relative, resolve } from 'node:path'
 import { createInterface } from 'node:readline'
 import { setTimeout as wait } from 'node:timers/promises'
 import { affectedSnapshot } from './ci-affected.mjs'
-import { appMcpDirectory } from '../packages/contracts/src/productEnvironmentNode.mjs'
 
 const environment = process.env
 
@@ -37,7 +36,9 @@ export function snapshot(cwd = process.cwd()) {
 
 /** Use the installed bridge so credential routes and Worker relay renewal stay owned by the app. */
 async function scopedRequest(message) {
-  const directory = appMcpDirectory(environment)
+  const directory = environment.FOREMAN_CODE_APP_MCP_DIRECTORY ?? environment.GRAPHQL_APP_MCP_DIRECTORY
+    // Provider accounts override HOME; the bridge belongs to the operating-system user.
+    ?? join(userInfo().homedir, '.local', 'share', 'graphql', 'mcp')
   const child = spawn(process.execPath, [join(directory, 'launcher.mjs')], { stdio: ['pipe', 'pipe', 'inherit'] })
   const lines = createInterface({ input: child.stdout })
   try {
@@ -156,9 +157,7 @@ export async function mcpClient(clientName = 'ci-remote') {
   }
   version = (await request('initialize', { protocolVersion: '2025-11-25', capabilities: {},
     clientInfo: { name: clientName, version: '1' } })).protocolVersion
-  return Object.assign((name, args) => request('tools/call', { name, arguments: args }), {
-    listTools: args => request('tools/list', args),
-  })
+  return (name, args) => request('tools/call', { name, arguments: args })
 }
 
 /** A suite part by its name (typecheck-api), an integration partition by its number. */
@@ -195,20 +194,6 @@ export async function workspaceFor(call) {
     cursor = page.pageInfo?.nextCursor
   } while (cursor)
   throw new Error(`No Foreman Code workspace uses ${repository}.`)
-}
-
-/** Token presence selects transport; the authenticated tool schema selects workspace arguments. */
-async function ciWorkspaceFor(call) {
-  let cursor
-  do {
-    const page = await call.listTools(cursor ? { cursor } : {})
-    const tool = page.tools.find(tool => tool.name === 'ci_run')
-    if (tool) {
-      return tool.inputSchema.required?.includes('workspaceId') ? workspaceFor(call) : undefined
-    }
-    cursor = page.nextCursor
-  } while (cursor)
-  throw new Error('The authenticated MCP connection does not advertise ci_run.')
 }
 
 /** Test files named on the command line (`pnpm test -- some.test.ts`), relative to the repository root. */
@@ -295,7 +280,7 @@ export async function awaitTickets(call, workspaceId, tickets,
 async function remote(suite, args) {
   const requested = requestedTestFiles(args)
   const call = await mcpClient()
-  const workspaceId = await ciWorkspaceFor(call)
+  const workspaceId = hasScopedCredential() ? undefined : await workspaceFor(call)
   const commit = snapshot()
   const selection = requested.length ? { scope: 'affected', files: requested, reason: 'Test files named on the command line.' }
     : environment.FOREMAN_CODE_CI_SCOPE === 'full' || git(['branch', '--show-current']) === 'main'
