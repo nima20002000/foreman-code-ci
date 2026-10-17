@@ -6,7 +6,6 @@ import { isCodexStagingRenameError, removeCodexStagingDirectories } from './npmS
 import { syncFingerprint } from './syncFingerprint.js'
 import { matchesMcpDefinition } from './mcpDefinitions.js'
 import { assertStdioAvailable } from './stdioAvailability.js'
-import { verifyPluginRelease } from './pluginAcquisition.js'
 import { MaintenanceTaskStore } from './maintenanceTaskStore.js'
 import { MaintenanceCommandStore } from './maintenanceCommandStore.js'
 import type { MaintenancePorts } from './maintenancePorts.js'
@@ -18,7 +17,7 @@ import { randomUUID } from 'node:crypto'
 import { access, mkdir, readFile, rename, statfs, writeFile } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { homedir } from 'node:os'
-import { delimiter, dirname, isAbsolute, join } from 'node:path'
+import { delimiter, dirname, join } from 'node:path'
 import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
 import {
   MaintenanceStatusSchema, MaintenanceTaskSchema, MaintenanceTaskStartSchema,
@@ -42,7 +41,7 @@ const APT = ['env', 'LC_ALL=C', 'DEBIAN_FRONTEND=noninteractive', 'NEEDRESTART_M
   '-o', 'Dpkg::Options::=--force-confdef', '-o', 'Dpkg::Options::=--force-confold']
 
 function tail(text: string, limit = 8000) { return text.length > limit ? text.slice(-limit) : text }
-type Step = (binary: string, args: string[], label: string, options?: { timeoutMs?: number; allowFailure?: boolean; environment?: NodeJS.ProcessEnv | undefined })
+type Step = (binary: string, args: string[], label: string, options?: { timeoutMs?: number; allowFailure?: boolean })
   => Promise<{ code: number | null; stdout: string; stderr: string }>
 function versionOf(output: string): string | null {
   return output.match(/\d+\.\d+\.\d+(?:[-+][\w.-]+)?/u)?.[0] ?? null
@@ -342,7 +341,7 @@ export class ComputerMaintenance {
   private async perform(request: MaintenanceTaskStart, task: MaintenanceTask): Promise<string> {
     const signal = AbortSignal.timeout(LONG_MS)
     const step: Step = async (binary, args, label, options = {}) => {
-      const result = await this.ports.run(binary, args, { signal, timeoutMs: options.timeoutMs ?? LONG_MS, environment: options.environment })
+      const result = await this.ports.run(binary, args, { signal, timeoutMs: options.timeoutMs ?? LONG_MS })
       task.outputTail = tail(`${task.outputTail}\n$ ${label}\n${result.stdout}${result.stderr}`)
       if (result.code !== 0 && !options.allowFailure) throw new Error(`${label} failed${result.code === null ? '' : ` (exit ${result.code})`}.`)
       return result
@@ -517,7 +516,6 @@ export class ComputerMaintenance {
     const updated: string[] = []
     const removed: string[] = []
     const kept: string[] = []
-    const failed: string[] = []
     for (const name of previous) {
       if (wanted.has(name)) continue
       if (!existing.has(name)) {
@@ -532,51 +530,45 @@ export class ComputerMaintenance {
       } else kept.push(name)
     }
     for (const server of servers) {
+      await assertStdioAvailable(server, this.ports)
       const replacing = existing.has(server.name)
-      if (replacing && !managed.has(server.name)) continue
-      try {
-        await assertStdioAvailable(server, this.ports)
-        if (replacing && matchesMcpDefinition(server, existing.get(server.name))) continue
-        if (replacing) {
-          await step(binary, harness === 'codex' ? ['mcp', 'remove', server.name]
-            : ['mcp', 'remove', '--scope', 'user', server.name], `${harness} mcp remove ${server.name}`,
-          { timeoutMs: 30_000 })
-        }
-        // Reserve only absent native entries before installation so interruption preserves ownership.
-        managed.add(server.name)
-        await saveOwnership()
-        if (harness === 'codex') {
-          const label = `codex mcp add ${server.name}`
-          // Codex saves the server, then waits for a browser sign-in on OAuth servers. That sign-in
-          // belongs to the person at that computer, so a saved server counts as added.
-          const result = await step(binary, server.transport === 'http'
-            ? ['mcp', 'add', server.name, '--url', server.url, ...(server.bearerTokenEnvVar ? ['--bearer-token-env-var', server.bearerTokenEnvVar] : [])]
-            : ['mcp', 'add', server.name, '--', server.command, ...server.args], label, { timeoutMs: 30_000, allowFailure: true })
-          if (result.code !== 0) {
-            const readback = await this.mcpDefinitions(harness, binary, signal)
-            const waitingForSignIn = /timed out waiting for OAuth callback/iu.test(result.stderr)
-            if (!waitingForSignIn || !matchesMcpDefinition(server, readback.get(server.name))) {
-              throw new Error(`${label} failed.`)
-            }
-            ;(replacing ? updated : added).push(`${server.name} (sign in on this computer)`)
-            continue
-          }
-        } else {
-          const definition = server.transport === 'http' ? { type: 'http', url: server.url } : { type: 'stdio', command: server.command, args: server.args }
-          await step(binary, ['mcp', 'add-json', '--scope', 'user', server.name, JSON.stringify(definition)], `claude mcp add-json ${server.name}`)
-        }
-        const readback = await this.mcpDefinitions(harness, binary, signal)
-        if (!matchesMcpDefinition(server, readback.get(server.name))) {
-          throw new Error(`${LABELS[harness]} MCP ${server.name} readback does not match the requested definition. Retry sync.`)
-        }
-        ;(replacing ? updated : added).push(server.name)
-      } catch (error) {
-        failed.push(maintenanceError(error, `Could not sync MCP server ${server.name}.`))
+      if (replacing && (!managed.has(server.name) || matchesMcpDefinition(server, existing.get(server.name)))) continue
+      if (replacing) {
+        await step(binary, harness === 'codex' ? ['mcp', 'remove', server.name]
+          : ['mcp', 'remove', '--scope', 'user', server.name], `${harness} mcp remove ${server.name}`,
+        { timeoutMs: 30_000 })
       }
+      // Reserve only absent native entries before installation so interruption preserves ownership.
+      managed.add(server.name)
+      await saveOwnership()
+      if (harness === 'codex') {
+        const label = `codex mcp add ${server.name}`
+        // Codex saves the server, then waits for a browser sign-in on OAuth servers. That sign-in
+        // belongs to the person at that computer, so a saved server counts as added.
+        const result = await step(binary, server.transport === 'http'
+          ? ['mcp', 'add', server.name, '--url', server.url, ...(server.bearerTokenEnvVar ? ['--bearer-token-env-var', server.bearerTokenEnvVar] : [])]
+          : ['mcp', 'add', server.name, '--', server.command, ...server.args], label, { timeoutMs: 30_000, allowFailure: true })
+        if (result.code !== 0) {
+          const readback = await this.mcpDefinitions(harness, binary, signal)
+          const waitingForSignIn = /timed out waiting for OAuth callback/iu.test(result.stderr)
+          if (!waitingForSignIn || !matchesMcpDefinition(server, readback.get(server.name))) {
+            throw new Error(`${label} failed.`)
+          }
+          ;(replacing ? updated : added).push(`${server.name} (sign in on this computer)`)
+          continue
+        }
+      } else {
+        const definition = server.transport === 'http' ? { type: 'http', url: server.url } : { type: 'stdio', command: server.command, args: server.args }
+        await step(binary, ['mcp', 'add-json', '--scope', 'user', server.name, JSON.stringify(definition)], `claude mcp add-json ${server.name}`)
+      }
+      const readback = await this.mcpDefinitions(harness, binary, signal)
+      if (!matchesMcpDefinition(server, readback.get(server.name))) {
+        throw new Error(`${LABELS[harness]} MCP ${server.name} readback does not match the requested definition. Retry sync.`)
+      }
+      ;(replacing ? updated : added).push(server.name)
     }
     // A server that could not be removed stays managed, so the next sync tries again.
-    if (kept.length) failed.push(`Could not remove ${kept.join(', ')}`)
-    if (failed.length) throw new Error(failed.join(' · '))
+    if (kept.length) throw new Error(`Could not remove ${kept.join(', ')}`)
     const summary = [added.length ? `Added ${added.join(', ')}` : '', updated.length ? `Updated ${updated.join(', ')}` : '',
       removed.length ? `Removed ${removed.join(', ')}` : '']
       .filter(Boolean).join(' · ')
@@ -605,7 +597,6 @@ export class ComputerMaintenance {
     const missing = plugins.filter(plugin => !installed.has(plugin)
       || (managed.has(plugin) && versions[plugin] !== undefined && versions[plugin] !== installed.get(plugin)?.version))
     const known = new Set(missing.length ? (await pluginMarketplaces(this.ports, codex, signal)).map(marketplace => marketplace.name) : [])
-    const unavailableMarketplaces = new Set<string>()
     const added: string[] = []
     const failed: string[] = []
     const removed: string[] = []
@@ -623,30 +614,26 @@ export class ComputerMaintenance {
       } else kept.push(plugin)
     }
     for (const marketplace of marketplaces) {
-      if (!missing.some(plugin => plugin.endsWith(`@${marketplace.name}`))) continue
-      const args = known.has(marketplace.name) ? ['upgrade', marketplace.name] : ['add', marketplace.source]
-      const result = await step(codex, ['plugin', 'marketplace', ...args], `codex plugin marketplace ${args.join(' ')}`, { allowFailure: true })
+      if (known.has(marketplace.name) || !missing.some(plugin => plugin.endsWith(`@${marketplace.name}`))) continue
+      const result = await step(codex, ['plugin', 'marketplace', 'add', marketplace.source], `codex plugin marketplace add ${marketplace.source}`, { allowFailure: true })
       if (result.code === 0) known.add(marketplace.name)
-      else unavailableMarketplaces.add(marketplace.name)
     }
     // One plugin that cannot install does not keep the others from installing.
     for (const plugin of missing) {
       managed.add(plugin)
       await saveOwnership()
-      const marketplaceName = plugin.split('@').at(-1)!
-      try {
-        if (unavailableMarketplaces.has(marketplaceName)) throw new Error('Marketplace refresh failed.')
-        const version = versions[plugin]
-        if (version !== undefined) {
-          await this.acquirePlugin('codex', codex, plugin, version,
-            marketplaces.find(marketplace => marketplace.name === marketplaceName), step, signal)
+      if (installed.has(plugin)) {
+        const removed = await step(codex, ['plugin', 'remove', plugin], `codex plugin remove ${plugin}`, { allowFailure: true })
+        if (removed.code !== 0) {
+          failed.push(plugin)
+          continue
         }
-        const result = await step(codex, ['plugin', 'add', plugin], `codex plugin add ${plugin}`, { allowFailure: true })
-        if (result.code === 0) added.push(plugin)
-        else failed.push(plugin)
-      } catch (error) {
-        failed.push(`${plugin}: ${maintenanceError(error, 'Plugin acquisition failed.')}`)
       }
+      const result = await step(codex, ['plugin', 'add', plugin], `codex plugin add ${plugin}`, { allowFailure: true })
+      if (result.code === 0) {
+        added.push(plugin)
+        managed.add(plugin)
+      } else failed.push(plugin)
     }
     const readback = new Map((await installedPlugins(this.ports, codex, signal)).map(plugin => [plugin.pluginId, plugin]))
     for (const plugin of plugins.filter(plugin => managed.has(plugin))) {
@@ -675,7 +662,6 @@ export class ComputerMaintenance {
     const failed: string[] = []
     const removed: string[] = []
     const kept: string[] = []
-    const unavailableMarketplaces = new Set<string>()
     for (const pluginId of previous) {
       if (wanted.includes(pluginId)) continue
       if (!installed.has(pluginId)) {
@@ -687,38 +673,19 @@ export class ComputerMaintenance {
       ;(result.code === 0 && claudeCliResult(result.stdout)?.outcome === 'ok' ? removed : kept).push(pluginId)
     }
     for (const marketplace of marketplaces) {
-      const pending = plugins.some(plugin => plugin.pluginId.endsWith(`@${marketplace.name}`)
-        && (!installed.has(plugin.pluginId) || (managed.has(plugin.pluginId)
-          && plugin.version !== undefined && plugin.version !== installed.get(plugin.pluginId)?.version)))
-      if (known.has(marketplace.name) && !pending) continue
-      const args = known.has(marketplace.name) ? ['update', marketplace.name] : ['add', marketplace.source]
-      const result = await step(claude, ['plugin', 'marketplace', ...args, '--json'],
-        `claude plugin marketplace ${args.join(' ')}`, { allowFailure: true })
+      if (known.has(marketplace.name)) continue
+      const result = await step(claude, ['plugin', 'marketplace', 'add', marketplace.source, '--json'],
+        `claude plugin marketplace add ${marketplace.source}`, { allowFailure: true })
       if (result.code === 0 && claudeCliResult(result.stdout)?.outcome === 'ok') known.add(marketplace.name)
-      else {
-        failed.push(`marketplace ${marketplace.name}`)
-        unavailableMarketplaces.add(marketplace.name)
-      }
+      else failed.push(`marketplace ${marketplace.name}`)
     }
     for (const plugin of plugins) {
       const existing = installed.get(plugin.pluginId)
       if (existing && !managed.has(plugin.pluginId)) continue
       const actions: string[] = []
       const replacing = existing && plugin.version !== undefined && plugin.version !== existing.version
-      if (!existing || replacing) {
-        const marketplaceName = plugin.pluginId.split('@').at(-1)!
-        try {
-          if (unavailableMarketplaces.has(marketplaceName)) throw new Error('Marketplace refresh failed.')
-          if (plugin.version !== undefined) {
-            await this.acquirePlugin('claude', claude, plugin.pluginId, plugin.version,
-              marketplaces.find(marketplace => marketplace.name === marketplaceName), step, signal)
-          }
-        } catch (error) {
-          failed.push(`${plugin.pluginId}: ${maintenanceError(error, 'Plugin acquisition failed.')}`)
-          continue
-        }
-        actions.push(existing ? 'update' : 'install')
-      }
+      if (replacing) actions.push('uninstall')
+      if (!existing || replacing) actions.push('install')
       if (!plugin.enabled) actions.push('disable')
       else if (existing && !existing.enabled) actions.push('enable')
       for (const action of actions) {
@@ -752,13 +719,6 @@ export class ComputerMaintenance {
     }
     const done = removed.length ? ` · Removed ${removed.join(', ')}` : ''
     return `${plugins.length} plugins in sync${done}`
-  }
-
-  private acquirePlugin(harness: MaintainedHarness, binary: string, pluginId: string, version: string,
-    marketplace: SyncedMarketplace | undefined, step: Step, signal: AbortSignal): Promise<void> {
-    const ports: MaintenancePorts = { ...this.ports,
-      run: (command, args, options) => step(command, args, `${harness} acquire ${args.join(' ')}`, options) }
-    return verifyPluginRelease(ports, { harness, binary, pluginId, version, marketplace }, signal)
   }
 
   private async installedVersion(harness: MaintainedHarness, signal: AbortSignal): Promise<string | null | undefined> {
@@ -857,7 +817,7 @@ export function systemMaintenancePorts(environment: NodeJS.ProcessEnv = process.
   const path = directories.join(delimiter)
   const run: MaintenancePorts['run'] = (binary, args, options) => new Promise((resolve, reject) => {
     execFile(binary, args, { signal: options.signal, timeout: options.timeoutMs, maxBuffer: 8 * 1024 * 1024,
-      encoding: 'utf8', env: { ...environment, PATH: path, NO_COLOR: '1', CI: '1', LC_ALL: 'C', ...options.environment } },
+      encoding: 'utf8', env: { ...environment, PATH: path, NO_COLOR: '1', CI: '1', LC_ALL: 'C' } },
     (error, stdout, stderr) => {
       if (error && maintenanceError(error, '') !== error.message) {
         reject(new Error(maintenanceError(error, 'Maintenance command failed.'), { cause: error }))
@@ -872,9 +832,7 @@ export function systemMaintenancePorts(environment: NodeJS.ProcessEnv = process.
     environment,
     async find(name) {
       const selected = binaries[name]
-      let candidates = directories.map(directory => join(directory, name))
-      if (isAbsolute(name)) candidates = [name]
-      if (selected) candidates = [selected]
+      const candidates = selected ? [selected] : directories.map(directory => join(directory, name))
       for (const candidate of candidates) {
         try {
           await access(candidate, constants.X_OK)
