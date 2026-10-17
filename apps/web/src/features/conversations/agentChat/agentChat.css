@@ -155,7 +155,7 @@
 @keyframes agent-chat-pulse { 50% { opacity: .35; } }
 .agent-chat-composer-controls { flex: 0 0 auto; padding: var(--space-3); border-top: 1px solid var(--border); }
 .agent-chat-composer { position: relative; min-width: 0; }
-.agent-chat-input-box { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: end; border: 1px solid var(--border-strong); border-radius: var(--radius-lg); background: var(--surface-raised); }
+.agent-chat-input-box { position: relative; border: 1px solid var(--border-strong); border-radius: var(--radius-lg); background: var(--surface-raised); }
 .agent-chat-input-box:focus-within { border-color: var(--focus); box-shadow: 0 0 0 2px var(--accent-subtle); }
 .agent-chat-input-box .n-input {
   display: block;
@@ -177,7 +177,6 @@
 .agent-chat-input-box .n-input::placeholder { color: var(--text-faint); }
 .agent-chat-input-box .n-input:disabled { cursor: default; }
 .agent-chat-send.n-button { position: absolute; right: var(--space-2); bottom: var(--space-2); width: 28px; height: 28px; min-height: 28px; padding: 0; border-radius: var(--radius-full); }
-.agent-chat-reason { margin: var(--space-1) 0 0; overflow: hidden; color: var(--text-muted); font: var(--type-caption); text-overflow: ellipsis; white-space: nowrap; }
 .agent-chat-composer-tools { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-1); margin-top: var(--space-1); }
 .agent-chat-composer-tools:empty { display: none; }
 .agent-chat-composer-tools .n-icon-button { width: 28px; height: 28px; min-height: 28px; padding: 0; }
@@ -232,12 +231,3 @@ body:has(.n-agent-popover[data-panel='chat']) .operator-chat-launcher { visibili
 .agent-chat-execution { display: grid; gap: var(--space-2); min-width: 0; }
 .agent-chat-execution-label { margin: 0; color: var(--text-muted); font: var(--type-caption); }
 .agent-chat-tool[data-status="failed"] summary small { color: var(--danger, currentColor); }
-
-/* Attach sits inline with the message field; chips wrap above the row. */
-.agent-chat-input-box > .attachment-control { display: contents; }
-.agent-chat-input-box .attachment-content { grid-column: 1 / -1; grid-row: 1; padding: var(--space-2) var(--space-3) 0; }
-.agent-chat-input-box .attachment-content:empty { display: none; }
-.agent-chat-input-box .attachment-control > .n-icon-button { grid-row: 2; grid-column: 1; width: 28px; height: 28px; min-width: 28px; min-height: 28px; margin: 0 0 var(--space-2) var(--space-2); border-radius: var(--radius-full); }
-.agent-chat-input-box > .agent-chat-field { grid-row: 2; grid-column: 2; min-width: 0; }
-.agent-chat-header-controls { display: inline-flex; align-items: center; gap: var(--space-1); flex: 0 0 auto; min-width: 0; }
-.agent-chat-header-controls .session-context-meter { min-height: 28px; height: 28px; }
