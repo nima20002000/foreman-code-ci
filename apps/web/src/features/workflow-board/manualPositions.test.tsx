@@ -88,7 +88,7 @@ it('places a newly added node through the hierarchy while leaving its saved posi
   await mountMeasuredBoard(href)
   await screen.findByRole('button', { name: /^Node 3, / })
   fireEvent.click(screen.getByRole('button', { name: 'Add agent or job to graph' }))
-  const picker = screen.getByRole('complementary', { name: 'Add node' })
+  const picker = await screen.findByRole('complementary', { name: 'Add node' })
   fireEvent.click(await within(picker).findByRole('button', { name: 'Add Agent 4' }))
   await screen.findByRole('button', { name: /^Agent 4, / })
   const key = nextDraftKey(mock.workspaceId, graph.id)

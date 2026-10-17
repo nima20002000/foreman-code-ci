@@ -129,6 +129,10 @@ describe.skipIf(!postgresEnabled)('current layout HTTP/MCP', () => {
   })
   it('marks only Operator-edited positions as manual and reads them back through authenticated MCP', async () => {
     const t = await fixture()
+    const capabilities = await t.call(CURRENT_WORKFLOW_TOOLS.capabilities, {})
+    expect(graphRpcValue(capabilities.result)).toMatchObject({
+      nodeGeometry: { manualPositionField: 'node.positionManual', automaticLayout: 'hierarchy', operatorPositionsManual: true },
+    })
     t.input.graph.nodes = t.input.graph.nodes.map((node, index) => ({
       ...node, position: { x: 320, y: index * 300 },
     }))
