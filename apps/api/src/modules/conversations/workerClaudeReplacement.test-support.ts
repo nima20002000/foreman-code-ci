@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto'
-import { DomainError } from '../errors.js'
 import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -15,42 +14,10 @@ import { createWorkerClaudeAuthority } from './workerClaudeAuthority.js'
 import { createWorkerClaudeOwner } from './workerClaudeOwner.js'
 import { WorkerConversationHost, type WorkerConversationAllocation, type WorkerConversationHostPorts } from './workerHost.js'
 import { WorkerConversationManager } from './workerManager.js'
-import { MainWorkerConversationBridge, type WorkerConversationChannel } from './workerBridge.js'
+import { MainWorkerConversationBridge } from './workerBridge.js'
 import { workerConversationCallbacks } from './workerCallbacks.js'
 import { workerConversationFixture } from './workerFixtures.test-support.js'
 import { recoverWorkerConversation } from './recoverWorkerConversation.js'
-
-function createRecordedObserver(f: ReturnType<typeof workerConversationFixture>, bridge: MainWorkerConversationBridge,
-  managers: WorkerConversationManager[], connected: () => boolean, request: WorkerConversationChannel['request']) {
-  const observer = new WorkerConversationManager({ binding: f.binding, configuration: f.configuration, bridge,
-    current: async () => {
-      if (!connected()) throw new DomainError('WORKER_CONVERSATION_UNAVAILABLE', 'The selected paired worker channel is unavailable.', 409)
-    }, channel: { binding: f.connection, request } })
-  managers.push(observer)
-  return observer
-}
-
-async function sendRecordedMessage(manager: WorkerConversationManager, journal: RemoteOperationJournal,
-  binding: ReturnType<typeof workerConversationFixture>['binding'], start: (id: string) => NativeSessionStart,
-  correlationId: string) {
-  const record = await journal.conversations.read(binding)
-  const input = { prompt: correlationId, clientCorrelationId: correlationId, sessionMode: 'regular' as const,
-    onMessageSubmitted: async () => {} }
-  const stream = record?.session ? manager.startTurn(record.session, input)
-    : manager.startInitialTurn(start(correlationId), { ...input, onSessionObserved: async () => {} })
-  for await (const event of stream) void event
-  return (await journal.conversations.read(binding))!.session!
-}
-
-function recordedProcessRegistry(launches: NativeLaunchObservation[]) {
-  return {
-    snapshot: () => ({ revision: 'recorded', launches }),
-    closedRegistration: (_owner: string, id: string) =>
-      launches.find(launch => launch.launchId === id && launch.lifecycle === 'closed'),
-    closeOwner: async (owner: string) => launches.filter(launch => launch.owner === owner)
-      .every(launch => launch.lifecycle === 'closed' && Boolean(launch.closureEvidence)),
-  }
-}
 
 /** Recorded provider output; no native process or paid model is launched. */
 export async function workerClaudeReplacementFixture(f = workerConversationFixture('operator', 'claude')) {
@@ -63,7 +30,6 @@ export async function workerClaudeReplacementFixture(f = workerConversationFixtu
   const recoveries: { inputsBefore: number; inputsAfter: number }[] = []
   let coldHistory = false
   let source: WorkerConversationRpcRequest
-  let connected = true
   let denied = false
   let failStartup = false
   let failMode = false
@@ -144,7 +110,13 @@ export async function workerClaudeReplacementFixture(f = workerConversationFixtu
       }
     },
   }
-  const registry = recordedProcessRegistry(launches)
+  const registry = {
+    snapshot: () => ({ revision: 'recorded', launches }),
+    closedRegistration: (_owner: string, id: string) =>
+      launches.find(launch => launch.launchId === id && launch.lifecycle === 'closed'),
+    closeOwner: async (owner: string) => launches.filter(launch => launch.owner === owner)
+      .every(launch => launch.lifecycle === 'closed' && Boolean(launch.closureEvidence)),
+  }
   const createOwners = () => createWorkerClaudeOwner({
     binding: f.binding, owner: `conversation:${f.binding.owner.conversationId}`,
     registry,
@@ -216,17 +188,28 @@ export async function workerClaudeReplacementFixture(f = workerConversationFixtu
   })
   let host = createHost()
   const managers: WorkerConversationManager[] = []
-  const createManager = () => createRecordedObserver(f, bridge, managers, () => connected, async payload => {
-    const request = WorkerConversationRpcRequestSchema.parse(payload)
-    if (request.method === 'conversation.initial-turn' || request.method === 'conversation.start-turn') source = request
-    return { payload: await host.handle(request, f.connection) }
-  })
+  const createManager = () => {
+    const observer = new WorkerConversationManager({ binding: f.binding, configuration: f.configuration, bridge,
+      current: async () => {}, channel: { binding: f.connection, request: async payload => {
+        const request = WorkerConversationRpcRequestSchema.parse(payload)
+        if (request.method === 'conversation.initial-turn' || request.method === 'conversation.start-turn') source = request
+        return { payload: await host.handle(request, f.connection) }
+      } } })
+    managers.push(observer)
+    return observer
+  }
   let manager = createManager()
-  const send = (correlationId: string) => sendRecordedMessage(manager, journal, f.binding, start, correlationId)
+  const send = async (correlationId: string) => {
+    const record = await journal.conversations.read(f.binding)
+    const input = { prompt: correlationId, clientCorrelationId: correlationId, sessionMode: 'regular' as const, onMessageSubmitted: async () => {} }
+    const stream = record?.session ? manager.startTurn(record.session, input)
+      : manager.startInitialTurn(start(correlationId), { ...input, onSessionObserved: async () => {} })
+    for await (const event of stream) void event
+    return (await journal.conversations.read(f.binding))!.session!
+  }
   return { ...f, get journal() { return journal }, get manager() { return manager }, createManager,
     get native() { return runtime.native }, get owners() { return runtime.owners },
     launches, offers, resumes, recoveries, send, start,
-    disconnect: () => { connected = false }, reconnect: () => { connected = true },
     async coldRestart() {
       for (const observer of managers) await observer.dispose()
       await host.shutdown()
