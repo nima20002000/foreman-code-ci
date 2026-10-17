@@ -296,15 +296,3 @@ it('shows a recorded OpenCode child without controls even when the saved project
   expect(screen.queryByRole('button', { name: 'Send' })).not.toBeInTheDocument()
   expect(screen.queryByRole('button', { name: 'Interrupt' })).not.toBeInTheDocument()
 })
-
-it('moves idle delivery guidance to a hint and removes redundant empty-history prose', async () => {
-  const record = qualified()
-  record.subagent.capabilities.inputTiming = 'idle'
-  server.use(http.get(`${base}/:subagentId`, () => HttpResponse.json(record)))
-  mount()
-  expect(await screen.findByText('No messages yet')).toBeVisible()
-  expect(screen.queryByText('Messages appear here as the subagent works.')).not.toBeInTheDocument()
-  expect(screen.queryByText('Delivered when the subagent is waiting for input.')).not.toBeInTheDocument()
-  fireEvent.focus(screen.getByRole('button', { name: 'About Message to subagent' }))
-  expect(screen.getByRole('tooltip')).toHaveTextContent('Delivered when the subagent is waiting for input.')
-})

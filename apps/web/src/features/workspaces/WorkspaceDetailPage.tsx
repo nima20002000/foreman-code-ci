@@ -1,4 +1,3 @@
-import { InfoHint } from '../../shared/ui/InfoHint'
 import type { ReactNode } from 'react'
 import { Link } from '@tanstack/react-router'
 import { useManagedWorkspaceQuery } from '../../shared/api/query'
@@ -31,9 +30,11 @@ export function WorkspaceDetailPage({ workspaceId, section, children }: {
             {current && <WorkspaceRepositoryForm key={workspaceId} workspaceId={workspaceId}
               revision={current.revision} repository={current.workspace.repository} />}
             {current && <section className="workspace-repository" aria-label="GitHub Actions CI">
-              <h2>GitHub Actions CI{current.workspace.ciMirror && <InfoHint label="GitHub Actions CI">CI also runs on free GitHub Actions runners in the public mirror. Main publishes only each tested commit's files there, without history, and refuses files that name your computers.</InfoHint>}</h2>
+              <h2>GitHub Actions CI</h2>
               {current.workspace.ciMirror
-                ? <p><code>{current.workspace.ciMirror.owner}/{current.workspace.ciMirror.name}</code></p>
+                ? <p>CI also runs on free GitHub Actions runners in the public mirror <code>
+                  {current.workspace.ciMirror.owner}/{current.workspace.ciMirror.name}</code>. Main publishes only each tested
+                  commit's files there, without history, and refuses files that name your computers.</p>
                 : <p>Not set up. Ask the Operator to set a public CI mirror for this workspace.</p>}
             </section>}
           </div>
