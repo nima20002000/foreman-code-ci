@@ -156,7 +156,7 @@
 .agent-chat-composer-controls { flex: 0 0 auto; padding: var(--space-3); border-top: 1px solid var(--border); }
 .agent-chat-composer { position: relative; min-width: 0; }
 .agent-chat-input-box { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: end; border: 1px solid var(--border-strong); border-radius: var(--radius-lg); background: var(--surface-raised); }
-.agent-chat-input-box:focus-within { border-color: var(--focus); outline: 1px solid var(--focus); }
+.agent-chat-input-box:focus-within { border-color: var(--focus); box-shadow: 0 0 0 2px var(--accent-subtle); }
 .agent-chat-input-box .n-input {
   display: block;
   box-sizing: border-box;
@@ -226,7 +226,7 @@ body:has(.n-agent-popover[data-panel='chat']) .operator-chat-launcher { visibili
 
 .agent-chat-field.n-field { gap: 0; }
 .agent-chat-field > label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-.agent-chat-input-box .n-input:is(:focus, :focus-visible) { outline: none; border: 0; box-shadow: none; }
+.agent-chat-input-box .n-input:focus { outline: none; border: 0; box-shadow: none; }
 /* Live execution activity: labeled executions (interval checks, retries) with one row per step. */
 .agent-chat-execution { display: grid; gap: var(--space-2); min-width: 0; }
 .agent-chat-execution-label { margin: 0; color: var(--text-muted); font: var(--type-caption); }
