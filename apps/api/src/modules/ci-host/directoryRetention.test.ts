@@ -115,3 +115,10 @@ it.each([false, true])('selects and removes the execution directory after reassi
     await client.end()
   }
 })
+
+
+it('confirms an already absent expired directory so Main can finish log retention after a crash', async () => {
+  const f = await fixture()
+  await rm(f.directory, { recursive: true })
+  await expect(sweepCiRunDirectories(f.options)).resolves.toEqual(f.options.runIds)
+})
