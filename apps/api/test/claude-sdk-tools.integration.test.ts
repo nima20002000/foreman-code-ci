@@ -4,6 +4,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { rm } from 'node:fs/promises'
 import { Readable } from 'node:stream'
 import { join } from 'node:path'
+import { performance } from 'node:perf_hooks'
 import { expect, it, vi } from 'vitest'
 import type { ClaudeHarnessConfiguration } from '@foreman-code/contracts/claude'
 import { readProductEnvironment } from '@foreman-code/contracts/product-environment'
@@ -27,6 +28,92 @@ import { readUntil } from './helpers/observableCondition.js'
 import { graphRpc, graphRpcValue } from './eng04-graph-composition-fixture.js'
 import { productionClaudeFixture } from './support/claudeProduction.js'
 import { claudeSdkToolTransport } from './support/claudeSdkToolTransport.js'
+
+it('reuses the production Claude SDK query with fresh revoked turn credentials through authenticated MCP', async () => {
+  await nim2691TaskDatabase(async (pool, directory) => {
+    await applyApplicationMigrations(pool)
+    const access = new PostgresAccessService(pool)
+    const owner = await access.issue({ name: 'Warm SDK owner', audience: 'operator', grants: [{ scope: {}, actions: [
+      'operator_chat:read', 'operator_chat:write', 'operator_chat:respond', 'harnesses:read', 'workspaces:read',
+    ] }] })
+    const repository = new PostgresOperatorConversationRepository(pool)
+    const operators = new PostgresOperatorRepository(pool)
+    const services = { commands: new PostgresCommandCoordinator(pool) } as OperatorServices
+    const app = buildApp({ logger: false, readiness: {
+      database: { ping: async () => {} }, checkpoints: { ping: async () => {} },
+    }, operator: { access, services } })
+    let chat: OperatorChatService | undefined
+    try {
+      const endpoint = `${await app.listen({ host: '127.0.0.1', port: 0 })}/mcp`
+      const mainId = randomUUID()
+      const selection = { instanceId: randomUUID(), instanceRevision: 'profile-1', target: {
+        hostRef: { kind: 'main' as const, mainId }, applicationInstallationId: mainId,
+        harnessInstallationId: 'recorded-cli', installationFingerprint: 'recorded-payload',
+      } }
+      const harness: ClaudeHarnessConfiguration = { harness: 'claude', model: 'recorded-model', authMode: 'subscription',
+        configDirectory: '/recorded/profile', permissionMode: 'default', sandbox: 'danger-full-access',
+        tools: [], permissionRules: [], instructions: '', mcpServers: { graphql: { type: 'http', url: endpoint } } }
+      const settings = new PostgresFoundationSettingsRepository(pool)
+      const defaults = await settings.getAgentDefaults()
+      await settings.updateAgentDefaults({ ...defaults.value,
+        operator: { ...defaults.value.operator, harness, harnessProfileSelection: selection },
+      }, defaults.revision)
+      const configuration = (await operators.ensure()).configuration
+      const conversation = await repository.create(configuration.operatorId, configuration, owner.principal.id)
+      const tokens: string[] = []
+      const transport = claudeSdkToolTransport(directory, () => [], { replyText: () => tokens[0] ?? 'First answer' })
+      const start = { kind: 'operator' as const, correlationId: `operator:${conversation.id}:cold-production`, configuration,
+        workingDirectory: directory, environment: { agentId: configuration.operatorId, variables: {} } }
+      const native = productionClaudeFixture('operator', undefined, endpoint, undefined,
+        { database: pool, binding: { kind: 'operator', conversationId: conversation.id, repository }, start, sdk: transport.sdk })
+      const authority = new PostgresOperatorChatAuthority(pool, access, new NativeRollout({ NODE_ENV: 'test' }),
+        directory, endpoint, manager => native.factories.inspector(manager), async (_manager, configuration, environment, signal) => {
+          const token = readProductEnvironment(environment.variables, 'MCP_TOKEN')!
+          await native.manager.refreshInspectionCredentials({ ...start, configuration, environment }, {
+            graphql: { type: 'http', url: endpoint, headers: { Authorization: `Bearer ${token}` } },
+          }, signal)
+        })
+      const prepared = vi.spyOn(authority, 'prepare')
+      chat = new OperatorChatService(repository, operators, () => native.manager, directory, authority)
+      services.operatorChat = chat
+      const durations: number[] = []
+      for (const requestId of ['cold-production', 'warm-production']) {
+        const startedAt = performance.now()
+        let firstOutput!: (value: number) => void
+        let outputFailed!: (error: Error) => void
+        const output = new Promise<number>((resolve, reject) => { firstOutput = resolve; outputFailed = reject })
+        const unsubscribe = chat.events.subscribe(conversation.id, event => {
+          if (event.type === 'delta' && event.data.requestId === requestId) firstOutput(performance.now() - startedAt)
+          if (event.type === 'state' && event.data.requestId === requestId
+            && ['error', 'uncertain'].includes(String(event.data.turnState))) outputFailed(new Error('Native turn failed before output'))
+        })
+        try {
+          const sent = await graphRpc(app, owner.token, 'tools/call', { name: 'operator_chat_send', arguments: {
+            conversationId: conversation.id, request: { requestId, content: 'Reply once' },
+          } })
+          expect(sent.result?.isError, JSON.stringify(sent)).not.toBe(true)
+          durations.push(await output.catch(async error => {
+            const state = await chat!.get(conversation.id, owner.principal)
+            throw new Error(JSON.stringify({ error: state.error, result: state.lastResult }), { cause: error })
+          }))
+          await readUntil(async () => chat!.get(conversation.id, owner.principal), state => state.turnState === 'idle',
+            { timeoutMs: 15000, description: 'production SDK turn completion' })
+          const environment = await prepared.mock.results.at(-1)!.value
+          tokens.push(readProductEnvironment(environment.variables, 'MCP_TOKEN')!)
+          await expect(access.authenticate(tokens.at(-1)!)).rejects.toMatchObject({ code: 'AUTH_REVOKED' })
+          expect(transport.queries).toHaveLength(1)
+          expect(transport.queries[0]!.closed).toBe(false)
+        } finally { unsubscribe() }
+      }
+      expect(tokens[1]).not.toBe(tokens[0])
+      expect(transport.offers).toHaveLength(2)
+      const messages = (await chat.get(conversation.id, owner.principal)).messages
+      expect(messages.filter(message => message.role === 'assistant')).toHaveLength(2)
+      expect(JSON.stringify(messages)).not.toContain(tokens[0]!)
+      console.info('Production Operator Claude timing', { coldMs: durations[0], warmMs: durations[1], queryStarts: transport.queries.length })
+    } finally { try { await chat?.shutdown() } finally { await app.close() } }
+  })
+}, 60000)
 
 it.each([
   { scenario: 'management', serverName: 'graphql' },

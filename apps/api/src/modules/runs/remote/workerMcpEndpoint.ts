@@ -264,5 +264,18 @@ export async function createUnboundWorkerMcpEndpoint(input: WorkerMcpEndpointOpt
     updates = task
     return task
   }
-  return { endpoint, bindRelay, refreshLease, close }
+  const unbindRelay = () => {
+    const task = updates.then(async () => {
+      renewal?.abort()
+      bound = undefined
+      await unregister?.()
+      unregister = undefined
+    }).catch(error => {
+      logFailure('unbind', error)
+      throw error
+    })
+    updates = task.then(() => undefined, () => undefined)
+    return task
+  }
+  return { endpoint, bindRelay, unbindRelay, refreshLease, close }
 }

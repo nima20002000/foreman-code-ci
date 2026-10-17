@@ -437,6 +437,16 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
   async history(session: NativeSessionReference, signal?: AbortSignal): Promise<NativeHistory> {
     return this.readHistory(session, signal)
   }
+  async rebindApplicationAccess(session: NativeSessionReference, start: NativeSessionStart, signal?: AbortSignal) {
+    this.assertSession(session)
+    const fields = this.startFields(start)
+    if (!fields.applicationAccess) conflict('A fresh scoped application credential is required.')
+    if (this.harness === 'claude') {
+      await this.deliverClaudeCredential(fields.applicationAccess.token, signal ?? new AbortController().signal)
+    } else {
+      await this.open(start, 'attach', session, signal)
+    }
+  }
   async retireTurn(session: NativeSessionReference, correlationId: string) {
     this.assertSession(session)
     if (this.receipt?.creation?.operationId === correlationId
