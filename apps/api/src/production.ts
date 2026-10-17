@@ -26,8 +26,8 @@ import { CircleAccountDirectory } from './modules/ci-host/circleAccounts.js'
 import { CircleAccountsManagementService } from './modules/settings/circleAccounts.js'
 import { CircleCreditCache } from './modules/ci-host/circleCreditCache.js'
 import { circleOrganizations } from './modules/ci-host/circleOrganizations.js'
-import { CircleStandby } from './modules/ci-host/circleStandby.js'
-import { CircleAccountFleetStatus } from './modules/ci-host/circleAccountStatus.js'
+import { CircleStandby, circleOrgKey } from './modules/ci-host/circleStandby.js'
+import { cloudCiId } from './modules/ci-host/cloudProviders.js'
 import { registerCircleAccountRoutes } from './routes/circleAccounts.js'
 import { homedir } from 'node:os'
 import { activeCiRuns, circleCiOrgs, cloudCis, runningCircleCiOwners, workspaceMirrorList, workspaceMirrors }
@@ -1101,7 +1101,7 @@ function configureHarnessQualifications(composition: ProductionComposition) {
       await assertDeviceHostInstallation(client, selector.target.hostRef, selector.target.applicationInstallationId)
       binding.admissionSignal?.throwIfAborted()
     },
-    async current(binding, value, client) {
+    async current(binding, value, client, options) {
       if (value.driverId === 'claude') {
         await requireClaudeProductionCredentialDelivery(value.configuration, providerAccounts, value.target.hostRef,
           value.target.applicationInstallationId)
@@ -1113,11 +1113,12 @@ function configureHarnessQualifications(composition: ProductionComposition) {
           return { registry, pin, applicationInstallationId: value.target.applicationInstallationId,
             suiteRevision: CLAUDE_PROFILE_CHECK_REVISION }
         }
-        const current = infrastructure?.claudeCurrentProfile ?? (infrastructure?.mode === 'replay' ? undefined : claudeDiscovery.current)
+        const current: AcceptedProfileAuthority<ClaudeProfileOwner>['current'] | undefined = infrastructure?.claudeCurrentProfile
+          ?? (infrastructure?.mode === 'replay' ? undefined : claudeDiscovery.current)
         if (!current) throw new DomainError('HARNESS_REPLAY_INCOMPLETE', 'Claude replay requires its current installed profile metadata port.', 500)
-        return current(binding, value, client)
+        return current(binding, value, client, options)
       }
-      if (binding.kind !== 'operator-observation' && !await harnessRegistry.profileEvidence(value, client)) {
+      if (binding.kind !== 'operator-observation' && !await harnessRegistry.profileEvidence(value, client, options)) {
         throw new DomainError('HARNESS_PROFILE_UNAVAILABLE', 'The exact accepted native profile proof is stale.', 409)
       }
       return { registry: harnessRegistry.pinOverride(value), applicationInstallationId: value.target.applicationInstallationId,
@@ -1695,7 +1696,7 @@ function configureConversationManagers(composition: ProductionComposition) {
       }
       if (profileSelection?.target.hostRef.kind === 'device') {
         const manager = workerChats.create({ configuration, conversationId, workingDirectory: sessionStartDirectory(start),
-          appMcpAccess: 'none', observationPrincipalId: principalId, profileSelection, sourceExecution })
+          appMcpAccess: 'none', lifecycle: 'observer', observationPrincipalId: principalId, profileSelection, sourceExecution })
         try { return await manager.readCompaction!(session, start, state, signal) }
         finally { await manager.dispose?.() }
       }
@@ -1997,6 +1998,7 @@ function configureAgentChat(composition: ProductionComposition) {
   resolveAgentChatManager.release = (conversationId) => { agentChatManagers.delete(conversationId) }
   resolveAgentChatManager.closeRetainedSession = (conversationId, configuration, principalId, signal) =>
     workerChats!.closeRetainedSession(conversationId, configuration, principalId, signal)
+  resolveAgentChatManager.closeRecoveredSession = (id, signal) => workerChats!.closeConversation(id, signal)
   composition.agentChat = new AgentChatService(database.pool, agentConversations,
     new PostgresOperatorConversationRepository(database.pool, accountConfigurations), workflows, runs, resolveAgentChatManager, config.harnesses.workspaceRoot)
   composition.reviews = new AutomaticReviewService(database.pool, runs, approvals, locations, rollout,
@@ -2931,8 +2933,25 @@ async function initializeCircleCi(composition: ProductionComposition, machine: P
     ...options, registry, context, standby: circleStandby, explicitPrimary: true,
     runningOrganizations: runningCircleCiOwners(database.pool, machine.installationId),
   })
-  runtimeServices.circleAccounts = new CircleAccountsManagementService(foundationSettings, commands,
-    new CircleAccountFleetStatus(database.pool, machine.installationId, directory, clouds, circleStandby), async id => {
+  runtimeServices.circleAccounts = new CircleAccountsManagementService(foundationSettings, commands, {
+    read: async account => {
+      const setup = await directory.read(account)
+      const counts = (await database.pool.query<{ segment: string; running: number }>(`select
+        split_part(host_key,':',3) as segment,count(*)::int as running from ci_runs
+        where state in ('starting','running') and host_key like $1 group by 1`, [`${machine.installationId}:cloud:%`])).rows
+      const roles = await circleStandby.roles()
+      const orgs = await Promise.all(setup.orgs.map(async org => {
+        const cloud = clouds.find(value => value.provider.circleAccountId === account.id
+          && value.provider.account?.owner.toLowerCase() === org.account.toLowerCase())
+        if (!cloud) return org
+        const reading = roles.get(circleOrgKey(org.account, account.id))
+        return { ...org, ...reading, ready: await cloud.ready() && cloud.provider.account!.mirrorNames.size > 0,
+          running: counts.find(row => row.segment === cloudCiId(cloud.provider))?.running ?? 0 }
+      }))
+      const ready = setup.tokenConfigured && orgs.length > 0 && orgs.every(org => org.ready)
+      return { ...setup, ready, reasons: ready ? [] : setup.reasons, orgs }
+    },
+  }, async id => {
     directory.invalidate(id)
     for (const cloud of clouds) if (cloud.provider.circleAccountId === id) cloud.invalidateReadiness()
     await circleOrgs.refresh()

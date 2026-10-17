@@ -137,7 +137,7 @@ export interface RpcResult {
 export interface RpcEnvelope { result?: RpcResult; error?: unknown }
 const origins = new WeakMap<FastifyInstance, Promise<string>>()
 export async function graphRpc(app: FastifyInstance, token: string, method: string,
-  params: Record<string, unknown> = {}): Promise<{ status: number } & RpcEnvelope> {
+  params: Record<string, unknown> = {}, requestId: string | number = 1): Promise<{ status: number } & RpcEnvelope> {
   let origin = origins.get(app)
   if (!origin) {
     const address = app.server.address()
@@ -148,7 +148,7 @@ export async function graphRpc(app: FastifyInstance, token: string, method: stri
   }
   const response = await fetch(new URL('/mcp', await origin), { method: 'POST',
     headers: { accept: 'application/json, text/event-stream', authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) })
+    body: JSON.stringify({ jsonrpc: '2.0', id: requestId, method, params }) })
   const text = await response.text()
   const message: RpcEnvelope = JSON.parse(response.headers.get('content-type')?.includes('text/event-stream')
     ? text.split(/\r?\n/).filter((line) => line.startsWith('data:')).map((line) => line.slice(5).trim()).join('\n') : text)

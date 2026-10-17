@@ -170,10 +170,12 @@ export function createRemoteWorkflowPhysicalVerification(input: RemoteWorkflowPh
       const deviceId = placement.hostRef.deviceId
       const original = input.endpoint().currentBinding(deviceId) ?? receipt.connection
       for (let reconnects = 0; ; reconnects++) {
+        const attempted = input.endpoint().currentBinding(deviceId)
         try {
           return await prefetchRemoteWorkflowPhysical(input, prepared, histories, receipt, placement, source, signal)
         } catch (error) {
-          if (!physicalReadoutLinkDropped(error) || reconnects >= 3) throw error
+          if (!physicalReadoutLinkDropped(error, attempted, input.endpoint().currentBinding(deviceId))
+            || reconnects >= 3) throw error
           await waitForDeviceReconnect({ original, failure: error, signal,
             live: () => input.endpoint().currentBinding(deviceId) })
         }
@@ -357,7 +359,8 @@ async function prefetchRemoteWorkflowPhysical(input: RemoteWorkflowPhysicalVerif
         assertRegisteredConnection()
         return response
       } catch (error) {
-        if (physicalReadoutLinkDropped(error)) throw error
+        if (physicalReadoutLinkDropped(error, captured.binding,
+          input.endpoint().currentBinding(captured.binding.deviceId))) throw error
         assertRegisteredConnection()
         const failure = deviceApplicationFailure(error)
         if (!failure.retryable || ['transport', 'DEVICE_LINK_DROPPED', 'REMOTE_NATIVE_PHYSICAL_UNAVAILABLE']
@@ -437,8 +440,11 @@ async function prefetchRemoteWorkflowPhysical(input: RemoteWorkflowPhysicalVerif
   return result
 }
 
-function physicalReadoutLinkDropped(error: unknown): boolean {
-  return isDeviceLinkDrop(error) || ['transport', 'DEVICE_LINK_DROPPED'].includes(deviceApplicationFailure(error).code)
+function physicalReadoutLinkDropped(error: unknown, previous: Readonly<DeviceSessionBinding> | undefined,
+  current: Readonly<DeviceSessionBinding> | undefined): boolean {
+  const unanswered = error instanceof DeviceConnectionError && ['timeout', 'backpressure'].includes(error.code)
+  if (unanswered && previous && same(previous, current)) return false
+  return isDeviceLinkDrop(error) || deviceApplicationFailure(error).code === 'DEVICE_LINK_DROPPED'
 }
 
 /** Facts one remote binding check read from the Run's rows; shared by every original of the same capture. */

@@ -21,7 +21,6 @@ import { WorkerConversationReceiptSchema } from '@foreman-code/contracts/remote-
 import { DomainError } from '../../errors.js'
 import { WorkerConversationArchive } from '../../conversations/workerConversationArchive.js'
 import { WorkerConversationJournal } from '../../conversations/workerJournal.js'
-import { workerConversationJournalKey } from '../../conversations/workerConversationJournalKey.js'
 import { workerConversationProcessDigest } from '../../conversations/workerNativeOwner.js'
 import type { NativeLaunchObservation } from '../../harnesses/recovery/processRegistry.js'
 import { RemoteOperationReceiptSchema, RemoteOwnerControlSchema, RemoteTerminalEvidenceSchema, RemoteNativeIdentitySchema, RemoteInteractionTargetSchema, RemoteOwnerReconciliationSchema,
@@ -99,19 +98,30 @@ export class RemoteOperationJournal {
     this.conversationArchive = new WorkerConversationArchive(path, byteLimit,
       (archivePath, value) => this.writeSnapshot(archivePath, value))
     this.conversations = new WorkerConversationJournal({
-      read: async conversationId => {
+      read: async (conversationId, generation) => {
         await this.tail
         if (this.closed || this.faulted) throw new Error('Journal unavailable: recovery required')
-        const retained = this.data.conversations.find(record => workerConversationJournalKey(record.binding) === conversationId)
-        const record = retained ?? await this.conversationArchive.read(conversationId)
+        const retained = this.data.conversations.find(record => record.binding.owner.conversationId === conversationId
+          && record.binding.generation === generation)
+        const record = retained ?? await this.conversationArchive.read(conversationId, generation)
         return record ? [structuredClone(record)] : []
       },
-      change: (conversationId, apply) => this.change(async data => {
-        if (data.conversations.some(record => workerConversationJournalKey(record.binding) === conversationId)) {
+      change: (conversationId, apply, generation) => this.change(async data => {
+        if (data.conversations.some(record => record.binding.owner.conversationId === conversationId
+          && record.binding.generation === generation)) {
           return apply(data.conversations)
         }
-        const archived = await this.conversationArchive.read(conversationId)
-        if (!archived) return apply(data.conversations)
+        const ancestors = await this.conversationArchive.readAll(conversationId)
+        const archived = ancestors.find(record => record.binding.generation === generation)
+        if (!archived) {
+          const frozen = structuredClone(ancestors)
+          const records = [...data.conversations, ...ancestors]
+          const result = apply(records)
+          if (!same(ancestors, frozen)) throw new DomainError(
+            'WORKER_CONVERSATION_CONFLICT', 'The retired conversation changed.', 409)
+          data.conversations = records.filter(record => !ancestors.includes(record))
+          return result
+        }
         const records = [structuredClone(archived)]
         const result = apply(records)
         if (!same(records, [archived])) {
