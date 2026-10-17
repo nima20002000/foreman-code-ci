@@ -68,27 +68,15 @@ describe('stable graph topology (reference assertions, not a renderer benchmark)
     expect(reordered.edges[0]).toBe(before.edges[2])
   })
 
-  it('keeps a placed node where the person put it and re-aims only its incident edges', () => {
+  it('ignores saved positions: moving a node on paper leaves the drawn Board untouched', () => {
     const { workflow, agents } = makeScaleGraph(4)
     const reconcile = createGraphTopologyProjector()
     const before = reconcile(workflow, agents)
     const after = reconcile({ ...workflow, nodes: workflow.nodes.map((node, index) => index === 0
       ? { ...node, position: { x: 300, y: 500 } } : node) }, agents)
-    expect(nativeNode(after.nodes[0]).position).toEqual({ x: 300, y: 500 })
-    expect(after.edges[0].sourceHandle).toBe('top')
+    expect(after.edges[0]).toBe(before.edges[0])
     expect(after.edges[1]).toBe(before.edges[1])
+    expect(nativeNode(after.nodes[0]).position).toEqual(nativeNode(before.nodes[0]).position)
     expect(nativeNode(after.nodes[1])).toBe(nativeNode(before.nodes[1]))
-  })
-
-  it('places only the nodes without a saved position into the hierarchy', () => {
-    const { workflow, agents } = makeScaleGraph(4)
-    const unplaced = { ...workflow, nodes: workflow.nodes.map((node, index) => {
-      const copy = { ...node }
-      delete copy.position
-      return index === 1 ? { ...copy, position: { x: 900, y: 900 } } : copy
-    }) }
-    const nodes = createGraphTopologyProjector()(unplaced, agents).nodes.map(nativeNode)
-    expect(nodes[1]!.position).toEqual({ x: 900, y: 900 })
-    expect(new Set(nodes.filter((_, index) => index !== 1).map((node) => `${node.position.x},${node.position.y}`)).size).toBe(3)
   })
 })
