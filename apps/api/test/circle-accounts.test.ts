@@ -178,16 +178,20 @@ it('blocks removal for assigned and collecting current, smoke, retry and history
     { executionHistory: [{ runId, hostRef }] }, { dispatchHostKey: 'fixture-main:cloud:circleci~reserve@fixture-delta:0' },
   ]
   for (const reference of references) {
+    const ticketId = randomUUID()
     await f.db.pool.query('insert into ci_runs(id,workspace_id,group_id,state,record) values($1,$2,$1,$3,$4::jsonb)',
-      [runId, 'fixture-workspace', 'running', JSON.stringify({ ...reference, collection: 'pending' })])
+      [ticketId, 'fixture-workspace', 'running', JSON.stringify({ ...reference, collection: 'pending' })])
     const blocked = await client.callTool({ name: 'circle_account_remove', arguments: { id: 'reserve' } })
     expect(blocked.isError).toBe(true)
     expect(JSON.stringify(blocked)).toContain('CIRCLE_ACCOUNT_IN_USE')
-    await f.db.pool.query("update ci_runs set state='passed' where id=$1", [runId])
+    await f.db.pool.query("update ci_runs set state='passed' where id=$1", [ticketId])
     expect((await client.callTool({ name: 'circle_account_remove', arguments: { id: 'reserve' } })).isError).toBe(true)
-    await f.db.pool.query('delete from ci_runs where id=$1', [runId])
+    await f.db.pool.query("update ci_runs set record=jsonb_set(record,'{collection}','\"complete\"'::jsonb) where id=$1", [ticketId])
   }
   const removed = await client.callTool({ name: 'circle_account_remove', arguments: { id: 'reserve' } })
   expect(removed.isError).not.toBe(true)
   expect((await list(client)).value.accounts).toHaveLength(1)
+  const history = await f.db.pool.query('select state, record from ci_runs')
+  expect(history.rows).toHaveLength(references.length)
+  expect(history.rows.every(row => row.state === 'passed' && row.record.collection === 'complete')).toBe(true)
 })
