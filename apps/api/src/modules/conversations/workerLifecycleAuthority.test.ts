@@ -46,8 +46,9 @@ it.each([false, true])('uses the retained owner for disposal after a read-only r
     return { payload: { receipt } }
   }
   let channel = { binding: f.connection, request }
-  const profiles = { admit: async () => ({ override: { configuration: f.configuration.harness,
-    target: binding.profile.target } }), revalidate: async () => {} }
+  const admit = async () => ({ override: { configuration: f.configuration.harness, target: binding.profile.target } })
+  const revalidate = async () => {}
+  const profiles = { admit, admitObservation: admit, revalidate, revalidateObservation: revalidate }
   const production = createProductionWorkerConversations({ pool, endpoint: () => ({ captureRequest: () => channel }),
     profiles, claudeProfiles: profiles, operators: {}, agents: {}, registry: {}, qualifications: {},
     suiteRevisions: {}, access: {}, mcpForward: () => ({}),

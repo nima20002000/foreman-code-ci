@@ -206,10 +206,13 @@ it.each((['codex', 'claude'] as const).flatMap(harness =>
       expect((await f.repository.get(f.conversation.id))?.agent_configuration_version_id).toBe(f.configuration.id)
       const update = AgentMutationResultSchema.parse(await f.update(changed, { matchingProfile: true }))
       expect(update.value.agent.harnessConfiguration).toEqual(changed)
+      const framesBeforeRead = f.frames.length
       const retained = AgentChatStateSchema.parse(await f.value('agent_chat_read', { query: f.context }))
       expect(retained.conversation?.nativeSession?.nativeSessionId).toBe(original.native_session_id)
-      expect(retained.activitySnapshot?.observation).toMatchObject({ status: 'unavailable',
-        lastError: expect.stringContaining('HARNESS_PROFILE_UNAVAILABLE') })
+      expect(retained.activitySnapshot?.observation).toBeUndefined()
+      expect(retained.availability.canSend).toBe(true)
+      expect(f.frames).toHaveLength(framesBeforeRead)
+      expect(f.providers.reduce((count, provider) => count + provider.prompts.length, 0)).toBe(before)
       const sent = await f.send('Use the saved settings on this turn')
       expect(sent.turn?.delivery).toBe('completed')
       expect(sent.turn?.error).toBeUndefined()

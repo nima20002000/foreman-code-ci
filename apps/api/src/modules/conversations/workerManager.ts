@@ -56,6 +56,7 @@ interface ManagerOptions {
 export class WorkerConversationManager implements NativeHarnessSessionManager {
   readonly harness
   private session: NativeSessionReference | undefined
+  private observedSession: NativeSessionReference | undefined
   private receipt: z.infer<typeof WorkerConversationReceiptSchema> | undefined
   private preferences: SessionPreferences | undefined
   private context: ContextSnapshot | null = null
@@ -70,6 +71,7 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
 
   constructor(private readonly options: ManagerOptions) {
     this.harness = options.binding.harness
+    if (this.harness === 'claude') this.startInitialTurn = this.initialTurn.bind(this)
     if (options.acceptedConfiguration) {
       if (!('operatorId' in options.configuration)) conflict('Presentation changes require an Operator configuration.')
       workerExecutionConfiguration(options.binding, options.acceptedConfiguration, options.configuration)
@@ -101,7 +103,7 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
       })
     })
   }
-  private async reconnect(signal?: AbortSignal) {
+  private async reconnect(signal?: AbortSignal, options: { reattachSession?: boolean } = {}) {
     this.lifetime.signal.throwIfAborted()
     signal?.throwIfAborted()
     if (this.reconnecting) return this.waitForReconnect(this.reconnecting, signal)
@@ -113,7 +115,7 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
       this.recoveredCallbacks.clear()
       this.credentialLease = undefined
       this.options.channel = channel
-      if (!this.session) return
+      if (!this.session || options.reattachSession === false) return
       const session = this.session
       const lease = this.captureConnected(this.frame({ method: 'conversation.open', mode: 'attach', source: session,
         operationId: this.receipt?.creation?.operationId ?? 'session-reconnect', configuration: this.options.configuration }))
@@ -138,7 +140,7 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
     callbacks?: WorkerConversationCallbacks; recoveredSubmission?: NativeMessageSubmission; recoveredTurnId?: string
     current?: ManagerOptions['current']
   } = {}, signal?: AbortSignal) {
-    await this.reconnect(signal)
+    await this.reconnect(signal, { reattachSession: frame.method !== 'conversation.release-runtime' })
     return this.captureConnected(frame, options)
   }
   private captureConnected(frame: WorkerConversationRpcRequest, options: {
@@ -285,8 +287,8 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
     const fields = this.startFields(start)
     if (mode === 'attach' && start.kind === 'operator' && start.observationOnly) delete fields.applicationAccess
     const frame = this.frame({ method: 'conversation.open', ...fields, mode,
-      ...(mode === 'attach' && this.options.previousBinding ? { previousBinding: this.options.previousBinding } : {}),
-      ...(mode === 'attach' && this.options.previousConfiguration
+      ...((mode === 'attach' || mode === 'create') && this.options.previousBinding ? { previousBinding: this.options.previousBinding } : {}),
+      ...((mode === 'attach' || mode === 'create') && this.options.previousConfiguration
         ? { previousConfiguration: this.options.previousConfiguration } : {}),
       ...(source ? { source } : {}) })
     const lease = await this.capture(frame, { callbacks: { sessionObserved: async session => {
@@ -335,8 +337,9 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
     for (const field of ['mainId', 'deviceId', 'workerInstallationId', 'keyRevision', 'authorizationRevision'] as const) {
       if (record.connection[field] !== this.options.channel.binding[field]) conflict('The original worker installation changed.')
     }
+    const observingTransition = this.options.previousBinding !== undefined
     const session = await this.attachSession(record.session, start, signal)
-    await this.options.observeSession?.(session)
+    if (!observingTransition) await this.options.observeSession?.(session)
     return session
   }
   async configureSessionPreferences(preferences: SessionPreferences) { this.preferences = SessionPreferencesSchema.parse(preferences) }
@@ -486,8 +489,11 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
       correlationId: input.clientCorrelationId, ...(input.sessionMode ? { sessionMode: input.sessionMode } : {}),
       ...(input.sessionPreferences ? { preferences: input.sessionPreferences } : {}) }), input, undefined, signal)
   }
-  startInitialTurn(start: NativeSessionStart, input: NativeInitialTurnInput, signal?: AbortSignal) {
+  readonly startInitialTurn?: NonNullable<NativeHarnessSessionManager['startInitialTurn']>
+  private initialTurn(start: NativeSessionStart, input: NativeInitialTurnInput, signal?: AbortSignal) {
     return this.stream(this.frame({ method: 'conversation.initial-turn', ...this.startFields(start),
+      ...(this.options.previousBinding ? { previousBinding: this.options.previousBinding } : {}),
+      ...(this.options.previousConfiguration ? { previousConfiguration: this.options.previousConfiguration } : {}),
       prompt: input.prompt, correlationId: input.clientCorrelationId,
       ...(input.sessionMode ? { sessionMode: input.sessionMode } : {}),
       ...(input.sessionPreferences ? { preferences: input.sessionPreferences } : {}) }), input, input, signal)
@@ -670,17 +676,32 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
     return z.object({ compaction: CompactionStateSchema }).parse(await this.request({
       method: 'conversation.compact-reconcile', session, state }, signal)).compaction
   }
+  private compactionReceipt(raw: unknown, session: NativeSessionReference, requestId: string) {
+    const { receipt } = z.object({ receipt: WorkerConversationReceiptSchema.optional() }).passthrough().parse(raw)
+    if (!receipt || !isDeepStrictEqual(receipt.binding, this.options.binding)
+      || !isDeepStrictEqual(receipt.session, session)
+      || !receipt.compactions.some(control => control.state.requestId === requestId
+        && control.state.nativeSessionId === session.nativeSessionId)) {
+      conflict('The persisted Worker compaction owner changed.')
+    }
+    for (const field of ['mainId', 'deviceId', 'workerInstallationId', 'keyRevision', 'authorizationRevision'] as const) {
+      if (receipt.connection[field] !== this.options.channel.binding[field]) conflict('The original Worker authority changed.')
+    }
+    return receipt
+  }
   async readCompaction(session: NativeSessionReference, start: NativeSessionStart, state: CompactionState, signal?: AbortSignal) {
     const fields = this.startFields(start)
-    const record = this.adopt(await this.request({ method: 'conversation.status' }, signal))
-    if (!record?.session || !isDeepStrictEqual(record.session, session)) conflict('The persisted worker session changed.')
+    const record = this.compactionReceipt(await this.request({ method: 'conversation.status' }, signal),
+      session, state.requestId)
     const result = z.object({ compaction: CompactionStateSchema, receipt: WorkerConversationReceiptSchema }).parse(
       await this.request({ method: 'conversation.compact-read', session, state,
         configuration: fields.configuration, correlationId: fields.operationId }, signal))
-    this.adopt(result)
+    const recovered = this.compactionReceipt(result, session, state.requestId)
+    if (recovered.revision < record.revision) conflict('The persisted Worker compaction result is stale.')
     if (result.compaction.requestId !== state.requestId || result.compaction.nativeSessionId !== session.nativeSessionId) {
       conflict('The worker returned another compaction request.')
     }
+    this.observedSession = structuredClone(session)
     return result.compaction
   }
   async close(session: NativeSessionReference) {
@@ -703,7 +724,10 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
     this.adopt(await this.request({ method: 'conversation.release-runtime', session }))
     this.runtimeAcquired = false
   }
-  async closeForRestart(session: NativeSessionReference) { this.assertSession(session); await this.detach() }
+  async closeForRestart(session: NativeSessionReference) {
+    if (this.session || !isDeepStrictEqual(this.observedSession, session)) this.assertSession(session)
+    await this.detach()
+  }
   async dispose() {
     if (this.options.lifecycle === 'observer') {
       await this.detach()
