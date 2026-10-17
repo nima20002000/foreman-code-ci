@@ -8,8 +8,7 @@ export function integrationFileList(cwd) {
 }
 
 export function repositoryFileList(cwd) {
-  return execFileSync('git', ['ls-files', '-z'], { cwd, encoding: 'utf8' }).split('\0')
-    .filter(file => file && file !== 'ci-dispatch-inputs.json').sort()
+  return execFileSync('git', ['ls-files', '-z'], { cwd, encoding: 'utf8' }).split('\0').filter(Boolean).sort()
 }
 
 export function selectByIndexes(files, spec) {

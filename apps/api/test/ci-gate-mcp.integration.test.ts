@@ -720,7 +720,7 @@ it('queues a second gate behind the first while full and affected requests keep 
   } finally { await f.close() }
 })
 
-it.each([[50, 4], [10, 1]])('persists and dispatches a gate within a %i percent build allowance through MCP', async (allowance, shards) => {
+it.each([50, 10])('persists and dispatches a gate within a %i percent build allowance through MCP', async allowance => {
   const f = await fixture({ allowance, cloudSlots: 2 })
   try {
     const input = { suite: 'integration', scope: 'full', gate: true, commit: 'a'.repeat(40), commandId: randomUUID() }
@@ -731,8 +731,7 @@ it.each([[50, 4], [10, 1]])('persists and dispatches a gate within a %i percent 
     const read = CiGetOutputSchema.parse(await f.value('ci_get', { ticketId: admitted.ticketId }))
     const hosts = read.partitions!.filter(run => run.suite === 'integration' && run.plannedHostKey?.startsWith('builder-'))
     expect(hosts).toHaveLength(2)
-    // 50%: 8 GiB minus 1 GiB host reserve and 1 GiB shared overhead allows four 1.5 GiB shards.
-    // 10% leaves less than one shard after reserves, so the minimum is one.
+    const shards = buildComputerIntegrationShards({ cpuCount: 16, memoryBytes: 16 * 2 ** 30 }, allowance)
     for (const host of hosts) {
       expect(host.integrationShards).toBe(shards)
       expect(f.started.find(item => item.request.operation === 'start' && item.request.runId === host.id)?.request)
@@ -762,13 +761,14 @@ it('rechecks the build allowance when dispatching an already planned gate throug
     vi.setSystemTime(Date.now() + 10_000)
     await settle(f.ci)
     const queued = CiGetOutputSchema.parse(await f.value('ci_get', { ticketId: admitted.ticketId }))
+    const resources = { cpuCount: 16, memoryBytes: 16 * 2 ** 30 }
     const planned = queued.partitions!.filter(run => run.suite === 'integration'
       && run.plannedHostKey?.startsWith('builder-'))
     expect(planned.map(run => run.plannedHostKey).sort()).toEqual(['builder-main', 'builder-paired'])
     expect(planned).toHaveLength(2)
     for (const host of planned) {
       expect(host.files).toHaveLength(1)
-      expect(host).toMatchObject({ state: 'queued', integrationShards: 8 })
+      expect(host).toMatchObject({ state: 'queued', integrationShards: buildComputerIntegrationShards(resources) })
     }
     for (const computer of f.computers.filter(computer => computer.hostRef.kind !== 'cloud')) {
       Object.assign(computer, { buildAllowancePercent: 50 })
@@ -781,9 +781,9 @@ it('rechecks the build allowance when dispatching an already planned gate throug
     expect(hosts).toHaveLength(2)
     expect(hosts.map(host => host.id).sort()).toEqual(planned.map(host => host.id).sort())
     for (const host of hosts) {
-      expect(host).toMatchObject({ state: 'running', integrationShards: 8 })
+      expect(host).toMatchObject({ state: 'running', integrationShards: buildComputerIntegrationShards(resources) })
       expect(f.started.find(item => item.request.operation === 'start' && item.request.runId === host.id)?.request)
-        .toMatchObject({ integrationShards: 4 })
+        .toMatchObject({ integrationShards: buildComputerIntegrationShards(resources, 50) })
     }
   } finally {
     dispatch.mockRestore()

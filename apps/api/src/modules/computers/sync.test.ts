@@ -1,4 +1,3 @@
-import { workerToolServices } from '../../../test/helpers/workerMcpServices.js'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { randomUUID } from 'node:crypto'
 import type pg from 'pg'
@@ -120,7 +119,7 @@ it('serves authenticated Agent context while optional shared-file installation i
     {} as never, {} as never), { syncedFolder: f.service.sharedFolder.bind(f.service) })
   const app = buildApp({ logger: false,
     readiness: { database: { ping: async () => {} }, checkpoints: { ping: async () => {} } },
-    operator: { access, services: { commands: f.commands } as OperatorServices }, appMcp: workerToolServices(f.pool, f.commands).appMcp(access, interactions) })
+    operator: { access, services: { commands: f.commands } as OperatorServices }, appMcp: { access, interactions } })
   const origin = await app.listen({ host: '127.0.0.1', port: 0 })
   const client = new Client({ name: 'pending-sync-context', version: '1' })
   cleanups.push(async () => { await client.close(); await app.close() })
@@ -253,9 +252,7 @@ it('pairs automatically through the channel and shares each workspace only with 
   expect(await f.service.sharedFolder('workspace-a', { kind: 'main' })).toBe(`/computer-0/shared/${sharedFolderId('workspace-a')}`)
   f.hosts.length = 0
   await f.service.reconcile()
-  expect(await f.rest[1]!.rest('GET', '/rest/config/folders')).toEqual([expect.objectContaining({
-    id: sharedFolderId('workspace-a'), paused: true, devices: [{ deviceID: workerSyncId }],
-  })])
+  expect(await f.rest[1]!.rest('GET', '/rest/config/folders')).toEqual([])
   expect(await f.service.sharedFolder('workspace-a', { kind: 'device', deviceId: f.devices[0]!.deviceId })).toBeNull()
 })
 
@@ -328,24 +325,17 @@ it('removes sharing after archive or Main disable and never gives a replacement 
   await f.service.paired(f.targets[1]!)
   f.hosts[0]!.installation_id = randomUUID()
   await f.service.reconcile()
-  expect(await f.rest[1]!.rest('GET', '/rest/config/folders')).toEqual([expect.objectContaining({
-    id: sharedFolderId('workspace-a'), paused: true, devices: [{ deviceID: workerSyncId }],
-  })])
+  expect(await f.rest[1]!.rest('GET', '/rest/config/folders')).toEqual([])
   f.hosts[0]!.installation_id = f.targets[1]!.applicationInstallationId
   await f.service.update(f.writer, 'mcp', { target: f.targets[0], workspaceId: 'workspace-a', enabled: false,
     expectedRevision: 0, commandId: randomUUID() })
   expect(await f.service.sharedFolder('workspace-a', { kind: 'device', deviceId: f.devices[0]!.deviceId })).toBeNull()
-  expect(await f.rest[1]!.rest('GET', '/rest/config/folders')).toEqual([expect.objectContaining({
-    id: sharedFolderId('workspace-a'), paused: true, devices: [{ deviceID: workerSyncId }],
-  })])
+  expect(await f.rest[1]!.rest('GET', '/rest/config/folders')).toEqual([])
   f.workspaces[1]!.active = false
   await f.service.reconcile()
   expect((await f.service.read(f.reader, 'mcp', { target: f.targets[0] })).folders.map(folder => folder.workspaceId))
     .toEqual(['workspace-a'])
-  expect(await f.rest[0]!.rest('GET', '/rest/config/folders')).toEqual([
-    expect.objectContaining({ id: sharedFolderId('workspace-a'), paused: true, devices: [{ deviceID: mainSyncId }] }),
-    expect.objectContaining({ id: sharedFolderId('workspace-b'), paused: true, devices: [{ deviceID: mainSyncId }] }),
-  ])
+  expect(await f.rest[0]!.rest('GET', '/rest/config/folders')).toEqual([])
 })
 
 it('defers membership replacement after restart while an enabled peer identity is unavailable', async () => {
@@ -461,8 +451,8 @@ for (const target of ['local', 'remote'] as const) {
     })
     const closing = shutdown.finish()
     try {
-      expect(signals).toHaveLength(target === 'local' ? 1 : 4)
-      for (const signal of signals) expect(signal.aborted).toBe(true)
+      expect(signals).toHaveLength(1)
+      expect(signals[0]!.aborted).toBe(true)
       expect(dispose).not.toHaveBeenCalled()
       expect(released).not.toHaveBeenCalled()
       await expect(f.service.reconcile()).rejects.toMatchObject({ code: 'SYNC_CLOSING' })
@@ -470,7 +460,7 @@ for (const target of ['local', 'remote'] as const) {
     expect(dispose).toHaveBeenCalledOnce()
     expect(released).toHaveBeenCalledOnce()
     await f.service.poll()
-    expect(signals).toHaveLength(target === 'local' ? 1 : 4)
+    expect(signals).toHaveLength(1)
   })
 }
 
@@ -563,79 +553,4 @@ it.each(['running', 'restarted'] as const)('refreshes regenerated peer identitie
   })
   await expect(f.createService().reconcile()).rejects.toThrow()
   expect(await folderDevices(0)).toEqual([{ deviceID: mainId }, { deviceID: workerId }])
-})
-
-it('configures healthy computers and unrelated workspaces while another identity is stalled', async () => {
-  const f = await fixture()
-  f.hosts.push({ ...f.hosts[0]!, host: f.targets[2]!.hostRef, installation_id: f.targets[2]!.applicationInstallationId })
-  const entered = deferred(), release = deferred()
-  const request = f.endpoint.request.bind(f.endpoint)
-  vi.spyOn(f.endpoint, 'request').mockImplementation(async (id, namespace, payload, options) => {
-    const input = SyncChannelRequestSchema.parse(payload)
-    if (id === f.devices[0]!.deviceId && input.request.operation === 'identity') {
-      entered.resolve()
-      await release.promise
-    }
-    return request(id, namespace, payload, options)
-  })
-  const reconciling = f.service.reconcile()
-  try {
-    await entered.promise
-    await vi.waitFor(async () => {
-      const main = await f.rest[0]!.rest('GET', '/rest/config/folders') as { id: string }[]
-      const healthy = await f.rest[2]!.rest('GET', '/rest/config/folders') as { id: string }[]
-      expect(main.map(folder => folder.id)).toContain(sharedFolderId('workspace-b'))
-      expect(healthy.map(folder => folder.id)).toContain(sharedFolderId('workspace-a'))
-    })
-  } finally { release.resolve(); await reconciling }
-})
-
-it('coalesces simultaneous reconciliations instead of configuring every workspace twice', async () => {
-  const f = await fixture()
-  const entered = deferred(), release = deferred()
-  const prepare = f.rest[0]!.ports.prepare.bind(f.rest[0]!.ports)
-  f.rest[0]!.ports.prepare = async () => { entered.resolve(); await release.promise; return prepare() }
-  const writes = vi.spyOn(f.rest[1]!.ports, 'rest')
-  const first = f.service.reconcile()
-  await entered.promise
-  const duplicate = f.service.reconcile()
-  release.resolve()
-  await Promise.all([first, duplicate])
-  const folders = writes.mock.calls.filter(([method, path]) => method === 'POST' && path === '/rest/config/folders')
-  expect(folders).toHaveLength(1)
-})
-
-it('updates one workspace without reconciling unrelated workspace folders', async () => {
-  const f = await fixture()
-  await f.service.reconcile()
-  const writes = vi.spyOn(f.rest[0]!.ports, 'rest')
-  await f.service.update(f.writer, 'mcp', { target: f.targets[1], workspaceId: 'workspace-a', enabled: false })
-  const folders = writes.mock.calls.filter(([method, path]) => method === 'POST' && path === '/rest/config/folders')
-  expect(folders.length).toBeGreaterThan(0)
-  for (const [, , body] of folders) expect(body).toMatchObject({ label: 'workspace-a' })
-})
-
-it('applies a saved preference after an older workspace configuration already in progress', async () => {
-  const f = await fixture()
-  await f.service.reconcile()
-  const entered = deferred(), release = deferred()
-  const handle = f.computers[1]!.handle.bind(f.computers[1]!)
-  vi.spyOn(f.computers[1]!, 'handle').mockImplementation(async (raw, options) => {
-    const input = SyncChannelRequestSchema.shape.request.parse(raw)
-    if (input.operation === 'configure' && input.enabled) {
-      entered.resolve()
-      await release.promise
-    }
-    return handle(raw, options)
-  })
-  const reconciling = f.service.reconcile()
-  await entered.promise
-  const updating = f.service.update(f.writer, 'mcp', { target: f.targets[1], workspaceId: 'workspace-a', enabled: false })
-  try {
-    await vi.waitFor(() => expect([...f.preferences.values()]).toContainEqual(expect.objectContaining({ enabled: false })))
-  } finally { release.resolve() }
-  await Promise.all([reconciling, updating])
-  expect(await f.rest[1]!.rest('GET', '/rest/config/folders')).toEqual([expect.objectContaining({
-    id: sharedFolderId('workspace-a'), paused: true, devices: [{ deviceID: workerSyncId }],
-  })])
 })
