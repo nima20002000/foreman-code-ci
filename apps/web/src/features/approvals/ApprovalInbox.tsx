@@ -6,10 +6,11 @@ import { approvalOptionScope } from '../../shared/ui/approvalOptionScope'
 import { NativeInteractionResponse } from '../../shared/ui/NativeInteractionResponse'
 import { Alert, Avatar, Button, ErrorState, Icon, IconButton, LoadingState } from '../../shared/ui/nocturne'
 import { usePresence } from '../../shared/ui/usePresence'
+import { raiseFloating, useFloatingZ } from '../../shared/ui/floatingStack'
 import { interactionMatchesScope } from './approvalState'
 import { summarizeApprovalRequest } from './approvalPresentation'
 import { approvalResizeEdges, useApprovalInboxResize } from './useApprovalInboxResize'
-import { useApprovalInboxStore } from './approvalInboxStore'
+import { APPROVAL_INBOX_STACK_ID, useApprovalInboxStore } from './approvalInboxStore'
 import './approvals.css'
 
 
@@ -92,6 +93,7 @@ function ApprovalInboxPanel({ open, exiting, resize }: {
   const workflowId = useApprovalInboxStore((state) => state.workflowId)
   const closeInbox = useApprovalInboxStore((state) => state.closeInbox)
   const { panelRef, style, moveGrip, grip } = resize
+  const zIndex = useFloatingZ(APPROVAL_INBOX_STACK_ID, !exiting)
   const scope = { workspaceId: workspaceId || undefined, workflowId, limit: 100 }
   const queue = useInfiniteInteractionsQuery({ ...scope, status: 'pending' }, open && Boolean(workspaceId))
   const workspace = useWorkspaceDetailsQuery(workspaceId, { enabled: open && Boolean(workspaceId), retry: false })
@@ -106,7 +108,8 @@ function ApprovalInboxPanel({ open, exiting, resize }: {
   }, [queue.data?.pages, workspaceId, workflowId])
   const refetch = () => void queue.refetch()
   const agentFor = (interaction: DurableInteraction) => workspace.data?.agents.find((agent) => agent.id === interaction.requestingAgentId)
-  return <div className="approval-inbox-root">
+  return <div className="approval-inbox-root" style={{ zIndex }} onPointerDownCapture={() => raiseFloating(APPROVAL_INBOX_STACK_ID)}
+    onFocusCapture={() => raiseFloating(APPROVAL_INBOX_STACK_ID)}>
     <section ref={panelRef} style={style} className="approval-inbox-panel" data-state={exiting ? 'closing' : 'open'} role="dialog" aria-modal="false" aria-label="Human approval inbox"
       aria-hidden={exiting} inert={exiting}
       onKeyDown={(event) => { if (event.key === 'Escape') closeInbox() }}>

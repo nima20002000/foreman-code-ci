@@ -61,7 +61,7 @@ const PinnedRunNode = memo(function PinnedRunNode({ id, data, selected, width, h
     ...data.facts.meta].slice(0, 2)
   return <><AgentNodeView ref={anchor} className="pinned-run-node" name={data.label} harness={data.facts.harness} harnessLabel={data.facts.harnessLabel}
     model={data.facts.model} icon={data.facts.icon} statusLabel={data.status} state={data.state} transition={data.transition} transitionKey={data.transitionKey} meta={meta}
-    entry={data.entry} selected={selected} ariaLabel={`Inspect Run node ${data.label}`} onSelect={()=>{if(data.kind==='job'){data.inspect();ui?.setOpen({nodeId:id,panel:'info'})} else if(ui?.panels) ui.openChat(id)}} openPanel={panel ?? (chatOpen ? 'chat' : undefined)}
+    entry={data.entry} selected={selected} ariaLabel={`Inspect Run node ${data.label}`} onSelect={()=>{if(data.kind==='job'){data.inspect();ui?.setOpen({nodeId:id,panel:'info'})}}} openPanel={panel ?? (chatOpen ? 'chat' : undefined)}
     onAction={ui?.panels && data.kind==='agent' ? (next) => next === 'chat' ? ui.openChat(id) : ui.setOpen(panel === next ? undefined : { nodeId: id, panel: next }) : undefined}>
     <AgentHandles name={data.label} connectable={false} />
     {data.kind === 'agent' && data.resizable ? <CircularNodeResizer id={id} name={data.label}
@@ -311,7 +311,7 @@ export function SelectedRunCanvas({ scope, panels, layout, geometry }: {
     </Alert> : null}
     {version ? <div className="pinned-run-flow">
       <ReactFlowProvider><RunAgentPanels.Provider value={{ panels, open, setOpen, chatScope, openChat, beginResize, resize, finishResize }}><Choreography.Provider value={motion}><ReactFlow<RunNode | CiServerFlowNode, RunEdge | CiTransferFlowEdge> nodes={flowNodes} edges={flowEdges} nodeTypes={nodeTypes} edgeTypes={edgeTypes}
-        onNodesChange={onNodesChange} nodesDraggable={false} nodesConnectable={false} nodesFocusable edgesFocusable
+        onNodesChange={onNodesChange} nodesDraggable={Boolean(geometry)} nodesConnectable={false} nodesFocusable edgesFocusable
         elementsSelectable deleteKeyCode={null} onlyRenderVisibleElements
         fitView fitViewOptions={fitViewOptions} proOptions={proOptions} minZoom={0.1} maxZoom={1.6}
         aria-label="Run graph canvas">
@@ -362,18 +362,21 @@ function useRunCanvasGeometry({ nodes, layout, version, geometry }: {
       const placement = layoutById.get(node.id) ?? pinnedById.get(node.id)
       return [node.id, { width: placement?.width ?? GRAPH_NODE_DEFAULT_SIZE, height: placement?.height ?? GRAPH_NODE_DEFAULT_SIZE }] as const
     }))
-    // The Run draws the same hierarchy the Board does, from its own pinned edges.
+    // A node still on the Board keeps the Board's place for it (the person's own, or the hierarchy's). A node the
+    // Board no longer has keeps its pinned position, or the hierarchy of the Run's own pinned edges.
     const placed = layoutHierarchy(nodes.map((node) => ({ id: node.id, ...sizes.get(node.id)! })),
       version?.definition.edges ?? [], version?.entryNodeId)
     return nodes.map((node) => {
       const { width, height } = sizes.get(node.id)!
-      const position = placed.get(node.id) ?? node.position
+      const pinned = pinnedById.get(node.id)?.position
+      const position = layoutById.get(node.id)?.position ?? (pinned?.manual ? { x: pinned.x, y: pinned.y } : undefined)
+        ?? placed.get(node.id) ?? node.position
       const resizable = Boolean(layoutById.has(node.id) && geometry)
       const cached = presented.current.get(node.id)
       if (cached && cached.source === node && cached.node.width === width && cached.node.height === height
         && cached.node.position.x === position.x && cached.node.position.y === position.y
         && cached.node.data.resizable === resizable) return cached.node
-      const result = { ...node, draggable: false, position, width, height, style: { width, height },
+      const result = { ...node, draggable: resizable, position, width, height, style: { width, height },
         data: { ...node.data, resizable } }
       presented.current.set(node.id, { source: node, node: result })
       return result

@@ -113,12 +113,17 @@ describe.skipIf(!connectionString)('Operator chat persistence and native binding
     expect(retained.rows).toEqual([{ closureState: 'closed', historyPersisted: true, result: state.lastResult }])
   })
 
-  it('lists empty chats for draft recovery and supports owner-scoped deletion and Undo', async () => {
+  it('hides empty drafts until the first message and supports owner-scoped deletion and Undo', async () => {
     const conversation = await chat.create(owner)
-    expect(await chat.summaries(owner)).toEqual([expect.objectContaining({ conversationId: conversation.id })])
+    const abandoned = await chat.create(owner, 'An abandoned named draft')
+    expect(await chat.summaries(owner)).toEqual([])
+    expect(await chat.list(owner)).toEqual([])
+    expect((await chat.get(conversation.id, owner)).messages).toEqual([])
+    expect((await chat.get(abandoned.id, owner)).messages).toEqual([])
     await chat.send(conversation.id, { requestId: 'visible-message', content: 'A named topic' }, owner)
     await waitFor(async () => (await chat.get(conversation.id, owner)).turnState === 'idle')
     expect(await chat.summaries(owner)).toEqual([expect.objectContaining({ conversationId: conversation.id, title: 'A named topic' })])
+    expect((await chat.list(owner)).map(item => item.id)).toEqual([conversation.id])
     const other = (await access.issue({ name: 'other', audience: 'operator', grants: owner.grants, expiresAt: new Date(Date.now() + 600_000) })).principal
     expect(await chat.summaries(other)).toEqual([])
     await expect(chat.setDeleted(conversation.id, other, true)).rejects.toMatchObject({ code: 'CONVERSATION_NOT_FOUND' })
