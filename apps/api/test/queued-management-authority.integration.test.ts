@@ -75,8 +75,7 @@ it.each(['workspace-defaults', 'agent-defaults', 'workflow-defaults', 'create', 
         await blocker.query('select pg_advisory_lock(hashtext($1))', [lock])
       }
       const request = client.callTool({ name: c.name, arguments: c.input })
-      try { await vi.waitFor(async () => {
-        // Session resource locks retry outside SQL; the command lock proves the caller reached the queue.
+      await vi.waitFor(async () => {
         const commandLock = `command:${caller.principal.id}:${c.operation}:${c.input.commandId}`
         let waiting: { rowCount: number | null }
         if (kind === 'agent-defaults') {
@@ -85,25 +84,13 @@ it.each(['workspace-defaults', 'agent-defaults', 'workflow-defaults', 'create', 
               select 1 from pg_locks owned where owned.pid=activity.pid and owned.locktype='advisory'
                 and owned.objid=(hashtext($2)::bigint & 4294967295)::oid and owned.granted)`,
           [blockerPid, commandLock])
-        } else if (kind.endsWith('defaults')) {
+        } else {
+          // Preparation releases the command lock before waiting for the workspace lock.
           waiting = await f.db.pool.query(`select 1 from pg_locks where locktype='advisory'
             and objid=(hashtext($1)::bigint & 4294967295)::oid and not granted`, [lock])
-        } else {
-          waiting = await f.db.pool.query(`select 1 from pg_locks where locktype='advisory'
-            and objid=(hashtext($1)::bigint & 4294967295)::oid and granted`, [commandLock])
         }
         expect(waiting.rowCount).toBeGreaterThan(0)
-      }, { timeout: 3_000, interval: 10 }) } catch (error) {
-        const commandLock = `command:${caller.principal.id}:${c.operation}:${c.input.commandId}`
-        const locks = await f.db.pool.query(`select pid, granted, objid::text,
-          pg_blocking_pids(pid) as blockers from pg_locks
-          where database=(select oid from pg_database where datname=current_database())
-            and locktype='advisory' and objid in
-              ((hashtext($1)::bigint & 4294967295)::oid, (hashtext($2)::bigint & 4294967295)::oid)`,
-        [commandLock, lock ?? commandLock])
-        console.error('Queued command lock snapshot', { kind, commandLock, resourceLock: lock, locks: locks.rows })
-        throw error
-      }
+      }, { timeout: 3_000, interval: 10 })
       await f.access.revoke(parent.principal.id)
       releaseAuthority.resolve()
       await authorityBlocker
