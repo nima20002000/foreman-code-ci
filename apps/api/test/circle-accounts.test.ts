@@ -11,6 +11,13 @@ import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { CircleAccountDirectory } from '../src/modules/ci-host/circleAccounts.js'
+import { CircleAccountFleetStatus } from '../src/modules/ci-host/circleAccountStatus.js'
+import { CircleCiAccounts } from '../src/modules/ci-host/circleCiAccounts.js'
+import { circleOrganizations } from '../src/modules/ci-host/circleOrganizations.js'
+import { CircleStandby, circleOrgKey } from '../src/modules/ci-host/circleStandby.js'
+import { CloudCi } from '../src/modules/ci-host/cloud.js'
+import { CircleCiProvider } from '../src/modules/ci-host/cloudProviders.js'
+import type { HostCiPorts } from '../src/modules/ci-host/runner.js'
 import { CircleAccountsManagementService } from '../src/modules/settings/circleAccounts.js'
 import { PostgresFoundationSettingsRepository } from '../src/modules/settings/foundation.js'
 import { deferred } from './helpers/deferred.js'
@@ -81,6 +88,90 @@ async function add(client: Client, account = reserve, extra: Record<string, unkn
     name: 'circle_account_add', arguments: { account, ...extra },
   })))
 }
+
+it('reads discovered primary organizations and dispatch readiness through MCP and HTTP without changing bindings', async () => {
+  const f = await fixture()
+  const repository = new PostgresFoundationSettingsRepository(f.db.pool)
+  const registry = { list: async () => (await repository.getCircleAccounts()).value.accounts }
+  const owners = ['fixture-alpha', 'fixture-bravo', 'fixture-charlie']
+  let authenticated = true
+  const ports: HostCiPorts = { now: () => new Date(), cpus: 4, memoryBytes: 2 ** 30,
+    run: async (file, args) => {
+      if (file === 'gh') return { code: 0, stdout: owners.join('\n'), stderr: '' }
+      if (file === 'circleci' && args[0] === 'auth' && !authenticated) {
+        return { code: 1, stdout: '', stderr: 'Not logged in' }
+      }
+      if (file === 'circleci' && ['auth', 'project'].includes(args[0]!)) {
+        return { code: 0, stdout: '{}', stderr: '' }
+      }
+      throw new Error(`Unexpected fixture command: ${file} ${args[0]}`)
+    } }
+  const directory = new CircleAccountDirectory(ports, registry, {
+    configRoot: join(f.db.directory, 'primary-config'), environment: { CIRCLE_TOKEN: 'fixture-primary' },
+  })
+  const context = async (id: string) => {
+    const selected = await directory.context(id)
+    if (!selected) throw new Error('Missing fixture login')
+    return selected
+  }
+  const clouds: CloudCi[] = []
+  const discovery = new CircleCiAccounts(ports, async () => ['fixture-alpha/site-ci'], async account => {
+    const selected = await context(account.circleAccountId ?? 'default')
+    clouds.push(new CloudCi('fixture-main', new CircleCiProvider(selected.ports, { http: selected.http }, account),
+      async () => 'fixture-alpha/site-ci', join(f.db.directory, account.owner)))
+  }, { registry, context, explicitPrimary: true })
+  await discovery.refresh()
+  await Promise.all(clouds.map(cloud => cloud.ready()))
+  const credits = { total: 400_000, used: 10_000, remaining: 390_000, asOf: new Date().toISOString() }
+  const standby = new CircleStandby(() => circleOrganizations(clouds), { reading: async () => ({ credits }) })
+  const app = await f.app(new CircleAccountFleetStatus(f.db.pool, 'fixture-main', directory, clouds, standby))
+  const owner = await f.issue(['settings:read'])
+  const client = await app.connect(owner.token)
+  await f.db.pool.query("insert into workspaces(id,record) values('fixture-workspace','{}'::jsonb)")
+  for (let slot = 0; slot < 2; slot++) {
+    const id = randomUUID()
+    await f.db.pool.query('insert into ci_runs(id,workspace_id,group_id,state,host_key,record) values($1,$2,$3,$4,$5,$6)',
+      [id, 'fixture-workspace', randomUUID(), 'running', `fixture-main:cloud:circleci@fixture-alpha:${slot}`, '{}'])
+  }
+  const read = async () => {
+    const mcp = await list(client)
+    const http = await app.instance.inject({ url: '/api/management/settings/circle-accounts',
+      headers: { authorization: `Bearer ${owner.token}` } })
+    expect(http.statusCode).toBe(200)
+    expect(http.json()).toEqual(mcp)
+    return mcp.value.accounts[0]!
+  }
+  const account = await read()
+  expect(account).toMatchObject({ id: 'default', role: 'primary', organizations: owners,
+    tokenConfigured: true, ready: true, reasons: [] })
+  expect(account.orgs.map(org => org.account)).toEqual(owners)
+  const roles = await standby.roles()
+  for (const org of account.orgs) {
+    expect(org).toMatchObject({ ready: true, credits, running: org.account === 'fixture-alpha' ? 2 : 0,
+      schedulingRole: roles.get(circleOrgKey(org.account, 'default'))!.schedulingRole })
+  }
+
+  clouds[2]!.provider.account!.registered = false
+  const retired = await read()
+  expect(retired.organizations).toEqual(owners.slice(0, 2))
+  expect(retired.orgs.map(org => org.account)).toEqual(owners.slice(0, 2))
+  authenticated = false
+  for (const cloud of clouds) cloud.invalidateReadiness()
+  const loggedOut = await read()
+  expect(loggedOut.ready).toBe(false)
+  expect(loggedOut.orgs.every(org => !org.ready)).toBe(true)
+  expect(loggedOut.reasons.length).toBeGreaterThan(0)
+  expect(loggedOut.reasons.join(' ')).not.toContain('Authentication has not been checked.')
+  expect(await clouds[0]!.handle({ operation: 'status' })).toMatchObject({ ready: false })
+  expect((await repository.getCircleAccounts()).value.accounts[0]?.organizations).toEqual([])
+
+  const denied = await f.issue([])
+  expect((await (await app.connect(denied.token)).callTool({ name: 'circle_accounts_list', arguments: {} })).isError)
+    .toBe(true)
+  expect((await app.instance.inject({ url: '/api/management/settings/circle-accounts',
+    headers: { authorization: `Bearer ${denied.token}` } })).statusCode).toBe(403)
+})
+
 it('registers only metadata with MCP and HTTP parity, persisted restart readback and safe credential status', async () => {
   const f = await fixture()
   const owner = await f.issue(['settings:read', 'settings:update', 'capabilities:read'])

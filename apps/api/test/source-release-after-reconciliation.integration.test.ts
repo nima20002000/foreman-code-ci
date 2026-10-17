@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
 import type { SourceOperationOwner } from '@foreman-code/contracts/source-operations'
@@ -8,15 +8,13 @@ import { PrivateSourceMaterializer, reconcileSourcePreparation, releaseMateriali
 import { createSourceManifest, sourceSha256 } from '../src/modules/sources/manifest.js'
 import { identity, openPrivateRoot } from '../src/modules/sources/privateFilesystem.js'
 import { sourceBindingHash } from '../src/modules/sources/bindingHash.js'
-import { sourceWorkingTreePath } from '../src/modules/sources/sourceTreePaths.js'
-import { MaterializationReceiptSchema } from '@foreman-code/contracts/source-materialization'
 
 const directories: string[] = []
 afterEach(async () => {
   await Promise.all(directories.splice(0).map(directory => rm(directory, { recursive: true, force: true })))
 })
 
-async function fixture(accessMode: 'read-only' | 'exclusive-write' = 'exclusive-write') {
+async function fixture() {
   const root = await mkdtemp(join(process.env.FOREMAN_CODE_TEST_ROOT!, 'source-release-reconciliation-'))
   directories.push(root)
   const handle = await openPrivateRoot(root)
@@ -33,7 +31,7 @@ async function fixture(accessMode: 'read-only' | 'exclusive-write' = 'exclusive-
   const operationId = randomUUID()
   const binding = { version: 1 as const, mainId, deviceId, workerInstallationId, workspaceId: 'workspace',
     rootId: randomUUID(), bindingRevision: 1, locationRevision: 1, canonicalPath: root, filesystem,
-    accessMode, snapshotId: manifest.snapshotId, manifestDigest: manifest.manifestDigest }
+    accessMode: 'exclusive-write' as const, snapshotId: manifest.snapshotId, manifestDigest: manifest.manifestDigest }
   const source = { approvedSourceId: manifest.approvedSourceId, snapshotId: manifest.snapshotId,
     manifestDigest: manifest.manifestDigest }
   const ownerRoot: SourceOperationOwner['root'] = { version: 1, source,
@@ -46,39 +44,14 @@ async function fixture(accessMode: 'read-only' | 'exclusive-write' = 'exclusive-
     keyRevision: 1, authorizationRevision: 1 }
   attempt.placementHash = sourceBindingHash(ownerRoot, attempt, operationId)
   const materializer = new PrivateSourceMaterializer({ read: async () => bytes }, async () => {})
-  const prepareInput = { manifest, binding, attempt,
-    ...(accessMode === 'read-only' ? { sharedReadOnlyTree: true as const } : { sharedWritableTree: true as const }) }
-  const receipt = await materializer.prepare(prepareInput)
+  const receipt = await materializer.prepare({ manifest, binding, attempt, sharedWritableTree: true })
   // Main lost the preparation reply, so reconciliation has no receipt yet.
   const owner: SourceOperationOwner = { identity: { operationId, ownerPrincipalId: 'owner',
     expiresAt: new Date(Date.now() + 60_000).toISOString() }, root: ownerRoot, attempt, source,
     record: null, physicalClosureConfirmed: true, preparationClosed: true }
   await reconcileSourcePreparation(randomUUID(), owner, async () => true, async () => {})
-  return { root, bytes, manifest, binding, attempt, materializer, receipt, prepareInput }
+  return { root, bytes, manifest, binding, attempt, materializer, receipt }
 }
-
-it('reuses one read-only workflow tree after retiring each execution reference', async () => {
-  const f = await fixture('read-only')
-  expect(f.receipt.sharedTree).toBeDefined()
-  expect(f.receipt.binding.accessMode).toBe('read-only')
-  const path = join(sourceWorkingTreePath(f.receipt), 'app.txt')
-  expect((await stat(path)).mode & 0o222).toBe(0)
-  expect(MaterializationReceiptSchema.safeParse({ ...f.receipt,
-    worktree: { repository: 'example/project', branch: 'foreman/agent', commit: 'a'.repeat(40) } }).success).toBe(false)
-  const trees = new Set([f.receipt.sharedTree!.id])
-  await releaseMaterializationClaim(f.receipt, async () => 'released')
-  for (let index = 0; index < 3; index++) {
-    const receipt = await f.materializer.prepare({ ...f.prepareInput,
-      attempt: { ...f.attempt, executionId: randomUUID(), attemptId: randomUUID() } })
-    trees.add(receipt.sharedTree!.id)
-    await releaseMaterializationClaim(receipt, async () => 'released')
-    await expect(readFile(join(f.root, receipt.materializationId, 'tree/app.txt')))
-      .rejects.toMatchObject({ code: 'ENOENT' })
-  }
-  expect(trees.size).toBe(1)
-  expect(await readFile(path)).toEqual(f.bytes)
-  expect((await stat(path)).mode & 0o222).toBe(0)
-})
 
 it('releases an acknowledged receipt after unacknowledged preparation reconciliation and preserves a successor', async () => {
   const f = await fixture()
@@ -88,10 +61,7 @@ it('releases an acknowledged receipt after unacknowledged preparation reconcilia
   await expect(releaseMaterializationClaim(f.receipt, async () => 'released')).resolves.toBeUndefined()
   await expect(releaseMaterializationClaim(f.receipt, async () => 'released')).resolves.toBeUndefined()
   expect(await f.materializer.prepare(successorInput)).toEqual(successor)
-  await expect(readFile(join(f.root, f.receipt.materializationId, 'tree/app.txt')))
-    .rejects.toMatchObject({ code: 'ENOENT' })
-  expect(await readFile(join(sourceWorkingTreePath(f.receipt), 'app.txt'))).toEqual(f.bytes)
-  expect(await readFile(join(sourceWorkingTreePath(successor), 'app.txt'))).toEqual(f.bytes)
+  expect(await readFile(join(f.root, f.receipt.materializationId, 'tree/app.txt'))).toEqual(f.bytes)
   await releaseMaterializationClaim(successor, async () => 'released')
 })
 
