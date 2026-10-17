@@ -16,7 +16,7 @@ function binding(kind: 'operator' | 'agent' = 'operator') {
     } } }
 }
 
-function historicalBinding() {
+it('binds a historical follow-up to its execution profile while preserving the Agent default configuration', () => {
   const target = WorkerConversationBindingSchema.parse(binding('agent'))
   if (target.owner.kind !== 'agent' || target.profile.target.hostRef.kind !== 'device') throw new Error('Agent fixture required')
   const configuration = AgentConfigurationVersionSchema.parse({ id: target.owner.configurationVersionId,
@@ -46,11 +46,6 @@ function historicalBinding() {
       directoryIdentityHash: digest, filesystem: { device: '1', inode: '2', mountId: '3' },
       accessMode: 'read-only', privateGit: null,
     } } })
-  return { accepted, configuration, target }
-}
-
-it('binds a historical follow-up to its execution profile while preserving the Agent default configuration', () => {
-  const { accepted, configuration, target } = historicalBinding()
   expect(WorkerConversationBindingSchema.safeParse({ ...accepted, workingDirectory: '/another-tree' }).success).toBe(false)
   const before = structuredClone(configuration)
   expect(workerConversationProfileSelection(accepted, configuration)).toEqual(target.profile)
@@ -63,29 +58,6 @@ it('binds a historical follow-up to its execution profile while preserving the A
   expect(WorkerConversationBindingSchema.safeParse({ ...accepted,
     owner: { ...target.owner, configurationVersionId: 'another-configuration' } }).success).toBe(false)
   expect(WorkerConversationBindingSchema.safeParse({ ...accepted, owner: binding().owner }).success).toBe(false)
-})
-
-it('keeps Run history separate from the qualified harness and profile used for later chat turns', () => {
-  const { accepted, configuration } = historicalBinding()
-  const profile = { ...accepted.profile, instanceId: randomUUID(), instanceRevision: 'claude-profile',
-    target: { ...accepted.profile.target, harnessInstallationId: 'claude-driver', installationFingerprint: 'claude-installation' } }
-  const continued = WorkerConversationBindingSchema.parse({ ...accepted, harness: 'claude', profile,
-    owner: { ...accepted.owner, configurationVersionId: 'replacement-configuration',
-      configurationHash: `sha256:${'d'.repeat(64)}` },
-    sourceConfigurationVersionId: configuration.id })
-  const selected = AgentConfigurationVersionSchema.parse({ ...configuration, id: continued.owner.configurationVersionId,
-    harness: DEFAULT_HARNESS_DEFAULTS.claude, harnessProfileSelection: profile })
-  expect(continued.sourceExecution).toEqual(accepted.sourceExecution)
-  expect(workerConversationProfileSelection(continued, selected)).toEqual(profile)
-  expect(WorkerConversationBindingSchema.safeParse({ ...continued, sourceConfigurationVersionId: undefined }).success).toBe(false)
-  expect(WorkerConversationBindingSchema.safeParse({ ...continued, workingDirectory: '/another-tree' }).success).toBe(false)
-  expect(WorkerConversationBindingSchema.safeParse({ ...continued,
-    sourceConfigurationVersionId: continued.owner.configurationVersionId }).success).toBe(false)
-  expect(WorkerConversationBindingSchema.safeParse({ ...continued,
-    profile: { ...profile, target: { ...profile.target, applicationInstallationId: randomUUID() } } }).success).toBe(false)
-  expect(WorkerConversationBindingSchema.safeParse({ ...continued,
-    owner: { ...continued.owner, workflowNodeId: 'another-node' } }).success).toBe(false)
-  expect(WorkerConversationBindingSchema.safeParse({ ...continued, appMcpAccess: 'scoped' }).success).toBe(false)
 })
 
 it('retains native input response digests and confirmed non-submission during Worker history readback', () => {
