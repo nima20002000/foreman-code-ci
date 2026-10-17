@@ -86,10 +86,10 @@ export const MaterializationReceiptSchema = z.object({
   }).strict().optional(),
   localTreeIdentity: z.object({ device: z.string().regex(/^\d+$/), inode: z.string().regex(/^\d+$/), mountId: z.string().regex(/^\d+$/) }).strict(),
 }).strict().superRefine((value, context) => {
-  if (value.sharedTree && (value.binding.accessMode !== 'exclusive-write' || value.claimScope !== 'execution')) {
-    context.addIssue({ code: 'custom', path: ['sharedTree'], message: 'Shared working trees require a writable execution claim.' })
+  if (value.sharedTree && value.claimScope !== 'execution') {
+    context.addIssue({ code: 'custom', path: ['sharedTree'], message: 'Shared working trees require an execution claim.' })
   }
-  if (value.worktree && !value.sharedTree) {
+  if (value.worktree && (!value.sharedTree || value.binding.accessMode !== 'exclusive-write')) {
     context.addIssue({ code: 'custom', path: ['worktree'], message: 'An agent worktree is a writable working tree.' })
   }
 })
