@@ -1,12 +1,12 @@
 /** Provider capabilities and pre-input MCP inspection. */
 import { sessionStartOwner } from '../sessionStart.js'
 import { APP_MCP_TOKEN_NAMES } from '@foreman-code/contracts/product'
-import type { McpDetection, NativeHarnessCapabilities, NativeSessionReference } from '@foreman-code/contracts'
+import type { McpDetection, NativeHarnessCapabilities } from '@foreman-code/contracts'
 import type { NativeSessionStart } from '../port.js'
 import { HarnessExecutionError } from '../errors.js'
 import { claudeMcpDetection, decodeClaudeMcpControl, type ClaudeMcpInspection } from './mcpInspection.js'
-import type { ClaudeManagerContext, Runtime } from './sessionTypes.js'
-import { sameJson, filterMcpServers, canonicalStart, runtimeFor } from './sessionState.js'
+import type { ClaudeManagerContext } from './sessionTypes.js'
+import { sameJson, filterMcpServers, canonicalStart } from './sessionState.js'
 import { ownedControl, inspectionCredentials, deliverCredentials } from './sessionCredentials.js'
 import { prepareRuntime } from './sessionOpening.js'
 
@@ -26,35 +26,6 @@ export async function refreshInspectionCredentials(ctx: ClaudeManagerContext, st
   const runtime = await inspected.opening
   if (runtime.active || runtime.session || runtime.closed || ctx.disposed) throw new HarnessExecutionError('CLAUDE_INSPECTION_ALREADY_STARTED', 'Pre-input credential delivery cannot mutate an active/native session.')
   if (runtime.controlPending) throw new HarnessExecutionError('CLAUDE_INSPECTION_BUSY', 'Credential refresh cannot overlap another owned SDK control operation.')
-  const original = JSON.parse(inspected.identity) as NativeSessionStart
-  const snapshot = await refreshCredentials(ctx, runtime, original, start, servers, signal)
-  inspected.identity = JSON.stringify(canonicalStart(start))
-  return snapshot
-}
-
-export async function refreshSessionCredentials(ctx: ClaudeManagerContext, session: NativeSessionReference,
-  start: NativeSessionStart, servers: Readonly<Record<string, unknown>>, signal?: AbortSignal): Promise<ClaudeMcpInspection> {
-  signal?.throwIfAborted()
-  const runtime = runtimeFor(ctx, session)
-  if (runtime.active || runtime.controlPending || runtime.turns.size || !runtime.retiredTurns) {
-    throw new HarnessExecutionError('CLAUDE_SESSION_BUSY', 'Credential rebinding requires an idle session with its previous turn retired.')
-  }
-  if (ctx.options.appMcpAccess !== 'management') {
-    throw new HarnessExecutionError('CLAUDE_MANAGEMENT_MCP_FORBIDDEN', 'This owner has no management MCP credential authority.')
-  }
-  if (!runtime.start.correlationId || !start.correlationId) {
-    throw new HarnessExecutionError('CLAUDE_INSPECTION_CONTEXT_CONFLICT', 'The original session correlation is unavailable.')
-  }
-  const original = { ...runtime.start, correlationId: start.correlationId }
-  const snapshot = await refreshCredentials(ctx, runtime, original, start, servers, signal)
-  if (ctx.prepared && await ctx.prepared.opening === runtime) {
-    ctx.prepared.identity = JSON.stringify(canonicalStart(start))
-  }
-  return snapshot
-}
-
-async function refreshCredentials(ctx: ClaudeManagerContext, runtime: Runtime, original: NativeSessionStart,
-  start: NativeSessionStart, servers: Readonly<Record<string, unknown>>, signal?: AbortSignal) {
   delete runtime.httpCredentialAcknowledgement
   delete runtime.credentialServers
   const withoutCredentials = (value: NativeSessionStart): string => {
@@ -63,6 +34,7 @@ async function refreshCredentials(ctx: ClaudeManagerContext, runtime: Runtime, o
     const agentId = value.environment?.agentId ?? sessionStartOwner(value)
     return JSON.stringify({ ...value, environment: { agentId, variables } })
   }
+  const original = JSON.parse(inspected.identity) as NativeSessionStart
   if (!sameJson(withoutCredentials(original), withoutCredentials(start))) throw new HarnessExecutionError('CLAUDE_INSPECTION_CONTEXT_CONFLICT', 'Credential delivery changed the accepted owner/configuration or noncredential environment.')
   const configured = filterMcpServers(start, ctx.configuredServers)
   servers = filterMcpServers(start, servers)
@@ -84,6 +56,8 @@ async function refreshCredentials(ctx: ClaudeManagerContext, runtime: Runtime, o
     if (!same) throw new HarnessExecutionError('CLAUDE_MCP_SCOPE_CONFLICT', 'Credential delivery cannot refresh unrelated native MCP servers.')
   }
   const snapshot = await deliverCredentials(ctx, runtime, start, servers, signal)
+  // Record the inspected context after the SDK confirms its credential update.
+  inspected.identity = JSON.stringify(canonicalStart(start))
   runtime.start = structuredClone(start)
   return snapshot
 }

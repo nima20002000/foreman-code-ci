@@ -63,17 +63,11 @@ export function useOperatorChatReadback(enabled: boolean, open: boolean, selecte
     const accepted = newer(queryClient.getQueryData<OperatorConversationState>(detailKey(id)), state)
     queryClient.setQueryData(detailKey(id), accepted)
     const summary = summarizeOperatorConversation(accepted)
-    queryClient.setQueryData<Summaries>(listKey, (current) => {
-      if (!current) return current
-      if (!accepted.messages.length && !accepted.hasEarlierMessages) {
-        return { ...current, conversations: current.conversations.filter(item => item.conversationId !== id) }
-      }
-      return {
-        ...current, conversations: current.conversations.some((item) => item.conversationId === id)
-          ? current.conversations.map((item) => item.conversationId === id && summary.revision >= item.revision ? summary : item)
-          : [summary, ...current.conversations],
-      }
-    })
+    queryClient.setQueryData<Summaries>(listKey, (current) => current ? {
+      ...current, conversations: current.conversations.some((item) => item.conversationId === id)
+        ? current.conversations.map((item) => item.conversationId === id && summary.revision >= item.revision ? summary : item)
+        : [summary, ...current.conversations],
+    } : current)
   }, [queryClient])
   const invalidate = async (id: string) => { await Promise.all([
     queryClient.invalidateQueries({ queryKey: detailKey(id) }), queryClient.invalidateQueries({ queryKey: listKey }),

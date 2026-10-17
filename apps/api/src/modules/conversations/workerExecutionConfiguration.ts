@@ -15,10 +15,6 @@ function executionSettings(configuration: OperatorConfigurationVersion) {
   }
 }
 
-export function sameOperatorExecutionConfiguration(left: OperatorConfigurationVersion, right: OperatorConfigurationVersion) {
-  return isDeepStrictEqual(executionSettings(left), executionSettings(right))
-}
-
 /** Presentation changes retain the immutable configuration that owns the Worker session. */
 export function workerExecutionConfiguration(binding: WorkerConversationBinding,
   accepted: WorkerConversationConfiguration, previous?: OperatorConfigurationVersion): WorkerConversationConfiguration {
@@ -28,6 +24,6 @@ export function workerExecutionConfiguration(binding: WorkerConversationBinding,
     && binding.owner.operatorId === accepted.operatorId && previous.operatorId === accepted.operatorId
     && binding.owner.configurationVersionId === previous.id
     && binding.owner.configurationHash === commandInputHash(previous)
-    && sameOperatorExecutionConfiguration(previous, accepted)) return previous
+    && isDeepStrictEqual(executionSettings(previous), executionSettings(accepted))) return previous
   throw new DomainError('WORKER_CONVERSATION_UNAVAILABLE', 'The original Worker execution configuration changed.', 409)
 }

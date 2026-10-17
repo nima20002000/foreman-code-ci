@@ -13,7 +13,8 @@ function useAccountSummary(binding?: AcceptedProviderAccountBinding) {
   const query = useProviderAccount(binding?.kind === 'slot' ? binding : undefined)
   const denied = useProtectedAccessError(query)
   const account = query.isError || denied ? undefined : query.data
-  if (!binding || binding.kind === 'legacy-profile') return { short: '', problem: undefined }
+  if (!binding) return { short: '', problem: undefined }
+  if (binding.kind === 'legacy-profile') return { short: 'Legacy profile', problem: undefined }
   const unavailable = !account || Boolean(account.removedAt) || account.status === 'unavailable'
   return {
     short: account?.name ?? binding.accountId,
@@ -40,7 +41,7 @@ export function ProviderAccountChip({ binding, label = 'Saved account' }: {
     document.addEventListener('pointerdown', outside)
     return () => document.removeEventListener('pointerdown', outside)
   }, [open])
-  if (!binding || binding.kind === 'legacy-profile') return null
+  if (!binding) return null
   return <span className="provider-account-chip" onKeyDown={event => {
     if (event.key === 'Escape' && open) { event.preventDefault(); event.stopPropagation(); setOpen(false); anchor.current?.focus() }
   }}>
