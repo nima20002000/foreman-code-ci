@@ -823,17 +823,16 @@ export class HostCiService {
     })
   }
 
-  private async schedulingFleet(computers: HostCiComputer[], mirrorName?: string): Promise<HostCiComputer[]> {
-    const roles = await this.circleStandby?.roles(mirrorName)
-    if (!roles) return computers
-    return computers.filter(computer => computer.hostRef.provider !== 'circleci'
-      || computer.hostRef.account && roles.get(circleOrgKey(computer.hostRef.account,
-        computer.hostRef.circleAccountId))?.schedulingRole === 'active')
-  }
-
   private planningForMirror(mirrorName?: string): HostCiEndpoint & Pick<CiPlanningSnapshot, 'lastStatus'> {
     return {
-      computers: async () => this.schedulingFleet(await this.planningEndpoint.computers(), mirrorName),
+      computers: async () => {
+        const computers = await this.planningEndpoint.computers()
+        const roles = await this.circleStandby?.roles(mirrorName)
+        if (!roles) return computers
+        return computers.filter(computer => computer.hostRef.provider !== 'circleci'
+          || computer.hostRef.account && roles.get(circleOrgKey(computer.hostRef.account,
+            computer.hostRef.circleAccountId))?.schedulingRole === 'active')
+      },
       request: (computer, request) => this.planningEndpoint.request(computer, request),
       lastStatus: computer => this.planningEndpoint.lastStatus(computer),
     }
@@ -1315,36 +1314,19 @@ export class HostCiService {
     return { totals, unavailable, gateShards }
   }
 
-  private async splitGateParts(queued: CiRunRecord[],
-    capacity: Omit<Parameters<typeof splitUnavailableGateParts>[2], 'reservedCloud'>) {
-    const result: CiRunRecord[] = []
-    for (const run of queued) {
-      if (!buildComputerGatePart(run, capacity.knownComputers ?? capacity.computers)) {
-        result.push(run)
-        continue
-      }
-      const computers = await this.schedulingFleet(capacity.computers, run.ciMirror?.split('/')[1])
-      const keys = new Set(computers.map(computer => computer.key))
-      result.push(...await splitUnavailableGateParts(this.pool, [run], { ...capacity, computers,
-        shards: new Map([...capacity.shards].filter(([key]) => keys.has(key))),
-        reservedCloud: reservedCloudSlotKeys(computers.filter(computer => capacity.shards.has(computer.key)), this.reservedCloudSlots) }))
-    }
-    return result
-  }
-
   private async dispatchOnce() {
     this.superseding ??= withoutCiDatabasePriority(() => this.cancelSuperseded())
       .catch(error => log.warn({ err: error }, 'Superseded CI cleanup failed; retrying'))
       .finally(() => { this.superseding = undefined })
-    const knownComputers = await this.endpoint.computers()
+    const computers = await this.endpoint.computers()
     const { parsed, durations } = await readQueuedCiRuns(this.pool)
-    void withoutCiDatabasePriority(async () => this.prewarm.schedule(knownComputers, parsed))
+    void withoutCiDatabasePriority(async () => this.prewarm.schedule(computers, parsed))
     this.dispatchRejections.retain(parsed)
-    this.refreshComputerStatuses(knownComputers)
+    this.refreshComputerStatuses(computers)
     const active = (await this.pool.query<{ id: string; record: unknown; host_key: string | null }>(
       `select id,record,host_key from ci_runs where state in ('starting','running') or record->>'collection'='pending'
         or (state in ('passed','failed','canceled','lost') and record#>>'{observation,status}'='unavailable')`)).rows
-    this.refreshActiveRuns(active, knownComputers)
+    this.refreshActiveRuns(active, computers)
     const busyRows = (await this.pool.query<{ host_key: string; record: unknown }>(
       `select host_key,record from ci_runs where ${CI_BUSY_TICKET}`)).rows
     const used = new Map<string, number>()
@@ -1354,7 +1336,6 @@ export class HostCiService {
       return [run.id, { groupId: run.groupId, computerKey: row.host_key }]
     }))
     const { gate, reservedHosts } = await readCiGateReservation(this.pool)
-    const computers = parsed.length ? await this.schedulingFleet(knownComputers) : knownComputers
     const { totals, unavailable, gateShards } = this.dispatchCapacity(computers, used)
     const freeSlots = (computer: HostCiComputer) => Math.max(0,
       (totals.get(computer.key) ?? 1) - (used.get(computer.key) ?? 0))
@@ -1378,12 +1359,13 @@ export class HostCiService {
       ? Number(needsSystemdExecutor(right)) - Number(needsSystemdExecutor(left)) : 0) || compareCiQueue(left, right))
     // Whether a ticket's mirror snapshot is on GitHub does not depend on which cloud slot is tried.
     const mirrorReady = new Map<string, boolean>()
-    const stealsGatePart = gatePartStealer(knownComputers, queued)
+    const stealsGatePart = gatePartStealer(computers, queued)
+    const reservedCloud = reservedCloudSlotKeys(computers, this.reservedCloudSlots)
     const canTakeGatePart = (run: CiRunRecord, computer: HostCiComputer) => {
       if (!gateShards.has(computer.key)) return false
       if (run.setupRetry) return true
       if (computer.key === run.plannedHostKey) return true
-      if (buildComputerGatePart(run, knownComputers)) {
+      if (buildComputerGatePart(run, computers)) {
         return computer.hostRef.kind !== 'cloud'
           && gateShards.get(computer.key)! >= run.integrationShards!
           && stealsGatePart(run, computer)
@@ -1392,8 +1374,9 @@ export class HostCiService {
         || !gateShards.has(run.plannedHostKey) && !this.observingComputers.has(run.plannedHostKey)
         || stealsGatePart(run, computer)
     }
-    queued = await this.splitGateParts(queued, { computers, knownComputers, shards: gateShards, durations,
-      gate, freeSlots, canTake: canTakeGatePart, idle: computer => (used.get(computer.key) ?? 0) === 0 })
+    queued = await splitUnavailableGateParts(this.pool, queued, { computers, shards: gateShards, durations,
+      reservedCloud, gate, freeSlots, canTake: canTakeGatePart,
+      idle: computer => (used.get(computer.key) ?? 0) === 0 })
     // Reserve slots before awaiting a start so concurrent dispatches cannot spend the same capacity.
     await inBatches(queued, 8, async run => {
       const smokeTarget = smokeTargets.get(run.groupId)
@@ -1420,10 +1403,10 @@ export class HostCiService {
       const selection = (run.gate || smokeTarget) && run.suite === 'integration'
         ? { gate: true, scope: 'full' as const, integrationShards: run.integrationShards!, files: run.files }
         : affectedFiles
-      const eligible = await this.schedulingFleet(computers, run.ciMirror?.split('/')[1])
-      const reservedCloud = reservedCloudSlotKeys(eligible.filter(computer => gateShards.has(computer.key)),
-        this.reservedCloudSlots)
-      const order = eligible
+      const eligible = await this.circleStandby?.roles(run.ciMirror?.split('/')[1])
+      const order = computers.filter(computer => computer.hostRef.provider !== 'circleci' || !eligible
+        || computer.hostRef.account && eligible.get(circleOrgKey(computer.hostRef.account,
+          computer.hostRef.circleAccountId))?.schedulingRole === 'active')
         .filter(computer => runsOnCircleCi(run)
         || computer.hostRef.kind !== 'cloud' || computer.hostRef.provider !== 'circleci')
         .filter(computer => !hostRequired || supportsUserSystemd(computer))
