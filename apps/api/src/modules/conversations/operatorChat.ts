@@ -123,7 +123,6 @@ export interface OperatorChatAuthority {
 interface Runtime {
   idleTimer?: ReturnType<typeof setTimeout>
   fileInputs?: boolean
-  interactionHandled?: boolean
   configuration?: OperatorConfigurationVersion
   manager: NativeHarnessSessionManager
   session?: NativeSessionReference
@@ -912,10 +911,7 @@ export class OperatorChatService {
     }
     const runtime = this.runtimes.get(id)
     const reusable = runtime?.session && runtime.manager.retireTurn && !runtime.disposalStarted && !runtime.disposal
-      && !this.closing && !runtime.observationOnly && !runtime.fileInputs && !runtime.interactionHandled
-      // Process environment and MCP credentials cannot be rotated in a live native session.
-      // Release turn-bound authority before another turn can receive fresh credentials.
-      && Object.keys(runtime.environment?.variables ?? {}).length === 0 && result.outcome === 'succeeded'
+      && !this.closing && !runtime.observationOnly && result.outcome === 'succeeded'
     if (runtime?.session && runtime.session.nativeSessionId !== terminal.observation.nativeSessionId) {
       throw new DomainError('OPERATOR_NATIVE_CLOSURE_CONFLICT', 'The result belongs to a different native runtime.', 409)
     }
@@ -1233,7 +1229,6 @@ export class OperatorChatService {
       if (!runtime.session || !await this.repository.claimResponse(id, row.active_request_id, input.nativeRequestId)) {
         throw new DomainError('NATIVE_RESPONSE_UNCERTAIN', 'A response was already submitted. Reconcile it before retrying.', 409)
       }
-      runtime.interactionHandled = true
       let delivered = false
       this.responding.add(id)
       try {
