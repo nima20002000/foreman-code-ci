@@ -8,7 +8,7 @@ import { readProductEnvironment } from '@foreman-code/contracts/product-environm
 import { APP_MCP_TOKEN_NAMES } from '@foreman-code/contracts/product'
 import type { NativeMessageSubmission } from '@foreman-code/contracts/claude'
 import {
-  compactionBlocksSend, CompactionStateSchema, ContextSnapshotSchema, McpDetectionSchema, NativeHarnessCapabilitiesSchema,
+  CompactionStateSchema, ContextSnapshotSchema, McpDetectionSchema, NativeHarnessCapabilitiesSchema,
   PendingNativeInteractionSchema, SessionControlCapabilitiesSchema, SessionPreferencesSchema,
   type CompactionState, type ContextSnapshot, type NativeSessionReference, type SessionPreferences,
 } from '@foreman-code/contracts'
@@ -28,6 +28,7 @@ import { MainWorkerConversationBridge, type WorkerConversationCallbacks, type Wo
 import { workerExecutionConfiguration } from './workerExecutionConfiguration.js'
 import type { OperatorConfigurationVersion } from '@foreman-code/contracts'
 import { DomainError } from '../errors.js'
+import { logIgnoredError } from '../diagnostics/ignoredError.js'
 import type { PrepareWorkerFiles } from './mainWorkerFiles.js'
 
 function conflict(message: string): never { throw new DomainError('WORKER_CONVERSATION_CONFLICT', message, 409) }
@@ -39,6 +40,7 @@ interface ManagerOptions {
   currentChannel?(): WorkerConversationChannel
   bridge: MainWorkerConversationBridge
   current(request: WorkerConversationRpcRequest, signal?: AbortSignal): Promise<void>
+  currentForDisposal?(request: WorkerConversationRpcRequest, signal?: AbortSignal): Promise<void>
   observeSession?(session: NativeSessionReference): Promise<void>
   profile?(): Promise<WorkerConversationProfileFacts>
   claudeAuthority?(request: WorkerClaudeAuthorityRequest, signal: AbortSignal): Promise<unknown>
@@ -60,7 +62,6 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
   private credentialLease: ReturnType<MainWorkerConversationBridge['capture']> | undefined
   private readonly recoveredCallbacks = new Map<string, ReturnType<MainWorkerConversationBridge['capture']>>()
   private preparationActive = false
-  private runtimeAcquired = false
   private reconnecting: Promise<void> | undefined
   private readonly lifetime = new AbortController()
 
@@ -75,14 +76,34 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
   private frame(input: Record<string, unknown>): WorkerConversationRpcRequest {
     return { ...input, binding: this.options.binding } as WorkerConversationRpcRequest
   }
-  private async reconnect(signal?: AbortSignal) {
-    this.lifetime.signal.throwIfAborted()
-    if (this.reconnecting) return this.reconnecting
+  private currentChannel() {
     const channel = this.options.currentChannel?.() ?? this.options.channel
-    if (isDeepStrictEqual(channel.binding, this.options.channel.binding)) return
     for (const field of ['mainId', 'deviceId', 'workerInstallationId', 'keyRevision', 'authorizationRevision'] as const) {
       if (channel.binding[field] !== this.options.channel.binding[field]) conflict('The original paired worker authority changed.')
     }
+    return channel
+  }
+  private waitForReconnect(task: Promise<void>, signal?: AbortSignal): Promise<void> {
+    signal?.throwIfAborted()
+    if (!signal) return task
+    return new Promise<void>((resolve, reject) => {
+      const abort = () => { signal.removeEventListener('abort', abort); reject(signal.reason) }
+      signal.addEventListener('abort', abort, { once: true })
+      void task.then(() => {
+        signal.removeEventListener('abort', abort)
+        resolve()
+      }, error => {
+        signal.removeEventListener('abort', abort)
+        reject(error)
+      })
+    })
+  }
+  private async reconnect(signal?: AbortSignal) {
+    this.lifetime.signal.throwIfAborted()
+    signal?.throwIfAborted()
+    if (this.reconnecting) return this.waitForReconnect(this.reconnecting, signal)
+    const channel = this.currentChannel()
+    if (isDeepStrictEqual(channel.binding, this.options.channel.binding)) return
     const previousChannel = this.options.channel
     const task = (async () => {
       for (const lease of [...this.leases]) await this.release(lease)
@@ -94,7 +115,7 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
       const lease = this.captureConnected(this.frame({ method: 'conversation.open', mode: 'attach', source: session,
         operationId: this.receipt?.creation?.operationId ?? 'session-reconnect', configuration: this.options.configuration }))
       try {
-        const receipt = this.adopt(await lease.request(signal), session)
+        const receipt = this.adopt(await lease.request(this.lifetime.signal), session)
         if (!receipt?.session || !isDeepStrictEqual(receipt.session, session)) conflict('The worker attached a different session.')
       } catch (error) {
         this.options.channel = previousChannel
@@ -102,16 +123,24 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
       } finally { await this.release(lease) }
     })()
     this.reconnecting = task
-    try { await task } finally { this.reconnecting = undefined }
+    void task.then(() => {
+      if (this.reconnecting === task) this.reconnecting = undefined
+    }, error => {
+      if (this.reconnecting === task) this.reconnecting = undefined
+      if (!this.lifetime.signal.aborted) logIgnoredError('harness', 'reconnect Worker conversation', error)
+    })
+    return this.waitForReconnect(task, signal)
   }
   private async capture(frame: WorkerConversationRpcRequest, options: {
     callbacks?: WorkerConversationCallbacks; recoveredSubmission?: NativeMessageSubmission; recoveredTurnId?: string
+    current?: ManagerOptions['current']
   } = {}, signal?: AbortSignal) {
     await this.reconnect(signal)
     return this.captureConnected(frame, options)
   }
   private captureConnected(frame: WorkerConversationRpcRequest, options: {
     callbacks?: WorkerConversationCallbacks; recoveredSubmission?: NativeMessageSubmission; recoveredTurnId?: string
+    current?: ManagerOptions['current']
   } = {}): ReturnType<MainWorkerConversationBridge['capture']> {
     const channel = this.options.channel
     const captured = this.options.bridge.capture({ request: frame, channel,
@@ -122,21 +151,13 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
       ...(options.recoveredTurnId ? { recoveredTurnId: options.recoveredTurnId } : {}),
       current: async signal => {
         this.lifetime.signal.throwIfAborted()
-        await this.options.current(frame, signal)
+        await (options.current ?? this.options.current)(frame, signal)
         if (!isDeepStrictEqual((this.options.currentChannel?.() ?? channel).binding, channel.binding)) {
           conflict('The admitted worker connection changed.')
         }
       } })
     const lease = { ...captured, request: async (signal?: AbortSignal) => {
-      let raw: unknown
-      try {
-        raw = await captured.request(signal)
-      } catch (error) {
-        // A failed process change leaves its native owner unconfirmed.
-        if (['conversation.preferences', 'conversation.open', 'conversation.initial-turn', 'conversation.start-turn']
-          .includes(frame.method)) this.runtimeAcquired = false
-        throw error
-      }
+      const raw = await captured.request(signal)
       if (frame.method === 'conversation.response-continuation') return raw
       const parsed = WorkerConversationResponsePageSchema.safeParse(raw)
       if (!parsed.success) return raw
@@ -144,7 +165,7 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
       return readJsonContinuation(first.metadata, async metadata => {
         const continuation = this.captureConnected(this.frame({
           method: 'conversation.response-continuation', transferId: first.transferId, metadata,
-        }))
+        }), { current: options.current ?? this.options.current })
         try {
           const next = WorkerConversationResponsePageSchema.parse(await continuation.request(signal))
           if (next.transferId !== first.transferId) conflict('The conversation response snapshot changed.')
@@ -259,7 +280,6 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
         delete this.options.previousBinding
         delete this.options.previousConfiguration
       }
-      this.runtimeAcquired = true
       return receipt.session
     } finally { await this.release(lease) }
   }
@@ -396,7 +416,6 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
         sequence = (history.nextSequence ?? Math.max(-1, ...history.events.map(event => event.sequence)) + 1) - 1
       }
       this.adopt(await lease.request(pollSignal))
-      this.runtimeAcquired = true
       this.checkRejection(input.clientCorrelationId)
       while (true) {
         pollSignal.throwIfAborted()
@@ -629,30 +648,25 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
     this.assertSession(session)
     this.adopt(await this.request({ method: 'conversation.close', session }))
   }
-  async closeRetainedSession(session: NativeSessionReference, signal: AbortSignal) {
-    const record = this.adopt(await this.request({ method: 'conversation.status' }, signal))
-    if (!record?.session || !isDeepStrictEqual(record.session, session)) conflict('The persisted worker session changed.')
-    if (record.closed) return
-    this.adopt(await this.request({ method: 'conversation.close', session }, signal))
-    if (!this.receipt?.closed) conflict('Closure of the persisted worker session is unconfirmed.')
-  }
   async closeForResume(session: NativeSessionReference) {
     this.assertSession(session)
     this.adopt(await this.request({ method: 'conversation.release-runtime', session }))
-    this.runtimeAcquired = false
   }
-  async closeForRestart(session: NativeSessionReference) { this.assertSession(session); await this.dispose() }
+  async closeForRestart(session: NativeSessionReference) { this.assertSession(session); await this.detach() }
   async dispose() {
-    if (this.runtimeAcquired && !this.lifetime.signal.aborted && this.session && this.receipt && !this.receipt.closed
-      && !this.receipt.closing && !this.receipt.runtimeReleased
-      && this.receipt.turns.every(turn => ['completed', 'rejected'].includes(turn.status))
-      && this.receipt.compactions.every(control => !compactionBlocksSend(control.state))) {
-      await this.closeForResume(this.session)
+    if (!this.lifetime.signal.aborted && this.session && !this.receipt?.closed && !this.receipt?.runtimeReleased) {
+      this.options.channel = this.currentChannel()
+      const lease = this.captureConnected(this.frame({ method: 'conversation.release-runtime', session: this.session }),
+        { current: this.options.currentForDisposal ?? this.options.current })
+      try { this.adopt(await lease.request()) } finally { await this.release(lease) }
     }
     if (this.preparationActive && !this.session && !this.lifetime.signal.aborted) {
       await this.request({ method: 'conversation.release-preparation' })
       this.preparationActive = false
     }
+    await this.detach()
+  }
+  private async detach() {
     this.lifetime.abort(new DomainError('ENGINE_RESTART', 'Main detached its worker conversation observer.', 503))
     for (const lease of this.leases) await this.release(lease)
     this.recoveredCallbacks.clear()
