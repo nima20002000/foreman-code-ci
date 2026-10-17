@@ -205,7 +205,7 @@ export const CiComputersOutputSchema = z.object({
   userSystemd: CiUserSystemdSchema.optional(),
   slotsUsed: z.number().int().nonnegative(), slotsTotal: z.number().int().nonnegative(),
   running: z.array(z.string()).optional(),
-  /** CircleCI accounts only: estimated monthly credits left. */
+  /** CircleCI accounts only: estimated monthly credits left per organization of the login plus their total. */
   ...circleCreditsShape,
 }).strict()) }).strict()
 

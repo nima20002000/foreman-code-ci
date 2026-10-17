@@ -2800,10 +2800,6 @@ async function initializeComputerServices(composition: ProductionComposition, ma
   const discoverClouds = () => circleOrgs.refresh()
   const circleCredits = new CircleCreditUsage(new CloudHttp(systemHostCiPorts(), 'circleci'), {
     allowance: async () => (await composition.foundationSettings.getCircleCreditAllowance()).value,
-    primaryOwner: async () => {
-      const owners = new Set((await workspaceMirrorList(database.pool)()).map(mirror => mirror.slice(0, mirror.indexOf('/')).toLowerCase()))
-      return owners.size === 1 ? [...owners][0]! : null
-    },
   })
   runtimeServices.computerActivity = new ComputerActivityService(database.pool, machine.installationId,
     id => deviceRuntime.presenceFor(id), commands, clouds, circleCredits)
