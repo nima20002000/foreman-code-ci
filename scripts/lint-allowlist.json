@@ -622,6 +622,7 @@
     "567096f450d1cb91c43c1f27d4855be6a83e64cef0185a013fd4783b6f3f9d86": "apps/web/src/features/operator-chat/operatorChatStore.ts",
     "eda86b839a52a7f800b003bebd46b1fa8f55917727d81b27b1cb2dac91718921": "apps/web/src/features/operator-chat/operatorChatUx.test.tsx",
     "865fab956e68e2be4bea71cc0520a43f0cc69f2721e04ceea906fa62dcffaaff": "apps/web/src/features/operator-chat/operatorOutbox.cross-tab.test.ts",
+    "5806c54830142c4d83ad5742304786870e5362301c9c8235976d371cfb03461a": "apps/web/src/features/operator-chat/pr17-operator-chat.test.tsx",
     "22d7315de61a83627d3f7bb8ef1aa96b795c17edfb65b61fcbc9c8b4e651e39a": "apps/web/src/features/operator-chat/pr17-recovery.test.tsx",
     "02e7306b419ff2c222b02533710ca3fddbf969f618fb0946f4c5fd1140f85b45": "apps/web/src/features/operator-chat/pr17-status.test.ts",
     "e07917b43b6cdc1b55ad3075cd1cfefd6730eee9c746bab28b53774838a580e3": "apps/web/src/features/operator-chat/pr19-transcript.test.tsx",

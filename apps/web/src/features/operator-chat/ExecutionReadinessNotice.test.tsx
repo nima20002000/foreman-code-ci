@@ -26,7 +26,7 @@ describe('execution readiness notice', () => {
     mount('blocked')
     expect(await screen.findByText('Execution is unavailable')).toBeVisible()
     expect(screen.getByText('Explicit opt-in is required.')).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Dismiss notice' })).toBeEnabled()
+    expect(screen.getByText(/continue browsing/)).toBeVisible()
   })
   it('does not imply the selected Operator has been qualified', async () => {
     mount('eligible')

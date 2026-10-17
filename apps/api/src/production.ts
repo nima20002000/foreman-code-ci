@@ -20,9 +20,7 @@ import { HostCiService } from './modules/ci-host/service.js'
 import { GitCiCommits } from './modules/ci-host/commits.js'
 import { RunCiAuthority } from './modules/jobs/ciAuthority.js'
 import { ProductionHostCiEndpoint } from './modules/ci-host/endpoint.js'
-import { HostCiRunner, systemHostCiPorts } from './modules/ci-host/runner.js'
-import { CircleCreditUsage } from './modules/ci-host/circleCredits.js'
-import { CloudHttp } from './modules/ci-host/cloudHttp.js'
+import { HostCiRunner } from './modules/ci-host/runner.js'
 import { activeCiRuns, circleCiOrgs, cloudCis, runningCircleCiOwners, workspaceMirrorList, workspaceMirrors }
   from './modules/ci-host/cloud.js'
 import { configuredReservedCloudSlots } from './modules/ci-host/cloudSlots.js'
@@ -2797,15 +2795,8 @@ async function initializeComputerServices(composition: ProductionComposition, ma
   const circleOrgs = circleCiOrgs(clouds, machine.installationId, workspaceMirrors(database.pool),
     workspaceMirrorList(database.pool), { ...cloudOptions, runningOwners: runningCircleCiOwners(database.pool) })
   const discoverClouds = () => circleOrgs.refresh()
-  const circleCredits = new CircleCreditUsage(new CloudHttp(systemHostCiPorts(), 'circleci'), {
-    allowance: async () => (await composition.foundationSettings.getCircleCreditAllowance()).value,
-    primaryOwner: async () => {
-      const owners = new Set((await workspaceMirrorList(database.pool)()).map(mirror => mirror.slice(0, mirror.indexOf('/')).toLowerCase()))
-      return owners.size === 1 ? [...owners][0]! : null
-    },
-  })
   runtimeServices.computerActivity = new ComputerActivityService(database.pool, machine.installationId,
-    id => deviceRuntime.presenceFor(id), commands, clouds, circleCredits)
+    id => deviceRuntime.presenceFor(id), commands, clouds)
   registerComputerActivityRoutes(app, runtimeServices.computerActivity)
   runtimeServices.computerAccounts = new ComputerAccountsService(database.pool, machine.installationId,
     () => deviceRuntime.endpointForDomains(), commands)
@@ -2881,7 +2872,7 @@ async function initializeComputerServices(composition: ProductionComposition, ma
   runtimeServices.jobs = jobRuntime.jobs
   const readAgentFiles = agentFileReader(() => deviceRuntime.endpointForDomains())
 
-  return { clouds, discoverClouds, readAgentFiles, workspaceRoots, circleCredits }
+  return { clouds, discoverClouds, readAgentFiles, workspaceRoots }
 }
 
 async function initializeCiServices(
@@ -2892,10 +2883,9 @@ async function initializeCiServices(
     discoverClouds: () => Promise<void>
     readAgentFiles: ReadAgentFiles
     workspaceRoots: WorkspaceBoundLocationService
-    circleCredits: CircleCreditUsage
   },
 ) {
-  const { clouds, discoverClouds, readAgentFiles, workspaceRoots, circleCredits } = computerServices
+  const { clouds, discoverClouds, readAgentFiles, workspaceRoots } = computerServices
   const {
     workerExecution,
     deviceRuntime,
@@ -2912,7 +2902,7 @@ async function initializeCiServices(
   composition.hostCi = new HostCiService(database.pool, commands, new RunCiAuthority(database.pool), new GitCiCommits(),
     new ProductionHostCiEndpoint(database.pool, machine.installationId, () => deviceRuntime.endpointForDomains(), new HostCiRunner(),
       clouds, discoverClouds, workerExecution),
-    agentSnapshots(database.pool, readAgentFiles), { reservedCloudSlots: configuredReservedCloudSlots(), circleCredits })
+    agentSnapshots(database.pool, readAgentFiles), { reservedCloudSlots: configuredReservedCloudSlots() })
   composition.hostCi.start()
   app.addHook('onClose', async () => { await composition.hostCi?.close() })
   const stopDeadlineSweeper = startStateDeadlineSweeper(database.pool, {
