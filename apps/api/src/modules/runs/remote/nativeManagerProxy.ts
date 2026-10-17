@@ -608,8 +608,10 @@ export class RemoteNativeSessionManager implements NativeHarnessSessionManager {
         phase: z.enum(['unknown', 'reserved', 'entered', 'acknowledged']), status: StatusSchema,
       }).strict().parse(reply.value)
       const receipt = await this.status(reply, delivery.status)
-      if (delivery.phase === 'reserved' && !receipt.terminal && !receipt.stopFence) {
-        if (!this.options.authorizeResponseRetry) throw new Error('Reserved response retry authorization is unavailable')
+      // 'unknown' is the original Worker confirming it never reserved this command, so the
+      // admitted command was lost in transit. Only entered commands stay observation-only.
+      if ((delivery.phase === 'reserved' || delivery.phase === 'unknown') && !receipt.terminal && !receipt.stopFence) {
+        if (!this.options.authorizeResponseRetry) throw new Error('Unentered response retry authorization is unavailable')
         await this.options.authorizeResponseRetry(command)
         await this.status(await this.request('control', { command }, signal))
       }
