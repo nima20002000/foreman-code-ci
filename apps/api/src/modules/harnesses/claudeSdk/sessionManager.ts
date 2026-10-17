@@ -19,6 +19,11 @@ export function createClaudeNativeSessionManager(options: ClaudeNativeSessionMan
   const ctx = createClaudeManagerContext(options)
   const manager: ClaudeNativeSessionManager = {
     harness: ctx.harness,
+    hasResidentSession(session) {
+      const runtime = ctx.resident.get(session.nativeSessionId)
+      return !ctx.disposed && runtime !== undefined && !runtime.closed && !runtime.failure
+        && session.harness === ctx.harness && session.providerVersion === runtime.session?.providerVersion
+    },
     requiresRuntimeClosure: () => ctx.options.runner.requiresRuntimeClosure?.() ?? ctx.all.size > 0,
     callbackAuthority(context) { return callbacks.callbackAuthority(ctx, context) },
     observeSubagentHook(sessionId, agentId, agentType, status) { callbacks.observeSubagentHook(ctx, sessionId, agentId, agentType, status) },
@@ -30,6 +35,9 @@ export function createClaudeNativeSessionManager(options: ClaudeNativeSessionMan
     inspectResponseAvailability(session, query, signal) { return callbacks.inspectResponseAvailability(ctx, session, query, signal) },
     capabilities() { return inspection.capabilities(ctx) },
     refreshInspectionCredentials(start, servers, signal) { return inspection.refreshInspectionCredentials(ctx, start, servers, signal) },
+    refreshSessionCredentials(session, start, servers, signal) {
+      return inspection.refreshSessionCredentials(ctx, session, start, servers, signal)
+    },
     prepareInspection(start, signal) { return inspection.prepareInspection(ctx, start, signal) },
     inspectMcp(signal) { return inspection.inspectMcp(ctx, signal) },
     createSession(start, signal) { return opening.createSession(manager, start, signal) },

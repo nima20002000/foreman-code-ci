@@ -22,9 +22,9 @@ export function useProviderHarnessModels(harness: HarnessConfiguration['harness'
   const scoped = useProviderAccountModels(accountAvailable ? modelBinding : undefined,
     account?.observation?.generation, account?.observation?.sequence)
   const modelDenial = useProtectedAccessError(scoped)
-  const localProfile = !accountId && !account && scope.target && access.target?.connected
+  const localProfile = !accountId && !account && scope.target?.hostRef.kind === 'main'
     && accounts.isSuccess && !denied && !accounts.isError
-  const native = useNativeHarnessOptions(harness, Boolean(localProfile), scope.target?.hostRef)
+  const native = useNativeHarnessOptions(harness, localProfile)
   if (localProfile) return native
   const unsupported = access.discovery.isSuccess && (!access.target?.canRead
     || !scope.target || accounts.isSuccess && (!account?.binding || !accountAvailable))
