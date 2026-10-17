@@ -1,5 +1,3 @@
-import { withChatReadClock } from './helpers/chatReadClock.js'
-import { withTransaction } from '../src/infrastructure/transaction.js'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { randomUUID } from 'node:crypto'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
@@ -29,11 +27,14 @@ vi.mock('../src/infrastructure/migrations.js', async (importOriginal) => {
   const { runSnapshotMigration } = await import('../src/infrastructure/runSnapshotMigration.js')
   return { ...actual, applyApplicationMigrations: async (...args: Parameters<typeof actual.applyApplicationMigrations>) => {
     await actual.applyApplicationMigrations(...args)
-    await withTransaction(args[0], async client => {
+    const client = await args[0].connect()
+    try {
+      await client.query('begin')
       const row = (await client.query<{ relation: string | null }>(
         "select to_regclass(current_schema() || '.run_board_snapshots')::text as relation")).rows[0]!
       if (!row.relation) await client.query(runSnapshotMigration.sql)
-    })
+      await client.query('commit')
+    } catch (error) { await client.query('rollback'); throw error } finally { client.release() }
   } }
 })
 
@@ -127,17 +128,15 @@ export async function executions(f: Fixture['f'], runId: string): Promise<Harnes
   return result
 }
 export async function read(f: Fixture, target: SelectedRunChatTarget, executionId?: string, token = f.f.writer.token, mcp = f.mcp) {
-  return withChatReadClock(async () => {
-    const http = await f.app.inject({ method: 'GET', url: path(target) + (executionId ? `?${new URLSearchParams({ executionId })}` : ''),
-      headers: { authorization: `Bearer ${token}` } })
-    expect(http.statusCode, http.body).toBe(200)
-    expect(http.headers['cache-control']).toBe('private, no-store')
-    const { workspaceId, ...selection } = target
-    const result = body(await mcp.callTool({ name: 'agent_chat_read', arguments: { workspaceId,
-      selection: { ...selection, ...(executionId ? { executionId } : {}) } } }))
-    expect(result).toEqual(http.json())
-    return ReadSelectedRunChatResponseSchema.parse(result)
-  })
+  const http = await f.app.inject({ method: 'GET', url: path(target) + (executionId ? `?${new URLSearchParams({ executionId })}` : ''),
+    headers: { authorization: `Bearer ${token}` } })
+  expect(http.statusCode, http.body).toBe(200)
+  expect(http.headers['cache-control']).toBe('private, no-store')
+  const { workspaceId, ...selection } = target
+  const result = body(await mcp.callTool({ name: 'agent_chat_read', arguments: { workspaceId,
+    selection: { ...selection, ...(executionId ? { executionId } : {}) } } }))
+  expect(result).toEqual(http.json())
+  return ReadSelectedRunChatResponseSchema.parse(result)
 }
 export async function oldRunRows(f: Fixture['f'], runIds: string[]) {
   return {
