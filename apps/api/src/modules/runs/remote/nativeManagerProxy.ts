@@ -21,7 +21,6 @@ import { readJsonContinuation } from './jsonContinuation.js'
 import { readRemoteReceiptResponse } from './installedWorkflowResponsePages.js'
 import { decodeResultCopies } from './executionResultCodec.js'
 import { DeviceApplicationError } from '../../devices/deviceApplicationError.js'
-import { DomainError } from '../../errors.js'
 import { retryDeviceRequest } from '../../devices/deviceRequestRetry.js'
 import { preparationStop } from './preparationCleanup.js'
 import { randomUUID } from 'node:crypto'
@@ -535,7 +534,7 @@ export class RemoteNativeSessionManager implements NativeHarnessSessionManager {
   async cancel(session: NativeSessionReference, signal?: AbortSignal, nativeTurnId?: string) {
     this.assertSession(session)
     // A reconnect can recover a turn acknowledgment that this proxy has not observed.
-    const receipt = await this.status(await this.request('status', { forStop: true }, signal))
+    const receipt = await this.status(await this.request('status', {}, signal))
     const native = remoteActiveNative(receipt)
     if (!native || nativeTurnId && nativeTurnId !== native.turnId) throw new Error('Wrong remote cancel turn')
     if (!receipt.terminal) {
@@ -549,10 +548,9 @@ export class RemoteNativeSessionManager implements NativeHarnessSessionManager {
     return this.receipt?.phase === 'confirmed_terminal' && this.receipt.terminal?.kind === 'cancelled'
   }
   async history(session: NativeSessionReference, signal?: AbortSignal): Promise<NativeHistory> {
-    return (await this.readHistoryObservation(session, this.historyCorrelation, signal)).history
+    return this.readHistory(session, this.historyCorrelation, signal)
   }
-  private async readHistoryObservation(session: NativeSessionReference, correlationId?: string, signal?: AbortSignal)
-    : Promise<{ history: NativeHistory; receipt: RemoteOperationReceipt }> {
+  private async readHistory(session: NativeSessionReference, correlationId?: string, signal?: AbortSignal): Promise<NativeHistory> {
     for (let attempt = 0; ; attempt++) {
       this.assertSession(session)
       signal?.throwIfAborted()
@@ -562,7 +560,7 @@ export class RemoteNativeSessionManager implements NativeHarnessSessionManager {
           && Date.now() - streamed.observedAt < 30_000 && isDeepStrictEqual(streamed.receipt, this.receipt)) {
           const history = this.projectHistory(streamed.value)
           await this.observeSource(streamed.receipt, { type: 'history', history }, signal)
-          return { history, receipt: streamed.receipt }
+          return history
         }
         const { value, receipt } = await this.readHistoryResponse({
           ...(correlationId ? { correlationId } : {}),
@@ -574,7 +572,7 @@ export class RemoteNativeSessionManager implements NativeHarnessSessionManager {
           afterSequence: streamed.afterSequence, page: value.page }
         const history = this.projectHistory(value.history)
         await this.observeSource(receipt, { type: 'history', history }, signal)
-        return { history, receipt }
+        return history
       } catch (error) {
         if (!expiredPhysicalReply(error) || attempt >= 4) throw error
         this.streamHistory = undefined
@@ -604,13 +602,7 @@ export class RemoteNativeSessionManager implements NativeHarnessSessionManager {
       ...(history.canceledRequestIds === undefined ? {} : { canceledRequestIds: history.canceledRequestIds }) }
   }
   async reconcile(session: NativeSessionReference, correlationId: string, signal?: AbortSignal) {
-    const { history, receipt } = await this.readHistoryObservation(session, correlationId, signal)
-    if (receipt.phase === 'confirmed_terminal' && receipt.terminal?.kind === 'cancelled'
-      && !receipt.terminal.result) {
-      throw new DomainError('EXECUTION_INTERRUPTED',
-        'The computer closed this attempt before it produced a result.', 503)
-    }
-    return history
+    return this.readHistory(session, correlationId, signal)
   }
   async reconcileResponse(session: NativeSessionReference, response: Parameters<NonNullable<NativeHarnessSessionManager['reconcileResponse']>>[1], signal?: AbortSignal) {
     this.assertSession(session)
@@ -656,9 +648,8 @@ export class RemoteNativeSessionManager implements NativeHarnessSessionManager {
   }
   async closeForRestart(session: NativeSessionReference, signal?: AbortSignal) {
     this.assertSession(session)
-    signal?.throwIfAborted()
     if (this.detached) return
-    // Main's saved lifetime retains the Worker identity for reconciliation after startup.
+    await this.history(session, signal)
     this.detached = true
   }
 }
