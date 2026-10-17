@@ -1695,7 +1695,7 @@ function configureConversationManagers(composition: ProductionComposition) {
       }
       if (profileSelection?.target.hostRef.kind === 'device') {
         const manager = workerChats.create({ configuration, conversationId, workingDirectory: sessionStartDirectory(start),
-          appMcpAccess: 'none', lifecycle: 'observer', observationPrincipalId: principalId, profileSelection, sourceExecution })
+          appMcpAccess: 'none', observationPrincipalId: principalId, profileSelection, sourceExecution })
         try { return await manager.readCompaction!(session, start, state, signal) }
         finally { await manager.dispose?.() }
       }
@@ -1997,7 +1997,6 @@ function configureAgentChat(composition: ProductionComposition) {
   resolveAgentChatManager.release = (conversationId) => { agentChatManagers.delete(conversationId) }
   resolveAgentChatManager.closeRetainedSession = (conversationId, configuration, principalId, signal) =>
     workerChats!.closeRetainedSession(conversationId, configuration, principalId, signal)
-  resolveAgentChatManager.closeRecoveredSession = (id, signal) => workerChats!.closeConversation(id, signal)
   composition.agentChat = new AgentChatService(database.pool, agentConversations,
     new PostgresOperatorConversationRepository(database.pool, accountConfigurations), workflows, runs, resolveAgentChatManager, config.harnesses.workspaceRoot)
   composition.reviews = new AutomaticReviewService(database.pool, runs, approvals, locations, rollout,

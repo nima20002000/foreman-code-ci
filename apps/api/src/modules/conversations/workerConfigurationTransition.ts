@@ -8,8 +8,6 @@ import { WorkflowVersionV3Schema } from '@foreman-code/contracts/wave25'
 import { configurationWithNodeSkills } from '../skills/nodeSkills.js'
 import { definedProperties } from '../definedProperties.js'
 import { validRunChatSkillsTransition } from './workerRunChatBinding.js'
-import { harnessSessionChanged } from '../harnesses/providerAccountConfiguration.js'
-import { verifiedSkills } from '../skills/instructions.js'
 
 /** A qualified settings change keeps the same Agent, Worker, account, folder and native session. */
 export function validAgentConfigurationTransition(previous: WorkerConversationBinding, next: WorkerConversationBinding,
@@ -24,9 +22,8 @@ export function validAgentConfigurationTransition(previous: WorkerConversationBi
     || commandInputHash(configuration) !== next.owner.configurationHash
     || base.harness.harness !== configuration.harness.harness || previous.harness !== next.harness
     || base.harness.harness === 'opencode' || configuration.harness.harness === 'opencode'
-    || harnessSessionChanged(base.harness, configuration.harness)
-    || base.harness.harness === 'claude' && configuration.harness.harness === 'claude'
-      && base.harness.configDirectory !== configuration.harness.configDirectory
+    || base.harness.accountId !== configuration.harness.accountId
+    || previous.profile.instanceId !== next.profile.instanceId
     || !isDeepStrictEqual(previous.profile.target, next.profile.target)
     || !isDeepStrictEqual(configuration.harnessProfileSelection, next.profile)) return false
   const owner = { ...previous.owner, configurationVersionId: next.owner.configurationVersionId,
@@ -37,8 +34,6 @@ export function validAgentConfigurationTransition(previous: WorkerConversationBi
     harnessInstallationId: next.profile.target.harnessInstallationId } } : undefined
   const sourceConfigurationVersionId = previous.sourceExecution
     ? previous.sourceConfigurationVersionId ?? previous.owner.configurationVersionId : undefined
-  verifiedSkills(base)
-  verifiedSkills(configuration)
   return isDeepStrictEqual(definedProperties({ ...previous, owner, profile: next.profile,
     directoryBinding, sourceConfigurationVersionId }), next)
 }

@@ -9,6 +9,7 @@ import { WorkerConversationRpcRequestSchema, type WorkerConversationBinding,
 import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
 import type { DeviceApplicationResult } from '@foreman-code/contracts/device-application'
 import type { ApprovedRootAllowlist } from '@foreman-code/contracts/workspace-root-policies'
+import type { NativeSessionReference } from '@foreman-code/contracts'
 import { readInstalledWorkflowConfiguration, type InstalledWorkflowConfigurationLocation } from '../runs/remote/installedWorkflowConfiguration.js'
 import { createWorkerMcpEndpoint } from '../runs/remote/workerMcpEndpoint.js'
 import type { RemoteOperationJournal } from '../runs/remote/operationJournal.js'
@@ -33,9 +34,8 @@ import { allocateInstalledWorkerClaude } from './installedWorkerClaude.js'
 import { WorkerConversationFiles } from './workerFiles.js'
 import { localCodexChatHost } from '../harnesses/codexFiles/localHost.js'
 import { assertCodexChatHost } from '../harnesses/codexFiles/localHost.js'
-import { closeRecoveredWorkerSession, workerConversationProcessDigest } from './workerNativeOwner.js'
+import { workerConversationProcessDigest } from './workerNativeOwner.js'
 import { recoverWorkerConversation } from './recoverWorkerConversation.js'
-import { closedWorkerConversationOwner } from './closedWorkerConversation.js'
 import { join } from 'node:path'
 
 function unavailable(message: string): never {
@@ -153,16 +153,11 @@ function createInstalledConversationAllocator(input: InstalledWorkerConversation
     let mcp: Awaited<ReturnType<typeof createWorkerMcpEndpoint>> | undefined
     let mcpEnvironment: Awaited<ReturnType<typeof prepareWorkerConversationMcp>>['environment'] | undefined
     let launch: NativeLaunchObservation | undefined
-    const nativeOwner: WorkerConversationAllocation['nativeOwner'] = async (session, options) => {
-      const rows = input.registry.snapshot().launches.filter(value => value.owner === scope.owner
-        && (value.lifecycle === 'active' || options?.allowExited
-          && (value.lifecycle === 'ended' || value.lifecycle === 'closed' && value.closureEvidence)))
+    const nativeOwner = async (session: NativeSessionReference) => {
+      const rows = input.registry.snapshot().launches.filter(value => value.owner === scope.owner && value.lifecycle === 'active')
       let current = rows.length === 1 ? rows[0] : undefined
       if (launch) current = rows.find(value => value.launchId === launch!.launchId)
-      if (!current && launch && options?.allowExited) current = input.registry.closedRegistration(scope.owner, launch.launchId)
-      if (!current?.guardian || !current.provider || !current.boundary || launch
-        && workerConversationProcessDigest(binding, launch) !== workerConversationProcessDigest(binding, current)
-        || current.lifecycle !== 'active' && rows.some(row => row.lifecycle === 'active' && row.launchId !== current.launchId)) {
+      if (!current?.guardian || !current.provider || !current.boundary || launch && !isDeepStrictEqual(launch, current)) {
         unavailable('The original native chat process is unavailable or changed.')
       }
       launch ??= current
@@ -253,12 +248,6 @@ export async function createInstalledWorkerConversations(input: InstalledWorkerC
     journal: conversationJournal,
     allocate: (binding, configuration, connection) => allocate(binding, configuration, connection, 'chat'),
     prepare: (binding, configuration, connection) => allocate(binding, configuration, connection, 'preparation'),
-    closePersistedRuntime: async (record, _connection, signal) => {
-      const closed = input.registry.closedRegistration(`conversation:${record.binding.owner.conversationId}`)
-      const owner = closedWorkerConversationOwner(record, input.registry, closed)
-      if (!await input.registry.closeOwner(owner, signal)) unavailable('Native chat closure is unconfirmed.')
-    },
-    closeRecoveredSession: (record, signal) => closeRecoveredWorkerSession(record, input.registry, signal),
     recover: (record, configuration, connection, signal, request) => recoverWorkerConversation({
       record, configuration, connection, signal, request, registry: input.registry, journal: conversationJournal,
       allocate: () => {

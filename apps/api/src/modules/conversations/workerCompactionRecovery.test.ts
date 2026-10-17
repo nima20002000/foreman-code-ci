@@ -14,8 +14,8 @@ import { MainWorkerConversationBridge } from './workerBridge.js'
 import { workerConversationCallbacks } from './workerCallbacks.js'
 import { workerConversationFixture } from './workerFixtures.test-support.js'
 
-it.each([['completed', 'dispose'], ['failed', 'dispose'], ['completed', 'restart'], ['failed', 'restart']] as const)(
-  'recovers the Worker Claude %s result after a boundary and restart without opening a writer (%s cleanup)', async (status, cleanup) => {
+it.each(['completed', 'failed'] as const)(
+  'recovers the Worker Claude %s result after a boundary and restart without opening a writer', async status => {
   const root = await mkdtemp(join(tmpdir(), 'worker-compaction-'))
   const f = workerConversationFixture('operator', 'claude')
   if (!('operatorId' in f.configuration) || f.configuration.harness.harness !== 'claude') throw new Error('Claude Operator fixture required')
@@ -76,8 +76,7 @@ it.each([['completed', 'dispose'], ['failed', 'dispose'], ['completed', 'restart
     await expect(manager.readCompaction(f.session, start, state)).rejects.toThrow('Read grant revoked')
     expect(allocations).toBe(0)
     const beforeDetach = await journal.conversations.read(binding)
-    if (cleanup === 'dispose') await expect(manager.dispose()).resolves.toBeUndefined()
-    else await manager.closeForRestart(f.session)
+    await expect(manager.dispose()).resolves.toBeUndefined()
     expect(await journal.conversations.read(binding)).toEqual(beforeDetach)
     expect(allocations).toBe(0)
   } finally {

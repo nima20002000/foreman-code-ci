@@ -96,22 +96,6 @@ it('keeps copy authorization capacity through the signed Endpoint–Supervisor h
   } finally { await f.close() }
 })
 
-it('negotiates signed execution callback admission advertised by both peers', async () => {
-  const f = fixture(async () => {}, async () => {}, [{ namespace: 'execution-v1', version: 1,
-    role: 'duplex', maxJsonBytes: 4096, maxBinaryBytes: 0,
-    handle: async payload => ({ payload: { received: payload } }),
-  }])
-  try {
-    f.worker.start()
-    await vi.waitFor(() => expect(f.worker.status().phase).toBe('ready'), { timeout: 2000, interval: 10 })
-    expect(f.endpoint.capabilities(identity.deviceId)).toEqual([expect.objectContaining({
-      namespace: 'execution-v1', mainCanRequest: true, workerCanRequest: true, callbackAdmission: true,
-    })])
-    const reply = await f.endpoint.request(identity.deviceId, 'execution-v1', { operation: 'probe' })
-    expect(reply.payload).toEqual({ received: { operation: 'probe' } })
-  } finally { await f.close() }
-})
-
 it.each(['main', 'worker'] as const)('allows application reconciliation on %s to outlast the handshake deadline', async side => {
   vi.useFakeTimers()
   let release!: () => void

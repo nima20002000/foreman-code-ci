@@ -30,7 +30,7 @@ const WorkerConversationOwnerSchema = z.discriminatedUnion('kind', [
     workflowId: id, workflowNodeId: id }).strict(),
 ])
 export const WorkerConversationBindingSchema = z.object({
-  generation: z.uuid().optional(),
+  sessionGeneration: id.optional(),
   accountBinding: AcceptedProviderAccountBindingSchema.optional(),
   owner: WorkerConversationOwnerSchema,
   directoryBinding: AgentChatDirectoryBindingSchema.optional(),
@@ -43,9 +43,6 @@ export const WorkerConversationBindingSchema = z.object({
   workingDirectory: directory,
   appMcpAccess: z.enum(['scoped', 'none']),
 }).strict().superRefine((value, context) => {
-  if (value.generation && value.owner.kind !== 'agent') {
-    context.addIssue({ code: 'custom', message: 'Replacement generations belong only to Agent chat.' })
-  }
   if (value.profile.target.hostRef.kind !== 'device') {
     context.addIssue({ code: 'custom', message: 'A worker conversation requires its selected device profile.' })
   }

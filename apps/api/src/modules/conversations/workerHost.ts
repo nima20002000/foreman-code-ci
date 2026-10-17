@@ -33,7 +33,7 @@ export interface WorkerConversationAllocation {
   inspector?: NativeMcpInspector
   start(input: { correlationId: string; instructionsDelivered: boolean;
     applicationAccess?: { kind: 'operator-chat-mcp'; token: string } }): Promise<NativeSessionStart>
-  nativeOwner(session: NativeSessionReference, options?: { allowExited: true }): Promise<RemoteNativeIdentity>
+  nativeOwner(session: NativeSessionReference): Promise<RemoteNativeIdentity>
   close(): Promise<void>
   deliverClaudeCredential?(token: string, signal: AbortSignal): Promise<void>
   refreshApplicationAccess?(token: string, signal: AbortSignal): Promise<void>
@@ -54,9 +54,6 @@ export interface WorkerConversationHostPorts {
   recover?(record: WorkerConversationReceipt, configuration: WorkerConversationConfiguration,
     connection: Readonly<DeviceSessionBinding>, signal: AbortSignal,
     request: WorkerConversationRpcRequest): Promise<WorkerConversationAllocation>
-  closePersistedRuntime?(record: WorkerConversationReceipt,
-    connection: Readonly<DeviceSessionBinding>, signal: AbortSignal): Promise<void>
-  closeRecoveredSession?(record: WorkerConversationReceipt, signal: AbortSignal): Promise<void>
   readCompaction?(request: Extract<WorkerConversationRpcRequest, { method: 'conversation.compact-read' }>,
     record: WorkerConversationReceipt, connection: Readonly<DeviceSessionBinding>, signal: AbortSignal): Promise<CompactionState>
   /** Native callbacks stay behind Main's persisted identity acknowledgement. */
@@ -269,14 +266,14 @@ export class WorkerConversationHost {
   }
 
   private async resident(request: WorkerConversationRpcRequest & { session: NativeSessionReference },
-    connection: Readonly<DeviceSessionBinding>, signal: AbortSignal, options: { purpose?: 'release' } = {}) {
+    connection: Readonly<DeviceSessionBinding>, signal: AbortSignal) {
     let record = await this.ports.journal.read(request.binding)
     if (this.allocating.has(request.binding.owner.conversationId)) unavailable('The native conversation is busy.')
     let resident = this.residents.get(request.binding.owner.conversationId)
     if (!record || !isDeepStrictEqual(record.session, request.session) || !resident
       || record.applicationAccessChange?.state === 'reserved'
       || !isDeepStrictEqual(resident.binding, request.binding)) unavailable('The original chat session is not resident.')
-    if (resident.allocation.hasExited?.() && options.purpose !== 'release') {
+    if (resident.allocation.hasExited?.()) {
       const id = request.binding.owner.conversationId
       const original = resident
       const recovery = this.recoverResident(original, record, request, connection, signal)
@@ -292,8 +289,7 @@ export class WorkerConversationHost {
         if (this.allocating.get(id) === recovery) this.allocating.delete(id)
       }
     }
-    const owner = sessionOwner(await resident.allocation.nativeOwner(request.session,
-      options.purpose === 'release' ? { allowExited: true } : undefined))
+    const owner = sessionOwner(await resident.allocation.nativeOwner(request.session))
     record = await this.ports.journal.read(request.binding)
     if (!record || !isDeepStrictEqual(record.nativeOwner, owner)) {
       unavailable('The original native chat process changed.')
@@ -762,7 +758,7 @@ export class WorkerConversationHost {
       history = { events: [], pendingInteractions: [], nonSubmission: {
         nativeSessionId: request.session.nativeSessionId, clientCorrelationId: turn.correlationId, result: turn.result,
       } }
-    } else if (request.method === 'conversation.history' && request.afterSequence !== undefined && running
+    } else if (request.afterSequence !== undefined && running && isDeepStrictEqual(running, connection)
       && manager.historyPage) {
       history = await manager.historyPage(request.session, request.afterSequence, signal)
     } else if (request.afterSequence !== undefined && request.correlationId
@@ -789,8 +785,6 @@ export class WorkerConversationHost {
   private async dispatch(request: WorkerConversationRpcRequest, connection: Readonly<DeviceSessionBinding>,
     signal: AbortSignal): Promise<unknown> {
     if (request.method === 'conversation.release-runtime') return this.releaseRuntime(request, connection, signal)
-    if (request.method === 'conversation.close') return this.closeConversation(request, connection, signal)
-    if (request.method === 'conversation.retire-turn') return this.retireTurn(request, connection, signal)
     if (request.method === 'conversation.status') return { receipt: await this.ports.journal.read(request.binding) }
     if (request.method === 'conversation.release-preparation') {
       const preparation = this.preparations.get(request.binding.owner.conversationId)
@@ -869,10 +863,22 @@ export class WorkerConversationHost {
       }
       return { receipt: await this.ports.journal.read(request.binding) }
     }
+    if (request.method === 'conversation.close') {
+      const record = await this.ports.journal.read(request.binding)
+      if (record?.closed && isDeepStrictEqual(record.session, request.session)) return { receipt: record }
+      if (record?.runtimeReleased && !this.residents.has(request.binding.owner.conversationId)) {
+        return this.closeReleasedSession(request, record, connection)
+      }
+    }
     if (!('session' in request)) unavailable('This native operation requires its conversation session.')
     const { resident, record } = await this.resident(request, connection, signal)
     const manager = resident.allocation.manager
     switch (request.method) {
+      case 'conversation.retire-turn': {
+        if (!record.turns.some(turn => turn.correlationId === request.correlationId)) unavailable('The native turn is not owned by this conversation.')
+        await manager.retireTurn?.(request.session, request.correlationId)
+        return { receipt: await this.ports.journal.read(request.binding) }
+      }
       case 'conversation.start-turn': {
         const reserved = await this.ports.journal.reserveTurn(request.binding, request.correlationId, commandInputHash({
           prompt: request.prompt, mode: request.sessionMode ?? 'regular', preferences: request.preferences ?? null }),
@@ -931,100 +937,29 @@ export class WorkerConversationHost {
         return manager.steerTurn(request.session, { prompt: request.prompt,
           clientCorrelationId: request.correlationId, expectedTurnId: request.expectedTurnId }, signal)
       case 'conversation.reconcile-steers': return manager.reconcileSteers?.(request.session, request.inputs, signal) ?? []
-    }
-  }
-
-  private async closeConversation(request: WorkerConversationRpcRequest & { session: NativeSessionReference },
-    connection: Readonly<DeviceSessionBinding>, signal: AbortSignal) {
-    const record = await this.ports.journal.read(request.binding)
-    if (!record || !isDeepStrictEqual(record.session, request.session)) unavailable('The saved native session changed.')
-    if (record.closed) return { receipt: record }
-    if (record.runtimeReleased && !this.residents.has(request.binding.owner.conversationId)) {
-      return this.closeReleasedSession(request, record, connection)
-    }
-    for (const field of ['mainId', 'deviceId', 'workerInstallationId', 'keyRevision', 'authorizationRevision'] as const) {
-      if (record.connection[field] !== connection[field]) unavailable('The original paired worker authority changed.')
-    }
-    const id = request.binding.owner.conversationId
-    const owned = this.residents.has(id) ? await this.resident(request, connection, signal, { purpose: 'release' }) : undefined
-    const resident = owned?.resident
-    const latest = owned?.record ?? record
-    if (this.allocating.has(id) || !resident && (this.hasRunningOperation(id)
-      || latest.turns.some(turn => !['completed', 'rejected'].includes(turn.status))
-      || latest.compactions.some(control => compactionBlocksSend(control.state)))) {
-      unavailable('Recover the active operation before closing its previous session.')
-    }
-    const closeRecoveredSession = this.ports.closeRecoveredSession
-    if (!resident && !latest.runtimeReleased && !closeRecoveredSession) {
-      unavailable('The previous native process closure is unconfirmed.')
-    }
-    const closing = (async () => {
-      const prepared = this.preparations.get(id)
-      if (prepared && !isDeepStrictEqual(prepared.binding, request.binding)) unavailable('The prepared native owner changed.')
-      await this.ports.journal.closeRequested(request.binding)
-      if (resident) {
-        if (!resident.allocation.hasExited?.()) await resident.allocation.manager.close(request.session)
+      case 'conversation.close':
+        await this.ports.journal.closeRequested(request.binding)
+        await manager.close(request.session)
         await resident.allocation.close()
-        this.residents.delete(id)
-      } else if (!latest.runtimeReleased) {
-        await closeRecoveredSession!(latest, signal)
-      }
-      if (prepared) {
-        await prepared.allocation.close()
-        this.preparations.delete(id)
-      }
-      await this.ports.journal.closeConfirmed(request.binding)
-    })()
-    this.allocating.set(id, closing)
-    try { await closing } finally { if (this.allocating.get(id) === closing) this.allocating.delete(id) }
-    return { receipt: await this.ports.journal.read(request.binding) }
-  }
-
-  private async retireTurn(request: Extract<WorkerConversationRpcRequest, { method: 'conversation.retire-turn' }>,
-    connection: Readonly<DeviceSessionBinding>, signal: AbortSignal) {
-    const saved = await this.ports.journal.read(request.binding)
-    if (!saved?.turns.some(turn => turn.correlationId === request.correlationId)) {
-      unavailable('The native turn is not owned by this conversation.')
+        this.residents.delete(request.binding.owner.conversationId)
+        return { receipt: await this.ports.journal.closeConfirmed(request.binding) }
     }
-    if (saved.runtimeReleased && isDeepStrictEqual(saved.session, request.session)) return { receipt: saved }
-    const { resident } = await this.resident(request, connection, signal, { purpose: 'release' })
-    if (resident.allocation.hasExited?.()) return this.releaseRuntime(request, connection, signal)
-    await resident.allocation.manager.retireTurn?.(request.session, request.correlationId)
-    return { receipt: await this.ports.journal.read(request.binding) }
   }
 
   private async releaseRuntime(request: WorkerConversationRpcRequest & { session: NativeSessionReference },
     connection: Readonly<DeviceSessionBinding>, signal: AbortSignal) {
     const saved = await this.ports.journal.read(request.binding)
-    if (!saved?.nativeOwner || !isDeepStrictEqual(saved.session, request.session)) {
-      unavailable('The original chat session is unavailable.')
-    }
-    for (const field of ['mainId', 'deviceId', 'workerInstallationId', 'keyRevision', 'authorizationRevision'] as const) {
-      if (saved.connection[field] !== connection[field]) unavailable('The original paired worker authority changed.')
-    }
-    if (saved.runtimeReleased) {
-      return { receipt: await this.ports.journal.rebind(request.binding, connection, saved.nativeOwner) }
-    }
+    if (saved?.runtimeReleased && isDeepStrictEqual(saved.session, request.session)) return { receipt: saved }
+    const { resident, record } = await this.resident(request, connection, signal)
     const id = request.binding.owner.conversationId
-    let resident: Resident | undefined
-    let record = saved
-    if (this.residents.has(id)) {
-      const owned = await this.resident(request, connection, signal, { purpose: 'release' })
-      resident = owned.resident
-      record = owned.record
-    }
     if (this.hasRunningOperation(id) || record.turns.some(turn => !['completed', 'rejected'].includes(turn.status))
       || record.compactions.some(control => compactionBlocksSend(control.state))) {
       unavailable('Finish the active operation before releasing its native process.')
     }
     if (this.allocating.has(id)) unavailable('The native conversation is busy.')
     const closing = (async () => {
-      if (resident) await resident.allocation.close()
-      else {
-        if (!this.ports.closePersistedRuntime) unavailable('The persisted native process closure cannot be confirmed.')
-        await this.ports.closePersistedRuntime(record, connection, signal)
-      }
-      await this.ports.journal.runtimeReleased(request.binding, connection)
+      await resident.allocation.close()
+      await this.ports.journal.runtimeReleased(request.binding)
       this.residents.delete(id)
       return resident
     })()
