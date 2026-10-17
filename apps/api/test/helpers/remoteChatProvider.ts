@@ -10,7 +10,6 @@ import { createClaudeSdkRunner } from '../../src/modules/harnesses/claudeSdk/run
 import { allocateClaudeNativeHarness } from '../../src/modules/harnesses/claudeSdk/composition.js'
 import { ActivityProductionReplay } from './activityProductionReplay.js'
 import { deferred, type Deferred } from './deferred.js'
-import { HarnessExecutionError } from '../../src/modules/harnesses/errors.js'
 
 /** Only provider I/O is recorded. Both native adapters and the remote conversation stack are real. */
 export async function remoteChatProvider(harness: 'codex' | 'claude', directory: string, options: {
@@ -26,7 +25,6 @@ export async function remoteChatProvider(harness: 'codex' | 'claude', directory:
   let holdCompactionNotifications = false
   const compactionNotifications: Array<() => void> = []
   let manager: NativeHarnessSessionManager
-  let createManager: () => NativeHarnessSessionManager
   if (harness === 'codex') {
     const replay = new ActivityProductionReplay(`remote-chat-${randomUUID()}`)
     const infrastructure = replay.infrastructure()
@@ -70,9 +68,8 @@ export async function remoteChatProvider(harness: 'codex' | 'claude', directory:
           return result
         } }
       } }
-    createManager = () => new CodexAppServerSessionManager('/recorded-no-native-codex', undefined, undefined,
+    manager = new CodexAppServerSessionManager('/recorded-no-native-codex', undefined, undefined,
       undefined, 'none', options.codexFiles, dependencies)
-    manager = createManager()
   } else {
     const nativeId = randomUUID()
     const profilePath = join(directory, 'claude-profile')
@@ -80,20 +77,15 @@ export async function remoteChatProvider(harness: 'codex' | 'claude', directory:
     await mkdir(transcriptDirectory, { recursive: true })
     const transcriptPath = join(transcriptDirectory, `${nativeId}.jsonl`)
     await writeFile(transcriptPath, '')
-    const messages: Array<Record<string, unknown>> = []
     const sdk: ClaudeSdkClient = {
       sdkVersion: '0.3.284', getSessionInfo: async sessionId => ({ sessionId }),
-      getSessionMessages: async (sessionId, { offset = 0, limit = 256 }) => sessionId === nativeId
-        ? structuredClone(messages.slice(offset, offset + limit)) : [],
+      getSessionMessages: async () => [],
       forkSession: async () => { throw new Error('This chat fixture does not fork') },
       query(input) {
         const frames = new ClaudeBoundedQueue<unknown>(32)
         const consume = (async () => {
           for await (const message of input.prompt) {
             prompts.push(message.message.content)
-            const parentUuid = messages.at(-1)?.uuid
-            messages.push({ ...message, session_id: nativeId, parent_tool_use_id: null,
-              ...(typeof parentUuid === 'string' ? { parentUuid } : {}) })
             await frames.offer({ type: 'system', subtype: 'init', session_id: nativeId,
               claude_code_version: '2.1.284', cwd: directory, slash_commands: ['compact'] })
             if (message.message.content === '/compact') {
@@ -116,12 +108,10 @@ export async function remoteChatProvider(harness: 'codex' | 'claude', directory:
                 event: { type: 'content_block_delta', index: 0,
                   delta: { type: 'text_delta', text: 'Remote streamed answer' } } })
               await reply?.promise
-              const assistant = { type: 'assistant', session_id: nativeId, uuid: randomUUID(),
+              await frames.offer({ type: 'assistant', session_id: nativeId, uuid: randomUUID(),
                 user_message_uuid: message.uuid, parent_tool_use_id: null,
                 message: { id: messageId, role: 'assistant',
-                  content: [{ type: 'text', text: 'Remote streamed answer' }] } }
-              messages.push({ ...assistant, parentUuid: message.uuid })
-              await frames.offer(assistant)
+                  content: [{ type: 'text', text: 'Remote streamed answer' }] } })
               await options.claudeMessage?.(nativeId, message.uuid)
             }
             await frames.offer({ type: 'result', session_id: nativeId, uuid: randomUUID(),
@@ -140,7 +130,7 @@ export async function remoteChatProvider(harness: 'codex' | 'claude', directory:
         }
       },
     }
-    createManager = () => allocateClaudeNativeHarness({ harness: 'claude', role: 'agent-chat', appMcpAccess: 'none',
+    manager = allocateClaudeNativeHarness({ harness: 'claude', role: 'agent-chat', appMcpAccess: 'none',
       workingDirectory: directory, ownerAgentId: 'recorded-agent',
       ownerForStart: start => ({ ownerId: start.kind === 'agent-chat' ? start.conversationId : 'recorded-owner',
         attemptId: start.correlationId ?? 'recorded-request', generation: 'recorded-query' }),
@@ -148,25 +138,8 @@ export async function remoteChatProvider(harness: 'codex' | 'claude', directory:
       scope: { deviceId: 'recorded-device', profilePath, configRevision: 'recorded', cwd: directory },
       sdkOptions: { includePartialMessages: true }, qualification: { sdkVersion: '0.3.284', cliVersion: '2.1.284',
         basicTurns: true, resume: true, fork: false, history: true } }).manager
-    manager = createManager()
   }
-  let loseCreationResponse = false
-  const observeCreation = (native: NativeHarnessSessionManager) => {
-    const createSession = native.createSession.bind(native)
-    native.createSession = async (...args) => {
-      const session = await createSession(...args)
-      if (loseCreationResponse) {
-        loseCreationResponse = false
-        throw new HarnessExecutionError('CODEX_SESSION_CREATION_UNCERTAIN', 'The recorded native creation response was lost.')
-      }
-      return session
-    }
-    return native
-  }
-  manager = observeCreation(manager)
-  return { get manager() { return manager }, modes, prompts, calls, get compactions() { return compactions },
-    restartManager() { manager = observeCreation(createManager()); return manager },
-    loseNextCreationResponse() { loseCreationResponse = true },
+  return { manager, modes, prompts, calls, get compactions() { return compactions },
     holdCompactionNotifications() { holdCompactionNotifications = true },
     releaseCompactionNotifications() {
       holdCompactionNotifications = false

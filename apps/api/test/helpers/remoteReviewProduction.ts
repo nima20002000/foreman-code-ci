@@ -567,8 +567,6 @@ export async function remoteReviewProduction(options: {
     let ready = false
     let workerStateRevision = 0
     let workerFailure = ''
-    let workerPhase = 'starting'
-    let workerConnectionFailure = 'none'
     const startWorker = async () => {
       ready = false
       workerFailure = ''
@@ -582,14 +580,12 @@ export async function remoteReviewProduction(options: {
       started.on('message', message => {
         if (message && typeof message === 'object' && 'view' in message) {
           const view = message.view
-          if (view && typeof view === 'object' && 'phase' in view) workerPhase = String(view.phase)
-          if (view && typeof view === 'object' && 'failure' in view) workerConnectionFailure = String(view.failure)
           ready = view !== null && typeof view === 'object' && 'phase' in view && view.phase === 'ready'
           if (!ready) workerStateRevision++
         }
       })
       await waitForChildReady(started, () => ready, 'authenticated installed Worker connection',
-        () => `Installed Worker phase: ${workerPhase}; failure: ${workerConnectionFailure}; diagnostics: ${workerFailure}`)
+        () => `Installed Worker exited: ${workerFailure}`)
     }
     const stopWorker = async (signal: NodeJS.Signals = 'SIGTERM') => {
       if (!worker || worker.exitCode !== null || worker.signalCode !== null) return

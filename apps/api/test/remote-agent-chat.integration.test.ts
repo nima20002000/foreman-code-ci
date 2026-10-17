@@ -145,7 +145,7 @@ it.each(['codex', 'claude'] as const)(
 
 it.each((['codex', 'claude'] as const).flatMap(harness =>
   (['model', 'effort', 'account'] as const).map(field => ({ harness, field }))))(
-  'preserves remote $harness Agent session ownership after a qualified $field change', async ({ harness, field }) => {
+  'persists a remote $harness Agent $field change but rejects its next turn at the old Worker binding', async ({ harness, field }) => {
     const f = await remoteAgentConversation(harness)
     try {
       await f.send('Establish the remote session')
@@ -165,27 +165,6 @@ it.each((['codex', 'claude'] as const).flatMap(harness =>
       expect((await f.repository.get(f.conversation.id))?.agent_configuration_version_id).toBe(f.configuration.id)
       const update = AgentMutationResultSchema.parse(await f.update(changed, { matchingProfile: true }))
       expect(update.value.agent.harnessConfiguration).toEqual(changed)
-      if (field !== 'account') {
-        const diagnostic = setTimeout(() => {
-          void f.repository.get(f.conversation.id).then(row => console.error('Remote settings recovery', {
-            turnState: row?.turn_state, requestId: row?.active_request_id, nativeSessionId: row?.native_session_id,
-            nativeCalls: f.provider.calls, promptCount: f.provider.prompts.length,
-            frames: f.frames.map(frame => frame.method),
-          }),
-            error => console.error('Remote settings recovery read failed', error))
-        }, 5000)
-        try { await f.send('Use the saved model on this turn') }
-        finally { clearTimeout(diagnostic) }
-        expect(f.provider.prompts).toHaveLength(before + 1)
-        const saved = (await f.repository.get(f.conversation.id))!
-        expect(saved.agent_configuration_version_id).toBe(update.value.agent.configurationVersionId)
-        expect(saved.native_session_id).toBe(original.native_session_id)
-        const binding = await f.binding()
-        expect(binding.owner).toMatchObject({ configurationVersionId: update.value.agent.configurationVersionId })
-        expect(binding.profile.instanceId).toBe(originalBinding.profile.instanceId)
-        expect(binding.profile.target).toEqual(originalBinding.profile.target)
-        return
-      }
       const failed = await f.send('Use the saved model on this turn', 'failed')
       expect(failed.turn?.error).toMatchObject({ code: 'WORKER_CONVERSATION_UNAVAILABLE' })
       expect(failed.turn?.error?.message).toBe('The original worker conversation binding changed.')
