@@ -42,7 +42,7 @@ export type HarnessMcpManagedPreset = z.infer<typeof HarnessMcpManagedPresetSche
 /** Plan history keeps the pre-unification `operator` and `worker` presets readable. */
 const HarnessMcpPlanPresetSchema = z.enum(['graphql', 'linear', 'operator', 'worker'])
 /** `legacy`: old graphql-app/graphql-operator entries remain; applying the preset replaces them. */
-const HarnessMcpPresetStatus = z.enum(['missing', 'installed', 'disabled', 'mismatch', 'inherited', 'legacy'])
+export const HarnessMcpPresetStatus = z.enum(['missing', 'installed', 'disabled', 'mismatch', 'inherited', 'legacy'])
 const ManagedHarness = z.enum(['codex', 'claude'])
 const HostRef = DeviceProvisioningHostReferenceSchema.optional()
 const HarnessMcpManagedBase = z.object({ harness: ManagedHarness, hostRef: HostRef, preset: HarnessMcpManagedPresetSchema,
