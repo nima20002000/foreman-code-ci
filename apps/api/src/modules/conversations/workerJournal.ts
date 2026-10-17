@@ -7,7 +7,6 @@ import type { WorkerConversationBinding, WorkerConversationReceipt, WorkerConver
 import { DomainError } from '../errors.js'
 import { sameConversationForAppAccess } from './conversationAppAccess.js'
 import { validRunChatSkillsTransition } from './workerRunChatBinding.js'
-import { validWorkerConfigurationTransition } from './workerConfigurationTransition.js'
 import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
 import { WorkerClaudeCallbackRecordSchema } from '@foreman-code/contracts/remote-execution-rpc'
 import type { ClaudeCallbackJournal } from '../harnesses/claudeSdk/callbackJournal.js'
@@ -57,12 +56,6 @@ export class WorkerConversationJournal {
   async inspectSkillsTransition(previous: WorkerConversationBinding, next: WorkerConversationBinding,
     base: WorkerConversationConfiguration, effective: WorkerConversationConfiguration) {
     if (!validRunChatSkillsTransition(previous, next, base, effective)) conflict('The Run chat skills transition changed.')
-    return this.inspectConfigurationTransition(previous, next, base, effective)
-  }
-
-  async inspectConfigurationTransition(previous: WorkerConversationBinding, next: WorkerConversationBinding,
-    base: WorkerConversationConfiguration, effective: WorkerConversationConfiguration) {
-    if (!validWorkerConfigurationTransition(previous, next, base, effective)) conflict('The chat configuration transition changed.')
     const record = (await this.store.read(next.owner.conversationId)).find(value =>
       value.binding.owner.conversationId === next.owner.conversationId)
     if (record && !isDeepStrictEqual(record.binding, previous) && !isDeepStrictEqual(record.binding, next)) {
@@ -73,7 +66,7 @@ export class WorkerConversationJournal {
 
   claudeCallbackJournal(binding: WorkerConversationBinding, request?: WorkerConversationRpcRequest): ClaudeCallbackJournal {
     const inspect = () => request?.method === 'conversation.open' && request.previousBinding && request.previousConfiguration
-      ? this.inspectConfigurationTransition(request.previousBinding, binding, request.previousConfiguration, request.configuration)
+      ? this.inspectSkillsTransition(request.previousBinding, binding, request.previousConfiguration, request.configuration)
       : this.inspectBinding(binding)
     const records = async () => Object.values((await inspect())?.claudeCallbacks ?? {})
       .map(record => definedProperties({ ...record, identity: definedProperties(record.identity) }))
@@ -231,7 +224,7 @@ export class WorkerConversationJournal {
       const change = record.applicationAccessChange
       const targetBinding = options?.targetBinding
       const changingSkills = targetBinding && options?.previousConfiguration && options.configuration
-        && validWorkerConfigurationTransition(binding, targetBinding, options.previousConfiguration, options.configuration)
+        && validRunChatSkillsTransition(binding, targetBinding, options.previousConfiguration, options.configuration)
       if (targetBinding && !changingSkills) {
         if (!change || change.state !== 'reserved' || change.previous !== binding.appMcpAccess
           || change.next !== targetBinding.appMcpAccess || !sameConversationForAppAccess(binding, targetBinding)) {
@@ -389,12 +382,11 @@ export class WorkerConversationJournal {
     return this.change(binding, record => { record.closing = true; return record })
   }
 
-  runtimeReleased(binding: WorkerConversationBinding, connection?: DeviceSessionBinding) {
+  runtimeReleased(binding: WorkerConversationBinding) {
     return this.change(binding, record => {
       writable(record)
       if (unsettled(record)) conflict('Finish the active turn before releasing its native process.')
       record.runtimeReleased = true
-      if (connection) record.connection = structuredClone(connection)
       return record
     })
   }

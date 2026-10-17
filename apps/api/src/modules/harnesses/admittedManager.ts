@@ -34,6 +34,14 @@ export function createAdmittedNativeManager<T extends NativeHarnessSessionManage
           await retireTurn(session, correlationId)
         }
       }
+      if (result.manager.rebindApplicationAccess) {
+        const rebind = result.manager.rebindApplicationAccess.bind(result.manager)
+        manager.rebindApplicationAccess = async (session, start, signal) => {
+          signal?.throwIfAborted()
+          lifetime.signal.throwIfAborted()
+          await rebind(session, start, signal)
+        }
+      }
       return result
     })
     const result = await opening
@@ -133,13 +141,10 @@ export function createAdmittedNativeManager<T extends NativeHarnessSessionManage
       return current.closeForRestart(session)
     },
     dispose() {
-      const disposed = new DomainError('NATIVE_MANAGER_DISPOSED', 'The admitted native allocation is disposed.', 409)
-      if (!allocation) lifetime.abort(disposed)
+      lifetime.abort(new DomainError('NATIVE_MANAGER_DISPOSED', 'The admitted native allocation is disposed.', 409))
       disposal ??= Promise.resolve().then(async () => {
         if (opening) await opening.catch(() => { /* ignore: the owner awaits the original promise; this observer prevents a duplicate unhandled rejection. */ })
-        await allocation?.manager.dispose?.()
-        lifetime.abort(disposed)
-        stopped.clear()
+        await allocation?.manager.dispose?.(); stopped.clear()
       })
       const attempt = disposal
       void attempt.catch(() => { if (disposal === attempt) disposal = undefined })
