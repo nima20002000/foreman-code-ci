@@ -270,8 +270,6 @@ export interface NativeHarnessSessionManager extends ResponseAvailabilityInspect
   /** Read-only recovery of the exact response; missing evidence remains uncertain. */
   reconcileResponse?(session: NativeSessionReference, response: NativeResponseIdentity, signal?: AbortSignal): Promise<NativeHistory>
   close(session: NativeSessionReference, signal?: AbortSignal): Promise<void>
-  /** Close an idle process while retaining the persisted session for a later cold resume. */
-  closeForResume?(session: NativeSessionReference): Promise<void>
   /** Detach the local runtime for process restart without canceling unresolved provider work. */
   closeForRestart?(session: NativeSessionReference, signal?: AbortSignal): Promise<void>
   /** Stop every owned transport, including creations without a known session identity. */
