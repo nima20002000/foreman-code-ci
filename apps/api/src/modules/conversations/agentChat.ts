@@ -529,8 +529,10 @@ export class AgentChatService {
     if (!loaded) throw new DomainError('CONVERSATION_NOT_FOUND', 'Conversation was not found.', 404)
     const resident = this.runtimes.get(loaded.row.id)
     resident?.manager.setSessionControlPrincipal?.(livePrincipal.id)
-    if (!blocked && !loaded.row.active_request_id && !loaded.row.pending_interaction && resident?.session
-      && !resident.retiring && !resident.disposal) {
+    if (!blocked && resident?.configuration.id === loaded.row.agent_configuration_version_id
+      && !loaded.row.active_request_id && !loaded.row.pending_interaction && resident?.session
+      && !resident.retiring && !resident.disposal
+      && !await this.pendingConfiguration(loaded.row)) {
       let pending: Awaited<ReturnType<NativeHarnessSessionManager['pending']>>
       const signal = AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(1_000)])
       try {
@@ -618,19 +620,8 @@ export class AgentChatService {
   private async harnessUnavailable(resolution: Resolution): Promise<Resolution['blocked']> {
     if (!this.managers.unavailable) return undefined
     const row = resolution.row
-    if (row?.origin_run_id && row.native_session_id && !row.record.sourceConfigurationVersionId) {
-      const agent = (await this.pool.query<{ current_configuration_version_id: string | null }>(
-        'select current_configuration_version_id from agents where workspace_id=$1 and id=$2 and archived_at is null',
-        [row.workspace_id, row.agent_id])).rows[0]
-      if (agent?.current_configuration_version_id
-        && agent.current_configuration_version_id !== row.agent_configuration_version_id) {
-        const configuration = await this.workflows.getAgentConfiguration(agent.current_configuration_version_id)
-        if (!configuration) {
-          throw new DomainError('AGENT_CHAT_CONFIGURATION_MISSING', 'The saved Agent configuration is unavailable.', 409)
-        }
-        return this.managers.unavailable?.(configuration, row.record.workingDirectory)
-      }
-    }
+    const pending = row ? await this.pendingConfiguration(row) : undefined
+    if (pending) return this.managers.unavailable?.(pending, row!.record.workingDirectory)
     const executionId = resolution.row?.record.sourceConfigurationVersionId
       ? undefined : resolution.executionId ?? resolution.row?.origin_execution_id
     const workingDirectory = resolution.row?.record.workingDirectory ?? resolution.create?.workingDirectory
@@ -662,20 +653,25 @@ export class AgentChatService {
     const row = await this.conversation(workspaceId, id, principal, write ? 'agent_chat:write' : 'agent_chat:read')
     this.runtimes.get(id)?.manager.setSessionControlPrincipal?.(principal.id)
     const state = await this.readConversation(principal, workspaceId, id)
-    const configuration = await this.conversationConfiguration(row)
-    const runtime = write && !row.active_request_id && row.native_session_id && configuration
-      ? await this.runtime(row, configuration, `session-control:${id}`, this.lifetime.signal, principal.id) : this.runtimes.get(id)
+    const pending = await this.pendingConfiguration(row)
+    const recoveringCompaction = pending !== undefined && await this.sessionControls.hasPendingCompaction(id)
+    const configuration = pending && !recoveringCompaction ? pending : await this.conversationConfiguration(row)
+    const nativeAvailable = !pending && state.sessionState !== 'unavailable'
+    let runtime = nativeAvailable ? this.runtimes.get(id) : undefined
+    if (nativeAvailable && write && !row.active_request_id && row.native_session_id && configuration) {
+      runtime = await this.runtime(row, configuration, `session-control:${id}`, this.lifetime.signal, principal.id)
+    }
     const session = runtime?.session ?? (row.native_session_id ? {
       harness: row.harness, providerVersion: row.provider_version ?? 'unknown', nativeSessionId: row.native_session_id,
     } : undefined)
-    return { conversationId: id, principalId: principal.id, defaultSubject: `${workspaceId}:${row.agent_id}`, profileKey: row.agent_configuration_version_id,
+    return { conversationId: id, principalId: principal.id, defaultSubject: `${workspaceId}:${row.agent_id}`, profileKey: configuration?.id ?? row.agent_configuration_version_id,
       busyReason: row.active_request_id || row.pending_interaction || state.turns.some(turn => turn.delivery === 'queued')
         ? 'Wait for the active and queued turns and their approvals to finish.' : null,
       session,
       get manager() {
         return runtime && !runtime.disposal && !runtime.retiring ? runtime.manager : undefined
       },
-      ...(session && configuration && this.managers.recoverCompaction ? {
+      ...((nativeAvailable || recoveringCompaction) && session && configuration && this.managers.recoverCompaction ? {
         recoverCompaction: (state: import('@foreman-code/contracts').CompactionState) => this.managers.recoverCompaction!(
           configuration, id, session, this.startInput(row, configuration, `session-control:${id}`, true),
           state, principal.id, this.lifetime.signal),
@@ -1211,17 +1207,25 @@ export class AgentChatService {
       : configuration
   }
 
-  private async applyTurnConfiguration(row: AgentConversationRow): Promise<AgentConversationRow> {
-    if (row.origin_run_id && !row.native_session_id && !row.record.startupDelivered) return row
+  private async pendingConfiguration(row: AgentConversationRow) {
+    if (row.origin_run_id && !row.native_session_id && !row.record.startupDelivered) return undefined
     const agent = (await this.pool.query<{ current_configuration_version_id: string | null }>(
       'select current_configuration_version_id from agents where workspace_id=$1 and id=$2 and archived_at is null',
       [row.workspace_id, row.agent_id])).rows[0]
-    // Retained conversations can outlive their editable Agent catalog entry.
-    if (!agent?.current_configuration_version_id) return row
-    if (agent.current_configuration_version_id === row.agent_configuration_version_id) return row
+    if (!agent?.current_configuration_version_id
+      || agent.current_configuration_version_id === row.agent_configuration_version_id) return undefined
     const configuration = await this.workflows.getAgentConfiguration(agent.current_configuration_version_id)
+    if (!configuration) {
+      throw new DomainError('AGENT_CHAT_CONFIGURATION_MISSING', 'The saved Agent configuration is unavailable.', 409)
+    }
+    return configuration
+  }
+
+  private async applyTurnConfiguration(row: AgentConversationRow): Promise<AgentConversationRow> {
+    const configuration = await this.pendingConfiguration(row)
+    if (!configuration) return row
     const previous = await this.conversationConfiguration(row)
-    if (!configuration || !previous) {
+    if (!previous) {
       throw new DomainError('AGENT_CHAT_CONFIGURATION_MISSING', 'The saved Agent configuration is unavailable.', 409)
     }
     let directoryBinding = row.record.directoryBinding
@@ -1692,8 +1696,7 @@ export class AgentChatService {
       const runtime = this.runtimes.get(id)
       if (runtime?.session) {
         const retirement = await runtime.manager.retireTurn?.(runtime.session, agentChatCorrelation(id, requestId))
-        // Retirement may settle inside release(); its existing disposal owns the remaining cleanup.
-        if (retirement?.runtimeReleased && !runtime.disposal) await this.release(id)
+        if (retirement?.runtimeReleased) await this.release(id)
       }
       const observer = runtime?.observer
       if (observer?.requestId === requestId) observer.controller.abort(new Error('Agent chat turn settled.'))

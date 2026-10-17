@@ -237,7 +237,8 @@ async function admitWorkerConversation(input: ProductionWorkerConversationsInput
   if (!principalId) unavailable('The chat has no admitted sender or control caller.')
   const profileOwner = { ...owner, ...(options.observationPrincipalId
     ? { observationPrincipalId: principalId } : { controlPrincipalId: principalId }), admissionSignal: signal }
-  const accepted = await profiles.admit(profileOwner, selector)
+  const admissionMethod = options.observationPrincipalId ? 'admitObservation' : 'admit'
+  const accepted = await profiles[admissionMethod](profileOwner, selector)
   if (!isDeepStrictEqual(withAdvancedDefaults(accepted.override.configuration), withAdvancedDefaults(configuration.harness))) {
     unavailable('The worker profile differs from this saved chat configuration.')
   }
@@ -263,8 +264,6 @@ async function admitWorkerConversation(input: ProductionWorkerConversationsInput
   }
   const requestedBinding = WorkerConversationBindingSchema.parse({
     ...(original.kind === 'agent' && original.record.workerGeneration ? { generation: original.record.workerGeneration } : {}),
-    ...(original.kind === 'agent' && !original.record.workerGeneration && savedBinding?.sessionGeneration
-      ? { sessionGeneration: savedBinding.sessionGeneration } : {}),
     owner: { ...ownerFields,
     conversationId: options.conversationId, configurationVersionId: executionConfiguration.id,
     configurationHash: commandInputHash(executionConfiguration) }, harness: configuration.harness.harness,
@@ -345,7 +344,8 @@ async function admitWorkerConversation(input: ProductionWorkerConversationsInput
     const observation = { ...owner, observationPrincipalId: currentCaller,
       ...(effectSignal ? { admissionSignal: effectSignal } : {}) }
     // Closing a settled owner does not launch or reconfigure its executable.
-    if (!cleanup) await profiles.revalidate(observation, accepted)
+    if (!cleanup) await profiles[options.observationPrincipalId && reads.has(request.method)
+      ? 'revalidateObservation' : 'revalidate'](observation, accepted)
     currentChannel()
   }
   const claudeFiles = configuration.harness.harness === 'claude' && input.fileService

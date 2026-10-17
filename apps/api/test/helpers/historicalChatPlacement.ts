@@ -9,7 +9,8 @@ import { waitForRequesterSession } from './remoteReviewEntryStartup.js'
 
 export async function historicalChatPlacement(
   scenario: (fixture: Awaited<ReturnType<typeof remoteReviewProduction>>) => Promise<void>,
-  options: { includeNodeRuntimePayload?: boolean; workflow?: 'single' | 'approval' } = {},
+  options: Pick<NonNullable<Parameters<typeof remoteReviewProduction>[0]>,
+    'includeNodeRuntimePayload' | 'sourceAccessMode'> & { workflow?: 'single' | 'approval' } = {},
 ) {
   const fixture = await remoteReviewProduction({
     workflow: 'single', parallelSetup: true,

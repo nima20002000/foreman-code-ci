@@ -32,7 +32,8 @@ export interface AcceptedClaudeProfile {
 /** The caller supplies its actual execution/conversation/turn owner authority, never a management grant surrogate. */
 export interface AcceptedProfileAuthority<Owner> {
   authorize(owner: Owner, selector: AcceptedProfileSelector, client: pg.PoolClient): Promise<void>
-  current(owner: Owner, value: HostHarnessOverride, client: pg.PoolClient): Promise<{
+  current(owner: Owner, value: HostHarnessOverride, client: pg.PoolClient,
+    options: { purpose: 'execution' | 'observation' }): Promise<{
     registry: RegistryHarnessSelection
     applicationInstallationId: string
     suiteRevision: string
@@ -98,7 +99,7 @@ export class AcceptedHarnessProfileAdmission<Owner> {
       if (options.purpose === 'execution') this.authority.assertReady?.(value)
       const proof = await this.proofs.latest(value.instanceId, value.revision, client)
       if (!proof || !proof.qualified || proof.authenticated !== true || proof.compatible !== true ) return unavailable()
-      const current = await this.authority.current(owner, value, client)
+      const current = await this.authority.current(owner, value, client, options)
       this.authority.assertCurrent(current.registry)
       const { selection, installation, instance } = current.registry
       if (current.applicationInstallationId !== value.target.applicationInstallationId
