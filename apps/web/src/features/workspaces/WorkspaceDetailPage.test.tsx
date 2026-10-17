@@ -13,7 +13,7 @@ import { worktreeFixture } from '../workflow-board/worktree.fixtures'
 import { WorkspaceDetailPage } from './WorkspaceDetailPage'
 
 describe('workspace settings actions', () => {
-  it('waits for workspace identity before mounting the section navigation and actions', async () => {
+  it('keeps the section navigation while the workspace identity loads and waits for it before mounting actions', async () => {
     let finishRead!: () => void
     const pending = new Promise<void>((resolve) => { finishRead = resolve })
     server.use(http.get('/api/management/workspaces/workspace-1', async () => {
@@ -23,11 +23,11 @@ describe('workspace settings actions', () => {
     renderWithRouter(<WorkspaceDetailPage workspaceId="workspace-1" section="settings" />)
 
     expect(await screen.findByText('Loading workspace…')).toBeInTheDocument()
-    expect(screen.queryByRole('navigation', { name: 'Workspace sections' })).not.toBeInTheDocument()
+    expect(screen.getByRole('navigation', { name: 'Workspace sections' })).toBeVisible()
     expect(screen.queryByRole('group', { name: 'Workspace actions' })).not.toBeInTheDocument()
     finishRead()
-    expect(await screen.findByRole('navigation', { name: 'Workspace sections' })).toBeVisible()
-    expect(screen.getByRole('group', { name: 'Workspace actions' })).toBeVisible()
+    expect(await screen.findByRole('group', { name: 'Workspace actions' })).toBeVisible()
+    expect(screen.getByRole('navigation', { name: 'Workspace sections' })).toBeVisible()
   })
 
   it('uses one label per action without repeating the workspace identity or settings heading', async () => {

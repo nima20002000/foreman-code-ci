@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { GraphDraftV3Schema, sameAuthoredWorkflow } from '@foreman-code/contracts/wave25'
 import { errorMessage } from '../../../shared/errorMessage'
-import { Button, LoadingState } from '../../../shared/ui/nocturne'
+import { Button } from '../../../shared/ui/nocturne'
 import { GraphPresentationProvider } from '../GraphPresentation'
 import { useGraphDraftStore } from '../store'
 import { hasLocalChanges } from './model'
@@ -11,6 +11,7 @@ import { nextDraftApi, type AuthoringContext } from './transport'
 import { claimEditTabOwnership, readEditSnapshot } from './editIntentStorage'
 import { type BoardUpdateFailure } from '../../workflow-board/BoardAlerts'
 import { boardDraftContextKey } from '../../workflow-board/keys'
+import { BoardLoading } from '../../workflow-board/BoardLoading'
 import { useDraftEditorController } from './useDraftEditorController'
 import { DraftEditorView } from './DraftEditorView'
 import '../graph.css'
@@ -74,10 +75,9 @@ function DraftLoader({ draftKey, workspaceId, workflowId, initialContext, update
   if (edit) return <EditorForm draftKey={draftKey} edit={edit} updateFailures={updateFailures} />
   if (storageError || source.isError) return <section className="workflow-graph-state" role="alert">
     <h2>Authoring unavailable</h2><p>{storageError ?? source.error?.message}</p>
-    <p>No retained command was deleted, retagged or replaced.</p>
     {!storageError ? <Button onClick={() => void source.refetch()}>Try again</Button> : null}
   </section>
-  return <LoadingState label="Loading the current workflow draft…" rows={2} />
+  return <BoardLoading />
 }
 
 function EditorForm({ draftKey, edit, updateFailures }: { draftKey: string; edit: NextDraftEdit; updateFailures?: readonly BoardUpdateFailure[] }) {

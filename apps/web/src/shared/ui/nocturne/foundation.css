@@ -61,15 +61,16 @@
 .n-icon-button.n-button--lg { width: 44px; height: 44px; }
 /* Inputs */
 .n-field { display: grid; gap: 7px; min-width: 0; }
-.n-field > label, .n-field .n-between > label, .n-radio-group legend { color: var(--n-text); font-size: 12px; font-weight: 500; }
+.n-field > label, .n-field-label > label, .n-field .n-between > label, .n-radio-group legend { color: var(--n-text); font-size: 12px; font-weight: 500; }
+.n-field-label { display: flex; align-items: center; }
 .n-field-hint { display: block; color: var(--n-faint); font-size: 11px; line-height: 1.6; }
 .n-field-error { display: flex; gap: 6px; align-items: start; color: var(--n-danger); font-size: 12px; line-height: 1.6; }
 .n-field-error svg { margin-top: 2px; }
 .n-input { width: 100%; min-width: 0; min-height: 38px; padding: 9px 11px; border: 1px solid var(--n-control-border); border-radius: var(--n-radius-sm); background: var(--n-canvas); color: var(--n-text); font: 12px/1.6 var(--n-font); transition: border-color var(--n-fast); }
 .n-input::placeholder { color: var(--n-faint); opacity: 1; }
 .n-input:hover:not(:disabled) { border-color: var(--n-faint); }
-.n-input:focus { box-shadow: none; }
-.n-theme .n-input:focus-visible { border-color: var(--n-focus); outline: 1px solid var(--n-focus); outline-offset: 0; }
+.n-input:focus { border-color: var(--n-control-border); box-shadow: none; }
+.n-theme .n-input:focus-visible { outline: 2px solid var(--n-muted); outline-offset: 1px; }
 .n-input[aria-invalid='true'], .n-input-wrap[data-invalid='true'] .n-input { border-color: var(--n-danger); }
 .n-input:disabled { opacity: .55; cursor: not-allowed; }
 .n-input[readonly] { background: var(--n-surface); }
@@ -400,10 +401,9 @@ button.n-node:disabled { opacity: .5; cursor: not-allowed; }
 .n-message--system .n-message-content { color: var(--n-faint); }
 .n-message-actions { margin-top: 10px; }
 .n-composer { min-width: 0; border: 1px solid var(--n-control-border); border-radius: var(--radius-md); background: var(--n-canvas); padding: 5px; }
-.n-composer:focus-within { border-color: var(--n-focus); outline: 1px solid var(--n-focus); }
+.n-composer:focus-within { border-color: var(--n-accent); }
 .n-composer-context { padding: 8px 10px; border-bottom: 1px solid var(--n-border); }
 .n-composer textarea { min-height: 88px; resize: vertical; border: 0; background: transparent; outline-offset: -3px !important; }
-.n-theme .n-composer textarea:focus-visible { outline: none; }
 .n-composer > footer { display: flex; gap: 10px; justify-content: space-between; align-items: end; padding: 8px; }
 .n-composer > footer > span { color: var(--n-faint); font-size: 11px; }
 .n-composer-count { display: block; font: 11px/1.8 var(--n-mono); margin-top: 3px; }

@@ -170,7 +170,10 @@ beforeEach(() => {
   unhandled.length = 0; server.events.on('request:unhandled', onUnhandled)
   const tails = new Map<string, Promise<unknown>>()
   Object.defineProperty(navigator, 'locks', { configurable: true, value: { request: (key: string, work: () => unknown) => {
-    const next = (tails.get(key) ?? Promise.resolve()).then(work); tails.set(key, next.catch(() => undefined)); return next
+    const next = (tails.get(key) ?? Promise.resolve()).then(work); tails.set(key, next.catch(() => {
+      // ignore: the caller receives the rejection; later lock requests must still run.
+      return undefined
+    })); return next
   } } })
 })
 afterEach(() => {
@@ -223,7 +226,7 @@ describe('ENG-05 contextual Run actions on current S3 contracts', () => {
     expect(screen.getByRole('button', { name: 'Resume execution — unavailable' })).toBeDisabled()
     expect(screen.queryByRole('button', { name: /retry.*node|restart.*provider/i })).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Refresh / reconnect client state' }))
-    await screen.findByText(/Client state refreshed\. This did not restart a provider/)
+    await screen.findByText('Client state refreshed.')
     expect(mock.state.requests.filter((request) => request.method === 'POST')).toEqual([])
   })
   it('retains exact Stop on an uncertain reply and separates accepted Stop from cleanup settlement', async () => {
@@ -290,7 +293,8 @@ describe('ENG-05 contextual Run actions on current S3 contracts', () => {
     await screen.findByRole('heading', { name: 'Confirm a new full Run' })
     expect(writes(mock, '/runs')).toEqual([])
     await user.click(screen.getByRole('button', { name: 'Start new full Run' }))
-    await screen.findByText(/Admission is not completion\. The selected historical Run has not been changed/)
+    const accepted = await screen.findByText(/Accepted Run/)
+    expect(accepted).toHaveTextContent(`Accepted Run ${mock.f.run.id}-new, saved version ${old.workflowVersionId}.`)
     const sent = RunStartV3InputSchema.parse(writes(mock, '/runs')[0]!.body)
     expect(sent).toMatchObject({ workspaceId: mock.f.scope.workspaceId, workflowId: mock.f.scope.workflowId,
       workflowVersionId: old.workflowVersionId, input: old.input, executionSemanticsVersion: 3,
@@ -335,7 +339,8 @@ describe('ENG-05 contextual Run actions on current S3 contracts', () => {
     await mount(mock)
     expect(screen.getByRole('button', { name: 'Review new full Run' })).toBeDisabled()
     await user.click(screen.getByRole('button', { name: 'Reconcile retained Start' }))
-    await screen.findByText(/Admission is not completion/)
+    const reconciled = await screen.findByText(/Reconciled Run/)
+    expect(reconciled).toHaveTextContent(`Reconciled Run ${mock.f.run.id}-new, saved version ${mock.f.version.id}.`)
     expect(writes(mock, '/runs').map((call) => call.body)).toEqual([request])
     expect(mock.state.requests.some((call) => call.path === mock.workflowPath || call.path.endsWith('/version'))).toBe(false)
   })
@@ -348,7 +353,8 @@ describe('ENG-05 contextual Run actions on current S3 contracts', () => {
     const retained = readBoardStart(nextDraftKey(mock.f.scope.workspaceId, mock.f.scope.workflowId))!
     expect(retained).toEqual(writes(mock, '/runs')[0]!.body)
     await user.click(screen.getByRole('button', { name: 'Reconcile retained Start' }))
-    await screen.findByText(/Admission is not completion/)
+    const reconciled = await screen.findByText(/Reconciled Run/)
+    expect(reconciled).toHaveTextContent(`Reconciled Run ${mock.f.run.id}-new, saved version ${mock.f.version.id}.`)
     expect(writes(mock, '/runs').map((call) => call.body)).toEqual([retained, retained])
   })
   it('uses the human Run-filtered inbox and exact revision, with decision distinct from native acknowledgement', async () => {

@@ -1,3 +1,4 @@
+import { InfoHint } from '../../shared/ui/InfoHint'
 import { useHoverControls } from '../../shared/ui/useHoverControls'
 import { memo, useCallback, useContext, useRef, useState, type ReactNode } from 'react'
 import { UnsavedChangesContext } from '../../shared/ui/unsavedChanges'
@@ -11,7 +12,7 @@ import { GraphGeometryContext, GraphNodeMenuContext } from './graphContexts'
 import { useGraphPresentation, useGraphPresentationStore } from './useGraphPresentation'
 import { useGraphNodeRuntime } from './useGraphNodeRuntime'
 import { presentGraphNodeRuntime } from './nodePresentation'
-import { agentNodeFacts, agentSettingRows, edgeBend, floatingCurve, useFloatingCurve } from './signalEdge'
+import { agentNodeFacts, agentSettingRows, edgeBend, floatingCurve, lineBend, useFloatingCurve } from './signalEdge'
 import { SignalEdgeShape } from './SignalEdgeShape'
 import type { AgentGraphNode, GraphNode, GraphEdge } from './types'
 import './graphRendering.css'
@@ -85,7 +86,7 @@ export const AgentNode = memo(function AgentNode({ data: staticData, isConnectab
         chat={<AgentChatPanel name={data.label} role={facts.roleLabel} activity={nodeView.actionLabel} running={nodeView.working}
           onClose={() => void (async () => { if (!guard || await guard.surfaces()) setMenuOpen(false) })()} />}
         settings={readOnly || !data.onSaveSettings ? <>
-          <p className="agent-panel-note">A Run keeps the settings it started with. Change them on the workflow board.</p>
+          <h3>Saved Run settings<InfoHint label="Saved Run settings">A Run keeps the settings it started with. Change them on the workflow board.</InfoHint></h3>
           <AgentFacts items={agentSettingRows(data.agent)} />
         </> : <AgentSettingsForm
           embedded
@@ -132,7 +133,8 @@ export const HandoffEdge = memo(function HandoffEdge({
   const active = !data?.departing && (hovered || focused)
   const receiver = useInternalNode<GraphNode>(target)
   const floating = useFloatingCurve(source, target, edgeBend(0, true))
-  const curve = floating ?? floatingCurve({ x: sourceX, y: sourceY }, { x: targetX, y: targetY }, edgeBend(0, true), 0)
+  const ends = [{ x: sourceX, y: sourceY }, { x: targetX, y: targetY }] as const
+  const curve = floating ?? floatingCurve(ends[0], ends[1], lineBend(ends[0], ends[1]) + edgeBend(0, true), 0)
   const receiverRuntime = useGraphNodeRuntime(receiver?.data.workflowNodeId ?? target, receiver?.data && 'agentId' in receiver.data?receiver.data.agentId:undefined)
   const receiverView = presentGraphNodeRuntime(receiverRuntime.activity, receiverRuntime.unavailable || !receiver)
   // Light only follows scoped runtime truth: a handoff is shown while its receiver is working.
