@@ -3,13 +3,37 @@ import { createHash, randomUUID } from 'node:crypto'
 import { readFile, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import { integrationPartition } from '@foreman-code/contracts'
 import { repositoryFileList, selectByIndexes } from '../../../../../scripts/ci-files.mjs'
 import { fixture } from './cloud.testSupport.js'
 import { cloudSuiteRunner } from './cloudRunner.testSupport.js'
 
 const parameter = (args: string[], name: string) => args.find(value => value.startsWith(`${name}=`))?.slice(name.length + 1)
+
+it.each(['unit', 'integration'] as const)('isolates the %s suite fixture from enclosing CI shell startup', async suite => {
+  const file = `apps/api/test/selected.${suite === 'integration' ? 'integration.' : ''}test.ts`
+  const f = await fixture({ [file]: '' }, { provider: 'circleci' })
+  await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId: randomUUID(),
+    repository: 'octo/site', commit: f.commit, suite, scope: 'affected', files: [file] })
+  const command = f.circle.triggered[0]!
+  const checkout = await f.checkoutMirror(command[command.indexOf('--branch') + 1]!)
+  const runner = await cloudSuiteRunner(checkout, command, 'circleci')
+  const startup = join(f.root, 'shell-startup')
+  await writeFile(startup, 'export PATH=/unavailable-fixture-commands\n')
+  vi.stubEnv('BASH_ENV', startup)
+  try {
+    const result = runner.run()
+    expect(result.status, result.stderr).toBe(0)
+    const calls = (await readFile(runner.calls, 'utf8')).trim().split('\n').map(line => JSON.parse(line))
+    expect(calls).toEqual(suite === 'integration' ? [['pnpm', 'test:integration', '--files', file]] : [
+      ['pnpm', '--filter', '@foreman-code/contracts', 'build'],
+      ['--', 'corepack', 'pnpm', '--dir', 'apps/api', 'exec', 'vitest', 'run', file.slice('apps/api/'.length)],
+    ])
+  } finally {
+    vi.unstubAllEnvs()
+  }
+})
 
 it.each(['github', 'circleci'] as const)('runs an oversized partition on %s with its complete file list', async provider => {
   const files = Array.from({ length: 40 }, (_, index) => `apps/api/test/selected-${index.toString().padStart(3, '0')}.integration.test.ts`)
