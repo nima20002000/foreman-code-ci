@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto'
-import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
 import { expect, it, vi } from 'vitest'
 import { AgentChatStateSchema } from '@foreman-code/contracts/agent-chat'
 import { SessionControlStateSchema, type HarnessConfiguration } from '@foreman-code/contracts'
@@ -8,9 +7,14 @@ import { remoteAgentConversation } from './helpers/remoteAgentConversation.js'
 import { workerConversationFixture } from '../src/modules/conversations/workerFixtures.test-support.js'
 import { assertAgentNewConversation } from './helpers/agentNewConversation.js'
 
-function changedSettings(configuration: HarnessConfiguration, field: 'model' | 'effort' | 'account'): HarnessConfiguration {
+function changedSettings(configuration: HarnessConfiguration, field: 'model' | 'effort' | 'account',
+  models: readonly string[]): HarnessConfiguration {
   if (configuration.harness === 'opencode') throw new Error('Supported chat harness required')
-  if (field === 'model') return { ...configuration, model: 'changed-model' }
+  if (field === 'model') {
+    const model = models.find(value => value !== configuration.model)
+    if (!model) throw new Error('A second recorded model is required for the model change scenario')
+    return { ...configuration, model }
+  }
   if (field === 'account') return { ...configuration, accountId: randomUUID() }
   if (configuration.harness === 'codex') return { ...configuration, reasoningEffort: 'high' }
   if (configuration.harness === 'claude') return { ...configuration, effort: 'high' }
@@ -146,14 +150,14 @@ it.each(['codex', 'claude'] as const)(
 
 it.each((['codex', 'claude'] as const).flatMap(harness =>
   (['model', 'effort', 'account'] as const).map(field => ({ harness, field }))))(
-  'applies a remote $harness Agent $field change on its next turn with an updated Worker binding', async ({ harness, field }) => {
+  'preserves remote $harness Agent session ownership after a qualified $field change', async ({ harness, field }) => {
     const f = await remoteAgentConversation(harness)
     try {
       await f.send('Establish the remote session')
       const original = (await f.repository.get(f.conversation.id))!
       const originalBinding = await f.binding()
-      const before = f.providers.reduce((count, provider) => count + provider.prompts.length, 0)
-      const changed = changedSettings(f.configuration.harness, field)
+      const before = f.provider.prompts.length
+      const changed = changedSettings(f.configuration.harness, field, f.provider.models)
       const denied = await f.call('agent_update', { agentId: f.context.agentId,
         commandId: randomUUID(), configuration: changed, expectedRevision: 1,
         expectedConfigurationVersionId: f.configuration.id }, f.reader.token)
@@ -166,32 +170,40 @@ it.each((['codex', 'claude'] as const).flatMap(harness =>
       expect((await f.repository.get(f.conversation.id))?.agent_configuration_version_id).toBe(f.configuration.id)
       const update = AgentMutationResultSchema.parse(await f.update(changed, { matchingProfile: true }))
       expect(update.value.agent.harnessConfiguration).toEqual(changed)
-      const retained = AgentChatStateSchema.parse(await f.value('agent_chat_read', { query: f.context }))
-      expect(retained.conversation?.nativeSession?.nativeSessionId).toBe(original.native_session_id)
-      expect(retained.activitySnapshot?.observation).toMatchObject({ status: 'unavailable',
-        lastError: expect.stringContaining('HARNESS_PROFILE_UNAVAILABLE') })
-      const sent = await f.send('Use the saved settings on this turn')
-      expect(sent.turn?.delivery).toBe('completed')
-      expect(sent.turn?.error).toBeUndefined()
-      expect(f.providers.reduce((count, provider) => count + provider.prompts.length, 0)).toBe(before + 1)
+      if (field !== 'account') {
+        const diagnostic = setTimeout(() => {
+          void f.repository.get(f.conversation.id).then(row => console.error('Remote settings recovery', {
+            turnState: row?.turn_state, requestId: row?.active_request_id, nativeSessionId: row?.native_session_id,
+            nativeCalls: f.provider.calls, promptCount: f.provider.prompts.length,
+            frames: f.frames.map(frame => frame.method),
+          }),
+            error => console.error('Remote settings recovery read failed', error))
+        }, 5000)
+        try { await f.send('Use the saved model on this turn') }
+        finally { clearTimeout(diagnostic) }
+        expect(f.provider.prompts).toHaveLength(before + 1)
+        const saved = (await f.repository.get(f.conversation.id))!
+        expect(saved.agent_configuration_version_id).toBe(update.value.agent.configurationVersionId)
+        expect(saved.native_session_id).toBe(original.native_session_id)
+        const binding = await f.binding()
+        expect(binding.owner).toMatchObject({ configurationVersionId: update.value.agent.configurationVersionId })
+        expect(binding.profile.instanceId).toBe(originalBinding.profile.instanceId)
+        expect(binding.profile.target).toEqual(originalBinding.profile.target)
+        return
+      }
+      const failed = await f.send('Use the saved model on this turn', 'failed')
+      expect(failed.turn?.error).toMatchObject({ code: 'WORKER_CONVERSATION_UNAVAILABLE' })
+      expect(failed.turn?.error?.message).toBe('The original worker conversation binding changed.')
+      expect(f.provider.prompts).toHaveLength(before)
       const saved = (await f.repository.get(f.conversation.id))!
       expect(saved.agent_configuration_version_id).toBe(update.value.agent.configurationVersionId)
-      const binding = await f.binding()
-      expect(binding.owner.configurationVersionId).toBe(update.value.agent.configurationVersionId)
-      expect(binding.owner.configurationHash).not.toBe(originalBinding.owner.configurationHash)
-      expect(binding.owner.configurationHash).toBe(commandInputHash(await f.chatConfiguration()))
-      expect(binding.profile.target).toEqual(originalBinding.profile.target)
-      expect(saved.native_session_id).toBeTruthy()
-      if (field === 'account') expect(saved.native_session_id).not.toBe(original.native_session_id)
-      else expect(saved.native_session_id).toBe(original.native_session_id)
-      expect(AgentChatStateSchema.parse(await f.value('agent_chat_read', { query: f.context })).conversation)
-        .toMatchObject({ id: f.conversation.id, agentConfigurationVersionId: update.value.agent.configurationVersionId,
-          nativeSession: { nativeSessionId: saved.native_session_id } })
+      expect(await f.binding()).toEqual(originalBinding)
+      expect(saved.native_session_id).toBe(field === 'account' ? null : original.native_session_id)
     } finally { await f.close() }
   }, 30_000)
 
 it.each(['codex', 'claude'] as const)(
-  'applies a remote %s Agent harness change on a separate native session', async harness => {
+  'rejects a remote %s Agent harness change at the retained Worker binding after saving it', async harness => {
     const f = await remoteAgentConversation(harness)
     try {
       await f.send('Establish the remote session')
@@ -200,18 +212,14 @@ it.each(['codex', 'claude'] as const)(
       const changed = workerConversationFixture('agent', harness === 'codex' ? 'claude' : 'codex').configuration.harness
       const update = AgentMutationResultSchema.parse(await f.update(changed, { matchingProfile: true }))
       expect(update.value.agent.harness).toBe(changed.harness)
-      const sent = await f.send('Use the saved harness on this turn')
-      expect(sent.turn?.delivery).toBe('completed')
-      expect(sent.turn?.error).toBeUndefined()
-      expect(f.providers.reduce((count, provider) => count + provider.prompts.length, 0)).toBe(2)
+      const failed = await f.send('Use the saved harness on this turn', 'failed')
+      expect(failed.turn?.error).toMatchObject({ code: 'WORKER_CONVERSATION_UNAVAILABLE',
+        message: 'The original worker conversation binding changed.' })
+      expect(f.provider.prompts).toHaveLength(1)
       const saved = (await f.repository.get(f.conversation.id))!
       expect(saved.agent_configuration_version_id).toBe(update.value.agent.configurationVersionId)
-      const binding = await f.binding()
-      expect(binding.harness).toBe(changed.harness)
-      expect(binding.owner.configurationVersionId).toBe(update.value.agent.configurationVersionId)
-      expect(binding.owner.configurationHash).not.toBe(originalBinding.owner.configurationHash)
-      expect(saved.native_session_id).toBeTruthy()
-      expect(saved.native_session_id).not.toBe(original.native_session_id)
+      expect(await f.binding()).toEqual(originalBinding)
+      expect(saved.native_session_id).toBeNull()
       expect(original.native_session_id).toBeTruthy()
     } finally { await f.close() }
   }, 30_000)

@@ -101,7 +101,7 @@ export class WorkerConversationHost {
   private responseBytes = 0
   private readonly preparations = new Map<string, Resident>()
   private readonly inspections = new Set<WorkerConversationAllocation>()
-  private readonly allocating = new Map<string, Promise<unknown>>()
+  private readonly allocating = new Map<string, Promise<Resident>>()
   private readonly tasks = new Set<Promise<void>>()
   private readonly running = new Map<string, Readonly<DeviceSessionBinding>>()
   private readonly runningCompactions = new Set<string>()
@@ -866,9 +866,6 @@ export class WorkerConversationHost {
     if (request.method === 'conversation.close') {
       const record = await this.ports.journal.read(request.binding)
       if (record?.closed && isDeepStrictEqual(record.session, request.session)) return { receipt: record }
-      if (record?.runtimeReleased && !this.residents.has(request.binding.owner.conversationId)) {
-        return this.closeReleasedSession(request, record, connection)
-      }
     }
     if (!('session' in request)) unavailable('This native operation requires its conversation session.')
     const { resident, record } = await this.resident(request, connection, signal)
@@ -962,31 +959,6 @@ export class WorkerConversationHost {
       await this.ports.journal.runtimeReleased(request.binding)
       this.residents.delete(id)
       return resident
-    })()
-    this.allocating.set(id, closing)
-    try { await closing } finally { if (this.allocating.get(id) === closing) this.allocating.delete(id) }
-    return { receipt: await this.ports.journal.read(request.binding) }
-  }
-
-  private async closeReleasedSession(request: WorkerConversationRpcRequest & { session: NativeSessionReference },
-    record: WorkerConversationReceipt, connection: Readonly<DeviceSessionBinding>) {
-    const id = request.binding.owner.conversationId
-    const nativeOwner = record.nativeOwner
-    if (!nativeOwner || !isDeepStrictEqual(record.session, request.session)
-      || this.allocating.has(id) || this.hasRunningOperation(id)
-      || record.turns.some(turn => !['completed', 'rejected'].includes(turn.status))
-      || record.compactions.some(control => compactionBlocksSend(control.state))) {
-      unavailable('The persisted session is unavailable or still busy.')
-    }
-    for (const field of ['mainId', 'deviceId', 'workerInstallationId', 'keyRevision', 'authorizationRevision'] as const) {
-      if (record.connection[field] !== connection[field]) unavailable('The original paired worker authority changed.')
-    }
-    const closing = (async () => {
-      if (!isDeepStrictEqual(record.connection, connection)) {
-        await this.ports.journal.rebind(request.binding, connection, nativeOwner)
-      }
-      await this.ports.journal.closeRequested(request.binding)
-      await this.ports.journal.closeConfirmed(request.binding)
     })()
     this.allocating.set(id, closing)
     try { await closing } finally { if (this.allocating.get(id) === closing) this.allocating.delete(id) }
