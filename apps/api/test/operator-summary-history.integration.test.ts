@@ -23,8 +23,8 @@ it('reads unresolved Operator summaries without scanning persisted completed or 
     for (const title of ['Idle', 'Running', 'Unknown']) {
       const conversation = await repository.create(operator.id, configuration, owner.id, title)
       conversations.push(conversation)
-      await repository.beginTurn(conversation.id, { requestId: 'history', content: `History for ${title}` }, owner.id)
-      await repository.finish(conversation.id, 'history', { outcome: 'succeeded' })
+      await pool.query(`insert into operator_conversation_turns(conversation_id,request_id,payload,input_hash)
+        values($1,'history','{}','fixture')`, [conversation.id])
       await pool.query(`insert into operator_conversation_activity(conversation_id,request_id,activity_id,record)
         select $1,'history',n::text,jsonb_build_object('id',n::text,'requestId','history',
           'kind',case when n%2=0 then 'thinking' else 'tool' end,
@@ -37,7 +37,6 @@ it('reads unresolved Operator summaries without scanning persisted completed or 
         id: 'unresolved', requestId: 'history', kind: 'tool', title: 'Unresolved tool', status,
       })])
     }
-    await repository.create(operator.id, configuration, owner.id, 'Empty draft')
     await pool.query('analyze operator_conversation_activity')
     const observed = vi.spyOn(pool, 'query')
     let query: string

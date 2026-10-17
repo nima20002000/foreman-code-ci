@@ -21,7 +21,6 @@ import { renewReviewLease } from './reviewLease.js'
 import { publicReviewRetirementFacts } from '../../run-graph/publicLifecycle.js'
 import { appendReviewNativeGraphEvent, appendReviewNativeGraphHistory } from './reviewNativeGraph.js'
 import { readRetainedRemoteReviewer } from '../retainedRemoteReviewer.js'
-import { assertReviewerCheckoutAvailable } from '../../runs/worktreeReviewers.js'
 
 function parseReviewJob(input: unknown): ReviewJob {
   return ReviewJobSchema.parse(JSON.parse(JSON.stringify(input)))
@@ -125,7 +124,6 @@ export class Wave25InteractionCoordinationRepository extends PostgresInteraction
           || old.working_directory !== supplied.workingDirectory) return fail('REVIEW_JOB_IDENTITY_CONFLICT')
         return { job: existing, created: false }
       }
-      await assertReviewerCheckoutAvailable(publication.sql, context.reviewer)
       await publication.source({ evidence: sourceForReview(accepted, '0'), sourceDigest: graphSourceDigest(accepted),
         facts: [reviewFact(context, accepted, '0'), ...await approvalAttentionFacts(publication.sql, context, { review: accepted })] }, async (sql) => {
         await sql.query(`insert into review_jobs(id,interaction_id,reviewer_agent_id,state,record,execution_id,working_directory,provider_version)

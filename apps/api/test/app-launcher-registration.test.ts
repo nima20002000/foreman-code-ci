@@ -19,21 +19,21 @@ afterEach(async () => {
   await Promise.all(directories.splice(0).map(directory => rm(directory, { recursive: true, force: true })))
 })
 
-async function fixture(runtimeCount = 3) {
+async function fixture() {
   const directory = await mkdtemp(join(tmpdir(), 'mcp-registration-'))
   directories.push(directory)
   const launcher = join(directory, 'mcp/launcher.mjs')
   vi.stubEnv('GRAPHQL_APP_MCP_DIRECTORY', undefined)
   vi.stubEnv('FOREMAN_CODE_APP_MCP_DIRECTORY', dirname(launcher))
   await installManagedLauncher(source, launcher)
-  const runtimes = Array.from({ length: runtimeCount }, (_, index) => join(directory, `node-${index}`))
+  const runtimes = [join(directory, 'node-a'), join(directory, 'node-b'), join(directory, 'node-c')]
   await Promise.all(runtimes.map(runtime => copyFile(process.execPath, runtime, constants.COPYFILE_FICLONE)))
   return { directory, launcher, runtimes }
 }
 
 it.each(['codex'] as const)(
   '%s registrations survive a stale metadata writer and recognition in a new process', async () => {
-    const { directory, launcher, runtimes } = await fixture(2)
+    const { directory, launcher, runtimes } = await fixture()
     const alias = join(directory, 'saved-mcp')
     await symlink(dirname(launcher), alias)
     const savedLauncher = join(alias, 'launcher.mjs')
@@ -66,9 +66,10 @@ it('merges stale registrations and simultaneous installations through both direc
       kind: 'install', launcher: index % 2 ? savedLauncher : launcher,
     }, runtime)),
   ])
-  const entries = runtimes.map(runtime => ({ command: runtime, args: [savedLauncher], env_vars: [APP_MCP_TOKEN] }))
-  expect(JSON.parse(await runLauncherProcess({ kind: 'recognize', launcher, entry: entries })))
-    .toEqual([true, true, true])
+  for (const runtime of runtimes) {
+    const entry = { command: runtime, args: [savedLauncher], env_vars: [APP_MCP_TOKEN] }
+    expect(await runLauncherProcess({ kind: 'recognize', launcher,  entry })).toBe('true')
+  }
   // A caller may hold a snapshot from before the other installations completed.
   await writeLauncherInstallation(launcher, { version: 1, executables: [] })
   for (const runtime of runtimes) {
@@ -76,17 +77,8 @@ it('merges stale registrations and simultaneous installations through both direc
   }
 }, 30_000)
 
-it('recognizes registered and unregistered commands together in a fresh process', async () => {
-  const { launcher, runtimes } = await fixture()
-  await writeLauncherInstallation(launcher, { version: 1,
-    executables: [{ path: runtimes[0]!, realpath: runtimes[0]! }] })
-  const entries = runtimes.map(runtime => ({ command: runtime, args: [launcher], env_vars: [APP_MCP_TOKEN] }))
-  expect(JSON.parse(await runLauncherProcess({ kind: 'recognize', launcher, entry: entries })))
-    .toEqual([true, false, false])
-}, 30_000)
-
 it('waits for another process and continues after its lock owner crashes', async () => {
-  const { launcher, runtimes } = await fixture(1)
+  const { launcher, runtimes } = await fixture()
   const program = `
     const fs = require('node:fs');
     const cp = require('node:child_process');

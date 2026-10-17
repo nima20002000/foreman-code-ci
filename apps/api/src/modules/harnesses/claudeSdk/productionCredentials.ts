@@ -1,5 +1,4 @@
 import type { HarnessConfiguration } from '@foreman-code/contracts'
-import { isDeepStrictEqual } from 'node:util'
 import { DomainError } from '../../errors.js'
 import type { ProviderAccountResolver } from '../../provider-accounts/service.js'
 import type { CanonicalMachineReference } from '@foreman-code/contracts/device-identity'
@@ -13,26 +12,11 @@ export function requireClaudeApiKey(configuration: HarnessConfiguration, apiKey?
 
 /** Secrets are resolved locally after the immutable account configuration is checked. */
 export async function requireClaudeProductionCredentialDelivery(configuration: HarnessConfiguration,
-  accounts?: ProviderAccountResolver, host?: CanonicalMachineReference, applicationInstallationId?: string): Promise<string | undefined> {
+  accounts?: ProviderAccountResolver, host?: CanonicalMachineReference): Promise<string | undefined> {
   if (configuration.harness === 'opencode') return undefined
   if (host?.kind === 'device') {
-    if (configuration.accountId) {
-      const account = await accounts?.resolve(configuration.harness, configuration.accountId)
-      if (!account) throw new DomainError('PROVIDER_ACCOUNT_UNAVAILABLE',
-        'The selected managed provider account is unavailable.', 409)
-      const binding = account.binding
-      if (!binding || binding.accountId !== configuration.accountId || binding.provider !== configuration.harness
-        || !isDeepStrictEqual(binding.target.hostRef, host)
-        || binding.target.applicationInstallationId !== applicationInstallationId) {
-        throw new DomainError('PROVIDER_ACCOUNT_TARGET_CONFLICT',
-          'The selected account belongs to another computer installation.', 409)
-      }
-      if (configuration.harness === 'claude' && configuration.authMode !== account.authMode) {
-        throw new DomainError('PROVIDER_ACCOUNT_CONFIGURATION_CONFLICT',
-          'Save the selected account settings before running this Claude profile.', 409)
-      }
-      return undefined
-    }
+    if (configuration.accountId) throw new DomainError('PROVIDER_ACCOUNT_LOCAL_ONLY',
+      'Managed provider accounts can run only on the computer where they were added.', 409)
     requireClaudeApiKey(configuration)
     return undefined
   }

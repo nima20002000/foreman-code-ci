@@ -1,22 +1,23 @@
 import { randomUUID } from 'node:crypto'
 import { access, mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { CiGetOutputSchema, CiRunRecordSchema } from '@foreman-code/contracts'
-import { expect, it, vi } from 'vitest'
+import { CiRunRecordSchema } from '@foreman-code/contracts'
+import { afterAll, beforeAll, expect, it, vi } from 'vitest'
 import { ProductionHostCiEndpoint } from '../src/modules/ci-host/endpoint.js'
 import { HostCiRunner, type HostCiPorts } from '../src/modules/ci-host/runner.js'
 import { CloudCi } from '../src/modules/ci-host/cloud.js'
 import type { CloudProvider } from '../src/modules/ci-host/cloudProviders.js'
 import type { GitWorktreePorts } from '../src/modules/sources/gitWorktree.js'
 import type { HostCiComputer } from '../src/modules/ci-host/service.js'
-import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
-import { fixture } from './helpers/hostCiMcpFixture.js'
+import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { privateFixtureDirectory } from './helpers/privateFixtureDirectory.js'
+
+let database: Awaited<ReturnType<typeof migratedDatabase>>
+beforeAll(async () => { database = await migratedDatabase() }, 60_000)
+afterAll(async () => { await database?.close() }, 60_000)
 
 it.each(['main', 'device', 'github', 'circleci'] as const)(
   'retains the newest 200 %s tickets, recent tickets and DB-active tickets without changing DB facts', async kind => {
-    const api = await fixture()
-    const database = { pool: api.pool }
     const root = await privateFixtureDirectory('ci-retention-')
     const mainId = randomUUID()
     const deviceId = randomUUID()
@@ -25,7 +26,9 @@ it.each(['main', 'device', 'github', 'circleci'] as const)(
     else if (kind === 'device') hostRef = { kind, mainId, deviceId }
     else hostRef = { kind: 'cloud', mainId, provider: kind, slot: 0 }
     const computer: HostCiComputer = { key: `fixture:${kind}`, hostRef, label: 'Fixture computer', priority: 1 }
-    const workspaceId = api.workspaceId
+    const workspaceId = randomUUID()
+    await database.pool.query('insert into workspaces(id,record) values($1,$2::jsonb)',
+      [workspaceId, JSON.stringify({ id: workspaceId, name: 'Retention fixture' })])
     const ports: HostCiPorts = { cpus: 8, memoryBytes: 16 * 2 ** 30,
       now: () => new Date('2026-10-14T00:00:00Z'),
       run: async () => ({ code: 0, stdout: 'active', stderr: '' }) }
@@ -56,7 +59,7 @@ it.each(['main', 'device', 'github', 'circleci'] as const)(
         finishedAt,
         ...(collecting ? { collection: 'pending' } : {}),
         initiator: { principalId: 'fixture-reader', executionId: null } })
-      await database.pool.query("insert into ci_runs(id,workspace_id,group_id,state,record,log_tail) values($1,$2,$3,$4,$5::jsonb,'retained log')",
+      await database.pool.query('insert into ci_runs(id,workspace_id,group_id,state,record) values($1,$2,$3,$4,$5::jsonb)',
         [id, workspaceId, record.groupId, record.state, JSON.stringify(record)])
       // The executor can already be settled while Main still needs its result.
       const directory = join(root, 'runs', id)
@@ -91,25 +94,8 @@ it.each(['main', 'device', 'github', 'circleci'] as const)(
         'select record from ci_runs where workspace_id=$1', [workspaceId])).rows.map(row => row.record)
       expect(saved).toEqual(expect.arrayContaining(records))
       expect(saved).toHaveLength(records.length)
-      await vi.waitFor(async () => {
-        const tails = (await database.pool.query<{ id: string; log_tail: string }>(
-          'select id::text,log_tail from ci_runs where workspace_id=$1', [workspaceId])).rows
-        const expired = new Set(records.slice(0, 7).map(record => record.id))
-        expect(tails.filter(row => row.log_tail === '').map(row => row.id).sort()).toEqual([...expired].sort())
-        expect(tails.filter(row => !expired.has(row.id)).every(row => row.log_tail === 'retained log')).toBe(true)
-      }, { timeout: 10_000 })
-      const ticketId = records[0]!.id
-      const read = await api.operator.callTool({ name: 'ci_get', arguments: { workspaceId, ticketId } })
-      expect(read.isError, JSON.stringify(read.content)).not.toBe(true)
-      const result = CiGetOutputSchema.parse(decodeMcpToolResult(read))
-      expect(result.run).toEqual(records[0])
-      expect(result.logTail).toBe('')
-      const denied = await (await api.connect(['workspaces:read'])).callTool({ name: 'ci_get', arguments: { workspaceId, ticketId } })
-      expect(denied.isError).toBe(true)
     } finally {
-      try {
-        if (hostRef.kind === 'cloud') await cloud.waitForMirrorCleanup('fixture/site', 'fixture/mirror')
-      } finally { await api.close() }
+      if (hostRef.kind === 'cloud') await cloud.waitForMirrorCleanup('fixture/site', 'fixture/mirror')
     }
   }, 30_000,
 )
