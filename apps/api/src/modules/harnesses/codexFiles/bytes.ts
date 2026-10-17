@@ -2,7 +2,6 @@ import { createHash } from 'node:crypto'
 import type { Readable } from 'node:stream'
 import { posix, win32 } from 'node:path'
 import type { RegisteredCodexCopy } from './port.js'
-import { reportOperationProgress } from '../../operationProgress.js'
 
 export class CodexFileDeliveryError extends Error {
   constructor(readonly code: string, options?: ErrorOptions) {
@@ -39,10 +38,7 @@ export async function collectCodexFileBytes(stream: Readable, maximum: number,
         const bytes = chunk as Uint8Array
         length += bytes.byteLength
         if (length > maximum) fail('CODEX_FILE_SIZE_LIMIT')
-        if (bytes.byteLength) {
-          chunks.push(Buffer.from(bytes))
-          reportOperationProgress(bytes.byteLength)
-        }
+        if (bytes.byteLength) chunks.push(Buffer.from(bytes))
       } catch (error) { finish(error) }
     }
     signal.addEventListener('abort', abort, { once: true })

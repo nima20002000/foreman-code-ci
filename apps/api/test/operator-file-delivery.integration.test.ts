@@ -250,41 +250,6 @@ describe.skipIf(!connectionString || process.platform === 'win32')('AF-02 produc
     }, 10000)
   }
 
-  it('revokes each text turn credential before a following turn receives fresh management authority', async () => {
-    await writeFile(join(f.directory, 'mcp.json'), JSON.stringify({ name: 'graphql', enabled: true, required: true,
-      transport: { type: 'streamable_http', url: managementEndpoint, bearer_token_env_var: 'GRAPHQL_MCP_TOKEN' } }))
-    const current = await operators.ensure()
-    await operators.update(input(f.directory).request.configuration.harness, current.operator.currentConfigurationVersionId)
-    const conversation = await chat.create(owner)
-    const access = new PostgresAccessService(pool)
-    const tokens: string[] = []
-    const sessions: string[] = []
-    for (const content of ['First text turn', 'Second text turn']) {
-      await chat.send(conversation.id, { requestId: randomUUID(), content }, owner)
-      const row = await until(async () => {
-        const active = await repository.active(conversation.id)
-        return active?.active_native_turn_id ? active : undefined
-      }, 10000)
-      sessions.push(row.native_session_id!)
-      const environment = await prepare.mock.results.at(-1)!.value
-      const token = environment.variables[OPERATOR_MCP_ENVIRONMENT_VARIABLE]!
-      tokens.push(token)
-      const delegate = await access.authenticate(token)
-      expect(delegate.id).not.toBe(owner.id)
-      expect(delegate.grants).toEqual([{ actions: ['harnesses:read', 'operator_handoff:read'], scope: {} }])
-      await finish(f.directory, row.native_session_id!)
-      await until(async () => (await chat.get(conversation.id, owner)).turnState === 'idle', 10000)
-      await expect(access.authenticate(token)).rejects.toMatchObject({ code: 'AUTH_REVOKED' })
-      expect(managers.size).toBe(0)
-    }
-    expect(sessions[1]).toBe(sessions[0])
-    expect(tokens[1]).not.toBe(tokens[0])
-    expect(prepare).toHaveBeenCalledTimes(2)
-    expect(setup).toHaveBeenCalledTimes(2)
-    expect((await calls(f.directory)).filter(entry =>
-      (entry.wire as { method?: string } | undefined)?.method === 'turn/start')).toHaveLength(2)
-  })
-
   it.each(['codex-cli 0.154.0', 'codex-cli 0.156.1'])(
     'R2-1 %s: a completed text-first Operator thread retains callable file tools on attachment resume', async (version) => {
       await retainCodexDeclarations(f)

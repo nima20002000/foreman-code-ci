@@ -8,7 +8,6 @@ import { useNativeHarnessOptions } from '../../shared/api/harnessSettings'
 import { OperatorMessages } from './OperatorMessages'
 import { OperatorHistory } from './OperatorHistory'
 import { HistoryWindowNotice } from '../conversations/HistoryWindowNotice'
-import { useChatTurnCompleted } from '../conversations/chatTurnCompletion'
 import type { OperatorTextProjection } from './operatorTextProjection'
 
 function AcceptedModelMessages(props: ComponentProps<typeof OperatorMessages>) {
@@ -29,7 +28,6 @@ export function OperatorTranscript({ messages, partialText, thinkingText = '', h
   approvalRevision?: string;
 }) {
   const client = useQueryClient()
-  const turnCompleted = useChatTurnCompleted(conversationId, activeRequestId)
   const activityKey = ['operator-chat', 'activity', conversationId ?? '', identityEpoch()] as const
   const earlierActivity = useInfiniteQuery({
     maxPages: 5, queryKey: activityKey,
@@ -74,7 +72,7 @@ export function OperatorTranscript({ messages, partialText, thinkingText = '', h
     return () => observer.disconnect()
   }, [])
   const renderMessages = (older: Message[]) => <AcceptedModelMessages messages={[...older, ...messages]} activities={entries}
-    activeRequestId={activeRequestId} parts={parts} timeline={timeline} working={working && !turnCompleted} partialText={partialText}
+    activeRequestId={activeRequestId} parts={parts} timeline={timeline} working={working} partialText={partialText}
     thinkingText={thinkingText} onBrowse={onBrowse} />
   return <div className="operator-chat-transcript">
     <div ref={scrollRef} className="operator-chat-transcript-scroll" role="region" aria-label="Operator transcript" tabIndex={0}
