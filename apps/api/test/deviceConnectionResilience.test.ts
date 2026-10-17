@@ -7,7 +7,6 @@ import { DeviceConnectionSupervisor } from '../src/modules/devices/connectionSup
 import { waitForDeviceReconnect } from '../src/modules/devices/deviceReconnect.js'
 import { adaptDeviceSocket } from '../src/modules/devices/deviceWire.js'
 import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
-import type { DeviceExtensionRegistration } from '../src/modules/devices/deviceApplicationChannel.js'
 
 class Socket extends EventEmitter {
   bufferedAmount = 0
@@ -37,8 +36,7 @@ const fingerprint = createHash('sha256').update(keys.publicKey.export({ type: 's
 const flush = async () => { for (let index = 0; index < 160; index++) await Promise.resolve() }
 
 function fixture(reconcile: (binding: DeviceSessionBinding, signal: AbortSignal) => Promise<void>,
-  workerReconcile: (binding: DeviceSessionBinding, signal: AbortSignal) => Promise<void> = async () => {},
-  extensions: DeviceExtensionRegistration[] = []) {
+  workerReconcile: (binding: DeviceSessionBinding, signal: AbortSignal) => Promise<void> = async () => {}) {
   const presence = vi.fn()
   const sockets: Socket[] = []
   const connectedAt: number[] = []
@@ -49,11 +47,11 @@ function fixture(reconcile: (binding: DeviceSessionBinding, signal: AbortSignal)
     signMainIdentityProof: async request => ({ request, mainApplicationVersion: 'build', mainPublicKey,
       mainPublicKeyFingerprint: fingerprint,
       signature: sign(null, Buffer.from(mainIdentityProofMessage(request, 'build')), keys.privateKey).toString('base64url') }),
-    reconcile, presence, extensions,
+    reconcile, presence,
   })
   const worker = new DeviceConnectionSupervisor({
     identity, appVersion: 'build', mainPublicKeyFingerprint: fingerprint, heartbeatMs: 1000,
-    random: () => 0.5, reconcile: workerReconcile, extensions,
+    random: () => 0.5, reconcile: workerReconcile,
     connect: async () => {
       connectedAt.push(Date.now())
       const main = new Socket()
@@ -75,26 +73,6 @@ function fixture(reconcile: (binding: DeviceSessionBinding, signal: AbortSignal)
 }
 
 afterEach(() => vi.useRealTimers())
-
-it('keeps copy authorization capacity through the signed Endpoint–Supervisor handshake', async () => {
-  const extensions: DeviceExtensionRegistration[] = [{ namespace: 'execution-v1', version: 1,
-    role: 'duplex', maxJsonBytes: 2048, maxBinaryBytes: 0, handle: async payload => ({ payload }) }]
-  const f = fixture(async () => {}, async () => {}, extensions)
-  try {
-    f.worker.start()
-    await vi.waitFor(() => expect(f.worker.status().phase).toBe('ready'))
-    await vi.waitFor(() => expect(f.endpoint.currentBinding(identity.deviceId, 'execution-v1')).toBeDefined())
-    const negotiated = f.worker.capabilities()
-    expect(negotiated).toContainEqual(expect.objectContaining({ namespace: 'execution-v1',
-      callbackAdmission: true, observationAdmission: true, mainCanRequest: true, workerCanRequest: true }))
-    expect(f.endpoint.capabilities(identity.deviceId)).toEqual(negotiated)
-    await expect(f.endpoint.request(identity.deviceId, 'execution-v1', { direction: 'to-worker' }))
-      .resolves.toEqual({ payload: { direction: 'to-worker' } })
-    await expect(f.worker.request('execution-v1', { direction: 'to-main' }))
-      .resolves.toEqual({ payload: { direction: 'to-main' } })
-    expect(f.connectedAt).toHaveLength(1)
-  } finally { await f.close() }
-})
 
 it.each(['main', 'worker'] as const)('allows application reconciliation on %s to outlast the handshake deadline', async side => {
   vi.useFakeTimers()

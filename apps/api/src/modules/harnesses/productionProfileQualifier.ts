@@ -30,8 +30,7 @@ export class ProductionHostHarnessProfileQualifier implements HostHarnessProfile
     if (commandInputHash(withAdvancedDefaults(value.configuration)) !== value.configurationFingerprint) {
       throw new DomainError('HARNESS_CONFIGURATION_MISMATCH', 'The saved configuration fingerprint is invalid.', 409)
     }
-    await requireClaudeProductionCredentialDelivery(value.configuration, this.accounts, value.target.hostRef,
-      value.target.applicationInstallationId)
+    await requireClaudeProductionCredentialDelivery(value.configuration, this.accounts, value.target.hostRef)
     const suiteRevision = value.driverId === 'claude'
       ? CLAUDE_PROFILE_CHECK_REVISION : `${value.driverId}-profile-check-v1`
     if (value.target.hostRef.kind === 'device') {

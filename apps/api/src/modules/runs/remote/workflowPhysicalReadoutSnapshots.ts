@@ -23,8 +23,6 @@ export class WorkflowPhysicalReadoutSnapshots {
   }>()
   private bytes = 0
 
-  constructor(private readonly now: () => number = () => Date.now()) {}
-
   private remove(key: string) {
     const snapshot = this.snapshots.get(key)
     if (!snapshot) return
@@ -35,7 +33,7 @@ export class WorkflowPhysicalReadoutSnapshots {
   remember(input: PhysicalReadoutSelector, readout: RemoteWorkflowPhysicalReadout,
     metadata: { digest: string; byteSize: number }) {
     for (const [key, snapshot] of this.snapshots) {
-      if (snapshot.expiresAt <= this.now()) this.remove(key)
+      if (snapshot.expiresAt <= Date.now()) this.remove(key)
     }
     const selector = selectorHash(input)
     const key = `${selector}:${metadata.digest}`
@@ -52,7 +50,7 @@ export class WorkflowPhysicalReadoutSnapshots {
   read(input: PhysicalReadoutSelector, digest: string): RemoteWorkflowPhysicalReadout {
     const key = `${selectorHash(input)}:${digest}`
     const snapshot = this.snapshots.get(key)
-    if (!snapshot || snapshot.expiresAt <= this.now()) {
+    if (!snapshot || snapshot.expiresAt <= Date.now()) {
       this.remove(key)
       throw new DomainError('transfer-expired', 'The physical readout continuation is no longer retained.', 409)
     }

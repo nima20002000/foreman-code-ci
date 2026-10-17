@@ -65,24 +65,18 @@ export async function finish(directory: string, sessionId: string, answer = 'cor
   } } })
 }
 // Integration suites run many production fixtures at once; a fixture state change can lag well past 5 s.
-export async function until<T>(
-  probe: () => Promise<T | undefined | false>,
-  timeout = 20_000,
-  schedule = setTimeout,
-): Promise<T> {
+export async function until<T>(probe: () => Promise<T | undefined | false>, timeout = 20_000): Promise<T> {
   const start = Date.now()
   while (Date.now() - start < timeout) {
     const value = await probe()
     if (value !== undefined && value !== false) return value
-    await new Promise((resolve) => schedule(resolve, 10))
+    await new Promise((resolve) => setTimeout(resolve, 10))
   }
   throw new Error('Timed out waiting for fixture state.')
 }
 export function collect(iterator: AsyncIterable<NativeHarnessEvent>): Promise<NativeHarnessEvent[]> {
   const result = (async () => { const events: NativeHarnessEvent[] = []; for await (const event of iterator) events.push(event); return events })()
-  void result.catch(() => {
-    // ignore: The caller awaits the original promise, which retains the rejection.
-  })
+  void result.catch(() => undefined)
   return result
 }
 export function errorCode(error: unknown): string | undefined {

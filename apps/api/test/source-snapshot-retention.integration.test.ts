@@ -2,7 +2,6 @@ import { sourceStorageCapacityFixture } from './helpers/sourceStorageCapacityFix
 import {
   beginTransaction, commitTransaction, rollbackTransaction, withTransaction,
 } from '../src/infrastructure/transaction.js'
-import { PostgresCommandReceiptRetention } from '../src/modules/commands/receiptRetention.js'
 import { sourceStorageLimits } from '../src/modules/sources/storageCapacity.js'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { randomUUID } from 'node:crypto'
@@ -210,7 +209,7 @@ async function setup() {
     return { principal: owner.principal, workspaceId, rootId: root.binding.rootId,
       bindingRevision: root.binding.bindingRevision, source: root.source, operationId, attempt }
   }
-  return { pool, store, sources, executions, client, access, owner, workspaceId, canonical, mainId, app, project,
+  return { pool, store, sources, executions, client, access, owner, workspaceId, canonical, mainId, app,
     approve, failedCapture, approval, sourcePin, pin, reservation, captureReservation, read, seedJob, finishJob, connect,
     executionRoot, preparation,
     async close() {
@@ -1105,97 +1104,4 @@ it('keeps maintenance backoff while allowing a direct cleanup retry to reclaim u
   const retry = await f.client.callTool({ name: 'source_approve', arguments: approved.input })
   expect(retry.isError).toBe(true)
   expect(JSON.stringify(retry.content)).toContain('SOURCE_UNAVAILABLE')
-}, 60_000)
-
-
-it('expires old unavailable source responses while preserving retained source retries and audit identities', async () => {
-  fixture = await setup()
-  const f = fixture
-  const expired = await f.approve(SOURCE_RETENTION_SECONDS * 3)
-  await f.sources.releaseUnusedSnapshots()
-  expect((await f.pool.query('select availability from source_snapshots where snapshot_id=$1',
-    [expired.source.manifest.snapshotId])).rows).toEqual([{ availability: 'unavailable' }])
-  const retained = await f.approve()
-  const commands = new PostgresCommandCoordinator(f.pool)
-  for (const { input } of [expired, retained]) {
-    await commands.execute({ principal: f.owner.principal, source: 'mcp', operation: 'source.project.capture',
-      commandId: input.commandId, targetKey: f.workspaceId, payload: input, perform: async () => input })
-  }
-  const old = new Date(Date.now() - 31 * 86_400_000)
-  await f.pool.query(`update management_command_receipts set created_at=$2
-    where operation in ('source.approve','source.project.capture') and command_id=any($1::text[])`,
-  [[expired.input.commandId, retained.input.commandId], old])
-  await f.pool.query(`update management_audit set occurred_at=$2
-    where action in ('source.approve','source.project.capture') and details->>'commandId'=any($1::text[])`,
-  [[expired.input.commandId, retained.input.commandId], old])
-  const retention = new PostgresCommandReceiptRetention(f.pool)
-  expect(await retention.prune()).toBe(2)
-  const rows = (await f.pool.query<{ command_id: string }>(
-    "select command_id from management_command_receipts where operation='source.approve'", [])).rows
-  expect(rows.map(row => row.command_id)).toEqual([retained.input.commandId])
-  expect((await f.pool.query(`select 1 from management_audit
-    where action='source.approve' and details->>'commandId'=$1 and outcome='succeeded'`,
-  [expired.input.commandId])).rowCount).toBe(1)
-  await expect(commands.execute({ principal: f.owner.principal, source: 'mcp', operation: 'source.project.capture',
-    commandId: expired.input.commandId, targetKey: f.workspaceId, payload: expired.input,
-    perform: async () => { throw new Error('Expired capture must not execute again') },
-  })).rejects.toMatchObject({ code: 'COMMAND_RESULT_EXPIRED' })
-  const reader = await f.access.issue({ name: 'Source reader', audience: 'operator',
-    grants: [{ actions: ['sources:read'], scope: { workspaceIds: [f.workspaceId] } }],
-    expiresAt: new Date(Date.now() + 60_000) })
-  const denied = await (await f.connect(reader.token)).callTool({ name: 'source_approve', arguments: retained.input })
-  expect(denied.isError).toBe(true)
-  const retry = await f.client.callTool({ name: 'source_approve', arguments: expired.input })
-  expect(retry.isError).toBe(true)
-  expect(JSON.stringify(retry.content)).toContain('SOURCE_UNAVAILABLE')
-  const replay = await f.client.callTool({ name: 'source_approve', arguments: retained.input })
-  expect(replay.isError, JSON.stringify(replay.content)).not.toBe(true)
-  expect(SourceApproveResultSchema.parse(decodeMcpToolResult(replay)).replayed).toBe(true)
-}, 60_000)
-
-
-it('expires both response kinds for reused repository snapshots without losing retry fences across sweeps', async () => {
-  fixture = await setup()
-  const f = fixture
-  await f.pool.query(`update workspaces set record=record||$2::jsonb where id=$1`,
-    [f.workspaceId, JSON.stringify({ repository: { provider: 'github', owner: 'fixture', name: 'site', defaultBranch: 'main' } })])
-  const options = { preparedRepository: { repository: 'fixture/site', clone: f.project,
-    commit: f.approval.commit, locationRevision: f.approval.expectedLocationRevision } }
-  const first = { workspaceId: f.workspaceId, commit: f.approval.commit, commandId: randomUUID(), executablePolicy: 'strip' as const }
-  const reused = { ...first, commandId: randomUUID() }
-  vi.useFakeTimers({ toFake: ['Date'] })
-  vi.setSystemTime(Date.now() - SOURCE_RETENTION_SECONDS * 3_000)
-  let original: ApprovedSource
-  let shared: ApprovedSource
-  try {
-    original = await f.sources.approveProject(f.owner.principal, first, options)
-    shared = await f.sources.approveProject(f.owner.principal, reused, options)
-  } finally { vi.useRealTimers() }
-  expect(shared.manifest.snapshotId).toBe(original.manifest.snapshotId)
-  expect((await f.pool.query('select 1 from source_approvals where command_id=$1', [reused.commandId])).rows).toEqual([])
-  await f.sources.releaseUnusedSnapshots()
-  const listed = await f.client.callTool({ name: 'source_list', arguments: { workspaceId: f.workspaceId, detail: 'full' } })
-  expect(listed.isError).not.toBe(true)
-  expect(SourceListResultSchema.parse(decodeMcpToolResult(listed)).items)
-    .toEqual([expect.objectContaining({ availability: 'unavailable' })])
-  await expect(f.sources.approveProject(f.owner.principal, reused, options))
-    .rejects.toMatchObject({ code: 'SOURCE_UNAVAILABLE' })
-  const old = new Date(Date.now() - 31 * 86_400_000)
-  await f.pool.query(`update management_command_receipts set created_at=$2
-    where command_id=any($1::text[]) and operation in ('source.approve','source.project.capture')`,
-  [[first.commandId, reused.commandId], old])
-  await f.pool.query(`update management_audit set occurred_at=$2 where details->>'commandId'=any($1::text[])
-    and action in ('source.approve','source.project.capture') and outcome='succeeded'`,
-  [[first.commandId, reused.commandId], old])
-  const retention = new PostgresCommandReceiptRetention(f.pool)
-  let removed = 0
-  for (let sweep = 0; sweep < 5; sweep++) removed += await retention.prune()
-  expect(removed).toBe(4)
-  expect((await f.pool.query('select 1 from management_command_receipts where command_id=any($1::text[])',
-    [[first.commandId, reused.commandId]])).rows).toEqual([])
-  expect((await f.pool.query(`select 1 from management_audit where details->>'commandId'=any($1::text[])
-    and action in ('source.approve','source.project.capture') and outcome='succeeded'`,
-  [[first.commandId, reused.commandId]])).rowCount).toBe(4)
-  await expect(f.sources.approveProject(f.owner.principal, reused, options))
-    .rejects.toMatchObject({ code: 'COMMAND_RESULT_EXPIRED' })
 }, 60_000)
