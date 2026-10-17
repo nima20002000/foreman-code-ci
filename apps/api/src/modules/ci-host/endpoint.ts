@@ -57,7 +57,7 @@ export class ProductionHostCiEndpoint implements HostCiEndpoint {
 
   async computers(): Promise<HostCiComputer[]> {
     // Recovery sweeps and org discovery make provider calls; planning and listing must not wait for them.
-    void this.discoverClouds?.()
+    if (this.discoverClouds) void withoutCiDatabasePriority(this.discoverClouds)
     for (const cloud of this.clouds) {
       void withoutCiDatabasePriority(() => cloud.reconcile()).catch(error => {
         log.warn({ operation: 'recover cloud CI tickets', err: error, provider: cloud.provider.id },
