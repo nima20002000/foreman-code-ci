@@ -24,7 +24,7 @@ export async function remoteChatProvider(harness: 'codex' | 'claude', directory:
   let reply: Deferred<void> | undefined
   let holdCompactionNotifications = false
   const compactionNotifications: Array<() => void> = []
-  let manager: NativeHarnessSessionManager
+  let createManager: () => NativeHarnessSessionManager
   if (harness === 'codex') {
     const replay = new ActivityProductionReplay(`remote-chat-${randomUUID()}`)
     const infrastructure = replay.infrastructure()
@@ -68,7 +68,7 @@ export async function remoteChatProvider(harness: 'codex' | 'claude', directory:
           return result
         } }
       } }
-    manager = new CodexAppServerSessionManager('/recorded-no-native-codex', undefined, undefined,
+    createManager = () => new CodexAppServerSessionManager('/recorded-no-native-codex', undefined, undefined,
       undefined, 'none', options.codexFiles, dependencies)
   } else {
     const nativeId = randomUUID()
@@ -130,7 +130,7 @@ export async function remoteChatProvider(harness: 'codex' | 'claude', directory:
         }
       },
     }
-    manager = allocateClaudeNativeHarness({ harness: 'claude', role: 'agent-chat', appMcpAccess: 'none',
+    createManager = () => allocateClaudeNativeHarness({ harness: 'claude', role: 'agent-chat', appMcpAccess: 'none',
       workingDirectory: directory, ownerAgentId: 'recorded-agent',
       ownerForStart: start => ({ ownerId: start.kind === 'agent-chat' ? start.conversationId : 'recorded-owner',
         attemptId: start.correlationId ?? 'recorded-request', generation: 'recorded-query' }),
@@ -139,7 +139,7 @@ export async function remoteChatProvider(harness: 'codex' | 'claude', directory:
       sdkOptions: { includePartialMessages: true }, qualification: { sdkVersion: '0.3.284', cliVersion: '2.1.284',
         basicTurns: true, resume: true, fork: false, history: true } }).manager
   }
-  return { manager, modes, prompts, calls, get compactions() { return compactions },
+  return { manager: createManager(), createManager, modes, prompts, calls, get compactions() { return compactions },
     holdCompactionNotifications() { holdCompactionNotifications = true },
     releaseCompactionNotifications() {
       holdCompactionNotifications = false

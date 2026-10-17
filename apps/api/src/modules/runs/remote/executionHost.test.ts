@@ -387,13 +387,13 @@ describe('actual worker native-port adapter', () => {
     await proxy.closeForRestart(session)
     await proxy.dispose()
     await expect(proxy.closeForRestart({ ...session, nativeSessionId: 'another-session' })).rejects.toThrow('Wrong remote native session')
-    expect(methods).toEqual(['prepare'])
+    expect(methods).toEqual(['prepare', 'history'])
     expect(f.state.starts).toBe(1)
     expect(f.state.cancels).toBe(0)
     expect((await f.journal.status(f.intent.operationId)).status).toBe('known')
   })
 
-  it('detaches the admitted session while history is unavailable and preserves its continuation', async () => {
+  it('retains failed restart disposition until the original history can be observed', async () => {
     const f = await setup()
     let unavailable = false
     const proxy = new RemoteNativeSessionManager({
@@ -406,10 +406,8 @@ describe('actual worker native-port adapter', () => {
     })
     const session = await proxy.createSession({ request: f.request, correlationId: 'execution:execution' })
     unavailable = true
-    const original = await f.journal.status(f.intent.operationId)
-    await expect(proxy.closeForRestart(session)).resolves.toBeUndefined()
-    await expect(proxy.dispose()).resolves.toBeUndefined()
-    expect(await f.journal.status(f.intent.operationId)).toEqual(original)
+    await expect(proxy.closeForRestart(session)).rejects.toThrow('History unavailable')
+    await expect(proxy.dispose()).rejects.toThrow('disposal is unconfirmed')
     unavailable = false
     await proxy.closeForRestart(session)
     await proxy.dispose()
