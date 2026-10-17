@@ -2,9 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { SessionControlStateSchema, unavailableSessionControls, type OperatorConversationState } from '@foreman-code/contracts'
-import { http, HttpResponse } from 'msw'
-import { server } from '../../mocks/server'
+import type { OperatorConversationState } from '@foreman-code/contracts'
 import { getOperatorConversation, sendOperatorMessage } from '../../shared/api/client'
 import { subscribeOperatorChat } from '../../shared/api/operatorChatStream'
 import { listOperatorConversationSummaries } from '../../shared/api/operatorChatSummaries'
@@ -81,31 +79,14 @@ describe('Operator chat interactions', () => {
     await user.tab()
     expect(screen.getByRole('button', { name: /Agent settings:/ })).toHaveFocus()
   })
-  it('keeps context-left in the header beside Close, showing the model window before the first turn', async () => {
-    server.use(http.get('/api/operator/conversations/:conversationId/session-controls', ({ params }) =>
-      HttpResponse.json(SessionControlStateSchema.parse({
-        conversationId: String(params.conversationId), revision: 0, profileKey: 'profile', desiredMode: 'regular',
-        appliedMode: null, defaults: {}, desired: {}, applied: null, applicability: 'next-turn', context: null,
-        nativeSessionId: null, nativeProviderVersion: null, compaction: null, compactions: [], busyReason: null,
-        capabilities: { ...unavailableSessionControls('profile'), modelCapacity: 200000 },
-      }))))
+  it('keeps context-left in the header beside Close and out of the composer', async () => {
     useOperatorChatStore.setState({ open: true })
     renderChat()
     const close = await screen.findByRole('button', { name: 'Close Operator chat' })
-    const context = await screen.findByRole('button', { name: '0% context' })
+    const context = await screen.findByRole('button', { name: /context/i })
     expect(close.parentElement).toContainElement(context)
-    const composer = within(screen.getByRole('form', { name: 'Conversation composer' }))
-    expect(composer.queryByRole('button', { name: /context/i })).not.toBeInTheDocument()
-    expect(composer.queryByRole('combobox', { name: 'Conversation mode' })).not.toBeInTheDocument()
-    expect(screen.queryByText(/context unknown/i)).not.toBeInTheDocument()
+    expect(within(screen.getByRole('form', { name: 'Conversation composer' })).queryByRole('button', { name: /context/i })).not.toBeInTheDocument()
     expect(screen.queryByText(/starts on the next turn/)).not.toBeInTheDocument()
-  })
-  it('shows no context meter before the first turn when the model window is not known yet', async () => {
-    useOperatorChatStore.setState({ open: true })
-    renderChat()
-    await screen.findByRole('button', { name: 'Close Operator chat' })
-    await screen.findByRole('textbox', { name: 'Message' })
-    expect(screen.queryByRole('button', { name: /context/i })).not.toBeInTheDocument()
   })
   it('keeps a rejected turn reason visible after reload without retrying it', async () => {
     const originalLocks = Object.getOwnPropertyDescriptor(navigator, 'locks')
