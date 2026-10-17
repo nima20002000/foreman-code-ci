@@ -68,15 +68,43 @@ describe('stable graph topology (reference assertions, not a renderer benchmark)
     expect(reordered.edges[0]).toBe(before.edges[2])
   })
 
-  it('ignores saved positions: moving a node on paper leaves the drawn Board untouched', () => {
+  it('keeps a manually placed node where the person put it and re-aims only its incident edges', () => {
     const { workflow, agents } = makeScaleGraph(4)
     const reconcile = createGraphTopologyProjector()
     const before = reconcile(workflow, agents)
     const after = reconcile({ ...workflow, nodes: workflow.nodes.map((node, index) => index === 0
-      ? { ...node, position: { x: 300, y: 500 } } : node) }, agents)
-    expect(after.edges[0]).toBe(before.edges[0])
+      ? { ...node, position: { x: 300, y: 500, manual: true } } : node) }, agents)
+    expect(nativeNode(after.nodes[0]).position).toEqual({ x: 300, y: 500 })
+    expect(before.edges[0].sourceHandle).toBe('bottom')
+    expect(after.edges[0].sourceHandle).toBe('left')
+    expect(after.edges[0]).not.toBe(before.edges[0])
     expect(after.edges[1]).toBe(before.edges[1])
-    expect(nativeNode(after.nodes[0]).position).toEqual(nativeNode(before.nodes[0]).position)
+    expect(after.edges[2]).toBe(before.edges[2])
     expect(nativeNode(after.nodes[1])).toBe(nativeNode(before.nodes[1]))
+    expect(nativeNode(after.nodes[2])).toBe(nativeNode(before.nodes[2]))
+    expect(nativeNode(after.nodes[3])).toBe(nativeNode(before.nodes[3]))
+  })
+
+  it('hierarchy-places absent and legacy positions while preserving manual placement', () => {
+    const { workflow, agents } = makeScaleGraph(4)
+    const unplaced = { ...workflow, nodes: workflow.nodes.map((node, index) => {
+      if (index === 1) return { ...node, position: { x: 900, y: 900, manual: true } }
+      if (index !== 3) return node
+      const copy = { ...node }
+      delete copy.position
+      return copy
+    }) }
+    const automatic = { ...workflow, nodes: workflow.nodes.map((node) => {
+      const copy = { ...node }
+      delete copy.position
+      return copy
+    }) }
+    const hierarchy = createGraphTopologyProjector()(automatic, agents).nodes
+    const nodes = createGraphTopologyProjector()(unplaced, agents).nodes.map(nativeNode)
+    expect(nodes[1]!.position).toEqual({ x: 900, y: 900 })
+    expect(new Set(nodes.filter((_, index) => index !== 1).map((node) => `${node.position.x},${node.position.y}`)).size).toBe(3)
+    for (const index of [0, 2, 3]) expect(nodes[index]!.position).toEqual(hierarchy[index]!.position)
+    expect(nodes[2]!.position.y).toBeGreaterThan(nodes[0]!.position.y)
+    expect(nodes[3]!.position.y).toBeGreaterThan(nodes[2]!.position.y)
   })
 })

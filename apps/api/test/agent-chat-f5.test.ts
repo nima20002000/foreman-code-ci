@@ -77,7 +77,12 @@ function approvalFixture() {
     if (text.includes('conversation_session_') || text.includes('as compaction')) {
       return controls.query(text, values)
     }
-    assert.equal(text, 'select id,name,audience,grants,expires_at,revoked_at,delegated_from from management_principals where id=$1 for share')
+    if (text.includes('from agents')) return { rows:
+      values[0] === workspaceId && values[1] === context.agentId
+        ? [{ current_configuration_version_id: configuration.id }] : [] }
+    if (text !== 'select id,name,audience,grants,expires_at,revoked_at,delegated_from from management_principals where id=$1 for share') {
+      throw new Error(`Unscripted approval fixture query: ${text}`)
+    }
     const rows = values[0] === principal.id ? [{ id: principal.id, name: principal.name, audience: principal.audience,
       grants: principal.grants, expires_at: new Date(principal.expiresAt), revoked_at: null, delegated_from: null }] : []
     return { rows, rowCount: rows.length }

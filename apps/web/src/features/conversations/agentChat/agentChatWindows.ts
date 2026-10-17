@@ -1,5 +1,6 @@
 import { createContext, useContext } from 'react'
 import { create } from 'zustand'
+import { raiseFloating, releaseFloating } from '../../../shared/ui/floatingStack'
 
 /** Position and size of a floating Agent chat window, in pixels inside the Board. */
 export type ChatWindowFrame = { x: number; y: number; width: number; height: number }
@@ -82,15 +83,15 @@ const toFront = (ids: readonly string[] = [], nodeId: string) => ids.at(-1) === 
 /** Local interaction state only: not shareable through the URL and not server state. */
 export const useChatWindowsStore = create<ChatWindowsState>((set) => ({
   open: {}, frames: {}, focus: {},
-  openWindow: (scope, nodeId) => set((state) => ({
+  openWindow: (scope, nodeId) => { raiseFloating(chatWindowKey(scope, nodeId)); set((state) => ({
     open: { ...state.open, [scope]: toFront(state.open[scope], nodeId) },
     focus: { ...state.focus, [chatWindowKey(scope, nodeId)]: (state.focus[chatWindowKey(scope, nodeId)] ?? 0) + 1 },
-  })),
-  raise: (scope, nodeId) => set((state) => {
+  })) },
+  raise: (scope, nodeId) => { raiseFloating(chatWindowKey(scope, nodeId)); set((state) => {
     const ids = toFront(state.open[scope], nodeId)
     return ids === state.open[scope] ? state : { open: { ...state.open, [scope]: ids } }
-  }),
-  closeWindow: (scope, nodeId) => set((state) => ({ open: { ...state.open, [scope]: (state.open[scope] ?? []).filter((id) => id !== nodeId) } })),
+  }) },
+  closeWindow: (scope, nodeId) => { releaseFloating(chatWindowKey(scope, nodeId)); set((state) => ({ open: { ...state.open, [scope]: (state.open[scope] ?? []).filter((id) => id !== nodeId) } })) },
   setFrame: (scope, nodeId, frame) => set((state) => ({ frames: { ...state.frames, [chatWindowKey(scope, nodeId)]: frame } })),
 }))
 
