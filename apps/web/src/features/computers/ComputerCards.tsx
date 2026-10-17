@@ -111,7 +111,6 @@ export function ComputerCards({ mainId, devices, onSelectComputer, only }: {
       </li>)}
     </ul>
     {only ? null : <MainRuntimeSetup />}
-    {!only && !devices.some(device => device.status === 'paired') && <p className="computer-list-caption">Add a computer to share builds and agents.</p>}
   </>
 }
 
@@ -138,6 +137,8 @@ function ComputerCard({ card, observed, fresh, activityComplete, codexMcp, claud
       <Monitor size={20} aria-hidden="true" />
       <h3>{name}</h3>
       <Badge tone={online ? 'success' : 'neutral'} dot>{presenceLabel(observed, fresh)}</Badge>
+      <Badge>Agent host</Badge>
+      {card.build?.preference.buildEnabled ? <Badge>CI</Badge> : null}
       {onOpen ? <IconButton label={`Open ${name}`} variant="ghost" size="sm" onClick={onOpen}><ChevronRight size={16} /></IconButton> : null}
     </header>
     <ComputerUtilization target={card.target} online={online} />
@@ -173,7 +174,7 @@ function ComputerCard({ card, observed, fresh, activityComplete, codexMcp, claud
         {!activityComplete ? <small>Other activity may not be visible.</small> : null}
       </> : 'Activity unknown'}</dd></div>
       {card.target.hostRef.kind === 'main' && card.build ? <div><dt>Worker execution</dt><dd>
-        {card.build.remoteExecutionEnabled ? 'On' : 'Off'} <small className="computer-card-note">set when Main starts</small></dd></div> : null}
+        {card.build.remoteExecutionEnabled ? 'On' : 'Off'}</dd></div> : null}
       <div><dt>System</dt><dd><SystemState status={maintenance} busy={maintaining || maintenanceError}
         onMaintain={onMaintain} agents={observed?.agents.length ?? 0} jobs={observed?.jobs.length ?? 0}
         activityComplete={Boolean(observed) && fresh && activityComplete} /></dd></div>
