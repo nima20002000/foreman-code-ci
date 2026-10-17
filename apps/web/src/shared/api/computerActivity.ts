@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { queryOptions, useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ComputerActivityListSchema, ComputerRenameInputSchema, ComputerRenameResultSchema } from '@foreman-code/contracts/computer-activity'
 import type { DeviceProvisioningTarget } from '@foreman-code/contracts/device-resources'
 import { TELEMETRY_LIMITS, TelemetrySelectorResultSchema } from '@foreman-code/contracts/resource-telemetry'
@@ -38,9 +38,8 @@ export function useRenameComputer() {
       { method: 'POST', body: ComputerRenameInputSchema.parse(input) }),
     onSettled: () => client.invalidateQueries({ queryKey: ['computer-activity'] }) })
 }
-export function useComputerUtilization(target: DeviceProvisioningTarget, online: boolean) {
-  useHarnessSessionEpoch()
-  return useQuery({ queryKey: ['computer-utilization', sessionGeneration(), target],
+function computerUtilizationOptions(target: DeviceProvisioningTarget, online: boolean) {
+  return queryOptions({ queryKey: ['computer-utilization', sessionGeneration(), target],
     enabled: online && !sessionIsSwitching(), retry: false, gcTime: 0, refetchInterval: TELEMETRY_LIMITS.intervalMs,
     queryFn: async ({ signal }) => {
       const resolved = await apiClient.request('/api/management/resource-telemetry/selector',
@@ -56,4 +55,15 @@ export function useComputerUtilization(target: DeviceProvisioningTarget, online:
       }
       return readResourceTelemetry(selector, { signal })
     } })
+}
+
+export function useComputerUtilization(target: DeviceProvisioningTarget, online: boolean) {
+  useHarnessSessionEpoch()
+  return useQuery(computerUtilizationOptions(target, online))
+}
+
+/** Shares the same per-computer cache and polling as the individual detail cards. */
+export function useComputerUtilizations(computers: { target: DeviceProvisioningTarget; online: boolean }[]) {
+  useHarnessSessionEpoch()
+  return useQueries({ queries: computers.map(computer => computerUtilizationOptions(computer.target, computer.online)) })
 }
