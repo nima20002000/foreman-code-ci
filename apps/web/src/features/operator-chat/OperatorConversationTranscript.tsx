@@ -27,7 +27,7 @@ export function OperatorConversationTranscript({ conversation, retired, archived
   const select = useOperatorChatStore((state) => state.select)
   return <>
     {!retired ? <ProviderAccountProblem binding={conversation.providerAccountBinding} /> : null}
-    {archived ? <Alert tone="warning" title="Conversation ended">This conversation is read-only. Its history and pending receipt remain available.</Alert> : null}
+    {archived ? <Alert tone="warning" title="Conversation ended">This conversation is read-only.</Alert> : null}
     {conversation.handoff ? <p className="operator-chat-handoff">Continued from <Button size="sm" variant="ghost" onClick={() => select(conversation.handoff!.parentConversationId)}>{conversation.handoff.sourceHarness} chat</Button>
       {conversation.handoff.omittedMessages ? ` · ${conversation.handoff.omittedMessages} older messages omitted from agent context` : ''}</p> : null}
     <OperatorTranscript key={conversation.conversation.id} conversationId={conversation.conversation.id} messages={conversation.messages} activities={conversation.activities} activityNextCursor={conversation.activityNextCursor}

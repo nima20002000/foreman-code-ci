@@ -1,3 +1,4 @@
+import { InfoHint } from '../../shared/ui/InfoHint'
 import { useQueryClient } from '@tanstack/react-query'
 import { WorkspaceRepositorySchema, type WorkspaceRepository } from '@foreman-code/contracts'
 import type { ManagedWorkspace } from '@foreman-code/contracts/management'
@@ -162,9 +163,9 @@ export function WorkspaceRepositoryForm({ workspaceId, revision, repository }: {
     error: conflict ? 'Review the repository conflict before saving.' : form.error, save, discard: form.reset })
   return <section className="workspace-repository" aria-label="GitHub repository">
     <h2>GitHub repository</h2>
-    <p>Each agent in a run gets its own branch and worktree of this repository on its computer.</p>
     <div className="workspace-repository-fields">
-      <TextField label="Repository" placeholder="owner/name" value={fields.slug} disabled={locked}
+      <TextField label="Repository"
+        labelHint={<InfoHint label="Repository">Each agent in a run gets its own branch and worktree of this repository on its computer.</InfoHint>} placeholder="owner/name" value={fields.slug} disabled={locked}
         onChange={event => form.setDraft({ ...fields, slug: event.target.value })}
         error={fields.slug && repositoryInvalid
           ? 'Use owner/name or a GitHub repository URL without extra path segments.' : undefined} />
@@ -172,7 +173,6 @@ export function WorkspaceRepositoryForm({ workspaceId, revision, repository }: {
         onChange={event => form.setDraft({ ...fields, branch: event.target.value })} error={branchError} />
     </div>
     {status?.state !== 'ready' && <>
-      <p>Add project prepares a clone on Main and approves the supported tracked files from this base branch.</p>
       <Select label="Project location on Main" value={base?.base.baseId ?? ''} disabled={locked}
         options={[{ value: '', label: 'Choose an approved location', disabled: true },
           ...bases.map(item => ({ value: item.base.baseId, label: item.base.canonicalPath }))]}
@@ -200,6 +200,7 @@ export function WorkspaceRepositoryForm({ workspaceId, revision, repository }: {
       {(!repository || status?.state !== 'ready' || importPending) && <Button variant="primary"
         disabled={busy || (!importPending && (locked || preparationDisabled))}
         onClick={() => void prepareProject()}>{importPending ? 'Retry project preparation' : repository ? 'Prepare project' : 'Add project'}</Button>}
+      {(!repository || status?.state !== 'ready' || importPending) && <InfoHint label="Add project">Add project prepares a clone on Main and approves the supported tracked files from this base branch.</InfoHint>}
       {repository && !importPending && <Button variant={status?.state === 'ready' ? 'primary' : 'secondary'}
         disabled={form.isSaving || incomplete || (!form.uncertain && (saveDisabled || !form.isDirty))}
         onClick={() => void saveMetadata()}>{form.uncertain ? 'Retry repository save' : 'Save repository'}</Button>}

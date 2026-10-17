@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 
-import type { DurableInteraction, NativeSessionReference } from '@foreman-code/contracts'
+import type { DurableInteraction, NativeSessionReference, PendingNativeInteraction } from '@foreman-code/contracts'
 import { it } from 'vitest'
 import type pg from 'pg'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
@@ -8,7 +8,7 @@ import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { DomainError } from '../src/modules/errors.js'
 import type { NativeHarnessSessionManager, NativeHistory, NativeResponseIdentity } from '../src/modules/harnesses/port.js'
 import type { PostgresApprovalBudgetRepository } from '../src/modules/interactions/budget.js'
-import { matchingDeliveryEvidence, type InteractionDeliveryClaim, type NativeDeliveryOutcome, type NativeResponseDeliveryEvidence } from '../src/modules/interactions/delivery.js'
+import { matchingDeliveryEvidence, responseValueDigest, type InteractionDeliveryClaim, type NativeDeliveryOutcome, type NativeResponseDeliveryEvidence } from '../src/modules/interactions/delivery.js'
 import type { GraphResumeClaim } from '../src/modules/interactions/deliveryPostgres.js'
 import { Wave25InteractionRepository } from '../src/modules/interactions/wave25/repository.js'
 import { SingleWriterSessionManager } from '../src/modules/interactions/sessionWriter.js'
@@ -16,6 +16,11 @@ import { nativeLanes } from './helpers/nativeLanes.js'
 import type { InteractionNativeRuntime } from '../src/modules/interactions/runtimePorts.js'
 import { InteractionService } from '../src/modules/interactions/service.js'
 import { deferred } from './helpers/deferred.js'
+import { ActivityProductionReplay } from './helpers/activityProductionReplay.js'
+import { input } from './fixtures/codex-test-helpers.js'
+import { CodexAppServerSessionManager } from '../src/modules/harnesses/codexAppServer.js'
+import { ApprovalPostgresSaver } from '../src/infrastructure/approvalCheckpointSaver.js'
+import { ExclusiveGraphConnection } from '../src/modules/run-graph/connection.js'
 
 function fixture(): DurableInteraction {
   return {
@@ -41,8 +46,10 @@ const reviewerPrincipal: ManagementPrincipal = { ...userPrincipal, id: 'unit-rev
  * explicit recording ports, not PostgreSQL/native receipt qualification. The
  * delegate tests below retain exact token/decision checks and distinguish a
  * committed checkpoint fixture from a callback that merely returns. */
-function harness() {
+function harness(manager?: NativeHarnessSessionManager, pending?: PendingNativeInteraction) {
   let record = fixture()
+  if (pending) record = { ...record, ...pending.session, nativeRequestId: pending.turn.nativeRequestId!,
+    nativeRequestType: pending.nativeRequestType, request: pending.request, responseOptions: pending.responseOptions }
   let claim: InteractionDeliveryClaim | undefined
   let graphOwned = false
   let attempt = 0
@@ -167,7 +174,7 @@ function harness() {
       calls.reconciles++; return control.history
     },
   } as unknown as NativeHarnessSessionManager
-  const writer = new SingleWriterSessionManager(rawManager, nativeLanes(), record.requestingAgentId)
+  const writer = new SingleWriterSessionManager(manager ?? rawManager, nativeLanes(), record.requestingAgentId)
   const runtime: InteractionNativeRuntime = {
     withInteractionOwner: async <T>(interaction: DurableInteraction, signal: AbortSignal,
       work: (signal: AbortSignal) => Promise<T>): Promise<T> => {
@@ -199,7 +206,7 @@ function harness() {
     return instance
   }
   const respond = (instance = service()) => instance.respond({ kind: 'user', principal: userPrincipal }, {
-    interactionId: record.id, optionId: 'opaque-option', expectedRevision: record.revision,
+    interactionId: record.id, optionId: record.responseOptions[0]!.optionId, expectedRevision: record.revision,
   })
   const proof = (): NativeResponseDeliveryEvidence => ({
     source: 'provider_history', harness: record.harness, providerVersion: record.providerVersion,
@@ -471,4 +478,100 @@ it('an acknowledged send without exact provider evidence remains uncertain', asy
   assert.equal(h.calls.sends, 1)
   assert.equal(h.get().deliveryState, 'uncertain')
   assert.equal(h.calls.resumes, 0)
+})
+
+const commandDecisions = ['accept', 'acceptForSession', 'decline', 'cancel',
+  { acceptWithExecpolicyAmendment: { execpolicy_amendment: ['echo'] } },
+  { applyNetworkPolicyAmendment: { network_policy_amendment: { action: 'allow', host: 'example.test' } } },
+  { applyNetworkPolicyAmendment: { network_policy_amendment: { action: 'deny', host: 'example.test' } } }]
+const approvalChoices = [
+  ...commandDecisions.map((decision, index) => ({ kind: 'command' as const, index, response: { decision } })),
+  ...['accept', 'acceptForSession', 'decline', 'cancel'].map((decision, index) =>
+    ({ kind: 'file' as const, index, response: { decision } })),
+  { kind: 'permission' as const, index: 0, response: { permissions: { network: { enabled: true } }, scope: 'turn' } },
+  { kind: 'permission' as const, index: 1, response: { permissions: { network: { enabled: true } }, scope: 'session' } },
+  { kind: 'permission' as const, index: 2, response: { permissions: {}, scope: 'turn' } },
+]
+
+/** SQL recording port: the production saver serializes and consumes the saved interrupt. */
+async function checkpointFixture(interaction: DurableInteraction) {
+  const saver = new ApprovalPostgresSaver({} as pg.Pool)
+  const [type, encoded] = await saver.serde.dumpsTyped([{ id: interaction.graphInterruptId,
+    value: { interactionId: interaction.id } }])
+  const writes = [{ task_id: 'approval-task', channel: '__interrupt__', type, blob: Buffer.from(encoded) }]
+  let checkpointValues: unknown = []
+  let staged: unknown = []
+  const client = { query: async (statement: string, values: unknown[] = []) => {
+    const rows = (data: unknown[] = []) => ({ rows: data, rowCount: data.length })
+    const query = statement.trim()
+    if (query.startsWith('begin')) { staged = checkpointValues; return rows() }
+    if (query === 'commit') { checkpointValues = staged; return rows() }
+    if (query === 'rollback') return rows()
+    if (query.startsWith('select checkpoint_id')) return rows([{ checkpoint_id: 'saved-checkpoint' }])
+    if (query.startsWith('select task_id,channel,type,blob')) return rows(writes)
+    if (query.startsWith('insert into')) {
+      staged = await saver.serde.loadsTyped(String(values[6]), values[7] as Buffer)
+      return rows()
+    }
+    throw new Error(`Unexpected checkpoint query: ${query}`)
+  } } as unknown as pg.ClientBase
+  const connection = new ExclusiveGraphConnection(client, () => {})
+  return { values: () => checkpointValues, close: () => connection.close(),
+    consume: (delivered: DurableInteraction) => connection.transaction(sql => saver.consumeApprovalInterrupt(sql, delivered)) }
+}
+
+it.each(approvalChoices)('delivers $kind choice $index and consumes its saved checkpoint', async choice => {
+  const replay = new ActivityProductionReplay('approval-choice')
+  const manager = new CodexAppServerSessionManager('/recorded-no-native-codex', undefined, undefined,
+    undefined, 'scoped', undefined, replay.infrastructure().codex!)
+  const session = await manager.createSession(input('/project'))
+  const turn = manager.startTurn(session, { prompt: 'Approval choice', clientCorrelationId: 'approval-choice' })
+  const stream = turn[Symbol.asyncIterator]()
+  let checkpoint: Awaited<ReturnType<typeof checkpointFixture>> | undefined
+  try {
+    let event = await stream.next()
+    while (!event.done && event.value.type !== 'turn.started') event = await stream.next()
+    assert.equal(event.done, false)
+    const thread = replay.threads.get(session.nativeSessionId)!
+    const common = { threadId: session.nativeSessionId, turnId: thread.turns.at(-1)!.id, itemId: 'approval-item' }
+    const requests = {
+      command: { method: 'item/commandExecution/requestApproval', params: { ...common,
+        command: 'echo approved', cwd: '/project', availableDecisions: commandDecisions } },
+      file: { method: 'item/fileChange/requestApproval', params: { ...common, reason: null, grantRoot: null } },
+      permission: { method: 'item/permissions/requestApproval', params: { ...common, cwd: '/project',
+        permissions: { network: { enabled: true } } } },
+    }
+    replay.requests.set('approval-rpc', session.nativeSessionId)
+    await replay.channels.get(session.nativeSessionId)!.request({ id: 'approval-rpc', ...requests[choice.kind] })
+    const pending = (await manager.pending(session))!
+    assert(pending)
+    const counts = { command: commandDecisions.length, file: 4, permission: 3 }
+    assert.equal(pending.responseOptions.length, counts[choice.kind])
+    const selected = pending.responseOptions[choice.index]!
+    const h = harness(manager, { ...pending,
+      responseOptions: [selected, ...pending.responseOptions.filter(option => option !== selected)] })
+    checkpoint = await checkpointFixture(h.get())
+    h.control.onResume = delivered => checkpoint!.consume(delivered)
+    assert.deepEqual(checkpoint.values(), [])
+    const result = await h.respond()
+    assert.deepEqual(replay.toolReplies.get('approval-rpc'), choice.response)
+    assert.equal(result.interaction.status, 'delivered')
+    assert.equal(result.interaction.deliveryState, 'delivered')
+    assert.deepEqual(checkpoint.values(), [{ interactionId: result.interaction.id }])
+    assert.equal(h.control.resumeState, 'completed')
+    assert.equal(h.calls.resumes, 1)
+    const history = await manager.history(session)
+    assert.equal(history.pendingInteractions.length, 0)
+    assert.equal(history.events.some(event => event.type === 'item.completed'), false)
+    assert.deepEqual(history.responseDeliveries, [{ source: 'provider_acknowledgement', ...session,
+      nativeRequestId: pending.turn.nativeRequestId, nativeRequestType: pending.nativeRequestType,
+      optionId: selected.optionId, semantic: selected.semantic, responseDigest: responseValueDigest(selected.response) }])
+    await h.respond()
+    assert.equal(replay.responses.length, 1)
+    assert.equal(h.calls.resumes, 1)
+  } finally {
+    await checkpoint?.close()
+    await stream.return?.(undefined)
+    await manager.shutdown()
+  }
 })
