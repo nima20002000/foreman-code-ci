@@ -519,8 +519,7 @@ export class AgentChatService {
         pending = await resident.manager.pending(resident.session)
         this.pendingObservations.set(loaded.row.id, successfulReadObservation())
       } catch (error) {
-        const retired = error instanceof DomainError
-          && ['NATIVE_MANAGER_DISPOSED', 'WORKER_CONVERSATION_CALLBACK_DENIED'].includes(error.code)
+        const retired = error instanceof DomainError && error.code === 'NATIVE_MANAGER_DISPOSED'
           && (resident.retiring || resident.disposal || this.runtimes.get(loaded.row.id) !== resident)
         const offline = error instanceof DeviceConnectionError && ['transport', 'timeout', 'unavailable'].includes(error.code)
           || error instanceof DomainError && error.code === 'WORKER_CONVERSATION_UNAVAILABLE'
