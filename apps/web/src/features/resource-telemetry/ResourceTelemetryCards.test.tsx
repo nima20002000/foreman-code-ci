@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { resourceTelemetryFixtures as fixtures } from '@foreman-code/contracts/resource-telemetry-fixtures'
 import { describe, expect, it } from 'vitest'
 import { ComputerContextCard, ResourceTelemetryPanel } from './ResourceTelemetryCards'
@@ -19,18 +19,14 @@ describe('ResourceTelemetryPanel', () => {
     expect(screen.getByText('Source: cgroup CPU usage')).toBeInTheDocument()
     expect(screen.getByText('Source: cgroup current')).toBeInTheDocument()
     expect(screen.queryByText('—')).toBeNull()
-    expect(screen.queryByText('Only processes owned by this execution — not the whole computer.')).not.toBeInTheDocument()
-    fireEvent.mouseEnter(screen.getByRole('button', { name: 'About Execution' }))
-    expect(screen.getByRole('tooltip')).toHaveTextContent('Only processes owned by this execution — not the whole computer.')
+    expect(screen.getByText('Only processes owned by this execution — not the whole computer.')).toBeInTheDocument()
   })
 
   it('labels whole-computer RAM as a host used estimate', () => {
     panel('computerZero', 0, 'computer')
     expect(screen.getByText('Source: Host used estimate (total − available)')).toBeInTheDocument()
     expect(screen.getByText('Source: Host active ticks')).toBeInTheDocument()
-    expect(screen.queryByText('Whole computer — not any one Agent’s usage.')).not.toBeInTheDocument()
-    fireEvent.mouseEnter(screen.getByRole('button', { name: 'About Execution' }))
-    expect(screen.getByRole('tooltip')).toHaveTextContent('Whole computer — not any one Agent’s usage.')
+    expect(screen.getByText('Whole computer — not any one Agent’s usage.')).toBeInTheDocument()
   })
 
   it('shows CPU warmup beside fresh RAM independently', () => {
@@ -54,9 +50,7 @@ describe('ResourceTelemetryPanel', () => {
   it('treats offline as presence with last known values, never as zero', () => {
     panel('offline')
     expect(screen.getByText('Worker offline')).toBeInTheDocument()
-    expect(screen.queryByText('Offline is worker presence, not zero use or a finished execution.')).not.toBeInTheDocument()
-    fireEvent.focus(screen.getByRole('button', { name: 'About Worker offline' }))
-    expect(screen.getByRole('tooltip')).toHaveTextContent('Offline is worker presence, not zero use or a finished execution.')
+    expect(screen.getByText('Offline is worker presence, not zero use or a finished execution.')).toBeInTheDocument()
     expect(screen.getByRole('region', { name: 'Last known' })).toBeInTheDocument()
   })
 
@@ -121,9 +115,7 @@ describe('ResourceTelemetryPanel', () => {
 
   it('states that cloud inference is not measured', () => {
     panel('freshZero')
-    expect(screen.queryByText(/cloud model inference is not measured/)).not.toBeInTheDocument()
-    fireEvent.focus(screen.getByRole('button', { name: 'About Resource usage' }))
-    expect(screen.getByRole('tooltip')).toHaveTextContent('Local processes only; cloud model inference is not measured.')
+    expect(screen.getByText(/cloud model inference is not measured/)).toBeInTheDocument()
   })
 })
 

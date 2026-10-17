@@ -140,8 +140,7 @@ describe('native approval response interleavings', () => {
       f.resolveRequest()
       f.completeCommand()
       await sending
-      // Exercise retained-history qualification independently of adapter-produced receipts.
-      const history = { ...await f.manager.history(f.session), responseDeliveries: [] }
+      const history = await f.manager.history(f.session)
       const events = history.events.filter(event => event.type !== 'interaction.submitting')
         .map(event => {
           const copy = structuredClone(event)
@@ -211,8 +210,7 @@ describe('native approval response interleavings', () => {
         }
         f.releaseResponse.resolve()
         await sending
-        // Exercise retained-history qualification independently of adapter-produced receipts.
-        const history = { ...await f.manager.history(f.session), responseDeliveries: [] }
+        const history = await f.manager.history(f.session)
         const types = history.events.map(event => event.type)
         expect(types.indexOf('interaction.resolved') < types.indexOf('interaction.submitted'))
           .toBe(ordering === 'before-write-callback')

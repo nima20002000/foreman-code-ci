@@ -8,7 +8,7 @@ import type { OperatorRequestContext } from './types.js'
 /** Called by the authenticated /mcp dispatcher before SDK handling, for direct calls to
  * registry tools this caller cannot discover. Hidden tools stay hidden; denials are audited. */
 
-const DEVICE_OPERATOR_TOOLS = ['computer_activity_list', 'computer_rename', 'computer_accounts_list', 'computer_github_login_start', 'computer_github_login_status', 'computer_github_logout', 'computer_github_setup_git', 'computer_sync_status', 'computer_sync_update', 'build_computer_get', 'build_computer_update', 'build_computers_update', 'device_main_identity_get', 'devices_list', 'device_pairing_grant_create', 'device_revoke', 'device_setup_code_create', 'device_setup_options_get',
+const DEVICE_OPERATOR_TOOLS = ['computer_activity_list', 'computer_accounts_list', 'computer_github_login_start', 'computer_github_login_status', 'computer_github_logout', 'computer_github_setup_git', 'computer_sync_status', 'computer_sync_update', 'build_computer_get', 'build_computer_update', 'build_computers_update', 'device_main_identity_get', 'devices_list', 'device_pairing_grant_create', 'device_revoke', 'device_setup_code_create', 'device_setup_options_get',
   'device_connection_host_discover', 'device_connection_read', 'device_connection_inspect', 'device_connection_check', 'device_connection_configure'] as const
 const DeviceToolCall = z.object({ jsonrpc: z.literal('2.0'), id: z.union([z.string(), z.number().int()]),
   method: z.literal('tools/call'), params: z.object({ name: z.enum(DEVICE_OPERATOR_TOOLS) }).passthrough() }).passthrough()
@@ -18,7 +18,7 @@ export async function unavailableDeviceOperatorToolCall(context: OperatorRequest
   if (!call.success || operatorToolAvailable(context, call.data.params.name)) return undefined
   const name = call.data.params.name
   let serviceAvailable = !!context.services.devices
-  if (name === 'computer_activity_list' || name === 'computer_rename') serviceAvailable = !!context.services.computerActivity
+  if (name === 'computer_activity_list') serviceAvailable = !!context.services.computerActivity
   else if (name === 'computer_accounts_list') serviceAvailable = !!context.services.computerAccounts
   else if (name.startsWith('computer_github_')) serviceAvailable = !!context.services.computerGitHub
   else if (name.startsWith('computer_sync_')) serviceAvailable = !!context.services.computerSync
