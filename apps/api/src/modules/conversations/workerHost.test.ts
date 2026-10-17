@@ -134,6 +134,41 @@ function receipt(value: unknown) {
   return WorkerConversationReceiptSchema.parse((value as { receipt: unknown }).receipt)
 }
 
+it('closes a released persisted session without allocating a replacement writer', async () => {
+  const f = await setup()
+  const allocate = vi.spyOn(f.ports, 'allocate')
+  await f.request(f.open)
+  await f.request({ method: 'conversation.release-runtime', session: f.session })
+  const before = (await f.journal.conversations.read(f.binding))!
+  expect(before.runtimeReleased).toBe(true)
+  await expect(f.request({ method: 'conversation.close',
+    session: { ...f.session, nativeSessionId: 'another-native-session' } }))
+    .rejects.toMatchObject({ code: 'WORKER_CONVERSATION_UNAVAILABLE' })
+  expect(await f.journal.conversations.read(f.binding)).toEqual(before)
+  const closed = receipt(await f.request({ method: 'conversation.close', session: f.session }))
+  expect(closed).toMatchObject({ closed: true, session: f.session, turns: before.turns, compactions: before.compactions })
+  expect(receipt(await f.request({ method: 'conversation.close', session: f.session }))).toEqual(closed)
+  expect(allocate).toHaveBeenCalledOnce()
+  expect(f.manager.creates).toBe(1)
+  f.deny()
+  await expect(f.request({ method: 'conversation.close', session: f.session })).rejects.toThrow('authority denied')
+  expect(await f.journal.conversations.read(f.binding)).toEqual(closed)
+})
+
+it('keeps cold closure unavailable without persisted process release', async () => {
+  const f = await setup()
+  await f.request(f.open)
+  await f.host.shutdown()
+  const before = await f.journal.conversations.read(f.binding)
+  const allocate = vi.spyOn(f.ports, 'allocate')
+  const host = new WorkerConversationHost(f.ports)
+  closing.push(() => host.shutdown())
+  await expect(host.handle({ method: 'conversation.close', binding: f.binding, session: f.session }, f.connection))
+    .rejects.toMatchObject({ code: 'WORKER_CONVERSATION_UNAVAILABLE' })
+  expect(await f.journal.conversations.read(f.binding)).toEqual(before)
+  expect(allocate).not.toHaveBeenCalled()
+})
+
 it('returns only events after the requested sequence while preserving terminal metadata', async () => {
   const f = await setup()
   await f.request(f.open)

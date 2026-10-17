@@ -137,6 +137,8 @@ export abstract class CodexManagerControls extends CodexManagerConnection {
     const recovered = this.compactionFromTurns(state, result.thread.turns)
     runtime.compaction = recovered
     if (recovered.status === 'completed' && runtime.context) runtime.context = { ...runtime.context, stale: true }
+    // History can settle compaction before its completion notification arrives.
+    if (['completed', 'failed', 'no-op'].includes(recovered.status)) this.wake(runtime)
     return recovered
   }
 

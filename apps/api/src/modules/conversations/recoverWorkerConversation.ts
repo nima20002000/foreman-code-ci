@@ -11,7 +11,7 @@ import { workerConversationProcessDigest } from './workerNativeOwner.js'
 import { DomainError } from '../errors.js'
 import { sameConversationForAppAccess } from './conversationAppAccess.js'
 import { readWorkerConversationResults } from './workerConversationResults.js'
-import { validWorkerConfigurationTransition } from './workerRunChatBinding.js'
+import { validWorkerConfigurationTransition } from './workerConfigurationTransition.js'
 
 function unavailable(message: string): never {
   throw new DomainError('WORKER_CONVERSATION_RECOVERY_REQUIRED', message, 409)
