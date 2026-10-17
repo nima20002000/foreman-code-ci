@@ -270,18 +270,17 @@ it.each(['codex', 'claude'] as const)(
   },
 )
 
-
 it('carries observation purpose through the authority while execution rejects a previous boot proof', async () => {
   const f = fixture()
   f.proof.connectionGeneration = 'previous-worker-boot'
-  f.registry.installation.connectionGeneration = 'replacement-worker-boot'
+  const registry = { ...f.registry, installation: { ...f.registry.installation,
+    connectionGeneration: 'replacement-worker-boot' } }
   vi.mocked(f.authority.current).mockImplementation(async (_owner, _value, _client,
     options?: { purpose: 'execution' | 'observation' }) => {
     if (options?.purpose !== 'observation') {
       throw new DomainError('HARNESS_PROFILE_UNAVAILABLE', 'The execution proof belongs to an earlier boot.', 409)
     }
-    return { registry: f.registry, applicationInstallationId: 'main', suiteRevision: 's',
-      pin: f.proof.claudeProof!.pin }
+    return { registry, applicationInstallationId: 'main', suiteRevision: 's', pin: f.proof.claudeProof!.pin }
   })
   const observed = await f.admission.admitObservation('saved-session-reader', f.selector)
   expect(observed.persistedProof).toEqual(f.proof)
