@@ -102,7 +102,7 @@ describe('provider account execution selection', () => {
     await expect(service.resolve({ ...codex, accountId: first }, { instanceId: first, instanceRevision: '1', target: {
       hostRef: { kind: 'device', mainId: first, deviceId: second }, applicationInstallationId: first,
       harnessInstallationId: first, installationFingerprint: 'selected-installation',
-    } })).rejects.toMatchObject({ code: 'PROVIDER_ACCOUNT_TARGET_CONFLICT' })
+    } })).rejects.toMatchObject({ code: 'PROVIDER_ACCOUNT_LOCAL_ONLY' })
     const ambient = new ProviderAccountConfigurationService(resolver(null))
     expect(await ambient.resolve(codex)).toBe(codex)
     const environment = pinnedCodexAccountEnvironment(resolver(null), undefined)
@@ -175,8 +175,8 @@ describe('provider account execution selection', () => {
     expect(await requireClaudeProductionCredentialDelivery(claude, { resolve }, device)).toBeUndefined()
     expect(resolve).not.toHaveBeenCalled()
     await expect(requireClaudeProductionCredentialDelivery({ ...claude, accountId: first }, { resolve }, device))
-      .rejects.toMatchObject({ code: 'PROVIDER_ACCOUNT_TARGET_CONFLICT' })
-    expect(resolve).toHaveBeenCalledWith('claude', first)
+      .rejects.toMatchObject({ code: 'PROVIDER_ACCOUNT_LOCAL_ONLY' })
+    expect(resolve).not.toHaveBeenCalled()
   })
 
   it('inherits a completed source execution account when creating an independent Agent chat runtime', async () => {

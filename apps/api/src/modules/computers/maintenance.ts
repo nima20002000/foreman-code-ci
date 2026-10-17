@@ -5,6 +5,7 @@ import { readClaudePlugins, claudeCliResult } from './claudePlugins.js'
 import { isCodexStagingRenameError, removeCodexStagingDirectories } from './npmStaging.js'
 import { syncFingerprint } from './syncFingerprint.js'
 import { matchesMcpDefinition } from './mcpDefinitions.js'
+import { assertStdioAvailable } from './stdioAvailability.js'
 import { MaintenanceTaskStore } from './maintenanceTaskStore.js'
 import { MaintenanceCommandStore } from './maintenanceCommandStore.js'
 import type { MaintenancePorts } from './maintenancePorts.js'
@@ -23,6 +24,7 @@ import {
   type MaintainedHarness, type MaintenanceStatus, type MaintenanceTask,
   type MaintenanceTaskStart, type SyncedMarketplace, type SyncedMcpServer,
   type WorkerUpdateStatus,
+  SyncedPluginSchema, type SyncedPlugin,
 } from '@foreman-code/contracts/computer-maintenance'
 
 export type { MaintenancePorts }
@@ -438,7 +440,7 @@ export class ComputerMaintenance {
             const managed = new Set(ledger.codexPlugins)
             try {
               return await this.syncPlugins(request.plugins, request.marketplaces, managed, step, signal,
-                () => this.updateLedger(current => { current.codexPlugins = [...managed] }))
+                () => this.updateLedger(current => { current.codexPlugins = [...managed] }), request.pluginVersions)
             } finally {
               await this.updateLedger(current => { current.codexPlugins = [...managed] })
             }
@@ -527,6 +529,7 @@ export class ComputerMaintenance {
       } else kept.push(name)
     }
     for (const server of servers) {
+      await assertStdioAvailable(server, this.ports)
       const replacing = existing.has(server.name)
       if (replacing && (!managed.has(server.name) || matchesMcpDefinition(server, existing.get(server.name)))) continue
       if (replacing) {
@@ -584,13 +587,14 @@ export class ComputerMaintenance {
   }
 
   private async syncPlugins(plugins: readonly string[], marketplaces: readonly SyncedMarketplace[], managed: Set<string>,
-    step: Step, signal: AbortSignal, saveOwnership: () => Promise<void>): Promise<string> {
+    step: Step, signal: AbortSignal, saveOwnership: () => Promise<void>, versions: Readonly<Record<string, string>> = {}): Promise<string> {
     const previous = [...managed]
     if (!plugins.length && !previous.length) return 'Nothing to sync'
     const codex = await this.ports.find('codex')
     if (!codex) throw new Error('Codex is not installed on this computer.')
-    const installed = new Set(await installedPlugins(this.ports, codex, signal))
-    const missing = plugins.filter(plugin => !installed.has(plugin))
+    const installed = new Map((await installedPlugins(this.ports, codex, signal)).map(plugin => [plugin.pluginId, plugin]))
+    const missing = plugins.filter(plugin => !installed.has(plugin)
+      || (managed.has(plugin) && versions[plugin] !== undefined && versions[plugin] !== installed.get(plugin)?.version))
     const known = new Set(missing.length ? (await pluginMarketplaces(this.ports, codex, signal)).map(marketplace => marketplace.name) : [])
     const added: string[] = []
     const failed: string[] = []
@@ -617,11 +621,23 @@ export class ComputerMaintenance {
     for (const plugin of missing) {
       managed.add(plugin)
       await saveOwnership()
+      if (installed.has(plugin)) {
+        const removed = await step(codex, ['plugin', 'remove', plugin], `codex plugin remove ${plugin}`, { allowFailure: true })
+        if (removed.code !== 0) {
+          failed.push(plugin)
+          continue
+        }
+      }
       const result = await step(codex, ['plugin', 'add', plugin], `codex plugin add ${plugin}`, { allowFailure: true })
       if (result.code === 0) {
         added.push(plugin)
         managed.add(plugin)
       } else failed.push(plugin)
+    }
+    const readback = new Map((await installedPlugins(this.ports, codex, signal)).map(plugin => [plugin.pluginId, plugin]))
+    for (const plugin of plugins.filter(plugin => managed.has(plugin))) {
+      const actual = readback.get(plugin)
+      if (!actual || (versions[plugin] !== undefined && actual.version !== versions[plugin])) failed.push(plugin)
     }
     const summary = [added.length ? `Installed ${added.join(', ')}` : '', removed.length ? `Removed ${removed.join(', ')}` : '',
       failed.length ? `Could not install ${failed.join(', ')}` : '', kept.length ? `Could not remove ${kept.join(', ')}` : '']
@@ -631,7 +647,7 @@ export class ComputerMaintenance {
   }
 
   private async syncClaudePlugins(
-    plugins: readonly { pluginId: string; enabled: boolean }[], marketplaces: readonly SyncedMarketplace[],
+    plugins: readonly { pluginId: string; enabled: boolean; version?: string }[], marketplaces: readonly SyncedMarketplace[],
     managed: Set<string>, step: Step, signal: AbortSignal, saveOwnership: () => Promise<void>,
   ): Promise<string> {
     const previous = [...managed]
@@ -666,7 +682,9 @@ export class ComputerMaintenance {
       const existing = installed.get(plugin.pluginId)
       if (existing && !managed.has(plugin.pluginId)) continue
       const actions: string[] = []
-      if (!existing) actions.push('install')
+      const replacing = existing && plugin.version !== undefined && plugin.version !== existing.version
+      if (replacing) actions.push('uninstall')
+      if (!existing || replacing) actions.push('install')
       if (!plugin.enabled) actions.push('disable')
       else if (existing && !existing.enabled) actions.push('enable')
       for (const action of actions) {
@@ -685,7 +703,8 @@ export class ComputerMaintenance {
     }
     const readback = await readClaudePlugins(this.ports, signal)
     for (const expected of plugins.filter(plugin => managed.has(plugin.pluginId))) {
-      if (!readback.plugins.some(item => item.pluginId === expected.pluginId && item.installed && item.enabled === expected.enabled)) {
+      if (!readback.plugins.some(item => item.pluginId === expected.pluginId && item.installed && item.enabled === expected.enabled
+        && (expected.version === undefined || item.version === expected.version))) {
         failed.push(expected.pluginId)
       }
     }
@@ -766,13 +785,16 @@ export async function claudeUserMcpServers(ports: Pick<MaintenancePorts, 'enviro
   return value.mcpServers && typeof value.mcpServers === 'object' ? value.mcpServers : {}
 }
 
-export async function installedPlugins(ports: Pick<MaintenancePorts, 'run'>, codex: string, signal: AbortSignal): Promise<string[]> {
+export async function installedPlugins(ports: Pick<MaintenancePorts, 'run'>, codex: string, signal: AbortSignal): Promise<SyncedPlugin[]> {
   const listed = await ports.run(codex, ['plugin', 'list', '--json'], { signal, timeoutMs: 120_000 })
   if (listed.code !== 0) {
     throw new Error('Codex could not list its plugins. Update or reinstall Codex on this computer, then retry sync.')
   }
-  const value = JSON.parse(listed.stdout) as { installed?: { pluginId?: unknown; installed?: unknown }[] }
-  return (value.installed ?? []).flatMap(entry => typeof entry.pluginId === 'string' && entry.installed !== false ? [entry.pluginId] : [])
+  const value = z.object({ installed: z.array(z.object({
+    pluginId: z.string(), installed: z.boolean().optional(), version: z.string().nullable().optional(),
+  })) }).parse(JSON.parse(listed.stdout))
+  return value.installed.filter(entry => entry.installed !== false)
+    .map(entry => SyncedPluginSchema.parse({ pluginId: entry.pluginId, version: entry.version ?? null }))
 }
 
 /** Configured plugin marketplaces; only Git sources can be added on another computer. */
