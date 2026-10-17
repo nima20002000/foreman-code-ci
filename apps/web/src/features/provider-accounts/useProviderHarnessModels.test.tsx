@@ -4,7 +4,7 @@ import { cleanup, renderHook, waitFor } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { afterEach, expect, it, vi } from 'vitest'
 import { server } from '../../mocks/server'
-import { accountId, accountTarget, accountTargetInfo, observedAccount, observedAt, secondAccountId } from './providerAccounts.fixtures'
+import { accountId, accountTarget, accountTargetInfo, observedAccount, observedAt, secondAccountId, workerAccountTarget } from './providerAccounts.fixtures'
 import { useProviderHarnessModels } from './useProviderHarnessModels'
 
 const clients: QueryClient[] = []
@@ -91,4 +91,26 @@ it.each(['accounts', 'models'] as const)('keeps denied %s discovery from falling
   expect(view.result.current.data).toBeUndefined()
   expect(view.result.current.isSuccess).toBe(false)
   expect(nativeRead).not.toHaveBeenCalled()
+})
+
+it.each(['codex', 'claude'] as const)('reads the selected Worker native %s login when it has no account slots', async harness => {
+  const nativeRead = vi.fn(({ request }: { request: Request }) => {
+    expect(JSON.parse(new URL(request.url).searchParams.get('hostRef')!)).toEqual(workerAccountTarget.hostRef)
+    return HttpResponse.json({ harness, providerVersion: 'worker-cli', authenticated: true,
+      models: [model('worker-native-model')], nativeAgents: [], settings: [], restrictions: [], checkedAt: observedAt })
+  })
+  server.use(
+    http.get('/api/provider-accounts/targets', () => HttpResponse.json({
+      targets: [accountTargetInfo(), accountTargetInfo(workerAccountTarget)],
+    })),
+    http.get('/api/provider-accounts/page', () => HttpResponse.json({
+      target: workerAccountTarget, revision: 1, accounts: [], defaults: [], nextCursor: null,
+    })),
+    http.get(`/api/management/harnesses/${harness}/options`, nativeRead),
+  )
+  const view = renderHook(() => useProviderHarnessModels(harness, undefined, workerAccountTarget.hostRef),
+    { wrapper: wrapper() })
+  await waitFor(() => expect(view.result.current.isSuccess).toBe(true))
+  expect(view.result.current.data?.models.map(item => item.id)).toEqual(['worker-native-model'])
+  expect(nativeRead).toHaveBeenCalledTimes(1)
 })

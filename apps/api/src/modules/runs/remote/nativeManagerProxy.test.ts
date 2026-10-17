@@ -496,6 +496,22 @@ describe('remote native history streaming', () => {
     expect(f.controlFor).not.toHaveBeenCalled()
   })
 
+  it('detaches the retained session for restart while its Worker is offline', async () => {
+    const f = setup(() => ({ events: [], pendingInteractions: [] }))
+    const session = await f.proxy.createSession(f.start)
+    expect(f.proxy.canDetachForRestart(session)).toBe(true)
+    f.request.mockRejectedValue(new DeviceApplicationError('transport'))
+
+    await expect(f.proxy.closeForRestart(session)).resolves.toBeUndefined()
+    await expect(f.proxy.dispose()).resolves.toBeUndefined()
+    await expect(f.proxy.closeForRestart(session)).resolves.toBeUndefined()
+    expect(f.request.mock.calls.map(([method]) => method)).toEqual(['prepare'])
+    expect(f.proxy.canDetachForRestart(session)).toBe(false)
+    expect(f.controlFor).not.toHaveBeenCalled()
+    expect(f.receipt.stopFence).toBe(false)
+    expect(f.receipt.terminal).toBeUndefined()
+  })
+
   it('still fails physical identity errors without refreshing the original source', async () => {
     const f = setup(() => terminal([event(0)]))
     const session = await f.proxy.createSession(f.start)
@@ -518,9 +534,21 @@ describe('remote native history streaming', () => {
     expect(f.controlFor).not.toHaveBeenCalled()
   })
 
-  it.each(['close', 'closeForRestart'] as const)('cancels the device request when %s reaches its deadline', async method => {
+  it.each(['close', 'closeForRestart'] as const)('honors the cancellation signal when %s closes the session', async method => {
     const f = setup(() => ({ events: [], pendingInteractions: [] }))
     const session = await f.proxy.createSession(f.start)
+    const controller = new AbortController()
+    const error = new Error('Cleanup deadline reached')
+    if (method === 'closeForRestart') {
+      controller.abort(error)
+      await expect(f.proxy.closeForRestart(session, controller.signal)).rejects.toBe(error)
+      expect(f.proxy.canDetachForRestart(session)).toBe(true)
+      expect(f.request).toHaveBeenCalledTimes(1)
+      await expect(f.proxy.closeForRestart(session)).resolves.toBeUndefined()
+      expect(f.proxy.canDetachForRestart(session)).toBe(false)
+      expect(f.request).toHaveBeenCalledTimes(1)
+      return
+    }
     let enteredSignal: AbortSignal | undefined
     f.request.mockImplementation(async (_method, _payload, signal) => {
       enteredSignal = signal
@@ -528,8 +556,6 @@ describe('remote native history streaming', () => {
         signal?.addEventListener('abort', () => reject(signal.reason), { once: true })
       })
     })
-    const controller = new AbortController()
-    const error = new Error('Cleanup deadline reached')
     const close = f.proxy[method] as (reference: typeof session, signal?: AbortSignal) => Promise<void>
     const result = close.call(f.proxy, session, controller.signal).catch((failure: unknown) => failure)
     await vi.waitFor(() => expect(f.request).toHaveBeenCalledTimes(2))
@@ -783,7 +809,7 @@ describe('remote native history streaming', () => {
 
     await f.proxy.closeForRestart(session)
     await f.proxy.dispose()
-    expect(f.request.mock.calls.map(([method]) => method)).toEqual(['prepare', 'history', 'history'])
+    expect(f.request.mock.calls.map(([method]) => method)).toEqual(['prepare', 'history'])
     expect(f.receipt.stopFence).toBe(false)
     expect(f.receipt.terminal).toBeUndefined()
     expect(f.observedReceipts.every(receipt => receipt.native?.sessionId === session.nativeSessionId)).toBe(true)

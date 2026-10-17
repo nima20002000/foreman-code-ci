@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { expect, it } from 'vitest'
 import { fixture } from './cloud.testSupport.js'
+import { CircleStandby, circleOrgKey } from './circleStandby.js'
 import { CircleCiAccounts } from './circleCiAccounts.js'
 import { reservedCloudSlotKeys } from './cloudSlots.js'
 import type { CloudAccount } from './cloudProviders.js'
@@ -108,4 +109,74 @@ it('publishes the workspace mirror without waiting for a further CircleCI org to
     [cloud(), cloud('org2')] as unknown as CloudCi[])
   await endpoint.publishMirror({ repository: 'octo/site', mirror: 'octo/site-ci', commit: 'a'.repeat(40) })
   expect(published.sort()).toEqual(['org2', 'primary'])
+})
+
+it('discovers explicitly bound standby projects without consulting primary GitHub memberships', async () => {
+  const commands: string[] = []
+  const primary = discoveryPorts(new Set())
+  const reserve: HostCiPorts = { ...primary.ports, run: async (file, args) => {
+    commands.push(`${file} ${args.join(' ')}`)
+    return { code: 0, stdout: '{}', stderr: '' }
+  } }
+  const added: CloudAccount[] = []
+  const discovery = new CircleCiAccounts(primary.ports, async () => ['alpha/site-ci'], org => added.push(org), {
+    registry: { list: async () => [
+      { id: 'default', label: 'Primary', role: 'primary', organizations: ['alpha', 'beta', 'gamma'] },
+      { id: 'reserve', label: 'Reserve', role: 'standby', organizations: ['delta', 'epsilon', 'zeta'] },
+    ] },
+    context: async id => ({ ports: id === 'reserve' ? reserve : primary.ports }),
+    runningOrganizations: async () => [{ owner: 'retired', circleAccountId: 'reserve' }],
+  })
+  await discovery.refresh()
+  expect(added.filter(org => org.circleAccountId === 'reserve').map(org => org.owner))
+    .toEqual(['retired', 'delta', 'epsilon', 'zeta'])
+  expect(commands.filter(command => command.includes('project get'))).toHaveLength(3)
+  expect(primary.calls.some(command => command.startsWith('gh '))).toBe(false)
+  expect(new Set(added.map(org => `${org.circleAccountId ?? 'default'}:${org.owner.toLowerCase()}`)).size).toBe(7)
+})
+
+it('retries constructing a configured executor after its account context becomes available', async () => {
+  const { ports } = discoveryPorts(new Set(['gh/alpha/site-ci']))
+  const added: CloudAccount[] = []
+  let now = 0
+  let unavailable = true
+  const discovery = new CircleCiAccounts(ports, async () => ['alpha/site-ci'], account => {
+    if (unavailable) throw new Error('Account context is temporarily unavailable.')
+    added.push(account)
+  }, { now: () => now, context: async () => ({ ports }), registry: { list: async () => [
+    { id: 'default', label: 'Primary', role: 'primary', organizations: ['alpha', 'beta', 'gamma'] },
+  ] } })
+  await discovery.refresh()
+  expect(added).toEqual([])
+  unavailable = false
+  now += 10 * 60_000
+  await discovery.refresh()
+  expect(added.map(account => account.owner)).toEqual(['alpha', 'beta', 'gamma'])
+  expect([...added[0]!.mirrorNames]).toEqual(['site-ci'])
+})
+
+it('restores a recovered standby organization’s registered role before overflow selection and UTC reset', async () => {
+  const { ports } = discoveryPorts(new Set(['gh/alpha/site-ci', 'gh/delta/site-ci']))
+  const added: CloudAccount[] = []
+  const discovery = new CircleCiAccounts(ports, async () => ['alpha/site-ci'], account => added.push(account), {
+    registry: { list: async () => [
+      { id: 'default', label: 'Primary', role: 'primary', organizations: ['alpha', 'beta', 'gamma'] },
+      { id: 'reserve', label: 'Reserve', role: 'standby', organizations: ['delta', 'epsilon', 'zeta'] },
+    ] },
+    context: async () => ({ ports }),
+    runningOrganizations: async () => [{ owner: 'delta', circleAccountId: 'reserve' }],
+  })
+  await discovery.refresh()
+  let now = Date.parse('2026-10-31T23:59:59Z')
+  const selector = new CircleStandby(async () => added.map(account => ({
+    owner: account.owner, circleAccountId: account.circleAccountId ?? 'default', role: account.role ?? 'primary',
+    ready: true, mirrorNames: account.mirrorNames,
+  })), { reading: async owner => now >= Date.parse('2026-11-01T00:00:00Z') ? { credits: null } : {
+    credits: { total: 400_000, used: owner === 'alpha' ? 380_000 : 0,
+      remaining: owner === 'alpha' ? 20_000 : 400_000, asOf: new Date(now).toISOString() },
+  } }, undefined, () => now)
+  expect((await selector.roles('site-ci')).get(circleOrgKey('delta', 'reserve'))?.schedulingRole).toBe('active')
+  now += 1000
+  expect((await selector.roles('site-ci')).get(circleOrgKey('delta', 'reserve'))?.schedulingRole).toBe('standby')
+  expect(added.find(account => account.owner === 'delta')?.role).toBe('standby')
 })

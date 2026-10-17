@@ -12,6 +12,7 @@ import type { WorkerExecutionPolicy } from './workerExecution.js'
 import { DomainError } from '../errors.js'
 import { hostCiCapacity } from '../ci-host/capacity.js'
 import { readHostCiStatus } from '../ci-host/status.js'
+import { workerBundleErrorMessage } from '../computers/workerBundleReadiness.js'
 
 export function buildComputerReadiness(input: { endpoint(): DeviceEndpoint; profiles: JobRuntimeProfiles;
   workerExecution: WorkerExecutionPolicy; localExecutor: boolean; availableMemory?: VerificationMemoryReader | undefined }) {
@@ -32,6 +33,8 @@ export function buildComputerReadiness(input: { endpoint(): DeviceEndpoint; prof
       if (!remoteExecutionEnabled) return result('setup-required', ['Remote execution disabled on Main.'])
       const clockReason = input.endpoint().clockReason(target.hostRef.deviceId)
       if (clockReason) return result('setup-required', [clockReason])
+      const bundle = await input.endpoint().workerBundleReadiness(target.hostRef.deviceId)
+      if (!bundle.ready) return result('setup-required', [workerBundleErrorMessage(bundle)])
       const hostCi = input.endpoint().capabilities(target.hostRef.deviceId)
         .some(value => value.namespace === CI_HOST_NAMESPACE && value.mainCanRequest)
       if (hostCi) {
