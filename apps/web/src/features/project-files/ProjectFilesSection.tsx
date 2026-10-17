@@ -1,4 +1,3 @@
-import { InfoHint } from '../../shared/ui/InfoHint'
 import { useEffect, useId, useRef, useState, type RefObject } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { createStore, useStore } from 'zustand'
@@ -45,8 +44,7 @@ function WorkspaceProjectFiles({ workspaceId }: ProjectFilesSectionProps) {
 
   return <section className="project-files" aria-labelledby={heading} {...drop.dropTargetProps}>
     <header className="project-files-header">
-      <div className="n-field-label"><h2 id={heading}>Project files</h2>
-        <InfoHint label="Project files">Drop a file here or use Upload.</InfoHint></div>
+      <h2 id={heading}>Project files</h2>
       <TextField ref={input} type="file" label="Choose project file" className="project-files-picker"
         accept={ATTACHMENT_ACCEPT} tabIndex={-1} disabled={upload.isPending || Boolean(ui.removing)}
         onChange={(event) => {
@@ -57,7 +55,7 @@ function WorkspaceProjectFiles({ workspaceId }: ProjectFilesSectionProps) {
       <Button ref={uploadButton} size="sm" disabled={upload.isPending || Boolean(ui.removing)} onClick={() => input.current?.click()}
         leading={<Upload size={16} aria-hidden="true" />}>Upload</Button>
     </header>
-    {drop.isDragging && <p className="project-files-message">Drop to upload</p>}
+    <p className="project-files-message">{drop.isDragging ? 'Drop to upload' : 'Drop a file here or use Upload.'}</p>
     {drop.dropError && <p className="project-files-message" role="alert">{drop.dropError}</p>}
     {ui.selectionIssue && <p className="project-files-message" role="alert">{ui.selectionIssue}</p>}
     {upload.isPending && <p className="project-files-message" role="status" aria-label={`Uploading ${upload.filename ?? 'file'}`}>Uploading…</p>}

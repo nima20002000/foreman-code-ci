@@ -1,5 +1,4 @@
 import { operatorSummaryActivityMigration } from './operatorSummaryActivityMigration.js'
-import { computerNamesMigration } from './computerNamesMigration.js'
 import { ciFailureHistoryMigration } from './ciFailureHistoryMigration.js'
 import { ciGateSpeedIndexMigration } from './ciGateSpeedIndexMigration.js'
 import { commandReceiptRetentionMigration } from './commandReceiptRetentionMigration.js'
@@ -134,7 +133,6 @@ import { pr18RecoveryMigration } from './pr18RecoveryMigration.js'
 import { runLiveActivityMigration } from './runLiveActivityMigration.js'
 import { reviewFailureLifecycleMigration } from './reviewFailureLifecycleMigration.js'
 import { localHumanMigration } from './localHumanMigration.js'
-import { retiredManagementActionsMigration } from './retiredManagementActionsMigration.js'
 import { skillsLibraryMigration } from './skillsLibraryMigration.js'
 import { currentApprovalPublicationMigration } from './currentApprovalPublicationMigration.js'
 import { agentChatMigration } from './agentChatMigration.js'
@@ -986,8 +984,6 @@ export const migrations = [
   runActivityCommitLockMigration,
   sourceSnapshotUsesMigration,
   operatorSummaryActivityMigration,
-  retiredManagementActionsMigration,
-  computerNamesMigration,
 ] as const
 
 export function assertMigrationVersions(entries: readonly { version: number }[]): void {
