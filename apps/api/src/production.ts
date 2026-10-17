@@ -1456,7 +1456,7 @@ function configureExecutionCoordinator(composition: ProductionComposition) {
       if (!execution || execution.workingDirectory !== input.workingDirectory) {
         throw new DomainError('WORKER_EXECUTION_IDENTITY_INVALID', 'Credential preflight must use the accepted execution directory.', 409)
       }
-      const configuration = await runs.getExecutionConfiguration(execution.agentConfigurationVersionId)
+      const configuration = await runs.getExecutionConfiguration(execution.agentConfigurationVersionId, execution)
       const run = await runs.get(execution.runId)
       if (!configuration || configuration.id !== execution.agentConfigurationVersionId
         || configuration.agentId !== execution.agentId || configuration.harness.harness !== input.harness
@@ -2198,7 +2198,7 @@ function configureHttpApplication(composition: ProductionComposition) {
   const runtimeServices = composition.runtimeServices = { ...operatorServices, extensions: operatorExtensions, harnessSettings }
   const localHuman = new PostgresLocalHumanAccess(database.pool, access)
   interactions.useWorkDirectionActions({
-    start: (principal, source, input) => operatorServices.runs.start(principal, source, input),
+    start: (principal, source, input, options) => operatorServices.runs.start(principal, source, input, options),
     wake: () => engine.reconcile(),
   })
   const runtimeBuildIdentity = readRuntimeBuildIdentity()
