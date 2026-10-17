@@ -247,7 +247,7 @@ createInterface({ input: process.stdin, crlfDelay: Infinity }).on('line', async 
     return
   }
   const params = message.params ?? {}
-  log({ method: message.method, pid: process.pid, threadId: params.threadId, correlationId: params.clientUserMessageId,
+  log({ method: message.method, threadId: params.threadId, correlationId: params.clientUserMessageId,
     ...(message.method === 'model/list' ? { workingDirectory: process.cwd() } : {}) })
   if (message.method === 'initialize') {
     reply(message.id, { userAgent: `codex-cli ${cliVersion}`, platformFamily: 'unix', platformOs: 'linux', codexHome: root })
