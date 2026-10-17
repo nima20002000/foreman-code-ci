@@ -28,7 +28,6 @@ import { registerSkillRoutes } from './skills.js'
 import {
   AgentGetInputSchema,
   GeneralSettingsUpdateInputSchema,
-  CircleCreditAllowanceUpdateInputSchema,
   RemoteExecutionSettingsUpdateInputSchema,
   AgentDefaultsUpdateInputSchema,
   AgentListInputSchema,
@@ -202,11 +201,6 @@ export function registerManagementRoutes(app: FastifyInstance, services: Operato
     app.put<{ Body: unknown }>('/api/management/settings/general', async request =>
       services.settings!.updateGeneralSettings(requirePrincipal(request), 'http',
         GeneralSettingsUpdateInputSchema.parse(request.body)))
-    app.get('/api/management/settings/circle-credits', async request =>
-      services.settings!.getCircleCreditAllowance(requirePrincipal(request)))
-    app.put<{ Body: unknown }>('/api/management/settings/circle-credits', async request =>
-      services.settings!.updateCircleCreditAllowance(requirePrincipal(request), 'http',
-        CircleCreditAllowanceUpdateInputSchema.parse(request.body)))
     app.get('/api/management/settings/agents', async (request) =>
       services.settings!.getAgentDefaults(requirePrincipal(request)))
     app.put<{ Body: unknown }>('/api/management/settings/agents', async (request) =>
