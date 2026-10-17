@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
-import { expect, it, vi } from 'vitest'
+import { expect, it } from 'vitest'
 import { AgentConfigurationVersionSchema, SessionControlStateSchema, SessionPreferencesSchema } from '@foreman-code/contracts'
 import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
 import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
@@ -70,37 +70,29 @@ it('preserves remote Claude cold recovery, ownership and non-delivery through au
     const call = (token: string, name: string, args: Record<string, unknown>) => graphRpc(app!, token, 'tools/call', {
       name, arguments: { workspaceId: seeded.scope.workspaceId, ...args },
     })
+    const id = conversation.id
+    const send = async (request: { requestId: string }, delivery: 'completed' | 'failed' = 'completed') => {
+      const terminal = deferred()
+      // Subscribe before admission so a fast turn cannot finish before the listener is installed.
+      const unsubscribe = chat!.events.subscribe(id, event => {
+        if (event.data.requestId === request.requestId
+          && ['completed', 'failed', 'canceled'].includes(String(event.data.delivery))) terminal.resolve()
+      })
+      try {
+        const result = await call(writer.token, 'agent_chat_send', { request })
+        expect(result.result?.isError).not.toBe(true)
+        await terminal.promise
+        expect((await repository.turn(id, request.requestId))?.delivery).toBe(delivery)
+        return result
+      } finally { unsubscribe() }
+    }
     const first = { requestId: 'remote-initial', content: 'Initial task', intent: 'next_turn',
       expectedConversationId: conversation.id, context: query }
     const denied = await call(reader.token, 'agent_chat_send', { request: first })
     expect(denied.error || denied.result?.isError).toBeTruthy()
     expect(worker.offers).toHaveLength(0)
-    const started = await call(writer.token, 'agent_chat_send', { request: first })
-    expect(started.result?.isError).not.toBe(true)
-    const id = conversation.id
-    const assertDelivery = async (requestId: string, delivery: 'completed' | 'failed') => {
-      const began = performance.now()
-      const terminal = deferred()
-      const events: { elapsedMs: number; type: string; data: Record<string, unknown> }[] = []
-      const unsubscribe = chat!.events.subscribe(id, event => {
-        if (event.data.requestId !== requestId) return
-        events.push({ elapsedMs: performance.now() - began, type: event.type, data: event.data })
-        if (event.data.delivery === delivery) terminal.resolve()
-      })
-      try {
-        await vi.waitFor(async () => expect((await repository.turn(id, requestId))?.delivery).toBe(delivery))
-      } catch (error) {
-        console.error('Claude delivery deadline snapshot', { requestId, elapsedMs: performance.now() - began,
-          turn: await repository.turn(id, requestId), events,
-          workerTurns: (await worker!.journal.conversations.read(worker!.binding))?.turns })
-        await terminal.promise
-        console.error('Claude persisted terminal event', { requestId, elapsedMs: performance.now() - began,
-          turn: await repository.turn(id, requestId), events })
-        throw error
-      } finally { unsubscribe() }
-    }
+    const started = await send(first)
     expect(graphRpcValue(started.result)).toMatchObject({ state: { conversation: { id } } })
-    await assertDelivery(first.requestId, 'completed')
     const nativeId = (await repository.get(id))!.native_session_id
     await chat.shutdown()
     await app.close()
@@ -121,8 +113,7 @@ it('preserves remote Claude cold recovery, ownership and non-delivery through au
     })
     expect(worker.offers).toHaveLength(1)
     const next = { ...first, requestId: 'remote-after-cold-restart', expectedConversationId: id }
-    expect((await call(writer.token, 'agent_chat_send', { request: next })).result?.isError).not.toBe(true)
-    await assertDelivery(next.requestId, 'completed')
+    await send(next)
     expect(worker.recoveries).toEqual([{ inputsBefore: 1, inputsAfter: 1 }])
     expect(worker.offers).toHaveLength(2)
     const recoveredWorker = (await worker.journal.conversations.read(worker.binding))!
@@ -141,19 +132,16 @@ it('preserves remote Claude cold recovery, ownership and non-delivery through au
     expect(applied.result?.isError).not.toBe(true)
     expect(SessionControlStateSchema.parse(graphRpcValue(applied.result)).desired.autoCompact).toBe('off')
     const afterPreferences = { ...first, requestId: 'remote-after-preferences', expectedConversationId: id }
-    expect((await call(writer.token, 'agent_chat_send', { request: afterPreferences })).result?.isError).not.toBe(true)
-    await assertDelivery(afterPreferences.requestId, 'completed')
+    await send(afterPreferences)
     expect((await worker!.journal.conversations.read(worker!.binding))!.nativeOwner).not.toEqual(previous)
     worker!.failMode()
     const failedInput = { ...first, requestId: 'remote-unoffered', expectedConversationId: id, sessionMode: 'plan' }
-    expect((await call(writer.token, 'agent_chat_send', { request: failedInput })).result?.isError).not.toBe(true)
-    await assertDelivery(failedInput.requestId, 'failed')
+    await send(failedInput, 'failed')
     expect((await repository.turn(id, failedInput.requestId))?.nativeSubmission).toBeUndefined()
     expect((await repository.get(id))?.active_request_id).toBeNull()
     expect(worker!.offers).toHaveLength(3)
     const retry = { ...first, requestId: 'remote-later', expectedConversationId: id }
-    expect((await call(writer.token, 'agent_chat_send', { request: retry })).result?.isError).not.toBe(true)
-    await assertDelivery(retry.requestId, 'completed')
+    await send(retry)
     const read = await call(writer.token, 'agent_chat_read', { query })
     expect(read.result?.isError).not.toBe(true)
     expect(graphRpcValue(read.result)).toMatchObject({ conversation: { id, nativeSession: { nativeSessionId: nativeId } } })
