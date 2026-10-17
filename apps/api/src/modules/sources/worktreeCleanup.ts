@@ -35,6 +35,8 @@ export async function closeSourceWorktree(receipt: MaterializationReceipt,
     workingDirectory: sourceWorkingTreePath(receipt), branch: receipt.worktree.branch,
     baseCommit: receipt.worktree.startCommit ?? receipt.worktree.commit, state: 'active',
   }, signal)
-  if (result.state === 'active') throw new DomainError('RUN_WORKTREE_UNAVAILABLE', 'Worktree cleanup is incomplete.', 409)
+  if (result.state !== 'removed' && result.state !== 'retained') {
+    throw new DomainError('RUN_WORKTREE_UNAVAILABLE', 'Worktree cleanup is incomplete.', 409)
+  }
   return { state: result.state, ...(result.message ? { message: result.message } : {}) }
 }

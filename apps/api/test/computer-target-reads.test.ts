@@ -371,7 +371,7 @@ describe('authenticated computer target reads and maintenance', () => {
     const f = await fixture()
     try {
       const source = 'https://owner:fixture-password@plugins.example/repo.git'
-      f.sources.codexPlugins = async () => ['docs@unsafe']
+      f.sources.codexPlugins = async () => [{ pluginId: 'docs@unsafe', version: null }]
       f.sources.codexMarketplaces = async () => [{ name: 'unsafe', source }]
       const client = await f.connect('owner')
       const started = await client.callTool({ name: 'computers_maintenance_start', arguments: {

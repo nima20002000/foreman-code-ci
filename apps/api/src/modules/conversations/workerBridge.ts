@@ -28,7 +28,8 @@ export interface WorkerConversationCallbacks {
 }
 export interface WorkerConversationChannel {
   binding: Readonly<DeviceSessionBinding>
-  request(payload: unknown, options?: { signal?: AbortSignal; timeoutMs?: number }): Promise<DeviceApplicationResult>
+  request(payload: unknown, options?: { signal?: AbortSignal; timeoutMs?: number;
+    progressTimeoutMs?: number }): Promise<DeviceApplicationResult>
 }
 interface Admission {
   request: WorkerConversationRpcRequest
@@ -92,7 +93,8 @@ export class MainWorkerConversationBridge {
       async request(signal?: AbortSignal) {
         await assertCurrent(signal)
         // Opening a native session starts the harness on the Worker; the 30 s channel default is too short under load.
-        const reply = await admission.channel.request(request, { ...(signal ? { signal } : {}), timeoutMs: NATIVE_REQUEST_TIMEOUT_MS })
+        const reply = await admission.channel.request(request, { ...(signal ? { signal } : {}),
+          timeoutMs: NATIVE_REQUEST_TIMEOUT_MS, progressTimeoutMs: NATIVE_REQUEST_TIMEOUT_MS })
         await assertCurrent(signal)
         if (reply.bytes !== undefined) denied()
         return reply.payload
