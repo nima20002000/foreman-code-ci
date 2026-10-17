@@ -20,9 +20,10 @@ import type { HostCiComputer, HostCiEndpoint } from './serviceTypes.js'
 const ports: HostCiPorts = { run: async () => ({ code: 1, stdout: '', stderr: '' }), now: () => new Date(),
   cpus: 4, memoryBytes: 2 ** 30 }
 const userSystemd = { supported: true, reason: null }
-const slot = (account: string | undefined, index: number): HostCiComputer => ({
-  key: `fixture-main:cloud:circleci${account ? `@${account}` : ''}:${index}`,
-  hostRef: { kind: 'cloud', mainId: 'fixture-main', provider: 'circleci', ...(account ? { account } : {}), slot: index },
+const slot = (account: string | undefined, index: number, circleAccountId?: string): HostCiComputer => ({
+  key: `fixture-main:cloud:circleci${circleAccountId ? `~${circleAccountId}` : ''}${account ? `@${account}` : ''}:${index}`,
+  hostRef: { kind: 'cloud', mainId: 'fixture-main', provider: 'circleci', ...(account ? { account } : {}), slot: index,
+    ...(circleAccountId ? { circleAccountId } : {}) },
   label: `CircleCI ${account ?? 'primary'} ${index + 1}`, priority: 30, userSystemd })
 const github: HostCiComputer = { key: 'fixture-main:cloud:github:0', label: 'GitHub Actions 1', priority: 30, userSystemd,
   hostRef: { kind: 'cloud', mainId: 'fixture-main', provider: 'github', slot: 0 } }
@@ -43,10 +44,10 @@ it('reads the estimated CircleCI credits per org through authenticated ci_comput
     return new Response(`PROJECT_NAME,TOTAL_CREDITS\nsite,${url.pathname.includes('org-beta') ? 380000 : 5690}\n`)
   }
   const allowance: CircleCreditAllowance = { defaultMonthlyCredits: 400000, accounts: {} }
-  const credits = new CircleCreditUsage(new CloudHttp(ports, 'circleci', { fetch: circleFetch, circleToken: async () => 'fixture-token' }),
+  const credits = new CircleCreditUsage(() => new CloudHttp(ports, 'circleci', { fetch: circleFetch, circleToken: async () => 'fixture-token' }),
     { allowance: async () => allowance, primaryOwner: async () => null }, { pollMs: 1 })
   const endpoint: HostCiEndpoint = {
-    computers: async () => [slot('acme', 0), slot('acme', 1), slot('beta', 0), slot(undefined, 0), github],
+    computers: async () => [slot('acme', 0), slot('acme', 1), slot('beta', 0, 'reserve'), slot(undefined, 0), github],
     request: async () => ({ operation: 'status', ready: true, reasons: [], cpuCount: 4, memoryBytes: 2 ** 30,
       slotsUsed: 0, slotsTotal: 1, runs: [] }),
   }
@@ -92,6 +93,7 @@ it('reads the estimated CircleCI credits per org through authenticated ci_comput
     // Each org's rows carry that org's own usage against its own 400,000 credits.
     expect(computers.find(computer => computer.label === 'CircleCI beta 1')?.credits).toMatchObject(
       { total: 400000, used: 380000, remaining: 20000 })
+    expect(computers.find(computer => computer.label === 'CircleCI beta 1')?.hostRef.circleAccountId).toBe('reserve')
     // The primary org's owner is unknown here, and GitHub Actions has no CircleCI credits.
     expect(computers.find(computer => computer.label === 'CircleCI primary 1')).toMatchObject({ credits: null })
     expect(computers.find(computer => computer.label === 'GitHub Actions 1')).not.toHaveProperty('credits')
