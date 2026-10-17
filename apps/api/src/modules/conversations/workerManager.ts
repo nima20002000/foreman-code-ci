@@ -28,6 +28,7 @@ import { MainWorkerConversationBridge, type WorkerConversationCallbacks, type Wo
 import { workerExecutionConfiguration } from './workerExecutionConfiguration.js'
 import type { OperatorConfigurationVersion } from '@foreman-code/contracts'
 import { DomainError } from '../errors.js'
+import { logIgnoredError } from '../diagnostics/ignoredError.js'
 import type { PrepareWorkerFiles } from './mainWorkerFiles.js'
 
 function conflict(message: string): never { throw new DomainError('WORKER_CONVERSATION_CONFLICT', message, 409) }
@@ -82,9 +83,25 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
     }
     return channel
   }
+  private waitForReconnect(task: Promise<void>, signal?: AbortSignal): Promise<void> {
+    signal?.throwIfAborted()
+    if (!signal) return task
+    return new Promise<void>((resolve, reject) => {
+      const abort = () => { signal.removeEventListener('abort', abort); reject(signal.reason) }
+      signal.addEventListener('abort', abort, { once: true })
+      void task.then(() => {
+        signal.removeEventListener('abort', abort)
+        resolve()
+      }, error => {
+        signal.removeEventListener('abort', abort)
+        reject(error)
+      })
+    })
+  }
   private async reconnect(signal?: AbortSignal) {
     this.lifetime.signal.throwIfAborted()
-    if (this.reconnecting) return this.reconnecting
+    signal?.throwIfAborted()
+    if (this.reconnecting) return this.waitForReconnect(this.reconnecting, signal)
     const channel = this.currentChannel()
     if (isDeepStrictEqual(channel.binding, this.options.channel.binding)) return
     const previousChannel = this.options.channel
@@ -98,7 +115,7 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
       const lease = this.captureConnected(this.frame({ method: 'conversation.open', mode: 'attach', source: session,
         operationId: this.receipt?.creation?.operationId ?? 'session-reconnect', configuration: this.options.configuration }))
       try {
-        const receipt = this.adopt(await lease.request(signal), session)
+        const receipt = this.adopt(await lease.request(this.lifetime.signal), session)
         if (!receipt?.session || !isDeepStrictEqual(receipt.session, session)) conflict('The worker attached a different session.')
       } catch (error) {
         this.options.channel = previousChannel
@@ -106,7 +123,13 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
       } finally { await this.release(lease) }
     })()
     this.reconnecting = task
-    try { await task } finally { this.reconnecting = undefined }
+    void task.then(() => {
+      if (this.reconnecting === task) this.reconnecting = undefined
+    }, error => {
+      if (this.reconnecting === task) this.reconnecting = undefined
+      if (!this.lifetime.signal.aborted) logIgnoredError('harness', 'reconnect Worker conversation', error)
+    })
+    return this.waitForReconnect(task, signal)
   }
   private async capture(frame: WorkerConversationRpcRequest, options: {
     callbacks?: WorkerConversationCallbacks; recoveredSubmission?: NativeMessageSubmission; recoveredTurnId?: string
