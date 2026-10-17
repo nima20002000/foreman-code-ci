@@ -32,7 +32,7 @@ async function computer(stall?: 'fetch' | 'checkout') {
   const ports: HostCiPorts = {
     cpus: 16, memoryBytes: 16 * 2 ** 30, now: () => new Date(),
     run: async (file, args, options) => {
-      if (file === 'git' && args.includes('cat-file')) return { code: 1, stdout: '', stderr: '' }
+      if (file === 'git' && args.includes('rev-list')) return { code: 1, stdout: '', stderr: '' }
       const fetching = file === 'git' && args.includes('fetch')
       const checkingOut = file === 'git' && args.includes('worktree') && args.includes('add')
       if (!stalled && (stall === 'fetch' && fetching || stall === 'checkout' && checkingOut)) {
@@ -160,4 +160,40 @@ it('removes a preempted warmup directory while retaining the real run and its sh
   expect(existsSync(join(f.root, 'runs', f.request.runId))).toBe(false)
   expect(existsSync(join(f.root, 'runs', runId))).toBe(true)
   expect(existsSync(join(f.root, 'slots', f.request.repository, '0', 'src', 'package.json'))).toBe(true)
+})
+
+
+it.each(['fetch', 'checkout'] as const)('cancels a stalled real CI %s and frees preparation for the next ticket', async stall => {
+  const f = await computer(stall)
+  const first = f.runner.handle({ ...f.request, warmup: false, suite: 'lint' })
+  let next: ReturnType<HostCiRunner['handle']> | undefined
+  let cancel: ReturnType<HostCiRunner['handle']> | undefined
+  let pid: number | undefined
+  let childPid: number | undefined
+  try {
+    await vi.waitFor(() => expect(existsSync(f.pidFile)).toBe(true))
+    pid = Number(await readFile(f.pidFile, 'utf8'))
+    await vi.waitFor(() => expect(existsSync(f.childPidFile)).toBe(true))
+    childPid = Number(await readFile(f.childPidFile, 'utf8'))
+    cancel = f.runner.handle({ operation: 'cancel', runId: f.request.runId })
+    const runId = randomUUID()
+    next = f.runner.handle({ ...f.request, runId, warmup: false, suite: 'lint' })
+    await vi.waitFor(() => expect(f.launches).toEqual([`foreman-ci-${runId}`]), { timeout: 1500 })
+    expect(() => process.kill(pid!, 0)).toThrow()
+    // Acknowledgement can precede process closure; the read below checks final cancellation after it closes.
+    await expect(cancel).resolves.toMatchObject({ operation: 'cancel', run: { runId: f.request.runId } })
+    await first
+    await expect(f.runner.handle({ operation: 'read', runId: f.request.runId, afterOffset: 0, maxBytes: 100 }))
+      .resolves.toMatchObject({ run: { state: 'canceled' } })
+    await expect(next).resolves.toMatchObject({ run: { runId } })
+    await expect(f.runner.status()).resolves.toMatchObject({ slotsUsed: 1,
+      runs: expect.arrayContaining([expect.objectContaining({ runId: f.request.runId, state: 'canceled' })]) })
+  } finally {
+    for (const processId of [pid, childPid]) {
+      if (processId === undefined) continue
+      try { process.kill(processId, 'SIGKILL') }
+      catch (error) { expect((error as NodeJS.ErrnoException).code).toBe('ESRCH') }
+    }
+    await Promise.all([first, next, cancel])
+  }
 })
