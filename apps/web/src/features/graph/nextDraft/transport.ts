@@ -6,7 +6,7 @@ import {
   GraphDraftV3Schema, WorkflowDefinitionV3Schema, CurrentManagedWorkflowSchema, CurrentWorkflowReadResultSchema,
   CurrentWorkflowSaveResultSchema, CurrentWorkflowValidationSchema, CURRENT_WORKFLOW_ROUTES,
   GraphDraftOperationV3Schema, CurrentRunPageSchema, sameAuthoredWorkflow, sameExecutableWorkflow,
-  preserveWorkflowPresentation,
+  preserveWorkflowGeometry, preserveWorkflowPresentation,
   type GraphDraftOperationV3, type WorkflowDefinitionV3,
 } from '@foreman-code/contracts/wave25'
 import { apiClient, ApiError, type ApiClient, type RequestOptions } from '../../../shared/api/client'
@@ -144,12 +144,18 @@ export function createNextDraftApi(client: ApiClient = apiClient) {
         const after = await load(workspaceId, workflowId, options)
         if (before.savedRevision === after.savedRevision
           && sameAuthoredWorkflow(before.savedDraft.graph, after.savedDraft.graph)) {
-          // Keep local acknowledgements while the saved base has not moved.
+          // Keep local acknowledgements while refreshing independently saved geometry.
           const current = opened.get(key(workspaceId, workflowId))
           if (!reload && current && current.savedRevision === after.savedRevision
             && current.draft.baseWorkflowVersionId === after.draft.baseWorkflowVersionId
             && sameAuthoredWorkflow(current.savedDraft.graph, after.savedDraft.graph)) {
-            return { draft: current.draft, savedDraft: current.savedDraft, agents: agents.items }
+            const refreshed = { ...current,
+              draft: { ...current.draft, graph: preserveWorkflowGeometry(current.draft.graph, after.draft.graph) },
+              savedDraft: { ...current.savedDraft,
+                graph: preserveWorkflowGeometry(current.savedDraft.graph, after.savedDraft.graph) },
+            }
+            opened.set(key(workspaceId, workflowId), refreshed)
+            return { draft: refreshed.draft, savedDraft: refreshed.savedDraft, agents: agents.items }
           }
           opened.set(key(workspaceId, workflowId), after)
           return { draft: after.draft, savedDraft: after.savedDraft, agents: agents.items }
