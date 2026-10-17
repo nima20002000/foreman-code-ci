@@ -72,6 +72,7 @@ it('preserves remote Claude cold recovery, ownership and non-delivery through au
     })
     const id = conversation.id
     const send = async (request: { requestId: string }, delivery: 'completed' | 'failed' = 'completed') => {
+      console.info('Remote Claude send started', request.requestId)
       const terminal = deferred()
       // Subscribe before admission so a fast turn cannot finish before the listener is installed.
       const unsubscribe = chat!.events.subscribe(id, event => {
@@ -80,8 +81,10 @@ it('preserves remote Claude cold recovery, ownership and non-delivery through au
       })
       try {
         const result = await call(writer.token, 'agent_chat_send', { request })
-        expect(result.result?.isError).not.toBe(true)
+        console.info('Remote Claude send admitted', request.requestId, JSON.stringify(result))
+        expect(result.result?.isError, JSON.stringify(result)).not.toBe(true)
         await terminal.promise
+        console.info('Remote Claude send settled', request.requestId)
         expect((await repository.turn(id, request.requestId))?.delivery).toBe(delivery)
         return result
       } finally { unsubscribe() }
