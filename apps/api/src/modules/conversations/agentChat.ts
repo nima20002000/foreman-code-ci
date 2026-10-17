@@ -6,7 +6,7 @@ import type { ChatResponseAcknowledgment } from '@foreman-code/contracts/interac
 import { withInteractionResponse, isSessionNativeInteraction } from '@foreman-code/contracts'
 import { resolveAgentChatDirectory, revalidateAgentChatDirectory } from './agentChatDirectory.js'
 import type { SessionControlRequest } from '@foreman-code/contracts'
-import { pendingSessionControls } from '../harnesses/sessionControlDefaults.js'
+import { pendingSessionControls, type ChatModelCatalog } from '../harnesses/sessionControlDefaults.js'
 import { readRunChatTranscript } from './runChatTranscript.js'
 import { ExecutionActivityReader, type ExecutionActivityRequest } from './executionActivity.js'
 import { SessionControlStateSchema } from '@foreman-code/contracts'
@@ -77,7 +77,7 @@ import {
 import { ignoreError } from '../diagnostics/ignoredError.js'
 
 /** One native manager per conversation; its process is owned by this service, never by a UI connection. */
-export interface AgentChatManagerFactory {
+export interface AgentChatManagerFactory extends ChatModelCatalog {
   (conversationId: string, configuration: AgentConfigurationVersion, workingDirectory: string,
     accountSource?: { executionId: string }): NativeHarnessSessionManager | Promise<NativeHarnessSessionManager>
   recoverCompaction?(configuration: AgentConfigurationVersion, conversationId: string,
@@ -609,7 +609,8 @@ export class AgentChatService {
           configuration, id, session, this.startInput(row, configuration, `session-control:${id}`, true),
           state, principal.id, this.lifetime.signal),
       } : {}),
-      ...(configuration ? { pendingCapabilities: pendingSessionControls(configuration.harness) } : {}) }
+      ...(configuration ? { pendingCapabilities: pendingSessionControls(configuration.harness,
+        !session ? await this.managers.modelOptions?.(configuration.harness) : undefined) } : {}) }
   }
 
   private async resolveControlContext(principal: ManagementPrincipal, context: AgentChatContext, executionId?: string) {
@@ -643,40 +644,31 @@ export class AgentChatService {
     return SessionControlStateSchema.parse({ conversationId: null, revision: 0,
       profileKey: resolved.configuration.id, desiredMode: 'regular', appliedMode: null,
       defaults, desired: defaults, applied: null, applicability: 'next-turn',
-      capabilities: pendingSessionControls(resolved.configuration.harness), context: null,
+      capabilities: pendingSessionControls(resolved.configuration.harness,
+        await this.managers.modelOptions?.(resolved.configuration.harness)), context: null,
       nativeSessionId: null, nativeProviderVersion: null, compaction: null, compactions: [],
       busyReason: resolved.blocked?.message ?? null })
   }
 
-  /** The stored conversation record for this context, created when absent. It starts no native session. */
-  private async ensureContextConversation(principal: ManagementPrincipal, context: AgentChatContext, executionId?: string,
-    expectedRevision = 0) {
+  async changeContextControls(principal: ManagementPrincipal, context: AgentChatContext,
+    input: SessionControlRequest, source: 'http' | 'mcp' = 'http', executionId?: string) {
     this.authorize(principal, 'agent_chat:write', context)
     this.authorize(principal, 'agent_chat:read', context)
     const resolved = await this.resolveControlContext(principal, context, executionId)
     if (resolved.blocked || !resolved.configuration) {
       throw new DomainError('AGENT_CHAT_UNAVAILABLE', resolved.blocked?.message ?? 'This node has no chat configuration.', 409)
     }
-    if (resolved.row) return resolved.row
-    if (!resolved.create || expectedRevision !== 0) staleRunChat()
-    return this.repository.ensureForControls(resolved.key ?? agentChatKey(context),
-      { ...resolved.create, context }, async client => {
-        const current = await readLiveManagementPrincipal(client, principal.id)
-        this.authorize(current, 'agent_chat:read', context)
-        this.authorize(current, 'agent_chat:write', context)
-      })
-  }
-
-  async changeContextControls(principal: ManagementPrincipal, context: AgentChatContext,
-    input: SessionControlRequest, source: 'http' | 'mcp' = 'http', executionId?: string) {
-    const row = await this.ensureContextConversation(principal, context, executionId, input.expectedRevision)
+    let row = resolved.row
+    if (!row) {
+      if (!resolved.create || input.expectedRevision !== 0) staleRunChat()
+      row = await this.repository.ensureForControls(resolved.key ?? agentChatKey(context),
+        { ...resolved.create, context }, async client => {
+          const current = await readLiveManagementPrincipal(client, principal.id)
+          this.authorize(current, 'agent_chat:read', context)
+          this.authorize(current, 'agent_chat:write', context)
+        })
+    }
     return this.changeSessionControls(principal, context.workspaceId, row.id, input, source)
-  }
-
-  /** Files attach to an existing conversation, so the first attachment creates the record (not a native session) first. */
-  async ensureConversation(principal: ManagementPrincipal, context: AgentChatContext, executionId?: string): Promise<AgentChatState> {
-    const row = await this.ensureContextConversation(principal, context, executionId)
-    return this.readConversation(principal, context.workspaceId, row.id)
   }
 
   async readSessionControls(principal: ManagementPrincipal, workspaceId: string, id: string) {
