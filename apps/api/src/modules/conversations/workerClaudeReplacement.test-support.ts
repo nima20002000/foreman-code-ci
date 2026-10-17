@@ -74,6 +74,7 @@ async function sendRecordedMessage(manager: WorkerConversationManager, journal: 
   binding: ReturnType<typeof workerConversationFixture>['binding'], start: (id: string) => NativeSessionStart,
   correlationId: string) {
   const record = await journal.conversations.read(binding)
+  if (!manager.startInitialTurn) throw new Error('The Claude fixture requires atomic initial message admission.')
   const input = { prompt: correlationId, clientCorrelationId: correlationId, sessionMode: 'regular' as const,
     onMessageSubmitted: async () => {} }
   const stream = record?.session ? manager.startTurn(record.session, input)
