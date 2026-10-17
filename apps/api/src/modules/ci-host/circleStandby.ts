@@ -1,6 +1,6 @@
 import type { CircleAccountRole, CircleSchedulingRole } from '@foreman-code/contracts'
 import type { CircleCreditsReader, CircleCreditsReading } from './circleCredits.js'
-import { CircleCreditCache, circleCreditKey, circleMonthStart } from './circleCreditCache.js'
+import { CircleCreditCache, circleCreditKey, circleMonthStart, type CircleCreditState } from './circleCreditCache.js'
 
 /** The owner is a GitHub organization; circleAccountId chooses its credential-bearing login. */
 export interface CircleOrganization {
@@ -21,6 +21,41 @@ function reason(role: CircleSchedulingRole): string {
   if (role === 'exhausted') return 'Estimated credits left reached the 20,000 reserve for this UTC month.'
   if (role === 'standby') return 'Standby capacity waits for a primary organization to reach its credit reserve.'
   return 'Active for new CI jobs.'
+}
+
+interface OrganizationStatus {
+  org: CircleOrganization
+  key: string
+  reading: CircleCreditsReading
+  policy: NonNullable<CircleCreditState['policy']>
+}
+
+function canReplace(status: OrganizationStatus): boolean {
+  return !status.policy.exhausted && status.org.ready && status.org.mirrorNames.size > 0
+    && (status.reading.credits != null || status.policy.activated)
+}
+
+/** Assignments belong to exhausted primaries globally; a workspace only filters their mirror support. */
+function selectReplacements(statuses: OrganizationStatus[]): Set<string> {
+  const ordered = [...statuses].sort((left, right) => left.key.localeCompare(right.key))
+  const primaries = ordered.filter(status => status.org.role === 'primary')
+  const standbys = ordered.filter(status => status.org.role === 'standby')
+  const selected = new Set<string>()
+  for (const primary of primaries) {
+    const assigned = standbys.find(status => status.key === primary.policy.replacement)
+    if (primary.policy.exhausted && assigned && canReplace(assigned) && !selected.has(assigned.key)) {
+      selected.add(assigned.key)
+    } else delete primary.policy.replacement
+  }
+  for (const primary of primaries) {
+    if (!primary.policy.exhausted || primary.policy.replacement) continue
+    const standby = standbys.find(status => !selected.has(status.key) && canReplace(status))
+    if (!standby) continue
+    primary.policy.replacement = standby.key
+    standby.policy.activated = true
+    selected.add(standby.key)
+  }
+  return selected
 }
 
 /** Scheduler, start admission and public readback use the same per-org replacement policy. */
@@ -54,26 +89,14 @@ export class CircleStandby {
         const reading: CircleCreditsReading = previousMonth
           ? { credits: null, creditsUnavailable: 'Usage from the previous UTC month has expired.' } : observed
         if (reading.credits) saved.policy.exhausted = reading.credits.remaining <= CIRCLE_EXHAUSTED_CREDITS
-        return { org, key, reading, policy: saved.policy,
-          hasMirror: mirrorName ? org.mirrorNames.has(mirrorName) : org.mirrorNames.size > 0 }
+        return { org, key, reading, policy: saved.policy }
       })
-      let replacements = statuses.filter(status => status.org.role === 'primary' && status.policy.exhausted).length
-      const selected = new Set<string>()
-      const standbys = statuses.filter(status => status.org.role === 'standby')
-        .sort((left, right) => left.org.owner.toLowerCase().localeCompare(right.org.owner.toLowerCase()))
-      for (const status of standbys) {
-        const eligible = !status.policy.exhausted && status.org.ready && status.hasMirror
-          && (status.reading.credits !== null || status.policy.activated)
-        if (replacements > 0 && eligible) {
-          selected.add(status.key)
-          status.policy.activated = true
-          replacements--
-        }
-      }
+      const selected = selectReplacements(statuses)
       return new Map(statuses.map(status => {
         let role: CircleSchedulingRole = 'standby'
         if (status.policy.exhausted) role = 'exhausted'
-        else if (status.hasMirror && (status.org.role === 'primary' || selected.has(status.key))) role = 'active'
+        else if ((mirrorName ? status.org.mirrorNames.has(mirrorName) : status.org.mirrorNames.size > 0)
+          && (status.org.role === 'primary' || selected.has(status.key))) role = 'active'
         return [status.key, { ...status.reading, schedulingRole: role, schedulingReason: reason(role) }]
       }))
     })

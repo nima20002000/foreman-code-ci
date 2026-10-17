@@ -515,20 +515,18 @@ export class AgentChatService {
     if (!blocked && !loaded.row.active_request_id && !loaded.row.pending_interaction && resident?.session
       && !resident.retiring && !resident.disposal) {
       let pending: Awaited<ReturnType<NativeHarnessSessionManager['pending']>>
-      const signal = AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(1_000)])
       try {
-        pending = await resident.manager.pending(resident.session, signal)
+        pending = await resident.manager.pending(resident.session)
         this.pendingObservations.set(loaded.row.id, successfulReadObservation())
       } catch (error) {
         const retired = error instanceof DomainError && error.code === 'NATIVE_MANAGER_DISPOSED'
           && (resident.retiring || resident.disposal || this.runtimes.get(loaded.row.id) !== resident)
-        const timedOut = signal.aborted && !this.lifetime.signal.aborted
-        const offline = timedOut || error instanceof DeviceConnectionError && ['transport', 'timeout', 'unavailable'].includes(error.code)
+        const offline = error instanceof DeviceConnectionError && ['transport', 'timeout', 'unavailable'].includes(error.code)
           || error instanceof DomainError && error.code === 'WORKER_CONVERSATION_UNAVAILABLE'
         if (!retired && !offline) throw error
         if (offline) {
-          const observation = failedReadObservation(this.pendingObservations.get(loaded.row.id), timedOut ? signal.reason : error,
-            'The chat Worker is unavailable; pending interactions could not be refreshed')
+          const observation = failedReadObservation(this.pendingObservations.get(loaded.row.id), error,
+            'The chat Worker is offline; pending interactions could not be refreshed')
           this.pendingObservations.set(loaded.row.id, observation)
           componentLogger('harness').warn({ conversationId: loaded.row.id, ...observation },
             'Agent chat pending interaction refresh unavailable')
