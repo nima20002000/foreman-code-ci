@@ -8,7 +8,6 @@ import type { HostCiComputer, HostCiEndpoint } from './service.js'
 import type { CiMirrorInput } from './serviceTypes.js'
 import type { HostCiRunner } from './runner.js'
 import type { CloudCi } from './cloud.js'
-import { WorkerExecutionPolicy } from '../settings/workerExecution.js'
 import { DomainError } from '../errors.js'
 import type { DeviceProvisioningTarget } from '@foreman-code/contracts/device-resources'
 import { assertBuildComputerTarget } from '../settings/buildComputers.js'
@@ -36,8 +35,7 @@ export class ProductionHostCiEndpoint implements HostCiEndpoint {
   private readonly cleanupPending = new Map<string, Promise<void>>()
   constructor(private readonly pool: pg.Pool, private readonly mainId: string,
     private readonly devices: () => DeviceRequests | undefined, private readonly local: Pick<HostCiRunner, 'handle'>,
-    private readonly clouds: CloudCi[] = [], private readonly discoverClouds?: () => Promise<void>,
-    private readonly workerExecution = new WorkerExecutionPolicy()) {}
+    private readonly clouds: CloudCi[] = [], private readonly discoverClouds?: () => Promise<void>) {}
 
   async publishMirror(input: CiMirrorInput): Promise<void> {
     // Publication is shared by provider and slot; readiness remains a dispatch concern. Further CircleCI orgs publish
@@ -73,12 +71,10 @@ export class ProductionHostCiEndpoint implements HostCiEndpoint {
       const hostRef = row.target.hostRef
       if (!row.build_enabled || hostRef.mainId !== this.mainId) continue
       try {
-        this.workerExecution.requireEnabled(hostRef)
         await assertBuildComputerTarget(this.pool, row.target)
       } catch (error) {
         if (error instanceof DeviceAccessError
-          || error instanceof DomainError
-            && ['BUILD_COMPUTER_IDENTITY_CHANGED', 'WORKER_EXECUTION_DISABLED'].includes(error.code)) continue
+          || error instanceof DomainError && error.code === 'BUILD_COMPUTER_IDENTITY_CHANGED') continue
         throw error
       }
       if (hostRef.kind === 'main') {
@@ -99,9 +95,7 @@ export class ProductionHostCiEndpoint implements HostCiEndpoint {
     options?: { priority: DeviceRequestPriority }): Promise<CiHostReply> {
     if (request.operation === 'start') {
       try {
-        if (computer.hostRef.kind === 'device') this.workerExecution.requireEnabled({ kind: computer.hostRef.kind })
         request = await this.prepareStart(computer, request)
-        if (computer.hostRef.kind === 'device') this.workerExecution.requireEnabled({ kind: computer.hostRef.kind })
       } catch (error) {
         throw new CiStartPreflightError(error)
       }

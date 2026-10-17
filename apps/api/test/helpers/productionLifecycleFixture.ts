@@ -29,7 +29,6 @@ import { privateFixtureDirectory } from './privateFixtureDirectory.js'
 const connectionString = process.env.TEST_DATABASE_URL!
 let schema: string
 let root: string
-let fileRoot: string
 export let project: string
 export let address: string
 let admin: pg.Pool
@@ -77,7 +76,6 @@ export function registerProductionLifecycleFixture() {
     schema = `production_lifecycle_${randomUUID().replaceAll('-', '')}`
     root = await privateFixtureDirectory('pr15-runtime-')
     project = await privateFixtureDirectory('pr15-project-')
-    fileRoot = await privateFixtureDirectory('lifecycle-files-')
     admin = new pg.Pool({ connectionString })
     await createFixtureSchema(admin, schema)
     await createFixtureSchema(admin, `${schema}_checkpoints`)
@@ -85,7 +83,6 @@ export function registerProductionLifecycleFixture() {
     url.searchParams.set('options', `-c search_path=${schema}`)
     config = loadConfig({ DATABASE_URL: url.toString(), DATABASE_POOL_MAX: '1', DATABASE_QUERY_TIMEOUT_MS: '5000', HARNESS_WORKSPACE_ROOT: root, HARNESS_TIMEOUT_MS: '30000', PORT: '4100' })
     config.workspaceStorageRoot = project
-    config.fileStorageRoot = fileRoot
     database = createDatabase(config.database)
     await database.migrate()
     checkpoints = createCheckpointStore(config.database.connectionString, `${schema}_checkpoints`, config.database)
@@ -179,7 +176,6 @@ export function registerProductionLifecycleFixture() {
     vi.spyOn(CodexAppServerSessionManager.prototype, 'close').mockImplementation(async () => { native.closes++ })
     vi.spyOn(ReviewerDispatcher.prototype, 'reconcile').mockResolvedValue() // manually drive the real dispatcher between crash boundaries
     production = buildProductionApp(config, database, checkpoints, false)
-    production.registerFileStorage()
     runs = Reflect.get(production.engine, 'runs') as PostgresRunRepository
     interactions = Reflect.get(runtime(), 'interactions') as PostgresInteractionRepository
     await production.initialize()
@@ -193,7 +189,7 @@ export function registerProductionLifecycleFixture() {
     await (admin ? dropFixtureSchema(admin, schema) : Promise.resolve())
     await (admin ? dropFixtureSchema(admin, `${schema}_checkpoints`) : Promise.resolve())
     await admin?.end()
-    await removeFixtureDirectory(root); await removeFixtureDirectory(project); await removeFixtureDirectory(fileRoot)
+    await removeFixtureDirectory(root); await removeFixtureDirectory(project)
     vi.restoreAllMocks()
     vi.unstubAllEnvs()
   })

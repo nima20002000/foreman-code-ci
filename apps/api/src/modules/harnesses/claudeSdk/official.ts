@@ -11,6 +11,9 @@ import type { ClaudeSdkClient } from './port.js'
 import { claudeProfileHelper } from './profileHelpers.js'
 
 
+export const CLAUDE_CLI_CANDIDATE_VERSION = '2.1.284'
+export const CLAUDE_SDK_CANDIDATE_VERSION = '0.3.284'
+
 export function assertClaudeSdkContract(sdk: unknown, version: string): void {
   const exports = sdk && typeof sdk === 'object' ? sdk as Record<string, unknown> : {}
   for (const method of ['query', 'getSessionInfo', 'getSessionMessages', 'forkSession', 'listSubagents', 'getSubagentMessages']) {

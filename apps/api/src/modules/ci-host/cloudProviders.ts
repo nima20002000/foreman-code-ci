@@ -17,7 +17,7 @@ export interface CloudRun {
   transport?: CiHostRun['transport']
   testsStarted?: boolean
   scope?: CiScope; files?: string[]; part?: CiPart; baseCommit?: string
-  dispatch?: { input: CloudDispatchInput; attempts: number; at: string; uncertain?: boolean; cancelAccepted?: boolean }
+  dispatch?: { input: CloudDispatchInput; attempts: number; at: string; uncertain?: boolean }
   reconciliation?: { attempts: number; at: string; since?: string; previousMessage: string | null }
   publicationRequest?: Extract<CiHostRequest, { operation: 'start' }>
   mirrorPublication?: CiHostRun['mirrorPublication']
@@ -96,8 +96,7 @@ export interface CloudProvider {
   log(run: CloudRun): Promise<string>
   /** The measured test file durations and structured test results the run left as an artifact. */
   artifacts(run: CloudRun, directory: string): Promise<CloudArtifacts>
-  /** False means no workflow accepted cancellation; a successful request otherwise returns normally. */
-  cancel(run: CloudRun): Promise<void | false>
+  cancel(run: CloudRun): Promise<void>
 }
 
 export function validateProviderParameters(provider: Pick<CloudProvider, 'label' | 'parameterLimit'>,
@@ -135,9 +134,7 @@ async function executeCommand(ports: HostCiPorts, label: string, file: string, a
     const noActiveWorkflows = file === 'circleci' && args[0] === 'run'
       && (args[1] === 'get' || args[1] === 'cancel') && /\bno active workflows\b/i.test(result.stderr)
     if (noActiveWorkflows) {
-      if (args[1] === 'cancel') {
-        throw new DomainError('CI_CLOUD_CANCEL_NOT_ACCEPTED', 'CircleCI has no active workflows to cancel.', 502)
-      }
+      if (args[1] === 'cancel') return ''
       throw new DomainError('CI_CLOUD_RUN_UNREADABLE',
         'CircleCI reports no active workflows; the final outcome is not visible yet.', 502)
     }
@@ -603,7 +600,7 @@ export class CircleCiProvider implements CloudProvider {
     return artifacts
   }
 
-  async cancel(run: CloudRun): Promise<void | false> {
+  async cancel(run: CloudRun) {
     this.outputPolls.delete(run.runId)
     let view: { phase?: string; workflows?: unknown[] } | null
     try {
@@ -615,11 +612,6 @@ export class CircleCiProvider implements CloudProvider {
       view = null
     }
     if (view?.phase === 'ended' && !view.workflows?.length) return
-    try {
-      await this.circleci(['run', 'cancel', run.providerRunId!, '--force'], 15_000)
-    } catch (error) {
-      if (error instanceof DomainError && error.code === 'CI_CLOUD_CANCEL_NOT_ACCEPTED') return false
-      throw error
-    }
+    await this.circleci(['run', 'cancel', run.providerRunId!, '--force'], 15_000)
   }
 }
