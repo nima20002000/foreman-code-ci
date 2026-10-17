@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { deferred } from '../../../../test/helpers/deferred.js'
 import { describe, expect, it, vi } from 'vitest'
-import { DEFAULT_HARNESS_DEFAULTS, type AgentConfigurationVersion, type NativeHarnessEvent } from '@foreman-code/contracts'
+import { CODEX_APPROVAL_OPTIONS_FIXTURE, DEFAULT_HARNESS_DEFAULTS, type AgentConfigurationVersion, type NativeHarnessEvent } from '@foreman-code/contracts'
 import { DEVICE_APPLICATION_JSON_BYTES } from '@foreman-code/contracts/device-application'
 import type { DeviceHistoryGap } from '@foreman-code/contracts/device-application'
 import { RemoteOperationReceiptSchema, RemoteOperationStatusSchema } from '@foreman-code/contracts/remote-execution'
@@ -10,10 +10,12 @@ import { RemoteExecutionRpcRequestSchema } from '@foreman-code/contracts/remote-
 import { freezePlacement, deriveDispatch } from '../../placement/binding.js'
 import type { NativeHistory } from '../../harnesses/port.js'
 import { HistoryObservationPages } from './historyObservationPages.js'
-import { pageNativeHistory } from './nativeHistoryPage.js'
+import { pageNativeHistory, startNativeHistoryDownload, readNativeHistoryMetadata } from './nativeHistoryPage.js'
+import { readJsonContinuation } from './jsonContinuation.js'
 import { RemoteNativeSessionManager, type RemoteNativeTransport, type RemoteNativeManagerOptions } from './nativeManagerProxy.js'
 import { DeviceApplicationError } from '../../devices/deviceApplicationError.js'
 import { DomainError } from '../../errors.js'
+import { deviceRequestTimeoutMs } from '../../devices/deviceRequestRetry.js'
 
 function event(sequence: number, text = 'event'): NativeHarnessEvent {
   return { sequence, type: 'native.notification', occurredAt: '2026-10-01T00:00:00.000Z', payload: { text } }
@@ -64,16 +66,19 @@ function setup(read: () => NativeHistory, changeReply?: (reply: ReturnType<typeo
     const frame = RemoteExecutionRpcRequestSchema.parse(raw)
     if (method === 'prepare') return { session, status }
     if (method === 'start-turn') return status
-    if (frame.method !== 'history') throw new Error('Unexpected request')
-    cursors.push(frame.afterSequence)
-    if (frame.metadata) return historyPages.read(frame)
-    const reply = { ...pageNativeHistory(read(), frame.afterSequence, frame.metadata), status }
+    if (frame.method !== 'history' && frame.method !== 'reconcile-response') throw new Error('Unexpected request')
+    const afterSequence = frame.method === 'history' ? frame.afterSequence : undefined
+    const metadata = frame.method === 'history' ? frame.metadata : undefined
+    cursors.push(afterSequence)
+    if (frame.method === 'history' && metadata) return historyPages.read(frame)
+    const reply = { ...startNativeHistoryDownload(read(), { afterSequence, downloadId: frame.downloadId }), status }
     changeReply?.(reply)
     expect(Buffer.byteLength(JSON.stringify(reply))).toBeLessThanOrEqual(DEVICE_APPLICATION_JSON_BYTES)
     return historyPages.remember(reply, intent, placement)
   })
+  const transport: RemoteNativeTransport = { request }
   const proxy = new RemoteNativeSessionManager({ intent, placement, harness: 'codex', configuration,
-    transport: { request }, observeReceipt: async value => { observedReceipts.push(value) },
+    transport, observeReceipt: async value => { observedReceipts.push(value) },
     discardReceipt: response => {
       const value = response as { status: unknown }
       const status = RemoteOperationStatusSchema.parse(typeof value.status === 'object' ? value.status : response)
@@ -84,7 +89,7 @@ function setup(read: () => NativeHistory, changeReply?: (reply: ReturnType<typeo
   const start = { correlationId: 'execution:execution', request: { executionId: 'execution', runId: 'run',
     workspaceId: 'workspace', workflowNodeId: 'node', workingDirectory: '/project', runtimeDirectory: '/runtime',
     configuration, input: {} } }
-  return { proxy, start, request, cursors, controlFor, observeOriginalSource, receipt, observedReceipts, discardedReceipts }
+  return { proxy, start, request, transport, cursors, controlFor, observeOriginalSource, receipt, observedReceipts, discardedReceipts }
 }
 
 function terminal(events: NativeHarnessEvent[]): NativeHistory {
@@ -96,6 +101,166 @@ function terminal(events: NativeHarnessEvent[]): NativeHistory {
 }
 
 describe('remote native history streaming', () => {
+  it('releases the lost initial snapshot when its replay observes changed metadata', async () => {
+    let reads = 0
+    const result = { outcome: 'succeeded' as const, output: { text: 'changed-snapshot' + 'x'.repeat(3 * 1024 * 1024) } }
+    const history = { ...terminal([]), terminalResult: result }
+    history.terminalTurn!.result = result
+    const f = setup(() => ({ ...history, nextCursor: `snapshot:${++reads}` }))
+    const request = f.request.getMockImplementation()!
+    let lost = false
+    f.transport.reconnect = async error => error instanceof DeviceApplicationError && error.code === 'DEVICE_LINK_DROPPED'
+    f.request.mockImplementation(async (method, raw, signal) => {
+      const frame = RemoteExecutionRpcRequestSchema.parse(raw)
+      const reply = await request(method, raw, signal)
+      if (frame.method === 'history' && !frame.metadata && !lost) {
+        lost = true
+        throw new DeviceApplicationError('DEVICE_LINK_DROPPED')
+      }
+      return reply
+    })
+    const session = await f.proxy.createSession(f.start)
+    expect((await f.proxy.history(session)).terminalResult).toEqual(result)
+    const downloads = Array.from({ length: 5 }, (_, index) => pageNativeHistory({
+      events: [], pendingInteractions: [], terminalResult: { outcome: 'succeeded',
+        output: { text: `after-changed-snapshot-${index}` + 'x'.repeat(3 * 1024 * 1024) } },
+    }).page.metadata!)
+    for (const first of downloads) {
+      expect(await readJsonContinuation(first, async request => readNativeHistoryMetadata(request)))
+        .toHaveProperty('kind', 'execution-result-dictionary')
+    }
+    expect(reads).toBe(2)
+    expect(f.controlFor).not.toHaveBeenCalled()
+  })
+
+  it.each(['history', 'stream', 'reconcile-response'] as const)(
+    'restarts a complete %s observation after a continuation expires during reconnect', async operation => {
+      const history = terminal([event(0), event(1)])
+      const original = { outcome: 'succeeded' as const, output: { text: 'before reconnect '.repeat(30_000) } }
+      const refreshed = { outcome: 'succeeded' as const, output: { text: 'after reconnect '.repeat(30_000) } }
+      history.terminalResult = original
+      history.terminalTurn!.result = original
+      const f = setup(() => history)
+      let now = Date.now()
+      const clock = vi.spyOn(Date, 'now').mockImplementation(() => now)
+      const request = f.request.getMockImplementation()!
+      let dropped = false
+      const reconnect = vi.fn(async (error: unknown) =>
+        error instanceof DeviceApplicationError && error.code === 'DEVICE_LINK_DROPPED')
+      f.transport.reconnect = reconnect
+      f.request.mockImplementation(async (method, raw, signal) => {
+        const frame = RemoteExecutionRpcRequestSchema.parse(raw)
+        try {
+          const reply = structuredClone(await request(method, raw, signal))
+          if (frame.method === 'history' && frame.metadata && !dropped) {
+            dropped = true
+            now += 130_000
+            history.terminalResult = refreshed
+            history.terminalTurn!.result = refreshed
+            throw new DeviceApplicationError('DEVICE_LINK_DROPPED')
+          }
+          return reply
+        } catch (error) {
+          if (error instanceof DomainError) throw new DeviceApplicationError(error.code)
+          throw error
+        }
+      })
+      try {
+        const session = await f.proxy.createSession(f.start)
+        if (operation === 'stream') {
+          const stream = f.proxy.startTurn(session, { prompt: 'prompt', clientCorrelationId: f.start.correlationId })
+          expect((await stream.next()).value).toEqual(event(0))
+          expect((await stream.next()).value).toEqual(event(1))
+          expect((await stream.next()).done).toBe(true)
+        } else {
+          const result = operation === 'history' ? await f.proxy.history(session)
+            : await f.proxy.reconcileResponse(session, { nativeRequestId: 'request', nativeRequestType: 'approval',
+              option: CODEX_APPROVAL_OPTIONS_FIXTURE[0]! })
+          expect(result).toMatchObject({ events: history.events, terminalResult: refreshed,
+            terminalTurn: { result: refreshed } })
+        }
+        const initial = f.request.mock.calls.map(([, raw]) => RemoteExecutionRpcRequestSchema.parse(raw))
+          .filter(frame => frame.method === 'history' && !frame.metadata || frame.method === 'reconcile-response')
+        expect(initial).toHaveLength(2)
+        expect(f.discardedReceipts).toHaveLength(1)
+        expect(reconnect).toHaveBeenCalledWith(expect.objectContaining({ code: 'DEVICE_LINK_DROPPED' }), undefined)
+        expect(f.controlFor).not.toHaveBeenCalled()
+        if (operation === 'stream') {
+          expect((await f.proxy.history(session)).terminalResult).toEqual(refreshed)
+          const reads = f.request.mock.calls.map(([, raw]) => RemoteExecutionRpcRequestSchema.parse(raw))
+            .filter(frame => frame.method === 'history' && !frame.metadata)
+          expect(reads).toHaveLength(3)
+        }
+      } finally {
+        clock.mockRestore()
+      }
+    })
+
+  it('bounds complete observation restarts when metadata expires on every attempt', async () => {
+    const history = terminal([])
+    const result = { outcome: 'succeeded' as const, output: { text: 'always-expired '.repeat(30_000) } }
+    history.terminalResult = result
+    history.terminalTurn!.result = result
+    const f = setup(() => history)
+    let now = Date.now()
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => now)
+    const request = f.request.getMockImplementation()!
+    f.request.mockImplementation(async (method, raw, signal) => {
+      const frame = RemoteExecutionRpcRequestSchema.parse(raw)
+      if (frame.method === 'history' && frame.metadata) now += deviceRequestTimeoutMs + 1
+      try {
+        return structuredClone(await request(method, raw, signal))
+      } catch (error) {
+        if (error instanceof DomainError) throw new DeviceApplicationError(error.code)
+        throw error
+      }
+    })
+    try {
+      const session = await f.proxy.createSession(f.start)
+      await expect(f.proxy.history(session)).rejects.toMatchObject({ code: 'transfer-expired' })
+      const initial = f.request.mock.calls.map(([, raw]) => RemoteExecutionRpcRequestSchema.parse(raw))
+        .filter(frame => frame.method === 'history' && !frame.metadata)
+      expect(initial).toHaveLength(5)
+      expect(f.discardedReceipts).toHaveLength(5)
+      expect(f.observeOriginalSource.mock.calls.some(([, source]) => source.type === 'history')).toBe(false)
+    } finally {
+      clock.mockRestore()
+    }
+  })
+
+  it('rejects a changed native owner when restarting an expired observation', async () => {
+    const history = terminal([])
+    const result = { outcome: 'succeeded' as const, output: { text: 'owner-change '.repeat(30_000) } }
+    history.terminalResult = result
+    history.terminalTurn!.result = result
+    const f = setup(() => history)
+    let now = Date.now()
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => now)
+    const request = f.request.getMockImplementation()!
+    let expired = false
+    f.request.mockImplementation(async (method, raw, signal) => {
+      const frame = RemoteExecutionRpcRequestSchema.parse(raw)
+      if (frame.method === 'history' && frame.metadata && !expired) {
+        expired = true
+        now += deviceRequestTimeoutMs + 1
+        f.receipt.native!.sessionId = 'different-session'
+      }
+      try {
+        return structuredClone(await request(method, raw, signal))
+      } catch (error) {
+        if (error instanceof DomainError) throw new DeviceApplicationError(error.code)
+        throw error
+      }
+    })
+    try {
+      const session = await f.proxy.createSession(f.start)
+      await expect(f.proxy.history(session)).rejects.toThrow('Original remote receipt changed')
+      expect(f.observeOriginalSource.mock.calls.some(([, source]) => source.type === 'history')).toBe(false)
+    } finally {
+      clock.mockRestore()
+    }
+  })
+
   it('refreshes physical history after a slow download before publishing and settling', async () => {
     const f = setup(() => terminal([event(0), event(1)]))
     let now = 1_000
