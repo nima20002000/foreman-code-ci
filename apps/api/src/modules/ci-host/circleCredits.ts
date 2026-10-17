@@ -1,5 +1,5 @@
 import { gunzipSync } from 'node:zlib'
-import type { CircleAccountCredits, CircleOrgCredits } from '@foreman-code/contracts'
+import type { CircleCredits } from '@foreman-code/contracts'
 import type { CircleCreditAllowance } from '@foreman-code/contracts/management'
 import { DomainError } from '../errors.js'
 import { componentLogger } from '../diagnostics/logger.js'
@@ -13,13 +13,12 @@ const EXPORT_WAIT_MS = 120_000
 /** A reading older than this, or from an earlier month, is no longer shown. */
 const MAX_AGE_MS = 60 * 60_000
 
-export interface CircleCreditsReading { credits: CircleAccountCredits | null; creditsUnavailable?: string }
+export interface CircleCreditsReading { credits: CircleCredits | null; creditsUnavailable?: string }
 
 interface Snapshot { used: number; asOf: string; periodStart: string }
-interface OrgState {
-  /** The GitHub owner of the CircleCI organization. */
-  name: string
-  id: string
+interface AccountState {
+  owner?: string
+  orgId?: string
   job?: { id: string; periodStart: string }
   snapshot?: Snapshot
   failure?: string
@@ -68,15 +67,12 @@ export function sumTotalCredits(csv: string): number {
 }
 
 /**
- * Remaining CircleCI credits for the login's GitHub organizations. CircleCI has no API for the plan balance, so each
- * organization's remaining credits are its monthly allowance (400,000 for open-source Linux builds on the Free plan,
- * overridable per organization) minus the organization's usage this month from CircleCI's usage export. One export
- * per organization at most every ten minutes, shared by every reader; readers only ever see the cached values.
+ * Remaining CircleCI credits per account, estimated as the configured monthly allowance minus this month's usage
+ * from CircleCI's usage export (CircleCI has no API for the plan balance). One export per account at most every ten
+ * minutes, shared by every reader; readers only ever see the cached value.
  */
 export class CircleCreditUsage {
-  private readonly orgs = new Map<string, OrgState>()
-  private readonly listing: { attemptedAt: number; failure?: string; refreshing?: Promise<void> | undefined } = {
-    attemptedAt: Number.NEGATIVE_INFINITY }
+  private readonly states = new Map<string, AccountState>()
   private readonly now: () => number
   private readonly refreshMs: number
   private readonly pollMs: number
@@ -84,6 +80,8 @@ export class CircleCreditUsage {
 
   constructor(private readonly http: Pick<CloudHttp, 'request' | 'check' | 'json' | 'downloadUrl'>, private readonly source: {
     allowance(): Promise<CircleCreditAllowance>
+    /** The GitHub owner of the CircleCI org behind the workspace CI mirrors, or null when it is not a single owner. */
+    primaryOwner(): Promise<string | null>
   }, options: { now?: () => number; refreshMs?: number; pollMs?: number; waitMs?: number } = {}) {
     this.now = options.now ?? Date.now
     this.refreshMs = options.refreshMs ?? REFRESH_MS
@@ -91,68 +89,40 @@ export class CircleCreditUsage {
     this.waitMs = options.waitMs ?? EXPORT_WAIT_MS
   }
 
-  async reading(): Promise<CircleCreditsReading> {
-    if (!this.listing.refreshing && this.now() - this.listing.attemptedAt >= this.refreshMs) {
-      this.listing.attemptedAt = this.now()
-      this.listing.refreshing = this.listOrganizations().finally(() => { this.listing.refreshing = undefined })
+  /** `account` is the GitHub owner of a further CircleCI org; omit it for the workspace mirror's own org. */
+  async reading(account?: string): Promise<CircleCreditsReading> {
+    const key = (account ?? '').toLowerCase()
+    let state = this.states.get(key)
+    if (!state) {
+      state = { attemptedAt: Number.NEGATIVE_INFINITY }
+      this.states.set(key, state)
     }
-    for (const state of this.orgs.values()) this.refreshIfDue(state)
-    if (!this.orgs.size) return { credits: null, creditsUnavailable: this.listing.failure ?? 'Credits are still being read.' }
-    const allowance = await this.source.allowance()
-    const orgs = [...this.orgs.values()].map(state => this.organizationReading(state, allowance))
-    const counted = orgs.flatMap(org => org.credits ? [org.credits] : [])
-    const total = counted.length ? {
-      total: counted.reduce((sum, credits) => sum + credits.total, 0),
-      used: counted.reduce((sum, credits) => sum + credits.used, 0),
-      remaining: counted.reduce((sum, credits) => sum + credits.remaining, 0),
-      asOf: counted.map(credits => credits.asOf).sort()[0]!,
-    } : null
-    return { credits: { orgs, total } }
-  }
-
-  private organizationReading(state: OrgState, allowance: CircleCreditAllowance): CircleOrgCredits {
-    const snapshot = state.snapshot
+    const current = state
+    if (!current.refreshing && this.now() - current.attemptedAt >= this.refreshMs) {
+      current.attemptedAt = this.now()
+      current.refreshing = this.refresh(current, account).finally(() => { current.refreshing = undefined })
+    }
+    const snapshot = current.snapshot
     const fresh = snapshot && this.now() - Date.parse(snapshot.asOf) <= MAX_AGE_MS
       && snapshot.periodStart === monthStart(this.now())
-    if (!fresh) return { org: state.name, credits: null, unavailable: state.failure ?? 'Credits are still being read.' }
-    const total = Object.entries(allowance.accounts).find(([name]) => name.toLowerCase() === state.name.toLowerCase())?.[1]
+    if (!fresh) return { credits: null, creditsUnavailable: current.failure ?? 'Credits are still being read.' }
+    const allowance = await this.source.allowance()
+    const owner = (current.owner ?? '').toLowerCase()
+    const total = Object.entries(allowance.accounts).find(([name]) => name.toLowerCase() === owner)?.[1]
       ?? allowance.defaultMonthlyCredits
-    return { org: state.name, credits: { total, used: snapshot.used, remaining: Math.max(0, total - snapshot.used), asOf: snapshot.asOf } }
+    return { credits: { total, used: snapshot.used, remaining: Math.max(0, total - snapshot.used), asOf: snapshot.asOf } }
   }
 
-  /** The login's GitHub organizations; a failed listing keeps the known ones. */
-  private async listOrganizations() {
+  private async refresh(state: AccountState, account: string | undefined) {
     try {
-      const response = await this.call('/api/v2/me/collaborations', 'the organization lookup')
-      const found = await this.http.json<{ id: string; name?: string; slug?: string; vcs_type?: string }[]>(response)
-      for (const org of found) {
-        const name = org.slug?.startsWith('gh/') ? org.slug.slice(3) : org.name
-        if (org.vcs_type !== 'github' || !name) continue
-        const known = this.orgs.get(name.toLowerCase())
-        if (known) known.id = org.id
-        else this.orgs.set(name.toLowerCase(), { name, id: org.id, attemptedAt: Number.NEGATIVE_INFINITY })
-      }
-      delete this.listing.failure
-      if (!this.orgs.size) this.listing.failure = 'The CircleCI login belongs to no GitHub organization.'
-    } catch (error) {
-      this.listing.failure = error instanceof DomainError ? error.message : 'CircleCI organizations could not be read.'
-      log.warn({ operation: 'list CircleCI organizations', err: error }, 'CircleCI organizations could not be listed')
-    }
-    for (const state of this.orgs.values()) this.refreshIfDue(state)
-  }
-
-  private refreshIfDue(state: OrgState) {
-    if (state.refreshing || this.now() - state.attemptedAt < this.refreshMs) return
-    state.attemptedAt = this.now()
-    state.refreshing = this.refresh(state).finally(() => { state.refreshing = undefined })
-  }
-
-  private async refresh(state: OrgState) {
-    try {
+      const owner = account ?? await this.source.primaryOwner()
+      if (!owner) throw new DomainError('CI_CLOUD_FAILED', 'The CircleCI organization of the CI mirror is not known.', 502)
+      state.owner = owner
+      state.orgId ??= await this.organizationId(owner)
       const periodStart = monthStart(this.now())
       if (state.job && state.job.periodStart !== periodStart) delete state.job
-      state.job ??= { id: await this.createExport(state.id, periodStart), periodStart }
-      const urls = await this.waitForExport(state, state.id, state.job.id)
+      state.job ??= { id: await this.createExport(state.orgId, periodStart), periodStart }
+      const urls = await this.waitForExport(state, state.orgId, state.job.id)
       if (!urls) throw new DomainError('CI_CLOUD_FAILED', 'CircleCI usage export is not ready yet.', 502)
       let used = 0
       for (const url of urls) {
@@ -164,7 +134,7 @@ export class CircleCreditUsage {
       delete state.failure
     } catch (error) {
       state.failure = error instanceof DomainError ? error.message : 'CircleCI usage could not be read.'
-      log.warn({ operation: 'read CircleCI credits', err: error, owner: state.name }, 'CircleCI credit usage could not be read')
+      log.warn({ operation: 'read CircleCI credits', err: error, owner: state.owner }, 'CircleCI credit usage could not be read')
     }
   }
 
@@ -175,6 +145,15 @@ export class CircleCreditUsage {
     return response
   }
 
+  private async organizationId(owner: string) {
+    const response = await this.call('/api/v2/me/collaborations', 'the organization lookup')
+    const orgs = await this.http.json<{ id: string; name?: string; slug?: string; vcs_type?: string }[]>(response)
+    const match = orgs.find(org => org.vcs_type !== 'bitbucket'
+      && (org.name?.toLowerCase() === owner.toLowerCase() || org.slug?.toLowerCase() === `gh/${owner.toLowerCase()}`))
+    if (!match) throw new DomainError('CI_CLOUD_FAILED', `CircleCI organization ${owner} is not visible to Main's login.`, 502)
+    return match.id
+  }
+
   private async createExport(orgId: string, start: string) {
     const response = await this.call(`/api/v2/organizations/${encodeURIComponent(orgId)}/usage_export_job`,
       'the usage export', { method: 'POST', body: JSON.stringify({ start, end: new Date(this.now()).toISOString() }) })
@@ -182,7 +161,7 @@ export class CircleCreditUsage {
   }
 
   /** The export's CSV links once it completed; null when it is still running after the wait. */
-  private async waitForExport(state: OrgState, orgId: string, jobId: string): Promise<string[] | null> {
+  private async waitForExport(state: AccountState, orgId: string, jobId: string): Promise<string[] | null> {
     const deadline = Date.now() + this.waitMs
     for (;;) {
       const response = await this.call(
