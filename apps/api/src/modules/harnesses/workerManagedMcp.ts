@@ -161,21 +161,29 @@ export class WorkerManagedMcp {
     const deadline = AbortSignal.timeout(120_000)
     const signal = options.signal ? AbortSignal.any([options.signal, deadline]) : deadline
     await this.options.installLauncher(signal)
+    const failures: unknown[] = []
     for (const harness of harnesses) {
-      await this.options.prepare?.(harness)
-      const snapshot = await this.options.adapters[harness].read(signal)
-      const status = managedStatus(snapshot, 'graphql')
-      const migrate = appMcpNeedsMigration(snapshot)
-      if ((status === 'installed' || status === 'disabled') && !migrate) continue
-      if (status !== 'missing' && status !== 'legacy' && !migrate) {
-        throw new DomainError('APP_MCP_SETUP_FAILED',
-          'Foreman Code MCP has custom or inherited configuration. Inspect its native connection settings.', 409)
+      try {
+        await this.options.prepare?.(harness)
+        const snapshot = await this.options.adapters[harness].read(signal)
+        const status = managedStatus(snapshot, 'graphql')
+        const migrate = appMcpNeedsMigration(snapshot)
+        if ((status === 'installed' || status === 'disabled') && !migrate) continue
+        if (status !== 'missing' && status !== 'legacy' && !migrate) {
+          throw new DomainError('APP_MCP_SETUP_FAILED',
+            'Foreman Code MCP has custom or inherited configuration. Inspect its native connection settings.', 409)
+        }
+        const result = await this.applyOnce({ harness, preset: 'graphql', installed: true,
+          commandId: `ready-${randomUUID()}`, expectedRevision: snapshot.revision },
+        'paired-device', signal, () => signal.throwIfAborted())
+        if (result.status !== 'applied') throw new DomainError('APP_MCP_SETUP_FAILED', result.error ?? 'Managed MCP setup failed.', 409)
+      } catch (error) {
+        signal.throwIfAborted()
+        failures.push(error)
       }
-      const result = await this.applyOnce({ harness, preset: 'graphql', installed: true,
-        commandId: `ready-${randomUUID()}`, expectedRevision: snapshot.revision },
-      'paired-device', signal, () => signal.throwIfAborted())
-      if (result.status !== 'applied') throw new DomainError('APP_MCP_SETUP_FAILED', result.error ?? 'Managed MCP setup failed.', 409)
     }
+    if (failures.length === 1) throw failures[0]
+    if (failures.length) throw new AggregateError(failures, 'Managed MCP setup failed for multiple harnesses.')
   }
 }
 

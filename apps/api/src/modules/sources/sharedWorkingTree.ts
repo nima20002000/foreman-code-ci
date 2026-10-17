@@ -105,7 +105,8 @@ export async function prepareSharedWorkingTree(input: {
     const tree = await openChildDirectory(directory, 'staging')
     let filesystem: RootBinding['filesystem']
     try {
-      await copyEntries(reference, tree, manifest, signal)
+      await copySourceTree({ source: reference, target: tree, manifest,
+        fileMode: binding.accessMode === 'read-only' ? 0o400 : 0o600, signal })
       await input.authorize()
       signal.throwIfAborted()
       filesystem = await identity(tree)

@@ -11,6 +11,8 @@ import { DeviceAccessError } from '../devices/accessError.js'
 import { DomainError } from '../errors.js'
 import type { HarnessInstanceSettingsRepository } from '../harnesses/instanceSettings/repository.js'
 import type { ProductionHarnessRegistry } from '../harnesses/productionRegistry.js'
+import { commandInputHash } from '../commands/postgres.js'
+import { computerAvailabilityFailure } from './computerAvailability.js'
 
 export interface PairedRootServices {
   profiles: HarnessInstanceSettingsRepository
@@ -46,7 +48,7 @@ export async function provisionPairedAgentRoots(pool: pg.Pool, services: PairedR
     if (!installation.installed || installation.driverId !== 'codex' || installation.hostRef.kind !== 'device') continue
     const host = installation.hostRef
     if (visited.has(host.deviceId)) continue
-    const target = await withTransaction(pool, async sql => {
+    const candidate = await withTransaction(pool, async sql => {
       const device = (await sql.query<{ worker_installation_id: string }>(
         'select worker_installation_id from device_registrations where id=$1 and main_id=$2',
         [host.deviceId, host.mainId])).rows[0]
@@ -64,24 +66,33 @@ export async function provisionPairedAgentRoots(pool: pg.Pool, services: PairedR
         && value.target.harnessInstallationId === installation.harnessInstallationId
         && value.target.installationFingerprint === installation.installationFingerprint)
       if (!profile) return null
-      try {
-        await services.ensureProfileReady?.(profile)
-      } catch (error) {
-        if (!(error instanceof DomainError) || ![409, 422, 503].includes(error.status)) throw error
-        if (error.code === 'HARNESS_PROFILE_CHECK_PENDING') pending = true
-        return null
-      }
-      if (!await services.registry.profileEvidence(profile, sql)) return null
-      return { hostRef: host, applicationInstallationId: registration.workerInstallationId,
-        keyRevision: registration.keyRevision, authorizationRevision: registration.authorizationRevision }
+      return { profile, target: { hostRef: host, applicationInstallationId: registration.workerInstallationId,
+        keyRevision: registration.keyRevision, authorizationRevision: registration.authorizationRevision } }
     })
-    if (!target) continue
+    if (!candidate) continue
     visited.add(host.deviceId)
     try {
-      await services.provisionRoot(principal, workspaceId, template, target, source)
+      await services.ensureProfileReady?.(candidate.profile)
     } catch (error) {
-      // Missing pairing storage leaves the computer unavailable; it cannot approve an arbitrary base.
-      if (!(error instanceof DomainError) || error.code !== 'CI_ENROLLMENT_ROOT_REQUIRED') throw error
+      const availability = computerAvailabilityFailure(error)
+      if (availability) pending ||= availability.pending
+      else if (error instanceof DomainError && [409, 422, 503].includes(error.status)) {
+        pending ||= error.code === 'HARNESS_PROFILE_CHECK_PENDING'
+      } else throw error
+      continue
+    }
+    const qualified = await withTransaction(pool, async sql => {
+      const current = await services.profiles.latest(sql, candidate.profile.instanceId)
+      if (!current || commandInputHash(current) !== commandInputHash(candidate.profile)) return false
+      return !!await services.registry.profileEvidence(current, sql)
+    })
+    if (!qualified) continue
+    try {
+      await services.provisionRoot(principal, workspaceId, template, candidate.target, source)
+    } catch (error) {
+      const availability = computerAvailabilityFailure(error)
+      if (!availability) throw error
+      pending ||= availability.pending
     }
   }
   return pending
