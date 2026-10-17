@@ -1,3 +1,6 @@
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { expect, it, vi } from 'vitest'
 import { withAdvancedDefaults } from '@foreman-code/contracts'
@@ -11,7 +14,12 @@ vi.mock('./installedClaudeInspection.js', () => ({ inspectInstalledClaude: nativ
 vi.mock('./claudeSdk/currentPin.js', () => ({ createClaudeCurrentPinResolver: () => native.resolve }))
 vi.mock('./claudeSdk/nativeProfileQualification.js', () => ({ qualifyClaudeNativeProfile: native.qualify }))
 
-it.each([true, false])('uses native behavior qualification for newer Claude versions (compatible: %s)', async compatible => {
+it.each([[true, undefined], [false, undefined], [true, 'api-key']] as const)(
+  'uses native behavior qualification for newer Claude versions (compatible: %s, account: %s)', async (compatible, authMode) => {
+  const cache = join(homedir(), '.cache/foreman-tmp')
+  await mkdir(cache, { recursive: true })
+  const directory = await mkdtemp(join(cache, 'claude-profile-'))
+  const accountId = randomUUID()
   const connection = { mainId: randomUUID(), deviceId: randomUUID(), workerInstallationId: randomUUID(),
     bootId: randomUUID(), connectionEpoch: 'connection', connectionGeneration: 1,
     keyRevision: 1, authorizationRevision: 1 }
@@ -21,6 +29,7 @@ it.each([true, false])('uses native behavior qualification for newer Claude vers
   const configuration = withAdvancedDefaults({ harness: 'claude', model: 'model', authMode: 'subscription',
     configDirectory: '/profile', permissionMode: 'default', sandbox: 'danger-full-access',
     tools: ['Write'], permissionRules: [], instructions: '', mcpServers: {} })
+  if (authMode) Object.assign(configuration, { authMode, accountId })
   const value: HostHarnessOverride = { instanceId: randomUUID(), instanceRevision: '1', revision: 1,
     target, driverId: 'claude', presetId: 'claude', enabled: true, configuration,
     configurationFingerprint: commandInputHash(configuration), qualification: 'unqualified' }
@@ -47,11 +56,28 @@ it.each([true, false])('uses native behavior qualification for newer Claude vers
   })
   const registry = { reserveLaunch: async (owner: string) => ({ root: '/unused', owner }),
     abandonReservedLaunch: async () => {}, closeOwner: async () => true }
-  const qualifier = createInstalledClaudeQualifier({ stateDirectory: '/unused', configuration: null,
-    current: () => connection, registry: registry as never })
+  const binding = { kind: 'slot' as const, accountId, provider: 'claude' as const,
+    target: { hostRef: target.hostRef, applicationInstallationId: connection.workerInstallationId,
+      keyRevision: 1, authorizationRevision: 1 }, profileRef: accountId, bindingRevision: 1, subject: null }
+  if (authMode) {
+    await mkdir(join(directory, 'provider-account-slots'))
+    await writeFile(join(directory, 'provider-account-slots', `${accountId}.json`), JSON.stringify({
+      id: accountId, provider: 'claude', name: 'Selected account', authMode, isDefault: false, revision: 1,
+      status: 'signed-in', identity: null, removedAt: null, binding,
+    }))
+  }
+  const resolve = vi.fn(async () => ({ accountId, homePath: configuration.configDirectory,
+    authMode: authMode ?? 'subscription', apiKey: 'fixture-key', binding }))
+  const qualifier = createInstalledClaudeQualifier({ stateDirectory: directory, configuration: null,
+    current: () => connection, registry: registry as never, accounts: () => ({ resolve }) })
   try {
     await expect(qualifier.qualify(value, { checkId: randomUUID(), signal: new AbortController().signal }))
       .resolves.toEqual(result)
     expect(native.qualify).toHaveBeenLastCalledWith(expect.objectContaining({ value, pin }))
-  } finally { await qualifier.close() }
+    if (authMode) {
+      expect(resolve).toHaveBeenCalledWith('claude', accountId,
+        expect.objectContaining({ acceptedBinding: binding, allowDefault: false }))
+      expect(native.qualify).toHaveBeenLastCalledWith(expect.objectContaining({ apiKey: 'fixture-key' }))
+    }
+  } finally { await qualifier.close(); await rm(directory, { recursive: true, force: true }) }
 })

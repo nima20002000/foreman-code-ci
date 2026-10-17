@@ -1,4 +1,4 @@
-import { lstat, readFile, rm } from 'node:fs/promises'
+import { readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import type pg from 'pg'
 import { CiHostRequestSchema, type CiHostRequest, type CiRunRecord } from '@foreman-code/contracts'
@@ -79,40 +79,8 @@ export async function sweepCiRunDirectories(options: {
       })
       if (deleted) removed.push(runId)
     } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code
-      if (code !== 'ENOENT' && code !== 'CI_RUN_UNKNOWN') throw error
-      if (code === 'ENOENT') {
-        // Directory removal may commit before Main persists the corresponding log expiry.
-        const exists = await lstat(join(options.root, 'runs', runId)).then(() => true, missing => {
-          if ((missing as NodeJS.ErrnoException).code === 'ENOENT') return false
-          throw missing
-        })
-        if (!exists) removed.push(runId)
-      }
+      if (!['ENOENT', 'CI_RUN_UNKNOWN'].includes((error as NodeJS.ErrnoException).code ?? '')) throw error
     }
   }
   return removed
-}
-
-
-/** Only the final executor's confirmed cleanup can expire Main's fallback log. Ticket facts stay intact. */
-export async function expireCiLogTails(pool: Pick<pg.Pool, 'query'>, host: NonNullable<CiRunRecord['computer']>,
-  removedRunIds: readonly string[], now: number): Promise<void> {
-  if (!removedRunIds.length) return
-  const hostRef = { ...host.hostRef }
-  delete hostRef.slot
-  await pool.query(`update ci_runs c set log_tail=''
-    where coalesce(c.record->>'executionRunId',c.record#>>'{setupRetry,runId}',c.id::text)=any($1::text[])
-      and c.state in ('passed','failed','canceled','lost')
-      and c.record#>'{computer,hostRef}' @> $2::jsonb
-      and c.record->>'collection' is distinct from 'pending'
-      and c.record#>>'{deadlineExceeded,executor}' is distinct from 'retained'
-      and (c.record->>'finishedAt')::timestamptz<$3::timestamptz and c.log_tail<>''
-      and not exists (
-        select 1 from harness_executions e join runs r on r.id=e.run_id
-        where (e.id=c.record#>>'{initiator,executionId}' or exists (
-          select 1 from ci_group_requesters q where q.group_id=c.group_id and q.execution_id=e.id))
-          and (r.execution_state<>'completed' or exists (
-            select 1 from run_cleanup_intents cleanup where cleanup.run_id=r.id and cleanup.pending))
-      )`, [removedRunIds, JSON.stringify(hostRef), new Date(now - CI_DIRECTORY_RETENTION_MS)])
 }
