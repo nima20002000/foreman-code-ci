@@ -1,3 +1,4 @@
+import { InfoHint } from '../../../shared/ui/InfoHint'
 import { useMemo } from 'react'
 import { ExecutionBranch } from './ExecutionBranch'
 import { useQueryClient } from '@tanstack/react-query'
@@ -47,7 +48,7 @@ export function ExecutionInspector({ scope, version }: { scope: RepeatGraphScope
   const occurrences = new Map(listed.flatMap((execution) => execution.occurrence
     ? [[execution.occurrence.occurrenceId, execution.occurrence] as const] : []))
   return <section aria-label="Exact execution inputs and results" className="run-execution-inspector">
-    <header><h3>Execution inputs and accepted results</h3>
+    <header><h3>Execution inputs and accepted results<InfoHint label="Execution history">History is a recorded read, not a live status feed. It changes only when you load or refresh it. Only the five most recently loaded pages are retained. Refresh returns to the first page.</InfoHint></h3>
       {(nodeId || inspection.runRelationshipId || inspection.runExchangeKey) ? <Button size="sm" onClick={() => board?.selectInspection({})}>Clear detail filter</Button> : null}
     </header>
     <Select label="Run node" value={inspection.runNodeId ?? ''} onChange={(event) =>
@@ -64,14 +65,13 @@ export function ExecutionInspector({ scope, version }: { scope: RepeatGraphScope
         summary="Saved node configuration (this Run)" label={`Saved Run node ${node.id}`}
         value={node.kind==='job'?{node,jobDefinitionVersionId:node.jobDefinitionVersionId}:{node,agentConfigurationVersionId:version.agentConfigurationVersionIds[node.agentId]}} /> : null}
       {version.definition.repeat ? <div className="run-occurrence-picker">
-        <Select label="Business repetition" value={selection.occurrenceId ?? ''} onChange={(event) => select(event.target.value ? { occurrenceId: event.target.value } : {})} options={[
+        <Select label="Business repetition" labelHint={<InfoHint label="Business repetition">Options come from loaded execution pages only. Load more executions to discover older or later repetitions. An attempt is not a repetition.</InfoHint>} value={selection.occurrenceId ?? ''} onChange={(event) => select(event.target.value ? { occurrenceId: event.target.value } : {})} options={[
           { value: '', label: 'All recorded repetitions' },
           ...(selection.occurrenceId && !occurrences.has(selection.occurrenceId) ? [{ value: selection.occurrenceId, label: `Requested occurrence ${selection.occurrenceId}` }] : []),
           ...[...occurrences.values()].sort((x, y) => x.blockId.localeCompare(y.blockId) || x.occurrenceIndex - y.occurrenceIndex)
             .map((item) => ({ value: item.occurrenceId, label: `${item.blockId} · repetition ${item.occurrenceIndex} · ${item.occurrenceId}` })),
         ]} />
-        <p>Options come from loaded execution pages only. Load more executions to discover older or later repetitions. An attempt is not a repetition.</p>
-      </div> : <p>This saved version has no repeat blocks. Its execution attempts are not manufactured repetition rounds.</p>}
+      </div> : <p>This saved version has no repeat blocks.</p>}
       {denied ? <Alert tone="warning" title="Execution history access is unavailable." /> : pages.isError ? <Alert tone="warning" title="Execution history could not be refreshed.">
         Previously loaded executions stay listed. <Button size="sm" onClick={() => void refreshFirstInspectionPage(cache, executionPagesKey(scope, filters))}>Retry executions</Button>
       </Alert> : null}
@@ -94,8 +94,6 @@ export function ExecutionInspector({ scope, version }: { scope: RepeatGraphScope
         <Button size="sm" variant="ghost" disabled={pages.isFetching || !!denied}
           onClick={() => void refreshFirstInspectionPage(cache, executionPagesKey(scope, filters))}>Refresh executions</Button>
       </div>
-      {pages.data?.pages.length === 5 ? <p>Only the five most recently loaded pages are retained. Refresh returns to the first page.</p> : null}
-      <p>History is a recorded read, not a live status feed. It changes only when you load or refresh it.</p>
       {selection.executionId && !denied ? <ExactExecution key={JSON.stringify([scope, selection.executionId])}
         scope={scope} version={version} executionId={selection.executionId} nodeId={nodeId}
         occurrenceId={selection.occurrenceId} relationshipId={inspection.runRelationshipId} /> : null}
@@ -144,7 +142,7 @@ function ExactExecution({ scope, version, executionId, nodeId, occurrenceId, rel
     {checked.acceptedResult.status === 'accepted' ? <>
       <p>Accepted result digest <code>{checked.acceptedResult.digest}</code></p>
       <JsonValue label={`Accepted result ${executionId}`} value={checked.acceptedResult.value} />
-    </> : <p>No accepted result is recorded for this exact execution. A native terminal report is not an accepted predecessor result.</p>}
+    </> : <p>No accepted result is recorded for this exact execution. <InfoHint label="Accepted result">A native terminal report is not an accepted predecessor result.</InfoHint></p>}
     {checked.reportedResult ? <JsonDisclosure disclosureKey={JSON.stringify([scope, executionId, 'native-report'])}
       summary="Recorded execution result (not proof of acceptance)" label={`Reported result ${executionId}`} value={checked.reportedResult} /> : null}
     <Button size="sm" variant="ghost" disabled={query.isFetching} onClick={() => void query.refetch()}>Refresh exact execution</Button>

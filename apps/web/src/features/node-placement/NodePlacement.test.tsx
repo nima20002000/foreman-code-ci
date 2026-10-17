@@ -7,7 +7,7 @@ import { acceptedPlacementFixture as placement, savedPlacementFixture as saved, 
 import { NativeExecutionPlacementSchema } from '@foreman-code/contracts/node-placement'
 import { worktreeFixture } from '../workflow-board/worktree.fixtures'
 
-it('shows Main as the default without inventing or applying a saved placement', () => {
+it('shows Main as the default without inventing or applying a saved placement', async () => {
   const change = vi.fn()
   const view = render(<NodePlacementField options={[{ label: 'Laptop', placement: saved }]} onChange={change} />)
   expect(screen.getByRole('option', { name: 'Main (default)' })).toBeInTheDocument()
@@ -16,7 +16,10 @@ it('shows Main as the default without inventing or applying a saved placement', 
   expect(change).not.toHaveBeenCalled()
   view.rerender(<NodePlacementField value={saved} stage="draft"
     options={[{ label: 'Laptop', placement: saved }]} onChange={vi.fn()} />)
-  expect(screen.getByText(/Start records every Agent’s authorized source, root and harness in the Run/)).toBeInTheDocument()
+  expect(screen.getByRole('status')).toHaveTextContent('Applied to draft')
+  expect(screen.queryByText(/Start records every Agent’s authorized source, root and harness in the Run/)).not.toBeInTheDocument()
+  await userEvent.hover(screen.getByRole('button', { name: 'About Computer' }))
+  expect(screen.getByRole('tooltip')).toHaveTextContent(/Start records every Agent’s authorized source, root and harness in the Run/)
 })
 
 it('retains removed placement and never silently selects the main computer', async () => {
@@ -34,11 +37,13 @@ it('lets an explicit or unavailable placement return to inherited Main', async (
   await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Computer' }), 'inherited')
   expect(change).toHaveBeenCalledExactlyOnceWith(undefined)
 })
-it('shows restricted or incompatible choices without allowing selection', () => {
+it('shows restricted or incompatible choices without allowing selection', async () => {
   render(<NodePlacementField value={saved} options={[{ label: 'Laptop', placement: saved, unavailableReason: 'Root access restricted' }]} onChange={vi.fn()} />)
   expect(screen.getByRole('option', { name: 'Laptop — Root access restricted' })).toBeDisabled()
   expect(screen.getByText('Root access restricted')).toBeInTheDocument()
-  expect(screen.getByText(/Save graph persists/)).toBeInTheDocument()
+  expect(screen.queryByText(/Save graph persists/)).not.toBeInTheDocument()
+  await userEvent.hover(screen.getByRole('button', { name: 'About Computer' }))
+  expect(screen.getByRole('tooltip')).toHaveTextContent(/Save graph persists/)
 })
 it('renders accepted pins without claiming execution before acknowledgment', () => {
   render(<NodePlacementFacts runId="run-a" nodeId="node-a" readback={{ evidence: 'accepted', placement, observations: [] }} />)

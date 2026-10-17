@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { HarnessHostInventoryMetadataSchema } from '@foreman-code/contracts/harness-registry'
 import { ComputerPresence } from './ComputerPresence'
@@ -44,6 +44,8 @@ describe('worker presence', () => {
   it('describes the selected main as having no worker connection', () => {
     const main = HarnessHostInventoryMetadataSchema.parse({ hostRef: { kind: 'main', mainId }, applicationInstallationId: mainId, platform: null, workspaceRoots: null, connection: null })
     render(<ComputerPresence host={{ kind: 'main', mainId }} applicationInstallationId={mainId} metadata={main} />)
-    expect(screen.getByText(/no separate worker connection/)).toBeVisible()
+    expect(screen.queryByText(/no separate worker connection/)).not.toBeInTheDocument()
+    fireEvent.focus(screen.getByRole('button', { name: 'About Main connection' }))
+    expect(screen.getByRole('tooltip')).toHaveTextContent('It owns scheduling and has no separate worker connection.')
   })
 })

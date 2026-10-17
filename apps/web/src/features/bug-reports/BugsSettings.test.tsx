@@ -467,3 +467,17 @@ it('reopens a closed report from history through its status', async () => {
   await userEvent.click(within(dialog).getByRole('button', { name: 'Close report' }))
   expect(await screen.findByText('No closed bug reports')).toBeVisible()
 })
+
+it('shows report status and closing-note help on demand', async () => {
+  serveReports()
+  mount('/settings/bugs?reportId=bug-report-1')
+  const user = userEvent.setup()
+  const dialog = await screen.findByRole('dialog', { name: 'Workflow start fails' })
+  expect(within(dialog).queryByText('Status changes save immediately.')).not.toBeInTheDocument()
+  await user.hover(within(dialog).getByRole('button', { name: 'About Report status' }))
+  expect(screen.getByRole('tooltip')).toHaveTextContent('Status changes save immediately.')
+  await user.unhover(within(dialog).getByRole('button', { name: 'About Report status' }))
+  await waitFor(() => expect(screen.queryByRole('tooltip')).not.toBeInTheDocument())
+  await user.hover(within(dialog).getByRole('button', { name: 'About Closing note' }))
+  expect(screen.getByRole('tooltip')).toHaveTextContent('Optional, such as the release or commit.')
+})
