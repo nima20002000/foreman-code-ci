@@ -53,6 +53,7 @@ export function AgentChatComposer({ name, draftKey, inputRef, sessionControls, d
     onSubmit={event => { event.preventDefault(); submit() }}>
     {menu.menu}
     <div className="agent-chat-input-box">
+      {attachmentControl}
       <Textarea label="Message" className="agent-chat-field" id={id} ref={inputRef} rows={1} value={draft} maxLength={32_000} disabled={disabled}
         placeholder={reason && reason.length > 64 ? 'Messaging unavailable' : reason ?? `Message ${name}…`} aria-describedby={`${id}-hint`} {...menu.inputProps}
         onChange={event => { setDraft(draftKey, event.currentTarget.value); menu.reset() }}
@@ -74,11 +75,10 @@ export function AgentChatComposer({ name, draftKey, inputRef, sessionControls, d
     </div>
     <span id={`${id}-hint`} className="n-sr-only">{reason ?? 'Enter to send. Shift+Enter for a new line.'}</span>
     <div className="agent-chat-composer-tools">
-      {attachmentControl}
       {!disabled && sessionControls.state ? <details className="agent-chat-options">
         <summary aria-label="Session options" title="Session options"><SlidersHorizontal size={15} aria-hidden="true" /></summary>
         <div className="agent-chat-options-content">
-          <SessionControls controls={sessionControls} />
+          <SessionControls controls={sessionControls} context={false} />
           <CompactionActivity controls={sessionControls} />
         </div>
       </details> : null}

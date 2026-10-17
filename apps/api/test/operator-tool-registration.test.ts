@@ -41,11 +41,11 @@ const actionTools: Array<[ManagementAction, OperatorToolName[]]> = [
   ['runs:read', ['run_activities_get_v1', 'run_events_list', 'run_get', 'run_list']],
   ['runs:stop', ['run_stop']],
   ['settings:read', [
-    'agent_defaults_get', 'general_settings_get', 'operator_initial_prompt_get',
+    'agent_defaults_get', 'circle_credit_allowance_get', 'general_settings_get', 'operator_initial_prompt_get',
     'system_prompt_get', 'workflow_defaults_get', 'workspace_defaults_get',
   ]],
   ['settings:update', [
-    'agent_defaults_update', 'general_settings_update', 'operator_initial_prompt_update',
+    'agent_defaults_update', 'circle_credit_allowance_update', 'general_settings_update', 'operator_initial_prompt_update',
     'system_prompt_update', 'workflow_defaults_update', 'workspace_defaults_update',
   ]],
   ['workflows:read', ['workflow_get', 'workflow_list']],

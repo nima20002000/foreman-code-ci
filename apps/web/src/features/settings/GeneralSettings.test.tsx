@@ -46,5 +46,5 @@ it('shows each computer’s workspace files and saves its own sync preference on
   expect(main.getByRole('switch', { name: 'Sync Website' })).toBeChecked()
   expect(writes).toEqual([expect.objectContaining({ target: deviceTarget, workspaceId: 'workspace',
     enabled: false, expectedRevision: 7 })])
-  expect(screen.getByText(/App defaults, harness presets, skills, prompts and workflows are saved on Main/)).toBeVisible()
+  expect(screen.getByRole('heading', { name: 'File sync by computer' })).toBeVisible()
 })
