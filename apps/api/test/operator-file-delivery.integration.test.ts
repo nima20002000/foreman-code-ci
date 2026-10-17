@@ -6,6 +6,9 @@ import { createServer } from 'node:net'
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
+import { performance } from 'node:perf_hooks'
+import { Client } from '@modelcontextprotocol/client'
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
@@ -24,6 +27,8 @@ import type { FileToolContext } from '../src/modules/files/tools/types.js'
 import type { NativeHarnessSessionManager } from '../src/modules/harnesses/port.js'
 import { calls, emit, finish, fixtureQualification, input, processesForRequests, state, until, type Fixture } from './fixtures/codex-test-helpers.js'
 import { fileRuntimeFixture } from './fixtures/codex-file-runtime-helpers.js'
+import { appLauncherPath, installAppLauncher } from '../src/modules/harnesses/appMcpLauncher.js'
+import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'
 
 // Codex uses an executable protocol fixture with deterministic responses.
 vi.doMock('../src/modules/harnesses/codexProtocol.js', async () => {
@@ -249,6 +254,110 @@ describe.skipIf(!connectionString || process.platform === 'win32')('AF-02 produc
       return issued.length === 1
     }, 10000)
   }
+
+  it('keeps the production managed launcher process warm while replacing and revoking each turn credential', async () => {
+    await installAppLauncher()
+    await writeFile(join(f.directory, 'mcp.json'), JSON.stringify({ name: 'foreman-code', enabled: true, required: true,
+      transport: { type: 'stdio', command: process.execPath, args: [appLauncherPath()],
+        env_vars: [OPERATOR_MCP_ENVIRONMENT_VARIABLE] } }))
+    const binary = await readFile(f.binary, 'utf8')
+    const initialize = "result(message.id, { userAgent: 'codex-cli 0.154.0', platformFamily: 'unix', platformOs: 'linux', codexHome: root })"
+    assert.equal(binary.split(initialize).length, 2)
+    await writeFile(f.binary, binary.replace(initialize, `setTimeout(() => ${initialize}, 500)`))
+    const current = await operators.ensure()
+    await operators.update(input(f.directory).request.configuration.harness, current.operator.currentConfigurationVersionId)
+    const conversation = await chat.create(owner)
+    const access = new PostgresAccessService(pool)
+    const delegateTokens: string[] = []
+    const durations: number[] = []
+    let client: Client | undefined
+    let sessionId: string | undefined
+    try {
+      for (const requestId of ['cold-production', 'warm-production']) {
+        const startedAt = performance.now()
+        let firstOutput!: (value: number) => void
+        const output = new Promise<number>(resolve => { firstOutput = resolve })
+        const unsubscribe = chat.events.subscribe(conversation.id, event => {
+          if (event.type === 'delta' && event.data.requestId === requestId) firstOutput(performance.now() - startedAt)
+        })
+        try {
+          await chat.send(conversation.id, { requestId, content: 'wait' }, owner)
+          const row = await until(async () => {
+            const active = await repository.active(conversation.id)
+            return active?.active_native_turn_id ? active : undefined
+          }, 10000)
+          sessionId ??= row.native_session_id!
+          expect(row.native_session_id).toBe(sessionId)
+          await emit(f.directory, { method: 'item/agentMessage/delta', params: {
+            threadId: sessionId, turnId: row.active_native_turn_id, itemId: `reply-${requestId}`, delta: 'First output',
+          } })
+          durations.push(await output)
+          const environment = await prepare.mock.results.at(-1)!.value
+          const processToken = environment.variables[OPERATOR_MCP_ENVIRONMENT_VARIABLE]!
+          const route = JSON.parse(await readFile(join(appLauncherPath(), '..', 'routes', `${digest(Buffer.from(processToken))}.json`), 'utf8'))
+          delegateTokens.push(route.authorizationToken ?? processToken)
+          await expect(access.authenticate(processToken)).rejects.toMatchObject({ code: 'AUTH_INVALID' })
+          if (!client) {
+            client = new Client({ name: 'warm-production-authority', version: '1' })
+            await client.connect(new StdioClientTransport({ command: process.execPath, args: [appLauncherPath()],
+              env: { ...process.env, [OPERATOR_MCP_ENVIRONMENT_VARIABLE]: processToken } }))
+          }
+          const tools = await client.listTools()
+          expect(tools.tools.some(tool => tool.name === 'operator_handoff_history_get')).toBe(true)
+          await expectMcpAccessDenied(client.callTool({ name: 'workspace_create', arguments: { name: 'Denied warm write' } }))
+          expect((await access.authenticate(delegateTokens.at(-1)!)).grants)
+            .toEqual([{ actions: ['harnesses:read', 'operator_handoff:read'], scope: {} }])
+          await finish(f.directory, sessionId)
+          await until(async () => (await chat.get(conversation.id, owner)).turnState === 'idle', 10000)
+          await expect(access.authenticate(delegateTokens.at(-1)!)).rejects.toMatchObject({ code: 'AUTH_REVOKED' })
+          await expect(client.listTools()).rejects.toThrow()
+          expect(await processesForRequests(f.directory, 'thread/start', 'thread/resume', 'turn/start')).toHaveLength(1)
+          expect(managers.size).toBe(1)
+        } finally { unsubscribe() }
+      }
+      expect(delegateTokens[1]).not.toBe(delegateTokens[0])
+      expect(durations[1]).toBeLessThan(durations[0]!)
+      expect(prepare).toHaveBeenCalledTimes(2)
+      expect(setup).toHaveBeenCalledTimes(1)
+      console.info('Production Operator Codex timing', { coldMs: durations[0], warmMs: durations[1],
+        initializationDelayMs: 500, processStarts: 1 })
+    } finally { await client?.close() }
+  })
+
+  it('revokes each text turn credential before a following turn receives fresh management authority', async () => {
+    await writeFile(join(f.directory, 'mcp.json'), JSON.stringify({ name: 'graphql', enabled: true, required: true,
+      transport: { type: 'streamable_http', url: managementEndpoint, bearer_token_env_var: 'GRAPHQL_MCP_TOKEN' } }))
+    const current = await operators.ensure()
+    await operators.update(input(f.directory).request.configuration.harness, current.operator.currentConfigurationVersionId)
+    const conversation = await chat.create(owner)
+    const access = new PostgresAccessService(pool)
+    const tokens: string[] = []
+    const sessions: string[] = []
+    for (const content of ['First text turn', 'Second text turn']) {
+      await chat.send(conversation.id, { requestId: randomUUID(), content }, owner)
+      const row = await until(async () => {
+        const active = await repository.active(conversation.id)
+        return active?.active_native_turn_id ? active : undefined
+      }, 10000)
+      sessions.push(row.native_session_id!)
+      const environment = await prepare.mock.results.at(-1)!.value
+      const token = environment.variables[OPERATOR_MCP_ENVIRONMENT_VARIABLE]!
+      tokens.push(token)
+      const delegate = await access.authenticate(token)
+      expect(delegate.id).not.toBe(owner.id)
+      expect(delegate.grants).toEqual([{ actions: ['harnesses:read', 'operator_handoff:read'], scope: {} }])
+      await finish(f.directory, row.native_session_id!)
+      await until(async () => (await chat.get(conversation.id, owner)).turnState === 'idle', 10000)
+      await expect(access.authenticate(token)).rejects.toMatchObject({ code: 'AUTH_REVOKED' })
+      expect(managers.size).toBe(0)
+    }
+    expect(sessions[1]).toBe(sessions[0])
+    expect(tokens[1]).not.toBe(tokens[0])
+    expect(prepare).toHaveBeenCalledTimes(2)
+    expect(setup).toHaveBeenCalledTimes(2)
+    expect((await calls(f.directory)).filter(entry =>
+      (entry.wire as { method?: string } | undefined)?.method === 'turn/start')).toHaveLength(2)
+  })
 
   it.each(['codex-cli 0.154.0', 'codex-cli 0.156.1'])(
     'R2-1 %s: a completed text-first Operator thread retains callable file tools on attachment resume', async (version) => {
