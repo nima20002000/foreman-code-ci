@@ -11,7 +11,7 @@ import { workerConversationProcessDigest } from './workerNativeOwner.js'
 import { DomainError } from '../errors.js'
 import { sameConversationForAppAccess } from './conversationAppAccess.js'
 import { readWorkerConversationResults } from './workerConversationResults.js'
-import { validWorkerConfigurationTransition } from './workerConfigurationTransition.js'
+import { validRunChatSkillsTransition } from './workerRunChatBinding.js'
 
 function unavailable(message: string): never {
   throw new DomainError('WORKER_CONVERSATION_RECOVERY_REQUIRED', message, 409)
@@ -44,13 +44,13 @@ export async function recoverWorkerConversation(input: {
     && request.previousBinding && request.previousConfiguration
     && isDeepStrictEqual(request.previousBinding, record.binding)
     && isDeepStrictEqual(request.source, session)
-    && validWorkerConfigurationTransition(record.binding, request.binding, request.previousConfiguration, input.configuration)
+    && validRunChatSkillsTransition(record.binding, request.binding, request.previousConfiguration, input.configuration)
   const settlingSkills = request.method === 'conversation.open' && request.mode === 'attach'
     && request.previousBinding && request.previousConfiguration
     && isDeepStrictEqual(request.previousBinding, record.binding)
     && isDeepStrictEqual(request.source, session)
     && isDeepStrictEqual(input.configuration, request.previousConfiguration)
-    && validWorkerConfigurationTransition(record.binding, request.binding, input.configuration, request.configuration)
+    && validRunChatSkillsTransition(record.binding, request.binding, input.configuration, request.configuration)
   const targetBinding = changingAccess || changingSkills ? request.binding : record.binding
   if (!session || !owner || !record.creation || record.closing || record.closed) {
     unavailable('The persisted chat has no recoverable native session.')

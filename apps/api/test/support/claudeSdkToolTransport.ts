@@ -24,7 +24,7 @@ interface Wire {
 /** Recorded CLI wire traffic only. The official SDK owns hook dispatch, permission
  * responses, in-process MCP transport and server connection; HTTP calls use its delivered config. */
 export function claudeSdkToolTransport(cwd: string, calls: (content: string) => ToolCall[],
-  options: { beforePermission?(): Promise<void> } = {}) {
+  options: { beforePermission?(): Promise<void>; replyText?(): string } = {}) {
   const results: Array<{ name: string; result: unknown; allowed: boolean }> = []
   const offers: string[] = []
   const queries: Array<{ resume: unknown; closed: boolean }> = []
@@ -113,10 +113,11 @@ export function claudeSdkToolTransport(cwd: string, calls: (content: string) => 
             message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: toolId,
               is_error: !allowed, content: allowed ? JSON.stringify(result) : 'Permission denied' }] } })
         }
+        const replyText = options.replyText?.() ?? 'SDK tools finished'
         send({ type: 'assistant', uuid: randomUUID(), session_id: nativeId, parent_tool_use_id: null,
-          user_message_uuid: message.uuid, message: { id: randomUUID(), role: 'assistant', content: [{ type: 'text', text: 'SDK tools finished' }] } })
+          user_message_uuid: message.uuid, message: { id: randomUUID(), role: 'assistant', content: [{ type: 'text', text: replyText }] } })
         send({ type: 'result', uuid: randomUUID(), session_id: nativeId, user_message_uuid: message.uuid,
-          subtype: 'success', is_error: false, result: 'SDK tools finished' })
+          subtype: 'success', is_error: false, result: replyText })
       }
       lines.on('line', line => {
         const frame = JSON.parse(line) as Wire
