@@ -629,6 +629,13 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
     this.assertSession(session)
     this.adopt(await this.request({ method: 'conversation.close', session }))
   }
+  async closeRetainedSession(session: NativeSessionReference, signal: AbortSignal) {
+    const record = this.adopt(await this.request({ method: 'conversation.status' }, signal))
+    if (!record?.session || !isDeepStrictEqual(record.session, session)) conflict('The persisted worker session changed.')
+    if (record.closed) return
+    this.adopt(await this.request({ method: 'conversation.close', session }, signal))
+    if (!this.receipt?.closed) conflict('Closure of the persisted worker session is unconfirmed.')
+  }
   async closeForResume(session: NativeSessionReference) {
     this.assertSession(session)
     this.adopt(await this.request({ method: 'conversation.release-runtime', session }))

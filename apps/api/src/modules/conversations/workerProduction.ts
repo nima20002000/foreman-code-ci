@@ -2,7 +2,7 @@ import type pg from 'pg'
 import { isDeepStrictEqual } from 'node:util'
 import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
 import { NativeSessionReferenceSchema, withAdvancedDefaults, RETIRED_OPENCODE_MESSAGE } from '@foreman-code/contracts'
-import type { PromptSettingSnapshot } from '@foreman-code/contracts'
+import type { AgentConfigurationVersion, NativeSessionReference, PromptSettingSnapshot } from '@foreman-code/contracts'
 import type { HarnessQualification } from '@foreman-code/contracts/harness-qualification'
 import { WorkerConversationBindingSchema, type WorkerConversationConfiguration,
   WorkerConversationProfileFactsSchema, type WorkerConversationRpcRequest } from '@foreman-code/contracts/remote-execution-rpc'
@@ -60,6 +60,7 @@ interface OwnerRow {
   workflow_node_id: string | null; agent_id: string | null; owner_principal_id: string | null
   operator_configuration_version_id: string | null; agent_configuration_version_id: string | null
   active_request_id: string | null; native_session_id: string | null; deleted_at: unknown
+  harness: NativeSessionReference['harness']; provider_version: string | null
   record: { status?: string; directoryBinding?: unknown; systemPrompt?: PromptSettingSnapshot;
     workerSessionGeneration?: string;
     sourceConfigurationVersionId?: string;
@@ -104,13 +105,19 @@ async function authorizeWorkerConversationRequest(pool: pg.Pool, live: OwnerRow,
     requestCallers: WeakMap<WorkerConversationRpcRequest, string>
     changingAccess: boolean | string | null
     originalBinding: WorkerConversationBinding
-  }) {
+  }, agents: Pick<PostgresAgentChatRepository, 'turnPrincipalId'>) {
   let currentCaller = context.requestCallers.get(request)
   if (!currentCaller) {
     const messageOperation = request.method === 'conversation.start-turn'
       || request.method === 'conversation.initial-turn' || request.method === 'conversation.open'
-    currentCaller = messageOperation ? live.payload?.ownerPrincipalId ?? live.owner_principal_id ?? undefined
-      : context.caller ?? live.payload?.ownerPrincipalId ?? live.owner_principal_id ?? undefined
+    if (request.method === 'conversation.retire-turn' && live.kind === 'agent') {
+      const prefix = agentChatCorrelation(live.id, '')
+      if (!request.correlationId.startsWith(prefix)) unavailable('The retired turn belongs to another conversation.')
+      currentCaller = await agents.turnPrincipalId(live.id, request.correlationId.slice(prefix.length))
+    } else {
+      currentCaller = messageOperation ? live.payload?.ownerPrincipalId ?? live.owner_principal_id ?? undefined
+        : context.caller ?? live.payload?.ownerPrincipalId ?? live.owner_principal_id ?? undefined
+    }
     if (currentCaller) context.requestCallers.set(request, currentCaller)
   }
   if (!currentCaller || live.kind === 'operator' && live.owner_principal_id !== currentCaller) {
@@ -322,7 +329,7 @@ async function admitWorkerConversation(input: ProductionWorkerConversationsInput
     }
     const currentCaller = await authorizeWorkerConversationRequest(input.pool, live, request, {
       caller: context.caller(), requestCallers, changingAccess, originalBinding,
-    })
+    }, input.agents)
     const observation = { ...owner, observationPrincipalId: currentCaller,
       ...(effectSignal ? { admissionSignal: effectSignal } : {}) }
     // Closing a settled owner does not launch or reconfigure its executable.
@@ -448,10 +455,51 @@ export function createProductionWorkerConversations(input: ProductionWorkerConve
     }
     return admitted.manager
   }
+  const closeRetainedSession = async (conversationId: string, configuration: AgentConfigurationVersion,
+    principalId: string, signal: AbortSignal) => {
+    const original = await row(conversationId, 'conversation.close')
+    const binding = WorkerConversationBindingSchema.parse(original.worker_conversation_binding)
+    if (original.kind !== 'agent' || binding.owner.kind !== 'agent'
+      || binding.owner.conversationId !== conversationId || binding.owner.workspaceId !== original.workspace_id
+      || binding.owner.agentId !== original.agent_id || binding.owner.workflowId !== original.workflow_id
+      || binding.owner.workflowNodeId !== original.workflow_node_id
+      || binding.owner.configurationVersionId !== configuration.id
+      || original.agent_configuration_version_id !== configuration.id
+      || binding.owner.configurationHash !== commandInputHash(configuration)) {
+      unavailable('The persisted Worker conversation owner changed.')
+    }
+    const session = NativeSessionReferenceSchema.parse({ harness: original.harness,
+      nativeSessionId: original.native_session_id, providerVersion: original.provider_version })
+    const host = binding.profile.target.hostRef
+    if (host.kind !== 'device') unavailable('The persisted conversation has no Worker host.')
+    const channel = input.endpoint().captureRequest(host.deviceId, 'execution-v1')
+    if (!channel || channel.binding.mainId !== host.mainId || channel.binding.deviceId !== host.deviceId
+      || channel.binding.workerInstallationId !== binding.profile.target.applicationInstallationId) {
+      unavailable('The original paired Worker is unavailable.')
+    }
+    const requestCallers = new WeakMap<WorkerConversationRpcRequest, string>()
+    const manager = new WorkerConversationManager({ binding, configuration, channel, bridge,
+      current: async (request, effectSignal) => {
+        effectSignal?.throwIfAborted()
+        const live = await row(conversationId, request.method)
+        if (live.kind !== 'agent' || live.agent_configuration_version_id !== configuration.id
+          || live.native_session_id !== session.nativeSessionId || live.provider_version !== session.providerVersion
+          || live.harness !== session.harness || !isDeepStrictEqual(live.worker_conversation_binding, binding)) {
+          unavailable('The persisted Worker session changed before closure.')
+        }
+        await assertConversationSource(input.pool, binding.sourceExecution, live)
+        await authorizeWorkerConversationRequest(input.pool, live, request, {
+          caller: principalId, requestCallers, changingAccess: false, originalBinding: binding,
+        }, input.agents)
+        if (!isDeepStrictEqual(input.endpoint().captureRequest(host.deviceId, 'execution-v1')?.binding,
+          channel.binding)) unavailable('The original Worker connection changed.')
+      } })
+    try { await manager.closeRetainedSession(session, signal) } finally { await manager.dispose() }
+  }
   const mcp = new MainWorkerConversationMcp({ pool: input.pool, access: input.access, operators: input.operators,
     profiles: input.profiles, claudeProfiles: input.claudeProfiles, bridge,
     current: deviceId => input.endpoint().captureRequest(deviceId, 'execution-v1')?.binding, forward: input.mcpForward })
-  return { create, bridge, mcp, inspector: (manager: NativeHarnessSessionManager) => inspectors.get(manager),
+  return { create, closeRetainedSession, bridge, mcp, inspector: (manager: NativeHarnessSessionManager) => inspectors.get(manager),
     deliverClaudeCredential: (manager: NativeHarnessSessionManager) => credentials.get(manager),
     close: () => bridge.close() }
 }

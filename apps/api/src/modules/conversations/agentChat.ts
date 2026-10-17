@@ -88,6 +88,8 @@ export interface AgentChatManagerFactory extends ChatModelCatalog {
     session: NativeSessionReference, start: NativeSessionStart,
     state: import('@foreman-code/contracts').CompactionState, principalId: string, signal: AbortSignal):
     Promise<import('@foreman-code/contracts').CompactionState>
+  closeRetainedSession?(conversationId: string, configuration: AgentConfigurationVersion,
+    principalId: string, signal: AbortSignal): Promise<void>
   release?(conversationId: string): void
   unavailable?(configuration: AgentConfigurationVersion, workingDirectory: string, executionId?: string):
     Promise<{ reason: AgentChatBlockedReason; message: string } | undefined>
@@ -1218,6 +1220,13 @@ export class AgentChatService {
       }
       if (replaceSession) await runtime.manager.close(runtime.session)
       else await runtime.manager.closeForResume(runtime.session)
+    } else if (replaceSession && row.native_session_id && row.worker_conversation_binding) {
+      const principalId = await this.repository.turnPrincipalId(row.id, row.active_request_id!)
+      if (!principalId || !this.managers.closeRetainedSession) {
+        throw new DomainError('NATIVE_RUNTIME_RELEASE_UNAVAILABLE',
+          'The previous Worker session cannot be closed with its saved owner.', 409)
+      }
+      await this.managers.closeRetainedSession(row.id, previous, principalId, this.lifetime.signal)
     }
     await this.release(row.id)
     return this.repository.applyConfiguration(row.id, row.active_request_id!, configuration, { replaceSession, directoryBinding })

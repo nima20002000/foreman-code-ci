@@ -173,12 +173,16 @@ export async function remoteAgentConversation(harness: 'codex' | 'claude', locat
         return productionCodexChatFiles(() => app, conversationId, admissions).prepare(turn)
       },
   } as unknown as Parameters<typeof createProductionWorkerConversations>[0])
-  const chat = new AgentChatService(db.pool, repository, messages, workflows, {
+  const managers = Object.assign((conversationId: string, selected: AgentConfigurationVersion, workingDirectory: string) =>
+    location === 'main' ? nativeManager(conversationId)
+      : workerChats.create({ conversationId, configuration: selected, workingDirectory, appMcpAccess: 'none' }),
+  { closeRetainedSession: workerChats.closeRetainedSession })
+  const createChat = () => new AgentChatService(db.pool, repository, messages, workflows, {
     getForWorkspace: async () => { throw new Error('Fresh Agent chat must not select a Run') },
     getExecution: async () => { throw new Error('Fresh Agent chat must not select an execution') },
     executionPages() { throw new Error('Fresh Agent chat must not select an execution') },
-  }, (conversationId, selected, workingDirectory) => location === 'main' ? nativeManager(conversationId)
-    : workerChats.create({ conversationId, configuration: selected, workingDirectory, appMcpAccess: 'none' }), db.directory)
+  }, managers, db.directory)
+  let chat = createChat()
   const commands = new PostgresCommandCoordinator(db.pool)
   const profileRepository = new HarnessInstanceSettingsRepository(db.pool)
   const profileService = new HostHarnessOverrideService(profileRepository, commands, {
@@ -204,13 +208,15 @@ export async function remoteAgentConversation(harness: 'codex' | 'claude', locat
       supportsCancellation: true, supportsWorkingDirectory: true, supportsStartupPrompt: true,
       supportedNativeTools: [], supportedSettings: [], unsupportedCapabilities: [] }),
   }, profileService)
-  const app = buildApp({ logger: false,
+  const createApp = () => buildApp({ logger: false,
     readiness: { database: { ping: async () => {} }, checkpoints: { ping: async () => {} } },
     operator: { access, services: { agentChat: chat, commands, extensions: { agents } } as never } })
-  const storage = registerProductionFileStorage(app, db.pool, {
+  let app = createApp()
+  const registerStorage = () => registerProductionFileStorage(app, db.pool, {
     fileStorageRoot: join(db.directory, 'vault'), workspaceStorageRoot: join(db.directory, 'workspaces'),
     harnesses: { workspaceRoot: join(db.directory, 'runtime') },
   } as ApiConfig)
+  let storage = registerStorage()
   const call = async (name: string, args: Record<string, unknown>, token = writer.token) =>
     graphRpc(app, token, 'tools/call', { name, arguments: { workspaceId: context.workspaceId, ...args } })
   const value = async (name: string, args: Record<string, unknown>) => {
@@ -239,9 +245,18 @@ export async function remoteAgentConversation(harness: 'codex' | 'claude', locat
       return { requestId, turn, events }
     } finally { unsubscribe() }
   }
-  return { db, provider, providers, configuration, context, conversation, repository, frames, chat, app,
+  return { db, provider, providers, configuration, context, conversation, repository, frames,
+    get chat() { return chat }, get app() { return app },
     journal, writer, reader, call, value, send, receivedAttachments,
     drainWorker: () => host.drainForUpdate(),
+    async restartMain() {
+      await host.drainForUpdate()
+      await chat.shutdown()
+      await app.close()
+      chat = createChat()
+      app = createApp()
+      storage = registerStorage()
+    },
     async chatConfiguration() {
       const row = (await repository.get(conversation.id))!
       return workflows.getAgentConfiguration(row.agent_configuration_version_id)
