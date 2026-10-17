@@ -27,6 +27,8 @@ export interface DeviceExtensionDescriptor {
   observationAdmission?: true
   /** Enables reserved CI Stop admission when both peers advertise support. */
   ciStopAdmission?: true
+  /** Status and receipt pages needed for Stop may use reserved Stop capacity. */
+  stopReadAdmission?: true
   /** Copy authorization can complete while its parent preparations occupy ordinary slots. */
   callbackAdmission?: true
 }
@@ -39,6 +41,7 @@ export interface DeviceNegotiatedExtension {
   maxBinaryBytes: number
   observationAdmission?: true
   ciStopAdmission?: true
+  stopReadAdmission?: true
   callbackAdmission?: true
 }
 export type DeviceApplicationFrame =
@@ -120,6 +123,7 @@ export function parseExtensionDescriptors(value: unknown): DeviceExtensionDescri
       maxJsonBytes: descriptor.maxJsonBytes, maxBinaryBytes: descriptor.maxBinaryBytes,
       ...(descriptor.observationAdmission === true ? { observationAdmission: true as const } : {}),
       ...(descriptor.ciStopAdmission === true ? { ciStopAdmission: true as const } : {}),
+      ...(descriptor.stopReadAdmission === true ? { stopReadAdmission: true as const } : {}),
       ...(descriptor.callbackAdmission === true ? { callbackAdmission: true as const } : {}) }
   }).sort((a, b) => a.namespace < b.namespace ? -1 : a.namespace > b.namespace ? 1 : 0)
 }
@@ -137,6 +141,8 @@ export function negotiateDeviceExtensions(main: DeviceExtensionDescriptor[], wor
         ? { observationAdmission: true as const } : {}),
       ...(local.ciStopAdmission === true && peer.ciStopAdmission === true
         ? { ciStopAdmission: true as const } : {}),
+      ...(local.stopReadAdmission === true && peer.stopReadAdmission === true
+        ? { stopReadAdmission: true as const } : {}),
       ...(local.callbackAdmission === true && peer.callbackAdmission === true
         ? { callbackAdmission: true as const } : {}) }]
   }).sort((a, b) => a.namespace < b.namespace ? -1 : a.namespace > b.namespace ? 1 : 0)
