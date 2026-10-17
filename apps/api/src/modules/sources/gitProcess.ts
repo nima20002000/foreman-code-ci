@@ -10,6 +10,7 @@ export interface GitProcessOptions {
   maximumFileBytes?: number
   lockFd?: number
   transferLockFd?: number
+  lifetimeLockFd?: number
 }
 export interface GitProcessResult {
   code: number
@@ -35,7 +36,8 @@ export function runGitProcess(args: string[], options: GitProcessOptions,
       detached: true,
       stdio: ['ignore', 'pipe', 'pipe',
         ...(options.lockFd !== undefined ? [options.lockFd] : []),
-        ...(options.transferLockFd !== undefined ? [options.transferLockFd] : [])],
+        ...(options.transferLockFd !== undefined ? [options.transferLockFd] : []),
+        ...(options.lifetimeLockFd !== undefined ? [options.lifetimeLockFd] : [])],
       env: { ...environment, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never',
         GIT_NO_LAZY_FETCH: '1', ...options.env },
     })

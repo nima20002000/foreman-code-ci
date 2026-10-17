@@ -1,5 +1,6 @@
 import type { SqlQuery } from '../../infrastructure/transaction.js'
 import { DomainError } from '../errors.js'
+import { withGitDirectoryDependencies } from '../workspaces/gitDirectoryDependencies.js'
 
 export async function assertNoActiveAgentChats(sql: SqlQuery, workspaceIds: string[]): Promise<void> {
   const active = await sql.query(`select 1 from operator_conversations c
@@ -26,5 +27,5 @@ export async function activeAgentChatDirectories(sql: SqlQuery): Promise<string[
       and (c.active_request_id is not null or exists(
         select 1 from operator_conversation_turns t where t.conversation_id=c.id
           and t.delivery in ('queued','submitting','accepted','unknown')))`)
-  return result.rows.map(row => row.path).filter(Boolean)
+  return withGitDirectoryDependencies(result.rows.map(row => row.path))
 }

@@ -84,7 +84,8 @@ it.each([
     reserveLaunch: async () => ({ launchId: 'fixture-launch' }),
     abandonReservedLaunch: async () => {}, closeOwner: async () => true,
   } as unknown as NativeProcessRegistry
-  const journal = { conversations: { claudeCallbackJournal: () => undefined } } as unknown as RemoteOperationJournal
+  const journal = { conversations: { inspectBinding: async () => undefined,
+    claudeCallbackJournal: () => undefined } } as unknown as RemoteOperationJournal
   const host = await createInstalledWorkerConversations({
     stateDirectory, configuration: null, registry, journal: async () => journal,
     current: () => f.connection, capture: () => undefined,
@@ -137,7 +138,7 @@ it('routes Worker Operator MCP calls through the managed launcher and removes th
     scope: (owner: string) => ({ owner, root: join(stateDirectory, 'processes') }),
     abandonReservedLaunch: async () => {}, closeOwner: async () => true,
   } as unknown as NativeProcessRegistry
-  const journal = { conversations: {} } as unknown as RemoteOperationJournal
+  const journal = { conversations: { inspectBinding: async () => undefined } } as unknown as RemoteOperationJournal
   const tools = [{ name: 'context_get', inputSchema: { type: 'object' } }]
   const forwarded = vi.fn()
   const host = await createInstalledWorkerConversations({

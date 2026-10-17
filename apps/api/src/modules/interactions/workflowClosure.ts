@@ -8,6 +8,7 @@ import type { RunOwnership } from '../runs/ownership.js'
 import { DomainError } from '../errors.js'
 import { RemoteOperationReceiptSchema } from '@foreman-code/contracts/remote-execution'
 import { readExecutionPlacement } from '../placement/persistence.js'
+import { assertReviewerCheckoutAvailable } from '../runs/worktreeReviewers.js'
 
 /** Private native-closure evidence, captured by the coordinator, never an API
  * input or an inference from a terminal business result. No secrets are stored. */
@@ -292,6 +293,7 @@ export class PostgresWorkflowClosureStore implements WorkflowClosureStore {
 
   async begin(execution: HarnessExecution): Promise<string> {
     return this.transaction(execution, async (sql, current) => {
+      if (current.state === 'completed') await assertReviewerCheckoutAvailable(sql, current)
       // This does not authorize native work. The existing continuation,
       // credentials, harness and writer-lane checks still run at their boundaries.
       const allowed = await sql.query(`select 1 from runs r where r.id=$1

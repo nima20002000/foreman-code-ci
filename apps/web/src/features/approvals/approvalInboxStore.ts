@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { raiseFloating } from '../../shared/ui/floatingStack'
 
 interface ApprovalInboxScope {
   workspaceId: string
@@ -11,9 +12,11 @@ interface ApprovalInboxUiState extends ApprovalInboxScope {
   closeInbox(): void
 }
 
+export const APPROVAL_INBOX_STACK_ID = 'approval-inbox'
+
 export const useApprovalInboxStore = create<ApprovalInboxUiState>((set) => ({
   open: false,
   workspaceId: '',
-  openInbox: (scope) => set({ ...scope, open: true }),
+  openInbox: (scope) => { raiseFloating(APPROVAL_INBOX_STACK_ID); set({ ...scope, open: true }) },
   closeInbox: () => set({ open: false }),
 }))

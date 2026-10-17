@@ -128,11 +128,84 @@ async function setup(harness: AgentHarness = 'codex') {
   const request = (input: Record<string, unknown>) => host.handle({ ...input, binding: f.binding }, current)
   const open = { method: 'conversation.open', operationId: 'original-message', mode: 'create', configuration: f.configuration }
   return { ...f, root, journal, journalPath: join(root, 'operations.json'), manager, ports, host, observed, request, open,
-    deny: () => { allowed = false }, replaceConnection: () => { current = { ...current, connectionEpoch: randomUUID() } } }
+    deny: () => { allowed = false },
+    replaceConnection: (changes: Partial<typeof current> = {}) => {
+      current = { ...current, connectionEpoch: randomUUID(), ...changes }
+      return current
+    } }
 }
 function receipt(value: unknown) {
   return WorkerConversationReceiptSchema.parse((value as { receipt: unknown }).receipt)
 }
+
+it('closes a released persisted session without allocating a replacement writer', async () => {
+  const f = await setup()
+  const allocate = vi.spyOn(f.ports, 'allocate')
+  await f.request(f.open)
+  await f.request({ method: 'conversation.release-runtime', session: f.session })
+  const before = (await f.journal.conversations.read(f.binding))!
+  expect(before.runtimeReleased).toBe(true)
+  await expect(f.request({ method: 'conversation.close',
+    session: { ...f.session, nativeSessionId: 'another-native-session' } }))
+    .rejects.toMatchObject({ code: 'WORKER_CONVERSATION_UNAVAILABLE' })
+  expect(await f.journal.conversations.read(f.binding)).toEqual(before)
+  const closed = receipt(await f.request({ method: 'conversation.close', session: f.session }))
+  expect(closed).toMatchObject({ closed: true, session: f.session, turns: before.turns, compactions: before.compactions })
+  expect(receipt(await f.request({ method: 'conversation.close', session: f.session }))).toEqual(closed)
+  expect(allocate).toHaveBeenCalledOnce()
+  expect(f.manager.creates).toBe(1)
+  f.deny()
+  await expect(f.request({ method: 'conversation.close', session: f.session })).rejects.toThrow('authority denied')
+  expect(await f.journal.conversations.read(f.binding)).toEqual(closed)
+})
+
+it('keeps cold closure unavailable without persisted process release', async () => {
+  const f = await setup()
+  await f.request(f.open)
+  await f.host.shutdown()
+  const before = await f.journal.conversations.read(f.binding)
+  const allocate = vi.spyOn(f.ports, 'allocate')
+  const host = new WorkerConversationHost(f.ports)
+  closing.push(() => host.shutdown())
+  await expect(host.handle({ method: 'conversation.close', binding: f.binding, session: f.session }, f.connection))
+    .rejects.toMatchObject({ code: 'WORKER_CONVERSATION_UNAVAILABLE' })
+  expect(await f.journal.conversations.read(f.binding)).toEqual(before)
+  expect(allocate).not.toHaveBeenCalled()
+})
+
+it('rebinds released-session closure to the authenticated Worker boot without native attachment', async () => {
+  const f = await setup()
+  await f.request(f.open)
+  await f.request({ method: 'conversation.release-runtime', session: f.session })
+  const before = (await f.journal.conversations.read(f.binding))!
+  await f.host.shutdown()
+  const connection = f.replaceConnection({ bootId: randomUUID(), connectionGeneration: 2 })
+  const allocate = vi.spyOn(f.ports, 'allocate')
+  const host = new WorkerConversationHost(f.ports)
+  closing.push(() => host.shutdown())
+  const closed = receipt(await host.handle({ method: 'conversation.close', binding: f.binding, session: f.session }, connection))
+  expect(closed).toMatchObject({ closed: true, connection, session: before.session,
+    nativeOwner: before.nativeOwner, turns: before.turns, compactions: before.compactions })
+  expect(await f.journal.conversations.read(f.binding)).toEqual(closed)
+  expect(receipt(await host.handle({ method: 'conversation.close', binding: f.binding, session: f.session }, connection)))
+    .toEqual(closed)
+  expect(allocate).not.toHaveBeenCalled()
+})
+
+it.each(['keyRevision', 'authorizationRevision'] as const)(
+  'rejects released-session closure after the paired Worker %s changes', async field => {
+    const f = await setup()
+    await f.request(f.open)
+    await f.request({ method: 'conversation.release-runtime', session: f.session })
+    const before = await f.journal.conversations.read(f.binding)
+    await f.host.shutdown()
+    const connection = f.replaceConnection({ bootId: randomUUID(), [field]: f.connection[field] + 1 })
+    const host = new WorkerConversationHost(f.ports)
+    closing.push(() => host.shutdown())
+    await expect(host.handle({ method: 'conversation.close', binding: f.binding, session: f.session }, connection))
+      .rejects.toMatchObject({ code: 'WORKER_CONVERSATION_UNAVAILABLE' })
+    expect(await f.journal.conversations.read(f.binding)).toEqual(before)
+  })
 
 it('returns only events after the requested sequence while preserving terminal metadata', async () => {
   const f = await setup()
