@@ -20,7 +20,7 @@ it('opens General settings from the settings directory and keeps the route linka
   const router = createRouter({ routeTree, history: createMemoryHistory({ initialEntries: ['/settings'] }) })
   const cache = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(<QueryClientProvider client={cache}><RouterProvider router={router} /></QueryClientProvider>)
-  const link = await screen.findByRole('link', { name: /General Appearance, sync across computers and chat retention/ })
+  const link = await screen.findByRole('link', { name: 'General' })
   expect(link).toHaveAttribute('href', '/settings/general')
   await userEvent.click(link)
   expect(await screen.findByRole('heading', { name: 'General', level: 1 })).toBeVisible()

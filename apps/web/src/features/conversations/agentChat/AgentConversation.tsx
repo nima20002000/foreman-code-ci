@@ -13,14 +13,15 @@ import { useFileDrop } from '../../../shared/ui/useFileDrop'
 import { AgentChatComposer } from './AgentChatComposer'
 import { AgentChatHeader, AgentChatStatus } from './AgentChatHeader'
 import { agentChatStateLabel } from './chatStateLabel'
-import { CornerDownLeft, RotateCcw, SlidersHorizontal } from 'lucide-react'
+import { CornerDownLeft, RotateCcw } from 'lucide-react'
 import { ConversationViewport } from '../ConversationViewport'
 import { useConversationDraftStore } from '../conversationDraftStore'
 import { chatBackgroundWork } from '../chatWorkStatus'
 import { AgentChatTranscript } from './AgentChatTranscript'
 import { chatBusy, intentUnavailable } from './model'
 import { useAgentChat } from './useAgentChat'
-import { PinnedProviderAccount } from '../../provider-accounts/PinnedProviderAccount'
+import { ProviderAccountChip, ProviderAccountProblem } from '../../provider-accounts/ProviderAccountChip'
+import { SessionContext } from '../sessionControls/SessionControls'
 import { useAgentConversationComposer } from './useAgentConversationComposer'
 import './agentChat.css'
 import '../chatAttachments.css'
@@ -59,7 +60,12 @@ function AgentConversationContent({ context, name, role, activity, runLabel, onC
   const stateLabel = agentChatStateLabel(state, runLabel)
   const header = <AgentChatHeader name={name} role={role} state={stateLabel}
     detail={[activity, state?.availability.message, state ? chatBackgroundWork(state.activitySnapshot)?.message : undefined]
-      .filter(Boolean).join(' · ')} onClose={onClose} />
+      .filter(Boolean).join(' · ')} onClose={onClose}
+    controls={<>
+      <ProviderAccountChip binding={conversation?.providerAccountBinding}
+        label={conversation?.origin.kind === 'run_execution' ? 'Source Run account · saved chat account' : 'Saved chat account'} />
+      <SessionContext controls={sessionControls} />
+    </>} />
   if (chat.access.isPending) return <div className="agent-conversation">{header}
     <ConversationViewport revision="access">{() => <LoadingState label="Checking Agent chat access…" rows={1} />}</ConversationViewport>
   </div>
@@ -140,6 +146,7 @@ function AgentConversationContent({ context, name, role, activity, runLabel, onC
   if (!composerReason && attachments.hasBlockingAttachments) composerReason = 'Wait for attachments'
   return <div className="agent-conversation" data-testid="agent-conversation" data-chat-key={chat.draftKey}>
     {header}
+    <ProviderAccountProblem binding={conversation?.providerAccountBinding} />
     <AgentChatStatus>{attention ? <><Tooltip content={attention}><span tabIndex={0}>{attention}</span></Tooltip><Tooltip content="Read the latest conversation status">
       <IconButton size="sm" variant="ghost" label="Refresh chat" disabled={chat.query.isFetching} onClick={chat.refresh}>
         <RotateCcw size={12} aria-hidden="true" />
@@ -158,9 +165,7 @@ function AgentConversationContent({ context, name, role, activity, runLabel, onC
         pending={chat.pending} controlPending={sessionControls.mutation.isPending}
         hasAttachments={attachments.hasAttachments} canStop={canStop} stopReason={stopReason}
         onStop={() => { chat.stop(); focus() }} onSubmit={(content, mode) => { void submit('next_turn', content, mode) }}
-        attachmentControl={!composerDisabled ? <Tooltip content="Attach files">
-          <div><ChatAttachmentControl draft={attachments} disabled={!!writeReason} composerDrop={drop} /></div>
-        </Tooltip> : undefined}
+        attachmentControl={!composerDisabled ? <ChatAttachmentControl draft={attachments} disabled={!!writeReason} composerDrop={drop} /> : undefined}
         actions={!retired ? <>
           {state.activeTurn && (state.capabilities.steer !== 'unavailable' || state.capabilities.unavailable.steer)
             ? <Tooltip content={steerReason ?? 'Steer the active turn'}>
@@ -172,11 +177,6 @@ function AgentConversationContent({ context, name, role, activity, runLabel, onC
               <IconButton size="sm" variant="ghost" label="Interrupt and send" title={interruptReason ?? 'Interrupt and send'} disabled={!!interruptReason || empty}
                 onClick={() => void submit('interrupt_and_send')}><RotateCcw size={15} aria-hidden="true" /></IconButton>
             </Tooltip> : null}
-          {conversation?.providerAccountBinding ? <details className="agent-chat-options agent-chat-account">
-            <summary aria-label="Saved account details" title="Saved account details"><SlidersHorizontal size={15} aria-hidden="true" /></summary>
-            <div className="agent-chat-options-content"><PinnedProviderAccount binding={conversation.providerAccountBinding}
-              label={conversation.origin.kind === 'run_execution' ? 'Source Run account · saved chat account' : 'Saved chat account'} /></div>
-          </details> : null}
         </> : undefined} />
     </div> : null}
     <div className="n-sr-only" aria-live="polite" aria-atomic="true">{latestReply ? `New reply from ${name}: ${latestReply.content}` : ''}</div>
