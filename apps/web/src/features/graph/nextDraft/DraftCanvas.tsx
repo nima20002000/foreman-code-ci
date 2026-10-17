@@ -254,7 +254,7 @@ export const DraftCanvas = forwardRef<DraftCanvasHandle, {
         fitView fitViewOptions={fitViewOptions} proOptions={proOptions} minZoom={RESPONSIVE_MIN_ZOOM} maxZoom={1.6} onInit={responsive.onInit}
         onMove={responsive.onMove}
         isValidConnection={(connection) => connection.source !== connection.target}
-        onConnectStart={() => setConnecting(true)} onConnectEnd={() => setConnecting(false)}
+        onConnectStart={(_e, p) => { console.log('DBG connectStart', JSON.stringify(p)); setConnecting(true) }} onConnectEnd={(_e, st) => { console.log('DBG connectEnd', JSON.stringify({ valid: st.isValid, to: st.toHandle?.nodeId, from: st.fromHandle?.nodeId })); setConnecting(false) }}
         onClickConnectStart={() => setConnecting(true)} onClickConnectEnd={() => setConnecting(false)}
         onNodeClick={(event, node) => {
           if (event.target instanceof Element && event.target.closest('.react-flow__handle')) return
@@ -262,6 +262,7 @@ export const DraftCanvas = forwardRef<DraftCanvasHandle, {
         }}
         onPaneClick={() => inspect(() => { setOpen(undefined); presentation.getState().setFocusedNodeId(undefined); presentation.getState().setFocusedEdgeId(undefined) })}
         onConnect={(connection) => {
+          console.log('DBG onConnect', JSON.stringify(connection))
           connectNodes(connection.source, connection.target)
         }}>
         <Background color="var(--border)" gap={24} size={1} />
