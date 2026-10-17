@@ -8,7 +8,7 @@ import { sessionControlsApi } from '../../../shared/api/sessionControls'
 import { useConversationDraftStore } from '../conversationDraftStore'
 import { pendingControl, reservePendingControl, clearPendingControl, recoverPendingControl } from './controlRequest'
 import { useSessionControls } from './useSessionControls'
-import { SessionContext } from './SessionControls'
+import { SessionControls } from './SessionControls'
 import { ApiError } from '../../../shared/api/client'
 import { OperatorComposer } from '../../operator-chat/OperatorComposer'
 import { ConversationComposer } from '../ConversationComposer'
@@ -17,7 +17,7 @@ import { deferred } from '../../../test/deferred'
 const initial = SessionControlStateSchema.parse({ conversationId: 'chat', revision: 1, profileKey: 'profile',
   desiredMode: 'regular', appliedMode: 'regular', defaults: {}, desired: {}, applied: {}, applicability: 'applied',
   context: null, nativeSessionId: 'native', nativeProviderVersion: 'test', compaction: null, compactions: [],
-  busyReason: null, capabilities: { ...unavailableSessionControls('profile'), modelCapacity: 200000 } })
+  busyReason: null, capabilities: unavailableSessionControls('profile') })
 function mount(context?: AgentChatContext) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const wrapper = ({ children }: PropsWithChildren) => createElement(QueryClientProvider, { client }, children)
@@ -29,7 +29,7 @@ beforeEach(() => {
   const tails = new Map<string, Promise<unknown>>()
   Object.defineProperty(navigator, 'locks', { configurable: true, value: {
     request<T>(name: string, options: LockOptions, callback: () => T): Promise<T> {
-      const work = (tails.get(name) ?? Promise.resolve()).catch(() => { /* ignore: a failed earlier lock holder must not block the next one. */ }).then(() => {
+      const work = (tails.get(name) ?? Promise.resolve()).catch(() => undefined).then(() => {
         options.signal?.throwIfAborted()
         return callback()
       })
@@ -76,7 +76,7 @@ it('clears a recovered command draft on readback while preserving later edits', 
   useConversationDraftStore.getState().setDraft('chat', '/compact')
   const first = mount()
   await waitFor(() => expect(first.result.current.state).toBeDefined())
-  await act(async () => { await first.result.current.command('/compact', 'chat').catch(() => { /* ignore: the rejection is asserted through the persisted pending control below. */ }) })
+  await act(async () => { await first.result.current.command('/compact', 'chat').catch(() => undefined) })
   first.unmount()
   const original = change.mock.calls[0]![1]
   useConversationDraftStore.getState().setDraft('chat', 'A later edit')
@@ -406,10 +406,10 @@ it('opens context settings only after activation and restores focus without reop
   vi.spyOn(sessionControlsApi, 'read').mockResolvedValue(initial)
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   function Controls() {
-    return <SessionContext controls={useSessionControls('chat')} />
+    return <SessionControls controls={useSessionControls('chat')} />
   }
   const view = render(<QueryClientProvider client={client}><Controls /></QueryClientProvider>)
-  const meter = await screen.findByRole('button', { name: '0% context' })
+  const meter = await screen.findByRole('button', { name: 'Context unknown' })
   fireEvent.mouseEnter(meter)
   act(() => meter.focus())
   expect(meter).toHaveAttribute('aria-expanded', 'false')

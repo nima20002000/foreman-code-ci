@@ -250,7 +250,6 @@ export class WorkerConversationJournal {
       if (transitions.length >= 1000) conflict('The conversation owner journal is full.')
       transitions.push({ previous, next })
       record.nativeOwner = next
-      delete record.runtimeReleased
       record.connection = connection
       if (targetBinding) {
         record.binding = structuredClone(targetBinding)
@@ -380,15 +379,6 @@ export class WorkerConversationJournal {
 
   closeRequested(binding: WorkerConversationBinding) {
     return this.change(binding, record => { record.closing = true; return record })
-  }
-
-  runtimeReleased(binding: WorkerConversationBinding) {
-    return this.change(binding, record => {
-      writable(record)
-      if (unsettled(record)) conflict('Finish the active turn before releasing its native process.')
-      record.runtimeReleased = true
-      return record
-    })
   }
 
   closeConfirmed(binding: WorkerConversationBinding) {
