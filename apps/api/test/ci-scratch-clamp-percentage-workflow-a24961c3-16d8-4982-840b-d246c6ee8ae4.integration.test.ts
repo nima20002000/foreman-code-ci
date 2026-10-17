@@ -9,11 +9,13 @@ describe('clampPercentage', () => {
     expect(clampPercentage(-25)).toBe(0)
   })
 
-  it.each([0, 25, 50.5, 100])('preserves %s within the inclusive bounds', (value) => {
-    expect(clampPercentage(value)).toBe(value)
+  it('preserves values within the bounds', () => {
+    expect(clampPercentage(42.5)).toBe(42.5)
+    expect(clampPercentage(0)).toBe(0)
+    expect(clampPercentage(100)).toBe(100)
   })
 
-  it('clamps values above 100 to 100', () => {
+  it('clamps values above one hundred to one hundred', () => {
     expect(clampPercentage(125)).toBe(100)
   })
 })
