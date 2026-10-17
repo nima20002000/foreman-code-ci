@@ -4,7 +4,6 @@ import { useQueryClient } from '@tanstack/react-query'
 import { ActivityChangeEnvelopeV1Schema, OperatorActivitySchema } from '@foreman-code/contracts'
 import type { OperatorConversationState } from '@foreman-code/contracts'
 import { createStreamReadback } from '../../shared/api/streamReadback'
-import { markChatTurnCompleted } from '../conversations/chatTurnCompletion'
 import { subscribeOperatorChat } from '../../shared/api/operatorChatStream'
 import { identityEpoch } from '../../shared/api/protectedChatStorage'
 import { projectOperatorActivity, projectOperatorEnvelope } from './operatorTextProjection'
@@ -52,10 +51,6 @@ export function useOperatorChatStream({ enabled, open, selectedId, accessDenied,
       reconnect: () => { setPartial((current) => current?.conversationId === selectedId ? undefined : current); refresh() },
       connection: (state) => setConnection((current) => current?.id === selectedId && current.state === state ? current : { id: selectedId, state }),
       event: (event) => {
-        if (event.type === 'state' && typeof event.data.requestId === 'string'
-          && ['idle', 'error'].includes(String(event.data.turnState))) {
-          markChatTurnCompleted(queryClient, selectedId, event.data.requestId)
-        }
         const state = queryClient.getQueryData<OperatorConversationState>(detailKey(selectedId))
         if (event.type === 'activity') {
           const activity = OperatorActivitySchema.safeParse(event.data.activity)

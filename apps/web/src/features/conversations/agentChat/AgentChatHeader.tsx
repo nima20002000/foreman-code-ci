@@ -1,19 +1,19 @@
 import type { ReactNode } from 'react'
 import { Icon, IconButton, Tooltip } from '../../../shared/ui/nocturne'
 
-export function AgentChatHeader({ name, state, detail, controls, onClose }: {
-  name: string; state: string; detail?: string; controls?: ReactNode; onClose?: () => void
+export function AgentChatHeader({ name, role = 'Agent', state, detail, controls, onClose }: {
+  name: string; role?: string; state: string; detail?: string; controls?: ReactNode; onClose?: () => void
 }) {
   const chip = <span className="agent-chat-session-label" data-state={state} role="status" aria-label="Agent state"
     tabIndex={detail ? 0 : undefined}>{state}</span>
-  return <header className="agent-chat-header"><nav aria-label={`${name} chat controls`}>
-    <div className="agent-chat-identity"><h2>{name}</h2></div>
+  return <header className="agent-chat-header">
+    <div className="agent-chat-identity"><h2>{name}</h2><span>{role}</span></div>
     {detail ? <Tooltip content={detail}>{chip}</Tooltip> : chip}
     {controls ? <div className="agent-chat-header-controls">{controls}</div> : null}
-    {onClose ? <IconButton className="agent-chat-close" label={`Close ${name}`} variant="ghost" onClick={onClose}>
-      <Icon name="close" />
+    {onClose ? <IconButton label={`Close ${name}`} variant="ghost" onClick={onClose}>
+      <Icon name="close" size={16} />
     </IconButton> : null}
-  </nav></header>
+  </header>
 }
 
 export function AgentChatStatus({ children }: { children?: ReactNode }) {
