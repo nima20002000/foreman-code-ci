@@ -30,13 +30,6 @@ export function createWorkerClaudeOwner(input: {
     sessionId: reference.nativeSessionId, processIdentityDigest: workerConversationProcessDigest(input.binding, process),
   })
   return {
-    hasExited() {
-      if (!launch || changing) return false
-      const original = launch
-      return input.registry.snapshot().launches.some(current => current.owner === input.owner
-        && current.launchId === original.launchId && ['ended', 'closed'].includes(current.lifecycle)
-        && workerConversationProcessDigest(input.binding, current) === workerConversationProcessDigest(input.binding, original))
-    },
     beginOwnerChange() {
       if (changing) unavailable()
       let complete!: () => void

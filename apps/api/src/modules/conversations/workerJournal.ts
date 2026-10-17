@@ -389,12 +389,11 @@ export class WorkerConversationJournal {
     return this.change(binding, record => { record.closing = true; return record })
   }
 
-  runtimeReleased(binding: WorkerConversationBinding, connection?: DeviceSessionBinding) {
+  runtimeReleased(binding: WorkerConversationBinding) {
     return this.change(binding, record => {
       writable(record)
       if (unsettled(record)) conflict('Finish the active turn before releasing its native process.')
       record.runtimeReleased = true
-      if (connection) record.connection = structuredClone(connection)
       return record
     })
   }
