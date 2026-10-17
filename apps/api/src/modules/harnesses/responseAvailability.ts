@@ -1,28 +1,12 @@
 import { logIgnoredError } from '../diagnostics/ignoredError.js'
 import type { NativeSessionReference, PendingNativeInteraction } from '@foreman-code/contracts'
 
-/** Read-only exact-request inquiry. Inspection must not attach, start, auto-reply or reconcile a response. */
-export interface NativeResponseAvailabilityQuery {
-  nativeRequestId: string
-  nativeRequestType: string
-  expectedNativeTurnId?: string
-  expectedNativeMessageId?: string
-  expectedGeneration?: string
-}
-export interface NativeResponseAvailability {
-  nativeSessionId: string
-  nativeRequestId: string
-  nativeRequestType: string
-  nativeTurnId?: string
-  nativeMessageId?: string
-  /** Current owned provider runtime/callback generation; never an arrival counter. */
-  generation?: string
-  qualified: boolean
-  state: 'available' | 'recovery_required' | 'unavailable'
-  path: 'live_callback' | 'qualified_recovery' | null
-  reason: 'live_callback' | 'qualified_recovery' | 'request_consumed' | 'callback_lost' | 'session_closed'
-    | 'unqualified' | 'identity_mismatch' | 'response_in_flight' | 'unsupported'
-}
+import type { NativeResponseAvailability, NativeResponseAvailabilityQuery }
+  from '@foreman-code/contracts/remote-execution-rpc'
+export type { NativeResponseAvailability, NativeResponseAvailabilityQuery }
+  from '@foreman-code/contracts/remote-execution-rpc'
+
+/** Read-only inspection must not attach, start, auto-reply or reconcile a response. */
 export interface ResponseAvailabilityInspector {
   inspectResponseAvailability?(session: NativeSessionReference, query: NativeResponseAvailabilityQuery,
     signal?: AbortSignal): Promise<NativeResponseAvailability>

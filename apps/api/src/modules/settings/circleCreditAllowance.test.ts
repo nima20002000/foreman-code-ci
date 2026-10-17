@@ -93,9 +93,9 @@ it('saves the CircleCI credit allowance through HTTP and authenticated MCP with 
   expect((await client.listTools()).tools.map(tool => tool.name)).toContain('circle_credit_allowance_update')
   const initial = ManagedCircleCreditAllowanceSchema.parse(decodeMcpToolResult(await client.callTool({
     name: 'circle_credit_allowance_get', arguments: {} })))
-  expect(initial).toEqual({ value: { defaultMonthlyCredits: 30000, accounts: {} }, revision: 0, versionId: null })
+  expect(initial).toEqual({ value: { defaultMonthlyCredits: 400000, accounts: {} }, revision: 0, versionId: null })
   const mcp = CircleCreditAllowanceUpdateResultSchema.parse(decodeMcpToolResult(await client.callTool({
-    name: 'circle_credit_allowance_update', arguments: { value: { defaultMonthlyCredits: 30000, accounts: { acme: 1000000 } },
+    name: 'circle_credit_allowance_update', arguments: { value: { defaultMonthlyCredits: 400000, accounts: { acme: 1000000 } },
       expectedRevision: 0, commandId: randomUUID() } })))
   expect(mcp.value).toMatchObject({ value: { accounts: { acme: 1000000 } }, revision: 1 })
   const http = await f.app.inject({ method: 'PUT', url: '/api/management/settings/circle-credits',

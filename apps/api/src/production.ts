@@ -30,6 +30,7 @@ import { agentSnapshots, type ReadAgentFiles } from './modules/ci-host/agentSnap
 import { registerComputerAccountsRoutes } from './routes/computerAccounts.js'
 import { registerComputerMaintenanceRoutes } from './routes/computerMaintenance.js'
 import { FleetMaintenanceService } from './modules/computers/fleet.js'
+import { computerConnectionsReader } from './modules/computers/connections.js'
 import { startWorkerPublicationSync } from './modules/computers/workerPublicationSync.js'
 import { createProductionWorkerArtifactExtension, readProductionWorkerManifestSha256s,
   readProductionWorkerContentSha256s, readProductionWorkerReleasePublication,
@@ -2799,10 +2800,6 @@ async function initializeComputerServices(composition: ProductionComposition, ma
   const discoverClouds = () => circleOrgs.refresh()
   const circleCredits = new CircleCreditUsage(new CloudHttp(systemHostCiPorts(), 'circleci'), {
     allowance: async () => (await composition.foundationSettings.getCircleCreditAllowance()).value,
-    primaryOwner: async () => {
-      const owners = new Set((await workspaceMirrorList(database.pool)()).map(mirror => mirror.slice(0, mirror.indexOf('/')).toLowerCase()))
-      return owners.size === 1 ? [...owners][0]! : null
-    },
   })
   runtimeServices.computerActivity = new ComputerActivityService(database.pool, machine.installationId,
     id => deviceRuntime.presenceFor(id), commands, clouds, circleCredits)
@@ -2818,6 +2815,10 @@ async function initializeComputerServices(composition: ProductionComposition, ma
         releaseDirectory: fileURLToPath(new URL('../../../', import.meta.url)) }),
       workerPublication: () => readProductionWorkerReleasePublication({ environment: process.env,
         releaseDirectory: fileURLToPath(new URL('../../../', import.meta.url)) }),
+      connections: computerConnectionsReader(runtimeServices.computerAccounts, {
+        list: (principal, harness, hostRef) => harnessSettings.mcp.list(principal, harness, hostRef),
+        readMainClaudeServers: () => claudeUserMcpServers(maintenancePorts),
+      }),
       codexUserMcpServers: () => harnessSettings.mcp.userServers('codex'),
       claudeUserMcpServers: () => claudeUserMcpServers(maintenancePorts),
       claudePlugins: async () => await maintenancePorts.find('claude')

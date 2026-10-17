@@ -181,22 +181,28 @@ it('shows cloud CI services by machines in use', async () => {
   expect(await within(await screen.findByRole('tooltip')).findByText('12 of 16 CI machines in use')).toBeInTheDocument()
 })
 
-it('shows the estimated credits left when hovering or focusing a CircleCI account', async () => {
+it('shows each organization of a CircleCI account with its credits left, unavailable ones as such, and the account total', async () => {
   const f = computersFixture(inRouter().element)
+  const asOf = new Date(Date.now() - 6 * 60_000).toISOString()
+  const org = (name: string, used: number) => ({ org: name, credits: { total: 400000, used, remaining: 400000 - used, asOf } })
   f.activity.cloud.push(
     { provider: 'circleci', account: 'acme', name: 'CircleCI acme', ready: true, slots: 30, running: 0,
-      credits: { total: 30000, used: 5690, remaining: 24310, asOf: new Date(Date.now() - 6 * 60_000).toISOString() } },
+      credits: { orgs: [org('acme', 125000), org('beta', 380000), { org: 'gamma', credits: null, unavailable: 'CircleCI usage export failed: query failed' }],
+        total: { total: 800000, used: 505000, remaining: 295000, asOf } } },
     { provider: 'circleci', account: 'beta', name: 'CircleCI beta', ready: true, slots: 30, running: 0,
       credits: null, creditsUnavailable: 'CircleCI is not logged in on Main.' })
   await act(() => f.client.invalidateQueries({ queryKey: ['computer-activity'] }))
   const acme = await screen.findByRole('button', { name: /^CircleCI acme, Cloud CI/ })
   const user = userEvent.setup()
   await user.hover(acme)
-  expect(await within(await screen.findByRole('tooltip')).findByText(
-    '≈ 24,310 of 30,000 credits left · updated 6 min ago')).toBeInTheDocument()
+  const tooltip = within(await screen.findByRole('tooltip'))
+  expect(await tooltip.findByText('acme: ≈ 275,000 of 400,000 credits left')).toBeInTheDocument()
+  expect(tooltip.getByText('beta: ≈ 20,000 of 400,000 credits left')).toBeInTheDocument()
+  expect(tooltip.getByText('gamma: unavailable (CircleCI usage export failed: query failed)')).toBeInTheDocument()
+  expect(tooltip.getByText(/Account total \(2 of 3 orgs\): ≈ 295,000 of 800,000 credits left · updated 6 min ago/)).toBeInTheDocument()
   await user.unhover(acme)
   const beta = screen.getByRole('button', { name: /^CircleCI beta, Cloud CI/ })
-  beta.focus()
+  await act(() => beta.focus())
   await waitFor(() => expect(beta).toHaveAttribute('aria-describedby'))
   const card = within(document.getElementById(beta.getAttribute('aria-describedby')!)!)
   expect(await card.findByText('Credits unavailable')).toBeInTheDocument()
