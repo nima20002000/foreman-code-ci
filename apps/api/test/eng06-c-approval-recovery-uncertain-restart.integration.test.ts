@@ -32,7 +32,14 @@ for (const form of ['ordinary', 'repeat'] as const) {
       expect(await t.runtime.runs.get(t.runId)).toMatchObject({ executionState: 'waiting', outcome: 'pending' })
       expect(await t.runtime.repository.get(pending.id)).toMatchObject({ deliveryState: 'uncertain' })
       expect(t.f.provider.counts).toEqual({ ...counts, responses: 1, attaches: counts.attaches + 1 })
-      expect(await t.closureRows()).toEqual(detached)
+      expect(await t.closureRows()).toEqual([...detached, expect.objectContaining({
+        execution_id: pending.executionId,
+        execution_identity: expect.objectContaining({ id: pending.executionId, runId: t.runId }),
+        expected_reference: { harness: pending.harness, providerVersion: pending.providerVersion,
+          nativeSessionId: pending.nativeSessionId },
+        closed_at: null, closed_reference: null, closed_without_session: false,
+        detached_at: null, detached_reference: null,
+      })])
       expect(await t.recoveryRows()).toEqual([])
       await assertPredecessorsUnchanged(t, before)
       expect(await t.f.receipts()).toHaveLength(0)
