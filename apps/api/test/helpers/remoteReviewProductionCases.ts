@@ -434,7 +434,19 @@ export async function retainedReviewRecovery(fixture: Fixture, recovery: 'crash'
     await fixture.reconcile()
     const calls = await fixture.provider.calls()
     const denied = calls.find(call => call.reviewDecisionError !== undefined)
-    expect(denied, 'the retained reviewer must remain authorized after Main recovery').toBeUndefined()
+    if (denied) {
+      const guard = (await fixture.db.pool.query(`select j.state,j.lease_fence,
+        j.lease_expires_at,clock_timestamp() as observed_at,
+        b.approval_review_job_id,b.approval_review_lease_fence,
+        b.approval_connection_generation as credential_generation,
+        j.approval_connection_generation as job_generation,l.record as writer
+        from review_jobs j join worker_credential_bindings b on b.execution_id=j.execution_id
+        join native_session_lanes l on l.harness=j.record->>'provider'
+          and l.native_session_id=j.record->>'nativeSessionId'
+        where j.id=$1 and b.revoked_at is null`, [active.job.id])).rows
+      expect(denied, `the retained reviewer must remain authorized after Main recovery: ${JSON.stringify(guard)}`)
+        .toBeUndefined()
+    }
     return calls.find(call => call.reviewDecision !== undefined)
   }, call => call !== undefined, 'authenticated retained reviewer decision response')
   expect(decisionCall?.reviewDecision).toMatchObject({
