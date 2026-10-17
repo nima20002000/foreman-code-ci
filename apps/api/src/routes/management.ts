@@ -1,3 +1,4 @@
+import { registerCircleAccountRoutes } from './circleAccounts.js'
 import { registerComputerActivityRoutes } from './computerActivity.js'
 import { registerBugReportRoutes } from './bugReports.js'
 import { registerHostCiRoutes } from './hostCi.js'
@@ -88,6 +89,7 @@ function page(query: Query) {
 
 export function registerManagementRoutes(app: FastifyInstance, services: OperatorServices): void {
   registerHostCiRoutes(app, services)
+  if (services.circleAccounts) registerCircleAccountRoutes(app, services.circleAccounts)
   if (services.bugReports) registerBugReportRoutes(app, services.bugReports)
   if (services.harnessRegistry) registerHarnessRegistryRoutes(app, services.harnessRegistry, async request => requirePrincipal(request))
   if (services.computerActivity) registerComputerActivityRoutes(app, services.computerActivity)
