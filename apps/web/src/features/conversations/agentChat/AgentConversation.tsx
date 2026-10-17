@@ -25,6 +25,7 @@ import { ProviderAccountChip, ProviderAccountProblem } from '../../provider-acco
 import { SessionContext } from '../sessionControls/SessionControls'
 import { useAgentConversationComposer } from './useAgentConversationComposer'
 import { useFirstAttachment } from './useFirstAttachment'
+import { AgentChatSettings } from './AgentChatSettings'
 import './agentChat.css'
 import '../chatAttachments.css'
 
@@ -172,6 +173,7 @@ function AgentConversationContent({ context, name, role, activity, runLabel, onC
         onStop={() => { chat.stop(); focus() }} onSubmit={(content, mode) => { void submit('next_turn', content, mode) }}
         attachmentControl={!composerDisabled ? <ChatAttachmentControl draft={attachmentDraft} disabled={!!writeReason} composerDrop={drop} /> : undefined}
         actions={!retired ? <>
+          <AgentChatSettings context={context} conversationVersionId={conversation?.agentConfigurationVersionId} disabled={!!writeReason} />
           {state.activeTurn && (state.capabilities.steer !== 'unavailable' || state.capabilities.unavailable.steer)
             ? <Tooltip content={steerReason ?? 'Steer the active turn'}>
               <IconButton size="sm" variant="ghost" label="Steer" title={steerReason ?? 'Steer the active turn'} disabled={!!steerReason || empty}
