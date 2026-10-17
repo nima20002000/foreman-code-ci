@@ -19,6 +19,7 @@ import { runChatStorageKey } from '../../conversations/selectedRunChat.js'
 import { DomainError } from '../../errors.js'
 import { PostgresArtifactPublicationAuthority } from './nativeArtifactAuthority.js'
 import { WorkflowNativeFileContextAdmission, WORKFLOW_NATIVE_FILE_CONTEXT_OPERATION, workflowNativeFileConversationKey } from './workflowNativeFileContext.js'
+import { completeResultRepair } from './workflowRepair.test-support.js'
 
 vi.mock('../../placement/persistence.js', () => ({ readDispatchIntent: vi.fn(), readAcceptedPlacement: vi.fn(), readNativePlacement: vi.fn() }))
 vi.mock('./persistence.js', () => ({ readReconciledDispatchIntent: vi.fn() }))
@@ -55,6 +56,7 @@ function fixture() {
     entryAttempted: true, turnEntryAttempted: true, stopFence: false, controls: [] }
   const state = { owned: true, resident: true, leaseHeld: true, ownerFence: '1', stopped: false, runState: 'running', revoked: false,
     grantLive: true, proofAvailable: true, closureLive: true, laneLive: true, canonical: true, loseAck: false,
+    repairAttempt: 0, laneCorrelation: undefined as string | undefined,
     expectedReference: session as typeof session | null,
     boundSession: session as typeof session | null,
     conversation: undefined as { id: string; key: string; record: unknown } | undefined,
@@ -86,7 +88,8 @@ function fixture() {
       expected_reference: state.expectedReference, closed: !state.closureLive }]
     else if (text.includes('from native_session_lanes')) rows = [{ owner_agent_id: execution.agentId, harness: session.harness, native_session_id: session.nativeSessionId,
       token: state.laneLive ? lease.fence.token : 'replacement', generation: String(lease.previous.connectionGeneration),
-      correlation: proof.commandId, provider_id: lease.providerId, held: true }]
+      correlation: state.laneCorrelation ?? proof.commandId, provider_id: lease.providerId, held: true }]
+    else if (text.includes('from execution_work_result_repairs')) rows = state.repairAttempt ? [{ attempt: state.repairAttempt }] : []
     else if (text.includes('from harness_executions e join runs')) rows = [{ execution, configuration, workspace_id: 'workspace', workflow_id: 'workflow',
       workflow_version_id: 'version', authorization_principal_id: 'run-owner', execution_state: state.runState, stopped: state.stopped }]
     else if (text.includes('from management_principals')) rows = [{ id: args[0], name: 'Original Run owner', audience: 'operator',
@@ -136,6 +139,51 @@ function fixture() {
     freshConnection: () => new ExclusiveGraphConnection({ query } as unknown as pg.ClientBase, owner.assertOwned) }
 }
 describe('genuine original workflow file-context admission', () => {
+  it('rejects a corrective context whose publishing turn is disconnected from the native journal', async () => {
+    const t = fixture()
+    await t.admit()
+    const before = structuredClone({ conversation: t.state.conversation, receipt: t.state.receipt })
+    const correlationId = completeResultRepair(t.remote, 'corrective-turn')
+    t.remote.nativeTurnRetries = []
+    t.state.repairAttempt = 1
+    t.state.laneCorrelation = correlationId
+    t.captureInput.lease!.providerId = 'corrective-turn'
+    const evidence = t.channel.capture.capture({ ...t.captureInput, source: { type: 'event', event: {
+      executionId: t.execution.id, type: 'turn.started', sequence: 2, occurredAt: t.execution.createdAt,
+      payload: { threadId: t.execution.nativeSessionId, turnId: 'corrective-turn', clientCorrelationId: correlationId },
+    } } })
+    const capture = t.channel.verify.read(evidence)
+    const proof = { ...t.proof, proofId: 'disconnected-turn', original: capture.source, lane: capture.lane }
+    await expect(t.freshConnection().transaction(sql =>
+      t.helper.resolveOrAdmitLocked(sql, evidence, proof, t.transfer)))
+      .rejects.toMatchObject({ code: 'NATIVE_ARTIFACT_CONTEXT_CONFLICT' })
+    expect({ conversation: t.state.conversation, receipt: t.state.receipt }).toEqual(before)
+  })
+
+  it.each([1, 2])('reuses the immutable admission for %s reserved corrective turns', async count => {
+    const t = fixture()
+    const original = await t.admit()
+    const before = structuredClone({ conversation: t.state.conversation, receipt: t.state.receipt,
+      proof: t.persistedProof, audits: t.state.audits })
+    for (let attempt = 1; attempt <= count; attempt++) {
+      const correlationId = completeResultRepair(t.remote, `corrective-${attempt}`)
+      t.state.repairAttempt = attempt
+      t.state.laneCorrelation = correlationId
+      t.captureInput.lease!.providerId = t.remote.native!.turnId!
+      const source = { type: 'event' as const, event: { executionId: t.execution.id, type: 'turn.started',
+        sequence: attempt + 1, occurredAt: t.execution.createdAt,
+        payload: { threadId: t.execution.nativeSessionId, turnId: t.remote.native!.turnId!, clientCorrelationId: correlationId } } }
+      const evidence = t.channel.capture.capture({ ...t.captureInput, source })
+      const capture = t.channel.verify.read(evidence)
+      const proof = { ...t.proof, proofId: `correction-${attempt}`, original: capture.source, lane: capture.lane }
+      const accepted = await t.freshConnection().transaction(sql =>
+        t.helper.resolveOrAdmitLocked(sql, evidence, proof, t.transfer))
+      expect(accepted).toEqual({ ...original, context: { ...original.context, turnId: t.remote.native!.turnId } })
+    }
+    expect({ conversation: t.state.conversation, receipt: t.state.receipt,
+      proof: t.persistedProof, audits: t.state.audits }).toEqual(before)
+  })
+
   it('admits and reads context when the lifetime was registered before the provider assigned its session', async () => {
     const t = fixture()
     t.state.expectedReference = null
@@ -250,7 +298,9 @@ describe('genuine original workflow file-context admission', () => {
     })).rejects.toThrow()
     expect(t.state.receipt).toEqual(receipt); expect(t.state.audits).toBe(1)
     await expect(t.connection.transaction(async sql => {
-      await t.helper.resolveOrAdmitLocked(sql, t.evidence, t.proof, t.transfer).catch(() => undefined)
+      await t.helper.resolveOrAdmitLocked(sql, t.evidence, t.proof, t.transfer).catch(error => {
+        expect(error).toBeInstanceOf(DomainError)
+      })
     })).rejects.toMatchObject({ code: 'GRAPH_TRANSACTION_FAILED' })
   })
   it('admits one namespaced conversation and exact native context in the capture transaction, then resolves it', async () => {
@@ -263,9 +313,11 @@ describe('genuine original workflow file-context admission', () => {
       session: t.proof.session, workingDirectory: '/original/worktree', runtimeDirectory: '/original/runtime' })
     expect(JSON.stringify(t.state.conversation)).not.toContain('unit-lease')
     expect(t.ports.assertPhysical).toHaveBeenCalledTimes(2); expect(t.state.audits).toBe(1)
-    expect(t.state.queries.some(sql => sql.includes('run_graph_sources'))).toBe(true)
+    expect(t.retainNativeSource).toHaveBeenCalledWith(expect.anything(), t.proof.proofId)
     expect(await t.connection.transaction(sql => t.authority.resolveWorkflowContext(t.attempt, t.transfer, sql))).toEqual(accepted)
-    expect(t.state.queries.some(sql => /insert into operator_conversation_(messages|turns)|update .*native_session/i.test(sql))).toBe(false)
+    expect(t.state.boundSession).toEqual(t.proof.session)
+    expect(t.state.conversation?.record).toMatchObject({ origin: { kind: 'run_execution',
+      runId: t.execution.runId, executionId: t.execution.id, sourceNativeSessionId: t.proof.session.nativeSessionId } })
   })
   it('keeps human chat key namespaces distinct and never adopts an existing human or conflicting internal conversation', async () => {
     const t = fixture(), context = { workspaceId: 'workspace', workflowId: 'workflow', workflowNodeId: 'node', agentId: 'agent', runId: 'run' }
@@ -332,14 +384,20 @@ describe('genuine original workflow file-context admission', () => {
       if (field === 'stopped') t.state.stopped = true
     })).rejects.toThrow()
     expect(t.state.conversation).toBeUndefined(); expect(t.state.receipt).toBeUndefined(); expect(t.state.audits).toBe(0)
-    expect(t.state.queries.at(-1)).toBe('rollback')
+    expect(t.state.commits).toBe(0)
+    expect(t.state.conversation).toBeUndefined()
+    expect(t.state.receipt).toBeUndefined()
   })
   it('poisons the transaction when a caught denial would otherwise permit COMMIT', async () => {
     const t = fixture(); t.state.proofAvailable = false
     await expect(t.connection.transaction(async sql => {
-      await t.helper.admitLocked(sql, t.evidence, t.proof, t.transfer).catch(() => undefined)
+      await t.helper.admitLocked(sql, t.evidence, t.proof, t.transfer).catch(error => {
+        expect(error).toBeInstanceOf(DomainError)
+      })
     })).rejects.toMatchObject({ code: 'GRAPH_TRANSACTION_FAILED' })
-    expect(t.state.queries.at(-1)).toBe('rollback')
+    expect(t.state.commits).toBe(0)
+    expect(t.state.conversation).toBeUndefined()
+    expect(t.state.receipt).toBeUndefined()
   })
   it('preserves exact saved read-only sandbox tools and rejects changed native/context receipt retry', async () => {
     const t = fixture(); t.configuration.harness = { ...DEFAULT_HARNESS_DEFAULTS.codex, sandbox: 'read-only' }
