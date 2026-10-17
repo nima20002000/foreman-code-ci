@@ -6,6 +6,7 @@ import { remoteEntryClosureDigest, remoteNonEntryClosureDigest } from '@foreman-
 import { ExclusiveGraphConnection } from '../run-graph/connection.js'
 import type { RunOwnership } from '../runs/ownership.js'
 import { DomainError } from '../errors.js'
+import { remoteStopChannel } from '../../../test/helpers/remoteStopChannel.js'
 
 const ports = vi.hoisted(() => {
   const connection = {
@@ -60,7 +61,7 @@ beforeEach(() => {
   ports.acknowledge.mockResolvedValue({})
 })
 
-function fixture() {
+function fixture(endpoint?: Parameters<typeof createProductionRemoteWorkflow>[0]['endpoint']) {
   const state = { session: null as NativeSessionReference | null, stored: undefined as RemoteOperationReceipt | undefined,
     cleanup: new Date('2026-10-01T00:00:00.000Z') as Date | undefined }
   const receipt: RemoteOperationReceipt = {
@@ -94,8 +95,8 @@ function fixture() {
   const composition = createProductionRemoteWorkflow({
     pool: { query } as unknown as pg.Pool,
     locations: {} as Parameters<typeof createProductionRemoteWorkflow>[0]['locations'],
-    endpoint: () => ({ captureRequest: () => ({ binding: ports.connection, request }) }) as unknown as
-      ReturnType<Parameters<typeof createProductionRemoteWorkflow>[0]['endpoint']>,
+    endpoint: endpoint ?? (() => ({ captureRequest: () => ({ binding: ports.connection, request }) }) as unknown as
+      ReturnType<Parameters<typeof createProductionRemoteWorkflow>[0]['endpoint']>),
     producer: () => ({} as NonNullable<ReturnType<Parameters<typeof createProductionRemoteWorkflow>[0]['producer']>>),
     execution: async () => ({
       id: 'execution', runId: 'run', workflowNodeId: 'node', attempt: 1, workingDirectory: '/workspace/source',
@@ -103,6 +104,36 @@ function fixture() {
   })
   return { state, receipt, request, composition, owner, close: () => connection.close() }
 }
+
+it('completes cold Stop on a saturated carrier', async () => {
+  const channel = remoteStopChannel()
+  const originals = structuredClone({ intent: ports.intent, placement: ports.placement, connection: ports.connection })
+  Object.assign(ports.intent, channel.intent)
+  Object.assign(ports.placement, channel.placement)
+  Object.assign(ports.connection, channel.connection)
+  const f = fixture(() => channel.endpoint as unknown as
+    ReturnType<Parameters<typeof createProductionRemoteWorkflow>[0]['endpoint']>)
+  f.state.stored = structuredClone(channel.receipt)
+  f.state.session = channel.session
+  const occupied = await channel.occupy()
+  let closure: Promise<boolean> | undefined
+  try {
+    expect(occupied.releases).toHaveLength(8)
+    closure = f.composition.confirmClosedExecution('execution', new AbortController().signal, f.owner)
+    await vi.waitFor(() => expect(channel.requests.some(frame => frame.method === 'control')).toBe(true))
+    await expect(closure).resolves.toBe(true)
+    expect(f.state.stored).toMatchObject({ phase: 'confirmed_terminal', terminal: { kind: 'cancelled' } })
+    expect(channel.requests.filter(frame => frame.method === 'control')).toHaveLength(1)
+    expect(channel.requests.find(frame => frame.method === 'status')).toMatchObject({ forStop: true })
+  } finally {
+    await channel.close()
+    await Promise.allSettled([...occupied.busy, ...(closure ? [closure] : [])])
+    await f.close()
+    Object.assign(ports.intent, originals.intent)
+    Object.assign(ports.placement, originals.placement)
+    Object.assign(ports.connection, originals.connection)
+  }
+})
 
 function runningFixture() {
   const f = fixture()

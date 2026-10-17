@@ -32,9 +32,12 @@ export function fakeComputer() {
   const result = (value: unknown = {}, code = 0) => ({ code, stdout: JSON.stringify(value), stderr: '' })
   const ports: MaintenancePorts = {
     environment: { HOME: '/fake/home' },
-    find: async name => ['codex', 'claude', 'npm'].includes(name) ? `/fake/${name}` : null,
-    run: async (binary, args) => {
-      calls.push({ binary, args })
+    find: async name => ['codex', 'claude', 'npm', 'server', 'updated-server', 'npx'].includes(name) ? `/fake/${name}` : null,
+    run: async (binary, suppliedArgs) => {
+      calls.push({ binary, args: suppliedArgs })
+      let commandIndex = 0
+      while (suppliedArgs[commandIndex] === '-c') commandIndex += 2
+      const args = suppliedArgs.slice(commandIndex)
       if (binary === 'sudo' && args.join(' ') === '-n true') {
         return { code: 1, stdout: '', stderr: 'sudo: a password is required' }
       }

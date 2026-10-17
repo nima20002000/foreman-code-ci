@@ -9,7 +9,6 @@ import { WorkerConversationRpcRequestSchema, type WorkerConversationBinding,
 import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
 import type { DeviceApplicationResult } from '@foreman-code/contracts/device-application'
 import type { ApprovedRootAllowlist } from '@foreman-code/contracts/workspace-root-policies'
-import type { NativeSessionReference } from '@foreman-code/contracts'
 import { readInstalledWorkflowConfiguration, type InstalledWorkflowConfigurationLocation } from '../runs/remote/installedWorkflowConfiguration.js'
 import { createWorkerMcpEndpoint } from '../runs/remote/workerMcpEndpoint.js'
 import type { RemoteOperationJournal } from '../runs/remote/operationJournal.js'
@@ -34,10 +33,10 @@ import { allocateInstalledWorkerClaude } from './installedWorkerClaude.js'
 import { WorkerConversationFiles } from './workerFiles.js'
 import { localCodexChatHost } from '../harnesses/codexFiles/localHost.js'
 import { assertCodexChatHost } from '../harnesses/codexFiles/localHost.js'
-import { workerConversationProcessDigest } from './workerNativeOwner.js'
+import { closeRecoveredWorkerSession, workerConversationProcessDigest } from './workerNativeOwner.js'
 import { recoverWorkerConversation } from './recoverWorkerConversation.js'
+import { closedWorkerConversationOwner } from './closedWorkerConversation.js'
 import { join } from 'node:path'
-import { workerConversationAccountOwner } from './workerAccountSession.js'
 
 function unavailable(message: string): never {
   throw new DomainError('WORKER_CONVERSATION_UNAVAILABLE', message, 409)
@@ -72,9 +71,8 @@ function createInstalledConversationAllocator(input: InstalledWorkerConversation
     if (harness !== 'codex') unavailable('The installed native selection does not support this driver.')
     if (configuration.harness.harness !== 'codex') unavailable('The selected Codex configuration changed.')
     assertWorkerProviderAccountBinding(binding.accountBinding, connection)
-    const accountOwner = await workerConversationAccountOwner(binding, conversationJournal, source())
     const account = await resolveRuntimeProviderAccount(input.accounts, 'codex', configuration.harness.accountId,
-      input.registry.scope(accountOwner), undefined, binding.accountBinding)
+      input.registry.scope(`conversation:${binding.owner.conversationId}`), undefined, binding.accountBinding)
     const environment = account ? managedProviderEnvironment(process.env, account, 'codex') : process.env
     const directory = await installedConversationDirectory({ binding, configuration, approvedRoots: input.approvedRoots })
     const reader = createInstalledConversationNativeReader({ binding, configuration, connection,
@@ -155,11 +153,16 @@ function createInstalledConversationAllocator(input: InstalledWorkerConversation
     let mcp: Awaited<ReturnType<typeof createWorkerMcpEndpoint>> | undefined
     let mcpEnvironment: Awaited<ReturnType<typeof prepareWorkerConversationMcp>>['environment'] | undefined
     let launch: NativeLaunchObservation | undefined
-    const nativeOwner = async (session: NativeSessionReference) => {
-      const rows = input.registry.snapshot().launches.filter(value => value.owner === scope.owner && value.lifecycle === 'active')
+    const nativeOwner: WorkerConversationAllocation['nativeOwner'] = async (session, options) => {
+      const rows = input.registry.snapshot().launches.filter(value => value.owner === scope.owner
+        && (value.lifecycle === 'active' || options?.allowExited
+          && (value.lifecycle === 'ended' || value.lifecycle === 'closed' && value.closureEvidence)))
       let current = rows.length === 1 ? rows[0] : undefined
       if (launch) current = rows.find(value => value.launchId === launch!.launchId)
-      if (!current?.guardian || !current.provider || !current.boundary || launch && !isDeepStrictEqual(launch, current)) {
+      if (!current && launch && options?.allowExited) current = input.registry.closedRegistration(scope.owner, launch.launchId)
+      if (!current?.guardian || !current.provider || !current.boundary || launch
+        && workerConversationProcessDigest(binding, launch) !== workerConversationProcessDigest(binding, current)
+        || current.lifecycle !== 'active' && rows.some(row => row.lifecycle === 'active' && row.launchId !== current.launchId)) {
         unavailable('The original native chat process is unavailable or changed.')
       }
       launch ??= current
@@ -250,6 +253,12 @@ export async function createInstalledWorkerConversations(input: InstalledWorkerC
     journal: conversationJournal,
     allocate: (binding, configuration, connection) => allocate(binding, configuration, connection, 'chat'),
     prepare: (binding, configuration, connection) => allocate(binding, configuration, connection, 'preparation'),
+    closePersistedRuntime: async (record, _connection, signal) => {
+      const closed = input.registry.closedRegistration(`conversation:${record.binding.owner.conversationId}`)
+      const owner = closedWorkerConversationOwner(record, input.registry, closed)
+      if (!await input.registry.closeOwner(owner, signal)) unavailable('Native chat closure is unconfirmed.')
+    },
+    closeRecoveredSession: (record, signal) => closeRecoveredWorkerSession(record, input.registry, signal),
     recover: (record, configuration, connection, signal, request) => recoverWorkerConversation({
       record, configuration, connection, signal, request, registry: input.registry, journal: conversationJournal,
       allocate: () => {
@@ -261,12 +270,6 @@ export async function createInstalledWorkerConversations(input: InstalledWorkerC
       },
       assertCurrent: () => callbacks.authorize(request, connection, signal),
     }),
-    releaseRuntime: async (record, connection, signal) => {
-      if (!isDeepStrictEqual(input.current(), connection)) unavailable('The selected Worker connection changed.')
-      if (!await input.registry.closeOwner(`conversation:${record.binding.owner.conversationId}`, signal)) {
-        unavailable('The previous native chat process is still closing.')
-      }
-    },
     readCompaction: async (request, _record, connection, signal) => {
       const observer = await allocate(request.binding, request.configuration, connection, 'compaction-read')
       try {

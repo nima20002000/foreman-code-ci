@@ -6,7 +6,6 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { negotiateDeviceExtensions } from '@foreman-code/contracts/device-application'
 import type { WorkerConversationRpcRequest } from '@foreman-code/contracts/remote-execution-rpc'
 import { DeviceApplicationChannel, extensionDescriptors } from '../devices/deviceApplicationChannel.js'
-import { DeviceApplicationError } from '../devices/deviceApplicationError.js'
 import { adaptDeviceSocket } from '../devices/deviceWire.js'
 import { collectCodexFileBytes } from '../harnesses/codexFiles/bytes.js'
 import { prepareCodexFileTurn } from '../harnesses/codexFiles/index.js'
@@ -20,7 +19,20 @@ import { deferred } from '../../../test/helpers/deferred.js'
 class Socket extends EventEmitter {
   bufferedAmount = 0
   peer?: Socket
-  send(text: string) { queueMicrotask(() => this.peer?.emit('message', Buffer.from(text), false)) }
+  private dropResponse = false
+  private readonly droppedResponses = new Set<string>()
+
+  get lostResponses(): number { return this.droppedResponses.size }
+  dropNextResponse() { this.dropResponse = true }
+  send(text: string) {
+    const frame = JSON.parse(text) as { type: string; id?: string; kind?: string }
+    if (this.dropResponse && frame.type === 'application-open' && frame.kind === 'response' && frame.id) {
+      this.dropResponse = false
+      this.droppedResponses.add(frame.id)
+    }
+    if (frame.id && this.droppedResponses.has(frame.id)) return
+    queueMicrotask(() => this.peer?.emit('message', Buffer.from(text), false))
+  }
   close() { this.emit('close') }
 }
 
@@ -48,6 +60,7 @@ function fixture(options: { downloadDelayMs?: number; copyDelayMs?: number; lose
   const ready = deferred()
   let preparations = 0
   let lostReply = false
+  const chunkRequests: unknown[] = []
   const copies: Buffer[] = []
   const current = vi.fn(async () => {})
   const limits = { namespace: 'execution-v1', version: 1, role: 'duplex' as const,
@@ -59,10 +72,11 @@ function fixture(options: { downloadDelayMs?: number; copyDelayMs?: number; lose
     const request = payload as WorkerConversationRpcRequest
     if (request.method === 'conversation.file-copy') {
       if (options.copyDelayMs) await new Promise(resolve => setTimeout(resolve, options.copyDelayMs))
+      if (request.copy.phase === 'chunk') chunkRequests.push(structuredClone(request.copy))
       const result = await files.copy(request, context.signal)
       if (options.loseChunkReply && !lostReply && request.copy.phase === 'chunk') {
         lostReply = true
-        throw new DeviceApplicationError('timeout')
+        workerSocket.dropNextResponse()
       }
       return { payload: result }
     }
@@ -121,7 +135,8 @@ function fixture(options: { downloadDelayMs?: number; copyDelayMs?: number; lose
       }) })
     return adapter
   }
-  return { ...f, ready, start, copies, current, worker, lostReply: () => lostReply,
+  return { ...f, ready, start, copies, current, worker, chunkRequests,
+    lostReply: () => workerSocket.lostResponses === 1,
     preparations: () => preparations,
     async close() {
       parent.abort()
@@ -159,7 +174,7 @@ it('prepares eight simultaneous attached chats while rechecking copy authority o
   } finally { f.ready.resolve(); await f.close(); await Promise.allSettled(pending) }
 })
 
-it('keeps progressing downloads and resumable copies alive beyond thirty seconds', async () => {
+it('keeps progressing downloads alive and resumes a chunk after an actual lost-reply deadline', async () => {
   vi.useFakeTimers()
   const f = fixture({ downloadDelayMs: 2000, copyDelayMs: 4000, loseChunkReply: true })
   let outcome: unknown
@@ -172,9 +187,15 @@ it('keeps progressing downloads and resumable copies alive beyond thirty seconds
     for (let second = 0; second < 80; second++) {
       await flush()
       await vi.advanceTimersByTimeAsync(1000)
+      if (second === 59) {
+        expect(f.lostReply()).toBe(true)
+        expect(outcome).toBeUndefined()
+      }
     }
     expect(outcome).toMatchObject({ nativeInput: expect.any(Function) })
     expect(f.lostReply()).toBe(true)
+    expect(f.chunkRequests).toHaveLength(2)
+    expect(f.chunkRequests[1]).toEqual(f.chunkRequests[0])
     expect(f.copies.map(bytes => bytes.toString())).toEqual(['# Attached document\n'])
   } finally { f.ready.resolve(); await f.close(); await Promise.allSettled(pending ? [pending] : []) }
 })

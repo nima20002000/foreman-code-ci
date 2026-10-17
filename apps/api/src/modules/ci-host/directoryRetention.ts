@@ -84,14 +84,13 @@ export async function sweepCiRunDirectories(options: {
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code
       if (code !== 'ENOENT' && code !== 'CI_RUN_UNKNOWN') throw error
-      if (code === 'ENOENT') {
-        // Directory removal may commit before Main persists the corresponding log expiry.
-        const exists = await lstat(join(options.root, 'runs', runId)).then(() => true, missing => {
-          if ((missing as NodeJS.ErrnoException).code === 'ENOENT') return false
-          throw missing
-        })
-        if (!exists) removed.push(runId)
-      }
+      // The runner translates missing metadata into CI_RUN_UNKNOWN. Only an
+      // absent directory confirms cleanup; damaged metadata alone does not.
+      const exists = await lstat(join(options.root, 'runs', runId)).then(() => true, missing => {
+        if ((missing as NodeJS.ErrnoException).code === 'ENOENT') return false
+        throw missing
+      })
+      if (!exists) removed.push(runId)
     }
   }
   return removed

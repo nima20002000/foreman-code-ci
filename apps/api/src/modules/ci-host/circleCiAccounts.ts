@@ -61,24 +61,29 @@ export class CircleCiAccounts {
     if (!mirrors.length) return
     if (registry?.some(account => account.organizations.length > 0)) {
       await this.discoverConfigured(registry, mirrors)
-      return
+      if (!registry.some(account => account.id === 'default' && account.organizations.length === 0)) return
     }
-    const primaryOwners = new Set(mirrors.map(mirror => mirror.slice(0, mirror.indexOf('/')).toLowerCase()))
+    const assignedElsewhere = new Set(registry?.filter(account => account.id !== 'default')
+      .flatMap(account => account.organizations.map(owner => owner.toLowerCase())) ?? [])
+    const primaryOwners = new Set(mirrors.map(mirror => mirror.slice(0, mirror.indexOf('/')).toLowerCase())
+      .filter(owner => !assignedElsewhere.has(owner)))
     const names = [...new Set(mirrors.map(mirror => mirror.slice(mirror.indexOf('/') + 1)))]
     const owners = (await this.command('gh', ['api', 'user/memberships/orgs', '--paginate',
       '--jq', '.[] | select(.state == "active") | .organization.login'])).split('\n').map(line => line.trim())
-      .filter(owner => owner && !primaryOwners.has(owner.toLowerCase()))
+      .filter(owner => owner && !primaryOwners.has(owner.toLowerCase()) && !assignedElsewhere.has(owner.toLowerCase()))
     if (this.options.explicitPrimary) owners.unshift(...primaryOwners)
     for (const owner of owners) {
       const found = new Set<string>()
       try {
-        for (const name of names) if (await this.followed(owner, name)) found.add(name)
+        const ports = this.options.context ? (await this.options.context('default')).ports : this.ports
+        for (const name of names) if (await this.followed(owner, name, ports)) found.add(name)
       } catch (error) {
         log.warn({ operation: 'discover CircleCI org', owner, err: error }, 'CircleCI org lookup failed; its known state stays')
         continue
       }
       const known = this.accounts.get(this.key(owner))
       if (known) {
+        if (known.registered === false) known.registered = true
         known.mirrorNames.clear()
         for (const name of found) known.mirrorNames.add(name)
       } else if (found.size) await this.add({ owner, circleAccountId: 'default', role: 'primary', mirrorNames: found })
@@ -121,7 +126,10 @@ export class CircleCiAccounts {
         }
       }
     }
+    const implicitPrimary = registry.some(account => account.id === 'default' && account.organizations.length === 0)
     for (const [key, account] of this.accounts) {
+      if (implicitPrimary && (account.circleAccountId ?? 'default') === 'default'
+        && !owners.has(account.owner.toLowerCase())) continue
       if (!bindings.has(key)) { account.registered = false; account.mirrorNames.clear() }
     }
   }

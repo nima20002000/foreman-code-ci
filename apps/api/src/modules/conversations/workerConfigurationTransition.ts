@@ -8,9 +8,11 @@ import { WorkflowVersionV3Schema } from '@foreman-code/contracts/wave25'
 import { configurationWithNodeSkills } from '../skills/nodeSkills.js'
 import { definedProperties } from '../definedProperties.js'
 import { validRunChatSkillsTransition } from './workerRunChatBinding.js'
+import { harnessSessionChanged } from '../harnesses/providerAccountConfiguration.js'
+import { verifiedSkills } from '../skills/instructions.js'
 
-/** Run lineage and the working folder outlive changes to the selected native session. */
-function validAgentConfigurationChange(previous: WorkerConversationBinding, next: WorkerConversationBinding,
+/** A qualified settings change keeps the same Agent, Worker, account, folder and native session. */
+export function validAgentConfigurationTransition(previous: WorkerConversationBinding, next: WorkerConversationBinding,
   base: WorkerConversationConfiguration, configuration: WorkerConversationConfiguration): boolean {
   if (previous.owner.kind !== 'agent' || next.owner.kind !== 'agent'
     || !('agentId' in base) || !('agentId' in configuration)
@@ -20,9 +22,13 @@ function validAgentConfigurationChange(previous: WorkerConversationBinding, next
     || configuration.workspaceId !== base.workspaceId
     || commandInputHash(base) !== previous.owner.configurationHash
     || commandInputHash(configuration) !== next.owner.configurationHash
-    || base.harness.harness !== previous.harness || configuration.harness.harness !== next.harness
-    || !isDeepStrictEqual(previous.profile.target.hostRef, next.profile.target.hostRef)
-    || previous.profile.target.applicationInstallationId !== next.profile.target.applicationInstallationId
+    || base.harness.harness !== configuration.harness.harness || previous.harness !== next.harness
+    || base.harness.harness === 'opencode' || configuration.harness.harness === 'opencode'
+    || harnessSessionChanged(base.harness, configuration.harness)
+    || base.harness.harness === 'claude' && configuration.harness.harness === 'claude'
+      && base.harness.configDirectory !== configuration.harness.configDirectory
+    || previous.profile.instanceId !== next.profile.instanceId
+    || !isDeepStrictEqual(previous.profile.target, next.profile.target)
     || !isDeepStrictEqual(configuration.harnessProfileSelection, next.profile)) return false
   const owner = { ...previous.owner, configurationVersionId: next.owner.configurationVersionId,
     configurationHash: next.owner.configurationHash }
@@ -32,25 +38,10 @@ function validAgentConfigurationChange(previous: WorkerConversationBinding, next
     harnessInstallationId: next.profile.target.harnessInstallationId } } : undefined
   const sourceConfigurationVersionId = previous.sourceExecution
     ? previous.sourceConfigurationVersionId ?? previous.owner.configurationVersionId : undefined
+  verifiedSkills(base)
+  verifiedSkills(configuration)
   return isDeepStrictEqual(definedProperties({ ...previous, owner, profile: next.profile,
-    harness: next.harness, accountBinding: next.accountBinding,
     directoryBinding, sourceConfigurationVersionId }), next)
-}
-
-export function validAgentSessionReplacement(previous: WorkerConversationBinding, next: WorkerConversationBinding,
-  base: WorkerConversationConfiguration, configuration: WorkerConversationConfiguration): boolean {
-  return validAgentConfigurationChange(previous, next, base, configuration)
-}
-
-export function validAgentConfigurationTransition(previous: WorkerConversationBinding, next: WorkerConversationBinding,
-  base: WorkerConversationConfiguration, configuration: WorkerConversationConfiguration): boolean {
-  return base.harness.harness !== 'opencode' && configuration.harness.harness !== 'opencode'
-    && base.harness.harness === configuration.harness.harness
-    && base.harness.accountId === configuration.harness.accountId
-    && previous.profile.instanceId === next.profile.instanceId
-    && isDeepStrictEqual(previous.profile.target, next.profile.target)
-    && isDeepStrictEqual(previous.accountBinding, next.accountBinding)
-    && validAgentConfigurationChange(previous, next, base, configuration)
 }
 
 export function validWorkerConfigurationTransition(previous: WorkerConversationBinding, next: WorkerConversationBinding,
@@ -78,5 +69,5 @@ export async function readAgentConfigurationTransition(pool: pg.Pool, previous: 
       base = configurationWithNodeSkills(base, node.skills, version.nodeSkillSnapshots?.[node.id])
     }
   }
-  return validAgentSessionReplacement(previous, next, base, configuration) ? base : undefined
+  return validAgentConfigurationTransition(previous, next, base, configuration) ? base : undefined
 }

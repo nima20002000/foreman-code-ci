@@ -58,11 +58,11 @@ export class CircleAccountsManagementService implements CircleAccountRegistry {
             'Keep one primary login and one standby login with distinct organization bindings.', 400)
         }
         const saved = await this.settings.updateCircleAccounts(parsed.data, input.expectedRevision, client)
-        return this.readback(saved)
+        return saved
       },
     })
     if (!result.replayed) await this.changed?.(input.account.id)
-    return result
+    return { ...result, value: await this.readback(result.value) }
   }
 
   async remove(principal: ManagementPrincipal, source: 'http' | 'mcp', raw: CircleAccountRemoveInput) {
@@ -79,17 +79,19 @@ export class CircleAccountsManagementService implements CircleAccountRegistry {
         const saved = await this.settings.updateCircleAccounts({
           accounts: current.value.accounts.filter(account => account.id !== input.id),
         }, input.expectedRevision, client)
-        return this.readback(saved)
+        return saved
       },
     })
     if (!result.replayed) await this.changed?.(input.id)
-    return result
+    return { ...result, value: await this.readback(result.value) }
   }
 
   private async readback(snapshot: VersionedSetting<CircleAccounts>) {
-    const accounts = await Promise.all(snapshot.value.accounts.map(async account => ({
-      ...account, ...await this.status.read(account),
-    })))
+    const accounts = await Promise.all(snapshot.value.accounts.map(async saved => {
+      const { id, label, role, organizations } = saved
+      const account = { id, label, role, organizations }
+      return { ...account, ...await this.status.read(account) }
+    }))
     return ManagedCircleAccountsSchema.parse({ ...snapshot, value: { accounts } })
   }
 

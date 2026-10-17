@@ -1101,7 +1101,7 @@ function configureHarnessQualifications(composition: ProductionComposition) {
       await assertDeviceHostInstallation(client, selector.target.hostRef, selector.target.applicationInstallationId)
       binding.admissionSignal?.throwIfAborted()
     },
-    async current(binding, value, client, options) {
+    async current(binding, value, client) {
       if (value.driverId === 'claude') {
         await requireClaudeProductionCredentialDelivery(value.configuration, providerAccounts, value.target.hostRef,
           value.target.applicationInstallationId)
@@ -1113,12 +1113,11 @@ function configureHarnessQualifications(composition: ProductionComposition) {
           return { registry, pin, applicationInstallationId: value.target.applicationInstallationId,
             suiteRevision: CLAUDE_PROFILE_CHECK_REVISION }
         }
-        const current: AcceptedProfileAuthority<ClaudeProfileOwner>['current'] | undefined = infrastructure?.claudeCurrentProfile
-          ?? (infrastructure?.mode === 'replay' ? undefined : claudeDiscovery.current)
+        const current = infrastructure?.claudeCurrentProfile ?? (infrastructure?.mode === 'replay' ? undefined : claudeDiscovery.current)
         if (!current) throw new DomainError('HARNESS_REPLAY_INCOMPLETE', 'Claude replay requires its current installed profile metadata port.', 500)
-        return current(binding, value, client, options)
+        return current(binding, value, client)
       }
-      if (binding.kind !== 'operator-observation' && !await harnessRegistry.profileEvidence(value, client, options)) {
+      if (binding.kind !== 'operator-observation' && !await harnessRegistry.profileEvidence(value, client)) {
         throw new DomainError('HARNESS_PROFILE_UNAVAILABLE', 'The exact accepted native profile proof is stale.', 409)
       }
       return { registry: harnessRegistry.pinOverride(value), applicationInstallationId: value.target.applicationInstallationId,
@@ -1363,7 +1362,7 @@ function configureWorkflowManagers(composition: ProductionComposition) {
     return manager
   })
   composition.validateContinuation = placedContinuationValidator(database.pool, locations, remoteWorkflow, {
-    async assertCurrent(binding, signal) {
+    async assertCurrent(binding, signal, purpose) {
       signal?.throwIfAborted()
       const sql = interactionConnection.getStore() ?? database.pool
       if (!composition.agentPlacement) {
@@ -1375,7 +1374,9 @@ function configureWorkflowManagers(composition: ProductionComposition) {
           [binding.intent.operationId])).rows[0]
         const receipt = stored && RemoteOperationReceiptSchema.parse(stored.receipt)
         if (receipt?.native) {
-          const authenticated = deviceRuntime.endpointForDomains().currentBinding(binding.placement.hostRef.deviceId)
+          // Restart preserves Main's admitted lifetime; it does not authorize a new Worker operation.
+          const authenticated = purpose === 'restart' ? receipt.connection
+            : deviceRuntime.endpointForDomains().currentBinding(binding.placement.hostRef.deviceId)
           if (!authenticated) {
             throw new DomainError('REMOTE_DISPATCH_UNAVAILABLE', 'The authenticated execution connection is unavailable.', 503)
           }
@@ -1694,7 +1695,7 @@ function configureConversationManagers(composition: ProductionComposition) {
       }
       if (profileSelection?.target.hostRef.kind === 'device') {
         const manager = workerChats.create({ configuration, conversationId, workingDirectory: sessionStartDirectory(start),
-          appMcpAccess: 'none', observationPrincipalId: principalId, profileSelection, sourceExecution })
+          appMcpAccess: 'none', lifecycle: 'observer', observationPrincipalId: principalId, profileSelection, sourceExecution })
         try { return await manager.readCompaction!(session, start, state, signal) }
         finally { await manager.dispose?.() }
       }
@@ -1994,6 +1995,9 @@ function configureAgentChat(composition: ProductionComposition) {
     configuration.harness === 'opencode' ? []
       : (await composition.nativeConfigurations.options(configuration.harness)).models
   resolveAgentChatManager.release = (conversationId) => { agentChatManagers.delete(conversationId) }
+  resolveAgentChatManager.closeRetainedSession = (conversationId, configuration, principalId, signal) =>
+    workerChats!.closeRetainedSession(conversationId, configuration, principalId, signal)
+  resolveAgentChatManager.closeRecoveredSession = (id, signal) => workerChats!.closeConversation(id, signal)
   composition.agentChat = new AgentChatService(database.pool, agentConversations,
     new PostgresOperatorConversationRepository(database.pool, accountConfigurations), workflows, runs, resolveAgentChatManager, config.harnesses.workspaceRoot)
   composition.reviews = new AutomaticReviewService(database.pool, runs, approvals, locations, rollout,
