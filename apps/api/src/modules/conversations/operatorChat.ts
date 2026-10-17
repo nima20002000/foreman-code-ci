@@ -118,8 +118,6 @@ export interface OperatorChatAuthority {
   setupConfiguration?(principal: ManagementPrincipal, configuration: OperatorConfigurationVersion, signal: AbortSignal): Promise<OperatorChatSetup>
   prepare(manager: NativeHarnessSessionManager, configuration: OperatorConfigurationVersion, conversationId: string,
     principalId: string, signal: AbortSignal): Promise<ChildProcessEnvironment>
-  /** Revoke turn authority while retaining a process whose credential channel can be rebound. */
-  retireTurn?(conversationId: string, environment: ChildProcessEnvironment): Promise<boolean>
   release(conversationId: string): Promise<void>
 }
 interface Runtime {
@@ -131,7 +129,6 @@ interface Runtime {
   session?: NativeSessionReference
   creationInput?: NativeSessionStart
   environment?: ChildProcessEnvironment
-  retiredCredentials?: Set<string>
   disposal?: Promise<void>
   disposalStarted?: boolean
   /** Recovery attachment cannot launch another turn. */
@@ -144,11 +141,7 @@ interface HistoryContext {
   session?: NativeSessionReference | undefined
   configuration?: OperatorConfigurationVersion | undefined
   environment?: ChildProcessEnvironment | undefined
-  retiredCredentials?: ReadonlySet<string> | undefined
   reconcile?(): Promise<void>
-}
-function redactionSecrets(runtime: Pick<HistoryContext, 'environment' | 'retiredCredentials'>): string[] {
-  return [...Object.values(runtime.environment?.variables ?? {}), ...(runtime.retiredCredentials ?? [])]
 }
 function failure(error: unknown): ExecutionResult {
   const provider = error && typeof error === 'object' && 'result' in error
@@ -427,8 +420,7 @@ export class OperatorChatService {
   private historyContext(id: string, requestId: string, runtime: Runtime): HistoryContext {
     return { harness: runtime.manager.harness, session: runtime.session, configuration: runtime.configuration,
       context: runtime.session ? runtime.manager.contextSnapshot?.(runtime.session) ?? null : null,
-      environment: runtime.environment, retiredCredentials: runtime.retiredCredentials,
-      reconcile: () => this.control(id, () => this.observe(id, requestId, runtime)) }
+      environment: runtime.environment, reconcile: () => this.control(id, () => this.observe(id, requestId, runtime)) }
   }
   private async recordActivity(id: string, requestId: string, runtime: HistoryContext, event: NativeHarnessEvent, nativeTurnId: string | null, authoritativeReconciliation = false, nativeSubmission?: NativeMessageSubmission) {
     const context = runtime.context ?? null
@@ -438,7 +430,7 @@ export class OperatorChatService {
         this.events.publish(id, 'error', { message: errorMessage(error, 'Context usage could not be saved.') })
       })
     }
-    const redact = nativePersistenceRedactor(redactionSecrets(runtime))
+    const redact = nativePersistenceRedactor(Object.values(runtime.environment?.variables ?? {}))
     const known = knownNativeActivity(event, runtime.harness)
     if (known && (known.native.sessionId !== runtime.session?.nativeSessionId
       || known.native.turnId !== nativeTurnId)) {
@@ -594,17 +586,7 @@ export class OperatorChatService {
     if (controlPrincipalId) existing?.manager.setSessionControlPrincipal?.(controlPrincipalId)
     const fileOnly = fileInputs && configuration.harness.harness === 'claude'
     if (existing?.session) {
-      existing.retiredCredentials ??= new Set()
-      for (const value of Object.values(existing.environment?.variables ?? {})) existing.retiredCredentials.add(value)
-      const environment = await this.authority.prepare(existing.manager, configuration, id, row.owner_principal_id!, signal)
-      if (commandInputHash(environment) !== commandInputHash(existing.environment)) {
-        if (!existing.manager.rebindApplicationAccess) {
-          throw new DomainError('OPERATOR_ENVIRONMENT_CHANGED', 'The retained native process requires a fresh credential channel.', 409)
-        }
-        await existing.manager.rebindApplicationAccess(existing.session, { kind: 'operator', configuration,
-          correlationId: nativeCorrelation(id, row.active_request_id!), workingDirectory: this.workingDirectory, environment }, signal)
-      }
-      existing.environment = environment
+      // The live process retains its qualified launch settings. Cold resumes run setup again.
       existing.configuration = configuration; return existing
     }
     if (!existing) await this.managers.prepareAccountBinding?.(configuration, id)
@@ -734,7 +716,7 @@ export class OperatorChatService {
           ...(observation.nativeMessageId ? { nativeMessageId: observation.nativeMessageId } : {}),
           retryable: false, requiresRuntimeClosure: true,
           ...(observation.history ? { history: nativePersistenceRedactor(
-            redactionSecrets(runtime)).value(observation.history) } : {}),
+            Object.values(runtime.environment?.variables ?? {})).value(observation.history) } : {}),
         })) throw new Error('Native terminal ownership was lost.')
       }
       if (!runtime.session) {
@@ -805,7 +787,7 @@ export class OperatorChatService {
       const textOwner = () => ({ scope: { kind: 'operator_chat' as const, conversationId: id },
         requestId: input.requestId, sessionId: runtime.session!.nativeSessionId,
         ...(submittedTurnId ? { turnId: submittedTurnId } : {}) })
-      const redactText = nativePersistenceRedactor(redactionSecrets(runtime))
+      const redactText = nativePersistenceRedactor(Object.values(runtime.environment?.variables ?? {}))
       const committed = committedNativeText({ id, requestId: input.requestId, repository: this.repository,
         harness: runtime.manager.harness, session: runtime.session, owner: textOwner, sanitize: (operation) => redactText.value(operation),
         reconcile: () => { void this.control(id, () => this.observe(id, input.requestId, runtime))
@@ -931,9 +913,9 @@ export class OperatorChatService {
     const runtime = this.runtimes.get(id)
     const reusable = runtime?.session && runtime.manager.retireTurn && !runtime.disposalStarted && !runtime.disposal
       && !this.closing && !runtime.observationOnly && !runtime.fileInputs && !runtime.interactionHandled
-      && result.outcome === 'succeeded'
-      && (Object.keys(runtime.environment?.variables ?? {}).length === 0
-        || runtime.environment && await this.authority.retireTurn?.(id, runtime.environment) === true)
+      // Process environment and MCP credentials cannot be rotated in a live native session.
+      // Release turn-bound authority before another turn can receive fresh credentials.
+      && Object.keys(runtime.environment?.variables ?? {}).length === 0 && result.outcome === 'succeeded'
     if (runtime?.session && runtime.session.nativeSessionId !== terminal.observation.nativeSessionId) {
       throw new DomainError('OPERATOR_NATIVE_CLOSURE_CONFLICT', 'The result belongs to a different native runtime.', 409)
     }
@@ -1054,7 +1036,7 @@ export class OperatorChatService {
     await this.repository.journalTerminal(id, row.active_request_id, history.terminalResult, {
       ...(history.nativeMessageId ? { nativeMessageId: history.nativeMessageId } : {}),
       ...(messageMatches ? { submission: submission! } : {}), retryable: false, requiresRuntimeClosure: true,
-      history: nativePersistenceRedactor(redactionSecrets(runtime)).value(history),
+      history: nativePersistenceRedactor(Object.values(runtime.environment?.variables ?? {})).value(history),
     })
     await this.persistObservedHistory(id, row.active_request_id, this.historyContext(id, row.active_request_id, runtime),
       history, messageMatches ? submission : undefined)
@@ -1125,7 +1107,7 @@ export class OperatorChatService {
       await this.repository.journalTerminal(id, requestId, history.terminalResult!, {
         ...(history.nativeMessageId ? { nativeMessageId: history.nativeMessageId } : {}),
         retryable: false, requiresRuntimeClosure: true,
-        history: nativePersistenceRedactor(redactionSecrets(runtime)).value(history),
+        history: nativePersistenceRedactor(Object.values(runtime.environment?.variables ?? {})).value(history),
       })
     }
     const pending = await this.persistObservedHistory(id, requestId, this.historyContext(id, requestId, runtime),
@@ -1315,7 +1297,7 @@ export class OperatorChatService {
       signal: AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(5_000)]),
       runtimeFor: (id) => {
         const runtime = this.runtimes.get(id)
-        return runtime?.session && !runtime.disposal ? { manager: runtime.manager, session: runtime.session, redact: nativePersistenceRedactor(redactionSecrets(runtime)) } : undefined
+        return runtime?.session && !runtime.disposal ? { manager: runtime.manager, session: runtime.session, redact: nativePersistenceRedactor(Object.values(runtime.environment?.variables ?? {})) } : undefined
       }, publish: (id, settled) => this.events.publish(id, 'activity', settled) })
     const candidates = (await this.repository.unfinished())[Symbol.iterator]()
     await Promise.all(Array.from({ length: 4 }, async () => {

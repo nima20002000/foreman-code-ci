@@ -38,7 +38,24 @@ export type ClaudeProfileOwner = (ClaudeDomainBinding | OperatorProfileObservati
 
 /** The role's immutable configuration/placement supplies the selector; the
  * existing admission reads its exact profile and current native proof. */
-interface ProductionClaudeInput {
+type ProductionClaudeInput = Parameters<typeof productionClaudeManager>[0]
+
+/** The role must match its actual domain owner; the caller's mutable settings are copied. */
+function ownedClaudeInput(input: ProductionClaudeInput): ProductionClaudeInput {
+  if (input.role === 'workflow' && input.binding.kind !== 'workflow'
+    || input.role === 'operator' && input.binding.kind !== 'operator'
+    || input.role === 'agent-chat' && input.binding.kind !== 'agent') throw new DomainError('CLAUDE_OWNER_MISMATCH',
+    'The Claude runtime role must match its actual domain owner.', 409)
+  return { ...input, configuration: structuredClone(input.configuration),
+    ...(input.accountBinding ? { accountBinding: structuredClone(input.accountBinding) } : {}),
+    ...(input.selector ? { selector: structuredClone(input.selector) } : {}) }
+}
+
+function setControlPrincipal(binding: ClaudeDomainBinding, principalId: string): void {
+  if (binding.kind === 'operator' || binding.kind === 'agent') binding.controlPrincipalId = principalId
+}
+
+export function productionClaudeManager(input: {
   pool: pg.Pool
   factories: NativeHarnessFactories
   registry: ProductionHarnessRegistry
@@ -60,42 +77,7 @@ interface ProductionClaudeInput {
   mode: 'native' | 'replay'
   files?: { service(): AgentFileToolService; sdk?: () => Promise<ClaudeFileSdk> }
   loadClient?: (input: { profilePath: string; recovery: NativeProcessRecovery; binary: string }) => Promise<ClaudeSdkClient>
-}
-
-/** The role must match its actual domain owner; the caller's mutable settings are copied. */
-function ownedClaudeInput(input: ProductionClaudeInput): ProductionClaudeInput {
-  if (input.role === 'workflow' && input.binding.kind !== 'workflow'
-    || input.role === 'operator' && input.binding.kind !== 'operator'
-    || input.role === 'agent-chat' && input.binding.kind !== 'agent') throw new DomainError('CLAUDE_OWNER_MISMATCH',
-    'The Claude runtime role must match its actual domain owner.', 409)
-  return { ...input, configuration: structuredClone(input.configuration),
-    ...(input.accountBinding ? { accountBinding: structuredClone(input.accountBinding) } : {}),
-    ...(input.selector ? { selector: structuredClone(input.selector) } : {}) }
-}
-
-function setControlPrincipal(binding: ClaudeDomainBinding, principalId: string): void {
-  if (binding.kind === 'operator' || binding.kind === 'agent') binding.controlPrincipalId = principalId
-}
-
-function bindOperatorCredentialRefresh(manager: ClaudeNativeSessionManager) {
-  manager.rebindApplicationAccess = async (session, start, signal) => {
-    if (start.kind !== 'operator' || start.configuration.harness.harness !== 'claude') {
-      throw new DomainError('HARNESS_ROLE_AUTHORITY_INVALID', 'Credential rebinding requires the accepted Claude Operator.', 403)
-    }
-    const servers = start.configuration.harness.mcpServers
-    const serverName = appMcpServerName(servers)
-    const configured = servers[serverName]
-    const token = readProductEnvironment(start.environment?.variables ?? {}, 'MCP_TOKEN')
-    if (configured?.type !== 'http' || !token) {
-      throw new DomainError('OPERATOR_MCP_SETUP_REQUIRED', 'The accepted HTTP credential arrangement is unavailable.', 409)
-    }
-    await manager.refreshSessionCredentials(session, start, { ...servers,
-      [serverName]: { ...configured, headers: { Authorization: `Bearer ${token}` } },
-    }, signal)
-  }
-}
-
-export function productionClaudeManager(input: ProductionClaudeInput) {
+}) {
   input = ownedClaudeInput(input)
   let actual: ClaudeNativeSessionManager | undefined
   let inspectedStart: NativeSessionStart | undefined
@@ -242,10 +224,8 @@ export function productionClaudeManager(input: ProductionClaudeInput) {
   // Factory initialization remains lazy; the admitted allocator's exact instance
   // is captured in the construction callback rather than selected by harness ID.
   const refresh = result.manager.refreshInspectionCredentials.bind(result.manager)
-  const refreshSession = result.manager.refreshSessionCredentials.bind(result.manager)
   let refreshingMcp = false
-  const refreshOwnedCredentials = async (start: NativeSessionStart, servers: Readonly<Record<string, unknown>>,
-    signal?: AbortSignal, session?: NativeSessionReference) => {
+  result.manager.refreshInspectionCredentials = async (start, servers, signal) => {
     if (refreshingMcp) throw new DomainError('CLAUDE_MCP_CONTROL_CONFLICT', 'An MCP credential refresh is already in progress.', 409)
     refreshingMcp = true
     try {
@@ -257,8 +237,7 @@ export function productionClaudeManager(input: ProductionClaudeInput) {
         throw new DomainError('CLAUDE_MCP_SCOPE_CONFLICT', 'The local file server cannot be replaced during credential refresh.', 409)
       }
       const acceptedServers = { ...servers, ...(fileServer ? { 'graphql-files': fileServer.server } : {}) }
-      const snapshot = session ? await refreshSession(session, start, acceptedServers, signal)
-        : await refresh(start, acceptedServers, signal)
+      const snapshot = await refresh(start, acceptedServers, signal)
       const manifests = input.appMcpAccess === 'none' ? [] : await acceptedClaudeAppTools({
         configuration: input.configuration, servers: acceptedServers,
         token: readProductEnvironment(start.environment?.variables ?? {}, 'MCP_TOKEN'),
@@ -271,9 +250,6 @@ export function productionClaudeManager(input: ProductionClaudeInput) {
       refreshingMcp = false
     }
   }
-  result.manager.refreshInspectionCredentials = (start, servers, signal) => refreshOwnedCredentials(start, servers, signal)
-  result.manager.refreshSessionCredentials = (session, start, servers, signal) => refreshOwnedCredentials(start, servers, signal, session)
-  if (input.role === 'operator' && input.appMcpAccess === 'scoped') bindOperatorCredentialRefresh(result.manager)
   const dispose = result.manager.dispose!.bind(result.manager)
   result.manager.dispose = async () => {
     try { await dispose() } finally {

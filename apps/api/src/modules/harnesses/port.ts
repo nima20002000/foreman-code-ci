@@ -267,8 +267,6 @@ export interface NativeHarnessSessionManager extends ResponseAvailabilityInspect
     afterSequence: number, signal?: AbortSignal): Promise<NativeHistory>
   /** Release resident turn resources after the caller commits its result and history. */
   retireTurn?(session: NativeSessionReference, correlationId: string): Promise<void>
-  /** Rebind a fresh turn credential on an idle, already owned native process. */
-  rebindApplicationAccess?(session: NativeSessionReference, start: NativeSessionStart, signal?: AbortSignal): Promise<void>
   /** Read-only recovery of the exact response; missing evidence remains uncertain. */
   reconcileResponse?(session: NativeSessionReference, response: NativeResponseIdentity, signal?: AbortSignal): Promise<NativeHistory>
   close(session: NativeSessionReference, signal?: AbortSignal): Promise<void>
