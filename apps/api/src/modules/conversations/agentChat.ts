@@ -472,7 +472,7 @@ export class AgentChatService {
     }
     if (row.record.sessionUnavailable) return { reason: row.record.sessionUnavailableReason ?? 'native_session_missing', message: row.record.sessionUnavailable }
     const runtime = this.runtimes.get(row.id)
-    if (runtime?.retiring) return { reason: 'harness_unavailable', message: 'Native cleanup is unconfirmed. This conversation cannot start more work until its owner is safely disposed.' }
+    if (runtime?.retiring && !runtime.disposal) return { reason: 'harness_unavailable', message: 'Native cleanup is unconfirmed. This conversation cannot start more work until its owner is safely disposed.' }
     if (row.native_session_id && configuration?.harness.harness === 'codex'
       && configuration.harness.advanced?.sessionPersistence === 'ephemeral'
       && runtime?.session?.nativeSessionId !== row.native_session_id) {
@@ -1241,9 +1241,8 @@ export class AgentChatService {
       && previous.harness.advanced?.sessionPersistence === 'ephemeral'
     const previousProfile = row.worker_conversation_binding
       ? WorkerConversationBindingSchema.parse(row.worker_conversation_binding).profile : previous.harnessProfileSelection
-    const profileChanged = previousProfile?.instanceId !== configuration.harnessProfileSelection?.instanceId
-      || commandInputHash(previousProfile?.target ?? null)
-        !== commandInputHash(configuration.harnessProfileSelection?.target ?? null)
+    const profileChanged = commandInputHash(previousProfile?.target ?? null)
+      !== commandInputHash(configuration.harnessProfileSelection?.target ?? null)
     const claudeDirectoryChanged = previous.harness.harness === 'claude' && configuration.harness.harness === 'claude'
       && previous.harness.configDirectory !== configuration.harness.configDirectory
     const replaceSession = harnessSessionChanged(previous.harness, configuration.harness)

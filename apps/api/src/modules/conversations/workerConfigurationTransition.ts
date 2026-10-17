@@ -27,7 +27,6 @@ export function validAgentConfigurationTransition(previous: WorkerConversationBi
     || harnessSessionChanged(base.harness, configuration.harness)
     || base.harness.harness === 'claude' && configuration.harness.harness === 'claude'
       && base.harness.configDirectory !== configuration.harness.configDirectory
-    || previous.profile.instanceId !== next.profile.instanceId
     || !isDeepStrictEqual(previous.profile.target, next.profile.target)
     || !isDeepStrictEqual(configuration.harnessProfileSelection, next.profile)) return false
   const owner = { ...previous.owner, configurationVersionId: next.owner.configurationVersionId,
