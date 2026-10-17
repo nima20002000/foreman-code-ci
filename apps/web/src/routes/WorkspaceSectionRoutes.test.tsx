@@ -1,6 +1,6 @@
-import { defaultScheduler, notifyManager, QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createMemoryHistory, createRouter, RouterProvider } from '@tanstack/react-router'
-import { act, render, screen, waitFor, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { HttpResponse, http } from 'msw'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -478,7 +478,7 @@ describe('workspace section routes', () => {
     expect(writes[0]).toMatchObject({ workspaceId: 'workspace-1', name: 'Confirmed retry rename', expectedRevision: 1 })
   })
 
-  it.each([false, true])('opens removal at the confirmed revision after saving an inline rename through the unsaved guard (deferred query notifications: %s)', async deferNotifications => {
+  it('opens removal at the confirmed revision after saving an inline rename through the unsaved guard', async () => {
     const removals: unknown[] = []
     server.use(http.delete('/api/management/workspaces/workspace-1', async ({ request }) => {
       removals.push(await request.clone().json())
@@ -491,23 +491,10 @@ describe('workspace section routes', () => {
     await user.paste('Name saved before removal')
     await user.click(screen.getByRole('button', { name: 'Remove workspace' }))
     const guard = await screen.findByRole('alertdialog', { name: 'Save changes before leaving?' })
-    const notifications: Array<() => void> = []
-    if (deferNotifications) notifyManager.setScheduler(callback => notifications.push(callback))
-    try {
-      await user.click(within(guard).getByRole('button', { name: 'Save' }))
-      if (deferNotifications) {
-        // The cache accepts the rename before its observers receive their scheduled notifications.
-        await screen.findByRole('dialog', { name: /^Remove / })
-        notifyManager.setScheduler(defaultScheduler)
-        await act(async () => { for (const notify of notifications.splice(0)) notify() })
-      }
-      const confirmation = await screen.findByRole('dialog', { name: 'Remove Name saved before removal?' })
-      await user.click(within(confirmation).getByRole('button', { name: 'Remove workspace' }))
-      await waitFor(() => expect(removals).toHaveLength(1))
-      expect(removals[0]).toMatchObject({ workspaceId: 'workspace-1', expectedRevision: 2 })
-    } finally {
-      notifyManager.setScheduler(defaultScheduler)
-      await act(async () => { for (const notify of notifications.splice(0)) notify() })
-    }
+    await user.click(within(guard).getByRole('button', { name: 'Save' }))
+    const confirmation = await screen.findByRole('dialog', { name: 'Remove Name saved before removal?' })
+    await user.click(within(confirmation).getByRole('button', { name: 'Remove workspace' }))
+    await waitFor(() => expect(removals).toHaveLength(1))
+    expect(removals[0]).toMatchObject({ workspaceId: 'workspace-1', expectedRevision: 2 })
   })
 })

@@ -100,7 +100,7 @@ function clickCiServer(button: HTMLElement) {
   expect(browserErrors).toEqual([])
 }
 async function openDetails() {
-  const close = screen.queryByRole('button', { name: 'Close Activities' })
+  const close = screen.queryByRole('button', { name: 'Close runs' })
   if (!close) await userEvent.setup().click(await screen.findByRole('button', { name: 'Activities' }))
   await screen.findByRole('region', { name: 'Exact execution inputs and results' })
 }
@@ -361,7 +361,7 @@ describe('Run inspection inside the one mounted Board', () => {
     await waitFor(() => expect(within(slot).getByRole('button', { name: 'Verify cleanup settlement' })).toBeDisabled())
     expect(readBoardStop(scope)).toEqual(journal)
     expect(journal.receipt?.processStopped).toBe(false)
-    const focus = screen.getByRole('button', { name: 'Close Activities' })
+    const focus = screen.getByRole('button', { name: 'Close runs' })
     focus.focus()
     await act(async () => { fixture.mock.settle(scope.runId); await cache.invalidateQueries() })
     await waitFor(() => expect(readBoardStop(scope)).toBeUndefined())
@@ -540,8 +540,8 @@ describe('Run inspection inside the one mounted Board', () => {
     const trigger = await screen.findByRole('button', { name: 'Activities' })
     trigger.focus()
     await user.keyboard('{Enter}')
-    await screen.findByRole('button', { name: 'Close Activities' })
-    await user.click(screen.getByRole('button', { name: 'Close Activities' }))
+    await screen.findByRole('button', { name: 'Close runs' })
+    await user.click(screen.getByRole('button', { name: 'Close runs' }))
     await waitFor(() => expect(trigger).toHaveFocus())
   })
 
