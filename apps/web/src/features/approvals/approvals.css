@@ -1,4 +1,4 @@
-.approval-inbox-root { position: fixed; top: 1rem; right: 1rem; z-index: 90; }
+.approval-inbox-root { position: fixed; top: 1rem; right: 1rem; }
 .approval-inbox-panel { position: relative; display: flex; width: min(20rem, calc(100vw - 2rem)); height: min(20rem, calc(100dvh - 2rem)); overflow: visible; color: var(--color-text); background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-dialog); }
 .approval-inbox-panel[data-state='open'] { animation: approval-inbox-open 180ms ease-out both; }
 .approval-inbox-panel[data-state='closing'] { animation: approval-inbox-close 180ms ease-in both; }

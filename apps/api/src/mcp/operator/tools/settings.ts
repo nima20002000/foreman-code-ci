@@ -73,7 +73,12 @@ export const settingsTools = [
     name: 'operator_chat_create',
     requires: [['operator_chat:write', 'global']],
     enabled: s => !!s.operatorChat,
-    description: 'Create an owner-bound Operator conversation using the current saved Operator defaults. commandId is optional and generated when omitted. Supply an ID and reuse it with the same title after a lost response to recover the same conversation, even if defaults have changed. Reusing it with a different title is a conflict. Use operator_chat_list to rediscover owned conversations. Requires global operator_chat:write.',
+    description: 'Create an owner-bound Operator draft using the current saved Operator defaults. '
+      + 'Empty drafts stay hidden from operator_chat_list and the sidebar until the first message is sent. '
+      + 'Keep the returned conversation ID to send or read it with operator_chat_get. '
+      + 'commandId is optional and generated when omitted. Supply an ID and reuse it with the same title '
+      + 'after a lost response to recover the same draft, even if defaults have changed. '
+      + 'Reusing it with a different title is a conflict. Requires global operator_chat:write.',
     inputSchema: CreateOperatorConversationRequestSchema,
     outputSchema: CreateOperatorConversationResponseSchema,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
@@ -111,7 +116,10 @@ export const settingsTools = [
     name: 'operator_chat_list',
     requires: [['operator_chat:read', 'global']],
     enabled: s => !!s.operatorChat,
-    description: 'Rediscover this caller\'s persisted Operator conversations, including newly created empty chats. Returns only conversations owned by this principal and excludes deleted conversations. Requires global operator_chat:read.',
+    description: 'List this caller\'s persisted Operator conversations with messages, matching sidebar history. '
+      + 'Empty drafts are retained but hidden until the first message is sent; '
+      + 'read a draft by its creation ID with operator_chat_get. Returns only conversations owned by this '
+      + 'principal and excludes deleted conversations. Requires global operator_chat:read.',
     inputSchema: z.object({}).strict(),
     outputSchema: ListOperatorConversationsResponseSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
@@ -246,10 +254,11 @@ export const settingsTools = [
     name: 'circle_credit_allowance_get',
     requires: [['settings:read', 'global']],
     enabled: s => !!s.settings,
-    description: 'Read the monthly CircleCI credit allowance and revision. defaultMonthlyCredits (the CircleCI Free plan '
-      + 'grants 30,000) applies to every CircleCI account without an entry in accounts, which is keyed by the GitHub '
-      + 'owner of the CircleCI org. ci_computers_list and computer_activity_list report remaining credits as this '
-      + 'allowance minus this month\u2019s usage read from CircleCI. Requires global settings:read.',
+    description: 'Read the monthly CircleCI credit allowance per organization and its revision. defaultMonthlyCredits '
+      + '(400,000: the CircleCI Free plan grants each organization that for Linux open-source builds) applies to every '
+      + 'organization without an entry in accounts, which is keyed by the GitHub owner of the CircleCI org. '
+      + 'ci_computers_list and computer_activity_list report each CircleCI org\u2019s remaining credits as this '
+      + 'allowance minus that org\u2019s usage this month read from CircleCI. Requires global settings:read.',
     inputSchema: z.object({}).strict(), outputSchema: ManagedCircleCreditAllowanceSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     run: (context) => context.services.settings!.getCircleCreditAllowance(context.principal),
@@ -258,7 +267,7 @@ export const settingsTools = [
     name: 'circle_credit_allowance_update',
     requires: [['settings:update', 'global']],
     enabled: s => !!s.settings,
-    description: 'Replace the monthly CircleCI credit allowance: defaultMonthlyCredits plus per-account overrides keyed '
+    description: 'Replace the monthly CircleCI credit allowance: defaultMonthlyCredits plus per-organization overrides keyed '
       + 'by the GitHub owner of the CircleCI org. Paid plans differ from the Free plan, so set the real allowance. '
       + 'Requires global settings:update. Omit expectedRevision for last write wins; supply it to reject a stale '
       + 'revision. Reuse commandId with identical input after an uncertain save. Read back with '
