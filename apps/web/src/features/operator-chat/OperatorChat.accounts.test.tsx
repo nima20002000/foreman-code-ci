@@ -187,7 +187,6 @@ it('keeps the displayed binding and source revision when the default changes dur
   expect(await screen.findByText('Continued using the original account')).toBeVisible()
   expect(messages[0]).toMatchObject({ forkExpectedRevision: 7, settings: { accountId: sourceAccountId } })
   await act(async () => { await client.invalidateQueries({ queryKey: ['provider-accounts'] }) })
-  await user.click(screen.getByRole('button', { name: 'Saved account details' }))
   expect(screen.getByRole('region', { name: 'Saved account' })).toHaveTextContent('Original account')
   expect(useOperatorChatStore.getState().selectedConversationId).toBe(source.conversation.id)
 })

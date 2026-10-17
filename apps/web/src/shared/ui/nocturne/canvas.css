@@ -436,8 +436,6 @@
 .react-flow__node-agent .n-agent-status { max-width: calc(100% - 40px); }
 .react-flow__node-agent .n-agent-name { max-width: calc(100% - 56px); }
 .react-flow__node-agent .n-agent-model { max-width: calc(100% - 72px); }
-/* Compact nodes keep status, name and harness; model and role facts live in the node's Info panel. */
-.react-flow__node-agent .n-agent-model, .react-flow__node-agent .n-agent-meta { display: none; }
 .react-flow__node-agent .n-agent-actions::before { left: 62%; width: 62%; height: 71%; }
 .react-flow__node-agent .n-agent[data-selected] .n-agent-actions::before { pointer-events: none; }
 .react-flow__node-agent .n-agent-action--chat { left: 69%; }
