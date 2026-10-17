@@ -804,6 +804,9 @@ export async function remoteReviewProduction(options: {
       denyNextReservedResponse: () => { denyReservedResponse = true },
       deniedResponse: () => deniedResponse,
       deliveryReads: transport.deliveryReads,
+      pauseWorkerConnection: transport.pauseConnections,
+      resumeWorkerConnection: transport.resumeConnections,
+      dropNextPhysicalReadout: transport.dropNextPhysicalReadout,
       async restoreOriginalResponseGrant() {
         const command = deniedResponse
         if (!command) throw new Error('No original reserved response was denied.')
@@ -817,7 +820,7 @@ export async function remoteReviewProduction(options: {
         const previousWorkerState = workerStateRevision
         ready = false
         await stopMain(options.mode === 'graceful' ? 'SIGTERM' : 'SIGKILL')
-        await waitForRemoteReview(async () => workerStateRevision,
+        if (!transport.paused()) await waitForRemoteReview(async () => workerStateRevision,
           value => value > previousWorkerState, 'Worker observing the stopped Main connection')
         await options.afterShutdown?.()
         await startMain(options.workingDirectory)
