@@ -22,6 +22,8 @@ export async function remoteChatProvider(harness: 'codex' | 'claude', directory:
   const calls: string[] = []
   let compactions = 0
   let reply: Deferred<void> | undefined
+  let holdCompactionNotifications = false
+  const compactionNotifications: Array<() => void> = []
   let manager: NativeHarnessSessionManager
   if (harness === 'codex') {
     const replay = new ActivityProductionReplay('remote-chat')
@@ -41,10 +43,12 @@ export async function remoteChatProvider(harness: 'codex' | 'claude', directory:
               items: [{ id: `boundary-${compactions}`, type: 'contextCompaction' }] }
             thread.turns.push(turn)
             const channel = replay.channels.get(thread.id)!
-            setImmediate(() => {
+            const notify = () => {
               channel.notify('turn/started', { threadId: thread.id, turn: { ...turn, status: 'inProgress' } })
               channel.notify('turn/completed', { threadId: thread.id, turn })
-            })
+            }
+            if (holdCompactionNotifications) compactionNotifications.push(notify)
+            else setImmediate(notify)
             return {}
           }
           const result = await transport.request(...requestArgs)
@@ -136,6 +140,11 @@ export async function remoteChatProvider(harness: 'codex' | 'claude', directory:
         basicTurns: true, resume: true, fork: false, history: true } }).manager
   }
   return { manager, modes, prompts, calls, get compactions() { return compactions },
+    holdCompactionNotifications() { holdCompactionNotifications = true },
+    releaseCompactionNotifications() {
+      holdCompactionNotifications = false
+      for (const notify of compactionNotifications.splice(0)) notify()
+    },
     holdReply() { reply = deferred() },
     releaseReply() { reply?.resolve(); reply = undefined },
   }

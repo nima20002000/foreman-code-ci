@@ -215,6 +215,7 @@ export async function remoteAgentConversation(harness: 'codex' | 'claude') {
   }
   return { db, provider, configuration, context, conversation, repository, frames, chat, app,
     journal, writer, reader, call, value, send, receivedAttachments,
+    drainWorker: () => host.drainForUpdate(),
     async snapshot() {
       const row = (await repository.get(conversation.id))!
       const native = row.native_session_id && row.provider_version ? await provider.manager.history({
