@@ -102,10 +102,6 @@ async function readRoute() {
       `The owning app MCP route expired because its renewal failed: ${route.renewalFailure.slice(0, 500)}`)
   }
   const url = new URL(route.endpoint)
-  if (route.authorizationToken !== undefined
-    && (typeof route.authorizationToken !== 'string' || !route.authorizationToken.trim())) {
-    throw new BridgeFailure('authentication', 'The current turn MCP credential is unavailable.')
-  }
   if (url.protocol !== 'http:' || !['127.0.0.1', '[::1]', 'localhost'].includes(url.hostname)
     || url.pathname !== '/mcp' || url.username || url.password || url.search || url.hash
     || !Number.isInteger(route.pid) || route.pid <= 0 || Date.parse(route.expiresAt) <= Date.now()
@@ -147,7 +143,7 @@ async function forwardAttempt(message, controller, timeoutMs, emit = output) {
       : AbortSignal.timeout(timeoutMs)
     deliveryStage = 'dispatched'
     const response = await postMcp(url, { timeoutMs,
-      headers: { Authorization: `Bearer ${route.authorizationToken ?? token}`, 'Content-Type': 'application/json',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json',
         Accept: 'application/json, text/event-stream', 'MCP-Protocol-Version': protocolVersion },
       body: JSON.stringify(message), signal: requestSignal })
     deliveryStage = 'response'
