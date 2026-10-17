@@ -70,12 +70,13 @@ export function AttachAgentField({ context, change, report }: { graph: WorkflowD
   }}>
     <h3>Existing agent</h3>
     <div className="next-draft-inline">
-      <Select label="Existing agent" labelHint={<InfoHint label="Existing agent">Keeps that agent’s saved settings.</InfoHint>} value={agentId} onChange={(event) => setAgentId(event.target.value)} options={[
+      <Select label="Existing agent" value={agentId} onChange={(event) => setAgentId(event.target.value)} options={[
         { value: '', label: 'Choose a node' },
         ...available.map(({ agent }) => ({ value: agent.id, label: `${agent.name} · ${agent.productRole === 'orchestrator' ? 'Orchestrator' : 'Worker'}` })),
       ]} />
       <Button type="submit" disabled={!available.some((item) => item.agent.id === agentId)}>Add to workflow</Button>
     </div>
+    <p className="next-draft-hint">Keeps that agent’s saved settings.</p>
   </form>
 }
 
@@ -99,13 +100,12 @@ export function ChoiceFields({ graph, node, change }: { graph: WorkflowDefinitio
   const outcomes = node.choice?.outcomes ?? []
   const setOutcomes = (update: (items: typeof outcomes) => typeof outcomes) => changeNode(change, node.id, (value) => ({ ...value, choice: { outcomes: update(value.choice?.outcomes ?? []) } }))
   return <fieldset className="next-draft-choice"><legend>When this {node.kind==='job'?'job':'agent'} finishes</legend>
-    <Select label="Routing mode" labelHint={node.choice ? <InfoHint label="Routing mode">{node.kind === 'job'
-      ? 'The observed process and output result select the matching dependency.'
-      : 'The agent ends with an outcome name, and only the matching handoff runs.'}</InfoHint> : undefined} value={node.choice ? 'choice' : 'fanout'} onChange={(event) => changeNode(change, node.id, (value) => {
+    <Select label="Routing mode" value={node.choice ? 'choice' : 'fanout'} onChange={(event) => changeNode(change, node.id, (value) => {
       if (event.target.value === 'choice') return { ...value, choice: { outcomes: [] } }
       const next = { ...value }; delete next.choice; return next
     })} options={[{ value: 'fanout', label: 'Continue to every connected node' }, { value: 'choice', label: 'Choose one handoff by outcome' }]} />
     {node.choice ? <>
+      <p className="next-draft-hint">{node.kind==='job'?'The observed process and output result select the matching dependency.':'The agent ends with an outcome name, and only the matching handoff runs.'}</p>
       {node.kind!=='job'?<details className="next-draft-details"><summary>Result format</summary>
         <p>Return exactly this JSON, with no other text:</p>
         <pre>{'{"routing":{"outcome":"approved"},"data":{}}'}</pre>
@@ -135,15 +135,13 @@ export function RelationshipFields({ graph, relationship, change, report }: { gr
   }
   const approval = relationship.kind === 'approval'
   return <section className="next-draft-section" aria-label="Connection settings">
-    <h3>Connection settings<InfoHint label="Connection settings">{approval
-      ? 'The reviewer answers approval requests from the other agent. It doesn’t pass work.'
-      : 'When the first agent finishes, its result goes to the second one.' + (!graph.handoffs
-        ? ' One-pass dependencies activate each selected node once. Configure an explicit finite repeat block when work must repeat.' : '')}</InfoHint></h3>
+    <p className="next-draft-hint">{approval ? 'The reviewer answers approval requests from the other agent. It doesn’t pass work.' : 'When the first agent finishes, its result goes to the second one.'}</p>
     <Select label={approval ? 'Reviewer' : 'From'} value={relationship.source} onChange={(event) => put({ source: event.target.value })} options={nodeOptions(graph)} />
     <Select label={approval ? 'Asks for approval' : 'To'} value={relationship.target} onChange={(event) => put({ target: event.target.value })} options={nodeOptions(graph)} />
-    <TextField label="Label" labelHint={<InfoHint label="Label">Optional. Shown on the connection.</InfoHint>} value={relationship.label ?? ''} onChange={(event) => put({ label: event.target.value })} />
+    <TextField label="Label" hint="Optional. Shown on the connection." value={relationship.label ?? ''} onChange={(event) => put({ label: event.target.value })} />
     {!approval && graph.handoffs ? <WorkConnectionLimitEditor value={relationship.maxWorkHandoffsPerRun}
       onApply={(limit) => { try { change((value) => setWorkConnectionLimit(value, relationship.id, limit)) } catch (error) { report(error) } }} /> : null}
+    {!approval && !graph.handoffs ? <p className="next-draft-hint">One-pass dependencies activate each selected node once. Configure an explicit finite repeat block when work must repeat.</p> : null}
     <Button variant="danger" size="sm" onClick={() => change((value) => removeRelationship(value, relationship.id))}>Remove connection</Button>
   </section>
 }

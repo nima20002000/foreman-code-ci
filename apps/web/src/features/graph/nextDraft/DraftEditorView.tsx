@@ -1,4 +1,3 @@
-import { InfoHint } from '../../../shared/ui/InfoHint'
 import { WorkflowSettings } from './WorkflowSettings'
 import { JobNodePicker } from '../../jobs'
 import { attachJob } from './model'
@@ -47,7 +46,8 @@ export function DraftEditorView({ draftKey, edit, updateFailures, controller }: 
         removalDisabled={edit.busy || reloading || editIntent.locked}
         open={openNode} setOpen={setOpenNode} panels={panels} />
       {!graph.nodes.length ? <div className="board-empty"><EmptyState icon="bot" title="Add your first agent"
-        action={<><InfoHint label="Add your first agent">Start with an orchestrator that plans the work, or a worker that does it.</InfoHint><Button variant="primary" leading={<Icon name="plus" size={15} />} onClick={() => openPanel('agents')}>Add node</Button></>} /></div> : null}
+        description="Start with an orchestrator that plans the work, or a worker that does it."
+        action={<Button variant="primary" leading={<Icon name="plus" size={15} />} onClick={() => openPanel('agents')}>Add node</Button>} /></div> : null}
       <header className="board-topbar">
         <div className="board-title">
           <WorkflowName ref={workflowName} name={graph.name} disabled={saveBusy || starting || editIntent.locked}
