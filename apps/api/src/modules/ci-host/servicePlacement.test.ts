@@ -49,6 +49,7 @@ function fleet(records: CiRunRecord[], available: HostCiComputer[],
     publishMirror?: HostCiEndpoint['publishMirror'] } = {}) {
   const started: { computer: HostCiComputer; request: CiHostRequest; assigned: CiRunRecord }[] = []
   const pool = { options: { max: 10 }, query: async (sql: string, parameters?: unknown[]) => {
+    if (sql.includes('from application_settings')) return { rows: [] }
     if (sql.includes('ci_dispatch_claims')) return { rows: [], rowCount: 1 }
     if (sql.startsWith('select record from ci_runs where id=')) {
       return { rows: records.filter(record => record.id === parameters![0]).map(record => ({ record })) }
@@ -94,6 +95,16 @@ function fleet(records: CiRunRecord[], available: HostCiComputer[],
     const active = records.filter(record => ['starting', 'running'].includes(record.state))
       .map(record => ({ id: record.id, record, host_key: available.find(computer =>
         isDeepStrictEqual(computer.hostRef, record.computer?.hostRef))?.key ?? host.key }))
+    if (sql.startsWith('select id from ci_runs') && parameters?.length === 4) {
+      return { rows: active.filter(row => {
+        const ref = row.record.computer?.hostRef
+        if (ref?.kind !== 'cloud' || ref.provider !== 'circleci') return false
+        const owner = ref.account ?? row.record.ciMirror?.split('/')[0]
+        return ref.mainId === parameters[0] && (ref.circleAccountId ?? 'default') === parameters[1]
+          && String(ref.slot ?? 0) === parameters[2]
+          && (owner?.toLowerCase() === parameters[3] || ref.account === undefined && row.record.ciMirror == null)
+      }) }
+    }
     return { rows: sql.startsWith('select host_key from ci_runs')
       ? active.filter(row => row.host_key === parameters![0]) : active }
   }, connect: async () => ({ query: pool.query, release: () => {} }) } as unknown as pg.Pool
