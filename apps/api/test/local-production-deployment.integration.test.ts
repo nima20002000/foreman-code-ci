@@ -8,6 +8,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { promisify } from 'node:util'
 import { expect, it } from 'vitest'
 import { parse } from 'yaml'
+import { testFixtureCacheRoot } from '../../../scripts/test-fixture-cache.mjs'
 import { removeFixtureDirectory } from './helpers/testResources.js'
 import { compileApiFixture } from './helpers/compiledApiFixture.js'
 import { createLocalProductionProject } from './helpers/localProductionProject.js'
@@ -21,7 +22,7 @@ it('keeps source development commands usable after successful and failed product
   await mkdir(fixtureRoot, { recursive: true })
   const directory = await mkdtemp(join(fixtureRoot, 'production-deployment-'))
   const source = join(directory, 'workspace')
-  const dependencies = { root: join(directory, 'api-dependencies'), source }
+  const dependencies = { root: join(testFixtureCacheRoot(), 'api-dependencies'), source }
   const api = join(source, 'apps/api')
   const contracts = join(source, 'packages/contracts')
   const destination = join(directory, 'deployed')
@@ -108,7 +109,7 @@ it('loads the compiled API using only its deployed production dependencies', asy
   await mkdir(fixtureRoot, { recursive: true })
   const directory = await mkdtemp(join(fixtureRoot, 'production-runtime-dependencies-'))
   const source = join(directory, 'workspace')
-  const dependencies = { root: join(directory, 'api-dependencies'), source }
+  const dependencies = { root: join(testFixtureCacheRoot(), 'api-dependencies'), source }
   const release = join(directory, 'release')
   const destination = join(release, 'apps/api')
   // Test homes are private and pnpm 11 ignores npm_config_* settings, so a dependency-cache miss would download

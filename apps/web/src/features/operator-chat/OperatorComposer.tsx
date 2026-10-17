@@ -4,6 +4,7 @@ import { parseSessionCommand, type SessionMode } from '@foreman-code/contracts'
 import { Icon, IconButton } from '../../shared/ui/nocturne'
 import { useConversationDraftStore } from '../conversations'
 import type { useFileDrop } from '../../shared/ui/useFileDrop'
+import { SessionControls } from '../conversations/sessionControls/SessionControls'
 import { useSlashCommandMenu } from '../conversations/sessionControls/useSlashCommandMenu'
 import type { ComposerSessionControls } from '../conversations/sessionControls/useSessionControls'
 import { ChatPrimaryActions } from '../conversations/ChatPrimaryActions'
@@ -60,7 +61,7 @@ export function OperatorComposer({ conversationId, context, attachmentControl, f
     onSubmit={event => { event.preventDefault(); void send() }}>
     {menu.menu}
     <label htmlFor={id} className="n-sr-only">Message</label>
-    {/* One compact block: attach, message and send share a row; agent settings sit in a quiet row below.
+    {/* One compact block: attach, message and send share a row; agent settings and session mode sit in a quiet row below.
         Attachment chips wrap above the input row. */}
     <div className="operator-composer-input">
       {attachmentControl}
@@ -81,6 +82,7 @@ export function OperatorComposer({ conversationId, context, attachmentControl, f
     </div>
     <div className="operator-composer-options">
       <div className="operator-composer-model">{context}</div>
+      {sessionControls ? <SessionControls controls={sessionControls} context={false} /> : null}
     </div>
     {commandError?.conversationId === conversationId && !recovered
       ? <p role="alert">{compaction?.message ?? commandError.message}</p> : null}

@@ -15,7 +15,7 @@ export interface AccountProbePorts {
   find(name: string): Promise<string | null>
   run(binary: string, args: string[], signal: AbortSignal): Promise<{ code: number | null; stdout: string; stderr: string }>
   readText(path: string): Promise<string | null>
-  probeIdentity?(tool: 'codex' | 'claude' | 'github', binary: string): Promise<string>
+  probeIdentity?(tool: 'claude' | 'github', binary: string): Promise<string>
   environment: NodeJS.ProcessEnv
 }
 
@@ -197,14 +197,9 @@ export function systemPorts(environment: NodeJS.ProcessEnv = process.env,
       const selected = await realpath(binary)
       const executable = await stat(selected, { bigint: true })
       const config = environment.XDG_CONFIG_HOME ?? join(home, '.config')
-      let files: string[]
-      if (tool === 'codex') {
-        files = ['auth.json', 'config.toml'].map(name => join(environment.CODEX_HOME ?? join(home, '.codex'), name))
-      } else if (tool === 'claude') {
-        files = [join(environment.CLAUDE_CONFIG_DIR ?? join(home, '.claude'), '.credentials.json'), join(home, '.claude.json')]
-      } else {
-        files = ['hosts.yml', 'config.yml'].map(name => join(environment.GH_CONFIG_DIR ?? join(config, 'gh'), name))
-      }
+      const files = tool === 'claude'
+        ? [join(environment.CLAUDE_CONFIG_DIR ?? join(home, '.claude'), '.credentials.json'), join(home, '.claude.json')]
+        : ['hosts.yml', 'config.yml'].map(name => join(environment.GH_CONFIG_DIR ?? join(config, 'gh'), name))
       const metadata = await Promise.all(files.map(async path => {
         try {
           const value = await stat(path, { bigint: true })

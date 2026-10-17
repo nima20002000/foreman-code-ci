@@ -47,9 +47,7 @@ export async function recoverWorkflowArtifactOutputs(input: {
       || intent.technicalAttempt !== execution.attempt || intent.inputDigest !== stored.inputDigest) throw unavailable()
     const receipt = (await sql.query<{ receipt: unknown }>(
       'select receipt from remote_execution_receipts where operation_id=$1 for share', [intent.operationId])).rows[0]
-    if (!receipt) throw unavailable()
-    const remote = RemoteOperationReceiptSchema.parse(receipt.receipt)
-    if (remote.terminal?.artifactValidationError) {
+    if (receipt?.receipt && RemoteOperationReceiptSchema.parse(receipt.receipt).terminal?.artifactValidationError) {
       throw new DomainError('WORKFLOW_ARTIFACT_OUTPUTS_CONFLICT',
         'The original native result failed artifact validation after physical closure.', 409)
     }
@@ -77,7 +75,7 @@ export async function recoverWorkflowArtifactOutputs(input: {
       authorizationRevision: transfer.authorizationRevision, bootId: transfer.bootId,
       connectionEpoch: transfer.connectionEpoch }), sql)
     await authority.authorize(accepted, sql)
-    return { accepted, version: snapshot.version, execution: stored.execution, remote, ...source }
+    return { accepted, version: snapshot.version, execution: stored.execution, ...source }
   }
   const current = () => owner.oneShotConnection().transaction(async (sql) => {
     const result = await read(sql)
@@ -96,7 +94,6 @@ export async function recoverWorkflowArtifactOutputs(input: {
     }
     const latest = await verify()
     return { version: latest.version, execution: latest.execution, proof: latest.proof,
-      sourceDigest: latest.sourceDigest, remote: latest.remote, assertCurrent: async () => { await verify() },
-      publicationContext: commandId => authority.resolvePublicationContext(accepted, commandId) }
+      sourceDigest: latest.sourceDigest, assertCurrent: async () => { await verify() } }
   } }, input.outputs).adoptOriginalOutputs(original.accepted)
 }

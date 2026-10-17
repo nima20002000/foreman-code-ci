@@ -85,22 +85,6 @@ function groupWaitBudgetMs(message) {
   return args?.waitUntil === 'group-terminal' && args.waitSeconds > 0 ? args.waitSeconds * 1000 : undefined
 }
 
-let localBootId
-
-async function routeExpired(route) {
-  const clock = route.monotonicExpiry
-  if (clock === undefined) return Date.parse(route.expiresAt) <= Date.now()
-  if (!clock || typeof clock.bootId !== 'string' || typeof clock.nanoseconds !== 'string'
-    || !/^-?\d+$/.test(clock.nanoseconds)) {
-    throw new BridgeFailure('route_unavailable', 'The owning app MCP route has an invalid elapsed-time deadline.')
-  }
-  localBootId ??= (await readFile('/proc/sys/kernel/random/boot_id', 'utf8')).trim()
-  if (clock.bootId !== localBootId) {
-    throw new BridgeFailure('route_unavailable', 'The owning app MCP route belongs to another computer boot.')
-  }
-  return process.hrtime.bigint() >= BigInt(clock.nanoseconds)
-}
-
 async function readRoute() {
   if (tokenConflict) throw new BridgeFailure('configuration',
     'FOREMAN_CODE_MCP_TOKEN conflicts with GRAPHQL_MCP_TOKEN. Supply one credential or matching credentials.')
@@ -113,15 +97,14 @@ async function readRoute() {
     throw new BridgeFailure('route_unavailable',
       'The owning app MCP route is unavailable. Open the owning app to refresh this credential’s connection.')
   }
-  const expired = await routeExpired(route)
-  if (typeof route.renewalFailure === 'string' && expired) {
+  if (typeof route.renewalFailure === 'string' && Date.parse(route.expiresAt) <= Date.now()) {
     throw new BridgeFailure('renewal_failed',
       `The owning app MCP route expired because its renewal failed: ${route.renewalFailure.slice(0, 500)}`)
   }
   const url = new URL(route.endpoint)
   if (url.protocol !== 'http:' || !['127.0.0.1', '[::1]', 'localhost'].includes(url.hostname)
     || url.pathname !== '/mcp' || url.username || url.password || url.search || url.hash
-    || !Number.isInteger(route.pid) || route.pid <= 0 || expired
+    || !Number.isInteger(route.pid) || route.pid <= 0 || Date.parse(route.expiresAt) <= Date.now()
     || !Number.isFinite(Date.parse(route.expiresAt))) throw new BridgeFailure('route_unavailable',
       'The owning app MCP route is invalid or expired. Open the owning app to refresh this credential’s connection.')
   return route

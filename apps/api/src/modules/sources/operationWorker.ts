@@ -31,7 +31,6 @@ import { readSourceStorageCapacity } from './storageCapacity.js'
 
 export interface SourceOperationWorkerContext { binding: Readonly<DeviceSessionBinding>; signal: AbortSignal; bytes?: Uint8Array }
 export interface SourceOperationWorkerOptions {
-  mainNow(): number
   currentReclamation?(reservationId: string, reclamationId: string,
     context: SourceOperationWorkerContext): Promise<SourceReservationReclamation>
   reclamationNativeClosed?(owner: SourceOperationOwner | null, operationId: string): Promise<boolean>
@@ -206,8 +205,7 @@ export class SourceOperationWorkerService {
         owner = current
       }
       if (request.operation === 'sources.capacity') {
-        const capacity = await readSourceStorageCapacity(owner.root.binding.canonicalPath,
-          owner.root.binding.filesystem, this.options.mainNow)
+        const capacity = await readSourceStorageCapacity(owner.root.binding.canonicalPath, owner.root.binding.filesystem)
         await reauthorize()
         return SourceOperationResponseSchema.parse({ version: 1, operation: request.operation, capacity })
       }
@@ -240,9 +238,7 @@ export class SourceOperationWorkerService {
         const receiptValue = await new PrivateSourceMaterializer(github.reader, reauthorize, quotaPool).prepare({ manifest,
           binding: owner.root.binding, attempt: owner.attempt, signal: context.signal,
           ...(owner.preparationKind === 'workflow' && owner.root.binding.accessMode === 'exclusive-write'
-            ? { sharedWritableTree: true, ...(request.worktree ? { worktree: request.worktree } : {}) } : {}),
-          ...(owner.preparationKind === 'workflow' && owner.root.binding.accessMode === 'read-only'
-            ? { sharedReadOnlyTree: true } : {}) })
+            ? { sharedWritableTree: true, ...(request.worktree ? { worktree: request.worktree } : {}) } : {}) })
         await reauthorize()
         assertWorktreeReceipt(receiptValue, owner.worktree, manifest.git?.commit)
         return SourceOperationResponseSchema.parse({ version: 1, operation: request.operation, receipt: receiptValue })
