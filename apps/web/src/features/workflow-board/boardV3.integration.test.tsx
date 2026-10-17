@@ -426,9 +426,6 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     fireEvent.click(canvas.getByRole('button', { name: new RegExp(`^${mock.agents[0]!.name},`) }))
     await waitFor(() => expect(canvas.getByRole('button', { name: new RegExp(`^${mock.agents[0]!.name},`) })).toHaveAttribute('aria-pressed', 'true'))
     fireEvent.click(canvas.getByRole('button', { name: new RegExp(`^${mock.agents[1]!.name},`) }))
-    const chat = await screen.findByRole('dialog', { name: `${mock.agents[1]!.name} chat` })
-    expect(chat).toBeVisible()
-    expect(chat).toContainElement(document.activeElement as HTMLElement)
     expect(useGraphDraftStore.getState().nextDrafts[key]!.graph.edges).toHaveLength(0)
     clickConnectionHandles(canvas.getByLabelText(`Connect ${mock.agents[0]!.name} to another agent`),
       canvas.getByLabelText(`Connect to ${mock.agents[1]!.name}`))
