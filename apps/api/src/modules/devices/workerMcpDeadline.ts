@@ -12,26 +12,17 @@ export const workerMcpUploadCeilingMs = workerMcpUploadIdleTimeoutMs + Math.ceil
 ) * 1000
 
 export async function withWorkerMcpDeadline<T>(
-  run: (signal: AbortSignal, uploaded: () => void, progress: (acknowledgedBytes: number) => void, started: () => void) => Promise<T>,
+  run: (signal: AbortSignal, uploaded: () => void, progress: (acknowledgedBytes: number) => void) => Promise<T>,
   signal?: AbortSignal, options: { uploading?: boolean } = {},
 ): Promise<T> {
   const deadline = new AbortController()
-  let uploadStarted = false
   let uploadFinished = false
   let acknowledgedBytes = 0
   const expire = () => deadline.abort()
-  let timer = options.uploading ? undefined : setTimeout(expire, relayDeadlineMs)
-  let ceiling: ReturnType<typeof setTimeout> | undefined
-  const started = () => {
-    if (!options.uploading || uploadFinished || deadline.signal.aborted) return
-    uploadStarted = true
-    clearTimeout(timer)
-    clearTimeout(ceiling)
-    timer = setTimeout(expire, workerMcpUploadIdleTimeoutMs)
-    ceiling = setTimeout(expire, workerMcpUploadCeilingMs)
-  }
+  let timer = setTimeout(expire, options.uploading ? workerMcpUploadIdleTimeoutMs : relayDeadlineMs)
+  const ceiling = options.uploading ? setTimeout(expire, workerMcpUploadCeilingMs) : undefined
   const progress = (bytes: number) => {
-    if (!uploadStarted || uploadFinished || deadline.signal.aborted || bytes <= acknowledgedBytes) return
+    if (!options.uploading || uploadFinished || deadline.signal.aborted || bytes <= acknowledgedBytes) return
     acknowledgedBytes = bytes
     clearTimeout(timer)
     timer = setTimeout(expire, workerMcpUploadIdleTimeoutMs)
@@ -48,7 +39,7 @@ export async function withWorkerMcpDeadline<T>(
   })
   try {
     return await Promise.race([
-      run(signal ? AbortSignal.any([signal, deadline.signal]) : deadline.signal, uploaded, progress, started), expired,
+      run(signal ? AbortSignal.any([signal, deadline.signal]) : deadline.signal, uploaded, progress), expired,
     ])
   } finally {
     clearTimeout(timer)

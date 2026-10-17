@@ -1280,17 +1280,14 @@ export class OperatorChatService {
             undefined, !row.cancel_requested)
           return
         }
-        const initialSessionBound = row.harness === 'claude' && row.native_session_id
-        if (row.active_phase === 'accepted' || row.active_phase === 'ready' && !initialSessionBound) {
+        if (row.active_phase === 'accepted' || row.active_phase === 'ready') {
           await this.complete(row.id, requestId, row.cancel_requested ? { outcome: 'canceled' }
             : failure(new Error('The server stopped before native submission. Retry the same request.')), undefined, !row.cancel_requested)
           return
         }
         if (!row.native_session_id) {
           let resident = this.runtimes.get(row.id)
-          const initialTurn = row.harness === 'claude' && row.active_phase === 'submitting'
-          const creating = row.active_phase === 'creating' || initialTurn
-          if (!resident && creating) {
+          if (!resident && row.active_phase === 'creating') {
             const configuration = await this.repository.configuration(row.operator_configuration_version_id)
             if (configuration?.harnessProfileSelection?.target.hostRef.kind === 'device') {
               const fileInputs = await this.managers.hasFileInputs?.(row.id, requestId) ?? false
@@ -1303,7 +1300,7 @@ export class OperatorChatService {
               if (preferences) await resident.manager.configureSessionPreferences?.(preferences)
             }
           }
-          if (!resident || resident.disposal || !creating) {
+          if (!resident || resident.disposal || row.active_phase !== 'creating') {
             throw new Error('Native session creation is uncertain; a replacement will not be created automatically.')
           }
           const creationInput = resident.creationInput
@@ -1329,10 +1326,6 @@ export class OperatorChatService {
             throw new Error('The original native session creation is not established.')
           }
           await this.repository.bind(row.id, requestId, resident.session.providerVersion, resident.session.nativeSessionId)
-          if (initialTurn) {
-            await this.observe(row.id, requestId, resident)
-            return
-          }
           await this.complete(row.id, requestId, row.cancel_requested ? { outcome: 'canceled' }
             : failure(new Error('Session binding recovered before prompt submission. Retry the same request.')), undefined, !row.cancel_requested)
           return

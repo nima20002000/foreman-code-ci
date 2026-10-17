@@ -119,14 +119,9 @@ export class NativeProviderAccountOperations implements ProviderAccountOperation
     const recovery = await this.processes.reserveLaunch(record.owner)
     if (!recovery.launchId) throw new DomainError('PROVIDER_OPERATION_UNSUPPORTED',
       'This host cannot retain native account process ownership.', 409)
-    const current = this.journal.read(record.operation.id)!
-    if (current.operation.cancelRequested || current.observation.nativeClosed) {
-      await this.processes.abandonReservedLaunch(recovery)
-      return structuredClone(this.journal.read(record.operation.id)!.observation)
-    }
-    current.launchId = recovery.launchId
-    current.dispatched = true
-    this.update(current, input.operation.intent === 'sign-in' ? 'awaiting-human' : 'observing', false)
+    record.launchId = recovery.launchId
+    record.dispatched = true
+    this.update(record, input.operation.intent === 'sign-in' ? 'awaiting-human' : 'observing', false)
     let process: AccountCommandProcess
     try {
       process = await this.commands.dispatch(input, input.operation.intent === 'sign-in' ? 'login' : 'logout', {
@@ -147,7 +142,7 @@ export class NativeProviderAccountOperations implements ProviderAccountOperation
       this.residents.delete(record.operation.id)
     })
     this.residents.set(record.operation.id, { process, completion })
-    return structuredClone(current.observation)
+    return structuredClone(record.observation)
   }
 
   private async failedDispatch(id: string, recovery: NativeProcessRecovery) {

@@ -153,9 +153,7 @@ export class MainWorkerConversationBridge {
       const session = 'session' in request ? request.session : admission.session
       const recovering = request.method === 'conversation.reconcile' && request.correlationId
         && admission.identities.get(request.correlationId)?.nativeTurnId
-      const missingFileInputs = callback.binding.appMcpAccess === 'scoped'
-        && !recovering && !(request.method === 'conversation.start-turn' && request.fileInputs)
-      if (!admission.files || callback.binding.harness !== 'codex' || missingFileInputs
+      if (!admission.files || callback.binding.harness !== 'codex' || callback.binding.appMcpAccess !== 'none'
         || !recovering && !['conversation.start-turn', 'conversation.initial-turn'].includes(request.method)
         || !('correlationId' in request) || request.correlationId !== callback.correlationId
         || !session || !isDeepStrictEqual(session, callback.session)) denied()

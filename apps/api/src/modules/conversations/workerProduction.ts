@@ -89,7 +89,6 @@ interface WorkerConversationOptions {
   configuration: WorkerConversationConfiguration
   workingDirectory: string
   appMcpAccess: 'scoped' | 'none'
-  fileInputs?: boolean
   observationPrincipalId?: string
   profileSelection?: AcceptedProfileSelector
   sourceExecution?: WorkerConversationBinding['sourceExecution']
@@ -323,7 +322,7 @@ async function admitWorkerConversation(input: ProductionWorkerConversationsInput
     ...(changingAccess || changingSkills ? { previousBinding: originalBinding } : {}),
     ...(previousConfiguration ? { previousConfiguration } : {}),
     sourceWorkingDirectory: options.workingDirectory,
-    ...(configuration.harness.harness === 'codex' && (binding.appMcpAccess === 'none' || options.fileInputs) && input.files
+    ...(configuration.harness.harness === 'codex' && binding.appMcpAccess === 'none' && input.files
       ? { files: input.files(options.conversationId, configuration, binding.workingDirectory) } : {}),
     ...(configuration.harness.harness === 'claude' ? { claudeAuthority: async (
       request: import('@foreman-code/contracts/remote-execution-rpc').WorkerClaudeAuthorityRequest,
@@ -405,9 +404,11 @@ export function createProductionWorkerConversations(input: ProductionWorkerConve
         configuration, selector, owner, profiles, kind, bridge, row, caller: () => caller,
       }, signal))
     admitted.manager.setSessionControlPrincipal = principalId => { caller = principalId }
-    admitted.manager.reconcileSessionCreation = async (start, signal, forkSource) => {
-      const manager = await admitted.actual(signal)
-      return manager.reconcileSessionCreation(start, signal, forkSource)
+    if (configuration.harness.harness === 'codex') {
+      admitted.manager.reconcileSessionCreation = async (start, signal, forkSource) => {
+        const manager = await admitted.actual(signal)
+        return manager.reconcileSessionCreation(start, signal, forkSource)
+      }
     }
     admitted.manager.mcpInspectionContext = async signal => {
       const manager = await admitted.actual(signal)

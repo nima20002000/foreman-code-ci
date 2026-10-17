@@ -109,14 +109,9 @@ function createInstalledConversationAllocator(input: InstalledWorkerConversation
         configuration.harness.advanced?.additionalWritableDirectories ?? [],
         configuration.harness.sandbox === 'workspace-write')
     }
-    const fileAdapter = purpose === 'chat'
+    const chatFiles = purpose === 'chat' && appMcpAccess === 'none'
       ? files.adapter({ source, signal: input.signal, assertCurrent: assertFileHost,
         host: () => localCodexChatHost(fileStorageRoot) }) : undefined
-    const chatFiles = fileAdapter ? { prepare: (turn: Parameters<typeof fileAdapter.prepare>[0]) => {
-      const request = source()
-      const hasFiles = appMcpAccess === 'none' || request.method === 'conversation.start-turn' && request.fileInputs
-      return hasFiles ? fileAdapter.prepare(turn) : Promise.resolve(undefined)
-    } } : undefined
     const dependencies = createInstalledCodexDependencies({ reader, codexSuiteRevision: input.codexSuiteRevision })
     const operations: Extract<CodexSessionDependencies, { mode: 'native' }> = { ...dependencies,
       environment: (variables, scopedNames) => {
@@ -200,7 +195,7 @@ function createInstalledConversationAllocator(input: InstalledWorkerConversation
         await mcp.bindRelay({ ...relay, environment: mcpEnvironment })
         signal.throwIfAborted()
       },
-      ...(harness === 'codex' ? {
+      ...(harness === 'codex' && appMcpAccess === 'none' ? {
         recoverFiles: (request, nativeTurnId, signal) => files.recover(request, nativeTurnId, signal),
       } satisfies Pick<WorkerConversationAllocation, 'recoverFiles'> : {}),
       async close() {

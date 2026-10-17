@@ -2,8 +2,9 @@ import { createHash, randomUUID } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { mkdir, open, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { homedir } from 'node:os'
 import { dirname, isAbsolute, join } from 'node:path'
-import { appMcpDirectory } from '@foreman-code/contracts/product-environment-node'
+import { readProductEnvironment } from '@foreman-code/contracts/product-environment'
 import type { HarnessMcpConnection } from '@foreman-code/contracts/management'
 import { APP_MCP_SERVER_NAMES, APP_MCP_TOKEN_NAMES, PRODUCT_SLUG } from '@foreman-code/contracts/product'
 
@@ -33,7 +34,11 @@ export const LEGACY_APP_MCP_SERVER_NAMES = ['graphql-app', 'graphql-operator'] a
 export const chatExcludedAppMcpServerNames = (serverName: string): readonly string[] =>
   [...new Set([serverName, ...APP_MCP_SERVER_NAMES, ...LEGACY_APP_MCP_SERVER_NAMES])]
 export function appLauncherPath(): string {
-  return join(appMcpDirectory(), 'launcher.mjs')
+  const configured = readProductEnvironment(process.env, 'APP_MCP_DIRECTORY')
+  if (configured !== undefined && !isAbsolute(configured)) {
+    throw new Error('FOREMAN_CODE_APP_MCP_DIRECTORY requires an absolute directory.')
+  }
+  return join(configured ?? join(homedir(), '.local', 'share', 'graphql', 'mcp'), 'launcher.mjs')
 }
 export function appLauncherConnection(): Extract<HarnessMcpConnection, { transport: 'stdio' }> {
   return { transport: 'stdio', executable: process.execPath, arguments: [appLauncherPath()], environmentVariables: [APP_MCP_TOKEN] }

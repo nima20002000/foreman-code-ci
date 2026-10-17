@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { DEFAULT_HARNESS_DEFAULTS, type AgentConfigurationVersion, type NativeHarnessEvent } from '@foreman-code/contracts'
 import { DEVICE_APPLICATION_JSON_BYTES } from '@foreman-code/contracts/device-application'
 import type { DeviceHistoryGap } from '@foreman-code/contracts/device-application'
-import { RemoteOperationReceiptSchema, RemoteOperationStatusSchema } from '@foreman-code/contracts/remote-execution'
+import { RemoteOperationReceiptSchema } from '@foreman-code/contracts/remote-execution'
 import { remoteEntryClosureDigest, remoteNonEntryClosureDigest } from '@foreman-code/contracts/remote-execution-entry-closure-node'
 import { RemoteExecutionRpcRequestSchema } from '@foreman-code/contracts/remote-execution-rpc'
 import { freezePlacement, deriveDispatch } from '../../placement/binding.js'
@@ -71,11 +71,7 @@ function setup(read: () => NativeHistory, changeReply?: (reply: ReturnType<typeo
   })
   const proxy = new RemoteNativeSessionManager({ intent, placement, harness: 'codex', configuration,
     transport: { request }, observeReceipt: async value => { observedReceipts.push(value) },
-    discardReceipt: response => {
-      const value = response as { status: unknown }
-      const status = RemoteOperationStatusSchema.parse(typeof value.status === 'object' ? value.status : response)
-      if (status.status === 'known') discardedReceipts.push(status.receipt)
-    }, observeOriginalSource,
+    discardReceipt: value => { discardedReceipts.push(value) }, observeOriginalSource,
     controlFor,
   })
   const start = { correlationId: 'execution:execution', request: { executionId: 'execution', runId: 'run',
