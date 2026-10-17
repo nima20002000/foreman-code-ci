@@ -221,7 +221,6 @@ export async function remoteAgentConversation(harness: 'codex' | 'claude', locat
       await value('agent_chat_send', { request: { requestId, content, intent: 'next_turn',
         expectedConversationId: conversationId, context, attachments } })
       await terminal.promise
-      await host.drainForUpdate()
       const turn = await repository.turn(conversationId, requestId)
       expect(turn?.delivery, JSON.stringify(turn)).toBe(delivery)
       return { requestId, turn, events }
