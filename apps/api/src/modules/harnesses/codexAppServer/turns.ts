@@ -267,17 +267,6 @@ export abstract class CodexManagerTurns extends CodexManagerControls {
     }
   }
 
-  async retireTurn(session: NativeSessionReference, correlationId: string): Promise<void> {
-    await this.exclusive(session.nativeSessionId, async () => {
-      const runtime = this.requireRuntime(session)
-      if (runtime.activeCorrelationId !== correlationId || !runtime.terminalResult) {
-        throw new HarnessExecutionError('CODEX_TURN_NOT_COMPLETED', 'Only the completed owned turn can be retired.')
-      }
-      this.assertIdle(runtime)
-      await this.finishTurnResources(runtime)
-    })
-  }
-
   /** Reserves the runtime for one starting turn and clears the previous turn's observations. */
   protected beginStartingTurn(runtime: Runtime, input: NativeTurnInput): StartingTurn {
     let resolveIdentity!: StartingTurn['resolveIdentity']

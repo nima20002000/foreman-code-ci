@@ -246,10 +246,11 @@ export const settingsTools = [
     name: 'circle_credit_allowance_get',
     requires: [['settings:read', 'global']],
     enabled: s => !!s.settings,
-    description: 'Read the monthly CircleCI credit allowance and revision. defaultMonthlyCredits (the CircleCI Free plan '
-      + 'grants 30,000) applies to every CircleCI account without an entry in accounts, which is keyed by the GitHub '
-      + 'owner of the CircleCI org. ci_computers_list and computer_activity_list report remaining credits as this '
-      + 'allowance minus this month\u2019s usage read from CircleCI. Requires global settings:read.',
+    description: 'Read the monthly CircleCI credit allowance per organization and its revision. defaultMonthlyCredits '
+      + '(400,000: the CircleCI Free plan grants each organization that for Linux open-source builds) applies to every '
+      + 'organization without an entry in accounts, which is keyed by the GitHub owner of the CircleCI org. '
+      + 'ci_computers_list and computer_activity_list report each CircleCI org\u2019s remaining credits as this '
+      + 'allowance minus that org\u2019s usage this month read from CircleCI. Requires global settings:read.',
     inputSchema: z.object({}).strict(), outputSchema: ManagedCircleCreditAllowanceSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     run: (context) => context.services.settings!.getCircleCreditAllowance(context.principal),
@@ -258,7 +259,7 @@ export const settingsTools = [
     name: 'circle_credit_allowance_update',
     requires: [['settings:update', 'global']],
     enabled: s => !!s.settings,
-    description: 'Replace the monthly CircleCI credit allowance: defaultMonthlyCredits plus per-account overrides keyed '
+    description: 'Replace the monthly CircleCI credit allowance: defaultMonthlyCredits plus per-organization overrides keyed '
       + 'by the GitHub owner of the CircleCI org. Paid plans differ from the Free plan, so set the real allowance. '
       + 'Requires global settings:update. Omit expectedRevision for last write wins; supply it to reject a stale '
       + 'revision. Reuse commandId with identical input after an uncertain save. Read back with '

@@ -105,12 +105,6 @@ export function createAdmittedNativeManager<T extends NativeHarnessSessionManage
       : allocation?.manager.subagentControl?.(child, () => { lifetime.signal.throwIfAborted(); assertOwner() }),
     history: async (session, signal) => (await actual(signal)).history(session, signal),
     reconcile: async (session, correlationId, signal) => (await actual(signal)).reconcile(session, correlationId, signal),
-    retireTurn: async (session, correlationId) => {
-      const current = await actual()
-      if (!current.retireTurn) throw new DomainError('NATIVE_TURN_RETIREMENT_UNAVAILABLE',
-        'The admitted driver cannot release completed turn resources while retaining its session.', 409)
-      await current.retireTurn(session, correlationId)
-    },
     reconcileResponse: async (session, response, signal) => {
       const current = await actual(signal)
       return current.reconcileResponse ? current.reconcileResponse(session, response, signal) : current.history(session, signal)
@@ -120,11 +114,6 @@ export function createAdmittedNativeManager<T extends NativeHarnessSessionManage
       return current.inspectResponseAvailability ? current.inspectResponseAvailability(session, query, signal) : unavailableNativeResponse(session, query, 'unsupported')
     },
     close: async session => (await actual()).close(session),
-    closeForResume: async session => {
-      const current = await actual()
-      if (current.closeForResume) await current.closeForResume(session)
-      else await current.close(session)
-    },
     closeForRestart: async session => {
       const current = await actual()
       if (!current.closeForRestart) throw new DomainError('HARNESS_RESTART_UNAVAILABLE', 'The admitted driver has no restart capability.', 409)
