@@ -10,9 +10,8 @@ describe('normalizeLabel', () => {
     expect(normalizeLabel(' \t\n ')).toBe('')
   })
 
-  it('trims labels and collapses internal whitespace', () => {
+  it('trims labels and collapses whitespace between words', () => {
     expect(normalizeLabel('  Project   label  ')).toBe('Project label')
-    expect(normalizeLabel('\tProject\n\tlabel\r\n')).toBe('Project label')
-    expect(normalizeLabel('Project label')).toBe('Project label')
+    expect(normalizeLabel('\tProject\n\t label\r\n ready  ')).toBe('Project label ready')
   })
 })
