@@ -3,7 +3,7 @@
   border: 1px solid var(--n-border-strong); border-radius: var(--radius-md); background: var(--n-raised);
   color: var(--n-text); box-shadow: var(--shadow-dialog);
 }
-.board-activities-popover:popover-open { animation: n-menu-in 140ms var(--n-ease); }
+.board-activities-popover { animation: n-menu-in 140ms var(--n-ease); }
 .board-activities-popover-header {
   position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between;
   padding: 6px 8px 6px 12px; border-bottom: 1px solid var(--n-border); background: var(--n-raised);
@@ -17,4 +17,4 @@
 .board-activities-popover .board-activities-list > li { grid-template-columns: 8px 64px minmax(0, 1fr); gap: 8px; padding: 5px 2px; }
 .board-activities-popover .board-run-more { font: var(--type-caption); }
 .board-activities-popover .board-run-more > summary { cursor: pointer; padding: 4px 0; color: var(--n-muted); }
-@media (prefers-reduced-motion: reduce) { .board-activities-popover:popover-open { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .board-activities-popover { animation: none; } }
