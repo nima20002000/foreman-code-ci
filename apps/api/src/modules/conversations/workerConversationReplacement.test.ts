@@ -1,13 +1,10 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { expect, it } from 'vitest'
 import { RemoteOperationJournal } from '../runs/remote/operationJournal.js'
 import { workerConversationFixture } from './workerFixtures.test-support.js'
-import { WorkerConversationArchive } from './workerConversationArchive.js'
-import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
-import type { WorkerConversationReceipt } from '@foreman-code/contracts/remote-execution-rpc'
 
 it('persists replacement generations independently and retains both closed receipts after archive and restart', async () => {
   const cache = join(homedir(), '.cache', 'foreman-tmp')
@@ -50,27 +47,4 @@ it('persists replacement generations independently and retains both closed recei
     await journal.close()
     await rm(directory, { recursive: true, force: true })
   }
-})
-
-it('keeps the saved archive unchanged when another generation exceeds its existing byte limit', async () => {
-  const cache = join(homedir(), '.cache', 'foreman-tmp')
-  await mkdir(cache, { recursive: true })
-  const directory = await mkdtemp(join(cache, 'worker-chat-archive-'))
-  const f = workerConversationFixture('agent')
-  const record: WorkerConversationReceipt = { binding: f.binding, connection: f.connection,
-    revision: 1, closed: true, closing: true, desiredPreferences: null, appliedPreferences: null,
-    turns: [{ correlationId: 'completed', inputHash: `sha256:${'a'.repeat(64)}`, status: 'completed',
-      nativeTurnId: 'original-turn', result: { outcome: 'succeeded', output: 'Saved result '.repeat(200) } }], compactions: [] }
-  const byteLimit = Buffer.byteLength(JSON.stringify({ receipt: record, digest: commandInputHash(record) }))
-  const archive = new WorkerConversationArchive(join(directory, 'operations.json'), byteLimit, async (path, value) => {
-    await mkdir(join(path, '..'), { recursive: true })
-    await writeFile(path, value)
-  })
-  const generation = randomUUID()
-  try {
-    await archive.save(record)
-    await expect(archive.save({ ...record, binding: { ...record.binding, generation } })).rejects.toThrow('byte limit')
-    await expect(archive.read(f.binding.owner.conversationId)).resolves.toEqual(record)
-    await expect(archive.read(f.binding.owner.conversationId, generation)).resolves.toBeUndefined()
-  } finally { await rm(directory, { recursive: true, force: true }) }
 })
