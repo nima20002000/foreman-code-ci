@@ -1,4 +1,3 @@
-.computer-list-caption { margin: .65rem 0; color: var(--n-muted); font-size: .8rem; }
 .computer-list-feedback { display: flex; gap: .5rem; align-items: center; color: var(--n-muted); font-size: .85rem; }
 .computer-priority-list { list-style: none; margin: .75rem 0 1.5rem; padding: 0; border-block: 1px solid var(--n-border); }
 .computer-priority-row { display: grid; grid-template-columns: minmax(0, 1fr); gap: .5rem; padding: .85rem .25rem; min-height: 4.6rem; }

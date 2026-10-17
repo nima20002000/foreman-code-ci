@@ -51,9 +51,7 @@ export function BugsSettings({ search, onSearchChange }: {
   delete filters.reportId
   const history = search.view === 'history'
   return <section className="settings-editor-page" aria-label="Bug reports">
-    <header className="settings-experience-heading"><h1 ref={heading} tabIndex={-1}>Bugs</h1>
-      <p>Review Agent reports about Foreman Code features and MCP tools, newest first. Closed reports move to
-        history.</p></header>
+    <header className="settings-experience-heading"><h1 ref={heading} tabIndex={-1}>Bugs</h1></header>
     <div className="bug-report-filters">
       <Select label="Show reports" value={search.view ?? 'active'}
         options={[{ value: 'active', label: 'Active' }, { value: 'history', label: 'History' }]}

@@ -49,6 +49,7 @@ import { ciCachedNotice, planCachedSelection, recordCiResultCache, type CachedSe
 import { ciRequestKey, joinCiRequest, registerCiRequest, releaseCiRequester, releaseStoppedRun,
   spareSharedSupersession } from './requestSharing.js'
 import type { AgentSnapshots, CiCommits, CiMirrorInput, HostCiComputer, HostCiEndpoint, HostRef } from './serviceTypes.js'
+import type { CircleCreditsReading } from './circleCredits.js'
 
 export type { AgentSnapshots, CiCommits, HostCiComputer, HostCiEndpoint } from './serviceTypes.js'
 
@@ -109,11 +110,13 @@ export class HostCiService {
   /** Cloud slots kept free for non-gate tickets while a gate is queued or running. */
   private readonly reservedCloudSlots: number
   private readonly reads: HostCiReads
+  private readonly circleCredits: { reading(account?: string): Promise<CircleCreditsReading> } | undefined
   private readonly prewarm: CiPrewarm
 
   constructor(private readonly pool: pg.Pool, private readonly commands: PostgresCommandCoordinator,
     private readonly authority: CiAuthority, private readonly commits: CiCommits,
-    endpoint: HostCiEndpoint, private readonly snapshots?: AgentSnapshots, options: { reservedCloudSlots?: number } = {}) {
+    endpoint: HostCiEndpoint, private readonly snapshots?: AgentSnapshots, options: { reservedCloudSlots?: number; circleCredits?: { reading(account?: string): Promise<CircleCreditsReading> } } = {}) {
+    this.circleCredits = options.circleCredits
     this.reservedCloudSlots = options.reservedCloudSlots ?? 0
     this.prewarm = new CiPrewarm(endpoint)
     this.planningEndpoint = new CiPlanningSnapshot(endpoint)
@@ -795,7 +798,16 @@ export class HostCiService {
             slotsUsed: Math.max(running.length, status.slotsUsed ?? 0), slotsTotal: status.slotsTotal ?? 1,
             running } : null
       }))
-      return { computers: result.filter(Boolean), queue, queueTruncated: queued.length > 500 }
+      const readings = new Map<string, Promise<CircleCreditsReading>>()
+      const computers = result.flatMap(computer => {
+        if (!computer) return []
+        const host = computer.hostRef
+        if (!this.circleCredits || host.kind !== 'cloud' || host.provider !== 'circleci') return [Promise.resolve(computer)]
+        const key = host.account ?? ''
+        if (!readings.has(key)) readings.set(key, this.circleCredits.reading(host.account))
+        return [readings.get(key)!.then(reading => ({ ...computer, ...reading }))]
+      })
+      return { computers: await Promise.all(computers), queue, queueTruncated: queued.length > 500 }
     })
   }
 
