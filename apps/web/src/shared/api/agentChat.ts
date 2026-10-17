@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import {
   AgentChatContextSchema, AgentChatExecutionActivityPageSchema, AgentChatHistoryPageSchema, AgentChatQuerySchema, AgentChatStateSchema,
-  AgentChatStateResponseSchema, CancelQueuedAgentChatTurnRequestSchema, InterruptAgentChatRequestSchema,
+  AgentChatStateResponseSchema, CancelQueuedAgentChatTurnRequestSchema, EnsureAgentChatConversationRequestSchema, InterruptAgentChatRequestSchema,
   RespondAgentChatInteractionRequestSchema, SendAgentChatMessageRequestSchema, SendAgentChatMessageResponseSchema,
   type AgentChatContext, type SendAgentChatMessageRequest,
 } from '@foreman-code/contracts/agent-chat'
@@ -31,6 +31,12 @@ export const agentChatApi = {
   send(workspaceId: string, input: SendAgentChatMessageRequest, options?: RequestOptions) {
     return apiClient.request(`${agentChatRoot(workspaceId)}/messages`, SendAgentChatMessageResponseSchema,
       { ...options, method: 'POST', body: SendAgentChatMessageRequestSchema.parse(input) })
+  },
+  /** The stored conversation record (no native session) that a first attachment needs to upload into. */
+  async ensureConversation(context: AgentChatContext, executionId?: string, options?: RequestOptions) {
+    const { workspaceId, ...query } = AgentChatContextSchema.parse(context)
+    const body = EnsureAgentChatConversationRequestSchema.parse({ context: AgentChatQuerySchema.parse(query), ...(executionId ? { executionId } : {}) })
+    return (await apiClient.request(`${agentChatRoot(workspaceId)}/conversation`, AgentChatStateResponseSchema, { ...options, method: 'POST', body })).state
   },
   interrupt(workspaceId: string, conversationId: string, input: z.infer<typeof InterruptAgentChatRequestSchema>, options?: RequestOptions) {
     return apiClient.request(`${agentChatConversationPath(workspaceId, conversationId)}/interrupt`, AgentChatStateResponseSchema,

@@ -419,7 +419,7 @@ h1 {
   gap: var(--space-3);
 }
 
-.sidebar-preferences-row { display: flex; align-items: center; gap: var(--space-1); min-width: 0; }
+.sidebar-preferences-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); min-width: 0; }
 .sidebar-settings-link { display: inline-flex; flex: 0 0 2.75rem; width: 2.75rem; height: 2.75rem; align-items: center; justify-content: center;
   border: 1px solid transparent; border-radius: var(--radius-sm); color: var(--text-muted); text-decoration: none; }
 .sidebar-settings-link:hover, .sidebar-settings-link:focus-visible { background: var(--surface-raised); color: var(--text); }

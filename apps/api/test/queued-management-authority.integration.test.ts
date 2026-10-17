@@ -76,6 +76,7 @@ it.each(['workspace-defaults', 'agent-defaults', 'workflow-defaults', 'create', 
       }
       const request = client.callTool({ name: c.name, arguments: c.input })
       await vi.waitFor(async () => {
+        // Session resource locks retry outside SQL; the command lock proves the caller reached the queue.
         const commandLock = `command:${caller.principal.id}:${c.operation}:${c.input.commandId}`
         let waiting: { rowCount: number | null }
         if (kind === 'agent-defaults') {
@@ -84,10 +85,12 @@ it.each(['workspace-defaults', 'agent-defaults', 'workflow-defaults', 'create', 
               select 1 from pg_locks owned where owned.pid=activity.pid and owned.locktype='advisory'
                 and owned.objid=(hashtext($2)::bigint & 4294967295)::oid and owned.granted)`,
           [blockerPid, commandLock])
-        } else {
-          // Preparation releases the command lock before waiting for the workspace lock.
+        } else if (kind.endsWith('defaults')) {
           waiting = await f.db.pool.query(`select 1 from pg_locks where locktype='advisory'
             and objid=(hashtext($1)::bigint & 4294967295)::oid and not granted`, [lock])
+        } else {
+          waiting = await f.db.pool.query(`select 1 from pg_locks where locktype='advisory'
+            and objid=(hashtext($1)::bigint & 4294967295)::oid and granted`, [commandLock])
         }
         expect(waiting.rowCount).toBeGreaterThan(0)
       }, { timeout: 3_000, interval: 10 })
