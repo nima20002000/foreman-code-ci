@@ -79,6 +79,9 @@ export const CI_TOOL_DESCRIPTIONS = {
     + 'systemd), saved buildAllowancePercent, allowedCpuCount, CPU and memory within that allowance, '
     + 'used and total CI slots, available memory, running tickets, and up to 500 queued tickets with priority, '
     + 'queue position and reason (queueTruncated reports more). Read participation and priority with build_computer_get. '
+    + 'CircleCI entries add credits {total, used, remaining, asOf}: an estimate of the month\u2019s credits left, the '
+    + 'configured monthly allowance (circle_credit_allowance_get/update; default 30,000, the Free plan) minus usage read '
+    + 'from CircleCI at most every ten minutes, or credits=null with creditsUnavailable when that read failed. '
     + 'Each further CircleCI org is its own set of cloud slots (hostRef.account names its GitHub owner); Main adds one '
     + 'by itself once that GitHub organization has a copy of the CI mirror followed in CircleCI, which is set up '
     + 'outside Foreman (docs/runbooks/add-circleci-org.md).',

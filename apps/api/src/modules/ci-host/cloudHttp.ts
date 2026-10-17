@@ -101,7 +101,7 @@ export class CloudHttp {
     }
   }
 
-  async request(path: string, options: { timeoutMs?: number; headers?: Record<string, string> } = {}) {
+  async request(path: string, options: { timeoutMs?: number; headers?: Record<string, string>; method?: string; body?: string } = {}) {
     const token = await this.token()
     const pending = this.cache.get(this.provider)
     this.observeTransport(token)
@@ -111,9 +111,11 @@ export class CloudHttp {
     const deadline = deadlines.getStore()
     const signal = deadline ? AbortSignal.any([deadline, timeout]) : timeout
     const send = (value: string) => this.fetch(`${base}${path}`, {
-      signal, redirect: 'manual', headers: {
+      signal, redirect: 'manual', method: options.method ?? 'GET', ...(options.body === undefined ? {} : { body: options.body }),
+      headers: {
         Authorization: `Bearer ${value}`, 'User-Agent': 'foreman-code',
         ...(this.provider === 'github' ? { Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' } : {}),
+        ...(options.body === undefined ? {} : { 'Content-Type': 'application/json' }),
         ...options.headers,
       },
     })
