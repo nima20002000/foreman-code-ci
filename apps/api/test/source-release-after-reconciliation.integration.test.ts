@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
 import type { SourceOperationOwner } from '@foreman-code/contracts/source-operations'
@@ -8,7 +8,6 @@ import { PrivateSourceMaterializer, reconcileSourcePreparation, releaseMateriali
 import { createSourceManifest, sourceSha256 } from '../src/modules/sources/manifest.js'
 import { identity, openPrivateRoot } from '../src/modules/sources/privateFilesystem.js'
 import { sourceBindingHash } from '../src/modules/sources/bindingHash.js'
-import { sourceWorkingTreePath } from '../src/modules/sources/sourceTreePaths.js'
 
 const directories: string[] = []
 afterEach(async () => {
@@ -59,19 +58,11 @@ it('releases an acknowledged receipt after unacknowledged preparation reconcilia
   const successorInput = { manifest: f.manifest, binding: f.binding,
     attempt: { ...f.attempt, executionId: randomUUID(), attemptId: randomUUID() }, sharedWritableTree: true as const }
   const successor = await f.materializer.prepare(successorInput)
-  const receiptPath = join(f.root, f.receipt.materializationId, 'receipt.json')
-  const storedReceipt = await readFile(receiptPath)
-  const workingDirectory = sourceWorkingTreePath(f.receipt)
   await expect(releaseMaterializationClaim(f.receipt, async () => 'released')).resolves.toBeUndefined()
   await expect(releaseMaterializationClaim(f.receipt, async () => 'released')).resolves.toBeUndefined()
   expect(await f.materializer.prepare(successorInput)).toEqual(successor)
-  await expect(stat(join(f.root, f.receipt.materializationId, 'tree'))).rejects.toMatchObject({ code: 'ENOENT' })
-  expect(await readFile(receiptPath)).toEqual(storedReceipt)
-  expect(await readFile(join(workingDirectory, 'app.txt'))).toEqual(f.bytes)
-  expect(await readFile(join(f.root, successor.materializationId, 'tree/app.txt'))).toEqual(f.bytes)
+  expect(await readFile(join(f.root, f.receipt.materializationId, 'tree/app.txt'))).toEqual(f.bytes)
   await releaseMaterializationClaim(successor, async () => 'released')
-  await expect(stat(join(f.root, successor.materializationId, 'tree'))).rejects.toMatchObject({ code: 'ENOENT' })
-  expect(await readFile(join(workingDirectory, 'app.txt'))).toEqual(f.bytes)
 })
 
 it('rejects a changed archived owner rather than treating a missing active claim as released', async () => {

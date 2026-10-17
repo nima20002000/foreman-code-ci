@@ -1,12 +1,10 @@
 import { lstat, readdir, rm } from 'node:fs/promises'
 import { join, relative, sep } from 'node:path'
 import { withHostCiRunLock } from './runnerLock.js'
-import { ciRepositoryStorageEntries, reclaimCiRepositoryStorage, type CiRepositoryStorageEntry } from './repositoryStorage.js'
-import type { CiUnitState } from './unitStates.js'
+import { ciRepositoryStorageEntries, reclaimCiRepositoryStorage } from './repositoryStorage.js'
 
 export const CI_HOST_CACHE_BUDGET_BYTES = 3 * 2 ** 30
-interface CacheEntry { path: string; bytes: number; usedAt: number; repository: string; repositoryStorage?: false }
-type StorageEntry = CacheEntry | CiRepositoryStorageEntry
+interface CacheEntry { path: string; bytes: number; usedAt: number; repository: string; repositoryStorage?: true }
 
 async function directories(path: string) {
   try { return await readdir(path, { withFileTypes: true }) }
@@ -59,10 +57,9 @@ async function cacheUsedSinceScan(entry: CacheEntry): Promise<boolean> {
 export async function sweepHostCiCache(root: string, options: {
   activeRepositories: () => ReadonlySet<string>
   budgetBytes?: number
-  unitState?: (runId: string) => Promise<CiUnitState>
 }): Promise<string[]> {
   const cache = join(root, 'cache')
-  const entries: StorageEntry[] = []
+  const entries: CacheEntry[] = []
   for (const owner of await directories(cache)) {
     if (!owner.isDirectory()) continue
     const ownerPath = join(cache, owner.name)
@@ -82,7 +79,7 @@ export async function sweepHostCiCache(root: string, options: {
   const pending = entries.filter(entry => !options.activeRepositories().has(entry.repository))
   let cursor = 0
   while (bytes > budget && cursor < pending.length) {
-    const batches = new Map<string, StorageEntry[]>()
+    const batches = new Map<string, CacheEntry[]>()
     let plannedBytes = bytes
     while (plannedBytes > budget && cursor < pending.length) {
       const entry = pending[cursor++]!
@@ -92,15 +89,14 @@ export async function sweepHostCiCache(root: string, options: {
       plannedBytes -= entry.bytes
     }
     for (const [repository, batch] of batches) {
-      for (const entry of batch) {
-        if (!entry.repositoryStorage) continue
-        const paths = await reclaimCiRepositoryStorage(root, entry, options.activeRepositories, options.unitState)
+      for (const entry of batch.filter(entry => entry.repositoryStorage)) {
+        const paths = await reclaimCiRepositoryStorage(root, entry, options.activeRepositories)
         if (paths) {
           bytes -= entry.bytes
           removed.push(...paths)
         }
       }
-      const cacheBatch = batch.filter((entry): entry is CacheEntry => !entry.repositoryStorage)
+      const cacheBatch = batch.filter(entry => !entry.repositoryStorage)
       if (!cacheBatch.length) continue
       await withHostCiRunLock(join(cache, ...repository.split('/')), async () => {
         if (options.activeRepositories().has(repository)) return
