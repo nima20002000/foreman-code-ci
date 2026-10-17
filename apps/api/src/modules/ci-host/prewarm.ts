@@ -1,4 +1,3 @@
-import { RetryBackoff } from '../../infrastructure/retryBackoff.js'
 import { randomUUID } from 'node:crypto'
 import type { CiRunRecord } from '@foreman-code/contracts'
 import { componentLogger } from '../diagnostics/logger.js'
@@ -10,7 +9,6 @@ const log = componentLogger('jobs')
 export class CiPrewarm {
   private pending: Promise<void> | undefined
   private readonly delivered = new Set<string>()
-  private readonly retries = new Map<string, RetryBackoff>()
 
   constructor(private readonly endpoint: HostCiEndpoint) {}
 
@@ -26,16 +24,10 @@ export class CiPrewarm {
     const retained = new Set(hosts.flatMap(host => commits.map(run => `${host.key}:${run.repository}:${run.commit}`)))
     for (const key of this.delivered) if (!retained.has(key)) this.delivered.delete(key)
     this.pending = Promise.all(hosts.map(async computer => {
-      const retry = this.retries.get(computer.key) ?? new RetryBackoff({ initialMs: 5000, maxMs: 300_000 })
-      this.retries.set(computer.key, retry)
-      if (!retry.ready()) return
       try {
         const status = await this.endpoint.request(computer, { operation: 'status' }, { priority: 'background' })
         if (status.operation !== 'status' || !status.ready || !status.prewarmSupported || status.slotsUsed
-          || status.runs.some(run => ['starting', 'running'].includes(run.state))) {
-          retry.reset()
-          return
-        }
+          || status.runs.some(run => ['starting', 'running'].includes(run.state))) return
         for (const run of commits) {
           const key = `${computer.key}:${run.repository}:${run.commit}`
           if (this.delivered.has(key)) continue
@@ -46,10 +38,8 @@ export class CiPrewarm {
           if (reply.run.state !== 'queued') this.delivered.add(key)
           if (['queued', 'starting', 'running'].includes(reply.run.state)) break
         }
-        retry.reset()
       } catch (error) {
-        const nextRetryMs = retry.fail()
-        log.warn({ err: error, computer: computer.key, nextRetryMs }, 'CI pre-warming unavailable; retry scheduled')
+        log.warn({ err: error, computer: computer.key }, 'CI pre-warming unavailable')
       }
     })).then(() => undefined).finally(() => { this.pending = undefined })
   }

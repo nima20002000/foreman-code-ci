@@ -22,7 +22,7 @@ it.each(['panel', 'heading', 'toolbar', 'Upload', 'hint', 'empty', 'list', 'row'
     const targets: Record<string, Element> = {
       panel, heading: screen.getByRole('heading', { name: 'Project files' }),
       toolbar: panel.querySelector('header')!, Upload: screen.getByRole('button', { name: 'Upload' }),
-      hint: screen.getByRole('button', { name: 'About Project files' }),
+      hint: screen.getByText('Drop a file here or use Upload.'),
       empty: screen.queryByText('No files.') ?? panel,
       list: screen.queryByRole('list', { name: 'Project files' }) ?? panel,
       row: screen.queryByText('existing.md') ?? panel,
@@ -779,12 +779,4 @@ describe('response identity and immutable-byte validation', () => {
     expect(await outcome).toMatchObject({ name: 'AbortError' })
     expect(calls.some((call) => call.phase === 'finalize')).toBe(false)
   })
-})
-
-it('offers idle upload guidance on hover and preserves the empty state', async () => {
-  mount()
-  expect(await screen.findByText('No files.')).toBeVisible()
-  expect(screen.queryByText('Drop a file here or use Upload.')).not.toBeInTheDocument()
-  await userEvent.hover(screen.getByRole('button', { name: 'About Project files' }))
-  expect(screen.getByRole('tooltip')).toHaveTextContent('Drop a file here or use Upload.')
 })

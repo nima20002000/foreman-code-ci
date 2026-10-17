@@ -1,4 +1,3 @@
-import { InfoHint } from '../../shared/ui/InfoHint'
 import { useState } from 'react'
 import { Button, Dialog, Select } from '../../shared/ui/nocturne'
 import { useHarnessDirectories, useHarnessSessionEpoch } from '../../shared/api/harnessSettings'
@@ -10,13 +9,13 @@ function DirectoryPicker({ value, onChange, error }: Props) {
   const query = useHarnessDirectories(location, open)
   const data = query.data
   return <section className="harness-directory-picker" aria-label="Additional writable directories">
-    <div className="harness-section-heading"><h4>Additional folders{!value.length ? <InfoHint label="Additional folders">Only the current workspace is added.</InfoHint> : null}</h4><Button size="sm" onClick={() => { setLocation({}); setOpen(true) }}>Browse folders</Button></div>
+    <div className="harness-section-heading"><h4>Additional folders</h4><Button size="sm" onClick={() => { setLocation({}); setOpen(true) }}>Browse folders</Button></div>
     {value.length ? <ul className="harness-folder-list">{value.map((path, index) => <li key={`${path}-${index}`}><span title={path}>{path}</span>
       <Button size="sm" variant="ghost" aria-label={`Remove writable folder ${path}`} onClick={() => onChange(value.filter((_, position) => position !== index))}>Remove</Button></li>)}</ul>
-      : null}
+      : <p className="harness-muted">Only the current workspace is added.</p>}
     {error ? <p className="n-field-error" role="alert">{error}</p> : null}
     <Dialog open={open} onOpenChange={setOpen} title="Choose a runner folder" size="md"
-      headerLeading={<InfoHint label="Choose a runner folder">Folders on the server, not files on your device.</InfoHint>}
+      description="Folders on the server, not files on your device."
       footer={<><Button onClick={() => setOpen(false)}>Cancel</Button><Button variant="primary" disabled={!data?.path || query.isFetching || query.isError}
         onClick={() => { if (data?.path) onChange([...new Set([...value, data.path])]); setOpen(false) }}>Add this folder</Button></>}>
       <div className="harness-folder-browser">

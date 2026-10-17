@@ -1,6 +1,5 @@
-import { InfoHint } from '../../shared/ui/InfoHint'
 import {
-  GRAPHQL_AGENT_TOOLS, graphqlRoleTools,
+  GRAPHQL_AGENT_TOOLS, effectiveGraphqlTools, graphqlRoleTools,
   type GraphqlAgentTool, type GraphqlToolOverride,
 } from '@foreman-code/contracts'
 
@@ -40,16 +39,21 @@ export function GraphqlToolsFields({ role, defaults, override, onChange }: {
     // A node-only change never rewrites the Agent's default.
     onChange(defaults ? [...defaults] : undefined, normalizeToolOverride({ add, remove }))
   }
-  return <fieldset className="agent-graphql-tools" aria-label="Foreman Code MCP tools">
-    <legend>Foreman Code MCP tools<InfoHint label="Foreman Code MCP tools">Bug reporting is always available. For other tools, the Agent default applies in every workflow. This workflow can turn a tool on or off for this node only.</InfoHint></legend>
+  const effective = effectiveGraphqlTools(role, agentDefault, override)
+  return <fieldset className="agent-graphql-tools">
+    <legend>Foreman Code MCP tools</legend>
+    <p className="settings-help">
+      Bug reporting is always available. For other tools, the Agent default applies in every workflow.
+      This workflow can turn a tool on or off for this node only.
+    </p>
     <div className="agent-graphql-tools-list">
       {tools.map((tool) => {
         const definition = GRAPHQL_AGENT_TOOLS[tool]
         if (tool === 'bug_report') {
           return <div key={tool} className="agent-graphql-tool">
             <div className="agent-graphql-tool-name">
-              <strong>{definition.label}<InfoHint label={definition.label}>{definition.description}</InfoHint></strong>
-              <span><code>{tool}</code></span>
+              <strong>{definition.label}</strong>
+              <span><code>{tool}</code> · {definition.description}</span>
             </div>
             <span>Always available</span>
           </div>
@@ -57,8 +61,8 @@ export function GraphqlToolsFields({ role, defaults, override, onChange }: {
         const inDefault = agentDefault.includes(tool)
         return <div key={tool} className="agent-graphql-tool" data-changed={choice(tool) !== 'default' || undefined}>
           <div className="agent-graphql-tool-name">
-            <strong>{definition.label}<InfoHint label={definition.label}>{definition.description}</InfoHint></strong>
-            <span><code>{tool}</code></span>
+            <strong>{definition.label}</strong>
+            <span><code>{tool}</code> · {definition.description}</span>
           </div>
           <Checkbox label="Agent default" aria-label={`${definition.label}: Agent default`} checked={inDefault}
             onChange={(event) => setDefault(tool, event.target.checked)} />
@@ -67,5 +71,6 @@ export function GraphqlToolsFields({ role, defaults, override, onChange }: {
         </div>
       })}
     </div>
+    <p className="settings-help" aria-live="polite">Enabled in this workflow: {effective.length ? effective.map((tool) => GRAPHQL_AGENT_TOOLS[tool].label).join(', ') : 'none'}.</p>
   </fieldset>
 }
