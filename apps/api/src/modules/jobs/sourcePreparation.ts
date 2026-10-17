@@ -41,7 +41,6 @@ import { matchesRuntimePolicy } from './runtimeSelection.js'
 import { DeviceAccessError } from '../devices/access.js'
 import { canonicalJson } from '@foreman-code/contracts/canonical-json'
 import { JobRepository, type JobSql } from './repository.js'
-import { computerNameKey, readComputerNames } from '../computers/names.js'
 import { JobPreparationService, type JobPreparationSources } from './preparation.js'
 
 /** W07/CI qualification readback; no probing, installing or pulling during authoring. */
@@ -64,9 +63,8 @@ export class CanonicalJobPreparationSources implements JobPreparationSources {
     const roots=(await sql.query<{record:unknown}>(`select b.record from source_root_catalog c join source_root_bindings b on b.root_id=c.root_id and b.binding_revision=c.current_binding_revision where c.workspace_id=$1 order by c.root_id limit 100`,[workspaceId])).rows.map(row=>SourceRootRecordSchema.parse(row.record))
     const policies=await this.runtime.choices(sql,principal,workspaceId)
     const targets:JobAuthoringChoicesRecord['targets']=[]
-    const names=roots.length?await readComputerNames(sql,roots[0]!.selection.hostRef.mainId):new Map<string,string>()
     for(const root of roots.filter(root=>sources.some(source=>source.snapshotId===root.source.snapshotId&&source.manifestDigest===root.source.manifestDigest))) {
-      try{const target=await this.target(sql,principal,root);targets.push({id:root.binding.rootId,label:names.get(computerNameKey(root.selection.hostRef.mainId,root.selection.hostRef.kind==='device'?root.selection.hostRef.deviceId:undefined))??(root.selection.hostRef.kind==='main'?'Main computer':`Computer ${root.selection.hostRef.deviceId}`),target,ready:root.binding.accessMode==='exclusive-write',reasons:root.binding.accessMode==='exclusive-write'?[]:['SOURCE_READ_ONLY']})}
+      try{const target=await this.target(sql,principal,root);targets.push({id:root.binding.rootId,label:root.selection.hostRef.kind==='main'?'Main computer':`Computer ${root.selection.hostRef.deviceId}`,target,ready:root.binding.accessMode==='exclusive-write',reasons:root.binding.accessMode==='exclusive-write'?[]:['SOURCE_READ_ONLY']})}
       catch (error) {
         // Retained roots on revoked devices remain history, but cannot be selected for another Job.
         if (root.selection.hostRef.kind === 'device' && error instanceof DeviceAccessError && error.code === 'revoked') {

@@ -196,7 +196,7 @@ it('shows the estimated credits left when hovering or focusing a CircleCI accoun
     '≈ 24,310 of 30,000 credits left · updated 6 min ago')).toBeInTheDocument()
   await user.unhover(acme)
   const beta = screen.getByRole('button', { name: /^CircleCI beta, Cloud CI/ })
-  await act(() => beta.focus())
+  beta.focus()
   await waitFor(() => expect(beta).toHaveAttribute('aria-describedby'))
   const card = within(document.getElementById(beta.getAttribute('aria-describedby')!)!)
   expect(await card.findByText('Credits unavailable')).toBeInTheDocument()
