@@ -1,4 +1,3 @@
-import { InfoHint } from '../../shared/ui/InfoHint'
 import { activeRunCandidates } from '@foreman-code/contracts/run-snapshots'
 import { useCallback, useEffect, useMemo, useRef, type ReactNode, type SyntheticEvent } from 'react'
 import { useLocation, useRouter } from '@tanstack/react-router'
@@ -153,7 +152,7 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
             {current ? <RunActivityPanel summaries={summaries} summariesReadAt={summariesReadAt} /> : null}
           </Drawer>
           <Dialog open={current && locationOpen} onOpenChange={setLocationOpen} title="Execution folder" closeLabel="Close execution folder"
-            headerLeading={<InfoHint label="Execution folder">Where agents work on files. It applies to future runs; runs already started keep their folder.</InfoHint>}>
+            description="Where agents work on files. It applies to future runs; runs already started keep their folder.">
             <WorkspaceExecutionLocationSettings workspaceId={workspaceId} presentation="field" />
           </Dialog>
         </div>

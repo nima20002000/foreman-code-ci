@@ -1,4 +1,3 @@
-import { InfoHint } from '../../shared/ui/InfoHint'
 import { useState } from 'react'
 import type { AccountProvider } from '@foreman-code/contracts/provider-accounts'
 import { sameDeviceProvisioningTarget, type DeviceProvisioningTarget } from '@foreman-code/contracts/device-resources'
@@ -53,7 +52,8 @@ export function ProviderAccountsSettings({ provider, selection, onSelect, target
   }
   return <section className="provider-accounts-settings" aria-label={provider
     ? `${provider === 'codex' ? 'Codex' : 'Claude'} accounts` : 'Provider accounts'}>
-    <header className="provider-accounts-heading"><h3>Accounts <InfoHint label="Accounts">Add one to keep its sign-in separate.</InfoHint></h3></header>
+    <header className="provider-accounts-heading"><h3>Accounts</h3></header>
+    <p>Default for new work without a saved account/profile.</p>
     {onTargetChange ? <Select label={`${provider === 'claude' ? 'Claude' : 'Codex'} account computer`}
       value={selectedTarget} options={targetChoices} disabled={access.discovery.isPending}
       onChange={event => {
@@ -63,6 +63,7 @@ export function ProviderAccountsSettings({ provider, selection, onSelect, target
     {scope.target ? <p className="provider-account-note">{access.target?.label ?? 'Saved computer'} · {
       scope.target.hostRef.kind === 'main' ? scope.target.hostRef.mainId : scope.target.hostRef.deviceId}
       {' · Installation '}{scope.target.applicationInstallationId}</p> : null}
+    <p className="provider-account-note">Credentials stay on their owning computer.</p>
     {denied || query.isError && !query.data || access.discovery.isError || access.discovery.isSuccess && !readable ?
       <ErrorState title="Accounts are unavailable"
       description={denied?.message ?? query.error?.message ?? access.discovery.error?.message
@@ -92,7 +93,7 @@ export function ProviderAccountsSettings({ provider, selection, onSelect, target
               onSelect?.({ provider: item, accountId: value.id, ...(scope.target ? { target: scope.target } : {}),
                 ...(auth?.accountId === value.id && auth.operationId ? { operationId: auth.operationId } : {}) })
             }} />)}</div>
-        {!accounts.some(value => value.provider === item) ? <p>No accounts added.</p> : null}
+        {!accounts.some(value => value.provider === item) ? <p>No accounts added. Add one to keep its sign-in separate.</p> : null}
         {capability?.reason ? <p>{capability.reason}</p> : null}
       </section>})}
     </>}

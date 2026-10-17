@@ -1,4 +1,3 @@
-import { InfoHint } from '../../shared/ui/InfoHint'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { Alert, Button, Dialog, Icon, LoadingState, StatusBadge, TextField } from '../../shared/ui/nocturne'
@@ -80,17 +79,18 @@ export function CodexPluginManager({ accessUnavailable = false }: { accessUnavai
     <p>{pending.result?.message ?? pending.error ?? 'The install or removal may have completed. Keep the original request until its outcome is known.'}</p>
     {pending.result?.nativeFailure ? <p>Native result: {pending.result.nativeFailure}</p> : null}
     {pending.error && pending.result ? <p>{pending.error}</p> : null}
+    <p>Refresh only reads the list. Reconcile checks this request without repeating the native write.</p>
     {pending.phase !== 'sending' ? <>
       {!pending.requestedBy && pending.input && pending.phase === 'retry'
         ? <Button size="sm" disabled={change.busy} onClick={change.retry}>Retry original request</Button> : null}
-      <span><Button size="sm" disabled={change.busy} onClick={() => change.reconcile()}>Reconcile original request</Button>
-        <InfoHint label="Reconcile">Refresh only reads the list. Reconcile checks this request without repeating the native write.</InfoHint></span>
+      <Button size="sm" disabled={change.busy} onClick={() => change.reconcile()}>Reconcile original request</Button>
       {pending.result?.observedRevision ? <Button size="sm" disabled={change.busy || list.isFetching || catalog?.revision !== pending.result.observedRevision} onClick={() => change.reconcile(true)}>Keep current state and close request</Button> : null}
     </> : <p role="status">Checking the original request…</p>}
   </Alert> : null
   const label = (item: NonNullable<typeof plugin>) => item.verification === 'unverified' ? 'Needs verification'
     : item.installed ? item.enabled ? 'Installed' : 'Disabled' : item.unavailableReason ? 'Unavailable' : 'Available'
   return <section className="codex-plugins" aria-label="Codex plugins">
+    <p className="harness-muted">Plugins use your Codex profile. New sessions use the updated bundle; service sign-in may still be required.</p>
     <div className="codex-plugins-controls">
       <div className="codex-plugins-tabs" role="group" aria-label="Plugin catalog view">
         <Button size="sm" variant={view === 'installed' ? 'primary' : 'ghost'} aria-pressed={view === 'installed'} onClick={() => move({ pluginView: 'installed', pluginOffset: 0 })}>Installed</Button>
@@ -134,7 +134,6 @@ export function CodexPluginManager({ accessUnavailable = false }: { accessUnavai
         {plugin && !plugin.installed && plugin.installPolicy === 'AVAILABLE' ? <Button variant="primary" disabled={busy || !snapshotReady || Boolean(plugin.unavailableReason) || catalog?.catalogStatus !== 'complete'} onClick={() => act('install')}>Install plugin</Button> : null}
         {plugin?.installed && plugin.verification !== 'unverified' && plugin.installPolicy !== 'INSTALLED_BY_DEFAULT' ? <Button variant="danger" leading={<Icon name="trash" size={16} />}
           disabled={busy || !snapshotReady || Boolean(plugin.unavailableReason)} onClick={() => act('remove')}>Remove plugin</Button> : null}
-        {plugin?.installed && plugin.verification !== 'unverified' && plugin.installPolicy !== 'INSTALLED_BY_DEFAULT' ? <InfoHint label="Remove plugin">Removing a plugin removes its bundled capabilities. Separately configured MCP connections remain in MCP connections.</InfoHint> : null}
         <Button disabled={change.busy} onClick={() => move({ pluginId: undefined })}>Close</Button>
       </>}>
       {!denied && detail.isPending ? <p role="status">Loading plugin details…</p> : null}
@@ -162,9 +161,10 @@ export function CodexPluginManager({ accessUnavailable = false }: { accessUnavai
           <div><strong>MCP servers</strong><span>{reviewed.contents.mcpServers.length ? reviewed.contents.mcpServers.join(', ') : 'None included'}</span></div>
           <div><strong>Apps</strong><span>{reviewed.contents.apps.length ? reviewed.contents.apps.join(', ') : 'None included'}</span></div>
           <div><strong>Hooks</strong><span>{reviewed.contents.hooks.length ? reviewed.contents.hooks.join(', ') : 'None included'}</span></div>
-        </div> : plugin.installed ? <Alert tone="warning" title="Bundle contents unavailable">Verified bundle contents are unavailable. <InfoHint label="Bundle contents">This can mean missing, unreadable, oversized, or unsupported files, not an empty bundle.</InfoHint></Alert>
-          : <p className="harness-muted">Bundle contents <InfoHint label="Bundle contents">Bundle contents can be checked after installation.</InfoHint></p>}
+        </div> : plugin.installed ? <Alert tone="warning" title="Bundle contents unavailable">Verified bundle contents are unavailable. This can mean missing, unreadable, oversized, or unsupported files—not an empty bundle.</Alert>
+          : <p className="harness-muted">Bundle contents can be checked after installation.</p>}
         {plugin.installed && plugin.installPolicy === 'INSTALLED_BY_DEFAULT' ? <p className="harness-muted">Codex installed this plugin by default; it cannot be removed here.</p> : null}
+        <p className="harness-muted">Removing a plugin removes its bundled capabilities. Separately configured MCP connections remain in MCP connections.</p>
       </div> : null}
     </Dialog>
   </section>

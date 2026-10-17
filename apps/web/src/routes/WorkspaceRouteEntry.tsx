@@ -6,7 +6,6 @@ import { boardSearchForInspection, type WorkspaceBoardInspection, boardSearchFor
 import { Button, ErrorState } from '../shared/ui/nocturne'
 import { PersistedWorkflowBoundary } from '../features/graph/PersistedWorkflowBoundary'
 import { WorkflowBoard } from '../features/workflow-board/WorkflowBoard'
-import { BoardLoading } from '../features/workflow-board/BoardLoading'
 import { useProtectedAccessError } from '../shared/api/useProtectedAccessError'
 import { clearCurrentRunAccess, revokeCurrentRunWorkspace } from '../features/workflow-board/currentRunQuery'
 import { ApiError } from '../shared/api/client'
@@ -125,7 +124,7 @@ function WorkspaceBoardRoute({ selection }: { selection: WorkflowBoardLocation }
     } })
   }, [workflowId, workspaceId, location.pathname, navigate])
 
-  if (workspace.isPending && !details) return <WorkspaceSelection workspaceId={workspaceId} state="loading" slots={{ graph: <BoardLoading /> }} />
+  if (workspace.isPending && !details) return <WorkspaceSelection workspaceId={workspaceId} state="loading" />
   if (!details) {
     const notFound = ApiError.is(workspace.error) && workspace.error.status === 404
     return <WorkspaceSelection workspaceId={workspaceId} state={notFound ? 'not-found' : 'error'}

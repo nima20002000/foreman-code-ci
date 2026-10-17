@@ -6,21 +6,17 @@ import type { WorkspaceUpdateInput } from '@foreman-code/contracts/management'
 import { CommandAttempt } from '../../shared/api/commandAttempt'
 import { queryKeys, useUpdateManagedWorkspaceMutation } from '../../shared/api/query'
 import { assertSession, sessionGeneration } from '../../shared/api/sessionBoundary'
-import { Alert, Button, Skeleton, TextField } from '../../shared/ui/nocturne'
+import { Alert, Button, TextField } from '../../shared/ui/nocturne'
 import { TrashIconButton } from '../../shared/ui/ResourceCard'
 import { useUnsavedChanges } from '../../shared/ui/unsavedChanges'
 import { WorkspaceExecutionLocationSettings } from '../settings'
 import { RemoveWorkspaceButton } from './RemoveWorkspaceButton'
 import './workspaceSettingsHeader.css'
 
-/** Without `name` and `revision` the identity read is still pending (or `failed`). The frame stays mounted, so
- * the page content below never remounts when the identity arrives. */
-export function WorkspaceSettingsHeader({ workspaceId, name: knownName, revision: knownRevision, failed = false, title = 'Settings', renderContent }: {
-  workspaceId: string; name?: string; revision?: number; failed?: boolean; title?: string
+export function WorkspaceSettingsHeader({ workspaceId, name, revision, title = 'Settings', renderContent }: {
+  workspaceId: string; name: string; revision: number; title?: string
   renderContent?: (actions: { rename(): void; remove(): void; chooseLocation(): void }) => ReactNode
 }) {
-  const known = knownName !== undefined && knownRevision !== undefined
-  const name = knownName ?? '', revision = knownRevision ?? 0
   const [uiStore] = useState(() => createStore(() => ({ open: false, value: name, baseRevision: revision, error: undefined as string | undefined })))
   const { open, value, baseRevision, error } = useStore(uiStore)
   const setOpen = (open: boolean) => uiStore.setState({ open })
@@ -70,8 +66,6 @@ export function WorkspaceSettingsHeader({ workspaceId, name: knownName, revision
   const leave = useUnsavedChanges({ scope: 'surface', label: 'workspace name', dirty: open && (value.trim() !== name || attempt.current.unresolved),
     busy: mutation.isPending, uncertain: attempt.current.unresolved, error, save, discard })
   const close = () => { if (!locked) void leave(() => setOpen(false)) }
-  // ignore: save() already reports its failure in the name editor before it rethrows.
-  const saveQuietly = () => { void save().catch(() => { /* ignore: reported by save() */ }) }
   const rename = () => {
     if (locked) return
     if (open) { input.current?.focus(); return }
@@ -79,20 +73,18 @@ export function WorkspaceSettingsHeader({ workspaceId, name: knownName, revision
   }
   return <>
     <RemoveWorkspaceButton workspaceId={workspaceId} name={name} revision={revision} renderTrigger={(remove) => <>
-      <header className="workspace-settings-header" aria-busy={!known && !failed}>
+      <header className="workspace-settings-header">
       <div className="workspace-settings-identity">
-        {!known ? <div className="workspace-settings-name-row">
-          {failed ? <span className="n-eyebrow">Workspace</span> : <Skeleton width="8rem" height="1.25rem" />}
-        </div> : <div className="workspace-settings-name-row">
+        <div className="workspace-settings-name-row">
           <div className="workspace-settings-name-actions">
           {open ? <div className="workspace-settings-name-editor">
             <TextField ref={input} label="Workspace name" value={value} maxLength={200} disabled={locked} error={error}
               onChange={(event) => { setValue(event.target.value); setError(undefined) }}
               onKeyDown={(event) => {
-                if (event.key === 'Enter') { event.preventDefault(); saveQuietly() }
+                if (event.key === 'Enter') { event.preventDefault(); void save().catch(() => undefined) }
                 if (event.key === 'Escape') { event.preventDefault(); close() }
               }} />
-            <Button size="sm" variant="primary" disabled={mutation.isPending} onClick={() => saveQuietly()}>
+            <Button size="sm" variant="primary" disabled={mutation.isPending} onClick={() => void save().catch(() => undefined)}>
               {mutation.isPending ? 'Saving…' : attempt.current.unresolved ? 'Retry rename' : 'Save name'}
             </Button>
             <Button size="sm" disabled={locked} onClick={close}>Cancel</Button>
@@ -103,7 +95,7 @@ export function WorkspaceSettingsHeader({ workspaceId, name: knownName, revision
           </>}
           </div>
           <WorkspaceExecutionLocationSettings workspaceId={workspaceId} presentation="compact" triggerRef={locationTrigger} />
-        </div>}
+        </div>
         {attempt.current.unresolved && !mutation.isPending ? <Alert tone="warning" title="The rename may have succeeded. Retry to confirm its outcome." /> : null}
         <h1>{title}</h1>
       </div>

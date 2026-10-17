@@ -19,8 +19,6 @@ import type { WorkerBundleReadiness } from '@foreman-code/contracts/computer-mai
 import { workerBundleErrorMessage } from '../computers/workerBundleReadiness.js'
 import { withCiDatabaseReservation, withoutCiDatabasePriority } from '../../infrastructure/ciDatabasePriority.js'
 
-import { RetryBackoff } from '../../infrastructure/retryBackoff.js'
-
 const log = componentLogger('jobs')
 
 interface DeviceRequests {
@@ -36,7 +34,6 @@ interface DeviceRequests {
 export class ProductionHostCiEndpoint implements HostCiEndpoint {
   private readonly cleanupAt = new Map<string, number>()
   private readonly cleanupPending = new Map<string, Promise<void>>()
-  private readonly cleanupRetries = new Map<string, RetryBackoff>()
   constructor(private readonly pool: pg.Pool, private readonly mainId: string,
     private readonly devices: () => DeviceRequests | undefined, private readonly local: Pick<HostCiRunner, 'handle'>,
     private readonly clouds: CloudCi[] = [], private readonly discoverClouds?: () => Promise<void>,
@@ -117,7 +114,9 @@ export class ProductionHostCiEndpoint implements HostCiEndpoint {
       }
     }
     if (reply.operation === 'status' && reply.cleanupSupported) {
-      void withoutCiDatabasePriority(() => this.cleanDirectories(computer))
+      void withoutCiDatabasePriority(() => this.cleanDirectories(computer)).catch(error => {
+        log.warn({ operation: 'clean retained CI directories', err: error, hostRef: computer.hostRef }, 'CI directory cleanup failed; next status will retry')
+      })
     }
     return reply
   }
@@ -152,9 +151,6 @@ export class ProductionHostCiEndpoint implements HostCiEndpoint {
     const pending = this.cleanupPending.get(key)
     if (pending) return pending
     const now = Date.now()
-    const retry = this.cleanupRetries.get(key) ?? new RetryBackoff({ initialMs: 5 * 60_000, maxMs: 30 * 60_000 })
-    this.cleanupRetries.set(key, retry)
-    if (!retry.ready(now)) return
     if (now - (this.cleanupAt.get(key) ?? -Infinity) < 5 * 60_000) return
     const cleanup = (async () => {
       for (let offset = 0; ; offset += CI_DIRECTORY_PAGE_SIZE) {
@@ -166,13 +162,8 @@ export class ProductionHostCiEndpoint implements HostCiEndpoint {
         }
         if (runIds.length < CI_DIRECTORY_PAGE_SIZE) break
       }
-      this.cleanupAt.set(key, Date.now())
-      retry.reset()
-    })().catch(error => {
-      const nextRetryMs = retry.fail()
-      log.warn({ operation: 'clean retained CI directories', err: error, hostRef: computer.hostRef, nextRetryMs },
-        'CI directory cleanup failed; retry scheduled')
-    })
+      this.cleanupAt.set(key, now)
+    })()
     this.cleanupPending.set(key, cleanup)
     try { await cleanup }
     finally { this.cleanupPending.delete(key) }
