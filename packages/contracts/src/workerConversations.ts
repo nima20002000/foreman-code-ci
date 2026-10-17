@@ -30,12 +30,14 @@ const WorkerConversationOwnerSchema = z.discriminatedUnion('kind', [
     workflowId: id, workflowNodeId: id }).strict(),
 ])
 export const WorkerConversationBindingSchema = z.object({
+  sessionGeneration: id.optional(),
   accountBinding: AcceptedProviderAccountBindingSchema.optional(),
   owner: WorkerConversationOwnerSchema,
   directoryBinding: AgentChatDirectoryBindingSchema.optional(),
   systemPrompt: PromptSettingSnapshotSchema.optional(),
   sourceExecution: z.object({ executionId: id, placement: z.lazy(() => AcceptedNodePlacementSchema),
     workingTree: VerifiedSourceWorkingTreeSchema }).strict().optional(),
+  sourceConfigurationVersionId: id.optional(),
   harness: z.lazy(() => AgentHarnessSchema),
   profile: HarnessProfileSelectionSchema,
   workingDirectory: directory,
@@ -61,9 +63,12 @@ export const WorkerConversationBindingSchema = z.object({
     const host = target.hostRef
     if (value.workingDirectory !== value.sourceExecution.workingTree.canonicalCwd
       || owner.kind !== 'agent' || payload.kind !== 'agent'
-      || payload.agentId !== owner.agentId || payload.agentConfigurationVersionId !== owner.configurationVersionId
+      || payload.agentId !== owner.agentId
+      || payload.agentConfigurationVersionId !== (value.sourceConfigurationVersionId ?? owner.configurationVersionId)
+      || value.sourceConfigurationVersionId === owner.configurationVersionId
       || placement.nodeId !== owner.workflowNodeId || payload.driverId !== value.harness
-      || value.profile.instanceId !== payload.instanceId || value.profile.instanceRevision !== payload.instanceRevision
+      || value.profile.instanceId !== payload.instanceId
+      || !value.sourceConfigurationVersionId && value.profile.instanceRevision !== payload.instanceRevision
       || host.kind !== 'device' || placement.hostRef.kind !== 'device'
       || host.mainId !== placement.hostRef.mainId || host.deviceId !== placement.hostRef.deviceId
       || target.applicationInstallationId !== placement.registration?.workerInstallationId
@@ -71,6 +76,9 @@ export const WorkerConversationBindingSchema = z.object({
       || target.installationFingerprint !== payload.installationFingerprint) {
       context.addIssue({ code: 'custom', message: 'The chat profile must match its accepted Agent execution placement.' })
     }
+  }
+  if (value.sourceConfigurationVersionId && !value.sourceExecution) {
+    context.addIssue({ code: 'custom', message: 'A continued configuration requires its original Run working tree.' })
   }
 })
 export type WorkerConversationBinding = z.infer<typeof WorkerConversationBindingSchema>
@@ -83,7 +91,7 @@ export type WorkerConversationConfiguration = z.infer<typeof WorkerConversationC
 export function workerConversationProfileSelection(binding: WorkerConversationBinding,
   configuration: WorkerConversationConfiguration) {
   const parsed = WorkerConversationBindingSchema.parse(binding)
-  return parsed.sourceExecution ? parsed.profile : configuration.harnessProfileSelection
+  return parsed.sourceExecution && !parsed.sourceConfigurationVersionId ? parsed.profile : configuration.harnessProfileSelection
 }
 
 const WorkerConversationTurnSchema = z.object({
@@ -111,6 +119,7 @@ export const WorkerConversationReceiptSchema = z.object({
   revision: z.number().int().positive(),
   closed: z.boolean(), closing: z.boolean(),
   closedAt: z.iso.datetime().optional(),
+  runtimeReleased: z.boolean().optional(),
   creation: z.object({ operationId: id, inputHash: digest, status: z.literal('rejected').optional() }).strict().optional(),
   session: z.lazy(() => NativeSessionReferenceSchema).optional(),
   nativeOwner: RemoteNativeIdentitySchema.optional(),
@@ -239,6 +248,7 @@ export const WorkerConversationRpcRequestSchema = z.discriminatedUnion('method',
   z.object({ method: z.literal('conversation.release-preparation'), ...binding }).strict(),
   z.object({ method: z.enum(['conversation.history', 'conversation.reconcile']), ...native,
     correlationId: id.optional(), before: id.optional(), afterSequence: z.number().int().min(-1).optional(),
+    waitForEvents: z.boolean().optional(),
     sessionMode: SessionModeSchema.optional() }).strict(),
   z.object({ method: z.literal('conversation.recover-files'), ...native,
     configuration: WorkerConversationConfigurationSchema, correlationId: id,
@@ -250,7 +260,7 @@ export const WorkerConversationRpcRequestSchema = z.discriminatedUnion('method',
       harness: z.lazy(() => AgentHarnessSchema), runnerId: id, workingDirectory: directory, serverName: id,
       phase: z.enum(['configuration', 'health']).optional(),
     }).strict() }).strict(),
-  z.object({ method: z.enum(['conversation.pending', 'conversation.controls-read', 'conversation.close']),
+  z.object({ method: z.enum(['conversation.pending', 'conversation.controls-read', 'conversation.close', 'conversation.release-runtime']),
     ...native }).strict(),
   z.object({ method: z.literal('conversation.cancel'), ...native, nativeTurnId: id.optional() }).strict(),
   z.object({ method: z.literal('conversation.retire-turn'), ...native, correlationId: id }).strict(),
