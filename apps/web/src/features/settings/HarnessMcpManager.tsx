@@ -186,7 +186,7 @@ function NativeMcpManager({ harness, accessUnavailable = false }: NativeMcpManag
     harness, accessUnavailable,
   })
   return <section className="harness-mcp-manager" aria-label={`${harness} MCP connections`}>
-    <div className="harness-section-heading"><div><h4>MCP servers</h4></div>
+    <div className="harness-section-heading"><div><h4>MCP servers</h4><p className="harness-muted">Native user configuration · changes apply to new sessions.</p></div>
       <div className="harness-inline-actions"><Button size="sm" disabled={servers.isFetching} onClick={() => void servers.refetch()}>Refresh</Button>
         <Button size="sm" variant="primary" disabled={!serverData || servers.isError} onClick={() => { request.reset(); setAdding(true) }}>Add server</Button></div></div>
     {blocked ? <Alert tone="warning" title="Connection access is unavailable">Your connection draft is kept. Restore access before reviewing it.</Alert> : null}

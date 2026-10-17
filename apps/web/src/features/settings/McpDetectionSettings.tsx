@@ -78,6 +78,7 @@ export function McpDetectionSettings(props: Props) {
   return <section className="mcp-connections" aria-label="Workspace Foreman Code MCP">
     <header className="mcp-heading">
       <div className="mcp-heading-title"><Icon name="workflow" size={20} /><h2>App connections</h2><Badge>MCP</Badge></div>
+      <p>{props.workspaceId ? 'Connections to this workspace’s app tools.' : 'Check app connections for a workspace.'}</p>
     </header>
     {props.workspaceId ? <WorkspaceEvidence key={`${props.workspaceId}:${epoch}`} {...props} workspaceId={props.workspaceId} />
       : <WorkspaceSelector key={epoch} harness={props.harness} />}

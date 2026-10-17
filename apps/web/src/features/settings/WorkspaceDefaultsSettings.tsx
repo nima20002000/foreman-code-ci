@@ -21,7 +21,7 @@ export function WorkspaceDefaultsSettings() {
   const draft = form.draft
   if (!draft) return <LoadingState label="Loading workspace defaults…" />
   return <section ref={root} className="settings-editor-page" aria-label="Workspace defaults">
-    <header className="settings-experience-heading"><h1>Workspaces</h1></header>
+    <header className="settings-experience-heading"><h1>Workspaces</h1><p>Starting details for new workspaces. Existing workspaces do not change.</p></header>
     <SettingsFormFeedback form={form} />
     {query.isError ? <p role="alert">Could not refresh. Your edits are kept. <Button size="sm" onClick={() => void query.refetch()}>Retry</Button></p> : null}
     <div className="settings-editor-content settings-single-column">
@@ -30,6 +30,7 @@ export function WorkspaceDefaultsSettings() {
       <Textarea label="Starting description" rows={4} maxLength={10_000} value={draft.description} error={fieldMessage(form.issues ?? [], 'description')}
         placeholder="Optional context for new workspaces" onChange={(event) => form.setDraft({ ...draft, description: event.target.value })} />
       <WorkspaceFolderPicker value={draft.parentPath ?? ''} label="Default location"
+        description="New workspaces get their own folder here."
         disabled={form.isSaving || form.uncertain} onSelect={(parentPath) => form.setDraft({ ...draft, parentPath })} />
       {fieldMessage(form.issues ?? [], 'parentPath') ? <p role="alert">{fieldMessage(form.issues ?? [], 'parentPath')}</p> : null}
     </div>

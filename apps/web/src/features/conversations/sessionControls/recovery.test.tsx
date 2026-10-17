@@ -3,7 +3,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { SessionControlStateSchema, unavailableSessionControls } from '@foreman-code/contracts'
 import { OperatorComposer } from '../../operator-chat/OperatorComposer'
 import { ConversationComposer } from '../ConversationComposer'
-import { SessionContext, SessionControls } from './SessionControls'
+import { SessionControls } from './SessionControls'
 import { useConversationDraftStore } from '../conversationDraftStore'
 import type { ComposerSessionControls } from './useSessionControls'
 
@@ -32,7 +32,7 @@ afterEach(() => {
 it.each(['operator', 'agent'])('shows the saved Plan mode and recovery after reloading %s chat', role => {
   const controls = controller()
   if (role === 'operator') {
-    render(<><SessionContext controls={controls} /><OperatorComposer conversationId="chat" sessionControls={controls} onNewChat={vi.fn()} onSubmit={vi.fn()} /></>)
+    render(<OperatorComposer conversationId="chat" sessionControls={controls} onNewChat={vi.fn()} onSubmit={vi.fn()} />)
   } else {
     render(<ConversationComposer conversationId="chat" sessionControls={controls} onSubmit={vi.fn()} />)
   }
