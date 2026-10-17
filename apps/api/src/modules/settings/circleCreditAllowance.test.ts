@@ -128,3 +128,13 @@ it('denies read-only and workspace-scoped allowance writes and rejects a stale r
   expect(stale.isError).toBe(true)
   expect(await f.settings.getCircleCreditAllowance(f.owner)).toMatchObject({ value: { defaultMonthlyCredits: 1 }, revision: 1 })
 })
+
+it('preserves an explicitly saved 30000 allowance and organization overrides after recreation', async () => {
+  const f = await fixture()
+  await f.settings.updateCircleCreditAllowance(f.owner, 'http', {
+    value: { defaultMonthlyCredits: 30000, accounts: { 'fixture-custom': 123456 } },
+  })
+  expect(await f.createSettings().getCircleCreditAllowance(f.owner)).toMatchObject({
+    value: { defaultMonthlyCredits: 30000, accounts: { 'fixture-custom': 123456 } }, revision: 1,
+  })
+})
