@@ -54,7 +54,7 @@ it.each(['resident', 'unloaded'] as const)(
       }))
       expect(replay.compaction).toMatchObject({ requestId: request.requestId, status: 'completed' })
       const persisted = AgentChatControlsStateSchema.parse(await fixture.value('agent_chat_controls_get', target))
-      expect(persisted.compactions).toContainEqual(recovered.compaction)
+      expect(persisted.compaction).toEqual(recovered.compaction)
       const continued = await chat.send('Continue with the saved settings after compaction.')
       expect(continued.state.conversation).toMatchObject({ id: chat.id, nativeSession: session,
         agentConfigurationVersionId: saved.result.value.agent.configurationVersionId })
