@@ -1,9 +1,12 @@
+import { mkdir, mkdtemp, rm } from 'node:fs/promises'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { expect, it } from 'vitest'
 import { CircleStandby, circleOrgKey, type CircleOrganization } from './circleStandby.js'
 import { CircleCreditCache } from './circleCreditCache.js'
 import type { CircleCreditsReading } from './circleCredits.js'
 
-function fixture() {
+function fixture(cache = new CircleCreditCache()) {
   let now = Date.parse('2026-10-17T12:00:00Z')
   const orgs: CircleOrganization[] = ['alpha', 'beta', 'gamma', 'delta', 'epsilon', 'zeta'].map((owner, index) => ({
     owner, circleAccountId: index < 3 ? 'default' : 'reserve', role: index < 3 ? 'primary' : 'standby',
@@ -15,7 +18,6 @@ function fixture() {
     return value === null || value === undefined ? { credits: null, creditsUnavailable: 'Usage unavailable.' }
       : { credits: { total: 400_000, used: 400_000 - value, remaining: value, asOf: new Date(now).toISOString() } }
   } }
-  const cache = new CircleCreditCache()
   const selector = () => new CircleStandby(async () => orgs, readings, cache, () => now)
   const standby = selector()
   const roles = async (mirror = 'site-ci') => {
@@ -90,4 +92,45 @@ it('cannot exhaust the new UTC month using a reading completed just before midni
     asOf: '2026-10-31T23:59:59.999Z' } }) }, new CircleCreditCache(), () => Date.parse('2026-11-01T00:00:00Z'))
   expect(await standby.eligible('alpha', 'default', 'site-ci')).toBe(true)
   expect(await standby.eligible('delta', 'reserve', 'site-ci')).toBe(false)
+})
+
+it('persists one globally bounded replacement across concurrent workspace selections and recreation', async () => {
+  const parent = join(homedir(), '.cache', 'foreman-tmp')
+  await mkdir(parent, { recursive: true })
+  const root = await mkdtemp(join(parent, 'circle-assignments-'))
+  try {
+    const path = join(root, 'usage.json')
+    const f = fixture(new CircleCreditCache(path))
+    f.remaining.set('alpha', 0)
+    for (const org of f.orgs.slice(0, 3)) org.mirrorNames = new Set(['mirror-a', 'mirror-b'])
+    f.orgs[3]!.mirrorNames = new Set(['mirror-a'])
+    f.orgs[4]!.mirrorNames = new Set(['mirror-b'])
+    f.orgs[5]!.mirrorNames = new Set()
+    const [first, second] = await Promise.all([f.standby.roles('mirror-a'), f.standby.roles('mirror-b')])
+    const active = new Set([...first, ...second].filter(([, reading]) => reading.schedulingRole === 'active')
+      .map(([key]) => key))
+    expect([...active].sort()).toEqual([
+      circleOrgKey('beta'), circleOrgKey('gamma'), circleOrgKey('delta', 'reserve'),
+    ].sort())
+    const restarted = fixture(new CircleCreditCache(path))
+    restarted.remaining.set('alpha', 0)
+    restarted.orgs.forEach((org, index) => { org.mirrorNames = f.orgs[index]!.mirrorNames })
+    const roles = await restarted.standby.roles('mirror-b')
+    expect(roles.get(circleOrgKey('epsilon', 'reserve'))?.schedulingRole).toBe('standby')
+    expect(roles.get(circleOrgKey('delta', 'reserve'))?.schedulingRole).toBe('standby')
+    expect((await restarted.standby.roles()).get(circleOrgKey('delta', 'reserve'))?.schedulingRole).toBe('active')
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+it('uses unknown usage only to retain an existing replacement, not to create another assignment', async () => {
+  const f = fixture()
+  f.remaining.set('alpha', 0)
+  expect((await f.roles())[3]).toBe('active')
+  f.remaining.set('alpha', 400_000)
+  expect((await f.roles())[3]).toBe('standby')
+  f.remaining.set('alpha', 0)
+  f.remaining.set('delta', null)
+  expect(await f.roles()).toEqual(['exhausted', 'active', 'active', 'standby', 'active', 'standby'])
 })

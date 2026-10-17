@@ -5,11 +5,12 @@ import { ArtifactAttemptSchema, type ArtifactAttempt, type ArtifactGrantReferenc
 import { DeviceConnectionIdentitySchema, type DeviceConnectionIdentity } from '@foreman-code/contracts/device-identity'
 import { WorkerMcpRelayRequestSchema, type WorkerMcpRelayRequest, type WorkerNativeOutputDeclarationsPolicy } from '@foreman-code/contracts/worker-mcp-relay'
 import { WORKER_NATIVE_OUTPUT_FILE_OPERATIONS } from '@foreman-code/contracts/worker-native-output'
-import { RemoteOperationReceiptSchema } from '@foreman-code/contracts/remote-execution'
+import { RemoteOperationReceiptSchema, remoteWorkflowHasTurn } from '@foreman-code/contracts/remote-execution'
 import { VerifiedTransferReceiptSchema, type VerifiedTransferReceipt, type TransferContext } from '@foreman-code/contracts/byte-transfer'
 import type { ArtifactPublicationAuthority, AcceptedArtifactPublication } from '../../files/distributed/publication.js'
 import type { AcceptedArtifactAttemptFence } from '../../files/distributed/authorization.js'
-import { bindingIdentity, isMutation } from '../../files/tools/context.js'
+import { bindingIdentity, digest, isMutation } from '../../files/tools/context.js'
+import type { DistributedPublicationLink } from '../../files/distributed/publicationLedger.js'
 import type { AuthorizedFileCaller, FileToolContext } from '../../files/tools/types.js'
 import type { FileQuery } from '../../files/repository.js'
 import { readLiveManagementPrincipal } from '../../access/liveManagementPrincipal.js'
@@ -129,6 +130,30 @@ export class PostgresArtifactPublicationAuthority implements ArtifactPublication
   authorize(accepted: AcceptedArtifactPublication, query?: FileQuery): Promise<AuthorizedFileCaller> {
     return query ? this.locked(accepted, query) : withExclusiveGraphConnection(this.pool, connection => connection.transaction(sql => this.locked(accepted, sql)))
   }
+  /** Reading an existing publication preserves its publishing turn; new writes still require the active turn. */
+  authorizePublication(accepted: AcceptedArtifactPublication, query?: FileQuery): Promise<AuthorizedFileCaller> {
+    const read = (sql: FileQuery) => this.locked(accepted, sql, { publicationRead: true })
+    return query ? read(query) : withExclusiveGraphConnection(this.pool, connection => connection.transaction(read))
+  }
+  resolvePublicationContext(accepted: AcceptedArtifactPublication, commandId: string,
+    query?: FileQuery): Promise<AcceptedArtifactPublication> {
+    const read = async (sql: FileQuery) => {
+      const current = await this.locked(accepted, sql)
+      const requestId = `fil05:remote:${digest(commandId)}`
+      const row = (await sql.query<{ record: DistributedPublicationLink }>(
+        'select record from file_tool_publications where owner_principal_id=$1 and request_id=$2 for share',
+        [current.principal.id, requestId])).rows[0]
+      if (!row) throw new DomainError('FILE_PUBLICATION_PENDING', 'The original publication has not been recorded.', 409)
+      const link = row.record
+      if (link.ownerPrincipalId !== current.principal.id || link.requestId !== requestId
+        || !isDeepStrictEqual({ ...link.context, turnId: accepted.context.turnId }, accepted.context)) return denied()
+      const original = { ...accepted, context: structuredClone(link.context) }
+      const caller = await this.locked(original, sql, { publicationRead: true })
+      if (caller.binding !== link.binding) return denied()
+      return original
+    }
+    return query ? read(query) : withExclusiveGraphConnection(this.pool, connection => connection.transaction(read))
+  }
   /** Resolves an already admitted workflow conversation. It never creates a chat or forks a native session. */
   resolveWorkflowContext(attempt: ArtifactAttempt, transferContext: TransferContext, query?: FileQuery): Promise<AcceptedArtifactPublication> {
     return this.resolveAuthorizedWorkflowContext(attempt, transferContext, query).then(result => result.accepted)
@@ -157,14 +182,14 @@ export class PostgresArtifactPublicationAuthority implements ArtifactPublication
         nativeSessionId: current.execution.nativeSessionId, turnId: receipt.native.turnId,
         allowMutation: current.configuration.harness.sandbox === 'workspace-write', allowedTools: codexChatFileTools(current.configuration.harness) }
       const accepted = { attempt: structuredClone(attempt), transferContext: structuredClone(transferContext), context }
-      const authorized = await this.locked(accepted, sql, current)
+      const authorized = await this.locked(accepted, sql, { loaded: current })
       return { accepted, authorized }
     }
     return query ? resolve(query) : withExclusiveGraphConnection(this.pool, connection => connection.transaction(resolve))
   }
   private async locked(accepted: AcceptedArtifactPublication, sql: FileQuery,
-    loaded?: Awaited<ReturnType<typeof acceptedAttempt>>): Promise<AuthorizedFileCaller> {
-    const current = loaded ?? await acceptedAttempt(this.mainId, this.ports, accepted.attempt, sql)
+    options: { loaded?: Awaited<ReturnType<typeof acceptedAttempt>>; publicationRead?: true } = {}): Promise<AuthorizedFileCaller> {
+    const current = options.loaded ?? await acceptedAttempt(this.mainId, this.ports, accepted.attempt, sql)
     const { context, transferContext: transfer } = accepted, scope = context.scope.chat
     if (current.placement.hostRef.kind !== 'device' || !current.placement.registration || scope.kind !== 'agent'
       || scope.workspaceId !== accepted.attempt.workspaceId || scope.workflowId !== accepted.attempt.workflowId
@@ -200,7 +225,10 @@ export class PostgresArtifactPublicationAuthority implements ArtifactPublication
     const reference = session && NativeSessionReferenceSchema.parse(session.reference)
     if (!reference || !receipt || !isDeepStrictEqual(receipt.intent, current.intent) || reference.harness !== current.configuration.harness.harness
       || !receipt.native?.turnId || receipt.native.sessionId !== reference.nativeSessionId || context.nativeSessionId !== reference.nativeSessionId
-      || current.execution.nativeSessionId !== reference.nativeSessionId || context.nativeMessageId !== undefined || context.turnId !== receipt.native.turnId
+      || current.execution.nativeSessionId !== reference.nativeSessionId || context.nativeMessageId !== undefined
+      || !context.turnId || (options.publicationRead
+        ? !remoteWorkflowHasTurn(receipt, context.nativeSessionId, context.turnId)
+        : context.turnId !== receipt.native.turnId)
       || receipt.connection.mainId !== transfer.mainId || receipt.connection.deviceId !== transfer.deviceId
       || receipt.connection.workerInstallationId !== transfer.workerInstallationId || receipt.connection.keyRevision !== transfer.keyRevision
       || receipt.connection.authorizationRevision !== transfer.authorizationRevision) return denied()

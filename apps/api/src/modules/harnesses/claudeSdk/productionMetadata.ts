@@ -11,15 +11,16 @@ import type { NativeHarnessFactories } from '../runtimeFactory.js'
 import type { HarnessInstanceSettingsRepository } from '../instanceSettings/repository.js'
 import { DomainError } from '../../errors.js'
 import { logger } from '../../diagnostics/logger.js'
-import { commandInputHash } from '../../commands/postgres.js'
+import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
 import { ClaudeCheckedNativeConfigurationPort } from './nativeConfiguration.js'
 import { discoverClaudeMetadata } from './metadata.js'
 import type { ProviderAccountResolver } from '../../provider-accounts/service.js'
 import { resolveRuntimeProviderAccount } from '../providerAccountRuntime.js'
 import { requireClaudeProductionCredentialDelivery } from './productionCredentials.js'
-
 import { detectedClaudeProfilePath } from './profilePath.js'
-export { detectedClaudeProfilePath } from './profilePath.js'
+
+export { detectedClaudeProfilePath }
+
 
 export function productionClaudeMetadata(input: {
   registry: ProductionHarnessRegistry; processes: Pick<NativeProcessRegistry, 'reserveLaunch' | 'abandonReservedLaunch' | 'closeOwner'>; settings: HarnessInstanceSettingsRepository

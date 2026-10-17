@@ -3,6 +3,7 @@ import { isDeepStrictEqual } from 'node:util'
 import { HarnessExecutionSchema, type HarnessExecution } from '@foreman-code/contracts'
 import { REMOTE_NATIVE_SOURCE_LIMIT } from '@foreman-code/contracts/remote-workflow-physical'
 import { ArtifactAttemptSchema } from '@foreman-code/contracts/artifact-edges'
+import { remoteWorkflowHasTurn, remoteWorkflowTurnId, type RemoteOperationReceipt } from '@foreman-code/contracts/remote-execution'
 import { WorkflowVersionV3Schema, type WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
 import { parseWorkflowArtifactResult, type WorkflowArtifactResultV1 } from '@foreman-code/contracts/workflow-artifact-result'
 import type { AcceptedArtifactPublication } from '../../files/distributed/publication.js'
@@ -17,6 +18,8 @@ export interface VerifiedWorkflowArtifactSource {
   execution: HarnessExecution
   proof: WorkflowNativeProofRecord
   sourceDigest: string
+  remote: RemoteOperationReceipt
+  publicationContext(commandId: string): Promise<AcceptedArtifactPublication>
   /** Recheck the retained original terminal, accepted dispatch/Run/version and
    * current authority. Positive original closure is not a replacement launch. */
   assertCurrent(): Promise<void>
@@ -48,7 +51,7 @@ export class WorkflowArtifactResultAdoption {
     // Snapshot before an authority await; a producer cannot change the value
     // being validated while a current-grant/ownership check is in flight.
     const snapshot = structuredClone({ version: original.version, execution: original.execution,
-      proof: original.proof, sourceDigest: original.sourceDigest })
+      proof: original.proof, sourceDigest: original.sourceDigest, remote: original.remote })
     await original.assertCurrent()
     const { proof } = snapshot
     const version = WorkflowVersionV3Schema.parse(snapshot.version), execution = HarnessExecutionSchema.parse(snapshot.execution)
@@ -65,12 +68,18 @@ export class WorkflowArtifactResultAdoption {
     if (!node.artifactOutputs) return { status: 'unavailable', reason: 'not_declared' }
     if (proof.original.type !== 'history' || !proof.lane || !proof.closureGeneration) return conflict()
     const history = proof.original.history, terminal = history.terminalTurn
-    if (!terminal || terminal.correlationId !== proof.commandId || history.correlationId !== proof.commandId
+    const correlationId = snapshot.remote.turnInput?.correlationId ?? proof.commandId
+    const turnId = remoteWorkflowTurnId(snapshot.remote, correlationId)
+    if (!terminal || terminal.correlationId !== correlationId || history.correlationId !== correlationId
       || !terminal.providerId || terminal.providerId !== history.nativeTurnId || terminal.providerId !== proof.lane.providerId
+      || terminal.providerId !== turnId || snapshot.remote.intent.executionId !== execution.id
+      || snapshot.remote.intent.attemptId !== accepted.attempt.attemptId
+      || snapshot.remote.intent.bindingHash !== accepted.attempt.placementHash
+      || snapshot.remote.native?.sessionId !== proof.session.nativeSessionId
       || terminal.providerId !== accepted.context.turnId || history.pendingInteraction || history.pendingInteractions.length
       || accepted.context.nativeMessageId !== undefined && history.nativeMessageId !== accepted.context.nativeMessageId
       || execution.result !== undefined && !isDeepStrictEqual(execution.result, terminal.result)) return conflict()
-    assertOriginalWorkflowTerminal(execution, proof.session, history)
+    assertOriginalWorkflowTerminal(execution, proof.session, history, correlationId)
     let mappings: WorkflowArtifactResultV1['outputs']
     try {
       if (version.definition.handoffs) {
@@ -87,7 +96,12 @@ export class WorkflowArtifactResultAdoption {
     const adopted: NativeArtifactOutput[] = []
     for (const mapping of mappings) {
       await original.assertCurrent()
-      const output = await this.outputs.acceptOutput(accepted, mapping.outputKey, mapping.commandId)
+      const publication = await original.publicationContext(mapping.commandId)
+      if (!isDeepStrictEqual(publication.attempt, accepted.attempt)
+        || !isDeepStrictEqual({ ...publication.context, turnId: accepted.context.turnId }, accepted.context)
+        || !publication.context.turnId || !remoteWorkflowHasTurn(snapshot.remote,
+          publication.context.nativeSessionId, publication.context.turnId)) return conflict()
+      const output = await this.outputs.acceptOutput(publication, mapping.outputKey, mapping.commandId)
       await original.assertCurrent()
       adopted.push(output)
     }

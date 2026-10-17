@@ -44,6 +44,8 @@ interface Admission {
   files?: MainWorkerFiles
 }
 const NATIVE_REQUEST_TIMEOUT_MS = 120_000
+// A lost copy reply must leave time to retry within preparation's 30-second idle window.
+const FILE_COPY_REQUEST_TIMEOUT_MS = 15_000
 function denied(): never {
   throw new DomainError('WORKER_CONVERSATION_CALLBACK_DENIED', 'The original admitted worker chat request is unavailable.', 403)
 }
@@ -82,7 +84,7 @@ export class MainWorkerConversationBridge {
       admission.files = new MainWorkerFiles(admission.callbacks.files, async (copy, signal) => {
         await assertCurrent(signal)
         const reply = await admission.channel.request({ method: 'conversation.file-copy',
-          binding: request.binding, admissionId, copy }, { signal })
+          binding: request.binding, admissionId, copy }, { signal, timeoutMs: FILE_COPY_REQUEST_TIMEOUT_MS })
         await assertCurrent(signal)
         if (reply.bytes !== undefined) denied()
         return reply.payload
