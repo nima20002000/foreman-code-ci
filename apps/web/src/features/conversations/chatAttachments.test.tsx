@@ -151,7 +151,7 @@ beforeEach(() => {
   let tail: Promise<unknown> = Promise.resolve()
   Object.defineProperty(navigator, 'locks', { configurable: true, value: {
     request<T>(name: string, options: LockOptions, callback: (lock: Lock) => T | PromiseLike<T>): Promise<T> {
-      const next = tail.catch(() => undefined).then(() => { options.signal?.throwIfAborted(); return callback({ name, mode: 'exclusive' } as Lock) })
+      const next = tail.catch(() => { /* ignore: an earlier lock holder's failure belongs to its own caller. */ }).then(() => { options.signal?.throwIfAborted(); return callback({ name, mode: 'exclusive' } as Lock) })
       tail = next
       return next
     },
@@ -246,6 +246,27 @@ describe('FIL-13 real chat mounts', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Send message' }))
     await waitFor(() => expect(kind === 'operator' ? sendCalls : agentCalls).toHaveLength(1))
     expect((kind === 'operator' ? sendCalls : agentCalls)[0].attachments).toEqual(messageAttachmentRefs({ attachments: [...staged.values()] }))
+  })
+  it('attaches and sends a file in a new Agent chat that has no conversation yet', async () => {
+    const empty = agentChatFixtureFor(agentChatFixtures.empty, idleAgent().context)
+    const mock = createAgentChatMock(empty)
+    server.use(...mock.handlers)
+    // The stored conversation is created by the first attachment; uploads then use its own scope.
+    const created: TemporaryFileScope = { kind: 'temporary', chat: { kind: 'agent', workspaceId: empty.context.workspaceId,
+      workflowId: empty.context.workflowId, agentId: empty.context.agentId, conversationId: 'conversation-created-1' } }
+    register(created)
+    render(tree(panel(empty)))
+    await screen.findByRole('textbox', { name: 'Message' })
+    await upload('first.md'); await uploaded('first.md')
+    expect(mock.calls.filter((call) => call.method === 'POST' && call.path.endsWith('/agent-chat/conversation'))).toHaveLength(1)
+    expect(uploadPaths).toEqual([`${root(created)}/uploads`])
+    compose('Review the first attachment')
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Send message' })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: 'Send message' }))
+    await waitFor(() => expect(mock.calls.some((call) => call.path.endsWith('/agent-chat/messages'))).toBe(true))
+    const sent = SendAgentChatMessageRequestSchema.parse(mock.calls.find((call) => call.path.endsWith('/agent-chat/messages'))!.body)
+    expect(sent.expectedConversationId).toBe('conversation-created-1')
+    expect(sent.attachments).toEqual(messageAttachmentRefs({ attachments: [...staged.values()] }))
   })
   it('sends an Operator file with exact pins and renders its persisted card after acceptance', async () => {
     render(operatorTree())

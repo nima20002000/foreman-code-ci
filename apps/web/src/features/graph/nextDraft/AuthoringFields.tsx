@@ -57,26 +57,19 @@ export function ApprovalFields({ graph, context, change, report, agentEdits }: {
   </section>
 }
 
-export function AttachAgentField({ context, change, report }: { graph: WorkflowDefinitionV3; context: NextDraftContext; change: EditGraph; report: (error: unknown) => void }) {
-  const [agentId, setAgentId] = useState('')
+/** The add-node panel: the Agents that can join this workflow, each with one Add action. */
+export function AvailableAgentList({ context, change, report }: { context: NextDraftContext; change: EditGraph; report: (error: unknown) => void }) {
   const available = context.agents.filter((record) => !record.archivedAt && record.agent.configurationVersionId
     && record.agent.productRole)
-  if (!available.length) return null
-  return <form className="next-draft-section" onSubmit={(event) => {
-    event.preventDefault()
-    const record = available.find((item) => item.agent.id === agentId)
-    if (!record) return
-    try { change((value) => attachAgent(value, record, `node-${crypto.randomUUID()}`)); setAgentId('') } catch (error) { report(error) }
-  }}>
-    <h3>Existing agent</h3>
-    <div className="next-draft-inline">
-      <Select label="Existing agent" labelHint={<InfoHint label="Existing agent">Keeps that agent’s saved settings.</InfoHint>} value={agentId} onChange={(event) => setAgentId(event.target.value)} options={[
-        { value: '', label: 'Choose a node' },
-        ...available.map(({ agent }) => ({ value: agent.id, label: `${agent.name} · ${agent.productRole === 'orchestrator' ? 'Orchestrator' : 'Worker'}` })),
-      ]} />
-      <Button type="submit" disabled={!available.some((item) => item.agent.id === agentId)}>Add to workflow</Button>
-    </div>
-  </form>
+  if (!available.length) return <p className="board-agent-picker-empty">No Agents are available to add. Create one from Agents.</p>
+  return <ul className="board-agent-picker-list" aria-label="Available Agents">
+    {available.map((record) => <li key={record.agent.id}>
+      <span className="board-agent-picker-name">{record.agent.name}</span>
+      <span className="board-agent-picker-role">{record.agent.productRole === 'orchestrator' ? 'Orchestrator' : 'Worker'}</span>
+      <Button size="sm" aria-label={`Add ${record.agent.name}`}
+        onClick={() => { try { change((value) => attachAgent(value, record, `node-${crypto.randomUUID()}`)) } catch (error) { report(error) } }}>Add</Button>
+    </li>)}
+  </ul>
 }
 
 /** The node's place in this workflow: whether it starts it and where its result goes. */
