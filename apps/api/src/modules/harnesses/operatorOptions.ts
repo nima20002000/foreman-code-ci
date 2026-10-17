@@ -16,6 +16,8 @@ export function codexModelOptions(value: unknown): HarnessOptions['models'] {
     if (typeof model.slug !== 'string' || !model.slug) throw new DomainError('HARNESS_CATALOG_INVALID', 'A native model has no ID.', 502)
     return {
       id: model.slug,
+      ...(Number.isSafeInteger(model.context_window) && Number(model.context_window) > 0
+        ? { contextWindow: Number(model.context_window) } : {}),
       ...(typeof model.display_name === 'string' ? { name: model.display_name } : {}),
       reasoningEfforts: strings(bounded(model.supported_reasoning_levels ?? [], 'reasoning levels').map((level) => asRecord(level).effort)),
       variants: [], serviceTiers: ['standard', ...(strings(model.additional_speed_tiers).includes('fast') ? ['priority'] : [])],
