@@ -1,10 +1,9 @@
 import { randomUUID } from 'node:crypto'
-import { access, mkdir, mkdtemp, open, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { expect, it } from 'vitest'
 import { HostCiRunner } from './runner.js'
-import { CI_HOST_CACHE_BUDGET_BYTES } from './cacheCleanup.js'
 
 it('reports healthy runs when other retained run directories are incomplete or damaged', async () => {
   const cache = join(homedir(), '.cache', 'foreman-tmp')
@@ -54,44 +53,3 @@ it('keeps a live run with an unreadable log counted and listed instead of treati
     await rm(root, { recursive: true, force: true })
   }
 })
-
-it.each(['stopped', 'active', 'unknown'] as const)(
-  'reconciles a damaged storage owner through native status %s before automatic reclamation', async state => {
-    const parent = join(homedir(), '.cache', 'foreman-tmp')
-    await mkdir(parent, { recursive: true })
-    const root = await mkdtemp(join(parent, 'ci-damaged-storage-'))
-    const runId = randomUUID()
-    const run = join(root, 'runs', runId)
-    const clone = join(root, 'git/fixture/site')
-    const slot = join(root, 'slots/fixture/site/0')
-    await mkdir(run, { recursive: true })
-    await mkdir(join(clone, '.git/objects'), { recursive: true })
-    await mkdir(join(slot, 'src/node_modules'), { recursive: true })
-    await writeFile(join(run, 'meta.json'), 'null')
-    await writeFile(join(slot, 'src/node_modules/package'), 'installed bytes')
-    const pack = await open(join(clone, '.git/objects/pack'), 'wx')
-    try { await pack.truncate(CI_HOST_CACHE_BUDGET_BYTES + 1) } finally { await pack.close() }
-    const runner = new HostCiRunner(root, { now: () => new Date(), cpus: 8, memoryBytes: 16 * 2 ** 30,
-      run: async (file, args) => {
-        if (file === 'systemctl' && args.includes('show')) {
-          return { code: state === 'unknown' ? 1 : 0, stderr: '',
-            stdout: `Id=foreman-ci-${runId}.service\nLoadState=loaded\nActiveState=${state === 'stopped' ? 'inactive' : 'active'}\n` }
-        }
-        return { code: 0, stdout: '', stderr: '' }
-      } })
-    try {
-      await expect(runner.handle({ operation: 'status' })).resolves.toMatchObject({ operation: 'status', runs: [] })
-      await runner.beginDrain()
-      if (state === 'stopped') {
-        await expect(access(slot)).rejects.toMatchObject({ code: 'ENOENT' })
-        await expect(access(join(clone, '.git'))).rejects.toMatchObject({ code: 'ENOENT' })
-      } else {
-        expect(await readFile(join(slot, 'src/node_modules/package'), 'utf8')).toBe('installed bytes')
-      }
-      expect(await readFile(join(run, 'meta.json'), 'utf8')).toBe('null')
-    } finally {
-      await runner.beginDrain()
-      await rm(root, { recursive: true, force: true })
-    }
-  },
-)

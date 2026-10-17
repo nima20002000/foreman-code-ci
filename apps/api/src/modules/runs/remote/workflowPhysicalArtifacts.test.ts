@@ -18,6 +18,7 @@ import { ExclusiveGraphConnection,type GraphTransactionSql } from '../../run-gra
 import { repeatDigest } from '../repeatResolution.js'
 import { NativeArtifactOutputSchema,type NativeArtifactOutput } from './nativeArtifactOutputs.js'
 import { PostgresWorkflowPhysicalArtifacts } from './workflowPhysicalArtifacts.js'
+import { artifactWorkflowReceipt, completeResultRepair } from './workflowRepair.test-support.js'
 const hash=(text:string|Buffer)=>createHash('sha256').update(text).digest('hex')
 // Real canonical allocation/publication services and immutable revision metadata;
 // memory bytes and SQL/authority doubles. No worker readiness or physical claim.
@@ -109,6 +110,26 @@ async function fixture(aliases=false) {
   return {f,binding,accepted,caller,artifactOutputs,result,run,version,links,admissions,admissionRows,mappings,readout,state,authority,files,connection,verifier,publications,adopted,adopt}
 }
 describe('canonical physical artifact metadata and final adoption',()=>{
+  it.each([1, 2])('retains the publishing turn after %s corrections for physical verification and adopted readback', async count => {
+    const t = await fixture()
+    try {
+      await t.adopt()
+      const original = structuredClone({ links: t.links, admissions: t.admissions, mappings: t.mappings })
+      const publicationCaller = structuredClone(t.caller)
+      const remote = artifactWorkflowReceipt(t.accepted, t.result)
+      remote.terminal!.artifactDigests = t.readout.receipt.terminal!.artifactDigests!
+      for (let attempt = 1; attempt <= count; attempt++) completeResultRepair(remote, `corrective-${attempt}`)
+      t.readout.receipt = remote
+      t.accepted.context = { ...t.accepted.context, turnId: remote.native!.turnId! }
+      t.caller.context = t.accepted.context
+      t.caller.binding = bindingIdentity(t.caller.context)
+      Object.assign(t.authority, { authorizePublication: vi.fn(async () => publicationCaller) })
+      await t.publications()
+      await t.adopted()
+      expect({ links: t.links, admissions: t.admissions, mappings: t.mappings }).toEqual(original)
+    } finally { await t.connection.close() }
+  })
+
   it.each(['invalid_result', 'missing_publication'] as const)(
     'verifies %s against saved declarations and canonical publications without adopting outputs', async reason => {
       const t = await fixture()
@@ -135,11 +156,13 @@ describe('canonical physical artifact metadata and final adoption',()=>{
     try {
       const downloads=t.f.bytes.downloads
       await t.publications()
-      expect(t.state.queries.some(text=>text.includes("operation='remote.native-artifact.output'"))).toBe(false)
+      expect(t.mappings.size).toBe(0)
       await expect(t.adopted()).rejects.toThrow()
       await t.adopt();await t.adopted()
       expect(t.f.bytes.downloads).toBe(downloads)
-      expect(t.state.queries.some(text=>text.includes("a.state='finalized'"))).toBe(true)
+      for (const mapping of t.mappings.values()) {
+        expect((await t.f.repository.read(mapping.result.pins.fileId, mapping.result.pins.revisionId))?.value.file.state).toBe('ready')
+      }
     }finally{await t.connection.close()}
   })
   it('retains two digest entries and immutable native mapping order for aliases of one canonical publication',async()=>{
