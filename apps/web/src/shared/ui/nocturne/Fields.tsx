@@ -10,13 +10,11 @@ function FieldNotes({ id, hint, error }: { id: string; hint?: ReactNode; error?:
   return <>{hint && <span id={`${id}-hint`} className="n-field-hint">{hint}</span>}{error && <span id={`${id}-error`} className="n-field-error"><Icon name="warning" size={14} />{error}</span>}</>
 }
 
-export function TextField({ label, labelHint, hint, error, className, id: suppliedId, leading, trailing, ...props }:
-  InputHTMLAttributes<HTMLInputElement> & { ref?: Ref<HTMLInputElement> } & FieldMeta & { leading?: ReactNode; trailing?: ReactNode; labelHint?: ReactNode }) {
+export function TextField({ label, hint, error, className, id: suppliedId, leading, trailing, ...props }:
+  InputHTMLAttributes<HTMLInputElement> & { ref?: Ref<HTMLInputElement> } & FieldMeta & { leading?: ReactNode; trailing?: ReactNode }) {
   const generated = useId()
   const id = suppliedId ?? generated
-  const fieldLabel = <label htmlFor={id}>{label}{props.required && <span aria-hidden="true"> *</span>}</label>
-  return <div className={cx('n-field', className)}>
-    {labelHint ? <div className="n-field-label">{fieldLabel}{labelHint}</div> : fieldLabel}
+  return <div className={cx('n-field', className)}><label htmlFor={id}>{label}{props.required && <span aria-hidden="true"> *</span>}</label>
     <div className="n-input-wrap" data-invalid={Boolean(error)}>
       {leading && <span className="n-input-leading">{leading}</span>}
       <input {...props} id={id} className="n-input" aria-invalid={error ? true : props['aria-invalid']}
@@ -38,13 +36,11 @@ export function Textarea({ label, hint, error, className, id: suppliedId, ...pro
 }
 
 export interface SelectOption { value: string; label: string; disabled?: boolean }
-export function Select({ label, labelHint, hint, error, options, className, id: suppliedId, ...props }:
-  SelectHTMLAttributes<HTMLSelectElement> & { ref?: Ref<HTMLSelectElement> } & FieldMeta & { options: readonly SelectOption[]; labelHint?: ReactNode }) {
+export function Select({ label, hint, error, options, className, id: suppliedId, ...props }:
+  SelectHTMLAttributes<HTMLSelectElement> & { ref?: Ref<HTMLSelectElement> } & FieldMeta & { options: readonly SelectOption[] }) {
   const generated = useId()
   const id = suppliedId ?? generated
-  const fieldLabel = <label htmlFor={id}>{label}{props.required && <span aria-hidden="true"> *</span>}</label>
-  return <div className={cx('n-field', className)}>
-    {labelHint ? <div className="n-field-label">{fieldLabel}{labelHint}</div> : fieldLabel}
+  return <div className={cx('n-field', className)}><label htmlFor={id}>{label}{props.required && <span aria-hidden="true"> *</span>}</label>
     <div className="n-select-wrap"><select {...props} id={id} className="n-input" aria-invalid={error ? true : props['aria-invalid']}
       aria-describedby={descriptions(id, hint, error, props['aria-describedby'])}>{options.map((option) => <option key={option.value} value={option.value} disabled={option.disabled}>{option.label}</option>)}</select><Icon name="down" size={15} /></div>
     <FieldNotes id={id} hint={hint} error={error} /></div>
