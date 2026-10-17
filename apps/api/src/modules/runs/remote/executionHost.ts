@@ -17,7 +17,7 @@ import { assertRuntimeLeafPath, assertRuntimeLeafBinding, type RuntimeLeafAttest
 import { readPlacement } from '../../placement/binding.js'
 import type { RemoteOperationJournal } from './operationJournal.js'
 import { HistoryObservationPages } from './historyObservationPages.js'
-import { pageNativeHistory } from './nativeHistoryPage.js'
+import { startNativeHistoryDownload } from './nativeHistoryPage.js'
 import { DomainError } from '../../errors.js'
 import { logIgnoredError } from '../../diagnostics/ignoredError.js'
 
@@ -214,7 +214,7 @@ export class RemoteExecutionHost {
         if (!resident.manager.reconcileResponse) throw new Error('Exact native response recovery unavailable')
         history = await resident.manager.reconcileResponse(resident.session, frame.response)
       }
-      return this.historyPages.remember({ ...pageNativeHistory(history),
+      return this.historyPages.remember({ ...startNativeHistoryDownload(history, { downloadId: frame.downloadId }),
         status: await this.ports.journal.status(frame.intent.operationId) }, frame.intent, frame.placement)
     }
     if (frame.method === 'control') return this.control(frame.command, frame)
@@ -236,7 +236,8 @@ export class RemoteExecutionHost {
       }
       const after = result.status.status === 'known' && frame.correlationId
         ? result.status.receipt.reviewTurns?.find(turn => turn.assignment.correlationId === frame.correlationId)?.afterSequence : undefined
-      return this.historyPages.remember({ ...pageNativeHistory(result.history, frame.afterSequence ?? after),
+      return this.historyPages.remember({ ...startNativeHistoryDownload(result.history, {
+        afterSequence: frame.afterSequence ?? after, downloadId: frame.downloadId }),
         context: result.context, status: result.status }, frame.intent, frame.placement)
     }
     return this.read(frame.intent.operationId, frame.method)

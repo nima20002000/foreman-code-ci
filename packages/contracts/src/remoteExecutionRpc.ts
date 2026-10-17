@@ -47,7 +47,7 @@ export const RemoteExecutionRpcRequestSchema = z.discriminatedUnion('method', [
     correlationId: z.string().min(1).optional(), receiptSequence: z.number().int().positive().optional() }).strict(),
   z.object({ method: z.enum(['pending', 'status']), ...binding }).strict(),
   z.object({ method: z.enum(['capabilities', 'inspect-mcp']), ...binding, configuration: z.lazy(() => AgentConfigurationVersionSchema) }).strict(),
-  z.object({ method: z.literal('reconcile-response'), ...binding, response: z.object({ nativeRequestId: z.string().min(1), nativeRequestType: z.string().min(1), option: z.lazy(() => ApprovalResponseOptionSchema) }).strict() }).strict(),
+  z.object({ method: z.literal('reconcile-response'), ...binding, downloadId: z.uuid().optional(), response: z.object({ nativeRequestId: z.string().min(1), nativeRequestType: z.string().min(1), option: z.lazy(() => ApprovalResponseOptionSchema) }).strict() }).strict(),
   z.object({ method: z.literal('session-controls-read'), ...binding, native: RemoteNativeIdentitySchema }).strict(),
   z.object({ method: z.literal('session-preferences-apply'), ...binding, native: RemoteNativeIdentitySchema, preferences: SessionPreferencesSchema }).strict(),
   z.object({ method: z.literal('session-compact'), ...binding, native: RemoteNativeIdentitySchema,
