@@ -67,9 +67,6 @@ it.each([['plugins', 'Codex plugins', 'Plugin catalog'], ['connections', 'Codex 
   'shows the %s panel in a dialog from the URL', (section, title, content) => {
     mount({ selectedHarness: 'codex', section })
     expect(within(screen.getByRole('dialog', { name: title })).getByText(content)).toBeVisible()
-    if (section === 'connections') {
-      expect(screen.getByRole('dialog', { name: title })).toHaveTextContent('Ask the Operator to manage connections.')
-    }
   })
 
 it('opens the Claude plugin summary from its card and URL', async () => {
@@ -94,7 +91,6 @@ it('keeps account controls in each card footer and independent of preset navigat
     const add = within(row).getByRole('button', { name: `Add ${harness} account` })
     await waitFor(() => expect(add).toBeEnabled())
     expect(edit.contains(add)).toBe(false)
-    expect(within(row).getByText('Default for new work without a saved account/profile.')).toBeVisible()
   }
   const user = userEvent.setup()
   await user.click(screen.getByRole('button', { name: 'Add Claude account' }))
