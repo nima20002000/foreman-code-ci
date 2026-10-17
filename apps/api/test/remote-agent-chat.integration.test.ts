@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { expect, it, vi } from 'vitest'
 import { AgentChatStateSchema } from '@foreman-code/contracts/agent-chat'
-import { SessionControlStateSchema, type HarnessConfiguration } from '@foreman-code/contracts'
+import { ActivityChangeEnvelopeV1Schema, SessionControlStateSchema, type HarnessConfiguration } from '@foreman-code/contracts'
 import { AgentMutationResultSchema } from '@foreman-code/contracts/management'
 import { remoteAgentConversation } from './helpers/remoteAgentConversation.js'
 import { workerConversationFixture } from '../src/modules/conversations/workerFixtures.test-support.js'
@@ -53,6 +53,41 @@ it.each(['codex', 'claude'] as const)(
       expect(f.frames.some(frame => frame.method === 'conversation.history' && frame.waitForEvents)).toBe(true)
     } finally { await f.close() }
   }, 30_000)
+
+it('streams and persists every remote Claude tool round before transcript entries and final messages', async () => {
+  const f = await remoteAgentConversation('claude')
+  const deltas: string[] = []
+  const unsubscribe = f.chat.events.subscribe(f.conversation.id, event => {
+    if (event.type !== 'delta') return
+    const change = ActivityChangeEnvelopeV1Schema.parse(event.data.activityChange).change
+    if (change.kind === 'text.append' && change.finality === 'provisional') deltas.push(change.text)
+  })
+  f.provider.holdClaudeToolRounds()
+  const sending = f.send('Read files in two tool rounds and explain the result')
+  try {
+    for (let round = 0; round < 3; round++) {
+      const text = `Remote tool round ${round + 1}`
+      await vi.waitFor(() => expect(deltas).toContain(text), { timeout: 5000 })
+      const partial = AgentChatStateSchema.parse(await f.value('agent_chat_read', { query: f.context }))
+      expect(partial.messages.some(message => message.role === 'assistant'
+        && message.content === text && message.nativeMessageComplete === false)).toBe(true)
+      expect(f.provider.persistedClaudeReplies).toBe(0)
+      f.provider.releaseClaudeToolRound(round)
+    }
+    await sending
+    const complete = AgentChatStateSchema.parse(await f.value('agent_chat_read', { query: f.context }))
+    for (const text of ['Remote tool round 1', 'Remote tool round 2', 'Remote tool round 3']) {
+      expect(complete.messages.some(message => message.role === 'assistant'
+        && message.content === text && message.nativeMessageComplete === true)).toBe(true)
+    }
+    expect(f.provider.persistedClaudeReplies).toBe(3)
+  } finally {
+    f.provider.releaseReply()
+    await sending
+    unsubscribe()
+    await f.close()
+  }
+}, 30_000)
 
 it('finishes remote Codex compaction when history completes before native notifications', async () => {
   const f = await remoteAgentConversation('codex')
@@ -145,7 +180,7 @@ it.each(['codex', 'claude'] as const)(
 
 it.each((['codex', 'claude'] as const).flatMap(harness =>
   (['model', 'effort', 'account'] as const).map(field => ({ harness, field }))))(
-  'persists a remote $harness Agent $field change but rejects its next turn at the old Worker binding', async ({ harness, field }) => {
+  'persists a remote $harness Agent $field change without replacing the native owner when recovery is unavailable', async ({ harness, field }) => {
     const f = await remoteAgentConversation(harness)
     try {
       await f.send('Establish the remote session')
@@ -167,7 +202,9 @@ it.each((['codex', 'claude'] as const).flatMap(harness =>
       expect(update.value.agent.harnessConfiguration).toEqual(changed)
       const failed = await f.send('Use the saved model on this turn', 'failed')
       expect(failed.turn?.error).toMatchObject({ code: 'WORKER_CONVERSATION_UNAVAILABLE' })
-      expect(failed.turn?.error?.message).toBe('The original worker conversation binding changed.')
+      expect(failed.turn?.error?.message).toBe(field === 'account'
+        ? 'The original worker conversation binding changed.'
+        : 'The original worker process needs native recovery before it can be attached.')
       expect(f.provider.prompts).toHaveLength(before)
       const saved = (await f.repository.get(f.conversation.id))!
       expect(saved.agent_configuration_version_id).toBe(update.value.agent.configurationVersionId)
