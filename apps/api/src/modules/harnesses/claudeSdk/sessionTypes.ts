@@ -48,6 +48,8 @@ export interface ClaudeNativeSessionManager extends NativeHarnessSessionManager,
   observeSubagentHook?(sessionId: string, agentId: string, agentType: string, status: 'running' | 'unknown'): void
   /** Read-only SDK callback context from a proven root tool/message owner. */
   refreshInspectionCredentials(start: NativeSessionStart, servers: Readonly<Record<string, unknown>>, signal?: AbortSignal): Promise<ClaudeMcpInspection>
+  refreshSessionCredentials(session: NativeSessionReference, start: NativeSessionStart,
+    servers: Readonly<Record<string, unknown>>, signal?: AbortSignal): Promise<ClaudeMcpInspection>
   prepareInspection(start: NativeSessionStart, signal?: AbortSignal): Promise<ClaudeMcpInspection>
   startInitialTurn(start: NativeSessionStart, input: ClaudeInitialTurnInput, signal?: AbortSignal): AsyncIterable<NativeHarnessEvent>
   nativeCallbackContext(nativeSessionId: string, toolUseId: string): ClaudeNativeCallbackContext | undefined
