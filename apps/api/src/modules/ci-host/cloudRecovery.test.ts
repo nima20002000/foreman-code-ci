@@ -7,6 +7,19 @@ import { repositoryFileList, integrationFileList, selectByIndexes } from '../../
 import { executionSelection } from '../../../../../scripts/ci-selection.mjs'
 import { fixture } from './cloud.testSupport.js'
 
+it('rejects conflicting saved login ownership without searching another journal root', async () => {
+  const f = await fixture({}, { provider: 'circleci' })
+  const runId = randomUUID()
+  await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId, repository: 'octo/site',
+    commit: f.commit, suite: 'lint', scope: 'full' })
+  const path = join(f.root, 'ci-cloud', 'runs', runId, 'meta.json')
+  const run = JSON.parse(await fs.readFile(path, 'utf8'))
+  await fs.writeFile(path, JSON.stringify({ ...run, circleAccountId: 'reserve' }))
+  await expect(f.reopen().handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 100 }))
+    .rejects.toMatchObject({ code: 'CI_CLOUD_ACCOUNT_MISMATCH' })
+  expect(f.circle.triggered).toHaveLength(1)
+})
+
 vi.mock('node:fs/promises', async original => {
   const actual = await original<typeof import('node:fs/promises')>()
   return { ...actual, writeFile: vi.fn(actual.writeFile) }
