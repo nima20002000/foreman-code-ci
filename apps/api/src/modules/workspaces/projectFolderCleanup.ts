@@ -1,7 +1,7 @@
 import { errorMessage } from '../../shared/errorMessage.js'
 import { lstat, realpath, rm } from 'node:fs/promises'
 import { beginTransaction, commitTransaction, rollbackTransaction } from '../../infrastructure/transaction.js'
-import { dirname, isAbsolute, join, relative, sep } from 'node:path'
+import { isAbsolute, relative, sep } from 'node:path'
 import { z } from 'zod'
 import type pg from 'pg'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
@@ -11,7 +11,6 @@ import { pathsOverlap } from './filesystem.js'
 import { ignoreError } from '../diagnostics/ignoredError.js'
 import { activeAgentChatDirectories } from '../conversations/activeAgentChats.js'
 import { lockWorkspaceFolders } from './folderLocks.js'
-import { qualifiedGit } from '../sources/capture.js'
 
 export const WORKSPACE_FOLDER_LIFECYCLE_LOCK = 'workspace-folder-lifecycle'
 export const CreatedProjectFolderSchema = z.object({
@@ -84,27 +83,7 @@ export async function cleanupWorkspaceProjectFolders(pool: pg.Pool, principal: M
   } finally { client.release() }
 }
 
-async function gitCommonDirectory(path: string): Promise<string | undefined> {
-  let directory = path
-  for (;;) {
-    let hasGitDirectory = false
-    try {
-      await lstat(join(directory, '.git'))
-      hasGitDirectory = true
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-    }
-    if (hasGitDirectory) {
-      const common = await qualifiedGit(directory, ['rev-parse', '--path-format=absolute', '--git-common-dir'])
-      return realpath(common.toString('utf8').trim())
-    }
-    const parent = dirname(directory)
-    if (parent === directory) return undefined
-    directory = parent
-  }
-}
-
-/** Main-host project and Git paths retained by Runs, native working trees and their cleanup. */
+/** Main-host project paths retained by Runs, native working trees and their cleanup. */
 export async function continuingRunDirectories(sql: Pick<pg.Pool, 'query'>, runnerId: string): Promise<string[]> {
   const result = await sql.query<{ path: string }>(
     `with continuing_runs as (
@@ -129,11 +108,5 @@ export async function continuingRunDirectories(sql: Pick<pg.Pool, 'query'>, runn
      from continuing_runs r join execution_native_placements n on n.record->>'runId'=r.id
      where n.record#>'{materialization,receipt,binding,deviceId}'='null'::jsonb`, [runnerId],
   )
-  const directories = new Set(result.rows.map(row => row.path).filter(Boolean))
-  for (const path of [...directories]) {
-    // Linked worktrees depend on an object store outside their working directory.
-    const common = await gitCommonDirectory(path)
-    if (common) directories.add(common)
-  }
-  return [...directories]
+  return result.rows.map(row => row.path).filter(Boolean)
 }

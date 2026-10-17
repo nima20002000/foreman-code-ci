@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import { appendFile, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { describe, it, vi } from 'vitest'
+import { describe, it } from 'vitest'
 import { DomainError } from '../src/modules/errors.js'
 import { NativeDeliveryError } from '../src/modules/harnesses/errors.js'
 import { assertOriginalWorkflowTerminal } from '../src/modules/interactions/workflowTerminalSource.js'
@@ -406,24 +406,16 @@ describe.skipIf(process.platform === 'win32')('Codex app-server regressions agai
         return new CodexStdioTransport(...args)
       },
     }))
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
-    try {
-      const session = await manager.createSession(source)
-      await flag('hold-turn-start')
-      const events = collect(manager.startTurn(session, { prompt: 'wait', clientCorrelationId: 'late' }))
-      await vi.waitFor(async () => assert.equal((await wire('turn/start')).length, 1))
-      await vi.advanceTimersByTimeAsync(500)
-      await assertCode(events, 'CODEX_APP_SERVER_TIMEOUT')
-      vi.useRealTimers()
-      const canceled = manager.cancel(session)
-      await flag('release-turn-start')
-      assert.equal(await canceled, true)
-      await until(async () => (await manager.history(session)).terminalResult?.outcome === 'canceled')
-      assert.equal((await wire('turn/start')).length, 1)
-      assert.equal((await wire('turn/interrupt')).length, 1)
-    } finally {
-      vi.useRealTimers()
-    }
+    const session = await manager.createSession(source)
+    await flag('hold-turn-start')
+    const events = collect(manager.startTurn(session, { prompt: 'wait', clientCorrelationId: 'late' }))
+    await assertCode(events, 'CODEX_APP_SERVER_TIMEOUT')
+    const canceled = manager.cancel(session)
+    await flag('release-turn-start')
+    assert.equal(await canceled, true)
+    await until(async () => (await manager.history(session)).terminalResult?.outcome === 'canceled')
+    assert.equal((await wire('turn/start')).length, 1)
+    assert.equal((await wire('turn/interrupt')).length, 1)
   })
 
   it('F12: an uncertain thread/start is never duplicated, and its late identity is recoverable', async () => {
