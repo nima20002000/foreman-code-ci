@@ -9,7 +9,6 @@ import { isDeepStrictEqual } from 'node:util'
 import { DEVICE_JSON_CONTINUATION_LIMIT } from '@foreman-code/contracts/device-application'
 import { createJsonContinuationPager } from './jsonContinuation.js'
 import { encodeResultCopies, historyResultPaths } from './executionResultCodec.js'
-import { randomUUID } from 'node:crypto'
 
 const historySource = Symbol('original native history page')
 type HistoryFields = Omit<NativeHistory, 'events' | 'firstRetainedSequence' | 'nextSequence' | 'gap'>
@@ -17,36 +16,22 @@ type MetadataTransfer = {
   fields: HistoryFields
   bytes: Buffer
   page: ReturnType<typeof createJsonContinuationPager>
-  /** Completed progress stays idempotent while the shared bytes remain retained. */
-  downloads: Map<string, { nextOffset: number; expiresAt: number }>
+  /** Each reader retains its next page until it is read or goes idle. */
+  downloads: Array<{ offset: number; expiresAt: number }>
 }
 const metadataTransfers = new Map<string, MetadataTransfer>()
 let retainedMetadataBytes = 0
 
-function servePage(transfer: MetadataTransfer, page: DeviceJsonContinuation,
-  request?: DeviceJsonContinuationRequest) {
+function servePage(transfer: MetadataTransfer, page: DeviceJsonContinuation) {
   const now = Date.now()
-  for (const [id, download] of transfer.downloads) {
-    if (download.expiresAt <= now) transfer.downloads.delete(id)
+  transfer.downloads = transfer.downloads.filter(download => download.expiresAt > now)
+  const reader = transfer.downloads.findIndex(download => download.offset === page.offset)
+  if (reader !== -1) transfer.downloads.splice(reader, 1)
+  const nextOffset = page.offset + DEVICE_JSON_CONTINUATION_BYTES
+  if (nextOffset < page.byteSize) {
+    transfer.downloads.push({ offset: nextOffset, expiresAt: now + deviceRequestTimeoutMs })
   }
-  if (request && !request.downloadId) {
-    throw new DomainError('conflict', 'Native history continuation requires its download identity.', 409)
-  }
-  const downloadId = request?.downloadId ?? randomUUID()
-  let download = transfer.downloads.get(downloadId)
-  if (request && !download) {
-    throw new DomainError('transfer-expired', 'Native history download is no longer retained.', 409)
-  }
-  if (!download) {
-    download = { nextOffset: 0, expiresAt: now + deviceRequestTimeoutMs }
-    transfer.downloads.set(downloadId, download)
-  }
-  const nextOffset = Math.min(page.offset + DEVICE_JSON_CONTINUATION_BYTES, page.byteSize)
-  if (nextOffset > download.nextOffset) {
-    download.nextOffset = nextOffset
-    download.expiresAt = now + deviceRequestTimeoutMs
-  }
-  return { ...page, downloadId }
+  return page
 }
 
 function metadataBytes(fields: HistoryFields) {
@@ -60,33 +45,32 @@ function metadataPage(fields: HistoryFields, request?: DeviceJsonContinuationReq
     { ...retained.fields, nextCursor: undefined },
     { ...fields, nextCursor: undefined },
   )) {
-    return servePage(retained, retained.page(request), request)
+    return servePage(retained, retained.page(request))
   }
   const bytes = metadataBytes(fields)
   const pager = createJsonContinuationPager(bytes)
   const page = pager(request)
   const existing = metadataTransfers.get(page.digest)
-  if (existing) return servePage(existing, page, request)
+  if (existing) return servePage(existing, page)
   if (page.offset + DEVICE_JSON_CONTINUATION_BYTES >= page.byteSize) return page
   while (metadataTransfers.size >= 64
     || retainedMetadataBytes + bytes.byteLength > DEVICE_JSON_CONTINUATION_LIMIT * 4) {
     const now = Date.now()
     const idle = [...metadataTransfers].find(([, transfer]) =>
-      ![...transfer.downloads.values()].some(download =>
-        download.nextOffset < transfer.bytes.byteLength && download.expiresAt > now))
+      !transfer.downloads.some(download => download.expiresAt > now))
     if (!idle) throw new DomainError('backpressure', 'Native history downloads in progress fill their retention.', 503)
     metadataTransfers.delete(idle[0])
     retainedMetadataBytes -= idle[1].bytes.byteLength
   }
-  const transfer: MetadataTransfer = { fields: structuredClone(fields), bytes, page: pager, downloads: new Map() }
+  const transfer: MetadataTransfer = { fields: structuredClone(fields), bytes, page: pager, downloads: [] }
   metadataTransfers.set(page.digest, transfer)
   retainedMetadataBytes += bytes.byteLength
-  return servePage(transfer, page, request)
+  return servePage(transfer, page)
 }
 export function readNativeHistoryMetadata(request: DeviceJsonContinuationRequest) {
   const retained = metadataTransfers.get(request.digest)
   if (!retained) throw new DomainError('transfer-expired', 'Native history metadata is no longer retained.', 409)
-  return servePage(retained, retained.page(request), request)
+  return servePage(retained, retained.page(request))
 }
 
 export function nativeHistoryPageSource(reply: unknown): NativeHistory | undefined {

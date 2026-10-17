@@ -3,7 +3,6 @@
   "files": [
     "src/**/*.integration.test.tsx",
     "src/routes/WorkspaceRouteEntry*.test.tsx",
-    "src/routes/boardNavigationFlash.test.tsx",
     "src/routes/WorkspaceSectionRoutes.test.tsx",
     "src/features/combined/**/*.test.tsx",
     "src/features/workflow-board/eng0*.test.tsx",
