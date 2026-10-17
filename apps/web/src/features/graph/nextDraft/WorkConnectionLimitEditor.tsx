@@ -1,4 +1,3 @@
-import { InfoHint } from '../../../shared/ui/InfoHint'
 import { useEffect, useState } from 'react'
 import { Button, TextField } from '../../../shared/ui/nocturne'
 
@@ -35,7 +34,7 @@ export function WorkConnectionLimitEditor({ value, onApply, onCancel, disabled =
     }}>
     <TextField label="Maximum work handoffs per Run" type="text" inputMode="numeric" autoComplete="off"
       value={raw} disabled={disabled} placeholder="Unlimited" error={error}
-      labelHint={<InfoHint label="Maximum work handoffs per Run">Includes the first work submission. Its return and permission questions use no extra slot. Leave blank for no connection cap.</InfoHint>}
+      hint="Includes the first work submission. Its return and permission questions use no extra slot. Leave blank for no connection cap."
       onChange={(event) => { setRaw(event.currentTarget.value); setError(undefined) }} />
     <div className="work-connection-limit-actions">
       <Button size="sm" type="submit" disabled={disabled}>Apply to draft</Button>

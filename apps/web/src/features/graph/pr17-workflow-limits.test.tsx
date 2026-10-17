@@ -13,7 +13,7 @@ vi.mock('../../shared/api/query', () => ({
   useManagedHarnessCatalogQuery: () => ({ data: undefined }),
 }))
 afterEach(cleanup)
-describe('agent and workflow execution limits', () => {
+describe('PR17 agent versus workflow scope', () => {
   it('keeps workflow limits out of the agent inspector and preserves the existing policy', async () => {
     const onSave = vi.fn()
     const policy = { maxNodeExecutions: 50, maxParallelism: 7 }

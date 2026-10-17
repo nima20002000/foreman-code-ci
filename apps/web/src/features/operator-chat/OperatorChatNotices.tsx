@@ -1,4 +1,3 @@
-import { InfoHint } from '../../shared/ui/InfoHint'
 import type { Dispatch, SetStateAction } from 'react'
 import type { OperatorConversationState } from '@foreman-code/contracts'
 import { Alert, Button, EmptyState, Icon, LoadingState } from '../../shared/ui/nocturne'
@@ -49,7 +48,7 @@ export function OperatorChatNotices({ handoffNotice, setHandoffNotice, recovered
       {request && create.variables?.request?.id === request.id ? <p>{request.content}</p> : null}
     </Alert> : null}
     {!selectedId && !accessDenied ? <div className="operator-chat-start"><EmptyState icon="chat" title="Chat with Operator"
-      titleHint={<InfoHint label="Chat with Operator">Ask about your workspaces and workflows, or describe a change you need.</InfoHint>}
+      description="Ask about your workspaces and workflows, or describe a change you need."
       action={<Button variant="primary" leading={<Icon name="plus" size={15} />} onClick={() => void createConversation({ retry: create.isError })}
         disabled={create.isPending} loading={create.isPending} loadingLabel="Starting…">Start chat</Button>} /></div> : null}
     {selected.isLoading ? <LoadingState label="Loading conversation…" rows={4} /> : null}

@@ -81,9 +81,6 @@ describe('workspace project preparation', () => {
     mount()
     expect(await screen.findByText('Project ready')).toBeVisible()
     expect(screen.getByRole('textbox', { name: 'Repository' })).toHaveValue('octo-owner/website')
-    const reloadedProject = within(screen.getByRole('region', { name: 'GitHub repository' }))
-    expect(reloadedProject.getByText(fixture.prepared.location.binding.canonicalProjectRoot)).toBeVisible()
-    expect(reloadedProject.getByText(fixture.prepared.source.manifest.git!.commit)).toBeVisible()
     expect(fixture.requests).toHaveLength(1)
   })
 

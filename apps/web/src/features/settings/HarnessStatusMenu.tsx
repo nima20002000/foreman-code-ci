@@ -1,4 +1,3 @@
-import { InfoHint } from '../../shared/ui/InfoHint'
 import { SidebarNavigationButton } from '../../shared/ui/SidebarNavigationButton'
 import { useLayoutEffect, useRef } from 'react'
 import { AgentHarnessSchema, type AgentHarness } from '@foreman-code/contracts'
@@ -51,10 +50,10 @@ function HarnessStatus({ harness, installation, failed, pending }: {
       <span className={`harness-status-light harness-status-light--${state}`} aria-hidden="true" />
     </SidebarNavigationButton>
     {hover.card(<div className={`sidebar-hover-body harness-hover harness-hover--${state}`}>
-      <div className="n-field-label"><SidebarHoverCardHeader icon={<HarnessMark harness={harness} size={16} />} name={name} role="Harness" />
-        <InfoHint label={`${name} harness`}>Sign-in and profile qualification are checked separately before execution.</InfoHint></div>
+      <SidebarHoverCardHeader icon={<HarnessMark harness={harness} size={16} />} name={name} role="Harness" />
       <p className="sidebar-hover-state">{label}</p>
       <p className="sidebar-hover-note">{detail}</p>
+      <p className="sidebar-hover-note">Sign-in and profile qualification are checked separately before execution.</p>
     </div>)}
   </>
 }
