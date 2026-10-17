@@ -88,10 +88,7 @@ async function openActivities() {
   const trigger = screen.getByLabelText('Activities', { selector: 'button' })
   expect(trigger).toBeVisible()
   await userEvent.click(trigger)
-  const dialog = screen.getByLabelText('Activities', { selector: 'dialog' })
-  await waitFor(() => expect(dialog).toHaveAttribute('open'))
-  expect(dialog).toHaveRole('dialog')
-  return dialog
+  return screen.findByRole('region', { name: 'Activities popover' })
 }
 
 function installNodeInspection() {
@@ -358,7 +355,7 @@ describe('Workspace Board route, editor and HTTP boundary', { timeout: 20_000 },
     expect(canvas).not.toBeVisible()
     const activities = await openActivities()
     expect(await within(activities).findByText('History for run-a')).toBeVisible()
-    await userEvent.click(within(activities).getByRole('button', { name: 'Close runs' }))
+    await userEvent.click(within(activities).getByRole('button', { name: 'Close Activities' }))
     fireEvent.keyDown(window, { key: 'z', ctrlKey: true })
     fireEvent.keyDown(window, { key: 'y', metaKey: true })
     expect(useGraphDraftStore.getState().nextDrafts[key]!.graph).toBe(graph)
@@ -502,14 +499,14 @@ describe('Workspace Board route, editor and HTTP boundary', { timeout: 20_000 },
     expect(router.state.location.pathname).toBe('/workspaces/workspace-1')
     expect(router.state.location.search).toMatchObject({ runId: 'run-a', workflowVersionId: 'version-a',
       executionSemanticsVersion: 3, runNodeId: 'node-x', agentId: 'agent-researcher' })
-    const linkedActivities = await screen.findByRole('dialog', { name: 'Activities' })
-    await userEvent.click(within(linkedActivities).getByRole('button', { name: 'Close runs' }))
+    const linkedActivities = await screen.findByRole('region', { name: 'Activities popover' })
+    await userEvent.click(within(linkedActivities).getByRole('button', { name: 'Close Activities' }))
     const hash = router.history.location.hash
     await choose('run-b')
     await screen.findByRole('button', { name: 'Inspect Run node X in B' })
     const activities = await openActivities()
     await within(activities).findByText('History for run-b')
-    await userEvent.click(within(activities).getByRole('button', { name: 'Close runs' }))
+    await userEvent.click(within(activities).getByRole('button', { name: 'Close Activities' }))
     expect(router.state.location.pathname).toBe('/workspaces/workspace-1')
     expect(router.state.location.search).toMatchObject({ workflowId: scope.workflowId, runId: 'run-b', workflowVersionId: 'version-b', executionSemanticsVersion: 3, agentId: 'agent-researcher' })
     expect(router.state.location.search.selectedRunId).toBeUndefined()
