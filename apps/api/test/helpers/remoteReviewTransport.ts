@@ -23,17 +23,18 @@ export async function createRemoteReviewTransport(input: {
     socket.once('close', () => connections.delete(socket))
   })
   const sockets = new Set<WebSocket>()
-  let loseCompactionResponse = false
+  let paused = false
+  let dropPhysical: (() => void) | undefined
   const deliveryReads: Array<{ command: ReturnType<typeof RemoteOwnerControlSchema.parse>; phase: string }> = []
   const websocket = new WebSocketServer({ server, perMessageDeflate: false, maxPayload: 16384 })
   websocket.on('connection', (worker, request) => {
+    if (paused) { worker.close(); return }
     const main = new WebSocket(input.endpoint, { ca: cert,
       headers: { authorization: request.headers.authorization! }, perMessageDeflate: false })
     sockets.add(worker)
     sockets.add(main)
     const assemblies = new Map<string, { bytes: number; chunks: Buffer[]; received: number }>()
     const readRequests = new Map<string, ReturnType<typeof RemoteOwnerControlSchema.parse>>()
-    const compactionReads = new Set<string>()
     const trace = new Map<string, { bytes: number; chunks: Buffer[]; received: number }>()
     const observe = (data: RawData, direction: 'to-worker' | 'to-main') => {
       const frame = JSON.parse(data.toString()) as DeviceApplicationFrame
@@ -50,16 +51,15 @@ export async function createRemoteReviewTransport(input: {
       if (assembly.received !== assembly.bytes) return
       trace.delete(key)
       const payload = JSON.parse(Buffer.concat(assembly.chunks).toString('utf8')) as {
-        method?: string; command?: unknown; phase?: string; compaction?: { status?: string }
+        method?: string; command?: unknown; phase?: string
       }
-      if (direction === 'to-worker' && payload.method === 'conversation.compact-reconcile'
-        && loseCompactionResponse) compactionReads.add(frame.id)
-      if (direction === 'to-main' && compactionReads.has(frame.id)) {
-        compactionReads.delete(frame.id)
-        if (loseCompactionResponse && payload.compaction?.status === 'completed') {
-          loseCompactionResponse = false
-          return true
-        }
+      if (direction === 'to-worker' && payload.method === 'physical-readout' && dropPhysical) {
+        const dropped = dropPhysical
+        dropPhysical = undefined
+        worker.terminate()
+        main.terminate()
+        dropped()
+        return true
       }
       if (direction === 'to-worker' && payload.method === 'control-delivery') {
         readRequests.set(frame.id, RemoteOwnerControlSchema.parse(payload.command))
@@ -79,7 +79,7 @@ export async function createRemoteReviewTransport(input: {
     })
     const discoveryFrames = new Map<string, Array<{ data: RawData; binary: boolean }>>()
     main.on('message', (data, binary) => {
-      observe(data, 'to-worker')
+      if (observe(data, 'to-worker')) return
       const frame = JSON.parse(data.toString()) as DeviceApplicationFrame
       if (input.beforeDiscovery && frame.type === 'application-open' && frame.kind === 'request'
         && frame.namespace === 'harness-discovery-v1') {
@@ -105,10 +105,7 @@ export async function createRemoteReviewTransport(input: {
     worker.on('close', () => { sockets.delete(worker); main.close() })
     worker.on('message', (data, binary) => {
       const forward = async () => {
-        if (observe(data, 'to-main')) {
-          fail()
-          return
-        }
+        observe(data, 'to-main')
         const frame = JSON.parse(data.toString()) as DeviceApplicationFrame
         if (frame.type === 'application-open' && frame.kind === 'request'
           && frame.namespace === EXECUTION_AUTHORITY_EXTENSION.namespace) {
@@ -141,7 +138,16 @@ export async function createRemoteReviewTransport(input: {
   const address = server.address()
   if (!address || typeof address === 'string') throw new Error('Expected a loopback transport fixture port.')
   return { endpoint: `wss://127.0.0.1:${address.port}/device/connect`, deliveryReads,
-    loseNextCompactionResponse: () => { loseCompactionResponse = true },
+    paused: () => paused,
+    pauseConnections() {
+      paused = true
+      for (const socket of sockets) socket.terminate()
+    },
+    resumeConnections() { paused = false },
+    dropNextPhysicalReadout() {
+      if (dropPhysical) throw new Error('A physical readout interruption is already armed.')
+      return new Promise<void>(resolve => { dropPhysical = resolve })
+    },
     close: async () => {
       const serverClosed = new Promise<void>((resolve, reject) => {
         server.close(error => error ? reject(error) : resolve())

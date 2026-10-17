@@ -777,7 +777,7 @@ class InstalledWorkflowHostRuntime {
             unavailable('original_native_start_changed')
           }
           // Native MCP inspection accepts the managed launcher, which reads routes beside itself.
-          if (!actual.mcp) actual.mcp = await createWorkerMcpEndpoint({ relay, launcher, signal })
+          if (!actual.mcp) actual.mcp = await createWorkerMcpEndpoint({ relay, launcher, signal, now: this.input.mainNow })
           else await actual.mcp.bindRelay(relay)
           actual.applicationAccess = structuredClone(access)
           actual.relay = relay

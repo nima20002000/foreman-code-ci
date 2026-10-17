@@ -16,7 +16,8 @@ const entrySchema = z.object({
   job: z.object({ id: z.string(), periodStart: period, windowEnd: period }).optional(),
   snapshot: z.object({ used: z.number().nonnegative(), asOf: period, periodStart: period, windowEnd: period }).optional(),
   failure: z.string().optional(),
-  policy: z.object({ month: period, exhausted: z.boolean(), activated: z.boolean() }).optional(),
+  policy: z.object({ month: period, exhausted: z.boolean(), activated: z.boolean(),
+    replacement: z.string().optional() }).optional(),
 }).strict()
 const cacheSchema = z.record(z.string(), entrySchema)
 export type CircleCreditState = z.infer<typeof entrySchema>

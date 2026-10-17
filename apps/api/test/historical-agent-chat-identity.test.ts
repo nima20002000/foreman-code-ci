@@ -152,7 +152,18 @@ function addJob(f: ReturnType<typeof fixture>) {
   return job
 }
 
-describe('SCH-06 historical Agent chat identity and fail-closed selection', () => {
+describe('historical Agent chat identity and fail-closed selection', () => {
+  it('reads a retained conversation without a host availability provider', async () => {
+    const f = fixture()
+    const value = await selected(f)
+    expect(value.state.conversation).toMatchObject({ id: f.stored.id,
+      agentConfigurationVersionId: f.source.agentConfigurationVersionId,
+      nativeSession: { nativeSessionId: f.stored.native_session_id } })
+    expect(value.state.sourceTranscript?.messages).toEqual([
+      expect.objectContaining({ role: 'assistant', content: 'Saved execution output' }),
+    ])
+    expect(f.managers).not.toHaveBeenCalled()
+  })
   it.each(['starting', 'running', 'completed'] as const)('reads the %s execution transcript without a chat or native probe', async state => {
     const f = fixture()
     f.conversations.clear()
