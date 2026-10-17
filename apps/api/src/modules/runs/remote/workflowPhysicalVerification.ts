@@ -576,7 +576,7 @@ async function assertRemoteWriterLane(sql: GraphTransactionSql, capture: Bound, 
     || lane.native_session_id !== readout.session.nativeSessionId) return unavailable('writer_lane_session')
   if (lane.token !== lifetime.lane!.token && !releasedAfterClosure) return unavailable('writer_lane_token')
   if (lane.generation !== String(lifetime.lane!.connectionGeneration)) return unavailable('writer_lane_generation')
-  const correlation = lifetime.review?.correlationId ?? `execution:${intent.executionId}`
+  const correlation = lifetime.review?.correlationId ?? receipt.turnInput?.correlationId ?? `execution:${intent.executionId}`
   const providerId = lifetime.review
     ? receipt.reviewTurns?.find(turn => turn.assignment.jobId === lifetime.review!.jobId)?.providerId : receipt.native?.turnId
   if (lane.correlation !== correlation) return unavailable('writer_lane_correlation')

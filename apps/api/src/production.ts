@@ -915,7 +915,7 @@ function configureWorkflowRepositories(composition: ProductionComposition) {
       if (!configuration) throw new DomainError('AGENT_CONFIGURATION_NOT_FOUND', 'The accepted Agent configuration is unavailable.', 409)
       const access = requiredLocationAccess([configuration])
       await locations.revalidateSnapshot(run.workspaceId, run.executionLocation, access)
-      const tree = await runWorktrees.prepare(run, AbortSignal.timeout(60_000), execution.id)
+      const tree = await runWorktrees.prepare(run)
       if (!tree) return undefined
       return { workingDirectory: tree.workingDirectory,
         runtimeDirectory: repeatRuntimeDirectory(config.harnesses.workspaceRoot, { workspaceId: run.workspaceId,

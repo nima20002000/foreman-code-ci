@@ -10,7 +10,6 @@ import { deviceManagedMcpMigration } from './deviceManagedMcpMigration.js'
 import { workflowAuthoringMigration } from './workflowAuthoringMigration.js'
 import { ciGrantMigration } from './ciGrantMigration.js'
 import { runWorktreesMigration } from './runWorktreesMigration.js'
-import { executionWorktreesMigration } from './executionWorktreesMigration.js'
 import { withTransaction } from './transaction.js'
 import { checkpointOwnerMigration } from './checkpointOwnerMigration.js'
 import { errorMessage } from '../shared/errorMessage.js'
@@ -991,7 +990,6 @@ export const migrations = [
   operatorSummaryActivityMigration,
   retiredManagementActionsMigration,
   computerNamesMigration,
-  executionWorktreesMigration,
 ] as const
 
 export function assertMigrationVersions(entries: readonly { version: number }[]): void {
