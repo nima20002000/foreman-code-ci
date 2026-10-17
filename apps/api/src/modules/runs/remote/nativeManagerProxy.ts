@@ -43,7 +43,6 @@ const HistoryResponseSchema = z.object({
 }).strict()
 function expiredPhysicalReply(error: unknown): boolean {
   return error instanceof DeviceApplicationError && error.code === 'REMOTE_NATIVE_PHYSICAL_REPLY_EXPIRED'
-    || error instanceof DomainError && error.code === 'REMOTE_CONNECTION_CONFLICT'
 }
 class RemoteHistorySnapshotChangedError extends Error {}
 interface RemoteReply {
@@ -625,7 +624,7 @@ export class RemoteNativeSessionManager implements NativeHarnessSessionManager {
     if (!nativeTurnId) throw new Error('Original native turn is unavailable')
     await this.status(await this.request('settle-turn', { correlationId, nativeTurnId }, signal))
     this.streamHistory = undefined
-    return this.reconcile(session, correlationId, signal)
+    return (await this.readHistoryObservation(session, correlationId, signal)).history
   }
   async reconcileResponse(session: NativeSessionReference, response: Parameters<NonNullable<NativeHarnessSessionManager['reconcileResponse']>>[1], signal?: AbortSignal) {
     this.assertSession(session)

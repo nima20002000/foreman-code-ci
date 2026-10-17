@@ -282,16 +282,20 @@ describe('actual worker native-port adapter', () => {
   it('production detaches the running remote resident before closing channels or releasing ownership', async () => {
     const f = await setup()
     let channelsClosed = false
-    let detachEntered!: () => void
-    let releaseDetachment!: () => void
-    const entered = new Promise<void>(resolve => { detachEntered = resolve })
-    const released = new Promise<void>(resolve => { releaseDetachment = resolve })
+    let historyEntered!: () => void
+    let releaseHistory!: () => void
+    const entered = new Promise<void>(resolve => { historyEntered = resolve })
+    const released = new Promise<void>(resolve => { releaseHistory = resolve })
     const order: string[] = []
     const proxy = new RemoteNativeSessionManager({
       intent: f.intent, placement: f.placement, harness: 'codex', configuration: f.request.configuration,
       transport: { request: async (method, frame) => {
         if (channelsClosed) throw new Error('Device channel closed')
-        expect(method).toBe('prepare')
+        if (method === 'history') {
+          historyEntered()
+          await released
+          if (channelsClosed) throw new Error('Device channel closed during disposition')
+        }
         return f.host.handle(frame)
       } },
       observeReceipt: async () => {}, controlFor: async () => { throw new Error('No control is requested') },
@@ -302,8 +306,6 @@ describe('actual worker native-port adapter', () => {
     const original = await f.journal.status(f.intent.operationId)
     const runtime = await productionShutdownFixture()
     runtime.detach.mockImplementation(async () => {
-      detachEntered()
-      await released
       await proxy.closeForRestart(session)
       order.push('resident detached')
     })
@@ -313,32 +315,32 @@ describe('actual worker native-port adapter', () => {
     const closing = runtime.production.shutdown()
     try {
       await Promise.race([entered, closing.then(() => {
-        throw new Error('Shutdown finished before detaching the remote resident')
+        throw new Error('Shutdown finished before observing the remote resident')
       })])
       expect(runtime.admission).toHaveBeenCalledOnce()
       expect(runtime.channels).not.toHaveBeenCalled()
       expect(runtime.managerDispose).not.toHaveBeenCalled()
       expect(runtime.ownerClose).not.toHaveBeenCalled()
       await expect(runtime.production.initialize()).rejects.toMatchObject({ code: 'NATIVE_RUNTIME_CLOSING' })
-      releaseDetachment()
+      releaseHistory()
       await closing
       expect(order).toEqual(['resident detached', 'manager disposed', 'channels closed', 'ownership released'])
       expect(await f.journal.status(f.intent.operationId)).toEqual(original)
       expect(f.state).toMatchObject({ starts: 1, turns: 1, cancels: 0 })
     } finally {
-      releaseDetachment()
+      releaseHistory()
       await Promise.allSettled([closing])
       await runtime.close()
     }
   })
 
-  it('production retains the channel and manager after failed detachment persistence and retries before releasing ownership', async () => {
+  it('production retains the channel and manager after failed detachment and retries before releasing ownership', async () => {
     const f = await setup()
-    let persistenceUnavailable = true
+    let historyUnavailable = true
     const proxy = new RemoteNativeSessionManager({
       intent: f.intent, placement: f.placement, harness: 'codex', configuration: f.request.configuration,
       transport: { request: (method, frame) => {
-        expect(method).toBe('prepare')
+        if (method === 'history' && historyUnavailable) throw new Error('Original history unavailable')
         return f.host.handle(frame)
       } },
       observeReceipt: async () => {}, controlFor: async () => { throw new Error('No control is requested') },
@@ -346,20 +348,16 @@ describe('actual worker native-port adapter', () => {
     const session = await proxy.createSession({ request: f.request, correlationId: 'execution:execution' })
     const original = await f.journal.status(f.intent.operationId)
     const runtime = await productionShutdownFixture()
-    runtime.detach.mockImplementation(async () => {
-      await proxy.closeForRestart(session)
-      if (persistenceUnavailable) throw new Error('Detachment persistence unavailable')
-    })
+    runtime.detach.mockImplementation(() => proxy.closeForRestart(session))
     runtime.managerDispose.mockImplementation(() => proxy.dispose())
     try {
       await expect(runtime.production.shutdown()).rejects.toThrow('runtime ownership was not released')
       expect(runtime.channels).not.toHaveBeenCalled()
       expect(runtime.managerDispose).not.toHaveBeenCalled()
       expect(runtime.ownerClose).not.toHaveBeenCalled()
-      expect(proxy.canDetachForRestart(session)).toBe(false)
-      expect(await f.journal.status(f.intent.operationId)).toEqual(original)
+      await expect(proxy.dispose()).rejects.toThrow('disposal is unconfirmed')
       expect(f.state).toMatchObject({ starts: 1, turns: 0, cancels: 0 })
-      persistenceUnavailable = false
+      historyUnavailable = false
       await runtime.production.drainShutdown()
       expect(runtime.detach).toHaveBeenCalledTimes(2)
       expect(runtime.managerDispose).toHaveBeenCalledOnce()
@@ -389,13 +387,13 @@ describe('actual worker native-port adapter', () => {
     await proxy.closeForRestart(session)
     await proxy.dispose()
     await expect(proxy.closeForRestart({ ...session, nativeSessionId: 'another-session' })).rejects.toThrow('Wrong remote native session')
-    expect(methods).toEqual(['prepare'])
+    expect(methods).toEqual(['prepare', 'history'])
     expect(f.state.starts).toBe(1)
     expect(f.state.cancels).toBe(0)
     expect((await f.journal.status(f.intent.operationId)).status).toBe('known')
   })
 
-  it('detaches the admitted session while history is unavailable and preserves its continuation', async () => {
+  it('retains failed restart disposition until the original history can be observed', async () => {
     const f = await setup()
     let unavailable = false
     const proxy = new RemoteNativeSessionManager({
@@ -408,10 +406,8 @@ describe('actual worker native-port adapter', () => {
     })
     const session = await proxy.createSession({ request: f.request, correlationId: 'execution:execution' })
     unavailable = true
-    const original = await f.journal.status(f.intent.operationId)
-    await expect(proxy.closeForRestart(session)).resolves.toBeUndefined()
-    await expect(proxy.dispose()).resolves.toBeUndefined()
-    expect(await f.journal.status(f.intent.operationId)).toEqual(original)
+    await expect(proxy.closeForRestart(session)).rejects.toThrow('History unavailable')
+    await expect(proxy.dispose()).rejects.toThrow('disposal is unconfirmed')
     unavailable = false
     await proxy.closeForRestart(session)
     await proxy.dispose()
