@@ -2,7 +2,7 @@ import { useId, type InputHTMLAttributes, type TextareaHTMLAttributes, type Sele
 import { cx, clamp } from './utils'
 import { Icon } from './Icon'
 
-interface FieldMeta { label: string; labelHint?: ReactNode; hint?: ReactNode; error?: string; className?: string }
+interface FieldMeta { label: string; hint?: ReactNode; error?: string; className?: string }
 function descriptions(id: string, hint: ReactNode, error: string | undefined, supplied?: string) {
   return [supplied, hint ? `${id}-hint` : '', error ? `${id}-error` : ''].filter(Boolean).join(' ') || undefined
 }
@@ -29,12 +29,10 @@ export function SearchField(props: InputHTMLAttributes<HTMLInputElement> & { ref
   return <TextField {...props} type="search" leading={<Icon name="search" size={16} />} />
 }
 
-export function Textarea({ label, labelHint, hint, error, className, id: suppliedId, ...props }: TextareaHTMLAttributes<HTMLTextAreaElement> & { ref?: Ref<HTMLTextAreaElement> } & FieldMeta) {
+export function Textarea({ label, hint, error, className, id: suppliedId, ...props }: TextareaHTMLAttributes<HTMLTextAreaElement> & { ref?: Ref<HTMLTextAreaElement> } & FieldMeta) {
   const generated = useId()
   const id = suppliedId ?? generated
-  const fieldLabel = <label htmlFor={id}>{label}{props.required && <span aria-hidden="true"> *</span>}</label>
-  return <div className={cx('n-field', className)}>
-    {labelHint ? <div className="n-field-label">{fieldLabel}{labelHint}</div> : fieldLabel}
+  return <div className={cx('n-field', className)}><label htmlFor={id}>{label}{props.required && <span aria-hidden="true"> *</span>}</label>
     <textarea {...props} id={id} className="n-input n-textarea" aria-invalid={error ? true : props['aria-invalid']}
       aria-describedby={descriptions(id, hint, error, props['aria-describedby'])} /><FieldNotes id={id} hint={hint} error={error} /></div>
 }
@@ -52,37 +50,28 @@ export function Select({ label, labelHint, hint, error, options, className, id: 
     <FieldNotes id={id} hint={hint} error={error} /></div>
 }
 
-export function Checkbox({ label, labelHint, hint, error, className, id: suppliedId, ...props }: Omit<InputHTMLAttributes<HTMLInputElement>, 'type'> & { ref?: Ref<HTMLInputElement> } & FieldMeta) {
+export function Checkbox({ label, hint, error, className, id: suppliedId, ...props }: Omit<InputHTMLAttributes<HTMLInputElement>, 'type'> & { ref?: Ref<HTMLInputElement> } & FieldMeta) {
   const generated = useId()
   const id = suppliedId ?? generated
-  const control = <label className="n-check" htmlFor={id}>
+  return <div className={cx('n-check-field', className)}><label className="n-check" htmlFor={id}>
     <input {...props} type="checkbox" id={id} aria-invalid={error ? true : props['aria-invalid']} aria-describedby={descriptions(id, hint, error, props['aria-describedby'])} />
-    <span>{label}</span></label>
-  return <div className={cx('n-check-field', className)}>
-    {labelHint ? <div className="n-field-label">{control}{labelHint}</div> : control}
-    <FieldNotes id={id} hint={hint} error={error} /></div>
+    <span>{label}</span></label><FieldNotes id={id} hint={hint} error={error} /></div>
 }
 
-export function Switch({ label, labelHint, hint, className, id: suppliedId, ...props }: Omit<InputHTMLAttributes<HTMLInputElement>, 'type'> & { ref?: Ref<HTMLInputElement> } & Omit<FieldMeta, 'error'>) {
+export function Switch({ label, hint, className, id: suppliedId, ...props }: Omit<InputHTMLAttributes<HTMLInputElement>, 'type'> & { ref?: Ref<HTMLInputElement> } & Omit<FieldMeta, 'error'>) {
   const generated = useId()
   const id = suppliedId ?? generated
-  const text = <span className="n-switch-text">
-    {labelHint ? <span className="n-field-label"><label htmlFor={id}>{label}</label>{labelHint}</span> : <span>{label}</span>}
-    {hint && <span className="n-field-hint" id={`${id}-hint`}>{hint}</span>}
-  </span>
-  const control = <span className="n-switch"><input {...props} type="checkbox" role="switch" id={id}
-    aria-describedby={descriptions(id, hint, undefined, props['aria-describedby'])} />
-    <span aria-hidden="true" className="n-switch-track" /></span>
-  return labelHint ? <div className={cx('n-switch-field', className)}>
-    {text}<label htmlFor={id}>{control}</label>
-  </div> : <label className={cx('n-switch-field', className)} htmlFor={id}>{text}{control}</label>
+  return <label className={cx('n-switch-field', className)} htmlFor={id}>
+    <span className="n-switch-text"><span>{label}</span>{hint && <span className="n-field-hint" id={`${id}-hint`}>{hint}</span>}</span>
+    <span className="n-switch"><input {...props} type="checkbox" role="switch" id={id} aria-describedby={descriptions(id, hint, undefined, props['aria-describedby'])} /><span aria-hidden="true" className="n-switch-track" /></span>
+  </label>
 }
 
-export function RadioGroup({ label, name, value, options, onValueChange, disabled = false, hint, labelHint }:
-  { label: string; name?: string; value: string; options: readonly (SelectOption & { description?: string })[]; onValueChange: (value: string) => void; disabled?: boolean; hint?: string; labelHint?: ReactNode }) {
+export function RadioGroup({ label, name, value, options, onValueChange, disabled = false, hint }:
+  { label: string; name?: string; value: string; options: readonly (SelectOption & { description?: string })[]; onValueChange: (value: string) => void; disabled?: boolean; hint?: string }) {
   const id = useId()
   return <fieldset className="n-radio-group" disabled={disabled} aria-describedby={hint ? `${id}-hint` : undefined}>
-    <legend>{label}{labelHint}</legend>{hint && <p className="n-field-hint" id={`${id}-hint`}>{hint}</p>}
+    <legend>{label}</legend>{hint && <p className="n-field-hint" id={`${id}-hint`}>{hint}</p>}
     {options.map((option) => <label key={option.value} className="n-radio-option" data-selected={value === option.value}>
       <input type="radio" name={name ?? id} value={option.value} checked={value === option.value} disabled={option.disabled} onChange={() => onValueChange(option.value)} />
       <span>{option.label}{option.description && <small>{option.description}</small>}</span></label>)}

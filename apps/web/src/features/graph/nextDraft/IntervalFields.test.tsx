@@ -3,7 +3,6 @@ import { useState } from 'react'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { makeCurrentWorkflowFixture, WorkflowDefinitionV3Schema, type WorkflowDefinitionV3 } from '@foreman-code/contracts/wave25'
-import userEvent from '@testing-library/user-event'
 import { IntervalFields } from './IntervalFields'
 import { intervalLabel } from './intervalLabel'
 
@@ -21,15 +20,10 @@ function mount() {
 }
 
 describe('Agent loops in node settings', () => {
-  it('is off by default, then saves the period the author chooses and clears it when turned off', async () => {
+  it('is off by default, then saves the period the author chooses and clears it when turned off', () => {
     const { saved } = mount()
     const toggle = screen.getByRole('switch', { name: /Loop while the workflow runs/ })
-    expect(screen.queryByText(/Loops never hand off work or use maximum parallelism slots/)).not.toBeInTheDocument()
-    const user = userEvent.setup()
-    const hint = screen.getByRole('button', { name: 'About Loop while the workflow runs' })
-    await user.hover(hint)
-    expect(screen.getByRole('tooltip')).toHaveTextContent(/Loops never hand off work or use maximum parallelism slots/)
-    await user.unhover(hint)
+    expect(screen.getByText(/Loops never hand off work or use maximum parallelism slots/)).toBeVisible()
     expect(toggle).not.toBeChecked()
     expect(screen.queryByLabelText('Every')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Each loop')).not.toBeInTheDocument()

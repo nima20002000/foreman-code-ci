@@ -14,7 +14,7 @@ import { runCommand } from '../process.js'
 import { assertCodexUnchanged, qualifyCodex } from '../codexProtocol.js'
 import { canonicalJsonNumericKeysFirstLegacy } from '@foreman-code/contracts/canonical-json'
 import { CodexChildControls } from '../codexChildControls.js'
-import { codexResponseDeliveryEvidence } from '../codexResponseDelivery.js'
+import { codexInputDeliveryEvidence } from '../codexResponseDelivery.js'
 import type { NativeResponseJournal } from '../recovery/responseJournal.js'
 import type { RunSubagent } from '@foreman-code/contracts/subagents'
 import { CodexStdioTransport, isObject, type JsonObject } from '../codexStdioTransport.js'
@@ -169,7 +169,7 @@ export abstract class CodexManagerBase {
   }
   protected captureResponseDeliveries(runtime: Runtime): void {
     for (const [id, decision] of runtime.responseDecisions) {
-      const proof = codexResponseDeliveryEvidence(decision.pending, decision.option, decision.nativeResponse,
+      const proof = codexInputDeliveryEvidence(decision.pending, decision.option, decision.nativeResponse,
         { events: runtime.events, pendingInteractions: [] })
       if (!proof) {
         if (decision.sequence < (runtime.events[0]?.sequence ?? runtime.sequence)) runtime.responseDecisions.delete(id)

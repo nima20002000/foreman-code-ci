@@ -121,10 +121,7 @@ describe('canonical original send input', () => {
     if (count) {
       expect(JSON.parse(within(preview).getByLabelText('Original file pins').textContent!)).toEqual(pins)
       expect(within(preview).getByText('original-input.md')).toBeInTheDocument()
-    } else {
-      expect(within(preview).getByText('No original files.')).toBeVisible()
-      expect(within(preview).queryByText(/This new message will contain text only/)).not.toBeInTheDocument()
-    }
+    } else expect(within(preview).getByText(/This new message will contain text only/)).toBeInTheDocument()
     expect(sends()).toHaveLength(0)
     await userEvent.click(within(preview).getByRole('button', { name: 'Keep it' }))
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
