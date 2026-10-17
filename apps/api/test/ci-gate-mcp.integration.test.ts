@@ -371,6 +371,7 @@ it.each(['cloud', 'build'] as const)('requeues a cloud setup failure once on ano
     f.runs.set(part.id, failed)
     if (destination === 'build') {
       for (const host of initial.partitions!.filter(run => run.computer?.hostRef.kind !== 'cloud')) {
+        if (host.computer?.hostRef.kind === 'main') continue
         const running = f.runs.get(host.id)
         if (running) f.runs.set(host.id, { ...running, state: 'passed', exitCode: 0,
           finishedAt: new Date().toISOString() })
@@ -388,6 +389,15 @@ it.each(['cloud', 'build'] as const)('requeues a cloud setup failure once on ano
       computer.key === part.plannedHostKey || (destination === 'cloud'
         ? computer.hostRef.kind === 'cloud' : computer.hostRef.kind !== 'cloud')))
     await settle(f.ci)
+    if (destination === 'build') {
+      const waiting = CiGetOutputSchema.parse(await f.value('ci_get', { ticketId: part.id }))
+      expect(waiting.run).toMatchObject({ state: 'queued', setupRetry: { reason } })
+      for (const host of initial.partitions!.filter(run => run.computer?.hostRef.kind === 'main')) {
+        f.runs.set(host.id, { ...f.runs.get(host.id)!, state: 'passed', exitCode: 0,
+          finishedAt: new Date().toISOString() })
+      }
+      await settle(f.ci)
+    }
     const read = CiGetOutputSchema.parse(await f.value('ci_get', { ticketId: part.id }))
     expect(read.run).toMatchObject({ state: 'running', id: part.id, groupId: part.groupId,
       setupRetry: { reason, failedComputer: part.computer!.hostRef } })

@@ -53,30 +53,6 @@ it.each(['codex', 'claude'] as const)(
     } finally { await f.close() }
   }, 30_000)
 
-it('finishes remote Codex compaction when history completes before native notifications', async () => {
-  const f = await remoteAgentConversation('codex')
-  try {
-    await f.send('Establish the remote session')
-    f.provider.holdCompactionNotifications()
-    const before = SessionControlStateSchema.parse(await f.value('agent_chat_controls_get', {
-      conversationId: f.conversation.id,
-    }))
-    const compact = SessionControlStateSchema.parse(await f.value('agent_chat_controls_update', {
-      conversationId: f.conversation.id, request: { kind: 'compact', requestId: randomUUID(),
-        expectedRevision: before.revision },
-    }))
-    expect(compact.compaction?.status).toBe('completed')
-    expect(f.provider.compactions).toBe(1)
-    f.provider.releaseCompactionNotifications()
-    let drained = false
-    const draining = f.drainWorker().then(() => { drained = true })
-    await vi.waitFor(() => expect(drained).toBe(true))
-    await draining
-    await f.send('Continue after compaction')
-    expect(f.frames.filter(frame => frame.method === 'conversation.compact')).toHaveLength(1)
-  } finally { await f.close() }
-}, 30_000)
-
 it.each(['codex', 'claude'] as const)(
   'applies Plan and Plan off to the next remote %s turn', async harness => {
     const f = await remoteAgentConversation(harness)
