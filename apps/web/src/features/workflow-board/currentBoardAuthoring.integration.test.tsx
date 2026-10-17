@@ -75,6 +75,7 @@ beforeEach(() => {
 })
 afterEach(() => {
   cleanup(); clients.splice(0).forEach((client) => client.clear())
+  vi.useRealTimers()
   useGraphDraftStore.getState().clearAllDrafts(); vi.restoreAllMocks(); vi.unstubAllGlobals()
   server.events.removeListener('request:unhandled', recordUnhandled)
   expect(unhandledRequests, 'No unhandled Board request may bypass MSW').toEqual([])
@@ -201,6 +202,7 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     stageShape(key, 'single', mock)
     const saved = await save(mock, user, 1)
     await waitFor(() => expect(control('Start saved version')).toBeEnabled())
+    vi.useFakeTimers({ shouldAdvanceTime: true })
     let workspaceAvailable = false, draftAvailable = false
     const unavailable = () => HttpResponse.json({ error: { code: 'UNAVAILABLE', message: 'Updates unavailable.' } }, { status: 503 })
     server.use(
@@ -210,6 +212,7 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     await mounted.query.invalidateQueries({ queryKey: queryKeys.workspaceDetails(mock.workspaceId) })
     await mounted.query.invalidateQueries({ queryKey: boardDraftContextKey(mock.workspaceId, id) })
     await mounted.query.invalidateQueries({ queryKey: ['workbench', 'board-start-preflight'] })
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000) })
     await waitFor(() => expect(screen.getByRole('button', { name: 'Workflow alerts, 2' })).toBeVisible())
     expect(control('Start saved version')).toBeDisabled()
     expect(readBoardStart(key)).toBeUndefined()
