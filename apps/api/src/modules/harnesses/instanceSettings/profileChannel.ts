@@ -1,7 +1,4 @@
 import { z } from 'zod'
-import { HarnessOptionsResultSchema, type HarnessOptions } from '@foreman-code/contracts/management'
-import { HarnessOptionsDiscoveryRequestSchema, type HarnessOptionsDiscoveryRequest } from '@foreman-code/contracts/harness-registry'
-import { DomainError } from '../../errors.js'
 import { OperatorChatSetupSchema, type OperatorChatSetup } from '@foreman-code/contracts'
 import { HARNESS_PROFILE_CHECK_NAMESPACE, HostHarnessProfileCheckRequestSchema, HostHarnessProfileEvidenceSchema,
   HostHarnessConfigurationInspectionRequestSchema, type HostHarnessConfigurationInspectionRequest,
@@ -13,14 +10,13 @@ import type { HostHarnessProfileQualifier } from './profileChecks.js'
 
 type ProfileBinding = Readonly<DeviceConnectionIdentity & { connectionEpoch: string }>
 type ProfileContext = { binding: ProfileBinding; signal: AbortSignal }
-const RequestSchema = z.union([HarnessOptionsDiscoveryRequestSchema, HostHarnessConfigurationInspectionRequestSchema, HostHarnessProfileCheckRequestSchema])
+const RequestSchema = z.union([HostHarnessConfigurationInspectionRequestSchema, HostHarnessProfileCheckRequestSchema])
 
 /** Advertise only with an actual admitted native qualifier; no incoming readiness flags are trusted. */
 export function createHostHarnessProfileCheckExtension(options: {
   hostRef: Extract<CanonicalMachineReference, { kind: 'device' }>
   applicationInstallationId: string
   qualifierForBinding: (binding: ProfileBinding) => HostHarnessProfileQualifier
-  discoverOptions?: (input: HarnessOptionsDiscoveryRequest, context: ProfileContext) => Promise<HarnessOptions>
   inspectConfiguration?: (input: HostHarnessConfigurationInspectionRequest,
     context: { binding: ProfileBinding; signal: AbortSignal }) => Promise<OperatorChatSetup>
 }) {
@@ -32,29 +28,11 @@ export function createHostHarnessProfileCheckExtension(options: {
   function handle(payload: HostHarnessConfigurationInspectionRequest,
     context: ProfileContext): Promise<{ payload: OperatorChatSetup }>
   function handle(payload: unknown,
-    context: ProfileContext): Promise<{ payload: HostHarnessProfileEvidence | OperatorChatSetup | HarnessOptions }>
+    context: ProfileContext): Promise<{ payload: HostHarnessProfileEvidence | OperatorChatSetup }>
   async function handle(payload: unknown,
-    context: ProfileContext): Promise<{ payload: HostHarnessProfileEvidence | OperatorChatSetup | HarnessOptions }> {
+    context: ProfileContext): Promise<{ payload: HostHarnessProfileEvidence | OperatorChatSetup }> {
     const input = RequestSchema.parse(payload)
     context.signal.throwIfAborted()
-    if ('operation' in input && input.operation === 'options') {
-      const target = input.target
-      if (context.binding.mainId !== hostRef.mainId || context.binding.deviceId !== hostRef.deviceId
-        || context.binding.workerInstallationId !== applicationInstallationId
-        || !isDeepStrictEqual(target.hostRef, hostRef) || target.applicationInstallationId !== applicationInstallationId
-        || target.keyRevision !== context.binding.keyRevision
-        || target.authorizationRevision !== context.binding.authorizationRevision
-        || input.accountBinding && (!isDeepStrictEqual(input.accountBinding.target, target)
-          || input.accountBinding.provider !== input.harness)) throw new DomainError(
-        'HARNESS_HOST_MISMATCH', 'Model discovery requires the owning Worker installation.', 409)
-      if (!options.discoverOptions) throw new DomainError('NATIVE_OPTIONS_UNAVAILABLE',
-        'Model discovery is unavailable on this computer.', 409)
-      const result = HarnessOptionsResultSchema.parse(await options.discoverOptions(input, context))
-      context.signal.throwIfAborted()
-      if (result.harness !== input.harness) throw new DomainError('HARNESS_CONFIGURATION_MISMATCH',
-        'The model catalog belongs to another harness.', 409)
-      return { payload: result }
-    }
     if (context.binding.mainId !== hostRef.mainId || context.binding.deviceId !== hostRef.deviceId
       || context.binding.workerInstallationId !== applicationInstallationId
       || !isDeepStrictEqual(input.override.target.hostRef, hostRef)

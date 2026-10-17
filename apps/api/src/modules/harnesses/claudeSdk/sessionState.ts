@@ -98,14 +98,7 @@ export function runtimeFor(ctx: ClaudeManagerContext, session: NativeSessionRefe
 }
 
 export async function record(ctx: ClaudeManagerContext, runtime: Runtime, type: string, payload: Record<string, unknown>, turn?: Turn): Promise<NativeHarnessEvent> {
-  // The owned query generation scopes the adapter cursor without claiming an SDK-native sequence.
-  const event: NativeHarnessEvent = {
-    connectionId: runtime.generation,
-    sequence: runtime.nextSequence++,
-    occurredAt: ctx.now(),
-    type,
-    payload: turn ? { ...payload, clientCorrelationId: turn.correlationId } : payload,
-  }
+  const event = { type, payload: turn ? { ...payload, clientCorrelationId: turn.correlationId } : payload, sequence: runtime.nextSequence++, occurredAt: ctx.now() }
   runtime.events.push(event)
   if (runtime.events.length > 256) runtime.events.shift()
   if (turn?.observing) await turn.events.offer(event)
