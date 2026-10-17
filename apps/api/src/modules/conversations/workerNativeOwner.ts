@@ -19,8 +19,7 @@ export async function closeRecoveredWorkerSession(record: WorkerConversationRece
   const original = launches.filter(launch => record.nativeOwner
     && workerConversationProcessDigest(record.binding, launch) === record.nativeOwner.processIdentityDigest)
   if (!record.session || record.nativeOwner?.sessionId !== record.session.nativeSessionId || original.length !== 1
-    || launches.some(launch => launch.lifecycle === 'active' && launch !== original[0])
-    || launches.some(launch => launch.lifecycle === 'closed' && !launch.closureEvidence)) {
+    || launches.some(launch => launch.lifecycle === 'active' && launch !== original[0])) {
     throw new DomainError('WORKER_CONVERSATION_UNAVAILABLE', 'The previous native process identity changed.', 409)
   }
   if (!await registry.closeOwner(owner, signal)) throw new DomainError(
