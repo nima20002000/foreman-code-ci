@@ -4,7 +4,7 @@ import type { FastifyInstance } from 'fastify'
 
 import {
   AGENT_CHAT_MESSAGE_BODY_LIMIT_BYTES, AgentChatExecutionActivityPageSchema, AgentChatExecutionActivityQuerySchema, AgentChatHistoryPageSchema, AgentChatTurnPageSchema, AgentChatReadbackQuerySchema, AgentChatQuerySchema, AgentChatStateResponseSchema, AgentChatStateSchema, CancelQueuedAgentChatTurnRequestSchema,
-  InterruptAgentChatRequestSchema, RespondAgentChatInteractionRequestSchema, SendAgentChatMessageRequestSchema,
+  EnsureAgentChatConversationRequestSchema, InterruptAgentChatRequestSchema, RespondAgentChatInteractionRequestSchema, SendAgentChatMessageRequestSchema,
   SendAgentChatMessageResponseSchema, type AgentChatStreamEvent,
 } from '@foreman-code/contracts/agent-chat'
 
@@ -58,6 +58,11 @@ export function registerAgentChatRoutes(app: FastifyInstance, chat: AgentChatSer
     const result = await chat.send(requirePrincipal(request), request.params.workspaceId, SendAgentChatMessageRequestSchema.parse(request.body))
     reply.code(result.replayed ? 200 : 202)
     return SendAgentChatMessageResponseSchema.parse(result)
+  })
+  app.post<{ Params: WorkspaceParams; Body: unknown }>(`${root}/conversation`, async (request) => {
+    const { context, executionId } = EnsureAgentChatConversationRequestSchema.parse(request.body)
+    return AgentChatStateResponseSchema.parse({ state: await chat.ensureConversation(requirePrincipal(request),
+      { workspaceId: request.params.workspaceId, ...context }, executionId) })
   })
   app.post<{ Params: ConversationParams; Body: unknown }>(`${root}/conversations/:conversationId/interrupt`, async (request) => {
     const input = InterruptAgentChatRequestSchema.parse(request.body)

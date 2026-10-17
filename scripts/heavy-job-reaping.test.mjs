@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
 import { once } from 'node:events'
+import { randomUUID } from 'node:crypto'
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -55,6 +56,24 @@ function fixture(t, pathKind = 'direct') {
     ['scripts/heavy-job.mjs', '--', process.execPath, '-e', 'console.log("replacement admitted")'],
     { cwd: root, env, encoding: 'utf8', timeout: 4000, killSignal: 'SIGKILL' })
   return { root, common, state, env, record, occupy, hook, run }
+}
+
+for (const slots of ['active only', 'running and active']) {
+  test(`reaps a previous boot's held slot and admits the next job (${slots})`, t => {
+    const f = fixture(t)
+    const boot = randomUUID()
+    assert.notEqual(boot, namespace.boot)
+    // A PID and start time can be reused across boots, even for a live process.
+    f.occupy(f.record({ namespace: { ...namespace, boot } }))
+    if (slots === 'active only') rmSync(join(f.state, 'running/0001-occupied'))
+
+    const result = f.run()
+    assert.equal(result.status, 0, result.stderr || result.error?.message)
+    assert.match(result.stdout, /replacement admitted/)
+    for (const path of ['running/0001-occupied', 'queue/0001-occupied', 'active']) {
+      assert.equal(existsSync(join(f.state, path)), false, `${path} was not released`)
+    }
+  })
 }
 
 for (const pathKind of ['direct', 'symlinked']) {
