@@ -22,6 +22,10 @@ function startupFailure(startup: Promise<unknown>) {
   )
 }
 
+async function startupStep(step: Promise<void>, failed: Promise<unknown>) {
+  await Promise.race([step, failed.then(error => { throw error })])
+}
+
 function assertPreserved(f: ReturnType<typeof fixture>, before: ReturnType<typeof f.execution>) {
   assert.deepEqual(f.execution(), before)
   assert.equal(f.state.stopped, false)
@@ -314,7 +318,7 @@ for (const { reviewer, wrapped } of [
       await disposed.promise
     }
     const failed = startupFailure(first.attachOriginal())
-    await attaching.promise
+    await startupStep(attaching.promise, failed)
     let settled = false
     const closing = first.coordinator.closeForRestart().finally(() => { settled = true })
     try {
@@ -349,7 +353,7 @@ it('waits for canceled credential preflight and disposes without attaching a sav
   })
   first.manager.dispose = async () => { disposals++ }
   const failed = startupFailure(first.attachOriginal())
-  await preparing.promise
+  await startupStep(preparing.promise, failed)
   let settled = false
   const closing = first.coordinator.closeForRestart().finally(() => { settled = true })
   try {
@@ -393,7 +397,7 @@ for (const drainBeforeClosure of [false, true]) {
     }
     first.manager.dispose = async () => { disposals++ }
     const failed = startupFailure(first.attachOriginal(caller.signal))
-    await attaching.promise
+    await startupStep(attaching.promise, failed)
     caller.abort(new DomainError('ENGINE_RESTART', 'The caller is shutting down for restart.', 409))
     await aborted.promise
     let closing: Promise<void> | undefined
@@ -437,7 +441,7 @@ it('records detachment only after an attachment that completes late is positivel
     await closedNative.promise
   })
   const failed = startupFailure(first.attachOriginal())
-  await attaching.promise
+  await startupStep(attaching.promise, failed)
   const closing = first.coordinator.closeForRestart()
   try {
     assertPreserved(f, before)
@@ -477,7 +481,7 @@ it('retries disposal of the same aborted attachment without inventing closure re
     if (disposals === 1) throw new Error('Original transport disposal is uncertain')
   }
   const failed = startupFailure(first.attachOriginal())
-  await attaching.promise
+  await startupStep(attaching.promise, failed)
   await assert.rejects(first.coordinator.closeForRestart(), AggregateError)
   await failed
   assertPreserved(f, before)
@@ -500,7 +504,7 @@ it('does not reinterpret uncertain native cleanup as expected restart cancellati
     })
   }
   const failed = startupFailure(first.attachOriginal())
-  await attaching.promise
+  await startupStep(attaching.promise, failed)
   await assert.rejects(first.coordinator.closeForRestart(), AggregateError)
   await failed
   assert.equal(f.rows().at(-1)!.closed, false)

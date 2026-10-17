@@ -82,8 +82,14 @@ interface WorkerMcpEndpointOptions {
   now?: () => number
   onArtifactPublication?(input: { transferId: string; publication: AgentFilePublishInput }, result: AgentFilePublishResult): void
 }
+export interface WorkerMcpEndpoint {
+  endpoint: string
+  bindRelay(relay: WorkerMcpRelay): Promise<void>
+  refreshLease(): Promise<string>
+  close(): Promise<void>
+}
 
-export async function createWorkerMcpEndpoint(input: WorkerMcpEndpointOptions & { relay: WorkerMcpRelay }) {
+export async function createWorkerMcpEndpoint(input: WorkerMcpEndpointOptions & { relay: WorkerMcpRelay }): Promise<WorkerMcpEndpoint> {
   const endpoint = await createUnboundWorkerMcpEndpoint(input)
   try { await endpoint.bindRelay(input.relay); return endpoint }
   catch (error) { await endpoint.close(); throw error }
@@ -267,5 +273,18 @@ export async function createUnboundWorkerMcpEndpoint(input: WorkerMcpEndpointOpt
     updates = task
     return task
   }
-  return { endpoint, bindRelay, refreshLease, close }
+  const unbindRelay = () => {
+    const task = updates.then(async () => {
+      renewal?.abort()
+      bound = undefined
+      await unregister?.()
+      unregister = undefined
+    }).catch(error => {
+      logFailure('unbind', error)
+      throw error
+    })
+    updates = task.then(() => undefined, () => undefined)
+    return task
+  }
+  return { endpoint, bindRelay, unbindRelay, refreshLease, close }
 }

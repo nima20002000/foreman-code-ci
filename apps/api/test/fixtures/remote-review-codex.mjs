@@ -250,7 +250,8 @@ createInterface({ input: process.stdin, crlfDelay: Infinity }).on('line', async 
     return
   }
   const params = message.params ?? {}
-  log({ method: message.method, threadId: params.threadId, correlationId: params.clientUserMessageId, model: params.model,
+  log({ method: message.method, pid: process.pid, threadId: params.threadId, correlationId: params.clientUserMessageId, model: params.model,
+    reasoningEffort: params.config?.model_reasoning_effort,
     ...(message.method === 'turn/start' ? { outputSchema: params.outputSchema } : {}),
     ...(message.method === 'model/list' ? { workingDirectory: process.cwd() } : {}) })
   if (message.method === 'initialize') {
@@ -278,9 +279,20 @@ createInterface({ input: process.stdin, crlfDelay: Infinity }).on('line', async 
     log({ forkedSession: { source: source.id, child: thread.id, cwd: thread.settings.cwd } })
     reply(message.id, { ...thread.settings, thread: view(!params.excludeTurns) })
   } else if (message.method === 'thread/read') {
+    thread = JSON.parse(readFileSync(join(root, `thread-${params.threadId}.json`), 'utf8'))
     reply(message.id, { thread: view(params.includeTurns === true) })
   } else if (message.method === 'thread/turns/list') {
     reply(message.id, { data: [...thread.turns].reverse(), nextCursor: null, backwardsCursor: null })
+  } else if (message.method === 'thread/compact/start') {
+    const turn = { id: randomUUID(), status: 'completed', itemsView: 'full', error: null,
+      startedAt: 1, completedAt: 2, durationMs: 1,
+      items: [{ id: randomUUID(), type: 'contextCompaction' }] }
+    thread.turns.push(turn)
+    save()
+    log({ compactedSession: thread.id })
+    reply(message.id, {})
+    notify('turn/started', { threadId: thread.id, turn: { ...turn, status: 'inProgress' } })
+    notify('turn/completed', { threadId: thread.id, turn })
   } else if (message.method === 'turn/start') {
     const turn = { id: randomUUID(), status: 'inProgress', itemsView: 'full', error: null,
       startedAt: 1, completedAt: null, durationMs: null,

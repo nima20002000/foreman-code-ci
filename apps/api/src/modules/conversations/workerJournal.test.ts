@@ -19,8 +19,8 @@ async function journal(capacity = 1000) {
   closing.push(() => store.close())
   return { path, store, chats: store.conversations }
 }
-async function opened() {
-  const f = workerConversationFixture()
+async function opened(kind: 'operator' | 'agent' = 'operator') {
+  const f = workerConversationFixture(kind)
   const j = await journal()
   await j.chats.receive(f.binding, f.connection)
   await j.chats.reserveCreation(f.binding, 'initial-message', commandInputHash({ mode: 'create' }))
@@ -29,8 +29,8 @@ async function opened() {
 }
 
 it('retains separate native session generations of the same conversation across restart', async () => {
-  const f = await opened()
-  const binding = WorkerConversationBindingSchema.parse({ ...f.binding, sessionGeneration: 'replacement-session' })
+  const f = await opened('agent')
+  const binding = WorkerConversationBindingSchema.parse({ ...f.binding, generation: randomUUID() })
   await f.chats.runtimeReleased(f.binding)
   await expect(f.chats.receive(binding, f.connection)).rejects.toThrow('previous native session')
   await f.chats.closeRequested(f.binding)
