@@ -292,7 +292,7 @@ async function admitWorkerConversation(input: ProductionWorkerConversationsInput
   }
   const binding = changingAccess || changingSkills ? requestedBinding : originalBinding
   const requestCallers = new WeakMap<WorkerConversationRpcRequest, string>()
-  const current = async (request: WorkerConversationRpcRequest, effectSignal?: AbortSignal) => {
+  const current = async (request: WorkerConversationRpcRequest, effectSignal?: AbortSignal, caller = context.caller()) => {
     const cleanup = request.method === 'conversation.release-runtime'
     const live = await row(options.conversationId, request.method)
     await assertSource(live)
@@ -319,7 +319,7 @@ async function admitWorkerConversation(input: ProductionWorkerConversationsInput
       await revalidateAgentChatDirectory(input.pool, configuration, directoryBinding, binding.workingDirectory)
     }
     const currentCaller = await authorizeWorkerConversationRequest(input.pool, live, request, {
-      caller: context.caller(), requestCallers, changingAccess, originalBinding,
+      caller, requestCallers, changingAccess, originalBinding,
     })
     const observation = { ...owner, observationPrincipalId: currentCaller,
       ...(effectSignal ? { admissionSignal: effectSignal } : {}) }
@@ -332,6 +332,7 @@ async function admitWorkerConversation(input: ProductionWorkerConversationsInput
       allowMutation: configuration.harness.sandbox !== 'read-only' }) : undefined
   const manager = new WorkerConversationManager({ binding, configuration: executionConfiguration,
     channel, currentChannel, bridge, current,
+    currentForDisposal: (request, effectSignal) => current(request, effectSignal, principalId),
     ...(executionConfiguration !== configuration && 'operatorId' in configuration
       ? { acceptedConfiguration: configuration } : {}),
     ...(changingAccess || changingSkills ? { previousBinding: originalBinding } : {}),

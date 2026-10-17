@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import { AgentConfigurationVersionSchema } from '@foreman-code/contracts'
 import { AgentChatStateSchema } from '@foreman-code/contracts/agent-chat'
 import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
@@ -152,4 +152,60 @@ it('releases a settled Worker runtime during graceful Main shutdown while retain
     await f.chat.shutdown()
     expect(f.worker.offers).toHaveLength(1)
   } finally { await f.cleanup() }
+})
+
+async function promptly<T>(read: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([read, new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => reject(new Error('Persisted snapshot waited for the stalled Worker')), 2_000)
+    })])
+  } finally { clearTimeout(timer) }
+}
+
+it.each(['pending', 'shared reconnect'] as const)('bounds stalled %s refreshes for persisted MCP, HTTP and SSE snapshots', async blocked => {
+  const f = await fixture()
+  let controls: Promise<unknown> | undefined
+  let controlsFinished = false
+  try {
+    const before = await f.read()
+    if (blocked === 'shared reconnect') {
+      const observer = f.worker.observer
+      const session = before.conversation?.nativeSession
+      if (!observer || !session) throw new Error('The saved native session and its observer are required')
+      f.worker.holdReconnect()
+      controls = observer.sessionControlCapabilities(session).then(
+        value => { controlsFinished = true; return { value } }, error => { controlsFinished = true; return { error } })
+      await vi.waitFor(() => expect(f.worker.hasReconnectWaiter()).toBe(true))
+    } else f.worker.disconnect('stalled')
+    const offline = await promptly(f.read())
+    expect(offline.messages).toEqual(before.messages)
+    expect(offline.activitySnapshot?.observation).toMatchObject({ status: 'unavailable',
+      lastError: expect.stringContaining('TimeoutError') })
+    const http = await promptly(f.app.inject({ method: 'GET', url: `${f.root}?${new URLSearchParams(f.query)}`,
+      headers: graphHeaders(f.reader.token) }))
+    expect(http.statusCode).toBe(200)
+    expect(AgentChatStateSchema.parse(http.json()).messages).toEqual(before.messages)
+    const address = f.app.server.address()
+    if (!address || typeof address === 'string') throw new Error('HTTP listener required')
+    const controller = new AbortController()
+    try {
+      const response = await promptly(fetch(`http://127.0.0.1:${address.port}${f.root}/conversations/${f.conversation.id}/events`, {
+        headers: graphHeaders(f.reader.token), signal: controller.signal }))
+      expect(response.status).toBe(200)
+      const stream = response.body!.getReader()
+      const first = await promptly(stream.read())
+      const frame = new TextDecoder().decode(first.value)
+      expect(frame).toContain('event: snapshot')
+      const snapshot = JSON.parse(frame.split('\n').find(line => line.startsWith('data:'))!.slice(5))
+      expect(snapshot.data.messages).toEqual(before.messages)
+      expect(snapshot.data.activitySnapshot.observation.status).toBe('unavailable')
+      await stream.cancel()
+    } finally { controller.abort() }
+    if (controls) expect(controlsFinished).toBe(false)
+    f.worker.reconnect()
+    if (controls) expect(await controls).toHaveProperty('value')
+    expect((await f.read()).activitySnapshot?.observation?.status).toBe('available')
+    expect(f.worker.offers).toHaveLength(1)
+  } finally { f.worker.reconnect(); await controls; await f.cleanup() }
 })

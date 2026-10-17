@@ -21,12 +21,45 @@ import { workerConversationCallbacks } from './workerCallbacks.js'
 import { workerConversationFixture } from './workerFixtures.test-support.js'
 import { recoverWorkerConversation } from './recoverWorkerConversation.js'
 
+function recordedConnection(f: ReturnType<typeof workerConversationFixture>) {
+  let state: 'connected' | 'unavailable' | 'transport' | 'stalled' | 'reattaching' = 'connected'
+  const waiting = new Set<() => void>()
+  return {
+    available: () => state !== 'unavailable',
+    disconnect: (next: Exclude<typeof state, 'connected'> = 'transport') => { state = next },
+    reconnect: () => { state = 'connected'; for (const resume of waiting) resume() },
+    hasWaiter: () => waiting.size > 0,
+    holdReconnect() {
+      f.connection = { ...f.connection, connectionGeneration: f.connection.connectionGeneration + 1,
+        connectionEpoch: randomUUID() }
+      state = 'reattaching'
+    },
+    async before(request: WorkerConversationRpcRequest, signal?: AbortSignal) {
+      if (state === 'transport') throw new DeviceConnectionError('transport')
+      const pending = state === 'stalled' && request.method === 'conversation.pending'
+      const attaching = state === 'reattaching' && request.method === 'conversation.open' && request.mode === 'attach'
+      if (!pending && !attaching) return
+      let resume!: () => void
+      const waitingForWorker = new Promise<void>((resolve, reject) => {
+        resume = resolve
+        const abort = () => reject(signal?.reason)
+        signal?.addEventListener('abort', abort, { once: true })
+        resume = () => { signal?.removeEventListener('abort', abort); resolve() }
+        if (signal?.aborted) abort()
+      })
+      waiting.add(resume)
+      try { await waitingForWorker } finally { waiting.delete(resume) }
+    },
+  }
+}
+
 function createRecordedObserver(f: ReturnType<typeof workerConversationFixture>, bridge: MainWorkerConversationBridge,
   managers: WorkerConversationManager[], connected: () => boolean, request: WorkerConversationChannel['request']) {
+  const channel = () => ({ binding: f.connection, request })
   const observer = new WorkerConversationManager({ binding: f.binding, configuration: f.configuration, bridge,
     current: async () => {
       if (!connected()) throw new DomainError('WORKER_CONVERSATION_UNAVAILABLE', 'The selected paired worker channel is unavailable.', 409)
-    }, channel: { binding: f.connection, request } })
+    }, channel: channel(), currentChannel: channel })
   managers.push(observer)
   return observer
 }
@@ -64,7 +97,7 @@ export async function workerClaudeReplacementFixture(f = workerConversationFixtu
   const recoveries: { inputsBefore: number; inputsAfter: number }[] = []
   let coldHistory = false
   let source: WorkerConversationRpcRequest
-  let connectionState: 'connected' | 'unavailable' | 'transport' = 'connected'
+  const connection = recordedConnection(f)
   let denied = false
   let failStartup = false
   let failMode = false
@@ -217,19 +250,20 @@ export async function workerClaudeReplacementFixture(f = workerConversationFixtu
   })
   let host = createHost()
   const managers: WorkerConversationManager[] = []
-  const createManager = () => createRecordedObserver(f, bridge, managers, () => connectionState !== 'unavailable', async payload => {
-    if (connectionState === 'transport') throw new DeviceConnectionError('transport')
+  const createManager = () => createRecordedObserver(f, bridge, managers, connection.available, async (payload, options) => {
     const request = WorkerConversationRpcRequestSchema.parse(payload)
+    await connection.before(request, options?.signal)
     if (request.method === 'conversation.initial-turn' || request.method === 'conversation.start-turn') source = request
-    return { payload: await host.handle(request, f.connection) }
+    return { payload: await host.handle(request, f.connection, options?.signal) }
   })
   let manager = createManager()
   const send = (correlationId: string) => sendRecordedMessage(manager, journal, f.binding, start, correlationId)
   return { ...f, get journal() { return journal }, get manager() { return manager }, createManager,
     get native() { return runtime.native }, get owners() { return runtime.owners },
     launches, offers, resumes, recoveries, send, start,
-    disconnect: (state: 'unavailable' | 'transport' = 'transport') => { connectionState = state },
-    reconnect: () => { connectionState = 'connected' },
+    disconnect: connection.disconnect, reconnect: connection.reconnect,
+    holdReconnect: connection.holdReconnect, hasReconnectWaiter: connection.hasWaiter,
+    get observer() { return managers.at(-1) },
     async coldRestart() {
       for (const observer of managers) await observer.dispose()
       await host.shutdown()
