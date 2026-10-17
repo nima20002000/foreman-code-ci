@@ -3,6 +3,7 @@ import { IdSchema, TimestampSchema } from './schemaPrimitives.js'
 export { integrationPartition, requiresUserSystemd } from './ciPartition.mjs'
 export { userSystemdIntegrationFiles, exclusiveIntegrationFiles, integrationCpuCost } from './integrationScheduling.mjs'
 import { WorkspaceRepositorySchema } from './workspaceRepository.js'
+import { CircleAccountIdSchema } from './circleCredits.js'
 import { BuildComputerAllowanceSchema } from './buildComputers.js'
 
 /** Host CI: a build computer runs a suite directly in a git worktree of the commit, like a self-hosted runner.
@@ -225,7 +226,9 @@ export type CiCancellation = z.infer<typeof CiCancellationSchema>
 export const CiComputerRefSchema = z.object({ kind: z.enum(['main', 'device', 'cloud']), mainId: z.string(), deviceId: z.string().optional(),
     provider: z.enum(['github', 'circleci']).optional(),
     /** The GitHub owner of the CircleCI org a cloud slot belongs to; absent for the workspace mirror's own owner. */
-    account: z.string().min(1).optional(), slot: z.number().int().nonnegative().optional() }).strict()
+    account: z.string().min(1).optional(), circleAccountId: CircleAccountIdSchema.optional(), slot: z.number().int().nonnegative().optional() }).strict().refine(
+      value => value.circleAccountId === undefined || value.kind === 'cloud' && value.provider === 'circleci',
+      'CircleCI login identity is only valid for CircleCI cloud computers.')
 
 export const CiRunRecordSchema = z.object({
   id: CiHostRunIdSchema, workspaceId: IdSchema, suite: CiSuiteSchema, commit: CommitSchema, repository: CiRepositorySchema,
