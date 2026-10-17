@@ -57,10 +57,7 @@ export type AgentCreateInput = z.infer<typeof AgentCreateInputSchema>;
 export type AgentUpdateInput = z.infer<typeof AgentUpdateInputSchema>;
 export type AgentCloneInput = z.infer<typeof AgentCloneInputSchema>;
 
-export const HarnessOptionsInputSchema = z.object({ harness: z.enum(["codex", "claude"]) }).strict();
-export const HarnessOptionsRefreshInputSchema = z.object({
-  harness: z.enum(["codex", "claude"]), refresh: z.enum(["catalog", "upstream"]).default("catalog"),
-}).strict();
+export { HarnessOptionsInputSchema, HarnessOptionsRefreshInputSchema, type HarnessOptionsInput } from "../harnessOptionsDiscovery.js";
 export { HarnessModelOptionSchema, HarnessOptionsResultSchema } from "../harnessOptions.js";
 import { HarnessOptionsResultSchema } from "../harnessOptions.js";
 export type HarnessOptions = z.infer<typeof HarnessOptionsResultSchema>;

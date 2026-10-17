@@ -10,6 +10,8 @@ import { OperatorConversationHistoryPageSchema, OperatorConversationHistoryQuery
   OperatorHandoffHistoryPageSchema, OperatorHistoryCursorSchema } from '@foreman-code/contracts/operator-chat'
 
 import {
+  CircleAccountAddInputSchema, CircleAccountRemoveInputSchema, ManagedCircleAccountsSchema,
+  CircleAccountsUpdateResultSchema,
   WorkerExecutionSettingsSchema,
   ManagedRemoteExecutionSettingsSchema,
   RemoteExecutionSettingsUpdateInputSchema,
@@ -33,6 +35,44 @@ import {
 import { defineOperatorTool } from '../definition.js'
 
 export const settingsTools = [
+  defineOperatorTool({
+    name: 'circle_accounts_list',
+    requires: [['settings:read', 'global']],
+    enabled: services => !!services.circleAccounts,
+    description: 'Read the primary and standby CircleCI login registrations, explicit GitHub organization bindings, '
+      + 'credential setup status, per-org scheduling role and estimated credits. Usage exports are sampled at most '
+      + 'every three hours and readings are usable for four hours from their export window end. '
+      + 'Local human setup provisions API tokens in private CLI profiles outside Foreman; no credentials are returned.',
+    inputSchema: z.object({}).strict(), outputSchema: ManagedCircleAccountsSchema,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    run: context => context.services.circleAccounts!.get(context.principal),
+  }),
+  defineOperatorTool({
+    name: 'circle_account_add',
+    requires: [['settings:update', 'global']],
+    enabled: services => !!services.circleAccounts,
+    description: 'Register or update nonsecret CircleCI account metadata: one stable default primary login and '
+      + 'one standby login, each with three distinct GitHub org owners. An omitted role defaults to standby. '
+      + 'Missing local credentials do not prevent registration. Local human setup provisions the token outside '
+      + 'Foreman. No token argument is accepted. Omit expectedRevision for last write wins or supply it to reject '
+      + 'stale metadata; reuse commandId with identical input after an uncertain save. Read back with circle_accounts_list.',
+    // Retain strict validation so an accidental credential argument is rejected before command persistence.
+    inputSchema: { '~standard': CircleAccountAddInputSchema['~standard'] }, outputSchema: CircleAccountsUpdateResultSchema,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    run: (context, input) => context.services.circleAccounts!.add(context.principal, 'mcp', input),
+  }),
+  defineOperatorTool({
+    name: 'circle_account_remove',
+    requires: [['settings:update', 'global']],
+    enabled: services => !!services.circleAccounts,
+    description: 'Remove the standby CircleCI registration after assigned jobs and result collection settle. '
+      + 'The default primary identity cannot be removed. Historical records and private CLI profiles remain; '
+      + 'local human cleanup revokes the token separately. Optional expectedRevision rejects stale metadata; '
+      + 'commandId supports identical retries. Read back with circle_accounts_list.',
+    inputSchema: { '~standard': CircleAccountRemoveInputSchema['~standard'] }, outputSchema: CircleAccountsUpdateResultSchema,
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+    run: (context, input) => context.services.circleAccounts!.remove(context.principal, 'mcp', input),
+  }),
   defineOperatorTool({
     name: 'worker_execution_settings_get',
     requires: [['settings:read', 'global']],
@@ -258,7 +298,9 @@ export const settingsTools = [
       + '(400,000: the CircleCI Free plan grants each organization that for Linux open-source builds) applies to every '
       + 'organization without an entry in accounts, which is keyed by the GitHub owner of the CircleCI org. '
       + 'ci_computers_list and computer_activity_list report each CircleCI org\u2019s remaining credits as this '
-      + 'allowance minus that org\u2019s usage this month read from CircleCI. Requires global settings:read.',
+      + 'allowance minus that org\u2019s usage this month read from CircleCI. Exports are sampled at most every '
+      + 'three hours; readings are usable for four hours from export window end. Primary and standby orgs '
+      + 'have separate usage estimates. Requires global settings:read.',
     inputSchema: z.object({}).strict(), outputSchema: ManagedCircleCreditAllowanceSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     run: (context) => context.services.settings!.getCircleCreditAllowance(context.principal),

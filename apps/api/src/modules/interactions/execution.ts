@@ -2823,6 +2823,7 @@ export class ApprovalExecutionCoordinator {
           })
           nativeEvents = manager.startInitialTurnBatches(start, {
             prompt: buildHarnessPrompt(request), clientCorrelationId: observation.workflowCorrelation,
+            deferSettlement: true,
             ...(nativeSchema ? { outputSchema: nativeSchema } : {}),
             onTurnOffered: () => { observation.nativeTurnOffered = true },
             onSessionObserved: async (native) => {
@@ -2835,6 +2836,7 @@ export class ApprovalExecutionCoordinator {
             timeRuntimeOperation('harness', 'native.create_session', () => manager.createSession(start, observation.signal)))
           nativeEvents = manager.startTurnBatches(observed, {
             prompt: buildHarnessPrompt(request), clientCorrelationId: observation.workflowCorrelation,
+            deferSettlement: true,
             ...(nativeSchema ? { outputSchema: nativeSchema } : {}),
             onSessionReady: () => publishObservedSession(observed),
             onTurnOffered: () => { observation.nativeTurnOffered = true },
@@ -2936,7 +2938,7 @@ export class ApprovalExecutionCoordinator {
         lane.guard.signal.throwIfAborted()
         input.owner.assertOwned()
         await observation.bookkeeping(() => this.budgets.assertActive(observation.execution.id))
-        const observed = await timeRuntimeOperation('harness', 'native.reconcile',
+        let observed = await timeRuntimeOperation('harness', 'native.reconcile',
           () => nativeManager.reconcile(observation.session!, observation.workflowCorrelation, lane.guard.signal))
         const messageReceipt = observed.nativeSubmission
         const messageIdentity = messageReceipt?.kind === 'message' && messageReceipt.nativeSessionId === observation.session!.nativeSessionId
@@ -2960,7 +2962,7 @@ export class ApprovalExecutionCoordinator {
           ))
         }
         const lease = { ...lane.fence, ...(lane.providerId ? { providerId: lane.providerId } : {}), live: false as const }
-        const captured = this.captureNative(input.owner, observation.execution,
+        let captured = this.captureNative(input.owner, observation.execution,
           { type: 'history', history: observation.safeValue(observed) }, 'recovery', lane)
         const waiting = await observation.observePending(observed, lease)
         if (waiting) return { waiting }
@@ -2973,8 +2975,7 @@ export class ApprovalExecutionCoordinator {
           const verdict = input.deliverable && !handoffPrompt
             ? await observation.bookkeeping(() => deliverableVerdict(observed.terminalTurn!.result, input.deliverable!)) : undefined
           const repairPrompt = handoffPrompt ?? (verdict ? deliverableRepairPrompt(verdict, input.deliverable!.outputSchema) : undefined)
-          if (repairPrompt && ownedSession.context.acceptedPlacement?.hostRef.kind !== 'device'
-            && observation.workResultRepairs < 2) {
+          if (repairPrompt && observation.workResultRepairs < 2) {
             assertOriginalWorkflowTerminal(observation.execution, observation.session!, observed, observation.workflowCorrelation)
             const reserved = await observation.bookkeeping(() => this.runs.reserveWorkResultRepair(
               observation.execution.id, observed.terminalTurn!.providerId, input.owner, captured))
@@ -2999,6 +3000,7 @@ export class ApprovalExecutionCoordinator {
               }
               const events = nativeManager.startTurn(observation.session!, {
                 prompt: repairPrompt, ...(nativeSchema ? { outputSchema: nativeSchema } : {}), clientCorrelationId: observation.workflowCorrelation,
+                deferSettlement: true,
                 onSubmitted: acknowledge,
                 onMessageSubmitted: async receipt => {
                   if (receipt.nativeSessionId !== observation.session!.nativeSessionId
@@ -3024,6 +3026,15 @@ export class ApprovalExecutionCoordinator {
               }
               continue
             }
+          }
+          if (nativeManager.settleTurn) {
+            const settled = await nativeManager.settleTurn(observation.session!, observation.workflowCorrelation, lane.guard.signal)
+            assertOriginalWorkflowTerminal(observation.execution, observation.session!, settled, observation.workflowCorrelation)
+            if (!isDeepStrictEqual(settled.terminalTurn, observed.terminalTurn)) throw new DomainError(
+              'NATIVE_TERMINAL_SOURCE_REQUIRED', 'The settled result differs from the validated provider output.', 409)
+            observed = settled
+            captured = this.captureNative(input.owner, observation.execution,
+              { type: 'history', history: observation.safeValue(observed) }, 'recovery', lane)
           }
           // The native result stays the evidence; a deliverable still failing after repair is failed where the terminal is normalized.
           const completed = HarnessExecutionSchema.parse({ ...observation.execution, state: 'completed',
