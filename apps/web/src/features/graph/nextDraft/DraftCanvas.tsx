@@ -256,7 +256,11 @@ export const DraftCanvas = forwardRef<DraftCanvasHandle, {
         isValidConnection={(connection) => connection.source !== connection.target}
         onConnectStart={() => setConnecting(true)} onConnectEnd={() => setConnecting(false)}
         onClickConnectStart={() => setConnecting(true)} onClickConnectEnd={() => setConnecting(false)}
-        onNodeClick={(_, node) => { if (node.type !== 'ciServer') selectNode(node.id); if (node.type === 'agent') openChat(node.id) }}
+        onNodeClick={(event, node) => {
+          if (event.target instanceof Element && event.target.closest('.react-flow__handle')) return
+          if (node.type !== 'ciServer') selectNode(node.id)
+          if (node.type === 'agent') openChat(node.id)
+        }}
         onPaneClick={() => inspect(() => { setOpen(undefined); presentation.getState().setFocusedNodeId(undefined); presentation.getState().setFocusedEdgeId(undefined) })}
         onConnect={(connection) => {
           connectNodes(connection.source, connection.target)
