@@ -104,7 +104,7 @@ it.each(['main', 'device', 'github', 'circleci'] as const)(
       const result = CiGetOutputSchema.parse(decodeMcpToolResult(read))
       expect(result.run).toEqual(records[0])
       expect(result.logTail).toBe('')
-      const denied = await (await api.connect([])).callTool({ name: 'ci_get', arguments: { workspaceId, ticketId } })
+      const denied = await (await api.connect(['workspaces:read'])).callTool({ name: 'ci_get', arguments: { workspaceId, ticketId } })
       expect(denied.isError).toBe(true)
     } finally {
       try {
