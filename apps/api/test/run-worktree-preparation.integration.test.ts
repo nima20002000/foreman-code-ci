@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { access, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { AcceptedWorkflowRunV3Schema, RunWorktreeSchema } from '@foreman-code/contracts/wave25'
+import { AcceptedWorkflowRunV3Schema, RunWorktreeSchema, RunStartV3ResultSchema } from '@foreman-code/contracts/wave25'
 import { decodeMcpToolResult, OperatorRunGetResultSchema } from '@foreman-code/contracts/operator-mcp'
 import { RunWorktrees } from '../src/modules/runs/runWorktrees.js'
 import { repeatRuntimeDirectory } from '../src/modules/runs/repeatRepositoryHost.js'
@@ -65,9 +65,22 @@ describe.runIf(postgresEnabled)('Local execution worktree preparation', () => {
       git('add', 'project.txt')
       git('commit', '-m', 'Project')
       service = new RunWorktrees(f.db.pool, join(runtimeRoot, 'managed'), systemGitWorktreePorts(env))
-      await f.engine.start(f.f.run.id)
-      await expect.poll(async () => (await f.runs.get(f.f.run.id))?.executionState, { timeout: 10_000 }).toBe('waiting')
-      const args = { workspaceId: f.f.run.workspaceId, runId: f.f.run.id, detail: 'full' }
+      const denied = await f.access.issue({ name: 'Denied Run reader', audience: 'operator',
+        expiresAt: new Date(Date.now() + 600000), grants: [] })
+      const workflow = (await f.db.pool.query<{ revision: string }>(
+        'select revision::text from workflows where id=$1', [f.f.run.workflowId])).rows[0]!
+      const input = { workspaceId: f.f.run.workspaceId, workflowId: f.f.run.workflowId,
+        workflowVersionId: f.f.version.id, executionSemanticsVersion: 3, input: {},
+        expectedWorkflowRevision: Number(workflow.revision),
+        expectedAgentConfigurationVersionIds: f.f.version.agentConfigurationVersionIds,
+        expectedLocationRevision: f.f.run.executionLocation!.locationRevision }
+      const deniedClient = await f.connect(denied.token)
+      expect((await deniedClient.callTool({ name: 'run_start', arguments: input })).isError).toBe(true)
+      const started = await f.client.callTool({ name: 'run_start', arguments: input })
+      expect(started.isError, JSON.stringify(started)).not.toBe(true)
+      const runId = RunStartV3ResultSchema.parse(decodeMcpToolResult(started)).run.id
+      await expect.poll(async () => (await f.runs.get(runId))?.executionState, { timeout: 10_000 }).toBe('waiting')
+      const args = { workspaceId: f.f.run.workspaceId, runId, detail: 'full' }
       const details = OperatorRunGetResultSchema.parse(decodeMcpToolResult(
         await f.client.callTool({ name: 'run_get', arguments: args })))
       if ('detail' in details) throw new Error('Expected full Run details')
@@ -79,12 +92,10 @@ describe.runIf(postgresEnabled)('Local execution worktree preparation', () => {
           executionId: execution.id, workingDirectory: execution.workingDirectory, state: 'active',
         }))
       }
-      const stored = await f.db.pool.query<{ record: unknown }>('select record from run_worktrees where run_id=$1', [f.f.run.id])
+      const stored = await f.db.pool.query<{ record: unknown }>('select record from run_worktrees where run_id=$1', [runId])
       expect(stored.rows.map(row => RunWorktreeSchema.parse(row.record)))
         .toEqual(expect.arrayContaining(details.worktrees!))
-      const denied = await f.access.issue({ name: 'Denied Run reader', audience: 'operator',
-        expiresAt: new Date(Date.now() + 600000), grants: [] })
-      expect((await (await f.connect(denied.token)).callTool({ name: 'run_get', arguments: args })).isError).toBe(true)
+      expect((await deniedClient.callTool({ name: 'run_get', arguments: args })).isError).toBe(true)
       const reader = await f.access.issue({ name: 'Run reader without location', audience: 'operator',
         expiresAt: new Date(Date.now() + 600000), grants: [{ actions: ['runs:read'],
           scope: { workspaceIds: [f.f.run.workspaceId] } }] })
@@ -148,7 +159,7 @@ describe.runIf(postgresEnabled)('Local execution worktree preparation', () => {
     }
   })
 
-  it('refuses an unfinished listed checkout after restart and preserves its files', async () => {
+  it.each(['preparing', 'retained'])('finishes an interrupted %s checkout after restart while preserving files', async state => {
     const f = await fixture()
     let allocated!: string
     const ports = { ...f.ports, git: async (...args: Parameters<typeof f.ports.git>) => {
@@ -157,15 +168,22 @@ describe.runIf(postgresEnabled)('Local execution worktree preparation', () => {
         expect(result.code).toBe(0)
         allocated = args[0][args[0].length - 2]!
         await writeFile(join(allocated, 'keep.txt'), 'partial preparation\n')
+        await writeFile(join(allocated, 'project.txt'), 'preparation edit\n')
         throw new Error('Checkout interrupted')
       }
       return f.ports.git(...args)
     } }
     try {
       await expect(new RunWorktrees(f.db.pool, f.managed, ports).prepare(f.run)).rejects.toThrow('Checkout interrupted')
-      await expect(f.service.prepare(f.run)).rejects.toMatchObject({ code: 'RUN_WORKTREE_UNAVAILABLE' })
+      await f.db.pool.query(`update run_worktrees set record=jsonb_set(record,'{state}',to_jsonb($2::text))
+        where run_id=$1`, [f.run.id, state])
+      const tree = await f.service.prepare(f.run)
+      expect(tree).toMatchObject({ state: 'active', workingDirectory: allocated })
       expect(await readFile(join(allocated, 'keep.txt'), 'utf8')).toBe('partial preparation\n')
-      expect(await f.trees()).toEqual([expect.objectContaining({ state: 'retained' })])
+      expect(await readFile(join(allocated, 'project.txt'), 'utf8')).toBe('preparation edit\n')
+      expect(await readFile(join(allocated, 'apps', 'api', 'service.txt'), 'utf8')).toBe('service\n')
+      expect(await f.trees()).toEqual([tree])
+      expect(await f.service.prepare(f.run)).toEqual(tree)
     } finally { await f.db.close() }
   })
 
