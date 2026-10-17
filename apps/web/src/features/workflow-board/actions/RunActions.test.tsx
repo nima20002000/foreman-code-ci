@@ -170,10 +170,7 @@ beforeEach(() => {
   unhandled.length = 0; server.events.on('request:unhandled', onUnhandled)
   const tails = new Map<string, Promise<unknown>>()
   Object.defineProperty(navigator, 'locks', { configurable: true, value: { request: (key: string, work: () => unknown) => {
-    const next = (tails.get(key) ?? Promise.resolve()).then(work); tails.set(key, next.catch(() => {
-      // ignore: the caller receives the rejection; later lock requests must still run.
-      return undefined
-    })); return next
+    const next = (tails.get(key) ?? Promise.resolve()).then(work); tails.set(key, next.catch(() => undefined)); return next
   } } })
 })
 afterEach(() => {
@@ -226,7 +223,7 @@ describe('ENG-05 contextual Run actions on current S3 contracts', () => {
     expect(screen.getByRole('button', { name: 'Resume execution — unavailable' })).toBeDisabled()
     expect(screen.queryByRole('button', { name: /retry.*node|restart.*provider/i })).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Refresh / reconnect client state' }))
-    await screen.findByText('Client state refreshed.')
+    await screen.findByText(/Client state refreshed\. This did not restart a provider/)
     expect(mock.state.requests.filter((request) => request.method === 'POST')).toEqual([])
   })
   it('retains exact Stop on an uncertain reply and separates accepted Stop from cleanup settlement', async () => {

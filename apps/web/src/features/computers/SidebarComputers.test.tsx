@@ -143,8 +143,6 @@ it('opens the card on keyboard focus with a Worker last seen time and app versio
   ])
   const device = await screen.findByRole('button', { name: `${deviceName}, Worker, Offline` })
   const user = userEvent.setup()
-  await user.tab()
-  await user.tab()
   expect(device).toHaveFocus()
   // The previously focused computer's card lingers briefly; read the card this button describes.
   await waitFor(() => expect(device).toHaveAttribute('aria-describedby'))
@@ -197,8 +195,7 @@ it('shows the estimated credits left when hovering or focusing a CircleCI accoun
   await user.unhover(acme)
   const beta = screen.getByRole('button', { name: /^CircleCI beta, Cloud CI/ })
   beta.focus()
-  await waitFor(() => expect(beta).toHaveAttribute('aria-describedby'))
-  const card = within(document.getElementById(beta.getAttribute('aria-describedby')!)!)
+  const card = within(await screen.findByRole('tooltip'))
   expect(await card.findByText('Credits unavailable')).toBeInTheDocument()
   expect(card.getByText('CircleCI is not logged in on Main.')).toBeInTheDocument()
 })
