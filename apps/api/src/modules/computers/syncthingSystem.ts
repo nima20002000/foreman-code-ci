@@ -75,6 +75,19 @@ export function systemSyncthingPorts(environment: NodeJS.ProcessEnv = process.en
     const text = await response.text()
     return text ? JSON.parse(text) as unknown : null
   }
+  const serviceHealthy = async (signal?: AbortSignal): Promise<boolean> => {
+    if (!(await availability.probe(signal)).running) return false
+    try {
+      await rest('GET', '/rest/system/status', undefined, signal)
+      return true
+    } catch (error) {
+      signal?.throwIfAborted()
+      // Failed REST health checks go through service startup and its readiness retry below.
+      if (error instanceof DomainError && error.code === 'SYNC_UNAVAILABLE') return false
+      if (error instanceof TypeError || error instanceof DOMException && error.name === 'TimeoutError') return false
+      throw error
+    }
+  }
   const install = async (signal?: AbortSignal, assertCurrent: () => void = () => {}) => {
     const check = () => { signal?.throwIfAborted(); assertCurrent() }
     check()
@@ -130,7 +143,7 @@ export function systemSyncthingPorts(environment: NodeJS.ProcessEnv = process.en
       check()
       const installed = await processPorts.find('syncthing')
       if (prepared && installed && Date.now() >= prepared.at && Date.now() - prepared.at < 30_000
-        && await preparationMetadata(installed) === prepared.metadata && (await availability.probe(signal)).running) {
+        && await preparationMetadata(installed) === prepared.metadata && await serviceHealthy(signal)) {
         check()
         return structuredClone(prepared.identity)
       }
@@ -152,12 +165,22 @@ export function systemSyncthingPorts(environment: NodeJS.ProcessEnv = process.en
         `ExecStart=${quote(binary)} serve ${quote(`--home=${state}`)} --gui-address=127.0.0.1:8385 --no-browser --no-upgrade`,
         'Restart=on-failure', '', '[Install]', 'WantedBy=default.target', ''].join('\n')
       check()
-      await writeFile(join(units, UNIT), content, { mode: 0o600 })
-      check()
-      await run('systemctl', ['--user', 'daemon-reload'], signal)
-      check()
-      await run('systemctl', ['--user', 'enable', '--now', UNIT], signal)
-      availability.invalidate()
+      const unitPath = join(units, UNIT)
+      let existing: string | undefined
+      try { existing = await readFile(unitPath, 'utf8') } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      }
+      if (existing !== content) {
+        check()
+        await writeFile(unitPath, content, { mode: 0o600 })
+        check()
+        await run('systemctl', ['--user', 'daemon-reload'], signal)
+      }
+      if (!await serviceHealthy(signal)) {
+        check()
+        await run('systemctl', ['--user', 'enable', '--now', UNIT], signal)
+        availability.invalidate()
+      }
       let ready = false
       for (let attempt = 0; attempt < 40; attempt++) {
         check()

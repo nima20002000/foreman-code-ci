@@ -16,7 +16,7 @@ describe('Operator message ownership', () => {
       mode: 'append', text: 'Retained prefix', truncation })
     const view = render(<OperatorMessages messages={[user]} activities={[]} activeRequestId="turn"
       partialText="Retained prefix" timeline={timeline} onBrowse={() => {}} />)
-    expect(screen.getByRole('note', { name: 'Shortened message' })).toHaveTextContent('remaining text is not shown')
+    expect(screen.getByRole('note', { name: 'Shortened message' })).toHaveTextContent(/^This message was shortened\.$/)
     const saved: Message = { id: 'saved', conversationId: 'chat', requestId: 'turn', role: 'assistant',
       content: 'Retained prefix', truncation }
     view.rerender(<OperatorMessages messages={[user, saved]} activities={[]} onBrowse={() => {}} />)

@@ -133,7 +133,6 @@ export function StartControls({ scope, run, permitted, available, refresh, viewR
       <button type="button" disabled={!permitted || busy} onClick={() => outbox.request && recovery.mutate(outbox.request)}>
         {recovery.isPending ? 'Recovering Start…' : 'Recover Start'}</button>
       <p>Recovery finds the accepted Run or cancels this pending Start. Review a new full Run after cancellation.</p>
-      <p>Reuses the same command ID, input and pins. No replacement command, native restart claim, or draft change.</p>
     </div> : null}
     {reconcile.isError ? <p role="alert">Start reconciliation is not confirmed: {(reconcile.error as Error).message} The original command remains retained.</p> : null}
     {recovery.isError ? <p role="alert">Start recovery is not confirmed: {recovery.error.message}</p> : null}
@@ -157,14 +156,13 @@ export function StartControls({ scope, run, permitted, available, refresh, viewR
       <details><summary>Exact input and configuration pins to send</summary>
         <pre tabIndex={0}>{JSON.stringify({ input: preflight.data.request.input,
           agentConfigurationVersionIds: preflight.data.request.expectedAgentConfigurationVersionIds }, null, 2)}</pre></details>
-      <p>Unsaved and pending Board edits remain untouched. All configured workflow steps, including any saved finite repeat policy, run normally.</p>
       <button type="button" disabled={!permitted || !available || editPending || busy || !!outbox.request || start.isError}
         onClick={() => start.mutate()}>{start.isPending ? 'Starting new full Run…' : 'Start new full Run'}</button>
       <button type="button" disabled={start.isPending} onClick={cancel}>Cancel</button>
     </div> : null}
     {start.isError ? <p role="alert">New Start is not confirmed: {(start.error as Error).message} Any reserved command is retained; do not replace it.</p> : null}
     {result ? <div role="status"><p>{result.replayed ? 'Reconciled' : 'Accepted'} Run <code>{result.run.id}</code>, saved version <code>{result.run.workflowVersionId}</code>.
-      {' '}Admission is not completion. The selected historical Run has not been changed.</p>
+</p>
       {viewRun ? <button type="button" onClick={() => viewRun(scopeForBoardRun(result.run))}>View accepted Run in this Board</button> : null}</div> : null}
   </section>
 }

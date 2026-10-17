@@ -1,3 +1,4 @@
+import { InfoHint } from '../../../shared/ui/InfoHint'
 import { useState } from 'react'
 import { AGENT_INTERVAL_MAX_SECONDS, AGENT_INTERVAL_MIN_SECONDS, AGENT_INTERVAL_PROMPT_MAX_LENGTH, type WorkflowDefinitionV3 } from '@foreman-code/contracts/wave25'
 import { Select, Switch, Textarea, TextField } from '../../../shared/ui/nocturne'
@@ -28,9 +29,8 @@ export function IntervalFields({ node, change }: {
     const value = Number(nextCount) * unitSeconds(nextUnit)
     if (Number.isInteger(value) && value >= AGENT_INTERVAL_MIN_SECONDS && value <= AGENT_INTERVAL_MAX_SECONDS) write(value)
   }
-  return <fieldset className="next-draft-choice"><legend>Loop</legend>
+  return <fieldset className="next-draft-choice"><legend>Loop<InfoHint label="Loop while the workflow runs">While this workflow's Run is active, this agent is woken in its own session on every loop and stops when the Run ends. Workflow schedules, which start Runs, are separate. Loops never hand off work or use maximum parallelism slots. They wait for work on this node to finish, and work on this node waits for a running loop. Each Run allows at most 1,000 loops. Needs native approval handling or a Codex agent that never asks for approval, and no artifact outputs.</InfoHint></legend>
     <Switch label="Loop while the workflow runs" checked={everySeconds !== undefined}
-      hint="While this workflow's Run is active, this agent is woken in its own session on every loop and stops when the Run ends. Workflow schedules, which start Runs, are separate. Loops never hand off work or use maximum parallelism slots. They wait for work on this node to finish, and work on this node waits for a running loop. Each Run allows at most 1,000 loops. Needs native approval handling or a Codex agent that never asks for approval, and no artifact outputs."
       onChange={(event) => write(event.currentTarget.checked ? (valid ? seconds : 60) : undefined)} />
     {everySeconds !== undefined ? <div className="next-draft-inline">
       <TextField label="Every" type="number" inputMode="numeric" min={1} step={1} value={count}
@@ -39,9 +39,10 @@ export function IntervalFields({ node, change }: {
       <Select label="Unit" value={unit} options={UNITS.map(({ value, label }) => ({ value, label }))}
         onChange={(event) => apply(count, event.target.value as Unit)} />
     </div> : null}
-    {everySeconds !== undefined ? <Textarea label="Each loop" rows={3} maxLength={AGENT_INTERVAL_PROMPT_MAX_LENGTH} value={prompt}
+    {everySeconds !== undefined ? <Textarea label="Each loop" rows={3}
+      labelHint={<InfoHint label="Each loop">What the agent does on each loop. Leave empty for the default check of the Run.</InfoHint>}
+      maxLength={AGENT_INTERVAL_PROMPT_MAX_LENGTH} value={prompt}
       placeholder="Check the Run for failed or stuck nodes, failing CI and repeated errors."
-      hint="What the agent does on each loop. Leave empty for the default check of the Run."
       onChange={(event) => { setPrompt(event.target.value); write(everySeconds, event.target.value) }} /> : null}
   </fieldset>
 }
