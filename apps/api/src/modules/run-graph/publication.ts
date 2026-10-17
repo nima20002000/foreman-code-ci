@@ -179,10 +179,10 @@ export interface GraphPublicationReceipt {
   batchId: string | null
   kind: 'none' | 'events' | 'reset'
 }
-const publications = new WeakMap<GraphTransactionSql, Map<string, RunGraphPublication<CanonicalRunGraphScope>>>()
+const publications = new WeakMap<GraphTransactionSql, RunGraphPublication<CanonicalRunGraphScope>>()
 const constructionKey = Symbol('RunGraphPublication')
 
-/** Domain producers for each Run share one finalized batch on the transaction. */
+/** All nested domain producers share this one transaction and ONE finalized batch. */
 export interface RepeatGraphSourceChange {
   evidence: GraphEvidence
   sourceDigest: string
@@ -860,12 +860,7 @@ export async function openRunGraphPublication<S extends CanonicalRunGraphScope>(
   assertGraphTransaction(sql)
   try {
     const scope = CanonicalRunGraphScopeSchema.parse(input) as S
-    const transactionPublications = publications.get(sql) ?? new Map<string, RunGraphPublication<CanonicalRunGraphScope>>()
-    // Continuation Start publishes its original Run and a newly inserted Run together.
-    if (transactionPublications.has(scope.runId)
-      || (transactionPublications.size > 0 && initialize?.historyCoverage !== 'from_admission')) {
-      throw new RunGraphError('GRAPH_TRANSACTION_NESTED')
-    }
+    if (publications.has(sql)) throw new RunGraphError('GRAPH_TRANSACTION_NESTED')
     const found = await sql.query<{ workspace_id: string; workflow_id: string; workflow_version_id: string;
       execution_semantics_version: number; has_job_nodes: boolean }>(
       `select r.workspace_id,r.workflow_id,r.workflow_version_id,v.execution_semantics_version,
@@ -896,15 +891,14 @@ export async function openRunGraphPublication<S extends CanonicalRunGraphScope>(
       if (!initialize || initialize.historyCoverage !== 'from_admission' || inserted?.fresh !== true) throw new RunGraphError('GRAPH_NOT_INITIALIZED')
     }
     const publication = new RunGraphPublication(constructionKey, sql, scope, { hasJobNodes: run.has_job_nodes }, readPublicProjection)
-    transactionPublications.set(scope.runId, publication)
-    publications.set(sql, transactionPublications)
+    publications.set(sql, publication)
     return publication
   } catch (error) { poisonGraphTransaction(sql); throw error }
 }
 
 export function assertRunGraphPublication(sql: GraphTransactionSql, scope: CanonicalRunGraphScope): void {
   assertGraphTransaction(sql)
-  const publication = publications.get(sql)?.get(scope.runId)
+  const publication = publications.get(sql)
   if (!publication || !sameCanonicalGraphScope(publication.scope, scope)) throw new RunGraphError('GRAPH_SCOPE_MISMATCH')
 }
 
@@ -925,11 +919,11 @@ export async function withRunGraphPublication<T>(
 /** False while a publication is still being opened (its committed projection is
  * being re-read), so read-only proof verification can skip enlistment. */
 export function hasRunGraphPublication(sql: GraphTransactionSql, scope: CanonicalRunGraphScope): boolean {
-  const publication = publications.get(sql)?.get(scope.runId)
+  const publication = publications.get(sql)
   return !!publication && sameCanonicalGraphScope(publication.scope, scope)
 }
 
 export function currentRunGraphPublication<S extends CanonicalRunGraphScope>(sql: GraphTransactionSql, scope: S): RunGraphPublication<S> {
   assertRunGraphPublication(sql, scope)
-  return publications.get(sql)!.get(scope.runId)! as RunGraphPublication<S>
+  return publications.get(sql)! as RunGraphPublication<S>
 }
