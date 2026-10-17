@@ -3,7 +3,7 @@ import { isDeepStrictEqual as same } from 'node:util'
 import { HarnessExecutionSchema, type HarnessExecution } from '@foreman-code/contracts'
 import { ArtifactAttemptSchema } from '@foreman-code/contracts/artifact-edges'
 import { TransferContextSchema } from '@foreman-code/contracts/byte-transfer'
-import { RemoteOperationReceiptSchema } from '@foreman-code/contracts/remote-execution'
+import { RemoteOperationReceiptSchema, remoteWorkflowTurnId, remoteWorkflowHasTurn } from '@foreman-code/contracts/remote-execution'
 import { parseWorkflowArtifactResult, workflowArtifactDigestsByOutputKey } from '@foreman-code/contracts/workflow-artifact-result'
 import type { AcceptedWorkflowRunV3, WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
 import { DomainError } from '../../errors.js'
@@ -16,6 +16,7 @@ import type { WorkflowNativeProofRecord } from '../workflowNativeProof.js'
 import type { PostgresArtifactPublicationAuthority } from './nativeArtifactAuthority.js'
 import { assertNativeArtifactOutputLive, readNativeArtifactOutput } from './nativeArtifactOutputPostgres.js'
 import { readReconciledDispatchIntent } from './persistence.js'
+import { assertWorkflowCorrelation } from '../workResultRepair.js'
 
 const pending = (): never => { throw new DomainError('WORKFLOW_ARTIFACT_OUTPUTS_PENDING',
   'The complete original artifact publications must be durably bound before accepting success.', 409) }
@@ -26,7 +27,8 @@ const conflict = (): never => { throw new DomainError('WORKFLOW_ARTIFACT_OUTPUTS
  * completed outside G1. No process, transfer, credential, publication or output
  * is created here; replay resamples the same durable facts and current grants. */
 export function createWorkflowArtifactOutputsGate(mainId: string,
-  authority: Pick<PostgresArtifactPublicationAuthority, 'resolveWorkflowContext' | 'authorize'>) {
+  authority: Pick<PostgresArtifactPublicationAuthority,
+    'resolveWorkflowContext' | 'resolvePublicationContext' | 'authorizePublication'>) {
   const verify = async (sql: GraphTransactionSql, run: AcceptedWorkflowRunV3,
     version: WorkflowVersionV3, supplied: HarnessExecution) => {
     const execution = HarnessExecutionSchema.parse(supplied)
@@ -45,14 +47,21 @@ export function createWorkflowArtifactOutputsGate(mainId: string,
     if (!receiptRow) return pending()
     const remote = RemoteOperationReceiptSchema.parse(receiptRow.receipt)
     if (remote.terminal?.artifactValidationError) return conflict()
+    const correlationId = remote.turnInput?.correlationId ?? `execution:${execution.id}`
+    const providerId = remoteWorkflowTurnId(remote, correlationId)
+    if (!providerId) return conflict()
+    await assertWorkflowCorrelation(sql, execution.id, correlationId)
     const producer = ArtifactAttemptSchema.parse({ workspaceId: run.workspaceId, workflowId: run.workflowId,
       runId: run.id, nodeId: node.id, executionId: execution.id, attemptId: intent.attemptId, placementHash: intent.bindingHash })
     const rows = (await sql.query<{ record: WorkflowNativeProofRecord; source_digest: string }>(
       `select record,source_digest from workflow_native_proofs where run_id=$1 and execution_id=$2
        and record#>>'{original,type}'='history' and record#>>'{original,history,terminalTurn,result,outcome}'='succeeded'
        order by proof_id for share`, [run.id, execution.id])).rows
-    if (!rows.length) return pending()
-    for (const { record: proof, source_digest } of rows) {
+    const finalProofs = rows.filter(({ record }) => record.original.type === 'history'
+      && record.original.history.correlationId === correlationId
+      && record.original.history.terminalTurn?.providerId === providerId)
+    if (!finalProofs.length) return pending()
+    for (const { record: proof, source_digest } of finalProofs) {
       if (proof.original.type !== 'history' || proof.scope.runId !== run.id || proof.scope.workspaceId !== run.workspaceId
         || proof.scope.workflowId !== run.workflowId || proof.scope.workflowVersionId !== version.id
         || proof.inputDigest !== intent.inputDigest || !same(proof.execution, repeatExecutionIdentity(execution))
@@ -60,7 +69,7 @@ export function createWorkflowArtifactOutputsGate(mainId: string,
         || proof.commandId !== `execution:${execution.id}` || source_digest !== repeatDigest(proof, 4 * 1024 * 1024)
         || !same(proof.original.history.terminalTurn?.result, execution.result)) return conflict()
       assertRepeatExecution(version, proof.scope, proof.ref, execution)
-      assertOriginalWorkflowTerminal(execution, proof.session, proof.original.history)
+      assertOriginalWorkflowTerminal(execution, proof.session, proof.original.history, correlationId)
       const receipt = { scope: proof.scope, evidence: { sourceKind: 'native_event' as const, sourceId: proof.proofId, sourceRevision: '1' },
         sourceDigest: source_digest, effect: null }
       await assertRepeatCanonicalReceiptLocked(sql, receipt)
@@ -79,14 +88,15 @@ export function createWorkflowArtifactOutputsGate(mainId: string,
     const native = remote.native
     if (!same(remote.intent, intent) || !same(remote.terminal?.result, execution.result)
       || !native?.turnId || native.sessionId !== execution.nativeSessionId) return conflict()
-    if (rows.some(({ record }) => record.lane?.providerId !== native.turnId)) return conflict()
+    if (finalProofs.some(({ record }) => record.lane?.providerId !== native.turnId)) return conflict()
     let accepted: Awaited<ReturnType<typeof authority.resolveWorkflowContext>> | undefined
     const digests: { outputKey: string; sha256: string }[] = []
     for (const mapping of mappings) {
       const output = await readNativeArtifactOutput(sql, mainId, producer, mapping.outputKey)
       if (!output) return pending()
       if (output.commandId !== mapping.commandId || output.nativeIdentity.nativeSessionId !== execution.nativeSessionId
-        || output.nativeIdentity.turnId !== native.turnId) return conflict()
+        || !output.nativeIdentity.turnId || !remoteWorkflowHasTurn(remote,
+          output.nativeIdentity.nativeSessionId, output.nativeIdentity.turnId)) return conflict()
       await assertNativeArtifactOutputLive(sql, mainId, output)
       if (!accepted) {
         const transfer = output.transferReceipt.intent
@@ -94,9 +104,10 @@ export function createWorkflowArtifactOutputsGate(mainId: string,
           deviceId: transfer.deviceId, workerInstallationId: transfer.workerInstallationId, keyRevision: transfer.keyRevision,
           authorizationRevision: transfer.authorizationRevision, bootId: transfer.bootId, connectionEpoch: transfer.connectionEpoch }), sql)
       }
-      const caller = await authority.authorize(accepted, sql)
+      const publication = await authority.resolvePublicationContext(accepted, mapping.commandId, sql)
+      const caller = await authority.authorizePublication(publication, sql)
       if (caller.principal.id !== output.publication.ownerPrincipalId || caller.binding !== output.publication.binding
-        || !same(caller.context, accepted.context)) return conflict()
+        || !same(caller.context, publication.context) || caller.context.turnId !== output.nativeIdentity.turnId) return conflict()
       digests.push({ outputKey: mapping.outputKey, sha256: output.pins.sha256 })
     }
     if (!same(remote.terminal?.artifactDigests, workflowArtifactDigestsByOutputKey(digests))) return conflict()

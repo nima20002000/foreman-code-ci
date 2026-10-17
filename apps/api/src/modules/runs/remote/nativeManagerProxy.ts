@@ -10,7 +10,7 @@ import { DeviceHistoryPageSchema } from '@foreman-code/contracts/device-applicat
 import { RemoteNativeHistorySchema } from '@foreman-code/contracts/remote-workflow-physical'
 import type { WorkflowOriginalNativeSource } from '../../interactions/workflowNativeCapture.js'
 import type { AcceptedNodePlacement, DispatchIntent } from '@foreman-code/contracts/node-placement'
-import { RemoteOperationStatusSchema as StatusSchema, RemoteApplicationAccessSchema, remoteActiveNative, remoteNativeContinues, type RemoteReviewerRequest,
+import { RemoteOperationStatusSchema as StatusSchema, RemoteApplicationAccessSchema, remoteActiveNative, remoteNativeContinues, remoteWorkflowTurnId, type RemoteReviewerRequest,
   type RemoteOperationReceipt, type RemoteOwnerControl, type RemoteNativeIdentity, type RemoteOwnerReconciliation } from '@foreman-code/contracts/remote-execution'
 import { hasPositiveRemoteEntryClosure, hasPositiveRemoteNonEntryClosure } from '@foreman-code/contracts/remote-execution-entry-closure-node'
 import type { ReviewJob } from '@foreman-code/contracts'
@@ -407,7 +407,8 @@ export class RemoteNativeSessionManager implements NativeHarnessSessionManager {
       const firstStarted = value.history.events.find(event => event.sequence > sequence
         && event.type === 'turn.started' && event.payload.clientCorrelationId === input.clientCorrelationId)
       let submittedId = review
-        ? receipt.reviewTurns?.find(turn => turn.assignment.jobId === review.jobId)?.providerId : receipt.native?.turnId
+        ? receipt.reviewTurns?.find(turn => turn.assignment.jobId === review.jobId)?.providerId
+        : remoteWorkflowTurnId(receipt, input.clientCorrelationId)
       if (typeof firstStarted?.payload.turnId === 'string') submittedId = firstStarted.payload.turnId
       if (value.context !== undefined) this.context = value.context
       if (!submitted && submittedId) {
@@ -442,7 +443,8 @@ export class RemoteNativeSessionManager implements NativeHarnessSessionManager {
           // receipt; the Worker still verifies this exact event in that history.
           const currentReceipt = this.receipt!
           const currentId = review
-            ? currentReceipt.reviewTurns?.find(turn => turn.assignment.jobId === review.jobId)?.providerId : currentReceipt.native?.turnId
+            ? currentReceipt.reviewTurns?.find(turn => turn.assignment.jobId === review.jobId)?.providerId
+            : remoteWorkflowTurnId(currentReceipt, input.clientCorrelationId)
           if (!submitted && currentId) {
             await input.onSubmitted?.(currentId)
             providerId = currentId
@@ -624,7 +626,7 @@ export class RemoteNativeSessionManager implements NativeHarnessSessionManager {
     if (!nativeTurnId) throw new Error('Original native turn is unavailable')
     await this.status(await this.request('settle-turn', { correlationId, nativeTurnId }, signal))
     this.streamHistory = undefined
-    return (await this.readHistoryObservation(session, correlationId, signal)).history
+    return this.readHistory(session, correlationId, signal)
   }
   async reconcileResponse(session: NativeSessionReference, response: Parameters<NonNullable<NativeHarnessSessionManager['reconcileResponse']>>[1], signal?: AbortSignal) {
     this.assertSession(session)
