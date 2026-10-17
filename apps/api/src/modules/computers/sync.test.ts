@@ -639,3 +639,50 @@ it('applies a saved preference after an older workspace configuration already in
     id: sharedFolderId('workspace-a'), paused: true, devices: [{ deviceID: workerSyncId }],
   })])
 })
+
+it('serializes workspace setup so shared-file sync leaves device slots for foreground work', async () => {
+  const f = await fixture()
+  for (let index = 0; index < 12; index++) f.workspaces.push({ id: `workspace-extra-${index}`, name: 'Extra', active: true })
+  const active = new Map<string, number>()
+  const maximum = new Map<string, number>()
+  const priorities: unknown[] = []
+  const request = f.endpoint.request
+  vi.spyOn(f.endpoint, 'request').mockImplementation(async (deviceId, namespace, payload, options) => {
+    priorities.push(options?.priority)
+    const count = (active.get(deviceId) ?? 0) + 1
+    active.set(deviceId, count)
+    maximum.set(deviceId, Math.max(maximum.get(deviceId) ?? 0, count))
+    try { return await request(deviceId, namespace, payload, options) }
+    finally { active.set(deviceId, count - 1) }
+  })
+  await f.service.poll()
+  expect([...maximum.values()]).toEqual([1, 1])
+  expect(priorities.length).toBeGreaterThan(12)
+  expect(new Set(priorities)).toEqual(new Set(['background']))
+})
+
+it('backs off shared-file polling failures and resets on success', async () => {
+  const f = await fixture()
+  vi.useFakeTimers({ toFake: ['Date'] })
+  const query = vi.spyOn(f.pool, 'query').mockRejectedValue(new Error('Query read timeout'))
+  await expect(f.service.poll()).rejects.toThrow('Query read timeout')
+  for (let attempt = 1; attempt <= 6; attempt++) {
+    vi.setSystemTime(Date.now() + Math.min(300_000, 30_000 * 2 ** (attempt - 1)) - 1)
+    await expect(f.service.poll()).resolves.toBeUndefined()
+    expect(query).toHaveBeenCalledTimes(attempt)
+    vi.setSystemTime(Date.now() + 1)
+    await expect(f.service.poll()).rejects.toThrow('Query read timeout')
+    expect(query).toHaveBeenCalledTimes(attempt + 1)
+  }
+  query.mockRestore()
+  vi.setSystemTime(Date.now() + 300_000)
+  await f.service.poll()
+  const failedAgain = vi.spyOn(f.pool, 'query').mockRejectedValue(new Error('Query read timeout'))
+  await expect(f.service.poll()).rejects.toThrow('Query read timeout')
+  vi.setSystemTime(Date.now() + 29_999)
+  await expect(f.service.poll()).resolves.toBeUndefined()
+  expect(failedAgain).toHaveBeenCalledTimes(1)
+  vi.setSystemTime(Date.now() + 1)
+  await expect(f.service.poll()).rejects.toThrow('Query read timeout')
+  expect(failedAgain).toHaveBeenCalledTimes(2)
+})

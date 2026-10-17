@@ -41,6 +41,7 @@ function ProviderCard({ harness, value, revision, readiness, onOpen, accountSele
   const summary = [...(preset ? harnessSummary(preset).filter((item) => item.label !== 'Harness') : [{ label: 'Preset', value: 'Not configured' }]),
     { label: 'Status', value: readiness }]
   return <SettingsChoice icon="settings" title={name} summary={summary}
+    description={harness === 'codex' ? 'Native app-server' : 'Host-local Claude profile'}
     onSelect={() => askOperator(`Change the ${name} preset: `, { send: false })}
     footer={<>
       {value && revision !== undefined ? <OperatorMcpStatus harness={harness} defaults={value} revision={revision} /> : null}
@@ -88,14 +89,16 @@ export function HarnessDefaultsSettings({ selectedHarness, section, onOpen, acco
   }
   return <>
     {overview}
-    <SettingsOverview title="Harnesses">
+    <SettingsOverview title="Harnesses" description="Your harness presets. Ask the Operator to change one.">
       {HARNESSES.map(harness => <ProviderCard key={harness} harness={harness} value={incoming?.value}
         revision={incoming?.revision} readiness={readiness(harness)} accountSelection={accountSelection}
         accountTarget={accountTarget} onAccountTargetChange={onAccountTargetChange}
         onAccountSelect={onAccountSelect} onOpen={next => onOpen?.({ harness, section: next })} />)}
     </SettingsOverview>
     <Dialog open={Boolean(dialog)} onOpenChange={(open) => { if (!open) onOpen?.(undefined) }} size="lg"
-      title={dialog === 'plugins' ? `${dialogName} plugins` : 'Codex connections'}>
+      title={dialog === 'plugins' ? `${dialogName} plugins` : 'Codex connections'}
+      description={dialog === 'plugins' ? `Plugins add skills, hooks and tools to ${dialogName}. Ask the Operator to manage them.`
+        : 'Native MCP connections. Ask the Operator to manage connections.'}>
       {dialog === 'plugins' && selectedHarness === 'claude' ? <ClaudePluginSummary accessUnavailable={Boolean(accessError)}
         onClose={() => onOpen?.(undefined)} /> : null}
       {dialog === 'plugins' && selectedHarness === 'codex' ? <CodexPluginManager accessUnavailable={Boolean(accessError)} /> : null}

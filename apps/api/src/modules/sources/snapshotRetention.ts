@@ -1,3 +1,4 @@
+import { RetryBackoff } from '../../infrastructure/retryBackoff.js'
 import type pg from 'pg'
 import { withClientTransaction } from '../../infrastructure/transaction.js'
 import type { GraphSqlClient } from '../run-graph/connection.js'
@@ -209,10 +210,19 @@ async function scanUnusedSourceSnapshots(pool: pg.Pool,
 
 type ReleaseScan = { pressure: { requested: boolean }; result: Promise<unknown[]> }
 const releaseScans = new WeakMap<pg.Pool, Map<string, ReleaseScan>>()
+const releaseRetries = new WeakMap<pg.Pool, Map<string, RetryBackoff>>()
 
 export async function releaseUnusedSourceSnapshots(pool: pg.Pool,
   store: SnapshotStore, scopeId: string,
   report?: (error: unknown) => void, underPressure = false): Promise<void> {
+  let retries = releaseRetries.get(pool)
+  if (!retries) {
+    retries = new Map()
+    releaseRetries.set(pool, retries)
+  }
+  const retry = retries.get(scopeId) ?? new RetryBackoff({ initialMs: 10 * 60_000, maxMs: 60 * 60_000 })
+  retries.set(scopeId, retry)
+  if (!underPressure && !retry.ready()) return
   let scopes = releaseScans.get(pool)
   if (!scopes) {
     scopes = new Map()
@@ -231,7 +241,12 @@ export async function releaseUnusedSourceSnapshots(pool: pg.Pool,
         if (!underPressure && pressure.requested) {
           errors.push(...await scanUnusedSourceSnapshots(pool, store, scopeId, true))
         }
+        if (errors.length) retry.fail()
+        else retry.reset()
         return errors
+      } catch (error) {
+        retry.fail()
+        return [error]
       } finally {
         activeScopes.delete(scopeId)
       }
