@@ -8,6 +8,7 @@ import { matchesMcpDefinition } from './mcpDefinitions.js'
 import { assertStdioAvailable } from './stdioAvailability.js'
 import { verifyPluginRelease, type AcquiredPluginRelease } from './pluginAcquisition.js'
 import { backupPluginInstallation, replacePluginWithBackup } from './pluginBackup.js'
+import { refreshCodexMarketplaceSnapshot } from './codexMarketplaceSnapshot.js'
 import { MaintenanceTaskStore } from './maintenanceTaskStore.js'
 import { MaintenanceCommandStore } from './maintenanceCommandStore.js'
 import type { MaintenancePorts } from './maintenancePorts.js'
@@ -643,6 +644,10 @@ export class ComputerMaintenance {
         if (version !== undefined) {
           release = await this.acquirePlugin('codex', codex, plugin, version,
             marketplaces.find(marketplace => marketplace.name === marketplaceName), step, signal)
+          if (!this.ports.refreshCodexMarketplace || !release.marketplaceRoot) {
+            throw new Error('Codex marketplace snapshot storage is unavailable.')
+          }
+          await this.ports.refreshCodexMarketplace(codex, marketplaceName, release.marketplaceRoot, signal)
         }
         const install = async () => {
           const result = await step(codex, [...release?.installArguments ?? [], 'plugin', 'add', plugin],
@@ -959,5 +964,7 @@ export function systemMaintenancePorts(environment: NodeJS.ProcessEnv = process.
     now: () => new Date(),
   }
   ports.backupPlugin = (harness, pluginId) => backupPluginInstallation(ports, harness, pluginId)
+  ports.refreshCodexMarketplace = (binary, name, acquiredRoot, signal) =>
+    refreshCodexMarketplaceSnapshot(ports, binary, name, acquiredRoot, signal)
   return ports
 }

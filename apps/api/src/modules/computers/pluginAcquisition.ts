@@ -8,6 +8,7 @@ import type { MaintenancePorts } from './maintenancePorts.js'
 
 export interface AcquiredPluginRelease {
   installArguments: string[]
+  marketplaceRoot: string | undefined
   discard(): Promise<void>
 }
 
@@ -49,6 +50,7 @@ export async function verifyPluginRelease(ports: MaintenancePorts, input: {
         + 'The existing installation was preserved.')
     }
     const installArguments: string[] = []
+    let marketplaceRoot: string | undefined
     if (harness === 'codex') {
       const result = await staged.run(binary, ['plugin', 'marketplace', 'list', '--json'], { signal, timeoutMs: 120_000 })
       if (result.code !== 0) throw new Error(`Could not read the acquired marketplace for ${pluginId}.`)
@@ -62,8 +64,9 @@ export async function verifyPluginRelease(ports: MaintenancePorts, input: {
       }
       const source = `{ source_type="local", source=${JSON.stringify(acquiredRoot)} }`
       installArguments.push('-c', `marketplaces={${JSON.stringify(marketplace.name)}=${source}}`)
+      marketplaceRoot = acquiredRoot
     }
-    return { installArguments, discard: () => rm(directory, { recursive: true, force: true }) }
+    return { installArguments, marketplaceRoot, discard: () => rm(directory, { recursive: true, force: true }) }
   } catch (error) {
     await rm(directory, { recursive: true, force: true })
     throw error

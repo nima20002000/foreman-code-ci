@@ -17,6 +17,8 @@ export interface MaintenancePorts {
   /** Writes a private (0600) file atomically, creating its directory. */
   writePrivateText(path: string, text: string): Promise<void>
   backupPlugin?(harness: MaintainedHarness, pluginId: string): Promise<MaintenancePluginBackup>
+  /** Replace a native Git marketplace snapshot without updating installed plugin caches. */
+  refreshCodexMarketplace?(binary: string, name: string, acquiredRoot: string, signal: AbortSignal): Promise<void>
   disk(path: string): Promise<{ freeBytes: number; totalBytes: number } | null>
   /** Runs fn after ms; restart uses it so the reply reaches Main before the computer goes down. */
   later(fn: () => void, ms: number): void

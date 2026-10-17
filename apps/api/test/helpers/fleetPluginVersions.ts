@@ -15,6 +15,12 @@ export function versionedComputer() {
   const snapshots = { codex: '1.0.0', claude: '1.0.0' }
   const knownMarketplaces = { codex: new Set(['official']), claude: new Set<string>() }
   const staging = new Map<string, { snapshot: string; installed: Map<string, string> }>()
+  computer.ports.refreshCodexMarketplace = async (_binary, _name, acquiredRoot) => {
+    await access(acquiredRoot)
+    const acquired = [...staging].find(([home]) => join(home, 'marketplace') === acquiredRoot)?.[1]
+    if (!acquired) throw new Error('Acquired marketplace is unavailable')
+    snapshots.codex = acquired.snapshot
+  }
   let published = '1.0.0'
   let retainVersion = false
   let acquisitionFailure = false
