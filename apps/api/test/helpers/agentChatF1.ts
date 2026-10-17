@@ -73,9 +73,6 @@ export class F1Store {
   private async query(text: string, values: unknown[], connection: number) {
     const sql = text.replace(/\s+/g, ' ').trim()
     this.statements.push({ sql, values: structuredClone(values), connection })
-    if (sql === 'select current_configuration_version_id from agents where workspace_id=$1 and id=$2 and archived_at is null') {
-      return result([{ current_configuration_version_id: configuration.id }])
-    }
     const result = (rows: unknown[] = [], rowCount = rows.length) => ({ rows: structuredClone(rows), rowCount })
     const id = String(values[1])
     const receipt = this.turns.get(id)

@@ -11,6 +11,16 @@ const fixture = () => ({
 })
 
 describe('shared executable/presentation boundary', () => {
+  it('treats manual placement as geometry and preserves it across executable edits', () => {
+    const before = fixture()
+    const manual = { ...before, nodes: [{ ...before.nodes[0]!, positionManual: true }] }
+    expect(sameAuthoredWorkflow(before, manual)).toBe(true)
+    expect(sameExecutableWorkflow(before, manual)).toBe(true)
+    expect(sameWorkflowExceptGeometry(before, manual)).toBe(true)
+    expect(executableNodeContent(manual.nodes[0]!)).not.toHaveProperty('positionManual')
+    expect(preserveWorkflowGeometry(before, manual).nodes[0]).toEqual(manual.nodes[0])
+    expect(preserveWorkflowGeometry(manual, before).nodes[0]).toEqual(before.nodes[0])
+  })
   it('exempts positions and server stamps from execution comparisons', () => {
     const before = fixture(), after = structuredClone(before)
     after.version++; after.updatedAt = '2026-09-24T01:00:00Z'; after.nodes[0]!.position = { x: 700, y: -100 }
