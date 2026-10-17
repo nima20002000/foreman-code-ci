@@ -1,3 +1,4 @@
+import { InfoHint } from '../../../shared/ui/InfoHint'
 import { useRef } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import type { RepeatGraphScopeV3 } from '@foreman-code/contracts/wave25'
@@ -51,8 +52,8 @@ export function StopControl({ scope, run, permitted, available, refresh }: {
       : outbox.error ?? (run.executionState === 'completed' && !run.cleanupPending && !outbox.journal ? 'This Run is terminal and cleanup-settled.' : undefined)
   const receipt = outbox.journal?.receipt ?? stop.data
   return <section aria-label="Stop and cleanup">
-    <h4 ref={heading} tabIndex={-1}>Stop and cleanup</h4>
-    <p>Stop targets Run <code>{scope.runId}</code>, saved version <code>{scope.workflowVersionId}</code>. It does not save or discard Board edits.</p>
+    <h4 ref={heading} tabIndex={-1}>Stop and cleanup<InfoHint label="Stop">It does not save or discard Board edits.</InfoHint></h4>
+    <p>Stop targets Run <code>{scope.runId}</code>, saved version <code>{scope.workflowVersionId}</code>.</p>
     <p role="status">{run.cleanupPending ? 'Cleanup pending. Native work or credentials may still need settlement.'
       : run.executionState === 'completed' ? 'Cleanup settled according to authenticated Run readback.' : 'No cleanup is currently reported pending; this Run is still active.'}</p>
     <button type="button" disabled={!!reason || stop.isPending || settlement.isPending} title={reason}

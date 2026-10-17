@@ -10,10 +10,8 @@ export function GeneralSettings() {
   const { settings, update, changeTheme, denied, uncertain, refresh, retry } = useSyncedTheme()
   const computers = useComputerActivity()
   return <section className="settings-editor-page" aria-label="General settings">
-    <header className="settings-experience-heading"><h1>General</h1>
-      <p>Preferences and file sharing across your computers.</p></header>
+    <header className="settings-experience-heading"><h1>General</h1></header>
     <h2>Appearance</h2>
-    <p>The saved theme applies to every browser connected to Main.</p>
     {settings.isPending && <LoadingState label="Reading general settings…" />}
     {settings.isError && <Alert tone="warning" title={settings.error.message} />}
     {settings.data && !denied && <Select label="Theme" value={settings.data.value.theme}
@@ -28,10 +26,6 @@ export function GeneralSettings() {
       Refresh general settings
     </Button>
     <div className="settings-editor-content"><ChatRetentionSettings /></div>
-    <h2>Settings from Main</h2>
-    <p>App defaults, harness presets, skills, prompts and workflows are saved on Main.
-      Computers receive their saved configuration through the paired connection.
-      Accepted Runs and conversations keep the configuration they started with.</p>
     <h2>File sync by computer</h2>
     {computers.isPending && <LoadingState label="Reading computers…" />}
     {computers.isError && <Alert tone="warning" title={computers.error.message}>
@@ -43,11 +37,10 @@ export function GeneralSettings() {
       {computers.data.computers.map(computer => <section className="computer-sync-folder"
         aria-label={`Sync on ${computer.name}`} key={JSON.stringify(computer.target)}>
         <h3>{computer.name}</h3>
-        <p>{computer.online ? 'Online' : 'Offline — setup resumes when this computer reconnects.'}</p>
+        <p>{computer.online ? 'Online' : 'Offline'}</p>
         <h4>Workspace files</h4>
         <ComputerSyncPanel key={computerKey(computer.target)} target={computer.target} />
       </section>)}
     </>}
-    <p>Credentials, provider sign-ins, native sessions and computer setup stay on their own computer.</p>
   </section>
 }
