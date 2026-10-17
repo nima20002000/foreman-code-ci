@@ -163,7 +163,7 @@ export function hostCiDirectory() {
 export class HostCiRunner {
   private readonly preparing = new Map<string, Promise<void>>()
   private readonly starts = new Map<string, Promise<CiHostRun>>()
-  private readonly warmupAborts = new Map<string, AbortController>()
+  private readonly preparationAborts = new Map<string, AbortController>()
   private readonly reading = new Map<string, number>()
   private startQueue = Promise.resolve()
   private pendingRealStarts = 0
@@ -459,13 +459,13 @@ export class HostCiRunner {
     const existing = this.starts.get(request.runId)
     if (existing) return existing
     if (!request.warmup) this.pendingRealStarts++
-    if (request.warmup) this.warmupAborts.set(request.runId, new AbortController())
+    this.preparationAborts.set(request.runId, new AbortController())
     const pending = this.startRun(request).catch(error => {
       this.invalidateReadiness()
       throw error
     }).finally(() => {
       this.starts.delete(request.runId)
-      if (!this.preparing.has(request.runId)) this.warmupAborts.delete(request.runId)
+      if (!this.preparing.has(request.runId)) this.preparationAborts.delete(request.runId)
       if (!request.warmup) this.pendingRealStarts--
     })
     this.starts.set(request.runId, pending)
@@ -574,14 +574,19 @@ export class HostCiRunner {
       ...(request.baseCommit ? { baseCommit: request.baseCommit } : {}),
       ...(request.notice ? { notice: request.notice } : {}),
       ...(request.durations ? { durations: request.durations } : {}) }
-    await this.writeMeta(meta)
-    this.trackCacheWriter(meta.runId, meta.repository)
-    return meta
+    return (await withHostCiRunLock(directory, async () => {
+      if (existsSync(join(directory, 'meta.json')) && (await this.readMeta(request.runId)).state !== 'queued') {
+        return this.refresh(request.runId)
+      }
+      await this.writeMeta(meta)
+      this.trackCacheWriter(meta.runId, meta.repository)
+      return meta
+    }))!
   }
 
   private async prepareRun(request: StartRequest, meta: RunMeta) {
     const directory = this.runDirectory(meta.runId)
-    const signal = this.warmupAborts.get(meta.runId)?.signal
+    const signal = this.preparationAborts.get(meta.runId)?.signal
     const allowance = { buildAllowancePercent: request.buildAllowancePercent ?? 100 }
     const ready = await withHostCiRunLock(directory, async () => {
       try {
@@ -646,7 +651,7 @@ export class HostCiRunner {
       }
     }).finally(() => {
       this.preparing.delete(meta.runId)
-      this.warmupAborts.delete(meta.runId)
+      this.preparationAborts.delete(meta.runId)
     })
     this.preparing.set(meta.runId, preparing)
     return this.refresh(request.runId)
@@ -673,7 +678,9 @@ export class HostCiRunner {
     this.repositoryQueues.set(repository, pending)
     await previous
     try {
-      return await work()
+      const clone = join(this.root, 'git', ...repository.split('/'))
+      await mkdir(clone, { recursive: true, mode: 0o700 })
+      return await withHostCiRunLock(clone, work)
     } finally {
       release()
       if (this.repositoryQueues.get(repository) === pending) this.repositoryQueues.delete(repository)
@@ -681,7 +688,7 @@ export class HostCiRunner {
   }
 
   private async launchRun(meta: RunMeta) {
-    const signal = this.warmupAborts.get(meta.runId)?.signal
+    const signal = this.preparationAborts.get(meta.runId)?.signal
     const source = await this.withRepository(meta.repository, async () => {
       const current = await this.readMeta(meta.runId)
       if (current.state !== 'starting' || current.cancellationRequested) return
@@ -728,7 +735,8 @@ export class HostCiRunner {
         await this.git(['init', '--quiet', clone], clone, signal)
         await this.git(['remote', 'add', 'origin', `https://github.com/${request.repository}.git`], clone, signal)
       } catch (error) {
-        await rm(clone, { recursive: true, force: true })
+        // Keep the directory inode stable while other runners wait for its repository lock.
+        await rm(join(clone, '.git'), { recursive: true, force: true })
         throw error
       }
     }
@@ -1152,7 +1160,7 @@ export class HostCiRunner {
     if (!meta) return this.canceledBeforeStart(runId)
     const directory = this.runDirectory(runId)
     // Status polls read every run; settled runs need no reconciliation lock.
-    const settled = !['starting', 'running'].includes(meta.state)
+    const settled = !['queued', 'starting', 'running'].includes(meta.state)
     if (settled) this.trackCacheWriter(runId)
     else this.trackCacheWriter(runId, meta.repository)
     const reconciled = settled || await withHostCiRunLock(directory, async () => {
@@ -1165,27 +1173,9 @@ export class HostCiRunner {
       meta = { ...meta, state: 'running' }
     }
     if (!['starting', 'running'].includes(meta.state)) this.trackCacheWriter(runId)
-    if (!['starting', 'running'].includes(meta.state) && !preparing && !this.preparing.has(runId)) {
-      if (!meta.cleaned) {
-        const clone = join(this.root, 'git', ...meta.repository.split('/'))
-        if (existsSync(join(directory, 'src'))) {
-          if (!(await stat(join(directory, 'src/.git')).catch(
-            fallbackOnMissing(null),
-          ))?.isDirectory()) {
-            await this.ports.run('git', ['worktree', 'remove', '--force', join(directory, 'src')],
-              { cwd: clone, env: this.environment })
-          }
-          await rm(join(directory, 'src'), { recursive: true, force: true })
-          await this.ports.run('git', ['worktree', 'prune'], { cwd: clone, env: this.environment })
-        }
-        await rm(join(directory, 'tmp'), { recursive: true, force: true })
-      }
-      // Older cleaned records can still hold the per-run test cache.
-      await rm(join(directory, 'vitest-cache'), { recursive: true, force: true })
-      if (!meta.cleaned) {
-        meta = { ...meta, cleaned: true }
-        await this.writeMeta(meta)
-      }
+    if (!['queued', 'starting', 'running'].includes(meta.state) && !preparing && !this.preparing.has(runId)) {
+      if (meta.cleaned) await rm(join(directory, 'vitest-cache'), { recursive: true, force: true })
+      else meta = await withHostCiRunLock(directory, () => this.cleanSettledRun(runId), { nonBlocking: true }) ?? meta
     }
     const log = await stat(join(directory, 'log')).catch(fallbackOnMissing(null))
     const step = (await readFile(join(directory, 'step'), 'utf8').catch(fallbackOnMissing(''))).trim()
@@ -1205,6 +1195,35 @@ export class HostCiRunner {
     if (version) this.settledRuns.set(runId, { version, run })
     else this.settledRuns.delete(runId)
     return run
+  }
+
+  private async cleanSettledRun(runId: string): Promise<RunMeta> {
+    const meta = await this.readMeta(runId)
+    if (['queued', 'starting', 'running'].includes(meta.state) || this.preparing.has(runId) || this.starts.has(runId)) {
+      return meta
+    }
+    const directory = this.runDirectory(runId)
+    if (!meta.cleaned) {
+      const clone = join(this.root, 'git', ...meta.repository.split('/'))
+      if (existsSync(join(directory, 'src'))) {
+        const standalone = (await stat(join(directory, 'src/.git')).catch(fallbackOnMissing(null)))?.isDirectory()
+        await this.withRepository(meta.repository, async () => {
+          if (!standalone) {
+            await this.ports.run('git', ['worktree', 'remove', '--force', join(directory, 'src')],
+              { cwd: clone, env: this.environment })
+          }
+          await rm(join(directory, 'src'), { recursive: true, force: true })
+          await this.ports.run('git', ['worktree', 'prune'], { cwd: clone, env: this.environment })
+        })
+      }
+      await rm(join(directory, 'tmp'), { recursive: true, force: true })
+    }
+    // Older cleaned records can still hold the per-run test cache.
+    await rm(join(directory, 'vitest-cache'), { recursive: true, force: true })
+    if (meta.cleaned) return meta
+    const cleaned = { ...meta, cleaned: true }
+    await this.writeMeta(cleaned)
+    return cleaned
   }
 
   private runMessage(meta: RunMeta): string | null {
@@ -1245,11 +1264,12 @@ export class HostCiRunner {
         if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
         // The first marker keeps the cancellation timestamp stable on retries.
       }
-      this.warmupAborts.get(runId)?.abort(new Error('Background CI preparation preempted.'))
+      this.preparationAborts.get(runId)?.abort(new Error('CI preparation canceled.'))
       if (!meta) return this.refresh(runId)
       if (meta.state === 'queued') {
         await withHostCiRunLock(directory, () => this.finish(runId, 'canceled', null, 'Canceled before execution.'))
       }
+      await this.starts.get(runId)
       await this.preparing.get(runId)
     }
     return this.refresh(runId)

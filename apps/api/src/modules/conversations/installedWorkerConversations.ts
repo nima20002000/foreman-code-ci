@@ -41,8 +41,7 @@ function unavailable(message: string): never {
   throw new DomainError('WORKER_CONVERSATION_UNAVAILABLE', message, 409)
 }
 
-/** Shipped conversation owner on the existing installed worker, journal and paired channel. */
-export async function createInstalledWorkerConversations(input: {
+interface InstalledWorkerConversationsInput {
   stateDirectory: string
   configuration: InstalledWorkflowConfigurationLocation | null
   registry: NativeProcessRegistry
@@ -54,22 +53,15 @@ export async function createInstalledWorkerConversations(input: {
   codexSuiteRevision: string
   accounts?: ProviderAccountResolver
   signal: AbortSignal
-}) {
-  const selected = await readInstalledWorkflowConfiguration(input.configuration)
-  if (!selected) return null
+}
+
+function createInstalledConversationAllocator(input: InstalledWorkerConversationsInput,
+  selected: NonNullable<Awaited<ReturnType<typeof readInstalledWorkflowConfiguration>>>,
+  conversationJournal: RemoteOperationJournal['conversations'], source: () => WorkerConversationRpcRequest,
+  callbacks: ReturnType<typeof workerConversationCallbacks>, files: WorkerConversationFiles) {
   const payloadFingerprints = new PayloadFingerprintCache()
-  const conversationJournal = (await input.journal()).conversations
-  const operations = new AsyncLocalStorage<WorkerConversationRpcRequest>()
-  const source = () => {
-    input.signal.throwIfAborted()
-    const request = operations.getStore()
-    if (!request) unavailable('The native operation has no admitted conversation request.')
-    return request
-  }
-  const callbacks = workerConversationCallbacks({ currentBinding: input.current, capture: input.capture })
-  const files = new WorkerConversationFiles(callbacks)
-  const allocate = async (binding: WorkerConversationBinding, configuration: WorkerConversationConfiguration,
-    connection: Readonly<DeviceSessionBinding>, purpose: 'chat' | 'compaction-read' | 'preparation'): Promise<WorkerConversationAllocation> => {
+  return async function allocate(binding: WorkerConversationBinding, configuration: WorkerConversationConfiguration,
+    connection: Readonly<DeviceSessionBinding>, purpose: 'chat' | 'compaction-read' | 'preparation'): Promise<WorkerConversationAllocation> {
     const harness = binding.harness
     if (harness === 'claude') return allocateInstalledWorkerClaude({ binding, configuration, connection, purpose,
       stateDirectory: input.stateDirectory, selection: input.configuration, launcher: selected.appMcpLauncher,
@@ -153,6 +145,7 @@ export async function createInstalledWorkerConversations(input: {
     const manager: NativeHarnessSessionManager = native
     const inspector: NativeMcpInspector = codexMcpInspectorAdapter(native)
     let mcp: Awaited<ReturnType<typeof createWorkerMcpEndpoint>> | undefined
+    let mcpEnvironment: Awaited<ReturnType<typeof prepareWorkerConversationMcp>>['environment'] | undefined
     let launch: NativeLaunchObservation | undefined
     const nativeOwner = async (session: NativeSessionReference) => {
       const rows = input.registry.snapshot().launches.filter(value => value.owner === scope.owner && value.lifecycle === 'active')
@@ -174,6 +167,7 @@ export async function createInstalledWorkerConversations(input: {
           request: input.request, signal: input.signal })
         mcp = await createWorkerMcpEndpoint({ relay, launcher: selected.appMcpLauncher, signal: input.signal })
         environment = relay.environment
+        mcpEnvironment = relay.environment
       }
       const owner = binding.owner
       if (owner.kind === 'operator' && 'operatorId' in configuration) {
@@ -187,6 +181,15 @@ export async function createInstalledWorkerConversations(input: {
         workingDirectory: binding.workingDirectory, instructionsDelivered: options.instructionsDelivered }
     }
     return { manager, inspector, nativeOwner, start,
+      async refreshApplicationAccess(token, signal) {
+        if (!mcp || !mcpEnvironment || appMcpAccess !== 'scoped') unavailable('The retained Codex MCP route is unavailable.')
+        await before(signal)
+        const relay = await prepareWorkerConversationMcp({ source: source(), token,
+          request: input.request, signal: input.signal })
+        // The running process keeps its local launcher token; Main receives the fresh turn credential.
+        await mcp.bindRelay({ ...relay, environment: mcpEnvironment })
+        signal.throwIfAborted()
+      },
       ...(harness === 'codex' && appMcpAccess === 'none' ? {
         recoverFiles: (request, nativeTurnId, signal) => files.recover(request, nativeTurnId, signal),
       } satisfies Pick<WorkerConversationAllocation, 'recoverFiles'> : {}),
@@ -206,6 +209,23 @@ export async function createInstalledWorkerConversations(input: {
         if (errors.length) throw new AggregateError(errors, 'Native chat resources need cleanup retry.')
       } }
   }
+}
+
+/** Shipped conversation owner on the existing installed worker, journal and paired channel. */
+export async function createInstalledWorkerConversations(input: InstalledWorkerConversationsInput) {
+  const selected = await readInstalledWorkflowConfiguration(input.configuration)
+  if (!selected) return null
+  const conversationJournal = (await input.journal()).conversations
+  const operations = new AsyncLocalStorage<WorkerConversationRpcRequest>()
+  const source = () => {
+    input.signal.throwIfAborted()
+    const request = operations.getStore()
+    if (!request) unavailable('The native operation has no admitted conversation request.')
+    return request
+  }
+  const callbacks = workerConversationCallbacks({ currentBinding: input.current, capture: input.capture })
+  const files = new WorkerConversationFiles(callbacks)
+  const allocate = createInstalledConversationAllocator(input, selected, conversationJournal, source, callbacks, files)
   const host = new WorkerConversationHost({ ...callbacks, currentBinding: input.current,
     journal: conversationJournal,
     allocate: (binding, configuration, connection) => allocate(binding, configuration, connection, 'chat'),
