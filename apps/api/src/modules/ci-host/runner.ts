@@ -76,10 +76,7 @@ function runPreparationCommand(file: string, args: readonly string[], options: {
 }): Promise<Command> {
   return new Promise(resolve => {
     if (options.signal?.aborted) return resolve({ code: 1, stdout: '', stderr: 'CI preparation canceled.' })
-    // The detached supervisor retains both the deadline and repository guard after API exit.
-    const timeoutSeconds = `${(options.timeoutMs ?? 600_000) / 1000}s`
-    const child = spawn('timeout', ['--signal=TERM', '--kill-after=0.25s', timeoutSeconds, file, ...args], {
-      cwd: options.cwd, env: options.env,
+    const child = spawn(file, [...args], { cwd: options.cwd, env: options.env,
       detached: true, stdio: ['ignore', 'pipe', 'pipe',
         ...(options.lockFd !== undefined ? [options.lockFd] : [])] })
     let stdout = ''
@@ -124,9 +121,8 @@ function runPreparationCommand(file: string, args: readonly string[], options: {
         clearTimeout(killTimer)
       }
       options.signal?.removeEventListener('abort', stop)
-      const supervisorTimedOut = code === 124 || code === 137 && !options.signal?.aborted
       resolve({ code: failure ? 1 : code ?? 1, stdout, stderr: failure?.message ?? stderr,
-        ...(timedOut || supervisorTimedOut ? { timedOut: true } : {}) })
+        ...(timedOut ? { timedOut: true } : {}) })
     })
   })
 }

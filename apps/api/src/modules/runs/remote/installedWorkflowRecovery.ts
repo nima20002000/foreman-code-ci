@@ -20,7 +20,6 @@ import { readRecord, writeRecord } from '../../harnesses/recovery/storage.js'
 import { RuntimeLeafAttestationSchema } from './runtimeLeaf.js'
 import { remoteWorkflowProcessDigest } from './workflowPhysicalReadout.js'
 import type { RemoteOperationJournal } from './operationJournal.js'
-import { HistoryObservationPages } from './historyObservationPages.js'
 
 const CaptureSchema = z.object({
   accountBinding: AcceptedProviderAccountBindingSchema.optional(),
@@ -36,8 +35,6 @@ export type InstalledWorkflowEntryCapture = z.infer<typeof EntryCaptureSchema>
 
 /** Pipes die with the worker; the persisted original registry still owns every descendant. */
 export class InstalledWorkflowRecovery {
-  readonly historyPages = new HistoryObservationPages()
-
   constructor(private readonly directory: string, private readonly registry: NativeProcessRegistry) {}
 
   private path(operationId: string) {

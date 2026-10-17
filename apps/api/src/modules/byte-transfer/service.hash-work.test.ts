@@ -13,8 +13,7 @@ it.each([8192, 65536])('keeps receiver hashing linear for %i-byte chunks and det
   const parent = join(homedir(), '.cache', 'foreman-tmp')
   await mkdir(parent, { recursive: true, mode: 0o700 })
   const root = await mkdtemp(join(parent, 'transfer-hash-'))
-  // Sixteen prefixes cost 7.5 payloads to rehash, exceeding the unchanged six-payload budget.
-  const bytes = Buffer.alloc(chunkBytes * 16, 97)
+  const bytes = Buffer.alloc(2 * 1024 * 1024, 97)
   const context: TransferContext = { mainId: randomUUID(), deviceId: randomUUID(), workerInstallationId: randomUUID(),
     keyRevision: 1, authorizationRevision: 1, bootId: randomUUID(), connectionEpoch: randomUUID() }
   const intent: TransferIntent = { ...context, version: 1, transferId: randomUUID(), operationId: randomUUID(),

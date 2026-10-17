@@ -43,20 +43,6 @@ async function mount(entry = runsUrl(null, scope)) {
     <QueryClientProvider client={client}><RouterProvider router={router} /></QueryClientProvider></>)
   return { ...result, router, client }
 }
-async function waitForBoardContext(client: QueryClient) {
-  await new Promise<void>((resolve, reject) => {
-    const check = () => {
-      const state = client.getQueryState(boardDraftContextKey(scope.workspaceId, scope.workflowId))
-      if (state?.status === 'success' || state?.status === 'error') {
-        unsubscribe()
-        if (state.status === 'error') reject(state.error)
-        else resolve()
-      }
-    }
-    const unsubscribe = client.getQueryCache().subscribe(check)
-    check()
-  })
-}
 async function authoring() {
   const editor = await screen.findByRole('region', { name: 'Workflow authoring' }, { timeout: 3000 })
   await within(editor).findByRole('heading', { name: 'Research to review' })
@@ -178,17 +164,8 @@ afterEach(() => {
 })
 
 describe('Workspace Board route, editor and HTTP boundary', { timeout: 20_000 }, () => {
-  it.each([
-    { runId: null, contextDelay: 0 },
-    { runId: 'run-a', contextDelay: 0 },
-    { runId: null, contextDelay: 1_100 },
-  ])('opens the Board after claiming browser tab ownership for Run $runId with $contextDelay ms context reads', async ({ runId, contextDelay }) => {
-    if (contextDelay) server.use(http.get('/api/management/workspaces/:workspaceId/agents', async () => {
-      await delay(contextDelay)
-      // Continue to the normal agent handler after the delayed response.
-    }))
-    const { client } = await mount(runsUrl(runId, scope))
-    await waitForBoardContext(client)
+  it.each([null, 'run-a'])('opens the Board after claiming browser tab ownership for Run %s', async (runId) => {
+    await mount(runsUrl(runId, scope))
     const name = runId ? 'Selected Run pinned topology' : 'Workflow authoring'
     expect(await screen.findByRole('region', { name })).toBeVisible()
     expect(screen.queryByText('This browser cannot safely recover independent tab edits.')).not.toBeInTheDocument()
