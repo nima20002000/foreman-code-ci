@@ -9,14 +9,12 @@ export function useFloatingSurface(
   width: number | 'anchor' = 260,
   align: 'start' | 'end' = 'start',
   side: 'block' | 'inline' = 'block',
-  /** False keeps the surface in normal stacking so a z-index can order it among other floating containers. */
-  topLayer = true,
 ) {
   useEffect(() => {
     const anchor = anchorRef.current
     const surface = surfaceRef.current
     if (!open || !anchor || !surface) return
-    const native = topLayer && typeof surface.showPopover === 'function'
+    const native = typeof surface.showPopover === 'function'
     if (native) surface.showPopover()
     else surface.style.display = 'block'
     function position() {
@@ -65,5 +63,5 @@ export function useFloatingSurface(
       window.visualViewport?.removeEventListener('scroll', position)
       if (native && surface.matches(':popover-open')) surface.hidePopover()
     }
-  }, [open, anchorRef, surfaceRef, width, align, side, topLayer])
+  }, [open, anchorRef, surfaceRef, width, align, side])
 }

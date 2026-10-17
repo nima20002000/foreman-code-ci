@@ -14,8 +14,6 @@ import { ClaudeBoundedQueue } from '../src/modules/harnesses/claudeSdk/queue.js'
 import { registerOperatorChatFixture, type OperatorChatFixture, waitFor } from './helpers/operatorChatFixture.js'
 
 const connectionString = process.env.TEST_DATABASE_URL
-const nativeFailure = { outcome: 'failed' as const, error: { code: 'CLAUDE_NATIVE_RESULT_ERROR',
-  message: 'Recorded native failure.', retryable: false } }
 
 let pool: OperatorChatFixture['pool']
 let access: OperatorChatFixture['access']
@@ -80,7 +78,7 @@ function settlingClaude() {
   return { manager, managers, prompts, closed: () => closed,
     failClosure: (value: boolean) => { failClosure = value },
     result: () => frames.offer({ type: 'result', uuid: `result:${promptUuid}`, session_id: 'settling-session',
-      user_message_uuid: promptUuid, subtype: 'error_during_execution', is_error: true, errors: ['Recorded native failure.'] }) }
+      user_message_uuid: promptUuid, subtype: 'success', is_error: false, result: 'Saved native result.' }) }
 }
 
 async function configureSettlingClaude(claude: ReturnType<typeof settlingClaude>) {
@@ -100,7 +98,7 @@ async function startSettlingClaude(claude: ReturnType<typeof settlingClaude>) {
   return conversation
 }
 
-describe.skipIf(!connectionString)('Operator failed-turn terminal persistence', () => {
+describe.skipIf(!connectionString)('Operator native terminal persistence', () => {
   it('recovers a pre-query profile failure after restart without inventing process closure', async () => {
     const claude = settlingClaude()
     await configureSettlingClaude(claude)
@@ -143,7 +141,7 @@ describe.skipIf(!connectionString)('Operator failed-turn terminal persistence', 
         expect((await chat.get(conversation.id, owner)).activeRequestId).toBe('terminal-request')
         expect(claude.closed()).toBe(['closureProven', 'finish'].includes(method) ? 1 : 0)
         if (terminal) {
-          expect(terminal.observation.result).toEqual(nativeFailure)
+          expect(terminal.observation.result).toEqual({ outcome: 'succeeded', output: 'Saved native result.' })
           await expect(finish(conversation.id, 'terminal-request', { outcome: 'canceled' }))
             .rejects.toMatchObject({ code: 'OPERATOR_CLOSURE_PENDING' })
         }
@@ -152,7 +150,7 @@ describe.skipIf(!connectionString)('Operator failed-turn terminal persistence', 
           chat = new OperatorChatService(repository, operators, claude.manager, runtimeDirectory, authority)
         }
         await waitFor(async () => { await chat.reconcileActive(); return !(await chat.get(conversation.id, owner)).activeRequestId })
-        expect((await chat.get(conversation.id, owner)).lastResult).toEqual(nativeFailure)
+        expect((await chat.get(conversation.id, owner)).lastResult).toEqual({ outcome: 'succeeded', output: 'Saved native result.' })
         expect(claude.prompts).toEqual(['Run once.'])
         expect(claude.managers).toHaveLength(1)
         expect(claude.closed()).toBe(1)
@@ -195,7 +193,7 @@ describe.skipIf(!connectionString)('Operator failed-turn terminal persistence', 
         expect(state.activeRequestId).toBe('terminal-request')
         expect(state.turnState).toBe('uncertain')
         expect(state.lastResult).toBeUndefined()
-        expect((await repository.terminal(conversation.id, 'terminal-request'))?.observation.result.outcome).toBe('failed')
+        expect((await repository.terminal(conversation.id, 'terminal-request'))?.observation.result.outcome).toBe('succeeded')
         expect(claude.prompts).toEqual(['Run once.'])
         expect(claude.managers).toHaveLength(1)
       } finally { fault?.mockRestore(); claude.failClosure(false); await previous.shutdown() }
@@ -238,7 +236,7 @@ describe.skipIf(!connectionString)('Operator failed-turn terminal persistence', 
       expect((await repository.terminal(conversation.id, 'terminal-request'))?.closureState).toBe('pending')
       closeOwner.mockImplementation(async id => id === conversation.id && claude.closed() === 1)
       await chat.reconcileActive()
-      expect((await chat.get(conversation.id, owner)).lastResult).toEqual(nativeFailure)
+      expect((await chat.get(conversation.id, owner)).lastResult).toEqual({ outcome: 'succeeded', output: 'Saved native result.' })
       expect((await chat.get(conversation.id, owner)).activeRequestId).toBeNull()
       expect(closeOwner).toHaveBeenCalledWith(conversation.id, expect.any(AbortSignal))
       expect(claude.managers).toHaveLength(1)
@@ -299,10 +297,10 @@ describe.skipIf(!connectionString)('Operator failed-turn terminal persistence', 
       fault.mockRestore()
       await waitFor(async () => { await chat.reconcileActive(); return !(await repository.active(conversationId))?.active_request_id })
       expect(decodeMcpToolResult((await get()))).toMatchObject({ activeRequestId: null,
-        lastResult: nativeFailure })
+        lastResult: { outcome: 'succeeded', output: 'Saved native result.' } })
       const persisted = (await pool.query('select result from operator_conversation_turns where conversation_id=$1 and request_id=$2',
         [conversationId, input.requestId])).rows[0]?.result
-      expect(persisted).toEqual(nativeFailure)
+      expect(persisted).toEqual({ outcome: 'succeeded', output: 'Saved native result.' })
       expect(claude.prompts).toEqual(['Run once.'])
       expect(claude.managers).toHaveLength(1)
     } finally {

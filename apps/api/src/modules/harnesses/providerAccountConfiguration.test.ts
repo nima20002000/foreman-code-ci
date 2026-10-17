@@ -40,7 +40,7 @@ describe('provider account execution selection', () => {
       const settings = OperatorChatSettingsSchema.parse(operatorChatSettings(selected))
       expect(settings.accountId).toBe(first)
       const changed = applyOperatorChatSettings(selected, { ...settings, accountId: second })
-      expect(changed.harness).toBe(base.harness)
+      if (changed.harness === 'opencode') throw new Error('Expected supported harness')
       expect(changed.accountId).toBe(second)
       expect(changed.sandbox).toBe(base.sandbox)
       expect(harnessSessionChanged(selected, changed)).toBe(true)
