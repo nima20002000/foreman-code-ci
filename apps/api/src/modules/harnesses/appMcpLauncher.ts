@@ -233,16 +233,9 @@ export async function registerAppRoute(
     undefined, renewalFailure)
 }
 
-/** The process keeps a routing secret; only the current turn's credential reaches the API. */
-export function registerAppCredentialRoute(channel: string, token: string, endpoint: string, expiresAt: string) {
-  return registerAppRouteDigest(createHash('sha256').update(channel).digest('hex'), endpoint, expiresAt,
-    appLauncherPath(), undefined, undefined, token)
-}
-
 export async function registerAppRouteDigest(
   digest: string, endpoint: string, expiresAt: string, launcher = appLauncherPath(), ownership?: AppMcpRouteOwnership,
   renewalFailure?: string,
-  authorizationToken?: string,
 ): Promise<AppMcpRouteRegistration> {
   if (!/^[a-f0-9]{64}$/.test(digest)) throw new Error('Invalid Foreman Code MCP route identity.')
   const directory = join(dirname(launcher), 'routes')
@@ -267,8 +260,7 @@ export async function registerAppRouteDigest(
       try {
         await writeFile(temporary, JSON.stringify({ endpoint, expiresAt: expiration, pid: process.pid,
           toolTimeoutMs: APP_MCP_TIMEOUTS.tool_timeout_sec * 1000,
-          registrationId, runtimeEpoch, ...(failure ? { renewalFailure: failure } : {}),
-          ...(authorizationToken ? { authorizationToken } : {}) }), { mode: 0o600, flag: 'wx' })
+          registrationId, runtimeEpoch, ...(failure ? { renewalFailure: failure } : {}) }), { mode: 0o600, flag: 'wx' })
         signal.throwIfAborted()
         ownership?.assertActive()
         await rename(temporary, file)
