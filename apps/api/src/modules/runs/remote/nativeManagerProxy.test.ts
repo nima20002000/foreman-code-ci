@@ -101,6 +101,49 @@ function terminal(events: NativeHarnessEvent[]): NativeHistory {
 }
 
 describe('remote native history streaming', () => {
+  it.each(['create', 'attach', 'boundary', 'response'] as const)(
+    'refreshes the authenticated observation during %s without repeating native work', async operation => {
+      const f = setup(() => terminal([event(0)]))
+      const session = { harness: 'codex' as const, providerVersion: 'fixture', nativeSessionId: 'native-session' }
+      const request = f.request.getMockImplementation()!
+      f.request.mockImplementation(async (method, payload, signal) => {
+        if (method === 'reattach') return { session, status: { status: 'known', receipt: f.receipt } }
+        if (method === 'status') return { status: 'known', receipt: f.receipt }
+        return request(method, payload, signal)
+      })
+      if (operation === 'boundary' || operation === 'response') await f.proxy.createSession(f.start)
+      f.observeOriginalSource.mockClear()
+      f.observeOriginalSource.mockRejectedValueOnce(new DomainError('REMOTE_CONNECTION_CONFLICT',
+        'The original authenticated native response connection changed.', 409))
+      if (operation === 'create') await expect(f.proxy.createSession(f.start)).resolves.toEqual(session)
+      if (operation === 'attach') await expect(f.proxy.attachSession(session, f.start)).resolves.toEqual(session)
+      if (operation === 'boundary') await expect(f.proxy.observeBoundary(session)).resolves.toBeUndefined()
+      if (operation === 'response') await expect(f.proxy.reconcileResponse(session, {
+        nativeRequestId: 'original-request', nativeRequestType: 'approval', option: CODEX_APPROVAL_OPTIONS_FIXTURE[0]!,
+      })).resolves.toMatchObject({ terminalTurn: terminal([event(0)]).terminalTurn })
+      expect(f.observeOriginalSource).toHaveBeenCalledTimes(2)
+      expect(f.request.mock.calls.filter(([method]) => method === 'prepare')).toHaveLength(operation === 'attach' ? 0 : 1)
+      expect(f.request.mock.calls.some(([method]) => method === 'start-turn' || method === 'control')).toBe(false)
+      expect(f.controlFor).not.toHaveBeenCalled()
+    },
+  )
+
+  it('returns the verified terminal history after settling the original Worker turn', async () => {
+    const history = terminal([event(0)])
+    const f = setup(() => history)
+    const session = await f.proxy.createSession(f.start)
+    const request = f.request.getMockImplementation()!
+    f.request.mockImplementation(async (method, payload, signal) => {
+      if (method === 'settle-turn') return { status: 'known', receipt: structuredClone(f.receipt) }
+      return request(method, payload, signal)
+    })
+    await expect(f.proxy.settleTurn(session, f.start.correlationId)).resolves.toMatchObject({
+      terminalTurn: history.terminalTurn, terminalResult: history.terminalResult,
+    })
+    expect(f.request.mock.calls.map(([method]) => method)).toEqual(['prepare', 'settle-turn', 'history'])
+    expect(f.controlFor).not.toHaveBeenCalled()
+  })
+
   it('releases the lost initial snapshot when its replay observes changed metadata', async () => {
     let reads = 0
     const result = { outcome: 'succeeded' as const, output: { text: 'changed-snapshot' + 'x'.repeat(3 * 1024 * 1024) } }

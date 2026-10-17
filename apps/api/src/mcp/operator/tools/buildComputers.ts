@@ -113,7 +113,7 @@ export const buildComputerTools = [
       + 'servers that other computers lack; secret values are not copied, those servers need a login on each computer), or '
       + 'sync-plugins (install Main\'s Codex and Claude plugins, reconcile fleet-managed versions with native readback, '
       + 'add Main\'s Git marketplaces first and match enabled state for fleet-managed Claude plugins). '
-      + 'MCP stdio commands must be executable on the destination, and explicit filesystem arguments must exist. An unavailable server does not block independent entries. Versioned plugin upgrades refresh marketplaces and verify acquisition in an isolated native home before native add/update, preserving existing plugins on acquisition failure. '
+      + 'MCP stdio paths must exist on the destination; missing or unresolved local paths leave sync failed until repaired. '
       + 'Sync preserves pre-existing computer-owned entries and removes only fleet-managed entries absent from an available Main catalog. '
       + 'Unsafe or unsupported MCP definitions and unreadable catalogs are skipped and reported; existing Worker entries for skipped definitions are preserved. '
       + 'Intentional credential skips do not fail a task. Automatic sync failures retry after 5 minutes with exponential '
