@@ -1,3 +1,4 @@
+import { InfoHint } from '../../shared/ui/InfoHint'
 import { useState } from 'react'
 import type { AccountProvider } from '@foreman-code/contracts/provider-accounts'
 import { sameDeviceProvisioningTarget, type DeviceProvisioningTarget } from '@foreman-code/contracts/device-resources'
@@ -52,7 +53,7 @@ export function ProviderAccountsSettings({ provider, selection, onSelect, target
   }
   return <section className="provider-accounts-settings" aria-label={provider
     ? `${provider === 'codex' ? 'Codex' : 'Claude'} accounts` : 'Provider accounts'}>
-    <header className="provider-accounts-heading"><h3>Accounts</h3></header>
+    <header className="provider-accounts-heading"><h3>Accounts <InfoHint label="Accounts">Add one to keep its sign-in separate.</InfoHint></h3></header>
     {onTargetChange ? <Select label={`${provider === 'claude' ? 'Claude' : 'Codex'} account computer`}
       value={selectedTarget} options={targetChoices} disabled={access.discovery.isPending}
       onChange={event => {
@@ -91,7 +92,7 @@ export function ProviderAccountsSettings({ provider, selection, onSelect, target
               onSelect?.({ provider: item, accountId: value.id, ...(scope.target ? { target: scope.target } : {}),
                 ...(auth?.accountId === value.id && auth.operationId ? { operationId: auth.operationId } : {}) })
             }} />)}</div>
-        {!accounts.some(value => value.provider === item) ? <p>No accounts added. Add one to keep its sign-in separate.</p> : null}
+        {!accounts.some(value => value.provider === item) ? <p>No accounts added.</p> : null}
         {capability?.reason ? <p>{capability.reason}</p> : null}
       </section>})}
     </>}

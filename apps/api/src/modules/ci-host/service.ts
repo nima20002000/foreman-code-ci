@@ -1,3 +1,4 @@
+import { RetryBackoff } from '../../infrastructure/retryBackoff.js'
 import { isDeepStrictEqual } from 'node:util'
 import { randomUUID } from 'node:crypto'
 import { inTransaction, type SqlQuery } from '../../infrastructure/transaction.js'
@@ -99,10 +100,12 @@ export class HostCiService {
   private readonly collectingRuns = new Set<string>()
   private observationOffset = 0
   private readonly observingComputers = new Map<string, Promise<void>>()
+  private readonly computerStatusRetries = new Map<string, RetryBackoff>()
   private readonly mirrorPublications = new Map<string, { settled: boolean }>()
   /** Computers that still had a free slot after the last dispatch pass: where a canceled provider-queued ticket can go. */
   private spareComputers: HostCiComputer[] = []
   private readonly dispatchRejections = new CiDispatchRejections()
+  private readonly dispatchRetry = new RetryBackoff({ initialMs: 1000, maxMs: 300_000 })
   private timer: NodeJS.Timeout | undefined
   private stoppingRuns = 0
   private readonly endpoint: HostCiEndpoint
@@ -910,6 +913,7 @@ export class HostCiService {
 
   /** Refresh running runs and dispatch queued work, retaining wake-ups during an active pass. */
   dispatch(): Promise<void> {
+    if (!this.dispatchRetry.ready()) return Promise.resolve()
     this.dispatchRequested = true
     if (this.stoppingRuns) return this.dispatching ?? Promise.resolve()
     this.dispatching ??= (async () => {
@@ -917,8 +921,12 @@ export class HostCiService {
         this.dispatchRequested = false
         await trackService('ci-dispatch', { cadenceMs: 1000, deadlineMs: CI_DISPATCH_PASS_MS },
           () => withCiDispatchDeadline(() => withProviderPoll(() => this.dispatchOnce())))
+        this.dispatchRetry.reset()
       }
-    })().catch(error => log.warn({ err: error }, 'CI dispatch failed'))
+    })().catch(error => {
+      const nextRetryMs = this.dispatchRetry.fail()
+      log.warn({ err: error, nextRetryMs }, 'CI dispatch failed; retry scheduled')
+    })
       .finally(() => { this.dispatching = undefined })
     return this.dispatching
   }
@@ -1195,9 +1203,18 @@ export class HostCiService {
   private refreshComputerStatuses(computers: HostCiComputer[]) {
     for (const computer of computers) {
       if (this.planningEndpoint.status(computer) || this.observingComputers.has(computer.key)) continue
+      const retry = this.computerStatusRetries.get(computer.key)
+        ?? new RetryBackoff({ initialMs: 5000, maxMs: 300_000 })
+      this.computerStatusRetries.set(computer.key, retry)
+      if (!retry.ready()) continue
       // Readiness belongs to dispatch; collecting running tickets uses the shared pool.
       const observation = withCiDatabasePriority(() => readCiComputerStatus(this.endpoint, computer)).then(status => {
-        if (status) void this.dispatch()
+        if (status) {
+          retry.reset()
+          void this.dispatch()
+        } else {
+          retry.fail()
+        }
       }).finally(() => { this.observingComputers.delete(computer.key) })
       this.observingComputers.set(computer.key, observation)
     }
