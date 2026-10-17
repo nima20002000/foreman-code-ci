@@ -13,6 +13,7 @@ import {
   type CodexPluginListInput, type CodexPluginChangeInput, type CodexPluginChangeResult, type CodexPluginReconcileInput,
   CodexPluginOperationsResultSchema, CodexPluginReconcileInputSchema,
 } from '@foreman-code/contracts/management'
+import type { DeviceProvisioningTarget } from '@foreman-code/contracts/device-resources'
 import type { HarnessConfiguration } from '@foreman-code/contracts'
 import { apiClient } from './client'
 import { reservePluginOperation, restorePluginOperation, pluginOperationFailed, pluginOperationSucceeded, terminalPluginResult, type PluginOperation } from './codexPluginOperation'
@@ -46,7 +47,8 @@ export function useHarnessSessionEpoch() { return useSyncExternalStore(subscribe
 type Harness = HarnessConfiguration['harness']
 export const harnessSettingsKeys = {
   root: ['workbench', 'management', 'harness-settings'] as const,
-  options: (harness: Harness) => [...harnessSettingsKeys.root, sessionGeneration(), harness, 'options'] as const,
+  options: (harness: Harness, hostRef?: DeviceProvisioningTarget['hostRef']) =>
+    [...harnessSettingsKeys.root, sessionGeneration(), harness, 'options', ...(hostRef ? [hostRef] : [])] as const,
   check: (snapshot: string) => [...harnessSettingsKeys.root, 'check', sessionGeneration(), snapshot] as const,
   mcp: (harness: Harness) => [...harnessSettingsKeys.root, sessionGeneration(), harness, 'mcp'] as const,
   plans: (harness: Harness) => [...harnessSettingsKeys.root, sessionGeneration(), harness, 'plans'] as const,
@@ -171,11 +173,14 @@ export function useChangeCodexPlugin() {
     reconciliation, busy: saved.data.operation?.phase === 'sending' || reconciliation.isPending }
 }
 
-export function useNativeHarnessOptions(harness: Harness, enabled = true) {
+export function useNativeHarnessOptions(harness: Harness, enabled = true, hostRef?: DeviceProvisioningTarget['hostRef']) {
   useHarnessSessionEpoch()
-  return useQuery({ queryKey: harnessSettingsKeys.options(harness), enabled: enabled && !sessionIsSwitching(), staleTime: 300_000, retry: false,
+  return useQuery({ queryKey: harnessSettingsKeys.options(harness, hostRef), enabled: enabled && !sessionIsSwitching(), staleTime: 300_000, retry: false,
     refetchOnWindowFocus: true,
-    queryFn: ({ signal }) => apiClient.request(`/api/management/harnesses/${harness}/options`, HarnessOptionsResultSchema, { signal }),
+    queryFn: ({ signal }) => {
+      const query = hostRef ? `?${new URLSearchParams({ hostRef: JSON.stringify(hostRef) })}` : ''
+      return apiClient.request(`/api/management/harnesses/${harness}/options${query}`, HarnessOptionsResultSchema, { signal })
+    },
   })
 }
 
@@ -261,7 +266,7 @@ async function refreshMcpReadback(client: QueryClient, epoch: number, harness?: 
       const snapshot = query.queryKey.at(-1)
       return Boolean(snapshot) && (!harness || (JSON.parse(String(snapshot)) as HarnessConfiguration).harness === harness)
     } }),
-  ]).catch(() => undefined)
+  ]).catch(error => { console.warn('Could not refresh harness settings.', error) })
   // Keep mutations pending until affected native revision/plan readback settles.
   await client.invalidateQueries({ queryKey: [...harnessSettingsKeys.root, epoch, ...(harness ? [harness] : [])],
     predicate: (query) => ['mcp', 'plans'].includes(String(query.queryKey.at(-1))) })
@@ -366,7 +371,7 @@ export function useCreateWorkspaceFolder() {
     retry: false,
     mutationFn: (input: WorkspaceFolderCreateInput) => apiClient.request('/api/management/harnesses/directories',
       WorkspaceFolderCreateResultSchema, { method: 'POST', body: WorkspaceFolderCreateInputSchema.parse(input) }),
-    onSuccess: () => { void client.invalidateQueries({ queryKey: harnessSettingsKeys.root }).catch(() => undefined) },
+    onSuccess: () => { void client.invalidateQueries({ queryKey: harnessSettingsKeys.root }).catch(error => { console.warn('Could not refresh harness settings.', error) }) },
   })
 }
 
@@ -377,7 +382,7 @@ export function useRenameWorkspaceFolder() {
     retry: false,
     mutationFn: (input: WorkspaceFolderRenameInput) => apiClient.request('/api/management/harnesses/directories/rename',
       WorkspaceFolderRenameResultSchema, { method: 'POST', body: WorkspaceFolderRenameInputSchema.parse(input) }),
-    onSuccess: () => { void client.invalidateQueries({ queryKey: harnessSettingsKeys.root }).catch(() => undefined) },
+    onSuccess: () => { void client.invalidateQueries({ queryKey: harnessSettingsKeys.root }).catch(error => { console.warn('Could not refresh harness settings.', error) }) },
   })
 }
 
