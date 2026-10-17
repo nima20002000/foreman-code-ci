@@ -17,6 +17,8 @@ const responseTypes: Record<Exclude<keyof CodexMethodMap, 'config/mcpServer/relo
   'mcpServerStatus/list': 'ListMcpServerStatusResponse',
   'account/login/start': 'LoginAccountResponse', 'account/login/cancel': 'CancelLoginAccountResponse',
 }
+const inspectionResponseTypes = { 'account/read': 'GetAccountResponse' } as const
+
 const threadResponseFields = {
   thread: 'object', model: 'string', modelProvider: 'string', cwd: 'string', sandbox: 'object',
   approvalPolicy: 'policy', approvalsReviewer: 'string', reasoningEffort: 'string', serviceTier: 'string',
@@ -210,7 +212,8 @@ export function protocolFromBundle(bundle: JsonObject, providerVersion = 'unknow
         if (!isObject(value) || Object.keys(value).length !== 0) throw new Error('Invalid reload response.')
         return
       }
-      const type = Object.hasOwn(responseTypes, method) ? responseTypes[method as keyof typeof responseTypes] : undefined
+      const type = Object.hasOwn(responseTypes, method) ? responseTypes[method as keyof typeof responseTypes]
+        : inspectionResponseTypes[method as keyof typeof inspectionResponseTypes]
       if (!type) throw new Error('Unqualified response method.')
       check(type, definition(type), value)
       checkResponseFields(type, value, providerVersion)

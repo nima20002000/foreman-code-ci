@@ -120,6 +120,8 @@ export interface NativeTurnInput {
   /** Native structured output for this turn when the harness supports it (Codex). Claude ignores it;
    * Foreman validates every deliverable either way. */
   outputSchema?: Record<string, unknown> | undefined
+  /** Keep a Worker session resident while Main validates and, if needed, corrects its output. */
+  deferSettlement?: true | undefined
   clientCorrelationId: string
   /** Await persistence of the provider identity immediately after submission acknowledgement. */
   onSubmitted?(nativeTurnId: string): Promise<void>
@@ -262,14 +264,22 @@ export interface NativeHarnessSessionManager extends ResponseAvailabilityInspect
   /** Refresh authenticated remote ownership before a coordinator boundary check. */
   observeBoundary?(session: NativeSessionReference, signal?: AbortSignal): Promise<void>
   reconcile(session: NativeSessionReference, correlationId: string, signal?: AbortSignal): Promise<NativeHistory>
-  /** Read chronological retained events without applying the recent observation window. */
+  /** Observe chronological retained output without native reconciliation or new output events. */
+  historyPage?(session: NativeSessionReference, afterSequence: number, signal?: AbortSignal): Promise<NativeHistory>
+  /** Finish Main's output validation and read the Worker's physically settled result. */
+  settleTurn?(session: NativeSessionReference, correlationId: string, signal?: AbortSignal): Promise<NativeHistory>
+  /** Reconcile ownership, then read chronological retained events without the recent observation window. */
   reconcileHistoryPage?(session: NativeSessionReference, correlationId: string,
     afterSequence: number, signal?: AbortSignal): Promise<NativeHistory>
   /** Release resident turn resources after the caller commits its result and history. */
-  retireTurn?(session: NativeSessionReference, correlationId: string): Promise<void>
+  retireTurn?(session: NativeSessionReference, correlationId: string): Promise<void | { runtimeReleased: true }>
+  /** Rebind a fresh turn credential on an idle, already owned native process. */
+  rebindApplicationAccess?(session: NativeSessionReference, start: NativeSessionStart, signal?: AbortSignal): Promise<void>
   /** Read-only recovery of the exact response; missing evidence remains uncertain. */
   reconcileResponse?(session: NativeSessionReference, response: NativeResponseIdentity, signal?: AbortSignal): Promise<NativeHistory>
   close(session: NativeSessionReference, signal?: AbortSignal): Promise<void>
+  /** Close an idle process while retaining the persisted session for a later cold resume. */
+  closeForResume?(session: NativeSessionReference): Promise<void>
   /** Detach the local runtime for process restart without canceling unresolved provider work. */
   closeForRestart?(session: NativeSessionReference, signal?: AbortSignal): Promise<void>
   /** Stop every owned transport, including creations without a known session identity. */

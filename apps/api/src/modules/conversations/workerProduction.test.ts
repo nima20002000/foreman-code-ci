@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { DomainError } from '../errors.js'
 import type pg from 'pg'
 import { expect, it, vi } from 'vitest'
 import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
@@ -118,7 +119,8 @@ it.each([false, true])('admits a thinking-only next turn through the production 
     owner.grants = [{ actions: ['operator_chat:read'], scope: {} }]
     await expect(manager.attachSession(f.session, { kind: 'operator', configuration: accepted,
       correlationId: 'denied', workingDirectory: '/main/runtime' })).rejects.toMatchObject({ code: 'ACCESS_DENIED' })
-  } finally { await manager.dispose?.(); await production.close() }
+    await expect(manager.dispose!()).rejects.toMatchObject({ code: 'ACCESS_DENIED' })
+  } finally { await production.close() }
 })
 
 it('rejects execution, profile, owner and bound-hash changes during a presentation transition', () => {
@@ -136,11 +138,16 @@ it('rejects execution, profile, owner and bound-hash changes during a presentati
     configurationHash: '0'.repeat(64) } }, accepted, configuration)).toThrow()
 })
 
-it.each([['codex', false], ['codex', true], ['claude', false], ['claude', true]] as const)(
-  'recovers journaled %s creation through the production manager (Worker restarted: %s)', async (harness, restarted) => {
+it.each([['codex', false, false, 'persisted'], ['codex', true, false, 'persisted'],
+  ['claude', false, false, 'persisted'], ['claude', true, false, 'persisted'],
+  ['codex', true, true, 'persisted'], ['codex', true, true, 'unobserved'],
+  ['claude', true, true, 'unobserved']] as const)(
+  'recovers journaled %s creation through production (Worker restarted: %s, preview generation: %s, binding: %s)',
+  async (harness, restarted, previewGeneration, bindingObservation) => {
   const f = workerConversationFixture('agent', harness)
   if (!('agentId' in f.configuration) || f.binding.owner.kind !== 'agent') throw new Error('Agent fixture required')
   const binding = { ...f.binding,
+    ...(previewGeneration ? { sessionGeneration: 'preview-configuration' } : {}),
     accountBinding: legacyProviderAccountBinding(f.configuration.harness, f.configuration.harnessProfileSelection)! }
   const principal = { id: 'owner', name: 'Owner', audience: 'operator', delegated_from: null,
     grants: [{ actions: ['agent_chat:read', 'agent_chat:write'], scope: {} }],
@@ -149,11 +156,15 @@ it.each([['codex', false], ['codex', true], ['claude', false], ['claude', true]]
     workflow_id: agentOwner(binding.owner).workflowId, workflow_node_id: agentOwner(binding.owner).workflowNodeId,
     agent_id: f.configuration.agentId, agent_configuration_version_id: f.configuration.id,
     active_request_id: 'request', native_session_id: null, deleted_at: null,
-    owner_principal_id: principal.id, payload: { ownerPrincipalId: principal.id }, record: { status: 'open' },
-    worker_conversation_binding: binding }
-  const pool = { query: vi.fn(async (sql: string) => {
+    owner_principal_id: principal.id, payload: { ownerPrincipalId: principal.id }, record: { status: 'open',
+      ...(previewGeneration ? { workerSessionGeneration: binding.sessionGeneration } : {}) },
+    worker_conversation_binding: bindingObservation === 'persisted' ? binding : null }
+  const pool = { query: vi.fn(async (sql: string, parameters?: unknown[]) => {
     if (sql.includes('from management_principals')) return { rows: [principal] }
     if (sql.includes('from provider_account_accepted_bindings')) return { rows: [{ binding: binding.accountBinding }] }
+    if (sql.startsWith('update operator_conversations set worker_conversation_binding')) {
+      conversation.worker_conversation_binding = JSON.parse(parameters![1] as string)
+    }
     return { rows: [conversation], rowCount: 1 }
   }) } as unknown as pg.Pool
   const operationId = 'original-creation'
@@ -173,7 +184,20 @@ it.each([['codex', false], ['codex', true], ['claude', false], ['claude', true]]
   const channel = { binding: connection, request: async (raw: unknown) => {
     const request = WorkerConversationRpcRequestSchema.parse(raw)
     methods.push(request.method)
-    if (request.method === 'conversation.status') return { payload: { receipt: structuredClone(receipt) } }
+    if (request.method === 'conversation.status') {
+      expect(request.binding).toEqual(binding)
+      return { payload: { receipt: structuredClone(receipt) } }
+    }
+    if (request.method === 'conversation.release-runtime') {
+      expect(request.session).toEqual(f.session)
+      if (receipt.turns.some(turn => !['completed', 'rejected'].includes(turn.status))) {
+        throw new DomainError('WORKER_CONVERSATION_UNAVAILABLE', 'Finish the active operation before releasing its native process.', 409)
+      }
+      expect(receipt.turns).toEqual([])
+      receipt.runtimeReleased = true
+      receipt.revision++
+      return { payload: { receipt: structuredClone(receipt) } }
+    }
     if (request.method !== 'conversation.open' || request.mode !== 'attach') {
       throw new Error('Creation recovery may only inspect the journal and attach its original session')
     }
@@ -207,5 +231,14 @@ it.each([['codex', false], ['codex', true], ['claude', false], ['claude', true]]
       conversationId: conversation.id, workflowId: agentOwner(binding.owner).workflowId, workflowNodeId: agentOwner(binding.owner).workflowNodeId,
       workingDirectory: binding.workingDirectory, correlationId: 'another-creation' })).rejects.toThrow()
     expect(methods).toEqual(['conversation.status', 'conversation.open', 'conversation.status'])
-  } finally { await manager.dispose?.(); await production.close() }
+    if (harness === 'claude') {
+      await expect(manager.dispose!()).rejects.toThrow('Finish the active operation')
+      expect(receipt.runtimeReleased).not.toBe(true)
+      expect(receipt.turns).toEqual(originalTurns)
+    } else {
+      await manager.dispose!()
+      expect(receipt.runtimeReleased).toBe(true)
+    }
+    expect(methods).toEqual(['conversation.status', 'conversation.open', 'conversation.status', 'conversation.release-runtime'])
+  } finally { await production.close() }
 })
