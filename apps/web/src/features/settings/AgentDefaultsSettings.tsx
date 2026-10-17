@@ -30,7 +30,7 @@ export function AgentDefaultsSettings({ selectedRole, onOpen }: {
   if (query.isError) return <ErrorState title="Agent defaults are unavailable" description={query.error.message} onRetry={() => void query.refetch()} />
   if (!query.data) return <LoadingState label="Loading agent defaults…" />
   const { value, revision } = query.data
-  return <SettingsOverview title="Agents" description="Open Operator to edit its initial prompt. Ask the Operator to change role defaults.">
+  return <SettingsOverview title="Agents">
     {agentRoleOrder.map((role) => {
       const info = rolePresentation[role]
       const summary = [...harnessSummary(value[role].harness),
@@ -38,7 +38,7 @@ export function AgentDefaultsSettings({ selectedRole, onOpen }: {
         { label: 'Skills', value: String(value.operator.assignedSkills?.length ?? 0) },
         ...(value.operator.harness.harness === 'codex' ? [{ label: 'Thinking', value: value.operator.showThinking ? 'Shown' : 'Hidden' }] : []),
       ] : [])]
-      return <SettingsChoice key={role} title={info.title} description={info.description} summary={summary}
+      return <SettingsChoice key={role} title={info.title} summary={summary}
         onSelect={() => {
           if (role === 'operator') onOpen?.(role)
           else askOperator(`Change the ${info.title} defaults: `, { send: false })
