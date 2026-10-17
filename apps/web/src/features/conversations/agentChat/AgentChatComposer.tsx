@@ -21,13 +21,13 @@ export function AgentChatComposer({ name, draftKey, inputRef, disabled, reason, 
   const blocked = disabled || (controlOnly ? controlPending : pending) || !!reason || (!draft.trim() && !hasAttachments) || draft.length > 32_000
   const submit = (content = draft) => {
     const submitted = parseSessionCommand(content)
-    const sessionCommand = submitted.kind === 'compact' || submitted.kind === 'mode'
+    const sessionCommand = submitted.kind === 'compact' || submitted.kind === 'mode' || submitted.kind === 'new'
     const unavailable = sessionCommand ? controlReason : reason
     const inFlight = sessionCommand ? controlPending : pending
     if (disabled || inFlight || unavailable || (!content.trim() && !hasAttachments) || content.length > 32_000) return
     onSubmit(content.trim(), submitted.kind === 'plan-task' ? 'plan' : undefined)
   }
-  const menu = useSlashCommandMenu(draft, value => setDraft(draftKey, value), content => submit(content))
+  const menu = useSlashCommandMenu(draft, value => setDraft(draftKey, value), content => submit(content), true)
   useLayoutEffect(() => {
     const input = inputRef.current
     if (!input) return

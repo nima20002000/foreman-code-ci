@@ -31,6 +31,7 @@ import { readSourceStorageCapacity } from './storageCapacity.js'
 
 export interface SourceOperationWorkerContext { binding: Readonly<DeviceSessionBinding>; signal: AbortSignal; bytes?: Uint8Array }
 export interface SourceOperationWorkerOptions {
+  mainNow(): number
   currentReclamation?(reservationId: string, reclamationId: string,
     context: SourceOperationWorkerContext): Promise<SourceReservationReclamation>
   reclamationNativeClosed?(owner: SourceOperationOwner | null, operationId: string): Promise<boolean>
@@ -205,7 +206,8 @@ export class SourceOperationWorkerService {
         owner = current
       }
       if (request.operation === 'sources.capacity') {
-        const capacity = await readSourceStorageCapacity(owner.root.binding.canonicalPath, owner.root.binding.filesystem)
+        const capacity = await readSourceStorageCapacity(owner.root.binding.canonicalPath,
+          owner.root.binding.filesystem, this.options.mainNow)
         await reauthorize()
         return SourceOperationResponseSchema.parse({ version: 1, operation: request.operation, capacity })
       }
