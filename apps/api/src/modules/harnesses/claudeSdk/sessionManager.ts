@@ -30,9 +30,6 @@ export function createClaudeNativeSessionManager(options: ClaudeNativeSessionMan
     inspectResponseAvailability(session, query, signal) { return callbacks.inspectResponseAvailability(ctx, session, query, signal) },
     capabilities() { return inspection.capabilities(ctx) },
     refreshInspectionCredentials(start, servers, signal) { return inspection.refreshInspectionCredentials(ctx, start, servers, signal) },
-    refreshSessionCredentials(session, start, servers, signal) {
-      return inspection.refreshSessionCredentials(ctx, session, start, servers, signal)
-    },
     prepareInspection(start, signal) { return inspection.prepareInspection(ctx, start, signal) },
     inspectMcp(signal) { return inspection.inspectMcp(ctx, signal) },
     createSession(start, signal) { return opening.createSession(manager, start, signal) },
