@@ -29,6 +29,8 @@ import { sanitizeCiText } from './text.js'
 import { withProviderPoll } from './providerPoll.js'
 import { sweepCiRunDirectories } from './directoryRetention.js'
 import { readFleetIdentityInventory } from './fleetIdentityInventory.js'
+import type { CircleAccountContext, CircleAccountRegistry } from './circleAccounts.js'
+import { CircleStandby } from './circleStandby.js'
 
 const MAX_DISPATCH_ATTEMPTS = 3
 /** A running run asks its service at most this often; reads in between answer from the kept state and log. */
@@ -124,10 +126,14 @@ export function workspaceMirrorList(pool: pg.Pool): () => Promise<string[]> {
 }
 
 /** GitHub owners of the further CircleCI orgs that hold unfinished runs. */
-export function runningCircleCiOwners(pool: pg.Pool): () => Promise<string[]> {
-  return async () => (await pool.query<{ owner: string }>(`select distinct record#>>'{computer,hostRef,account}' as owner
+export function runningCircleCiOwners(pool: pg.Pool, mainId?: string): () => Promise<{ owner: string; circleAccountId: string }[]> {
+  return async () => (await pool.query<{ owner: string; circle_account_id: string }>(`select distinct
+    coalesce(record#>>'{computer,hostRef,account}',split_part(record->>'ciMirror','/',1)) as owner,
+    coalesce(record#>>'{computer,hostRef,circleAccountId}','default') as circle_account_id
     from ci_runs where (state in ('queued','starting','running') or record->>'collection' = 'pending')
-      and record#>>'{computer,hostRef,account}' is not null`)).rows.map(row => row.owner)
+      and record#>>'{computer,hostRef,provider}'='circleci'
+      and ($1::text is null or record#>>'{computer,hostRef,mainId}'=$1)`, [mainId ?? null])).rows
+    .filter(row => row.owner).map(row => ({ owner: row.owner, circleAccountId: row.circle_account_id }))
 }
 
 /** Main owns ticket completion even when the last attempt ran on a different provider. */
@@ -142,6 +148,7 @@ export async function activeCiRuns(pool: pg.Pool): Promise<ActiveCiRuns> {
  * commit's files to the mirror as one commit without history, starts the provider's run of them, and reads the
  * result, log and measured durations back. */
 export class CloudCi {
+  private standby: CircleStandby | undefined
   private activeRuns: (() => Promise<ActiveCiRuns>) | undefined
   private checked: { at: number; ready: boolean } | undefined
   private readinessProbe: Promise<boolean> | undefined
@@ -162,6 +169,25 @@ export class CloudCi {
     private readonly ports: HostCiPorts = systemHostCiPorts(),
     private readonly git: GitWorktreePorts = systemGitWorktreePorts(),
     private readonly identity = { home: homedir(), user: userInfo().username, host: hostname() }) {}
+
+  setCircleStandby(standby: CircleStandby) { this.standby = standby }
+
+  invalidateReadiness() { this.checked = undefined }
+
+  async schedulingReading(mirrorName?: string) {
+    if (this.provider.id !== 'circleci' || !this.provider.account || !this.standby) return undefined
+    return this.standby.reading(this.provider.account.owner, this.provider.circleAccountId, mirrorName)
+  }
+
+  private async requireNewStart(mirrorName: string) {
+    if (this.provider.recoveryOnly || this.provider.account?.registered === false) {
+      throw new DomainError('CI_CLOUD_UNAVAILABLE', 'This CircleCI executor only finishes previously assigned jobs.', 409)
+    }
+    const reading = await this.schedulingReading(mirrorName)
+    if (reading && reading.schedulingRole !== 'active') {
+      throw new DomainError('CI_CLOUD_UNAVAILABLE', reading.schedulingReason, 409)
+    }
+  }
 
   async publishMirror(input: CiMirrorInput): Promise<void> {
     const mirror = this.accountMirror(input.mirror)
@@ -213,11 +239,14 @@ export class CloudCi {
   }
 
   computers(priority = 30): HostCiComputer[] {
+    if (this.provider.recoveryOnly) return []
     // An org without a copy of any workspace mirror only finishes the runs it already has.
     if (this.provider.account && !this.provider.account.mirrorNames.size) return []
     const account = this.provider.account?.owner
+    const circleAccountId = this.provider.circleAccountId
     return Array.from({ length: this.provider.slots }, (_, slot) => ({ key: `${this.mainId}:cloud:${cloudCiId(this.provider)}:${slot}`,
-      hostRef: { kind: 'cloud' as const, mainId: this.mainId, provider: this.provider.id, ...(account ? { account } : {}), slot },
+      hostRef: { kind: 'cloud' as const, mainId: this.mainId, provider: this.provider.id, ...(account ? { account } : {}), slot,
+        ...(circleAccountId && circleAccountId !== 'default' ? { circleAccountId } : {}) },
       label: `${this.provider.label} ${slot + 1}`, priority, userSystemd: this.provider.userSystemd }))
   }
 
@@ -354,12 +383,17 @@ export class CloudCi {
   private path(runId: string, name: 'meta.json' | 'log') { return join(this.root, 'runs', runId, name) }
 
   private async read(runId: string): Promise<CloudRun> {
-    return readCloudRun(this.path(runId, 'meta.json'))
+    const run = await readCloudRun(this.path(runId, 'meta.json'))
+    if (this.provider.id === 'circleci' && (run.circleAccountId ?? 'default') !== (this.provider.circleAccountId ?? 'default')) {
+      throw new DomainError('CI_CLOUD_ACCOUNT_MISMATCH', 'This saved CI run belongs to a different CircleCI login.', 409)
+    }
+    return run
   }
 
   private save(run: CloudRun) {
     const transport = this.provider.transport ?? run.transport
-    return saveCloudRun(this.path(run.runId, 'meta.json'), { ...run, ...(transport ? { transport } : {}) })
+    return saveCloudRun(this.path(run.runId, 'meta.json'), { ...run, ...(transport ? { transport } : {}),
+      ...(this.provider.id === 'circleci' ? { circleAccountId: this.provider.circleAccountId ?? 'default' } : {}) })
   }
 
   private view(run: CloudRun, logBytes: number): CiHostRun {
@@ -406,6 +440,7 @@ export class CloudCi {
       throw new DomainError('CI_CLOUD_UNAVAILABLE', `${this.provider.label} has no copy of the CI mirror ${mirror}.`, 409)
     }
     if (mirror) mirror = this.accountMirror(mirror)
+    if (mirror) await this.requireNewStart(mirror.slice(mirror.indexOf('/') + 1))
     // CircleCI's machine image has no podman, which the Worker unit tests (unit-other) use.
     if (this.provider.id === 'circleci' && !runsOnCircleCi(request)) {
       throw new DomainError('CI_CLOUD_UNAVAILABLE', `${this.provider.label} cannot run the Worker unit tests (no podman).`, 409)
@@ -540,6 +575,7 @@ export class CloudCi {
         `${input.workflowCommit}:refs/heads/${input.workflowRef}`]), { mirror, commit: request.commit })
     }
     validateProviderParameters(this.provider, input)
+    await this.requireNewStart(mirror.slice(mirror.indexOf('/') + 1))
     let run = await this.save({ mirrorBranch: branch, runId: request.runId, repository: request.repository, mirror, commit: request.commit,
       suite: request.suite, ...(request.part ? { part: request.part } : {}), startedAt: this.ports.now().toISOString(), providerRunId: null, state: 'starting',
       scope, ...(request.files !== undefined ? { files: request.files } : {}),
@@ -748,6 +784,13 @@ export class CloudCi {
     })
   }
 
+  private async siblingRoots(): Promise<string[]> {
+    const parent = dirname(this.root)
+    const entries = await readdir(parent, { withFileTypes: true })
+    return entries.filter(entry => entry.isDirectory() && /^(github|circleci)(?:[~@]|$)/.test(entry.name))
+      .map(entry => join(parent, entry.name))
+  }
+
   private async prune(run: Pick<CloudRun, 'repository' | 'mirror'>, finishedRuns: ReadonlySet<string>) {
     try {
       const clone = await ensureClone(this.git, run.repository, AbortSignal.timeout(120_000))
@@ -760,7 +803,7 @@ export class CloudCi {
       const publications = this.publications(run.repository, run.mirror)
       const reserved = mirrorMaintenance.get(this.mirrorKey(run.repository, run.mirror))!.keep
       await pruneMirrorBranches({ mirror: run.mirror, activeRuns,
-        roots: [this.root, join(this.root, '..', 'github'), join(this.root, '..', 'circleci')],
+        roots: [this.root, ...await this.siblingRoots()],
         // Starts during this sweep stay protected even after their reservation becomes a persisted ticket.
         keep: () => reserved,
         withRemovalLock: remove => serializeMirror(run.mirror, remove),
@@ -1480,19 +1523,32 @@ export class CloudCi {
 
 /** GitHub Actions and CircleCI on the same public mirror. */
 export function cloudCis(mainId: string, mirrors: Mirrors,
-  options: { ports?: HostCiPorts; activeRuns?: () => Promise<ActiveCiRuns> } = {}): CloudCi[] {
+  options: { ports?: HostCiPorts; activeRuns?: () => Promise<ActiveCiRuns>;
+    primaryContext?: CircleAccountContext; explicitCircleOrgs?: boolean } = {}): CloudCi[] {
   const ports = options.ports ?? systemHostCiPorts()
-  return [new GitHubActionsProvider(ports), new CircleCiProvider(ports)].map(provider => cloudCi(mainId, provider, mirrors, options))
+  const context = options.primaryContext
+  const primary = new CircleCiProvider(context?.ports ?? ports, context ? { http: context.http } : {})
+  primary.recoveryOnly = options.explicitCircleOrgs ?? false
+  return [new GitHubActionsProvider(ports), primary].map(provider => cloudCi(mainId, provider, mirrors, options))
 }
 
 /** Appends a CircleCI service to `clouds` for each further CircleCI org discovery finds; the caller refreshes it. */
 export function circleCiOrgs(clouds: CloudCi[], mainId: string, mirrors: Mirrors, mirrorList: () => Promise<string[]>,
-  options: { ports?: HostCiPorts; activeRuns?: () => Promise<ActiveCiRuns>; runningOwners?: () => Promise<string[]> } = {})
+  options: { ports?: HostCiPorts; activeRuns?: () => Promise<ActiveCiRuns>; runningOwners?: () => Promise<string[]>;
+    runningOrganizations?: () => Promise<{ owner: string; circleAccountId: string }[]>;
+    registry?: CircleAccountRegistry; context?: (id: string) => Promise<CircleAccountContext>;
+    standby?: CircleStandby; explicitPrimary?: boolean } = {})
   : CircleCiAccounts {
   const ports = options.ports ?? systemHostCiPorts()
   return new CircleCiAccounts(ports, mirrorList,
-    account => clouds.push(cloudCi(mainId, new CircleCiProvider(ports, {}, account), mirrors, options)),
-    { runningOwners: options.runningOwners })
+    async account => {
+      const context = await options.context?.(account.circleAccountId ?? 'default')
+      const provider = new CircleCiProvider(context?.ports ?? ports, context ? { http: context.http } : {}, account)
+      const cloud = cloudCi(mainId, provider, mirrors, options)
+      if (options.standby) cloud.setCircleStandby(options.standby)
+      clouds.push(cloud)
+    }, { runningOwners: options.runningOwners, runningOrganizations: options.runningOrganizations,
+      registry: options.registry, context: options.context, explicitPrimary: options.explicitPrimary })
 }
 
 function cloudCi(mainId: string, provider: CloudProvider, mirrors: Mirrors,
