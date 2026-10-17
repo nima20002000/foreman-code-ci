@@ -117,7 +117,7 @@ describe('fleet source propagation', () => {
   it.each(['codex', 'claude'] as const)('preserves %s plugins when its source is unreadable', async harness => {
     const computer = fakeComputer()
     const { fleet, sources } = fakeFleet(computer)
-    sources.codexPlugins = async () => ['notes@official']
+    sources.codexPlugins = async () => [{ pluginId: 'notes@official', version: null }]
     sources.claudePlugins = async () => ({ plugins: [{ pluginId: 'notes@official', installed: true,
       enabled: true, name: 'notes', marketplaceName: 'official', description: null,
       version: null, installCount: null }], marketplaces: [] })
@@ -139,7 +139,7 @@ describe('fleet source propagation', () => {
     let now = Date.now()
     computer.ports.now = () => new Date(now)
     const { fleet, sources, requested, createFleet } = fakeFleet(computer, () => now)
-    sources.codexPlugins = async () => ['notes@official']
+    sources.codexPlugins = async () => [{ pluginId: 'notes@official', version: null }]
     computer.fail((binary, args) => binary.endsWith('codex') && args[0] === 'plugin' && args[1] === 'add')
     await fleet.syncChangedSources()
     expect((await settle(computer)).tasks.find(task => task.kind === 'sync-plugins')?.state).toBe('failed')
@@ -283,7 +283,7 @@ describe('fleet source propagation', () => {
     const older = await computer.maintenance.start(kind === 'sync-mcp'
       ? mcpRequest(['old']) : pluginRequest(['old@official']))
     const { fleet, requested, sources } = fakeFleet(computer)
-    sources.codexPlugins = async () => ['notes@official']
+    sources.codexPlugins = async () => [{ pluginId: 'notes@official', version: null }]
     try {
       await fleet.syncChangedSources()
       const status = await computer.maintenance.status(AbortSignal.timeout(1000))
@@ -316,7 +316,7 @@ describe('fleet source propagation', () => {
   it('acknowledges plugin sources when receiver validation changes property order', async () => {
     const computer = fakeComputer()
     const { fleet, sources, requested } = fakeFleet(computer)
-    sources.codexPlugins = async () => ['notes@official']
+    sources.codexPlugins = async () => [{ pluginId: 'notes@official', version: null }]
     sources.codexMarketplaces = async () => [{ source: 'owner/official', name: 'official' }]
     await fleet.syncChangedSources()
     await settle(computer)
@@ -371,7 +371,7 @@ describe('fleet source propagation', () => {
     } else {
       sources.codexUserMcpServers = async () => { throw new Error('MCP discovery timeout') }
       sources.claudeUserMcpServers = async () => { throw new Error('MCP discovery timeout') }
-      sources.codexPlugins = async () => ['notes@official']
+      sources.codexPlugins = async () => [{ pluginId: 'notes@official', version: null }]
     }
     await expect(fleet.syncChangedSources()).rejects.toThrow('Some fleet settings could not be read')
     await settle(computer)

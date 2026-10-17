@@ -65,6 +65,7 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
 
   constructor(private readonly options: ManagerOptions) {
     this.harness = options.binding.harness
+    if (this.harness === 'claude') this.startInitialTurn = this.initialTurn.bind(this)
     if (options.acceptedConfiguration) {
       if (!('operatorId' in options.configuration)) conflict('Presentation changes require an Operator configuration.')
       workerExecutionConfiguration(options.binding, options.acceptedConfiguration, options.configuration)
@@ -74,7 +75,7 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
   private frame(input: Record<string, unknown>): WorkerConversationRpcRequest {
     return { ...input, binding: this.options.binding } as WorkerConversationRpcRequest
   }
-  private async reconnect(signal?: AbortSignal) {
+  private async reconnect(signal?: AbortSignal, options: { reattachSession?: boolean } = {}) {
     this.lifetime.signal.throwIfAborted()
     if (this.reconnecting) return this.reconnecting
     const channel = this.options.currentChannel?.() ?? this.options.channel
@@ -88,7 +89,7 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
       this.recoveredCallbacks.clear()
       this.credentialLease = undefined
       this.options.channel = channel
-      if (!this.session) return
+      if (!this.session || options.reattachSession === false) return
       const session = this.session
       const lease = this.captureConnected(this.frame({ method: 'conversation.open', mode: 'attach', source: session,
         operationId: this.receipt?.creation?.operationId ?? 'session-reconnect', configuration: this.options.configuration }))
@@ -106,7 +107,7 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
   private async capture(frame: WorkerConversationRpcRequest, options: {
     callbacks?: WorkerConversationCallbacks; recoveredSubmission?: NativeMessageSubmission; recoveredTurnId?: string
   } = {}, signal?: AbortSignal) {
-    await this.reconnect(signal)
+    await this.reconnect(signal, { reattachSession: frame.method !== 'conversation.release-runtime' })
     return this.captureConnected(frame, options)
   }
   private captureConnected(frame: WorkerConversationRpcRequest, options: {
@@ -229,8 +230,8 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
     const fields = this.startFields(start)
     if (mode === 'attach' && start.kind === 'operator' && start.observationOnly) delete fields.applicationAccess
     const frame = this.frame({ method: 'conversation.open', ...fields, mode,
-      ...(mode === 'attach' && this.options.previousBinding ? { previousBinding: this.options.previousBinding } : {}),
-      ...(mode === 'attach' && this.options.previousConfiguration
+      ...((mode === 'attach' || mode === 'create') && this.options.previousBinding ? { previousBinding: this.options.previousBinding } : {}),
+      ...((mode === 'attach' || mode === 'create') && this.options.previousConfiguration
         ? { previousConfiguration: this.options.previousConfiguration } : {}),
       ...(source ? { source } : {}) })
     const lease = await this.capture(frame, { callbacks: { sessionObserved: async session => {
@@ -428,8 +429,11 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
       correlationId: input.clientCorrelationId, ...(input.sessionMode ? { sessionMode: input.sessionMode } : {}),
       ...(input.sessionPreferences ? { preferences: input.sessionPreferences } : {}) }), input, undefined, signal)
   }
-  startInitialTurn(start: NativeSessionStart, input: NativeInitialTurnInput, signal?: AbortSignal) {
+  readonly startInitialTurn?: NonNullable<NativeHarnessSessionManager['startInitialTurn']>
+  private initialTurn(start: NativeSessionStart, input: NativeInitialTurnInput, signal?: AbortSignal) {
     return this.stream(this.frame({ method: 'conversation.initial-turn', ...this.startFields(start),
+      ...(this.options.previousBinding ? { previousBinding: this.options.previousBinding } : {}),
+      ...(this.options.previousConfiguration ? { previousConfiguration: this.options.previousConfiguration } : {}),
       prompt: input.prompt, correlationId: input.clientCorrelationId,
       ...(input.sessionMode ? { sessionMode: input.sessionMode } : {}),
       ...(input.sessionPreferences ? { preferences: input.sessionPreferences } : {}) }), input, input, signal)
@@ -437,22 +441,11 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
   async history(session: NativeSessionReference, signal?: AbortSignal): Promise<NativeHistory> {
     return this.readHistory(session, signal)
   }
-  async rebindApplicationAccess(session: NativeSessionReference, start: NativeSessionStart, signal?: AbortSignal) {
-    this.assertSession(session)
-    const fields = this.startFields(start)
-    if (!fields.applicationAccess) conflict('A fresh scoped application credential is required.')
-    if (this.harness === 'claude') {
-      await this.deliverClaudeCredential(fields.applicationAccess.token, signal ?? new AbortController().signal)
-    } else {
-      await this.open(start, 'attach', session, signal)
-    }
-  }
   async retireTurn(session: NativeSessionReference, correlationId: string) {
     this.assertSession(session)
     if (this.receipt?.creation?.operationId === correlationId
       && !this.receipt.turns.some(turn => turn.correlationId === correlationId)) return
     this.adopt(await this.request({ method: 'conversation.retire-turn', session, correlationId }))
-    if (this.receipt?.runtimeReleased) return { runtimeReleased: true as const }
   }
   private async readHistory(session: NativeSessionReference, signal?: AbortSignal): Promise<NativeHistory> {
     this.assertSession(session)

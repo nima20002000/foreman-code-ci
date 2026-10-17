@@ -175,8 +175,8 @@ describe('provider account execution selection', () => {
     expect(await requireClaudeProductionCredentialDelivery(claude, { resolve }, device)).toBeUndefined()
     expect(resolve).not.toHaveBeenCalled()
     await expect(requireClaudeProductionCredentialDelivery({ ...claude, accountId: first }, { resolve }, device))
-      .rejects.toMatchObject({ code: 'PROVIDER_ACCOUNT_LOCAL_ONLY' })
-    expect(resolve).not.toHaveBeenCalled()
+      .rejects.toMatchObject({ code: 'PROVIDER_ACCOUNT_TARGET_CONFLICT' })
+    expect(resolve).toHaveBeenCalledWith('claude', first)
   })
 
   it('inherits a completed source execution account when creating an independent Agent chat runtime', async () => {
