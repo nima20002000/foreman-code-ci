@@ -65,7 +65,7 @@ function CloudRow({ cloud, fresh }: { cloud: CloudCiActivity; fresh: boolean }) 
 
 const NUMBER = new Intl.NumberFormat('en-US')
 
-/** CircleCI has no plan-balance API: each org's credits are its monthly allowance minus this month's usage, so an estimate. */
+/** CircleCI has no plan-balance API: the credits are the configured allowance minus this month's usage, so an estimate. */
 function CircleCredits({ cloud }: { cloud: CloudCiActivity }) {
   if (cloud.provider !== 'circleci' || cloud.credits === undefined && cloud.creditsUnavailable === undefined) return null
   const { credits } = cloud
@@ -73,19 +73,9 @@ function CircleCredits({ cloud }: { cloud: CloudCiActivity }) {
     <p className="sidebar-hover-note">Credits unavailable</p>
     {cloud.creditsUnavailable && <p className="sidebar-hover-note">{cloud.creditsUnavailable}</p>}
   </>
-  const { total } = credits
-  const readable = credits.orgs.filter(org => org.credits).length
-  return <>
-    {credits.orgs.map(org => <p key={org.org} className="sidebar-hover-note">
-      {org.org}: {org.credits
-        ? `≈ ${NUMBER.format(org.credits.remaining)} of ${NUMBER.format(org.credits.total)} credits left`
-        : `unavailable${org.unavailable ? ` (${org.unavailable})` : ''}`}
-    </p>)}
-    {total && <p className="sidebar-hover-note">
-      Account total{readable < credits.orgs.length ? ` (${readable} of ${credits.orgs.length} orgs)` : ''}:
-      {' '}≈ {NUMBER.format(total.remaining)} of {NUMBER.format(total.total)} credits left · updated {ago(Date.parse(total.asOf))}
-    </p>}
-  </>
+  return <p className="sidebar-hover-note">
+    ≈ {NUMBER.format(credits.remaining)} of {NUMBER.format(credits.total)} credits left · updated {ago(Date.parse(credits.asOf))}
+  </p>
 }
 
 type RowLink = { to: '/settings/computers' } | { to: '/settings/computers/$deviceId'; params: { deviceId: string } }

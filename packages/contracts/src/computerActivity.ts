@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { DeviceCommandIdSchema, DeviceProvisioningTargetSchema } from './deviceResources.js'
+import { DeviceProvisioningTargetSchema } from './deviceResources.js'
 import { HarnessExecutionStateSchema, IdSchema, TimestampSchema } from './index.js'
 import { JobProcessStateSchema } from './jobs.js'
 import { circleCreditsShape } from './circleCredits.js'
@@ -10,16 +10,6 @@ export const COMPUTER_ACTIVITY_LIMIT = 200
 export function computerDisplayName(hostRef: { kind: 'main' } | { kind: 'device'; deviceId: string }) {
   return hostRef.kind === 'main' ? 'Main PC' : `Computer ${hostRef.deviceId.slice(0, 8)}`
 }
-/** A name the owner gives a computer: trimmed, one short line. */
-export const COMPUTER_NAME_MAX_LENGTH = 60
-export const ComputerNameSchema = z.string().trim().min(1).max(COMPUTER_NAME_MAX_LENGTH)
-export const ComputerRenameInputSchema = z.object({
-  target: DeviceProvisioningTargetSchema,
-  name: ComputerNameSchema,
-  commandId: DeviceCommandIdSchema.optional().describe('Optional retry identity; generated server-side when omitted.'),
-}).strict()
-export const ComputerRenameResultSchema = z.object({ target: DeviceProvisioningTargetSchema, name: ComputerNameSchema }).strict()
-export type ComputerRenameResult = z.infer<typeof ComputerRenameResultSchema>
 export const ComputerJobActivitySchema = z.object({
   id: IdSchema,
   name: z.string(),
@@ -58,7 +48,7 @@ const CloudCiActivitySchema = z.object({
   slots: z.number().int().positive(),
   /** CI runs using one of its machines now. */
   running: z.number().int().nonnegative(),
-  /** CircleCI accounts only: estimated monthly credits left per organization of the login plus their total, or null with the reason it is unavailable. */
+  /** CircleCI accounts only: estimated monthly credits left, or null with the reason it is unavailable. */
   ...circleCreditsShape,
 }).strict()
 export const ComputerActivityListSchema = z.object({
