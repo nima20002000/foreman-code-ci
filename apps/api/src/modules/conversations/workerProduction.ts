@@ -92,7 +92,7 @@ interface ProductionWorkerConversationsInput {
 interface WorkerConversationOptions {
   conversationId: string
   configuration: WorkerConversationConfiguration
-  lifecycle?: 'observer'
+  lifecycle?: 'owner' | 'observer'
   workingDirectory: string
   appMcpAccess: 'scoped' | 'none'
   fileInputs?: boolean
@@ -350,7 +350,7 @@ async function admitWorkerConversation(input: ProductionWorkerConversationsInput
     ? createMainWorkerClaudeFiles({ pool: input.pool, binding: owner, service: input.fileService,
       allowMutation: configuration.harness.sandbox !== 'read-only' }) : undefined
   const manager = new WorkerConversationManager({ binding, configuration: executionConfiguration,
-    ...(options.lifecycle ? { lifecycle: options.lifecycle } : {}),
+    lifecycle: options.lifecycle ?? 'owner',
     channel, currentChannel, bridge, current,
     currentForDisposal: (request, effectSignal) => current(request, effectSignal, principalId),
     ...(executionConfiguration !== configuration && 'operatorId' in configuration

@@ -36,7 +36,7 @@ interface ManagerOptions {
   binding: WorkerConversationBinding
   configuration: WorkerConversationConfiguration
   /** Temporary readers own their observer, while native runtime ownership stays on Worker. */
-  lifecycle?: 'observer'
+  lifecycle?: 'owner' | 'observer'
   acceptedConfiguration?: OperatorConfigurationVersion
   channel: WorkerConversationChannel
   currentChannel?(): WorkerConversationChannel
@@ -709,7 +709,7 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
       await this.detach()
       return
     }
-    if (this.runtimeAcquired && !this.lifetime.signal.aborted && this.session
+    if ((this.options.lifecycle === 'owner' || this.runtimeAcquired) && !this.lifetime.signal.aborted && this.session
       && !this.receipt?.closed && !this.receipt?.runtimeReleased) {
       this.options.channel = this.currentChannel()
       const lease = this.captureConnected(this.frame({ method: 'conversation.release-runtime', session: this.session }),
