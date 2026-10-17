@@ -13,6 +13,7 @@ import {
   type MaintenanceStatus, type MaintenanceTask, type MaintenanceTaskStart, type SyncedMarketplace, type SyncedMcpServer,
   type WorkerReleasePublication,
   type WorkerBundleReadiness,
+  type SyncedPlugin,
 } from '@foreman-code/contracts/computer-maintenance'
 import { DeviceRegistrationSchema } from '@foreman-code/contracts/device-identity'
 import { sameDeviceProvisioningTarget, type DeviceProvisioningTarget } from '@foreman-code/contracts/device-resources'
@@ -36,7 +37,7 @@ export interface MaintenanceEndpoint {
 export interface FleetSources {
   codexUserMcpServers(): Promise<Record<string, unknown>>
   claudeUserMcpServers(): Promise<Record<string, unknown>>
-  codexPlugins(): Promise<string[]>
+  codexPlugins(): Promise<SyncedPlugin[]>
   codexMarketplaces(): Promise<SyncedMarketplace[]>
   claudePlugins(): Promise<ClaudePluginCatalog>
   workerManifestSha256s?(): Promise<readonly string[]>
@@ -455,7 +456,9 @@ export class FleetMaintenanceService {
       if (codex.status === 'fulfilled') {
         const marketplaces = SyncedMarketplaceSchema.array().safeParse(codex.value[1])
         if (marketplaces.success) {
-          request.plugins = codex.value[0]
+          request.plugins = codex.value[0].map(plugin => plugin.pluginId)
+          const versions = codex.value[0].flatMap(plugin => plugin.version === null ? [] : [[plugin.pluginId, plugin.version]])
+          if (versions.length) request.pluginVersions = Object.fromEntries(versions)
           request.marketplaces = marketplaces.data
         } else warnings.push('Codex marketplace sources are unsafe or invalid; plugin sync skipped.')
       } else warnings.push('Codex plugin catalog could not be read; skipped.')
@@ -464,7 +467,7 @@ export class FleetMaintenanceService {
           .flatMap(item => item.source ? [{ name: item.name, source: item.source }] : []))
         if (marketplaces.success) {
           request.claudePlugins = claude.value.plugins.filter(plugin => plugin.installed)
-            .map(({ pluginId, enabled }) => ({ pluginId, enabled }))
+            .map(({ pluginId, enabled, version }) => ({ pluginId, enabled, ...(version === null ? {} : { version }) }))
           request.claudeMarketplaces = marketplaces.data
         } else warnings.push('Claude marketplace sources are unsafe or invalid; plugin sync skipped.')
       } else warnings.push('Claude plugin catalog could not be read; skipped.')

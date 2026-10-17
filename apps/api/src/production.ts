@@ -1096,8 +1096,7 @@ function configureHarnessQualifications(composition: ProductionComposition) {
     },
     async current(binding, value, client) {
       if (value.driverId === 'claude') {
-        await requireClaudeProductionCredentialDelivery(value.configuration, providerAccounts, value.target.hostRef,
-          value.target.applicationInstallationId)
+        await requireClaudeProductionCredentialDelivery(value.configuration, providerAccounts, value.target.hostRef)
         if (value.target.hostRef.kind === 'device') {
           const registry = harnessRegistry.pinOverride(value)
           const proof = await hostProfileEvidence.latest(value.instanceId, value.revision, client)
@@ -1153,8 +1152,7 @@ function configureHarnessProfiles(composition: ProductionComposition) {
   const hostProfileChecks = composition.hostProfileChecks = new HostHarnessInstanceProfileChecks(hostSettings, hostProfileEvidence, commands, hostAuthority,
     new ProductionHostHarnessProfileQualifier(harnessRegistry, nativeFactories, () => deviceRuntime.endpointForDomains(), config.harnesses.workspaceRoot,
       infrastructure?.mode === 'replay' ? undefined : { async qualify(value, input) {
-        const apiKey = await requireClaudeProductionCredentialDelivery(value.configuration, providerAccounts, value.target.hostRef,
-          value.target.applicationInstallationId)
+        const apiKey = await requireClaudeProductionCredentialDelivery(value.configuration, providerAccounts, value.target.hostRef)
         const current = await claudeDiscovery.currentForConfiguration(value, input.signal)
         const binding = harnessRegistry.pinOverride(value)
         const recovery = await processRegistry.reserveLaunch(`claude-profile-check:${input.checkId}`)
@@ -1183,8 +1181,7 @@ function configureHarnessProfiles(composition: ProductionComposition) {
       },
     }) : undefined)
   const harnessInstances = composition.harnessInstances = new HostHarnessOverrideService(hostSettings, commands, hostAuthority, async (value, client) => {
-    await requireClaudeProductionCredentialDelivery(value.configuration, providerAccounts, value.target.hostRef,
-          value.target.applicationInstallationId)
+    await requireClaudeProductionCredentialDelivery(value.configuration, providerAccounts, value.target.hostRef)
     const proof = await harnessRegistry.profileEvidence(value, client, { includeFailed: true })
     return proof ? { target: proof.target, configurationFingerprint: proof.configurationFingerprint,
       qualified: proof.qualified, ...(proof.failure ? { failure: proof.failure } : {}) } : null
@@ -1218,9 +1215,6 @@ function configureHarnessProfiles(composition: ProductionComposition) {
   const harnessCatalog = composition.harnessCatalog = new HarnessCatalogService(qualifier, settings, commands, config.harnesses.workspaceRoot, appMcpEndpoint)
   const nativeConfigurations = composition.nativeConfigurations = new NativeConfigurationService(
     config.harnesses.codexBinary, config.harnesses.workspaceRoot, nativeFactories, claudeMetadata, providerAccounts,
-    { mainId: async () => (await database.pool.query<{ id: string }>(
-      'select id from application_installation where singleton=true')).rows[0]?.id ?? '',
-    endpoint: () => deviceRuntime.endpointForDomains() },
   )
   composition.appRoutes = new AppMcpRoutes(database.pool, appMcpEndpoint, appLauncherPath(), () => composition.runtimeOwner)
   const maintenancePorts = composition.maintenancePorts = systemMaintenancePorts(process.env, { get codex() { return mainCodex.binary } })
@@ -2847,7 +2841,7 @@ async function initializeComputerServices(composition: ProductionComposition, ma
           installedPlugins(maintenancePorts, mainCodex.binary, AbortSignal.timeout(120_000)),
           pluginMarketplaces(maintenancePorts, mainCodex.binary, AbortSignal.timeout(60_000))])
         const local = new Set(marketplaces.filter(marketplace => marketplace.local).map(marketplace => marketplace.name))
-        return plugins.filter(pluginId => !local.has(pluginId.split('@').at(-1)!))
+        return plugins.filter(plugin => !local.has(plugin.pluginId.split('@').at(-1)!))
       },
       codexMarketplaces: async () => await maintenancePorts.find('codex')
         ? (await pluginMarketplaces(maintenancePorts, mainCodex.binary, AbortSignal.timeout(60_000)))
