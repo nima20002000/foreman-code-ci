@@ -1,3 +1,4 @@
+import { InfoHint } from '../../shared/ui/InfoHint'
 import { useMemo } from 'react'
 import type { RepeatBlockV1, WorkflowDefinitionV3 } from '@foreman-code/contracts/wave25'
 import { Button, Checkbox, Select, TextField } from '../../shared/ui/nocturne'
@@ -37,7 +38,7 @@ export function RepeatEditor({ graph, change, disabled = false }: {
       limitExit: { kind: 'branch_end' } }],
   } }))
   return <section className="repeat-editor" aria-label="Repeat settings">
-    <div className="repeat-heading"><div><h3>Repeats</h3><p>Repeat a section up to a chosen limit.</p></div></div>
+    <div className="repeat-heading"><div><h3>Repeats<InfoHint label="Repeats">Repeat a section up to a chosen limit. Sections cannot overlap or nest. Use the repeat outcome instead of a connection back to the entry. Allow enough node executions in Workflow settings for the chosen limit. Retries do not count as another repeat.</InfoHint></h3></div></div>
     {!blocks.length ? <p className="repeat-muted">No repeats.</p> : null}
     <div className="repeat-blocks">{blocks.map((block, index) => {
       const outcomes = blockOutcomeOptions(graph, block.exitNodeId)
@@ -47,7 +48,7 @@ export function RepeatEditor({ graph, change, disabled = false }: {
         <legend>Repeat {index + 1}</legend>
         <TextField label="Repeat name" value={block.id} required
           onChange={(event) => updateBlock(index, (value) => ({ ...value, id: event.currentTarget.value }))} />
-        <div className="repeat-scope"><span className="repeat-label">Scope</span><p>Choose one entry-to-exit section.</p>
+        <div className="repeat-scope"><span className="repeat-label">Scope<InfoHint label="Scope">Choose one entry-to-exit section.</InfoHint></span>
           <div className="repeat-node-grid">{options.map((option) => <Checkbox key={option.value} label={option.label}
             checked={block.nodeIds.includes(option.value)} onChange={(event) => updateBlock(index, (value) => ({ ...value,
               nodeIds: event.currentTarget.checked ? [...value.nodeIds, option.value] : value.nodeIds.filter((id) => id !== option.value),
@@ -58,15 +59,14 @@ export function RepeatEditor({ graph, change, disabled = false }: {
           <Select label="Exit node" required value={block.exitNodeId} options={[{ value: '', label: 'Choose exit' }, ...options]}
             onChange={(event) => updateBlock(index, (value) => ({ ...value, exitNodeId: event.currentTarget.value, repeatOutcome: '', earlyExitOutcome: '' }))} />
           <TextField label="Maximum occurrences" type="number" min={1} max={2147483647} step={1} required value={block.maxOccurrences}
-            hint="Includes the first run through this section."
+            labelHint={<InfoHint label="Maximum occurrences">Includes the first run through this section.</InfoHint>}
             onChange={(event) => updateBlock(index, (value) => ({ ...value, maxOccurrences: Number(event.currentTarget.value) }))} />
           <Select label="Repeat outcome" required value={block.repeatOutcome} options={[{ value: '', label: 'Choose outcome' }, ...outcomes.map((outcome) => ({ value: outcome, label: outcome }))]}
             onChange={(event) => updateBlock(index, (value) => ({ ...value, repeatOutcome: event.currentTarget.value }))} />
           <Select label="Early-exit outcome" required value={block.earlyExitOutcome} options={[{ value: '', label: 'Choose outcome' }, ...outcomes.map((outcome) => ({ value: outcome, label: outcome }))]}
             onChange={(event) => updateBlock(index, (value) => ({ ...value, earlyExitOutcome: event.currentTarget.value }))} />
         </div>
-        <div className="repeat-limit-route"><strong>At the cap</strong><span>{targetLabel(limitTarget)}</span>
-          <small>Continue here when the limit is reached.</small></div>
+        <div className="repeat-limit-route"><strong>At the cap<InfoHint label="At the cap">Continue here when the limit is reached.</InfoHint></strong><span>{targetLabel(limitTarget)}</span></div>
         {blockIssues.length ? <ul className="repeat-errors" aria-label={`Problems in repeat ${index + 1}`}>{blockIssues.map((issue, item) => <li key={item}>{issue.message}</li>)}</ul> : null}
         <Button size="sm" variant="ghost" onClick={() => removeBlock(index)}>Remove repeat</Button>
       </fieldset>
@@ -74,9 +74,5 @@ export function RepeatEditor({ graph, change, disabled = false }: {
     <Button size="sm" variant="secondary" disabled={disabled} onClick={addBlock}>Add repeat</Button>
     {issues.filter((issue) => !issue.blockId).length ? <ul className="repeat-errors" aria-label="Repeat plan problems">
       {issues.filter((issue) => !issue.blockId).map((issue, index) => <li key={index}>{issue.message}</li>)}</ul> : null}
-    <details className="repeat-muted"><summary>Repeat help</summary>
-      <p>Sections cannot overlap or nest. Use the repeat outcome instead of a connection back to the entry.
-        Allow enough node executions in Workflow settings for the chosen limit. Retries do not count as another repeat.</p>
-    </details>
   </section>
 }

@@ -1,3 +1,4 @@
+import { InfoHint } from '../../shared/ui/InfoHint'
 import { useState } from 'react'
 import { APP_MCP_SERVER_NAMES, PRODUCT_SLUG } from '@foreman-code/contracts/product'
 import { ClaudeMcpServerNameSchema, ClaudeMcpServerSchema, ClaudeSupportedMcpServersSchema,
@@ -32,8 +33,8 @@ export function ClaudeMcpConfiguration({ value, onChange, appPreset = true }: {
     setName(''); setUrl(''); setError(undefined)
   }
   return <section className="harness-form-stack" aria-label="Claude MCP configuration">
-    <p>Claude supports the Foreman Code app MCP connection. External MCP servers are not supported because their tool manifests cannot be verified. Save changes below to apply them to future configurations.</p>
-    {appPreset ? <div className="harness-section-heading"><div><strong>Foreman Code MCP</strong><p className="harness-muted">The app delivers a scoped credential at authorized execution. Adding this connection does not grant tool access or qualify Claude.</p></div>
+    <h4>MCP connections <InfoHint label="MCP connections">Claude supports the Foreman Code app MCP connection. External MCP servers are not supported because their tool manifests cannot be verified. Save changes below to apply them to future configurations.</InfoHint></h4>
+    {appPreset ? <div className="harness-section-heading"><div><strong>Foreman Code MCP</strong><InfoHint label="Foreman Code MCP">The app delivers a scoped credential at authorized execution. Adding this connection does not grant tool access or qualify Claude.</InfoHint></div>
       <Button size="sm" disabled={!setup.data?.graphqlMcp || appConfigured}
         onClick={() => { if (setup.data?.graphqlMcp) setServer(PRODUCT_SLUG, setup.data.graphqlMcp) }}>{appConfigured ? 'Foreman Code added' : 'Add Foreman Code MCP'}</Button>
     </div> : null}
@@ -48,6 +49,5 @@ export function ClaudeMcpConfiguration({ value, onChange, appPreset = true }: {
       <TextField label="MCP endpoint" value={url} placeholder="https://example.com/mcp" onChange={event => setUrl(event.target.value)} /></div>
     {error ? <p role="alert" className="n-field-error">{error}</p> : null}
     <Button size="sm" disabled={!name.trim() || !url.trim()} onClick={add}>Add HTTP MCP server</Button>
-    <p className="harness-muted">Only the app HTTP connection is supported. Tool access still requires an accepted manifest, application grants and tool permissions.</p>
   </section>
 }

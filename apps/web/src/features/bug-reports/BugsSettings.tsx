@@ -1,3 +1,4 @@
+import { InfoHint } from '../../shared/ui/InfoHint'
 import {
   BugReportSeveritySchema,
   BugReportStatusSchema,
@@ -51,7 +52,7 @@ export function BugsSettings({ search, onSearchChange }: {
   delete filters.reportId
   const history = search.view === 'history'
   return <section className="settings-editor-page" aria-label="Bug reports">
-    <header className="settings-experience-heading"><h1 ref={heading} tabIndex={-1}>Bugs</h1></header>
+    <header className="settings-experience-heading"><h1 ref={heading} tabIndex={-1}>Bugs</h1><InfoHint label="Bugs">Reports submitted by Agents appear here. Closed reports are in history.</InfoHint></header>
     <div className="bug-report-filters">
       <Select label="Show reports" value={search.view ?? 'active'}
         options={[{ value: 'active', label: 'Active' }, { value: 'history', label: 'History' }]}
@@ -83,9 +84,7 @@ export function BugsSettings({ search, onSearchChange }: {
     {reports.isError && <Alert live tone="danger" title={reports.error.message}
       action={<Button disabled={reports.isFetching} onClick={() => void reports.refetch()}>Refresh bug reports</Button>} />}
     {!reports.isPending && !reports.isError && !items.length && <EmptyState
-      title={history ? 'No closed bug reports' : 'No active bug reports'}
-      description={history ? 'Reports closed as fixed, won’t fix or duplicate appear here.'
-        : 'Reports submitted by Agents appear here. Closed reports are in history.'} />}
+      title={history ? 'No closed bug reports' : 'No active bug reports'} />}
     {items.length > 0 && <ul className="settings-choice-grid bug-report-list" aria-label="Bug reports, newest first">
       {items.map(report => <ReportCard key={report.id} report={report}
         onSelect={() => onSearchChange({ ...filters, reportId: report.id })} />)}
