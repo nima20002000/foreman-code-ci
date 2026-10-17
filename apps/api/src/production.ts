@@ -1844,9 +1844,6 @@ function configureOperatorChat(composition: ProductionComposition) {
     if (binding) operatorAccountBindings.set(conversationId, binding)
     else operatorAccountBindings.delete(conversationId)
   }
-  resolveOperatorManager.modelOptions = async configuration =>
-    configuration.harness === 'opencode' ? []
-      : (await composition.nativeConfigurations.options(configuration.harness)).models
   resolveOperatorManager.recoverCompaction = recoverChatCompaction
   composition.chat = new OperatorChatService(
     operatorConversations, operators,
@@ -1957,8 +1954,7 @@ function configureAgentChat(composition: ProductionComposition) {
     if (!row || row.agent_configuration_version_id !== configuration.id) {
       throw new DomainError('PLACEMENT_BINDING_CONFLICT', 'The chat configuration changed.', 409)
     }
-    const executionId = row.record.origin.kind === 'run_execution' && !row.record.sourceConfigurationVersionId
-      ? row.record.origin.executionId : undefined
+    const executionId = row.record.origin.kind === 'run_execution' ? row.record.origin.executionId : undefined
     const selected = await agentChatProfileSelection(configuration, sessionStartDirectory(start), executionId)
     return recoverChatCompaction(configuration, conversationId, session, start, state, principalId, signal,
       selected.profileSelection, selected.sourceExecution)
@@ -1976,9 +1972,6 @@ function configureAgentChat(composition: ProductionComposition) {
     }
     return undefined
   }
-  resolveAgentChatManager.modelOptions = async configuration =>
-    configuration.harness === 'opencode' ? []
-      : (await composition.nativeConfigurations.options(configuration.harness)).models
   resolveAgentChatManager.release = (conversationId) => { agentChatManagers.delete(conversationId) }
   composition.agentChat = new AgentChatService(database.pool, agentConversations,
     new PostgresOperatorConversationRepository(database.pool, accountConfigurations), workflows, runs, resolveAgentChatManager, config.harnesses.workspaceRoot)
@@ -2803,8 +2796,7 @@ async function initializeComputerServices(composition: ProductionComposition, ma
   const cloudOptions = { activeRuns: () => activeCiRuns(database.pool) }
   const clouds = cloudCis(machine.installationId, workspaceMirrors(database.pool), cloudOptions)
   const circleOrgs = circleCiOrgs(clouds, machine.installationId, workspaceMirrors(database.pool),
-    workspaceMirrorList(database.pool), { ...cloudOptions,
-      runningOrganizations: runningCircleCiOwners(database.pool, machine.installationId) })
+    workspaceMirrorList(database.pool), { ...cloudOptions, runningOwners: runningCircleCiOwners(database.pool) })
   const discoverClouds = () => circleOrgs.refresh()
   const circleCredits = new CircleCreditUsage(new CloudHttp(systemHostCiPorts(), 'circleci'), {
     allowance: async () => (await composition.foundationSettings.getCircleCreditAllowance()).value,
