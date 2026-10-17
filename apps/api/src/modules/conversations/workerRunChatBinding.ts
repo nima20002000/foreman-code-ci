@@ -8,6 +8,7 @@ import { configurationWithNodeSkills } from '../skills/nodeSkills.js'
 import { verifiedSkills } from '../skills/instructions.js'
 import { DomainError } from '../errors.js'
 import { harnessSessionChanged } from '../harnesses/providerAccountConfiguration.js'
+import { definedProperties } from '../definedProperties.js'
 
 interface RunChatSource {
   native_session_id: string | null
@@ -20,6 +21,9 @@ interface RunChatSource {
 export function validWorkerConfigurationTransition(previous: WorkerConversationBinding, next: WorkerConversationBinding,
   base: WorkerConversationConfiguration, effective: WorkerConversationConfiguration) {
   if (validRunChatSkillsTransition(previous, next, base, effective)) return true
+  const sourceConfigurationVersionId = previous.sourceExecution
+    ? previous.sourceConfigurationVersionId ?? previous.owner.configurationVersionId
+    : previous.sourceConfigurationVersionId
   if (previous.owner.kind !== 'agent' || next.owner.kind !== 'agent' || !('agentId' in base) || !('agentId' in effective)
     || base.id === effective.id || base.id !== previous.owner.configurationVersionId
     || effective.id !== next.owner.configurationVersionId
@@ -29,8 +33,9 @@ export function validWorkerConfigurationTransition(previous: WorkerConversationB
     || commandInputHash(effective) !== next.owner.configurationHash
     || harnessSessionChanged(base.harness, effective.harness)
     || !isDeepStrictEqual(previous.profile.target, next.profile.target)
-    || !isDeepStrictEqual({ ...previous, owner: next.owner, profile: next.profile,
-      directoryBinding: next.directoryBinding }, { ...next, directoryBinding: next.directoryBinding })
+    || !isDeepStrictEqual(definedProperties({ ...previous, owner: next.owner, profile: next.profile,
+      directoryBinding: next.directoryBinding, sourceConfigurationVersionId }),
+    definedProperties({ ...next, directoryBinding: next.directoryBinding }))
     || !isDeepStrictEqual({ ...previous.owner, configurationVersionId: next.owner.configurationVersionId,
       configurationHash: next.owner.configurationHash }, next.owner)) return false
   if (base.harness.harness === 'claude' && effective.harness.harness === 'claude'
