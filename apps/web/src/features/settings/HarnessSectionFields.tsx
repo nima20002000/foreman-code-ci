@@ -1,4 +1,3 @@
-import { InfoHint } from '../../shared/ui/InfoHint'
 import type { ReactNode } from 'react'
 import { changeCodexSandbox, withAdvancedDefaults, type CodexAdvancedConfiguration, type HarnessConfiguration } from '@foreman-code/contracts'
 import type { HarnessSettingsSection } from '@foreman-code/contracts/management'
@@ -24,10 +23,11 @@ export function HarnessSectionFields({ editor, onChange, section, issues = [], r
   if (value.harness === 'claude') return <div className="harness-section-fields">
     {section === 'model' || section === 'permissions' ? <HarnessBasicFields value={value} onChange={change} issues={issues}
       qualified={qualified} checking={checking} checkError={checkError} /> : section === 'session' ? <>
-      <p>Accepted instructions <InfoHint label="Accepted instructions">Claude sessions use the accepted profile. Native hooks, plugins and agents are excluded.</InfoHint>: {value.instructions || 'None'}</p>
+      <p>Claude sessions use the accepted profile. Native hooks, plugins and agents are excluded.</p>
+      <p>Accepted instructions: {value.instructions || 'None'}</p>
     </> : section === 'connections' ? <ClaudeMcpConfiguration value={value} onChange={change} />
       : section === 'tools' ? <HarnessMcpPolicies editor={editor} onChange={onChange} /> : <>
-      <h4>Access &amp; approvals <InfoHint label="Access & approvals">Claude uses the tools, approval rules and MCP servers pinned in this configuration. App approval routing is preserved.</InfoHint></h4>
+      <p>Claude uses the tools, approval rules and MCP servers pinned in this configuration. App approval routing is preserved.</p>
       <p>Enabled tools: {value.tools.join(', ') || 'None'}</p>
       {value.permissionRules.map((rule) => <p key={rule.tool}>{rule.tool}: {rule.effect}</p>)}
       {Object.entries(value.mcpServers).map(([name, server]) => <p key={name}>{name}: {server.url}</p>)}
@@ -44,9 +44,8 @@ export function HarnessSectionFields({ editor, onChange, section, issues = [], r
                   onChange={(event) => codex({ ...value.advanced!, approvalPolicy: event.target.value as CodexAdvancedConfiguration['approvalPolicy'] })} />
                 <Select label="Approval reviewer" value={value.advanced!.approvalsReviewer} error={error('advanced.approvalsReviewer')}
                   options={[{ value: 'user', label: 'User / app routing' }, { value: 'auto_review', label: 'Codex automatic review', disabled: routedApproval && !allowAutoReview }]}
-                  labelHint={allowAutoReview || routedApproval ? <InfoHint label="Approval reviewer">{allowAutoReview
-                    ? 'Codex reviews this Agent’s native requests. Other Agents keep their own approval settings.'
-                    : 'This workflow uses app approval routing.'}</InfoHint> : undefined}
+                  hint={allowAutoReview ? 'Codex reviews this Agent’s native requests. Other Agents keep their own approval settings.'
+                    : routedApproval ? 'This workflow uses app approval routing.' : undefined}
                   onChange={(event) => codex({ ...value.advanced!, approvalsReviewer: event.target.value as CodexAdvancedConfiguration['approvalsReviewer'] })} />
               </div>
               {value.sandbox === 'workspace-write' ? <>

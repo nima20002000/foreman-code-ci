@@ -4,7 +4,6 @@ import type pg from 'pg'
 
 import { interactionConnection } from './connection.js'
 import { DomainError } from '../errors.js'
-import { RUN_CLEANUP_BOUNDARY_SQL } from './wave25/cleanupAuthority.js'
 import {
   INTERACTION_DELIVERY_LEASE_MS,
   matchingDeliveryEvidence,
@@ -281,12 +280,6 @@ export class PostgresInteractionDeliveryRepository {
        where ($1::text is null or d.id>$1) and (
          (d.status='delivery_pending' and not exists (
            select 1 from interaction_delivery_attempts a where a.interaction_id=d.id and a.lease_expires_at>clock_timestamp()))
-         -- A failure before native dispatch began is definitely unsent: retry it while its Run is open.
-         or (d.status='delivery_failed' and d.record->>'kind' is distinct from 'work_direction'
-           and d.record->>'deliveryState'='failed' and not exists (
-           select 1 from interaction_delivery_attempts a where a.interaction_id=d.id
-             and (a.approval_write_started_at is not null or a.lease_expires_at>clock_timestamp()))
-           and exists (select 1 from runs r where r.id=d.run_id and not ${RUN_CLEANUP_BOUNDARY_SQL}))
          or (d.record->>'kind' is distinct from 'work_direction' and d.record->>'deliveryState'='delivered' and (g.interaction_id is null or
            (g.state in ('pending','resuming','blocked') and (g.lease_expires_at is null or g.lease_expires_at<=clock_timestamp())))))
        order by d.id limit $2`, [input.afterId ?? null, input.limit],

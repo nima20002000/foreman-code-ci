@@ -154,7 +154,7 @@ it('keeps a deep-linked active workflow visible without fetching intervening pag
   expect(await screen.findByRole('button', { name: /^Zeta/ })).toHaveAttribute('aria-current', 'page')
   expect(await screen.findByRole('button', { name: /^Alpha/ })).toBeVisible()
   expect(screen.getAllByRole('button').filter(button => button.classList.contains('workflow-navigation-item'))).toHaveLength(6)
-  expect(screen.queryByText('Selected workflow')).not.toBeInTheDocument()
+  expect(screen.getByText('Selected workflow')).toBeVisible()
   for (const name of ['Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo']) {
     expect(screen.getByRole('button', { name: new RegExp(`^${name}`) })).toBeVisible()
   }

@@ -49,7 +49,7 @@ export function RuntimeInstanceBoundary({ children }: { children: ReactNode }) {
   if (identity.isError || build.isError && !build.data || storageFailed) return <main className="runtime-screen"><section className="runtime-card" role="alert">
     <h1>Could not verify this app</h1>
     <p>{storageFailed ? 'Browser storage is unavailable. Allow storage for this app, then try again.'
-      : 'The app connection could not be verified.'}</p>
+      : 'The app connection could not be verified. Your saved drafts have not been changed.'}</p>
     <Button variant="primary" onClick={() => { setStorageFailed(false); void identity.refetch(); void build.refetch() }}>Try again</Button>
   </section></main>
   if (!current || !build.data || current !== accepted || reloading.current) {
