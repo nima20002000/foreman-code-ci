@@ -19,7 +19,6 @@ import { resolveRuntimeProviderAccount } from '../providerAccountRuntime.js'
 import { requireClaudeProductionCredentialDelivery } from './productionCredentials.js'
 
 import { detectedClaudeProfilePath } from './profilePath.js'
-export { detectedClaudeProfilePath } from './profilePath.js'
 
 export function productionClaudeMetadata(input: {
   registry: ProductionHarnessRegistry; processes: Pick<NativeProcessRegistry, 'reserveLaunch' | 'abandonReservedLaunch' | 'closeOwner'>; settings: HarnessInstanceSettingsRepository
