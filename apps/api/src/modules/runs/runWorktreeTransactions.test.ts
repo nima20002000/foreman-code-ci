@@ -29,12 +29,9 @@ async function fixture(options: { existing?: boolean; stopDuringFetch?: boolean 
     if (text.startsWith('begin')) inTransaction = true
     if (text === 'commit' || text === 'rollback') inTransaction = false
     if (text.includes('pg_try_advisory_lock')) return { rows: [{ locked: true }], rowCount: 1 }
-    if (text.includes('select w.run_id')) {
-      return { rows: tree ? [{ run_id: run.id, allocation_id: '' }] : [], rowCount: tree ? 1 : 0 }
-    }
+    if (text.includes('select w.run_id')) return { rows: tree ? [{ run_id: run.id }] : [], rowCount: tree ? 1 : 0 }
     if (text.includes('from run_worktrees')) {
-      return { rows: tree ? [{ repository_root: root, record: structuredClone(tree),
-        checkout_root: tree.workingDirectory, cleanup_attempts: 0 }] : [], rowCount: tree ? 1 : 0 }
+      return { rows: tree ? [{ repository_root: root, record: structuredClone(tree) }] : [], rowCount: tree ? 1 : 0 }
     }
     if (text.includes('from harness_executions')) return { rows: [], rowCount: 0 }
     if (text.includes('select 1 from runs r')) return { rows: stopped ? [{}] : [], rowCount: stopped ? 1 : 0 }
