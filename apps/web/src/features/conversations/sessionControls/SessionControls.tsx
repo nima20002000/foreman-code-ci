@@ -61,8 +61,7 @@ export function SessionContext({ controls }: { controls: ComposerSessionControls
           <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="2.5"
             strokeDasharray={`${Math.min(100, percentage) * .5655} 56.55`} transform="rotate(-90 12 12)" />
         </svg>
-        <span aria-hidden="true">{context ? `${percentage}%`
-          : `${capacity!.toLocaleString()} of ${capacity!.toLocaleString()} left`}</span>
+        <span aria-hidden="true">{`${percentage}%`}</span>
       </Button>
       {open ? <div ref={surface} popover="manual" id={`${id}-context`} className="session-context-popover" onKeyDown={event => {
         if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close() }
