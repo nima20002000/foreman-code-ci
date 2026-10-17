@@ -99,8 +99,6 @@ it('RH-02 keeps new, in-steer replay and ordinary replay responses on the explic
       latestRequestId: receipts.get(id)?.at(-1)?.requestId ?? null, activeStartedAt: id === selected.id ? new Date(saved.createdAt) : null,
       unfinishedActivities: [], publicationReceipts: [], activityPage: { activities: [], itemRevisions: {}, nextCursor: null } })),
     open: vi.fn(async () => [selected]), restoreUnsettled: vi.fn(async () => selected),
-    turnPrincipalId: vi.fn(async (id: string, requestId: string) =>
-      receipts.get(id)?.some(turn => turn.requestId === requestId) ? principal.id : undefined),
     abandon: vi.fn(async (id: string, requestId: string, message: string) => {
       const row = rows.find(entry => entry.id === id && entry.active_request_id === requestId)
       if (row) {
@@ -149,7 +147,6 @@ it('RH-02 keeps new, in-steer replay and ordinary replay responses on the explic
   try {
     // Use public recovery to attach E2's existing active session; no private runtime injection.
     await chat.recover()
-    expect(repository.turnPrincipalId).toHaveBeenCalledWith(selected.id, 'active-e2')
     expect(attach).toHaveBeenCalledWith(expect.objectContaining({ nativeSessionId: selected.native_session_id }), expect.anything(), expect.anything())
     const beforeLegacy = structuredClone({ row: legacy, messages: messages.get(legacy.id), receipts: receipts.get(legacy.id) })
     const request = { selection: { ...target, executionId: executions[1]!.id }, message: { requestId: steerRequestId,

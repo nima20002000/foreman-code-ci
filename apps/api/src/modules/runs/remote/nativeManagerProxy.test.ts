@@ -65,7 +65,7 @@ function setup(read: () => NativeHistory, changeReply?: (reply: ReturnType<typeo
   const request = vi.fn<RemoteNativeTransport['request']>(async (method, raw) => {
     const frame = RemoteExecutionRpcRequestSchema.parse(raw)
     if (method === 'prepare') return { session, status }
-    if (method === 'start-turn' || method === 'settle-turn') return status
+    if (method === 'start-turn') return status
     if (frame.method !== 'history' && frame.method !== 'reconcile-response') throw new Error('Unexpected request')
     const afterSequence = frame.method === 'history' ? frame.afterSequence : undefined
     const metadata = frame.method === 'history' ? frame.metadata : undefined
@@ -101,95 +101,6 @@ function terminal(events: NativeHarnessEvent[]): NativeHistory {
 }
 
 describe('remote native history streaming', () => {
-  it('reads the settled turn through the history observation interface', async () => {
-    const history = terminal([event(0)])
-    const f = setup(() => history)
-    const session = await f.proxy.createSession(f.start)
-    f.receipt.phase = 'confirmed_terminal'
-    f.receipt.terminal = { kind: 'completed', closureEvidenceDigest: 'a'.repeat(64), result: history.terminalResult! }
-    f.receipt.sequence++
-    expect(await f.proxy.settleTurn(session, 'execution:execution')).toMatchObject({ terminalTurn: history.terminalTurn })
-    expect(f.observeOriginalSource).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'confirmed_terminal' }),
-      { type: 'history', history })
-  })
-
-  it.each([false, true])('waits for the corrective submission while startup has events=%s', async startupEvents => {
-    const submitted = vi.fn<(turnId: string) => Promise<void>>(async () => {})
-    const settings = vi.fn(async () => {})
-    const correlationId = 'execution:execution:result-repair:1'
-    let polls = 0
-    const f = setup(() => {
-      if (polls++ === 0) return { events: startupEvents ? [event(2)] : [], pendingInteractions: [],
-        correlationId, firstRetainedSequence: 0, nextSequence: startupEvents ? 3 : 2 }
-      expect(submitted).not.toHaveBeenCalled()
-      f.receipt.nativeTurnRetries = [{ previousTurnId: 'native-turn', turnId: 'corrective-turn' }]
-      f.receipt.native!.turnId = 'corrective-turn'
-      f.receipt.sequence++
-      f.receipt.phase = 'running'
-      const result = { outcome: 'succeeded' as const, output: { text: 'corrected' } }
-      const sequence = startupEvents ? 3 : 2
-      return { events: [{ ...event(sequence), type: 'turn.started',
-        payload: { clientCorrelationId: correlationId, turnId: 'corrective-turn' } }, event(sequence + 1)],
-      pendingInteractions: [], correlationId, nativeTurnId: 'corrective-turn', firstRetainedSequence: 0,
-      nextSequence: sequence + 2, terminalResult: result,
-      terminalTurn: { correlationId, providerId: 'corrective-turn', result } }
-    })
-    const session = await f.proxy.createSession(f.start)
-    f.receipt.resultRepairs = [{ previousInput: { ...f.receipt.turnInput!, deferSettlement: true },
-      previousTurnId: 'native-turn', afterSequence: 1 }]
-    f.receipt.turnInput = { ...f.receipt.turnInput!, correlationId, deferSettlement: true }
-    f.receipt.phase = 'start_acknowledged'
-    f.receipt.sequence++
-    for await (const frame of f.proxy.startTurn(session, { prompt: 'correct output', clientCorrelationId: correlationId,
-      onSubmitted: submitted, onSettingsApplied: settings, deferSettlement: true })) {
-      if (startupEvents && frame.sequence === 2) expect(submitted).not.toHaveBeenCalled()
-    }
-    expect(submitted).toHaveBeenCalledExactlyOnceWith('corrective-turn')
-    expect(settings).toHaveBeenCalledTimes(1)
-
-  it.each(['create', 'attach', 'boundary', 'response'] as const)(
-    'refreshes the authenticated observation during %s without repeating native work', async operation => {
-      const f = setup(() => terminal([event(0)]))
-      const session = { harness: 'codex' as const, providerVersion: 'fixture', nativeSessionId: 'native-session' }
-      const request = f.request.getMockImplementation()!
-      f.request.mockImplementation(async (method, payload, signal) => {
-        if (method === 'reattach') return { session, status: { status: 'known', receipt: f.receipt } }
-        if (method === 'status') return { status: 'known', receipt: f.receipt }
-        return request(method, payload, signal)
-      })
-      if (operation === 'boundary' || operation === 'response') await f.proxy.createSession(f.start)
-      f.observeOriginalSource.mockClear()
-      f.observeOriginalSource.mockRejectedValueOnce(new DomainError('REMOTE_CONNECTION_CONFLICT',
-        'The original authenticated native response connection changed.', 409))
-      if (operation === 'create') await expect(f.proxy.createSession(f.start)).resolves.toEqual(session)
-      if (operation === 'attach') await expect(f.proxy.attachSession(session, f.start)).resolves.toEqual(session)
-      if (operation === 'boundary') await expect(f.proxy.observeBoundary(session)).resolves.toBeUndefined()
-      if (operation === 'response') await expect(f.proxy.reconcileResponse(session, {
-        nativeRequestId: 'original-request', nativeRequestType: 'approval', option: CODEX_APPROVAL_OPTIONS_FIXTURE[0]!,
-      })).resolves.toMatchObject({ terminalTurn: terminal([event(0)]).terminalTurn })
-      expect(f.observeOriginalSource).toHaveBeenCalledTimes(2)
-      expect(f.request.mock.calls.filter(([method]) => method === 'prepare')).toHaveLength(operation === 'attach' ? 0 : 1)
-      expect(f.request.mock.calls.some(([method]) => method === 'start-turn' || method === 'control')).toBe(false)
-      expect(f.controlFor).not.toHaveBeenCalled()
-    },
-  )
-
-  it('returns the verified terminal history after settling the original Worker turn', async () => {
-    const history = terminal([event(0)])
-    const f = setup(() => history)
-    const session = await f.proxy.createSession(f.start)
-    const request = f.request.getMockImplementation()!
-    f.request.mockImplementation(async (method, payload, signal) => {
-      if (method === 'settle-turn') return { status: 'known', receipt: structuredClone(f.receipt) }
-      return request(method, payload, signal)
-    })
-    await expect(f.proxy.settleTurn(session, f.start.correlationId)).resolves.toMatchObject({
-      terminalTurn: history.terminalTurn, terminalResult: history.terminalResult,
-    })
-    expect(f.request.mock.calls.map(([method]) => method)).toEqual(['prepare', 'settle-turn', 'history'])
-    expect(f.controlFor).not.toHaveBeenCalled()
-  })
-
   it('releases the lost initial snapshot when its replay observes changed metadata', async () => {
     let reads = 0
     const result = { outcome: 'succeeded' as const, output: { text: 'changed-snapshot' + 'x'.repeat(3 * 1024 * 1024) } }

@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { isDeepStrictEqual as same } from 'node:util'
 import { AgentConfigurationVersionSchema, HarnessExecutionSchema, type NativeSessionReference } from '@foreman-code/contracts'
 import { REMOTE_NATIVE_SOURCE_LIMIT } from '@foreman-code/contracts/remote-workflow-physical'
-import { RemoteOperationReceiptSchema, remoteWorkflowHasTurn } from '@foreman-code/contracts/remote-execution'
+import { RemoteOperationReceiptSchema } from '@foreman-code/contracts/remote-execution'
 import type { DispatchIntent } from '@foreman-code/contracts/node-placement'
 import { ArtifactAttemptSchema } from '@foreman-code/contracts/artifact-edges'
 import { TransferContextSchema, type TransferContext } from '@foreman-code/contracts/byte-transfer'
@@ -170,9 +170,7 @@ export class WorkflowNativeFileContextAdmission {
     if (!receipt || !same(receipt.intent, intent) || receipt.stopFence || receipt.terminal
       || receipt.native?.sessionId !== capture.session.nativeSessionId || receipt.native.turnId !== turnId
       || receipt.turnInput?.correlationId !== correlationId
-      || !admission.context.turnId
-      || !remoteWorkflowHasTurn(receipt, admission.context.nativeSessionId, admission.context.turnId)
-      || !remoteWorkflowHasTurn(receipt, capture.session.nativeSessionId, turnId)) return conflict()
+      || !repairs.some(repair => repair.previousTurnId === admission.context.turnId)) return conflict()
     await assertWorkflowCorrelation(sql, capture.execution.id, correlationId)
     return { context: { ...admission.context, turnId }, correlationId }
   }

@@ -54,6 +54,8 @@ export interface WorkerConversationHostPorts {
   recover?(record: WorkerConversationReceipt, configuration: WorkerConversationConfiguration,
     connection: Readonly<DeviceSessionBinding>, signal: AbortSignal,
     request: WorkerConversationRpcRequest): Promise<WorkerConversationAllocation>
+  closePersistedRuntime?(record: WorkerConversationReceipt,
+    connection: Readonly<DeviceSessionBinding>, signal: AbortSignal): Promise<void>
   readCompaction?(request: Extract<WorkerConversationRpcRequest, { method: 'conversation.compact-read' }>,
     record: WorkerConversationReceipt, connection: Readonly<DeviceSessionBinding>, signal: AbortSignal): Promise<CompactionState>
   /** Native callbacks stay behind Main's persisted identity acknowledgement. */
@@ -101,7 +103,7 @@ export class WorkerConversationHost {
   private responseBytes = 0
   private readonly preparations = new Map<string, Resident>()
   private readonly inspections = new Set<WorkerConversationAllocation>()
-  private readonly allocating = new Map<string, Promise<unknown>>()
+  private readonly allocating = new Map<string, Promise<Resident | undefined>>()
   private readonly tasks = new Set<Promise<void>>()
   private readonly running = new Map<string, Readonly<DeviceSessionBinding>>()
   private readonly runningCompactions = new Set<string>()
@@ -266,7 +268,7 @@ export class WorkerConversationHost {
   }
 
   private async resident(request: WorkerConversationRpcRequest & { session: NativeSessionReference },
-    connection: Readonly<DeviceSessionBinding>, signal: AbortSignal) {
+    connection: Readonly<DeviceSessionBinding>, signal: AbortSignal, options: { purpose?: 'release' } = {}) {
     let record = await this.ports.journal.read(request.binding)
     if (this.allocating.has(request.binding.owner.conversationId)) unavailable('The native conversation is busy.')
     let resident = this.residents.get(request.binding.owner.conversationId)
@@ -274,6 +276,7 @@ export class WorkerConversationHost {
       || record.applicationAccessChange?.state === 'reserved'
       || !isDeepStrictEqual(resident.binding, request.binding)) unavailable('The original chat session is not resident.')
     if (resident.allocation.hasExited?.()) {
+      if (options.purpose === 'release') return { resident, record }
       const id = request.binding.owner.conversationId
       const original = resident
       const recovery = this.recoverResident(original, record, request, connection, signal)
@@ -758,7 +761,7 @@ export class WorkerConversationHost {
       history = { events: [], pendingInteractions: [], nonSubmission: {
         nativeSessionId: request.session.nativeSessionId, clientCorrelationId: turn.correlationId, result: turn.result,
       } }
-    } else if (request.afterSequence !== undefined && running && isDeepStrictEqual(running, connection)
+    } else if (request.method === 'conversation.history' && request.afterSequence !== undefined && running
       && manager.historyPage) {
       history = await manager.historyPage(request.session, request.afterSequence, signal)
     } else if (request.afterSequence !== undefined && request.correlationId
@@ -866,9 +869,6 @@ export class WorkerConversationHost {
     if (request.method === 'conversation.close') {
       const record = await this.ports.journal.read(request.binding)
       if (record?.closed && isDeepStrictEqual(record.session, request.session)) return { receipt: record }
-      if (record?.runtimeReleased && !this.residents.has(request.binding.owner.conversationId)) {
-        return this.closeReleasedSession(request, record, connection)
-      }
     }
     if (!('session' in request)) unavailable('This native operation requires its conversation session.')
     const { resident, record } = await this.resident(request, connection, signal)
@@ -949,44 +949,37 @@ export class WorkerConversationHost {
   private async releaseRuntime(request: WorkerConversationRpcRequest & { session: NativeSessionReference },
     connection: Readonly<DeviceSessionBinding>, signal: AbortSignal) {
     const saved = await this.ports.journal.read(request.binding)
-    if (saved?.runtimeReleased && isDeepStrictEqual(saved.session, request.session)) return { receipt: saved }
-    const { resident, record } = await this.resident(request, connection, signal)
+    if (!saved?.nativeOwner || !isDeepStrictEqual(saved.session, request.session)) {
+      unavailable('The original chat session is unavailable.')
+    }
+    for (const field of ['mainId', 'deviceId', 'workerInstallationId', 'keyRevision', 'authorizationRevision'] as const) {
+      if (saved.connection[field] !== connection[field]) unavailable('The original paired worker authority changed.')
+    }
+    if (saved.runtimeReleased) {
+      return { receipt: await this.ports.journal.rebind(request.binding, connection, saved.nativeOwner) }
+    }
     const id = request.binding.owner.conversationId
+    let resident: Resident | undefined
+    let record = saved
+    if (this.residents.has(id)) {
+      const owned = await this.resident(request, connection, signal, { purpose: 'release' })
+      resident = owned.resident
+      record = owned.record
+    }
     if (this.hasRunningOperation(id) || record.turns.some(turn => !['completed', 'rejected'].includes(turn.status))
       || record.compactions.some(control => compactionBlocksSend(control.state))) {
       unavailable('Finish the active operation before releasing its native process.')
     }
     if (this.allocating.has(id)) unavailable('The native conversation is busy.')
     const closing = (async () => {
-      await resident.allocation.close()
-      await this.ports.journal.runtimeReleased(request.binding)
+      if (resident) await resident.allocation.close()
+      else {
+        if (!this.ports.closePersistedRuntime) unavailable('The persisted native process closure cannot be confirmed.')
+        await this.ports.closePersistedRuntime(record, connection, signal)
+      }
+      await this.ports.journal.runtimeReleased(request.binding, connection)
       this.residents.delete(id)
       return resident
-    })()
-    this.allocating.set(id, closing)
-    try { await closing } finally { if (this.allocating.get(id) === closing) this.allocating.delete(id) }
-    return { receipt: await this.ports.journal.read(request.binding) }
-  }
-
-  private async closeReleasedSession(request: WorkerConversationRpcRequest & { session: NativeSessionReference },
-    record: WorkerConversationReceipt, connection: Readonly<DeviceSessionBinding>) {
-    const id = request.binding.owner.conversationId
-    const nativeOwner = record.nativeOwner
-    if (!nativeOwner || !isDeepStrictEqual(record.session, request.session)
-      || this.allocating.has(id) || this.hasRunningOperation(id)
-      || record.turns.some(turn => !['completed', 'rejected'].includes(turn.status))
-      || record.compactions.some(control => compactionBlocksSend(control.state))) {
-      unavailable('The persisted session is unavailable or still busy.')
-    }
-    for (const field of ['mainId', 'deviceId', 'workerInstallationId', 'keyRevision', 'authorizationRevision'] as const) {
-      if (record.connection[field] !== connection[field]) unavailable('The original paired worker authority changed.')
-    }
-    const closing = (async () => {
-      if (!isDeepStrictEqual(record.connection, connection)) {
-        await this.ports.journal.rebind(request.binding, connection, nativeOwner)
-      }
-      await this.ports.journal.closeRequested(request.binding)
-      await this.ports.journal.closeConfirmed(request.binding)
     })()
     this.allocating.set(id, closing)
     try { await closing } finally { if (this.allocating.get(id) === closing) this.allocating.delete(id) }

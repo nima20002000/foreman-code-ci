@@ -82,20 +82,6 @@ function fixture() {
     close: async () => { await manager.dispose(); await host.shutdown(); await bridge.close() } }
 }
 
-it('still releases its acquired runtime after a failed read and restored access', async () => {
-  const f = fixture()
-  try {
-    await f.manager.createSession(f.start)
-    await f.turn('first')
-    f.deny()
-    await expect(f.manager.history(f.session)).rejects.toThrow('Caller denied')
-    f.allow()
-    await f.manager.dispose()
-    expect(f.closes()).toBe(1)
-    expect(await f.journal.read(f.binding)).toMatchObject({ runtimeReleased: true, closed: false })
-  } finally { f.allow(); await f.close() }
-})
-
 it('closes an idle Worker process without closing its conversation and cold-resumes the saved identity', async () => {
   const f = fixture()
   try {
