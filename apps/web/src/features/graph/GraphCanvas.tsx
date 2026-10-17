@@ -161,7 +161,7 @@ export const GraphCanvas = memo(function GraphCanvas({
         onConnect={onConnect} onPaneClick={onPaneClick} isValidConnection={isValidConnection} connectionRadius={120}
         onConnectStart={() => setConnecting(true)} onConnectEnd={() => setConnecting(false)}
         onClickConnectStart={() => setConnecting(true)} onClickConnectEnd={() => setConnecting(false)}
-        nodesDraggable={false} nodesConnectable={!readOnly} elementsSelectable
+        nodesDraggable={!readOnly} nodesConnectable={!readOnly} elementsSelectable
         panOnDrag zoomOnScroll deleteKeyCode={null} fitView fitViewOptions={fitViewOptions} minZoom={RESPONSIVE_MIN_ZOOM}
         defaultEdgeOptions={defaultEdgeOptions} proOptions={proOptions}
         aria-label={readOnly ? 'Run graph canvas' : 'Workflow editor canvas'} onInit={handleInit} onMove={onMove}>
