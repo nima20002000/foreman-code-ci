@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { IconButton, Icon } from '../../shared/ui/nocturne'
 import { useFloatingSurface } from '../../shared/ui/nocturne/useFloatingSurface'
 import './activitiesPopover.css'
@@ -18,9 +18,20 @@ function PopoverSurface({ onClose, findAnchor, children }: { onClose(): void; fi
   // The toolbar button may mount after the popover (a deep link opens it), so it is looked up again on every event.
   const find = useRef(findAnchor)
   find.current = findAnchor
-  // Parent toolbar refs are attached before passive effects, including on initial open.
-  useEffect(() => { anchor.current = find.current() }, [])
-  useFloatingSurface(true, anchor, surface, 420, 'end')
+  // A deep link can open the popover before the toolbar button exists; show it as soon as the button appears.
+  const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
+  anchor.current = anchorEl
+  useEffect(() => {
+    const found = find.current()
+    if (found) { setAnchorEl(found); return }
+    const watch = new MutationObserver(() => {
+      const next = find.current()
+      if (next) { setAnchorEl(next); watch.disconnect() }
+    })
+    watch.observe(document.body, { childList: true, subtree: true })
+    return () => watch.disconnect()
+  }, [])
+  useFloatingSurface(anchorEl !== null, anchor, surface, 420, 'end')
   useEffect(() => {
     const onButton = (target: EventTarget | null) => target instanceof Node && !!find.current()?.contains(target)
     const outside = (event: PointerEvent) => {
