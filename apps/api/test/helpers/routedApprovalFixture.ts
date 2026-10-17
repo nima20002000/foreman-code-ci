@@ -3,8 +3,8 @@ import { vi } from 'vitest'
 import { codexApprovalRuntime } from './codexApprovalRuntime.js'
 
 /** Shared Save/Start and Codex adapter events with replayed external provider IO. */
-export async function routedApprovalFixture(options: Parameters<typeof codexApprovalRuntime>[1] = {}) {
-  const runtime = await codexApprovalRuntime('orchestrator', options)
+export async function routedApprovalFixture() {
+  const runtime = await codexApprovalRuntime('orchestrator')
   try {
     // Tests control dispatch timing; enqueue and every lease/evidence transition
     // still use the production coordinator and dispatcher.
