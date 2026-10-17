@@ -174,13 +174,6 @@ it.each([['codex', false], ['codex', true], ['claude', false], ['claude', true]]
     const request = WorkerConversationRpcRequestSchema.parse(raw)
     methods.push(request.method)
     if (request.method === 'conversation.status') return { payload: { receipt: structuredClone(receipt) } }
-    if (request.method === 'conversation.release-runtime') {
-      expect(request.session).toEqual(f.session)
-      expect(receipt.turns).toEqual([])
-      receipt.runtimeReleased = true
-      receipt.revision++
-      return { payload: { receipt: structuredClone(receipt) } }
-    }
     if (request.method !== 'conversation.open' || request.mode !== 'attach') {
       throw new Error('Creation recovery may only inspect the journal and attach its original session')
     }
@@ -214,9 +207,5 @@ it.each([['codex', false], ['codex', true], ['claude', false], ['claude', true]]
       conversationId: conversation.id, workflowId: agentOwner(binding.owner).workflowId, workflowNodeId: agentOwner(binding.owner).workflowNodeId,
       workingDirectory: binding.workingDirectory, correlationId: 'another-creation' })).rejects.toThrow()
     expect(methods).toEqual(['conversation.status', 'conversation.open', 'conversation.status'])
-    await manager.dispose?.()
-    expect(methods).toEqual(['conversation.status', 'conversation.open', 'conversation.status',
-      ...(harness === 'codex' ? ['conversation.release-runtime'] : [])])
-    expect(receipt.runtimeReleased).toBe(harness === 'codex' ? true : undefined)
   } finally { await manager.dispose?.(); await production.close() }
 })

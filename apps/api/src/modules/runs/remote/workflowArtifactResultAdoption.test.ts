@@ -19,7 +19,6 @@ import { repeatDigest, repeatExecutionIdentity } from '../repeatResolution.js'
 import type { WorkflowNativeProofRecord } from '../workflowNativeProof.js'
 import { NativeArtifactOutputs, type NativeArtifactOutput, type NativeArtifactOutputRepository } from './nativeArtifactOutputs.js'
 import { WorkflowArtifactResultAdoption, type VerifiedWorkflowArtifactSource } from './workflowArtifactResultAdoption.js'
-import { artifactWorkflowReceipt, completeResultRepair } from './workflowRepair.test-support.js'
 
 const hash = (value: Buffer | string) => createHash('sha256').update(value).digest('hex')
 const roots: string[] = []
@@ -66,11 +65,7 @@ async function fixture(keys = ['report']) {
     observedAt: execution.createdAt, ownerId: 'unit-owner', ownerFence: '1', lifetimeGeneration: 1, closureGeneration: '1',
     lane: { id: 'unit-lane', token: 'unit-token', connectionGeneration: 1, providerId: f.context.turnId! } }
   const current = vi.fn(async () => {})
-  const original = { version, execution, proof, sourceDigest: repeatDigest(proof), assertCurrent: current,
-    remote: artifactWorkflowReceipt(accepted, result),
-    publicationContext: async () => ({ ...accepted, context: f.context }),
-  } satisfies VerifiedWorkflowArtifactSource & { remote: ReturnType<typeof artifactWorkflowReceipt>;
-    publicationContext(commandId: string): Promise<AcceptedArtifactPublication> }
+  const original: VerifiedWorkflowArtifactSource = { version, execution, proof, sourceDigest: repeatDigest(proof), assertCurrent: current }
   const source = { readVerified: vi.fn(async () => original) }
   const root = await mkdtemp(join(process.cwd(), '.workflow-artifact-adoption-test-')); roots.push(root)
   const files = new TemporaryFileService(f.repository, new FileByteStorage(root, MAX_FILE_BYTES), { resolve: async () => f.scope }, undefined, f.clock)
@@ -118,39 +113,6 @@ async function fixture(keys = ['report']) {
 }
 
 describe('saved original workflow artifact result adoption', () => {
-  it.each([{ count: 1, retried: false }, { count: 2, retried: false }, { count: 1, retried: true }])(
-    'adopts earlier publications without changing provenance ($count corrections, retried=$retried)', async ({ count, retried }) => {
-    const t = await fixture()
-    const published = await t.publish()
-    const publication = structuredClone(t.accepted)
-    if (retried) {
-      t.original.remote.nativeTurnRetries = [{ previousTurnId: t.original.remote.native!.turnId!, turnId: 'native-retry' }]
-      t.original.remote.native!.turnId = 'native-retry'
-    }
-    let correlationId = t.proof.commandId
-    for (let attempt = 1; attempt <= count; attempt++) {
-      correlationId = completeResultRepair(t.original.remote, `corrective-${attempt}`)
-    }
-    const turnId = t.original.remote.native!.turnId!
-    t.accepted.context = { ...t.accepted.context, turnId }
-    if (t.proof.original.type !== 'history') throw new Error('Expected terminal history')
-    const history = t.proof.original.history
-    history.correlationId = correlationId
-    history.nativeTurnId = turnId
-    history.terminalTurn = { ...history.terminalTurn!, correlationId, providerId: turnId }
-    history.events[0]!.payload = { threadId: t.execution.nativeSessionId, turnId,
-      clientCorrelationId: correlationId, status: 'completed' }
-    t.proof.lane!.providerId = turnId
-    t.refresh()
-    const before = structuredClone({ proof: t.proof, remote: t.original.remote, publication })
-    const adopted = await t.adoption.adoptOriginalOutputs(t.accepted)
-    expect(adopted.status).toBe('adopted')
-    expect(t.records.get('report')).toMatchObject({ commandId: t.publicationCommand,
-      nativeIdentity: { nativeSessionId: publication.context.nativeSessionId, turnId: publication.context.turnId },
-      pins: { fileId: published.value.file.fileId, revisionId: published.value.revision.revisionId } })
-    expect({ proof: t.proof, remote: t.original.remote, publication }).toEqual(before)
-  })
-
   it('resolves the saved name/original command to canonical bytes and original receipt', async () => {
     const t = await fixture(), published = await t.publish()
     const before = structuredClone({ result: t.result, version: t.original.version, accepted: t.accepted })

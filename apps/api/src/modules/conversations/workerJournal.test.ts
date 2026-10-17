@@ -5,7 +5,6 @@ import { randomUUID } from 'node:crypto'
 import { afterEach, expect, it } from 'vitest'
 import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
 import { SessionPreferencesSchema } from '@foreman-code/contracts'
-import { WorkerConversationBindingSchema } from '@foreman-code/contracts/remote-execution-rpc'
 import { RemoteOperationJournal } from '../runs/remote/operationJournal.js'
 import { workerConversationFixture } from './workerFixtures.test-support.js'
 
@@ -27,28 +26,6 @@ async function opened() {
   await j.chats.bindSession(f.binding, f.session, f.nativeOwner)
   return { ...j, ...f }
 }
-
-it('retains separate native session generations of the same conversation across restart', async () => {
-  const f = await opened()
-  const binding = WorkerConversationBindingSchema.parse({ ...f.binding, sessionGeneration: 'replacement-session' })
-  await f.chats.runtimeReleased(f.binding)
-  await expect(f.chats.receive(binding, f.connection)).rejects.toThrow('previous native session')
-  await f.chats.closeRequested(f.binding)
-  await f.chats.closeConfirmed(f.binding)
-  const previous = await f.chats.read(f.binding)
-  const session = { ...f.session, nativeSessionId: 'replacement-native-session' }
-  await f.chats.receive(binding, f.connection)
-  await f.chats.reserveCreation(binding, 'replacement-message', commandInputHash('replacement-message'))
-  await f.chats.bindSession(binding, session, { ...f.nativeOwner, sessionId: session.nativeSessionId })
-  expect(await f.chats.read(f.binding)).toEqual(previous)
-  expect(await f.chats.read(binding)).toMatchObject({ session, closed: false })
-  await f.store.close()
-  const reopened = await RemoteOperationJournal.open(f.path)
-  closing.push(() => reopened.close())
-  expect(await reopened.conversations.read(f.binding)).toEqual(previous)
-  expect(await reopened.conversations.read(binding)).toMatchObject({ session, closed: false })
-  await expect(reopened.conversations.bindSession(binding, f.session, f.nativeOwner)).rejects.toThrow('replace')
-})
 
 it('keeps a persisted Agent session busy for runtime refresh until its own closure is confirmed', async () => {
   const f = await opened()

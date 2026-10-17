@@ -18,15 +18,13 @@ import { fileScopeIdentity } from '../../files/requests.js'
 import type { PostgresArtifactPublicationAuthority } from './nativeArtifactAuthority.js'
 import { NativeArtifactOutputSchema, type NativeArtifactOutput } from './nativeArtifactOutputs.js'
 import { DomainError } from '../../errors.js'
-import { remoteWorkflowHasTurn } from '@foreman-code/contracts/remote-execution'
 
 export interface WorkflowPhysicalArtifactsPort {
   assertPublications(sql: GraphTransactionSql, readout: RemoteWorkflowPhysicalReadout, binding: Readonly<DeviceSessionBinding>): Promise<void>
   assertAdopted(sql: GraphTransactionSql, readout: RemoteWorkflowPhysicalReadout, binding: Readonly<DeviceSessionBinding>): Promise<void>
 }
 interface Ports {
-  authority: Pick<PostgresArtifactPublicationAuthority,
-    'resolveWorkflowContext' | 'authorize' | 'authorizePublication' | 'assertSourceLive'>
+  authority: Pick<PostgresArtifactPublicationAuthority, 'resolveWorkflowContext' | 'authorize' | 'assertSourceLive'>
   files: Pick<PostgresFileRepository, 'read'>
 }
 const unavailable = (): never => { throw new DomainError('REMOTE_ARTIFACT_PHYSICAL_UNAVAILABLE',
@@ -75,15 +73,10 @@ export class PostgresWorkflowPhysicalArtifacts implements WorkflowPhysicalArtifa
         if (caller.context.nativeSessionId !== receipt.native.sessionId
           || caller.context.turnId !== receipt.native.turnId) return unavailable()
         for (const mapping of derived.artifactOutputs.outputs) {
-          const publication = await sql.query<{ record: DistributedPublicationLink }>(`select record from file_tool_publications
-            where owner_principal_id=$1 and request_id=$2 for share`,
-          [caller.principal.id, `fil05:remote:${digest(mapping.commandId)}`])
+          const publication = await sql.query(`select record from file_tool_publications
+            where owner_principal_id=$1 and request_id=$2 and binding=$3 for share`,
+          [caller.principal.id, `fil05:remote:${digest(mapping.commandId)}`, caller.binding])
           if (publication.rowCount === 0) return
-          if (publication.rowCount !== 1) return unavailable()
-          const original = { ...accepted, context: publication.rows[0]!.record.context }
-          const publisher = await this.ports.authority.authorizePublication(original, sql)
-          if (publisher.binding !== publication.rows[0]!.record.binding || !original.context.turnId
-            || !remoteWorkflowHasTurn(receipt, original.context.nativeSessionId, original.context.turnId)) return unavailable()
         }
         return unavailable()
       }
@@ -110,17 +103,13 @@ export class PostgresWorkflowPhysicalArtifacts implements WorkflowPhysicalArtifa
         const publication = await sql.query<{ record: DistributedPublicationLink;file_id:string;revision_id:string }>(`select p.record,p.file_id,p.revision_id from file_tool_publications p
           join file_allocations a on a.owner_principal_id=p.owner_principal_id and a.request_id=p.request_id
           join files f on f.file_id=p.file_id join file_revisions r on r.file_id=f.file_id and r.revision_id=p.revision_id
-          where p.owner_principal_id=$1 and p.request_id=$2 and f.owner_principal_id=p.owner_principal_id
+          where p.owner_principal_id=$1 and p.request_id=$2 and p.binding=$3 and f.owner_principal_id=p.owner_principal_id
           and a.file_id=p.file_id and a.revision_id=p.revision_id and a.state='finalized'
           and f.state='ready' and f.scope_kind='temporary' and f.expires_at>clock_timestamp() for share of p,a,f,r`,
-        [caller.principal.id, requestId])
+        [caller.principal.id, requestId, caller.binding])
         const joined=publication.rows[0],link = joined?.record
-        if (publication.rowCount !== 1 || !link || !link.context.turnId
-          || !remoteWorkflowHasTurn(receipt, link.context.nativeSessionId, link.context.turnId)) return unavailable()
-        const publicationContext = { ...accepted, context: link.context }
-        const publisher = await this.ports.authority.authorizePublication(publicationContext, sql)
         if (publication.rowCount !== 1 || !link || link.ownerPrincipalId !== caller.principal.id || link.requestId !== requestId
-          || link.binding !== publisher.binding || !same(link.context, publisher.context) || !link.publicationInputHash
+          || link.binding !== caller.binding || !same(link.context, caller.context) || !link.publicationInputHash
           ||link.ref.fileId!==joined?.file_id||link.ref.revisionId!==joined?.revision_id) return unavailable()
         const transfer = VerifiedTransferReceiptSchema.parse(link.transferReceipt)
         await this.ports.authority.assertSourceLive(accepted, transfer, sql)
@@ -132,7 +121,7 @@ export class PostgresWorkflowPhysicalArtifacts implements WorkflowPhysicalArtifa
         if (admission.rowCount !== 1 || !original || !same(original.intent, transfer.intent) || !same(original.accepted.attempt, attempt)
           ||!original.workerPrincipalId||admitted?.principal_id!==original.workerPrincipalId||admitted.command_id!==mapping.commandId
           ||admitted.target_key!==`workflow-artifact:${original.workerPrincipalId}`||admitted.input_hash!==commandInputHash(original.declaration)
-          || !same(original.accepted.context, publisher.context) || original.declaration.commandId !== mapping.commandId || original.declaration.sha256 !== transfer.sha256
+          || !same(original.accepted.context, caller.context) || original.declaration.commandId !== mapping.commandId || original.declaration.sha256 !== transfer.sha256
           || original.declaration.byteSize !== transfer.byteSize
           || workflowArtifactTransferManifestDigest(original.declaration) !== transfer.intent.manifestDigest) return unavailable()
         const stored = await this.ports.files.read(link.ref.fileId, link.ref.revisionId, sql)
@@ -141,9 +130,9 @@ export class PostgresWorkflowPhysicalArtifacts implements WorkflowPhysicalArtifa
           || stored.value.revision.fileId !== link.ref.fileId || stored.value.revision.revisionId !== link.ref.revisionId
           || stored.value.revision.sha256 !== transfer.sha256 || stored.value.revision.byteSize !== transfer.byteSize) return unavailable()
         const expected = NativeArtifactOutputSchema.parse({ version: 1, producer: attempt, outputKey: mapping.outputKey, commandId: mapping.commandId,
-          nativeIdentity: { nativeSessionId: publisher.context.nativeSessionId, turnId: publisher.context.turnId,
-            ...(publisher.context.messageId ? { messageId: publisher.context.messageId } : {}) },
-          publication: { ownerPrincipalId: publisher.principal.id, requestId, binding: publisher.binding }, pins: { ...link.ref, sha256: transfer.sha256,
+          nativeIdentity: { nativeSessionId: caller.context.nativeSessionId, turnId: caller.context.turnId,
+            ...(caller.context.messageId ? { messageId: caller.context.messageId } : {}) },
+          publication: { ownerPrincipalId: caller.principal.id, requestId, binding: caller.binding }, pins: { ...link.ref, sha256: transfer.sha256,
             byteSize: transfer.byteSize }, scope: stored.value.file.scope, transferReceipt: transfer })
         if (adopted) {
           const target = JSON.stringify([this.mainId, attempt.executionId, attempt.attemptId, mapping.outputKey])

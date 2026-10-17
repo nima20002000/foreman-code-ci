@@ -3,7 +3,7 @@ import { readProductEnvironment } from '../packages/contracts/src/productEnviron
 import { retainedHeavyJobTokens, writeHeavyJobRecord } from './heavy-job-slots.mjs'
 import { spawn, spawnSync } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
-import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, readlinkSync, rmdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, readlinkSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve, sep } from 'node:path'
@@ -203,10 +203,7 @@ async function cleanQueue() {
   const held = readJson(join(active, 'owner.json'))
   // Allow an older caller time to publish its owner after creating the directory.
   if (!held && isDirectory(active) && ageMs(active) > 10_000) {
-    try {
-      // A legacy writer can briefly leave an existing owner file empty.
-      if (readdirSync(active).length === 0) rmdirSync(active)
-    } catch (error) { warnMetadata('reap empty scheduler directory', error) }
+    rmSync(active, { recursive: true, force: true })
   }
   if (held?.common === common && (reaped.has(held.token) || await reapDeletedWorktree(held)
     || held.phase === 'running' && !alive(held)
