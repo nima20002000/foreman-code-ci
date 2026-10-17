@@ -116,7 +116,7 @@ it('opens Bugs from Settings and stores filters and report selection in the URL'
   serveReports(items)
   const router = mount('/settings')
   const user = userEvent.setup()
-  await user.click(await screen.findByRole('link', { name: /Bugs Review Agent reports and update their status/ }))
+  await user.click(await screen.findByRole('link', { name: 'Bugs' }))
   expect(await screen.findByRole('heading', { name: 'Bugs', level: 1 })).toBeVisible()
   expect(router.state.location.pathname).toBe('/settings/bugs')
   await user.selectOptions(screen.getByRole('combobox', { name: 'Filter by status' }), 'open')

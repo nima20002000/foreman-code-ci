@@ -1,5 +1,7 @@
 import type { Edge, Node, ReactFlowProps } from '@xyflow/react'
 import type { RunBoardSnapshot, RunBoardNodeSnapshot, RunBoardEdgeSnapshot } from '@foreman-code/contracts/run-snapshots'
+import { GRAPH_NODE_DEFAULT_SIZE } from '../graph/mapper'
+import { layoutHierarchy } from '../graph/hierarchyLayout'
 import type { ActivitySnapshotV1, CiActivity, WorkRef } from '@foreman-code/contracts'
 
 export type AvailableRunBoardSnapshot = Extract<RunBoardSnapshot, { kind: 'available' }>
@@ -21,10 +23,13 @@ export const READ_ONLY_FLOW_PROPS = {
 export function projectRunBoard(snapshot: AvailableRunBoardSnapshot, activity?: ActivitySnapshotV1): { nodes: SavedBoardNode[]; edges: SavedBoardEdge[] } {
   const names = new Map(snapshot.nodes.map((node) => [node.id, node.name]))
   const cis = runBoardCi(snapshot, activity)
+  // Saved positions and sizes are not drawn: a Run lays itself out as the same hierarchy the Board does.
+  const size = { width: GRAPH_NODE_DEFAULT_SIZE, height: GRAPH_NODE_DEFAULT_SIZE }
+  const placed = layoutHierarchy(snapshot.nodes.map((node) => ({ id: node.id, ...size })), snapshot.edges)
   const nodes: SavedBoardNode[] = snapshot.nodes.map((node) => ({
-    id: node.id, type: 'savedBoardNode', position: { ...node.position }, origin: [0, 0],
-    initialWidth: node.size.width, initialHeight: node.size.height,
-    style: { width: node.size.width, height: node.size.height }, data: { snapshot: node,
+    id: node.id, type: 'savedBoardNode', position: { ...placed.get(node.id)! }, origin: [0, 0],
+    initialWidth: size.width, initialHeight: size.height,
+    style: { ...size }, data: { snapshot: node,
       ...(cis.has(node.id) ? { ci: cis.get(node.id)! } : {}) },
     draggable: false, connectable: false, selectable: false, deletable: false, focusable: true,
     ariaRole: 'group', ariaLabel: `${node.name}, saved ${node.kind==='job'?'job':'agent'}, read only`,
