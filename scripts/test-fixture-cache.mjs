@@ -45,18 +45,87 @@ async function cacheEntryExists(directory) {
   }
 }
 
-async function lockCacheEntry(handle) {
+async function lockCacheEntry(handle, mode = 'exclusive', nonblocking = false) {
   // The inherited descriptor shares the lock until this parent closes it.
-  await new Promise((resolve, reject) => {
-    const child = spawn('flock', ['--exclusive', '3'], {
+  return new Promise((resolve, reject) => {
+    const args = [`--${mode}`, ...(nonblocking ? ['--nonblock', '--conflict-exit-code', '75'] : []), '3']
+    const child = spawn('flock', args, {
       stdio: ['ignore', 'ignore', 'inherit', handle.fd],
     })
     child.once('error', reject)
     child.once('close', code => {
-      if (code === 0) resolve()
+      if (code === 0) resolve(true)
+      else if (nonblocking && code === 75) resolve(false)
       else reject(new Error(`Fixture cache lock failed (${code})`))
     })
   })
+}
+
+// Returned paths remain in use for the caller's process lifetime. The OS releases
+// these shared locks on exit, including an interrupted test process.
+const cacheLeases = new Map()
+const cacheRequests = new Map()
+
+async function pruneFixtureEntries(parent) {
+  const entries = []
+  for (const name of await readdir(parent)) {
+    if (!/^[a-f0-9]{64}$/.test(name)) continue
+    const directory = join(parent, name)
+    try {
+      if (await cacheEntryExists(directory)) entries.push({ name, directory, modified: (await lstat(directory)).mtimeMs })
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error
+    }
+  }
+  entries.sort((left, right) => right.modified - left.modified || right.name.localeCompare(left.name))
+  for (const entry of entries.slice(2)) {
+    const handle = await open(join(parent, `${entry.name}.lock`), 'a', 0o600)
+    try {
+      if (await lockCacheEntry(handle, 'exclusive', true) && await cacheEntryExists(entry.directory)) {
+        await rm(entry.directory, { recursive: true, force: true })
+      }
+    } finally { await handle.close() }
+  }
+}
+
+async function acquireFixture(parent, key, populate) {
+  const directory = join(parent, key)
+  const handle = await open(join(parent, `${key}.lock`), 'a', 0o600)
+  let retained = false
+  try {
+    for (;;) {
+      await lockCacheEntry(handle, 'shared')
+      if (await cacheEntryExists(directory)) break
+      if (!await lockCacheEntry(handle, 'exclusive', true)) continue
+      if (!await cacheEntryExists(directory)) {
+        const temporary = await mkdtemp(join(parent, `${key}.pending-`))
+        try {
+          await populate(temporary)
+          await rename(temporary, directory)
+        } finally {
+          await rm(temporary, { recursive: true, force: true })
+        }
+        await pruneFixtureEntries(parent)
+      }
+      await lockCacheEntry(handle, 'shared')
+      break
+    }
+    cacheLeases.set(directory, handle)
+    retained = true
+    return directory
+  } finally {
+    if (!retained) await handle.close()
+  }
+}
+
+/** Serializes fixture builders that also share a dependency tree. */
+export async function withTestFixtureCacheLock(root, namespace, work) {
+  await mkdir(root, { recursive: true, mode: 0o700 })
+  const handle = await open(join(root, `${namespace}.lock`), 'a', 0o600)
+  try {
+    await lockCacheEntry(handle)
+    return await work()
+  } finally { await handle.close() }
 }
 
 /** Only immutable setup output is shared. Rename publishes a complete entry. */
@@ -72,31 +141,24 @@ export async function cachedTestFixture(root, namespace, inputs, populate) {
   const parent = await realpath(join(root, namespace))
   const key = hash.digest('hex')
   const directory = join(parent, key)
-  if (await cacheEntryExists(directory)) return directory
-  const handle = await open(join(parent, `${key}.lock`), 'a', 0o600)
-  try {
-    await lockCacheEntry(handle)
-    if (await cacheEntryExists(directory)) return directory
-    const temporary = await mkdtemp(join(parent, `${key}.pending-`))
-    try {
-      await populate(temporary)
-      await rename(temporary, directory)
-    } finally {
-      await rm(temporary, { recursive: true, force: true })
-    }
-    return directory
-  } finally {
-    await handle.close()
-  }
+  if (cacheLeases.has(directory) && await cacheEntryExists(directory)) return directory
+  const pending = cacheRequests.get(directory)
+  if (pending) return pending
+  const request = acquireFixture(parent, key, populate)
+  cacheRequests.set(directory, request)
+  try { return await request }
+  finally { cacheRequests.delete(directory) }
 }
 
 /** A cached release is a donor when its recorded source snapshot is still the committed content and it was
  * built for the same target and host. Only the files the release really bundled define it. */
-async function releaseDonor(parent, repository, commit, identity, status) {
+async function releaseDonor(parent, repository, commit, identity, status, temporary) {
   for (const name of await readdir(parent)) {
     if (name.endsWith('.lock') || name.includes('.pending-')) continue
     const directory = join(parent, name)
+    const handle = await open(join(parent, `${name}.lock`), 'a', 0o600)
     try {
+      await lockCacheEntry(handle, 'shared')
       if ((await readFile(join(directory, 'identity'), 'utf8')) !== identity) continue
       const { sourceSnapshot } = JSON.parse(await readFile(join(directory, 'release', 'manifest.json'), 'utf8'))
       const files = sourceSnapshot.files
@@ -107,12 +169,15 @@ async function releaseDonor(parent, repository, commit, identity, status) {
         const [meta, path] = line.split('\t')
         return [path, meta.split(' ')[2]]
       }))
-      if (files.every(file => current.get(file.path) === file.gitBlobSha1)) return directory
+      if (files.every(file => current.get(file.path) === file.gitBlobSha1)) {
+        await cp(join(directory, 'release'), join(temporary, 'release'), { recursive: true, preserveTimestamps: true })
+        return true
+      }
     } catch (error) {
       if (error.code !== 'ENOENT' && !(error instanceof SyntaxError) && !(error instanceof TypeError)) throw error
       status.status = 'invalid'
       status.lastError = 'Release donor metadata is invalid or incomplete.'
-    }
+    } finally { await handle.close() }
   }
   return null
 }
@@ -127,12 +192,11 @@ export async function cachedWorkerRelease(root, repository, commit, identityPart
     status.status = 'miss'
     status.missCount++
     const parent = await realpath(join(root, 'worker-artifacts'))
-    const donor = await releaseDonor(parent, repository, commit, identity, status)
+    const donor = await releaseDonor(parent, repository, commit, identity, status, temporary)
     status.rebuildCount = donor ? 0 : 1
     options.onCacheStatus?.({ ...status })
     if (status.lastError) console.warn('Release cache unavailable', JSON.stringify(status))
-    if (donor) await cp(join(donor, 'release'), join(temporary, 'release'), { recursive: true, preserveTimestamps: true })
-    else {
+    if (!donor) {
       await build(temporary)
     }
     await writeFile(join(temporary, 'identity'), identity, { mode: 0o600 })

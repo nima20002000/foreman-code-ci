@@ -1,25 +1,18 @@
-import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import { Icon, IconButton } from '../../shared/ui/nocturne'
-import { raiseFloating, useFloatingZ } from '../../shared/ui/floatingStack'
-
-const STACK_ID = 'board-add-agent'
 
 export function AgentPickerPanel({ children, close }: { children: ReactNode; close(): void }) {
   const panel = useRef<HTMLElement>(null)
   const drag = useRef<{ x: number; y: number; left: number; top: number } | null>(null)
   const [position, setPosition] = useState<{ left: number; top: number }>()
-  const zIndex = useFloatingZ(STACK_ID)
-  // Like an Agent chat window, the panel takes focus when it opens so Escape closes it at once.
-  useLayoutEffect(() => { panel.current?.focus({ preventScroll: true }) }, [])
   const move = (left: number, top: number) => {
     const element = panel.current, parent = element?.parentElement
     if (!element || !parent) return
     setPosition({ left: Math.max(0, Math.min(left, parent.clientWidth - element.offsetWidth)),
       top: Math.max(0, Math.min(top, parent.clientHeight - element.offsetHeight)) })
   }
-  return <aside ref={panel} tabIndex={-1} className="board-agent-picker" aria-label="Add node"
-    style={position ? { ...position, right: 'auto', zIndex } : { zIndex }}
-    onPointerDownCapture={() => raiseFloating(STACK_ID)} onFocusCapture={() => raiseFloating(STACK_ID)}
+  return <aside ref={panel} className="board-agent-picker" aria-label="Add node"
+    style={position ? { ...position, right: 'auto' } : undefined}
     onKeyDown={(event) => { if (event.key === 'Escape') { event.stopPropagation(); close() } }}>
     <header>
       <h2><button type="button" title="Drag to move; use arrow keys to move with the keyboard"

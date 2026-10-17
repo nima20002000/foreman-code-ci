@@ -79,10 +79,9 @@ export const CI_TOOL_DESCRIPTIONS = {
     + 'systemd), saved buildAllowancePercent, allowedCpuCount, CPU and memory within that allowance, '
     + 'used and total CI slots, available memory, running tickets, and up to 500 queued tickets with priority, '
     + 'queue position and reason (queueTruncated reports more). Read participation and priority with build_computer_get. '
-    + 'CircleCI entries add credits {total, used, remaining, asOf}: an estimate of that one org\u2019s credits left this '
-    + 'month, its configured monthly allowance (circle_credit_allowance_get/update; default 400,000, the Free plan\u2019s '
-    + 'open-source Linux credits per org) minus the org\u2019s usage read from CircleCI at most every ten minutes, or '
-    + 'credits=null with creditsUnavailable when that org\u2019s read failed. '
+    + 'CircleCI entries add credits {total, used, remaining, asOf}: an estimate of the month\u2019s credits left, the '
+    + 'configured monthly allowance (circle_credit_allowance_get/update; default 30,000, the Free plan) minus usage read '
+    + 'from CircleCI at most every ten minutes, or credits=null with creditsUnavailable when that read failed. '
     + 'Each further CircleCI org is its own set of cloud slots (hostRef.account names its GitHub owner); Main adds one '
     + 'by itself once that GitHub organization has a copy of the CI mirror followed in CircleCI, which is set up '
     + 'outside Foreman (docs/runbooks/add-circleci-org.md).',
@@ -99,7 +98,9 @@ export const CI_TOOL_DESCRIPTIONS = {
     + 'Queued tickets return CI_NOT_STARTED. Malformed or unknown ticketId returns CI_RUN_NOT_FOUND with up to five '
     + 'recent groups you requested or joined, '
     + 'scoped to your execution when present, in the message and details.recentTickets '
-    + '(lead ticketId, suite, scope, group state, createdAt in UTC).',
+    + '(lead ticketId, suite, scope, group state, createdAt in UTC). '
+    + 'Saved tails expire with confirmed executor cleanup after three days, keeping the newest 200 tickets per computer. '
+    + 'Ticket results and history remain available.',
   ci_list: 'List CI tickets the Agents of one Run requested or joined as identical requests, newest first (at most 500). '
     + 'Optional executionId filters before the limit. Each ticket includes suite, part, '
     + 'partition, scope, state, step, computer and placement (host, github or circleci), timing, the requesting '
