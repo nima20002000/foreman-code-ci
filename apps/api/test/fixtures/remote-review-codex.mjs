@@ -251,7 +251,6 @@ createInterface({ input: process.stdin, crlfDelay: Infinity }).on('line', async 
   }
   const params = message.params ?? {}
   log({ method: message.method, threadId: params.threadId, correlationId: params.clientUserMessageId, model: params.model,
-    reasoningEffort: params.config?.model_reasoning_effort,
     ...(message.method === 'turn/start' ? { outputSchema: params.outputSchema } : {}),
     ...(message.method === 'model/list' ? { workingDirectory: process.cwd() } : {}) })
   if (message.method === 'initialize') {
