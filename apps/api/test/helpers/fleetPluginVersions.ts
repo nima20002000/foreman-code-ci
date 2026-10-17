@@ -1,59 +1,20 @@
-import { homedir } from 'node:os'
-import { join } from 'node:path'
 import { readClaudePlugins } from '../../src/modules/computers/claudePlugins.js'
 import { installedPlugins } from '../../src/modules/computers/maintenance.js'
 import { fakeComputer } from './fleetSync.js'
 
 export const fleetPluginId = 'notes@official'
 
-/** Native installs read a local marketplace snapshot until a refresh fetches the published catalog. */
+/** Native CLI fixture with independently published and installed plugin versions. */
 export function versionedComputer() {
   const computer = fakeComputer()
-  computer.ports.environment.XDG_CACHE_HOME = join(homedir(), '.cache')
   const versions = { codex: new Map<string, string>(), claude: new Map<string, string>() }
-  const snapshots = { codex: '1.0.0', claude: '1.0.0' }
-  const knownMarketplaces = { codex: new Set(['official']), claude: new Set<string>() }
-  const staging = new Map<string, { snapshot: string; installed: Map<string, string> }>()
   let published = '1.0.0'
   let retainVersion = false
-  let acquisitionFailure = false
   const run = computer.ports.run
   computer.ports.run = async (binary, args, options) => {
-    const harness = binary.endsWith('codex') ? 'codex' : 'claude'
-    const environment = (options as typeof options & { environment?: NodeJS.ProcessEnv }).environment
-    const stagingHome = environment?.CODEX_HOME ?? environment?.CLAUDE_CONFIG_DIR
-    if (stagingHome && args[0] === 'plugin') {
-      computer.calls.push({ binary, args })
-      let state = staging.get(stagingHome)
-      if (!state) {
-        state = { snapshot: published, installed: new Map() }
-        staging.set(stagingHome, state)
-      }
-      if (['add', 'install'].includes(args[1]!)) {
-        if (acquisitionFailure) return { code: 1, stdout: '', stderr: 'Artifact download failed' }
-        state.installed.set(args[2]!, retainVersion ? '1.0.0' : state.snapshot)
-      }
-      let value: unknown = { outcome: 'ok' }
-      if (args[1] === 'list') value = { installed: [...state.installed].map(([pluginId, version]) => harness === 'codex'
-        ? { pluginId, version, installed: true } : { id: pluginId, version, enabled: true, scope: 'user' }), available: [] }
-      if (args[1] === 'marketplace' && args[2] === 'list') value = harness === 'codex'
-        ? { marketplaces: [{ name: 'official', marketplaceSource: { sourceType: 'git', source: 'owner/official' } }] }
-        : [{ name: 'official', repo: 'owner/official' }]
-      return { code: 0, stdout: JSON.stringify(value), stderr: '' }
-    }
-    if (args[0] === 'plugin' && ['add', 'install', 'update'].includes(args[1]!) && acquisitionFailure) {
-      computer.calls.push({ binary, args })
-      return { code: 1, stdout: '', stderr: 'Artifact download failed' }
-    }
     const result = await run(binary, args, options)
+    const harness = binary.endsWith('codex') ? 'codex' : 'claude'
     if (args[0] !== 'plugin' || result.code !== 0) return result
-    if (args[1] === 'marketplace') {
-      if (['add', 'upgrade', 'update'].includes(args[2]!)) snapshots[harness] = published
-      if (args[2] === 'add') knownMarketplaces[harness].add('official')
-      if (args[2] === 'list' && harness === 'claude') {
-        return { ...result, stdout: JSON.stringify([...knownMarketplaces.claude].map(name => ({ name, repo: 'owner/official' }))) }
-      }
-    }
     if (args[1] === 'list') {
       const listed = JSON.parse(result.stdout) as { installed: Record<string, unknown>[] }
       listed.installed = listed.installed.map(plugin => ({
@@ -62,7 +23,7 @@ export function versionedComputer() {
       return { ...result, stdout: JSON.stringify(listed) }
     }
     if (['add', 'install', 'update'].includes(args[1]!) && !retainVersion) {
-      versions[harness].set(args[2]!, snapshots[harness])
+      versions[harness].set(args[2]!, published)
     }
     if (['remove', 'uninstall'].includes(args[1]!) && !retainVersion) versions[harness].delete(args[2]!)
     return result
@@ -71,12 +32,9 @@ export function versionedComputer() {
     ...computer, versions,
     publish: (version: string) => { published = version },
     retainInstalledVersion: () => { retainVersion = true },
-    failAcquisition: (fail = true) => { acquisitionFailure = fail },
     sources: {
       codexPlugins: () => installedPlugins(computer.ports, '/fake/codex', AbortSignal.timeout(1000)),
-      codexMarketplaces: async () => [{ name: 'official', source: 'owner/official' }],
-      claudePlugins: async () => ({ ...await readClaudePlugins(computer.ports, AbortSignal.timeout(1000)),
-        marketplaces: [{ name: 'official', source: 'owner/official' }] }),
+      claudePlugins: () => readClaudePlugins(computer.ports, AbortSignal.timeout(1000)),
     },
   }
 }
