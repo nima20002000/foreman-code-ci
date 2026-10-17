@@ -6,6 +6,52 @@ import { integrationPartition } from '@foreman-code/contracts'
 import { repositoryFileList, integrationFileList, selectByIndexes } from '../../../../../scripts/ci-files.mjs'
 import { executionSelection } from '../../../../../scripts/ci-selection.mjs'
 import { fixture } from './cloud.testSupport.js'
+import { CloudCi } from './cloud.js'
+import { CircleCiProvider } from './cloudProviders.js'
+import { CircleStandby } from './circleStandby.js'
+
+it('drains a saved standby run through its original login after UTC reset while refusing new starts there', async () => {
+  const f = await fixture({}, { provider: 'circleci', account: 'delta' })
+  let now = Date.parse('2026-10-31T23:59:00Z')
+  const provider = new CircleCiProvider(f.ports, { circleToken: async () => null }, {
+    owner: 'delta', circleAccountId: 'reserve', role: 'standby', mirrorNames: new Set(['site-ci']),
+  })
+  const cloud = new CloudCi('main-1', provider, async () => 'octo/site-ci', join(f.root, 'ci-cloud'), f.ports, f.git,
+    { home: f.root, user: 'fixture-user', host: 'fixture-host' })
+  cloud.setCircleStandby(new CircleStandby(async () => [
+    { owner: 'alpha', circleAccountId: 'default', role: 'primary', ready: true, mirrorNames: new Set(['site-ci']) },
+    { owner: 'delta', circleAccountId: 'reserve', role: 'standby', ready: true, mirrorNames: new Set(['site-ci']) },
+  ], { reading: async owner => now >= Date.parse('2026-11-01T00:00:00Z') ? { credits: null }
+    : { credits: { total: 400_000, used: owner === 'alpha' ? 380_000 : 0,
+      remaining: owner === 'alpha' ? 20_000 : 400_000, asOf: new Date(now).toISOString() } } }, undefined, () => now))
+  const runId = randomUUID()
+  const request = { operation: 'start', workspaceId: 'ci-workspace', runId, repository: 'octo/site',
+    commit: f.commit, suite: 'lint', scope: 'full' }
+  try {
+    expect(await cloud.handle(request)).toMatchObject({ run: { state: 'running' } })
+    now = Date.parse('2026-11-01T00:00:00Z')
+    expect(await cloud.handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 100 }))
+      .toMatchObject({ run: { state: 'running' } })
+    expect(await cloud.handle(request)).toMatchObject({ run: { state: 'running' } })
+    await expect(cloud.handle({ ...request, runId: randomUUID() })).rejects.toMatchObject({ code: 'CI_CLOUD_UNAVAILABLE' })
+    expect(f.circle.triggered).toHaveLength(1)
+    const saved = JSON.parse(await fs.readFile(join(f.root, 'ci-cloud', 'runs', runId, 'meta.json'), 'utf8'))
+    expect(saved).toMatchObject({ circleAccountId: 'reserve', mirror: 'delta/site-ci', providerRunId: 'run-1' })
+  } finally { await cloud.waitForMirrorCleanup('octo/site', 'octo/site-ci') }
+})
+
+it('rejects conflicting saved login ownership without searching another journal root', async () => {
+  const f = await fixture({}, { provider: 'circleci' })
+  const runId = randomUUID()
+  await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId, repository: 'octo/site',
+    commit: f.commit, suite: 'lint', scope: 'full' })
+  const path = join(f.root, 'ci-cloud', 'runs', runId, 'meta.json')
+  const run = JSON.parse(await fs.readFile(path, 'utf8'))
+  await fs.writeFile(path, JSON.stringify({ ...run, circleAccountId: 'reserve' }))
+  await expect(f.reopen().handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 100 }))
+    .rejects.toMatchObject({ code: 'CI_CLOUD_ACCOUNT_MISMATCH' })
+  expect(f.circle.triggered).toHaveLength(1)
+})
 
 vi.mock('node:fs/promises', async original => {
   const actual = await original<typeof import('node:fs/promises')>()

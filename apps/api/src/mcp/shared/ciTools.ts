@@ -75,7 +75,11 @@ export const CI_TOOL_DESCRIPTIONS = {
     + 'Malformed or unknown ticketId returns CI_RUN_NOT_FOUND with up to five recent groups you requested or joined, '
     + 'scoped to your execution when present, '
     + 'in the message and details.recentTickets (lead ticketId, suite, scope, group state, createdAt in UTC).',
-  ci_computers_list: 'List the computers CI can use: readiness and its reasons (GitHub login, git, corepack, user '
+  ci_computers_list: 'CircleCI rows retain account as the GitHub org owner and use circleAccountId for the login; '
+    + 'schedulingRole reports active, standby or exhausted independently of authentication readiness. '
+    + 'Estimated usage is sampled at most every three hours, usable for four hours from export window end; '
+    + 'credits-left at or below 20,000 exhausts an org for new starts. '
+    + 'List the computers CI can use: readiness and its reasons (GitHub login, git, corepack, user '
     + 'systemd), saved buildAllowancePercent, allowedCpuCount, CPU and memory within that allowance, '
     + 'used and total CI slots, available memory, running tickets, and up to 500 queued tickets with priority, '
     + 'queue position and reason (queueTruncated reports more). Read participation and priority with build_computer_get. '
