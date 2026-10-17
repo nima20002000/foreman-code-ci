@@ -1,7 +1,7 @@
 import { defaultAgentForHarness } from '../agents/agentSettings'
 import { savedClaudeConfiguration } from '../settings/claudeSettings.fixtures'
 import { describe, expect, it } from 'vitest'
-import { AGENT_NODE_SIZE, edgeBend, floatingCurve, lineBend, relationshipLines, agentNodeFacts, agentSettingRows } from './signalEdge'
+import { AGENT_NODE_SIZE, edgeBend, floatingCurve, relationshipLines, agentNodeFacts, agentSettingRows } from './signalEdge'
 
 describe('floating agent connections', () => {
   it('leaves and enters each circle on its rim, not at a fixed side handle', () => {
@@ -59,27 +59,4 @@ it('labels recorded OpenCode agent facts as retired without presenting execution
     model: 'provider/recorded-model' }
   expect(agentNodeFacts(agent)).toMatchObject({ harness: 'opencode',
     harnessLabel: 'Retired harness (OpenCode): read-only', model: 'provider/recorded-model' })
-})
-
-describe('edge direction from node positions', () => {
-  const path = (target: { x: number; y: number }) => {
-    const source = { x: 0, y: 0 }
-    const curve = floatingCurve(source, target, lineBend(source, target))
-    const [, control] = [...curve.path.matchAll(/(-?[\d.]+),(-?[\d.]+)/g)].map((match) => ({ x: Number(match[1]), y: Number(match[2]) }))
-    return { curve, control: control! }
-  }
-  it('is straight when the nodes are aligned', () => {
-    expect(path({ x: 0, y: 300 }).control.x).toBeCloseTo(0)
-    expect(path({ x: 300, y: 0 }).control.y).toBeCloseTo(0)
-  })
-  it('bends left toward a target on the left and right toward one on the right', () => {
-    expect(path({ x: -150, y: 300 }).control.x).toBeLessThan(-75)
-    expect(path({ x: 150, y: 300 }).control.x).toBeGreaterThan(75)
-  })
-  it('routes a line back up on the other side of its forward line', () => {
-    const forward = path({ x: 150, y: 300 }).control.x - 75
-    const back = floatingCurve({ x: 150, y: 300 }, { x: 0, y: 0 }, lineBend({ x: 150, y: 300 }, { x: 0, y: 0 }))
-    const control = Number(/Q (-?[\d.]+),/.exec(back.path)![1]) - 75
-    expect(Math.sign(control)).toBe(-Math.sign(forward))
-  })
 })

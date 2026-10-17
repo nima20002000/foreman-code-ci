@@ -54,7 +54,8 @@ export function SkillsLibrary({ search, onSearchChange }: { search: SkillLibrary
 
   return <section className="settings-editor-page skills-library" aria-label="Skills">
     <header className="skills-heading">
-      <div className="settings-experience-heading"><h1>Skills</h1></div>
+      <div className="settings-experience-heading"><h1>Skills</h1>
+        <p>Reusable instructions for Agents. Assign skills to an Agent on the board; each Agent keeps the exact version it was saved with.</p></div>
       {addSkill}
     </header>
     <div className="skills-toolbar" role="search">
