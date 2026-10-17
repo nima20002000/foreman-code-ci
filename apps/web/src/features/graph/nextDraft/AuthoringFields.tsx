@@ -7,6 +7,7 @@ import { attachAgent, changeApprovalHandler, entryChoices, nodeTitle, putRelatio
 import { WorkConnectionLimitEditor } from './WorkConnectionLimitEditor'
 import { IntervalFields } from './IntervalFields'
 import { Button, Icon, IconButton, SegmentedControl, Select, Switch, TextField, type SelectOption } from '../../../shared/ui/nocturne'
+import { InfoHint } from '../../../shared/ui'
 
 export type EditGraph = (update: (graph: WorkflowDefinitionV3) => WorkflowDefinitionV3) => void
 function nodeOptions(graph: WorkflowDefinitionV3, except?: string): SelectOption[] {
@@ -21,11 +22,11 @@ export function EntryFields({ graph, context, change, agentEdits }: { graph: Wor
   return <section aria-labelledby={id} className="next-draft-section">
     <h3 id={id}>Starting node</h3>
     <Select data-save-field="entry" label="Starts the workflow" value={graph.entryNodeId ?? ''} aria-invalid={!choices.valid}
+      labelHint={<InfoHint label="Starts the workflow">{choices.mode === 'orchestrator' ? 'Only an orchestrator can start a workflow that has one.' : 'The first node to run. It can’t receive a dependency.'}</InfoHint>}
       onChange={(event) => change((value) => ({ ...value, entryNodeId: event.target.value || null }))} options={[
         { value: '', label: 'Choose a node' },
         ...graph.nodes.map((node) => ({ value: node.id, disabled: !choices.eligible.some((item) => item.id === node.id), label: nodeTitle(graph, node.id) })),
       ]} />
-    <p className="next-draft-hint">{choices.mode === 'orchestrator' ? 'Only an orchestrator can start a workflow that has one.' : 'The first node to run. It can’t receive a dependency.'}</p>
     {graph.entryNodeId && !graph.nodes.some((node) => node.id === graph.entryNodeId) ? <p role="alert">The starting node was removed. Choose another one.</p> : null}
   </section>
 }
@@ -39,18 +40,20 @@ export function ApprovalFields({ graph, context, change, report, agentEdits }: {
   }
   return <section className="next-draft-section" aria-label="Approval handling">
     <h3>Approvals</h3>
-    <Select data-save-field="approval" label="Approval handler" value={graph.approval?.handler ?? ''} onChange={(event) => {
+    <Select data-save-field="approval" label="Approval handler" value={graph.approval?.handler ?? ''}
+      labelHint={graph.approval?.handler !== 'orchestrator' ? <InfoHint label="Approval handler">{hint}</InfoHint> : undefined}
+      onChange={(event) => {
       const handler = event.target.value
       if (handler !== 'user' && handler !== 'orchestrator' && handler !== 'native') return
       try { change((value) => changeApprovalHandler(value, handler)) } catch (error) { report(error) }
     }} options={[{ value: '', label: 'Choose who approves', disabled: true }, { value: 'user', label: 'You, the Operator' },
       { value: 'orchestrator', label: 'An orchestrator agent' }, { value: 'native', label: 'Native harness' }]} />
     {graph.approval?.handler === 'orchestrator' ? <Select data-save-field="orchestrator" label="Reviewing orchestrator" value={graph.approval.designatedOrchestratorAgentId ?? ''}
+      labelHint={<InfoHint label="Reviewing orchestrator">{hint}</InfoHint>}
       onChange={(event) => change((value) => ({ ...value, approval: { handler: 'orchestrator', ...(event.target.value ? { designatedOrchestratorAgentId: event.target.value } : {}) } }))} options={[
         { value: '', label: 'Choose an orchestrator' },
         ...graph.nodes.filter((node) => node.kind!=='job').filter((node) => roleEvidence(context, node.agentId, agentEdits).role === 'orchestrator').map((node) => ({ value: node.agentId, label: nodeTitle(graph, node.id) })),
       ]} /> : null}
-    <p className="next-draft-hint">{hint}</p>
   </section>
 }
 
