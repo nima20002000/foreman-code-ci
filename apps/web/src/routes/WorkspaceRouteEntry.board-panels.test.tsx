@@ -303,7 +303,14 @@ describe('Workspace Board route, editor and HTTP boundary', { timeout: 20_000 },
     await user.click(actions.getByLabelText('Open X before rename settings', { selector: 'button' }))
     const settings = await screen.findByLabelText('X before rename settings')
     expect(settings).toHaveRole('dialog')
-    expect(within(settings).getByText(/This is a saved Run Agent/)).toBeVisible()
+    expect(within(settings).queryByText(/This is a saved Run Agent/)).not.toBeInTheDocument()
+    await user.hover(within(settings).getByRole('button', { name: 'About Settings' }))
+    expect(screen.getByRole('tooltip')).toHaveTextContent(
+      'This is a saved Run Agent. Return to the draft to edit settings for future work. Chat does not change this Run.',
+    )
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+    expect(settings).toBeVisible()
     await user.keyboard('{Escape}')
     await waitFor(() => expect(settings).not.toBeInTheDocument())
     await user.click(actions.getByLabelText('Open X before rename chat', { selector: 'button' }))

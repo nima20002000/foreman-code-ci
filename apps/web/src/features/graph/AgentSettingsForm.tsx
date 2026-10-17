@@ -9,14 +9,14 @@ import {
 import { NodePlacementField, type NodePlacementOption } from '../node-placement/NodePlacementField'
 import type { AgentForm } from './nextDraft/agentForm'
 import { useUnsavedChanges } from '../../shared/ui/unsavedChanges'
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   AgentHarnessSchema, CodexSessionCompatibilitySchema, DEFAULT_HARNESS_DEFAULTS, legacyEffortForHarness,
   validateHarnessWorkflowCompatibility, withAdvancedDefaults,
   type Agent, type ApprovalHandler, type AssignedSkill, type GraphqlToolOverride, type HarnessDefaults, type WorkflowExecutionPolicy,
 } from '@foreman-code/contracts'
 
-import { Alert, Button, Icon, IconButton, Select, TextField } from '../../shared/ui/nocturne'
+import { Alert, Button, Icon, IconButton, Select, Textarea, TextField } from '../../shared/ui/nocturne'
 import { configuredHarness, initialModel } from '../agents/agentSettings'
 import { useHarnessDefaultsQuery, useManagedHarnessCatalogQuery } from '../../shared/api/query'
 import { ClaudeFullAccessConfigurationSchema } from '@foreman-code/contracts/claude'
@@ -193,8 +193,6 @@ function EditableAgentSettingsForm({ agent, initialPrompt, nodeGraphqlTools, cre
   executionPolicy = { maxNodeExecutions: 1, maxParallelism: 1 }, workspaceId,
   workflowApprovalHandler, designatedOrchestrator = false, embedded = false,
 }: EditableAgentSettingsFormProps) {
-  const instructionsId = useId()
-  const promptId = useId()
   const {
     error, issues, view, setView, root, setLocalPlacement, setLocalPrefix, name, prompt, editor, placement,
     branchPrefix, graphqlTools, instructions, skills, changeForm, setName, setPrompt, setGraphqlTools,
@@ -267,14 +265,12 @@ function EditableAgentSettingsForm({ agent, initialPrompt, nodeGraphqlTools, cre
       </section>}
       {workspaceId ? <AgentSkillsField workspaceId={workspaceId} value={skills} onChange={(next) => { setSkills(next); clearErrors() }} /> : null}
     </div> : <div className="agent-settings-advanced-view">
-      <div className="n-field agent-settings-prompt">
-      <div className="n-field-label"><label htmlFor={instructionsId}>Agent instructions</label><InfoHint label="Agent instructions">Given to this Agent before its skills on every turn. Not part of the task.</InfoHint></div>
-      <textarea id={instructionsId} className="n-input n-textarea" rows={4} value={instructions}
-        onChange={(event) => { setInstructions(event.target.value); clearErrors() }} /></div>
-      <div className="n-field agent-settings-prompt">
-      <div className="n-field-label"><label htmlFor={promptId}>Initial prompt</label><InfoHint label="Initial prompt">The task this node starts with.</InfoHint></div>
-      <textarea id={promptId} aria-label="Initial prompt" className="n-input n-textarea" rows={3} value={prompt}
-        onChange={(event) => { setPrompt(event.target.value); clearErrors() }} /></div>
+      <Textarea label="Agent instructions" className="agent-settings-prompt" rows={4} value={instructions}
+        labelHint={<InfoHint label="Agent instructions">Given to this Agent before its skills on every turn. Not part of the task.</InfoHint>}
+        onChange={(event) => { setInstructions(event.target.value); clearErrors() }} />
+      <Textarea label="Initial prompt" aria-label="Initial prompt" className="agent-settings-prompt" rows={3} value={prompt}
+        labelHint={<InfoHint label="Initial prompt">The task this node starts with.</InfoHint>}
+        onChange={(event) => { setPrompt(event.target.value); clearErrors() }} />
       <GraphqlToolsFields role={agent.productRole === 'orchestrator' ? 'orchestrator' : 'coder'} defaults={graphqlTools.defaults} override={graphqlTools.override}
         onChange={(defaults, override) => { setGraphqlTools({ ...(defaults ? { defaults } : {}), ...(override ? { override } : {}) }); clearErrors() }} />
       <HarnessConfigurationFields editor={editor} issues={issuesAt(issues, ['harness'])} onChange={(next) => { setEditor(next); clearErrors() }} allowHarnessChange={false} harnessDefaults={providerDefaults} workspaceId={workspaceId} routedApproval={Boolean(workflowApprovalHandler)} allowAutoReview={workflowApprovalHandler === 'orchestrator'} compact advancedOnly />
