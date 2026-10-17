@@ -45,7 +45,7 @@ async function reclaimableCgroupMemory(): Promise<number> {
 }
 
 export async function readSourceStorageCapacity(path: string,
-  expectedFilesystem?: RootBinding['filesystem'], now: () => number = () => Date.now()): Promise<SourceStorageCapacity> {
+  expectedFilesystem?: RootBinding['filesystem']): Promise<SourceStorageCapacity> {
   const root = await openPrivateRoot(path)
   try {
     const filesystem = await identity(root)
@@ -70,7 +70,7 @@ export async function readSourceStorageCapacity(path: string,
       availableBytes: Number(disk.bavail * disk.bsize),
       cpuCount: availableParallelism(),
       availableMemoryBytes,
-      observedAt: new Date(now()).toISOString(),
+      observedAt: new Date().toISOString(),
     })
   } finally { await root.close() }
 }

@@ -6,7 +6,6 @@ import { Alert, Button, LoadingState } from '../../shared/ui/nocturne'
 import { ComputerRevokeButton } from './ComputerRevokeButton'
 import { ComputerPairingForm } from './ComputerPairingForm'
 import { ConnectionSetupStatus } from './DeviceSetupGuide'
-import { CircleCiSummaryCard } from './CircleCiSummaryCard'
 import './computerSettings.css'
 
 /** Which main's Add computer panel is open, keyed by session generation and main so a new session or main starts closed. */
@@ -43,6 +42,5 @@ export function ComputerSettings({ deviceId, onSelectComputer }: { deviceId?: st
         </section>
       </> : <Alert tone="warning" title="This device is not registered with the selected main." />
       : <ComputerCards mainId={currentMain!.mainId} devices={devices} onSelectComputer={onSelectComputer} />)}
-    {!deviceId && <CircleCiSummaryCard />}
   </section>
 }
