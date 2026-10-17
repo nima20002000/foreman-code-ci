@@ -75,7 +75,7 @@ it.each(['codex', 'claude'] as const)('reads Worker %s catalogs through HTTP and
     }
     expect(request).toHaveBeenCalledWith(expect.objectContaining({ operation: 'options', harness,
       target: { hostRef, applicationInstallationId: binding.workerInstallationId, keyRevision: 1,
-        authorizationRevision: 1 } }), expect.any(Object))
+        authorizationRevision: 1 } }), expect.objectContaining({ timeoutMs: 60_000 }))
     expect(discoverModels).not.toHaveBeenCalled()
     const changedHost = { ...hostRef, mainId: randomUUID() }
     expect((await rpc('catalog-reader', 'harness_options_get', { harness, hostRef: changedHost })).isError).toBe(true)

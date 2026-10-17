@@ -67,15 +67,17 @@ export function registerProductionFileStorage(app: FastifyInstance, pool: pg.Poo
 /** Publication and recovery share the original canonical store, ledger and
  * accepted-attempt authority. Callers supply genuine W08 authority/transfer ports. */
 export function createProductionDistributedArtifacts(input: { pool: pg.Pool; files: TemporaryFileService;
-  mainId: string; attempts: AcceptedArtifactAttemptFence; authority: ArtifactPublicationAuthority; transfers: VerifiedArtifactReader }) {
+  mainId: string; attempts: AcceptedArtifactAttemptFence; authority: ArtifactPublicationAuthority;
+  readAuthority?: Pick<ArtifactPublicationAuthority, 'authorize'>; transfers: VerifiedArtifactReader }) {
   if (!productionStores.has(input.files)) throw new DomainError('NATIVE_ARTIFACT_STORE_UNAVAILABLE', 'The original production file store is required.', 503)
   const ledger = new PostgresDistributedPublicationLedger(input.pool)
-  const results = new CanonicalNativeArtifactResults(input.files, ledger, input.authority)
+  const readAuthority = input.readAuthority ?? input.authority
+  const results = new CanonicalNativeArtifactResults(input.files, ledger, readAuthority)
   const edges = new ArtifactEdgeService(new PostgresArtifactEdgeRepository(input.pool), input.files.repository, input.files.bytes,
     new PostgresArtifactEdgeAuthorization(input.attempts))
   return {
     publications: new DistributedArtifactPublicationService(input.files, ledger, input.transfers, input.authority),
     results, edges,
-    outputs: new NativeArtifactOutputs(results, new PostgresNativeArtifactOutputRepository(input.pool, input.mainId), input.authority, edges),
+    outputs: new NativeArtifactOutputs(results, new PostgresNativeArtifactOutputRepository(input.pool, input.mainId), readAuthority, edges),
   }
 }

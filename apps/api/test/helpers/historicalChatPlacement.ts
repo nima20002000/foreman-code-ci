@@ -8,8 +8,7 @@ import { measureIntegrationPhase } from './integrationPhase.js'
 
 export async function historicalChatPlacement(
   scenario: (fixture: Awaited<ReturnType<typeof remoteReviewProduction>>) => Promise<void>,
-  options: Pick<NonNullable<Parameters<typeof remoteReviewProduction>[0]>,
-    'includeNodeRuntimePayload' | 'sourceAccessMode'> = {},
+  options: { includeNodeRuntimePayload?: boolean } = {},
 ) {
   const fixture = await remoteReviewProduction({
     workflow: 'single', parallelSetup: true,
