@@ -141,6 +141,7 @@ export function WorkspaceShell({
 
         <div className="sidebar-footer">
           <SidebarComputers />
+          <HarnessStatusMenu />
           <div className="sidebar-preferences-row">
             <SidebarNavigationButton
               to="/settings"
@@ -152,7 +153,6 @@ export function WorkspaceShell({
               <Settings aria-hidden="true" size={16} />
             </SidebarNavigationButton>
             <ThemeToggle />
-            <HarnessStatusMenu />
           </div>
         </div>
       </aside>
