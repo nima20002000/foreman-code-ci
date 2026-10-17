@@ -1,3 +1,4 @@
+import { beginTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
 import { sourceStorageCapacityFixture } from './helpers/sourceStorageCapacityFixture.js'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'
@@ -144,7 +145,7 @@ describe.skipIf(!postgresEnabled)('failed Job source preparation reconciliation'
       }))
     }
     const owners = new PostgresSourceOperationAuthority(database.pool, attempts, (_sql, record) => confirmedClosed(record))
-    worker = new SourceOperationWorkerService({authenticate:async context=>{expect(context.binding).toEqual(binding)},approvedRoots:async()=>approved,
+    worker = new SourceOperationWorkerService({mainNow:()=>Date.now(),authenticate:async context=>{expect(context.binding).toEqual(binding)},approvedRoots:async()=>approved,
       currentOwner:(operation,context)=>owners.resolve(operation,DeviceConnectionIdentitySchema.parse({mainId:context.binding.mainId,deviceId:context.binding.deviceId,
         workerInstallationId:context.binding.workerInstallationId,keyRevision:1,authorizationRevision:1,bootId:context.binding.bootId,connectionGeneration:1})),
       quotaPoolFor: async binding => {
@@ -267,10 +268,10 @@ describe.skipIf(!postgresEnabled)('failed Job source preparation reconciliation'
       expect(Number((await database.pool.query("select count(*) from management_audit where action='source.preparation.reconcile' and outcome='succeeded' and details->>'commandId'=$1",[command.commandId])).rows[0].count)).toBe(1)
     }
     const sql=await database.pool.connect()
-    try {await sql.query('begin');const original=(await sql.query<{record:{scopeId:string}}>('select record from source_storage_reservations where owner_id=$1',[rows[0]!.operation_id])).rows[0]!.record
+    try {await beginTransaction(sql);const original=(await sql.query<{record:{scopeId:string}}>('select record from source_storage_reservations where owner_id=$1',[rows[0]!.operation_id])).rows[0]!.record
       const reservations = new PostgresSourceReservations(async () =>
         sourceStorageCapacityFixture({ filesystem: root.binding.filesystem }))
-      await expect(reservations.reserve(sql,{scopeId:original.scopeId,ownerKind:'materialization',ownerId:randomUUID(),reservedBytes:1000})).resolves.toHaveProperty('reservationId');await sql.query('rollback')
+      await expect(reservations.reserve(sql,{scopeId:original.scopeId,ownerKind:'materialization',ownerId:randomUUID(),reservedBytes:1000})).resolves.toHaveProperty('reservationId');await rollbackTransaction(sql)
     } finally {sql.release()}
     expect(Number((await database.pool.query('select count(*) from job_executions where workspace_id=$1',[workspaceId])).rows[0].count)).toBe(0)
     const old=await start(commandsToReconcile[0]!);expect(old.statusCode).toBe(409);expect(old.json().error.code).toBe('SOURCE_PREPARATION_RECONCILED')
@@ -782,12 +783,12 @@ describe.skipIf(!postgresEnabled)('failed Job source preparation reconciliation'
       expect(f.delivered).toEqual([])
       const sql = await database.pool.connect()
       try {
-        await sql.query('begin')
+        await beginTransaction(sql)
         const claim = await f.placement.claim(sql, f.principal, f.definition, {
           executionId: randomUUID(), attemptId: randomUUID(), operationId: randomUUID(),
         })
         expect(claim.spec).toMatchObject({ verification: { suite: 'unit' } })
-        await sql.query('rollback')
+        await rollbackTransaction(sql)
       } finally { sql.release() }
     })
 

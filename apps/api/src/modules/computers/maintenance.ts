@@ -5,6 +5,10 @@ import { readClaudePlugins, claudeCliResult } from './claudePlugins.js'
 import { isCodexStagingRenameError, removeCodexStagingDirectories } from './npmStaging.js'
 import { syncFingerprint } from './syncFingerprint.js'
 import { matchesMcpDefinition } from './mcpDefinitions.js'
+import { assertStdioAvailable } from './stdioAvailability.js'
+import { verifyPluginRelease, type AcquiredPluginRelease } from './pluginAcquisition.js'
+import { backupPluginInstallation, replacePluginWithBackup } from './pluginBackup.js'
+import { refreshCodexMarketplaceSnapshot } from './codexMarketplaceSnapshot.js'
 import { MaintenanceTaskStore } from './maintenanceTaskStore.js'
 import { MaintenanceCommandStore } from './maintenanceCommandStore.js'
 import type { MaintenancePorts } from './maintenancePorts.js'
@@ -16,18 +20,20 @@ import { randomUUID } from 'node:crypto'
 import { access, mkdir, readFile, rename, statfs, writeFile } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { homedir } from 'node:os'
-import { delimiter, dirname, join } from 'node:path'
+import { delimiter, dirname, isAbsolute, join } from 'node:path'
 import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
 import {
   MaintenanceStatusSchema, MaintenanceTaskSchema, MaintenanceTaskStartSchema,
   type MaintainedHarness, type MaintenanceStatus, type MaintenanceTask,
   type MaintenanceTaskStart, type SyncedMarketplace, type SyncedMcpServer,
   type WorkerUpdateStatus,
+  SyncedPluginSchema, type SyncedPlugin,
 } from '@foreman-code/contracts/computer-maintenance'
 
 export type { MaintenancePorts }
 
 type FleetLedger = { mcp: Record<MaintainedHarness, string[]>; codexPlugins: string[]; claudePlugins: string[] }
+type PluginSyncRequest = Extract<MaintenanceTaskStart, { kind: 'sync-plugins' }>
 const PACKAGES: Record<MaintainedHarness, string> = { codex: '@openai/codex', claude: '@anthropic-ai/claude-code' }
 const LABELS: Record<MaintainedHarness, string> = { codex: 'Codex', claude: 'Claude' }
 const LATEST_MS = 60 * 60_000
@@ -38,7 +44,7 @@ const APT = ['env', 'LC_ALL=C', 'DEBIAN_FRONTEND=noninteractive', 'NEEDRESTART_M
   '-o', 'Dpkg::Options::=--force-confdef', '-o', 'Dpkg::Options::=--force-confold']
 
 function tail(text: string, limit = 8000) { return text.length > limit ? text.slice(-limit) : text }
-type Step = (binary: string, args: string[], label: string, options?: { timeoutMs?: number; allowFailure?: boolean })
+type Step = (binary: string, args: string[], label: string, options?: { timeoutMs?: number; allowFailure?: boolean; environment?: NodeJS.ProcessEnv | undefined })
   => Promise<{ code: number | null; stdout: string; stderr: string }>
 function versionOf(output: string): string | null {
   return output.match(/\d+\.\d+\.\d+(?:[-+][\w.-]+)?/u)?.[0] ?? null
@@ -338,7 +344,7 @@ export class ComputerMaintenance {
   private async perform(request: MaintenanceTaskStart, task: MaintenanceTask): Promise<string> {
     const signal = AbortSignal.timeout(LONG_MS)
     const step: Step = async (binary, args, label, options = {}) => {
-      const result = await this.ports.run(binary, args, { signal, timeoutMs: options.timeoutMs ?? LONG_MS })
+      const result = await this.ports.run(binary, args, { signal, timeoutMs: options.timeoutMs ?? LONG_MS, environment: options.environment })
       task.outputTail = tail(`${task.outputTail}\n$ ${label}\n${result.stdout}${result.stderr}`)
       if (result.code !== 0 && !options.allowFailure) throw new Error(`${label} failed${result.code === null ? '' : ` (exit ${result.code})`}.`)
       return result
@@ -438,7 +444,7 @@ export class ComputerMaintenance {
             const managed = new Set(ledger.codexPlugins)
             try {
               return await this.syncPlugins(request.plugins, request.marketplaces, managed, step, signal,
-                () => this.updateLedger(current => { current.codexPlugins = [...managed] }))
+                () => this.updateLedger(current => { current.codexPlugins = [...managed] }), request.pluginVersions)
             } finally {
               await this.updateLedger(current => { current.codexPlugins = [...managed] })
             }
@@ -513,6 +519,7 @@ export class ComputerMaintenance {
     const updated: string[] = []
     const removed: string[] = []
     const kept: string[] = []
+    const failed: string[] = []
     for (const name of previous) {
       if (wanted.has(name)) continue
       if (!existing.has(name)) {
@@ -528,43 +535,50 @@ export class ComputerMaintenance {
     }
     for (const server of servers) {
       const replacing = existing.has(server.name)
-      if (replacing && (!managed.has(server.name) || matchesMcpDefinition(server, existing.get(server.name)))) continue
-      if (replacing) {
-        await step(binary, harness === 'codex' ? ['mcp', 'remove', server.name]
-          : ['mcp', 'remove', '--scope', 'user', server.name], `${harness} mcp remove ${server.name}`,
-        { timeoutMs: 30_000 })
-      }
-      // Reserve only absent native entries before installation so interruption preserves ownership.
-      managed.add(server.name)
-      await saveOwnership()
-      if (harness === 'codex') {
-        const label = `codex mcp add ${server.name}`
-        // Codex saves the server, then waits for a browser sign-in on OAuth servers. That sign-in
-        // belongs to the person at that computer, so a saved server counts as added.
-        const result = await step(binary, server.transport === 'http'
-          ? ['mcp', 'add', server.name, '--url', server.url, ...(server.bearerTokenEnvVar ? ['--bearer-token-env-var', server.bearerTokenEnvVar] : [])]
-          : ['mcp', 'add', server.name, '--', server.command, ...server.args], label, { timeoutMs: 30_000, allowFailure: true })
-        if (result.code !== 0) {
-          const readback = await this.mcpDefinitions(harness, binary, signal)
-          const waitingForSignIn = /timed out waiting for OAuth callback/iu.test(result.stderr)
-          if (!waitingForSignIn || !matchesMcpDefinition(server, readback.get(server.name))) {
-            throw new Error(`${label} failed.`)
-          }
-          ;(replacing ? updated : added).push(`${server.name} (sign in on this computer)`)
-          continue
+      if (replacing && !managed.has(server.name)) continue
+      try {
+        await assertStdioAvailable(server, this.ports)
+        if (replacing && matchesMcpDefinition(server, existing.get(server.name))) continue
+        if (replacing) {
+          await step(binary, harness === 'codex' ? ['mcp', 'remove', server.name]
+            : ['mcp', 'remove', '--scope', 'user', server.name], `${harness} mcp remove ${server.name}`,
+          { timeoutMs: 30_000 })
         }
-      } else {
-        const definition = server.transport === 'http' ? { type: 'http', url: server.url } : { type: 'stdio', command: server.command, args: server.args }
-        await step(binary, ['mcp', 'add-json', '--scope', 'user', server.name, JSON.stringify(definition)], `claude mcp add-json ${server.name}`)
+        // Reserve only absent native entries before installation so interruption preserves ownership.
+        managed.add(server.name)
+        await saveOwnership()
+        if (harness === 'codex') {
+          const label = `codex mcp add ${server.name}`
+          // Codex saves the server, then waits for a browser sign-in on OAuth servers. That sign-in
+          // belongs to the person at that computer, so a saved server counts as added.
+          const result = await step(binary, server.transport === 'http'
+            ? ['mcp', 'add', server.name, '--url', server.url, ...(server.bearerTokenEnvVar ? ['--bearer-token-env-var', server.bearerTokenEnvVar] : [])]
+            : ['mcp', 'add', server.name, '--', server.command, ...server.args], label, { timeoutMs: 30_000, allowFailure: true })
+          if (result.code !== 0) {
+            const readback = await this.mcpDefinitions(harness, binary, signal)
+            const waitingForSignIn = /timed out waiting for OAuth callback/iu.test(result.stderr)
+            if (!waitingForSignIn || !matchesMcpDefinition(server, readback.get(server.name))) {
+              throw new Error(`${label} failed.`)
+            }
+            ;(replacing ? updated : added).push(`${server.name} (sign in on this computer)`)
+            continue
+          }
+        } else {
+          const definition = server.transport === 'http' ? { type: 'http', url: server.url } : { type: 'stdio', command: server.command, args: server.args }
+          await step(binary, ['mcp', 'add-json', '--scope', 'user', server.name, JSON.stringify(definition)], `claude mcp add-json ${server.name}`)
+        }
+        const readback = await this.mcpDefinitions(harness, binary, signal)
+        if (!matchesMcpDefinition(server, readback.get(server.name))) {
+          throw new Error(`${LABELS[harness]} MCP ${server.name} readback does not match the requested definition. Retry sync.`)
+        }
+        ;(replacing ? updated : added).push(server.name)
+      } catch (error) {
+        failed.push(maintenanceError(error, `Could not sync MCP server ${server.name}.`))
       }
-      const readback = await this.mcpDefinitions(harness, binary, signal)
-      if (!matchesMcpDefinition(server, readback.get(server.name))) {
-        throw new Error(`${LABELS[harness]} MCP ${server.name} readback does not match the requested definition. Retry sync.`)
-      }
-      ;(replacing ? updated : added).push(server.name)
     }
     // A server that could not be removed stays managed, so the next sync tries again.
-    if (kept.length) throw new Error(`Could not remove ${kept.join(', ')}`)
+    if (kept.length) failed.push(`Could not remove ${kept.join(', ')}`)
+    if (failed.length) throw new Error(failed.join(' · '))
     const summary = [added.length ? `Added ${added.join(', ')}` : '', updated.length ? `Updated ${updated.join(', ')}` : '',
       removed.length ? `Removed ${removed.join(', ')}` : '']
       .filter(Boolean).join(' · ')
@@ -584,14 +598,16 @@ export class ComputerMaintenance {
   }
 
   private async syncPlugins(plugins: readonly string[], marketplaces: readonly SyncedMarketplace[], managed: Set<string>,
-    step: Step, signal: AbortSignal, saveOwnership: () => Promise<void>): Promise<string> {
+    step: Step, signal: AbortSignal, saveOwnership: () => Promise<void>, versions: Readonly<Record<string, string>> = {}): Promise<string> {
     const previous = [...managed]
     if (!plugins.length && !previous.length) return 'Nothing to sync'
     const codex = await this.ports.find('codex')
     if (!codex) throw new Error('Codex is not installed on this computer.')
-    const installed = new Set(await installedPlugins(this.ports, codex, signal))
-    const missing = plugins.filter(plugin => !installed.has(plugin))
+    const installed = new Map((await installedPlugins(this.ports, codex, signal)).map(plugin => [plugin.pluginId, plugin]))
+    const missing = plugins.filter(plugin => !installed.has(plugin)
+      || (managed.has(plugin) && versions[plugin] !== undefined && versions[plugin] !== installed.get(plugin)?.version))
     const known = new Set(missing.length ? (await pluginMarketplaces(this.ports, codex, signal)).map(marketplace => marketplace.name) : [])
+    const unavailableMarketplaces = new Set<string>()
     const added: string[] = []
     const failed: string[] = []
     const removed: string[] = []
@@ -609,29 +625,63 @@ export class ComputerMaintenance {
       } else kept.push(plugin)
     }
     for (const marketplace of marketplaces) {
-      if (known.has(marketplace.name) || !missing.some(plugin => plugin.endsWith(`@${marketplace.name}`))) continue
-      const result = await step(codex, ['plugin', 'marketplace', 'add', marketplace.source], `codex plugin marketplace add ${marketplace.source}`, { allowFailure: true })
+      if (!missing.some(plugin => plugin.endsWith(`@${marketplace.name}`))) continue
+      if (known.has(marketplace.name)) continue
+      const args = ['add', marketplace.source]
+      const result = await step(codex, ['plugin', 'marketplace', ...args], `codex plugin marketplace ${args.join(' ')}`, { allowFailure: true })
       if (result.code === 0) known.add(marketplace.name)
+      else unavailableMarketplaces.add(marketplace.name)
     }
     // One plugin that cannot install does not keep the others from installing.
     for (const plugin of missing) {
       managed.add(plugin)
       await saveOwnership()
-      const result = await step(codex, ['plugin', 'add', plugin], `codex plugin add ${plugin}`, { allowFailure: true })
-      if (result.code === 0) {
+      const marketplaceName = plugin.split('@').at(-1)!
+      let release: AcquiredPluginRelease | undefined
+      try {
+        if (unavailableMarketplaces.has(marketplaceName)) throw new Error('Marketplace refresh failed.')
+        const version = versions[plugin]
+        if (version !== undefined) {
+          release = await this.acquirePlugin('codex', codex, plugin, version,
+            marketplaces.find(marketplace => marketplace.name === marketplaceName), step, signal)
+          if (!this.ports.refreshCodexMarketplace || !release.marketplaceRoot) {
+            throw new Error('Codex marketplace snapshot storage is unavailable.')
+          }
+          await this.ports.refreshCodexMarketplace(codex, marketplaceName, release.marketplaceRoot, signal)
+        }
+        const install = async () => {
+          const result = await step(codex, [...release?.installArguments ?? [], 'plugin', 'add', plugin],
+            `codex plugin add ${plugin}`, { allowFailure: true })
+          const actual = (await installedPlugins(this.ports, codex, signal)).find(item => item.pluginId === plugin)
+          if (result.code !== 0 || !actual || (version !== undefined && actual.version !== version)) {
+            throw new DomainError('COMPUTER_PLUGIN_INSTALL_FAILED', `Could not install ${plugin}.`, 409)
+          }
+        }
+        if (installed.has(plugin)) await replacePluginWithBackup(this.ports, 'codex', plugin, install)
+        else await install()
         added.push(plugin)
-        managed.add(plugin)
-      } else failed.push(plugin)
+      } catch (error) {
+        failed.push(error instanceof DomainError && error.code === 'COMPUTER_PLUGIN_INSTALL_FAILED'
+          ? plugin : `${plugin}: ${maintenanceError(error, 'Plugin acquisition failed.')}`)
+      } finally {
+        try { await release?.discard() }
+        catch (error) { failed.push(`${plugin}: ${maintenanceError(error, 'Could not remove plugin staging files.')}`) }
+      }
+    }
+    const readback = new Map((await installedPlugins(this.ports, codex, signal)).map(plugin => [plugin.pluginId, plugin]))
+    for (const plugin of plugins.filter(plugin => managed.has(plugin))) {
+      const actual = readback.get(plugin)
+      if (!actual || (versions[plugin] !== undefined && actual.version !== versions[plugin])) failed.push(plugin)
     }
     const summary = [added.length ? `Installed ${added.join(', ')}` : '', removed.length ? `Removed ${removed.join(', ')}` : '',
-      failed.length ? `Could not install ${failed.join(', ')}` : '', kept.length ? `Could not remove ${kept.join(', ')}` : '']
+      failed.length ? `Could not install ${[...new Set(failed)].join(', ')}` : '', kept.length ? `Could not remove ${kept.join(', ')}` : '']
       .filter(Boolean).join(' · ')
     if (failed.length || kept.length) throw new Error(summary)
     return summary || 'Already in sync'
   }
 
   private async syncClaudePlugins(
-    plugins: readonly { pluginId: string; enabled: boolean }[], marketplaces: readonly SyncedMarketplace[],
+    plugins: Readonly<NonNullable<PluginSyncRequest['claudePlugins']>>, marketplaces: readonly SyncedMarketplace[],
     managed: Set<string>, step: Step, signal: AbortSignal, saveOwnership: () => Promise<void>,
   ): Promise<string> {
     const previous = [...managed]
@@ -645,6 +695,7 @@ export class ComputerMaintenance {
     const failed: string[] = []
     const removed: string[] = []
     const kept: string[] = []
+    const unavailableMarketplaces = new Set<string>()
     for (const pluginId of previous) {
       if (wanted.includes(pluginId)) continue
       if (!installed.has(pluginId)) {
@@ -656,36 +707,70 @@ export class ComputerMaintenance {
       ;(result.code === 0 && claudeCliResult(result.stdout)?.outcome === 'ok' ? removed : kept).push(pluginId)
     }
     for (const marketplace of marketplaces) {
-      if (known.has(marketplace.name)) continue
-      const result = await step(claude, ['plugin', 'marketplace', 'add', marketplace.source, '--json'],
-        `claude plugin marketplace add ${marketplace.source}`, { allowFailure: true })
+      const pending = plugins.some(plugin => plugin.pluginId.endsWith(`@${marketplace.name}`)
+        && (!installed.has(plugin.pluginId) || (managed.has(plugin.pluginId)
+          && plugin.version !== undefined && plugin.version !== installed.get(plugin.pluginId)?.version)))
+      if (known.has(marketplace.name) && !pending) continue
+      const args = known.has(marketplace.name) ? ['update', marketplace.name] : ['add', marketplace.source]
+      const result = await step(claude, ['plugin', 'marketplace', ...args, '--json'],
+        `claude plugin marketplace ${args.join(' ')}`, { allowFailure: true })
       if (result.code === 0 && claudeCliResult(result.stdout)?.outcome === 'ok') known.add(marketplace.name)
-      else failed.push(`marketplace ${marketplace.name}`)
+      else {
+        failed.push(`marketplace ${marketplace.name}`)
+        unavailableMarketplaces.add(marketplace.name)
+      }
     }
     for (const plugin of plugins) {
       const existing = installed.get(plugin.pluginId)
       if (existing && !managed.has(plugin.pluginId)) continue
       const actions: string[] = []
-      if (!existing) actions.push('install')
+      const replacing = existing && plugin.version !== undefined && plugin.version !== existing.version
+      if (!existing || replacing) {
+        const marketplaceName = plugin.pluginId.split('@').at(-1)!
+        try {
+          if (unavailableMarketplaces.has(marketplaceName)) throw new Error('Marketplace refresh failed.')
+          if (plugin.version !== undefined) {
+            const release = await this.acquirePlugin('claude', claude, plugin.pluginId, plugin.version,
+              marketplaces.find(marketplace => marketplace.name === marketplaceName), step, signal)
+            await release.discard()
+          }
+        } catch (error) {
+          failed.push(`${plugin.pluginId}: ${maintenanceError(error, 'Plugin acquisition failed.')}`)
+          continue
+        }
+        actions.push(existing ? 'update' : 'install')
+      }
       if (!plugin.enabled) actions.push('disable')
       else if (existing && !existing.enabled) actions.push('enable')
-      for (const action of actions) {
-        if (action === 'install') {
-          managed.add(plugin.pluginId)
-          await saveOwnership()
+      const apply = async () => {
+        for (const action of actions) {
+          if (action === 'install') {
+            managed.add(plugin.pluginId)
+            await saveOwnership()
+          }
+          const result = await step(claude, ['plugin', action, plugin.pluginId, '--scope', 'user', '--json'],
+            `claude plugin ${action} ${plugin.pluginId}`, { allowFailure: true })
+          if (result.code !== 0 || claudeCliResult(result.stdout)?.outcome !== 'ok') {
+            throw new DomainError('COMPUTER_PLUGIN_INSTALL_FAILED', `Could not sync ${plugin.pluginId}.`, 409)
+          }
         }
-        const result = await step(claude, ['plugin', action, plugin.pluginId, '--scope', 'user', '--json'],
-          `claude plugin ${action} ${plugin.pluginId}`, { allowFailure: true })
-        if (result.code !== 0 || claudeCliResult(result.stdout)?.outcome !== 'ok') {
-          failed.push(plugin.pluginId)
-          break
+        const actual = (await readClaudePlugins(this.ports, signal)).plugins.find(item => item.pluginId === plugin.pluginId && item.installed)
+        if (!actual || actual.enabled !== plugin.enabled || (plugin.version !== undefined && actual.version !== plugin.version)) {
+          throw new DomainError('COMPUTER_PLUGIN_INSTALL_FAILED', `Could not verify ${plugin.pluginId}.`, 409)
         }
-        if (action === 'install') managed.add(plugin.pluginId)
+      }
+      try {
+        if (replacing) await replacePluginWithBackup(this.ports, 'claude', plugin.pluginId, apply)
+        else await apply()
+      } catch (error) {
+        failed.push(error instanceof DomainError && error.code === 'COMPUTER_PLUGIN_INSTALL_FAILED'
+          ? plugin.pluginId : `${plugin.pluginId}: ${maintenanceError(error, 'Plugin update failed.')}`)
       }
     }
     const readback = await readClaudePlugins(this.ports, signal)
     for (const expected of plugins.filter(plugin => managed.has(plugin.pluginId))) {
-      if (!readback.plugins.some(item => item.pluginId === expected.pluginId && item.installed && item.enabled === expected.enabled)) {
+      if (!readback.plugins.some(item => item.pluginId === expected.pluginId && item.installed && item.enabled === expected.enabled
+        && (expected.version === undefined || item.version === expected.version))) {
         failed.push(expected.pluginId)
       }
     }
@@ -699,6 +784,13 @@ export class ComputerMaintenance {
     }
     const done = removed.length ? ` · Removed ${removed.join(', ')}` : ''
     return `${plugins.length} plugins in sync${done}`
+  }
+
+  private acquirePlugin(harness: MaintainedHarness, binary: string, pluginId: string, version: string,
+    marketplace: SyncedMarketplace | undefined, step: Step, signal: AbortSignal): Promise<AcquiredPluginRelease> {
+    const ports: MaintenancePorts = { ...this.ports,
+      run: (command, args, options) => step(command, args, `${harness} acquire ${args.join(' ')}`, options) }
+    return verifyPluginRelease(ports, { harness, binary, pluginId, version, marketplace }, signal)
   }
 
   private async installedVersion(harness: MaintainedHarness, signal: AbortSignal): Promise<string | null | undefined> {
@@ -766,13 +858,16 @@ export async function claudeUserMcpServers(ports: Pick<MaintenancePorts, 'enviro
   return value.mcpServers && typeof value.mcpServers === 'object' ? value.mcpServers : {}
 }
 
-export async function installedPlugins(ports: Pick<MaintenancePorts, 'run'>, codex: string, signal: AbortSignal): Promise<string[]> {
+export async function installedPlugins(ports: Pick<MaintenancePorts, 'run'>, codex: string, signal: AbortSignal): Promise<SyncedPlugin[]> {
   const listed = await ports.run(codex, ['plugin', 'list', '--json'], { signal, timeoutMs: 120_000 })
   if (listed.code !== 0) {
     throw new Error('Codex could not list its plugins. Update or reinstall Codex on this computer, then retry sync.')
   }
-  const value = JSON.parse(listed.stdout) as { installed?: { pluginId?: unknown; installed?: unknown }[] }
-  return (value.installed ?? []).flatMap(entry => typeof entry.pluginId === 'string' && entry.installed !== false ? [entry.pluginId] : [])
+  const value = z.object({ installed: z.array(z.object({
+    pluginId: z.string(), installed: z.boolean().optional(), version: z.string().nullable().optional(),
+  })) }).parse(JSON.parse(listed.stdout))
+  return value.installed.filter(entry => entry.installed !== false)
+    .map(entry => SyncedPluginSchema.parse({ pluginId: entry.pluginId, version: entry.version ?? null }))
 }
 
 /** Configured plugin marketplaces; only Git sources can be added on another computer. */
@@ -794,7 +889,7 @@ export function systemMaintenancePorts(environment: NodeJS.ProcessEnv = process.
   const path = directories.join(delimiter)
   const run: MaintenancePorts['run'] = (binary, args, options) => new Promise((resolve, reject) => {
     execFile(binary, args, { signal: options.signal, timeout: options.timeoutMs, maxBuffer: 8 * 1024 * 1024,
-      encoding: 'utf8', env: { ...environment, PATH: path, NO_COLOR: '1', CI: '1', LC_ALL: 'C' } },
+      encoding: 'utf8', env: { ...environment, PATH: path, NO_COLOR: '1', CI: '1', LC_ALL: 'C', ...options.environment } },
     (error, stdout, stderr) => {
       if (error && maintenanceError(error, '') !== error.message) {
         reject(new Error(maintenanceError(error, 'Maintenance command failed.'), { cause: error }))
@@ -805,11 +900,13 @@ export function systemMaintenancePorts(environment: NodeJS.ProcessEnv = process.
       resolve({ code, stdout, stderr })
     })
   })
-  return {
+  const ports: MaintenancePorts = {
     environment,
     async find(name) {
       const selected = binaries[name]
-      const candidates = selected ? [selected] : directories.map(directory => join(directory, name))
+      let candidates = directories.map(directory => join(directory, name))
+      if (isAbsolute(name)) candidates = [name]
+      if (selected) candidates = [selected]
       for (const candidate of candidates) {
         try {
           await access(candidate, constants.X_OK)
@@ -866,4 +963,8 @@ export function systemMaintenancePorts(environment: NodeJS.ProcessEnv = process.
     later: (fn, ms) => { setTimeout(fn, ms).unref() },
     now: () => new Date(),
   }
+  ports.backupPlugin = (harness, pluginId) => backupPluginInstallation(ports, harness, pluginId)
+  ports.refreshCodexMarketplace = (binary, name, acquiredRoot, signal) =>
+    refreshCodexMarketplaceSnapshot(ports, binary, name, acquiredRoot, signal)
+  return ports
 }

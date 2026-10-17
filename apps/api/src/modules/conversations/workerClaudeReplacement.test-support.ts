@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto'
+import { DomainError } from '../errors.js'
+import { DeviceConnectionError } from '../devices/deviceWire.js'
 import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -14,10 +16,72 @@ import { createWorkerClaudeAuthority } from './workerClaudeAuthority.js'
 import { createWorkerClaudeOwner } from './workerClaudeOwner.js'
 import { WorkerConversationHost, type WorkerConversationAllocation, type WorkerConversationHostPorts } from './workerHost.js'
 import { WorkerConversationManager } from './workerManager.js'
-import { MainWorkerConversationBridge } from './workerBridge.js'
+import { MainWorkerConversationBridge, type WorkerConversationChannel } from './workerBridge.js'
 import { workerConversationCallbacks } from './workerCallbacks.js'
 import { workerConversationFixture } from './workerFixtures.test-support.js'
 import { recoverWorkerConversation } from './recoverWorkerConversation.js'
+
+function createRecordedObserver(f: ReturnType<typeof workerConversationFixture>, bridge: MainWorkerConversationBridge,
+  managers: WorkerConversationManager[], connected: () => boolean, request: WorkerConversationChannel['request']) {
+  const observer = new WorkerConversationManager({ binding: f.binding, configuration: f.configuration, bridge,
+    current: async () => {
+      if (!connected()) throw new DomainError('WORKER_CONVERSATION_UNAVAILABLE', 'The selected paired worker channel is unavailable.', 409)
+    }, channel: { binding: f.connection, request } })
+  managers.push(observer)
+  return observer
+}
+
+async function sendRecordedMessage(manager: WorkerConversationManager, journal: RemoteOperationJournal,
+  binding: ReturnType<typeof workerConversationFixture>['binding'], start: (id: string) => NativeSessionStart,
+  correlationId: string) {
+  const record = await journal.conversations.read(binding)
+  const input = { prompt: correlationId, clientCorrelationId: correlationId, sessionMode: 'regular' as const,
+    onMessageSubmitted: async () => {} }
+  const stream = record?.session ? manager.startTurn(record.session, input)
+    : manager.startInitialTurn(start(correlationId), { ...input, onSessionObserved: async () => {} })
+  for await (const event of stream) void event
+  return (await journal.conversations.read(binding))!.session!
+}
+
+function recordedProcessRegistry(launches: NativeLaunchObservation[]) {
+  return {
+    snapshot: () => ({ revision: 'recorded', launches }),
+    closedRegistration: (_owner: string, id: string) =>
+      launches.find(launch => launch.launchId === id && launch.lifecycle === 'closed'),
+    closeOwner: async (owner: string) => launches.filter(launch => launch.owner === owner)
+      .every(launch => launch.lifecycle === 'closed' && Boolean(launch.closureEvidence)),
+  }
+}
+
+function recordedClaudeRuntime(input: {
+  fixture: ReturnType<typeof workerConversationFixture>
+  profilePath: string
+  sdk: ClaudeSdkClient
+  journal: RemoteOperationJournal
+  registry: ReturnType<typeof recordedProcessRegistry>
+  source(): WorkerConversationRpcRequest
+}) {
+  const { fixture: f, profilePath, sdk, journal, registry, source } = input
+  const owners = createWorkerClaudeOwner({
+    binding: f.binding, owner: `conversation:${f.binding.owner.conversationId}`,
+    registry,
+    journal: journal.conversations, current: () => f.connection })
+  const native = createClaudeNativeSessionManager({ runner: createClaudeSdkRunner({ loadClient: async () => sdk }),
+    scope: { deviceId: f.connection.deviceId, profilePath, configRevision: 'recorded', cwd: f.binding.workingDirectory },
+    sdkOptions: {}, qualification: { sdkVersion: '0.3.284', cliVersion: '2.1.284', basicTurns: true, resume: true, fork: false, history: true },
+    messageSubmitted: async correlationId => Boolean((await journal.conversations.read(f.binding))?.turns
+      .find(turn => turn.correlationId === correlationId)?.nativeSubmission) })
+  if (f.configuration.harness.harness !== 'claude') throw new Error('Claude configuration required')
+  const configuration = f.configuration.harness
+  const authority = createWorkerClaudeAuthority({ configuration, version: '2.1.284',
+      source, signal: AbortSignal.timeout(120_000),
+      callbackJournal: journal.conversations.claudeCallbackJournal(f.binding),
+      ...owners, request: async (request, action) => action.phase === 'admission'
+        ? { ownerPrincipalId: 'recorded-sender', attemptId: 'correlationId' in request ? request.correlationId : 'recorded-request' }
+        : { authorized: true } })
+  authority.bind(native)
+  return { owners, native }
+}
 
 /** Recorded provider output; no native process or paid model is launched. */
 export async function workerClaudeReplacementFixture(f = workerConversationFixture('operator', 'claude')) {
@@ -28,8 +92,8 @@ export async function workerClaudeReplacementFixture(f = workerConversationFixtu
   const offers: ClaudeSdkUserMessage[] = []
   const resumes: unknown[] = []
   const recoveries: { inputsBefore: number; inputsAfter: number }[] = []
-  let coldHistory = false
   let source: WorkerConversationRpcRequest
+  let connectionState: 'connected' | 'unavailable' | 'transport' = 'connected'
   let denied = false
   let failStartup = false
   let failMode = false
@@ -37,6 +101,8 @@ export async function workerClaudeReplacementFixture(f = workerConversationFixtu
   let closureConfirmed = true
   let releaseResume: (() => void) | undefined
   let holdResume = false
+  let releaseClosure: (() => void) | undefined
+  let holdClosure = false
   const nativeId = f.session.nativeSessionId
   const profilePath = join(root, 'profile')
   const transcriptDirectory = join(profilePath, 'projects', 'recorded')
@@ -48,7 +114,6 @@ export async function workerClaudeReplacementFixture(f = workerConversationFixtu
   const sdk: ClaudeSdkClient = {
     sdkVersion: '0.3.284', getSessionInfo: async sessionId => ({ sessionId }),
     getSessionMessages: async (_sessionId, options) => {
-      if (!coldHistory) return []
       const rows = (await readFile(historyPath, 'utf8')).split('\n').filter(Boolean).map(line => JSON.parse(line) as unknown)
       const offset = options.offset ?? 0
       return rows.slice(offset, offset + (options.limit ?? 256))
@@ -110,37 +175,11 @@ export async function workerClaudeReplacementFixture(f = workerConversationFixtu
       }
     },
   }
-  const registry = {
-    snapshot: () => ({ revision: 'recorded', launches }),
-    closedRegistration: (_owner: string, id: string) =>
-      launches.find(launch => launch.launchId === id && launch.lifecycle === 'closed'),
-    closeOwner: async (owner: string) => launches.filter(launch => launch.owner === owner)
-      .every(launch => launch.lifecycle === 'closed' && Boolean(launch.closureEvidence)),
-  }
-  const createOwners = () => createWorkerClaudeOwner({
-    binding: f.binding, owner: `conversation:${f.binding.owner.conversationId}`,
-    registry,
-    journal: journal.conversations, current: () => f.connection })
-  const createNative = () => createClaudeNativeSessionManager({ runner: createClaudeSdkRunner({ loadClient: async () => sdk }),
-    scope: { deviceId: f.connection.deviceId, profilePath, configRevision: 'recorded', cwd: f.binding.workingDirectory },
-    sdkOptions: {}, qualification: { sdkVersion: '0.3.284', cliVersion: '2.1.284', basicTurns: true, resume: true, fork: false, history: true },
-    messageSubmitted: async correlationId => Boolean((await journal.conversations.read(f.binding))?.turns
-      .find(turn => turn.correlationId === correlationId)?.nativeSubmission) })
-  if (f.configuration.harness.harness !== 'claude') throw new Error('Claude configuration required')
-  const configuration = f.configuration.harness
-  const createRuntime = () => {
-    const owners = createOwners()
-    const native = createNative()
-    const authority = createWorkerClaudeAuthority({ configuration, version: '2.1.284',
-      source: () => source, signal: AbortSignal.timeout(120_000),
-      callbackJournal: journal.conversations.claudeCallbackJournal(f.binding),
-      ...owners, request: async (request, action) => action.phase === 'admission'
-        ? { ownerPrincipalId: 'recorded-sender', attemptId: 'correlationId' in request ? request.correlationId : 'recorded-request' }
-        : { authorized: true } })
-    authority.bind(native)
-    return { owners, native }
-  }
+  const registry = recordedProcessRegistry(launches)
+  const createRuntime = () => recordedClaudeRuntime({ fixture: f, profilePath, sdk, journal, registry,
+    source: () => source })
   let runtime = createRuntime()
+  let allocationClosed = false
   const bridge = new MainWorkerConversationBridge()
   const callbacks = workerConversationCallbacks({ currentBinding: () => f.connection,
     capture: () => ({ binding: f.connection, request: async payload => ({
@@ -165,9 +204,21 @@ export async function workerClaudeReplacementFixture(f = workerConversationFixtu
       if (input.kind === 'agent-chat') return { ...input, instructionsDelivered }
       return input
     },
-      nativeOwner: current.owners.nativeOwner, close: async () => { await current.native.dispose?.() } }
+      nativeOwner: current.owners.nativeOwner, close: async () => {
+        if (holdClosure) await new Promise<void>(resolve => { releaseClosure = resolve })
+        await current.native.dispose?.()
+        if (runtime === current) allocationClosed = true
+      } }
   }
   let allocation = createAllocation()
+  const liveAllocation = () => {
+    if (allocationClosed) {
+      runtime = createRuntime()
+      allocation = createAllocation()
+      allocationClosed = false
+    }
+    return allocation
+  }
   const authorize: WorkerConversationHostPorts['authorize'] =
     async (request, connection, signal) => {
       if (denied) throw new Error('Main denied the caller')
@@ -175,12 +226,12 @@ export async function workerClaudeReplacementFixture(f = workerConversationFixtu
     }
   const createHost = () => new WorkerConversationHost({
     ...callbacks, currentBinding: () => f.connection, journal: journal.conversations,
-    allocate: async () => allocation,
+    allocate: async () => liveAllocation(),
     authorize,
     recover: async (record, configuration, connection, signal, request) => {
       const inputsBefore = offers.length
       const recovered = await recoverWorkerConversation({ record, configuration, connection, signal, request,
-        registry, journal: journal.conversations, allocate: async () => allocation,
+        registry, journal: journal.conversations, allocate: async () => liveAllocation(),
         assertCurrent: () => authorize(request, connection, signal) })
       recoveries.push({ inputsBefore, inputsAfter: offers.length })
       return recovered
@@ -188,36 +239,27 @@ export async function workerClaudeReplacementFixture(f = workerConversationFixtu
   })
   let host = createHost()
   const managers: WorkerConversationManager[] = []
-  const createManager = () => {
-    const observer = new WorkerConversationManager({ binding: f.binding, configuration: f.configuration, bridge,
-      current: async () => {}, channel: { binding: f.connection, request: async payload => {
-        const request = WorkerConversationRpcRequestSchema.parse(payload)
-        if (request.method === 'conversation.initial-turn' || request.method === 'conversation.start-turn') source = request
-        return { payload: await host.handle(request, f.connection) }
-      } } })
-    managers.push(observer)
-    return observer
-  }
+  const createManager = () => createRecordedObserver(f, bridge, managers, () => connectionState !== 'unavailable', async payload => {
+    if (connectionState === 'transport') throw new DeviceConnectionError('transport')
+    const request = WorkerConversationRpcRequestSchema.parse(payload)
+    if (request.method === 'conversation.initial-turn' || request.method === 'conversation.start-turn') source = request
+    return { payload: await host.handle(request, f.connection) }
+  })
   let manager = createManager()
-  const send = async (correlationId: string) => {
-    const record = await journal.conversations.read(f.binding)
-    const input = { prompt: correlationId, clientCorrelationId: correlationId, sessionMode: 'regular' as const, onMessageSubmitted: async () => {} }
-    const stream = record?.session ? manager.startTurn(record.session, input)
-      : manager.startInitialTurn(start(correlationId), { ...input, onSessionObserved: async () => {} })
-    for await (const event of stream) void event
-    return (await journal.conversations.read(f.binding))!.session!
-  }
+  const send = (correlationId: string) => sendRecordedMessage(manager, journal, f.binding, start, correlationId)
   return { ...f, get journal() { return journal }, get manager() { return manager }, createManager,
     get native() { return runtime.native }, get owners() { return runtime.owners },
     launches, offers, resumes, recoveries, send, start,
+    disconnect: (state: 'unavailable' | 'transport' = 'transport') => { connectionState = state },
+    reconnect: () => { connectionState = 'connected' },
     async coldRestart() {
       for (const observer of managers) await observer.dispose()
       await host.shutdown()
       await journal.close()
       journal = await RemoteOperationJournal.open(journalPath)
-      coldHistory = true
       runtime = createRuntime()
       allocation = createAllocation()
+      allocationClosed = false
       host = createHost()
       manager = createManager()
     },
@@ -225,8 +267,12 @@ export async function workerClaudeReplacementFixture(f = workerConversationFixtu
     failResume: () => { failResume = true }, holdResume: () => { holdResume = true },
     releaseResume: () => { holdResume = false; releaseResume?.() },
     hasResumeWaiter: () => Boolean(releaseResume), unconfirmedClosure: () => { closureConfirmed = false },
+    holdClosure: () => { holdClosure = true }, hasClosureWaiter: () => Boolean(releaseClosure),
+    releaseClosure: () => { holdClosure = false; releaseClosure?.(); releaseClosure = undefined },
     async close() {
       releaseResume?.()
+      holdClosure = false
+      releaseClosure?.()
       for (const observer of managers) await observer.dispose()
       await host.shutdown()
       await journal.close()
