@@ -1,8 +1,10 @@
+import { assertArchivedLogs, assertJunitCases } from './test-support/verificationExports.mjs'
 const fixtureGitEnvironment = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')))
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import fs, { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { syncBuiltinESMExports } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -207,6 +209,8 @@ test('finalization emits contract-valid summary, JUnit, Vitest JSON and a binary
   const f = fixture()
   try {
     receipt(f.directory, 'apps/api:build')
+    const log = 'compiler diagnostic: fixture output\n'
+    writeFileSync(portionPath(f.directory, 'apps/api:build', 'log'), log)
     const configuration = { ...context('build'), requiredPortions: [{ key: 'apps/api:build', kind: 'command' }] }
     const summary = finalizeVerification(configuration, { root: f.root, directory: f.directory,
       state: { startedAt: new Date(Date.now() - 1000).toISOString(), expected: [{ key: 'apps/api:build', kind: 'command' }] },
@@ -215,8 +219,33 @@ test('finalization emits contract-valid summary, JUnit, Vitest JSON and a binary
     const { JobVerificationReportSchema } = await import('../packages/contracts/dist/jobVerification.js')
     assert.equal(JobVerificationReportSchema.parse(summary).executionId, 'execution')
     for (const file of ['summary.json', 'junit.xml', 'vitest.json', 'logs.tar.gz']) assert.ok(existsSync(join(f.directory, file)))
-    assert.equal(readFileSync(join(f.directory, 'logs.tar.gz'))[0], 0x1f)
+    assertArchivedLogs(f.root, f.directory, log)
     assert.equal(JSON.parse(readFileSync(join(f.directory, 'vitest.json'), 'utf8')).verification.commit, configuration.identity.commit)
+  } finally { f.close() }
+})
+
+test('finalization publishes passing, failing and skipped cases in JUnit', () => {
+  const f = fixture()
+  try {
+    const key = 'root:test'
+    receipt(f.directory, key, 1)
+    writeReport(portionPath(f.directory, key, 'inventory.json'), ['example.test.mjs'], 8192)
+    writeReport(portionPath(f.directory, key, 'vitest.json'), {
+      success: false, numTotalTestSuites: 1, numPassedTestSuites: 0, numFailedTestSuites: 1,
+      numPendingTestSuites: 0, numTotalTests: 3, numPassedTests: 1, numFailedTests: 1, numPendingTests: 1,
+      testResults: [{ name: join(f.root, 'example.test.mjs'), status: 'failed', startTime: 0, endTime: 1000,
+        assertionResults: [
+          { fullName: 'passes & reports', status: 'passed', duration: 100 },
+          { fullName: 'fails <clearly>', status: 'failed', failureMessages: ['expected <actual> & failed'] },
+          { fullName: 'skips', status: 'pending' },
+        ] }],
+    }, 8192)
+    const configuration = { ...context(), requiredPortions: [{ key, kind: 'vitest' }] }
+    const summary = finalizeVerification(configuration, { root: f.root, directory: f.directory,
+      state: { startedAt: new Date().toISOString() }, terminalOutcome: 'failed', processStopped: true })
+    assert.equal(summary.outcome, 'failed')
+    assert.deepEqual(summary.totals, { total: 3, passed: 1, failed: 1, skipped: 1 })
+    assertJunitCases(f.directory)
   } finally { f.close() }
 })
 
@@ -301,7 +330,7 @@ test('unit inventory includes all package runners and both web/root smoke comman
 })
 
 
-test('measurement reads available cgroup metrics and denies missing or corrupt metrics', () => {
+test('measurement reads available cgroup metrics and denies missing or corrupt metrics', t => {
   const f = fixture()
   try {
     const cgroup = join(f.root, 'cgroup')
@@ -310,12 +339,18 @@ test('measurement reads available cgroup metrics and denies missing or corrupt m
     writeFileSync(join(cgroup, 'memory.peak'), '65536\n')
     writeFileSync(join(cgroup, 'pids.peak'), '4\n')
     const input = { mutableDirectory: f.root, cgroupDirectory: cgroup }
+    const statfs = t.mock.method(fs, 'statfsSync')
+    syncBuiltinESMExports()
+    t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports() })
     const measurement = sampleVerificationResources(input)
+    assert.equal(statfs.mock.callCount(), 1)
+    // Compare the kernel snapshot consumed by the sampler, which other writers cannot change afterward.
+    const filesystem = statfs.mock.calls[0].result
+    assert.equal(measurement.mutableBytes, (filesystem.blocks - filesystem.bfree) * filesystem.bsize)
+    assert.equal(measurement.mutableInodes, filesystem.files - filesystem.ffree)
     assert.equal(measurement.cpuUsageUsec, 12345)
     assert.equal(measurement.memoryPeakBytes, 65536)
     assert.equal(measurement.pidsPeak, 4)
-    assert.ok(measurement.mutableBytes >= 0)
-    assert.ok(measurement.mutableInodes >= 0)
     writeFileSync(join(cgroup, 'pids.peak'), 'unknown\n')
     assert.throws(() => sampleVerificationResources(input), /unavailable or invalid/)
     rmSync(join(cgroup, 'pids.peak'))
