@@ -1,6 +1,4 @@
 import type { ProviderAccountBinding } from '@foreman-code/contracts/provider-accounts'
-import { homedir } from 'node:os'
-import { join } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
 import { randomUUID } from 'node:crypto'
 import type { HarnessConfiguration } from '@foreman-code/contracts'
@@ -19,8 +17,10 @@ import { discoverClaudeMetadata } from './metadata.js'
 import type { ProviderAccountResolver } from '../../provider-accounts/service.js'
 import { resolveRuntimeProviderAccount } from '../providerAccountRuntime.js'
 import { requireClaudeProductionCredentialDelivery } from './productionCredentials.js'
+import { detectedClaudeProfilePath } from './profilePath.js'
 
-export const detectedClaudeProfilePath = () => process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude')
+export { detectedClaudeProfilePath }
+
 
 export function productionClaudeMetadata(input: {
   registry: ProductionHarnessRegistry; processes: Pick<NativeProcessRegistry, 'reserveLaunch' | 'abandonReservedLaunch' | 'closeOwner'>; settings: HarnessInstanceSettingsRepository

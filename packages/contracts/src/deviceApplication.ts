@@ -13,6 +13,7 @@ export const DEVICE_APPLICATION_CHUNK_WINDOW = 4
 export const DEVICE_APPLICATION_IN_FLIGHT = 8
 export const DEVICE_APPLICATION_OBSERVATION_IN_FLIGHT = 8
 export const DEVICE_APPLICATION_STOP_IN_FLIGHT = 1
+export const DEVICE_APPLICATION_CALLBACK_IN_FLIGHT = 1
 export const DEVICE_APPLICATION_STOP_BYTES = DEVICE_APPLICATION_JSON_BYTES
 export const DEVICE_APPLICATION_BUFFER_BYTES = 4_194_304
 type DeviceExtensionRole = 'client' | 'server' | 'duplex'
@@ -26,6 +27,8 @@ export interface DeviceExtensionDescriptor {
   observationAdmission?: true
   /** Enables reserved CI Stop admission when both peers advertise support. */
   ciStopAdmission?: true
+  /** Copy authorization can complete while its parent preparations occupy ordinary slots. */
+  callbackAdmission?: true
 }
 export interface DeviceNegotiatedExtension {
   namespace: string
@@ -36,13 +39,15 @@ export interface DeviceNegotiatedExtension {
   maxBinaryBytes: number
   observationAdmission?: true
   ciStopAdmission?: true
+  callbackAdmission?: true
 }
 export type DeviceApplicationFrame =
-  | { type: 'application-open'; id: string; namespace: string; version: number; kind: 'request' | 'response' | 'error'; jsonBytes: number; binaryBytes: number; admission?: 'stop' | 'observation' }
+  | { type: 'application-open'; id: string; namespace: string; version: number; kind: 'request' | 'response' | 'error'; jsonBytes: number; binaryBytes: number; admission?: 'stop' | 'observation' | 'callback'; progress?: true }
   | { type: 'application-chunk'; id: string; offset: number; data: string }
   | { type: 'application-ack'; id: string; offset: number }
   | { type: 'application-cancel'; id: string }
   | { type: 'application-reject'; id: string; code: 'backpressure' }
+  | { type: 'application-progress'; id: string; bytes: number }
 export interface DeviceApplicationResult { payload: unknown; bytes?: Uint8Array }
 export type DeviceRequestPriority = 'foreground' | 'background'
 export interface DeviceBusyDetails {
@@ -106,6 +111,7 @@ export function parseExtensionDescriptors(value: unknown): DeviceExtensionDescri
       || !Number.isSafeInteger(descriptor.version) || descriptor.version < 1
       || descriptor.observationAdmission !== undefined && descriptor.observationAdmission !== true
       || descriptor.ciStopAdmission !== undefined && descriptor.ciStopAdmission !== true
+      || descriptor.callbackAdmission !== undefined && descriptor.callbackAdmission !== true
       || !['client', 'server', 'duplex'].includes(descriptor.role)
       || !Number.isSafeInteger(descriptor.maxJsonBytes) || descriptor.maxJsonBytes < 256 || descriptor.maxJsonBytes > maxJsonBytes
       || !Number.isSafeInteger(descriptor.maxBinaryBytes) || descriptor.maxBinaryBytes < 0 || descriptor.maxBinaryBytes > maxBinaryBytes) throw new Error('Invalid device extension')
@@ -113,7 +119,8 @@ export function parseExtensionDescriptors(value: unknown): DeviceExtensionDescri
     return { namespace: descriptor.namespace, version: descriptor.version, role: descriptor.role,
       maxJsonBytes: descriptor.maxJsonBytes, maxBinaryBytes: descriptor.maxBinaryBytes,
       ...(descriptor.observationAdmission === true ? { observationAdmission: true as const } : {}),
-      ...(descriptor.ciStopAdmission === true ? { ciStopAdmission: true as const } : {}) }
+      ...(descriptor.ciStopAdmission === true ? { ciStopAdmission: true as const } : {}),
+      ...(descriptor.callbackAdmission === true ? { callbackAdmission: true as const } : {}) }
   }).sort((a, b) => a.namespace < b.namespace ? -1 : a.namespace > b.namespace ? 1 : 0)
 }
 export function negotiateDeviceExtensions(main: DeviceExtensionDescriptor[], worker: DeviceExtensionDescriptor[]): DeviceNegotiatedExtension[] {
@@ -129,6 +136,8 @@ export function negotiateDeviceExtensions(main: DeviceExtensionDescriptor[], wor
       ...(local.observationAdmission === true && peer.observationAdmission === true
         ? { observationAdmission: true as const } : {}),
       ...(local.ciStopAdmission === true && peer.ciStopAdmission === true
-        ? { ciStopAdmission: true as const } : {}) }]
+        ? { ciStopAdmission: true as const } : {}),
+      ...(local.callbackAdmission === true && peer.callbackAdmission === true
+        ? { callbackAdmission: true as const } : {}) }]
   }).sort((a, b) => a.namespace < b.namespace ? -1 : a.namespace > b.namespace ? 1 : 0)
 }

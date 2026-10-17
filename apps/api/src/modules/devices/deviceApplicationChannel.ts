@@ -6,6 +6,7 @@ import {
   WORKER_MCP_CHUNK_WINDOW,
   DEVICE_APPLICATION_IN_FLIGHT, DEVICE_APPLICATION_OBSERVATION_IN_FLIGHT,
   DEVICE_APPLICATION_STOP_IN_FLIGHT, DEVICE_APPLICATION_STOP_BYTES,
+  DEVICE_APPLICATION_CALLBACK_IN_FLIGHT,
   parseExtensionDescriptors, type DeviceApplicationResult, type DeviceExtensionDescriptor, type DeviceNegotiatedExtension,
   type DeviceRequestPriority,
 } from '@foreman-code/contracts/device-application'
@@ -21,8 +22,9 @@ import { MainClock } from './workerClock.js'
 import { isTransientDatabaseOrSocketError } from '@foreman-code/contracts/failure'
 import {
   DeviceRequestQueue, deviceForegroundWaitMs, deviceRequestIsBulk, deviceRequestIsObservation,
-  effectiveDeviceRequestPriority,
+  effectiveDeviceRequestPriority, deviceRequestIsCopyAuthorization,
 } from './deviceRequestQueue.js'
+import { operationProgressReporter, withOperationProgress } from '../operationProgress.js'
 export { DeviceApplicationError } from './deviceApplicationError.js'
 
 /** A link whose authority was confirmed this recently keeps serving work while the database is slow or short of
@@ -36,6 +38,8 @@ export interface DeviceExtensionRegistration extends DeviceExtensionDescriptor {
 }
 export interface DeviceApplicationRequestOptions {
   signal?: AbortSignal; bytes?: Uint8Array; timeoutMs?: number; priority?: DeviceRequestPriority
+  /** Renew the response deadline only when the peer reports increasing byte progress. */
+  progressTimeoutMs?: number
   uploadTimeoutMs?: number
   onUploadStarted?(): void
   onUploaded?(): void
@@ -53,12 +57,14 @@ interface Pending {
   abort: AbortController
   stop: boolean
   observation: boolean
+  callback: boolean
+  progress(bytes: number): void
   onUploadProgress?(acknowledgedBytes: number): void
 }
 interface Assembly {
   namespace: string; kind: 'request' | 'response' | 'error'; jsonBytes: number; binaryBytes: number
   received: number; chunks: Buffer[]; abort: AbortController
-  stop: boolean; observation: boolean; released?: boolean
+  stop: boolean; observation: boolean; callback: boolean; progress: boolean; released?: boolean
 }
 export function extensionDescriptors(registrations: DeviceExtensionRegistration[]) {
   for (const registration of registrations) if (registration.role !== 'client' && typeof registration.handle !== 'function') throw new Error('A device server extension requires its actual domain handler')
@@ -69,6 +75,8 @@ export function extensionDescriptors(registrations: DeviceExtensionRegistration[
       ? { observationAdmission: true as const } : {}),
     ...(registration.namespace === CI_HOST_NAMESPACE && registration.version === 1
       ? { ciStopAdmission: true as const } : {}),
+    ...(registration.namespace === 'execution-v1' && registration.version === 1
+      ? { callbackAdmission: true as const } : {}),
   })))
 }
 export function deviceNegotiationHash(extensions: DeviceNegotiatedExtension[]) {
@@ -215,7 +223,11 @@ export class DeviceApplicationChannel {
         && session.harness === binding.harness
     }
     const parsed = RemoteExecutionRpcRequestSchema.safeParse(payload)
-    if (!parsed.success || parsed.data.method !== 'control' || parsed.data.command.action.kind !== 'stop') return false
+    if (!parsed.success) return false
+    if (parsed.data.method === 'status' && parsed.data.forStop) {
+      return this.stopPlacement(parsed.data.intent, parsed.data.placement)
+    }
+    if (parsed.data.method !== 'control' || parsed.data.command.action.kind !== 'stop') return false
     const { intent, placement, command } = parsed.data
     return this.stopPlacement(intent, placement)
       && command.bindingHash === intent.bindingHash
@@ -252,10 +264,12 @@ export class DeviceApplicationChannel {
     const priority = effectiveDeviceRequestPriority(namespace, payload, options.priority)
     const bulk = deviceRequestIsBulk(namespace, payload, options.bytes !== undefined)
     const observation = options.bytes === undefined && deviceRequestIsObservation(namespace, payload)
+    const callback = this.options.side === 'worker' && extension.callbackAdmission === true
+      && options.bytes === undefined && deviceRequestIsCopyAuthorization(namespace, payload)
     const timeoutMs = Math.min(900_000, Math.max(1, options.timeoutMs ?? 30_000))
     const deadline = Date.now() + timeoutMs
     const release = await this.requestQueue.acquire({
-      priority, stop, bulk, observation, namespace, signal: options.signal, timeoutMs,
+      priority, stop, bulk, observation, callback, namespace, signal: options.signal, timeoutMs,
     }).catch((error: unknown) => {
       if (error instanceof DeviceApplicationAdmissionError) this.reportSaturation(namespace, error.reason)
       throw error
@@ -273,7 +287,7 @@ export class DeviceApplicationChannel {
         if (remaining <= 0) throw new DeviceApplicationError('timeout')
         try {
           return await this.sendRequest(namespace, payload, extension.version,
-            { ...options, timeoutMs: remaining }, { stop, observation, priority })
+            { ...options, timeoutMs: remaining }, { stop, observation, callback, priority })
         } catch (error) {
           const remaining = deadline - Date.now()
           if (priority !== 'foreground' || !(error instanceof DeviceApplicationAdmissionError)
@@ -286,14 +300,23 @@ export class DeviceApplicationChannel {
   }
   private async sendRequest(namespace: string, payload: unknown, version: number,
     options: DeviceApplicationRequestOptions,
-    admission: { stop: boolean; observation: boolean; priority: DeviceRequestPriority }) {
+    admission: { stop: boolean; observation: boolean; callback: boolean; priority: DeviceRequestPriority }) {
     const id = randomUUID(), abort = new AbortController()
     let uploading = true
     let reject!: (error: Error) => void
+    let acknowledgedProgress = 0
+    const reportProgress = operationProgressReporter()
     const result = new Promise<DeviceApplicationResult>((resolve, fail) => {
       reject = fail
       this.pending.set(id, { namespace, resolve, reject: fail, abort,
-        stop: admission.stop, observation: admission.observation,
+        stop: admission.stop, observation: admission.observation, callback: admission.callback,
+        progress: bytes => {
+          if (options.progressTimeoutMs === undefined || abort.signal.aborted || bytes <= acknowledgedProgress) return
+          reportProgress(bytes - acknowledgedProgress)
+          acknowledgedProgress = bytes
+          clearTimeout(timer)
+          timer = setTimeout(timeout, responseTimeoutMs)
+        },
         ...(options.onUploadProgress ? { onUploadProgress: options.onUploadProgress } : {}) })
     })
     const cancel = () => { abort.abort(); reject(new DeviceApplicationError('cancelled')); this.trySendCancel(id) }
@@ -307,13 +330,14 @@ export class DeviceApplicationChannel {
       reject(failure)
       this.trySendCancel(id)
     }
-    const responseTimeoutMs = Math.min(900_000, Math.max(1, options.timeoutMs ?? 30_000))
+    const responseTimeoutMs = Math.min(900_000, Math.max(1, options.progressTimeoutMs ?? options.timeoutMs ?? 30_000))
     let timer = setTimeout(timeout, Math.min(900_000, Math.max(1, options.uploadTimeoutMs ?? responseTimeoutMs)))
     // Observe rejection immediately while the request bytes are still uploading.
     void result.catch(() => { /* ignore: the owner awaits the original promise; this observer prevents a duplicate unhandled rejection. */ })
     try {
       await this.sendPacket(id, namespace, version, 'request', payload, options.bytes, abort.signal, {
-        ...admission, ...(options.onUploadStarted ? { onUploadStarted: options.onUploadStarted } : {}),
+        ...admission, progress: options.progressTimeoutMs !== undefined,
+        ...(options.onUploadStarted ? { onUploadStarted: options.onUploadStarted } : {}),
       })
       uploading = false
       if (options.uploadTimeoutMs !== undefined) {
@@ -417,7 +441,8 @@ export class DeviceApplicationChannel {
   }
   private async sendPacket(id: string, namespace: string, version: number, kind: Assembly['kind'],
     payload: unknown, bytes: Uint8Array | undefined, signal: AbortSignal,
-    admission: { stop: boolean; observation?: boolean; priority?: DeviceRequestPriority; onUploadStarted?(): void } = { stop: false }) {
+    admission: { stop: boolean; observation?: boolean; callback?: boolean; progress?: boolean;
+      priority?: DeviceRequestPriority; onUploadStarted?(): void } = { stop: false }) {
     this.current()
     const { stop } = admission
     const extension = this.extensions.find((item) => item.namespace === namespace)!
@@ -453,6 +478,8 @@ export class DeviceApplicationChannel {
       await this.waitAck(id, 0, upload.signal, { type: 'application-open', id, namespace, version, kind,
         jsonBytes: json.byteLength, binaryBytes: bytes?.byteLength ?? 0,
         ...(kind === 'request' && stop ? { admission: 'stop' as const } : {}),
+        ...(kind === 'request' && admission.callback ? { admission: 'callback' as const } : {}),
+        ...(kind === 'request' && admission.progress ? { progress: true as const } : {}),
         // Older peers accept observations as ordinary requests.
         ...(kind === 'request' && admission.observation
           && this.negotiated(namespace, true).observationAdmission === true
@@ -499,6 +526,13 @@ export class DeviceApplicationChannel {
     this.current()
     if (typeof frame.id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(frame.id)) throw new DeviceConnectionError('malformed-frame')
     const id = frame.id
+    if (frame.type === 'application-progress') {
+      if (typeof frame.bytes !== 'number' || !Number.isSafeInteger(frame.bytes) || frame.bytes <= 0) {
+        throw new DeviceConnectionError('malformed-frame')
+      }
+      this.pending.get(id)?.progress(frame.bytes)
+      return
+    }
     if (frame.type === 'application-ack') {
       if (typeof frame.offset !== 'number' || !Number.isSafeInteger(frame.offset) || frame.offset < 0) throw new DeviceConnectionError('malformed-frame')
       const receipts = this.acknowledgements.get(id)
@@ -532,12 +566,19 @@ export class DeviceApplicationChannel {
       if (frame.admission !== undefined) {
         const allowed = kind === 'request' && (frame.admission === 'stop'
           && (frame.namespace === stopNamespace || frame.namespace === CI_HOST_NAMESPACE && this.options.side === 'worker')
-          || frame.admission === 'observation' && ['execution-v1', 'computer-maintenance-v2'].includes(frame.namespace))
+          || frame.admission === 'observation' && ['execution-v1', 'computer-maintenance-v2'].includes(frame.namespace)
+          || frame.admission === 'callback' && frame.namespace === 'execution-v1' && this.options.side === 'main'
+            && this.negotiated(frame.namespace, false).callbackAdmission === true)
         if (!allowed) throw new DeviceConnectionError('malformed-frame')
       }
       const stop = kind === 'request' ? frame.admission === 'stop' : this.pending.get(id)?.stop === true
       const observation = kind === 'request'
         ? frame.admission === 'observation' : this.pending.get(id)?.observation === true
+      const callback = kind === 'request'
+        ? frame.admission === 'callback' : this.pending.get(id)?.callback === true
+      if (frame.progress !== undefined && (frame.progress !== true || kind !== 'request')) {
+        throw new DeviceConnectionError('malformed-frame')
+      }
       const extension = kind === 'request' ? this.negotiated(frame.namespace, false) : this.extensions.find((item) => item.namespace === frame.namespace)
       if (kind !== 'request' && !this.pending.has(id)) { this.trySendCancel(id); return }
       if (!extension || frame.version !== extension.version || (kind !== 'request' && this.pending.get(id)?.namespace !== frame.namespace)) throw new DeviceConnectionError('malformed-frame')
@@ -546,23 +587,24 @@ export class DeviceApplicationChannel {
       // Replies to admitted outgoing requests have their own bounded capacity.
       if (this.assemblies.has(id) || this.handlers.has(id) || this.rawHandlers.has(id) || this.replies.has(id)) throw new DeviceConnectionError('malformed-frame')
       const active = kind === 'request' ? new Map([...this.rawHandlers, ...this.handlers]) : this.replies
-      const sameClass = (item: Assembly) => item.stop === stop && item.observation === observation
+      const sameClass = (item: Assembly) => item.stop === stop && item.observation === observation && item.callback === callback
       const assembling = [...this.assemblies.values()].filter(item =>
         (item.kind === 'request') === (kind === 'request') && sameClass(item)).length
       const occupied = [...active.values()].filter(sameClass).length
       let countLimit = DEVICE_APPLICATION_IN_FLIGHT
       if (stop) countLimit = DEVICE_APPLICATION_STOP_IN_FLIGHT
       else if (observation) countLimit = DEVICE_APPLICATION_OBSERVATION_IN_FLIGHT
+      else if (callback) countLimit = DEVICE_APPLICATION_CALLBACK_IN_FLIGHT
       const byteLimit = this.bufferBytes - (stop ? 0 : DEVICE_APPLICATION_STOP_BYTES)
       if (assembling + occupied >= countLimit || this.inboundBytes + total > byteLimit
         || stop && kind === 'request' && (total > DEVICE_APPLICATION_STOP_BYTES || binaryBytes !== 0)
-        || observation && kind === 'request' && binaryBytes !== 0) {
+        || (observation || callback) && kind === 'request' && binaryBytes !== 0) {
         this.queueFrame({ type: 'application-reject', id, code: 'backpressure' })
         return
       }
       this.inboundBytes += total
       this.assemblies.set(id, { namespace: frame.namespace, kind, jsonBytes, binaryBytes, received: 0,
-        chunks: [], abort: new AbortController(), stop, observation })
+        chunks: [], abort: new AbortController(), stop, observation, callback, progress: frame.progress === true })
       this.queueFrame({ type: 'application-ack', id, offset: 0 }); return
     }
     if (frame.type !== 'application-chunk') throw new DeviceConnectionError('malformed-frame')
@@ -609,10 +651,19 @@ export class DeviceApplicationChannel {
         if (assembly.observation && !deviceRequestIsObservation(assembly.namespace, payload)) {
           throw new DeviceApplicationError('forbidden')
         }
+        if (assembly.callback && !deviceRequestIsCopyAuthorization(assembly.namespace, payload)) {
+          throw new DeviceApplicationError('forbidden')
+        }
+        let progressedBytes = 0
+        const progress = (bytes: number) => {
+          if (!assembly.progress || assembly.abort.signal.aborted || this.abort.signal.aborted || bytes <= 0) return
+          progressedBytes += bytes
+          this.queueFrame({ type: 'application-progress', id, bytes: progressedBytes })
+        }
         this.rawHandlers.set(id, assembly)
-        const raw = this.track(Promise.resolve().then(() => registration.handle!(payload, {
+        const raw = this.track(Promise.resolve().then(() => withOperationProgress(progress, () => registration.handle!(payload, {
           binding: Object.freeze({ ...this.binding }), signal: assembly.abort.signal, connectionSignal: this.abort.signal, ...(bytes ? { bytes } : {}),
-        })))
+        }))))
         const drained = () => {
           this.rawHandlers.delete(id)
           if (!this.handlers.has(id)) this.releaseIncoming(assembly)
