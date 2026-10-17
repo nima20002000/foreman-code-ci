@@ -18,7 +18,7 @@ async function callThroughLauncher(renewalFailure?: string) {
   await copyFile(new URL('../../../scripts/graphql-mcp.mjs', import.meta.url), launcher)
   const token = `expired-route-${Math.random().toString(36).slice(2)}`
   await registerAppRoute(token, 'http://127.0.0.1:9/mcp', new Date(Date.now() - 1_000).toISOString(), launcher,
-    renewalFailure)
+    renewalFailure ? { renewalFailure } : {})
   const environment = Object.fromEntries(Object.entries(process.env).filter(([name]) => name !== 'FOREMAN_CODE_MCP_TOKEN'))
   const child = spawn(process.execPath, [launcher], { env: { ...environment, GRAPHQL_MCP_TOKEN: token }, stdio: 'pipe' })
   cleanup.push(() => { child.kill() })

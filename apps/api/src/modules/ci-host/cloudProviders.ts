@@ -11,6 +11,7 @@ import { CircleRest } from './cloudCircle.js'
 import { circleCiIntegrationResults } from './circleCiResults.js'
 
 export interface CloudRun {
+  circleAccountId?: string
   runId: string; repository: string; mirror: string; commit: string; suite: CiSuite; startedAt: string
   providerRunId: string | null; state: CiHostRun['state']; finishedAt: string | null; exitCode: number | null
   message: string | null; durations?: CiDurations; testResults?: CiTestResults
@@ -62,13 +63,19 @@ export interface CloudDispatchInput {
 /** A further CircleCI org of Main's login: a GitHub owner with a copy of the workspace mirror under the same name. */
 export interface CloudAccount {
   readonly owner: string
+  readonly circleAccountId?: string | undefined
+  readonly role?: 'primary' | 'standby' | undefined
+  registered?: boolean
   /** Mirror repository names the org has a CircleCI project for; discovery keeps it current. */
   readonly mirrorNames: Set<string>
 }
 
 /** The slot key segment of a cloud CI service: the provider, and the GitHub owner of a further CircleCI org. */
-export function cloudCiId(provider: { id: string; account?: { owner: string } | undefined }): string {
-  return provider.account ? `${provider.id}@${provider.account.owner}` : provider.id
+export function cloudCiId(provider: { id: string; circleAccountId?: string | undefined;
+  account?: { owner: string; circleAccountId?: string | undefined } | undefined }): string {
+  const login = provider.circleAccountId ?? provider.account?.circleAccountId ?? 'default'
+  const prefix = provider.id === 'circleci' && login !== 'default' ? `circleci~${login}` : provider.id
+  return provider.account ? `${prefix}@${provider.account.owner}` : prefix
 }
 
 /** One cloud CI service: how Main starts a run of a mirror branch and reads it back, through the service's CLI login. */
@@ -77,6 +84,8 @@ export interface CloudProvider {
   readonly label: string
   /** Absent for the service on the workspace mirror's own owner. */
   readonly account?: CloudAccount | undefined
+  readonly circleAccountId?: string | undefined
+  recoveryOnly?: boolean
   readonly transport?: CiHostRun['transport']
   /** Longest accepted pipeline parameter value, when the provider caps it. */
   readonly parameterLimit?: number
@@ -371,6 +380,7 @@ function circlePipelinePending(view: {
 /** Large Linux machines (4 vCPUs, 15 GB); the free plan runs 30 jobs at once and open-source Linux builds are free. */
 /** The free plan runs 30 jobs at once. */
 export class CircleCiProvider implements CloudProvider {
+  recoveryOnly = false
   readonly id = 'circleci' as const
   readonly label: string
   readonly userSystemd = { supported: true, reason: null }
@@ -385,10 +395,11 @@ export class CircleCiProvider implements CloudProvider {
   private readonly outputPolls = new Map<string, { key: string; at: number }>()
 
   get transport() { return this.rest.transport }
+  get circleAccountId() { return this.account?.circleAccountId ?? 'default' }
 
-  constructor(private readonly ports: HostCiPorts, options: CloudRestOptions = {}, readonly account?: CloudAccount) {
+  constructor(private readonly ports: HostCiPorts, options: CloudRestOptions & { http?: CloudHttp } = {}, readonly account?: CloudAccount) {
     this.label = account ? `CircleCI ${account.owner}` : 'CircleCI'
-    this.rest = new CircleRest(new CloudHttp(ports, 'circleci', options))
+    this.rest = new CircleRest(options.http ?? new CloudHttp(ports, 'circleci', options))
   }
 
   private circleci(args: string[], timeoutMs = 120_000) {
