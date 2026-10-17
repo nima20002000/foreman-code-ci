@@ -1372,7 +1372,7 @@ export function operatorChatSettings(harness: HarnessConfiguration, showThinking
     serviceTier: harness.serviceTier, showThinking };
 }
 /** Apply chat controls without replacing the accepted execution permissions. */
-export function applyOperatorChatSettings(base: HarnessConfiguration, settings: OperatorChatSettings) {
+export function applyOperatorChatSettings(base: HarnessConfiguration, settings: OperatorChatSettings): HarnessConfiguration {
   if (base.harness !== settings.harness) throw new Error("Select the matching harness defaults before applying chat settings.");
   if (settings.harness === "claude") {
     const configuration = ClaudeHarnessConfigurationSchema.parse({ ...base, accountId: settings.accountId, model: settings.model });
