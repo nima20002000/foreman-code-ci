@@ -48,9 +48,7 @@ it.each(['completed', 'failed', 'canceled'])('stops responding immediately on a 
     activeTurn: { ...running.activeTurn!, requestId: 'next-turn' } }
   mounted.mock.setState(next)
   await act(async () => { await mounted.refresh() })
-  await waitFor(() => {
-    expect(screen.getByRole('status', { name: 'Coder is working' })).toBeVisible()
-  })
+  expect(screen.getByRole('status', { name: 'Coder is working' })).toBeVisible()
   act(() => source.event({ id: 2, conversationId: running.conversation!.id, type: 'state',
     data: { requestId: running.activeTurn!.requestId, delivery } }))
   expect(screen.getByRole('status', { name: 'Coder is working' })).toBeVisible()

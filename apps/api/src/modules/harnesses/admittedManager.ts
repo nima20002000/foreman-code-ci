@@ -31,7 +31,15 @@ export function createAdmittedNativeManager<T extends NativeHarnessSessionManage
         const retireTurn = result.manager.retireTurn.bind(result.manager)
         manager.retireTurn = async (session, correlationId) => {
           lifetime.signal.throwIfAborted()
-          await retireTurn(session, correlationId)
+          return retireTurn(session, correlationId)
+        }
+      }
+      if (result.manager.rebindApplicationAccess) {
+        const rebind = result.manager.rebindApplicationAccess.bind(result.manager)
+        manager.rebindApplicationAccess = async (session, start, signal) => {
+          signal?.throwIfAborted()
+          lifetime.signal.throwIfAborted()
+          await rebind(session, start, signal)
         }
       }
       return result
