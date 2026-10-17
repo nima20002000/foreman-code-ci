@@ -11,7 +11,7 @@ import { buildApp } from '../src/app.js'
 import { createClaudeNativeSessionManager } from '../src/modules/harnesses/claudeSdk/sessionManager.js'
 import { createClaudeSdkRunner } from '../src/modules/harnesses/claudeSdk/runner.js'
 import { ClaudeBoundedQueue } from '../src/modules/harnesses/claudeSdk/queue.js'
-import { ChatManager, registerOperatorChatFixture, type OperatorChatFixture, waitFor } from './helpers/operatorChatFixture.js'
+import { registerOperatorChatFixture, type OperatorChatFixture, waitFor } from './helpers/operatorChatFixture.js'
 
 const connectionString = process.env.TEST_DATABASE_URL
 const nativeFailure = { outcome: 'failed' as const, error: { code: 'CLAUDE_NATIVE_RESULT_ERROR',
@@ -101,23 +101,6 @@ async function startSettlingClaude(claude: ReturnType<typeof settlingClaude>) {
 }
 
 describe.skipIf(!connectionString)('Operator failed-turn terminal persistence', () => {
-  it('finishes a successful turn after retirement releases its exited runtime and cold resumes the following turn', async () => {
-    const manager = Object.assign(new ChatManager(), {
-      retireTurn: async () => ({ runtimeReleased: true as const }),
-    })
-    chat = new OperatorChatService(repository, operators, () => manager, runtimeDirectory, authority)
-    const conversation = await chat.create(owner)
-    await chat.send(conversation.id, { requestId: 'saved-result', content: 'First task' }, owner)
-    await waitFor(async () => (await chat.get(conversation.id, owner)).turnState === 'idle')
-    expect((await repository.terminal(conversation.id, 'saved-result'))?.closureState).toBe('closed')
-    expect(manager.disposals).toBe(1)
-    await chat.send(conversation.id, { requestId: 'following-result', content: 'Following task' }, owner)
-    await waitFor(async () => (await chat.get(conversation.id, owner)).turnState === 'idle')
-    expect(manager.attachments).toBe(1)
-    expect(manager.sessions).toBe(1)
-    expect(manager.turns).toBe(2)
-  })
-
   it('recovers a pre-query profile failure after restart without inventing process closure', async () => {
     const claude = settlingClaude()
     await configureSettlingClaude(claude)

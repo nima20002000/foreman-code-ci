@@ -60,13 +60,22 @@ export const RemoteReviewerTurnSchema = z.object({
   result: z.lazy(() => ExecutionResultSchema).optional(), resultDigest: PlacementDigestSchema.optional(),
   historyDigest: PlacementDigestSchema.optional(),
 }).strict()
+export const RemoteWorkflowTurnInputSchema = z.object({
+  correlationId: z.string().min(1), promptDigest: PlacementDigestSchema,
+  sessionMode: z.enum(['regular', 'plan']).default('regular'),
+  outputSchemaDigest: PlacementDigestSchema.optional(), deferSettlement: z.literal(true).optional(),
+}).strict()
 export const RemoteOperationReceiptSchema = z.object({
   schemaVersion: z.literal(1), intent: DispatchIntentSchema,
   ...HistoricalDeviceExecutionAdmissionFields,
   connection: DeviceConnectionIdentitySchema, workerIncarnationId: z.uuid(),
   sequence: z.number().int().positive(), phase: RemoteOperationPhaseSchema,
   interaction: RemoteInteractionTargetSchema.optional(), native: RemoteNativeIdentitySchema.optional(), terminal: RemoteTerminalEvidenceSchema.optional(),
-  entryAttempted: z.boolean(), turnEntryAttempted: z.boolean(), turnInput: z.object({ correlationId: z.string().min(1), promptDigest: PlacementDigestSchema, sessionMode: z.enum(['regular', 'plan']).default('regular') }).strict().optional(), stopFence: z.boolean(), controls: z.array(RemoteOwnerControlSchema).max(128),
+  entryAttempted: z.boolean(), turnEntryAttempted: z.boolean(), turnInput: RemoteWorkflowTurnInputSchema.optional(),
+  resultRepairs: z.array(z.object({ previousInput: RemoteWorkflowTurnInputSchema,
+    previousTurnId: z.string().min(1), afterSequence: z.number().int().min(-1) }).strict()).max(2).optional(),
+  outputValidationComplete: z.literal(true).optional(),
+  stopFence: z.boolean(), controls: z.array(RemoteOwnerControlSchema).max(128),
   nativeTurnRetries: z.array(z.object({
     previousTurnId: z.string().min(1), turnId: z.string().min(1),
   }).strict()).optional(),
@@ -83,7 +92,8 @@ export const RemoteOperationReceiptSchema = z.object({
   if ((value.phase === 'confirmed_terminal') !== (value.terminal !== undefined)) context.addIssue({ code: 'custom', message: 'Terminal phase requires exact closure evidence.' })
   if (['start_acknowledged', 'running'].includes(value.phase) && !value.native) context.addIssue({ code: 'custom', message: 'Acknowledged/running requires native ownership.' })
   if (value.retainedReviewer && (!value.native?.turnId || value.native.turnId !== value.retainedReviewer.workflowTurnId
-    || value.turnInput?.correlationId !== `execution:${value.intent.executionId}`
+    || value.turnInput?.correlationId !== `execution:${value.intent.executionId}${value.resultRepairs?.length
+      ? `:result-repair:${value.resultRepairs.length}` : ''}`
     || value.retainedReviewer.result.outcome !== 'succeeded'))
     context.addIssue({ code: 'custom', message: 'Reviewer retention requires its successful original workflow turn.' })
   if (value.reviewTurns?.some(turn => !value.retainedReviewer

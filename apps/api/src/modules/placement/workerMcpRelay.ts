@@ -2,6 +2,7 @@ import type pg from 'pg'
 import { withTransaction } from '../../infrastructure/transaction.js'
 import type { DeviceConnectionIdentity } from '@foreman-code/contracts/device-identity'
 import { WorkerMcpRelayRequestSchema, WorkerMcpRelayAuthorizationSchema, WorkerMcpRelayResponseSchema, WorkerNativeOutputAuthorizationSchema,
+  WORKER_MCP_RESPONSE_MAX_BYTES,
   WorkerNativeOutputDeclarationsAuthorizationSchema, WorkerNativeOutputDeclarationsPolicySchema,
   WorkerNativeOutputReadinessSchema,
   type WorkerNativeOutputDeclarationsPolicy, type WorkerMcpRelayRequest } from '@foreman-code/contracts/worker-mcp-relay'
@@ -20,7 +21,7 @@ import { readReconciledDispatchIntent } from '../runs/remote/persistence.js'
 import { readAcceptedPlacement } from './persistence.js'
 import { DomainError, databaseReadFailure } from '../errors.js'
 import { RemoteOperationReceiptSchema } from '@foreman-code/contracts/remote-execution'
-import { requestAppMcp } from '../harnesses/appMcpHttp.js'
+import { deviceRequestTimeoutMs } from '../devices/deviceRequestRetry.js'
 
 export interface SelectedMainMcpForward {
   /** Existing selected main's MCP transports, with this exact worker bearer;
@@ -206,6 +207,34 @@ export function selectedMainMcpForward(app: import('fastify').FastifyInstance): 
     if (host === '0.0.0.0') host = '127.0.0.1'
     else if (host === '::') host = '::1'
     const authority = `${host.includes(':') ? `[${host}]` : host}:${address.port}`
-    return requestAppMcp(`http://${authority}${url}`, body, token, protocolVersion, signal)
+    const response = await fetch(`http://${authority}${url}`, {
+      method: 'POST', body: JSON.stringify(body), redirect: 'error',
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(deviceRequestTimeoutMs)]) : AbortSignal.timeout(deviceRequestTimeoutMs), headers: {
+      authorization: `Bearer ${token}`, accept: 'application/json, text/event-stream', 'content-type': 'application/json',
+      ...(protocolVersion ? { 'mcp-protocol-version': protocolVersion } : {}),
+    } })
+    const chunks: Uint8Array[] = []
+    let byteLength = 0
+    const reader = response.body?.getReader()
+    try {
+      while (reader) {
+        const chunk = await reader.read()
+        if (chunk.done) break
+        byteLength += chunk.value.byteLength
+        if (byteLength > WORKER_MCP_RESPONSE_MAX_BYTES) {
+          await reader.cancel()
+          throw new DomainError('WORKER_MCP_RESPONSE_INVALID', 'The selected Main MCP response exceeds its relay limit.', 502)
+        }
+        chunks.push(chunk.value)
+      }
+    } finally { reader?.releaseLock() }
+    const payload = Buffer.concat(chunks).toString('utf8')
+    const type = response.headers.get('content-type')
+    let contentType: 'empty' | 'application/json' | 'text/event-stream' | undefined
+    if (payload === '') contentType = 'empty'
+    else if (type?.startsWith('application/json')) contentType = 'application/json'
+    else if (type?.startsWith('text/event-stream')) contentType = 'text/event-stream'
+    if (!contentType) throw new DomainError('WORKER_MCP_RESPONSE_INVALID', 'The selected main returned an unsupported MCP response.', 502)
+    return { statusCode: response.status, contentType, body: payload }
   } }
 }
