@@ -1,4 +1,3 @@
-import { InfoHint } from '../../shared/ui/InfoHint'
 import { PinnedNodePlacement } from '../node-placement/PinnedNodePlacement'
 import { SavedWorkflowWorktree } from './SavedWorkflowWorktree'
 import { useProtectedAccessError } from '../../shared/api/useProtectedAccessError'
@@ -114,6 +113,7 @@ export function CurrentRunDetails({ scope, runActions }: RunDetailsProps) {
     <header><Badge tone="neutral">Semantics 3</Badge><p>Run <code>{scope.runId}</code> · saved version <code>{scope.workflowVersionId}</code></p></header>
     {canonical.isPending && !canonical.isPaused ? <p role="status">Loading the bounded current Run state…</p>
       : !snapshot ? <Alert tone="warning" title={canonical.isPaused ? 'Current Run refresh is paused.' : 'Current Run state is unavailable.'}>
+      No stale status, native acknowledgement or synthetic occurrence is used.
       <Button size="sm" onClick={() => void canonical.refetch()}>Refresh exact Run</Button></Alert> : <p role="status">
       Recorded {snapshot.state.run.executionState} · {snapshot.state.run.outcome} · complete cut {snapshot.asOfSequence}.
       {snapshot.state.run.stopRequested ? ' Stop requested; cleanup is not implied.' : ''}</p>}
@@ -124,7 +124,7 @@ export function CurrentRunDetails({ scope, runActions }: RunDetailsProps) {
     </section> : null}
     {accountSnapshot.isError && !denied ? <p role="status">Saved Run accounts are unavailable.</p> : null}
     {run.isPending ? <p role="status">Reading accepted Run facts…</p> : null}
-    {detail ? <p>
+    {detail ? <p>Saved Run details below were read from the server.
       <Button size="sm" variant="ghost" disabled={run.isFetching} onClick={() => void refetchRun()}>Refresh accepted Run facts</Button></p> : null}
     {run.isError ? <Alert tone="warning" title="Private Run details are unavailable."><Button size="sm" onClick={() => void refetchRun()}>Retry pinned details</Button></Alert> : null}
     <div data-testid="run-details-actions-slot">{denied ? null : runActions !== undefined ? runActions : <>
@@ -134,7 +134,7 @@ export function CurrentRunDetails({ scope, runActions }: RunDetailsProps) {
     {outbox.error || stop.isError || settlement.isError ? <Alert tone="warning" title="Stop is not confirmed.">
       {outbox.error ?? stop.error?.message ?? settlement.error?.message} The original command is retained; no replacement Run is started.</Alert> : null}
     {receipt ? <p role="status">Stop receipt: {receipt.status}{receipt.replayed ? ' (replayed)' : ''}. {receipt.processStopped ? 'Native process closure was observed.' : 'Native process closure has not been confirmed.'}
-      {' '}<InfoHint label="Stop receipt">A Stop receipt is not cleanup settlement.</InfoHint></p> : null}
+      {' '}A Stop receipt is not cleanup settlement.</p> : null}
     </>}</div>
     {runActions !== undefined && outbox.journal && settlement.isError ? <Alert tone="warning" title="Stop journal settlement is not confirmed.">
       {settlement.error.message} The retained command was not replaced. Refresh the exact Run and use the cleanup verification control to retry.

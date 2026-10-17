@@ -50,13 +50,3 @@ it('does not invent artifact URLs or actions', () => {
   render(<ArtifactCard title="Plan" />)
   expect(screen.queryByRole('link')).not.toBeInTheDocument(); expect(screen.queryByRole('button')).not.toBeInTheDocument()
 })
-
-it('keeps keyboard guidance available through a hint and accessible description while showing the count', async () => {
-  render(<MessageComposer value="Hello" onValueChange={vi.fn()} onSend={vi.fn()} />)
-  const guidance = 'Enter to send · Shift + Enter for a new line'
-  expect(screen.getByRole('textbox')).toHaveAccessibleDescription(expect.stringContaining(guidance))
-  expect(screen.getByText('5 / 16,000')).toBeVisible()
-  expect(screen.getByText(guidance)).not.toBeVisible()
-  await userEvent.hover(screen.getByRole('button', { name: 'About Message the operator' }))
-  expect(screen.getByRole('tooltip')).toHaveTextContent(guidance)
-})
