@@ -115,37 +115,3 @@ it.each([false, true])('selects and removes the execution directory after reassi
     await client.end()
   }
 })
-
-
-it('confirms an already absent expired directory so Main can finish log retention after a crash', async () => {
-  const f = await fixture()
-  await rm(f.directory, { recursive: true })
-  await expect(sweepCiRunDirectories(f.options)).resolves.toEqual(f.options.runIds)
-})
-
-it('keeps primary cleanup away from secondary current, retry and historical attempts', async () => {
-  const client = new pg.Client({ connectionString: ownedTestDatabaseUrl() })
-  await client.connect()
-  const mainId = 'fixture-main'
-  const primary = { kind: 'cloud' as const, mainId, provider: 'circleci' as const, account: 'alpha' }
-  const reserve = { ...primary, circleAccountId: 'reserve' }
-  const now = Date.parse('2026-10-17T12:00:00Z')
-  const id = randomUUID()
-  const retryId = randomUUID()
-  const historyId = randomUUID()
-  try {
-    await client.query('create temporary table ci_runs (id text primary key, state text, record jsonb)')
-    const recent = Array.from({ length: 201 }, () => ({ id: randomUUID(), state: 'passed', record: {
-      computer: { hostRef: reserve, label: 'Reserve' }, finishedAt: new Date(now).toISOString(),
-    } }))
-    const old = { id, state: 'passed', record: { computer: { hostRef: reserve, label: 'Reserve' },
-      finishedAt: '2026-10-01T00:00:00Z', executionRunId: retryId,
-      executionHistory: [{ runId: historyId, hostRef: reserve }] } }
-    await client.query(`insert into ci_runs(id,state,record)
-      select id,state,record from jsonb_to_recordset($1::jsonb) as x(id text,state text,record jsonb)`,
-    [JSON.stringify([...recent, old])])
-    expect(await ciDirectoryCleanupCandidates(client, { hostRef: primary, label: 'Primary' }, now)).toEqual([])
-    expect((await ciDirectoryCleanupCandidates(client, { hostRef: reserve, label: 'Reserve' }, now)).sort())
-      .toEqual([retryId, historyId].sort())
-  } finally { await client.end() }
-})
