@@ -13,7 +13,7 @@ vi.mock('../../shared/api/query', () => ({
   useManagedHarnessCatalogQuery: () => ({ data: undefined }),
 }))
 afterEach(cleanup)
-describe('agent and workflow execution limits', () => {
+describe('PR17 agent versus workflow scope', () => {
   it('keeps workflow limits out of the agent inspector and preserves the existing policy', async () => {
     const onSave = vi.fn()
     const policy = { maxNodeExecutions: 50, maxParallelism: 7 }
@@ -22,11 +22,7 @@ describe('agent and workflow execution limits', () => {
     expect(screen.getByRole('button', { name: 'Save agent settings' })).toBeDisabled()
     const user = userEvent.setup()
     await user.click(screen.getByRole('button', { name: /^Advanced settings/ }))
-    expect(screen.queryByText(/Use Save graph to persist/)).not.toBeInTheDocument()
-    const settingsHint = screen.getByRole('button', { name: 'About Agent settings' })
-    await user.hover(settingsHint)
-    expect(screen.getByRole('tooltip')).toHaveTextContent('Save updates this graph draft. Use Save graph to persist it.')
-    await user.unhover(settingsHint)
+    expect(screen.getByText(/Use Save graph to persist/)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Back to general settings' }))
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Coder updated' } })
     await user.click(screen.getByRole('button', { name: 'Save agent settings' }))

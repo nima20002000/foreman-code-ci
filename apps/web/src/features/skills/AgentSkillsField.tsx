@@ -31,9 +31,9 @@ function SkillPicker({ workspaceId, catalog, selected, onAdd, onClose, workspace
   const previewed = preview ? find(preview) : undefined
   // Inline, not a nested modal: the board Agent editor is itself a dismissable surface.
   return <section className="agent-skill-picker" aria-label="Add skills" onKeyDown={(event) => { if (event.key === 'Escape') { event.stopPropagation(); onClose() } }}>
-      {/* // InfoHint: Skills follow selection order and keep their assigned version. */}
+      <p className="n-field-hint">Selected skills are added in the order you pick them. Each keeps its current version until you update it.</p>
       <SearchField label="Search skills" value={query} onChange={(event) => setQuery(event.target.value)} autoFocus />
-      {available.length === 0 ? <EmptyState icon="code" title="No more skills to add" />
+      {available.length === 0 ? <EmptyState icon="code" title="No more skills to add" description="Every skill in this workspace is already assigned, or none exist yet." />
         : shown.length === 0 ? <p className="n-field-hint" role="status">No skills match “{query}”.</p>
           : <ul className="agent-skill-options" aria-label="Available skills">{shown.map((skill) => {
             const key = keyOf(skill), index = chosen.indexOf(key)
@@ -76,7 +76,7 @@ export function AgentSkillsField<T extends SkillRef>({ workspaceId, acrossWorksp
     </div>
     {catalog.isError ? <Alert tone="warning" title="Skills could not be loaded. Your selection is unchanged."
       action={<Button size="sm" onClick={() => void catalog.refetch()}>Try again</Button>} /> : null}
-    {value.length === 0 ? <p className="n-field-hint">{catalog.isPending && ready ? 'Loading skills…' : 'No skills assigned'}</p>
+    {value.length === 0 ? <p className="n-field-hint">{catalog.isPending && ready ? 'Loading skills…' : 'No skills. This Agent uses only its own instructions.'}</p>
       : <ol className="agent-skills-list" aria-label="Assigned skills, in the order the Agent receives them">{value.map((item, index) => {
         const skill = skills.find((entry) => keyOf(entry) === keyOf(item, workspaceId))
         const label = skill?.name ?? item.skillId
