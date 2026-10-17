@@ -108,6 +108,7 @@ export function ComputerPairingForm({ mainId }: { mainId: string }) {
       <li>Paste the code here and approve the computer.</li>
       <li>Enter the private pairing code you get into the companion.</li>
     </ol>
+    <p className="computer-hint">SSH connectivity does not prove application pairing. A pending computer becomes paired only after the main confirms it.</p>
     {options.isPending ? <p role="status">Reading computer setup configuration…</p> : null}
     {options.error ? <p role="alert">{options.error.message}</p> : null}
     {options.data && !options.data.available ? <div role="alert" className="computer-unavailable">
@@ -143,6 +144,7 @@ export function ComputerPairingForm({ mainId }: { mainId: string }) {
         <div className="computer-actions"><Button onClick={() => setRevealed(value => !value)}>{revealed ? 'Hide pairing code' : 'Show pairing code'}</Button>
         <Button onClick={() => void copy()}>Copy pairing code</Button></div>
         {copied ? <p role="status">{copied === 'done' ? 'Copied. Paste it into the companion.' : 'Copy was blocked. Show the code and copy it manually.'}</p> : null}
+        <p>Paste this code into the companion. Keep it out of screenshots and logs.</p>
       </> : null}
       <Button onClick={() => { reset(); clear(); setResultTarget(undefined); setRevealed(false); setCopied(undefined) }}>{paired || revoked || superseded ? 'Done' : 'Discard pairing code'}</Button>
     </div>}

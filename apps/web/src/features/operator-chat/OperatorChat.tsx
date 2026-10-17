@@ -122,8 +122,7 @@ function OperatorChatContent({ settingsWarning }: { settingsWarning?: string }) 
       {settingsWarning ? <details><summary>Operator settings refresh failed</summary>{settingsWarning}</details> : null}
       {accessDenied ? <Alert live tone="danger" title="Operator access unavailable">Check your browser enrollment and permissions.</Alert> : null}
       <OperatorChatHeader historyOpen={historyOpen} historyId={historyId} historyTriggerRef={historyTriggerRef} closeRef={closeRef}
-        historyFailed={list.isError} moveGrip={moveGrip}
-        sessionControls={conversation ? sessionControls : undefined} accountBinding={conversation && !retired ? conversation.providerAccountBinding : undefined} onToggleHistory={() => showHistory(!historyOpen)} onClose={close} />
+        historyFailed={list.isError} moveGrip={moveGrip} onToggleHistory={() => showHistory(!historyOpen)} onClose={close} />
       <div className={`operator-chat-body${historyOpen ? ' operator-chat-history-open' : ''}`}>
         <OperatorChatHistory historyOpen={historyOpen} historyId={historyId} historyRef={historyRef} historyTriggerRef={historyTriggerRef}
           list={list} entries={entries} selectedId={selectedId} accessDenied={accessDenied} creating={create.isPending}

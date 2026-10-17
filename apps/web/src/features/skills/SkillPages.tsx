@@ -13,7 +13,8 @@ export function NewSkillPage({ workspaceId, onSaved, onCancel }: { workspaceId?:
   const { workspaces, options } = useWorkspaceNames()
   const accessError = useProtectedAccessError(workspaces)
   return <section className="settings-editor-page skill-page" aria-label="New skill">
-    <header className="settings-experience-heading"><h1>New skill</h1></header>
+    <header className="settings-experience-heading"><h1>New skill</h1>
+      <p>Write instructions once and assign them to Agents on the board. Saving creates version 1.</p></header>
     {accessError ? <ProtectedAccessError error={accessError} />
       : workspaces.isPending ? <LoadingState label="Loading workspaces…" />
         : workspaces.isError ? <ErrorState title="Workspaces could not be loaded" description={workspaces.error.message} onRetry={() => void workspaces.refetch()} />

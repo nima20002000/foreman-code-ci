@@ -31,5 +31,11 @@ export function ConnectionSetupStatus({ registration }: { registration: DeviceRe
       : registration.status === 'paired'
         ? <><strong>Connection status unverified.</strong> This computer is paired. Ask the Operator to read its current remote-command approval and check the connection.</>
         : <><strong>Pairing needed.</strong> Pair this computer before any connection can be set up.</>}</p>
+    <p className="computer-hint">Running commands as the selected operating-system user needs a separate owner approval.
+      This page does not display or request that approval, and pairing does not substitute for it.</p>
+    <ul className="computer-diagnostics">
+      <li>Remote-command approval does not give any agent permissions; read-only agents stay read-only.</li>
+      <li>It never uses sudo or root automatically, skips SSH host-key checks, or stores hidden credentials.</li>
+    </ul>
   </section>
 }

@@ -103,7 +103,7 @@ export function SkillEditor({ saved, workspaceOptions, initialWorkspace, onSaved
       if (ApiError.is(failure) && failure.code === 'SKILL_REVISION_CONFLICT') {
         setConflict(Number(failure.details?.currentRevision) || undefined)
         // Load the newer head so "load latest" shows it; the dirty draft is never replaced automatically.
-        if (base) void queryClient.invalidateQueries({ queryKey: skillKeys.detail(base.skill.workspaceId, base.skill.skillId) }).catch(() => { /* ignore: a failed refresh leaves the conflict banner and draft intact */ })
+        if (base) void queryClient.invalidateQueries({ queryKey: skillKeys.detail(base.skill.workspaceId, base.skill.skillId) }).catch(() => undefined)
         return
       }
       const fieldIssues = validationIssues(failure)
@@ -133,11 +133,12 @@ export function SkillEditor({ saved, workspaceOptions, initialWorkspace, onSaved
       action={<Button size="sm" onClick={() => { setBase(newer); setDraft(draftOf(newer)); setConflict(undefined) }}>Discard my edits and load it</Button>} /> : null}
     <div className="skill-editor-fields">
       {base ? null : <Select label="Workspace" required value={draft.workspaceId} disabled={saving || uncertain}
-        error={fieldMessage(issues, 'workspaceId')}
+        error={fieldMessage(issues, 'workspaceId')} hint="The workspace that owns this skill. Agents in this workspace can use it."
         options={[{ value: '', label: 'Choose a workspace', disabled: true }, ...workspaceOptions]} onChange={(event) => change({ workspaceId: event.target.value })} />}
       <TextField label="Name" required maxLength={200} value={draft.name} readOnly={readOnly} disabled={uncertain}
         error={fieldMessage(issues, 'name')} onChange={(event) => change({ name: event.target.value })} />
-      <TextField label="Description" maxLength={1000} value={draft.description} readOnly={readOnly} disabled={uncertain} error={fieldMessage(issues, 'description')}
+      <TextField label="Description" maxLength={1000} value={draft.description} readOnly={readOnly} disabled={uncertain}
+        hint="Optional. Shown in the skills list and the Agent skill picker." error={fieldMessage(issues, 'description')}
         onChange={(event) => change({ description: event.target.value })} />
       <div className="skill-instructions" {...drop.dropTargetProps}>
         <div className="skill-instructions-head">
@@ -158,7 +159,7 @@ export function SkillEditor({ saved, workspaceOptions, initialWorkspace, onSaved
           { value: 'write', label: 'Write', content: <Textarea label="Instructions" className="skill-instructions-input" required rows={18}
             maxLength={MAX_SKILL_INSTRUCTIONS_CHARS} value={draft.instructions} readOnly={readOnly} disabled={uncertain} spellCheck={false}
             placeholder={'# When reviewing code\n\n- Check tests first\n- Explain each finding'} error={fieldMessage(issues, 'instructions')}
-            hint={`${draft.instructions.length.toLocaleString()} / ${MAX_SKILL_INSTRUCTIONS_CHARS.toLocaleString()} characters.`}
+            hint={`Markdown text, delivered to Agents exactly as written. ${draft.instructions.length.toLocaleString()} / ${MAX_SKILL_INSTRUCTIONS_CHARS.toLocaleString()} characters.`}
             onChange={(event) => change({ instructions: event.target.value })} /> },
           { value: 'preview', label: 'Preview', content: <SkillTextPreview text={draft.instructions} /> },
         ]} />
