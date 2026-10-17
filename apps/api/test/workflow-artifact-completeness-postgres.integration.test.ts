@@ -27,6 +27,8 @@ import { readLiveManagementPrincipal } from '../src/modules/access/liveManagemen
 import { requireAuthorization } from '../src/modules/access/policy.js'
 import { applyApplicationMigrations } from '../src/infrastructure/migrations.js'
 import type { FileQuery } from '../src/modules/files/repository.js'
+import { beginTransaction, commitTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
+import { completeResultRepair } from '../src/modules/runs/remote/workflowRepair.test-support.js'
 const text = (value: unknown) => canonicalGraphJson(value, 4 * 1024 * 1024)
 // Explicit SQL-boundary facts only. No host qualification, provider process,
 // native byte production or physical publication is established by this fixture.
@@ -116,14 +118,24 @@ describe.skipIf(!databaseUrl)('durable artifact completeness gate on real Postgr
     await pool?.end()
     if (admin) { try { await dropFixtureSchema(admin, schema) } finally { await admin.end() } }
   })
-  async function seed(bindKeys = ['z', 'a'], handoff = false) {
+  async function seed(bindKeys = ['z', 'a'], handoff = false, repairCount = 0) {
     const x = facts(handoff), { run, node, execution, placement, intent, proof, context } = x
+    for (let attempt = 1; attempt <= repairCount; attempt++) {
+      const correlationId = completeResultRepair(x.remote, `corrective-${attempt}`)
+      if (proof.original.type !== 'history') throw new Error('Expected terminal history')
+      const turnId = x.remote.native!.turnId!
+      proof.original.history.correlationId = correlationId
+      proof.original.history.nativeTurnId = turnId
+      proof.original.history.terminalTurn = { ...proof.original.history.terminalTurn!, correlationId, providerId: turnId }
+      proof.original.history.events[0]!.payload = { threadId: execution.nativeSessionId, turnId, status: 'completed', clientCorrelationId: correlationId }
+      proof.lane!.providerId = turnId
+    }
     const client = await pool.connect()
     try {
       // Actual owner lock/backend fence required by dispatch admission triggers.
       // This is SQL fixture admission, not a device/native launch grant.
       await client.query('select pg_advisory_lock(810002,hashtext($1))', [run.id])
-      await client.query('begin')
+      await beginTransaction(client)
       const owner = (await client.query<{ owner_id: string; fence: string }>(`select pg_backend_pid()::text as owner_id,
         (extract(epoch from backend_start)*1000000)::bigint::text as fence from pg_stat_activity where pid=pg_backend_pid()`)).rows[0]!
       await client.query(`insert into management_principals(id,name,audience,token_hash,grants,expires_at)
@@ -156,6 +168,10 @@ describe.skipIf(!databaseUrl)('durable artifact completeness gate on real Postgr
       [execution.id, run.id, slotId, text(repeatExecutionIdentity(execution)), activation?.activationId ?? null])
       await client.query(`insert into execution_dispatch_intents(operation_id,execution_id,run_id,node_id,binding_hash,attempt_id,record,scheduler_owner_id,scheduler_owner_fence)
         values($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9)`, [intent.operationId, execution.id, run.id, node.id, intent.bindingHash, intent.attemptId, text(intent), owner.owner_id, owner.fence])
+      for (const [index, repair] of (x.remote.resultRepairs ?? []).entries()) {
+        await client.query('insert into execution_work_result_repairs(execution_id,attempt,rejected_provider_id) values($1,$2,$3)',
+          [execution.id, index + 1, repair.previousTurnId])
+      }
       await client.query('insert into remote_execution_receipts(operation_id,sequence,receipt) values($1,$2,$3::jsonb)', [intent.operationId, x.remote.sequence, text(x.remote)])
       await client.query("insert into run_graph_heads(run_id,protocol_version,head_sequence,history_coverage) values($1,1,1,'from_admission')", [run.id])
       await client.query(`insert into run_graph_sources(run_id,source_kind,source_id,source_revision,source_digest,semantic_digest,first_sequence)
@@ -182,20 +198,40 @@ describe.skipIf(!databaseUrl)('durable artifact completeness gate on real Postgr
           values($1,'remote.artifact-transfer.admit',$2,$3,$4,$5::jsonb)`, [x.principalId, record.commandId,
           `workflow-artifact:${x.principalId}`, commandInputHash(declaration), text(admitted)])
       }
-      await client.query('commit')
-    } catch (error) { await client.query('rollback'); throw error }
+      await commitTransaction(client)
+    } catch (error) { await rollbackTransaction(client); throw error }
     finally { await client.query('select pg_advisory_unlock(810002,hashtext($1))', [run.id]); client.release() }
-    const authorize = async (sql: FileQuery) => {
+    const authorize = async (sql: FileQuery, nativeContext = context) => {
       const principal = await readLiveManagementPrincipal(sql, x.principalId)
       requireAuthorization(principal, 'agent_chat:write', { workspaceId: run.workspaceId })
-      return { principal, context, binding: bindingIdentity(context) }
+      return { principal, context: nativeContext, binding: bindingIdentity(nativeContext) }
     }
     const repository = new PostgresNativeArtifactOutputRepository(pool, x.mainId)
     for (const record of x.records) if (bindKeys.includes(record.outputKey)) await repository.bind(record, async sql => { await authorize(sql) })
     // Native source/current placement authority is a boundary double. Current
     // principal grants, canonical SQL receipt/metadata and mappings are real.
-    const gate = createWorkflowArtifactOutputsGate(x.mainId, { resolveWorkflowContext: async () => x.accepted,
-      authorize: async (_accepted, sql) => { if (!sql) throw new Error('Same SQL required'); return authorize(sql) } })
+    const currentContext = { ...context, turnId: x.remote.native!.turnId! }
+    const authority = {
+      resolveWorkflowContext: async () => ({ ...x.accepted, context: currentContext }),
+      authorize: async (accepted: AcceptedArtifactPublication, sql?: FileQuery) => {
+        if (!sql) throw new Error('Same SQL required')
+        return authorize(sql, accepted.context)
+      },
+      authorizePublication: async (accepted: AcceptedArtifactPublication, sql?: FileQuery) => {
+        if (!sql) throw new Error('Same SQL required')
+        return authorize(sql, accepted.context)
+      },
+      resolvePublicationContext: async (accepted: AcceptedArtifactPublication, commandId: string, sql?: FileQuery) => {
+        if (!sql) throw new Error('Same SQL required')
+        const row = (await sql.query<{ record: { context: FileToolContext } }>(
+          'select record from file_tool_publications where owner_principal_id=$1 and request_id=$2',
+          [x.principalId, `fil05:remote:${createHash('sha256').update(commandId).digest('hex')}`])).rows[0]
+        if (!row) throw new Error('Missing fixture publication')
+        return { ...accepted, context: row.record.context }
+      },
+      assertSourceLive: async (_accepted: AcceptedArtifactPublication, _receipt: unknown, sql: FileQuery) => { await authorize(sql) },
+    }
+    const gate = createWorkflowArtifactOutputsGate(x.mainId, authority)
     const check = async (after: (sql: FileQuery) => Promise<void> = async () => {}) => {
       const current = await pool.connect(), connection = new ExclusiveGraphConnection(current, () => {})
       try { await connection.transaction(async sql => {
@@ -210,10 +246,7 @@ describe.skipIf(!databaseUrl)('durable artifact completeness gate on real Postgr
     const readout = { receipt: x.remote, output: { kind: 'published-artifacts', result: execution.result,
       artifactOutputs: JSON.parse((execution.result!.output as { text: string }).text).artifactOutputs } } as RemoteWorkflowPhysicalReadout
     const binding: DeviceSessionBinding = { ...x.accepted.transferContext, connectionGeneration: 1 }
-    const metadata = new PostgresWorkflowPhysicalArtifacts(x.mainId, { files: new PostgresFileRepository(pool),
-      authority: { resolveWorkflowContext: async () => x.accepted,
-        authorize: async (_accepted, sql) => { if (!sql) throw new Error('Same SQL required'); return authorize(sql) },
-        assertSourceLive: async (_accepted, _receipt, sql) => { await authorize(sql) } } })
+    const metadata = new PostgresWorkflowPhysicalArtifacts(x.mainId, { files: new PostgresFileRepository(pool), authority })
     const checkMetadata = async (adopted: boolean, after: (sql: FileQuery) => Promise<void> = async () => {}) => {
       const current = await pool.connect(), connection = new ExclusiveGraphConnection(current, () => {})
       try { await connection.transaction(async sql => {
@@ -225,6 +258,21 @@ describe.skipIf(!databaseUrl)('durable artifact completeness gate on real Postgr
     }
     return { ...x, check, checkMetadata, visits, repository }
   }
+  it.each([1, 2])('preserves earlier publications when accepting a handoff after %s corrections', async count => {
+    const x = await seed(['z', 'a'], true, count)
+    const original = structuredClone(x.records)
+    await x.check()
+    await x.checkMetadata(true)
+    expect(await x.visits()).toBe(2)
+    for (const record of original) {
+      expect(await x.repository.read(record.producer, record.outputKey)).toEqual(record)
+      expect(record.nativeIdentity.turnId).toBe('original-turn')
+    }
+    const remote = (await pool.query<{ receipt: typeof x.remote }>(
+      'select receipt from remote_execution_receipts where operation_id=$1', [x.intent.operationId])).rows[0]!.receipt
+    expect(remote.native!.turnId).toBe(`corrective-${count}`)
+    expect(remote.resultRepairs).toHaveLength(count)
+  })
   it('accepts and rechecks combined handoff artifacts through fresh SQL connections', async () => {
     const x = await seed(['z', 'a'], true)
     await x.check()
