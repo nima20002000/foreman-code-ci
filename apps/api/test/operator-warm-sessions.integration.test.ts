@@ -121,7 +121,8 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('Operator warm Codex sessions', 
       const result = await f.writer.callTool({ name: 'operator_chat_send', arguments: {
         conversationId: id, request: { requestId, content: 'Reply once', settings },
       } })
-      expect(result.isError, JSON.stringify(result)).not.toBe(true)
+      const state = result.isError ? await f.readOperator(id) : undefined
+      expect(result.isError, JSON.stringify({ result, state })).not.toBe(true)
       await idle(id)
     }
     await send('thinking-settings', { ...f.settings, showThinking: true })
