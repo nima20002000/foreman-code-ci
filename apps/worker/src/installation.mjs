@@ -333,7 +333,7 @@ async function removeObsoleteWorkerVersions(root, stateDirectory, retained = [])
   } catch (error) {
     if (error.code !== 'ENOENT') throw error;
   }
-  await retainWorkflowSdkRelease(stateDirectory, keep, hashes);
+  await retainWorkflowSdkRelease(stateDirectory, keep);
   for (const entry of await readdir(versions, { withFileTypes: true })) {
     if (!entry.isDirectory() || !/^\d+\.\d+\.\d+-[a-f0-9]{64}$/.test(entry.name)) continue;
     const path = join(versions, entry.name);
@@ -345,7 +345,7 @@ async function removeObsoleteWorkerVersions(root, stateDirectory, retained = [])
 }
 
 // Offline updates can prune before the running Worker validates and publishes its replacement SDK selection.
-async function retainWorkflowSdkRelease(stateDirectory, keep, hashes) {
+async function retainWorkflowSdkRelease(stateDirectory, keep) {
   const path = join(stateDirectory, 'workflow-runtime.json');
   let info;
   try { info = await lstat(path); }
@@ -358,10 +358,7 @@ async function retainWorkflowSdkRelease(stateDirectory, keep, hashes) {
   const selection = JSON.parse(await readFile(path, 'utf8'));
   if (selection?.schemaVersion !== 1) throw new WorkerError('workflow_selection_invalid');
   for (const path of [selection.claude?.sdkEntrypoint, selection.claude?.installedLockPath]) {
-    if (typeof path !== 'string' || !isAbsolute(path)) continue;
-    // The selected SDK can be missing during replacement, while its release directory still exists.
-    const release = /^(.*\/versions\/\d+\.\d+\.\d+-[a-f0-9]{64})(?:\/|$)/u.exec(path)?.[1];
-    await retainUpdateReferences([path, release], keep, hashes);
+    if (typeof path === 'string' && isAbsolute(path)) keep.add(path);
   }
 }
 
