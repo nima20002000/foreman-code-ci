@@ -8,6 +8,7 @@ import { AgentUpdateInputSchema, type AgentUpdateInput } from '@foreman-code/con
 import { server } from '../../../mocks/server'
 import { agentChatTestActions } from '../../../shared/mocks/agentChatHandlers'
 import { defaultAgentForHarness } from '../../agents/agentSettings'
+import { savedClaudeConfiguration } from '../../settings/claudeSettings.fixtures'
 import { installChatSource, mountChat } from './testSupport'
 
 const codex = DEFAULT_HARNESS_DEFAULTS.codex
@@ -46,8 +47,7 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('Agent settings in the Agent chat window', () => {
-  it.each(['codex', 'claude'] as const)('produces a supported %s Agent edit without changing execution settings', harness => {
-    const base = DEFAULT_HARNESS_DEFAULTS[harness]
+  it.each([codex, savedClaudeConfiguration])('produces a supported $harness Agent edit without changing execution settings', base => {
     const configuration: AgentUpdateInput['configuration'] = applyOperatorChatSettings(base, operatorChatSettings(base))
 
     expect(configuration).toStrictEqual(base)
