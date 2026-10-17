@@ -10,8 +10,6 @@ import type { PreparedCodexFileTurn } from '../harnesses/codexFiles/runtime.js'
 import type { CodexFileHostLease } from '../harnesses/codexFiles/port.js'
 import { collectCodexFileBytes } from '../harnesses/codexFiles/bytes.js'
 import { DomainError } from '../errors.js'
-import { retryDeviceRequest } from '../devices/deviceRequestRetry.js'
-import { reportOperationProgress } from '../operationProgress.js'
 
 export type PrepareWorkerFiles = (input: { session: NativeSessionReference;
   clientCorrelationId: string; signal: AbortSignal; host: CodexFileHostLease;
@@ -34,12 +32,7 @@ export class MainWorkerFiles {
   private async copy(copy: WorkerConversationFileCopy, signal: AbortSignal) {
     const key = commandInputHash(copy)
     this.pendingCopies.set(key, (this.pendingCopies.get(key) ?? 0) + 1)
-    try {
-      // Begin, immutable chunks and finish already acknowledge duplicate frames on the Worker.
-      const result = await retryDeviceRequest(() => this.sendCopy(copy, signal), { retry: 'idempotent', signal })
-      if (copy.phase === 'chunk') reportOperationProgress(Buffer.byteLength(copy.contentBase64, 'base64'))
-      return result
-    }
+    try { return await this.sendCopy(copy, signal) }
     finally {
       const remaining = this.pendingCopies.get(key)! - 1
       if (remaining) this.pendingCopies.set(key, remaining)

@@ -80,11 +80,8 @@ export async function provisionPairedAgentRoots(pool: pg.Pool, services: PairedR
     try {
       await services.provisionRoot(principal, workspaceId, template, target, source)
     } catch (error) {
-      // A Worker's unavailable storage or execution must not hide usable sibling computers.
-      if (!(error instanceof DomainError) || ![
-        'CI_ENROLLMENT_ROOT_REQUIRED', 'WORKER_EXECUTION_DISABLED', 'WORKER_VERSION_SKEW',
-        'WORKER_BUNDLE_UNPUBLISHED', 'WORKER_UPDATING', 'WORKER_STATUS_UNAVAILABLE',
-      ].includes(error.code)) throw error
+      // Missing pairing storage leaves the computer unavailable; it cannot approve an arbitrary base.
+      if (!(error instanceof DomainError) || error.code !== 'CI_ENROLLMENT_ROOT_REQUIRED') throw error
     }
   }
   return pending

@@ -130,7 +130,6 @@ interface InstalledWorkerComposition {
   systemInput: ReturnType<typeof createVerificationSystemInput>
   journalOpening: Promise<RemoteOperationJournal> | undefined
   nativeRecordCleanup: Promise<unknown> | undefined
-  mainNow: () => number
   journal: () => Promise<RemoteOperationJournal>
   current: () => NonNullable<ReturnType<DeviceConnectionSupervisor['currentBinding']>>
   request: (
@@ -252,12 +251,6 @@ async function configureWorkerTransfers(composition: InstalledWorkerComposition)
     if (observed !== undefined) mainClock.observe(observed)
     return mainClock.observed ? mainClock.now() : undefined
   }
-  composition.mainNow = () => {
-    const now = observedMainTime()
-    if (now === undefined) throw new DomainError('WORKER_CLOCK_UNTRUSTED',
-      'Main clock has not been observed on this connection.', 409)
-    return now
-  }
   const ownership = { now: () => observedMainTime() ?? Date.now(),
     retentionNow: () => input.connection()?.mainNow(),
     ...(input.assertStateOwnership ? { assertExclusiveOwner: input.assertStateOwnership } : {}) }
@@ -370,7 +363,6 @@ async function configureWorkerSources(composition: InstalledWorkerComposition) {
       accepted: rsync.kind === 'configured' ? input.rsync!.accepted : sourceTransfersOnMain(request, current),
       ...(rsync.kind === 'configured' ? { receiver: input.rsync!.receiver } : {}) })
     const sources = new SourceOperationWorkerService({
-      mainNow: composition.mainNow,
       authenticate: async context => {
         if (!sameDeviceInstallation(current(), context.binding)) {
           throw new DomainError('SOURCE_CONNECTION_CONFLICT',
@@ -467,7 +459,7 @@ async function configureWorkerSources(composition: InstalledWorkerComposition) {
       } : {}),
     })
     const createWorkflow = (location: InstalledWorkflowConfigurationLocation | null) =>
-      createInstalledWorkflowHost({ stateDirectory: input.stateDirectory, mainNow: composition.mainNow, pairing: input.pairing, bootId: input.bootId,
+      createInstalledWorkflowHost({ stateDirectory: input.stateDirectory, pairing: input.pairing, bootId: input.bootId,
       configuration: location, currentBinding: () => input.connection()?.currentBinding(),
       linkLostAt: () => input.connection()?.linkLostAt?.(),
       captureRequest: namespace => input.connection()?.captureRequest(namespace), sources, approvedRoots: roots,
@@ -726,6 +718,7 @@ async function configureWorkerExecution(composition: InstalledWorkerComposition)
       await readInstalledWorkflowConfiguration(location)
       lifetime.signal.throwIfAborted()
       composition.configuration = location
+      await composition.managedMcp.ensureReady()
       await composition.openWorkflow?.(location)
       composition.profileChecks ??= await createInstalledWorkerProfileChecks({ stateDirectory: input.stateDirectory,
         configuration: composition.configuration, pairing: input.pairing, current, registry,

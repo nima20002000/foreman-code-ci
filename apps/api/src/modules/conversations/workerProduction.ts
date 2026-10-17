@@ -40,8 +40,7 @@ import { createMainWorkerClaudeFiles } from './mainWorkerClaudeFiles.js'
 import type { AgentFileToolService } from '../files/tools/service.js'
 import { sameConversationForAppAccess } from './conversationAppAccess.js'
 import { sameOperatorExecutionConfiguration, workerExecutionConfiguration } from './workerExecutionConfiguration.js'
-import { readRunChatSkillsTransition } from './workerRunChatBinding.js'
-import { readAgentConfigurationTransition } from './workerConfigurationTransition.js'
+import { readAgentChatConfigurationTransition, readRunChatSkillsTransition } from './workerRunChatBinding.js'
 import { definedProperties } from '../definedProperties.js'
 import { readExecutionPlacement, readNativePlacement } from '../placement/persistence.js'
 import type { WorkerConversationBinding } from '@foreman-code/contracts/remote-execution-rpc'
@@ -61,7 +60,6 @@ interface OwnerRow {
   operator_configuration_version_id: string | null; agent_configuration_version_id: string | null
   active_request_id: string | null; native_session_id: string | null; deleted_at: unknown
   record: { status?: string; directoryBinding?: unknown; systemPrompt?: PromptSettingSnapshot;
-    sourceConfigurationVersionId?: string;
     origin?: { kind: string; runId?: string; executionId?: string; sourceNativeSessionId?: string } }
   payload: { ownerPrincipalId?: string } | null
   worker_conversation_binding: unknown
@@ -202,10 +200,7 @@ async function admitWorkerConversation(input: ProductionWorkerConversationsInput
   }, signal: AbortSignal) {
   const { configuration, selector, owner, profiles, kind, bridge, row } = context
   const original = await row(options.conversationId)
-  const retained = original.worker_conversation_binding
-    ? WorkerConversationBindingSchema.parse(original.worker_conversation_binding) : undefined
   const sourceExecution = options.sourceExecution
-    ?? (original.record.sourceConfigurationVersionId ? retained?.sourceExecution : undefined)
   const assertSource = (live: OwnerRow) => assertConversationSource(input.pool, sourceExecution, live)
   await assertSource(original)
   const directoryBinding = original.kind === 'agent' && original.record.directoryBinding
@@ -258,8 +253,6 @@ async function admitWorkerConversation(input: ProductionWorkerConversationsInput
       ?? legacyProviderAccountBinding(executionConfiguration.harness, executionConfiguration.harnessProfileSelection),
     ...(original.kind === 'agent' && original.record.systemPrompt ? { systemPrompt: original.record.systemPrompt } : {}),
     ...(sourceExecution ? { sourceExecution } : {}),
-    ...(sourceExecution && original.record.sourceConfigurationVersionId
-      ? { sourceConfigurationVersionId: original.record.sourceConfigurationVersionId } : {}),
     ...(directoryBinding ? { directoryBinding } : {}) })
   if (requestedBinding.owner.kind === 'operator') {
     const rootChannel = input.endpoint().captureRequest(host.deviceId, WORKSPACE_ROOT_EXTENSION.namespace)
@@ -284,7 +277,7 @@ async function admitWorkerConversation(input: ProductionWorkerConversationsInput
     && sameConversationForAppAccess(originalBinding, requestedBinding)
   const previousConfiguration = await readRunChatSkillsTransition(input.pool, original,
     originalBinding, requestedBinding, configuration)
-    ?? await readAgentConfigurationTransition(input.pool, originalBinding, requestedBinding, configuration)
+    ?? await readAgentChatConfigurationTransition(input.pool, originalBinding, requestedBinding, configuration)
   const changingSkills = previousConfiguration !== undefined
   if (!changingAccess && !changingSkills
     && !isDeepStrictEqual(options.observationPrincipalId ? observationBinding : originalBinding, requestedBinding)) {
