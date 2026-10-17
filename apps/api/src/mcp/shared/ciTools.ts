@@ -98,9 +98,7 @@ export const CI_TOOL_DESCRIPTIONS = {
     + 'Queued tickets return CI_NOT_STARTED. Malformed or unknown ticketId returns CI_RUN_NOT_FOUND with up to five '
     + 'recent groups you requested or joined, '
     + 'scoped to your execution when present, in the message and details.recentTickets '
-    + '(lead ticketId, suite, scope, group state, createdAt in UTC). '
-    + 'Saved tails expire with confirmed executor cleanup after three days, keeping the newest 200 tickets per computer. '
-    + 'Ticket results and history remain available.',
+    + '(lead ticketId, suite, scope, group state, createdAt in UTC).',
   ci_list: 'List CI tickets the Agents of one Run requested or joined as identical requests, newest first (at most 500). '
     + 'Optional executionId filters before the limit. Each ticket includes suite, part, '
     + 'partition, scope, state, step, computer and placement (host, github or circleci), timing, the requesting '
