@@ -1,4 +1,3 @@
-import { InfoHint } from '../../shared/ui/InfoHint'
 import { CLAUDE_FULL_ACCESS_REQUIRED, ClaudeEffortSchema, type ClaudeHarnessConfiguration } from '@foreman-code/contracts/claude'
 import { claudeAccessOptions } from './claudeAccess'
 import type { HarnessOptions } from '@foreman-code/contracts/management'
@@ -33,7 +32,7 @@ export function ClaudeConfigurationFields({ value, onChange, models, qualified, 
     {models.length ? <Combobox label="Model" value={value.model} options={options} error={fieldMessage(issues, 'model')}
       onValueChange={(model) => { const chosen = models.find(item => item.id === model); if (chosen) onChange({ ...value, model,
         ...(chosen.reasoningEfforts?.includes(value.effort ?? '') ? {} : chosen.reasoningEfforts?.includes('medium') ? { effort: 'medium' } : { effort: undefined }) }) }} />
-      : <TextField label="Model" value={value.model} error={fieldMessage(issues, 'model')} labelHint={<InfoHint label="Model">An explicit model choice; saving it does not prove native model availability.</InfoHint>}
+      : <TextField label="Model" value={value.model} error={fieldMessage(issues, 'model')} hint="An explicit model choice; saving it does not prove native model availability."
         onChange={event => onChange({ ...value, model: event.target.value })} />}
     <Select label="Effort" value={value.effort ?? ''} error={fieldMessage(issues, 'effort')}
       options={[{ value: '', label: 'Native default' }, ...[...new Set([...efforts, ...(value.effort ? [value.effort] : [])])].map(effort => ({
@@ -41,9 +40,9 @@ export function ClaudeConfigurationFields({ value, onChange, models, qualified, 
       onChange={event => onChange({ ...value, effort: event.target.value ? ClaudeEffortSchema.parse(event.target.value) : undefined })} />
     </div></div>
     {!managedAccount ? <TextField label="Local Claude profile directory" value={value.configDirectory} error={fieldMessage(issues, 'configDirectory')}
-      labelHint={<InfoHint label="Local Claude profile directory">Sign in on the selected computer using this profile.</InfoHint>}
+      hint="Sign in on the selected computer using this profile."
       onChange={(event) => onChange({ ...value, configDirectory: event.target.value })} />
-      : <p>{selectedAccount?.name ?? 'Selected account'} <InfoHint label="Account profile">The selected account controls the Claude profile and authentication.</InfoHint></p>}
+      : <p>The {selectedAccount?.name ?? 'selected'} account controls the Claude profile and authentication.</p>}
     <div className="harness-two-columns">
       {!managedAccount ? <Select label="Authentication" value={value.authMode} error={fieldMessage(issues, 'authMode')}
         options={[{ value: 'subscription', label: 'Local Claude subscription login' }, { value: 'api-key', label: 'Explicit API key · separate billing' }]}

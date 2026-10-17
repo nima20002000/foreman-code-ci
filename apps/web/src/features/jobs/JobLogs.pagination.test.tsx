@@ -1,4 +1,3 @@
-import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
@@ -31,13 +30,6 @@ it('loads the next cursor page and keeps earlier output visible', async () => {
     <JobLogs workspaceId={execution.workspaceId} executionId={execution.id} attemptId={execution.attemptId} enabled />
   </QueryClientProvider>)
   expect(await screen.findByText(/build failed/)).toBeVisible()
-  expect(screen.getByText('1 loaded chunks.')).toBeVisible()
-  expect(screen.queryByText('Searches only the loaded window, up to 250 chunks.')).not.toBeInTheDocument()
-  const user = userEvent.setup()
-  const hint = screen.getByRole('button', { name: 'About Search loaded logs' })
-  await user.hover(hint)
-  expect(screen.getByRole('tooltip')).toHaveTextContent('Searches only the loaded window, up to 250 chunks.')
-  await user.unhover(hint)
   fireEvent.click(screen.getByRole('checkbox', { name: 'Follow tail' }))
   fireEvent.click(screen.getByRole('button', { name: 'Load next log page' }))
   expect(await screen.findByText('Later build failure')).toBeVisible()

@@ -1,4 +1,3 @@
-import { InfoHint } from '../../shared/ui/InfoHint'
 import {
   BugReportActiveStatusSchema,
   BugReportClosedStatusSchema,
@@ -109,8 +108,7 @@ export function BugReportDialog({ reportId, returnFocusRef, onClose }: {
     {value && <>
       <ReportContent report={value} />
       <Select label="Report status"
-        labelHint={active ? <InfoHint label="Report status">Status changes save immediately.</InfoHint> : undefined}
-        hint={active ? undefined : 'Choose Open or Triaged to reopen this report.'}
+        hint={active ? 'Status changes save immediately.' : 'Choose Open or Triaged to reopen this report.'}
         value={value.status}
         options={active ? activeStatusOptions
           : [{ value: value.status, label: statusLabels[value.status], disabled: true }, ...activeStatusOptions]}
@@ -129,7 +127,7 @@ export function BugReportDialog({ reportId, returnFocusRef, onClose }: {
           onChange={event => setCloseAs(BugReportClosedStatusSchema.parse(event.target.value))} />
         {closeAs === 'duplicate' && <TextField label="Duplicate of report ID" required value={duplicateOfId}
           disabled={editDisabled} onChange={event => setDuplicateOfId(event.target.value)} />}
-        <TextField label="Closing note" labelHint={<InfoHint label="Closing note">Optional, such as the release or commit.</InfoHint>} maxLength={1000}
+        <TextField label="Closing note" hint="Optional, such as the release or commit." maxLength={1000}
           value={note} disabled={editDisabled} onChange={event => setNote(event.target.value)} />
         <Button type="submit" disabled={editDisabled || invalidDuplicate}>
           Close and archive

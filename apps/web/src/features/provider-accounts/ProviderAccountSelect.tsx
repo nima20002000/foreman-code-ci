@@ -1,4 +1,3 @@
-import { InfoHint } from '../../shared/ui/InfoHint'
 import type { AccountProvider } from '@foreman-code/contracts/provider-accounts'
 import type { DeviceProvisioningTarget } from '@foreman-code/contracts/device-resources'
 import { Button, Select } from '../../shared/ui/nocturne'
@@ -35,7 +34,7 @@ export function ProviderAccountSelect({ provider, value, onChange, disabled = fa
   return <div className="provider-account-select">
     <Select label="Account" value={value ?? ''} options={options}
       disabled={disabled || !available || !query.isSuccess || access.discovery.isError || Boolean(denied)}
-      labelHint={<InfoHint label="Account">Choose an account on the selected computer. Manage accounts in Settings &gt; Harnesses.</InfoHint>}
+      hint="Choose an account on the selected computer. Manage accounts in Settings > Harnesses."
       onChange={event => onChange(event.target.value || undefined)} />
     {access.discovery.isPending || !unavailable && query.isPending ? <small role="status">Loading accounts…</small> : null}
     {query.isError || access.discovery.isError ? <div role="alert">Account details could not be refreshed. Your selection is kept.
