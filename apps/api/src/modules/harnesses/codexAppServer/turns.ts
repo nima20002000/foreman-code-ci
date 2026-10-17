@@ -636,7 +636,7 @@ export abstract class CodexManagerTurns extends CodexManagerControls {
           result: structuredClone(rejected) } }
       const observedTerminal = runtime.activeCorrelationId === correlationId
         && runtime.activeTurnId !== undefined && runtime.terminalResult !== undefined
-      let restarted = runtime.closed && !observedTerminal
+      const restarted = runtime.closed && !observedTerminal
       if (restarted) await this.restart(runtime, signal)
       const locallyIdle = !runtime.attached && runtime.phase === 'idle' && runtime.activeCorrelationId === undefined
         && runtime.activeTurnId === undefined && runtime.interactions.size === 0
@@ -648,7 +648,6 @@ export abstract class CodexManagerTurns extends CodexManagerControls {
             && error.result.error?.code === 'CODEX_APP_SERVER_DISCONNECTED'
           if (!disconnected || !runtime.closed || restarted) throw error
           await this.restart(runtime, signal)
-          restarted = true
           await this.synchronize(runtime, correlationId, signal)
         }
       }
@@ -657,11 +656,6 @@ export abstract class CodexManagerTurns extends CodexManagerControls {
       if (lateRejection) return { ...await this.history(session), correlationId,
         nonSubmission: { nativeSessionId: session.nativeSessionId, clientCorrelationId: correlationId,
           result: structuredClone(lateRejection) } }
-      this.record(runtime, 'thread.reconciled', {
-        correlationId, restarted, threadId: session.nativeSessionId,
-        ...(runtime.activeTurnId ? { turnId: runtime.activeTurnId } : {}),
-        terminal: runtime.terminalResult?.outcome ?? null,
-      })
       const history = await this.history(session)
       return runtime.activeCorrelationId === correlationId && runtime.activeTurnId
         ? {
@@ -683,6 +677,14 @@ export abstract class CodexManagerTurns extends CodexManagerControls {
   async reconcileHistoryPage(session: NativeSessionReference, correlationId: string,
     afterSequence: number, signal?: AbortSignal): Promise<NativeHistory> {
     const history = await this.reconcile(session, correlationId, signal)
+    return this.historyPageFrom(session, history, afterSequence)
+  }
+
+  async historyPage(session: NativeSessionReference, afterSequence: number): Promise<NativeHistory> {
+    return this.historyPageFrom(session, await this.history(session), afterSequence)
+  }
+
+  private historyPageFrom(session: NativeSessionReference, history: NativeHistory, afterSequence: number): NativeHistory {
     const runtime = this.requireRuntime(session)
     const events: NativeHarnessEvent[] = []
     let bytes = 0
