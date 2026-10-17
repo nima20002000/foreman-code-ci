@@ -55,7 +55,7 @@ import {
 import { agentActivitySnapshot } from './activitySnapshot.js'
 import { AgentChatCommands } from './agentChatCommands.js'
 import { requireAuthorization, isAuthorized } from '../access/policy.js'
-import { commandInputHash } from '../commands/postgres.js'
+import { commandInputHash, PostgresCommandCoordinator } from '../commands/postgres.js'
 import { DomainError } from '../errors.js'
 import { NativeDeliveryError, NativeTurnNotActiveError } from '../harnesses/errors.js'
 import type { NativeHarnessSessionManager, NativeSessionStart, AgentChatNativeSessionStart, NativeMessageSubmission } from '../harnesses/port.js'
@@ -259,6 +259,9 @@ export class AgentChatService {
     // before command reservation or any native/database mutation, also on replay.
     if (action !== 'agent_chat:read') this.authorize(live, 'agent_chat:read', { workspaceId, workflowId: row.workflow_id,
       ...(row.origin_run_id ? { runId: row.origin_run_id } : {}) })
+    if (action === 'agent_chat:write' && row.record.archived) {
+      throw new DomainError('AGENT_CHAT_CONTEXT_STALE', 'This conversation is in history. Use the current conversation.', 409)
+    }
     if (action !== 'agent_chat:read' && row.record.origin.kind === 'run_execution'
       && row.native_session_id === row.record.origin.sourceNativeSessionId) {
       throw new DomainError('AGENT_CHAT_UNAVAILABLE', 'A Run source session cannot be controlled as a chat session.', 409)
@@ -353,7 +356,7 @@ export class AgentChatService {
       }
       if (row) {
         const unavailable = this.sessionUnavailable(row, configuration)
-          ?? (!row.native_session_id && (!source.nativeSessionId || !source.workingDirectory || source.state !== 'completed'
+          ?? (!row.native_session_id && !row.record.freshSession && (!source.nativeSessionId || !source.workingDirectory || source.state !== 'completed'
             || configuration.harness.harness === 'codex' && configuration.harness.advanced?.sessionPersistence === 'ephemeral')
             ? { reason: 'native_session_missing' as const, message: 'The Run source cannot be forked. Stored chat messages remain readable; no replacement session will be created.' }
             : undefined)
@@ -585,6 +588,11 @@ export class AgentChatService {
     const row = await this.conversation(workspaceId, id, principal, 'agent_chat:read')
     const context: AgentChatContext = { workspaceId, workflowId: row.workflow_id, workflowNodeId: row.workflow_node_id,
       agentId: row.agent_id, ...(row.origin_run_id ? { runId: row.origin_run_id } : {}) }
+    if (row.record.archived) {
+      const configuration = await this.conversationConfiguration(row)
+      return this.state({ context, row, ...(configuration ? { configuration } : {}),
+        blocked: { reason: 'context_stale', message: 'This conversation is in history. Use the current conversation.' } }, principal)
+    }
     const resolution = await this.resolve(context, row.origin_execution_id ?? undefined,
       !!context.runId && !!row.origin_execution_id && row.agent_key === runChatStorageKey(context, row.origin_execution_id))
     if (resolution.row?.id !== id) staleRunChat()
@@ -756,6 +764,21 @@ export class AgentChatService {
     })
   }
 
+  sendSelectedRunCommand(principal: ManagementPrincipal, raw: unknown, source: 'http' | 'mcp' = 'http') {
+    const input = SendSelectedRunChatRequestSchema.parse(raw)
+    if (parseSessionCommand(input.message.content).kind !== 'new') return this.sendSelectedRun(principal, input)
+    return this.command(() => withRunChatAuthority(this.pool, principal, input.selection,
+      ['agent_chat:read', 'agent_chat:write'], async (client, assertCurrent) => {
+        const selected = await resolveRunChatSelection(client, this.runs, input.selection)
+        if (selected.kind !== 'selected') {
+          throw new DomainError('AGENT_CHAT_UNAVAILABLE', 'The selected Run has no resolvable historical chat.', 409)
+        }
+        const { workspaceId, ...context } = selected.context
+        return this.sendCommand(principal, workspaceId, { ...input.message, context }, source,
+          { executionId: selected.selection.executionId, assertCurrent })
+      }))
+  }
+
   interruptSelectedRun(principal: ManagementPrincipal, raw: unknown, source: 'http' | 'mcp' = 'http'): Promise<AgentChatState> {
     return this.command(async () => {
       const input = InterruptSelectedRunChatRequestSchema.parse(raw)
@@ -777,6 +800,67 @@ export class AgentChatService {
   }
 
   // ---------------------------------------------------------------- commands
+
+  async sendCommand(principal: ManagementPrincipal, workspaceId: string, value: SendAgentChatMessageRequest,
+    source: 'http' | 'mcp' = 'http', selection?: { executionId: string; assertCurrent: RunChatAuthorityCheck }) {
+    const input = SendAgentChatMessageRequestSchema.parse(value)
+    if (parseSessionCommand(input.content).kind !== 'new') return this.send(principal, workspaceId, input)
+    return this.command(async () => {
+      const context = { workspaceId, ...input.context }
+      const authorize = async (client: Pick<pg.Pool, 'query'>) => {
+        const live = await readLiveManagementPrincipal(client, principal.id)
+        this.authorize(live, 'agent_chat:read', context)
+        this.authorize(live, 'agent_chat:write', context)
+      }
+      await authorize(this.pool)
+      if (input.attachments.length || input.intent === 'steer' || input.sessionMode) {
+        throw new DomainError('SESSION_COMMAND_INVALID', '/new starts a separate conversation without attachments or a mode.', 422)
+      }
+      const result = await new PostgresCommandCoordinator(this.pool).execute({
+        principal, source, operation: 'agent_chat_new', commandId: input.requestId,
+        targetKey: agentChatKey(context), payload: input, authorize,
+        perform: async client => {
+          await selection?.assertCurrent()
+          const resolved = await this.resolve(context, selection?.executionId, !!selection)
+          if ((resolved.row?.id ?? null) !== input.expectedConversationId) staleRunChat()
+          if (resolved.blocked && !['native_session_missing', 'harness_unavailable'].includes(resolved.blocked.reason)) {
+            throw new DomainError('AGENT_CHAT_UNAVAILABLE', resolved.blocked.message, 409)
+          }
+          if (!resolved.configuration || resolved.configuration.harness.harness === 'opencode') {
+            throw new DomainError('AGENT_CHAT_UNAVAILABLE', 'This Agent has no supported chat configuration.', 409)
+          }
+          if (!resolved.row) {
+            if (resolved.blocked) throw new DomainError('AGENT_CHAT_UNAVAILABLE', resolved.blocked.message, 409)
+            if (!resolved.create) staleRunChat()
+            const key = resolved.key ?? agentChatKey(context)
+            await client.query('select pg_advisory_xact_lock(hashtext($1))', [`agent-chat:${key}`])
+            if (await this.repository.byKey(key, client)) staleRunChat()
+            const row = await this.repository.ensureForControls(key, { ...resolved.create, context }, authorize, client)
+            return { conversationId: row.id, previousConversationId: null }
+          }
+          return { conversationId: await this.repository.replaceConversation(client, resolved.row),
+            previousConversationId: resolved.row.id }
+        },
+      })
+      const { conversationId, previousConversationId } = result.value
+      if (previousConversationId) await this.retireArchivedConversation(previousConversationId)
+      this.events.publish(previousConversationId ?? conversationId, 'state', { conversationReset: true })
+      return { state: await this.readConversation(principal, workspaceId, conversationId),
+        reset: { requestId: input.requestId, previousConversationId }, replayed: result.replayed }
+    })
+  }
+
+  private async retireArchivedConversation(id: string) {
+    const row = await this.repository.get(id)
+    if (!row?.record.archived || row.active_request_id) return
+    const state = await this.repository.state(id)
+    if (state?.turns.some(turn => ['queued', 'submitting', 'accepted', 'unknown'].includes(turn.delivery))) return
+    await this.control(id, async () => {
+      const runtime = this.runtimes.get(id)
+      if (runtime?.session && runtime.manager.closeForResume) await runtime.manager.closeForResume(runtime.session)
+      await this.release(id)
+    })
+  }
 
   send(principal: ManagementPrincipal, workspaceId: string, value: SendAgentChatMessageRequest) {
     return this.command(() => this.sendMessage(principal, workspaceId, value))
@@ -1003,7 +1087,10 @@ export class AgentChatService {
         if (this.closing) return
         this.wakeups.delete(id) // This queue scan services admissions already observed.
         const next = await this.repository.nextQueued(id)
-        if (!next) return
+        if (!next) {
+          await this.retireArchivedConversation(id)
+          return
+        }
         // Claims cannot overtake a fenced native interrupt. A canceled selection is not a busy queue.
         if (!await this.control(id, () => this.repository.claim(id, next.requestId))) {
           const row = await this.repository.get(id)
@@ -1104,6 +1191,7 @@ export class AgentChatService {
     this.assertOpen()
     signal.throwIfAborted()
     const accountSource = row.record.origin.kind === 'run_execution' && !row.record.sourceConfigurationVersionId
+      && !row.record.freshSession
       ? { executionId: row.record.origin.executionId } : undefined
     const runtime: Runtime = existing ?? { manager: await this.managers(row.id, configuration, row.record.workingDirectory,
       accountSource), configuration }
@@ -1137,7 +1225,7 @@ export class AgentChatService {
       }
       let creationRequested = false
       try {
-        if (row.record.origin.kind === 'run_execution' && !row.record.handoffContext) {
+        if (row.record.origin.kind === 'run_execution' && !row.record.handoffContext && !row.record.freshSession) {
           const origin = row.record.origin
           if (!runtime.manager.forkSession) throw new DomainError('AGENT_CHAT_FORK_UNAVAILABLE', 'This harness cannot continue a Run session in chat.', 409)
           const providerVersion = await this.sourceProviderVersion(origin, runtime)

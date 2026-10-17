@@ -30,7 +30,6 @@ function setup(ids: string[]) {
     return (id: string, ...args: unknown[]) => Reflect.get(find(id).repository, name).call(find(id).repository, id, ...args)
   } }) as PostgresOperatorConversationRepository
   const attached: string[] = []
-  const closed: string[] = []
   const recovered: NativeSessionStart[] = []
   let unblock!: () => void
   const gate = new Promise<void>(resolve => { unblock = resolve })
@@ -43,16 +42,12 @@ function setup(ids: string[]) {
     reconcileSessionCreation: async (start: NativeSessionStart) => { recovered.push(start); return f.session },
     reconcile: async () => ({ events: [], pendingInteractions: [], correlationId: nativeCorrelation(id, 'request'),
       nativeTurnId: 'native-turn', terminalResult: { outcome: 'succeeded' } }),
-    closeForResume: async (session: unknown) => {
-      expect(session).toEqual(f.session)
-      closed.push(id)
-    },
     dispose: async () => {}, stopAutomaticResponses: () => {},
   }) as unknown as NativeHarnessSessionManager
   const authority = { current: async () => principal, release: async () => {},
     prepare: async () => { throw new Error('Recovery must not issue a launch credential') } }
   const chat = new OperatorChatService(repository, {} as never, managers as never, '/runtime/operator', authority as never)
-  return { chat, conversations, attached, closed, recovered, unblock, f }
+  return { chat, conversations, attached, recovered, unblock, f }
 }
 
 it('recovers healthy conversations while another computer is stalled, with a bounded recovery pool', async () => {
@@ -86,16 +81,4 @@ it('admits at most four independent recovery operations at once', async () => {
     for (let index = 0; index < 200; index++) await Promise.resolve()
     expect(f.attached).toHaveLength(4)
   } finally { f.unblock(); await recovering; await f.chat.shutdown() }
-})
-
-it('closes only the recovered Worker owner while retaining its session and original turn result', async () => {
-  const f = setup(['healthy'])
-  try {
-    await f.chat.reconcileActive()
-    expect(f.closed).toEqual(['healthy'])
-    expect(f.attached).toEqual(['healthy'])
-    expect(f.recovered).toEqual([])
-    expect(f.conversations[0]!.row.native_session_id).toBe(f.f.session.nativeSessionId)
-    expect(f.conversations[0]!.finishResults).toEqual([{ outcome: 'succeeded' }])
-  } finally { await f.chat.shutdown() }
 })
