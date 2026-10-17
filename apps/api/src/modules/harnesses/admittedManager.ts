@@ -27,21 +27,6 @@ export function createAdmittedNativeManager<T extends NativeHarnessSessionManage
         throw new DomainError('HARNESS_CONFIGURATION_MISMATCH', 'The admitted native adapter differs from its role configuration.', 409)
       }
       for (const session of stopped.values()) result.manager.stopAutomaticResponses?.(session)
-      if (result.manager.retireTurn) {
-        const retireTurn = result.manager.retireTurn.bind(result.manager)
-        manager.retireTurn = async (session, correlationId) => {
-          lifetime.signal.throwIfAborted()
-          await retireTurn(session, correlationId)
-        }
-      }
-      if (result.manager.rebindApplicationAccess) {
-        const rebind = result.manager.rebindApplicationAccess.bind(result.manager)
-        manager.rebindApplicationAccess = async (session, start, signal) => {
-          signal?.throwIfAborted()
-          lifetime.signal.throwIfAborted()
-          await rebind(session, start, signal)
-        }
-      }
       return result
     })
     const result = await opening
@@ -120,6 +105,12 @@ export function createAdmittedNativeManager<T extends NativeHarnessSessionManage
       : allocation?.manager.subagentControl?.(child, () => { lifetime.signal.throwIfAborted(); assertOwner() }),
     history: async (session, signal) => (await actual(signal)).history(session, signal),
     reconcile: async (session, correlationId, signal) => (await actual(signal)).reconcile(session, correlationId, signal),
+    retireTurn: async (session, correlationId) => {
+      const current = await actual()
+      if (!current.retireTurn) throw new DomainError('NATIVE_TURN_RETIREMENT_UNAVAILABLE',
+        'The admitted driver cannot release completed turn resources while retaining its session.', 409)
+      await current.retireTurn(session, correlationId)
+    },
     reconcileResponse: async (session, response, signal) => {
       const current = await actual(signal)
       return current.reconcileResponse ? current.reconcileResponse(session, response, signal) : current.history(session, signal)
