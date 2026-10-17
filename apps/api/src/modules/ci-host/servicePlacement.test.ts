@@ -9,6 +9,8 @@ import type { CiAuthority } from '../jobs/ciAuthority.js'
 import { DomainError } from '../errors.js'
 import { planIntegrationParts } from './integrationParts.js'
 import { readExecutorSpeeds } from './executorSpeed.js'
+import type { CircleAccounts } from '@foreman-code/contracts/management'
+import { CircleStandby } from './circleStandby.js'
 import { ciExecutionRunId } from './executionAttempt.js'
 
 function deferred() {
@@ -46,9 +48,11 @@ function queuedRuns(count: number) {
 function fleet(records: CiRunRecord[], available: HostCiComputer[],
   unavailable = new Map<string, string>(), occupied = new Set<string>(), slots = new Map<string, number>(),
   options: { cpuCounts?: Map<string, number>; durations?: CiDurations; reservedCloudSlots?: number;
-    publishMirror?: HostCiEndpoint['publishMirror'] } = {}) {
+    publishMirror?: HostCiEndpoint['publishMirror']; circleStandby?: CircleStandby; circleAccounts?: CircleAccounts } = {}) {
   const started: { computer: HostCiComputer; request: CiHostRequest; assigned: CiRunRecord }[] = []
   const pool = { options: { max: 10 }, query: async (sql: string, parameters?: unknown[]) => {
+    if (sql.includes('from application_settings')) return { rows: options.circleAccounts
+      ? [{ record: options.circleAccounts, revision: '1', current_version_id: null }] : [] }
     if (sql.includes('ci_dispatch_claims')) return { rows: [], rowCount: 1 }
     if (sql.startsWith('select record from ci_runs where id=')) {
       return { rows: records.filter(record => record.id === parameters![0]).map(record => ({ record })) }
@@ -94,6 +98,14 @@ function fleet(records: CiRunRecord[], available: HostCiComputer[],
     const active = records.filter(record => ['starting', 'running'].includes(record.state))
       .map(record => ({ id: record.id, record, host_key: available.find(computer =>
         isDeepStrictEqual(computer.hostRef, record.computer?.hostRef))?.key ?? host.key }))
+    if (sql.startsWith('select id from ci_runs') && parameters?.length === 4) {
+      return { rows: active.filter(row => {
+        const ref = row.record.computer?.hostRef
+        return ref?.kind === 'cloud' && ref.provider === 'circleci' && ref.mainId === parameters[0]
+          && (ref.circleAccountId ?? 'default') === parameters[1] && String(ref.slot ?? 0) === parameters[2]
+          && (ref.account ?? row.record.ciMirror?.split('/')[0])?.toLowerCase() === parameters[3]
+      }) }
+    }
     return { rows: sql.startsWith('select host_key from ci_runs')
       ? active.filter(row => row.host_key === parameters![0]) : active }
   }, connect: async () => ({ query: pool.query, release: () => {} }) } as unknown as pg.Pool
@@ -1166,6 +1178,49 @@ it('keeps structural protocol rejections blocked across time until executor stat
     await f.service.dispatch()
     expect(attempts).toBe(2)
     expect(records[0]?.state).toBe('running')
+  } finally {
+    await f.service.close()
+  }
+})
+
+it('reserves ordinary cloud capacity on active standby orgs instead of exhausted primaries', async () => {
+  const owners = ['alpha', 'beta', 'gamma', 'delta', 'epsilon', 'zeta']
+  const organizations = owners.flatMap((owner, index) => Array.from({ length: 2 }, (_, slot): HostCiComputer => ({
+    key: `fixture:cloud:circleci${index < 3 ? '' : '~reserve'}@${owner}:${slot}`, label: owner, priority: 10,
+    hostRef: { kind: 'cloud', mainId: 'fixture', provider: 'circleci', account: owner, slot,
+      ...(index < 3 ? {} : { circleAccountId: 'reserve' }) },
+  })))
+  const github = Array.from({ length: 2 }, (_, slot): HostCiComputer => ({
+    key: `fixture:cloud:github:${slot}`, label: 'GitHub', priority: 10,
+    hostRef: { kind: 'cloud', mainId: 'fixture', provider: 'github', slot },
+  }))
+  const selector = new CircleStandby(async () => owners.map((owner, index) => ({ owner,
+    circleAccountId: index < 3 ? 'default' : 'reserve', role: index < 3 ? 'primary' : 'standby', ready: true,
+    mirrorNames: new Set(['ci-mirror']),
+  })), { reading: async owner => ({ credits: { total: 400_000,
+    used: owners.indexOf(owner!) < 3 ? 400_000 : 0, remaining: owners.indexOf(owner!) < 3 ? 0 : 400_000,
+    asOf: '2026-10-12T00:00:00Z' } }) }, undefined, () => Date.parse('2026-10-12T00:00:00Z'))
+  const records = queuedRuns(8).map(run => CiRunRecordSchema.parse({ ...run, gate: true, noSupersede: true,
+    plannedHostKey: organizations[0]!.key, integrationShards: 4, requiresBuildComputer: false,
+    partition: { ...run.partition!, weights: Array.from({ length: 8 }, () => 1) },
+  }))
+  vi.spyOn(Date, 'now').mockReturnValue(Date.parse(records[0]!.queuedAt) + 1000)
+  const f = fleet(records, [...github, ...organizations], new Map(), new Set(), new Map(), {
+    circleStandby: selector, reservedCloudSlots: 4, circleAccounts: { accounts: [
+      { id: 'default', label: 'Primary', role: 'primary', organizations: owners.slice(0, 3) },
+      { id: 'reserve', label: 'Reserve', role: 'standby', organizations: owners.slice(3) },
+    ] },
+  })
+  try {
+    await f.service.dispatch()
+    await f.service.drain()
+    const keys = f.started.map(item => item.computer.key)
+    expect(keys).toHaveLength(4)
+    for (const owner of owners.slice(3)) {
+      expect(keys.filter(key => key.includes(`@${owner}:`))).toHaveLength(1)
+    }
+    expect(keys.some(key => key.endsWith(':1'))).toBe(false)
+    expect(records.filter(run => run.state === 'queued')).toHaveLength(4)
   } finally {
     await f.service.close()
   }
