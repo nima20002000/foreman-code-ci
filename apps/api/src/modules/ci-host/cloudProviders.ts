@@ -359,15 +359,6 @@ function circleConclusion(outcome: string | undefined): 'success' | 'failure' | 
   return failures.includes(outcome ?? '') ? 'failure' : null
 }
 
-function circlePipelinePending(view: {
-  state?: string; phase?: string; outcome?: string; current_outcome?: string
-  workflows?: unknown[]; errors?: unknown[]
-}) {
-  const pendingState = [view.state, view.phase].some(state => state === 'created' || state === 'setup-pending')
-  const notStarted = (view.outcome ?? view.current_outcome) === 'not_run' && !view.errors?.length
-  return !view.workflows?.length && (pendingState || notStarted)
-}
-
 /** Large Linux machines (4 vCPUs, 15 GB); the free plan runs 30 jobs at once and open-source Linux builds are free. */
 /** The free plan runs 30 jobs at once. */
 export class CircleCiProvider implements CloudProvider {
@@ -463,7 +454,10 @@ export class CircleCiProvider implements CloudProvider {
       workflows?: { phase?: string; outcome?: string; stopped_at?: string; jobs?: { id: string }[] }[]
     }
     // A CLI placeholder outcome cannot finish a pipeline that is still waiting for workflows.
-    if (circlePipelinePending(view)) return { ...view, phase: 'started', outcome: undefined, current_outcome: undefined }
+    const pendingState = [view.state, view.phase].some(state => state === 'created' || state === 'setup-pending')
+    const notStarted = (view.outcome ?? view.current_outcome) === 'not_run' && !view.errors?.length
+    const waiting = !view.workflows?.length && (pendingState || notStarted)
+    if (waiting) return { ...view, phase: 'started', outcome: undefined, current_outcome: undefined }
     if (view.errors?.length && (view.phase === 'ended' || view.current_outcome === 'not_run')) {
       const message = view.errors.map(error => `${error.type}: ${error.message}`).join('; ')
       throw new DomainError('CI_CLOUD_PIPELINE_FAILED', `${this.label} pipeline failed: ${message}`, 502,
@@ -617,7 +611,7 @@ export class CircleCiProvider implements CloudProvider {
 
   async cancel(run: CloudRun): Promise<void | false> {
     this.outputPolls.delete(run.runId)
-    let view: Parameters<typeof circlePipelinePending>[0] | null
+    let view: { phase?: string; workflows?: unknown[] } | null
     try {
       view = JSON.parse(await this.circleci(['run', 'get', run.providerRunId!, '--json'], 15_000)) as typeof view
     } catch (error) {
@@ -626,9 +620,7 @@ export class CircleCiProvider implements CloudProvider {
       // Cancellation of the known pipeline does not require a successful status lookup.
       view = null
     }
-    const terminal = view?.phase === 'ended' && !circlePipelinePending(view)
-      && circleConclusion(view.outcome ?? view.current_outcome) !== null
-    if (terminal && !view?.workflows?.length) return
+    if (view?.phase === 'ended' && !view.workflows?.length) return
     try {
       await this.circleci(['run', 'cancel', run.providerRunId!, '--force'], 15_000)
     } catch (error) {
