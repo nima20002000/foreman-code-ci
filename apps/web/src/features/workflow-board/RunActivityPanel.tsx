@@ -1,3 +1,4 @@
+import { InfoHint } from '../../shared/ui/InfoHint'
 import { preferRunSummary } from '@foreman-code/contracts/run-snapshots'
 import { RunActions } from './actions'
 import { useEffect, useRef } from 'react'
@@ -85,13 +86,12 @@ export function RunActivityPanel({ summaries, summariesReadAt = 0 }: {
   const inspect = (runId: string) => discovery.mutate({ runId, generation: sessionGeneration(), ticket: ++request.current })
   const listedIds = new Set(listed.map((item) => item.id))
   const runParts = <>
-    <h3>Current and past Runs</h3>
-    <p>Select a Run to show its own immutable topology, even when repeat was added or removed in a later saved version.</p>
+    <h3>Current and past Runs<InfoHint label="Current and past Runs">Select a Run to show its own immutable topology, even when repeat was added or removed in a later saved version. The five most recently loaded pages are retained. Refresh starts at the first page.</InfoHint></h3>
     {error ? <Alert tone="danger" live title="That run couldn’t be opened.">{error}</Alert> : null}
     {denied ? <Alert tone="warning" title="You don’t have access to this workflow’s runs." /> : runs.isError ? <Alert tone="danger" title="Runs couldn’t be loaded."
       action={<Button size="sm" onClick={() => void refreshFirstInspectionPage(client, boardRunListKey(workspaceId, workflowId))}>Try again</Button>} /> : null}
     {runs.isPending && !denied ? <LoadingState label="Loading runs…" rows={3} /> : null}
-    {!runs.isPending && !listed.length && !workspaceSummaries.length && !denied && !runs.isError ? <EmptyState icon="history" title="No runs yet" description="Start a run from the board. It shows up here." /> : null}
+    {!runs.isPending && !listed.length && !workspaceSummaries.length && !denied && !runs.isError ? <EmptyState icon="history" title="No runs yet" description="Start a run from the board." /> : null}
     <ul className="board-run-list">
       {workspaceSummaries.filter((run) => !listedIds.has(run.id)).map((run) => <li key={run.id}>
         <button type="button" className="board-run-row" disabled={reading === run.id} onClick={() => void inspect(run.id)} aria-label={`Inspect ${run.id}`}>
@@ -118,7 +118,6 @@ export function RunActivityPanel({ summaries, summariesReadAt = 0 }: {
       {runs.hasNextPage && !denied && !runs.isError ? <Button size="sm" disabled={runs.isFetching} onClick={() => void runs.fetchNextPage()}>Load more Runs</Button> : null}
       <Button size="sm" variant="ghost" leading={<Icon name="refresh" size={14} />} disabled={runs.isFetching} onClick={() => void refreshFirstInspectionPage(client, boardRunListKey(workspaceId, workflowId))}>Refresh Runs</Button>
     </div>
-    {runs.data?.pages.length === 5 ? <p>The five most recently loaded pages are retained. Refresh starts at the first page.</p> : null}
     {!selected ? <section className="board-activities" aria-label="Activities"><h3>Activities</h3>
       <p>Select a Run to see its recorded Agent actions, outcomes and notices.</p></section> : null}
     {selected ? <section className="board-run-detail" aria-label="Selected run">
