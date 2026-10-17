@@ -21,7 +21,6 @@ import { WorkerConversationReceiptSchema } from '@foreman-code/contracts/remote-
 import { DomainError } from '../../errors.js'
 import { WorkerConversationArchive } from '../../conversations/workerConversationArchive.js'
 import { WorkerConversationJournal } from '../../conversations/workerJournal.js'
-import { workerConversationJournalKey } from '../../conversations/workerConversationJournalKey.js'
 import { workerConversationProcessDigest } from '../../conversations/workerNativeOwner.js'
 import type { NativeLaunchObservation } from '../../harnesses/recovery/processRegistry.js'
 import { RemoteOperationReceiptSchema, RemoteOwnerControlSchema, RemoteTerminalEvidenceSchema, RemoteNativeIdentitySchema, RemoteInteractionTargetSchema, RemoteOwnerReconciliationSchema,
@@ -102,12 +101,12 @@ export class RemoteOperationJournal {
       read: async conversationId => {
         await this.tail
         if (this.closed || this.faulted) throw new Error('Journal unavailable: recovery required')
-        const retained = this.data.conversations.find(record => workerConversationJournalKey(record.binding) === conversationId)
+        const retained = this.data.conversations.find(record => record.binding.owner.conversationId === conversationId)
         const record = retained ?? await this.conversationArchive.read(conversationId)
         return record ? [structuredClone(record)] : []
       },
       change: (conversationId, apply) => this.change(async data => {
-        if (data.conversations.some(record => workerConversationJournalKey(record.binding) === conversationId)) {
+        if (data.conversations.some(record => record.binding.owner.conversationId === conversationId)) {
           return apply(data.conversations)
         }
         const archived = await this.conversationArchive.read(conversationId)

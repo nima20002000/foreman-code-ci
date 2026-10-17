@@ -32,7 +32,7 @@ export function fakeComputer() {
   const result = (value: unknown = {}, code = 0) => ({ code, stdout: JSON.stringify(value), stderr: '' })
   const ports: MaintenancePorts = {
     environment: { HOME: '/fake/home' },
-    find: async name => ['codex', 'claude', 'npm'].includes(name) ? `/fake/${name}` : null,
+    find: async name => ['codex', 'claude', 'npm', 'server', 'updated-server', 'npx'].includes(name) ? `/fake/${name}` : null,
     run: async (binary, args) => {
       calls.push({ binary, args })
       if (binary === 'sudo' && args.join(' ') === '-n true') {
