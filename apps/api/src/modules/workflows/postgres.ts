@@ -9,7 +9,7 @@ import { readImmutableWorkflowVersion, readImmutableAgentConfiguration, readSave
   type ImmutableWorkflowVersionRow, type ImmutableAgentConfigurationRow } from './immutableRead.js'
 
 export class PostgresWorkflowRepository {
-  constructor(private readonly pool: pg.Pool) {}
+  constructor(private readonly pool: Pick<pg.Pool, 'query'>) {}
 
   async list(workspaceId: string): Promise<SavedWorkflowDefinition[]> {
     const result = await this.pool.query<{ id: string; workspace_id: string; record: unknown }>(
