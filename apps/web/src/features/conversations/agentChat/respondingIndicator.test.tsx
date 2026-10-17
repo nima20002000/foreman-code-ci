@@ -4,6 +4,7 @@ import { agentChatFixtures, type AgentChatState } from '@foreman-code/contracts/
 import { agentChatApi } from '../../../shared/api/agentChat'
 import { deferred } from '../../../test/deferred'
 import { useConversationDraftStore } from '../conversationDraftStore'
+import { agentChatStateKey } from './useAgentChat'
 import { AgentChatTestSource, approvalState, installChatSource, mountChat } from './testSupport'
 
 const clients: ReturnType<typeof mountChat>['client'][] = []
@@ -48,6 +49,8 @@ it.each(['completed', 'failed', 'canceled'])('stops responding immediately on a 
     activeTurn: { ...running.activeTurn!, requestId: 'next-turn' } }
   mounted.mock.setState(next)
   await act(async () => { await mounted.refresh() })
+  expect(mounted.client.getQueryData<AgentChatState>(agentChatStateKey(running.context)))
+    .toMatchObject({ sessionState: 'active', activeTurn: { requestId: 'next-turn' } })
   expect(screen.getByRole('status', { name: 'Coder is working' })).toBeVisible()
   act(() => source.event({ id: 2, conversationId: running.conversation!.id, type: 'state',
     data: { requestId: running.activeTurn!.requestId, delivery } }))
