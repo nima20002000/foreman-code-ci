@@ -512,9 +512,7 @@ export class AgentChatService {
     if (!loaded) throw new DomainError('CONVERSATION_NOT_FOUND', 'Conversation was not found.', 404)
     const resident = this.runtimes.get(loaded.row.id)
     resident?.manager.setSessionControlPrincipal?.(livePrincipal.id)
-    const pendingConfiguration = await this.pendingConfiguration(loaded.row)
-    if (!blocked && !pendingConfiguration && resident?.configuration.id === loaded.row.agent_configuration_version_id
-      && !loaded.row.active_request_id && !loaded.row.pending_interaction && resident?.session
+    if (!blocked && !loaded.row.active_request_id && !loaded.row.pending_interaction && resident?.session
       && !resident.retiring && !resident.disposal) {
       let pending: Awaited<ReturnType<NativeHarnessSessionManager['pending']>>
       try {
@@ -592,8 +590,19 @@ export class AgentChatService {
 
   private async harnessUnavailable(resolution: Resolution): Promise<Resolution['blocked']> {
     const row = resolution.row
-    const pending = row ? await this.pendingConfiguration(row) : undefined
-    if (pending) return this.managers.unavailable?.(pending, row!.record.workingDirectory)
+    if (row?.origin_run_id && row.native_session_id && !row.record.sourceConfigurationVersionId) {
+      const agent = (await this.pool.query<{ current_configuration_version_id: string | null }>(
+        'select current_configuration_version_id from agents where workspace_id=$1 and id=$2 and archived_at is null',
+        [row.workspace_id, row.agent_id])).rows[0]
+      if (agent?.current_configuration_version_id
+        && agent.current_configuration_version_id !== row.agent_configuration_version_id) {
+        const configuration = await this.workflows.getAgentConfiguration(agent.current_configuration_version_id)
+        if (!configuration) {
+          throw new DomainError('AGENT_CHAT_CONFIGURATION_MISSING', 'The saved Agent configuration is unavailable.', 409)
+        }
+        return this.managers.unavailable?.(configuration, row.record.workingDirectory)
+      }
+    }
     const executionId = resolution.row?.record.sourceConfigurationVersionId
       ? undefined : resolution.executionId ?? resolution.row?.origin_execution_id
     const workingDirectory = resolution.row?.record.workingDirectory ?? resolution.create?.workingDirectory
@@ -1161,25 +1170,17 @@ export class AgentChatService {
       : configuration
   }
 
-  private async pendingConfiguration(row: AgentConversationRow) {
-    if (row.origin_run_id && !row.native_session_id && !row.record.startupDelivered) return undefined
+  private async applyTurnConfiguration(row: AgentConversationRow): Promise<AgentConversationRow> {
+    if (row.origin_run_id && !row.native_session_id && !row.record.startupDelivered) return row
     const agent = (await this.pool.query<{ current_configuration_version_id: string | null }>(
       'select current_configuration_version_id from agents where workspace_id=$1 and id=$2 and archived_at is null',
       [row.workspace_id, row.agent_id])).rows[0]
-    if (!agent?.current_configuration_version_id
-      || agent.current_configuration_version_id === row.agent_configuration_version_id) return undefined
+    // Retained conversations can outlive their editable Agent catalog entry.
+    if (!agent?.current_configuration_version_id) return row
+    if (agent.current_configuration_version_id === row.agent_configuration_version_id) return row
     const configuration = await this.workflows.getAgentConfiguration(agent.current_configuration_version_id)
-    if (!configuration) {
-      throw new DomainError('AGENT_CHAT_CONFIGURATION_MISSING', 'The saved Agent configuration is unavailable.', 409)
-    }
-    return configuration
-  }
-
-  private async applyTurnConfiguration(row: AgentConversationRow): Promise<AgentConversationRow> {
-    const configuration = await this.pendingConfiguration(row)
-    if (!configuration) return row
     const previous = await this.conversationConfiguration(row)
-    if (!previous) {
+    if (!configuration || !previous) {
       throw new DomainError('AGENT_CHAT_CONFIGURATION_MISSING', 'The saved Agent configuration is unavailable.', 409)
     }
     let directoryBinding = row.record.directoryBinding
