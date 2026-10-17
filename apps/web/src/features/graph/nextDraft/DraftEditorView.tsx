@@ -1,5 +1,7 @@
 import { InfoHint } from '../../../shared/ui/InfoHint'
 import { WorkflowSettings } from './WorkflowSettings'
+import { JobNodePicker } from '../../jobs'
+import { attachJob } from './model'
 import { BoardNotice } from './BoardNotice'
 import { Inbox, Redo2, Save, Undo2 } from 'lucide-react'
 import { ActionMenu, Button, ConfirmDialog, EmptyState, Icon, IconButton, Toolbar } from '../../../shared/ui/nocturne'
@@ -7,8 +9,9 @@ import { nodeTitle, removeRelationship } from './model'
 import { nextDraftDirty, type NextDraftEdit } from './state'
 import { WorkflowSaveError } from './WorkflowSaveError'
 import { EditIntentStatus } from './EditIntentStatus'
-import { AvailableAgentList } from './AuthoringFields'
+import { AttachAgentField } from './AuthoringFields'
 import { DraftCanvas } from './DraftCanvas'
+import { NewBoardAgent } from '../../workflow-board/AgentControls'
 import { AgentPickerPanel } from '../../workflow-board/AgentPickerPanel'
 import { WorkflowName } from '../../workflow-board/WorkflowName'
 import { WorkflowWorktreeField } from '../../workflow-board/WorkflowWorktreeField'
@@ -16,7 +19,6 @@ import { BoardUndoNotice } from '../../workflow-board/BoardUndoNotice'
 import { BoardAlerts, type BoardUpdateFailure } from '../../workflow-board/BoardAlerts'
 import { RemoveWorkflowButton } from '../../workflows/RemoveWorkflowButton'
 import { useApprovalInboxStore } from '../../approvals'
-import { raiseFloating, useFloatingZ } from '../../../shared/ui/floatingStack'
 import { RepeatEditor } from '../../repeats/RepeatEditor'
 import type { useDraftEditorController } from './useDraftEditorController'
 
@@ -36,8 +38,6 @@ export function DraftEditorView({ draftKey, edit, updateFailures, controller }: 
     message, setGeometryPending, canvas, presentation, change, geometry, report, inspect, openPanel, prepare } = core
   const { dirty, needsSave, canUndo, canRedo, startReloadRequired, startDisabled, startReason, saveBusy,
     affectedRuns, affectedWorkflows, stopBlocked, errorText, locationMessage, panelTitle } = controller.status
-  const repeatOpen = panel === 'repeat', settingsOpen = !!panel && panel !== 'repeat' && panel !== 'agents'
-  const repeatZ = useFloatingZ('board-repeat', repeatOpen), settingsZ = useFloatingZ('board-settings', settingsOpen)
   return <section className="workflow-graph board-typed-editor" aria-label="Workflow authoring">
     <div className="workflow-graph-canvas">
       <DraftCanvas ref={canvas} draftKey={draftKey} graph={graph} agents={agents} kind="execution"
@@ -132,18 +132,19 @@ export function DraftEditorView({ draftKey, edit, updateFailures, controller }: 
           {errorText}{edit.error?.issues?.length ? <ul>{edit.error.issues.map((issue, i) => <li key={i}>{issue.message}</li>)}</ul> : null}
         </BoardNotice> : null}
       </div>
-      <aside className="board-side-panel" hidden={!repeatOpen} style={repeatOpen ? { zIndex: repeatZ } : { display: 'none' }} aria-label="Business repeats"
-        onPointerDownCapture={() => raiseFloating('board-repeat')} onFocusCapture={() => raiseFloating('board-repeat')}>
+      <aside className="board-side-panel" hidden={panel !== 'repeat'} style={panel === 'repeat' ? undefined : { display: 'none' }} aria-label="Business repeats">
         <header><h2>Business repeats</h2><IconButton variant="ghost" label="Close panel" onClick={() => openPanel(null)}><Icon name="close" size={16} /></IconButton></header>
         <RepeatEditor graph={graph} change={change} disabled={edit.busy || reloading || editIntent.locked || !!edit.pending || !!pendingStart} />
       </aside>
       {panel === 'agents' ? <AgentPickerPanel close={() => openPanel(null)}>
+        {graph.handoffs?<section><h3>Saved jobs</h3><p>This workflow uses work handoffs, which job nodes can’t join. Switch to one-pass dependencies to add a job; the change is saved as a new version with the usual Stop-and-save checks.</p><Button disabled={edit.busy || reloading || editIntent.locked || starting} onClick={()=>change(value=>{const next={...value};delete next.handoffs;return next})}>Use one-pass dependencies</Button></section>:null}
+        {!graph.handoffs?<JobNodePicker workspaceId={graph.workspaceId} onChoose={definition=>{change(value=>attachJob(value,definition,`node-${crypto.randomUUID()}`));openPanel(null)}}/>:null}
         <fieldset disabled={edit.busy || reloading || editIntent.locked || starting}>
-          <AvailableAgentList context={context} change={change} report={report} />
+          <NewBoardAgent draftKey={draftKey} edit={edit} report={report} />
+          <AttachAgentField graph={graph} context={context} change={change} report={report} />
         </fieldset>
       </AgentPickerPanel> : null}
-      {settingsOpen ? <aside ref={settingsPanel} className="board-side-panel" aria-label={panelTitle || 'Board controls'} style={{ zIndex: settingsZ }}
-        onPointerDownCapture={() => raiseFloating('board-settings')} onFocusCapture={() => raiseFloating('board-settings')}>
+      {panel && panel !== 'repeat' && panel !== 'agents' ? <aside ref={settingsPanel} className="board-side-panel" aria-label={panelTitle || 'Board controls'}>
         <header><h2>{panelTitle}</h2><IconButton variant="ghost" label="Close panel" onClick={() => openPanel(null)}><Icon name="close" size={16} /></IconButton></header>
         <fieldset disabled={edit.busy || reloading || editIntent.locked}>
           {panel === 'workflow' ? <WorkflowSettings edit={edit} change={change} report={report}
