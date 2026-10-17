@@ -385,20 +385,28 @@ describe('Workspace Board route, editor and HTTP boundary', { timeout: 20_000 },
     expect(screen.queryByRole('region', { name: 'Selected Run pinned topology' })).not.toBeInTheDocument()
   }, 20_000)
 
-  it('restores the URL-selected Run in a fresh Router and QueryClient, with back/forward selection', async () => {
+  it.each([0, 1_100])('restores the URL-selected Run in a fresh Router and QueryClient, with back/forward selection and %s ms context reads', async contextDelay => {
     const first = await mount()
     await authoring(); await choose('run-a'); await savedY()
     await act(async () => { first.router.history.back() })
     await waitFor(() => expect(screen.getByLabelText('Editable workflow graph')).toBeVisible())
     await act(async () => { first.router.history.forward() })
     await savedY()
+    await waitFor(() => expect(first.router.state.location.search.runId).toBe('run-a'))
     const href = first.router.history.location.href
     first.unmount(); first.client.clear(); useGraphDraftStore.getState().clearAllDrafts()
+    if (contextDelay) server.use(http.get('/api/management/workspaces/:workspaceId/agents', async () => {
+      await delay(contextDelay)
+    }))
     const refreshed = await mount(href)
+    await waitForBoardContext(refreshed.client)
     await savedY()
-    expect(refreshed.router.state.location.search.runId).toBe('run-a')
-    expect(screen.getByRole('region', { name: 'Workflow authoring' })).toBeVisible()
+    await waitFor(() => expect(refreshed.router.state.location.search).toMatchObject({
+      runId: 'run-a', workflowVersionId: 'version-a', executionSemanticsVersion: 3,
+    }))
+    expect(await screen.findByRole('region', { name: 'Workflow authoring' })).toBeVisible()
     expect(screen.getByLabelText('Editable workflow graph')).not.toBeVisible()
+    expect(writes).toEqual([])
   })
 
   it.each([3_200, 6_400])('refreshes the retained draft context without replacing local edits over %s ms while a Run is pinned', async (pollingTime) => {

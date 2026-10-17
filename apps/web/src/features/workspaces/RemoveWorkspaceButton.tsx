@@ -1,7 +1,7 @@
-import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
-import type { WorkspaceArchiveInput } from '@foreman-code/contracts/management'
+import type { ManagedWorkspace, WorkspaceArchiveInput } from '@foreman-code/contracts/management'
 
 import { CommandAttempt } from '../../shared/api/commandAttempt'
 import { queryKeys, useArchiveManagedWorkspaceMutation } from '../../shared/api/query'
@@ -16,8 +16,6 @@ export function RemoveWorkspaceButton({ workspaceId, name, revision, renderTrigg
 }) {
   const [open, setOpen] = useState(false)
   const [baseRevision, setBaseRevision] = useState(revision)
-  const latestRevision = useRef(revision)
-  useLayoutEffect(() => { latestRevision.current = revision }, [revision])
   const mutation = useArchiveManagedWorkspaceMutation()
   const queryClient = useQueryClient()
   const navigate = useNavigate()
@@ -39,14 +37,17 @@ export function RemoveWorkspaceButton({ workspaceId, name, revision, renderTrigg
       return
     } finally { inFlight.current = false }
     setOpen(false)
-    void queryClient.invalidateQueries({ queryKey: queryKeys.managedWorkspaces }).catch(() => undefined)
-    void queryClient.invalidateQueries({ queryKey: queryKeys.workspaceDetails(workspaceId) }).catch(() => undefined)
+    void queryClient.invalidateQueries({ queryKey: queryKeys.managedWorkspaces })
+    void queryClient.invalidateQueries({ queryKey: queryKeys.workspaceDetails(workspaceId) })
     void navigate({ to: '/workspaces', replace: true })
   }
 
   const show = () => {
-      // A preceding unsaved-name Save may have advanced the revision before this action opens.
-      setBaseRevision(latestRevision.current); mutation.reset(); setOpen(true)
+    // A guarded rename updates the cache before observers receive the confirmed revision.
+    const confirmed = queryClient.getQueryData<ManagedWorkspace>(queryKeys.managedWorkspace(workspaceId))
+    setBaseRevision(confirmed?.revision ?? revision)
+    mutation.reset()
+    setOpen(true)
   }
   return <>
     {renderTrigger ? renderTrigger(show) : <IconButton label="Remove workspace" variant="ghost" className="workspace-remove-button" onClick={show}><Icon name="trash" size={16} /></IconButton>}
