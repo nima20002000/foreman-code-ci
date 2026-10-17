@@ -39,6 +39,16 @@ import {
 } from './immutableRead.js'
 
 type Source = 'http' | 'mcp'
+
+function manualPositionsForSave(graph: WorkflowDefinitionV3, previous: WorkflowDefinitionV3, source?: Source) {
+  if (source !== 'mcp') return graph
+  const previousNodes = new Map(previous.nodes.map((node) => [node.id, node]))
+  return { ...graph, nodes: graph.nodes.map((node) => {
+    const position = node.position
+    if (!position || sameWorkflowValue(position, previousNodes.get(node.id)?.position)) return node
+    return { ...node, position: { ...position, manual: true } }
+  }) }
+}
 type Scope = { workspaceId: string; workflowId: string }
 export interface WorkflowAuthoringOptions {
   agentActiveTimeoutMs?: number | undefined
@@ -261,7 +271,7 @@ export class CurrentWorkflowAuthoring {
   private async publish(client: pg.PoolClient, principal: ManagementPrincipal, source: Source,
     input: CurrentEditSaveInput, request: CurrentEditSaveInput, intentId?: string) {
     if (intentId) await this.editIntents.publication(client, principal, intentId, input)
-    const prepared = await this.prepare(client, principal, input, true, intentId)
+    const prepared = await this.prepare(client, principal, input, true, intentId, source)
     const agents = prepared.staged ? await persistCurrentStagedAgents(client, input.workspaceId, prepared.staged.prepared) : undefined
     let revision: number
     if (prepared.presentationOnly) {
@@ -295,7 +305,7 @@ export class CurrentWorkflowAuthoring {
   }
 
   private async prepare(client: pg.PoolClient, principal: ManagementPrincipal,
-    input: CurrentWorkflowValidateInput | CurrentEditSaveInput, publication: boolean, intentId?: string) {
+    input: CurrentWorkflowValidateInput | CurrentEditSaveInput, publication: boolean, intentId?: string, source?: Source) {
     await lockActiveWorkspace(client, input.workspaceId)
     const row = (await client.query<{ record: unknown; revision: string; current_version_id: string | null; archived_at: Date | null }>(
       'select record,revision::text,current_version_id,archived_at from workflows where workspace_id=$1 and id=$2 for update',
@@ -328,8 +338,9 @@ export class CurrentWorkflowAuthoring {
       await validateWorkflowWorktrees({ sql: client, principal, definition: input.graph, previous: current,
         services: this.options.worktrees })
       return { presentationOnly, version: base, content: '',
-        definition: WorkflowDefinitionV3Schema.parse({ ...(intentId ? preserveWorkflowGeometry(input.graph, current) : input.graph),
-          updatedAt: new Date().toISOString() }) }
+        definition: manualPositionsForSave(WorkflowDefinitionV3Schema.parse({
+          ...(intentId ? preserveWorkflowGeometry(input.graph, current) : input.graph),
+          updatedAt: new Date().toISOString() }), current, source) }
     }
 
     if (publication) {
@@ -372,6 +383,7 @@ export class CurrentWorkflowAuthoring {
       agentConfigurationVersionIds: configurationPins, contentHash: `sha256:${'0'.repeat(64)}`, createdAt: now })
     if (!parsedVersion.success) throw new DomainError('GRAPH_INVALID', 'Fix the workflow settings below.', 409, { issues: workflowSaveIssues(parsedVersion.error.issues) })
     const version = parsedVersion.data
+    version.definition = manualPositionsForSave(version.definition, current, source)
     const executable = ExecutableWorkflowV3Schema.safeParse({ version, configurations })
     if (!executable.success) throw new DomainError('GRAPH_INVALID', 'Fix the workflow settings below.', 409, { issues: workflowSaveIssues(executable.error.issues) })
     for (const node of version.definition.nodes) {
