@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { beforeEach, expect, it, vi } from 'vitest'
-import { AgentConfigurationVersionSchema, type ExecutionResult } from '@foreman-code/contracts'
+import { AgentConfigurationVersionSchema, type ExecutionResult, type NativeSessionReference } from '@foreman-code/contracts'
 import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
 import type { WorkerConversationReceipt, WorkerConversationRpcRequest } from '@foreman-code/contracts/remote-execution-rpc'
 import type { NativeHistory, NativeSessionStart } from '../harnesses/port.js'
@@ -12,7 +12,7 @@ import { WorkerConversationJournal } from './workerJournal.js'
 import { workerConversationFixture } from './workerFixtures.test-support.js'
 
 const provider = vi.hoisted(() => ({
-  session: { harness: 'codex' as const, providerVersion: 'fixture-codex', nativeSessionId: 'original-session' },
+  session: { harness: 'codex' as const, providerVersion: 'fixture-codex', nativeSessionId: 'original-session' } as NativeSessionReference,
   starts: [] as NativeSessionStart[],
   history: { events: [], pendingInteractions: [] } as NativeHistory,
   creates: 0,
@@ -29,6 +29,24 @@ vi.mock('./installedNativeProfile.js', () => ({
     qualification: { version: 'fixture-codex' },
   }) }),
 }))
+vi.mock('./installedClaudeConversationProfile.js', () => ({
+  createInstalledClaudeConversationProfile: () => ({ capture: async () => ({
+    installation: { launcher: { resolvedLauncher: '/fixture/claude' } }, sdk: { entrypoint: '/fixture/sdk' },
+    accepted: { currentBinding: { pin: { sdkVersion: '0.3.284', cliVersion: '2.1.284', configRevision: 'fixture' } } },
+  }) }),
+}))
+vi.mock('../harnesses/claudeSdk/configuration.js', () => ({
+  compileClaudeConfiguration: (configuration: unknown) => ({ configuration, mcpServers: {}, env: {},
+    qualification: { basicTurns: true, resume: true, history: true, policy: { alwaysAppliedToolHook: true } } }),
+}))
+vi.mock('../harnesses/claudeSdk/official.js', () => ({ loadInstalledClaudeSdk: async () => ({}) }))
+vi.mock('./workerClaudeFiles.js', () => ({ createWorkerClaudeFiles: () => undefined }))
+vi.mock('../harnesses/claudeSdk/composition.js', () => ({ allocateClaudeNativeHarness: () => ({ manager: {
+  harness: 'claude', createSession: async () => { provider.creates++; return provider.session },
+  attachSession: async (session: NativeSessionReference, start: NativeSessionStart) => { provider.starts.push(start); return session },
+  history: async () => structuredClone(provider.history), reconcile: async () => structuredClone(provider.history),
+  pending: async () => undefined, cancel: async () => false, dispose: async () => {},
+} }) }))
 // Only provider IO and installation qualification are replaced; host, callbacks, journal and recovery are real.
 vi.mock('../harnesses/codexAppServer.js', async importOriginal => ({
   ...await importOriginal<typeof import('../harnesses/codexAppServer.js')>(),
@@ -53,8 +71,14 @@ beforeEach(() => {
     terminalResult: { outcome: 'succeeded', output: 'Saved native answer' } }
 })
 
-async function fixture() {
-  const f = workerConversationFixture('agent')
+async function fixture(harness: 'codex' | 'claude' = 'codex') {
+  const f = workerConversationFixture('agent', harness)
+  provider.session.harness = harness
+  if (harness === 'claude') {
+    delete provider.history.nativeTurnId
+    provider.history.nativeSubmission = { kind: 'message', nativeSessionId: provider.session.nativeSessionId,
+      nativeMessageId: 'native-message', clientCorrelationId: 'unfinished' }
+  }
   const base = AgentConfigurationVersionSchema.parse(f.configuration)
   const instructions = 'Use the node skill.'
   const configuration = { ...base, assignedSkills: [{ skillId: 'node-skill', version: '1' }],
@@ -103,7 +127,8 @@ async function fixture() {
   await request({ method: 'conversation.open', binding: f.binding, configuration: base,
     mode: 'create', operationId: 'original-create' })
   await journal.reserveTurn(f.binding, 'unfinished', commandInputHash('original-input'))
-  await journal.submitted(f.binding, 'unfinished', { nativeTurnId: 'native-turn' })
+  await journal.submitted(f.binding, 'unfinished', harness === 'codex'
+    ? { nativeTurnId: 'native-turn' } : { nativeSubmission: provider.history.nativeSubmission! })
   await journal.finishTurn(f.binding, 'unfinished')
   launches[0] = { ...launches[0]!, lifecycle: 'ended' }
   const attach = () => request({ method: 'conversation.open', binding: f.binding, configuration: base,
@@ -265,8 +290,8 @@ it('refuses a different exited process during ordinary attachment without closin
 })
 
 for (const method of ['conversation.history', 'conversation.reconcile', 'conversation.pending', 'conversation.cancel'] as const) {
-  it(`recovers an exited owner during ${method} on the unchanged device connection`, async () => {
-    const f = await fixture()
+  it.each(['codex', 'claude'] as const)(`recovers an exited %s owner during ${method} on the unchanged device connection`, async harness => {
+    const f = await fixture(harness)
     try {
       if (method === 'conversation.reconcile') {
         await f.request({ method, binding: f.originalBinding, session: provider.session, correlationId: 'unfinished' })
@@ -276,8 +301,8 @@ for (const method of ['conversation.history', 'conversation.reconcile', 'convers
       const saved = (await f.journal.read(f.originalBinding))!
       expect(saved.session).toEqual(provider.session)
       expect(saved.connection).toEqual(f.connection)
-      expect(saved.turns[0]).toMatchObject({ status: 'completed', nativeTurnId: 'native-turn',
-        result: provider.history.terminalResult })
+      expect(saved.turns[0]).toMatchObject({ status: 'completed', result: provider.history.terminalResult,
+        ...(harness === 'codex' ? { nativeTurnId: 'native-turn' } : { nativeSubmission: provider.history.nativeSubmission }) })
       expect(saved.ownerTransitions).toHaveLength(1)
       expect(provider.starts.map(start => 'configuration' in start && start.configuration)).toEqual([f.base])
       expect(provider.creates).toBe(1)

@@ -221,6 +221,7 @@ export async function allocateInstalledWorkerClaude(input: {
       })
     },
     nativeOwner: nativeOwner.nativeOwner,
+    hasExited: nativeOwner.hasExited,
     async close() {
       await manager.dispose?.()
       authority.bridge.close()
