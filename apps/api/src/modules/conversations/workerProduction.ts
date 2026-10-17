@@ -306,8 +306,7 @@ async function admitWorkerConversation(input: ProductionWorkerConversationsInput
     requestedBinding.workingDirectory = workerOperatorDirectory(roots.managedRuntimeRoot, requestedBinding.owner)
     await profiles.revalidate(profileOwner, accepted)
   }
-  const originalBinding = original.worker_conversation_binding
-    ? WorkerConversationBindingSchema.parse(original.worker_conversation_binding) : requestedBinding
+  const originalBinding = savedBinding ?? requestedBinding
   const observationBinding = { ...originalBinding, appMcpAccess: requestedBinding.appMcpAccess }
   const changingAccess = !options.observationPrincipalId && original.native_session_id
     && originalBinding.appMcpAccess !== requestedBinding.appMcpAccess
