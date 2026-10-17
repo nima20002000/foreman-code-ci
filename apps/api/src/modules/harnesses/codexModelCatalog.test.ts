@@ -66,3 +66,25 @@ it('retries unavailable catalog inspection on the native admission path', async 
     undefined, undefined, { ...f.value, runCommand })).resolves.toMatchObject({ modelCatalogSource: 'cached' })
   expect(runCommand).toHaveBeenCalledTimes(2)
 })
+
+it('retains model/list windows and fills missing ones from the selected installation cache', async () => {
+  const f = inspection([
+    { ...selected, contextWindow: 272000 },
+    { ...selected, model: 'cached-model' },
+    { ...selected, model: 'unknown-model' },
+  ])
+  const readCachedModels = vi.fn(async () => [
+    { slug: selected.model, context_window: 128000 },
+    { slug: 'cached-model', context_window: 200000 },
+    { slug: 'unlisted-model', context_window: 1000000 },
+  ])
+  const catalog = await readNativeCodexModelCatalog({ ...f.value, readCachedModels }, '/workspace', {})
+  expect(catalog.models).toMatchObject([
+    { slug: selected.model, context_window: 272000 },
+    { slug: 'cached-model', context_window: 200000 },
+    { slug: 'unknown-model' },
+  ])
+  expect(catalog.models[2]).not.toHaveProperty('context_window')
+  expect(catalog.models).toHaveLength(3)
+  expect(readCachedModels).toHaveBeenCalledOnce()
+})
