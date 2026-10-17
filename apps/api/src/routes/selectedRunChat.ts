@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import { AGENT_CHAT_MESSAGE_BODY_LIMIT_BYTES, AgentChatStateResponseSchema, AgentChatSendResponseSchema } from '@foreman-code/contracts/agent-chat'
+import { AGENT_CHAT_MESSAGE_BODY_LIMIT_BYTES, AgentChatStateResponseSchema, SendAgentChatMessageResponseSchema } from '@foreman-code/contracts/agent-chat'
 import {
   ReadSelectedRunChatResponseSchema, SelectedRunChatSelectionSchema, SelectedRunChatTargetSchema,
   SendSelectedRunChatRequestSchema, InterruptSelectedRunChatRequestSchema,
@@ -31,9 +31,9 @@ export function registerSelectedRunChatRoutes(app: FastifyInstance, chat: AgentC
   app.post<{ Params: unknown; Body: unknown }>(`${root}/messages`, { bodyLimit: AGENT_CHAT_MESSAGE_BODY_LIMIT_BYTES }, async (request, reply) => {
     const target = SelectedRunChatTargetSchema.parse(request.params)
     const { executionId, ...message } = messageSchema.parse(request.body)
-    const result = await chat.sendSelectedRunCommand(requirePrincipal(request), { selection: { ...target, executionId }, message })
+    const result = await chat.sendSelectedRun(requirePrincipal(request), { selection: { ...target, executionId }, message })
     reply.code(result.replayed ? 200 : 202)
-    return AgentChatSendResponseSchema.parse(result)
+    return SendAgentChatMessageResponseSchema.parse(result)
   })
   app.post<{ Params: unknown; Body: unknown }>(`${root}/interrupt`, async (request) => {
     const target = SelectedRunChatTargetSchema.parse(request.params)

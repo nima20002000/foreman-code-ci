@@ -165,7 +165,7 @@ describe.skipIf(!postgresEnabled)('computer maintenance through Operator MCP', (
       codexUserMcpServers: async () => ({ linear: { url: 'https://mcp.linear.app/mcp' }, private: { command: 'x', env: { TOKEN: 'secret' } }, 'foreman-code': { command: 'app' } }),
       claudeUserMcpServers: async () => ({ docs: { type: 'http', url: 'https://docs.example/mcp' } }),
       claudePlugins: async () => ({ plugins: [], marketplaces: [] }),
-      codexPlugins: async () => ['pdf@openai'],
+      codexPlugins: async () => [{ pluginId: 'pdf@openai', version: null }],
       codexMarketplaces: async () => [{ name: 'claude-plugins-official', source: 'https://github.com/anthropics/claude-plugins-official.git' }],
     })
     const app = buildApp({ readiness: { database: { ping: async () => {} }, checkpoints: { ping: async () => {} } },
