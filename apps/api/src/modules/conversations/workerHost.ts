@@ -265,30 +265,13 @@ export class WorkerConversationHost {
     return this.ports.recover(record, configuration, connection, signal, request)
   }
 
-  private async resident(request: WorkerConversationRpcRequest & { session: NativeSessionReference },
-    connection: Readonly<DeviceSessionBinding>, signal: AbortSignal) {
+  private async resident(request: WorkerConversationRpcRequest & { session: NativeSessionReference }) {
     let record = await this.ports.journal.read(request.binding)
     if (this.allocating.has(request.binding.owner.conversationId)) unavailable('The native conversation is busy.')
-    let resident = this.residents.get(request.binding.owner.conversationId)
+    const resident = this.residents.get(request.binding.owner.conversationId)
     if (!record || !isDeepStrictEqual(record.session, request.session) || !resident
       || record.applicationAccessChange?.state === 'reserved'
       || !isDeepStrictEqual(resident.binding, request.binding)) unavailable('The original chat session is not resident.')
-    if (resident.allocation.hasExited?.()) {
-      const id = request.binding.owner.conversationId
-      const original = resident
-      const recovery = this.recoverResident(original, record, request, connection, signal)
-      this.allocating.set(id, recovery)
-      try {
-        resident = await recovery
-        this.residents.set(id, resident)
-        this.current(request.binding, connection, signal)
-      } catch (error) {
-        if (resident === original) this.residents.set(id, original)
-        throw error
-      } finally {
-        if (this.allocating.get(id) === recovery) this.allocating.delete(id)
-      }
-    }
     const owner = sessionOwner(await resident.allocation.nativeOwner(request.session))
     record = await this.ports.journal.read(request.binding)
     if (!record || !isDeepStrictEqual(record.nativeOwner, owner)) {
@@ -733,58 +716,9 @@ export class WorkerConversationHost {
     }
   }
 
-  private async readHistory(request: Extract<WorkerConversationRpcRequest,
-    { method: 'conversation.history' | 'conversation.reconcile' }>, resident: Resident, record: WorkerConversationReceipt,
-    connection: Readonly<DeviceSessionBinding>, signal: AbortSignal) {
-    const manager = resident.allocation.manager
-    const turn = record.turns.find(turn => turn.correlationId === request.correlationId)
-    const running = request.correlationId === undefined ? undefined
-      : this.running.get(`${request.binding.owner.conversationId}:${request.correlationId}`)
-    const submitted = Boolean(turn?.nativeTurnId || turn?.nativeSubmission)
-    if (request.method === 'conversation.reconcile' && turn?.nativeSubmission
-      && !['completed', 'rejected'].includes(turn.status)) {
-      await resident.allocation.recoverClaudeAuthority?.(request, turn.nativeSubmission, signal)
-      await this.authorize(request, connection, signal)
-    }
-    if ((!running || !isDeepStrictEqual(running, connection))
-      && request.method === 'conversation.reconcile' && turn?.nativeTurnId
-      && !['completed', 'rejected'].includes(turn.status)) {
-      if ((request.sessionMode ?? 'regular') !== (turn.sessionMode ?? 'regular')) unavailable('The recovered turn mode changed.')
-      await resident.allocation.recoverFiles?.(request, turn.nativeTurnId, signal)
-      await this.authorize(request, connection, signal)
-    }
-    let history: NativeHistory
-    if (turn?.status === 'rejected' && turn.result) {
-      history = { events: [], pendingInteractions: [], nonSubmission: {
-        nativeSessionId: request.session.nativeSessionId, clientCorrelationId: turn.correlationId, result: turn.result,
-      } }
-    } else if (request.afterSequence !== undefined && running && isDeepStrictEqual(running, connection)
-      && manager.historyPage) {
-      history = await manager.historyPage(request.session, request.afterSequence, signal)
-    } else if (request.afterSequence !== undefined && request.correlationId
-      && (!running || submitted) && manager.reconcileHistoryPage) {
-      history = await manager.reconcileHistoryPage(request.session, request.correlationId, request.afterSequence, signal)
-    } else if (turn && request.correlationId && !running) {
-      history = await manager.reconcile(request.session, request.correlationId, signal)
-    } else {
-      // Main can reconcile a message before its Worker reservation exists.
-      history = await manager.history(request.session, signal)
-    }
-    history = this.restoreJournaledResult(request.session, history, turn)
-    if (request.correlationId && !running && record.turns.some(turn => turn.correlationId === request.correlationId)) {
-      await this.finish(request.binding, request.correlationId, history)
-    }
-    if (request.afterSequence !== undefined) {
-      const after = request.afterSequence
-      history = { ...history, events: history.events.filter(event => event.sequence > after) }
-    }
-    return { history, context: manager.contextSnapshot?.(request.session) ?? null,
-      receipt: await this.ports.journal.read(request.binding) }
-  }
-
   private async dispatch(request: WorkerConversationRpcRequest, connection: Readonly<DeviceSessionBinding>,
     signal: AbortSignal): Promise<unknown> {
-    if (request.method === 'conversation.release-runtime') return this.releaseRuntime(request, connection, signal)
+    if (request.method === 'conversation.release-runtime') return this.releaseRuntime(request)
     if (request.method === 'conversation.status') return { receipt: await this.ports.journal.read(request.binding) }
     if (request.method === 'conversation.release-preparation') {
       const preparation = this.preparations.get(request.binding.owner.conversationId)
@@ -868,7 +802,7 @@ export class WorkerConversationHost {
       if (record?.closed && isDeepStrictEqual(record.session, request.session)) return { receipt: record }
     }
     if (!('session' in request)) unavailable('This native operation requires its conversation session.')
-    const { resident, record } = await this.resident(request, connection, signal)
+    const { resident, record } = await this.resident(request)
     const manager = resident.allocation.manager
     switch (request.method) {
       case 'conversation.retire-turn': {
@@ -885,8 +819,48 @@ export class WorkerConversationHost {
         return { receipt: await this.ports.journal.read(request.binding) }
       }
       case 'conversation.history':
-      case 'conversation.reconcile':
-        return this.readHistory(request, resident, record, connection, signal)
+      case 'conversation.reconcile': {
+        const turn = record.turns.find(turn => turn.correlationId === request.correlationId)
+        const running = request.correlationId === undefined ? undefined
+          : this.running.get(`${request.binding.owner.conversationId}:${request.correlationId}`)
+        const submitted = Boolean(turn?.nativeTurnId || turn?.nativeSubmission)
+        if (request.method === 'conversation.reconcile' && turn?.nativeSubmission
+          && !['completed', 'rejected'].includes(turn.status)) {
+          await resident.allocation.recoverClaudeAuthority?.(request, turn.nativeSubmission, signal)
+          await this.authorize(request, connection, signal)
+        }
+        if ((!running || !isDeepStrictEqual(running, connection))
+          && request.method === 'conversation.reconcile' && turn?.nativeTurnId
+          && !['completed', 'rejected'].includes(turn.status)) {
+          if ((request.sessionMode ?? 'regular') !== (turn.sessionMode ?? 'regular')) unavailable('The recovered turn mode changed.')
+          await resident.allocation.recoverFiles?.(request, turn.nativeTurnId, signal)
+          await this.authorize(request, connection, signal)
+        }
+        let history: NativeHistory
+        if (turn?.status === 'rejected' && turn.result) {
+          history = { events: [], pendingInteractions: [], nonSubmission: {
+            nativeSessionId: request.session.nativeSessionId, clientCorrelationId: turn.correlationId, result: turn.result,
+          } }
+        } else if (request.afterSequence !== undefined && request.correlationId
+          && (!running || submitted) && manager.reconcileHistoryPage) {
+          history = await manager.reconcileHistoryPage(request.session, request.correlationId, request.afterSequence, signal)
+        } else if (turn && request.correlationId && !running) {
+          history = await manager.reconcile(request.session, request.correlationId, signal)
+        } else {
+          // Main can reconcile a message before its Worker reservation exists.
+          history = await manager.history(request.session, signal)
+        }
+        history = this.restoreJournaledResult(request.session, history, turn)
+        if (request.correlationId && !running && record.turns.some(turn => turn.correlationId === request.correlationId)) {
+          await this.finish(request.binding, request.correlationId, history)
+        }
+        if (request.afterSequence !== undefined) {
+          const after = request.afterSequence
+          history = { ...history, events: history.events.filter(event => event.sequence > after) }
+        }
+        return { history, context: manager.contextSnapshot?.(request.session) ?? null,
+          receipt: await this.ports.journal.read(request.binding) }
+      }
       case 'conversation.pending': return manager.pending(request.session, signal)
       case 'conversation.controls-read': return {
         capabilities: await manager.sessionControlCapabilities?.(request.session) ?? null,
@@ -943,11 +917,10 @@ export class WorkerConversationHost {
     }
   }
 
-  private async releaseRuntime(request: WorkerConversationRpcRequest & { session: NativeSessionReference },
-    connection: Readonly<DeviceSessionBinding>, signal: AbortSignal) {
+  private async releaseRuntime(request: WorkerConversationRpcRequest & { session: NativeSessionReference }) {
     const saved = await this.ports.journal.read(request.binding)
     if (saved?.runtimeReleased && isDeepStrictEqual(saved.session, request.session)) return { receipt: saved }
-    const { resident, record } = await this.resident(request, connection, signal)
+    const { resident, record } = await this.resident(request)
     const id = request.binding.owner.conversationId
     if (this.hasRunningOperation(id) || record.turns.some(turn => !['completed', 'rejected'].includes(turn.status))
       || record.compactions.some(control => compactionBlocksSend(control.state))) {
