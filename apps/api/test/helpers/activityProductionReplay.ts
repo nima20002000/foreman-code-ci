@@ -84,7 +84,7 @@ export class ActivityProductionReplay {
               if (mode === 'complete') { this.complete(thread.id, turn.id, 'recorded workflow final'); resolve() }
               else this.ask(thread.id, turn.id).then(resolve, reject)
             }))
-            this.inFlight.add(task); void task.finally(() => this.inFlight.delete(task)).catch(() => { /* ignore: disposal awaits the original recorded task; this observer only removes it from the in-flight set. */ })
+            this.inFlight.add(task); void task.finally(() => this.inFlight.delete(task)).catch(() => {})
           }
           return { turn: structuredClone(turn) }
         }
@@ -242,7 +242,7 @@ export class ActivityProductionReplay {
         return { complete: true, paths: [] }
       } },
       auxiliary: { command, recovery: { scope: (owner) => ({ root: processRegistryRoot, owner }),
-        reserveLaunch: async (owner) => {
+        reserveLaunch: (owner) => {
           const launchId = randomUUID()
           this.auxiliary.add(launchId)
           return { root: processRegistryRoot, owner, launchId }

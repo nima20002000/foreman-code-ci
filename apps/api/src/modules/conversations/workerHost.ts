@@ -8,7 +8,7 @@ import {
   WorkerConversationResponsePageSchema, WORKER_CONVERSATION_RESPONSE_BYTES,
 } from '@foreman-code/contracts/remote-execution-rpc'
 import { DEVICE_APPLICATION_JSON_BYTES } from '@foreman-code/contracts/device-application'
-import { createJsonContinuationPager } from '../runs/remote/jsonContinuation.js'
+import { pageJsonContinuationBytes } from '../runs/remote/jsonContinuation.js'
 import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
 import type { NativeSessionReference } from '@foreman-code/contracts'
 import type { RemoteNativeIdentity } from '@foreman-code/contracts/remote-execution'
@@ -22,7 +22,6 @@ import { isDefiniteCompactionRejection, NativeDeliveryError } from '../harnesses
 import { recoverPersistedClaudeCompaction } from '../harnesses/claudeSdk/recoverCompaction.js'
 import { unavailableNativeResponse } from '../harnesses/responseAvailability.js'
 import { sameConversationForAppAccess } from './conversationAppAccess.js'
-import { validRunChatSkillsTransition } from './workerRunChatBinding.js'
 
 export interface WorkerConversationAllocation {
   manager: NativeHarnessSessionManager
@@ -91,15 +90,14 @@ function validateConfiguration(binding: WorkerConversationBinding, configuration
 export class WorkerConversationHost {
   private readonly residents = new Map<string, Resident>()
   private readonly responseTransfers = new Map<string, {
-    binding: WorkerConversationBinding; connection: Readonly<DeviceSessionBinding>; byteSize: number;
-    page: ReturnType<typeof createJsonContinuationPager>; expiresAt: number
+    binding: WorkerConversationBinding; connection: Readonly<DeviceSessionBinding>; bytes: Buffer; expiresAt: number
   }>()
   private responseBytes = 0
   private readonly preparations = new Map<string, Resident>()
   private readonly inspections = new Set<WorkerConversationAllocation>()
   private readonly allocating = new Map<string, Promise<Resident>>()
   private readonly tasks = new Set<Promise<void>>()
-  private readonly running = new Map<string, Readonly<DeviceSessionBinding>>()
+  private readonly running = new Map<string, Promise<void>>()
   private readonly lifetime = new AbortController()
   private readonly log = componentLogger('harness')
   private closing = false
@@ -276,7 +274,6 @@ export class WorkerConversationHost {
     connection: Readonly<DeviceSessionBinding>, signal: AbortSignal) {
     validateConfiguration(request.binding, request.configuration)
     if (request.mode !== 'create' && !request.source) unavailable('Native attachment or fork requires its source session.')
-    if (request.previousConfiguration) return this.changeNodeSkills(request, connection, signal)
     if (request.previousBinding) return this.changeApplicationAccess(request, connection, signal)
     const record = await this.ports.journal.receive(request.binding, connection)
     const resident = await this.allocate(request, connection, signal)
@@ -314,54 +311,6 @@ export class WorkerConversationHost {
     } else session = await manager.createSession(start, signal)
     await this.bind(resident, session, request, signal)
     return { receipt: await this.ports.journal.read(request.binding) }
-  }
-
-  private async changeNodeSkills(request: Extract<WorkerConversationRpcRequest, { method: 'conversation.open' }>,
-    connection: Readonly<DeviceSessionBinding>, signal: AbortSignal) {
-    const previous = request.previousBinding
-    if (request.mode !== 'attach' || !request.source || !previous || !request.previousConfiguration
-      || !validRunChatSkillsTransition(previous, request.binding, request.previousConfiguration, request.configuration)) {
-      unavailable('A Run chat skills change keeps the original configuration, profile and session.')
-    }
-    const id = request.binding.owner.conversationId
-    if (this.allocating.has(id) || this.running.has(id)) unavailable('The native conversation is busy.')
-    const task = (async () => {
-      const record = await this.ports.journal.inspectSkillsTransition(previous, request.binding,
-        request.previousConfiguration!, request.configuration)
-      if (!record?.session || !isDeepStrictEqual(record.session, request.source)
-        || record.closed || record.closing) unavailable('The original Run chat session is unavailable.')
-      if (isDeepStrictEqual(record.binding, request.binding)) {
-        const resident = this.residents.get(id)
-        if (resident && isDeepStrictEqual(resident.binding, request.binding)) return resident
-        const allocation = await this.recover(record, request.configuration, connection, signal, request)
-        const recovered = { binding: structuredClone(request.binding), configuration: structuredClone(request.configuration), allocation }
-        this.residents.set(id, recovered)
-        return recovered
-      }
-      if (!isDeepStrictEqual(record.binding, previous)) unavailable('The original Run chat binding changed.')
-      const old = this.residents.get(id)
-      if (old) {
-        if (!isDeepStrictEqual(old.binding, previous)) unavailable('The native chat owner changed.')
-        await old.allocation.close()
-        this.residents.delete(id)
-      }
-      const preparation = this.preparations.get(id)
-      if (preparation) {
-        await preparation.allocation.close()
-        this.preparations.delete(id)
-      }
-      await this.authorize(request, connection, signal)
-      const allocation = await this.recover(record, request.configuration, connection, signal, request)
-      const resident = { binding: structuredClone(request.binding), configuration: structuredClone(request.configuration), allocation }
-      this.residents.set(id, resident)
-      return resident
-    })()
-    this.allocating.set(id, task)
-    try {
-      await task
-      await this.authorize(request, connection, signal)
-      return { receipt: await this.ports.journal.read(request.binding) }
-    } finally { if (this.allocating.get(id) === task) this.allocating.delete(id) }
   }
 
   private async changeApplicationAccess(request: Extract<WorkerConversationRpcRequest, { method: 'conversation.open' }>,
@@ -464,7 +413,7 @@ export class WorkerConversationHost {
       }
     })()
     const key = `${resident.binding.owner.conversationId}:${request.correlationId}`
-    this.running.set(key, connection)
+    this.running.set(key, task)
     void task.then(() => this.running.delete(key), () => this.running.delete(key))
     void this.track(task)
   }
@@ -559,7 +508,8 @@ export class WorkerConversationHost {
       if (!isDeepStrictEqual(retained.binding, request.binding) || !isDeepStrictEqual(retained.connection, connection)) {
         unavailable('The conversation response owner changed.')
       }
-      const metadata = retained.page(request.metadata)
+      const metadata = pageJsonContinuationBytes(retained.bytes, request.metadata,
+        { maxBytes: WORKER_CONVERSATION_RESPONSE_BYTES })
       retained.expiresAt = Date.now() + 120_000
       this.responseTransfers.delete(request.transferId)
       this.responseTransfers.set(request.transferId, retained)
@@ -570,13 +520,12 @@ export class WorkerConversationHost {
     if (response === undefined) return response
     const bytes = Buffer.from(JSON.stringify(response))
     if (bytes.byteLength <= DEVICE_APPLICATION_JSON_BYTES) return response
-    const page = createJsonContinuationPager(bytes, { maxBytes: WORKER_CONVERSATION_RESPONSE_BYTES })
-    const metadata = page()
+    const metadata = pageJsonContinuationBytes(bytes, undefined, { maxBytes: WORKER_CONVERSATION_RESPONSE_BYTES })
     while (this.responseBytes + bytes.byteLength > WORKER_CONVERSATION_RESPONSE_BYTES
       || this.responseTransfers.size >= 128) this.removeResponse(this.responseTransfers.keys().next().value!)
     const transferId = randomUUID()
     this.responseTransfers.set(transferId, { binding: structuredClone(request.binding),
-      connection: structuredClone(connection), byteSize: bytes.byteLength, page, expiresAt: Date.now() + 120_000 })
+      connection: structuredClone(connection), bytes, expiresAt: Date.now() + 120_000 })
     this.responseBytes += bytes.byteLength
     return WorkerConversationResponsePageSchema.parse({ kind: 'conversation-response-page', transferId, metadata })
   }
@@ -584,7 +533,7 @@ export class WorkerConversationHost {
   private removeResponse(id: string) {
     const transfer = this.responseTransfers.get(id)
     if (!transfer) return
-    this.responseBytes -= transfer.byteSize
+    this.responseBytes -= transfer.bytes.byteLength
     this.responseTransfers.delete(id)
   }
 
@@ -692,16 +641,15 @@ export class WorkerConversationHost {
       case 'conversation.history':
       case 'conversation.reconcile': {
         const turn = record.turns.find(turn => turn.correlationId === request.correlationId)
-        const running = request.correlationId === undefined ? undefined
-          : this.running.get(`${request.binding.owner.conversationId}:${request.correlationId}`)
+        const running = request.correlationId !== undefined
+          && this.running.has(`${request.binding.owner.conversationId}:${request.correlationId}`)
         const submitted = Boolean(turn?.nativeTurnId || turn?.nativeSubmission)
         if (request.method === 'conversation.reconcile' && turn?.nativeSubmission
           && !['completed', 'rejected'].includes(turn.status)) {
           await resident.allocation.recoverClaudeAuthority?.(request, turn.nativeSubmission, signal)
           await this.authorize(request, connection, signal)
         }
-        if ((!running || !isDeepStrictEqual(running, connection))
-          && request.method === 'conversation.reconcile' && turn?.nativeTurnId
+        if (!running && request.method === 'conversation.reconcile' && turn?.nativeTurnId
           && !['completed', 'rejected'].includes(turn.status)) {
           if ((request.sessionMode ?? 'regular') !== (turn.sessionMode ?? 'regular')) unavailable('The recovered turn mode changed.')
           await resident.allocation.recoverFiles?.(request, turn.nativeTurnId, signal)

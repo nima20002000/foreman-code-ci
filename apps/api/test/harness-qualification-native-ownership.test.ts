@@ -10,7 +10,7 @@ const input = (signal = new AbortController().signal): QualificationSuiteInput =
 it('admits a distinct qualification owner and retains uncertain cleanup for retry', async () => {
   const scope = { root: '/recorded/registry', owner: 'qualification:codex:recorded', launchId: 'recorded-launch' }
   let closes = 0
-  const registry = { reserveLaunch: vi.fn(async (owner: string) => { expect(owner).toMatch(/^qualification:codex:/); return scope }), abandonReservedLaunch: vi.fn(async () => false),
+  const registry = { reserveLaunch: vi.fn((owner: string) => { expect(owner).toMatch(/^qualification:codex:/); return scope }), abandonReservedLaunch: vi.fn(async () => false),
     closeOwner: vi.fn(async () => ++closes > 1) }
   let retained: (() => Promise<void>) | undefined
   const release = vi.fn()
@@ -43,7 +43,7 @@ it('rejects cancellation during positive physical cleanup before publishing qual
   source.ownCleanup = () => release
   const suite = withNativeQualificationOwnership({ harness: 'codex', revision: 'recorded',
     run: async () => ({ checks: [], evidence: {} }) }, {
-    reserveLaunch: async () => ({ root: '/recorded/registry', owner: 'qualification:codex:recorded' }),
+    reserveLaunch: () => ({ root: '/recorded/registry', owner: 'qualification:codex:recorded' }),
     abandonReservedLaunch: async () => true,
     closeOwner: async () => { entered(); await closed; return true },
   }, () => async () => undefined)
@@ -57,7 +57,7 @@ it('rejects cancellation during positive physical cleanup before publishing qual
 
 it('checks the selected payload before native reservation and after physical closure', async () => {
   let changed = true
-  const reserveLaunch = vi.fn(async (owner: string) => ({ root: '/recorded/registry', owner }))
+  const reserveLaunch = vi.fn((owner: string) => ({ root: '/recorded/registry', owner }))
   const guard = async () => { if (changed) throw new Error('Selected payload changed') }
   const release = vi.fn()
   const source = input()

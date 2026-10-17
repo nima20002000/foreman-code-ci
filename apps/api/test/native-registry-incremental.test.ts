@@ -93,12 +93,11 @@ function age(path: string, elapsed = 2 * dayMs): void {
 }
 
 describe('incremental native registry', () => {
-  it('rescans persisted launches when a directory disappears during watcher startup', async () => {
+  it('rescans persisted launches when a directory disappears during watcher startup', () => {
     const f = fixture()
     try {
       const row = f.registration({ live: true })
       const registry = new NativeProcessRegistry(f.root)
-      await registry.ready()
       races.beforeWatch = () => {
         throw Object.assign(new Error('registry directory disappeared'), { code: 'ENOENT' })
       }
@@ -117,7 +116,6 @@ describe('incremental native registry', () => {
     try {
       const row = f.registration({ live: true })
       const registry = new NativeProcessRegistry(f.root)
-      await registry.ready()
       expect(registry.snapshot().launches[0]?.lifecycle).toBe('active')
       rmSync(row.path, { recursive: true })
       races.watchers.at(-1)!.emit('error', Object.assign(new Error('retired directory disappeared'), {
@@ -132,12 +130,11 @@ describe('incremental native registry', () => {
     } finally { rmSync(f.root, { recursive: true, force: true }) }
   })
 
-  it.each(['root', 'owner'] as const)('tolerates a missing %s between validation and scanning', async level => {
+  it.each(['root', 'owner'] as const)('tolerates a missing %s between validation and scanning', level => {
     const f = fixture()
     try {
       const row = f.registration({ live: true })
       const registry = new NativeProcessRegistry(f.root)
-      await registry.ready()
       expect(registry.snapshot().launches[0]?.lifecycle).toBe('active')
       const directory = level === 'root' ? f.root : f.directory
       privateDirectory(join(directory, level === 'root' ? 'b'.repeat(64) : randomUUID()))
@@ -162,7 +159,6 @@ describe('incremental native registry', () => {
         rmSync(directory, { recursive: true })
       }
       const registry = new NativeProcessRegistry(f.root)
-      await registry.ready()
       expect(registry.snapshot().launches).toEqual([])
       expect(existsSync(directory)).toBe(false)
       expect(registry.closedRegistration(f.owner, row.id)).toBeUndefined()
@@ -172,12 +168,11 @@ describe('incremental native registry', () => {
     } finally { rmSync(f.root, { recursive: true, force: true }) }
   })
 
-  it.each(['startup', 'event'] as const)('preserves watcher permission failures during %s', async phase => {
+  it.each(['startup', 'event'] as const)('preserves watcher permission failures during %s', phase => {
     const f = fixture()
     try {
       f.registration()
       const registry = new NativeProcessRegistry(f.root)
-      await registry.ready()
       const denied = Object.assign(new Error('registry access denied'), { code: 'EACCES' })
       if (phase === 'startup') races.beforeWatch = () => { throw denied }
       else {
@@ -188,14 +183,13 @@ describe('incremental native registry', () => {
     } finally { rmSync(f.root, { recursive: true, force: true }) }
   })
 
-  it('keeps unchanged snapshot IO constant with a thousand retired owners', async () => {
+  it('keeps unchanged snapshot IO constant with a thousand retired owners', () => {
     const costs: typeof io[] = []
     for (const history of [0, 1000]) {
       const f = fixture()
       try {
         for (let index = 0; index < history; index++) f.receipt(randomUUID(), `retired-owner-${index}`)
         const registry = new NativeProcessRegistry(f.root)
-        await registry.ready()
         const baseline = registry.snapshot()
         expect(baseline.launches).toHaveLength(history)
         io.reads = 0
@@ -226,14 +220,12 @@ describe('incremental native registry', () => {
           age(join(retired.ownerDirectory, 'retired.json'))
         }
         let registry = new NativeProcessRegistry(f.root)
-        await registry.ready()
         // Archived owners leave the hot snapshot; their closure remains addressable below.
         registry.snapshot()
         io.inventories = 0
         for (let launch = 0; launch < 3; launch++) {
           registry = new NativeProcessRegistry(f.root)
-          await registry.ready()
-          const scope = await registry.reserveLaunch(`execution:publication-${launch}`)
+          const scope = registry.reserveLaunch(`execution:publication-${launch}`)
           expect(registry.snapshot().launches).toContainEqual(expect.objectContaining({
             launchId: scope.launchId, lifecycle: 'closure-unconfirmed',
           }))
@@ -264,7 +256,6 @@ describe('incremental native registry', () => {
       const old = f.receipt()
       age(old.path)
       const registry = new NativeProcessRegistry(f.root)
-      await registry.ready()
       expect(readRecord(old.path)).toBeUndefined()
       expect(registry.closedRegistration(f.owner, old.id)).toEqual(old.observation)
       expect(registry.snapshot().launches).toEqual([old.observation])
@@ -275,13 +266,12 @@ describe('incremental native registry', () => {
     } finally { rmSync(f.root, { recursive: true, force: true }) }
   })
 
-  it('retains a recent closure certificate for the recovery window', async () => {
+  it('retains a recent closure certificate for the recovery window', () => {
     const f = fixture()
     try {
       const recent = f.receipt()
       age(recent.path, dayMs - 60_000)
       const registry = new NativeProcessRegistry(f.root)
-      await registry.ready()
       expect(readRecord(recent.path)).toEqual(recent.observation)
       expect(registry.closedRegistration(f.owner, recent.id)).toEqual(recent.observation)
     } finally { rmSync(f.root, { recursive: true, force: true }) }
@@ -292,7 +282,6 @@ describe('incremental native registry', () => {
     try {
       const row = f.registration({ closed: true })
       const registry = new NativeProcessRegistry(f.root)
-      await registry.ready()
       expect(readRecord(join(row.path, 'intent.json'))).toBeUndefined()
       expect(registry.closedRegistration(f.owner, row.id)).toMatchObject({ launchId: row.id, lifecycle: 'closed' })
       await registry.closeRegistration(registry.scope(f.owner), row.id)
@@ -306,7 +295,6 @@ describe('incremental native registry', () => {
       const unconfirmed = f.registration()
       age(join(unconfirmed.path, 'intent.json'))
       const registry = new NativeProcessRegistry(f.root)
-      await registry.ready()
       expect(readRecord(join(live.path, 'intent.json'))).toEqual(live.intent)
       expect(readRecord(join(unconfirmed.path, 'intent.json'))).toEqual(unconfirmed.intent)
       await expect(registry.closeRegistration(registry.scope(f.owner), live.id)).rejects.toThrow('live process')
@@ -314,11 +302,11 @@ describe('incremental native registry', () => {
         .rejects.toThrow()
       expect(readRecord(join(live.path, 'intent.json'))).toEqual(live.intent)
       expect(readRecord(join(unconfirmed.path, 'intent.json'))).toEqual(unconfirmed.intent)
-      await expect(registry.reserveLaunch(f.owner)).rejects.toThrow('live process')
+      expect(() => registry.reserveLaunch(f.owner)).toThrow('live process')
     } finally { rmSync(f.root, { recursive: true, force: true }) }
   })
 
-  it('retains an aged closed receipt if its recorded process still lives', async () => {
+  it('retains an aged closed receipt if its recorded process still lives', () => {
     const f = fixture()
     try {
       const row = f.receipt()
@@ -328,23 +316,21 @@ describe('incremental native registry', () => {
       writeRecord(join(f.directory, 'retired.json'), { format: 2, owner: f.owner, id: row.id, observation })
       age(row.path)
       const registry = new NativeProcessRegistry(f.root)
-      await registry.ready()
       expect(readRecord(row.path)).toEqual(observation)
       expect(registry.closedRegistration(f.owner, row.id)).toEqual(observation)
     } finally { rmSync(f.root, { recursive: true, force: true }) }
   })
 
-  it('keeps an aged legacy close marker unconfirmed and blocks owner reuse', async () => {
+  it('keeps an aged legacy close marker unconfirmed and blocks owner reuse', () => {
     const f = fixture()
     try {
       const row = f.registration({ closed: true })
       writeRecord(join(row.path, 'closed.json'), { format: 1, id: row.id, owner: f.owner })
       age(join(row.path, 'closed.json'))
       const registry = new NativeProcessRegistry(f.root)
-      await registry.ready()
       expect(registry.snapshot().launches[0]?.lifecycle).toBe('closure-unconfirmed')
       expect(readRecord(join(row.path, 'intent.json'))).toEqual(row.intent)
-      await expect(registry.reserveLaunch(f.owner)).rejects.toThrow('active or unconfirmed')
+      expect(() => registry.reserveLaunch(f.owner)).toThrow('active or unconfirmed')
     } finally { rmSync(f.root, { recursive: true, force: true }) }
   })
 
@@ -353,7 +339,6 @@ describe('incremental native registry', () => {
     try {
       f.receipt()
       const registry = new NativeProcessRegistry(f.root)
-      await registry.ready()
       const baseline = registry.snapshot()
       const id = randomUUID()
       const path = privateDirectory(join(f.directory, id))
@@ -370,7 +355,7 @@ describe('incremental native registry', () => {
     } finally { rmSync(f.root, { recursive: true, force: true }) }
   })
 
-  it('recovers an interrupted archive copy without losing closure or replacing a conflicting certificate', async () => {
+  it('recovers an interrupted archive copy without losing closure or replacing a conflicting certificate', () => {
     for (const conflict of [false, true]) {
       const f = fixture()
       try {
@@ -380,11 +365,10 @@ describe('incremental native registry', () => {
         writeRecord(join(archive, `${row.id}.json`), conflict
           ? { ...row.observation, bootId: 'different-boot' } : row.observation)
         if (conflict) {
-          await expect(new NativeProcessRegistry(f.root).ready()).rejects.toThrow('Conflicting archived native closure')
+          expect(() => new NativeProcessRegistry(f.root)).toThrow('Conflicting archived native closure')
           expect(readRecord(row.path)).toEqual(row.observation)
         } else {
           const registry = new NativeProcessRegistry(f.root)
-          await registry.ready()
           expect(readRecord(row.path)).toBeUndefined()
           expect(registry.closedRegistration(f.owner, row.id)).toEqual(row.observation)
         }
@@ -398,8 +382,7 @@ describe('incremental native registry', () => {
       const old = f.receipt()
       age(old.path)
       const registry = new NativeProcessRegistry(f.root)
-      await registry.ready()
-      const scope = await registry.reserveLaunch('execution:remaining-launch')
+      const scope = registry.reserveLaunch('execution:remaining-launch')
       const before = registry.snapshot()
       vi.resetModules()
       const { NativeProcessRegistry: RestartedRegistry } = await import('../src/modules/harnesses/recovery/processRegistry.js')

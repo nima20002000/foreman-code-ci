@@ -43,7 +43,7 @@ export async function qualifyCodexOutputProtection(input: {
   const signal = AbortSignal.any([input.signal, AbortSignal.timeout(60_000)])
   assertCodexProtectedOutputPlacement(protectedDirectory, selected.expectedSandbox)
   await input.assertCurrent(signal)
-  const recovery = await registry.reserveLaunch(`native-output-qualification:${randomUUID()}`)
+  const recovery = registry.reserveLaunch(`native-output-qualification:${randomUUID()}`)
   let transport: CodexStdioTransport | undefined
   const marker = randomUUID()
   const directPath = join(protectedDirectory, `.native-direct-${marker}`)
@@ -61,7 +61,11 @@ export async function qualifyCodexOutputProtection(input: {
     } catch (error) { errors.push(error) }
     if (errors.length) throw new AggregateError(errors, 'Native output qualification closure was incomplete.')
     // Own probe markers only, after positive diagnostic closure.
-    await removeProbeMarkers([hostPath, directPath, descendantPath, witnessPath, programPath])
+    for (const path of [hostPath, directPath, descendantPath, witnessPath, programPath]) {
+      await unlink(path).catch((error: unknown) => {
+        if (!(error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT')) throw error
+      })
+    }
   }
   try {
     const environment = inheritedAgentEnvironment()
@@ -227,14 +231,6 @@ export async function qualifyCodexOutputProtection(input: {
       if (failure) throw new AggregateError([failure.error, error],
         'Native output qualification and cleanup both failed.', { cause: error })
       throw error
-    })
-  }
-}
-
-async function removeProbeMarkers(paths: string[]): Promise<void> {
-  for (const path of paths) {
-    await unlink(path).catch((error: unknown) => {
-      if (!(error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT')) throw error
     })
   }
 }

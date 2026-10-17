@@ -75,7 +75,7 @@ describe.skipIf(!enabled)('installed harness local-human isolation', { timeout: 
       let launchError: Error | undefined
       let diagnostics = ''
       let transcript = ''
-      const owned = await spawnOwnedStdioProcess({
+      const owned = spawnOwnedStdioProcess({
         binary: harnessBinaries(process.env).codexBinary,
         args: ['exec', '--sandbox', 'read-only', '--skip-git-repo-check',
           '--model', process.env.CODEX_TEST_MODEL ?? 'gpt-5.6-luna',

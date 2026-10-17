@@ -57,12 +57,6 @@ function conversationStore() {
         ? [...rows.values()].find(row => row.agent_key === values[0]) : rows.get(String(values[0]))
       return { rows: found ? [structuredClone(found)] : [], rowCount: found ? 1 : 0 }
     }
-    if (sql.startsWith("select c.record->>'workingDirectory' as path,")) {
-      const found = rows.get(String(values[0]))
-      const record = found?.record as Record<string, unknown> | undefined
-      const directories = record ? [{ path: record.workingDirectory, host_kind: 'main' }] : []
-      return { rows: directories, rowCount: directories.length }
-    }
     if (sql.startsWith('select count(*)::text as count from operator_conversation_turns')) {
       return { rows: [{ count: '0' }], rowCount: 1 }
     }
@@ -103,7 +97,7 @@ describe('conversation prompt snapshots', () => {
     const repository = new PostgresAgentChatRepository(store.pool)
     const create: NewAgentConversation = {
       context, agentConfigurationVersionId: 'agent-config', harness: 'codex', origin: { kind: 'fresh' },
-      workingDirectory: process.cwd(), runtimeDirectory: '/runtime',
+      workingDirectory: '/workspace', runtimeDirectory: '/runtime',
     }
     const first = await repository.ensureForControls('first', create, async () => {})
     expect(agentConversation(first).systemPrompt).toBeUndefined()
@@ -124,7 +118,7 @@ describe('conversation prompt snapshots', () => {
     const repository = new PostgresAgentChatRepository(store.pool)
     const create: NewAgentConversation = {
       context, agentConfigurationVersionId: 'agent-config', harness: 'codex', origin: { kind: 'fresh' },
-      workingDirectory: process.cwd(), runtimeDirectory: '/runtime',
+      workingDirectory: '/workspace', runtimeDirectory: '/runtime',
     }
     store.change(snapshot('Updated prompt', 2))
     const origin = { kind: 'run_execution' as const, runId: 'run', executionId: 'execution', sourceNativeSessionId: 'source' }

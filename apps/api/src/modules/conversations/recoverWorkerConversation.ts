@@ -11,7 +11,6 @@ import type { WorkerConversationJournal } from './workerJournal.js'
 import { workerConversationProcessDigest } from './workerNativeOwner.js'
 import { DomainError } from '../errors.js'
 import { sameConversationForAppAccess } from './conversationAppAccess.js'
-import { validRunChatSkillsTransition } from './workerRunChatBinding.js'
 
 function unavailable(message: string): never {
   throw new DomainError('WORKER_CONVERSATION_RECOVERY_REQUIRED', message, 409)
@@ -40,18 +39,13 @@ export async function recoverWorkerConversation(input: {
     && record.applicationAccessChange?.state === 'reserved'
     && record.applicationAccessChange.operationId === request.operationId
     && record.applicationAccessChange.next === request.binding.appMcpAccess
-  const changingSkills = request.method === 'conversation.open' && request.mode === 'attach'
-    && request.previousBinding && request.previousConfiguration
-    && isDeepStrictEqual(request.previousBinding, record.binding)
-    && isDeepStrictEqual(request.source, session)
-    && validRunChatSkillsTransition(record.binding, request.binding, request.previousConfiguration, input.configuration)
-  const targetBinding = changingAccess || changingSkills ? request.binding : record.binding
+  const targetBinding = changingAccess ? request.binding : record.binding
   if (!session || !owner || !record.creation || record.closing || record.closed) {
     unavailable('The persisted chat has no recoverable native session.')
   }
-  if (commandInputHash(input.configuration) !== targetBinding.owner.configurationHash
+  if (commandInputHash(input.configuration) !== record.binding.owner.configurationHash
     || input.configuration.harness.harness !== session.harness || owner.sessionId !== session.nativeSessionId
-    || !isDeepStrictEqual(request.binding, record.binding) && !changingAccess && !changingSkills) {
+    || !isDeepStrictEqual(request.binding, record.binding) && !changingAccess) {
     unavailable('The saved conversation configuration or native session changed.')
   }
   for (const field of ['mainId', 'deviceId', 'workerInstallationId', 'keyRevision', 'authorizationRevision'] as const) {
@@ -126,9 +120,7 @@ export async function recoverWorkerConversation(input: {
     for (const turn of recoveredTurns) await input.journal.finishTurn(record.binding, turn.correlationId, turn.result)
     for (const state of recoveredCompactions) await input.journal.compactProgress(record.binding, state)
     await input.journal.recoveredOwner(record.binding, input.connection, owner, await allocation.nativeOwner(session),
-      changingAccess || changingSkills ? { targetBinding,
-        ...(changingSkills && request.method === 'conversation.open' && request.previousConfiguration
-          ? { previousConfiguration: request.previousConfiguration, configuration: input.configuration } : {}) } : undefined)
+      changingAccess ? { targetBinding } : undefined)
     if (preferences) await input.journal.preferences(targetBinding, preferences,
       allocation.manager.appliedSessionPreferences?.(session) ?? null)
     return allocation

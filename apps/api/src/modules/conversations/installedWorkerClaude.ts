@@ -17,7 +17,7 @@ import { loadInstalledClaudeSdk, loadOfficialClaudeSdk } from '../harnesses/clau
 import { allocateClaudeNativeHarness } from '../harnesses/claudeSdk/composition.js'
 import { claudeProductionMcpInspector } from '../harnesses/claudeSdk/productionMcpInspector.js'
 import { appMcpServerName, isSupportedAppMcpServerName } from '../harnesses/appMcpLauncher.js'
-import type { NativeProcessRegistry, NativeProcessRecovery } from '../harnesses/recovery/processRegistry.js'
+import type { NativeProcessRegistry } from '../harnesses/recovery/processRegistry.js'
 import type { InstalledWorkflowConfigurationLocation } from '../runs/remote/installedWorkflowConfiguration.js'
 import { createUnboundWorkerMcpEndpoint } from '../runs/remote/workerMcpEndpoint.js'
 import { installedConversationDirectory } from './installedConversationDirectory.js'
@@ -31,21 +31,6 @@ import { createWorkerClaudeFiles } from './workerClaudeFiles.js'
 import type { NativeSessionStart } from '../harnesses/port.js'
 import type { WorkerConversationJournal } from './workerJournal.js'
 import { acceptedClaudeAppTools } from '../harnesses/claudeSdk/mcpPolicy.js'
-
-function workerClaudeSessionStart(binding: WorkerConversationBinding, configuration: WorkerConversationConfiguration,
-  environment: Awaited<ReturnType<typeof prepareWorkerConversationMcp>>['environment'] | undefined,
-  options: Parameters<WorkerConversationAllocation['start']>[0]): NativeSessionStart {
-  const owner = binding.owner
-  if (owner.kind === 'operator' && 'operatorId' in configuration) return { kind: 'operator', configuration,
-    correlationId: options.correlationId, workingDirectory: binding.workingDirectory,
-    ...(environment ? { environment } : {}) }
-  if (owner.kind !== 'agent' || !('agentId' in configuration) || environment) throw new DomainError(
-    'HARNESS_ROLE_AUTHORITY_INVALID', 'Agent chat cannot receive an Operator MCP credential.', 403)
-  return { kind: 'agent-chat', configuration, conversationId: owner.conversationId, workflowId: owner.workflowId,
-    workflowNodeId: owner.workflowNodeId, correlationId: options.correlationId,
-    ...(binding.systemPrompt ? { systemPrompt: binding.systemPrompt } : {}),
-    workingDirectory: binding.workingDirectory, instructionsDelivered: options.instructionsDelivered }
-}
 
 export async function allocateInstalledWorkerClaude(input: {
   binding: WorkerConversationBinding
@@ -91,7 +76,7 @@ export async function allocateInstalledWorkerClaude(input: {
   if (reader) owner = `conversation-read:${binding.owner.conversationId}:${randomUUID()}`
   if (input.purpose === 'preparation') owner = `conversation-prepare:${binding.owner.conversationId}:${randomUUID()}`
   const recovery = input.registry.scope(owner)
-  const reservation = workerClaudeReservation(input.registry, recovery)
+  let reserved = false
   const before = async (signal?: AbortSignal) => {
     signal?.throwIfAborted()
     await directory.assertCurrent(signal)
@@ -105,16 +90,30 @@ export async function allocateInstalledWorkerClaude(input: {
       'HARNESS_PROFILE_UNAVAILABLE', 'The accepted Claude native policy changed.', 409,
       { changedFields, nativePinChanged })
   }
-
+  const reserve = () => {
+    if (reserved) return
+    Object.assign(recovery, input.registry.reserveLaunch(owner))
+    reserved = true
+  }
   const appAccess = reader ? 'none' : binding.appMcpAccess
   let mcp: Awaited<ReturnType<typeof createUnboundWorkerMcpEndpoint>> | undefined
   let token: string | undefined
   let environment: Awaited<ReturnType<typeof prepareWorkerConversationMcp>>['environment'] | undefined
-  const buildStart = (options: Parameters<WorkerConversationAllocation['start']>[0]) =>
-    workerClaudeSessionStart(binding, configuration, environment, options)
+  const buildStart = (options: Parameters<WorkerConversationAllocation['start']>[0]): NativeSessionStart => {
+    const owner = binding.owner
+    if (owner.kind === 'operator' && 'operatorId' in configuration) return { kind: 'operator', configuration,
+      correlationId: options.correlationId, workingDirectory: binding.workingDirectory,
+      ...(environment ? { environment } : {}) }
+    if (owner.kind !== 'agent' || !('agentId' in configuration) || environment) throw new DomainError(
+      'HARNESS_ROLE_AUTHORITY_INVALID', 'Agent chat cannot receive an Operator MCP credential.', 403)
+    return { kind: 'agent-chat', configuration, conversationId: owner.conversationId, workflowId: owner.workflowId,
+      workflowNodeId: owner.workflowNodeId, correlationId: options.correlationId,
+      ...(binding.systemPrompt ? { systemPrompt: binding.systemPrompt } : {}),
+      workingDirectory: binding.workingDirectory, instructionsDelivered: options.instructionsDelivered }
+  }
   const start: WorkerConversationAllocation['start'] = async options => {
     await before(input.signal)
-    await reservation.reserve()
+    reserve()
     if (options.applicationAccess && options.applicationAccess.token !== token) {
       await deliverScopedCredential(options.applicationAccess.token, input.signal, options)
     }
@@ -134,10 +133,10 @@ export async function allocateInstalledWorkerClaude(input: {
   const authority = createWorkerClaudeAuthority({ configuration: callbackConfiguration,
     version: original.accepted.currentBinding.pin.cliVersion, signal: input.signal, source: input.source,
     beginOwnerChange: nativeOwner.beginOwnerChange, refreshOwner: nativeOwner.refreshOwner,
-    callbackJournal: input.journal.claudeCallbackJournal(binding, input.source()), request: input.callbacks.claudeAuthority })
+    callbackJournal: input.journal.claudeCallbackJournal(binding), request: input.callbacks.claudeAuthority })
   const runner = createClaudeSdkRunner({ loadClient: async () => {
     await before(input.signal)
-    await reservation.reserve()
+    reserve()
     return loadOfficialClaudeSdk(compiled.configuration.configDirectory, recovery, binary, original.sdk.entrypoint)
   } })
   const callbacks = createClaudeSdkCallbacks({ manager: () => manager, bridge: authority.bridge })
@@ -224,26 +223,13 @@ export async function allocateInstalledWorkerClaude(input: {
     async close() {
       await manager.dispose?.()
       authority.bridge.close()
-      await reservation.close()
+      if (reserved) {
+        await input.registry.abandonReservedLaunch(recovery)
+        if (!await input.registry.closeOwner(owner)) throw new DomainError('CLAUDE_PROCESS_CLOSURE_PENDING',
+          'The native Claude chat has not stopped.', 409)
+      }
       await mcp?.close()
       await fileServer?.close()
-    },
-  }
-}
-
-function workerClaudeReservation(registry: NativeProcessRegistry, recovery: NativeProcessRecovery) {
-  let pending: Promise<void> | undefined
-  return {
-    reserve() {
-      pending ??= registry.reserveLaunch(recovery.owner).then(scope => { Object.assign(recovery, scope) })
-      return pending
-    },
-    async close() {
-      if (!pending) return
-      await pending
-      await registry.abandonReservedLaunch(recovery)
-      if (!await registry.closeOwner(recovery.owner)) throw new DomainError('CLAUDE_PROCESS_CLOSURE_PENDING',
-        'The native Claude chat has not stopped.', 409)
     },
   }
 }

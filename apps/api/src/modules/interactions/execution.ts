@@ -106,7 +106,6 @@ interface OwnedNativeSession {
   closureGeneration?: string
   closureRegistration?: Promise<string>
   launchReserved?: boolean
-  launchReservation?: Promise<void>
   failed?: boolean
   session?: NativeSessionReference
   starting?: Promise<void>
@@ -333,7 +332,6 @@ export class ApprovalExecutionCoordinator {
           owned.context.acceptedPlacement?.hostRef.kind === 'device' ? { timeoutMs: deviceRequestTimeoutMs } : {})
       // Create/attach can be in flight when Stop arrives. Never invent an identity
       // or replay a turn to obtain a session that can be canceled.
-      if (owned.launchReservation) await attempt('await native launch reservation', async () => { await owned.launchReservation })
       if (owned.opening) await attempt('await native session', async () => { await owned.opening })
       // A persisted session reference is not evidence that THIS manager ever
       // attached it. A failed cold attach cannot close an invented local session.
@@ -622,7 +620,7 @@ export class ApprovalExecutionCoordinator {
     private readonly nativeCaptures?: WorkflowNativeCapturePort,
     private readonly reviewNativeCaptures?: ReviewNativeCapturePort,
     private readonly recoverNativeProcesses?: (executionId: string, signal: AbortSignal, owner: RunOwnership) => Promise<boolean>,
-    private readonly reserveNativeLaunch?: (executionId: string, manager: NativeHarnessSessionManager) => void | Promise<void>,
+    private readonly reserveNativeLaunch?: (executionId: string, manager: NativeHarnessSessionManager) => void,
     private readonly prepareManagerContext?: (context: NativeManagerResolutionContext) => Promise<NativeManagerResolutionContext>,
     private readonly commitReviewNative?: (executionId: string) => Promise<void>,
   ) {
@@ -909,11 +907,8 @@ export class ApprovalExecutionCoordinator {
       // Allocation/reviewer cleanup alone must not reserve or dispatch anything.
       if (resolved.processState === 'needs_start' && !owned.launchReserved && !continuing) {
         signal?.throwIfAborted()
-        owned.launchReservation ??= Promise.resolve().then(async () => {
-          await this.reserveNativeLaunch?.(context.executionId, this.rawManagers.get(owned.manager) ?? owned.manager)
-          owned.launchReserved = true
-        })
-        await owned.launchReservation
+        this.reserveNativeLaunch?.(context.executionId, this.rawManagers.get(owned.manager) ?? owned.manager)
+        owned.launchReserved = true
       }
       owned.closureRegistration ??= this.workflowClosures.begin(owned.execution)
       const generation = await owned.closureRegistration

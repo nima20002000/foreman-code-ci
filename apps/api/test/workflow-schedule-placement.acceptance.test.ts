@@ -22,12 +22,12 @@ describe('native scheduled placement recovery', () => {
 
   it.each(['node', 'codex'] as const)('closes an owned %s diagnostic after its direct child exits', async (harness) => {
     const registry = new NativeProcessRegistry(join(database.directory, 'diagnostic-processes'))
-    const recovery = await registry.reserveLaunch(`version-diagnostic:${harness}`)
+    const recovery = registry.reserveLaunch(`version-diagnostic:${harness}`)
     const errors: Error[] = []
     const binary = harness === 'node' ? process.execPath
       : createRequire(import.meta.url).resolve('@openai/codex/bin/codex.js')
     const args = harness === 'node' ? ['-e', 'process.stdout.write("diagnostic complete\\n")'] : ['--version']
-    const diagnostic = await spawnOwnedStdioProcess({
+    const diagnostic = spawnOwnedStdioProcess({
       binary, args, cwd: database.directory,
       environment: diagnosticEnvironment(database.directory, process.env), recovery,
       onError: error => { errors.push(error) },

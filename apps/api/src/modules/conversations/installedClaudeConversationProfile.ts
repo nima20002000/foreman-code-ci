@@ -5,7 +5,6 @@ import { WorkerConversationProfileFactsSchema, workerConversationProfileSelectio
   type WorkerConversationConfiguration } from '@foreman-code/contracts/remote-execution-rpc'
 import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
 import { DomainError } from '../errors.js'
-import { sameWorkerProfileHost } from './workerProfileTarget.js'
 import type { InstalledClaudeTarget } from '../harnesses/installedClaudeInspection.js'
 import { installedClaudeProfilePin } from '../harnesses/claudeSdk/installedProfilePin.js'
 import { HarnessInstanceRegistry, localHarnessDrivers } from '../harnesses/instanceRegistry.js'
@@ -36,7 +35,7 @@ export function createInstalledClaudeConversationProfile(input: {
     const after = (await input.inspect(input.signal)).currentTarget
     if (!before || !after || !isDeepStrictEqual(input.current(), live)
       || !isDeepStrictEqual(before.binding, live) || !isDeepStrictEqual(after.binding, live)
-      || !isDeepStrictEqual(before.target, after.target) || !isDeepStrictEqual(after.target, facts.override.target)
+      || !isDeepStrictEqual(before.target, after.target) || !isDeepStrictEqual(after.target, binding.profile.target)
       || !isDeepStrictEqual(before.installation.claudeSdk, after.installation.claudeSdk)
       || !isDeepStrictEqual(before.installation.launcher.payloadFingerprints, after.installation.launcher.payloadFingerprints)
       || !isDeepStrictEqual(facts.installation.claudeSdk, after.installation.claudeSdk)
@@ -44,7 +43,7 @@ export function createInstalledClaudeConversationProfile(input: {
       || configuration.harness.harness !== 'claude' || binding.harness !== 'claude'
       || commandInputHash(configuration) !== binding.owner.configurationHash
       || !isDeepStrictEqual(workerConversationProfileSelection(binding, configuration), binding.profile)
-      || !sameWorkerProfileHost(binding.profile.target, facts.override.target)
+      || !isDeepStrictEqual(facts.override.target, binding.profile.target)
       || facts.override.instanceId !== binding.profile.instanceId
       || facts.override.instanceRevision !== binding.profile.instanceRevision
       || !isDeepStrictEqual(withAdvancedDefaults(facts.override.configuration), withAdvancedDefaults(configuration.harness))) return unavailable()

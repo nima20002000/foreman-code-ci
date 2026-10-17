@@ -18,10 +18,9 @@ import { nativeRegistryProjection, type NativeRegistrySnapshot, type NativeRegis
 export type { NativeLaunchObservation, NativeRegistrySnapshot, NativeRegistryChange } from './registryObservation.js'
 import { nativeAgentEnvironment } from '../secrets.js'
 import { NativeProcessObservationSchema } from '@foreman-code/contracts/remote-execution-entry-closure'
-import { existingPrivateDirectory, privateDirectory, readRecord, recordObject, syncDirectory, syncDirectoryAsync, writeRecord } from './storage.js'
+import { existingPrivateDirectory, privateDirectory, readRecord, recordObject, syncDirectory, writeRecord } from './storage.js'
 import { archivedClosure, archivedRetirement } from './registryArchive.js'
 import { prepareRegistryRetirement, pruneClosedObservation, retireRegistrations } from './registryRetirement.js'
-import { registryOperation } from './registryOperations.js'
 import { NativeRegistryRetention } from './nativeRetention.js'
 
 export interface NativeProcessRecovery {
@@ -44,10 +43,6 @@ const owned = new WeakMap<ChildProcess, { scope: NativeProcessRecovery; id: stri
 const closing = new Map<string, Promise<void>>()
 const key = (owner: string) => createHash('sha256').update(owner).digest('hex')
 const socketName = (id: string) => `\0graphql-native-${id}`
-
-function ownerOperation(scope: NativeProcessRecovery): string {
-  return JSON.stringify([resolve(scope.root), key(scope.owner)])
-}
 
 function launchRecord(value: unknown): LaunchRecord {
   const row = recordObject(value)
@@ -204,8 +199,8 @@ function closedObservation(directory: string, owner: string, id: string): Native
   return Object.freeze(raw as NativeLaunchObservation)
 }
 
-async function retireRegistration(directory: string, launch: LaunchRecord,
-  batch?: Map<string, NativeLaunchObservation>): Promise<void> {
+function retireRegistration(directory: string, launch: LaunchRecord,
+  batch?: Map<string, NativeLaunchObservation>): void {
   if (!closedRecord(directory, launch)) throw new Error('Unconfirmed native registrations cannot be retired.')
   const ownerDirectory = dirname(directory)
   const observation = nativeRegistryProjection(dirname(ownerDirectory)).retirementObservation(directory)
@@ -236,14 +231,14 @@ async function retireRegistration(directory: string, launch: LaunchRecord,
   }
   publishRetirement(directory)
   if (batch) batch.set(launch.id, observation)
-  else await retireRegistrations(ownerDirectory, new Map([[launch.id, observation]]))
+  else retireRegistrations(ownerDirectory, new Map([[launch.id, observation]]))
 }
 
-async function confirmClosed(directory: string, launch: LaunchRecord, evidence: ClosureEvidence,
-  batch?: Map<string, NativeLaunchObservation>): Promise<void> {
+function confirmClosed(directory: string, launch: LaunchRecord, evidence: ClosureEvidence,
+  batch?: Map<string, NativeLaunchObservation>): void {
   writeRecord(join(directory, 'closed.json'), { format: 2, id: launch.id, owner: launch.owner, boot: launch.boot,
     observedAt: new Date().toISOString(), evidence })
-  await retireRegistration(directory, launch, batch)
+  retireRegistration(directory, launch, batch)
 }
 
 function unstartedGuardianAlive(directory: string, launch: LaunchRecord): boolean {
@@ -266,8 +261,8 @@ async function waitForUnstartedGuardian(directory: string, launch: LaunchRecord,
 }
 
 /** Compact proven closures BEFORE enforcing the unresolved-work bound. */
-async function inventory(directory: string, owner: string): Promise<string[]> {
-  return nativeRegistryProjection(dirname(directory)).retirementBatch(async () => {
+function inventory(directory: string, owner: string): string[] {
+  return nativeRegistryProjection(dirname(directory)).retirementBatch(() => {
     const ids: string[] = []
     const closures = new Map<string, NativeLaunchObservation>()
     try {
@@ -293,18 +288,18 @@ async function inventory(directory: string, owner: string): Promise<string[]> {
         const notStarted = readRecord(join(path, 'not-started.json'))
         if (alreadyClosed && (notStarted === undefined || readRecord(join(path, 'birth.json')) !== undefined
           || !unstartedGuardianAlive(path, launch))) {
-          await retireRegistration(path, launch, closures)
+          retireRegistration(path, launch, closures)
           continue
         }
-        if (launch.boot !== bootIdentity()) { await confirmClosed(path, launch, 'linux_boot_changed', closures); continue }
+        if (launch.boot !== bootIdentity()) { confirmClosed(path, launch, 'linux_boot_changed', closures); continue }
         if (notStarted !== undefined) {
           const row = recordObject(notStarted)
           if (row.id !== id || row.owner !== owner || readRecord(join(path, 'birth.json')) !== undefined) {
             throw new Error('Conflicting native startup evidence.')
           }
           if (!unstartedGuardianAlive(path, launch)) {
-            if (alreadyClosed) await retireRegistration(path, launch, closures)
-            else await confirmClosed(path, launch, 'native_not_started', closures)
+            if (alreadyClosed) retireRegistration(path, launch, closures)
+            else confirmClosed(path, launch, 'native_not_started', closures)
             continue
           }
         }
@@ -312,35 +307,29 @@ async function inventory(directory: string, owner: string): Promise<string[]> {
         if (ids.length > 10_000) throw new Error('Native recovery inventory exceeds its unresolved-work scan limit.')
       }
       return ids
-    } finally { await retireRegistrations(directory, closures) }
+    } finally { retireRegistrations(directory, closures) }
   })
 }
 
 /** Backend-owned registry. An empty registry is NOT evidence about pre-upgrade processes. */
 export class NativeProcessRegistry {
   private readonly retention: NativeRegistryRetention
-  private readonly preparation: Promise<void>
   constructor(private readonly root: string) {
     this.retention = new NativeRegistryRetention(root)
-    this.preparation = process.platform === 'linux'
-      ? registryOperation(`maintenance:${resolve(root)}`, () => prepareRegistryRetirement(resolve(root), async (directory, batch) => {
-        const intent = readRecord(join(directory, 'intent.json'))
-        if (intent === undefined && !existingPrivateDirectory(directory)) return
-        const launch = launchRecord(intent)
-        if (launch.id !== basename(directory) || key(launch.owner) !== basename(dirname(directory))) {
-          throw new Error('Native owner inventory mismatch.')
-        }
-        if (!closedRecord(directory, launch)) return
-        const observation = nativeRegistryProjection(resolve(root)).retirementObservation(directory)
-        if (launch.boot === bootIdentity()
-          && [observation?.guardian, observation?.provider].some(process => process && identityAlive(process))) return
-        await retireRegistration(directory, launch, batch)
-      })) : Promise.resolve()
-    void this.preparation.catch(error => {
-      harnessLog.warn({ err: error }, 'Native registry maintenance failed')
+    if (process.platform === 'linux') prepareRegistryRetirement(resolve(root), directory => {
+      const intent = readRecord(join(directory, 'intent.json'))
+      if (intent === undefined && !existingPrivateDirectory(directory)) return
+      const launch = launchRecord(intent)
+      if (launch.id !== basename(directory) || key(launch.owner) !== basename(dirname(directory))) {
+        throw new Error('Native owner inventory mismatch.')
+      }
+      if (!closedRecord(directory, launch)) return
+      const observation = nativeRegistryProjection(resolve(root)).retirementObservation(directory)
+      if (launch.boot === bootIdentity()
+        && [observation?.guardian, observation?.provider].some(process => process && identityAlive(process))) return
+      retireRegistration(directory, launch)
     })
   }
-  ready(): Promise<void> { return this.preparation }
   snapshot(): NativeRegistrySnapshot { return nativeRegistryProjection(this.root).snapshot() }
   pruneSettled(isSettled: (owner: string) => Promise<boolean>, now = Date.now()): Promise<number> {
     return this.retention.prune(isSettled, now)
@@ -362,12 +351,11 @@ export class NativeProcessRegistry {
   /** Allocate before authorizing native submission, not at child_process.spawn.
    * A dead original parent plus this durable intent and no dispatch is positive
    * native_not_started evidence. A missing directory still proves nothing. */
-  async reserveLaunch(owner: string): Promise<NativeProcessRecovery> {
+  reserveLaunch(owner: string): NativeProcessRecovery {
     const scope = this.scope(owner)
     if (process.platform !== 'linux') return scope
-    await this.preparation
     try {
-      return await registryOperation(ownerOperation(scope), async () => ({ ...scope, launchId: (await reserveProcess(scope)).id }))
+      return { ...scope, launchId: reserveProcess(scope).id }
     } catch (error) {
       const storageError = error as NodeJS.ErrnoException
       if (storageError.code !== 'ENOSPC' && storageError.code !== 'EDQUOT'
@@ -422,17 +410,14 @@ export class NativeProcessRegistry {
   }
   async closeOwner(owner: string, signal?: AbortSignal): Promise<boolean> {
     if (process.platform !== 'linux') return false
-    await this.preparation
     const root = privateDirectory(this.root)
     const directory = join(root, key(owner))
-    const registrations = await registryOperation(ownerOperation({ root, owner }), async () => {
-      try { lstatSync(directory) } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
-        throw error
-      }
-      privateDirectory(directory)
-      return inventory(directory, owner)
-    })
+    try { lstatSync(directory) } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return retiredOwner(directory, owner)
+      throw error
+    }
+    privateDirectory(directory)
+    const registrations = inventory(directory, owner)
     if (!registrations.length) return retiredOwner(directory, owner)
     const failures: unknown[] = []
     for (const id of registrations) {
@@ -446,10 +431,7 @@ export class NativeProcessRegistry {
     const previous = closing.get(identity)
     if (previous) return previous
     const attempt = timeRuntimeOperation('harness', 'process.close',
-      async () => {
-        await this.preparation
-        await registryOperation(ownerOperation(scope), () => this.closeRegistered(scope, id, signal))
-      }, { ownerId: scope.owner })
+      () => this.closeRegistered(scope, id, signal), { ownerId: scope.owner })
     closing.set(identity, attempt)
     void attempt.finally(() => { if (closing.get(identity) === attempt) closing.delete(identity) }).catch(() => { /* ignore: the owner awaits the original promise; this observer prevents a duplicate unhandled rejection. */ })
     return attempt
@@ -471,7 +453,7 @@ export class NativeProcessRegistry {
       }
       privateDirectory(tombstone)
       rmSync(tombstone, { recursive: true })
-      await syncDirectoryAsync(dirname(directory))
+      syncDirectory(dirname(directory))
       return
     }
     privateDirectory(directory)
@@ -486,13 +468,13 @@ export class NativeProcessRegistry {
         throw new Error('Conflicting native startup evidence.')
       }
       await waitForUnstartedGuardian(directory, launch, signal)
-      if (alreadyClosed) await retireRegistration(directory, launch)
-      else await confirmClosed(directory, launch, 'native_not_started')
+      if (alreadyClosed) retireRegistration(directory, launch)
+      else confirmClosed(directory, launch, 'native_not_started')
       return
     }
-    if (alreadyClosed) { await retireRegistration(directory, launch); return }
+    if (alreadyClosed) { retireRegistration(directory, launch); return }
     // A different kernel boot proves no process from the earlier boot can execute.
-    if (launch.boot !== boot) { await confirmClosed(directory, launch, 'linux_boot_changed'); return }
+    if (launch.boot !== boot) { confirmClosed(directory, launch, 'linux_boot_changed'); return }
     const end = Date.now() + 5_000
     let requested = false
     const forceAt = Date.now() + 1_000
@@ -504,7 +486,7 @@ export class NativeProcessRegistry {
         const dispatched = readRecord(join(directory, 'dispatched.json'))
         if (dispatched === undefined) {
           // Parent persists dispatched BEFORE sending the native configuration.
-          if (!identityAlive(launch.parent)) { await confirmClosed(directory, launch, 'native_not_started'); return }
+          if (!identityAlive(launch.parent)) { confirmClosed(directory, launch, 'native_not_started'); return }
         } else {
           const record = recordObject(dispatched)
           const guardian = recordObject(record.guardian)
@@ -513,13 +495,13 @@ export class NativeProcessRegistry {
           if (!identityAlive({ pid: Number(guardian.pid), startTicks: guardian.startTicks })) {
             // The guardian cannot start a native executable until birth.json is durable.
             // Re-read after observing exit so a concurrent final publication cannot be missed.
-            if (readRecord(join(directory, 'birth.json')) === undefined) { await confirmClosed(directory, launch, 'native_not_started'); return }
+            if (readRecord(join(directory, 'birth.json')) === undefined) { confirmClosed(directory, launch, 'native_not_started'); return }
           }
         }
       } else {
         const birth = birthRecord(rawBirth, launch)
         const evidence = observeCgroupClosure(directory, launch, birth)
-        if (evidence) { await confirmClosed(directory, launch, evidence); return }
+        if (evidence) { confirmClosed(directory, launch, evidence); return }
         if (birth.containment && !forced && (Date.now() >= forceAt || !identityAlive(birth.guardian))) {
           killCgroup(birth.containment)
           forced = true
@@ -540,15 +522,15 @@ export class NativeProcessRegistry {
 }
 
 /** A fresh manager cannot overlap an older, still-running native process for this owner. */
-async function assertOwnerIdle(directory: string, owner: string): Promise<void> {
+function assertOwnerIdle(directory: string, owner: string): void {
   const boot = bootIdentity()
-  const ids = await inventory(directory, owner)
+  const ids = inventory(directory, owner)
   for (const id of ids) {
     if (!/^[0-9a-f-]{36}$/.test(id)) throw new Error('Unexpected native process inventory entry.')
     const previous = privateDirectory(join(directory, id))
     const intent = launchRecord(readRecord(join(previous, 'intent.json')))
     if (intent.owner !== owner || intent.id !== id) throw new Error('Native owner inventory mismatch.')
-    if (intent.boot !== boot) { await confirmClosed(previous, intent, 'linux_boot_changed'); continue }
+    if (intent.boot !== boot) { confirmClosed(previous, intent, 'linux_boot_changed'); continue }
     const notStarted = readRecord(join(previous, 'not-started.json'))
     if (notStarted !== undefined) {
       const record = recordObject(notStarted)
@@ -556,18 +538,18 @@ async function assertOwnerIdle(directory: string, owner: string): Promise<void> 
         throw new Error('Conflicting native startup evidence.')
       }
       if (!unstartedGuardianAlive(previous, intent)) {
-        await confirmClosed(previous, intent, 'native_not_started')
+        confirmClosed(previous, intent, 'native_not_started')
         continue
       }
     }
     const rawBirth = readRecord(join(previous, 'birth.json'))
     if (rawBirth !== undefined) {
       const evidence = observeCgroupClosure(previous, intent, birthRecord(rawBirth, intent))
-      if (evidence) { await confirmClosed(previous, intent, evidence); continue }
+      if (evidence) { confirmClosed(previous, intent, evidence); continue }
     } else {
       const rawDispatch = readRecord(join(previous, 'dispatched.json'))
       if (rawDispatch === undefined) {
-        if (!identityAlive(intent.parent)) { await confirmClosed(previous, intent, 'native_not_started'); continue }
+        if (!identityAlive(intent.parent)) { confirmClosed(previous, intent, 'native_not_started'); continue }
       } else {
         const dispatched = recordObject(rawDispatch)
         const guardian = recordObject(dispatched.guardian)
@@ -575,7 +557,7 @@ async function assertOwnerIdle(directory: string, owner: string): Promise<void> 
           || typeof guardian.startTicks !== 'string' || !/^\d+$/.test(guardian.startTicks)) throw new Error('Invalid guardian dispatch record.')
         if (!identityAlive({ pid: Number(guardian.pid), startTicks: guardian.startTicks })
           && readRecord(join(previous, 'birth.json')) === undefined) {
-          await confirmClosed(previous, intent, 'native_not_started'); continue
+          confirmClosed(previous, intent, 'native_not_started'); continue
         }
       }
     }
@@ -585,9 +567,9 @@ async function assertOwnerIdle(directory: string, owner: string): Promise<void> 
 
 /** Publish a complete intent atomically. A crash before the rename cannot leave
  * a half-registration in the unresolved inventory. No executable is dispatched. */
-async function reserveProcess(scope: NativeProcessRecovery): Promise<LaunchRecord> {
+function reserveProcess(scope: NativeProcessRecovery): LaunchRecord {
   const ownerDirectory = privateDirectory(join(privateDirectory(scope.root), key(scope.owner)))
-  await assertOwnerIdle(ownerDirectory, scope.owner)
+  assertOwnerIdle(ownerDirectory, scope.owner)
   const parent = processIdentity(process.pid)
   if (!parent) throw new Error('Cannot identify the launching API process.')
   const id = randomUUID()
@@ -603,7 +585,7 @@ async function reserveProcess(scope: NativeProcessRecovery): Promise<LaunchRecor
     published = true
     syncDirectory(ownerDirectory)
   } catch (error) {
-    // No guardian can dispatch until the reservation has been returned.
+    // No guardian can dispatch until this synchronous reservation returns.
     try {
       rmSync(published ? directory : temporary, { recursive: true, force: true })
       syncDirectory(ownerDirectory)
@@ -617,15 +599,6 @@ async function reserveProcess(scope: NativeProcessRecovery): Promise<LaunchRecor
   return launch
 }
 
-/** Sequential subprocesses need another awaited reservation; exact entered scopes keep their original identity. */
-export async function prepareNativeProcessRecovery(scope: NativeProcessRecovery): Promise<NativeProcessRecovery> {
-  const consumed = consumedLaunchScopes.get(scope)
-  if (consumed && (consumed.root !== resolve(scope.root) || consumed.owner !== scope.owner
-    || consumed.launchId !== scope.launchId)) throw new Error('The entered native launch scope was modified.')
-  if (scope.launchId && !consumed) return scope
-  return new NativeProcessRegistry(scope.root).reserveLaunch(scope.owner)
-}
-
 /** A recovered/revoked scope must NEVER silently allocate a replacement launch.
  * The parent identity and immutable id fence the handoff. All operations through
  * guardian dispatch are synchronous; a live parent cannot race its own cleanup.
@@ -635,7 +608,7 @@ function takeLaunch(scope: NativeProcessRecovery): LaunchRecord {
   if (consumed && (consumed.root !== resolve(scope.root) || consumed.owner !== scope.owner || consumed.launchId !== scope.launchId)) {
     throw new Error('The entered native launch scope was modified.')
   }
-  if (!scope.launchId || consumed) throw new Error('Reserve the native launch before synchronous dispatch.')
+  if (!scope.launchId || consumed) return reserveProcess(scope)
   if (!/^[0-9a-f-]{36}$/.test(scope.launchId)) throw new Error('Invalid reserved native launch.')
   const directory = join(privateDirectory(scope.root), key(scope.owner), scope.launchId)
   const launch = launchRecord(readRecord(join(directory, 'intent.json')))
@@ -660,7 +633,6 @@ function takeLaunch(scope: NativeProcessRecovery): LaunchRecord {
  * spawning native code. Its authenticated control socket survives API replacement.
  * Native stdin/stdout/stderr retain their original pipe semantics.
  */
-/** Linux recovery scopes must be reserved asynchronously before this synchronous dispatch. */
 export function spawnNativeProcess(binary: string, args: string[], options: {
   cwd: string; env: NodeJS.ProcessEnv; recovery?: NativeProcessRecovery; restartDetachable?: true
   reconnectableStdio?: true

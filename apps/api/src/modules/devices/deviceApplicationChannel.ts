@@ -2,7 +2,6 @@ import { componentLogger } from '../diagnostics/logger.js'
 import { createHash, randomUUID } from 'node:crypto'
 import {
   DEVICE_APPLICATION_BUFFER_BYTES, DEVICE_APPLICATION_CHUNK_BYTES, DEVICE_APPLICATION_CHUNK_WINDOW,
-  WORKER_MCP_CHUNK_WINDOW,
   DEVICE_APPLICATION_IN_FLIGHT, DEVICE_APPLICATION_OBSERVATION_IN_FLIGHT,
   DEVICE_APPLICATION_STOP_IN_FLIGHT, DEVICE_APPLICATION_STOP_BYTES,
   parseExtensionDescriptors, type DeviceApplicationResult, type DeviceExtensionDescriptor, type DeviceNegotiatedExtension,
@@ -10,7 +9,6 @@ import {
 } from '@foreman-code/contracts/device-application'
 import { DEVICE_BUFFER_BYTES, type DeviceFrame, type DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
 import { RemoteExecutionRpcRequestSchema, WorkerConversationRpcRequestSchema } from '@foreman-code/contracts/remote-execution-rpc'
-import { WORKER_MCP_EXTENSION } from '@foreman-code/contracts/worker-mcp-relay'
 import { ExecutionAuthorityRequestSchema, EXECUTION_AUTHORITY_EXTENSION } from '@foreman-code/contracts/execution-authority'
 import type { AcceptedNodePlacement, DispatchIntent } from '@foreman-code/contracts/node-placement'
 import { DeviceConnectionError, nextFrame, readFrame, sendFrame, withDeviceDeadline, type DeviceSocket } from './deviceWire.js'
@@ -35,9 +33,6 @@ export interface DeviceExtensionRegistration extends DeviceExtensionDescriptor {
 }
 export interface DeviceApplicationRequestOptions {
   signal?: AbortSignal; bytes?: Uint8Array; timeoutMs?: number; priority?: DeviceRequestPriority
-  uploadTimeoutMs?: number
-  onUploaded?(): void
-  onUploadProgress?(acknowledgedBytes: number): void
 }
 export interface CapturedDeviceApplicationRequest {
   binding: Readonly<DeviceSessionBinding>
@@ -51,7 +46,6 @@ interface Pending {
   abort: AbortController
   stop: boolean
   observation: boolean
-  onUploadProgress?(acknowledgedBytes: number): void
 }
 interface Assembly {
   namespace: string; kind: 'request' | 'response' | 'error'; jsonBytes: number; binaryBytes: number
@@ -90,7 +84,6 @@ export class DeviceApplicationChannel {
   private readonly uploads = new Map<string, AbortController>()
   private readonly acknowledgements = new Map<string, Map<number, { resolve(): void; reject(error: Error): void }>>()
   private readonly chunkTransmissions = new Set<Promise<void>>()
-  private frameTransmission = Promise.resolve()
   private inboundBytes = 0
   private outboundBytes = 0
   private failure: Error | undefined
@@ -283,32 +276,24 @@ export class DeviceApplicationChannel {
     const result = new Promise<DeviceApplicationResult>((resolve, fail) => {
       reject = fail
       this.pending.set(id, { namespace, resolve, reject: fail, abort,
-        stop: admission.stop, observation: admission.observation,
-        ...(options.onUploadProgress ? { onUploadProgress: options.onUploadProgress } : {}) })
+        stop: admission.stop, observation: admission.observation })
     })
     const cancel = () => { abort.abort(); reject(new DeviceApplicationError('cancelled')); this.trySendCancel(id) }
     options.signal?.addEventListener('abort', cancel, { once: true })
     if (options.signal?.aborted) cancel()
-    const timeout = () => {
+    const timer = setTimeout(() => {
       const failure = uploading && !this.uploads.has(id)
         ? new DeviceApplicationAdmissionError('upload_capacity_timeout') : new DeviceApplicationError('timeout')
       this.reportSaturation(namespace, failure instanceof DeviceApplicationAdmissionError ? failure.reason : failure.message)
       abort.abort()
       reject(failure)
       this.trySendCancel(id)
-    }
-    const responseTimeoutMs = Math.min(900_000, Math.max(1, options.timeoutMs ?? 30_000))
-    let timer = setTimeout(timeout, Math.min(900_000, Math.max(1, options.uploadTimeoutMs ?? responseTimeoutMs)))
+    }, Math.min(900_000, Math.max(1, options.timeoutMs ?? 30_000)))
     // Observe rejection immediately while the request bytes are still uploading.
     void result.catch(() => { /* ignore: the owner awaits the original promise; this observer prevents a duplicate unhandled rejection. */ })
     try {
       await this.sendPacket(id, namespace, version, 'request', payload, options.bytes, abort.signal, admission)
       uploading = false
-      if (options.uploadTimeoutMs !== undefined) {
-        clearTimeout(timer)
-        timer = setTimeout(timeout, responseTimeoutMs)
-      }
-      options.onUploaded?.()
       return await result
     } catch (error) {
       this.trySendCancel(id)
@@ -355,19 +340,13 @@ export class DeviceApplicationChannel {
       backoff = Math.min(1_000, backoff * 2)
     }
   }
-  private sendWhenReady(frame: DeviceFrame, signal: AbortSignal): Promise<void> {
-    // Serialize writes, not ACK waits, so a larger transfer window still lets the peer drain its socket queue.
-    const transmission = this.frameTransmission.then(async () => {
-      const size = Buffer.byteLength(JSON.stringify(frame))
-      await this.waitForCapacity(() => {
-        if (this.options.socket.bufferedAmount + size > DEVICE_BUFFER_BYTES) return false
-        sendFrame(this.options.socket, frame)
-        return true
-      }, signal)
-    })
-    // Each caller handles its own failure; subsequent control frames must still be able to send.
-    this.frameTransmission = transmission.then(() => undefined, () => undefined)
-    return transmission
+  private async sendWhenReady(frame: DeviceFrame, signal: AbortSignal): Promise<void> {
+    const size = Buffer.byteLength(JSON.stringify(frame))
+    await this.waitForCapacity(() => {
+      if (this.options.socket.bufferedAmount + size > DEVICE_BUFFER_BYTES) return false
+      sendFrame(this.options.socket, frame)
+      return true
+    }, signal)
   }
   private async waitAck(id: string, offset: number, signal: AbortSignal, frame: DeviceFrame) {
     this.current()
@@ -388,10 +367,9 @@ export class DeviceApplicationChannel {
       if (!receipts.size) this.acknowledgements.delete(id)
     }
   }
-  private async sendChunk(id: string, offset: number, chunk: Buffer, signal: AbortSignal,
-    admission: { stop: boolean }, window: number) {
+  private async sendChunk(id: string, offset: number, chunk: Buffer, signal: AbortSignal, admission: { stop: boolean }) {
     // A channel-wide window also bounds queued socket bytes across concurrent uploads.
-    while (this.chunkTransmissions.size >= window + (admission.stop ? 1 : 0)) {
+    while (this.chunkTransmissions.size >= DEVICE_APPLICATION_CHUNK_WINDOW + (admission.stop ? 1 : 0)) {
       await withDeviceDeadline(Promise.race(this.chunkTransmissions), signal, deviceRequestTimeoutMs)
     }
     this.current()
@@ -446,13 +424,11 @@ export class DeviceApplicationChannel {
           && this.negotiated(namespace, true).observationAdmission === true
           ? { admission: 'observation' as const } : {}) })
       const packet = bytes ? Buffer.concat([json, Buffer.from(bytes)]) : json
-      const window = namespace === WORKER_MCP_EXTENSION.namespace ? WORKER_MCP_CHUNK_WINDOW : DEVICE_APPLICATION_CHUNK_WINDOW
-      const windowBytes = DEVICE_APPLICATION_CHUNK_BYTES * window
+      const windowBytes = DEVICE_APPLICATION_CHUNK_BYTES * DEVICE_APPLICATION_CHUNK_WINDOW
       for (let start = 0; start < packet.byteLength; start += windowBytes) {
         const chunks: Promise<void>[] = []
         for (let offset = start; offset < Math.min(start + windowBytes, packet.byteLength); offset += DEVICE_APPLICATION_CHUNK_BYTES) {
-          chunks.push(this.track(this.sendChunk(id, offset,
-            packet.subarray(offset, offset + DEVICE_APPLICATION_CHUNK_BYTES), upload.signal, admission, window)))
+          chunks.push(this.track(this.sendChunk(id, offset, packet.subarray(offset, offset + DEVICE_APPLICATION_CHUNK_BYTES), upload.signal, admission)))
         }
         await Promise.all(chunks)
       }
@@ -490,9 +466,7 @@ export class DeviceApplicationChannel {
       if (!receipts) return // Cancellation can race a chunk receipt; receipts acquire no authority.
       const ack = receipts.get(frame.offset)
       if (!ack) throw new DeviceConnectionError('malformed-frame')
-      ack.resolve()
-      if (frame.offset > 0) this.pending.get(id)?.onUploadProgress?.(frame.offset)
-      return
+      ack.resolve(); return
     }
     if (frame.type === 'application-cancel') {
       this.uploads.get(id)?.abort(); this.handlers.get(id)?.abort.abort(); this.replies.get(id)?.abort.abort()

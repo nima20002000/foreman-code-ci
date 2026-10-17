@@ -14,7 +14,7 @@ describe.skipIf(process.platform !== 'linux')('write-ahead native launch handoff
   const roots: string[] = []
   afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }) })
   function fixture() {
-    const root = mkdtempSync(join(tmpdir(), 'native-launch-handoff-')); roots.push(root)
+    const root = mkdtempSync(join(tmpdir(), 'eng06-launch-')); roots.push(root)
     const owner = `execution:${randomUUID()}`
     const directory = join(root, createHash('sha256').update(owner).digest('hex'))
     return { root, owner, directory, registry: new NativeProcessRegistry(root) }
@@ -46,9 +46,9 @@ describe.skipIf(process.platform !== 'linux')('write-ahead native launch handoff
   })
 
   it('cannot close a still-live parent reservation or allocate over it', async () => {
-    const t = fixture(), scope = await t.registry.reserveLaunch(t.owner)
+    const t = fixture(), scope = t.registry.reserveLaunch(t.owner)
     await expect(t.registry.closeOwner(t.owner, AbortSignal.timeout(75))).rejects.toBeInstanceOf(AggregateError)
-    await expect(t.registry.reserveLaunch(t.owner)).rejects.toThrow()
+    expect(() => t.registry.reserveLaunch(t.owner)).toThrow()
     expect(readRecord(join(t.directory, scope.launchId!, 'intent.json'))).toBeDefined()
     expect(readRecord(join(t.directory, 'retired.json'))).toBeUndefined()
   })

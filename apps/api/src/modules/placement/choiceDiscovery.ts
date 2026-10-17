@@ -41,7 +41,7 @@ export class ProductionPlacementChoiceDiscovery implements PlacementChoiceDiscov
   constructor(private readonly pool: pg.Pool, private readonly services: () => DiscoveryServices) {}
 
   async list(principal: ManagementPrincipal, input: NodePlacementChoicesInput,
-    source: 'http' | 'mcp' = 'mcp'): Promise<{ choices: NodePlacementChoice[]; pending: boolean }> {
+    source: 'http' | 'mcp' = 'mcp'): Promise<NodePlacementChoice[]> {
     const services = this.services()
     const configuration = await withTransaction(this.pool, async sql => {
       const row = (await sql.query<{ record: unknown }>(
@@ -50,7 +50,7 @@ export class ProductionPlacementChoiceDiscovery implements PlacementChoiceDiscov
       )).rows[0]
       return AgentConfigurationVersionSchema.parse(row?.record)
     })
-    let pending = await provisionPairedAgentRoots(this.pool, services, principal, input.workspaceId, configuration,
+    await provisionPairedAgentRoots(this.pool, services, principal, input.workspaceId, configuration,
       matchesConfiguration, source)
     return withTransaction(this.pool, async sql => {
       const roots = await this.sourceRoots(sql, input.workspaceId)
@@ -77,12 +77,10 @@ export class ProductionPlacementChoiceDiscovery implements PlacementChoiceDiscov
         }
         const profiles = await services.profiles.list(policy.hostRef, policy.applicationInstallationId, sql)
         for (const profile of profiles.filter(value => matchesConfiguration(value, configuration))) {
-          const found = await this.choice(sql, services, policy, root, profile, rootUnavailableReason)
-          choices.push(found.choice)
-          pending ||= found.pending
+          choices.push(await this.choice(sql, services, policy, root, profile, rootUnavailableReason))
         }
       }
-      return { choices, pending }
+      return choices
     })
   }
 
@@ -94,8 +92,7 @@ export class ProductionPlacementChoiceDiscovery implements PlacementChoiceDiscov
   }
 
   private async choice(sql: pg.PoolClient, services: DiscoveryServices, policy: PlacementRootPolicy,
-    root: SourceRootRecord, profile: HostHarnessOverride, rootUnavailableReason: string | null,
-  ): Promise<{ choice: NodePlacementChoice; pending: boolean }> {
+    root: SourceRootRecord, profile: HostHarnessOverride, rootUnavailableReason: string | null): Promise<NodePlacementChoice> {
     const placement = SavedNodePlacementSchema.parse({ schemaVersion: 1, hostRef: policy.hostRef,
       rootPolicyId: policy.rootPolicyId, rootPolicyRevision: policy.rootPolicyRevision,
       locationRevision: policy.locationRevision, projectRoot: policy.canonicalProjectRoot,
@@ -103,7 +100,6 @@ export class ProductionPlacementChoiceDiscovery implements PlacementChoiceDiscov
       instanceRevision: profile.instanceRevision, harnessInstallationId: profile.target.harnessInstallationId,
       source: root.source, rootBinding: { rootId: root.binding.rootId, bindingRevision: root.binding.bindingRevision } })
     let reason = rootUnavailableReason
-    let pending = false
     if (reason === null) {
       const installed = services.registry.installations.list().some(installation => installation.installed
         && sameWorkflowValue(installation.hostRef, policy.hostRef)
@@ -117,7 +113,6 @@ export class ProductionPlacementChoiceDiscovery implements PlacementChoiceDiscov
         } catch (error) {
           if (!(error instanceof DomainError) || ![409, 422, 503].includes(error.status)) throw error
           reason = error.message
-          pending = error.code === 'HARNESS_PROFILE_CHECK_PENDING'
         }
       }
       const qualified = reason === null && supportedDriver && installed
@@ -129,8 +124,7 @@ export class ProductionPlacementChoiceDiscovery implements PlacementChoiceDiscov
       }
     }
     const hostLabel = policy.hostRef.kind === 'main' ? 'Main' : `Computer ${policy.hostRef.deviceId}`
-    return { pending, choice: { id: commandInputHash(placement),
-      label: `${hostLabel} · ${profile.driverId} · ${policy.canonicalProjectRoot}`,
-      placement, availability: reason === null ? 'ready' : 'unavailable', reason } }
+    return { id: commandInputHash(placement), label: `${hostLabel} · ${profile.driverId} · ${policy.canonicalProjectRoot}`,
+      placement, availability: reason === null ? 'ready' : 'unavailable', reason }
   }
 }

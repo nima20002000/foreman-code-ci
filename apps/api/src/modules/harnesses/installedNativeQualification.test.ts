@@ -77,7 +77,7 @@ async function fixture() {
     harness: 'codex', binding, trustedCurrentBinding: () => binding,
     inspect: async () => ({ inventory: {} as never, currentTarget: target }),
     registry: {
-      reserveLaunch: async owner => ({ owner } as NativeProcessRecovery),
+      reserveLaunch: owner => ({ owner } as NativeProcessRecovery),
       abandonReservedLaunch: async () => true, closeOwner: async () => true,
     },
     workingRoot: directory, environment: {}, checkConfiguration,
