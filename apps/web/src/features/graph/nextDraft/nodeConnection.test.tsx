@@ -1,5 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { ReactFlowProvider, useReactFlow } from '@xyflow/react'
+import { ReactFlowProvider } from '@xyflow/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import type { WorkflowDefinitionV3 } from '@foreman-code/contracts/wave25'
 import { installFlowLayout } from '../../run-board/testFlowLayout'
@@ -28,14 +28,12 @@ afterEach(() => {
   useGraphDraftStore.getState().clearAllDrafts(); useChatWindowsStore.setState({ open: {}, frames: {}, focus: {} })
 })
 
-let probe: ReturnType<typeof useReactFlow> | undefined
-function Probe() { probe = useReactFlow(); return null }
 function mount() {
   const change = vi.fn(), geometry = vi.fn()
   render(<GraphPresentationProvider><ReactFlowProvider><DraftCanvas draftKey={key} graph={context.draft.graph}
     agents={context.agents.map((item) => item.agent)} kind="execution" change={change} geometry={geometry}
     pending={vi.fn()} report={vi.fn()}
-    panels={(nodeId) => ({ chat: <p>{`Chat of ${nodeId}`}</p>, chatHasHeader: false, settings: null, info: null })} /><Probe /></ReactFlowProvider></GraphPresentationProvider>)
+    panels={(nodeId) => ({ chat: <p>{`Chat of ${nodeId}`}</p>, chatHasHeader: false, settings: null, info: null })} /></ReactFlowProvider></GraphPresentationProvider>)
   return { change, geometry }
 }
 const connected = (change: ReturnType<typeof vi.fn>): WorkflowDefinitionV3['edges'] =>
@@ -47,16 +45,9 @@ function dragConnection(source: HTMLElement, target: HTMLElement) {
   Object.defineProperty(document, 'elementFromPoint', { configurable: true, value: () => target })
   try {
     const at = (x: number, y: number) => ({ clientX: x, clientY: y, button: 0, buttons: 1 })
-    const canvas = () => document.querySelector('.next-draft-canvas')!.className
-    console.log('DBG before', canvas(), source.className, target.className, source.getAttribute('data-nodeid'), target.getAttribute('data-nodeid'))
-    const internal = probe!.getInternalNode('node-0')
-    console.log('DBG internals', JSON.stringify(internal?.internals.handleBounds), JSON.stringify(internal?.measured), JSON.stringify(internal?.internals.positionAbsolute))
-    source.addEventListener('pointerdown', (e) => console.log('DBG native pointerdown', e.constructor.name, (e as MouseEvent).button, (e as MouseEvent).clientX), true)
     act(() => { fireEvent.pointerDown(source, { ...at(300, 200), pointerId: 1 }) })
     act(() => { fireEvent.mouseMove(document, at(400, 260)) })
-    console.log('DBG after down+move1', canvas())
     act(() => { fireEvent.mouseMove(document, at(520, 300)) })
-    console.log('DBG after move2', canvas(), document.querySelector('.react-flow__connection') ? 'connection-svg' : 'none')
     act(() => { fireEvent.mouseUp(document, at(520, 300)) })
   } finally {
     if (descriptor) Object.defineProperty(document, 'elementFromPoint', descriptor)
