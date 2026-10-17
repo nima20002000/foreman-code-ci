@@ -73,12 +73,7 @@ export const settingsTools = [
     name: 'operator_chat_create',
     requires: [['operator_chat:write', 'global']],
     enabled: s => !!s.operatorChat,
-    description: 'Create an owner-bound Operator draft using the current saved Operator defaults. '
-      + 'Empty drafts stay hidden from operator_chat_list and the sidebar until the first message is sent. '
-      + 'Keep the returned conversation ID to send or read it with operator_chat_get. '
-      + 'commandId is optional and generated when omitted. Supply an ID and reuse it with the same title '
-      + 'after a lost response to recover the same draft, even if defaults have changed. '
-      + 'Reusing it with a different title is a conflict. Requires global operator_chat:write.',
+    description: 'Create an owner-bound Operator conversation using the current saved Operator defaults. commandId is optional and generated when omitted. Supply an ID and reuse it with the same title after a lost response to recover the same conversation, even if defaults have changed. Reusing it with a different title is a conflict. Use operator_chat_list to rediscover owned conversations. Requires global operator_chat:write.',
     inputSchema: CreateOperatorConversationRequestSchema,
     outputSchema: CreateOperatorConversationResponseSchema,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
@@ -116,10 +111,7 @@ export const settingsTools = [
     name: 'operator_chat_list',
     requires: [['operator_chat:read', 'global']],
     enabled: s => !!s.operatorChat,
-    description: 'List this caller\'s persisted Operator conversations with messages, matching sidebar history. '
-      + 'Empty drafts are retained but hidden until the first message is sent; '
-      + 'read a draft by its creation ID with operator_chat_get. Returns only conversations owned by this '
-      + 'principal and excludes deleted conversations. Requires global operator_chat:read.',
+    description: 'Rediscover this caller\'s persisted Operator conversations, including newly created empty chats. Returns only conversations owned by this principal and excludes deleted conversations. Requires global operator_chat:read.',
     inputSchema: z.object({}).strict(),
     outputSchema: ListOperatorConversationsResponseSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
