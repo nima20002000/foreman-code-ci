@@ -2841,7 +2841,7 @@ async function initializeComputerServices(composition: ProductionComposition, ma
           installedPlugins(maintenancePorts, mainCodex.binary, AbortSignal.timeout(120_000)),
           pluginMarketplaces(maintenancePorts, mainCodex.binary, AbortSignal.timeout(60_000))])
         const local = new Set(marketplaces.filter(marketplace => marketplace.local).map(marketplace => marketplace.name))
-        return plugins.filter(pluginId => !local.has(pluginId.split('@').at(-1)!))
+        return plugins.filter(plugin => !local.has(plugin.pluginId.split('@').at(-1)!))
       },
       codexMarketplaces: async () => await maintenancePorts.find('codex')
         ? (await pluginMarketplaces(maintenancePorts, mainCodex.binary, AbortSignal.timeout(60_000)))

@@ -207,10 +207,7 @@ async function started(turn, prompt) {
       if (contents && position <= JSON.parse(contents).allowFirst) break
       await new Promise(resolve => setTimeout(resolve, 20))
     }
-    const answersFile = join(root, 'workflow-answers.json')
-    const answers = existsSync(answersFile) ? JSON.parse(readFileSync(answersFile, 'utf8')) : undefined
-    const output = answers ? answers[Math.min(thread.turns.length - 1, answers.length - 1)]
-      : thread.instructions.includes('fixture-work-handoff')
+    const output = thread.instructions.includes('fixture-work-handoff')
       ? JSON.stringify({ routing: { kind: 'finish' }, data: { latestDeliverable: 'fixture complete', remainingFindings: [] } })
       : 'fixture complete'
     complete(turn, output)
@@ -251,7 +248,6 @@ createInterface({ input: process.stdin, crlfDelay: Infinity }).on('line', async 
   }
   const params = message.params ?? {}
   log({ method: message.method, threadId: params.threadId, correlationId: params.clientUserMessageId,
-    ...(message.method === 'turn/start' ? { outputSchema: params.outputSchema } : {}),
     ...(message.method === 'model/list' ? { workingDirectory: process.cwd() } : {}) })
   if (message.method === 'initialize') {
     reply(message.id, { userAgent: `codex-cli ${cliVersion}`, platformFamily: 'unix', platformOs: 'linux', codexHome: root })
