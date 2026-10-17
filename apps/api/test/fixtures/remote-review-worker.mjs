@@ -9,11 +9,11 @@ if (process.argv[4] === 'initialize') {
   await worker.initializeInstalledNativeRuntime(stateDirectory)
   process.exit(0)
 }
+const runtime = await worker.startConfiguredWorker({ stateDirectory })
 const { readWorkerStatus } = await import(pathToFileURL(join(releaseDirectory, 'src', 'runtime.mjs')).href)
 const timer = setInterval(() => {
   void readWorkerStatus(stateDirectory).then(view => process.send?.({ kind: 'status', view }))
 }, 25)
-const runtime = await worker.startConfiguredWorker({ stateDirectory })
 let closing = false
 async function close() {
   if (closing) return

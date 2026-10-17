@@ -570,7 +570,6 @@ export async function remoteReviewProduction(options: {
     const startWorker = async () => {
       ready = false
       workerFailure = ''
-      let previousPhase: unknown
       const started = spawn(process.execPath, [workerEntrypoint, stateDirectory, workerRelease], {
         cwd: fileURLToPath(new URL('../../../..', import.meta.url)),
         stdio: ['ignore', 'pipe', 'pipe', 'ipc'], env: workerEnvironment,
@@ -581,24 +580,12 @@ export async function remoteReviewProduction(options: {
       started.on('message', message => {
         if (message && typeof message === 'object' && 'view' in message) {
           const view = message.view
-          if (view !== null && typeof view === 'object' && 'phase' in view && view.phase !== previousPhase) {
-            previousPhase = view.phase
-            process.stdout.write(`[worker-startup] ${JSON.stringify({ phase: view.phase,
-              failure: 'failure' in view ? view.failure : null })}\n`)
-          }
           ready = view !== null && typeof view === 'object' && 'phase' in view && view.phase === 'ready'
           if (!ready) workerStateRevision++
         }
       })
-      try {
-        await waitForChildReady(started, () => ready, 'authenticated installed Worker connection',
-          () => `Installed Worker exited: ${workerFailure}`)
-      } catch (error) {
-        process.stdout.write(`[worker-startup-failed] ${JSON.stringify({ phase: previousPhase,
-          stderr: workerFailure.slice(-4000), failures: failures.slice(-8),
-          methods: (await provider.calls()).slice(-10).map(call => call.method) })}\n`)
-        throw error
-      }
+      await waitForChildReady(started, () => ready, 'authenticated installed Worker connection',
+        () => `Installed Worker exited: ${workerFailure}`)
     }
     const stopWorker = async (signal: NodeJS.Signals = 'SIGTERM') => {
       if (!worker || worker.exitCode !== null || worker.signalCode !== null) return

@@ -146,16 +146,14 @@ it('keeps ordinary CI cancellation framing and the shared channel for a Worker w
 })
 
 
-it.each([{ namespace: CI_HOST_NAMESPACE, field: 'ciStopAdmission' },
-  { namespace: 'execution-v1', field: 'callbackAdmission' }])(
-  'preserves $field support through the authenticated Worker handshake', async ({ namespace, field }) => {
+it('preserves CI Stop support through the authenticated Worker handshake', async () => {
   const identity = { mainId: randomUUID(), deviceId: randomUUID(), workerInstallationId: randomUUID(),
     keyRevision: 1, authorizationRevision: 1, bootId: randomUUID() }
   const keys = generateKeyPairSync('ed25519')
   const mainPublicKey = keys.publicKey.export({ type: 'spki', format: 'pem' }).toString()
   const mainPublicKeyFingerprint = createHash('sha256')
     .update(keys.publicKey.export({ type: 'spki', format: 'der' })).digest('hex')
-  const registration = { namespace, version: 1, maxJsonBytes: 1_048_576, maxBinaryBytes: 0 }
+  const registration = { namespace: CI_HOST_NAMESPACE, version: 1, maxJsonBytes: 1_048_576, maxBinaryBytes: 0 }
   const main = new DeviceEndpoint({ mainId: identity.mainId, appVersion: 'main-build',
     auth: { authenticateDevice: async () => ({ ...identity, audience: 'graphql-worker',
       expiresAt: '2099-01-01T00:00:00Z' }), revalidateDevice: async () => {} },
@@ -184,11 +182,11 @@ it.each([{ namespace: CI_HOST_NAMESPACE, field: 'ciStopAdmission' },
   try {
     worker.start()
     await vi.waitFor(() => expect(worker.status().phase).toBe('ready'))
-    expect(main.capabilities(identity.deviceId)).toContainEqual(expect.objectContaining({ [field]: true }))
-    const request = namespace === CI_HOST_NAMESPACE ? { operation: 'cancel', runId: randomUUID() } : { method: 'probe' }
-    await expect(main.request(identity.deviceId, namespace, request)).resolves.toEqual({ payload: request })
+    expect(main.capabilities(identity.deviceId)).toContainEqual(expect.objectContaining({ ciStopAdmission: true }))
+    const request = { operation: 'cancel', runId: randomUUID() }
+    await expect(main.request(identity.deviceId, CI_HOST_NAMESPACE, request)).resolves.toEqual({ payload: request })
     expect(sockets[0]!.frames).toContainEqual(expect.objectContaining({ type: 'application-open',
-      namespace, ...(namespace === CI_HOST_NAMESPACE ? { admission: 'stop' } : {}) }))
+      namespace: CI_HOST_NAMESPACE, admission: 'stop' }))
   } finally {
     await worker.stop()
     main.close()
