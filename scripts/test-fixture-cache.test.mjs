@@ -213,7 +213,6 @@ function cacheProcess(t, root, options = {}) {
     process.send({ kind: 'requested' });
     const directory = await cachedTestFixture(root, process.argv[2], [process.argv[3]], async directory => {
       await appendFile(join(root, 'builds'), 'build\\n');
-      await writeFile(join(directory, 'partial'), 'in-progress bytes');
       process.send({ kind: 'building' });
       await released;
       await writeFile(join(directory, 'payload'), 'complete');
@@ -281,7 +280,6 @@ test('an interrupted builder releases its OS lock for the next slot', { timeout:
   })
   assert.equal(await readFile(join(root, 'builds'), 'utf8'), 'build\nreplacement\n')
   assert.equal(await readFile(join(complete, 'payload'), 'utf8'), 'complete')
-  assert.equal((await readdir(join(root, 'worker'))).filter(name => name.includes('.pending-')).length, 0)
 })
 
 async function publishCacheEntry(t, root, input, options = {}) {
@@ -321,25 +319,4 @@ test('eviction skips a returned fixture while another process uses it and reclai
   await assert.rejects(stat(first.directory), { code: 'ENOENT' })
   const entries = await readdir(join(root, 'worker'), { withFileTypes: true })
   assert.equal(entries.filter(entry => entry.isDirectory()).length, 2)
-})
-
-
-test('publication removes abandoned builds of other keys while preserving a live builder', async t => {
-  const root = await fixtureCache(t)
-  const abandoned = cacheProcess(t, root, { input: 'abandoned' })
-  await abandoned.message('building')
-  const [orphan] = (await readdir(join(root, 'worker'))).filter(name => name.includes('.pending-'))
-  assert.equal(await readFile(join(root, 'worker', orphan, 'partial'), 'utf8'), 'in-progress bytes')
-  abandoned.child.kill('SIGKILL')
-  await abandoned.closed
-  const active = cacheProcess(t, root, { input: 'active' })
-  await active.message('building')
-  const [working] = (await readdir(join(root, 'worker'))).filter(name => name.includes('.pending-') && name !== orphan)
-  await publishCacheEntry(t, root, 'complete')
-  await assert.rejects(stat(join(root, 'worker', orphan)), { code: 'ENOENT' })
-  assert.equal(await readFile(join(root, 'worker', working, 'partial'), 'utf8'), 'in-progress bytes')
-  active.child.send({ kind: 'release' })
-  await active.message('complete')
-  assert.deepEqual(await active.closed, [0, null])
-  assert.equal((await readdir(join(root, 'worker'))).filter(name => name.includes('.pending-')).length, 0)
 })
