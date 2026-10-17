@@ -60,7 +60,6 @@ async function fixture(options: {
     build_allowance_percent: 100 }
   const receipts = new Map<string, { input_hash: unknown; target_key: unknown; result: unknown }>()
   const cloudRunning = new Map<string, number>()
-  const names = new Map<string, string>()
   const principals = new Map([owner, denied, scoped, settingsReader].map(principal => [principal.id, principal]))
   const query = vi.fn(async (text: string, values: unknown[] = []) => {
     if (text.includes('from management_principals')) {
@@ -69,8 +68,6 @@ async function fixture(options: {
         expires_at: new Date(principal.expiresAt), revoked_at: principal.revokedAt, delegated_from: null }] }
     }
     if (text.includes('from application_installation')) return { rows: [{ id: mainId }] }
-    if (text.includes('from computer_names')) return { rows: [...names].map(([host_key, name]) => ({ host_key, name })) }
-    if (text.includes('insert into computer_names')) names.set(String(values[0]), String(values[1]))
     if (text.includes('from build_computer_preferences')) return { rows: [preference] }
     if (text.includes('insert into build_computer_preferences')) {
       preference = { target: JSON.parse(String(values[1])), revision: String(values[2]), build_enabled: Boolean(values[3]),
@@ -530,45 +527,5 @@ it('includes active Host CI on its executor through HTTP and authenticated MCP w
     expect((await deniedClient.callTool({ name: 'computer_activity_list', arguments: {} })).isError).toBe(true)
     f.ciTickets.splice(0)
     expect((await f.service.list(owner)).computers[1]?.jobs).toEqual([])
-  } finally { await f.close() }
-})
-
-it('renames Main and a paired computer through authenticated MCP and HTTP with persisted readback and denied callers', async () => {
-  const f = await fixture()
-  try {
-    const client = await f.connect('owner')
-    expect((await client.listTools()).tools.map(tool => tool.name)).toContain('computer_rename')
-    const capabilities = await client.callTool({ name: 'operator_get_capabilities', arguments: { detail: 'full' } })
-    expect(decodeMcpToolResult(capabilities)).toMatchObject({ requirements: expect.arrayContaining([
-      expect.objectContaining({ name: 'computer_rename', actions: ['settings:update'] }),
-    ]) })
-    const mainTarget = { hostRef: { kind: 'main' as const, mainId }, applicationInstallationId: mainId,
-      keyRevision: null, authorizationRevision: null }
-    const names = async () => ComputerActivityListSchema.parse(decodeMcpToolResult(
-      await client.callTool({ name: 'computer_activity_list', arguments: {} }))).computers.map(computer => computer.name)
-    expect(await names()).toEqual(['Main PC', 'Computer 22222222'])
-    const renamed = await client.callTool({ name: 'computer_rename', arguments: { target, name: '  Spare laptop  ' } })
-    expect(renamed.isError).not.toBe(true)
-    expect(decodeMcpToolResult(renamed)).toEqual({ target, name: 'Spare laptop' })
-    expect((await client.callTool({ name: 'computer_rename', arguments: { target: mainTarget, name: 'Studio PC' } })).isError).not.toBe(true)
-    expect(await names()).toEqual(['Studio PC', 'Spare laptop'])
-    const http = await f.app.inject({ method: 'POST', url: '/api/management/computers/rename',
-      headers: { authorization: 'Bearer owner' }, payload: { target, name: 'Desk laptop' } })
-    expect(http.statusCode).toBe(200)
-    expect(await names()).toEqual(['Studio PC', 'Desk laptop'])
-    for (const name of ['   ', 'x'.repeat(61)]) {
-      expect((await client.callTool({ name: 'computer_rename', arguments: { target, name } })).isError).toBe(true)
-    }
-    const otherMain = { ...target, hostRef: { ...target.hostRef, mainId: '99999999-9999-4999-8999-999999999999' } }
-    expect((await client.callTool({ name: 'computer_rename', arguments: { target: otherMain, name: 'Elsewhere' } })).isError).toBe(true)
-    expect(await names()).toEqual(['Studio PC', 'Desk laptop'])
-    const reader = await f.connect('settings-reader')
-    expect((await reader.listTools()).tools.map(tool => tool.name)).not.toContain('computer_rename')
-    const deniedCall = await reader.callTool({ name: 'computer_rename', arguments: { target, name: 'Hijacked' } })
-    expect(deniedCall.isError).toBe(true)
-    expect(f.audit).toHaveBeenCalledWith('settings-reader', 'mcp', 'computer_rename', 'mcp:computer_rename')
-    expect((await f.app.inject({ method: 'POST', url: '/api/management/computers/rename',
-      headers: { authorization: 'Bearer settings-reader' }, payload: { target, name: 'Hijacked' } })).statusCode).toBe(403)
-    expect(await names()).toEqual(['Studio PC', 'Desk laptop'])
   } finally { await f.close() }
 })

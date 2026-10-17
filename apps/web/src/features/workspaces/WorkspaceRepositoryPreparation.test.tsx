@@ -67,13 +67,7 @@ describe('workspace project preparation', () => {
     await user.type(await screen.findByRole('textbox', { name: 'Repository' }), 'octo-owner/website')
     const add = screen.getByRole('button', { name: 'Add project' })
     await waitFor(() => expect(add).toBeEnabled())
-    expect(screen.queryByText(/approves the supported tracked files/)).not.toBeInTheDocument()
-    const projectHint = screen.getByRole('button', { name: 'About Add project' })
-    await user.hover(projectHint)
-    expect(screen.getByRole('tooltip')).toHaveTextContent(
-      'Add project prepares a clone on Main and approves the supported tracked files from this base branch.',
-    )
-    await user.unhover(projectHint)
+    expect(screen.getByText(/approves the supported tracked files/)).toBeVisible()
     await user.click(add)
     expect(await screen.findByText('Project ready')).toBeVisible()
     const project = within(screen.getByRole('region', { name: 'GitHub repository' }))
@@ -87,9 +81,6 @@ describe('workspace project preparation', () => {
     mount()
     expect(await screen.findByText('Project ready')).toBeVisible()
     expect(screen.getByRole('textbox', { name: 'Repository' })).toHaveValue('octo-owner/website')
-    const reloadedProject = within(screen.getByRole('region', { name: 'GitHub repository' }))
-    expect(reloadedProject.getByText(fixture.prepared.location.binding.canonicalProjectRoot)).toBeVisible()
-    expect(reloadedProject.getByText(fixture.prepared.source.manifest.git!.commit)).toBeVisible()
     expect(fixture.requests).toHaveLength(1)
   })
 

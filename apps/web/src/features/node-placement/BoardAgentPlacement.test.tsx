@@ -33,14 +33,7 @@ it('Board Apply changes the exact node draft while keeping saved placement and o
   await userEvent.click(screen.getByRole('button', { name: 'Save agent settings' }))
   const applied = useGraphDraftStore.getState().nextDrafts[key]!
   expect(nativeNode(applied.graph.nodes[0])?.placement).toEqual(placement)
-  expect(screen.getByText('Applied to draft')).toBeInTheDocument()
-  const user = userEvent.setup()
-  const computerHint = screen.getByRole('button', { name: 'About Computer' })
-  await user.hover(computerHint)
-  expect(screen.getByRole('tooltip')).toHaveTextContent(
-    'Apply changes this node’s draft. Save graph persists it for a later Run. An accepted Run keeps its original placement.',
-  )
-  await user.unhover(computerHint)
+  expect(screen.getByText(/Applied to draft — Save graph/)).toBeInTheDocument()
   expect(nativeNode(applied.graph.nodes[1])?.placement).toBeUndefined()
   expect(nativeNode(applied.context.draft.graph.nodes[0])?.placement).toBeUndefined()
   expect(applied.agentForms?.['node-0']).toBeUndefined()
@@ -136,11 +129,7 @@ it('inherits a workflow worktree and applies a branch-only override to the selec
     expect(applied.graph.nodes[0]).not.toHaveProperty('placement')
     expect(applied.graph.nodes[1]).not.toHaveProperty('worktree')
     expect(applied.context.draft.graph.nodes[0]).not.toHaveProperty('worktree')
-    expect(screen.getByRole('textbox', { name: 'Agent branch prefix' })).toHaveValue('foreman/reviewer')
-    const prefixHint = screen.getByRole('button', { name: 'About Agent branch prefix' })
-    await user.hover(prefixHint)
-    expect(screen.getByRole('tooltip')).toHaveTextContent('Optional override. Each execution adds a unique suffix.')
-    await user.unhover(prefixHint)
+    expect(screen.getByText('Override: Agent branch prefix foreman/reviewer.')).toBeInTheDocument()
   } finally {
     view.unmount()
     query.clear()

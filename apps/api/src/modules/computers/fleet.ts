@@ -9,7 +9,7 @@ import {
   COMPUTER_MAINTENANCE_NAMESPACE, WORKER_UPDATE_NAMESPACE, ComputerMaintenanceListSchema, ComputerMaintenanceReadInputSchema,
   ComputerMaintenanceStartInputSchema, SyncedMarketplaceSchema,
   ComputerMaintenanceStartResultSchema, ComputerMaintenanceDispatchSchema, MaintenanceReplySchema, SyncedMcpServerSchema,
-  type ComputerConnections, type ComputerMaintenanceList, type ComputerMaintenanceStartInput, type ComputerMaintenanceStartResult,
+  type ComputerMaintenanceList, type ComputerMaintenanceStartInput, type ComputerMaintenanceStartResult,
   type MaintenanceStatus, type MaintenanceTask, type MaintenanceTaskStart, type SyncedMarketplace, type SyncedMcpServer,
   type WorkerReleasePublication,
   type WorkerBundleReadiness,
@@ -42,8 +42,6 @@ export interface FleetSources {
   workerManifestSha256s?(): Promise<readonly string[]>
   workerContentSha256s?(): Promise<readonly string[]>
   workerPublication?(): Promise<WorkerReleasePublication>
-  /** Sign-in and Foreman Code MCP facts for one computer, read with the caller's own authority. */
-  connections?(principal: ManagementPrincipal, target: DeviceProvisioningTarget): Promise<ComputerConnections>
 }
 
 interface WorkerArtifactIdentities {
@@ -136,8 +134,7 @@ export class FleetMaintenanceService {
     const targets = await this.targets(principal, 'settings:read')
     const workerPublication = await this.sources.workerPublication?.()
     return ComputerMaintenanceListSchema.parse({ computers: await Promise.all(targets.map(async target =>
-      ({ target, ...await this.observeComputer(target, refresh), ...(workerPublication ? { workerPublication } : {}),
-        ...await this.connections(principal, target) }))) })
+      ({ target, ...await this.observeComputer(target, refresh), ...(workerPublication ? { workerPublication } : {}) }))) })
   }
 
   async start(principal: ManagementPrincipal, source: 'http' | 'mcp', raw: ComputerMaintenanceStartInput): Promise<ComputerMaintenanceStartResult> {
@@ -203,7 +200,7 @@ export class FleetMaintenanceService {
     const workerPublication = await this.sources.workerPublication?.()
     return ComputerMaintenanceListSchema.parse({
       computers: [{ target: input.target, ...await this.observeComputer(input.target, input.refresh === true),
-        ...(workerPublication ? { workerPublication } : {}), ...await this.connections(principal, input.target) }],
+        ...(workerPublication ? { workerPublication } : {}) }],
     })
   }
 
@@ -512,16 +509,6 @@ export class FleetMaintenanceService {
   private async status(target: DeviceProvisioningTarget, refresh: boolean): Promise<MaintenanceStatus | null> {
     const { status, observation } = await this.observeStatus(target, refresh)
     return observation.status === 'available' ? status : null
-  }
-
-  private async connections(principal: ManagementPrincipal, target: DeviceProvisioningTarget) {
-    try {
-      const connections = await this.sources.connections?.(principal, target)
-      return connections ? { connections } : {}
-    } catch (error) {
-      logIgnoredError('lifecycle', 'read computer connections', error, { host: target.hostRef })
-      return {}
-    }
   }
 
   private async observeComputer(target: DeviceProvisioningTarget, refresh: boolean) {
