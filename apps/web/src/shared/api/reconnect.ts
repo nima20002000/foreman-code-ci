@@ -9,7 +9,8 @@ export const reconnectingMessage = 'Updating — reconnecting…'
 const reconnectIntervalMs = 1_000
 
 function needsReconnect(query: Query): boolean {
-  return query.isActive() && (isApiRestartError(query.state.error) || isApiRestartError(query.state.fetchFailureReason))
+  return query.isActive() && query.meta?.refetchOnApiReconnect !== false
+    && (isApiRestartError(query.state.error) || isApiRestartError(query.state.fetchFailureReason))
 }
 
 function isRecoverableError(error: unknown): boolean {
@@ -18,8 +19,13 @@ function isRecoverableError(error: unknown): boolean {
 }
 
 function needsRecovery(query: Query): boolean {
-  return query.isActive()
+  return query.isActive() && query.meta?.refetchOnApiReconnect !== false
     && (isRecoverableError(query.state.error) || isRecoverableError(query.state.fetchFailureReason))
+}
+
+function canRefetchAfterReconnect(query: Query): boolean {
+  return query.meta?.refetchOnApiReconnect !== false
+    && (!query.state.error || isTransientReadError(query.state.error))
 }
 
 /** Request failures stay in Query; recovery refreshes the other mounted reads too. */
@@ -59,7 +65,7 @@ export function useApiReconnect(): boolean {
         probeFailed.current = false
         void client.invalidateQueries({
           refetchType: 'active',
-          predicate: query => query.meta?.refetchOnApiReconnect !== false,
+          predicate: canRefetchAfterReconnect,
         })
       }
       return identity
@@ -70,7 +76,7 @@ export function useApiReconnect(): boolean {
     if (!recovering && online) {
       if (wasReconnecting.current) void client.invalidateQueries({
         refetchType: 'active',
-        predicate: query => query.meta?.refetchOnApiReconnect !== false,
+        predicate: canRefetchAfterReconnect,
       })
       wasReconnecting.current = false
       return

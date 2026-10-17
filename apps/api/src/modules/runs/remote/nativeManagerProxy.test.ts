@@ -491,9 +491,25 @@ describe('remote native history streaming', () => {
     const session = await f.proxy.createSession(f.start)
     f.observeOriginalSource.mockRejectedValueOnce(new DeviceApplicationError('REMOTE_NATIVE_PHYSICAL_REPLY_EXPIRED'))
     expect((await f.proxy.history(session)).events).toEqual(history.events)
-    expect(f.request.mock.calls.map(([method]) => method)).toEqual(['prepare', 'history', 'history'])
+    expect(f.request.mock.calls.map(([method]) => method)).toEqual(['prepare', 'history'])
     expect(f.observedReceipts.every(receipt => receipt.intent.attemptId === f.receipt.intent.attemptId)).toBe(true)
     expect(f.controlFor).not.toHaveBeenCalled()
+  })
+
+  it('detaches the retained session for restart while its Worker is offline', async () => {
+    const f = setup(() => ({ events: [], pendingInteractions: [] }))
+    const session = await f.proxy.createSession(f.start)
+    expect(f.proxy.canDetachForRestart(session)).toBe(true)
+    f.request.mockRejectedValue(new DeviceApplicationError('transport'))
+
+    await expect(f.proxy.closeForRestart(session)).resolves.toBeUndefined()
+    await expect(f.proxy.dispose()).resolves.toBeUndefined()
+    await expect(f.proxy.closeForRestart(session)).resolves.toBeUndefined()
+    expect(f.request.mock.calls.map(([method]) => method)).toEqual(['prepare'])
+    expect(f.proxy.canDetachForRestart(session)).toBe(false)
+    expect(f.controlFor).not.toHaveBeenCalled()
+    expect(f.receipt.stopFence).toBe(false)
+    expect(f.receipt.terminal).toBeUndefined()
   })
 
   it('still fails physical identity errors without refreshing the original source', async () => {
