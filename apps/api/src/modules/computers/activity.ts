@@ -17,8 +17,7 @@ import { buildComputerKey } from '../settings/buildComputers.js'
 import { computerNameKey, readComputerNames, renameComputer } from './names.js'
 import { cloudCiId } from '../ci-host/cloudProviders.js'
 import { logIgnoredError } from '../diagnostics/ignoredError.js'
-import type { CircleCreditsReader } from '../ci-host/circleCredits.js'
-import type { CircleSchedulingReading } from '../ci-host/circleStandby.js'
+import type { CircleCreditsReading } from '../ci-host/circleCredits.js'
 
 const jobRow = z.object({ target: DeviceProvisioningTargetSchema, activity: ComputerJobActivitySchema })
 const agentRow = z.object({ target: DeviceProvisioningTargetSchema, activity: ComputerAgentActivitySchema })
@@ -26,11 +25,9 @@ const agentRow = z.object({ target: DeviceProvisioningTargetSchema, activity: Co
 /** A cloud CI service as Main's CI dispatcher sees it. */
 export interface CloudCiService {
   readonly provider: { readonly id: CloudCiActivity['provider']; readonly label: string; readonly slots: number
-    readonly circleAccountId?: string | undefined; readonly recoveryOnly?: boolean | undefined
-    readonly account?: { readonly owner: string; registered?: boolean } | undefined }
+    readonly account?: { readonly owner: string } | undefined }
   readonly readinessObservation?: ReadObservation | undefined
   ready(): Promise<boolean>
-  schedulingReading?(): Promise<CircleSchedulingReading | undefined>
 }
 
 export class ComputerActivityService {
@@ -41,7 +38,7 @@ export class ComputerActivityService {
     private readonly presence: (deviceId: string) => DevicePresence | null,
     private readonly commands: PostgresCommandCoordinator,
     private readonly clouds: readonly CloudCiService[] = [],
-    private readonly credits?: CircleCreditsReader,
+    private readonly credits?: { reading(account?: string): Promise<CircleCreditsReading> },
   ) {}
 
   rename(principal: ManagementPrincipal, source: 'http' | 'mcp', raw: unknown) {
@@ -100,11 +97,10 @@ export class ComputerActivityService {
           if (computer && sameDeviceProvisioningTarget(computer.target, target)) computer.agents.push(activity)
         }
       }
-      const cloud = await readCloud(sql, this.mainId, await Promise.all(this.clouds.map(async service => ({
+      const cloud = await readCloud(sql, this.mainId, this.clouds.map(service => ({
         provider: service.provider, ready: this.cloudReadiness.get(service)?.ready ?? false,
         observation: service.readinessObservation,
-        scheduling: await service.schedulingReading?.(),
-      }))), this.credits)
+      })), this.credits)
       const truncated = registrations.rows.length > 100 || jobActivities.length > COMPUTER_ACTIVITY_LIMIT
         || agents.rows.length > COMPUTER_ACTIVITY_LIMIT
       const latest = await readLiveManagementPrincipal(sql, principal.id)
@@ -141,8 +137,7 @@ export class ComputerActivityService {
 
 async function readCloud(sql: pg.PoolClient, mainId: string, clouds: readonly {
   provider: CloudCiService['provider']; ready: boolean; observation: ReadObservation | undefined
-  scheduling?: CircleSchedulingReading | undefined
-}[], credits?: CircleCreditsReader) {
+}[], credits?: { reading(account?: string): Promise<CircleCreditsReading> }) {
   if (!clouds.length) return []
   const counts = await sql.query<{ provider: string; running: number }>(`select split_part(host_key, ':', 3) as provider,
     count(*)::int as running from ci_runs where state in ('starting','running') and host_key like $1
@@ -153,15 +148,11 @@ async function readCloud(sql: pg.PoolClient, mainId: string, clouds: readonly {
     const { ready, observation } = cloud
     const count = running.get(cloudCiId(cloud.provider)) ?? 0
     // A service Main is not logged in to and that runs nothing is not part of this installation.
-    if ((!cloud.provider.recoveryOnly && (ready || cloud.provider.account?.registered === true
-      || observation?.status === 'unavailable')) || count > 0) listed.push({
+    if (ready || count > 0 || observation?.status === 'unavailable') listed.push({
       provider: cloud.provider.id, ...(cloud.provider.account ? { account: cloud.provider.account.owner } : {}),
-      ...(cloud.provider.circleAccountId && cloud.provider.circleAccountId !== 'default'
-        ? { circleAccountId: cloud.provider.circleAccountId } : {}),
       name: cloud.provider.label, ready,
-      slots: cloud.provider.recoveryOnly ? 0 : cloud.provider.slots, running: count, ...(observation ? { observation } : {}),
-      ...(cloud.scheduling ?? (cloud.provider.id === 'circleci' && credits
-        ? await credits.reading(cloud.provider.account?.owner, cloud.provider.circleAccountId) : {})) })
+      slots: cloud.provider.slots, running: count, ...(observation ? { observation } : {}),
+      ...(cloud.provider.id === 'circleci' && credits ? await credits.reading(cloud.provider.account?.owner) : {}) })
   }
   return listed
 }
