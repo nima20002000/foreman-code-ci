@@ -379,6 +379,7 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
     } })
     const pollSignal = AbortSignal.any([this.lifetime.signal, ...(signal ? [signal] : [])])
     let sequence: number | undefined
+    let pollDelayMs = 100
     try {
       if (this.session && !initial) {
         const history = await this.history(this.session, pollSignal)
@@ -393,6 +394,7 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
           this.checkRejection(input.clientCorrelationId)
           if (!this.session) { await delay(100, undefined, { signal: pollSignal }); continue }
         }
+        const readStarted = performance.now()
         const value = z.object({ history: WorkerConversationHistorySchema, context: ContextSnapshotSchema.nullable(),
           receipt: WorkerConversationReceiptSchema }).parse(await this.request({ method: 'conversation.history',
           session: this.session, correlationId: input.clientCorrelationId,
@@ -402,6 +404,7 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
         this.context = value.context
         if (sequence !== undefined && value.history.firstRetainedSequence !== undefined
           && sequence < value.history.firstRetainedSequence - 1) conflict('The worker event window has advanced; recover persisted history.')
+        const previousSequence = sequence
         for (const event of value.history.events) {
           if (sequence !== undefined && event.sequence <= sequence) continue
           sequence = event.sequence
@@ -411,6 +414,10 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
         if (turn?.status === 'completed'
           && (value.history.nextSequence === undefined || (sequence ?? -1) >= value.history.nextSequence - 1)) return
         if (turn?.status === 'uncertain') conflict('The original worker turn needs native recovery; input was not replayed.')
+        pollDelayMs = sequence === previousSequence ? Math.min(2000, pollDelayMs * 2) : 100
+        // The event wait consumes the read interval; bursts still obey the existing request rate limit.
+        const remainingDelay = pollDelayMs - (performance.now() - readStarted)
+        if (remainingDelay > 0) await delay(remainingDelay, undefined, { signal: pollSignal })
       }
     } finally { await this.release(lease) }
   }
