@@ -14,6 +14,8 @@ export async function ciDirectoryCleanupCandidates(pool: Pick<pg.Pool, 'query'>,
   if (!host) return []
   const hostRef = { ...host.hostRef }
   delete hostRef.slot
+  const circleAccountId = hostRef.circleAccountId ?? 'default'
+  if (circleAccountId === 'default') delete hostRef.circleAccountId
   const rows = (await pool.query<{ run_id: string; state: string; finished_at: string | null;
     collection: string | null; rank: string }>(`
     with tickets as materialized (
@@ -40,6 +42,7 @@ export async function ciDirectoryCleanupCandidates(pool: Pick<pg.Pool, 'query'>,
           as attempt("runId" text,"hostRef" jsonb)
     ), owned_attempts as (
       select distinct run_id,state,finished_at,collection from attempts where host_ref @> $1::jsonb
+        and coalesce(host_ref->>'circleAccountId','default')=$6
     ), ranked as (
       select *, row_number() over (order by finished_at::timestamptz desc nulls first, run_id desc) as rank
       from owned_attempts
@@ -49,7 +52,7 @@ export async function ciDirectoryCleanupCandidates(pool: Pick<pg.Pool, 'query'>,
       and finished_at::timestamptz < $3::timestamptz
     order by rank limit $4 offset $5`,
   [JSON.stringify(hostRef), CI_DIRECTORY_KEEP, new Date(now - CI_DIRECTORY_RETENTION_MS).toISOString(),
-    CI_DIRECTORY_PAGE_SIZE, options.offset ?? 0])).rows
+    CI_DIRECTORY_PAGE_SIZE, options.offset ?? 0, circleAccountId])).rows
   const cutoff = now - CI_DIRECTORY_RETENTION_MS
   return rows.filter(row => terminalStates.has(row.state) && row.collection !== 'pending'
     && row.finished_at !== null && Date.parse(row.finished_at) < cutoff).map(row => row.run_id)
