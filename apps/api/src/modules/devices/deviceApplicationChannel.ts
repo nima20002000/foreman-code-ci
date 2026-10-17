@@ -215,11 +215,7 @@ export class DeviceApplicationChannel {
         && session.harness === binding.harness
     }
     const parsed = RemoteExecutionRpcRequestSchema.safeParse(payload)
-    if (!parsed.success) return false
-    if (parsed.data.method === 'status' && parsed.data.forStop) {
-      return this.stopPlacement(parsed.data.intent, parsed.data.placement)
-    }
-    if (parsed.data.method !== 'control' || parsed.data.command.action.kind !== 'stop') return false
+    if (!parsed.success || parsed.data.method !== 'control' || parsed.data.command.action.kind !== 'stop') return false
     const { intent, placement, command } = parsed.data
     return this.stopPlacement(intent, placement)
       && command.bindingHash === intent.bindingHash

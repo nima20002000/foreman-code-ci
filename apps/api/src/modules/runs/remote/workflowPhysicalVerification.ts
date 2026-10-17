@@ -11,8 +11,6 @@ import type { RemoteOperationReceipt } from '@foreman-code/contracts/remote-exec
 import type { DeviceEndpoint } from '../../devices/deviceEndpoint.js'
 import { deviceRequestTimeoutMs, waitForDeviceRetry } from '../../devices/deviceRequestRetry.js'
 import { deviceApplicationFailure } from '../../devices/deviceApplicationError.js'
-import { isDeviceLinkDrop, waitForDeviceReconnect } from '../../devices/deviceReconnect.js'
-import { DeviceConnectionError } from '../../devices/deviceWire.js'
 import type { WorkflowOriginalNativeSource, WorkflowNativeCapture } from '../../interactions/workflowNativeCapture.js'
 import type { RemoteNativeBatchPhysicalVerification, VerifiedRemoteOriginalSource } from '../../placement/remoteNativeSource.js'
 import { readAcceptedPlacement, readNativePlacement } from '../../placement/persistence.js'
@@ -165,19 +163,8 @@ export function createRemoteWorkflowPhysicalVerification(input: RemoteWorkflowPh
       return (session === null || same(readout.session, session)) && readout.closure?.ownerClosed === true
         && hasNativeClosure(readout.observation) && same(readout.closure.launch, readout.observation)
     },
-    async prefetch(receipt, placement, source, signal) {
-      if (placement.hostRef.kind !== 'device') return unavailable('remote_placement')
-      const deviceId = placement.hostRef.deviceId
-      const original = input.endpoint().currentBinding(deviceId) ?? receipt.connection
-      for (let reconnects = 0; ; reconnects++) {
-        try {
-          return await prefetchRemoteWorkflowPhysical(input, prepared, histories, receipt, placement, source, signal)
-        } catch (error) {
-          if (!physicalReadoutLinkDropped(error) || reconnects >= 3) throw error
-          await waitForDeviceReconnect({ original, failure: error, signal,
-            live: () => input.endpoint().currentBinding(deviceId) })
-        }
-      }
+    prefetch(receipt, placement, source, signal) {
+      return prefetchRemoteWorkflowPhysical(input, prepared, histories, receipt, placement, source, signal)
     },
     bind(original, proof, owner, lifetime) {
       const capture = prepared.get(proof)
@@ -318,7 +305,7 @@ async function prefetchRemoteWorkflowPhysical(input: RemoteWorkflowPhysicalVerif
   signal?.throwIfAborted()
   if (placement.hostRef.kind !== 'device' || !placement.registration || !receipt.native) return unavailable('remote_placement')
   const endpoint = input.endpoint(), captured = endpoint.captureRequest(placement.hostRef.deviceId, 'execution-v1')
-  if (!captured) throw new DeviceConnectionError('transport')
+  if (!captured) return unavailable('device_connection')
   const retained = histories.get(receipt.intent.operationId)
   const retainedSource = retained && (source.type === 'history'
     ? same(source.history, retained.readout.history)
@@ -357,7 +344,6 @@ async function prefetchRemoteWorkflowPhysical(input: RemoteWorkflowPhysicalVerif
         assertRegisteredConnection()
         return response
       } catch (error) {
-        if (physicalReadoutLinkDropped(error)) throw error
         assertRegisteredConnection()
         const failure = deviceApplicationFailure(error)
         if (!failure.retryable || ['transport', 'DEVICE_LINK_DROPPED', 'REMOTE_NATIVE_PHYSICAL_UNAVAILABLE']
@@ -435,10 +421,6 @@ async function prefetchRemoteWorkflowPhysical(input: RemoteWorkflowPhysicalVerif
     if (histories.size > 16) histories.delete(histories.keys().next().value!)
   }
   return result
-}
-
-function physicalReadoutLinkDropped(error: unknown): boolean {
-  return isDeviceLinkDrop(error) || ['transport', 'DEVICE_LINK_DROPPED'].includes(deviceApplicationFailure(error).code)
 }
 
 /** Facts one remote binding check read from the Run's rows; shared by every original of the same capture. */
@@ -594,7 +576,7 @@ async function assertRemoteWriterLane(sql: GraphTransactionSql, capture: Bound, 
     || lane.native_session_id !== readout.session.nativeSessionId) return unavailable('writer_lane_session')
   if (lane.token !== lifetime.lane!.token && !releasedAfterClosure) return unavailable('writer_lane_token')
   if (lane.generation !== String(lifetime.lane!.connectionGeneration)) return unavailable('writer_lane_generation')
-  const correlation = lifetime.review?.correlationId ?? `execution:${intent.executionId}`
+  const correlation = lifetime.review?.correlationId ?? receipt.turnInput?.correlationId ?? `execution:${intent.executionId}`
   const providerId = lifetime.review
     ? receipt.reviewTurns?.find(turn => turn.assignment.jobId === lifetime.review!.jobId)?.providerId : receipt.native?.turnId
   if (lane.correlation !== correlation) return unavailable('writer_lane_correlation')
