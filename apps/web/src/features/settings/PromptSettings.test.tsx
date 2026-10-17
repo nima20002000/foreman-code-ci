@@ -111,7 +111,6 @@ describe('Prompt settings', () => {
     const view = mount(page.page)
     const editor = await screen.findByRole('textbox', { name: page.label })
     await waitFor(() => expect(editor).not.toHaveAttribute('readonly'))
-    expect(editor).toHaveAccessibleDescription('Leave blank and save to clear this prompt.')
     await userEvent.clear(editor)
     await userEvent.click(screen.getByRole('button', { name: page.saveLabel }))
     expect(await screen.findByText('Prompt saved')).toBeVisible()

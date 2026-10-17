@@ -16,6 +16,7 @@ import type { PostgresCommandCoordinator } from '../commands/postgres.js'
 import { buildComputerKey } from '../settings/buildComputers.js'
 import { cloudCiId } from '../ci-host/cloudProviders.js'
 import { logIgnoredError } from '../diagnostics/ignoredError.js'
+import type { CircleCreditsReading } from '../ci-host/circleCredits.js'
 
 const jobRow = z.object({ target: DeviceProvisioningTargetSchema, activity: ComputerJobActivitySchema })
 const agentRow = z.object({ target: DeviceProvisioningTargetSchema, activity: ComputerAgentActivitySchema })
@@ -36,6 +37,7 @@ export class ComputerActivityService {
     private readonly presence: (deviceId: string) => DevicePresence | null,
     private readonly commands: PostgresCommandCoordinator,
     private readonly clouds: readonly CloudCiService[] = [],
+    private readonly credits?: { reading(account?: string): Promise<CircleCreditsReading> },
   ) {}
 
   async list(principal: ManagementPrincipal, source: 'http' | 'mcp' = 'http'): Promise<ComputerActivityList> {
@@ -91,7 +93,7 @@ export class ComputerActivityService {
       const cloud = await readCloud(sql, this.mainId, this.clouds.map(service => ({
         provider: service.provider, ready: this.cloudReadiness.get(service)?.ready ?? false,
         observation: service.readinessObservation,
-      })))
+      })), this.credits)
       const truncated = registrations.rows.length > 100 || jobActivities.length > COMPUTER_ACTIVITY_LIMIT
         || agents.rows.length > COMPUTER_ACTIVITY_LIMIT
       const latest = await readLiveManagementPrincipal(sql, principal.id)
@@ -128,7 +130,7 @@ export class ComputerActivityService {
 
 async function readCloud(sql: pg.PoolClient, mainId: string, clouds: readonly {
   provider: CloudCiService['provider']; ready: boolean; observation: ReadObservation | undefined
-}[]) {
+}[], credits?: { reading(account?: string): Promise<CircleCreditsReading> }) {
   if (!clouds.length) return []
   const counts = await sql.query<{ provider: string; running: number }>(`select split_part(host_key, ':', 3) as provider,
     count(*)::int as running from ci_runs where state in ('starting','running') and host_key like $1
@@ -142,7 +144,8 @@ async function readCloud(sql: pg.PoolClient, mainId: string, clouds: readonly {
     if (ready || count > 0 || observation?.status === 'unavailable') listed.push({
       provider: cloud.provider.id, ...(cloud.provider.account ? { account: cloud.provider.account.owner } : {}),
       name: cloud.provider.label, ready,
-      slots: cloud.provider.slots, running: count, ...(observation ? { observation } : {}) })
+      slots: cloud.provider.slots, running: count, ...(observation ? { observation } : {}),
+      ...(cloud.provider.id === 'circleci' && credits ? await credits.reading(cloud.provider.account?.owner) : {}) })
   }
   return listed
 }
