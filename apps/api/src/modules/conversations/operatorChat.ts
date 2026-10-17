@@ -118,6 +118,8 @@ export interface OperatorChatAuthority {
   setupConfiguration?(principal: ManagementPrincipal, configuration: OperatorConfigurationVersion, signal: AbortSignal): Promise<OperatorChatSetup>
   prepare(manager: NativeHarnessSessionManager, configuration: OperatorConfigurationVersion, conversationId: string,
     principalId: string, signal: AbortSignal): Promise<ChildProcessEnvironment>
+  /** Revoke turn authority while retaining a process whose credential channel can be rebound. */
+  retireTurn?(conversationId: string, environment: ChildProcessEnvironment): Promise<boolean>
   release(conversationId: string): Promise<void>
 }
 interface Runtime {
@@ -586,7 +588,15 @@ export class OperatorChatService {
     if (controlPrincipalId) existing?.manager.setSessionControlPrincipal?.(controlPrincipalId)
     const fileOnly = fileInputs && configuration.harness.harness === 'claude'
     if (existing?.session) {
-      // The live process retains its qualified launch settings. Cold resumes run setup again.
+      const environment = await this.authority.prepare(existing.manager, configuration, id, row.owner_principal_id!, signal)
+      if (commandInputHash(environment) !== commandInputHash(existing.environment)) {
+        if (!existing.manager.rebindApplicationAccess) {
+          throw new DomainError('OPERATOR_ENVIRONMENT_CHANGED', 'The retained native process requires a fresh credential channel.', 409)
+        }
+        await existing.manager.rebindApplicationAccess(existing.session, { kind: 'operator', configuration,
+          correlationId: nativeCorrelation(id, row.active_request_id!), workingDirectory: this.workingDirectory, environment }, signal)
+      }
+      existing.environment = environment
       existing.configuration = configuration; return existing
     }
     if (!existing) await this.managers.prepareAccountBinding?.(configuration, id)
@@ -913,9 +923,9 @@ export class OperatorChatService {
     const runtime = this.runtimes.get(id)
     const reusable = runtime?.session && runtime.manager.retireTurn && !runtime.disposalStarted && !runtime.disposal
       && !this.closing && !runtime.observationOnly && !runtime.fileInputs && !runtime.interactionHandled
-      // Process environment and MCP credentials cannot be rotated in a live native session.
-      // Release turn-bound authority before another turn can receive fresh credentials.
-      && Object.keys(runtime.environment?.variables ?? {}).length === 0 && result.outcome === 'succeeded'
+      && result.outcome === 'succeeded'
+      && (Object.keys(runtime.environment?.variables ?? {}).length === 0
+        || runtime.environment && await this.authority.retireTurn?.(id, runtime.environment) === true)
     if (runtime?.session && runtime.session.nativeSessionId !== terminal.observation.nativeSessionId) {
       throw new DomainError('OPERATOR_NATIVE_CLOSURE_CONFLICT', 'The result belongs to a different native runtime.', 409)
     }
