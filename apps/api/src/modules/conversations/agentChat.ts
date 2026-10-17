@@ -1,5 +1,7 @@
 import { logIgnoredError } from '../diagnostics/ignoredError.js'
 import type { ReadObservation } from '@foreman-code/contracts'
+import { failedReadObservation, successfulReadObservation } from '../diagnostics/readObservation.js'
+import { DeviceConnectionError } from '../devices/deviceWire.js'
 import { errorMessage } from '../../shared/errorMessage.js'
 import { RETIRED_OPENCODE_MESSAGE } from '@foreman-code/contracts'
 import type { ChatResponseAcknowledgment } from '@foreman-code/contracts/interaction-activity'
@@ -192,6 +194,7 @@ function intervalTick(execution: HarnessExecution): number {
 
 export class AgentChatService {
   private readonly activityObservations = new Map<string, ReadObservation>()
+  private readonly pendingObservations = new Map<string, ReadObservation>()
   readonly events = new AgentChatEvents()
   private readonly runtimes = new Map<string, Runtime>()
   private readonly tasks = new Map<string, Promise<void>>()
@@ -510,9 +513,20 @@ export class AgentChatService {
       let pending: Awaited<ReturnType<NativeHarnessSessionManager['pending']>>
       try {
         pending = await resident.manager.pending(resident.session)
+        this.pendingObservations.set(loaded.row.id, successfulReadObservation())
       } catch (error) {
-        if (!(error instanceof DomainError && error.code === 'NATIVE_MANAGER_DISPOSED'
-          && (resident.retiring || resident.disposal || this.runtimes.get(loaded.row.id) !== resident))) throw error
+        const retired = error instanceof DomainError && error.code === 'NATIVE_MANAGER_DISPOSED'
+          && (resident.retiring || resident.disposal || this.runtimes.get(loaded.row.id) !== resident)
+        const offline = error instanceof DeviceConnectionError && ['transport', 'timeout', 'unavailable'].includes(error.code)
+          || error instanceof DomainError && error.code === 'WORKER_CONVERSATION_UNAVAILABLE'
+        if (!retired && !offline) throw error
+        if (offline) {
+          const observation = failedReadObservation(this.pendingObservations.get(loaded.row.id), error,
+            'The chat Worker is offline; pending interactions could not be refreshed')
+          this.pendingObservations.set(loaded.row.id, observation)
+          componentLogger('harness').warn({ conversationId: loaded.row.id, ...observation },
+            'Agent chat pending interaction refresh unavailable')
+        }
       }
       if (pending && isSessionNativeInteraction(pending)) {
         await this.repository.pending(loaded.row.id, null, pending)
@@ -544,8 +558,11 @@ export class AgentChatService {
     const qualifiedResponse = responseAvailability && !isAuthorized(finalPrincipal, 'agent_chat:respond', { workspaceId: context.workspaceId, workflowId: context.workflowId, ...(context.runId ? { runId: context.runId } : {}) })
       ? { ...responseAvailability, available: false, status: 'unavailable' as const, path: null,
         reason: 'unauthorized' as const, message: 'Your current grants do not allow responding to this interaction.' } : responseAvailability
+    const pendingObservation = this.pendingObservations.get(row.id)
+    const observation = pendingObservation?.status === 'unavailable' ? pendingObservation
+      : this.activityObservations.get(row.id) ?? pendingObservation
     const activitySnapshot = { ...qualifyChatActivity(agentActivitySnapshot(loaded), qualifiedResponse),
-      ...(this.activityObservations.has(row.id) ? { observation: this.activityObservations.get(row.id) } : {}) }
+      ...(observation ? { observation } : {}) }
     const qualificationKey = commandInputHash({ principal: finalPrincipal, configurationId: resolution.configuration?.id ?? null,
       availability, capabilities, scope: activitySnapshot.scope, revision: activitySnapshot.revision,
       sourceRevisions: 'sourceRevisions' in activitySnapshot ? activitySnapshot.sourceRevisions : null,
@@ -1700,6 +1717,7 @@ export class AgentChatService {
       // Both maps retain ownership until cleanup positively succeeds.
       this.managers.release?.(id)
       this.runtimes.delete(id)
+      this.pendingObservations.delete(id)
     })
     try { await disposal } catch (error) {
       if (runtime.disposal === disposal) delete runtime.disposal
