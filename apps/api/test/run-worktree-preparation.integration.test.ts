@@ -148,7 +148,7 @@ describe.runIf(postgresEnabled)('Local execution worktree preparation', () => {
     }
   })
 
-  it('finishes an interrupted checkout after restart while preserving files already present', async () => {
+  it('refuses an unfinished listed checkout after restart and preserves its files', async () => {
     const f = await fixture()
     let allocated!: string
     const ports = { ...f.ports, git: async (...args: Parameters<typeof f.ports.git>) => {
@@ -157,20 +157,15 @@ describe.runIf(postgresEnabled)('Local execution worktree preparation', () => {
         expect(result.code).toBe(0)
         allocated = args[0][args[0].length - 2]!
         await writeFile(join(allocated, 'keep.txt'), 'partial preparation\n')
-        await writeFile(join(allocated, 'project.txt'), 'preparation edit\n')
         throw new Error('Checkout interrupted')
       }
       return f.ports.git(...args)
     } }
     try {
       await expect(new RunWorktrees(f.db.pool, f.managed, ports).prepare(f.run)).rejects.toThrow('Checkout interrupted')
-      const tree = await f.service.prepare(f.run)
-      expect(tree).toMatchObject({ state: 'active', workingDirectory: allocated })
+      await expect(f.service.prepare(f.run)).rejects.toMatchObject({ code: 'RUN_WORKTREE_UNAVAILABLE' })
       expect(await readFile(join(allocated, 'keep.txt'), 'utf8')).toBe('partial preparation\n')
-      expect(await readFile(join(allocated, 'project.txt'), 'utf8')).toBe('preparation edit\n')
-      expect(await readFile(join(allocated, 'apps', 'api', 'service.txt'), 'utf8')).toBe('service\n')
-      expect(await f.trees()).toEqual([tree])
-      expect(await f.service.prepare(f.run)).toEqual(tree)
+      expect(await f.trees()).toEqual([expect.objectContaining({ state: 'retained' })])
     } finally { await f.db.close() }
   })
 
