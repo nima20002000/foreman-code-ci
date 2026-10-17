@@ -6,7 +6,7 @@ import type pg from 'pg'
 import { canonicalJson } from '@foreman-code/contracts/canonical-json'
 import { waitForCiDispatch, withCiDatabasePriority, withoutCiDatabaseDeadline,
   withoutCiDatabasePriority } from '../../infrastructure/ciDatabasePriority.js'
-import { CI_DISPATCH_PASS_MS, withCiDispatchDeadline } from './dispatchDeadline.js'
+import { CI_DISPATCH_PASS_MS, CiDispatchDeadlineError, withCiDispatchDeadline } from './dispatchDeadline.js'
 import { withProviderPoll } from './providerPoll.js'
 import { CI_HOST_NAMESPACE, CiComputerRefSchema, CiRunRecordSchema, CiRunOutputSchema,
   WorkspaceSchema,
@@ -924,7 +924,8 @@ export class HostCiService {
         this.dispatchRetry.reset()
       }
     })().catch(error => {
-      const nextRetryMs = this.dispatchRetry.fail()
+      // Slow work has already spent the pass budget; other errors still need an increasing retry delay.
+      const nextRetryMs = error instanceof CiDispatchDeadlineError ? 0 : this.dispatchRetry.fail()
       log.warn({ err: error, nextRetryMs }, 'CI dispatch failed; retry scheduled')
     })
       .finally(() => { this.dispatching = undefined })
