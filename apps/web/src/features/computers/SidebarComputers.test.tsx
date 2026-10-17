@@ -143,8 +143,6 @@ it('opens the card on keyboard focus with a Worker last seen time and app versio
   ])
   const device = await screen.findByRole('button', { name: `${deviceName}, Worker, Offline` })
   const user = userEvent.setup()
-  await user.tab()
-  await user.tab()
   expect(device).toHaveFocus()
   // The previously focused computer's card lingers briefly; read the card this button describes.
   await waitFor(() => expect(device).toHaveAttribute('aria-describedby'))
@@ -179,6 +177,27 @@ it('shows cloud CI services by machines in use', async () => {
   expect(circle.closest('li')).toHaveAttribute('data-load', 'offline')
   await userEvent.setup().hover(github)
   expect(await within(await screen.findByRole('tooltip')).findByText('12 of 16 CI machines in use')).toBeInTheDocument()
+})
+
+it('shows the estimated credits left when hovering or focusing a CircleCI account', async () => {
+  const f = computersFixture(inRouter().element)
+  f.activity.cloud.push(
+    { provider: 'circleci', account: 'acme', name: 'CircleCI acme', ready: true, slots: 30, running: 0,
+      credits: { total: 30000, used: 5690, remaining: 24310, asOf: new Date(Date.now() - 6 * 60_000).toISOString() } },
+    { provider: 'circleci', account: 'beta', name: 'CircleCI beta', ready: true, slots: 30, running: 0,
+      credits: null, creditsUnavailable: 'CircleCI is not logged in on Main.' })
+  await act(() => f.client.invalidateQueries({ queryKey: ['computer-activity'] }))
+  const acme = await screen.findByRole('button', { name: /^CircleCI acme, Cloud CI/ })
+  const user = userEvent.setup()
+  await user.hover(acme)
+  expect(await within(await screen.findByRole('tooltip')).findByText(
+    '≈ 24,310 of 30,000 credits left · updated 6 min ago')).toBeInTheDocument()
+  await user.unhover(acme)
+  const beta = screen.getByRole('button', { name: /^CircleCI beta, Cloud CI/ })
+  beta.focus()
+  const card = within(await screen.findByRole('tooltip'))
+  expect(await card.findByText('Credits unavailable')).toBeInTheDocument()
+  expect(card.getByText('CircleCI is not logged in on Main.')).toBeInTheDocument()
 })
 
 it('counts Agents and CI jobs, caps the badge, and pulses on starts including a replacement at the same count', async () => {
