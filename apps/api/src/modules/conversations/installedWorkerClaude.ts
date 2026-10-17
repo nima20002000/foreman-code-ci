@@ -184,8 +184,7 @@ export async function allocateInstalledWorkerClaude(input: {
       throw new DomainError('HARNESS_ROLE_AUTHORITY_INVALID', 'This native owner has no scoped Operator HTTP MCP connection.', 403)
     }
     await before(signal)
-    const saved = await input.journal.read(binding)
-    if (!saved?.session) await manager.prepareInspection(buildStart(startup), signal)
+    await manager.prepareInspection(buildStart(startup), signal)
     if (token !== nextToken) {
       const relay = await prepareWorkerConversationMcp({ source: input.source(), token: nextToken,
         request: input.request, signal: input.signal })
@@ -193,11 +192,9 @@ export async function allocateInstalledWorkerClaude(input: {
       environment = relay.environment
       token = nextToken
     }
-    const servers = { ...nativeServers,
-      [serverName]: { ...configured, url: mcp.endpoint, headers: { Authorization: `Bearer ${nextToken}` } } }
-    const snapshot = saved?.session
-      ? await manager.refreshSessionCredentials(saved.session, buildStart(startup), servers, signal)
-      : await manager.refreshInspectionCredentials(buildStart(startup), servers, signal)
+    const snapshot = await manager.refreshInspectionCredentials(buildStart(startup), { ...nativeServers,
+      [serverName]: { ...configured, url: mcp.endpoint, headers: { Authorization: `Bearer ${nextToken}` } },
+    }, signal)
     if (snapshot.httpCredentialAcknowledgement?.endpoint !== mcp.endpoint) throw new DomainError(
       'CLAUDE_MCP_CREDENTIAL_DELIVERY_UNCONFIRMED', 'The SDK has not acknowledged the scoped worker credential.', 409)
     const manifests = await acceptedClaudeAppTools({ configuration: callbackConfiguration,
