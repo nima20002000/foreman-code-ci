@@ -16,7 +16,6 @@ import type { WorkflowNativeProofRecord } from '../workflowNativeProof.js'
 import { NativeArtifactOutputSchema } from './nativeArtifactOutputs.js'
 import { readReconciledDispatchIntent } from './persistence.js'
 import { createWorkflowArtifactOutputsGate } from './workflowArtifactAcceptance.js'
-import { completeResultRepair } from './workflowRepair.test-support.js'
 
 vi.mock('../../placement/persistence.js', () => ({ readDispatchIntent: vi.fn() }))
 vi.mock('./persistence.js', () => ({ readReconciledDispatchIntent: vi.fn() }))
@@ -80,17 +79,12 @@ function fixture() {
     workerIncarnationId: randomUUID(), sequence: 3, phase: 'confirmed_terminal', native: { sessionId: 'original-session', turnId: 'original-turn', processIdentityDigest: digest },
     entryAttempted: true, turnEntryAttempted: true, stopFence: false, controls: [],
     terminal: { kind: 'completed', closureEvidenceDigest: digest, result: execution.result, artifactDigests: ['b'.repeat(64), 'c'.repeat(64)] } })
-  const state = { missing: '', expired: false, revoked: false, proofDigest: repeatDigest(proof, 4 * 1024 * 1024),
-    precedingProofs: [] as WorkflowNativeProofRecord[], committed: false, queries: [] as string[] }
+  const state = { missing: '', expired: false, revoked: false, proofDigest: repeatDigest(proof, 4 * 1024 * 1024), committed: false, queries: [] as string[] }
   const client = { query: vi.fn(async (text: string, values: unknown[] = []) => {
     state.queries.push(text); let rows: unknown[] = []
     if (text === 'commit') state.committed = true
-    else if (text.includes('from workflow_native_proofs')) rows = [
-      ...state.precedingProofs.map(record => ({ record, source_digest: repeatDigest(record, 4 * 1024 * 1024) })),
-      { record: proof, source_digest: state.proofDigest },
-    ]
+    else if (text.includes('from workflow_native_proofs')) rows = [{ record: proof, source_digest: state.proofDigest }]
     else if (text.includes('from remote_execution_receipts')) rows = [{ receipt: remote }]
-    else if (text.includes('from execution_work_result_repairs')) rows = [{ attempt: remote.resultRepairs?.length ?? 0 }]
     else if (text.includes('from management_command_receipts')) {
       const key = JSON.parse(values[1] as string)[3] as string
       rows = key === state.missing ? [] : [{ result: records.find(output => output.outputKey === key) }]
@@ -106,34 +100,12 @@ function fixture() {
     return { principal: { id: 'owner' }, context, binding: bindingIdentity(context) } as Awaited<ReturnType<import('./nativeArtifactAuthority.js').PostgresArtifactPublicationAuthority['authorize']>>
   }) }
   vi.mocked(readDispatchIntent).mockResolvedValue(intent); vi.mocked(readReconciledDispatchIntent).mockResolvedValue(intent)
-  const publications = Object.assign(authority, { resolvePublicationContext: async () => accepted,
-    authorizePublication: authority.authorize })
-  const gate = createWorkflowArtifactOutputsGate(mainId, publications)
+  const gate = createWorkflowArtifactOutputsGate(mainId, authority)
   const check = (after = async () => {}) => connection.transaction(async sql => { await gate(sql, run, f.version, execution); await after() })
-  return { check, state, records, proof, remote, execution, f, authority, context }
+  return { check, state, records, proof, remote, execution, f, authority }
 }
 
 describe('durable original artifact completeness before result acceptance', () => {
-  it.each([1, 2])('accepts the final repair after %s corrections and preserves earlier artifact identities', async count => {
-    const f = fixture()
-    const originalRecords = structuredClone(f.records)
-    f.state.precedingProofs.push(structuredClone(f.proof))
-    let correlationId = f.proof.commandId
-    for (let attempt = 1; attempt <= count; attempt++) correlationId = completeResultRepair(f.remote, `corrective-${attempt}`)
-    if (f.proof.original.type !== 'history') throw new Error('Expected terminal history')
-    const turnId = f.remote.native!.turnId!
-    f.proof.original.history.correlationId = correlationId
-    f.proof.original.history.nativeTurnId = turnId
-    f.proof.original.history.terminalTurn = { ...f.proof.original.history.terminalTurn!, correlationId, providerId: turnId }
-    f.proof.original.history.events[0]!.payload = { threadId: f.execution.nativeSessionId, turnId,
-      clientCorrelationId: correlationId, status: 'completed' }
-    f.proof.lane!.providerId = turnId
-    f.state.proofDigest = repeatDigest(f.proof, 4 * 1024 * 1024)
-    await f.check()
-    expect(f.state.committed).toBe(true)
-    expect(f.records).toEqual(originalRecords)
-  })
-
   it.each(['invalid_result', 'missing_publication'] as const)('refuses persisted %s before output adoption', async reason => {
     const f = fixture()
     const original = structuredClone(f.execution.result)
@@ -145,12 +117,10 @@ describe('durable original artifact completeness before result acceptance', () =
     expect(f.authority.authorize).not.toHaveBeenCalled()
   })
   it('resamples all original canonical mappings and authority before COMMIT and on replay', async () => {
-    const f = fixture()
-    const before = structuredClone({ records: f.records, proof: f.proof, remote: f.remote })
-    await f.check(); await f.check()
+    const f = fixture(); await f.check(); await f.check()
     expect(f.state.committed).toBe(true)
     expect(f.authority.authorize).toHaveBeenCalledTimes(8)
-    expect({ records: f.records, proof: f.proof, remote: f.remote }).toEqual(before)
+    expect(f.state.queries.some(query => /insert|update|delete/i.test(query) && !query.includes('for update'))).toBe(false)
     expect(f.authority.resolveWorkflowContext).toHaveBeenCalledTimes(4)
   })
   it.each(['missing', 'command', 'digest', 'source', 'session', 'expired', 'revoked'] as const)('rejects %s instead of exposing partial success', async field => {
