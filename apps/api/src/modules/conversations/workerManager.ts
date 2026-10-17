@@ -8,7 +8,7 @@ import { readProductEnvironment } from '@foreman-code/contracts/product-environm
 import { APP_MCP_TOKEN_NAMES } from '@foreman-code/contracts/product'
 import type { NativeMessageSubmission } from '@foreman-code/contracts/claude'
 import {
-  CompactionStateSchema, ContextSnapshotSchema, McpDetectionSchema, NativeHarnessCapabilitiesSchema,
+  compactionBlocksSend, CompactionStateSchema, ContextSnapshotSchema, McpDetectionSchema, NativeHarnessCapabilitiesSchema,
   PendingNativeInteractionSchema, SessionControlCapabilitiesSchema, SessionPreferencesSchema,
   type CompactionState, type ContextSnapshot, type NativeSessionReference, type SessionPreferences,
 } from '@foreman-code/contracts'
@@ -60,12 +60,12 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
   private credentialLease: ReturnType<MainWorkerConversationBridge['capture']> | undefined
   private readonly recoveredCallbacks = new Map<string, ReturnType<MainWorkerConversationBridge['capture']>>()
   private preparationActive = false
+  private runtimeAcquired = false
   private reconnecting: Promise<void> | undefined
   private readonly lifetime = new AbortController()
 
   constructor(private readonly options: ManagerOptions) {
     this.harness = options.binding.harness
-    if (this.harness === 'claude') this.startInitialTurn = this.initialTurn.bind(this)
     if (options.acceptedConfiguration) {
       if (!('operatorId' in options.configuration)) conflict('Presentation changes require an Operator configuration.')
       workerExecutionConfiguration(options.binding, options.acceptedConfiguration, options.configuration)
@@ -75,7 +75,7 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
   private frame(input: Record<string, unknown>): WorkerConversationRpcRequest {
     return { ...input, binding: this.options.binding } as WorkerConversationRpcRequest
   }
-  private async reconnect(signal?: AbortSignal, options: { reattachSession?: boolean } = {}) {
+  private async reconnect(signal?: AbortSignal) {
     this.lifetime.signal.throwIfAborted()
     if (this.reconnecting) return this.reconnecting
     const channel = this.options.currentChannel?.() ?? this.options.channel
@@ -89,7 +89,7 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
       this.recoveredCallbacks.clear()
       this.credentialLease = undefined
       this.options.channel = channel
-      if (!this.session || options.reattachSession === false) return
+      if (!this.session) return
       const session = this.session
       const lease = this.captureConnected(this.frame({ method: 'conversation.open', mode: 'attach', source: session,
         operationId: this.receipt?.creation?.operationId ?? 'session-reconnect', configuration: this.options.configuration }))
@@ -107,7 +107,7 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
   private async capture(frame: WorkerConversationRpcRequest, options: {
     callbacks?: WorkerConversationCallbacks; recoveredSubmission?: NativeMessageSubmission; recoveredTurnId?: string
   } = {}, signal?: AbortSignal) {
-    await this.reconnect(signal, { reattachSession: frame.method !== 'conversation.release-runtime' })
+    await this.reconnect(signal)
     return this.captureConnected(frame, options)
   }
   private captureConnected(frame: WorkerConversationRpcRequest, options: {
@@ -128,7 +128,15 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
         }
       } })
     const lease = { ...captured, request: async (signal?: AbortSignal) => {
-      const raw = await captured.request(signal)
+      let raw: unknown
+      try {
+        raw = await captured.request(signal)
+      } catch (error) {
+        // A failed process change leaves its native owner unconfirmed.
+        if (['conversation.preferences', 'conversation.open', 'conversation.initial-turn', 'conversation.start-turn']
+          .includes(frame.method)) this.runtimeAcquired = false
+        throw error
+      }
       if (frame.method === 'conversation.response-continuation') return raw
       const parsed = WorkerConversationResponsePageSchema.safeParse(raw)
       if (!parsed.success) return raw
@@ -230,8 +238,8 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
     const fields = this.startFields(start)
     if (mode === 'attach' && start.kind === 'operator' && start.observationOnly) delete fields.applicationAccess
     const frame = this.frame({ method: 'conversation.open', ...fields, mode,
-      ...((mode === 'attach' || mode === 'create') && this.options.previousBinding ? { previousBinding: this.options.previousBinding } : {}),
-      ...((mode === 'attach' || mode === 'create') && this.options.previousConfiguration
+      ...(mode === 'attach' && this.options.previousBinding ? { previousBinding: this.options.previousBinding } : {}),
+      ...(mode === 'attach' && this.options.previousConfiguration
         ? { previousConfiguration: this.options.previousConfiguration } : {}),
       ...(source ? { source } : {}) })
     const lease = await this.capture(frame, { callbacks: { sessionObserved: async session => {
@@ -251,6 +259,7 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
         delete this.options.previousBinding
         delete this.options.previousConfiguration
       }
+      this.runtimeAcquired = true
       return receipt.session
     } finally { await this.release(lease) }
   }
@@ -387,6 +396,7 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
         sequence = (history.nextSequence ?? Math.max(-1, ...history.events.map(event => event.sequence)) + 1) - 1
       }
       this.adopt(await lease.request(pollSignal))
+      this.runtimeAcquired = true
       this.checkRejection(input.clientCorrelationId)
       while (true) {
         pollSignal.throwIfAborted()
@@ -429,11 +439,8 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
       correlationId: input.clientCorrelationId, ...(input.sessionMode ? { sessionMode: input.sessionMode } : {}),
       ...(input.sessionPreferences ? { preferences: input.sessionPreferences } : {}) }), input, undefined, signal)
   }
-  readonly startInitialTurn?: NonNullable<NativeHarnessSessionManager['startInitialTurn']>
-  private initialTurn(start: NativeSessionStart, input: NativeInitialTurnInput, signal?: AbortSignal) {
+  startInitialTurn(start: NativeSessionStart, input: NativeInitialTurnInput, signal?: AbortSignal) {
     return this.stream(this.frame({ method: 'conversation.initial-turn', ...this.startFields(start),
-      ...(this.options.previousBinding ? { previousBinding: this.options.previousBinding } : {}),
-      ...(this.options.previousConfiguration ? { previousConfiguration: this.options.previousConfiguration } : {}),
       prompt: input.prompt, correlationId: input.clientCorrelationId,
       ...(input.sessionMode ? { sessionMode: input.sessionMode } : {}),
       ...(input.sessionPreferences ? { preferences: input.sessionPreferences } : {}) }), input, input, signal)
@@ -625,9 +632,16 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
   async closeForResume(session: NativeSessionReference) {
     this.assertSession(session)
     this.adopt(await this.request({ method: 'conversation.release-runtime', session }))
+    this.runtimeAcquired = false
   }
   async closeForRestart(session: NativeSessionReference) { this.assertSession(session); await this.dispose() }
   async dispose() {
+    if (this.runtimeAcquired && !this.lifetime.signal.aborted && this.session && this.receipt && !this.receipt.closed
+      && !this.receipt.closing && !this.receipt.runtimeReleased
+      && this.receipt.turns.every(turn => ['completed', 'rejected'].includes(turn.status))
+      && this.receipt.compactions.every(control => !compactionBlocksSend(control.state))) {
+      await this.closeForResume(this.session)
+    }
     if (this.preparationActive && !this.session && !this.lifetime.signal.aborted) {
       await this.request({ method: 'conversation.release-preparation' })
       this.preparationActive = false

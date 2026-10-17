@@ -259,12 +259,6 @@ export async function createInstalledWorkerConversations(input: InstalledWorkerC
       },
       assertCurrent: () => callbacks.authorize(request, connection, signal),
     }),
-    releaseRuntime: async (record, connection, signal) => {
-      if (!isDeepStrictEqual(input.current(), connection)) unavailable('The selected Worker connection changed.')
-      if (!await input.registry.closeOwner(`conversation:${record.binding.owner.conversationId}`, signal)) {
-        unavailable('The previous native chat process is still closing.')
-      }
-    },
     readCompaction: async (request, _record, connection, signal) => {
       const observer = await allocate(request.binding, request.configuration, connection, 'compaction-read')
       try {
