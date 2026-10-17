@@ -296,10 +296,14 @@ export class SessionControlStore {
     }
   }
 
-  async assertSendAllowed(conversationId: string): Promise<void> {
+  async hasPendingCompaction(conversationId: string): Promise<boolean> {
     const result = await this.pool.query<{ record: unknown }>(
       'select record from conversation_session_controls where conversation_id=$1', [conversationId])
-    if (result.rows[0] && compactionBlocksSend(SessionControlStateSchema.parse(result.rows[0].record).compaction)) {
+    return !!result.rows[0] && compactionBlocksSend(SessionControlStateSchema.parse(result.rows[0].record).compaction)
+  }
+
+  async assertSendAllowed(conversationId: string): Promise<void> {
+    if (await this.hasPendingCompaction(conversationId)) {
       throw new DomainError('SESSION_COMPACT_UNCONFIRMED', 'Compaction is still pending. Read its status before sending.', 409)
     }
   }
