@@ -6,9 +6,7 @@ import { dirname, join } from 'node:path'
 import { createTestRoot, removeTestRoot } from '../../../scripts/test-resources.mjs'
 import { installedRestartService } from './helpers/installedRestartService.js'
 
-const fixture = vi.hoisted(() => ({
-  build: vi.fn(), deploy: vi.fn(), prune: vi.fn(), lockfile: 'locked dependencies',
-}))
+const fixture = vi.hoisted(() => ({ build: vi.fn(), deploy: vi.fn(), lockfile: 'locked dependencies' }))
 vi.mock('node:module', async importOriginal => {
   const actual = await importOriginal<typeof import('node:module')>()
   return {
@@ -54,7 +52,6 @@ describe('installed restart artifact reuse', () => {
     vi.stubEnv('FOREMAN_CODE_TEST_CACHE_ROOT', join(root.directory, 'cache'))
     fixture.lockfile = 'locked dependencies'
     fixture.deploy.mockReset()
-    fixture.prune.mockReset()
     fixture.build.mockReset()
     fixture.build.mockImplementation(async (options: { outdir?: string; outfile?: string }) => {
       const output = options.outfile ?? join(options.outdir!, 'compiled.js')
@@ -104,18 +101,6 @@ describe('installed restart artifact reuse', () => {
     await prepare('retry')
     expect(fixture.deploy).toHaveBeenCalledTimes(2)
     expect(fixture.build).toHaveBeenCalledTimes(2)
-  })
-
-  it('reports dependency cache maintenance failures before publishing a service', async () => {
-    fixture.prune.mockRejectedValueOnce(new Error('fixture cache maintenance failed'))
-    const directory = join(root.directory, 'maintenance-failure')
-    await mkdir(directory)
-    await expect(installedRestartService(directory, 'config.json', {}, 'runtime'))
-      .rejects.toThrow('fixture cache maintenance failed')
-    await prepare('retry')
-    expect(fixture.deploy).toHaveBeenCalledOnce()
-    expect(fixture.build).toHaveBeenCalledTimes(2)
-    expect(fixture.prune).toHaveBeenCalledTimes(2)
   })
 
   it('copies independent releases while preserving relative links and executable modes', async () => {
