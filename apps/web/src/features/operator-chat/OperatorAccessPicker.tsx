@@ -1,4 +1,3 @@
-import { InfoHint } from '../../shared/ui/InfoHint'
 import { retiredHarnessLabel } from '../settings/settingsPresentation'
 import { changeCodexSandbox, withAdvancedDefaults, type HarnessConfiguration } from '@foreman-code/contracts'
 import { Select } from '../../shared/ui/nocturne'
@@ -16,7 +15,7 @@ function EditableOperatorAccessPicker({ value, disabled, saving = false, saveErr
   onChange(value: HarnessConfiguration): Promise<boolean>
 }) {
   return <div className="operator-access-inline" role="group" aria-label="Operator access">
-    <div className="n-field-label">Operator access<InfoHint label="Operator access">Access changes apply to new chats and harness handoffs. Existing chats keep their accepted access policy.</InfoHint></div>
+    <small>Access changes apply to new chats and harness handoffs. Existing chats keep their accepted access policy.</small>
     {saving ? <small role="status">Saving Operator access…</small> : null}
     {saveError ? <p role="alert">{saveError}</p> : null}
     {value.harness === 'codex' || value.harness === 'claude' ? <Select label="Sandbox" value={value.sandbox}

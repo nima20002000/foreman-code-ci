@@ -63,19 +63,12 @@ const procStart = pid => {
 }
 const namespace = { boot: readFileSync('/proc/sys/kernel/random/boot_id', 'utf8').trim(), pid: readlinkSync('/proc/self/ns/pid') }
 const gone = (error) => error.code === 'ENOENT' || error.code === 'ESRCH'
-const validOwner = record => typeof record?.namespace?.boot === 'string'
-  && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(record.namespace.boot)
-  && typeof record.namespace.pid === 'string' && /^pid:\[\d+\]$/.test(record.namespace.pid)
+const localOwner = record => record?.namespace?.boot === namespace.boot && record?.namespace?.pid === namespace.pid
   && Number.isSafeInteger(record.pid) && record.pid > 0 && typeof record.start === 'string'
   && /^\d+$/.test(record.start) && typeof record.token === 'string' && Boolean(record.token)
-const localOwner = record => validOwner(record)
-  && record.namespace.boot === namespace.boot && record.namespace.pid === namespace.pid
 const alive = (record) => {
-  if (!validOwner(record)) return true
-  // Processes from an earlier boot cannot survive, even if their PIDs are reused.
-  if (record.namespace.boot !== namespace.boot) return false
   // A PID/start pair has meaning only in the namespace that recorded it.
-  // Foreign PID namespaces and unreadable ownership remain unknown, not stale.
+  // Legacy, foreign, malformed, or unreadable ownership is unknown, not stale.
   if (!localOwner(record)) return true
   try {
     const text = readFileSync(`/proc/${record.pid}/stat`, 'utf8')

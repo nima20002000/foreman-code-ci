@@ -1,4 +1,3 @@
-import { InfoHint } from '../../shared/ui/InfoHint'
 import { PromptTextSchema, type PromptText } from '@foreman-code/contracts/management'
 import {
   usePromptSettingQuery,
@@ -13,18 +12,17 @@ import { fieldMessage } from './fieldValidation'
 import { SettingsFormActions } from './SettingsFormActions'
 import { useRevisionedForm } from './revisionedForm'
 import './settingsExperience.css'
-import './settingsHelp.css'
 
 const presentation = {
   'system-prompt': {
     title: 'System prompt',
     label: 'System prompt',
-    help: 'Newly started Agent sessions will use this revision.',
+    savedMessage: 'The system prompt is saved. Newly started Agent sessions will use this revision.',
   },
   'operator-initial-prompt': {
     title: 'Operator',
     label: 'Initial prompt',
-    help: 'New Operator conversations will use this revision.',
+    savedMessage: 'The initial prompt is saved. New Operator conversations will use this revision.',
   },
 }
 
@@ -74,13 +72,14 @@ export function PromptSettings({ page, onBack }: { page: PromptSettingsPage; onB
     {form.error && !form.conflicted && !form.uncertain ? <Alert live tone="danger" title="Prompt was not saved">
       {form.error} Your edits are still here.
     </Alert> : null}
-    {form.savedRevision !== undefined && !form.error ? <Alert live tone="success" title="Prompt saved" /> : null}
+    {form.savedRevision !== undefined && !form.error ? <Alert live tone="success" title="Prompt saved">
+      {info.savedMessage}
+    </Alert> : null}
     <div className="settings-editor-content settings-single-column">
-      <div className="settings-field-help"><Textarea label={info.label} rows={12} value={draft.text} maxLength={PromptTextSchema.shape.text.maxLength ?? undefined}
+      <Textarea label={info.label} rows={12} value={draft.text} maxLength={PromptTextSchema.shape.text.maxLength ?? undefined}
         readOnly={!canEdit} disabled={form.isSaving || form.uncertain}
         error={fieldMessage(form.issues ?? [], 'text')}
         onChange={event => form.setDraft({ text: event.target.value })} />
-        <InfoHint label={info.label}>{info.help}</InfoHint></div>
       {!canEdit && !access.isPending ? <p role="status">You have read-only access to this prompt.</p> : null}
     </div>
     <Button size="sm" disabled={query.isFetching || form.isSaving || form.uncertain}
