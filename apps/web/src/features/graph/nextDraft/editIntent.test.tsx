@@ -17,6 +17,7 @@ import { NextDraftEditor } from './NextDraftEditor'
 import { nextDraftApi } from './transport'
 import { nextDraftDirty, nextDraftKey } from './state'
 import { changeDraftAgent, editorAgents } from './agentEdits'
+import { defaultAgentForHarness } from '../../agents/agentSettings'
 import { attachAgent, removeNode } from './model'
 import { acknowledgeEditOutbox, readEditOutbox, readEditSnapshot, storeEditSnapshot } from './editIntentStorage'
 import { acknowledgeEditIntentSnapshot } from './useGraphEditIntent'
@@ -154,9 +155,14 @@ function published(value: GraphEditReadResultV3): GraphEditReadResultV3 {
 function waiting(value: GraphEditReadResultV3): GraphEditReadResultV3 {
   return { ...value, intent: { ...value.intent!, state: 'waiting' } }
 }
-async function createWorker(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getByRole('button', { name: 'Add agent or job to graph' }))
-  await user.click(screen.getByRole('button', { name: 'Worker' }))
+/** A Worker created locally and not yet saved, the way the editor stages one: the Board panel only adds saved Agents. */
+function createWorker() {
+  const agent = defaultAgentForHarness('codex', `agent-${crypto.randomUUID()}`, 'Worker 2', undefined, 'coder')
+  act(() => useGraphDraftStore.getState().updateNextDraft(key, (current) => {
+    const agentForms = { ...current.agentForms }
+    return changeDraftAgent({ ...current, agentForms }, agent, { ...current.graph,
+      nodes: [...current.graph.nodes, { id: `node-${crypto.randomUUID()}`, agentId: agent.id, name: agent.name }] })
+  }))
   const node = edit().graph.nodes.map(nativeNode).find((item) => nativeNode(item).agentId !== 'agent-0')!
   expect(edit().agentEdits?.[nativeNode(node).agentId]?.configurationVersionId).toBeUndefined()
   expect(edit().agentEdits?.[nativeNode(node).agentId]?.prompt).toBeUndefined()
@@ -440,7 +446,7 @@ describe('NIM-2644 mounted frontend recovery through the real edit-intent hook',
     vi.mocked(nextDraftApi.editRead).mockImplementation(async () => persisted)
     const stage = vi.spyOn(nextDraftApi, 'editStage').mockImplementation(async (input) => (persisted = stageValue(input)))
     const advance = vi.spyOn(nextDraftApi, 'editAdvance').mockImplementation(async () => (persisted = published(persisted)))
-    const user = userEvent.setup(), first = mount(), node = await createWorker(user)
+    const user = userEvent.setup(), first = mount(), node = createWorker()
     const rawWorker = structuredClone(edit().agentEdits![nativeNode(node).agentId]!)
     await user.click(screen.getByRole('button', { name: 'Entry · Node 0' }))
     await user.click(screen.getByRole('button', { name: /from workflow$/ }))
@@ -477,7 +483,7 @@ describe('NIM-2644 mounted frontend recovery through the real edit-intent hook',
     vi.mocked(nextDraftApi.editRead).mockImplementation(async () => visible)
     const stage = vi.spyOn(nextDraftApi, 'editStage').mockImplementation(async (input) => (visible = persisted = stageValue(input)))
     const advance = vi.spyOn(nextDraftApi, 'editAdvance').mockImplementation(async () => { persisted = published(persisted); throw new Error('publication reply lost') })
-    const user = userEvent.setup(), first = mount(), node = await createWorker(user)
+    const user = userEvent.setup(), first = mount(), node = createWorker()
     await saveWithStop(user); await waitFor(() => expect(advance).toHaveBeenCalledOnce())
     await retainedSaveReady()
     expect(readEditOutbox(key)?.agentTarget?.[nativeNode(node).agentId]?.prompt).toBeUndefined()
@@ -497,7 +503,7 @@ describe('NIM-2644 mounted frontend recovery through the real edit-intent hook',
     vi.mocked(nextDraftApi.editRead).mockImplementation(async () => persisted)
     vi.spyOn(nextDraftApi, 'editStage').mockImplementation(async (input) => (persisted = stageValue(input)))
     const advance = vi.spyOn(nextDraftApi, 'editAdvance').mockImplementation(async () => new Promise((resolve) => { release = resolve }))
-    const user = userEvent.setup(); mount(); const node = await createWorker(user)
+    const user = userEvent.setup(); mount(); const node = createWorker()
     await saveWithStop(user); await waitFor(() => expect(advance).toHaveBeenCalledOnce())
     // Simulate an independently newer retained form, not typing into a locked fieldset.
     act(() => useGraphDraftStore.getState().updateNextDraft(key, (state) => changeDraftAgent(state,
@@ -631,7 +637,7 @@ describe('NIM-2644 follow-up mounted stale-tab readback', () => {
     vi.spyOn(nextDraftApi, 'editAdvance').mockImplementation(async () => {
       persisted = published(persisted); throw new Error('Publication reply lost in the stale tab')
     })
-    const user = userEvent.setup(), first = mount(), node = await createWorker(user)
+    const user = userEvent.setup(), first = mount(), node = createWorker()
     await saveWithStop(user)
     await waitFor(() => expect(persisted.intent?.state).toBe('saved'))
     await retainedSaveReady()
