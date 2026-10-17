@@ -8,9 +8,6 @@ import { readJsonContinuation } from './jsonContinuation.js'
 import { decodeResultCopies } from './executionResultCodec.js'
 import { pageNativeHistory, readNativeHistoryMetadata } from './nativeHistoryPage.js'
 import { readPhysicalReadout, remoteWorkflowSourceDigest } from './workflowPhysicalReadout.js'
-import { RemoteExecutionRpcRequestSchema } from '@foreman-code/contracts/remote-execution-rpc'
-import { RemoteNativeSessionManager, type RemoteNativeTransport } from './nativeManagerProxy.js'
-import { DeviceApplicationError } from '../../devices/deviceApplicationError.js'
 
 it.each(['receipt bytes', 'physical hashing'] as const)(
   'reuses the first installed history observation for metadata pages: %s', async measure => {
@@ -135,48 +132,6 @@ it('retries installed history continuations without leaving an unread download r
       const fields = await readJsonContinuation(first, async request => readNativeHistoryMetadata(request))
       expect(decodeResultCopies(fields)).toHaveProperty('terminalResult')
     }
-  } finally {
-    await f.host.close()
-  }
-})
-
-it('reuses the initial reader identity after a lost reply while independent observations stay distinct', async () => {
-  const f = await runningInstalledFixture()
-  const result = { outcome: 'succeeded' as const, output: { text: 'initial-replay' + 'x'.repeat(3 * 1024 * 1024) } }
-  const initial: Array<Record<string, unknown>> = []
-  const transport: RemoteNativeTransport = {
-    request: async (method, raw) => {
-      const frame = RemoteExecutionRpcRequestSchema.parse(raw)
-      const reply = await f.call(method, frame)
-      if (frame.method === 'history' && !frame.metadata) {
-        initial.push(frame)
-        if (initial.length === 1) throw new DeviceApplicationError('DEVICE_LINK_DROPPED')
-      }
-      return structuredClone(reply.payload)
-    },
-    reconnect: async error => error instanceof DeviceApplicationError && error.code === 'DEVICE_LINK_DROPPED',
-  }
-  const proxy = new RemoteNativeSessionManager({ intent: f.intent, placement: f.placement, harness: 'codex',
-    configuration: f.request.configuration, transport, observeReceipt: async () => {},
-    controlFor: async () => { throw new Error('No native control expected') } })
-  try {
-    f.finish('succeeded', result.output)
-    await f.settled
-    await proxy.attachSession(f.session, { request: f.request, correlationId: 'execution:execution' })
-    expect((await proxy.history(f.session)).terminalTurn?.result).toEqual(result)
-    expect((await proxy.history(f.session)).terminalTurn?.result).toEqual(result)
-    const downloads = Array.from({ length: 5 }, (_, index) => pageNativeHistory({
-      events: [], pendingInteractions: [], terminalResult: { outcome: 'succeeded',
-        output: { text: `after-initial-replay-${index}` + 'x'.repeat(3 * 1024 * 1024) } },
-    }).page.metadata!)
-    for (const first of downloads) {
-      const fields = await readJsonContinuation(first, async request => readNativeHistoryMetadata(request))
-      expect(decodeResultCopies(fields)).toHaveProperty('terminalResult')
-    }
-    expect(initial).toHaveLength(3)
-    expect(initial[0]!.downloadId).toEqual(expect.any(String))
-    expect(initial[1]!.downloadId).toBe(initial[0]!.downloadId)
-    expect(initial[2]!.downloadId).not.toBe(initial[0]!.downloadId)
   } finally {
     await f.host.close()
   }

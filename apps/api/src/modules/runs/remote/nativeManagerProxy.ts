@@ -23,7 +23,6 @@ import { decodeResultCopies } from './executionResultCodec.js'
 import { DeviceApplicationError } from '../../devices/deviceApplicationError.js'
 import { retryDeviceRequest } from '../../devices/deviceRequestRetry.js'
 import { preparationStop } from './preparationCleanup.js'
-import { randomUUID } from 'node:crypto'
 
 export interface RemoteNativeTransport {
   request(method: 'prepare' | 'reattach' | 'prepare-review' | 'get-application-access' | 'start-turn'
@@ -202,16 +201,14 @@ export class RemoteNativeSessionManager implements NativeHarnessSessionManager {
     for (let attempt = 0; ; attempt++) {
       signal?.throwIfAborted()
       try {
-        const value = await this.historyResponse(await this.request(method,
-          { ...payload, downloadId: randomUUID() }, signal), signal)
+        const value = await this.historyResponse(await this.request(method, payload, signal), signal)
         const receipt = await this.status(value.reply, value.status)
         if (!isDeepStrictEqual(value.status, { status: 'known', receipt })) {
           throw new RemoteHistorySnapshotChangedError('Remote history response was overtaken')
         }
         return { value, receipt }
       } catch (error) {
-        const expired = error instanceof DeviceApplicationError && error.code === 'transfer-expired'
-        if (!(error instanceof RemoteHistorySnapshotChangedError) && !expired || attempt >= 4) throw error
+        if (!(error instanceof RemoteHistorySnapshotChangedError) || attempt >= 4) throw error
       }
     }
   }
