@@ -1,4 +1,3 @@
-import { workerToolServices } from './helpers/workerMcpServices.js'
 import { randomUUID } from 'node:crypto'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import {
@@ -40,7 +39,6 @@ async function fixture(options: { agentOnly?: boolean } = {}) {
     readiness: { database: { ping: async () => {} }, checkpoints: { ping: async () => {} } },
     ...(options.agentOnly ? {} : { operator: { access: runtime.access, services } }),
     appMcp: {
-      references: workerToolServices(runtime.db.pool, commands).references,
       access: runtime.access,
       commands,
       interactions: new PostgresAppInteractionService(runtime.db.pool, runtime.repository, commands),

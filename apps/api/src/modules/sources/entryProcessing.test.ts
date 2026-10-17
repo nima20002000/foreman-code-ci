@@ -44,9 +44,7 @@ it.each(['failure', 'cancellation'])('joins in-flight I/O before reporting %s an
     started.push(entry.path)
     if (entry === entries[0]) {
       await failed.pending
-      if (kind === 'failure') throw error
-      completed.push(entry.path)
-      return
+      throw error
     }
     await blocked.pending
     completed.push(entry.path)
@@ -60,5 +58,5 @@ it.each(['failure', 'cancellation'])('joins in-flight I/O before reporting %s an
   blocked.release()
   expect(await observed).toBe(error)
   expect(started).toHaveLength(4)
-  expect(completed).toHaveLength(kind === 'failure' ? 3 : 4)
+  expect(completed).toHaveLength(3)
 })

@@ -1,4 +1,3 @@
-import type { AgentReferenceService } from '../../modules/files/references/agentService.js'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 
 import type { PostgresAccessService } from '../../modules/access/postgres.js'
@@ -9,7 +8,6 @@ import type { PostgresCommandCoordinator } from '../../modules/commands/postgres
 export interface AppMcpServices {
   access: PostgresAccessService
   interactions: AppInteractionService
-  references?: AgentReferenceService
   bugReports?: BugReportService
   commands?: PostgresCommandCoordinator
 }

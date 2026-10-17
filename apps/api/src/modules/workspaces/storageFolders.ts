@@ -10,8 +10,7 @@ import { requireAuthorization } from '../access/policy.js'
 import { PostgresCommandCoordinator } from '../commands/postgres.js'
 import { DomainError } from '../errors.js'
 import { pathsOverlap } from './filesystem.js'
-import { activeAgentChatDirectories } from '../conversations/activeAgentChats.js'
-import { WORKSPACE_FOLDER_LIFECYCLE_LOCK, continuingRunDirectories } from './projectFolderCleanup.js'
+import { WORKSPACE_FOLDER_LIFECYCLE_LOCK } from './projectFolderCleanup.js'
 
 function identity(details: { dev: bigint; ino: bigint }): string {
   return 'sha256:' + createHash('sha256').update(`${details.dev}:${details.ino}`).digest('hex')
@@ -21,7 +20,7 @@ type FolderReference = { path: string; kind: 'workspace' | 'archived_workspace' 
 const protectionMessages: Record<FolderReference['kind'], string> = {
   workspace: 'This folder overlaps a registered workspace. Remove that workspace through its own action.',
   archived_workspace: 'An archived workspace still references this folder. Its retained location is protected.',
-  owned_folder: 'A workspace owns or is preparing this project folder. Finish preparation before removing the workspace.',
+  owned_folder: 'A workspace owns this project folder. Remove that workspace through its own action.',
   active_run: 'An active run uses this folder. Settle active work before deleting it.',
   defaults: 'Workspace defaults use this folder. Choose another default destination before deleting it.',
 }
@@ -32,7 +31,7 @@ function deletionState(path: string, rootPath: string, references: FolderReferen
 
 /** Discovery never registers records or confers ownership of existing content. */
 export class WorkspaceStorageFolders {
-  constructor(private readonly pool: pg.Pool, private readonly commands: PostgresCommandCoordinator, private readonly root: string, private readonly runnerId = 'runner-local') {}
+  constructor(private readonly pool: pg.Pool, private readonly commands: PostgresCommandCoordinator, private readonly root: string) {}
 
   private async rootPath() {
     try { return await realpath(this.root) } catch {
@@ -44,18 +43,12 @@ export class WorkspaceStorageFolders {
     const result = await client.query<FolderReference>(`
       select execution_location->>'rootPath' as path,
         case when archived_at is null then 'workspace' else 'archived_workspace' end as kind,
-        archived_at is null as registered from workspaces where execution_location->>'runnerId'=$1
-      union all select created_project_folder->>'rootPath', 'owned_folder', false from workspaces where created_project_folder->>'runnerId'=$1
-      union all select (preparation->>'basePath') || '/' || (preparation->>'directoryName'), 'owned_folder', false
-        from workspace_repository_imports where finished_at is null
+        archived_at is null as registered from workspaces where execution_location is not null
+      union all select created_project_folder->>'rootPath', 'owned_folder', false from workspaces where created_project_folder is not null
+      union all select coalesce(working_directory, record->'executionLocation'->>'rootPath'), 'active_run', false from runs where execution_state <> 'completed'
       union all select record->>'parentPath', 'defaults', false from application_settings where record->>'parentPath' is not null
-    `, [this.runnerId])
-    const directories = [
-      ...await continuingRunDirectories(client, this.runnerId),
-      ...await activeAgentChatDirectories(client),
-    ]
-    return [...result.rows, ...directories.map(path => ({ path, kind: 'active_run' as const, registered: false }))]
-      .filter(({ path }) => Boolean(path))
+    `)
+    return result.rows.filter(({ path }) => Boolean(path))
   }
 
   async list(principal: ManagementPrincipal, raw: { cursor?: string | undefined; limit?: number | undefined }) {
