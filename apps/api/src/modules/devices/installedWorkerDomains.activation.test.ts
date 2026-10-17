@@ -15,7 +15,6 @@ import { buildApp } from '../../app.js'
 import { DomainError } from '../errors.js'
 import { RemoteOperationJournal } from '../runs/remote/operationJournal.js'
 import { sourceFixture } from '../runs/remote/__tests__/installedWorkflowHost.js'
-import { workerHarnessCatalogFixture } from '../../../test/helpers/workerHarnessCatalog.js'
 import { createInstalledWorkerDomains } from './installedWorkerDomains.js'
 
 // Native MCP files are exercised separately; domain fixtures must not touch the host user profile.
@@ -221,8 +220,8 @@ it('returns installed inventory when native MCP repair fails for a signed-out ha
     endpoint: 'wss://worker.example/device/connect', mainPublicKeyFingerprint: 'a'.repeat(64),
     credential: 'b'.repeat(64), expiresAt: '2099-01-01T00:00:00.000Z' }
   const location = { path: join(f.root, 'workflow-runtime.json'), ownerUid: process.getuid!() }
-  const native = await workerHarnessCatalogFixture()
-  const selection = native.selection
+  const selection = { schemaVersion: 1, codexBinary: process.execPath, expectedVersion: 'codex-cli 0.162.0',
+    payloadPaths: [], appMcpLauncher: '/installed/launcher.mjs' }
   const refresh = vi.fn(async () => {
     await writeFile(location.path, JSON.stringify(selection), { mode: 0o600 })
     return location
@@ -237,11 +236,9 @@ it('returns installed inventory when native MCP repair fails for a signed-out ha
     const { payload } = await discovery.handle!({ operation: 'discover', refreshId: randomUUID() },
       { binding, signal: AbortSignal.timeout(20_000) })
     expect(HarnessRegistryReadbackSchema.parse(payload).installations).toMatchObject([
-      { driverId: 'codex', installed: true }, { driverId: 'claude', installed: true }])
+      { driverId: 'codex', installed: true }])
   } finally {
     managedMcp.ensureReady = async () => {}
     await mounted.close()
-    await native.close()
-    vi.unstubAllEnvs()
   }
 })

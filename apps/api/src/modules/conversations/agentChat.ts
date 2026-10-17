@@ -589,6 +589,7 @@ export class AgentChatService {
   }
 
   private async harnessUnavailable(resolution: Resolution): Promise<Resolution['blocked']> {
+    if (!this.managers.unavailable) return undefined
     const row = resolution.row
     if (row?.origin_run_id && row.native_session_id && !row.record.sourceConfigurationVersionId) {
       const agent = (await this.pool.query<{ current_configuration_version_id: string | null }>(
