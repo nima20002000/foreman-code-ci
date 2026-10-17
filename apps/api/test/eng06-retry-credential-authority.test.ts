@@ -1,4 +1,3 @@
-import { workerToolServices } from './helpers/workerMcpServices.js'
 import { createHash } from 'node:crypto'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { buildApp } from '../src/app.js'
@@ -234,7 +233,7 @@ it('starts a single-tool Coder MCP session across publication and denies revoked
   const service = new PostgresAppInteractionService(pool, {} as never, {} as never)
   const app = buildApp({ logger: false,
     readiness: { database: { ping: async () => {} }, checkpoints: { ping: async () => {} } },
-    appMcp: workerToolServices(pool, {} as never).appMcp(access, service) })
+    appMcp: { access, interactions: service } })
   const client = new Client({ name: 'startup-coder', version: '1' })
   try {
     const address = await app.listen({ host: '127.0.0.1', port: 0 })

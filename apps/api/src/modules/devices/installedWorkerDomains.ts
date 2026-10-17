@@ -289,8 +289,7 @@ async function configureWorkerTransfers(composition: InstalledWorkerComposition)
     componentLogger('devices').warn({ operation: 'repair managed MCP mount', err: error }, 'Managed Foreman Code MCP setup needs repair')
   })
   composition.profileChecks = approved ? await createInstalledWorkerProfileChecks({ stateDirectory: input.stateDirectory,
-    configuration: composition.configuration, pairing: input.pairing, current, registry,
-    accounts: () => composition.accounts }) : null
+    configuration: composition.configuration, pairing: input.pairing, current, registry }) : null
   const sourceAcknowledgement = input.rsync && createWorkerSourceRsyncAcknowledgement({
     authenticate: async (intent, context, signal) => {
       if (!isDeepStrictEqual(transferContextForBinding(current()), context)) throw new DomainError('SOURCE_CONNECTION_CONFLICT', 'Source acknowledgement requires the original current channel.', 409)
@@ -345,7 +344,6 @@ async function configureWorkerSources(composition: InstalledWorkerComposition) {
   } = composition
   const providerAccounts = composition.providerAccounts = input.providerAccounts ?? createInstalledWorkerAccounts({
     stateDirectory: input.stateDirectory, configuration: configurationLocation, current, registry,
-    prepareAccount: account => composition.managedMcp.ensureReady({ account, signal: lifetime.signal }),
     target: { hostRef: { kind: 'device', mainId: input.pairing.mainId, deviceId: input.pairing.deviceId },
       applicationInstallationId: input.pairing.workerInstallationId, keyRevision: input.pairing.keyRevision,
       authorizationRevision: input.pairing.authorizationRevision },
@@ -715,8 +713,7 @@ async function configureWorkerExecution(composition: InstalledWorkerComposition)
       await composition.managedMcp.ensureReady()
       await composition.openWorkflow?.(location)
       composition.profileChecks ??= await createInstalledWorkerProfileChecks({ stateDirectory: input.stateDirectory,
-        configuration: composition.configuration, pairing: input.pairing, current, registry,
-        accounts: () => composition.accounts })
+        configuration: composition.configuration, pairing: input.pairing, current, registry })
       composition.conversations ??= await createConversations()
     })()
     try { await composition.activation }

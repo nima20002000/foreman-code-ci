@@ -5,9 +5,6 @@ import { describe, expect, it } from 'vitest'
 import { CURRENT_WORKFLOW_TOOLS, RUN_INSPECTION_TOOLS } from '@foreman-code/contracts/wave25'
 import { ManagedWorkspaceSchema } from '@foreman-code/contracts/management'
 
-import { SkillCatalogService } from '../src/modules/skills/catalog.js'
-import { SkillUsageService } from '../src/modules/skills/usage.js'
-import { OperatorAgentMutationService } from '../src/modules/workspaces/operatorAgents.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { postgresEnabled } from './helpers/eng04CurrentDatabase.js'
@@ -27,12 +24,8 @@ describe.skipIf(!postgresEnabled)('authenticated calls to hidden MCP tools', () 
         runGraph: {}, harnessInstances: { qualificationSupported: true },
         harnessSettings: { mcp: {}, directories: {}, plugins: {} },
         extensions: {
-          native: {}, agents: {}, history: {}, lifecycle: {},
+          native: {}, agents: {}, history: {}, lifecycle: {}, skills: {},
           workspace: { provisioningEnabled: true },
-          skills: new SkillCatalogService(f.db.pool, f.commands),
-          skillUsage: new SkillUsageService(f.db.pool,
-            new OperatorAgentMutationService(f.db.pool, f.commands, f.services.harnesses),
-            f.services.workflows.current, f.commands),
         },
       })
       const restricted = await f.access.issue({
@@ -40,12 +33,9 @@ describe.skipIf(!postgresEnabled)('authenticated calls to hidden MCP tools', () 
         expiresAt: new Date(Date.now() + 600000),
       })
       const client = await f.connect(restricted.token)
-      const listed = (await client.listTools()).tools.map(tool => tool.name)
-      const catalog = (await f.client.listTools()).tools.map(tool => tool.name)
-      // Skill tools intentionally remain discoverable; their services enforce grants on calls.
-      expect(listed.sort()).toEqual(['skill_list', 'skill_get', 'skill_versions_list', 'skill_create',
-        'skill_update', 'skill_archive', 'skill_usage_get', 'skill_users_update'].sort())
-      expect(catalog).toEqual(expect.arrayContaining([
+      const listed = new Set((await client.listTools()).tools.map(tool => tool.name))
+      const hidden = (await f.client.listTools()).tools.map(tool => tool.name).filter(name => !listed.has(name))
+      expect(hidden).toEqual(expect.arrayContaining([
         'operator_get_capabilities', 'workspace_get', 'workspace_create', 'workspace_update', 'workspace_archive',
         'workspace_location_set', 'workspace_storage_folders_list', 'workspace_storage_folder_delete',
         'workspace_folders_list', 'workspace_folder_create', 'workspace_folder_rename', 'workspace_folder_undo',
@@ -69,16 +59,8 @@ describe.skipIf(!postgresEnabled)('authenticated calls to hidden MCP tools', () 
       const receiptsQuery = 'select * from management_command_receipts order by principal_id, operation, command_id'
       const receipts = (await f.db.pool.query(receiptsQuery)).rows
       const providerCounts = { ...f.provider.counts }
-      const skill = { workspaceId, skillId: 'denied-skill' }
-      const skillInputs: Record<string, Record<string, unknown>> = {
-        skill_list: { workspaceId }, skill_get: skill, skill_versions_list: skill,
-        skill_create: { workspaceId, name: 'Denied skill', instructions: 'Do not save this.' },
-        skill_update: { ...skill, expectedRevision: 1, name: 'Denied skill', instructions: 'Do not save this.' },
-        skill_archive: { ...skill, expectedRevision: 1, archived: true },
-        skill_usage_get: skill, skill_users_update: skill,
-      }
-      for (const name of catalog) {
-        const result = await client.callTool({ name, arguments: skillInputs[name] ?? {} })
+      for (const name of hidden) {
+        const result = await client.callTool({ name, arguments: {} })
         expect(result.isError, name).toBe(true)
         expect(JSON.stringify(result.content), name).toContain('ACCESS_DENIED')
         expect((await f.db.pool.query(
@@ -89,7 +71,7 @@ describe.skipIf(!postgresEnabled)('authenticated calls to hidden MCP tools', () 
       }
       await expect(client.callTool({ name: 'unknown_management_tool', arguments: {} })).rejects.toThrow('not found')
       expect((await f.db.pool.query('select action from management_audit where principal_id=$1',
-        [restricted.principal.id])).rowCount).toBe(catalog.length)
+        [restricted.principal.id])).rowCount).toBe(hidden.length)
       expect((await f.db.pool.query(receiptsQuery)).rows).toEqual(receipts)
       expect(decodeMcpToolResult((await f.client.callTool({ name: 'workspace_get', arguments: { workspaceId } }))))
         .toMatchObject({ ...workspace, locationValidation: { status: workspace.locationValidation.status } })
