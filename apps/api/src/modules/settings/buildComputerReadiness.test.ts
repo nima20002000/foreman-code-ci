@@ -11,7 +11,6 @@ import { verificationCapacityFixture } from '../../../test/helpers/verificationC
 import { BuildComputerSettings, buildComputerTarget } from './buildComputers.js'
 import { buildComputerReadiness } from './buildComputerReadiness.js'
 import { WorkerExecutionPolicy } from './workerExecution.js'
-import { workerBundleReadinessFixture } from '../../../test/helpers/workerBundleReadinessFixture.js'
 
 function fixture(host: 'main' | 'device', memory: number | null = 14 * 2 ** 30, computing = 0) {
   const profile = verificationCapacityFixture(host)
@@ -19,8 +18,7 @@ function fixture(host: 'main' | 'device', memory: number | null = 14 * 2 ** 30, 
     registration: profile.root.registration, mainInstallationId: profile.root.binding.mainId })
   const endpoint = { currentBinding: () => ({ workerInstallationId: target.applicationInstallationId,
     keyRevision: target.keyRevision, authorizationRevision: target.authorizationRevision }),
-  captureRequest: () => ({}), clockReason: () => null, capabilities: () => [],
-  workerBundleReadiness: async () => workerBundleReadinessFixture().read() } as unknown as DeviceEndpoint
+  captureRequest: () => ({}), clockReason: () => null, capabilities: () => [] } as unknown as DeviceEndpoint
   const sql = { query: async (text: string) => ({ rows: text.includes('select record from job_runtime_profiles')
     ? [{ record: profile }] : Array.from({ length: computing }, () => ({
       limits: profile.spec.resources.limits, compute_closed: false,
