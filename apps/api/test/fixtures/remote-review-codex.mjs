@@ -253,7 +253,7 @@ createInterface({ input: process.stdin, crlfDelay: Infinity }).on('line', async 
   log({ method: message.method, pid: process.pid, threadId: params.threadId, correlationId: params.clientUserMessageId, model: params.model,
     reasoningEffort: params.config?.model_reasoning_effort,
     ...(message.method === 'turn/start' ? { outputSchema: params.outputSchema } : {}),
-    ...(message.method === 'model/list' ? { workingDirectory: process.cwd(), providerVersion: cliVersion } : {}) })
+    ...(message.method === 'model/list' ? { workingDirectory: process.cwd() } : {}) })
   if (message.method === 'initialize') {
     reply(message.id, { userAgent: `codex-cli ${cliVersion}`, platformFamily: 'unix', platformOs: 'linux', codexHome: root })
   } else if (message.method === 'initialized') {

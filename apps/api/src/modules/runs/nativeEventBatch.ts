@@ -68,26 +68,14 @@ export async function appendNormalizedNativeEvents(sql: GraphTransactionSql,
     }
     return { ...normalized, event }
   })
-  const ids = [...new Set(events.map(({ event }) => event.executionId))].sort()
-  const allocators = await sql.query<ExecutionAllocator>(`select id,native_event_next_sequence::text as next_sequence
-    from harness_executions where id=any($1::text[]) order by id for update`, [ids])
-  // Keep each identity form on its unique index; an OR join scans the entire native journal.
-  const rows = await sql.query<EventRow>(`with replay_identities as materialized (
-      select distinct execution_id,connection_id,source_sequence from jsonb_to_recordset($1::jsonb)
-        as p(execution_id text,connection_id text,source_sequence integer)
-    ) select n.execution_id,n.sequence,n.connection_id,n.source_sequence,n.record
-      from harness_native_events n join replay_identities p on n.execution_id=p.execution_id
-        and n.connection_id=p.connection_id and n.source_sequence=p.source_sequence
-      where p.connection_id is not null
-    union all
-    select n.execution_id,n.sequence,n.connection_id,n.source_sequence,n.record
-      from harness_native_events n join replay_identities p on n.execution_id=p.execution_id
-        and n.sequence=p.source_sequence
-      where p.connection_id is null`, [JSON.stringify(events.map(({ event }) => ({
-    execution_id: event.executionId, connection_id: event.connectionId ?? null, source_sequence: event.sequence,
-  })))])
-  const batch = allocateEvents(events, allocators.rows, rows.rows)
+  const saved = (await sql.query<{ allocators: ExecutionAllocator[]; events: EventRow[] }>(
+    'select allocators,events from read_harness_native_event_batch($1::jsonb)',
+    [JSON.stringify(events.map(({ event }) => ({
+      execution_id: event.executionId, connection_id: event.connectionId ?? null, source_sequence: event.sequence,
+    })))])).rows[0]!
+  const batch = allocateEvents(events, saved.allocators, saved.events)
   if (!batch.inserts.length) return batch.results
+  const changedExecutions = new Set(batch.inserts.map(row => row.execution_id))
   await sql.query(`with proposed as materialized (
       select * from jsonb_to_recordset($2::jsonb)
         as p(ordinal integer,execution_id text,sequence integer,record jsonb,connection_id text,source_sequence integer)
@@ -107,7 +95,8 @@ export async function appendNormalizedNativeEvents(sql: GraphTransactionSql,
         'item/agentMessage/delta','item/commandExecution/outputDelta','item/fileChange/outputDelta',
         'item/reasoning/textDelta','item/reasoning/summaryTextDelta','item/reasoning/summaryPartAdded',
         'item/mcpToolCall/progress','thread/tokenUsage/updated','account/rateLimits/updated')
-      order by p.ordinal`, [JSON.stringify([...batch.next].map(([id, next]) => ({ id, next_sequence: String(next) }))),
+      order by p.ordinal`, [JSON.stringify([...batch.next].filter(([id]) => changedExecutions.has(id))
+      .map(([id, next]) => ({ id, next_sequence: String(next) }))),
     JSON.stringify(batch.inserts)])
   return batch.results
 }
