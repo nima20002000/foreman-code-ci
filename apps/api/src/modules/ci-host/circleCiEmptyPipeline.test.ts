@@ -96,8 +96,8 @@ it('keeps a running workflow owned while its jobs are not yet listed', async () 
   expect(await f.provider.cancel(run)).toBe(false)
 })
 
-it.each([[], [{ type: 'config', message: 'Invalid workflow configuration' }]])(
-  'settles cancellation of an errored pipeline without jobs or an active-workflow cancellation', async errors => {
+it.each([{ errors: [] }, { errors: [{ type: 'config', message: 'Invalid workflow configuration' }] }])(
+  'settles cancellation of an errored pipeline without jobs or an active-workflow cancellation', async ({ errors }) => {
     const f = providerFixture()
     f.control.state = 'errored'
     f.control.errors = errors
