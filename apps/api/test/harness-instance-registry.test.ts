@@ -17,7 +17,7 @@ describe('configured harness instances', () => {
     }))
     registry.reload(profiles)
     const pinned = registry.select(profiles[0]!.instanceId)
-    const added = { ...profiles[0]!, instanceId: 'configuration-check' }
+    const added = { ...structuredClone(profiles[0]!), instanceId: 'configuration-check' }
     registry.reload([...structuredClone(profiles), added])
     expect(decodes).toBe(171)
     expect(registry.select(profiles[0]!.instanceId)).toBe(pinned)

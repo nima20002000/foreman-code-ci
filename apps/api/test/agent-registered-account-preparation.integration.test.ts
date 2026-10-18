@@ -52,6 +52,7 @@ it.skipIf(!postgresEnabled)('creates a registered-account Agent through MCP with
     const path = join(root, 'qualification.json')
     writeRecord(path, { version: 1, records: [record] })
     let refreshes = 0
+    const discoveryAccountLocks: boolean[] = []
     const selection = createProductionAccountSelection({ path,
       managedPaths: () => ({ homePath: root, userHome: root }),
       models: async () => { throw new Error('Model discovery is outside this account fixture') },
@@ -63,6 +64,7 @@ it.skipIf(!postgresEnabled)('creates a registered-account Agent through MCP with
             and database=(select oid from pg_database where datname=current_database())
             and classid=((hashtext($1)::bigint >> 32) & 4294967295)
             and objid=(hashtext($1)::bigint & 4294967295)) as held`, [await repository.key()])
+        discoveryAccountLocks.push(result.rows[0]!.held)
         expect(result.rows[0]!.held, 'Native discovery must release the account transaction').toBe(false)
         refreshes++
       },
@@ -81,7 +83,8 @@ it.skipIf(!postgresEnabled)('creates a registered-account Agent through MCP with
       await accounts.resolve('codex', accountId)
       return qualifyConfiguration(configuration)
     } }, new PostgresSettingsRepository(f.db.pool), f.commands, root)
-    ;(f.services as OperatorServices).extensions!.agents = new OperatorAgentMutationService(f.db.pool, f.commands, harnesses,
+    const services = f.services as OperatorServices
+    services.extensions!.agents = new OperatorAgentMutationService(f.db.pool, f.commands, harnesses,
       undefined, new ProviderAccountConfigurationService(accounts))
     const workspaceId = f.f.scope.workspaceId
     const input = { workspaceId, agentId: randomUUID(), commandId: randomUUID(), name: 'Registered Agent',
@@ -92,6 +95,7 @@ it.skipIf(!postgresEnabled)('creates a registered-account Agent through MCP with
     await expectMcpAccessDenied(reader.callTool({ name: 'agent_create', arguments: input }))
     expect(refreshes).toBe(0)
     const response = await f.client.callTool({ name: 'agent_create', arguments: input })
+    expect(discoveryAccountLocks, 'Native discovery must run without account locks').not.toContain(true)
     expect(response.isError, JSON.stringify(response)).not.toBe(true)
     const created = AgentMutationResultSchema.parse(decodeMcpToolResult(response))
     expect(refreshes).toBeGreaterThan(0)
