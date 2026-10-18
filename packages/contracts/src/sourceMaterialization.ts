@@ -78,8 +78,6 @@ export const MaterializationReceiptSchema = z.object({
   verifiedManifestDigest: SourceHashSchema, verifiedEntries: z.number().int().nonnegative(),
   verifiedBytes: z.number().int().nonnegative(), verifiedAt: z.string().datetime(),
   claimScope: z.literal('execution').optional(),
-  /** Original directory owner when a serialized node turn retains its working files. */
-  retainedTree: z.object({ materializationId: z.uuid(), executionId: IdSchema }).strict().optional(),
   sharedTree: z.object({ id: z.uuid(), referenceIdentity: RootBindingSchema.shape.filesystem }).strict().optional(),
   worktree: SourceWorktreeRequestSchema.extend({
     commit: z.string().regex(/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/),
@@ -88,11 +86,6 @@ export const MaterializationReceiptSchema = z.object({
   }).strict().optional(),
   localTreeIdentity: z.object({ device: z.string().regex(/^\d+$/), inode: z.string().regex(/^\d+$/), mountId: z.string().regex(/^\d+$/) }).strict(),
 }).strict().superRefine((value, context) => {
-  if (value.retainedTree && (value.quota || !value.sharedTree || value.claimScope !== 'execution'
-    || value.retainedTree.materializationId === value.materializationId)) {
-    context.addIssue({ code: 'custom', path: ['retainedTree'],
-      message: 'Retained node directories require a separate execution claim without a Job quota.' })
-  }
   if (value.sharedTree && value.claimScope !== 'execution') {
     context.addIssue({ code: 'custom', path: ['sharedTree'], message: 'Shared working trees require an execution claim.' })
   }

@@ -31,8 +31,6 @@ function fixture(t) {
   }
   const calls = join(root, 'calls.jsonl')
   writeFileSync(calls, '')
-  writeFileSync(join(bin, 'corepack'), '#!/bin/sh\n[ "$1" = pnpm ] || exit 2\nshift\nexec pnpm "$@"\n',
-    { mode: 0o755 })
   writeFileSync(join(bin, 'pnpm'), `#!${process.execPath}
 const { appendFileSync, mkdirSync, writeFileSync } = require('node:fs')
 const args = process.argv.slice(2)

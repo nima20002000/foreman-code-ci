@@ -24,8 +24,7 @@ import { LocalProviderCredentials } from './localCredentials.js'
 import { NativeProviderAccountCommands } from './nativeCommands.js'
 import { NativeProviderAccountOperations } from './nativeOperations.js'
 import { NativeAccountJournal } from './nativeJournal.js'
-import { createProductionAccountSelection, AccountIsolationQualificationsSchema,
-  type AccountIsolationQualification } from './productionSelection.js'
+import { createProductionAccountSelection, AccountIsolationQualificationsSchema } from './productionSelection.js'
 import { assertWorkerProviderAccountBinding, workerProviderAccountResolver, type WorkerAccountOperationPorts } from './workerOperations.js'
 
 /** Opens only installer-qualified account support; account roots and native history remain on this Worker. */
@@ -69,33 +68,32 @@ export function createInstalledWorkerAccounts(input: {
     if (binding.profileRef === binding.accountId) await credentials.assertAvailable(binding.accountId)
     return { account, ...paths }
   }
-  const validateProfile = async (record: AccountIsolationQualification) => {
-    const binding = input.current()
-    assertWorkerProviderAccountBinding({ kind: 'slot', accountId: randomUUID(), provider: record.provider,
-      target: record.target, profileRef: 'installation-check', bindingRevision: 1, subject: null }, binding)
-    const inspection = await (record.provider === 'codex' ? inspectInstalledCodex : inspectInstalledClaude)({
-      binding, configuration: input.configuration, environment: process.env, cwd: input.stateDirectory,
-      signal: AbortSignal.timeout(15_000),
-    })
-    if (!isDeepStrictEqual(binding, input.current()) || !inspection.currentTarget
-      || !isDeepStrictEqual(inspection.currentTarget.target, record.override.target)) {
-      throw new DomainError('PROVIDER_ACCOUNT_UNQUALIFIED', 'The actual Worker executable no longer matches isolation qualification.', 409)
-    }
-    const installation = inspection.currentTarget.installation
-    if ('sdk' in inspection.currentTarget) sdkEntrypoints.set(record.override.instanceId, inspection.currentTarget.sdk.entrypoint)
-    configured.set(record.override.instanceId, { instanceId: record.override.instanceId,
-      instanceRevision: record.override.instanceRevision, driverId: record.provider,
-      enabled: record.override.enabled, configuration: record.override.configuration })
-    instances.reload([...configured.values()])
-    const installed: HarnessInstallationRecord = { ...installation,
-      launcher: { ...installation.launcher, payloadFingerprints: installation.launcher.payloadFingerprints ?? [] } }
-    installations.refresh([...installations.list().filter(value => value.harnessInstallationId !== installed.harnessInstallationId), installed])
-    selections.set(record.qualificationId, installations.pin({ instanceId: record.override.instanceId,
-      hostRef: installation.hostRef, harnessInstallationId: installation.harnessInstallationId,
-      environmentGeneration: installation.environmentGeneration, connectionGeneration: installation.connectionGeneration }))
-  }
   const selection = createProductionAccountSelection({ path: qualificationPath, managedPaths: id => credentials.paths(id),
-    validate: validateProfile, prepareProfilePaths: validateProfile,
+    async validate(record) {
+      const binding = input.current()
+      assertWorkerProviderAccountBinding({ kind: 'slot', accountId: randomUUID(), provider: record.provider,
+        target: record.target, profileRef: 'installation-check', bindingRevision: 1, subject: null }, binding)
+      const inspection = await (record.provider === 'codex' ? inspectInstalledCodex : inspectInstalledClaude)({
+        binding, configuration: input.configuration, environment: process.env, cwd: input.stateDirectory,
+        signal: AbortSignal.timeout(15_000),
+      })
+      if (!isDeepStrictEqual(binding, input.current()) || !inspection.currentTarget
+        || !isDeepStrictEqual(inspection.currentTarget.target, record.override.target)) {
+        throw new DomainError('PROVIDER_ACCOUNT_UNQUALIFIED', 'The actual Worker executable no longer matches isolation qualification.', 409)
+      }
+      const installation = inspection.currentTarget.installation
+      if ('sdk' in inspection.currentTarget) sdkEntrypoints.set(record.override.instanceId, inspection.currentTarget.sdk.entrypoint)
+      configured.set(record.override.instanceId, { instanceId: record.override.instanceId,
+        instanceRevision: record.override.instanceRevision, driverId: record.provider,
+        enabled: record.override.enabled, configuration: record.override.configuration })
+      instances.reload([...configured.values()])
+      const installed: HarnessInstallationRecord = { ...installation,
+        launcher: { ...installation.launcher, payloadFingerprints: installation.launcher.payloadFingerprints ?? [] } }
+      installations.refresh([...installations.list().filter(value => value.harnessInstallationId !== installed.harnessInstallationId), installed])
+      selections.set(record.qualificationId, installations.pin({ instanceId: record.override.instanceId,
+        hostRef: installation.hostRef, harnessInstallationId: installation.harnessInstallationId,
+        environmentGeneration: installation.environmentGeneration, connectionGeneration: installation.connectionGeneration }))
+    },
     pin(record) {
       const selected = selections.get(record.qualificationId)
       if (!selected) {

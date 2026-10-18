@@ -1,10 +1,9 @@
 import { NativeSessionReferenceSchema, type HarnessExecution } from '@foreman-code/contracts'
 import { sameWorkflowValue } from '@foreman-code/contracts/wave25'
 import { RemoteOperationReceiptSchema } from '@foreman-code/contracts/remote-execution'
-import type { AcceptedNodePlacement } from '@foreman-code/contracts/node-placement'
 import { beforeGraphCommit, type GraphSqlClient, type GraphTransactionSql } from '../run-graph/connection.js'
 import { readReconciledDispatchIntent } from '../runs/remote/persistence.js'
-import { readExecutionPlacement, readExecutionPlacements } from '../placement/persistence.js'
+import { readExecutionPlacement } from '../placement/persistence.js'
 import { remoteReviewerPolicy, assertRemoteReviewerReceipt } from '../placement/remoteReviewerAuthority.js'
 import { requireReviewerCredential } from './reviewerCredential.js'
 import { DomainError } from '../errors.js'
@@ -36,16 +35,6 @@ export async function readRetainedRemoteReviewer(sql: GraphSqlClient, execution:
   return { generation: retained.generation, principalId: retained.principalId, session: retained.session }
 }
 
-export async function readRetainedRemoteReviewers(sql: GraphSqlClient, executions: readonly HarnessExecution[]) {
-  const placements = await readExecutionPlacements(sql, executions.map(execution => execution.id))
-  const retained = []
-  for (const execution of executions) {
-    const reviewer = await readRemoteReviewerWithPlacement(sql, execution, 'live', placements.get(execution.id))
-    if (reviewer) retained.push(reviewer)
-  }
-  return retained
-}
-
 /** A saved candidate grants no review access until authenticated Worker attachment refreshes its lease. */
 export function readRecoverableRemoteReviewer(sql: GraphSqlClient, execution: HarnessExecution) {
   return readRemoteReviewer(sql, execution, 'recovery')
@@ -53,11 +42,6 @@ export function readRecoverableRemoteReviewer(sql: GraphSqlClient, execution: Ha
 
 async function readRemoteReviewer(sql: GraphSqlClient, execution: HarnessExecution, purpose: 'live' | 'recovery') {
   const placement = await readExecutionPlacement(sql, execution.id)
-  return readRemoteReviewerWithPlacement(sql, execution, purpose, placement)
-}
-
-async function readRemoteReviewerWithPlacement(sql: GraphSqlClient, execution: HarnessExecution,
-  purpose: 'live' | 'recovery', placement: AcceptedNodePlacement | undefined) {
   if (placement?.hostRef.kind !== 'device') return undefined
   const row = (await sql.query<{ receipt: unknown }>(`select r.receipt from remote_execution_receipts r
     join execution_dispatch_intents i using(operation_id) where i.execution_id=$1`, [execution.id])).rows[0]
