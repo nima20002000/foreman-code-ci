@@ -16,6 +16,7 @@ import type { WorkflowNativeVerificationPort } from '../interactions/workflowNat
 import { WorkflowNativeProofServices } from './workflowNativeProof.js'
 import { assertSettlementLocked } from './repeatSettlementServices.js'
 import { readRepeatExecutionLocked } from './repeatPostgres.js'
+import { readRepeatExecutionsLocked } from './repeatExecutionRead.js'
 import { readAcceptedRepeatRunLocked } from './repeatStartRead.js'
 import { assertRepeatSource, repeatDigest, sameRepeatValue, type RepeatSource } from './repeatResolution.js'
 import type { RepeatRepositoryServices } from './repeatRepositoryHost.js'
@@ -27,7 +28,7 @@ import { hasExecutionRetryBudget, isTransientExecutionResult } from './execution
 import type { ApprovalPostgresSaver } from '../../infrastructure/approvalCheckpointSaver.js'
 import { lockInteraction } from '../interactions/wave25/context.js'
 import { assertSavedPendingApprovalOriginalLocked } from '../interactions/nativeApprovalProof.js'
-import { readRetainedRemoteReviewer } from '../interactions/retainedRemoteReviewer.js'
+import { readRetainedRemoteReviewers } from '../interactions/retainedRemoteReviewer.js'
 
 export interface WorkflowRestartApprovals {
   saver: ApprovalPostgresSaver
@@ -159,11 +160,9 @@ export async function assertWorkflowRunSettlementLocked(sql: GraphTransactionSql
       await assertSettlementLocked(sql, run, ids, owner)
       if (intent === 'success') {
         const snapshot = await readAcceptedRepeatRunLocked(sql, run.id)
-        for (const id of ids) {
-          const stored = await readRepeatExecutionLocked(sql, snapshot, id)
-          const reviewer = await readRetainedRemoteReviewer(sql, stored.execution)
-          if (reviewer) retainedPrincipals.push(reviewer.principalId)
-        }
+        const executions = await readRepeatExecutionsLocked(sql, snapshot, ids)
+        const reviewers = await readRetainedRemoteReviewers(sql, executions.map(stored => stored.execution))
+        retainedPrincipals.push(...reviewers.map(reviewer => reviewer.principalId))
       }
     })
   }
@@ -207,25 +206,31 @@ export async function completeRunLocked(sql: GraphTransactionSql, suppliedRun: A
       workflowVersionId: version.id, executionSemanticsVersion: 3 as const }
     const outputs: Array<{ nodeId: string; executionId: string; result: NonNullable<ExecutionResult['output']> | null }> = []
     const activationIds = new Set<string>()
-    for (const terminal of terminals) {
-      const stored = await readRepeatExecutionLocked(sql, snapshot, terminal.execution.executionId)
+    const ids = terminals.map(terminal => terminal.execution.executionId)
+    const storedTerminals = await readRepeatExecutionsLocked(sql, snapshot, ids)
+    const acceptedRows = await sql.query<{ execution_id: string; result_digest: string; result_json: string }>(
+      'select execution_id,result_digest,result_json from run_repeat_results where run_id=$1 and execution_id=any($2::text[])',
+      [run.id, ids])
+    const acceptedById = new Map(acceptedRows.rows.map(row => [row.execution_id, row]))
+    const workRows = version.definition.handoffs ? (await sql.query<{
+      execution_id: string; activation_id: string; result_digest: string
+    }>(`select x.execution_id,x.activation_id,x.result_digest from run_work_results x
+        join run_work_activations a on a.run_id=x.run_id and a.activation_id=x.activation_id
+      where x.run_id=$1 and x.execution_id=any($2::text[]) and a.state='completed'`, [run.id, ids])).rows : []
+    const workById = new Map(workRows.map(row => [row.execution_id, row]))
+    for (const [index, terminal] of terminals.entries()) {
+      const stored = storedTerminals[index]!
       assertRepeatSource(version, scope, terminal, stored.execution, stored.accepted)
       AcceptedCurrentNodeResultSchema.parse(stored.execution.result)
       if (version.definition.handoffs) {
-        const work = (await sql.query<{ activation_id: string; result_digest: string }>(`
-          select x.activation_id,x.result_digest from run_work_results x
-            join run_work_activations a on a.run_id=x.run_id and a.activation_id=x.activation_id
-          where x.run_id=$1 and x.execution_id=$2 and a.state='completed'`,
-        [run.id, stored.execution.id])).rows[0]
+        const work = workById.get(stored.execution.id)
         if (!work || work.activation_id !== stored.workActivationId
           || work.result_digest !== terminal.acceptedResultDigest || activationIds.has(work.activation_id)) {
           return conflict('WORK_RESULT_RECEIPT_MISSING')
         }
         activationIds.add(work.activation_id)
       }
-      const accepted = (await sql.query<{ result_digest: string; result_json: string }>(
-        'select result_digest,result_json from run_repeat_results where run_id=$1 and execution_id=$2',
-        [run.id, stored.execution.id])).rows[0]
+      const accepted = acceptedById.get(stored.execution.id)
       if (!accepted || accepted.result_digest !== terminal.acceptedResultDigest
         || repeatDigest(JSON.parse(accepted.result_json), 64 * 1024) !== accepted.result_digest) return conflict('REPEAT_INPUT_NOT_ACCEPTED')
       outputs.push({ nodeId: stored.ref.nodeId, executionId: stored.execution.id, result: stored.execution.result!.output ?? null })
