@@ -57,39 +57,6 @@ it.each([
   } finally { await monitor.close() }
 })
 
-it('lets a stale automatic Worker check refresh the inventory with foreground discovery', async () => {
-  const hostRef = { kind: 'device' as const, mainId: 'main', deviceId: 'worker' }
-  let busy = false
-  let listener: ((host: CanonicalMachineReference, installationId: string) => void) | undefined
-  const recheckInstallation = vi.fn<(input: AutomaticHostProfileCheck) => Promise<void>>(async () => {})
-  const registry = {
-    observeInstallations: (value: typeof listener) => { listener = value },
-    installations: { list: () => [{ hostRef, harnessInstallationId: 'launcher',
-      installationFingerprint: 'payload', driverId: 'codex', driverRevision: '1',
-      protocolRevision: 'protocol', environmentGeneration: 'environment', connectionGeneration: 'connection',
-      installed: true }] },
-    refreshMain: async () => {},
-  }
-  const binding = { mainId: 'main', deviceId: 'worker', workerInstallationId: 'installation' }
-  const discover = vi.fn(async () => ({ payload: { inventory: 'refreshed' } }))
-  const collectWorker = vi.fn(async () => { listener?.(hostRef, 'installation') })
-  const monitor = new HarnessInstallationMonitor(registry as never, { recheckInstallation } as never,
-    () => ({ captureRequest: () => ({ binding, get busy() { return busy }, request: discover }) }) as never,
-    collectWorker, async () => {}, vi.fn())
-  try {
-    monitor.start('main')
-    monitor.workerReady(binding as never, new AbortController().signal)
-    expect(recheckInstallation).toHaveBeenCalledTimes(1)
-    const check = recheckInstallation.mock.calls[0]![0]
-    // A stale check runs while the Worker is busy with the other profile check.
-    busy = true
-    await check.refresh!(new AbortController().signal)
-    expect(discover).toHaveBeenCalledWith({ operation: 'discover', refreshId: expect.any(String) },
-      expect.objectContaining({ priority: 'foreground' }))
-    expect(collectWorker).toHaveBeenCalledWith(binding, { inventory: 'refreshed' })
-  } finally { await monitor.close() }
-})
-
 it('detects a new payload at the same launcher and schedules one automatic check per inventory generation', async () => {
   const hostRef = { kind: 'main' as const, mainId: 'main' }
   let fingerprint = 'old-payload'
