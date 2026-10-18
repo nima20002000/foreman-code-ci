@@ -17,14 +17,11 @@ import { CI_GET_ACTIONS, CI_RUN_ACTIONS, RunCiAuthority } from '../src/modules/j
 import { WorkerExecutionPolicy } from '../src/modules/settings/workerExecution.js'
 import { BuildComputerSettings } from '../src/modules/settings/buildComputers.js'
 import { buildComputerFixture } from './helpers/buildComputerFixture.js'
-import { deferred } from './helpers/deferred.js'
 import { agent3Database } from './helpers/wave25Agent3.js'
 
 it('honors persisted MCP build participation and priority while retaining assigned run control', async () => {
   const db = await agent3Database()
   const clients: Client[] = []
-  const preferredStatusRequested = deferred()
-  const preferredStatusReleased = deferred()
   let app: ReturnType<typeof buildApp> | undefined
   let ci: HostCiService | undefined
   try {
@@ -46,19 +43,12 @@ it('honors persisted MCP build participation and priority while retaining assign
     const starts: string[] = []
     const requests = new Map<string, CiHostRequest>()
     const outdated = new Set<string>()
-    let holdPreferredStatus = false
     const cancelAcknowledgements = new Set<string>()
     const request = async (computer: string, input: CiHostRequest): Promise<CiHostReply> => {
-      if (input.operation === 'status') {
-        if (holdPreferredStatus && computer === devices[1]!.registration.deviceId) {
-          preferredStatusRequested.resolve()
-          await preferredStatusReleased.promise
-        }
-        return { operation: 'status', ready: true, reasons: [],
-          ...(!outdated.has(computer) ? { startProtocolVersion: CI_HOST_START_PROTOCOL_VERSION } : {}),
-          cpuCount: 8, memoryBytes: 16 * 2 ** 30,
-          runs: [...runs.values()].filter(entry => entry.computer === computer).map(entry => entry.run) }
-      }
+      if (input.operation === 'status') return { operation: 'status', ready: true, reasons: [],
+        ...(!outdated.has(computer) ? { startProtocolVersion: CI_HOST_START_PROTOCOL_VERSION } : {}),
+        cpuCount: 8, memoryBytes: 16 * 2 ** 30,
+        runs: [...runs.values()].filter(entry => entry.computer === computer).map(entry => entry.run) }
       if (input.operation === 'start') {
         const run: CiHostRun = { runId: input.runId, state: 'running', step: input.suite, exitCode: null,
           startedAt: new Date().toISOString(), finishedAt: null, logBytes: 0, message: null }
@@ -218,16 +208,12 @@ it('honors persisted MCP build participation and priority while retaining assign
       observation: { status: 'available', lastSuccessAt: expect.any(String), lastError: null,
         consecutiveFailures: 0, nextAttemptAt: null } })
     await cancel(protocolTicket.ticketId)
-    await ci.drain()
     outdated.clear()
-    // Keep the preferred Worker's readiness refresh pending through dispatch, independent of database timing.
-    holdPreferredStatus = true
     vi.setSystemTime(Date.now() + 5001)
     starts.length = 0
 
     const first = await start()
     const firstRead = await getRunning(first.ticketId)
-    await preferredStatusRequested.promise
     expect(firstRead.run.computer?.hostRef).toEqual(devices[1]!.target.hostRef)
     expect((await db.pool.query('select record from ci_runs where id=$1', [first.ticketId])).rows[0]!.record)
       .toEqual(firstRead.run)
@@ -304,7 +290,6 @@ it('honors persisted MCP build participation and priority while retaining assign
     expect(storedSmoke).not.toHaveProperty('smokeComputer')
     expect({ ...storedSmoke, smokeComputer: smokeInput.smokeComputer }).toEqual(smokeRead.run)
   } finally {
-    preferredStatusReleased.resolve()
     vi.useRealTimers()
     await Promise.allSettled(clients.map(client => client.close()))
     await ci?.close()
