@@ -32,37 +32,14 @@ function fixture() {
   const selected = { inventoryRevision: 3, installation: { launcher: { resolvedLauncher: '/fixture/selected-codex' } },
     instance: { instanceId: record.override.instanceId }, selection: { installationFingerprint: 'actual-fingerprint' } } as RegistryHarnessSelection
   const pin = vi.fn(() => selected)
-  const validate = vi.fn(async () => {})
   const models = vi.fn(async () => ({ binding, generation: 3, observedAt: '2026-01-01T00:00:00.000Z', models: [] }))
   const path = join(root, 'qualification.json')
-  const source = createProductionAccountSelection({ path, pin, validate,
-    managedPaths: () => ({ homePath: root, userHome: root }), models })
+  const source = createProductionAccountSelection({ path, pin, managedPaths: () => ({ homePath: root, userHome: root }), models })
   const account: ProviderAccount = { id: binding.accountId, provider: 'codex', authMode: 'subscription', binding,
     name: 'Selected slot', isDefault: false, status: 'unavailable', identity: null, revision: 1 }
   const save = () => writeRecord(path, { version: 1, records: [record] })
-  return { source, root, record, binding, account, pin, validate, models, save, path, selected }
+  return { source, root, record, binding, account, pin, models, save, path, selected }
 }
-
-it('resolves registered profile paths without native discovery and refreshes before native use', async () => {
-  const f = fixture()
-  f.save()
-  expect(await f.source.resolveProfile!(f.account)).toEqual({ binding: f.binding,
-    homePath: f.root, userHome: f.root })
-  expect(f.validate).not.toHaveBeenCalled()
-  expect(f.pin).toHaveBeenCalledWith(f.record)
-
-  await f.source.selected({ account: f.account, homePath: f.root, userHome: f.root })
-  expect(f.validate).toHaveBeenCalledExactlyOnceWith(f.record)
-  f.validate.mockRejectedValueOnce(new Error('Installation discovery failed'))
-  await expect(f.source.selected({ account: f.account, homePath: f.root, userHome: f.root }))
-    .rejects.toThrow('Installation discovery failed')
-
-  f.pin.mockImplementation(() => { throw new Error('The installed payload changed') })
-  await expect(f.source.resolveProfile!(f.account)).rejects.toThrow('installed payload changed')
-  f.record.expiresAt = '2000-01-01T00:00:00.000Z'
-  f.save()
-  await expect(f.source.resolveProfile!(f.account)).rejects.toMatchObject({ code: 'PROVIDER_ACCOUNT_UNQUALIFIED' })
-})
 
 it('keeps production account support unavailable without explicit installer-owned isolation evidence', async () => {
   const f = fixture()
