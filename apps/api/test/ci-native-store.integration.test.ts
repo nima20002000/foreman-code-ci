@@ -12,6 +12,17 @@ const execute = promisify(execFile)
 const scripts = fileURLToPath(new URL('../../../scripts/', import.meta.url))
 const fixture = nativeStoreFixtures()
 
+it('uses provisioned pinned pnpm without an inherited npm_execpath', async () => {
+  const f = await fixture('packages')
+  try {
+    expect(f.environment.npm_execpath).toBeUndefined()
+    const result = await execute('corepack', ['pnpm', '--version'], { cwd: f.source, env: f.environment })
+    expect(result.stdout.trim()).toBe('11.27.0')
+  } finally {
+    await f.close()
+  }
+})
+
 for (const entry of ['packages', 'warm setup'] as const) {
   it(`${entry} repairs only the native package when unrelated tarballs have been evicted`, async () => {
     const f = await fixture(entry)
