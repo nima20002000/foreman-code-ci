@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { assertRequiredNativePayloads } from './ci-native-payloads.mjs'
+import { writeCiPackagePaths } from './ci-package-paths.mjs'
 
 function nativePayloadsReady(root) {
   try {
@@ -40,6 +41,7 @@ function install(root) {
   const key = packagesCacheKey(root)
   const stamp = join(root, 'node_modules/.ci-packages-key')
   const restored = join(root, '.logs/ci-packages-restored')
+  const paths = { storeDir: join(root, 'node_modules/.pnpm-store'), cacheDir: join(root, '.logs/pnpm-metadata') }
   rmSync(restored, { force: true })
   const complete = ['node_modules/.pnpm', 'node_modules/.modules.yaml',
     ...workspaceDirectories(root).map(directory => `${directory}/node_modules`)]
@@ -51,6 +53,7 @@ function install(root) {
     }
     mkdirSync(join(root, '.logs'), { recursive: true })
     writeFileSync(restored, key)
+    writeCiPackagePaths(root, paths)
     console.log('[ci-cache] installed packages reused')
     return 0
   }
@@ -67,6 +70,7 @@ function install(root) {
   if (status === 0) {
     if (!nativePayloadsReady(root)) return 1
     writeFileSync(stamp, key)
+    writeCiPackagePaths(root, paths)
   }
   return status
 }

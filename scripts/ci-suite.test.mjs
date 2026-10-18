@@ -56,6 +56,11 @@ function runSuite(t, suite, failCommand = '', scope = 'full', action = '', insta
   mkdirSync(cache, { recursive: true })
   const directory = mkdtempSync(join(cache, 'ci-suite-'))
   t.after(() => rmSync(directory, { recursive: true, force: true }))
+  mkdirSync(join(directory, 'apps/api'), { recursive: true })
+  mkdirSync(join(directory, 'scripts'))
+  for (const reporter of ['ci-progress-reporter.mjs', 'ci-node-test-reporter.mjs']) {
+    writeFileSync(join(directory, 'scripts', reporter), 'export {}\n')
+  }
   const callsFile = join(directory, 'calls.jsonl')
   writeFileSync(callsFile, '')
   writeFileSync(join(directory, 'pnpm'), `#!${process.execPath}
@@ -99,7 +104,7 @@ if (args.at(-1) === process.env.FAIL_COMMAND) process.exit(9)
 `, { mode: 0o755 })
   }
   if (selection && !selection.missingSelector) {
-    mkdirSync(join(directory, 'scripts'))
+    mkdirSync(join(directory, 'scripts'), { recursive: true })
     writeFileSync(join(directory, 'scripts/ci-affected.mjs'), 'export {}')
     writeFileSync(join(directory, 'git'), `#!${process.execPath}
 require('node:fs').appendFileSync(process.env.CALLS_FILE, JSON.stringify(['git', ...process.argv.slice(2)]) + '\\n')

@@ -1,9 +1,11 @@
 import { execFile } from 'node:child_process'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { parse, stringify } from 'yaml'
 import { cachedTestFixture, testFixtureCacheRoot } from '../../../../scripts/test-fixture-cache.mjs'
+import { readCiPackagePaths } from '../../../../scripts/ci-package-paths.mjs'
 
 interface PackageLock {
   lockfileVersion: string
@@ -14,15 +16,6 @@ interface PackageLock {
 }
 
 const execute = promisify(execFile)
-
-async function prefetchedStoreArguments(): Promise<string[]> {
-  if (process.env.PNPM_CONFIG_STORE_DIR || process.env.npm_config_store_dir) return []
-  const modules = parse(await readFile(new URL('../../../../node_modules/.modules.yaml', import.meta.url), 'utf8')) as {
-    storeDir?: string
-  }
-  if (!modules.storeDir) throw new Error('The CI pnpm store is unavailable. Complete CI dependency setup before schema export.')
-  return ['--store-dir', modules.storeDir]
-}
 
 /** The schema exporter needs its platform package even when pnpm skips a missing optional dependency. */
 export async function pinnedProviderExporter(launcherVersion: string): Promise<string> {
@@ -50,10 +43,11 @@ export async function pinnedProviderExporter(launcherVersion: string): Promise<s
     [nativeName]: { specifier: `npm:${nativeKey}`, version: nativeKey },
   }
   const providerKeys = new Set([providerKey, ...Object.values(lock.snapshots[providerKey]!.optionalDependencies!)])
-  const storeArguments = await prefetchedStoreArguments()
-  const metadata = process.env.PNPM_CONFIG_CACHE_DIR ?? process.env.npm_config_cache_dir
-    ?? process.env.FOREMAN_CODE_TEST_PNPM_CACHE_DIR
-  if (!metadata) throw new Error('CI publication metadata is unavailable. Complete CI dependency setup before schema export.')
+  const paths = readCiPackagePaths(fileURLToPath(new URL('../../../../', import.meta.url)))
+  const environment = { ...process.env,
+    PNPM_CONFIG_STORE_DIR: process.env.PNPM_CONFIG_STORE_DIR ?? paths.storeDir,
+    PNPM_CONFIG_CACHE_DIR: process.env.PNPM_CONFIG_CACHE_DIR ?? paths.cacheDir,
+  }
   const installation = await cachedTestFixture(testFixtureCacheRoot(), 'provider-exporter',
     [...inputs, platform, process.arch, process.version, 'offline-prefetched-store'], async directory => {
       const manifest = { private: true, packageManager,
@@ -70,8 +64,8 @@ export async function pinnedProviderExporter(launcherVersion: string): Promise<s
         snapshots: Object.fromEntries([...providerKeys].map(key => [key, key === nativeKey ? {} : lock.snapshots[key]])),
       }))
       console.info('[provider-schemas] Installing the locked exporter offline from the CI pnpm store.')
-      await execute('corepack', ['pnpm', 'install', '--frozen-lockfile', '--offline', ...storeArguments], {
-        cwd: directory, env: { ...process.env, PNPM_CONFIG_CACHE_DIR: metadata },
+      await execute('corepack', ['pnpm', 'install', '--frozen-lockfile', '--offline'], {
+        cwd: directory, env: environment,
       })
     })
   return join(installation, 'node_modules/@openai/codex/bin/codex.js')
