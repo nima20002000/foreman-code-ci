@@ -199,10 +199,7 @@ interface Retained {
  * Retention rule: Main reads a reply right after it arrives (events of a streamed history as it yields them) and can
  * ACK it only inside the observation window it was served. A reply Main never read (an empty streaming poll) or whose
  * served window has passed can no longer be needed, so it yields its slot, oldest first, when retention is full.
- * Replies Main may still read or ACK are never evicted; a store full of them refuses the new reply loudly.
- * The one exception is cleanup: a reply of an operation that is being stopped or closed (its cancel, stop or closure
- * readout) frees capacity, so it displaces that same operation's oldest observation instead of being refused. Main
- * re-reads a displaced observation as an expired reply; other operations' replies are never displaced. */
+ * Replies Main may still read or ACK are never evicted; a store full of them refuses the new reply loudly. */
 export class InstalledWorkflowPhysicalReadouts {
   private readonly snapshots: WorkflowPhysicalReadoutSnapshots
 
@@ -239,18 +236,15 @@ export class InstalledWorkflowPhysicalReadouts {
       }
     }
   }
-  private evictOldest(except: Retained | undefined, operationId?: string, cleanupOperationId?: string) {
+  private evictOldest(except: Retained | undefined, operationId?: string) {
     const now = this.now()
-    let oldest: Retained | undefined, displaced: Retained | undefined
+    let oldest: Retained | undefined
     for (const [operation, entries] of this.originals) {
       if (operationId !== undefined && operation !== operationId) continue
       for (const retained of entries.values()) {
-        if (retained === except) continue
-        if (retained.protectedUntil <= now && (!oldest || retained.order < oldest.order)) oldest = retained
-        if (operation === cleanupOperationId && (!displaced || retained.order < displaced.order)) displaced = retained
+        if (retained !== except && retained.protectedUntil <= now && (!oldest || retained.order < oldest.order)) oldest = retained
       }
     }
-    oldest ??= displaced
     if (!oldest) throw new DomainError('REMOTE_NATIVE_PHYSICAL_BACKPRESSURE',
       'Original physical source retention is full of replies Main may still read or acknowledge.', 503)
     this.drop(oldest)
@@ -263,7 +257,7 @@ export class InstalledWorkflowPhysicalReadouts {
   }
   clear() { this.originals.clear();this.events.clear();this.results.clear();this.snapshots.clear(); this.byteSize = 0 }
   remember(input: { readout: RemoteWorkflowPhysicalReadout; placement: AcceptedNodePlacement; source: WorkflowOriginalNativeSource;
-    leaseExpiresAt: string; cleanup?: boolean; assertOwnerCurrent(): Promise<void>; assertCurrent(): Promise<void>; observe(): NativeLaunchObservation; closure(): NativeLaunchObservation | null;
+    leaseExpiresAt: string; assertOwnerCurrent(): Promise<void>; assertCurrent(): Promise<void>; observe(): NativeLaunchObservation; closure(): NativeLaunchObservation | null;
     waitForSettlement?: (signal: AbortSignal) => Promise<void> }): void {
     const parsed = RemoteWorkflowPhysicalReadoutSchema.parse(input.readout)
     canonicalGraphJson(input.source, REMOTE_NATIVE_SOURCE_LIMIT)
@@ -316,9 +310,8 @@ export class InstalledWorkflowPhysicalReadouts {
       }
       return size
     }
-    const cleanupOperationId = input.cleanup ? operationId : undefined
-    while (!previous && (this.originals.get(operationId)?.size ?? 0) >= 128) this.evictOldest(undefined, operationId, cleanupOperationId)
-    while (projectedSize() > physicalRetentionLimit) this.evictOldest(previous, undefined, cleanupOperationId)
+    while (!previous && (this.originals.get(operationId)?.size ?? 0) >= 128) this.evictOldest(undefined, operationId)
+    while (projectedSize() > physicalRetentionLimit) this.evictOldest(previous)
     if (previous) this.drop(previous)
     for (const payload of payloads) {
       const original = this.results.get(payload.digest)
