@@ -22,6 +22,8 @@ fi
 # Test commands never inherit where this run's results go: a nested CI fixture would write over them.
 test_results="${TEST_RESULTS_OUTPUT:-}"
 unset TEST_RESULTS_OUTPUT
+selection_output="${CI_SELECTION_OUTPUT:-}"
+unset CI_SELECTION_OUTPUT
 state="${CI_STATE:-${TMPDIR:-/tmp}/foreman-ci-state}"
 # Private-root checks reject group-writable ancestors; cloud images create the home cache with umask 002.
 if [ "${CI_HOST_RUNNER:-0}" != 1 ]; then
@@ -188,7 +190,7 @@ if [ "$scope" = affected ] && [ -z "${SELECTED_FILES:-}" ] && { [ "$SUITE" != in
     fi
     mkdir -p "$state"
     selected_list="$state/selected-files.json"
-    scope="$(node scripts/ci-selection.mjs "$SUITE" "$default_ref" "${CI_PARTITION:-}" "$selected_list")"
+    scope="$(CI_SELECTION_OUTPUT="$selection_output" node scripts/ci-selection.mjs "$SUITE" "$default_ref" "${CI_PARTITION:-}" "$selected_list")"
     if [ "$scope" = full ] && { [ "$SUITE" != integration ] || [ -z "${CI_PARTITION:-}" ]; }; then
       selected_list=''
     fi
@@ -211,6 +213,17 @@ if [ "$scope" = full ] && [ "$SUITE" = integration ] && [ -z "${SLICE:-}" ] && [
 fi
 
 unset CI_SELECTION_COMMIT
+
+if [ -n "$selection_output" ] && [ ! -f "$selection_output" ]; then
+  mkdir -p "$(dirname "$selection_output")"
+  node --input-type=module -e '
+    import { writeFileSync } from "node:fs"
+    const scope = process.argv[1]
+    const reason = scope === "full" ? "Full scope requested; every file in the suite or partition runs."
+      : "Caller supplied the affected files."
+    writeFileSync(process.argv[2], JSON.stringify({ scope, files: [], reason }))
+  ' "$scope" "$selection_output"
+fi
 
 if [ "$scope" = affected ] && [ "$SUITE" != integration ]; then
   case "$SUITE" in
@@ -253,6 +266,11 @@ case "$SUITE" in
   build-other) pnpm -r --filter '!@foreman-code/api' --if-present build ;;
   typecheck|lint|build) pnpm "$SUITE" ;;
   integration)
+    export FOREMAN_CODE_INTEGRATION_COVERAGE=0
+    if [ "$scope" = full ]; then
+      export FOREMAN_CODE_INTEGRATION_COVERAGE=1
+      export FOREMAN_CODE_INTEGRATION_COVERAGE_OUTPUT="$(dirname "$DURATIONS_OUTPUT")/integration-coverage.json"
+    fi
     if [ "${CI_USER_SYSTEMD:-0}" = 1 ] && [ "${CI_HOST_RUNNER:-0}" != 1 ]; then
       source scripts/ci-user-systemd.sh
     fi
