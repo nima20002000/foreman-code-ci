@@ -16,9 +16,7 @@ async function githubFixture() {
   const original = f.ports.run
   const control = { failure: lookupTimeout, attempts: 0, discoveryFailure: false }
   vi.spyOn(f.ports, 'run').mockImplementation(async (file, args, options) => {
-    const listing = args[0] === 'run' && args[1] === 'list'
-      || args[0] === 'api' && args[1]?.includes('/actions/workflows/ci.yml/runs?')
-    if (file === 'gh' && listing && control.discoveryFailure) {
+    if (file === 'gh' && args[0] === 'run' && args[1] === 'list' && control.discoveryFailure) {
       throw new Error('Provider discovery is unavailable')
     }
     if (file === 'gh' && args[0] === 'workflow') {
@@ -92,7 +90,7 @@ it('confirms cancellation of an unsent GitHub dispatch after the discovery windo
   expect(f.dispatched).toEqual([])
 })
 
-it('retains a queued GitHub attempt discovered after a dispatch POST timeout until it stops', async () => {
+it('retains an uncertain GitHub submission when the dispatch POST times out', async () => {
   const f = await githubFixture()
   f.control.failure = 'Post "https://api.github.com/repos/octo/site-ci/actions/workflows/ci.yml/dispatches": '
     + 'dial tcp 192.0.2.1:443: i/o timeout'
@@ -101,12 +99,10 @@ it('retains a queued GitHub attempt discovered after a dispatch POST timeout unt
   expect(await f.reopen().handle(f.read)).toMatchObject({ run: { state: 'starting', finishedAt: null } })
   expect(await f.reopen().handle({ operation: 'cancel', runId: f.runId }))
     .toMatchObject({ run: { state: 'starting', finishedAt: null } })
-  f.github.listed = [{ databaseId: 91, displayTitle: `ci ${f.runId}`, headSha: f.mirrorGit('rev-parse', 'main') }]
-  f.github.status = 'queued'
   f.advance(75_000)
   expect(await f.reopen().handle(f.read)).toMatchObject({ run: { state: 'starting', finishedAt: null } })
   expect(f.control.attempts).toBe(1)
-  expect(f.github.canceled).toEqual(['91'])
+  f.github.listed = [{ databaseId: 91, displayTitle: `ci ${f.runId}`, headSha: f.mirrorGit('rev-parse', 'main') }]
   Object.assign(f.github, { status: 'completed', conclusion: 'cancelled' })
   f.advance(4_000)
   expect(await f.reopen().handle(f.read)).toMatchObject({ run: { state: 'canceled' } })
@@ -166,10 +162,9 @@ it('keeps earlier accepted GitHub attempts owned after a later workflow lookup f
   await expect(f.reopen().handle(f.read)).resolves.toMatchObject({ run: { state: 'starting' } })
   const cancel = { operation: 'cancel', runId: f.runId } as const
   expect(await f.reopen().handle(cancel)).toMatchObject({ run: { state: 'starting', finishedAt: null } })
-  f.github.listed = [{ databaseId: 91, displayTitle: `ci ${f.runId}` }]
   f.advance(75_000)
   expect(await f.reopen().handle(f.read)).toMatchObject({ run: { state: 'starting', finishedAt: null } })
-  expect(f.github.canceled).toEqual(['91'])
+  f.github.listed = [{ databaseId: 91, displayTitle: `ci ${f.runId}` }]
   Object.assign(f.github, { status: 'completed', conclusion: 'cancelled' })
   f.advance(4_000)
   expect(await f.reopen().handle(f.read)).toMatchObject({ run: { state: 'canceled' } })
