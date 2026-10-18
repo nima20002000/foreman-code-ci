@@ -27,7 +27,7 @@ export class IntegrationCoverageStore {
       const saved = await this.read(path)
       const coverage = { ...saved?.coverage }
       for (const [file, files] of Object.entries(parsed.coverage)) {
-        coverage[file] = [...new Set([...(coverage[file] ?? []), ...files])].sort()
+        coverage[file] = [...new Set([...(coverage[file] ?? []), ...files])]
       }
       const staticTests = [...new Set([...(saved?.staticTests ?? []), ...(parsed.staticTests ?? [])])].sort()
       const merged = CiIntegrationCoverageSchema.parse({ ...parsed, coverage, staticTests })
