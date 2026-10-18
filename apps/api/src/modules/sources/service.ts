@@ -43,7 +43,6 @@ import { prepareRunSources } from './runSource.js'
 import { retainRunSource } from './runSourceUse.js'
 import { authorizationReadSnapshot } from '../access/authorizationReadSnapshot.js'
 import { SourceCapacityErrorDetailsSchema } from '@foreman-code/contracts'
-import { retainedNodeReceipt, retainsNodeWorkingTree } from './retainedNodeSource.js'
 
 export type { SourceExecutionHostPort }
 type Transport = 'http' | 'mcp'
@@ -567,8 +566,6 @@ export class PostgresSourceService implements SourceAdmissionPort {
       const workflow = await sql.query('select 1 from execution_dispatch_intents where execution_id=$1 and attempt_id=$2 and operation_id=$3',
         [input.attempt.executionId, input.attempt.attemptId, input.operationId])
       const sharedWritableTree = root.binding.accessMode === 'exclusive-write' && workflow.rowCount === 1
-      const retainedReceipt = workflow.rowCount === 1
-        ? await retainedNodeReceipt(sql, input.attempt.executionId, root.binding) : undefined
       const worktree = sharedWritableTree
         ? await agentWorktree(sql, input.attempt.executionId, source.manifest) : undefined
       const existing = (await sql.query<{ record: unknown; state: string }>('select record,state from source_execution_materializations where execution_id=$1 and attempt_id=$2 for update', [input.attempt.executionId, input.attempt.attemptId])).rows[0]
@@ -577,7 +574,7 @@ export class PostgresSourceService implements SourceAdmissionPort {
         if (record.operationId !== input.operationId || !isDeepStrictEqual(record.receipt.binding, root.binding)
           || record.receipt.placementHash !== input.attempt.placementHash) throw new DomainError('SOURCE_ATTEMPT_CONFLICT', 'Source preparation belongs to another exact execution/attempt.', 409)
         assertWorktreeReceipt(record.receipt, worktree, source.manifest.git?.commit)
-        return { root, source, record, reservation: null, sharedWritableTree, worktree, retainedReceipt }
+        return { root, source, record, reservation: null, sharedWritableTree, worktree }
       }
       const reservedBytes = sourceMaterializationBytes(source.manifest)
       // Worker I/O can outlive admission; keep its cleanup identity with the capacity it owns.
@@ -590,7 +587,7 @@ export class PostgresSourceService implements SourceAdmissionPort {
         physicalClosureConfirmed: false, ...(worktree ? { worktree } : {}),
         ...(workflow.rowCount === 1 ? { preparationKind: 'workflow' as const } : {}) },
       }, capacity ? { capacity } : {})
-      return { root, source, record: null, reservation, sharedWritableTree, worktree, retainedReceipt }
+      return { root, source, record: null, reservation, sharedWritableTree, worktree }
     }, measureCapacity)
     if (state.record) {
       await this.executions.verify(state.record)
@@ -599,9 +596,7 @@ export class PostgresSourceService implements SourceAdmissionPort {
     }
     // No main SQL transaction spans carrier/native filesystem I/O.
     const receipt = await this.executions.prepare(state.source.manifest, state.root, input.attempt,
-      { ...(state.sharedWritableTree ? { sharedWritableTree: true } : {}),
-        ...(state.worktree ? { worktree: state.worktree } : {}),
-        ...(state.retainedReceipt ? { retainedReceipt: state.retainedReceipt } : {}) })
+      state.sharedWritableTree ? { sharedWritableTree: true, ...(state.worktree ? { worktree: state.worktree } : {}) } : undefined)
     if (!isDeepStrictEqual(receipt.binding, state.root.binding) || receipt.executionId !== input.attempt.executionId
       || receipt.attemptId !== input.attempt.attemptId || receipt.placementHash !== input.attempt.placementHash
       || receipt.keyRevision !== input.attempt.keyRevision || receipt.authorizationRevision !== input.attempt.authorizationRevision
@@ -680,17 +675,11 @@ export class PostgresSourceService implements SourceAdmissionPort {
     record = SourceMaterializationRecordSchema.parse(record)
     options?.signal?.throwIfAborted()
     if (record.receipt.worktree) {
-      const previous = (await this.pool.query<{ state: string; record: unknown; run_terminal: boolean | null;
+      const previous = (await this.pool.query<{ state: string; record: unknown;
         worktree_cleanup: RetainedSourceFootprint['worktree'] | null }>(
-        `select m.state,m.record,m.worktree_cleanup,
-          r.execution_state in ('completed','interrupted') as run_terminal
-          from source_execution_materializations m
-          left join harness_executions e on e.id=m.execution_id left join runs r on r.id=e.run_id
-          where m.materialization_id=$1`,
+        'select state,record,worktree_cleanup from source_execution_materializations where materialization_id=$1',
         [record.receipt.materializationId])).rows[0]
-      const firstTerminalCleanup = previous?.run_terminal === true
-        && previous.worktree_cleanup?.removalAttempted !== true
-      if (previous?.state === 'closed' && !firstTerminalCleanup && isDeepStrictEqual(previous.record, record)
+      if (previous?.state === 'closed' && isDeepStrictEqual(previous.record, record)
         && previous.worktree_cleanup?.state === 'retained'
         && Date.parse(previous.worktree_cleanup.nextAttemptAt ?? '') > Date.now()) return
     }
@@ -707,10 +696,7 @@ export class PostgresSourceService implements SourceAdmissionPort {
       const signal = options?.signal ?? AbortSignal.timeout(60_000)
       for (const entry of manifest.entries) await this.store.read(manifest, entry, signal)
     }
-    const retainWorkingTree = await retainsNodeWorkingTree(this.pool, record.receipt.executionId)
-    const footprint = await this.executions.releaseClaim(record, {
-      ...options, ...(retainWorkingTree ? { retainWorkingTree: true } : {}),
-    })
+    const footprint = await this.executions.releaseClaim(record, options)
     const retainedBytes = footprint.retainedBytes + 16 * 1024
     const quotaReclaimed = Boolean(record.receipt.quota && footprint.retainedBytes === 0)
     await this.lifecycle.closed?.(record)
