@@ -83,11 +83,11 @@ function fixture() {
       const source = state.sources.find(row => row.source_id === values[2])
       rows = source ? [{ ...receipt, source_digest: source.source_digest,
         source_semantic_digest: source.semantic_digest }] : []
-    } else if (text.includes('native_event_next_sequence::text')) rows = [{ id: 'execution', next_sequence: state.next }]
-    else if (text.includes('from harness_native_events n join')) {
+    } else if (text.includes('read_harness_native_event_batch')) {
       const inputs = JSON.parse(String(values[0])) as typeof state.events
-      rows = state.events.filter(row => inputs.some(input => input.execution_id === row.execution_id
+      const events = state.events.filter(row => inputs.some(input => input.execution_id === row.execution_id
         && input.connection_id === row.connection_id && input.source_sequence === row.source_sequence))
+      rows = [{ allocators: [{ id: 'execution', next_sequence: state.next }], events }]
     } else if (text.startsWith('with proposed as materialized')) {
       state.next = (JSON.parse(String(values[0])) as { next_sequence: string }[])[0]!.next_sequence
       state.events.push(...JSON.parse(String(values[1])) as typeof state.events)
