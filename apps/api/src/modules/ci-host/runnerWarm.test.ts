@@ -16,12 +16,13 @@ afterEach(async () => {
 })
 
 async function computer({ prepareDatabase = false, beforeLaunch, afterRunning, expireUnit = false,
-  expireInstallLock = false }: {
+  expireInstallLock = false, failPrefetch = false }: {
   prepareDatabase?: boolean
   beforeLaunch?: () => Promise<void>
   afterRunning?: () => Promise<void>
   expireUnit?: boolean
   expireInstallLock?: boolean
+  failPrefetch?: boolean
 } = {}) {
   const base = process.env.FOREMAN_CODE_TEST_ROOT ?? process.env.TMPDIR
     ?? join(homedir(), '.cache/foreman-code/tests')
@@ -32,8 +33,10 @@ async function computer({ prepareDatabase = false, beforeLaunch, afterRunning, e
   const bin = join(root, 'bin')
   const calls = join(root, 'calls.jsonl')
   const offlineFailure = join(root, 'offline-failure')
+  const prefetchFailure = join(root, 'prefetch-failure')
   await mkdir(origin)
   await mkdir(bin)
+  if (failPrefetch) await writeFile(prefetchFailure, 'fetch failed')
   if (expireInstallLock) {
     await writeFile(join(bin, 'flock'), '#!/bin/sh\n[ "$1" = "-s" ] && exit 0\nexit 1\n', { mode: 0o700 })
   }
@@ -59,7 +62,7 @@ if (args[1] === 'db:up') {
     console.error('Database preparation attempted to reinstall unfinished dependencies')
     process.exit(8)
   }
-} else if (args[1] === 'install') {
+} else if (args[1] === 'install' || args[1] === 'fetch') {
   if (${prepareDatabase}) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 200)
   if (args.includes('--offline') && fs.existsSync(${JSON.stringify(offlineFailure)})) process.exit(7)
   const storeIndex = args.indexOf('--store-dir')
@@ -67,18 +70,33 @@ if (args[1] === 'db:up') {
   const metadataIndex = args.indexOf('--cache-dir')
   const metadata = path.join(metadataIndex < 0 ? '.fixture-metadata' : args[metadataIndex + 1], 'release-age')
   const seed = path.join(store, require('node:crypto').createHash('sha256').update(fs.readFileSync('pnpm-lock.yaml')).digest('hex'))
+  const deploymentPackage = seed + '-deployment'
   if (args.includes('--offline') && (!fs.existsSync(seed) || !fs.existsSync(metadata))) process.exit(7)
+  if (args[1] === 'fetch' && args.includes('--offline') && !fs.existsSync(deploymentPackage)) process.exit(7)
+  if (args[1] === 'fetch' && fs.existsSync(${JSON.stringify(prefetchFailure)})) {
+    console.error('Full lockfile prefetch failed')
+    process.exit(19)
+  }
   fs.mkdirSync(store, { recursive: true })
   fs.writeFileSync(seed, 'pristine')
   fs.mkdirSync(path.dirname(metadata), { recursive: true })
   fs.writeFileSync(metadata, 'verified package publication time')
-  fs.mkdirSync('node_modules', { recursive: true })
-  if (!fs.existsSync('node_modules/dependency')) fs.copyFileSync(seed, 'node_modules/dependency')
+  if (!args.includes('--offline')) fs.rmSync(${JSON.stringify(offlineFailure)}, { force: true })
+  if (args[1] === 'fetch') fs.writeFileSync(deploymentPackage, 'available offline')
+  else {
+    fs.mkdirSync('node_modules', { recursive: true })
+    if (!fs.existsSync('node_modules/dependency')) fs.copyFileSync(seed, 'node_modules/dependency')
+  }
 } else {
   console.log('dependency=' + fs.readFileSync('node_modules/dependency', 'utf8'))
   const metadata = process.env.npm_config_cache_dir
   console.log('metadata=' + (metadata
     ? fs.readFileSync(path.join(metadata, 'release-age'), 'utf8') : 'unavailable'))
+  const store = path.join(path.dirname(metadata), 'pnpm-store')
+  const deploymentPackage = path.join(store,
+    require('node:crypto').createHash('sha256').update(fs.readFileSync('pnpm-lock.yaml')).digest('hex') + '-deployment')
+  console.log('production dependency=' + (fs.existsSync(deploymentPackage)
+    ? fs.readFileSync(deploymentPackage, 'utf8') : 'unavailable'))
   fs.writeFileSync('node_modules/dependency', 'modified by suite')
 }
 `, { mode: 0o755 })
@@ -154,6 +172,7 @@ if (args[1] === 'db:up') {
   // A checkout whose git link is broken cannot be reset to another commit.
   const breakCheckout = () => writeFile(join(slot, '.git'), 'gitdir: missing\n')
   return { run, commands, origin, git, failOffline, removeDependencies, breakCheckout,
+    allowPrefetch: () => rm(prefetchFailure),
     readRetained: async () => {
       const retained = new HostCiRunner(join(root, 'runner'), ports, environment)
       try { return await retained.handle({ operation: 'status' }) }
@@ -217,6 +236,41 @@ it('makes the installation metadata cache available to commands launched by the 
   const fixture = await computer()
   await expect(fixture.run()).resolves.toMatchObject({
     run: { state: 'passed' }, text: expect.stringContaining('metadata=verified package publication time'),
+  })
+})
+
+it('prefetches deployment-only packages before suites and keeps later requests offline', async () => {
+  const fixture = await computer()
+  for (let request = 0; request < 2; request++) {
+    await expect(fixture.run()).resolves.toMatchObject({
+      run: { state: 'passed' }, text: expect.stringContaining('production dependency=available offline'),
+    })
+  }
+  const fetches = (await fixture.commands()).filter(args => args[1] === 'fetch')
+  expect(fetches.filter(args => !args.includes('--offline'))).toHaveLength(1)
+})
+
+it('prefetches the changed lockfile before its first suite', async () => {
+  const fixture = await computer()
+  await fixture.run()
+  await writeFile(join(fixture.origin, 'pnpm-lock.yaml'), 'fixture-lock-two')
+  fixture.git('add', '.')
+  fixture.git('commit', '-qm', 'dependency update')
+  await expect(fixture.run()).resolves.toMatchObject({
+    run: { state: 'passed' }, text: expect.stringContaining('production dependency=available offline'),
+  })
+  const fetches = (await fixture.commands()).filter(args => args[1] === 'fetch')
+  expect(fetches.filter(args => !args.includes('--offline'))).toHaveLength(2)
+})
+
+it('reports prefetch failure before running a suite and fills the store on the next request', async () => {
+  const fixture = await computer({ failPrefetch: true })
+  await expect(fixture.run()).resolves.toMatchObject({
+    run: { state: 'failed', exitCode: 19 }, text: expect.stringContaining('Full lockfile prefetch failed'),
+  })
+  await fixture.allowPrefetch()
+  await expect(fixture.run()).resolves.toMatchObject({
+    run: { state: 'passed' }, text: expect.stringContaining('production dependency=available offline'),
   })
 })
 

@@ -136,15 +136,8 @@ it('loads the compiled API using only its deployed production dependencies', asy
   const run = async (command: string, args: string[]) => {
     // This source is discarded after deployment, so it needs no development dependency restoration.
     if (args.includes('install')) return
-    const started = performance.now()
-    try {
-      const { stdout } = await child(`${command} ${args.join(' ')}`, 45_000, command, [...args, ...packageStore],
-        { cwd: source, env: process.env })
-      console.info(stdout)
-    } finally {
-      console.info('[integration-phase] local-production-deployment.integration.test.ts deploy-production-dependencies',
-        Math.round(performance.now() - started))
-    }
+    await child(`${command} ${args.join(' ')}`, 45_000, command, [...args, ...packageStore],
+      { cwd: source, env: process.env })
   }
   try {
     const prepareSource = async () => {
