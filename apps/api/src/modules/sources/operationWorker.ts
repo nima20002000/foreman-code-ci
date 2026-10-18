@@ -69,9 +69,6 @@ function checkOwner(request: SourceFilesystemOperation, raw: SourceOperationOwne
     if (request.operation === 'sources.prepare' && !isDeepStrictEqual(request.worktree, owner.worktree)) {
       throw new SourceError('SOURCE_OPERATION_AUTHORITY_CONFLICT', 'Preparation cannot change the accepted Agent branch request.')
     }
-    if (request.operation === 'sources.prepare' && !isDeepStrictEqual(request.retainedReceipt, owner.retainedReceipt)) {
-      throw new SourceError('SOURCE_OPERATION_AUTHORITY_CONFLICT', 'Preparation cannot substitute the retained node directory.')
-    }
     if (request.operation === 'sources.prepare' && request.worktree
       && (owner.preparationKind !== 'workflow' || root.binding.accessMode !== 'exclusive-write')) {
       throw new SourceError('SOURCE_READ_ONLY', 'Agent branches require a writable workflow source.')
@@ -242,7 +239,6 @@ export class SourceOperationWorkerService {
         const manifest = github.manifest
         const receiptValue = await new PrivateSourceMaterializer(github.reader, reauthorize, quotaPool).prepare({ manifest,
           binding: owner.root.binding, attempt: owner.attempt, signal: context.signal,
-          ...(owner.retainedReceipt ? { retainedReceipt: owner.retainedReceipt } : {}),
           ...(owner.preparationKind === 'workflow' && owner.root.binding.accessMode === 'exclusive-write'
             ? { sharedWritableTree: true, ...(request.worktree ? { worktree: request.worktree } : {}) } : {}),
           ...(owner.preparationKind === 'workflow' && owner.root.binding.accessMode === 'read-only'
@@ -296,9 +292,7 @@ export class SourceOperationWorkerService {
       }, quotaPool, context.signal)
       await this.options.executionTransfersClosed?.(record, context.signal)
       await reauthorize()
-      const worktree = owner.retainWorkingTree && record.receipt.worktree
-        ? { state: 'retained' as const, message: 'The active Run retains this node working directory.' }
-        : await closeSourceWorktree(record.receipt, context.signal)
+      const worktree = await closeSourceWorktree(record.receipt, context.signal)
       const footprint = { ...await measureRetainedMaterializationFootprint(record.receipt), ...(worktree ? { worktree } : {}) }
       await reauthorize()
       return SourceOperationResponseSchema.parse({ version: 1, operation: request.operation,

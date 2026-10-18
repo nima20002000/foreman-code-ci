@@ -28,7 +28,6 @@ interface CompletedSource {
   execution: unknown
   settlement_pending: boolean
   preparation_closed: boolean
-  run_terminal: boolean
   worktree_cleanup?: RetainedSourceFootprint['worktree']
 }
 
@@ -88,7 +87,6 @@ async function completedSourcePage(pool: Pick<pg.Pool, 'query'>, after: Complete
       ))
     ) select m.materialization_id,m.state='closed' as already_closed,
       m.record,m.worktree_cleanup,e.record as execution,
-      r.execution_state in ('completed','interrupted') as run_terminal,
       exists(select 1 from source_preparation_reconciliations c
         where c.operation_id::text=m.record->>'operationId' and c.status='closed') as preparation_closed,
       (r.execution_state in ('running','waiting')
@@ -131,8 +129,7 @@ export async function closeCompletedWorkflowSources(
       unseen.delete(row.materialization_id)
       const retry = retries.get(row.materialization_id)
       if (retry && retry.nextAttemptAt > Date.now()) continue
-      const firstTerminalCleanup = row.run_terminal && row.worktree_cleanup?.removalAttempted !== true
-      if (!firstTerminalCleanup && row.already_closed && row.worktree_cleanup?.state === 'retained'
+      if (row.already_closed && row.worktree_cleanup?.state === 'retained'
         && Date.parse(row.worktree_cleanup.nextAttemptAt ?? '') > Date.now()) continue
       try {
         // A successful result can be published before its native closure commits.

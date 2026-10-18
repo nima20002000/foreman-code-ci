@@ -24,10 +24,7 @@ function database() {
     if (text.startsWith('begin')) staged = [...committed]
     if (text === 'commit') committed = [...staged]
     if (text === 'rollback') staged = [...committed]
-    if (text.startsWith('insert into run_node_placements')) {
-      const records = Array.isArray(values[3]) ? values[3] as string[] : [values[3] as string]
-      staged.push(...records.map(record => JSON.parse(record)))
-    }
+    if (text.startsWith('insert into run_node_placements')) staged.push(JSON.parse(values[3] as string))
     if (text.startsWith('select record from run_node_placements')) return { rows: staged.map((record) => ({ record })), rowCount: staged.length }
     return { rows: [], rowCount: 0 }
   } } as unknown as pg.ClientBase

@@ -1443,29 +1443,40 @@ export class CloudCi {
 
   private async cancelAttempts(run: CloudRun): Promise<CloudRun> {
     if (!cancellationPending(run)) return run
-    if (this.provider.id !== 'github') run = await this.adoptSubmission(run)
+    run = await this.adoptSubmission(run)
     const canceled = new Set(run.cancellation!.canceledIds)
-    const knownIds = new Set([run.providerRunId, ...run.dispatchHistory?.map(attempt => attempt.providerRunId) ?? []]
-      .filter((id): id is string => Boolean(id)))
-    const known = await this.cancelProviderAttempts(run, knownIds, canceled)
-    run = known.run
     const unsent = neverSubmitted(run)
     const discovered = this.provider.id === 'github' && !unsent
       ? await this.provider.discover!(run) : []
-    const discoveryComplete = !run.dispatch?.attempts
-      || this.ports.now().getTime() - Date.parse(run.cancellation!.at) >= CLOUD_START_TIMEOUT_MS
-    // A complete GitHub listing also resolves a lost dispatch reply when no workflow was created.
-    if (this.provider.id === 'github' && run.dispatch?.uncertain && (discovered.length || discoveryComplete)) {
-      run = { ...run, providerRunId: run.providerRunId ?? discovered[0] ?? null,
+    if (this.provider.id === 'github' && run.dispatch?.uncertain && discovered.length) {
+      run = { ...run, providerRunId: run.providerRunId ?? discovered[0]!,
         dispatch: { ...run.dispatch, uncertain: false } }
     }
-    run = await this.save(run)
-    const additional = await this.cancelProviderAttempts(run, new Set(discovered.filter(id => !knownIds.has(id))), canceled)
-    run = additional.run
-    const ids = new Set([...knownIds, ...discovered])
-    const absent = this.provider.id === 'github' && ids.size === 0
-    const stopped = discoveryComplete && !run.dispatch?.uncertain && known.stopped && additional.stopped
-      && (ids.size > 0 || !run.dispatch?.attempts || unsent || absent)
+    const history = [...run.dispatchHistory ?? []]
+    for (const providerRunId of discovered) {
+      if (!history.some(attempt => attempt.providerRunId === providerRunId)) {
+        history.push({ at: this.ports.now().toISOString(), providerRunId })
+      }
+    }
+    run = await this.save({ ...run, dispatchHistory: history })
+    const attempts = history.map(attempt => attempt.providerRunId)
+    const ids = new Set([run.providerRunId, ...attempts, ...discovered].filter((id): id is string => Boolean(id)))
+    const discoveryComplete = !run.dispatch?.attempts
+      || this.ports.now().getTime() - Date.parse(run.cancellation!.at) >= CLOUD_START_TIMEOUT_MS
+    let stopped = discoveryComplete && !run.dispatch?.uncertain
+      && (ids.size > 0 || !run.dispatch?.attempts || unsent)
+    for (const providerRunId of ids) {
+      if (!canceled.has(providerRunId) || run.emptyPipelineCancellations?.[providerRunId]) {
+        const cancellation = await this.requestCancellation(run, providerRunId)
+        run = cancellation.run
+        if (cancellation.accepted) canceled.add(providerRunId)
+        else canceled.delete(providerRunId)
+        run = await this.save({ ...run, cancellation: { ...run.cancellation!, canceledIds: [...canceled] } })
+      }
+      const status = await this.provider.status({ ...run, providerRunId })
+      if (!canceled.has(providerRunId) || !status.done) stopped = false
+      run = await this.recordTerminatedAttempt(run, providerRunId, status)
+    }
     this.polled.set(run.runId, this.ports.now().getTime())
     const now = this.ports.now().toISOString()
     if (stopped && run.cancellation!.requeue) {
@@ -1482,27 +1493,6 @@ export class CloudCi {
       ...(stopped ? { state: run.state === 'queued' ? 'queued' : 'canceled',
         finishedAt: run.state === 'queued' ? null : now, message: 'Canceled.' } : {}),
       cancellation: { ...run.cancellation!, canceledIds: [...canceled], ...(stopped ? { completedAt: now } : {}) } })
-  }
-
-  private async cancelProviderAttempts(run: CloudRun, ids: Set<string>, canceled: Set<string>) {
-    let stopped = true
-    for (const providerRunId of ids) {
-      if (!run.dispatchHistory?.some(attempt => attempt.providerRunId === providerRunId)) {
-        run = await this.save({ ...run, dispatchHistory: [...run.dispatchHistory ?? [],
-          { at: this.ports.now().toISOString(), providerRunId }] })
-      }
-      if (!canceled.has(providerRunId) || run.emptyPipelineCancellations?.[providerRunId]) {
-        const cancellation = await this.requestCancellation(run, providerRunId)
-        run = cancellation.run
-        if (cancellation.accepted) canceled.add(providerRunId)
-        else canceled.delete(providerRunId)
-        run = await this.save({ ...run, cancellation: { ...run.cancellation!, canceledIds: [...canceled] } })
-      }
-      const status = await this.provider.status({ ...run, providerRunId })
-      if (!canceled.has(providerRunId) || !status.done) stopped = false
-      run = await this.recordTerminatedAttempt(run, providerRunId, status)
-    }
-    return { run, stopped }
   }
 
   private async collect(run: CloudRun): Promise<CloudRun> {

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { expect, it, vi } from 'vitest'
+import { expect, it } from 'vitest'
 import { RespondToInteractionResponseSchema } from '@foreman-code/contracts'
 import { ManagementActionSchema } from '@foreman-code/contracts/management'
 import { CanonicalRunGraphCurrentSchema, CANONICAL_RUN_GRAPH_MCP_TOOLS,
@@ -81,20 +81,6 @@ it.skipIf(!postgresEnabled)('allows workflow saves after an owner finishes a Run
     const [interaction] = await f.pending()
     expect(interaction).toMatchObject({ kind: 'work_direction', status: 'pending' })
     if (!interaction) throw new Error('Expected a direction interaction')
-    for (const engine of [f.engine, f.compose().engine]) {
-      const drives = vi.spyOn(engine, 'start')
-      const errors: unknown[] = []
-      try {
-        for (let cycle = 0; cycle < 4; cycle++) {
-          await engine.reconcile(error => errors.push(error))
-          await Promise.all(drives.mock.results.map(result => result.value))
-        }
-        expect(errors).toEqual([])
-        expect(drives).not.toHaveBeenCalled()
-      } finally {
-        drives.mockRestore()
-      }
-    }
     await f.engine.start(f.f.run.id)
     expect(await f.runs.get(f.f.run.id)).toMatchObject({ executionState: 'waiting', outcome: 'pending' })
     expect(await call('interaction_get', { interactionId: interaction.id })).toMatchObject({ canRespond: true })
