@@ -212,7 +212,9 @@ it('does not refill dependencies online during pre-warming', async () => {
   expect((await fixture.warm()).run).toMatchObject({ state: 'failed', exitCode: 7 })
   expect(await fixture.fetches()).toHaveLength(1)
   expect((await fixture.fetches())[0]).toContain('--offline')
-  expect(await fixture.installs()).toEqual([])
+  expect(await fixture.installs()).toEqual([
+    expect.objectContaining({ installed: false, args: expect.arrayContaining(['--offline', '--frozen-lockfile']) }),
+  ])
 })
 
 it('stops a running warm-up before real CI uses its checkout and defers warm-ups while CI is active', async () => {

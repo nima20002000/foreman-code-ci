@@ -292,12 +292,17 @@ it('refills an evicted deployment package even when the checkout is already inst
   expect(await fixture.onlinePackageCommands()).toHaveLength(2)
 })
 
-it('reports prefetch failure before running a suite and fills the store on the next request', async () => {
+it('reports prefetch failure, uses normal install, and fills the full store on the next request', async () => {
   const fixture = await computer({ failPrefetch: true })
   await expect(fixture.run()).resolves.toMatchObject({
-    run: { state: 'failed', exitCode: 19 }, text: expect.stringContaining('Full lockfile prefetch failed'),
+    run: { state: 'passed', exitCode: 0 }, text: expect.stringContaining('Full lockfile prefetch failed'),
   })
-  expect((await fixture.commands()).filter(args => args[1] === 'run')).toEqual([])
+  const commands = await fixture.commands()
+  expect(commands.filter(args => args[1] === 'run')).toHaveLength(1)
+  expect(commands.filter(args => args[1] === 'install')).toEqual([
+    expect.arrayContaining(['--offline', '--frozen-lockfile']),
+    expect.arrayContaining(['--prefer-offline', '--frozen-lockfile']),
+  ])
   await fixture.allowPrefetch()
   await expect(fixture.run()).resolves.toMatchObject({
     run: { state: 'passed' }, text: expect.stringContaining('production dependency=available offline'),
