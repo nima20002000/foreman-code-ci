@@ -5,6 +5,7 @@ export { userSystemdIntegrationFiles, exclusiveIntegrationFiles, integrationCpuC
 import { WorkspaceRepositorySchema } from './workspaceRepository.js'
 import { CircleAccountIdSchema } from './circleCredits.js'
 import { BuildComputerAllowanceSchema } from './buildComputers.js'
+import { isIntegrationCoverage, type IntegrationCoverage } from './ciCoverage.mjs'
 
 /** Host CI: a build computer runs a suite directly in a git worktree of the commit, like a self-hosted runner.
  * It fetches with its own GitHub CLI login and installs packages normally; a systemd unit caps CPU and memory. */
@@ -27,10 +28,18 @@ function validCiPart(value: { suite: CiSuite; part?: CiPart | null | undefined; 
   return !value.partition || value.part === 'unit-api' || value.part === 'unit-web' || value.part === 'unit-web-heavy'
 }
 export const CiScopeSchema = z.enum(['affected', 'full'])
+export const CiIntegrationCoverageSchema = z.custom<IntegrationCoverage>(isIntegrationCoverage)
+export type { IntegrationCoverage } from './ciCoverage.mjs'
+/** Gzip keeps per-file dependency sets within the device channel's message budget. Artifacts stay plain JSON. */
+export const CiCoverageSelectionSchema = z.object({ map: z.string().max(700_000),
+  changedFiles: z.array(z.string()) }).strict()
+export type CiCoverageSelection = z.infer<typeof CiCoverageSelectionSchema>
 export type CiScope = z.infer<typeof CiScopeSchema>
 export const CiSelectedFilesSchema = z.array(z.string().min(1)
   .regex(/^(?!\/|[A-Za-z]:)[^\\\0]+$/)
   .refine(file => !file.split('/').some(part => part === '..' || part === '.' || part === '')))
+export const CiSelectionSchema = z.object({ scope: CiScopeSchema, files: CiSelectedFilesSchema,
+  reason: z.string().max(2000) }).strict()
 
 export function validCiSelection(value: { suite: CiSuite; scope?: CiScope | undefined; files?: string[] | undefined }) {
   if (value.scope === 'full') return !value.files?.length
@@ -126,6 +135,7 @@ const CiHostStartSchema = z.object({
   deferMirror: z.boolean().optional(),
   suite: CiSuiteSchema, part: CiPartSchema.optional(), partition: CiPartitionSchema.optional(), durations: CiDurationsSchema.optional(),
   scope: CiScopeSchema.optional(), files: CiSelectedFilesSchema.optional(),
+  integrationCoverage: CiCoverageSelectionSchema.optional(),
   expectedDurationMs: z.number().nonnegative().finite().optional(),
   buildAllowancePercent: BuildComputerAllowanceSchema.optional(),
   /** Idle preparation reuses a persistent checkout without reserving CI capacity. */
@@ -153,6 +163,7 @@ export const CiHostRequestSchema = z.discriminatedUnion('operation', [
   // test results. Results are opt-in so a Worker never sends them to a Main whose reply schema predates them.
   z.object({ operation: z.literal('read'), runId: CiHostRunIdSchema, afterOffset: z.number().int().nonnegative(),
     maxBytes: z.number().int().nonnegative().max(CI_LOG_MAX_BYTES), durations: z.boolean().optional(), testResults: z.boolean().optional(),
+    integrationCoverage: z.boolean().optional(),
     // Main sets `reassign` while another computer has a free slot; a cloud executor cancels a provider-queued workflow only then.
     reassign: z.boolean().optional() }).strict(),
   z.object({ operation: z.literal('cancel'), runId: CiHostRunIdSchema }).strict(),
@@ -176,6 +187,7 @@ export const CiTransportSchema = z.object({
   lastError: z.string().max(300).nullable(), fallbackCount: z.number().int().nonnegative(),
 }).strict()
 const CiHostRunSchema = z.object({
+  selection: CiSelectionSchema.optional(),
   runId: CiHostRunIdSchema, state: CiHostRunStateSchema, step: z.string().max(80).nullable(),
   warmup: z.boolean().optional(),
   exitCode: z.number().int().nullable(), startedAt: TimestampSchema, finishedAt: TimestampSchema.nullable(),
@@ -210,7 +222,8 @@ export const CiHostReplySchema = z.discriminatedUnion('operation', [
   CiHostStatusSchema,
   z.object({ operation: z.literal('start'), run: CiHostRunSchema }).strict(),
   z.object({ operation: z.literal('read'), run: CiHostRunSchema, text: z.string(), nextOffset: z.number().int().nonnegative(),
-    durations: CiDurationsSchema.optional(), testResults: CiTestResultsSchema.optional() }).strict(),
+    durations: CiDurationsSchema.optional(), testResults: CiTestResultsSchema.optional(),
+    integrationCoverage: z.string().max(700_000).optional() }).strict(),
   z.object({ operation: z.literal('cancel'), run: CiHostRunSchema }).strict(),
 ])
 export type CiHostReply = z.infer<typeof CiHostReplySchema>
@@ -256,6 +269,7 @@ export const CiRunRecordSchema = z.object({
   providerMessage: z.string().max(2000).nullable().optional(),
   messageHistory: z.array(z.string().max(2000)).max(8).optional(),
   scope: CiScopeSchema.default('full'), files: CiSelectedFilesSchema.default([]),
+  selection: CiSelectionSchema.optional(),
   priority: CiPrioritySchema.default('normal'), priorityReason: CiPriorityReasonSchema.default('normal'),
   gate: z.boolean().optional(), integrationShards: z.number().int().min(1).max(64).optional(),
   /** An omitted caller selection is computed on the runner; an explicit empty list is already complete. */

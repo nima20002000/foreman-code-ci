@@ -7,7 +7,8 @@ import { sanitizeCiText, serializeCiJson } from './text.js'
 import { availableParallelism, freemem, homedir, totalmem } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { join, matchesGlob } from 'node:path'
-import { CiWatchdogFailureSchema, CiDurationsSchema, CiHostReplySchema, CiHostRequestSchema, CiTestResultsSchema, integrationPartition,
+import { gzipSync } from 'node:zlib'
+import { CiIntegrationCoverageSchema, CiWatchdogFailureSchema, CiDurationsSchema, CiHostReplySchema, CiHostRequestSchema, CiTestResultsSchema, integrationPartition,
   CiScopeSchema, CiSelectedFilesSchema, validCiSelection,
   CI_HOST_START_PROTOCOL_VERSION,
   type CiDurations, type CiHostReply, type CiHostRequest, type CiHostRun, type CiSuite, type CiPart, type CiPartition, type CiScope } from '@foreman-code/contracts'
@@ -177,6 +178,8 @@ interface RunMeta {
   startedAt: string; state: CiHostRun['state']; finishedAt: string | null; exitCode: number | null
   message: string | null; cleaned: boolean; durations?: CiDurations
   scope?: CiScope; files?: string[]; part?: CiPart; defaultBranch?: string; baseCommit?: string; deriveFiles?: boolean
+  integrationCoverage?: Extract<CiHostRequest, { operation: 'start' }>['integrationCoverage']
+  selection?: CiHostRun['selection']
   resources?: { cpuCount: number; memoryBytes: number; memoryBudget?: number }
   /** The persistent checkout this run holds; absent when it uses a fresh checkout in its run directory. */
   slot?: number
@@ -195,6 +198,7 @@ type StartRequest = { runId: string; repository: string; commit: string; suite: 
   scope?: CiScope | undefined; files?: string[] | undefined; defaultBranch?: string | undefined;
   expectedDurationMs?: number | undefined; baseCommit?: string | undefined; gate?: boolean | undefined;
   integrationShards?: number | undefined; buildAllowancePercent?: number | undefined; notice?: string | undefined;
+  integrationCoverage?: Extract<CiHostRequest, { operation: 'start' }>['integrationCoverage'];
   warmup?: boolean | undefined }
 
 const unitName = (runId: string) => `foreman-ci-${runId}`
@@ -287,6 +291,9 @@ export class HostCiRunner {
       ? await readCiReport(reportPath('measured-durations.json'), CiDurationsSchema) : null
     const tests = request.testResults && finished
       ? await readCiReport(reportPath('test-results.json'), CiTestResultsSchema) : null
+    const coverage = request.integrationCoverage && finished
+      ? await readCiReport(reportPath('integration-coverage.json'), CiIntegrationCoverageSchema) : null
+    const compressed = coverage?.state === 'complete' ? gzipSync(JSON.stringify(coverage.data)).toString('base64') : undefined
     if (tests) {
       const meta = await this.readMeta(request.runId).catch(error => {
         if (error instanceof DomainError && error.code === 'CI_RUN_UNKNOWN' && run.state === 'canceled') return null
@@ -305,6 +312,7 @@ export class HostCiRunner {
     }
     return CiHostReplySchema.parse({ operation: 'read', run, text, nextOffset,
       ...(measured?.state === 'complete' ? { durations: measured.data } : {}),
+      ...(compressed && compressed.length <= 700_000 ? { integrationCoverage: compressed } : {}),
       ...(tests?.state === 'complete' ? { testResults: tests.data } : {}) })
   }
 
@@ -624,6 +632,9 @@ export class HostCiRunner {
       deriveFiles: (request.scope ?? 'affected') === 'affected' && request.files === undefined,
       ...(request.defaultBranch ? { defaultBranch: request.defaultBranch } : {}),
       ...(request.baseCommit ? { baseCommit: request.baseCommit } : {}),
+      ...(request.integrationCoverage ? { integrationCoverage: request.integrationCoverage } : {}),
+      selection: { scope: request.scope ?? 'affected', files: request.files ?? [],
+        reason: request.files ? 'Caller supplied the affected files.' : 'Full scope requested.' },
       ...(request.notice ? { notice: request.notice } : {}),
       ...(request.durations ? { durations: request.durations } : {}) }
     return (await withHostCiRunLock(directory, async () => {
@@ -778,6 +789,7 @@ export class HostCiRunner {
     const serviceUnit = `${unitName(meta.runId)}.service`
     await this.writeMeta({ ...meta, ...current, serviceUnit,
       ...(meta.scope ? { scope: meta.scope } : {}), ...(meta.files ? { files: meta.files } : {}),
+      ...(meta.selection ? { selection: meta.selection } : {}),
       ...(meta.testResultsExpected !== undefined ? { testResultsExpected: meta.testResultsExpected } : {}),
       message: meta.message })
     const resources = this.suiteResources(meta)
@@ -902,6 +914,7 @@ export class HostCiRunner {
     const full = (reason: string) => {
       meta.scope = 'full'
       meta.message = `Running full suite: ${reason}`
+      meta.selection = { scope: 'full', files: [], reason }
     }
     const selector = join(source, 'scripts/ci-affected.mjs')
     if (!existsSync(selector)) return full('The repository has no affected selector.')
@@ -938,31 +951,38 @@ export class HostCiRunner {
     if (selection.scope === 'full') return full(selection.reason)
     const files = await this.partFiles(meta, source, selection.files)
     meta.files = files
-    meta.message = files.length ? `Selected ${files.length} affected files for ${meta.part ?? meta.suite}.`
+    meta.selection = { scope: selection.scope, files, reason: selection.reason }
+    meta.message = files.length ? `Selected ${files.length} affected files for ${meta.part ?? meta.suite}: ${selection.reason}`
       : 'No affected files for this suite part.'
   }
 
   private async repositorySelection(meta: RunMeta, source: string, selector: string, changed: string[],
     signal?: AbortSignal) {
     signal?.throwIfAborted()
+    const coveragePath = join(this.runDirectory(meta.runId), 'coverage-selection.json')
+    await writeFile(coveragePath, JSON.stringify(meta.integrationCoverage ?? null))
     // selectAffectedFiles also supports repositories whose snapshot helper assumes origin/main.
     const code = [
       "import { execFileSync } from 'node:child_process'",
       "import { readFileSync } from 'node:fs'",
       "import { join } from 'node:path'",
       "import { pathToFileURL } from 'node:url'",
-      'const [selector, suite, commit, changed] = process.argv.slice(1)',
+      "import { gunzipSync } from 'node:zlib'",
+      'const [selector, suite, commit, changed, coveragePath] = process.argv.slice(1)',
+      "const coverage = JSON.parse(readFileSync(coveragePath, 'utf8'))",
+      "const coverageMap = coverage ? JSON.parse(gunzipSync(Buffer.from(coverage.map, 'base64')).toString()) : undefined",
       'const { selectAffectedFiles } = await import(pathToFileURL(selector).href)',
       "const paths = execFileSync('git', ['ls-tree', '-r', '--name-only', '-z', commit], { encoding: 'utf8' })",
       "  .split('\\0').filter(Boolean)",
       'const sources = new Map(paths.map(file => [file, /\\.(?:[cm]?[jt]sx?|json|css)$/.test(file)',
       "  ? readFileSync(join(process.cwd(), file), 'utf8') : '']))",
       "const manifest = sources.get('packages/contracts/package.json')",
-      'console.log(JSON.stringify(selectAffectedFiles({ suite, changedFiles: JSON.parse(changed), sources,',
+      'console.log(JSON.stringify(selectAffectedFiles({ suite, changedFiles:',
+      '  [...new Set([...JSON.parse(changed), ...coverage?.changedFiles ?? []])], sources, coverageMap,',
       '  exports: manifest ? JSON.parse(manifest).exports : {} })))',
     ].join('\n')
     const result = await this.ports.run('node', ['--input-type=module', '-e', code, selector,
-      meta.suite, meta.commit, JSON.stringify(changed)], { cwd: source, env: this.environment, signal })
+      meta.suite, meta.commit, JSON.stringify(changed), coveragePath], { cwd: source, env: this.environment, signal })
     signal?.throwIfAborted()
     if (result.code !== 0) throw new Error(`Affected selection failed: ${result.stderr.trim().slice(0, 500)}`)
     const selection = JSON.parse(result.stdout) as { scope: unknown; files: unknown; reason: string }
@@ -1048,6 +1068,8 @@ export class HostCiRunner {
       integrationEnvironment = ` FOREMAN_CODE_INTEGRATION_DURATIONS=${quote(join(run, 'expected-durations.json'))}`
         + ` FOREMAN_CODE_INTEGRATION_DURATIONS_OUTPUT=${quote(join(run, 'measured-durations.json'))}`
         + ` FOREMAN_CODE_INTEGRATION_TEST_RESULTS_OUTPUT=${quote(join(run, 'test-results.json'))}`
+        + ` FOREMAN_CODE_INTEGRATION_COVERAGE=${meta.scope === 'full' ? 1 : 0}`
+        + ` FOREMAN_CODE_INTEGRATION_COVERAGE_OUTPUT=${quote(join(run, 'integration-coverage.json'))}`
       if (meta.partition || affected || meta.gate) {
         const tests = join(source, 'apps/api/test')
         const files = existsSync(tests) ? (await readdir(tests)).filter(file => file.endsWith('.integration.test.ts'))
@@ -1274,6 +1296,7 @@ export class HostCiRunner {
         Object.assign(new Error('The completed CI step record is missing.'), { code: 'ENOENT' }), { runId })
     }
     const run = { runId, ...(meta.warmup ? { warmup: true } : {}),
+      ...(meta.selection ? { selection: meta.selection } : {}),
       state: meta.state, step, exitCode: meta.exitCode, startedAt: meta.startedAt,
       finishedAt: meta.finishedAt, logBytes: log?.size ?? 0,
       message: this.runMessage(meta) }

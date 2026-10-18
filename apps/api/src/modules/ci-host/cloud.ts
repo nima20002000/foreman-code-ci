@@ -3,12 +3,13 @@ import { failedReadObservation, successfulReadObservation } from '../diagnostics
 import type { ReadObservation } from '@foreman-code/contracts'
 import { mkdir, mkdtemp, open, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { createHash, randomUUID } from 'node:crypto'
+import { gzipSync } from 'node:zlib'
 import { homedir, hostname, userInfo } from 'node:os'
 import { delimiter, dirname, join, resolve } from 'node:path'
 import type pg from 'pg'
-import { CiWatchdogFailureSchema, CiDurationsSchema, CiHostReplySchema, CiHostRequestSchema, CiTestResultsSchema, WorkspaceSchema,
+import { CiIntegrationCoverageSchema, CiSelectionSchema, CiWatchdogFailureSchema, CiDurationsSchema, CiHostReplySchema, CiHostRequestSchema, CiTestResultsSchema, WorkspaceSchema,
   integrationPartition, requiresUserSystemd,
-  type CiDurations, type CiHostReply, type CiHostRequest, type CiHostRun, type CiPartition, type CiMirrorRepair } from '@foreman-code/contracts'
+  type CiCoverageSelection, type CiDurations, type CiHostReply, type CiHostRequest, type CiHostRun, type CiPartition, type CiMirrorRepair } from '@foreman-code/contracts'
 import { canonicalJson } from '@foreman-code/contracts/canonical-json'
 import { DomainError } from '../errors.js'
 import { componentLogger } from '../diagnostics/logger.js'
@@ -340,6 +341,7 @@ export class CloudCi {
     return CiHostReplySchema.parse({ operation: 'read', run: view,
       text: sanitizeCiText(page.text), nextOffset: page.nextOffset,
       ...(request.durations && run.durations ? { durations: run.durations } : {}),
+      ...(request.integrationCoverage && run.integrationCoverage ? { integrationCoverage: run.integrationCoverage } : {}),
       ...(request.testResults && run.testResults ? { testResults: run.testResults } : {}) })
   }
 
@@ -422,6 +424,7 @@ export class CloudCi {
       ? [`CLI transport: ${transport.reason} (fallback count ${transport.fallbackCount}).`, run.message]
         .filter(Boolean).join(' ').slice(0, 2000) : run.message
     return { runId: run.runId, state: run.state, step,
+      ...(run.selection ? { selection: run.selection } : {}),
       ...(transport ? { transport } : {}),
       exitCode: run.exitCode, startedAt: run.startedAt, finishedAt: run.finishedAt, logBytes, message: message === null ? null : sanitizeCiText(message),
       ...(run.provenance ? { provenance: run.provenance } : {}),
@@ -524,7 +527,8 @@ export class CloudCi {
     try {
       const publication = await this.publish(request.repository, mirror, request.commit,
         deriveFiles && !request.baseCommit ? request.defaultBranch ?? 'main' : undefined,
-        deriveFiles ? request.baseCommit : undefined, request.durations ?? {}, request.partition !== undefined)
+        deriveFiles ? request.baseCommit : undefined, request.durations ?? {}, request.partition !== undefined,
+        request.integrationCoverage)
       if (request.deferMirror) {
         return await this.serializeRun(request.runId, async () => {
           const latest = await this.read(request.runId)
@@ -854,14 +858,15 @@ export class CloudCi {
    * that splits its files on the runner (`exact`) needs a snapshot with exactly its learned durations; any other start
    * only orders its files by them, so it reuses whichever snapshot of the commit is already there. */
   private async publish(repository: string, mirror: string, commit: string, defaultBranch: string | undefined,
-    baseCommit: string | undefined, durations: CiDurations, exact: boolean) {
+    baseCommit: string | undefined, durations: CiDurations, exact: boolean, coverage?: CiCoverageSelection) {
     return serializeMirror(mirror, () => this.publishLocked(repository, mirror, commit,
-      defaultBranch, baseCommit, durations, exact))
+      defaultBranch, baseCommit, durations, exact, coverage))
   }
 
   private async publishLocked(repository: string, mirror: string, commit: string, defaultBranch: string | undefined,
-    baseCommit: string | undefined, durations: CiDurations, exact: boolean) {
-    const prefix = `${commit}\n${defaultBranch ?? ''}\n${baseCommit ?? ''}\n`
+    baseCommit: string | undefined, durations: CiDurations, exact: boolean, coverage?: CiCoverageSelection) {
+    const coverageKey = coverage ? createHash('sha256').update(canonicalJson(coverage)).digest('hex') : ''
+    const prefix = `${commit}\n${defaultBranch ?? ''}\n${baseCommit ?? ''}\n${coverageKey}\n`
     const key = `${prefix}${canonicalJson(durations)}`
     const publications = this.publications(repository, mirror)
     let published = publications.get(key)
@@ -874,7 +879,7 @@ export class CloudCi {
       const source = ensureCommit(this.git, repository, commit, AbortSignal.timeout(600_000))
       source.catch(() => { /* ignore: the push awaits the source and reports its failure */ })
       const pushed = queued.then(() => this.push(repository, mirror, commit, defaultBranch, baseCommit, durations,
-        { queuedAt, startedAt, source }))
+        { queuedAt, startedAt, source }, coverage))
       published = pushed
       mirrorPushes.set(mirror, pushed)
       void pushed.catch(() => { /* ignore: the push failure is reported to the caller awaiting it; this only clears the queue entry */ }).then(() => { if (mirrorPushes.get(mirror) === pushed) mirrorPushes.delete(mirror) })
@@ -893,7 +898,8 @@ export class CloudCi {
   }
 
   private async push(repository: string, mirror: string, commit: string, defaultBranch: string | undefined,
-    baseCommit: string | undefined, durations: CiDurations, queued: { queuedAt: number; startedAt: string; source: Promise<string> }) {
+    baseCommit: string | undefined, durations: CiDurations, queued: { queuedAt: number; startedAt: string; source: Promise<string> },
+    coverage?: CiCoverageSelection) {
     const startedAt = queued.startedAt
     const started = performance.now()
     const queueMs = started - queued.queuedAt
@@ -981,7 +987,7 @@ export class CloudCi {
       const sourceWorkflows = new Set((await git(['ls-tree', source, '--', ...workflows])).split('\n')
         .map(entry => entry.split('\t')[1]))
       const missing = entries.filter(entry => !sourceWorkflows.has(entry.split('\t')[1]))
-      if (!missing.length && !Object.keys(durations).length) return source
+      if (!missing.length && !Object.keys(durations).length && !coverage) return source
       await mkdir(this.root, { recursive: true, mode: 0o700 })
       const directory = await mkdtemp(join(this.root, 'snapshot-'))
       try {
@@ -996,6 +1002,12 @@ export class CloudCi {
           await writeFile(path, canonicalJson(durations), { mode: 0o600 })
           const blob = await git(['hash-object', '-w', path])
           await git(['update-index', '--add', '--cacheinfo', `100644,${blob},scripts/ci-learned-durations.json`], env)
+        }
+        if (coverage) {
+          const path = join(directory, 'coverage.json')
+          await writeFile(path, canonicalJson(coverage), { mode: 0o600 })
+          const blob = await git(['hash-object', '-w', path])
+          await git(['update-index', '--add', '--cacheinfo', `100644,${blob},ci-integration-coverage.json`], env)
         }
         return await git(['write-tree'], env)
       } finally {
@@ -1401,6 +1413,14 @@ export class CloudCi {
             const contents = Buffer.from(artifacts.suiteLog).subarray(-CLOUD_LOG_LIMIT)
             await writeFile(this.path(run.runId, 'log'), contents, { mode: 0o600 })
             collection.log = true
+          }
+          const selection = CiSelectionSchema.safeParse(artifacts.selection)
+          if (selection.success) run = { ...run, selection: selection.data }
+          const coverage = CiIntegrationCoverageSchema.safeParse(artifacts.integrationCoverage)
+          if (run.suite === 'integration' && run.scope === 'full' && coverage.success) {
+            const compressed = gzipSync(JSON.stringify(coverage.data)).toString('base64')
+            if (compressed.length <= 700_000) run = { ...run, integrationCoverage: compressed }
+            else log.warn({ runId: run.runId }, 'Integration coverage exceeds the device report limit')
           }
           if (run.suite === 'integration' || run.suite === 'unit') {
             const durations = CiDurationsSchema.safeParse(artifacts.durations)

@@ -175,6 +175,7 @@ jobs:
         env:
           DURATIONS_OUTPUT: ${{ runner.temp }}/durations.json
           TEST_RESULTS_OUTPUT: ${{ runner.temp }}/test-results.json
+          CI_SELECTION_OUTPUT: ${{ runner.temp }}/selection.json
           CI_WATCHDOG_MESSAGE_FILE: ${{ runner.temp }}/watchdog-message.json
       - name: Save suite caches
         if: always() && steps.suite-cache.conclusion == 'success' && steps.suite-cache.outputs.cache-hit != 'true'
@@ -203,6 +204,8 @@ jobs:
             ${{ runner.temp }}/durations.json
             ${{ runner.temp }}/durations.json.vitest.json
             ${{ runner.temp }}/test-results.json
+            ${{ runner.temp }}/integration-coverage.json
+            ${{ runner.temp }}/selection.json
             ${{ runner.temp }}/watchdog-message.json
             ${{ runner.temp }}/suite.log
           retention-days: 1

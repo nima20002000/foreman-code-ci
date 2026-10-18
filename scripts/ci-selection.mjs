@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { join, matchesGlob, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { gunzipSync } from 'node:zlib'
 import { affectedSnapshot } from './ci-affected.mjs'
 import { integrationPartition } from '../packages/contracts/src/ciPartition.mjs'
 import { integrationFileList } from './ci-files.mjs'
@@ -30,7 +31,12 @@ export function executionDurations(suite, cwd, learned = {}) {
 /** Selection and partitioning happen in the checked-out repository on the cloud runner. */
 export function executionSelection({ commit, baseCommit, executionSuite, defaultRef, partition, learned = {}, cwd = process.cwd() }) {
   const suite = executionSuite.split('-')[0]
-  const selection = affectedSnapshot(commit, suite, cwd, defaultRef, baseCommit)
+  const coveragePath = join(cwd, 'ci-integration-coverage.json')
+  const coverage = existsSync(coveragePath) ? JSON.parse(readFileSync(coveragePath, 'utf8')) : undefined
+  // Main validates source ancestry before copying this input into the mirror's synthetic Git history.
+  const prepared = coverage ? { changedFiles: coverage.changedFiles, coverageMap: JSON.parse(
+    gunzipSync(Buffer.from(coverage.map, 'base64'), { maxOutputLength: 64 * 1024 * 1024 }).toString()) } : undefined
+  const selection = affectedSnapshot(commit, suite, cwd, defaultRef, baseCommit, [], prepared)
   let files = executionFiles(selection.files, executionSuite, cwd)
   if (selection.scope === 'full' && suite === 'integration' && partition) files = integrationFileList(cwd)
   if (partition && (selection.scope === 'affected' || suite === 'integration')) {
@@ -61,7 +67,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     baseCommit: process.env.BASE_COMMIT || undefined,
     partition: partition ? JSON.parse(partition) : undefined, learned: JSON.parse(process.env.CI_DURATIONS || '{}') })
   writeFileSync(output, JSON.stringify(selection.files))
+  if (process.env.CI_SELECTION_OUTPUT) writeFileSync(process.env.CI_SELECTION_OUTPUT, JSON.stringify(selection))
   console.error(selection.scope === 'full' ? `Running full suite: ${selection.reason}`
-    : `Selected ${selection.files.length} affected files for ${executionSuite}.`)
+    : `Selected ${selection.files.length} affected files for ${executionSuite}: ${selection.reason}`)
   console.log(selection.scope)
 }

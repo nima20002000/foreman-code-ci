@@ -212,6 +212,17 @@ fi
 
 unset CI_SELECTION_COMMIT
 
+if [ -n "${CI_SELECTION_OUTPUT:-}" ] && [ ! -f "$CI_SELECTION_OUTPUT" ]; then
+  mkdir -p "$(dirname "$CI_SELECTION_OUTPUT")"
+  node --input-type=module -e '
+    import { writeFileSync } from "node:fs"
+    const scope = process.argv[1]
+    const reason = scope === "full" ? "Full scope requested; every file in the suite or partition runs."
+      : "Caller supplied the affected files."
+    writeFileSync(process.env.CI_SELECTION_OUTPUT, JSON.stringify({ scope, files: [], reason }))
+  ' "$scope"
+fi
+
 if [ "$scope" = affected ] && [ "$SUITE" != integration ]; then
   case "$SUITE" in
     unit|unit-api) ready db; ready clis; delegate_cgroup ;;
@@ -253,6 +264,11 @@ case "$SUITE" in
   build-other) pnpm -r --filter '!@foreman-code/api' --if-present build ;;
   typecheck|lint|build) pnpm "$SUITE" ;;
   integration)
+    export FOREMAN_CODE_INTEGRATION_COVERAGE=0
+    if [ "$scope" = full ]; then
+      export FOREMAN_CODE_INTEGRATION_COVERAGE=1
+      export FOREMAN_CODE_INTEGRATION_COVERAGE_OUTPUT="$(dirname "$DURATIONS_OUTPUT")/integration-coverage.json"
+    fi
     if [ "${CI_USER_SYSTEMD:-0}" = 1 ] && [ "${CI_HOST_RUNNER:-0}" != 1 ]; then
       source scripts/ci-user-systemd.sh
     fi

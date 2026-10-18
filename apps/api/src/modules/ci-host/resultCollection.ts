@@ -5,11 +5,14 @@ import { componentLogger } from '../diagnostics/logger.js'
 import type { HostCiComputer, HostCiEndpoint } from './service.js'
 import { serializeCiJson } from './text.js'
 import { ciExecutionRunId } from './executionAttempt.js'
+import { gunzipSync } from 'node:zlib'
+import { CiIntegrationCoverageSchema } from '@foreman-code/contracts'
+import type { IntegrationCoverageStore } from './coverageStore.js'
 
 const log = componentLogger('jobs')
 
 export async function collectCiResults(pool: pg.Pool, endpoint: HostCiEndpoint, computer: HostCiComputer,
-  run: CiRunRecord, reply: Extract<CiHostReply, { operation: 'read' }>) {
+  run: CiRunRecord, reply: Extract<CiHostReply, { operation: 'read' }>, coverage?: IntegrationCoverageStore) {
   if (!['unit', 'integration'].includes(run.suite)) {
     return { run: reply.run, durations: reply.durations, error: undefined }
   }
@@ -18,9 +21,16 @@ export async function collectCiResults(pool: pg.Pool, endpoint: HostCiEndpoint, 
   let collectionError: unknown
   try {
     const fetched = await endpoint.request(computer, { operation: 'read', runId: ciExecutionRunId(run),
-      afterOffset: 0, maxBytes: 1, testResults: true, durations: true }, { priority: 'background' })
+      afterOffset: 0, maxBytes: 1, testResults: true, durations: true,
+      ...(coverage && run.suite === 'integration' && run.scope === 'full' ? { integrationCoverage: true } : {}) },
+    { priority: 'background' })
     if (fetched.operation === 'read') {
       results = fetched
+      if (coverage && fetched.integrationCoverage && run.suite === 'integration' && run.scope === 'full') {
+        const report = CiIntegrationCoverageSchema.parse(JSON.parse(
+          gunzipSync(Buffer.from(fetched.integrationCoverage, 'base64'), { maxOutputLength: 64 * 1024 * 1024 }).toString()))
+        await coverage.record(run.repository, run.commit, report)
+      }
       if (fetched.testResults) {
         await pool.query('update ci_runs set test_results=$2::jsonb where id=$1', [run.id, serializeCiJson(fetched.testResults)])
         collection = fetched.run.collection === 'pending' ? 'pending' : 'complete'

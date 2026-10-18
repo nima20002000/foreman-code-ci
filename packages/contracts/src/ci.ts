@@ -4,6 +4,7 @@ import { circleCreditsShape, circleSchedulingShape } from './circleCredits.js'
 import { CI_LOG_MAX_BYTES, CI_MAX_RUN_TICKETS, CiCachedFileSchema, CiCollectionSchema, CiComputerRefSchema, CiActivitySchema, CiRunRecordSchema, CiSuiteSchema, CiScopeSchema, CiSelectedFilesSchema,
   CiTestResultsSchema, CiPrioritySchema, CiPriorityReasonSchema,
   CiTestStatusSchema, CiTestSummarySchema, CiUserSystemdSchema, validCiSelection } from './ciHost.js'
+import { CiSelectionSchema } from './ciHost.js'
 import { IdSchema } from './schemaPrimitives.js'
 import { JobResourceRequestSchema } from './jobVerificationPolicy.js'
 import { SourceRootRecordSchema } from './sourceAdmission.js'
@@ -69,6 +70,8 @@ const CiRunTicketSchema = z.object({ ticketId: IdSchema }).strict()
 /** `joined` marks a request that joined an identical active request of the same workspace instead of queueing tickets;
  * `sharedWith` counts the other requesters still attached to that group. */
 export const CiRunOutputSchema = CiRunTicketSchema.extend({ partitions: z.array(CiRunTicketSchema).min(2).max(CI_MAX_RUN_TICKETS).optional(),
+  selection: CiSelectionSchema.optional().describe('Initial scope and selection reason. Runner-derived choices, '
+    + 'including coverage map commits and static/full fallbacks, are reported in ci_get run.selection.'),
   cachedFiles: z.array(CiCachedFileSchema).optional(), joined: z.literal(true).optional(),
   sharedWith: z.number().int().nonnegative().optional() }).strict()
 export type CiRunOutput = z.infer<typeof CiRunOutputSchema>
