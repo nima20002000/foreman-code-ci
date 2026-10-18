@@ -7,21 +7,6 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
-## [0.0.108] - 2026-10-18
-
-CI reliability fixes.
-- CI setup validates the required native Codex payload before reusing or publishing a package install, and fails loudly instead of accepting an incomplete one; the pinned schema exporter is used from the CI install without downloading during tests.
-- CI duration learning: a finished run's file durations are counted once even when two observations collect it at the same time; expired history is pruned after the collection commits, avoiding deadlocks.
-- Board: duplicate refetches no longer start before the previous request settles in the CI dialog.
-- Test fixtures: packaging tarballs store hardlinked files with their contents; the Board manual-positions suite runs in the heavy phase.
-
-## [0.0.107] - 2026-10-18
-
-CircleCI recovery and flake fixes.
-- CircleCI: pipelines that finish processing with no workflow are recognised, cancelled and retried safely; late workflows from earlier attempts stay tracked and cancelled after ticket completion; an older attempt's failure no longer fails its replacement; deadline release clears executor cleanup.
-- CircleCI usage: shutdown cancels slow credit refreshes within seconds, keeps pending exports for restart and finishes cache cleanup.
-- Worker chats: terminal operation receipts wait for native cleanup, fixing a rollover race after compaction.
-
 ## [0.0.106] - 2026-10-18
 
 CI correctness and speed.

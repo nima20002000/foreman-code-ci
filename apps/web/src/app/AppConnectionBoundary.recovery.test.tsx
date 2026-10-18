@@ -47,7 +47,7 @@ function RetryingRead() {
 
 it('refreshes healthy reads only after a failed read actually recovers, not while its retry is pending', async () => {
   const retryStarted = deferred()
-  const retryResponse = deferred()
+  const retryResponse = deferred<Response>()
   const healthyResponse = deferred()
   let attempts = 0
   let healthyReads = 0
@@ -61,8 +61,7 @@ it('refreshes healthy reads only after a failed read actually recovers, not whil
       attempts++
       if (attempts === 1) return unavailable()
       retryStarted.resolve()
-      await retryResponse.promise
-      return HttpResponse.json({ value: 'Recovered read' })
+      return retryResponse.promise
     }),
   )
   client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
@@ -82,7 +81,7 @@ it('refreshes healthy reads only after a failed read actually recovers, not whil
     expect(client.getQueryState(['recovery-page'])).toMatchObject({ isInvalidated: false, fetchStatus: 'idle' })
     expect(healthyReads).toBe(1)
     await act(async () => {
-      retryResponse.resolve()
+      retryResponse.resolve(HttpResponse.json({ value: 'Recovered read' }))
       await retry
     })
     expect(await screen.findByText('Recovered read')).toBeVisible()
@@ -91,7 +90,7 @@ it('refreshes healthy reads only after a failed read actually recovers, not whil
     await waitFor(() => expect(client.isFetching({ queryKey: ['recovery-page'] })).toBe(0))
     expect(healthyReads).toBe(2)
   } finally {
-    retryResponse.resolve()
+    retryResponse.resolve(unavailable())
     healthyResponse.resolve()
     view.unmount()
     await client.cancelQueries()

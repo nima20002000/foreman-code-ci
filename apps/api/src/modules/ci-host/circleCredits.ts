@@ -1,5 +1,4 @@
 import { gunzipSync } from 'node:zlib'
-import { setTimeout as delay } from 'node:timers/promises'
 import type { CircleCredits } from '@foreman-code/contracts'
 import type { CircleCreditAllowance } from '@foreman-code/contracts/management'
 import { DomainError } from '../errors.js'
@@ -12,14 +11,12 @@ const log = componentLogger('jobs')
 const REFRESH_MS = 3 * 60 * 60_000
 const POLL_MS = 6_000
 const EXPORT_WAIT_MS = 120_000
-const SHUTDOWN_GRACE_MS = 5_000
 const MAX_AGE_MS = 4 * 60 * 60_000
 const DAILY_EXPORT_LIMIT = 10
 
 export interface CircleCreditsReading { credits: CircleCredits | null; creditsUnavailable?: string }
 export interface CircleCreditsReader {
   reading(owner?: string, circleAccountId?: string): Promise<CircleCreditsReading>
-  close?(): Promise<void>
 }
 type UsageHttp = Pick<CloudHttp, 'request' | 'check' | 'json' | 'downloadUrl'>
 type HttpSource = UsageHttp | ((circleAccountId: string) => UsageHttp | Promise<UsageHttp>)
@@ -62,8 +59,6 @@ export function sumTotalCredits(csv: string): number {
 /** Org usage is sampled at most every three hours; all readers share the persisted export and attempt budget. */
 export class CircleCreditUsage implements CircleCreditsReader {
   private readonly refreshing = new Map<string, Promise<void>>()
-  private readonly shutdown = new AbortController()
-  private closed = false
   private readonly cache: CircleCreditCache
   private readonly now: () => number
   private readonly pollMs: number
@@ -79,18 +74,6 @@ export class CircleCreditUsage implements CircleCreditsReader {
     this.cache = options.cache ?? new CircleCreditCache()
   }
 
-  async close(): Promise<void> {
-    this.closed = true
-    const timer = setTimeout(() => {
-      this.shutdown.abort(new Error('CircleCI usage shutdown deadline reached.'))
-    }, SHUTDOWN_GRACE_MS)
-    try {
-      await Promise.all(this.refreshing.values())
-    } finally {
-      clearTimeout(timer)
-    }
-  }
-
   async reading(account?: string, circleAccountId = 'default'): Promise<CircleCreditsReading> {
     const owner = (account ?? await this.source.primaryOwner())?.toLowerCase()
     if (!owner) return { credits: null, creditsUnavailable: 'The CircleCI organization of the CI mirror is not known.' }
@@ -98,7 +81,7 @@ export class CircleCreditUsage implements CircleCreditsReader {
     const state = await this.cache.transaction(states => structuredClone(states[key] ?? { attempts: [] }))
     const due = state.job ? this.now() >= (state.nextPollAt ?? 0)
       : this.now() - (state.lastAttemptAt ?? -Infinity) >= REFRESH_MS
-    if (!this.closed && due && this.now() >= (state.retryAt ?? 0) && !this.refreshing.has(key)) {
+    if (due && this.now() >= (state.retryAt ?? 0) && !this.refreshing.has(key)) {
       const task = withoutCiDatabasePriority(() => this.refresh(key, owner, circleAccountId)).catch(() => {
         log.warn({ operation: 'read CircleCI credits', circleAccountId, owner }, 'CircleCI usage cache could not be read')
       }).finally(() => { this.refreshing.delete(key) })
@@ -126,7 +109,6 @@ export class CircleCreditUsage implements CircleCreditsReader {
     })
     if (!claimed) return
     try {
-      this.shutdown.signal.throwIfAborted()
       const http = typeof this.http === 'function' ? await this.http(circleAccountId) : this.http
       if (circleAccountId !== 'default' && typeof this.http !== 'function') {
         throw new DomainError('CI_CLOUD_CREDENTIALS_UNAVAILABLE', 'This CircleCI login is not configured.', 503)
@@ -140,8 +122,7 @@ export class CircleCreditUsage implements CircleCreditsReader {
       if (!urls) return
       let used = 0
       for (const url of urls) {
-        this.shutdown.signal.throwIfAborted()
-        const file = await http.downloadUrl(url, 120_000, this.shutdown.signal)
+        const file = await http.downloadUrl(url, 120_000)
         used += sumTotalCredits((file[0] === 0x1f && file[1] === 0x8b ? gunzipSync(file) : file).toString('utf8'))
       }
       await this.cache.transaction(states => {
@@ -156,8 +137,6 @@ export class CircleCreditUsage implements CircleCreditsReader {
         }
       })
     } catch (error) {
-      // Shutdown retains the saved export and provider retry schedule for the next reader.
-      if (this.shutdown.signal.aborted) return
       const message = error instanceof DomainError ? error.message : 'CircleCI usage could not be read.'
       await this.cache.transaction(states => {
         const state = states[key]!
@@ -173,8 +152,7 @@ export class CircleCreditUsage implements CircleCreditsReader {
   }
 
   private async call(http: UsageHttp, path: string, what: string, options: { method?: string; body?: string } = {}) {
-    this.shutdown.signal.throwIfAborted()
-    const response = await http.request(path, { timeoutMs: 60_000, signal: this.shutdown.signal, ...options })
+    const response = await http.request(path, { timeoutMs: 60_000, ...options })
     if (!response) throw new DomainError('CI_CLOUD_CREDENTIALS_UNAVAILABLE', 'CircleCI is not logged in on Main.', 503)
     if (response.status === 429) {
       const retryAfter = response.headers.get('retry-after')
@@ -224,7 +202,6 @@ export class CircleCreditUsage implements CircleCreditsReader {
   private async waitForExport(http: UsageHttp, key: string, orgId: string, jobId: string): Promise<string[] | null> {
     const deadline = Date.now() + this.waitMs
     for (;;) {
-      this.shutdown.signal.throwIfAborted()
       const now = this.now()
       const canPoll = await this.cache.transaction(states => {
         const state = states[key]!
@@ -245,7 +222,7 @@ export class CircleCreditUsage implements CircleCreditsReader {
         throw new DomainError('CI_CLOUD_FAILED', 'CircleCI usage export failed.', 502)
       }
       if (Date.now() + this.pollMs > deadline) return null
-      await delay(this.pollMs, undefined, { signal: this.shutdown.signal })
+      await new Promise(resolve => setTimeout(resolve, this.pollMs))
     }
   }
 }

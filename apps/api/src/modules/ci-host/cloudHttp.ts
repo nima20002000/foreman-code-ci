@@ -115,23 +115,15 @@ export class CloudHttp {
     }
   }
 
-  private requestSignal(timeoutMs: number, callerSignal?: AbortSignal): AbortSignal {
-    const signals = [AbortSignal.timeout(timeoutMs)]
-    const deadline = deadlines.getStore()
-    if (deadline) signals.push(deadline)
-    if (callerSignal) signals.push(callerSignal)
-    return AbortSignal.any(signals)
-  }
-
-  async request(path: string, options: {
-    timeoutMs?: number; headers?: Record<string, string>; method?: string; body?: string; signal?: AbortSignal
-  } = {}) {
+  async request(path: string, options: { timeoutMs?: number; headers?: Record<string, string>; method?: string; body?: string } = {}) {
     const token = await this.token()
     const pending = this.cache.get(this.credentialKey)
     this.observeTransport(token)
     if (!token) return null
     const base = this.provider === 'github' ? 'https://api.github.com' : 'https://circleci.com'
-    const signal = this.requestSignal(options.timeoutMs ?? 120_000, options.signal)
+    const timeout = AbortSignal.timeout(options.timeoutMs ?? 120_000)
+    const deadline = deadlines.getStore()
+    const signal = deadline ? AbortSignal.any([deadline, timeout]) : timeout
     const send = (value: string) => this.fetch(`${base}${path}`, {
       signal, redirect: 'manual', method: options.method ?? 'GET', ...(options.body === undefined ? {} : { body: options.body }),
       headers: {
@@ -221,10 +213,12 @@ export class CloudHttp {
     return Buffer.from(await response.arrayBuffer())
   }
 
-  async downloadUrl(url: string, timeoutMs: number, callerSignal?: AbortSignal): Promise<Buffer> {
+  async downloadUrl(url: string, timeoutMs: number): Promise<Buffer> {
     // Signed artifact/log URLs must never receive API credentials, including across redirects.
     try {
-      const signal = this.requestSignal(timeoutMs, callerSignal)
+      const timeout = AbortSignal.timeout(timeoutMs)
+      const deadline = deadlines.getStore()
+      const signal = deadline ? AbortSignal.any([deadline, timeout]) : timeout
       const response = await this.fetch(url, { signal })
       await this.check(response, () => `${this.label} artifacts could not be downloaded.`)
       return Buffer.from(await response.arrayBuffer())
