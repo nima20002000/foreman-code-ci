@@ -707,10 +707,10 @@ export class PostgresSourceService implements SourceAdmissionPort {
       const signal = options?.signal ?? AbortSignal.timeout(60_000)
       for (const entry of manifest.entries) await this.store.read(manifest, entry, signal)
     }
-    const retainWorkingTree = await retainsNodeWorkingTree(this.pool, record.receipt.executionId)
-    const footprint = await this.executions.releaseClaim(record, {
-      ...options, ...(retainWorkingTree ? { retainWorkingTree: true } : {}),
-    })
+    const retainWorkingTree = record.receipt.worktree !== undefined
+      && await retainsNodeWorkingTree(this.pool, record.receipt.executionId)
+    const footprint = await this.executions.releaseClaim(record,
+      retainWorkingTree ? { ...options, retainWorkingTree: true } : options)
     const retainedBytes = footprint.retainedBytes + 16 * 1024
     const quotaReclaimed = Boolean(record.receipt.quota && footprint.retainedBytes === 0)
     await this.lifecycle.closed?.(record)
