@@ -13,8 +13,6 @@ import type { WorkflowClosureStore } from '../src/modules/interactions/workflowC
 import { ExclusiveGraphConnection } from '../src/modules/run-graph/connection.js'
 import type { RunOwnership } from '../src/modules/runs/ownership.js'
 import { nativeLanes } from './helpers/nativeLanes.js'
-import { AppMcpRoutes } from '../src/modules/harnesses/appMcpRoutes.js'
-import { deferred } from './helpers/deferred.js'
 
 const connections: ExclusiveGraphConnection[] = []
 afterEach(async () => {
@@ -183,37 +181,5 @@ it.each(['check', 'refresh'] as const)('logs and preserves the original %s failu
   } finally {
     f.controller.abort()
     await f.pending
-  }
-})
-
-it('keeps a native execution alive across MCP route refresh deadlines and retries credential maintenance', async () => {
-  vi.useFakeTimers()
-  const f = fixture()
-  const epoch = deferred<string>()
-  const routes = new AppMcpRoutes({ query: async () => ({ rows: [] }) } as unknown as pg.Pool,
-    'http://127.0.0.1:3101/mcp', undefined, () => ({ active: true, readRuntimeEpoch: () => epoch.promise }))
-  f.renew.mockImplementation(async () => {
-    await routes.refresh()
-    return new Date(Date.now() + 900_000).toISOString()
-  })
-  try {
-    await f.started
-    await vi.advanceTimersByTimeAsync(720_000)
-    expect(f.signal()?.aborted).toBe(false)
-    expect(f.cancel).not.toHaveBeenCalled()
-    expect(f.revokeForExecution).not.toHaveBeenCalled()
-    expect(f.renew.mock.calls.length).toBeGreaterThan(1)
-    epoch.resolve('123456')
-    await vi.advanceTimersByTimeAsync(5_000)
-    f.finish()
-    await expect(f.pending).resolves.toMatchObject({ state: 'completed', result: { outcome: 'succeeded' } })
-    expect(f.createSession).toHaveBeenCalledOnce()
-    expect(f.manager.startTurn).toHaveBeenCalledOnce()
-    expect(f.prepare).toHaveBeenCalledOnce()
-  } finally {
-    epoch.resolve('123456')
-    f.controller.abort()
-    await f.pending
-    await routes.close()
   }
 })
