@@ -757,10 +757,6 @@ export class CloudCi {
     if (this.ports.now().getTime() - Date.parse(dispatchedAt) < CLOUD_START_TIMEOUT_MS) return run
     // Retire the pipeline before retrying so it cannot acquire a workflow later.
     if (run.providerRunId) {
-      if (this.provider.id === 'circleci') {
-        const status = await this.provider.status(run)
-        if (status.done && status.notStarted) return this.retryUnstarted(run)
-      }
       if (!run.dispatch?.cancelAccepted) {
         let accepted: boolean
         try {
@@ -782,10 +778,6 @@ export class CloudCi {
         return this.save({ ...run, state: 'running', workflowStarted: true })
       }
     }
-    return this.retryUnstarted(run)
-  }
-
-  private async retryUnstarted(run: CloudRun) {
     const retryInput = run.dispatch && run.dispatch.attempts < MAX_DISPATCH_ATTEMPTS ? run.dispatch.input : undefined
     const message = `${this.provider.label} created no workflow within 75 seconds. `
       + (retryInput ? `Retrying dispatch (${run.dispatch!.attempts + 1}/${MAX_DISPATCH_ATTEMPTS}).`
@@ -1593,7 +1585,7 @@ export class CloudCi {
     const message = passed ? run.message : [run.message, status.message ?? failure].filter(Boolean).join(' ')
     const terminal = await this.save({ ...run, state,
       exitCode: passed ? 0 : 1, finishedAt: status.finishedAt, collection: { log: false, artifacts: false },
-      ...(failedSetup || status.notStarted ? { testsStarted: false } : {}),
+      ...(failedSetup ? { testsStarted: false } : {}),
       message })
     return terminal
   }

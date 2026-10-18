@@ -11,6 +11,7 @@ export const ciInfrastructure = [
   /(?:^|\/)migrations?\/|Migration\.[cm]?[jt]s$/,
   /^packages\/contracts\/src\/index\.ts$/,
   /^packages\/contracts\/src\/ci(?:Coverage|ImportGraph)\.[^/]+$/,
+  /^apps\/api\/src\/modules\/ci-host\/(?!.*\.(?:test|testSupport)\.[^/]+$)/,
   /^scripts\/(?:test-integration[^/]*|test-resources[^/]*|integration-process[^/]*|integration-coverage[^/]*|ci-[^/]*|vitest-[^/]*|test-db\.mjs|test-command\.mjs|heavy-job\.mjs)$/,
   /^apps\/api\/test\/(?:helpers\/|setup[^/]*$)|^apps\/web\/src\/test\//,
   /^(?:\.github\/workflows\/|\.circleci\/)/,
