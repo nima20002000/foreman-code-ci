@@ -1246,10 +1246,15 @@ export class HostCiService {
   private refreshActiveRuns(active: { id: string; record: unknown; host_key: string | null }[],
     computers: HostCiComputer[]) {
     const refresh = async (listed: typeof active[number]) => {
-      const { workspaceId } = CiRunRecordSchema.parse(listed.record)
+      const listedRun = CiRunRecordSchema.parse(listed.record)
+      const { workspaceId } = listedRun
       try {
         // An observation that finished after this pass listed the ticket has rewritten it, including its backoff.
         const previous = await this.read(listed.id, workspaceId)
+        // It may also have moved the ticket off the listed executor, such as a setup retry queued with a new
+        // execution. The listed executor does not hold that execution; the next pass lists the ticket where it is.
+        if (ciExecutionRunId(previous) !== ciExecutionRunId(listedRun)
+          || !isDeepStrictEqual(previous.computer?.hostRef, listedRun.computer?.hostRef)) return
         await this.refreshRun({ ...listed, record: previous }, computers,
           { onCollecting: () => { this.collectingRuns.add(listed.id) } })
         const current = await this.read(listed.id, workspaceId)
