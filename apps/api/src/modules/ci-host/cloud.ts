@@ -3,14 +3,12 @@ import { failedReadObservation, successfulReadObservation } from '../diagnostics
 import type { ReadObservation } from '@foreman-code/contracts'
 import { mkdir, mkdtemp, open, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { createHash, randomUUID } from 'node:crypto'
-import { gzipSync } from 'node:zlib'
-import { compactIntegrationCoverage } from '@foreman-code/contracts/ci-coverage'
 import { homedir, hostname, userInfo } from 'node:os'
 import { delimiter, dirname, join, resolve } from 'node:path'
 import type pg from 'pg'
-import { CiIntegrationCoverageSchema, CiSelectionSchema, CiWatchdogFailureSchema, CiDurationsSchema, CiHostReplySchema, CiHostRequestSchema, CiTestResultsSchema, WorkspaceSchema,
+import { CiWatchdogFailureSchema, CiDurationsSchema, CiHostReplySchema, CiHostRequestSchema, CiTestResultsSchema, WorkspaceSchema,
   integrationPartition, requiresUserSystemd,
-  type CiCoverageSelection, type CiDurations, type CiHostReply, type CiHostRequest, type CiHostRun, type CiPartition, type CiMirrorRepair } from '@foreman-code/contracts'
+  type CiDurations, type CiHostReply, type CiHostRequest, type CiHostRun, type CiPartition, type CiMirrorRepair } from '@foreman-code/contracts'
 import { canonicalJson } from '@foreman-code/contracts/canonical-json'
 import { DomainError } from '../errors.js'
 import { componentLogger } from '../diagnostics/logger.js'
@@ -35,6 +33,7 @@ import type { CircleAccountContext, CircleAccountRegistry } from './circleAccoun
 import { CircleStandby } from './circleStandby.js'
 
 const MAX_DISPATCH_ATTEMPTS = 3
+const GITHUB_INPUT_LIMIT_BYTES = 65_535
 /** A running run asks its service at most this often; reads in between answer from the kept state and log. */
 const POLL_MS = 4_000
 const FINISH_POLL_MS = 2_000
@@ -57,6 +56,11 @@ function collectionPending(run: CloudRun): boolean {
 
 function cancellationPending(run: CloudRun): boolean {
   return Boolean(run.cancellation && !run.cancellation.completedAt)
+}
+
+function neverSubmitted(run: CloudRun): boolean {
+  return Boolean(run.dispatch?.notSent && !run.dispatch.uncertain
+    && !run.providerRunId && !run.dispatchHistory?.length)
 }
 
 export type { CloudRun }
@@ -206,7 +210,7 @@ export class CloudCi {
     }
     try {
       await this.publish(input.repository, mirror, input.commit,
-        input.defaultBranch, input.baseCommit, input.durations ?? {}, false, input.integrationCoverage)
+        input.defaultBranch, input.baseCommit, input.durations ?? {}, false)
     } finally {
       reservations.delete(reservation)
       if (!reservations.size) publishingBranches.delete(mirror)
@@ -342,7 +346,6 @@ export class CloudCi {
     return CiHostReplySchema.parse({ operation: 'read', run: view,
       text: sanitizeCiText(page.text), nextOffset: page.nextOffset,
       ...(request.durations && run.durations ? { durations: run.durations } : {}),
-      ...(request.integrationCoverage && run.integrationCoverage ? { integrationCoverage: run.integrationCoverage } : {}),
       ...(request.testResults && run.testResults ? { testResults: run.testResults } : {}) })
   }
 
@@ -425,7 +428,6 @@ export class CloudCi {
       ? [`CLI transport: ${transport.reason} (fallback count ${transport.fallbackCount}).`, run.message]
         .filter(Boolean).join(' ').slice(0, 2000) : run.message
     return { runId: run.runId, state: run.state, step,
-      ...(run.selection ? { selection: run.selection } : {}),
       ...(transport ? { transport } : {}),
       exitCode: run.exitCode, startedAt: run.startedAt, finishedAt: run.finishedAt, logBytes, message: message === null ? null : sanitizeCiText(message),
       ...(run.provenance ? { provenance: run.provenance } : {}),
@@ -528,8 +530,7 @@ export class CloudCi {
     try {
       const publication = await this.publish(request.repository, mirror, request.commit,
         deriveFiles && !request.baseCommit ? request.defaultBranch ?? 'main' : undefined,
-        deriveFiles ? request.baseCommit : undefined, request.durations ?? {}, request.partition !== undefined,
-        request.integrationCoverage)
+        deriveFiles ? request.baseCommit : undefined, request.durations ?? {}, request.partition !== undefined)
       if (request.deferMirror) {
         return await this.serializeRun(request.runId, async () => {
           const latest = await this.read(request.runId)
@@ -585,6 +586,10 @@ export class CloudCi {
       ...(baseCommit ? { baseCommit } : {}),
       ...(partition ? { partition } : {}),
       ...(durations && durations.length <= limit ? { durations } : {}) }
+    // Complete timings are in the snapshot; omit the duplicate when JSON escaping exceeds GitHub's input budget.
+    if (this.provider.id === 'github' && Buffer.byteLength(JSON.stringify(input)) > GITHUB_INPUT_LIMIT_BYTES) {
+      delete input.durations
+    }
     if (this.provider.id === 'circleci') {
       input.workflowRef = `ci/${request.commit}-${request.runId}`
       if ([input.slice, input.files, input.partition].some(value => value && value.length > limit)) {
@@ -662,16 +667,16 @@ export class CloudCi {
       })
       if (failed) return this.failPipeline(pending, { message: this.checkAccount(failed).message! })
     }
-    pending = await this.save({ ...pending, dispatch: { ...pending.dispatch!, uncertain: true, notSent: false } })
-    // Check policy after the final journal write, immediately before contacting the provider.
-    if (!run.providerRunId && ((run.dispatch?.attempts ?? 0) === 0 || run.dispatch?.notSent) && !run.dispatch?.uncertain) {
-      try {
+    try {
+      pending = await this.save({ ...pending, dispatch: { ...pending.dispatch!, uncertain: true, notSent: false } })
+      // Check policy after the final journal write, immediately before contacting the provider.
+      if (!run.providerRunId && ((run.dispatch?.attempts ?? 0) === 0 || run.dispatch?.notSent) && !run.dispatch?.uncertain) {
         await this.requireNewStart(input.mirror.slice(input.mirror.indexOf('/') + 1))
-      } catch (error) {
-        pending = await this.save({ ...pending, dispatch: { ...pending.dispatch!, uncertain: false, notSent: true } })
-        if (!(error instanceof DomainError && error.code === 'CI_CLOUD_UNAVAILABLE')) throw error
-        return this.failPipeline(pending, { message: error.message })
       }
+    } catch (error) {
+      pending = await this.save({ ...pending, dispatch: { ...pending.dispatch!, uncertain: false, notSent: true } })
+      if (!(error instanceof DomainError && error.code === 'CI_CLOUD_UNAVAILABLE')) throw error
+      return this.failPipeline(pending, { message: error.message })
     }
     let providerRunId: string | null
     try {
@@ -859,15 +864,14 @@ export class CloudCi {
    * that splits its files on the runner (`exact`) needs a snapshot with exactly its learned durations; any other start
    * only orders its files by them, so it reuses whichever snapshot of the commit is already there. */
   private async publish(repository: string, mirror: string, commit: string, defaultBranch: string | undefined,
-    baseCommit: string | undefined, durations: CiDurations, exact: boolean, coverage?: CiCoverageSelection) {
+    baseCommit: string | undefined, durations: CiDurations, exact: boolean) {
     return serializeMirror(mirror, () => this.publishLocked(repository, mirror, commit,
-      defaultBranch, baseCommit, durations, exact, coverage))
+      defaultBranch, baseCommit, durations, exact))
   }
 
   private async publishLocked(repository: string, mirror: string, commit: string, defaultBranch: string | undefined,
-    baseCommit: string | undefined, durations: CiDurations, exact: boolean, coverage?: CiCoverageSelection) {
-    const coverageKey = coverage ? createHash('sha256').update(canonicalJson(coverage)).digest('hex') : ''
-    const prefix = `${commit}\n${defaultBranch ?? ''}\n${baseCommit ?? ''}\n${coverageKey}\n`
+    baseCommit: string | undefined, durations: CiDurations, exact: boolean) {
+    const prefix = `${commit}\n${defaultBranch ?? ''}\n${baseCommit ?? ''}\n`
     const key = `${prefix}${canonicalJson(durations)}`
     const publications = this.publications(repository, mirror)
     let published = publications.get(key)
@@ -880,7 +884,7 @@ export class CloudCi {
       const source = ensureCommit(this.git, repository, commit, AbortSignal.timeout(600_000))
       source.catch(() => { /* ignore: the push awaits the source and reports its failure */ })
       const pushed = queued.then(() => this.push(repository, mirror, commit, defaultBranch, baseCommit, durations,
-        { queuedAt, startedAt, source }, coverage))
+        { queuedAt, startedAt, source }))
       published = pushed
       mirrorPushes.set(mirror, pushed)
       void pushed.catch(() => { /* ignore: the push failure is reported to the caller awaiting it; this only clears the queue entry */ }).then(() => { if (mirrorPushes.get(mirror) === pushed) mirrorPushes.delete(mirror) })
@@ -899,8 +903,7 @@ export class CloudCi {
   }
 
   private async push(repository: string, mirror: string, commit: string, defaultBranch: string | undefined,
-    baseCommit: string | undefined, durations: CiDurations, queued: { queuedAt: number; startedAt: string; source: Promise<string> },
-    coverage?: CiCoverageSelection) {
+    baseCommit: string | undefined, durations: CiDurations, queued: { queuedAt: number; startedAt: string; source: Promise<string> }) {
     const startedAt = queued.startedAt
     const started = performance.now()
     const queueMs = started - queued.queuedAt
@@ -988,7 +991,7 @@ export class CloudCi {
       const sourceWorkflows = new Set((await git(['ls-tree', source, '--', ...workflows])).split('\n')
         .map(entry => entry.split('\t')[1]))
       const missing = entries.filter(entry => !sourceWorkflows.has(entry.split('\t')[1]))
-      if (!missing.length && !Object.keys(durations).length && !coverage) return source
+      if (!missing.length && !Object.keys(durations).length) return source
       await mkdir(this.root, { recursive: true, mode: 0o700 })
       const directory = await mkdtemp(join(this.root, 'snapshot-'))
       try {
@@ -1003,12 +1006,6 @@ export class CloudCi {
           await writeFile(path, canonicalJson(durations), { mode: 0o600 })
           const blob = await git(['hash-object', '-w', path])
           await git(['update-index', '--add', '--cacheinfo', `100644,${blob},scripts/ci-learned-durations.json`], env)
-        }
-        if (coverage) {
-          const path = join(directory, 'coverage.json')
-          await writeFile(path, canonicalJson(coverage), { mode: 0o600 })
-          const blob = await git(['hash-object', '-w', path])
-          await git(['update-index', '--add', '--cacheinfo', `100644,${blob},ci-integration-coverage.json`], env)
         }
         return await git(['write-tree'], env)
       } finally {
@@ -1349,7 +1346,8 @@ export class CloudCi {
     if (!cancellationPending(run)) return run
     run = await this.adoptSubmission(run)
     const canceled = new Set(run.cancellation!.canceledIds)
-    const discovered = this.provider.id === 'github'
+    const unsent = neverSubmitted(run)
+    const discovered = this.provider.id === 'github' && !unsent
       ? await this.provider.discover!(run) : []
     if (this.provider.id === 'github' && run.dispatch?.uncertain && discovered.length) {
       run = { ...run, providerRunId: run.providerRunId ?? discovered[0]!,
@@ -1366,9 +1364,8 @@ export class CloudCi {
     const ids = new Set([run.providerRunId, ...attempts, ...discovered].filter((id): id is string => Boolean(id)))
     const discoveryComplete = !run.dispatch?.attempts
       || this.ports.now().getTime() - Date.parse(run.cancellation!.at) >= CLOUD_START_TIMEOUT_MS
-    const neverSubmitted = run.dispatch?.notSent && !history.length
     let stopped = discoveryComplete && !run.dispatch?.uncertain
-      && (ids.size > 0 || !run.dispatch?.attempts || neverSubmitted)
+      && (ids.size > 0 || !run.dispatch?.attempts || unsent)
     for (const providerRunId of ids) {
       const attempt = { ...run, providerRunId }
       if (!canceled.has(providerRunId)) {
@@ -1414,14 +1411,6 @@ export class CloudCi {
             const contents = Buffer.from(artifacts.suiteLog).subarray(-CLOUD_LOG_LIMIT)
             await writeFile(this.path(run.runId, 'log'), contents, { mode: 0o600 })
             collection.log = true
-          }
-          const selection = CiSelectionSchema.safeParse(artifacts.selection)
-          if (selection.success) run = { ...run, selection: selection.data }
-          const coverage = CiIntegrationCoverageSchema.safeParse(artifacts.integrationCoverage)
-          if (run.suite === 'integration' && run.scope === 'full' && coverage.success) {
-            const compressed = gzipSync(JSON.stringify(compactIntegrationCoverage(coverage.data))).toString('base64')
-            if (compressed.length <= 700_000) run = { ...run, integrationCoverage: compressed }
-            else log.warn({ runId: run.runId }, 'Integration coverage exceeds the device report limit')
           }
           if (run.suite === 'integration' || run.suite === 'unit') {
             const durations = CiDurationsSchema.safeParse(artifacts.durations)
@@ -1522,6 +1511,7 @@ export class CloudCi {
   private async follow(run: CloudRun, reassign: boolean): Promise<CloudRun> {
     const runId = run.runId
     run = await this.adoptSubmission(run)
+    if (neverSubmitted(run)) return this.recoverUnstarted(run)
     if (run.state === 'starting' || !run.providerRunId || !run.workflowStarted && this.provider.id === 'circleci') {
       const providerRunId = await this.provider.find(run)
       if (!providerRunId) {

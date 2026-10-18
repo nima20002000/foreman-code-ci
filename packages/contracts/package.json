@@ -22,7 +22,6 @@
     "./product-environment": { "types": "./dist/productEnvironment.d.mts", "import": "./dist/productEnvironment.mjs" },
     "./product-environment-node": { "types": "./dist/productEnvironmentNode.d.mts", "import": "./dist/productEnvironmentNode.mjs" },
     "./ci-import-graph": { "types": "./dist/ciImportGraph.d.mts", "import": "./dist/ciImportGraph.mjs" },
-    "./ci-coverage": { "types": "./dist/ciCoverage.d.mts", "import": "./dist/ciCoverage.mjs" },
     "./subagents": { "types": "./dist/subagents.d.ts", "import": "./dist/subagents.js" },
     ".": {
       "types": "./dist/index.d.ts",

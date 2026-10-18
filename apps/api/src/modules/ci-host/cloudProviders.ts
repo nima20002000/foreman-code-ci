@@ -15,8 +15,6 @@ export interface CloudRun {
   runId: string; repository: string; mirror: string; commit: string; suite: CiSuite; startedAt: string
   providerRunId: string | null; state: CiHostRun['state']; finishedAt: string | null; exitCode: number | null
   message: string | null; durations?: CiDurations; testResults?: CiTestResults
-  integrationCoverage?: string
-  selection?: CiHostRun['selection']
   transport?: CiHostRun['transport']
   testsStarted?: boolean
   scope?: CiScope; files?: string[]; part?: CiPart; baseCommit?: string
@@ -164,10 +162,13 @@ async function executeCommand(ports: HostCiPorts, label: string, file: string, a
     }
 
     // gh resolves the workflow with a GET before it sends the dispatch POST.
-    const workflowLookupFailed = file === 'gh' && args[0] === 'workflow' && args[1] === 'run'
+    const githubDispatch = file === 'gh' && args[0] === 'workflow' && args[1] === 'run'
+    const workflowLookupFailed = githubDispatch
       && result.stderr.trimStart().startsWith(
         `Get "https://api.github.com/repos/${args[args.indexOf('-R') + 1]}/actions/workflows/${args[2]}":`)
-    const code = workflowLookupFailed ? 'CI_CLOUD_DISPATCH_NOT_SENT' : 'CI_CLOUD_FAILED'
+    const dispatchRejected = githubDispatch
+      && /could not create workflow dispatch event: HTTP (?:400|401|403|404|422)\b/.test(result.stderr)
+    const code = workflowLookupFailed || dispatchRejected ? 'CI_CLOUD_DISPATCH_NOT_SENT' : 'CI_CLOUD_FAILED'
     throw new DomainError(code, `${label} did not accept ${file} ${args[0]} ${args[1]}: `
       + `${result.stderr.trim().slice(0, 300)}`, 502)
   }
@@ -187,7 +188,6 @@ async function findFile(directory: string, name: string): Promise<string | null>
 
 export interface CloudArtifacts {
   durations: unknown; testResults: unknown; watchdogFailure?: unknown; suiteLog?: string
-  integrationCoverage?: unknown; selection?: unknown
 }
 const ARTIFACT_VISIBILITY_MS = 5 * 60_000
 const noArtifacts: CloudArtifacts = { durations: null, testResults: null }
@@ -199,7 +199,6 @@ async function readArtifacts(directory: string): Promise<CloudArtifacts> {
   }
   const suiteLog = await findFile(directory, 'suite.log')
   return { durations: await read('durations.json'), testResults: await read('test-results.json'),
-    integrationCoverage: await read('integration-coverage.json'), selection: await read('selection.json'),
     watchdogFailure: await read('watchdog-message.json'),
     ...(suiteLog ? { suiteLog: await readFile(suiteLog, 'utf8') } : {}) }
 }
@@ -613,7 +612,6 @@ export class CircleCiProvider implements CloudProvider {
     await rm(directory, { recursive: true, force: true })
     await mkdir(directory, { recursive: true })
     const resultPaths = new Set(['durations/durations.json', 'durations/test-results.json',
-      'durations/integration-coverage.json', 'durations/selection.json',
       'durations/watchdog-message.json', 'durations/suite.log'])
     for (const artifact of (JSON.parse(listed) as { path: string; url: string }[])
       .filter(value => resultPaths.has(value.path) || run.suite === 'integration'
