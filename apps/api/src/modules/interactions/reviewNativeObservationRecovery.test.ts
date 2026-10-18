@@ -1,6 +1,6 @@
 import type pg from 'pg'
 import { describe, expect, it, vi } from 'vitest'
-import { HarnessExecutionSchema, ReviewJobSchema, type ReviewJob } from '@foreman-code/contracts'
+import { HarnessExecutionSchema, ReviewJobSchema } from '@foreman-code/contracts'
 import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import type { NativeHarnessSessionManager, NativeHistory } from '../harnesses/port.js'
 import { ExclusiveGraphConnection } from '../run-graph/connection.js'
@@ -32,20 +32,21 @@ async function fixture() {
   vi.mocked(readRepeatExecutionLocked).mockResolvedValue({
     execution, ref, inputDigest: repeatDigest(execution.input),
   } as Awaited<ReturnType<typeof readRepeatExecutionLocked>>)
+  const reviewTurnId = 'original-review-turn'
   let job = ReviewJobSchema.parse({ id: 'retained-review', interactionId: 'pending-interaction',
     reviewerAgentId: execution.agentId, attempt: 1, state: 'acknowledged', provider: session.harness,
     nativeSessionId: session.nativeSessionId, correlationId: 'original-review-correlation',
-    providerTurnOrMessageId: 'original-review-turn', submittedAt: f.createdAt, acknowledgedAt: f.createdAt,
+    providerTurnOrMessageId: reviewTurnId, submittedAt: f.createdAt, acknowledgedAt: f.createdAt,
     createdAt: f.createdAt, updatedAt: f.createdAt, leaseOwner: 'original-main', leaseToken: 'original-job-lease',
     leaseExpiresAt: new Date(Date.now() + 60_000).toISOString() })
   const history: NativeHistory = { events: [{ sequence: 0, type: 'turn.started', occurredAt: f.createdAt,
     connectionId: 'original-worker-stream', payload: { threadId: session.nativeSessionId,
-      turnId: job.providerTurnOrMessageId, clientCorrelationId: job.correlationId } }],
-  correlationId: job.correlationId, nativeTurnId: job.providerTurnOrMessageId, pendingInteractions: [] }
+      turnId: reviewTurnId, clientCorrelationId: job.correlationId } }],
+  correlationId: job.correlationId, nativeTurnId: reviewTurnId, pendingInteractions: [] }
   const coordination = nativeLanes()
   await coordination.ensureLane({ id: 'retained-lane', harness: session.harness,
     nativeSessionId: session.nativeSessionId, ownerAgentId: execution.agentId, observedStatus: 'busy',
-    connectionGeneration: 1, correlationId: job.correlationId, currentTurnOrMessageId: job.providerTurnOrMessageId,
+    connectionGeneration: 1, correlationId: job.correlationId, currentTurnOrMessageId: reviewTurnId,
     observedAt: f.createdAt, revision: 0 })
   const writer = coordinateSessionManager({ harness: session.harness } as NativeHarnessSessionManager,
     coordination, execution.agentId)
