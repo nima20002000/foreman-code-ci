@@ -7,6 +7,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.0.104] - 2026-10-18
+
+Reliability fixes for flaky gate tests.
+- Logging: a rotating log file no longer exceeds its size bound under buffered writes; retention keeps rotation order, never prunes segments still draining, and keeps running under continuous rotation.
+- Tests: profile-check Start scope selects only checks for the updated provider version; hover-card help waits for the opened card.
+
 ## [0.0.103] - 2026-10-18
 
 Owner bug sweep and edge-case hardening: owner-reported UI and backend bugs #1–#50 fixed, plus five edge-case reviews with eleven reviewed fix lanes.

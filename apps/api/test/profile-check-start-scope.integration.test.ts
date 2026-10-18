@@ -61,24 +61,56 @@ describe('profile-scoped Start after a Worker harness installation update', () =
       const active = await fixture.start()
       await waitForRemoteReview(() => fixture.provider.calls(), calls =>
         calls.some(call => call.workflowTurn !== undefined), 'active native placement')
+      const originalProfiles = await waitForRemoteReview(() => profiles(fixture), values =>
+        values.length === 4 && values.every(profile => profile.qualification === 'qualified'),
+      'completed checks before the installation update')
       const callsBefore = (await fixture.provider.calls()).length
+      // Keep real old-installation requests in the observation window to reproduce late check activity.
+      for (const profile of originalProfiles.filter(value => unusedIds.slice(0, 2).includes(value.instanceId))) {
+        const checked = HostHarnessInstanceCheckResultSchema.parse(await fixture.value('harness_instance_check', {
+          commandId: randomUUID(), instanceId: profile.instanceId,
+          expectedRevision: profile.revision, target: profile.target,
+        }))
+        expect(checked.proof.qualified).toBe(true)
+      }
+      const obsoleteCalls = (await fixture.provider.calls()).slice(callsBefore)
+      expect(modelRequestDirectories(obsoleteCalls, fixture.stateDirectory, '0.154.0')).toHaveLength(2)
       // Hold only Worker profile checks; the later Run starts its session in a fresh source tree.
       await fixture.provider.blockModels({ workingDirectory: fixture.stateDirectory })
       modelsBlocked = true
-      await fixture.provider.updatePayload()
-      // Main checks share the provider; count only directories held by the Worker blocker.
+      const providerVersion = await fixture.provider.updatePayload()
+      expect(modelRequestDirectories(obsoleteCalls, fixture.stateDirectory, providerVersion)).toEqual([])
+      // Checks from the previous installation may still arrive after the payload changes.
       const checking = await waitForRemoteReview(() => fixture.provider.calls(), calls =>
-        modelRequestDirectories(calls.slice(callsBefore), fixture.stateDirectory).length === 2,
+        modelRequestDirectories(calls.slice(callsBefore), fixture.stateDirectory, providerVersion).length === 2,
       'two parallel profile checks')
-      const directories = modelRequestDirectories(checking.slice(callsBefore), fixture.stateDirectory)
+      const directories = modelRequestDirectories(checking.slice(callsBefore), fixture.stateDirectory, providerVersion)
       expect(directories).toHaveLength(2)
       await expect(fixture.start()).rejects.toThrow('HARNESS_PROFILE_CHECK_PENDING')
       await fixture.provider.allowModelDirectories(directories)
-      const mixed = await waitForRemoteReview(() => profiles(fixture), values =>
-        values.find(profile => profile.instanceId === configured.instanceId)?.qualification === 'qualified'
-          && values.filter(profile => profile.qualification === 'qualified').length === 2
-          && values.filter(profile => profile.qualification === 'qualifying').length === 2,
-      'active placement ready while unused profiles remain pending')
+      let qualifications: unknown
+      const mixed = await waitForRemoteReview(async () => {
+        const values = await profiles(fixture)
+        qualifications = values.map(profile => ({
+          active: profile.instanceId === configured.instanceId,
+          qualification: profile.qualification,
+          revision: profile.revision,
+          failure: profile.qualificationFailure,
+        }))
+        return values
+      }, values => values.find(profile => profile.instanceId === configured.instanceId)?.qualification === 'qualified'
+        && values.filter(profile => profile.qualification === 'qualified').length === 2
+        && values.filter(profile => profile.qualification === 'qualifying').length === 2,
+      'active placement ready while unused profiles remain pending').catch(async error => {
+        const message = error instanceof Error ? error.message : String(error)
+        throw new Error(`${message} ${JSON.stringify({ qualifications,
+          directories: directories.map(directory => directory.slice(fixture.stateDirectory.length)),
+          failures: fixture.failures(),
+          modelRequests: (await fixture.provider.calls()).slice(callsBefore).filter(call => call.method === 'model/list')
+            .map(call => ({ directory: String(call.workingDirectory).replace(fixture.stateDirectory, ''),
+              version: call.providerVersion, pid: call.pid })),
+        })}`, { cause: error })
+      })
       const ready = mixed.find(profile => profile.instanceId === configured.instanceId)!
       const pending = mixed.find(profile => profile.qualification === 'qualifying')!
       const evidence = await latestEvidence(fixture)
