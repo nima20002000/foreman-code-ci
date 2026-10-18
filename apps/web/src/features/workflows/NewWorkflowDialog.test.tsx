@@ -30,6 +30,7 @@ describe('NewWorkflowDialog default name', () => {
     await user.click(screen.getByRole('button', { name: 'Create workflow' }))
 
     await waitFor(() => expect(onCreated).toHaveBeenCalledTimes(1))
+    expect(fixture.workflows.get(onCreated.mock.calls[0]![0])?.approval).toEqual({ handler: 'native' })
     const details = await apiClient.getWorkspaceDetails({ workspaceId: fixture.workspaceId })
     expect(details.workflows).toEqual([
       expect.objectContaining({ id: onCreated.mock.calls[0]![0], name: 'Untitled workflow' }),
