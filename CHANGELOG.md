@@ -7,6 +7,14 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.0.103] - 2026-10-18
+
+Owner bug sweep and edge-case hardening: owner-reported UI and backend bugs #1–#50 fixed, plus five edge-case reviews with eleven reviewed fix lanes.
+- UI: Settings computers cards rebuilt with rename and colored harness/GitHub/MCP chips and one update button; compact sidebar computer and cloud icons with compute hovers; simpler skills and workflow settings pages; Board layered layout with movable nodes, straight and curved edges, newest container on top, resizable Agent chat containers; Operator and Agent chats share one composer (/plan only, no session options, no stray notices, empty chats hidden); auto-reconnect after the API returns.
+- Agents across computers: chat, files, live settings, /new, /compact and /plan work for Agents on another computer; Claude replies stream; warm sessions shorten Operator replies; approvals answered from any computer settle once and survive restarts; one worktree is never shared by Agents on two computers.
+- CI: a second CircleCI account can stand by as overflow when primary organizations run out of credits; CircleCI organization discovery and submission no longer depend on the dispatch-pass deadline; credit checks run after the final journal write; build-slot locks from reboots and empty slot directories are reclaimed; CI no longer prefers Main; per-computer priority and allowance apply.
+- Storage and recovery: bounded test-fixture caches and retention; shared checkouts kept and charged after interruption; run recovery, archive, clock, attachment and output-validation fixes.
+
 ## [0.0.102] - 2026-10-17
 
 Multi-computer reliability: the cross-computer Agent scenario (Main + two laptops, two repositories, Foreman CI on every computer + CircleCI + GitHub) passed two consecutive rounds, the second on the first round's leftover state.
