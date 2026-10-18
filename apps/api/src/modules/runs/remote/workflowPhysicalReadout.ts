@@ -179,6 +179,8 @@ interface Retained {
   /** Until then Main may still read or acknowledge this reply; 0 means Main never read it. */
   protectedUntil: number
   released: boolean
+  cleanup: boolean
+  selector: PhysicalReadoutSelector
   receipt: RemoteOperationReceipt
   placement: AcceptedNodePlacement
   source: WorkflowOriginalNativeSource
@@ -199,7 +201,10 @@ interface Retained {
  * Retention rule: Main reads a reply right after it arrives (events of a streamed history as it yields them) and can
  * ACK it only inside the observation window it was served. A reply Main never read (an empty streaming poll) or whose
  * served window has passed can no longer be needed, so it yields its slot, oldest first, when retention is full.
- * Replies Main may still read or ACK are never evicted; a store full of them refuses the new reply loudly. */
+ * Replies Main may still read or ACK are never evicted; a store full of them refuses the new reply loudly.
+ * The one exception is cleanup: a reply of an operation that is being stopped or closed (its cancel, stop or closure
+ * readout) frees capacity, so it displaces that same operation's oldest observation instead of being refused. Main
+ * re-reads a displaced observation as an expired reply; other operations' replies are never displaced. */
 export class InstalledWorkflowPhysicalReadouts {
   private readonly snapshots: WorkflowPhysicalReadoutSnapshots
 
@@ -217,7 +222,7 @@ export class InstalledWorkflowPhysicalReadouts {
   }>()
   private key(sequence: number, sourceDigest: string) { return `${sequence}:${sourceDigest}` }
   /** Removes a reply and its event indexes; releasing its bytes happens exactly once whoever gets there first. */
-  private drop(retained: Retained) {
+  private drop(retained: Retained, options: { keepSnapshots?: boolean } = {}) {
     const operationId = retained.receipt.intent.operationId
     const entries = this.originals.get(operationId), events = this.events.get(operationId)
     if (entries?.get(retained.key) === retained) entries.delete(retained.key)
@@ -225,6 +230,7 @@ export class InstalledWorkflowPhysicalReadouts {
     if (entries && !entries.size) this.originals.delete(operationId)
     if (events && !events.size) this.events.delete(operationId)
     if (retained.released) return
+    if (!options.keepSnapshots) this.snapshots.forget(retained.selector)
     retained.released = true
     this.byteSize -= retained.bytes
     for (const digest of retained.resultDigests) {
@@ -236,15 +242,18 @@ export class InstalledWorkflowPhysicalReadouts {
       }
     }
   }
-  private evictOldest(except: Retained | undefined, operationId?: string) {
+  private evictOldest(except: Retained | undefined, operationId?: string, cleanupOperationId?: string) {
     const now = this.now()
-    let oldest: Retained | undefined
+    let oldest: Retained | undefined, displaced: Retained | undefined
     for (const [operation, entries] of this.originals) {
       if (operationId !== undefined && operation !== operationId) continue
       for (const retained of entries.values()) {
-        if (retained !== except && retained.protectedUntil <= now && (!oldest || retained.order < oldest.order)) oldest = retained
+        if (retained === except) continue
+        if (retained.protectedUntil <= now && (!oldest || retained.order < oldest.order)) oldest = retained
+        if (operation === cleanupOperationId && (!displaced || retained.order < displaced.order)) displaced = retained
       }
     }
+    oldest ??= displaced
     if (!oldest) throw new DomainError('REMOTE_NATIVE_PHYSICAL_BACKPRESSURE',
       'Original physical source retention is full of replies Main may still read or acknowledge.', 503)
     this.drop(oldest)
@@ -257,7 +266,7 @@ export class InstalledWorkflowPhysicalReadouts {
   }
   clear() { this.originals.clear();this.events.clear();this.results.clear();this.snapshots.clear(); this.byteSize = 0 }
   remember(input: { readout: RemoteWorkflowPhysicalReadout; placement: AcceptedNodePlacement; source: WorkflowOriginalNativeSource;
-    leaseExpiresAt: string; assertOwnerCurrent(): Promise<void>; assertCurrent(): Promise<void>; observe(): NativeLaunchObservation; closure(): NativeLaunchObservation | null;
+    leaseExpiresAt: string; cleanup?: boolean; assertOwnerCurrent(): Promise<void>; assertCurrent(): Promise<void>; observe(): NativeLaunchObservation; closure(): NativeLaunchObservation | null;
     waitForSettlement?: (signal: AbortSignal) => Promise<void> }): void {
     const parsed = RemoteWorkflowPhysicalReadoutSchema.parse(input.readout)
     canonicalGraphJson(input.source, REMOTE_NATIVE_SOURCE_LIMIT)
@@ -280,7 +289,8 @@ export class InstalledWorkflowPhysicalReadouts {
     const readoutExpiresAt = Math.min(Date.parse(readout.expiresAt), Date.parse(input.leaseExpiresAt),
       this.now() + physicalReadoutLifetimeMs)
     if (!Number.isFinite(readoutExpiresAt) || readoutExpiresAt <= this.now()) return unavailable()
-    const key = this.key(receipt.sequence, remoteWorkflowSourceDigest(source)), operationId = receipt.intent.operationId
+    const sourceDigest = remoteWorkflowSourceDigest(source)
+    const key = this.key(receipt.sequence, sourceDigest), operationId = receipt.intent.operationId
     const previous = this.originals.get(operationId)?.get(key)
     if (previous) {
       if (!isDeepStrictEqual(previous.receipt,receipt)||!isDeepStrictEqual(previous.source, source)
@@ -310,9 +320,10 @@ export class InstalledWorkflowPhysicalReadouts {
       }
       return size
     }
-    while (!previous && (this.originals.get(operationId)?.size ?? 0) >= 128) this.evictOldest(undefined, operationId)
-    while (projectedSize() > physicalRetentionLimit) this.evictOldest(previous)
-    if (previous) this.drop(previous)
+    const cleanupOperationId = input.cleanup ? operationId : undefined
+    while (!previous && (this.originals.get(operationId)?.size ?? 0) >= 128) this.evictOldest(undefined, operationId, cleanupOperationId)
+    while (projectedSize() > physicalRetentionLimit) this.evictOldest(previous, undefined, cleanupOperationId)
+    if (previous) this.drop(previous, { keepSnapshots: true })
     for (const payload of payloads) {
       const original = this.results.get(payload.digest)
       if (original) original.references++
@@ -323,6 +334,8 @@ export class InstalledWorkflowPhysicalReadouts {
     }
     this.byteSize += bytes
     const retained:Retained={ key, order: ++this.order, protectedUntil: previous?.protectedUntil ?? 0, released: false,
+      cleanup: input.cleanup === true,
+      selector: { intent: receipt.intent, placement, receiptSequence: receipt.sequence, sourceDigest },
       receipt, placement, source, readout, readoutExpiresAt, bytes,aliases,resultDigests,
       assertOwnerCurrent: input.assertOwnerCurrent, assertCurrent: input.assertCurrent, observe: input.observe, closure: input.closure,
       ...(input.waitForSettlement ? { waitForSettlement: input.waitForSettlement } : {}) }
@@ -382,7 +395,8 @@ export class InstalledWorkflowPhysicalReadouts {
     }
     freezeTree(readout)
     const page = pagePhysicalReadout(readout)
-    if ('kind' in page) this.snapshots.remember(input, readout, page.metadata)
+    if ('kind' in page) this.snapshots.remember(input, readout, page.metadata,
+      { cleanup: retained.cleanup, original: retained.selector })
     return readout
   }
   /** An exact original reply selector retires its derived event indexes too.

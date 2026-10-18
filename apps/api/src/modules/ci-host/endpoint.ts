@@ -14,6 +14,7 @@ import type { DeviceProvisioningTarget } from '@foreman-code/contracts/device-re
 import { assertBuildComputerTarget } from '../settings/buildComputers.js'
 import { readComputerNames } from '../computers/names.js'
 import { DeviceAccessError } from '../devices/access.js'
+import { DeviceApplicationError } from '../devices/deviceApplicationError.js'
 import { componentLogger } from '../diagnostics/logger.js'
 import type { DeviceRequestPriority } from '@foreman-code/contracts/device-application'
 import type { WorkerBundleReadiness } from '@foreman-code/contracts/computer-maintenance'
@@ -201,7 +202,16 @@ export class ProductionHostCiEndpoint implements HostCiEndpoint {
     if (!devices || !deviceId) throw new Error('The build computer is offline.')
     const priority = options?.priority ?? (request.operation === 'status' ? 'background' : 'foreground')
     // Execution and cleanup need live replies; readiness caching belongs to CiPlanningSnapshot.
-    const reply = await devices.request(deviceId, CI_HOST_NAMESPACE, request, { timeoutMs: 120_000, priority })
+    let reply: { payload: unknown }
+    try {
+      reply = await devices.request(deviceId, CI_HOST_NAMESPACE, request, { timeoutMs: 120_000, priority })
+    } catch (error) {
+      if (error instanceof DeviceApplicationError && error.code === 'CI_RUN_UNKNOWN') {
+        throw new DomainError('CI_RUN_UNKNOWN', 'The build computer has no such CI run.', 404,
+          undefined, { cause: error })
+      }
+      throw error
+    }
     const parsed = CiHostReplySchema.parse(reply.payload)
     if (request.operation === 'status' && parsed.operation !== 'status') {
       throw new DomainError('CI_HOST_REPLY_INVALID', 'Expected Worker CI status.', 502)

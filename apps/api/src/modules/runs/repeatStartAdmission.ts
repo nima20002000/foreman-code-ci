@@ -33,7 +33,7 @@ import { WorkerExecutionPolicy } from '../settings/workerExecution.js'
 import { prepareRunStart } from './startPreparation.js'
 import { RUN_START_LOCK_WAIT_MS, waitForRunStartLock, type RunStartLockWait } from './startLocks.js'
 import { authorizeRunStart, lockRunStartCommand } from './startCommand.js'
-import type { AcceptedProviderAccountBindings } from '../provider-accounts/acceptedBindings.js'
+import type { AcceptedProviderAccountBindings, AccountBindingAcceptance } from '../provider-accounts/acceptedBindings.js'
 import type { AcceptedProviderAccountBinding } from '@foreman-code/contracts/provider-accounts'
 import { ignoreError } from '../diagnostics/ignoredError.js'
 import { requireRunStartAvailable } from './maintenance.js'
@@ -257,20 +257,24 @@ export async function insertRepeatRun(sql: GraphTransactionSql, input: AcceptedR
     run.executionLocation.runnerId, run.executionLocation.rootPath, run.executionLocation.locationRevision])
   const providerAccountBindings: Record<string, AcceptedProviderAccountBinding> = {}
   if (publication.accountBindings) {
+    const entries: (AccountBindingAcceptance & { key: string })[] = []
     for (const configuration of accepted.snapshot.executable.configurations) {
-      const binding = await publication.accountBindings.accept(sql, 'run-node', `${run.id}:agent:${configuration.agentId}`,
-        configuration.harness, configuration.harnessProfileSelection,
-        { prepared: publication.preparedAccountBindings?.[configuration.id] })
-      if (binding) providerAccountBindings[`agent:${configuration.agentId}`] = binding
+      entries.push({ id: `${run.id}:agent:${configuration.agentId}`, key: `agent:${configuration.agentId}`,
+        configuration: configuration.harness, selection: configuration.harnessProfileSelection,
+        options: { prepared: publication.preparedAccountBindings?.[configuration.id] } })
     }
     for (const node of accepted.snapshot.executable.version.definition.nodes) {
       if (node.kind === 'job') continue
       const configuration = accepted.snapshot.executable.configurations.find(value => value.agentId === node.agentId)
       if (!configuration) throw new DomainError('RUN_CONFIGURATION_MISSING', 'The node configuration is unavailable.', 409)
-      const binding = await publication.accountBindings.accept(sql, 'run-node', `${run.id}:${node.id}`,
-        configuration.harness, configuration.harnessProfileSelection,
-        { prepared: publication.preparedAccountBindings?.[configuration.id] })
-      if (binding) providerAccountBindings[node.id] = binding
+      entries.push({ id: `${run.id}:${node.id}`, key: node.id,
+        configuration: configuration.harness, selection: configuration.harnessProfileSelection,
+        options: { prepared: publication.preparedAccountBindings?.[configuration.id] } })
+    }
+    const bindings = await publication.accountBindings.acceptMany(sql, 'run-node', entries)
+    for (const entry of entries) {
+      const binding = bindings.get(entry.id)
+      if (binding) providerAccountBindings[entry.key] = binding
     }
   }
   // Required admission write: failure rolls back the Run, authority and command.

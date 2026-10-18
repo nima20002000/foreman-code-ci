@@ -45,11 +45,14 @@ function fixture(type: string, expiresBeforeCommit = false, persistedSequences =
       const position = values[2] as number
       return { rows: [{ sequence: persistedSequences.get(position) ?? String(position) }], rowCount: 1 }
     }
-    if (sql.includes('select correlation_key from run_native_correlations')) {
+    if (sql.startsWith('select correlation_key,first_native_sequence::text from run_native_correlations')) {
       const base = values[2] as string
-      const latest = [...correlations.values()].filter(value =>
-        value.correlationKey === base || value.correlationKey.startsWith(`${base}:retry:`)).at(-1)
-      return { rows: latest ? [{ correlation_key: latest.correlationKey }] : [], rowCount: latest ? 1 : 0 }
+      const candidates = [...correlations.values()].filter(value => value.nativeRequestId === null
+        && value.interactionId === null
+        && (value.correlationKey === base || value.correlationKey.startsWith(`${base}:retry:`)))
+        .sort((left, right) => Number(BigInt(right.firstNativeSequence) - BigInt(left.firstNativeSequence)))
+      return { rows: candidates.map(value => ({ correlation_key: value.correlationKey,
+        first_native_sequence: value.firstNativeSequence })), rowCount: candidates.length }
     }
     if (sql.startsWith('delete from run_native_projection_checkpoints')) return { rows: [], rowCount: 1 }
     if (sql.startsWith('select record from runs')) return { rows: [{ record: run }], rowCount: 1 }
