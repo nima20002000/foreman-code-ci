@@ -282,22 +282,21 @@ it('honors persisted MCP build participation and priority while retaining assign
       await db.pool.query(`insert into ci_runs(id,workspace_id,group_id,state,record)
         values($1,$2,$3,'passed',$4::jsonb)`, [history.id, workspaceId, history.groupId, JSON.stringify(history)])
     }
+    // Re-enabled workers need observed readiness before comparing partition priority and capacity.
     const partitionReadiness = list()
     await preferredStatusRequested.promise
-    const partitioned = CiRunOutputSchema.parse(await call(writer, 'ci_run', {
-      workspaceId, suite: 'integration', commandId: randomUUID(), partitions: 2,
-    }))
-    expect(partitioned.partitions).toHaveLength(2)
-    for (const ticket of partitioned.partitions!) {
-      await getRunning(ticket.ticketId)
-      preferredStatusReleased.resolve()
-    }
+    preferredStatusReleased.resolve()
     expect((await partitionReadiness).computers).toMatchObject([
       { hostRef: devices[1]!.target.hostRef, ready: true, reasons: [], priority: 90, buildAllowancePercent: 50,
         slotsUsed: 0, slotsTotal: 1 },
       { hostRef: devices[0]!.target.hostRef, ready: true, reasons: [], priority: 20, buildAllowancePercent: 100,
         slotsUsed: 0, slotsTotal: 1 },
     ])
+    const partitioned = CiRunOutputSchema.parse(await call(writer, 'ci_run', {
+      workspaceId, suite: 'integration', commandId: randomUUID(), partitions: 2,
+    }))
+    expect(partitioned.partitions).toHaveLength(2)
+    for (const ticket of partitioned.partitions!) await getRunning(ticket.ticketId)
     const partitionRead = await get(partitioned.ticketId)
     const higher = partitionRead.partitions!.find(run => run.partition?.index === 0)!
     const lower = partitionRead.partitions!.find(run => run.partition?.index === 1)!
