@@ -8,7 +8,7 @@ import { DurableInteractionSchema, HarnessExecutionSchema, NativeSessionReferenc
 import { canonicalGraphJson, type GraphEvidence, type NativeGraphProjectionKey, type AcceptedWorkflowRunV3 } from '@foreman-code/contracts/wave25'
 import { DomainError } from '../errors.js'
 import { assertGraphTransaction, beforeGraphCommit, poisonGraphTransaction, type GraphTransactionSql } from '../run-graph/connection.js'
-import { activeNativeBatch, memoizeNativeRead, nativeCommitCheck, seedNativeRead } from '../run-graph/nativeBatch.js'
+import { activeNativeBatch, memoizeNativeRead, nativeCommitCheck, prefetchedNativeAppend, seedNativeRead } from '../run-graph/nativeBatch.js'
 import { currentRunGraphPublication, hasRunGraphPublication, seedRetainRows } from '../run-graph/publication.js'
 import { assertRepeatCanonicalReceiptRows, requireRepeatCanonicalReceiptBeforeCommit,
   type RepeatCanonicalReceiptRow } from '../run-graph/repeatReceipts.js'
@@ -348,11 +348,15 @@ export class WorkflowNativeProofServices {
         : history?.events.map((event) => ({ ...event, executionId: stored.execution.id })) ?? []
       const retainedEvents = history && !approval
         ? await retainedNativeHistoryEvents(sql, scope, events, capture) : new Set<HarnessNativeEvent>()
+      await prefetchNativeFrames(sql, scope.runId, events.filter(event => !retainedEvents.has(event))
+        .map(normalizeNativeProducerEvent))
       let transcripts: HarnessNativeEvent[] = []
       const flushTranscripts = async () => {
         if (!transcripts.length) return
         capture.assertCurrent()
-        const appended = await appendNormalizedNativeEvents(sql, transcripts.map(normalizeNativeProducerEvent))
+        const prefetched = prefetchedNativeAppend(sql, transcripts[0]!)
+        const appended = prefetched ? [prefetched]
+          : await appendNormalizedNativeEvents(sql, transcripts.map(normalizeNativeProducerEvent))
         await appendWorkflowNativeGraphEventLocked(sql, owner, transcripts[0]!, lease, approval, continuation,
           { sql, scope, execution: stored.execution, appended: appended[0]! })
         transcripts = []
