@@ -590,17 +590,8 @@ export class RemoteExecutionHost {
     })()
     return this.ports.journal.status(operationId)
   }
-  private async settle(resident: Resident, correlationId: string): Promise<void> {
-    if (resident.settlementTask) {
-      await resident.settlementTask
-      const current = await this.ports.journal.status(resident.intent.operationId)
-      // Stop can arrive after the pending pass chose to retain this process.
-      // Finish the fenced closure after that pass drains, without overlapping it.
-      if (current.status === 'known' && current.receipt.stopFence && !current.receipt.terminal) {
-        return this.settle(resident, correlationId)
-      }
-      return
-    }
+  private settle(resident: Resident, correlationId: string): Promise<void> {
+    if (resident.settlementTask) return resident.settlementTask
     const task = (async () => {
       const status = await this.ports.journal.status(resident.intent.operationId)
       if (status.status === 'known' && status.receipt.terminal) return
