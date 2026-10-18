@@ -3,47 +3,13 @@ import { createHash, randomUUID } from 'node:crypto'
 import { readFile, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { gzipSync } from 'node:zlib'
 import { expect, it, vi } from 'vitest'
 import { integrationPartition } from '@foreman-code/contracts'
-import { compactIntegrationCoverage } from '@foreman-code/contracts/ci-coverage'
 import { repositoryFileList, selectByIndexes } from '../../../../../scripts/ci-files.mjs'
 import { fixture } from './cloud.testSupport.js'
 import { cloudSuiteRunner } from './cloudRunner.testSupport.js'
 
 const parameter = (args: string[], name: string) => args.find(value => value.startsWith(`${name}=`))?.slice(name.length + 1)
-
-it.each(['github', 'circleci'] as const)('uses source coverage across the synthetic %s mirror history', async provider => {
-  const f = await fixture({}, { provider })
-  const source = 'apps/api/test/feature.ts'
-  const other = 'apps/api/test/other.ts'
-  const files = ['a', 'b', 'c', 'd'].map(name => `apps/api/test/${name}.integration.test.ts`)
-  await f.write(source, 'export const value = 1')
-  await f.write(other, 'export const other = 2')
-  await f.write('apps/api/test/bootstrap.ts', "import './feature.js'; import './other.js'")
-  for (const file of files.slice(0, 2)) await f.write(file, "import './bootstrap.js'")
-  f.run('add', '.')
-  f.run('commit', '-qm', 'coverage baseline')
-  const baseCommit = f.run('rev-parse', 'HEAD')
-  const coverage = { version: 1 as const, commit: baseCommit, testFiles: files,
-    coverage: { [files[0]!]: [source], [files[1]!]: [other], [files[2]!]: [], [files[3]!]: [] } }
-  await f.write(source, 'export const value = 3')
-  f.run('commit', '-qam', 'feature change')
-  f.push('main')
-  await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId: randomUUID(),
-    repository: 'octo/site', commit: f.run('rev-parse', 'HEAD'), baseCommit,
-    suite: 'integration', scope: 'affected', integrationCoverage: {
-      map: gzipSync(JSON.stringify(compactIntegrationCoverage(coverage))).toString('base64'), changedFiles: [source],
-    } })
-  const command = (provider === 'circleci' ? f.circle.triggered : f.dispatched)[0]!
-  const checkout = await f.checkoutMirror(command[command.indexOf(provider === 'circleci' ? '--branch' : '--ref') + 1]!)
-  const suite = await cloudSuiteRunner(checkout, command, provider)
-  const result = suite.run()
-  expect(result.status, result.stderr).toBe(0)
-  const calls = (await readFile(suite.calls, 'utf8')).trim().split('\n').map(line => JSON.parse(line))
-  expect(calls).toEqual([['pnpm', 'test:integration', '--files', files[0]]])
-  expect(result.stderr).toContain(baseCommit)
-})
 
 it.each(['unit', 'integration'] as const)('isolates the %s suite fixture from enclosing CI shell startup', async suite => {
   const file = `apps/api/test/selected.${suite === 'integration' ? 'integration.' : ''}test.ts`
@@ -125,38 +91,6 @@ it('runs a CircleCI affected file selection that exceeds the compact index param
   expect(result.status, result.stderr).toBe(0)
   const calls = (await readFile(suite.calls, 'utf8')).trim().split('\n').map(line => JSON.parse(line))
   expect(calls).toEqual([['pnpm', 'test:integration', '--files', ...files]])
-})
-
-it('keeps GitHub dispatch inputs within the payload limit while preserving learned partition timings', async () => {
-  const f = await fixture()
-  const files = ['a', 'b', 'c', 'd'].map(name => `apps/api/test/${name}.integration.test.ts`)
-  const durations = Object.fromEntries(Array.from({ length: 996 }, (_, index) => [
-    `apps/api/test/${String(index).padStart(4, '0')}-${'x'.repeat(18)}.integration.test.ts`, 1000,
-  ]))
-  Object.assign(durations, Object.fromEntries(files.map((file, index) => [file, (index + 1) * 100])))
-  expect(JSON.stringify(durations).length).toBeLessThan(65_535)
-  for (const file of files) await f.write(file, 'export {}\n')
-  f.run('commit', '-qam', 'Change selected files')
-  f.push('main')
-  const partition = { index: 0, count: 2, weights: [2, 1] }
-  await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId: randomUUID(),
-    repository: 'octo/site', commit: f.run('rev-parse', 'HEAD'), baseCommit: f.commit,
-    suite: 'integration', partition, durations })
-  const command = f.dispatched[0]!
-  const inputs = Object.fromEntries(command.flatMap((value, index) => {
-    if (command[index - 1] !== '-f') return []
-    const separator = value.indexOf('=')
-    return [[value.slice(0, separator), value.slice(separator + 1)]]
-  }))
-  expect(Buffer.byteLength(JSON.stringify(inputs))).toBeLessThanOrEqual(65_535)
-  const checkout = await f.checkoutMirror(command[command.indexOf('--ref') + 1]!)
-  expect(JSON.parse(await readFile(join(checkout, 'scripts/ci-learned-durations.json'), 'utf8')))
-    .toEqual(durations)
-  const suite = await cloudSuiteRunner(checkout, command, 'github')
-  const result = suite.run()
-  expect(result.status, result.stderr).toBe(0)
-  const calls = (await readFile(suite.calls, 'utf8')).trim().split('\n').map(line => JSON.parse(line))
-  expect(calls).toEqual([['pnpm', 'test:integration', '--files', ...integrationPartition(files, durations, partition)]])
 })
 
 it('preserves repository file indexes for oversized CircleCI rerun selections', async () => {

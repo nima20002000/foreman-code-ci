@@ -3,15 +3,11 @@ import { readdir, readFile, stat } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { promisify } from 'node:util'
-import { unresolvedCloudAttemptIds } from './cloudAttempts.js'
 
 const ciBranch = /^refs\/heads\/(?:ci|ci-default)\/.+$/
 export interface ActiveCiRuns { ids: ReadonlySet<string>; readAt: number }
 
 interface MirrorRun {
-  circleAccountId?: string
-  providerRunId?: string | null
-  dispatchHistory?: { at: string; providerRunId: string | null; terminated?: true }[]
   runId: string
   startedAt: string
   mirror: string
@@ -80,13 +76,12 @@ export async function pruneMirrorBranches(options: {
       if (!directory.isDirectory()) continue
       const run = await readRun(join(root, 'runs', directory.name, 'meta.json'))
       if (!run) continue
-      const pending = unresolvedCloudAttemptIds({ ...run, providerRunId: run.providerRunId ?? null }).length > 0
-      if (run.mirror !== options.mirror || !['starting', 'running', 'queued'].includes(run.state) && !pending) continue
+      if (run.mirror !== options.mirror || !['starting', 'running', 'queued'].includes(run.state)) continue
       const index = options.activeRuns
       // A new dispatch after the index was read stays protected until the next sweep.
       const newer = index && Date.parse(run.startedAt) > index.readAt
-      if (index && !index.ids.has(run.runId) && !newer && !pending) continue
-      const branch = run.dispatch?.input?.branch ?? run.mirrorBranch
+      if (index && !index.ids.has(run.runId) && !newer) continue
+      const branch = run.dispatch?.input.branch ?? run.mirrorBranch
       if (branch) keep.add(`refs/heads/${branch}`)
       else {
         // Older persisted tickets predate the stored mirror ref; either publication may still be in use.
@@ -94,8 +89,8 @@ export async function pruneMirrorBranches(options: {
         if (run.baseCommit) keep.add(`refs/heads/ci/${run.commit}-${run.baseCommit}`)
       }
       keep.add(`refs/heads/ci-default/${run.commit}`)
-      if (run.dispatch?.input?.workflowRef) keep.add(`refs/heads/${run.dispatch.input.workflowRef}`)
-      if (run.dispatch?.input?.defaultBranch) keep.add(`refs/heads/${run.dispatch.input.defaultBranch}`)
+      if (run.dispatch?.input.workflowRef) keep.add(`refs/heads/${run.dispatch.input.workflowRef}`)
+      if (run.dispatch?.input.defaultBranch) keep.add(`refs/heads/${run.dispatch.input.defaultBranch}`)
     }
   }
   const refs = listed.split('\n').flatMap(line => {

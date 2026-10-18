@@ -23,8 +23,7 @@ const CODES: Record<CiPhase, Deadline['code']> = {
 }
 const ACTIVE = ['queued', 'starting', 'running']
 /** Tickets that hold an executor slot: assigned work, and deadline failures whose executor has not confirmed a stop. */
-export const CI_BUSY_TICKET = `(state in ('starting','running') or record#>>'{deadlineExceeded,executor}'='retained'
-  or record->>'executorCleanupPending'='true')`
+export const CI_BUSY_TICKET = `(state in ('starting','running') or record#>>'{deadlineExceeded,executor}'='retained')`
 
 /** The ticket's current phase and its saved entry time. Retries keep that entry time, and so the deadline. */
 export function ciPhase(run: CiRunRecord): { phase: CiPhase; enteredAt: string } | null {
@@ -96,8 +95,7 @@ export async function expireOverdueCiRuns(pool: pg.Pool, now = new Date(),
         host_key=case when $5 then host_key else null end, record=$3::jsonb
       where id=$1 and state=$4 and record=$6::jsonb`,
     [run.id, next.state, serializeCiJson(next), run.state,
-      next.deadlineExceeded!.executor === 'retained' || next.executorCleanupPending
-        || !ACTIVE.includes(run.state), JSON.stringify(run)])
+      next.deadlineExceeded!.executor === 'retained' || !ACTIVE.includes(run.state), JSON.stringify(run)])
     if (!saved.rowCount) continue
     expired++
     componentLogger('jobs').error({ runId: run.id, deadline: next.deadlineExceeded }, next.message ?? 'CI ticket deadline exceeded')
