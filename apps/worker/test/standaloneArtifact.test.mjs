@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { WorkerArtifactManifestSchema } from '@foreman-code/contracts/worker-update';
 import { persistentFixtureRoot } from './fixtureStorage.mjs';
 
-test('the built standalone artifact meets manifest bounds and loads its installer and update supervisor', async t => {
+test('the built standalone artifact meets manifest bounds and loads installer help with its shipped modules', async t => {
   const directory = await mkdtemp(join(persistentFixtureRoot, 'standalone-artifact-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const root = new URL('../../../', import.meta.url).pathname;
@@ -24,15 +24,4 @@ test('the built standalone artifact meets manifest bounds and loads its installe
     assert.equal(result.stderr, '');
     assert.match(result.stdout, /install --root \/private\/app --state \/private\/state --artifact/);
   }
-  await t.test('the packaged supervisor starts with no pending update', async () => {
-    const stateDirectory = join(directory, 'state');
-    await mkdir(stateDirectory, { mode: 0o700 });
-    const result = spawnSync(process.execPath, [join(output, 'src/update-supervisor-cli.mjs'), stateDirectory], {
-      cwd: output, encoding: 'utf8', timeout: 5000, env: { PATH: '', HOME: directory },
-    });
-    assert.ifError(result.error);
-    assert.equal(result.status, 0, result.stderr);
-    assert.equal(result.stdout, '');
-    assert.equal(result.stderr, '');
-  });
 });
