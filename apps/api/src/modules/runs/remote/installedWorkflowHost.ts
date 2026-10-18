@@ -1364,7 +1364,7 @@ class InstalledWorkflowHostRuntime {
                 ||logged.receipt.native?.processIdentityDigest!==resident.native?.native.processIdentityDigest)unavailable('original_physical_owner_changed')
               this.current(context.binding)
             }
-            this.physical.remember({readout,placement:frame.placement,source,leaseExpiresAt:observationExpiresAt,assertOwnerCurrent,
+            this.physical.remember({readout,placement:frame.placement,source,leaseExpiresAt:observationExpiresAt,cleanup:cleanupOnly||receipt.stopFence||receipt.terminal!==undefined,assertOwnerCurrent,
               assertCurrent:async()=>{
                 const approvedRoots=ApprovedRootAllowlistSchema.parse(cleanupOnly || receipt.stopFence
                   ? resident.runtimeRoots : await this.input.approvedRoots())
