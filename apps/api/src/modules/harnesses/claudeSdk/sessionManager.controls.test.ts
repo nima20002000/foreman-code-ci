@@ -6,37 +6,6 @@ import { claudePromptUuid, type ClaudeMessageTurnInput } from './sessionManager.
 import { qualification, start, fixture, workflowRequest, deferred, drain } from './__tests__/sessionManager.js'
 
 describe('Claude native session manager admission', () => {
-  it('rebinds only the managed credential on a retired live session and rejects busy or changed scope', async () => {
-    const http = { type: 'http', url: 'http://127.0.0.1:3000/mcp/app' }
-    const f = fixture(undefined, { appMcpAccess: 'management', sdkOptions: { mcpServers: { graphql: http } } })
-    const admitted = { ...start, environment: { agentId: 'operator', variables: { FOREMAN_CODE_MCP_TOKEN: 'first-token' } } }
-    const updated = { ...admitted, correlationId: 'second',
-      environment: { agentId: 'operator', variables: { FOREMAN_CODE_MCP_TOKEN: 'second-token' } } }
-    const servers = { graphql: { ...http, headers: { Authorization: 'Bearer second-token' } } }
-    try {
-      const session = await f.manager.attachSession({ harness: 'claude', providerVersion: '2.1.284', nativeSessionId: 'native-session' }, admitted)
-      const running = drain(f.manager.startTurn(session, { prompt: 'First', clientCorrelationId: 'first' }))
-      const message = await f.nextMessage()
-      await expect(f.manager.refreshSessionCredentials(session, updated, servers)).rejects.toThrow('idle')
-      expect(f.setServers).not.toHaveBeenCalled()
-      void f.frames.offer({ type: 'assistant', session_id: session.nativeSessionId, uuid: 'reply-first',
-        user_message_uuid: message.uuid })
-      void f.frames.offer({ type: 'result', session_id: session.nativeSessionId, uuid: 'result-first',
-        user_message_uuid: message.uuid, subtype: 'success', is_error: false, result: 'Done' })
-      await running
-      await f.manager.retireTurn!(session, 'first')
-      await expect(f.manager.refreshSessionCredentials(session, { ...updated, workingDirectory: '/other' } as NativeSessionStart,
-        servers)).rejects.toThrow('owner/configuration')
-      await expect(f.manager.refreshSessionCredentials(session, updated,
-        { graphql: { ...servers.graphql, url: 'http://127.0.0.1:9999/mcp' } })).rejects.toThrow('server names, endpoints')
-      expect(f.setServers).not.toHaveBeenCalled()
-      const result = await f.manager.refreshSessionCredentials(session, updated, servers)
-      expect(result.httpCredentialAcknowledgement?.endpoint).toBe(http.url)
-      expect(f.setServers).toHaveBeenCalledExactlyOnceWith(servers)
-      expect(f.queries).toHaveBeenCalledTimes(1)
-    } finally { await f.manager.dispose?.() }
-  })
-
   it('inspects only the exact live callback generation/message and performs no SDK response or pending-row lookup', async () => {
     const inspect = vi.fn(async (query: import('./callbackAvailability.js').ClaudeLiveCallbackQuery) => ({
       nativeSessionId: query.nativeSessionId, nativeRequestId: query.nativeRequestId, nativeRequestType: query.nativeRequestType,

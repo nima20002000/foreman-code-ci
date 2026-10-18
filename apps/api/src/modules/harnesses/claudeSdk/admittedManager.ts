@@ -8,12 +8,9 @@ export function createAdmittedClaudeManager(initialize: (signal: AbortSignal) =>
   const admitted = createAdmittedNativeManager('claude', initialize)
   const manager: ClaudeNativeSessionManager = {
     ...admitted.manager,
-    hasResidentSession: session => admitted.peek()?.hasResidentSession(session) ?? false,
     retireTurn: async (session, correlationId) => admitted.peek()?.retireTurn?.(session, correlationId),
     prepareInspection: async (start, signal) => (await admitted.actual(signal)).prepareInspection(start, signal),
     refreshInspectionCredentials: async (start, servers, signal) => (await admitted.actual(signal)).refreshInspectionCredentials(start, servers, signal),
-    refreshSessionCredentials: async (session, start, servers, signal) =>
-      (await admitted.actual(signal)).refreshSessionCredentials(session, start, servers, signal),
     async *startInitialTurn(start, input, signal) { yield* (await admitted.actual(signal)).startInitialTurn(start, input, signal) },
     nativeCallbackContext: (sessionId, toolUseId) => {
       // Synchronous callbacks can run only after initialization. Keep the exact

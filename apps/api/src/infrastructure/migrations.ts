@@ -10,8 +10,6 @@ import { deviceManagedMcpMigration } from './deviceManagedMcpMigration.js'
 import { workflowAuthoringMigration } from './workflowAuthoringMigration.js'
 import { ciGrantMigration } from './ciGrantMigration.js'
 import { runWorktreesMigration } from './runWorktreesMigration.js'
-import { executionWorktreesMigration } from './executionWorktreesMigration.js'
-import { workflowFileContextSessionMigration } from './workflowFileContextSessionMigration.js'
 import { withTransaction } from './transaction.js'
 import { checkpointOwnerMigration } from './checkpointOwnerMigration.js'
 import { errorMessage } from '../shared/errorMessage.js'
@@ -60,7 +58,6 @@ import { compactCommandActivityMigration } from './compactCommandActivityMigrati
 import { workflowPresentationMigration } from './workflowPresentationMigration.js'
 import { operatorTerminalMigration } from './operatorTerminalMigration.js'
 import { operatorTerminalHistoryMigration } from './operatorTerminalHistoryMigration.js'
-import { operatorTurnRetirementMigration } from './operatorTurnRetirementMigration.js'
 import { claudeCallbackMigration } from './claudeCallbackMigration.js'
 import { nativeCorrelationProvidersMigration } from './nativeCorrelationProvidersMigration.js'
 import { runSubagentsMigration } from './runSubagentsMigration.js'
@@ -923,7 +920,6 @@ export const migrations = [
   workJoinDispositionMigration,
   operatorTerminalMigration,
   operatorTerminalHistoryMigration,
-  operatorTurnRetirementMigration,
   localWorkflowNativeOutputMigration,
   localHumanMigration,
   claudeCallbackMigration,
@@ -992,8 +988,6 @@ export const migrations = [
   operatorSummaryActivityMigration,
   retiredManagementActionsMigration,
   computerNamesMigration,
-  executionWorktreesMigration,
-  workflowFileContextSessionMigration,
 ] as const
 
 export function assertMigrationVersions(entries: readonly { version: number }[]): void {

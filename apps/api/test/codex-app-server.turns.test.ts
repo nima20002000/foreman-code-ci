@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import { appendFile, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { describe, it, vi } from 'vitest'
+import { describe, it } from 'vitest'
 import { DomainError } from '../src/modules/errors.js'
 import { NativeDeliveryError } from '../src/modules/harnesses/errors.js'
 import { assertOriginalWorkflowTerminal } from '../src/modules/interactions/workflowTerminalSource.js'
@@ -36,9 +36,6 @@ import {
   useCodexFixture,
   setManager,
 } from './codex-app-server.test-support.js'
-
-// Fixture I/O uses wall time while transport deadlines stay frozen.
-const scheduleFixturePoll = setTimeout
 
 describe.skipIf(process.platform === 'win32')('Codex app-server regressions against the real manager', () => {
   useCodexFixture()
@@ -402,37 +399,23 @@ describe.skipIf(process.platform === 'win32')('Codex app-server regressions agai
     assert.equal((await manager.reconcile(session, 'recover')).terminalResult?.outcome, 'succeeded')
   })
 
-  it.each([
-    { readiness: 'immediate', delayMs: 0 },
-    { readiness: 'slower than the RPC deadline', delayMs: 600 },
-    { readiness: 'slower than one second', delayMs: 1_200 },
-  ])('keeps a late turn correlated after timeout and cancellation with $readiness MCP readiness', async ({ delayMs }) => {
+  it('F12: a late turn ID remains correlated after timeout and cancellation reaches it', async () => {
     setManager(makeManager({
       transport: (...args) => {
         args[7] = 500
         return new CodexStdioTransport(...args)
       },
     }))
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
-    try {
-      const session = await manager.createSession(source)
-      await json('mcp-status-delay-ms.json', delayMs)
-      await flag('hold-turn-start')
-      const events = collect(manager.startTurn(session, { prompt: 'wait', clientCorrelationId: 'late' }))
-      await until(async () => (await wire('turn/start')).length === 1, 20_000, scheduleFixturePoll)
-      assert.equal((await wire('config/mcpServer/reload')).length, 0)
-      await vi.advanceTimersByTimeAsync(500)
-      await assertCode(events, 'CODEX_APP_SERVER_TIMEOUT')
-      vi.useRealTimers()
-      const canceled = manager.cancel(session)
-      await flag('release-turn-start')
-      assert.equal(await canceled, true)
-      await until(async () => (await manager.history(session)).terminalResult?.outcome === 'canceled')
-      assert.equal((await wire('turn/start')).length, 1)
-      assert.equal((await wire('turn/interrupt')).length, 1)
-    } finally {
-      vi.useRealTimers()
-    }
+    const session = await manager.createSession(source)
+    await flag('hold-turn-start')
+    const events = collect(manager.startTurn(session, { prompt: 'wait', clientCorrelationId: 'late' }))
+    await assertCode(events, 'CODEX_APP_SERVER_TIMEOUT')
+    const canceled = manager.cancel(session)
+    await flag('release-turn-start')
+    assert.equal(await canceled, true)
+    await until(async () => (await manager.history(session)).terminalResult?.outcome === 'canceled')
+    assert.equal((await wire('turn/start')).length, 1)
+    assert.equal((await wire('turn/interrupt')).length, 1)
   })
 
   it('F12: an uncertain thread/start is never duplicated, and its late identity is recoverable', async () => {

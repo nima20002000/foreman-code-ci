@@ -1,6 +1,6 @@
 import { isDeepStrictEqual as same } from 'node:util'
 import type { TransferContext } from '@foreman-code/contracts/byte-transfer'
-import { RemoteOperationReceiptSchema, remoteWorkflowTurnId } from '@foreman-code/contracts/remote-execution'
+import { RemoteOperationReceiptSchema } from '@foreman-code/contracts/remote-execution'
 import type { AcceptedArtifactPublication } from '../../files/distributed/publication.js'
 import { DomainError } from '../../errors.js'
 import type { WorkflowNativeCapture, WorkflowNativeVerificationPort } from '../../interactions/workflowNativeCapture.js'
@@ -10,7 +10,6 @@ import { assertRepeatCanonicalReceiptLocked, requireRepeatCanonicalReceiptBefore
 import { readRepeatExecutionLocked } from '../repeatPostgres.js'
 import { readAcceptedRepeatRunLocked } from '../repeatStartRead.js'
 import { repeatDigest, repeatExecutionIdentity } from '../repeatResolution.js'
-import { readWorkResultRepairAttempt, workResultRepairCorrelation } from '../workResultRepair.js'
 import type { RepeatNativeEvidence } from '../repeatNativeRepository.js'
 import type { RunOwnership } from '../ownership.js'
 import type { WorkflowNativeProofRecord } from '../workflowNativeProof.js'
@@ -39,7 +38,7 @@ const unavailable = (): never => { throw new DomainError('WORKFLOW_ARTIFACT_SOUR
 export function createProductionWorkflowArtifactResultSource(ports: {
   captures: WorkflowNativeVerificationPort
   physical: WorkflowArtifactTerminalPorts
-  authority: Pick<PostgresArtifactPublicationAuthority, 'resolveWorkflowContext' | 'resolvePublicationContext' | 'authorize'>
+  authority: Pick<PostgresArtifactPublicationAuthority, 'resolveWorkflowContext' | 'authorize'>
 }) {
   const originals = new WeakMap<RepeatNativeEvidence, Retained>()
   const executions = new Map<string, Retained>()
@@ -66,18 +65,8 @@ export function createProductionWorkflowArtifactResultSource(ports: {
     // This physical port verifies the retained ORIGINAL terminal and positive
     // closure, rather than demanding a replacement/live process after cleanup.
     await ports.physical.assertArtifactTerminal(sql, capture.owner, capture, proof)
-    const remoteRow = (await sql.query<{ receipt: unknown }>(
-      'select receipt from remote_execution_receipts where operation_id=$1 for share',
-      [(await readDispatchIntent(sql, capture.execution.id))?.operationId])).rows[0]
-    if (!remoteRow || proof.original.type !== 'history') return unavailable()
-    const remote = RemoteOperationReceiptSchema.parse(remoteRow.receipt)
-    const correlationId = proof.original.history.correlationId
-    if (!correlationId || remoteWorkflowTurnId(remote, correlationId) !== proof.lane?.providerId) return unavailable()
-    const repairAttempt = await readWorkResultRepairAttempt(sql, capture.execution.id)
-    if (correlationId !== workResultRepairCorrelation(capture.execution.id, repairAttempt)) return unavailable()
     capture.owner.assertOwned()
-    return { version: snapshot.version, execution: stored.execution, proof: structuredClone(proof),
-      sourceDigest: row.source_digest, remote }
+    return { version: snapshot.version, execution: stored.execution, proof: structuredClone(proof), sourceDigest: row.source_digest }
   }
   const source: WorkflowArtifactResultSourcePort = {
     async readVerified(accepted) {
@@ -89,8 +78,7 @@ export function createProductionWorkflowArtifactResultSource(ports: {
         beforeGraphCommit(sql, async () => { await verify(sql, entry) })
         return result
       })
-      return { ...await current(), assertCurrent: async () => { await current() },
-        publicationContext: commandId => ports.authority.resolvePublicationContext(accepted, commandId) }
+      return { ...await current(), assertCurrent: async () => { await current() } }
     },
   }
   return {
@@ -122,8 +110,7 @@ export function createProductionWorkflowArtifactResultSource(ports: {
         || intent.inputDigest !== proof.inputDigest || intent.technicalAttempt !== capture.execution.attempt) return unavailable()
       const terminal = (await sql.query<{ receipt: unknown }>(
         'select receipt from remote_execution_receipts where operation_id=$1 for share', [intent.operationId])).rows[0]
-      const remote = terminal ? RemoteOperationReceiptSchema.parse(terminal.receipt) : undefined
-      if (!remote?.terminal || remote.terminal.artifactValidationError) return
+      if (terminal?.receipt && RemoteOperationReceiptSchema.parse(terminal.receipt).terminal?.artifactValidationError) return
       const transfer = await ports.physical.artifactTerminalContext(sql, capture.owner, capture, proof)
       const accepted = await ports.authority.resolveWorkflowContext({ workspaceId: proof.scope.workspaceId,
         workflowId: proof.scope.workflowId, runId: proof.scope.runId, nodeId: proof.ref.nodeId,
