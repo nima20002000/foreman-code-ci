@@ -59,8 +59,8 @@ it('rechecks standby eligibility after saving submission ownership and before a 
   vi.mocked(fs.writeFile).mockImplementation(async (path, data, options) => {
     await actual.writeFile(path, data, options)
     if (typeof data !== 'string' || !data.startsWith('{')) return
-    const saved = JSON.parse(data) as { runId?: string; dispatch?: { uncertain?: boolean } }
-    if (saved.runId === runId && saved.dispatch?.uncertain) now = Date.parse('2026-11-01T00:00:00Z')
+    const saved = JSON.parse(data) as { runId?: string; dispatch?: { notSent?: boolean } }
+    if (saved.runId === runId && saved.dispatch?.notSent) now = Date.parse('2026-11-01T00:00:00Z')
   })
   try {
     expect(await cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId, repository: 'octo/site',
