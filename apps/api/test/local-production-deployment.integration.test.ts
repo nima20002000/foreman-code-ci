@@ -133,11 +133,18 @@ it('loads the compiled API using only its deployed production dependencies', asy
       throw new Error(`Production runtime fixture step "${step}" failed: ${detail}`, { cause })
     }
   }
-  const run = async (command: string, args: string[]) => {
+  const run = async (command: string, args: string[], options: { timeout: number }) => {
     // This source is discarded after deployment, so it needs no development dependency restoration.
     if (args.includes('install')) return
-    await child(`${command} ${args.join(' ')}`, 45_000, command, [...args, ...packageStore],
-      { cwd: source, env: process.env })
+    const started = performance.now()
+    try {
+      const { stdout } = await child(`${command} ${args.join(' ')}`, options.timeout, command, [...args, ...packageStore],
+        { cwd: source, env: process.env })
+      console.info(stdout)
+    } finally {
+      console.info('[integration-phase] local-production-deployment.integration.test.ts deploy-production-dependencies',
+        Math.round(performance.now() - started))
+    }
   }
   try {
     const prepareSource = async () => {
