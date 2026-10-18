@@ -42,3 +42,27 @@ it('merges complete commit artifacts, keeps repositories separate and selects th
       reason: 'Coverage map predates lockfile or CI infrastructure changes.' })
   } finally { await rm(root, { recursive: true, force: true }) }
 })
+
+it('keeps a repository-sized coverage map within the device limit without dropping dependencies', async () => {
+  const cache = join(homedir(), '.cache/foreman-tmp')
+  await mkdir(cache, { recursive: true })
+  const root = await mkdtemp(join(cache, 'coverage-size-'))
+  try {
+    const store = new IntegrationCoverageStore(root)
+    const commit = 'a'.repeat(40)
+    const testFiles = Array.from({ length: 700 }, (_, index) => `apps/api/test/feature-${index}.integration.test.ts`)
+    const sourceFiles = Array.from({ length: 900 }, (_, index) => `apps/api/src/modules/feature-${index}/implementation.ts`)
+    await store.record('example/project', commit, { version: 1, commit, testFiles,
+      coverage: Object.fromEntries(testFiles.map(file => [file, sourceFiles])) })
+    const selected = await store.selection('example/project', commit, {
+      isAncestor: async () => true,
+      testTree: async () => ({ blobs: new Map(), read: async () => '' }),
+    })
+    expect(selected?.map).toBeTypeOf('string')
+    expect(selected!.map!.length).toBeLessThanOrEqual(700_000)
+    const { expandIntegrationCoverage } = await import('@foreman-code/contracts/ci-coverage')
+    const decoded = expandIntegrationCoverage(JSON.parse(gunzipSync(Buffer.from(selected!.map!, 'base64')).toString()))
+    expect(Object.keys(decoded.coverage)).toEqual(testFiles)
+    for (const file of testFiles) expect(decoded.coverage[file]).toEqual(sourceFiles)
+  } finally { await rm(root, { recursive: true, force: true }) }
+})
