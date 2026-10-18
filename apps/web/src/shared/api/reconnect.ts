@@ -23,6 +23,11 @@ function needsRecovery(query: Query): boolean {
     && (isRecoverableError(query.state.error) || isRecoverableError(query.state.fetchFailureReason))
 }
 
+function hasPendingRetry(query: Query): boolean {
+  return query.isActive() && query.meta?.refetchOnApiReconnect !== false
+    && query.state.status === 'pending' && query.state.errorUpdateCount > 0
+}
+
 function canRefetchAfterReconnect(query: Query): boolean {
   return query.meta?.refetchOnApiReconnect !== false
     && (!query.state.error || isTransientReadError(query.state.error))
@@ -39,6 +44,10 @@ export function useApiReconnect(): boolean {
   const recovering = useSyncExternalStore(
     listener => cache.subscribe(listener),
     () => cache.getAll().some(needsRecovery),
+  )
+  const retrying = useSyncExternalStore(
+    listener => cache.subscribe(listener),
+    () => cache.getAll().some(hasPendingRetry),
   )
   const online = useSyncExternalStore(
     listener => onlineManager.subscribe(listener),
@@ -74,6 +83,8 @@ export function useApiReconnect(): boolean {
   const wasReconnecting = useRef(false)
   useEffect(() => {
     if (!recovering && online) {
+      // A retry without cached data clears its error before a response arrives.
+      if (retrying) return
       if (wasReconnecting.current) void client.invalidateQueries({
         refetchType: 'active',
         predicate: canRefetchAfterReconnect,
@@ -87,6 +98,6 @@ export function useApiReconnect(): boolean {
       void client.refetchQueries({ predicate: needsRecovery, type: 'active' }, { cancelRefetch: false })
     }, reconnectIntervalMs)
     return () => window.clearInterval(timer)
-  }, [client, recovering, online])
+  }, [client, recovering, retrying, online])
   return reconnecting || !online
 }
