@@ -60,7 +60,11 @@ export async function assertIntervalRestart(executionHost: 'main' | 'worker'): P
       expiresAt: new Date(Date.now() + 600_000), grants: [{ actions: ['runs:read'],
         scope: { workspaceIds: [started.run.workspaceId], workflowIds: [started.run.workflowId] } }] })
     const workerPid = fixture.workerPid()
+    console.info('Interval restart admitted executions:', active.map(execution => ({
+      id: execution.id, nativeSessionId: execution.nativeSessionId,
+    })))
     await fixture.restartMain({ mode: 'graceful', afterShutdown: async () => {
+      console.info('Interval restart Main shutdown completed')
       const preserved = await fixture.executions(started.run.id)
       for (const execution of active) {
         expect(preserved.find(item => item.id === execution.id)).toMatchObject({

@@ -321,7 +321,10 @@ export async function remoteReviewProduction(options: {
           const sourceMessage = event.err?.message
           const errorDetail = code === 'source-reconciliation-unconfirmed' && typeof sourceMessage === 'string'
             && /^Process \d+ (?:still |could not be inspected|exceeded )/.test(sourceMessage)
-            ? sourceMessage.slice(0, 200) : undefined
+            ? sourceMessage.slice(0, 200)
+            : event.err?.type === 'HarnessExecutionError' && typeof sourceMessage === 'string'
+              && /^(The submitted native turn was not found|Reconcile the correlation|A different native turn is still active|More than one native turn has this correlation)/.test(sourceMessage)
+              ? sourceMessage.slice(0, 200) : undefined
           failuresSeen += 1
           failures.push({ role, reason: typeof event.reason === 'string' && /^[a-z][a-z0-9_]{1,64}$/.test(event.reason)
             ? event.reason : undefined, message: typeof event.msg === 'string' ? event.msg.slice(0, 160) : undefined,
