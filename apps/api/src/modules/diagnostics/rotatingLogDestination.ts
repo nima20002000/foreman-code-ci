@@ -7,7 +7,7 @@ import pino from 'pino'
 type FileSegment = {
   path: string
   bytes: number
-  stream: ReturnType<typeof pino.destination>
+  stream: ReturnType<typeof pino.destination> & { destroyed: boolean }
   ready: boolean
   pending: string[]
 }
@@ -31,7 +31,8 @@ class RotatingLogDestination extends EventEmitter {
   private date = dateName()
   private number: number
 
-  constructor(private readonly file: string, private readonly maxBytes: number, number: number) {
+  constructor(private readonly file: string, private readonly maxBytes: number, number: number,
+    private readonly onFlush: () => void) {
     super()
     this.number = number
     this.active = this.openSegment()
@@ -47,7 +48,7 @@ class RotatingLogDestination extends EventEmitter {
 
   flushSync(): void {
     for (const segment of this.segments) {
-      if (segment.ready) {
+      if (segment.ready && !segment.stream.destroyed) {
         segment.stream.flushSync()
       } else if (segment.pending.length) {
         // An exit cannot wait for an async open callback. Nothing is submitted until ready,
@@ -57,11 +58,12 @@ class RotatingLogDestination extends EventEmitter {
       }
     }
     this.updateSymlink()
+    this.onFlush()
   }
 
   private openSegment(): FileSegment {
     const path = `${this.file.replace(/\.log$/, '')}.${this.date}.${this.number++}.log`
-    const stream = pino.destination({ dest: path, sync: false })
+    const stream = pino.destination({ dest: path, sync: false }) as FileSegment['stream']
     const segment: FileSegment = { path, bytes: 0, stream, ready: false, pending: [] }
     this.segments.add(segment)
     stream.on('error', error => this.emit('error', error))
@@ -107,14 +109,15 @@ class RotatingLogDestination extends EventEmitter {
   }
 }
 
-export async function rotatingLogDestination(file: string, size: string): Promise<RotatingLogDestination> {
+export async function rotatingLogDestination(file: string, size: string,
+  onFlush: () => void): Promise<RotatingLogDestination> {
   const prefix = `${basename(file).replace(/\.log$/, '')}.${dateName()}.`
   const names = await readdir(dirname(file))
   const numbers = names.filter(name => name.startsWith(prefix) && name.endsWith('.log'))
     .map(name => Number(name.slice(prefix.length, -4)))
     .filter(number => Number.isSafeInteger(number) && number > 0)
   const number = numbers.reduce((largest, value) => Math.max(largest, value), 0) + 1
-  const destination = new RotatingLogDestination(file, sizeBytes(size), number)
+  const destination = new RotatingLogDestination(file, sizeBytes(size), number, onFlush)
   await once(destination, 'ready')
   return destination
 }

@@ -1,3 +1,4 @@
+import { readdirSync, readlinkSync, statSync, unlinkSync } from 'node:fs'
 import { mkdir, readdir, readlink, stat, unlink } from 'node:fs/promises'
 import { basename, dirname, join, resolve } from 'node:path'
 import { runtimeTimingChannel, type RuntimeTimingRecord } from './runtimeTiming.js'
@@ -100,6 +101,30 @@ const positive = (value: string | undefined, fallback: number) => {
   return fallback
 }
 
+function logFilePattern(file: string): RegExp {
+  const base = basename(file).replace(/\.log$/, '')
+  return new RegExp(`^${base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\.(?:\\d{4}-\\d{2}-\\d{2}\\.)?\\d+\\.log$`)
+}
+
+function expiredLogNames(files: { name: string; active: boolean; modified: number }[],
+  count: number, days: number, now: number): string[] {
+  return files.sort((a, b) => Number(b.active) - Number(a.active) || b.modified - a.modified)
+    .filter((item, index) => !item.active && (index >= count || now - item.modified > days * 86_400_000))
+    .map(item => item.name)
+}
+
+function pruneLogFilesSync(file: string, count: number, days: number): void {
+  const directory = dirname(file)
+  const active = resolve(directory, readlinkSync(join(directory, 'current.log')))
+  const own = logFilePattern(file)
+  const files = readdirSync(directory).filter(name => own.test(name)).map(name => ({
+    name,
+    active: resolve(directory, name) === active,
+    modified: statSync(join(directory, name)).mtimeMs,
+  }))
+  for (const name of expiredLogNames(files, count, days, Date.now())) unlinkSync(join(directory, name))
+}
+
 /**
  * Deletes rotated files older than `days`, then all but the newest `count`. Only this
  * logger's own numbered and dated files are touched. The active destination stays,
@@ -107,14 +132,13 @@ const positive = (value: string | undefined, fallback: number) => {
  */
 export async function pruneLogFiles(file: string, count: number, days: number, now = Date.now()): Promise<string[]> {
   const directory = dirname(file)
-  const base = basename(file).replace(/\.log$/, '')
   const target = await readlink(join(directory, 'current.log')).catch((error: unknown) => {
     const code = (error as NodeJS.ErrnoException).code
     if (code === 'ENOENT' || code === 'EINVAL') return undefined
     throw error
   })
   const active = target === undefined ? undefined : resolve(directory, target)
-  const own = new RegExp(`^${base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\.(?:\\d{4}-\\d{2}-\\d{2}\\.)?\\d+\\.log$`)
+  const own = logFilePattern(file)
   const names = (await readdir(directory).catch((error: unknown) => {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
       componentLogger('lifecycle').warn({ operation: 'read log directory', file: basename(file), err: error },
@@ -122,13 +146,12 @@ export async function pruneLogFiles(file: string, count: number, days: number, n
     }
     return [] as string[]
   })).filter((name) => own.test(name))
-  const files = (await Promise.all(names.map(async (name) => ({
+  const files = await Promise.all(names.map(async (name) => ({
     name,
     active: resolve(directory, name) === active,
     modified: (await stat(join(directory, name))).mtimeMs,
-  })))).sort((a, b) => Number(b.active) - Number(a.active) || b.modified - a.modified)
-  const expired = files.filter((item, index) => !item.active
-    && (index >= count || now - item.modified > days * 86_400_000)).map((item) => item.name)
+  })))
+  const expired = expiredLogNames(files, count, days, now)
   await Promise.allSettled(expired.map((name) => unlink(join(directory, name)).catch((error: unknown) => {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
     componentLogger('lifecycle').warn({ operation: 'remove rotated log', file: name, err: error },
@@ -149,7 +172,7 @@ export async function enableFileLogging(env: NodeJS.ProcessEnv = process.env): P
   const count = positive(env.LOG_MAX_FILES, 14)
   const days = positive(env.LOG_RETENTION_DAYS, 14)
   await mkdir(dirname(file), { recursive: true })
-  const stream = await rotatingLogDestination(file, env.LOG_MAX_SIZE ?? '20m')
+  const stream = await rotatingLogDestination(file, env.LOG_MAX_SIZE ?? '20m', () => pruneLogFilesSync(file, count, days))
   fileStream = stream
   const pruned = await pruneLogFiles(file, count, days)
   let cleanup = Promise.resolve()
