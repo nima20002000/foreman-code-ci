@@ -20,7 +20,7 @@ export interface CloudRun {
   transport?: CiHostRun['transport']
   testsStarted?: boolean
   scope?: CiScope; files?: string[]; part?: CiPart; baseCommit?: string
-  dispatch?: { input: CloudDispatchInput; attempts: number; at: string; uncertain?: boolean; cancelAccepted?: boolean
+  dispatch?: { input?: CloudDispatchInput; attempts: number; at: string; uncertain?: boolean; cancelAccepted?: boolean
     notSent?: boolean }
   reconciliation?: { attempts: number; at: string; since?: string; previousMessage: string | null }
   publicationRequest?: Extract<CiHostRequest, { operation: 'start' }>
@@ -289,7 +289,7 @@ export class GitHubActionsProvider implements CloudProvider {
   }
 
   private async matches(run: CloudRun) {
-    const branch = run.dispatch?.input.workflowRef ?? run.dispatch?.input.branch ?? 'main'
+    const branch = run.dispatch?.input?.workflowRef ?? run.dispatch?.input?.branch ?? 'main'
     const listed = JSON.parse(await this.gh(['run', 'list', '-R', run.mirror, '--workflow', WORKFLOW, '--branch', branch,
       '--event', 'workflow_dispatch', '--limit', '200', '--json', 'databaseId,displayTitle,status,headSha'], 15_000)) as
       { databaseId: number; displayTitle: string; status?: string; headSha: string }[]
@@ -457,7 +457,7 @@ export class CircleCiProvider implements CloudProvider {
   }
 
   async discover(run: CloudRun) {
-    const branch = run.dispatch?.input.workflowRef
+    const branch = run.dispatch?.input?.workflowRef
     if (!branch || branch !== `ci/${run.commit}-${run.runId}`) {
       throw new DomainError('CI_CLOUD_SUBMISSION_UNCERTAIN',
         'CircleCI submission has no execution-specific ref; ownership retained.', 503)

@@ -423,7 +423,7 @@ export class CloudCi {
     if (run.state === 'starting') step = run.mirrorPublication?.state === 'pending' ? 'publish mirror' : 'dispatch'
     if (run.state === 'queued') step = null
     let collection: CiHostRun['collection']
-    if (run.state === 'failed' && !run.dispatch && !run.providerRunId) collection = 'unsupported'
+    if (run.state === 'failed' && !run.dispatch?.attempts && !run.providerRunId) collection = 'unsupported'
     else if (run.collection?.unavailableAt) collection = 'unsupported'
     else if (run.collection) collection = run.collection.log && run.collection.artifacts ? 'complete' : 'pending'
     const transport = this.provider.transport ?? run.transport
@@ -469,16 +469,43 @@ export class CloudCi {
     if (!mirror || !await this.ready()) {
       throw new DomainError('CI_CLOUD_UNAVAILABLE', `This workspace has no CI mirror, or Main is not logged in to ${this.provider.label}.`, 409)
     }
+    const startedAt = this.ports.now().toISOString()
+    const pending = await this.save({ runId: request.runId, repository: request.repository, mirror,
+      commit: request.commit, suite: request.suite, startedAt, state: 'starting', providerRunId: null,
+      finishedAt: null, exitCode: null, message: 'Publishing the checked CI mirror snapshot.',
+      dispatch: { attempts: 0, at: startedAt, uncertain: false, notSent: true },
+      publicationRequest: request, mirrorPublication: { state: 'pending', startedAt, finishedAt: null } })
     if (request.deferMirror) {
-      const startedAt = this.ports.now().toISOString()
-      const pending = await this.save({ runId: request.runId, repository: request.repository, mirror,
-        commit: request.commit, suite: request.suite, startedAt, state: 'starting', providerRunId: null,
-        finishedAt: null, exitCode: null, message: 'Publishing the checked CI mirror snapshot.',
-        publicationRequest: request, mirrorPublication: { state: 'pending', startedAt, finishedAt: null } })
       this.publishInBackground(pending)
       return this.view(pending, 0)
     }
-    return this.publishAndStart(request, mirror)
+    try {
+      return await this.publishAndStart(request, mirror)
+    } catch (error) {
+      await this.recordStartFailure(request.runId, error)
+      throw error
+    }
+  }
+
+  private async recordStartFailure(runId: string, error: unknown) {
+    const latest = await this.read(runId)
+    if (latest.state !== 'starting') return
+    if (latest.dispatch?.attempts || latest.providerRunId || latest.dispatchHistory?.length) {
+      const message = latest.dispatch?.notSent && !latest.dispatch.uncertain
+        ? 'Cloud submission was not sent; start admission will be retried.'
+        : 'Cloud dispatch reply was not confirmed; ownership retained.'
+      await this.save({ ...latest, message })
+      return
+    }
+    const unavailable = error instanceof DomainError && error.code === 'CI_CLOUD_UNAVAILABLE'
+    const message = sanitizeCiText(error instanceof Error ? error.message : String(error)).slice(0, 2000)
+    const failed: CloudRun = { ...latest, state: unavailable ? 'queued' : 'failed',
+      finishedAt: unavailable ? null : this.ports.now().toISOString(), message,
+      ...(error instanceof DomainError && error.code === 'CI_CLOUD_FAILED' ? { testsStarted: false } : {}),
+      mirrorPublication: { ...latest.mirrorPublication!, state: 'failed', finishedAt: this.ports.now().toISOString() } }
+    delete failed.publicationRequest
+    await writeFile(this.path(runId, 'log'), `${message}\n`, { flag: 'a', mode: 0o600 })
+    await this.save(failed)
   }
 
   private publishInBackground(run: CloudRun) {
@@ -486,25 +513,7 @@ export class CloudCi {
     if (pendingPublications.has(key)) return
     const task = this.publishAndStart(run.publicationRequest!, run.mirror).then(() => undefined).catch(async error => {
       log.warn({ err: error, runId: run.runId }, 'CI mirror publication failed')
-      await this.serializeRun(run.runId, async () => {
-        const latest = await this.read(run.runId)
-        if (latest.state !== 'starting') return
-        if (latest.mirrorPublication?.state === 'ready' && latest.dispatch) {
-          const message = latest.dispatch.notSent && !latest.dispatch.uncertain
-            ? 'Cloud submission was not sent; start admission will be retried.'
-            : 'Cloud dispatch reply was not confirmed; ownership retained.'
-          await this.save({ ...latest, message })
-          return
-        }
-        const unavailable = error instanceof DomainError && error.code === 'CI_CLOUD_UNAVAILABLE'
-        const failed: CloudRun = { ...latest, state: unavailable ? 'queued' : 'failed',
-          finishedAt: unavailable ? null : this.ports.now().toISOString(),
-          message: sanitizeCiText(error instanceof Error ? error.message : String(error)).slice(0, 2000),
-          mirrorPublication: latest.mirrorPublication?.state === 'ready' ? latest.mirrorPublication
-            : { ...latest.mirrorPublication!, state: 'failed', finishedAt: this.ports.now().toISOString() } }
-        delete failed.publicationRequest
-        await this.save(failed)
-      })
+      await this.serializeRun(run.runId, () => this.recordStartFailure(run.runId, error))
     }).catch(error => {
       log.error({ err: error, runId: run.runId }, 'CI mirror failure could not be recorded; recovery will retry')
     }).finally(() => {
@@ -600,8 +609,8 @@ export class CloudCi {
       if ([input.slice, input.files, input.partition].some(value => value && value.length > limit)) {
         input.workflowCommit = await this.dispatchSnapshot(publication, input)
       }
-      await pushMirror(() => git(['push', '--quiet', `https://github.com/${mirror}.git`,
-        `${input.workflowCommit}:refs/heads/${input.workflowRef}`]), { mirror, commit: request.commit })
+      await pushMirror(git, ['push', '--quiet', `https://github.com/${mirror}.git`,
+        `${input.workflowCommit}:refs/heads/${input.workflowRef}`], { mirror, commit: request.commit })
     }
     validateProviderParameters(this.provider, input)
     await this.requireNewStart(mirror.slice(mirror.indexOf('/') + 1))
@@ -612,7 +621,7 @@ export class CloudCi {
       provenance: { sourceCommit: request.commit, workflowCommit: input.workflowCommit!, workflowRef: input.workflowRef! },
       finishedAt: null, exitCode: null, message,
       mirrorPublication: { ...mirrorPublication, snapshotCommit: input.workflowCommit! },
-      dispatch: { input, attempts: 0, at: this.ports.now().toISOString() } })
+      dispatch: { input, attempts: 0, at: this.ports.now().toISOString(), uncertain: false, notSent: true } })
     run = await this.trigger(run, input)
     if (run.providerRunId) {
       try {
@@ -770,15 +779,15 @@ export class CloudCi {
         return this.save({ ...run, state: 'running', workflowStarted: true })
       }
     }
-    const retry = run.dispatch && run.dispatch.attempts < MAX_DISPATCH_ATTEMPTS
+    const retryInput = run.dispatch && run.dispatch.attempts < MAX_DISPATCH_ATTEMPTS ? run.dispatch.input : undefined
     const message = `${this.provider.label} created no workflow within 75 seconds. `
-      + (retry ? `Retrying dispatch (${run.dispatch!.attempts + 1}/${MAX_DISPATCH_ATTEMPTS}).`
+      + (retryInput ? `Retrying dispatch (${run.dispatch!.attempts + 1}/${MAX_DISPATCH_ATTEMPTS}).`
         : 'Dispatch retries exhausted; queued for another computer.')
     await writeFile(this.path(run.runId, 'log'), sanitizeCiText(`${message}\n`), { flag: 'a', mode: 0o600 })
     const recovered = { ...run, message }
     delete recovered.reconciliation
     const next = await this.save(recovered)
-    if (retry) return this.trigger(next, run.dispatch!.input)
+    if (retryInput) return this.trigger(next, retryInput)
     return this.save({ ...next, state: 'queued', providerRunId: null, finishedAt: null, exitCode: null,
       cancellation: { at: this.ports.now().toISOString(), canceledIds: [] } })
   }
@@ -1086,8 +1095,8 @@ export class CloudCi {
     const snapshotMs = Math.max(0, performance.now() - snapshotting - (guardMs - initialGuardMs) - branchFetchMs)
     const pushing = performance.now()
     pushedMains.delete(mirrorKey)
-    await pushMirror(() => git(['push', '--quiet', '--force', `https://github.com/${mirror}.git`, `${snapshot}:refs/heads/${branch}`,
-      `${snapshot}:refs/heads/main`, `${snapshot}:refs/heads/${workflowRef}`, ...(comparison ? [`${comparison.commit}:refs/heads/${comparison.branch}`] : [])]),
+    await pushMirror(git, ['push', '--quiet', '--force', `https://github.com/${mirror}.git`, `${snapshot}:refs/heads/${branch}`,
+      `${snapshot}:refs/heads/main`, `${snapshot}:refs/heads/${workflowRef}`, ...(comparison ? [`${comparison.commit}:refs/heads/${comparison.branch}`] : [])],
     { mirror, commit })
     pushedMains.set(mirrorKey, snapshot)
     const timings = { queueMs, sourceMs, fetchMs, guardMs, snapshotMs, pushMs: performance.now() - pushing,
@@ -1187,7 +1196,7 @@ export class CloudCi {
   }
 
   private expectedEnd(run: CloudRun): number {
-    const duration = run.dispatch?.input.expectedDurationMs ?? 0
+    const duration = run.dispatch?.input?.expectedDurationMs ?? 0
     if (duration <= 0) return Infinity
     return Date.parse(run.dispatch?.at ?? run.startedAt) + duration
   }
@@ -1327,7 +1336,7 @@ export class CloudCi {
   private stalled(run: CloudRun): boolean {
     if (run.state !== 'running') return false
     const timeout = Math.max(MIN_STALL_MS,
-      (run.dispatch?.input.expectedDurationMs ?? 0) * EXPECTED_DURATION_MULTIPLIER)
+      (run.dispatch?.input?.expectedDurationMs ?? 0) * EXPECTED_DURATION_MULTIPLIER)
     const lastProgress = Date.parse(run.lastProgressAt ?? run.dispatch?.at ?? run.startedAt)
     return this.ports.now().getTime() - lastProgress >= timeout
   }
