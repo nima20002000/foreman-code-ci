@@ -1036,7 +1036,7 @@ export class HostCiRunner {
     const contracts = (prerequisites || meta.warmup) && existsSync(join(source, 'scripts/ci-contracts.mjs'))
     let install: string[] = []
     if (existsSync(join(source, 'pnpm-lock.yaml'))) {
-      install = pnpmInstall(cache, join(run, 'watchdog-message.json'), { offlineOnly: meta.warmup === true })
+      install = await pnpmInstall(source, cache, join(run, 'watchdog-message.json'), { offlineOnly: meta.warmup === true })
     } else if (!meta.warmup) {
       install = [`${pm} install || finish $?`]
     }
