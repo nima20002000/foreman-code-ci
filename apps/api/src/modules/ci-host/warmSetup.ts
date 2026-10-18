@@ -84,10 +84,9 @@ export async function pnpmInstall(source: string, cache: string, messageFile: st
     `export npm_config_cache_dir=${shellQuote(join(cache, 'pnpm-metadata'))}`,
     `export npm_config_store_dir=${shellQuote(join(cache, 'pnpm-store'))}`,
     ...(validateNative ? [
-      'native_store_offline=--offline',
       'install_ci_dependencies() {',
       `  ${installCommand} "$@" || return $?`,
-      `  ${shellQuote(process.execPath)} ${shellQuote(validator)} ${shellQuote(source)} --repair $native_store_offline || {`,
+      `  ${shellQuote(process.execPath)} ${shellQuote(validator)} ${shellQuote(source)} || {`,
       `    rm -f -- ${shellQuote(complete)}`,
       '    return 1',
       '  }',
@@ -107,7 +106,6 @@ export async function pnpmInstall(source: string, cache: string, messageFile: st
     // Dependency snapshots from the previous per-run copy scheme are no longer read.
     `rm -rf ${shellQuote(join(cache, 'modules'))}`,
     // Another request may have filled these inputs while this checkout waited for the lock.
-    ...(!options.offlineOnly && validateNative ? ['native_store_offline='] : []),
     `${ready} && ${install} --offline || {`,
     ...(inputs && staging ? [
       '(',
