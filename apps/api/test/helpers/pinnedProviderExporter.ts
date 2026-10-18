@@ -51,6 +51,9 @@ export async function pinnedProviderExporter(launcherVersion: string): Promise<s
   }
   const providerKeys = new Set([providerKey, ...Object.values(lock.snapshots[providerKey]!.optionalDependencies!)])
   const storeArguments = await prefetchedStoreArguments()
+  const metadata = process.env.PNPM_CONFIG_CACHE_DIR ?? process.env.npm_config_cache_dir
+    ?? process.env.FOREMAN_CODE_TEST_PNPM_CACHE_DIR
+  if (!metadata) throw new Error('CI publication metadata is unavailable. Complete CI dependency setup before schema export.')
   const installation = await cachedTestFixture(testFixtureCacheRoot(), 'provider-exporter',
     [...inputs, platform, process.arch, process.version, 'offline-prefetched-store'], async directory => {
       const manifest = { private: true, packageManager,
@@ -67,7 +70,9 @@ export async function pinnedProviderExporter(launcherVersion: string): Promise<s
         snapshots: Object.fromEntries([...providerKeys].map(key => [key, key === nativeKey ? {} : lock.snapshots[key]])),
       }))
       console.info('[provider-schemas] Installing the locked exporter offline from the CI pnpm store.')
-      await execute('corepack', ['pnpm', 'install', '--frozen-lockfile', '--offline', ...storeArguments], { cwd: directory })
+      await execute('corepack', ['pnpm', 'install', '--frozen-lockfile', '--offline', ...storeArguments], {
+        cwd: directory, env: { ...process.env, PNPM_CONFIG_CACHE_DIR: metadata },
+      })
     })
   return join(installation, 'node_modules/@openai/codex/bin/codex.js')
 }

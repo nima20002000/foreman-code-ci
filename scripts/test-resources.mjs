@@ -175,6 +175,10 @@ export function testEnvironment(environment, resource) {
   requireTestServerUrl(resource.databaseUrl)
   assertTestRoot(resource.directory, resource.token)
   const clean = { ...environment }
+  // Schema fixtures keep publication metadata when each test receives a disposable home.
+  clean.FOREMAN_CODE_TEST_PNPM_CACHE_DIR = environment.FOREMAN_CODE_TEST_PNPM_CACHE_DIR
+    ?? environment.PNPM_CONFIG_CACHE_DIR ?? environment.npm_config_cache_dir
+    ?? join(environment.XDG_CACHE_HOME ?? join(homedir(), '.cache'), 'pnpm')
   if (hostCiRunId) {
     clean.FOREMAN_CODE_CI_TEST_ADMIN_URL = testAdminUrl
     clean.FOREMAN_CODE_CI_HOST_RUN_ID = hostCiRunId
