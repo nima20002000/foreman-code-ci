@@ -1,5 +1,5 @@
 import type pg from 'pg'
-import { CiCoverageSelectionSchema, CiRunRecordSchema, type CiCoverageSelection, type CiDurations } from '@foreman-code/contracts'
+import { CiRunRecordSchema, type CiDurations } from '@foreman-code/contracts'
 import { CI_QUEUE_ORDER } from './priority.js'
 
 export async function readQueuedCiRuns(pool: pg.Pool) {
@@ -9,13 +9,7 @@ export async function readQueuedCiRuns(pool: pg.Pool) {
       order by ${CI_QUEUE_ORDER}`)).rows
   const parsed = queuedRows.map(row => CiRunRecordSchema.parse(row.record))
   const durations = new Map(queuedRows.map((row, index) => [parsed[index]!.id, row.durations]))
-  const groups = [...new Set(parsed.filter(run => run.suite === 'integration' && run.deriveFiles).map(run => run.groupId))]
-  const inputs = groups.length ? (await pool.query<{ group_id: string; integration_selection: unknown }>(
-    'select group_id,integration_selection from ci_runs where group_id=any($1::uuid[]) and integration_selection is not null',
-    [groups])).rows : []
-  const coverage = new Map<string, CiCoverageSelection>(inputs.map(row =>
-    [row.group_id, CiCoverageSelectionSchema.parse(row.integration_selection)]))
-  return { parsed, durations, coverage }
+  return { parsed, durations }
 }
 
 export async function readCiGateReservation(pool: pg.Pool) {
