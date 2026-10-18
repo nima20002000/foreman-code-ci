@@ -2,6 +2,7 @@ import { accessSync, constants, existsSync, readFileSync, realpathSync, statSync
 import { createRequire } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { spawnSync } from 'node:child_process'
 
 const targets = {
   'linux-x64': 'x86_64-unknown-linux-musl', 'linux-arm64': 'aarch64-unknown-linux-musl',
@@ -45,7 +46,24 @@ export function assertRequiredNativePayloads(root) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
   try {
-    assertRequiredNativePayloads(resolve(process.argv[2] ?? process.cwd()))
+    const root = resolve(process.argv[2] ?? process.cwd())
+    if (process.argv.includes('--repair')) {
+      const { repairRequiredNativePayloads } = await import('./ci-store-prefetch.mjs')
+      const storeDir = process.env.npm_config_store_dir
+      const cacheDir = process.env.npm_config_cache_dir
+      if (!storeDir || !cacheDir) throw new Error('CI native repair requires the provisioned store and metadata paths.')
+      repairRequiredNativePayloads(root, { storeDir, cacheDir, offlineOnly: process.argv.includes('--offline'),
+        installArgs: ['install', '--frozen-lockfile', '--config.confirm-modules-purge=false',
+          '--store-dir', storeDir, '--cache-dir', cacheDir],
+        run: (args, cwd) => {
+          const result = spawnSync('corepack', ['pnpm', ...args], { cwd, env: process.env, stdio: 'inherit' })
+          if (result.error) throw result.error
+          return result.status ?? 1
+        },
+      })
+    } else {
+      assertRequiredNativePayloads(root)
+    }
   } catch (error) {
     console.error(error.message)
     process.exitCode = 1

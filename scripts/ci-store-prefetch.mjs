@@ -1,0 +1,80 @@
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, existsSync, writeFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
+import { join } from 'node:path'
+import { assertRequiredNativePayloads } from './ci-native-payloads.mjs'
+
+function nativeDependency(root, parse) {
+  const api = JSON.parse(readFileSync(join(root, 'apps/api/package.json'), 'utf8'))
+  const version = api.dependencies['@openai/codex']
+  const platform = process.platform === 'android' ? 'linux' : process.platform
+  const name = `@openai/codex-${platform}-${process.arch}`
+  const lock = parse(readFileSync(join(root, 'pnpm-lock.yaml'), 'utf8'))
+  const reference = lock.snapshots?.[`@openai/codex@${version}`]?.optionalDependencies?.[name]
+  const expected = `@openai/codex@${version}-${platform}-${process.arch}`
+  if (reference !== expected || !lock.packages?.[reference]?.resolution?.integrity || !lock.snapshots?.[reference]) {
+    throw new Error(`The frozen lockfile does not pin the required platform package ${name}.`)
+  }
+  return { name, reference, specifier: `npm:${reference}`, lock }
+}
+
+/** Make the host payload required in an isolated frozen install so pnpm cannot silently omit it. */
+function provisionNativeStore(root, options) {
+  const { parse, stringify } = createRequire(new URL('../apps/api/package.json', import.meta.url))('yaml')
+  const dependency = nativeDependency(root, parse)
+  const { name, reference, specifier, lock } = dependency
+  mkdirSync(options.cacheDir, { recursive: true })
+  const staging = mkdtempSync(join(options.cacheDir, 'ci-store-prefetch-'))
+  try {
+    const manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
+    const workspacePath = join(root, 'pnpm-workspace.yaml')
+    const workspace = existsSync(workspacePath) ? parse(readFileSync(workspacePath, 'utf8')) : {}
+    writeFileSync(join(staging, 'package.json'), JSON.stringify({ private: true,
+      packageManager: manifest.packageManager, dependencies: { [name]: specifier } }))
+    // This tree installs only an unpatched native payload; retain all registry and release-age settings.
+    writeFileSync(join(staging, 'pnpm-workspace.yaml'), stringify({ ...workspace,
+      packages: [], patchedDependencies: {} }))
+    if (existsSync(join(root, '.npmrc'))) {
+      writeFileSync(join(staging, '.npmrc'), readFileSync(join(root, '.npmrc')))
+    }
+    const nativeSnapshot = { ...lock.snapshots[reference] }
+    delete nativeSnapshot.optional
+    writeFileSync(join(staging, 'pnpm-lock.yaml'), stringify({ ...lock, patchedDependencies: {},
+      importers: { '.': { dependencies: { [name]: { specifier, version: reference } } } },
+      snapshots: { ...lock.snapshots, [reference]: nativeSnapshot },
+    }))
+    const args = ['install', '--frozen-lockfile', '--ignore-scripts', '--config.confirm-modules-purge=false',
+      '--store-dir', options.storeDir, '--cache-dir', options.cacheDir, '--package-import-method=hardlink']
+    let status = options.run([...args, '--offline'], staging)
+    if (status !== 0 && !options.offlineOnly) {
+      rmSync(join(staging, 'node_modules'), { recursive: true, force: true })
+      status = options.run([...args, '--prefer-offline'], staging)
+    }
+    if (status !== 0) throw new Error(`Required native store provisioning failed (exit ${status}).`)
+    return reference
+  } finally {
+    rmSync(staging, { recursive: true, force: true })
+  }
+}
+
+export function repairRequiredNativePayloads(root, options) {
+  const apiManifest = join(root, 'apps/api/package.json')
+  if (!existsSync(apiManifest) || !JSON.parse(readFileSync(apiManifest, 'utf8')).dependencies?.['@openai/codex']) return
+  let payloadError
+  try {
+    assertRequiredNativePayloads(root)
+  } catch (error) {
+    payloadError = error
+  }
+  try {
+    const reference = provisionNativeStore(root, options)
+    if (!payloadError) return
+    console.log('[ci-cache] repairing the required native virtual-store package')
+    rmSync(join(root, 'node_modules/.pnpm', reference.replaceAll('/', '+')), { recursive: true, force: true })
+    const status = options.run([...options.installArgs, '--offline'], root)
+    if (status !== 0) throw new Error(`Native payload reinstall failed (exit ${status}).`)
+    assertRequiredNativePayloads(root)
+  } catch (error) {
+    const name = `@openai/codex-${process.platform === 'android' ? 'linux' : process.platform}-${process.arch}`
+    throw new Error(`CI_NATIVE_PAYLOAD_UNAVAILABLE: ${name}. ${error.message}`, { cause: error })
+  }
+}
