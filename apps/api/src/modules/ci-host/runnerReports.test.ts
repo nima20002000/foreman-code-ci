@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import * as fs from 'node:fs/promises'
 import { join } from 'node:path'
-import { dirname } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import type { CiTestResults } from '@foreman-code/contracts'
 import { deferred } from '../../../test/helpers/deferred.js'
@@ -106,31 +105,6 @@ it('keeps a supported missing report pending and collects it when it appears', a
   await fs.writeFile(join(f.directory, 'test-results.json'), JSON.stringify(tests))
   await expect(f.reopen().handle(f.read)).resolves.toMatchObject({ testResults: tests, run: { collection: 'complete' } })
   expect(f.launches()).toBe(1)
-})
-
-it('bounds status summaries while individual reads retain the complete selection', async () => {
-  const f = await fixture('integration')
-  await f.runner.handle(f.read)
-  const saved = JSON.parse(await fs.readFile(join(f.directory, 'meta.json'), 'utf8'))
-  const root = dirname(dirname(f.directory))
-  const files = Array.from({ length: 2500 }, (_, index) =>
-    `apps/api/test/${'feature-'.repeat(10)}${index}.integration.test.ts`)
-  const ids: string[] = Array.from({ length: 10 }, () => randomUUID())
-  for (const runId of ids) {
-    const directory = join(root, 'runs', runId)
-    await fs.mkdir(directory)
-    await fs.writeFile(join(directory, 'meta.json'), JSON.stringify({ ...saved, runId, cleaned: true,
-      selection: { scope: 'affected', files, reason: 'Recorded execution coverage.' } }))
-    await fs.writeFile(join(directory, 'log'), '')
-    await fs.writeFile(join(directory, 'step'), 'integration')
-  }
-  const runner = f.reopen()
-  const status = await runner.handle({ operation: 'status' })
-  expect(Buffer.byteLength(JSON.stringify(status))).toBeLessThan(1024 * 1024)
-  if (status.operation !== 'status') throw new Error('Expected CI status')
-  expect(status.runs.filter(run => ids.includes(run.runId)).every(run => run.selection === undefined)).toBe(true)
-  const detail = await runner.handle({ operation: 'read', runId: ids[0]!, afterOffset: 0, maxBytes: 0 })
-  expect(detail).toMatchObject({ run: { selection: { files } } })
 })
 
 it.each(['unit', 'integration'] as const)('fails collection of missing %s reports after a crashed process closes', async suite => {
