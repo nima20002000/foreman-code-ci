@@ -52,6 +52,6 @@ describe('Worker model request directories', () => {
       modelCall(workerDirectory),
     ]
 
-    expect(modelRequestDirectories(calls, workerDirectory)).toEqual([activeDirectory, workerDirectory])
+    expect(modelRequestDirectories(calls, workerDirectory)).toEqual([activeDirectory])
   })
 })
