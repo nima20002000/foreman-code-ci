@@ -54,7 +54,6 @@ function provisionNativeStore(root, options) {
     if (verified !== 0) throw new Error(`Required native release-age verification failed (exit ${verified}).`)
     let status = options.run([...args, '--offline'], staging)
     if (status !== 0 && !options.offlineOnly) {
-      console.log(`[ci-cache] downloading the required native package ${reference} into the shared store`)
       rmSync(join(staging, 'node_modules'), { recursive: true, force: true })
       status = options.run([...args, '--prefer-offline'], staging)
     }
