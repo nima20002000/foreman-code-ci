@@ -40,10 +40,7 @@ export async function assertIntervalRestart(executionHost: 'main' | 'worker'): P
       subscribe: fixture.subscribeNativeChanges,
     })
     if (!before) throw new Error('Expected both native turns to be admitted')
-    expect(before.executions, JSON.stringify(before.executions.map(execution => ({
-      id: execution.id, node: execution.workflowNodeId, state: execution.state, input: execution.input,
-      result: execution.result, nativeSessionId: execution.nativeSessionId,
-    })))).toHaveLength(3)
+    expect(before.executions).toHaveLength(3)
     const active = before.executions.filter(execution => execution.state === 'running')
     expect(active.filter(({ input }) => input !== null && typeof input === 'object'
       && !Array.isArray(input) && input.tick)).toHaveLength(1)
