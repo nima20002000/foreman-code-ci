@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { gunzipSync } from 'node:zlib'
@@ -6,7 +6,9 @@ import { expect, it } from 'vitest'
 import { IntegrationCoverageStore } from './coverageStore.js'
 
 it('merges complete commit artifacts, keeps repositories separate and selects the newest ancestor', async () => {
-  const root = await mkdtemp(join(homedir(), '.cache/foreman-tmp/coverage-store-'))
+  const cache = join(homedir(), '.cache/foreman-tmp')
+  await mkdir(cache, { recursive: true })
+  const root = await mkdtemp(join(cache, 'coverage-store-'))
   try {
     const store = new IntegrationCoverageStore(root)
     const first = 'apps/api/test/first.integration.test.ts'

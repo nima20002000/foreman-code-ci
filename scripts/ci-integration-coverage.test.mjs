@@ -143,3 +143,15 @@ test('V8 collection identifies child process work that needs static selection', 
   await stop(process.cwd(), new Set())
   assert.equal(stop.requiresStatic, true)
 })
+
+test('missing worker reports retain static fallback while absent partitions remain incomplete', async t => {
+  const { integrationCoverageReport } = await import('./integration-coverage.mjs')
+  const { completeIntegrationCoverage } = await import('../packages/contracts/src/ciCoverage.mjs')
+  const f = repository(t)
+  const third = 'apps/api/test/third.integration.test.ts'
+  writeFileSync(join(f.root, 'feature.integration.test.ts.json'), JSON.stringify({ files: [source], requiresStatic: false }))
+  const report = integrationCoverageReport(f.root, f.base, [first, second, third], [first, second])
+  assert.deepEqual(report.coverage, { [first]: [source], [second]: [] })
+  assert.deepEqual(report.staticTests, [second])
+  assert.equal(completeIntegrationCoverage(report), false)
+})
