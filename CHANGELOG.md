@@ -7,6 +7,14 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.0.106] - 2026-10-18
+
+CI correctness and speed.
+- Full rounds: a CI part's setup retry no longer swaps its assigned test files for duplicates, so every full round runs every file.
+- Affected integration runs select tests by recorded per-test coverage from full runs (with per-file static fallback, conservative handling of filesystem, subprocess and Worker-bundle inputs, and full scope for CI-host runtime changes), cutting typical selections by about two thirds.
+- Cloud CI: GitHub "inputs too large" and throttling refusals, CircleCI trigger refusals and mirror publication failures are recorded as never sent and retried instead of stranding a ticket; mirror pushes recover from missing remote objects with a complete pack.
+- Remote review: Stop waits for confirmed closure after graceful Main recovery.
+
 ## [0.0.105] - 2026-10-18
 
 CI reliability.
