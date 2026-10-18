@@ -60,8 +60,6 @@ export function createCurrentEditIntentService(pool: pg.Pool, commands: Postgres
       void action; void commandId
       let saveInput = CurrentEditSaveInputSchema.parse({ ...definition, commandId: saveCommandId })
       const { version, presentationOnly } = await writer.validate(client, principal, saveInput)
-      const graph = { ...input.graph, approval: version.approval }
-      saveInput = CurrentEditSaveInputSchema.parse({ ...saveInput, graph })
       if (input.stagedAgents?.length) saveInput = CurrentEditSaveInputSchema.parse({ ...saveInput,
         resultantAgentConfigurationVersionIds: version.agentConfigurationVersionIds })
       else if (!sameWorkflowValue(version.agentConfigurationVersionIds, input.expectedAgentConfigurationVersionIds)) {
@@ -85,7 +83,7 @@ export function createCurrentEditIntentService(pool: pg.Pool, commands: Postgres
       })
       const stagedDraft = CurrentEditDraftSchema.parse({ id: draftId, workspaceId: input.workspaceId,
         workflowId: input.workflowId, revision: input.expectedRevision, baseWorkflowVersionId: input.expectedWorkflowVersionId,
-        graph, agentConfigurationVersionIds: input.expectedAgentConfigurationVersionIds,
+        graph: input.graph, agentConfigurationVersionIds: input.expectedAgentConfigurationVersionIds,
         ...(presentationOnly ? { presentationOnly: true } : {}),
         ...(input.stagedAgents ? { stagedAgents: input.stagedAgents } : {}),
         ...(input.stagedAgents?.length ? { resultantAgentConfigurationVersionIds: version.agentConfigurationVersionIds,
