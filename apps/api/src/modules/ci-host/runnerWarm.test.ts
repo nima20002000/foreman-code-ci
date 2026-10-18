@@ -1,12 +1,13 @@
 import { execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, utimes, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { deferred, type Deferred } from '../../../test/helpers/deferred.js'
 import { gitFixtureEnvironment } from '../../../test/helpers/gitFixture.js'
 import { HostCiRunner, systemHostCiPorts, type HostCiPorts } from './runner.js'
+import { sweepHostCiCache } from './cacheCleanup.js'
 
 const roots: string[] = []
 const completions: (() => Promise<void>)[] = []
@@ -173,8 +174,12 @@ if (args[1] === 'db:up') {
     const fetch = (await commands()).find(args => args[1] === 'fetch')!
     const store = fetch[fetch.indexOf('--store-dir') + 1]!
     for (const name of await readdir(store)) {
-      if (name.endsWith('-deployment')) await rm(join(store, name))
+      if (!name.endsWith('-deployment')) continue
+      const packageFile = join(store, name)
+      await writeFile(packageFile, Buffer.alloc(2 * 2 ** 20))
+      await utimes(packageFile, new Date('2020-01-01'), new Date('2020-01-01'))
     }
+    await sweepHostCiCache(join(root, 'runner'), { budgetBytes: 2 ** 20, activeRepositories: () => new Set() })
   }
   const slot = join(root, 'runner/slots/example/project/0/src')
   // A new slot starts without dependencies and installs them from the shared store.
