@@ -15,8 +15,6 @@ import { advanced, accepted, binding, credentialIdentity, configuration, threadP
 import { CodexManagerTurns } from './turns.js'
 
 export abstract class CodexManagerSessions extends CodexManagerTurns {
-  private readonly workflowContinuations = new WeakSet<Runtime>()
-
   async createSession(source: NativeSessionStart, signal?: AbortSignal): Promise<NativeSessionReference> {
     if (isWorkflowStart(source) && source.sessionContinuation) {
       return this.attachSessionRuntime(source.sessionContinuation.session, { ...source, instructionsDelivered: true },
@@ -249,8 +247,7 @@ export abstract class CodexManagerSessions extends CodexManagerTurns {
   }
 
   protected isOriginalResident(runtime: Runtime): boolean {
-    return (!runtime.attached || this.workflowContinuations.has(runtime))
-      && runtime.generation === 0 && !runtime.closed && !runtime.disposed
+    return !runtime.attached && runtime.generation === 0 && !runtime.closed && !runtime.disposed
       && !runtime.starting && runtime.phase !== 'uncertain' && this.transports.has(runtime.transport)
       && runtime.transport.isConnected?.() === true
       && !this.shutdownController.signal.aborted
@@ -339,14 +336,19 @@ export abstract class CodexManagerSessions extends CodexManagerTurns {
         if (!settings) throw new HarnessExecutionError('CODEX_EFFECTIVE_SETTINGS_MISMATCH',
           'The original daemon has no accepted thread settings.')
         this.validateThreadResponse(prepared, { ...settings, thread: response.thread }, session.nativeSessionId)
-        const runtime = this.runtime(prepared, structuredClone(session), candidate.transport, true)
-        if (options.workflowContinuation && candidate.transport.reattached?.() !== true) {
-          this.workflowContinuations.add(runtime)
-        }
+        let runtime = this.runtime(prepared, structuredClone(session), candidate.transport, true)
         attachedRuntime = runtime
         const rejected = input.correlationId && this.responseJournal?.readTurnRejection(session, input.correlationId)
         if (!rejected) {
           await this.synchronize(runtime, candidate.transport.reattached?.() ? input.correlationId : undefined, signal)
+        }
+        if (options.workflowContinuation && candidate.transport.reattached?.() !== true) {
+          if (runtime.phase !== 'idle' || runtime.interactions.size > 0) {
+            throw new HarnessExecutionError('CODEX_SESSION_BUSY', 'The previous workflow turn is still active.')
+          }
+          // Continue the native transcript, but own only this new execution's turns and results.
+          runtime = this.runtime(prepared, structuredClone(session), candidate.transport)
+          attachedRuntime = runtime
         }
         if (candidate.transport.reattached?.()) await this.restoreNativeOutputTurn(runtime, signal)
         await candidate.activate(runtime)
