@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { readFile, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { gzipSync } from 'node:zlib'
 import { expect, it, vi } from 'vitest'
 import { integrationPartition } from '@foreman-code/contracts'
 import { repositoryFileList, selectByIndexes } from '../../../../../scripts/ci-files.mjs'
@@ -10,6 +11,38 @@ import { fixture } from './cloud.testSupport.js'
 import { cloudSuiteRunner } from './cloudRunner.testSupport.js'
 
 const parameter = (args: string[], name: string) => args.find(value => value.startsWith(`${name}=`))?.slice(name.length + 1)
+
+it.each(['github', 'circleci'] as const)('uses source coverage across the synthetic %s mirror history', async provider => {
+  const f = await fixture({}, { provider })
+  const source = 'apps/api/test/feature.ts'
+  const other = 'apps/api/test/other.ts'
+  const files = ['a', 'b', 'c', 'd'].map(name => `apps/api/test/${name}.integration.test.ts`)
+  await f.write(source, 'export const value = 1')
+  await f.write(other, 'export const other = 2')
+  await f.write('apps/api/test/bootstrap.ts', "import './feature.js'; import './other.js'")
+  for (const file of files.slice(0, 2)) await f.write(file, "import './bootstrap.js'")
+  f.run('add', '.')
+  f.run('commit', '-qm', 'coverage baseline')
+  const baseCommit = f.run('rev-parse', 'HEAD')
+  const coverage = { version: 1, commit: baseCommit, testFiles: files,
+    coverage: { [files[0]!]: [source], [files[1]!]: [other], [files[2]!]: [], [files[3]!]: [] } }
+  await f.write(source, 'export const value = 3')
+  f.run('commit', '-qam', 'feature change')
+  f.push('main')
+  await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId: randomUUID(),
+    repository: 'octo/site', commit: f.run('rev-parse', 'HEAD'), baseCommit,
+    suite: 'integration', scope: 'affected', integrationCoverage: {
+      map: gzipSync(JSON.stringify(coverage)).toString('base64'), changedFiles: [source],
+    } })
+  const command = (provider === 'circleci' ? f.circle.triggered : f.dispatched)[0]!
+  const checkout = await f.checkoutMirror(command[command.indexOf(provider === 'circleci' ? '--branch' : '--ref') + 1]!)
+  const suite = await cloudSuiteRunner(checkout, command, provider)
+  const result = suite.run()
+  expect(result.status, result.stderr).toBe(0)
+  const calls = (await readFile(suite.calls, 'utf8')).trim().split('\n').map(line => JSON.parse(line))
+  expect(calls).toEqual([['pnpm', 'test:integration', '--files', files[0]]])
+  expect(result.stderr).toContain(baseCommit)
+})
 
 it.each(['unit', 'integration'] as const)('isolates the %s suite fixture from enclosing CI shell startup', async suite => {
   const file = `apps/api/test/selected.${suite === 'integration' ? 'integration.' : ''}test.ts`
