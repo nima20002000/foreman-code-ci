@@ -168,6 +168,7 @@ it('persists creation attempts and pending jobs across readers and recreation wi
   const parent = process.env.FOREMAN_CODE_TEST_ROOT ?? join(homedir(), '.cache', 'foreman-tmp')
   await mkdir(parent, { recursive: true })
   const directory = await mkdtemp(join(parent, 'circle-usage-'))
+  const readers: CircleCreditUsage[] = []
   try {
     let now = Date.parse('2026-10-17T12:00:00Z')
     let completed = false
@@ -180,11 +181,18 @@ it('persists creation attempts and pending jobs across readers and recreation wi
         download_urls: completed ? ['https://signed.example/usage'] : null })
       return new Response('TOTAL_CREDITS\n380000\n')
     } })
-    const create = () => new CircleCreditUsage(http, {
-      allowance: async () => ({ defaultMonthlyCredits: 400_000, accounts: {} }), primaryOwner: async () => 'acme',
-    }, { now: () => now, waitMs: 0, cache: new CircleCreditCache(join(directory, 'usage.json')) })
-    await Promise.all([create().reading('acme'), create().reading('ACME')])
-    await vi.waitFor(() => { expect(posts).toBe(1) })
+    const create = () => {
+      const reader = new CircleCreditUsage(http, {
+        allowance: async () => ({ defaultMonthlyCredits: 400_000, accounts: {} }), primaryOwner: async () => 'acme',
+      }, { now: () => now, waitMs: 0, cache: new CircleCreditCache(join(directory, 'usage.json')) })
+      readers.push(reader)
+      return reader
+    }
+    const first = create()
+    const second = create()
+    await Promise.all([first.reading('acme'), second.reading('ACME')])
+    await Promise.all([first.close(), second.close()])
+    expect(posts).toBe(1)
     completed = true
     now += 6_000
     const restarted = create()
@@ -195,7 +203,10 @@ it('persists creation attempts and pending jobs across readers and recreation wi
     expect(posts).toBe(1)
     now = Date.parse('2026-11-01T00:00:00Z')
     expect((await restarted.reading('acme')).credits).toBeNull()
-  } finally { await rm(directory, { recursive: true, force: true }) }
+  } finally {
+    await Promise.all(readers.map(reader => reader.close()))
+    await rm(directory, { recursive: true })
+  }
 })
 
 it('enforces the daily POST ceiling across recreated readers, including failed creation attempts', async () => {
