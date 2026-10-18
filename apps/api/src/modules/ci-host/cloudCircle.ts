@@ -8,7 +8,6 @@ interface Workflow { id: string; status: string; stopped_at?: string }
 interface JobRef { id: string; job_number?: number }
 interface Pipeline {
   state?: string; errors?: { type: string; message: string }[]
-  created_at?: string; updated_at?: string
 }
 export interface CircleStep {
   num: number; name: string; phase: string; outcome?: string
@@ -75,32 +74,22 @@ export class CircleRest {
     if (!response) return null
     const pipeline = await this.http.json<Pipeline>(response)
     if (pipeline.state === 'errored' && pipeline.errors?.length) {
-      return { state: pipeline.state, created_at: pipeline.created_at, stopped_at: pipeline.updated_at,
-        phase: 'ended', current_outcome: 'not_run', notStarted: true, errors: pipeline.errors, workflows: [] }
+      return { phase: 'ended', current_outcome: 'not_run', errors: pipeline.errors, workflows: [] }
     }
     const workflows = await this.list<Workflow>(`/api/v2/pipeline/${id}/workflow`, args, timeoutMs)
     if (!workflows) return null
     const mapped = await Promise.all(workflows.map(async workflow => {
-      let jobsUnavailable = false
       const jobs = await this.list<JobRef>(`/api/v2/workflow/${workflow.id}/job`, args, timeoutMs).catch(error => {
         // A workflow can be visible before CircleCI serves its jobs; the pipeline still exists.
-        if (error instanceof DomainError && error.code === 'CI_CLOUD_RUN_NOT_FOUND') {
-          jobsUnavailable = true
-          return []
-        }
+        if (error instanceof DomainError && error.code === 'CI_CLOUD_RUN_NOT_FOUND') return []
         throw error
       })
       if (!jobs) return null
-      return { ...lifecycle(workflow.status), stopped_at: workflow.stopped_at, jobs, jobsUnavailable }
+      return { ...lifecycle(workflow.status), stopped_at: workflow.stopped_at, jobs }
     }))
     if (mapped.some(workflow => workflow === null)) return null
     const complete = workflows.length > 0 && workflows.every(workflow => lifecycle(workflow.status).phase === 'ended')
-    const noJobs = mapped.every(workflow => workflow && !workflow.jobsUnavailable && !workflow.jobs.length)
-    const notStarted = noJobs && (complete
-      || !workflows.length && (pipeline.state === 'created' || pipeline.state === 'errored'))
-    return { state: pipeline.state, created_at: pipeline.created_at,
-      phase: complete || notStarted ? 'ended' : 'started', errors: pipeline.errors, workflows: mapped,
-      ...(notStarted ? { notStarted: true, current_outcome: 'not_run', stopped_at: pipeline.updated_at } : {}) }
+    return { state: pipeline.state, phase: complete ? 'ended' : 'started', errors: pipeline.errors, workflows: mapped }
   }
 
   private async job(id: string, args: string[], timeoutMs: number): Promise<CircleJob | null> {
