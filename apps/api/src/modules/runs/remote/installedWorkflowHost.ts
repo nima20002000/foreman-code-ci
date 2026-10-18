@@ -1184,6 +1184,12 @@ class InstalledWorkflowHostRuntime {
 
   private readonly drainForUpdate = async () => {
     await Promise.allSettled([...this.active])
+    for (const owned of this.operations.values()) {
+      const status = await (await this.journal()).status(owned.intent.operationId)
+      if (status.status === 'known' && status.receipt.stopFence && !status.receipt.native) {
+        await this.closeResidentPreparation(owned, 'worker_update_stopped_preparation')
+      }
+    }
     await Promise.all([...this.hosts.values()].map(host => host.drain()))
   }
 

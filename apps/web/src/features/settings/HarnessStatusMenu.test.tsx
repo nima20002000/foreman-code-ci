@@ -136,8 +136,7 @@ describe('HarnessStatusMenu', () => {
       open.mockRestore()
       expect(link.querySelector('.harness-status-light')).toHaveClass(`harness-status-light--${state}`)
       await expectDetails(link, new RegExp(`${name}.*${label}`))
-      // Descriptions include hidden content before the native popover opens.
-      const help = await screen.findByRole('button', { name: `About ${name} harness` })
+      const help = screen.getByRole('button', { name: `About ${name} harness` })
       expect(screen.queryByText('Sign-in and profile qualification are checked separately before execution.')).not.toBeInTheDocument()
       act(() => help.focus())
       expect(help).toHaveAccessibleDescription('Sign-in and profile qualification are checked separately before execution.')
