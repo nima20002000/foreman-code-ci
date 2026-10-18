@@ -8,10 +8,6 @@ import { existingPrivateDirectory, readRecord, syncDirectory } from './storage.j
 const retentionMs = 24 * 60 * 60 * 1000
 const sweepIntervalMs = 60 * 60 * 1000
 const batchSize = 100
-const oneShotPrefixes = new Set([
-  'managed-mcp:codex', 'catalog-authentication', 'model-catalog', 'claude-metadata',
-  'operator-configuration-inspection', 'native-output-qualification', 'claude-profile-version', 'claude-profile-check',
-])
 
 function* entries(directory: string): Generator<string> {
   if (!existingPrivateDirectory(directory)) return
@@ -120,11 +116,7 @@ export class NativeRegistryRetention {
       return false
     }
     // Confirmed-closed one-shot inspections have no workflow acknowledgement to wait for.
-    const separator = row.owner.lastIndexOf(':')
-    const prefix = row.owner.slice(0, separator)
-    const operationId = row.owner.slice(separator + 1)
-    const oneShot = oneShotPrefixes.has(prefix)
-      && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(operationId)
+    const oneShot = /^(?:managed-mcp:codex|catalog-authentication|model-catalog):[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(row.owner)
     if (!oneShot && !await isSettled(row.owner)) return false
     const after = lstatSync(path)
     if (before.ino !== after.ino || before.dev !== after.dev || before.mtimeMs !== after.mtimeMs) return false
