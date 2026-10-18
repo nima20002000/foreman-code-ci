@@ -2,13 +2,12 @@ import { createHash } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { repairRequiredNativePayloads } from './ci-store-prefetch.mjs'
 import { assertRequiredNativePayloads } from './ci-native-payloads.mjs'
 import { writeCiPackagePaths } from './ci-package-paths.mjs'
 
-function nativePayloadsReady(root, options) {
+function nativePayloadsReady(root) {
   try {
-    repairRequiredNativePayloads(root, options)
+    assertRequiredNativePayloads(root)
     return true
   } catch (error) {
     console.error(error.message)
@@ -43,20 +42,12 @@ function install(root) {
   const stamp = join(root, 'node_modules/.ci-packages-key')
   const restored = join(root, '.logs/ci-packages-restored')
   const paths = { storeDir: join(root, 'node_modules/.pnpm-store'), cacheDir: join(root, '.logs/pnpm-metadata') }
-  const args = ['install', '--frozen-lockfile', '--store-dir', paths.storeDir,
-    '--cache-dir', paths.cacheDir, '--package-import-method=hardlink']
-  const run = (argumentsList, cwd = root) => {
-    const result = spawnSync('corepack', ['pnpm', ...argumentsList], { cwd, env: process.env, stdio: 'inherit' })
-    if (result.error) throw result.error
-    return result.status ?? 1
-  }
-  const nativeOptions = { ...paths, run, installArgs: args, validate: assertRequiredNativePayloads }
   rmSync(restored, { force: true })
   const complete = ['node_modules/.pnpm', 'node_modules/.modules.yaml',
     ...workspaceDirectories(root).map(directory => `${directory}/node_modules`)]
     .every(path => existsSync(join(root, path)))
   if (complete && existsSync(stamp) && readFileSync(stamp, 'utf8') === key) {
-    if (!nativePayloadsReady(root, nativeOptions)) {
+    if (!nativePayloadsReady(root)) {
       rmSync(stamp, { force: true })
       return 1
     }
@@ -67,10 +58,17 @@ function install(root) {
     return 0
   }
   rmSync(stamp, { force: true })
+  const args = ['install', '--frozen-lockfile', '--store-dir', 'node_modules/.pnpm-store',
+    '--cache-dir', '.logs/pnpm-metadata', '--package-import-method=hardlink']
+  const run = argumentsList => {
+    const result = spawnSync('pnpm', argumentsList, { cwd: root, env: process.env, stdio: 'inherit' })
+    if (result.error) throw result.error
+    return result.status ?? 1
+  }
   let status = run([...args, '--offline'])
   if (status !== 0 && process.env.CI_PNPM_STORE_CACHE_HIT !== 'true') status = run(args)
   if (status === 0) {
-    if (!nativePayloadsReady(root, nativeOptions)) return 1
+    if (!nativePayloadsReady(root)) return 1
     writeFileSync(stamp, key)
     writeCiPackagePaths(root, paths)
   }
