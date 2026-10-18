@@ -321,23 +321,19 @@ export async function remoteReviewProduction(options: {
           const sourceMessage = event.err?.message
           const errorDetail = code === 'source-reconciliation-unconfirmed' && typeof sourceMessage === 'string'
             && /^Process \d+ (?:still |could not be inspected|exceeded )/.test(sourceMessage)
-            ? sourceMessage.slice(0, 200)
-            : typeof sourceMessage === 'string'
-              && /^(The submitted native turn was not found|Reconcile the correlation|A different native turn is still active|More than one native turn has this correlation|The original physical reply|Session continuation requires the closed execution)/.test(sourceMessage)
-              ? sourceMessage.slice(0, 200) : undefined
+            ? sourceMessage.slice(0, 200) : undefined
           failuresSeen += 1
-          const reason = event.reason
-          failures.push({ role, reason: typeof reason === 'string' && /^[a-z][a-z0-9_]{1,64}$/.test(reason)
-            ? reason : undefined, message: typeof event.msg === 'string' ? event.msg.slice(0, 160) : undefined,
+          failures.push({ role, reason: typeof event.reason === 'string' && /^[a-z][a-z0-9_]{1,64}$/.test(event.reason)
+            ? event.reason : undefined, message: typeof event.msg === 'string' ? event.msg.slice(0, 160) : undefined,
             time: (parsed as { time?: unknown }).time, code, phase: event.phase, errorType: event.errorType ?? event.err?.type,
             errorDetail, tool: typeof event.tool === 'string' ? event.tool : undefined,
             namespace: typeof event.namespace === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(event.namespace)
               ? event.namespace : undefined,
             errorLocation: event.errorLocation ?? (frames.length ? frames.map(frame => frame.trim()).join(' ') : undefined)
               ?? (typeof event.err?.stack === 'string'
-              ? event.err.stack.split('\n').slice(1, 5).map(line => line.trim()).join(' ') : undefined),
+              ? event.err.stack.split('\n').slice(1, 3).map(line => line.trim()).join(' ') : undefined),
             runId: typeof event.runId === 'string' && /^run-[a-z0-9-]{1,100}$/.test(event.runId) ? event.runId : null })
-          if (failures.length > 32) failures.splice(16, 1)
+          if (failures.length > 32) failures.shift()
         }
       })
     }
@@ -513,10 +509,6 @@ export async function remoteReviewProduction(options: {
     closes.push(releaseWorkerDiscovery)
     let deniedResponse: ReturnType<typeof RemoteOwnerControlSchema.parse> | undefined
     const transport = await createRemoteReviewTransport({ ...tls, endpoint: deviceEndpoint,
-      beforeCompactionResponse: async () => {
-        await waitForRemoteReview(provider.calls, calls => calls.some(call => call.compactedSession),
-          'native compaction completion before acknowledgement loss')
-      },
       beforeDiscovery: async () => {
         const paused = pausedDiscovery
         if (paused) { paused.entered(); return paused.waiting }
@@ -575,12 +567,9 @@ export async function remoteReviewProduction(options: {
     let ready = false
     let workerStateRevision = 0
     let workerFailure = ''
-    let workerPhase = 'starting'
-    let workerConnectionFailure = 'none'
     const startWorker = async () => {
       ready = false
       workerFailure = ''
-      let phase: unknown
       const started = spawn(process.execPath, [workerEntrypoint, stateDirectory, workerRelease], {
         cwd: fileURLToPath(new URL('../../../..', import.meta.url)),
         stdio: ['ignore', 'pipe', 'pipe', 'ipc'], env: workerEnvironment,
@@ -591,20 +580,12 @@ export async function remoteReviewProduction(options: {
       started.on('message', message => {
         if (message && typeof message === 'object' && 'view' in message) {
           const view = message.view
-          if (view !== null && typeof view === 'object' && 'phase' in view && view.phase !== phase) {
-            phase = view.phase
-            console.info('[remote-review] Worker connection state', {
-              phase, failure: 'failure' in view ? view.failure : null,
-            })
-          }
-          if (view && typeof view === 'object' && 'phase' in view) workerPhase = String(view.phase)
-          if (view && typeof view === 'object' && 'failure' in view) workerConnectionFailure = String(view.failure)
           ready = view !== null && typeof view === 'object' && 'phase' in view && view.phase === 'ready'
           if (!ready) workerStateRevision++
         }
       })
       await waitForChildReady(started, () => ready, 'authenticated installed Worker connection',
-        () => `Installed Worker phase: ${workerPhase}; failure: ${workerConnectionFailure}; diagnostics: ${workerFailure}`)
+        () => `Installed Worker exited: ${workerFailure}`)
     }
     const stopWorker = async (signal: NodeJS.Signals = 'SIGTERM') => {
       if (!worker || worker.exitCode !== null || worker.signalCode !== null) return
@@ -823,11 +804,6 @@ export async function remoteReviewProduction(options: {
       denyNextReservedResponse: () => { denyReservedResponse = true },
       deniedResponse: () => deniedResponse,
       deliveryReads: transport.deliveryReads,
-      pauseWorkerConnection: transport.pauseConnections,
-      resumeWorkerConnection: transport.resumeConnections,
-      dropNextPhysicalReadout: transport.dropNextPhysicalReadout,
-      loseNextCompactionResponse: transport.loseNextCompactionResponse,
-      conversationRequests: transport.conversationRequests,
       async restoreOriginalResponseGrant() {
         const command = deniedResponse
         if (!command) throw new Error('No original reserved response was denied.')
@@ -841,7 +817,7 @@ export async function remoteReviewProduction(options: {
         const previousWorkerState = workerStateRevision
         ready = false
         await stopMain(options.mode === 'graceful' ? 'SIGTERM' : 'SIGKILL')
-        if (!transport.paused()) await waitForRemoteReview(async () => workerStateRevision,
+        await waitForRemoteReview(async () => workerStateRevision,
           value => value > previousWorkerState, 'Worker observing the stopped Main connection')
         await options.afterShutdown?.()
         await startMain(options.workingDirectory)

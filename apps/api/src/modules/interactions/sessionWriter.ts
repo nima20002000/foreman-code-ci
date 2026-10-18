@@ -815,11 +815,6 @@ export class SingleWriterSessionManager implements NativeHarnessSessionManager {
     return this.withLane(session, `close-${randomUUID()}`, signal, async (manager, lease) => {
       lease.observedStatus = lease.previous.observedStatus === 'idle' ? 'idle' : 'disconnected'
       await close(manager)
-      if (!restart) {
-        // Physical closure retires this process's turn; detachment must keep its exact identity.
-        lease.observedStatus = 'idle'
-        delete lease.providerId
-      }
     })
   }
 

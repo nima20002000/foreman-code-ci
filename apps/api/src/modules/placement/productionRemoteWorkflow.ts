@@ -374,14 +374,12 @@ async function confirmRemoteWorkflowClosedExecution(input: ProductionRemoteWorkf
       'Closure readback cannot contain binary data.', 409)
     const raw = await readRemoteReceiptResponse(reply.payload, binding.intent, async continuation => {
       const next = await request({ method: 'receipt-continuation', intent: binding.intent,
-        placement: binding.placement, ...continuation,
-        ...(captured.stopReadAdmission ? { forStop: true } : {}) })
+        placement: binding.placement, ...continuation })
       return next.payload
     }, signal)
     return RemoteOperationStatusSchema.parse(raw)
   }
-  let status = await readStatus({ method: 'status', intent: binding.intent, placement: binding.placement,
-    ...(captured.stopReadAdmission ? { forStop: true } : {}) })
+  let status = await readStatus({ method: 'status', intent: binding.intent, placement: binding.placement })
   if (status.status === 'known' && sameWorkflowValue(status.receipt.intent, binding.intent)
     && !status.receipt.native && !status.receipt.terminal) {
     // Entry may have started without acknowledging a session; Stop still needs positive closure below.

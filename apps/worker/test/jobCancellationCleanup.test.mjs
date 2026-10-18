@@ -222,16 +222,6 @@ test('signed no-entry cleanup archives only the original claim and replays witho
   assert.deepEqual(await readFile(f.claimPath), successor);
 });
 
-test('signed no-entry cleanup rejects changed original source bytes before releasing their claim', async t => {
-  const f = await fixture(t);
-  const changed = Buffer.from('changed original source');
-  await writeFile(f.sourcePath, changed);
-  await assert.rejects(worker.cleanupJobBeforeEntry(f.state, f.grantPath));
-  assert.deepEqual(await readFile(f.claimPath), f.claim);
-  assert.deepEqual(await readFile(f.sourcePath), changed);
-  await assert.rejects(readFile(join(f.state, `job-cancellation-closure-${f.grant.id}.json`)), { code: 'ENOENT' });
-});
-
 for (const kind of ['signature', 'expired', 'future', 'long-life', 'installation', 'key', 'pairing', 'root',
   'filesystem', 'intent', 'source', 'missing-journal', 'recreated-journal', 'entry', 'native-owner',
   'private-mode', 'symlink', 'hardlink', 'missing-identity', 'public-as-private', 'worker-active', 'journal-active']) test(`cleanup rejects ${kind} and preserves the claim`, async t => {

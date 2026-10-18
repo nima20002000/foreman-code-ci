@@ -11,7 +11,6 @@ import { pathsOverlap } from './filesystem.js'
 import { ignoreError } from '../diagnostics/ignoredError.js'
 import { activeAgentChatDirectories } from '../conversations/activeAgentChats.js'
 import { lockWorkspaceFolders } from './folderLocks.js'
-import { withGitDirectoryDependencies } from './gitDirectoryDependencies.js'
 
 export const WORKSPACE_FOLDER_LIFECYCLE_LOCK = 'workspace-folder-lifecycle'
 export const CreatedProjectFolderSchema = z.object({
@@ -45,10 +44,9 @@ export async function cleanupWorkspaceProjectFolders(pool: pg.Pool, principal: M
          union all select created_project_folder->>'rootPath' as path from workspaces
          where not (id = any($1::text[])) and created_project_folder->>'runnerId'=$2`, [ids, runnerId],
       )
-      const workspaceDirectories = await withGitDirectoryDependencies(otherWorkspaces.rows.map(row => row.path))
       const runDirectories = await continuingRunDirectories(client, runnerId)
       const contains = (path: string) => { const suffix = relative(folder.rootPath, path); return !isAbsolute(suffix) && suffix !== '..' && !suffix.startsWith('..' + sep) }
-      if (references.rows.some(({ path }) => contains(path)) || workspaceDirectories.some(path => pathsOverlap(folder.rootPath, path))) {
+      if (references.rows.some(({ path }) => contains(path)) || otherWorkspaces.rows.some(({ path }) => pathsOverlap(folder.rootPath, path))) {
         throw new Error('The project folder is still used by another workspace or workspace defaults.')
       }
       if (runDirectories.some(path => pathsOverlap(folder.rootPath, path))) {
@@ -85,7 +83,7 @@ export async function cleanupWorkspaceProjectFolders(pool: pg.Pool, principal: M
   } finally { client.release() }
 }
 
-/** Main-host project and Git paths retained by Runs, native working trees and their cleanup. */
+/** Main-host project paths retained by Runs, native working trees and their cleanup. */
 export async function continuingRunDirectories(sql: Pick<pg.Pool, 'query'>, runnerId: string): Promise<string[]> {
   const result = await sql.query<{ path: string }>(
     `with continuing_runs as (
@@ -110,5 +108,5 @@ export async function continuingRunDirectories(sql: Pick<pg.Pool, 'query'>, runn
      from continuing_runs r join execution_native_placements n on n.record->>'runId'=r.id
      where n.record#>'{materialization,receipt,binding,deviceId}'='null'::jsonb`, [runnerId],
   )
-  return withGitDirectoryDependencies(result.rows.map(row => row.path))
+  return result.rows.map(row => row.path).filter(Boolean)
 }
