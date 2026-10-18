@@ -24,12 +24,14 @@ async function computer() {
   const origin = join(root, 'origin')
   const bin = join(root, 'bin')
   const calls = join(root, 'calls.jsonl')
+  const fetchCalls = join(root, 'fetch-calls.jsonl')
   const started = join(root, 'started')
   const contracts = join(root, 'contracts')
   const offlineFailure = join(root, 'offline-failure')
   await mkdir(join(origin, 'src'), { recursive: true })
   await mkdir(bin)
   await mkdir(started)
+  await writeFile(calls, '')
   await writeFile(join(origin, 'package.json'), JSON.stringify({ scripts: { lint: 'fixture', typecheck: 'fixture' } }))
   await writeFile(join(origin, 'pnpm-lock.yaml'), 'fixture-lock')
   await mkdir(join(origin, 'scripts'))
@@ -48,6 +50,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const args = process.argv.slice(2)
 if (args[1] === 'fetch') {
+  fs.appendFileSync(${JSON.stringify(fetchCalls)}, JSON.stringify(args) + '\\n')
   if (args.includes('--offline') && fs.existsSync(${JSON.stringify(offlineFailure)})) process.exit(7)
   if (!args.includes('--offline')) fs.rmSync(${JSON.stringify(offlineFailure)}, { force: true })
   process.exit(0)
@@ -140,10 +143,13 @@ if (args[1] === 'install') {
     return { ...reply, checkout: launched.get(script)!.cwd }
   }
   const installs = async () => (await readFile(calls, 'utf8')).trim().split('\n')
+    .filter(Boolean)
     .map(line => JSON.parse(line) as { cwd: string; args: string[]; installed: boolean })
+  const fetches = async () => (await readFile(fetchCalls, 'utf8')).trim().split('\n')
+    .map(line => JSON.parse(line) as string[])
   const inCheckout = (checkout: string, ...args: string[]) =>
     execFileSync('git', args, { cwd: checkout, env: environment, encoding: 'utf8' }).trim()
-  return { run, installs, git, origin, inCheckout, runner, units, stopped,
+  return { run, installs, fetches, git, origin, inCheckout, runner, units, stopped,
     warm: () => run('install', true),
     hold: (value: boolean) => { hold = value },
     failOffline: () => writeFile(offlineFailure, ''),
@@ -203,8 +209,9 @@ it('does not refill dependencies online during pre-warming', async () => {
   const fixture = await computer()
   await fixture.failOffline()
   expect((await fixture.warm()).run).toMatchObject({ state: 'failed', exitCode: 7 })
-  expect(await fixture.installs()).toHaveLength(1)
-  expect((await fixture.installs())[0]!.args).toContain('--offline')
+  expect(await fixture.fetches()).toHaveLength(1)
+  expect((await fixture.fetches())[0]).toContain('--offline')
+  expect(await fixture.installs()).toEqual([])
 })
 
 it('stops a running warm-up before real CI uses its checkout and defers warm-ups while CI is active', async () => {

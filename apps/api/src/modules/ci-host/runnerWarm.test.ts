@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -169,12 +169,20 @@ if (args[1] === 'db:up') {
   const onlinePackageCommands = async () => (await commands()).filter(args =>
     (args[1] === 'install' || args[1] === 'fetch') && !args.includes('--offline'))
   const failOffline = () => writeFile(offlineFailure, 'store unavailable')
+  const evictDeploymentPackage = async () => {
+    const fetch = (await commands()).find(args => args[1] === 'fetch')!
+    const store = fetch[fetch.indexOf('--store-dir') + 1]!
+    for (const name of await readdir(store)) {
+      if (name.endsWith('-deployment')) await rm(join(store, name))
+    }
+  }
   const slot = join(root, 'runner/slots/example/project/0/src')
   // A new slot starts without dependencies and installs them from the shared store.
   const removeDependencies = () => rm(join(slot, 'node_modules'), { recursive: true, force: true })
   // A checkout whose git link is broken cannot be reset to another commit.
   const breakCheckout = () => writeFile(join(slot, '.git'), 'gitdir: missing\n')
   return { run, commands, onlinePackageCommands, origin, git, failOffline, removeDependencies, breakCheckout,
+    evictDeploymentPackage,
     allowPrefetch: () => rm(prefetchFailure),
     readRetained: async () => {
       const retained = new HostCiRunner(join(root, 'runner'), ports, environment)
@@ -267,6 +275,18 @@ it('prefetches the changed lockfile before its first suite', async () => {
   expect(fetches.filter(args => !args.includes('--offline'))).toHaveLength(2)
 })
 
+it('refills an evicted deployment package even when the checkout is already installed', async () => {
+  const fixture = await computer()
+  await expect(fixture.run()).resolves.toMatchObject({
+    run: { state: 'passed' }, text: expect.stringContaining('production dependency=available offline'),
+  })
+  await fixture.evictDeploymentPackage()
+  await expect(fixture.run()).resolves.toMatchObject({
+    run: { state: 'passed' }, text: expect.stringContaining('production dependency=available offline'),
+  })
+  expect(await fixture.onlinePackageCommands()).toHaveLength(2)
+})
+
 it('reports prefetch failure before running a suite and fills the store on the next request', async () => {
   const fixture = await computer({ failPrefetch: true })
   await expect(fixture.run()).resolves.toMatchObject({
@@ -286,6 +306,7 @@ it('keeps background warmup offline even when the full lockfile store is incompl
   await expect(fixture.run()).resolves.toMatchObject({
     run: { state: 'passed' }, text: expect.stringContaining('production dependency=available offline'),
   })
+  fixture.git('commit', '--allow-empty', '-qm', 'request a new warmup')
   await expect(fixture.run({ warmup: true })).resolves.toMatchObject({ run: { state: 'passed' } })
   expect(await fixture.onlinePackageCommands()).toHaveLength(1)
 })
