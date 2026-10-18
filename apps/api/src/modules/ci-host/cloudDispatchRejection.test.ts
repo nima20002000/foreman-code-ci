@@ -14,8 +14,11 @@ async function githubFixture() {
     repository: 'octo/site', commit: f.commit, suite: 'lint', scope: 'full' } as const
   const read = { operation: 'read', runId, afterOffset: 0, maxBytes: 1024 } as const
   const original = f.ports.run
-  const control = { failure: lookupTimeout, attempts: 0 }
+  const control = { failure: lookupTimeout, attempts: 0, discoveryFailure: false }
   vi.spyOn(f.ports, 'run').mockImplementation(async (file, args, options) => {
+    if (file === 'gh' && args[0] === 'run' && args[1] === 'list' && control.discoveryFailure) {
+      throw new Error('Provider discovery is unavailable')
+    }
     if (file === 'gh' && args[0] === 'workflow') {
       control.attempts++
       if (control.failure) return { code: 1, stdout: '', stderr: control.failure }
@@ -105,6 +108,50 @@ it('retains an uncertain GitHub submission when the dispatch POST times out', as
   expect(await f.reopen().handle(f.read)).toMatchObject({ run: { state: 'canceled' } })
   expect(f.github.canceled).toEqual(['91'])
 })
+
+it.each(['retry', 'cancel'] as const)(
+  'can %s a rejected GitHub dispatch without waiting for a nonexistent run', async recovery => {
+    const f = await githubFixture()
+    f.control.failure = 'could not create workflow dispatch event: HTTP 422: inputs are too large. '
+      + '(https://api.github.com/repos/octo/site-ci/actions/workflows/123/dispatches)'
+    expect(await f.cloud.handle(f.start)).toMatchObject({ run: {
+      state: 'starting', finishedAt: null, message: expect.stringContaining('HTTP 422'),
+    } })
+    expect(f.dispatched).toEqual([])
+    if (recovery === 'cancel') {
+      expect(await f.reopen().handle({ operation: 'cancel', runId: f.runId }))
+        .toMatchObject({ run: { state: 'starting' } })
+    }
+    f.control.failure = ''
+    f.advance(75_000)
+    expect(await f.reopen().handle(f.read)).toMatchObject({
+      run: { state: recovery === 'cancel' ? 'canceled' : 'starting' },
+    })
+    expect(f.control.attempts).toBe(recovery === 'cancel' ? 1 : 2)
+    expect(f.dispatched).toHaveLength(recovery === 'cancel' ? 0 : 1)
+    expect(f.github.canceled).toEqual([])
+  },
+)
+
+it.each(['retry', 'cancel'] as const)(
+  'can %s a never-sent GitHub submission when provider discovery is unavailable', async recovery => {
+    const f = await githubFixture()
+    expect(await f.cloud.handle(f.start)).toMatchObject({ run: { state: 'starting' } })
+    f.control.discoveryFailure = true
+    if (recovery === 'cancel') {
+      expect(await f.reopen().handle({ operation: 'cancel', runId: f.runId }))
+        .toMatchObject({ run: { state: 'starting' } })
+    }
+    f.control.failure = ''
+    f.advance(75_000)
+    expect(await f.reopen().handle(f.read)).toMatchObject({
+      run: { state: recovery === 'cancel' ? 'canceled' : 'starting' },
+    })
+    expect(f.control.attempts).toBe(recovery === 'cancel' ? 1 : 2)
+    expect(f.dispatched).toHaveLength(recovery === 'cancel' ? 0 : 1)
+    expect(f.github.canceled).toEqual([])
+  },
+)
 
 it('keeps earlier accepted GitHub attempts owned after a later workflow lookup fails', async () => {
   const f = await githubFixture()

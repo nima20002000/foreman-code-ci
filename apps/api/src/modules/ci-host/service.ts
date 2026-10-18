@@ -10,7 +10,7 @@ import { CI_DISPATCH_PASS_MS, CiDispatchDeadlineError, withCiDispatchDeadline } 
 import { withProviderPoll } from './providerPoll.js'
 import { CI_HOST_NAMESPACE, CiComputerRefSchema, CiRunRecordSchema, CiRunOutputSchema,
   WorkspaceSchema,
-  type CiDurations, type CiHostRequest, type CiHostRun, type CiHostStatus, type CiRunRecord, type CiRunInput,
+  type CiCoverageSelection, type CiDurations, type CiHostRequest, type CiHostRun, type CiHostStatus, type CiRunRecord, type CiRunInput,
   type CiCancellation, type Workspace } from '@foreman-code/contracts'
 import type { ManagementAction, ManagementPrincipal } from '@foreman-code/contracts/management'
 import type { PostgresCommandCoordinator } from '../commands/postgres.js'
@@ -35,6 +35,7 @@ import { reconcileCiHostStart, sendCiDispatch, type CiDispatchState } from './di
 import { CiDispatchRejections } from './dispatchRejections.js'
 import { CiPrewarm } from './prewarm.js'
 import { collectCiResults } from './resultCollection.js'
+import { IntegrationCoverageStore } from './coverageStore.js'
 import { sanitizeCiText, serializeCiJson } from './text.js'
 import { isGitHubComputer, needsSystemdExecutor, supportsUserSystemd } from './computerCapabilities.js'
 import { weighCiPartitions } from './partitionPlanning.js'
@@ -72,6 +73,8 @@ interface PreparedCiRuns {
   repository: NonNullable<Workspace['repository']>
   runs: CiRunRecord[]
   durations: CiDurations | null
+  coverage?: CiCoverageSelection
+  publication?: CiMirrorInput
   /** Result cache keys of the files the runs execute, and the log tail of a request the cache completed. */
   cacheKeys?: Record<string, string>
   logTail?: string
@@ -121,6 +124,7 @@ export class HostCiService {
   private readonly circleCredits: CircleCreditsReader | undefined
   private readonly circleStandby: CircleStandby | undefined
   private readonly prewarm: CiPrewarm
+  private readonly coverage = new IntegrationCoverageStore()
 
   constructor(private readonly pool: pg.Pool, private readonly commands: PostgresCommandCoordinator,
     private readonly authority: CiAuthority, private readonly commits: CiCommits,
@@ -195,7 +199,6 @@ export class HostCiService {
     this.stoppingRuns += 1
     this.reads.close()
     await this.drain()
-    await this.circleCredits?.close?.()
   }
 
   /** Resolves when dispatch, superseded cleanup, observations and readiness reads have finished, including work they start. */
@@ -320,12 +323,13 @@ export class HostCiService {
       },
       authorize: async () => { await this.authority.resolve(caller, scope.workspaceId, actions) },
       perform: async client => {
-        const { runs, durations, cacheKeys, logTail } = prepared!
+        const { runs, durations, cacheKeys, logTail, coverage } = prepared!
         const { groupId, commit, priority, priorityReason, cachedFiles, initiator } = runs[0]!
         // An identical request already queued or running in this workspace is joined instead of queueing tickets.
         const requestKey = runs[0]!.state === 'queued' ? ciRequestKey(input, runs[0]!) : null
         const shared = requestKey ? await joinCiRequest(client, scope.workspaceId, requestKey, initiator, commandId) : null
         const result = shared?.output ?? CiRunOutputSchema.parse({ ticketId: runs[0]!.id,
+          selection: runs[0]!.selection,
           ...(runs.length > 1 ? { partitions: runs.map(run => ({ ticketId: run.id })) } : {}),
           ...(cachedFiles?.length ? { cachedFiles } : {}) })
         if (!input.gate) {
@@ -340,11 +344,12 @@ export class HostCiService {
           return result
         }
         if (requestKey) await registerCiRequest(client, scope.workspaceId, groupId, requestKey, result)
-        for (const run of runs) {
-          await client.query(`insert into ci_runs(id,workspace_id,group_id,state,record,durations,result_cache_keys,log_tail)
-            values($1,$2,$3,$6,$4::jsonb,$5::jsonb,$7::jsonb,$8)`, [run.id, run.workspaceId, groupId, serializeCiJson(run),
+        for (const [index, run] of runs.entries()) {
+          await client.query(`insert into ci_runs(id,workspace_id,group_id,state,record,durations,result_cache_keys,log_tail,integration_selection)
+            values($1,$2,$3,$6,$4::jsonb,$5::jsonb,$7::jsonb,$8,$9::jsonb)`, [run.id, run.workspaceId, groupId, serializeCiJson(run),
             durations ? serializeCiJson(durations) : null, run.state,
-            cacheKeys && Object.keys(cacheKeys).length ? JSON.stringify(cacheKeys) : null, logTail ?? ''])
+            cacheKeys && Object.keys(cacheKeys).length ? JSON.stringify(cacheKeys) : null, logTail ?? '',
+            index === 0 && coverage ? JSON.stringify(coverage) : null])
         }
         await client.query(`insert into management_audit(principal_id,source,action,target_key,outcome,details)
           values($1,$2,'ci.priority',$3,'succeeded',$4::jsonb)`, [caller.id, source, scope.workspaceId,
@@ -356,6 +361,8 @@ export class HostCiService {
         return result
       },
     })
+    if (prepared?.publication && !outcome.replayed && !outcome.value.joined
+      && outcome.value.ticketId === prepared.runs[0]!.id) this.publishMirror(prepared.publication)
     return outcome.value
   }
 
@@ -391,7 +398,9 @@ export class HostCiService {
     const mirror = workspace.ciMirror ? `${workspace.ciMirror.owner}/${workspace.ciMirror.name}` : undefined
     const planning = this.planningForMirror(workspace.ciMirror?.name)
     // Unit and gate durations are only final once the unit inventory is read; they publish then, so dispatch reuses the push.
-    const publishLater = input.suite === 'unit' || input.gate === true
+    const prepareCoverage = input.suite === 'integration' && (input.scope ?? 'affected') === 'affected'
+      && input.files === undefined
+    const publishLater = input.suite === 'unit' || input.gate === true || prepareCoverage
     const publishEarly = (finalDurations: CiDurations, deriveFiles: boolean) => {
       if (!mirror || !this.endpoint.publishMirror) return
       this.publishMirror({ repository, mirror, commit,
@@ -452,6 +461,8 @@ export class HostCiService {
     }
     const selectionScope = supportsSelection ? input.scope ?? 'affected' : 'full'
     const deriveFiles = selectionScope === 'affected' && input.files === undefined
+    const coverage = deriveFiles && input.suite === 'integration'
+      ? await this.coverage.selection(repository, commit, this.commits) : undefined
     const selection = { ...input, scope: selectionScope, files: selectionScope === 'affected' ? input.files : [] }
     // Gates, full scope and smoke runs always run every file; only explicit affected test selections use the cache.
     let cache: CachedSelection | undefined
@@ -511,6 +522,9 @@ export class HostCiService {
     }
     timing.mark('planMs')
     log.info({ gate: input.gate === true, suite: input.suite, ...timing.phases }, 'CI run preparation timing')
+    let selectionReason = 'Caller supplied the affected files.'
+    if (selectionScope === 'full') selectionReason = 'Full scope requested; every file in the suite or partition runs.'
+    if (deriveFiles) selectionReason = 'Affected files will be selected on the runner.'
     const runs = parts.map((planned, index) => CiRunRecordSchema.parse({
       ...planned,
       ...(index === 0 && cachedFiles ? { cachedFiles } : {}),
@@ -519,6 +533,7 @@ export class HostCiService {
         ...(smokeShards !== undefined ? { integrationShards: smokeShards } : {}) } : {}),
       id: randomUUID(), workspaceId: scope.workspaceId,
       suite: planned.suite ?? input.suite, scope: selectionScope, commit, repository, groupId,
+      selection: { scope: selectionScope, files: planned.files ?? input.files ?? [], reason: selectionReason },
       ciMirror: workspace.ciMirror ? `${workspace.ciMirror.owner}/${workspace.ciMirror.name}` : null,
       priority, priorityReason,
       ...(input.gate ? { gate: true, noSupersede: true } : {}),
@@ -537,8 +552,15 @@ export class HostCiService {
     const measuredUnitDurations = Object.fromEntries((inventory?.files ?? []).filter(file => unitDurations[file] !== undefined)
       .map(file => [file, unitDurations[file]!]))
     if (Object.keys(measuredUnitDurations).length) durations = { ...durations, ...measuredUnitDurations }
-    if (publishLater) publishEarly(durations ?? {}, !input.gate && deriveFiles)
+    if (publishLater && !prepareCoverage) publishEarly(durations ?? {}, !input.gate && deriveFiles)
+    const publication: CiMirrorInput | undefined = prepareCoverage && mirror ? {
+      repository, mirror, commit, durations: durations ?? {},
+      ...(deriveFiles && input.baseCommit ? { baseCommit: input.baseCommit } : {}),
+      ...(deriveFiles && !input.baseCommit ? { defaultBranch } : {}),
+      ...(coverage ? { integrationCoverage: coverage } : {}),
+    } : undefined
     return { repository: workspace.repository, runs, durations,
+      ...(coverage ? { coverage } : {}), ...(publication ? { publication } : {}),
       ...(cache && !empty ? { cacheKeys: cache.keys } : {}),
       ...(empty && cachedFiles ? { logTail: ciCachedNotice(cachedFiles) } : {}) }
   }
@@ -679,7 +701,8 @@ export class HostCiService {
       const message = run.supersededBy ? `superseded by ${run.supersededBy}` : 'Canceled.'
       const canceled = { ...run, state: 'canceled' as const, finishedAt: new Date().toISOString(), message,
         cancellation: undefined, dispatchRequest: undefined }
-      const saved = await this.saveCancellation(`update ci_runs set state='canceled', host_key=null, record=$2::jsonb
+      const hostKey = run.executorCleanupPending ? 'host_key' : 'null'
+      const saved = await this.saveCancellation(`update ci_runs set state='canceled', host_key=${hostKey}, record=$2::jsonb
         where id=$1 and state='queued' and record->>'supersededBy' is not distinct from $3`,
       [run.id, serializeCiJson(canceled), run.supersededBy ?? null], canceled, audit)
       if (!saved.rowCount) return this.cancelTicketAttempt(workspaceId, ticketId, audit)
@@ -896,12 +919,15 @@ export class HostCiService {
     exitCode: number | null; startedAt: string | null; finishedAt: string | null; message: string | null
     collection?: CiHostRun['collection']; provenance?: CiHostRun['provenance'];
     mirrorPublication?: CiHostRun['mirrorPublication']; testsStarted?: CiHostRun['testsStarted'];
-    transport?: CiHostRun['transport'] },
+    executorCleanupPending?: CiHostRun['executorCleanupPending'];
+    transport?: CiHostRun['transport']; selection?: CiHostRun['selection'] },
     options: { logTail?: string | undefined; audit?: CiCancellation | undefined;
       client?: pg.PoolClient | undefined; observation?: CiRunRecord['observation'] } = {}) {
     const { logTail, audit, client } = options
+    const executorCleanupPending = state.executorCleanupPending ?? run.executorCleanupPending
     const setupRequeue = computer.hostRef.kind === 'cloud' && state.state === 'failed'
-      && state.testsStarted === false && !run.setupRetry && !run.cancellation && !run.supersededBy
+      && state.testsStarted === false && !executorCleanupPending
+      && !run.setupRetry && !run.cancellation && !run.supersededBy
     let setupRetry = run.setupRetry
     if (setupRequeue) {
       const reason = sanitizeCiText(state.message ?? 'Cloud setup failed before the first test started.').slice(0, 2000)
@@ -909,7 +935,7 @@ export class HostCiService {
       state = { state: 'queued', step: null, exitCode: null, startedAt: null, finishedAt: null,
         message: `Queued once on another slot after setup failure: ${reason}`.slice(0, 2000) }
     }
-    const requeued = state.state === 'queued'
+    const requeued = state.state === 'queued' && !executorCleanupPending
     const executionHistory = [...run.executionHistory ?? []]
     if (requeued) {
       const previousRunId = ciExecutionRunId(run)
@@ -937,6 +963,8 @@ export class HostCiService {
       ...(executionHistory.length ? { executionHistory } : {}),
       ...(options.observation ? { observation: options.observation } : {}),
       ...(state.transport ? { transport: state.transport } : {}),
+      ...(state.selection ? { selection: state.selection } : {}),
+      ...(executorCleanupPending !== undefined ? { executorCleanupPending } : {}),
       ...(setupRequeue ? { dispatchAttempts: undefined, collection: undefined, provenance: undefined,
         mirrorPublication: undefined } : {}),
       cancellation: terminal ? undefined : run.cancellation,
@@ -944,23 +972,25 @@ export class HostCiService {
       ...(state.provenance ? { provenance: state.provenance } : {}),
       ...(state.mirrorPublication ? { mirrorPublication: state.mirrorPublication } : {}),
       ...(unstartedProviders.size ? { unstartedProviders: [...unstartedProviders] } : {}) })
-    const hostKey = ['starting', 'running'].includes(next.state) ? computer.key : null
+    const hostKey = ['starting', 'running'].includes(next.state) || next.executorCleanupPending ? computer.key : null
     let savedLogTail = logTail === undefined ? null : sanitizeCiText(logTail)
     if (setupRequeue) savedLogTail = ''
     // Reusing the stored JSON keeps its TOAST value when only the log changes.
     const record = serializeCiJson(next)
     const recordAssignment = canonicalJson(run) === canonicalJson(JSON.parse(record)) ? '' : 'record=$4::jsonb, '
+    // Durations are partition inputs: setup retries must keep the original file membership.
     const saved = await this.saveCancellation(`update ci_runs set state=$2, host_key=$3, ${recordAssignment}log_tail=coalesce($6,log_tail),
-        test_results=case when $10 then null else test_results end,
-        durations=case when $10 then null else durations end
+        test_results=case when $10 then null else test_results end
       where id=$1 and (state in ('queued','starting','running') or state=$8
-        and (record->>'collection'='pending' or record#>>'{observation,status}'='unavailable'))
+        and (record->>'collection'='pending' or record#>>'{observation,status}'='unavailable'
+          or record->>'executorCleanupPending'='true'))
         and host_key is not distinct from $5
         and record->>'supersededBy' is not distinct from $7
         and record=$9::jsonb
         and (state is distinct from $2 or host_key is distinct from $3
           or record is distinct from $4::jsonb or ($6::text is not null and log_tail is distinct from $6))`,
-      [run.id, next.state, hostKey, record, ['starting', 'running'].includes(run.state) ? computer.key : null,
+      [run.id, next.state, hostKey, record,
+        ['starting', 'running'].includes(run.state) || run.executorCleanupPending ? computer.key : null,
         savedLogTail,
         run.supersededBy ?? null, run.state, JSON.stringify(run), setupRequeue],
       next, run.cancellation ?? audit, client)
@@ -1134,7 +1164,7 @@ export class HostCiService {
       }
     }
     const terminal = !['queued', 'starting', 'running'].includes(reply.run.state)
-    const collected = terminal ? await collectCiResults(this.pool, this.endpoint, computer, run, reply)
+    const collected = terminal ? await collectCiResults(this.pool, this.endpoint, computer, run, reply, this.coverage)
       : { run: reply.run, durations: reply.durations, error: undefined }
     let observationError = logError ?? collected.error
     if (!['queued', 'starting', 'running'].includes(run.state)) {
@@ -1169,7 +1199,8 @@ export class HostCiService {
   private async releaseRetainedExecutor(run: CiRunRecord, computer: HostCiComputer) {
     try {
       const reply = await this.endpoint.request(computer, { operation: 'cancel', runId: ciExecutionRunId(run) })
-      if (reply.operation !== 'cancel' || ['queued', 'starting', 'running'].includes(reply.run.state)) {
+      if (reply.operation !== 'cancel' || ['queued', 'starting', 'running'].includes(reply.run.state)
+        || reply.run.executorCleanupPending) {
         throw new DomainError('CI_EXECUTOR_CLEANUP_PENDING', 'The executor has not confirmed the run stopped.', 503)
       }
     } catch (error) {
@@ -1212,6 +1243,7 @@ export class HostCiService {
           { onCollecting: () => { this.collectingRuns.add(listed.id) } })
         const current = await this.read(listed.id, workspaceId)
         if (['starting', 'running'].includes(previous.state) && !['starting', 'running'].includes(current.state)
+          || previous.executorCleanupPending && !current.executorCleanupPending
           || previous.deadlineExceeded?.executor === 'retained' && current.deadlineExceeded?.executor === 'released') {
           void this.dispatch()
         }
@@ -1312,11 +1344,15 @@ export class HostCiService {
     return this.publishMirror({ repository: start.repository, mirror: start.ciMirror, commit: start.commit,
       ...(deriveFiles && !start.baseCommit ? { defaultBranch: start.defaultBranch ?? 'main' } : {}),
       ...(deriveFiles && start.baseCommit ? { baseCommit: start.baseCommit } : {}),
+      ...(start.integrationCoverage ? { integrationCoverage: start.integrationCoverage } : {}),
       durations: start.durations ?? {} }).settled
   }
 
   private startRequest(run: CiRunRecord, selection: Partial<Extract<CiHostRequest, { operation: 'start' }>>,
-    durations: CiDurations | null | undefined): Extract<CiHostRequest, { operation: 'start' }> {
+    durations: CiDurations | null | undefined, coverage?: CiCoverageSelection): Extract<CiHostRequest, { operation: 'start' }> {
+    if (run.suite === 'integration' && run.deriveFiles && !coverage) {
+      throw new DomainError('CI_GROUP_SELECTION_MISSING', 'The integration group has no saved selection input.', 409)
+    }
     return {
       operation: 'start', runId: ciExecutionRunId(run), workspaceId: run.workspaceId, ciMirror: run.ciMirror ?? null,
       repository: run.repository, commit: run.commit, suite: run.suite,
@@ -1328,6 +1364,7 @@ export class HostCiService {
       ...(run.baseCommit ? { baseCommit: run.baseCommit } : {}),
       ...(run.cachedFiles?.length ? { notice: ciCachedNotice(run.cachedFiles) } : {}),
       ...(durations ? { durations } : {}),
+      ...(coverage ? { integrationCoverage: coverage } : {}),
     }
   }
 
@@ -1375,12 +1412,13 @@ export class HostCiService {
       .catch(error => log.warn({ err: error }, 'Superseded CI cleanup failed; retrying'))
       .finally(() => { this.superseding = undefined })
     const knownComputers = await this.endpoint.computers()
-    const { parsed, durations } = await readQueuedCiRuns(this.pool)
+    const { parsed, durations, coverage } = await readQueuedCiRuns(this.pool)
     void withoutCiDatabasePriority(async () => this.prewarm.schedule(knownComputers, parsed))
     this.dispatchRejections.retain(parsed)
     this.refreshComputerStatuses(knownComputers)
     const active = (await this.pool.query<{ id: string; record: unknown; host_key: string | null }>(
       `select id,record,host_key from ci_runs where state in ('starting','running') or record->>'collection'='pending'
+        or record->>'executorCleanupPending'='true'
         or (state in ('passed','failed','canceled','lost') and record#>>'{observation,status}'='unavailable')`)).rows
     this.refreshActiveRuns(active, knownComputers)
     const busyRows = (await this.pool.query<{ host_key: string; record: unknown }>(
@@ -1516,7 +1554,7 @@ export class HostCiService {
           continue
         }
         const shards = gateDispatchShards(run, computer.key, gateShards.get(computer.key)!)
-        const start = this.startRequest(run, { ...selection, ...shards }, durations.get(run.id))
+        const start = this.startRequest(run, { ...selection, ...shards }, durations.get(run.id), coverage.get(run.groupId))
         // A cloud slot is claimed only once the shared mirror snapshot is on GitHub; build computers need no snapshot.
         if (computer.hostRef.kind === 'cloud') {
           if (!mirrorReady.has(run.id)) mirrorReady.set(run.id, this.mirrorPublished(start))

@@ -47,6 +47,16 @@ export class GitCiCommits implements CiCommits {
     throw gitFailure('SOURCE_WORKTREE_FAILED', 'merge-base')
   }
 
+  async coverageAncestors(repository: string, commit: string, candidates: string[]): Promise<string[]> {
+    const signal = AbortSignal.timeout(30_000)
+    const clone = await ensureCommit(this.git, repository, commit, signal)
+    // Date order keeps descendants ahead of parents, then orders independent branches by commit time.
+    const result = await this.git.git(['rev-list', '--date-order', commit], { cwd: clone, signal })
+    if (result.code !== 0) throw gitFailure('SOURCE_WORKTREE_FAILED', 'rev-list')
+    const retained = new Set(candidates)
+    return result.stdout.trim().split('\n').filter(ancestor => retained.has(ancestor))
+  }
+
   async capabilities(repository: string, commit: string) {
     const signal = AbortSignal.timeout(30_000)
     const clone = await ensureCommit(this.git, repository, commit, signal)

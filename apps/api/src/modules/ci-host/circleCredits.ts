@@ -17,7 +17,6 @@ const DAILY_EXPORT_LIMIT = 10
 export interface CircleCreditsReading { credits: CircleCredits | null; creditsUnavailable?: string }
 export interface CircleCreditsReader {
   reading(owner?: string, circleAccountId?: string): Promise<CircleCreditsReading>
-  close?(): Promise<void>
 }
 type UsageHttp = Pick<CloudHttp, 'request' | 'check' | 'json' | 'downloadUrl'>
 type HttpSource = UsageHttp | ((circleAccountId: string) => UsageHttp | Promise<UsageHttp>)
@@ -60,7 +59,6 @@ export function sumTotalCredits(csv: string): number {
 /** Org usage is sampled at most every three hours; all readers share the persisted export and attempt budget. */
 export class CircleCreditUsage implements CircleCreditsReader {
   private readonly refreshing = new Map<string, Promise<void>>()
-  private closed = false
   private readonly cache: CircleCreditCache
   private readonly now: () => number
   private readonly pollMs: number
@@ -76,11 +74,6 @@ export class CircleCreditUsage implements CircleCreditsReader {
     this.cache = options.cache ?? new CircleCreditCache()
   }
 
-  async close(): Promise<void> {
-    this.closed = true
-    await Promise.all(this.refreshing.values())
-  }
-
   async reading(account?: string, circleAccountId = 'default'): Promise<CircleCreditsReading> {
     const owner = (account ?? await this.source.primaryOwner())?.toLowerCase()
     if (!owner) return { credits: null, creditsUnavailable: 'The CircleCI organization of the CI mirror is not known.' }
@@ -88,7 +81,7 @@ export class CircleCreditUsage implements CircleCreditsReader {
     const state = await this.cache.transaction(states => structuredClone(states[key] ?? { attempts: [] }))
     const due = state.job ? this.now() >= (state.nextPollAt ?? 0)
       : this.now() - (state.lastAttemptAt ?? -Infinity) >= REFRESH_MS
-    if (!this.closed && due && this.now() >= (state.retryAt ?? 0) && !this.refreshing.has(key)) {
+    if (due && this.now() >= (state.retryAt ?? 0) && !this.refreshing.has(key)) {
       const task = withoutCiDatabasePriority(() => this.refresh(key, owner, circleAccountId)).catch(() => {
         log.warn({ operation: 'read CircleCI credits', circleAccountId, owner }, 'CircleCI usage cache could not be read')
       }).finally(() => { this.refreshing.delete(key) })
