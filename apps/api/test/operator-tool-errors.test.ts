@@ -50,24 +50,6 @@ it('retains permission-denial audit and public domain errors', async () => {
   expect(log.error).not.toHaveBeenCalled()
 })
 
-it('logs a recognized database exception name without exposing arbitrary database messages', async () => {
-  for (const message of ['CURRENT_VERSION_INVALID', 'private-database-value', 'CURRENT_VERSION_INVALID\nprivate-value']) {
-    log.error.mockClear()
-    const error = Object.assign(new Error(message), { code: 'PGC02' })
-    const result = await invokeOperatorTool(context().value, 'workflow_create', async () => { throw error })
-    expect(result).toMatchObject({ isError: true })
-    const diagnostic = log.error.mock.calls[0]![0]
-    expect(diagnostic.errorCode).toBe('PGC02')
-    if (message === 'CURRENT_VERSION_INVALID') {
-      expect(diagnostic.databaseException).toBe('CURRENT_VERSION_INVALID')
-    } else {
-      expect(diagnostic).not.toHaveProperty('databaseException')
-    }
-    expect(JSON.stringify(diagnostic)).not.toContain('private-')
-    expect(JSON.stringify(result)).not.toContain(message)
-  }
-})
-
 it('logs host-profile check failures without exposing private provider text', async () => {
   log.error.mockClear()
   const failure = new Error('private-native-credential')

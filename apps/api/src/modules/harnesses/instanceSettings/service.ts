@@ -99,10 +99,7 @@ export class HostHarnessOverrideService {
     return this.repository.readAuthorized(async client => {
       await this.authority.authorize(principal, 'harnesses:read', input.hostRef, input.applicationInstallationId, client)
       const overrides = await this.repository.list(input.hostRef, input.applicationInstallationId, client)
-      // One transaction client runs one query at a time.
-      const described: HostHarnessOverride[] = []
-      for (const value of overrides) described.push(await this.describe(value, client))
-      return { overrides: described }
+      return { overrides: await Promise.all(overrides.map(value => this.describe(value, client))) }
     })
   }
   /** Called inside the existing management command transaction before publishing a selected profile. */

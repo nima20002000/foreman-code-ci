@@ -1,5 +1,4 @@
 import { HarnessConfigurationSchema, RETIRED_OPENCODE_MESSAGE, type HarnessDefaults } from '@foreman-code/contracts'
-import { isDeepStrictEqual } from 'node:util'
 import { DomainError } from '../errors.js'
 
 /** Reusable code/metadata only. A registration must not contain a live manager. */
@@ -32,7 +31,6 @@ function freeze(value: unknown): unknown {
 /** Reloads affect new selections only: accepted callers retain their immutable value. */
 export class HarnessInstanceRegistry {
   private instances = new Map<string, HarnessInstanceProjection>()
-  private inputs = new Map<string, ConfiguredHarnessInstance>()
   private readonly drivers: ReadonlyMap<string, HarnessDriverRegistration>
   constructor(drivers: readonly HarnessDriverRegistration[]) {
     this.drivers = new Map(drivers.map((driver) => [driver.driverId, Object.freeze({ ...driver })]))
@@ -40,17 +38,8 @@ export class HarnessInstanceRegistry {
   }
   reload(instances: readonly ConfiguredHarnessInstance[]): void {
     const next = new Map<string, HarnessInstanceProjection>()
-    const inputs = new Map<string, ConfiguredHarnessInstance>()
     for (const instance of instances) {
       if (!instance.instanceId || !instance.instanceRevision || next.has(instance.instanceId)) throw new Error('Invalid or duplicate harness instance identity.')
-      const prior = this.instances.get(instance.instanceId)
-      const priorInput = this.inputs.get(instance.instanceId)
-      if (prior && priorInput && isDeepStrictEqual(priorInput, instance)) {
-        next.set(instance.instanceId, prior)
-        inputs.set(instance.instanceId, priorInput)
-        continue
-      }
-      inputs.set(instance.instanceId, structuredClone(instance))
       const driver = this.drivers.get(instance.driverId)
       let configuration = structuredClone(instance.configuration)
       let availability: HarnessInstanceProjection['availability'] = driver ? 'available' : 'unknown-driver'
@@ -64,13 +53,13 @@ export class HarnessInstanceRegistry {
         || savedConfiguration.success && savedConfiguration.data.harness === 'opencode'
       if (retired) availability = 'retired'
       const projection: HarnessInstanceProjection = { ...instance, configuration: freeze(configuration), availability, ...(retired ? { retirementMessage: RETIRED_OPENCODE_MESSAGE } : {}), ...(driver ? { driverRevision: driver.driverRevision } : {}) }
+      const prior = this.instances.get(instance.instanceId)
       if (prior?.instanceRevision === instance.instanceRevision && JSON.stringify(prior) !== JSON.stringify(projection)) {
         throw new Error('A configured instance revision is immutable.')
       }
       next.set(instance.instanceId, Object.freeze(projection))
     }
     this.instances = next
-    this.inputs = inputs
   }
   list(): readonly HarnessInstanceProjection[] { return [...this.instances.values()] }
   select(instanceId: string): HarnessInstanceProjection {
