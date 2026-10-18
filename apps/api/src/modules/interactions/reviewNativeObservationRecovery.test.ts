@@ -29,8 +29,9 @@ async function fixture() {
     workingDirectory: '/project', runtimeDirectory: '/runtime', nativeSessionId: session.nativeSessionId })
   const ref = { nodeId: node.id, occurrence: null }
   vi.mocked(readAcceptedRepeatRunLocked).mockResolvedValue({} as Awaited<ReturnType<typeof readAcceptedRepeatRunLocked>>)
-  vi.mocked(readRepeatExecutionLocked).mockResolvedValue({ execution, ref, inputDigest: repeatDigest(execution.input) }
-    as Awaited<ReturnType<typeof readRepeatExecutionLocked>>)
+  vi.mocked(readRepeatExecutionLocked).mockResolvedValue({
+    execution, ref, inputDigest: repeatDigest(execution.input),
+  } as Awaited<ReturnType<typeof readRepeatExecutionLocked>>)
   let job = ReviewJobSchema.parse({ id: 'retained-review', interactionId: 'pending-interaction',
     reviewerAgentId: execution.agentId, attempt: 1, state: 'acknowledged', provider: session.harness,
     nativeSessionId: session.nativeSessionId, correlationId: 'original-review-correlation',
