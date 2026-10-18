@@ -701,7 +701,8 @@ export class HostCiService {
       const message = run.supersededBy ? `superseded by ${run.supersededBy}` : 'Canceled.'
       const canceled = { ...run, state: 'canceled' as const, finishedAt: new Date().toISOString(), message,
         cancellation: undefined, dispatchRequest: undefined }
-      const saved = await this.saveCancellation(`update ci_runs set state='canceled', host_key=null, record=$2::jsonb
+      const hostKey = run.executorCleanupPending ? 'host_key' : 'null'
+      const saved = await this.saveCancellation(`update ci_runs set state='canceled', host_key=${hostKey}, record=$2::jsonb
         where id=$1 and state='queued' and record->>'supersededBy' is not distinct from $3`,
       [run.id, serializeCiJson(canceled), run.supersededBy ?? null], canceled, audit)
       if (!saved.rowCount) return this.cancelTicketAttempt(workspaceId, ticketId, audit)
@@ -918,12 +919,14 @@ export class HostCiService {
     exitCode: number | null; startedAt: string | null; finishedAt: string | null; message: string | null
     collection?: CiHostRun['collection']; provenance?: CiHostRun['provenance'];
     mirrorPublication?: CiHostRun['mirrorPublication']; testsStarted?: CiHostRun['testsStarted'];
+    executorCleanupPending?: CiHostRun['executorCleanupPending'];
     transport?: CiHostRun['transport']; selection?: CiHostRun['selection'] },
     options: { logTail?: string | undefined; audit?: CiCancellation | undefined;
       client?: pg.PoolClient | undefined; observation?: CiRunRecord['observation'] } = {}) {
     const { logTail, audit, client } = options
     const setupRequeue = computer.hostRef.kind === 'cloud' && state.state === 'failed'
-      && state.testsStarted === false && !run.setupRetry && !run.cancellation && !run.supersededBy
+      && state.testsStarted === false && !state.executorCleanupPending
+      && !run.setupRetry && !run.cancellation && !run.supersededBy
     let setupRetry = run.setupRetry
     if (setupRequeue) {
       const reason = sanitizeCiText(state.message ?? 'Cloud setup failed before the first test started.').slice(0, 2000)
@@ -931,7 +934,7 @@ export class HostCiService {
       state = { state: 'queued', step: null, exitCode: null, startedAt: null, finishedAt: null,
         message: `Queued once on another slot after setup failure: ${reason}`.slice(0, 2000) }
     }
-    const requeued = state.state === 'queued'
+    const requeued = state.state === 'queued' && !state.executorCleanupPending
     const executionHistory = [...run.executionHistory ?? []]
     if (requeued) {
       const previousRunId = ciExecutionRunId(run)
@@ -960,6 +963,7 @@ export class HostCiService {
       ...(options.observation ? { observation: options.observation } : {}),
       ...(state.transport ? { transport: state.transport } : {}),
       ...(state.selection ? { selection: state.selection } : {}),
+      ...(state.executorCleanupPending !== undefined ? { executorCleanupPending: state.executorCleanupPending } : {}),
       ...(setupRequeue ? { dispatchAttempts: undefined, collection: undefined, provenance: undefined,
         mirrorPublication: undefined } : {}),
       cancellation: terminal ? undefined : run.cancellation,
@@ -967,7 +971,7 @@ export class HostCiService {
       ...(state.provenance ? { provenance: state.provenance } : {}),
       ...(state.mirrorPublication ? { mirrorPublication: state.mirrorPublication } : {}),
       ...(unstartedProviders.size ? { unstartedProviders: [...unstartedProviders] } : {}) })
-    const hostKey = ['starting', 'running'].includes(next.state) ? computer.key : null
+    const hostKey = ['starting', 'running'].includes(next.state) || next.executorCleanupPending ? computer.key : null
     let savedLogTail = logTail === undefined ? null : sanitizeCiText(logTail)
     if (setupRequeue) savedLogTail = ''
     // Reusing the stored JSON keeps its TOAST value when only the log changes.
@@ -977,13 +981,15 @@ export class HostCiService {
     const saved = await this.saveCancellation(`update ci_runs set state=$2, host_key=$3, ${recordAssignment}log_tail=coalesce($6,log_tail),
         test_results=case when $10 then null else test_results end
       where id=$1 and (state in ('queued','starting','running') or state=$8
-        and (record->>'collection'='pending' or record#>>'{observation,status}'='unavailable'))
+        and (record->>'collection'='pending' or record#>>'{observation,status}'='unavailable'
+          or record->>'executorCleanupPending'='true'))
         and host_key is not distinct from $5
         and record->>'supersededBy' is not distinct from $7
         and record=$9::jsonb
         and (state is distinct from $2 or host_key is distinct from $3
           or record is distinct from $4::jsonb or ($6::text is not null and log_tail is distinct from $6))`,
-      [run.id, next.state, hostKey, record, ['starting', 'running'].includes(run.state) ? computer.key : null,
+      [run.id, next.state, hostKey, record,
+        ['starting', 'running'].includes(run.state) || run.executorCleanupPending ? computer.key : null,
         savedLogTail,
         run.supersededBy ?? null, run.state, JSON.stringify(run), setupRequeue],
       next, run.cancellation ?? audit, client)
@@ -1192,7 +1198,8 @@ export class HostCiService {
   private async releaseRetainedExecutor(run: CiRunRecord, computer: HostCiComputer) {
     try {
       const reply = await this.endpoint.request(computer, { operation: 'cancel', runId: ciExecutionRunId(run) })
-      if (reply.operation !== 'cancel' || ['queued', 'starting', 'running'].includes(reply.run.state)) {
+      if (reply.operation !== 'cancel' || ['queued', 'starting', 'running'].includes(reply.run.state)
+        || reply.run.executorCleanupPending) {
         throw new DomainError('CI_EXECUTOR_CLEANUP_PENDING', 'The executor has not confirmed the run stopped.', 503)
       }
     } catch (error) {
@@ -1235,6 +1242,7 @@ export class HostCiService {
           { onCollecting: () => { this.collectingRuns.add(listed.id) } })
         const current = await this.read(listed.id, workspaceId)
         if (['starting', 'running'].includes(previous.state) && !['starting', 'running'].includes(current.state)
+          || previous.executorCleanupPending && !current.executorCleanupPending
           || previous.deadlineExceeded?.executor === 'retained' && current.deadlineExceeded?.executor === 'released') {
           void this.dispatch()
         }
@@ -1409,6 +1417,7 @@ export class HostCiService {
     this.refreshComputerStatuses(knownComputers)
     const active = (await this.pool.query<{ id: string; record: unknown; host_key: string | null }>(
       `select id,record,host_key from ci_runs where state in ('starting','running') or record->>'collection'='pending'
+        or record->>'executorCleanupPending'='true'
         or (state in ('passed','failed','canceled','lost') and record#>>'{observation,status}'='unavailable')`)).rows
     this.refreshActiveRuns(active, knownComputers)
     const busyRows = (await this.pool.query<{ host_key: string; record: unknown }>(

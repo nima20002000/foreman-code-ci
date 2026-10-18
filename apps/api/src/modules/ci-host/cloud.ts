@@ -33,6 +33,7 @@ import { sweepCiRunDirectories } from './directoryRetention.js'
 import { readFleetIdentityInventory } from './fleetIdentityInventory.js'
 import type { CircleAccountContext, CircleAccountRegistry } from './circleAccounts.js'
 import { CircleStandby } from './circleStandby.js'
+import { unresolvedCloudAttemptIds } from './cloudAttempts.js'
 
 const MAX_DISPATCH_ATTEMPTS = 3
 const GITHUB_INPUT_LIMIT_BYTES = 65_535
@@ -138,7 +139,8 @@ export function runningCircleCiOwners(pool: pg.Pool, mainId?: string): () => Pro
   return async () => (await pool.query<{ owner: string; circle_account_id: string }>(`select distinct
     coalesce(record#>>'{computer,hostRef,account}',split_part(record->>'ciMirror','/',1)) as owner,
     coalesce(record#>>'{computer,hostRef,circleAccountId}','default') as circle_account_id
-    from ci_runs where (state in ('queued','starting','running') or record->>'collection' = 'pending')
+    from ci_runs where (state in ('queued','starting','running') or record->>'collection' = 'pending'
+      or record->>'executorCleanupPending'='true')
       and record#>>'{computer,hostRef,provider}'='circleci'
       and ($1::text is null or record#>>'{computer,hostRef,mainId}'=$1)`, [mainId ?? null])).rows
     .filter(row => row.owner).map(row => ({ owner: row.owner, circleAccountId: row.circle_account_id }))
@@ -148,7 +150,7 @@ export function runningCircleCiOwners(pool: pg.Pool, mainId?: string): () => Pro
 export async function activeCiRuns(pool: pg.Pool): Promise<ActiveCiRuns> {
   const readAt = Date.now()
   const rows = (await pool.query<{ id: string; retry_id: string | null }>(
-    "select id,coalesce(record->>'executionRunId',record#>>'{setupRetry,runId}') as retry_id from ci_runs where state in ('queued','starting','running')")).rows
+    "select id,coalesce(record->>'executionRunId',record#>>'{setupRetry,runId}') as retry_id from ci_runs where state in ('queued','starting','running') or record->>'executorCleanupPending'='true'")).rows
   return { ids: new Set(rows.flatMap(row => row.retry_id ? [row.id, row.retry_id] : [row.id])), readAt }
 }
 
@@ -263,7 +265,8 @@ export class CloudCi {
     if (request.operation === 'status') {
       const removedRunIds = request.cleanupRunIds ? await sweepCiRunDirectories({
         root: this.root, runIds: request.cleanupRunIds,
-        isInUse: runId => this.reading.has(runId) || pendingPublications.has(`${this.root}\n${runId}`),
+        isInUse: async runId => this.reading.has(runId) || pendingPublications.has(`${this.root}\n${runId}`)
+          || unresolvedCloudAttemptIds(await this.read(runId)).length > 0,
         withRun: (runId, work) => this.serializeRun(runId, work),
       }) : undefined
       for (const runId of removedRunIds ?? []) this.polled.delete(runId)
@@ -431,6 +434,7 @@ export class CloudCi {
       ? [`CLI transport: ${transport.reason} (fallback count ${transport.fallbackCount}).`, run.message]
         .filter(Boolean).join(' ').slice(0, 2000) : run.message
     return { runId: run.runId, state: run.state, step,
+      ...(this.provider.id === 'circleci' ? { executorCleanupPending: unresolvedCloudAttemptIds(run).length > 0 } : {}),
       ...(run.selection ? { selection: run.selection } : {}),
       ...(transport ? { transport } : {}),
       exitCode: run.exitCode, startedAt: run.startedAt, finishedAt: run.finishedAt, logBytes, message: message === null ? null : sanitizeCiText(message),
@@ -815,30 +819,39 @@ export class CloudCi {
     return { run, accepted: result !== false }
   }
 
-  private async reconcilePreviousAttempts(run: CloudRun) {
+  private async reconcileAcceptedAttempts(run: CloudRun) {
     let pending = false
-    if (this.provider.id !== 'circleci') return { run, pending }
-    const ids = new Set(run.dispatchHistory?.filter(attempt => !attempt.terminated).map(attempt => attempt.providerRunId))
-    for (const providerRunId of ids) {
-      if (!providerRunId || providerRunId === run.providerRunId) continue
-      const status = await this.provider.status({ ...run, providerRunId })
-      if (status.done) {
-        run = await this.recordTerminatedAttempt(run, providerRunId, status)
-        continue
+    for (const providerRunId of unresolvedCloudAttemptIds(run)) {
+      try {
+        const status = await this.provider.status({ ...run, providerRunId })
+        if (status.done) {
+          run = await this.recordTerminatedAttempt(run, providerRunId, status)
+          continue
+        }
+        const cancellation = await this.requestCancellation(run, providerRunId)
+        run = cancellation.run
+        const stopped = await this.provider.status({ ...run, providerRunId })
+        if (!stopped.done) pending = true
+        else run = await this.recordTerminatedAttempt(run, providerRunId, stopped)
+      } catch (error) {
+        if (!(error instanceof DomainError && error.code === 'CI_CLOUD_PIPELINE_FAILED')) throw error
+        log.warn({ err: error, runId: run.runId, providerRunId }, 'Previous cloud pipeline failed')
+        const failure = { message: error.message, configError: error.details?.configError === true }
+        run = { ...run, dispatchHistory: (run.dispatchHistory ?? []).map(attempt =>
+          attempt.providerRunId === providerRunId ? { ...attempt, failure } : attempt) }
+        run = await this.recordTerminatedAttempt(run, providerRunId,
+          { done: true, conclusion: 'failure', finishedAt: this.ports.now().toISOString() })
       }
-      const cancellation = await this.requestCancellation(run, providerRunId)
-      run = cancellation.run
-      const stopped = await this.provider.status({ ...run, providerRunId })
-      if (!stopped.done) pending = true
-      else run = await this.recordTerminatedAttempt(run, providerRunId, stopped)
     }
     return { run, pending }
   }
 
   private async recordTerminatedAttempt(run: CloudRun, providerRunId: string, status: CloudStatus) {
-    // Verified emptiness is still reconciled: unlike a terminal workflow, it can become visible late.
-    if (!status.done || run.emptyPipelineCancellations?.[providerRunId] || !run.dispatchHistory) return run
-    return this.save({ ...run, dispatchHistory: run.dispatchHistory.map(attempt => attempt.providerRunId === providerRunId
+    if (!status.done || status.terminationUnconfirmed || !run.dispatchHistory) return run
+    const observations = { ...run.emptyPipelineCancellations }
+    delete observations[providerRunId]
+    return this.save({ ...run, emptyPipelineCancellations: observations,
+      dispatchHistory: run.dispatchHistory.map(attempt => attempt.providerRunId === providerRunId
       ? { ...attempt, terminated: true as const } : attempt) })
   }
 
@@ -1260,16 +1273,18 @@ export class CloudCi {
     }
     const pendingCollection = collectionPending(run)
     const pendingCancellation = cancellationPending(run)
-    if (!['starting', 'running'].includes(run.state) && !pendingCancellation && !pendingCollection) return run
+    const pendingAttempts = unresolvedCloudAttemptIds(run).length > 0
+    if (!['starting', 'running'].includes(run.state) && !pendingCancellation && !pendingCollection && !pendingAttempts) return run
     const now = this.ports.now().getTime()
     if (run.reconciliation && now - Date.parse(run.reconciliation.at) < POLL_MS) return run
-    if (pendingCollection && !pendingCancellation && run.collection?.retry) {
+    if (pendingCollection && !pendingCancellation && !pendingAttempts && run.collection?.retry) {
       if (now - Date.parse(run.collection.retry.since) >= COLLECTION_RECOVERY_MS) return this.collect(run)
       if (now < Date.parse(run.collection.retry.nextAttemptAt)) return run
     }
     if (now < this.backoff.until) return run
-    const interval = this.expectedEnd(run) - now <= FINISH_WINDOW_MS ? FINISH_POLL_MS : POLL_MS
-    if ((pendingCancellation || pendingCollection || run.state === 'running' && run.workflowStarted)
+    const nearFinish = !pendingAttempts && this.expectedEnd(run) - now <= FINISH_WINDOW_MS
+    const interval = nearFinish ? FINISH_POLL_MS : POLL_MS
+    if ((pendingCancellation || pendingCollection || pendingAttempts || run.state === 'running' && run.workflowStarted)
       && now - (this.polled.get(runId) ?? -Infinity) < interval) return run
     if (this.following >= POLL_CONCURRENCY) await new Promise<void>(resume => { this.waiting.push({ run, resume }) })
     else this.following++
@@ -1280,7 +1295,10 @@ export class CloudCi {
       return await withProviderPoll(async () => {
         let next: CloudRun
         if (pendingCancellation) next = await this.cancelAttempts(run)
-        else if (pendingCollection) next = run
+        else if (pendingCollection || !['starting', 'running'].includes(run.state)) {
+          next = (await this.reconcileAcceptedAttempts(run)).run
+          this.polled.set(runId, this.ports.now().getTime())
+        }
         else next = await this.follow(run, reassign)
         if (next.reconciliation && next.state !== 'starting') {
           const recovered = { ...next,
@@ -1409,7 +1427,7 @@ export class CloudCi {
         const run = await this.read(runId)
         if (run.publicationRequest && run.state === 'starting' || this.stalled(run)
           || run.reconciliation && ['starting', 'running'].includes(run.state)
-          || cancellationPending(run) || collectionPending(run)) {
+          || cancellationPending(run) || collectionPending(run) || unresolvedCloudAttemptIds(run).length > 0) {
           await this.handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 1 })
         }
       } catch (error) {
@@ -1451,7 +1469,9 @@ export class CloudCi {
         else canceled.delete(providerRunId)
         run = await this.save({ ...run, cancellation: { ...run.cancellation!, canceledIds: [...canceled] } })
       }
-      if (!canceled.has(providerRunId) || !(await this.provider.status({ ...run, providerRunId })).done) stopped = false
+      const status = await this.provider.status({ ...run, providerRunId })
+      if (!canceled.has(providerRunId) || !status.done) stopped = false
+      run = await this.recordTerminatedAttempt(run, providerRunId, status)
     }
     this.polled.set(run.runId, this.ports.now().getTime())
     const now = this.ports.now().toISOString()
@@ -1600,7 +1620,7 @@ export class CloudCi {
     const runId = run.runId
     run = await this.adoptSubmission(run)
     if (neverSubmitted(run)) return this.recoverUnstarted(run)
-    const previous = await this.reconcilePreviousAttempts(run)
+    const previous = await this.reconcileAcceptedAttempts(run)
     run = previous.run
     if (previous.pending) {
       this.polled.set(runId, this.ports.now().getTime())
@@ -1630,6 +1650,7 @@ export class CloudCi {
     }
     run = await this.progress(run, status)
     if (!status.done) return run
+    if (this.provider.id === 'circleci') run = await this.recordTerminatedAttempt(run, run.providerRunId!, status)
     this.polled.delete(runId)
     if (run.queueCancelRequested) {
       if (status.conclusion === 'cancelled') return this.requeueCanceledQueue(run)

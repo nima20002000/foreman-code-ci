@@ -38,7 +38,8 @@ export interface CloudRun {
   cancellation?: { at: string; canceledIds: string[]; completedAt?: string; requeue?: boolean }
   /** First fresh empty observation after requesting cancellation of each accepted pipeline. */
   emptyPipelineCancellations?: Record<string, string>
-  dispatchHistory?: { at: string; providerRunId: string | null; terminated?: true }[]
+  dispatchHistory?: { at: string; providerRunId: string | null; terminated?: true
+    failure?: { message: string; configError: boolean } }[]
   /** Live progress kept while the run is followed: steps already written to the log, the running step's output
    * bytes written so far, and bytes written in all. */
   live?: { step: string | null; seen: string[]; output?: { key: string; bytes: number }; bytes: number }
@@ -54,6 +55,8 @@ export interface CloudStep { key: string; name: string; state: 'running' | 'pass
  * output so far. */
 export type CloudStatus = ({ done: false } | {
   done: true; conclusion: 'success' | 'failure' | 'cancelled'; finishedAt: string; message?: string; notStarted?: true
+  /** Empty observations allow recovery, but the accepted pipeline still needs to be followed. */
+  terminationUnconfirmed?: true
 }) & { steps?: CloudStep[]; output?: { key: string; text: string }
   /** The provider holds the workflow in its queue: no job has started. */
   queued?: boolean }
@@ -546,6 +549,7 @@ export class CircleCiProvider implements CloudProvider {
     }
     if (view.notStarted || empty) {
       return { done: true, conclusion: 'failure', notStarted: true, steps: [],
+        ...(empty ? { terminationUnconfirmed: true as const } : {}),
         finishedAt: view.stopped_at ?? this.ports.now().toISOString(),
         message: `${this.label} pipeline created no workflows or jobs.` }
     }
