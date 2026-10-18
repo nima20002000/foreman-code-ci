@@ -15,9 +15,12 @@ import { advanced, accepted, binding, credentialIdentity, configuration, threadP
 import { CodexManagerTurns } from './turns.js'
 
 export abstract class CodexManagerSessions extends CodexManagerTurns {
+  private readonly workflowContinuations = new WeakSet<Runtime>()
+
   async createSession(source: NativeSessionStart, signal?: AbortSignal): Promise<NativeSessionReference> {
     if (isWorkflowStart(source) && source.sessionContinuation) {
-      return this.attachSession(source.sessionContinuation.session, { ...source, instructionsDelivered: true }, signal)
+      return this.attachSessionRuntime(source.sessionContinuation.session, { ...source, instructionsDelivered: true },
+        { signal, workflowContinuation: true })
     }
     return this.beginCreation(source, { signal })
   }
@@ -246,7 +249,8 @@ export abstract class CodexManagerSessions extends CodexManagerTurns {
   }
 
   protected isOriginalResident(runtime: Runtime): boolean {
-    return !runtime.attached && runtime.generation === 0 && !runtime.closed && !runtime.disposed
+    return (!runtime.attached || this.workflowContinuations.has(runtime))
+      && runtime.generation === 0 && !runtime.closed && !runtime.disposed
       && !runtime.starting && runtime.phase !== 'uncertain' && this.transports.has(runtime.transport)
       && runtime.transport.isConnected?.() === true
       && !this.shutdownController.signal.aborted
@@ -280,6 +284,12 @@ export abstract class CodexManagerSessions extends CodexManagerTurns {
   }
 
   async attachSession(session: NativeSessionReference, source: NativeSessionStart, signal?: AbortSignal): Promise<NativeSessionReference> {
+    return this.attachSessionRuntime(session, source, { signal })
+  }
+
+  private async attachSessionRuntime(session: NativeSessionReference, source: NativeSessionStart,
+    options: { signal?: AbortSignal | undefined; workflowContinuation?: true }): Promise<NativeSessionReference> {
+    const signal = options.signal
     this.assertSessionVersion(session)
     if (this.locks.has(session.nativeSessionId)) {
       throw new HarnessExecutionError('CODEX_SESSION_BUSY', 'A session lifecycle operation is in progress.')
@@ -330,6 +340,9 @@ export abstract class CodexManagerSessions extends CodexManagerTurns {
           'The original daemon has no accepted thread settings.')
         this.validateThreadResponse(prepared, { ...settings, thread: response.thread }, session.nativeSessionId)
         const runtime = this.runtime(prepared, structuredClone(session), candidate.transport, true)
+        if (options.workflowContinuation && candidate.transport.reattached?.() !== true) {
+          this.workflowContinuations.add(runtime)
+        }
         attachedRuntime = runtime
         const rejected = input.correlationId && this.responseJournal?.readTurnRejection(session, input.correlationId)
         if (!rejected) {

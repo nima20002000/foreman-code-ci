@@ -331,7 +331,7 @@ export async function remoteReviewProduction(options: {
               ? event.namespace : undefined,
             errorLocation: event.errorLocation ?? (frames.length ? frames.map(frame => frame.trim()).join(' ') : undefined)
               ?? (typeof event.err?.stack === 'string'
-              ? event.err.stack.split('\n').slice(1, 3).map(line => line.trim()).join(' ') : undefined),
+              ? event.err.stack.split('\n').slice(1, 5).map(line => line.trim()).join(' ') : undefined),
             runId: typeof event.runId === 'string' && /^run-[a-z0-9-]{1,100}$/.test(event.runId) ? event.runId : null })
           if (failures.length > 32) failures.shift()
         }
