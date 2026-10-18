@@ -35,7 +35,6 @@ import { reconcileCiHostStart, sendCiDispatch, type CiDispatchState } from './di
 import { CiDispatchRejections } from './dispatchRejections.js'
 import { CiPrewarm } from './prewarm.js'
 import { collectCiResults } from './resultCollection.js'
-import { IntegrationCoverageStore } from './coverageStore.js'
 import { sanitizeCiText, serializeCiJson } from './text.js'
 import { isGitHubComputer, needsSystemdExecutor, supportsUserSystemd } from './computerCapabilities.js'
 import { weighCiPartitions } from './partitionPlanning.js'
@@ -122,7 +121,6 @@ export class HostCiService {
   private readonly circleCredits: CircleCreditsReader | undefined
   private readonly circleStandby: CircleStandby | undefined
   private readonly prewarm: CiPrewarm
-  private readonly coverage = new IntegrationCoverageStore()
 
   constructor(private readonly pool: pg.Pool, private readonly commands: PostgresCommandCoordinator,
     private readonly authority: CiAuthority, private readonly commits: CiCommits,
@@ -142,11 +140,6 @@ export class HostCiService {
       },
       ...(endpoint.publishMirror ? { publishMirror: endpoint.publishMirror.bind(endpoint) } : {}),
       request: async (computer, request, options) => {
-        if (request.operation === 'start' && request.suite === 'integration'
-          && request.scope === 'affected' && request.files === undefined) {
-          const coverage = await this.coverage.selection(request.repository, request.commit, this.commits)
-          if (coverage) request = { ...request, integrationCoverage: coverage }
-        }
         const send = () => {
           const requestHost = () => options ? endpoint.request(computer, request, options) : endpoint.request(computer, request)
           // A persisted start can finish after its caller stops waiting for the reply.
@@ -332,7 +325,6 @@ export class HostCiService {
         const requestKey = runs[0]!.state === 'queued' ? ciRequestKey(input, runs[0]!) : null
         const shared = requestKey ? await joinCiRequest(client, scope.workspaceId, requestKey, initiator, commandId) : null
         const result = shared?.output ?? CiRunOutputSchema.parse({ ticketId: runs[0]!.id,
-          selection: runs[0]!.selection,
           ...(runs.length > 1 ? { partitions: runs.map(run => ({ ticketId: run.id })) } : {}),
           ...(cachedFiles?.length ? { cachedFiles } : {}) })
         if (!input.gate) {
@@ -518,9 +510,6 @@ export class HostCiService {
     }
     timing.mark('planMs')
     log.info({ gate: input.gate === true, suite: input.suite, ...timing.phases }, 'CI run preparation timing')
-    let selectionReason = 'Caller supplied the affected files.'
-    if (selectionScope === 'full') selectionReason = 'Full scope requested; every file in the suite or partition runs.'
-    if (deriveFiles) selectionReason = 'Affected files will be selected on the runner.'
     const runs = parts.map((planned, index) => CiRunRecordSchema.parse({
       ...planned,
       ...(index === 0 && cachedFiles ? { cachedFiles } : {}),
@@ -529,7 +518,6 @@ export class HostCiService {
         ...(smokeShards !== undefined ? { integrationShards: smokeShards } : {}) } : {}),
       id: randomUUID(), workspaceId: scope.workspaceId,
       suite: planned.suite ?? input.suite, scope: selectionScope, commit, repository, groupId,
-      selection: { scope: selectionScope, files: planned.files ?? input.files ?? [], reason: selectionReason },
       ciMirror: workspace.ciMirror ? `${workspace.ciMirror.owner}/${workspace.ciMirror.name}` : null,
       priority, priorityReason,
       ...(input.gate ? { gate: true, noSupersede: true } : {}),
@@ -907,7 +895,7 @@ export class HostCiService {
     exitCode: number | null; startedAt: string | null; finishedAt: string | null; message: string | null
     collection?: CiHostRun['collection']; provenance?: CiHostRun['provenance'];
     mirrorPublication?: CiHostRun['mirrorPublication']; testsStarted?: CiHostRun['testsStarted'];
-    transport?: CiHostRun['transport']; selection?: CiHostRun['selection'] },
+    transport?: CiHostRun['transport'] },
     options: { logTail?: string | undefined; audit?: CiCancellation | undefined;
       client?: pg.PoolClient | undefined; observation?: CiRunRecord['observation'] } = {}) {
     const { logTail, audit, client } = options
@@ -948,7 +936,6 @@ export class HostCiService {
       ...(executionHistory.length ? { executionHistory } : {}),
       ...(options.observation ? { observation: options.observation } : {}),
       ...(state.transport ? { transport: state.transport } : {}),
-      ...(state.selection ? { selection: state.selection } : {}),
       ...(setupRequeue ? { dispatchAttempts: undefined, collection: undefined, provenance: undefined,
         mirrorPublication: undefined } : {}),
       cancellation: terminal ? undefined : run.cancellation,
@@ -962,9 +949,9 @@ export class HostCiService {
     // Reusing the stored JSON keeps its TOAST value when only the log changes.
     const record = serializeCiJson(next)
     const recordAssignment = canonicalJson(run) === canonicalJson(JSON.parse(record)) ? '' : 'record=$4::jsonb, '
-    // Durations are partition inputs: setup retries must keep the original file membership.
     const saved = await this.saveCancellation(`update ci_runs set state=$2, host_key=$3, ${recordAssignment}log_tail=coalesce($6,log_tail),
-        test_results=case when $10 then null else test_results end
+        test_results=case when $10 then null else test_results end,
+        durations=case when $10 then null else durations end
       where id=$1 and (state in ('queued','starting','running') or state=$8
         and (record->>'collection'='pending' or record#>>'{observation,status}'='unavailable'))
         and host_key is not distinct from $5
@@ -1146,7 +1133,7 @@ export class HostCiService {
       }
     }
     const terminal = !['queued', 'starting', 'running'].includes(reply.run.state)
-    const collected = terminal ? await collectCiResults(this.pool, this.endpoint, computer, run, reply, this.coverage)
+    const collected = terminal ? await collectCiResults(this.pool, this.endpoint, computer, run, reply)
       : { run: reply.run, durations: reply.durations, error: undefined }
     let observationError = logError ?? collected.error
     if (!['queued', 'starting', 'running'].includes(run.state)) {

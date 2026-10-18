@@ -10,8 +10,7 @@ export const ciInfrastructure = [
   /(?:^|\/)(?:package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|tsconfig[^/]*|vitest\.config\.[^/]*|eslint\.config\.[^/]*)$/,
   /(?:^|\/)migrations?\/|Migration\.[cm]?[jt]s$/,
   /^packages\/contracts\/src\/index\.ts$/,
-  /^packages\/contracts\/src\/ci(?:Coverage|ImportGraph)\.[^/]+$/,
-  /^scripts\/(?:test-integration[^/]*|test-resources[^/]*|integration-process[^/]*|integration-coverage[^/]*|ci-[^/]*|vitest-[^/]*|test-db\.mjs|test-command\.mjs|heavy-job\.mjs)$/,
+  /^scripts\/(?:test-integration[^/]*|test-resources[^/]*|integration-process[^/]*|ci-[^/]*|vitest-[^/]*|test-db\.mjs|test-command\.mjs|heavy-job\.mjs)$/,
   /^apps\/api\/test\/(?:helpers\/|setup[^/]*$)|^apps\/web\/src\/test\//,
   /^(?:\.github\/workflows\/|\.circleci\/)/,
 ]

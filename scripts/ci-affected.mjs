@@ -4,23 +4,19 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ciCodeFile as codeFile, ciInfrastructureFile, importSpecifiers as imports, resolveImport }
   from '../packages/contracts/src/ciImportGraph.mjs'
-import { usableIntegrationCoverage } from '../packages/contracts/src/ciCoverage.mjs'
 
 const projects = ['apps/api', 'apps/web', 'apps/worker', 'packages/contracts']
 const testFile = /\.(?:test|spec)\.(?:[cm]?[jt]sx?)$/
 const integrationFile = /^apps\/api\/test\/[^/]+\.integration\.test\.ts$/
 
 /** Reverse import reachability, like Vitest related/changed, with separate package test inventories. */
-export function selectAffectedFiles({ suite, changedFiles, sources, exports = {}, coverageMap, coverageReason }) {
+export function selectAffectedFiles({ suite, changedFiles, sources, exports = {} }) {
   const full = reason => ({ scope: 'full', files: [], reason })
   if (!['unit', 'integration', 'lint', 'typecheck'].includes(suite)) return full('This suite requires a full run.')
   if (changedFiles.some(ciInfrastructureFile)) return full('Shared CI infrastructure changed.')
   if (changedFiles.some(file => codeFile.test(file) && !sources.has(file))) return full('A source file was removed.')
   // Glob dependencies cannot be represented by one literal import edge.
   if ([...sources.values()].some(text => /import\.meta\.glob\s*\(/.test(text))) return full('Glob imports require a full run.')
-  const useCoverage = suite === 'integration' && usableIntegrationCoverage(coverageMap)
-  const recordedSources = new Set(useCoverage ? Object.values(coverageMap.coverage).flat() : [])
-  const staticChanges = useCoverage ? changedFiles.filter(file => !recordedSources.has(file)) : changedFiles
   const dependents = new Map()
   for (const [file, text] of sources) {
     for (const specifier of imports(text)) {
@@ -28,7 +24,7 @@ export function selectAffectedFiles({ suite, changedFiles, sources, exports = {}
       if (target) dependents.set(target, [...dependents.get(target) ?? [], file])
     }
   }
-  const affected = new Set(staticChanges)
+  const affected = new Set(changedFiles)
   const pending = [...affected]
   for (let index = 0; index < pending.length; index++) {
     for (const file of dependents.get(pending[index]) ?? []) {
@@ -36,26 +32,7 @@ export function selectAffectedFiles({ suite, changedFiles, sources, exports = {}
     }
   }
   let files
-  let staticFallbackFiles = []
-  let missingRecords = []
-  if (suite === 'integration') {
-    files = [...affected].filter(file => sources.has(file) && integrationFile.test(file))
-    if (useCoverage) {
-      const changed = new Set(changedFiles)
-      const inventory = new Set(coverageMap.testFiles)
-      missingRecords = [...sources.keys()].filter(file => integrationFile.test(file)
-        && inventory.has(file) && !Object.hasOwn(coverageMap.coverage, file))
-      const staticTests = new Set([...coverageMap.staticTests ?? [], ...missingRecords])
-      const staticAffected = new Set(staticTests.size
-        ? selectAffectedFiles({ suite, changedFiles, sources, exports }).files : [])
-      staticFallbackFiles = missingRecords.filter(file => staticAffected.has(file)).sort()
-      for (const file of sources.keys()) {
-        if (integrationFile.test(file) && (changed.has(file) || !inventory.has(file)
-          || staticTests.has(file) && staticAffected.has(file)
-          || coverageMap.coverage[file]?.some(path => changed.has(path)))) files.push(file)
-      }
-    }
-  }
+  if (suite === 'integration') files = [...affected].filter(file => sources.has(file) && integrationFile.test(file))
   else if (suite === 'unit') {
     files = [...affected].filter(file => sources.has(file) && testFile.test(file)
       && !(file.startsWith('apps/api/') && /\.(?:integration|acceptance)\.test\.ts$/.test(file))
@@ -67,19 +44,11 @@ export function selectAffectedFiles({ suite, changedFiles, sources, exports = {}
     files = [...affected].filter(file => sources.has(file) && /\.tsx?$/.test(file)
       && projects.some(project => file.startsWith(`${project}/`)))
   }
-  let reason = 'Static import reachability from changed files.'
-  if (suite === 'integration') {
-    reason = useCoverage
-      ? `Coverage map ${coverageMap.commit}; changed/new tests included; static selection for ${missingRecords.length} missing coverage records, ${staticChanges.length} unrecorded changes and subprocess tests.`
-      : `Static import reachability: ${coverageReason ?? 'no usable coverage map'}.`
-  }
-  return { scope: 'affected', files: [...new Set(files)].sort(), reason,
-    ...(useCoverage ? { staticFallbackFiles } : {}) }
+  return { scope: 'affected', files: [...new Set(files)].sort(), reason: 'Selected from changed files and their imports.' }
 }
 
 /** Read the snapshot tree against an explicit ancestor or its default branch merge-base. */
-export function affectedSnapshot(commit, suite, cwd = process.cwd(), defaultRef = 'origin/main', baseCommit,
-  coverageMaps = [], preparedCoverage) {
+export function affectedSnapshot(commit, suite, cwd = process.cwd(), defaultRef = 'origin/main', baseCommit) {
   cwd = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd, encoding: 'utf8' }).trim()
   const git = (args, env) => execFileSync('git', args, { cwd, env, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }).trim()
   if (!baseCommit && git(['rev-list', '--parents', '-n', '1', commit]).split(' ').length > 2) {
@@ -114,23 +83,6 @@ export function affectedSnapshot(commit, suite, cwd = process.cwd(), defaultRef 
     const sources = new Map(paths.map(file => [file, codeFile.test(file) ? readFileSync(join(tree, file), 'utf8') : '']))
     const manifest = sources.get('packages/contracts/package.json')
     const exports = manifest ? JSON.parse(manifest).exports : {}
-    const coverage = suite === 'integration' ? preparedCoverage ?? ancestorCoverage(git, commit, coverageMaps) : {}
-    return selectAffectedFiles({ suite, changedFiles: [...new Set([...changedFiles, ...coverage.changedFiles ?? []])],
-      sources, exports, ...coverage })
+    return selectAffectedFiles({ suite, changedFiles, sources, exports })
   } finally { rmSync(directory, { recursive: true, force: true }) }
-}
-
-/** Git history, rather than wall-clock age, determines whether a map still describes this runtime. */
-function ancestorCoverage(git, commit, maps) {
-  const candidates = maps.filter(usableIntegrationCoverage)
-  if (!candidates.length) return { coverageReason: 'no usable coverage map' }
-  const ancestors = git(['rev-list', commit]).split('\n')
-  for (const ancestor of ancestors) {
-    const coverageMap = candidates.find(map => map.commit === ancestor)
-    if (!coverageMap) continue
-    const changedFiles = git(['diff', '--name-only', '--no-renames', '-z', ancestor, commit]).split('\0').filter(Boolean)
-    if (changedFiles.some(ciInfrastructureFile)) return { coverageReason: 'coverage map predates lockfile or CI infrastructure changes' }
-    return { coverageMap, changedFiles }
-  }
-  return { coverageReason: 'no coverage map from an ancestor commit' }
 }
