@@ -46,6 +46,8 @@ it.each(['github', 'circleci'] as const)(
       expect(await f.reopen().handle(read)).toMatchObject({ run: { state: 'starting' } })
       expect([...f.dispatched, ...f.circle.triggered]).toEqual([])
       f.advance(1)
+      expect(await f.reopen().handle(read)).toMatchObject({ run: { state: 'starting' } })
+      expect([...f.dispatched, ...f.circle.triggered]).toHaveLength(1)
       expect(await f.reopen().handle(read)).toMatchObject({
         run: { state: provider === 'github' ? 'starting' : 'running' },
       })
