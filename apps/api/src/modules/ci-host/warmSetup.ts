@@ -74,13 +74,14 @@ export async function pnpmInstall(source: string, cache: string, messageFile: st
   const install = `corepack pnpm install --frozen-lockfile --config.confirm-modules-purge=false`
     + store
   const ready = inputs
-    ? `[ -f ${shellQuote(complete)} ] && [ "$(< ${shellQuote(complete)})" = ${shellQuote(inputs.key)} ]` : 'false'
+    ? `[ -f ${shellQuote(complete)} ] && [ "$(< ${shellQuote(complete)})" = ${shellQuote(inputs.key)} ]` : 'true'
   const prefetch = options.offlineOnly ? `${fetch} --offline`
     : `${fetch} --offline || { echo '[ci-cache] filling store online'; ${fetch} --prefer-offline; }`
-  const normalInstall = options.offlineOnly ? `${install} --offline`
-    : `${install} --offline || { echo '[ci-cache] filling store with normal install'; ${install} --prefer-offline; }`
   return [
     `export npm_config_cache_dir=${shellQuote(join(cache, 'pnpm-metadata'))}`,
+    ...(repositoryHook ? [
+      "echo '[ci-cache] prefetch unsupported for this layout (.pnpmfile.cjs); using normal install' >&2",
+    ] : []),
     `${ready} && ${install} --offline || {`,
     `mkdir -p ${shellQuote(join(cache, 'locks'))}`,
     `exec {cache_lock}>${shellQuote(join(cache, 'locks', 'install.lock'))}`,
@@ -115,8 +116,11 @@ export async function pnpmInstall(source: string, cache: string, messageFile: st
       'fi',
       `${install} --offline || finish $?`,
     ] : [
-      "echo '[ci-cache] prefetch unsupported for this layout (.pnpmfile.cjs); using normal install' >&2",
-      `{ ${normalInstall}; } || finish $?`,
+      // Both offline attempts failed; only the refill remains under the shared lock.
+      ...(options.offlineOnly ? ['finish $?'] : [
+        "echo '[ci-cache] filling store with normal install'",
+        `${install} --prefer-offline || finish $?`,
+      ]),
     ]),
     '}',
     'flock -u "$cache_lock"',

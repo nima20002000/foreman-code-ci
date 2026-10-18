@@ -84,6 +84,7 @@ it.each([
         expect.arrayContaining(['pnpm', 'install', '--offline', '--frozen-lockfile']),
       ])
       await writeFile(calls, '')
+      await mkdir(join(root, 'cache/locks'), { recursive: true })
       const holder = spawn('/usr/bin/flock', ['--exclusive', join(root, 'cache/locks/install.lock'),
         '/bin/sh', '-c', 'printf "locked\\n"; read -r release'])
       const closed = once(holder, 'close')
