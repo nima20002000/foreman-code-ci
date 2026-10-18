@@ -1524,7 +1524,7 @@ function configureExecutionCoordinator(composition: ProductionComposition) {
               arrangement: checked.detection.credentialArrangement?.kind ?? null }, 'Claude scoped MCP credential preflight rejected')
             throw new DomainError('APP_MCP_PREFLIGHT_FAILED', 'Claude did not acknowledge the scoped HTTP credential on its current query.', 409)
           }
-          await appRoutes.refresh({ signal: input.signal })
+          await appRoutes.refresh()
           return { credential, detection: checked }
         } catch (error) {
           componentLogger('harness').warn({ executionId: input.executionId, code: error instanceof DomainError ? error.code
@@ -1537,17 +1537,16 @@ function configureExecutionCoordinator(composition: ProductionComposition) {
       // BEFORE preflight. It owns disposal + durable closure on every failure;
       // releasing an empty resolver here would destroy the only positive proof.
       const prepared = await launch.prepare(input)
-      try { await appRoutes.refresh({ signal: input.signal }) } catch (error) { await credentials.revoke(prepared.credential); throw error }
+      try { await appRoutes.refresh() } catch (error) { await credentials.revoke(prepared.credential); throw error }
       return prepared
     },
     revoke: (credential) => credentials.revoke(credential),
     revokeForExecution: (executionId) => credentials.revokeForExecution(executionId),
     revokeForRun: (runId, client) => credentials.revokeForRun(runId, client),
     reconcileTerminalCredentials: () => credentials.reconcileTerminalCredentials(),
-    renew: async (executionId, credential, signal) => {
-      signal?.throwIfAborted()
+    renew: async (executionId, credential) => {
       const expiresAt = await credentials.renewForExecution(executionId, credential)
-      if (!composition.closing) await appRoutes.refresh({ signal })
+      if (!composition.closing) await appRoutes.refresh()
       return expiresAt
     },
   }

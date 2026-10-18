@@ -331,7 +331,7 @@ export interface ExecutionCredentialProvider {
   /** Verify the retained original environment without issuing another process credential. */
   restore?(executionId: string, environment: ChildProcessEnvironment): Promise<IssuedWorkerCredential>
   /** Same-token server-side lease renewal. Providers without it must not rotate a busy process. */
-  renew?(executionId: string, credential: Pick<IssuedWorkerCredential, 'principalId'>, signal?: AbortSignal): Promise<string>
+  renew?(executionId: string, credential: Pick<IssuedWorkerCredential, 'principalId'>): Promise<string>
   revoke(credential: Pick<IssuedWorkerCredential, 'principalId'>): Promise<void>
   revokeForExecution(executionId: string): Promise<number>
   revokeForRun?(runId: string, client?: pg.PoolClient): Promise<number>

@@ -8,7 +8,7 @@ import { nativeLanes } from './helpers/nativeLanes.js'
 import { reviewerFixture } from './helpers/reviewerAudit.js'
 
 import { DEFAULT_WORKER_CREDENTIAL_TTL_MS, type IssuedWorkerCredential } from '../src/modules/access/workerCredentials.js'
-import { WorkerLaunchCredentialService, type ExecutionCredentialProvider } from '../src/modules/harnesses/mcpDetection.js'
+import { WorkerLaunchCredentialService } from '../src/modules/harnesses/mcpDetection.js'
 import type { NativeHarnessSessionManager, NativeHistory, NativeSessionStart } from '../src/modules/harnesses/port.js'
 import { createWorkflowNativeCaptureChannel } from '../src/modules/interactions/workflowNativeCapture.js'
 import type { WorkflowClosureStore } from '../src/modules/interactions/workflowClosure.js'
@@ -87,9 +87,7 @@ function fixture(harness: AgentHarness = 'codex', started = true) {
       issued.push(credential)
       return { credential, detection: {} as never }
     }),
-    renew: vi.fn<NonNullable<ExecutionCredentialProvider['renew']>>(
-      async () => new Date(Date.now() + DEFAULT_WORKER_CREDENTIAL_TTL_MS).toISOString(),
-    ),
+    renew: vi.fn(async () => new Date(Date.now() + DEFAULT_WORKER_CREDENTIAL_TTL_MS).toISOString()),
     revoke: vi.fn(async () => undefined),
     revokeForExecution: vi.fn(async () => 1),
   }
@@ -266,12 +264,7 @@ for (const harness of ['codex'] as const) {
     await f.coordinator.attachOwnedSession(f.context, f.session)
     await f.coordinator.attachOwnedSession(f.context, f.session)
     expect(f.credentials.renew).toHaveBeenCalledTimes(1)
-    expect(f.credentials.renew).toHaveBeenCalledWith(
-      f.context.executionId,
-      expect.objectContaining({ principalId: credential.principalId }),
-      expect.any(AbortSignal),
-    )
-    expect(f.credentials.renew.mock.calls[0]![2]?.aborted).toBe(false)
+    expect(f.credentials.renew).toHaveBeenCalledWith(f.context.executionId, expect.objectContaining({ principalId: credential.principalId }))
     expect(f.credentials.prepare).toHaveBeenCalledTimes(1)
     expect(f.managers).toHaveLength(1)
     const manager = f.managers[0]!
