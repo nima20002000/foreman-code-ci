@@ -98,6 +98,7 @@ export class HarnessInstallationMonitor {
     void this.checks.recheckInstallation({ host, driverId, applicationInstallationId: installationId, generation,
       signal, authorize,
       installation: value => this.registry.currentInstallation(value),
+      refresh: refreshSignal => this.refreshHosts([host], refreshSignal),
       ...(host.kind === 'main' && driverId === 'codex' ? { beforeChecks: this.qualifyMain } : {}),
     }).then(() => {
       if (!this.backingOff(host)) this.succeeded(host, 'qualification')
