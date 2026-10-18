@@ -10,10 +10,37 @@ import { pnpmInstall } from './warmSetup.js'
 async function runWarmInstall(root: string, bin: string, environment: NodeJS.ProcessEnv) {
   const script = ['finish() { exit "$1"; }',
     ...await pnpmInstall(root, join(root, 'cache'), join(root, 'message'))].join('\n')
-  await promisify(execFile)('/bin/bash', ['-c', script], {
+  return promisify(execFile)('/bin/bash', ['-c', script], {
     cwd: root, env: { ...environment, BASH_ENV: '', PATH: `${bin}:/usr/bin:/bin` },
   })
 }
+
+it.each([0, 34])('uses normal install after prefetch fails and preserves its exit code (%i)', async installCode => {
+  const base = join(homedir(), '.cache', 'foreman-tmp')
+  await mkdir(base, { recursive: true })
+  const root = await mkdtemp(join(base, 'prefetch-failure-'))
+  try {
+    const bin = join(root, 'bin')
+    await mkdir(bin)
+    await writeFile(join(root, 'package.json'), '{"packageManager":"pnpm@11.27.0"}\n')
+    await writeFile(join(root, 'pnpm-lock.yaml'), 'fixture lockfile\n')
+    await writeFile(join(bin, 'corepack'), '#!/bin/sh\n'
+      + 'if [ "$2" = fetch ]; then echo "fetch unsupported" >&2; exit 21; fi\n'
+      + `if [ "$2" = install ]; then echo "normal install attempted"; exit ${installCode}; fi\n`
+      + 'exit 22\n', { mode: 0o700 })
+    const result = runWarmInstall(root, bin, process.env)
+    const diagnostic = expect.stringContaining('isolated prefetch failed (exit 21); continuing with normal install')
+    if (installCode === 0) {
+      await expect(result).resolves.toMatchObject({
+        stdout: expect.stringContaining('normal install attempted'), stderr: diagnostic,
+      })
+    } else {
+      await expect(result).rejects.toMatchObject({ code: installCode, stderr: diagnostic })
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
 
 it.each([false, true])(
   'installs warm dependencies while the shared online refill lock is unavailable (runner shell startup: %s)',
