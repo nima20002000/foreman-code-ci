@@ -6,7 +6,6 @@ import {
   CurrentWorkflowSaveResultSchema, canonicalGraphJson, preserveWorkflowGeometry,
 } from '@foreman-code/contracts/wave25'
 import { commandInputHash } from '../src/modules/commands/postgres.js'
-import { graphHeaders } from './eng04-graph-composition-fixture.js'
 import { setup } from './helpers/workflowWorktreeMcp.js'
 import { agentWorkflowNode } from './helpers/agentWorkflowFixture.js'
 
@@ -16,11 +15,8 @@ it('replays an existing profile-reconciled save without retroactively marking re
     const { saveInput } = await f.create()
     saveInput.graph.nodes = saveInput.graph.nodes.map(node => ({ ...agentWorkflowNode(node),
       placement: f.placement.local, position: { x: 10, y: 20 } }))
-    const firstResponse = await f.base.app.inject({ method: 'PUT',
-      url: `/api/management/workspaces/${f.workspaceId}/workflows/${saveInput.workflowId}/definition`,
-      headers: graphHeaders(f.base.writer.token), payload: saveInput })
-    expect(firstResponse.statusCode, firstResponse.body).toBe(200)
-    const first = CurrentWorkflowSaveResultSchema.parse(firstResponse.json())
+    const first = CurrentWorkflowSaveResultSchema.parse(await f.base.services.workflows.current.save(
+      f.base.writer.principal, 'http', saveInput))
     const selectedInstanceId = randomUUID()
     const originalConfiguration = f.base.f.configurations[0]!
     const configuration = AgentConfigurationVersionSchema.parse({ ...originalConfiguration,
