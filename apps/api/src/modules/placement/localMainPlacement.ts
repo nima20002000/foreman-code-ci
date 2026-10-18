@@ -26,7 +26,6 @@ export async function resolveLocalMainPlacement(input: {
   mainId: string
   workspaceId: string
   configuration: AgentConfigurationVersion
-  nodeId?: string
   roots: WorkspaceRootPolicyPort
   installations: HarnessInstallationRegistry
   qualificationSuites: Readonly<Record<CompatibilityHarness, string>>
@@ -113,7 +112,6 @@ export async function resolveBoundRootPlacement(input: {
   mainId: string
   workspaceId: string
   configuration: AgentConfigurationVersion
-  nodeId?: string
   root: SourceRootRecord
   roots: WorkspaceRootPolicyPort
   installations: HarnessInstallationRegistry
@@ -162,20 +160,11 @@ export async function resolveBoundRootPlacement(input: {
       if (!(error instanceof DomainError) || error.code !== 'HARNESS_PROFILE_UNAVAILABLE') throw error
     }
   }
-  // Equivalent qualified profiles are interchangeable; ascending instanceId keeps selection stable across reads.
-  qualified.sort((left, right) => left.instanceId < right.instanceId ? -1 : Number(left.instanceId > right.instanceId))
-  const profile = qualified[0]
-  if (!profile) {
-    const requiredConfiguration = withAdvancedDefaults(configuration.harness)
-    const subject = input.nodeId
-      ? `node "${input.nodeId}" (Agent "${configuration.agentId}")` : `Agent "${configuration.agentId}"`
-    const code = compatible.length > 0 ? 'HARNESS_PROFILE_UNAVAILABLE' : 'PLACEMENT_ADMISSION_CONFLICT'
-    throw new DomainError(code,
-      `No matching qualified harness profile for ${subject}. Required configuration: ${JSON.stringify(requiredConfiguration)}.`,
-      409, { reason: 'selected_harness_profile', agentId: configuration.agentId,
-        agentConfigurationVersionId: configuration.id, requiredConfiguration,
-        ...(input.nodeId ? { nodeId: input.nodeId } : {}) })
+  if (qualified.length === 0 && compatible.length > 0) {
+    throw new DomainError('HARNESS_PROFILE_UNAVAILABLE', 'No compatible harness profile is qualified.', 409)
   }
+  const profile = qualified[0]
+  if (qualified.length !== 1 || !profile) return unavailable('selected_harness_profile')
   return SavedNodePlacementSchema.parse({
     schemaVersion: 1, hostRef, rootPolicyId: policy.rootPolicyId, rootPolicyRevision: policy.rootPolicyRevision,
     locationRevision: policy.locationRevision, projectRoot: policy.canonicalProjectRoot,
