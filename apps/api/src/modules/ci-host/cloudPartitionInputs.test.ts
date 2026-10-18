@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url'
 import { gzipSync } from 'node:zlib'
 import { expect, it, vi } from 'vitest'
 import { integrationPartition } from '@foreman-code/contracts'
+import { compactIntegrationCoverage } from '@foreman-code/contracts/ci-coverage'
 import { repositoryFileList, selectByIndexes } from '../../../../../scripts/ci-files.mjs'
 import { fixture } from './cloud.testSupport.js'
 import { cloudSuiteRunner } from './cloudRunner.testSupport.js'
@@ -24,7 +25,7 @@ it.each(['github', 'circleci'] as const)('uses source coverage across the synthe
   f.run('add', '.')
   f.run('commit', '-qm', 'coverage baseline')
   const baseCommit = f.run('rev-parse', 'HEAD')
-  const coverage = { version: 1, commit: baseCommit, testFiles: files,
+  const coverage = { version: 1 as const, commit: baseCommit, testFiles: files,
     coverage: { [files[0]!]: [source], [files[1]!]: [other], [files[2]!]: [], [files[3]!]: [] } }
   await f.write(source, 'export const value = 3')
   f.run('commit', '-qam', 'feature change')
@@ -32,7 +33,7 @@ it.each(['github', 'circleci'] as const)('uses source coverage across the synthe
   await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId: randomUUID(),
     repository: 'octo/site', commit: f.run('rev-parse', 'HEAD'), baseCommit,
     suite: 'integration', scope: 'affected', integrationCoverage: {
-      map: gzipSync(JSON.stringify(coverage)).toString('base64'), changedFiles: [source],
+      map: gzipSync(JSON.stringify(compactIntegrationCoverage(coverage))).toString('base64'), changedFiles: [source],
     } })
   const command = (provider === 'circleci' ? f.circle.triggered : f.dispatched)[0]!
   const checkout = await f.checkoutMirror(command[command.indexOf(provider === 'circleci' ? '--branch' : '--ref') + 1]!)

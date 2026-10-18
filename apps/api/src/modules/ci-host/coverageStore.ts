@@ -4,12 +4,13 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { gzipSync } from 'node:zlib'
 import { CiIntegrationCoverageSchema, type CiCoverageSelection, type IntegrationCoverage } from '@foreman-code/contracts'
-import { completeIntegrationCoverage } from '@foreman-code/contracts/ci-coverage'
+import { compactIntegrationCoverage, completeIntegrationCoverage } from '@foreman-code/contracts/ci-coverage'
 import { ciInfrastructureFile } from '@foreman-code/contracts/ci-import-graph'
 import type { CiCommits } from './serviceTypes.js'
 
 export class IntegrationCoverageStore {
   private readonly writes = new Map<string, Promise<void>>()
+  private selections = new WeakMap<object, Map<string, Promise<CiCoverageSelection>>>()
 
   constructor(private readonly root = join(homedir(), '.cache/foreman-code/integration-coverage')) {}
 
@@ -33,6 +34,7 @@ export class IntegrationCoverageStore {
       await mkdir(this.directory(repository), { recursive: true })
       await writeFile(`${path}.writing`, JSON.stringify(merged))
       await rename(`${path}.writing`, path)
+      this.selections = new WeakMap()
     })
     this.writes.set(path, pending)
     try { await pending }
@@ -47,7 +49,25 @@ export class IntegrationCoverageStore {
     }
   }
 
-  async selection(repository: string, commit: string, commits: Pick<CiCommits, 'isAncestor' | 'testTree'>)
+  selection(repository: string, commit: string, commits: Pick<CiCommits, 'isAncestor' | 'testTree'>) {
+    const key = `${repository}:${commit}`
+    let cache = this.selections.get(commits)
+    if (!cache) {
+      cache = new Map()
+      this.selections.set(commits, cache)
+    }
+    const saved = cache.get(key)
+    if (saved) return saved
+    const pending = this.select(repository, commit, commits).catch(error => {
+      cache.delete(key)
+      throw error
+    })
+    cache.set(key, pending)
+    if (cache.size > 32) cache.delete(cache.keys().next().value!)
+    return pending
+  }
+
+  private async select(repository: string, commit: string, commits: Pick<CiCommits, 'isAncestor' | 'testTree'>)
     : Promise<CiCoverageSelection> {
     const fallback = (reason: string): CiCoverageSelection => ({ changedFiles: [], reason })
     if (!commits.isAncestor || !commits.testTree) return fallback('Repository ancestry or source trees are unavailable.')
@@ -70,7 +90,7 @@ export class IntegrationCoverageStore {
     const changedFiles = [...new Set([...before.blobs.keys(), ...after.blobs.keys()])]
       .filter(file => before.blobs.get(file) !== after.blobs.get(file)).sort()
     if (changedFiles.some(ciInfrastructureFile)) return fallback('Coverage map predates lockfile or CI infrastructure changes.')
-    const map = gzipSync(JSON.stringify(newest)).toString('base64')
+    const map = gzipSync(JSON.stringify(compactIntegrationCoverage(newest))).toString('base64')
     if (map.length > 700_000) return fallback('Coverage map exceeds the device report limit.')
     return { map, changedFiles }
   }

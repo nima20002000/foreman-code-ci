@@ -23,7 +23,8 @@ dependents for unrecorded source changes and tests requiring static selection.
 Missing or unusable maps use ordinary static import selection. Existing rules
 that require full scope still apply.
 
-Artifacts are readable JSON. Only transport across the device channel uses gzip.
+Artifacts are readable JSON. Transport uses a shared source-path index and gzip
+to keep complete maps within the device channel's existing message limit.
 Cloud snapshots carry the same selection input as build computers, outside
 provider parameter limits. `ci_run` reports the initial choice; `ci_get` retains
 the runner's `selection` with its scope, files and reason, including the coverage

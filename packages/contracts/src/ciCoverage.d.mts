@@ -7,3 +7,9 @@ export interface IntegrationCoverage {
 }
 export function isIntegrationCoverage(value: unknown): value is IntegrationCoverage
 export function completeIntegrationCoverage(value: unknown): value is IntegrationCoverage
+export interface CompactIntegrationCoverage extends Omit<IntegrationCoverage, 'coverage'> {
+  sourceFiles: string[]
+  coverage: Record<string, number[]>
+}
+export function compactIntegrationCoverage(map: IntegrationCoverage): CompactIntegrationCoverage
+export function expandIntegrationCoverage(value: unknown): IntegrationCoverage

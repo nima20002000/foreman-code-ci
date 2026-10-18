@@ -4,6 +4,7 @@ import type { ReadObservation } from '@foreman-code/contracts'
 import { mkdir, mkdtemp, open, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { createHash, randomUUID } from 'node:crypto'
 import { gzipSync } from 'node:zlib'
+import { compactIntegrationCoverage } from '@foreman-code/contracts/ci-coverage'
 import { homedir, hostname, userInfo } from 'node:os'
 import { delimiter, dirname, join, resolve } from 'node:path'
 import type pg from 'pg'
@@ -1418,7 +1419,7 @@ export class CloudCi {
           if (selection.success) run = { ...run, selection: selection.data }
           const coverage = CiIntegrationCoverageSchema.safeParse(artifacts.integrationCoverage)
           if (run.suite === 'integration' && run.scope === 'full' && coverage.success) {
-            const compressed = gzipSync(JSON.stringify(coverage.data)).toString('base64')
+            const compressed = gzipSync(JSON.stringify(compactIntegrationCoverage(coverage.data))).toString('base64')
             if (compressed.length <= 700_000) run = { ...run, integrationCoverage: compressed }
             else log.warn({ runId: run.runId }, 'Integration coverage exceeds the device report limit')
           }

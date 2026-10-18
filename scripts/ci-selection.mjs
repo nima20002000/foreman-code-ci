@@ -7,6 +7,7 @@ import { gunzipSync } from 'node:zlib'
 import { affectedSnapshot } from './ci-affected.mjs'
 import { integrationPartition } from '../packages/contracts/src/ciPartition.mjs'
 import { integrationFileList } from './ci-files.mjs'
+import { expandIntegrationCoverage } from '../packages/contracts/src/ciCoverage.mjs'
 
 export function executionFiles(files, executionSuite, cwd) {
   const [suite, part] = executionSuite.split('-')
@@ -35,8 +36,8 @@ export function executionSelection({ commit, baseCommit, executionSuite, default
   const coverage = existsSync(coveragePath) ? JSON.parse(readFileSync(coveragePath, 'utf8')) : undefined
   // Main validates source ancestry before copying this input into the mirror's synthetic Git history.
   const prepared = coverage ? { changedFiles: coverage.changedFiles, coverageReason: coverage.reason,
-    coverageMap: coverage.map ? JSON.parse(gunzipSync(Buffer.from(coverage.map, 'base64'),
-      { maxOutputLength: 64 * 1024 * 1024 }).toString()) : undefined } : undefined
+    coverageMap: coverage.map ? expandIntegrationCoverage(JSON.parse(gunzipSync(Buffer.from(coverage.map, 'base64'),
+      { maxOutputLength: 64 * 1024 * 1024 }).toString())) : undefined } : undefined
   const selection = affectedSnapshot(commit, suite, cwd, defaultRef, baseCommit, [], prepared)
   let files = executionFiles(selection.files, executionSuite, cwd)
   if (selection.scope === 'full' && suite === 'integration' && partition) files = integrationFileList(cwd)

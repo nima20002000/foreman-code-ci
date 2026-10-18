@@ -23,3 +23,29 @@ export function isIntegrationCoverage(value) {
 export function completeIntegrationCoverage(value) {
   return isIntegrationCoverage(value) && value.testFiles.every(file => Object.hasOwn(value.coverage, file))
 }
+
+/** @typedef {Omit<IntegrationCoverage, 'coverage'> & { sourceFiles: string[], coverage: Record<string, number[]> }} CompactIntegrationCoverage */
+
+/** @param {IntegrationCoverage} map @returns {CompactIntegrationCoverage} */
+export function compactIntegrationCoverage(map) {
+  const sourceFiles = [...new Set(Object.values(map.coverage).flat())].sort()
+  const indexes = new Map(sourceFiles.map((file, index) => [file, index]))
+  return { ...map, sourceFiles, coverage: Object.fromEntries(Object.entries(map.coverage)
+    .map(([file, paths]) => [file, paths.map(path => indexes.get(path))])) }
+}
+
+/** @param {unknown} value @returns {IntegrationCoverage} */
+export function expandIntegrationCoverage(value) {
+  if (isIntegrationCoverage(value)) return value
+  if (!value || typeof value !== 'object' || !Array.isArray(value.sourceFiles)
+    || !value.coverage || typeof value.coverage !== 'object') throw new Error('Invalid integration coverage transport.')
+  const coverage = {}
+  for (const [file, indexes] of Object.entries(value.coverage)) {
+    if (!Array.isArray(indexes) || indexes.some(index => !Number.isSafeInteger(index)
+      || index < 0 || index >= value.sourceFiles.length)) throw new Error('Invalid integration coverage source index.')
+    coverage[file] = indexes.map(index => value.sourceFiles[index])
+  }
+  const map = { ...value, coverage }
+  if (!isIntegrationCoverage(map)) throw new Error('Invalid integration coverage map.')
+  return map
+}

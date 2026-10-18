@@ -8,6 +8,7 @@ import { ciExecutionRunId } from './executionAttempt.js'
 import { gunzipSync } from 'node:zlib'
 import { CiIntegrationCoverageSchema } from '@foreman-code/contracts'
 import type { IntegrationCoverageStore } from './coverageStore.js'
+import { expandIntegrationCoverage } from '@foreman-code/contracts/ci-coverage'
 
 const log = componentLogger('jobs')
 
@@ -27,8 +28,8 @@ export async function collectCiResults(pool: pg.Pool, endpoint: HostCiEndpoint, 
     if (fetched.operation === 'read') {
       results = fetched
       if (coverage && fetched.integrationCoverage && run.suite === 'integration' && run.scope === 'full') {
-        const report = CiIntegrationCoverageSchema.parse(JSON.parse(
-          gunzipSync(Buffer.from(fetched.integrationCoverage, 'base64'), { maxOutputLength: 64 * 1024 * 1024 }).toString()))
+        const report = CiIntegrationCoverageSchema.parse(expandIntegrationCoverage(JSON.parse(
+          gunzipSync(Buffer.from(fetched.integrationCoverage, 'base64'), { maxOutputLength: 64 * 1024 * 1024 }).toString())))
         await coverage.record(run.repository, run.commit, report)
       }
       if (fetched.testResults) {

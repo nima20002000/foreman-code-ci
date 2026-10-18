@@ -7,7 +7,8 @@ import { sanitizeCiText, serializeCiJson } from './text.js'
 import { availableParallelism, freemem, homedir, totalmem } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { join, matchesGlob } from 'node:path'
-import { gzipSync } from 'node:zlib'
+import { gzipSync, gunzipSync } from 'node:zlib'
+import { compactIntegrationCoverage, expandIntegrationCoverage } from '@foreman-code/contracts/ci-coverage'
 import { CiIntegrationCoverageSchema, CiWatchdogFailureSchema, CiDurationsSchema, CiHostReplySchema, CiHostRequestSchema, CiTestResultsSchema, integrationPartition,
   CiScopeSchema, CiSelectedFilesSchema, validCiSelection,
   CI_HOST_START_PROTOCOL_VERSION,
@@ -293,7 +294,8 @@ export class HostCiRunner {
       ? await readCiReport(reportPath('test-results.json'), CiTestResultsSchema) : null
     const coverage = request.integrationCoverage && finished
       ? await readCiReport(reportPath('integration-coverage.json'), CiIntegrationCoverageSchema) : null
-    const compressed = coverage?.state === 'complete' ? gzipSync(JSON.stringify(coverage.data)).toString('base64') : undefined
+    const compressed = coverage?.state === 'complete'
+      ? gzipSync(JSON.stringify(compactIntegrationCoverage(coverage.data))).toString('base64') : undefined
     if (tests) {
       const meta = await this.readMeta(request.runId).catch(error => {
         if (error instanceof DomainError && error.code === 'CI_RUN_UNKNOWN' && run.state === 'canceled') return null
@@ -960,17 +962,19 @@ export class HostCiRunner {
     signal?: AbortSignal) {
     signal?.throwIfAborted()
     const coveragePath = join(this.runDirectory(meta.runId), 'coverage-selection.json')
-    await writeFile(coveragePath, JSON.stringify(meta.integrationCoverage ?? null))
+    const coverage = meta.integrationCoverage
+    const coverageMap = coverage?.map ? expandIntegrationCoverage(JSON.parse(gunzipSync(
+      Buffer.from(coverage.map, 'base64'), { maxOutputLength: 64 * 1024 * 1024 }).toString())) : undefined
+    await writeFile(coveragePath, JSON.stringify(coverage ? { ...coverage, map: undefined, coverageMap } : null))
     // selectAffectedFiles also supports repositories whose snapshot helper assumes origin/main.
     const code = [
       "import { execFileSync } from 'node:child_process'",
       "import { readFileSync } from 'node:fs'",
       "import { join } from 'node:path'",
       "import { pathToFileURL } from 'node:url'",
-      "import { gunzipSync } from 'node:zlib'",
       'const [selector, suite, commit, changed, coveragePath] = process.argv.slice(1)',
       "const coverage = JSON.parse(readFileSync(coveragePath, 'utf8'))",
-      "const coverageMap = coverage?.map ? JSON.parse(gunzipSync(Buffer.from(coverage.map, 'base64')).toString()) : undefined",
+      'const coverageMap = coverage?.coverageMap',
       'const { selectAffectedFiles } = await import(pathToFileURL(selector).href)',
       "const paths = execFileSync('git', ['ls-tree', '-r', '--name-only', '-z', commit], { encoding: 'utf8' })",
       "  .split('\\0').filter(Boolean)",
