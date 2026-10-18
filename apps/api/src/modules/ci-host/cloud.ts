@@ -1448,8 +1448,11 @@ export class CloudCi {
     const unsent = neverSubmitted(run)
     const discovered = this.provider.id === 'github' && !unsent
       ? await this.provider.discover!(run) : []
-    if (this.provider.id === 'github' && run.dispatch?.uncertain && discovered.length) {
-      run = { ...run, providerRunId: run.providerRunId ?? discovered[0]!,
+    const discoveryComplete = !run.dispatch?.attempts
+      || this.ports.now().getTime() - Date.parse(run.cancellation!.at) >= CLOUD_START_TIMEOUT_MS
+    // A complete GitHub listing also resolves a lost dispatch reply when no workflow was created.
+    if (this.provider.id === 'github' && run.dispatch?.uncertain && (discovered.length || discoveryComplete)) {
+      run = { ...run, providerRunId: run.providerRunId ?? discovered[0] ?? null,
         dispatch: { ...run.dispatch, uncertain: false } }
     }
     const history = [...run.dispatchHistory ?? []]
@@ -1461,10 +1464,9 @@ export class CloudCi {
     run = await this.save({ ...run, dispatchHistory: history })
     const attempts = history.map(attempt => attempt.providerRunId)
     const ids = new Set([run.providerRunId, ...attempts, ...discovered].filter((id): id is string => Boolean(id)))
-    const discoveryComplete = !run.dispatch?.attempts
-      || this.ports.now().getTime() - Date.parse(run.cancellation!.at) >= CLOUD_START_TIMEOUT_MS
+    const absent = this.provider.id === 'github' && ids.size === 0
     let stopped = discoveryComplete && !run.dispatch?.uncertain
-      && (ids.size > 0 || !run.dispatch?.attempts || unsent)
+      && (ids.size > 0 || !run.dispatch?.attempts || unsent || absent)
     for (const providerRunId of ids) {
       if (!canceled.has(providerRunId) || run.emptyPipelineCancellations?.[providerRunId]) {
         const cancellation = await this.requestCancellation(run, providerRunId)
