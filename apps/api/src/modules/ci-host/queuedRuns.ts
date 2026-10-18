@@ -6,6 +6,7 @@ export async function readQueuedCiRuns(pool: pg.Pool) {
   // Eligibility is resolved after loading the queue; blocked entries cannot hide runnable work.
   const queuedRows = (await pool.query<{ record: unknown; durations: CiDurations | null }>(
     `select record,durations from ci_runs where state='queued' and record->>'supersededBy' is null
+      and record->>'executorCleanupPending' is distinct from 'true'
       order by ${CI_QUEUE_ORDER}`)).rows
   const parsed = queuedRows.map(row => CiRunRecordSchema.parse(row.record))
   const durations = new Map(queuedRows.map((row, index) => [parsed[index]!.id, row.durations]))

@@ -1,5 +1,6 @@
 import { operatorSummaryActivityMigration } from './operatorSummaryActivityMigration.js'
 import { ciIntegrationSelectionMigration } from './ciIntegrationSelectionMigration.js'
+import { ciExecutorCleanupMigration } from './ciExecutorCleanupMigration.js'
 import { computerNamesMigration } from './computerNamesMigration.js'
 import { ciFailureHistoryMigration } from './ciFailureHistoryMigration.js'
 import { ciGateSpeedIndexMigration } from './ciGateSpeedIndexMigration.js'
@@ -998,6 +999,7 @@ export const migrations = [
   workflowFileContextSessionMigration,
   nativeBatchReadMigration,
   ciIntegrationSelectionMigration,
+  ciExecutorCleanupMigration,
 ] as const
 
 export function assertMigrationVersions(entries: readonly { version: number }[]): void {

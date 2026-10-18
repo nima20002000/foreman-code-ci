@@ -106,8 +106,8 @@ export class WorkerConversationHost {
   private readonly inspections = new Set<WorkerConversationAllocation>()
   private readonly allocating = new Map<string, Promise<unknown>>()
   private readonly tasks = new Set<Promise<void>>()
-  private readonly running = new Map<string, Readonly<DeviceSessionBinding>>()
-  private readonly runningCompactions = new Set<string>()
+  private readonly running = new Map<string, { connection: Readonly<DeviceSessionBinding>; task: Promise<void> }>()
+  private readonly runningCompactions = new Map<string, Promise<void>>()
   private readonly eventWait = new WorkerEventWait()
   private readonly lifetime = new AbortController()
   private readonly log = componentLogger('harness')
@@ -381,7 +381,7 @@ export class WorkerConversationHost {
   }
 
   private hasRunningOperation(conversationId: string) {
-    return [...this.running.keys(), ...this.runningCompactions].some(key => key.startsWith(`${conversationId}:`))
+    return [...this.running.keys(), ...this.runningCompactions.keys()].some(key => key.startsWith(`${conversationId}:`))
   }
 
   private async recoverResident(resident: Resident, record: WorkerConversationReceipt,
@@ -585,7 +585,7 @@ export class WorkerConversationHost {
       }
     })()
     const key = `${resident.binding.owner.conversationId}:${request.correlationId}`
-    this.running.set(key, connection)
+    this.running.set(key, { connection, task })
     void task.then(() => this.running.delete(key), () => this.running.delete(key))
     void this.track(task)
   }
@@ -620,7 +620,9 @@ export class WorkerConversationHost {
     if (!manager.compactSession) unavailable('The selected native driver cannot compact this session.')
     const reserved = await this.ports.journal.reserveCompact(request.binding, request.requestId,
       commandInputHash({ session: request.session, correlationId: request.correlationId }))
-    if (!reserved.dispatch) return { compaction: reserved.state }
+    if (!reserved.dispatch) return {
+      compaction: await this.joinCompaction(request, reserved.state, connection, this.lifetime.signal),
+    }
     const task = (async () => {
       let offered = false
       let progress = reserved.state
@@ -650,10 +652,24 @@ export class WorkerConversationHost {
       }
     })()
     const key = `${request.binding.owner.conversationId}:${request.requestId}`
-    this.runningCompactions.add(key)
+    this.runningCompactions.set(key, task)
     void task.then(() => this.runningCompactions.delete(key), () => this.runningCompactions.delete(key))
     void this.track(task)
     return { compaction: reserved.state }
+  }
+
+  private async joinCompaction(request: WorkerConversationRpcRequest, state: CompactionState,
+    connection: Readonly<DeviceSessionBinding>, signal: AbortSignal) {
+    if (compactionBlocksSend(state)) return state
+    const task = this.runningCompactions.get(`${request.binding.owner.conversationId}:${state.requestId}`)
+    if (!task) return state
+    // A saved terminal result can precede native cleanup and the final journal write.
+    await task
+    await this.authorize(request, connection, signal)
+    const record = await this.ports.journal.read(request.binding)
+    const settled = record?.compactions.find(control => control.state.requestId === state.requestId)
+    if (!settled) unavailable('The persisted compaction owner changed.')
+    return settled.state
   }
 
   private async readCompaction(request: Extract<WorkerConversationRpcRequest, { method: 'conversation.compact-read' }>,
@@ -665,8 +681,9 @@ export class WorkerConversationHost {
       || request.state.nativeSessionId !== request.session.nativeSessionId) unavailable('The persisted compaction owner changed.')
     let state = original.state
     if (!compactionBlocksSend(state)) {
+      state = await this.joinCompaction(request, state, connection, signal)
       await this.authorize(request, connection, signal)
-      return { compaction: state, receipt: record }
+      return { compaction: state, receipt: await this.ports.journal.read(request.binding) }
     }
     if (this.ports.readCompaction) state = await this.ports.readCompaction({ ...request, state }, record, connection, signal)
     else if (request.configuration.harness.harness === 'claude') {
@@ -678,7 +695,8 @@ export class WorkerConversationHost {
     } else unavailable('The selected native driver has no installed compaction reader.')
     await this.authorize(request, connection, signal)
     const compaction = await this.ports.journal.compactProgress(request.binding, state)
-    return { compaction, receipt: await this.ports.journal.read(request.binding) }
+    return { compaction: await this.joinCompaction(request, compaction, connection, signal),
+      receipt: await this.ports.journal.read(request.binding) }
   }
 
   async handle(raw: unknown, connection: Readonly<DeviceSessionBinding>, signal = this.lifetime.signal): Promise<unknown> {
@@ -750,7 +768,7 @@ export class WorkerConversationHost {
 
   private async readHistory(request: Extract<WorkerConversationRpcRequest,
     { method: 'conversation.history' | 'conversation.reconcile' }>, resident: Resident, record: WorkerConversationReceipt,
-    connection: Readonly<DeviceSessionBinding>, signal: AbortSignal) {
+    connection: Readonly<DeviceSessionBinding>, signal: AbortSignal): Promise<unknown> {
     const manager = resident.allocation.manager
     const turn = record.turns.find(turn => turn.correlationId === request.correlationId)
     const running = request.correlationId === undefined ? undefined
@@ -761,7 +779,7 @@ export class WorkerConversationHost {
       await resident.allocation.recoverClaudeAuthority?.(request, turn.nativeSubmission, signal)
       await this.authorize(request, connection, signal)
     }
-    if ((!running || !isDeepStrictEqual(running, connection))
+    if ((!running || !isDeepStrictEqual(running.connection, connection))
       && request.method === 'conversation.reconcile' && turn?.nativeTurnId
       && !['completed', 'rejected'].includes(turn.status)) {
       if ((request.sessionMode ?? 'regular') !== (turn.sessionMode ?? 'regular')) unavailable('The recovered turn mode changed.')
@@ -793,8 +811,16 @@ export class WorkerConversationHost {
       const after = request.afterSequence
       history = { ...history, events: history.events.filter(event => event.sequence > after) }
     }
-    return { history, context: manager.contextSnapshot?.(request.session) ?? null,
-      receipt: await this.ports.journal.read(request.binding) }
+    const receipt = await this.ports.journal.read(request.binding)
+    const savedTurn = receipt?.turns.find(turn => turn.correlationId === request.correlationId)
+    if (running && savedTurn && ['completed', 'rejected'].includes(savedTurn.status)) {
+      // Keep Main's callbacks alive until the native stream has drained its terminal result.
+      await running.task
+      await this.authorize(request, connection, signal)
+      const latest = await this.resident(request, connection, signal)
+      return this.readHistory(request, latest.resident, latest.record, connection, signal)
+    }
+    return { history, context: manager.contextSnapshot?.(request.session) ?? null, receipt }
   }
 
   private async dispatch(request: WorkerConversationRpcRequest, connection: Readonly<DeviceSessionBinding>,
@@ -918,9 +944,12 @@ export class WorkerConversationHost {
       case 'conversation.compact-reconcile': {
         const original = record.compactions.find(value => value.state.requestId === request.state.requestId)
         if (!original || request.state.nativeSessionId !== request.session.nativeSessionId) unavailable('The compaction owner changed.')
-        if (!compactionBlocksSend(original.state)) return { compaction: original.state }
-        const state = await manager.reconcileCompaction?.(request.session, original.state, signal) ?? original.state
-        return { compaction: await this.ports.journal.compactProgress(request.binding, state) }
+        let state = original.state
+        if (compactionBlocksSend(state)) {
+          state = await manager.reconcileCompaction?.(request.session, state, signal) ?? state
+          state = await this.ports.journal.compactProgress(request.binding, state)
+        }
+        return { compaction: await this.joinCompaction(request, state, connection, signal) }
       }
       case 'conversation.cancel': return { canceled: await manager.cancel(request.session, signal, request.nativeTurnId) }
       case 'conversation.respond':

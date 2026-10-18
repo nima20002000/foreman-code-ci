@@ -188,6 +188,8 @@ export const CiTransportSchema = z.object({
   lastError: z.string().max(300).nullable(), fallbackCount: z.number().int().nonnegative(),
 }).strict()
 const CiHostRunSchema = z.object({
+  /** Accepted provider attempts still retain this executor after the ticket outcome is known. */
+  executorCleanupPending: z.boolean().optional(),
   selection: CiSelectionSchema.optional(),
   runId: CiHostRunIdSchema, state: CiHostRunStateSchema, step: z.string().max(80).nullable(),
   warmup: z.boolean().optional(),
@@ -245,6 +247,8 @@ export const CiComputerRefSchema = z.object({ kind: z.enum(['main', 'device', 'c
       'CircleCI login identity is only valid for CircleCI cloud computers.')
 
 export const CiRunRecordSchema = z.object({
+  /** Retains the assigned slot while accepted provider attempts still need confirmed termination. */
+  executorCleanupPending: z.boolean().optional(),
   id: CiHostRunIdSchema, workspaceId: IdSchema, suite: CiSuiteSchema, commit: CommitSchema, repository: CiRepositorySchema,
   ciMirror: CiRepositorySchema.nullable().optional(),
   /** Unacknowledged host starts stay on the same computer so late delivery cannot launch a second run. */
