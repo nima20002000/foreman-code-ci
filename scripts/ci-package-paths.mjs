@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { isAbsolute, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { assertRequiredNativePayloads } from './ci-native-payloads.mjs'
 
 export function writeCiPackagePaths(root, paths) {
   mkdirSync(join(root, '.logs'), { recursive: true })
@@ -25,8 +26,10 @@ export function readCiPackagePaths(root, environment = process.env) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  const paths = readCiPackagePaths(resolve(process.argv[2] ?? process.cwd()))
-  writeCiPackagePaths(resolve(process.argv[2] ?? process.cwd()), paths)
+  const root = resolve(process.argv[2] ?? process.cwd())
+  assertRequiredNativePayloads(root)
+  const paths = readCiPackagePaths(root)
+  writeCiPackagePaths(root, paths)
   const quote = value => `'${value.replaceAll("'", "'\\''")}'`
   console.log(`export PNPM_CONFIG_STORE_DIR=${quote(paths.storeDir)} PNPM_CONFIG_CACHE_DIR=${quote(paths.cacheDir)}`)
 }

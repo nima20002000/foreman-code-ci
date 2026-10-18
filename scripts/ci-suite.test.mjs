@@ -56,7 +56,7 @@ function runSuite(t, suite, failCommand = '', scope = 'full', action = '', insta
   mkdirSync(cache, { recursive: true })
   const directory = mkdtempSync(join(cache, 'ci-suite-'))
   t.after(() => rmSync(directory, { recursive: true, force: true }))
-  mkdirSync(join(directory, 'apps/api'), { recursive: true })
+  for (const project of ['apps/api', 'apps/worker']) mkdirSync(join(directory, project), { recursive: true })
   mkdirSync(join(directory, 'scripts'))
   for (const reporter of ['ci-progress-reporter.mjs', 'ci-node-test-reporter.mjs']) {
     writeFileSync(join(directory, 'scripts', reporter), 'export {}\n')
