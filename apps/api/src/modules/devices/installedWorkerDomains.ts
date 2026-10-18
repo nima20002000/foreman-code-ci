@@ -4,7 +4,8 @@ import { createWorkerManagedMcpExtension } from '../harnesses/workerManagedMcp.j
 import { createInstalledWorkerAccounts } from '../provider-accounts/installedWorkerAccounts.js'
 import { createProviderAccountWorkerExtension, workerProviderAccountResolver, type WorkerAccountOperationPorts } from '../provider-accounts/workerOperations.js'
 import { inventoryPayloadFingerprints } from '../harnesses/payloadFingerprintCache.js'
-import { realpath } from 'node:fs/promises'
+import { realpath, stat } from 'node:fs/promises'
+import type { TransferIntent } from '@foreman-code/contracts/byte-transfer'
 import { setTimeout as wait } from 'node:timers/promises'
 import { SourceReservationReclamationAuthorityResponseSchema } from '@foreman-code/contracts/source-operations'
 import { hasPositiveRemoteEntryClosure, hasPositiveRemoteNonEntryClosure }
@@ -121,7 +122,7 @@ interface InstalledWorkerComposition {
   lifetime: AbortController
   configuration: InstalledWorkflowConfigurationLocation | null
   configurationLocation: InstalledWorkflowConfigurationLocation
-  active: Map<Promise<unknown>, string>
+  active: Map<Promise<unknown>, { namespace: string; sourceCleanup: boolean }>
   maintenance: Promise<ComputerMaintenance> | undefined
   registry: NativeProcessRegistry
   jobRegistry: NativeProcessRegistry
@@ -243,7 +244,7 @@ async function configureWorkerTransfers(composition: InstalledWorkerComposition)
   composition.configurationLocation = input.configuration ?? {
     path: join(input.stateDirectory, 'workflow-runtime.json'), ownerUid: process.getuid!(),
   }
-  composition.active = new Map<Promise<unknown>, string>()
+  composition.active = new Map()
   const registry = composition.registry = new NativeProcessRegistry(join(input.stateDirectory, 'workflow-native-processes'))
   composition.jobRegistry = new NativeProcessRegistry(join(input.stateDirectory, 'job-runtime-native-processes'))
   const mainClock = new MainClock()
@@ -784,6 +785,28 @@ async function configureWorkerExecution(composition: InstalledWorkerComposition)
   })
 }
 
+async function stoppedWorkerTransfer(composition: InstalledWorkerComposition, transfer: TransferIntent): Promise<boolean> {
+  const journals = [
+    ['workflow-operations.json', composition.journalOpening, composition.journal],
+    ['job-runtime-operations.json', composition.jobJournalOpening, composition.jobJournal],
+  ] as const
+  for (const [file, opening, open] of journals) {
+    if (!opening) {
+      try { await stat(join(composition.input.stateDirectory, file)) } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue
+        throw error
+      }
+    }
+    const journal = await (opening ?? open())
+    const statuses = await Promise.all([journal.status(transfer.operationId), journal.jobStatus(transfer.operationId)])
+    if (statuses.some(status => status.status === 'known' && status.receipt.stopFence
+      && status.receipt.intent.mainId === transfer.mainId
+      && status.receipt.intent.executionId === transfer.executionId
+      && status.receipt.intent.attemptId === transfer.attemptId)) return true
+  }
+  return false
+}
+
 async function configureWorkerDrain(composition: InstalledWorkerComposition) {
   const {
     lifetime,
@@ -803,8 +826,10 @@ async function configureWorkerDrain(composition: InstalledWorkerComposition) {
   }
   const updateDrain = composition.updateDrain = createWorkerRuntimeDrain({ signal: lifetime.signal,
     waitingOn: () => [...updateWaits, ...new Set([...active.values()]
-      .filter(namespace => namespace !== COMPUTER_MAINTENANCE_NAMESPACE))],
-    active: () => [...active].filter(([, namespace]) => namespace !== COMPUTER_MAINTENANCE_NAMESPACE)
+      .filter(task => task.namespace !== COMPUTER_MAINTENANCE_NAMESPACE && !task.sourceCleanup)
+      .map(task => task.namespace))],
+    // Source cleanup may wait on Main after local closure; local process and byte checks still gate the update.
+    active: () => [...active].filter(([, task]) => task.namespace !== COMPUTER_MAINTENANCE_NAMESPACE && !task.sourceCleanup)
       .map(([task]) => task),
     drainJobs: async signal => {
       await Promise.all([
@@ -862,7 +887,7 @@ async function configureWorkerDrain(composition: InstalledWorkerComposition) {
       }
       if (composition.receiver) {
         updateWaits.add('byte-transfer-receiver')
-        if (!await composition.receiver.receiver.isRuntimeQuiescent()) return false
+        if (!await composition.receiver.receiver.isWorkerUpdateIdle(intent => stoppedWorkerTransfer(composition, intent))) return false
         updateWaits.delete('byte-transfer-receiver')
       }
       if (rsync.kind === 'configured') {
@@ -887,7 +912,7 @@ async function configureWorkerDrain(composition: InstalledWorkerComposition) {
       }
       return extension.handle!(payload, { ...context, signal: AbortSignal.any([context.signal, lifetime.signal]) })
     })()
-    active.set(task, extension.namespace)
+    active.set(task, { namespace: extension.namespace, sourceCleanup: isWorkerSourceCleanup(extension.namespace, payload) })
     void task.then(() => active.delete(task), () => active.delete(task))
     return task
   } } : {}) }))
