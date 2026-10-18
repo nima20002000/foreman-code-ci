@@ -7,6 +7,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.0.105] - 2026-10-18
+
+CI reliability.
+- CI preparation fills the shared package store from the lockfile in an isolated staging directory under the repository lock, only when dependency inputs change, so test fixtures never download packages mid-run on slow computers; real fetch failures stop setup loudly; repositories with pnpm hooks install offline before taking the refill lock.
+- Tests: build-preference placement waits for every computer's readiness before starting.
+
 ## [0.0.104] - 2026-10-18
 
 Reliability fixes for flaky gate tests.
