@@ -6,7 +6,6 @@ import { reconcileAgentProfilePlacements } from './agentProfilePlacements.js'
 import { requireCurrentWorkflowAccess } from './currentWorkflowPolicy.js'
 import { createHash, randomUUID } from 'node:crypto'
 import type pg from 'pg'
-import type { z } from 'zod'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import {
   workflowSaveIssues, CURRENT_WORKFLOW_CAPABILITIES, DEFAULT_AGENT_ACTIVE_TIMEOUT_MS,
@@ -41,21 +40,6 @@ import {
 
 type Source = 'http' | 'mcp'
 
-function parseAuthoringInput<T>(schema: z.ZodType<T>, raw: unknown): T {
-  const parsed = schema.safeParse(raw)
-  if (parsed.success) return parsed.data
-  const graphInvalid = parsed.error.issues.some((issue) => issue.path[0] === 'graph')
-  const issues = workflowSaveIssues(parsed.error.issues.map((issue) => ({
-    ...issue, path: issue.path[0] === 'graph' ? issue.path.slice(1) : issue.path,
-  })))
-  throw new DomainError(
-    graphInvalid ? 'GRAPH_INVALID' : 'INVALID_REQUEST',
-    graphInvalid ? 'Fix the workflow settings below.' : 'The request does not match the workflow contract.',
-    graphInvalid ? 409 : 400,
-    { issues },
-  )
-}
-
 function manualPositionsForSave(graph: WorkflowDefinitionV3, previous: WorkflowDefinitionV3, source?: Source) {
   if (source !== 'mcp') return graph
   const previousNodes = new Map(previous.nodes.map((node) => [node.id, node]))
@@ -81,7 +65,7 @@ function completeSaveInput(
     createdAt: createdAt ?? metadata.createdAt,
     updatedAt: updatedAt ?? metadata.updatedAt,
   }
-  return parseAuthoringInput(CurrentWorkflowSaveInputSchema, { ...request, graph: {
+  return CurrentWorkflowSaveInputSchema.parse({ ...request, graph: {
     ...graph,
     ...(stamps.version === undefined ? {} : { version: stamps.version }),
     ...(stamps.createdAt === undefined ? {} : { createdAt: stamps.createdAt }),
@@ -139,10 +123,10 @@ export class CurrentWorkflowAuthoring {
     return this.runtime?.availability() ?? { runtimeAdmission: false, stopAvailable: false }
   }
   readEdits(principal: ManagementPrincipal, raw: unknown) {
-    return this.editIntents.read(principal, parseAuthoringInput(CurrentEditReadInputSchema, raw))
+    return this.editIntents.read(principal, CurrentEditReadInputSchema.parse(raw))
   }
   mutateEdits(principal: ManagementPrincipal, source: Source, raw: unknown) {
-    const input = parseAuthoringInput(CurrentEditMutationInputSchema, raw)
+    const input = CurrentEditMutationInputSchema.parse(raw)
     switch (input.action) {
       case 'stage_edits': return this.editIntents.stage(principal, source, input)
       case 'discard_edits': return this.editIntents.discard(principal, source, input)
@@ -166,7 +150,7 @@ export class CurrentWorkflowAuthoring {
     }
   }
   async read(principal: ManagementPrincipal, raw: unknown) {
-    const input = parseAuthoringInput(CurrentWorkflowReadInputSchema, raw)
+    const input = CurrentWorkflowReadInputSchema.parse(raw)
     requireAuthorization(principal, 'workflows:read', input)
     requireAuthorization(principal, 'graph:read', input)
     return withTransaction(this.pool, async (client) => {
@@ -183,7 +167,7 @@ export class CurrentWorkflowAuthoring {
     })
   }
   async validate(principal: ManagementPrincipal, raw: unknown) {
-    const input = parseAuthoringInput(CurrentWorkflowValidateInputSchema, raw)
+    const input = CurrentWorkflowValidateInputSchema.parse(raw)
     authorize(principal, input, false)
     return withTransaction(this.pool, async (client) => {
       const live = await readLiveManagementPrincipal(client, principal.id)
@@ -200,9 +184,7 @@ export class CurrentWorkflowAuthoring {
   }
   private async write(principal: ManagementPrincipal, source: Source, raw: unknown, intentId?: string) {
     // Preserve optional-repeat omission in the exact HTTP/MCP command hash.
-    let input: CurrentEditSaveInput = intentId
-      ? parseAuthoringInput(CurrentEditSaveInputSchema, raw)
-      : parseAuthoringInput(CurrentWorkflowSaveInputSchema, raw)
+    let input: CurrentEditSaveInput = intentId ? CurrentEditSaveInputSchema.parse(raw) : CurrentWorkflowSaveInputSchema.parse(raw)
     const request = input
     const needsMetadata = !intentId && (input.graph.version === undefined
       || input.graph.createdAt === undefined || input.graph.updatedAt === undefined)
@@ -272,7 +254,7 @@ export class CurrentWorkflowAuthoring {
   }
 
   async saveInitial(client: pg.PoolClient, principal: ManagementPrincipal, source: Source, raw: unknown) {
-    const input = parseAuthoringInput(CurrentWorkflowSaveInputSchema, raw)
+    const input = CurrentWorkflowSaveInputSchema.parse(raw)
     authorize(principal, input, true)
     const value = await this.publish(client, principal, source, input, input)
     // The publication guard requires its save receipt and audit in this transaction.
