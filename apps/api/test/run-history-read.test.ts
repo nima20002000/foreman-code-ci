@@ -71,14 +71,18 @@ function fixture(queued = false, size = 1, form: 'single' | 'repeat' = 'single')
     if (expectedValues) expect(values).toEqual(expectedValues)
     return { rows }
   }
-  const activityFacts = () => [reply([{
-    run: { revision: '1', stopped: false, outcome: run.outcome,
-      started_at: null, execution_state: run.executionState },
-    executions: [{ id: execution.id, attempt: 1, revision: '1', state: execution.state,
+  const activityFacts = () => [
+    reply([{ revision: '1', stopped: false, outcome: run.outcome,
+      started_at: null, execution_state: run.executionState }], [run.id, run.workspaceId, run.workflowId, run.workflowVersionId]),
+    reply([{ id: execution.id, attempt: 1, revision: '1', state: execution.state,
       outcome: 'result' in execution ? execution.result?.outcome : undefined,
       created_at: f.createdAt, started_at: null, native_session_id: null, harness: null, native_revision: '0' }],
-    jobs: [], cis: [], interactions: [], bounds: { high_water: '0', retained_from: '0', observed: 0 },
-  }], [run.id, run.workspaceId, run.workflowId, run.workflowVersionId])]
+    [run.id, run.workspaceId]),
+    reply([], [run.id, run.workspaceId, run.workflowId, run.workflowVersionId]),
+    reply([], [run.id, run.workspaceId, run.workflowId, run.workflowVersionId]),
+    reply([], [run.id, run.workspaceId, run.workflowId]),
+    reply([{ high_water: '0', retained_from: '0', observed: 0 }], [run.id]),
+  ]
   const receiptRows = () => executions.length === 1 ? [receipt]
     : executions.map((_item, ordinal) => ({ ordinal, receipts: [receipt] }))
   const recordedBatches = () => {
