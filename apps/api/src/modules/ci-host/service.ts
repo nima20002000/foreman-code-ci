@@ -195,6 +195,7 @@ export class HostCiService {
     this.stoppingRuns += 1
     this.reads.close()
     await this.drain()
+    await this.circleCredits?.close?.()
   }
 
   /** Resolves when dispatch, superseded cleanup, observations and readiness reads have finished, including work they start. */
