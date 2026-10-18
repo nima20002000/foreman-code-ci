@@ -16,6 +16,7 @@ import { OPERATOR_MCP_ENVIRONMENT_VARIABLE, PostgresOperatorChatAuthority } from
 import { NativeRollout } from '../src/modules/harnesses/nativeRollout.js'
 import { registerOperatorChatRoutes } from '../src/routes/operatorChat.js'
 import { registerOperatorChatFixture, type OperatorChatFixture, waitFor } from './helpers/operatorChatFixture.js'
+import { withTransaction } from '../src/infrastructure/transaction.js'
 
 const connectionString = process.env.TEST_DATABASE_URL
 
@@ -106,13 +107,8 @@ describe.skipIf(!connectionString)('Operator chat persistence and native binding
       expect(readback.value.operator.harness).toMatchObject({ sandbox: 'danger-full-access' })
       const nextSelector = { ...selector, instanceId: randomUUID(), instanceRevision: '2' }
       const changed = await settings.updateAgentDefaults({ ...saved.value, operator: { ...saved.value.operator, harnessProfileSelection: nextSelector } }, saved.revision)
-      const connection = await pool.connect()
-      let second: typeof first
-      try {
-        await connection.query('begin')
-        second = (await operators.updateWithClient(connection, first.harness, first.id, first.showThinking, undefined, nextSelector)).configuration
-        await connection.query('commit')
-      } catch (error) { await connection.query('rollback'); throw error } finally { connection.release() }
+      const second = (await withTransaction(pool, connection =>
+        operators.updateWithClient(connection, first.harness, first.id, first.showThinking, undefined, nextSelector))).configuration
       expect(changed.value.operator.harnessProfileSelection).toEqual(nextSelector)
       const transitioned = await fetch(`${address}/api/operator/setup?harness=claude&expectedDefaultsRevision=${changed.revision}`, { headers: { Authorization: `Bearer ${reader.token}` } })
       expect(transitioned.status).toBe(200)
@@ -191,9 +187,8 @@ describe.skipIf(!connectionString)('Operator chat persistence and native binding
           permissionMode: 'default' as const, sandbox: 'danger-full-access' as const, tools: [], permissionRules: [], instructions: '',
           mcpServers: { graphql: { type: 'http' as const, url: endpoint } } }
         await settings.updateAgentDefaults({ ...DEFAULT_AGENT_DEFAULTS, operator: { ...DEFAULT_AGENT_DEFAULTS.operator, harness, harnessProfileSelection: selector } }, 0)
-        const connection = await pool.connect()
-        try { await connection.query('begin'); await operators.updateWithClient(connection, harness, first.id, false, undefined, selector); await connection.query('commit') }
-        catch (error) { await connection.query('rollback'); throw error } finally { connection.release() }
+        await withTransaction(pool, connection =>
+          operators.updateWithClient(connection, harness, first.id, false, undefined, selector))
         await client.connect(new StreamableHTTPClientTransport(new URL('/mcp', address), { authProvider: { token: async () => token! } }))
         expect((await client.listTools()).tools.map((tool) => tool.name)).toContain('operator_mcp_setup_get')
         expect((await client.callTool({ name: 'operator_mcp_setup_get', arguments: {} })).isError).not.toBe(true)
@@ -216,7 +211,9 @@ describe.skipIf(!connectionString)('Operator chat persistence and native binding
         const result = await client.callTool({ name: 'operator_mcp_setup_get', arguments: {} }).then((value) => value, (error: unknown) => error)
         expect(result instanceof Error || typeof result === 'object' && result !== null && 'isError' in result && result.isError === true).toBe(true)
         expect(inspected).toEqual([delegate.id])
-      } finally { await client.close().catch(() => {}); await app.close() }
+      } finally {
+        try { await client.close() } finally { await app.close() }
+      }
     }, 30_000)
 
 })

@@ -12,11 +12,17 @@ import { agent3Database, seedAgent3 } from './helpers/wave25Agent3.js'
 import { ChatManager } from './helpers/operatorChatFixture.js'
 import { readUntil } from './helpers/observableCondition.js'
 
-it('disposes a local native owner during shutdown while retaining its unconfirmed message for recovery', async () => {
+it.each(['stopped', 'disconnected'] as const)(
+  'disposes a local native owner after its stream is %s while retaining its unconfirmed message', async stream => {
   const db = await agent3Database()
   let chat: AgentChatService | undefined
   const native = new ChatManager()
   native.autoFinish = false
+  const startTurn = native.startTurn.bind(native)
+  native.startTurn = async function* (session, input, signal) {
+    yield* startTurn(session, input, signal)
+    if (stream === 'disconnected') signal?.throwIfAborted()
+  }
   try {
     const seeded = await seedAgent3(db.pool, db.directory, makeCurrentWorkflowFixture(randomUUID(), 'sequential'), { run: false })
     const node = seeded.version.definition.nodes[0]!
@@ -50,7 +56,8 @@ it('disposes a local native owner during shutdown while retaining its unconfirme
     expect(native.turns).toBe(1)
     expect(native.sessions).toBe(1)
     expect(await repository.get(conversation.id)).toMatchObject({ active_request_id: 'original-input' })
-    expect((await repository.turn(conversation.id, 'original-input'))?.delivery).toBe('unknown')
+    expect((await repository.turn(conversation.id, 'original-input'))?.delivery)
+      .toBe(stream === 'disconnected' ? 'unknown' : 'accepted')
     await expect(chat.shutdown()).resolves.toBeUndefined()
     expect(native.disposals).toBe(1)
     expect(releases).toBe(1)
