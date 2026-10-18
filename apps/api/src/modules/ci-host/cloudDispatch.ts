@@ -45,7 +45,7 @@ export async function expireCloudDispatch(endpoint: HostCiEndpoint, computer: Ho
       || ['queued', 'starting', 'running'].includes(reply.run.state)) {
       throw new DomainError('CI_CLOUD_CLEANUP_PENDING', 'Cloud cancellation was not confirmed; ownership retained.', 503)
     }
-    if (reply.run.state !== 'canceled' || reply.run.executorCleanupPending) return reply.run
+    if (reply.run.state !== 'canceled') return reply.run
   } catch (error) {
     log.warn({ runId: run.id }, 'Expired cloud dispatch cleanup remains pending; ownership retained')
     if (error instanceof DomainError && error.code === 'CI_CLOUD_CLEANUP_PENDING') throw error
