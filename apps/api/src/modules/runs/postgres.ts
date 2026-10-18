@@ -265,13 +265,7 @@ export class PostgresRunRepository {
     if (!Number.isInteger(limit) || limit < 1 || limit > 1000) throw new DomainError('RUN_READ_LIMIT', 'Use a bounded Run cursor.', 409)
     // Failed Main-local Runs can outlive their detached runtime. Selection still requires physical closure in cleanup.
     const rows = (await this.pool.query<{ id: string }>(`select id from runs where id>$1 and
-      ((execution_state in ('queued','running','waiting') and not exists(
-          select 1 from run_work_direction_waits d
-            join durable_interactions i on i.run_id=d.run_id
-          where d.run_id=runs.id and d.workflow_version_id=runs.workflow_version_id
-            and runs.execution_state='waiting' and runs.record->>'executionState'='waiting'
-            and runs.record->>'outcome'='pending' and runs.stop_requested_at is null
-            and i.record->>'kind'='work_direction' and i.status in ('pending','delivery_pending')))
+      (execution_state in ('queued','running','waiting')
         or exists(select 1 from run_cleanup_intents c where c.run_id=runs.id and c.pending)
         or (execution_state='completed' and record->>'outcome'='failed'
           and exists(select 1 from harness_executions e

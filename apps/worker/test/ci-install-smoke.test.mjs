@@ -49,49 +49,6 @@ test('update smoke bounds busy capacity waits and cancels its own ticket', async
   assert.equal(canceled, true);
 });
 
-// A commit whose lockfile pins a new native package fills the store online during its install step.
-function installingRunner(stepAt, { finish = true } = {}) {
-  const requests = [];
-  const started = { at: 0 };
-  const runner = { handle: async request => {
-    requests.push(request);
-    if (request.operation === 'status') return { ready: true, cpuCount: 8, memoryBytes: 16 * 2 ** 30 };
-    if (request.operation === 'start') { started.at = Date.now(); return {}; }
-    if (request.operation === 'cancel') return {};
-    const step = stepAt(Date.now() - started.at);
-    if (step !== 'done' || !finish) return { run: { state: 'running', step: step === 'done' ? 'integration' : step,
-      exitCode: null, message: null }, text: '' };
-    return { run: { state: 'passed', step: 'integration', exitCode: 0, message: null }, text: '', testResults: {
-      summary: { passed: 1, failed: 0 }, files: [{ file: 'apps/api/test/ci-smoke.integration.test.ts',
-        tests: [{ status: 'passed' }] }] } };
-  } };
-  return { runner, requests };
-}
-
-test('update smoke lets a first-run dependency install outlast the smoke budget', async () => {
-  const { runner, requests } = installingRunner(elapsed => elapsed < 300 ? 'install'
-    : elapsed < 320 ? 'integration' : 'done');
-  await runCiInstallSmoke({ repository: 'fixture/project', commit: 'a'.repeat(40) },
-    { runner, timeoutMs: 100, capacityTimeoutMs: 5000, pollMs: 5 });
-  assert.equal(requests.some(request => request.operation === 'cancel'), false);
-});
-
-test('update smoke bounds a dependency install that never finishes and cancels it', async () => {
-  const { runner, requests } = installingRunner(() => 'install');
-  await assert.rejects(runCiInstallSmoke({ repository: 'fixture/project', commit: 'a'.repeat(40) },
-    { runner, timeoutMs: 50, capacityTimeoutMs: 300, pollMs: 5 }), /dependency install timed out/);
-  assert.equal(requests.some(request => request.operation === 'cancel'), true);
-});
-
-test('update smoke applies its full smoke budget once the install step has finished', async () => {
-  const { runner, requests } = installingRunner(elapsed => elapsed < 150 ? 'install' : 'done', { finish: false });
-  const began = Date.now();
-  await assert.rejects(runCiInstallSmoke({ repository: 'fixture/project', commit: 'a'.repeat(40) },
-    { runner, timeoutMs: 100, capacityTimeoutMs: 5000, pollMs: 5 }), /Worker CI smoke timed out/);
-  assert.ok(Date.now() - began >= 250);
-  assert.equal(requests.some(request => request.operation === 'cancel'), true);
-});
-
 for (const { capacity, cpuCount, memoryGiB } of [
   { capacity: 'normal', cpuCount: 16, memoryGiB: 14 },
   { capacity: 'CPU-limited', cpuCount: 8, memoryGiB: 32 },

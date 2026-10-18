@@ -19,7 +19,6 @@ export interface PlacementCommitFence {
   /** Read SQL-only live registration/grants/config/root-policy revisions using the
    * existing admission transaction. No remote filesystem IO inside this callback. */
   assertCurrent(placement: AcceptedNodePlacement): Promise<void>
-  assertAllCurrent?(placements: readonly AcceptedNodePlacement[]): Promise<void>
 }
 export async function preparePlacementForRun(port: PlacementValidationPort, saved: SavedNodePlacement,
   identity: Pick<AcceptedNodePlacement, 'mainId' | 'mainInstallationId' | 'nodeId' | 'labelAtAcceptance'>,

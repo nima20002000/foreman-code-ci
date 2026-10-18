@@ -10,14 +10,7 @@ export async function runCiInstallSmoke({ repository, commit }, { runner,
   const runId = randomUUID();
   const controller = new AbortController();
   const deadline = signal ? AbortSignal.any([controller.signal, signal]) : controller.signal;
-  // One preparation deadline covers the capacity wait and the run's dependency install, which fills the shared
-  // store online when the commit pins new packages (a platform-native payload is over 100 MB).
-  let preparation = 'capacity wait';
-  const timer = setTimeout(() => controller.abort(new Error(`Worker CI smoke ${preparation} timed out.`)),
-    capacityTimeoutMs);
-  const smokeDeadline = () => setTimeout(() => controller.abort(new Error('Worker CI smoke timed out.')), timeoutMs);
-  let smokeTimer;
-  let installing = false;
+  let timer = setTimeout(() => controller.abort(new Error('Worker CI smoke capacity wait timed out.')), capacityTimeoutMs);
   const expired = new Promise((_, reject) => {
     deadline.addEventListener('abort', () => reject(deadline.reason), { once: true });
   });
@@ -35,19 +28,11 @@ export async function runCiInstallSmoke({ repository, commit }, { runner,
         await delay(pollMs, undefined, { signal: deadline });
       }
     }
-    preparation = 'dependency install';
-    smokeTimer = smokeDeadline();
+    clearTimeout(timer);
+    timer = setTimeout(() => controller.abort(new Error('Worker CI smoke timed out.')), timeoutMs);
     while (true) {
       const reply = await bounded(() => runner.handle({ operation: 'read', runId, afterOffset: 0,
         maxBytes: 8192, testResults: true }));
-      if (!installing && reply.run.step === 'install') {
-        installing = true;
-        clearTimeout(smokeTimer);
-      } else if (installing && reply.run.step !== 'install') {
-        installing = false;
-        clearTimeout(timer);
-        smokeTimer = smokeDeadline();
-      }
       if (reply.run.state === 'passed' && reply.run.exitCode === 0) {
         const file = reply.testResults?.files.find(file => file.file === 'apps/api/test/ci-smoke.integration.test.ts');
         if (!file?.tests.some(test => test.status === 'passed') || reply.testResults.summary.failed !== 0) {
@@ -69,7 +54,6 @@ export async function runCiInstallSmoke({ repository, commit }, { runner,
     throw failure;
   } finally {
     clearTimeout(timer);
-    clearTimeout(smokeTimer);
   }
 }
 

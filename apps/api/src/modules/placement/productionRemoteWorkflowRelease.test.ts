@@ -9,9 +9,6 @@ import { physicalFixture } from '../runs/remote/__tests__/installedWorkflowHost.
 import { ExclusiveGraphConnection } from '../run-graph/connection.js'
 import { VerifiedRemoteEvidence } from '../runs/remote/resultBridge.js'
 import { createProductionRemoteWorkflow } from './productionRemoteWorkflow.js'
-import { RemoteExecutionRpcRequestSchema } from '@foreman-code/contracts/remote-execution-rpc'
-import { InstalledWorkflowPhysicalReadouts, pagePhysicalReadout, remoteWorkflowSourceDigest }
-  from '../runs/remote/workflowPhysicalReadout.js'
 
 const ports = vi.hoisted(() => ({ manager: vi.fn(), persist: vi.fn() }))
 vi.mock('./workerCarrier.js', () => ({ remoteNativeManager: ports.manager }))
@@ -65,11 +62,10 @@ async function fixture() {
   composition.manager({ executionId: f.execution.id, agentId: f.execution.agentId,
     configuration, harness: 'codex', workingDirectory: f.execution.workingDirectory! }, () => f.owner)
   const callbacks = ports.manager.mock.calls.at(-1)![2] as Parameters<typeof remoteNativeManager>[2]
-  const observe = async (signal?: AbortSignal) => {
+  const observe = async () => {
     const receipt = f.readout.receipt
-    const authenticated = { ...f.connection, connectionGeneration: f.context.binding.connectionGeneration }
-    await VerifiedRemoteEvidence.commit(receipt, authenticated, await callbacks.commit(receipt, authenticated, {}))
-    await callbacks.observeOriginalSource!(receipt, { type: 'history', history: f.readout.history! } as never, signal)
+    await VerifiedRemoteEvidence.commit(receipt, f.connection, await callbacks.commit(receipt, f.connection, {}))
+    await callbacks.observeOriginalSource!(receipt, { type: 'history', history: f.readout.history! } as never)
   }
   const closeNative = () => {
     f.readout.receipt = { ...f.readout.receipt, sequence: f.readout.receipt.sequence + 1,
@@ -102,100 +98,6 @@ it('releases real execution bindings after cold closure is committed and acknowl
     } as unknown as WorkflowNativeCapture)).toThrowError(expect.objectContaining({ code: 'REMOTE_NATIVE_SOURCE_NOT_CAPTURED' }))
   } finally { await f.sqlConnection.close() }
 })
-
-it('releases superseded uncaptured histories before normal streaming fills Worker retention', async () => {
-  const f = await fixture()
-  const readouts = new InstalledWorkflowPhysicalReadouts()
-  const acknowledged: string[] = []
-  f.request.mockImplementation(async payload => {
-    const frame = RemoteExecutionRpcRequestSchema.parse(payload)
-    if (frame.method === 'physical-readout') return { payload: pagePhysicalReadout(await readouts.read(frame)) }
-    if (frame.method === 'physical-ack') {
-      if (f.state.failAck) throw new Error('Acknowledgment lost')
-      const ack = await readouts.ack(frame)
-      acknowledged.push(frame.sourceDigest)
-      return { payload: ack }
-    }
-    throw new Error('Only physical reads and acknowledgments are expected')
-  })
-  const remember = (sequence: number) => {
-    const history = { ...f.source.history, nextSequence: sequence }
-    f.readout.history = history
-    readouts.remember({ readout: f.readout, placement: f.placement, source: { type: 'history', history },
-      leaseExpiresAt: '2099-01-01T00:00:00.000Z', assertOwnerCurrent: async () => {},
-      assertCurrent: async () => {}, observe: () => f.captured.launch, closure: () => null })
-    return remoteWorkflowSourceDigest({ type: 'history', history })
-  }
-  try {
-    const kept = remember(0)
-    await f.observe()
-    const captured = { ...f.lifetime, owner: f.owner, kind: 'live', observedAt: f.execution.createdAt,
-      source: { type: 'history', history: structuredClone(f.readout.history!) } } as WorkflowNativeCapture
-    f.composition.capture({ owner: f.owner } as WorkflowNativeCaptureInput, captured)
-    const discarded: string[] = []
-    for (let sequence = 1; sequence <= 140; sequence++) {
-      const digest = remember(sequence)
-      await f.observe()
-      if (sequence < 140) discarded.push(digest)
-    }
-    expect(acknowledged).toEqual(discarded)
-    const selector = { intent: f.intent, placement: f.placement, receiptSequence: f.readout.receipt.sequence }
-    await expect(readouts.read({ ...selector, sourceDigest: discarded[0]! }))
-      .rejects.toMatchObject({ details: { reason: 'not_retained' } })
-    expect((await readouts.read({ ...selector, sourceDigest: kept })).history).toEqual(captured.source.type === 'history'
-      ? captured.source.history : undefined)
-    expect((await readouts.read({ ...selector,
-      sourceDigest: remoteWorkflowSourceDigest({ type: 'history', history: f.readout.history! } as never) })).history)
-      .toEqual(f.readout.history)
-  } finally { readouts.clear(); await f.sqlConnection.close() }
-})
-
-it('keeps an uncaptured history until its release acknowledgment succeeds', async () => {
-  const f = await fixture()
-  try {
-    await f.observe()
-    const firstDigest = remoteWorkflowSourceDigest({ type: 'history', history: f.readout.history! } as never)
-    f.readout.history = { ...f.readout.history!, nextSequence: 1 }
-    f.state.failAck = true
-    await expect(f.observe()).rejects.toThrow('Acknowledgment lost')
-    f.state.failAck = false
-    await f.observe()
-    expect(f.request).toHaveBeenCalledWith(expect.objectContaining({ method: 'physical-ack',
-      sourceDigest: firstDigest }), expect.anything())
-  } finally { await f.sqlConnection.close() }
-})
-
-it.each(['aborted signal', 'replaced connection'] as const)(
-  'disposes of a superseded uncaptured history after its %s makes acknowledgment obsolete', async reason => {
-    const f = await fixture()
-    const original = new AbortController()
-    const active = new AbortController()
-    const capture = () => ({ ...f.lifetime, owner: f.owner, kind: 'live', observedAt: f.execution.createdAt,
-      source: { type: 'history', history: structuredClone(f.readout.history!) } } as WorkflowNativeCapture)
-    try {
-      await f.observe(original.signal)
-      const discarded = capture()
-      if (reason === 'aborted signal') original.abort(new Error('Observation canceled'))
-      else {
-        f.context.binding = { ...f.context.binding, connectionGeneration: f.context.binding.connectionGeneration + 1 }
-        f.currentBinding.mockReturnValue(f.context.binding)
-      }
-      f.request.mockClear()
-      f.readout.history = { ...f.source.history, nextSequence: 1 }
-      await expect(f.observe(active.signal)).resolves.toBeUndefined()
-      expect(() => f.composition.capture({ owner: f.owner } as WorkflowNativeCaptureInput, discarded))
-        .toThrowError(expect.objectContaining({ code: 'REMOTE_NATIVE_SOURCE_NOT_CAPTURED' }))
-      const supersededDigest = remoteWorkflowSourceDigest({ type: 'history', history: f.readout.history! } as never)
-      f.readout.history = { ...f.source.history, nextSequence: 2 }
-      await expect(f.observe(active.signal)).resolves.toBeUndefined()
-      const acknowledgments = f.request.mock.calls.map(([payload]) => RemoteExecutionRpcRequestSchema.parse(payload))
-        .filter(frame => frame.method === 'physical-ack')
-      expect(acknowledgments).toEqual([expect.objectContaining({ sourceDigest: supersededDigest })])
-      f.composition.capture({ owner: f.owner } as WorkflowNativeCaptureInput, capture())
-      expect(f.composition.getRemoteNativeOwners().map(owner => owner.execution.id)).toEqual([f.execution.id])
-    } finally { await f.sqlConnection.close() }
-  },
-)
 
 it.each([false, true])('releases real reviewer source maps only after closed lifetime ACKs (closed=%s)', async closed => {
   const f = await fixture()
