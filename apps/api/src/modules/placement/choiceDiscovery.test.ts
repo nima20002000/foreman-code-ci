@@ -99,6 +99,23 @@ it('discovers an authorized matching profile with the persisted root, source and
   expect(((await f.service.list(f.principal, f.input)).choices)[0]!.id).toBe(choices[0]!.id)
 })
 
+it.each(['main', 'device'] as const)('offers both identical qualified profiles on %s', async host => {
+  const f = fixture({ host })
+  const duplicate = { ...f.profile, instanceId: randomUUID() }
+  const writable = { ...f.profile, instanceId: randomUUID(),
+    configuration: { ...f.profile.configuration, sandbox: 'workspace-write' as const } }
+  f.profiles.mockResolvedValue([duplicate, writable, f.profile])
+
+  const result = await f.service.list(f.principal, f.input)
+
+  expect(result.pending).toBe(false)
+  expect(result.choices).toHaveLength(2)
+  expect(result.choices.map(choice => choice.placement.instanceId).sort())
+    .toEqual([f.profile.instanceId, duplicate.instanceId].sort())
+  expect(result.choices.every(choice => choice.availability === 'ready' && choice.reason === null)).toBe(true)
+  expect(new Set(result.choices.map(choice => choice.id)).size).toBe(2)
+})
+
 it.each([
   { driver: 'codex', host: 'main', availability: 'ready' },
   { driver: 'codex', host: 'device', availability: 'ready' },

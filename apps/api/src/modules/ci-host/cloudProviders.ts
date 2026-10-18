@@ -268,7 +268,10 @@ export class GitHubActionsProvider implements CloudProvider {
       let result: string | null = null
       const mirror = args[args.indexOf('-R') + 1]!
       if (args[0] === 'run' && args[1] === 'list') {
-        result = await this.rest.list(mirror, args[args.indexOf('--branch') + 1]!)
+        const limit = Number(args[args.indexOf('--limit') + 1])
+        const cliPage = limit > 200 ? (path: string, remaining: number) =>
+          executeCommand(this.ports, this.label, 'gh', ['api', path], remaining) : undefined
+        result = await this.rest.list(mirror, args[args.indexOf('--branch') + 1]!, limit, cliPage)
       } else if (args[0] === 'run' && args[1] === 'view') {
         result = args.includes('--log') ? await this.rest.log(mirror, args[2]!) : await this.rest.view(mirror, args[2]!)
       }
@@ -294,17 +297,18 @@ export class GitHubActionsProvider implements CloudProvider {
     return null
   }
 
-  private async matches(run: CloudRun) {
+  private async matches(run: CloudRun, options: { requireComplete?: boolean } = {}) {
     const branch = run.dispatch?.input?.workflowRef ?? run.dispatch?.input?.branch ?? 'main'
+    const limit = options.requireComplete ? 1000 : 200
     const listed = JSON.parse(await this.gh(['run', 'list', '-R', run.mirror, '--workflow', WORKFLOW, '--branch', branch,
-      '--event', 'workflow_dispatch', '--limit', '200', '--json', 'databaseId,displayTitle,status,headSha'], 15_000)) as
+      '--event', 'workflow_dispatch', '--limit', String(limit), '--json', 'databaseId,displayTitle,status,headSha'], 15_000)) as
       { databaseId: number; displayTitle: string; status?: string; headSha: string }[]
     return listed.filter(value => value.displayTitle === `ci ${run.runId}`)
       .sort((left, right) => left.databaseId - right.databaseId)
   }
 
   async discover(run: CloudRun) {
-    return (await this.matches(run)).map(match => String(match.databaseId))
+    return (await this.matches(run, { requireComplete: true })).map(match => String(match.databaseId))
   }
 
   async find(run: CloudRun) {

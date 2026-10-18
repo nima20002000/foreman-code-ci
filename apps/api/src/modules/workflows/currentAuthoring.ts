@@ -6,6 +6,7 @@ import { reconcileAgentProfilePlacements } from './agentProfilePlacements.js'
 import { requireCurrentWorkflowAccess } from './currentWorkflowPolicy.js'
 import { createHash, randomUUID } from 'node:crypto'
 import type pg from 'pg'
+import type { z } from 'zod'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import {
   workflowSaveIssues, CURRENT_WORKFLOW_CAPABILITIES, DEFAULT_AGENT_ACTIVE_TIMEOUT_MS,
@@ -40,6 +41,21 @@ import {
 
 type Source = 'http' | 'mcp'
 
+function parseAuthoringInput<T>(schema: z.ZodType<T>, raw: unknown): T {
+  const parsed = schema.safeParse(raw)
+  if (parsed.success) return parsed.data
+  const graphInvalid = parsed.error.issues.some((issue) => issue.path[0] === 'graph')
+  const issues = workflowSaveIssues(parsed.error.issues.map((issue) => ({
+    ...issue, path: issue.path[0] === 'graph' ? issue.path.slice(1) : issue.path,
+  })))
+  throw new DomainError(
+    graphInvalid ? 'GRAPH_INVALID' : 'INVALID_REQUEST',
+    graphInvalid ? 'Fix the workflow settings below.' : 'The request does not match the workflow contract.',
+    graphInvalid ? 409 : 400,
+    { issues },
+  )
+}
+
 function manualPositionsForSave(graph: WorkflowDefinitionV3, previous: WorkflowDefinitionV3, source?: Source) {
   if (source !== 'mcp') return graph
   const previousNodes = new Map(previous.nodes.map((node) => [node.id, node]))
@@ -65,8 +81,10 @@ function completeSaveInput(
     createdAt: createdAt ?? metadata.createdAt,
     updatedAt: updatedAt ?? metadata.updatedAt,
   }
-  return CurrentWorkflowSaveInputSchema.parse({ ...request, graph: {
+  const approval = graph.approval ?? metadata.approval
+  return parseAuthoringInput(CurrentWorkflowSaveInputSchema, { ...request, graph: {
     ...graph,
+    ...(approval === undefined ? {} : { approval }),
     ...(stamps.version === undefined ? {} : { version: stamps.version }),
     ...(stamps.createdAt === undefined ? {} : { createdAt: stamps.createdAt }),
     ...(stamps.updatedAt === undefined ? {} : { updatedAt: stamps.updatedAt }),
@@ -106,8 +124,9 @@ export class CurrentWorkflowAuthoring {
     this.editIntents = createCurrentEditIntentService(pool, commands, {
       validate: async (client, principal, input, options) => {
         authorize(principal, input, true)
-        const prepared = await this.prepare(client, principal, input, false, options?.intentId)
-        return { version: prepared.version, presentationOnly: prepared.presentationOnly }
+        const prepared = await this.prepare(client, principal, input, false, options?.intentId, options?.source)
+        return { version: prepared.version, presentationOnly: prepared.presentationOnly,
+          graph: prepared.graph ?? input.graph }
       },
       publish: (principal, source, input, intentId) => this.write(principal, source, input, intentId),
       assertStopReady: () => {
@@ -123,10 +142,10 @@ export class CurrentWorkflowAuthoring {
     return this.runtime?.availability() ?? { runtimeAdmission: false, stopAvailable: false }
   }
   readEdits(principal: ManagementPrincipal, raw: unknown) {
-    return this.editIntents.read(principal, CurrentEditReadInputSchema.parse(raw))
+    return this.editIntents.read(principal, parseAuthoringInput(CurrentEditReadInputSchema, raw))
   }
   mutateEdits(principal: ManagementPrincipal, source: Source, raw: unknown) {
-    const input = CurrentEditMutationInputSchema.parse(raw)
+    const input = parseAuthoringInput(CurrentEditMutationInputSchema, raw)
     switch (input.action) {
       case 'stage_edits': return this.editIntents.stage(principal, source, input)
       case 'discard_edits': return this.editIntents.discard(principal, source, input)
@@ -150,7 +169,7 @@ export class CurrentWorkflowAuthoring {
     }
   }
   async read(principal: ManagementPrincipal, raw: unknown) {
-    const input = CurrentWorkflowReadInputSchema.parse(raw)
+    const input = parseAuthoringInput(CurrentWorkflowReadInputSchema, raw)
     requireAuthorization(principal, 'workflows:read', input)
     requireAuthorization(principal, 'graph:read', input)
     return withTransaction(this.pool, async (client) => {
@@ -167,7 +186,7 @@ export class CurrentWorkflowAuthoring {
     })
   }
   async validate(principal: ManagementPrincipal, raw: unknown) {
-    const input = CurrentWorkflowValidateInputSchema.parse(raw)
+    const input = parseAuthoringInput(CurrentWorkflowValidateInputSchema, raw)
     authorize(principal, input, false)
     return withTransaction(this.pool, async (client) => {
       const live = await readLiveManagementPrincipal(client, principal.id)
@@ -184,10 +203,12 @@ export class CurrentWorkflowAuthoring {
   }
   private async write(principal: ManagementPrincipal, source: Source, raw: unknown, intentId?: string) {
     // Preserve optional-repeat omission in the exact HTTP/MCP command hash.
-    let input: CurrentEditSaveInput = intentId ? CurrentEditSaveInputSchema.parse(raw) : CurrentWorkflowSaveInputSchema.parse(raw)
+    let input: CurrentEditSaveInput = intentId
+      ? parseAuthoringInput(CurrentEditSaveInputSchema, raw)
+      : parseAuthoringInput(CurrentWorkflowSaveInputSchema, raw)
     const request = input
     const needsMetadata = !intentId && (input.graph.version === undefined
-      || input.graph.createdAt === undefined || input.graph.updatedAt === undefined)
+      || input.graph.createdAt === undefined || input.graph.updatedAt === undefined || input.graph.approval === undefined)
     authorize(principal, input, true)
     return this.commands.execute({ principal, source, operation: 'workflow.save.v3', commandId: input.commandId,
       targetKey: `workflow:${input.workflowId}:definition`, payload: request,
@@ -224,8 +245,13 @@ export class CurrentWorkflowAuthoring {
           }
           const { version, configurations } = await versionAt(client, input, saved.currentVersionId)
           // Replays use saved configurations even when the Agent has since changed.
-          const publishedInput = witness && !sameWorkflowValue(witness.input, input)
+          let publishedInput = witness && !sameWorkflowValue(witness.input, input)
             ? { ...input, graph: reconcileAgentProfilePlacements(input.graph, configurations) } : input
+          // Existing witnesses can record profile reconciliation without manual position flags.
+          if (witness && !sameWorkflowValue(witness.input, publishedInput)) {
+            publishedInput = { ...publishedInput,
+              graph: manualPositionsForSave(publishedInput.graph, version.definition, source) }
+          }
           if (!sameWorkflowValue(version, saved.version) || !sameWorkflowValue(version.agentConfigurationVersionIds, input.resultantAgentConfigurationVersionIds ?? input.expectedAgentConfigurationVersionIds)) {
             return fail('WORKFLOW_RECEIPT_CONFLICT', 'The receipt differs from its exact immutable version/configuration pins.')
           }
@@ -254,7 +280,7 @@ export class CurrentWorkflowAuthoring {
   }
 
   async saveInitial(client: pg.PoolClient, principal: ManagementPrincipal, source: Source, raw: unknown) {
-    const input = CurrentWorkflowSaveInputSchema.parse(raw)
+    const input = parseAuthoringInput(CurrentWorkflowSaveInputSchema, raw)
     authorize(principal, input, true)
     const value = await this.publish(client, principal, source, input, input)
     // The publication guard requires its save receipt and audit in this transaction.
@@ -271,7 +297,8 @@ export class CurrentWorkflowAuthoring {
   private async publish(client: pg.PoolClient, principal: ManagementPrincipal, source: Source,
     input: CurrentEditSaveInput, request: CurrentEditSaveInput, intentId?: string) {
     if (intentId) await this.editIntents.publication(client, principal, intentId, input)
-    const prepared = await this.prepare(client, principal, input, true, intentId, source)
+    // Staged graphs already have the normalization recorded by their command hash.
+    const prepared = await this.prepare(client, principal, input, true, intentId, intentId ? undefined : source)
     const agents = prepared.staged ? await persistCurrentStagedAgents(client, input.workspaceId, prepared.staged.prepared) : undefined
     let revision: number
     if (prepared.presentationOnly) {
@@ -370,7 +397,9 @@ export class CurrentWorkflowAuthoring {
       return readImmutableAgentConfiguration(config, { workspaceId: input.workspaceId, agentId: config.agent_id, id })
     })
     configurations.push(...(staged?.prepared.map((item) => item.configuration) ?? []))
-    const graph = reconcileAgentProfilePlacements(input.graph, configurations)
+    // Publication and the immutable version must use the same manual placement flags and inherited approval.
+    const graph = manualPositionsForSave(reconcileAgentProfilePlacements({ ...input.graph,
+      approval: input.graph.approval ?? current.approval }, configurations), current, source)
     await validateWorkflowWorktrees({ sql: client, principal, definition: graph, previous: current,
       configurations, services: this.options.worktrees })
     const number = Number((await client.query<{ next: string }>('select coalesce(max(version),0)+1 as next from workflow_versions where workflow_id=$1',
@@ -383,7 +412,6 @@ export class CurrentWorkflowAuthoring {
       agentConfigurationVersionIds: configurationPins, contentHash: `sha256:${'0'.repeat(64)}`, createdAt: now })
     if (!parsedVersion.success) throw new DomainError('GRAPH_INVALID', 'Fix the workflow settings below.', 409, { issues: workflowSaveIssues(parsedVersion.error.issues) })
     const version = parsedVersion.data
-    version.definition = manualPositionsForSave(version.definition, current, source)
     const executable = ExecutableWorkflowV3Schema.safeParse({ version, configurations })
     if (!executable.success) throw new DomainError('GRAPH_INVALID', 'Fix the workflow settings below.', 409, { issues: workflowSaveIssues(executable.error.issues) })
     for (const node of version.definition.nodes) {
