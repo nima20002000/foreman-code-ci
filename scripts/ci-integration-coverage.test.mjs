@@ -48,6 +48,11 @@ test('unrecorded changed sources use static reachability alongside coverage matc
   assert.match(select([added], { sources: graph }).reason, /static/i)
 })
 
+test('tests that execute child processes retain static reachability', () => {
+  assert.deepEqual(select([source], { coverageMap: { ...coverageMap, staticTests: [second] } }).files,
+    [first, second])
+})
+
 test('missing, malformed and incomplete maps retain static selection with a reason', () => {
   for (const map of [undefined, {}, { ...coverageMap, coverage: { [first]: [source] } },
     { ...coverageMap, coverage: { [first]: ['/private/source.ts'], [second]: [other] } }]) {
@@ -129,4 +134,12 @@ test('cheap V8 collection records executed repository files with portable paths'
   assert.equal(loaded.value(), 42)
   const files = await stop(f.root, new Set(['executed.mjs']))
   assert.deepEqual(files, ['executed.mjs'])
+})
+
+test('V8 collection identifies child process work that needs static selection', async () => {
+  const { startFileCoverage } = await import('./integration-coverage.mjs')
+  const stop = await startFileCoverage()
+  execFileSync(process.execPath, ['-e', 'process.exit(0)'])
+  await stop(process.cwd(), new Set())
+  assert.equal(stop.requiresStatic, true)
 })
