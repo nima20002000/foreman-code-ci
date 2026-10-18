@@ -1,5 +1,9 @@
 import { expect, it } from 'vitest'
-import { DEFAULT_AGENT_DEFAULTS, withAdvancedDefaults } from '../src/index.js'
+import { DEFAULT_AGENT_DEFAULTS, DEFAULT_WORKFLOW_APPROVAL_HANDLER, withAdvancedDefaults } from '../src/index.js'
+
+it('defaults workflow approval handling to native without a reviewing orchestrator', () => {
+  expect(DEFAULT_WORKFLOW_APPROVAL_HANDLER).toBe('native')
+})
 
 it('defaults workflow Agents to never approval while preserving read-only sandboxing', () => {
   for (const role of ['coder', 'orchestrator'] as const) {

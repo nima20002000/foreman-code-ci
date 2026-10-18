@@ -13,10 +13,13 @@ export function logOperatorToolFailure(name: string, error: unknown): void {
   if (error instanceof DomainError) return
   const diagnostic = error as { code?: unknown; stack?: unknown } | null
   const code = diagnostic?.code
+  const databaseException = error instanceof Error && code === 'PGC02'
+    && /^CURRENT_[A-Z_]{1,56}$/.test(error.message) ? error.message : undefined
   componentLogger('engine').error({
     tool: name,
     errorType: error instanceof Error ? error.constructor.name : typeof error,
     ...(typeof code === 'string' && /^[A-Z0-9_]{1,64}$/.test(code) ? { errorCode: code } : {}),
+    ...(databaseException ? { databaseException } : {}),
     ...(typeof diagnostic?.stack === 'string'
       ? { stackFrames: diagnostic.stack.split('\n').filter(line => /^\s+at\s/.test(line)).slice(0, 8) } : {}),
   }, 'Operator tool failed')
