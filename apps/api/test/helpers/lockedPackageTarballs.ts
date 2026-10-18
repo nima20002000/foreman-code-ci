@@ -27,9 +27,7 @@ async function packInstalledPackage(source: string, archive: string, patch: stri
       // Deployment applies workspace patches, so the registry must serve the unpatched package.
       await execute('git', ['apply', '--reverse', patch], { cwd: packageDirectory })
     }
-    // Hardlinked installs share inodes between identical files; pnpm extracts tar hardlink entries as empty files.
-    await execute('tar', ['-cf', archive, '-I', 'gzip -1', '--hard-dereference', '--sort=name', '--mtime=@0',
-      '--owner=0', '--group=0',
+    await execute('tar', ['-cf', archive, '-I', 'gzip -1', '--sort=name', '--mtime=@0', '--owner=0', '--group=0',
       '--numeric-owner', '--exclude=node_modules', '-C', dirname(packageDirectory), basename(packageDirectory)])
     return `sha512-${createHash('sha512').update(await readFile(archive)).digest('base64')}`
   } finally {

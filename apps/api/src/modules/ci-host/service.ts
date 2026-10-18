@@ -1,7 +1,7 @@
 import { RetryBackoff } from '../../infrastructure/retryBackoff.js'
 import { isDeepStrictEqual } from 'node:util'
 import { randomUUID } from 'node:crypto'
-import { inTransaction, withTransaction, type SqlQuery } from '../../infrastructure/transaction.js'
+import { inTransaction, type SqlQuery } from '../../infrastructure/transaction.js'
 import type pg from 'pg'
 import { canonicalJson } from '@foreman-code/contracts/canonical-json'
 import { waitForCiDispatch, withCiDatabasePriority, withoutCiDatabaseDeadline,
@@ -586,15 +586,17 @@ export class HostCiService {
   }
 
   /** Folds a finished run's measured file durations into the repository's history: an exponential moving
-   * average per file, so one slow run moves the expectation only halfway. */
-  private async learnDurations(repository: string, durations: CiDurations, sql: SqlQuery) {
+   * average per file, so one slow run moves the expectation only halfway. Files not measured for 30 days are dropped. */
+  private async learnDurations(repository: string, durations: CiDurations) {
     const files = Object.keys(durations)
     if (!files.length) return
-    await sql.query(`insert into ci_file_durations(repository,file,duration_ms)
+    await this.pool.query(`insert into ci_file_durations(repository,file,duration_ms)
       select $1,file,greatest(1,round(ms))::integer from unnest($2::text[],$3::double precision[]) as measured(file,ms)
       on conflict (repository,file) do update set
         duration_ms=greatest(1,round((ci_file_durations.duration_ms+excluded.duration_ms)/2.0))::integer,
         samples=ci_file_durations.samples+1, updated_at=now()`, [repository, files, files.map(file => durations[file])])
+    await this.pool.query(`delete from ci_file_durations where repository=$1 and updated_at < now() - interval '30 days'`,
+      [repository])
   }
 
   private async read(id: string, workspaceId: string, sql: SqlQuery = this.pool): Promise<CiRunRecord> {
@@ -1168,6 +1170,15 @@ export class HostCiService {
     if (!['queued', 'starting', 'running'].includes(run.state)) {
       collected.run = { ...collected.run, state: run.state, exitCode: run.exitCode, finishedAt: run.finishedAt }
     }
+    if (terminal && collected.durations && collected.run.collection !== 'pending') {
+      try {
+        await this.learnDurations(run.repository, collected.durations)
+      } catch (error) {
+        collected.run = { ...collected.run, collection: 'pending' }
+        observationError ??= error
+        log.warn({ err: error, runId: run.id }, 'CI durations remain pending')
+      }
+    }
     if (terminal && collected.run.collection === 'complete') {
       try {
         await recordCiResultCache(this.pool, run, collected.run.state)
@@ -1180,28 +1191,7 @@ export class HostCiService {
     if (terminal && collected.run.collection === 'pending') {
       observationError ??= new DomainError('CI_COLLECTION_PENDING', 'CI test reports are not available yet.', 503)
     }
-    const settlement = { logTail, observation: observationError ? undefined : observation }
-    const collecting = ['queued', 'starting', 'running'].includes(run.state) || run.collection === 'pending'
-    const durations = terminal && collecting && collected.run.collection !== 'pending' ? collected.durations : undefined
-    if (durations && Object.keys(durations).length) {
-      // A finished run's durations count once: only the observation whose write ends its collection folds them
-      // in, atomically with that write. A concurrent or stale observation of the same run loses the write and adds
-      // no second sample; a failed fold leaves the collection pending for the next observation.
-      const learned = await withTransaction(this.pool, async client => {
-        const settled = await this.settle(run, computer, collected.run, { ...settlement, client })
-        if (settled) {
-          await this.learnDurations(run.repository, durations, client)
-        }
-        return settled
-      })
-      if (learned) {
-        // Release the upsert's row locks before pruning can wait on another collection's expired rows.
-        await this.pool.query(`delete from ci_file_durations
-          where repository=$1 and updated_at < now() - interval '30 days'`, [run.repository])
-      }
-    } else {
-      await this.settle(run, computer, collected.run, settlement)
-    }
+    await this.settle(run, computer, collected.run, { logTail, observation: observationError ? undefined : observation })
     if (observationError) throw observationError
   }
 
