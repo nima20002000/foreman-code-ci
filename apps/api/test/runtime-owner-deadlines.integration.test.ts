@@ -25,7 +25,7 @@ async function stalledReplies(afterReady: number) {
       return result
     })
   }) as typeof pg.Client.prototype.query)
-  return { url: process.env.TEST_DATABASE_URL!, async close() {
+  return { url: process.env.TEST_DATABASE_URL!, get stalledReplyCount() { return Math.max(0, replies - afterReady + 1) }, async close() {
     spy.mockRestore()
     release.resolve()
   } }
@@ -54,7 +54,9 @@ describe.skipIf(!postgresEnabled)('runtime owner with PostgreSQL reply loss', ()
     try {
       await owner.acquire()
       reading = owner.readRuntimeEpoch().then(value => ({ value }), error => ({ error }))
-      await new Promise(resolve => setTimeout(resolve, 5_200))
+      await readUntil(async () => ({ active: owner.active, replies: proxy.stalledReplyCount }),
+        result => !result.active || result.replies >= 2,
+        { timeoutMs: 7_000, description: 'epoch read retry or ownership loss' })
       expect(owner.active).toBe(true)
       expect(lost).not.toHaveBeenCalled()
       await expect(successor.acquire()).rejects.toMatchObject({ code: 'OPERATOR_API_ALREADY_OWNED' })
