@@ -23,8 +23,8 @@ import { agent3Database } from './helpers/wave25Agent3.js'
 it('honors persisted MCP build participation and priority while retaining assigned run control', async () => {
   const db = await agent3Database()
   const clients: Client[] = []
-  const preferredStatusRequested = deferred()
-  const preferredStatusReleased = deferred()
+  let preferredStatusRequested = deferred()
+  let preferredStatusReleased = deferred()
   let app: ReturnType<typeof buildApp> | undefined
   let ci: HostCiService | undefined
   try {
@@ -264,6 +264,9 @@ it('honors persisted MCP build participation and priority while retaining assign
     expect((await list()).computers).toEqual([])
     expect((await get(third.ticketId)).run.state).toBe('running')
     await cancel(third.ticketId)
+    await ci.drain()
+    preferredStatusRequested = deferred()
+    preferredStatusReleased = deferred()
     await save(main, false, 100)
     await save(devices[0]!.target, true, 20)
     await save(devices[1]!.target, true, 90, 50)
@@ -279,11 +282,22 @@ it('honors persisted MCP build participation and priority while retaining assign
       await db.pool.query(`insert into ci_runs(id,workspace_id,group_id,state,record)
         values($1,$2,$3,'passed',$4::jsonb)`, [history.id, workspaceId, history.groupId, JSON.stringify(history)])
     }
+    const partitionReadiness = list()
+    await preferredStatusRequested.promise
     const partitioned = CiRunOutputSchema.parse(await call(writer, 'ci_run', {
       workspaceId, suite: 'integration', commandId: randomUUID(), partitions: 2,
     }))
     expect(partitioned.partitions).toHaveLength(2)
-    for (const ticket of partitioned.partitions!) await getRunning(ticket.ticketId)
+    for (const ticket of partitioned.partitions!) {
+      await getRunning(ticket.ticketId)
+      preferredStatusReleased.resolve()
+    }
+    expect((await partitionReadiness).computers).toMatchObject([
+      { hostRef: devices[1]!.target.hostRef, ready: true, reasons: [], priority: 90, buildAllowancePercent: 50,
+        slotsUsed: 0, slotsTotal: 1 },
+      { hostRef: devices[0]!.target.hostRef, ready: true, reasons: [], priority: 20, buildAllowancePercent: 100,
+        slotsUsed: 0, slotsTotal: 1 },
+    ])
     const partitionRead = await get(partitioned.ticketId)
     const higher = partitionRead.partitions!.find(run => run.partition?.index === 0)!
     const lower = partitionRead.partitions!.find(run => run.partition?.index === 1)!
