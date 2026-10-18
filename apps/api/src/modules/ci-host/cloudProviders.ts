@@ -294,17 +294,21 @@ export class GitHubActionsProvider implements CloudProvider {
     return null
   }
 
-  private async matches(run: CloudRun) {
+  private async matches(run: CloudRun, options: { requireComplete?: boolean } = {}) {
     const branch = run.dispatch?.input?.workflowRef ?? run.dispatch?.input?.branch ?? 'main'
     const listed = JSON.parse(await this.gh(['run', 'list', '-R', run.mirror, '--workflow', WORKFLOW, '--branch', branch,
       '--event', 'workflow_dispatch', '--limit', '200', '--json', 'databaseId,displayTitle,status,headSha'], 15_000)) as
       { databaseId: number; displayTitle: string; status?: string; headSha: string }[]
+    if (options.requireComplete && listed.length >= 200) {
+      throw new DomainError('CI_CLOUD_DISCOVERY_INCOMPLETE',
+        'GitHub Actions discovery reached its listing limit; ownership retained.', 503)
+    }
     return listed.filter(value => value.displayTitle === `ci ${run.runId}`)
       .sort((left, right) => left.databaseId - right.databaseId)
   }
 
   async discover(run: CloudRun) {
-    return (await this.matches(run)).map(match => String(match.databaseId))
+    return (await this.matches(run, { requireComplete: true })).map(match => String(match.databaseId))
   }
 
   async find(run: CloudRun) {
