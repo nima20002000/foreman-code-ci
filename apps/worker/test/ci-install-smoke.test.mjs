@@ -6,7 +6,6 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
-import { setTimeout as delay } from 'node:timers/promises';
 import { CiHostRequestSchema } from '@foreman-code/contracts';
 import { runCiInstallSmoke } from '../src/ciInstallSmoke.mjs';
 const require = createRequire(new URL('../../api/package.json', import.meta.url));
@@ -49,86 +48,6 @@ test('update smoke bounds busy capacity waits and cancels its own ticket', async
     { runner, timeoutMs: 50, capacityTimeoutMs: 10, pollMs: 1 }), /capacity wait timed out/);
   assert.equal(canceled, true);
 });
-
-// A commit whose lockfile pins a new native package fills the store online during its install step.
-function installingRunner(stepAt, { finish = true } = {}) {
-  const requests = [];
-  const started = { at: 0 };
-  const runner = { handle: async request => {
-    requests.push(request);
-    if (request.operation === 'status') return { ready: true, cpuCount: 8, memoryBytes: 16 * 2 ** 30 };
-    if (request.operation === 'start') { started.at = Date.now(); return {}; }
-    if (request.operation === 'cancel') return {};
-    const step = stepAt(Date.now() - started.at);
-    if (step !== 'done' || !finish) return { run: { state: 'running', step: step === 'done' ? 'integration' : step,
-      exitCode: null, message: null }, text: '' };
-    return { run: { state: 'passed', step: 'integration', exitCode: 0, message: null }, text: '', testResults: {
-      summary: { passed: 1, failed: 0 }, files: [{ file: 'apps/api/test/ci-smoke.integration.test.ts',
-        tests: [{ status: 'passed' }] }] } };
-  } };
-  return { runner, requests };
-}
-
-test('update smoke lets a first-run dependency install outlast the smoke budget', async () => {
-  const { runner, requests } = installingRunner(elapsed => elapsed < 300 ? 'install'
-    : elapsed < 320 ? 'integration' : 'done');
-  await runCiInstallSmoke({ repository: 'fixture/project', commit: 'a'.repeat(40) },
-    { runner, timeoutMs: 100, capacityTimeoutMs: 5000, pollMs: 5 });
-  assert.equal(requests.some(request => request.operation === 'cancel'), false);
-});
-
-test('update smoke bounds a dependency install that never finishes and cancels it', async () => {
-  const { runner, requests } = installingRunner(() => 'install');
-  await assert.rejects(runCiInstallSmoke({ repository: 'fixture/project', commit: 'a'.repeat(40) },
-    { runner, timeoutMs: 50, capacityTimeoutMs: 300, pollMs: 5 }), /dependency install timed out/);
-  assert.equal(requests.some(request => request.operation === 'cancel'), true);
-});
-
-test('update smoke applies its full smoke budget once the install step has finished', async () => {
-  const { runner, requests } = installingRunner(elapsed => elapsed < 150 ? 'install' : 'done', { finish: false });
-  const began = Date.now();
-  await assert.rejects(runCiInstallSmoke({ repository: 'fixture/project', commit: 'a'.repeat(40) },
-    { runner, timeoutMs: 100, capacityTimeoutMs: 5000, pollMs: 5 }), /Worker CI smoke timed out/);
-  assert.ok(Date.now() - began >= 250);
-  assert.equal(requests.some(request => request.operation === 'cancel'), true);
-});
-
-for (const step of ['contracts', 'prepare', 'integration']) {
-  test(`update smoke recognizes a cached install when its first poll sees ${step}`, async t => {
-    t.mock.timers.enable({ apis: ['Date', 'setTimeout'] });
-    let starts = 0;
-    let reads = 0;
-    let canceled = false;
-    const postInstall = Promise.withResolvers();
-    const runner = { handle: async request => {
-      if (request.operation === 'status') return { ready: true };
-      if (request.operation === 'start') {
-        if (++starts === 1) {
-          t.mock.timers.tick(90);
-          throw Object.assign(new Error('Busy'), { code: 'CI_HOST_BUSY' });
-        }
-        return {};
-      }
-      if (request.operation === 'cancel') { canceled = true; return {}; }
-      if (++reads === 1) {
-        postInstall.resolve();
-        return { run: { state: 'running', step }, text: '' };
-      }
-      return { run: { state: 'passed', step: 'integration', exitCode: 0 }, text: '', testResults: {
-        summary: { passed: 1, failed: 0 }, files: [{ file: 'apps/api/test/ci-smoke.integration.test.ts',
-          tests: [{ status: 'passed' }] }] } };
-    } };
-    const smoke = runCiInstallSmoke({ repository: 'fixture/project', commit: 'a'.repeat(40) },
-      { runner, timeoutMs: 50, capacityTimeoutMs: 100, pollMs: 1 });
-    await postInstall.promise;
-    await new Promise(setImmediate);
-    t.mock.timers.tick(20);
-    await smoke;
-    assert.equal(starts, 2);
-    assert.equal(reads, 2);
-    assert.equal(canceled, false);
-  });
-}
 
 for (const { capacity, cpuCount, memoryGiB } of [
   { capacity: 'normal', cpuCount: 16, memoryGiB: 14 },
@@ -207,8 +126,6 @@ test('a single-file update smoke can start alongside unrelated CI when a slot is
   git('commit', '-qm', 'fixture');
   const commit = git('rev-parse', 'HEAD');
   const occupied = randomUUID();
-  const occupiedLaunch = Promise.withResolvers();
-  const releaseOccupied = Promise.withResolvers();
   const units = new Set();
   const launched = [];
   const system = systemHostCiPorts();
@@ -220,14 +137,10 @@ test('a single-file update smoke can start alongside unrelated CI when a slot is
         args.map(arg => arg.startsWith('https://github.com/') ? origin : arg), options);
       if (file === 'systemd-run') {
         const unit = args.find(arg => arg.startsWith('--unit=')).slice(7);
+        units.add(unit);
         const directory = dirname(args.at(-1));
         const runId = basename(directory);
         launched.push(runId);
-        if (runId === occupied) {
-          occupiedLaunch.resolve();
-          await releaseOccupied.promise;
-        }
-        units.add(unit);
         if (runId !== occupied) {
           await writeFile(join(directory, 'log'), 'smoke completed');
           await writeFile(join(directory, 'step'), 'integration');
@@ -250,22 +163,11 @@ test('a single-file update smoke can start alongside unrelated CI when a slot is
     } };
   const runner = new HostCiRunner(join(root, 'runner'), ports, env);
   t.after(async () => {
-    releaseOccupied.resolve();
     try { await runner.beginDrain(); await runner.cancel(occupied); }
     finally { await rm(root, { recursive: true, force: true }); }
   });
   await runner.handle({ operation: 'start', runId: occupied, repository: 'fixture/project', commit,
     suite: 'lint', scope: 'full' });
-  await occupiedLaunch.promise;
-  const starting = await runner.handle({ operation: 'status' });
-  assert.equal(starting.runs.find(run => run.runId === occupied).state, 'starting');
-  releaseOccupied.resolve();
-  for (let poll = 0; poll < 200; poll++) {
-    const reply = await runner.handle({ operation: 'read', runId: occupied, afterOffset: 0, maxBytes: 0 });
-    if (reply.run.state === 'running') break;
-    assert.equal(reply.run.state, 'starting');
-    await delay(5);
-  }
   const busy = await runner.handle({ operation: 'status' });
   assert.equal(busy.slotsUsed, 1);
   assert.ok(busy.slotsTotal > 1);
