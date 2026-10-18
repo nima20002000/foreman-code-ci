@@ -131,7 +131,8 @@ export async function closeCompletedWorkflowSources(
       unseen.delete(row.materialization_id)
       const retry = retries.get(row.materialization_id)
       if (retry && retry.nextAttemptAt > Date.now()) continue
-      if (!row.run_terminal && row.already_closed && row.worktree_cleanup?.state === 'retained'
+      const firstTerminalCleanup = row.run_terminal && row.worktree_cleanup?.removalAttempted !== true
+      if (!firstTerminalCleanup && row.already_closed && row.worktree_cleanup?.state === 'retained'
         && Date.parse(row.worktree_cleanup.nextAttemptAt ?? '') > Date.now()) continue
       try {
         // A successful result can be published before its native closure commits.

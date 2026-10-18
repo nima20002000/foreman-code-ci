@@ -108,6 +108,8 @@ export const SourceReservationReclamationAuthorityResponseSchema = z.object({ ve
   operation: z.literal('sources.reclamation-authorize'), grant: SourceReservationReclamationSchema }).strict()
 export const RetainedSourceFootprintSchema = z.object({
   worktree: z.object({ state: z.enum(['removed', 'retained']), message: z.string().optional(),
+    /** Distinguishes cleanup that retained files from retention for an active Run. */
+    removalAttempted: z.literal(true).optional(),
     nextAttemptAt: z.string().datetime().optional() }).strict().optional(),
   retainedBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   sharedTree: z.object({

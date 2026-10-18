@@ -688,7 +688,9 @@ export class PostgresSourceService implements SourceAdmissionPort {
           left join harness_executions e on e.id=m.execution_id left join runs r on r.id=e.run_id
           where m.materialization_id=$1`,
         [record.receipt.materializationId])).rows[0]
-      if (previous?.state === 'closed' && previous.run_terminal !== true && isDeepStrictEqual(previous.record, record)
+      const firstTerminalCleanup = previous?.run_terminal === true
+        && previous.worktree_cleanup?.removalAttempted !== true
+      if (previous?.state === 'closed' && !firstTerminalCleanup && isDeepStrictEqual(previous.record, record)
         && previous.worktree_cleanup?.state === 'retained'
         && Date.parse(previous.worktree_cleanup.nextAttemptAt ?? '') > Date.now()) return
     }

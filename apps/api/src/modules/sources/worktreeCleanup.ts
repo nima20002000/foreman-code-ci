@@ -60,7 +60,9 @@ export async function closeSourceWorktree(receipt: MaterializationReceipt,
     throw new DomainError('RUN_WORKTREE_UNAVAILABLE', 'Worktree cleanup is incomplete.', 409)
   }
   if (result.state === 'removed' && !await removeEmptyWorktreeAllocation(receipt)) {
-    return { state: 'retained' as const, message: 'Files remain alongside this worktree.' }
+    return { state: 'retained' as const, removalAttempted: true as const,
+      message: 'Files remain alongside this worktree.' }
   }
-  return { state: result.state, ...(result.message ? { message: result.message } : {}) }
+  return { state: result.state, ...(result.state === 'retained' ? { removalAttempted: true as const } : {}),
+    ...(result.message ? { message: result.message } : {}) }
 }
