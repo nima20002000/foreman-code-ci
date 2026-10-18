@@ -56,6 +56,9 @@ it.each([
     await mkdir(base, { recursive: true })
     const root = await mkdtemp(join(base, 'warm-install-'))
     try {
+      await mkdir(join(root, 'scripts'))
+      await symlink(fileURLToPath(new URL('../../../../../scripts/ci-package-paths.mjs', import.meta.url)),
+        join(root, 'scripts/ci-package-paths.mjs'))
       const bin = join(root, 'bin')
       await mkdir(bin)
       const calls = join(root, 'calls')

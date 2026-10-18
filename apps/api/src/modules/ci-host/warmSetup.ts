@@ -139,8 +139,10 @@ export async function pnpmInstall(source: string, cache: string, messageFile: st
     'flock -u "$cache_lock"',
     'exec {cache_lock}>&-',
     '}',
-    `mkdir -p ${shellQuote(join(source, '.logs'))} || finish $?`,
-    `printf '%s\\n' ${shellQuote(JSON.stringify({ storeDir: join(cache, 'pnpm-store'),
-      cacheDir: join(cache, 'pnpm-metadata') }))} > ${shellQuote(join(source, '.logs/ci-package-paths.json'))} || finish $?`,
+    ...(existsSync(join(source, 'scripts/ci-package-paths.mjs')) ? [
+      `mkdir -p ${shellQuote(join(source, '.logs'))} || finish $?`,
+      `printf '%s\\n' ${shellQuote(JSON.stringify({ storeDir: join(cache, 'pnpm-store'),
+        cacheDir: join(cache, 'pnpm-metadata') }))} > ${shellQuote(join(source, '.logs/ci-package-paths.json'))} || finish $?`,
+    ] : []),
   ]
 }
