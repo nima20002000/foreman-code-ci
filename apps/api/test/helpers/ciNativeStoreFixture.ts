@@ -26,13 +26,38 @@ const triples: Record<string, string> = {
 type Entry = 'packages' | 'warm setup'
 type InstalledState = 'ready' | 'launcher'
 
+async function resolveProvisionedPnpm(environment: NodeJS.ProcessEnv) {
+  const workspace = JSON.parse(
+    await readFile(new URL('../../../../package.json', import.meta.url), 'utf8'),
+  ) as { packageManager: string }
+  const pinned = /^pnpm@(\d+\.\d+\.\d+)(?:\+.*)?$/.exec(workspace.packageManager)?.[1]
+  if (!pinned) throw new Error('The CI fixture requires an exact pnpm packageManager pin.')
+  const cacheHome = environment.COREPACK_HOME ?? join(
+    environment.XDG_CACHE_HOME ?? environment.LOCALAPPDATA
+      ?? join(homedir(), process.platform === 'win32' ? 'AppData/Local' : '.cache'), 'node', 'corepack')
+  // CI uses Corepack versions with both the versioned and unversioned provisioned-cache layouts.
+  for (const cache of [join(cacheHome, 'v1'), cacheHome]) {
+    const directory = join(cache, 'pnpm', pinned)
+    if (!existsSync(join(directory, '.corepack'))) continue
+    const manifest = JSON.parse(
+      await readFile(join(directory, 'package.json'), 'utf8'),
+    ) as { name: string; version: string; bin: string | Record<string, string> }
+    if (manifest.name !== 'pnpm' || manifest.version !== pinned) {
+      throw new Error('The provisioned pnpm package does not match the repository pin.')
+    }
+    const bin = typeof manifest.bin === 'string' ? manifest.bin : manifest.bin.pnpm
+    if (!bin) throw new Error('The provisioned pnpm package has no executable.')
+    const executable = join(directory, bin)
+    if (!existsSync(executable)) throw new Error('The provisioned pnpm executable is missing.')
+    return executable
+  }
+  throw new Error(`The pinned pnpm ${pinned} is not provisioned in the Corepack cache.`)
+}
+
 async function preparePackageManager() {
-  const api = fileURLToPath(new URL('../../', import.meta.url))
   const environment: NodeJS.ProcessEnv = { ...process.env, COREPACK_ENABLE_NETWORK: '0' }
   delete environment.npm_execpath
-  const { stdout } = await execute('corepack', ['pnpm', 'exec', process.execPath, '-p', 'process.env.npm_execpath'],
-    { cwd: api, env: environment })
-  const pnpm = stdout.trim()
+  const pnpm = await resolveProvisionedPnpm(environment)
   const base = join(homedir(), '.cache/foreman-tmp')
   await mkdir(base, { recursive: true })
   const root = await mkdtemp(join(base, 'native-store-tools-'))
