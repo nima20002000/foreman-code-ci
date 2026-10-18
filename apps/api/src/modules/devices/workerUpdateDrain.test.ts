@@ -343,9 +343,13 @@ it('drains stopped source transfers before the idle deadline while retaining act
     operationId: intent.operationId, occurrenceId: null, occurrenceIndex: 0, technicalAttempt: 1,
     bindingHash: intent.placementHash, inputDigest: `sha256:${'d'.repeat(64)}`,
     owner: { grantId: 'grant', epoch: '1' } }, binding, randomUUID())
+  const stopped = await journal.revokeFence(intent.operationId)
+  await journal.close()
   const accepted = { intent: async () => intent, authorize: async () => {} }
   const receiver = new ResumableByteTransferService(join(stateDirectory, 'canonical'), accepted)
   await receiver.start(intent, transferContextForBinding(binding))
+  const activeTransfer = { ...intent, transferId: randomUUID(), operationId: randomUUID(), executionId: randomUUID() }
+  await receiver.start(activeTransfer, transferContextForBinding(binding))
   const executable = await realpath(process.execPath)
   const sha256 = createHash('sha256').update(await readFile(executable)).digest('hex')
   const domains = await createInstalledWorkerDomains({ stateDirectory, pairing, bootId: binding.bootId,
@@ -361,14 +365,17 @@ it('drains stopped source transfers before the idle deadline while retaining act
   try {
     await new Promise(resolve => setTimeout(resolve, 150))
     expect(drained).toBe(false)
-    await registry.abandonReservedLaunch(reserved)
+    await receiver.cancel(activeTransfer.transferId, transferContextForBinding(binding))
     await new Promise(resolve => setTimeout(resolve, 150))
     expect(drained).toBe(false)
-    const stopped = await journal.revokeFence(intent.operationId)
+    await registry.abandonReservedLaunch(reserved)
     await expect.poll(() => drained, { timeout: 2000 }).toBe(true)
     await draining
-    expect(await journal.status(intent.operationId)).toEqual({ status: 'known', receipt: stopped })
-    expect(await receiver.inventory()).toEqual([intent])
+    const retained = await RemoteOperationJournal.open(join(stateDirectory, 'workflow-operations.json'))
+    try {
+      expect(await retained.status(intent.operationId)).toEqual({ status: 'known', receipt: stopped })
+    } finally { await retained.close() }
+    expect(await receiver.inventory()).toContainEqual(intent)
     expect(await receiver.isRuntimeQuiescent()).toBe(false)
     domains.resumeAfterUpdate()
   } finally {
