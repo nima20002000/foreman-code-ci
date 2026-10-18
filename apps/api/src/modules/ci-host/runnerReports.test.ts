@@ -115,7 +115,7 @@ it('bounds status summaries while individual reads retain the complete selection
   const root = dirname(dirname(f.directory))
   const files = Array.from({ length: 2500 }, (_, index) =>
     `apps/api/test/${'feature-'.repeat(10)}${index}.integration.test.ts`)
-  const ids = Array.from({ length: 10 }, () => randomUUID())
+  const ids: string[] = Array.from({ length: 10 }, () => randomUUID())
   for (const runId of ids) {
     const directory = join(root, 'runs', runId)
     await fs.mkdir(directory)
