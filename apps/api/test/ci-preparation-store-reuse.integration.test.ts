@@ -9,7 +9,8 @@ import { HostCiRunner, systemHostCiPorts, type HostCiPorts } from '../src/module
 import { deferred, type Deferred } from './helpers/deferred.js'
 import { gitFixtureEnvironment } from './helpers/gitFixture.js'
 
-it('preserves a warm checkout dependency tree with pinned pnpm across CI requests', async () => {
+it.each(['workspace', 'standalone', 'custom patch directory'])(
+  'preserves a warm checkout dependency tree with pinned pnpm across CI requests (%s)', async layout => {
   const base = process.env.FOREMAN_CODE_TEST_ROOT ?? join(homedir(), '.cache', 'foreman-tmp')
   await mkdir(base, { recursive: true })
   const root = await mkdtemp(join(base, 'ci-store-reuse-'))
@@ -30,10 +31,22 @@ it('preserves a warm checkout dependency tree with pinned pnpm across CI request
       name: 'ci-store-reuse-fixture', private: true, packageManager: 'pnpm@11.27.0',
       dependencies: { '@fixture/dependency': 'file:./dependency.tgz' }, scripts: { lint: 'node suite.cjs' },
     }))
-    await writeFile(join(origin, 'pnpm-workspace.yaml'), [
+    const workspace = [
       'minimumReleaseAge: 2880', 'minimumReleaseAgeStrict: true',
       'minimumReleaseAgeIgnoreMissingTime: false', 'packageImportMethod: clone-or-copy',
-    ].join('\n') + '\n')
+    ]
+    const patched = layout === 'custom patch directory'
+    if (patched) {
+      await mkdir(join(origin, 'config/fixes'), { recursive: true })
+      await writeFile(join(origin, 'config/fixes/dependency.patch'), [
+        'diff --git a/index.cjs b/index.cjs', '--- a/index.cjs', '+++ b/index.cjs', '@@ -1 +1 @@',
+        '-module.exports = "pristine"', '+module.exports = "patched"', '',
+      ].join('\n'))
+      workspace.push('patchedDependencies:', '  "@fixture/dependency@1.0.0": config/fixes/dependency.patch')
+    }
+    if (layout !== 'standalone') {
+      await writeFile(join(origin, 'pnpm-workspace.yaml'), workspace.join('\n') + '\n')
+    }
     await writeFile(join(root, 'package/package.json'), JSON.stringify({
       name: '@fixture/dependency', version: '1.0.0', main: 'index.cjs',
     }))
@@ -46,7 +59,7 @@ it('preserves a warm checkout dependency tree with pinned pnpm across CI request
     ].join('\n'))
     await command('corepack', ['pnpm', 'install', '--lockfile-only', '--offline', '--no-frozen-lockfile'])
     await command('git', ['init', '-q', '-b', 'main'])
-    await command('git', ['add', 'package.json', 'pnpm-workspace.yaml', 'pnpm-lock.yaml', 'dependency.tgz', 'suite.cjs'])
+    await command('git', ['add', '.'])
     await command('git', ['commit', '-qm', 'fixture'])
     const { stdout } = await command('git', ['rev-parse', 'HEAD'])
     let commit = stdout.trim()
@@ -88,7 +101,7 @@ it('preserves a warm checkout dependency tree with pinned pnpm across CI request
       return runner!.handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 65_536 })
     }
     await expect(run()).resolves.toMatchObject({
-      run: { state: 'passed' }, text: expect.stringContaining('dependency=pristine'),
+      run: { state: 'passed' }, text: expect.stringContaining(`dependency=${patched ? 'patched' : 'pristine'}`),
     })
     await expect(run()).resolves.toMatchObject({
       run: { state: 'passed' }, text: expect.stringContaining('dependency=modified by suite'),
