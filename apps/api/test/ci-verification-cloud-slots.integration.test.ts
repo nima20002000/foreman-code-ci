@@ -64,9 +64,9 @@ function executor(options: { status?: (computer: HostCiComputer) => Promise<CiHo
     if (request.operation === 'cancel') return { operation: 'cancel', run: { ...run, state: 'canceled' } }
     return { operation: 'read', run, text: '', nextOffset: 0 }
   }
-  const finish = (runId: string) => {
+  const finish = (runId: string, options: { executorCleanupPending?: boolean } = {}) => {
     const run = runs.get(runId)!
-    runs.set(runId, { ...run, state: 'passed', exitCode: 0, finishedAt: new Date().toISOString() })
+    runs.set(runId, { ...run, ...options, state: 'passed', exitCode: 0, finishedAt: new Date().toISOString() })
   }
   return { request, started, finish }
 }
@@ -142,6 +142,43 @@ it('keeps reserved cloud slots out of a gate plan and starts a fix verification 
     const active = (await database.pool.query<{ host_key: string; count: number }>(`select host_key,count(*)::int as count
       from ci_runs where state in ('starting','running') group by host_key`)).rows
     expect(active.filter(row => row.host_key.startsWith('cloud-') && row.count > 1)).toEqual([])
+  } finally { await f.close() }
+})
+
+it('retains a completed ticket slot until its accepted cloud attempts are confirmed stopped', async () => {
+  const slot = cloudSlots(1)[0]!
+  const fleet = executor()
+  const commands = new PostgresCommandCoordinator(database.pool)
+  const ci = new HostCiService(database.pool, commands, new RunCiAuthority(database.pool), commits,
+    { computers: async () => [slot], request: fleet.request })
+  const f = await operatorApp(ci, commands)
+  const read = async (ticketId: string) => CiGetOutputSchema.parse(await f.value('ci_get', { ticketId }))
+  try {
+    const first = CiRunOutputSchema.parse(await f.value('ci_run', verification('e'.repeat(40))))
+    await ci.dispatch()
+    await ci.drain()
+    fleet.finish(first.ticketId, { executorCleanupPending: true })
+    await ci.dispatch()
+    await ci.drain()
+    expect((await read(first.ticketId)).run).toMatchObject({ state: 'passed', executorCleanupPending: true })
+    const saved = (await database.pool.query('select host_key from ci_runs where id=$1', [first.ticketId])).rows[0]
+    expect(saved.host_key).toBe(slot.key)
+    const second = CiRunOutputSchema.parse(await f.value('ci_run', verification('f'.repeat(40))))
+    await ci.dispatch()
+    await ci.drain()
+    const queued = (await read(second.ticketId)).run
+    expect(queued.state).toBe('queued')
+    expect(await claimCiSlot(database.pool, queued, slot, { operation: 'start', runId: queued.id,
+      repository: queued.repository, commit: queued.commit, suite: queued.suite, scope: queued.scope })).toBe('busy')
+    expect(fleet.started).toHaveLength(1)
+    fleet.finish(first.ticketId, { executorCleanupPending: false })
+    await ci.dispatch()
+    await ci.drain()
+    await ci.dispatch()
+    await ci.drain()
+    expect((await read(first.ticketId)).run).toMatchObject({ state: 'passed', executorCleanupPending: false })
+    expect((await read(second.ticketId)).run.state).toBe('running')
+    expect(fleet.started).toHaveLength(2)
   } finally { await f.close() }
 })
 
