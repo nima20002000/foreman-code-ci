@@ -19,16 +19,16 @@ function fixture(moving = false, jobs: Record<string, unknown>[] = [], movingJob
     { id: 'B', attempt: 1, revision: '0', native_revision: '0', state: 'queued', outcome: null,
       started_at: null, native_session_id: null, harness: 'codex' },
   ]
-  const facts = (after: boolean) => [{
-    run: { revision: moving && after ? '4' : '3', stopped: false, outcome: 'pending', execution_state: 'running' },
+  const facts = (after: boolean): unknown[][] => [
+    [{ revision: moving && after ? '4' : '3', stopped: false, outcome: 'pending', execution_state: 'running' }],
     executions,
-    jobs: jobs.map(job => ({ ...job, revision: movingJob && after ? '10' : job.revision })),
-    cis: cis.map(ci => ({ ...ci, revision: movingCi && after ? '4' : ci.revision })),
-    interactions: [],
-    bounds: { high_water: '9007199254740993', retained_from: '1', observed: 1 },
-  }]
+    jobs.map(job => ({ ...job, revision: movingJob && after ? '10' : job.revision })),
+    cis.map(ci => ({ ...ci, revision: movingCi && after ? '4' : ci.revision })),
+    [],
+    [{ high_water: '9007199254740993', retained_from: '1', observed: 1 }],
+  ]
   // Serve the two fact reads around the activity/native pages, independent of query spelling.
-  const responses = [facts(false), activities, [], facts(true)]
+  const responses = [...facts(false), activities, [], ...facts(true)]
   const sql = { query: async () => {
     const rows = responses.shift()
     if (!rows) throw new Error('Unexpected activity read after the snapshot completed')
