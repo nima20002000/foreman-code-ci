@@ -33,7 +33,6 @@ import type { CircleAccountContext, CircleAccountRegistry } from './circleAccoun
 import { CircleStandby } from './circleStandby.js'
 
 const MAX_DISPATCH_ATTEMPTS = 3
-const GITHUB_INPUT_LIMIT_BYTES = 65_535
 /** A running run asks its service at most this often; reads in between answer from the kept state and log. */
 const POLL_MS = 4_000
 const FINISH_POLL_MS = 2_000
@@ -56,11 +55,6 @@ function collectionPending(run: CloudRun): boolean {
 
 function cancellationPending(run: CloudRun): boolean {
   return Boolean(run.cancellation && !run.cancellation.completedAt)
-}
-
-function neverSubmitted(run: CloudRun): boolean {
-  return Boolean(run.dispatch?.notSent && !run.dispatch.uncertain
-    && !run.providerRunId && !run.dispatchHistory?.length)
 }
 
 export type { CloudRun }
@@ -586,10 +580,6 @@ export class CloudCi {
       ...(baseCommit ? { baseCommit } : {}),
       ...(partition ? { partition } : {}),
       ...(durations && durations.length <= limit ? { durations } : {}) }
-    // Complete timings are in the snapshot; omit the duplicate when JSON escaping exceeds GitHub's input budget.
-    if (this.provider.id === 'github' && Buffer.byteLength(JSON.stringify(input)) > GITHUB_INPUT_LIMIT_BYTES) {
-      delete input.durations
-    }
     if (this.provider.id === 'circleci') {
       input.workflowRef = `ci/${request.commit}-${request.runId}`
       if ([input.slice, input.files, input.partition].some(value => value && value.length > limit)) {
@@ -667,29 +657,24 @@ export class CloudCi {
       })
       if (failed) return this.failPipeline(pending, { message: this.checkAccount(failed).message! })
     }
-    try {
-      pending = await this.save({ ...pending, dispatch: { ...pending.dispatch!, uncertain: true, notSent: false } })
-      // Check policy after the final journal write, immediately before contacting the provider.
-      if (!run.providerRunId && ((run.dispatch?.attempts ?? 0) === 0 || run.dispatch?.notSent) && !run.dispatch?.uncertain) {
+    pending = await this.save({ ...pending, dispatch: { ...pending.dispatch!, uncertain: true, notSent: false } })
+    // Check policy after the final journal write, immediately before contacting the provider.
+    if (!run.providerRunId && ((run.dispatch?.attempts ?? 0) === 0 || run.dispatch?.notSent) && !run.dispatch?.uncertain) {
+      try {
         await this.requireNewStart(input.mirror.slice(input.mirror.indexOf('/') + 1))
+      } catch (error) {
+        pending = await this.save({ ...pending, dispatch: { ...pending.dispatch!, uncertain: false, notSent: true } })
+        if (!(error instanceof DomainError && error.code === 'CI_CLOUD_UNAVAILABLE')) throw error
+        return this.failPipeline(pending, { message: error.message })
       }
-    } catch (error) {
-      pending = await this.save({ ...pending, dispatch: { ...pending.dispatch!, uncertain: false, notSent: true } })
-      if (!(error instanceof DomainError && error.code === 'CI_CLOUD_UNAVAILABLE')) throw error
-      return this.failPipeline(pending, { message: error.message })
     }
     let providerRunId: string | null
     try {
       providerRunId = await this.provider.dispatch(input)
     } catch (error) {
-      if (!(error instanceof DomainError)) throw error
-      const throttled = error.code === 'CI_CLOUD_RATE_LIMITED'
-      const notSent = error.code === 'CI_CLOUD_DISPATCH_NOT_SENT' || throttled && error.details?.notSent === true
-      if (!notSent) throw error
-      const rejected = await this.save({ ...pending, message: sanitizeCiText(error.message),
+      if (!(error instanceof DomainError && error.code === 'CI_CLOUD_DISPATCH_NOT_SENT')) throw error
+      return this.save({ ...pending, message: sanitizeCiText(error.message),
         dispatch: { ...pending.dispatch!, uncertain: false, notSent: true } })
-      if (throttled) this.pausePolling(run.runId)
-      return rejected
     }
     return this.save({ ...pending, providerRunId, dispatch: { ...pending.dispatch!, uncertain: false }, dispatchHistory: [...pending.dispatchHistory ?? [],
       { at: pending.dispatch!.at, providerRunId }] })
@@ -1351,8 +1336,7 @@ export class CloudCi {
     if (!cancellationPending(run)) return run
     run = await this.adoptSubmission(run)
     const canceled = new Set(run.cancellation!.canceledIds)
-    const unsent = neverSubmitted(run)
-    const discovered = this.provider.id === 'github' && !unsent
+    const discovered = this.provider.id === 'github'
       ? await this.provider.discover!(run) : []
     if (this.provider.id === 'github' && run.dispatch?.uncertain && discovered.length) {
       run = { ...run, providerRunId: run.providerRunId ?? discovered[0]!,
@@ -1369,8 +1353,9 @@ export class CloudCi {
     const ids = new Set([run.providerRunId, ...attempts, ...discovered].filter((id): id is string => Boolean(id)))
     const discoveryComplete = !run.dispatch?.attempts
       || this.ports.now().getTime() - Date.parse(run.cancellation!.at) >= CLOUD_START_TIMEOUT_MS
+    const neverSubmitted = run.dispatch?.notSent && !history.length
     let stopped = discoveryComplete && !run.dispatch?.uncertain
-      && (ids.size > 0 || !run.dispatch?.attempts || unsent)
+      && (ids.size > 0 || !run.dispatch?.attempts || neverSubmitted)
     for (const providerRunId of ids) {
       const attempt = { ...run, providerRunId }
       if (!canceled.has(providerRunId)) {
@@ -1516,7 +1501,6 @@ export class CloudCi {
   private async follow(run: CloudRun, reassign: boolean): Promise<CloudRun> {
     const runId = run.runId
     run = await this.adoptSubmission(run)
-    if (neverSubmitted(run)) return this.recoverUnstarted(run)
     if (run.state === 'starting' || !run.providerRunId || !run.workflowStarted && this.provider.id === 'circleci') {
       const providerRunId = await this.provider.find(run)
       if (!providerRunId) {
