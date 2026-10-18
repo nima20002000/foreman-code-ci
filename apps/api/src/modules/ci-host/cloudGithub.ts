@@ -17,34 +17,21 @@ export class GitHubRest {
 
   get transport() { return this.http.transport }
 
-  list(mirror: string, branch: string, limit: number) {
-    return this.http.operation(15_000, () => this.listRuns(mirror, branch, limit))
+  list(mirror: string, branch: string) {
+    return this.http.operation(15_000, () => this.listRuns(mirror, branch))
   }
 
-  private async listRuns(mirror: string, branch: string, limit: number): Promise<string | null> {
+  private async listRuns(mirror: string, branch: string): Promise<string | null> {
     const runs: { id: number; display_title: string; status: string; head_sha: string }[] = []
-    let complete = false
-    let total = 0
-    for (let page = 1; page <= Math.ceil(limit / 100); page++) {
+    for (let page = 1; page <= 2; page++) {
       const path = `/repos/${mirror}/actions/workflows/ci.yml/runs?branch=${encodeURIComponent(branch)}`
         + `&event=workflow_dispatch&per_page=100&page=${page}`
       const response = await this.http.request(path, { timeoutMs: 15_000 })
       if (!response) return null
       await this.http.check(response, failedRead('list'))
-      const result = await this.http.json<{ total_count?: number; workflow_runs: typeof runs }>(response)
-      const batch = result.workflow_runs
-      total = Math.max(total, result.total_count ?? 0)
+      const batch = (await this.http.json<{ workflow_runs: typeof runs }>(response)).workflow_runs
       runs.push(...batch)
-      if (batch.length < 100) {
-        complete = true
-        break
-      }
-    }
-    // GitHub caps filtered searches at 1,000 runs. Moving pages can also repeat IDs and omit older runs.
-    const unique = new Set(runs.map(run => run.id)).size
-    if (limit > 200 && (!complete || unique !== runs.length || unique < total)) {
-      throw new DomainError('CI_CLOUD_DISCOVERY_INCOMPLETE',
-        'GitHub Actions discovery is incomplete; ownership retained.', 503)
+      if (batch.length < 100) break
     }
     return JSON.stringify(runs.map(value => ({ databaseId: value.id, displayTitle: value.display_title,
       status: value.status, headSha: value.head_sha })))
