@@ -28,7 +28,7 @@ type InstalledState = 'ready' | 'launcher'
 
 async function preparePackageManager() {
   const api = fileURLToPath(new URL('../../', import.meta.url))
-  const environment = { ...process.env, COREPACK_ENABLE_NETWORK: '0' }
+  const environment: NodeJS.ProcessEnv = { ...process.env, COREPACK_ENABLE_NETWORK: '0' }
   const { stdout } = await execute('corepack', ['pnpm', 'exec', process.execPath, '-p', 'process.env.npm_execpath'],
     { cwd: api, env: environment })
   const pnpm = stdout.trim()
