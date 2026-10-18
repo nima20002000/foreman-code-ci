@@ -23,6 +23,14 @@ function boardFixture(suffix: string) {
   return { mock, graph, href: `/workspaces/${graph.workspaceId}?workflowId=${graph.id}` }
 }
 
+async function boardShown() {
+  // Role queries check styles and ancestors for every candidate and rerun on every DOM mutation.
+  // Keep that work out of retries while the Board mounts: React Flow shows a node once it is measured.
+  await waitFor(() => expect(document.querySelector<HTMLElement>('.react-flow__node[data-id="node-3"]')
+    ?.style.visibility).toBe('visible'))
+  await screen.findByRole('button', { name: /^Node 3, / })
+}
+
 function placed(id: string) {
   const node = document.querySelector<HTMLElement>(`.react-flow__node[data-id="${id}"]`)!
   const match = /translate\((-?[\d.]+)px,\s*(-?[\d.]+)px\)/.exec(node.style.transform)!
@@ -40,7 +48,7 @@ function expectHierarchy() {
 it('renders a legacy workflow with stacked saved positions as a hierarchy without saving it', async () => {
   const { mock, graph, href } = boardFixture('legacy-positions')
   await mountMeasuredBoard(href)
-  await screen.findByRole('button', { name: /^Node 3, / })
+  await boardShown()
   expectHierarchy()
   expect(mock.workflows.get(graph.id)!.nodes).toEqual(graph.nodes)
   expect(mock.calls.filter((call) => call.method !== 'GET')).toEqual([])
@@ -50,7 +58,7 @@ it('keeps a dragged node after reload while the other nodes stay in the hierarch
   installFlowLayout(1000, 720)
   const { mock, graph, href } = boardFixture('dragged-positions')
   const mounted = await mountMeasuredBoard(href)
-  await screen.findByRole('button', { name: /^Node 3, / })
+  await boardShown()
   const others = ['node-0', 'node-2', 'node-3'].map(placed)
   const before = placed('node-1')
   const core = document.querySelector<HTMLElement>('.react-flow__node[data-id="node-1"] .n-agent-core')!
@@ -75,7 +83,7 @@ it('keeps a dragged node after reload while the other nodes stay in the hierarch
   mounted.cache.clear()
   act(() => useGraphDraftStore.getState().clearAllDrafts())
   await mountMeasuredBoard(href)
-  await screen.findByRole('button', { name: /^Node 3, / })
+  await boardShown()
   expect(placed('node-1')).toEqual(moved)
   expect(['node-0', 'node-2', 'node-3'].map(placed)).toEqual(others)
   expect(placed('node-2').y).toBe(placed('node-3').y)
@@ -86,7 +94,7 @@ it('keeps a dragged node after reload while the other nodes stay in the hierarch
 it('places a newly added node through the hierarchy while leaving its saved position absent', async () => {
   const { mock, graph, href } = boardFixture('added-positions')
   await mountMeasuredBoard(href)
-  await screen.findByRole('button', { name: /^Node 3, / })
+  await boardShown()
   fireEvent.click(screen.getByRole('button', { name: 'Add agent or job to graph' }))
   const picker = await screen.findByRole('complementary', { name: 'Add node' })
   fireEvent.click(await within(picker).findByRole('button', { name: 'Add Agent 4' }))

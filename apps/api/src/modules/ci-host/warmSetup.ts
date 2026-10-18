@@ -71,14 +71,27 @@ export async function pnpmInstall(source: string, cache: string, messageFile: st
   const store = ` --store-dir ${shellQuote(join(cache, 'pnpm-store'))}`
     + ` --cache-dir ${shellQuote(join(cache, 'pnpm-metadata'))}`
   const fetch = `corepack pnpm fetch --frozen-lockfile --config.confirm-modules-purge=false${store}`
-  const install = `corepack pnpm install --frozen-lockfile --config.confirm-modules-purge=false`
+  const installCommand = `corepack pnpm install --frozen-lockfile --config.confirm-modules-purge=false`
     + store
+  const validator = join(source, 'scripts/ci-native-payloads.mjs')
+  const validateNative = existsSync(validator)
+  const install = validateNative ? 'install_ci_dependencies' : installCommand
   const ready = inputs
     ? `[ -f ${shellQuote(complete)} ] && [ "$(< ${shellQuote(complete)})" = ${shellQuote(inputs.key)} ]` : 'true'
   const prefetch = options.offlineOnly ? `${fetch} --offline`
     : `${fetch} --offline || { echo '[ci-cache] filling store online'; ${fetch} --prefer-offline; }`
   return [
     `export npm_config_cache_dir=${shellQuote(join(cache, 'pnpm-metadata'))}`,
+    `export npm_config_store_dir=${shellQuote(join(cache, 'pnpm-store'))}`,
+    ...(validateNative ? [
+      'install_ci_dependencies() {',
+      `  ${installCommand} "$@" || return $?`,
+      `  ${shellQuote(process.execPath)} ${shellQuote(validator)} ${shellQuote(source)} || {`,
+      `    rm -f -- ${shellQuote(complete)}`,
+      '    return 1',
+      '  }',
+      '}',
+    ] : []),
     ...(repositoryHook ? [
       "echo '[ci-cache] prefetch unsupported for this layout (.pnpmfile.cjs); using normal install' >&2",
     ] : []),
@@ -104,8 +117,6 @@ export async function pnpmInstall(source: string, cache: string, messageFile: st
       ]),
       `(cd ${shellQuote(staging)} && { ${prefetch}; }) || exit $?`,
       `rm -rf -- ${shellQuote(staging)} || exit $?`,
-      `printf '%s\\n' ${shellQuote(inputs.key)} > ${shellQuote(complete + '.pending')} || exit $?`,
-      `mv -- ${shellQuote(complete + '.pending')} ${shellQuote(complete)} || exit $?`,
       ')',
       'prefetch_code=$?',
       'if [ "$prefetch_code" != 0 ]; then',
@@ -115,6 +126,8 @@ export async function pnpmInstall(source: string, cache: string, messageFile: st
       'finish "$prefetch_code"',
       'fi',
       `${install} --offline || finish $?`,
+      `printf '%s\\n' ${shellQuote(inputs.key)} > ${shellQuote(complete + '.pending')} || finish $?`,
+      `mv -- ${shellQuote(complete + '.pending')} ${shellQuote(complete)} || finish $?`,
     ] : [
       // Both offline attempts failed; only the refill remains under the shared lock.
       ...(options.offlineOnly ? ['finish $?'] : [
@@ -126,5 +139,10 @@ export async function pnpmInstall(source: string, cache: string, messageFile: st
     'flock -u "$cache_lock"',
     'exec {cache_lock}>&-',
     '}',
+    ...(existsSync(join(source, 'scripts/ci-package-paths.mjs')) ? [
+      `mkdir -p ${shellQuote(join(source, '.logs'))} || finish $?`,
+      `printf '%s\\n' ${shellQuote(JSON.stringify({ storeDir: join(cache, 'pnpm-store'),
+        cacheDir: join(cache, 'pnpm-metadata') }))} > ${shellQuote(join(source, '.logs/ci-package-paths.json'))} || finish $?`,
+    ] : []),
   ]
 }
