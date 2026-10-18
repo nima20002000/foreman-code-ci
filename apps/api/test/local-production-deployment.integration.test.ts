@@ -121,7 +121,7 @@ it('loads the compiled API using only its deployed production dependencies', asy
   const metadataCache = process.env.npm_config_cache_dir
     || (existsSync(ciMetadataCache) ? ciMetadataCache : join(userInfo().homedir, '.cache/pnpm'))
   const packageStore = ['--prefer-offline', '--store-dir', storeDir, '--cache-dir', metadataCache,
-    '--package-import-method=hardlink', '--reporter=ndjson']
+    '--package-import-method=hardlink']
   // Every child process is killed after a bounded time and reports the fixture step it was running.
   const child = async (step: string, timeoutMs: number, command: string, args: string[],
     options: { cwd: string, env: NodeJS.ProcessEnv }) => {
