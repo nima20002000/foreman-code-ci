@@ -30,7 +30,10 @@ async function submissionFixture(provider: 'github' | 'circleci') {
     saved: () => readCloudRun(join(f.root, 'ci-cloud', 'runs', runId, 'meta.json')) }
 }
 
-it.each([403, 429])('retries a confirmed GitHub HTTP %s throttle without losing the provider backoff', async status => {
+it.each([
+  { status: 403, phase: 'dispatch' }, { status: 429, phase: 'dispatch' },
+  { status: 403, phase: 'workflow lookup' }, { status: 429, phase: 'workflow lookup' },
+])('retries a GitHub HTTP $status throttle during $phase without losing backoff', async ({ status, phase }) => {
   const f = await submissionFixture('github')
   const runningId = randomUUID()
   await f.cloud.handle({ ...f.start, runId: runningId })
@@ -38,8 +41,11 @@ it.each([403, 429])('retries a confirmed GitHub HTTP %s throttle without losing 
   const runningRead = { ...f.read, runId: runningId }
   expect(await f.cloud.handle(runningRead)).toMatchObject({ run: { state: 'running' } })
   const jobReads = f.github.jobReads.length
-  f.control.failure = `could not create workflow dispatch event: HTTP ${status}: API rate limit exceeded. `
-    + '(https://api.github.com/repos/octo/site-ci/actions/workflows/123/dispatches)'
+  const reason = status === 403 ? 'API rate limit exceeded' : 'Too Many Requests'
+  f.control.failure = phase === 'dispatch'
+    ? `could not create workflow dispatch event: HTTP ${status}: ${reason}. `
+      + '(https://api.github.com/repos/octo/site-ci/actions/workflows/123/dispatches)'
+    : `Get "https://api.github.com/repos/octo/site-ci/actions/workflows/ci.yml": HTTP ${status}: ${reason}`
   expect(await f.cloud.handle(f.start)).toMatchObject({ run: {
     state: 'starting', message: expect.stringContaining('rate limit'),
   } })
