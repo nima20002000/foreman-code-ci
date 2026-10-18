@@ -41,9 +41,7 @@ export interface ReviewNativeProofRecord {
 function proofEvidence(proofId: string) { return { sourceKind: 'native_event' as const, sourceId: proofId, sourceRevision: '1' } }
 function sourceIdentity(record: ReviewNativeProofRecord) {
   return { scope: record.scope, ref: record.ref, execution: record.execution, inputDigest: record.inputDigest,
-    job: record.job, session: record.session, original: record.original,
-    lifetimeGeneration: record.lifetimeGeneration, closureGeneration: record.closureGeneration,
-    lane: record.lane, jobLease: record.jobLease }
+    job: record.job, session: record.session, original: record.original }
 }
 export function reviewSourceEvents(record: Pick<ReviewNativeProofRecord, 'original' | 'execution'>): NativeHarnessEvent[] {
   const events = record.original.type === 'event' ? [record.original.event]
@@ -118,14 +116,11 @@ export class ReviewNativeProofServices {
     const originalKey = capture.source.type === 'event'
       ? ['event', capture.source.event.connectionId ?? null, capture.source.event.sequence, repeatDigest(capture.source.pending)]
       : capture.source.type === 'history' ? ['history', repeatDigest(capture.source.history, REMOTE_NATIVE_SOURCE_LIMIT)] : ['entry']
-    const observer = { lifetimeGeneration: capture.lifetimeGeneration, closureGeneration: capture.closureGeneration,
-      lane: capture.lane, jobLease: { token: job.leaseToken!, fence } }
-    const proofId = `review-original:${repeatDigest([
-      publication.scope, jobIdentity(job), repeatExecutionIdentity(stored.execution), originalKey, observer,
-    ]).slice(7)}`
+    const proofId = `review-original:${repeatDigest([publication.scope, jobIdentity(job), repeatExecutionIdentity(stored.execution), originalKey]).slice(7)}`
     let record: ReviewNativeProofRecord = { proofId, scope: publication.scope as RepeatScope, ref: stored.ref,
       execution: repeatExecutionIdentity(stored.execution), inputDigest: stored.inputDigest, job: jobIdentity(job), session: capture.session,
-      original: capture.source, observedAt: capture.observedAt, ...observer }
+      original: capture.source, observedAt: capture.observedAt, lifetimeGeneration: capture.lifetimeGeneration,
+      closureGeneration: capture.closureGeneration, lane: capture.lane, jobLease: { token: job.leaseToken!, fence } }
     const sql = publication.sql
     const previous = (await sql.query<{ record: ReviewNativeProofRecord; source_digest: string }>(
       'select record,source_digest from review_native_proofs where proof_id=$1 for share', [proofId])).rows[0]
