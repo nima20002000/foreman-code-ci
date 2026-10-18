@@ -70,7 +70,7 @@ const args = process.argv.slice(2)
 console.log(tool + ' ' + args.join(' '))
 if (args[0] === '--version') process.exit(0)
 if (tool === 'corepack') args.shift()
-if (args[0] === 'install') process.exit(0)
+if (args[0] === 'install' || args[0] === 'fetch') process.exit(0)
 if (args[0] !== 'run' || args.length !== 2) process.exit(21)
 const script = JSON.parse(readFileSync('package.json', 'utf8')).scripts[args[1]]
 if (!script) process.exit(22)
