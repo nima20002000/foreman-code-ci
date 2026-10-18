@@ -10,14 +10,12 @@ import { currentWorkflowAvailable, type CurrentWorkflowOperation } from '../../.
 import { DomainError } from '../../../modules/errors.js'
 import { toolFailure, toolResult } from '../../shared/results.js'
 import type { OperatorRequestContext } from '../types.js'
-import { logOperatorToolFailure } from '../invoke.js'
 
 function available(context: OperatorRequestContext, operation: CurrentWorkflowOperation) {
   return !!context.services.workflows?.current && currentWorkflowAvailable(context.principal, operation)
 }
 async function invoke(context: OperatorRequestContext, operation: CurrentWorkflowOperation, work: () => unknown | Promise<unknown>) {
   try { return toolResult(await work()) } catch (error) {
-    logOperatorToolFailure(CURRENT_WORKFLOW_TOOLS[operation], error)
     if (error instanceof DomainError && error.status === 403) await context.services.commands.recordDenied(
       context.principal.id, 'mcp', CURRENT_WORKFLOW_TOOLS[operation], `mcp:${CURRENT_WORKFLOW_TOOLS[operation]}`)
     return toolFailure(error)
