@@ -140,3 +140,15 @@ it('retries an accepted empty pipeline through CLI only after cancellation is re
   expect(f.circle.canceled).toEqual(['run-1', 'run-1'])
   expect(f.circle.triggered).toHaveLength(2)
 })
+
+it('does not verify an empty CLI pipeline when the workflow listing is absent', async () => {
+  const ports: HostCiPorts = { cpus: 4, memoryBytes: 2 ** 30, now: () => new Date(finishedAt),
+    run: async (_file, args) => args[1] === 'cancel'
+      ? { code: 1, stdout: '', stderr: 'no active workflows' }
+      : { code: 0, stderr: '', stdout: JSON.stringify({ state: 'created', phase: 'ended', current_outcome: 'not_run' }) } }
+  const provider = new CircleCiProvider(ports, { circleToken: async () => null })
+  expect(await provider.status(run)).toMatchObject({ done: false })
+  expect(await provider.cancel(run)).toBe(false)
+  const checked = { ...run, emptyPipelineCancellations: { pipeline: run.startedAt } }
+  expect(await provider.status(checked)).toMatchObject({ done: false })
+})
