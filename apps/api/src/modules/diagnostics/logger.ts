@@ -1,5 +1,3 @@
-/// <reference types="../../types/pino-roll.d.ts" />
-import { once } from 'node:events'
 import { mkdir, readdir, readlink, stat, unlink } from 'node:fs/promises'
 import { basename, dirname, join, resolve } from 'node:path'
 import { runtimeTimingChannel, type RuntimeTimingRecord } from './runtimeTiming.js'
@@ -7,6 +5,7 @@ import type { LogComponent } from './logComponent.js'
 export type { LogComponent } from './logComponent.js'
 import pino, { type Level, type Logger, type LevelWithSilent } from 'pino'
 import { recordOperationalFailure } from './operationalFailures.js'
+import { rotatingLogDestination } from './rotatingLogDestination.js'
 export { readOperationalFailures } from './operationalFailures.js'
 
 // Secrets and model content never reach a log line, wherever they sit in a logged object.
@@ -142,25 +141,19 @@ export async function pruneLogFiles(file: string, count: number, days: number, n
  * Adds a rotating file beside stdout: a new file daily or at LOG_MAX_SIZE (default 20m).
  * Retention: at most LOG_MAX_FILES files (default 14) and nothing older than
  * LOG_RETENTION_DAYS (default 14), enforced at startup and on every roll, across restarts.
- * Writes are synchronous for the same crash reason.
+ * Writes are asynchronous; flushLogsSync also drains files whose opens are still pending at exit.
  */
 export async function enableFileLogging(env: NodeJS.ProcessEnv = process.env): Promise<string | undefined> {
   const file = logFilePath(env)
   if (!file) return undefined
   const count = positive(env.LOG_MAX_FILES, 14)
   const days = positive(env.LOG_RETENTION_DAYS, 14)
-  const { default: roll } = await import('pino-roll')
-  // The asynchronous destination creates its directory too late for the symlink pino-roll makes at startup.
   await mkdir(dirname(file), { recursive: true })
-  // Daily names prevent a roll from reopening a numbered file from an earlier day.
-  const stream = await roll({ file: file.replace(/\.log$/, ''), extension: '.log', frequency: 'daily',
-    dateFormat: 'yyyy-MM-dd', size: env.LOG_MAX_SIZE ?? '20m', mkdir: true, symlink: true, sync: false })
-  // Retention must see the opened active file, not race its asynchronous creation.
-  if ((stream as unknown as { fd: number }).fd < 0) await once(stream, 'ready')
+  const stream = await rotatingLogDestination(file, env.LOG_MAX_SIZE ?? '20m')
   fileStream = stream
   const pruned = await pruneLogFiles(file, count, days)
   let cleanup = Promise.resolve()
-  // Reopen emits ready after the active symlink changes. Serialize retention across rolls.
+  // Each opened file emits ready after the active symlink changes. Serialize retention across rolls.
   stream.on('ready', () => {
     cleanup = cleanup.then(async () => {
       await pruneLogFiles(file, count, days)
