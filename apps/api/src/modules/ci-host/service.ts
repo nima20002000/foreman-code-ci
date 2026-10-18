@@ -1312,13 +1312,14 @@ export class HostCiService {
 
   /** Pushes a commit snapshot to the CI mirror once per distinct payload; dispatch runs again when the push settles. */
   private publishMirror(input: CiMirrorInput): { settled: boolean } {
+    if (!this.endpoint.publishMirror) return { settled: true }
     const key = canonicalJson(input)
     const known = this.mirrorPublications.get(key)
     if (known) return known
     const publication = { settled: false }
     this.mirrorPublications.set(key, publication)
     if (this.mirrorPublications.size > 200) this.mirrorPublications.delete(this.mirrorPublications.keys().next().value!)
-    void this.endpoint.publishMirror!(input).catch(error => {
+    void this.endpoint.publishMirror(input).catch(error => {
       // A failed push is retried, and reported, by the ticket's own start.
       log.warn({ err: error, commit: input.commit, mirror: input.mirror }, 'CI mirror publication failed; the start will retry')
     }).finally(() => {

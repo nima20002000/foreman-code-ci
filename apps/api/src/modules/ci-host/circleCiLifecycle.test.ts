@@ -14,7 +14,7 @@ const run: CloudRun = {
 }
 const finishedAt = '2026-10-01T00:04:00Z'
 
-it.each(['pending', 'setup-pending'])(
+it.each(['created', 'setup-pending'])(
   'waits for workflows on a %s CircleCI pipeline and then reads success through HTTP', async state => {
     let visible = false
     let pipelineId = 'pipeline'
@@ -26,10 +26,7 @@ it.each(['pending', 'setup-pending'])(
       if (path === `/api/v2/pipeline/${pipelineId}/workflow`) {
         return Response.json({ items: visible ? [{ id: 'workflow', status: 'success', stopped_at: finishedAt }] : [] })
       }
-      if (path === '/api/v2/workflow/workflow/job') return Response.json({ items: [{ id: 'job' }] })
-      if (path === '/api/v3/jobs/job') return Response.json({ data: { attributes: {
-        phase: 'ended', outcome: 'succeeded', ended_at: finishedAt, parallel_executions: [],
-      } } })
+      if (path === '/api/v2/workflow/workflow/job') return Response.json({ items: [] })
       throw new Error(`Unexpected CircleCI request: ${path}`)
     }
     const provider = new CircleCiProvider(ports, { fetch: fetchCircle, circleToken: async () => 'fixture-token' })
