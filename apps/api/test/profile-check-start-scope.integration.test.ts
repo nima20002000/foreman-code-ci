@@ -72,32 +72,27 @@ describe('profile-scoped Start after a Worker harness installation update', () =
       'two parallel profile checks')
       const directories = modelRequestDirectories(checking.slice(callsBefore), fixture.stateDirectory)
       expect(directories).toHaveLength(2)
-      console.info('profile checks selected', {
-        directories: directories.map(directory => directory.slice(fixture.stateDirectory.length)),
-        profiles: (await profiles(fixture)).map(profile => ({
-          active: profile.instanceId === configured.instanceId,
-          qualification: profile.qualification,
-          revision: profile.revision,
-        })),
-      })
       await expect(fixture.start()).rejects.toThrow('HARNESS_PROFILE_CHECK_PENDING')
       await fixture.provider.allowModelDirectories(directories)
-      let previousQualifications = ''
+      let qualifications: unknown
       const mixed = await waitForRemoteReview(async () => {
         const values = await profiles(fixture)
-        const qualifications = JSON.stringify(values.map(profile => ({
+        qualifications = values.map(profile => ({
           active: profile.instanceId === configured.instanceId,
           qualification: profile.qualification,
           revision: profile.revision,
           failure: profile.qualificationFailure,
-        })))
-        if (qualifications !== previousQualifications) console.info('profile check progress', qualifications)
-        previousQualifications = qualifications
+        }))
         return values
       }, values => values.find(profile => profile.instanceId === configured.instanceId)?.qualification === 'qualified'
         && values.filter(profile => profile.qualification === 'qualified').length === 2
         && values.filter(profile => profile.qualification === 'qualifying').length === 2,
-      'active placement ready while unused profiles remain pending')
+      'active placement ready while unused profiles remain pending').catch(error => {
+        const message = error instanceof Error ? error.message : String(error)
+        throw new Error(`${message} ${JSON.stringify({ qualifications,
+          directories: directories.map(directory => directory.slice(fixture.stateDirectory.length)),
+        })}`, { cause: error })
+      })
       const ready = mixed.find(profile => profile.instanceId === configured.instanceId)!
       const pending = mixed.find(profile => profile.qualification === 'qualifying')!
       const evidence = await latestEvidence(fixture)
