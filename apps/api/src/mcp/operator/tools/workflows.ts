@@ -49,8 +49,10 @@ export const workflowTools = [
     requires: [['workflows:create', 'workspace']],
     enabled: s => !!s.workflows,
     description: 'Create a named semantics-3 workflow using global workflow defaults. '
+      + 'The built-in approval handler is native; saved global defaults take precedence. '
       + 'Omit initialSave for an unsaved workflow, or provide initialSave '
       + '{graph, expectedAgentConfigurationVersionIds} to atomically create and save. '
+      + 'Omitted graph.approval uses the workflow creation default; explicit orchestrator handling requires a designated reviewer. '
       + 'The graph omits workflow identity, name, description, defaultWorktree and timestamps; '
       + 'creation supplies those fields. Invalid graphs or configuration references leave no workflow. '
       + 'Initial save additionally requires workflows:read/update, graph:read/edit/save, agents:read '

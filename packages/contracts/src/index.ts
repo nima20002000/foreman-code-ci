@@ -400,7 +400,7 @@ export function operatorHarnessDefaults(base: HarnessConfiguration): HarnessConf
 }
 
 /** A designated Orchestrator is selected when a workflow is created. */
-export const DEFAULT_WORKFLOW_APPROVAL_HANDLER: ApprovalHandler = "orchestrator";
+export const DEFAULT_WORKFLOW_APPROVAL_HANDLER: ApprovalHandler = "native";
 
 export const HarnessQualificationSchema = z
   .object({
