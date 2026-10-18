@@ -138,6 +138,7 @@ if (args[1] === 'install') {
     const script = join(root, 'runner/runs', runId, 'run.sh')
     await vi.waitFor(() => expect(launched.has(script)).toBe(true), { timeout: 10_000 })
     await launched.get(script)!.done
+    await vi.waitFor(() => expect(runner.isUpdateIdle()).toBe(true), { timeout: 10_000 })
     const reply = await runner.handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 65_536 })
     if (reply.operation !== 'read') throw new Error('Expected a read reply.')
     return { ...reply, checkout: launched.get(script)!.cwd }
