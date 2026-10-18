@@ -15,10 +15,12 @@ export interface CloudRun {
   runId: string; repository: string; mirror: string; commit: string; suite: CiSuite; startedAt: string
   providerRunId: string | null; state: CiHostRun['state']; finishedAt: string | null; exitCode: number | null
   message: string | null; durations?: CiDurations; testResults?: CiTestResults
+  integrationCoverage?: string
+  selection?: CiHostRun['selection']
   transport?: CiHostRun['transport']
   testsStarted?: boolean
   scope?: CiScope; files?: string[]; part?: CiPart; baseCommit?: string
-  dispatch?: { input: CloudDispatchInput; attempts: number; at: string; uncertain?: boolean; cancelAccepted?: boolean
+  dispatch?: { input?: CloudDispatchInput; attempts: number; at: string; uncertain?: boolean; cancelAccepted?: boolean
     notSent?: boolean }
   reconciliation?: { attempts: number; at: string; since?: string; previousMessage: string | null }
   publicationRequest?: Extract<CiHostRequest, { operation: 'start' }>
@@ -122,9 +124,29 @@ export function validateProviderParameters(provider: Pick<CloudProvider, 'label'
 }
 
 /** The service refused because its API rate limit is spent; callers back off instead of retrying at once. */
-function rateLimited(label: string, text: string) {
+function rateLimited(label: string, text: string, details?: Record<string, unknown>) {
   return /rate limit|\b429\b|too many requests/i.test(text)
-    ? new DomainError('CI_CLOUD_RATE_LIMITED', `${label} rate limit reached; polling paused.`, 503) : null
+    ? new DomainError('CI_CLOUD_RATE_LIMITED', `${label} rate limit reached; polling paused.`, 503, details) : null
+}
+
+function confirmedDispatchRefusal(file: string, args: string[], text: string): boolean {
+  if (file === 'gh' && args[0] === 'workflow' && args[1] === 'run') {
+    return /could not create workflow dispatch event: HTTP (?:400|401|403|404|422|429)\b/.test(text)
+  }
+  if (!(file === 'circleci' && args[0] === 'run' && args[1] === 'trigger')) return false
+  if (/^(?:error:\s*)?(?:HTTP(?:\/\d(?:\.\d)?)?\s+|API returned\s+)(?:401|403|404|429)\b/im.test(text)) {
+    return true
+  }
+  try {
+    const failure = JSON.parse(text) as { error?: unknown; code?: unknown; message?: unknown } | null
+    if (failure?.error !== true) return false
+    if (failure.code === 'auth.token_invalid' || failure.code === 'run.not_found') return true
+    return failure.code === 'api.error' && typeof failure.message === 'string'
+      && /^API returned (?:401|403|404|429):/.test(failure.message)
+  } catch {
+    // Non-JSON transport errors cannot establish that the provider refused the trigger.
+    return false
+  }
 }
 
 async function command(ports: HostCiPorts, label: string, file: string, args: string[], timeoutMs = 120_000) {
@@ -134,7 +156,14 @@ async function command(ports: HostCiPorts, label: string, file: string, args: st
 async function executeCommand(ports: HostCiPorts, label: string, file: string, args: string[], timeoutMs: number) {
   const result = await ports.run(file, args, { timeoutMs })
   if (result.code !== 0) {
-    const limited = rateLimited(label, result.stderr)
+    // gh resolves the workflow with a GET before it sends the dispatch POST.
+    const githubDispatch = file === 'gh' && args[0] === 'workflow' && args[1] === 'run'
+    const workflowLookupFailed = githubDispatch
+      && result.stderr.trimStart().startsWith(
+        `Get "https://api.github.com/repos/${args[args.indexOf('-R') + 1]}/actions/workflows/${args[2]}":`)
+    const dispatchRejected = confirmedDispatchRefusal(file, args, result.stderr)
+    const notSent = workflowLookupFailed || dispatchRejected
+    const limited = rateLimited(label, result.stderr, notSent ? { notSent: true } : undefined)
     if (limited) throw limited
     const noCircleArtifacts = file === 'circleci' && args[0] === 'job' && args[1] === 'artifact'
       && /\bartifacts\.not_found\b/.test(result.stderr)
@@ -161,11 +190,7 @@ async function executeCommand(ports: HostCiPorts, label: string, file: string, a
         + result.stderr.trim().slice(0, 300), 502)
     }
 
-    // gh resolves the workflow with a GET before it sends the dispatch POST.
-    const workflowLookupFailed = file === 'gh' && args[0] === 'workflow' && args[1] === 'run'
-      && result.stderr.trimStart().startsWith(
-        `Get "https://api.github.com/repos/${args[args.indexOf('-R') + 1]}/actions/workflows/${args[2]}":`)
-    const code = workflowLookupFailed ? 'CI_CLOUD_DISPATCH_NOT_SENT' : 'CI_CLOUD_FAILED'
+    const code = notSent ? 'CI_CLOUD_DISPATCH_NOT_SENT' : 'CI_CLOUD_FAILED'
     throw new DomainError(code, `${label} did not accept ${file} ${args[0]} ${args[1]}: `
       + `${result.stderr.trim().slice(0, 300)}`, 502)
   }
@@ -185,6 +210,7 @@ async function findFile(directory: string, name: string): Promise<string | null>
 
 export interface CloudArtifacts {
   durations: unknown; testResults: unknown; watchdogFailure?: unknown; suiteLog?: string
+  integrationCoverage?: unknown; selection?: unknown
 }
 const ARTIFACT_VISIBILITY_MS = 5 * 60_000
 const noArtifacts: CloudArtifacts = { durations: null, testResults: null }
@@ -196,6 +222,7 @@ async function readArtifacts(directory: string): Promise<CloudArtifacts> {
   }
   const suiteLog = await findFile(directory, 'suite.log')
   return { durations: await read('durations.json'), testResults: await read('test-results.json'),
+    integrationCoverage: await read('integration-coverage.json'), selection: await read('selection.json'),
     watchdogFailure: await read('watchdog-message.json'),
     ...(suiteLog ? { suiteLog: await readFile(suiteLog, 'utf8') } : {}) }
 }
@@ -262,7 +289,7 @@ export class GitHubActionsProvider implements CloudProvider {
   }
 
   private async matches(run: CloudRun) {
-    const branch = run.dispatch?.input.workflowRef ?? run.dispatch?.input.branch ?? 'main'
+    const branch = run.dispatch?.input?.workflowRef ?? run.dispatch?.input?.branch ?? 'main'
     const listed = JSON.parse(await this.gh(['run', 'list', '-R', run.mirror, '--workflow', WORKFLOW, '--branch', branch,
       '--event', 'workflow_dispatch', '--limit', '200', '--json', 'databaseId,displayTitle,status,headSha'], 15_000)) as
       { databaseId: number; displayTitle: string; status?: string; headSha: string }[]
@@ -430,7 +457,7 @@ export class CircleCiProvider implements CloudProvider {
   }
 
   async discover(run: CloudRun) {
-    const branch = run.dispatch?.input.workflowRef
+    const branch = run.dispatch?.input?.workflowRef
     if (!branch || branch !== `ci/${run.commit}-${run.runId}`) {
       throw new DomainError('CI_CLOUD_SUBMISSION_UNCERTAIN',
         'CircleCI submission has no execution-specific ref; ownership retained.', 503)
@@ -609,6 +636,7 @@ export class CircleCiProvider implements CloudProvider {
     await rm(directory, { recursive: true, force: true })
     await mkdir(directory, { recursive: true })
     const resultPaths = new Set(['durations/durations.json', 'durations/test-results.json',
+      'durations/integration-coverage.json', 'durations/selection.json',
       'durations/watchdog-message.json', 'durations/suite.log'])
     for (const artifact of (JSON.parse(listed) as { path: string; url: string }[])
       .filter(value => resultPaths.has(value.path) || run.suite === 'integration'
