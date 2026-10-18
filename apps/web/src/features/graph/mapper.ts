@@ -265,12 +265,10 @@ export function workflowToGraph(
     }
   })
 
-  // Only explicit manual placement overrides the hierarchy; older saved positions are automatic.
+  // The Board lays itself out from the graph: saved positions are not used to draw it.
   const placed = layoutHierarchy(nodes.map((node) => ({ id: node.id, width: node.width ?? DEFAULT_NODE_WIDTH, height: node.height ?? DEFAULT_NODE_HEIGHT })),
     workflow.edges, workflow.entryNodeId ?? undefined)
-  nodes.forEach((node, index) => {
-    if (!workflow.nodes[index]!.position?.manual) nodes[index] = { ...node, position: placed.get(node.id)! } as GraphNode
-  })
+  nodes.forEach((node, index) => { nodes[index] = { ...node, position: placed.get(node.id)! } as GraphNode })
 
   const nodeBoxes = new Map<string, NodeBox>(nodes.map((node) => [node.id, {
     position: node.position,

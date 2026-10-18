@@ -60,22 +60,13 @@ export const RemoteReviewerTurnSchema = z.object({
   result: z.lazy(() => ExecutionResultSchema).optional(), resultDigest: PlacementDigestSchema.optional(),
   historyDigest: PlacementDigestSchema.optional(),
 }).strict()
-export const RemoteWorkflowTurnInputSchema = z.object({
-  correlationId: z.string().min(1), promptDigest: PlacementDigestSchema,
-  sessionMode: z.enum(['regular', 'plan']).default('regular'),
-  outputSchemaDigest: PlacementDigestSchema.optional(), deferSettlement: z.literal(true).optional(),
-}).strict()
 export const RemoteOperationReceiptSchema = z.object({
   schemaVersion: z.literal(1), intent: DispatchIntentSchema,
   ...HistoricalDeviceExecutionAdmissionFields,
   connection: DeviceConnectionIdentitySchema, workerIncarnationId: z.uuid(),
   sequence: z.number().int().positive(), phase: RemoteOperationPhaseSchema,
   interaction: RemoteInteractionTargetSchema.optional(), native: RemoteNativeIdentitySchema.optional(), terminal: RemoteTerminalEvidenceSchema.optional(),
-  entryAttempted: z.boolean(), turnEntryAttempted: z.boolean(), turnInput: RemoteWorkflowTurnInputSchema.optional(),
-  resultRepairs: z.array(z.object({ previousInput: RemoteWorkflowTurnInputSchema,
-    previousTurnId: z.string().min(1), afterSequence: z.number().int().min(-1) }).strict()).max(2).optional(),
-  outputValidationComplete: z.literal(true).optional(),
-  stopFence: z.boolean(), controls: z.array(RemoteOwnerControlSchema).max(128),
+  entryAttempted: z.boolean(), turnEntryAttempted: z.boolean(), turnInput: z.object({ correlationId: z.string().min(1), promptDigest: PlacementDigestSchema, sessionMode: z.enum(['regular', 'plan']).default('regular') }).strict().optional(), stopFence: z.boolean(), controls: z.array(RemoteOwnerControlSchema).max(128),
   nativeTurnRetries: z.array(z.object({
     previousTurnId: z.string().min(1), turnId: z.string().min(1),
   }).strict()).optional(),
@@ -92,8 +83,7 @@ export const RemoteOperationReceiptSchema = z.object({
   if ((value.phase === 'confirmed_terminal') !== (value.terminal !== undefined)) context.addIssue({ code: 'custom', message: 'Terminal phase requires exact closure evidence.' })
   if (['start_acknowledged', 'running'].includes(value.phase) && !value.native) context.addIssue({ code: 'custom', message: 'Acknowledged/running requires native ownership.' })
   if (value.retainedReviewer && (!value.native?.turnId || value.native.turnId !== value.retainedReviewer.workflowTurnId
-    || value.turnInput?.correlationId !== `execution:${value.intent.executionId}${value.resultRepairs?.length
-      ? `:result-repair:${value.resultRepairs.length}` : ''}`
+    || value.turnInput?.correlationId !== `execution:${value.intent.executionId}`
     || value.retainedReviewer.result.outcome !== 'succeeded'))
     context.addIssue({ code: 'custom', message: 'Reviewer retention requires its successful original workflow turn.' })
   if (value.reviewTurns?.some(turn => !value.retainedReviewer
@@ -104,52 +94,6 @@ export const RemoteOperationReceiptSchema = z.object({
     context.addIssue({ code: 'custom', message: 'Review turns retain distinct assignments on the original session.' })
 })
 export type RemoteOperationReceipt = z.infer<typeof RemoteOperationReceiptSchema>
-/** Resolve only submissions established by the original turn and its connected repair journal. */
-export function remoteWorkflowTurnId(receipt: RemoteOperationReceipt, correlationId: string): string | undefined {
-  const native = receipt.native
-  if (!native?.turnId) return undefined
-  const initial = `execution:${receipt.intent.executionId}`
-  const repairs = receipt.resultRepairs ?? []
-  if (!repairs.length) return correlationId === (receipt.turnInput?.correlationId ?? initial) ? native.turnId : undefined
-  if (repairs.some((repair, index) => repair.previousInput.correlationId !== initial
-    + (index ? `:result-repair:${index}` : '') || !repair.previousInput.deferSettlement)
-    || receipt.turnInput?.correlationId !== `${initial}:result-repair:${repairs.length}`) return undefined
-  const first = repairs[0]!.previousTurnId
-  const retries = receipt.nativeTurnRetries ?? []
-  const start = retries.findIndex(retry => retry.previousTurnId === first)
-  const submitted = [first]
-  for (const retry of retries.slice(start < 0 ? retries.length : start)) {
-    if (retry.previousTurnId !== submitted.at(-1) || submitted.includes(retry.turnId)) return undefined
-    submitted.push(retry.turnId)
-  }
-  if (submitted.at(-1) !== native.turnId) return undefined
-  let previous = -1
-  for (const repair of repairs) {
-    const index = submitted.indexOf(repair.previousTurnId)
-    if (index <= previous) return undefined
-    previous = index
-  }
-  const preceding = repairs.find(repair => repair.previousInput.correlationId === correlationId)
-  if (preceding) return preceding.previousTurnId
-  return receipt.turnInput.correlationId === correlationId && native.turnId !== repairs.at(-1)!.previousTurnId
-    ? native.turnId : undefined
-}
-
-export function remoteWorkflowHasTurn(receipt: RemoteOperationReceipt, sessionId: string, turnId: string): boolean {
-  const native = receipt.native
-  if (native?.sessionId !== sessionId || !native.turnId) return false
-  const initial = `execution:${receipt.intent.executionId}`
-  const correlations = [initial,
-    ...(receipt.resultRepairs ?? []).map((_, index) => `${initial}:result-repair:${index + 1}`)]
-  if (!correlations.some(correlation => remoteWorkflowTurnId(receipt, correlation) !== undefined)) return false
-  const retries = receipt.nativeTurnRetries ?? []
-  const submitted = [retries[0]?.previousTurnId ?? native.turnId]
-  for (const retry of retries) {
-    if (retry.previousTurnId !== submitted.at(-1) || submitted.includes(retry.turnId)) return false
-    submitted.push(retry.turnId)
-  }
-  return submitted.at(-1) === native.turnId && submitted.includes(turnId)
-}
 export function remoteActiveNative(receipt: RemoteOperationReceipt): RemoteNativeIdentity | undefined {
   const turn = receipt.reviewTurns?.at(-1)
   if (!receipt.native || !turn) return receipt.native

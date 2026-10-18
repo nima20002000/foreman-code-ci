@@ -281,7 +281,7 @@ export class ProductionHarnessRegistry {
       ? harnessSessionConnectionGeneration(binding) : harnessConnectionGeneration(binding)
   }
   async profileEvidence(value: HostHarnessOverride, client?: pg.PoolClient,
-    options?: { includeFailed?: true; purpose?: 'execution' | 'observation' }): Promise<HostHarnessProfileEvidence | null> {
+    options?: { includeFailed: true }): Promise<HostHarnessProfileEvidence | null> {
     if (value.target.hostRef.kind === 'device') {
       if (!options?.includeFailed && this.connection(value.target.hostRef.deviceId)?.clockReason) return null
       const binding = this.currentRemoteBinding(value.target.hostRef.deviceId)
@@ -302,8 +302,7 @@ export class ProductionHarnessRegistry {
       || proof.configurationFingerprint !== commandInputHash(withAdvancedDefaults(value.configuration))
       || proof.driverId !== value.driverId || proof.driverRevision !== installation.driverRevision
       || proof.protocolRevision !== installation.protocolRevision || proof.suiteRevision !== suiteRevision
-      || options?.purpose !== 'observation'
-        && (proof.environmentGeneration !== installation.environmentGeneration || proof.connectionGeneration !== connectionGeneration)
+      || proof.environmentGeneration !== installation.environmentGeneration || proof.connectionGeneration !== connectionGeneration
       || (!options?.includeFailed && (!proof.authenticated || !proof.compatible || !proof.qualified))) return null
     return proof
   }

@@ -11,8 +11,7 @@ import { gitFixtureEnvironment } from './helpers/gitFixture.js'
 import { sourceStorageCapacityFixture } from './helpers/sourceStorageCapacityFixture.js'
 import { createSourceManifest, sourceSha256 } from '../src/modules/sources/manifest.js'
 import { identity, openPrivateRoot } from '../src/modules/sources/privateFilesystem.js'
-import { archiveMaterializationClaim, PrivateSourceMaterializer,
-  releaseMaterializationClaim } from '../src/modules/sources/materialization.js'
+import { PrivateSourceMaterializer, releaseMaterializationClaim } from '../src/modules/sources/materialization.js'
 import { systemGitWorktreePorts, type GitWorktreePorts } from '../src/modules/sources/gitWorktree.js'
 import { closeSourceWorktree } from '../src/modules/sources/worktreeCleanup.js'
 import { measureRetainedMaterializationFootprint } from '../src/modules/sources/retainedDirectoryUsage.js'
@@ -323,47 +322,6 @@ it('releases finished Loop copies while preserving live ownership, dirty work an
   } finally {
     await f.dispose()
   }
-}, 60_000)
-
-it('retires previously closed Worker references while the Loop Run continues and preserves execution history', async () => {
-  const f = await fixture('device')
-  try {
-    await f.pool.query(`
-      create table remote_execution_receipts (operation_id text, receipt jsonb);
-      create table execution_dispatch_intents (operation_id text, execution_id text)`)
-    const copy = await addOccurrence(f, 'completed')
-    const receipt = copy.record.receipt
-    await archiveMaterializationClaim(receipt, { filesystem: f.binding.filesystem }, async () => 'released')
-    const worktree = await closeSourceWorktree(receipt, AbortSignal.timeout(30_000), f.ports)
-    expect(worktree).toMatchObject({ state: 'removed' })
-    const footprint = await measureRetainedMaterializationFootprint(receipt)
-    await new PostgresSourceReservations().retainMaterialization(f.pool, copy.reservation,
-      { ...footprint, retainedBytes: footprint.retainedBytes + 16 * 1024 })
-    await f.pool.query(`update source_execution_materializations set state='closed',worktree_cleanup=$2
-      where materialization_id=$1`, [receipt.materializationId, worktree])
-    const live = await addOccurrence(f, 'running')
-    const settling = await addOccurrence(f, 'completed', false)
-    const history = (await f.pool.query('select record from harness_executions order by id')).rows
-    await expect(f.sources.confirmClosed(live.record)).rejects.toMatchObject({ code: 'SOURCE_EXECUTION_UNCERTAIN' })
-    await closeCompletedWorkflowSources(f.pool, f.sources, error => { throw error })
-    await expect(stat(join(f.binding.canonicalPath, receipt.materializationId, 'tree')))
-      .rejects.toMatchObject({ code: 'ENOENT' })
-    const retained = (await f.pool.query('select record,reserved_bytes from source_storage_reservations where reservation_id=$1',
-      [copy.reservation.reservationId])).rows[0]
-    expect(retained.record.referenceReclaimed).toBe(true)
-    expect(Number(retained.reserved_bytes)).toBeLessThan(footprint.retainedBytes + 16 * 1024)
-    const sourcePath = f.manifest.entries[0]!.path
-    for (const active of [live, settling]) {
-      expect(await readFile(join(active.workingDirectory, sourcePath))).toEqual(f.bytes)
-      expect(await readFile(join(f.binding.canonicalPath, active.record.receipt.materializationId, 'tree', sourcePath)))
-        .toEqual(f.bytes)
-    }
-    expect((await f.pool.query('select execution_state from runs')).rows).toEqual([{ execution_state: 'running' }])
-    expect((await f.pool.query('select record from harness_executions order by id')).rows).toEqual(history)
-    await closeCompletedWorkflowSources(f.pool, f.sources, error => { throw error })
-    expect((await f.pool.query('select record,reserved_bytes from source_storage_reservations where reservation_id=$1',
-      [copy.reservation.reservationId])).rows[0]).toEqual(retained)
-  } finally { await f.dispose() }
 }, 60_000)
 
 it('visits later cleanup candidates after more than one page of persistent retained worktrees', async () => {

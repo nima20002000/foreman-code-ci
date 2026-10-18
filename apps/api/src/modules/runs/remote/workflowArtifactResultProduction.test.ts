@@ -11,7 +11,6 @@ import { repeatDigest, repeatExecutionIdentity } from '../repeatResolution.js'
 import type { WorkflowNativeProofRecord } from '../workflowNativeProof.js'
 import { currentInitialPrompt, parseCurrentChoiceResult } from '../currentRouting.js'
 import { createProductionWorkflowArtifactResultSource } from './workflowArtifactResultProduction.js'
-import { artifactWorkflowReceipt } from './workflowRepair.test-support.js'
 
 const reads = vi.hoisted(() => ({ snapshot: vi.fn(), execution: vi.fn(), dispatch: vi.fn(), intent: vi.fn(),
   receipt: vi.fn(), placement: vi.fn() }))
@@ -35,24 +34,17 @@ function fixture() {
     workflowVersionId: 'version', executionSemanticsVersion: 3 }, ref: { nodeId: 'node', occurrence: null },
     execution: repeatExecutionIdentity(execution), inputDigest: repeatDigest(execution.input), commandId: 'execution:execution',
     session: { harness: 'codex', providerVersion: 'unit', nativeSessionId: 'session' },
-    original: { type: 'history', history: { correlationId: 'execution:execution', nativeTurnId: 'turn',
-      events: [], pendingInteractions: [], terminalTurn: { correlationId: 'execution:execution', providerId: 'turn', result: execution.result } } },
+    original: { type: 'history', history: { terminalTurn: { result: execution.result } } },
     observedAt: '2026-10-02T00:00:00.000Z', ownerId: 'owner', ownerFence: '1',
-    lifetimeGeneration: 1, closureGeneration: '1', lane: { id: 'lane', token: 'token',
-      connectionGeneration: 1, providerId: 'turn' } } as WorkflowNativeProofRecord
+    lifetimeGeneration: 1, closureGeneration: '1', lane: null } as WorkflowNativeProofRecord
   const accepted = { attempt: { workspaceId: 'workspace', workflowId: 'workflow', runId: 'run', nodeId: 'node',
-    executionId: 'execution', attemptId: 'attempt', placementHash: 'a'.repeat(64) },
-    context: { nativeSessionId: 'session', turnId: 'turn' }, transferContext: { mainId: randomUUID(),
-      deviceId: randomUUID(), workerInstallationId: randomUUID(), keyRevision: 1, authorizationRevision: 1,
-      bootId: randomUUID(), connectionEpoch: randomUUID() } } as AcceptedArtifactPublication
-  const remote = artifactWorkflowReceipt(accepted, execution.result!)
+    executionId: 'execution', attemptId: 'attempt', placementHash: 'placement' },
+    context: { nativeSessionId: 'session', turnId: 'turn' }, transferContext: { connectionEpoch: 'original' } } as AcceptedArtifactPublication
   const version = { id: 'version', definition: { nodes: [{ id: 'node', artifactOutputs: { version: 1, outputKeys: ['report'] } }] } }
   const snapshot = { version, stopRequested: false, cleanupPending: false }
   const stored = { execution, ref: proof.ref, inputDigest: proof.inputDigest }
   let durable = { record: structuredClone(proof), source_digest: repeatDigest(proof, 4 * 1024 * 1024) }
-  const connection = new ExclusiveGraphConnection({ query: vi.fn(async (text: string) => ({
-    rows: [text.includes('from remote_execution_receipts') ? { receipt: remote } : durable], rowCount: 1,
-  })) } as unknown as pg.ClientBase, () => {})
+  const connection = new ExclusiveGraphConnection({ query: vi.fn(async () => ({ rows: [durable], rowCount: 1 })) } as unknown as pg.ClientBase, () => {})
   const owner = { runId: 'run', assertOwned() {}, oneShotConnection: () => connection } as unknown as RunOwnership
   const capture = { owner, execution, session: proof.session, source: proof.original,
     assertCurrent: vi.fn() } as unknown as WorkflowNativeCapture
@@ -62,21 +54,14 @@ function fixture() {
   const authority = { resolveWorkflowContext: vi.fn(async () => accepted), authorize: vi.fn(async () => ({ context: accepted.context })) }
   reads.snapshot.mockResolvedValue(snapshot); reads.execution.mockResolvedValue(stored)
   reads.dispatch.mockResolvedValue({ operationId: 'operation' })
-  reads.intent.mockResolvedValue(remote.intent)
+  reads.intent.mockResolvedValue({ operationId: 'operation', runId: 'run', nodeId: 'node', executionId: 'execution',
+    inputDigest: proof.inputDigest, technicalAttempt: 1, attemptId: 'attempt', bindingHash: 'placement' })
   const service = createProductionWorkflowArtifactResultSource({ captures: { read: () => capture }, physical,
     authority: authority as unknown as Parameters<typeof createProductionWorkflowArtifactResultSource>[0]['authority'] })
   const retain = () => connection.transaction(sql => service.retainOriginalLocked(sql, evidence, proof))
   return { service, retain, connection, proof, accepted, capture, physical, authority, snapshot, stored,
-    evidence, remote, changeProof: () => { durable = { ...durable, record: { ...durable.record, ownerFence: '2' } } } }
+    evidence, changeProof: () => { durable = { ...durable, record: { ...durable.record, ownerFence: '2' } } } }
 }
-it('waits for Main validation and physical settlement before retaining an artifact terminal', async () => {
-  const f = fixture()
-  delete f.remote.terminal
-  f.remote.phase = 'running'
-  await f.retain()
-  expect(f.service.acceptedAfterCommit(f.evidence)).toBeUndefined()
-  expect(f.physical.artifactTerminalContext).not.toHaveBeenCalled()
-})
 it('qualifies only the exact committed original and rechecks it across later awaits', async () => {
   const f = fixture(); await f.retain()
   expect(f.service.acceptedAfterCommit(f.evidence)).toEqual(f.accepted)

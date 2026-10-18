@@ -1,8 +1,7 @@
 import pg from 'pg'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createDatabase } from '../../infrastructure/database.js'
-import { withCiDatabasePriority, withoutCiDatabasePriority,
-  withoutCiDatabaseReservation } from '../../infrastructure/ciDatabasePriority.js'
+import { withCiDatabasePriority, withoutCiDatabaseReservation } from '../../infrastructure/ciDatabasePriority.js'
 import type { PostgresCommandCoordinator } from '../commands/postgres.js'
 import type { CiAuthority } from '../jobs/ciAuthority.js'
 import { claimCiSlot } from './cloudSlots.js'
@@ -247,101 +246,3 @@ it('keeps persisted build validation independent of shared-pool saturation', asy
     await db.close()
   }
 })
-
-it('drains a late cloud acknowledgement after the pass expires while preserving the remaining queue', async () => {
-  vi.useFakeTimers()
-  const records = [queuedTicket(), queuedTicket({ queuedAt: '2026-10-12T00:00:01.000Z' })]
-  const db = database(records)
-  const release = deferred()
-  const starts: string[] = []
-  const endpoint: HostCiEndpoint = { computers: async () => [cloud], request: async (_computer, request) => {
-    if (request.operation === 'status') return readyStatus()
-    if (request.operation !== 'start') throw new Error('Unexpected fixture executor request')
-    starts.push(request.runId)
-    await release.promise
-    return { operation: 'start', run: { runId: request.runId, state: 'running', step: 'lint',
-      startedAt: new Date().toISOString(), finishedAt: null, exitCode: null, message: null, logBytes: 0 } }
-  } }
-  const service = new HostCiService(db.pool, {} as PostgresCommandCoordinator,
-    {} as CiAuthority, {} as CiCommits, endpoint)
-  let drained = false
-  try {
-    const dispatch = service.dispatch()
-    await vi.waitFor(() => expect(starts, JSON.stringify(records.map(run => db.read(run.id).record)))
-      .toEqual([records[0]!.id]))
-    await vi.advanceTimersByTimeAsync(3001)
-    await dispatch
-    const draining = service.drain().then(() => { drained = true })
-    await vi.advanceTimersByTimeAsync(0)
-    expect(drained).toBe(false)
-    release.resolve()
-    await vi.advanceTimersByTimeAsync(0)
-    await draining
-    expect(db.read(records[0]!.id).record).toMatchObject({ state: 'running' })
-    expect(db.read(records[1]!.id).record.state).toBe('queued')
-    expect(starts).toEqual([records[0]!.id])
-  } finally {
-    release.resolve()
-    await vi.advanceTimersByTimeAsync(0)
-    await service.close()
-    await db.close()
-  }
-})
-
-it.each(['before submission', 'during provider I/O'] as const)(
-  'persists claimed cloud delivery with the shared pool saturated %s', async saturation => {
-    vi.useFakeTimers()
-    const run = queuedTicket()
-    const db = database([run])
-    const held: pg.PoolClient[] = []
-    const occupySharedPool = async () => {
-      held.push(...await withoutCiDatabasePriority(() =>
-        Promise.all(Array.from({ length: 4 }, () => db.pool.connect()))))
-    }
-    const release = deferred()
-    const starts: string[] = []
-    let providerPoolError: unknown
-    const endpoint: HostCiEndpoint = { computers: async () => [cloud], request: async (_computer, request) => {
-      if (request.operation === 'status') return readyStatus()
-      if (request.operation !== 'start') throw new Error('Unexpected fixture executor request')
-      starts.push(request.runId)
-      if (saturation === 'during provider I/O') await occupySharedPool()
-      const reserved = await withCiDatabasePriority(() => Promise.all([db.pool.connect(), db.pool.connect()]))
-      for (const client of reserved) client.release()
-      providerPoolError = await db.pool.connect().then(client => {
-        client.release()
-        return null
-      }, error => error)
-      await release.promise
-      return { operation: 'start', run: { runId: request.runId, state: 'running', step: 'build',
-        startedAt: new Date().toISOString(), finishedAt: null, exitCode: null, message: null, logBytes: 0 } }
-    } }
-    const service = new HostCiService(db.pool, {} as PostgresCommandCoordinator,
-      {} as CiAuthority, {} as CiCommits, endpoint)
-    try {
-      if (saturation === 'before submission') await occupySharedPool()
-      const dispatch = service.dispatch()
-      await vi.advanceTimersByTimeAsync(1500)
-      expect(starts).toEqual([run.id])
-      expect(db.read(run.id).record.dispatchAttempts).toBe(1)
-      expect(providerPoolError).toMatchObject({ message: 'timeout exceeded when trying to connect' })
-      expect(held).toHaveLength(4)
-      await vi.advanceTimersByTimeAsync(3001)
-      await dispatch
-      const reserved = await withCiDatabasePriority(() => Promise.all([db.pool.connect(), db.pool.connect()]))
-      for (const client of reserved) client.release()
-      release.resolve()
-      await vi.advanceTimersByTimeAsync(1001)
-      await service.drain()
-      expect(db.read(run.id).record).toMatchObject({ state: 'running' })
-      expect(db.read(run.id).record.dispatchRequest).toBeUndefined()
-      expect(starts).toEqual([run.id])
-    } finally {
-      release.resolve()
-      for (const client of held) client.release()
-      await vi.advanceTimersByTimeAsync(1001)
-      await service.close()
-      await db.close()
-    }
-  },
-)

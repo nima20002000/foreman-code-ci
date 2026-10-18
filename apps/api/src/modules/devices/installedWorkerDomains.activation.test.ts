@@ -15,7 +15,6 @@ import { buildApp } from '../../app.js'
 import { DomainError } from '../errors.js'
 import { RemoteOperationJournal } from '../runs/remote/operationJournal.js'
 import { sourceFixture } from '../runs/remote/__tests__/installedWorkflowHost.js'
-import { workerHarnessCatalogFixture } from '../../../test/helpers/workerHarnessCatalog.js'
 import { createInstalledWorkerDomains } from './installedWorkerDomains.js'
 
 // Native MCP files are exercised separately; domain fixtures must not touch the host user profile.
@@ -206,42 +205,5 @@ it('reports an unavailable selected installation although managed setup cannot r
   } finally {
     managedMcp.ensureReady = async () => {}
     await mounted.close()
-  }
-})
-
-it('returns installed inventory when native MCP repair fails for a signed-out harness', async () => {
-  const f = await sourceFixture()
-  for (const name of ['workflow-operations.json', 'job-runtime-operations.json']) {
-    const journal = await RemoteOperationJournal.open(join(f.root, name), { initializeNewInstallation: true })
-    await journal.close()
-  }
-  const binding = f.context.binding
-  const pairing = { formatVersion: 1 as const, mainId: binding.mainId, deviceId: binding.deviceId,
-    workerInstallationId: binding.workerInstallationId, keyRevision: 1, authorizationRevision: 1,
-    endpoint: 'wss://worker.example/device/connect', mainPublicKeyFingerprint: 'a'.repeat(64),
-    credential: 'b'.repeat(64), expiresAt: '2099-01-01T00:00:00.000Z' }
-  const location = { path: join(f.root, 'workflow-runtime.json'), ownerUid: process.getuid!() }
-  const native = await workerHarnessCatalogFixture()
-  const selection = native.selection
-  const refresh = vi.fn(async () => {
-    await writeFile(location.path, JSON.stringify(selection), { mode: 0o600 })
-    return location
-  })
-  const mounted = await createInstalledWorkerDomains({ stateDirectory: f.root, pairing, bootId: binding.bootId,
-    configuration: null, refreshWorkflowConfiguration: refresh, approvedRoots: async () => f.approvedRoots,
-    connection: () => ({ currentBinding: () => binding, mainNow: () => Date.now(),
-      captureRequest: () => undefined }), codexSuiteRevision: 'fixture-suite' })
-  const discovery = mounted.extensions.find(extension => extension.namespace === 'harness-discovery-v1')!
-  managedMcp.ensureReady = async () => { throw new DomainError('CODEX_SIGNED_OUT', 'Codex is signed out.', 409) }
-  try {
-    const { payload } = await discovery.handle!({ operation: 'discover', refreshId: randomUUID() },
-      { binding, signal: AbortSignal.timeout(20_000) })
-    expect(HarnessRegistryReadbackSchema.parse(payload).installations).toMatchObject([
-      { driverId: 'codex', installed: true }, { driverId: 'claude', installed: true }])
-  } finally {
-    managedMcp.ensureReady = async () => {}
-    await mounted.close()
-    await native.close()
-    vi.unstubAllEnvs()
   }
 })

@@ -7,11 +7,11 @@ import type { WorkerConversationConfiguration, WorkerConversationReceipt,
 import type { NativeProcessRegistry } from '../harnesses/recovery/processRegistry.js'
 import type { WorkerConversationAllocation } from './workerHost.js'
 import type { WorkerConversationJournal } from './workerJournal.js'
-import { closedWorkerConversationOwner } from './closedWorkerConversation.js'
+import { workerConversationProcessDigest } from './workerNativeOwner.js'
 import { DomainError } from '../errors.js'
 import { sameConversationForAppAccess } from './conversationAppAccess.js'
 import { readWorkerConversationResults } from './workerConversationResults.js'
-import { validWorkerConfigurationTransition } from './workerConfigurationTransition.js'
+import { validRunChatSkillsTransition } from './workerRunChatBinding.js'
 
 function unavailable(message: string): never {
   throw new DomainError('WORKER_CONVERSATION_RECOVERY_REQUIRED', message, 409)
@@ -44,13 +44,13 @@ export async function recoverWorkerConversation(input: {
     && request.previousBinding && request.previousConfiguration
     && isDeepStrictEqual(request.previousBinding, record.binding)
     && isDeepStrictEqual(request.source, session)
-    && validWorkerConfigurationTransition(record.binding, request.binding, request.previousConfiguration, input.configuration)
+    && validRunChatSkillsTransition(record.binding, request.binding, request.previousConfiguration, input.configuration)
   const settlingSkills = request.method === 'conversation.open' && request.mode === 'attach'
     && request.previousBinding && request.previousConfiguration
     && isDeepStrictEqual(request.previousBinding, record.binding)
     && isDeepStrictEqual(request.source, session)
     && isDeepStrictEqual(input.configuration, request.previousConfiguration)
-    && validWorkerConfigurationTransition(record.binding, request.binding, input.configuration, request.configuration)
+    && validRunChatSkillsTransition(record.binding, request.binding, input.configuration, request.configuration)
   const targetBinding = changingAccess || changingSkills ? request.binding : record.binding
   if (!session || !owner || !record.creation || record.closing || record.closed) {
     unavailable('The persisted chat has no recoverable native session.')
@@ -64,7 +64,15 @@ export async function recoverWorkerConversation(input: {
     if (record.connection[field] !== input.connection[field]) unavailable('The original paired worker authority changed.')
   }
   assertWorkerProviderAccountBinding(record.binding.accountBinding, input.connection)
-  const scopeOwner = closedWorkerConversationOwner(record, input.registry)
+  const scopeOwner = `conversation:${record.binding.owner.conversationId}`
+  const snapshot = input.registry.snapshot()
+  const launches = snapshot.launches.filter(launch => launch.owner === scopeOwner)
+  const original = launches.filter(launch => launch.guardian && launch.provider && launch.boundary
+    && workerConversationProcessDigest(record.binding, launch) === owner.processIdentityDigest)
+  if (original.length !== 1 || !launches.length
+    || launches.some(launch => launch.lifecycle !== 'closed' || !launch.closureEvidence)) {
+    unavailable('The original native process has not been positively closed.')
+  }
   await input.assertCurrent()
   if (record.turns.some(turn => !['completed', 'rejected'].includes(turn.status) && !turn.nativeTurnId && !turn.nativeSubmission)
     || record.compactions.some(control => !['completed', 'failed', 'no-op'].includes(control.state.status)

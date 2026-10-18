@@ -1,6 +1,8 @@
 import { REMOTE_EXECUTION_EXTENSION, REMOTE_PREPARATION_EXTENSION } from '@foreman-code/contracts/remote-execution-rpc'
+import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
+import type { DeviceApplicationResult } from '@foreman-code/contracts/device-application'
 import { sameWorkflowValue } from '@foreman-code/contracts/wave25'
-import type { CapturedDeviceApplicationRequest } from '../devices/deviceApplicationChannel.js'
+import type { DeviceApplicationRequestOptions } from '../devices/deviceApplicationChannel.js'
 import { waitForDeviceReconnect } from '../devices/deviceReconnect.js'
 import { DeviceConnectionError } from '../devices/deviceWire.js'
 import { DomainError } from '../errors.js'
@@ -8,7 +10,8 @@ import type { MainWorkerCarrier } from './workerCarrier.js'
 
 /** The authenticated Main device endpoint, as the carrier sees it. */
 export interface DeviceCarrierEndpoint {
-  captureRequest(deviceId: string, namespace: string): CapturedDeviceApplicationRequest | undefined
+  captureRequest(deviceId: string, namespace: string): { binding: Readonly<DeviceSessionBinding>
+    request(payload: unknown, options?: DeviceApplicationRequestOptions): Promise<DeviceApplicationResult> } | undefined
   isRevoked(deviceId: string, authorizationRevision: number): boolean
 }
 /** Each capture returns the identity and request closure of the SAME live channel; reconnect waits for the same boot. */
@@ -22,7 +25,6 @@ export function deviceEndpointCarrier(endpoint: () => DeviceCarrierEndpoint): Ma
         ? preparation : undefined
       const { mainId, workerInstallationId, bootId, keyRevision, authorizationRevision, connectionGeneration } = captured.binding
       return { identity: { mainId, deviceId, workerInstallationId, bootId, keyRevision, authorizationRevision, connectionGeneration },
-        ...(captured.stopReadAdmission ? { stopReadAdmission: true as const } : {}),
         supports: namespace => namespace === REMOTE_EXECUTION_EXTENSION
           || namespace === REMOTE_PREPARATION_EXTENSION.namespace && compatiblePreparation !== undefined,
         request(namespace, payload, options) {

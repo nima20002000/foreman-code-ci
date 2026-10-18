@@ -96,25 +96,13 @@ export function validateSourcePreparationClosure(reconciliationId: string, owner
   }
   return closure
 }
-function readPreparationClosure(state: State) {
-  if (state.closure) return SourcePreparationClosureSchema.parse(state.closure)
-  const { preparationClosure, reclamation } = state.reservation
-  if (!preparationClosure) return null
-  if (!reclamation?.owner || reclamation.operationId !== state.operationId) {
-    throw new DomainError('SOURCE_CLOSURE_CONFLICT', 'Automatic source closure has no matching preparation owner.', 409)
-  }
-  return validateSourcePreparationClosure(reclamation.reclamationId,
-    SourceOperationOwnerSchema.parse(reclamation.owner), preparationClosure)
-}
-
 function metadata(state: State) {
-  const closure = readPreparationClosure(state)
   return SourcePreparationSchema.parse({ workspaceId: state.workspaceId, operationId: state.operationId,
     hostRef: state.root.selection.hostRef,
     executionId: state.attempt.executionId, attemptId: state.attempt.attemptId, reservationId: state.reservation.reservationId,
     reservationState: state.reservation_state, reservedBytes: Number(state.reserved_bytes),
-    materializationId: state.record?.receipt.materializationId ?? closure?.materializationId ?? null,
-    closure })
+    materializationId: state.record?.receipt.materializationId ?? (state.closure ? SourcePreparationClosureSchema.parse(state.closure).materializationId : null),
+    closure: state.closure })
 }
 export async function admissionClosed(sql: GraphSqlClient, state: State) {
   if (state.kind === 'workflow') return assertWorkflowPreparationClosed(sql, state)

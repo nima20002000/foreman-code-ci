@@ -64,12 +64,12 @@ it('allows concurrent profile admission while another reader waits for its Run o
   const settings = new HarnessInstanceSettingsRepository(pool)
   vi.spyOn(settings, 'latest').mockImplementation(f.settings.latest)
   const current = vi.mocked(f.authority.current).getMockImplementation()!
-  vi.mocked(f.authority.current).mockImplementation(async (owner, value, client, options) => {
+  vi.mocked(f.authority.current).mockImplementation(async (owner, value, client) => {
     if (owner === 'first-owner') {
       reading.resolve()
       await resume.promise
     }
-    return current(owner, value, client, options)
+    return current(owner, value, client)
   })
   const admission = new AcceptedClaudeProfileAdmission(settings,
     f.proofs as unknown as HostHarnessProfileEvidenceRepository, f.authority)
@@ -269,25 +269,3 @@ it.each(['codex', 'claude'] as const)(
     await expect(admission.revalidate('owner', accepted)).rejects.toThrow('revoked owner')
   },
 )
-
-it('carries observation purpose through the authority while execution rejects a previous boot proof', async () => {
-  const f = fixture()
-  f.proof.connectionGeneration = 'previous-worker-boot'
-  const registry = { ...f.registry, installation: { ...f.registry.installation,
-    connectionGeneration: 'replacement-worker-boot' } }
-  vi.mocked(f.authority.current).mockImplementation(async (_owner, _value, _client,
-    options?: { purpose: 'execution' | 'observation' }) => {
-    if (options?.purpose !== 'observation') {
-      throw new DomainError('HARNESS_PROFILE_UNAVAILABLE', 'The execution proof belongs to an earlier boot.', 409)
-    }
-    return { registry, applicationInstallationId: 'main', suiteRevision: 's', pin: f.proof.claudeProof!.pin }
-  })
-  const observed = await f.admission.admitObservation('saved-session-reader', f.selector)
-  expect(observed.persistedProof).toEqual(f.proof)
-  expect(observed.currentBinding.connectionGeneration).toBe('replacement-worker-boot')
-  await expect(f.admission.admit('execution-owner', f.selector))
-    .rejects.toMatchObject({ code: 'HARNESS_PROFILE_UNAVAILABLE' })
-  vi.mocked(f.authority.authorize).mockRejectedValue(new DomainError('ACCESS_DENIED', 'Caller revoked.', 403))
-  await expect(f.admission.admitObservation('revoked-reader', f.selector))
-    .rejects.toMatchObject({ code: 'ACCESS_DENIED' })
-})
