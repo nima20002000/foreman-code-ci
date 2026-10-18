@@ -152,7 +152,8 @@ if (args[1] === 'db:up') {
     const started = deferred()
     starts.set(script, started)
     await runner.handle({ operation: 'start', runId, repository: 'example/project', commit: git('rev-parse', 'HEAD'),
-      suite: warmup ? 'install' : 'lint', scope: 'affected', files: [], ...(warmup ? { warmup: true } : {}) })
+      suite: warmup ? 'install' : 'lint',
+      ...(warmup ? { scope: 'full', warmup: true } : { scope: 'affected', files: [] }) })
     await vi.waitFor(async () => {
       const reply = await runner.handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 65_536 })
       if (reply.operation !== 'read' || reply.run.state === 'starting') throw new Error('Run is starting')

@@ -47,6 +47,11 @@ async function computer() {
 const fs = require('node:fs')
 const path = require('node:path')
 const args = process.argv.slice(2)
+if (args[1] === 'fetch') {
+  if (args.includes('--offline') && fs.existsSync(${JSON.stringify(offlineFailure)})) process.exit(7)
+  if (!args.includes('--offline')) fs.rmSync(${JSON.stringify(offlineFailure)}, { force: true })
+  process.exit(0)
+}
 if (args[1] === 'install') {
   fs.appendFileSync(${JSON.stringify(calls)}, JSON.stringify({ cwd: process.cwd(), args,
     installed: fs.existsSync('node_modules/dependency') }) + '\\n')
