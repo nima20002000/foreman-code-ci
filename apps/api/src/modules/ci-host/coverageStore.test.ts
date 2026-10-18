@@ -6,7 +6,7 @@ import { expect, it } from 'vitest'
 import { IntegrationCoverageStore } from './coverageStore.js'
 import { expandIntegrationCoverage } from '@foreman-code/contracts/ci-coverage'
 
-it('merges complete commit artifacts, keeps repositories separate and selects the newest ancestor', async () => {
+it('merges commit artifacts, keeps repositories separate and selects the newest usable ancestor', async () => {
   const cache = join(homedir(), '.cache/foreman-tmp')
   await mkdir(cache, { recursive: true })
   const root = await mkdtemp(join(cache, 'coverage-store-'))
@@ -23,8 +23,10 @@ it('merges complete commit artifacts, keeps repositories separate and selects th
         blobs: new Map([['apps/api/src/a.ts', commit === a ? 'old' : 'changed']]),
         read: async () => '',
       }) }
-    expect(await store.selection('example/project', b, commits)).toEqual({ changedFiles: [],
-      reason: 'No complete coverage map from an ancestor commit is available.' })
+    const partial = await store.selection('example/project', b, commits)
+    expect(expandIntegrationCoverage(JSON.parse(gunzipSync(Buffer.from(partial.map!, 'base64')).toString())).coverage)
+      .toEqual({ [first]: ['apps/api/src/a.ts'] })
+    expect(partial.changedFiles).toEqual(['apps/api/src/a.ts'])
     await store.record('example/project', a, { ...report, coverage: { [second]: ['apps/api/src/b.ts'] } })
     const selected = await store.selection('example/project', b, commits)
     expect(expandIntegrationCoverage(JSON.parse(gunzipSync(Buffer.from(selected.map!, 'base64')).toString())).coverage)

@@ -53,8 +53,20 @@ test('tests that execute child processes retain static reachability', () => {
     [first, second])
 })
 
+test('a partial map keeps coverage matches and applies missing-record fallback per test file', () => {
+  const third = 'apps/api/test/third.integration.test.ts'
+  const unrelated = 'apps/api/test/unreached.integration.test.ts'
+  const graph = new Map([...sources, [third, "import '../src/app.js'"], [unrelated, 'export {}']])
+  const partial = { ...coverageMap, testFiles: [first, second, third, unrelated],
+    coverage: { [first]: [source], [third]: [other] } }
+  const result = select([source], { sources: graph, coverageMap: partial })
+  assert.deepEqual(result.files, [first, second])
+  assert.deepEqual(result.staticFallbackFiles, [second])
+  assert.match(result.reason, /missing coverage records/i)
+})
+
 test('missing, malformed and incomplete maps retain static selection with a reason', () => {
-  for (const map of [undefined, {}, { ...coverageMap, coverage: { [first]: [source] } },
+  for (const map of [undefined, {}, { ...coverageMap, coverage: {} }, { ...coverageMap, coverage: { [first]: [source] } },
     { ...coverageMap, coverage: { [first]: ['/private/source.ts'], [second]: [other] } }]) {
     const result = select([source], { coverageMap: map })
     assert.deepEqual(result.files, [first, second])
