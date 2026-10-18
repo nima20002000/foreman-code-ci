@@ -45,32 +45,7 @@ describe.skipIf(!postgresEnabled)('runtime owner with PostgreSQL reply loss', ()
     }
   })
 
-  it('keeps ownership and excludes a successor while an epoch reply is delayed beyond its deadline', async () => {
-    const proxy = await stalledReplies(2)
-    const lost = vi.fn()
-    const owner = new OperatorRuntimeOwner(proxy.url, lost)
-    const successor = new OperatorRuntimeOwner(proxy.url, vi.fn())
-    let reading: Promise<unknown> | undefined
-    try {
-      await owner.acquire()
-      reading = owner.readRuntimeEpoch().then(value => ({ value }), error => ({ error }))
-      await new Promise(resolve => setTimeout(resolve, 5_200))
-      expect(owner.active).toBe(true)
-      expect(lost).not.toHaveBeenCalled()
-      await expect(successor.acquire()).rejects.toMatchObject({ code: 'OPERATOR_API_ALREADY_OWNED' })
-      await proxy.close()
-      expect(await reading).toEqual({ value: expect.stringMatching(/^\d+$/) })
-      expect(owner.active).toBe(true)
-      expect(lost).not.toHaveBeenCalled()
-    } finally {
-      await proxy.close()
-      await reading
-      await successor.close()
-      await owner.close()
-    }
-  })
-
-  it.each(['acquire', 'close'] as const)('bounds %s and releases its physical advisory-lock session', async (operation) => {
+  it.each(['acquire', 'epoch', 'close'] as const)('bounds %s and releases its physical advisory-lock session', async (operation) => {
     const monitor = new pg.Client({ connectionString: process.env.TEST_DATABASE_URL! })
     await monitor.connect()
     const proxy = await stalledReplies(operation === 'acquire' ? 1 : 2)
@@ -85,7 +60,8 @@ describe.skipIf(!postgresEnabled)('runtime owner with PostgreSQL reply loss', ()
           and objid=710014::oid and objsubid=1 and granted
           and database=(select oid from pg_database where datname=current_database())`)).rows[0]?.pid
       let ownerPid = operation === 'acquire' ? undefined : await readOwnerPid()
-      work = operation === 'acquire' ? owner.acquire() : owner.close()
+      work = operation === 'acquire' ? owner.acquire()
+        : operation === 'epoch' ? owner.readRuntimeEpoch() : owner.close()
       const result = work.then(() => 'success', error => error)
       if (operation === 'acquire') {
         ownerPid = await readUntil(readOwnerPid, pid => pid !== undefined,
