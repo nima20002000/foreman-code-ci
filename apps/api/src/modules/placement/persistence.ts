@@ -33,7 +33,7 @@ export async function insertAcceptedPlacements(sql: GraphTransactionSql, runId: 
       select $1,p.node_id,p.binding_hash,p.record::jsonb
       from unnest($2::text[],$3::text[],$4::text[]) with ordinality as p(node_id,binding_hash,record,ordinal)
       order by p.ordinal`,
-    [runId, pins.map(pin => pin.nodeId), pins.map(pin => pin.bindingHash), pins.map(canonicalGraphJson)])
+    [runId, pins.map(pin => pin.nodeId), pins.map(pin => pin.bindingHash), pins.map(pin => canonicalGraphJson(pin))])
   }
   beforeGraphCommit(sql, async () => {
     await assertCurrent()
