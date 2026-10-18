@@ -81,7 +81,7 @@ export async function pruneMirrorBranches(options: {
       // A new dispatch after the index was read stays protected until the next sweep.
       const newer = index && Date.parse(run.startedAt) > index.readAt
       if (index && !index.ids.has(run.runId) && !newer) continue
-      const branch = run.dispatch?.input.branch ?? run.mirrorBranch
+      const branch = run.dispatch?.input?.branch ?? run.mirrorBranch
       if (branch) keep.add(`refs/heads/${branch}`)
       else {
         // Older persisted tickets predate the stored mirror ref; either publication may still be in use.
@@ -89,8 +89,8 @@ export async function pruneMirrorBranches(options: {
         if (run.baseCommit) keep.add(`refs/heads/ci/${run.commit}-${run.baseCommit}`)
       }
       keep.add(`refs/heads/ci-default/${run.commit}`)
-      if (run.dispatch?.input.workflowRef) keep.add(`refs/heads/${run.dispatch.input.workflowRef}`)
-      if (run.dispatch?.input.defaultBranch) keep.add(`refs/heads/${run.dispatch.input.defaultBranch}`)
+      if (run.dispatch?.input?.workflowRef) keep.add(`refs/heads/${run.dispatch.input.workflowRef}`)
+      if (run.dispatch?.input?.defaultBranch) keep.add(`refs/heads/${run.dispatch.input.defaultBranch}`)
     }
   }
   const refs = listed.split('\n').flatMap(line => {
