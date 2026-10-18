@@ -8,17 +8,19 @@ HTML, or source-map report generation.
 
 Each partition publishes a fragment alongside its durations and test results.
 Main merges fragments by source repository and commit in its integration coverage
-cache. A fragment cannot narrow selection until every file in the inventory is
-accounted for. Tests without worker reports, or tests starting child processes or
+cache. A partial map can narrow selection for files with records. For each test
+in the map inventory without a record, selection uses its static import graph.
+Selected files using that fallback appear in `selection.staticFallbackFiles`.
+Tests without worker reports, or tests starting child processes or
 worker threads, retain static selection because worker coverage cannot describe
 all their execution. Failed tests can still supply coverage; absent worker reports
 use static selection.
 
-For affected integration requests, Main chooses a complete ancestor map and
+For affected integration requests, Main chooses a usable ancestor map and
 compares its source tree with the requested commit. Lockfile or shared CI
 infrastructure changes invalidate the map. All intervening changes participate
 in selection, including changes that preceded the request's comparison base.
-The runner selects coverage matches, changed or unrecorded tests, and static
+The runner selects coverage matches, changed or new tests, and static
 dependents for unrecorded source changes and tests requiring static selection.
 Missing or unusable maps use ordinary static import selection. Existing rules
 that require full scope still apply.

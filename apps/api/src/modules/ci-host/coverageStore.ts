@@ -4,7 +4,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { gzipSync } from 'node:zlib'
 import { CiIntegrationCoverageSchema, type CiCoverageSelection, type IntegrationCoverage } from '@foreman-code/contracts'
-import { compactIntegrationCoverage, completeIntegrationCoverage } from '@foreman-code/contracts/ci-coverage'
+import { compactIntegrationCoverage, usableIntegrationCoverage } from '@foreman-code/contracts/ci-coverage'
 import { ciInfrastructureFile } from '@foreman-code/contracts/ci-import-graph'
 import type { CiCommits } from './serviceTypes.js'
 
@@ -80,10 +80,10 @@ export class IntegrationCoverageStore {
     let newest: IntegrationCoverage | undefined
     for (const path of paths.filter(path => /^[a-f0-9]{40}(?:[a-f0-9]{24})?\.json$/.test(path))) {
       const map = await this.read(join(this.directory(repository), path))
-      if (!completeIntegrationCoverage(map) || !await commits.isAncestor(repository, map.commit, commit)) continue
+      if (!usableIntegrationCoverage(map) || !await commits.isAncestor(repository, map.commit, commit)) continue
       if (!newest || await commits.isAncestor(repository, newest.commit, map.commit)) newest = map
     }
-    if (!newest) return fallback('No complete coverage map from an ancestor commit is available.')
+    if (!newest) return fallback('No usable coverage map from an ancestor commit is available.')
     const [before, after] = await Promise.all([
       commits.testTree(repository, newest.commit), commits.testTree(repository, commit),
     ])

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ciCodeFile as codeFile, ciInfrastructureFile, importSpecifiers as imports, resolveImport }
   from '../packages/contracts/src/ciImportGraph.mjs'
-import { completeIntegrationCoverage } from '../packages/contracts/src/ciCoverage.mjs'
+import { usableIntegrationCoverage } from '../packages/contracts/src/ciCoverage.mjs'
 
 const projects = ['apps/api', 'apps/web', 'apps/worker', 'packages/contracts']
 const testFile = /\.(?:test|spec)\.(?:[cm]?[jt]sx?)$/
@@ -18,7 +18,7 @@ export function selectAffectedFiles({ suite, changedFiles, sources, exports = {}
   if (changedFiles.some(file => codeFile.test(file) && !sources.has(file))) return full('A source file was removed.')
   // Glob dependencies cannot be represented by one literal import edge.
   if ([...sources.values()].some(text => /import\.meta\.glob\s*\(/.test(text))) return full('Glob imports require a full run.')
-  const useCoverage = suite === 'integration' && completeIntegrationCoverage(coverageMap)
+  const useCoverage = suite === 'integration' && usableIntegrationCoverage(coverageMap)
   const recordedSources = new Set(useCoverage ? Object.values(coverageMap.coverage).flat() : [])
   const staticChanges = useCoverage ? changedFiles.filter(file => !recordedSources.has(file)) : changedFiles
   const dependents = new Map()
@@ -36,16 +36,23 @@ export function selectAffectedFiles({ suite, changedFiles, sources, exports = {}
     }
   }
   let files
+  let staticFallbackFiles = []
+  let missingRecords = []
   if (suite === 'integration') {
     files = [...affected].filter(file => sources.has(file) && integrationFile.test(file))
     if (useCoverage) {
       const changed = new Set(changedFiles)
-      const staticAffected = coverageMap.staticTests?.length
-        ? selectAffectedFiles({ suite, changedFiles, sources, exports }).files : []
+      const inventory = new Set(coverageMap.testFiles)
+      missingRecords = [...sources.keys()].filter(file => integrationFile.test(file)
+        && inventory.has(file) && !Object.hasOwn(coverageMap.coverage, file))
+      const staticTests = new Set([...coverageMap.staticTests ?? [], ...missingRecords])
+      const staticAffected = new Set(staticTests.size
+        ? selectAffectedFiles({ suite, changedFiles, sources, exports }).files : [])
+      staticFallbackFiles = missingRecords.filter(file => staticAffected.has(file)).sort()
       for (const file of sources.keys()) {
-        if (integrationFile.test(file) && (changed.has(file) || !Object.hasOwn(coverageMap.coverage, file)
-          || coverageMap.staticTests?.includes(file) && staticAffected.includes(file)
-          || coverageMap.coverage[file].some(path => changed.has(path)))) files.push(file)
+        if (integrationFile.test(file) && (changed.has(file) || !inventory.has(file)
+          || staticTests.has(file) && staticAffected.has(file)
+          || coverageMap.coverage[file]?.some(path => changed.has(path)))) files.push(file)
       }
     }
   }
@@ -63,10 +70,11 @@ export function selectAffectedFiles({ suite, changedFiles, sources, exports = {}
   let reason = 'Static import reachability from changed files.'
   if (suite === 'integration') {
     reason = useCoverage
-      ? `Coverage map ${coverageMap.commit}; changed/unrecorded tests included; static reachability for ${staticChanges.length} unrecorded changes and subprocess tests.`
-      : `Static import reachability: ${coverageReason ?? 'no complete usable coverage map'}.`
+      ? `Coverage map ${coverageMap.commit}; changed/new tests included; static selection for ${missingRecords.length} missing coverage records, ${staticChanges.length} unrecorded changes and subprocess tests.`
+      : `Static import reachability: ${coverageReason ?? 'no usable coverage map'}.`
   }
-  return { scope: 'affected', files: [...new Set(files)].sort(), reason }
+  return { scope: 'affected', files: [...new Set(files)].sort(), reason,
+    ...(useCoverage ? { staticFallbackFiles } : {}) }
 }
 
 /** Read the snapshot tree against an explicit ancestor or its default branch merge-base. */
@@ -114,8 +122,8 @@ export function affectedSnapshot(commit, suite, cwd = process.cwd(), defaultRef 
 
 /** Git history, rather than wall-clock age, determines whether a map still describes this runtime. */
 function ancestorCoverage(git, commit, maps) {
-  const candidates = maps.filter(completeIntegrationCoverage)
-  if (!candidates.length) return { coverageReason: 'no complete coverage map' }
+  const candidates = maps.filter(usableIntegrationCoverage)
+  if (!candidates.length) return { coverageReason: 'no usable coverage map' }
   const ancestors = git(['rev-list', commit]).split('\n')
   for (const ancestor of ancestors) {
     const coverageMap = candidates.find(map => map.commit === ancestor)

@@ -2,6 +2,7 @@ export interface AffectedSelection {
   scope: 'affected' | 'full'
   files: string[]
   reason: string
+  staticFallbackFiles?: string[]
 }
 
 import type { IntegrationCoverage } from '../packages/contracts/src/ciCoverage.mjs'

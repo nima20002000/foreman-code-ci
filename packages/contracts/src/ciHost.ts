@@ -39,7 +39,8 @@ export const CiSelectedFilesSchema = z.array(z.string().min(1)
   .regex(/^(?!\/|[A-Za-z]:)[^\\\0]+$/)
   .refine(file => !file.split('/').some(part => part === '..' || part === '.' || part === '')))
 export const CiSelectionSchema = z.object({ scope: CiScopeSchema, files: CiSelectedFilesSchema,
-  reason: z.string().max(2000) }).strict()
+  reason: z.string().max(2000), staticFallbackFiles: CiSelectedFilesSchema.optional()
+    .describe('Selected integration files that used static imports because their coverage record is missing.') }).strict()
 
 export function validCiSelection(value: { suite: CiSuite; scope?: CiScope | undefined; files?: string[] | undefined }) {
   if (value.scope === 'full') return !value.files?.length

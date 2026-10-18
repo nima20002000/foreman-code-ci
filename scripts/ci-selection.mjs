@@ -44,7 +44,8 @@ export function executionSelection({ commit, baseCommit, executionSuite, default
   if (partition && (selection.scope === 'affected' || suite === 'integration')) {
     files = integrationPartition(files, executionDurations(suite, cwd, learned), partition)
   }
-  return { ...selection, files }
+  return { ...selection, files,
+    ...(selection.staticFallbackFiles ? { staticFallbackFiles: selection.staticFallbackFiles.filter(file => files.includes(file)) } : {}) }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

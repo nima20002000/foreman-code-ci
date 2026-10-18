@@ -10,7 +10,7 @@ import { join, matchesGlob } from 'node:path'
 import { gzipSync, gunzipSync } from 'node:zlib'
 import { compactIntegrationCoverage, expandIntegrationCoverage } from '@foreman-code/contracts/ci-coverage'
 import { CiIntegrationCoverageSchema, CiWatchdogFailureSchema, CiDurationsSchema, CiHostReplySchema, CiHostRequestSchema, CiTestResultsSchema, integrationPartition,
-  CiScopeSchema, CiSelectedFilesSchema, validCiSelection,
+  CiScopeSchema, CiSelectedFilesSchema, CiSelectionSchema, validCiSelection,
   CI_HOST_START_PROTOCOL_VERSION,
   type CiDurations, type CiHostReply, type CiHostRequest, type CiHostRun, type CiSuite, type CiPart, type CiPartition, type CiScope } from '@foreman-code/contracts'
 import { DomainError } from '../errors.js'
@@ -953,7 +953,8 @@ export class HostCiRunner {
     if (selection.scope === 'full') return full(selection.reason)
     const files = await this.partFiles(meta, source, selection.files)
     meta.files = files
-    meta.selection = { scope: selection.scope, files, reason: selection.reason }
+    meta.selection = { ...selection, files,
+      ...(selection.staticFallbackFiles ? { staticFallbackFiles: selection.staticFallbackFiles.filter(file => files.includes(file)) } : {}) }
     meta.message = files.length ? `Selected ${files.length} affected files for ${meta.part ?? meta.suite}: ${selection.reason}`
       : 'No affected files for this suite part.'
   }
@@ -989,11 +990,10 @@ export class HostCiRunner {
       meta.suite, meta.commit, JSON.stringify(changed), coveragePath], { cwd: source, env: this.environment, signal })
     signal?.throwIfAborted()
     if (result.code !== 0) throw new Error(`Affected selection failed: ${result.stderr.trim().slice(0, 500)}`)
-    const selection = JSON.parse(result.stdout) as { scope: unknown; files: unknown; reason: string }
-    const scope = CiScopeSchema.parse(selection.scope)
-    const files = CiSelectedFilesSchema.parse(selection.files)
+    const selection = CiSelectionSchema.parse(JSON.parse(result.stdout))
+    const { scope, files } = selection
     if (!validCiSelection({ suite: meta.suite, scope, files })) throw new Error('The repository returned invalid affected files.')
-    return { scope, files, reason: selection.reason }
+    return selection
   }
 
   private async partFiles(meta: RunMeta, source: string, selected: string[]) {
