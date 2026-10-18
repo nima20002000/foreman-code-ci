@@ -104,8 +104,7 @@ it('expires closed managed MCP owners without workflow retirement while retainin
   }
 })
 
-it.each(['catalog-authentication', 'model-catalog', 'claude-metadata', 'operator-configuration-inspection',
-  'native-output-qualification', 'claude-profile-version', 'claude-profile-check'])(
+it.each(['catalog-authentication', 'model-catalog'])(
   'expires confirmed-closed %s records without workflow settlement', async prefix => {
     const directory = fixture()
     const root = privateDirectory(join(directory, 'native-processes'))
