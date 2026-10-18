@@ -7,9 +7,12 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
 import { integrationProcessProgress, waitForIntegrationProcess } from './integration-process.mjs'
+import { reusableIntegrationFile } from './integration-slot-process.mjs'
 import { integrationEnvironmentCapabilities, partitionIntegrationCapabilities,
   supportsInstalledWorkerHost } from './integration-capabilities.mjs'
 import { readVerificationEnvironment } from '../packages/contracts/src/verificationEnvironment.mjs'
+import { exclusiveIntegrationFiles, requirements,
+  userSystemdIntegrationFiles } from '../packages/contracts/src/integrationScheduling.mjs'
 import { createTestRoot, removeTestRoot, requireTestServerUrl, testAdminUrl } from './test-resources.mjs'
 import { migrationContentsHash } from './test-database-template.mjs'
 import { readIntegrationStartup } from './integration-startup.mjs'
@@ -24,6 +27,21 @@ import { autoRetestFiles, discoverFiles, failedCasesFromLog, failedFilesFromLog,
   signalOwnedChildren, vitestCommand, writeDurations } from './test-integration.mjs'
 
 const startupReporter = new URL('./integration-startup-reporter.mjs', import.meta.url).pathname
+const terminalRecoveryFiles = [
+  'apps/api/test/recovery-terminal-before-closure-approval.integration.test.ts',
+  'apps/api/test/recovery-terminal-before-closure-repeat-success.integration.test.ts',
+  'apps/api/test/recovery-terminal-before-closure-retry-exhausted.integration.test.ts',
+  'apps/api/test/recovery-terminal-before-closure-retry.integration.test.ts',
+  'apps/api/test/recovery-terminal-before-closure-sequential-success.integration.test.ts',
+  'apps/api/test/recovery-terminal-before-closure-stop.integration.test.ts',
+]
+const startupStorageFiles = [
+  'apps/api/test/test-startup-storage-isolation.integration.test.ts',
+  'apps/api/test/test-startup-file-storage-isolation.integration.test.ts',
+  'apps/api/test/test-startup-harness-storage-isolation.integration.test.ts',
+  'apps/api/test/test-startup-workspace-storage-isolation.integration.test.ts',
+  'apps/api/test/test-startup-mcp-storage-isolation.integration.test.ts',
+]
 
 test('migration template keys include ordered versions and SQL contents', () => {
   const migrations = [{ version: 1, sql: 'first migration' }, { version: 2, sql: 'second migration' }]
@@ -109,8 +127,8 @@ test('each affected integration file runs only when its required capability is p
     ['apps/api/test/remote-review-production-delivery.integration.test.ts', 'installedWorkerHost'],
     ['apps/api/test/remote-review-production-entry-recovery.integration.test.ts', 'installedWorkerHost'],
     ['apps/api/test/remote-review-production-main-crash.integration.test.ts', 'installedWorkerHost'],
-    ['apps/api/test/remote-review-production-main-expired-receipt.integration.test.ts', 'installedWorkerHost'],
-    ['apps/api/test/remote-review-production-main-graceful.integration.test.ts', 'installedWorkerHost'],
+    ['apps/api/test/remote-review-expired-receipt-recovery.integration.test.ts', 'installedWorkerHost'],
+    ['apps/api/test/remote-review-main-recovery.integration.test.ts', 'installedWorkerHost'],
     ['apps/api/test/remote-review-production-reserved-decision.integration.test.ts', 'installedWorkerHost'],
     ['apps/api/test/remote-review-production-worker-crash.integration.test.ts', 'installedWorkerHost'],
     ['apps/api/test/historical-chat-placement-fork.integration.test.ts', 'installedWorkerHost'],
@@ -146,6 +164,22 @@ test('installed API packaging and recovery files run exclusively while publicati
     exclusive: installed,
     parallel: [ordinary],
   })
+})
+
+test('retained remote review recovery files run alone in a fresh process on an installed Worker host', () => {
+  const recovery = [
+    'apps/api/test/remote-review-expired-receipt-recovery.integration.test.ts',
+    'apps/api/test/remote-review-main-recovery.integration.test.ts',
+  ]
+  const ordinary = 'apps/api/test/remote-review-changes.integration.test.ts'
+  assert.deepEqual(partitionIntegrationFiles([...recovery, ordinary]), { exclusive: recovery, parallel: [ordinary] })
+  const environment = { schemaVersion: 1, runtime: 'host', capabilities: { nativeCgroupDelegation: true,
+    testDatabaseStartup: true, dockerCompose: true, installedWorkerHost: false } }
+  const { runnable, unavailable } = partitionIntegrationCapabilities(recovery, environment)
+  assert.deepEqual(runnable, [])
+  assert.deepEqual(unavailable.map(file => file.requiredCapabilities), recovery.map(() => ['installedWorkerHost']))
+  for (const file of recovery) assert.equal(reusableIntegrationFile(file), false)
+  assert.equal(reusableIntegrationFile(ordinary), true)
 })
 
 test('unsupported integration files remain required and prevent a complete or passing report', async () => {
@@ -190,8 +224,8 @@ test('installed Worker suites remain unavailable and nonzero even when explicitl
     'apps/api/test/remote-review-production-delivery.integration.test.ts',
     'apps/api/test/remote-review-production-entry-recovery.integration.test.ts',
     'apps/api/test/remote-review-production-main-crash.integration.test.ts',
-    'apps/api/test/remote-review-production-main-expired-receipt.integration.test.ts',
-    'apps/api/test/remote-review-production-main-graceful.integration.test.ts',
+    'apps/api/test/remote-review-expired-receipt-recovery.integration.test.ts',
+    'apps/api/test/remote-review-main-recovery.integration.test.ts',
     'apps/api/test/remote-review-production-reserved-decision.integration.test.ts',
     'apps/api/test/remote-review-production-worker-crash.integration.test.ts',
     'apps/api/test/worker-chat-profile-qualification.integration.test.ts',
@@ -225,8 +259,8 @@ test('diagnostic case selection preserves file and worker limits and passes the 
     'apps/api/test/remote-review-production-delivery.integration.test.ts',
     'apps/api/test/remote-review-production-entry-recovery.integration.test.ts',
     'apps/api/test/remote-review-production-main-crash.integration.test.ts',
-    'apps/api/test/remote-review-production-main-expired-receipt.integration.test.ts',
-    'apps/api/test/remote-review-production-main-graceful.integration.test.ts',
+    'apps/api/test/remote-review-expired-receipt-recovery.integration.test.ts',
+    'apps/api/test/remote-review-main-recovery.integration.test.ts',
     'apps/api/test/remote-review-production-reserved-decision.integration.test.ts',
     'apps/api/test/remote-review-production-worker-crash.integration.test.ts',
   ]
@@ -249,6 +283,26 @@ test('integration discovery takes a sorted snapshot with startup included', () =
   assert.equal(new Set(files).size, files.length)
   assert.ok(files.includes('apps/api/test/dev-startup.integration.test.ts'))
   assert.ok(files.every((file) => file.startsWith('apps/api/test/') && file.endsWith('.integration.test.ts')))
+})
+
+for (const [name, entries] of [
+  ['capability requirements', requirements.keys()],
+  ['user systemd', userSystemdIntegrationFiles],
+  ['exclusive scheduling', exclusiveIntegrationFiles],
+]) test(`${name} entries refer to discovered integration files`, () => {
+  const discovered = new Set(discoverFiles())
+  assert.deepEqual([...entries].filter(file => !discovered.has(file)), [])
+})
+
+for (const [name, files] of [
+  ['terminal recovery', terminalRecoveryFiles],
+  ['startup storage isolation', startupStorageFiles],
+]) test(`${name} suites run exclusively in fresh processes`, () => {
+  const ordinary = 'apps/api/test/ordinary.integration.test.ts'
+  const partition = partitionIntegrationFiles([...files, ordinary])
+  assert.deepEqual(partition.exclusive.slice().sort(), files.slice().sort())
+  assert.deepEqual(partition.parallel, [ordinary])
+  for (const file of files) assert.equal(reusableIntegrationFile(file), false, file)
 })
 
 test('discovery accepts valid Git filenames and rejects non-normal paths', () => {
@@ -858,9 +912,9 @@ const lowPressure = () => ({ cpuUtilization: 0, cpuPressure: 0,
   memoryPressure: 0, memoryUtilization: 0, totalMemoryBytes: 16 * 1024 ** 3, cpuCount: 8 })
 
 const installedWorkerFiles = [
-  'apps/api/test/remote-review-production-main-expired-receipt.integration.test.ts',
+  'apps/api/test/remote-review-production-main-crash.integration.test.ts',
   'apps/api/test/remote-review-production-worker-crash.integration.test.ts',
-  'apps/api/test/remote-review-production-main-graceful.integration.test.ts',
+  'apps/api/test/remote-review-production-entry-recovery.integration.test.ts',
 ]
 const measuredFiles = Array.from({ length: 9 }, (_, index) => `apps/api/test/measured-${index}.integration.test.ts`)
 const ordinaryFiles = Array.from({ length: 5 }, (_, index) => `apps/api/test/ordinary-${index}.integration.test.ts`)
@@ -1047,7 +1101,7 @@ for (const [name, reservedReview] of [
   ['remote review delivery', 'apps/api/test/remote-review-production-delivery.integration.test.ts'],
   ['historical workflow version pins', 'apps/api/test/workflow-historical-version-pins.integration.test.ts'],
   ['source snapshot retention', 'apps/api/test/source-snapshot-retention.integration.test.ts'],
-  ['terminal recovery', 'apps/api/test/recovery-terminal-before-closure.integration.test.ts'],
+  ...terminalRecoveryFiles.map(file => [`terminal recovery (${file})`, file]),
   ['six-node checkpoint routing', 'apps/api/test/eng03-b-durability-routing.integration.test.ts'],
 ]) test(`${name} runs without competing integration or gate processes`, async () => {
   const ordinary = 'apps/api/test/ordinary.integration.test.ts'
