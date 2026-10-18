@@ -42,7 +42,7 @@ export interface EditIntentBoundary<S extends EditStageScope, I extends DurableE
   intentSchema: { parse(raw: unknown): I }
   readResultSchema: { parse(raw: unknown): EditIntentReadResult<I> }
   resultSchema: { parse(raw: unknown): NonNullable<I['result']> }
-  prepare(client: pg.PoolClient, principal: ManagementPrincipal, input: S, saveCommandId: string, source: Source):
+  prepare(client: pg.PoolClient, principal: ManagementPrincipal, input: S, saveCommandId: string):
     Promise<Pick<I, 'savedWorkflowRevision' | 'stagedDraft' | 'agentPins' | 'saveInput'>>
   stagedAgentIds(draft: I['stagedDraft']): string[]
   requiresRunSettlement(client: pg.PoolClient, draft: I['stagedDraft']): boolean | Promise<boolean>
@@ -179,7 +179,7 @@ export class DurableEditIntentService<S extends EditStageScope, I extends Durabl
       perform: async (client) => {
         // prepare holds the same workspace/workflow locks as Start and Save,
         // applies existing typed operations in memory, and performs no publication.
-        const prepared = await this.drafts.prepare(client, principal, input, randomUUID(), source)
+        const prepared = await this.drafts.prepare(client, principal, input, randomUUID())
         const existing = await client.query<{ id: string }>(`select id from graph_edit_intents
           where workspace_id=$1 and workflow_id=$2 and state not in ('saved','discarded') limit 1`,
         [input.workspaceId, input.workflowId])
