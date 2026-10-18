@@ -45,6 +45,7 @@ it.each(['UTC month resets', 'credits reach the reserve'])('rejects standby star
   const runId = randomUUID()
   let now = Date.parse('2026-10-31T23:59:59Z')
   let reserveReached = false
+  const reason = boundary === 'UTC month resets' ? /standby/i : /20,000 reserve/i
   const provider = new CircleCiProvider(f.ports, { circleToken: async () => null }, {
     owner: 'delta', circleAccountId: 'reserve', role: 'standby', mirrorNames: new Set(['site-ci']),
   })
@@ -70,10 +71,10 @@ it.each(['UTC month resets', 'credits reach the reserve'])('rejects standby star
   try {
     expect(await cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId, repository: 'octo/site',
       commit: f.commit, suite: 'lint', scope: 'full' }))
-      .toMatchObject({ run: { state: 'failed', testsStarted: false, message: expect.stringMatching(/standby/i) } })
+      .toMatchObject({ run: { state: 'failed', testsStarted: false, message: expect.stringMatching(reason) } })
     expect(f.circle.triggered).toEqual([])
     expect(await cloud.handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 1000 }))
-      .toMatchObject({ run: { state: 'failed' }, text: expect.stringMatching(/standby/i) })
+      .toMatchObject({ run: { state: 'failed' }, text: expect.stringMatching(reason) })
   } finally {
     vi.mocked(fs.writeFile).mockImplementation(actual.writeFile)
     await cloud.waitForMirrorCleanup('octo/site', 'octo/site-ci')
