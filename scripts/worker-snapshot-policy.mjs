@@ -17,7 +17,7 @@ export const verificationScripts = [
   'scripts/integration-capabilities.mjs',
 ]
 
-export const workerSnapshotFiles = [
+const snapshotFiles = [
   'apps/web/public/graphql.svg',
   'scripts/build-worker-artifact.mjs',
   'scripts/quota-helper-abi.mjs',
@@ -25,9 +25,6 @@ export const workerSnapshotFiles = [
   'scripts/worker-snapshot-policy.mjs',
   'scripts/graphql-mcp.mjs',
   'packages/contracts/package.json',
-  'packages/contracts/src/productEnvironment.mjs',
-  'packages/contracts/src/verificationEnvironment.mjs',
-  'packages/contracts/src/integrationScheduling.mjs',
   'apps/worker/package.json',
   'package.json',
   'pnpm-workspace.yaml',
@@ -42,7 +39,7 @@ export function assertWorkerSnapshotSource(path) {
   const secretSource = /(?:^|\/)\.env(?:\.|$)|\.(?:pem|key)$|(?:^|\/)(?:credentials|secrets)\.json$/.test(path)
   const allowedSource = path.startsWith('apps/api/src/') || path.startsWith('apps/worker/src/')
     || path.startsWith('apps/worker/artifacts/') || path.startsWith('packages/contracts/src/')
-    || verificationScripts.includes(path) || workerSnapshotFiles.includes(path)
+    || verificationScripts.includes(path) || snapshotFiles.includes(path)
   if (forbiddenApiModule || invalidPath || testSource || secretSource || !allowedSource) {
     throw new Error(`Forbidden snapshot source: ${path}`)
   }
