@@ -135,8 +135,6 @@ export function createRemoteWorkflowPhysicalVerification(input: RemoteWorkflowPh
   passiveNativeOwner(original: VerifiedRemoteOriginalSource): PassiveRemoteNativeOwner | undefined
   confirmedClosed(prepared: PreparedRemoteWorkflowPhysical, session: NativeSessionReference | null): boolean
   prefetch(receipt: RemoteOperationReceipt, placement: AcceptedNodePlacement, source: WorkflowOriginalNativeSource, signal?: AbortSignal): Promise<PreparedRemoteWorkflowPhysical>
-  /** Releases a superseded source Main did not capture for publication. */
-  discard(prepared: PreparedRemoteWorkflowPhysical): Promise<RemoteWorkflowPhysicalAck>
   bind(original: VerifiedRemoteOriginalSource, prepared: PreparedRemoteWorkflowPhysical, owner: RunOwnership, lifetime: RemoteWorkflowMainLifetime): void
   /** Caller invokes only after durable canonical publication, outside G1. */
   acknowledge(original:VerifiedRemoteOriginalSource):Promise<RemoteWorkflowPhysicalAck>
@@ -159,15 +157,6 @@ export function createRemoteWorkflowPhysicalVerification(input: RemoteWorkflowPh
     captured: WorkflowNativeCapture, retained: WorkflowPhysicalTerminal, committed: boolean) =>
     assertRemoteWorkflowTerminal(sql, owner, captured, retained, committed, bound, input)
   return {
-    async discard(value) {
-      const capture = prepared.get(value)
-      if (!capture) return unavailable('uncaptured_source')
-      const ack = await capture.acknowledge(remoteWorkflowSourceDigest(capture.source))
-      prepared.delete(value)
-      const operationId = capture.readout.receipt.intent.operationId
-      if (histories.get(operationId)?.readout === capture.readout) histories.delete(operationId)
-      return ack
-    },
     confirmedClosed(value, session) {
       const captured = prepared.get(value)
       if (!captured) return unavailable('uncaptured_closure')
@@ -374,8 +363,7 @@ async function prefetchRemoteWorkflowPhysical(input: RemoteWorkflowPhysicalVerif
           input.endpoint().currentBinding(captured.binding.deviceId))) throw error
         assertRegisteredConnection()
         const failure = deviceApplicationFailure(error)
-        if (!failure.retryable || ['transport', 'DEVICE_LINK_DROPPED', 'REMOTE_NATIVE_PHYSICAL_UNAVAILABLE',
-          'REMOTE_NATIVE_PHYSICAL_REPLY_EXPIRED']
+        if (!failure.retryable || ['transport', 'DEVICE_LINK_DROPPED', 'REMOTE_NATIVE_PHYSICAL_UNAVAILABLE']
           .includes(failure.code)) throw error
         // Only an identified Main database timeout leaves the ordinary RPC budget untouched.
         if (failure.code !== 'DATABASE_READ_TIMEOUT' && ordinaryFailures++ >= 4) throw error
