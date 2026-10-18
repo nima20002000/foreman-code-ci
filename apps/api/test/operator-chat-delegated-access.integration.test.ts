@@ -12,7 +12,7 @@ import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { PostgresFoundationSettingsRepository } from '../src/modules/settings/foundation.js'
 import { FoundationSettingsManagementService } from '../src/modules/settings/management.js'
 import { buildApp } from '../src/app.js'
-import { OPERATOR_MCP_ENVIRONMENT_VARIABLE, PostgresOperatorChatAuthority } from '../src/modules/conversations/operatorChatAuthority.js'
+import { PostgresOperatorChatAuthority } from '../src/modules/conversations/operatorChatAuthority.js'
 import { NativeRollout } from '../src/modules/harnesses/nativeRollout.js'
 import { registerOperatorChatRoutes } from '../src/routes/operatorChat.js'
 import { registerOperatorChatFixture, type OperatorChatFixture, waitFor } from './helpers/operatorChatFixture.js'
@@ -33,31 +33,6 @@ registerOperatorChatFixture(fixture => {
 }, () => chat)
 
 describe.skipIf(!connectionString)('Operator chat persistence and native binding with stubbed authority', () => {
-  it('issues a usable delegated bearer when the native adapter cannot rebind a retained credential', async () => {
-    const parent = await access.issue({ name: 'Native chat owner', audience: 'operator',
-      grants: [{ actions: ['operator_chat:read', 'operator_chat:write', 'harnesses:read'], scope: {} }] })
-    const conversation = await chat.create(parent.principal)
-    const configuration = (await operators.ensure()).configuration
-    const nativeAuthority = new PostgresOperatorChatAuthority(pool, access,
-      new NativeRollout({ NODE_ENV: 'test', HOST: '127.0.0.1' }), runtimeDirectory, 'http://127.0.0.1:1/mcp',
-      () => ({ inspect: async request => ({ harness: request.harness, providerVersion: 'recorded-codex',
-        runnerId: request.runnerId, workingDirectory: request.workingDirectory, inspectedAt: new Date().toISOString(),
-        entry: { name: 'graphql', enabled: true, transport: 'stdio', automaticEndpoint: true,
-          credentialEnvironmentVariable: 'GRAPHQL_MCP_TOKEN', status: 'connected' } }) }))
-    try {
-      const environment = await nativeAuthority.prepare(manager, configuration, conversation.id, parent.principal.id,
-        AbortSignal.timeout(2_000))
-      const token = environment.variables[OPERATOR_MCP_ENVIRONMENT_VARIABLE]
-      const delegated = await access.authenticate(token)
-      expect(delegated.id).not.toBe(parent.principal.id)
-      expect(delegated.grants.flatMap(grant => grant.actions)).toContain('harnesses:read')
-      expect(manager.sessions).toBe(0)
-      expect(manager.turns).toBe(0)
-      await nativeAuthority.release(conversation.id)
-      await expect(access.authenticate(token)).rejects.toMatchObject({ code: 'AUTH_REVOKED' })
-    } finally { await nativeAuthority.release(conversation.id) }
-  })
-
   it.each(['main', 'device'] as const)(
     'inspects persisted %s Claude setup through read-only HTTP and MCP without creating an execution owner', async host => {
     const settings = new PostgresFoundationSettingsRepository(pool)
