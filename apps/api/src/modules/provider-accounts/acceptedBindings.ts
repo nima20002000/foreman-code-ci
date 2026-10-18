@@ -3,11 +3,22 @@ import type { HarnessConfiguration } from '@foreman-code/contracts'
 import { AcceptedProviderAccountBindingSchema, type AcceptedProviderAccountBinding,
   type ProviderAccountBinding } from '@foreman-code/contracts/provider-accounts'
 import type { HarnessProfileSelection } from '@foreman-code/contracts/harness-registry'
+import { canonicalGraphJson } from '@foreman-code/contracts/wave25'
 import type { GraphSqlClient } from '../run-graph/connection.js'
 import { DomainError } from '../errors.js'
 import type { ProviderAccountResolver } from './ports.js'
 
 export type AccountBindingOwner = 'run-node' | 'operator-command' | 'agent-conversation'
+type AcceptanceOptions = {
+  source?: AcceptedProviderAccountBinding | undefined
+  prepared?: AcceptedProviderAccountBinding | undefined
+}
+export interface AccountBindingAcceptance {
+  id: string
+  configuration: HarnessConfiguration
+  selection?: HarnessProfileSelection | undefined
+  options?: AcceptanceOptions | undefined
+}
 
 export function legacyProviderAccountBinding(configuration: HarnessConfiguration,
   selection?: HarnessProfileSelection): AcceptedProviderAccountBinding | undefined {
@@ -84,11 +95,56 @@ export class AcceptedProviderAccountBindings {
 
   async accept(sql: GraphSqlClient, kind: AccountBindingOwner, id: string,
     configuration: HarnessConfiguration, selection?: HarnessProfileSelection,
-    options: { source?: AcceptedProviderAccountBinding | undefined;
-      prepared?: AcceptedProviderAccountBinding | undefined } = {}): Promise<AcceptedProviderAccountBinding | undefined> {
-    const { source, prepared } = options
+    options: AcceptanceOptions = {}): Promise<AcceptedProviderAccountBinding | undefined> {
     const prior = await readProviderAccountBinding(sql, kind, id)
     if (prior) return prior
+    const binding = await this.resolveAccepted(sql, configuration, selection, options)
+    return binding ? saveProviderAccountBinding(sql, kind, id, binding) : undefined
+  }
+
+  async acceptMany(sql: GraphSqlClient, kind: AccountBindingOwner,
+    entries: readonly AccountBindingAcceptance[]): Promise<Map<string, AcceptedProviderAccountBinding>> {
+    const read = async () => {
+      const rows = await sql.query<{ owner_id: string; binding: unknown }>(
+        'select owner_id,binding from provider_account_accepted_bindings where owner_kind=$1 and owner_id=any($2::text[])',
+        [kind, entries.map(entry => entry.id)])
+      return new Map(rows.rows.map(row => [row.owner_id, AcceptedProviderAccountBindingSchema.parse(row.binding)]))
+    }
+    const bindings = await read()
+    const resolved = new Map<string, AcceptedProviderAccountBinding | undefined>()
+    const inserts: { id: string; binding: AcceptedProviderAccountBinding }[] = []
+    for (const entry of entries) {
+      if (bindings.has(entry.id)) continue
+      const key = canonicalGraphJson({ configuration: entry.configuration,
+        selection: entry.selection ?? null, source: entry.options?.source ?? null,
+        prepared: entry.options?.prepared ?? null })
+      if (!resolved.has(key)) {
+        resolved.set(key, await this.resolveAccepted(sql, entry.configuration, entry.selection, entry.options))
+      }
+      const binding = resolved.get(key)
+      if (!binding) continue
+      const parsed = AcceptedProviderAccountBindingSchema.parse(binding)
+      bindings.set(entry.id, parsed)
+      inserts.push({ id: entry.id, binding: parsed })
+    }
+    if (!inserts.length) return bindings
+    await sql.query(`insert into provider_account_accepted_bindings(owner_kind,owner_id,binding,account_id)
+      select $1,b.owner_id,b.binding::jsonb,b.account_id
+      from unnest($2::text[],$3::text[],$4::uuid[]) with ordinality as b(owner_id,binding,account_id,ordinal)
+      order by b.ordinal on conflict(owner_kind,owner_id) do nothing`,
+    [kind, inserts.map(entry => entry.id), inserts.map(entry => JSON.stringify(entry.binding)),
+      inserts.map(entry => entry.binding.accountId ?? null)])
+    const stored = await read()
+    for (const entry of inserts) {
+      if (!isDeepStrictEqual(entry.binding, stored.get(entry.id))) {
+        throw new DomainError('PROVIDER_ACCOUNT_BINDING_CONFLICT', 'Accepted work already uses another account/profile.', 409)
+      }
+    }
+    return bindings
+  }
+
+  private async resolveAccepted(sql: GraphSqlClient, configuration: HarnessConfiguration,
+    selection?: HarnessProfileSelection, { source, prepared }: AcceptanceOptions = {}) {
     if (configuration.harness === 'opencode') return undefined
     if (source) {
       if (source.provider !== configuration.harness) {
@@ -101,10 +157,10 @@ export class AcceptedProviderAccountBindings {
       } else if (configuration.accountId && configuration.accountId !== source.accountId) {
         throw new DomainError('PROVIDER_ACCOUNT_BINDING_CONFLICT', 'The source uses an original native profile.', 409)
       }
-      return saveProviderAccountBinding(sql, kind, id, source)
+      return source
     }
     if (!configuration.accountId) {
-      return saveProviderAccountBinding(sql, kind, id, legacyProviderAccountBinding(configuration, selection)!)
+      return legacyProviderAccountBinding(configuration, selection)
     }
     const selected = await this.accounts.resolve(configuration.harness, configuration.accountId,
       { sql, allowDefault: false, ...(prepared ? { acceptedBinding: prepared } : {}) })
@@ -122,6 +178,6 @@ export class AcceptedProviderAccountBindings {
       throw new DomainError('HARNESS_PROFILE_SELECTION_REQUIRED',
         'Select and qualify a Claude profile for this account before starting work.', 409)
     }
-    return saveProviderAccountBinding(sql, kind, id, selected.binding)
+    return selected.binding
   }
 }

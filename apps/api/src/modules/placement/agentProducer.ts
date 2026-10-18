@@ -35,6 +35,7 @@ import { bindGeneratedWorktreeRun, generatedWorktreePrefix } from '../sources/wo
 import type { SourceRootRecord } from '@foreman-code/contracts/source-admission'
 import type { WorktreeComputerSelection } from '@foreman-code/contracts/worktree-settings'
 import { assertWorktreeComputers } from '../workflows/worktreeComputers.js'
+import { startPlacementFence } from './startFence.js'
 
 function refreshSourcePlacement(
   saved: SavedNodePlacement, roots: ReadonlyMap<string, SourceRootRecord>,
@@ -134,12 +135,15 @@ export class AgentPlacementProducer implements RunPlacementAdmissionPort {
       const prepared: { pins: Omit<AcceptedNodePlacement, 'runId' | 'bindingHash'>; selection: RegistryHarnessSelection;
         saved: SavedNodePlacement; configuration: AgentConfigurationVersion; implicit: boolean;
         generatedBranch: boolean }[] = []
+      const configurationRows = await sql.query<{ id: string; agent_id: string; record: unknown }>(
+        'select id,agent_id,record from agent_configuration_versions where id=any($1::text[]) and workspace_id=$2',
+        [Object.values(version.agentConfigurationVersionIds), input.workspaceId])
       for (const node of nodes) {
         signal?.throwIfAborted()
         if (node.placement && node.placement.hostRef.mainId !== this.mainId) this.conflict()
-        const configRow = (await sql.query<{ record: unknown }>('select record from agent_configuration_versions where id=$1 and workspace_id=$2 and agent_id=$3',
-          [version.agentConfigurationVersionIds[node.agentId], input.workspaceId, node.agentId])).rows[0]
-        const config = AgentConfigurationVersionSchema.parse(configRow?.record)
+        const configuration = configurationRows.rows.find(row =>
+          row.id === version.agentConfigurationVersionIds[node.agentId] && row.agent_id === node.agentId)
+        const config = AgentConfigurationVersionSchema.parse(configuration?.record)
         const saved = node.placement ? refreshSourcePlacement(node.placement, roots) : await resolveInherited(sql, principal, config)
         const instance = await this.readInstance(sql, saved.instanceId)
         await this.assertProfileReady?.(instance)
@@ -208,10 +212,13 @@ export class AgentPlacementProducer implements RunPlacementAdmissionPort {
         return freezePlacement({ ...pins, runId })
       }
       return { bind: runId => prepared.map(item => bind(item, runId)),
-        fence: transaction => ({ assertCurrent: async pin => {
+        fence: transaction => startPlacementFence(pin => {
           const saved = prepared.find(item => item.pins.nodeId === pin.nodeId)
           if (!saved || !sameWorkflowValue(bind(saved, pin.runId), pin)) this.conflict()
           this.registry.installations.assertCurrent(saved!.selection)
+          return saved
+        }, async pin => {
+          const saved = prepared.find(item => item.pins.nodeId === pin.nodeId)!
           if (this.accounts && pin.payload.kind === 'agent' && pin.payload.accountBinding?.kind === 'slot') {
             const binding = pin.payload.accountBinding
             await this.accounts.resolve(binding.provider, binding.accountId, { sql: transaction,
@@ -229,7 +236,7 @@ export class AgentPlacementProducer implements RunPlacementAdmissionPort {
             if (!sameWorkflowValue(saved.saved, current)) this.conflict()
           }
           await this.assertPinsCurrent(transaction, pin, live, input.workspaceId)
-        } }) }
+        }) }
     }))
   }
   private async readSelectedRoots(input: RunStartV3Input, principal: ManagementPrincipal,
