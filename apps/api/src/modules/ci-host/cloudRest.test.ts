@@ -157,7 +157,7 @@ it('downloads GitHub artifact archives and preserves structured results', async 
   })
   const cli = ports()
   expect(await new GitHubActionsProvider(cli.value, server).artifacts(run, await directory()))
-    .toEqual({ durations, testResults, watchdogFailure: 'watchdog' })
+    .toEqual({ durations, testResults, integrationCoverage: null, selection: null, watchdogFailure: 'watchdog' })
   expect(server.requests.at(-1)?.authorization).toBeUndefined()
   expect(cli.calls).toHaveBeenCalledTimes(1)
 })
@@ -399,7 +399,8 @@ it('downloads only CircleCI duration artifacts from the job artifact listing', a
   const path = await directory()
   await writeFile(join(path, 'stale.json'), '{}')
   expect(await provider.artifacts(run, path))
-    .toEqual({ durations: { 'feature.test.ts': 10 }, testResults: { files: [] }, watchdogFailure: null })
+    .toEqual({ durations: { 'feature.test.ts': 10 }, testResults: { files: [] },
+      integrationCoverage: null, selection: null, watchdogFailure: null })
   expect(server.requests.some(request => request.url === '/large')).toBe(false)
   expect(server.requests.find(request => request.url === '/results')?.authorization).toBeUndefined()
   expect(cli.calls).not.toHaveBeenCalled()
