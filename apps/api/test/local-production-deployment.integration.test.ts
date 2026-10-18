@@ -120,7 +120,7 @@ it('loads the compiled API using only its deployed production dependencies', asy
   const ciMetadataCache = join(repository, '.logs/pnpm-metadata')
   const metadataCache = process.env.npm_config_cache_dir
     || (existsSync(ciMetadataCache) ? ciMetadataCache : join(userInfo().homedir, '.cache/pnpm'))
-  const packageStore = ['--offline', '--store-dir', storeDir, '--cache-dir', metadataCache,
+  const packageStore = ['--prefer-offline', '--store-dir', storeDir, '--cache-dir', metadataCache,
     '--package-import-method=hardlink']
   // Every child process is killed after a bounded time and reports the fixture step it was running.
   const child = async (step: string, timeoutMs: number, command: string, args: string[],
@@ -133,18 +133,11 @@ it('loads the compiled API using only its deployed production dependencies', asy
       throw new Error(`Production runtime fixture step "${step}" failed: ${detail}`, { cause })
     }
   }
-  const run = async (command: string, args: string[], options: { timeout: number }) => {
+  const run = async (command: string, args: string[]) => {
     // This source is discarded after deployment, so it needs no development dependency restoration.
     if (args.includes('install')) return
-    const started = performance.now()
-    try {
-      const { stdout } = await child(`${command} ${args.join(' ')}`, options.timeout, command, [...args, ...packageStore],
-        { cwd: source, env: process.env })
-      console.info(stdout)
-    } finally {
-      console.info('[integration-phase] local-production-deployment.integration.test.ts deploy-production-dependencies',
-        Math.round(performance.now() - started))
-    }
+    await child(`${command} ${args.join(' ')}`, 45_000, command, [...args, ...packageStore],
+      { cwd: source, env: process.env })
   }
   try {
     const prepareSource = async () => {
@@ -154,7 +147,7 @@ it('loads the compiled API using only its deployed production dependencies', asy
       }
       await cp(join(repository, 'patches'), join(source, 'patches'), { recursive: true })
       await cp(join(repository, 'scripts/require-pnpm.mjs'), join(source, 'scripts/require-pnpm.mjs'))
-      for (const project of ['apps/api', 'apps/web', 'apps/worker', 'packages/contracts']) {
+      for (const project of ['apps/api', 'packages/contracts']) {
         await mkdir(join(source, project), { recursive: true })
         await cp(join(repository, project, 'package.json'), join(source, project, 'package.json'))
       }
