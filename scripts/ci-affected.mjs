@@ -135,9 +135,8 @@ export function affectedSnapshot(commit, suite, cwd = process.cwd(), defaultRef 
     const manifest = sources.get('packages/contracts/package.json')
     const exports = manifest ? JSON.parse(manifest).exports : {}
     const coverage = suite === 'integration' ? preparedCoverage ?? ancestorCoverage(git, commit, coverageMaps) : {}
-    const { changedFiles: coverageChanges = [], coverageMap, coverageReason } = coverage
-    return selectAffectedFiles({ suite, changedFiles: [...new Set([...changedFiles, ...coverageChanges])],
-      sources, exports, coverageMap, coverageReason })
+    return selectAffectedFiles({ suite, changedFiles: [...new Set([...changedFiles, ...coverage.changedFiles ?? []])],
+      sources, exports, ...coverage })
   } finally { rmSync(directory, { recursive: true, force: true }) }
 }
 

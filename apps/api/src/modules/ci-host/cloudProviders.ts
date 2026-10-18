@@ -36,12 +36,15 @@ export interface CloudRun {
   collection?: { log: boolean; artifacts: boolean; unavailableAt?: string
     retry?: { since: string; attempts: number; nextAttemptAt: string } }
   cancellation?: { at: string; canceledIds: string[]; completedAt?: string; requeue?: boolean }
-  dispatchHistory?: { at: string; providerRunId: string | null }[]
+  /** First fresh empty observation after requesting cancellation of each accepted pipeline. */
+  emptyPipelineCancellations?: Record<string, string>
+  dispatchHistory?: { at: string; providerRunId: string | null; terminated?: true }[]
   /** Live progress kept while the run is followed: steps already written to the log, the running step's output
    * bytes written so far, and bytes written in all. */
   live?: { step: string | null; seen: string[]; output?: { key: string; bytes: number }; bytes: number }
 }
 export const CLOUD_START_TIMEOUT_MS = 75_000
+export const CIRCLE_EMPTY_PIPELINE_RECHECK_MS = 4_000
 export const CLOUD_LOG_LIMIT = 4 * 1024 * 1024
 const LIVE_OUTPUT_POLL_MS = 60_000
 
@@ -50,7 +53,7 @@ export interface CloudStep { key: string; name: string; state: 'running' | 'pass
 /** The run's state with its live progress: the job's steps and, where the provider streams it, the running step's
  * output so far. */
 export type CloudStatus = ({ done: false } | {
-  done: true; conclusion: 'success' | 'failure' | 'cancelled'; finishedAt: string; message?: string
+  done: true; conclusion: 'success' | 'failure' | 'cancelled'; finishedAt: string; message?: string; notStarted?: true
 }) & { steps?: CloudStep[]; output?: { key: string; text: string }
   /** The provider holds the workflow in its queue: no job has started. */
   queued?: boolean }
@@ -108,8 +111,8 @@ export interface CloudProvider {
   log(run: CloudRun): Promise<string>
   /** The measured test file durations and structured test results the run left as an artifact. */
   artifacts(run: CloudRun, directory: string): Promise<CloudArtifacts>
-  /** False means no workflow accepted cancellation; a successful request otherwise returns normally. */
-  cancel(run: CloudRun): Promise<void | false>
+  /** An empty pipeline needs a second observation before ownership can be released. */
+  cancel(run: CloudRun): Promise<void | false | { empty: true }>
 }
 
 export function validateProviderParameters(provider: Pick<CloudProvider, 'label' | 'parameterLimit'>,
@@ -395,13 +398,22 @@ function circleConclusion(outcome: string | undefined): 'success' | 'failure' | 
   return failures.includes(outcome ?? '') ? 'failure' : null
 }
 
-function circlePipelinePending(view: {
+interface CirclePipelineView {
   state?: string; phase?: string; outcome?: string; current_outcome?: string
-  workflows?: unknown[]; errors?: unknown[]
-}) {
+  created_at?: string; stopped_at?: string; notStarted?: boolean
+  errors?: { type: string; message: string }[]
+  workflows?: { phase?: string; outcome?: string; stopped_at?: string; jobs?: { id: string }[] }[]
+}
+
+function circlePipelinePending(view: CirclePipelineView) {
+  if (view.notStarted) return false
   const pendingState = [view.state, view.phase].some(state => state === 'created' || state === 'setup-pending')
   const notStarted = (view.outcome ?? view.current_outcome) === 'not_run' && !view.errors?.length
   return !view.workflows?.length && (pendingState || notStarted)
+}
+
+function circleEmptyPipeline(view: CirclePipelineView) {
+  return !view.workflows?.length && (view.state === 'created' || view.phase === 'created')
 }
 
 /** Large Linux machines (4 vCPUs, 15 GB); the free plan runs 30 jobs at once and open-source Linux builds are free. */
@@ -490,19 +502,22 @@ export class CircleCiProvider implements CloudProvider {
   async find(run: CloudRun) {
     if (!run.providerRunId) return null
     const view = await this.pipeline(run, 15_000)
+    if (view.notStarted || circleEmptyPipeline(view)) return null
     const terminal = view.phase === 'ended' && circleConclusion(view.outcome ?? view.current_outcome) !== null
     return view.workflows?.length || terminal ? run.providerRunId : null
   }
 
+  private async readPipeline(run: CloudRun, timeoutMs?: number): Promise<CirclePipelineView> {
+    return JSON.parse(await this.circleci(['run', 'get', run.providerRunId!, '--json'], timeoutMs)) as CirclePipelineView
+  }
+
   private async pipeline(run: CloudRun, timeoutMs?: number) {
-    const view = JSON.parse(await this.circleci(['run', 'get', run.providerRunId!, '--json'], timeoutMs)) as {
-      state?: string; phase?: string; outcome?: string; current_outcome?: string; stopped_at?: string
-      errors?: { type: string; message: string }[]
-      workflows?: { phase?: string; outcome?: string; stopped_at?: string; jobs?: { id: string }[] }[]
-    }
+    const view = await this.readPipeline(run, timeoutMs)
     // A CLI placeholder outcome cannot finish a pipeline that is still waiting for workflows.
-    if (circlePipelinePending(view)) return { ...view, phase: 'started', outcome: undefined, current_outcome: undefined }
-    if (view.errors?.length && (view.phase === 'ended' || view.current_outcome === 'not_run')) {
+    if (circlePipelinePending(view)) return { ...view, state: view.state ?? view.phase,
+      phase: 'started', outcome: undefined, current_outcome: undefined }
+    const canceling = run.cancellation && !run.cancellation.completedAt
+    if (!canceling && view.errors?.length && (view.phase === 'ended' || view.current_outcome === 'not_run')) {
       const message = view.errors.map(error => `${error.type}: ${error.message}`).join('; ')
       throw new DomainError('CI_CLOUD_PIPELINE_FAILED', `${this.label} pipeline failed: ${message}`, 502,
         { configError: view.errors.some(error => error.type === 'config') })
@@ -517,6 +532,18 @@ export class CircleCiProvider implements CloudProvider {
 
   async status(run: CloudRun): Promise<CloudStatus> {
     const view = await this.pipeline(run)
+    const empty = circleEmptyPipeline(view)
+    if (empty) {
+      const since = run.emptyPipelineCancellations?.[run.providerRunId!]
+      if (!since || this.ports.now().getTime() - Date.parse(since) < CIRCLE_EMPTY_PIPELINE_RECHECK_MS) {
+        return { done: false, steps: [] }
+      }
+    }
+    if (view.notStarted || empty) {
+      return { done: true, conclusion: 'failure', notStarted: true, steps: [],
+        finishedAt: view.stopped_at ?? this.ports.now().toISOString(),
+        message: `${this.label} pipeline created no workflows or jobs.` }
+    }
     const workflows = view.workflows ?? []
     const pipelineEnded = view.phase === 'ended'
     const workflowsEnded = workflows.length > 0 && workflows.every(workflow => workflow.phase === 'ended')
@@ -654,11 +681,11 @@ export class CircleCiProvider implements CloudProvider {
     return artifacts
   }
 
-  async cancel(run: CloudRun): Promise<void | false> {
+  async cancel(run: CloudRun): Promise<void | false | { empty: true }> {
     this.outputPolls.delete(run.runId)
-    let view: Parameters<typeof circlePipelinePending>[0] | null
+    let view: CirclePipelineView | null
     try {
-      view = JSON.parse(await this.circleci(['run', 'get', run.providerRunId!, '--json'], 15_000)) as typeof view
+      view = await this.readPipeline(run, 15_000)
     } catch (error) {
       if (!(error instanceof DomainError
         && ['CI_CLOUD_RUN_NOT_FOUND', 'CI_CLOUD_RUN_UNREADABLE'].includes(error.code))) throw error
@@ -667,12 +694,22 @@ export class CircleCiProvider implements CloudProvider {
     }
     const terminal = view?.phase === 'ended' && !circlePipelinePending(view)
       && circleConclusion(view.outcome ?? view.current_outcome) !== null
-    if (terminal && !view?.workflows?.length) return
+    const workflowsEnded = view?.workflows?.length && view.workflows.every(workflow => workflow.phase === 'ended'
+      && circleConclusion(workflow.outcome) !== null)
+    if (view && !circleEmptyPipeline(view) && (view.notStarted || terminal || workflowsEnded)) return
+    let accepted = true
     try {
       await this.circleci(['run', 'cancel', run.providerRunId!, '--force'], 15_000)
     } catch (error) {
-      if (error instanceof DomainError && error.code === 'CI_CLOUD_CANCEL_NOT_ACCEPTED') return false
-      throw error
+      if (!(error instanceof DomainError && error.code === 'CI_CLOUD_CANCEL_NOT_ACCEPTED')) throw error
+      accepted = false
     }
+    if (!accepted || view && circleEmptyPipeline(view)) {
+      // The real cancellation invalidated the poll cache, including a no-active-workflows reply.
+      // Re-read through either transport: the pre-request snapshot cannot confirm emptiness.
+      const after = await this.readPipeline(run, 15_000)
+      if (circleEmptyPipeline(after)) return { empty: true }
+    }
+    if (!accepted) return false
   }
 }
