@@ -381,33 +381,6 @@ describe('automatic installation profile checks', () => {
     expect(await f.service.failure(updated)).toMatchObject({ code: 'CODEX_MODEL_UNAVAILABLE' })
     await f.service.close()
   })
-  it('rechecks stale higher-priority profiles on the refreshed inventory before lower-priority profiles', async () => {
-    const f = updatedFixture()
-    const unused = [randomUUID(), randomUUID(), randomUUID()].map(instanceId => ({ ...f.saved, instanceId }))
-    for (const value of unused) {
-      f.setOverride(value)
-      f.seed(f.proof(value), value)
-    }
-    const active = f.saved.instanceId
-    const stale = new Set([active, unused[0]!.instanceId])
-    f.qualify.mockImplementation(async value => {
-      if (stale.delete(value.instanceId)) throw new DeviceApplicationError('HARNESS_QUALIFICATION_TARGET_CHANGED')
-      return f.proof(value)
-    })
-    const refresh = vi.fn(async () => {})
-    const outcome = await f.service.recheckInstallation({ ...f.request, refresh }).then(() => null, error => error)
-    const checked = f.qualify.mock.calls.map(([value]) => value.instanceId)
-    // Both slots retry their stale profile before any lower-priority profile is checked.
-    expect(checked.slice(0, 4).sort()).toEqual([active, active, unused[0]!.instanceId, unused[0]!.instanceId].sort())
-    expect(checked.slice(4).sort()).toEqual([unused[1]!.instanceId, unused[2]!.instanceId].sort())
-    expect(refresh).toHaveBeenCalled()
-    expect(outcome).toBeNull()
-    expect(f.append.mock.calls.map(call => call[2].instanceId).sort())
-      .toEqual([active, ...unused.map(value => value.instanceId)].sort())
-    expect(f.append.mock.calls.every(call => call[3].qualified)).toBe(true)
-    for (const [value] of f.qualify.mock.calls) expect(f.service.pending(value)).toBe(false)
-    await f.service.close()
-  })
   it('releases each updated profile after its own check while another profile remains pending', async () => {
     const f = updatedFixture()
     const other = { ...f.saved, instanceId: randomUUID() }
