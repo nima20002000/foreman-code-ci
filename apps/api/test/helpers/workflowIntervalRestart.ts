@@ -49,9 +49,12 @@ export async function assertIntervalRestart(executionHost: 'main' | 'worker'): P
       && !Array.isArray(input) && input.tick)).toHaveLength(1)
     const calls = await fixture.provider.calls()
     const originals = active.map(execution => {
+      const starts = calls.filter(call => call.method === 'turn/start'
+        && call.correlationId === `execution:${execution.id}`)
+      expect(starts).toHaveLength(1)
       const call = calls.find(item => {
-        const turn = item.workflowTurn as { sessionId: string } | undefined
-        return turn?.sessionId === execution.nativeSessionId
+        const turn = item.workflowTurn as { pid: number; sessionId: string } | undefined
+        return turn?.sessionId === execution.nativeSessionId && turn.pid === starts[0]!.pid
       })
       expect(call).toBeDefined()
       return call!.workflowTurn as { pid: number; sessionId: string; turnId: string }
