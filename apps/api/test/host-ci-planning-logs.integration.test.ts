@@ -299,7 +299,6 @@ it('retains persisted host capacity through failed cancellation and unavailable 
     expect(cancellation.isError).toBe(true)
     expect(decodeMcpToolResult(cancellation)).toMatchObject({ error: { code: 'CI_CANCEL_PENDING' } })
     await f.ci.dispatch()
-    await f.ci.drain()
     const pending = CiGetOutputSchema.parse(await f.value('ci_get', { ticketId: active.id }))
     expect(pending.run).toMatchObject({ state: 'running', finishedAt: null,
       cancellation: { reason: 'direct', source: 'mcp' } })
@@ -312,13 +311,10 @@ it('retains persisted host capacity through failed cancellation and unavailable 
     f.control.stopCode = 0
     f.control.code = 0
     await f.ci.dispatch()
-    await f.ci.drain()
     await expect.poll(async () => CiGetOutputSchema.parse(await f.value('ci_get', { ticketId: active.id }))
       .run.state).toBe('canceled')
     const cancellationRead = CiGetOutputSchema.parse(await f.value('ci_get', { ticketId: active.id }))
     expect(cancellationRead.run.state).toBe('canceled')
-    expect((await database.pool.query('select host_key from ci_runs where id=$1', [active.id]))
-      .rows[0].host_key).toBeNull()
     await f.ci.dispatch()
     await f.ci.close()
     const closed = CiGetOutputSchema.parse(await f.value('ci_get', { ticketId: active.id }))

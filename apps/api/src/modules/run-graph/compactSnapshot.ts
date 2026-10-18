@@ -10,7 +10,6 @@ import { readPublicNodeProjection } from './publicProjection.js'
 import { readPublicRunStateLocked } from './publicRunState.js'
 import { readPublicAttentionCounts } from './currentAttention.js'
 import { RunGraphError } from './errors.js'
-import { readCompactProjectionRows } from './compactProjectionRows.js'
 import type { CurrentNativeActivity } from './nativeActivitySelection.js'
 
 export type CurrentExchanges = Pick<PublicGraphProjection, 'interactions' | 'reviews'>
@@ -26,22 +25,28 @@ export function compactNodeState(workflowNodeId: string, current: CompactExecuti
 export async function readPublicProjectionLocked(sql: GraphTransactionSql, scope: RunGraphScope,
   pinnedVersion?: WorkflowVersionV3): Promise<PublicGraphProjection> {
   assertGraphTransaction(sql)
-  const rows = await readCompactProjectionRows(sql, scope, pinnedVersion?.definition.nodes.map(node => node.id))
-  const version = pinnedVersion ?? (await readRepeatGraphPinsLocked(sql, scope, rows.pins)).version
+  const version = pinnedVersion ?? (await readRepeatGraphPinsLocked(sql, scope)).version
   const nodeIds = version.definition.nodes.map((node) => node.id)
-  const attention = await readPublicAttentionCounts(sql, scope.runId, undefined, {}, rows.attention)
+  const attention = await readPublicAttentionCounts(sql, scope.runId)
   for (const id of nodeIds) if (!attention.has(id)) attention.set(id, { pendingInteractionCount: 0,
     unsettledReviewCount: 0, cleanupPending: false, deliveryBlocked: false })
-  const nodes = await readPublicNodeProjection(sql, scope, nodeIds, {}, attention, rows)
-  if (rows.bindings.length > RUN_GRAPH_LIMITS.relationships) throw new RunGraphError('GRAPH_SNAPSHOT_TOO_LARGE')
-  const inputBindings = rows.bindings.map(({ record, bound_at }) => InputBindingSchema.parse({
+  const nodes = await readPublicNodeProjection(sql, scope, nodeIds, {}, attention)
+  const currentIds = nodes.flatMap((node) => node.state.execution ? [node.state.execution.executionId] : [])
+  // Carries remain qualified evidence, never masquerade as a canvas execution edge.
+  const rows = await sql.query<{ record: { bindingId: string; recipient: unknown; inputDigest: string;
+    source: { relationshipId: string; execution: unknown; acceptedResultDigest: string }; ordinal: number };
+    bound_at: Date | string }>(`select b.record,b.bound_at from run_repeat_bindings b
+      where b.run_id=$1 and b.recipient_execution_id=any($2::text[]) and b.record->>'kind'<>'carry'
+      order by b.binding_id limit $3`, [scope.runId, currentIds, RUN_GRAPH_LIMITS.relationships + 1])
+  if (rows.rows.length > RUN_GRAPH_LIMITS.relationships) throw new RunGraphError('GRAPH_SNAPSHOT_TOO_LARGE')
+  const inputBindings = rows.rows.map(({ record, bound_at }) => InputBindingSchema.parse({
     bindingId: record.bindingId, relationshipId: record.source.relationshipId,
     sender: record.source.execution, recipient: record.recipient,
     acceptedResultDigest: record.source.acceptedResultDigest, recipientInputDigest: record.inputDigest,
-    inputOrdinal: record.ordinal, boundAt: new Date(bound_at).toISOString(),
+    inputOrdinal: record.ordinal, boundAt: bound_at instanceof Date ? bound_at.toISOString() : bound_at,
   }))
-  return PublicGraphProjectionSchema.parse({ run: await readPublicRunStateLocked(sql, scope, attention, rows.runState), nodes, inputBindings,
-    ...await readCurrentGraphExchanges(sql, scope, rows) })
+  return PublicGraphProjectionSchema.parse({ run: await readPublicRunStateLocked(sql, scope, attention), nodes, inputBindings,
+    ...await readCurrentGraphExchanges(sql, scope) })
 }
 
 /** Public composition retains a single current reader, not a version dispatcher. */
