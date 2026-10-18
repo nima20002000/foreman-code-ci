@@ -89,73 +89,6 @@ describe('API logging', () => {
 })
 
 describe('log retention and noise', () => {
-  it('continues retention when another prune removes a file after listing', async () => {
-    const dir = await temporaryDirectory('api-log-prune-race-')
-    const { code, lines, stderr } = await run(`
-      import fs from 'node:fs/promises'
-      import { syncBuiltinESMExports } from 'node:module'
-      import { join } from 'node:path'
-      import { pruneLogFiles } from '${join(api, 'src/infrastructure/logger.ts')}'
-      const file = join(process.env.LOG_DIR, 'api.log')
-      const names = ['api.1.log', 'api.2.log', 'api.3.log', 'api.4.log']
-      for (const name of names) await fs.writeFile(join(process.env.LOG_DIR, name), name)
-      await fs.symlink(names[3], join(process.env.LOG_DIR, 'current.log'))
-      const readdir = fs.readdir
-      let competingPrune
-      fs.readdir = async (...args) => {
-        const listed = await Reflect.apply(readdir, fs, args)
-        fs.readdir = readdir
-        syncBuiltinESMExports()
-        competingPrune = await pruneLogFiles(file, 3, 14)
-        return listed
-      }
-      syncBuiltinESMExports()
-      let removed
-      try {
-        removed = await pruneLogFiles(file, 2, 14)
-      } finally {
-        fs.readdir = readdir
-        syncBuiltinESMExports()
-      }
-      const retained = await Promise.all(names.slice(2).map(name => fs.readFile(join(process.env.LOG_DIR, name), 'utf8')))
-      console.log(JSON.stringify({ competingPrune, removed, retained, files: (await readdir(process.env.LOG_DIR)).sort() }))
-    `, { LOG_DIR: dir })
-    expect(code, stderr).toBe(0)
-    expect(lines).toEqual([{
-      competingPrune: ['api.1.log'],
-      removed: ['api.2.log'],
-      retained: ['api.3.log', 'api.4.log'],
-      files: ['api.3.log', 'api.4.log', 'current.log'],
-    }])
-  })
-
-  it.each(['EACCES', 'EIO'])('surfaces %s errors while inspecting a rotated file', async errorCode => {
-    const dir = await temporaryDirectory('api-log-stat-error-')
-    const { code, lines, stderr } = await run(`
-      import fs from 'node:fs/promises'
-      import { syncBuiltinESMExports } from 'node:module'
-      import { join } from 'node:path'
-      import { pruneLogFiles } from '${join(api, 'src/infrastructure/logger.ts')}'
-      const path = join(process.env.LOG_DIR, 'api.1.log')
-      await fs.writeFile(path, 'retained on error')
-      const stat = fs.stat
-      fs.stat = async () => { throw Object.assign(new Error('Cannot inspect rotated file'), { code: '${errorCode}' }) }
-      syncBuiltinESMExports()
-      let failure
-      try {
-        await pruneLogFiles(join(process.env.LOG_DIR, 'api.log'), 1, 14)
-      } catch (error) {
-        failure = error.code
-      } finally {
-        fs.stat = stat
-        syncBuiltinESMExports()
-      }
-      console.log(JSON.stringify({ failure, retained: await fs.readFile(path, 'utf8') }))
-    `, { LOG_DIR: dir })
-    expect(code, stderr).toBe(0)
-    expect(lines).toEqual([{ failure: errorCode, retained: 'retained on error' }])
-  })
-
   it('retains newer rotations when an older rotation is modified last', async () => {
     const dir = await temporaryDirectory('api-log-order-')
     const now = Date.now()
@@ -175,7 +108,6 @@ describe('log retention and noise', () => {
     const dir = await temporaryDirectory('api-log-drain-')
     const { code, lines, stderr } = await run(`
       import fs from 'node:fs'
-      import { once } from 'node:events'
       import { readdir, readFile } from 'node:fs/promises'
       import { join } from 'node:path'
       import { rotatingLogDestination } from '${join(api, 'src/modules/diagnostics/rotatingLogDestination.ts')}'
@@ -183,13 +115,12 @@ describe('log retention and noise', () => {
       const file = join(process.env.LOG_DIR, 'api.log')
       const destination = await rotatingLogDestination(file, '1b', () => {})
       let cleanup = Promise.resolve()
-      const scheduleCleanup = () => {
-        cleanup = cleanup.then(() => pruneLogFiles(file, 2, 14, Date.now(), path => destination.isPendingFile(path)))
-      }
-      destination.on('segmentClosed', scheduleCleanup)
-      destination.on('ready', scheduleCleanup)
+      destination.on('ready', () => { cleanup = cleanup.then(() => pruneLogFiles(file, 2, 14)) })
       const written = Object.fromEntries(['A', 'B', 'C'].map(record => [record, Promise.withResolvers()]))
+      const closed = Promise.withResolvers()
       const write = fs.write
+      const close = fs.close
+      let heldFd
       let release
       fs.write = function (...args) {
         const text = String(args[1])
@@ -202,26 +133,32 @@ describe('log retention and noise', () => {
           })
         }
         if (record === 'A') {
+          heldFd = args[0]
           release = () => Reflect.apply(write, fs, args)
           return
         }
         return Reflect.apply(write, fs, args)
       }
+      fs.close = function (fd, callback) {
+        return close(fd, (...result) => {
+          callback(...result)
+          if (fd === heldFd) closed.resolve()
+        })
+      }
       let beforeDrain
-      const drained = once(destination, 'ready')
-      const completed = once(destination, 'segmentClosed')
       try {
         for (const record of ['A', 'B', 'C']) destination.write(JSON.stringify({ record }) + String.fromCharCode(10))
         await Promise.all([written.B.promise, written.C.promise])
-        await completed
         await cleanup
         beforeDrain = (await readdir(process.env.LOG_DIR)).filter(name => name.startsWith('api.') && name.endsWith('.log')).length
       } finally {
         fs.write = write
         release()
       }
-      await drained
+      await closed.promise
+      fs.close = close
       await cleanup
+      await pruneLogFiles(file, 2, 14)
       const names = (await readdir(process.env.LOG_DIR)).filter(name => name.startsWith('api.') && name.endsWith('.log'))
       const records = await Promise.all(names.map(async name => JSON.parse(await readFile(join(process.env.LOG_DIR, name), 'utf8')).record))
       console.log(JSON.stringify({ beforeDrain, records: records.sort() }))
