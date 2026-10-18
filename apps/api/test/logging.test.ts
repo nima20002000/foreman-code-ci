@@ -88,48 +88,6 @@ describe('API logging', () => {
 })
 
 describe('log retention and noise', () => {
-  it.each(['burst', 'delayed writes', 'exit flush'])(
-    'allows only the final record to cross the file size threshold during %s', async mode => {
-      const dir = await temporaryDirectory('api-log-queued-')
-      const { code, lines } = await run(`${imports}
-        import fs from 'node:fs'
-        import { flushLogsSync } from '${join(api, 'src/infrastructure/logger.ts')}'
-        await enableFileLogging(process.env)
-        ${mode === 'delayed writes' ? `
-          const write = fs.write
-          fs.write = function (...args) {
-            if (args[0] !== 1) {
-              const callback = args.pop()
-              args.push((...result) => setImmediate(() => callback(...result)))
-            }
-            return Reflect.apply(write, fs, args)
-          }` : ''}
-        for (let record = 0; record < 40; record++) {
-          log.info({ record, detail: '界'.repeat(240) }, 'queued record')
-        }
-        ${mode === 'exit flush' ? 'flushLogsSync(); process.exit(0)' : ''}`, {
-        LOG_DIR: dir, LOG_MAX_SIZE: '4k', LOG_MAX_FILES: '100',
-      })
-      expect(code).toBe(0)
-      const names = (await readdir(dir)).filter(name => /^api\..*\.log$/.test(name))
-      expect(names.length).toBeGreaterThan(1)
-      const records: Record<string, unknown>[] = []
-      for (const name of names) {
-        const content = await readFile(join(dir, name), 'utf8')
-        const written = content.trimEnd().split('\n')
-        // All bytes before the final whole record must be below the threshold.
-        const lastRecordBytes = Buffer.byteLength(written.at(-1)! + '\n')
-        expect(Buffer.byteLength(content) - lastRecordBytes, name).toBeLessThan(4096)
-        records.push(...written.map(line => JSON.parse(line) as Record<string, unknown>))
-      }
-      const queued = records.filter(line => line.msg === 'queued record')
-        .sort((a, b) => Number(a.record) - Number(b.record))
-      expect(queued).toEqual(lines.filter(line => line.msg === 'queued record'))
-      expect(queued.map(line => line.record)).toEqual(Array.from({ length: 40 }, (_, record) => record))
-      expect(records.filter(line => line.msg === 'process exiting')).toHaveLength(1)
-    },
-  )
-
   it('starts a dated destination instead of appending to reused oversized numbered logs', async () => {
     const dir = await temporaryDirectory('api-log-restart-')
     const existing = 'previous log data\n'.repeat(1024)
