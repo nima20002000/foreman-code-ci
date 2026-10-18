@@ -644,7 +644,7 @@ export class RemoteNativeSessionManager implements NativeHarnessSessionManager {
   async reconcile(session: NativeSessionReference, correlationId: string, signal?: AbortSignal) {
     const { history, receipt } = await this.readHistoryObservation(session, correlationId, signal)
     if (receipt.phase === 'confirmed_terminal' && receipt.terminal?.kind === 'cancelled'
-      && !receipt.terminal.result) {
+      && !receipt.terminal.result && !history.terminalTurn) {
       throw new DomainError('EXECUTION_INTERRUPTED',
         'The computer closed this attempt before it produced a result.', 503)
     }
