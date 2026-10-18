@@ -66,7 +66,7 @@ describe('profile-scoped Start after a Worker harness installation update', () =
       await fixture.provider.blockModels({ workingDirectory: fixture.stateDirectory })
       modelsBlocked = true
       await fixture.provider.updatePayload()
-      // Main checks share the provider; count only directories held by the Worker blocker.
+      // Catalog discovery shares the provider; release only the two Worker qualification directories.
       const checking = await waitForRemoteReview(() => fixture.provider.calls(), calls =>
         modelRequestDirectories(calls.slice(callsBefore), fixture.stateDirectory).length === 2,
       'two parallel profile checks')
@@ -74,11 +74,26 @@ describe('profile-scoped Start after a Worker harness installation update', () =
       expect(directories).toHaveLength(2)
       await expect(fixture.start()).rejects.toThrow('HARNESS_PROFILE_CHECK_PENDING')
       await fixture.provider.allowModelDirectories(directories)
-      const mixed = await waitForRemoteReview(() => profiles(fixture), values =>
-        values.find(profile => profile.instanceId === configured.instanceId)?.qualification === 'qualified'
-          && values.filter(profile => profile.qualification === 'qualified').length === 2
-          && values.filter(profile => profile.qualification === 'qualifying').length === 2,
-      'active placement ready while unused profiles remain pending')
+      let qualifications: unknown
+      const mixed = await waitForRemoteReview(async () => {
+        const values = await profiles(fixture)
+        qualifications = values.map(profile => ({
+          active: profile.instanceId === configured.instanceId,
+          qualification: profile.qualification,
+          revision: profile.revision,
+          failure: profile.qualificationFailure,
+        }))
+        return values
+      }, values => values.find(profile => profile.instanceId === configured.instanceId)?.qualification === 'qualified'
+        && values.filter(profile => profile.qualification === 'qualified').length === 2
+        && values.filter(profile => profile.qualification === 'qualifying').length === 2,
+      'active placement ready while unused profiles remain pending').catch(error => {
+        const message = error instanceof Error ? error.message : String(error)
+        throw new Error(`${message} ${JSON.stringify({ qualifications,
+          directories: directories.map(directory => directory.slice(fixture.stateDirectory.length)),
+          failures: fixture.failures(),
+        })}`, { cause: error })
+      })
       const ready = mixed.find(profile => profile.instanceId === configured.instanceId)!
       const pending = mixed.find(profile => profile.qualification === 'qualifying')!
       const evidence = await latestEvidence(fixture)
