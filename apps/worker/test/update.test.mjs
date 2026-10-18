@@ -230,22 +230,6 @@ test('a stalled update can resume and retry after slow artifact preparation', as
   await assertStalledUpdateRetry(t, { beforeDownload: () => wait(150) });
 });
 
-test('Worker update persists the original attempt deadline across a long drain and supervisor handoff', async t => {
-  const f = await fixture(t);
-  const began = Date.now();
-  t.mock.timers.enable({ apis: ['Date'], now: began });
-  let handedOff;
-  const updater = await new WorkerUpdater({ ...f.options,
-    drain: async () => { t.mock.timers.tick(29 * 60_000); },
-    launchSupervisor: async stateDirectory => { handedOff = await readUpdateRecord(stateDirectory); },
-  }).initialize();
-  t.after(() => updater.close());
-  await updater.start();
-  assert.equal(handedOff.status.state, 'restarting');
-  assert.equal(handedOff.attemptDeadlineAt, began + 45 * 60_000);
-  assert.equal(handedOff.attemptDeadlineAt - Date.now(), 16 * 60_000);
-});
-
 test('Worker status advertises the running manifest even after a failed target update', async t => {
   const f = await fixture(t);
   const updater = await new WorkerUpdater(f.options).initialize();

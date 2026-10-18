@@ -7,18 +7,6 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
-## [0.0.109] - 2026-10-18
-
-Workflow, runtime and CI fixes found by multi-Agent scenarios.
-- Workflow saves through the Operator keep node positions; workflows without an approval setting default to native approval; equivalent qualified harness profiles are chosen deterministically; invalid initial saves return graph validation issues instead of an internal error.
-- Interval loops keep their session and checkout across ticks and do not resend the initial task; stopped Runs release their checkouts without waiting for the retention delay.
-- A Run waiting for work direction no longer re-drives the engine until it is answered.
-- Faster Run database paths: native events, executions, completion, projections and Start admission use batched queries (Start went from 242–329 queries per transaction to a bounded count).
-- agent_create no longer runs native discovery inside its transaction.
-- Native cleanup: Main releases history replies it reads and discards, cleanup replies are never refused by Worker backpressure, and restart closure finishes abandoned attempts.
-- CI: terminal runs on GitHub Actions, CircleCI and paired computers reach a confirmed executor state and release capacity instead of retrying forever; CI hosts provision the native Codex package for offline installs; the production database gets CPU priority over disposable CI databases.
-- Test reliability: board repeat-authoring and worker-file tests no longer time out under load.
-
 ## [0.0.108] - 2026-10-18
 
 CI reliability fixes.

@@ -5,7 +5,6 @@ import { WorkerArtifactManifestSchema, WorkerArtifactReplySchema, WorkerUpdateSt
   WORKER_UPDATE_NAMESPACE, WORKER_UPDATE_VERSION, WORKER_UPDATE_MAX_BINARY_BYTES,
   WORKER_UPDATE_MAX_JSON_BYTES, WORKER_UPDATE_ATTEMPT_TIMEOUT_MS } from '../../../packages/contracts/src/workerUpdate.ts';
 import { readWorkerSmokeConfiguration } from './ciInstallSmoke.mjs';
-import { waitForUpdateOperation } from './updateOperation.mjs';
 import { workerArtifactContentSha256 } from '../../../packages/contracts/src/workerArtifactContentNode.mjs';
 import { WorkerError, workerUpdateErrorMessage } from './diagnostics.mjs';
 import { validateManifest, stageRunningVersion, migrateReleaseCompanionLauncher } from './installation.mjs';
@@ -23,6 +22,22 @@ const expected = { protocolVersion: 1, identityFormat: 1 };
 const automaticRetryErrors = new Set(['worker_update_interrupted', 'worker_updater_stopped',
   'worker_update_channel_unavailable', 'worker_update_download_timeout', 'WORKER_RELEASE_ASSET_UNAVAILABLE',
   'worker_update_smoke_unavailable', 'worker_update_deadline_exceeded', 'worker_update_drain_deadline_exceeded']);
+
+async function waitForUpdateOperation(operation, signal) {
+  signal.throwIfAborted();
+  let abort;
+  const aborted = new Promise((_resolve, reject) => {
+    abort = () => reject(signal.reason);
+    signal.addEventListener('abort', abort, { once: true });
+  });
+  try {
+    const result = await Promise.race([operation(), aborted]);
+    signal.throwIfAborted();
+    return result;
+  } finally {
+    signal.removeEventListener('abort', abort);
+  }
+}
 
 export const workerUpdateExtension = { namespace: WORKER_UPDATE_NAMESPACE, version: WORKER_UPDATE_VERSION,
   role: 'client', maxJsonBytes: WORKER_UPDATE_MAX_JSON_BYTES, maxBinaryBytes: WORKER_UPDATE_MAX_BINARY_BYTES };
@@ -260,18 +275,17 @@ export class WorkerUpdater {
   async update(retry) {
     const deadline = new AbortController();
     const timeoutMs = this.options.attemptTimeoutMs ?? WORKER_UPDATE_ATTEMPT_TIMEOUT_MS;
-    const attemptDeadlineAt = Date.now() + timeoutMs;
     const timer = setTimeout(() => deadline.abort(new WorkerError('worker_update_deadline_exceeded',
       `Worker update attempt exceeded ${timeoutMs} ms.`)), timeoutMs);
     const signal = AbortSignal.any([this.lifetime.signal, deadline.signal]);
     try {
-      return await this.performUpdate(retry, signal, attemptDeadlineAt);
+      return await this.performUpdate(retry, signal, () => clearTimeout(timer));
     } finally {
       clearTimeout(timer);
     }
   }
 
-  async performUpdate(retry, signal, attemptDeadlineAt) {
+  async performUpdate(retry, signal, handoff) {
     const { stateDirectory, version, facts, connection, drain, resume, assertStateOwnership } = this.options;
     const run = operation => waitForUpdateOperation(() => {
       const pending = operation();
@@ -355,7 +369,7 @@ export class WorkerUpdater {
       enter('release');
       const launch = await run(() => (this.options.locateLaunch ?? locateWorkerLaunch)(this.options));
       await this.save({ targetVersion: release.version, state: 'pending', lastError: null },
-        { manifestSha256: release.manifestSha256, contentSha256, attemptDeadlineAt,
+        { manifestSha256: release.manifestSha256, contentSha256,
           downloadSource: null });
       // Download and verify while the Worker still admits work.
       // Only installation and restart need the drained runtime.
@@ -383,6 +397,8 @@ export class WorkerUpdater {
         assertStateOwnership, updatePolicy: async () => true, signal }));
       signal.throwIfAborted();
       assertStateOwnership();
+      // Restart supervision owns its own deadline once the pre-restart work has completed.
+      handoff();
       this.handoff = randomUUID();
       await this.save({ state: 'restarting' }, { restart: { ...launch, directory: installed.directory,
         ...(ciSmoke ? { ciSmoke } : {}),
