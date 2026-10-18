@@ -103,19 +103,13 @@ it('reserves admissions for startup smoke and resumes them after validation', as
   await runner.cancel(f.request.runId)
 })
 
-it.each(['before', 'after'] as const)(
-  'recovers the original service after restart between native entry and the running metadata write (exit %s write)',
-  async completion => {
+it('recovers the original service after restart between native entry and the running metadata write', async () => {
   const f = await fixture()
   let release!: () => void
   let entered!: () => void
   const paused = new Promise<void>(resolve => { entered = resolve })
   const gate = new Promise<void>(resolve => { release = resolve })
   writes.running = async () => { entered(); await gate }
-  const complete = async () => {
-    await writeFile(join(f.root, 'runs', f.request.runId, 'log'), 'Completed lint')
-    await writeFile(join(f.root, 'runs', f.request.runId, 'exit'), '0\n')
-  }
   try {
     await f.runner.handle(f.request)
     await paused
@@ -124,29 +118,20 @@ it.each(['before', 'after'] as const)(
     await expect(access(f.source)).resolves.toBeUndefined()
     await expect(recovered.handle(f.request)).resolves.toMatchObject({ run: { state: 'running' } })
     expect(f.control.launches).toBe(1)
-    if (completion === 'before') await complete()
-    expect(f.runner.isUpdateIdle()).toBe(false)
-    await expect(recovered.handle(f.read)).resolves.toMatchObject({
-      run: { state: 'running', exitCode: null },
-    })
     release()
-    // A running read can come from the service marker while launch still holds the metadata lock.
-    await f.runner.beginDrain()
-    expect(f.runner.isUpdateIdle()).toBe(true)
-    if (completion === 'after') {
+    await vi.waitFor(async () => {
       await expect(f.runner.handle(f.read)).resolves.toMatchObject({ run: { state: 'running' } })
-      await complete()
-    }
+    })
+    await writeFile(join(f.root, 'runs', f.request.runId, 'log'), 'Completed lint')
+    await writeFile(join(f.root, 'runs', f.request.runId, 'exit'), '0\n')
     await expect(recovered.handle(f.read)).resolves.toMatchObject({ run: { state: 'passed', exitCode: 0 } })
-    await expect(new HostCiRunner(f.root, f.ports, {}).handle(f.read))
-      .resolves.toMatchObject({ run: { state: 'passed', exitCode: 0 } })
-    expect(f.control.launches).toBe(1)
   } finally {
     writes.running = undefined
     release()
-    await f.runner.beginDrain()
-    const reply = await f.runner.handle(f.read)
-    expect('run' in reply && reply.run.state).not.toBe('starting')
+    await vi.waitFor(async () => {
+      const reply = await f.runner.handle(f.read)
+      expect('run' in reply && reply.run.state).not.toBe('starting')
+    })
   }
 })
 

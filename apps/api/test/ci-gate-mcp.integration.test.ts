@@ -472,6 +472,97 @@ it('fails the gate on a second setup failure and does not retry a failure after 
   } finally { await f.close() }
 })
 
+it('observes a setup retry only where it runs when a dispatch listing predates the requeue', async () => {
+  const pool = createTestPool({ connectionString: database.databaseUrl, max: 64,
+    options: '-c search_path=public -c statement_timeout=10000 -c lock_timeout=5000' })
+  // Every result reaches the service through this hook, so the test can hold a pass between its listing and its
+  // observations without reading the statements.
+  let afterResult: ((values: unknown[] | undefined, rows: Record<string, unknown>[]) => Promise<void>) | undefined
+  const query = pool.query.bind(pool) as unknown as
+    (text: unknown, values?: unknown[]) => Promise<pg.QueryResult<Record<string, unknown>>>
+  pool.query = (async (text: unknown, values?: unknown[]) => {
+    const result = await query(text, values)
+    await afterResult?.(values, result.rows)
+    return result
+  }) as unknown as typeof pool.query
+  const reads: { key: string; runId: string }[] = []
+  let heldRead: { runId: string; reached: () => void; release: Promise<void> } | undefined
+  // Nine cloud slots each take one of the gate's nine checks, so a setup retry waits until a check finishes.
+  const f = await fixture({ pool, cloudSlots: 9, readCloud: async (computer, request) => {
+    reads.push({ key: computer.key, runId: request.runId })
+    const held = heldRead
+    if (held?.runId === request.runId) {
+      heldRead = undefined
+      held.reached()
+      await held.release
+    }
+    return undefined
+  } })
+  try {
+    const started = CiRunOutputSchema.parse(await f.value('ci_run', {
+      suite: 'integration', scope: 'full', gate: true, commandId: randomUUID(), commit: 'a'.repeat(40),
+    }))
+    await settle(f.ci)
+    const initial = CiGetOutputSchema.parse(await f.value('ci_get', { ticketId: started.ticketId }))
+    const [part, other] = initial.partitions!.filter(run => run.state === 'running' && run.suite === 'unit'
+      && run.computer?.hostRef.kind === 'cloud')
+    const failedKey = (await database.pool.query<{ host_key: string }>('select host_key from ci_runs where id=$1',
+      [part!.id])).rows[0]!.host_key
+    const firstRunId = ciExecutionRunId(part!)
+    const reason = 'Setup failed before the first test started'
+    f.runs.set(firstRunId, { ...f.runs.get(firstRunId)!, state: 'failed', exitCode: 1,
+      finishedAt: new Date().toISOString(), message: reason, testsStarted: false })
+    // A pass starts observing the setup failure; the executor answers once the next pass has listed the ticket.
+    let release!: () => void
+    const reached = new Promise<void>(resolve => {
+      heldRead = { runId: firstRunId, reached: resolve, release: new Promise<void>(done => { release = done }) }
+    })
+    const firstPass = f.ci.dispatch()
+    await reached
+    await firstPass
+    let requeued!: () => void
+    const retryQueued = new Promise<void>(resolve => { requeued = resolve })
+    let listed = false
+    afterResult = async (values, rows) => {
+      const state = (rows[0]?.record as { state?: string } | undefined)?.state
+      if (values?.[0] === part!.id && state === 'queued') requeued()
+      if (listed || !rows.some(row => row.id === part!.id && row.host_key === failedKey)) return
+      listed = true
+      // This pass still lists the failed attempt on its executor; the held observation now queues the setup retry.
+      release()
+      await retryQueued
+      // Reading the requeued ticket back is that observation's last I/O.
+      await new Promise(resolve => setImmediate(resolve))
+    }
+    await f.ci.dispatch()
+    afterResult = undefined
+    // Every other slot is still busy, so the setup retry stays queued while the stale listing is observed.
+    await settle(f.ci)
+    expect(CiGetOutputSchema.parse(await f.value('ci_get', { ticketId: part!.id })).run)
+      .toMatchObject({ state: 'queued', setupRetry: { reason } })
+    const otherRunId = ciExecutionRunId(other!)
+    f.runs.set(otherRunId, { ...f.runs.get(otherRunId)!, state: 'passed', exitCode: 0,
+      finishedAt: new Date().toISOString() })
+    await settle(f.ci)
+    const retried = CiGetOutputSchema.parse(await f.value('ci_get', { ticketId: part!.id }))
+    expect(retried.run).toMatchObject({ state: 'running', setupRetry: { reason } })
+    const retryRunId = ciExecutionRunId(retried.run)
+    expect(retryRunId).not.toBe(firstRunId)
+    // The failed executor never holds the retry, so nothing asks it about the retry.
+    expect(reads.filter(read => read.runId === retryRunId && read.key === failedKey)).toEqual([])
+    expect(retried.run.observation?.status).not.toBe('unavailable')
+    f.runs.set(retryRunId, { ...f.runs.get(retryRunId)!, state: 'failed', exitCode: 2,
+      finishedAt: new Date().toISOString(), message: 'Second setup failure', testsStarted: false,
+      collection: 'unsupported' })
+    await settle(f.ci)
+    expect(CiGetOutputSchema.parse(await f.value('ci_get', { ticketId: part!.id })).run)
+      .toMatchObject({ state: 'failed', exitCode: 2, message: 'Second setup failure', setupRetry: { reason } })
+  } finally {
+    await f.close()
+    await pool.end()
+  }
+})
+
 it('keeps a draining build gate off cloud until the grace expires, then persists and completes its cloud parts through MCP', async () => {
   const files = Array.from({ length: 80 }, (_, index) => `apps/api/test/feature-${index}.integration.test.ts`)
   const durations = Object.fromEntries(files.map((file, index) => [file, index < 24 ? 60_000 : 5_000]))
