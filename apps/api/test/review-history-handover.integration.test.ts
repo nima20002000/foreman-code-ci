@@ -13,7 +13,8 @@ import { postgresEnabled } from './helpers/wave25Agent3.js'
 afterEach(() => vi.restoreAllMocks())
 
 describe.skipIf(!postgresEnabled)('review history across observer handover', () => {
-  it('continues the original review after publishing unchanged history with a successor lease', async () => {
+  it.each(['after publication', 'before publication'] as const)(
+    'continues the original review when its observer stops %s', async handover => {
     const f = await routedApprovalFixture()
     const started = rejectableDeferred()
     const releaseOriginal = rejectableDeferred()
@@ -32,15 +33,20 @@ describe.skipIf(!postgresEnabled)('review history across observer handover', () 
       return capture(...args)
     })
     const eventSpy = vi.spyOn(f.coordination, 'appendReviewNativeEvent').mockImplementation(async (...args) => {
-      await appendEvent(...args)
-      if (args[1].type !== 'turn.started') return
+      if (args[1].type !== 'turn.started') return appendEvent(...args)
+      if (handover === 'after publication') await appendEvent(...args)
       started.resolve()
       await releaseOriginal.promise
+      if (handover === 'before publication') {
+        lane!.guard.signal.throwIfAborted()
+        await appendEvent(...args)
+      }
     })
     let replayed = false
     const historySpy = vi.spyOn(f.coordination, 'appendReviewNativeHistory').mockImplementation(async (...args) => {
-      if (!replayed && originalHistory) {
-        replayed = true
+      if (replayed) return appendHistory(...args)
+      replayed = true
+      if (originalHistory) {
         if (!lane || !args[2]) throw new Error('The successor history has no active writer')
         const context = await f.coordination.getReviewJobContext(args[0].id)
         const saved = capture(f.reviewer.id, {
@@ -48,10 +54,10 @@ describe.skipIf(!postgresEnabled)('review history across observer handover', () 
           nativeSessionId: args[0].nativeSessionId,
         }, args[0], lane, { type: 'history', history: originalHistory })
         await appendHistory(args[0], originalHistory.events, { ...args[2], nativeCapture: saved })
-        published.resolve()
-        await releaseSuccessor.promise
       }
       await appendHistory(...args)
+      published.resolve()
+      await releaseSuccessor.promise
     })
     try {
       originalDispatch = f.native.reviewers.dispatchNext(f.reviewerId, 'original-observer')
@@ -59,13 +65,18 @@ describe.skipIf(!postgresEnabled)('review history across observer handover', () 
       const job = (await f.coordination.findReviewJob(f.interaction.id, f.reviewerId))!
       const resident = f.native.passiveOwnedNativeSessions().find(value => value.execution.id === f.reviewer.id)!
       expect(lane).toBeDefined()
-      originalHistory = await resident.manager.reconcile(resident.session, job.correlationId)
-      await appendHistory(job, originalHistory.events, {
-        writer: lane!.fence, live: false, terminalReady: false,
-        nativeCapture: capture(f.reviewer.id, resident.session, job, lane!, {
-          type: 'history', history: originalHistory,
-        }),
-      })
+      if (handover === 'after publication') {
+        originalHistory = await resident.manager.reconcile(resident.session, job.correlationId)
+        await appendHistory(job, originalHistory.events, {
+          writer: lane!.fence, live: false, terminalReady: false,
+          nativeCapture: capture(f.reviewer.id, resident.session, job, lane!, {
+            type: 'history', history: originalHistory,
+          }),
+        })
+      }
+      const saved = (await f.db.pool.query<{ proof_id: string; record: unknown }>(
+        'select proof_id,record from review_native_proofs where job_id=$1 order by proof_id', [job.id])).rows
+      expect(saved.length).toBeGreaterThan(0)
       const stopping = f.native.reviewers.shutdown()
       releaseOriginal.resolve()
       await stopping
@@ -88,10 +99,13 @@ describe.skipIf(!postgresEnabled)('review history across observer handover', () 
       await successorDispatch
       await successor.dispatchNext(f.reviewerId, 'replacement-observer')
       expect((await f.service.recover({ limit: 10 })).errors).toEqual([])
-      expect(await f.repository.get(f.interaction.id)).toMatchObject({ deliveryState: 'delivered' })
+      expect(await f.repository.get(f.interaction.id), 'native continuation must proceed after terminal history publication')
+        .toMatchObject({ deliveryState: 'delivered' })
       expect(f.counts()).toMatchObject({ prompts: 3, responses: 1 })
       expect(await f.coordination.findReviewJob(f.interaction.id, f.reviewerId))
         .toMatchObject({ state: 'completed', providerTurnOrMessageId: job.providerTurnOrMessageId })
+      expect((await f.db.pool.query('select proof_id,record from review_native_proofs where proof_id=any($1::text[]) order by proof_id',
+        [saved.map(value => value.proof_id)])).rows).toEqual(saved)
     } finally {
       releaseOriginal.resolve()
       releaseSuccessor.resolve()
