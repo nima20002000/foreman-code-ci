@@ -2,23 +2,20 @@ import { join } from 'node:path'
 
 export const shellQuote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
 
-/** Fetches the full lockfile before installing each checkout. Clone-or-copy keeps suite mutations out of the store. */
+/** Installs into the checkout's own node_modules from the shared store. A persistent slot already holds the
+ * previous part's dependencies, so this is incremental. The workspace's import method (clone-or-copy) keeps the
+ * checkout's files independent of the store, so a suite that mutates dependencies cannot corrupt the store. */
 export function pnpmInstall(cache: string, messageFile: string, options: { offlineOnly?: boolean } = {}): string[] {
-  const store = ` --store-dir ${shellQuote(join(cache, 'pnpm-store'))}`
-    + ` --cache-dir ${shellQuote(join(cache, 'pnpm-metadata'))}`
-  const fetch = `corepack pnpm fetch --frozen-lockfile --config.confirm-modules-purge=false${store}`
   const install = `corepack pnpm install --frozen-lockfile --config.confirm-modules-purge=false`
-    + store
+    + ` --store-dir ${shellQuote(join(cache, 'pnpm-store'))} --cache-dir ${shellQuote(join(cache, 'pnpm-metadata'))}`
   if (options.offlineOnly) return [
     `export npm_config_cache_dir=${shellQuote(join(cache, 'pnpm-metadata'))}`,
-    `${fetch} --offline || finish $?`,
     `${install} --offline || finish $?`,
   ]
   return [
     `export npm_config_cache_dir=${shellQuote(join(cache, 'pnpm-metadata'))}`,
-    // An installed checkout can outlive evicted store entries needed by deployment fixtures.
-    // Check the full lockfile offline; only an online store refill needs the repository lock.
-    `${fetch} --offline && ${install} --offline || {`,
+    // Warm checkouts install independently; only an online store refill needs the repository lock.
+    `${install} --offline || {`,
     `mkdir -p ${shellQuote(join(cache, 'locks'))}`,
     `exec {cache_lock}>${shellQuote(join(cache, 'locks', 'install.lock'))}`,
     'flock --wait 600 "$cache_lock" || {',
@@ -29,11 +26,10 @@ export function pnpmInstall(cache: string, messageFile: string, options: { offli
     // Dependency snapshots from the previous per-run copy scheme are no longer read.
     `rm -rf ${shellQuote(join(cache, 'modules'))}`,
     // Recheck after waiting: another checkout may have filled the missing store entries.
-    `${fetch} --offline && ${install} --offline || {`,
+    `${install} --offline || {`,
     // A warmed store can still miss metadata (pruned or partial cache); refill it online instead of failing the job.
     `  echo '[ci-cache] filling store online'`,
-    `  ${fetch} --prefer-offline || finish $?`,
-    `  ${install} --offline || finish $?`,
+    `  ${install} || finish $?`,
     '}',
     'flock -u "$cache_lock"',
     'exec {cache_lock}>&-',
