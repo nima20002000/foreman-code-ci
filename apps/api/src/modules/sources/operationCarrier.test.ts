@@ -170,7 +170,8 @@ it('keeps a Worker retained-tree measurement bound to the original materializati
       sharedTree: { id: treeId, referenceIdentity: f.record.receipt.binding.filesystem } } })
   const payload = { version: 1, operation: 'sources.release', materializationId: record.receipt.materializationId,
     operationId: record.operationId, released: true, retainedBytes: 2 * 1024 * 1024 * 1024,
-    sharedTree: { id: treeId, bytes: 4096 }, worktree: { state: 'retained' as const, message: 'Uncommitted changes remain.' } }
+    sharedTree: { id: treeId, bytes: 4096 }, worktree: { state: 'retained' as const,
+      removalAttempted: true as const, message: 'Uncommitted changes remain.' } }
   const identity: DeviceConnectionIdentity & { connectionEpoch?: string } = { ...f.binding }
   delete identity.connectionEpoch
   const host = new CarrierRemoteSourceMaterializationHost({ capture: () => ({ identity,
