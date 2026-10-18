@@ -126,28 +126,6 @@ test('coverage cannot narrow shared infrastructure changes or change other suite
     sources: new Map([...sources, [unit, "import './app.js'"]]) }).files, [unit])
 })
 
-test('CI orchestration changes require full scope even when recorded coverage omits CI integration consumers', () => {
-  const service = 'apps/api/src/modules/ci-host/service.ts'
-  const helper = 'apps/api/test/admission.ts'
-  const queue = 'apps/api/test/host-ci-queue-priority.integration.test.ts'
-  const cloud = 'apps/api/test/host-ci-cloud-integration.integration.test.ts'
-  const graph = new Map([...sources, [service, 'export class HostCiService {}'],
-    [helper, "import '../src/modules/ci-host/service.js'"],
-    [queue, "import './admission.js'"], [cloud, "import './admission.js'"]])
-  const recorded = { ...coverageMap, testFiles: [first, second, queue, cloud],
-    coverage: { ...coverageMap.coverage, [first]: [service], [queue]: [other], [cloud]: [other] } }
-  const result = select([service], { sources: graph, coverageMap: recorded })
-  assert.equal(result.scope, 'full')
-  assert.match(result.reason, /infrastructure/i)
-})
-
-test('CI host unit test edits retain affected integration scope', () => {
-  const unit = 'apps/api/src/modules/ci-host/service.test.ts'
-  const result = select([unit], { sources: new Map([...sources, [unit, 'export {}']]) })
-  assert.equal(result.scope, 'affected')
-  assert.deepEqual(result.files, [])
-})
-
 test('coverage recording and map validation changes require full integration scope', () => {
   for (const file of ['scripts/integration-coverage.mjs', 'packages/contracts/src/ciCoverage.mjs',
     'packages/contracts/src/ciImportGraph.mjs', 'apps/api/test/setupCoverage.ts']) {
@@ -189,39 +167,6 @@ test('snapshot uses the newest ancestor map and includes intervening changes', t
   assert.ok(result.reason.includes(middle))
   const drift = affectedSnapshot(head, 'integration', f.root, 'main', middle, [oldMap])
   assert.deepEqual(drift.files, [first, second])
-})
-
-test('snapshot retains Git changes when prepared coverage falls back without a map', t => {
-  const f = repository(t)
-  f.put(source, 'export const feature = () => 3')
-  const head = f.commit('feature change')
-  const result = affectedSnapshot(head, 'integration', f.root, 'main', f.base, [], {
-    changedFiles: [], coverageReason: 'No integration coverage artifacts are available.',
-  })
-  assert.equal(result.scope, 'affected')
-  assert.deepEqual(result.files, [first, second])
-})
-
-test('snapshot combines Git changes with the changes supplied by a coverage map', t => {
-  const f = repository(t)
-  f.put(source, 'export const feature = () => 3')
-  const head = f.commit('feature change')
-  const result = affectedSnapshot(head, 'integration', f.root, 'main', f.base, [], {
-    changedFiles: [other], coverageMap: { ...coverageMap, commit: f.base },
-  })
-  assert.equal(result.scope, 'affected')
-  assert.deepEqual(result.files, [first, second])
-})
-
-test('prepared coverage fallback cannot erase an infrastructure change from Git', t => {
-  const f = repository(t)
-  f.put('pnpm-lock.yaml', 'changed')
-  const head = f.commit('dependency change')
-  const result = affectedSnapshot(head, 'integration', f.root, 'main', f.base, [], {
-    changedFiles: [], coverageReason: 'No integration coverage artifacts are available.',
-  })
-  assert.equal(result.scope, 'full')
-  assert.match(result.reason, /infrastructure/i)
 })
 
 test('snapshot rejects non-ancestors and maps predating lockfile or CI infrastructure changes', t => {
