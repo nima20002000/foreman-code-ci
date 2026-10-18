@@ -61,6 +61,32 @@ export class ProjectionDatabase {
       stopRequested: this.state.stopped, cleanupPending: this.state.cleanupPending,
       pendingInteractionCount: 0, unsettledReviewCount: 0 })
   }
+  private pinnedRows(s: State) {
+    this.protectedMetadataReads++
+    const version = this.fixture.version
+    return [{ workspace_id: this.scope.workspaceId, workflow_id: this.scope.workflowId,
+      workflow_version_id: this.scope.workflowVersionId, execution_state: s.executionState,
+      execution_semantics_version: this.scope.executionSemanticsVersion, version_id: version.id,
+      version_number: version.version, entry_node_id: version.entryNodeId, run_record: this.run(s), version_record: version,
+      version_workspace_id: version.workspaceId, version_workflow_id: version.workflowId,
+      configurations: this.fixture.configurations.map(record => ({ id: record.id,
+        workspace_id: record.workspaceId, agent_id: record.agentId, version: record.version, record })) }]
+  }
+  private projectionRows(s: State, values: unknown[], pins?: ReturnType<ProjectionDatabase['pinnedRows']>) {
+    assert.ok(this.fixture.version.definition.nodes.every(node => node.kind !== 'job'),
+      'this fixture has no Job preparations')
+    const found = values[0] === this.scope.runId
+    const matchesScope = found && values[2] === this.scope.workflowVersionId
+      && values[3] === this.scope.workspaceId && values[4] === this.scope.workflowId
+    return {
+      ...(pins === undefined ? {} : { pins: found ? pins : [] }),
+      nodeRun: found ? [{ closed: s.stopped || ['completed', 'interrupted'].includes(s.executionState),
+        cleanup_pending: s.cleanupPending }] : [],
+      runState: matchesScope ? [{ execution_state: s.executionState, outcome: s.outcome,
+        stopped: s.stopped, cleanup_pending: s.cleanupPending }] : [],
+      executions: [], jobs: [], attention: [], native: [], interactions: [], reviews: [], resolutions: [], bindings: [],
+    }
+  }
   /** Actual canonical admission/finalization, not hand-written receipt success.
    * The one ordinary node has no admitted execution, history or native resources.
    * Generic journal producer callbacks below remain explicit unit-test ports. */
@@ -79,6 +105,9 @@ export class ProjectionDatabase {
     this.transactions.length = 0
     this.protectedMetadataReads = 0
     this.historyBodyReads = 0
+    this.headReads = 0
+    this.scopeReads = 0
+    this.writes = 0
   }
   /** Exercise the real publisher's before/after Run and public-projection checks. */
   async changeRun(patch: { stopped?: boolean; executionState?: string; outcome?: string; cleanupPending?: boolean }) {
@@ -91,11 +120,20 @@ export class ProjectionDatabase {
   ownerLost = false
   ownerFence = '100'
   onInsertSource: (() => void) | undefined
+  onInsertEffect: ((effect: Effect) => void) | undefined
   unknownCommit = false
   calls: string[] = []
   transactions: Array<{ readOnly: boolean; isolation: string; outcome: 'pending' | 'committed' | 'rolled-back' }> = []
   protectedMetadataReads = 0
   historyBodyReads = 0
+  headReads = 0
+  scopeReads = 0
+  writes = 0
+  assertNoProtectedGraphReads(): void {
+    assert.equal(this.headReads, 0)
+    assert.equal(this.protectedMetadataReads, 0)
+    assert.equal(this.historyBodyReads, 0)
+  }
   readonly owner = { runId: projectionScope.runId, assertOwned: () => { if (this.ownerLost) throw new Error('RUN_OWNERSHIP_LOST') },
     readOneShotFence: async (sql: GraphTransactionSql) => {
       const row = (await sql.query<{ owner_id: string; fence: string }>('select projection_test_owner_fence')).rows[0]
@@ -110,6 +148,7 @@ export class ProjectionDatabase {
     client.query = (async (text: string, values: unknown[] = []) => {
       const q = text.replace(/\s+/g, ' ').trim(), s = transaction ?? this.state
       this.calls.push(q)
+      if (/^(insert|update|delete)\b/.test(q)) this.writes++
       const result = (rows: unknown[] = []) => ({ rows: structuredClone(rows), rowCount: rows.length, command: '', oid: 0, fields: [] })
       if (q.startsWith('begin ')) {
         observedTransaction = { readOnly: q.endsWith('read only'),
@@ -136,6 +175,12 @@ export class ProjectionDatabase {
         if (transaction) this.initialized = initializedBefore
         transaction = null
         return result()
+      }
+      if (q.startsWith('with pins as materialized')) {
+        return result([this.projectionRows(s, values, this.pinnedRows(s))])
+      }
+      if (q.startsWith('with projection_nodes as materialized')) {
+        return result([this.projectionRows(s, values)])
       }
       if (q === 'select projection_test_owner_fence') return result([{ owner_id: '42', fence: this.ownerFence }])
       if (q === 'update projection_test_domain set revision=revision+1') { s.domain++; return result() }
@@ -204,20 +249,15 @@ export class ProjectionDatabase {
           semantic_digest: String(values[4]), sequence: String(values[1]) }; return result()
       }
       if (q.startsWith('select r.workspace_id,r.workflow_id,r.workflow_version_id,r.execution_state')) {
-        this.protectedMetadataReads++
-        const version = this.fixture.version
-        return result([{ workspace_id: this.scope.workspaceId, workflow_id: this.scope.workflowId,
-          workflow_version_id: this.scope.workflowVersionId, execution_state: s.executionState,
-          execution_semantics_version: this.scope.executionSemanticsVersion, version_id: version.id,
-          version_number: version.version, entry_node_id: version.entryNodeId, run_record: this.run(s), version_record: version,
-          version_workspace_id: version.workspaceId, version_workflow_id: version.workflowId,
-          configurations: this.fixture.configurations.map((record) => ({ id: record.id,
-            workspace_id: record.workspaceId, agent_id: record.agentId, version: record.version, record })) }])
+        return result(this.pinnedRows(s))
       }
       if (q.startsWith('select r.stop_requested_at is not null')) return result([{ closed: s.stopped
         || ['completed', 'interrupted'].includes(s.executionState), cleanup_pending: s.cleanupPending }])
-      if (q.startsWith('select workspace_id,workflow_id,id from runs')) return result(values[0] === this.scope.runId
-        ? [{ id: this.scope.runId, workspace_id: this.scope.workspaceId, workflow_id: this.scope.workflowId }] : [])
+      if (q.startsWith('select workspace_id,workflow_id,id from runs')) {
+        this.scopeReads++
+        return result(values[0] === this.scope.runId
+          ? [{ id: this.scope.runId, workspace_id: this.scope.workspaceId, workflow_id: this.scope.workflowId }] : [])
+      }
       // Empty, ordinary workflow cut. Each named query is an explicit physical
       // table read: no catch-all SELECT branch, native proof or history fallback.
       if (q === CURRENT_NATIVE_ACTIVITIES_SQL.replace(/\s+/g, ' ').trim()) return result()
@@ -238,9 +278,13 @@ export class ProjectionDatabase {
       if (q.startsWith('select r.workspace_id')) return result([{ workspace_id: this.scope.workspaceId, workflow_id: this.scope.workflowId,
         workflow_version_id: this.scope.workflowVersionId, execution_semantics_version: this.scope.executionSemanticsVersion,
         has_job_nodes: this.fixture.version.definition.nodes.some(node => node.kind === 'job') }])
-      if (q.startsWith('select h.head_sequence')) return result(values[0] !== this.scope.runId || values[1] !== this.scope.workspaceId
-        || values[2] !== this.scope.workflowId || values[3] !== this.scope.workflowVersionId || this.scope.executionSemanticsVersion !== 3 ? [] : [{ head_sequence: this.initialized ? String(s.head) : null,
-        retention_floor: String(s.floor), protocol_version: this.protocolVersion, history_coverage: 'from_admission' }])
+      if (q.startsWith('select h.head_sequence')) {
+        this.headReads++
+        return result(values[0] !== this.scope.runId || values[1] !== this.scope.workspaceId
+          || values[2] !== this.scope.workflowId || values[3] !== this.scope.workflowVersionId
+          || this.scope.executionSemanticsVersion !== 3 ? [] : [{ head_sequence: this.initialized ? String(s.head) : null,
+          retention_floor: String(s.floor), protocol_version: this.protocolVersion, history_coverage: 'from_admission' }])
+      }
       if (q.startsWith('select protocol_version from run_graph_heads')) return result(this.initialized ? [{ protocol_version: 1 }] : [])
       if (q.startsWith('select execution_state,')) return result([{ execution_state: s.executionState, stopped: s.stopped, outcome: s.outcome }])
       if (q.startsWith('select source_digest,semantic_digest')) return result(s.sources.filter(x => x.source_kind === values[1]
@@ -261,7 +305,9 @@ export class ProjectionDatabase {
       if (q.startsWith('insert into run_graph_effects')) {
         for (const row of JSON.parse(String(values[2])) as Omit<Effect, 'first_sequence'>[]) {
           assert.ok(!s.effects.some(x => x.effect_kind === row.effect_kind && x.entity_id === row.entity_id))
-          s.effects.push({ ...row, first_sequence: String(values[1]) })
+          const effect = { ...row, first_sequence: String(values[1]) }
+          s.effects.push(effect)
+          this.onInsertEffect?.(effect)
         } return result()
       }
       if (q.startsWith('select b.sequence::text,b.kind,b.payload_bytes')) return result(s.batches
