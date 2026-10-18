@@ -10,6 +10,12 @@ const ownershipCheckIntervalMs = 5_000
 const ownershipCheckBudgetMs = 5_000
 const ownershipLockKey = 710_014
 
+interface RuntimeSession {
+  pid: number
+  /** Epoch microseconds retain PostgreSQL's precision when a PID is reused. */
+  backend_start: string
+}
+
 function reportOwnershipCheckFailure(error: unknown): void {
   componentLogger('db').warn({ operation: 'check native runtime ownership', err: error },
     'Runtime ownership could not be checked; keeping the owner active and retrying.')
@@ -35,7 +41,7 @@ export class OperatorRuntimeOwner {
   private acquisition: Promise<void> | undefined
   private closure: Promise<void> | undefined
   private ending: Promise<void> | undefined
-  private backendPid: number | undefined
+  private backendSession: RuntimeSession | undefined
   private checkTimer: ReturnType<typeof setTimeout> | undefined
   private checkController: AbortController | undefined
   private checking: Promise<void> | undefined
@@ -97,13 +103,16 @@ export class OperatorRuntimeOwner {
       try {
         await this.client.connect()
         if (this.closing) throw new Error('Native runtime ownership is closing.')
-        const result = await this.query<{ acquired: boolean; pid: number }>(
-          'select pg_try_advisory_lock($1) as acquired, pg_backend_pid() as pid', [ownershipLockKey])
+        const result = await this.query<RuntimeSession & { acquired: boolean }>(`
+          select pg_try_advisory_lock($1) as acquired, pid,
+            (extract(epoch from backend_start)*1000000)::bigint::text as backend_start
+          from pg_stat_activity where pid=pg_backend_pid()`, [ownershipLockKey])
         if (!result.rows[0]?.acquired) {
           throw new DomainError('OPERATOR_API_ALREADY_OWNED', 'Another API process owns the native runtime for this database. Multi-instance native execution is not enabled.', 503)
         }
         if (this.loss) throw this.loss
-        this.backendPid = result.rows[0]!.pid
+        const session = result.rows[0]!
+        this.backendSession = { pid: session.pid, backend_start: session.backend_start }
         this.held = true
         this.checkController = new AbortController()
         this.scheduleCheck()
@@ -199,7 +208,7 @@ export class OperatorRuntimeOwner {
   }
 
   private async checkOwnership(signal: AbortSignal): Promise<void> {
-    let owners: Array<{ pid: number }>
+    let owners: RuntimeSession[]
     try {
       owners = await this.readLockOwners(signal)
     } catch (error) {
@@ -207,13 +216,15 @@ export class OperatorRuntimeOwner {
       return
     }
     if (!this.active || signal.aborted) return
-    if (!owners.some(owner => owner.pid === this.backendPid) || owners.some(owner => owner.pid !== this.backendPid)) {
+    const isOriginalSession = (owner: RuntimeSession) => owner.pid === this.backendSession?.pid
+      && owner.backend_start === this.backendSession?.backend_start
+    if (!owners.some(isOriginalSession) || owners.some(owner => !isOriginalSession(owner))) {
       this.loseOwnership(new DomainError('NATIVE_RUNTIME_UNAVAILABLE',
         'The original runtime session no longer owns the native runtime lock.', 503))
     }
   }
 
-  private async readLockOwners(lifetime: AbortSignal): Promise<Array<{ pid: number }>> {
+  private async readLockOwners(lifetime: AbortSignal): Promise<RuntimeSession[]> {
     const deadline = new AbortController()
     const signal = AbortSignal.any([lifetime, deadline.signal])
     const timer = setTimeout(() => deadline.abort(new Error('Runtime ownership check timed out.')), ownershipCheckBudgetMs)
@@ -231,9 +242,12 @@ export class OperatorRuntimeOwner {
         return connection
       }, signal)
       acquired.on('error', reportOwnershipCheckFailure)
-      const result = await withAbortSignal(() => acquired.query<{ pid: number }>(`select pid from pg_locks
-        where locktype='advisory' and classid=0::oid and objid=$1::oid and objsubid=1 and granted
-        and database=(select oid from pg_database where datname=current_database())`, [ownershipLockKey]), signal)
+      const result = await withAbortSignal(() => acquired.query<RuntimeSession>(`
+        select locks.pid, (extract(epoch from activity.backend_start)*1000000)::bigint::text as backend_start
+        from pg_locks locks join pg_stat_activity activity on activity.pid=locks.pid
+        where locks.locktype='advisory' and locks.classid=0::oid and locks.objid=$1::oid
+        and locks.objsubid=1 and locks.granted
+        and locks.database=(select oid from pg_database where datname=current_database())`, [ownershipLockKey]), signal)
       failed = false
       return result.rows
     } finally {

@@ -9,7 +9,7 @@ interface OwnerReply {
 }
 
 interface OwnershipCheck {
-  query: Mock<() => Promise<{ rows: Array<{ pid: number; backend_start?: string }> }>>
+  query: Mock<() => Promise<{ rows: Array<{ pid: number; backend_start: string }> }>>
   connect: Mock<() => Promise<OwnershipCheck>>
   release: Mock
   end: Mock<() => Promise<void>>
@@ -265,7 +265,7 @@ describe('runtime-owner connection lifetime', () => {
   it.each(['missing', 'taken over'] as const)('fences an independently confirmed %s lock without ownership read activity', async state => {
     vi.useFakeTimers()
     const { owner, lost, check } = fixture()
-    check.query.mockResolvedValue({ rows: state === 'missing' ? [] : [{ pid: 124 }] })
+    check.query.mockResolvedValue({ rows: state === 'missing' ? [] : [{ pid: 124, backend_start: '2000001' }] })
     await owner.acquire()
     try {
       await vi.advanceTimersByTimeAsync(5_001)
@@ -302,7 +302,7 @@ describe('runtime-owner connection lifetime', () => {
     const { owner, driver, lost, check } = fixture()
     await owner.acquire()
     const reply = deferred<OwnerReply>()
-    const checkReply = deferred<{ rows: Array<{ pid: number }> }>()
+    const checkReply = deferred<{ rows: Array<{ pid: number; backend_start: string }> }>()
     if (condition === 'stalled') check.query.mockImplementation(() => checkReply.promise)
     if (condition === 'failed') check.query.mockRejectedValue(new Error('Query read timeout'))
     driver.query.mockImplementation(() => reply.promise)
@@ -313,7 +313,7 @@ describe('runtime-owner connection lifetime', () => {
       expect(lost).not.toHaveBeenCalled()
       expect(check.query.mock.calls.length).toBeGreaterThan(1)
     } finally {
-      checkReply.resolve({ rows: [{ pid: 123 }] })
+      checkReply.resolve({ rows: [{ pid: 123, backend_start: '1000001' }] })
       reply.resolve({ rows: [{ epoch: '123456' }] })
       await reading
       await owner.close()
@@ -331,7 +331,7 @@ describe('runtime-owner connection lifetime', () => {
     try {
       await vi.advanceTimersByTimeAsync(5_001)
       controller.abort(new Error('Caller canceled'))
-      check.query.mockResolvedValue({ rows: [{ pid: 124 }] })
+      check.query.mockResolvedValue({ rows: [{ pid: 124, backend_start: '2000001' }] })
       await vi.advanceTimersByTimeAsync(5_001)
       expect(owner.active).toBe(false)
       expect(lost).toHaveBeenCalledOnce()
