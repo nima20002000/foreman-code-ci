@@ -924,8 +924,9 @@ export class HostCiService {
     options: { logTail?: string | undefined; audit?: CiCancellation | undefined;
       client?: pg.PoolClient | undefined; observation?: CiRunRecord['observation'] } = {}) {
     const { logTail, audit, client } = options
+    const executorCleanupPending = state.executorCleanupPending ?? run.executorCleanupPending
     const setupRequeue = computer.hostRef.kind === 'cloud' && state.state === 'failed'
-      && state.testsStarted === false && !state.executorCleanupPending
+      && state.testsStarted === false && !executorCleanupPending
       && !run.setupRetry && !run.cancellation && !run.supersededBy
     let setupRetry = run.setupRetry
     if (setupRequeue) {
@@ -934,7 +935,7 @@ export class HostCiService {
       state = { state: 'queued', step: null, exitCode: null, startedAt: null, finishedAt: null,
         message: `Queued once on another slot after setup failure: ${reason}`.slice(0, 2000) }
     }
-    const requeued = state.state === 'queued' && !state.executorCleanupPending
+    const requeued = state.state === 'queued' && !executorCleanupPending
     const executionHistory = [...run.executionHistory ?? []]
     if (requeued) {
       const previousRunId = ciExecutionRunId(run)
@@ -963,7 +964,7 @@ export class HostCiService {
       ...(options.observation ? { observation: options.observation } : {}),
       ...(state.transport ? { transport: state.transport } : {}),
       ...(state.selection ? { selection: state.selection } : {}),
-      ...(state.executorCleanupPending !== undefined ? { executorCleanupPending: state.executorCleanupPending } : {}),
+      ...(executorCleanupPending !== undefined ? { executorCleanupPending } : {}),
       ...(setupRequeue ? { dispatchAttempts: undefined, collection: undefined, provenance: undefined,
         mirrorPublication: undefined } : {}),
       cancellation: terminal ? undefined : run.cancellation,
