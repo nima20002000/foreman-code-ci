@@ -62,6 +62,14 @@ describe('profile-scoped Start after a Worker harness installation update', () =
       await waitForRemoteReview(() => fixture.provider.calls(), calls =>
         calls.some(call => call.workflowTurn !== undefined), 'active native placement')
       const callsBefore = (await fixture.provider.calls()).length
+      // Catalog reads use the Worker state root; allowing it would release every profile check.
+      const catalog = await fixture.call('harness_options_refresh', { harness: 'codex', hostRef: fixture.hostRef })
+      expect(catalog.isError).not.toBe(true)
+      const catalogCalls = (await fixture.provider.calls()).slice(callsBefore)
+      expect(catalogCalls).toContainEqual(expect.objectContaining({
+        method: 'model/list', workingDirectory: fixture.stateDirectory,
+      }))
+      expect(modelRequestDirectories(catalogCalls, fixture.stateDirectory)).toEqual([])
       // Hold only Worker profile checks; the later Run starts its session in a fresh source tree.
       await fixture.provider.blockModels({ workingDirectory: fixture.stateDirectory })
       modelsBlocked = true
