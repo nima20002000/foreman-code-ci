@@ -5,7 +5,8 @@ import {
   type NativeGraphProjectionKey,
 } from '@foreman-code/contracts/wave25'
 import { poisonGraphTransaction, type GraphTransactionSql } from './connection.js'
-import { readCurrentNativeActivities, type CurrentNativeActivity } from './currentActivity.js'
+import { type CurrentNativeActivity } from './currentActivity.js'
+import { readBatchNativeActivities } from './nativeBatchActivity.js'
 import { composePublicNodes, readPublicNodeInputs, type PublicNodeInputs } from './publicProjection.js'
 import { readNativeProjectionFacts } from './nativeProjectionFacts.js'
 import { assertRunGraphPublication, graphSourceDigest, graphSourceRowKey, readGraphSourceRow, type RunGraphPublication } from './publication.js'
@@ -83,8 +84,8 @@ async function ingest(publication: RunGraphPublication, input: HarnessNativeEven
   const writes: (() => Promise<void>)[] = []
   const facts: GraphFact[] = []
   const nodeIds = [...new Set(ordered.map((item) => item.guard.expected.key.execution.workflowNodeId))]
-  await flushForRead(sql, ['activity'])
-  const beforeCandidates = await readCurrentNativeActivities(sql, scope, nodeIds)
+  const inputs = await projectionInputs(sql, scope, nodeIds)
+  const beforeCandidates = await readBatchNativeActivities(sql, scope, inputs)
   const afterCandidates: CurrentNativeActivity[] = [...beforeCandidates]
   // Oversized original evidence fails projection explicitly; raw source numbering is preserved.
   let sourceDigest: string
@@ -181,7 +182,6 @@ async function ingest(publication: RunGraphPublication, input: HarnessNativeEven
       if (saved.rowCount !== 1) throw new RunGraphError('GRAPH_SOURCE_CONFLICT')
     })
   }
-  const inputs = await projectionInputs(sql, scope, nodeIds)
   facts.push(...await readNativeProjectionFacts(beforeCandidates, afterCandidates,
     native => composePublicNodes(sql, scope, inputs, { native })))
   const mutate = async () => { for (const write of writes) await write() }
@@ -217,12 +217,6 @@ export async function prefetchNativeFrames(sql: GraphTransactionSql, runId: stri
      where run_id=$1 and source_kind='native_event' and source_revision=0 and source_id=any($2::text[])`, [runId, ids])
   const found = new Map(rows.rows.map((row) => [row.source_id, row]))
   for (const id of ids) seedNativeRead(sql, graphSourceRowKey(runId, 'native_event', id, '0'), found.get(id))
-}
-
-/** A read that must see staged activity rows flushes them first; other staged rows stay batched. */
-async function flushForRead(sql: GraphTransactionSql, kinds: Parameters<typeof flushNativeGraphRows>[1]): Promise<void> {
-  const batch = activeNativeBatch(sql)
-  if (batch) await flushNativeGraphRows(batch, kinds)
 }
 
 /** Scopes read-once projection inputs to one native batch transaction. Inside it the

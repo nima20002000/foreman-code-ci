@@ -33,7 +33,7 @@ function url(kind: 'current' | 'events' = 'current') {
     ...(kind === 'events' ? { afterSequence: '0' } : {}) })}`
 }
 
-describe('FE-R2-001 current V3 HTTP/MCP shared read boundaries', () => {
+describe('current workflow HTTP/MCP shared read boundaries', () => {
   it('returns unactivated nodes without invented native work through Operator MCP', async () => {
     const f = await currentGraphReadUnit()
     const services = { runGraph: f.reads } as unknown as OperatorServices
@@ -110,7 +110,10 @@ describe('FE-R2-001 current V3 HTTP/MCP shared read boundaries', () => {
     const context = { principal, services }, tool = tools(context, f.reads).get(CANONICAL_RUN_GRAPH_MCP_TOOLS.current)!
     const result = await tool.invoke(f.request) as { isError: boolean; structuredContent?: unknown }
     expect(result.isError).toBe(true); expect(result.structuredContent).toBeUndefined()
-    expect(f.db.calls.filter((q) => q.startsWith('select '))).toEqual(['select workspace_id,workflow_id,id from runs where id=$1'])
+    expect(f.db.scopeReads).toBe(1)
+    expect(f.db.headReads).toBe(0)
+    expect(f.db.protectedMetadataReads).toBe(0)
+    expect(f.db.historyBodyReads).toBe(0)
     expect(recordDenied).toHaveBeenLastCalledWith(context.principal.id, 'mcp', 'GRAPH_READ_ACCESS_DENIED',
       `mcp:${CANONICAL_RUN_GRAPH_MCP_TOOLS.current}`)
   })

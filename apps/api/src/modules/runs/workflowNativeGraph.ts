@@ -18,6 +18,7 @@ import { type NativeResponseDeliveryEvidence } from '../interactions/delivery.js
 import type { NativeHistory } from '../harnesses/port.js'
 import { selectNativeGraphEvidence } from '../run-graph/nativeEvidence.js'
 import type { NativeEventAppendResult } from './nativeEventBatch.js'
+import { latestWorkflowCorrelation } from './workflowNativeCorrelation.js'
 
 export interface WorkflowNativeLease {
   id: string
@@ -93,16 +94,7 @@ export async function appendWorkflowNativeGraphEventLocked(sql: GraphTransaction
       'The native writer is no longer the current workflow owner.', 409)
     const generation = String(lane.record.connectionGeneration)
     const turnCorrelation = lane.record.correlationId ?? `execution:${execution.id}`
-    // The newest-turn lookup reads the table, so staged correlations of this batch reach it first.
-    const latestBatch = activeNativeBatch(sql)
-    if (latestBatch) await flushNativeGraphRows(latestBatch, ['correlation'])
-    const latest = await sql.query<{ correlation_key: string }>(
-      `select correlation_key from run_native_correlations
-       where run_id=$1 and execution_id=$2 and work_kind='workflow' and work_id=$2
-         and native_request_id is null and interaction_id is null
-         and (correlation_key=$3 or starts_with(correlation_key,$3 || ':retry:'))
-       order by first_native_sequence desc limit 1`, [scope.runId, execution.id, turnCorrelation])
-    const correlationKey = latest.rows[0]?.correlation_key ?? turnCorrelation
+    const correlationKey = await latestWorkflowCorrelation(sql, scope.runId, execution.id, turnCorrelation)
     const prior = await readNativeGraphCorrelation(sql, scope, key, correlationKey)
     // The original capture still checks physical ownership before publication
     // and commit. An unchanged correlation has no graph mutation for transcript-only frames.
