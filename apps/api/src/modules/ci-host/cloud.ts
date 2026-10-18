@@ -504,7 +504,6 @@ export class CloudCi {
       ...(error instanceof DomainError && error.code === 'CI_CLOUD_FAILED' ? { testsStarted: false } : {}),
       mirrorPublication: { ...latest.mirrorPublication!, state: 'failed', finishedAt: this.ports.now().toISOString() } }
     delete failed.publicationRequest
-    await writeFile(this.path(runId, 'log'), `${message}\n`, { flag: 'a', mode: 0o600 })
     await this.save(failed)
   }
 
