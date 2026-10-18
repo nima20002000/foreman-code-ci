@@ -122,9 +122,29 @@ export function validateProviderParameters(provider: Pick<CloudProvider, 'label'
 }
 
 /** The service refused because its API rate limit is spent; callers back off instead of retrying at once. */
-function rateLimited(label: string, text: string) {
+function rateLimited(label: string, text: string, details?: Record<string, unknown>) {
   return /rate limit|\b429\b|too many requests/i.test(text)
-    ? new DomainError('CI_CLOUD_RATE_LIMITED', `${label} rate limit reached; polling paused.`, 503) : null
+    ? new DomainError('CI_CLOUD_RATE_LIMITED', `${label} rate limit reached; polling paused.`, 503, details) : null
+}
+
+function confirmedDispatchRefusal(file: string, args: string[], text: string): boolean {
+  if (file === 'gh' && args[0] === 'workflow' && args[1] === 'run') {
+    return /could not create workflow dispatch event: HTTP (?:400|401|403|404|422|429)\b/.test(text)
+  }
+  if (!(file === 'circleci' && args[0] === 'run' && args[1] === 'trigger')) return false
+  if (/^(?:error:\s*)?(?:HTTP(?:\/\d(?:\.\d)?)?\s+|API returned\s+)(?:401|403|404|429)\b/im.test(text)) {
+    return true
+  }
+  try {
+    const failure = JSON.parse(text) as { error?: unknown; code?: unknown; message?: unknown } | null
+    if (failure?.error !== true) return false
+    if (failure.code === 'auth.token_invalid' || failure.code === 'run.not_found') return true
+    return failure.code === 'api.error' && typeof failure.message === 'string'
+      && /^API returned (?:401|403|404|429):/.test(failure.message)
+  } catch {
+    // Non-JSON transport errors cannot establish that the provider refused the trigger.
+    return false
+  }
 }
 
 async function command(ports: HostCiPorts, label: string, file: string, args: string[], timeoutMs = 120_000) {
@@ -134,7 +154,14 @@ async function command(ports: HostCiPorts, label: string, file: string, args: st
 async function executeCommand(ports: HostCiPorts, label: string, file: string, args: string[], timeoutMs: number) {
   const result = await ports.run(file, args, { timeoutMs })
   if (result.code !== 0) {
-    const limited = rateLimited(label, result.stderr)
+    // gh resolves the workflow with a GET before it sends the dispatch POST.
+    const githubDispatch = file === 'gh' && args[0] === 'workflow' && args[1] === 'run'
+    const workflowLookupFailed = githubDispatch
+      && result.stderr.trimStart().startsWith(
+        `Get "https://api.github.com/repos/${args[args.indexOf('-R') + 1]}/actions/workflows/${args[2]}":`)
+    const dispatchRejected = confirmedDispatchRefusal(file, args, result.stderr)
+    const notSent = workflowLookupFailed || dispatchRejected
+    const limited = rateLimited(label, result.stderr, notSent ? { notSent: true } : undefined)
     if (limited) throw limited
     const noCircleArtifacts = file === 'circleci' && args[0] === 'job' && args[1] === 'artifact'
       && /\bartifacts\.not_found\b/.test(result.stderr)
@@ -161,14 +188,7 @@ async function executeCommand(ports: HostCiPorts, label: string, file: string, a
         + result.stderr.trim().slice(0, 300), 502)
     }
 
-    // gh resolves the workflow with a GET before it sends the dispatch POST.
-    const githubDispatch = file === 'gh' && args[0] === 'workflow' && args[1] === 'run'
-    const workflowLookupFailed = githubDispatch
-      && result.stderr.trimStart().startsWith(
-        `Get "https://api.github.com/repos/${args[args.indexOf('-R') + 1]}/actions/workflows/${args[2]}":`)
-    const dispatchRejected = githubDispatch
-      && /could not create workflow dispatch event: HTTP (?:400|401|403|404|422)\b/.test(result.stderr)
-    const code = workflowLookupFailed || dispatchRejected ? 'CI_CLOUD_DISPATCH_NOT_SENT' : 'CI_CLOUD_FAILED'
+    const code = notSent ? 'CI_CLOUD_DISPATCH_NOT_SENT' : 'CI_CLOUD_FAILED'
     throw new DomainError(code, `${label} did not accept ${file} ${args[0]} ${args[1]}: `
       + `${result.stderr.trim().slice(0, 300)}`, 502)
   }

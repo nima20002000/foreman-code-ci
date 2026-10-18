@@ -682,9 +682,14 @@ export class CloudCi {
     try {
       providerRunId = await this.provider.dispatch(input)
     } catch (error) {
-      if (!(error instanceof DomainError && error.code === 'CI_CLOUD_DISPATCH_NOT_SENT')) throw error
-      return this.save({ ...pending, message: sanitizeCiText(error.message),
+      if (!(error instanceof DomainError)) throw error
+      const throttled = error.code === 'CI_CLOUD_RATE_LIMITED'
+      const notSent = error.code === 'CI_CLOUD_DISPATCH_NOT_SENT' || throttled && error.details?.notSent === true
+      if (!notSent) throw error
+      const rejected = await this.save({ ...pending, message: sanitizeCiText(error.message),
         dispatch: { ...pending.dispatch!, uncertain: false, notSent: true } })
+      if (throttled) this.pausePolling(run.runId)
+      return rejected
     }
     return this.save({ ...pending, providerRunId, dispatch: { ...pending.dispatch!, uncertain: false }, dispatchHistory: [...pending.dispatchHistory ?? [],
       { at: pending.dispatch!.at, providerRunId }] })
