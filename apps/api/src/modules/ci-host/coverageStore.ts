@@ -75,7 +75,7 @@ export class IntegrationCoverageStore {
     }
   }
 
-  selection(repository: string, commit: string, commits: Pick<CiCommits, 'isAncestor' | 'testTree'>) {
+  selection(repository: string, commit: string, commits: Pick<CiCommits, 'coverageAncestors' | 'testTree'>) {
     const key = `${repository}:${commit}`
     let cache = this.selections.get(commits)
     if (!cache) {
@@ -93,15 +93,14 @@ export class IntegrationCoverageStore {
     return pending
   }
 
-  private async select(repository: string, commit: string, commits: Pick<CiCommits, 'isAncestor' | 'testTree'>)
+  private async select(repository: string, commit: string, commits: Pick<CiCommits, 'coverageAncestors' | 'testTree'>)
     : Promise<CiCoverageSelection> {
     const fallback = (reason: string): CiCoverageSelection => ({ changedFiles: [], reason })
-    if (!commits.isAncestor || !commits.testTree) return fallback('Repository ancestry or source trees are unavailable.')
+    if (!commits.coverageAncestors || !commits.testTree) return fallback('Repository ancestry or source trees are unavailable.')
     const candidates = await this.candidates(repository)
     if (!candidates.length) return fallback('No integration coverage artifacts are available.')
     let newest: IntegrationCoverage | undefined
-    for (const ancestor of candidates) {
-      if (!await commits.isAncestor(repository, ancestor, commit)) continue
+    for (const ancestor of await commits.coverageAncestors(repository, commit, candidates)) {
       const map = await this.read(join(this.directory(repository), `${ancestor}.json`))
       if (usableIntegrationCoverage(map)) {
         newest = map

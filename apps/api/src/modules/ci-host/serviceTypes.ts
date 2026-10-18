@@ -27,6 +27,8 @@ export interface CiCommits {
   infrastructureOnly?(repository: string, commit: string): Promise<boolean>
   branch?(repository: string, defaultBranch: string, commit: string): Promise<string | null>
   isAncestor?(repository: string, ancestor: string, commit: string): Promise<boolean>
+  /** Retained coverage commits in ancestry/date order, newest first; completion order is unrelated. */
+  coverageAncestors?(repository: string, commit: string, candidates: string[]): Promise<string[]>
   capabilities(repository: string, commit: string): Promise<CiRepositoryCapabilities>
   integrationInventory?(repository: string, commit: string): Promise<CiIntegrationInventory>
   unitInventory?(repository: string, commit: string): Promise<CiUnitInventory>

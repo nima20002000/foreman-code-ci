@@ -19,6 +19,8 @@ it('merges commit artifacts, keeps repositories separate and selects the newest 
     const report = { version: 1 as const, commit: a, testFiles: [first, second], coverage: { [first]: ['apps/api/src/a.ts'] } }
     await store.record('example/project', a, report)
     const commits = { isAncestor: async (_repository: string, ancestor: string) => ancestor === a || ancestor === b,
+      coverageAncestors: async (_repository: string, _commit: string, candidates: string[]) =>
+        [b, a].filter(commit => candidates.includes(commit)),
       testTree: async (_repository: string, commit: string) => ({
         blobs: new Map([['apps/api/src/a.ts', commit === a ? 'old' : 'changed']]),
         read: async () => '',
@@ -57,10 +59,12 @@ it('keeps a repository-sized coverage map within the device limit without droppi
     const sourceFiles = Array.from({ length: 900 }, (_, index) => `apps/api/src/modules/feature-${index}/implementation.ts`)
     await store.record('example/project', commit, { version: 1, commit, testFiles,
       coverage: Object.fromEntries(testFiles.map(file => [file, sourceFiles])) })
-    const selected = await store.selection('example/project', commit, {
+    const commits = {
       isAncestor: async () => true,
+      coverageAncestors: async () => [commit],
       testTree: async () => ({ blobs: new Map(), read: async () => '' }),
-    })
+    }
+    const selected = await store.selection('example/project', commit, commits)
     expect(selected?.map).toBeTypeOf('string')
     expect(selected!.map!.length).toBeLessThanOrEqual(700_000)
     const decoded = expandIntegrationCoverage(JSON.parse(gunzipSync(Buffer.from(selected!.map!, 'base64')).toString()))
@@ -81,11 +85,17 @@ it('bounds retained ancestor candidates before loading coverage payloads', async
       await store.record('example/project', commit, { version: 1, commit, testFiles: [file], coverage: { [file]: [] } })
     }
     let checked = 0
-    const result = await store.selection('example/project', 'f'.repeat(40), {
+    const commits = {
       isAncestor: async () => { checked++; return false },
+      coverageAncestors: async (_repository: string, _commit: string, candidates: string[]) => {
+        checked += candidates.length
+        return []
+      },
       testTree: async () => { throw new Error('Unrelated maps must not load a source tree') },
-    })
+    }
+    const result = await store.selection('example/project', 'f'.repeat(40), commits)
     expect(result.map).toBeUndefined()
+    expect(checked).toBe(32)
     expect(checked).toBeLessThanOrEqual(32)
   } finally { await rm(root, { recursive: true, force: true }) }
 })
@@ -104,10 +114,13 @@ it('keeps the newest ancestor when an older run reports a late coverage fragment
     await store.record('example/project', older, report(older))
     await store.record('example/project', newer, report(newer))
     await store.record('example/project', older, report(older))
-    const result = await store.selection('example/project', head, {
-      isAncestor: async (_repository, ancestor, commit) => history.indexOf(ancestor) <= history.indexOf(commit),
+    const commits = {
+      isAncestor: async (_repository: string, ancestor: string, commit: string) => history.indexOf(ancestor) <= history.indexOf(commit),
+      coverageAncestors: async (_repository: string, _commit: string, candidates: string[]) =>
+        [...history].reverse().filter(commit => candidates.includes(commit)),
       testTree: async () => ({ blobs: new Map(), read: async () => '' }),
-    })
+    }
+    const result = await store.selection('example/project', head, commits)
     const decoded = expandIntegrationCoverage(JSON.parse(gunzipSync(Buffer.from(result.map!, 'base64')).toString()))
     expect(decoded.commit).toBe(newer)
   } finally { await rm(root, { recursive: true, force: true }) }

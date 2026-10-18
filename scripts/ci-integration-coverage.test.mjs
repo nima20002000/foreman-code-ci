@@ -99,6 +99,15 @@ test('Worker bundle inputs require full integration scope despite unrelated inco
   }
 })
 
+test('Worker entrypoint dependencies require full scope while unrelated API changes retain coverage selection', () => {
+  const input = 'apps/api/src/bundled.ts'
+  const graph = new Map([...sources, [input, 'export {}'],
+    ['apps/worker/src/workerFactory.mjs', "import '../../api/src/bundled.js'"],
+    [second, 'execFile(process.execPath, [computedBuilderPath])']])
+  assert.equal(select([input], { sources: graph }).scope, 'full')
+  assert.deepEqual(select([source], { sources: graph }).files, [first])
+})
+
 test('missing, malformed and incomplete maps retain static selection with a reason', () => {
   for (const map of [undefined, {}, { ...coverageMap, coverage: {} }, { ...coverageMap, coverage: { [first]: [source] } },
     { ...coverageMap, coverage: { [first]: ['/private/source.ts'], [second]: [other] } }]) {
