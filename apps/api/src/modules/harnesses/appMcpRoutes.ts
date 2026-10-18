@@ -53,7 +53,7 @@ export class AppMcpRoutes {
     }
     this.pending = operation
     const timer = setTimeout(() => operation.controller.abort(new DomainError('APP_MCP_REFRESH_TIMEOUT',
-      'MCP route refresh did not complete within its deadline.', 503)), 30_000)
+      'MCP route refresh did not complete within its deadline.', 503, { retryable: true })), 30_000)
     timer.unref()
     operation.promise = withAbortSignal(() => this.refreshRoutes(operation), operation.controller.signal).finally(() => {
       clearTimeout(timer)
