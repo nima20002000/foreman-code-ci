@@ -45,11 +45,6 @@ if [ "${CI_HOST_RUNNER:-0}" = 1 ]; then
   pnpm() { corepack pnpm "$@"; }
 fi
 
-if [ -f node_modules/.modules.yaml ]; then
-  package_environment="$(node scripts/ci-package-paths.mjs "$PWD")"
-  eval "$package_environment"
-fi
-
 if [ -z "${1:-}" ] && [ -n "${FOREMAN_CODE_CI_TYPECHECK_CACHE:-}" ] \
   && [ "${FOREMAN_CODE_CI_TYPECHECK_CACHE_ACTIVE:-}" != 1 ]; then
   case "$SUITE" in

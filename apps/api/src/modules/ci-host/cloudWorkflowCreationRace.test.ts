@@ -4,7 +4,7 @@ import { fixture } from './cloud.testSupport.js'
 
 afterEach(() => vi.restoreAllMocks())
 
-it('keeps an invisible CircleCI pipeline until cancellation is confirmed across restart', async () => {
+it('keeps a late CircleCI workflow owned until cancellation is confirmed across restart', async () => {
   const f = await fixture({}, { provider: 'circleci' })
   f.circle.phantoms = 1
   f.circle.cancelError = 'no active workflows'
@@ -16,15 +16,17 @@ it('keeps an invisible CircleCI pipeline until cancellation is confirmed across 
   f.advance(75_000)
   expect(await f.cloud.handle(read)).toMatchObject({ run: { state: 'starting', finishedAt: null } })
   expect(f.circle.triggered).toHaveLength(1)
+  // Work appears during the empty-pipeline verification window, so cancellation must be retried.
+  f.circle.runView = { phase: 'started', workflows: [{ phase: 'started', jobs: [{ id: 'job-1' }] }] }
+  f.circle.cancelError = ''
   f.advance(4_000)
   expect(await f.reopen().handle(read)).toMatchObject({ run: { state: 'starting', finishedAt: null } })
   expect(f.circle.canceled).toEqual(['run-1', 'run-1'])
-
-  // The original pipeline can create its workflow after both unsuccessful cancellation requests.
-  f.circle.runView = { phase: 'started', workflows: [{ phase: 'started', jobs: [{ id: 'job-1' }] }] }
-  f.advance(4_000)
-  expect(await f.reopen().handle(read)).toMatchObject({ run: { state: 'running' } })
   expect(f.circle.triggered).toHaveLength(1)
+  f.circle.runView = { phase: 'ended', current_outcome: 'canceled', workflows: [] }
+  f.advance(4_000)
+  expect(await f.reopen().handle(read)).toMatchObject({ run: { state: 'starting' } })
+  expect(f.circle.triggered).toHaveLength(2)
 })
 
 it('dispatches a replacement only after CircleCI confirms the unstarted pipeline ended', async () => {
