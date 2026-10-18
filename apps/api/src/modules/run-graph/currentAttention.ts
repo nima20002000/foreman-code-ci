@@ -9,9 +9,27 @@ export interface PublicAttentionOverlay {
   interaction?: { record: DurableInteraction; workflowNodeId: string; nativeAcknowledged?: boolean }
   review?: { record: ReviewJob; workflowNodeId: string }
 }
-export type PublicAttentionRow = { kind: 'interaction' | 'review'; node_id: string; count: string;
-    pending_id: string | null; blocked: boolean | null; cleanup: boolean | null }
-export const PUBLIC_ATTENTION_SQL = `with interactions as (
+export interface PublicAttentionCount {
+  pendingInteractionCount: number
+  unsettledReviewCount: number
+  cleanupPending: boolean
+  pendingInteractionId?: string
+  deliveryBlocked: boolean
+}
+const empty = (): PublicAttentionCount => ({ pendingInteractionCount: 0, unsettledReviewCount: 0,
+  cleanupPending: false, deliveryBlocked: false })
+
+/** The same current-obligation aggregates serve snapshots, one-shot writers,
+ * approval publication and native projection. Reviews belong to their host once,
+ * not to both host and requester. The optional overlay excludes the stored row
+ * before counting the proposed mutation; no domain write occurs in this helper. */
+export async function readPublicAttentionCounts(sql: GraphTransactionSql, runId: string,
+  nodeIds?: readonly string[], overlay: PublicAttentionOverlay = {}): Promise<Map<string, PublicAttentionCount>> {
+  if (nodeIds && nodeIds.length > 1000) throw new RunGraphError('GRAPH_SNAPSHOT_TOO_LARGE')
+  const ids = nodeIds ? [...nodeIds] : null
+  const rows = await sql.query<{ kind: 'interaction' | 'review'; node_id: string; count: string;
+    pending_id: string | null; blocked: boolean | null; cleanup: boolean | null }>(
+    `with interactions as (
      select e.workflow_node_id as node_id,count(*)::text,
        min(i.id) filter(where i.status='pending') as pending_id,
        bool_or(i.status in ('decided','delivery_pending','delivery_failed','delivered')) as blocked
@@ -31,29 +49,7 @@ export const PUBLIC_ATTENTION_SQL = `with interactions as (
     )
     select 'interaction'::text as kind,node_id,count,pending_id,blocked,null::boolean as cleanup from interactions
     union all
-    select 'review'::text as kind,node_id,count,null::text as pending_id,null::boolean as blocked,cleanup from reviews`
-
-export interface PublicAttentionCount {
-  pendingInteractionCount: number
-  unsettledReviewCount: number
-  cleanupPending: boolean
-  pendingInteractionId?: string
-  deliveryBlocked: boolean
-}
-const empty = (): PublicAttentionCount => ({ pendingInteractionCount: 0, unsettledReviewCount: 0,
-  cleanupPending: false, deliveryBlocked: false })
-
-/** The same current-obligation aggregates serve snapshots, one-shot writers,
- * approval publication and native projection. Reviews belong to their host once,
- * not to both host and requester. The optional overlay excludes the stored row
- * before counting the proposed mutation; no domain write occurs in this helper. */
-export async function readPublicAttentionCounts(sql: GraphTransactionSql, runId: string,
-  nodeIds?: readonly string[], overlay: PublicAttentionOverlay = {},
-  prefetched?: PublicAttentionRow[]): Promise<Map<string, PublicAttentionCount>> {
-  if (nodeIds && nodeIds.length > 1000) throw new RunGraphError('GRAPH_SNAPSHOT_TOO_LARGE')
-  const ids = nodeIds ? [...nodeIds] : null
-  const rows = prefetched ? { rows: prefetched } : await sql.query<PublicAttentionRow>(
-    PUBLIC_ATTENTION_SQL,
+    select 'review'::text as kind,node_id,count,null::text as pending_id,null::boolean as blocked,cleanup from reviews`,
     [runId, ids, overlay.interaction?.record.id ?? null, overlay.review?.record.id ?? null])
   if (rows.rows.filter((row) => row.kind === 'interaction').length > 1000
     || rows.rows.filter((row) => row.kind === 'review').length > 1000) throw new RunGraphError('GRAPH_SNAPSHOT_TOO_LARGE')

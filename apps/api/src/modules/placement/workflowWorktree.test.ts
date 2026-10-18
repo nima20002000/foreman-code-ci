@@ -70,24 +70,18 @@ function fixture(options: { repository?: boolean } = {}) {
       harnessInstallationId: value.target.harnessInstallationId, installationFingerprint: digest },
     installation: { driverRevision: '1', protocolRevision: 'native-v1' },
   }) } as unknown as Pick<ProductionHarnessRegistry, 'installations' | 'pinOverride'>
-  const client = { query: async (text: string, values?: unknown[]) => {
+  const client = { query: async (text: string) => {
     let rows: unknown[] = []
     if (text.includes('from workflow_versions')) {
       rows = [{ id: version.id, workspace_id: version.workspaceId, workflow_id: version.workflowId,
         version: version.version, entry_node_id: version.entryNodeId, execution_semantics_version: 3, record: version }]
-    } else if (text.includes('from agent_configuration_versions')) {
-      rows = [{ id: configuration.id, agent_id: configuration.agentId, record: configuration }]
-    }
+    } else if (text.includes('from agent_configuration_versions')) rows = [{ record: configuration }]
     else if (text.includes('from workspaces') && options.repository) rows = [{ record: {
       id: version.workspaceId, name: 'GitHub workspace',
       repository: { provider: 'github', owner: 'octo', name: 'site', defaultBranch: 'main' },
     } }]
     else if (text.includes('from source_root_bindings')) rows = [{ record: catalog.root }]
-    else if (text.includes('from harness_instance_settings')) {
-      const selected = text.includes('where instance_id=$1')
-        ? profiles.filter(profile => profile.instanceId === values?.[0]) : profiles
-      rows = selected.map(record => ({ record }))
-    }
+    else if (text.includes('from harness_instance_settings')) rows = profiles.map(record => ({ record }))
     return { rows, rowCount: rows.length }
   }, on: () => {}, removeListener: () => {}, release: () => {} }
   const refresh = vi.fn(async () => {})
@@ -171,15 +165,10 @@ it('uses an explicit node placement without resolving the workflow default root'
     destination: { canonicalCwd: '/worker/project/src' }, payload: { instanceId: f.profile.instanceId } })
 })
 
-it('selects equivalent qualified profiles deterministically and rejects read-only branch requests', async () => {
+it('rejects ambiguous compatible profiles and read-only branch requests without selecting Main', async () => {
   const f = fixture()
-  f.profile.instanceId = '00000000-0000-4000-8000-000000000002'
-  const selectedInstanceId = '00000000-0000-4000-8000-000000000001'
-  f.profiles.push({ ...f.profile, instanceId: selectedInstanceId })
-  const placement = (await f.prepare())!.bind('run-one')[0]!
-  expect(placement).toMatchObject({ hostRef: f.root.selection.hostRef, payload: { instanceId: selectedInstanceId } })
-  f.profiles.reverse()
-  expect((await f.prepare())!.bind('run-one')[0]).toEqual(placement)
+  f.profiles.push({ ...f.profile, instanceId: randomUUID() })
+  await expect(f.prepare()).rejects.toMatchObject({ code: 'PLACEMENT_ADMISSION_CONFLICT' })
   f.profiles.pop()
   f.root.binding.accessMode = 'read-only'
   await expect(f.prepare()).rejects.toMatchObject({ code: 'WORKTREE_BRANCH_UNAVAILABLE' })

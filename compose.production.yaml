@@ -4,10 +4,6 @@ services:
   postgres:
     image: postgres:17-alpine
     restart: unless-stopped
-    # Main also runs CI: the production database must win CPU and disk over disposable CI databases.
-    cpu_shares: 10240
-    blkio_config:
-      weight: 1000
     environment:
       POSTGRES_DB: graphql_production
       POSTGRES_USER: graphql_production

@@ -10,11 +10,6 @@ interface Job {
   id: number; name: string; status: string; conclusion?: string
   steps?: { number: number; name: string; status: string; conclusion: string | null }[]
 }
-interface WorkflowRunPage {
-  total_count?: number
-  workflow_runs: { id: number; display_title: string; status: string; head_sha: string }[]
-}
-type CliRunPage = (path: string, timeoutMs: number) => Promise<string>
 const failedRead = (action: string) => (detail: string) => `GitHub Actions did not accept gh run ${action}: ${detail}`
 
 export class GitHubRest {
@@ -22,56 +17,24 @@ export class GitHubRest {
 
   get transport() { return this.http.transport }
 
-  list(mirror: string, branch: string, limit: number, cliPage?: CliRunPage) {
-    return this.http.operation(15_000, () => this.listRuns(mirror, branch, limit, cliPage))
+  list(mirror: string, branch: string) {
+    return this.http.operation(15_000, () => this.listRuns(mirror, branch))
   }
 
-  private async listRuns(mirror: string, branch: string, limit: number, cliPage?: CliRunPage): Promise<string | null> {
-    const runs: WorkflowRunPage['workflow_runs'] = []
-    const deadline = Date.now() + 15_000
-    let complete = false
-    let total = 0
-    for (let page = 1; page <= Math.ceil(limit / 100); page++) {
+  private async listRuns(mirror: string, branch: string): Promise<string | null> {
+    const runs: { id: number; display_title: string; status: string; head_sha: string }[] = []
+    for (let page = 1; page <= 2; page++) {
       const path = `/repos/${mirror}/actions/workflows/ci.yml/runs?branch=${encodeURIComponent(branch)}`
         + `&event=workflow_dispatch&per_page=100&page=${page}`
-      const result = await this.runPage(path, deadline, cliPage)
-      if (result === undefined) return null
-      if (!result || !Array.isArray(result.workflow_runs)
-        || limit > 200 && (!Number.isSafeInteger(result.total_count) || result.total_count! < 0)) {
-        throw new DomainError('CI_CLOUD_DISCOVERY_INCOMPLETE',
-          'GitHub Actions discovery has no valid inventory totals; ownership retained.', 503)
-      }
-      const batch = result.workflow_runs
-      total = Math.max(total, result.total_count ?? 0)
+      const response = await this.http.request(path, { timeoutMs: 15_000 })
+      if (!response) return null
+      await this.http.check(response, failedRead('list'))
+      const batch = (await this.http.json<{ workflow_runs: typeof runs }>(response)).workflow_runs
       runs.push(...batch)
-      if (batch.length < 100) {
-        complete = true
-        break
-      }
-    }
-    // GitHub caps filtered searches at 1,000 runs. Moving pages can also repeat IDs and omit older runs.
-    const unique = new Set(runs.map(run => run.id)).size
-    if (limit > 200 && (!complete || unique !== runs.length || unique !== total)) {
-      throw new DomainError('CI_CLOUD_DISCOVERY_INCOMPLETE',
-        'GitHub Actions discovery is incomplete; ownership retained.', 503)
+      if (batch.length < 100) break
     }
     return JSON.stringify(runs.map(value => ({ databaseId: value.id, displayTitle: value.display_title,
       status: value.status, headSha: value.head_sha })))
-  }
-
-  private async runPage(path: string, deadline: number, cliPage?: CliRunPage): Promise<WorkflowRunPage | undefined> {
-    const response = await this.http.request(path, { timeoutMs: 15_000 })
-    if (response) {
-      await this.http.check(response, failedRead('list'))
-      return this.http.json<WorkflowRunPage>(response)
-    }
-    if (!cliPage) return undefined
-    const remaining = deadline - Date.now()
-    if (remaining <= 0) {
-      throw new DomainError('CI_CLOUD_DISCOVERY_INCOMPLETE',
-        'GitHub Actions discovery exceeded its time limit; ownership retained.', 503)
-    }
-    return JSON.parse(await cliPage(path, remaining)) as WorkflowRunPage
   }
 
   async view(mirror: string, id: string) {
