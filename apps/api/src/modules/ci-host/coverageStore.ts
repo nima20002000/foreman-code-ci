@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdir, readdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { gzipSync } from 'node:zlib'
@@ -7,6 +7,8 @@ import { CiIntegrationCoverageSchema, type CiCoverageSelection, type Integration
 import { compactIntegrationCoverage, usableIntegrationCoverage } from '@foreman-code/contracts/ci-coverage'
 import { ciInfrastructureFile } from '@foreman-code/contracts/ci-import-graph'
 import type { CiCommits } from './serviceTypes.js'
+
+const COVERAGE_ARTIFACT_LIMIT = 32
 
 export class IntegrationCoverageStore {
   private readonly writes = new Map<string, Promise<void>>()
@@ -18,10 +20,23 @@ export class IntegrationCoverageStore {
     return join(this.root, createHash('sha256').update(repository).digest('hex'))
   }
 
+  private async candidates(repository: string): Promise<string[]> {
+    try {
+      const value: unknown = JSON.parse(await readFile(join(this.directory(repository), 'index.json'), 'utf8'))
+      if (!Array.isArray(value) || value.some(commit => typeof commit !== 'string'
+        || !/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/.test(commit))) throw new Error('Invalid coverage artifact index')
+      return value.slice(0, COVERAGE_ARTIFACT_LIMIT)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
+      throw error
+    }
+  }
+
   /** CI partitions report independently; serialize merges so the last partition cannot erase its siblings. */
   async record(repository: string, commit: string, fragment: IntegrationCoverage) {
     const path = join(this.directory(repository), `${commit}.json`)
-    const previous = this.writes.get(path) ?? Promise.resolve()
+    const directory = this.directory(repository)
+    const previous = this.writes.get(directory) ?? Promise.resolve()
     const pending = previous.then(async () => {
       const parsed = CiIntegrationCoverageSchema.parse({ ...fragment, commit })
       const saved = await this.read(path)
@@ -34,11 +49,22 @@ export class IntegrationCoverageStore {
       await mkdir(this.directory(repository), { recursive: true })
       await writeFile(`${path}.writing`, JSON.stringify(merged))
       await rename(`${path}.writing`, path)
+      const retained = [commit, ...(await this.candidates(repository)).filter(value => value !== commit)]
+        .slice(0, COVERAGE_ARTIFACT_LIMIT)
+      const index = join(directory, 'index.json')
+      await writeFile(`${index}.writing`, JSON.stringify(retained))
+      await rename(`${index}.writing`, index)
+      const known = new Set(retained.map(value => `${value}.json`))
+      for (const file of await readdir(directory)) {
+        if (/^[a-f0-9]{40}(?:[a-f0-9]{24})?\.json(?:\.writing)?$/.test(file) && !known.has(file)) {
+          await rm(join(directory, file), { force: true })
+        }
+      }
       this.selections = new WeakMap()
     })
-    this.writes.set(path, pending)
+    this.writes.set(directory, pending)
     try { await pending }
-    finally { if (this.writes.get(path) === pending) this.writes.delete(path) }
+    finally { if (this.writes.get(directory) === pending) this.writes.delete(directory) }
   }
 
   private async read(path: string): Promise<IntegrationCoverage | undefined> {
@@ -71,17 +97,16 @@ export class IntegrationCoverageStore {
     : Promise<CiCoverageSelection> {
     const fallback = (reason: string): CiCoverageSelection => ({ changedFiles: [], reason })
     if (!commits.isAncestor || !commits.testTree) return fallback('Repository ancestry or source trees are unavailable.')
-    let paths: string[]
-    try { paths = await readdir(this.directory(repository)) }
-    catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return fallback('No integration coverage artifacts are available.')
-      throw error
-    }
+    const candidates = await this.candidates(repository)
+    if (!candidates.length) return fallback('No integration coverage artifacts are available.')
     let newest: IntegrationCoverage | undefined
-    for (const path of paths.filter(path => /^[a-f0-9]{40}(?:[a-f0-9]{24})?\.json$/.test(path))) {
-      const map = await this.read(join(this.directory(repository), path))
-      if (!usableIntegrationCoverage(map) || !await commits.isAncestor(repository, map.commit, commit)) continue
-      if (!newest || await commits.isAncestor(repository, newest.commit, map.commit)) newest = map
+    for (const ancestor of candidates) {
+      if (!await commits.isAncestor(repository, ancestor, commit)) continue
+      const map = await this.read(join(this.directory(repository), `${ancestor}.json`))
+      if (usableIntegrationCoverage(map)) {
+        newest = map
+        break
+      }
     }
     if (!newest) return fallback('No usable coverage map from an ancestor commit is available.')
     const [before, after] = await Promise.all([

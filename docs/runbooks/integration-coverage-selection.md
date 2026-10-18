@@ -25,6 +25,17 @@ dependents for unrecorded source changes and tests requiring static selection.
 Missing or unusable maps use ordinary static import selection. Existing rules
 that require full scope still apply.
 
+The chosen coverage input is saved once per CI group at admission and reused by
+every partition and setup retry, including after a service restart. New artifacts
+can change later groups but cannot change an admitted group's selection. Mirror
+prepublication and starts receive that same saved input.
+
+Static dependencies include literal `new URL(..., import.meta.url)` inputs and
+literal filesystem reads, including forked fixture modules. A changed repository
+runtime input with no resolved dependency or execution record requires full scope.
+The artifact cache retains at most 32 maps per repository. A small index selects
+ancestor candidates before their coverage payloads are loaded.
+
 Artifacts are readable JSON. Transport uses a shared source-path index and gzip
 to keep complete maps within the device channel's existing message limit.
 Cloud snapshots carry the same selection input as build computers, outside
@@ -33,3 +44,5 @@ the runner's `selection` with its scope, files and reason, including the coverag
 commit or the fallback reason. Cloud runners also publish `selection.json`.
 Explicit full requests and release gates always execute their entire assigned
 suite or partition.
+Computer status replies omit selection details to stay within the device channel
+limit; individual run reads retain the complete selection.

@@ -442,7 +442,8 @@ export class HostCiRunner {
       startProtocolVersion: CI_HOST_START_PROTOCOL_VERSION, cleanupSupported: true, prewarmSupported: true,
       ...resources, buildAllowancePercent,
       slotsUsed: capacity.slotsUsed + Number(Boolean(pendingStart)), slotsTotal: capacity.slotsTotal,
-      runs: [...activeRuns, ...finishedRuns.slice(-Math.max(0, 50 - activeRuns.length))].slice(0, 50) })
+      runs: [...activeRuns, ...finishedRuns.slice(-Math.max(0, 50 - activeRuns.length))].slice(0, 50)
+        .map(run => ({ ...run, selection: undefined })) })
   }
 
   private trackCacheWriter(runId: string, repository?: string) {

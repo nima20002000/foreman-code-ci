@@ -54,3 +54,30 @@ export function resolveImport(file, specifier, paths, exports) {
     .map(extension => `${stem}${extension}`)]
   return candidates.find(candidate => paths.has(candidate)) ?? null
 }
+
+/** Repository files named by literal fixture URLs or filesystem reads.
+ * @param {string} file
+ * @param {string} text
+ * @param {{ has(path: string): boolean }} paths
+ * @returns {string[]} */
+export function runtimeDependencies(file, text, paths) {
+  const resolved = new Set()
+  const add = (base, literal) => {
+    const target = posix.normalize(posix.join(base, literal))
+    if (paths.has(target)) resolved.add(target)
+    else {
+      const source = resolveImport(file, `./${posix.relative(posix.dirname(file), target)}`, paths, {})
+      if (source) resolved.add(source)
+    }
+  }
+  for (const match of text.matchAll(/\bnew\s+URL\s*\(\s*['"]([^'"]+)['"]\s*,\s*import\.meta\.url\s*\)/g)) {
+    if (match[1].startsWith('.')) add(posix.dirname(file), match[1])
+  }
+  const parts = file.split('/')
+  const project = ['apps', 'packages'].includes(parts[0]) ? parts.slice(0, 2).join('/') : parts[0]
+  for (const match of text.matchAll(/\b(?:readFile|readFileSync|createReadStream)\s*\(\s*['"]([^'"]+)['"]/g)) {
+    if (match[1].startsWith('/') || /^[a-z]+:/i.test(match[1])) continue
+    for (const base of [posix.dirname(file), project, '']) add(base, match[1])
+  }
+  return [...resolved]
+}

@@ -206,7 +206,7 @@ export class CloudCi {
     }
     try {
       await this.publish(input.repository, mirror, input.commit,
-        input.defaultBranch, input.baseCommit, input.durations ?? {}, false)
+        input.defaultBranch, input.baseCommit, input.durations ?? {}, false, input.integrationCoverage)
     } finally {
       reservations.delete(reservation)
       if (!reservations.size) publishingBranches.delete(mirror)

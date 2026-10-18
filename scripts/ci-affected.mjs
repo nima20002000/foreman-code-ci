@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { ciCodeFile as codeFile, ciInfrastructureFile, importSpecifiers as imports, resolveImport }
+import { ciCodeFile as codeFile, ciInfrastructureFile, importSpecifiers as imports, resolveImport, runtimeDependencies }
   from '../packages/contracts/src/ciImportGraph.mjs'
 import { usableIntegrationCoverage } from '../packages/contracts/src/ciCoverage.mjs'
 
@@ -23,11 +23,17 @@ export function selectAffectedFiles({ suite, changedFiles, sources, exports = {}
   const staticChanges = useCoverage ? changedFiles.filter(file => !recordedSources.has(file)) : changedFiles
   const dependents = new Map()
   for (const [file, text] of sources) {
-    for (const specifier of imports(text)) {
-      const target = resolveImport(file, specifier, sources, exports)
+    const dependencies = [...imports(text).map(specifier => resolveImport(file, specifier, sources, exports)),
+      ...runtimeDependencies(file, text, sources)]
+    for (const target of dependencies) {
       if (target) dependents.set(target, [...dependents.get(target) ?? [], file])
     }
   }
+  const unresolved = suite === 'integration' && changedFiles.find(file => !testFile.test(file)
+    && /^(?:apps|packages|scripts|fixtures)\//.test(file)
+    && (!/\.(?:md|mdx)$/.test(file) || /\/fixtures?\//.test(file))
+    && !dependents.has(file) && !recordedSources.has(file))
+  if (unresolved) return full(`A changed runtime input has no resolved dependency: ${unresolved}`)
   const affected = new Set(staticChanges)
   const pending = [...affected]
   for (let index = 0; index < pending.length; index++) {
@@ -46,8 +52,9 @@ export function selectAffectedFiles({ suite, changedFiles, sources, exports = {}
       missingRecords = [...sources.keys()].filter(file => integrationFile.test(file)
         && inventory.has(file) && !Object.hasOwn(coverageMap.coverage, file))
       const staticTests = new Set([...coverageMap.staticTests ?? [], ...missingRecords])
-      const staticAffected = new Set(staticTests.size
-        ? selectAffectedFiles({ suite, changedFiles, sources, exports }).files : [])
+      const staticSelection = staticTests.size ? selectAffectedFiles({ suite, changedFiles, sources, exports }) : undefined
+      if (staticSelection?.scope === 'full') return staticSelection
+      const staticAffected = new Set(staticSelection?.files ?? [])
       staticFallbackFiles = missingRecords.filter(file => staticAffected.has(file)).sort()
       for (const file of sources.keys()) {
         if (integrationFile.test(file) && (changed.has(file) || !inventory.has(file)
