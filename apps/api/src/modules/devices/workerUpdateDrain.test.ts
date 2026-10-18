@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promi
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, expect, it, vi } from 'vitest'
-import { WorkerPairingConfigurationSchema } from '@foreman-code/contracts/device-identity'
+import { DeviceConnectionIdentitySchema, WorkerPairingConfigurationSchema } from '@foreman-code/contracts/device-identity'
 import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
 import { workerConversationFixture } from '../conversations/workerFixtures.test-support.js'
 import { RemoteOperationJournal } from '../runs/remote/operationJournal.js'
@@ -342,7 +342,7 @@ it('drains stopped source transfers before the idle deadline while retaining act
     runId: 'run', nodeId: 'node', executionId: intent.executionId, attemptId: intent.attemptId,
     operationId: intent.operationId, occurrenceId: null, occurrenceIndex: 0, technicalAttempt: 1,
     bindingHash: intent.placementHash, inputDigest: `sha256:${'d'.repeat(64)}`,
-    owner: { grantId: 'grant', epoch: '1' } }, binding, randomUUID())
+    owner: { grantId: 'grant', epoch: '1' } }, DeviceConnectionIdentitySchema.strip().parse(binding), randomUUID())
   const stopped = await journal.revokeFence(intent.operationId)
   await journal.close()
   const accepted = { intent: async () => intent, authorize: async () => {} }
