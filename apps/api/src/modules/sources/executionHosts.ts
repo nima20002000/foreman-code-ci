@@ -1,6 +1,6 @@
 import { closeSourceWorktree } from './worktreeCleanup.js'
 import type { RetainedSourceFootprint } from '@foreman-code/contracts/source-operations'
-import type { SourceWorktreeRequest } from '@foreman-code/contracts/source-materialization'
+import type { SourceWorktreeRequest, MaterializationReceipt } from '@foreman-code/contracts/source-materialization'
 import type { RootBinding } from '@foreman-code/contracts/source-materialization'
 import type { SourceQuotaPool } from './materialization.js'
 import type { GraphSqlClient } from '../run-graph/connection.js'
@@ -35,10 +35,10 @@ export type SourceInstalledNativeOwnerReader = (record: SourceMaterializationRec
 export interface RemoteSourceMaterializationHost {
   storageCapacity?(root: SourceRootRecord, attempt: MaterializationAttempt): Promise<SourceStorageCapacity>
   prepare(manifest: SourceManifest, root: SourceRootRecord, attempt: MaterializationAttempt,
-    options?: { sharedWritableTree?: true; worktree?: SourceWorktreeRequest }): Promise<SourceMaterializationRecord['receipt']>
+    options?: { sharedWritableTree?: true; worktree?: SourceWorktreeRequest; retainedReceipt?: MaterializationReceipt }): Promise<SourceMaterializationRecord['receipt']>
   verifyWorkingDirectory(record: SourceMaterializationRecord, relativeCwd: string): Promise<VerifiedSourceWorkingTree>
   verify(record: SourceMaterializationRecord): Promise<string>
-  releaseClaim(record: SourceMaterializationRecord, options?: { signal?: AbortSignal; deadlineAt?: string }): Promise<RetainedSourceFootprint>
+  releaseClaim(record: SourceMaterializationRecord, options?: { signal?: AbortSignal; deadlineAt?: string; retainWorkingTree?: true }): Promise<RetainedSourceFootprint>
   privateRepository(record: SourceMaterializationRecord, manifest: SourceManifest): Promise<{ workTree: string; gitDirectory: string; generatedCommit: string; sourceCommit: string | null }>
   reconcilePreparation?(reconciliationId: string, owner: SourceOperationOwner): Promise<SourcePreparationClosure>
 }
@@ -83,9 +83,9 @@ export class InstalledSourceExecutionHosts implements SourceExecutionHostPort {
     return this.authority.authorizeFinal(sql, principal, record, hash)
   }
   async prepare(manifest: SourceManifest, root: SourceRootRecord, attempt: MaterializationAttempt,
-    options?: { sharedWritableTree?: true; worktree?: SourceWorktreeRequest }) {
+    options?: { sharedWritableTree?: true; worktree?: SourceWorktreeRequest; retainedReceipt?: MaterializationReceipt }) {
     if (root.binding.mainId !== this.mainId) throw new DomainError('SOURCE_WRONG_MAIN', 'Source copy belongs to another main.', 403)
-    if (root.binding.deviceId !== null) return this.remote.prepare(manifest, root, attempt, options?.worktree ? { worktree: options.worktree } : undefined)
+    if (root.binding.deviceId !== null) return this.remote.prepare(manifest, root, attempt, options)
     const materializer = new PrivateSourceMaterializer(this.bytes, async () => this.authority.revalidate(root, attempt),
       await this.quotaPoolFor?.(root.binding, attempt))
     return materializer.prepare({ manifest, binding: root.binding, attempt, ...options })
@@ -105,14 +105,16 @@ export class InstalledSourceExecutionHosts implements SourceExecutionHostPort {
     return verifyMaterializedWorkingDirectory(record, relativeCwd, () => this.authority.revalidateMaterialization(record), capture ?? undefined)
   }
   /** Main service calls only after exact original physical closure proof. */
-  async releaseClaim(record: SourceMaterializationRecord, options?: { signal?: AbortSignal; deadlineAt?: string }): Promise<RetainedSourceFootprint> {
+  async releaseClaim(record: SourceMaterializationRecord, options?: { signal?: AbortSignal; deadlineAt?: string; retainWorkingTree?: true }): Promise<RetainedSourceFootprint> {
     if (record.receipt.binding.deviceId !== null) return this.remote.releaseClaim(record, options)
     const receipt = record.receipt
     const attempt = { placementHash: receipt.placementHash, executionId: receipt.executionId, attemptId: receipt.attemptId,
       keyRevision: receipt.keyRevision, authorizationRevision: receipt.authorizationRevision }
     await releaseMaterializationClaim(receipt, async () => 'released',
       await this.quotaPoolFor?.(receipt.binding, attempt), options?.signal)
-    const worktree = await closeSourceWorktree(receipt, options?.signal)
+    const worktree = options?.retainWorkingTree && receipt.worktree
+      ? { state: 'retained' as const, message: 'The active Run retains this node working directory.' }
+      : await closeSourceWorktree(receipt, options?.signal)
     return { ...await measureRetainedMaterializationFootprint(record.receipt), ...(worktree ? { worktree } : {}) }
   }
   /** CI-only explicit detached write copy; read-only references cannot acquire
