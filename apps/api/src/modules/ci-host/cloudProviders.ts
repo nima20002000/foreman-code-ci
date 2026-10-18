@@ -162,13 +162,10 @@ async function executeCommand(ports: HostCiPorts, label: string, file: string, a
     }
 
     // gh resolves the workflow with a GET before it sends the dispatch POST.
-    const githubDispatch = file === 'gh' && args[0] === 'workflow' && args[1] === 'run'
-    const workflowLookupFailed = githubDispatch
+    const workflowLookupFailed = file === 'gh' && args[0] === 'workflow' && args[1] === 'run'
       && result.stderr.trimStart().startsWith(
         `Get "https://api.github.com/repos/${args[args.indexOf('-R') + 1]}/actions/workflows/${args[2]}":`)
-    const dispatchRejected = githubDispatch
-      && /could not create workflow dispatch event: HTTP (?:400|401|403|404|422)\b/.test(result.stderr)
-    const code = workflowLookupFailed || dispatchRejected ? 'CI_CLOUD_DISPATCH_NOT_SENT' : 'CI_CLOUD_FAILED'
+    const code = workflowLookupFailed ? 'CI_CLOUD_DISPATCH_NOT_SENT' : 'CI_CLOUD_FAILED'
     throw new DomainError(code, `${label} did not accept ${file} ${args[0]} ${args[1]}: `
       + `${result.stderr.trim().slice(0, 300)}`, 502)
   }

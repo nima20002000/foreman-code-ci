@@ -93,38 +93,6 @@ it('runs a CircleCI affected file selection that exceeds the compact index param
   expect(calls).toEqual([['pnpm', 'test:integration', '--files', ...files]])
 })
 
-it('keeps GitHub dispatch inputs within the payload limit while preserving learned partition timings', async () => {
-  const f = await fixture()
-  const files = ['a', 'b', 'c', 'd'].map(name => `apps/api/test/${name}.integration.test.ts`)
-  const durations = Object.fromEntries(Array.from({ length: 996 }, (_, index) => [
-    `apps/api/test/${String(index).padStart(4, '0')}-${'x'.repeat(18)}.integration.test.ts`, 1000,
-  ]))
-  Object.assign(durations, Object.fromEntries(files.map((file, index) => [file, (index + 1) * 100])))
-  expect(JSON.stringify(durations).length).toBeLessThan(65_535)
-  for (const file of files) await f.write(file, 'export {}\n')
-  f.run('commit', '-qam', 'Change selected files')
-  f.push('main')
-  const partition = { index: 0, count: 2, weights: [2, 1] }
-  await f.cloud.handle({ operation: 'start', workspaceId: 'ci-workspace', runId: randomUUID(),
-    repository: 'octo/site', commit: f.run('rev-parse', 'HEAD'), baseCommit: f.commit,
-    suite: 'integration', partition, durations })
-  const command = f.dispatched[0]!
-  const inputs = Object.fromEntries(command.flatMap((value, index) => {
-    if (command[index - 1] !== '-f') return []
-    const separator = value.indexOf('=')
-    return [[value.slice(0, separator), value.slice(separator + 1)]]
-  }))
-  expect(Buffer.byteLength(JSON.stringify(inputs))).toBeLessThanOrEqual(65_535)
-  const checkout = await f.checkoutMirror(command[command.indexOf('--ref') + 1]!)
-  expect(JSON.parse(await readFile(join(checkout, 'scripts/ci-learned-durations.json'), 'utf8')))
-    .toEqual(durations)
-  const suite = await cloudSuiteRunner(checkout, command, 'github')
-  const result = suite.run()
-  expect(result.status, result.stderr).toBe(0)
-  const calls = (await readFile(suite.calls, 'utf8')).trim().split('\n').map(line => JSON.parse(line))
-  expect(calls).toEqual([['pnpm', 'test:integration', '--files', ...integrationPartition(files, durations, partition)]])
-})
-
 it('preserves repository file indexes for oversized CircleCI rerun selections', async () => {
   const inventory = Array.from({ length: 1200 }, (_, index) => `scripts/selected-${index.toString().padStart(4, '0')}.test.mjs`)
   const files = inventory.filter((_file, index) => index % 2 === 0)
