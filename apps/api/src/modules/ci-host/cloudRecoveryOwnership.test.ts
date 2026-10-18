@@ -61,12 +61,9 @@ it('remembers GitHub acceptance found only once during cancellation discovery', 
   const original = f.ports.run
   let listings = 0
   vi.spyOn(f.ports, 'run').mockImplementation(async (file, args, options) => {
-    const cliPage = args[0] === 'api' && args[1]?.includes('/actions/workflows/ci.yml/runs?')
-    if (file === 'gh' && (args[0] === 'run' && args[1] === 'list' || cliPage)) {
+    if (file === 'gh' && args[0] === 'run' && args[1] === 'list') {
       listings++
-      if (listings !== 2) {
-        return { code: 0, stdout: cliPage ? JSON.stringify({ total_count: 0, workflow_runs: [] }) : '[]', stderr: '' }
-      }
+      if (listings !== 2) return { code: 0, stdout: '[]', stderr: '' }
     }
     const result = await original(file, args, options)
     if (file === 'gh' && args[0] === 'workflow') throw new Error('Trigger reply lost')
