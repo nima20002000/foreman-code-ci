@@ -149,6 +149,9 @@ export class ProjectionDatabase {
       const q = text.replace(/\s+/g, ' ').trim(), s = transaction ?? this.state
       this.calls.push(q)
       if (/^(insert|update|delete)\b/.test(q)) this.writes++
+      // Count attempted reads before any handler can return, including empty results and proof/header lookups.
+      if (/\b(?:from|join) run_graph_(?:heads|sources|effects|public_projection)\b/.test(q)) this.headReads++
+      if (/\b(?:from|join) run_graph_batches\b/.test(q)) this.historyBodyReads++
       const result = (rows: unknown[] = []) => ({ rows: structuredClone(rows), rowCount: rows.length, command: '', oid: 0, fields: [] })
       if (q.startsWith('begin ')) {
         observedTransaction = { readOnly: q.endsWith('read only'),
@@ -279,7 +282,6 @@ export class ProjectionDatabase {
         workflow_version_id: this.scope.workflowVersionId, execution_semantics_version: this.scope.executionSemanticsVersion,
         has_job_nodes: this.fixture.version.definition.nodes.some(node => node.kind === 'job') }])
       if (q.startsWith('select h.head_sequence')) {
-        this.headReads++
         return result(values[0] !== this.scope.runId || values[1] !== this.scope.workspaceId
           || values[2] !== this.scope.workflowId || values[3] !== this.scope.workflowVersionId
           || this.scope.executionSemanticsVersion !== 3 ? [] : [{ head_sequence: this.initialized ? String(s.head) : null,
@@ -314,7 +316,6 @@ export class ProjectionDatabase {
         .filter(x => BigInt(x.sequence) > BigInt(String(values[1])) && BigInt(x.sequence) <= BigInt(String(values[2])))
         .sort((a,b) => Number(a.sequence)-Number(b.sequence)).slice(0, Number(values[3])))
       if (q.startsWith('select b.sequence::text,b.payload')) {
-        this.historyBodyReads++
         return result(s.batches.filter(x => (values[1] as string[]).includes(x.sequence))
           .sort((a,b) => Number(a.sequence)-Number(b.sequence)))
       }
