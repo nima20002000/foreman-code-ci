@@ -102,7 +102,7 @@ jobs:
           path: .logs/ci-clis
           key: clis-v1-${{ runner.os }}-${{ runner.arch }}-node22.23.2-${{ steps.cache-inputs.outputs.clis }}
       - run: scripts/ci-suite.sh start
-      # Installed packages without the pnpm store: half the size, so the restore is twice as fast.
+      # Installed packages and the pnpm store have separate archives.
       - id: packages
         uses: actions/cache@v4
         with:
@@ -115,16 +115,14 @@ jobs:
             !**/node_modules/.cache
             !apps/web/node_modules/.tmp
           key: packages-v2-${{ runner.os }}-${{ steps.cache-inputs.outputs.packages }}
-      # Metadata and store are needed only when installed packages must be populated.
+      # Native payload validation needs publication metadata even on installed-package hits.
       - id: metadata
-        if: steps.packages.outputs.cache-hit != 'true'
         uses: actions/cache@v4
         with:
           path: .logs/pnpm-metadata
           key: pnpm-metadata-v2-${{ runner.os }}-${{ steps.cache-inputs.outputs.packages }}
-      # A complete packages hit needs no store; a miss restores it so the offline install can fill packages.
+      # Restore native store content alongside package hits so validation and repair can stay offline.
       - id: store
-        if: steps.packages.outputs.cache-hit != 'true'
         uses: actions/cache@v4
         with:
           path: node_modules/.pnpm-store

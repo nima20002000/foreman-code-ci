@@ -127,9 +127,12 @@ it.each(['mcp', 'http'] as const)('reads queued user-systemd slices through %s w
     clock.mockReturnValue(now + 10_002)
     await f.ci.dispatch()
     const startedHost = await f.waitFor(reader, slices.ticketId, output =>
-      output.partitions!.find(run => run.id === host.id)?.state === 'running')
+      output.partitions!.some(run => run.id === host.id && run.state === 'running'
+        && run.observation?.status === 'available'))
     const running = startedHost.partitions!.find(run => run.id === host.id)!
-    expect(running).toMatchObject({ state: 'running', computer: { label: 'laptop' }, message: null })
+    expect(running).toMatchObject({ state: 'running', computer: { label: 'laptop' }, message: null,
+      observation: { status: 'available', consecutiveFailures: 0, lastError: null,
+        lastSuccessAt: expect.any(String), nextAttemptAt: null } })
     expect((await f.pool.query('select record from ci_runs where id=$1', [host.id])).rows[0].record).toEqual(running)
   } finally {
     await f.close()

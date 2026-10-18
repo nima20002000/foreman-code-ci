@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto'
 import {
   AgentDefaultsSchema,
   DEFAULT_AGENT_DEFAULTS,
+  DEFAULT_WORKFLOW_APPROVAL_HANDLER,
   WorkflowDefaultsSchema,
   withAdvancedDefaults,
   type AgentDefaults,
@@ -31,10 +32,6 @@ import { DomainError } from '../errors.js'
 import type { GraphSqlClient } from '../run-graph/connection.js'
 
 const KEYS = { agents: 'agent-defaults-v1', workflows: 'workflow-defaults-v1', workspaces: 'workspace-defaults-v1' } as const
-
-const LEGACY_WORKFLOW_DEFAULTS: WorkflowDefaults = {
-  approvalHandler: 'orchestrator',
-}
 
 export interface VersionedSetting<T> { value: T; versionId: string | null; revision: number }
 
@@ -147,7 +144,8 @@ export class PostgresFoundationSettingsRepository {
   }
 
   getWorkflowDefaults(client?: pg.ClientBase): Promise<VersionedSetting<WorkflowDefaults>> {
-    return this.read(KEYS.workflows, WorkflowDefaultsSchema, LEGACY_WORKFLOW_DEFAULTS, client)
+    return this.read(KEYS.workflows, WorkflowDefaultsSchema,
+      { approvalHandler: DEFAULT_WORKFLOW_APPROVAL_HANDLER }, client)
   }
 
   updateAgentDefaults(value: AgentDefaults, expectedRevision: number | undefined, client?: pg.ClientBase) {
