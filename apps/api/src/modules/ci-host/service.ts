@@ -949,9 +949,9 @@ export class HostCiService {
     // Reusing the stored JSON keeps its TOAST value when only the log changes.
     const record = serializeCiJson(next)
     const recordAssignment = canonicalJson(run) === canonicalJson(JSON.parse(record)) ? '' : 'record=$4::jsonb, '
-    // Durations are partition inputs: setup retries must keep the original file membership.
     const saved = await this.saveCancellation(`update ci_runs set state=$2, host_key=$3, ${recordAssignment}log_tail=coalesce($6,log_tail),
-        test_results=case when $10 then null else test_results end
+        test_results=case when $10 then null else test_results end,
+        durations=case when $10 then null else durations end
       where id=$1 and (state in ('queued','starting','running') or state=$8
         and (record->>'collection'='pending' or record#>>'{observation,status}'='unavailable'))
         and host_key is not distinct from $5
