@@ -121,7 +121,7 @@ it('loads the compiled API using only its deployed production dependencies', asy
   const metadataCache = process.env.npm_config_cache_dir
     || (existsSync(ciMetadataCache) ? ciMetadataCache : join(userInfo().homedir, '.cache/pnpm'))
   const packageStore = ['--prefer-offline', '--store-dir', storeDir, '--cache-dir', metadataCache,
-    '--package-import-method=hardlink']
+    '--package-import-method=hardlink', '--fetch-retries=0', '--fetch-timeout=10000']
   // Every child process is killed after a bounded time and reports the fixture step it was running.
   const child = async (step: string, timeoutMs: number, command: string, args: string[],
     options: { cwd: string, env: NodeJS.ProcessEnv }) => {
@@ -136,8 +136,15 @@ it('loads the compiled API using only its deployed production dependencies', asy
   const run = async (command: string, args: string[]) => {
     // This source is discarded after deployment, so it needs no development dependency restoration.
     if (args.includes('install')) return
-    await child(`${command} ${args.join(' ')}`, 45_000, command, [...args, ...packageStore],
-      { cwd: source, env: process.env })
+    const started = performance.now()
+    try {
+      const { stdout } = await child(`${command} ${args.join(' ')}`, 45_000, command, [...args, ...packageStore],
+        { cwd: source, env: process.env })
+      console.info(stdout)
+    } finally {
+      console.info('[integration-phase] local-production-deployment.integration.test.ts deploy-production-dependencies',
+        Math.round(performance.now() - started))
+    }
   }
   try {
     const prepareSource = async () => {
