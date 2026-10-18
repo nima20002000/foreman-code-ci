@@ -18,7 +18,7 @@ import { deepenUntilConnected, ensureClone, ensureCommit, fetchRepositoryBranch,
 import { systemHostCiPorts, type HostCiPorts } from './runner.js'
 import type { HostCiComputer } from './service.js'
 import type { CiMirrorInput } from './serviceTypes.js'
-import { CLOUD_LOG_LIMIT, CLOUD_START_TIMEOUT_MS, CIRCLE_EMPTY_PIPELINE_RECHECK_MS, CircleCiProvider, GitHubActionsProvider, cloudCiId, validateProviderParameters,
+import { CLOUD_LOG_LIMIT, CLOUD_START_TIMEOUT_MS, CircleCiProvider, GitHubActionsProvider, cloudCiId, validateProviderParameters,
   type CloudDispatchInput, type CloudProvider, type CloudRun, type CloudStatus } from './cloudProviders.js'
 import { runsOnCircleCi } from './parts.js'
 import { pruneMirrorBranches, type ActiveCiRuns } from './mirrorBranches.js'
@@ -755,14 +755,12 @@ export class CloudCi {
     }
     const dispatchedAt = run.dispatch?.at ?? run.mirrorPublication?.finishedAt ?? run.startedAt
     if (this.ports.now().getTime() - Date.parse(dispatchedAt) < CLOUD_START_TIMEOUT_MS) return run
-    // Request cancellation and verify the accepted pipeline before replacing it.
+    // Retire the pipeline before retrying so it cannot acquire a workflow later.
     if (run.providerRunId) {
-      if (!run.dispatch?.cancelAccepted || run.emptyPipelineCancellations?.[run.providerRunId]) {
+      if (!run.dispatch?.cancelAccepted) {
         let accepted: boolean
         try {
-          const cancellation = await this.requestCancellation(run, run.providerRunId)
-          run = cancellation.run
-          accepted = cancellation.accepted
+          accepted = await this.provider.cancel(run) !== false
         } catch (error) {
           if (error instanceof DomainError && error.code === 'CI_CLOUD_RATE_LIMITED') throw error
           return this.reconcileLookupFailure(run, error)
@@ -776,15 +774,10 @@ export class CloudCi {
         return this.save({ ...run,
           message: `${this.provider.label} cancellation is unconfirmed; waiting before retrying dispatch.` })
       }
-      if (status.conclusion !== 'cancelled' && !status.notStarted) {
+      if (status.conclusion !== 'cancelled') {
         return this.save({ ...run, state: 'running', workflowStarted: true })
       }
-      run = await this.recordTerminatedAttempt(run, run.providerRunId!, status)
     }
-    return this.retryUnstarted(run)
-  }
-
-  private async retryUnstarted(run: CloudRun) {
     const retryInput = run.dispatch && run.dispatch.attempts < MAX_DISPATCH_ATTEMPTS ? run.dispatch.input : undefined
     const message = `${this.provider.label} created no workflow within 75 seconds. `
       + (retryInput ? `Retrying dispatch (${run.dispatch!.attempts + 1}/${MAX_DISPATCH_ATTEMPTS}).`
@@ -796,50 +789,6 @@ export class CloudCi {
     if (retryInput) return this.trigger(next, retryInput)
     return this.save({ ...next, state: 'queued', providerRunId: null, finishedAt: null, exitCode: null,
       cancellation: { at: this.ports.now().toISOString(), canceledIds: [] } })
-  }
-
-  private async requestCancellation(run: CloudRun, providerRunId: string) {
-    const result = await this.provider.cancel({ ...run, providerRunId })
-    const observations = { ...run.emptyPipelineCancellations }
-    if (result && typeof result === 'object') {
-      const now = this.ports.now()
-      const since = observations[providerRunId] ?? now.toISOString()
-      observations[providerRunId] = since
-      run = await this.save({ ...run, emptyPipelineCancellations: observations })
-      return { run, accepted: now.getTime() - Date.parse(since) >= CIRCLE_EMPTY_PIPELINE_RECHECK_MS }
-    }
-    if (observations[providerRunId]) {
-      delete observations[providerRunId]
-      run = await this.save({ ...run, emptyPipelineCancellations: observations })
-    }
-    return { run, accepted: result !== false }
-  }
-
-  private async reconcilePreviousAttempts(run: CloudRun) {
-    let pending = false
-    if (this.provider.id !== 'circleci') return { run, pending }
-    const ids = new Set(run.dispatchHistory?.filter(attempt => !attempt.terminated).map(attempt => attempt.providerRunId))
-    for (const providerRunId of ids) {
-      if (!providerRunId || providerRunId === run.providerRunId) continue
-      const status = await this.provider.status({ ...run, providerRunId })
-      if (status.done) {
-        run = await this.recordTerminatedAttempt(run, providerRunId, status)
-        continue
-      }
-      const cancellation = await this.requestCancellation(run, providerRunId)
-      run = cancellation.run
-      const stopped = await this.provider.status({ ...run, providerRunId })
-      if (!stopped.done) pending = true
-      else run = await this.recordTerminatedAttempt(run, providerRunId, stopped)
-    }
-    return { run, pending }
-  }
-
-  private async recordTerminatedAttempt(run: CloudRun, providerRunId: string, status: CloudStatus) {
-    // Verified emptiness is still reconciled: unlike a terminal workflow, it can become visible late.
-    if (!status.done || run.emptyPipelineCancellations?.[providerRunId] || !run.dispatchHistory) return run
-    return this.save({ ...run, dispatchHistory: run.dispatchHistory.map(attempt => attempt.providerRunId === providerRunId
-      ? { ...attempt, terminated: true as const } : attempt) })
   }
 
   private mirrorKey(repository: string, mirror: string) {
@@ -1444,14 +1393,13 @@ export class CloudCi {
     let stopped = discoveryComplete && !run.dispatch?.uncertain
       && (ids.size > 0 || !run.dispatch?.attempts || unsent)
     for (const providerRunId of ids) {
-      if (!canceled.has(providerRunId) || run.emptyPipelineCancellations?.[providerRunId]) {
-        const cancellation = await this.requestCancellation(run, providerRunId)
-        run = cancellation.run
-        if (cancellation.accepted) canceled.add(providerRunId)
-        else canceled.delete(providerRunId)
+      const attempt = { ...run, providerRunId }
+      if (!canceled.has(providerRunId)) {
+        const accepted = await this.provider.cancel(attempt)
+        if (accepted !== false) canceled.add(providerRunId)
         run = await this.save({ ...run, cancellation: { ...run.cancellation!, canceledIds: [...canceled] } })
       }
-      if (!canceled.has(providerRunId) || !(await this.provider.status({ ...run, providerRunId })).done) stopped = false
+      if (!(await this.provider.status(attempt)).done) stopped = false
     }
     this.polled.set(run.runId, this.ports.now().getTime())
     const now = this.ports.now().toISOString()
@@ -1571,9 +1519,7 @@ export class CloudCi {
     if (!run.providerQueuedAt) run = await this.save({ ...run, providerQueuedAt: since })
     if (!reassign || run.queueCancelRequested || now.getTime() - Date.parse(since) < CLOUD_START_TIMEOUT_MS) return run
     try {
-      const cancellation = await this.requestCancellation(run, run.providerRunId!)
-      run = cancellation.run
-      if (!cancellation.accepted) return run
+      if (await this.provider.cancel(run) === false) return run
     } catch (error) {
       if (error instanceof DomainError && error.code === 'CI_CLOUD_RATE_LIMITED') throw error
       return this.reconcileLookupFailure(run, error)
@@ -1600,16 +1546,6 @@ export class CloudCi {
     const runId = run.runId
     run = await this.adoptSubmission(run)
     if (neverSubmitted(run)) return this.recoverUnstarted(run)
-    const previous = await this.reconcilePreviousAttempts(run)
-    run = previous.run
-    if (previous.pending) {
-      this.polled.set(runId, this.ports.now().getTime())
-      return run
-    }
-    if (run.state === 'starting' && this.provider.id === 'circleci'
-      && (run.dispatch?.cancelAccepted || run.emptyPipelineCancellations?.[run.providerRunId!])) {
-      return this.recoverUnstarted(run)
-    }
     if (run.state === 'starting' || !run.providerRunId || !run.workflowStarted && this.provider.id === 'circleci') {
       const providerRunId = await this.provider.find(run)
       if (!providerRunId) {
@@ -1649,7 +1585,7 @@ export class CloudCi {
     const message = passed ? run.message : [run.message, status.message ?? failure].filter(Boolean).join(' ')
     const terminal = await this.save({ ...run, state,
       exitCode: passed ? 0 : 1, finishedAt: status.finishedAt, collection: { log: false, artifacts: false },
-      ...(failedSetup || status.notStarted ? { testsStarted: false } : {}),
+      ...(failedSetup ? { testsStarted: false } : {}),
       message })
     return terminal
   }

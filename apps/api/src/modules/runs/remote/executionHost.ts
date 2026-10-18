@@ -46,7 +46,7 @@ export interface RemoteExecutionHostPorts {
   verifyRecovery?(receipt: RemoteOperationReceipt, session: NativeSessionReference, evidenceDigest: string): Promise<void>
   settle(intent: DispatchIntent, history: NativeHistory, owner: { manager: NativeHarnessSessionManager; session: NativeSessionReference; request: HarnessExecutionRequest }): Promise<RemoteTerminalEvidence | null>
 }
-interface Resident { intent: DispatchIntent; placement: AcceptedNodePlacement; request: HarnessExecutionRequest; manager: NativeHarnessSessionManager; session: NativeSessionReference; controller: AbortController; turn?: Promise<void>; settlementTask?: Promise<void>; settlementHistory?: NativeHistory; workflowHistory?: NativeHistory; settlementEvidence?: RemoteTerminalEvidence }
+interface Resident { intent: DispatchIntent; placement: AcceptedNodePlacement; request: HarnessExecutionRequest; manager: NativeHarnessSessionManager; session: NativeSessionReference; controller: AbortController; turn?: Promise<void>; settlementTask?: Promise<{ stopFence: boolean }>; settlementHistory?: NativeHistory; workflowHistory?: NativeHistory; settlementEvidence?: RemoteTerminalEvidence }
 interface WorkflowPreparation {
   intent: unknown
   placement: unknown
@@ -590,16 +590,27 @@ export class RemoteExecutionHost {
     })()
     return this.ports.journal.status(operationId)
   }
-  private settle(resident: Resident, correlationId: string): Promise<void> {
-    if (resident.settlementTask) return resident.settlementTask
+  private async settle(resident: Resident, correlationId: string): Promise<void> {
+    if (resident.settlementTask) {
+      const settled = await resident.settlementTask
+      if (settled.stopFence) return
+      const current = await this.ports.journal.status(resident.intent.operationId)
+      // Stop can arrive after the pending pass chose to retain this process.
+      // Finish the fenced closure after that pass drains, without overlapping it.
+      if (current.status === 'known' && current.receipt.stopFence && !current.receipt.terminal) {
+        return this.settle(resident, correlationId)
+      }
+      return
+    }
     const task = (async () => {
       const status = await this.ports.journal.status(resident.intent.operationId)
-      if (status.status === 'known' && status.receipt.terminal) return
+      const settled = { stopFence: status.status === 'known' && status.receipt.stopFence }
+      if (status.status === 'known' && status.receipt.terminal) return settled
       const history = resident.settlementHistory ?? resident.workflowHistory ?? await resident.manager.reconcile(resident.session, correlationId)
       // Preserve the actual last provider snapshot before a closure producer removes its runtime.
       if (history.terminalTurn?.correlationId === correlationId || (history.correlationId === correlationId && history.terminalResult)) resident.settlementHistory = structuredClone(history)
       if (status.status === 'known' && status.receipt.turnInput?.deferSettlement
-        && !status.receipt.outputValidationComplete && !status.receipt.stopFence) return
+        && !status.receipt.outputValidationComplete && !status.receipt.stopFence) return settled
       const evidence = resident.settlementEvidence ?? await this.ports.settle(resident.intent, history, resident)
       const retained = await this.ports.journal.status(resident.intent.operationId)
       if (retained.status === 'known' && retained.receipt.retainedReviewer
@@ -609,10 +620,11 @@ export class RemoteExecutionHost {
         resident.settlementEvidence = structuredClone(evidence)
         await this.ports.journal.terminal(resident.intent.operationId, evidence)
       }
+      return settled
     })()
     resident.settlementTask = task
     void task.then(() => { if (resident.settlementTask === task) delete resident.settlementTask }, () => { if (resident.settlementTask === task) delete resident.settlementTask })
-    return task
+    await task
   }
   async closeRetainedReviewer(operationId: string, expiredReviewer?: { sequence: number }): Promise<boolean> {
     const resident = this.residents.get(operationId)
