@@ -6,7 +6,7 @@ import { readCloudRun, saveCloudRun } from './cloudJournal.js'
 
 afterEach(() => vi.restoreAllMocks())
 
-it('resolves a lost CircleCI submission after complete empty discovery and the cancellation window', async () => {
+it.each([true, undefined])('resolves a lost CircleCI submission after complete empty discovery, uncertainty flag: %s', async uncertainty => {
   const f = await fixture({}, { provider: 'circleci' })
   const runId = randomUUID()
   const original = f.ports.run
@@ -22,6 +22,11 @@ it('resolves a lost CircleCI submission after complete empty discovery and the c
   await expect(f.cloud.handle({ operation: 'start', runId, workspaceId: 'ci-workspace',
     repository: 'octo/site', commit: f.commit, suite: 'lint', scope: 'full' }))
     .rejects.toMatchObject({ code: 'CI_CLOUD_FAILED' })
+  const path = join(f.root, 'ci-cloud', 'runs', runId, 'meta.json')
+  const saved = await readCloudRun(path)
+  const dispatch = { ...saved.dispatch! }
+  if (uncertainty === undefined) delete dispatch.uncertain
+  await saveCloudRun(path, { ...saved, dispatch })
   const cancel = { operation: 'cancel', runId } as const
   expect(await f.cloud.handle(cancel)).toMatchObject({ run: { state: 'starting', finishedAt: null } })
   f.advance(74_999)
