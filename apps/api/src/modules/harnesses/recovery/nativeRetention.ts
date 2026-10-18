@@ -115,9 +115,9 @@ export class NativeRegistryRetention {
     if (row.bootId === bootIdentity() && [row.guardian, row.provider].some(process => process && identityAlive(process))) {
       return false
     }
-    // Each managed MCP owner is a one-shot configuration operation; its confirmed closure needs no workflow ACK.
-    const managedMcp = /^managed-mcp:codex:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(row.owner)
-    if (!managedMcp && !await isSettled(row.owner)) return false
+    // Confirmed-closed one-shot inspections have no workflow acknowledgement to wait for.
+    const oneShot = /^(?:managed-mcp:codex|catalog-authentication|model-catalog):[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(row.owner)
+    if (!oneShot && !await isSettled(row.owner)) return false
     const after = lstatSync(path)
     if (before.ino !== after.ino || before.dev !== after.dev || before.mtimeMs !== after.mtimeMs) return false
     unlinkSync(path)

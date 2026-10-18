@@ -7,6 +7,7 @@ import { appMcpDirectory } from '@foreman-code/contracts/product-environment-nod
 import type { HarnessMcpConnection } from '@foreman-code/contracts/management'
 import { APP_MCP_SERVER_NAMES, APP_MCP_TOKEN_NAMES, PRODUCT_SLUG } from '@foreman-code/contracts/product'
 import { workerMcpRequestBudgetMs } from '../devices/workerMcpDeadline.js'
+import { bootIdentity } from './recovery/linuxIdentity.js'
 
 /** One native entry serves every role; the credential decides Operator, Orchestrator or Coder. */
 export const APP_MCP_SERVER_NAME = PRODUCT_SLUG
@@ -225,17 +226,29 @@ export type AppMcpRouteRegistration = (() => Promise<void>) & {
   refresh(expiresAt: string): Promise<void>
 }
 
+interface AppMcpRouteOptions {
+  now?: () => number
+  renewalFailure?: string
+}
+
+/** The local launcher shares this boot's monotonic clock, even when lease timestamps come from Main. */
+function routeMonotonicExpiry(expiresAt: string, now: () => number) {
+  const elapsed = process.hrtime.bigint()
+  const remainingMs = Date.parse(expiresAt) - now()
+  return { bootId: bootIdentity(), nanoseconds: (elapsed + BigInt(Math.floor(remainingMs * 1_000_000))).toString() }
+}
+
 /** `renewalFailure` records why the route's lease stopped renewing; the launcher reports it once the route expires. */
 export async function registerAppRoute(
-  token: string, endpoint: string, expiresAt: string, launcher = appLauncherPath(), renewalFailure?: string,
+  token: string, endpoint: string, expiresAt: string, launcher = appLauncherPath(), options: AppMcpRouteOptions = {},
 ): Promise<AppMcpRouteRegistration> {
   return registerAppRouteDigest(createHash('sha256').update(token).digest('hex'), endpoint, expiresAt, launcher,
-    undefined, renewalFailure)
+    undefined, options)
 }
 
 export async function registerAppRouteDigest(
   digest: string, endpoint: string, expiresAt: string, launcher = appLauncherPath(), ownership?: AppMcpRouteOwnership,
-  renewalFailure?: string,
+  options: AppMcpRouteOptions = {},
 ): Promise<AppMcpRouteRegistration> {
   if (!/^[a-f0-9]{64}$/.test(digest)) throw new Error('Invalid Foreman Code MCP route identity.')
   const directory = join(dirname(launcher), 'routes')
@@ -260,6 +273,7 @@ export async function registerAppRouteDigest(
       try {
         await writeFile(temporary, JSON.stringify({ endpoint, expiresAt: expiration, pid: process.pid,
           toolTimeoutMs: APP_MCP_TIMEOUTS.tool_timeout_sec * 1000,
+          ...(options.now ? { monotonicExpiry: routeMonotonicExpiry(expiration, options.now) } : {}),
           registrationId, runtimeEpoch, ...(failure ? { renewalFailure: failure } : {}) }), { mode: 0o600, flag: 'wx' })
         signal.throwIfAborted()
         ownership?.assertActive()
@@ -268,7 +282,7 @@ export async function registerAppRouteDigest(
         await rm(temporary, { force: true })
       }
     })
-  await publish(expiresAt, 'register', renewalFailure)
+  await publish(expiresAt, 'register', options.renewalFailure)
   const remove = async (): Promise<void> => {
     await withLauncherLock(launcher, async () => {
       if (await ownsRoute()) await rm(file, { force: true })

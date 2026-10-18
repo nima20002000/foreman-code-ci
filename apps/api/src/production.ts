@@ -22,7 +22,14 @@ import { RunCiAuthority } from './modules/jobs/ciAuthority.js'
 import { ProductionHostCiEndpoint } from './modules/ci-host/endpoint.js'
 import { HostCiRunner, systemHostCiPorts } from './modules/ci-host/runner.js'
 import { CircleCreditUsage } from './modules/ci-host/circleCredits.js'
-import { CloudHttp } from './modules/ci-host/cloudHttp.js'
+import { CircleAccountDirectory } from './modules/ci-host/circleAccounts.js'
+import { CircleAccountsManagementService } from './modules/settings/circleAccounts.js'
+import { CircleCreditCache } from './modules/ci-host/circleCreditCache.js'
+import { circleOrganizations } from './modules/ci-host/circleOrganizations.js'
+import { CircleStandby } from './modules/ci-host/circleStandby.js'
+import { CircleAccountFleetStatus } from './modules/ci-host/circleAccountStatus.js'
+import { registerCircleAccountRoutes } from './routes/circleAccounts.js'
+import { homedir } from 'node:os'
 import { activeCiRuns, circleCiOrgs, cloudCis, runningCircleCiOwners, workspaceMirrorList, workspaceMirrors }
   from './modules/ci-host/cloud.js'
 import { configuredReservedCloudSlots } from './modules/ci-host/cloudSlots.js'
@@ -915,7 +922,7 @@ function configureWorkflowRepositories(composition: ProductionComposition) {
       if (!configuration) throw new DomainError('AGENT_CONFIGURATION_NOT_FOUND', 'The accepted Agent configuration is unavailable.', 409)
       const access = requiredLocationAccess([configuration])
       await locations.revalidateSnapshot(run.workspaceId, run.executionLocation, access)
-      const tree = await runWorktrees.prepare(run)
+      const tree = await runWorktrees.prepare(run, AbortSignal.timeout(60_000), execution.id)
       if (!tree) return undefined
       return { workingDirectory: tree.workingDirectory,
         runtimeDirectory: repeatRuntimeDirectory(config.harnesses.workspaceRoot, { workspaceId: run.workspaceId,
@@ -1094,9 +1101,10 @@ function configureHarnessQualifications(composition: ProductionComposition) {
       await assertDeviceHostInstallation(client, selector.target.hostRef, selector.target.applicationInstallationId)
       binding.admissionSignal?.throwIfAborted()
     },
-    async current(binding, value, client) {
+    async current(binding, value, client, options) {
       if (value.driverId === 'claude') {
-        await requireClaudeProductionCredentialDelivery(value.configuration, providerAccounts, value.target.hostRef)
+        await requireClaudeProductionCredentialDelivery(value.configuration, providerAccounts, value.target.hostRef,
+          value.target.applicationInstallationId)
         if (value.target.hostRef.kind === 'device') {
           const registry = harnessRegistry.pinOverride(value)
           const proof = await hostProfileEvidence.latest(value.instanceId, value.revision, client)
@@ -1105,11 +1113,12 @@ function configureHarnessQualifications(composition: ProductionComposition) {
           return { registry, pin, applicationInstallationId: value.target.applicationInstallationId,
             suiteRevision: CLAUDE_PROFILE_CHECK_REVISION }
         }
-        const current = infrastructure?.claudeCurrentProfile ?? (infrastructure?.mode === 'replay' ? undefined : claudeDiscovery.current)
+        const current: AcceptedProfileAuthority<ClaudeProfileOwner>['current'] | undefined = infrastructure?.claudeCurrentProfile
+          ?? (infrastructure?.mode === 'replay' ? undefined : claudeDiscovery.current)
         if (!current) throw new DomainError('HARNESS_REPLAY_INCOMPLETE', 'Claude replay requires its current installed profile metadata port.', 500)
-        return current(binding, value, client)
+        return current(binding, value, client, options)
       }
-      if (binding.kind !== 'operator-observation' && !await harnessRegistry.profileEvidence(value, client)) {
+      if (binding.kind !== 'operator-observation' && !await harnessRegistry.profileEvidence(value, client, options)) {
         throw new DomainError('HARNESS_PROFILE_UNAVAILABLE', 'The exact accepted native profile proof is stale.', 409)
       }
       return { registry: harnessRegistry.pinOverride(value), applicationInstallationId: value.target.applicationInstallationId,
@@ -1152,7 +1161,8 @@ function configureHarnessProfiles(composition: ProductionComposition) {
   const hostProfileChecks = composition.hostProfileChecks = new HostHarnessInstanceProfileChecks(hostSettings, hostProfileEvidence, commands, hostAuthority,
     new ProductionHostHarnessProfileQualifier(harnessRegistry, nativeFactories, () => deviceRuntime.endpointForDomains(), config.harnesses.workspaceRoot,
       infrastructure?.mode === 'replay' ? undefined : { async qualify(value, input) {
-        const apiKey = await requireClaudeProductionCredentialDelivery(value.configuration, providerAccounts, value.target.hostRef)
+        const apiKey = await requireClaudeProductionCredentialDelivery(value.configuration, providerAccounts, value.target.hostRef,
+          value.target.applicationInstallationId)
         const current = await claudeDiscovery.currentForConfiguration(value, input.signal)
         const binding = harnessRegistry.pinOverride(value)
         const recovery = await processRegistry.reserveLaunch(`claude-profile-check:${input.checkId}`)
@@ -1181,7 +1191,8 @@ function configureHarnessProfiles(composition: ProductionComposition) {
       },
     }) : undefined)
   const harnessInstances = composition.harnessInstances = new HostHarnessOverrideService(hostSettings, commands, hostAuthority, async (value, client) => {
-    await requireClaudeProductionCredentialDelivery(value.configuration, providerAccounts, value.target.hostRef)
+    await requireClaudeProductionCredentialDelivery(value.configuration, providerAccounts, value.target.hostRef,
+          value.target.applicationInstallationId)
     const proof = await harnessRegistry.profileEvidence(value, client, { includeFailed: true })
     return proof ? { target: proof.target, configurationFingerprint: proof.configurationFingerprint,
       qualified: proof.qualified, ...(proof.failure ? { failure: proof.failure } : {}) } : null
@@ -1215,6 +1226,9 @@ function configureHarnessProfiles(composition: ProductionComposition) {
   const harnessCatalog = composition.harnessCatalog = new HarnessCatalogService(qualifier, settings, commands, config.harnesses.workspaceRoot, appMcpEndpoint)
   const nativeConfigurations = composition.nativeConfigurations = new NativeConfigurationService(
     config.harnesses.codexBinary, config.harnesses.workspaceRoot, nativeFactories, claudeMetadata, providerAccounts,
+    { mainId: async () => (await database.pool.query<{ id: string }>(
+      'select id from application_installation where singleton=true')).rows[0]?.id ?? '',
+    endpoint: () => deviceRuntime.endpointForDomains() },
   )
   composition.appRoutes = new AppMcpRoutes(database.pool, appMcpEndpoint, appLauncherPath(), () => composition.runtimeOwner)
   const maintenancePorts = composition.maintenancePorts = systemMaintenancePorts(process.env, { get codex() { return mainCodex.binary } })
@@ -1349,7 +1363,7 @@ function configureWorkflowManagers(composition: ProductionComposition) {
     return manager
   })
   composition.validateContinuation = placedContinuationValidator(database.pool, locations, remoteWorkflow, {
-    async assertCurrent(binding, signal) {
+    async assertCurrent(binding, signal, purpose) {
       signal?.throwIfAborted()
       const sql = interactionConnection.getStore() ?? database.pool
       if (!composition.agentPlacement) {
@@ -1361,7 +1375,9 @@ function configureWorkflowManagers(composition: ProductionComposition) {
           [binding.intent.operationId])).rows[0]
         const receipt = stored && RemoteOperationReceiptSchema.parse(stored.receipt)
         if (receipt?.native) {
-          const authenticated = deviceRuntime.endpointForDomains().currentBinding(binding.placement.hostRef.deviceId)
+          // Restart preserves Main's admitted lifetime; it does not authorize a new Worker operation.
+          const authenticated = purpose === 'restart' ? receipt.connection
+            : deviceRuntime.endpointForDomains().currentBinding(binding.placement.hostRef.deviceId)
           if (!authenticated) {
             throw new DomainError('REMOTE_DISPATCH_UNAVAILABLE', 'The authenticated execution connection is unavailable.', 503)
           }
@@ -1680,7 +1696,7 @@ function configureConversationManagers(composition: ProductionComposition) {
       }
       if (profileSelection?.target.hostRef.kind === 'device') {
         const manager = workerChats.create({ configuration, conversationId, workingDirectory: sessionStartDirectory(start),
-          appMcpAccess: 'none', observationPrincipalId: principalId, profileSelection, sourceExecution })
+          appMcpAccess: 'none', lifecycle: 'observer', observationPrincipalId: principalId, profileSelection, sourceExecution })
         try { return await manager.readCompaction!(session, start, state, signal) }
         finally { await manager.dispose?.() }
       }
@@ -1844,6 +1860,9 @@ function configureOperatorChat(composition: ProductionComposition) {
     if (binding) operatorAccountBindings.set(conversationId, binding)
     else operatorAccountBindings.delete(conversationId)
   }
+  resolveOperatorManager.modelOptions = async configuration =>
+    configuration.harness === 'opencode' ? []
+      : (await composition.nativeConfigurations.options(configuration.harness)).models
   resolveOperatorManager.recoverCompaction = recoverChatCompaction
   composition.chat = new OperatorChatService(
     operatorConversations, operators,
@@ -1954,7 +1973,8 @@ function configureAgentChat(composition: ProductionComposition) {
     if (!row || row.agent_configuration_version_id !== configuration.id) {
       throw new DomainError('PLACEMENT_BINDING_CONFLICT', 'The chat configuration changed.', 409)
     }
-    const executionId = row.record.origin.kind === 'run_execution' ? row.record.origin.executionId : undefined
+    const executionId = row.record.origin.kind === 'run_execution' && !row.record.sourceConfigurationVersionId
+      ? row.record.origin.executionId : undefined
     const selected = await agentChatProfileSelection(configuration, sessionStartDirectory(start), executionId)
     return recoverChatCompaction(configuration, conversationId, session, start, state, principalId, signal,
       selected.profileSelection, selected.sourceExecution)
@@ -1972,7 +1992,13 @@ function configureAgentChat(composition: ProductionComposition) {
     }
     return undefined
   }
+  resolveAgentChatManager.modelOptions = async configuration =>
+    configuration.harness === 'opencode' ? []
+      : (await composition.nativeConfigurations.options(configuration.harness)).models
   resolveAgentChatManager.release = (conversationId) => { agentChatManagers.delete(conversationId) }
+  resolveAgentChatManager.closeRetainedSession = (conversationId, configuration, principalId, signal) =>
+    workerChats!.closeRetainedSession(conversationId, configuration, principalId, signal)
+  resolveAgentChatManager.closeRecoveredSession = (id, signal) => workerChats!.closeConversation(id, signal)
   composition.agentChat = new AgentChatService(database.pool, agentConversations,
     new PostgresOperatorConversationRepository(database.pool, accountConfigurations), workflows, runs, resolveAgentChatManager, config.harnesses.workspaceRoot)
   composition.reviews = new AutomaticReviewService(database.pool, runs, approvals, locations, rollout,
@@ -2136,6 +2162,10 @@ function configureOperatorServices(composition: ProductionComposition) {
         const runtime = composition.jobRuntime
         return { roots: runtime.policies, sources: runtime.sources, profiles: hostSettings, registry: harnessRegistry,
           ensureProfileReady: profile => composition.harnessInstances.ensureReady(profile),
+          ensureComputerReady: async host => {
+            workerExecution.requireEnabled(host)
+            if (host.kind === 'device') await deviceRuntime.endpointForDomains().assertWorkerBundleReady(host.deviceId)
+          },
           provisionRoot: (...args: Parameters<ProductionCiEnrollmentInventory['root']>) => {
             const workspaceRoots = composition.runtimeServices.workspaceRoots
             if (!workspaceRoots) throw new DomainError('PLACEMENT_CHOICES_UNAVAILABLE', 'Workspace roots are not initialized.', 503)
@@ -2793,18 +2823,7 @@ async function initializeComputerServices(composition: ProductionComposition, ma
     runtimeServices.workspaces, runtimeServices.workspaceRoots, jobRuntime.policies, jobRuntime.sources,
     machine.installationId, projectRoot)
   registerWorkspaceRepositoryRoutes(app, runtimeServices.workspaceRepositories)
-  const cloudOptions = { activeRuns: () => activeCiRuns(database.pool) }
-  const clouds = cloudCis(machine.installationId, workspaceMirrors(database.pool), cloudOptions)
-  const circleOrgs = circleCiOrgs(clouds, machine.installationId, workspaceMirrors(database.pool),
-    workspaceMirrorList(database.pool), { ...cloudOptions, runningOwners: runningCircleCiOwners(database.pool) })
-  const discoverClouds = () => circleOrgs.refresh()
-  const circleCredits = new CircleCreditUsage(new CloudHttp(systemHostCiPorts(), 'circleci'), {
-    allowance: async () => (await composition.foundationSettings.getCircleCreditAllowance()).value,
-    primaryOwner: async () => {
-      const owners = new Set((await workspaceMirrorList(database.pool)()).map(mirror => mirror.slice(0, mirror.indexOf('/')).toLowerCase()))
-      return owners.size === 1 ? [...owners][0]! : null
-    },
-  })
+  const { clouds, discoverClouds, circleCredits, circleStandby } = await initializeCircleCi(composition, machine)
   runtimeServices.computerActivity = new ComputerActivityService(database.pool, machine.installationId,
     id => deviceRuntime.presenceFor(id), commands, clouds, circleCredits)
   registerComputerActivityRoutes(app, runtimeServices.computerActivity)
@@ -2834,7 +2853,7 @@ async function initializeComputerServices(composition: ProductionComposition, ma
           installedPlugins(maintenancePorts, mainCodex.binary, AbortSignal.timeout(120_000)),
           pluginMarketplaces(maintenancePorts, mainCodex.binary, AbortSignal.timeout(60_000))])
         const local = new Set(marketplaces.filter(marketplace => marketplace.local).map(marketplace => marketplace.name))
-        return plugins.filter(pluginId => !local.has(pluginId.split('@').at(-1)!))
+        return plugins.filter(plugin => !local.has(plugin.pluginId.split('@').at(-1)!))
       },
       codexMarketplaces: async () => await maintenancePorts.find('codex')
         ? (await pluginMarketplaces(maintenancePorts, mainCodex.binary, AbortSignal.timeout(60_000)))
@@ -2886,7 +2905,44 @@ async function initializeComputerServices(composition: ProductionComposition, ma
   runtimeServices.jobs = jobRuntime.jobs
   const readAgentFiles = agentFileReader(() => deviceRuntime.endpointForDomains())
 
-  return { clouds, discoverClouds, readAgentFiles, workspaceRoots, circleCredits }
+  return { clouds, discoverClouds, readAgentFiles, workspaceRoots, circleCredits, circleStandby }
+}
+
+async function initializeCircleCi(composition: ProductionComposition, machine: ProductionMainInstallation) {
+  const { database, foundationSettings, commands, runtimeServices, app } = composition
+  const registry = { list: async () => (await foundationSettings.getCircleAccounts()).value.accounts }
+  const directory = new CircleAccountDirectory(systemHostCiPorts(), registry)
+  const context = async (id: string) => {
+    const account = await directory.context(id)
+    if (!account) throw new DomainError('CI_CLOUD_UNAVAILABLE', 'This CircleCI login is no longer registered.', 409)
+    return account
+  }
+  const options = { activeRuns: () => activeCiRuns(database.pool) }
+  const mirrors = workspaceMirrors(database.pool)
+  const mirrorList = workspaceMirrorList(database.pool)
+  const clouds = cloudCis(machine.installationId, mirrors, {
+    ...options, primaryContext: await context('default'), explicitCircleOrgs: true,
+  })
+  const cache = new CircleCreditCache(join(homedir(), '.local/share/foreman-code/circleci-usage', 'usage.json'))
+  const circleCredits = new CircleCreditUsage(async id => (await context(id)).http, {
+    allowance: async () => (await foundationSettings.getCircleCreditAllowance()).value,
+    primaryOwner: async () => null,
+  }, { cache })
+  const circleStandby = new CircleStandby(() => circleOrganizations(clouds), circleCredits, cache)
+  const circleOrgs = circleCiOrgs(clouds, machine.installationId, mirrors, mirrorList, {
+    ...options, registry, context, standby: circleStandby, explicitPrimary: true,
+    runningOrganizations: runningCircleCiOwners(database.pool, machine.installationId),
+  })
+  runtimeServices.circleAccounts = new CircleAccountsManagementService(foundationSettings, commands,
+    new CircleAccountFleetStatus(database.pool, machine.installationId, directory, clouds, circleStandby), async id => {
+    directory.invalidate(id)
+    for (const cloud of clouds) if (cloud.provider.circleAccountId === id) cloud.invalidateReadiness()
+    await circleOrgs.refresh()
+    circleOrgs.invalidate()
+    await circleOrgs.refresh()
+  })
+  registerCircleAccountRoutes(app, runtimeServices.circleAccounts)
+  return { clouds, discoverClouds: () => circleOrgs.refresh(), circleCredits, circleStandby }
 }
 
 async function initializeCiServices(
@@ -2898,9 +2954,10 @@ async function initializeCiServices(
     readAgentFiles: ReadAgentFiles
     workspaceRoots: WorkspaceBoundLocationService
     circleCredits: CircleCreditUsage
+    circleStandby: CircleStandby
   },
 ) {
-  const { clouds, discoverClouds, readAgentFiles, workspaceRoots, circleCredits } = computerServices
+  const { clouds, discoverClouds, readAgentFiles, workspaceRoots, circleCredits, circleStandby } = computerServices
   const {
     workerExecution,
     deviceRuntime,
@@ -2917,7 +2974,9 @@ async function initializeCiServices(
   composition.hostCi = new HostCiService(database.pool, commands, new RunCiAuthority(database.pool), new GitCiCommits(),
     new ProductionHostCiEndpoint(database.pool, machine.installationId, () => deviceRuntime.endpointForDomains(), new HostCiRunner(),
       clouds, discoverClouds, workerExecution),
-    agentSnapshots(database.pool, readAgentFiles), { reservedCloudSlots: configuredReservedCloudSlots(), circleCredits })
+    agentSnapshots(database.pool, readAgentFiles), {
+      reservedCloudSlots: configuredReservedCloudSlots(), circleCredits, circleStandby,
+    })
   composition.hostCi.start()
   app.addHook('onClose', async () => { await composition.hostCi?.close() })
   const stopDeadlineSweeper = startStateDeadlineSweeper(database.pool, {

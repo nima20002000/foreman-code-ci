@@ -27,6 +27,21 @@ export function createAdmittedNativeManager<T extends NativeHarnessSessionManage
         throw new DomainError('HARNESS_CONFIGURATION_MISMATCH', 'The admitted native adapter differs from its role configuration.', 409)
       }
       for (const session of stopped.values()) result.manager.stopAutomaticResponses?.(session)
+      if (result.manager.retireTurn) {
+        const retireTurn = result.manager.retireTurn.bind(result.manager)
+        manager.retireTurn = async (session, correlationId) => {
+          lifetime.signal.throwIfAborted()
+          return retireTurn(session, correlationId)
+        }
+      }
+      if (result.manager.rebindApplicationAccess) {
+        const rebind = result.manager.rebindApplicationAccess.bind(result.manager)
+        manager.rebindApplicationAccess = async (session, start, signal) => {
+          signal?.throwIfAborted()
+          lifetime.signal.throwIfAborted()
+          await rebind(session, start, signal)
+        }
+      }
       return result
     })
     const result = await opening
@@ -36,6 +51,7 @@ export function createAdmittedNativeManager<T extends NativeHarnessSessionManage
   const manager: NativeHarnessSessionManager = {
     harness,
     requiresRuntimeClosure: () => allocation?.manager.requiresRuntimeClosure?.() ?? Boolean(allocation),
+    requiresSettledDisposal: () => allocation?.manager.requiresSettledDisposal?.() ?? false,
     canDetachForRestart: session => allocation?.manager.canDetachForRestart?.(session) ?? false,
     originalEnvironment: async (session, signal) => (await actual(signal)).originalEnvironment?.(session, signal),
     capabilities: async signal => (await actual(signal)).capabilities(signal),
@@ -114,16 +130,25 @@ export function createAdmittedNativeManager<T extends NativeHarnessSessionManage
       return current.inspectResponseAvailability ? current.inspectResponseAvailability(session, query, signal) : unavailableNativeResponse(session, query, 'unsupported')
     },
     close: async session => (await actual()).close(session),
+    closeForResume: async session => {
+      const current = await actual()
+      if (!current.closeForResume) throw new DomainError('NATIVE_RUNTIME_RELEASE_UNAVAILABLE',
+        'The admitted driver cannot release its process while retaining the conversation.', 409)
+      await current.closeForResume(session)
+    },
     closeForRestart: async session => {
       const current = await actual()
       if (!current.closeForRestart) throw new DomainError('HARNESS_RESTART_UNAVAILABLE', 'The admitted driver has no restart capability.', 409)
       return current.closeForRestart(session)
     },
     dispose() {
-      lifetime.abort(new DomainError('NATIVE_MANAGER_DISPOSED', 'The admitted native allocation is disposed.', 409))
+      const disposed = new DomainError('NATIVE_MANAGER_DISPOSED', 'The admitted native allocation is disposed.', 409)
+      if (!allocation) lifetime.abort(disposed)
       disposal ??= Promise.resolve().then(async () => {
         if (opening) await opening.catch(() => { /* ignore: the owner awaits the original promise; this observer prevents a duplicate unhandled rejection. */ })
-        await allocation?.manager.dispose?.(); stopped.clear()
+        await allocation?.manager.dispose?.()
+        lifetime.abort(disposed)
+        stopped.clear()
       })
       const attempt = disposal
       void attempt.catch(() => { if (disposal === attempt) disposal = undefined })

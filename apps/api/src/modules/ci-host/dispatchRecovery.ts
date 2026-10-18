@@ -3,7 +3,7 @@ import type pg from 'pg'
 import { CiHostReplySchema, type CiHostReply, type CiHostStatus,
   type CiRunRecord } from '@foreman-code/contracts'
 import type { SqlQuery } from '../../infrastructure/transaction.js'
-import { withoutCiDatabaseReservation } from '../../infrastructure/ciDatabasePriority.js'
+import { withoutCiDatabaseDeadline, withoutCiDatabaseReservation } from '../../infrastructure/ciDatabasePriority.js'
 import { DomainError } from '../errors.js'
 import { componentLogger } from '../diagnostics/logger.js'
 import type { CiRunSettlement, HostCiComputer, HostCiEndpoint } from './serviceTypes.js'
@@ -54,10 +54,13 @@ async function sendDispatch(services: DispatchServices, run: CiRunRecord, comput
 async function sendAssignedDispatch(services: DispatchServices, run: CiRunRecord,
   computer: HostCiComputer, client: CiTicketSql) {
   if (computer.hostRef.kind === 'cloud') {
-    const result = await dispatchCloudTicket(client, services.endpoint, computer, run,
-      error => services.rejected?.(run, computer, error))
-    if (result.outcome === 'settled') await services.settle(result.run, computer, result.observed, { client })
-    return result.outcome
+    // The committed ticket claim owns provider I/O and settlement beyond the scheduling pass.
+    return withoutCiDatabaseDeadline(async () => {
+      const result = await dispatchCloudTicket(client, services.endpoint, computer, run,
+        error => services.rejected?.(run, computer, error))
+      if (result.outcome === 'settled') await services.settle(result.run, computer, result.observed, { client })
+      return result.outcome
+    })
   }
   const request = run.dispatchRequest
   if (!request) throw new Error('CI dispatch request is missing.')

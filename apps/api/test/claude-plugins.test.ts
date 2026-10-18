@@ -20,6 +20,23 @@ async function settled(maintenance: ComputerMaintenance) {
 }
 
 describe('Claude plugin catalog and fleet sync', () => {
+  it('refreshes a known marketplace by alias while preserving its repository source', async () => {
+    const fake = claudePluginPorts()
+    fake.marketplaces.set('official', 'owner/official')
+    const commands: string[][] = []
+    const maintenance = new ComputerMaintenance({ ...fake.ports, run: async (binary, args, options) => {
+      commands.push([...args])
+      return fake.ports.run(binary, args, options)
+    } })
+    await maintenance.start({ ...syncRequest, claudePlugins: [{ pluginId: 'review@official', enabled: true }] })
+    expect(await settled(maintenance)).toMatchObject({ state: 'succeeded' })
+    expect(commands).toContainEqual(['plugin', 'marketplace', 'update', 'official', '--json'])
+    expect(commands).not.toContainEqual(['plugin', 'marketplace', 'add', 'owner/official', '--json'])
+    expect((await readClaudePlugins(fake.ports, AbortSignal.timeout(1000))).marketplaces)
+      .toContainEqual({ name: 'official', source: 'owner/official' })
+    expect(fake.installed.has('review@official')).toBe(true)
+  })
+
   it('reads installed state, available plugins and shareable marketplaces', async () => {
     const fake = claudePluginPorts()
     fake.installed.set('notes@official', { version: '1.0.0', enabled: false })

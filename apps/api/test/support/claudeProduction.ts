@@ -1,4 +1,5 @@
 import { sessionStartConfiguration, sessionStartDirectory } from '../../src/modules/harnesses/sessionStart.js'
+import { isDeepStrictEqual } from 'node:util'
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk'
 import type { AgentFileToolService } from '../../src/modules/files/tools/service.js'
 import Fastify from 'fastify'
@@ -68,7 +69,15 @@ export function productionClaudeFixture(surface: 'workflow' | 'operator' | 'agen
     environmentGeneration: proof.environmentGeneration, connectionGeneration: proof.connectionGeneration })
   const client = {} as pg.PoolClient
   const profiles = new AcceptedClaudeProfileAdmission<ClaudeDomainBinding>(
-    { readAuthorized: async <T>(read: (sql: pg.PoolClient) => Promise<T>) => read(client), latest: async () => override, lockRevision: async () => {} } as unknown as HarnessInstanceSettingsRepository,
+    { readAuthorized: async <T>(read: (sql: pg.PoolClient) => Promise<T>) => read(client),
+      latest: async () => override,
+      savedRevision: async (_client: pg.ClientBase, instanceId: string, instanceRevision: string,
+        options?: { target: HostHarnessOverride['target'] }) => {
+        if (instanceId !== override.instanceId || instanceRevision !== override.instanceRevision
+          || options && !isDeepStrictEqual(options.target, override.target)) return null
+        return override
+      },
+      lockRevision: async () => {} } as unknown as HarnessInstanceSettingsRepository,
     { latest: async () => proof } as unknown as HostHarnessProfileEvidenceRepository,
     { authorize: async () => {}, current: async () => ({ registry: binding, applicationInstallationId: target.applicationInstallationId, suiteRevision: proof.suiteRevision, pin }), assertCurrent: value => installations.assertCurrent(value) })
   const agent = AgentConfigurationVersionSchema.parse({ id: 'configuration-1', workspaceId: 'workspace', agentId: 'agent', productRole: 'coder', version: 1,
