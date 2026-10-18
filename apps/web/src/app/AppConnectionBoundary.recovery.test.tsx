@@ -4,6 +4,7 @@ import { http, HttpResponse } from 'msw'
 import { afterEach, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import { server } from '../mocks/server'
+import { deferred } from '../test/deferred'
 import { apiClient } from '../shared/api/client'
 import { settingsExperienceKeys } from '../shared/api/settingsExperience'
 import { UnsavedChangesContext } from '../shared/ui/unsavedChanges'
@@ -37,6 +38,64 @@ function mount(unsaved = () => false) {
     <UnsavedChangesContext.Provider value={guard}><ReleaseAutoReload /><Page /></UnsavedChangesContext.Provider>
   </AppConnectionBoundary></QueryClientProvider>)
 }
+
+function RetryingRead() {
+  const read = useQuery({ queryKey: ['retrying-read'], queryFn: ({ signal }) =>
+    apiClient.request('/api/retrying-read', z.object({ value: z.string() }), { signal }) })
+  return <p>{read.isPending ? 'Retry read pending' : read.error?.message ?? read.data?.value}</p>
+}
+
+it('refreshes healthy reads only after a failed read actually recovers, not while its retry is pending', async () => {
+  const retryStarted = deferred()
+  const retryResponse = deferred<Response>()
+  const healthyResponse = deferred()
+  let attempts = 0
+  let healthyReads = 0
+  server.use(
+    http.get('/api/recovery-page', async () => {
+      healthyReads++
+      if (healthyReads > 1) await healthyResponse.promise
+      return HttpResponse.json({ value: 'Healthy page' })
+    }),
+    http.get('/api/retrying-read', async () => {
+      attempts++
+      if (attempts === 1) return unavailable()
+      retryStarted.resolve()
+      return retryResponse.promise
+    }),
+  )
+  client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  const view = render(<QueryClientProvider client={client}><AppConnectionBoundary>
+    <Page /><RetryingRead />
+  </AppConnectionBoundary></QueryClientProvider>)
+  try {
+    await screen.findByText('Healthy page')
+    await screen.findByText('Connection interrupted.')
+    expect(healthyReads).toBe(1)
+    let retry!: Promise<void>
+    await act(async () => {
+      retry = client.refetchQueries({ queryKey: ['retrying-read'], exact: true })
+      await retryStarted.promise
+    })
+    expect(await screen.findByText('Retry read pending')).toBeVisible()
+    expect(client.getQueryState(['recovery-page'])).toMatchObject({ isInvalidated: false, fetchStatus: 'idle' })
+    expect(healthyReads).toBe(1)
+    await act(async () => {
+      retryResponse.resolve(HttpResponse.json({ value: 'Recovered read' }))
+      await retry
+    })
+    expect(await screen.findByText('Recovered read')).toBeVisible()
+    await waitFor(() => expect(healthyReads).toBe(2))
+    healthyResponse.resolve()
+    await waitFor(() => expect(client.isFetching({ queryKey: ['recovery-page'] })).toBe(0))
+    expect(healthyReads).toBe(2)
+  } finally {
+    retryResponse.resolve(unavailable())
+    healthyResponse.resolve()
+    view.unmount()
+    await client.cancelQueries()
+  }
+})
 
 it('recovers a structured server outage and refreshes mounted reads without a reload or manual retry', async () => {
   let available = true
