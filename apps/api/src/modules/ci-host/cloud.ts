@@ -657,15 +657,17 @@ export class CloudCi {
       })
       if (failed) return this.failPipeline(pending, { message: this.checkAccount(failed).message! })
     }
+    pending = await this.save({ ...pending, dispatch: { ...pending.dispatch!, uncertain: true, notSent: false } })
+    // Check policy after the final journal write, immediately before contacting the provider.
     if (!run.providerRunId && ((run.dispatch?.attempts ?? 0) === 0 || run.dispatch?.notSent) && !run.dispatch?.uncertain) {
-      try { await this.requireNewStart(input.mirror.slice(input.mirror.indexOf('/') + 1)) }
-      catch (error) {
+      try {
+        await this.requireNewStart(input.mirror.slice(input.mirror.indexOf('/') + 1))
+      } catch (error) {
+        pending = await this.save({ ...pending, dispatch: { ...pending.dispatch!, uncertain: false, notSent: true } })
         if (!(error instanceof DomainError && error.code === 'CI_CLOUD_UNAVAILABLE')) throw error
-        return this.failPipeline({ ...pending,
-          dispatch: { ...pending.dispatch!, uncertain: false, notSent: true } }, { message: error.message })
+        return this.failPipeline(pending, { message: error.message })
       }
     }
-    pending = await this.save({ ...pending, dispatch: { ...pending.dispatch!, uncertain: true, notSent: false } })
     let providerRunId: string | null
     try {
       providerRunId = await this.provider.dispatch(input)
