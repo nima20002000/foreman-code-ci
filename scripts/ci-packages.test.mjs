@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
 import { delimiter, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
+import { nativeProviderFixture } from './fixtures/native-provider.mjs'
 
 const script = fileURLToPath(new URL('./ci-packages.mjs', import.meta.url))
 const require = createRequire(new URL('../apps/api/package.json', import.meta.url))
@@ -120,3 +121,29 @@ test('an incomplete packages restore is repaired rather than treated as an insta
   assert.equal(result.status, 0, result.stderr)
   assert.equal(f.commands().length, 1)
 })
+
+test('publishes the prefetched store and publication cache locations on install and cache reuse', t => {
+  const f = fixture(t)
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const result = f.run()
+    assert.equal(result.status, 0, result.stderr)
+    const paths = JSON.parse(readFileSync(join(f.root, '.logs/ci-package-paths.json'), 'utf8'))
+    assert.deepEqual(paths, { storeDir: join(f.root, 'node_modules/.pnpm-store'),
+      cacheDir: join(f.root, '.logs/pnpm-metadata') })
+  }
+})
+
+for (const restored of [false, true]) {
+  test(`rejects a missing required native payload after pnpm succeeds (restored: ${restored})`, t => {
+    const f = fixture(t)
+    const provider = nativeProviderFixture(f.root)
+    if (restored) assert.equal(f.run().status, 0)
+    rmSync(provider.payload)
+    const result = f.run()
+    assert.equal(result.status, 1, result.stdout + result.stderr)
+    assert.match(result.stderr, /CI_NATIVE_PAYLOAD_UNAVAILABLE/)
+    assert.ok(result.stderr.includes(provider.name), result.stderr)
+    assert.equal(existsSync(join(f.root, 'node_modules/.ci-packages-key')), false)
+    assert.equal(existsSync(join(f.root, '.logs/ci-packages-restored')), false)
+  })
+}
