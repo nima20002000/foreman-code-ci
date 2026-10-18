@@ -30,7 +30,7 @@ it.each(['initialSave', 'workflow_save_v3'] as const)(
       const initial = initialSave(f.f.version.definition, { [agentId]: agent.configurationVersionId! })
       const nodeId = 'worker'
       const graph = { ...initial.graph, entryNodeId: nodeId, approval: { handler: 'native' }, edges: [],
-        nodes: [{ id: nodeId, agentId, initialPrompt: 'Do the work', position: { x: 0, y: 0 } }] }
+        nodes: [{ id: nodeId, agentId, name: 'Worker', initialPrompt: 'Do the work', position: { x: 0, y: 0 } }] }
       const createInput = { workspaceId, name: 'Manual placement', commandId: randomUUID(),
         ...(route === 'initialSave' ? { initialSave: { ...initial, graph } } : {}) }
       const reader = await f.access.issue({ name: 'Workflow reader', audience: 'operator',
