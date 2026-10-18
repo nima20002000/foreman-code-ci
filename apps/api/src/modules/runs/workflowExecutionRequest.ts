@@ -20,7 +20,7 @@ function every(seconds: number | undefined): string {
 function intervalCheckPrompt(index: number, interval: { everySeconds: number; prompt?: string | undefined } | undefined,
   continued: boolean, initialPrompt?: string): string {
   return [
-    ...(initialPrompt ? ['Background from the initial activation (already assigned; do not repeat it):', initialPrompt, ''] : []),
+    ...(initialPrompt ? [`Your task in this workflow: ${initialPrompt}`, ''] : []),
     `Foreman Code loop ${index}. While this Run is active you are re-activated ${every(interval?.everySeconds)}.`,
     ...(interval?.prompt ? [`Each loop: ${interval.prompt}`,
       'run_status_get reads your own Run: each node\'s state, the Run\'s CI tickets and recent errors.'] : [
