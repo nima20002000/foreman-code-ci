@@ -80,6 +80,7 @@ async function retainedWorkingTree(directory: FileHandle, root: SourceRootRecord
     }
     if (!receipt.sharedTree) return null
     if (!receipt.worktree) {
+      if (receipt.binding.accessMode !== 'read-only') return measureRetainedMaterializationFootprint(receipt)
       const parent = await openChildDirectory(directory, materializationId)
       try {
         await authorize()
