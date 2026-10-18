@@ -56,13 +56,13 @@ describe.skipIf(!databaseUrl)('original native artifact output receipt SQL guard
     await expect(pool.query("update management_command_receipts set operation=$1 where operation='fixture.ordinary'", [operation])).rejects.toThrow('original command insertion')
     expect((await pool.query("update management_command_receipts set result='{}' where operation='fixture.ordinary'")).rowCount).toBe(1)
   })
-  async function outputFixture(internalContext = false) {
+  async function outputFixture(internalContext = false, nativeSessionId?: string) {
     // Explicit SQL-boundary facts. These rows are not native qualification or a physical publication.
     const suffix = randomUUID(), principalId = `sql-output-${suffix}`, mainId = randomUUID()
     const workspaceId = `workspace-${suffix}`, agentId = `agent-${suffix}`, configurationId = randomUUID(), conversationId = randomUUID()
     const producer = { workspaceId, workflowId: `workflow-${suffix}`, runId: `run-${suffix}`, nodeId: 'sql-node', executionId: randomUUID(), attemptId: randomUUID(), placementHash: 'b'.repeat(64) }
     const scope = { kind: 'temporary' as const, chat: { kind: 'agent' as const, conversationId, agentId, workspaceId, workflowId: producer.workflowId, runId: producer.runId, executionId: producer.executionId } }
-    const context: FileToolContext = { ownerPrincipalId: principalId, scope, nativeSessionId: `sql-native-${suffix}`, turnId: 'sql-turn', allowMutation: true, allowedTools: ['files.publish_result'] }
+    const context: FileToolContext = { ownerPrincipalId: principalId, scope, nativeSessionId: nativeSessionId ?? `sql-native-${suffix}`, turnId: 'sql-turn', allowMutation: true, allowedTools: ['files.publish_result'] }
     const fileId = randomUUID(), revisionId = randomUUID(), transferId = randomUUID(), body = Buffer.from('SQL boundary fixture'), sha256 = createHash('sha256').update(body).digest('hex')
     const record = NativeArtifactOutputSchema.parse({ version: 1, producer, outputKey: 'report', commandId: 'sql-original-command', nativeIdentity: { nativeSessionId: context.nativeSessionId, turnId: context.turnId },
       publication: { ownerPrincipalId: principalId, requestId: randomUUID(), binding: bindingIdentity(context) }, pins: { fileId, revisionId, sha256, byteSize: body.length }, scope,
@@ -104,6 +104,29 @@ describe.skipIf(!databaseUrl)('original native artifact output receipt SQL guard
     expect((await pool.query('select count(*)::int as count from management_audit where action=$1 and target_key=$2', [operation, target])).rows[0].count).toBe(1)
     await expect(f.repository.bind({ ...f.record, commandId: 'changed-command' }, f.authorize)).rejects.toMatchObject({ code: 'NATIVE_ARTIFACT_OUTPUT_CONFLICT' })
     expect(await f.repository.read(f.record.producer, f.record.outputKey)).toEqual(f.record)
+  })
+  it('keeps separate immutable workflow file contexts for one continued native thread while fencing ordinary chat ownership', async () => {
+    const first = await outputFixture(true)
+    const nativeSessionId = first.record.nativeIdentity.nativeSessionId
+    await first.repository.bind(first.record, first.authorize)
+    const next = await outputFixture(true, nativeSessionId)
+    await next.repository.bind(next.record, next.authorize)
+    expect(next.conversationId).not.toBe(first.conversationId)
+    expect(await first.repository.read(first.record.producer, first.record.outputKey)).toEqual(first.record)
+    expect(await next.repository.read(next.record.producer, next.record.outputKey)).toEqual(next.record)
+    const contexts = (await pool.query<{ id: string; execution_id: string; native_session_id: string }>(
+      `select id,origin_execution_id as execution_id,native_session_id from operator_conversations
+        where id=any($1::text[]) order by id`, [[first.conversationId, next.conversationId]])).rows
+    expect(contexts).toEqual([
+      { id: first.conversationId, execution_id: first.record.producer.executionId, native_session_id: nativeSessionId },
+      { id: next.conversationId, execution_id: next.record.producer.executionId, native_session_id: nativeSessionId },
+    ].sort((a, b) => a.id.localeCompare(b.id)))
+    await expect(pool.query("update operator_conversations set native_session_id='replacement' where id=$1",
+      [first.conversationId])).rejects.toThrow('identity is immutable')
+    const chat = await outputFixture(false, nativeSessionId)
+    await expect(outputFixture(false, nativeSessionId)).rejects.toMatchObject({ code: '23505' })
+    expect((await pool.query('select native_session_id from operator_conversations where id=$1',
+      [chat.conversationId])).rows[0].native_session_id).toBe(nativeSessionId)
   })
   it('cancels a blocked binding, releases its file lock and reconstructs the same output', async () => {
     const f = await outputFixture()

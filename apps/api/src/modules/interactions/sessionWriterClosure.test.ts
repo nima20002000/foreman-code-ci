@@ -39,7 +39,11 @@ function fixture(close: () => Promise<void>) {
       return structuredClone(lane)
     },
   }
-  const native = { harness: 'codex', close, closeForRestart: close } as NativeHarnessSessionManager
+  const unexpected = async (): Promise<never> => { throw new Error('Unexpected native operation during closure') }
+  const native: NativeHarnessSessionManager = { harness: 'codex', close, closeForRestart: close,
+    capabilities: unexpected, inspectMcp: unexpected, createSession: unexpected, attachSession: unexpected,
+    pending: unexpected, respond: unexpected, cancel: unexpected, history: unexpected, reconcile: unexpected,
+    startTurn: () => { throw new Error('Unexpected native turn during closure') } }
   const writer = new SingleWriterSessionManager(native,
     coordination as unknown as PostgresInteractionCoordinationRepository, 'workflow-agent')
   return { writer, lane: () => structuredClone(lane) }
