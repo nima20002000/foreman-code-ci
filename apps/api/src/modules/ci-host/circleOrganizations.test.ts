@@ -70,3 +70,28 @@ it('reuses the last readiness observation during a refresh and excludes a confir
   expect(await circleOrganizations([cloud])).toMatchObject([{ ready: false }])
   expect(run).toHaveBeenCalledTimes(2)
 })
+
+it.each(executors)('dispatches to $label while CircleCI credit-policy storage is blocked', async computer => {
+  vi.useFakeTimers()
+  vi.setSystemTime(new Date('2026-10-12T00:00:01Z'))
+  const release = deferred()
+  const circle: HostCiComputer = { key: 'fixture:cloud:circleci@fixture-org:0', label: 'Fixture CircleCI', priority: 30,
+    hostRef: { kind: 'cloud', mainId: 'fixture', provider: 'circleci', account: 'fixture-org', slot: 0 } }
+  const selector = new CircleStandby(async () => [{ owner: 'fixture-org', circleAccountId: 'default',
+    role: 'primary', ready: true, mirrorNames: new Set(['ci-mirror']) }], { reading: async () => {
+    await release.promise
+    return { credits: null }
+  } })
+  const f = dispatchFleet([computer, circle], [queuedTicket()], { circleStandby: selector })
+  const dispatch = f.service.dispatch()
+  try {
+    await vi.advanceTimersByTimeAsync(3500)
+    await dispatch
+    expect(f.started.map(start => start.computer.key)).toEqual([computer.key])
+  } finally {
+    const closing = f.service.close()
+    release.resolve()
+    await vi.advanceTimersByTimeAsync(1)
+    await closing
+  }
+})

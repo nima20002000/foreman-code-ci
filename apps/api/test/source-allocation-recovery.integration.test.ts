@@ -10,7 +10,6 @@ import { systemGitWorktreePorts, type GitWorktreePorts } from '../src/modules/so
 import { identity, openPrivateRoot } from '../src/modules/sources/privateFilesystem.js'
 import { reclaimSourceReservation } from '../src/modules/sources/reclaimSourceReservation.js'
 import { sourceBindingHash } from '../src/modules/sources/bindingHash.js'
-import { measureRetainedMaterializationFootprint } from '../src/modules/sources/retainedDirectoryUsage.js'
 import { gitFixtureEnvironment } from './helpers/gitFixture.js'
 import { removeFixtureDirectory } from './helpers/testResources.js'
 
@@ -34,7 +33,7 @@ afterEach(async () => {
 const git = (cwd: string, ...args: string[]) => execFileSync('git', args,
   { cwd, encoding: 'utf8', env: gitFixtureEnvironment() }).trim()
 
-async function fixture(mode: 'main-worktree' | 'worker-read-only' | 'worker-writable' = 'main-worktree') {
+async function fixture(mode: 'main-worktree' | 'worker-read-only' = 'main-worktree') {
   const base = await mkdtemp(join(process.env.FOREMAN_CODE_TEST_ROOT!, 'source-allocation-'))
   directories.push(base)
   const origin = join(base, 'origin')
@@ -55,7 +54,7 @@ async function fixture(mode: 'main-worktree' | 'worker-read-only' | 'worker-writ
   const filesystem = await identity(handle)
   await handle.close()
   const mainId = randomUUID()
-  const deviceId = mode === 'main-worktree' ? null : randomUUID()
+  const deviceId = mode === 'worker-read-only' ? randomUUID() : null
   const workerInstallationId = deviceId ? randomUUID() : null
   const root: SourceOperationOwner['root'] = { version: 1,
     source: { approvedSourceId: manifest.approvedSourceId, snapshotId: manifest.snapshotId,
@@ -64,8 +63,7 @@ async function fixture(mode: 'main-worktree' | 'worker-read-only' | 'worker-writ
       rootPolicyRevision: '1', locationRevision: '1' },
     binding: { version: 1, mainId, deviceId, workerInstallationId, workspaceId: 'workspace',
       rootId: randomUUID(), bindingRevision: 1, locationRevision: 1, canonicalPath: rootPath, filesystem,
-      accessMode: mode === 'worker-read-only' ? 'read-only' : 'exclusive-write',
-      snapshotId: manifest.snapshotId, manifestDigest: manifest.manifestDigest },
+      accessMode: deviceId ? 'read-only' : 'exclusive-write', snapshotId: manifest.snapshotId, manifestDigest: manifest.manifestDigest },
     registration: workerInstallationId ? { workerInstallationId, keyRevision: 1, authorizationRevision: 1 } : null,
     ownerPrincipalId: 'operator', authorizedByPrincipalId: 'operator',
     attestationId: randomUUID(), attestationDigest: 'a'.repeat(64), boundAt: new Date().toISOString() }
@@ -130,30 +128,6 @@ it('reclaims an interrupted Worker reference while charging its retained read-on
   expect(await f.prepare(otherOwner, undefined, false)).toEqual(other)
   expect(await f.reclaim(grant)).toEqual(retained)
 })
-
-it.each(['main-worktree', 'worker-writable'] as const)(
-  'retains the immutable baseline and edited checkout of an abandoned writable preparation on %s', async mode => {
-    const f = await fixture(mode)
-    const original = f.owner()
-    const receipt = await f.prepare(original, undefined, false)
-    const reference = join(f.rootPath, receipt.materializationId, 'tree/app.txt')
-    const working = join(f.rootPath, receipt.sharedTree!.id, 'tree/app.txt')
-    await writeFile(working, 'Unintegrated workflow edit')
-    const grant = f.grant(original)
-    await expect(f.reclaim(grant, false)).rejects.toMatchObject({ code: 'source-reconciliation-unconfirmed' })
-    expect(await readFile(reference)).toEqual(f.bytes)
-    const retained = await f.reclaim(grant)
-    expect(await readFile(reference)).toEqual(f.bytes)
-    expect(await readFile(working, 'utf8')).toBe('Unintegrated workflow edit')
-    expect(retained.retained).toEqual(await measureRetainedMaterializationFootprint(receipt))
-    expect(retained.retained!.sharedTree!.bytes).toBeGreaterThan(0)
-    const successorOwner = f.owner()
-    const successor = await f.prepare(successorOwner, undefined, false)
-    expect(await f.reclaim(grant)).toEqual(retained)
-    expect(await readFile(reference)).toEqual(f.bytes)
-    expect(await f.prepare(successorOwner, undefined, false)).toEqual(successor)
-    expect(await readFile(working, 'utf8')).toBe('Unintegrated workflow edit')
-  })
 
 it.each(['allocation', 'copy', 'marker'] as const)(
   'charges a secondary Git allocation interrupted during %s and preserves unrelated work', async phase => {

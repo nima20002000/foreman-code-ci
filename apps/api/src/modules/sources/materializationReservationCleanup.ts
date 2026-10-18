@@ -266,9 +266,7 @@ export class MaterializationReservationCleanup {
         }
         const reservations = new PostgresSourceReservations()
         if (result.retained) {
-          const receipt = original?.record?.receipt
-          if (!grant.removeRetained && receipt?.sharedTree
-            && (receipt.binding.accessMode === 'read-only' || receipt.worktree)) reservation.referenceReclaimed = true
+          if (original?.record?.receipt.sharedTree) reservation.referenceReclaimed = true
           await reservations.retainMaterialization(sql, reservation,
             { ...result.retained, retainedBytes: result.retained.retainedBytes + 16 * 1024 })
         } else {
