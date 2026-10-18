@@ -507,7 +507,16 @@ function createRemoteWorkflowManager(input: ProductionRemoteWorkflowInput, depen
       const entries = retained.get(receipt.intent.executionId) ?? new Map()
       const key = sourceKey(source)
       if (!entries.has(key) && entries.size >= 1024) throw new DomainError('REMOTE_NATIVE_SOURCE_BACKPRESSURE', 'The original remote source window is full.', 503)
-      for (const [oldKey, old] of entries) if (oldKey !== key && (old.acknowledgment || source.type === 'history' && old.source.type === 'history' && !old.evidence)) entries.delete(oldKey)
+      for (const [oldKey, old] of entries) {
+        if (oldKey === key) continue
+        const uncapturedHistory = source.type === 'history' && old.source.type === 'history' && !old.evidence
+        if (!old.acknowledgment && !uncapturedHistory) continue
+        if (!old.acknowledgment) {
+          await physical.discard(old.prepared)
+          channel.forget(receipt.intent.executionId, old.source)
+        }
+        entries.delete(oldKey)
+      }
       entries.set(key, { source, prepared })
       retained.set(receipt.intent.executionId, entries)
       latest.set(receipt.intent.executionId, key)
