@@ -514,8 +514,13 @@ export class CircleCiProvider implements CloudProvider {
   private async pipeline(run: CloudRun, timeoutMs?: number) {
     const view = await this.readPipeline(run, timeoutMs)
     // A CLI placeholder outcome cannot finish a pipeline that is still waiting for workflows.
-    if (circlePipelinePending(view)) return { ...view, state: view.state ?? view.phase,
-      phase: 'started', outcome: undefined, current_outcome: undefined }
+    if (circlePipelinePending(view)) {
+      const pending = { ...view, phase: 'started' }
+      if (pending.state === undefined && view.phase !== undefined) pending.state = view.phase
+      delete pending.outcome
+      delete pending.current_outcome
+      return pending
+    }
     const canceling = run.cancellation && !run.cancellation.completedAt
     if (!canceling && view.errors?.length && (view.phase === 'ended' || view.current_outcome === 'not_run')) {
       const message = view.errors.map(error => `${error.type}: ${error.message}`).join('; ')

@@ -755,7 +755,7 @@ export class CloudCi {
     }
     const dispatchedAt = run.dispatch?.at ?? run.mirrorPublication?.finishedAt ?? run.startedAt
     if (this.ports.now().getTime() - Date.parse(dispatchedAt) < CLOUD_START_TIMEOUT_MS) return run
-    // Retire the pipeline before retrying so it cannot acquire a workflow later.
+    // Request cancellation and verify the accepted pipeline before replacing it.
     if (run.providerRunId) {
       if (!run.dispatch?.cancelAccepted || run.emptyPipelineCancellations?.[run.providerRunId]) {
         let accepted: boolean
@@ -837,8 +837,8 @@ export class CloudCi {
 
   private async recordTerminatedAttempt(run: CloudRun, providerRunId: string, status: CloudStatus) {
     // Verified emptiness is still reconciled: unlike a terminal workflow, it can become visible late.
-    if (!status.done || run.emptyPipelineCancellations?.[providerRunId]) return run
-    return this.save({ ...run, dispatchHistory: run.dispatchHistory?.map(attempt => attempt.providerRunId === providerRunId
+    if (!status.done || run.emptyPipelineCancellations?.[providerRunId] || !run.dispatchHistory) return run
+    return this.save({ ...run, dispatchHistory: run.dispatchHistory.map(attempt => attempt.providerRunId === providerRunId
       ? { ...attempt, terminated: true as const } : attempt) })
   }
 
