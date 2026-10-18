@@ -2,6 +2,7 @@ import { isDeepStrictEqual } from 'node:util'
 import { SourceMaterializationRecordSchema } from '@foreman-code/contracts/source-admission'
 import type { RootBinding } from '@foreman-code/contracts/source-materialization'
 import type { GraphSqlClient } from '../run-graph/connection.js'
+import { outstandingCheckoutReviewSql } from '../runs/worktreeReviewers.js'
 
 /** The saved node, rather than a resolved placement label, decides directory retention. */
 export async function retainsNodeWorkingTree(sql: GraphSqlClient, executionId: string): Promise<boolean> {
@@ -34,7 +35,11 @@ export async function retainedNodeReceipt(sql: GraphSqlClient, executionId: stri
         where writer.run_id=incoming.run_id and writer.workflow_node_id=incoming.workflow_node_id
           and writer.id<>incoming.id and (writer.record->>'state'<>'completed'
             or exists(select 1 from execution_native_sessions active where active.execution_id=writer.id
-              and active.workflow_finalized_at is null)))`, [executionId])).rows[0]
+              and active.workflow_finalized_at is null)
+            or (writer.record->>'nativeSessionId' is not null and not exists(
+              select 1 from execution_native_sessions finalized where finalized.execution_id=writer.id
+                and finalized.workflow_finalized_at is not null))
+            or (${outstandingCheckoutReviewSql})))`, [executionId])).rows[0]
   if (!row) return undefined
   const receipt = SourceMaterializationRecordSchema.parse(row.record).receipt
   return !receipt.quota && isDeepStrictEqual(receipt.binding, binding) ? receipt : undefined
