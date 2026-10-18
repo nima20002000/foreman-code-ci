@@ -98,9 +98,7 @@ async function harnessRegistry(base: Base, mainId: string, project: string) {
   return { overrides, installations, pinOverride }
 }
 
-export async function sourceWorktreeMcpFixture(options: {
-  approvalNodeIds?: string[]; fixture?: ReturnType<typeof makeCurrentWorkflowFixture>
-} = {}) {
+export async function sourceWorktreeMcpFixture(options: { approvalNodeIds?: string[] } = {}) {
   let producer: AgentPlacementProducer
   let preparation: AgentExecutionPreparation
   let validatePlacement: ReturnType<typeof placedContinuationValidator>

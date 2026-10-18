@@ -106,8 +106,9 @@ export class CurrentWorkflowAuthoring {
     this.editIntents = createCurrentEditIntentService(pool, commands, {
       validate: async (client, principal, input, options) => {
         authorize(principal, input, true)
-        const prepared = await this.prepare(client, principal, input, false, options?.intentId)
-        return { version: prepared.version, presentationOnly: prepared.presentationOnly }
+        const prepared = await this.prepare(client, principal, input, false, options?.intentId, options?.source)
+        return { version: prepared.version, presentationOnly: prepared.presentationOnly,
+          graph: prepared.graph ?? input.graph }
       },
       publish: (principal, source, input, intentId) => this.write(principal, source, input, intentId),
       assertStopReady: () => {
@@ -224,8 +225,13 @@ export class CurrentWorkflowAuthoring {
           }
           const { version, configurations } = await versionAt(client, input, saved.currentVersionId)
           // Replays use saved configurations even when the Agent has since changed.
-          const publishedInput = witness && !sameWorkflowValue(witness.input, input)
+          let publishedInput = witness && !sameWorkflowValue(witness.input, input)
             ? { ...input, graph: reconcileAgentProfilePlacements(input.graph, configurations) } : input
+          // Existing witnesses can record profile reconciliation without manual position flags.
+          if (witness && !sameWorkflowValue(witness.input, publishedInput)) {
+            publishedInput = { ...publishedInput,
+              graph: manualPositionsForSave(publishedInput.graph, version.definition, source) }
+          }
           if (!sameWorkflowValue(version, saved.version) || !sameWorkflowValue(version.agentConfigurationVersionIds, input.resultantAgentConfigurationVersionIds ?? input.expectedAgentConfigurationVersionIds)) {
             return fail('WORKFLOW_RECEIPT_CONFLICT', 'The receipt differs from its exact immutable version/configuration pins.')
           }
@@ -271,7 +277,8 @@ export class CurrentWorkflowAuthoring {
   private async publish(client: pg.PoolClient, principal: ManagementPrincipal, source: Source,
     input: CurrentEditSaveInput, request: CurrentEditSaveInput, intentId?: string) {
     if (intentId) await this.editIntents.publication(client, principal, intentId, input)
-    const prepared = await this.prepare(client, principal, input, true, intentId, source)
+    // Staged graphs already have the normalization recorded by their command hash.
+    const prepared = await this.prepare(client, principal, input, true, intentId, intentId ? undefined : source)
     const agents = prepared.staged ? await persistCurrentStagedAgents(client, input.workspaceId, prepared.staged.prepared) : undefined
     let revision: number
     if (prepared.presentationOnly) {
@@ -370,7 +377,8 @@ export class CurrentWorkflowAuthoring {
       return readImmutableAgentConfiguration(config, { workspaceId: input.workspaceId, agentId: config.agent_id, id })
     })
     configurations.push(...(staged?.prepared.map((item) => item.configuration) ?? []))
-    const graph = reconcileAgentProfilePlacements(input.graph, configurations)
+    // Publication and the immutable version must use the same manual placement flags.
+    const graph = manualPositionsForSave(reconcileAgentProfilePlacements(input.graph, configurations), current, source)
     await validateWorkflowWorktrees({ sql: client, principal, definition: graph, previous: current,
       configurations, services: this.options.worktrees })
     const number = Number((await client.query<{ next: string }>('select coalesce(max(version),0)+1 as next from workflow_versions where workflow_id=$1',
@@ -383,7 +391,6 @@ export class CurrentWorkflowAuthoring {
       agentConfigurationVersionIds: configurationPins, contentHash: `sha256:${'0'.repeat(64)}`, createdAt: now })
     if (!parsedVersion.success) throw new DomainError('GRAPH_INVALID', 'Fix the workflow settings below.', 409, { issues: workflowSaveIssues(parsedVersion.error.issues) })
     const version = parsedVersion.data
-    version.definition = manualPositionsForSave(version.definition, current, source)
     const executable = ExecutableWorkflowV3Schema.safeParse({ version, configurations })
     if (!executable.success) throw new DomainError('GRAPH_INVALID', 'Fix the workflow settings below.', 409, { issues: workflowSaveIssues(executable.error.issues) })
     for (const node of version.definition.nodes) {
