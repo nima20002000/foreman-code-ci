@@ -29,7 +29,7 @@ it.each(['http', 'mcp'] as const)('%s releases the preparation connection before
       try { prepared++ } finally { client.release() }
       return undefined
     },
-    async accept() { return undefined },
+    async acceptMany() { return new Map() },
   } as unknown as AcceptedProviderAccountBindings
   const result = await admitRepeatRun(f.pool, f.locations, f.principal, source, f.request,
     { ...f.publication, accountBindings: accounts })
@@ -50,7 +50,7 @@ it('cancels account preparation at the Start deadline without accepting late wor
       signal?.throwIfAborted()
       return undefined
     },
-    async accept() { return undefined },
+    async acceptMany() { return new Map() },
   } as unknown as AcceptedProviderAccountBindings
   const started = admitRepeatRun(f.pool, f.locations, f.principal, 'mcp', f.request,
     { ...f.publication, accountBindings: accounts })
