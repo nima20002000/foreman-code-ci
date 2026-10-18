@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import pg from 'pg'
 import { expect, it, vi } from 'vitest'
 import { HarnessExecutionSchema } from '@foreman-code/contracts'
+import { makeCurrentWorkflowFixture, WorkflowVersionV3Schema } from '@foreman-code/contracts/wave25'
 import { SourceMaterializationRecordSchema } from '@foreman-code/contracts/source-admission'
 import { createFixtureDatabase, dropFixtureDatabase, removeFixtureDirectory } from './helpers/testResources.js'
 import { gitFixtureEnvironment } from './helpers/gitFixture.js'
@@ -46,8 +47,10 @@ async function fixture(host: 'main' | 'device' = 'main') {
   }
   try {
     await pool.query(`
-      create table runs (id text primary key, execution_state text not null);
-      create table harness_executions (id text primary key, run_id text not null, record jsonb not null);
+      create table runs (id text primary key, execution_state text not null, workflow_version_id text);
+      create table workflow_versions (id text primary key, record jsonb not null);
+      create table harness_executions (id text primary key, run_id text not null, record jsonb not null,
+        workflow_node_id text not null);
       create table execution_native_sessions (execution_id text primary key, reference jsonb,
         workflow_finalized_at timestamptz);
       create table execution_native_closures (execution_id text, generation bigint, execution_identity jsonb,
@@ -59,7 +62,7 @@ async function fixture(host: 'main' | 'device' = 'main') {
         owner_id text, reserved_bytes bigint, state text, record jsonb);
       create table source_execution_materializations (materialization_id uuid primary key, execution_id text,
         reservation_id uuid, record jsonb, state text, worktree_cleanup jsonb);
-      insert into runs values ('loop-run','running')`)
+      insert into runs(id,execution_state) values ('loop-run','running')`)
     const origin = join(base, 'origin')
     const rootPath = join(base, 'materializations')
     await mkdir(origin, { mode: 0o700 })
@@ -106,6 +109,22 @@ async function fixture(host: 'main' | 'device' = 'main') {
       registration: device ? { workerInstallationId: device.workerInstallationId, keyRevision: device.keyRevision,
         authorizationRevision: device.authorizationRevision } : null, ownerPrincipalId: 'operator', authorizedByPrincipalId: 'operator',
       attestationId: randomUUID(), attestationDigest: 'a'.repeat(64), boundAt: new Date().toISOString() }
+    const saved = makeCurrentWorkflowFixture('source-cleanup', 'single').version
+    const node = saved.definition.nodes[0]!
+    node.id = 'agent-node'
+    node.agentId = 'agent'
+    node.placement = { schemaVersion: 1, ...root.selection, projectRoot: origin,
+      cwdPolicy: 'project-root', relativeCwd: '', instanceId: randomUUID(), instanceRevision: '1',
+      harnessInstallationId: 'fixture-codex', source: root.source,
+      rootBinding: { rootId: binding.rootId, bindingRevision: binding.bindingRevision } }
+    saved.workspaceId = binding.workspaceId
+    saved.definition.workspaceId = binding.workspaceId
+    saved.entryNodeId = node.id
+    saved.definition.entryNodeId = node.id
+    saved.agentConfigurationVersionIds = { [node.agentId]: 'configuration' }
+    const version = WorkflowVersionV3Schema.parse(saved)
+    await pool.query('insert into workflow_versions values($1,$2)', [version.id, version])
+    await pool.query('update runs set workflow_version_id=$1', [version.id])
     return { pool, dispose, ports, binding, root, manifest, materializer, sources, bytes }
   } catch (error) {
     await dispose()
@@ -136,7 +155,8 @@ async function addOccurrence(f: Awaited<ReturnType<typeof fixture>>, state: 'run
   const executionIdentity = { id: execution.id, runId: execution.runId, workflowNodeId: execution.workflowNodeId,
     agentId: execution.agentId, agentConfigurationVersionId: execution.agentConfigurationVersionId,
     attempt: execution.attempt, workingDirectory }
-  await f.pool.query('insert into harness_executions values($1,$2,$3)', [execution.id, execution.runId, execution])
+  await f.pool.query('insert into harness_executions values($1,$2,$3,$4)',
+    [execution.id, execution.runId, execution, execution.workflowNodeId])
   await f.pool.query('insert into execution_native_sessions values($1,$2,$3)',
     [execution.id, session, closed ? new Date() : null])
   await f.pool.query(`insert into execution_native_closures

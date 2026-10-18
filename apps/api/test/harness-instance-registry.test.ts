@@ -3,6 +3,36 @@ import { DEFAULT_HARNESS_DEFAULTS, type ClaudeHarnessConfiguration } from '@fore
 import { HarnessInstanceRegistry, localDefaultInstances, localHarnessDrivers } from '../src/modules/harnesses/instanceRegistry.js'
 
 describe('configured harness instances', () => {
+  it('decodes only changed inputs when adding a configuration to retained profiles', () => {
+    let decodes = 0
+    const registry = new HarnessInstanceRegistry([{
+      driverId: 'test', driverRevision: '1', decodeConfiguration(value) {
+        decodes++
+        return value
+      },
+    }])
+    const profiles = Array.from({ length: 170 }, (_, index) => ({
+      instanceId: `profile-${index}`, instanceRevision: '1', driverId: 'test', enabled: true,
+      configuration: { model: `model-${index}` },
+    }))
+    registry.reload(profiles)
+    const pinned = registry.select(profiles[0]!.instanceId)
+    const added = { ...structuredClone(profiles[0]!), instanceId: 'configuration-check' }
+    registry.reload([...structuredClone(profiles), added])
+    expect(decodes).toBe(171)
+    expect(registry.select(profiles[0]!.instanceId)).toBe(pinned)
+    expect(registry.select(added.instanceId).configuration).toEqual(added.configuration)
+
+    profiles[0]!.configuration.model = 'changed-model'
+    expect(() => registry.reload(profiles)).toThrow('immutable')
+    expect(registry.select(profiles[0]!.instanceId)).toBe(pinned)
+    expect(pinned.configuration).toEqual({ model: 'model-0' })
+    registry.reload([{ ...profiles[0]!, instanceRevision: '2' }, added])
+    expect(registry.select(profiles[0]!.instanceId).configuration).toEqual({ model: 'changed-model' })
+    expect(registry.list()).toHaveLength(2)
+    expect(() => registry.select(profiles[1]!.instanceId)).toThrow('unavailable')
+  })
+
   it('decodes once and pins independent immutable revisions without live resources', () => {
     let decodes = 0
     const registry = new HarnessInstanceRegistry([{ driverId: 'test', driverRevision: '1', decodeConfiguration(value) { decodes++; return value } }])
