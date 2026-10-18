@@ -22,21 +22,12 @@ export async function insertAcceptedPlacements(sql: GraphTransactionSql, runId: 
     const node = nodes.find((node) => node.id === pin.nodeId)
     if (pin.runId !== runId || !node || pin.payload.kind !== 'agent' || pin.payload.agentId !== node.agentId
       || pin.payload.agentConfigurationVersionId !== configurationIds[node.agentId]) conflict()
-  }
-  const assertCurrent = async () => {
-    if (fence.assertAllCurrent) return fence.assertAllCurrent(pins)
-    for (const pin of pins) await fence.assertCurrent(pin)
-  }
-  await assertCurrent()
-  if (pins.length) {
-    await sql.query(`insert into run_node_placements(run_id,node_id,binding_hash,record)
-      select $1,p.node_id,p.binding_hash,p.record::jsonb
-      from unnest($2::text[],$3::text[],$4::text[]) with ordinality as p(node_id,binding_hash,record,ordinal)
-      order by p.ordinal`,
-    [runId, pins.map(pin => pin.nodeId), pins.map(pin => pin.bindingHash), pins.map(pin => canonicalGraphJson(pin))])
+    await fence.assertCurrent(pin)
+    await sql.query(`insert into run_node_placements(run_id,node_id,binding_hash,record) values($1,$2,$3,$4::jsonb)`,
+      [runId, pin.nodeId, pin.bindingHash, canonicalGraphJson(pin)])
   }
   beforeGraphCommit(sql, async () => {
-    await assertCurrent()
+    for (const pin of pins) await fence.assertCurrent(pin)
     const rows = await sql.query<{ record: unknown }>('select record from run_node_placements where run_id=$1 order by node_id', [runId])
     if (!sameWorkflowValue(rows.rows.map((r) => readPlacement(r.record)), [...pins].sort((a, b) => a.nodeId < b.nodeId ? -1 : a.nodeId > b.nodeId ? 1 : 0))) conflict()
   })
