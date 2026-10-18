@@ -314,8 +314,12 @@ export class CloudCi {
         run = await this.save({ ...run, message: 'Cancellation requested; waiting for the provider to stop.',
           cancellation: { ...run.cancellation ?? { at: this.ports.now().toISOString(), canceledIds: [] }, requeue: false } })
       }
-      const canceled = cancellationPending(run) && run.mirrorPublication?.state !== 'pending'
-        ? await this.cancelAttempts(run) : run
+      let canceled = run
+      if (cancellationPending(run) && run.mirrorPublication?.state !== 'pending') {
+        canceled = await this.cancelAttempts(run)
+      } else if (unresolvedCloudAttemptIds(run).length) {
+        canceled = (await this.reconcileAcceptedAttempts(run)).run
+      }
       if (!['queued', 'starting', 'running'].includes(canceled.state)) this.schedulePrune(canceled, canceled.runId)
       return CiHostReplySchema.parse({ operation: 'cancel', run: this.view(canceled, 0) })
     }
@@ -1443,19 +1447,21 @@ export class CloudCi {
 
   private async cancelAttempts(run: CloudRun): Promise<CloudRun> {
     if (!cancellationPending(run)) return run
-    if (this.provider.id !== 'github') run = await this.adoptSubmission(run)
     const canceled = new Set(run.cancellation!.canceledIds)
     const knownIds = new Set([run.providerRunId, ...run.dispatchHistory?.map(attempt => attempt.providerRunId) ?? []]
       .filter((id): id is string => Boolean(id)))
     const known = await this.cancelProviderAttempts(run, knownIds, canceled)
     run = known.run
     const unsent = neverSubmitted(run)
-    const discovered = this.provider.id === 'github' && !unsent
+    const uncertainSubmission = run.dispatch?.uncertain === true
+      || !run.providerRunId && (run.dispatch?.attempts ?? 0) > 0 && run.dispatch?.uncertain !== false
+    const requiresDiscovery = this.provider.id === 'github' || uncertainSubmission
+    const discovered = requiresDiscovery && !unsent
       ? await this.provider.discover!(run) : []
     const discoveryComplete = !run.dispatch?.attempts
       || this.ports.now().getTime() - Date.parse(run.cancellation!.at) >= CLOUD_START_TIMEOUT_MS
-    // A complete GitHub listing also resolves a lost dispatch reply when no workflow was created.
-    if (this.provider.id === 'github' && run.dispatch?.uncertain && (discovered.length || discoveryComplete)) {
+    // Complete execution-specific discovery also resolves a lost trigger reply when no pipeline was created.
+    if (run.dispatch && uncertainSubmission && (discovered.length || discoveryComplete)) {
       run = { ...run, providerRunId: run.providerRunId ?? discovered[0] ?? null,
         dispatch: { ...run.dispatch, uncertain: false } }
     }
@@ -1463,7 +1469,7 @@ export class CloudCi {
     const additional = await this.cancelProviderAttempts(run, new Set(discovered.filter(id => !knownIds.has(id))), canceled)
     run = additional.run
     const ids = new Set([...knownIds, ...discovered])
-    const absent = this.provider.id === 'github' && ids.size === 0
+    const absent = requiresDiscovery && ids.size === 0
     const stopped = discoveryComplete && !run.dispatch?.uncertain && known.stopped && additional.stopped
       && (ids.size > 0 || !run.dispatch?.attempts || unsent || absent)
     this.polled.set(run.runId, this.ports.now().getTime())

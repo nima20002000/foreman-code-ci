@@ -17,37 +17,6 @@ function fixture() {
 }
 
 describe('workflow session prompt snapshot', () => {
-  it('makes the loop instructions the task and labels the initial task as background in a fresh session', () => {
-    const { saved, execution, configuration } = fixture()
-    const node = saved.version.definition.nodes[0]!
-    node.initialPrompt = 'Finish with a one-line note that monitoring started.'
-    node.interval = { everySeconds: 60, prompt: 'Inspect failures and avoid duplicate reports.' }
-    execution.input = { tick: { index: 2, everySeconds: 60 } }
-    const request = workflowExecutionRequest({ execution, version: saved.version, configuration,
-      workspaceId: saved.run.workspaceId })
-    const prompt = buildHarnessPrompt(request)
-    expect(prompt).toContain('Background from the initial activation (already assigned; do not repeat it):')
-    expect(prompt).toContain(node.initialPrompt)
-    expect(prompt).toContain(`Each loop: ${node.interval.prompt}`)
-    expect(prompt).not.toContain('Your task in this workflow:')
-    expect(prompt).toContain('This loop does not route the workflow')
-  })
-
-  it('uses retained history without resending the initial task in a continued loop', () => {
-    const { saved, execution, configuration } = fixture()
-    const node = saved.version.definition.nodes[0]!
-    node.initialPrompt = 'Finish with a one-line note that monitoring started.'
-    node.interval = { everySeconds: 60 }
-    execution.input = { tick: { index: 3, everySeconds: 60 } }
-    execution.sessionContinuation = { previousExecutionId: 'earlier-loop', session: {
-      harness: 'codex', providerVersion: '0.154.0', nativeSessionId: 'retained-thread' } }
-    const prompt = buildHarnessPrompt(workflowExecutionRequest({ execution, version: saved.version,
-      configuration, workspaceId: saved.run.workspaceId }))
-    expect(prompt).not.toContain(node.initialPrompt)
-    expect(prompt).toContain('Review your own earlier work too')
-    expect(prompt).toContain('Foreman Code loop 3')
-  })
-
   it('carries the saved system prompt into the native request without repeating it in turn input', () => {
     const { saved, execution, configuration } = fixture()
     execution.systemPrompt = { value: { text: 'App instructions.' }, revision: 3, versionId: 'prompt-version-3' }

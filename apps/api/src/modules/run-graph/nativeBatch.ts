@@ -21,7 +21,6 @@ export interface NativeBatch {
 export interface StagedNativeRow { kind: 'correlation' | 'activity' | 'checkpoint'; expected: string | null; value: unknown; dirty: boolean }
 
 const batches = new WeakMap<GraphSqlClient, NativeBatch>()
-export const WORKFLOW_CORRELATION_READ_PREFIX = 'latest-workflow-correlation:'
 
 export function openNativeBatch(sql: GraphTransactionSql, runId: string): NativeBatch {
   if (batches.has(sql)) throw new RunGraphError('GRAPH_TRANSACTION_NESTED')
