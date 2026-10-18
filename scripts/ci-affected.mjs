@@ -5,10 +5,21 @@ import { join } from 'node:path'
 import { ciCodeFile as codeFile, ciInfrastructureFile, importSpecifiers as imports, resolveImport, runtimeDependencies }
   from '../packages/contracts/src/ciImportGraph.mjs'
 import { usableIntegrationCoverage } from '../packages/contracts/src/ciCoverage.mjs'
+import { workerEntryPoints, rsyncWriterEntrypoint, schemaWorkerEntrypoint, verificationScripts, workerSnapshotFiles }
+  from './worker-snapshot-policy.mjs'
 
 const projects = ['apps/api', 'apps/web', 'apps/worker', 'packages/contracts']
 const testFile = /\.(?:test|spec)\.(?:[cm]?[jt]sx?)$/
 const integrationFile = /^apps\/api\/test\/[^/]+\.integration\.test\.ts$/
+
+/** Bundled/copied sources run under generated paths in child processes, outside repository V8 coverage. */
+function changedWorkerBundleInput(changedFiles, dependencies) {
+  const inputs = new Set([...Object.values(workerEntryPoints), rsyncWriterEntrypoint, schemaWorkerEntrypoint,
+    ...verificationScripts, ...workerSnapshotFiles])
+  for (const input of inputs) for (const dependency of dependencies.get(input) ?? []) inputs.add(dependency)
+  return changedFiles.find(file => !testFile.test(file)
+    && (inputs.has(file) || /^apps\/worker\/(?:src|artifacts)\//.test(file)))
+}
 
 /** Reverse import reachability, like Vitest related/changed, with separate package test inventories. */
 export function selectAffectedFiles({ suite, changedFiles, sources, exports = {}, coverageMap, coverageReason }) {
@@ -22,13 +33,15 @@ export function selectAffectedFiles({ suite, changedFiles, sources, exports = {}
   const recordedSources = new Set(useCoverage ? Object.values(coverageMap.coverage).flat() : [])
   const staticChanges = useCoverage ? changedFiles.filter(file => !recordedSources.has(file)) : changedFiles
   const dependents = new Map()
+  const dependencies = new Map()
   for (const [file, text] of sources) {
-    const dependencies = [...imports(text).map(specifier => resolveImport(file, specifier, sources, exports)),
-      ...runtimeDependencies(file, text, sources)]
-    for (const target of dependencies) {
-      if (target) dependents.set(target, [...dependents.get(target) ?? [], file])
-    }
+    const targets = [...imports(text).map(specifier => resolveImport(file, specifier, sources, exports)),
+      ...runtimeDependencies(file, text, sources)].filter(Boolean)
+    dependencies.set(file, targets)
+    for (const target of targets) dependents.set(target, [...dependents.get(target) ?? [], file])
   }
+  const bundleInput = suite === 'integration' && changedWorkerBundleInput(changedFiles, dependencies)
+  if (bundleInput) return full(`A Worker bundle input changed: ${bundleInput}`)
   const unresolved = suite === 'integration' && changedFiles.find(file => !testFile.test(file)
     && /^(?:apps|packages|scripts|fixtures)\//.test(file)
     && (!/\.(?:md|mdx)$/.test(file) || /\/fixtures?\//.test(file))
