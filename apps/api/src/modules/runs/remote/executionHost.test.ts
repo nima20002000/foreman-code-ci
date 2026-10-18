@@ -8,8 +8,8 @@ import type { RemoteJobDispatchIntent } from '@foreman-code/contracts/remote-job
 import { RemoteOwnerControlSchema } from '@foreman-code/contracts/remote-execution'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { persistentFixtureRoot } from '../../../../test/helpers/fixtureStorage.js'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import { DeviceHistoryPageSchema } from '@foreman-code/contracts/device-application'
@@ -42,7 +42,7 @@ const HistoryReplySchema = z.object({
 }).passthrough()
 afterEach(async () => { await Promise.all(hosts.splice(0).map(host => host.drain())); await Promise.all(journals.splice(0).map(journal => journal.close())); await Promise.all(roots.splice(0).map(path => rm(path, { recursive: true, force: true }))) })
 async function setup(expectedToken?: string) {
-  const root = await mkdtemp(join(tmpdir(), 'w08-host-')); roots.push(root)
+  const root = await mkdtemp(join(persistentFixtureRoot, 'remote-execution-host-')); roots.push(root)
   const journalPath = join(root, 'journal')
   const journal = await RemoteOperationJournal.open(journalPath, { initializeNewInstallation: true })
   journals.push(journal)
@@ -92,6 +92,92 @@ async function productionShutdownFixture() {
 }
 
 describe('actual worker native-port adapter', () => {
+  it('finishes retained review closure when Stop overlaps an older retention settlement', async () => {
+    const f = await setup()
+    f.request.configuration.productRole = 'orchestrator'
+    f.ports.authorizeReview = async () => {}
+    const retaining = deferred()
+    const releaseRetention = deferred()
+    const stopped = deferred()
+    const workflowCorrelation = `execution:${f.intent.executionId}`
+    const reviewCorrelation = 'review-correlation'
+    const result = { outcome: 'succeeded' as const, output: { text: 'original result' } }
+    let activeCorrelation = workflowCorrelation
+    let physicallyClosed = false
+    let settlements = 0
+    const history = (correlationId: string) => {
+      const providerId = correlationId === workflowCorrelation ? 'native-turn' : 'review-turn'
+      return { events: [], pendingInteractions: [], correlationId, nativeTurnId: providerId,
+        terminalResult: result, terminalTurn: { correlationId, providerId, result } }
+    }
+    f.manager.history = async () => history(activeCorrelation)
+    f.manager.reconcile = async (_session, correlationId) => history(correlationId)
+    f.manager.startTurn = async function* (_session, input) {
+      f.state.turns++
+      activeCorrelation = input.clientCorrelationId
+      await input.onSubmitted?.(activeCorrelation === workflowCorrelation ? 'native-turn' : 'review-turn')
+      yield { sequence: f.state.turns, type: 'turn.completed', occurredAt: new Date().toISOString(), payload: {} }
+    }
+    f.manager.cancel = async () => { f.state.cancels++; stopped.resolve(); return false }
+    f.ports.settle = async (_intent, original) => {
+      settlements++
+      const status = await f.journal.status(f.intent.operationId)
+      if (status.status !== 'known') throw new Error('Missing original settlement receipt')
+      if (!status.receipt.stopFence) {
+        await f.journal.retainReviewer(f.intent.operationId, {
+          agentId: f.request.configuration.agentId, expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        }, original)
+        retaining.resolve()
+        await releaseRetention.promise
+        return null
+      }
+      physicallyClosed = true
+      return { kind: 'cancelled', closureEvidenceDigest: 'a'.repeat(64) }
+    }
+    const controlFor = vi.fn(async (input: Parameters<ConstructorParameters<typeof RemoteNativeSessionManager>[0]['controlFor']>[0]) => ({
+      schemaVersion: 1 as const, protocolVersion: 1 as const, commandId: 'original-stop',
+      operationId: f.intent.operationId, attemptId: f.intent.attemptId, executionId: f.intent.executionId,
+      bindingHash: f.intent.bindingHash, owner: f.intent.owner, native: input.native, action: { kind: 'stop' as const },
+    }))
+    const proxy = new RemoteNativeSessionManager({ intent: f.intent, placement: f.placement,
+      harness: 'codex', configuration: f.request.configuration,
+      transport: { request: (_method, frame) => f.host.handle(frame) }, observeReceipt: async () => {}, controlFor })
+    let closing: Promise<void> | undefined
+    try {
+      const session = await proxy.createSession({ request: f.request, correlationId: workflowCorrelation })
+      await f.host.startTurn(f.intent.operationId, 'workflow', workflowCorrelation)
+      await retaining.promise
+      await f.host.startTurn(f.intent.operationId, 'review', reviewCorrelation, {
+        jobId: 'original-review', interactionId: 'interaction', reviewerAgentId: f.request.configuration.agentId,
+        correlationId: reviewCorrelation, session, leaseToken: 'review-lease',
+      })
+      await f.host.drain()
+      expect(await f.journal.reviewHistory(f.intent.operationId, reviewCorrelation)).toEqual(history(reviewCorrelation))
+      closing = proxy.close(session)
+      const outcome = Promise.allSettled([closing])
+      await stopped.promise
+      expect(physicallyClosed).toBe(false)
+      expect(await f.journal.status(f.intent.operationId)).toMatchObject({
+        status: 'known', receipt: { phase: 'stop_requested', stopFence: true },
+      })
+      releaseRetention.resolve()
+      await expect(closing).resolves.toBeUndefined()
+      await outcome
+      expect(physicallyClosed).toBe(true)
+      expect(await f.journal.status(f.intent.operationId)).toMatchObject({
+        status: 'known', receipt: { phase: 'confirmed_terminal', terminal: { kind: 'cancelled' } },
+      })
+      expect(await f.journal.reviewHistory(f.intent.operationId, reviewCorrelation)).toEqual(history(reviewCorrelation))
+      expect(f.state).toMatchObject({ starts: 1, turns: 2, cancels: 1 })
+      expect(controlFor).toHaveBeenCalledOnce()
+      expect(settlements).toBe(2)
+    } finally {
+      releaseRetention.resolve()
+      await Promise.allSettled(closing ? [closing] : [])
+      await f.host.drain()
+    }
+  })
+
   it('aborts operation preflight before awaiting preparation cleanup', async () => {
     const f = await setup()
     const entered = deferred()
