@@ -106,6 +106,30 @@ it('retains an uncertain GitHub submission when the dispatch POST times out', as
   expect(f.github.canceled).toEqual(['91'])
 })
 
+it.each(['retry', 'cancel'] as const)(
+  'can %s a rejected GitHub dispatch without waiting for a nonexistent run', async recovery => {
+    const f = await githubFixture()
+    f.control.failure = 'could not create workflow dispatch event: HTTP 422: inputs are too large. '
+      + '(https://api.github.com/repos/octo/site-ci/actions/workflows/123/dispatches)'
+    expect(await f.cloud.handle(f.start)).toMatchObject({ run: {
+      state: 'starting', finishedAt: null, message: expect.stringContaining('HTTP 422'),
+    } })
+    expect(f.dispatched).toEqual([])
+    if (recovery === 'cancel') {
+      expect(await f.reopen().handle({ operation: 'cancel', runId: f.runId }))
+        .toMatchObject({ run: { state: 'starting' } })
+    }
+    f.control.failure = ''
+    f.advance(75_000)
+    expect(await f.reopen().handle(f.read)).toMatchObject({
+      run: { state: recovery === 'cancel' ? 'canceled' : 'starting' },
+    })
+    expect(f.control.attempts).toBe(recovery === 'cancel' ? 1 : 2)
+    expect(f.dispatched).toHaveLength(recovery === 'cancel' ? 0 : 1)
+    expect(f.github.canceled).toEqual([])
+  },
+)
+
 it('keeps earlier accepted GitHub attempts owned after a later workflow lookup fails', async () => {
   const f = await githubFixture()
   f.control.failure = ''
