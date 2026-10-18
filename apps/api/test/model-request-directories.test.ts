@@ -27,6 +27,22 @@ describe('Worker model request directories', () => {
     },
   )
 
+  it.each(['before', 'between', 'after'] as const)(
+    'selects both profile checks with a Worker catalog request %s them', position => {
+      const calls = [modelCall(activeDirectory), modelCall(unusedDirectory)]
+      const index = { before: 0, between: 1, after: 2 }[position]
+      calls.splice(index, 0, modelCall(workerDirectory))
+
+      expect(modelRequestDirectories(calls, workerDirectory)).toEqual([activeDirectory, unusedDirectory])
+    },
+  )
+
+  it('keeps waiting when only Worker catalog and workflow requests have arrived', () => {
+    const calls = [modelCall(workerDirectory), modelCall(`${workerDirectory}/worktrees/agent`)]
+
+    expect(modelRequestDirectories(calls, workerDirectory)).toEqual([])
+  })
+
   it('deduplicates model requests and excludes sibling directories and other methods', () => {
     const calls = [
       modelCall(activeDirectory),
@@ -36,6 +52,6 @@ describe('Worker model request directories', () => {
       modelCall(workerDirectory),
     ]
 
-    expect(modelRequestDirectories(calls, workerDirectory)).toEqual([activeDirectory, workerDirectory])
+    expect(modelRequestDirectories(calls, workerDirectory)).toEqual([activeDirectory])
   })
 })
