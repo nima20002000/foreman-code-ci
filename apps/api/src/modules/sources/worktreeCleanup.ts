@@ -5,27 +5,6 @@ import { sourceWorkingTreePath } from './sourceTreePaths.js'
 import type { RunWorktree } from '@foreman-code/contracts/wave25'
 import type { GitWorktreePorts } from './gitWorktree.js'
 import { DomainError } from '../errors.js'
-import { rmdir } from 'node:fs/promises'
-import { isDeepStrictEqual } from 'node:util'
-import { anchored, identity, openPrivateRoot } from './privateFilesystem.js'
-
-async function removeEmptyWorktreeAllocation(receipt: MaterializationReceipt): Promise<boolean> {
-  const root = await openPrivateRoot(receipt.binding.canonicalPath)
-  try {
-    if (!isDeepStrictEqual(await identity(root), receipt.binding.filesystem)) {
-      throw new DomainError('SOURCE_ROOT_CHANGED', 'The source root changed before worktree cleanup.', 409)
-    }
-    try {
-      await rmdir(anchored(root, receipt.sharedTree!.id))
-      return true
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code
-      if (code === 'ENOENT') return true
-      if (code === 'ENOTEMPTY') return false
-      throw error
-    }
-  } finally { await root.close() }
-}
 
 export async function removeCommittedWorktree(ports: GitWorktreePorts, root: string,
   tree: RunWorktree, signal: AbortSignal): Promise<RunWorktree> {
@@ -59,10 +38,5 @@ export async function closeSourceWorktree(receipt: MaterializationReceipt,
   if (result.state !== 'removed' && result.state !== 'retained') {
     throw new DomainError('RUN_WORKTREE_UNAVAILABLE', 'Worktree cleanup is incomplete.', 409)
   }
-  if (result.state === 'removed' && !await removeEmptyWorktreeAllocation(receipt)) {
-    return { state: 'retained' as const, removalAttempted: true as const,
-      message: 'Files remain alongside this worktree.' }
-  }
-  return { state: result.state, ...(result.state === 'retained' ? { removalAttempted: true as const } : {}),
-    ...(result.message ? { message: result.message } : {}) }
+  return { state: result.state, ...(result.message ? { message: result.message } : {}) }
 }

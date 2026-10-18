@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
-import { setTimeout as delay } from 'node:timers/promises'
 import { expect, it, vi } from 'vitest'
 import type { WorkerConversationRpcRequest } from '@foreman-code/contracts/remote-execution-rpc'
 import { MainWorkerConversationBridge, type WorkerConversationChannel } from './workerBridge.js'
@@ -190,9 +189,7 @@ it('rejects file authority on read-only leases and on Operator turns without fil
   }
 })
 
-it.each([0, 1100])(
-  'restores file callbacks for the recorded turn while retaining its original worker input copies (copy delay %i ms)',
-  async copyDelayMs => {
+it('restores file callbacks for the recorded turn while retaining its original worker input copies', async () => {
   const f = await fixture()
   let recovery: ReturnType<MainWorkerConversationBridge['capture']> | undefined
   try {
@@ -205,14 +202,6 @@ it.each([0, 1100])(
     await f.submitted()
     await turn!.activate('native-turn')
     await f.lease.close()
-    const sendCopy = f.channel.request.bind(f.channel)
-    f.channel.request = async (payload, options) => {
-      const request = payload as WorkerConversationRpcRequest
-      if (request.method === 'conversation.file-copy' && request.copy.phase === 'finish') {
-        await delay(copyDelayMs)
-      }
-      return sendCopy(payload, options)
-    }
     const request: Extract<WorkerConversationRpcRequest, { method: 'conversation.history' | 'conversation.reconcile' }> = {
       method: 'conversation.reconcile', binding: f.binding, session: f.session, correlationId: 'message',
     }

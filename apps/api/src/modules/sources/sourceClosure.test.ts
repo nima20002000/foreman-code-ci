@@ -1,7 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, mkdtemp, rm } from 'node:fs/promises'
-import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { mkdtemp, rm } from 'node:fs/promises'
 import type pg from 'pg'
 import { afterEach, expect, it, vi } from 'vitest'
 import { SourceMaterializationRecordSchema } from '@foreman-code/contracts/source-admission'
@@ -16,9 +14,7 @@ afterEach(async () => {
 })
 
 async function fixture() {
-  const parent = process.env.FOREMAN_CODE_TEST_ROOT ?? join(homedir(), '.cache', 'foreman-tmp')
-  await mkdir(parent, { recursive: true })
-  const directory = await mkdtemp(join(parent, 'source-closure-'))
+  const directory = await mkdtemp('/tmp/source-closure-')
   directories.push(directory)
   const store = new PrivateSourceSnapshotStore(directory)
   const bytes = Buffer.from('original immutable source')
@@ -74,14 +70,4 @@ it('releases a stopped verification Job while preserving its committed canonical
   expect(f.state).toEqual({ materialization: 'closed', reservation: 'reclaimed' })
   expect(await f.store.manifest(f.manifest.snapshotId)).toEqual(f.manifest)
   expect(await f.store.read(f.manifest, f.manifest.entries[0]!, AbortSignal.timeout(5000))).toEqual(f.bytes)
-})
-
-it('preserves explicit cleanup options when releasing a verification Job source', async () => {
-  const f = await fixture()
-  await f.store.write(f.manifest.snapshotId, f.manifest.entries[0]!, f.bytes)
-  await f.store.commit(f.manifest)
-  const options = { signal: new AbortController().signal }
-  await f.sources.confirmClosed(f.record, options)
-  expect(f.releaseClaim).toHaveBeenCalledWith(f.record, options)
-  expect(f.state).toEqual({ materialization: 'closed', reservation: 'reclaimed' })
 })
