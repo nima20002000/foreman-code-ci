@@ -90,9 +90,13 @@ async function computer(options: { github?: boolean; suiteExit?: number; watchdo
   if (options.selector) {
     await copyFile(new URL('../../../../../scripts/ci-affected.mjs', import.meta.url),
       join(origin, 'scripts/ci-affected.mjs'))
+    await copyFile(new URL('../../../../../scripts/worker-snapshot-policy.mjs', import.meta.url),
+      join(origin, 'scripts/worker-snapshot-policy.mjs'))
     await mkdir(join(origin, 'packages/contracts/src'), { recursive: true })
-    await copyFile(new URL('../../../../../packages/contracts/src/ciImportGraph.mjs', import.meta.url),
-      join(origin, 'packages/contracts/src/ciImportGraph.mjs'))
+    for (const file of ['ciImportGraph.mjs', 'ciCoverage.mjs']) {
+      await copyFile(new URL(`../../../../../packages/contracts/src/${file}`, import.meta.url),
+        join(origin, 'packages/contracts/src', file))
+    }
     await mkdir(join(origin, 'apps/api/src'), { recursive: true })
     await writeFile(join(origin, 'apps/api/src/feature.ts'), 'export const value = 1')
     await writeFile(join(origin, unitFiles[0]!), "import '../src/feature.js'")
@@ -309,7 +313,8 @@ describe('host CI runner', () => {
     await f.runner.handle({ operation: 'start', runId, repository: 'example/project', commit: f.commit,
       baseCommit: f.baseCommit, suite: 'unit', part: 'unit-api', scope: 'affected' })
     const done = await f.settle(runId)
-    expect(done.run).toMatchObject({ state: 'passed', message: 'Selected 1 affected files for unit-api.' })
+    expect(done.run).toMatchObject({ state: 'passed',
+      message: 'Selected 1 affected files for unit-api: Static import reachability from changed files.' })
     expect(done.text).toContain('vitest run test/first.test.ts')
     expect(done.text).not.toContain('second.test.ts')
     expect(done.text).not.toContain('Running full suite:')
@@ -345,7 +350,8 @@ describe('host CI runner', () => {
     await f.runner.handle({ operation: 'start', runId, repository: 'example/project', commit: f.commit,
       suite: 'unit', part: 'unit-api', defaultBranch: 'release/stable' })
     const done = await f.settle(runId)
-    expect(done.run).toMatchObject({ state: 'passed', message: 'Selected 1 affected files for unit-api.' })
+    expect(done.run).toMatchObject({ state: 'passed',
+      message: 'Selected 1 affected files for unit-api: Static import reachability from changed files.' })
     expect(done.text).toContain('corepack pnpm --dir apps/api exec vitest run test/first.test.ts')
     expect(done.text).not.toContain('second.test.ts')
     expect(done.text).not.toContain('apps/web')
@@ -358,7 +364,7 @@ describe('host CI runner', () => {
       suite: 'unit', part: 'unit-api' })
     const done = await f.settle(runId)
     expect(done.run).toMatchObject({ state: 'passed' })
-    expect(done.run.message).toBe('Selected 2002 affected files for unit-api.')
+    expect(done.run.message).toBe('Selected 2002 affected files for unit-api: Static import reachability from changed files.')
     expect(done.text).toContain('many-2000.test.ts')
     expect(done.text).not.toContain('Running full suite:')
   }, 30_000)
