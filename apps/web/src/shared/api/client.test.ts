@@ -44,7 +44,7 @@ describe('Phase 1 API boundary', () => {
     const agents = await apiClient.getManagedAgentDefaults()
     const workflows = await apiClient.getManagedWorkflowDefaults()
     expect(agents).toEqual({ value: DEFAULT_AGENT_DEFAULTS, revision: 0, versionId: null })
-    expect(workflows).toEqual({ value: { approvalHandler: 'native' }, revision: 0, versionId: null })
+    expect(workflows).toEqual({ value: { approvalHandler: 'orchestrator' }, revision: 0, versionId: null })
 
     const next = structuredClone(DEFAULT_AGENT_DEFAULTS)
     next.operator.uiEnabled = false

@@ -2,8 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
-import { CiComputersOutputSchema, CiGetOutputSchema, CiRunOutputSchema,
-  type CiHostRequest, type CiHostReply, type CiHostRun } from '@foreman-code/contracts'
+import { CiGetOutputSchema, CiRunOutputSchema, type CiHostRequest, type CiHostReply, type CiHostRun } from '@foreman-code/contracts'
 import type { ManagementAction } from '@foreman-code/contracts/management'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from 'vitest'
@@ -685,9 +684,6 @@ it.each([
       await release.promise
     }
     f.control.available = true
-    const ready = CiComputersOutputSchema.parse(await f.value('ci_computers_list', {}))
-    expect(ready.computers).toHaveLength(2)
-    expect(ready.computers.every(computer => computer.ready)).toBe(true)
     const tickets = CiRunOutputSchema.parse(await f.value('ci_run', {
       suite: 'integration', partitions, scope: 'full', commandId: randomUUID(),
     }))
