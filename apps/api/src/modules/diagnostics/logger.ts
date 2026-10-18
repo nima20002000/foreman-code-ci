@@ -1,4 +1,5 @@
-import { readdirSync, readlinkSync, statSync, unlinkSync } from 'node:fs'
+/// <reference types="../../types/pino-roll.d.ts" />
+import { once } from 'node:events'
 import { mkdir, readdir, readlink, stat, unlink } from 'node:fs/promises'
 import { basename, dirname, join, resolve } from 'node:path'
 import { runtimeTimingChannel, type RuntimeTimingRecord } from './runtimeTiming.js'
@@ -6,7 +7,6 @@ import type { LogComponent } from './logComponent.js'
 export type { LogComponent } from './logComponent.js'
 import pino, { type Level, type Logger, type LevelWithSilent } from 'pino'
 import { recordOperationalFailure } from './operationalFailures.js'
-import { rotatingLogDestination } from './rotatingLogDestination.js'
 export { readOperationalFailures } from './operationalFailures.js'
 
 // Secrets and model content never reach a log line, wherever they sit in a logged object.
@@ -101,30 +101,6 @@ const positive = (value: string | undefined, fallback: number) => {
   return fallback
 }
 
-function logFilePattern(file: string): RegExp {
-  const base = basename(file).replace(/\.log$/, '')
-  return new RegExp(`^${base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\.(?:\\d{4}-\\d{2}-\\d{2}\\.)?\\d+\\.log$`)
-}
-
-function expiredLogNames(files: { name: string; active: boolean; modified: number }[],
-  count: number, days: number, now: number): string[] {
-  return files.sort((a, b) => Number(b.active) - Number(a.active) || b.modified - a.modified)
-    .filter((item, index) => !item.active && (index >= count || now - item.modified > days * 86_400_000))
-    .map(item => item.name)
-}
-
-function pruneLogFilesSync(file: string, count: number, days: number): void {
-  const directory = dirname(file)
-  const active = resolve(directory, readlinkSync(join(directory, 'current.log')))
-  const own = logFilePattern(file)
-  const files = readdirSync(directory).filter(name => own.test(name)).map(name => ({
-    name,
-    active: resolve(directory, name) === active,
-    modified: statSync(join(directory, name)).mtimeMs,
-  }))
-  for (const name of expiredLogNames(files, count, days, Date.now())) unlinkSync(join(directory, name))
-}
-
 /**
  * Deletes rotated files older than `days`, then all but the newest `count`. Only this
  * logger's own numbered and dated files are touched. The active destination stays,
@@ -132,13 +108,14 @@ function pruneLogFilesSync(file: string, count: number, days: number): void {
  */
 export async function pruneLogFiles(file: string, count: number, days: number, now = Date.now()): Promise<string[]> {
   const directory = dirname(file)
+  const base = basename(file).replace(/\.log$/, '')
   const target = await readlink(join(directory, 'current.log')).catch((error: unknown) => {
     const code = (error as NodeJS.ErrnoException).code
     if (code === 'ENOENT' || code === 'EINVAL') return undefined
     throw error
   })
   const active = target === undefined ? undefined : resolve(directory, target)
-  const own = logFilePattern(file)
+  const own = new RegExp(`^${base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\.(?:\\d{4}-\\d{2}-\\d{2}\\.)?\\d+\\.log$`)
   const names = (await readdir(directory).catch((error: unknown) => {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
       componentLogger('lifecycle').warn({ operation: 'read log directory', file: basename(file), err: error },
@@ -146,12 +123,13 @@ export async function pruneLogFiles(file: string, count: number, days: number, n
     }
     return [] as string[]
   })).filter((name) => own.test(name))
-  const files = await Promise.all(names.map(async (name) => ({
+  const files = (await Promise.all(names.map(async (name) => ({
     name,
     active: resolve(directory, name) === active,
     modified: (await stat(join(directory, name))).mtimeMs,
-  })))
-  const expired = expiredLogNames(files, count, days, now)
+  })))).sort((a, b) => Number(b.active) - Number(a.active) || b.modified - a.modified)
+  const expired = files.filter((item, index) => !item.active
+    && (index >= count || now - item.modified > days * 86_400_000)).map((item) => item.name)
   await Promise.allSettled(expired.map((name) => unlink(join(directory, name)).catch((error: unknown) => {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
     componentLogger('lifecycle').warn({ operation: 'remove rotated log', file: name, err: error },
@@ -164,19 +142,25 @@ export async function pruneLogFiles(file: string, count: number, days: number, n
  * Adds a rotating file beside stdout: a new file daily or at LOG_MAX_SIZE (default 20m).
  * Retention: at most LOG_MAX_FILES files (default 14) and nothing older than
  * LOG_RETENTION_DAYS (default 14), enforced at startup and on every roll, across restarts.
- * Writes are asynchronous; flushLogsSync also drains files whose opens are still pending at exit.
+ * Writes are synchronous for the same crash reason.
  */
 export async function enableFileLogging(env: NodeJS.ProcessEnv = process.env): Promise<string | undefined> {
   const file = logFilePath(env)
   if (!file) return undefined
   const count = positive(env.LOG_MAX_FILES, 14)
   const days = positive(env.LOG_RETENTION_DAYS, 14)
+  const { default: roll } = await import('pino-roll')
+  // The asynchronous destination creates its directory too late for the symlink pino-roll makes at startup.
   await mkdir(dirname(file), { recursive: true })
-  const stream = await rotatingLogDestination(file, env.LOG_MAX_SIZE ?? '20m', () => pruneLogFilesSync(file, count, days))
+  // Daily names prevent a roll from reopening a numbered file from an earlier day.
+  const stream = await roll({ file: file.replace(/\.log$/, ''), extension: '.log', frequency: 'daily',
+    dateFormat: 'yyyy-MM-dd', size: env.LOG_MAX_SIZE ?? '20m', mkdir: true, symlink: true, sync: false })
+  // Retention must see the opened active file, not race its asynchronous creation.
+  if ((stream as unknown as { fd: number }).fd < 0) await once(stream, 'ready')
   fileStream = stream
   const pruned = await pruneLogFiles(file, count, days)
   let cleanup = Promise.resolve()
-  // Each opened file emits ready after the active symlink changes. Serialize retention across rolls.
+  // Reopen emits ready after the active symlink changes. Serialize retention across rolls.
   stream.on('ready', () => {
     cleanup = cleanup.then(async () => {
       await pruneLogFiles(file, count, days)
