@@ -48,12 +48,13 @@ export class IntegrationCoverageStore {
   }
 
   async selection(repository: string, commit: string, commits: Pick<CiCommits, 'isAncestor' | 'testTree'>)
-    : Promise<CiCoverageSelection | undefined> {
-    if (!commits.isAncestor || !commits.testTree) return undefined
+    : Promise<CiCoverageSelection> {
+    const fallback = (reason: string): CiCoverageSelection => ({ changedFiles: [], reason })
+    if (!commits.isAncestor || !commits.testTree) return fallback('Repository ancestry or source trees are unavailable.')
     let paths: string[]
     try { paths = await readdir(this.directory(repository)) }
     catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return fallback('No integration coverage artifacts are available.')
       throw error
     }
     let newest: IntegrationCoverage | undefined
@@ -62,15 +63,15 @@ export class IntegrationCoverageStore {
       if (!completeIntegrationCoverage(map) || !await commits.isAncestor(repository, map.commit, commit)) continue
       if (!newest || await commits.isAncestor(repository, newest.commit, map.commit)) newest = map
     }
-    if (!newest) return undefined
+    if (!newest) return fallback('No complete coverage map from an ancestor commit is available.')
     const [before, after] = await Promise.all([
       commits.testTree(repository, newest.commit), commits.testTree(repository, commit),
     ])
     const changedFiles = [...new Set([...before.blobs.keys(), ...after.blobs.keys()])]
       .filter(file => before.blobs.get(file) !== after.blobs.get(file)).sort()
-    if (changedFiles.some(ciInfrastructureFile)) return undefined
+    if (changedFiles.some(ciInfrastructureFile)) return fallback('Coverage map predates lockfile or CI infrastructure changes.')
     const map = gzipSync(JSON.stringify(newest)).toString('base64')
-    if (map.length > 700_000) return undefined
+    if (map.length > 700_000) return fallback('Coverage map exceeds the device report limit.')
     return { map, changedFiles }
   }
 }

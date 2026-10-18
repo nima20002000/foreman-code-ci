@@ -970,7 +970,7 @@ export class HostCiRunner {
       "import { gunzipSync } from 'node:zlib'",
       'const [selector, suite, commit, changed, coveragePath] = process.argv.slice(1)',
       "const coverage = JSON.parse(readFileSync(coveragePath, 'utf8'))",
-      "const coverageMap = coverage ? JSON.parse(gunzipSync(Buffer.from(coverage.map, 'base64')).toString()) : undefined",
+      "const coverageMap = coverage?.map ? JSON.parse(gunzipSync(Buffer.from(coverage.map, 'base64')).toString()) : undefined",
       'const { selectAffectedFiles } = await import(pathToFileURL(selector).href)',
       "const paths = execFileSync('git', ['ls-tree', '-r', '--name-only', '-z', commit], { encoding: 'utf8' })",
       "  .split('\\0').filter(Boolean)",
@@ -978,7 +978,7 @@ export class HostCiRunner {
       "  ? readFileSync(join(process.cwd(), file), 'utf8') : '']))",
       "const manifest = sources.get('packages/contracts/package.json')",
       'console.log(JSON.stringify(selectAffectedFiles({ suite, changedFiles:',
-      '  [...new Set([...JSON.parse(changed), ...coverage?.changedFiles ?? []])], sources, coverageMap,',
+      '  [...new Set([...JSON.parse(changed), ...coverage?.changedFiles ?? []])], sources, coverageMap, coverageReason: coverage?.reason,',
       '  exports: manifest ? JSON.parse(manifest).exports : {} })))',
     ].join('\n')
     const result = await this.ports.run('node', ['--input-type=module', '-e', code, selector,

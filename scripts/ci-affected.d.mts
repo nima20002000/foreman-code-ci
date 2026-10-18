@@ -7,7 +7,7 @@ export interface AffectedSelection {
 import type { IntegrationCoverage } from '../packages/contracts/src/ciCoverage.mjs'
 export function affectedSnapshot(commit: string, suite: string, cwd?: string, defaultRef?: string,
   baseCommit?: string, coverageMaps?: IntegrationCoverage[],
-  preparedCoverage?: { coverageMap: IntegrationCoverage; changedFiles: string[] }): AffectedSelection
+  preparedCoverage?: { coverageMap?: IntegrationCoverage; coverageReason?: string; changedFiles: string[] }): AffectedSelection
 
 export function selectAffectedFiles(input: {
   suite: string

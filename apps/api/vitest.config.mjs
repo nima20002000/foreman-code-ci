@@ -11,7 +11,7 @@ export default defineConfig({
   test: {
     ...(env.CI_PROGRESS_FILE ? { runner: '../../packages/contracts/ci-test-runner.mjs', reporters: ['default', '../../scripts/ci-progress-reporter.mjs'] } : {}),
     globalSetup: ['../../scripts/vitest-heavy-setup.mjs', '../../scripts/vitest-test-resources.mjs'],
-    setupFiles: ['./test/coverageSetup.ts', './test/setupResources.ts'],
+    setupFiles: ['./test/setupCoverage.ts', './test/setupResources.ts'],
     sequence: { setupFiles: 'list' },
     // Leave CPU headroom for the Vitest coordinator and application processes.
     maxWorkers,

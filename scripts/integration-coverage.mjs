@@ -51,6 +51,9 @@ export function integrationCoverageReport(directory, commit, testFiles, complete
       const report = JSON.parse(readFileSync(path, 'utf8'))
       coverage[file] = report.files
       if (report.requiresStatic) staticTests.push(file)
+    } else {
+      coverage[file] = []
+      staticTests.push(file)
     }
   }
   return { version: 1, commit, testFiles, coverage, staticTests }

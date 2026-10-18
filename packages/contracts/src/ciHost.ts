@@ -31,8 +31,8 @@ export const CiScopeSchema = z.enum(['affected', 'full'])
 export const CiIntegrationCoverageSchema = z.custom<IntegrationCoverage>(isIntegrationCoverage)
 export type { IntegrationCoverage } from './ciCoverage.mjs'
 /** Gzip keeps per-file dependency sets within the device channel's message budget. Artifacts stay plain JSON. */
-export const CiCoverageSelectionSchema = z.object({ map: z.string().max(700_000),
-  changedFiles: z.array(z.string()) }).strict()
+export const CiCoverageSelectionSchema = z.object({ map: z.string().max(700_000).optional(),
+  changedFiles: z.array(z.string()), reason: z.string().max(500).optional() }).strict()
 export type CiCoverageSelection = z.infer<typeof CiCoverageSelectionSchema>
 export type CiScope = z.infer<typeof CiScopeSchema>
 export const CiSelectedFilesSchema = z.array(z.string().min(1)

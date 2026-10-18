@@ -1,0 +1,32 @@
+# Integration coverage selection
+
+Full integration runs record function-level V8 coverage in each test worker.
+`integration-coverage.json` contains a commit, the complete test inventory, and
+repository-relative executed source paths for each reported test file. Built
+contracts paths are mapped back to their source paths. There is no statement,
+HTML, or source-map report generation.
+
+Each partition publishes a fragment alongside its durations and test results.
+Main merges fragments by source repository and commit in its integration coverage
+cache. A fragment cannot narrow selection until every file in the inventory is
+accounted for. Tests without worker reports, or tests starting child processes or
+worker threads, retain static selection because worker coverage cannot describe
+all their execution. Failed tests can still supply coverage; absent worker reports
+use static selection.
+
+For affected integration requests, Main chooses a complete ancestor map and
+compares its source tree with the requested commit. Lockfile or shared CI
+infrastructure changes invalidate the map. All intervening changes participate
+in selection, including changes that preceded the request's comparison base.
+The runner selects coverage matches, changed or unrecorded tests, and static
+dependents for unrecorded source changes and tests requiring static selection.
+Missing or unusable maps use ordinary static import selection. Existing rules
+that require full scope still apply.
+
+Artifacts are readable JSON. Only transport across the device channel uses gzip.
+Cloud snapshots carry the same selection input as build computers, outside
+provider parameter limits. `ci_run` reports the initial choice; `ci_get` retains
+the runner's `selection` with its scope, files and reason, including the coverage
+commit or the fallback reason. Cloud runners also publish `selection.json`.
+Explicit full requests and release gates always execute their entire assigned
+suite or partition.
