@@ -45,6 +45,7 @@ it('commits collection and its duration sample before waiting for expired histor
     })
 
     await collecting
+    await f.ci.drain()
     expect((await f.pool.query('select file from ci_file_durations where repository=$1 order by file',
       ['octo/site'])).rows).toEqual([{ file }])
   } finally {
