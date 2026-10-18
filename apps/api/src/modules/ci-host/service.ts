@@ -52,11 +52,12 @@ import { ciRequestKey, joinCiRequest, registerCiRequest, releaseCiRequester, rel
   spareSharedSupersession } from './requestSharing.js'
 import type { AgentSnapshots, CiCommits, CiMirrorInput, HostCiComputer, HostCiEndpoint, HostRef } from './serviceTypes.js'
 import type { CircleCreditsReader, CircleCreditsReading } from './circleCredits.js'
-import { CircleStandby, circleOrgKey } from './circleStandby.js'
+import { CircleStandby, circleOrgKey, type CircleSchedulingReading } from './circleStandby.js'
 
 export type { AgentSnapshots, CiCommits, HostCiComputer, HostCiEndpoint } from './serviceTypes.js'
 
 const log = componentLogger('jobs')
+type PolicySnapshots = Map<string, ReadonlyMap<string, CircleSchedulingReading> | undefined>
 
 /** Elapsed milliseconds per named phase, each measured from the previous mark. */
 function phaseTimer() {
@@ -103,6 +104,7 @@ export class HostCiService {
   private observationOffset = 0
   private readonly observingComputers = new Map<string, Promise<void>>()
   private readonly cloudDispatches = new Map<string, ReturnType<typeof sendCiDispatch>>()
+  private readonly policyRefreshes = new Map<string, Promise<void>>()
   private readonly computerStatusRetries = new Map<string, RetryBackoff>()
   private readonly mirrorPublications = new Map<string, { settled: boolean }>()
   /** Computers that still had a free slot after the last dispatch pass: where a canceled provider-queued ticket can go. */
@@ -199,7 +201,8 @@ export class HostCiService {
   async drain() {
     for (;;) {
       const pending = [this.dispatching, this.superseding, this.prewarm.drain(),
-        ...this.observingRuns.values(), ...this.observingComputers.values(), ...this.cloudDispatches.values()]
+        ...this.observingRuns.values(), ...this.observingComputers.values(), ...this.cloudDispatches.values(),
+        ...this.policyRefreshes.values()]
         .filter(work => work !== undefined)
       if (!pending.length) return
       await Promise.allSettled(pending)
@@ -824,17 +827,43 @@ export class HostCiService {
     })
   }
 
-  private async schedulingFleet(computers: HostCiComputer[], mirrorName?: string): Promise<HostCiComputer[]> {
-    const roles = await this.circleStandby?.roles(mirrorName)
-    if (!roles) return computers
+  private refreshSchedulingPolicy(mirrorName?: string) {
+    const selector = this.circleStandby!
+    const key = mirrorName ?? ''
+    if (this.policyRefreshes.has(key)) return
+    const previous = selector.snapshot(mirrorName)
+    const refresh = selector.roles(mirrorName).then(roles => {
+      const changed = !previous || previous.size !== roles.size
+        || [...roles].some(([owner, reading]) => previous.get(owner)?.schedulingRole !== reading.schedulingRole)
+      if (changed) void this.dispatch()
+    }).catch(error => {
+      log.warn({ operation: 'refresh CircleCI scheduling policy', err: error }, 'CircleCI scheduling policy refresh failed')
+    }).finally(() => { this.policyRefreshes.delete(key) })
+    this.policyRefreshes.set(key, refresh)
+  }
+
+  private async schedulingFleet(computers: HostCiComputer[], options: {
+    mirrorName?: string | undefined; snapshots?: PolicySnapshots
+  } = {}): Promise<HostCiComputer[]> {
+    if (!this.circleStandby) return computers
+    const { mirrorName, snapshots } = options
+    let roles: ReadonlyMap<string, CircleSchedulingReading> | undefined
+    if (snapshots) {
+      const key = mirrorName ?? ''
+      if (!snapshots.has(key)) {
+        this.refreshSchedulingPolicy(mirrorName)
+        snapshots.set(key, this.circleStandby.snapshot(mirrorName))
+      }
+      roles = snapshots.get(key)
+    } else roles = await this.circleStandby.roles(mirrorName)
     return computers.filter(computer => computer.hostRef.provider !== 'circleci'
-      || computer.hostRef.account && roles.get(circleOrgKey(computer.hostRef.account,
+      || computer.hostRef.account && roles?.get(circleOrgKey(computer.hostRef.account,
         computer.hostRef.circleAccountId))?.schedulingRole === 'active')
   }
 
   private planningForMirror(mirrorName?: string): HostCiEndpoint & Pick<CiPlanningSnapshot, 'lastStatus'> {
     return {
-      computers: async () => this.schedulingFleet(await this.planningEndpoint.computers(), mirrorName),
+      computers: async () => this.schedulingFleet(await this.planningEndpoint.computers(), { mirrorName }),
       request: (computer, request) => this.planningEndpoint.request(computer, request),
       lastStatus: computer => this.planningEndpoint.lastStatus(computer),
     }
@@ -1323,14 +1352,14 @@ export class HostCiService {
   }
 
   private async splitGateParts(queued: CiRunRecord[],
-    capacity: Omit<Parameters<typeof splitUnavailableGateParts>[2], 'reservedCloud'>) {
+    capacity: Omit<Parameters<typeof splitUnavailableGateParts>[2], 'reservedCloud'>, snapshots: PolicySnapshots) {
     const result: CiRunRecord[] = []
     for (const run of queued) {
       if (!buildComputerGatePart(run, capacity.knownComputers ?? capacity.computers)) {
         result.push(run)
         continue
       }
-      const computers = await this.schedulingFleet(capacity.computers, run.ciMirror?.split('/')[1])
+      const computers = await this.schedulingFleet(capacity.computers, { mirrorName: run.ciMirror?.split('/')[1], snapshots })
       const keys = new Set(computers.map(computer => computer.key))
       result.push(...await splitUnavailableGateParts(this.pool, [run], { ...capacity, computers,
         shards: new Map([...capacity.shards].filter(([key]) => keys.has(key))),
@@ -1340,6 +1369,7 @@ export class HostCiService {
   }
 
   private async dispatchOnce() {
+    const snapshots: PolicySnapshots = new Map()
     this.superseding ??= withoutCiDatabasePriority(() => this.cancelSuperseded())
       .catch(error => log.warn({ err: error }, 'Superseded CI cleanup failed; retrying'))
       .finally(() => { this.superseding = undefined })
@@ -1361,7 +1391,7 @@ export class HostCiService {
       return [run.id, { groupId: run.groupId, computerKey: row.host_key }]
     }))
     const { gate, reservedHosts } = await readCiGateReservation(this.pool)
-    const computers = parsed.length ? await this.schedulingFleet(knownComputers) : knownComputers
+    const computers = parsed.length ? await this.schedulingFleet(knownComputers, { snapshots }) : knownComputers
     const { totals, unavailable, gateShards } = this.dispatchCapacity(computers, used)
     const freeSlots = (computer: HostCiComputer) => Math.max(0,
       (totals.get(computer.key) ?? 1) - (used.get(computer.key) ?? 0))
@@ -1400,7 +1430,7 @@ export class HostCiService {
         || stealsGatePart(run, computer)
     }
     queued = await this.splitGateParts(queued, { computers, knownComputers, shards: gateShards, durations,
-      gate, freeSlots, canTake: canTakeGatePart, idle: computer => (used.get(computer.key) ?? 0) === 0 })
+      gate, freeSlots, canTake: canTakeGatePart, idle: computer => (used.get(computer.key) ?? 0) === 0 }, snapshots)
     // Reserve slots before awaiting a start so concurrent dispatches cannot spend the same capacity.
     await inBatches(queued, 8, async run => {
       const smokeTarget = smokeTargets.get(run.groupId)
@@ -1427,7 +1457,7 @@ export class HostCiService {
       const selection = (run.gate || smokeTarget) && run.suite === 'integration'
         ? { gate: true, scope: 'full' as const, integrationShards: run.integrationShards!, files: run.files }
         : affectedFiles
-      const eligible = await this.schedulingFleet(computers, run.ciMirror?.split('/')[1])
+      const eligible = await this.schedulingFleet(computers, { mirrorName: run.ciMirror?.split('/')[1], snapshots })
       const reservedCloud = reservedCloudSlotKeys(eligible.filter(computer => gateShards.has(computer.key)),
         this.reservedCloudSlots)
       const order = eligible

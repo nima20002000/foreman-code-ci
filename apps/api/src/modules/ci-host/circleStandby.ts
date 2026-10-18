@@ -1,4 +1,6 @@
 import type { CircleAccountRole, CircleSchedulingRole } from '@foreman-code/contracts'
+import { isDeepStrictEqual } from 'node:util'
+import { withoutCiDatabasePriority } from '../../infrastructure/ciDatabasePriority.js'
 import type { CircleCreditsReader, CircleCreditsReading } from './circleCredits.js'
 import { CircleCreditCache, circleCreditKey, circleMonthStart, type CircleCreditState } from './circleCreditCache.js'
 
@@ -62,6 +64,7 @@ function selectReplacements(statuses: OrganizationStatus[]): Set<string> {
 /** Scheduler, start admission and public readback use the same per-org replacement policy. */
 export class CircleStandby {
   private readonly pending = new Map<string, Promise<Map<string, CircleSchedulingReading>>>()
+  private readonly observed = new Map<string, { month: string; roles: Map<string, CircleSchedulingReading> }>()
   constructor(private readonly organizations: () => Promise<CircleOrganization[]>,
     private readonly credits: CircleCreditsReader, private readonly cache = new CircleCreditCache(),
     private readonly now: () => number = Date.now) {}
@@ -70,10 +73,22 @@ export class CircleStandby {
     const key = mirrorName ?? ''
     let operation = this.pending.get(key)
     if (!operation) {
-      operation = this.evaluate(mirrorName).finally(() => { this.pending.delete(key) })
+      const month = circleMonthStart(this.now())
+      operation = withoutCiDatabasePriority(() => this.evaluate(mirrorName)).then(roles => {
+        const previous = this.observed.get(key)
+        if (!previous || previous.month !== month || !isDeepStrictEqual(previous.roles, roles)) {
+          this.observed.set(key, { month, roles })
+        }
+        return this.observed.get(key)!.roles
+      }).finally(() => { this.pending.delete(key) })
       this.pending.set(key, operation)
     }
     return operation
+  }
+
+  snapshot(mirrorName?: string): ReadonlyMap<string, CircleSchedulingReading> | undefined {
+    const observed = this.observed.get(mirrorName ?? '')
+    return observed?.month === circleMonthStart(this.now()) ? observed.roles : undefined
   }
 
   private async evaluate(mirrorName?: string): Promise<Map<string, CircleSchedulingReading>> {

@@ -480,7 +480,10 @@ export class CloudCi {
         const latest = await this.read(run.runId)
         if (latest.state !== 'starting') return
         if (latest.mirrorPublication?.state === 'ready' && latest.dispatch) {
-          await this.save({ ...latest, message: 'Cloud dispatch reply was not confirmed; ownership retained.' })
+          const message = latest.dispatch.notSent && !latest.dispatch.uncertain
+            ? 'Cloud submission was not sent; start admission will be retried.'
+            : 'Cloud dispatch reply was not confirmed; ownership retained.'
+          await this.save({ ...latest, message })
           return
         }
         const unavailable = error instanceof DomainError && error.code === 'CI_CLOUD_UNAVAILABLE'
@@ -644,9 +647,9 @@ export class CloudCi {
   }
 
   private async trigger(run: CloudRun, input: CloudDispatchInput) {
-    const pending = await this.save({ ...run, state: 'starting', providerRunId: null,
+    let pending = await this.save({ ...run, state: 'starting', providerRunId: null,
       dispatch: { input, attempts: (run.dispatch?.attempts ?? 0) + 1, at: this.ports.now().toISOString(),
-        uncertain: true } })
+        uncertain: false, notSent: true } })
     if (this.provider.id === 'circleci') {
       const failed = await readCloudRun(this.configErrorPath(pending)).catch(error => {
         if (error instanceof DomainError && error.code === 'CI_RUN_UNKNOWN') return null
@@ -654,7 +657,7 @@ export class CloudCi {
       })
       if (failed) return this.failPipeline(pending, { message: this.checkAccount(failed).message! })
     }
-    if (!run.providerRunId && (run.dispatch?.attempts ?? 0) === 0 && !run.dispatch?.uncertain) {
+    if (!run.providerRunId && ((run.dispatch?.attempts ?? 0) === 0 || run.dispatch?.notSent) && !run.dispatch?.uncertain) {
       try { await this.requireNewStart(input.mirror.slice(input.mirror.indexOf('/') + 1)) }
       catch (error) {
         if (!(error instanceof DomainError && error.code === 'CI_CLOUD_UNAVAILABLE')) throw error
@@ -662,6 +665,7 @@ export class CloudCi {
           dispatch: { ...pending.dispatch!, uncertain: false, notSent: true } }, { message: error.message })
       }
     }
+    pending = await this.save({ ...pending, dispatch: { ...pending.dispatch!, uncertain: true, notSent: false } })
     let providerRunId: string | null
     try {
       providerRunId = await this.provider.dispatch(input)
