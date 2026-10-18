@@ -2,7 +2,7 @@ import type { SourceManifest, SourceEntry, SourceSnapshotReference }
   from '@foreman-code/contracts/source-materialization'
 import type { FileHandle } from 'node:fs/promises'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
-import type { SourceWorktreeRequest } from '@foreman-code/contracts/source-materialization'
+import type { SourceWorktreeRequest, MaterializationReceipt } from '@foreman-code/contracts/source-materialization'
 import type { SourceMaterializationRecord, SourcePreparationClosure, SourceRootRecord, VerifiedSourceWorkingTree }
   from '@foreman-code/contracts/source-admission'
 import type { RetainedSourceFootprint, SourceActiveNativeSession, SourceOperationOwner, SourceStorageCapacity }
@@ -39,10 +39,10 @@ export interface SourceExecutionHostPort {
    * owner and placement before source service can prepare a native directory. */
   authorize(sql: GraphSqlClient, principal: ManagementPrincipal,
     input: { workspaceId: string; root: SourceRootRecord; attempt: MaterializationAttempt; operationId: string }): Promise<void>
-  prepare(manifest: SourceManifest, root: SourceRootRecord, attempt: MaterializationAttempt, options?: { sharedWritableTree?: true; worktree?: SourceWorktreeRequest }): Promise<SourceMaterializationRecord['receipt']>
+  prepare(manifest: SourceManifest, root: SourceRootRecord, attempt: MaterializationAttempt, options?: { sharedWritableTree?: true; worktree?: SourceWorktreeRequest; retainedReceipt?: MaterializationReceipt }): Promise<SourceMaterializationRecord['receipt']>
   verifyWorkingDirectory(record: SourceMaterializationRecord, relativeCwd: string): Promise<VerifiedSourceWorkingTree>
   verify(record: SourceMaterializationRecord): Promise<string>
-  releaseClaim(record: SourceMaterializationRecord, options?: { signal?: AbortSignal; deadlineAt?: string }): Promise<RetainedSourceFootprint>
+  releaseClaim(record: SourceMaterializationRecord, options?: { signal?: AbortSignal; deadlineAt?: string; retainWorkingTree?: true }): Promise<RetainedSourceFootprint>
   authorizeFinal(sql: GraphSqlClient, principal: ManagementPrincipal, record: SourceMaterializationRecord, finalDispatchBindingHash: string): Promise<void>
   reconcilePreparation?(reconciliationId: string, owner: SourceOperationOwner): Promise<SourcePreparationClosure>
 }

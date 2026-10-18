@@ -533,7 +533,9 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     expect(screen.getByRole('region', { name: 'Workflow authoring' })).toBe(editor)
     await user.click(screen.getByRole('button', { name: 'Clear Run selection' }))
     expect(useGraphDraftStore.getState().nextDrafts[key]!.graph).not.toHaveProperty('repeat')
-  }, 15_000)
+    // Three Saves and two Starts on one mounted Board: about twice S3-01's work,
+    // measured at 4-6 s idle and 12-16 s in the loaded heavy phase. Keep the heavy-tier limit.
+  }, 30_000)
   it('removes finite repeat and reopens the saved Board through the registered route', async () => {
     const mock = newBoardMock()
     const user = userEvent.setup()
