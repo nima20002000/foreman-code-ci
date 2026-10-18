@@ -128,7 +128,7 @@ export async function assertIntervalRestart(executionHost: 'main' | 'worker'): P
     }
   } catch (error) {
     console.error(error)
-    console.error('First native failures:', JSON.stringify(fixture.failures().slice(0, 8).map(failure => ({
+    console.error('First native failures:', JSON.stringify(fixture.failures().slice(0, 16).map(failure => ({
       ...failure, errorLocation: typeof failure.errorLocation === 'string'
         ? failure.errorLocation.split(' (')[0] : failure.errorLocation,
     }))))
