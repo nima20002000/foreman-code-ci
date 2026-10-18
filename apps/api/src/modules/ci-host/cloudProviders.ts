@@ -413,7 +413,9 @@ function circlePipelinePending(view: CirclePipelineView) {
 }
 
 function circleEmptyPipeline(view: CirclePipelineView) {
-  return !view.workflows?.length && (view.state === 'created' || view.phase === 'created')
+  const outcome = view.outcome ?? view.current_outcome
+  return view.workflows !== undefined && view.workflows.length === 0
+    && (view.state === 'created' || view.phase === 'created') && (outcome === undefined || outcome === 'not_run')
 }
 
 /** Large Linux machines (4 vCPUs, 15 GB); the free plan runs 30 jobs at once and open-source Linux builds are free. */
@@ -517,8 +519,6 @@ export class CircleCiProvider implements CloudProvider {
     if (circlePipelinePending(view)) {
       const pending = { ...view, phase: 'started' }
       if (pending.state === undefined && view.phase !== undefined) pending.state = view.phase
-      delete pending.outcome
-      delete pending.current_outcome
       return pending
     }
     const canceling = run.cancellation && !run.cancellation.completedAt
@@ -709,7 +709,7 @@ export class CircleCiProvider implements CloudProvider {
       if (!(error instanceof DomainError && error.code === 'CI_CLOUD_CANCEL_NOT_ACCEPTED')) throw error
       accepted = false
     }
-    if (!accepted || view && circleEmptyPipeline(view)) {
+    if (!accepted) {
       // The real cancellation invalidated the poll cache, including a no-active-workflows reply.
       // Re-read through either transport: the pre-request snapshot cannot confirm emptiness.
       const after = await this.readPipeline(run, 15_000)

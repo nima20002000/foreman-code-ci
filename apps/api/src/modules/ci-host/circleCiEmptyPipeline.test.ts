@@ -111,6 +111,7 @@ it.each([{ errors: [] }, { errors: [{ type: 'config', message: 'Invalid workflow
 it.each(['retry', 'cancel', 'late-workflow', 'late-previous-workflow'] as const)(
   'reconciles accepted empty pipelines across restart: %s', async operation => {
     const f = await fixture({}, { provider: 'circleci' })
+    f.circle.cancelError = 'no active workflows'
     const api = providerFixture(f.ports)
     api.control.createdAt = f.ports.now().toISOString()
     const original = f.ports.run
@@ -145,6 +146,7 @@ it.each(['retry', 'cancel', 'late-workflow', 'late-previous-workflow'] as const)
     if (operation === 'late-workflow') {
       api.control.workflowStatus = 'running'
       api.control.jobs = ['job']
+      f.circle.cancelError = ''
     }
     f.advance(4_000)
     expect(await reopen().handle(read)).toMatchObject({ run: { state: 'starting' } })
