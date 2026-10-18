@@ -375,7 +375,6 @@ describe('selected-Agent chat service', { timeout: 60_000 }, () => {
         ? { ...state, status: 'completed', nativeOperationId: 'original-compaction', observedAt: new Date().toISOString() }
         : state
       Object.assign(native, {
-        requiresSettledDisposal: () => true,
         sessionControlCapabilities: async () => ({ ...unavailableSessionControls('fixture'),
           compact: { supported: true, reason: null } }),
         compactSession: async (_session: NativeSessionReference, input: NativeCompactInput) => {
@@ -1280,7 +1279,6 @@ describe('selected-Agent chat service', { timeout: 60_000 }, () => {
     const warm = await first.service.send(writer, workspace, request(codexNode, 'warm', null))
     await settled(first.service, read(first.service))
     FakeNative.all[0]!.hold = true
-    Object.assign(FakeNative.all[0]!, { requiresSettledDisposal: () => true })
     const inflight = await first.service.send(writer, workspace, request(codexNode, 'inflight', warm.state.conversation!.id))
     await settled(first.service, read(first.service), (value) => Boolean(value.activeTurn?.nativeTurnId))
     const queued = await first.service.send(writer, workspace, request(codexNode, 'after restart', warm.state.conversation!.id))
