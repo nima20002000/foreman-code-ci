@@ -16,7 +16,7 @@ import { ciExecutionRunId } from './executionAttempt.js'
 
 const log = componentLogger('jobs')
 export type CiDispatchState = Pick<CiRunSettlement, 'state' | 'step' | 'exitCode' | 'startedAt' | 'finishedAt' | 'message'
-  | 'collection' | 'provenance' | 'mirrorPublication' | 'testsStarted'>
+  | 'collection' | 'provenance' | 'mirrorPublication' | 'testsStarted' | 'selection'>
 interface DispatchServices {
   pool: pg.Pool
   endpoint: HostCiEndpoint
