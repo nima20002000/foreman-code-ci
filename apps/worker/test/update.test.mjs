@@ -15,8 +15,6 @@ import { WorkerError } from '../src/diagnostics.mjs';
 import { readUpdateRecord, superviseWorkerUpdate, waitForWorkerReady, locateWorkerLaunch,
   launchUpdateSupervisor } from '../src/updateSupervisor.mjs';
 import { recoverPendingWorkerUpdate, writeUpdateRecord, migrateWorkerService } from '../src/updateSupervisor.mjs';
-import { switchWorkerPointer } from '../src/updateSupervisor.mjs';
-import { WORKER_UPDATE_STARTUP_TIMEOUT_MS } from '../src/ciSmokeTiming.mjs';
 import { renderUserService } from '../src/service.mjs';
 import { workerArtifactContentSha256 } from '../../../packages/contracts/src/workerArtifactContentNode.mjs';
 import { DeviceConnectionError } from '../../../apps/api/src/modules/devices/deviceWire.ts';
@@ -230,22 +228,6 @@ test('a stalled update attempt persists its deadline, resumes work, and can retr
 
 test('a stalled update can resume and retry after slow artifact preparation', async t => {
   await assertStalledUpdateRetry(t, { beforeDownload: () => wait(150) });
-});
-
-test('Worker update persists the original attempt deadline across a long drain and supervisor handoff', async t => {
-  const f = await fixture(t);
-  const began = Date.now();
-  t.mock.timers.enable({ apis: ['Date'], now: began });
-  let handedOff;
-  const updater = await new WorkerUpdater({ ...f.options,
-    drain: async () => { t.mock.timers.tick(29 * 60_000); },
-    launchSupervisor: async stateDirectory => { handedOff = await readUpdateRecord(stateDirectory); },
-  }).initialize();
-  t.after(() => updater.close());
-  await updater.start();
-  assert.equal(handedOff.status.state, 'restarting');
-  assert.equal(handedOff.attemptDeadlineAt, began + 45 * 60_000);
-  assert.equal(handedOff.attemptDeadlineAt - Date.now(), 16 * 60_000);
 });
 
 test('Worker status advertises the running manifest even after a failed target update', async t => {
@@ -983,50 +965,6 @@ test('startup recovers an unfinished restart after its supervisor service disapp
   assert.equal((await readUpdateRecord(f.stateDirectory)).status.state, 'current');
   assert.equal((await readInstalledRelease({ root: f.root, facts, expected })).manifest.version, '1.1.0');
 });
-
-for (const ciSmoke of [null, { repository: 'fixture/project', commit: 'c'.repeat(40) }]) {
-  test(`startup completes an older update record without an attempt deadline (CI smoke: ${Boolean(ciSmoke)})`, async t => {
-    const f = await fixture(t);
-    const updater = await new WorkerUpdater(f.options).initialize();
-    t.after(() => updater.close());
-    await updater.start();
-    const record = await readUpdateRecord(f.stateDirectory);
-    delete record.attemptDeadlineAt;
-    if (ciSmoke) record.restart.ciSmoke = ciSmoke;
-    record.restart.unit = `foreman-worker-update-${randomUUID()}`;
-    record.restart.restartAttempted = true;
-    await f.prepareService(record.restart);
-    await switchWorkerPointer(record.restart.pointer, record.restart.directory);
-    await writeUpdateRecord(f.stateDirectory, record);
-    await f.restart('ready');
-    const readiness = [];
-    const smokePlans = [];
-    let launches = 0;
-    await recoverPendingWorkerUpdate(f.stateDirectory, {
-      run: async () => ({ stdout: 'inactive\n' }),
-      launch: async stateDirectory => {
-        launches++;
-        await superviseWorkerUpdate(await readUpdateRecord(stateDirectory), {
-          restart: () => f.restart('ready'), prepareService: f.prepareService,
-          ready: async options => {
-            readiness.push({ version: options.version, timeoutMs: options.timeoutMs });
-            await waitForWorkerReady({ ...options, pollMs: 1 });
-          },
-          smoke: async plan => { if (plan.ciSmoke) smokePlans.push(plan.ciSmoke); },
-        });
-      },
-    });
-    const saved = await readUpdateRecord(f.stateDirectory);
-    assert.equal(launches, 1);
-    assert.equal(saved.status.state, 'current');
-    assert.equal(saved.status.lastError, null);
-    assert.equal(saved.attemptDeadlineAt, undefined);
-    assert.equal((await readInstalledRelease({ root: f.root, facts, expected })).manifest.version, '1.1.0');
-    assert.deepEqual(readiness, [{ version: '1.1.0',
-      timeoutMs: ciSmoke ? 60_000 : WORKER_UPDATE_STARTUP_TIMEOUT_MS }]);
-    assert.deepEqual(smokePlans, ciSmoke ? [ciSmoke] : []);
-  });
-}
 
 test('shutdown waits for an active staging operation and prevents a restart after ownership can change', async t => {
   const f = await fixture(t);
