@@ -75,7 +75,9 @@ function fixture(options: { repository?: boolean } = {}) {
     if (text.includes('from workflow_versions')) {
       rows = [{ id: version.id, workspace_id: version.workspaceId, workflow_id: version.workflowId,
         version: version.version, entry_node_id: version.entryNodeId, execution_semantics_version: 3, record: version }]
-    } else if (text.includes('from agent_configuration_versions')) rows = [{ record: configuration }]
+    } else if (text.includes('from agent_configuration_versions')) {
+      rows = [{ id: configuration.id, agent_id: configuration.agentId, record: configuration }]
+    }
     else if (text.includes('from workspaces') && options.repository) rows = [{ record: {
       id: version.workspaceId, name: 'GitHub workspace',
       repository: { provider: 'github', owner: 'octo', name: 'site', defaultBranch: 'main' },

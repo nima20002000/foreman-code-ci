@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
+import { setTimeout as delay } from 'node:timers/promises'
 import { expect, it, vi } from 'vitest'
 import type { WorkerConversationRpcRequest } from '@foreman-code/contracts/remote-execution-rpc'
 import { MainWorkerConversationBridge, type WorkerConversationChannel } from './workerBridge.js'
@@ -13,7 +14,8 @@ import { prepareCodexFileTurn } from '../harnesses/codexFiles/index.js'
 import { filePorts, fileScope, sourceRef, publishedRef } from '../../../test/fixtures/codex-file-runtime-helpers.js'
 import { privateFixtureDirectory } from '../../../test/helpers/privateFixtureDirectory.js'
 
-async function fixture(options: { repeatCopies?: boolean; scopedOperator?: boolean } = {}) {
+// The runner owns cancellation; real filesystem latency is not a deadline in these behavior tests.
+async function fixture(signal: AbortSignal, options: { repeatCopies?: boolean; scopedOperator?: boolean } = {}) {
   const repeatCopies = options.repeatCopies
   const directory = await privateFixtureDirectory('worker-attachments-')
   const f = workerConversationFixture(options.scopedOperator ? 'operator' : 'agent')
@@ -25,7 +27,7 @@ async function fixture(options: { repeatCopies?: boolean; scopedOperator?: boole
   const physical = vi.fn(async () => {})
   const callbacks = workerConversationCallbacks({ currentBinding: () => f.connection,
     capture: () => ({ binding: f.connection, request: async (payload, options) => ({
-      payload: await bridge.handle(payload, f.connection, options?.signal ?? AbortSignal.timeout(1000)),
+      payload: await bridge.handle(payload, f.connection, options?.signal ?? signal),
     }) }) })
   const worker = new WorkerConversationFiles(callbacks)
   const sentCopies: unknown[] = []
@@ -34,10 +36,10 @@ async function fixture(options: { repeatCopies?: boolean; scopedOperator?: boole
       const request = payload as WorkerConversationRpcRequest
       if (request.method === 'conversation.file-copy') {
         sentCopies.push(request.copy)
-        const signal = options?.signal ?? AbortSignal.timeout(1000)
-        const result = await worker.copy(request, signal)
+        const copySignal = options?.signal ?? signal
+        const result = await worker.copy(request, copySignal)
         if (repeatCopies && ['begin', 'chunk', 'finish'].includes(request.copy.phase)) {
-          expect(await worker.copy(request, signal)).toEqual(result)
+          expect(await worker.copy(request, copySignal)).toEqual(result)
         }
         return { payload: result }
       }
@@ -64,11 +66,11 @@ async function fixture(options: { repeatCopies?: boolean; scopedOperator?: boole
     if (!source) throw new Error('Missing original request')
     return source
   }, host: () => localCodexChatHost(join(directory, 'storage')),
-  assertCurrent: physical, signal: AbortSignal.timeout(10000) })
+  assertCurrent: physical, signal })
   const invoke = (payload: Record<string, unknown>, connection = f.connection) => bridge.handle({ ...payload,
-    binding: f.binding, admissionId: lease.admissionId }, connection, AbortSignal.timeout(1000))
+    binding: f.binding, admissionId: lease.admissionId }, connection, signal)
   const prepare = () => adapter.prepare({ session: f.session, clientCorrelationId: 'message',
-    signal: AbortSignal.timeout(5000) })
+    signal })
   const submitted = () => invoke({ method: 'conversation.submitted', correlationId: 'message',
     identity: { nativeTurnId: 'native-turn' } })
   return { ...f, ports, directory, lease, invoke, prepare, submitted, sentCopies, current, physical,
@@ -76,8 +78,8 @@ async function fixture(options: { repeatCopies?: boolean; scopedOperator?: boole
     async close() { await lease.close(); await worker.close(); await rm(directory, { recursive: true, force: true }) } }
 }
 
-it('delivers immutable worker copies and uses the persisted native ACK for file tools', async () => {
-  const f = await fixture()
+it('delivers immutable worker copies and uses the persisted native ACK for file tools', async ({ signal }) => {
+  const f = await fixture(signal)
   try {
     const turn = await f.prepare()
     expect(turn).toBeDefined()
@@ -116,8 +118,8 @@ it('delivers immutable worker copies and uses the persisted native ACK for file 
   } finally { await f.close() }
 })
 
-it('denies foreign sessions, correlations, replacement prompts and revoked original senders', async () => {
-  const f = await fixture()
+it('denies foreign sessions, correlations, replacement prompts and revoked original senders', async ({ signal }) => {
+  const f = await fixture(signal)
   try {
     const callback = { method: 'conversation.files', session: f.session, correlationId: 'message',
       action: { phase: 'prepare', executionHostId: 'unallocated' } }
@@ -133,8 +135,8 @@ it('denies foreign sessions, correlations, replacement prompts and revoked origi
   } finally { await f.close() }
 })
 
-it('rejects unsolicited host copies and a replay through an ended or different channel', async () => {
-  const f = await fixture()
+it('rejects unsolicited host copies and a replay through an ended or different channel', async ({ signal }) => {
+  const f = await fixture(signal)
   try {
     await f.prepare()
     await expect(f.invoke({ method: 'conversation.file-copy-authorize', copy: {
@@ -150,8 +152,8 @@ it('rejects unsolicited host copies and a replay through an ended or different c
   } finally { await f.close() }
 })
 
-it('acknowledges repeated transfer frames without duplicating bytes or replacing the registered copy', async () => {
-  const f = await fixture({ repeatCopies: true })
+it('acknowledges repeated transfer frames without duplicating bytes or replacing the registered copy', async ({ signal }) => {
+  const f = await fixture(signal, { repeatCopies: true })
   try {
     const turn = await f.prepare()
     const input = await turn!.nativeInput('Read the attached notes.')
@@ -169,7 +171,7 @@ it('acknowledges repeated transfer frames without duplicating bytes or replacing
   } finally { await f.close() }
 })
 
-it('rejects file authority on read-only leases and on Operator turns without file admission', async () => {
+it('rejects file authority on read-only leases and on Operator turns without file admission', async ({ signal }) => {
   for (const requestKind of ['read', 'scoped'] as const) {
     const f = workerConversationFixture('operator')
     const bridge = new MainWorkerConversationBridge()
@@ -183,50 +185,61 @@ it('rejects file authority on read-only leases and on Operator turns without fil
     try {
       await expect(bridge.handle({ method: 'conversation.files', binding, admissionId: lease.admissionId,
         session: f.session, correlationId: 'message', action: { phase: 'prepare', executionHostId: 'host' } },
-      f.connection, AbortSignal.timeout(1000))).rejects.toMatchObject({ status: 403 })
+      f.connection, signal)).rejects.toMatchObject({ status: 403 })
       expect(prepare).not.toHaveBeenCalled()
     } finally { await lease.close() }
   }
 })
 
-it('restores file callbacks for the recorded turn while retaining its original worker input copies', async () => {
-  const f = await fixture()
-  let recovery: ReturnType<MainWorkerConversationBridge['capture']> | undefined
-  try {
-    const turn = await f.prepare()
-    const input = await turn!.nativeInput('Read the attached notes.')
-    const text = input[0]
-    if (text?.type !== 'text') throw new Error('Expected native text input')
-    const attachment = text.text.split('\n').find(line => line.startsWith('{"filename"'))!
-    const path = (JSON.parse(attachment) as { path: string }).path
-    await f.submitted()
-    await turn!.activate('native-turn')
-    await f.lease.close()
-    const request: Extract<WorkerConversationRpcRequest, { method: 'conversation.history' | 'conversation.reconcile' }> = {
-      method: 'conversation.reconcile', binding: f.binding, session: f.session, correlationId: 'message',
-    }
-    recovery = f.bridge.capture({ request, recoveredTurnId: 'native-turn', current: f.current,
-      channel: f.channel, callbacks: { files: f.prepareFiles } })
-    const recovered = { ...request, admissionId: recovery.admissionId }
-    await expect(f.worker.recover(recovered, 'another-turn', AbortSignal.timeout(1000)))
-      .rejects.toMatchObject({ status: 409 })
-    await f.worker.recover(recovered, 'native-turn', AbortSignal.timeout(1000))
-    expect(await readFile(path, 'utf8')).toBe('# Attached document\n')
-    expect(f.ports.issued).toHaveLength(2)
-    expect(f.ports.issued[1]).toMatchObject({ nativeSessionId: f.session.nativeSessionId,
-      turnId: 'native-turn', messageId: 'message-a' })
-    await f.worker.recover(recovered, 'native-turn', AbortSignal.timeout(1000))
-    expect(f.ports.issued).toHaveLength(2)
-    expect(await turn!.call({ threadId: f.session.nativeSessionId, turnId: 'native-turn',
-      tool: 'files_list', arguments: { scope: fileScope } })).toMatchObject({ success: true })
-    await expect(turn!.nativeInput('Read the attached notes.')).rejects.toMatchObject({ status: 403 })
-    await turn!.close()
-    await expect(readFile(path)).rejects.toMatchObject({ code: 'ENOENT' })
-  } finally { await recovery?.close(); await f.close() }
-})
+it.for([0, 1100])(
+  'restores file callbacks for the recorded turn while retaining its original worker input copies (copy delay %i ms)',
+  async (copyDelayMs, { signal }) => {
+    const f = await fixture(signal)
+    let recovery: ReturnType<MainWorkerConversationBridge['capture']> | undefined
+    try {
+      const turn = await f.prepare()
+      const input = await turn!.nativeInput('Read the attached notes.')
+      const text = input[0]
+      if (text?.type !== 'text') throw new Error('Expected native text input')
+      const attachment = text.text.split('\n').find(line => line.startsWith('{"filename"'))!
+      const path = (JSON.parse(attachment) as { path: string }).path
+      await f.submitted()
+      await turn!.activate('native-turn')
+      await f.lease.close()
+      const sendCopy = f.channel.request.bind(f.channel)
+      f.channel.request = async (payload, options) => {
+        const request = payload as WorkerConversationRpcRequest
+        if (request.method === 'conversation.file-copy' && request.copy.phase === 'finish') {
+          await delay(copyDelayMs)
+        }
+        return sendCopy(payload, options)
+      }
+      const request: Extract<WorkerConversationRpcRequest, { method: 'conversation.history' | 'conversation.reconcile' }> = {
+        method: 'conversation.reconcile', binding: f.binding, session: f.session, correlationId: 'message',
+      }
+      recovery = f.bridge.capture({ request, recoveredTurnId: 'native-turn', current: f.current,
+        channel: f.channel, callbacks: { files: f.prepareFiles } })
+      const recovered = { ...request, admissionId: recovery.admissionId }
+      await expect(f.worker.recover(recovered, 'another-turn', signal))
+        .rejects.toMatchObject({ status: 409 })
+      await f.worker.recover(recovered, 'native-turn', signal)
+      expect(await readFile(path, 'utf8')).toBe('# Attached document\n')
+      expect(f.ports.issued).toHaveLength(2)
+      expect(f.ports.issued[1]).toMatchObject({ nativeSessionId: f.session.nativeSessionId,
+        turnId: 'native-turn', messageId: 'message-a' })
+      await f.worker.recover(recovered, 'native-turn', signal)
+      expect(f.ports.issued).toHaveLength(2)
+      expect(await turn!.call({ threadId: f.session.nativeSessionId, turnId: 'native-turn',
+        tool: 'files_list', arguments: { scope: fileScope } })).toMatchObject({ success: true })
+      await expect(turn!.nativeInput('Read the attached notes.')).rejects.toMatchObject({ status: 403 })
+      await turn!.close()
+      await expect(readFile(path)).rejects.toMatchObject({ code: 'ENOENT' })
+    } finally { await recovery?.close(); await f.close() }
+  },
+)
 
-it('delivers Codex attachments alongside scoped Operator MCP without sharing file credentials', async () => {
-  const f = await fixture({ scopedOperator: true })
+it('delivers Codex attachments alongside scoped Operator MCP without sharing file credentials', async ({ signal }) => {
+  const f = await fixture(signal, { scopedOperator: true })
   try {
     const turn = await f.prepare()
     expect(turn).toBeDefined()
@@ -241,5 +254,26 @@ it('delivers Codex attachments alongside scoped Operator MCP without sharing fil
     await expect(turn!.publications()).rejects.toThrow('Sender revoked')
     await turn!.close()
     expect(f.ports.tokens.size).toBe(0)
+  } finally { await f.close() }
+})
+
+it('rejects canceled copy preparation without activating file callbacks', async ({ signal }) => {
+  const controller = new AbortController()
+  const f = await fixture(AbortSignal.any([signal, controller.signal]))
+  const reason = new Error('Copy preparation canceled')
+  const sendCopy = f.channel.request.bind(f.channel)
+  f.channel.request = async (payload, options) => {
+    const request = payload as WorkerConversationRpcRequest
+    if (request.method === 'conversation.file-copy' && request.copy.phase === 'finish') controller.abort(reason)
+    return sendCopy(payload, options)
+  }
+  try {
+    await expect(f.prepare()).rejects.toMatchObject({
+      code: 'CODEX_FILE_PREPARATION_CLEANUP_REQUIRED',
+      cause: { errors: [reason, reason] },
+    })
+    expect(f.ports.issued).toEqual([])
+    expect(f.ports.tokens.size).toBe(0)
+    expect(f.sentCopies).toEqual(expect.arrayContaining([expect.objectContaining({ phase: 'finish' })]))
   } finally { await f.close() }
 })
