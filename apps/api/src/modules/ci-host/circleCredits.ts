@@ -5,6 +5,7 @@ import { DomainError } from '../errors.js'
 import { componentLogger } from '../diagnostics/logger.js'
 import type { CloudHttp } from './cloudHttp.js'
 import { CircleCreditCache, circleCreditKey, circleMonthStart, type CircleCreditState } from './circleCreditCache.js'
+import { withoutCiDatabasePriority } from '../../infrastructure/ciDatabasePriority.js'
 
 const log = componentLogger('jobs')
 const REFRESH_MS = 3 * 60 * 60_000
@@ -81,7 +82,7 @@ export class CircleCreditUsage implements CircleCreditsReader {
     const due = state.job ? this.now() >= (state.nextPollAt ?? 0)
       : this.now() - (state.lastAttemptAt ?? -Infinity) >= REFRESH_MS
     if (due && this.now() >= (state.retryAt ?? 0) && !this.refreshing.has(key)) {
-      const task = this.refresh(key, owner, circleAccountId).catch(() => {
+      const task = withoutCiDatabasePriority(() => this.refresh(key, owner, circleAccountId)).catch(() => {
         log.warn({ operation: 'read CircleCI credits', circleAccountId, owner }, 'CircleCI usage cache could not be read')
       }).finally(() => { this.refreshing.delete(key) })
       this.refreshing.set(key, task)

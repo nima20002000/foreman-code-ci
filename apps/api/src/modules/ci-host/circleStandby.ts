@@ -1,6 +1,5 @@
 import type { CircleAccountRole, CircleSchedulingRole } from '@foreman-code/contracts'
-import { isDeepStrictEqual } from 'node:util'
-import { withoutCiDatabasePriority } from '../../infrastructure/ciDatabasePriority.js'
+import { withoutCiDatabaseDeadline } from '../../infrastructure/ciDatabasePriority.js'
 import type { CircleCreditsReader, CircleCreditsReading } from './circleCredits.js'
 import { CircleCreditCache, circleCreditKey, circleMonthStart, type CircleCreditState } from './circleCreditCache.js'
 
@@ -74,18 +73,16 @@ export class CircleStandby {
     let operation = this.pending.get(key)
     if (!operation) {
       const month = circleMonthStart(this.now())
-      operation = withoutCiDatabasePriority(() => this.evaluate(mirrorName)).then(roles => {
-        const previous = this.observed.get(key)
-        if (!previous || previous.month !== month || !isDeepStrictEqual(previous.roles, roles)) {
-          this.observed.set(key, { month, roles })
-        }
-        return this.observed.get(key)!.roles
+      operation = withoutCiDatabaseDeadline(() => this.evaluate(mirrorName)).then(roles => {
+        this.observed.set(key, { month, roles })
+        return roles
       }).finally(() => { this.pending.delete(key) })
       this.pending.set(key, operation)
     }
     return operation
   }
 
+  /** Dispatch observes completed policy; start admission still awaits roles(). */
   snapshot(mirrorName?: string): ReadonlyMap<string, CircleSchedulingReading> | undefined {
     const observed = this.observed.get(mirrorName ?? '')
     return observed?.month === circleMonthStart(this.now()) ? observed.roles : undefined

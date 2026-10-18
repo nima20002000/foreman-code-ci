@@ -3,6 +3,7 @@ import { MANAGED_MCP_NAMESPACE } from '@foreman-code/contracts/managed-mcp-chann
 import { DeviceManagedMcp } from './modules/harnesses/deviceManagedMcp.js'
 import { RunWorktrees } from './modules/runs/runWorktrees.js'
 import { withTransaction } from './infrastructure/transaction.js'
+import { withCiDatabaseReservation } from './infrastructure/ciDatabasePriority.js'
 import { ComputerActivityService } from './modules/computers/activity.js'
 import { registerComputerActivityRoutes } from './routes/computerActivity.js'
 import { ComputerAccountsService } from './modules/computers/accounts.js'
@@ -2925,7 +2926,9 @@ async function initializeCircleCi(composition: ProductionComposition, machine: P
   })
   const cache = new CircleCreditCache(join(homedir(), '.local/share/foreman-code/circleci-usage', 'usage.json'))
   const circleCredits = new CircleCreditUsage(async id => (await context(id)).http, {
-    allowance: async () => (await foundationSettings.getCircleCreditAllowance()).value,
+    allowance: () => withCiDatabaseReservation(database.pool, async () => {
+      return (await foundationSettings.getCircleCreditAllowance()).value
+    }),
     primaryOwner: async () => null,
   }, { cache })
   const circleStandby = new CircleStandby(() => circleOrganizations(clouds), circleCredits, cache)
