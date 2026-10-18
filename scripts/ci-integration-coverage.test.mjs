@@ -71,6 +71,15 @@ test('coverage cannot narrow shared infrastructure changes or change other suite
     sources: new Map([...sources, [unit, "import './app.js'"]]) }).files, [unit])
 })
 
+test('coverage recording and map validation changes require full integration scope', () => {
+  for (const file of ['scripts/integration-coverage.mjs', 'packages/contracts/src/ciCoverage.mjs',
+    'packages/contracts/src/ciImportGraph.mjs', 'apps/api/test/setupCoverage.ts']) {
+    const result = select([file], { sources: new Map([...sources, [file, 'export {}']]) })
+    assert.equal(result.scope, 'full', file)
+    assert.match(result.reason, /infrastructure/i)
+  }
+})
+
 function repository(t) {
   const cache = join(homedir(), '.cache', 'foreman-tmp')
   mkdirSync(cache, { recursive: true })
