@@ -96,7 +96,7 @@ export class PostgresOperatorChatAuthority implements OperatorChatAuthority {
       && (automatic || paired || entry.endpoint === this.endpoint && entry.transport === 'streamable-http')
       && (manager.harness === 'claude' ? Boolean(this.deliverClaudeCredential)
         : isSupportedAppMcpTokenName(entry.credentialEnvironmentVariable))
-    if (configured && automatic && manager.harness === 'codex' && context.runnerId === 'runner-local') {
+    if (configured && automatic && manager.harness === 'codex' && manager.retireTurn && context.runnerId === 'runner-local') {
       this.managedLaunchers.add(manager)
     }
     return { ...result, status: configured ? 'configured' : 'setup_required', routing: automatic || paired ? 'automatic' : 'fixed' }

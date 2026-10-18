@@ -91,6 +91,7 @@ class MemoryRepository extends PostgresAgentChatRepository {
 }
 class NativeFixture implements NativeHarnessSessionManager {
   readonly harness = 'codex' as const
+  requiresSettledDisposal() { return true }
   histories = new Map<string, NativeHistory>()
   attached: NativeSessionStart[] = []
   prompts: NativeTurnInput[] = []
