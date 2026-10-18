@@ -128,7 +128,7 @@ export async function assertIntervalRestart(executionHost: 'main' | 'worker'): P
     }
   } catch (error) {
     console.error(error)
-    console.error('Native failure codes:', fixture.failures())
+    console.error('Native failure codes:', JSON.stringify(fixture.failures()))
     throw error
   } finally {
     if (blocked) await fixture.provider.releaseWorkflowTurns()

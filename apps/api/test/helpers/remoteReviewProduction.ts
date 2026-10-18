@@ -310,9 +310,10 @@ export async function remoteReviewProduction(options: {
             })
           }
           const event = parsed as { level?: unknown; code?: unknown; errorCode?: unknown; stackFrames?: unknown;
-            namespace?: unknown; tool?: unknown; runId?: unknown; err?: { code?: unknown; stack?: unknown; message?: unknown; type?: unknown }; msg?: unknown;
+            namespace?: unknown; tool?: unknown; runId?: unknown; err?: { code?: unknown; stack?: unknown; message?: unknown; type?: unknown;
+              result?: { error?: { code?: unknown } }; details?: { reason?: unknown } }; msg?: unknown;
             phase?: unknown; errorType?: unknown; errorLocation?: unknown; reason?: unknown }
-          const code = event.err?.code ?? event.code ?? event.errorCode
+          const code = event.err?.code ?? event.err?.result?.error?.code ?? event.code ?? event.errorCode
             ?? (event.msg === 'Device extension request failed' ? 'DEVICE_EXTENSION_FAILED' : undefined)
             ?? (event.msg === 'Operator tool failed' ? 'OPERATOR_TOOL_FAILED' : undefined)
           if (!['warn', 'error', 'fatal'].includes(String(event.level)) || typeof code !== 'string' || !/^[A-Za-z][A-Za-z0-9_-]{1,127}$/.test(code)) continue
@@ -326,8 +327,9 @@ export async function remoteReviewProduction(options: {
               && /^(The submitted native turn was not found|Reconcile the correlation|A different native turn is still active|More than one native turn has this correlation)/.test(sourceMessage)
               ? sourceMessage.slice(0, 200) : undefined
           failuresSeen += 1
-          failures.push({ role, reason: typeof event.reason === 'string' && /^[a-z][a-z0-9_]{1,64}$/.test(event.reason)
-            ? event.reason : undefined, message: typeof event.msg === 'string' ? event.msg.slice(0, 160) : undefined,
+          const reason = event.reason ?? event.err?.details?.reason
+          failures.push({ role, reason: typeof reason === 'string' && /^[a-z][a-z0-9_]{1,64}$/.test(reason)
+            ? reason : undefined, message: typeof event.msg === 'string' ? event.msg.slice(0, 160) : undefined,
             time: (parsed as { time?: unknown }).time, code, phase: event.phase, errorType: event.errorType ?? event.err?.type,
             errorDetail, tool: typeof event.tool === 'string' ? event.tool : undefined,
             namespace: typeof event.namespace === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(event.namespace)
@@ -336,7 +338,7 @@ export async function remoteReviewProduction(options: {
               ?? (typeof event.err?.stack === 'string'
               ? event.err.stack.split('\n').slice(1, 5).map(line => line.trim()).join(' ') : undefined),
             runId: typeof event.runId === 'string' && /^run-[a-z0-9-]{1,100}$/.test(event.runId) ? event.runId : null })
-          if (failures.length > 32) failures.shift()
+          if (failures.length > 32) failures.splice(8, 1)
         }
       })
     }
