@@ -1452,7 +1452,7 @@ export class CloudCi {
       || this.ports.now().getTime() - Date.parse(run.cancellation!.at) >= CLOUD_START_TIMEOUT_MS
     // A complete GitHub listing also resolves a lost dispatch reply when no workflow was created.
     if (this.provider.id === 'github' && run.dispatch?.uncertain && (discovered.length || discoveryComplete)) {
-      run = { ...run, providerRunId: run.providerRunId ?? discovered[0]!,
+      run = { ...run, providerRunId: run.providerRunId ?? discovered[0] ?? null,
         dispatch: { ...run.dispatch, uncertain: false } }
     }
     const history = [...run.dispatchHistory ?? []]
