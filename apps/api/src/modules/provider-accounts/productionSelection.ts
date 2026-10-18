@@ -143,8 +143,7 @@ export function createProductionAccountSelection(input: {
     async resolveProfile(account) {
       if (!account.binding) throw new DomainError('PROVIDER_PROFILE_UNAVAILABLE', 'The saved profile is unavailable.', 409)
       const record = findRecord(account.binding)
-      // Path reads also run in database transactions. Native operations refresh
-      // installation evidence in selected(); this lookup still validates the pin.
+      await input.validate?.(record)
       pin(record)
       return { binding: account.binding, ...paths(record, account.binding) }
     },
