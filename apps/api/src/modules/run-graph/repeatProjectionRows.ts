@@ -37,19 +37,11 @@ async function readRepeatGraphPins(sql: GraphTransactionSql, input: RepeatGraphS
   configurationPolicy: 'executable' | 'recorded') {
   assertGraphTransaction(sql)
   const scope = RepeatGraphScopeV3Schema.parse(input)
-  const rows = await sql.query<{
-    workspace_id: string; workflow_id: string; workflow_version_id: string;
-    version_id: string; version_number: number; entry_node_id: string; execution_state: string;
-    execution_semantics_version: number; version_workspace_id: string; version_workflow_id: string;
-    run_record: unknown; version_record: unknown; configurations: ImmutableAgentConfigurationRow[]
-  }>(
+  const rows = await sql.query<{ workspace_id: string; workflow_id: string; workflow_version_id: string;
+    version_id: string; version_number: number; entry_node_id: string; execution_state: string; execution_semantics_version: number; version_workspace_id: string; version_workflow_id: string; run_record: unknown; version_record: unknown }>(
     `select r.workspace_id,r.workflow_id,r.workflow_version_id,r.execution_state,v.execution_semantics_version,
       v.id as version_id,v.version as version_number,v.entry_node_id,
-      r.record as run_record,v.record as version_record,v.workspace_id as version_workspace_id,v.workflow_id as version_workflow_id,
-      coalesce((select json_agg(p order by p.id) from (
-        select c.id,c.workspace_id,c.agent_id,c.version,c.record from agent_configuration_versions c
-        where c.id in (select pin.value from jsonb_each_text(v.record->'agentConfigurationVersionIds') pin)
-      ) p),'[]'::json) as configurations
+      r.record as run_record,v.record as version_record,v.workspace_id as version_workspace_id,v.workflow_id as version_workflow_id
      from runs r join workflow_versions v on v.id=r.workflow_version_id where r.id=$1`, [scope.runId])
   const row = rows.rows[0]
   if (rows.rows.length !== 1 || !row || row.workspace_id !== scope.workspaceId || row.workflow_id !== scope.workflowId
@@ -64,7 +56,10 @@ async function readRepeatGraphPins(sql: GraphTransactionSql, input: RepeatGraphS
   CurrentRunVersionSnapshotSchema.parse({ run, version })
   if (run.id !== scope.runId || run.workspaceId !== scope.workspaceId || run.workflowId !== scope.workflowId
     || run.workflowVersionId !== scope.workflowVersionId || run.executionState !== row.execution_state) return conflict()
-  const configurations = readPinnedAgentConfigurations(version, row.configurations)
+  const configs = await sql.query<ImmutableAgentConfigurationRow>(
+    'select id,workspace_id,agent_id,version,record from agent_configuration_versions where id=any($1::text[]) order by id',
+    [Object.values(version.agentConfigurationVersionIds)])
+  const configurations = readPinnedAgentConfigurations(version, configs.rows)
   if (configurationPolicy === 'executable') ExecutableWorkflowV3Schema.parse({ version, configurations })
   return { scope, run, version, configurations }
 }
