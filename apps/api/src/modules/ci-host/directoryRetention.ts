@@ -27,6 +27,7 @@ export async function ciDirectoryCleanupCandidates(pool: Pick<pg.Pool, 'query'>,
         as x("finishedAt" text, collection text, computer jsonb, "setupRetry" jsonb, "executionRunId" text,
           "executionHistory" jsonb)
       where c.state in ('passed','failed','canceled','lost')
+        and c.record->>'executorCleanupPending' is distinct from 'true'
         and ((c.record#>'{computer,hostRef}') @> $1::jsonb
           or (c.record#>'{setupRetry,failedComputer}') @> $1::jsonb
           or (c.record->'executionHistory') @> jsonb_build_array(jsonb_build_object('hostRef',$1::jsonb)))
@@ -62,7 +63,7 @@ export async function ciDirectoryCleanupCandidates(pool: Pick<pg.Pool, 'query'>,
 export async function sweepCiRunDirectories(options: {
   root: string
   runIds: readonly string[]
-  isInUse: (runId: string) => boolean
+  isInUse: (runId: string) => boolean | Promise<boolean>
   withRun: (runId: string, work: () => Promise<boolean>) => Promise<boolean | undefined>
 }): Promise<string[]> {
   const request = CiHostRequestSchema.parse({ operation: 'status', cleanupRunIds: options.runIds }) as
@@ -70,13 +71,13 @@ export async function sweepCiRunDirectories(options: {
   const runIds = request.cleanupRunIds ?? []
   const removed: string[] = []
   for (const runId of new Set(runIds)) {
-    if (options.isInUse(runId)) continue
     try {
+      if (await options.isInUse(runId)) continue
       const deleted = await options.withRun(runId, async () => {
-        if (options.isInUse(runId)) return false
+        if (await options.isInUse(runId)) return false
         const directory = join(options.root, 'runs', runId)
         const meta = JSON.parse(await readFile(join(directory, 'meta.json'), 'utf8')) as { state: string }
-        if (!terminalStates.has(meta.state) || options.isInUse(runId)) return false
+        if (!terminalStates.has(meta.state) || await options.isInUse(runId)) return false
         await rm(directory, { recursive: true, force: true })
         return true
       })
@@ -108,6 +109,7 @@ export async function expireCiLogTails(pool: Pick<pg.Pool, 'query'>, host: NonNu
       and c.state in ('passed','failed','canceled','lost')
       and c.record#>'{computer,hostRef}' @> $2::jsonb
       and c.record->>'collection' is distinct from 'pending'
+      and c.record->>'executorCleanupPending' is distinct from 'true'
       and c.record#>>'{deadlineExceeded,executor}' is distinct from 'retained'
       and (c.record->>'finishedAt')::timestamptz<$3::timestamptz and c.log_tail<>''
       and not exists (
