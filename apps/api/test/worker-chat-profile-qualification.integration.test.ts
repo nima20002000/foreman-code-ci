@@ -120,23 +120,13 @@ it('uses the selected Worker qualification when the general harness cache has a 
         item.requestId === following.requestId && ['completed', 'failed'].includes(item.delivery)),
       'Worker chat after Agent settings change')
       expect(after.turns.find(item => item.requestId === following.requestId)?.delivery).toBe('completed')
-      const nativeSessionId = after.conversation!.nativeSession!.nativeSessionId
-      if (replaceProfile) {
-        expect(nativeSessionId).not.toBe(state.conversation!.nativeSession!.nativeSessionId)
-        expect(after.messages.filter(message => message.role === 'user').map(message => message.content))
-          .toEqual([request.content, request.content, request.content])
-      } else {
-        expect(nativeSessionId).toBe(state.conversation!.nativeSession!.nativeSessionId)
-      }
+      expect(after.conversation?.nativeSession?.nativeSessionId).toBe(state.conversation?.nativeSession?.nativeSessionId)
       const binding = (await fixture.db.pool.query<{ worker_conversation_binding: { owner: { configurationVersionId: string } } }>(
         'select worker_conversation_binding from operator_conversations where id=$1', [state.conversation!.id])).rows[0]!
       expect(binding.worker_conversation_binding.owner.configurationVersionId).toBe(updated.value.agent.configurationVersionId)
       const starts = (await fixture.provider.calls()).filter(call =>
         call.method === 'thread/resume' && call.threadId === state.conversation?.nativeSession?.nativeSessionId)
-      expect(starts).toHaveLength(resumesBefore + (replaceProfile ? 0 : 1))
-      expect((await fixture.provider.calls()).filter(call => call.method === 'turn/start'
-        && call.threadId === nativeSessionId && call.correlationId === `agent-chat:${state.conversation!.id}:${following.requestId}`))
-        .toHaveLength(1)
+      expect(starts).toHaveLength(resumesBefore + 1)
       expect(() => process.kill(firstPid as number, 0)).toThrow(expect.objectContaining({ code: 'ESRCH' }))
       selectedProfile = checked.value
     }

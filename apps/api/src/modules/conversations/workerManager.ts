@@ -728,7 +728,6 @@ export class WorkerConversationManager implements NativeHarnessSessionManager {
     if (this.session || !isDeepStrictEqual(this.observedSession, session)) this.assertSession(session)
     await this.detach()
   }
-  requiresSettledDisposal() { return this.options.lifecycle !== 'observer' }
   async dispose() {
     if (this.options.lifecycle === 'observer') {
       await this.detach()

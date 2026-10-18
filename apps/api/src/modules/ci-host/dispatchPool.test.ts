@@ -246,3 +246,43 @@ it('keeps persisted build validation independent of shared-pool saturation', asy
     await db.close()
   }
 })
+
+it('drains a late cloud acknowledgement after the pass expires while preserving the remaining queue', async () => {
+  vi.useFakeTimers()
+  const records = [queuedTicket(), queuedTicket({ queuedAt: '2026-10-12T00:00:01.000Z' })]
+  const db = database(records)
+  const release = deferred()
+  const starts: string[] = []
+  const endpoint: HostCiEndpoint = { computers: async () => [cloud], request: async (_computer, request) => {
+    if (request.operation === 'status') return readyStatus()
+    if (request.operation !== 'start') throw new Error('Unexpected fixture executor request')
+    starts.push(request.runId)
+    await release.promise
+    return { operation: 'start', run: { runId: request.runId, state: 'running', step: 'lint',
+      startedAt: new Date().toISOString(), finishedAt: null, exitCode: null, message: null, logBytes: 0 } }
+  } }
+  const service = new HostCiService(db.pool, {} as PostgresCommandCoordinator,
+    {} as CiAuthority, {} as CiCommits, endpoint)
+  let drained = false
+  try {
+    const dispatch = service.dispatch()
+    await vi.waitFor(() => expect(starts, JSON.stringify(records.map(run => db.read(run.id).record)))
+      .toEqual([records[0]!.id]))
+    await vi.advanceTimersByTimeAsync(3001)
+    await dispatch
+    const draining = service.drain().then(() => { drained = true })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(drained).toBe(false)
+    release.resolve()
+    await vi.advanceTimersByTimeAsync(0)
+    await draining
+    expect(db.read(records[0]!.id).record).toMatchObject({ state: 'running' })
+    expect(db.read(records[1]!.id).record.state).toBe('queued')
+    expect(starts).toEqual([records[0]!.id])
+  } finally {
+    release.resolve()
+    await vi.advanceTimersByTimeAsync(0)
+    await service.close()
+    await db.close()
+  }
+})

@@ -1885,7 +1885,7 @@ export class AgentChatService {
   }
 
   private async reconcileRetiringRuntime(id: string, runtime: Runtime): Promise<void> {
-    if (!this.closing || !runtime.session || !runtime.manager.requiresSettledDisposal?.()) return
+    if (!this.closing || !runtime.session) return
     const row = await this.repository.get(id)
     if (!row) return
     const signal = AbortSignal.timeout(30_000)
