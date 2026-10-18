@@ -86,7 +86,9 @@ async function fixture() {
     let rows: unknown[] = []
     if (text.includes('from workflow_versions')) rows = [{ id: version.id, workspace_id: version.workspaceId, workflow_id: version.workflowId,
       version: version.version, entry_node_id: version.entryNodeId, execution_semantics_version: 3, record: version }]
-    else if (text.includes('from agent_configuration_versions')) rows = [{ record: configuration }]
+    else if (text.includes('from agent_configuration_versions')) {
+      rows = [{ id: configuration.id, agent_id: configuration.agentId, record: configuration }]
+    }
     else if (text.includes('from source_root_bindings')) rows = [{ record: sourceRoot }]
     else if (text.includes('from harness_instance_settings')) rows = [{ record: override }]
     else if (text.includes('from harness_instance_profile_evidence')) rows = [{ instance_revision: String(override.revision), record: profileProof }]
