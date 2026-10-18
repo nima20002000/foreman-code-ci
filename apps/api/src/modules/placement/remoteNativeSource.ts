@@ -40,6 +40,7 @@ export function createRemoteNativeSourceChannel(): {
   observe(verified: VerifiedRemoteEvidence, source: WorkflowOriginalNativeSource, assertOriginalProducer: () => void): void
   capture(executionId: string, source: WorkflowOriginalNativeSource): RemoteNativeSourceEvidence
   verify: RemoteNativeSourceVerification
+  forget(executionId: string, source: WorkflowOriginalNativeSource): void
   release(executionId: string): void
 } {
   const observations = new Map<string, Map<string, VerifiedRemoteOriginalSource>>()
@@ -85,6 +86,7 @@ export function createRemoteNativeSourceChannel(): {
       if (!original || original.sourceDigest !== evidence.sourceDigest) return conflict()
       original.assertCurrent(); return original
     } },
+    forget(executionId, source) { observations.get(executionId)?.delete(digest(source)) },
     release(executionId) { observations.delete(executionId); generations.delete(executionId) },
   }
 }

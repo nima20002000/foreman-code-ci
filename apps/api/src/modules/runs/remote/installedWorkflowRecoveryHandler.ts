@@ -185,7 +185,8 @@ export async function recoverInstalledWorkflowReply(input: {
       }
       input.assertCurrent()
     }
-    input.physical.remember({ readout, placement: frame.placement, source, leaseExpiresAt: expiresAt,
+    // A recovered process is already closed: its replies confirm closure, so they are cleanup replies.
+    input.physical.remember({ readout, placement: frame.placement, source, leaseExpiresAt: expiresAt, cleanup: true,
       assertOwnerCurrent, assertCurrent: () => assertOriginalPhysicalDirectories({
         source: capture.source, runtimeLeaf: capture.runtimeLeaf, placement: frame.placement,
         approvedRoots: capture.approvedRoots, signal: input.lifetimeSignal,

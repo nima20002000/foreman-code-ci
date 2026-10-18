@@ -11,7 +11,8 @@ import {
   readNativeGraphActivity, readNativeGraphCorrelation, stagedNativeRecordId,
   type NativeGraphProjectionGuard,
 } from './records.js'
-import { activeNativeBatch, memoizeNativeRead, stageNativeRow, type NativeBatch, type StagedNativeRow } from './nativeBatch.js'
+import { activeNativeBatch, memoizeNativeRead, stageNativeRow, WORKFLOW_CORRELATION_READ_PREFIX,
+  type NativeBatch, type StagedNativeRow } from './nativeBatch.js'
 
 /** The G1 writer port. All methods require the caller's Run -> head -> domain lock order. */
 export class PostgresNativeGraphProjectionWriter {
@@ -138,6 +139,11 @@ function assertRevision(expected: string | null, actual: string | undefined, nex
  * requires the revision it was based on; a lost race fails the batch instead of overwriting. */
 export async function flushNativeGraphRows(batch: NativeBatch, kinds: readonly StagedNativeRow['kind'][]): Promise<void> {
   for (const kind of kinds) {
+    if (kind === 'correlation') {
+      for (const key of batch.reads.keys()) {
+        if (key.startsWith(WORKFLOW_CORRELATION_READ_PREFIX)) batch.reads.delete(key)
+      }
+    }
     const dirty = [...batch.staged.entries()].filter(([, row]) => row.dirty && row.kind === kind)
     if (!dirty.length) continue
     const rows = dirty.map(([, row]) => row)
