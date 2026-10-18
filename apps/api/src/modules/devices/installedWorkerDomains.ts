@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { isWorkerAdmission, requiresWorkerBundle } from './workerAdmission.js'
 import { createInstalledWorkerManagedMcp } from '../harnesses/installedWorkerManagedMcp.js'
 import { createWorkerManagedMcpExtension } from '../harnesses/workerManagedMcp.js'
@@ -116,13 +117,21 @@ interface InstalledWorkerInput {
   assertBundleReady?(context: DeviceExtensionContext): Promise<void>
 }
 
+interface WorkerRequestActivity {
+  namespace: string
+  payload: unknown
+  sourceCleanup: boolean
+  waitingOnMain: number
+}
+
 interface InstalledWorkerComposition {
   input: InstalledWorkerInput
   managedMcp: ReturnType<typeof createInstalledWorkerManagedMcp>
   lifetime: AbortController
   configuration: InstalledWorkflowConfigurationLocation | null
   configurationLocation: InstalledWorkflowConfigurationLocation
-  active: Map<Promise<unknown>, { namespace: string; sourceCleanup: boolean }>
+  active: Map<Promise<unknown>, WorkerRequestActivity>
+  requestActivity: AsyncLocalStorage<WorkerRequestActivity>
   maintenance: Promise<ComputerMaintenance> | undefined
   registry: NativeProcessRegistry
   jobRegistry: NativeProcessRegistry
@@ -245,6 +254,7 @@ async function configureWorkerTransfers(composition: InstalledWorkerComposition)
     path: join(input.stateDirectory, 'workflow-runtime.json'), ownerUid: process.getuid!(),
   }
   composition.active = new Map()
+  composition.requestActivity = new AsyncLocalStorage()
   const registry = composition.registry = new NativeProcessRegistry(join(input.stateDirectory, 'workflow-native-processes'))
   composition.jobRegistry = new NativeProcessRegistry(join(input.stateDirectory, 'job-runtime-native-processes'))
   const mainClock = new MainClock()
@@ -279,8 +289,16 @@ async function configureWorkerTransfers(composition: InstalledWorkerComposition)
   const request = composition.request = async (namespace: string, payload: unknown, options?: { signal?: AbortSignal; bytes?: Uint8Array; timeoutMs?: number }) => {
     const binding = current(), captured = input.connection()?.captureRequest(namespace)
     if (!captured || !isDeepStrictEqual(captured.binding, binding)) throw new DomainError('WORKER_DOMAIN_UNAVAILABLE', 'The exact original Main channel is unavailable.', 409)
-    const reply = await captured.request(payload, { ...options,
-      signal: options?.signal ? AbortSignal.any([options.signal, lifetime.signal]) : lifetime.signal })
+    const activity = composition.requestActivity.getStore()
+    if (activity?.sourceCleanup) activity.waitingOnMain++
+    let reply
+    try {
+      reply = await captured.request(payload, { ...options,
+        signal: options?.signal ? AbortSignal.any([options.signal, lifetime.signal]) : lifetime.signal })
+    } finally {
+      if (activity?.sourceCleanup) activity.waitingOnMain--
+    }
+    if (activity?.sourceCleanup) composition.updateDrain.assertAdmission(activity.namespace, activity.payload)
     if (!isDeepStrictEqual(current(), binding)) throw new DomainError('WORKER_DOMAIN_UNAVAILABLE', 'The authenticated Main generation changed.', 409)
     return reply
   }
@@ -826,10 +844,13 @@ async function configureWorkerDrain(composition: InstalledWorkerComposition) {
   }
   const updateDrain = composition.updateDrain = createWorkerRuntimeDrain({ signal: lifetime.signal,
     waitingOn: () => [...updateWaits, ...new Set([...active.values()]
-      .filter(task => task.namespace !== COMPUTER_MAINTENANCE_NAMESPACE && !task.sourceCleanup)
+      .filter(task => task.namespace !== COMPUTER_MAINTENANCE_NAMESPACE && !(task.sourceCleanup && task.waitingOnMain))
       .map(task => task.namespace))],
-    // Source cleanup may wait on Main after local closure; local process and byte checks still gate the update.
-    active: () => [...active].filter(([, task]) => task.namespace !== COMPUTER_MAINTENANCE_NAMESPACE && !task.sourceCleanup)
+    dispatches: () => [...active].filter(([, task]) => task.namespace !== COMPUTER_MAINTENANCE_NAMESPACE && !task.sourceCleanup)
+      .map(([task]) => task),
+    // Cleanup waits on Main in the background; its local work still participates in the final drain.
+    active: () => [...active].filter(([, task]) => task.namespace !== COMPUTER_MAINTENANCE_NAMESPACE
+      && !(task.sourceCleanup && task.waitingOnMain))
       .map(([task]) => task),
     drainJobs: async signal => {
       await Promise.all([
@@ -901,7 +922,9 @@ async function configureWorkerDrain(composition: InstalledWorkerComposition) {
     } })
   composition.tracked = extensions.map(extension => ({ ...extension, ...(extension.handle ? { handle: (payload: unknown, context: DeviceExtensionContext) => {
     lifetime.signal.throwIfAborted()
-    const task = (async () => {
+    const activity = { namespace: extension.namespace, payload,
+      sourceCleanup: isWorkerSourceCleanup(extension.namespace, payload), waitingOnMain: 0 }
+    const task = composition.requestActivity.run(activity, async () => {
       // Admission is decided when the request arrives, so a drain that starts during the bundle check waits for this task.
       updateDrain.assertAdmission(extension.namespace, payload)
       if (requiresWorkerBundle(extension.namespace, payload)) await composition.input.assertBundleReady?.(context)
@@ -911,8 +934,8 @@ async function configureWorkerDrain(composition: InstalledWorkerComposition) {
           ...(context.connectionSignal ? [context.connectionSignal] : [])]) })
       }
       return extension.handle!(payload, { ...context, signal: AbortSignal.any([context.signal, lifetime.signal]) })
-    })()
-    active.set(task, { namespace: extension.namespace, sourceCleanup: isWorkerSourceCleanup(extension.namespace, payload) })
+    })
+    active.set(task, activity)
     void task.then(() => active.delete(task), () => active.delete(task))
     return task
   } } : {}) }))
@@ -921,6 +944,7 @@ async function configureWorkerDrain(composition: InstalledWorkerComposition) {
 export function createWorkerRuntimeDrain(ports: {
   signal: AbortSignal
   active(): Promise<unknown>[]
+  dispatches?(): Promise<unknown>[]
   drainJobs(signal: AbortSignal): Promise<void>
   drainQualifications(): Promise<void>
   drainMaintenance(): Promise<void>
@@ -959,7 +983,7 @@ export function createWorkerRuntimeDrain(ports: {
       }
       try {
         // In-flight dispatches finish admission before the Job host stops accepting work.
-        await runStage(() => Promise.allSettled(ports.active()))
+        await runStage(() => Promise.allSettled(ports.dispatches?.() ?? ports.active()))
         stage = 'jobs'
         await runStage(() => ports.drainJobs(signal))
         stage = 'qualifications'
