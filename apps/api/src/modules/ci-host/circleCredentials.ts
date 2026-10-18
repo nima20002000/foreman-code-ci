@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises'
+import { lstat, readFile } from 'node:fs/promises'
 import { homedir, userInfo } from 'node:os'
 import { join } from 'node:path'
 import { parse } from 'yaml'
@@ -19,16 +19,17 @@ async function readConfig(path: string): Promise<CircleConfig | null> {
     return config
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
-    throw new DomainError('CI_CLOUD_CREDENTIALS_UNAVAILABLE', 'CircleCI credential configuration could not be read.', 503, undefined, { cause: error })
+    throw circleCredentialError()
   }
 }
 
-export async function configuredCircleToken(ports: HostCiPorts): Promise<string | null> {
-  const environmentToken = process.env.CIRCLE_TOKEN || process.env.CIRCLE_CLI_TOKEN
+export async function configuredCircleToken(ports: HostCiPorts,
+  environment: NodeJS.ProcessEnv = process.env): Promise<string | null> {
+  const environmentToken = environment.CIRCLE_TOKEN || environment.CIRCLE_CLI_TOKEN
   if (environmentToken) return environmentToken
-  const directory = process.env.XDG_CONFIG_HOME || join(homedir(), '.config')
+  const directory = environment.XDG_CONFIG_HOME || join(homedir(), '.config')
   const config = await readConfig(join(directory, 'circleci', 'config.yml'))
-  const host = process.env.CIRCLE_HOST || config?.host || CLOUD_HOST
+  const host = environment.CIRCLE_HOST || config?.host || CLOUD_HOST
   // Server credentials must not be sent to the cloud REST endpoint.
   if (host !== CLOUD_HOST) return null
   if (process.platform === 'linux') {
@@ -45,4 +46,29 @@ export async function configuredCircleToken(ports: HostCiPorts): Promise<string 
   if (config?.token?.trim()) return config.token.trim()
   const legacy = await readConfig(join(homedir(), '.circleci', 'cli.yml'))
   return legacy?.token?.trim() || null
+}
+
+export function circleCredentialError() {
+  return new DomainError('CI_CLOUD_CREDENTIALS_UNAVAILABLE', 'CircleCI credential configuration could not be read.', 503)
+}
+
+/** Managed profiles are the only credential source for additional logins. No keyring lookup occurs here. */
+export async function circleProfileToken(xdgHome: string): Promise<string | null> {
+  const directory = join(xdgHome, 'circleci')
+  const path = join(directory, 'config.yml')
+  try {
+    for (const [entry, isDirectory] of [[xdgHome, true], [directory, true], [path, false]] as const) {
+      const info = await lstat(entry)
+      if (info.isSymbolicLink() || (isDirectory ? !info.isDirectory() : !info.isFile())
+        || process.platform !== 'win32' && (info.mode & 0o777) !== (isDirectory ? 0o700 : 0o600)) {
+        throw circleCredentialError()
+      }
+    }
+    const config = await readConfig(path)
+    if (config?.host && config.host !== CLOUD_HOST) throw circleCredentialError()
+    return config?.token?.trim() || null
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+    throw circleCredentialError()
+  }
 }

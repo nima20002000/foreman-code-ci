@@ -61,11 +61,17 @@ cleanup fence before contacting the original worker. The worker checks its
 protected native journal, active preparation tasks, original filesystem, and
 source/native producer processes. Live or uncertain ownership stays reserved.
 
-Closure archives only the original claim and retains source trees, private Git,
-transfer evidence and receipts. Main records closure and changes the reservation
-to `retained`, freeing active materialization/preparing slots. Retained evidence
-continues to count against the aggregate disk budget. Reconciled preparations
-cannot regain execution authority.
+Closure archives the original claim and preserves private Git, transfer evidence
+and receipts. Closed Worker executions also retire their immutable reference
+copies after result collection and confirmed native closure, including while a
+Loop Run continues. Worker workflows share one read-only checkout per source
+binding when they cannot write; its files and harness remain read-only. This
+keeps historical chat's accepted directory available without retaining a source
+copy for every execution. Separate shared working trees keep their own retention.
+Main records the remaining footprint and changes the reservation to `retained`,
+freeing active materialization/preparing slots. Remaining bytes continue to count
+against the aggregate disk budget. Reconciled preparations cannot regain
+execution authority.
 
 ## Source storage capacity and capture retention
 

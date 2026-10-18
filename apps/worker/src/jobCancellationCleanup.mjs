@@ -10,7 +10,7 @@ import { WorkerPairingConfigurationSchema } from '../../../packages/contracts/sr
 import { RemoteJobOperationReceiptRecordSchema } from '../../../packages/contracts/src/remoteJobExecution.ts';
 import { publicKeyFingerprint } from '../../../packages/contracts/src/deviceIdentityNode.ts';
 import { RemoteOperationJournal } from '../../../apps/api/src/modules/runs/remote/operationJournal.ts';
-import { releaseMaterializationClaim, releaseMaterializationClaimForCancellation,
+import { releaseMaterializationClaimForCancellation,
   preparationChildrenClosed } from '../../../apps/api/src/modules/sources/materialization.ts';
 import { InstalledJobRuntimeConfigurationRecordSchema } from '../../../apps/api/src/modules/jobs/installedRuntimeHost.ts';
 import { isPreparatoryVerificationOwner, JobNativeOwnerSchema } from '../../../apps/api/src/modules/jobs/executorJournal.ts';
@@ -382,10 +382,9 @@ export async function cleanupJobBeforeEntry(stateDirectory, grantPath) {
         ? grant.filesystemRecovery.blockDevice : originalPool.blockDevice;
       quota = { pool: quotaProjection(configuration, filesystem, blockDevice) };
     }
-    if (grant.filesystemRecovery) {
-      await releaseMaterializationClaimForCancellation(grant.materialization.receipt,
-        grant.filesystemRecovery.filesystem, noEntry, signal, quota);
-    } else await releaseMaterializationClaim(grant.materialization.receipt, noEntry, quota, signal);
+    const sourceFilesystem = grant.filesystemRecovery?.filesystem ?? grant.root.binding.filesystem;
+    await releaseMaterializationClaimForCancellation(grant.materialization.receipt,
+      sourceFilesystem, noEntry, signal, quota);
     const root = await openPrivateRoot(grant.root.binding.canonicalPath);
     let archiveBytes;
     try {

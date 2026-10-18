@@ -1,17 +1,14 @@
 import { useLayoutEffect, useId, type ReactNode, type RefObject } from 'react'
-import { ArrowUp, CornerDownLeft, SlidersHorizontal, Square } from 'lucide-react'
+import { ArrowUp, CornerDownLeft, Square } from 'lucide-react'
 import { parseSessionCommand, type SessionMode } from '@foreman-code/contracts'
 import { IconButton, Textarea, Tooltip } from '../../../shared/ui/nocturne'
 import { useConversationDraftStore } from '../conversationDraftStore'
-import { SessionControls } from '../sessionControls/SessionControls'
-import { CompactionActivity } from '../sessionControls/CompactionActivity'
 import { useSlashCommandMenu } from '../sessionControls/useSlashCommandMenu'
-import type { ComposerSessionControls } from '../sessionControls/useSessionControls'
 
-export function AgentChatComposer({ name, draftKey, inputRef, sessionControls, disabled, reason, controlReason, pending, controlPending,
+export function AgentChatComposer({ name, draftKey, inputRef, disabled, reason, controlReason, pending, controlPending,
   hasAttachments, attachmentControl, actions, canStop, stopReason, onStop, onSubmit }: {
   name: string; draftKey: string; inputRef: RefObject<HTMLTextAreaElement | null>
-  sessionControls: ComposerSessionControls; disabled: boolean; reason?: string; controlReason?: string
+  disabled: boolean; reason?: string; controlReason?: string
   pending: boolean; controlPending: boolean
   hasAttachments: boolean; attachmentControl?: ReactNode; actions?: ReactNode
   canStop: boolean; stopReason?: string; onStop(): void; onSubmit(content: string, mode?: SessionMode): void
@@ -24,13 +21,13 @@ export function AgentChatComposer({ name, draftKey, inputRef, sessionControls, d
   const blocked = disabled || (controlOnly ? controlPending : pending) || !!reason || (!draft.trim() && !hasAttachments) || draft.length > 32_000
   const submit = (content = draft) => {
     const submitted = parseSessionCommand(content)
-    const sessionCommand = submitted.kind === 'compact' || submitted.kind === 'mode'
+    const sessionCommand = submitted.kind === 'compact' || submitted.kind === 'mode' || submitted.kind === 'new'
     const unavailable = sessionCommand ? controlReason : reason
     const inFlight = sessionCommand ? controlPending : pending
     if (disabled || inFlight || unavailable || (!content.trim() && !hasAttachments) || content.length > 32_000) return
     onSubmit(content.trim(), submitted.kind === 'plan-task' ? 'plan' : undefined)
   }
-  const menu = useSlashCommandMenu(draft, value => setDraft(draftKey, value), content => submit(content))
+  const menu = useSlashCommandMenu(draft, value => setDraft(draftKey, value), content => submit(content), true)
   useLayoutEffect(() => {
     const input = inputRef.current
     if (!input) return
@@ -77,13 +74,6 @@ export function AgentChatComposer({ name, draftKey, inputRef, sessionControls, d
     {reason && reason.length > 64 ? <p id={`${id}-hint`} className="agent-chat-reason" title={reason}>{reason}</p>
       : <span id={`${id}-hint`} className="n-sr-only">{reason ?? 'Enter to send. Shift+Enter for a new line.'}</span>}
     <div className="agent-chat-composer-tools">
-      {!disabled && sessionControls.state ? <details className="agent-chat-options">
-        <summary aria-label="Session options" title="Session options"><SlidersHorizontal size={15} aria-hidden="true" /></summary>
-        <div className="agent-chat-options-content">
-          <SessionControls controls={sessionControls} context={false} />
-          <CompactionActivity controls={sessionControls} />
-        </div>
-      </details> : null}
       {canStop ? <Tooltip content={reason ?? 'Queue a message for the next turn'}>
         <IconButton label="Queue message" variant="ghost" disabled={blocked} onClick={() => submit()}>
           <CornerDownLeft size={15} aria-hidden="true" />

@@ -310,6 +310,42 @@ describe('atomic original remote reviewer retention', () => {
 })
 
 describe('retained remote reviewer recovery', () => {
+  it.each(['attachment', 'application access', 'credential', 'review lease'] as const)(
+    'retries a transient %s failure on the same original reviewer', async stage => {
+      const f = await recoveryFixture()
+      const main = f.coordinator()
+      const original = structuredClone(f.execution)
+      const failure = stage === 'review lease'
+        ? new DomainError('REVIEW_JOB_LEASE_LOST', 'The review lease changed.', 409)
+        : new DeviceApplicationError('timeout')
+      let interrupted = true
+      const failWhileInterrupted = () => {
+        if (interrupted) throw failure
+      }
+      if (stage === 'attachment' || stage === 'review lease') {
+        f.worker.beforeReattach = async () => failWhileInterrupted()
+      }
+      if (stage === 'application access') f.worker.beforeApplicationAccess = failWhileInterrupted
+      if (stage === 'credential') f.credentials.recoverRemote.mockRejectedValueOnce(failure)
+      try {
+        await expect(f.attach(main)).rejects.toBe(failure)
+        expect(f.resident).not.toHaveBeenCalled()
+        interrupted = false
+        const recovered = await f.attach(main)
+        expect(recovered.session).toEqual(f.session)
+        expect(f.execution).toEqual(original)
+        expect(f.resident).toHaveBeenCalledOnce()
+        expect(f.proxies).toHaveLength(1)
+        expect(f.credentials.recoverRemote).toHaveBeenLastCalledWith(f.execution.id,
+          expect.objectContaining({ token: 'original-token' }), undefined)
+        expect(f.closures.begin).not.toHaveBeenCalled()
+        expect(f.requests.every(method => ['reattach', 'get-application-access'].includes(method))).toBe(true)
+        await main.releaseReviewSession(f.execution.id)
+        await main.closeForRestart()
+      } finally { await f.connection.close() }
+    },
+  )
+
   it('requests Run cleanup when the Worker closes the original reviewer during cold recovery', async () => {
     const f = await recoveryFixture()
     const original = structuredClone(f.execution)
@@ -473,6 +509,7 @@ describe('retained remote reviewer recovery', () => {
 
   it('reattaches the original reviewer after graceful Main shutdown without closing its native lifetime', async () => {
     const f = await recoveryFixture()
+    const original = structuredClone(f.execution)
     try {
       const first = f.coordinator()
       expect((await f.attach(first)).session).toEqual(f.session)
@@ -482,10 +519,13 @@ describe('retained remote reviewer recovery', () => {
       expect((await f.attach(second)).session).toEqual(f.session)
       expect(f.closures.begin).toHaveBeenCalledTimes(1)
       expect(f.state).toMatchObject({ detached: false, closed: false, generation: '2' })
-      expect(f.requests).toEqual(['reattach', 'get-application-access', 'history', 'reattach', 'get-application-access'])
+      expect(f.execution).toEqual(original)
+      expect(f.requests).toEqual(['reattach', 'get-application-access', 'reattach', 'get-application-access'])
+      expect(f.closures.recordDetached).toHaveBeenNthCalledWith(1, original, f.session, '1', expect.any(Function))
       expect(f.credentials.recoverRemote.mock.results).toHaveLength(2)
       await second.closeForRestart()
       expect(f.closures.recordDetached).toHaveBeenCalledTimes(2)
+      expect(f.closures.recordDetached).toHaveBeenNthCalledWith(2, original, f.session, '2', expect.any(Function))
     } finally { await f.connection.close() }
   })
 
