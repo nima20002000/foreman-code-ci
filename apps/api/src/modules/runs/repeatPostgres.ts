@@ -4,7 +4,6 @@ import {
   readRepeatExecutionLocked, retainRepeatEffectReceipt, type StoredOccurrence, type StoredRepeatExecution,
 } from './repeatExecutionRead.js'
 import { readSystemPromptSetting } from '../settings/foundation.js'
-import { withNativeGraphProjectionBatch } from '../run-graph/nativeIngestion.js'
 import { readWorkflowSessionContinuation } from './sessionContinuation.js'
 import { readWorkResultRepairAttempt } from './workResultRepair.js'
 import { workflowDeliverableFailure } from './workflowDeliverable.js'
@@ -255,7 +254,7 @@ export class RepeatRunRepository {
   }
   /** Queue one exact activation through the existing native receipt and launch path. */
   admitWorkActivation(activationId: string, candidate: (nodeId: string) => HarnessExecution): Promise<{ execution: HarnessExecution; reused: boolean }> {
-    return this.transaction(context => withNativeGraphProjectionBatch(context.sql, context.scope.runId, async () => {
+    return this.transaction(async (context) => {
       this.active(context)
       await context.hooks.assertAuthorityLocked(context.sql)
       const input = await readWorkActivationInputLocked({ ...context,
@@ -295,7 +294,7 @@ export class RepeatRunRepository {
           await markWorkNoticePendingLocked(context, activationId, queued.id)
         })
       return { execution: queued, reused: false }
-    }))
+    })
   }
   /** Settle one exact native attempt before accepting its work result. A
    * technical retry stays in the same activation and never reserves a handoff. */
@@ -750,9 +749,8 @@ export class RepeatRunRepository {
         { workResultRepair, deliverableFailure, executionContext })
       await this.launchReceipt(context, stored)
       await context.hooks.assertAuthorityLocked(context.sql)
-      const original = await withNativeGraphProjectionBatch(context.sql, context.scope.runId,
-        () => native.assertUpdateLocked(context.sql, structuredClone(stored.execution), structuredClone(incoming),
-          structuredClone(stored.ref), evidence))
+      const original = await native.assertUpdateLocked(context.sql, structuredClone(stored.execution), structuredClone(incoming),
+        structuredClone(stored.ref), evidence)
       const rows = await context.sql.query<{ reference: unknown }>(
         'select reference from execution_native_sessions where execution_id=$1 for share', [incoming.id])
       const session = NativeSessionReferenceSchema.parse(rows.rows[0]?.reference)
