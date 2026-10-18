@@ -10,8 +10,7 @@ export const ciInfrastructure = [
   /(?:^|\/)(?:package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|tsconfig[^/]*|vitest\.config\.[^/]*|eslint\.config\.[^/]*)$/,
   /(?:^|\/)migrations?\/|Migration\.[cm]?[jt]s$/,
   /^packages\/contracts\/src\/index\.ts$/,
-  /^packages\/contracts\/src\/ci(?:Coverage|ImportGraph)\.[^/]+$/,
-  /^scripts\/(?:test-integration[^/]*|test-resources[^/]*|integration-process[^/]*|integration-coverage[^/]*|ci-[^/]*|vitest-[^/]*|test-db\.mjs|test-command\.mjs|heavy-job\.mjs)$/,
+  /^scripts\/(?:test-integration[^/]*|test-resources[^/]*|integration-process[^/]*|ci-[^/]*|vitest-[^/]*|test-db\.mjs|test-command\.mjs|heavy-job\.mjs)$/,
   /^apps\/api\/test\/(?:helpers\/|setup[^/]*$)|^apps\/web\/src\/test\//,
   /^(?:\.github\/workflows\/|\.circleci\/)/,
 ]
@@ -53,31 +52,4 @@ export function resolveImport(file, specifier, paths, exports) {
   const candidates = [target, ...['.ts', '.tsx', '.mts', '.mjs', '.js', '.jsx', '.json', '/index.ts', '/index.tsx', '/index.js']
     .map(extension => `${stem}${extension}`)]
   return candidates.find(candidate => paths.has(candidate)) ?? null
-}
-
-/** Repository files named by literal fixture URLs or filesystem reads.
- * @param {string} file
- * @param {string} text
- * @param {{ has(path: string): boolean }} paths
- * @returns {string[]} */
-export function runtimeDependencies(file, text, paths) {
-  const resolved = new Set()
-  const add = (base, literal) => {
-    const target = posix.normalize(posix.join(base, literal))
-    if (paths.has(target)) resolved.add(target)
-    else {
-      const source = resolveImport(file, `./${posix.relative(posix.dirname(file), target)}`, paths, {})
-      if (source) resolved.add(source)
-    }
-  }
-  for (const match of text.matchAll(/\bnew\s+URL\s*\(\s*['"]([^'"]+)['"]\s*,\s*import\.meta\.url\s*\)/g)) {
-    if (match[1].startsWith('.')) add(posix.dirname(file), match[1])
-  }
-  const parts = file.split('/')
-  const project = ['apps', 'packages'].includes(parts[0]) ? parts.slice(0, 2).join('/') : parts[0]
-  for (const match of text.matchAll(/\b(?:readFile|readFileSync|createReadStream)\s*\(\s*['"]([^'"]+)['"]/g)) {
-    if (match[1].startsWith('/') || /^[a-z]+:/i.test(match[1])) continue
-    for (const base of [posix.dirname(file), project, '']) add(base, match[1])
-  }
-  return [...resolved]
 }
