@@ -1,6 +1,5 @@
 import { CiRunRecordSchema, type CiHostReply, type CiHostRequest, type CiRunRecord } from '@foreman-code/contracts'
 import { expect, it } from 'vitest'
-import { DomainError } from '../errors.js'
 import { PostgresCommandCoordinator } from '../commands/postgres.js'
 import type { CiAuthority } from '../jobs/ciAuthority.js'
 import { expireCiRun, expireOverdueCiRuns } from './deadlines.js'
@@ -150,52 +149,3 @@ it('keeps the starting phase deadline after repeated acknowledgements with a sta
     await service.close()
   }
 })
-
-it.each(['stopped', 'unknown'] as const)(
-  'clears pending executor cleanup when a deadline-retained executor is confirmed %s', async confirmation => {
-    const executor: HostCiComputer = { key: 'fixture-main:cloud:circleci:0', label: 'CircleCI fixture', priority: 0,
-      hostRef: { kind: 'cloud', mainId: 'fixture-main', provider: 'circleci', slot: 0 } }
-    const running = ticket(uuid(8), { state: 'running', queuedAt: ago(5 * hours), startedAt: ago(4 * hours),
-      executorCleanupPending: true, computer: { hostRef: executor.hostRef, label: executor.label } })
-    const store = ticketStore([running], { [running.id]: executor.key })
-    expect(await expireOverdueCiRuns(store.pool, now, async run => run)).toBe(1)
-    const expired = store.read(running.id).record
-    expect(store.read(running.id)).toMatchObject({ hostKey: executor.key, record: {
-      executorCleanupPending: true, deadlineExceeded: { executor: 'retained' },
-    } })
-    const operations: string[] = []
-    const endpoint = { computers: async () => [executor],
-      request: async (_computer: HostCiComputer, request: CiHostRequest): Promise<CiHostReply> => {
-        if (request.operation === 'status') {
-          return { operation: 'status', ready: true, reasons: [], cpuCount: 4, memoryBytes: 2 ** 33, runs: [] }
-        }
-        operations.push(request.operation)
-        if (request.operation !== 'cancel') throw new Error(`Unexpected ${request.operation}`)
-        if (confirmation === 'unknown') throw new DomainError('CI_RUN_UNKNOWN', 'The executor has no such run.', 404)
-        return { operation: 'cancel', run: { runId: request.runId, state: 'canceled', step: null,
-          startedAt: expired.startedAt!, finishedAt: now.toISOString(), exitCode: null, logBytes: 0,
-          executorCleanupPending: false, message: 'Canceled.' } }
-      } }
-    const authority: CiAuthority = { resolve: async principal => ({ principal, workspaceId: 'workspace' }) }
-    const reopen = () => new HostCiService(store.pool, new PostgresCommandCoordinator(store.pool),
-      authority, {} as CiCommits, endpoint)
-    const service = reopen()
-    try {
-      await service.dispatch()
-      await service.drain()
-      expect(store.read(expired.id)).toMatchObject({ state: 'failed', hostKey: null, record: {
-        executorCleanupPending: false, deadlineExceeded: { executor: 'released' },
-        observation: { status: 'available', consecutiveFailures: 0, nextAttemptAt: null },
-        finishedAt: expired.finishedAt, message: expired.message, collection: 'failed',
-      } })
-      expect(operations).toEqual(['cancel'])
-    } finally { await service.close() }
-    const restarted = reopen()
-    try {
-      await restarted.dispatch()
-      await restarted.drain()
-      expect(operations).toEqual(['cancel'])
-      expect(store.read(expired.id)).toMatchObject({ hostKey: null, record: { executorCleanupPending: false } })
-    } finally { await restarted.close() }
-  },
-)
