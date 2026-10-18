@@ -122,6 +122,17 @@ test('an incomplete packages restore is repaired rather than treated as an insta
   assert.equal(f.commands().length, 1)
 })
 
+test('publishes the prefetched store and publication cache locations on install and cache reuse', t => {
+  const f = fixture(t)
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const result = f.run()
+    assert.equal(result.status, 0, result.stderr)
+    const paths = JSON.parse(readFileSync(join(f.root, '.logs/ci-package-paths.json'), 'utf8'))
+    assert.deepEqual(paths, { storeDir: join(f.root, 'node_modules/.pnpm-store'),
+      cacheDir: join(f.root, '.logs/pnpm-metadata') })
+  }
+})
+
 for (const restored of [false, true]) {
   test(`rejects a missing required native payload after pnpm succeeds (restored: ${restored})`, t => {
     const f = fixture(t)

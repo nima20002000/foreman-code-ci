@@ -77,6 +77,9 @@ it.each([
         environment.RUNNER_BIN = runnerBin
       }
       await runWarmInstall(root, bin, environment)
+      expect(JSON.parse(await readFile(join(root, '.logs/ci-package-paths.json'), 'utf8'))).toEqual({
+        storeDir: join(root, 'cache/pnpm-store'), cacheDir: join(root, 'cache/pnpm-metadata'),
+      })
       const commands = async () => (await readFile(calls, 'utf8')).trim().split('\n')
         .map(line => JSON.parse(line) as string[])
       expect(await commands()).toEqual(repositoryHook ? [

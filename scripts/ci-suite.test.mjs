@@ -122,7 +122,7 @@ if (process.argv[2] === 'rev-parse') console.log('false')
   }
   const result = spawnSync('bash', [script, action], {
     encoding: 'utf8',
-    ...(selection ? { cwd: directory } : {}),
+    cwd: directory,
     env: { ...sourceEnvironment, BASH_ENV: '',
       FOREMAN_CODE_CI_TYPECHECK_CACHE: '', FOREMAN_CODE_CI_TYPECHECK_CACHE_ACTIVE: '',
       SUITE: suite, SCOPE: selection?.omitScope ? undefined : scope,
