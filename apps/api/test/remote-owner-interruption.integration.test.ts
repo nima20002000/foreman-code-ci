@@ -2,12 +2,12 @@ import { randomUUID } from 'node:crypto'
 import { rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, it } from 'vitest'
-import { SourcePreparationSchema } from '@foreman-code/contracts/source-admission'
 import { SavedRunDetailsSchema } from '@foreman-code/contracts/wave25'
 import { hasPositiveRemoteEntryClosure } from '@foreman-code/contracts/remote-execution-entry-closure-node'
 import { receipts, useRemoteReviewFixture, waitForRemoteReview } from './helpers/remoteReviewProductionCases.js'
 import { startWhenReady } from './helpers/harnessInstallationUpdate.js'
 import { waitForRequesterSession } from './helpers/remoteReviewEntryStartup.js'
+import { waitForReleasedWorkflowSource } from './helpers/releasedWorkflowSource.js'
 
 const withRemoteReviewFixture = useRemoteReviewFixture()
 
@@ -61,13 +61,8 @@ it('closes an unbound attempt after owner restarts, records interruption, and ad
     expect(closed.native).toBeUndefined()
     expect(closed.terminal?.result).toBeUndefined()
     expect(originalOwners.every(original => fixture.registry.closedRegistration(original.owner, original.launchId))).toBe(true)
-    const preparation = await waitForRemoteReview(async () => {
-      await fixture.reconcile()
-      return SourcePreparationSchema.parse(await fixture.value('source_preparation_get', {
-        workspaceId: started.run.workspaceId, operationId: closed.intent.operationId,
-      }))
-    }, value => value.reservationState === 'reclaimed', 'source release after interrupted entry closure')
-    expect(preparation.reservationState).toBe('reclaimed')
+    const preparation = await waitForReleasedWorkflowSource(fixture, started.run.workspaceId, closed.intent.operationId)
+    expect(preparation.reservationState).toBe('retained')
     await fixture.reconcile()
     expect((await fixture.executions(started.run.id)).filter(execution => execution.workflowNodeId === requester.workflowNodeId))
       .toHaveLength(1)

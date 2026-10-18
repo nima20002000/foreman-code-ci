@@ -136,8 +136,8 @@ it.each(['completed', 'failed'] as const)(
       const mcp = (token: string) => graphRpc(production!.app, token, 'tools/call', {
         name: 'agent_chat_controls_get', arguments: target })
       const pending = await mcp(reader.token)
-      expect(pending.result?.isError, JSON.stringify(pending)).not.toBe(true)
       expect(methods).toContain('conversation.compact-read')
+      expect(pending.result?.isError, JSON.stringify(pending)).not.toBe(true)
       expect(SessionControlStateSchema.parse(graphRpcValue(pending.result)).compaction)
         .toMatchObject({ requestId, status: 'uncertain' })
       failRead = true
