@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto'
 import { isDeepStrictEqual as same } from 'node:util'
 import { AgentConfigurationVersionSchema, HarnessExecutionSchema, type NativeSessionReference } from '@foreman-code/contracts'
 import { REMOTE_NATIVE_SOURCE_LIMIT } from '@foreman-code/contracts/remote-workflow-physical'
+import { RemoteOperationReceiptSchema, remoteWorkflowHasTurn } from '@foreman-code/contracts/remote-execution'
+import type { DispatchIntent } from '@foreman-code/contracts/node-placement'
 import { ArtifactAttemptSchema } from '@foreman-code/contracts/artifact-edges'
 import { TransferContextSchema, type TransferContext } from '@foreman-code/contracts/byte-transfer'
 import type { AcceptedArtifactPublication } from '../../files/distributed/publication.js'
@@ -16,6 +18,7 @@ import { currentRunGraphPublication } from '../../run-graph/publication.js'
 import { requireRepeatCanonicalReceiptBeforeCommit } from '../../run-graph/repeatReceipts.js'
 import { commandInputHash } from '../../commands/postgres.js'
 import { repeatDigest, repeatExecutionIdentity } from '../repeatResolution.js'
+import { assertWorkflowCorrelation } from '../workResultRepair.js'
 import type { RepeatNativeEvidence } from '../repeatNativeRepository.js'
 import type { WorkflowNativeProofRecord } from '../workflowNativeProof.js'
 import type { RunOwnership } from '../ownership.js'
@@ -89,7 +92,7 @@ export class WorkflowNativeFileContextAdmission {
       if (!admission || admission.version !== 1 || admission.conversationKey !== key
         || conversation.id !== `workflow-native-files-${digest(key)}` || admission.commandId !== `execution:${capture.execution.id}`
         || !same(admission.session, capture.session) || admission.context.nativeSessionId !== capture.session.nativeSessionId
-        || admission.context.turnId !== capture.lane.providerId || admission.context.scope.chat.kind !== 'agent'
+        || admission.context.scope.chat.kind !== 'agent'
         || admission.context.scope.chat.conversationId !== conversation.id
         || admission.agentConfigurationVersionId !== capture.execution.agentConfigurationVersionId
         || admission.workingDirectory !== capture.execution.workingDirectory || admission.runtimeDirectory !== capture.execution.runtimeDirectory
@@ -97,7 +100,8 @@ export class WorkflowNativeFileContextAdmission {
         || admission.attempt.nodeId !== intent.nodeId || admission.attempt.attemptId !== intent.attemptId
         || admission.attempt.placementHash !== intent.bindingHash || admission.attempt.workspaceId !== proof.scope.workspaceId
         || admission.attempt.workflowId !== proof.scope.workflowId) return conflict()
-      const accepted = { context: admission.context, attempt: ArtifactAttemptSchema.parse(admission.attempt), transferContext }
+      const active = await this.currentTurnContext(sql, capture, admission, intent)
+      const accepted = { context: active.context, attempt: ArtifactAttemptSchema.parse(admission.attempt), transferContext }
       const fence = await capture.owner.readOneShotFence(sql)
       const verify = async () => {
         capture.assertCurrent(); capture.owner.assertOwned()
@@ -124,7 +128,7 @@ export class WorkflowNativeFileContextAdmission {
           || !lane || !lane.held || lane.owner_agent_id !== capture.execution.agentId || lane.harness !== capture.session.harness
           || lane.native_session_id !== capture.session.nativeSessionId || lane.token !== capture.lane!.token
           || lane.generation !== String(capture.lane!.connectionGeneration) || lane.provider_id !== capture.lane!.providerId
-          || lane.correlation !== admission.commandId) return denied('native_lease_changed')
+          || lane.correlation !== active.correlationId) return denied('native_lease_changed')
         const stored = (await sql.query<{ record: WorkflowNativeProofRecord; source_digest: string }>(
           'select record,source_digest from workflow_native_proofs where proof_id=$1 and run_id=$2 and execution_id=$3 for share',
           [admission.proofId, intent.runId, intent.executionId])).rows[0]
@@ -142,7 +146,7 @@ export class WorkflowNativeFileContextAdmission {
           || receipts[0]!.command_id !== digest(target) || receipts[0]!.input_hash !== commandInputHash(admission)
           || !same(receipts[0]!.result, admission)) return conflict()
         const caller = await this.ports.authority.authorize(accepted, sql)
-        if (caller.principal.id !== admission.context.ownerPrincipalId || !same(caller.context, admission.context)) return denied('file_caller_changed')
+        if (caller.principal.id !== admission.context.ownerPrincipalId || !same(caller.context, active.context)) return denied('file_caller_changed')
         capture.assertCurrent()
       }
       await verify()
@@ -153,6 +157,24 @@ export class WorkflowNativeFileContextAdmission {
       })
       return structuredClone(accepted)
     } catch (error) { poisonGraphTransaction(sql); throw error }
+  }
+  private async currentTurnContext(sql: GraphTransactionSql, capture: WorkflowNativeCapture,
+    admission: Admission, intent: DispatchIntent): Promise<{ context: FileToolContext; correlationId: string }> {
+    const turnId = capture.lane!.providerId!
+    if (admission.context.turnId === turnId) return { context: admission.context, correlationId: admission.commandId }
+    const row = (await sql.query<{ receipt: unknown }>(
+      'select receipt from remote_execution_receipts where operation_id=$1 for share', [intent.operationId])).rows[0]
+    const receipt = row && RemoteOperationReceiptSchema.parse(row.receipt)
+    const repairs = receipt?.resultRepairs ?? []
+    const correlationId = `${admission.commandId}:result-repair:${repairs.length}`
+    if (!receipt || !same(receipt.intent, intent) || receipt.stopFence || receipt.terminal
+      || receipt.native?.sessionId !== capture.session.nativeSessionId || receipt.native.turnId !== turnId
+      || receipt.turnInput?.correlationId !== correlationId
+      || !admission.context.turnId
+      || !remoteWorkflowHasTurn(receipt, admission.context.nativeSessionId, admission.context.turnId)
+      || !remoteWorkflowHasTurn(receipt, capture.session.nativeSessionId, turnId)) return conflict()
+    await assertWorkflowCorrelation(sql, capture.execution.id, correlationId)
+    return { context: { ...admission.context, turnId }, correlationId }
   }
   async admitLocked(sql: GraphTransactionSql, evidence: RepeatNativeEvidence, rawProof: WorkflowNativeProofRecord,
     rawTransfer: TransferContext): Promise<AcceptedArtifactPublication> {

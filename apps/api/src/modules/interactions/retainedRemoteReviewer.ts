@@ -83,7 +83,8 @@ async function readRemoteReviewer(sql: GraphSqlClient, execution: HarnessExecuti
     and record#>>'{original,type}'='history' and record#>>'{original,history,terminalTurn,correlationId}'=$3
     and record#>>'{original,history,terminalTurn,providerId}'=$4
     and record#>'{original,history,terminalTurn,result}'=$5::jsonb limit 1`,
-  [execution.id, execution.runId, `execution:${execution.id}`, receipt.retainedReviewer.workflowTurnId, JSON.stringify(execution.result)])
+  [execution.id, execution.runId, receipt.turnInput?.correlationId ?? `execution:${execution.id}`,
+    receipt.retainedReviewer.workflowTurnId, JSON.stringify(execution.result)])
   if (terminal.rowCount !== 1) throw new DomainError('REMOTE_REVIEWER_DENIED', 'Original reviewer terminal proof is required.', 409)
   const credentials = (await sql.query<{ principal_id: string }>(`select b.principal_id from worker_credential_bindings b
     join management_principals p on p.id=b.principal_id where b.execution_id=$1 and b.run_id=$2
