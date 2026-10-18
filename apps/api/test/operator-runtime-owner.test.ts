@@ -4,13 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vite
 import { OperatorRuntimeOwner } from '../src/infrastructure/operatorRuntimeOwner.js'
 import { deferred } from './helpers/deferred.js'
 
-interface OwnerReply {
-  rows: Array<{ acquired?: boolean; epoch?: string }>
-}
-
 interface Driver extends EventEmitter {
   connect: Mock<() => Promise<void>>
-  query: Mock<(sql: string) => Promise<OwnerReply>>
+  query: Mock<(sql: string) => Promise<{ rows: Array<{ acquired: boolean }> }>>
   end: Mock<() => Promise<void>>
 }
 const state = vi.hoisted(() => ({ drivers: [] as Driver[] }))
@@ -18,7 +14,7 @@ vi.mock('pg', async () => {
   const { EventEmitter } = await import('node:events')
   return { default: { Client: class extends EventEmitter {
     connect = vi.fn<() => Promise<void>>(async () => undefined)
-    query = vi.fn<(sql: string) => Promise<OwnerReply>>(async () => ({ rows: [{ acquired: true }] }))
+    query = vi.fn<(sql: string) => Promise<{ rows: Array<{ acquired: boolean }> }>>(async () => ({ rows: [{ acquired: true }] }))
     end = vi.fn(async () => { this.emit('end') })
     constructor() { super(); state.drivers.push(this) }
   } } }
@@ -131,13 +127,14 @@ describe('runtime-owner connection lifetime', () => {
     expect(driver.end).toHaveBeenCalledTimes(1)
   })
 
-  it.each(['acquire', 'close'] as const)('bounds a stalled %s reply and closes its session', async (operation) => {
+  it.each(['acquire', 'epoch', 'close'] as const)('bounds a stalled %s reply and closes its session', async (operation) => {
     vi.useFakeTimers()
     const { owner, driver, lost } = fixture()
     if (operation !== 'acquire') await owner.acquire()
     const pending = deferred<{ rows: Array<{ acquired: boolean }> }>()
     driver.query.mockImplementationOnce(() => pending.promise)
-    const work = operation === 'acquire' ? owner.acquire() : owner.close()
+    const work = operation === 'acquire' ? owner.acquire()
+      : operation === 'epoch' ? owner.readRuntimeEpoch() : owner.close()
     let result: unknown
     const observed = work.then(() => { result = 'success' }, error => { result = error })
     try {
@@ -145,139 +142,11 @@ describe('runtime-owner connection lifetime', () => {
       expect(result).toBeInstanceOf(Error)
       expect(owner.active).toBe(false)
       expect(driver.end).toHaveBeenCalledOnce()
-      expect(lost).not.toHaveBeenCalled()
+      expect(lost).toHaveBeenCalledTimes(operation === 'epoch' ? 1 : 0)
     } finally {
       pending.resolve({ rows: [{ acquired: true }] })
       await observed
       await owner.close().catch(() => { /* ignore: the failed close is asserted above. */ })
-    }
-  })
-
-  it('keeps ownership when an epoch reply misses its deadline and subsequently succeeds', async () => {
-    vi.useFakeTimers()
-    const { owner, driver, lost } = fixture()
-    await owner.acquire()
-    const pending = deferred<OwnerReply>()
-    driver.query.mockResolvedValue({ rows: [{ epoch: '123456' }] })
-    driver.query.mockImplementationOnce(() => pending.promise)
-    const reading = owner.readRuntimeEpoch().then(value => ({ value }), error => ({ error }))
-    try {
-      await vi.advanceTimersByTimeAsync(5_001)
-      expect(owner.active).toBe(true)
-      expect(lost).not.toHaveBeenCalled()
-      expect(driver.end).not.toHaveBeenCalled()
-      pending.resolve({ rows: [{ epoch: '123456' }] })
-      await vi.advanceTimersByTimeAsync(100)
-      expect(await reading).toEqual({ value: '123456' })
-      expect(state.drivers).toHaveLength(1)
-    } finally {
-      pending.resolve({ rows: [{ epoch: '123456' }] })
-      await vi.advanceTimersByTimeAsync(30_000)
-      await reading
-      await owner.close()
-    }
-  })
-
-  it.each([
-    Object.assign(new Error('canceling statement due to statement timeout'), { code: '57014' }),
-    new Error('Query read timeout'),
-  ])('retries a transient epoch read timeout on the original owner session: %s', async failure => {
-    vi.useFakeTimers()
-    const { owner, driver, lost } = fixture()
-    await owner.acquire()
-    driver.query.mockResolvedValue({ rows: [{ epoch: '123456' }] })
-    driver.query.mockRejectedValueOnce(failure)
-    const reading = owner.readRuntimeEpoch().then(value => ({ value }), error => ({ error }))
-    try {
-      await vi.advanceTimersByTimeAsync(100)
-      expect(await reading).toEqual({ value: '123456' })
-      expect(owner.active).toBe(true)
-      expect(lost).not.toHaveBeenCalled()
-      expect(driver.end).not.toHaveBeenCalled()
-      expect(state.drivers).toHaveLength(1)
-    } finally {
-      await owner.close()
-    }
-  })
-
-  it('reports exhausted epoch read retries without releasing the runtime lock', async () => {
-    vi.useFakeTimers()
-    const { owner, driver, lost } = fixture()
-    await owner.acquire()
-    driver.query.mockRejectedValue(Object.assign(new Error('canceling statement due to statement timeout'), {
-      code: '57014',
-    }))
-    const reading = owner.readRuntimeEpoch().catch(error => error)
-    try {
-      await vi.advanceTimersByTimeAsync(30_000)
-      expect(await reading).toMatchObject({ code: 'DATABASE_RETRY_DEADLINE_EXCEEDED' })
-      expect(owner.active).toBe(true)
-      expect(lost).not.toHaveBeenCalled()
-      expect(driver.end).not.toHaveBeenCalled()
-      driver.query.mockResolvedValue({ rows: [{ epoch: '123456' }] })
-      await expect(owner.readRuntimeEpoch()).resolves.toBe('123456')
-      expect(state.drivers).toHaveLength(1)
-    } finally {
-      driver.query.mockResolvedValue({ rows: [{ acquired: true }] })
-      await owner.close()
-    }
-  })
-
-  it('fences an owner whose connection ends while an epoch read is retrying', async () => {
-    vi.useFakeTimers()
-    const { owner, driver, lost } = fixture()
-    await owner.acquire()
-    driver.query.mockRejectedValueOnce(new Error('Query read timeout'))
-    const reading = owner.readRuntimeEpoch().catch(error => error)
-    await vi.advanceTimersByTimeAsync(0)
-    driver.emit('end')
-    await vi.advanceTimersByTimeAsync(100)
-    expect(await reading).toMatchObject({ code: 'NATIVE_RUNTIME_UNAVAILABLE' })
-    expect(owner.active).toBe(false)
-    expect(lost).toHaveBeenCalledOnce()
-    await expect(owner.readRuntimeEpoch()).rejects.toMatchObject({ code: 'NATIVE_RUNTIME_UNAVAILABLE' })
-    await expect(owner.acquire()).rejects.toBeInstanceOf(Error)
-    expect(state.drivers).toHaveLength(1)
-    await owner.close()
-  })
-
-  it('fences a silent ownership transport within a bounded time without connection events', async () => {
-    vi.useFakeTimers()
-    const { owner, driver, lost } = fixture()
-    await owner.acquire()
-    const reply = deferred<OwnerReply>()
-    driver.query.mockImplementation(() => reply.promise)
-    const reading = owner.readRuntimeEpoch().catch(error => error)
-    try {
-      await vi.advanceTimersByTimeAsync(35_001)
-      expect(owner.active).toBe(false)
-      expect(lost).toHaveBeenCalledOnce()
-      await expect(owner.acquire()).rejects.toBeInstanceOf(Error)
-    } finally {
-      reply.resolve({ rows: [{ epoch: '123456' }] })
-      await reading
-      await owner.close()
-    }
-  })
-
-  it('does not let cancellation discard an unanswered ownership transport deadline', async () => {
-    vi.useFakeTimers()
-    const { owner, driver, lost } = fixture()
-    await owner.acquire()
-    const reply = deferred<OwnerReply>()
-    driver.query.mockImplementation(() => reply.promise)
-    const controller = new AbortController()
-    const reading = owner.readRuntimeEpoch({ signal: controller.signal }).catch(error => error)
-    try {
-      await vi.advanceTimersByTimeAsync(5_001)
-      controller.abort(new Error('Caller canceled'))
-      await vi.advanceTimersByTimeAsync(30_000)
-      expect(owner.active).toBe(false)
-      expect(lost).toHaveBeenCalledOnce()
-    } finally {
-      reply.resolve({ rows: [{ epoch: '123456' }] })
-      await reading
-      await owner.close()
     }
   })
 

@@ -40,7 +40,8 @@ export class CircleRest {
     if (!response) return null
     if (response.status === 404 && args[0] === 'run' && args[1] === 'get') {
       await response.body?.cancel()
-      throw new DomainError('CI_CLOUD_RUN_NOT_FOUND', 'CircleCI run is not visible.', 502)
+      const resource = path === `/api/v2/pipeline/${args[2]}` ? 'pipeline' : 'child'
+      throw new DomainError('CI_CLOUD_RUN_NOT_FOUND', 'CircleCI run is not visible.', 502, { resource })
     }
     const lookupDenied = args[1] === 'get' && (args[0] === 'run' || args[0] === 'job')
       && (response.status === 401 || response.status === 403)

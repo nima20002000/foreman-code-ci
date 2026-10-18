@@ -1,11 +1,7 @@
 import pg from 'pg'
 import { DomainError } from '../modules/errors.js'
 import { retryStartupDatabase } from './startupDatabase.js'
-import { isDatabaseTimeout, retryDatabaseOperation } from './databaseTimeout.js'
-
-function isRuntimeDatabaseTimeout(error: unknown): error is DomainError {
-  return error instanceof DomainError && error.code === 'NATIVE_RUNTIME_DATABASE_TIMEOUT'
-}
+import { isDatabaseTimeout } from './databaseTimeout.js'
 
 /** One API/native owner per database. A separate connection never consumes an application-pool slot. */
 export class OperatorRuntimeOwner {
@@ -45,17 +41,9 @@ export class OperatorRuntimeOwner {
   /** Passive authority for local telemetry; no lock acquisition or owner mutation. */
   get active(): boolean { return this.held && !this.closing && !this.loss }
   async readRuntimeEpoch(): Promise<string> {
-    const assertActive = () => {
-      if (!this.active) throw new DomainError('NATIVE_RUNTIME_UNAVAILABLE', 'The original runtime owner is not active.', 503)
-    }
-    // The advisory lock lasts for the session; an epoch read timeout does not release ownership.
-    const result = await retryDatabaseOperation(() => this.queryWithDeadline<{ epoch: string }>(`
-      select (extract(epoch from backend_start)*1000000)::bigint::text as epoch
-      from pg_stat_activity where pid=pg_backend_pid()`), isRuntimeDatabaseTimeout, {
-      signal: this.startup.signal,
-      check: assertActive,
-    })
-    const row = result.rows[0]
+    if (!this.active) throw new DomainError('NATIVE_RUNTIME_UNAVAILABLE', 'The original runtime owner is not active.', 503)
+    const row = (await this.query<{ epoch: string }>(`select (extract(epoch from backend_start)*1000000)::bigint::text as epoch
+      from pg_stat_activity where pid=pg_backend_pid()`)).rows[0]
     if (!this.active || !row?.epoch) throw new DomainError('NATIVE_RUNTIME_UNAVAILABLE', 'The original runtime owner epoch is unavailable.', 503)
     return row.epoch
   }
@@ -138,22 +126,6 @@ export class OperatorRuntimeOwner {
   }
 
   private async query<R extends pg.QueryResultRow>(text: string, values?: unknown[]): Promise<pg.QueryResult<R>> {
-    try {
-      return await this.queryWithDeadline<R>(text, values)
-    } catch (error) {
-      if (!isRuntimeDatabaseTimeout(error)) throw error
-      this.loss = error
-      const held = this.held
-      this.held = false
-      // An unanswered lock request may have acquired ownership on the server.
-      this.destroySession()
-      if (held && !this.closing) this.onLost(error)
-      await this.end()
-      throw error
-    }
-  }
-
-  private async queryWithDeadline<R extends pg.QueryResultRow>(text: string, values?: unknown[]): Promise<pg.QueryResult<R>> {
     const timeout = new DomainError('NATIVE_RUNTIME_DATABASE_TIMEOUT',
       'The runtime ownership database did not respond within its deadline.', 503)
     let timer: ReturnType<typeof setTimeout> | undefined
@@ -163,8 +135,15 @@ export class OperatorRuntimeOwner {
       })
       return await Promise.race([this.client.query<R>(text, values), deadline])
     } catch (error) {
-      if (isDatabaseTimeout(error)) throw timeout
-      throw error
+      if (error !== timeout && !isDatabaseTimeout(error)) throw error
+      this.loss = timeout
+      const held = this.held
+      this.held = false
+      // An unanswered lock request may have acquired ownership on the server.
+      this.destroySession()
+      if (held && !this.closing) this.onLost(timeout)
+      await this.end()
+      throw timeout
     } finally {
       if (timer) clearTimeout(timer)
     }
