@@ -44,7 +44,7 @@ export const SourceFilesystemOperationSchema = z.discriminatedUnion('operation',
     root: SourceRootRecordSchema, attempt: SourceOperationAttemptSchema }).strict(),
   z.object({ version: z.literal(1), operation: z.literal('sources.prepare'), identity: SourcePreparationIdentitySchema,
     root: SourceRootRecordSchema, attempt: SourceOperationAttemptSchema, github: SourceGitHubReferenceSchema,
-    worktree: SourceWorktreeRequestSchema.optional() }).strict(),
+    worktree: SourceWorktreeRequestSchema.optional(), retainedReceipt: MaterializationReceiptSchema.optional() }).strict(),
   z.object({ version: z.literal(1), operation: z.literal('sources.verify'), record: SourceMaterializationRecordSchema,
     relativeCwd: z.string().max(1024).default('') }).strict(),
   z.object({ version: z.literal(1), operation: z.literal('sources.private-repository'), record: SourceMaterializationRecordSchema }).strict(),
@@ -89,6 +89,7 @@ export const SourceActiveNativeSessionSchema = z.object({
 export type SourceActiveNativeSession = z.infer<typeof SourceActiveNativeSessionSchema>
 export const SourceOperationOwnerSchema = z.object({ identity: SourcePreparationIdentitySchema, root: SourceRootRecordSchema,
   attempt: SourceOperationAttemptSchema, source: SourcePinSchema, record: SourceMaterializationRecordSchema.nullable(),
+  retainedReceipt: MaterializationReceiptSchema.optional(), retainWorkingTree: z.literal(true).optional(),
   worktree: SourceWorktreeRequestSchema.optional(),
   preparationKind: z.literal('workflow').optional(), quotaRequired: z.literal(true).optional(),
   preparationNativeSession: z.lazy(() => NativeSessionReferenceSchema).nullable().optional(),
@@ -107,6 +108,8 @@ export const SourceReservationReclamationAuthorityResponseSchema = z.object({ ve
   operation: z.literal('sources.reclamation-authorize'), grant: SourceReservationReclamationSchema }).strict()
 export const RetainedSourceFootprintSchema = z.object({
   worktree: z.object({ state: z.enum(['removed', 'retained']), message: z.string().optional(),
+    /** Distinguishes cleanup that retained files from retention for an active Run. */
+    removalAttempted: z.literal(true).optional(),
     nextAttemptAt: z.string().datetime().optional() }).strict().optional(),
   retainedBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   sharedTree: z.object({

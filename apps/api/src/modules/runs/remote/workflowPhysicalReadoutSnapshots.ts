@@ -17,6 +17,7 @@ export class WorkflowPhysicalReadoutSnapshots {
   private readonly snapshots = new Map<string, {
     operationId: string
     selector: string
+    originalSelector: string
     readout: RemoteWorkflowPhysicalReadout
     bytes: number
     expiresAt: number
@@ -33,18 +34,24 @@ export class WorkflowPhysicalReadoutSnapshots {
   }
 
   remember(input: PhysicalReadoutSelector, readout: RemoteWorkflowPhysicalReadout,
-    metadata: { digest: string; byteSize: number }) {
+    metadata: { digest: string; byteSize: number }, options: {
+      cleanup?: boolean; original?: PhysicalReadoutSelector
+    } = {}) {
     for (const [key, snapshot] of this.snapshots) {
       if (snapshot.expiresAt <= this.now()) this.remove(key)
     }
     const selector = selectorHash(input)
     const key = `${selector}:${metadata.digest}`
     if (this.snapshots.has(key)) return
-    if (this.bytes + metadata.byteSize > DEVICE_JSON_CONTINUATION_LIMIT * 4 || this.snapshots.size >= 128) {
-      throw new DomainError('REMOTE_NATIVE_PHYSICAL_BACKPRESSURE',
+    while (this.bytes + metadata.byteSize > DEVICE_JSON_CONTINUATION_LIMIT * 4 || this.snapshots.size >= 128) {
+      const oldest = options.cleanup && [...this.snapshots].find(([, snapshot]) =>
+        snapshot.operationId === input.intent.operationId)
+      if (!oldest) throw new DomainError('REMOTE_NATIVE_PHYSICAL_BACKPRESSURE',
         'Physical readout retention is full of replies being paged.', 503)
+      this.remove(oldest[0])
     }
     this.snapshots.set(key, { operationId: input.intent.operationId, selector, readout,
+      originalSelector: selectorHash(options.original ?? input),
       bytes: metadata.byteSize, expiresAt: Date.parse(readout.expiresAt) })
     this.bytes += metadata.byteSize
   }
@@ -62,7 +69,7 @@ export class WorkflowPhysicalReadoutSnapshots {
   forget(input: PhysicalReadoutSelector) {
     const selector = selectorHash(input)
     for (const [key, snapshot] of this.snapshots) {
-      if (snapshot.selector === selector) this.remove(key)
+      if (snapshot.selector === selector || snapshot.originalSelector === selector) this.remove(key)
     }
   }
 

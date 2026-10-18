@@ -78,15 +78,21 @@ export async function pnpmInstall(source: string, cache: string, messageFile: st
   const install = validateNative ? 'install_ci_dependencies' : installCommand
   const ready = inputs
     ? `[ -f ${shellQuote(complete)} ] && [ "$(< ${shellQuote(complete)})" = ${shellQuote(inputs.key)} ]` : 'true'
-  const prefetch = options.offlineOnly ? `${fetch} --offline`
-    : `${fetch} --offline || { echo '[ci-cache] filling store online'; ${fetch} --prefer-offline; }`
+  // pnpm can fetch tarballs concurrently with policy verification. Complete verification before provisioning.
+  const verify = `${installCommand} --lockfile-only --ignore-scripts`
+  const fetchOffline = validateNative ? `${verify} --offline && ${fetch} --offline` : `${fetch} --offline`
+  const fetchOnline = validateNative ? `${verify} --prefer-offline && ${fetch} --prefer-offline`
+    : `${fetch} --prefer-offline`
+  const prefetch = options.offlineOnly ? fetchOffline
+    : `${fetchOffline} || { echo '[ci-cache] filling store online'; ${fetchOnline}; }`
   return [
     `export npm_config_cache_dir=${shellQuote(join(cache, 'pnpm-metadata'))}`,
     `export npm_config_store_dir=${shellQuote(join(cache, 'pnpm-store'))}`,
     ...(validateNative ? [
+      'native_store_offline=--offline',
       'install_ci_dependencies() {',
       `  ${installCommand} "$@" || return $?`,
-      `  ${shellQuote(process.execPath)} ${shellQuote(validator)} ${shellQuote(source)} || {`,
+      `  ${shellQuote(process.execPath)} ${shellQuote(validator)} ${shellQuote(source)} --repair $native_store_offline || {`,
       `    rm -f -- ${shellQuote(complete)}`,
       '    return 1',
       '  }',
@@ -106,6 +112,7 @@ export async function pnpmInstall(source: string, cache: string, messageFile: st
     // Dependency snapshots from the previous per-run copy scheme are no longer read.
     `rm -rf ${shellQuote(join(cache, 'modules'))}`,
     // Another request may have filled these inputs while this checkout waited for the lock.
+    ...(!options.offlineOnly && validateNative ? ['native_store_offline='] : []),
     `${ready} && ${install} --offline || {`,
     ...(inputs && staging ? [
       '(',
