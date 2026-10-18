@@ -111,8 +111,8 @@ export class AgentPlacementProducer implements RunPlacementAdmissionPort {
       }
       await assertRepository(sql)
       const resolveMain = async (sql: GraphTransactionSql, principal: ManagementPrincipal,
-        configuration: AgentConfigurationVersion) => {
-        const context = { sql, principal, configuration, mainId: this.mainId, workspaceId: input.workspaceId,
+        configuration: AgentConfigurationVersion, nodeId: string) => {
+        const context = { sql, principal, configuration, nodeId, mainId: this.mainId, workspaceId: input.workspaceId,
           roots: this.roots, installations: this.registry.installations, qualificationSuites: this.qualificationSuites,
           ...(this.assertProfileReady ? { assertProfileReady: this.assertProfileReady } : {}) }
         if (initial.inheritedRoot) {
@@ -122,11 +122,11 @@ export class AgentPlacementProducer implements RunPlacementAdmissionPort {
         return refreshSourcePlacement(await resolveLocalMainPlacement(context), roots)
       }
       const resolveInherited = async (sql: GraphTransactionSql, principal: ManagementPrincipal,
-        configuration: AgentConfigurationVersion) => {
-        if (!version.definition.defaultWorktree) return resolveMain(sql, principal, configuration)
+        configuration: AgentConfigurationVersion, nodeId: string) => {
+        if (!version.definition.defaultWorktree) return resolveMain(sql, principal, configuration, nodeId)
         const root = await resolveWorkflowRootBinding({ sql, principal, workspaceId: input.workspaceId,
           reference: version.definition.defaultWorktree.rootBinding, sources: this.sources })
-        return resolveBoundRootPlacement({ sql, principal, configuration, root, mainId: this.mainId,
+        return resolveBoundRootPlacement({ sql, principal, configuration, nodeId, root, mainId: this.mainId,
           workspaceId: input.workspaceId, roots: this.roots, installations: this.registry.installations,
           qualificationSuites: this.qualificationSuites,
           ...(this.assertProfileReady ? { assertProfileReady: this.assertProfileReady } : {}) })
@@ -140,7 +140,8 @@ export class AgentPlacementProducer implements RunPlacementAdmissionPort {
         const configRow = (await sql.query<{ record: unknown }>('select record from agent_configuration_versions where id=$1 and workspace_id=$2 and agent_id=$3',
           [version.agentConfigurationVersionIds[node.agentId], input.workspaceId, node.agentId])).rows[0]
         const config = AgentConfigurationVersionSchema.parse(configRow?.record)
-        const saved = node.placement ? refreshSourcePlacement(node.placement, roots) : await resolveInherited(sql, principal, config)
+        const saved = node.placement ? refreshSourcePlacement(node.placement, roots)
+          : await resolveInherited(sql, principal, config, node.id)
         const instance = await this.readInstance(sql, saved.instanceId)
         await this.assertProfileReady?.(instance)
         if (saved) this.workerExecution.requireEnabled(saved.hostRef)
@@ -221,9 +222,9 @@ export class AgentPlacementProducer implements RunPlacementAdmissionPort {
           await assertRepository(transaction)
           if (saved.implicit) {
             const current = version.definition.defaultWorktree
-              ? await resolveInherited(transaction, live, saved.configuration)
+              ? await resolveInherited(transaction, live, saved.configuration, pin.nodeId)
               : await resolveLocalMainPlacement({ sql: transaction, principal: live,
-                configuration: saved.configuration, mainId: this.mainId, workspaceId: input.workspaceId,
+                configuration: saved.configuration, nodeId: pin.nodeId, mainId: this.mainId, workspaceId: input.workspaceId,
                 roots: this.roots, installations: this.registry.installations,
                 qualificationSuites: this.qualificationSuites })
             if (!sameWorkflowValue(saved.saved, current)) this.conflict()
