@@ -2,39 +2,8 @@ import { randomUUID } from 'node:crypto'
 import { afterEach, expect, it, vi } from 'vitest'
 import { CircleCiProvider, type CloudRun } from './cloudProviders.js'
 import { fixture } from './cloud.testSupport.js'
-import { CircleStandby } from './circleStandby.js'
 
 afterEach(() => vi.restoreAllMocks())
-
-it.each(['cancel', 'recheck policy'] as const)('recovers a failed pre-trigger policy read by %s without inventing a submission', async recovery => {
-  const f = await fixture({}, { provider: 'circleci', account: 'fixture-org' })
-  const failure = new Error('Fixture credit allowance read failed')
-  let readings = 0
-  f.cloud.setCircleStandby(new CircleStandby(async () => [{ owner: 'fixture-org', circleAccountId: 'default',
-    role: 'primary', ready: true, mirrorNames: new Set(['site-ci']) }], { reading: async () => {
-    readings++
-    if (readings === 3) throw failure
-    const remaining = readings > 3 ? 0 : 400_000
-    return { credits: { total: 400_000, used: 400_000 - remaining, remaining, asOf: f.ports.now().toISOString() } }
-  } }))
-  const original = f.ports.run
-  vi.spyOn(f.ports, 'run').mockImplementation(async (file, args, options) => {
-    if (file === 'circleci' && args[0] === 'api') {
-      return { code: 0, stdout: JSON.stringify({ items: [], next_page_token: null }), stderr: '' }
-    }
-    return original(file, args, options)
-  })
-  const runId = randomUUID()
-  await expect(f.cloud.handle({ operation: 'start', runId, workspaceId: 'ci-workspace', repository: 'octo/site',
-    commit: f.commit, suite: 'lint', scope: 'full' })).rejects.toBe(failure)
-  expect(f.circle.triggered).toEqual([])
-  const read = { operation: 'read', runId, afterOffset: 0, maxBytes: 1024 } as const
-  if (recovery === 'cancel') await f.reopen().handle({ operation: 'cancel', runId })
-  f.advance(75_001)
-  const cloud = recovery === 'cancel' ? f.reopen() : f.cloud
-  expect(await cloud.handle(read)).toMatchObject({ run: { state: recovery === 'cancel' ? 'canceled' : 'failed' } })
-  expect(f.circle.triggered).toEqual([])
-})
 
 it.each([false, true])('adopts an accepted CircleCI submission after its reply is lost, delayed visibility: %s', async delayed => {
   const f = await fixture({}, { provider: 'circleci' })

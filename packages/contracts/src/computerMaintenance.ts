@@ -39,11 +39,6 @@ export const SyncedMarketplaceSchema = z.object({
 }).strict()
 export type SyncedMarketplace = z.infer<typeof SyncedMarketplaceSchema>
 
-export const SyncedPluginSchema = z.object({
-  pluginId: z.string().regex(/^[^\s@]+@[^\s@]+$/u), version: z.string().min(1).max(256).nullable(),
-}).strict()
-export type SyncedPlugin = z.infer<typeof SyncedPluginSchema>
-
 export const MaintenanceTaskStartSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('update-harnesses'), harnesses: HarnessSelectionSchema }).strict(),
   // Automatic convergence preserves the updater's failure guard; explicit Retry defaults to true.
@@ -59,12 +54,9 @@ export const MaintenanceTaskStartSchema = z.discriminatedUnion('kind', [
       claude: z.array(z.string().min(1).max(100)).max(100).optional() }).strict().optional(),
     warnings: z.array(z.string().max(300)).max(202).optional() }).strict(),
   z.object({ kind: z.literal('sync-plugins'), plugins: z.array(z.string().regex(/^[^\s@]+@[^\s@]+$/u)).max(200).optional(),
-    pluginVersions: z.record(z.string().regex(/^[^\s@]+@[^\s@]+$/u), z.string().min(1).max(256)).optional(),
     /** Main's Git plugin marketplaces; a computer adds the ones it lacks before installing plugins from them. */
     marketplaces: z.array(SyncedMarketplaceSchema).max(50).optional(),
-    claudePlugins: z.array(SyncedPluginSchema.omit({ version: true }).extend({
-      enabled: z.boolean(), version: z.string().min(1).max(256).optional(),
-    }).strict()).max(200).optional(),
+    claudePlugins: z.array(z.object({ pluginId: z.string().regex(/^[^\s@]+@[^\s@]+$/u), enabled: z.boolean() }).strict()).max(200).optional(),
     claudeMarketplaces: z.array(SyncedMarketplaceSchema).max(50).optional(),
     warnings: z.array(z.string().max(300)).max(202).optional() }).strict().refine(task =>
       (task.plugins !== undefined || task.claudePlugins !== undefined)

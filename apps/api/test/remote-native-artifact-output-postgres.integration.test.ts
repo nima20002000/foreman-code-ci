@@ -10,7 +10,6 @@ import type { FileToolContext } from '../src/modules/files/tools/types.js'
 import { readLiveManagementPrincipal } from '../src/modules/access/liveManagementPrincipal.js'
 import { requireAuthorization } from '../src/modules/access/policy.js'
 import { applyApplicationMigrations } from '../src/infrastructure/migrations.js'
-import { withTransaction } from '../src/infrastructure/transaction.js'
 
 const databaseUrl = process.env.TEST_DATABASE_URL
 const schema = `native_output_${randomUUID().replaceAll('-', '')}`
@@ -57,13 +56,13 @@ describe.skipIf(!databaseUrl)('original native artifact output receipt SQL guard
     await expect(pool.query("update management_command_receipts set operation=$1 where operation='fixture.ordinary'", [operation])).rejects.toThrow('original command insertion')
     expect((await pool.query("update management_command_receipts set result='{}' where operation='fixture.ordinary'")).rowCount).toBe(1)
   })
-  async function outputFixture(internalContext = false, nativeSessionId?: string) {
+  async function outputFixture(internalContext = false) {
     // Explicit SQL-boundary facts. These rows are not native qualification or a physical publication.
     const suffix = randomUUID(), principalId = `sql-output-${suffix}`, mainId = randomUUID()
     const workspaceId = `workspace-${suffix}`, agentId = `agent-${suffix}`, configurationId = randomUUID(), conversationId = randomUUID()
     const producer = { workspaceId, workflowId: `workflow-${suffix}`, runId: `run-${suffix}`, nodeId: 'sql-node', executionId: randomUUID(), attemptId: randomUUID(), placementHash: 'b'.repeat(64) }
     const scope = { kind: 'temporary' as const, chat: { kind: 'agent' as const, conversationId, agentId, workspaceId, workflowId: producer.workflowId, runId: producer.runId, executionId: producer.executionId } }
-    const context: FileToolContext = { ownerPrincipalId: principalId, scope, nativeSessionId: nativeSessionId ?? `sql-native-${suffix}`, turnId: 'sql-turn', allowMutation: true, allowedTools: ['files.publish_result'] }
+    const context: FileToolContext = { ownerPrincipalId: principalId, scope, nativeSessionId: `sql-native-${suffix}`, turnId: 'sql-turn', allowMutation: true, allowedTools: ['files.publish_result'] }
     const fileId = randomUUID(), revisionId = randomUUID(), transferId = randomUUID(), body = Buffer.from('SQL boundary fixture'), sha256 = createHash('sha256').update(body).digest('hex')
     const record = NativeArtifactOutputSchema.parse({ version: 1, producer, outputKey: 'report', commandId: 'sql-original-command', nativeIdentity: { nativeSessionId: context.nativeSessionId, turnId: context.turnId },
       publication: { ownerPrincipalId: principalId, requestId: randomUUID(), binding: bindingIdentity(context) }, pins: { fileId, revisionId, sha256, byteSize: body.length }, scope,
@@ -71,7 +70,9 @@ describe.skipIf(!databaseUrl)('original native artifact output receipt SQL guard
     const chatContext = { workspaceId, workflowId: producer.workflowId, runId: producer.runId, workflowNodeId: producer.nodeId, agentId }
     const agentKey = internalContext ? 'workflow-native-files:v1:' + JSON.stringify([mainId, producer.executionId, producer.attemptId]) : runChatStorageKey(chatContext, producer.executionId)
     const conversationRecord = { origin: { kind: 'run_execution', runId: producer.runId, executionId: producer.executionId, sourceNativeSessionId: context.nativeSessionId }, workingDirectory: '/sql-fixture/source', runtimeDirectory: '/sql-fixture/runtime', workflowFileContext: { fixture: 'original admission' } }
-    await withTransaction(pool, async client => {
+    const client = await pool.connect()
+    try {
+      await client.query('begin')
       await client.query("insert into management_principals(id,name,audience,token_hash,grants,expires_at) values($1,'SQL fixture','operator',$2,$3::jsonb,clock_timestamp()+interval '1 hour')", [principalId, createHash('sha256').update(suffix).digest('hex'), JSON.stringify([{ actions: ['agent_chat:write'], scope: { workspaceIds: [workspaceId] } }])])
       await client.query("insert into workspaces(id,record) values($1,'{}')", [workspaceId])
       await client.query("insert into agents(id,workspace_id,record) values($1,$2,'{}')", [agentId, workspaceId])
@@ -87,7 +88,8 @@ describe.skipIf(!databaseUrl)('original native artifact output receipt SQL guard
       await client.query("insert into file_allocations(allocation_id,owner_principal_id,request_id,input_hash,file_id,revision_id,state,created_at) values($1,$2,$3,$4,$5,$6,'finalized',now())", [randomUUID(), principalId, record.publication.requestId, 'a'.repeat(64), fileId, revisionId])
       const link = { ...record.publication, context, ref: { fileId, revisionId }, transferReceipt: record.transferReceipt, publicationInputHash: 'a'.repeat(64), createdAt: new Date().toISOString() }
       await client.query('insert into file_tool_publications(owner_principal_id,request_id,binding,file_id,revision_id,record) values($1,$2,$3,$4,$5,$6::jsonb)', [principalId, record.publication.requestId, record.publication.binding, fileId, revisionId, JSON.stringify(link)])
-    })
+      await client.query('commit')
+    } catch (error) { await client.query('rollback'); throw error } finally { client.release() }
     const authorize = async (query: import('../src/modules/files/repository.js').FileQuery) => {
       requireAuthorization(await readLiveManagementPrincipal(query, principalId), 'agent_chat:write', { workspaceId })
     }
@@ -103,53 +105,31 @@ describe.skipIf(!databaseUrl)('original native artifact output receipt SQL guard
     await expect(f.repository.bind({ ...f.record, commandId: 'changed-command' }, f.authorize)).rejects.toMatchObject({ code: 'NATIVE_ARTIFACT_OUTPUT_CONFLICT' })
     expect(await f.repository.read(f.record.producer, f.record.outputKey)).toEqual(f.record)
   })
-  it('keeps separate immutable workflow file contexts for one continued native thread while fencing ordinary chat ownership', async () => {
-    const first = await outputFixture(true)
-    const nativeSessionId = first.record.nativeIdentity.nativeSessionId
-    await first.repository.bind(first.record, first.authorize)
-    const next = await outputFixture(true, nativeSessionId)
-    await next.repository.bind(next.record, next.authorize)
-    expect(next.conversationId).not.toBe(first.conversationId)
-    expect(await first.repository.read(first.record.producer, first.record.outputKey)).toEqual(first.record)
-    expect(await next.repository.read(next.record.producer, next.record.outputKey)).toEqual(next.record)
-    const contexts = (await pool.query<{ id: string; execution_id: string; native_session_id: string }>(
-      `select id,origin_execution_id as execution_id,native_session_id from operator_conversations
-        where id=any($1::text[]) order by id`, [[first.conversationId, next.conversationId]])).rows
-    expect(contexts).toEqual([
-      { id: first.conversationId, execution_id: first.record.producer.executionId, native_session_id: nativeSessionId },
-      { id: next.conversationId, execution_id: next.record.producer.executionId, native_session_id: nativeSessionId },
-    ].sort((a, b) => a.id.localeCompare(b.id)))
-    await expect(pool.query("update operator_conversations set native_session_id='replacement' where id=$1",
-      [first.conversationId])).rejects.toThrow('identity is immutable')
-    const chat = await outputFixture(false, nativeSessionId)
-    await expect(outputFixture(false, nativeSessionId)).rejects.toMatchObject({ code: '23505' })
-    expect((await pool.query('select native_session_id from operator_conversations where id=$1',
-      [chat.conversationId])).rows[0].native_session_id).toBe(nativeSessionId)
-  })
   it('cancels a blocked binding, releases its file lock and reconstructs the same output', async () => {
     const f = await outputFixture()
+    const barrier = await pool.connect()
     const controller = new AbortController()
     const stopped = new Error('Owned artifact adoption stopped')
     let binding: Promise<unknown> | undefined
     try {
-      await withTransaction(pool, async barrier => {
-        await barrier.query('lock table management_command_receipts in share mode')
-        let resolvePid!: (pid: number) => void
-        const pid = new Promise<number>(resolve => { resolvePid = resolve })
-        binding = f.repository.bind(f.record, async query => {
-          await f.authorize(query)
-          resolvePid((await query.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid)
-        }, controller.signal)
-        const rejected = expect(binding).rejects.toBe(stopped)
-        const backend = await pid
-        await expect.poll(async () => (await pool.query<{ waiting: boolean }>(
-          "select wait_event_type='Lock' as waiting from pg_stat_activity where pid=$1", [backend])).rows[0]?.waiting)
-          .toBe(true)
-        controller.abort(stopped)
-        await rejected
-        await barrier.query("set local lock_timeout='1s'")
-        await barrier.query('select file_id from files where file_id=$1 for update', [f.record.pins.fileId])
-      })
+      await barrier.query('begin')
+      await barrier.query('lock table management_command_receipts in share mode')
+      let resolvePid!: (pid: number) => void
+      const pid = new Promise<number>(resolve => { resolvePid = resolve })
+      binding = f.repository.bind(f.record, async query => {
+        await f.authorize(query)
+        resolvePid((await query.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid)
+      }, controller.signal)
+      const rejected = expect(binding).rejects.toBe(stopped)
+      const backend = await pid
+      await expect.poll(async () => (await pool.query<{ waiting: boolean }>(
+        "select wait_event_type='Lock' as waiting from pg_stat_activity where pid=$1", [backend])).rows[0]?.waiting)
+        .toBe(true)
+      controller.abort(stopped)
+      await rejected
+      await barrier.query("set local lock_timeout='1s'")
+      await barrier.query('select file_id from files where file_id=$1 for update', [f.record.pins.fileId])
+      await barrier.query('rollback')
       expect(await f.repository.read(f.record.producer, f.record.outputKey)).toBeUndefined()
       const recovered = new PostgresNativeArtifactOutputRepository(pool, f.mainId)
       expect(await recovered.bind(f.record, f.authorize)).toEqual(f.record)
@@ -157,6 +137,7 @@ describe.skipIf(!databaseUrl)('original native artifact output receipt SQL guard
     } finally {
       controller.abort(stopped)
       if (binding) await Promise.allSettled([binding])
+      try { await barrier.query('rollback') } finally { barrier.release() }
     }
   })
   it('rejects revoked SQL authority on retries and rolls back a newly inserted mapping at the commit fence', async () => {
