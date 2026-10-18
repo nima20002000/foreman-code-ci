@@ -24,12 +24,17 @@ interface InteractionFact { id: string; revision: string; execution_id: string; 
   answer_recorded: boolean; harness: string; native_session_id: string; native_request_id: string; worker_acknowledged: boolean; acknowledgment_revision: string | null }
 
 async function facts(sql: Queryable, scope: RunActivityScope) {
-  const run = (await sql.query<RunFact>(`select activity_record_revision::text as revision,stop_requested_at is not null as stopped,
-    record->>'outcome' as outcome,record->>'startedAt' as started_at,execution_state from runs where id=$1 and workspace_id=$2 and workflow_id=$3 and workflow_version_id=$4`,
-  [scope.runId, scope.workspaceId, scope.workflowId, scope.workflowVersionId])).rows[0]
-  if (!run) throw new DomainError('RUN_PIN_CONFLICT', 'The exact Run activity scope is unavailable.', 409)
-  // Only named normalized identity/status fields cross this read boundary.
-  const executions = (await sql.query<ExecutionFact>(`select e.id,e.attempt,e.activity_record_revision::text as revision,
+  // Both revision samples remain live; each sample shares one database snapshot.
+  const result = (await sql.query<{
+    run: RunFact | null; executions: ExecutionFact[]; jobs: JobFact[];
+    cis: (Omit<CiFact, 'ci'> & { record: unknown })[]; interactions: InteractionFact[];
+    bounds: { high_water: string; retained_from: string; observed: number }
+  }>(`with run_fact as (
+    select activity_record_revision::text as revision,stop_requested_at is not null as stopped,
+      record->>'outcome' as outcome,record->>'startedAt' as started_at,execution_state from runs
+      where id=$1 and workspace_id=$2 and workflow_id=$3 and workflow_version_id=$4
+  ), execution_facts as (
+    select e.id,e.attempt,e.activity_record_revision::text as revision,
     e.record#>>'{sessionContinuation,previousExecutionId}' as continued_from_execution_id,
     to_char(e.created_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as created_at,
     e.record->>'state' as state,e.record#>>'{result,outcome}' as outcome,e.record->>'startedAt' as started_at,
@@ -37,8 +42,9 @@ async function facts(sql: Queryable, scope: RunActivityScope) {
     coalesce((select max(sequence) from harness_native_events n where n.execution_id=e.id),0)::text as native_revision
     from harness_executions e left join agent_configuration_versions c on c.id=e.record->>'agentConfigurationVersionId'
       and c.agent_id=e.agent_id and c.workspace_id=$2
-    where e.run_id=$1 order by e.created_at,e.id limit 16001`, [scope.runId, scope.workspaceId])).rows
-  const jobs = (await sql.query<JobFact>(`select j.id,j.attempt_id,j.operation_id,j.activity_record_revision::text as revision,
+    where e.run_id=$1 order by e.created_at,e.id limit 16001
+  ), job_facts as (
+    select j.id,j.attempt_id,j.operation_id,j.activity_record_revision::text as revision,
     j.record#>>'{workflow,nodeId}' as node_id,j.accepted_spec->>'definitionId' as definition_id,
     (j.accepted_spec->>'definitionRevision')::integer as definition_revision,j.accepted_spec->>'definitionVersionId' as definition_version_id,
     j.record#>>'{process,phase}' as phase,j.record#>>'{process,outcome}' as outcome,
@@ -71,23 +77,32 @@ async function facts(sql: Queryable, scope: RunActivityScope) {
     left join run_repeat_slots s on s.slot_id=x.slot_id and s.run_id=w.run_id
     left join workflow_job_preparations p on p.slot_id=s.slot_id and p.run_id=w.run_id
     where w.run_id=$1
-    order by created_at,id limit 16001`,
-  [scope.runId, scope.workspaceId, scope.workflowId, scope.workflowVersionId])).rows
-  const ciRows = (await sql.query<Omit<CiFact, 'ci'> & { record: unknown }>(AGENT_CI_SNAPSHOT_SQL,
-    [scope.runId, scope.workspaceId, scope.workflowId, scope.workflowVersionId])).rows
-  const cis = ciRows.map(({ record, ...row }) => ({ ...row, ci: ciActivityFromRecord(record) }))
-  const interactions = (await sql.query<InteractionFact>(`select i.id,i.revision::text,i.execution_id,i.status,
+    order by created_at,id limit 16001
+  ), ci_facts as (
+    ${AGENT_CI_SNAPSHOT_SQL}
+  ), interaction_facts as (
+    select i.id,i.revision::text,i.execution_id,i.status,
     i.record->>'deliveryState' as delivery,(i.record->>'decidedAt') is not null as answer_recorded,
     i.harness,i.native_session_id,i.native_request_id,
     exists(select 1 from interaction_graph_resumes g where g.interaction_id=i.id and g.run_id=i.run_id
       and g.execution_id=i.execution_id and g.approval_native_ack_id is not null) as worker_acknowledged,
     (select g.revision::text from interaction_graph_resumes g where g.interaction_id=i.id and g.run_id=i.run_id and g.execution_id=i.execution_id) as acknowledgment_revision
-    from durable_interactions i where i.run_id=$1 and i.workspace_id=$2 and i.workflow_id=$3 order by i.id limit 2001`,
-  [scope.runId, scope.workspaceId, scope.workflowId])).rows
+    from durable_interactions i where i.run_id=$1 and i.workspace_id=$2 and i.workflow_id=$3 order by i.id limit 2001
+  ), activity_bounds as (
+    ${RUN_ACTIVITIES_BOUNDS_SQL}
+  ) select (select row_to_json(r) from run_fact r) as run,
+    coalesce((select json_agg(e) from execution_facts e),'[]'::json) as executions,
+    coalesce((select json_agg(j) from job_facts j),'[]'::json) as jobs,
+    coalesce((select json_agg(c) from ci_facts c),'[]'::json) as cis,
+    coalesce((select json_agg(i) from interaction_facts i),'[]'::json) as interactions,
+    (select row_to_json(b) from activity_bounds b) as bounds`,
+  [scope.runId, scope.workspaceId, scope.workflowId, scope.workflowVersionId])).rows[0]!
+  const { run, executions, jobs, interactions, bounds } = result
+  if (!run) throw new DomainError('RUN_PIN_CONFLICT', 'The exact Run activity scope is unavailable.', 409)
+  const cis = result.cis.map(({ record, ...row }) => ({ ...row, ci: ciActivityFromRecord(record) }))
   if (executions.length + jobs.length + cis.length > REPEAT_GRAPH_LIMITS.executions || interactions.length > REPEAT_GRAPH_LIMITS.decisions) {
     throw new DomainError('ACTIVITY_SNAPSHOT_TOO_LARGE', 'Use the bounded canonical graph for this Run.', 409)
   }
-  const bounds = (await sql.query<{ high_water: string; retained_from: string; observed: number }>(RUN_ACTIVITIES_BOUNDS_SQL, [scope.runId])).rows[0]!
   const revisions: ActivitySourceRevision[] = [{ source: 'scope', id: scope.runId, revision: run.revision },
     { source: 'run_activity', id: scope.runId, revision: bounds.high_water },
     ...executions.flatMap((execution) => [{ source: 'execution' as const, id: execution.id, revision: execution.revision },

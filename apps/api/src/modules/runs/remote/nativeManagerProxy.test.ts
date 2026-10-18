@@ -101,6 +101,37 @@ function terminal(events: NativeHarnessEvent[]): NativeHistory {
 }
 
 describe('remote native history streaming', () => {
+  it.each(['settled', 'unfinished'] as const)(
+    'reconciles a %s retained review when Worker cleanup closes its process', async state => {
+      const result = { outcome: 'succeeded' as const, output: { text: 'review completed' } }
+      const correlationId = 'review-correlation'
+      const history: NativeHistory = { events: [], pendingInteractions: [], correlationId,
+        firstRetainedSequence: 0, nextSequence: 0, nativeTurnId: 'review-turn', ...(state === 'settled' ? {
+          terminalResult: result, terminalTurn: { correlationId, providerId: 'review-turn', result },
+        } : {}) }
+      const f = setup(() => history)
+      const session = await f.proxy.createSession(f.start)
+      f.receipt.retainedReviewer = { agentId: 'agent', workflowTurnId: 'native-turn',
+        expiresAt: new Date(Date.now() + 60_000).toISOString(), result: { outcome: 'succeeded' } }
+      f.receipt.reviewTurns = [{ assignment: { jobId: 'review-job', interactionId: 'interaction',
+        reviewerAgentId: 'agent', correlationId, session }, promptDigest: 'a'.repeat(64),
+        afterSequence: -1, entered: true, providerId: 'review-turn', settled: state === 'settled',
+        ...(state === 'settled' ? { result } : {}) }]
+      f.receipt.phase = 'confirmed_terminal'
+      f.receipt.stopFence = true
+      f.receipt.terminal = { kind: 'cancelled', closureEvidenceDigest: 'b'.repeat(64) }
+      f.receipt.sequence++
+      if (state === 'settled') {
+        await expect(f.proxy.reconcile(session, correlationId)).resolves.toEqual(history)
+        await expect(f.proxy.close(session)).resolves.toBeUndefined()
+      } else {
+        await expect(f.proxy.reconcile(session, correlationId)).rejects.toMatchObject({ code: 'EXECUTION_INTERRUPTED' })
+      }
+      expect(f.controlFor).not.toHaveBeenCalled()
+      expect(f.request.mock.calls.map(([method]) => method)).toEqual(['prepare', 'history'])
+    },
+  )
+
   it('reads the settled turn through the history observation interface', async () => {
     const history = terminal([event(0)])
     const f = setup(() => history)
