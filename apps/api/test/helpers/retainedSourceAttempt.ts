@@ -4,7 +4,7 @@ import { SourceMaterializationRecordSchema, SourceRootRecordSchema } from '@fore
 import { withTransaction } from '../../src/infrastructure/transaction.js'
 import { readDispatchIntent, readExecutionPlacement } from '../../src/modules/placement/persistence.js'
 import { sourceBindingHash } from '../../src/modules/sources/bindingHash.js'
-import { PrivateSourceMaterializer } from '../../src/modules/sources/materialization.js'
+import { PrivateSourceMaterializer, releaseMaterializationClaim } from '../../src/modules/sources/materialization.js'
 import { measureRetainedMaterializationFootprint } from '../../src/modules/sources/retainedDirectoryUsage.js'
 import { sourceWorkingTreePath } from '../../src/modules/sources/sourceTreePaths.js'
 import type { sourceWorktreeMcpFixture } from './sourceWorktreeMcpFixture.js'
@@ -35,6 +35,8 @@ export async function seedRetainedSourceAttempt(f: Awaited<ReturnType<typeof sou
   })
   const receipt = await materializer.prepare({ manifest, binding: root.binding, attempt,
     sharedWritableTree: true, ...(placement.payload.worktree ? { worktree: placement.payload.worktree } : {}) })
+  // This preparation never entered a native process; discard its claim while retaining its checkout.
+  await releaseMaterializationClaim(receipt, async () => 'released')
   const footprint = await measureRetainedMaterializationFootprint(receipt)
   const capacity = await f.production.executions.storageCapacity(root, {
     ...attempt, attemptId: intent.attemptId,
