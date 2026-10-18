@@ -28,6 +28,7 @@ import type { SourceOperationOwner } from '@foreman-code/contracts/source-operat
 import { componentLogger } from '../diagnostics/logger.js'
 import { reconcileSecondaryAllocation, preserveReleasedPreparationClaim } from './secondaryAllocation.js'
 import { openSnapshotReference } from './snapshotReference.js'
+import { verifyRetainedWorkingTree } from './retainedWorkingTree.js'
 
 const equal = isDeepStrictEqual
 export class PrivateSourceMaterializer {
@@ -39,7 +40,7 @@ export class PrivateSourceMaterializer {
   async prepare(input: { manifest: SourceManifest; binding: RootBinding; attempt: MaterializationAttempt; signal?: AbortSignal;
     sharedWritableTree?: true; sharedReadOnlyTree?: true
     /** Workflow agents in a GitHub workspace get their own worktree and branch instead of the shared copy. */
-    worktree?: WorktreeRequest }): Promise<MaterializationReceipt> {
+    worktree?: WorktreeRequest; retainedReceipt?: MaterializationReceipt }): Promise<MaterializationReceipt> {
     const bytes = this.bytes
     if (!bytes) throw new SourceError('SOURCE_READ_ONLY_VERIFIER', 'A verification-only materializer cannot prepare source bytes.')
     const started = performance.now()
@@ -195,21 +196,27 @@ export class PrivateSourceMaterializer {
       try { if (!equal(await identity(current), binding.filesystem)) throw new SourceError('SOURCE_ROOT_CHANGED', 'Destination root replaced before activation.') }
       finally { await current.close() }
       const referenceIdentity = await identity(tree)
-      const worktree = writable && input.worktree ? await prepareAgentWorktree({
+      const retained = input.retainedReceipt
+        ? await verifyRetainedWorkingTree(root, input.retainedReceipt, binding, this.git, signal) : undefined
+      const worktree = !retained && writable && input.worktree ? await prepareAgentWorktree({
         root, binding, primary: reservation, materializationId: id, attempt, executionId: attempt.executionId,
         manifest, reference: tree, request: input.worktree, ports: this.git, signal,
         authorize: () => this.authorize(binding, attempt),
       }) : undefined
-      const shared = worktree ?? (writable || input.sharedReadOnlyTree
+      const retainedDirectory = retained ? { id: retained.sharedTree?.id ?? retained.materializationId,
+        filesystem: retained.localTreeIdentity } : undefined
+      const shared = retainedDirectory ?? worktree ?? (writable || input.sharedReadOnlyTree
         ? await withClaimLock(root, () => prepareSharedWorkingTree({
           root: root!, binding, primary: reservation!, materializationId: id, attempt, manifest,
           reference: tree!, signal, authorize: () => this.authorize(binding, attempt),
         })) : undefined)
       completed('prepareWorkingTreeMs')
+      const branch = retained?.worktree ?? worktree?.worktree
       const receipt = MaterializationReceiptSchema.parse({ version: 1, materializationId: id, binding, ...attempt, ...(quota ? { quota } : {}),
         claimScope: 'execution',
+        ...(retained ? { retainedTree: { materializationId: retained.materializationId, executionId: retained.executionId } } : {}),
         ...(shared ? { sharedTree: { id: shared.id, referenceIdentity } } : {}),
-        ...(worktree ? { worktree: worktree.worktree } : {}),
+        ...(branch ? { worktree: branch } : {}),
         verifiedManifestDigest: manifest.manifestDigest, verifiedEntries: manifest.totalEntries,
         verifiedBytes: manifest.totalBytes, verifiedAt: new Date().toISOString(), localTreeIdentity: shared?.filesystem ?? referenceIdentity })
       const encodedRecord = encodeMaterializationRecord({ receipt, manifest, ...(snapshotReference ? { snapshotReference } : {}) })
@@ -325,7 +332,8 @@ export class PrivateSourceMaterializer {
           if (!equal(await identity(tree), receipt.sharedTree?.referenceIdentity ?? receipt.localTreeIdentity)) throw new SourceError('SOURCE_ROOT_CHANGED', 'Materialized source reference replaced.')
           await verifyMaterializedSourceTree(tree, manifest, expected.signal,
             stored.snapshotReference ? { snapshotBytes: true } : {})
-          await verifySharedWorkingTree(root, receipt)
+          if (receipt.retainedTree) await verifyRetainedWorkingTree(root, receipt, receipt.binding, this.git, expected.signal)
+          else await verifySharedWorkingTree(root, receipt)
           await verifyWorktreeBranch(receipt, { git: this.git, signal: expected.signal })
         } finally { await tree.close() }
       } finally { await directory.close() }

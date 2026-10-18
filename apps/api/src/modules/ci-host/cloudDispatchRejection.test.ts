@@ -16,9 +16,7 @@ async function githubFixture() {
   const original = f.ports.run
   const control = { failure: lookupTimeout, attempts: 0, discoveryFailure: false }
   vi.spyOn(f.ports, 'run').mockImplementation(async (file, args, options) => {
-    const listing = args[0] === 'run' && args[1] === 'list'
-      || args[0] === 'api' && args[1]?.includes('/actions/workflows/ci.yml/runs?')
-    if (file === 'gh' && listing && control.discoveryFailure) {
+    if (file === 'gh' && args[0] === 'run' && args[1] === 'list' && control.discoveryFailure) {
       throw new Error('Provider discovery is unavailable')
     }
     if (file === 'gh' && args[0] === 'workflow') {
