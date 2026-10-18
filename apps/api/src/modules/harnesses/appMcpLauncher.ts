@@ -223,13 +223,12 @@ export interface AppMcpRouteOwnership {
 }
 
 export type AppMcpRouteRegistration = (() => Promise<void>) & {
-  refresh(expiresAt: string, signal?: AbortSignal): Promise<void>
+  refresh(expiresAt: string): Promise<void>
 }
 
 interface AppMcpRouteOptions {
   now?: () => number
   renewalFailure?: string
-  signal?: AbortSignal | undefined
 }
 
 /** The local launcher shares this boot's monotonic clock, even when lease timestamps come from Main. */
@@ -265,8 +264,7 @@ export async function registerAppRouteDigest(
       throw error
     }
   }
-  const publish = (expiration: string, mode: 'register' | 'refresh',
-    publication: Pick<AppMcpRouteOptions, 'renewalFailure' | 'signal'> = {}): Promise<void> =>
+  const publish = (expiration: string, mode: 'register' | 'refresh', failure?: string): Promise<void> =>
     withLauncherLock(launcher, async signal => {
       ownership?.assertActive()
       if (mode === 'refresh' && !await ownsRoute()) return
@@ -276,22 +274,19 @@ export async function registerAppRouteDigest(
         await writeFile(temporary, JSON.stringify({ endpoint, expiresAt: expiration, pid: process.pid,
           toolTimeoutMs: APP_MCP_TIMEOUTS.tool_timeout_sec * 1000,
           ...(options.now ? { monotonicExpiry: routeMonotonicExpiry(expiration, options.now) } : {}),
-          registrationId, runtimeEpoch,
-          ...(publication.renewalFailure ? { renewalFailure: publication.renewalFailure } : {}) }), { mode: 0o600, flag: 'wx' })
+          registrationId, runtimeEpoch, ...(failure ? { renewalFailure: failure } : {}) }), { mode: 0o600, flag: 'wx' })
         signal.throwIfAborted()
         ownership?.assertActive()
         await rename(temporary, file)
       } finally {
         await rm(temporary, { force: true })
       }
-    }, publication.signal)
-  await publish(expiresAt, 'register', options)
+    })
+  await publish(expiresAt, 'register', options.renewalFailure)
   const remove = async (): Promise<void> => {
     await withLauncherLock(launcher, async () => {
       if (await ownsRoute()) await rm(file, { force: true })
     })
   }
-  return Object.assign(remove, {
-    refresh: (expiration: string, signal?: AbortSignal) => publish(expiration, 'refresh', { signal }),
-  })
+  return Object.assign(remove, { refresh: (expiration: string) => publish(expiration, 'refresh') })
 }
