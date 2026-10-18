@@ -34,8 +34,8 @@ async function requiresRunSettlement(client: pg.PoolClient, draft: CurrentEditDr
 export interface CurrentEditWriter {
   assertStopReady(): void
   validate(client: pg.PoolClient, principal: ManagementPrincipal, input: CurrentEditSaveInput,
-    options?: { intentId?: string; source?: EditIntentSource }):
-    Promise<{ version: WorkflowVersionV3; presentationOnly: boolean; graph: CurrentEditSaveInput['graph'] }>
+    options?: { intentId: string }):
+    Promise<{ version: WorkflowVersionV3; presentationOnly: boolean }>
   publish(principal: ManagementPrincipal, source: EditIntentSource, input: CurrentEditSaveInput, intentId: string): Promise<unknown>
 }
 /** Same durable Stage/Discard/Stop-and-save coordinator, now with a complete
@@ -55,12 +55,11 @@ export function createCurrentEditIntentService(pool: pg.Pool, commands: Postgres
     },
     stagedAgentIds: (draft) => (draft.stagedAgents ?? []).map((item) => item.agent.id),
     requiresRunSettlement,
-    prepare: async (client, principal, input, saveCommandId, source) => {
+    prepare: async (client, principal, input, saveCommandId) => {
       const { action, draftId, commandId, ...definition } = input
       void action; void commandId
       let saveInput = CurrentEditSaveInputSchema.parse({ ...definition, commandId: saveCommandId })
-      const { version, presentationOnly, graph } = await writer.validate(client, principal, saveInput, { source })
-      saveInput = CurrentEditSaveInputSchema.parse({ ...saveInput, graph })
+      const { version, presentationOnly } = await writer.validate(client, principal, saveInput)
       if (input.stagedAgents?.length) saveInput = CurrentEditSaveInputSchema.parse({ ...saveInput,
         resultantAgentConfigurationVersionIds: version.agentConfigurationVersionIds })
       else if (!sameWorkflowValue(version.agentConfigurationVersionIds, input.expectedAgentConfigurationVersionIds)) {
@@ -84,7 +83,7 @@ export function createCurrentEditIntentService(pool: pg.Pool, commands: Postgres
       })
       const stagedDraft = CurrentEditDraftSchema.parse({ id: draftId, workspaceId: input.workspaceId,
         workflowId: input.workflowId, revision: input.expectedRevision, baseWorkflowVersionId: input.expectedWorkflowVersionId,
-        graph: saveInput.graph, agentConfigurationVersionIds: input.expectedAgentConfigurationVersionIds,
+        graph: input.graph, agentConfigurationVersionIds: input.expectedAgentConfigurationVersionIds,
         ...(presentationOnly ? { presentationOnly: true } : {}),
         ...(input.stagedAgents ? { stagedAgents: input.stagedAgents } : {}),
         ...(input.stagedAgents?.length ? { resultantAgentConfigurationVersionIds: version.agentConfigurationVersionIds,
