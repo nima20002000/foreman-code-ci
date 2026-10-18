@@ -1659,8 +1659,7 @@ export class ApprovalExecutionCoordinator {
           if (this.closedExecutions.has(owned.execution.id)) return
           // Local engine ownership can finish before its native session detaches.
           const snapshot = await this.runs.getRepeatSnapshot(owned.execution.runId, owner)
-          // A failed or closing attempt has no lifetime to preserve; renewing it for detachment fails its lease check.
-          if (snapshot.stopRequested || snapshot.cleanupPending || owned.failed || owned.cleanup) {
+          if (snapshot.stopRequested || snapshot.cleanupPending) {
             const cleanup = await this.cleanupSession(owned)
             if (cleanup.length) throw new AggregateError(cleanup, 'Interrupted native cleanup remains unconfirmed.')
             return
