@@ -98,6 +98,7 @@ for (const step of ['contracts', 'prepare', 'integration']) {
     let starts = 0;
     let reads = 0;
     let canceled = false;
+    const postInstall = Promise.withResolvers();
     const runner = { handle: async request => {
       if (request.operation === 'status') return { ready: true };
       if (request.operation === 'start') {
@@ -108,15 +109,17 @@ for (const step of ['contracts', 'prepare', 'integration']) {
         return {};
       }
       if (request.operation === 'cancel') { canceled = true; return {}; }
-      if (++reads === 1) return { run: { state: 'running', step }, text: '' };
+      if (++reads === 1) {
+        postInstall.resolve();
+        return { run: { state: 'running', step }, text: '' };
+      }
       return { run: { state: 'passed', step: 'integration', exitCode: 0 }, text: '', testResults: {
         summary: { passed: 1, failed: 0 }, files: [{ file: 'apps/api/test/ci-smoke.integration.test.ts',
           tests: [{ status: 'passed' }] }] } };
     } };
     const smoke = runCiInstallSmoke({ repository: 'fixture/project', commit: 'a'.repeat(40) },
       { runner, timeoutMs: 50, capacityTimeoutMs: 100, pollMs: 1 });
-    await new Promise(setImmediate);
-    t.mock.timers.tick(1);
+    await postInstall.promise;
     await new Promise(setImmediate);
     t.mock.timers.tick(20);
     await smoke;

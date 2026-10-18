@@ -13,7 +13,8 @@ test('update supervision gives process startup sixty seconds before separate CI 
   const root = await mkdtemp(join(fixtureRoot, 'worker-startup-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   await mkdir(join(root, 'versions'));
-  const record = { format: 1, status: { state: 'restarting', currentVersion: '1.0.0', targetVersion: '1.1.0',
+  const record = { format: 1, attemptDeadlineAt: Date.now() + 45 * 60_000,
+    status: { state: 'restarting', currentVersion: '1.0.0', targetVersion: '1.1.0',
     manifestSha256: 'a'.repeat(64) }, manifestSha256: 'b'.repeat(64), restart: {
     service: 'graphql-worker.service', root, stateDirectory: root,
     pointer: { kind: 'file', path: join(root, 'release') }, directory: join(root, 'incoming'),
