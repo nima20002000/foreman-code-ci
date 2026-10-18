@@ -15,8 +15,8 @@ import { inventoryPayloadFingerprints } from '../../src/modules/harnesses/payloa
 const execute = promisify(execFile)
 const require = createRequire(import.meta.url)
 
-async function copyProviderSchemas(directory: string) {
-  const pinnedLauncher = require.resolve('@openai/codex/bin/codex.js')
+export async function copyProviderSchemas(directory: string,
+  pinnedLauncher = require.resolve('@openai/codex/bin/codex.js')) {
   const lockfile = new URL('../../../../pnpm-lock.yaml', import.meta.url)
   const inputs = await Promise.all([readFile(pinnedLauncher), readFile(lockfile)])
   const payload = await passiveDriverPayloads('codex', pinnedLauncher)
