@@ -47,7 +47,9 @@ it.each(['initialSave', 'workflow_save_v3'] as const)(
       let saved: ReturnType<typeof CurrentWorkflowReadResultSchema.parse>
       if (route === 'workflow_save_v3') {
         const input = { ...scope, executionSemanticsVersion: 3, commandId: randomUUID(),
-          expectedAgentConfigurationVersionIds: initial.expectedAgentConfigurationVersionIds, graph }
+          expectedRevision: created.value.revision, expectedWorkflowVersionId: null,
+          expectedAgentConfigurationVersionIds: initial.expectedAgentConfigurationVersionIds,
+          graph: { ...graph, id: workflowId, workspaceId, name: created.value.workflow.name } }
         const deniedSave = await readClient.callTool({ name: 'workflow_save_v3', arguments: input })
         expect(deniedSave.isError).toBe(true)
         expect(decodeMcpToolResult(deniedSave)).toMatchObject({ error: { code: 'ACCESS_DENIED' } })
@@ -69,6 +71,7 @@ it.each(['initialSave', 'workflow_save_v3'] as const)(
 
       const edited = CurrentWorkflowSaveResultSchema.parse(await call('workflow_save_v3', {
         ...scope, executionSemanticsVersion: 3,
+        expectedRevision: saved.revision, expectedWorkflowVersionId: saved.currentVersionId,
         expectedAgentConfigurationVersionIds: saved.version.agentConfigurationVersionIds,
         graph: { ...saved.version.definition, nodes: saved.version.definition.nodes.map(node => ({
           ...node, initialPrompt: 'Updated work',
