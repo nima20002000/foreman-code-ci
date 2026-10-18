@@ -12,7 +12,6 @@ import { ciGrantMigration } from './ciGrantMigration.js'
 import { runWorktreesMigration } from './runWorktreesMigration.js'
 import { executionWorktreesMigration } from './executionWorktreesMigration.js'
 import { workflowFileContextSessionMigration } from './workflowFileContextSessionMigration.js'
-import { nativeBatchReadMigration } from './nativeBatchReadMigration.js'
 import { withTransaction } from './transaction.js'
 import { checkpointOwnerMigration } from './checkpointOwnerMigration.js'
 import { errorMessage } from '../shared/errorMessage.js'
@@ -995,7 +994,6 @@ export const migrations = [
   computerNamesMigration,
   executionWorktreesMigration,
   workflowFileContextSessionMigration,
-  nativeBatchReadMigration,
 ] as const
 
 export function assertMigrationVersions(entries: readonly { version: number }[]): void {
