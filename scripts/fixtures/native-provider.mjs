@@ -20,6 +20,17 @@ export function nativeProviderFixture(root) {
     optionalDependencies: { [name]: `npm:@openai/codex@${version}-${target}` } }))
   writeFileSync(join(provider, 'bin/codex.js'), '#!/usr/bin/env node\n', { mode: 0o700 })
   writeFileSync(join(native, 'package.json'), JSON.stringify({ name: '@openai/codex', version: `${version}-${target}` }))
+  writeFileSync(join(root, 'pnpm-lock.yaml'), `lockfileVersion: '9.0'
+packages:
+  '@openai/codex@${version}-${target}':
+    resolution: {integrity: sha512-fixture}
+snapshots:
+  '@openai/codex@${version}':
+    optionalDependencies:
+      '${name}': '@openai/codex@${version}-${target}'
+  '@openai/codex@${version}-${target}':
+    optional: true
+`)
   symlinkSync(process.execPath, payload)
   return { payload, name }
 }
