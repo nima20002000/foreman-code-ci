@@ -68,6 +68,9 @@ describe.skipIf(!postgresEnabled)('runtime owner with PostgreSQL reply loss', ()
       await entered.promise
       await monitor.query(`select pg_terminate_backend(pid) from pg_stat_activity
         where datname=current_database() and (extract(epoch from backend_start)*1000000)::bigint::text=$1`, [epoch])
+      await readUntil(async () => (await monitor.query(`select pid from pg_stat_activity
+        where datname=current_database() and (extract(epoch from backend_start)*1000000)::bigint::text=$1`, [epoch])).rows.length,
+      count => count === 0, { timeoutMs: 5_000, description: 'terminated ownership backend' })
       await successor.acquire()
       expect(successor.active).toBe(true)
       await readUntil(async () => owner.active, active => !active,
@@ -80,7 +83,7 @@ describe.skipIf(!postgresEnabled)('runtime owner with PostgreSQL reply loss', ()
       emit.mockRestore()
       reply.resolve({ rows: [{ epoch: '123456' }], command: 'SELECT', rowCount: 1, oid: 0, fields: [] })
       await reading
-      await owner.close()
+      await owner.close().catch(() => { /* ignore: the terminated backend can reject the pre-fix owner's unlock. */ })
       await successor.close()
       await monitor.end()
     }
