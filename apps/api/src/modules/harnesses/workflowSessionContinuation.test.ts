@@ -10,7 +10,7 @@ async function closedWorkflow() {
   if (infrastructure.mode !== 'replay') throw new Error('Recorded provider I/O required')
   const managers: CodexAppServerSessionManager[] = []
   const createManager = () => {
-    const manager = new CodexAppServerSessionManager('/recorded/codex', undefined, undefined,
+    const manager = new CodexAppServerSessionManager('/recorded-no-native-codex', undefined, undefined,
       undefined, 'scoped', undefined, infrastructure.codex)
     managers.push(manager)
     return manager
