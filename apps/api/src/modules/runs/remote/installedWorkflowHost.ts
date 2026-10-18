@@ -965,7 +965,7 @@ class InstalledWorkflowHostRuntime {
     resident.preparationRecovery = true
     await resident.host?.abortPreparation(resident.intent.operationId)
     await resident.manager?.dispose?.()
-    await this.registry.abandonReservedLaunch(resident.scope)
+    if (resident.scope.launchId) await this.registry.abandonReservedLaunch(resident.scope)
     const log = await this.journal()
     const state = await log.status(resident.intent.operationId)
     const receipt = state.status === 'known' ? state.receipt
@@ -975,7 +975,9 @@ class InstalledWorkflowHostRuntime {
     } else if (receipt.entryAttempted) {
       await this.recovery.closePendingEntry(receipt, log, this.signal)
     } else {
-      if (!await this.registry.closeOwner(resident.scope.owner, this.signal)) unavailable('native_owner_closure_unconfirmed')
+      if (resident.scope.launchId && !await this.registry.closeOwner(resident.scope.owner, this.signal)) {
+        unavailable('native_owner_closure_unconfirmed')
+      }
       await log.revokeFence(receipt.intent.operationId)
       if (!receipt.terminal) await log.terminal(receipt.intent.operationId, { kind: 'not_started',
         closureEvidenceDigest: remoteNonEntryClosureDigest(receipt.intent) })
@@ -1184,6 +1186,12 @@ class InstalledWorkflowHostRuntime {
 
   private readonly drainForUpdate = async () => {
     await Promise.allSettled([...this.active])
+    for (const owned of this.operations.values()) {
+      const status = await (await this.journal()).status(owned.intent.operationId)
+      if (status.status === 'known' && status.receipt.stopFence && !status.receipt.native) {
+        await this.closeResidentPreparation(owned, 'worker_update_stopped_preparation')
+      }
+    }
     await Promise.all([...this.hosts.values()].map(host => host.drain()))
   }
 
