@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import type { HarnessExecution } from '@foreman-code/contracts'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
@@ -98,7 +99,10 @@ async function harnessRegistry(base: Base, mainId: string, project: string) {
   return { overrides, installations, pinOverride }
 }
 
-export async function sourceWorktreeMcpFixture(options: { approvalNodeIds?: string[] } = {}) {
+export async function sourceWorktreeMcpFixture(options: {
+  approvalNodeIds?: string[]; fixture?: ReturnType<typeof makeCurrentWorkflowFixture>
+  beforePrepareExecution?: (execution: HarnessExecution) => Promise<void>
+} = {}) {
   let producer: AgentPlacementProducer
   let preparation: AgentExecutionPreparation
   let validatePlacement: ReturnType<typeof placedContinuationValidator>
@@ -113,7 +117,10 @@ export async function sourceWorktreeMcpFixture(options: { approvalNodeIds?: stri
       admitPlacementExecutionLocked: async (sql, owner, run, execution, ref, inputDigest) => {
         await producer.admitExecution(sql, owner, execution, ref, inputDigest, run.authorizationPrincipalId)
       },
-      preparePlacementExecution: (owner, run, execution) => preparation.prepare(owner, run, execution),
+      preparePlacementExecution: async (owner, run, execution) => {
+        await options.beforePrepareExecution?.(execution)
+        return preparation.prepare(owner, run, execution)
+      },
     })
   } finally {
     continuationSpy.mockRestore()

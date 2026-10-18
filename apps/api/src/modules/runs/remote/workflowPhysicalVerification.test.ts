@@ -31,6 +31,8 @@ import { RemoteWorkflowPhysicalReadoutSchema } from '@foreman-code/contracts/rem
 import { assertRemoteNativeSourceLocked, createRemoteNativeSourceChannel, type RemoteNativeSourceEvidence } from '../../placement/remoteNativeSource.js'
 import { VerifiedRemoteEvidence } from './resultBridge.js'
 import { deviceRequestTimeoutMs } from '../../devices/deviceRequestRetry.js'
+import { DeviceApplicationError } from '../../devices/deviceApplicationError.js'
+import { DomainError } from '../../errors.js'
 import { ExclusiveGraphConnection, beforeGraphCommit } from '../../run-graph/connection.js'
 import { repeatExecutionIdentity, repeatDigest } from '../repeatResolution.js'
 
@@ -692,6 +694,21 @@ async function publishPhysicalObservation(f: Awaited<ReturnType<typeof physicalF
   await f.sqlConnection.transaction(sql => f.producer.assertOriginal(sql, f.owner, original))
   return original
 }
+
+it.each(['device', 'domain'] as const)('propagates a displaced %s selector without retrying it', async kind => {
+  const f = await physicalFixture()
+  const expired = kind === 'device' ? new DeviceApplicationError('REMOTE_NATIVE_PHYSICAL_REPLY_EXPIRED')
+    : new DomainError('REMOTE_NATIVE_PHYSICAL_UNAVAILABLE', 'Reply displaced', 409, { reason: 'not_retained' })
+  try {
+    vi.useFakeTimers()
+    f.request.mockRejectedValue(expired)
+    const outcome = f.producer.prefetch(f.readout.receipt, f.placement, f.source)
+      .then(() => undefined, error => error)
+    await vi.runAllTimersAsync()
+    expect(await outcome).toBe(expired)
+    expect(f.request).toHaveBeenCalledOnce()
+  } finally { vi.useRealTimers(); await f.sqlConnection.close() }
+})
 
 describe('physical acknowledgment retry eligibility', () => {
   it.each(['running', 'rolled-back', 'completed'] as const)(
