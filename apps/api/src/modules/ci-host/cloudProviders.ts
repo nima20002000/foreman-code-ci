@@ -188,9 +188,7 @@ async function executeCommand(ports: HostCiPorts, label: string, file: string, a
     }
     const missingRun = file === 'circleci' && args[0] === 'run' && args[1] === 'get'
       && /\brun\.not_found\b/.test(result.stderr)
-    if (missingRun) {
-      throw new DomainError('CI_CLOUD_RUN_NOT_FOUND', 'CircleCI run is not visible.', 502, { resource: 'pipeline' })
-    }
+    if (missingRun) throw new DomainError('CI_CLOUD_RUN_NOT_FOUND', 'CircleCI run is not visible.', 502)
     const lookup = file === 'circleci' && args[1] === 'get' && (args[0] === 'run' || args[0] === 'job')
     const denied = /permission denied|not authorized|unauthori[sz]ed|forbidden|authentication|invalid (?:api )?token|\b40[13]\b/i
     if (lookup && denied.test(result.stderr)) {
@@ -270,10 +268,7 @@ export class GitHubActionsProvider implements CloudProvider {
       let result: string | null = null
       const mirror = args[args.indexOf('-R') + 1]!
       if (args[0] === 'run' && args[1] === 'list') {
-        const limit = Number(args[args.indexOf('--limit') + 1])
-        const cliPage = limit > 200 ? (path: string, remaining: number) =>
-          executeCommand(this.ports, this.label, 'gh', ['api', path], remaining) : undefined
-        result = await this.rest.list(mirror, args[args.indexOf('--branch') + 1]!, limit, cliPage)
+        result = await this.rest.list(mirror, args[args.indexOf('--branch') + 1]!)
       } else if (args[0] === 'run' && args[1] === 'view') {
         result = args.includes('--log') ? await this.rest.log(mirror, args[2]!) : await this.rest.view(mirror, args[2]!)
       }
@@ -299,18 +294,17 @@ export class GitHubActionsProvider implements CloudProvider {
     return null
   }
 
-  private async matches(run: CloudRun, options: { requireComplete?: boolean } = {}) {
+  private async matches(run: CloudRun) {
     const branch = run.dispatch?.input?.workflowRef ?? run.dispatch?.input?.branch ?? 'main'
-    const limit = options.requireComplete ? 1000 : 200
     const listed = JSON.parse(await this.gh(['run', 'list', '-R', run.mirror, '--workflow', WORKFLOW, '--branch', branch,
-      '--event', 'workflow_dispatch', '--limit', String(limit), '--json', 'databaseId,displayTitle,status,headSha'], 15_000)) as
+      '--event', 'workflow_dispatch', '--limit', '200', '--json', 'databaseId,displayTitle,status,headSha'], 15_000)) as
       { databaseId: number; displayTitle: string; status?: string; headSha: string }[]
     return listed.filter(value => value.displayTitle === `ci ${run.runId}`)
       .sort((left, right) => left.databaseId - right.databaseId)
   }
 
   async discover(run: CloudRun) {
-    return (await this.matches(run, { requireComplete: true })).map(match => String(match.databaseId))
+    return (await this.matches(run)).map(match => String(match.databaseId))
   }
 
   async find(run: CloudRun) {
@@ -486,13 +480,8 @@ export class CircleCiProvider implements CloudProvider {
         'CircleCI submission has no execution-specific ref; ownership retained.', 503)
     }
     const matches: { id: string; revision: string | undefined }[] = []
-    const tokens = new Set<string>()
     let page: string | null = null
-    let pages = 0
     do {
-      if (pages++ === 10) {
-        throw new DomainError('CI_CLOUD_DISCOVERY_INCOMPLETE', 'CircleCI discovery reached its page limit; ownership retained.', 503)
-      }
       const query = `branch=${encodeURIComponent(branch)}`
         + (page ? `&page-token=${encodeURIComponent(page)}` : '')
       const listed = JSON.parse(await this.circleci(['api',
@@ -500,19 +489,13 @@ export class CircleCiProvider implements CloudProvider {
         items: { id: string; vcs?: { branch?: string; revision?: string }; trigger?: { type?: string } }[]
         next_page_token?: string | null
       }
-      const next = listed.next_page_token
-      if (!Array.isArray(listed.items) || next !== null
-        && (typeof next !== 'string' || !next || tokens.has(next))) {
-        throw new DomainError('CI_CLOUD_DISCOVERY_INCOMPLETE', 'CircleCI discovery is incomplete; ownership retained.', 503)
-      }
       for (const pipeline of listed.items) {
         // Publishing the ref can also create a VCS-triggered pipeline with no ticket parameters.
         if (pipeline.vcs?.branch === branch && pipeline.trigger?.type === 'api') {
           matches.push({ id: pipeline.id, revision: pipeline.vcs.revision })
         }
       }
-      if (next) tokens.add(next)
-      page = next
+      page = listed.next_page_token ?? null
     } while (page)
     if (matches.some(pipeline => pipeline.revision !== run.provenance?.workflowCommit)) {
       throw new DomainError('CI_CLOUD_PROVENANCE_MISMATCH',
@@ -550,29 +533,13 @@ export class CircleCiProvider implements CloudProvider {
     return view
   }
 
-  private missingPipelineConfirmed(run: CloudRun, error: unknown): boolean {
-    if (!(error instanceof DomainError && error.code === 'CI_CLOUD_RUN_NOT_FOUND'
-      && error.details?.resource === 'pipeline')) return false
-    if (!run.cancellation && ['starting', 'running'].includes(run.state)) return false
-    const submittedAt = run.dispatch?.at ?? run.startedAt
-    const since = Math.max(Date.parse(submittedAt), Date.parse(run.cancellation?.at ?? submittedAt))
-    return this.ports.now().getTime() - since >= CLOUD_START_TIMEOUT_MS
-  }
-
   private async job(run: CloudRun) {
     const view = await this.pipeline(run)
     return { job: view.workflows?.flatMap(workflow => workflow.jobs ?? [])[0] ?? null }
   }
 
   async status(run: CloudRun): Promise<CloudStatus> {
-    let view: CirclePipelineView
-    try {
-      view = await this.pipeline(run)
-    } catch (error) {
-      if (!this.missingPipelineConfirmed(run, error)) throw error
-      return { done: true, conclusion: 'failure', notStarted: true,
-        finishedAt: this.ports.now().toISOString(), message: `${this.label} has no such pipeline.` }
-    }
+    const view = await this.pipeline(run)
     const empty = circleEmptyPipeline(view)
     if (empty) {
       const since = run.emptyPipelineCancellations?.[run.providerRunId!]
@@ -729,7 +696,6 @@ export class CircleCiProvider implements CloudProvider {
     try {
       view = await this.readPipeline(run, 15_000)
     } catch (error) {
-      if (this.missingPipelineConfirmed(run, error)) return
       if (!(error instanceof DomainError
         && ['CI_CLOUD_RUN_NOT_FOUND', 'CI_CLOUD_RUN_UNREADABLE'].includes(error.code))) throw error
       // Cancellation of the known pipeline does not require a successful status lookup.
