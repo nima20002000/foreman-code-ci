@@ -65,8 +65,10 @@ function completeSaveInput(
     createdAt: createdAt ?? metadata.createdAt,
     updatedAt: updatedAt ?? metadata.updatedAt,
   }
+  const approval = graph.approval ?? metadata.approval
   return CurrentWorkflowSaveInputSchema.parse({ ...request, graph: {
     ...graph,
+    ...(approval === undefined ? {} : { approval }),
     ...(stamps.version === undefined ? {} : { version: stamps.version }),
     ...(stamps.createdAt === undefined ? {} : { createdAt: stamps.createdAt }),
     ...(stamps.updatedAt === undefined ? {} : { updatedAt: stamps.updatedAt }),
@@ -187,7 +189,7 @@ export class CurrentWorkflowAuthoring {
     let input: CurrentEditSaveInput = intentId ? CurrentEditSaveInputSchema.parse(raw) : CurrentWorkflowSaveInputSchema.parse(raw)
     const request = input
     const needsMetadata = !intentId && (input.graph.version === undefined
-      || input.graph.createdAt === undefined || input.graph.updatedAt === undefined)
+      || input.graph.createdAt === undefined || input.graph.updatedAt === undefined || input.graph.approval === undefined)
     authorize(principal, input, true)
     return this.commands.execute({ principal, source, operation: 'workflow.save.v3', commandId: input.commandId,
       targetKey: `workflow:${input.workflowId}:definition`, payload: request,
@@ -370,7 +372,8 @@ export class CurrentWorkflowAuthoring {
       return readImmutableAgentConfiguration(config, { workspaceId: input.workspaceId, agentId: config.agent_id, id })
     })
     configurations.push(...(staged?.prepared.map((item) => item.configuration) ?? []))
-    const graph = reconcileAgentProfilePlacements(input.graph, configurations)
+    const graph = reconcileAgentProfilePlacements({ ...input.graph,
+      approval: input.graph.approval ?? current.approval }, configurations)
     await validateWorkflowWorktrees({ sql: client, principal, definition: graph, previous: current,
       configurations, services: this.options.worktrees })
     const number = Number((await client.query<{ next: string }>('select coalesce(max(version),0)+1 as next from workflow_versions where workflow_id=$1',
