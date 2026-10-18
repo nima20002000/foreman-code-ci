@@ -21,6 +21,7 @@ import type { HostHarnessProfileEvidenceRepository } from './profileRepository.j
 import type { HarnessInstallationRecord } from '../installationRegistry.js'
 import { qualificationError, staleQualification } from '../qualificationErrors.js'
 import { CLAUDE_PROFILE_CHECK_REVISION } from '../claudeSdk/profileRevision.js'
+import { logIgnoredError } from '../../diagnostics/ignoredError.js'
 
 export interface AutomaticHostProfileCheck {
   host: CanonicalMachineReference
@@ -31,6 +32,8 @@ export interface AutomaticHostProfileCheck {
   authorize(client: pg.PoolClient): Promise<void>
   installation(value: HostHarnessOverride): HarnessInstallationRecord | undefined
   beforeChecks?: () => Promise<void>
+  /** Refreshes this host's inventory; a changed generation supersedes the running batch. */
+  refresh?: (signal: AbortSignal) => Promise<void>
 }
 
 export interface HostHarnessProfileQualifier {
@@ -224,7 +227,7 @@ export class HostHarnessInstanceProfileChecks {
       }
     } catch (error) { preparationFailure = error }
     const failures: unknown[] = []
-    await this.recheckInParallel(ordered, input.signal, async saved => {
+    const checkProfile = async (saved: HostHarnessOverride, refreshed = false): Promise<void> => {
       input.signal.throwIfAborted()
       const installation = input.installation(saved)
       const checkId = randomUUID()
@@ -251,6 +254,20 @@ export class HostHarnessInstanceProfileChecks {
       } catch (error) {
         input.signal.throwIfAborted()
         if (staleQualification(error)) {
+          if (!refreshed && input.refresh) {
+            // Recheck on the settled inventory in this slot so the profile keeps its priority;
+            // a changed inventory generation aborts this batch for a new prioritized one.
+            try {
+              await input.refresh(input.signal)
+            } catch (refreshFailure) {
+              input.signal.throwIfAborted()
+              logIgnoredError('harness', 'refresh inventory after a stale profile check', refreshFailure,
+                { instanceId: value.instanceId })
+              failures.push(error)
+              return
+            }
+            return checkProfile(value, true)
+          }
           // The Worker no longer matches the requested target; the monitor retries once its inventory settles.
           failures.push(error)
           return
@@ -294,7 +311,8 @@ export class HostHarnessInstanceProfileChecks {
         failures.push(error)
       }
       batch.pendingProfiles!.delete(profileKey(value))
-    }, batch)
+    }
+    await this.recheckInParallel(ordered, input.signal, saved => checkProfile(saved), batch)
     if (failures.length) throw new AggregateError(failures, 'Automatic harness profile checks failed.')
   }
   private async recheckProfiles(host: CanonicalMachineReference, binding: Readonly<DeviceSessionBinding>,
