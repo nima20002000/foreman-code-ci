@@ -1453,13 +1453,15 @@ export class CloudCi {
     const known = await this.cancelProviderAttempts(run, knownIds, canceled)
     run = known.run
     const unsent = neverSubmitted(run)
-    const requiresDiscovery = this.provider.id === 'github' || run.dispatch?.uncertain === true
+    const uncertainSubmission = run.dispatch?.uncertain === true
+      || !run.providerRunId && (run.dispatch?.attempts ?? 0) > 0 && run.dispatch?.uncertain !== false
+    const requiresDiscovery = this.provider.id === 'github' || uncertainSubmission
     const discovered = requiresDiscovery && !unsent
       ? await this.provider.discover!(run) : []
     const discoveryComplete = !run.dispatch?.attempts
       || this.ports.now().getTime() - Date.parse(run.cancellation!.at) >= CLOUD_START_TIMEOUT_MS
     // Complete execution-specific discovery also resolves a lost trigger reply when no pipeline was created.
-    if (run.dispatch?.uncertain && (discovered.length || discoveryComplete)) {
+    if (run.dispatch && uncertainSubmission && (discovered.length || discoveryComplete)) {
       run = { ...run, providerRunId: run.providerRunId ?? discovered[0] ?? null,
         dispatch: { ...run.dispatch, uncertain: false } }
     }
