@@ -2,8 +2,7 @@ import { errorMessage } from '../errorMessage'
 import { nativeNode } from './nativeFixtureTypes'
 import { http, HttpResponse, type RequestHandler } from 'msw'
 import { inspectionFixturePage, runInspectionFixtureResponse, type RunInspectionFixture, type RunInspectionActivity } from './runInspection'
-import { AgentConfigurationVersionSchema, AgentSchema, DEFAULT_WORKFLOW_APPROVAL_HANDLER,
-  WorkflowRunSummarySchema, type Agent } from '@foreman-code/contracts'
+import { AgentConfigurationVersionSchema, AgentSchema, WorkflowRunSummarySchema, type Agent } from '@foreman-code/contracts'
 import { ReadSelectedRunChatResponseSchema } from '@foreman-code/contracts/selected-run-chat'
 import { RunBoardSnapshotGetResultSchema } from '@foreman-code/contracts/run-snapshots'
 import { AgentCreateInputSchema, AgentUpdateInputSchema, AgentMutationResultSchema, LocalHumanAccessSchema, ManagedWorkspaceSchema, RunStopInputSchema, WorkflowUpdateInputSchema, WorkflowArchiveInputSchema, WorkflowBatchArchiveInputSchema } from '@foreman-code/contracts/management'
@@ -320,8 +319,7 @@ function dispatchCurrentBoardWorkflows({ url, path, method, prefix, publicPrefix
       if (input.workspaceId !== workspaceId) return failure('SCOPE_MISMATCH', 'Out of scope')
       return HttpResponse.json(journal(`create:${input.commandId}`, input, () => install({ id: `workflow-current-${nextWorkflow()}`,
         workspaceId, name: input.name, ...(input.description ? { description: input.description } : {}), executionSemanticsVersion: 3,
-        entryNodeId: null, nodes: [], edges: [], executionCondition: { kind: 'manual' },
-        approval: { handler: DEFAULT_WORKFLOW_APPROVAL_HANDLER },
+        entryNodeId: null, nodes: [], edges: [], executionCondition: { kind: 'manual' }, approval: { handler: 'user' },
         executionPolicy: { maxParallelism: 4, maxNodeExecutions: 40 } })), { status: 201 }) }
   }
   if (path === `${prefix}/workflows/batch-archive` && method === 'POST') {
