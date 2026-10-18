@@ -16,23 +16,6 @@ afterEach(async () => {
   for (const dispose of disposals.splice(0)) await dispose()
 })
 
-type GitHubListedRun = { databaseId: number; displayTitle: string; headSha?: string }
-
-function githubListing(github: { listed: GitHubListedRun[]; status: string }, dispatched: string[][],
-  commit: (branch: string) => string, path?: string) {
-  const page = path ? Number(new URL(path, 'https://api.github.com').searchParams.get('page')) : null
-  const selected = page === null ? github.listed : github.listed.slice((page - 1) * 100, page * 100)
-  const listed = selected.map(value => {
-    const command = dispatched.find(args => args.includes(`run_id=${value.displayTitle.slice(3)}`))
-    const branch = command?.[command.indexOf('--ref') + 1] ?? 'main'
-    return { ...value, headSha: value.headSha ?? commit(branch) }
-  })
-  if (!path) return JSON.stringify(listed)
-  return JSON.stringify({ total_count: github.listed.length,
-    workflow_runs: listed.map(value => ({ id: value.databaseId, display_title: value.displayTitle,
-      status: github.status, head_sha: value.headSha })) })
-}
-
 /** A private repository and its public mirror as local bare repositories standing in for GitHub, with a gh that
  * records dispatches and replays the run states a test sets. */
 export async function fixture(files: Record<string, string> = {}, options: { mirror?: boolean; provider?: 'github' | 'circleci'
@@ -97,12 +80,10 @@ export async function fixture(files: Record<string, string> = {}, options: { mir
     }),
   }
   const dispatched: string[][] = []
-  const github = { listed: [] as GitHubListedRun[], status: 'in_progress', conclusion: '',
+  const github = { listed: [] as { databaseId: number; displayTitle: string; headSha?: string }[], status: 'in_progress', conclusion: '',
     durations: null as Record<string, number> | null, testResults: null as unknown, canceled: [] as string[],
     steps: [] as { number: number; name: string; status: string; conclusion: string | null }[],
     watchdogFailure: null as unknown, suiteLog: '', log: 'ci\tSuite\tall green\n', rateLimited: false, jobReads: [] as ('full' | 'unchanged')[], artifactError: '', logError: '' }
-  const githubRuns = (path?: string) => githubListing(github, dispatched,
-    branch => run(mirror, 'rev-parse', branch), path)
   const circle = { triggered: [] as string[][], outcome: '' as string, durations: null as Record<string, number> | null,
     testResults: null as unknown, watchdogFailure: null as unknown, log: 'Suite\nall green\n',
     artifacts: null as Record<string, unknown> | null, rawOutput: null as string | null,
@@ -174,7 +155,6 @@ export async function fixture(files: Record<string, string> = {}, options: { mir
     if (args[0] === 'api') {
       if (github.rateLimited) return { code: 1, stdout: 'HTTP/2.0 403 Forbidden\r\nX-Ratelimit-Remaining: 0\r\n\r\n{}',
         stderr: 'gh: API rate limit exceeded for user ID 1. (HTTP 403)' }
-      if (args[1]?.includes('/actions/workflows/ci.yml/runs?')) return ok(githubRuns(args[1]))
       const body = JSON.stringify({ jobs: [{ id: 1, status: github.status === 'completed' || github.status === 'queued' ? github.status : 'in_progress',
         steps: github.steps }] })
       const etag = `"${createHash('sha1').update(body).digest('hex')}"`
@@ -185,7 +165,11 @@ export async function fixture(files: Record<string, string> = {}, options: { mir
       github.jobReads.push('full')
       return ok(`HTTP/2.0 200 OK\r\nEtag: W/${etag}\r\n\r\n${body}`)
     }
-    if (args[1] === 'list') return ok(githubRuns())
+    if (args[1] === 'list') return ok(JSON.stringify(github.listed.map(value => {
+      const command = dispatched.find(args => args.includes(`run_id=${value.displayTitle.slice(3)}`))
+      const branch = command?.[command.indexOf('--ref') + 1] ?? 'main'
+      return { ...value, headSha: value.headSha ?? run(mirror, 'rev-parse', branch) }
+    })))
     if (args[1] === 'cancel') { github.canceled.push(args[2]!); return ok() }
     if (args[1] === 'view' && args.includes('--log')) {
       return github.logError ? { code: 1, stdout: '', stderr: github.logError } : ok(github.log)
