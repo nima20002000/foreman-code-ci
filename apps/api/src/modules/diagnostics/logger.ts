@@ -153,11 +153,20 @@ export async function pruneLogFiles(file: string, count: number, days: number, n
     }
     return [] as string[]
   })).filter((name) => own.test(name))
-  const files = await Promise.all(names.map(async (name) => ({
-    name,
-    active: resolve(directory, name) === active,
-    modified: (await stat(join(directory, name))).mtimeMs,
-  })))
+  const candidates = await Promise.all(names.map(async (name) => {
+    try {
+      return {
+        name,
+        active: resolve(directory, name) === active,
+        modified: (await stat(join(directory, name))).mtimeMs,
+      }
+    } catch (error) {
+      // Another prune or an exit flush can remove a segment after it was listed.
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
+      throw error
+    }
+  }))
+  const files = candidates.filter(file => file !== undefined)
   const expired = expiredLogNames(files, count, days, now)
     .filter(name => !isPendingFile(join(directory, name)))
   await Promise.allSettled(expired.map((name) => unlink(join(directory, name)).catch((error: unknown) => {

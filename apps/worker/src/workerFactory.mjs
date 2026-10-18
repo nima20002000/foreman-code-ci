@@ -30,8 +30,8 @@ import { WorkerArtifactReplySchema, WorkerArtifactManifestSchema } from '../../.
 import { workerArtifactContentSha256 } from '../../../packages/contracts/src/workerArtifactContentNode.mjs';
 import { workerBundleReadiness, requireWorkerBundleReady } from '../../../apps/api/src/modules/computers/workerBundleReadiness.ts';
 
-export function runInstalledCiSmoke(input) {
-  return runCiInstallSmoke(input, { runner: new HostCiRunner() });
+export function runInstalledCiSmoke(input, { signal } = {}) {
+  return runCiInstallSmoke(input, { runner: new HostCiRunner(), signal });
 }
 export { ensurePairedManagedSetup };
 export { refreshWorkflowSelection };

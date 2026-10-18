@@ -18,8 +18,8 @@ export const requirements = new Map([
   ['apps/api/test/remote-review-production-delivery.integration.test.ts', ['installedWorkerHost']],
   ['apps/api/test/remote-review-production-entry-recovery.integration.test.ts', ['installedWorkerHost']],
   ['apps/api/test/remote-review-production-main-crash.integration.test.ts', ['installedWorkerHost']],
-  ['apps/api/test/remote-review-production-main-expired-receipt.integration.test.ts', ['installedWorkerHost']],
-  ['apps/api/test/remote-review-production-main-graceful.integration.test.ts', ['installedWorkerHost']],
+  ['apps/api/test/remote-review-expired-receipt-recovery.integration.test.ts', ['installedWorkerHost']],
+  ['apps/api/test/remote-review-main-recovery.integration.test.ts', ['installedWorkerHost']],
   ['apps/api/test/remote-review-production-reserved-decision.integration.test.ts', ['installedWorkerHost']],
   ['apps/api/test/remote-review-production-worker-crash.integration.test.ts', ['installedWorkerHost']],
   ['apps/api/test/historical-chat-placement-fork.integration.test.ts', ['installedWorkerHost']],
@@ -72,6 +72,9 @@ export const exclusiveIntegrationFiles = [startupFile,
   'apps/api/test/remote-review-production-reserved-decision.integration.test.ts',
   // Startup and original-owner recovery must finish within the same fixed file deadline.
   'apps/api/test/remote-review-production-worker-crash.integration.test.ts',
+  // Main recovery and the retained reviewer's continuation must finish within the same fixed case deadline.
+  'apps/api/test/remote-review-expired-receipt-recovery.integration.test.ts',
+  'apps/api/test/remote-review-main-recovery.integration.test.ts',
   // Repeated schema migrations need uncontended host resources.
   'apps/api/test/workflow-historical-version-pins.integration.test.ts',
   'apps/api/test/source-snapshot-retention.integration.test.ts',
