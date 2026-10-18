@@ -5,5 +5,5 @@ export function modelRequestDirectories(
   return [...new Set(calls.filter(call => call.method === 'model/list')
     .map(call => call.workingDirectory)
     .filter((directory): directory is string => typeof directory === 'string'
-      && directory.startsWith(`${workingDirectory}/native-codex-qualification-`)))]
+      && (directory === workingDirectory || directory.startsWith(`${workingDirectory}/`))))]
 }
