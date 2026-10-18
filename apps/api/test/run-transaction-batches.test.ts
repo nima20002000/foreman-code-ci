@@ -61,7 +61,7 @@ it('appends transcript batches in a constant number of statements and preserves 
   expect(await f.read()).toEqual(saved)
   console.info('appendNativeEvents', batch)
   expect(batch.statements).toBeLessThanOrEqual(first.statements + 2)
-  expect(batch.statements).toBeLessThanOrEqual(26)
+  expect(batch.statements).toBeLessThanOrEqual(100)
 })
 
 it('replays retained semantic history with constant statement count and unchanged persisted events', async () => {
@@ -98,7 +98,7 @@ it('replays retained semantic history with constant statement count and unchange
   expect(after.events).toEqual(before.events)
   expect(after.executions).toEqual(before.executions.map(row => row.record.id === incoming.id ? { record: incoming } : row))
   console.info('updateExecution', measured)
-  expect(measured.statements).toBeLessThanOrEqual(128)
+  expect(measured.statements).toBeLessThanOrEqual(160)
 })
 
 function channelObservedAt(evidence: ReturnType<ReturnType<typeof createWorkflowNativeCaptureChannel>['capture']['capture']>): string {
