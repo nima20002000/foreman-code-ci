@@ -118,6 +118,12 @@ it('recovers the original service after restart between native entry and the run
     await expect(access(f.source)).resolves.toBeUndefined()
     await expect(recovered.handle(f.request)).resolves.toMatchObject({ run: { state: 'running' } })
     expect(f.control.launches).toBe(1)
+    await writeFile(join(f.root, 'runs', f.request.runId, 'log'), 'Completed lint')
+    await writeFile(join(f.root, 'runs', f.request.runId, 'exit'), '0\n')
+    expect(f.runner.isUpdateIdle()).toBe(false)
+    await expect(recovered.handle(f.read)).resolves.toMatchObject({
+      run: { state: 'running', exitCode: null },
+    })
     release()
     await vi.waitFor(async () => {
       await expect(f.runner.handle(f.read)).resolves.toMatchObject({ run: { state: 'running' } })
