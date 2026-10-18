@@ -47,7 +47,7 @@ afterEach(() => { vi.unstubAllEnvs() })
 
 /** Two build computers that answer the host CI protocol from memory; tests finish their runs. */
 function fakeComputers(github: Record<string, boolean> = {}, cloud: boolean | { github: number; circleci: number } = false,
-  hostSlots = 1, cloudSystemd = false, publishMirror?: HostCiEndpoint['publishMirror']) {
+  hostSlots = 1, cloudSystemd = false) {
   const mainId = randomUUID()
   const computers: HostCiComputer[] = ['laptop', 'builder'].map((name, index) => ({ key: `${mainId}:${name}`,
     hostRef: { kind: 'device', mainId, deviceId: randomUUID() }, label: name, priority: 60 - index }))
@@ -63,7 +63,6 @@ function fakeComputers(github: Record<string, boolean> = {}, cloud: boolean | { 
     durations?: Record<string, number> }>()
   const started: { computer: string; request: CiHostRequest }[] = []
   const endpoint: HostCiEndpoint = {
-    ...(publishMirror ? { publishMirror } : {}),
     computers: async () => computers,
     request: async (computer, request): Promise<CiHostReply> => {
       if (request.operation === 'status') {
@@ -132,7 +131,6 @@ export async function fixture(options: { repository?: boolean; github?: Record<s
   integrationInventory?: CiIntegrationInventory
   cloud?: boolean | { github: number; circleci: number }; agent?: boolean; hostSlots?: number; cloudSystemd?: boolean
   changedFiles?: string[]
-  publishMirror?: HostCiEndpoint['publishMirror']
   databasePool?: (databaseUrl: string) => pg.Pool
   supersession?: { branch(commit: string): string | null; isAncestor(ancestor: string, commit: string): boolean }
   repositoryRunner?: { commits: CiCommits; endpoint: HostCiEndpoint } } = {}) {
@@ -175,7 +173,7 @@ export async function fixture(options: { repository?: boolean; github?: Record<s
     published.push(resolved)
     return resolved
   } }
-  const computers = fakeComputers(options.github, options.cloud, options.hostSlots, options.cloudSystemd, options.publishMirror)
+  const computers = fakeComputers(options.github, options.cloud, options.hostSlots, options.cloudSystemd)
   const commands = new PostgresCommandCoordinator(db.pool)
   const tools = workerToolServices(db.pool, commands)
   const { bugReports } = tools

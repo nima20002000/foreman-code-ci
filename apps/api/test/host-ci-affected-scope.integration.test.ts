@@ -7,22 +7,6 @@ import { CI_GET_ACTIONS, CI_RUN_ACTIONS } from '../src/modules/jobs/ciAuthority.
 import { fixture } from './helpers/hostCiMcpFixture.js'
 import { ciRunReadback } from './helpers/ciRunReadback.js'
 
-it('reports the explicit selection reason through authenticated MCP and persisted readback', async () => {
-  const f = await fixture()
-  try {
-    const reader = await f.connect(CI_GET_ACTIONS)
-    const input = { suite: 'integration', scope: 'affected', files: [],
-      commit: 'a'.repeat(40), commandId: 'selection-reason' }
-    expect((await f.call(reader, 'ci_run', input)).isError).toBe(true)
-    const started = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', input))
-    const read = CiGetOutputSchema.parse(await f.value(reader, 'ci_get', { ticketId: started.ticketId }))
-    expect(read.run).toHaveProperty('selection', { scope: 'affected', files: [], reason: 'Caller supplied the affected files.' })
-    const persisted = (await f.pool.query<{ record: unknown }>('select record from ci_runs where id=$1',
-      [started.ticketId])).rows[0]!.record
-    expect(persisted).toEqual(read.run)
-  } finally { await f.close() }
-})
-
 it('splits affected unit files without sending an empty part to a computer', async () => {
   const f = await fixture({ cloud: { github: 3, circleci: 0 } })
   try {
