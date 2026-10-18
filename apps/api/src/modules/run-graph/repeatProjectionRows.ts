@@ -25,32 +25,36 @@ export function boundedRepeatRows<T>(rows: T[], limit: number): T[] {
 
 /** Private pins remain local. Only the caller's explicit whitelist reaches wire
  * schemas. This is a same-transaction read, not Start admission/authorization. */
-export function readRepeatGraphPinsLocked(sql: GraphTransactionSql, input: RepeatGraphScopeV3) {
-  return readRepeatGraphPins(sql, input, 'executable')
+export function readRepeatGraphPinsLocked(sql: GraphTransactionSql, input: RepeatGraphScopeV3,
+  prefetched?: RepeatGraphPinsRow[]) {
+  return readRepeatGraphPins(sql, input, 'executable', prefetched)
 }
 
-export function readRecordedRepeatGraphPinsLocked(sql: GraphTransactionSql, input: RepeatGraphScopeV3) {
-  return readRepeatGraphPins(sql, input, 'recorded')
-}
-
-async function readRepeatGraphPins(sql: GraphTransactionSql, input: RepeatGraphScopeV3,
-  configurationPolicy: 'executable' | 'recorded') {
-  assertGraphTransaction(sql)
-  const scope = RepeatGraphScopeV3Schema.parse(input)
-  const rows = await sql.query<{
+export type RepeatGraphPinsRow = {
     workspace_id: string; workflow_id: string; workflow_version_id: string;
     version_id: string; version_number: number; entry_node_id: string; execution_state: string;
     execution_semantics_version: number; version_workspace_id: string; version_workflow_id: string;
     run_record: unknown; version_record: unknown; configurations: ImmutableAgentConfigurationRow[]
-  }>(
-    `select r.workspace_id,r.workflow_id,r.workflow_version_id,r.execution_state,v.execution_semantics_version,
+  }
+export const REPEAT_GRAPH_PINS_SQL = `select r.workspace_id,r.workflow_id,r.workflow_version_id,r.execution_state,v.execution_semantics_version,
       v.id as version_id,v.version as version_number,v.entry_node_id,
       r.record as run_record,v.record as version_record,v.workspace_id as version_workspace_id,v.workflow_id as version_workflow_id,
       coalesce((select json_agg(p order by p.id) from (
         select c.id,c.workspace_id,c.agent_id,c.version,c.record from agent_configuration_versions c
         where c.id in (select pin.value from jsonb_each_text(v.record->'agentConfigurationVersionIds') pin)
       ) p),'[]'::json) as configurations
-     from runs r join workflow_versions v on v.id=r.workflow_version_id where r.id=$1`, [scope.runId])
+     from runs r join workflow_versions v on v.id=r.workflow_version_id where r.id=$1`
+
+export function readRecordedRepeatGraphPinsLocked(sql: GraphTransactionSql, input: RepeatGraphScopeV3) {
+  return readRepeatGraphPins(sql, input, 'recorded')
+}
+
+async function readRepeatGraphPins(sql: GraphTransactionSql, input: RepeatGraphScopeV3,
+  configurationPolicy: 'executable' | 'recorded', prefetched?: RepeatGraphPinsRow[]) {
+  assertGraphTransaction(sql)
+  const scope = RepeatGraphScopeV3Schema.parse(input)
+  const rows = prefetched ? { rows: prefetched } : await sql.query<RepeatGraphPinsRow>(
+    REPEAT_GRAPH_PINS_SQL, [scope.runId])
   const row = rows.rows[0]
   if (rows.rows.length !== 1 || !row || row.workspace_id !== scope.workspaceId || row.workflow_id !== scope.workflowId
     || row.workflow_version_id !== scope.workflowVersionId || row.execution_semantics_version !== 3
