@@ -1206,7 +1206,8 @@ export class HostCiService {
     } catch (error) {
       if (!(error instanceof DomainError && error.code === 'CI_RUN_UNKNOWN')) throw error
     }
-    const next = CiRunRecordSchema.parse({ ...run, deadlineExceeded: { ...run.deadlineExceeded!, executor: 'released' },
+    const next = CiRunRecordSchema.parse({ ...run, executorCleanupPending: false,
+      deadlineExceeded: { ...run.deadlineExceeded!, executor: 'released' },
       observation: { status: 'available', lastSuccessAt: new Date().toISOString(), lastError: null,
         consecutiveFailures: 0, nextAttemptAt: null } })
     await this.pool.query(`update ci_runs set host_key=null, record=$2::jsonb where id=$1 and record=$3::jsonb`,
