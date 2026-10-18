@@ -2,7 +2,6 @@ import { lstat, readdir, rm } from 'node:fs/promises'
 import { join, relative, sep } from 'node:path'
 import { withHostCiRunLock } from './runnerLock.js'
 import { ciRepositoryStorageEntries, reclaimCiRepositoryStorage } from './repositoryStorage.js'
-import { pnpmFetchRecord } from './warmSetup.js'
 
 export const CI_HOST_CACHE_BUDGET_BYTES = 3 * 2 ** 30
 interface CacheEntry { path: string; bytes: number; usedAt: number; repository: string; repositoryStorage?: true }
@@ -99,17 +98,10 @@ export async function sweepHostCiCache(root: string, options: {
       }
       const cacheBatch = batch.filter(entry => !entry.repositoryStorage)
       if (!cacheBatch.length) continue
-      const repositoryCache = join(cache, ...repository.split('/'))
-      await withHostCiRunLock(repositoryCache, async () => {
+      await withHostCiRunLock(join(cache, ...repository.split('/')), async () => {
         if (options.activeRepositories().has(repository)) return
-        let prefetchInvalidated = false
         for (const entry of cacheBatch) {
           if (await cacheUsedSinceScan(entry)) continue
-          if (!prefetchInvalidated && ['pnpm-store', 'pnpm-metadata']
-            .some(directory => entry.path.startsWith(join(repositoryCache, directory) + sep))) {
-            await rm(pnpmFetchRecord(repositoryCache), { force: true })
-            prefetchInvalidated = true
-          }
           await rm(entry.path, { recursive: true, force: true })
           bytes -= entry.bytes
           removed.push(entry.path)

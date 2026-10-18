@@ -6,6 +6,6 @@ export async function ciRunReadback(read: (input: CiGetInput) => Promise<unknown
   state: CiRunRecord['state']) {
   const result = CiGetOutputSchema.parse(await read({ ticketId, waitUntil: 'group-terminal', waitSeconds: 10 }))
   expect(result.wait?.status).toBe('settled')
-  expect(result.run.state, result.logTail ?? result.run.message ?? undefined).toBe(state)
+  expect(result.run.state).toBe(state)
   return result
 }

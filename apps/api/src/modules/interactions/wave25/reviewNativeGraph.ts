@@ -128,8 +128,11 @@ export async function appendReviewNativeGraphHistory(pool: pg.Pool, supplied: Re
       }
       const raw = await appendNormalizedNativeEvent(sql, { ...normalized, event })
       if (raw.rejected || !job.submittedAt) continue
+      const observation = observationFor(job, event, publication.scope, key, row.generation!, terminalReady)
       const correlation = await readNativeGraphCorrelation(sql, publication.scope, key, job.correlationId)
-      if (!correlation && !live) continue
+      // A crash can lose the live callback after submission. Original provider
+      // history can establish that same review without submitting another turn.
+      if (!correlation && !live && !observation) continue
       if (correlation && (correlation.connectionId !== (event.connectionId ?? null)
         || String(correlation.connectionGeneration) !== row.generation)) continue
       if (!correlation) await new PostgresNativeGraphProjectionWriter().persistCorrelation(sql, publication.scope, null, {
@@ -142,7 +145,6 @@ export async function appendReviewNativeGraphHistory(pool: pg.Pool, supplied: Re
       const transport = nativeDisconnectObservation(publication.scope, key, event, row.generation!)
       await appendNativeGraphEvent(publication, event, [{ guard, correlationKey: job.correlationId,
         ...(transport ? { observation: transport } : {}) }])
-      const observation = observationFor(job, event, publication.scope, key, row.generation!, terminalReady)
       if (observation) await recordReviewObservation(publication, observation, guard, original.proofId)
     }
   })
