@@ -65,8 +65,10 @@ function completeSaveInput(
     createdAt: createdAt ?? metadata.createdAt,
     updatedAt: updatedAt ?? metadata.updatedAt,
   }
+  const approval = graph.approval ?? metadata.approval
   return CurrentWorkflowSaveInputSchema.parse({ ...request, graph: {
     ...graph,
+    ...(approval === undefined ? {} : { approval }),
     ...(stamps.version === undefined ? {} : { version: stamps.version }),
     ...(stamps.createdAt === undefined ? {} : { createdAt: stamps.createdAt }),
     ...(stamps.updatedAt === undefined ? {} : { updatedAt: stamps.updatedAt }),
@@ -187,7 +189,7 @@ export class CurrentWorkflowAuthoring {
     let input: CurrentEditSaveInput = intentId ? CurrentEditSaveInputSchema.parse(raw) : CurrentWorkflowSaveInputSchema.parse(raw)
     const request = input
     const needsMetadata = !intentId && (input.graph.version === undefined
-      || input.graph.createdAt === undefined || input.graph.updatedAt === undefined)
+      || input.graph.createdAt === undefined || input.graph.updatedAt === undefined || input.graph.approval === undefined)
     authorize(principal, input, true)
     return this.commands.execute({ principal, source, operation: 'workflow.save.v3', commandId: input.commandId,
       targetKey: `workflow:${input.workflowId}:definition`, payload: request,
@@ -225,8 +227,7 @@ export class CurrentWorkflowAuthoring {
           const { version, configurations } = await versionAt(client, input, saved.currentVersionId)
           // Replays use saved configurations even when the Agent has since changed.
           const publishedInput = witness && !sameWorkflowValue(witness.input, input)
-            ? { ...input, graph: manualPositionsForSave(
-              reconcileAgentProfilePlacements(input.graph, configurations), version.definition, source) } : input
+            ? { ...input, graph: reconcileAgentProfilePlacements(input.graph, configurations) } : input
           if (!sameWorkflowValue(version, saved.version) || !sameWorkflowValue(version.agentConfigurationVersionIds, input.resultantAgentConfigurationVersionIds ?? input.expectedAgentConfigurationVersionIds)) {
             return fail('WORKFLOW_RECEIPT_CONFLICT', 'The receipt differs from its exact immutable version/configuration pins.')
           }
@@ -371,8 +372,8 @@ export class CurrentWorkflowAuthoring {
       return readImmutableAgentConfiguration(config, { workspaceId: input.workspaceId, agentId: config.agent_id, id })
     })
     configurations.push(...(staged?.prepared.map((item) => item.configuration) ?? []))
-    // Publication and the immutable version must use the same manual placement flags.
-    const graph = manualPositionsForSave(reconcileAgentProfilePlacements(input.graph, configurations), current, source)
+    const graph = reconcileAgentProfilePlacements({ ...input.graph,
+      approval: input.graph.approval ?? current.approval }, configurations)
     await validateWorkflowWorktrees({ sql: client, principal, definition: graph, previous: current,
       configurations, services: this.options.worktrees })
     const number = Number((await client.query<{ next: string }>('select coalesce(max(version),0)+1 as next from workflow_versions where workflow_id=$1',
@@ -385,6 +386,7 @@ export class CurrentWorkflowAuthoring {
       agentConfigurationVersionIds: configurationPins, contentHash: `sha256:${'0'.repeat(64)}`, createdAt: now })
     if (!parsedVersion.success) throw new DomainError('GRAPH_INVALID', 'Fix the workflow settings below.', 409, { issues: workflowSaveIssues(parsedVersion.error.issues) })
     const version = parsedVersion.data
+    version.definition = manualPositionsForSave(version.definition, current, source)
     const executable = ExecutableWorkflowV3Schema.safeParse({ version, configurations })
     if (!executable.success) throw new DomainError('GRAPH_INVALID', 'Fix the workflow settings below.', 409, { issues: workflowSaveIssues(executable.error.issues) })
     for (const node of version.definition.nodes) {
