@@ -17,7 +17,7 @@ export async function runCiInstallSmoke({ repository, commit }, { runner,
     capacityTimeoutMs);
   const smokeDeadline = () => setTimeout(() => controller.abort(new Error('Worker CI smoke timed out.')), timeoutMs);
   let smokeTimer;
-  let installing = false;
+  let smokeStarted = false;
   const expired = new Promise((_, reject) => {
     deadline.addEventListener('abort', () => reject(deadline.reason), { once: true });
   });
@@ -40,12 +40,12 @@ export async function runCiInstallSmoke({ repository, commit }, { runner,
     while (true) {
       const reply = await bounded(() => runner.handle({ operation: 'read', runId, afterOffset: 0,
         maxBytes: 8192, testResults: true }));
-      if (!installing && reply.run.step === 'install') {
-        installing = true;
+      if (!smokeStarted && reply.run.step === 'install') {
         clearTimeout(smokeTimer);
-      } else if (installing && reply.run.step !== 'install') {
-        installing = false;
+      } else if (!smokeStarted && ['contracts', 'prepare', 'integration'].includes(reply.run.step)) {
+        smokeStarted = true;
         clearTimeout(timer);
+        clearTimeout(smokeTimer);
         smokeTimer = smokeDeadline();
       }
       if (reply.run.state === 'passed' && reply.run.exitCode === 0) {
