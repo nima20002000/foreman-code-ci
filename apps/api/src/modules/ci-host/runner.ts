@@ -10,7 +10,7 @@ import { join, matchesGlob } from 'node:path'
 import { gzipSync, gunzipSync } from 'node:zlib'
 import { compactIntegrationCoverage, expandIntegrationCoverage } from '@foreman-code/contracts/ci-coverage'
 import { CiIntegrationCoverageSchema, CiWatchdogFailureSchema, CiDurationsSchema, CiHostReplySchema, CiHostRequestSchema, CiTestResultsSchema, integrationPartition,
-  CiScopeSchema, CiSelectedFilesSchema, CiSelectionSchema, validCiSelection,
+  CiSelectionSchema, validCiSelection,
   CI_HOST_START_PROTOCOL_VERSION,
   type CiDurations, type CiHostReply, type CiHostRequest, type CiHostRun, type CiSuite, type CiPart, type CiPartition, type CiScope } from '@foreman-code/contracts'
 import { DomainError } from '../errors.js'
