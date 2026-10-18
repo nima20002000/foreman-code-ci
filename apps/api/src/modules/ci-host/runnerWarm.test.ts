@@ -146,13 +146,13 @@ if (args[1] === 'db:up') {
     await runner.beginDrain()
     await Promise.all([...launched.values()].map(process => process.done))
   })
-  async function run() {
+  async function run({ warmup = false } = {}) {
     const runId = randomUUID()
     const script = join(root, 'runner/runs', runId, 'run.sh')
     const started = deferred()
     starts.set(script, started)
     await runner.handle({ operation: 'start', runId, repository: 'example/project', commit: git('rev-parse', 'HEAD'),
-      suite: 'lint', scope: 'affected', files: [] })
+      suite: warmup ? 'install' : 'lint', scope: 'affected', files: [], ...(warmup ? { warmup: true } : {}) })
     await vi.waitFor(async () => {
       const reply = await runner.handle({ operation: 'read', runId, afterOffset: 0, maxBytes: 65_536 })
       if (reply.operation !== 'read' || reply.run.state === 'starting') throw new Error('Run is starting')
@@ -165,13 +165,15 @@ if (args[1] === 'db:up') {
   }
   const commands = async () => (await readFile(calls, 'utf8')).trim().split('\n')
     .map(line => JSON.parse(line) as string[])
+  const onlinePackageCommands = async () => (await commands()).filter(args =>
+    (args[1] === 'install' || args[1] === 'fetch') && !args.includes('--offline'))
   const failOffline = () => writeFile(offlineFailure, 'store unavailable')
   const slot = join(root, 'runner/slots/example/project/0/src')
   // A new slot starts without dependencies and installs them from the shared store.
   const removeDependencies = () => rm(join(slot, 'node_modules'), { recursive: true, force: true })
   // A checkout whose git link is broken cannot be reset to another commit.
   const breakCheckout = () => writeFile(join(slot, '.git'), 'gitdir: missing\n')
-  return { run, commands, origin, git, failOffline, removeDependencies, breakCheckout,
+  return { run, commands, onlinePackageCommands, origin, git, failOffline, removeDependencies, breakCheckout,
     allowPrefetch: () => rm(prefetchFailure),
     readRetained: async () => {
       const retained = new HostCiRunner(join(root, 'runner'), ports, environment)
@@ -206,7 +208,7 @@ it('warms once, installs offline on later jobs, and keeps the store private from
   await fixture.removeDependencies()
   await expect(fixture.run()).resolves.toMatchObject({ run: { state: 'passed' }, text: expect.stringContaining('dependency=pristine') })
   const installs = (await fixture.commands()).filter(args => args[1] === 'install')
-  expect(installs.filter(args => !args.includes('--offline'))).toHaveLength(1)
+  expect(await fixture.onlinePackageCommands()).toHaveLength(1)
   expect(installs.at(-1)).toEqual(expect.arrayContaining(['--offline', '--frozen-lockfile']))
 })
 
@@ -219,7 +221,7 @@ it('allows one online fill for a changed lockfile and then returns to offline in
   await fixture.run()
   await fixture.run()
   const installs = (await fixture.commands()).filter(args => args[1] === 'install')
-  expect(installs.filter(args => !args.includes('--offline'))).toHaveLength(2)
+  expect(await fixture.onlinePackageCommands()).toHaveLength(2)
   expect(installs.at(-1)).toEqual(expect.arrayContaining(['--offline', '--frozen-lockfile']))
 })
 
@@ -228,8 +230,7 @@ it('retains release-age metadata for offline installs after slot dependencies ar
   await expect(fixture.run()).resolves.toMatchObject({ run: { state: 'passed' } })
   await fixture.removeDependencies()
   await expect(fixture.run()).resolves.toMatchObject({ run: { state: 'passed' } })
-  const installs = (await fixture.commands()).filter(args => args[1] === 'install')
-  expect(installs.filter(args => !args.includes('--offline'))).toHaveLength(1)
+  expect(await fixture.onlinePackageCommands()).toHaveLength(1)
 })
 
 it('makes the installation metadata cache available to commands launched by the suite', async () => {
@@ -248,6 +249,8 @@ it('prefetches deployment-only packages before suites and keeps later requests o
   }
   const fetches = (await fixture.commands()).filter(args => args[1] === 'fetch')
   expect(fetches.filter(args => !args.includes('--offline'))).toHaveLength(1)
+  const installs = (await fixture.commands()).filter(args => args[1] === 'install')
+  expect(installs.every(args => args.includes('--offline'))).toBe(true)
 })
 
 it('prefetches the changed lockfile before its first suite', async () => {
@@ -268,10 +271,33 @@ it('reports prefetch failure before running a suite and fills the store on the n
   await expect(fixture.run()).resolves.toMatchObject({
     run: { state: 'failed', exitCode: 19 }, text: expect.stringContaining('Full lockfile prefetch failed'),
   })
+  expect((await fixture.commands()).filter(args => args[1] === 'run')).toEqual([])
   await fixture.allowPrefetch()
   await expect(fixture.run()).resolves.toMatchObject({
     run: { state: 'passed' }, text: expect.stringContaining('production dependency=available offline'),
   })
+})
+
+it('keeps background warmup offline even when the full lockfile store is incomplete', async () => {
+  const fixture = await computer()
+  await expect(fixture.run({ warmup: true })).resolves.toMatchObject({ run: { state: 'failed', exitCode: 7 } })
+  expect(await fixture.onlinePackageCommands()).toEqual([])
+  await expect(fixture.run()).resolves.toMatchObject({
+    run: { state: 'passed' }, text: expect.stringContaining('production dependency=available offline'),
+  })
+  await expect(fixture.run({ warmup: true })).resolves.toMatchObject({ run: { state: 'passed' } })
+  expect(await fixture.onlinePackageCommands()).toHaveLength(1)
+})
+
+it('shares one online prefetch between concurrent cold requests', async () => {
+  const fixture = await computer()
+  const replies = await Promise.all([fixture.run(), fixture.run()])
+  for (const reply of replies) {
+    expect(reply).toMatchObject({
+      run: { state: 'passed' }, text: expect.stringContaining('production dependency=available offline'),
+    })
+  }
+  expect(await fixture.onlinePackageCommands()).toHaveLength(1)
 })
 
 it('installs concurrent jobs offline from one warmed repository and store', async () => {
@@ -279,8 +305,7 @@ it('installs concurrent jobs offline from one warmed repository and store', asyn
   await fixture.run()
   const results = await Promise.all([fixture.run(), fixture.run()])
   for (const result of results) expect(result).toMatchObject({ run: { state: 'passed' } })
-  const installs = (await fixture.commands()).filter(args => args[1] === 'install')
-  expect(installs.filter(args => !args.includes('--offline'))).toHaveLength(1)
+  expect(await fixture.onlinePackageCommands()).toHaveLength(1)
 })
 
 it('refills an unavailable warmed store online instead of failing the job', async () => {
@@ -288,8 +313,7 @@ it('refills an unavailable warmed store online instead of failing the job', asyn
   await expect(fixture.run()).resolves.toMatchObject({ run: { state: 'passed' } })
   await fixture.failOffline()
   await expect(fixture.run()).resolves.toMatchObject({ run: { state: 'passed' } })
-  const installs = (await fixture.commands()).filter(args => args[1] === 'install')
-  expect(installs.filter(args => !args.includes('--offline'))).toHaveLength(2)
+  expect(await fixture.onlinePackageCommands()).toHaveLength(2)
 })
 
 it('waits for dependencies before database preparation can trigger another install', async () => {
@@ -307,8 +331,7 @@ it('falls back to a fresh checkout when the slot checkout is unusable, then recr
   const next = await fixture.run()
   expect(next).toMatchObject({ run: { state: 'passed' }, text: expect.stringContaining('dependency=pristine') })
   expect(next).toMatchObject({ text: expect.not.stringContaining('[ci-checkout]') })
-  const installs = (await fixture.commands()).filter(args => args[1] === 'install')
-  expect(installs.filter(args => !args.includes('--offline'))).toHaveLength(1)
+  expect(await fixture.onlinePackageCommands()).toHaveLength(1)
 })
 
 it('fetches only the tested commit on a cold runner and on later jobs with explicit files', async () => {
@@ -342,8 +365,7 @@ it('waits for a registered process when the unit appears active before launch ac
     await expect(fixture.run()).resolves.toMatchObject({
       run: { state: 'passed' }, text: expect.stringContaining('dependency=pristine'),
     })
-    const installs = (await fixture.commands()).filter(args => args[1] === 'install')
-    expect(installs.filter(args => !args.includes('--offline'))).toHaveLength(1)
+    expect(await fixture.onlinePackageCommands()).toHaveLength(1)
   } finally {
     acknowledged.resolve()
   }
