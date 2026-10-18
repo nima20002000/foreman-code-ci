@@ -109,7 +109,6 @@ for (const step of ['contracts', 'prepare', 'integration']) {
       }
       if (request.operation === 'cancel') { canceled = true; return {}; }
       if (++reads === 1) return { run: { state: 'running', step }, text: '' };
-      t.mock.timers.tick(20);
       return { run: { state: 'passed', step: 'integration', exitCode: 0 }, text: '', testResults: {
         summary: { passed: 1, failed: 0 }, files: [{ file: 'apps/api/test/ci-smoke.integration.test.ts',
           tests: [{ status: 'passed' }] }] } };
@@ -119,7 +118,7 @@ for (const step of ['contracts', 'prepare', 'integration']) {
     await new Promise(setImmediate);
     t.mock.timers.tick(1);
     await new Promise(setImmediate);
-    t.mock.timers.tick(1);
+    t.mock.timers.tick(20);
     await smoke;
     assert.equal(starts, 2);
     assert.equal(reads, 2);
