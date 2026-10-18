@@ -279,7 +279,7 @@ it('preserves a closed Agent Git worktree and reports its retained bytes during 
     expect(result.retained?.worktree).toMatchObject({ state: 'retained', message: expect.any(String) })
     expect(result.retained).toEqual({
       ...await measureRetainedMaterializationFootprint(receipt),
-      worktree: { state: 'retained', removalAttempted: true, message: expect.any(String) },
+      worktree: { state: 'retained', message: expect.any(String) },
     })
     expect(result.retained!.retainedBytes).toBeGreaterThan(0)
     expect(result.closures).toMatchObject([{ materializationId: receipt.materializationId, claimReleased: true }])
