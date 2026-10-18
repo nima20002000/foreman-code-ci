@@ -120,7 +120,12 @@ it('loads the compiled API using only its deployed production dependencies', asy
   const ciMetadataCache = join(repository, '.logs/pnpm-metadata')
   const metadataCache = process.env.npm_config_cache_dir
     || (existsSync(ciMetadataCache) ? ciMetadataCache : join(userInfo().homedir, '.cache/pnpm'))
-  const packageStore = ['--offline', '--store-dir', storeDir, '--cache-dir', metadataCache,
+  const fixtureMetadataCache = join(directory, 'pnpm-metadata')
+  const metadataCaches = new Set([join(userInfo().homedir, '.cache/pnpm'), ciMetadataCache, metadataCache])
+  for (const cache of metadataCaches) {
+    if (existsSync(cache)) await cp(cache, fixtureMetadataCache, { recursive: true })
+  }
+  const packageStore = ['--offline', '--store-dir', storeDir, '--cache-dir', fixtureMetadataCache,
     '--package-import-method=hardlink']
   // Every child process is killed after a bounded time and reports the fixture step it was running.
   const child = async (step: string, timeoutMs: number, command: string, args: string[],
