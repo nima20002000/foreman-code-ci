@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
+import { SourceMaterializationRecordSchema } from '@foreman-code/contracts/source-admission'
 import { PostgresSourceService } from '../src/modules/sources/service.js'
 import { PostgresSourceReservations, type SourceReservation } from '../src/modules/sources/reservations.js'
 import { releaseMaterializationClaim } from '../src/modules/sources/materialization.js'
@@ -60,10 +61,20 @@ it.each(['timeout', 'invalid reply', 'adoption rollback'] as const)(
   }, 60_000)
 
 
-it('keeps abandoned writable trees and their measured charge after releasing preparation ownership', async () => {
+it.each(['unadopted', 'recorded'] as const)(
+  'keeps abandoned writable trees and their measured charge after releasing %s preparation ownership', async state => {
   fixture = await setupMaterializationReservationCleanup()
   const f = fixture
   const orphan = await f.orphan('owned', { sharedWritableTree: true })
+  if (state === 'recorded') {
+    const record = SourceMaterializationRecordSchema.parse({ receipt: orphan.receipt,
+      rootPolicyId: f.root.selection.rootPolicyId, rootPolicyRevision: f.root.selection.rootPolicyRevision,
+      operationId: orphan.reservation.ownerId, reservationId: orphan.reservation.reservationId,
+      sourceBindingHash: orphan.receipt.placementHash, finalDispatchBindingHash: null, state: 'prepared' })
+    await f.pool.query(`update source_storage_reservations
+      set record=jsonb_set(record,'{preparation,record}',$2::jsonb) where reservation_id=$1`,
+    [orphan.reservation.reservationId, JSON.stringify(record)])
+  }
   const working = join(f.namespace, orphan.receipt.sharedTree!.id, 'tree', 'output.txt')
   await writeFile(working, 'Unintegrated Agent output')
   expect(await f.cleanup.reconcile()).toBe(1)
@@ -79,6 +90,7 @@ it('keeps abandoned writable trees and their measured charge after releasing pre
   expect(stored.preparationClosure).toMatchObject({ operationId: orphan.reservation.ownerId,
     executionId: orphan.attempt.executionId, attemptId: orphan.attempt.attemptId,
     materializationId: orphan.receipt.materializationId, childrenClosed: true, claimReleased: true })
+  expect(stored.referenceReclaimed).toBeUndefined()
   expect(await readFile(working, 'utf8')).toBe('Unintegrated Agent output')
   expect(await readFile(join(f.namespace, orphan.receipt.materializationId, 'tree', 'source.txt'))).toBeDefined()
   const next = await f.orphan('owned')
