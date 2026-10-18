@@ -36,6 +36,7 @@ async function fixture() {
     const url = decodeURIComponent(request.url ?? '')
     requests.push(url)
     if (unavailable) {
+      response.setHeader('Connection', 'close')
       response.writeHead(503)
       response.end('Registry unavailable')
       return
@@ -125,7 +126,7 @@ for (const entry of ['packages', 'warm setup']) {
       await f.run(entry)
       await rm(f.store(entry), { recursive: true })
       await execute('corepack', ['pnpm', 'store', 'add', `@openai/codex@${nativeVersion}`,
-        '--store-dir', f.store(entry), '--cache-dir', f.metadata(entry)], { cwd: f.source })
+        '--store-dir', f.store(entry), `--config.cache-dir=${f.metadata(entry)}`], { cwd: f.source })
       const native = join(f.source, 'node_modules/.pnpm', `@openai+codex@${nativeVersion}`)
       await rm(native, { recursive: true })
       await mkdir(join(native, 'node_modules'), { recursive: true })
@@ -241,10 +242,12 @@ it('restores GitHub package-hit native store and publication metadata through a 
     await execute('corepack', ['pnpm', 'install', '--frozen-lockfile', '--store-dir', f.store('packages'),
       '--cache-dir', f.metadata('packages')], { cwd: f.source })
     await f.run('packages')
+    console.error('Cache fixture: installed packages primed')
     const workflow = parse(await readFile(new URL('../../../.github/workflows/ci.yml', import.meta.url), 'utf8'))
     const steps = workflow.jobs.ci.steps as (CacheStep & { name?: string; run?: string; env?: Record<string, string> })[]
     const caches = steps.filter(step => ['packages', 'metadata', 'store'].includes(step.id))
     for (const step of caches) await copyCache(step, f.source, join(f.root, 'archives', step.id))
+    console.error('Cache fixture: archives saved')
     await rm(join(f.source, 'node_modules'), { recursive: true })
     await rm(join(f.source, 'apps/api/node_modules'), { recursive: true })
     await rm(join(f.source, '.logs'), { recursive: true })
@@ -254,6 +257,7 @@ it('restores GitHub package-hit native store and publication metadata through a 
       await copyCache(step, join(f.root, 'archives', step.id), f.source)
       hits[step.id] = 'true'
     }
+    console.error('Cache fixture: archives restored', hits)
     const install = steps.find(step => step.name === 'Install from cached store')!
     const render = (value: string) => value.replace(/\$\{\{ steps\.(\w+)\.outputs\.cache-hit \}\}/g,
       (_match, id: string) => hits[id] ?? '')
@@ -262,6 +266,7 @@ it('restores GitHub package-hit native store and publication metadata through a 
     const environment = Object.fromEntries(Object.entries(install.env ?? {}).map(([key, value]) => [key, render(value)]))
     f.requests.length = 0
     f.outage()
+    console.error('Cache fixture: running cached install during outage')
     await expect(execute('/bin/bash', ['-ec', command], { cwd: f.source,
       env: { ...process.env, ...environment, BASH_ENV: '' } })).resolves.toMatchObject({ stderr: expect.any(String) })
     expect(f.requests).toEqual([])
