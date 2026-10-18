@@ -210,10 +210,10 @@ export class ProjectionDatabase {
           workflow_version_id: this.scope.workflowVersionId, execution_state: s.executionState,
           execution_semantics_version: this.scope.executionSemanticsVersion, version_id: version.id,
           version_number: version.version, entry_node_id: version.entryNodeId, run_record: this.run(s), version_record: version,
-          version_workspace_id: version.workspaceId, version_workflow_id: version.workflowId }])
+          version_workspace_id: version.workspaceId, version_workflow_id: version.workflowId,
+          configurations: this.fixture.configurations.map((record) => ({ id: record.id,
+            workspace_id: record.workspaceId, agent_id: record.agentId, version: record.version, record })) }])
       }
-      if (q.startsWith('select id,workspace_id,agent_id,version,record from agent_configuration_versions')) return result(this.fixture.configurations.map((record) => ({
-        id: record.id, workspace_id: record.workspaceId, agent_id: record.agentId, version: record.version, record })))
       if (q.startsWith('select r.stop_requested_at is not null')) return result([{ closed: s.stopped
         || ['completed', 'interrupted'].includes(s.executionState), cleanup_pending: s.cleanupPending }])
       if (q.startsWith('select workspace_id,workflow_id,id from runs')) return result(values[0] === this.scope.runId
