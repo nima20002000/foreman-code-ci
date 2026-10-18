@@ -24,19 +24,20 @@ async function run(source: string, env: NodeJS.ProcessEnv = {}, signal?: NodeJS.
   const dir = await temporaryDirectory('api-log-script-')
   const script = join(dir, 'main.mts')
   await writeFile(script, source)
-  return new Promise<{ code: number | null; lines: Record<string, unknown>[] }>((done, fail) => {
+  return new Promise<{ code: number | null; lines: Record<string, unknown>[]; stderr: string }>((done, fail) => {
     // Without VITEST the child logs like the real API process.
     const parent = Object.fromEntries(Object.entries(process.env).filter(([key]) => key !== 'VITEST'))
     const child = spawn(process.execPath, ['--import', 'tsx', script], {
       cwd: api, env: { ...parent, LOG_LEVEL: 'info', ...env }, stdio: ['ignore', 'pipe', 'pipe'],
     })
-    let out = '', signalled = false
+    let out = '', stderr = '', signalled = false
+    child.stderr.on('data', (chunk: Buffer) => { stderr += chunk })
     child.stdout.on('data', (chunk: Buffer) => {
       out += chunk
       if (signal && !signalled && out.includes('"ready"')) { signalled = true; child.kill(signal) }
     })
     child.on('error', fail)
-    child.on('close', (code) => done({ code, lines: out.split('\n').filter((line) => line.startsWith('{')).map((line) => JSON.parse(line) as Record<string, unknown>) }))
+    child.on('close', (code) => done({ code, stderr, lines: out.split('\n').filter((line) => line.startsWith('{')).map((line) => JSON.parse(line) as Record<string, unknown>) }))
   })
 }
 const imports = `import { componentLogger, enableFileLogging } from '${join(api, 'src/infrastructure/logger.ts')}'
@@ -105,7 +106,7 @@ describe('log retention and noise', () => {
 
   it('waits for older segment writes to close before pruning rotated files', async () => {
     const dir = await temporaryDirectory('api-log-drain-')
-    const { code, lines } = await run(`
+    const { code, lines, stderr } = await run(`
       import fs from 'node:fs'
       import { readdir, readFile } from 'node:fs/promises'
       import { join } from 'node:path'
@@ -146,10 +147,10 @@ describe('log retention and noise', () => {
       }
       let beforeDrain
       try {
-        for (const record of ['A', 'B', 'C']) destination.write(JSON.stringify({ record }) + '\n')
+        for (const record of ['A', 'B', 'C']) destination.write(JSON.stringify({ record }) + String.fromCharCode(10))
         await Promise.all([written.B.promise, written.C.promise])
         await cleanup
-        beforeDrain = (await readdir(process.env.LOG_DIR)).filter(name => /^api\..*\.log$/.test(name)).length
+        beforeDrain = (await readdir(process.env.LOG_DIR)).filter(name => name.startsWith('api.') && name.endsWith('.log')).length
       } finally {
         fs.write = write
         release()
@@ -158,11 +159,11 @@ describe('log retention and noise', () => {
       fs.close = close
       await cleanup
       await pruneLogFiles(file, 2, 14)
-      const names = (await readdir(process.env.LOG_DIR)).filter(name => /^api\..*\.log$/.test(name))
+      const names = (await readdir(process.env.LOG_DIR)).filter(name => name.startsWith('api.') && name.endsWith('.log'))
       const records = await Promise.all(names.map(async name => JSON.parse(await readFile(join(process.env.LOG_DIR, name), 'utf8')).record))
       console.log(JSON.stringify({ beforeDrain, records: records.sort() }))
     `, { LOG_DIR: dir })
-    expect(code).toBe(0)
+    expect(code, stderr).toBe(0)
     expect(lines).toEqual([{ beforeDrain: 3, records: ['B', 'C'] }])
   })
 
