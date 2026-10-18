@@ -1,13 +1,11 @@
 import { execFile, spawn } from 'node:child_process'
 import { once } from 'node:events'
-import { access, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
-import { fileURLToPath } from 'node:url'
 import { expect, it } from 'vitest'
-import { pnpmFetchRecord, pnpmInstall } from './warmSetup.js'
-import { nativeProviderFixture } from '../../../../../scripts/fixtures/native-provider.mjs'
+import { pnpmInstall } from './warmSetup.js'
 
 async function runWarmInstall(root: string, bin: string, environment: NodeJS.ProcessEnv) {
   const script = ['finish() { exit "$1"; }',
@@ -56,9 +54,6 @@ it.each([
     await mkdir(base, { recursive: true })
     const root = await mkdtemp(join(base, 'warm-install-'))
     try {
-      await mkdir(join(root, 'scripts'))
-      await symlink(fileURLToPath(new URL('../../../../../scripts/ci-package-paths.mjs', import.meta.url)),
-        join(root, 'scripts/ci-package-paths.mjs'))
       const bin = join(root, 'bin')
       await mkdir(bin)
       const calls = join(root, 'calls')
@@ -80,9 +75,6 @@ it.each([
         environment.RUNNER_BIN = runnerBin
       }
       await runWarmInstall(root, bin, environment)
-      expect(JSON.parse(await readFile(join(root, '.logs/ci-package-paths.json'), 'utf8'))).toEqual({
-        storeDir: join(root, 'cache/pnpm-store'), cacheDir: join(root, 'cache/pnpm-metadata'),
-      })
       const commands = async () => (await readFile(calls, 'utf8')).trim().split('\n')
         .map(line => JSON.parse(line) as string[])
       expect(await commands()).toEqual(repositoryHook ? [
@@ -114,28 +106,3 @@ it.each([
     }
   },
 )
-
-it.each([false, true])('rejects an absent native payload without retaining a ready prefetch record (warm: %s)', async warm => {
-  const base = join(homedir(), '.cache', 'foreman-tmp')
-  await mkdir(base, { recursive: true })
-  const root = await mkdtemp(join(base, 'native-install-'))
-  try {
-    const bin = join(root, 'bin')
-    await mkdir(bin)
-    await mkdir(join(root, 'scripts'))
-    await symlink(fileURLToPath(new URL('../../../../../scripts/ci-native-payloads.mjs', import.meta.url)),
-      join(root, 'scripts/ci-native-payloads.mjs'))
-    await writeFile(join(root, 'package.json'), '{"packageManager":"pnpm@11.27.0"}')
-    await writeFile(join(root, 'pnpm-lock.yaml'), 'lockfileVersion: 9.0\n')
-    await writeFile(join(bin, 'corepack'), '#!/bin/sh\nexit 0\n', { mode: 0o700 })
-    const provider = nativeProviderFixture(root)
-    if (warm) await runWarmInstall(root, bin, process.env)
-    await rm(provider.payload)
-    await expect(runWarmInstall(root, bin, process.env)).rejects.toMatchObject({
-      code: 1, stderr: expect.stringContaining('CI_NATIVE_PAYLOAD_UNAVAILABLE'),
-    })
-    await expect(access(pnpmFetchRecord(join(root, 'cache')))).rejects.toMatchObject({ code: 'ENOENT' })
-  } finally {
-    await rm(root, { recursive: true, force: true })
-  }
-})

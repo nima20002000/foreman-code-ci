@@ -1,8 +1,14 @@
-import { CiGetOutputSchema, CiRunOutputSchema, integrationPartition } from '@foreman-code/contracts'
-import { expect, it } from 'vitest'
+import { randomUUID } from 'node:crypto'
+import {
+  CiGetOutputSchema, CiRunOutputSchema, CiRunRecordSchema, integrationPartition, type CiHostReply, type CiHostRun,
+} from '@foreman-code/contracts'
+import { afterEach, expect, it, vi } from 'vitest'
 import { CI_GET_ACTIONS, CI_RUN_ACTIONS } from '../src/modules/jobs/ciAuthority.js'
 import { ciReadWhen } from './helpers/ciReadWhen.js'
+import { deferred } from './helpers/deferred.js'
 import { fixture } from './helpers/hostCiMcpFixture.js'
+
+afterEach(() => { vi.restoreAllMocks() })
 
 it('denies callers without CI grants and asks for a GitHub repository first', async () => {
   const f = await fixture({ repository: false })
@@ -85,6 +91,56 @@ it('learns integration file durations from finished runs and hands every partiti
     expect(f.started.slice(4).map(value => value.request.operation === 'start' && value.request.suite)).toEqual(['integration', 'unit'])
     expect(startedDurations().slice(4)).toEqual([{ ...learned, [file('a')]: 2000 }, undefined])
   } finally { await f.close() }
+})
+
+it('counts a finished run\'s durations once when two observations collect it at the same time', async () => {
+  const f = await fixture()
+  const host = f.computers[0]!
+  const file = 'apps/api/test/a.integration.test.ts'
+  const startedAt = new Date(Date.now() - 4 * 60 * 60_000).toISOString()
+  const finishedAt = new Date().toISOString()
+  const release = deferred()
+  const bothCollecting = deferred()
+  let collecting = 0
+  try {
+    // A ticket past its running deadline whose executor has already finished it with one measurement.
+    const record = CiRunRecordSchema.parse({ id: randomUUID(), groupId: randomUUID(), workspaceId: f.workspaceId,
+      suite: 'integration', scope: 'full', files: [], part: null, partition: null, repository: 'fixture/project',
+      commit: 'a'.repeat(40), state: 'running', computer: { hostRef: host.hostRef, label: host.label },
+      step: 'integration', exitCode: null, message: null, queuedAt: startedAt, startedAt, finishedAt: null,
+      initiator: { principalId: 'operator', executionId: null } })
+    await f.pool.query(`insert into ci_runs(id,workspace_id,group_id,state,host_key,record,log_tail)
+      values($1,$2,$3,$4,$5,$6::jsonb,$7)`, [record.id, record.workspaceId, record.groupId, record.state,
+      host.key, JSON.stringify(record), ''])
+    const request = f.endpoint.request.bind(f.endpoint)
+    vi.spyOn(f.endpoint, 'request').mockImplementation(async (computer, input, options): Promise<CiHostReply> => {
+      if (input.operation !== 'read') return request(computer, input, options)
+      const run: CiHostRun = { runId: input.runId, state: 'passed', step: 'integration', startedAt, finishedAt,
+        exitCode: 0, message: null, logBytes: 0 }
+      const durations = { [file]: 3000 }
+      if (!input.testResults) return { operation: 'read', run, text: '', nextOffset: 0, durations }
+      // Hold result collection until both observations of the finished ticket are collecting it.
+      if (++collecting === 2) bothCollecting.resolve()
+      await release.promise
+      return { operation: 'read', run: { ...run, collection: 'complete' }, text: '', nextOffset: 0, durations,
+        testResults: { summary: { passed: 0, failed: 0, skipped: 0 }, files: [], truncated: false } }
+    })
+
+    // The deadline sweep reconciles the ticket; settling its outcome wakes dispatch, which observes it as well.
+    const expiring = f.ci.expireOverdueRuns()
+    await bothCollecting.promise
+    release.resolve()
+    expect(await expiring).toBe(0)
+    await f.ci.drain()
+
+    const read = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: record.id }))
+    expect(read.run).toMatchObject({ state: 'passed', collection: 'complete' })
+    expect((await f.pool.query(`select file,duration_ms,samples from ci_file_durations
+      where repository='fixture/project'`)).rows).toEqual([{ file, duration_ms: 3000, samples: 1 }])
+  } finally {
+    release.resolve()
+    await f.close()
+  }
 })
 
 it.each(['full', 'affected'] as const)('automatically sizes %s integration via MCP with estimates and persisted readback', async scope => {

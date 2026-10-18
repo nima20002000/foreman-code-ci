@@ -11,17 +11,14 @@ import { measureIntegrationPhase } from './integrationPhase.js'
 import { diagnosticEnvironment } from '../../src/modules/harnesses/compatibility/probe.js'
 import { passiveDriverPayloads } from '../../src/modules/harnesses/payloadDiscovery.js'
 import { inventoryPayloadFingerprints } from '../../src/modules/harnesses/payloadFingerprintCache.js'
-import { pinnedProviderExporter } from './pinnedProviderExporter.js'
 
 const execute = promisify(execFile)
 const require = createRequire(import.meta.url)
 
-export async function copyProviderSchemas(directory: string,
-  pinnedLauncher = require.resolve('@openai/codex/bin/codex.js')) {
+async function copyProviderSchemas(directory: string) {
+  const pinnedLauncher = require.resolve('@openai/codex/bin/codex.js')
   const lockfile = new URL('../../../../pnpm-lock.yaml', import.meta.url)
   const inputs = await Promise.all([readFile(pinnedLauncher), readFile(lockfile)])
-  const manifest = JSON.parse(await readFile(join(dirname(pinnedLauncher), '../package.json'), 'utf8')) as { version: string }
-  pinnedLauncher = await pinnedProviderExporter(manifest.version)
   const payload = await passiveDriverPayloads('codex', pinnedLauncher)
   if (!payload.complete || !payload.paths.length) throw new Error('Pinned provider schema exporter is unavailable.')
   const payloadHashes = await Promise.all(payload.paths.map(path => inventoryPayloadFingerprints.fingerprint(path)))
