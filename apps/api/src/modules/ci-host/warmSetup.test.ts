@@ -1,4 +1,5 @@
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
+import { once } from 'node:events'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -7,7 +8,8 @@ import { expect, it } from 'vitest'
 import { pnpmInstall } from './warmSetup.js'
 
 async function runWarmInstall(root: string, bin: string, environment: NodeJS.ProcessEnv) {
-  const script = ['finish() { exit "$1"; }', ...pnpmInstall(join(root, 'cache'), join(root, 'message'))].join('\n')
+  const script = ['finish() { exit "$1"; }',
+    ...await pnpmInstall(root, join(root, 'cache'), join(root, 'message'))].join('\n')
   await promisify(execFile)('/bin/bash', ['-c', script], {
     cwd: root, env: { ...environment, BASH_ENV: '', PATH: `${bin}:/usr/bin:/bin` },
   })
@@ -22,9 +24,12 @@ it.each([false, true])(
     try {
       const bin = join(root, 'bin')
       await mkdir(bin)
-      await writeFile(join(bin, 'corepack'), '#!/bin/sh\necho "$*" >> calls\n', { mode: 0o700 })
-      // The offline store is warm; another checkout owns the exclusive refill lock.
-      await writeFile(join(bin, 'flock'), '#!/bin/sh\nexit 1\n', { mode: 0o700 })
+      const calls = join(root, 'calls')
+      await writeFile(join(root, 'package.json'), '{"packageManager":"pnpm@11.27.0"}\n')
+      await writeFile(join(root, 'pnpm-lock.yaml'), 'fixture lockfile\n')
+      await writeFile(join(bin, 'corepack'), `#!${process.execPath}\n`
+        + `require('node:fs').appendFileSync(${JSON.stringify(calls)}, JSON.stringify(process.argv.slice(2)) + '\\n')\n`,
+      { mode: 0o700 })
       const environment = { ...process.env }
       if (runnerShellStartup) {
         const runnerBin = join(root, 'runner-bin')
@@ -37,7 +42,29 @@ it.each([false, true])(
         environment.RUNNER_BIN = runnerBin
       }
       await runWarmInstall(root, bin, environment)
-      expect((await readFile(join(root, 'calls'), 'utf8')).trim().split('\n')).toHaveLength(1)
+      const commands = async () => (await readFile(calls, 'utf8')).trim().split('\n')
+        .map(line => JSON.parse(line) as string[])
+      expect(await commands()).toEqual([
+        expect.arrayContaining(['pnpm', 'fetch', '--offline', '--frozen-lockfile']),
+        expect.arrayContaining(['pnpm', 'install', '--offline', '--frozen-lockfile']),
+      ])
+      await writeFile(calls, '')
+      const holder = spawn('/usr/bin/flock', ['--exclusive', join(root, 'cache/locks/install.lock'),
+        '/bin/sh', '-c', 'printf "locked\\n"; read -r release'])
+      const closed = once(holder, 'close')
+      try {
+        const [ready] = await once(holder.stdout, 'data')
+        expect(String(ready)).toContain('locked')
+        // Fail immediately if a warm checkout unexpectedly tries to acquire the occupied refill lock.
+        await writeFile(join(bin, 'flock'), '#!/bin/sh\nexit 1\n', { mode: 0o700 })
+        await runWarmInstall(root, bin, environment)
+        expect(await commands()).toEqual([
+          expect.arrayContaining(['pnpm', 'install', '--offline', '--frozen-lockfile']),
+        ])
+      } finally {
+        holder.stdin.end('release\n')
+        await closed
+      }
     } finally {
       await rm(root, { recursive: true, force: true })
     }

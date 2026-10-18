@@ -29,15 +29,17 @@ it('keeps real pnpm store and another checkout intact after a suite overwrites i
     await writeFile(join(first, 'pnpm-workspace.yaml'), 'packageImportMethod: clone-or-copy\n')
     execFileSync('corepack', ['pnpm', 'install', '--lockfile-only', '--offline', '--ignore-scripts'], { cwd: first, env: environment })
     await cp(first, second, { recursive: true })
-    const install = (cwd: string) => new Promise<void>((resolve, reject) => {
-      const script = ['finish() { exit "$1"; }', ...pnpmInstall(cache, join(root, 'message.json'))].join('\n')
-      const child = spawn('bash', ['-c', script], { cwd, env: environment, stdio: ['ignore', 'pipe', 'pipe'] })
-      let output = ''
-      child.stdout.on('data', data => { output += data })
-      child.stderr.on('data', data => { output += data })
-      child.once('error', reject)
-      child.once('exit', code => code === 0 ? resolve() : reject(new Error(output)))
-    })
+    const install = async (cwd: string) => {
+      const script = ['finish() { exit "$1"; }', ...await pnpmInstall(cwd, cache, join(root, 'message.json'))].join('\n')
+      return new Promise<void>((resolve, reject) => {
+        const child = spawn('bash', ['-c', script], { cwd, env: environment, stdio: ['ignore', 'pipe', 'pipe'] })
+        let output = ''
+        child.stdout.on('data', data => { output += data })
+        child.stderr.on('data', data => { output += data })
+        child.once('error', reject)
+        child.once('exit', code => code === 0 ? resolve() : reject(new Error(output)))
+      })
+    }
     await install(first)
     await install(second)
     const store = join(cache, 'pnpm-store')
