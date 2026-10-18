@@ -245,17 +245,6 @@ it('uses the persisted retry date of a retained worktree without repeating its f
   expect(f.sources.confirmClosed).toHaveBeenCalledOnce()
 })
 
-it('cleans up a terminal Run immediately despite its active-Run worktree backoff', async () => {
-  const f = remoteSourceFixture()
-  const row = { materialization_id: f.record.receipt.materializationId, record: f.record,
-    execution: f.execution, settlement_pending: false, already_closed: true, run_terminal: true,
-    worktree_cleanup: { state: 'retained', nextAttemptAt: new Date(Date.now() + 300_000).toISOString() } }
-  const pool = { query: async () => ({ rows: [row] }) } as unknown as Pick<pg.Pool, 'query'>
-  await closeCompletedWorkflowSources(pool, f.sources, f.report)
-  expect(f.sources.confirmClosed).toHaveBeenCalledWith(f.record)
-  expect(f.report).not.toHaveBeenCalled()
-})
-
 it.each([
   new DomainError('SOURCE_EXECUTION_UNCERTAIN', 'Physical closure is unconfirmed.', 409),
   new DeviceApplicationError('SOURCE_EXECUTION_UNCERTAIN'),

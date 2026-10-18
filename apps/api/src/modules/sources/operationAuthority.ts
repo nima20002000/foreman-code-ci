@@ -16,7 +16,6 @@ import type { MaterializationAttempt } from './ports.js'
 import { resolvePreparationReconciliationOwner } from './preparationReconciliation.js'
 import { requireUnreclaimedSourceOperation } from './reservations.js'
 import { agentWorktree } from './service.js'
-import { retainedNodeReceipt, retainsNodeWorkingTree } from './retainedNodeSource.js'
 
 /** Actual Main allocation/source facts; workers receive no database credentials. */
 export class PostgresSourceOperationAuthority {
@@ -140,15 +139,7 @@ export class PostgresSourceOperationAuthority {
       if (request.operation === 'sources.prepare' && !isDeepStrictEqual(request.worktree, worktree)) {
         throw new DomainError('SOURCE_WORKTREE_CONFLICT', 'Preparation cannot substitute the accepted Agent branch request.', 409)
       }
-      const retainedReceipt = request.operation === 'sources.prepare' && allocated.preparation_kind === 'workflow'
-        ? await retainedNodeReceipt(sql, attempt.executionId, root.binding) : undefined
-      if (request.operation === 'sources.prepare' && !isDeepStrictEqual(request.retainedReceipt, retainedReceipt)) {
-        throw new DomainError('SOURCE_RECEIPT_CONFLICT', 'Preparation cannot substitute the retained node directory.', 409)
-      }
-      const retainWorkingTree = request.operation === 'sources.release'
-        && await retainsNodeWorkingTree(sql, attempt.executionId)
       return SourceOperationOwnerSchema.parse({ identity, root, attempt, source: root.source, record, physicalClosureConfirmed, activeNativeSession,
-        ...(retainedReceipt ? { retainedReceipt } : {}), ...(retainWorkingTree ? { retainWorkingTree: true } : {}),
         ...(worktree ? { worktree } : {}),
         ...(quotaRequired ? { quotaRequired: true } : {}),
         ...(allocated.preparation_kind === 'workflow' ? { preparationKind: 'workflow' } : {}) })
