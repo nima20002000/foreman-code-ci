@@ -2,6 +2,17 @@ import { createHash } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { assertRequiredNativePayloads } from './ci-native-payloads.mjs'
+
+function nativePayloadsReady(root) {
+  try {
+    assertRequiredNativePayloads(root)
+    return true
+  } catch (error) {
+    console.error(error.message)
+    return false
+  }
+}
 
 function workspaceDirectories(root) {
   const directories = []
@@ -34,6 +45,10 @@ function install(root) {
     ...workspaceDirectories(root).map(directory => `${directory}/node_modules`)]
     .every(path => existsSync(join(root, path)))
   if (complete && existsSync(stamp) && readFileSync(stamp, 'utf8') === key) {
+    if (!nativePayloadsReady(root)) {
+      rmSync(stamp, { force: true })
+      return 1
+    }
     mkdirSync(join(root, '.logs'), { recursive: true })
     writeFileSync(restored, key)
     console.log('[ci-cache] installed packages reused')
@@ -49,7 +64,10 @@ function install(root) {
   }
   let status = run([...args, '--offline'])
   if (status !== 0 && process.env.CI_PNPM_STORE_CACHE_HIT !== 'true') status = run(args)
-  if (status === 0) writeFileSync(stamp, key)
+  if (status === 0) {
+    if (!nativePayloadsReady(root)) return 1
+    writeFileSync(stamp, key)
+  }
   return status
 }
 
