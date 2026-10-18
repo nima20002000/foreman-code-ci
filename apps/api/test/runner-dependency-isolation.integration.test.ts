@@ -32,12 +32,12 @@ it('keeps real pnpm store and another checkout intact after a suite overwrites i
     const install = async (cwd: string) => {
       const script = ['finish() { exit "$1"; }', ...await pnpmInstall(cwd, cache, join(root, 'message.json'))].join('\n')
       return new Promise<void>((resolve, reject) => {
-      const child = spawn('bash', ['-c', script], { cwd, env: environment, stdio: ['ignore', 'pipe', 'pipe'] })
-      let output = ''
-      child.stdout.on('data', data => { output += data })
-      child.stderr.on('data', data => { output += data })
-      child.once('error', reject)
-      child.once('exit', code => code === 0 ? resolve() : reject(new Error(output)))
+        const child = spawn('bash', ['-c', script], { cwd, env: environment, stdio: ['ignore', 'pipe', 'pipe'] })
+        let output = ''
+        child.stdout.on('data', data => { output += data })
+        child.stderr.on('data', data => { output += data })
+        child.once('error', reject)
+        child.once('exit', code => code === 0 ? resolve() : reject(new Error(output)))
       })
     }
     await install(first)
