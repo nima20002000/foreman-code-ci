@@ -587,13 +587,21 @@ export class ResumableByteTransferService implements ByteTransferPort {
     for (const name of records) intents.push((await this.load(name.slice(0, -5))).intent)
     return intents
   }
-  async isRuntimeQuiescent(): Promise<boolean> {
+  isRuntimeQuiescent(): Promise<boolean> {
+    return this.runtimeQuiescent()
+  }
+  /** Updates retain stopped transfer journals until Main reclaims their bytes. */
+  isWorkerUpdateIdle(isStopped: (intent: TransferIntent) => Promise<boolean>): Promise<boolean> {
+    return this.runtimeQuiescent(isStopped)
+  }
+  private async runtimeQuiescent(isStopped?: (intent: TransferIntent) => Promise<boolean>): Promise<boolean> {
     if (this.busy.size || this.readers.size || this.allocationBusy) return false
     await this.cleanupExpired()
     for (const intent of await this.inventory()) {
       const record = await this.load(intent.transferId)
       if (!['verified', 'cancelled'].includes(record.progress.state)
-        && this.now() < Date.parse(intent.expiresAt)) return false
+        && this.now() < Date.parse(intent.expiresAt)
+        && (!isStopped || !await isStopped(intent))) return false
     }
     return this.busy.size === 0 && this.readers.size === 0 && !this.allocationBusy
   }

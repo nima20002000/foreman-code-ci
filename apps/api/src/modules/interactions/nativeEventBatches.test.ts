@@ -89,11 +89,11 @@ it.each(['graph', 'mixed'] as const)('persists %s item bursts and replays within
   const client = { query: async (_text: string, values: unknown[] = []) => {
     statements += 1
     let rows: unknown[] = []
-    if (Array.isArray(values[0])) rows = [{ id: 'execution', next_sequence: next }]
-    else if (values.length === 1) {
+    if (values.length === 1) {
       const sources = JSON.parse(String(values[0])) as Row[]
-      rows = saved.filter(row => sources.some(source => source.execution_id === row.execution_id
-        && source.connection_id === row.connection_id && source.source_sequence === row.source_sequence))
+      rows = [{ allocators: [{ id: 'execution', next_sequence: next }],
+        events: saved.filter(row => sources.some(source => source.execution_id === row.execution_id
+          && source.connection_id === row.connection_id && source.source_sequence === row.source_sequence)) }]
     } else if (values.length === 2) {
       next = (JSON.parse(String(values[0])) as { next_sequence: string }[])[0]!.next_sequence
       saved.push(...JSON.parse(String(values[1])) as Row[])
