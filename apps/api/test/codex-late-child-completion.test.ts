@@ -60,7 +60,8 @@ describe('recorded already-known Codex command completion after parent terminal'
       assert.deepEqual(after.terminalResult, f.before.terminalResult)
       assert.equal(after.nativeTurnId, f.start.nativeTurnId)
       assert.equal(after.terminalTurn?.correlationId, 'original-A')
-      assert.equal(after.events.length, f.before.events.length + 2) // Child completion and reconciliation diagnostic only.
+      assert.deepEqual(after.events, [...f.before.events, completion])
+      assert.deepEqual((await f.manager.reconcile(f.session, 'original-A')).events, after.events)
       assert.equal(f.replay.starts.length, 1)
       assert.equal(f.replay.responses.length, 0)
       assert.equal(f.replay.calls.some(call => ['thread/resume', 'thread/turns/list'].includes(call.method)), false)
