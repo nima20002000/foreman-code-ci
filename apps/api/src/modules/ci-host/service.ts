@@ -102,6 +102,7 @@ export class HostCiService {
   private readonly collectingRuns = new Set<string>()
   private observationOffset = 0
   private readonly observingComputers = new Map<string, Promise<void>>()
+  private readonly cloudDispatches = new Map<string, ReturnType<typeof sendCiDispatch>>()
   private readonly computerStatusRetries = new Map<string, RetryBackoff>()
   private readonly mirrorPublications = new Map<string, { settled: boolean }>()
   /** Computers that still had a free slot after the last dispatch pass: where a canceled provider-queued ticket can go. */
@@ -198,8 +199,8 @@ export class HostCiService {
   async drain() {
     for (;;) {
       const pending = [this.dispatching, this.superseding, this.prewarm.drain(),
-        ...this.observingRuns.values(), ...this.observingComputers.values()]
-        .filter((work): work is Promise<void> => work !== undefined)
+        ...this.observingRuns.values(), ...this.observingComputers.values(), ...this.cloudDispatches.values()]
+        .filter(work => work !== undefined)
       if (!pending.length) return
       await Promise.allSettled(pending)
     }
@@ -976,7 +977,13 @@ export class HostCiService {
   }
 
   private sendDispatch(run: CiRunRecord, computer: HostCiComputer) {
-    return sendCiDispatch(this.dispatchServices(computer), run, computer)
+    if (computer.hostRef.kind !== 'cloud') return sendCiDispatch(this.dispatchServices(computer), run, computer)
+    const pending = this.cloudDispatches.get(run.id)
+    if (pending) return pending
+    const delivery = sendCiDispatch(this.dispatchServices(computer), run, computer)
+      .finally(() => { this.cloudDispatches.delete(run.id) })
+    this.cloudDispatches.set(run.id, delivery)
+    return delivery
   }
 
   private reconcileHostStart(run: CiRunRecord, computer: HostCiComputer, status: CiHostStatus | null) {

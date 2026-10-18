@@ -77,6 +77,11 @@ export function ticketStore(initial: CiRunRecord[], hostKeys: Record<string, str
     if (text.startsWith('update ci_runs set state=$2, host_key=$3, record=$4::jsonb where id=$1 and state=\'queued\'')) {
       return changed(matches(p[0], p[4]), { state: p[1], hostKey: p[2], record: p[3] })
     }
+    if (text.startsWith('update ci_runs set state=$2, host_key=$3, record=$4::jsonb where id=$1 and state=\'starting\'')) {
+      const row = matches(p[0], p[4])
+      return changed(row?.state === 'starting' && row.hostKey === p[2] ? row : undefined,
+        { state: p[1], hostKey: p[2], record: p[3] })
+    }
     if (text.startsWith('update ci_runs set state=$2, host_key=$3, record=$4::jsonb,')
       || text.startsWith('update ci_runs set state=$2, host_key=$3, log_tail=')) {
       return changed(matches(p[0], p[8]), { state: p[1], hostKey: p[2], record: p[3] })

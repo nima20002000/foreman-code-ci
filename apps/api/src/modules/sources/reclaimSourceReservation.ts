@@ -79,14 +79,7 @@ async function retainedWorkingTree(directory: FileHandle, root: SourceRootRecord
       throw new SourceError('SOURCE_CLAIM_CONFLICT', 'Retained working tree belongs to another preparation.')
     }
     if (!receipt.sharedTree) return null
-    if (!receipt.worktree) {
-      const parent = await openChildDirectory(directory, materializationId)
-      try {
-        await authorize()
-        await removeSourceDirectory(parent, 'tree', receipt, signal)
-      } finally { await parent.close() }
-      return measureRetainedMaterializationFootprint(receipt)
-    }
+    if (!receipt.worktree) return measureRetainedMaterializationFootprint(receipt)
     await preparationChildrenClosed(`${root.binding.canonicalPath}/${receipt.sharedTree.id}`, signal)
     let worktree: RetainedSourceFootprint['worktree']
     const parent = await openChildDirectory(directory, materializationId)
@@ -117,7 +110,7 @@ async function retainedWorkingTree(directory: FileHandle, root: SourceRootRecord
       worktree = await closeSourceWorktree(receipt, signal, git)
       await preserveReleasedPreparationClaim(parent, claim, signal)
       await authorize()
-      await removeSourceDirectory(parent, 'tree', receipt, signal)
+      if (receipt.binding.deviceId === null) await removeSourceDirectory(parent, 'tree', receipt, signal)
     } finally {
       await parent.close()
     }

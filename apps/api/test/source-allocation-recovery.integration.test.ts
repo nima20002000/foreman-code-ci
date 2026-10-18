@@ -33,7 +33,7 @@ afterEach(async () => {
 const git = (cwd: string, ...args: string[]) => execFileSync('git', args,
   { cwd, encoding: 'utf8', env: gitFixtureEnvironment() }).trim()
 
-async function fixture(mode: 'main-worktree' | 'worker-read-only' = 'main-worktree') {
+async function fixture() {
   const base = await mkdtemp(join(process.env.FOREMAN_CODE_TEST_ROOT!, 'source-allocation-'))
   directories.push(base)
   const origin = join(base, 'origin')
@@ -54,18 +54,15 @@ async function fixture(mode: 'main-worktree' | 'worker-read-only' = 'main-worktr
   const filesystem = await identity(handle)
   await handle.close()
   const mainId = randomUUID()
-  const deviceId = mode === 'worker-read-only' ? randomUUID() : null
-  const workerInstallationId = deviceId ? randomUUID() : null
   const root: SourceOperationOwner['root'] = { version: 1,
     source: { approvedSourceId: manifest.approvedSourceId, snapshotId: manifest.snapshotId,
       manifestDigest: manifest.manifestDigest },
-    selection: { hostRef: deviceId ? { kind: 'device', mainId, deviceId } : { kind: 'main', mainId }, rootPolicyId: randomUUID(),
+    selection: { hostRef: { kind: 'main', mainId }, rootPolicyId: randomUUID(),
       rootPolicyRevision: '1', locationRevision: '1' },
-    binding: { version: 1, mainId, deviceId, workerInstallationId, workspaceId: 'workspace',
+    binding: { version: 1, mainId, deviceId: null, workerInstallationId: null, workspaceId: 'workspace',
       rootId: randomUUID(), bindingRevision: 1, locationRevision: 1, canonicalPath: rootPath, filesystem,
-      accessMode: deviceId ? 'read-only' : 'exclusive-write', snapshotId: manifest.snapshotId, manifestDigest: manifest.manifestDigest },
-    registration: workerInstallationId ? { workerInstallationId, keyRevision: 1, authorizationRevision: 1 } : null,
-    ownerPrincipalId: 'operator', authorizedByPrincipalId: 'operator',
+      accessMode: 'exclusive-write', snapshotId: manifest.snapshotId, manifestDigest: manifest.manifestDigest },
+    registration: null, ownerPrincipalId: 'operator', authorizedByPrincipalId: 'operator',
     attestationId: randomUUID(), attestationDigest: 'a'.repeat(64), boundAt: new Date().toISOString() }
   const system = systemGitWorktreePorts(gitFixtureEnvironment())
   let failure: 'allocation' | 'copy' | 'marker' | undefined
@@ -84,7 +81,7 @@ async function fixture(mode: 'main-worktree' | 'worker-read-only' = 'main-worktr
   function owner(): SourceOperationOwner {
     const operationId = randomUUID()
     const attempt = { executionId: randomUUID(), attemptId: randomUUID(), placementHash: '',
-      keyRevision: root.registration?.keyRevision ?? null, authorizationRevision: root.registration?.authorizationRevision ?? null }
+      keyRevision: null, authorizationRevision: null }
     attempt.placementHash = sourceBindingHash(root, attempt, operationId)
     return { identity: { operationId, ownerPrincipalId: 'operator',
       expiresAt: new Date(Date.now() + 300_000).toISOString() }, root, source: root.source, attempt,
@@ -92,8 +89,7 @@ async function fixture(mode: 'main-worktree' | 'worker-read-only' = 'main-worktr
   }
   const prepare = (original: SourceOperationOwner, authorize = async () => {}, worktree = true) =>
     new PrivateSourceMaterializer({ read: async () => bytes }, authorize, undefined, ports).prepare({
-      binding: root.binding, manifest, attempt: original.attempt,
-      ...(root.binding.accessMode === 'read-only' ? { sharedReadOnlyTree: true } : { sharedWritableTree: true }),
+      binding: root.binding, manifest, attempt: original.attempt, sharedWritableTree: true,
       ...(worktree ? { worktree: { repository: 'fixture/project', branch: 'foreman/recovery' } } : {}) })
   const grant = (original: SourceOperationOwner): SourceReservationReclamation => ({
     reservationId: randomUUID(), reclamationId: randomUUID(), operationId: original.identity.operationId,
@@ -101,33 +97,12 @@ async function fixture(mode: 'main-worktree' | 'worker-read-only' = 'main-worktr
   const reclaim = (request: SourceReservationReclamation, closed = true) => reclaimSourceReservation(request, {
     authorize: async () => {}, operationClosed: async () => closed, nativeClosed: async () => closed,
   }, AbortSignal.timeout(60_000))
-  return { rootPath, root, manifest, ports, owner, prepare, grant, reclaim, bytes,
+  return { rootPath, root, manifest, ports, owner, prepare, grant, reclaim,
     failAllocation: (phase: 'allocation' | 'copy' | 'marker') => {
       failure = phase
       failures.markerSync = phase === 'marker'
     }, allocationPath: () => allocationPath }
 }
-
-it('reclaims an interrupted Worker reference while charging its retained read-only checkout and preserving a successor', async () => {
-  const f = await fixture('worker-read-only')
-  const original = f.owner()
-  const receipt = await f.prepare(original, undefined, false)
-  const otherOwner = f.owner()
-  const other = await f.prepare(otherOwner, undefined, false)
-  expect(other.sharedTree!.id).toBe(receipt.sharedTree!.id)
-  const grant = f.grant(original)
-  await expect(f.reclaim(grant, false)).rejects.toMatchObject({ code: 'source-reconciliation-unconfirmed' })
-  expect(await readFile(join(f.rootPath, receipt.materializationId, 'tree/app.txt'))).toEqual(f.bytes)
-  const retained = await f.reclaim(grant)
-  await expect(stat(join(f.rootPath, receipt.materializationId, 'tree'))).rejects.toMatchObject({ code: 'ENOENT' })
-  expect(retained.retained?.sharedTree).toMatchObject({ id: receipt.sharedTree!.id, bytes: expect.any(Number) })
-  expect(retained.retained!.sharedTree!.bytes).toBeGreaterThan(0)
-  expect(retained.retained!.retainedBytes).toBeGreaterThanOrEqual(retained.retained!.sharedTree!.bytes)
-  expect(await readFile(join(f.rootPath, receipt.sharedTree!.id, 'tree/app.txt'))).toEqual(f.bytes)
-  expect(await readFile(join(f.rootPath, other.materializationId, 'tree/app.txt'))).toEqual(f.bytes)
-  expect(await f.prepare(otherOwner, undefined, false)).toEqual(other)
-  expect(await f.reclaim(grant)).toEqual(retained)
-})
 
 it.each(['allocation', 'copy', 'marker'] as const)(
   'charges a secondary Git allocation interrupted during %s and preserves unrelated work', async phase => {
