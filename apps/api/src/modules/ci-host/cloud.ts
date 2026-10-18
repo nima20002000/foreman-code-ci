@@ -718,6 +718,10 @@ export class CloudCi {
   }
 
   private async failPipeline(run: CloudRun, failure: { message: string; configError?: boolean }): Promise<CloudRun> {
+    if (this.provider.id === 'circleci' && run.providerRunId) {
+      run = await this.recordTerminatedAttempt(run, run.providerRunId,
+        { done: true, conclusion: 'failure', finishedAt: this.ports.now().toISOString() })
+    }
     const failed: CloudRun = { ...run, state: 'failed', exitCode: 1, finishedAt: this.ports.now().toISOString(),
       message: sanitizeCiText(failure.message), testsStarted: false, collection: { log: true, artifacts: true } }
     delete failed.reconciliation
