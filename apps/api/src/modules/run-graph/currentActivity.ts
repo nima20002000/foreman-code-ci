@@ -8,12 +8,6 @@ import { RunGraphError } from './errors.js'
 import { type CurrentNativeActivity, type CurrentActivityContext } from './nativeActivitySelection.js'
 export { selectCurrentNodeActivity, type CurrentNativeActivity, type CurrentActivityContext } from './nativeActivitySelection.js'
 
-export type CurrentNativeActivityRow = {
-    execution_id: string; workflow_node_id: string; attempt: number; work_kind: 'workflow' | 'review'; work_id: string;
-    agent_id: string; configuration_id: string; activity: unknown; last_native_sequence: string | null;
-    terminal_native_sequence: string | null; projection_revision: string; work_closed: boolean | null
-  }
-
 /** Exported so disposable-DB qualification EXPLAINs the actual production query. */
 export const CURRENT_NATIVE_ACTIVITIES_SQL = `
   with latest_workflow_executions as materialized (
@@ -47,9 +41,12 @@ export const CURRENT_NATIVE_ACTIVITIES_SQL = `
 
 /** The two branches use current-only indexes; completed review history is never loaded. */
 export async function readCurrentNativeActivities(sql: GraphTransactionSql, scope: RunGraphScope,
-  nodeIds?: readonly string[], allowClosedForClear = false,
-  prefetched?: CurrentNativeActivityRow[]): Promise<CurrentNativeActivity[]> {
-  const result = prefetched ? { rows: prefetched } : await sql.query<CurrentNativeActivityRow>(CURRENT_NATIVE_ACTIVITIES_SQL,
+  nodeIds?: readonly string[], allowClosedForClear = false): Promise<CurrentNativeActivity[]> {
+  const result = await sql.query<{
+    execution_id: string; workflow_node_id: string; attempt: number; work_kind: 'workflow' | 'review'; work_id: string;
+    agent_id: string; configuration_id: string; activity: unknown; last_native_sequence: string | null;
+    terminal_native_sequence: string | null; projection_revision: string; work_closed: boolean | null
+  }>(CURRENT_NATIVE_ACTIVITIES_SQL,
     [scope.runId, nodeIds ? [...nodeIds] : null, RUN_GRAPH_LIMITS.nodes + RUN_GRAPH_LIMITS.exchanges + 1])
   if (result.rows.length > RUN_GRAPH_LIMITS.nodes + RUN_GRAPH_LIMITS.exchanges) throw new RunGraphError('GRAPH_SNAPSHOT_TOO_LARGE')
   return result.rows.map((row) => {
