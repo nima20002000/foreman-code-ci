@@ -21,6 +21,11 @@ export function claudePluginPorts() {
       })
       if (args[1] === 'marketplace') {
         if (args[2] === 'list') return result([...marketplaces].map(([name, repo]) => ({ name, source: 'github', repo })))
+        if (args[2] === 'update') {
+          if (!marketplaces.has(args[3]!)) return result({ outcome: 'error' }, 1)
+          changes.push(`marketplace:update:${args[3]}`)
+          return result({ outcome: 'ok' })
+        }
         changes.push(`marketplace:${args[3]}`)
         marketplaces.set(args[3]!.split('/').at(-1)!.replace(/\.git$/, ''), args[3]!)
         return result({ outcome: 'ok' })
