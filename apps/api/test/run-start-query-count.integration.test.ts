@@ -85,3 +85,27 @@ it('starts additional Agents sharing a destination without repeating its transac
   console.info('Start admission statements', { two, three })
   expect(three).toBeLessThanOrEqual(two)
 }, 120_000)
+
+it('rolls back Start when a placement profile changes after the initial checks and before commit', async () => {
+  const f = await fixture()
+  try {
+    const saved = await f.save('mcp')
+    await expect(admitRepeatRun(f.base.db.pool, f.base.locations, f.base.writer.principal, 'mcp',
+      startInput(f, saved), { ...repeatStartPublication, placementAdmission: f.placement.producer,
+        workerExecution: new WorkerExecutionPolicy({ enabled: true, managedBy: 'startup' }),
+        initializeLocked: async (sql, accepted) => {
+          const result = await repeatStartPublication.initializeLocked(sql, accepted)
+          await sql.query(`update harness_instance_settings set record=jsonb_set(record,'{enabled}','false'::jsonb)
+            where instance_id=$1`, [f.placement.remote.instanceId])
+          return result
+        },
+      })).rejects.toMatchObject({ code: 'PLACEMENT_ADMISSION_CONFLICT' })
+    expect((await f.base.db.pool.query('select id from runs where workflow_id=$1',
+      [saved.version.workflowId])).rows).toEqual([])
+    expect((await f.base.db.pool.query<{ enabled: boolean }>(
+      "select (record->>'enabled')::boolean as enabled from harness_instance_settings where instance_id=$1",
+      [f.placement.remote.instanceId])).rows.every(row => row.enabled)).toBe(true)
+  } finally {
+    await f.close()
+  }
+}, 120_000)
