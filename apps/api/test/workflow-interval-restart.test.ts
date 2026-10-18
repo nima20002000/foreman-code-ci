@@ -38,9 +38,11 @@ it.each(['main', 'worker'] as const)(
       provider: {
         blockWorkflowTurns: async () => undefined,
         releaseWorkflowTurns: release,
-        calls: async () => executions.filter(execution => execution.nativeSessionId).map(execution => ({
-          workflowTurn: { pid: process.pid, sessionId: execution.nativeSessionId, turnId: `${execution.id}-turn` },
-        })),
+        calls: async () => executions.filter(execution => execution.nativeSessionId).flatMap(execution => [
+          { method: 'turn/start', correlationId: `execution:${execution.id}`, pid: process.pid,
+            threadId: execution.nativeSessionId },
+          { workflowTurn: { pid: process.pid, sessionId: execution.nativeSessionId, turnId: `${execution.id}-turn` } },
+        ]),
       },
       // A yielded settlement needs the maintenance pass supplied by the real server's timer.
       details: async () => ({

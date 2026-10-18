@@ -1,5 +1,5 @@
-/* Non-modal chat windows floating over the Board. The layer ignores the pointer except on the windows themselves. */
-.agent-chat-window-layer { position: absolute; z-index: 30; inset: 0; overflow: hidden; pointer-events: none; }
+/* Non-modal chat windows floating over the Board. The layer makes no stacking context: each window takes its z-index from the shared floating stack. The layer ignores the pointer except on the windows themselves. */
+.agent-chat-window-layer { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
 .agent-chat-window {
   --agent-hue: var(--harness-neutral);
   position: absolute;

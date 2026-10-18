@@ -74,6 +74,19 @@ it('shows an error even when local hints and validation contain no warnings', as
   expect(within(dialog).getByText('The workflow could not be saved.')).toBeVisible()
 })
 
+it('shows one shared-worktree error naming the Agents and computers', async () => {
+  const message = 'Worktree prefix "foreman/site/shared" is used by Agent One on Main desktop and Agent Two '
+    + 'on Worker laptop. Place Agents using this worktree setting on one computer, or choose different branch prefixes.'
+  render(<BoardAlerts {...props} hints={[]} error={new ApiError({
+    code: 'WORKTREE_COMPUTER_CONFLICT', message,
+  }, 409)} />)
+  await userEvent.click(screen.getByRole('button', { name: 'Workflow alerts, 1' }))
+  const dialog = screen.getByRole('dialog', { name: 'Workflow alerts' })
+  expect(within(dialog).getAllByRole('listitem')).toHaveLength(1)
+  expect(within(dialog).getByText(message)).toBeVisible()
+  expect(within(dialog).getByRole('listitem')).toHaveAttribute('data-tone', 'danger')
+})
+
 it('counts update failures as compact recovery rows and retains their retry/loading behavior', async () => {
   const workspaceRetry = vi.fn(), draftRetry = vi.fn()
   const failures = [

@@ -1,3 +1,4 @@
+import { withChatReadClock } from './chatReadClock.js'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { randomUUID } from 'node:crypto'
 import pg from 'pg'
@@ -220,16 +221,18 @@ export async function readSnapshot(api: HistoricalApi, target: RunTarget, token 
 }
 export async function readSelected(api: HistoricalApi, target: SelectedRunChatTarget, executionId?: string,
   token = api.f.writer.token, client = api.client) {
-  const query = executionId ? `?${new URLSearchParams({ executionId })}` : ''
-  const http = await api.app.inject({ method: 'GET', url: selectedPath(target) + query, headers: { authorization: `Bearer ${token}` } })
-  expect(http.statusCode, http.body).toBe(200)
-  expect(http.headers['cache-control']).toBe('private, no-store')
-  const { workspaceId, ...selection } = target
-  const mcp = toolValue(await client.callTool({ name: 'agent_chat_read', arguments: {
-    workspaceId, selection: { ...selection, ...(executionId ? { executionId } : {}) },
-  } }))
-  expect(mcp).toEqual(http.json())
-  return ReadSelectedRunChatResponseSchema.parse(mcp)
+  return withChatReadClock(async () => {
+    const query = executionId ? `?${new URLSearchParams({ executionId })}` : ''
+    const http = await api.app.inject({ method: 'GET', url: selectedPath(target) + query, headers: { authorization: `Bearer ${token}` } })
+    expect(http.statusCode, http.body).toBe(200)
+    expect(http.headers['cache-control']).toBe('private, no-store')
+    const { workspaceId, ...selection } = target
+    const mcp = toolValue(await client.callTool({ name: 'agent_chat_read', arguments: {
+      workspaceId, selection: { ...selection, ...(executionId ? { executionId } : {}) },
+    } }))
+    expect(mcp).toEqual(http.json())
+    return ReadSelectedRunChatResponseSchema.parse(mcp)
+  })
 }
 export async function conversationPages(api: HistoricalApi, target: SelectedRunChatTarget, executionId: string) {
   const { workspaceId, ...selection } = target

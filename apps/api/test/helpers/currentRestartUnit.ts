@@ -114,6 +114,7 @@ export function currentRestartUnit(reviewer = false, acceptedPlacement?: Accepte
     if (q === 'select id from runs where id=$1 for update') {
       assert.deepEqual(values, [f.run.id]); return result([{ id: f.run.id }])
     }
+    if (q.startsWith('select 1 from run_worktrees target')) return result()
     if (q.startsWith('select record from harness_executions')) {
       assert.deepEqual(values, [execution.id, f.run.id]); return result([{ record: execution }])
     }

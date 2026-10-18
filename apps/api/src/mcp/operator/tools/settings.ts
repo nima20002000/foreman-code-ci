@@ -10,6 +10,8 @@ import { OperatorConversationHistoryPageSchema, OperatorConversationHistoryQuery
   OperatorHandoffHistoryPageSchema, OperatorHistoryCursorSchema } from '@foreman-code/contracts/operator-chat'
 
 import {
+  CircleAccountAddInputSchema, CircleAccountRemoveInputSchema, ManagedCircleAccountsSchema,
+  CircleAccountsUpdateResultSchema,
   WorkerExecutionSettingsSchema,
   ManagedRemoteExecutionSettingsSchema,
   RemoteExecutionSettingsUpdateInputSchema,
@@ -33,6 +35,45 @@ import {
 import { defineOperatorTool } from '../definition.js'
 
 export const settingsTools = [
+  defineOperatorTool({
+    name: 'circle_accounts_list',
+    requires: [['settings:read', 'global']],
+    enabled: services => !!services.circleAccounts,
+    description: 'Read primary and standby CircleCI logins, organization status, observed authentication/readiness, '
+      + 'per-org scheduling role and estimated credits from the dispatch fleet. organizations contains saved bindings; '
+      + 'orgs includes automatically discovered primary organizations. Usage exports are sampled at most '
+      + 'every three hours and readings are usable for four hours from their export window end. '
+      + 'Local human setup provisions API tokens in private CLI profiles outside Foreman; no credentials are returned.',
+    inputSchema: z.object({}).strict(), outputSchema: ManagedCircleAccountsSchema,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    run: context => context.services.circleAccounts!.get(context.principal),
+  }),
+  defineOperatorTool({
+    name: 'circle_account_add',
+    requires: [['settings:update', 'global']],
+    enabled: services => !!services.circleAccounts,
+    description: 'Register or update nonsecret CircleCI account metadata: one stable default primary login and '
+      + 'one standby login, each with three distinct GitHub org owners. An omitted role defaults to standby. '
+      + 'Missing local credentials do not prevent registration. Local human setup provisions the token outside '
+      + 'Foreman. No token argument is accepted. Omit expectedRevision for last write wins or supply it to reject '
+      + 'stale metadata; reuse commandId with identical input after an uncertain save. Read back with circle_accounts_list.',
+    // Retain strict validation so an accidental credential argument is rejected before command persistence.
+    inputSchema: { '~standard': CircleAccountAddInputSchema['~standard'] }, outputSchema: CircleAccountsUpdateResultSchema,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    run: (context, input) => context.services.circleAccounts!.add(context.principal, 'mcp', input),
+  }),
+  defineOperatorTool({
+    name: 'circle_account_remove',
+    requires: [['settings:update', 'global']],
+    enabled: services => !!services.circleAccounts,
+    description: 'Remove the standby CircleCI registration after assigned jobs and result collection settle. '
+      + 'The default primary identity cannot be removed. Historical records and private CLI profiles remain; '
+      + 'local human cleanup revokes the token separately. Optional expectedRevision rejects stale metadata; '
+      + 'commandId supports identical retries. Read back with circle_accounts_list.',
+    inputSchema: { '~standard': CircleAccountRemoveInputSchema['~standard'] }, outputSchema: CircleAccountsUpdateResultSchema,
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+    run: (context, input) => context.services.circleAccounts!.remove(context.principal, 'mcp', input),
+  }),
   defineOperatorTool({
     name: 'worker_execution_settings_get',
     requires: [['settings:read', 'global']],
@@ -73,7 +114,12 @@ export const settingsTools = [
     name: 'operator_chat_create',
     requires: [['operator_chat:write', 'global']],
     enabled: s => !!s.operatorChat,
-    description: 'Create an owner-bound Operator conversation using the current saved Operator defaults. commandId is optional and generated when omitted. Supply an ID and reuse it with the same title after a lost response to recover the same conversation, even if defaults have changed. Reusing it with a different title is a conflict. Use operator_chat_list to rediscover owned conversations. Requires global operator_chat:write.',
+    description: 'Create an owner-bound Operator draft using the current saved Operator defaults. '
+      + 'Empty drafts stay hidden from operator_chat_list and the sidebar until the first message is sent. '
+      + 'Keep the returned conversation ID to send or read it with operator_chat_get. '
+      + 'commandId is optional and generated when omitted. Supply an ID and reuse it with the same title '
+      + 'after a lost response to recover the same draft, even if defaults have changed. '
+      + 'Reusing it with a different title is a conflict. Requires global operator_chat:write.',
     inputSchema: CreateOperatorConversationRequestSchema,
     outputSchema: CreateOperatorConversationResponseSchema,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
@@ -111,7 +157,10 @@ export const settingsTools = [
     name: 'operator_chat_list',
     requires: [['operator_chat:read', 'global']],
     enabled: s => !!s.operatorChat,
-    description: 'Rediscover this caller\'s persisted Operator conversations, including newly created empty chats. Returns only conversations owned by this principal and excludes deleted conversations. Requires global operator_chat:read.',
+    description: 'List this caller\'s persisted Operator conversations with messages, matching sidebar history. '
+      + 'Empty drafts are retained but hidden until the first message is sent; '
+      + 'read a draft by its creation ID with operator_chat_get. Returns only conversations owned by this '
+      + 'principal and excludes deleted conversations. Requires global operator_chat:read.',
     inputSchema: z.object({}).strict(),
     outputSchema: ListOperatorConversationsResponseSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
@@ -246,10 +295,13 @@ export const settingsTools = [
     name: 'circle_credit_allowance_get',
     requires: [['settings:read', 'global']],
     enabled: s => !!s.settings,
-    description: 'Read the monthly CircleCI credit allowance and revision. defaultMonthlyCredits (the CircleCI Free plan '
-      + 'grants 30,000) applies to every CircleCI account without an entry in accounts, which is keyed by the GitHub '
-      + 'owner of the CircleCI org. ci_computers_list and computer_activity_list report remaining credits as this '
-      + 'allowance minus this month\u2019s usage read from CircleCI. Requires global settings:read.',
+    description: 'Read the monthly CircleCI credit allowance per organization and its revision. defaultMonthlyCredits '
+      + '(400,000: the CircleCI Free plan grants each organization that for Linux open-source builds) applies to every '
+      + 'organization without an entry in accounts, which is keyed by the GitHub owner of the CircleCI org. '
+      + 'ci_computers_list and computer_activity_list report each CircleCI org\u2019s remaining credits as this '
+      + 'allowance minus that org\u2019s usage this month read from CircleCI. Exports are sampled at most every '
+      + 'three hours; readings are usable for four hours from export window end. Primary and standby orgs '
+      + 'have separate usage estimates. Requires global settings:read.',
     inputSchema: z.object({}).strict(), outputSchema: ManagedCircleCreditAllowanceSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     run: (context) => context.services.settings!.getCircleCreditAllowance(context.principal),
@@ -258,7 +310,7 @@ export const settingsTools = [
     name: 'circle_credit_allowance_update',
     requires: [['settings:update', 'global']],
     enabled: s => !!s.settings,
-    description: 'Replace the monthly CircleCI credit allowance: defaultMonthlyCredits plus per-account overrides keyed '
+    description: 'Replace the monthly CircleCI credit allowance: defaultMonthlyCredits plus per-organization overrides keyed '
       + 'by the GitHub owner of the CircleCI org. Paid plans differ from the Free plan, so set the real allowance. '
       + 'Requires global settings:update. Omit expectedRevision for last write wins; supply it to reject a stale '
       + 'revision. Reuse commandId with identical input after an uncertain save. Read back with '

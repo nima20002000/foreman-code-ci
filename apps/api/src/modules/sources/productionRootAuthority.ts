@@ -2,6 +2,7 @@ import type pg from 'pg'
 import { join } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
 import type { DeviceEndpoint } from '../devices/deviceEndpoint.js'
+import { DeviceApplicationError } from '../devices/deviceApplicationError.js'
 import { assertDeviceHostInstallation } from '../devices/hostAuthorization.js'
 import { DomainError } from '../errors.js'
 import { DeviceRegistrationSchema } from '@foreman-code/contracts/device-identity'
@@ -35,7 +36,15 @@ export function createProductionRootPolicies(input: {
       const captured = endpoint.captureRequest(host.deviceId, WORKSPACE_ROOT_EXTENSION.namespace)
       if (!captured || captured.binding.mainId !== host.mainId || captured.binding.workerInstallationId !== registration.workerInstallationId
         || captured.binding.keyRevision !== registration.keyRevision || captured.binding.authorizationRevision !== registration.authorizationRevision) unavailable()
-      const reply = await captured!.request({ version: 1, operation: 'workspace-roots.configuration' }, { signal: AbortSignal.timeout(10_000) })
+      const signal = AbortSignal.timeout(10_000)
+      const reply = await captured!.request({ version: 1, operation: 'workspace-roots.configuration' }, { signal })
+        .catch((error: unknown) => {
+          if (!(error instanceof DeviceApplicationError) || error.code !== 'cancelled'
+            || !signal.aborted || !(signal.reason instanceof Error) || signal.reason.name !== 'TimeoutError') throw error
+          // The channel reports aborts as cancellation; only this request's own deadline means unavailability.
+          throw new DomainError('timeout', 'The selected computer did not respond. Reconnect it and retry.',
+            503, undefined, { cause: signal.reason })
+        })
       if (reply.bytes !== undefined || !isDeepStrictEqual(endpoint.currentBinding(host.deviceId), captured!.binding))
         throw new DomainError('ROOT_DEVICE_CONFLICT', 'The authenticated root configuration channel changed during adoption.', 409)
       const configuration = ApprovedRootAllowlistSchema.parse(reply.payload)

@@ -40,15 +40,21 @@ export async function assertIntervalRestart(executionHost: 'main' | 'worker'): P
       subscribe: fixture.subscribeNativeChanges,
     })
     if (!before) throw new Error('Expected both native turns to be admitted')
-    expect(before.executions).toHaveLength(3)
+    expect(before.executions, JSON.stringify(before.executions.map(execution => ({
+      id: execution.id, node: execution.workflowNodeId, state: execution.state,
+      result: execution.result, nativeSessionId: execution.nativeSessionId,
+    })))).toHaveLength(3)
     const active = before.executions.filter(execution => execution.state === 'running')
     expect(active.filter(({ input }) => input !== null && typeof input === 'object'
       && !Array.isArray(input) && input.tick)).toHaveLength(1)
     const calls = await fixture.provider.calls()
     const originals = active.map(execution => {
+      const starts = calls.filter(call => call.method === 'turn/start'
+        && call.correlationId === `execution:${execution.id}`)
+      expect(starts).toHaveLength(1)
       const call = calls.find(item => {
-        const turn = item.workflowTurn as { sessionId: string } | undefined
-        return turn?.sessionId === execution.nativeSessionId
+        const turn = item.workflowTurn as { pid: number; sessionId: string } | undefined
+        return turn !== undefined && turn.sessionId === execution.nativeSessionId && turn.pid === starts[0]!.pid
       })
       expect(call).toBeDefined()
       return call!.workflowTurn as { pid: number; sessionId: string; turnId: string }
@@ -57,7 +63,11 @@ export async function assertIntervalRestart(executionHost: 'main' | 'worker'): P
       expiresAt: new Date(Date.now() + 600_000), grants: [{ actions: ['runs:read'],
         scope: { workspaceIds: [started.run.workspaceId], workflowIds: [started.run.workflowId] } }] })
     const workerPid = fixture.workerPid()
+    console.info('Interval restart admitted executions:', active.map(execution => ({
+      id: execution.id, nativeSessionId: execution.nativeSessionId,
+    })))
     await fixture.restartMain({ mode: 'graceful', afterShutdown: async () => {
+      console.info('Interval restart Main shutdown completed')
       const preserved = await fixture.executions(started.run.id)
       for (const execution of active) {
         expect(preserved.find(item => item.id === execution.id)).toMatchObject({
@@ -121,7 +131,10 @@ export async function assertIntervalRestart(executionHost: 'main' | 'worker'): P
     }
   } catch (error) {
     console.error(error)
-    console.error('Native failure codes:', fixture.failures())
+    console.error('First native failures:', JSON.stringify(fixture.failures().slice(0, 16).map(failure => ({
+      ...failure, errorLocation: typeof failure.errorLocation === 'string'
+        ? failure.errorLocation.split(' (')[0] : failure.errorLocation,
+    }))))
     throw error
   } finally {
     if (blocked) await fixture.provider.releaseWorkflowTurns()
