@@ -9,7 +9,6 @@ import { WorkerError, requirePrivateDirectory, workerUpdateErrorMessage } from '
 import { pruneWorkerVersions } from './installation.mjs';
 import { readWorkerStatus } from './runtime.mjs';
 import { WORKER_UPDATE_STARTUP_TIMEOUT_MS } from './ciSmokeTiming.mjs';
-import { waitForUpdateOperation } from './updateOperation.mjs';
 
 const execute = promisify(execFile);
 const services = ['graphql-worker.service', 'foreman-ci-worker.service'];
@@ -173,12 +172,11 @@ export async function workerPointerMatches(pointer, directory) {
 }
 
 export async function waitForWorkerReady({ stateDirectory, version, workerInstallationId,
-  timeoutMs = 60_000, pollMs = 250, readStatus = readWorkerStatus, signal }) {
+  timeoutMs = 60_000, pollMs = 250, readStatus = readWorkerStatus }) {
   const deadline = Date.now() + timeoutMs;
   let lastStatus;
   let lastProbeError;
   do {
-    signal?.throwIfAborted();
     let status;
     try {
       status = await readStatus(stateDirectory);
@@ -191,7 +189,7 @@ export async function waitForWorkerReady({ stateDirectory, version, workerInstal
     if (status?.phase === 'blocked' && status.failure) throw new Error(status.failure);
     if (status?.active === true && status.phase === 'ready' && status.appVersion === version
       && status.workerInstallationId === workerInstallationId) return;
-    await wait(pollMs, undefined, { signal });
+    await wait(pollMs);
   } while (Date.now() < deadline);
   const observed = lastStatus
     ? `phase=${lastStatus.phase}, failure=${lastStatus.failure ?? 'none'}, version=${lastStatus.appVersion ?? 'unknown'}`
@@ -208,34 +206,25 @@ async function readWorkerStartupFailure(plan, since) {
 }
 
 export async function superviseWorkerUpdate(record, ports = {}) {
-  const { restart = async (service, { signal } = {}) => {
+  const { restart = async service => {
     await execute('/usr/bin/systemctl', ['--user', 'reset-failed', service],
-      { timeout: 5000, maxBuffer: 4096, env: environment(), signal });
+      { timeout: 5000, maxBuffer: 4096, env: environment() });
     await execute('/usr/bin/systemctl', ['--user', 'restart', service],
-      { timeout: 30_000, maxBuffer: 4096, env: environment(), signal });
+      { timeout: 30_000, maxBuffer: 4096, env: environment() });
   }, ready = waitForWorkerReady, switchPointer = switchWorkerPointer,
   prepareService = migrateWorkerService, persist = writeUpdateRecord,
   readStartupFailure = ports.restart ? async () => '' : readWorkerStartupFailure,
-  smoke = async (plan, { signal }) => {
+  smoke = async plan => {
     if (!plan.ciSmoke) return;
     if (process.env.FOREMAN_INSTALL_SKIP_CI_SMOKE === '1') {
       process.stderr.write('Worker CI smoke explicitly skipped (FOREMAN_INSTALL_SKIP_CI_SMOKE=1).\n');
       return;
     }
     const { runInstalledCiSmoke } = await import(pathToFileURL(join(plan.directory, 'src/worker.mjs')));
-    signal.throwIfAborted();
-    await runInstalledCiSmoke(plan.ciSmoke, { signal });
+    await runInstalledCiSmoke(plan.ciSmoke);
   } } = ports;
   const plan = record.restart;
   if (!plan || !services.includes(plan.service)) throw new WorkerError('worker_update_state_invalid');
-  const controller = new AbortController();
-  const signal = controller.signal;
-  const remainingMs = record.attemptDeadlineAt - Date.now();
-  const expire = () => controller.abort(new WorkerError('worker_update_deadline_exceeded'));
-  let timer;
-  if (!Number.isFinite(record.attemptDeadlineAt) || remainingMs <= 0) expire();
-  else timer = setTimeout(expire, remainingMs);
-  const run = operation => waitForUpdateOperation(operation, signal);
   const previousManifestSha256 = record.status.manifestSha256;
   const previousContentSha256 = record.status.contentSha256;
   const save = async (state, currentVersion, lastError) => {
@@ -248,35 +237,28 @@ export async function superviseWorkerUpdate(record, ports = {}) {
   };
   let restartStartedAt;
   let waitingForReady = false;
-  const restartWorker = async (options = {}) => {
+  const restartWorker = async () => {
     // A surviving process may resume only when neither restart was attempted.
     plan.restartAttempted = true;
     await persist(plan.stateDirectory, record);
-    options.signal?.throwIfAborted();
     restartStartedAt = new Date().toISOString();
-    await restart(plan.service, options);
+    await restart(plan.service);
   };
   try {
-    signal.throwIfAborted();
     await prepareService(plan);
-    signal.throwIfAborted();
     await switchPointer(plan.pointer, plan.directory);
-    signal.throwIfAborted();
     if (plan.pointer.kind === 'symlink') {
       await switchPointer({ kind: 'symlink', path: join(plan.root, 'previous') }, plan.previousDirectory);
     }
-    await run(() => restartWorker({ signal }));
+    await restartWorker();
     waitingForReady = true;
-    await run(() => ready({ stateDirectory: plan.stateDirectory, version: record.status.targetVersion,
+    await ready({ stateDirectory: plan.stateDirectory, version: record.status.targetVersion,
       workerInstallationId: plan.workerInstallationId,
-      signal, timeoutMs: Math.min(plan.ciSmoke ? 60_000 : WORKER_UPDATE_STARTUP_TIMEOUT_MS,
-        record.attemptDeadlineAt - Date.now()) }));
+      timeoutMs: plan.ciSmoke ? 60_000 : WORKER_UPDATE_STARTUP_TIMEOUT_MS });
     waitingForReady = false;
-    await run(() => smoke(plan, { signal }));
+    await smoke(plan);
     await save('current', record.status.targetVersion, null);
   } catch (error) {
-    // Recovery keeps its own startup budget after the update attempt expires.
-    clearTimeout(timer);
     let failure = workerUpdateErrorMessage(error);
     if (waitingForReady) {
       try {
@@ -298,8 +280,6 @@ export async function superviseWorkerUpdate(record, ports = {}) {
       await save('failed', plan.previousVersion, `${failure.slice(-950)}; rollback: ${reason.slice(-950)}`);
       throw new WorkerError('worker_update_rollback_failed', undefined, { cause: rollbackError });
     }
-  } finally {
-    clearTimeout(timer);
   }
   if (record.status.state === 'current') {
     try {
