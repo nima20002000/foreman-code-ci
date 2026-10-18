@@ -233,8 +233,11 @@ export async function superviseWorkerUpdate(record, ports = {}) {
   const remainingMs = record.attemptDeadlineAt - Date.now();
   const expire = () => controller.abort(new WorkerError('worker_update_deadline_exceeded'));
   let timer;
-  if (!Number.isFinite(record.attemptDeadlineAt) || remainingMs <= 0) expire();
-  else timer = setTimeout(expire, remainingMs);
+  // Older update records retain the bounded restart, readiness and smoke budgets.
+  if (record.attemptDeadlineAt !== undefined) {
+    if (!Number.isFinite(record.attemptDeadlineAt) || remainingMs <= 0) expire();
+    else timer = setTimeout(expire, remainingMs);
+  }
   const run = operation => waitForUpdateOperation(operation, signal);
   const previousManifestSha256 = record.status.manifestSha256;
   const previousContentSha256 = record.status.contentSha256;
@@ -266,11 +269,14 @@ export async function superviseWorkerUpdate(record, ports = {}) {
       await switchPointer({ kind: 'symlink', path: join(plan.root, 'previous') }, plan.previousDirectory);
     }
     await run(() => restartWorker({ signal }));
+    let startupTimeoutMs = plan.ciSmoke ? 60_000 : WORKER_UPDATE_STARTUP_TIMEOUT_MS;
+    if (record.attemptDeadlineAt !== undefined) {
+      startupTimeoutMs = Math.min(startupTimeoutMs, record.attemptDeadlineAt - Date.now());
+    }
     waitingForReady = true;
     await run(() => ready({ stateDirectory: plan.stateDirectory, version: record.status.targetVersion,
       workerInstallationId: plan.workerInstallationId,
-      signal, timeoutMs: Math.min(plan.ciSmoke ? 60_000 : WORKER_UPDATE_STARTUP_TIMEOUT_MS,
-        record.attemptDeadlineAt - Date.now()) }));
+      signal, timeoutMs: startupTimeoutMs }));
     waitingForReady = false;
     await run(() => smoke(plan, { signal }));
     await save('current', record.status.targetVersion, null);
