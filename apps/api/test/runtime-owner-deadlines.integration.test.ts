@@ -7,14 +7,16 @@ import { postgresEnabled } from './helpers/eng04CurrentDatabase.js'
 import { deferred } from './helpers/deferred.js'
 
 async function stalledReplies(afterReady: number) {
-  const connect = pg.Client.prototype.connect as unknown as (this: pg.Client) => Promise<pg.Client>
+  const connect = pg.Client.prototype.connect
   const query = pg.Client.prototype.query as unknown as
     (this: pg.Client, ...args: unknown[]) => Promise<pg.QueryResult>
   const release = deferred()
   const ownerClients = new Set<pg.Client>()
-  const connection = vi.spyOn(pg.Client.prototype, 'connect').mockImplementation((function (this: pg.Client) {
+  const connection = vi.spyOn(pg.Client.prototype, 'connect').mockImplementation((function (
+    this: pg.Client, ...args: unknown[]
+  ) {
     if (!ownerClients.size) ownerClients.add(this)
-    return connect.call(this)
+    return Reflect.apply(connect, this, args)
   }) as typeof pg.Client.prototype.connect)
   let replies = 0
   // Keep the guarded disposable endpoint; suppress delivery after PostgreSQL executes the query.
