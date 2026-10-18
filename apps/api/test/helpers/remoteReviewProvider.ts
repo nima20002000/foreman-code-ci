@@ -102,12 +102,14 @@ int main(int argc, char **argv) {
       await rename(replacement, binary)
     },
     async updatePayload() {
+      const version = '0.156.1'
       const sourceText = await readFile(source, 'utf8')
-      await writeFile(source, sourceText.replace('"0.154.0"', '"0.156.1"'))
+      await writeFile(source, sourceText.replace('"0.154.0"', JSON.stringify(version)))
       const replacement = join(directory, 'codex-updated')
       await execute('cc', ['-O2', source, '-o', replacement])
       // Publish the payload and its version together so discovery sees one installation change.
       await rename(replacement, binary)
+      return version
     },
     failModelRefresh: () => writeFile(join(directory, 'fail-model-refresh'), '', { mode: 0o600 }),
     hideModels: () => writeFile(join(directory, 'hide-models'), '', { mode: 0o600 }),
