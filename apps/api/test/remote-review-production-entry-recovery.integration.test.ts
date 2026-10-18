@@ -8,7 +8,6 @@ import { SourcePreparationSchema } from '@foreman-code/contracts/source-admissio
 import { SavedRunDetailsSchema } from '@foreman-code/contracts/wave25'
 import { waitForRemoteReview, receipts, useRemoteReviewFixture } from './helpers/remoteReviewProductionCases.js'
 import { waitForRequesterSession } from './helpers/remoteReviewEntryStartup.js'
-import { waitForReleasedWorkflowSource } from './helpers/releasedWorkflowSource.js'
 
 const withRemoteReviewFixture = useRemoteReviewFixture()
 
@@ -87,7 +86,12 @@ describe('production remote review and native recovery through authenticated MCP
       expect(detail.executions.find(execution => execution.id === requester.id)?.nativeSessionId).toBeUndefined()
       expect((await fixture.db.pool.query('select 1 from execution_native_sessions where execution_id=$1',
         [requester.id])).rows).toEqual([])
-      const released = await waitForReleasedWorkflowSource(fixture, started.run.workspaceId, original.intent.operationId)
+      const released = await waitForRemoteReview(async () => {
+        await fixture.reconcile()
+        return SourcePreparationSchema.parse(await fixture.value('source_preparation_get', {
+          workspaceId: started.run.workspaceId, operationId: original.intent.operationId,
+        }))
+      }, value => value.reservationState === 'reclaimed', 'source reclamation after the original entry closure')
       expect(released.materializationId).toBe(preparation.materializationId)
       expect((await fixture.db.pool.query<{ state: string }>(
         'select state from source_execution_materializations where operation_id=$1',
