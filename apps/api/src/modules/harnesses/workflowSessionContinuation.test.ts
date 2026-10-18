@@ -4,7 +4,7 @@ import type { WorkflowNativeSessionStart } from './port.js'
 import { ActivityProductionReplay } from '../../../test/helpers/activityProductionReplay.js'
 import { collect, input } from '../../../test/fixtures/codex-test-helpers.js'
 
-async function closedWorkflow(withCompletedTurn = false) {
+async function closedWorkflow(previousTurn?: 'completed' | 'active') {
   const replay = new ActivityProductionReplay('continued-workflow')
   const infrastructure = replay.infrastructure()
   if (infrastructure.mode !== 'replay') throw new Error('Recorded provider I/O required')
@@ -19,10 +19,16 @@ async function closedWorkflow(withCompletedTurn = false) {
   const source = input('/recorded/workflow')
   source.correlationId = `execution:${source.request.executionId}`
   const session = await original.createSession(source)
-  if (withCompletedTurn) {
-    replay.nextStart = 'complete'
-    await collect(original.startTurn(session, { prompt: 'Finish the original execution',
-      clientCorrelationId: source.correlationId! }))
+  if (previousTurn) {
+    replay.nextStart = previousTurn === 'completed' ? 'complete' : 'active'
+    const stream = original.startTurn(session, { prompt: 'Finish the original execution',
+      clientCorrelationId: source.correlationId! })
+    if (previousTurn === 'completed') await collect(stream)
+    else {
+      const iterator = stream[Symbol.asyncIterator]()
+      await iterator.next()
+      await iterator.return?.()
+    }
   }
   await original.close(session)
   const continuation: WorkflowNativeSessionStart = { ...source,
@@ -52,7 +58,7 @@ it('captures a newly admitted workflow continuation as its own original process 
 })
 
 it('observes an admitted continuation as idle before its first turn without adopting the previous result', async () => {
-  const f = await closedWorkflow(true)
+  const f = await closedWorkflow('completed')
   try {
     const manager = f.createManager()
     await manager.createSession(f.continuation)
@@ -68,6 +74,15 @@ it('observes an admitted continuation as idle before its first turn without adop
       providerId: 'recorded-turn-2', result: { outcome: 'succeeded' } })
     expect(f.replay.starts.map(start => start.correlationId))
       .toEqual(['execution:execution-agent-a', f.continuation.correlationId])
+  } finally { await f.close() }
+})
+
+it('refuses a continuation whose native history still has an active previous turn', async () => {
+  const f = await closedWorkflow('active')
+  try {
+    await expect(f.createManager().createSession(f.continuation))
+      .rejects.toMatchObject({ result: { error: { code: 'CODEX_SESSION_BUSY' } } })
+    expect(f.replay.starts).toHaveLength(1)
   } finally { await f.close() }
 })
 
