@@ -41,7 +41,7 @@ export async function assertIntervalRestart(executionHost: 'main' | 'worker'): P
     })
     if (!before) throw new Error('Expected both native turns to be admitted')
     expect(before.executions, JSON.stringify(before.executions.map(execution => ({
-      id: execution.id, node: execution.workflowNodeId, state: execution.state, input: execution.input,
+      id: execution.id, node: execution.workflowNodeId, state: execution.state,
       result: execution.result, nativeSessionId: execution.nativeSessionId,
     })))).toHaveLength(3)
     const active = before.executions.filter(execution => execution.state === 'running')
@@ -128,7 +128,10 @@ export async function assertIntervalRestart(executionHost: 'main' | 'worker'): P
     }
   } catch (error) {
     console.error(error)
-    console.error('Native failure codes:', JSON.stringify(fixture.failures()))
+    console.error('First native failures:', JSON.stringify(fixture.failures().slice(0, 8).map(failure => ({
+      ...failure, errorLocation: typeof failure.errorLocation === 'string'
+        ? failure.errorLocation.split(' (')[0] : failure.errorLocation,
+    }))))
     throw error
   } finally {
     if (blocked) await fixture.provider.releaseWorkflowTurns()
