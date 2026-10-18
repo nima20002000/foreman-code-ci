@@ -36,6 +36,12 @@ it('closes the reserved native launch of a Run stopped before entry so source cl
       expect.objectContaining({ lifecycle: expect.not.stringMatching(/^closed$/) })])
     expect(await f.journal.isWorkerUpdateIdle(registry.snapshot().launches)).toBe(false)
 
+    await f.host.drainForUpdate()
+    expect(registry.snapshot().launches.filter(launch => launch.owner === owner)).toEqual([
+      expect.objectContaining({ lifecycle: 'closed', closureEvidence: 'native_not_started' })])
+    expect(await f.journal.isWorkerUpdateIdle(registry.snapshot().launches)).toBe(true)
+    expect(await f.journal.isRetired(f.intent.operationId)).toBe(false)
+
     const cleanup = { ...f.owner, preparationKind: 'workflow' as const, preparationClosed: true as const }
     expect(await f.host.preparationClosed(cleanup)).toBe(true)
     expect(registry.snapshot().launches.filter(launch => launch.owner === owner)).toEqual([

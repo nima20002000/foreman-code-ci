@@ -7,6 +7,7 @@ import { WorkerPairingConfigurationSchema } from '@foreman-code/contracts/device
 import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
 import { workerConversationFixture } from '../conversations/workerFixtures.test-support.js'
 import { RemoteOperationJournal } from '../runs/remote/operationJournal.js'
+import { deferred, rejectableDeferred } from '../../../test/helpers/deferred.js'
 import { createInstalledWorkerDomains } from './installedWorkerDomains.js'
 
 // Native MCP files are exercised separately; domain fixtures must not touch the host user profile.
@@ -261,3 +262,121 @@ it.each(['turn', 'compaction', 'closing', 'access-change'] as const)(
       await rm(stateDirectory, { recursive: true, force: true })
     }
   })
+
+
+it('finishes an update while Main source cleanup is pending and resumes admissions before that cleanup returns', async () => {
+  const stateDirectory = await mkdtemp(join(persistentFixtureRoot, 'worker-background-cleanup-'))
+  const project = join(stateDirectory, 'project')
+  await mkdir(project, { mode: 0o700 })
+  const pairing = WorkerPairingConfigurationSchema.parse({ formatVersion: 1, mainId: randomUUID(),
+    deviceId: randomUUID(), workerInstallationId: randomUUID(), keyRevision: 1, authorizationRevision: 1,
+    endpoint: 'wss://unconnected.example/device/connect', mainPublicKeyFingerprint: 'a'.repeat(64),
+    credential: 'b'.repeat(64), expiresAt: '2099-01-01T00:00:00Z' })
+  const binding = { mainId: pairing.mainId, deviceId: pairing.deviceId,
+    workerInstallationId: pairing.workerInstallationId, bootId: bootIdentity(), keyRevision: 1,
+    authorizationRevision: 1, connectionEpoch: randomUUID(), connectionGeneration: 1 }
+  const approved = await qualifyApprovedRootAllowlist({ schemaVersion: 1,
+    hostRef: { kind: 'device', mainId: pairing.mainId, deviceId: pairing.deviceId },
+    applicationInstallationId: pairing.workerInstallationId, configurationRevision: '1',
+    bases: [{ baseId: randomUUID(), canonicalPath: project, accessModes: ['read-write'] }],
+    managedRuntimeRoot: stateDirectory })
+  const requested = deferred<void>()
+  const mainCleanup = rejectableDeferred<never>()
+  const domains = await createInstalledWorkerDomains({ stateDirectory, pairing, bootId: binding.bootId,
+    configuration: null, approvedRoots: async () => approved, codexSuiteRevision: 'fixture',
+    connection: () => ({ currentBinding: () => binding, mainNow: () => Date.now(),
+      captureRequest: () => ({ binding, request: async () => { requested.resolve(); return mainCleanup.promise } }) }) })
+  const source = domains.extensions.find(extension => extension.namespace === 'source-operations-v1')!
+  const discovery = domains.extensions.find(extension => extension.namespace === 'harness-discovery-v1')!
+  const frame = { binding, signal: new AbortController().signal }
+  const cleaning = source.handle!({ version: 1, operation: 'sources.reclaim-reservation',
+    reservationId: randomUUID(), reclamationId: randomUUID() }, frame)
+  const cleanupResult = expect(cleaning).rejects.toThrow('Main cleanup unavailable')
+  await requested.promise
+  let drained = false
+  const draining = domains.drainForUpdate().then(() => { drained = true })
+  try {
+    await expect.poll(() => drained, { timeout: 2000 }).toBe(true)
+    await draining
+    await expect(discovery.handle!({}, frame)).rejects.toMatchObject({ code: 'WORKER_RUNTIME_DRAINING' })
+    domains.resumeAfterUpdate()
+    expect((await discovery.handle!({ operation: 'discover', refreshId: randomUUID() }, frame)).payload).toBeDefined()
+    mainCleanup.reject(new Error('Main cleanup unavailable'))
+    await cleanupResult
+  } finally {
+    mainCleanup.reject(new Error('Main cleanup unavailable'))
+    await domains.close()
+    await Promise.allSettled([cleaning, draining])
+    await cleanupResult
+    await rm(stateDirectory, { recursive: true, force: true })
+  }
+})
+
+
+it('drains stopped source transfers before the idle deadline while retaining active transfers and native owners', async () => {
+  const stateDirectory = await mkdtemp(join(persistentFixtureRoot, 'worker-stopped-transfer-'))
+  const project = join(stateDirectory, 'project')
+  const stagingRoot = join(stateDirectory, 'staging')
+  await mkdir(project, { mode: 0o700 })
+  await mkdir(stagingRoot, { mode: 0o700 })
+  const pairing = WorkerPairingConfigurationSchema.parse({ formatVersion: 1, mainId: randomUUID(),
+    deviceId: randomUUID(), workerInstallationId: randomUUID(), keyRevision: 1, authorizationRevision: 1,
+    endpoint: 'wss://unconnected.example/device/connect', mainPublicKeyFingerprint: 'a'.repeat(64),
+    credential: 'b'.repeat(64), expiresAt: '2099-01-01T00:00:00Z' })
+  const binding = { mainId: pairing.mainId, deviceId: pairing.deviceId,
+    workerInstallationId: pairing.workerInstallationId, bootId: bootIdentity(), keyRevision: 1,
+    authorizationRevision: 1, connectionEpoch: randomUUID(), connectionGeneration: 1 }
+  const approved = await qualifyApprovedRootAllowlist({ schemaVersion: 1,
+    hostRef: { kind: 'device', mainId: pairing.mainId, deviceId: pairing.deviceId },
+    applicationInstallationId: pairing.workerInstallationId, configurationRevision: '1',
+    bases: [{ baseId: randomUUID(), canonicalPath: project, accessModes: ['read-write'] }],
+    managedRuntimeRoot: stateDirectory })
+  const intent: TransferIntent = { ...transferContextForBinding(binding), version: 1,
+    transferId: randomUUID(), operationId: randomUUID(), executionId: randomUUID(), attemptId: randomUUID(),
+    placementHash: 'a'.repeat(64), rootId: randomUUID(), rootBindingRevision: 1, direction: 'to-worker',
+    byteClass: 'source', sha256: 'b'.repeat(64), byteSize: 8, manifestDigest: 'c'.repeat(64), chunkBytes: 8,
+    expiresAt: new Date(Date.now() + 60_000).toISOString() }
+  const journal = await RemoteOperationJournal.open(join(stateDirectory, 'workflow-operations.json'),
+    { initializeNewInstallation: true })
+  await journal.accept({ schemaVersion: 1, protocolVersion: 1, mainId: pairing.mainId,
+    runId: 'run', nodeId: 'node', executionId: intent.executionId, attemptId: intent.attemptId,
+    operationId: intent.operationId, occurrenceId: null, occurrenceIndex: 0, technicalAttempt: 1,
+    bindingHash: intent.placementHash, inputDigest: `sha256:${'d'.repeat(64)}`,
+    owner: { grantId: 'grant', epoch: '1' } }, binding, randomUUID())
+  const accepted = { intent: async () => intent, authorize: async () => {} }
+  const receiver = new ResumableByteTransferService(join(stateDirectory, 'canonical'), accepted)
+  await receiver.start(intent, transferContextForBinding(binding))
+  const executable = await realpath(process.execPath)
+  const sha256 = createHash('sha256').update(await readFile(executable)).digest('hex')
+  const domains = await createInstalledWorkerDomains({ stateDirectory, pairing, bootId: binding.bootId,
+    configuration: null, approvedRoots: async () => approved, codexSuiteRevision: 'fixture',
+    connection: () => ({ currentBinding: () => binding, mainNow: () => Date.now(), captureRequest: () => undefined }),
+    rsync: { stagingRoot, accepted, receiver, binary: { executable, sha256 },
+      resolveSource: async () => { throw new Error('No source reader selected') },
+      acknowledged: async () => {}, quiescent: async () => {} } })
+  const registry = new NativeProcessRegistry(join(stateDirectory, 'workflow-native-processes'))
+  const reserved = await registry.reserveLaunch(`execution:${intent.executionId}`)
+  let drained = false
+  const draining = domains.drainForUpdate().then(() => { drained = true })
+  try {
+    await new Promise(resolve => setTimeout(resolve, 150))
+    expect(drained).toBe(false)
+    await registry.abandonReservedLaunch(reserved)
+    await new Promise(resolve => setTimeout(resolve, 150))
+    expect(drained).toBe(false)
+    const stopped = await journal.revokeFence(intent.operationId)
+    await expect.poll(() => drained, { timeout: 2000 }).toBe(true)
+    await draining
+    expect(await journal.status(intent.operationId)).toEqual({ status: 'known', receipt: stopped })
+    expect(await receiver.inventory()).toEqual([intent])
+    expect(await receiver.isRuntimeQuiescent()).toBe(false)
+    domains.resumeAfterUpdate()
+  } finally {
+    await domains.close()
+    await Promise.allSettled([draining])
+    await journal.close()
+    await receiver.close()
+    registry.closeRetention()
+    await rm(stateDirectory, { recursive: true, force: true })
+  }
+})
