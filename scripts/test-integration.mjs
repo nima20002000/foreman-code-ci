@@ -28,6 +28,7 @@ import { scheduleQueue } from './dense-scheduler.mjs'
 import { reusableIntegrationFile, startSlotServer, stopSlotServer, stopStrayProcesses } from './integration-slot-process.mjs'
 import { writeCiTestResults } from './ci-test-results.mjs'
 import { readProfiles, startProcessMetrics, writeProfiles } from './dense-resources.mjs'
+import { integrationCoverageReport } from './integration-coverage.mjs'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const startupFile = 'apps/api/test/dev-startup.integration.test.ts'
@@ -757,6 +758,10 @@ export async function runIntegration(argv = [], {
       const json = `${log}.json`
       const environment = { ...integrationEnvironment(env, slot), FOREMAN_CODE_TEST_FILE_STARTED_AT: String(Date.now()),
         FOREMAN_CODE_TEST_FILE: file, FOREMAN_CODE_TEST_CACHE_ROOT: testFixtureCacheRoot(env) }
+      if (env.CI === 'true' && env.FOREMAN_CODE_INTEGRATION_COVERAGE !== '0') {
+        environment.FOREMAN_CODE_INTEGRATION_COVERAGE_DIRECTORY = join(failedLogs, 'coverage')
+        mkdirSync(environment.FOREMAN_CODE_INTEGRATION_COVERAGE_DIRECTORY, { recursive: true })
+      }
       const vitest = vitestCommand(environment, file, testNamePattern, json)
       const reuse = !isRetest && reusableIntegrationFile(file)
       if (!reuse) await dropSlotServer(slot)
@@ -1069,6 +1074,17 @@ export async function runIntegration(argv = [], {
         console.error(`[integration] could not record measured durations: ${error.message}`)
       }
       // Structured per-test results, so a host CI dispatcher can show them with the ticket.
+      if (env.CI === 'true' && env.FOREMAN_CODE_INTEGRATION_COVERAGE !== '0') {
+        const commit = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' })
+        if (commit.status !== 0) throw new Error('Could not identify the integration coverage commit')
+        const coverage = integrationCoverageReport(join(failedLogs, 'coverage'), commit.stdout.trim(), discoverFiles(),
+          firstPass.map(file => file.file))
+        writeDurations(join(failedLogs, 'integration-coverage.json'), coverage)
+        console.log(`[integration] coverage: ${Object.keys(coverage.coverage).length}/${coverage.testFiles.length} test files;`
+          + ` ${coverage.staticTests.length} retain static selection; commit ${coverage.commit}`)
+        const output = env.FOREMAN_CODE_INTEGRATION_COVERAGE_OUTPUT
+        if (output) writeDurations(resolve(output), coverage)
+      }
       const testResults = readProductEnvironment(env, 'INTEGRATION_TEST_RESULTS_OUTPUT')
       if (testResults) {
         try {
