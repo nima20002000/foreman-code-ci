@@ -173,25 +173,13 @@ async function fixture(executor?: HostCiEndpoint) {
     return result
   }
   const read = async (ticketId: string) => CiGetOutputSchema.parse(await value('ci_get', { ticketId })).run
-  const observeWhenDue = async (service: HostCiService, ticketId: string) => {
-    const nextAttemptAt = (await read(ticketId)).observation?.nextAttemptAt
-    if (!nextAttemptAt) return settle(service)
-    const retryAt = Date.parse(nextAttemptAt)
-    expect(retryAt - Date.now()).toBeLessThanOrEqual(1000)
-    const clock = vi.spyOn(Date, 'now').mockReturnValue(Math.max(Date.now(), retryAt))
-    try {
-      await settle(service)
-    } finally {
-      clock.mockRestore()
-    }
-  }
   const close = async () => {
     await ci.close()
     await Promise.all(clients.map(client => client.close()))
     await app.close()
   }
   return { pool, app, workspaceId, repository, operator, connect, call, value, enqueue, read, ci,
-    createService, control, remote, starts, computers, endpoint, observeWhenDue, close }
+    createService, control, remote, starts, computers, endpoint, close }
 }
 
 function failingCloud(f: Awaited<ReturnType<typeof fixture>>, provider: 'github' | 'circleci') {
@@ -435,7 +423,7 @@ it('retains one executor after an accepted start loses its reply and reconciles 
     expect(recovered).toMatchObject({ state: 'running', computer: {
       hostRef: accepted.computer.hostRef },
       startedAt: f.remote.get(`${accepted.computer.key}:${ticket.ticketId}`)!.startedAt })
-    await f.observeWhenDue(restarted, ticket.ticketId)
+    await settle(restarted)
     expect(await f.read(ticket.ticketId)).toEqual({ ...recovered, observation: {
       status: 'available', consecutiveFailures: 0, lastError: null,
       nextAttemptAt: null, lastSuccessAt: expect.any(String) } })
@@ -477,14 +465,14 @@ it('preserves the assignment when the database rejects settlement after an accep
     expect(f.starts).toHaveLength(1)
     expect((await f.read(ticket.ticketId)).state).toBe('starting')
     await f.pool.query('drop trigger reject_ci_running on ci_runs')
-    await f.observeWhenDue(f.ci, ticket.ticketId)
+    await settle(f.ci)
     expect(f.starts).toHaveLength(1)
     const recovered = await f.read(ticket.ticketId)
     const accepted = f.starts[0]!
     expect(recovered).toMatchObject({ state: 'running', computer: {
       hostRef: accepted.computer.hostRef },
       startedAt: f.remote.get(`${accepted.computer.key}:${ticket.ticketId}`)!.startedAt })
-    await f.observeWhenDue(f.ci, ticket.ticketId)
+    await settle(f.ci)
     expect(await f.read(ticket.ticketId)).toEqual({ ...recovered, observation: {
       status: 'available', consecutiveFailures: 0, lastError: null,
       nextAttemptAt: null, lastSuccessAt: expect.any(String) } })
@@ -1039,7 +1027,7 @@ it('recovers an accepted completed start after settlement fails without starting
     expect(f.starts).toHaveLength(1)
     expect((await f.read(ticket.ticketId)).state).toBe('starting')
     await f.pool.query('drop trigger reject_ci_finished on ci_runs')
-    await f.observeWhenDue(f.ci, ticket.ticketId)
+    await settle(f.ci)
     const recovered = await f.read(ticket.ticketId)
     expect(recovered).toMatchObject({ state: 'passed', exitCode: 0,
       computer: { hostRef: f.starts[0]!.computer.hostRef } })
