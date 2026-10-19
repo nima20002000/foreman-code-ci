@@ -46,7 +46,7 @@ export interface RemoteExecutionHostPorts {
   verifyRecovery?(receipt: RemoteOperationReceipt, session: NativeSessionReference, evidenceDigest: string): Promise<void>
   settle(intent: DispatchIntent, history: NativeHistory, owner: { manager: NativeHarnessSessionManager; session: NativeSessionReference; request: HarnessExecutionRequest }): Promise<RemoteTerminalEvidence | null>
 }
-interface Resident { intent: DispatchIntent; placement: AcceptedNodePlacement; request: HarnessExecutionRequest; manager: NativeHarnessSessionManager; session: NativeSessionReference; controller: AbortController; turn?: Promise<void>; cancellation?: Promise<void>; settlementTask?: Promise<{ stopFence: boolean }>; settlementHistory?: NativeHistory; workflowHistory?: NativeHistory; settlementEvidence?: RemoteTerminalEvidence }
+interface Resident { intent: DispatchIntent; placement: AcceptedNodePlacement; request: HarnessExecutionRequest; manager: NativeHarnessSessionManager; session: NativeSessionReference; controller: AbortController; turn?: Promise<void>; settlementTask?: Promise<{ stopFence: boolean }>; settlementHistory?: NativeHistory; workflowHistory?: NativeHistory; settlementEvidence?: RemoteTerminalEvidence }
 interface WorkflowPreparation {
   intent: unknown
   placement: unknown
@@ -634,22 +634,10 @@ export class RemoteExecutionHost {
       throw new Error('Original retained reviewer owner unavailable')
     const fenced = await this.ports.journal.revokeFence(operationId, expiredReviewer)
     if (!fenced.stopFence || fenced.terminal) return false
-    await this.cancelResident(resident)
+    resident.controller.abort()
+    await resident.manager.cancel(resident.session)
     await this.settle(resident, `execution:${resident.intent.executionId}`)
     return true
-  }
-  private cancelResident(resident: Resident, nativeTurnId?: string): Promise<void> {
-    if (resident.cancellation) return resident.cancellation
-    resident.controller.abort()
-    resident.manager.stopAutomaticResponses?.(resident.session)
-    const cancellation = resident.manager.cancel(resident.session, undefined, nativeTurnId).then(() => undefined)
-    // A Stop fence prevents another turn; keep successful cancellation while physical settlement closes this session.
-    resident.cancellation = cancellation
-    void cancellation.catch(() => {
-      // ignore: the caller receives the failure; a later Stop can retry this original session.
-      if (resident.cancellation === cancellation) delete resident.cancellation
-    })
-    return cancellation
   }
   async read(operationId: string, method: 'history' | 'pending' | 'capabilities' | 'inspectMcp',
     correlationId?: string, afterSequence?: number) {
@@ -765,15 +753,11 @@ export class RemoteExecutionHost {
       return this.ports.journal.status(command.operationId)
     }
     try {
-      if (command.action.kind === 'stop') await this.cancelResident(resident, remoteActiveNative(recorded.receipt)?.turnId)
+      if (command.action.kind === 'stop') { resident.controller.abort(); resident.manager.stopAutomaticResponses?.(resident.session); await resident.manager.cancel(resident.session, undefined, remoteActiveNative(recorded.receipt)?.turnId) }
       else await resident.manager.respond(resident.session, command.action.nativeInteractionId, ApprovalResponseOptionSchema.parse(command.action.response))
       await this.ports.journal.acknowledgeControl(command)
       await this.settle(resident, `execution:${resident.intent.executionId}`)
-    } catch (error) {
-      logIgnoredError('engine', 'settle remote native control', error,
-        { code: 'REMOTE_CONTROL_UNCONFIRMED', operationId: command.operationId, action: command.action.kind })
-      await this.ports.journal.uncertain(command.operationId, 'Native control acknowledgment unavailable')
-    }
+    } catch { await this.ports.journal.uncertain(command.operationId, 'Native control acknowledgment unavailable') }
     return this.ports.journal.status(command.operationId)
   }
   async retireSettled(operationId: string) {
