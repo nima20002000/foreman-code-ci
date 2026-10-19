@@ -757,7 +757,11 @@ export class RemoteExecutionHost {
       else await resident.manager.respond(resident.session, command.action.nativeInteractionId, ApprovalResponseOptionSchema.parse(command.action.response))
       await this.ports.journal.acknowledgeControl(command)
       await this.settle(resident, `execution:${resident.intent.executionId}`)
-    } catch { await this.ports.journal.uncertain(command.operationId, 'Native control acknowledgment unavailable') }
+    } catch (error) {
+      logIgnoredError('engine', 'settle remote native control', error,
+        { code: 'REMOTE_CONTROL_UNCONFIRMED', operationId: command.operationId, action: command.action.kind })
+      await this.ports.journal.uncertain(command.operationId, 'Native control acknowledgment unavailable')
+    }
     return this.ports.journal.status(command.operationId)
   }
   async retireSettled(operationId: string) {
