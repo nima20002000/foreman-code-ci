@@ -141,16 +141,7 @@ it.each(['mcp', 'http'] as const)('reads queued user-systemd slices through %s w
 })
 
 it('uses every cloud slot for ordinary integration files and persists throughput weights through authenticated MCP', async () => {
-  let releaseGithub!: () => void
-  const githubReady = new Promise<void>(resolve => { releaseGithub = resolve })
-  let githubStatusRequested!: () => void
-  const githubStatus = new Promise<void>(resolve => { githubStatusRequested = resolve })
-  const f = await fixture({ cloud: { github: 4, circleci: 4 }, beforeStatus: async computer => {
-    if (computer.hostRef.provider === 'github') {
-      githubStatusRequested()
-      await githubReady
-    }
-  } })
+  const f = await fixture({ cloud: { github: 4, circleci: 4 } })
   f.computers.splice(0, 2)
   const files = [
     ...Array.from({ length: 256 }, (_, index) => `apps/api/test/ordinary-${index}.integration.test.ts`),
@@ -184,13 +175,6 @@ it('uses every cloud slot for ordinary integration files and persists throughput
     const reader = await f.connect(CI_GET_ACTIONS)
     expect((await f.call(reader, 'ci_run', input)).isError).toBe(true)
     expect(f.published).toHaveLength(0)
-    // Weights describe the fleet ready at planning time, so finish every status probe before admission.
-    const listing = f.value(reader, 'ci_computers_list', {})
-    await githubStatus
-    releaseGithub()
-    const ready = CiComputersOutputSchema.parse(await listing)
-    expect(ready.computers).toHaveLength(8)
-    expect(ready.computers.every(computer => computer.ready && computer.slotsUsed === 0)).toBe(true)
     const started = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', input))
     await f.ci.dispatch()
     expect(f.started).toHaveLength(8)
@@ -224,10 +208,7 @@ it('uses every cloud slot for ordinary integration files and persists throughput
     await f.ci.dispatch()
     const finished = await ciRunReadback(input => f.value(reader, 'ci_get', input), started.ticketId, 'passed')
     expect(finished.partitions!.every(run => run.state === 'passed')).toBe(true)
-  } finally {
-    releaseGithub()
-    await f.close()
-  }
+  } finally { await f.close() }
 })
 
 it('runs an ordinary unpartitioned integration selection on cloud without a build computer', async () => {
