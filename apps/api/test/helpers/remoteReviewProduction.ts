@@ -263,7 +263,6 @@ export async function remoteReviewProduction(options: {
     if (mainService) closes.push(mainService.close)
     if (mainService) await execute(provider.binary, ['--version'], { env: logEnvironment })
     let mainFailure = ''
-    let executionObservations: readonly unknown[] = []
     const failures: Array<{ code: string; runId: string | null; namespace?: unknown; tool?: unknown;
       phase?: unknown; errorType?: unknown; errorLocation?: unknown; errorDetail?: string | undefined;
       role?: 'Main' | 'Worker'; message?: string | undefined; reason?: string | undefined; time?: unknown }> = []
@@ -280,7 +279,7 @@ export async function remoteReviewProduction(options: {
       await new Promise<void>((resolve, reject) => {
         stopped.once('error', reject)
         stopped.once('exit', code => {
-          if (signal === 'SIGTERM' && code !== 0) reject(new Error(`Production Main cleanup failed: ${mainFailure}\nNative failure codes: ${JSON.stringify(failures.slice(-16))}\nExecution observations: ${JSON.stringify(executionObservations)}`))
+          if (signal === 'SIGTERM' && code !== 0) reject(new Error(`Production Main cleanup failed: ${mainFailure}\nNative failure codes: ${JSON.stringify(failures.slice(-16))}`))
           else resolve()
         })
         stopped.kill(signal)
@@ -541,7 +540,6 @@ export async function remoteReviewProduction(options: {
         [command.executionId, command.operationId, command.owner.grantId, command.owner.epoch])
         if (changed.rowCount !== 1) throw new Error('The original response grant was unavailable for the denial scenario.')
       } })
-    executionObservations = transport.executionObservations
     closes.splice(closes.indexOf(stopMain), 0, transport.close)
     const pairing = WorkerPairingConfigurationSchema.parse({ formatVersion: 1, mainId,
       deviceId: paired.registration.deviceId, workerInstallationId: identity.workerInstallationId,
