@@ -57,6 +57,9 @@ it('uses ready GitHub capacity while a preferred CircleCI status is still pendin
     if (computer.hostRef.provider === 'circleci' && computer.hostRef.slot === 1) await circleStatus.promise
   } })
   try {
+    const pendingComputer = f.computers.pop()!
+    await settle(f.ci)
+    f.computers.push(pendingComputer)
     const started = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', {
       suite: 'integration', commandId: 'pending-circle-status', partitions: 4,
     }))
