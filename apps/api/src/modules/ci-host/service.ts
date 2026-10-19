@@ -1471,16 +1471,7 @@ export class HostCiService {
     return result
   }
 
-  private async dispatchOnce() {
-    const snapshots: PolicySnapshots = new Map()
-    this.superseding ??= withoutCiDatabasePriority(() => this.cancelSuperseded())
-      .catch(error => log.warn({ err: error }, 'Superseded CI cleanup failed; retrying'))
-      .finally(() => { this.superseding = undefined })
-    const knownComputers = await this.endpoint.computers()
-    const { parsed, durations, coverage } = await readQueuedCiRuns(this.pool)
-    void withoutCiDatabasePriority(async () => this.prewarm.schedule(knownComputers, parsed))
-    this.dispatchRejections.retain(parsed)
-    this.refreshComputerStatuses(knownComputers)
+  private async refreshExecutions(knownComputers: HostCiComputer[]) {
     const active = (await this.pool.query<{ id: string; record: unknown; host_key: string | null }>(
       `select id,record,host_key from ci_runs where state in ('starting','running') or record->>'collection'='pending'
         or record->>'executorCleanupPending'='true'
@@ -1495,12 +1486,25 @@ export class HostCiService {
     }), knownComputers)
     const busyTickets = (await this.pool.query<{ host_key: string | null; record: unknown }>(
       `select host_key,record from ci_runs where ${CI_BUSY_TICKET} or ${CI_RETAINED_EXECUTORS}`)).rows
-    const busyRows = busyTickets.flatMap(row => {
+    return busyTickets.flatMap(row => {
       const run = CiRunRecordSchema.parse(row.record)
       const assigned = row.host_key ? [{ ...row, host_key: row.host_key }] : []
       return [...assigned, ...run.retainedExecutions?.filter(attempt => attempt.executor === 'retained')
         .map(attempt => ({ record: row.record, host_key: attempt.hostKey })) ?? []]
     })
+  }
+
+  private async dispatchOnce() {
+    const snapshots: PolicySnapshots = new Map()
+    this.superseding ??= withoutCiDatabasePriority(() => this.cancelSuperseded())
+      .catch(error => log.warn({ err: error }, 'Superseded CI cleanup failed; retrying'))
+      .finally(() => { this.superseding = undefined })
+    const knownComputers = await this.endpoint.computers()
+    const { parsed, durations, coverage } = await readQueuedCiRuns(this.pool)
+    void withoutCiDatabasePriority(async () => this.prewarm.schedule(knownComputers, parsed))
+    this.dispatchRejections.retain(parsed)
+    this.refreshComputerStatuses(knownComputers)
+    const busyRows = await this.refreshExecutions(knownComputers)
     const used = new Map<string, number>()
     for (const row of busyRows) used.set(row.host_key, (used.get(row.host_key) ?? 0) + 1)
     const assignments = new Map(busyRows.map(row => {
