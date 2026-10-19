@@ -7,6 +7,13 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.0.112] - 2026-10-19
+
+CI keeps moving when a computer goes offline.
+- A CI part whose computer stops answering is moved to another computer after twice its expected duration (5 to 15 minutes), instead of holding its whole gate until the 210-minute deadline. The old computer's slot stays reserved until it confirms the stop, and late results from the abandoned execution are ignored.
+- A computer that still reports the execution in its status is never treated as offline, including status reads made for planning.
+- Gate parts split onto cloud CI after a move each get their own execution, so every file is tested once.
+
 ## [0.0.111] - 2026-10-19
 
 Remote Agent results reach Main reliably.
