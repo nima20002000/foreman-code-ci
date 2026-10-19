@@ -178,6 +178,14 @@ async function fixture(options: { state?: 'starting' | 'running'; expectedDurati
     },
     anotherDispatcher: create,
     dispatch: async () => { await ci.dispatch(); await ci.drain() },
+    dispatchUntilStarts: async (count: number, dispatcher = ci) => {
+      // Cleanup can invalidate a queued claim; synchronize on Start rather than counting dispatch passes.
+      await vi.waitFor(async () => {
+        await dispatcher.dispatch()
+        await dispatcher.drain()
+        expect(starts).toHaveLength(count)
+      })
+    },
     restart: async () => { await ci.close(); ci = create() },
     read: async () => CiGetOutputSchema.parse(decodeMcpToolResult(await operator.callTool(input))),
     listComputers: async () => CiComputersOutputSchema.parse(decodeMcpToolResult(await operator.callTool({
@@ -208,8 +216,7 @@ it.each([
     expect(f.starts).toEqual([])
     // The observation backoff stays at one minute; recovery happens on the next eligible observation.
     vi.setSystemTime(started + threshold + 60_000)
-    await f.dispatch()
-    await f.dispatch()
+    await f.dispatchUntilStarts(1)
     expect(f.starts, JSON.stringify(await f.diagnostic())).toHaveLength(1)
     const attempt = f.starts[0]!
     expect(attempt.computer).toBe(f.replacement.key)
@@ -249,8 +256,7 @@ it.each([
       retainedExecutions: [{ executor: 'retained' }] })
     f.setCleanup('stopped')
     vi.setSystemTime(Date.now() + 60_000)
-    await f.dispatch()
-    await f.dispatch()
+    await f.dispatchUntilStarts(2)
     expect(f.starts).toHaveLength(2)
     expect(f.starts[1]).toEqual({ computer: f.original.key, runId: queued.id })
     expect(f.cancels).toContain(f.record.id)
@@ -313,10 +319,7 @@ it('rejects an abandoned result arriving after another dispatcher completes the 
     observing = f.dispatch()
     await pending.entered.promise
     f.setOffline(true)
-    await other.dispatch()
-    await other.drain()
-    await other.dispatch()
-    await other.drain()
+    await f.dispatchUntilStarts(1, other)
     expect(f.starts, JSON.stringify(await f.diagnostic())).toHaveLength(1)
     expect(f.starts[0]!.runId).not.toBe(f.record.id)
     f.finish()
@@ -424,8 +427,7 @@ it('reroutes when status names the ticket but does not observe its active execut
     f.setReadFailure('timeout')
     f.setStatusExecution(f.record.id)
     vi.setSystemTime(Date.now() + 438_000)
-    await f.dispatch()
-    await f.dispatch()
+    await f.dispatchUntilStarts(1)
     expect(f.starts).toHaveLength(1)
     expect(f.starts[0]!.computer).toBe(f.replacement.key)
     expect((await f.read()).run).toMatchObject({ state: 'running',
@@ -450,10 +452,7 @@ it('does not apply a delayed status from an abandoned execution to its replaceme
     observing = f.listComputers()
     await pending.entered.promise
     f.setStatusExecution(undefined)
-    await other.dispatch()
-    await other.drain()
-    await other.dispatch()
-    await other.drain()
+    await f.dispatchUntilStarts(1, other)
     expect(f.starts).toHaveLength(1)
     const replacementId = f.starts[0]!.runId
     f.setReplacementReadFailure('timeout')
