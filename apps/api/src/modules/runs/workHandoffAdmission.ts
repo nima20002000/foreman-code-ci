@@ -459,7 +459,8 @@ export async function admitWorkHandoffLocked(context: AdmissionContext, sourceEx
     await sql.query(`insert into run_activity(run_id,source,kind,harness_execution_id,occurred_at,payload)
       values($1,'backend','work_requester_reactivated',$2,$3,$4::jsonb)`, [scope.runId, sourceExecutionId,
       context.now, canonicalGraphJson({ activationId: continuationActivationId, requesterNodeId: node.id,
-        denialId: denial.denialId, noticeId: notice.noticeId })])
+        denialId: denial.denialId, noticeId: notice.noticeId,
+        ...(dispatchSourceActivationId ? { sourceActivationId: dispatchSourceActivationId } : {}) })])
     return { kind: 'limit_reached', denial, notice, replayed: false }
   }
   const incoming = version.definition.edges.filter((edge) => edge.kind === 'execution' && edge.target === destinationNodeId)
@@ -561,7 +562,14 @@ async function forwardAcceptedWorkReturnsLocked(context: AdmissionContext,
       if (admitted.kind === 'accepted' && admitted.destinationReady) {
         destinations.push(admitted.request.destinationActivationId)
       } else if (admitted.kind === 'limit_reached') {
-        destinations.push(admitted.notice.continuationActivationId)
+        const dispatch = (await context.sql.query<{ source_activation_id: string | null }>(
+          `select payload->>'sourceActivationId' as source_activation_id from run_activity
+            where run_id=$1 and kind='work_requester_reactivated' and payload->>'denialId'=$2`,
+          [context.scope.runId, admitted.denial.denialId])).rows[0]
+        if (!dispatch) return repeatConflict('WORK_DENIAL_CONTINUATION_UNRESOLVED')
+        // Older denials were dispatched by the final returning task.
+        const owner = dispatch.source_activation_id ?? returns.at(-1)!.returned.sourceActivationId
+        if (owner === sourceActivationId) destinations.push(admitted.notice.continuationActivationId)
       }
     }
   }
