@@ -92,6 +92,81 @@ async function productionShutdownFixture() {
 }
 
 describe('actual worker native-port adapter', () => {
+  it('joins retained reviewer cancellation when Main closes the same session during physical settlement', async () => {
+    const f = await setup()
+    f.request.configuration.productRole = 'orchestrator'
+    const correlationId = `execution:${f.intent.executionId}`
+    const result = { outcome: 'succeeded' as const, output: { text: 'Original workflow result' } }
+    const history = { events: [], pendingInteractions: [], correlationId, nativeTurnId: 'native-turn',
+      terminalResult: result, terminalTurn: { correlationId, providerId: 'native-turn', result } }
+    const settling = deferred()
+    const releaseClosure = deferred()
+    const controlEntered = deferred()
+    let physicallyClosed = false
+    let closingProvider = false
+    f.manager.reconcile = async () => structuredClone(history)
+    f.manager.cancel = async () => {
+      f.state.cancels++
+      if (closingProvider) throw new Error('The native session is already closing')
+      return false
+    }
+    f.ports.settle = async (_intent, original) => {
+      const status = await f.journal.status(f.intent.operationId)
+      if (status.status !== 'known') throw new Error('Missing original settlement receipt')
+      if (!status.receipt.stopFence) {
+        await f.journal.retainReviewer(f.intent.operationId, { agentId: f.request.configuration.agentId,
+          expiresAt: new Date(Date.now() + 60_000).toISOString() }, original)
+        return null
+      }
+      closingProvider = true
+      settling.resolve()
+      await releaseClosure.promise
+      physicallyClosed = true
+      return { kind: 'cancelled', closureEvidenceDigest: 'a'.repeat(64) }
+    }
+    const enter = f.journal.enterControlDelivery.bind(f.journal)
+    vi.spyOn(f.journal, 'enterControlDelivery').mockImplementation(async command => {
+      const entered = await enter(command)
+      if (entered) controlEntered.resolve()
+      return entered
+    })
+    const command = RemoteOwnerControlSchema.parse({ schemaVersion: 1, protocolVersion: 1,
+      commandId: 'close-original-reviewer', operationId: f.intent.operationId, attemptId: f.intent.attemptId,
+      executionId: f.intent.executionId, bindingHash: f.intent.bindingHash, owner: f.intent.owner,
+      action: { kind: 'stop' } })
+    const proxy = new RemoteNativeSessionManager({ intent: f.intent, placement: f.placement,
+      harness: 'codex', configuration: f.request.configuration,
+      transport: { request: (_method, frame) => f.host.handle(frame) },
+      observeReceipt: async () => {}, controlFor: async () => command })
+    const session = await proxy.createSession({ request: f.request, correlationId })
+    await f.host.startTurn(f.intent.operationId, 'workflow', correlationId)
+    await f.host.drain()
+    const maintenance = f.host.closeRetainedReviewer(f.intent.operationId)
+    let closing: Promise<void> | undefined
+    try {
+      await settling.promise
+      closing = proxy.close(session)
+      const outcome = Promise.allSettled([closing])
+      await controlEntered.promise
+      await new Promise<void>(resolve => setImmediate(resolve))
+      expect(f.state.cancels).toBe(1)
+      expect(physicallyClosed).toBe(false)
+      releaseClosure.resolve()
+      await expect(closing).resolves.toBeUndefined()
+      await outcome
+      await maintenance
+      expect(physicallyClosed).toBe(true)
+      expect(await f.journal.controlDelivery(command)).toBe('acknowledged')
+      expect(await f.journal.status(f.intent.operationId)).toMatchObject({ status: 'known', receipt: {
+        phase: 'confirmed_terminal', stopFence: true, terminal: { kind: 'cancelled' },
+      } })
+      expect(f.state).toMatchObject({ starts: 1, turns: 1, cancels: 1 })
+    } finally {
+      releaseClosure.resolve()
+      await Promise.allSettled([maintenance, ...(closing ? [closing] : [])])
+    }
+  })
+
   it('finishes retained review closure when Stop overlaps an older retention settlement', async () => {
     const f = await setup()
     f.request.configuration.productRole = 'orchestrator'
