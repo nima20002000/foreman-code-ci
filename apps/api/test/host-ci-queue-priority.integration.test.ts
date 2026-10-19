@@ -14,14 +14,23 @@ async function settle(service: { dispatch(): Promise<void>; drain(): Promise<voi
 }
 
 it('prefers build computers and CircleCI over higher-priority GitHub slots for integration', async () => {
-  const f = await fixture({ cloud: { github: 2, circleci: 2 } })
+  const circleStatus = deferred()
+  const f = await fixture({ cloud: { github: 2, circleci: 2 }, beforeStatus: async computer => {
+    if (computer.hostRef.provider === 'circleci' && computer.hostRef.slot === 1) await circleStatus.promise
+  } })
   try {
     for (const computer of f.computers) {
       if (computer.hostRef.kind === 'cloud' && computer.hostRef.provider === 'github') computer.priority = 100
     }
+    const pendingComputer = f.computers.pop()!
+    await settle(f.ci)
+    f.computers.push(pendingComputer)
     const started = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', {
       suite: 'integration', commandId: 'integration-preference', partitions: 4,
     }))
+    await f.ci.dispatch()
+    await f.waitFor(f.operator, started.ticketId, output => output.partitions!.every(run => run.state === 'running'))
+    circleStatus.resolve()
     await settle(f.ci)
     const read = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: started.ticketId }))
     expect(read.partitions).toHaveLength(4)
@@ -48,7 +57,10 @@ it('prefers build computers and CircleCI over higher-priority GitHub slots for i
     const running = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: fallback.ticketId }))
     expect(running.partitions!.find(run => run.id === hostSlice.id))
       .toMatchObject({ computer: { hostRef: { kind: 'device' } }, message: null })
-  } finally { await f.close() }
+  } finally {
+    circleStatus.resolve()
+    await f.close()
+  }
 })
 
 it('uses ready GitHub capacity while a preferred CircleCI status is still pending', async () => {
