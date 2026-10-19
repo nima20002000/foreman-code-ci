@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
-import { CiGetOutputSchema, CiRunRecordSchema, type CiHostRun, type CiRunRecord } from '@foreman-code/contracts'
+import { CiGetOutputSchema, CiRunRecordSchema, type CiHostRequest, type CiHostRun, type CiRunRecord } from '@foreman-code/contracts'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest'
 import { buildApp } from '../src/app.js'
@@ -23,7 +23,10 @@ beforeEach(async () => {
 })
 afterEach(() => vi.useRealTimers())
 
-async function fixture(state: 'starting' | 'running' = 'running', expectedDurationMs = 189_000) {
+async function fixture(options: { state?: 'starting' | 'running'; expectedDurationMs?: number; gate?: boolean } = {}) {
+  const state = options.state ?? 'running'
+  const expectedDurationMs = options.expectedDurationMs ?? 189_000
+  const gate = options.gate ?? false
   const pool = database.pool
   const workspaceId = randomUUID()
   const at = new Date().toISOString()
@@ -33,11 +36,15 @@ async function fixture(state: 'starting' | 'running' = 'running', expectedDurati
   }))
   const original = computers[0]!
   const replacement = computers[1]!
+  const files = Array.from({ length: 49 }, (_, index) => `apps/api/test/example-${index}.integration.test.ts`)
+  const durations = Object.fromEntries(files.map(file => [file, 189_000]))
+  const selectedFile = files[14]!
   const record = CiRunRecordSchema.parse({
     id: randomUUID(), workspaceId, groupId: randomUUID(), suite: 'integration', part: null,
-    scope: 'full', files: ['apps/api/test/example.integration.test.ts'],
-    partition: { index: 14, count: 49, weights: Array.from({ length: 49 }, () => 1), tier: 'slow' },
-    gate: true, integrationShards: 1, plannedHostKey: original.key, expectedDurationMs,
+    scope: 'full', files: gate ? [selectedFile] : [],
+    partition: gate ? null : { index: 14, count: 49, weights: Array.from({ length: 49 }, () => 1),
+      tier: 'slow', slowFiles: files },
+    gate, ...(gate ? { integrationShards: 1 } : {}), plannedHostKey: original.key, expectedDurationMs,
     repository: 'fixture/site', commit: 'a'.repeat(40), state,
     computer: { hostRef: original.hostRef, label: original.label }, step: state === 'starting' ? 'dispatch' : 'integration',
     exitCode: null, message: null, queuedAt: at, dispatchedAt: at,
@@ -49,9 +56,9 @@ async function fixture(state: 'starting' | 'running' = 'running', expectedDurati
       provider: 'github', owner: 'fixture', name: 'site', defaultBranch: 'main',
     } })])
   const insert = async (run: CiRunRecord, hostKey: string | null = null) => {
-    await pool.query(`insert into ci_runs(id,workspace_id,group_id,state,host_key,record)
-      values($1,$2,$3,$4,$5,$6::jsonb)`,
-    [run.id, workspaceId, run.groupId, run.state, hostKey, JSON.stringify(run)])
+    await pool.query(`insert into ci_runs(id,workspace_id,group_id,state,host_key,record,durations)
+      values($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb)`,
+    [run.id, workspaceId, run.groupId, run.state, hostKey, JSON.stringify(run), JSON.stringify(durations)])
   }
   await insert(record, original.key)
   let offline = true
@@ -61,6 +68,7 @@ async function fixture(state: 'starting' | 'running' = 'running', expectedDurati
   let readFailure: string | undefined
   let heldRead: { entered: ReturnType<typeof deferred<void>>; reply: ReturnType<typeof deferred<void>> } | undefined
   const starts: { computer: string; runId: string }[] = []
+  const startRequests: Extract<CiHostRequest, { operation: 'start' }>[] = []
   const oldReads: string[] = []
   const cancels: string[] = []
   const endpoint: HostCiEndpoint = {
@@ -72,7 +80,10 @@ async function fixture(state: 'starting' | 'running' = 'running', expectedDurati
         return { operation: 'status', ready: old || replacementReady, reasons: [], cpuCount: 8,
           memoryBytes: 16 * 2 ** 30, slotsTotal: 1, slotsUsed: 0, runs: [] }
       }
-      if (request.operation === 'start') starts.push({ computer: computer.key, runId: request.runId })
+      if (request.operation === 'start') {
+        starts.push({ computer: computer.key, runId: request.runId })
+        startRequests.push(request)
+      }
       if (request.operation === 'cancel') cancels.push(request.runId)
       if (old && request.operation === 'read') {
         oldReads.push(request.runId)
@@ -94,7 +105,7 @@ async function fixture(state: 'starting' | 'running' = 'running', expectedDurati
       return { operation: 'read', run, text: old ? 'abandoned output' : 'replacement output', nextOffset: 0,
         ...(request.testResults && terminal ? { testResults: {
           summary: { passed: 1, failed: 0, skipped: 0 }, truncated: false,
-          files: [{ file: record.files[0]!, status: 'passed', durationMs: 189_000,
+          files: [{ file: selectedFile, status: 'passed', durationMs: 189_000,
             tests: [{ name: old ? 'abandoned result' : 'replacement result', status: 'passed', durationMs: 189_000 }] }],
         } } : {}) }
     },
@@ -122,7 +133,7 @@ async function fixture(state: 'starting' | 'running' = 'running', expectedDurati
   const operator = await connect(workspaceId)
   const denied = await connect(randomUUID())
   const input = { name: 'ci_get', arguments: { workspaceId, ticketId: record.id, testStatus: ['passed'] } }
-  return { record, original, replacement, starts, oldReads, cancels, insert,
+  return { record, original, replacement, starts, startRequests, durations, oldReads, cancels, insert,
     setOffline(value: boolean) { offline = value },
     finish() { finished = true },
     setCleanup(value: typeof cleanup) { cleanup = value },
@@ -150,8 +161,9 @@ it.each([
   { state: 'starting' as const, expected: 189_000, threshold: 378_000 },
   { state: 'running' as const, expected: 10_000, threshold: 300_000 },
   { state: 'running' as const, expected: 1_800_000, threshold: 900_000 },
-])('finishes an unobservable $state partition elsewhere after $threshold ms', async ({ state, expected, threshold }) => {
-  const f = await fixture(state, expected)
+  { state: 'running' as const, expected: 189_000, threshold: 378_000, gate: true },
+])('finishes an unobservable $state selection elsewhere after $threshold ms, gate=$gate', async ({ state, expected, threshold, gate }) => {
+  const f = await fixture({ state, expectedDurationMs: expected, gate: gate ?? false })
   const started = Date.now()
   try {
     await f.dispatch()
@@ -167,6 +179,9 @@ it.each([
     const attempt = f.starts[0]!
     expect(attempt.computer).toBe(f.replacement.key)
     expect(attempt.runId).not.toBe(f.record.id)
+    expect(f.startRequests[0]!.durations).toEqual(f.durations)
+    expect(f.startRequests[0]!.partition ?? null).toEqual(f.record.partition)
+    if (gate) expect(f.startRequests[0]!.files).toEqual(f.record.files)
     const running = (await f.read()).run
     expect(running).toMatchObject({ id: f.record.id, groupId: f.record.groupId, state: 'running',
       files: f.record.files, partition: f.record.partition, executionRunId: attempt.runId,
@@ -185,6 +200,7 @@ it.each([
     f.setOffline(false)
     f.setReplacementReady(false)
     const queued = CiRunRecordSchema.parse({ ...f.record, id: randomUUID(), groupId: randomUUID(), gate: false,
+      files: [], integrationShards: undefined,
       state: 'queued', computer: null, startedAt: null, dispatchedAt: undefined, plannedHostKey: undefined })
     await f.insert(queued)
     vi.setSystemTime(Date.now() + 60_000)
