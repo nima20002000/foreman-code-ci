@@ -11,6 +11,7 @@ import { HostCiService, type CiCommits, type HostCiComputer, type HostCiEndpoint
 import { DeviceApplicationError } from '../src/modules/devices/deviceApplicationError.js'
 import { CI_GET_ACTIONS, RunCiAuthority } from '../src/modules/jobs/ciAuthority.js'
 import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { deferred } from './helpers/deferred.js'
 
 let database: Awaited<ReturnType<typeof migratedDatabase>>
 beforeAll(async () => { database = await migratedDatabase() }, 60_000)
@@ -57,6 +58,7 @@ async function fixture(state: 'starting' | 'running' = 'running', expectedDurati
   let cleanup: 'running' | 'pending' | 'stopped' = 'running'
   let replacementReady = true
   let readFailure: string | undefined
+  let heldRead: { entered: ReturnType<typeof deferred<void>>; reply: ReturnType<typeof deferred<void>> } | undefined
   const starts: { computer: string; runId: string }[] = []
   const oldReads: string[] = []
   const cancels: string[] = []
@@ -74,6 +76,12 @@ async function fixture(state: 'starting' | 'running' = 'running', expectedDurati
       if (old && request.operation === 'read') {
         oldReads.push(request.runId)
         if (readFailure) throw new DeviceApplicationError(readFailure)
+        if (heldRead) {
+          const pending = heldRead
+          heldRead = undefined
+          pending.entered.resolve()
+          await pending.reply.promise
+        }
       }
       const terminal = old ? cleanup !== 'running' : finished
       const run: CiHostRun = { runId: request.runId, state: terminal ? 'passed' : 'running',
@@ -119,6 +127,12 @@ async function fixture(state: 'starting' | 'running' = 'running', expectedDurati
     setCleanup(value: typeof cleanup) { cleanup = value },
     setReplacementReady(value: boolean) { replacementReady = value },
     setReadFailure(value: string | undefined) { readFailure = value },
+    holdOldRead() {
+      const pending = { entered: deferred<void>(), reply: deferred<void>() }
+      heldRead = pending
+      return pending
+    },
+    anotherDispatcher: create,
     dispatch: async () => { await ci.dispatch(); await ci.drain() },
     restart: async () => { await ci.close(); ci = create() },
     read: async () => CiGetOutputSchema.parse(decodeMcpToolResult(await operator.callTool(input))),
@@ -160,7 +174,7 @@ it.each([
     f.finish()
     await f.dispatch()
     const complete = await f.read()
-    expect(complete).toMatchObject({ groupState: 'passed', run: { state: 'passed', collection: 'complete' },
+    expect(complete).toMatchObject({ group: { state: 'passed' }, run: { state: 'passed', collection: 'complete' },
       tests: { files: [{ tests: [{ name: 'replacement result' }] }] } })
     expect(complete.run).toEqual(await f.stored())
     expect(Date.now() - started).toBeLessThan(20 * 60_000)
@@ -230,4 +244,44 @@ it('keeps application observation failures on their assigned executor', async ()
     expect((await f.read()).run).toMatchObject({ state: 'running', computer: { hostRef: f.original.hostRef } })
     expect(f.starts).toEqual([])
   } finally { await f.close() }
+})
+
+it('rejects an abandoned result arriving after another dispatcher completes the replacement', async () => {
+  const f = await fixture()
+  const other = f.anotherDispatcher()
+  let pending: ReturnType<typeof f.holdOldRead> | undefined
+  let observing: Promise<void> | undefined
+  try {
+    await f.dispatch()
+    vi.setSystemTime(Date.now() + 438_000)
+    f.setOffline(false)
+    pending = f.holdOldRead()
+    observing = f.dispatch()
+    await pending.entered.promise
+    f.setOffline(true)
+    await other.dispatch()
+    await other.drain()
+    await other.dispatch()
+    await other.drain()
+    expect(f.starts).toHaveLength(1)
+    expect(f.starts[0]!.runId).not.toBe(f.record.id)
+    f.finish()
+    await other.dispatch()
+    await other.drain()
+    expect((await f.read()).run).toMatchObject({ state: 'passed', collection: 'complete' })
+    f.setCleanup('stopped')
+    f.setOffline(false)
+    pending.reply.resolve()
+    await observing
+    const completed = await f.read()
+    expect(completed).toMatchObject({ run: { state: 'passed', executionRunId: f.starts[0]!.runId },
+      tests: { files: [{ tests: [{ name: 'replacement result' }] }] } })
+    expect(completed.logTail).not.toContain('abandoned output')
+    expect(completed.run).toEqual(await f.stored())
+  } finally {
+    pending?.reply.resolve()
+    await observing
+    await other.close()
+    await f.close()
+  }
 })
