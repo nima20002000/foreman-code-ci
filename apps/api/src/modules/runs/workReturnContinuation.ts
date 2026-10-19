@@ -22,7 +22,10 @@ export async function ensureWorkReturnContinuationLocked(context: WorkReturnCont
       join run_work_requests q on q.run_id=t.run_id and q.request_id=t.request_id
       join run_work_activations a on a.run_id=t.run_id and a.activation_id=t.requester_continuation_activation_id
       where q.run_id=$1 and q.requester_node_id=$2 and t.outcome='needs_changes'
-      order by a.activation_sequence desc`, [scope.runId, request.requesterNodeId])).rows
+        and (a.state<>'waiting' or work_parent_request($1,a.activation_id)
+          is not distinct from work_parent_request($1,$3))
+      order by a.activation_sequence desc`,
+    [scope.runId, request.requesterNodeId, request.requesterActivationId])).rows
   const waiting = prior.find(row => row.state === 'waiting')
   if (waiting) return waiting.requester_continuation_activation_id
   context.assertActive()
