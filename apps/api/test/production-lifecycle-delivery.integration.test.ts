@@ -1,7 +1,8 @@
 import { expect, it, vi } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import { CodexAppServerSessionManager } from '../src/modules/harnesses/codexAppServer.js'
-import { access, native, production, registerProductionLifecycleFixture, runtime, start } from './helpers/productionLifecycleFixture.js'
+import { access, database, native, production, registerProductionLifecycleFixture, runtime, start } from './helpers/productionLifecycleFixture.js'
+import { requestDatabaseCommand } from './helpers/requestDatabaseCommand.js'
 
 registerProductionLifecycleFixture()
 
@@ -28,8 +29,9 @@ it('makes production Stop and native delivery progress with a one-slot pool', as
   // inject starts when awaited/then'ed; keep both requests live.
   const delivered = Promise.resolve(delivery)
   await writing
-  const stopped = Promise.resolve(production.app.inject({ method: 'POST', url: `/api/management/workspaces/workspace-1/runs/${run.id}/stop`,
-    headers: { authorization: `Bearer ${issuer.token}` }, payload: { commandId: randomUUID() } }))
+  const commandId = randomUUID()
+  const stopped = requestDatabaseCommand(async () => production.app.inject({ method: 'POST', url: `/api/management/workspaces/workspace-1/runs/${run.id}/stop`,
+    headers: { authorization: `Bearer ${issuer.token}` }, payload: { commandId } }))
   release()
   const [response, stop] = await Promise.all([delivered, stopped])
   // Stop may cancel the graph acknowledgement after the native receipt commits.
@@ -43,6 +45,43 @@ it('makes production Stop and native delivery progress with a one-slot pool', as
   const completed = await production.app.inject({ method: 'GET', url: runUrl })
   expect(completed.statusCode, completed.body).toBe(200)
   expect(completed.json().run.executionState).toBe('completed')
+})
+
+it('retries the same Stop after a held one-slot connection returns DATABASE_BUSY', async () => {
+  const { run, issuer } = await start('user')
+  const commandId = randomUUID()
+  const options = { method: 'POST' as const,
+    url: `/api/management/workspaces/workspace-1/runs/${run.id}/stop`,
+    headers: { authorization: `Bearer ${issuer.token}` }, payload: { commandId } }
+  const held = await database.pool.connect()
+  let released = false
+  const replies: number[] = []
+  try {
+    const stopped = await requestDatabaseCommand(async () => {
+      const response = await production.app.inject(options)
+      replies.push(response.statusCode)
+      if (!released) {
+        expect(response.statusCode, response.body).toBe(503)
+        expect(response.json().error).toMatchObject({
+          code: 'DATABASE_BUSY', details: { retryable: true, newCommandRequired: false },
+        })
+        held.release()
+        released = true
+      }
+      return response
+    })
+    expect(stopped.statusCode, stopped.body).toBe(200)
+    expect(replies[0]).toBe(503)
+    const replayed = await requestDatabaseCommand(async () => production.app.inject(options))
+    expect(replayed.statusCode, replayed.body).toBe(200)
+    expect(replayed.json()).toMatchObject({ runId: run.id, replayed: true })
+    const persisted = await production.app.inject({ method: 'GET',
+      url: `/api/management/workspaces/workspace-1/runs/${run.id}` })
+    expect(persisted.statusCode, persisted.body).toBe(200)
+    expect(persisted.json().run.executionState).toBe('completed')
+  } finally {
+    if (!released) held.release()
+  }
 })
 
 it('revalidates the accepting authority again between attachment and the native response', async () => {
