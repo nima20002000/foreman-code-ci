@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { RunEventsPageSchema } from '@foreman-code/contracts/management'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { makeCurrentWorkflowFixture, WorkActivationInputSchema } from '@foreman-code/contracts/wave25'
+import { DomainError } from '../src/modules/errors.js'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { deferred } from './helpers/deferred.js'
 import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'
@@ -24,12 +25,16 @@ describe.runIf(postgresEnabled)('requester fan-out returns', () => {
     const [coder, correct, tests, judge] = fixture.version.definition.nodes
     if (!coder || !correct || !tests || !judge) throw new Error('Four workflow nodes are required')
     const reviewers = outcomes.length === 1 ? [correct] : [correct, tests]
-    const needsChanges = outcomes.includes('needs_changes')
+    const needsChanges = outcomes.some(outcome => outcome === 'needs_changes')
     const hasJudge = reviewers.length > 1
     fixture.version.definition.handoffs = { contractVersion: 1 }
     fixture.version.definition.executionPolicy = { maxParallelism: 2,
       maxNodeExecutions: 1 + reviewers.length + (needsChanges ? 1 + reviewers.length : 0) + (hasJudge ? 1 : 0) }
     fixture.version.definition.nodes = [coder, ...reviewers, ...(hasJudge ? [judge] : [])]
+    const agentIds = new Set(fixture.version.definition.nodes.map(node => node.agentId))
+    fixture.configurations = fixture.configurations.filter(configuration => agentIds.has(configuration.agentId))
+    fixture.version.agentConfigurationVersionIds = Object.fromEntries(fixture.configurations.map(configuration =>
+      [configuration.agentId, configuration.id]))
     fixture.version.definition.edges = reviewers.flatMap(reviewer => [
       { id: `coder-${reviewer.id}`, kind: 'execution' as const, source: coder.id, target: reviewer.id },
       ...(hasJudge ? [{ id: `${reviewer.id}-judge`, kind: 'execution' as const,
@@ -123,6 +128,72 @@ describe.runIf(postgresEnabled)('requester fan-out returns', () => {
       await expectMcpAccessDenied((await f.connect(denied.token)).callTool({
         name: 'run_events_list', arguments: scope,
       }))
+    } finally {
+      release.resolve()
+      await drive
+      await f.close()
+    }
+  }, 60_000)
+
+  it('releases returned feedback once a sibling fails, preserving the failure', async () => {
+    const fixture = makeCurrentWorkflowFixture(randomUUID(), 'parallel')
+    const [coder, correct, tests, judge] = fixture.version.definition.nodes
+    if (!coder || !correct || !tests || !judge) throw new Error('Four workflow nodes are required')
+    fixture.version.definition.handoffs = { contractVersion: 1 }
+    fixture.version.definition.executionPolicy = { maxParallelism: 2, maxNodeExecutions: 5 }
+    fixture.version.definition.edges = [correct, tests, judge].map(node => ({
+      id: `coder-${node.id}`, kind: 'execution', source: coder.id, target: node.id,
+    }))
+    delete judge.join
+    // The third sibling finishes without feedback; the second fails before native launch.
+    const release = deferred()
+    const entered = deferred()
+    const inputs: unknown[] = []
+    const f = await currentOperatorIntegration({ fixture, approvalNodeIds: [], workerParallelism: 2,
+      preparePlacementExecution: async (_owner, _run, execution) => {
+        if (execution.workflowNodeId === tests.id) {
+          entered.resolve()
+          await release.promise
+          throw new DomainError('HARNESS_PROFILE_UNAVAILABLE', 'Reviewer profile is unavailable.', 409)
+        }
+        return undefined
+      },
+      outputFor: (nodeId, request) => {
+        const input = WorkActivationInputSchema.parse(request.input)
+        if (nodeId === coder.id && input.work.kind === 'work_return') inputs.push(input)
+        return { routing: nodeId === correct.id && input.work.kind === 'work_request'
+          ? { kind: 'return', requestId: input.work.request.requestId, outcome: 'needs_changes' }
+          : { kind: 'finish' },
+        data: { latestDeliverable: { nodeId }, remainingFindings: nodeId === correct.id
+          || input.work.kind === 'work_return' ? ['review is incomplete'] : [] } }
+      },
+    })
+    const scope = { workspaceId: f.f.run.workspaceId, runId: f.f.run.id }
+    const events = async () => RunEventsPageSchema.parse(decodeMcpToolResult(await f.client.callTool({
+      name: 'run_events_list', arguments: { ...scope, limit: 500 },
+    }))).items
+    let failure: unknown
+    const drive = f.engine.start(f.f.run.id).catch((error: unknown) => { failure = error })
+    try {
+      await Promise.race([entered.promise, drive.then(() => {
+        throw new Error('The run settled before the sibling failure gate')
+      })])
+      await expect.poll(async () => (await events()).filter(event => event.kind === 'work_handoff_returned').length,
+        { timeout: 15_000 }).toBe(1)
+      expect((await events()).filter(event => event.kind === 'work_requester_reactivated')).toHaveLength(0)
+      release.resolve()
+      await drive
+      expect(failure).toMatchObject({ code: 'WORK_SELECTED_EXECUTION_FAILED' })
+      expect(await f.runs.get(f.f.run.id)).toMatchObject({ executionState: 'completed', outcome: 'failed' })
+      expect((await events()).filter(event => event.kind === 'work_requester_reactivated')).toHaveLength(1)
+      expect(inputs).toHaveLength(1)
+      expect(inputs[0]).toMatchObject({ work: {
+        returns: [expect.objectContaining({ returned: expect.objectContaining({ outcome: 'needs_changes' }) })],
+        failures: [expect.objectContaining({ request: expect.objectContaining({ destinationNodeId: tests.id }),
+          result: expect.objectContaining({ outcome: 'failed', error: expect.objectContaining({
+            code: 'HARNESS_PROFILE_UNAVAILABLE',
+          }) }) })],
+      } })
     } finally {
       release.resolve()
       await drive
