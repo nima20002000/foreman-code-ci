@@ -7,6 +7,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.0.111] - 2026-10-19
+
+Remote Agent results reach Main reliably.
+- An Agent on a paired computer that finished no longer leaves its Run stuck: when the computer has evicted a physical readout Main still reads (not_retained), Main re-observes the operation instead of retrying the dead selector forever.
+- Worker maintenance and Main cleanup now share one cancellation while a retained native session settles, so a reviewer cancellation no longer reports its original native closure as unconfirmed.
+
 ## [0.0.110] - 2026-10-19
 
 Runtime ownership and Worker update reliability.
