@@ -438,7 +438,7 @@ it('does not apply a delayed status from an abandoned execution to its replaceme
   const f = await fixture({ executionRunId })
   const other = f.anotherDispatcher()
   let pending: ReturnType<typeof f.holdOldStatus> | undefined
-  let observing: Promise<void> | undefined
+  let observing: ReturnType<typeof f.listComputers> | undefined
   try {
     await f.dispatch()
     f.setOffline(false)
@@ -446,7 +446,8 @@ it('does not apply a delayed status from an abandoned execution to its replaceme
     f.setStatusExecution(executionRunId)
     vi.setSystemTime(Date.now() + 438_000)
     pending = f.holdOldStatus()
-    observing = f.dispatch()
+    // Hold only the live status read; a dispatch also starts a competing observation of the ticket.
+    observing = f.listComputers()
     await pending.entered.promise
     f.setStatusExecution(undefined)
     await other.dispatch()
