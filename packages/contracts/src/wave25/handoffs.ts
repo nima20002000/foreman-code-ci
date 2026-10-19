@@ -140,10 +140,6 @@ export const WorkActivationInputSchema = z.object({
       request: WorkRequestSchema, acceptedSourceResult: ExecutionResultSchema }).strict(),
     z.object({ kind: z.literal('work_return'), activation: WorkActivationIdentitySchema,
       returned: WorkReturnSchema, acceptedSourceResult: ExecutionResultSchema,
-      returns: z.array(z.object({ returned: WorkReturnSchema, acceptedSourceResult: ExecutionResultSchema,
-        notice: WorkNoticeSchema.optional() }).strict()).min(1).max(1000).optional(),
-      failures: z.array(z.object({ request: WorkRequestSchema, result: ExecutionResultSchema }).strict())
-        .max(1000).optional(),
       notice: WorkNoticeSchema.optional() }).strict(),
     z.object({ kind: z.literal('limit_denial'), activation: WorkActivationIdentitySchema,
       denial: WorkLimitDenialSchema, acceptedSourceResult: ExecutionResultSchema,
@@ -182,26 +178,6 @@ export const WorkActivationInputSchema = z.object({
   if (work.kind !== 'entry' && work.kind !== 'join' && work.acceptedSourceResult.outcome !== 'succeeded'
     || work.kind === 'join' && work.sources.some((item) => item.acceptedSourceResult.outcome !== 'succeeded')) {
     context.addIssue({ code: 'custom', path: ['work', 'acceptedSourceResult'], message: 'WORK_INPUT_SOURCE_NOT_ACCEPTED' })
-  }
-  if (work.kind === 'work_return' && work.returns) {
-    const invalid = work.returns.some(item => item.acceptedSourceResult.outcome !== 'succeeded'
-      || canonicalGraphJson(item.returned.scope) !== canonicalGraphJson(work.activation.scope)
-      || item.returned.outcome === 'needs_changes'
-        && item.returned.continuationActivationId !== work.activation.activationId
-      || item.notice && (item.notice.cause.kind !== 'last_return'
-        || item.notice.cause.returnId !== item.returned.returnId
-        || item.notice.continuationActivationId !== work.activation.activationId))
-    if (invalid || new Set(work.returns.map(item => item.returned.requestId)).size !== work.returns.length
-      || !work.returns.some(item => canonicalGraphJson(item.returned) === canonicalGraphJson(work.returned)
-        && canonicalGraphJson(item.acceptedSourceResult) === canonicalGraphJson(work.acceptedSourceResult))) {
-      context.addIssue({ code: 'custom', path: ['work', 'returns'], message: 'WORK_RETURN_GROUP_CONFLICT' })
-    }
-  }
-  if (work.kind === 'work_return' && work.failures?.some(item =>
-    item.request.requesterNodeId !== work.activation.workflowNodeId
-    || canonicalGraphJson(item.request.scope) !== canonicalGraphJson(work.activation.scope)
-    || item.result.outcome !== 'failed' && item.result.outcome !== 'canceled')) {
-    context.addIssue({ code: 'custom', path: ['work', 'failures'], message: 'WORK_RETURN_GROUP_CONFLICT' })
   }
   try { canonicalGraphJson(value, 4 * 1024 * 1024) }
   catch { context.addIssue({ code: 'custom', message: 'WORK_ACTIVATION_INPUT_TOO_LARGE' }) }
