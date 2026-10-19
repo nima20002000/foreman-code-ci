@@ -70,16 +70,16 @@ it.each(['typecheck', 'lint', 'build', 'unit'] as const)(
       f.computers.push(...available)
       await settle(f.ci)
       const checksRead = await f.waitFor(reader, checks.ticketId, output =>
-        output.partitions!.every(run => run.state === 'running'))
+        output.partitions!.filter(run => run.state === 'running').length === Math.min(4, output.partitions!.length))
+      // Four slots stay reserved while checks wait; once every check part runs, integration may use the rest.
+      const integrationLimit = checksRead.partitions!.some(run => run.state === 'queued') ? 16 : 18
       const integrationRead = await f.waitFor(reader, integration.ticketId, output =>
-        output.partitions!.filter(run => run.computer?.hostRef.provider === 'github').length === 18
+        output.partitions!.filter(run => run.computer?.hostRef.provider === 'github').length === integrationLimit
         && output.partitions!.filter(run => run.computer?.hostRef.provider === 'circleci').length === 2)
       const dispatched = (await f.pool.query<{ record: unknown }>(
         'select record from ci_runs where group_id=(select group_id from ci_runs where id=$1)',
         [integration.ticketId])).rows
         .map(row => CiRunRecordSchema.parse(row.record))
-      // Four slots stay reserved while checks wait; once every check part runs, integration may use the rest.
-      const integrationLimit = checksRead.partitions!.some(run => run.state === 'queued') ? 16 : 18
       expect(dispatched.filter(run => run.computer?.hostRef.provider === 'github')).toHaveLength(integrationLimit)
       expect(integrationRead.partitions!.filter(run => run.computer?.hostRef.provider === 'github'))
         .toHaveLength(integrationLimit)
