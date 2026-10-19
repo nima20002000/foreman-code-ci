@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
-import { CiGetOutputSchema, CiRunRecordSchema, type CiHostRequest, type CiHostRun, type CiRunRecord } from '@foreman-code/contracts'
+import { CiComputersOutputSchema, CiGetOutputSchema, CiRunRecordSchema,
+  type CiHostRequest, type CiHostRun, type CiRunRecord } from '@foreman-code/contracts'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest'
 import { buildApp } from '../src/app.js'
@@ -70,6 +71,7 @@ async function fixture(options: { state?: 'starting' | 'running'; expectedDurati
   let readFailure: string | undefined
   let replacementReadFailure: string | undefined
   let statusExecutionId: string | undefined
+  let statusState: CiHostRun['state'] = 'running'
   let heldStatus: { entered: ReturnType<typeof deferred<void>>; reply: ReturnType<typeof deferred<void>> } | undefined
   let heldRead: { entered: ReturnType<typeof deferred<void>>; reply: ReturnType<typeof deferred<void>> } | undefined
   const starts: { computer: string; runId: string }[] = []
@@ -83,6 +85,7 @@ async function fixture(options: { state?: 'starting' | 'running'; expectedDurati
       if (old && offline) throw new DeviceApplicationError('transport')
       if (request.operation === 'status') {
         const runId = old ? statusExecutionId : undefined
+        const state = statusState
         if (old && heldStatus) {
           const pending = heldStatus
           heldStatus = undefined
@@ -91,8 +94,10 @@ async function fixture(options: { state?: 'starting' | 'running'; expectedDurati
         }
         return { operation: 'status', ready: old || replacementReady, reasons: [], cpuCount: 8,
           memoryBytes: 16 * 2 ** 30, slotsTotal: 1, slotsUsed: 0,
-          runs: runId ? [{ runId, state: 'running', step: 'integration', startedAt: at,
-            finishedAt: null, exitCode: null, logBytes: 0, message: null }] : [] }
+          runs: runId ? [{ runId, state, step: 'integration', startedAt: at,
+            finishedAt: ['passed', 'failed'].includes(state) ? new Date().toISOString() : null,
+            exitCode: ['passed', 'failed'].includes(state) ? Number(state === 'failed') : null,
+            logBytes: 0, message: null }] : [] }
       }
       if (request.operation === 'start') {
         starts.push({ computer: computer.key, runId: request.runId })
@@ -157,7 +162,10 @@ async function fixture(options: { state?: 'starting' | 'running'; expectedDurati
     setReplacementReady(value: boolean) { replacementReady = value },
     setReadFailure(value: string | undefined) { readFailure = value },
     setReplacementReadFailure(value: string | undefined) { replacementReadFailure = value },
-    setStatusExecution(value: string | undefined) { statusExecutionId = value },
+    setStatusExecution(value: string | undefined, state: CiHostRun['state'] = 'running') {
+      statusExecutionId = value
+      statusState = state
+    },
     holdOldStatus() {
       const pending = { entered: deferred<void>(), reply: deferred<void>() }
       heldStatus = pending
@@ -172,6 +180,9 @@ async function fixture(options: { state?: 'starting' | 'running'; expectedDurati
     dispatch: async () => { await ci.dispatch(); await ci.drain() },
     restart: async () => { await ci.close(); ci = create() },
     read: async () => CiGetOutputSchema.parse(decodeMcpToolResult(await operator.callTool(input))),
+    listComputers: async () => CiComputersOutputSchema.parse(decodeMcpToolResult(await operator.callTool({
+      name: 'ci_computers_list', arguments: { workspaceId },
+    }))),
     denied: async () => (await denied.callTool(input)).isError,
     stored: async () => (await pool.query('select record from ci_runs where id=$1', [record.id])).rows[0]!.record,
     diagnostic: async () => ({ run: (await pool.query('select record from ci_runs where id=$1', [record.id])).rows[0]!.record,
@@ -351,6 +362,59 @@ it('keeps work on an executor that reports the matching execution while log read
     expect(f.cancels).toEqual([])
   } finally { await f.close() }
 })
+
+it('records a matching planning status before caching it and deciding whether to reroute', async () => {
+  const executionRunId = randomUUID()
+  const f = await fixture({ executionRunId })
+  try {
+    await f.dispatch()
+    const unavailableSince = (await f.read()).run.observation!.transportUnavailableSince
+    expect(unavailableSince).toBeDefined()
+    f.setOffline(false)
+    f.setReadFailure('timeout')
+    f.setStatusExecution(executionRunId)
+    vi.setSystemTime(Date.now() + 438_000)
+    const fleet = await f.listComputers()
+    expect(fleet.computers.find(computer => computer.hostRef.deviceId === f.original.hostRef.deviceId))
+      .toMatchObject({ ready: true, running: [f.record.id] })
+    const observed = (await f.read()).run
+    expect(observed.observation!.transportUnavailableSince).not.toBe(unavailableSince)
+    expect(observed).toEqual(await f.stored())
+    await f.dispatch()
+    expect((await f.read()).run).toMatchObject({ state: 'running', executionRunId,
+      computer: { hostRef: f.original.hostRef } })
+    expect(f.starts).toEqual([])
+    expect(f.cancels).toEqual([])
+  } finally { await f.close() }
+})
+
+it.each(['passed', 'failed'] as const)(
+  'resets the outage for a matching %s status while leaving outcome collection to run reads', async state => {
+    const executionRunId = randomUUID()
+    const f = await fixture({ executionRunId })
+    const started = Date.now()
+    try {
+      await f.dispatch()
+      const unavailableSince = (await f.read()).run.observation!.transportUnavailableSince
+      expect(unavailableSince).toBeDefined()
+      f.setOffline(false)
+      f.setReadFailure('timeout')
+      f.setStatusExecution(executionRunId, state)
+      vi.setSystemTime(started + 300_000)
+      await f.dispatch()
+      const observed = (await f.read()).run
+      expect(observed.observation!.transportUnavailableSince).not.toBe(unavailableSince)
+      expect(observed).toMatchObject({ state: 'running', executionRunId, exitCode: null, finishedAt: null })
+      expect(observed.collection).toBeUndefined()
+      expect(observed).toEqual(await f.stored())
+      vi.setSystemTime(started + 600_000)
+      await f.dispatch()
+      expect((await f.read()).run).toMatchObject({ state: 'running', executionRunId,
+        computer: { hostRef: f.original.hostRef }, exitCode: null, finishedAt: null })
+      expect(f.starts).toEqual([])
+      expect(f.cancels).toEqual([])
+    } finally { await f.close() }
+  })
 
 it('reroutes when status names the ticket but does not observe its active execution', async () => {
   const f = await fixture({ executionRunId: randomUUID() })
