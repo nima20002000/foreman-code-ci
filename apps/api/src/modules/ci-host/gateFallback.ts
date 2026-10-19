@@ -7,6 +7,7 @@ import { withTransaction } from '../../infrastructure/transaction.js'
 import { supportsUserSystemd } from './computerCapabilities.js'
 import type { HostCiComputer } from './serviceTypes.js'
 import { serializeCiJson } from './text.js'
+import { ciExecutionRunId } from './executionAttempt.js'
 
 const BUILD_WAIT_MS = 90_000
 const CLOUD_TEST_MS = 240_000
@@ -52,7 +53,14 @@ function cloudParts(run: CiRunRecord, capacity: FallbackCapacity) {
       const slice = integrationPartition(selected, durations, { index, count, targetDurationMs: CLOUD_TEST_MS })
       if (!slice.length) continue
       const computer = eligible[index % eligible.length]!
-      result.push(CiRunRecordSchema.parse({ ...run, id: result.length ? randomUUID() : run.id,
+      const original = result.length === 0
+      const id = original ? run.id : randomUUID()
+      // The original ticket alone owns earlier attempts; each added ticket starts its own execution.
+      result.push(CiRunRecordSchema.parse({ ...run, id,
+        executionRunId: original ? ciExecutionRunId(run) : id,
+        retainedExecutions: original ? run.retainedExecutions : undefined,
+        executionHistory: original ? run.executionHistory : undefined,
+        setupRetry: original ? run.setupRetry : undefined,
         files: slice, partition: null, plannedHostKey: computer.key,
         integrationShards: capacity.shards.get(computer.key), requiresBuildComputer: systemd,
         expectedDurationMs: BUILD_WAIT_MS + slice.reduce((sum, file) => sum + duration(file), 0),
