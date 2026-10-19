@@ -483,6 +483,30 @@ postgresDescribe('NIM-2691 durable handoff migration', () => {
         expect((await pool.query(`select 1 from run_work_activations
           where run_id=$1 and cause_kind='work_return' and cause_id=$2`,
           [run.id, lastReturn.value.returnId])).rowCount).toBe(1)
+        await expect(store.admitWorkActivation(notice.continuationActivationId,
+          () => { throw new Error('The earlier requester continuation must settle first.') }))
+          .rejects.toMatchObject({ code: 'WORK_ACTIVATION_NOT_QUEUED' })
+        assert.ok(returned.value.continuationActivationId)
+        const firstTurn = await store.admitWorkActivation(returned.value.continuationActivationId, () => ({
+          id: 'first-return-continuation-execution', runId: run.id,
+          workflowNodeId: requester!.id, agentId: requester!.agentId,
+          agentConfigurationVersionId: version.agentConfigurationVersionIds[requester!.agentId]!,
+          attempt: 1, input: {}, state: 'queued', createdAt: fixture.createdAt,
+        }))
+        const firstTurnResult = { outcome: 'succeeded', output: { routing: { kind: 'finish' },
+          data: { latestDeliverable: { revision: 1 }, remainingFindings: [{ id: 'finding-1' }] } } }
+        await transaction(pool, async sql => {
+          await sql.query('update harness_executions set record=$2::jsonb,accepted=true where id=$1',
+            [firstTurn.execution.id, text({ ...firstTurn.execution, state: 'completed',
+              result: firstTurnResult, finishedAt: fixture.createdAt })])
+          await sql.query(`insert into run_work_results(execution_id,run_id,activation_id,result_json,result_digest,accepted_at)
+            values($1,$2,$3,$4,$5,clock_timestamp())`, [firstTurn.execution.id, run.id,
+            returned.value.continuationActivationId, text(firstTurnResult), digest(firstTurnResult)])
+          await sql.query("update run_work_activations set state='completed' where run_id=$1 and activation_id=$2",
+            [run.id, returned.value.continuationActivationId])
+        })
+        expect(await store.resolveWaitingWorkJoins(returned.value.continuationActivationId))
+          .toContain(notice.continuationActivationId)
         const returnTurn = await store.admitWorkActivation(notice.continuationActivationId, () => ({
           id: 'last-return-continuation-execution', runId: run.id,
           workflowNodeId: requester!.id, agentId: requester!.agentId,
