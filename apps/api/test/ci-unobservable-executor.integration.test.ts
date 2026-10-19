@@ -1,0 +1,233 @@
+import { randomUUID } from 'node:crypto'
+import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
+import { CiGetOutputSchema, CiRunRecordSchema, type CiHostRun, type CiRunRecord } from '@foreman-code/contracts'
+import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
+import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest'
+import { buildApp } from '../src/app.js'
+import type { OperatorServices } from '../src/mcp/operator/types.js'
+import { PostgresAccessService } from '../src/modules/access/postgres.js'
+import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
+import { HostCiService, type CiCommits, type HostCiComputer, type HostCiEndpoint } from '../src/modules/ci-host/service.js'
+import { DeviceApplicationError } from '../src/modules/devices/deviceApplicationError.js'
+import { CI_GET_ACTIONS, RunCiAuthority } from '../src/modules/jobs/ciAuthority.js'
+import { migratedDatabase } from './helpers/migratedDatabase.js'
+
+let database: Awaited<ReturnType<typeof migratedDatabase>>
+beforeAll(async () => { database = await migratedDatabase() }, 60_000)
+afterAll(async () => { await database?.close() }, 60_000)
+beforeEach(async () => {
+  await database.pool.query('truncate ci_runs, ci_file_durations, management_command_receipts, management_audit')
+  vi.useFakeTimers({ toFake: ['Date'] })
+})
+afterEach(() => vi.useRealTimers())
+
+async function fixture(state: 'starting' | 'running' = 'running', expectedDurationMs = 189_000) {
+  const pool = database.pool
+  const workspaceId = randomUUID()
+  const at = new Date().toISOString()
+  const computers: HostCiComputer[] = [0, 1].map(index => ({
+    key: `fixture:executor:${index}`, label: `Executor ${index}`, priority: 2 - index,
+    hostRef: { kind: 'device', mainId: 'fixture', deviceId: `executor-${index}` },
+  }))
+  const original = computers[0]!
+  const replacement = computers[1]!
+  const record = CiRunRecordSchema.parse({
+    id: randomUUID(), workspaceId, groupId: randomUUID(), suite: 'integration', part: null,
+    scope: 'full', files: ['apps/api/test/example.integration.test.ts'],
+    partition: { index: 14, count: 49, weights: Array.from({ length: 49 }, () => 1), tier: 'slow' },
+    gate: true, integrationShards: 1, plannedHostKey: original.key, expectedDurationMs,
+    repository: 'fixture/site', commit: 'a'.repeat(40), state,
+    computer: { hostRef: original.hostRef, label: original.label }, step: state === 'starting' ? 'dispatch' : 'integration',
+    exitCode: null, message: null, queuedAt: at, dispatchedAt: at,
+    startedAt: state === 'running' ? at : null, finishedAt: null,
+    initiator: { principalId: 'operator', executionId: null },
+  })
+  await pool.query('insert into workspaces(id,record) values($1,$2::jsonb)', [workspaceId,
+    JSON.stringify({ id: workspaceId, name: 'CI recovery', repository: {
+      provider: 'github', owner: 'fixture', name: 'site', defaultBranch: 'main',
+    } })])
+  const insert = async (run: CiRunRecord, hostKey: string | null = null) => {
+    await pool.query(`insert into ci_runs(id,workspace_id,group_id,state,host_key,record)
+      values($1,$2,$3,$4,$5,$6::jsonb)`,
+    [run.id, workspaceId, run.groupId, run.state, hostKey, JSON.stringify(run)])
+  }
+  await insert(record, original.key)
+  let offline = true
+  let finished = false
+  let cleanup: 'running' | 'pending' | 'stopped' = 'running'
+  let replacementReady = true
+  let readFailure: string | undefined
+  const starts: { computer: string; runId: string }[] = []
+  const oldReads: string[] = []
+  const cancels: string[] = []
+  const endpoint: HostCiEndpoint = {
+    computers: async () => computers,
+    request: async (computer, request) => {
+      const old = computer.key === original.key
+      if (old && offline) throw new DeviceApplicationError('transport')
+      if (request.operation === 'status') {
+        return { operation: 'status', ready: old || replacementReady, reasons: [], cpuCount: 8,
+          memoryBytes: 16 * 2 ** 30, slotsTotal: 1, slotsUsed: 0, runs: [] }
+      }
+      if (request.operation === 'start') starts.push({ computer: computer.key, runId: request.runId })
+      if (request.operation === 'cancel') cancels.push(request.runId)
+      if (old && request.operation === 'read') {
+        oldReads.push(request.runId)
+        if (readFailure) throw new DeviceApplicationError(readFailure)
+      }
+      const terminal = old ? cleanup !== 'running' : finished
+      const run: CiHostRun = { runId: request.runId, state: terminal ? 'passed' : 'running',
+        step: 'integration', startedAt: at, finishedAt: terminal ? new Date().toISOString() : null,
+        exitCode: terminal ? 0 : null, message: null, logBytes: 0,
+        ...(old && cleanup === 'pending' ? { executorCleanupPending: true } : {}) }
+      if (request.operation === 'cancel') return { operation: 'cancel', run }
+      if (request.operation === 'start') return { operation: 'start', run }
+      return { operation: 'read', run, text: old ? 'abandoned output' : 'replacement output', nextOffset: 0,
+        ...(request.testResults && terminal ? { testResults: {
+          summary: { passed: 1, failed: 0, skipped: 0 }, truncated: false,
+          files: [{ file: record.files[0]!, status: 'passed', durationMs: 189_000,
+            tests: [{ name: old ? 'abandoned result' : 'replacement result', status: 'passed', durationMs: 189_000 }] }],
+        } } : {}) }
+    },
+  }
+  const commands = new PostgresCommandCoordinator(pool)
+  const create = () => new HostCiService(pool, commands, new RunCiAuthority(pool), {} as CiCommits, endpoint)
+  let ci = create()
+  const access = new PostgresAccessService(pool)
+  const app = buildApp({ logger: false,
+    readiness: { database: { ping: async () => {} }, checkpoints: { ping: async () => {} } },
+    operator: { access, services: { commands, ci } as unknown as OperatorServices } })
+  const address = await app.listen({ host: '127.0.0.1', port: 0 })
+  const clients: Client[] = []
+  const connect = async (allowedWorkspace: string) => {
+    const issued = await access.issue({ name: 'CI reader', audience: 'operator',
+      expiresAt: new Date(Date.now() + 86_400_000),
+      grants: [{ actions: CI_GET_ACTIONS, scope: { workspaceIds: [allowedWorkspace] } }] })
+    const client = new Client({ name: 'ci-recovery-test', version: '1' })
+    clients.push(client)
+    await client.connect(new StreamableHTTPClientTransport(new URL('/mcp', address), {
+      requestInit: { headers: { authorization: `Bearer ${issued.token}` } },
+    }))
+    return client
+  }
+  const operator = await connect(workspaceId)
+  const denied = await connect(randomUUID())
+  const input = { name: 'ci_get', arguments: { workspaceId, ticketId: record.id, testStatus: ['passed'] } }
+  return { record, original, replacement, starts, oldReads, cancels, insert,
+    setOffline(value: boolean) { offline = value },
+    finish() { finished = true },
+    setCleanup(value: typeof cleanup) { cleanup = value },
+    setReplacementReady(value: boolean) { replacementReady = value },
+    setReadFailure(value: string | undefined) { readFailure = value },
+    dispatch: async () => { await ci.dispatch(); await ci.drain() },
+    restart: async () => { await ci.close(); ci = create() },
+    read: async () => CiGetOutputSchema.parse(decodeMcpToolResult(await operator.callTool(input))),
+    denied: async () => (await denied.callTool(input)).isError,
+    stored: async () => (await pool.query('select record from ci_runs where id=$1', [record.id])).rows[0]!.record,
+    close: async () => { await ci.close(); await Promise.all(clients.map(client => client.close())); await app.close() },
+  }
+}
+
+it.each([
+  { state: 'running' as const, expected: 189_000, threshold: 378_000 },
+  { state: 'starting' as const, expected: 189_000, threshold: 378_000 },
+  { state: 'running' as const, expected: 10_000, threshold: 300_000 },
+  { state: 'running' as const, expected: 1_800_000, threshold: 900_000 },
+])('finishes an unobservable $state partition elsewhere after $threshold ms', async ({ state, expected, threshold }) => {
+  const f = await fixture(state, expected)
+  const started = Date.now()
+  try {
+    await f.dispatch()
+    vi.setSystemTime(started + threshold - 1)
+    await f.dispatch()
+    expect((await f.read()).run).toMatchObject({ state, computer: { hostRef: f.original.hostRef } })
+    expect(f.starts).toEqual([])
+    // The observation backoff stays at one minute; recovery happens on the next eligible observation.
+    vi.setSystemTime(started + threshold + 60_000)
+    await f.dispatch()
+    await f.dispatch()
+    expect(f.starts).toHaveLength(1)
+    const attempt = f.starts[0]!
+    expect(attempt.computer).toBe(f.replacement.key)
+    expect(attempt.runId).not.toBe(f.record.id)
+    const running = (await f.read()).run
+    expect(running).toMatchObject({ id: f.record.id, groupId: f.record.groupId, state: 'running',
+      files: f.record.files, partition: f.record.partition, executionRunId: attempt.runId,
+      retainedExecutions: [{ runId: f.record.id, hostKey: f.original.key, executor: 'retained' }] })
+    expect(await f.denied()).toBe(true)
+    await f.restart()
+    vi.setSystemTime(Date.now() + 189_000)
+    f.finish()
+    await f.dispatch()
+    const complete = await f.read()
+    expect(complete).toMatchObject({ groupState: 'passed', run: { state: 'passed', collection: 'complete' },
+      tests: { files: [{ tests: [{ name: 'replacement result' }] }] } })
+    expect(complete.run).toEqual(await f.stored())
+    expect(Date.now() - started).toBeLessThan(20 * 60_000)
+    // Even a ready status claiming zero usage cannot release the abandoned executor's slot.
+    f.setOffline(false)
+    f.setReplacementReady(false)
+    const queued = CiRunRecordSchema.parse({ ...f.record, id: randomUUID(), groupId: randomUUID(), gate: false,
+      state: 'queued', computer: null, startedAt: null, dispatchedAt: undefined, plannedHostKey: undefined })
+    await f.insert(queued)
+    vi.setSystemTime(Date.now() + 60_000)
+    await f.dispatch()
+    expect(f.starts).toHaveLength(1)
+    f.setCleanup('pending')
+    vi.setSystemTime(Date.now() + 60_000)
+    await f.dispatch()
+    expect(f.starts).toHaveLength(1)
+    expect((await f.read()).run).toMatchObject({ state: 'passed',
+      retainedExecutions: [{ executor: 'retained' }] })
+    f.setCleanup('stopped')
+    vi.setSystemTime(Date.now() + 60_000)
+    await f.dispatch()
+    await f.dispatch()
+    expect(f.starts).toHaveLength(2)
+    expect(f.starts[1]).toEqual({ computer: f.original.key, runId: queued.id })
+    expect(f.cancels).toContain(f.record.id)
+    expect(f.oldReads).not.toContain(f.record.id)
+    const preserved = await f.read()
+    expect(preserved).toMatchObject({ run: { state: 'passed', executionRunId: attempt.runId,
+      retainedExecutions: [{ executor: 'released' }] },
+      tests: { files: [{ tests: [{ name: 'replacement result' }] }] } })
+    expect(preserved.logTail).not.toContain('abandoned output')
+    expect(preserved.run).toEqual(await f.stored())
+  } finally { await f.close() }
+})
+
+it('keeps a slow observable executor and restarts the outage clock after it answers', async () => {
+  const f = await fixture()
+  const started = Date.now()
+  try {
+    f.setOffline(false)
+    await f.dispatch()
+    vi.setSystemTime(started + 30 * 60_000)
+    await f.dispatch()
+    expect((await f.read()).run).toMatchObject({ state: 'running', computer: { hostRef: f.original.hostRef } })
+    f.setOffline(true)
+    await f.dispatch()
+    vi.setSystemTime(Date.now() + 300_000)
+    f.setOffline(false)
+    await f.dispatch()
+    f.setOffline(true)
+    await f.dispatch()
+    vi.setSystemTime(Date.now() + 300_000)
+    await f.dispatch()
+    expect((await f.read()).run).toMatchObject({ state: 'running', computer: { hostRef: f.original.hostRef } })
+    expect(f.starts).toEqual([])
+  } finally { await f.close() }
+})
+
+it('keeps application observation failures on their assigned executor', async () => {
+  const f = await fixture()
+  try {
+    f.setOffline(false)
+    f.setReadFailure('CI_HOST_REPLY_INVALID')
+    await f.dispatch()
+    vi.setSystemTime(Date.now() + 30 * 60_000)
+    await f.dispatch()
+    expect((await f.read()).run).toMatchObject({ state: 'running', computer: { hostRef: f.original.hostRef } })
+    expect(f.starts).toEqual([])
+  } finally { await f.close() }
+})
