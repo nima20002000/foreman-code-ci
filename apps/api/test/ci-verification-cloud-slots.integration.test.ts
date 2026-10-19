@@ -1,8 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
-import { CiGetOutputSchema, CiRunOutputSchema, CiRunRecordSchema,
-  type CiHostReply, type CiHostRequest, type CiHostRun } from '@foreman-code/contracts'
+import { CiGetOutputSchema, CiRunOutputSchema, type CiHostReply, type CiHostRequest, type CiHostRun } from '@foreman-code/contracts'
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from 'vitest'
 import { buildApp } from '../src/app.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
@@ -43,45 +42,6 @@ const commits: CiCommits = {
   unitInventory: async () => ({ files: ['apps/api/src/site.test.ts', 'apps/web/src/site.test.tsx'],
     durations: {}, heavy: [] }),
 }
-
-it('keeps an abandoned cloud slot reserved after its ticket moves to another executor', async () => {
-  const pool = database.pool
-  const workspaceId = randomUUID()
-  const at = new Date().toISOString()
-  const slots = cloudSlots(2)
-  const retainedSlot = slots[0]!
-  const freeSlot = slots[1]!
-  await pool.query('insert into workspaces(id,record) values($1,$2::jsonb)',
-    [workspaceId, JSON.stringify({ id: workspaceId, name: 'Slot ownership' })])
-  const ticket = () => CiRunRecordSchema.parse({ id: randomUUID(), workspaceId, groupId: randomUUID(),
-    suite: 'unit', part: 'unit-api', partition: null, scope: 'affected', files: ['apps/api/src/example.test.ts'],
-    repository: 'octo/site', ciMirror: 'octo/site-ci', commit: 'a'.repeat(40), state: 'queued', computer: null,
-    step: null, exitCode: null, message: null, queuedAt: at, startedAt: null, finishedAt: null,
-    initiator: { principalId: 'operator', executionId: null } })
-  const owner = CiRunRecordSchema.parse({ ...ticket(), state: 'passed', exitCode: 0, startedAt: at, finishedAt: at,
-    computer: { hostRef: builders[0]!.hostRef, label: builders[0]!.label },
-    retainedExecutions: [{ runId: randomUUID(), hostKey: retainedSlot.key,
-      computer: { hostRef: retainedSlot.hostRef, label: retainedSlot.label },
-      executor: 'retained', nextAttemptAt: at }] })
-  const waiting = ticket()
-  const other = ticket()
-  for (const run of [owner, waiting, other]) {
-    await pool.query(`insert into ci_runs(id,workspace_id,group_id,state,record)
-      values($1,$2,$3,$4,$5::jsonb)`, [run.id, workspaceId, run.groupId, run.state, JSON.stringify(run)])
-  }
-  const request = (run: typeof waiting): Extract<CiHostRequest, { operation: 'start' }> => ({
-    operation: 'start', runId: run.id, repository: run.repository, commit: run.commit, suite: run.suite,
-    part: 'unit-api', scope: run.scope, files: run.files,
-  })
-  expect(await claimCiSlot(pool, waiting, retainedSlot, request(waiting))).toBe('busy')
-  expect(await claimCiSlot(pool, other, freeSlot, request(other))).toMatchObject({ state: 'starting', id: other.id })
-  expect((await pool.query('select state,host_key from ci_runs where id=$1', [waiting.id])).rows[0])
-    .toEqual({ state: 'queued', host_key: null })
-  await pool.query(`update ci_runs set record=jsonb_set(record,'{retainedExecutions,0,executor}','"released"')
-    where id=$1`, [owner.id])
-  expect(await claimCiSlot(pool, waiting, retainedSlot, request(waiting)))
-    .toMatchObject({ state: 'starting', id: waiting.id, computer: { hostRef: retainedSlot.hostRef } })
-})
 
 /** A build computer or cloud slot that starts every assigned ticket at once and records which slot received it. */
 function executor(options: { status?: (computer: HostCiComputer) => Promise<CiHostReply> } = {}) {

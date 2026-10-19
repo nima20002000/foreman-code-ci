@@ -54,12 +54,6 @@ function fleet(records: CiRunRecord[], available: HostCiComputer[],
     if (sql.startsWith('select record from ci_runs where id=')) {
       return { rows: records.filter(record => record.id === parameters![0]).map(record => ({ record })) }
     }
-    if (sql.startsWith("select id from ci_runs where record->'retainedExecutions'")) {
-      const [reservation] = JSON.parse(parameters![0] as string) as { hostKey: string; executor: string }[]
-      return { rows: records.filter(record => record.retainedExecutions?.some(attempt =>
-        attempt.hostKey === reservation!.hostKey && attempt.executor === reservation!.executor))
-        .map(record => ({ id: record.id })) }
-    }
     if (sql.startsWith('insert into ci_runs')) {
       records.push(CiRunRecordSchema.parse(JSON.parse(parameters![3] as string)))
       return { rows: [], rowCount: 1 }

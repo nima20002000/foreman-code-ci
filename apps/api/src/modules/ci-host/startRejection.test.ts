@@ -54,7 +54,7 @@ function ticketDatabase() {
     }
     if (text.startsWith('update ci_runs')) {
       const previous = rows.get(values[0] as string)
-      const expectedRecord = values.length === 11 ? values[8] : values[4]
+      const expectedRecord = values.length === 10 ? values[8] : values[4]
       const expected = JSON.parse(expectedRecord as string)
       if (!previous || !isDeepStrictEqual(previous.record, expected)) return { rows: [], rowCount: 0 }
       const record = CiRunRecordSchema.parse(JSON.parse(values[3] as string))

@@ -141,7 +141,11 @@ it.each(['mcp', 'http'] as const)('reads queued user-systemd slices through %s w
 })
 
 it('uses every cloud slot for ordinary integration files and persists throughput weights through authenticated MCP', async () => {
-  const f = await fixture({ cloud: { github: 4, circleci: 4 } })
+  let releaseGithub!: () => void
+  const githubReady = new Promise<void>(resolve => { releaseGithub = resolve })
+  const f = await fixture({ cloud: { github: 4, circleci: 4 }, beforeStatus: async computer => {
+    if (computer.hostRef.provider === 'github') await githubReady
+  } })
   f.computers.splice(0, 2)
   const files = [
     ...Array.from({ length: 256 }, (_, index) => `apps/api/test/ordinary-${index}.integration.test.ts`),
@@ -177,6 +181,10 @@ it('uses every cloud slot for ordinary integration files and persists throughput
     expect(f.published).toHaveLength(0)
     const started = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', input))
     await f.ci.dispatch()
+    await expect.poll(() => f.started.length).toBe(4)
+    releaseGithub()
+    await f.ci.drain()
+    await f.ci.dispatch()
     expect(f.started).toHaveLength(8)
     expect(new Set(f.started.map(value => value.computer)).size).toBe(8)
     expect(CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', input))).toEqual(started)
@@ -208,7 +216,10 @@ it('uses every cloud slot for ordinary integration files and persists throughput
     await f.ci.dispatch()
     const finished = await ciRunReadback(input => f.value(reader, 'ci_get', input), started.ticketId, 'passed')
     expect(finished.partitions!.every(run => run.state === 'passed')).toBe(true)
-  } finally { await f.close() }
+  } finally {
+    releaseGithub()
+    await f.close()
+  }
 })
 
 it('runs an ordinary unpartitioned integration selection on cloud without a build computer', async () => {
