@@ -484,7 +484,7 @@ it('preserves the assignment when the database rejects settlement after an accep
     expect(recovered).toMatchObject({ state: 'running', computer: {
       hostRef: accepted.computer.hostRef },
       startedAt: f.remote.get(`${accepted.computer.key}:${ticket.ticketId}`)!.startedAt })
-    await settle(f.ci)
+    await f.observeWhenDue(f.ci, ticket.ticketId)
     expect(await f.read(ticket.ticketId)).toEqual({ ...recovered, observation: {
       status: 'available', consecutiveFailures: 0, lastError: null,
       nextAttemptAt: null, lastSuccessAt: expect.any(String) } })

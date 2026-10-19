@@ -1040,8 +1040,7 @@ export class HostCiService {
     return this.dispatching
   }
 
-  private dispatchServices(computer: HostCiComputer) {
-    const status = this.planningEndpoint.dispatchStatus(computer)
+  private dispatchServices(computer: HostCiComputer, status = this.planningEndpoint.dispatchStatus(computer)) {
     return { pool: this.pool, endpoint: this.endpoint,
       read: (id: string, workspaceId: string, sql: SqlQuery) => this.read(id, workspaceId, sql),
       rejected: (run: CiRunRecord, rejectedComputer: HostCiComputer, error: unknown) => {
@@ -1066,7 +1065,7 @@ export class HostCiService {
   }
 
   private reconcileHostStart(run: CiRunRecord, computer: HostCiComputer, status: CiHostStatus | null) {
-    return reconcileCiHostStart(this.dispatchServices(computer), run, computer, status)
+    return reconcileCiHostStart(this.dispatchServices(computer, status ?? undefined), run, computer, status)
   }
 
   expireOverdueRuns(now = new Date()): Promise<number> {

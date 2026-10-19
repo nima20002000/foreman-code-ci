@@ -98,9 +98,13 @@ async function claimSlot(pool: pg.Pool, run: CiRunRecord, computer: HostCiComput
       return claimCiDispatch(client, run, computer, request)
     }
     await client.query('select pg_advisory_xact_lock(hashtextextended($1,0))', [`ci-cloud-slot:${computer.key}`])
-    if (await retainedCiSlot(client, computer.key)) return 'busy' as const
     const assigned = (await client.query<{ host_key: string | null }>(`select host_key from ci_runs
-      where host_key=$1 and (${CI_BUSY_TICKET}) limit 1`, [computer.key])).rows
+      where host_key=$1 and (${CI_BUSY_TICKET})
+      union all
+      select $1::text as host_key from ci_runs where ${CI_RETAINED_EXECUTORS}
+        and record->'retainedExecutions' @> jsonb_build_array(
+          jsonb_build_object('executor','retained','hostKey',$1::text))
+      limit 1`, [computer.key])).rows
     if (assigned.some(row => row.host_key === computer.key)) return 'busy' as const
     return claimCiDispatch(client, run, computer, request)
   })
