@@ -81,7 +81,7 @@ export async function readWorkActivationInputLocked(context: AdmissionContext, a
     const returned = WorkReturnSchema.parse(returnedRow.record)
     if (returned.continuationActivationId !== activationId
       || !sameRepeatValue(returned.scope, scope)) return repeatConflict('WORK_RETURN_ANCESTRY_CONFLICT')
-    const feedback = await readWorkReturnFeedbackLocked(context, returned)
+    const feedback = await readWorkReturnFeedbackLocked(context, returned, activation.workflowNodeId)
     return WorkActivationInputSchema.parse({ ...base, work: { kind: 'work_return', activation, ...feedback } })
   }
   if (activation.cause.kind === 'limit_denial') {

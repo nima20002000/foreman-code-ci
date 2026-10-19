@@ -185,7 +185,6 @@ export const WorkActivationInputSchema = z.object({
   }
   if (work.kind === 'work_return' && work.returns) {
     const invalid = work.returns.some(item => item.acceptedSourceResult.outcome !== 'succeeded'
-      || item.returned.requesterActivationId !== work.returned.requesterActivationId
       || canonicalGraphJson(item.returned.scope) !== canonicalGraphJson(work.activation.scope)
       || item.returned.outcome === 'needs_changes'
         && item.returned.continuationActivationId !== work.activation.activationId
@@ -199,7 +198,7 @@ export const WorkActivationInputSchema = z.object({
     }
   }
   if (work.kind === 'work_return' && work.failures?.some(item =>
-    item.request.requesterActivationId !== work.returned.requesterActivationId
+    item.request.requesterNodeId !== work.activation.workflowNodeId
     || canonicalGraphJson(item.request.scope) !== canonicalGraphJson(work.activation.scope)
     || item.result.outcome !== 'failed' && item.result.outcome !== 'canceled')) {
     context.addIssue({ code: 'custom', path: ['work', 'failures'], message: 'WORK_RETURN_GROUP_CONFLICT' })

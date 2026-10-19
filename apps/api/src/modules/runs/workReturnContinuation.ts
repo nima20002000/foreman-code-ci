@@ -21,8 +21,8 @@ export async function ensureWorkReturnContinuationLocked(context: WorkReturnCont
     `select t.requester_continuation_activation_id,a.state from run_work_returns t
       join run_work_requests q on q.run_id=t.run_id and q.request_id=t.request_id
       join run_work_activations a on a.run_id=t.run_id and a.activation_id=t.requester_continuation_activation_id
-      where q.run_id=$1 and q.requester_activation_id=$2 and t.outcome='needs_changes'
-      order by a.activation_sequence desc`, [scope.runId, request.requesterActivationId])).rows
+      where q.run_id=$1 and q.requester_node_id=$2 and t.outcome='needs_changes'
+      order by a.activation_sequence desc`, [scope.runId, request.requesterNodeId])).rows
   const waiting = prior.find(row => row.state === 'waiting')
   if (waiting) return waiting.requester_continuation_activation_id
   context.assertActive()
@@ -83,28 +83,41 @@ export async function workRequestSettlementsLocked(context: WorkReturnContext, r
   return { pending, failures }
 }
 
+export async function workReturnGroupSettlementsLocked(context: WorkReturnContext, activationId: string) {
+  const requesters = (await context.sql.query<{ requester_activation_id: string }>(
+    `select distinct q.requester_activation_id from run_work_returns t
+      join run_work_requests q on q.run_id=t.run_id and q.request_id=t.request_id
+      where t.run_id=$1 and t.requester_continuation_activation_id=$2 order by q.requester_activation_id`,
+    [context.scope.runId, activationId])).rows
+  if (!requesters.length) return repeatConflict('WORK_RETURN_MISSING')
+  const failures: Awaited<ReturnType<typeof workRequestSettlementsLocked>>['failures'] = []
+  let pending = false
+  for (const requester of requesters) {
+    const settled = await workRequestSettlementsLocked(context, requester.requester_activation_id)
+    pending ||= settled.pending
+    failures.push(...settled.failures)
+  }
+  return { pending, failures }
+}
+
 /** The reactivation event also records which graph task owns dispatch across replay. */
 export async function resolveWaitingWorkReturnsLocked(context: WorkReturnContext,
   sourceActivationId: string): Promise<string[]> {
   const { sql, scope } = context
   const rows = (await sql.query<{ activation_id: string; workflow_node_id: string;
-    requester_activation_id: string; return_id: string }>(
-    `select a.activation_id,a.workflow_node_id,q.requester_activation_id,t.return_id from run_work_activations a
+    return_id: string }>(
+    `select a.activation_id,a.workflow_node_id,t.return_id from run_work_activations a
       join run_work_returns t on t.run_id=a.run_id and t.return_id=a.cause_id
-      join run_work_requests q on q.run_id=t.run_id and q.request_id=t.request_id
       where a.run_id=$1 and a.cause_kind='work_return' and a.state='waiting'
       order by a.activation_sequence for update of a`,
     [scope.runId])).rows
   for (const row of rows) {
-    const settled = await workRequestSettlementsLocked(context, row.requester_activation_id)
-    if (settled.pending) continue
     const active = await sql.query(`select 1 from run_work_activations a
-      join run_work_returns t on t.run_id=a.run_id and t.return_id=a.cause_id
-      join run_work_requests q on q.run_id=t.run_id and q.request_id=t.request_id
-      where a.run_id=$1 and q.requester_activation_id=$2 and a.activation_id<>$3
-        and a.state in ('queued','running') limit 1`,
-    [scope.runId, row.requester_activation_id, row.activation_id])
+      where a.run_id=$1 and a.workflow_node_id=$2 and a.cause_kind='work_return'
+        and a.state in ('queued','running') limit 1`, [scope.runId, row.workflow_node_id])
     if (active.rowCount) continue
+    const settled = await workReturnGroupSettlementsLocked(context, row.activation_id)
+    if (settled.pending) continue
     context.assertActive()
     await sql.query(`update run_work_activations set state='queued' where run_id=$1 and activation_id=$2`,
       [scope.runId, row.activation_id])

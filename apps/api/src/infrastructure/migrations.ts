@@ -60,6 +60,7 @@ import { workJoinDispatchMigration } from './workJoinDispatchMigration.js'
 import { workJoinDispositionMigration } from './workJoinDispositionMigration.js'
 import { workParentRequestMigration } from './workParentRequestMigration.js'
 import { workReturnGroupMigration } from './workReturnGroupMigration.js'
+import { workReturnNodeGroupingMigration } from './workReturnNodeGroupingMigration.js'
 import { workReturnRequestMigration } from './workReturnRequestMigration.js'
 import { compactCommandActivityMigration } from './compactCommandActivityMigration.js'
 import { workflowPresentationMigration } from './workflowPresentationMigration.js'
@@ -1004,6 +1005,7 @@ export const migrations = [
   ciExecutorCleanupMigration,
   ciRetainedExecutorsMigration,
   workReturnGroupMigration,
+  workReturnNodeGroupingMigration,
 ] as const
 
 export function assertMigrationVersions(entries: readonly { version: number }[]): void {
