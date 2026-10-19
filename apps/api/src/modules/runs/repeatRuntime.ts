@@ -573,7 +573,7 @@ export async function executeRepeatRuntime(input: {
               'A handoff launch failure requires its persisted execution cause.', 409, undefined, { cause: error })
             await bookkeeping(() => recordFailure(executionId, error.result))
           }
-          return []
+          return input.store.resolveWaitingWorkJoins(activationId)
         }
       },
     },

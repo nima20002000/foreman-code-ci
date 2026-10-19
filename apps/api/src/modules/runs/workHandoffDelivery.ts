@@ -42,7 +42,7 @@ async function assertReturnFits(context: DeliveryContext, execution: HarnessExec
   const request = await readWorkReturnRequestLocked(context, activationId, routing.requestId)
   if (request.destinationNodeId !== execution.workflowNodeId) return repeatConflict('WORK_RETURN_ANCESTRY_CONFLICT')
   const returnId = repeatId('work-return', execution.id)
-  const continuationActivationId = routing.outcome === 'needs_changes' ? repeatId('work-activation', returnId) : undefined
+  const continuationActivationId = routing.outcome === 'needs_changes' ? repeatId('work-activation', 'returns', request.requesterActivationId) : undefined
   const returned = WorkReturnSchema.parse({ scope: context.scope, returnId, requestId: request.requestId,
     sourceActivationId: activationId, sourceExecutionId: execution.id,
     requesterActivationId: request.requesterActivationId,
