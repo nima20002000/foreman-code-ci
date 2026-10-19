@@ -20,7 +20,7 @@ import { RemoteHistoryContinuationSchema, RemoteHistoryReceiptIdentitySchema } f
 import { readJsonContinuation } from './jsonContinuation.js'
 import { readRemoteReceiptResponse } from './installedWorkflowResponsePages.js'
 import { decodeResultCopies } from './executionResultCodec.js'
-import { DeviceApplicationError, deviceApplicationFailure } from '../../devices/deviceApplicationError.js'
+import { DeviceApplicationError } from '../../devices/deviceApplicationError.js'
 import { DomainError } from '../../errors.js'
 import { retryDeviceRequest } from '../../devices/deviceRequestRetry.js'
 import { preparationStop } from './preparationCleanup.js'
@@ -42,7 +42,7 @@ const HistoryResponseSchema = z.object({
   page: DeviceHistoryPageSchema,
 }).strict()
 function expiredPhysicalReply(error: unknown): boolean {
-  return deviceApplicationFailure(error).code === 'REMOTE_NATIVE_PHYSICAL_REPLY_EXPIRED'
+  return error instanceof DeviceApplicationError && error.code === 'REMOTE_NATIVE_PHYSICAL_REPLY_EXPIRED'
     || error instanceof DomainError && error.code === 'REMOTE_CONNECTION_CONFLICT'
 }
 class RemoteHistorySnapshotChangedError extends Error {}
