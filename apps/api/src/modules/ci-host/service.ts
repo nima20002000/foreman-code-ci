@@ -48,7 +48,7 @@ import { cloudCiId } from './cloudProviders.js'
 import { cancelAssignedCiTicket } from './assignedCancellation.js'
 import { ciExecutionRunId } from './executionAttempt.js'
 import { CI_RETAINED_EXECUTORS, CiExecutorObservationError, CiRetainedExecutors,
-  ciExecutorOutageLimit, ciTransportUnavailable } from './executorRecovery.js'
+  ciExecutorOutageLimit, ciTransportUnavailable, recordCiExecutorStatus } from './executorRecovery.js'
 import { CI_BUSY_TICKET, expireOverdueCiRuns } from './deadlines.js'
 import { ciCachedNotice, planCachedSelection, recordCiResultCache, type CachedSelection } from './resultCacheStore.js'
 import { ciRequestKey, joinCiRequest, registerCiRequest, releaseCiRequester, releaseStoppedRun,
@@ -177,7 +177,9 @@ export class HostCiService {
           throw error
         } finally {
           for (const row of assigned) {
-            await this.reconcileHostStart(CiRunRecordSchema.parse(row.record), computer, status)
+            const run = CiRunRecordSchema.parse(row.record)
+            await this.reconcileHostStart(run, computer, status)
+            await recordCiExecutorStatus(this.pool, run, computer, status)
           }
         }
       },
@@ -1114,12 +1116,6 @@ export class HostCiService {
         await this.endpoint.request(computer, { operation: 'status' }, { priority: 'background' })
       } catch (error) {
         throw new CiExecutorObservationError(error)
-      }
-      if (run.observation?.transportUnavailableSince) {
-        await this.pool.query(`update ci_runs set record=jsonb_set(record,'{observation}',$2::jsonb)
-          where id=$1 and coalesce(record->>'executionRunId',record#>>'{setupRetry,runId}',id::text)=$3`,
-        [run.id, JSON.stringify({ status: 'available', lastSuccessAt: new Date().toISOString(), lastError: null,
-          consecutiveFailures: 0, nextAttemptAt: null }), ciExecutionRunId(run)])
       }
       return
     }

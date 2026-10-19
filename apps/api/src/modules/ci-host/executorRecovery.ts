@@ -1,10 +1,11 @@
 import type pg from 'pg'
-import type { CiRunRecord } from '@foreman-code/contracts'
+import type { CiHostStatus, CiRunRecord } from '@foreman-code/contracts'
 import { withoutCiDatabasePriority } from '../../infrastructure/ciDatabasePriority.js'
 import { componentLogger } from '../diagnostics/logger.js'
 import { DomainError } from '../errors.js'
 import { errorMessage } from '../../shared/errorMessage.js'
 import type { HostCiComputer, HostCiEndpoint, HostRef } from './serviceTypes.js'
+import { ciExecutionRunId } from './executionAttempt.js'
 
 const log = componentLogger('jobs')
 export const CI_RETAINED_EXECUTORS = `record->'retainedExecutions' @> '[{"executor":"retained"}]'::jsonb`
@@ -29,6 +30,22 @@ export function ciExecutorOutageLimit(run: CiRunRecord) {
   // Two expected runtimes allow setup and timing variation. Five minutes absorb short link outages;
   // fifteen minutes cap the wait for long parts because transport failure gives no evidence of progress.
   return Math.min(15 * 60_000, Math.max(5 * 60_000, 2 * (run.expectedDurationMs ?? 0)))
+}
+
+export async function recordCiExecutorStatus(pool: pg.Pool, run: CiRunRecord,
+  computer: HostCiComputer, status: CiHostStatus | null) {
+  const executionRunId = ciExecutionRunId(run)
+  const observed = status?.runs.some(execution => execution.runId === executionRunId
+    && ['starting', 'running'].includes(execution.state))
+  if (!observed) return
+  // Status proves this execution is observable even when log reads fail; keep their retry backoff.
+  await pool.query(`update ci_runs set record=jsonb_set(record,'{observation}',
+      (record->'observation' - 'transportUnavailableSince') || jsonb_build_object('lastSuccessAt',$4::text))
+    where id=$1 and host_key=$2 and state in ('starting','running')
+      and coalesce(record->>'executionRunId',record#>>'{setupRetry,runId}',id::text)=$3
+      and record#>'{computer,hostRef}'=$5::jsonb
+      and record#>>'{observation,transportUnavailableSince}' is not null`,
+  [run.id, computer.key, executionRunId, new Date().toISOString(), JSON.stringify(computer.hostRef)])
 }
 
 /** Stop abandoned executions separately, so an unreachable old computer cannot delay the replacement's observation. */
