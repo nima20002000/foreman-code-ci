@@ -110,7 +110,8 @@ describe.runIf(postgresEnabled)('handoff settlement and withheld feedback', () =
           || nodeId === second.id && input.work.kind === 'work_return'
         const requestId = input.work.kind === 'work_request' ? input.work.request.requestId
           : input.parentRequest?.requestId
-        return { routing: returnsToCaller ? { kind: 'return', requestId, outcome: 'needs_changes' }
+        if (returnsToCaller && !requestId) throw new Error('Reviewer feedback requires its received request ID')
+        return { routing: returnsToCaller ? { kind: 'return', requestId: requestId!, outcome: 'needs_changes' }
           : { kind: 'finish' },
         data: { latestDeliverable: { nodeId }, remainingFindings: returnsToCaller
           || nodeId === coder.id && input.work.kind === 'work_return' ? [`finding-${nodeId}`] : [] } }
