@@ -137,8 +137,6 @@ export class HostCiService {
     this.circleCredits = options.circleCredits
     this.circleStandby = options.circleStandby
     this.reservedCloudSlots = options.reservedCloudSlots ?? 0
-    this.prewarm = new CiPrewarm(endpoint)
-    this.planningEndpoint = new CiPlanningSnapshot(endpoint)
     this.endpoint = {
       computers: async () => {
         const computers = await waitForCiDispatch(() => endpoint.computers())
@@ -152,7 +150,7 @@ export class HostCiService {
           // A persisted start can finish after its caller stops waiting for the reply.
           return request.operation === 'start' ? withoutCiDatabaseDeadline(requestHost) : requestHost()
         }
-        if (request.operation !== 'status' || computer.hostRef.kind === 'cloud') {
+        if (request.operation !== 'status') {
           try {
             const reply = await waitForCiDispatch(send)
             this.planningEndpoint.observeStatus(computer, reply)
@@ -169,7 +167,6 @@ export class HostCiService {
         try {
           const reply = await waitForCiDispatch(send)
           if (reply.operation === 'status') status = reply
-          this.planningEndpoint.observeStatus(computer, reply)
           return reply
         } catch (error) {
           // Yielding to foreground work says nothing about the computer; its last-known readiness stays bounded by age.
@@ -181,9 +178,12 @@ export class HostCiService {
             await this.reconcileHostStart(run, computer, status)
             await recordCiExecutorStatus(this.pool, run, computer, status)
           }
+          if (status) this.planningEndpoint.observeStatus(computer, status)
         }
       },
     }
+    this.planningEndpoint = new CiPlanningSnapshot(this.endpoint)
+    this.prewarm = new CiPrewarm(this.endpoint)
     this.reads = new HostCiReads(pool, authority, {
       endpoint: this.endpoint,
       computer: hostRef => this.computer(hostRef),

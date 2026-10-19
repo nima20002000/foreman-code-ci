@@ -35,8 +35,7 @@ export function ciExecutorOutageLimit(run: CiRunRecord) {
 export async function recordCiExecutorStatus(pool: pg.Pool, run: CiRunRecord,
   computer: HostCiComputer, status: CiHostStatus | null) {
   const executionRunId = ciExecutionRunId(run)
-  const observed = status?.runs.some(execution => execution.runId === executionRunId
-    && ['starting', 'running'].includes(execution.state))
+  const observed = status?.runs.some(execution => execution.runId === executionRunId)
   if (!observed) return
   // Status proves this execution is observable even when log reads fail; keep their retry backoff.
   await pool.query(`update ci_runs set record=jsonb_set(record,'{observation}',
