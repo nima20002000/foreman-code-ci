@@ -7,6 +7,17 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.0.110] - 2026-10-19
+
+Runtime ownership and Worker update reliability.
+- Main no longer shuts itself down when a runtime-ownership database read is slow: ownership is fenced only on positive evidence (the ownership connection ends, or an independent check shows the lock is no longer held by this session, matched by PID and backend start time), checked on its own timer; concurrent route refreshes share one deadline and a refresh timeout no longer aborts running Agents.
+- Paired computer Worker updates no longer roll back when a release pins a new native Codex package: the CI smoke's 160 s window starts after dependency installation, the whole update attempt keeps one absolute deadline, older update records keep their previous budgets, and the packaged supervisor ships every module it imports.
+- Harness qualification: a check that goes stale after an installation update refreshes the inventory and rechecks in its own slot, so the active profile keeps priority.
+- Test reliability: host CI build-preference test waits for both Workers' readiness.
+- CI scheduling: entries now match the real test files (an inventory check fails on renames), so recovery suites run exclusively on installed-Worker hosts; CI observations no longer use a stale listing's executor, so a gate's setup retry is observed where it runs.
+- Logging: pruning tolerates rotated files removed concurrently.
+- Test reliability: native store tests use a local fixture registry; runner recovery and one-slot-pool delivery tests synchronize and honor retryable DATABASE_BUSY.
+
 ## [0.0.109] - 2026-10-18
 
 Workflow, runtime and CI fixes found by multi-Agent scenarios.
