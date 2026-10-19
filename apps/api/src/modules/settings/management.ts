@@ -146,11 +146,9 @@ export class FoundationSettingsManagementService {
     let livePrincipal = principal
     let previous: Awaited<ReturnType<PostgresFoundationSettingsRepository['getAgentDefaults']>>
     let value: AgentDefaults
-    const unchangedProfile = (role: keyof AgentDefaults) => {
-      const next = value[role], prior = previous.value[role]
-      return !!next && !!prior && isDeepStrictEqual(next.harnessProfileSelection, prior.harnessProfileSelection)
-        && isDeepStrictEqual(withAdvancedDefaults(next.harness), withAdvancedDefaults(prior.harness))
-    }
+    const unchangedProfile = (role: keyof AgentDefaults) =>
+      isDeepStrictEqual(value[role].harnessProfileSelection, previous.value[role].harnessProfileSelection)
+      && isDeepStrictEqual(withAdvancedDefaults(value[role].harness), withAdvancedDefaults(previous.value[role].harness))
     return this.commands.execute({
       principal, source, operation: 'agent.defaults.update', commandId: input.commandId,
       targetKey: 'agent-defaults-v1', payload: input,
@@ -166,38 +164,31 @@ export class FoundationSettingsManagementService {
         }
         await withTransaction(pool, async client => {
           if (this.accountConfigurations) {
-            for (const role of ['master', 'orchestrator', 'coder', 'operator'] as const) {
-              const template = value[role]
-              if (!template || unchangedProfile(role)) continue
-              template.harness = await this.accountConfigurations.resolve(template.harness,
-                template.harnessProfileSelection, { sql: client })
+            for (const role of ['orchestrator', 'coder', 'operator'] as const) {
+              if (unchangedProfile(role)) continue
+              value[role].harness = await this.accountConfigurations.resolve(value[role].harness,
+                value[role].harnessProfileSelection, { sql: client })
             }
           }
         })
-        for (const role of ['master', 'orchestrator', 'coder', 'operator'] as const) {
-          const template = value[role]
-          if (template) assertClaudeFullAccess(template.harness)
-        }
-        for (const role of ['master', 'orchestrator', 'coder', 'operator'] as const) {
-          const template = value[role]
-          if (!template) continue
-          const prior = previous.value[role]
-          const configuration = template.harness
+        for (const role of ['orchestrator', 'coder', 'operator'] as const) assertClaudeFullAccess(value[role].harness)
+        for (const role of ['orchestrator', 'coder', 'operator'] as const) {
+          const configuration = value[role].harness
           if (role === 'operator' && configuration.harness === 'claude'
-            && template.harnessProfileSelection?.target.hostRef.kind === 'main'
-            && isDeepStrictEqual(template.harnessProfileSelection, prior?.harnessProfileSelection)
-            && !isDeepStrictEqual(withAdvancedDefaults(configuration), prior ? withAdvancedDefaults(prior.harness) : undefined)) {
+            && value[role].harnessProfileSelection?.target.hostRef.kind === 'main'
+            && isDeepStrictEqual(value[role].harnessProfileSelection, previous.value[role].harnessProfileSelection)
+            && !isDeepStrictEqual(withAdvancedDefaults(configuration), withAdvancedDefaults(previous.value[role].harness))) {
             // A newly edited default cannot reuse its previous exact proof.
             // Accepted conversations and the saved source profile stay pinned.
-            delete template.harnessProfileSelection
+            delete value[role].harnessProfileSelection
           }
-          if (role === 'operator' && configuration.harness === 'claude' && !template.harnessProfileSelection) {
+          if (role === 'operator' && configuration.harness === 'claude' && !value[role].harnessProfileSelection) {
             const resolved = await withTransaction(pool, client =>
               this.profiles?.selectionForConfiguration?.(livePrincipal, configuration, client) ?? Promise.resolve(undefined))
               ?? await this.profiles?.prepareOperatorConfiguration?.(livePrincipal, source, configuration, input.commandId)
-            if (resolved) template.harnessProfileSelection = resolved
+            if (resolved) value[role].harnessProfileSelection = resolved
           }
-          const selection = template.harnessProfileSelection
+          const selection = value[role].harnessProfileSelection
           // Even unchanged legacy defaults must satisfy Operator chat's resumability boundary.
           // Validate before the unchanged-configuration shortcut or any persistent write.
           if (role === 'operator' && configuration.harness === 'codex') {
@@ -208,7 +199,7 @@ export class FoundationSettingsManagementService {
             if (!this.profiles) throw new DomainError('HARNESS_PROFILE_SELECTION_UNAVAILABLE', 'Selected host profile validation is not composed.', 503)
             continue
           }
-          if (isDeepStrictEqual(prior ? withAdvancedDefaults(prior.harness) : undefined, withAdvancedDefaults(configuration))) continue
+          if (isDeepStrictEqual(withAdvancedDefaults(previous.value[role].harness), withAdvancedDefaults(configuration))) continue
           if (!this.harnesses) throw new DomainError('HARNESS_QUALIFICATION_UNAVAILABLE', 'Native qualification is unavailable; changed configurations were not saved.', 503)
           if (role !== 'operator') {
             validateHarnessWorkflowCompatibility(configuration, 'user')
@@ -262,13 +253,11 @@ export class FoundationSettingsManagementService {
 
   private async validatePreparedDefaults(client: pg.PoolClient, principal: ManagementPrincipal,
     value: AgentDefaults, previous: AgentDefaults): Promise<void> {
-    for (const role of ['master', 'orchestrator', 'coder', 'operator'] as const) {
-      const template = value[role], prior = previous[role]
-      if (!template) continue
-      const configuration = template.harness
-      const selection = template.harnessProfileSelection
-      const unchanged = !!prior && isDeepStrictEqual(selection, prior.harnessProfileSelection)
-        && isDeepStrictEqual(withAdvancedDefaults(configuration), withAdvancedDefaults(prior.harness))
+    for (const role of ['orchestrator', 'coder', 'operator'] as const) {
+      const configuration = value[role].harness
+      const selection = value[role].harnessProfileSelection
+      const unchanged = isDeepStrictEqual(selection, previous[role].harnessProfileSelection)
+        && isDeepStrictEqual(withAdvancedDefaults(configuration), withAdvancedDefaults(previous[role].harness))
       if (unchanged) continue
       if (this.accountConfigurations) {
         const resolved = await this.accountConfigurations.resolve(configuration, selection, { sql: client })

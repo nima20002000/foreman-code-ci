@@ -8,7 +8,6 @@ import { SourcePinSchema, SourceMaterializationRecordSchema, VerifiedSourceWorki
 import { GraphIdSchema, IdSchema } from './schemaPrimitives.js'
 import { WorkflowArtifactOutputsV1Schema } from './workflowArtifactDeclarations.js'
 import { AcceptedProviderAccountBindingSchema } from './providerAccounts.js'
-import { ResultProtocolSchema } from './coordinationResult.js'
 
 export const PlacementDigestSchema = z.string().regex(/^[a-f0-9]{64}$/)
 const Revision = z.string().regex(/^[1-9][0-9]*$/)
@@ -30,8 +29,6 @@ export const AcceptedDestinationSchema = z.object({
   attestationId: IdSchema, attestationHash: PlacementDigestSchema,
 }).strict()
 const AgentPayload = z.object({
-  /** Future result envelope, pinned into the immutable launch binding only at producer cutover. */
-  resultProtocol: ResultProtocolSchema.optional(),
   accountBinding: AcceptedProviderAccountBindingSchema.optional(),
   worktree: SourceWorktreeRequestSchema.optional(),
   kind: z.literal('agent'), agentId: IdSchema, agentConfigurationVersionId: IdSchema,

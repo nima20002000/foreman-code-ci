@@ -15,7 +15,7 @@ export class CodexApprovalProvider extends ActivityProductionReplay {
   private readonly pendingTasks = new Set<Promise<void>>()
   private readonly failures: unknown[] = []
 
-  constructor(readonly executionId: string, private readonly completesWorkflowTurn: boolean,
+  constructor(readonly executionId: string, private readonly entry: boolean,
     private readonly options: ApprovalProviderOptions = {}) {
     super(`approval-${executionId}`)
   }
@@ -36,7 +36,7 @@ export class CodexApprovalProvider extends ActivityProductionReplay {
             const correlationId = String(params?.clientUserMessageId)
             if (correlationId === `execution:${this.executionId}`) {
               this.schedule(async () => {
-                if (this.completesWorkflowTurn) {
+                if (this.entry) {
                   const output = await this.options.workflowOutput?.(this.executionId) ?? 'entry complete'
                   this.complete(sessionId, String(turn.id), output)
                 } else {

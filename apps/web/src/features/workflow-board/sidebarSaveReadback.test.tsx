@@ -49,7 +49,7 @@ describe('sidebar classification after confirmed Board publication', () => {
     const reads = () => f.wire.matching((sample) => sample.method === 'GET'
       && sample.path === `/api/management/workspaces/${f.workspaceId}/workflows`).length
     const before = reads()
-    const save = board().getByRole('button', { name: 'Save workflow' })
+    const save = board().getByRole('button', { name: 'Save changes' })
     await user.click(save)
     try {
       await waitFor(() => expect(submitted).toBe(1))
@@ -75,7 +75,7 @@ describe('sidebar classification after confirmed Board publication', () => {
     const f = await mount(async (request) => await advance(request)
       ? HttpResponse.json({ error: { code: 'REVISION_CONFLICT', message: 'Publication rejected.' } }, { status: 409 }) : undefined)
     change(f.key)
-    await userEvent.click(board().getByRole('button', { name: 'Save workflow' }))
+    await userEvent.click(board().getByRole('button', { name: 'Save changes' }))
     await screen.findByText('The workflow changed.')
     expect(sidebar().getByRole('button', { name: /^First Board/ })).toHaveTextContent('Draft')
     expect(f.mock.managed(f.workflowId).currentVersionId).toBeNull()
@@ -88,7 +88,7 @@ describe('sidebar classification after confirmed Board publication', () => {
     const gate = new Promise<void>((resolve) => { release = resolve })
     const f = await mount(async (request) => { if (await advance(request)) { submitted = true; await gate } return undefined })
     change(f.key)
-    await userEvent.click(board().getByRole('button', { name: 'Save workflow' }))
+    await userEvent.click(board().getByRole('button', { name: 'Save changes' }))
     try {
       await waitFor(() => expect(submitted).toBe(true))
       // A retained newer local form is independent of the acknowledged payload.
@@ -107,11 +107,11 @@ describe('sidebar classification after confirmed Board publication', () => {
   it('refreshes the saved head after repeated saves and retains classification across workflow navigation', async () => {
     const f = await mount(), user = userEvent.setup()
     change(f.key)
-    await user.click(board().getByRole('button', { name: 'Save workflow' }))
+    await user.click(board().getByRole('button', { name: 'Save changes' }))
     await waitFor(() => expect(nextDraftDirty(useGraphDraftStore.getState().nextDrafts[f.key]!)).toBe(false))
     const firstVersion = f.mock.managed(f.workflowId).currentVersionId
     change(f.key, 'Second saved Board')
-    await user.click(board().getByRole('button', { name: 'Save workflow' }))
+    await user.click(board().getByRole('button', { name: 'Save changes' }))
     await waitFor(() => expect(nextDraftDirty(useGraphDraftStore.getState().nextDrafts[f.key]!)).toBe(false))
     expect(f.mock.managed(f.workflowId).currentVersionId).not.toBe(firstVersion)
     expect(await sidebar().findByRole('button', { name: 'Second saved Board' })).toBeVisible()

@@ -1,6 +1,3 @@
-import { workflowChatTools } from '../operator/tools/workflowChat.js'
-import { registerToolDefinition } from '../operator/definition.js'
-import { invokeOperatorTool } from '../operator/invoke.js'
 import { MCP_DISPLAY_NAME, PRODUCT_SLUG } from '@foreman-code/contracts/product'
 import { McpServer } from '@modelcontextprotocol/server'
 import { paginateToolLists } from '../toolListPagination.js'
@@ -29,7 +26,6 @@ import { MCP_ROLE_LABELS, roleInstructions, roleList, toolRoles, type McpRole } 
 export interface GraphqlMcpContext {
   role: McpRole
   principal: ManagementPrincipal
-  reauthorize?: () => Promise<ManagementPrincipal>
   operator?: OperatorServices
   interactions?: AppInteractionService
   references?: AgentReferenceService
@@ -93,7 +89,6 @@ function requestOperatorTools(context: GraphqlMcpContext, registration: McpReque
   if (!registration.operator) {
     const registered: OperatorRequestTools = { tools: [] }
     registered.tools = operatorRequestTools({ principal: context.principal, services: context.operator!,
-      ...(context.reauthorize ? { reauthorize: context.reauthorize } : {}),
       ...(context.signal ? { signal: context.signal } : {}),
     }, callbackContext => registered.catalog?.(callbackContext) ?? Promise.resolve([]))
     registration.operator = Promise.resolve(registered)
@@ -170,13 +165,6 @@ export async function createGraphqlMcpServer(context: GraphqlMcpContext, request
       await registerAppTools(collector, { principal: context.principal, interactions: context.interactions!,
         ...(context.bugReports ? { bugReports: context.bugReports } : {}),
         ...(context.signal ? { signal: context.signal } : {}) })
-      if (context.operator?.workflowChat) {
-        for (const tool of workflowChatTools(context.operator.workflowChat)) {
-          if (tool.name !== 'workflow_chat_read' && tool.name !== 'workflow_chat_post') continue
-          registerToolDefinition(collector, { principal: context.principal, services: context.operator }, tool,
-            { invoke: invokeOperatorTool })
-        }
-      }
       if (context.references) registerExecutionReferenceTools(collector, context.principal, context.references)
       if (context.operator) registerCiTools(collector, { principal: context.principal, services: context.operator,
         ...(context.signal ? { signal: context.signal } : {}) })

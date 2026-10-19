@@ -1,7 +1,7 @@
 import { optionalCommandId } from './commands.js'
 import { z } from "zod";
 
-const SettingsAgentRoleSchema = z.enum(["operator", "master", "orchestrator", "coder"]);
+const SettingsAgentRoleSchema = z.enum(["operator", "orchestrator", "coder"]);
 export type SettingsAgentRole = z.infer<typeof SettingsAgentRoleSchema>;
 const HarnessSettingsSectionSchema = z.enum(["model", "permissions", "session", "tools", "connections", "plugins", "workspace"]);
 export type HarnessSettingsSection = z.infer<typeof HarnessSettingsSectionSchema>;

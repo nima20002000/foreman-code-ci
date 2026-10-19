@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { expect, it, vi } from 'vitest'
-import { Client } from '@modelcontextprotocol/client'
+import { expect, it } from 'vitest'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { SavedRunDetailsSchema } from '@foreman-code/contracts/wave25'
 import { installationUpdateFixture, startWhenReady, runningTurn, completedRun } from './helpers/harnessInstallationUpdate.js'
@@ -8,21 +7,6 @@ import { waitForRemoteReview } from './helpers/remoteReviewProduction.js'
 import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'
 
 type Fixture = Awaited<ReturnType<typeof installationUpdateFixture>>
-
-it('reports an early authenticated MCP failure before the Worker starts', async () => {
-  const callTool = Client.prototype.callTool
-  // Exercise a real MCP error before setup reaches Worker initialization.
-  const request = vi.spyOn(Client.prototype, 'callTool').mockImplementationOnce(function (this: Client) {
-    return callTool.call(this, { name: 'workspace_get', arguments: { workspaceId: 'missing-workspace' } })
-  })
-  try {
-    await expect(installationUpdateFixture({ workflow: 'single', executionHost: 'worker' }))
-      .rejects.toThrow(/WORKSPACE_NOT_FOUND[\s\S]*Main stderr:[\s\S]*Worker stderr:/)
-    expect(request).toHaveBeenCalledTimes(1)
-  } finally {
-    request.mockRestore()
-  }
-}, 240_000)
 
 async function active(f: Fixture) {
   await f.provider.blockWorkflowTurns()
