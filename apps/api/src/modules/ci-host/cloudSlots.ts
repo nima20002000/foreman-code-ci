@@ -5,7 +5,6 @@ import { queueCiDatabaseWork } from '../../infrastructure/ciDatabasePriority.js'
 import { componentLogger } from '../diagnostics/logger.js'
 import { claimCiDispatch } from './dispatch.js'
 import { CI_BUSY_TICKET } from './deadlines.js'
-import { CI_RETAINED_EXECUTORS } from './executorRecovery.js'
 import { DomainError } from '../errors.js'
 import { PostgresFoundationSettingsRepository } from '../settings/foundation.js'
 import type { HostCiComputer } from './serviceTypes.js'
@@ -84,7 +83,6 @@ async function claimSlot(pool: pg.Pool, run: CiRunRecord, computer: HostCiComput
       const slot = host.slot ?? 0
       const key = `${host.mainId}:circleci:${circleAccountId}:${owner}:${slot}`
       await client.query('select pg_advisory_xact_lock(hashtextextended($1,0))', [`ci-cloud-slot:${key}`])
-      if (await retainedCiSlot(client, computer.key)) return 'busy' as const
       const assigned = await client.query(`select id from ci_runs where (${CI_BUSY_TICKET})
         and record#>>'{computer,hostRef,kind}'='cloud'
         and record#>>'{computer,hostRef,provider}'='circleci'
@@ -98,17 +96,9 @@ async function claimSlot(pool: pg.Pool, run: CiRunRecord, computer: HostCiComput
       return claimCiDispatch(client, run, computer, request)
     }
     await client.query('select pg_advisory_xact_lock(hashtextextended($1,0))', [`ci-cloud-slot:${computer.key}`])
-    if (await retainedCiSlot(client, computer.key)) return 'busy' as const
     const assigned = (await client.query<{ host_key: string | null }>(`select host_key from ci_runs
       where host_key=$1 and (${CI_BUSY_TICKET}) limit 1`, [computer.key])).rows
     if (assigned.some(row => row.host_key === computer.key)) return 'busy' as const
     return claimCiDispatch(client, run, computer, request)
   })
-}
-
-async function retainedCiSlot(client: pg.PoolClient, hostKey: string) {
-  const result = await client.query(`select id from ci_runs where ${CI_RETAINED_EXECUTORS}
-    and record->'retainedExecutions' @> $1::jsonb limit 1`,
-  [JSON.stringify([{ executor: 'retained', hostKey }])])
-  return result.rows.length > 0
 }
