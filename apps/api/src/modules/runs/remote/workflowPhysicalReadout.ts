@@ -198,9 +198,10 @@ interface Retained {
 /** Only the installed original host remembers its own replies. Request selectors
  * locate those immutable originals; they can never supply or reconstruct proof.
  *
- * Retention rule: Main reads a reply right after it arrives (events of a streamed history as it yields them) and can
- * ACK it only inside the observation window it was served. A reply Main never read (an empty streaming poll) or whose
- * served window has passed can no longer be needed, so it yields its slot, oldest first, when retention is full.
+ * Retention rule: reads protect a reply through its served observation window and a latency allowance.
+ * Unread replies and replies whose protection has elapsed yield their slots, oldest first, when retention is full.
+ * Main may still hold their selectors after a delayed observation; it must re-observe the operation's history or
+ * status when that happens. Terminal results remain in the operation journal independently of these readouts.
  * Replies Main may still read or ACK are never evicted; a store full of them refuses the new reply loudly.
  * The one exception is cleanup: a reply of an operation that is being stopped or closed (its cancel, stop or closure
  * readout) frees capacity, so it displaces that same operation's oldest observation instead of being refused. Main
