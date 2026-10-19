@@ -83,8 +83,9 @@ export async function workRequestSettlementsLocked(context: WorkReturnContext, r
 export async function resolveWaitingWorkReturnsLocked(context: WorkReturnContext,
   sourceActivationId: string): Promise<string[]> {
   const { sql, scope } = context
-  const rows = (await sql.query<{ activation_id: string; workflow_node_id: string; requester_activation_id: string }>(
-    `select a.activation_id,a.workflow_node_id,q.requester_activation_id from run_work_activations a
+  const rows = (await sql.query<{ activation_id: string; workflow_node_id: string;
+    requester_activation_id: string; return_id: string }>(
+    `select a.activation_id,a.workflow_node_id,q.requester_activation_id,t.return_id from run_work_activations a
       join run_work_returns t on t.run_id=a.run_id and t.return_id=a.cause_id
       join run_work_requests q on q.run_id=t.run_id and q.request_id=t.request_id
       where a.run_id=$1 and a.cause_kind='work_return' and a.state='waiting' for update of a`,
@@ -98,7 +99,7 @@ export async function resolveWaitingWorkReturnsLocked(context: WorkReturnContext
     await sql.query(`insert into run_activity(run_id,source,kind,occurred_at,payload)
       values($1,'backend','work_requester_reactivated',$2,$3::jsonb)`,
     [scope.runId, context.now, canonicalGraphJson({ activationId: row.activation_id,
-      requesterNodeId: row.workflow_node_id, sourceActivationId })])
+      requesterNodeId: row.workflow_node_id, returnId: row.return_id, sourceActivationId })])
   }
   return (await sql.query<{ activation_id: string }>(
     `select payload->>'activationId' as activation_id from run_activity

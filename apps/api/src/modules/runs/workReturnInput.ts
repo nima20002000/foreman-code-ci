@@ -1,5 +1,5 @@
 import {
-  AcceptedCurrentNodeResultSchema, WorkReturnSchema, canonicalGraphJson, parseWorkHandoffResult,
+  AcceptedCurrentNodeResultSchema, WorkActivationInputSchema, WorkReturnSchema, canonicalGraphJson, parseWorkHandoffResult,
   type WorkActivationInput, type WorkReturn,
 } from '@foreman-code/contracts/wave25'
 import { frozenWorkNotice, readWorkLimitNoticeLocked } from './workHandoffNotice.js'
@@ -8,12 +8,18 @@ import { workRequestSettlementsLocked, type WorkReturnContext } from './workRetu
 
 export async function readWorkReturnFeedbackLocked(context: WorkReturnContext, returned: WorkReturn) {
   const { sql, scope } = context
+  const slot = (await sql.query<{ input_json: string }>(
+    'select input_json from run_repeat_slots where run_id=$1 and work_activation_id=$2',
+    [scope.runId, returned.continuationActivationId])).rows[0]
+  const frozen = slot ? WorkActivationInputSchema.parse(JSON.parse(slot.input_json)).work : undefined
+  if (frozen && frozen.kind !== 'work_return') return repeatConflict('WORK_RETURN_ANCESTRY_CONFLICT')
+  const grouped = !frozen || frozen.returns !== undefined
   const rows = (await sql.query<{ record: unknown; result_json: string; result_digest: string }>(
     `select t.record,x.result_json,x.result_digest from run_work_returns t
       join run_work_requests q on q.run_id=t.run_id and q.request_id=t.request_id
       join run_work_results x on x.run_id=t.run_id and x.execution_id=t.source_execution_id
-      where q.run_id=$1 and q.requester_activation_id=$2 order by q.request_id`,
-    [scope.runId, returned.requesterActivationId])).rows
+      where q.run_id=$1 and q.requester_activation_id=$2 and ($3 or t.return_id=$4) order by q.request_id`,
+    [scope.runId, returned.requesterActivationId, grouped, returned.returnId])).rows
   const feedback: NonNullable<Extract<WorkActivationInput['work'], { kind: 'work_return' }>['returns']> = []
   for (const row of rows) {
     const value = WorkReturnSchema.parse(row.record)
@@ -39,6 +45,8 @@ export async function readWorkReturnFeedbackLocked(context: WorkReturnContext, r
   if (!primary || canonicalGraphJson(primary.returned) !== canonicalGraphJson(returned)) {
     return repeatConflict('WORK_RETURN_RESULT_CONFLICT')
   }
+  // Bound inputs keep their saved single-return shape when read after an upgrade.
+  if (!grouped) return primary
   const settled = await workRequestSettlementsLocked(context, returned.requesterActivationId)
   if (settled.pending) return repeatConflict('WORK_RETURN_PENDING')
   return { ...primary, returns: feedback, failures: settled.failures }

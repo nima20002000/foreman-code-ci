@@ -3,7 +3,8 @@ import {
   AcceptedCurrentNodeResultSchema, WorkActivationIdentitySchema, WorkHandoffResultSchema,
   WorkActivationInputSchema, WorkLimitDenialSchema, WorkRequestSchema, WorkReturnSchema,
   canonicalGraphJson, parseWorkHandoffResult, workConnectionForRequest,
-  type WorkActivationInput, type WorkLimitDenial, type WorkNotice, type WorkRequest, type WorkReturn, type WorkflowVersionV3,
+  type WorkActivationInput, type WorkHandoffResult, type WorkLimitDenial, type WorkNotice,
+  type WorkRequest, type WorkReturn, type WorkflowVersionV3,
 } from '@foreman-code/contracts/wave25'
 import type { GraphTransactionSql } from '../run-graph/connection.js'
 import type { RepeatLockedHooks } from './repeatPostgres.js'
@@ -343,7 +344,7 @@ export async function admitWorkHandoffLocked(context: AdmissionContext, sourceEx
     return repeatConflict('WORK_SOURCE_ACTIVATION_CONFLICT')
   }
   const result = WorkHandoffResultSchema.parse(parseWorkHandoffResult(execution.result))
-  const routing = result.routing.kind === 'return' && result.routing.outcome === 'accepted'
+  const routing: WorkHandoffResult['routing'] = result.routing.kind === 'return' && result.routing.outcome === 'accepted'
     && !result.data.remainingFindings.length ? { kind: 'finish' as const } : result.routing
   const node = version.definition.nodes.find((item) => item.id === execution.workflowNodeId)
   if (!node || routing.kind === 'return') return repeatConflict('WORK_REQUEST_RESULT_REQUIRED')
@@ -509,10 +510,12 @@ export async function admitWorkHandoffLocked(context: AdmissionContext, sourceEx
     values($1,'backend','work_handoff_accepted',$2,$3,$4::jsonb)`, [scope.runId, sourceExecutionId,
     context.now, canonicalGraphJson({ requestId, relationshipId: relationship.id, requesterNodeId: node.id,
       destinationNodeId, used: reserved.used, maximum })])
-  const sourceNotice = (await sql.query<{ notice_id: string; relationship_id: string }>(
+  const sourceNotices = (await sql.query<{ notice_id: string; relationship_id: string }>(
     `select notice_id,relationship_id from run_work_notices
-      where run_id=$1 and continuation_activation_id=$2`, [scope.runId, activation.activationId])).rows[0]
-  if (sourceNotice && sourceNotice.relationship_id !== relationship.id) {
+      where run_id=$1 and continuation_activation_id=$2 order by notice_id`,
+    [scope.runId, activation.activationId])).rows
+  for (const sourceNotice of sourceNotices) {
+    if (sourceNotice.relationship_id === relationship.id) continue
     await sql.query(`insert into run_activity(run_id,source,kind,harness_execution_id,occurred_at,payload)
       values($1,'backend','work_rerouted',$2,$3,$4::jsonb)`, [scope.runId, sourceExecutionId,
       context.now, canonicalGraphJson({ requestId, noticeId: sourceNotice.notice_id,
