@@ -9,6 +9,7 @@ import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { HostCiService, type CiCommits, type HostCiComputer, type HostCiEndpoint } from '../src/modules/ci-host/service.js'
 import { DeviceApplicationError } from '../src/modules/devices/deviceApplicationError.js'
+import { readServiceHealth } from '../src/modules/diagnostics/serviceHealth.js'
 import { CI_GET_ACTIONS, RunCiAuthority } from '../src/modules/jobs/ciAuthority.js'
 import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { deferred } from './helpers/deferred.js'
@@ -138,6 +139,8 @@ async function fixture(state: 'starting' | 'running' = 'running', expectedDurati
     read: async () => CiGetOutputSchema.parse(decodeMcpToolResult(await operator.callTool(input))),
     denied: async () => (await denied.callTool(input)).isError,
     stored: async () => (await pool.query('select record from ci_runs where id=$1', [record.id])).rows[0]!.record,
+    diagnostic: async () => ({ run: (await pool.query('select record from ci_runs where id=$1', [record.id])).rows[0]!.record,
+      services: readServiceHealth() }),
     close: async () => { await ci.close(); await Promise.all(clients.map(client => client.close())); await app.close() },
   }
 }
@@ -160,7 +163,7 @@ it.each([
     vi.setSystemTime(started + threshold + 60_000)
     await f.dispatch()
     await f.dispatch()
-    expect(f.starts, JSON.stringify((await f.read()).run)).toHaveLength(1)
+    expect(f.starts, JSON.stringify(await f.diagnostic())).toHaveLength(1)
     const attempt = f.starts[0]!
     expect(attempt.computer).toBe(f.replacement.key)
     expect(attempt.runId).not.toBe(f.record.id)
@@ -186,11 +189,11 @@ it.each([
     await f.insert(queued)
     vi.setSystemTime(Date.now() + 60_000)
     await f.dispatch()
-    expect(f.starts, JSON.stringify((await f.read()).run)).toHaveLength(1)
+    expect(f.starts, JSON.stringify(await f.diagnostic())).toHaveLength(1)
     f.setCleanup('pending')
     vi.setSystemTime(Date.now() + 60_000)
     await f.dispatch()
-    expect(f.starts, JSON.stringify((await f.read()).run)).toHaveLength(1)
+    expect(f.starts, JSON.stringify(await f.diagnostic())).toHaveLength(1)
     expect((await f.read()).run).toMatchObject({ state: 'passed',
       retainedExecutions: [{ executor: 'retained' }] })
     f.setCleanup('stopped')
@@ -263,7 +266,7 @@ it('rejects an abandoned result arriving after another dispatcher completes the 
     await other.drain()
     await other.dispatch()
     await other.drain()
-    expect(f.starts, JSON.stringify((await f.read()).run)).toHaveLength(1)
+    expect(f.starts, JSON.stringify(await f.diagnostic())).toHaveLength(1)
     expect(f.starts[0]!.runId).not.toBe(f.record.id)
     f.finish()
     await other.dispatch()
