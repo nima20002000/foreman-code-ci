@@ -5,6 +5,7 @@ import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { expect, it } from 'vitest'
 import { CI_GET_ACTIONS } from '../src/modules/jobs/ciAuthority.js'
 import { fixture } from './helpers/hostCiMcpFixture.js'
+import { deferred } from './helpers/deferred.js'
 
 /** Dispatch passes hand observations and follow-up passes to background work; settle waits for all of it. */
 async function settle(service: { dispatch(): Promise<void>; drain(): Promise<void> }) {
@@ -48,6 +49,32 @@ it('prefers build computers and CircleCI over higher-priority GitHub slots for i
     expect(running.partitions!.find(run => run.id === hostSlice.id))
       .toMatchObject({ computer: { hostRef: { kind: 'device' } }, message: null })
   } finally { await f.close() }
+})
+
+it('uses ready GitHub capacity while a preferred CircleCI status is still pending', async () => {
+  const circleStatus = deferred()
+  const f = await fixture({ cloud: { github: 2, circleci: 2 }, beforeStatus: async computer => {
+    if (computer.hostRef.provider === 'circleci' && computer.hostRef.slot === 1) await circleStatus.promise
+  } })
+  try {
+    const started = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', {
+      suite: 'integration', commandId: 'pending-circle-status', partitions: 4,
+    }))
+    await f.ci.dispatch()
+    const read = await f.waitFor(f.operator, started.ticketId, output =>
+      output.partitions!.every(run => run.state === 'running'))
+    expect(read.partitions).toHaveLength(4)
+    expect(read.partitions!.filter(run => run.computer?.hostRef.kind === 'device')).toHaveLength(2)
+    expect(read.partitions!.filter(run => run.computer?.hostRef.provider === 'circleci')).toHaveLength(1)
+    expect(read.partitions!.filter(run => run.computer?.hostRef.provider === 'github')).toHaveLength(1)
+    circleStatus.resolve()
+    await settle(f.ci)
+    const settled = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: started.ticketId }))
+    expect(settled.partitions!.map(run => run.computer)).toEqual(read.partitions!.map(run => run.computer))
+  } finally {
+    circleStatus.resolve()
+    await f.close()
+  }
 })
 
 it.each(['typecheck', 'lint', 'build', 'unit'] as const)(
