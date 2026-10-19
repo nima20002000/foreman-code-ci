@@ -56,7 +56,7 @@ export function workHandoffNodeAction(input: {
       const result = parseWorkHandoffResult(terminal.execution.result)
       if (result.routing.kind === 'return') {
         const returned = await input.store.returnWork(terminal.execution.id)
-        return returned.value.continuationActivationId ? [returned.value.continuationActivationId] : []
+        return returned.destinations ?? []
       }
       const selected: string[] = []
       if (result.routing.kind === 'request') {
