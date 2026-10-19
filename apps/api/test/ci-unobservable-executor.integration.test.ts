@@ -23,7 +23,8 @@ beforeEach(async () => {
 })
 afterEach(() => vi.useRealTimers())
 
-async function fixture(options: { state?: 'starting' | 'running'; expectedDurationMs?: number; gate?: boolean } = {}) {
+async function fixture(options: { state?: 'starting' | 'running'; expectedDurationMs?: number; gate?: boolean;
+  executionRunId?: string } = {}) {
   const state = options.state ?? 'running'
   const expectedDurationMs = options.expectedDurationMs ?? 189_000
   const gate = options.gate ?? false
@@ -41,6 +42,7 @@ async function fixture(options: { state?: 'starting' | 'running'; expectedDurati
   const selectedFile = files[14]!
   const record = CiRunRecordSchema.parse({
     id: randomUUID(), workspaceId, groupId: randomUUID(), suite: 'integration', part: null,
+    ...(options.executionRunId ? { executionRunId: options.executionRunId } : {}),
     scope: 'full', files: gate ? [selectedFile] : [],
     partition: gate ? null : { index: 14, count: 49, weights: Array.from({ length: 49 }, () => 1),
       tier: 'slow', slowFiles: files },
@@ -66,6 +68,9 @@ async function fixture(options: { state?: 'starting' | 'running'; expectedDurati
   let cleanup: 'running' | 'pending' | 'stopped' = 'running'
   let replacementReady = true
   let readFailure: string | undefined
+  let replacementReadFailure: string | undefined
+  let statusExecutionId: string | undefined
+  let heldStatus: { entered: ReturnType<typeof deferred<void>>; reply: ReturnType<typeof deferred<void>> } | undefined
   let heldRead: { entered: ReturnType<typeof deferred<void>>; reply: ReturnType<typeof deferred<void>> } | undefined
   const starts: { computer: string; runId: string }[] = []
   const startRequests: Extract<CiHostRequest, { operation: 'start' }>[] = []
@@ -77,14 +82,26 @@ async function fixture(options: { state?: 'starting' | 'running'; expectedDurati
       const old = computer.key === original.key
       if (old && offline) throw new DeviceApplicationError('transport')
       if (request.operation === 'status') {
+        const runId = old ? statusExecutionId : undefined
+        if (old && heldStatus) {
+          const pending = heldStatus
+          heldStatus = undefined
+          pending.entered.resolve()
+          await pending.reply.promise
+        }
         return { operation: 'status', ready: old || replacementReady, reasons: [], cpuCount: 8,
-          memoryBytes: 16 * 2 ** 30, slotsTotal: 1, slotsUsed: 0, runs: [] }
+          memoryBytes: 16 * 2 ** 30, slotsTotal: 1, slotsUsed: 0,
+          runs: runId ? [{ runId, state: 'running', step: 'integration', startedAt: at,
+            finishedAt: null, exitCode: null, logBytes: 0, message: null }] : [] }
       }
       if (request.operation === 'start') {
         starts.push({ computer: computer.key, runId: request.runId })
         startRequests.push(request)
       }
       if (request.operation === 'cancel') cancels.push(request.runId)
+      if (!old && request.operation === 'read' && replacementReadFailure) {
+        throw new DeviceApplicationError(replacementReadFailure)
+      }
       if (old && request.operation === 'read') {
         oldReads.push(request.runId)
         if (readFailure) throw new DeviceApplicationError(readFailure)
@@ -139,6 +156,13 @@ async function fixture(options: { state?: 'starting' | 'running'; expectedDurati
     setCleanup(value: typeof cleanup) { cleanup = value },
     setReplacementReady(value: boolean) { replacementReady = value },
     setReadFailure(value: string | undefined) { readFailure = value },
+    setReplacementReadFailure(value: string | undefined) { replacementReadFailure = value },
+    setStatusExecution(value: string | undefined) { statusExecutionId = value },
+    holdOldStatus() {
+      const pending = { entered: deferred<void>(), reply: deferred<void>() }
+      heldStatus = pending
+      return pending
+    },
     holdOldRead() {
       const pending = { entered: deferred<void>(), reply: deferred<void>() }
       heldRead = pending
@@ -297,6 +321,85 @@ it('rejects an abandoned result arriving after another dispatcher completes the 
       tests: { files: [{ tests: [{ name: 'replacement result' }] }] } })
     expect(completed.logTail).not.toContain('abandoned output')
     expect(completed.run).toEqual(await f.stored())
+  } finally {
+    pending?.reply.resolve()
+    await observing
+    await other.close()
+    await f.close()
+  }
+})
+
+it('keeps work on an executor that reports the matching execution while log reads time out', async () => {
+  const executionRunId = randomUUID()
+  const f = await fixture({ executionRunId })
+  const started = Date.now()
+  try {
+    await f.dispatch()
+    const unavailableSince = (await f.read()).run.observation!.transportUnavailableSince
+    expect(unavailableSince).toBeDefined()
+    f.setOffline(false)
+    f.setReadFailure('timeout')
+    f.setStatusExecution(executionRunId)
+    vi.setSystemTime(started + 300_000)
+    await f.dispatch()
+    expect((await f.read()).run.observation!.transportUnavailableSince).not.toBe(unavailableSince)
+    vi.setSystemTime(started + 600_000)
+    await f.dispatch()
+    expect((await f.read()).run).toMatchObject({ state: 'running', executionRunId,
+      computer: { hostRef: f.original.hostRef } })
+    expect(f.starts).toEqual([])
+    expect(f.cancels).toEqual([])
+  } finally { await f.close() }
+})
+
+it('reroutes when status names the ticket but does not observe its active execution', async () => {
+  const f = await fixture({ executionRunId: randomUUID() })
+  try {
+    await f.dispatch()
+    f.setOffline(false)
+    f.setReadFailure('timeout')
+    f.setStatusExecution(f.record.id)
+    vi.setSystemTime(Date.now() + 438_000)
+    await f.dispatch()
+    await f.dispatch()
+    expect(f.starts).toHaveLength(1)
+    expect(f.starts[0]!.computer).toBe(f.replacement.key)
+    expect((await f.read()).run).toMatchObject({ state: 'running',
+      executionRunId: f.starts[0]!.runId, computer: { hostRef: f.replacement.hostRef } })
+  } finally { await f.close() }
+})
+
+it('does not apply a delayed status from an abandoned execution to its replacement', async () => {
+  const executionRunId = randomUUID()
+  const f = await fixture({ executionRunId })
+  const other = f.anotherDispatcher()
+  let pending: ReturnType<typeof f.holdOldStatus> | undefined
+  let observing: Promise<void> | undefined
+  try {
+    await f.dispatch()
+    f.setOffline(false)
+    f.setReadFailure('timeout')
+    f.setStatusExecution(executionRunId)
+    vi.setSystemTime(Date.now() + 438_000)
+    pending = f.holdOldStatus()
+    observing = f.dispatch()
+    await pending.entered.promise
+    f.setStatusExecution(undefined)
+    await other.dispatch()
+    await other.drain()
+    await other.dispatch()
+    await other.drain()
+    expect(f.starts).toHaveLength(1)
+    const replacementId = f.starts[0]!.runId
+    f.setReplacementReadFailure('timeout')
+    await other.dispatch()
+    await other.drain()
+    const outage = (await f.read()).run.observation!.transportUnavailableSince
+    expect(outage).toBeDefined()
+    pending.reply.resolve()
+    await observing
+    expect((await f.read()).run).toMatchObject({ state: 'running', executionRunId: replacementId,
+      observation: { transportUnavailableSince: outage } })
   } finally {
     pending?.reply.resolve()
     await observing
