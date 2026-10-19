@@ -987,7 +987,11 @@ export class HostCiService {
     if (setupRequeue || options.retainExecutor) savedLogTail = ''
     // Reusing the stored JSON keeps its TOAST value when only the log changes.
     const record = serializeCiJson(next)
-    const recordAssignment = canonicalJson(run) === canonicalJson(JSON.parse(record)) ? '' : 'record=$4::jsonb, '
+    // Cleanup can change an earlier execution while this execution's result is in flight. Preserve those
+    // independent slot facts; all other ticket fields still participate in the compare-and-set.
+    const recordAssignment = canonicalJson(run) === canonicalJson(JSON.parse(record)) ? '' : `record=$4::jsonb ||
+      case when record ? 'retainedExecutions' or $11::jsonb is not null then jsonb_build_object('retainedExecutions',
+        coalesce(record->'retainedExecutions','[]'::jsonb) || coalesce($11::jsonb,'[]'::jsonb)) else '{}'::jsonb end, `
     // Durations are partition inputs: setup retries must keep the original file membership.
     const saved = await this.saveCancellation(`update ci_runs set state=$2, host_key=$3, ${recordAssignment}log_tail=coalesce($6,log_tail),
         test_results=case when $10 then null else test_results end
@@ -996,13 +1000,16 @@ export class HostCiService {
           or record->>'executorCleanupPending'='true'))
         and host_key is not distinct from $5
         and record->>'supersededBy' is not distinct from $7
-        and record=$9::jsonb
+        and record - 'retainedExecutions'=$9::jsonb - 'retainedExecutions'
         and (state is distinct from $2 or host_key is distinct from $3
-          or record is distinct from $4::jsonb or ($6::text is not null and log_tail is distinct from $6))`,
+          or record - 'retainedExecutions' is distinct from $4::jsonb - 'retainedExecutions'
+          or $11::jsonb is not null
+          or ($6::text is not null and log_tail is distinct from $6))`,
       [run.id, next.state, hostKey, record,
         ['starting', 'running'].includes(run.state) || run.executorCleanupPending ? computer.key : null,
         savedLogTail,
-        run.supersededBy ?? null, run.state, JSON.stringify(run), setupRequeue || options.retainExecutor === true],
+        run.supersededBy ?? null, run.state, JSON.stringify(run), setupRequeue || options.retainExecutor === true,
+        options.retainExecutor ? JSON.stringify(retainedExecutions.slice(-1)) : null],
       next, run.cancellation ?? audit, client)
     if (terminal && run.gate && run.suite === 'integration') invalidateExecutorSpeeds(this.planningEndpoint)
     if (requeued && saved.rowCount) log.warn({ runId: run.id, provider: computer.hostRef.provider, message: messages.message },

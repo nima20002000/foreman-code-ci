@@ -1,5 +1,6 @@
 import type pg from 'pg'
 import type { CiRunRecord } from '@foreman-code/contracts'
+import { withoutCiDatabasePriority } from '../../infrastructure/ciDatabasePriority.js'
 import { componentLogger } from '../diagnostics/logger.js'
 import { DomainError } from '../errors.js'
 import { errorMessage } from '../../shared/errorMessage.js'
@@ -45,7 +46,8 @@ export class CiRetainedExecutors {
       if (this.pending.size >= limit) break
       if (this.pending.has(run.id) || !run.retainedExecutions?.some(attempt =>
         attempt.executor === 'retained' && Date.parse(attempt.nextAttemptAt) <= Date.now())) continue
-      const work = this.cleanup(run, computers).then(released => { if (released) onReleased() })
+      const work = withoutCiDatabasePriority(() => this.cleanup(run, computers))
+        .then(released => { if (released) onReleased() })
         .catch(error => log.warn({ err: error, runId: run.id }, 'Abandoned CI executor cleanup failed'))
         .finally(() => { this.pending.delete(run.id) })
       this.pending.set(run.id, work)
