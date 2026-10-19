@@ -17,12 +17,14 @@ export interface WorkReturnContext {
 export async function ensureWorkReturnContinuationLocked(context: WorkReturnContext,
   request: WorkRequest, returnId: string): Promise<string> {
   const { sql, scope } = context
-  const prior = (await sql.query<{ requester_continuation_activation_id: string }>(
-    `select t.requester_continuation_activation_id from run_work_returns t
+  const prior = (await sql.query<{ requester_continuation_activation_id: string; state: string }>(
+    `select t.requester_continuation_activation_id,a.state from run_work_returns t
       join run_work_requests q on q.run_id=t.run_id and q.request_id=t.request_id
+      join run_work_activations a on a.run_id=t.run_id and a.activation_id=t.requester_continuation_activation_id
       where q.run_id=$1 and q.requester_activation_id=$2 and t.outcome='needs_changes'
-      order by t.returned_at,t.return_id limit 1`, [scope.runId, request.requesterActivationId])).rows[0]
-  if (prior) return prior.requester_continuation_activation_id
+      order by a.activation_sequence desc`, [scope.runId, request.requesterActivationId])).rows
+  const waiting = prior.find(row => row.state === 'waiting')
+  if (waiting) return waiting.requester_continuation_activation_id
   context.assertActive()
   await assertWorkflowExecutionCapacityLocked(sql, scope.runId, context.version)
   const requester = (await sql.query<{ record: unknown }>(
@@ -33,7 +35,9 @@ export async function ensureWorkReturnContinuationLocked(context: WorkReturnCont
   if (original.workflowNodeId !== request.requesterNodeId || !sameRepeatValue(original.scope, scope)) {
     return repeatConflict('WORK_RETURN_REQUESTER_CONFLICT')
   }
-  const activationId = repeatId('work-activation', 'returns', request.requesterActivationId)
+  const activationId = prior.length
+    ? repeatId('work-activation', 'returns', request.requesterActivationId, returnId)
+    : repeatId('work-activation', 'returns', request.requesterActivationId)
   const next = WorkActivationIdentitySchema.parse({ scope, activationId,
     workflowNodeId: request.requesterNodeId, lineageId: original.lineageId,
     cause: { kind: 'work_return', returnId } })
@@ -88,11 +92,19 @@ export async function resolveWaitingWorkReturnsLocked(context: WorkReturnContext
     `select a.activation_id,a.workflow_node_id,q.requester_activation_id,t.return_id from run_work_activations a
       join run_work_returns t on t.run_id=a.run_id and t.return_id=a.cause_id
       join run_work_requests q on q.run_id=t.run_id and q.request_id=t.request_id
-      where a.run_id=$1 and a.cause_kind='work_return' and a.state='waiting' for update of a`,
+      where a.run_id=$1 and a.cause_kind='work_return' and a.state='waiting'
+      order by a.activation_sequence for update of a`,
     [scope.runId])).rows
   for (const row of rows) {
     const settled = await workRequestSettlementsLocked(context, row.requester_activation_id)
     if (settled.pending) continue
+    const active = await sql.query(`select 1 from run_work_activations a
+      join run_work_returns t on t.run_id=a.run_id and t.return_id=a.cause_id
+      join run_work_requests q on q.run_id=t.run_id and q.request_id=t.request_id
+      where a.run_id=$1 and q.requester_activation_id=$2 and a.activation_id<>$3
+        and a.state in ('queued','running') limit 1`,
+    [scope.runId, row.requester_activation_id, row.activation_id])
+    if (active.rowCount) continue
     context.assertActive()
     await sql.query(`update run_work_activations set state='queued' where run_id=$1 and activation_id=$2`,
       [scope.runId, row.activation_id])
@@ -104,5 +116,11 @@ export async function resolveWaitingWorkReturnsLocked(context: WorkReturnContext
   return (await sql.query<{ activation_id: string }>(
     `select payload->>'activationId' as activation_id from run_activity
       where run_id=$1 and kind='work_requester_reactivated' and payload->>'sourceActivationId'=$2
-      order by sequence`, [scope.runId, sourceActivationId])).rows.map(row => row.activation_id)
+      union
+      select t.requester_continuation_activation_id as activation_id from run_work_returns t
+      join run_activity a on a.run_id=t.run_id and a.kind='work_requester_reactivated'
+        and a.payload->>'activationId'=t.requester_continuation_activation_id
+      where t.run_id=$1 and t.source_activation_id=$2 and t.outcome='needs_changes'
+        and not (a.payload ? 'sourceActivationId')
+      order by activation_id`, [scope.runId, sourceActivationId])).rows.map(row => row.activation_id)
 }

@@ -180,6 +180,7 @@ async function claimWorkJoinDispatchLocked(context: AdmissionContext,
 export async function resolveWaitingWorkJoinsLocked(context: AdmissionContext,
   sourceActivationId: string): Promise<string[]> {
   await context.hooks.assertAuthorityLocked(context.sql)
+  const ready = await reconcileAcceptedWorkReturnsLocked(context, sourceActivationId)
   const rows = (await context.sql.query<{ activation_id: string; workflow_node_id: string; state: string }>(
     `select a.activation_id,a.workflow_node_id,a.state from run_work_activations a
       left join run_work_join_dispatches d on d.run_id=a.run_id and d.activation_id=a.activation_id
@@ -188,7 +189,6 @@ export async function resolveWaitingWorkJoinsLocked(context: AdmissionContext,
         and not exists(select 1 from harness_executions e where e.run_id=a.run_id
           and e.work_activation_id=a.activation_id))) order by a.activation_id for update of a`,
     [context.scope.runId, sourceActivationId])).rows
-  const ready: string[] = []
   for (const row of rows) {
     const owned = (await context.sql.query(`select 1 from run_work_join_dispatches
       where run_id=$1 and activation_id=$2 and source_activation_id=$3`,
@@ -198,7 +198,7 @@ export async function resolveWaitingWorkJoinsLocked(context: AdmissionContext,
       ready.push(row.activation_id)
     }
   }
-  return [...ready, ...await resolveWaitingWorkReturnsLocked(context, sourceActivationId)]
+  return [...new Set([...ready, ...await resolveWaitingWorkReturnsLocked(context, sourceActivationId)])]
 }
 
 /** Preserve the accepted native decision when no lawful continuation remains.
@@ -329,7 +329,7 @@ async function readAcceptedWorkSourceLocked(context: AdmissionContext, sourceExe
  * This is an admission receipt; native launch still uses the original one-use
  * claim, authorization, session and possible-submission boundary. */
 export async function admitWorkHandoffLocked(context: AdmissionContext, sourceExecutionId: string,
-  selectedRelationshipId?: string): Promise<WorkRequestAdmission> {
+  selectedRelationshipId?: string, dispatchSourceActivationId?: string): Promise<WorkRequestAdmission> {
   const { sql, scope, version, hooks } = context
   if (!version.definition.handoffs || version.definition.repeat
     || version.definition.nodes.some((node) => node.kind === 'job')) return repeatConflict('WORK_POLICY_PIN_CONFLICT')
@@ -388,7 +388,7 @@ export async function admitWorkHandoffLocked(context: AdmissionContext, sourceEx
     if (!state) return repeatConflict('WORK_ACTIVATION_MISSING')
     const destinationReady = state.cause_kind === 'join'
       ? state.state !== 'waiting' && await claimWorkJoinDispatchLocked(context,
-        request.destinationActivationId, activation.activationId)
+        request.destinationActivationId, dispatchSourceActivationId ?? activation.activationId)
       : state.state !== 'waiting'
     return { kind: 'accepted', request, replayed: true, destinationReady }
   }
@@ -505,7 +505,7 @@ export async function admitWorkHandoffLocked(context: AdmissionContext, sourceEx
     sourceExecutionId, activationId, node.id, destinationNodeId, payloadDigest, canonicalGraphJson(request), context.now])
   let destinationReady = !join
   if (join) destinationReady = await resolveWorkJoinLocked(context, activationId, destinationNodeId)
-    && await claimWorkJoinDispatchLocked(context, activationId, activation.activationId)
+    && await claimWorkJoinDispatchLocked(context, activationId, dispatchSourceActivationId ?? activation.activationId)
   await sql.query(`insert into run_activity(run_id,source,kind,harness_execution_id,occurred_at,payload)
     values($1,'backend','work_handoff_accepted',$2,$3,$4::jsonb)`, [scope.runId, sourceExecutionId,
     context.now, canonicalGraphJson({ requestId, relationshipId: relationship.id, requesterNodeId: node.id,
@@ -525,6 +525,19 @@ export async function admitWorkHandoffLocked(context: AdmissionContext, sourceEx
   return { kind: 'accepted', request, replayed: false, destinationReady }
 }
 
+async function reconcileAcceptedWorkReturnsLocked(context: AdmissionContext,
+  sourceActivationId: string): Promise<string[]> {
+  const requests = (await context.sql.query<{ record: unknown }>(
+    `select distinct on (requester_activation_id) record from run_work_requests
+      where run_id=$1 and (destination_activation_id=$2 or request_id=work_parent_request($1,$2))
+      order by requester_activation_id,request_id`, [context.scope.runId, sourceActivationId])).rows
+  const ready: string[] = []
+  for (const row of requests) {
+    ready.push(...await forwardAcceptedWorkReturnsLocked(context, WorkRequestSchema.parse(row.record), sourceActivationId))
+  }
+  return [...new Set(ready)]
+}
+
 async function forwardAcceptedWorkReturnsLocked(context: AdmissionContext,
   request: WorkRequest, sourceActivationId: string): Promise<string[]> {
   const settled = await workRequestSettlementsLocked(context, request.requesterActivationId)
@@ -538,13 +551,13 @@ async function forwardAcceptedWorkReturnsLocked(context: AdmissionContext,
       where q.run_id=$1 and q.requester_activation_id=$2 order by a.sequence`,
     [context.scope.runId, request.requesterActivationId])).rows
   const returns = rows.map(row => ({ ...row, returned: WorkReturnSchema.parse(row.record) }))
-  if (returns.at(-1)?.returned.sourceActivationId !== sourceActivationId
-    || returns.some(row => row.returned.outcome !== 'accepted' || row.returned.remainingFindings.length)) return []
+  if (returns.some(row => row.returned.outcome !== 'accepted' || row.returned.remainingFindings.length)) return []
   const destinations: string[] = []
   for (const row of returns) {
     const result = parseWorkHandoffResult(AcceptedCurrentNodeResultSchema.parse(JSON.parse(row.result_json)))
     for (const relationshipId of selectedWorkHandoffRoutes(context.version.definition, row.node_id, result)) {
-      const admitted = await admitWorkHandoffLocked(context, row.returned.sourceExecutionId, relationshipId)
+      const admitted = await admitWorkHandoffLocked(context, row.returned.sourceExecutionId,
+        relationshipId, sourceActivationId)
       if (admitted.kind === 'accepted' && admitted.destinationReady) {
         destinations.push(admitted.request.destinationActivationId)
       } else if (admitted.kind === 'limit_reached') {

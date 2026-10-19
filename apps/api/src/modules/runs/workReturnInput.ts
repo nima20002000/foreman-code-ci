@@ -13,13 +13,22 @@ export async function readWorkReturnFeedbackLocked(context: WorkReturnContext, r
     [scope.runId, returned.continuationActivationId])).rows[0]
   const frozen = slot ? WorkActivationInputSchema.parse(JSON.parse(slot.input_json)).work : undefined
   if (frozen && frozen.kind !== 'work_return') return repeatConflict('WORK_RETURN_ANCESTRY_CONFLICT')
-  const grouped = !frozen || frozen.returns !== undefined
+  const legacyQueued = !frozen && (await sql.query(`select 1 from run_activity
+    where run_id=$1 and kind='work_requester_reactivated' and payload->>'activationId'=$2
+      and not (payload ? 'sourceActivationId')`, [scope.runId, returned.continuationActivationId])).rowCount === 1
+  const grouped = frozen ? frozen.returns !== undefined : !legacyQueued
+  const frozenReturnIds = frozen?.returns?.map(item => item.returned.returnId)
   const rows = (await sql.query<{ record: unknown; result_json: string; result_digest: string }>(
     `select t.record,x.result_json,x.result_digest from run_work_returns t
       join run_work_requests q on q.run_id=t.run_id and q.request_id=t.request_id
       join run_work_results x on x.run_id=t.run_id and x.execution_id=t.source_execution_id
-      where q.run_id=$1 and q.requester_activation_id=$2 and ($3 or t.return_id=$4) order by q.request_id`,
-    [scope.runId, returned.requesterActivationId, grouped, returned.returnId])).rows
+      where q.run_id=$1 and q.requester_activation_id=$2 and (
+        not $3 and t.return_id=$4
+        or $3 and ($6::text[] is not null and t.return_id=any($6)
+          or $6::text[] is null and (t.outcome='accepted' or t.requester_continuation_activation_id=$5)))
+      order by q.request_id`,
+    [scope.runId, returned.requesterActivationId, grouped, returned.returnId,
+      returned.continuationActivationId, frozenReturnIds ?? null])).rows
   const feedback: NonNullable<Extract<WorkActivationInput['work'], { kind: 'work_return' }>['returns']> = []
   for (const row of rows) {
     const value = WorkReturnSchema.parse(row.record)
