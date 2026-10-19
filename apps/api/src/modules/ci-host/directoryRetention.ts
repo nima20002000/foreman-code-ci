@@ -28,6 +28,7 @@ export async function ciDirectoryCleanupCandidates(pool: Pick<pg.Pool, 'query'>,
           "executionHistory" jsonb)
       where c.state in ('passed','failed','canceled','lost')
         and c.record->>'executorCleanupPending' is distinct from 'true'
+        and (c.record->'retainedExecutions' @> '[{"executor":"retained"}]'::jsonb) is not true
         and ((c.record#>'{computer,hostRef}') @> $1::jsonb
           or (c.record#>'{setupRetry,failedComputer}') @> $1::jsonb
           or (c.record->'executionHistory') @> jsonb_build_array(jsonb_build_object('hostRef',$1::jsonb)))
