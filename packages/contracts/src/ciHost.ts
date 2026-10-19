@@ -182,8 +182,6 @@ export const CiObservationSchema = z.object({
   status: z.enum(['available', 'unavailable']), lastSuccessAt: TimestampSchema.nullable(),
   lastError: z.string().max(300).nullable(), consecutiveFailures: z.number().int().nonnegative(),
   nextAttemptAt: TimestampSchema.nullable(),
-  /** Continuous transport failure of the executor observation, reset when the executor answers. */
-  transportUnavailableSince: TimestampSchema.optional(),
 }).strict()
 export const CiTransportSchema = z.object({
   source: z.enum(['rest', 'cli']), reason: z.string().max(300).nullable(),
@@ -309,14 +307,8 @@ export const CiRunRecordSchema = z.object({
   requiresBuildComputer: z.boolean().optional(),
   /** Providers that accepted a dispatch but exhausted retries without creating work. */
   unstartedProviders: z.array(z.enum(['github', 'circleci'])).max(2).optional(),
-  /** A fresh executor identity after reassignment; the ticket keeps its ID. */
+  /** A fresh executor identity after confirmed reassignment; the ticket keeps its ID. */
   executionRunId: CiHostRunIdSchema.optional(),
-  /** Abandoned executions retain their slots independently of the replacement's outcome. */
-  retainedExecutions: z.array(z.object({
-    runId: CiHostRunIdSchema, hostKey: z.string(),
-    computer: z.object({ hostRef: CiComputerRefSchema, label: z.string() }).strict(),
-    executor: z.enum(['retained', 'released']), nextAttemptAt: TimestampSchema,
-  }).strict()).optional(),
   /** Earlier execution directories and the computers that own them. */
   executionHistory: z.array(z.object({ runId: CiHostRunIdSchema, hostRef: CiComputerRefSchema }).strict()).optional(),
   /** One fresh executor attempt after a cloud failure before its first test case. */
