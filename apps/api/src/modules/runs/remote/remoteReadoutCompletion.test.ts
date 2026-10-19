@@ -3,6 +3,7 @@ import type { NativeHarnessEvent } from '@foreman-code/contracts'
 import type { DeviceHistoryGap } from '@foreman-code/contracts/device-application'
 import { RemoteExecutionRpcRequestSchema } from '@foreman-code/contracts/remote-execution-rpc'
 import { DeviceApplicationError, deviceApplicationFailure } from '../../devices/deviceApplicationError.js'
+import { CodexAppServerSessionManager } from '../../harnesses/codexAppServer.js'
 import { runningInstalledFixture } from './__tests__/installedWorkflowHost.js'
 import { RemoteNativeSessionManager } from './nativeManagerProxy.js'
 import { createRemoteWorkflowPhysicalVerification } from './workflowPhysicalVerification.js'
@@ -20,11 +21,14 @@ it.each(['current channel', 'older channel', 'direct handler'] as const)(
     f.history.events = [event(38), event(39)]
     f.history.firstRetainedSequence = 38
     f.history.nextSequence = 40
+    vi.spyOn(CodexAppServerSessionManager.prototype, 'reconcileHistoryPage')
+      .mockImplementation(async () => structuredClone(f.history))
     const result = { outcome: 'succeeded' as const, output: { text: 'The original native deliverable' } }
     let delayObservation = false
     let evictBeforeRead = false
     let evictions = 0
     let confirmedClosed = false
+    let finished = false
     const reads: string[] = []
     const physical = createRemoteWorkflowPhysicalVerification({ endpoint: () => ({
       currentBinding: () => f.context.binding,
@@ -54,6 +58,7 @@ it.each(['current channel', 'older channel', 'direct handler'] as const)(
             })
             evictions++
             f.finish('succeeded', result.output)
+            finished = true
             await f.settled
           }
           try {
@@ -91,7 +96,8 @@ it.each(['current channel', 'older channel', 'direct handler'] as const)(
         clientCorrelationId: 'execution:execution', onEventsSkipped: async gap => { skipped.push(gap) } })
       const first = await stream.next()
       expect(first).toEqual({ done: false, value: event(38) })
-      delivered.push(first.value!)
+      if (first.done) throw new Error('Expected the first native event')
+      delivered.push(first.value)
       delayObservation = true
       for await (const frame of stream) delivered.push(frame)
       const completion = await proxy.reconcile(f.session, 'execution:execution')
@@ -110,6 +116,8 @@ it.each(['current channel', 'older channel', 'direct handler'] as const)(
       expect(f.create).toHaveBeenCalledOnce()
       expect(f.cancel).not.toHaveBeenCalled()
     } finally {
+      if (!finished) f.finish('canceled')
+      await f.settled
       await f.host.close()
     }
   },
