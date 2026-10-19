@@ -4,9 +4,24 @@ import type { Socket } from 'node:net'
 import WebSocket, { WebSocketServer, type RawData } from 'ws'
 import { ExecutionAuthorityRequestSchema, EXECUTION_AUTHORITY_EXTENSION } from '@foreman-code/contracts/execution-authority'
 import type { DeviceApplicationFrame } from '@foreman-code/contracts/device-application'
-import { RemoteOwnerControlSchema } from '@foreman-code/contracts/remote-execution'
+import { RemoteOperationReceiptSchema, RemoteOperationStatusSchema,
+  RemoteOwnerControlSchema } from '@foreman-code/contracts/remote-execution'
 import { WorkerConversationRpcRequestSchema, type WorkerConversationRpcRequest }
   from '@foreman-code/contracts/remote-execution-rpc'
+
+function executionObservation(payload: Record<string, unknown>, direction: string, requestId: string) {
+  const status = RemoteOperationStatusSchema.safeParse(payload.status ?? payload)
+  const parsed = RemoteOperationReceiptSchema.safeParse(payload.receipt
+    ?? (status.success && status.data.status === 'known' ? status.data.receipt : undefined))
+  const receipt = parsed.success ? parsed.data : undefined
+  const command = RemoteOwnerControlSchema.safeParse(payload.command)
+  const intent = payload.intent as { operationId?: unknown } | undefined
+  return { direction, requestId, method: payload.method, operationId: receipt?.intent.operationId ?? intent?.operationId,
+    correlationId: payload.correlationId, receiptSequence: payload.receiptSequence ?? receipt?.sequence,
+    sourceDigest: payload.sourceDigest, phase: receipt?.phase, stopFence: receipt?.stopFence,
+    terminal: receipt?.terminal?.kind, control: command.success ? command.data.action.kind : undefined,
+    code: payload.code }
+}
 
 /** Forward actual paired frames unchanged. A test can delay authorization at
  * the network boundary; Main still performs the original scope checks. */
@@ -31,6 +46,7 @@ export async function createRemoteReviewTransport(input: {
   let loseCompactionResponse = false
   const conversationRequests: WorkerConversationRpcRequest[] = []
   const deliveryReads: Array<{ command: ReturnType<typeof RemoteOwnerControlSchema.parse>; phase: string }> = []
+  const executionObservations: ReturnType<typeof executionObservation>[] = []
   const websocket = new WebSocketServer({ server, perMessageDeflate: false, maxPayload: 16384 })
   websocket.on('connection', (worker, request) => {
     if (paused) { worker.close(); return }
@@ -59,6 +75,8 @@ export async function createRemoteReviewTransport(input: {
       const payload = JSON.parse(Buffer.concat(assembly.chunks).toString('utf8')) as {
         method?: string; command?: unknown; phase?: string
       }
+      executionObservations.push(executionObservation(payload, direction, frame.id))
+      if (executionObservations.length > 64) executionObservations.shift()
       if (direction === 'to-worker' && payload.method === 'physical-readout' && dropPhysical) {
         const dropped = dropPhysical
         dropPhysical = undefined
@@ -160,6 +178,7 @@ export async function createRemoteReviewTransport(input: {
   const address = server.address()
   if (!address || typeof address === 'string') throw new Error('Expected a loopback transport fixture port.')
   return { endpoint: `wss://127.0.0.1:${address.port}/device/connect`, deliveryReads, conversationRequests,
+    executionObservations,
     paused: () => paused,
     pauseConnections() {
       paused = true
