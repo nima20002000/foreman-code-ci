@@ -10,7 +10,7 @@ import type { AcceptedNodePlacement } from '@foreman-code/contracts/node-placeme
 import type { RemoteOperationReceipt } from '@foreman-code/contracts/remote-execution'
 import type { DeviceEndpoint } from '../../devices/deviceEndpoint.js'
 import { deviceRequestTimeoutMs, waitForDeviceRetry } from '../../devices/deviceRequestRetry.js'
-import { deviceApplicationFailure } from '../../devices/deviceApplicationError.js'
+import { DeviceApplicationError, deviceApplicationFailure } from '../../devices/deviceApplicationError.js'
 import { isDeviceLinkDrop, waitForDeviceReconnect } from '../../devices/deviceReconnect.js'
 import { DeviceConnectionError } from '../../devices/deviceWire.js'
 import type { WorkflowOriginalNativeSource, WorkflowNativeCapture } from '../../interactions/workflowNativeCapture.js'
@@ -400,6 +400,10 @@ async function prefetchRemoteWorkflowPhysical(input: RemoteWorkflowPhysicalVerif
       }, signal)
       break
     } catch (error) {
+      // Older Workers omit the reason on the wire. Refresh the operation; its next readout still needs full verification.
+      if (error instanceof DeviceApplicationError && error.code === 'REMOTE_NATIVE_PHYSICAL_UNAVAILABLE') {
+        throw new DeviceApplicationError('REMOTE_NATIVE_PHYSICAL_REPLY_EXPIRED', undefined, { cause: error })
+      }
       // Expired pages require a fresh observation; bytes from different snapshots cannot be combined.
       if (deviceApplicationFailure(error).code !== 'transfer-expired' || attempt >= 4) throw error
     }
