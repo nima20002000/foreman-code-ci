@@ -1399,6 +1399,11 @@ function assertWorkActivationReplay(stored: StoredRepeatExecution, input: WorkAc
   const expected = { ...input }
   // Historical inputs keep their original shape; ancestry is validated separately.
   if (!('parentRequest' in frozen)) delete expected.parentRequest
+  if (frozen.work.kind === 'work_return' && expected.work.kind === 'work_return') {
+    expected.work = { ...expected.work }
+    if (!('returns' in frozen.work)) delete expected.work.returns
+    if (!('failures' in frozen.work)) delete expected.work.failures
+  }
   if (stored.workActivationId !== input.work.activation.activationId || !sameRepeatValue(frozen, expected)) {
     return repeatConflict('WORK_ACTIVATION_REPLAY_CONFLICT')
   }

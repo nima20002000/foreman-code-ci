@@ -120,9 +120,15 @@ export function frozenWorkNotice(notice: WorkNotice): WorkNotice {
 /** Sent in the workflow-owned native request, not an Agent-chat message. The
  * frozen input has already been checked against the committed notice cause. */
 export function trustedWorkNoticePrompt(input: WorkActivationInput): string | undefined {
-  const notice = input.work.kind === 'work_return' || input.work.kind === 'limit_denial'
-    ? input.work.notice : undefined
-  if (!notice) return undefined
+  if (input.work.kind === 'work_return' && input.work.returns) {
+    const notices = input.work.returns.flatMap(item => item.notice ? [item.notice] : [])
+    return notices.length ? notices.map(workNoticePrompt).join('\n\n') : undefined
+  }
+  if (input.work.kind !== 'work_return' && input.work.kind !== 'limit_denial') return undefined
+  return input.work.notice ? workNoticePrompt(input.work.notice) : undefined
+}
+
+function workNoticePrompt(notice: WorkNotice): string {
   const routes = notice.alternatives.map((item) => ({ destination: item.destinationName,
     nodeId: item.destinationNodeId, outcomes: item.outcomes,
     used: item.used, maximum: item.maxWorkHandoffsPerRun }))
@@ -142,75 +148,77 @@ export function trustedWorkNoticePrompt(input: WorkActivationInput): string | un
   ].join('\n')
 }
 
-async function noticeForActivation(context: NoticeContext, activationId: string): Promise<{
+async function noticesForActivation(context: NoticeContext, activationId: string): Promise<{
   value: WorkNotice; revision: number
-} | undefined> {
-  const row = (await context.sql.query<{ record: unknown; revision: number }>(
+}[]> {
+  const rows = (await context.sql.query<{ record: unknown; revision: number }>(
     `select record,revision from run_work_notices
       where run_id=$1 and continuation_activation_id=$2 for update`,
-    [context.scope.runId, activationId])).rows[0]
-  if (!row) return undefined
-  const value = WorkNoticeSchema.parse(row.record)
-  if (!sameRepeatValue(value.scope, context.scope) || value.continuationActivationId !== activationId) {
-    return repeatConflict('WORK_NOTICE_PIN_CONFLICT')
-  }
-  return { value, revision: row.revision }
+    [context.scope.runId, activationId])).rows
+  return rows.map(row => {
+    const value = WorkNoticeSchema.parse(row.record)
+    if (!sameRepeatValue(value.scope, context.scope) || value.continuationActivationId !== activationId) {
+      return repeatConflict('WORK_NOTICE_PIN_CONFLICT')
+    }
+    return { value, revision: row.revision }
+  })
 }
 
 export async function markWorkNoticePendingLocked(context: NoticeContext, activationId: string,
   executionId: string): Promise<void> {
-  const current = await noticeForActivation(context, activationId)
-  if (!current) return
-  if (current.value.delivery !== 'queued') return repeatConflict('WORK_NOTICE_DELIVERY_CONFLICT')
-  const next = WorkNoticeSchema.parse({ ...current.value, delivery: 'pending', updatedAt: context.now })
-  const changed = await context.sql.query(`update run_work_notices set delivery_state='pending',revision=revision+1,
-    record=$4::jsonb,updated_at=$5 where notice_id=$1 and run_id=$2 and revision=$3
-      and delivery_state='queued' returning notice_id`,
-  [next.noticeId, context.scope.runId, current.revision, canonicalGraphJson(next), context.now])
-  if (changed.rowCount !== 1) return repeatConflict('WORK_NOTICE_DELIVERY_CONFLICT')
-  await context.sql.query(`insert into run_activity(run_id,source,kind,harness_execution_id,occurred_at,payload)
-    values($1,'backend','work_limit_notice_pending',$2,$3,$4::jsonb)`,
-  [context.scope.runId, executionId, context.now, canonicalGraphJson({ noticeId: next.noticeId,
-    continuationActivationId: activationId })])
+  for (const current of await noticesForActivation(context, activationId)) {
+    if (current.value.delivery !== 'queued') return repeatConflict('WORK_NOTICE_DELIVERY_CONFLICT')
+    const next = WorkNoticeSchema.parse({ ...current.value, delivery: 'pending', updatedAt: context.now })
+    const changed = await context.sql.query(`update run_work_notices set delivery_state='pending',revision=revision+1,
+      record=$4::jsonb,updated_at=$5 where notice_id=$1 and run_id=$2 and revision=$3
+        and delivery_state='queued' returning notice_id`,
+    [next.noticeId, context.scope.runId, current.revision, canonicalGraphJson(next), context.now])
+    if (changed.rowCount !== 1) return repeatConflict('WORK_NOTICE_DELIVERY_CONFLICT')
+    await context.sql.query(`insert into run_activity(run_id,source,kind,harness_execution_id,occurred_at,payload)
+      values($1,'backend','work_limit_notice_pending',$2,$3,$4::jsonb)`,
+    [context.scope.runId, executionId, context.now, canonicalGraphJson({ noticeId: next.noticeId,
+      continuationActivationId: activationId })])
+  }
 }
 
 /** A committed launch without an exact native session may have submitted the
  * notice. Recovery keeps that uncertainty visible and cannot issue a new turn. */
 export async function markWorkNoticeUnknownLocked(context: NoticeContext, activationId: string,
   executionId: string): Promise<void> {
-  const current = await noticeForActivation(context, activationId)
-  if (!current || current.value.delivery === 'unknown' || current.value.delivery === 'delivered') return
-  if (current.value.delivery !== 'pending') return repeatConflict('WORK_NOTICE_DELIVERY_CONFLICT')
-  const next = WorkNoticeSchema.parse({ ...current.value, delivery: 'unknown', updatedAt: context.now })
-  const changed = await context.sql.query(`update run_work_notices set delivery_state='unknown',revision=revision+1,
-    record=$4::jsonb,updated_at=$5 where notice_id=$1 and run_id=$2 and revision=$3
-      and delivery_state='pending' returning notice_id`,
-  [next.noticeId, context.scope.runId, current.revision, canonicalGraphJson(next), context.now])
-  if (changed.rowCount !== 1) return repeatConflict('WORK_NOTICE_DELIVERY_CONFLICT')
-  await context.sql.query(`insert into run_activity(run_id,source,kind,harness_execution_id,occurred_at,payload)
-    values($1,'backend','work_limit_notice_unknown',$2,$3,$4::jsonb)`,
-  [context.scope.runId, executionId, context.now, canonicalGraphJson({ noticeId: next.noticeId,
-    continuationActivationId: activationId })])
+  for (const current of await noticesForActivation(context, activationId)) {
+    if (current.value.delivery === 'unknown' || current.value.delivery === 'delivered') continue
+    if (current.value.delivery !== 'pending') return repeatConflict('WORK_NOTICE_DELIVERY_CONFLICT')
+    const next = WorkNoticeSchema.parse({ ...current.value, delivery: 'unknown', updatedAt: context.now })
+    const changed = await context.sql.query(`update run_work_notices set delivery_state='unknown',revision=revision+1,
+      record=$4::jsonb,updated_at=$5 where notice_id=$1 and run_id=$2 and revision=$3
+        and delivery_state='pending' returning notice_id`,
+    [next.noticeId, context.scope.runId, current.revision, canonicalGraphJson(next), context.now])
+    if (changed.rowCount !== 1) return repeatConflict('WORK_NOTICE_DELIVERY_CONFLICT')
+    await context.sql.query(`insert into run_activity(run_id,source,kind,harness_execution_id,occurred_at,payload)
+      values($1,'backend','work_limit_notice_unknown',$2,$3,$4::jsonb)`,
+    [context.scope.runId, executionId, context.now, canonicalGraphJson({ noticeId: next.noticeId,
+      continuationActivationId: activationId })])
+  }
 }
 
 export async function markWorkNoticeDeliveredLocked(context: NoticeContext, activationId: string,
   executionId: string): Promise<void> {
-  const current = await noticeForActivation(context, activationId)
-  if (!current) return
-  if (current.value.delivery === 'delivered') {
-    if (current.value.acknowledgementId !== executionId) return repeatConflict('WORK_NOTICE_DELIVERY_CONFLICT')
-    return
+  for (const current of await noticesForActivation(context, activationId)) {
+    if (current.value.delivery === 'delivered') {
+      if (current.value.acknowledgementId !== executionId) return repeatConflict('WORK_NOTICE_DELIVERY_CONFLICT')
+      continue
+    }
+    if (!['pending', 'unknown'].includes(current.value.delivery)) return repeatConflict('WORK_NOTICE_DELIVERY_CONFLICT')
+    const next = WorkNoticeSchema.parse({ ...current.value, delivery: 'delivered',
+      acknowledgementId: executionId, updatedAt: context.now })
+    const changed = await context.sql.query(`update run_work_notices set delivery_state='delivered',
+      acknowledgement_execution_id=$4,revision=revision+1,record=$5::jsonb,updated_at=$6
+      where notice_id=$1 and run_id=$2 and revision=$3 returning notice_id`,
+    [next.noticeId, context.scope.runId, current.revision, executionId, canonicalGraphJson(next), context.now])
+    if (changed.rowCount !== 1) return repeatConflict('WORK_NOTICE_DELIVERY_CONFLICT')
+    await context.sql.query(`insert into run_activity(run_id,source,kind,harness_execution_id,occurred_at,payload)
+      values($1,'backend','work_limit_notice_delivered',$2,$3,$4::jsonb)`,
+    [context.scope.runId, executionId, context.now, canonicalGraphJson({ noticeId: next.noticeId,
+      continuationActivationId: activationId, acknowledgementExecutionId: executionId })])
   }
-  if (!['pending', 'unknown'].includes(current.value.delivery)) return repeatConflict('WORK_NOTICE_DELIVERY_CONFLICT')
-  const next = WorkNoticeSchema.parse({ ...current.value, delivery: 'delivered',
-    acknowledgementId: executionId, updatedAt: context.now })
-  const changed = await context.sql.query(`update run_work_notices set delivery_state='delivered',
-    acknowledgement_execution_id=$4,revision=revision+1,record=$5::jsonb,updated_at=$6
-    where notice_id=$1 and run_id=$2 and revision=$3 returning notice_id`,
-  [next.noticeId, context.scope.runId, current.revision, executionId, canonicalGraphJson(next), context.now])
-  if (changed.rowCount !== 1) return repeatConflict('WORK_NOTICE_DELIVERY_CONFLICT')
-  await context.sql.query(`insert into run_activity(run_id,source,kind,harness_execution_id,occurred_at,payload)
-    values($1,'backend','work_limit_notice_delivered',$2,$3,$4::jsonb)`,
-  [context.scope.runId, executionId, context.now, canonicalGraphJson({ noticeId: next.noticeId,
-    continuationActivationId: activationId, acknowledgementExecutionId: executionId })])
 }

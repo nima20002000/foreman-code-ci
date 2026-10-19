@@ -5,7 +5,14 @@ export function selectedWorkHandoffRoutes(definition: WorkflowDefinitionV3, node
   result: WorkHandoffResult): string[] {
   const node = definition.nodes.find((item) => item.id === nodeId)
   if (!node) return repeatConflict('WORKFLOW_NODE_NOT_FOUND')
-  if (result.routing.kind === 'return') return []
+  if (result.routing.kind === 'return'
+    && (result.routing.outcome !== 'accepted' || result.data.remainingFindings.length)) return []
+  if (result.routing.kind === 'return') {
+    if (node.choice) return []
+    return definition.edges.filter(edge => edge.kind === 'execution' && edge.source === nodeId
+      && definition.nodes.some(target => target.id === edge.target && target.join?.mode === 'all'))
+      .map(edge => edge.id)
+  }
   const outcome = result.routing.outcome
   if (outcome === undefined) {
     if (node.choice || result.data.remainingFindings.length) return []
