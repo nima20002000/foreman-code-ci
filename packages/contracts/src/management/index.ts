@@ -561,6 +561,9 @@ export const REPEAT_OPERATOR_TOOL_NAMES = [
 export type RepeatOperatorToolName = typeof REPEAT_OPERATOR_TOOL_NAMES[number];
 
 export const OperatorToolNameSchema = z.enum([
+  'harness_instances_list', 'harness_instance_save', 'harness_instance_check', 'workspace_root_configuration_adopt',
+  'reference_files_list', 'reference_file_read', 'reference_file_add', 'reference_file_remove',
+  'file_retention_get', 'file_retention_preview', 'file_retention_save', 'run_summaries_list', 'run_board_snapshot_get',
   'bug_report', 'bug_reports_list', 'bug_report_get', 'bug_report_update', 'bug_reports_close',
   "ci_run", "ci_get", "ci_computers_list", "ci_cancel", "ci_logs_read", "ci_list",
   ...Object.keys(GRAPHQL_OPERATOR_TOOLS) as (keyof typeof GRAPHQL_OPERATOR_TOOLS)[],
