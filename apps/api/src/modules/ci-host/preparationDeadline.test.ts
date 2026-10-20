@@ -25,7 +25,7 @@ function killWriter(pid: number) {
 }
 
 function handleProcessReadError(error: NodeJS.ErrnoException): undefined {
-  if (error.code === 'ENOENT') return undefined
+  if (error.code === 'ENOENT' || error.code === 'ESRCH') return undefined
   throw error
 }
 
