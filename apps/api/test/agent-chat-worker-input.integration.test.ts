@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { expect, it, vi } from 'vitest'
 import { AgentChatStateSchema, SendAgentChatMessageResponseSchema } from '@foreman-code/contracts/agent-chat'
+import { AgentMutationResultSchema } from '@foreman-code/contracts/management'
+import { workerConversationFixture } from '../src/modules/conversations/workerFixtures.test-support.js'
 import { remoteAgentConversation } from './helpers/remoteAgentConversation.js'
 import { graphHeaders } from './eng04-graph-composition-fixture.js'
 
@@ -163,11 +165,13 @@ it.each(['codex', 'claude'] as const)('delivers Worker %s follow-ups with a larg
   } finally { await f.close() }
 }, 30_000)
 
-it.each(['http', 'mcp'] as const)('recovers a historical large Agent message through %s without admitting another turn', async transport => {
+it.each((['http', 'mcp'] as const).flatMap(transport =>
+  [800_000, 1_000_001, 1_048_576].map(characters => ({ transport, characters }))))(
+  'recovers a historical $characters-character Agent message through $transport without admitting another turn', async ({ transport, characters }) => {
   const f = await remoteAgentConversation('codex')
   try {
     const { workspaceId, ...context } = f.context
-    const request = { requestId: randomUUID(), content: 'x'.repeat(800_000), intent: 'next_turn' as const,
+    const request = { requestId: randomUUID(), content: 'x'.repeat(characters), intent: 'next_turn' as const,
       expectedConversationId: f.conversation.id, context }
     const row = (await f.repository.get(f.conversation.id))!
     await f.repository.admit({ key: row.agent_key, request, context: f.context, delivery: 'queued',
@@ -208,3 +212,41 @@ it.each(['http', 'mcp'] as const)('recovers a historical large Agent message thr
     expect(f.frames).toHaveLength(0)
   } finally { await f.close() }
 }, 30_000)
+
+it.each((['codex', 'claude'] as const).flatMap(harness =>
+  (['model', 'harness'] as const).map(change => ({ harness, change }))))(
+  'applies a Worker $harness $change transition with a large saved system prompt', async ({ harness, change }) => {
+    const f = await remoteAgentConversation(harness)
+    try {
+      const systemPrompt = { value: { text: '界'.repeat(100_000) }, revision: 1, versionId: 'saved-system-prompt' }
+      await f.db.pool.query('update operator_conversations set record=record || $2::jsonb where id=$1',
+        [f.conversation.id, JSON.stringify({ systemPrompt })])
+      await f.send('Establish the session and retain these details')
+      const original = (await f.repository.get(f.conversation.id))!
+      const configuration = change === 'model' ? { ...f.configuration.harness, model: 'changed-model' }
+        : workerConversationFixture('agent', harness === 'codex' ? 'claude' : 'codex').configuration.harness
+      const saved = AgentMutationResultSchema.parse(await f.update(configuration, { matchingProfile: true }))
+      const before = await f.repository.state(f.conversation.id)
+      const rejected = await f.call('agent_chat_send', { request: { requestId: randomUUID(), content: 'x'.repeat(500_000),
+        intent: 'next_turn', expectedConversationId: f.conversation.id, context: f.context } })
+      expect(rejected.result?.isError).toBe(true)
+      expect(JSON.stringify(rejected)).toContain('CHAT_MESSAGE_TOO_LARGE')
+      expect(await f.repository.state(f.conversation.id)).toEqual(before)
+      expect(f.providers.reduce((count, provider) => count + provider.prompts.length, 0)).toBe(1)
+      const sent = await f.send('Continue using the saved settings')
+      expect(sent.turn?.delivery).toBe('completed')
+      expect(sent.turn?.error).toBeUndefined()
+      const applied = (await f.repository.get(f.conversation.id))!
+      expect(applied.agent_configuration_version_id).toBe(saved.value.agent.configurationVersionId)
+      if (change === 'model') expect(applied.native_session_id).toBe(original.native_session_id)
+      else expect(applied.native_session_id).not.toBe(original.native_session_id)
+      expect(await f.binding()).toMatchObject({ systemPrompt,
+        owner: { configurationVersionId: saved.value.agent.configurationVersionId } })
+      expect(f.providers.reduce((count, provider) => count + provider.prompts.length, 0)).toBe(2)
+      for (const frame of f.frames) {
+        expect(Buffer.byteLength(JSON.stringify(frame))).toBeLessThanOrEqual(1024 * 1024)
+        expect(Buffer.byteLength(JSON.stringify({ method: 'conversation.authorize', admissionId: frame.admissionId,
+          binding: frame.binding, request: frame }))).toBeLessThanOrEqual(1024 * 1024)
+      }
+    } finally { await f.close() }
+  }, 30_000)
