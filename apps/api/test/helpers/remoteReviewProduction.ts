@@ -103,7 +103,6 @@ export async function remoteReviewProduction(options: {
   installationRefreshIntervalMs?: number; parallelSetup?: boolean; includeNodeRuntimePayload?: boolean
   installedMainService?: boolean
   sourceAccessMode?: 'read-only' | 'exclusive-write'
-  artifactOutputKeys?: string[]
   reportPhase?: (phase: string, elapsedMs: number) => void
 } = {}) {
   const rootAccessMode = options.sourceAccessMode === 'exclusive-write' ? 'read-write' : 'read-only'
@@ -216,9 +215,6 @@ export async function remoteReviewProduction(options: {
       homes: [logEnvironment.HOME!, workerEnvironment.HOME!] })
     const shape = options.workflow === 'interval' ? 'sequential' : options.workflow ?? 'approval'
     const seed = makeCurrentWorkflowFixture(randomUUID(), shape)
-    if (options.artifactOutputKeys) seed.version.definition.nodes[0]!.artifactOutputs = {
-      version: 1, outputKeys: options.artifactOutputKeys,
-    }
     if (options.workflow === 'interval') {
       seed.version.definition.handoffs = { contractVersion: 1 }
       seed.version.definition.nodes[0]!.interval = { everySeconds: 10 }
@@ -232,10 +228,6 @@ export async function remoteReviewProduction(options: {
         ...configuration, prompt: { system: systemPrompt },
         harness: { ...configuration.harness, model: 'test-model',
           ...(options.sourceAccessMode === 'exclusive-write' ? { sandbox: 'workspace-write' } : {}),
-          ...(options.artifactOutputKeys ? { advanced: {
-            ...DEFAULT_CODEX_ADVANCED_CONFIGURATION,
-            workspaceWrite: { networkAccess: false, excludeTmpdirEnvVar: true, excludeSlashTmp: true },
-          } } : {}),
           ...(options.workflow === 'interval' ? { advanced: {
             ...DEFAULT_CODEX_ADVANCED_CONFIGURATION, approvalPolicy: 'never',
           } } : {}) },
@@ -271,7 +263,6 @@ export async function remoteReviewProduction(options: {
     if (mainService) closes.push(mainService.close)
     if (mainService) await execute(provider.binary, ['--version'], { env: logEnvironment })
     let mainFailure = ''
-    let workerFailure = ''
     const failures: Array<{ code: string; runId: string | null; namespace?: unknown; tool?: unknown;
       phase?: unknown; errorType?: unknown; errorLocation?: unknown; errorDetail?: string | undefined;
       role?: 'Main' | 'Worker'; message?: string | undefined; reason?: string | undefined; time?: unknown }> = []
@@ -583,6 +574,7 @@ export async function remoteReviewProduction(options: {
     let worker: ChildProcess | undefined
     let ready = false
     let workerStateRevision = 0
+    let workerFailure = ''
     let workerPhase = 'starting'
     let workerConnectionFailure = 'none'
     const startWorker = async () => {
@@ -834,8 +826,6 @@ export async function remoteReviewProduction(options: {
       pauseWorkerConnection: transport.pauseConnections,
       resumeWorkerConnection: transport.resumeConnections,
       dropNextPhysicalReadout: transport.dropNextPhysicalReadout,
-      dropNextSettlement: transport.dropNextSettlement,
-      holdNextRetirementReply: transport.holdNextRetirementReply,
       loseNextCompactionResponse: transport.loseNextCompactionResponse,
       conversationRequests: transport.conversationRequests,
       async restoreOriginalResponseGrant() {

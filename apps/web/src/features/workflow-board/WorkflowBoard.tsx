@@ -1,12 +1,11 @@
-import { MemoryBoardSurface } from './MemoryBoardSurface'
 import { InfoHint } from '../../shared/ui/InfoHint'
 import { activeRunCandidates } from '@foreman-code/contracts/run-snapshots'
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type SyntheticEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, type ReactNode, type SyntheticEvent } from 'react'
 import { useLocation, useRouter } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import type { WorkflowRunSummary } from '@foreman-code/contracts'
 import type { RepeatGraphScopeV3, WorkspaceBoardInspection } from '@foreman-code/contracts/wave25'
-import { Button, Dialog } from '../../shared/ui/nocturne'
+import { Dialog } from '../../shared/ui/nocturne'
 import { WorkspaceExecutionLocationSettings } from '../settings/WorkspaceExecutionLocationSettings'
 import { RunBoardSlot } from '../run-board'
 import { runsSelectorApi, useRunSummaries, useSelectedRun, useSelectedRunSnapshot } from '../runs-selector'
@@ -18,24 +17,17 @@ import { ActivitiesPopover } from './ActivitiesPopover'
 import { RunActivityPanel } from './RunActivityPanel'
 import { shortRunId } from './runFacts'
 import { useInspectionPresentation } from './inspect/presentation'
-import { useWorkflowSidePanel } from './useWorkflowSidePanel'
-import { WorkflowMemoryDialog, WorkflowSidePanel, type WorkflowCollaborationSlots } from './WorkflowSidePanel'
-import { useWorkflowOperatorDock } from './operatorDockContext'
 import './workflowBoard.css'
 
 /** This component is keyed by workspace/workflow only, NEVER by selected Run. */
-export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, selectRun, inspection, selectInspection, summaries, summariesReadAt, children, selectedAgentId, selectDraftAgent, collaborationSlots }: {
+export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, selectRun, inspection, selectInspection, summaries, summariesReadAt, children, selectedAgentId, selectDraftAgent }: {
   workspaceId: string; workflowId: string; run?: RepeatGraphScopeV3
   selectedAgentId?: string; selectDraftAgent?(agentId?: string): void
   inspection: WorkspaceBoardInspection; selectInspection(inspection: WorkspaceBoardInspection): void
   selectRun(scope?: RepeatGraphScopeV3): void; summaries: readonly WorkflowRunSummary[]; summariesReadAt?: number; children: ReactNode
-  collaborationSlots?: WorkflowCollaborationSlots
 }) {
   const location = useLocation()
   const router = useRouter()
-  const side = useWorkflowSidePanel(workspaceId, workflowId, requestedRun)
-  const [sidePanelHost, setSidePanelHost] = useState<HTMLDivElement | null>(null)
-  useWorkflowOperatorDock(side.scope, sidePanelHost, side.panel.kind === 'operator', side.memoryOpen, side.selectPanel, side.closeOperator)
   const selection = useRef({ location: router.history.location, generation: 0 })
   const getSelectionToken = useCallback(() => {
     if (selection.current.location !== router.history.location) {
@@ -138,30 +130,19 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
   // History is rendered only by RunBoardSlot. Do not feed legacy Run pins to the
   // hidden editor/SelectedRunCanvas, or fabricate missing version/semantics pins.
   const value = useMemo(() => ({ workspaceId, workflowId, run: legacyRun, selectRun: chooseRun, getSelectionToken, inspection, selectInspection, selectedAgentId, selectDraftAgent,
-    sidePanel: side.panel, selectedPanelNodeId: side.agentSelection?.nodeId, selectSidePanel: side.selectPanel, sidePanelHost, memoryOpen: side.memoryOpen,
     openLocation: () => setLocationOpen(true), openRuns: () => setRunsOpen(true), activeRuns, authoringActive: current,
     navigationControls: current ? <BoardNavigationControls workspaceId={workspaceId} workflowId={workflowId} selection={navigationSelection} /> : undefined,
-  }), [workspaceId, workflowId, legacyRun, chooseRun, getSelectionToken, inspection, selectInspection, selectedAgentId, selectDraftAgent, activeRuns, setRunsOpen, setLocationOpen, navigationSelection, current, side.panel, side.agentSelection?.nodeId, side.selectPanel, sidePanelHost, side.memoryOpen])
+  }), [workspaceId, workflowId, legacyRun, chooseRun, getSelectionToken, inspection, selectInspection, selectedAgentId, selectDraftAgent, activeRuns, setRunsOpen, setLocationOpen, navigationSelection, current])
   const authoringEvent = (event: SyntheticEvent) => {
-    if (event.target instanceof Element && event.target.closest('.workflow-side-panel')) return
     // React capture also covers descendants portalled outside the inert subtree.
     if (!currentRef.current) { event.preventDefault(); event.stopPropagation() }
   }
   return <WorkflowBoardContext.Provider value={value}>
     <div ref={toolbar} className="unified-workflow-board" data-testid="unified-workflow-board" style={{ flexDirection: 'column' }}>
-      <nav className="workflow-collaboration-toolbar" aria-label="Workflow views">
-        <span>{legacyRun || pickedRunId ? 'Selected Run' : 'Editing draft'}</span>
-        <Button size="sm" variant="ghost" aria-pressed={side.view === 'graph'} onClick={() => side.selectView('graph')}>Graph</Button>
-        <Button size="sm" variant="ghost" aria-pressed={side.view === 'overview'} onClick={() => side.selectView('overview')}>Overview</Button>
-        <Button size="sm" variant="ghost" onClick={() => side.setMemoryOpen(true)}>Memory board</Button>
-        <Button size="sm" variant="ghost" aria-pressed={side.panel.kind === 'group_chat'} onClick={() => side.selectPanel({ kind: 'group_chat' })}>Group chat</Button>
-      </nav>
       {!current ? <header className="board-topbar" aria-label="Board toolbar"
         style={{ position: 'static', flex: '0 0 auto', flexWrap: 'wrap', justifyContent: 'flex-end', padding: 'var(--space-2)', boxSizing: 'border-box', minWidth: 0 }}>
         <BoardNavigationControls workspaceId={workspaceId} workflowId={workflowId} selection={navigationSelection} />
       </header> : null}
-      <div className="workflow-collaboration-layout" data-panel-open={side.panel.kind !== 'none' && !side.memoryOpen}>
-      <div className="workflow-collaboration-canvas" hidden={side.view !== 'graph'} inert={side.view !== 'graph'}>
       <RunBoardSlot selection={boardSelection}>
         <div className="workflow-board-authoring" onClickCapture={authoringEvent} onKeyDownCapture={authoringEvent} onSubmitCapture={authoringEvent}>
           {children}
@@ -178,17 +159,6 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
           </Dialog>
         </div>
       </RunBoardSlot>
-      </div>
-      {side.view === 'overview' ? <section className="workflow-overview-slot" aria-label="Workflow Overview">
-        {collaborationSlots?.overview?.() ?? <p role="status">Workflow Overview is not available yet.</p>}
-      </section> : null}
-      <WorkflowSidePanel scope={side.scope} opener={side.opener} runId={legacyRun?.runId ?? pickedRunId} selection={side.panel} agentSelection={side.agentSelection} onSelect={side.selectPanel} bodyRef={setSidePanelHost}
-        modalOpen={side.memoryOpen} slots={collaborationSlots} />
-      </div>
-      {collaborationSlots?.memoryBoard
-        ? <WorkflowMemoryDialog open={side.memoryOpen} onOpenChange={side.setMemoryOpen} slots={collaborationSlots} />
-        : side.memoryOpen && <MemoryBoardSurface scope={{ kind: 'workflow', workspaceId, workflowId }}
-          scopeName="Workflow" dialog={{ open: true, onOpenChange: side.setMemoryOpen, historicalRun: Boolean(legacyRun || pickedRunId) }} />}
     </div>
   </WorkflowBoardContext.Provider>
 }

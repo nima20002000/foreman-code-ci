@@ -1,8 +1,7 @@
-import { MemoryBoardAccessField } from '../memory-boards/MemoryBoardAccessField'
 import { InfoHint } from '../../shared/ui/InfoHint'
 import {
-  GRAPHQL_AGENT_TOOLS, graphqlRoleTools, effectiveGraphqlTools, memoryBoardTools, GraphqlAgentToolSchema,
-  type GraphqlAgentTool, type GraphqlToolOverride, type WorkflowAgentProductRole,
+  GRAPHQL_AGENT_TOOLS, graphqlRoleTools,
+  type GraphqlAgentTool, type GraphqlToolOverride,
 } from '@foreman-code/contracts'
 
 import { Checkbox, SegmentedControl } from '../../shared/ui/nocturne'
@@ -15,18 +14,16 @@ function normalizeToolOverride(override: GraphqlToolOverride | undefined): Graph
 }
 
 /** The Agent's default Foreman Code MCP tools, and this workflow node's change to them. */
-export function GraphqlToolsFields({ role, defaults, override, readOnly = false, onChange }: {
+export function GraphqlToolsFields({ role, defaults, override, onChange }: {
   /** Workflow Agent roles only; Operator tools are never enabled per Agent. */
-  role: WorkflowAgentProductRole
+  role: 'orchestrator' | 'coder'
   defaults: readonly GraphqlAgentTool[] | undefined
   override: GraphqlToolOverride | undefined
-  readOnly?: boolean
-  /** Missing defaults retain the legacy enabled set until explicitly edited. */
+  /** defaults stays undefined (inherit every role tool) until the Agent default itself is edited. */
   onChange(defaults: GraphqlAgentTool[] | undefined, override: GraphqlToolOverride | undefined): void
 }) {
-  const implemented: GraphqlAgentTool[] = memoryBoardTools('write')
-  const tools = graphqlRoleTools(role, implemented)
-  const agentDefault = effectiveGraphqlTools(role, defaults, undefined, false, implemented)
+  const tools = graphqlRoleTools(role)
+  const agentDefault = defaults ? tools.filter((tool) => defaults.includes(tool)) : tools
   const choice = (tool: GraphqlAgentTool): NodeChoice => override?.add.includes(tool) ? 'on' : override?.remove.includes(tool) ? 'off' : 'default'
   const setDefault = (tool: GraphqlAgentTool, enabled: boolean) => {
     const next = tools.filter((item) => item === tool ? enabled : agentDefault.includes(item))
@@ -45,21 +42,8 @@ export function GraphqlToolsFields({ role, defaults, override, readOnly = false,
   }
   return <fieldset className="agent-graphql-tools" aria-label="Foreman Code MCP tools">
     <legend>Foreman Code MCP tools<InfoHint label="Foreman Code MCP tools">Bug reporting is always available. For other tools, the Agent default applies in every workflow. This workflow can turn a tool on or off for this node only.</InfoHint></legend>
-    <MemoryBoardAccessField agentDefaultTools={agentDefault} readOnly={readOnly}
-      value={override?.add.some(tool => implemented.includes(tool)) || override?.remove.some(tool => implemented.includes(tool))
-        ? effectiveGraphqlTools(role, defaults, override, false, implemented) : undefined}
-      onChange={selected => {
-        const next = (selected ?? agentDefault).map(tool => GraphqlAgentToolSchema.parse(tool))
-        const add = (override?.add ?? []).filter(tool => !implemented.includes(tool))
-        const remove = (override?.remove ?? []).filter(tool => !implemented.includes(tool))
-        for (const tool of implemented) {
-          if (next.includes(tool) && !agentDefault.includes(tool)) add.push(tool)
-          if (!next.includes(tool) && agentDefault.includes(tool)) remove.push(tool)
-        }
-        onChange(defaults ? [...defaults] : undefined, normalizeToolOverride({ add, remove }))
-      }} />
     <div className="agent-graphql-tools-list">
-      {tools.filter(tool => !implemented.includes(tool)).map((tool) => {
+      {tools.map((tool) => {
         const definition = GRAPHQL_AGENT_TOOLS[tool]
         if (tool === 'bug_report') {
           return <div key={tool} className="agent-graphql-tool">

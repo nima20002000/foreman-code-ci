@@ -1,5 +1,4 @@
 import { GRAPHQL_OPERATOR_TOOLS } from '../graphqlMcpTools.js'
-import { AgentProductRoleSchema } from '../agentIdentity.js'
 import { OperationalFailureSchema } from '../operationalFailures.js'
 import { NativeInteractionSupportSchema } from '../nativeInteractionSupport.js'
 import { ClaudeFullAccessConfigurationSchema, ClaudeHarnessConfigurationSchema } from '../claude.js';
@@ -258,7 +257,7 @@ const AgentAddOperationSchema = z.object({
   nodeId: IdSchema,
   name: z.string().trim().min(1).max(200),
   nodeName: z.string().trim().min(1).max(200).optional(),
-  productRole: AgentProductRoleSchema.optional(),
+  productRole: z.enum(["orchestrator", "coder"]).optional(),
   /** Omit to copy the role template. A different harness requires an explicit configuration. */
   harness: z.enum(["codex", "claude"]).optional(),
   configuration: ManagementHarnessConfigurationSchema.optional(),
@@ -272,7 +271,7 @@ const AgentAddOperationSchema = z.object({
 }).strict();
 /** Select a product template; callers cannot fabricate a privileged Agent role. */
 const AgentAddFromTemplateOperationSchema = AgentAddOperationSchema.omit({ harness: true }).extend({
-  type: z.literal("agent.add_from_template"), template: AgentProductRoleSchema,
+  type: z.literal("agent.add_from_template"), template: z.enum(["orchestrator", "coder"]),
 }).strict().refine((value) => value.productRole === undefined || value.productRole === value.template,
   "productRole must match the selected template");
 const WorkflowApprovalOperationSchema = z.object({
@@ -482,10 +481,8 @@ export const AgentDefaultsUpdateInputSchema = z.object({
   expectedRevision: ExpectedRevisionSchema.optional()
     .describe('Omit for last write wins; supply to reject a stale revision.'),
   value: AgentDefaultsSchema.superRefine((value, context) => {
-    for (const role of ['master', 'orchestrator', 'coder', 'operator'] as const) {
-      const template = value[role];
-      if (!template) continue;
-      const result = SupportedHarnessConfigurationSchema.safeParse(template.harness);
+    for (const role of ['orchestrator', 'coder', 'operator'] as const) {
+      const result = SupportedHarnessConfigurationSchema.safeParse(value[role].harness);
       if (!result.success) for (const issue of result.error.issues) context.addIssue({
         ...issue, path: [role, 'harness', ...issue.path],
       });
@@ -564,8 +561,6 @@ export const REPEAT_OPERATOR_TOOL_NAMES = [
 export type RepeatOperatorToolName = typeof REPEAT_OPERATOR_TOOL_NAMES[number];
 
 export const OperatorToolNameSchema = z.enum([
-  'memory_board_get', 'memory_board_changes_read', 'memory_card_create', 'memory_card_update',
-  'memory_note_create', 'memory_note_update', 'memory_note_archive',
   'harness_instances_list', 'harness_instance_save', 'harness_instance_check', 'workspace_root_configuration_adopt',
   'reference_files_list', 'reference_file_read', 'reference_file_add', 'reference_file_remove',
   'file_retention_get', 'file_retention_preview', 'file_retention_save', 'run_summaries_list', 'run_board_snapshot_get',

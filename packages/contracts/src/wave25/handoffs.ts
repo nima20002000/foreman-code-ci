@@ -1,5 +1,3 @@
-import { coordinationBusinessOutput, type CoordinationResultContext } from '../coordinationResult.js'
-import { WorkHandoffRoutingSchema, WorkHandoffDataSchema } from '../workflowHierarchy.js'
 import { z } from 'zod'
 import { ExecutionResultSchema } from '../index.js'
 import { TimestampSchema } from '../schemaPrimitives.js'
@@ -212,8 +210,14 @@ export type WorkActivationInput = z.infer<typeof WorkActivationInputSchema>
 
 /** A typed native decision; the server resolves and validates saved routes. */
 export const WorkHandoffResultSchema = z.object({
-  routing: WorkHandoffRoutingSchema,
-  data: WorkHandoffDataSchema,
+  routing: z.discriminatedUnion('kind', [
+    z.object({ kind: z.literal('request'), outcome: z.string().regex(/^[a-z][a-z0-9_]{0,47}$/) }).strict(),
+    z.object({ kind: z.literal('return'),
+      requestId: GraphIdSchema.optional().describe('May be omitted for a single open received request; required when several are open. A supplied ID must match an open received request.'),
+      outcome: z.enum(['accepted', 'needs_changes']) }).strict(),
+    z.object({ kind: z.literal('finish'), outcome: z.string().regex(/^[a-z][a-z0-9_]{0,47}$/).optional() }).strict(),
+  ]),
+  data: z.object({ latestDeliverable: z.json(), remainingFindings: z.array(z.json()).max(1000) }).strict(),
   artifactOutputs: WorkflowArtifactResultV1Schema.optional(),
 }).strict().superRefine((value, context) => {
   if (value.data.latestDeliverable === null) context.addIssue({ code: 'custom', path: ['data', 'latestDeliverable'], message: 'HANDOFF_DELIVERABLE_REQUIRED' })
@@ -222,10 +226,10 @@ export const WorkHandoffResultSchema = z.object({
 export type WorkHandoffResult = z.infer<typeof WorkHandoffResultSchema>
 
 /** Parse only the exact native result carrier; route IDs are resolved server-side. */
-export function parseWorkHandoffResult(result: unknown, context?: CoordinationResultContext): WorkHandoffResult {
+export function parseWorkHandoffResult(result: unknown): WorkHandoffResult {
   const accepted = ExecutionResultSchema.parse(result)
   if (accepted.outcome !== 'succeeded') throw new Error('HANDOFF_RESULT_NOT_SUCCESSFUL')
-  let output: unknown = context ? coordinationBusinessOutput(accepted.output, context) : accepted.output
+  let output: unknown = accepted.output
   if (output !== null && typeof output === 'object' && !Array.isArray(output)
     && Object.keys(output).length === 1 && 'text' in output && typeof output.text === 'string') output = output.text
   if (typeof output === 'string') {
@@ -236,7 +240,7 @@ export function parseWorkHandoffResult(result: unknown, context?: CoordinationRe
 }
 
 /** Artifact associations share the handoff envelope; publication is checked separately. */
-export function parseWorkHandoffArtifactResult(result: unknown, declaration: WorkflowArtifactOutputsV1, context?: CoordinationResultContext):
+export function parseWorkHandoffArtifactResult(result: unknown, declaration: WorkflowArtifactOutputsV1):
   WorkHandoffResult & { artifactOutputs: WorkflowArtifactResultV1 } {
   const accepted = ExecutionResultSchema.parse(result)
   const output = accepted.output
@@ -244,7 +248,7 @@ export function parseWorkHandoffArtifactResult(result: unknown, declaration: Wor
     || Object.keys(output).length !== 1 || !('text' in output) || typeof output.text !== 'string') {
     throw new Error('WORKFLOW_ARTIFACT_NATIVE_TEXT_REQUIRED')
   }
-  const envelope = parseWorkHandoffResult(accepted, context)
+  const envelope = parseWorkHandoffResult(accepted)
   const artifactOutputs = WorkflowArtifactResultV1Schema.parse(envelope.artifactOutputs)
   const saved = WorkflowArtifactOutputsV1Schema.parse(declaration)
   const keys = new Set(artifactOutputs.outputs.map((item) => item.outputKey))

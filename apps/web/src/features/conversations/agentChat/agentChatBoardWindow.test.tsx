@@ -20,9 +20,9 @@ afterEach(() => {
   useChatWindowsStore.setState({ open: {}, frames: {}, focus: {} })
 })
 
-/** Actual Board route/editor/canvas/chat rail with MSW. JSDOM has no layout engine: the viewport
+/** Actual Board route/editor/canvas/chat window with MSW. JSDOM has no layout engine: the viewport
  * dimensions below exercise placement branches and structure, NOT real pixel visibility. */
-describe('mounted Board chat rail action area', () => {
+describe('mounted Board chat window action area', () => {
   it.each([[1400, 812], [320, 568], [390, 844]])('keeps actions outside transcript scrolling at %ix%i', async (width, height) => {
     vi.stubGlobal('innerWidth', width); vi.stubGlobal('innerHeight', height); installChatSource()
     const viewport = Object.assign(new EventTarget(), { width, height, offsetTop: 0, offsetLeft: 0 })
@@ -44,21 +44,20 @@ describe('mounted Board chat rail action area', () => {
     const mounted = await mountMeasuredBoard(boardHref(scope))
     const trigger = await screen.findByRole('button', { name: `Open ${fixture.first.name!} chat` })
     await userEvent.click(trigger)
-    const rail = await screen.findByRole('complementary', { name: 'Workflow side panel' })
-    expect(within(rail).getByRole('button', { name: 'Chat' })).toHaveAttribute('aria-pressed', 'true')
-    expect(rail.closest('[role=dialog]')).toBeNull()
-    expect(mounted.router.state.location.search).toMatchObject({ boardPanel: 'agent', boardAgentTab: 'chat', boardNodeId: fixture.first.id })
-    const input = await within(rail).findByRole('textbox', { name: 'Message' })
+    const dialog = await screen.findByRole('dialog', { name: `${fixture.first.name!} chat` })
+    expect(dialog).toHaveAttribute('data-panel', 'chat')
+    expect(dialog).toHaveAttribute('aria-modal', 'false')
+    const input = await within(dialog).findByRole('textbox', { name: 'Message' })
     await waitFor(() => expect(input).toHaveFocus())
     fireEvent.change(input, { target: { value: 'Control input at a narrow width' } })
-    const transcript = within(rail).getByRole('region', { name: 'Agent conversation transcript' })
-    const actions = within(rail).getByRole('group', { name: 'Chat actions' })
-    expect(rail.querySelectorAll('.conversation-viewport-scroll')).toHaveLength(1)
+    const transcript = within(dialog).getByRole('region', { name: 'Agent conversation transcript' })
+    const actions = within(dialog).getByRole('group', { name: 'Chat actions' })
+    expect(dialog.querySelectorAll('.conversation-viewport-scroll')).toHaveLength(1)
     expect(transcript).not.toContainElement(actions)
     expect(actions.parentElement).toBe(transcript.closest('.conversation-viewport')!.parentElement)
     expect(within(transcript).getByRole('status', { name: `${fixture.first.name!} is working` })).toBeInTheDocument()
     // Plan mode is entered only by typing /plan, so the action area has no session options.
-    expect(within(rail).queryByLabelText('Session options')).not.toBeInTheDocument()
+    expect(within(dialog).queryByLabelText('Session options')).not.toBeInTheDocument()
     for (const name of ['Attach files', 'Queue message', 'Steer', 'Interrupt and send', 'Stop chat']) {
       expect(within(actions).getByRole('button', { name })).toBeEnabled()
     }
@@ -66,16 +65,16 @@ describe('mounted Board chat rail action area', () => {
       await userEvent.tab()
     }
     expect(within(actions).getByRole('button', { name: 'Stop chat' })).toHaveFocus()
-    // Inspecting history or clicking the Board keeps the non-modal chat rail open.
+    // Inspecting history or clicking the Board keeps the non-modal chat window open.
     fireEvent.scroll(transcript, { target: { scrollTop: 10 } })
     fireEvent.click(document.querySelector<HTMLElement>('.pinned-run-canvas .react-flow__pane')!)
     fireEvent.mouseDown(document.body)
     expect(within(actions).getByRole('button', { name: 'Stop chat' })).toBeInTheDocument()
-    expect(screen.getByRole('complementary', { name: 'Workflow side panel' })).toBe(rail)
-    await waitFor(() => expect(rail.style.maxHeight).toBe(`${Math.max(0, height - rail.getBoundingClientRect().top)}px`))
+    expect(screen.getByRole('dialog', { name: `${fixture.first.name!} chat` })).toBe(dialog)
+    await waitFor(() => expect((dialog as HTMLElement).style.getPropertyValue('--agent-chat-viewport-height')).toBe(`${height}px`))
     // Synthetic visual viewport resize/pan, modelling keyboard appearance without claiming geometry.
     await act(async () => { viewport.height = 400; viewport.offsetTop = 31; viewport.dispatchEvent(new Event('resize')) })
-    await waitFor(() => expect(rail.style.maxHeight).toBe(`${Math.max(0, 431 - Math.max(31, rail.getBoundingClientRect().top))}px`))
+    await waitFor(() => expect((dialog as HTMLElement).style.getPropertyValue('--agent-chat-viewport-height')).toBe('400px'))
     expect(within(actions).getByRole('button', { name: 'Stop chat' })).toHaveFocus()
     await userEvent.click(within(actions).getByRole('button', { name: 'Stop chat' }))
     await waitFor(() => expect(chat.getState(context).activeTurn).toBeNull())
@@ -83,9 +82,9 @@ describe('mounted Board chat rail action area', () => {
     expect(chat.calls.find((call) => call.method === 'POST')!.path).toMatch(/\/interrupt$/)
     expect(fixture.mock.runs.get(scope.runId)).toEqual(beforeRun)
     expect(fixture.mock.calls.filter((call) => call.method !== 'GET')).toEqual([])
-    expect(screen.getByRole('complementary', { name: 'Workflow side panel' })).toBe(rail)
+    expect(screen.getByRole('dialog', { name: `${fixture.first.name!} chat` })).toBe(dialog)
     await userEvent.keyboard('{Escape}')
-    await waitFor(() => expect(screen.queryByRole('complementary', { name: 'Workflow side panel' })).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: `${fixture.first.name!} chat` })).not.toBeInTheDocument())
     await waitFor(() => expect(trigger).toHaveFocus())
     expect(mounted.history.location.search).toContain(`runId=${scope.runId}`)
   }, 30_000)
