@@ -972,7 +972,11 @@ export class AgentChatService {
           ...(admitted.replayWarning ? { replayWarning: admitted.replayWarning } : {}) }
       }
     }
-    SendAgentChatMessageRequestSchema.parse(input)
+    const admissionValidation = SendAgentChatMessageRequestSchema.safeParse(input)
+    if (!admissionValidation.success) {
+      throw new DomainError('CHAT_MESSAGE_TOO_LARGE',
+        admissionValidation.error.issues.map(issue => issue.message).join('; '), 400)
+    }
     const blocked = resolution.blocked ?? await this.harnessUnavailable(resolution)
     if (blocked) {
       throw new DomainError('AGENT_CHAT_UNAVAILABLE',
