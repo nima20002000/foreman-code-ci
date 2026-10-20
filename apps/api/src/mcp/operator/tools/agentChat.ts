@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import {
-  EnsureAgentChatConversationRequestSchema, CancelQueuedAgentChatTurnRequestSchema, RespondAgentChatInteractionRequestSchema,
+  CancelQueuedAgentChatTurnRequestSchema, RespondAgentChatInteractionRequestSchema,
   AgentChatStateResponseSchema, AgentChatSendResponseSchema,
 } from '@foreman-code/contracts/agent-chat'
 import {
@@ -9,28 +9,12 @@ import {
 
 import { DomainError } from '../../../modules/errors.js'
 import { defineOperatorTool } from '../definition.js'
-import { conversationFileTools } from './conversationFiles.js'
 
 const workspace = z.string().min(1)
 const conversation = z.string().min(1)
 
 /** Operator MCP parity for the Board's selected-Agent chat. Same services, receipts and authorization as HTTP. */
 export const agentChatTools = [
-  ...conversationFileTools,
-  defineOperatorTool({
-    name: 'agent_chat_ensure_conversation',
-    requires: [['agent_chat:write', 'resource'], ['agent_chat:read', 'resource']],
-    enabled: services => !!services.agentChat,
-    description: 'Prepare the stored Agent conversation before its first attachment. Pass workspaceId and context '
-      + '{workflowId, workflowNodeId, agentId, runId?}, plus executionId for a selected Run execution. '
-      + 'Returns the same persisted conversation on retry without sending a message or starting a native session. '
-      + 'Requires agent_chat:read and agent_chat:write in that conversation scope.',
-    inputSchema: EnsureAgentChatConversationRequestSchema.extend({ workspaceId: workspace }),
-    outputSchema: AgentChatStateResponseSchema,
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-    run: async (context, { workspaceId, context: query, executionId }) => ({ state: await context.services.agentChat!
-      .ensureConversation(context.principal, { workspaceId, ...query }, executionId) }),
-  }),
   defineOperatorTool({
     name: 'agent_chat_read',
     requires: [['agent_chat:read', 'resource']],
