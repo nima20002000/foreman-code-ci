@@ -18,8 +18,7 @@ import { SessionControlStore } from './sessionControls/store.js'
 import { acceptedResponseControl } from './acceptedResponseControl.js'
 import { nativeNonSubmission } from './nativeNonSubmission.js'
 import { sessionStartConfiguration } from '../harnesses/sessionStart.js'
-import { harnessSessionChanged } from '../harnesses/providerAccountConfiguration.js'
-import { WorkerConversationBindingSchema } from '@foreman-code/contracts/remote-execution-rpc'
+import { agentConfigurationTransition, agentConfigurationDirectory } from './agentConfigurationTransition.js'
 import { pendingInteractionAfterHistory } from './pendingInteractionReadback.js'
 import { qualifyChatActivity } from './qualifiedActivity.js'
 import { reconcileKnownActivities } from './reconcileKnownActivities.js'
@@ -1242,30 +1241,8 @@ export class AgentChatService {
     if (!previous) {
       throw new DomainError('AGENT_CHAT_CONFIGURATION_MISSING', 'The saved Agent configuration is unavailable.', 409)
     }
-    let directoryBinding = row.record.directoryBinding
-    if (directoryBinding) {
-      const profile = configuration.harnessProfileSelection
-      const placement = profile ? { ...directoryBinding.placement, instanceId: profile.instanceId,
-        instanceRevision: profile.instanceRevision, harnessInstallationId: profile.target.harnessInstallationId }
-        : directoryBinding.placement
-      const directory = await resolveAgentChatDirectory({ sql: this.pool, configuration,
-        workflowVersionId: directoryBinding.workflowVersionId, placement })
-      if (directory.workingDirectory !== row.record.workingDirectory) {
-        throw new DomainError('AGENT_CHAT_DIRECTORY_UNAVAILABLE', 'The chat settings changed its saved working folder.', 409)
-      }
-      directoryBinding = directory.directoryBinding
-    }
-    const ephemeral = previous.harness.harness === 'codex'
-      && previous.harness.advanced?.sessionPersistence === 'ephemeral'
-    const previousProfile = row.worker_conversation_binding
-      ? WorkerConversationBindingSchema.parse(row.worker_conversation_binding).profile : previous.harnessProfileSelection
-    const profileChanged = previousProfile?.instanceId !== configuration.harnessProfileSelection?.instanceId
-      || commandInputHash(previousProfile?.target ?? null)
-        !== commandInputHash(configuration.harnessProfileSelection?.target ?? null)
-    const claudeDirectoryChanged = previous.harness.harness === 'claude' && configuration.harness.harness === 'claude'
-      && previous.harness.configDirectory !== configuration.harness.configDirectory
-    const replaceSession = harnessSessionChanged(previous.harness, configuration.harness)
-      || ephemeral || profileChanged || claudeDirectoryChanged
+    const directoryBinding = await agentConfigurationDirectory(this.pool, row, configuration)
+    const { previousProfile, replaceSession } = agentConfigurationTransition(row, previous, configuration)
     const runtime = this.runtimes.get(row.id)
     if (!runtime?.session && replaceSession && row.native_session_id && row.worker_conversation_binding) {
       const principalId = await this.repository.turnPrincipalId(row.id, row.active_request_id!)

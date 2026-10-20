@@ -23,7 +23,8 @@ import { assertConversationCursor, withConversationPageRead } from './activityCu
 import { readActivityCommands } from './activityCommands.js'
 import { readConversationPublicationReceipts, type ConversationPublicationReceipt } from './messagePublications.js'
 import { PostgresOperatorActivityRepository } from './operatorActivityRepository.js'
-import { OPERATOR_SNAPSHOT_MESSAGE_BYTES, OPERATOR_HISTORY_PAGE_BYTES, HANDOFF_MESSAGE_LIMIT, handoffContext } from './operatorChatRepository.js'
+import { OPERATOR_SNAPSHOT_MESSAGE_BYTES, OPERATOR_HISTORY_PAGE_BYTES } from './operatorChatRepository.js'
+import { agentConfigurationHandoff } from './agentConfigurationTransition.js'
 import { AgentConfigurationVersionSchema, type AgentConfigurationVersion } from '@foreman-code/contracts'
 import { legacyProviderAccountBinding, readProviderAccountBinding, type AcceptedProviderAccountBindings }
   from '../provider-accounts/acceptedBindings.js'
@@ -531,16 +532,7 @@ export class PostgresAgentChatRepository {
       if (row.origin_run_id) record.sourceConfigurationVersionId ??= row.agent_configuration_version_id
       if (options.replaceSession) {
         if (row.native_session_id) record.workerGeneration = randomUUID()
-        const history = await client.query<{ role: string; content: string }>(`select role,content
-          from operator_conversation_messages where conversation_id=$1 and role in ('user','assistant')
-          and sequence < (select sequence from operator_conversation_messages
-            where conversation_id=$1 and client_request_id=$2)
-          order by sequence desc limit $3`, [id, requestId, HANDOFF_MESSAGE_LIMIT])
-        const count = await client.query<{ count: string }>(`select count(*)::text as count
-          from operator_conversation_messages where conversation_id=$1 and role in ('user','assistant')
-          and sequence < (select sequence from operator_conversation_messages
-            where conversation_id=$1 and client_request_id=$2)`, [id, requestId])
-        record.handoffContext = handoffContext(null, 0, history.rows, Number(count.rows[0]!.count), 'Agent').text
+        record.handoffContext = await agentConfigurationHandoff(client, id, requestId)
         record.startupDelivered = false
         delete record.startupReceipt
         delete record.sessionCreation

@@ -1,5 +1,5 @@
 import { NativeInteractionResponseAvailabilitySchema } from './interaction-activity.js';
-import { CHAT_MAX_MESSAGE_CHARACTERS, ChatMessageContentSchema, refineChatMessageSize } from './chatInput.js';
+import { ChatMessageContentSchema, refineChatMessageSize } from './chatInput.js';
 import { NativeMessageSubmissionSchema } from './claude.js';
 import { z } from "zod";
 import { ActivitySnapshotV1Schema } from "./activity.js";
@@ -304,7 +304,7 @@ export const AgentChatQuerySchema = AgentChatContextSchema.omit({ workspaceId: t
 export type AgentChatQuery = z.infer<typeof AgentChatQuerySchema>;
 
 /** POST /api/workspaces/:workspaceId/agent-chat/messages */
-export const AGENT_CHAT_MAX_MESSAGE_CHARACTERS = CHAT_MAX_MESSAGE_CHARACTERS
+export const AGENT_CHAT_MAX_MESSAGE_CHARACTERS = 1_048_576
 // JSON can encode each character as a six-byte escape, plus request metadata.
 export const AGENT_CHAT_MESSAGE_BODY_LIMIT_BYTES = 6 * AGENT_CHAT_MAX_MESSAGE_CHARACTERS + 64 * 1024
 export const SendAgentChatMessageRequestSchema = z.object({
@@ -331,7 +331,7 @@ export type SendAgentChatMessageRequest = Omit<z.infer<typeof SendAgentChatMessa
 /** Transport parsing retains the historical character limit so stored receipts remain recoverable.
  * Fresh admissions still validate SendAgentChatMessageRequestSchema after the receipt lookup. */
 export const AgentChatMessageCommandSchema = z.object({ ...SendAgentChatMessageRequestSchema.shape,
-  content: z.string().trim().max(CHAT_MAX_MESSAGE_CHARACTERS)
+  content: z.string().trim().max(AGENT_CHAT_MAX_MESSAGE_CHARACTERS)
     .describe('New messages must fit within 768 KiB of UTF-8 JSON. Identical retries may recover older, larger receipts.'),
 }).strict().refine(value => value.content.length > 0 || value.attachments.length > 0, {
   path: ['content'], message: 'Message requires text or an attachment.',

@@ -20,8 +20,11 @@ export function assertWorkerChatInputSize(input: { prompt: string; metadata: rea
   }
 }
 
-/** Authorization callbacks repeat the binding, but carry the prompt and configuration only in the request. */
-export function assertWorkerChatRequestSize(request: WorkerConversationRpcRequest): void {
+type PendingSessionTurn = Omit<Extract<WorkerConversationRpcRequest, { method: 'conversation.start-turn' }>, 'session'>
+
+/** A first Codex turn gets its session identity after creation; the bridge checks the completed frame too.
+ * Authorization callbacks repeat the binding, but carry prompt/configuration only in the request. */
+export function assertWorkerChatRequestSize(request: WorkerConversationRpcRequest | PendingSessionTurn): void {
   const callback = { method: 'conversation.authorize', admissionId: request.admissionId,
     binding: request.binding, request }
   if (chatJsonBytes(request) > WORKER_CHAT_MAX_JSON_BYTES || chatJsonBytes(callback) > WORKER_CHAT_MAX_JSON_BYTES) {
