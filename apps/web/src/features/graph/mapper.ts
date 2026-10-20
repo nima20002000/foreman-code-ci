@@ -219,7 +219,7 @@ export function workflowToGraph(
     const liveActivity = options.runActive ? options.liveActivitiesByNodeId?.get(workflowNode.id) : undefined
     const runState = options.runStatesByNodeId?.get(workflowNode.id)
     const runOutcome = options.runOutcomesByNodeId?.get(workflowNode.id)
-    const defaultSize = agent.productRole === 'master' || agent.productRole === 'orchestrator' ? ORCHESTRATOR_NODE_SIZE : DEFAULT_NODE_WIDTH
+    const defaultSize = agent.productRole === 'orchestrator' ? ORCHESTRATOR_NODE_SIZE : DEFAULT_NODE_WIDTH
     const size = clampNodeSize(workflowNode.width ?? defaultSize, workflowNode.height ?? defaultSize)
     return {
       id: workflowNode.id,
