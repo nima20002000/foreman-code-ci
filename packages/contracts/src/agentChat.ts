@@ -1,5 +1,4 @@
 import { NativeInteractionResponseAvailabilitySchema } from './interaction-activity.js';
-import { CHAT_MAX_MESSAGE_CHARACTERS, ChatMessageContentSchema, refineChatMessageSize } from './chatInput.js';
 import { NativeMessageSubmissionSchema } from './claude.js';
 import { z } from "zod";
 import { ActivitySnapshotV1Schema } from "./activity.js";
@@ -304,7 +303,7 @@ export const AgentChatQuerySchema = AgentChatContextSchema.omit({ workspaceId: t
 export type AgentChatQuery = z.infer<typeof AgentChatQuerySchema>;
 
 /** POST /api/workspaces/:workspaceId/agent-chat/messages */
-export const AGENT_CHAT_MAX_MESSAGE_CHARACTERS = CHAT_MAX_MESSAGE_CHARACTERS
+export const AGENT_CHAT_MAX_MESSAGE_CHARACTERS = 1_048_576
 // JSON can encode each character as a six-byte escape, plus request metadata.
 export const AGENT_CHAT_MESSAGE_BODY_LIMIT_BYTES = 6 * AGENT_CHAT_MAX_MESSAGE_CHARACTERS + 64 * 1024
 export const SendAgentChatMessageRequestSchema = z.object({
@@ -312,7 +311,7 @@ export const SendAgentChatMessageRequestSchema = z.object({
   requestId: IdSchema,
   ...MessageAttachmentFields,
   context: AgentChatQuerySchema,
-  content: ChatMessageContentSchema.describe('Message text, up to 768 KiB as UTF-8 JSON including request metadata. Saved context and configuration also count toward the Worker 1 MiB limit. Bare /new starts a separate Agent conversation without a model turn.'),
+  content: z.string().trim().max(AGENT_CHAT_MAX_MESSAGE_CHARACTERS).describe('Message text, up to 1,048,576 characters. Bare /new starts a separate Agent conversation and returns a reset response without a model turn.'),
   sessionMode: z.enum(['regular', 'plan']).optional()
     .describe('Selects the mode for a new turn. Steering may only retain the active applied mode; mode changes and /plan tasks require next_turn or interrupt_and_send.'),
   intent: AgentChatIntentSchema.default("next_turn")
@@ -325,7 +324,7 @@ export const SendAgentChatMessageRequestSchema = z.object({
   path: ["content"], message: "Message requires text or an attachment.",
 }).refine((value) => value.intent !== "steer" || value.attachments.length === 0, {
   path: ["attachments"], message: "Attachment steering is not supported. Send attachments in a new turn.",
-}).superRefine(refineChatMessageSize);
+});
 export type SendAgentChatMessageRequest = Omit<z.infer<typeof SendAgentChatMessageRequestSchema>, "attachments">
   & { attachments?: z.input<typeof MessageAttachmentFields.attachments> };
 /** Legacy urgent receipts did not retain the original target. This is readback, not target verification. */
