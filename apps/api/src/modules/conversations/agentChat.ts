@@ -38,7 +38,7 @@ import {
   ExecutionLocationSchema, NativeSessionReferenceSchema, type AgentConfigurationVersion, type HarnessExecution, type ExecutionResult, type NativeHarnessEvent, type NativeSessionReference,
 } from '@foreman-code/contracts'
 import {
-  AgentChatStateSchema, AgentChatStreamEventSchema, SendAgentChatMessageRequestSchema, AgentChatReadbackQuerySchema,
+  AgentChatStateSchema, AgentChatStreamEventSchema, SendAgentChatMessageRequestSchema, AgentChatMessageCommandSchema, AgentChatReadbackQuerySchema,
   InterruptAgentChatRequestSchema, CancelQueuedAgentChatTurnRequestSchema, RespondAgentChatInteractionRequestSchema,
   type AgentChatBlockedReason, type AgentChatCapabilities, type AgentChatContext, type AgentChatOrigin, type AgentChatQuery,
   type AgentChatSessionState, type AgentChatState, type AgentChatStreamEvent, type AgentChatTurn, type SendAgentChatMessageRequest,
@@ -860,7 +860,7 @@ export class AgentChatService {
 
   async sendCommand(principal: ManagementPrincipal, workspaceId: string, value: SendAgentChatMessageRequest,
     source: 'http' | 'mcp' = 'http', selection?: { executionId: string; assertCurrent: RunChatAuthorityCheck }) {
-    const input = SendAgentChatMessageRequestSchema.parse(value)
+    const input = AgentChatMessageCommandSchema.parse(value)
     if (parseSessionCommand(input.content).kind !== 'new') return this.send(principal, workspaceId, input)
     return this.command(async () => {
       const context = { workspaceId, ...input.context }
@@ -943,7 +943,7 @@ export class AgentChatService {
 
   private async sendMessage(principal: ManagementPrincipal, workspaceId: string, value: SendAgentChatMessageRequest, executionId?: string, assertCurrent: RunChatAuthorityCheck = async () => {}) {
     this.assertOpen()
-    const parsed = SendAgentChatMessageRequestSchema.parse(value)
+    const parsed = AgentChatMessageCommandSchema.parse(value)
     const planTask = parseSessionCommand(parsed.content).kind === 'plan-task' || parsed.sessionMode === 'plan'
     const input = planTask ? { ...parsed, sessionMode: 'plan' as const } : parsed
     const context: AgentChatContext = { workspaceId, ...input.context }
@@ -972,6 +972,7 @@ export class AgentChatService {
           ...(admitted.replayWarning ? { replayWarning: admitted.replayWarning } : {}) }
       }
     }
+    SendAgentChatMessageRequestSchema.parse(input)
     const blocked = resolution.blocked ?? await this.harnessUnavailable(resolution)
     if (blocked) {
       throw new DomainError('AGENT_CHAT_UNAVAILABLE',

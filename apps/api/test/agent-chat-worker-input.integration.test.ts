@@ -153,6 +153,12 @@ it.each(['codex', 'claude'] as const)('delivers Worker %s follow-ups with a larg
         binding: frame.binding, request: frame }
       expect(Buffer.byteLength(JSON.stringify(callback))).toBeLessThanOrEqual(1024 * 1024)
     }
+    const before = AgentChatStateSchema.parse(await f.value('agent_chat_read', { query: f.context }))
+    const rejected = await f.call('agent_chat_send', { request: { requestId: randomUUID(), content: 'x'.repeat(500_000),
+      intent: 'next_turn', expectedConversationId: f.conversation.id, context: f.context } })
+    expect(rejected.result?.isError).toBe(true)
+    expect(JSON.stringify(rejected)).toContain('CHAT_MESSAGE_TOO_LARGE')
+    expect(AgentChatStateSchema.parse(await f.value('agent_chat_read', { query: f.context }))).toEqual(before)
   } finally { await f.close() }
 }, 30_000)
 

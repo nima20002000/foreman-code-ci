@@ -328,6 +328,16 @@ export const SendAgentChatMessageRequestSchema = z.object({
 }).superRefine(refineChatMessageSize);
 export type SendAgentChatMessageRequest = Omit<z.infer<typeof SendAgentChatMessageRequestSchema>, "attachments">
   & { attachments?: z.input<typeof MessageAttachmentFields.attachments> };
+/** Transport parsing retains the historical character limit so stored receipts remain recoverable.
+ * Fresh admissions still validate SendAgentChatMessageRequestSchema after the receipt lookup. */
+export const AgentChatMessageCommandSchema = z.object({ ...SendAgentChatMessageRequestSchema.shape,
+  content: z.string().trim().max(CHAT_MAX_MESSAGE_CHARACTERS)
+    .describe('New messages must fit within 768 KiB of UTF-8 JSON. Identical retries may recover older, larger receipts.'),
+}).strict().refine(value => value.content.length > 0 || value.attachments.length > 0, {
+  path: ['content'], message: 'Message requires text or an attachment.',
+}).refine(value => value.intent !== 'steer' || value.attachments.length === 0, {
+  path: ['attachments'], message: 'Attachment steering is not supported. Send attachments in a new turn.',
+});
 /** Legacy urgent receipts did not retain the original target. This is readback, not target verification. */
 const AgentChatReplayWarningSchema = z.object({
   code: z.literal("AGENT_CHAT_LEGACY_TARGET_UNVERIFIABLE"),

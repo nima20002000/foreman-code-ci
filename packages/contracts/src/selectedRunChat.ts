@@ -1,11 +1,10 @@
 import { z } from "zod";
-import { refineChatMessageSize } from './chatInput.js';
 import { GraphIdSchema, IdSchema } from "./schemaPrimitives.js";
 import { SelectedRunChatKeySchema } from "./runSnapshots.js";
 import {
   AgentChatHistoryPageSchema, AgentChatReadbackQuerySchema, AgentChatStateSchema,
   AgentChatTurnPageSchema, InterruptAgentChatRequestSchema, ReadAgentChatRequestSchema, ReadAgentChatResponseSchema,
-  SendAgentChatMessageRequestSchema,
+  AgentChatMessageCommandSchema,
 } from "./agentChat.js";
 
 /** SCH-06 is an additive envelope; the frozen Run snapshot and FEAT-15 shapes are unchanged. */
@@ -71,12 +70,12 @@ export type ReadSelectedRunChatResponse = z.infer<typeof ReadSelectedRunChatResp
 export const SendSelectedRunChatRequestSchema = z.object({
   selection: SelectedRunChatExecutionSchema,
   // Derive fields before refining: preserve content and attachment-steering checks.
-  message: z.object(SendAgentChatMessageRequestSchema.shape).omit({ context: true }).strict()
+  message: z.object(AgentChatMessageCommandSchema.shape).omit({ context: true }).strict()
     .refine((value) => value.content.length > 0 || value.attachments.length > 0, {
       path: ["content"], message: "Message requires text or an attachment.",
     }).refine((value) => value.intent !== "steer" || value.attachments.length === 0, {
       path: ["attachments"], message: "Attachment steering is not supported. Send attachments in a new turn.",
-    }).superRefine(refineChatMessageSize),
+    }),
 }).strict();
 export const InterruptSelectedRunChatRequestSchema = z.object({
   key: SelectedRunChatKeySchema, request: InterruptAgentChatRequestSchema,
@@ -92,7 +91,7 @@ export const AgentChatReadToolInputSchema = ReadAgentChatRequestSchema.extend({
 });
 
 export const AgentChatSendToolInputSchema = z.object({
-  workspaceId: IdSchema, request: SendAgentChatMessageRequestSchema.optional(),
+  workspaceId: IdSchema, request: AgentChatMessageCommandSchema.optional(),
   selection: SelectedRunChatExecutionSchema.omit({ workspaceId: true }).optional(),
   message: SendSelectedRunChatRequestSchema.shape.message.optional(),
 }).strict().superRefine((value, context) => {
