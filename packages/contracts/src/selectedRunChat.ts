@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { refineChatMessageSize } from './chatInput.js';
 import { GraphIdSchema, IdSchema } from "./schemaPrimitives.js";
 import { SelectedRunChatKeySchema } from "./runSnapshots.js";
 import {
@@ -75,7 +76,7 @@ export const SendSelectedRunChatRequestSchema = z.object({
       path: ["content"], message: "Message requires text or an attachment.",
     }).refine((value) => value.intent !== "steer" || value.attachments.length === 0, {
       path: ["attachments"], message: "Attachment steering is not supported. Send attachments in a new turn.",
-    }),
+    }).superRefine(refineChatMessageSize),
 }).strict();
 export const InterruptSelectedRunChatRequestSchema = z.object({
   key: SelectedRunChatKeySchema, request: InterruptAgentChatRequestSchema,
