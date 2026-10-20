@@ -5,6 +5,7 @@ import { unavailableJobToolCall } from '../operator/tools/jobs.js'
 import { unavailableJobRuntimeToolCall } from '../operator/tools/jobRuntimeProfiles.js'
 import { unavailableHostHarnessToolCall } from '../../modules/harnesses/instanceSettings/management.js'
 import type { AgentReferenceService } from '../../modules/files/references/agentService.js'
+import type { TemporaryFileService } from '../../modules/files/service.js'
 import type { FileReferenceService } from '../../modules/files/references/service.js'
 import { MAX_REFERENCE_MCP_BODY_BYTES } from '../../modules/files/references/requests.js'
 import { unavailableFileReferenceToolCall } from '../operator/tools/fileReferences.js'
@@ -67,6 +68,9 @@ export function registerGraphqlMcp(app: FastifyInstance, services: GraphqlMcpSer
   // FIL-03 is composed after buildProductionApp. Bind the same service before any MCP request,
   // rather than constructing another storage/auth boundary or changing server startup ownership.
   app.addHook('onReady', async () => {
+    if (services.operator && app.hasDecorator('temporaryFileService')) {
+      services.operator.temporaryFiles = app.getDecorator<TemporaryFileService>('temporaryFileService')
+    }
     if (services.operator && app.hasDecorator('fileReferenceService')) {
       services.operator.fileReferences = app.getDecorator<FileReferenceService>('fileReferenceService')
     }
