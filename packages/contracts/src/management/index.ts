@@ -595,6 +595,7 @@ export const OperatorToolNameSchema = z.enum([
   "workspace_defaults_update",
   "harness_mcp_servers_list", "harness_mcp_change_request", "harness_mcp_managed_request", "harness_mcp_change_get", "harness_mcp_change_reconcile", "codex_plugin_change", "codex_plugin_reconcile",
   "codex_plugins_list", "codex_plugin_get",
+  "codex_plugin_operations_list", "harness_mcp_plans_list", "harness_mcp_change_decide",
   "claude_plugins_list", "claude_plugin_change", "claude_plugin_marketplace_add",
   "harness_configuration_check",
   "execution_readiness_get",
