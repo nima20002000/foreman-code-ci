@@ -356,7 +356,6 @@ export class PostgresAgentChatRepository {
     key: string; request: SendAgentChatMessageRequest; context: AgentChatContext; create?: NewAgentConversation; ownerPrincipalId?: string
     delivery: 'queued' | 'submitting'; targetNativeTurnId?: string
     assertCurrent?: (transaction: pg.PoolClient) => Promise<void>
-    validateInput?: (transaction: pg.PoolClient, row: AgentConversationRow) => Promise<void>
   }): Promise<{ conversationId: string; turn: AgentChatTurn; replayed: boolean; created: boolean; interruptTarget?: AgentChatInterruptTarget; replayWarning?: AgentChatReplayWarning }> {
     return withTransaction(this.pool, async (client) => {
       await client.query('select pg_advisory_xact_lock(hashtext($1))', [`admission:workspace:${input.context.workspaceId}`])
@@ -451,7 +450,6 @@ export class PostgresAgentChatRepository {
         ? { requestId: row.active_request_id, nativeTurnId: row.active_native_turn_id } : undefined
       const targetNativeTurnId = input.request.intent === 'interrupt_and_send'
         ? input.request.expectedNativeTurnId ?? interruptTarget?.nativeTurnId : input.targetNativeTurnId
-      await input.validateInput?.(client, row)
       await admitSessionMessage(client, row.id, input.request)
       await validateMessageAttachments(client, row.id, input.request.attachments)
       await assertAgentChatDirectoryAvailable(client, row.id)
