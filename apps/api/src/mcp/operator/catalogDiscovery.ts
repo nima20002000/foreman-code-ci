@@ -20,7 +20,7 @@ export function catalogToolAvailable(context: OperatorRequestContext, name: stri
   registry: readonly OperatorToolDefinition[], resource: AuthorizedResource = {}): boolean {
   const tool = registry.find(candidate => candidate.name === name)
   if (tool) return toolAvailable(context, tool, resource)
-  if (name === 'workspace_root_configuration_adopt') return !!context.services.workspaceRoots
+  if (name === 'workspace_root_configuration_adopt') return workspaceRootAdoptionAvailable(context, registry, resource)
   const host = HOST_HARNESS_TOOLS.find(candidate => candidate === name)
   if (host) return hostHarnessToolAvailable(context.services.harnessInstances, context.principal, host)
   if (CI_TOOLS.some(candidate => candidate === name)) return ciCapabilities(context, resource).some(tool => tool.name === name)
@@ -49,6 +49,18 @@ export function catalogToolAvailable(context: OperatorRequestContext, name: stri
   return false
 }
 
+/** Adoption and root selection use the same workspace location update authorization. */
+function workspaceRootAdoptionAvailable(context: OperatorRequestContext, registry: readonly OperatorToolDefinition[],
+  resource: AuthorizedResource): boolean {
+  if (!context.services.workspaceRoots) return false
+  const write = registry.find(tool => tool.name === 'workspace_root_location_set')
+  if (!write) return false
+  const workspaces = resource.workspaceId ? [resource.workspaceId]
+    : [undefined, ...new Set(context.principal.grants.flatMap(grant => grant.scope.workspaceIds ?? []))]
+  return workspaces.some(workspaceId => write.requires.every(([action]) =>
+    isAuthorized(context.principal, action, workspaceId ? { workspaceId } : {})))
+}
+
 export interface CapabilityRequirement { name: string; actions: ManagementAction[]; detail: string }
 
 /** Metadata for registered tools whose owning modules still use direct registrars. */
@@ -58,7 +70,7 @@ function extensionRequirements(): CapabilityRequirement[] {
     harness_instance_check: ['harnesses:read', 'harnesses:update'],
   }
   const host = HOST_HARNESS_TOOLS.map(name => ({ name, actions: hostActions[name],
-    detail: 'Host-instance grants are checked again on the selected host and installation. Checking requires a composed qualification service.',
+    detail: 'Requires unscoped harness actions before checking the selected host and installation. Checking requires a composed qualification service.',
   }))
   const references = FILE_REFERENCE_TOOL_NAMES.map(name => {
     const write = name === 'reference_file_add' || name === 'reference_file_remove'
