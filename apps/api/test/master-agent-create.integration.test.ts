@@ -56,7 +56,7 @@ it.skipIf(!postgresEnabled)('creates explicit Masters through HTTP and MCP from 
     expect(ManagedAgentDefaultsSchema.parse(await call('agent_defaults_get', {}))).toEqual(legacy)
 
     const reader = await f.access.issue({ name: 'Master read only', audience: 'operator',
-      expiresAt: new Date(Date.now() + 600_000), grants: [{ actions: ['agents:read'], scope: { workspaceId } }] })
+      expiresAt: new Date(Date.now() + 600_000), grants: [{ actions: ['agents:read'], scope: { workspaceIds: [workspaceId] } }] })
     const denied = await f.connect(reader.token)
     const readable = await denied.callTool({ name: 'agent_get', arguments: { workspaceId, agentId: 'master-mcp' } })
     expect(readable.isError, JSON.stringify(readable)).not.toBe(true)

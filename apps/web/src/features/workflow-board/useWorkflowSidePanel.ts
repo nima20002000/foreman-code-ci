@@ -11,10 +11,13 @@ export function useWorkflowSidePanel(workspaceId: string, workflowId: string, ru
   const scope = JSON.stringify([workspaceId, workflowId])
   const opener = useRef<HTMLElement | null>(null)
   const panel = boardSidePanelFromSearch(search)
+  const runId = run?.runId
+  const workflowVersionId = run?.workflowVersionId
+  const executionSemanticsVersion = run?.executionSemanticsVersion
   const keepRun = useCallback((previous: ReturnType<typeof RunsSelectorSearchSchema.parse>) => ({ ...previous, workflowId,
-    ...(run && !previous.runId && !previous.selectedRunId ? { runId: run.runId,
-      workflowVersionId: run.workflowVersionId, executionSemanticsVersion: run.executionSemanticsVersion } : {}) }),
-  [workflowId, run])
+    ...(runId && !previous.runId && !previous.selectedRunId ? { runId,
+      workflowVersionId, executionSemanticsVersion } : {}) }),
+  [workflowId, runId, workflowVersionId, executionSemanticsVersion])
   const selectPanel = useCallback((next: BoardSidePanel) => {
     if (panel.kind === 'none' && next.kind !== 'none') {
       opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null

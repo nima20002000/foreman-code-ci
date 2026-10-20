@@ -128,10 +128,11 @@ function useRunAgentPanels(scope: RepeatGraphScopeV3, board: NonNullable<ReturnT
   }
   // Each Run keeps its own floating chat windows; they never mix with the draft's.
   const chatScope = `run:${scope.workflowId}:${scope.runId}`
+  const selectSidePanel = board.selectSidePanel
   const openChat = useCallback((nodeId: string) => {
-    if (board.selectSidePanel) board.selectSidePanel({ kind: 'agent', nodeId, tab: 'chat' })
+    if (selectSidePanel) selectSidePanel({ kind: 'agent', nodeId, tab: 'chat' })
     else useChatWindowsStore.getState().openWindow(chatScope, nodeId)
-  }, [board.selectSidePanel, chatScope])
+  }, [selectSidePanel, chatScope])
   return { open, setOpen, chatScope, openChat }
 }
 

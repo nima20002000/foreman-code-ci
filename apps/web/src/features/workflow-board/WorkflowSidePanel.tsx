@@ -38,7 +38,8 @@ export function WorkflowSidePanel({ scope, runId, opener, selection, agentSelect
   const active = selection.kind !== 'none'
   useEffect(() => {
     if (!active) return
-    return () => { if (opener.current?.isConnected) opener.current.focus() }
+    const openedFrom = opener.current
+    return () => { if (openedFrom?.isConnected) openedFrom.focus() }
   }, [active, opener])
   const content = modalOpen ? null : selection.kind === 'group_chat'
     ? slots?.groupChat?.() ?? <p role="status">Group chat is not available yet.</p>
