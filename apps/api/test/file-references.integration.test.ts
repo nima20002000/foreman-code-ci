@@ -30,7 +30,7 @@ import { WorkflowManagementService } from '../src/modules/workflows/management.j
 import { registerGraphqlMcp } from '../src/mcp/unified/transport.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { FILE_REFERENCE_TOOL_NAMES } from '../src/mcp/operator/tools/fileReferences.js'
-import { FileReferenceReadResultSchema } from '../src/modules/files/references/requests.js'
+import { FileReferenceReadResultSchema } from '@foreman-code/contracts/files'
 import { agent3Database, postgresEnabled } from './helpers/wave25Agent3.js'
 import { rejectableDeferred } from './helpers/deferred.js'
 
