@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import {
-  CancelQueuedAgentChatTurnRequestSchema, RespondAgentChatInteractionRequestSchema,
+  EnsureAgentChatConversationRequestSchema, CancelQueuedAgentChatTurnRequestSchema, RespondAgentChatInteractionRequestSchema,
   AgentChatStateResponseSchema, AgentChatSendResponseSchema,
 } from '@foreman-code/contracts/agent-chat'
 import {
@@ -8,13 +8,29 @@ import {
 } from '@foreman-code/contracts/selected-run-chat'
 
 import { DomainError } from '../../../modules/errors.js'
-import { defineOperatorTool } from '../definition.js'
+import { defineOperatorTool, type OperatorToolDefinition } from '../definition.js'
+import { conversationFileTools } from './conversationFiles.js'
 
 const workspace = z.string().min(1)
 const conversation = z.string().min(1)
 
 /** Operator MCP parity for the Board's selected-Agent chat. Same services, receipts and authorization as HTTP. */
-export const agentChatTools = [
+export const agentChatTools: readonly OperatorToolDefinition[] = [
+  ...conversationFileTools,
+  defineOperatorTool({
+    name: 'agent_chat_ensure_conversation',
+    requires: [['agent_chat:write', 'resource'], ['agent_chat:read', 'resource']],
+    enabled: services => !!services.agentChat,
+    description: 'Prepare the stored Agent conversation before its first attachment. Pass workspaceId and context '
+      + '{workflowId, workflowNodeId, agentId, runId?}, plus executionId for a selected Run execution. '
+      + 'Returns the same persisted conversation on retry without sending a message or starting a native session. '
+      + 'Requires agent_chat:read and agent_chat:write in that conversation scope.',
+    inputSchema: EnsureAgentChatConversationRequestSchema.extend({ workspaceId: workspace }),
+    outputSchema: AgentChatStateResponseSchema,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    run: async (context, { workspaceId, context: query, executionId }) => ({ state: await context.services.agentChat!
+      .ensureConversation(context.principal, { workspaceId, ...query }, executionId) }),
+  }),
   defineOperatorTool({
     name: 'agent_chat_read',
     requires: [['agent_chat:read', 'resource']],
@@ -49,7 +65,7 @@ export const agentChatTools = [
     name: 'agent_chat_send',
     requires: [['agent_chat:write', 'resource'], ['agent_chat:read', 'resource']],
     enabled: s => !!s.agentChat,
-    description: 'Send content /new with intent next_turn to start a fresh conversation for the same Agent node on its saved execution computer. The previous conversation stays in history; the result has reset {requestId, previousConversationId}, state and replayed instead of a model turn. No native prompt is sent until the next ordinary message. Reuse the identical requestId after a lost response. /new takes no attachments or sessionMode. Use agent_chat_controls_update for bare /compact, /plan and /plan off. For one Plan task send sessionMode: plan with its task text through the same admission. Send a message to a workflow Agent chat using request. content and request metadata accept up to 768 KiB as UTF-8 JSON; saved context and configuration also count toward the Worker 1 MiB request limit. Shorten oversized messages or upload their content as an attachment. content may be empty only when attachments contains at least one fileId/revisionId pin for an existing conversation. For historical selection, instead supply selection: {workflowId, runId, workflowNodeId, executionId} and message with the usual message fields except context; Agent identity comes from the snapshot. The follow-up forks and recovers on the original accepted execution computer and profile; unavailable placement fails without changing hosts. Never supply both forms. intent next_turn queues after the active turn (or starts now when idle); steer adds text only to the active turn when capabilities.steer allows it and needs expectedNativeTurnId; steering may retain the active applied mode but mode changes and /plan tasks require next_turn or interrupt_and_send; attachments are rejected for steer before admission, so use next_turn or interrupt_and_send for files; interrupt_and_send stops the active turn and sends once. Set expectedConversationId to the conversation id read before (null for the first message). Reuse the exact requestId and input after a lost response: the stored receipt is returned and nothing is resent. For old interrupt_and_send receipts whose target was not retained, replayWarning AGENT_CHAT_LEGACY_TARGET_UNVERIFIABLE means readback only: content, intent and context match, but the supplied target was not verified or applied (including a changed or omitted target). Do not interpret that receipt as a new command or verified target match. Never starts or changes a workflow Run. Requires agent_chat:write and agent_chat:read.',
+    description: 'Send content /new with intent next_turn to start a fresh conversation for the same Agent node on its saved execution computer. The previous conversation stays in history; the result has reset {requestId, previousConversationId}, state and replayed instead of a model turn. No native prompt is sent until the next ordinary message. Reuse the identical requestId after a lost response. /new takes no attachments or sessionMode. Use agent_chat_controls_update for bare /compact, /plan and /plan off. For one Plan task send sessionMode: plan with its task text through the same admission. Send a message to a workflow Agent chat using request. content accepts up to 1,048,576 characters and may be empty only when attachments contains at least one fileId/revisionId pin for an existing conversation. For historical selection, instead supply selection: {workflowId, runId, workflowNodeId, executionId} and message with the usual message fields except context; Agent identity comes from the snapshot. The follow-up forks and recovers on the original accepted execution computer and profile; unavailable placement fails without changing hosts. Never supply both forms. intent next_turn queues after the active turn (or starts now when idle); steer adds text only to the active turn when capabilities.steer allows it and needs expectedNativeTurnId; steering may retain the active applied mode but mode changes and /plan tasks require next_turn or interrupt_and_send; attachments are rejected for steer before admission, so use next_turn or interrupt_and_send for files; interrupt_and_send stops the active turn and sends once. Set expectedConversationId to the conversation id read before (null for the first message). Reuse the exact requestId and input after a lost response: the stored receipt is returned and nothing is resent. For old interrupt_and_send receipts whose target was not retained, replayWarning AGENT_CHAT_LEGACY_TARGET_UNVERIFIABLE means readback only: content, intent and context match, but the supplied target was not verified or applied (including a changed or omitted target). Do not interpret that receipt as a new command or verified target match. Never starts or changes a workflow Run. Requires agent_chat:write and agent_chat:read.',
     inputSchema: AgentChatSendToolInputSchema, outputSchema: AgentChatSendResponseSchema,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     run: (context, { workspaceId, request, selection, message }) => selection && message ? context.services.agentChat!.sendSelectedRunCommand(context.principal, { selection: { workspaceId, ...selection }, message }, 'mcp')

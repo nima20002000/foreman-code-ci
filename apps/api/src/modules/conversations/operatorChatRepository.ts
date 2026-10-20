@@ -4,9 +4,6 @@ import { admitSessionMessage } from './sessionControls/messageAdmission.js'
 import { SessionControlStore } from './sessionControls/store.js'
 import type { NativeMessageSubmission } from '../harnesses/port.js'
 import type { NativeHistory } from '../harnesses/port.js'
-import type { WorkerConversationBinding } from '@foreman-code/contracts/remote-execution-rpc'
-import { assertWorkerChatInputSize } from './chatInputSize.js'
-import { operatorMessagePrompt } from './operatorMessagePrompt.js'
 import { createHash, randomUUID } from 'node:crypto'
 
 import {
@@ -58,7 +55,6 @@ export interface ConversationRow {
   harness: RecordedAgentHarness
   provider_version: string | null
   native_session_id: string | null
-  worker_conversation_binding?: WorkerConversationBinding | null
   parent_conversation_id: string | null
   fork_request_id: string | null
   handoff_source_harness: RecordedAgentHarness | null
@@ -242,8 +238,8 @@ export class PostgresOperatorConversationRepository {
   }
 
   async get(id: string, query: Queryable = this.pool): Promise<OperatorConversationState | undefined> {
-    // One statement gives the recent window and state the same MVCC snapshot.
-    // Always retain the newest message; older messages remain in history().
+    // One statement gives the bounded recent window and state the same MVCC
+    // snapshot. Large/older messages remain accessible through history().
     const result = await query.query<ConversationRow & {
       messages: unknown[]
       activities: unknown[]
@@ -262,8 +258,7 @@ export class PostgresOperatorConversationRepository {
         then (select sequence::text from operator_conversation_activity where conversation_id=c.id
           order by operator_conversation_activity.sequence desc offset 99 limit 1) end as activity_cursor,
       coalesce((select jsonb_agg(retained.record order by retained.sequence) from (
-        select recent.*,row_number() over (order by recent.sequence desc) as ordinal,
-          sum(octet_length(recent.record::text)) over (order by recent.sequence desc) as bytes
+        select recent.*,sum(octet_length(recent.record::text)) over (order by recent.sequence desc) as bytes
         from (select m.record || jsonb_build_object('revision',m.activity_record_revision::text,'sequence',m.sequence::text)
             || case when m.client_request_id is null then '{}'::jsonb else jsonb_build_object('requestId',m.client_request_id) end
             || case when accepted.id is null then '{}'::jsonb else jsonb_build_object('acceptedModel',
@@ -273,7 +268,7 @@ export class PostgresOperatorConversationRepository {
             and turn.request_id=coalesce(m.client_request_id,m.record->>'requestId')
           left join operator_configuration_versions accepted on accepted.id=coalesce(turn.operator_configuration_version_id,turn.payload->>'acceptedConfigurationVersionId')
           where m.conversation_id=c.id order by m.sequence desc limit $2) recent
-        ) retained where retained.bytes<=$3 or retained.ordinal=1),'[]'::jsonb) as messages
+        ) retained where retained.bytes<=$3),'[]'::jsonb) as messages
       from operator_conversations c where c.id=$1`, [id, OPERATOR_SNAPSHOT_MESSAGE_LIMIT, OPERATOR_SNAPSHOT_MESSAGE_BYTES])
     const row = result.rows[0]
     if (!row) return undefined
@@ -345,8 +340,8 @@ export class PostgresOperatorConversationRepository {
     [id, before ?? null, limit, OPERATOR_HISTORY_PAGE_BYTES])
     const row = result.rows[0]
     if (!row) return undefined
-    // One oversized message is returned so the history cursor always advances.
-    // The live SSE bootstrap independently applies its own payload limit.
+    // One oversized message is returned over HTTP so the cursor always advances;
+    // it is never put in a live SSE snapshot.
     const messages = await hydrateMessageAttachments(query, id, row.entries.map((entry) => entry.message))
     return OperatorConversationHistoryPageSchema.parse({ conversationId: row.id, revision: Number(row.revision),
       activeRequestId: row.active_request_id, entries: row.entries.map((entry, index) => ({ ...entry, message: messages[index] })), nextCursor: row.next_cursor })
@@ -391,8 +386,8 @@ export class PostgresOperatorConversationRepository {
   async hasTurn(id: string, requestId: string): Promise<boolean> {
     return (await this.pool.query('select 1 from operator_conversation_turns where conversation_id=$1 and request_id=$2', [id, requestId])).rowCount === 1
   }
-  async handoffInitialized(id: string, nativeSessionId: string, query: Queryable = this.pool): Promise<boolean> {
-    const evidence = await query.query<{ initialized: boolean; legacy_uncertain: boolean }>(`select
+  async handoffInitialized(id: string, nativeSessionId: string): Promise<boolean> {
+    const evidence = await this.pool.query<{ initialized: boolean; legacy_uncertain: boolean }>(`select
       exists(select 1 from operator_conversation_turns t where t.conversation_id=c.id
         and t.payload->>'handoffContextSessionId'=$2)
       or exists(select 1 from operator_conversation_turns t where t.conversation_id=c.id and t.request_id=c.fork_request_id
@@ -411,8 +406,8 @@ export class PostgresOperatorConversationRepository {
   async hasMessages(id: string): Promise<boolean> {
     return (await this.pool.query('select 1 from operator_conversation_messages where conversation_id=$1 limit 1', [id])).rowCount === 1
   }
-  async hasNativeSubmission(id: string, query: Queryable = this.pool): Promise<boolean> {
-    const result = await query.query(`select 1 from operator_conversation_turns
+  async hasNativeSubmission(id: string): Promise<boolean> {
+    const result = await this.pool.query(`select 1 from operator_conversation_turns
       where conversation_id=$1 and (native_turn_id is not null or payload->'nativeSubmission' is not null) limit 1`, [id])
     return result.rowCount === 1
   }
@@ -502,27 +497,6 @@ export class PostgresOperatorConversationRepository {
     return pinned ? this.configuration(pinned) : undefined
   }
 
-  private async validateWorkerInput(query: Queryable, row: ConversationRow, input: SendOperatorMessageRequest,
-    configuration: OperatorConfigurationVersion): Promise<void> {
-    const binding = row.worker_conversation_binding
-    if (configuration.harnessProfileSelection?.target.hostRef.kind !== 'device' && !binding) return
-    const previous = binding && binding.owner.configurationVersionId !== configuration.id
-      ? await this.configuration(binding.owner.configurationVersionId, query) : undefined
-    const initialPrompt = conversation(row).initialPrompt?.value.text
-    const initial = initialPrompt && !await this.hasNativeSubmission(row.id, query) ? initialPrompt : ''
-    const handoff = row.handoff_context && (!row.native_session_id
-      || !await this.handoffInitialized(row.id, row.native_session_id, query)) ? row.handoff_context : null
-    const preferences = await query.query<{ desired: unknown; defaults: unknown }>(`select
-      (select record->'desired' from conversation_session_controls where conversation_id=$1) as desired,
-      (select record from conversation_session_defaults
-        where principal_id=$2 and role='operator' and subject='application-operator' and profile_key=$3) as defaults`,
-    [row.id, row.owner_principal_id, configuration.contentHash])
-    const accountBinding = await readProviderAccountBinding(query, 'operator-command', `${row.id}:session`)
-    assertWorkerChatInputSize({ prompt: operatorMessagePrompt(input, initial, handoff),
-      metadata: [configuration, previous, binding, accountBinding, preferences.rows[0], row.provider_version,
-        row.native_session_id, { ...input, content: undefined }] })
-  }
-
   /** The first cross-harness message and its child are one durable, idempotent admission. */
   async beginForkTurn(sourceId: string, input: SendOperatorMessageRequest, ownerId: string, harness: HarnessConfiguration,
     expectedConfigurationId?: string, validate?: (configuration: OperatorConfigurationVersion) => void,
@@ -563,8 +537,6 @@ export class PostgresOperatorConversationRepository {
         history.rows, Number(count.rows[0]?.count ?? 0))
       const next = await acceptOperatorConfiguration(client, current, input, undefined, harness, validate,
         this.accountConfigurations, preparedProfile)
-      await this.validateWorkerInput(client, { ...source, id: childId, native_session_id: null,
-        worker_conversation_binding: null, handoff_context: context.text }, input, next)
       const now = new Date().toISOString()
       const parentTitle = conversation(source).title ?? 'Conversation'
       const record = ConversationSchema.parse({ id: childId, agentId: current.operatorId, scope: 'application',
@@ -629,7 +601,6 @@ export class PostgresOperatorConversationRepository {
             throw new DomainError('OPERATOR_RETRY_CONFIGURATION_UNKNOWN', 'The receipt execution configuration is unavailable or incompatible with this conversation.', 409)
           }
           validate?.(accepted)
-          await this.validateWorkerInput(client, row, input, accepted)
           row.operator_configuration_version_id = accepted.id
           row.record = { ...OperatorConversationRecordSchema.parse(row.record), operatorConfigurationVersionId: accepted.id }
           await client.query('update operator_conversations set operator_configuration_version_id=$2 where id=$1', [id, accepted.id])
@@ -643,7 +614,6 @@ export class PostgresOperatorConversationRepository {
           if (!current) throw new DomainError('OPERATOR_CONFIGURATION_NOT_FOUND', 'Operator configuration was not found.', 409)
           const next = await acceptOperatorConfiguration(client, current, input, undefined, harness, validate,
             this.accountConfigurations, preparedProfile)
-          await this.validateWorkerInput(client, row, input, next)
           const sessionChanged = harnessSessionChanged(current.harness, next.harness)
           if (sessionChanged && (await client.query('select 1 from operator_conversation_messages where conversation_id=$1 limit 1', [id])).rowCount) {
             throw new DomainError('HARNESS_HANDOFF_REQUIRED',

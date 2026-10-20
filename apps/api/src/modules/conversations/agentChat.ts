@@ -64,8 +64,7 @@ import { NativeDeliveryError, NativeTurnNotActiveError } from '../harnesses/erro
 import type { NativeHarnessSessionManager, NativeSessionStart, AgentChatNativeSessionStart, NativeMessageSubmission } from '../harnesses/port.js'
 import { primeInitialNativeStream } from '../harnesses/claudeSdk/initialStream.js'
 import { nativePersistenceRedactor } from '../interactions/nativePersistence.js'
-import { agentMessagePrompt } from './agentMessagePrompt.js'
-import { assertAgentChatInputSize } from './agentInputSize.js'
+import { legacySkillPrompt } from '../skills/instructions.js'
 import { configurationWithNodeSkills } from '../skills/nodeSkills.js'
 import type { PostgresRunRepository } from '../runs/postgres.js'
 import { PostgresWorkflowRepository } from '../workflows/postgres.js'
@@ -979,20 +978,14 @@ export class AgentChatService {
     }
     validateSessionMessage(input.content, input.sessionMode)
     const row = resolution.row
-    const nextConfiguration = row && input.intent !== 'steer' ? await this.pendingConfiguration(row) : undefined
-    const validateInput = async (sql: pg.PoolClient, current: AgentConversationRow) => {
-      if (resolution.configuration) await assertAgentChatInputSize(sql, { row: current,
-        configuration: resolution.configuration, ...(nextConfiguration ? { nextConfiguration } : {}),
-        request: input, principalId: principal.id })
-    }
-    if (input.intent === 'steer') return this.steer(principal, context, key, input, resolution, selectedRun, assertCurrent, validateInput)
+    if (input.intent === 'steer') return this.steer(principal, context, key, input, resolution, selectedRun, assertCurrent)
     if (input.intent === 'interrupt_and_send' && !row) throw new DomainError('AGENT_CHAT_TURN_NOT_ACTIVE', 'There is no active turn to interrupt.', 409)
     const create = resolution.create ? { ...resolution.create, context } : undefined
     const admit = async () => {
       if (row) await this.sessionControls.assertSendAllowed(row.id)
       await this.conversationAuthority(principal, context)
       return this.repository.admit({ key, request: input, context, delivery: 'queued', ownerPrincipalId: principal.id,
-        assertCurrent, validateInput, ...(create ? { create } : {}) })
+        assertCurrent, ...(create ? { create } : {}) })
     }
     // The repository locks admission with compaction; settlement can proceed after its commit.
     const admitted = await admit()
@@ -1004,8 +997,7 @@ export class AgentChatService {
     return { state: await this.state(await this.resolve(context, resolution.executionId, selectedRun), principal), turn: admitted.turn, replayed: false }
   }
 
-  private async steer(principal: ManagementPrincipal, context: AgentChatContext, key: string, input: SendAgentChatMessageRequest, resolution: Resolution, selectedRun: boolean, assertCurrent: RunChatAuthorityCheck,
-    validateInput: (sql: pg.PoolClient, row: AgentConversationRow) => Promise<void>) {
+  private async steer(principal: ManagementPrincipal, context: AgentChatContext, key: string, input: SendAgentChatMessageRequest, resolution: Resolution, selectedRun: boolean, assertCurrent: RunChatAuthorityCheck = async () => {}) {
     const row = resolution.row
     const runtime = row ? this.runtimes.get(row.id) : undefined
     if (!row || !row.active_request_id || !row.active_native_turn_id || !runtime?.session) {
@@ -1020,8 +1012,7 @@ export class AgentChatService {
     const target = input.expectedNativeTurnId
     return this.control(row.id, async () => {
       await assertCurrent()
-      const admitted = await this.repository.admit({ key, request: input, context, delivery: 'submitting',
-        ownerPrincipalId: principal.id, targetNativeTurnId: target, assertCurrent, validateInput })
+      const admitted = await this.repository.admit({ key, request: input, context, delivery: 'submitting', targetNativeTurnId: target, assertCurrent })
       if (admitted.replayed) return { state: await this.state(await this.resolve(context, resolution.executionId, selectedRun), principal), turn: admitted.turn, replayed: true }
       try {
         const steered = await runtime.manager.steerTurn!(runtime.session!, {
@@ -1385,6 +1376,18 @@ export class AgentChatService {
     return (await runtime.manager.capabilities(this.lifetime.signal)).providerVersion
   }
 
+  /** Earlier configurations send pinned skills with the first turn; native-v1 delivers them at session start. */
+  private prompt(row: AgentConversationRow, configuration: AgentConfigurationVersion, content: string): { text: string; startup: boolean } {
+    if (row.record.handoffContext && !row.record.startupDelivered) {
+      content = `${row.record.handoffContext}\n\n${content}`
+    }
+    if (row.record.origin.kind !== 'fresh' || row.record.startupDelivered) return { text: content, startup: false }
+    if (configuration.instructionDelivery === 'native-v1') return { text: content, startup: true }
+    const skills = legacySkillPrompt(configuration)
+    if (!skills.length) return { text: content, startup: true }
+    return { text: [...skills, '', 'USER MESSAGE', content].join('\n'), startup: true }
+  }
+
   private async runTurn(id: string, turn: AgentChatTurn): Promise<void> {
     const correlationId = agentChatCorrelation(id, turn.requestId)
     const signal = this.lifetime.signal
@@ -1427,7 +1430,7 @@ export class AgentChatService {
       // Stop may have committed while the first session was being created/bound. No turn was sent.
       if (fresh.cancel_requested) { await this.settle(id, turn.requestId, { outcome: 'canceled' }); return }
       signal.throwIfAborted()
-      const prompt = agentMessagePrompt(fresh.record, configuration, sessionTaskContent(content, selectedMode))
+      const prompt = this.prompt(fresh, configuration, sessionTaskContent(content, selectedMode))
       if (!session) {
         if (!runtime.manager.startInitialTurn || forksRunHistory(fresh)) throw new DomainError('AGENT_INITIAL_TURN_UNAVAILABLE', 'No admitted initial native lifecycle is available.', 409)
         initialOffered = true // A failure after offer is not a definite prompt rejection/create failure.
