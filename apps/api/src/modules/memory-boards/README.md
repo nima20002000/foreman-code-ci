@@ -30,7 +30,10 @@ It imports the exact shared domain schemas and `MemoryBoardPort` named in
   These methods never commit their supplied transaction or perform native/network I/O.
 - Mount `registerMemoryBoardRoutes` and the seven definitions returned by
   `createMemoryBoardTools` in both authenticated Operator and scoped agent
-  registries. Keep the existing MCP unknown-field stripping wrapper and denied
+  registries. Add their names to the central Operator tool-name union and invoke
+  them through the shared audit/error wrapper. The exported
+  `MemoryBoardToolDefinition` describes the feature boundary independently of
+  that catalog. Keep the existing MCP unknown-field stripping wrapper and denied
   guessed-tool handling. Their service rechecks concrete scope and effective tools.
   Update D's HTTP action/bypass map for `/api/memory-boards`: the base map does not
   know this namespace and must delegate its scope-dependent action to this service.
@@ -59,10 +62,11 @@ no board tables. Agent defaults and saving configuration remain Team D responsib
 
 ## Verification status
 
-Public behavior and authenticated HTTP/MCP test source is provided in the explicitly
-allocated `apps/api/test/f1-memory-boards.test.ts` and `f1-memory-boards-mcp.test.ts`.
+Public behavior and authenticated HTTP/MCP tests are in
+`apps/api/test/memory-boards.integration.test.ts` and `memory-boards-mcp.integration.test.ts`.
 Typed fakes stand in only for the parallel Team D authority/owner ports; board
 persistence, transactions and MCP transport in those tests use real PostgreSQL.
-Tests, builds, compiler, lint, formatting, code generation, native acceptance and
-performance measurements are **UNRUN**, as requested. End-to-end engine/shell
-acceptance requires the separately owned C0/F4/I0 integration.
+The test registry is also a typed composition fake. Run these files with Foreman
+CI's affected integration suite; the rendered UI and stream tests use its unit suite.
+End-to-end engine/shell acceptance and performance measurements require the
+separately owned C0/F4/I0 integration.

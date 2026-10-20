@@ -12,12 +12,10 @@ import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { DomainError } from '../src/modules/errors.js'
 import { registerMemoryBoardRoutes } from '../src/routes/memoryBoards.js'
 import { createMemoryBoardTools } from '../src/mcp/operator/tools/memoryBoards.js'
-import { registerToolDefinition, toolAvailable } from '../src/mcp/operator/definition.js'
-import { invokeOperatorTool } from '../src/mcp/operator/invoke.js'
 import { stripMcpInputSchemas } from '../src/mcp/shared/inputSchemas.js'
-import type { OperatorRequestContext, OperatorServices } from '../src/mcp/operator/types.js'
-import type { BoardSnapshot, CardDetail, MutationReceipt } from '../src/modules/memory-boards/types.js'
+import type { CardDetail, MutationReceipt } from '../src/modules/memory-boards/types.js'
 import { memoryFixture } from '../src/modules/memory-boards/testing/fixture.js'
+import { memoryTestRegistry } from '../src/modules/memory-boards/testing/mcpRegistry.js'
 import { agent3Database, postgresEnabled } from './helpers/wave25Agent3.js'
 
 describe.skipIf(!postgresEnabled)('Memory board HTTP and authenticated MCP parity',()=>{
@@ -50,23 +48,22 @@ describe.skipIf(!postgresEnabled)('Memory board HTTP and authenticated MCP parit
     })
     app.setErrorHandler((error,_request,reply)=>{
       const known=error instanceof DomainError
-      return reply.code(known?error.status:400).send({error:{code:known?error.code:'VALIDATION_ERROR',message:error.message}})
+      const message=error instanceof Error?error.message:'Invalid request'
+      return reply.code(known?error.status:400).send({error:{code:known?error.code:'VALIDATION_ERROR',message}})
     })
     registerMemoryBoardRoutes(app,f.service)
-    // Feature composition fixture uses the real MCP transport, authentication,
-    // common schema stripping/invocation and A's exported definitions. D owns
-    // mounting this same tool group into the full application registries.
+    // The registry is a typed composition fake over real transport, authentication and handlers.
     app.post('/mcp',async(request,reply)=>{
-      const context:OperatorRequestContext={principal:request.operatorPrincipal!,services:{commands} as OperatorServices}
+      const registry=memoryTestRegistry(request.operatorPrincipal!,commands)
       const rpc=request.body as {id?:string|number;method?:string;params?:{name?:string}}
       const selected=tools.find(tool=>tool.name===rpc.params?.name)
-      if(rpc.method==='tools/call' && selected && !toolAvailable(context,selected)) {
-        const result=await invokeOperatorTool(context,selected.name,async()=>{throw new DomainError('ACCESS_DENIED','This memory tool is unavailable.',403)},selected.requires[0][0])
+      if(rpc.method==='tools/call' && selected && !registry.available(selected)) {
+        const result=await registry.invoke(selected,rpc.params)
         return reply.send({jsonrpc:'2.0',id:rpc.id,result})
       }
       const server=new McpServer({name:'memory-board-parity',version:'1'})
       stripMcpInputSchemas(server)
-      for(const tool of tools)if(toolAvailable(context,tool))registerToolDefinition(server,context,tool,{invoke:invokeOperatorTool,tools})
+      for(const tool of tools)if(registry.available(tool))registry.register(server,tool)
       const transport=new WebStandardStreamableHTTPServerTransport({sessionIdGenerator:undefined})
       reply.raw.once('close',()=>{void Promise.allSettled([transport.close(),server.close()])})
       await server.connect(transport)
@@ -84,10 +81,10 @@ describe.skipIf(!postgresEnabled)('Memory board HTTP and authenticated MCP parit
       const created=await app.inject({method:'POST',url:`/api/memory-boards/${boardId}/cards`,headers:{authorization:`Bearer ${owner.token}`},payload:command})
       expect(created.statusCode).toBe(200)
       const saved=created.json<MutationReceipt>()
-      const read=decodeMcpToolResult(await readonly.callTool({name:'memory_board_get',arguments:{boardId,view:'card',cardId:saved.card!.id}})) as CardDetail
+      const read=decodeMcpToolResult(await readonly.callTool({name:'memory_board_get',arguments:{boardId,view:'card',cardId:saved.card!.id}}))
       expect(read.card).toEqual(saved.card)
       const updated=decodeMcpToolResult(await editor.callTool({name:'memory_card_update',arguments:{kind:'card_update',boardId,cardId:saved.card!.id,
-        commandId:randomUUID(),patch:{body:'Changed over MCP'},explanation:'Ignored by normal wrapper'}})) as MutationReceipt
+        commandId:randomUUID(),patch:{body:'Changed over MCP'},explanation:'Ignored by normal wrapper'}}))
       const response=await app.inject({method:'GET',url:`/api/memory-boards?boardId=${boardId}&view=card&cardId=${saved.card!.id}`,headers:{authorization:`Bearer ${reader.token}`}})
       expect(response.json<CardDetail>().card).toEqual(updated.card)
       expect((await readonly.listTools()).tools.map(tool=>tool.name)).not.toContain('memory_card_update')
@@ -97,8 +94,12 @@ describe.skipIf(!postgresEnabled)('Memory board HTTP and authenticated MCP parit
       expect((await f.card(boardId,saved.card!.id)).card.body).toBe('Changed over MCP')
       const mismatch=await app.inject({method:'POST',url:`/api/memory-boards/${randomUUID()}/cards`,headers:{authorization:`Bearer ${owner.token}`},payload:command})
       expect(mismatch.statusCode).toBe(400)
-      const view=decodeMcpToolResult(await editor.callTool({name:'memory_board_get',arguments:{boardId}})) as BoardSnapshot
-      expect(view.openColumns.flatMap(column=>column.items)).toHaveLength(1)
+      const view=decodeMcpToolResult(await editor.callTool({name:'memory_board_get',arguments:{boardId}}))
+      expect(view).toMatchObject({openColumns:[
+        {status:'todo',items:[updated.card]},
+        {status:'doing',items:[]},
+        {status:'blocked',items:[]},
+      ]})
       expect(createMemoryBoardTools(undefined)).toEqual([])
     } finally {
       await Promise.allSettled(clients.map(client=>client.close()))

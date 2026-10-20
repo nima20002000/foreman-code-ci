@@ -28,9 +28,19 @@ export function effectReceipt(sourceEventKey: string, rows: Iterable<BoardRow>, 
   return { applicationId:randomUUID(),sourceEventKey,commandIds,changedCardIds:[...new Set(changedCardIds)],
     boardRevisions:[...rows].map(row => ({ boardId:row.board.id,revision:row.board.revision })),replayed:false }
 }
+function bindingState(phase: BoardLifecycleFact['phase']): MemoryCardWorkBinding['state'] {
+  switch (phase) {
+    case 'admitted':
+    case 'retry_admitted':
+    case 'continuation_admitted': return 'queued'
+    case 'launched': return 'running'
+    default: return phase
+  }
+}
 function nextBinding(binding: MemoryCardWorkBinding, fact: BoardLifecycleFact): MemoryCardWorkBinding {
   if (binding.resolution) return binding
   const continuing = fact.phase === 'continuation_admitted'
+    || ((fact.phase === 'admitted' || fact.phase === 'launched') && fact.continuationOf !== undefined)
   if (continuing && fact.controlContinuationId) {
     if (!fact.previousExecution || !fact.execution) invalid('A control continuation needs the old and successor executions.')
     if (binding.currentExecutionId === fact.execution.executionId) return binding
@@ -43,8 +53,7 @@ function nextBinding(binding: MemoryCardWorkBinding, fact: BoardLifecycleFact): 
   }
   if (binding.state === 'accepted' && !continuing) return binding
   if (['failed','canceled'].includes(binding.state) && !['retry_admitted','continuation_admitted'].includes(fact.phase)) return binding
-  const state: MemoryCardWorkBinding['state'] = fact.phase === 'admitted' || fact.phase === 'retry_admitted' || continuing ? 'queued'
-    : fact.phase === 'launched' ? 'running' : fact.phase
+  const state = bindingState(fact.phase)
   const next: MemoryCardWorkBinding = { ...binding,work:fact.work,state,
     currentExecutionId: fact.execution?.executionId ?? binding.currentExecutionId,
     reason: ['blocked','failed','canceled'].includes(state) ? fact.reason : null,
@@ -86,7 +95,9 @@ async function projectCard(tx: GraphTransactionSql, row: BoardRow, cardId: strin
   const base = blockerSource === 'engine' ? { ...card,status:'todo' as const,completionKind:null,reason:null } : card
   const manualBlocker = base.status === 'blocked' && blockerSource === 'manual'
   let projected = manualBlocker ? base : aggregateCard(base,bindings,claims)
-  if (fact.phase === 'continuation_admitted' && !manualBlocker && projected.status !== 'blocked') {
+  const continuationAdmitted = fact.phase === 'continuation_admitted'
+    || (fact.phase === 'admitted' && fact.continuationOf !== undefined)
+  if (continuationAdmitted && !manualBlocker && projected.status !== 'blocked') {
     projected = { ...projected,status:'doing',completionKind:null,reason:null }
   }
   await saveCard(tx,row,card,projected,{ actor:{ kind:'engine',id:fact.agent.agentId,displayName:fact.agent.displayName },

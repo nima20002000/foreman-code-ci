@@ -7,7 +7,8 @@ import type { CardFilter, MemoryBoardClient, MemoryBoardView, MemoryConnection, 
 
 export const memoryKey = (boardId: string) => ['memory-board', sessionGeneration(), boardId] as const
 export const memorySnapshotKey = (boardId: string) => [...memoryKey(boardId), 'snapshot'] as const
-const quiet = { retry: false, staleTime: Infinity, refetchOnWindowFocus: false, refetchOnReconnect: false, refetchOnMount: false } as const
+// Editors unmount the read views; reopening must refresh queries invalidated by a save.
+const quiet = { retry: false, staleTime: Infinity, refetchOnWindowFocus: false, refetchOnReconnect: false, refetchOnMount: true } as const
 
 /** A live reset refreshes first pages only, never replays a long cursor chain. */
 export async function refreshMemory(cache: QueryClient, boardId: string): Promise<void> {
