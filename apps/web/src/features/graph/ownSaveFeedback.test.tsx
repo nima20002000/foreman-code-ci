@@ -153,7 +153,7 @@ it.each(['Agent settings Save', 'Agent settings Save and run', 'added Agent Save
     }
     const accessReadsBeforeStart = accessReads
     await user.click(screen.getByRole('button', {
-      name: path === 'Agent settings Save and run' ? 'Save and run' : 'Save workflow',
+      name: path === 'Agent settings Save and run' ? 'Save and run' : 'Save changes',
     }))
     await waitFor(() => expect(journal.intent?.state).toBe('saved'))
     try {

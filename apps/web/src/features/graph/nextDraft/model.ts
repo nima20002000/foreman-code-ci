@@ -12,7 +12,7 @@ export type NextDraftContext = { draft: GraphDraftV3; savedDraft?: GraphDraftV3;
 export type DraftNode = WorkflowDefinitionV3['nodes'][number]
 export type AuthoringIssue = { code: string; message: string; nodeId?: string; relationshipId?: string }
 export type RoleEvidence = {
-  role?: 'master' | 'orchestrator' | 'coder'
+  role?: 'orchestrator' | 'coder'
   configurationVersionId?: string
   source: 'configuration' | 'staged' | 'local' | 'unavailable'
 }
@@ -33,26 +33,25 @@ export function roleEvidence(context: NextDraftContext, agentId: string, agentEd
   const local = agentEdits[agentId]
   if (!agent && !expected && !context.draft.graph.nodes.some((node) => node.kind!=='job' && node.agentId === agentId)
     && local?.id === agentId && !local.configurationVersionId
-    && (local.productRole === 'coder' || local.productRole === 'orchestrator' || local.productRole === 'master')) {
+    && (local.productRole === 'coder' || local.productRole === 'orchestrator')) {
     return { role: local.productRole, source: 'local' }
   }
   if (!agent || !agent.configurationVersionId
     || (expected && expected.configurationVersionId !== agent.configurationVersionId)) return { source: 'unavailable' }
   const role = agent.productRole
-  if (role !== 'master' && role !== 'orchestrator' && role !== 'coder') return { source: 'unavailable' }
+  if (role !== 'orchestrator' && role !== 'coder') return { source: 'unavailable' }
   return { role, source: 'configuration', configurationVersionId: agent.configurationVersionId }
 }
 
 export function entryChoices(graph: WorkflowDefinitionV3, context: NextDraftContext, agentEdits: DraftAgentEdits = {}) {
   const roles = new Map(graph.nodes.filter(node=>node.kind!=='job').map((node) => [node.id, roleEvidence(context, node.agentId, agentEdits)]))
   const unresolved = graph.nodes.filter((node) => node.kind!=='job' && !roles.get(node.id)?.role)
-  const masters = graph.nodes.filter((node) => roles.get(node.id)?.role === 'master')
   const orchestrators = graph.nodes.filter((node) => roles.get(node.id)?.role === 'orchestrator')
   // An unresolved node might be an Orchestrator. Do not enable a permissive Worker fallback.
-  const eligible = unresolved.length || masters.length > 1 ? [] : masters.length ? masters : orchestrators.length ? orchestrators : graph.nodes.filter((node) => node.kind==='job' || roles.get(node.id)?.role === 'coder')
+  const eligible = unresolved.length ? [] : orchestrators.length ? orchestrators : graph.nodes.filter((node) => node.kind==='job' || roles.get(node.id)?.role === 'coder')
   return { roles, unresolved, eligible,
     valid: graph.entryNodeId !== null && eligible.some((node) => node.id === graph.entryNodeId),
-    mode: graph.nodes.length === 1 ? 'sole' : masters.length ? 'master' : orchestrators.length ? 'orchestrator' : 'worker',
+    mode: graph.nodes.length === 1 ? 'sole' : orchestrators.length ? 'orchestrator' : 'worker',
   }
 }
 
@@ -72,7 +71,6 @@ export function authoringHints(graph: WorkflowDefinitionV3, context: NextDraftCo
   else if (entry.unresolved.length) issues.push({ code: 'ROLE_PIN_UNAVAILABLE', message: 'An agent’s role changed or can’t be confirmed. Reload the saved draft.' })
   else if (!entry.valid) issues.push({ code: 'ENTRY_REQUIRED', message: entry.mode === 'sole'
     ? 'Mark the only agent as the one that starts the workflow.'
-    : entry.mode === 'master' ? 'Choose the master that starts the workflow.'
     : entry.mode === 'orchestrator' ? 'Choose the orchestrator that starts the workflow.'
       : 'Choose the worker that starts the workflow.' })
   for (const edge of graph.edges) {
@@ -106,7 +104,7 @@ export function authoringHints(graph: WorkflowDefinitionV3, context: NextDraftCo
   if (graph.approval?.handler !== 'orchestrator' && approvals.length) issues.push({ code: 'APPROVAL_MODE_CONFLICT', message: 'Approval connections only work when an agent reviews approvals. Remove them or change who handles approvals.' })
   if (graph.approval?.handler === 'orchestrator') {
     const reviewer = graph.nodes.find((node) => node.id===graph.entryNodeId && node.kind!=='job' && node.agentId === graph.approval?.designatedOrchestratorAgentId)
-    if (!reviewer || reviewer.id !== graph.entryNodeId || !['master', 'orchestrator'].includes(entry.roles.get(reviewer.id)?.role ?? '')) issues.push({
+    if (!reviewer || reviewer.id !== graph.entryNodeId || entry.roles.get(reviewer.id)?.role !== 'orchestrator') issues.push({
       code: 'REVIEWER_BOOTSTRAP_UNSUPPORTED', message: 'The reviewer must be the orchestrator that starts the workflow.',
     })
     if (reviewer && reviewer.kind !== 'job') {
@@ -161,7 +159,7 @@ export function changeApprovalHandler(graph: WorkflowDefinitionV3, handler: Work
 }
 
 export function attachAgent(graph: WorkflowDefinitionV3, record: CatalogAgent, nodeId: string): WorkflowDefinitionV3 {
-  if (record.archivedAt || !record.agent.configurationVersionId || !['master', 'coder', 'orchestrator'].includes(record.agent.productRole ?? '')) throw new Error('A board Agent with an available product-role configuration pin is required.')
+  if (record.archivedAt || !record.agent.configurationVersionId || !['coder', 'orchestrator'].includes(record.agent.productRole ?? '')) throw new Error('A board Agent with an available product-role configuration pin is required.')
   if (graph.nodes.some((node) => node.id === nodeId)) throw new Error('A node identity can occur only once in this workflow definition.')
   // No position: the Board places a new node in the hierarchy until the person drags it.
   const node: DraftNode = { id: nodeId, agentId: record.agent.id, name: record.agent.name }

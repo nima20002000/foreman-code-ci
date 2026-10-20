@@ -73,7 +73,7 @@ export function DraftEditorView({ draftKey, edit, updateFailures, controller }: 
             {edit.pending ? <Button disabled={saveBusy || starting} onClick={requestSave}>Retry save</Button> : null}
             {editIntent.locked ? <Button disabled={saveBusy || starting || !!editIntent.storageError || stopBlocked} onClick={requestSave}>
               {affectedRuns.length ? 'Stop affected Runs and save' : 'Reconcile Save'}</Button>
-              : <IconButton label="Save workflow" disabled={saveBusy || starting || !!editIntent.storageError} onClick={requestSave}><Save aria-hidden="true" size={16} /></IconButton>}
+              : <IconButton label="Save changes" disabled={saveBusy || starting || !!editIntent.storageError} onClick={requestSave}><Save aria-hidden="true" size={16} /></IconButton>}
             </> : null}
           </Toolbar> : null}
         {board?.navigationControls}
