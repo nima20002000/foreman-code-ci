@@ -52,29 +52,16 @@ harness. It installs the managed stdio launcher
 (`~/.local/share/graphql/mcp/launcher.mjs`) with automatic instance routing.
 Existing installs of the retired `graphql-app` and `graphql-operator` entries
 show **Upgrade to Foreman Code MCP**; the upgrade writes `foreman-code` and removes both
-retired entries in one native write. **Repair Foreman Code MCP** converts a
+retired entries in one reviewed native write. **Repair Foreman Code MCP** converts a
 standard fixed `/mcp` entry to the launcher and keeps its disabled state and
 tool/approval policies. Custom and inherited entries must be changed at their
 native source.
 
-The Operator can discover, apply, and read back the `graphql` preset (its stable serialized name) through
-`harness_mcp_servers_list` → `harness_mcp_managed_request` →
-`harness_mcp_change_get`, then list the persisted connections again. With the normal
-`harnesses:read` and `harnesses:update` grants, the request applies the native change
-directly, including for delegated Operator credentials. An uncertain result uses
-`harness_mcp_change_reconcile`; it must not be resubmitted as a new write. Local
-programs must already be installed. Provider API-key provisioning remains local-human-only;
-credentials must not be placed in MCP arguments. Operator chat setup
+The Operator can discover, request, and read back the `graphql` preset (its stable serialized name) through
+`harness_mcp_servers_list`, `harness_mcp_managed_request`, and
+`harness_mcp_change_get`. A local human applies it in Harness Settings; an
+Operator cannot approve its own native-configuration write. Operator chat setup
 and workflow credential preflight both recognize either the enabled `foreman-code` or supported `graphql` entry.
-
-For paired computers, the Operator can read the connection with
-`device_connection_read`, configure it with `device_connection_configure` using
-global `settings:update`, and verify readiness with `device_connection_check`.
-Pairing authorizes direct connection changes; no separate human approval is required.
-This does not install the companion, SSH, rsync or Tailscale, sign in to accounts,
-enable SSH/VPN, or grant sudo or Agent execution access. Local installation and
-credential entry remain separate setup steps. Read-only callers and callers
-without the required grants or scope remain denied.
 
 ## Routing
 
