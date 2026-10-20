@@ -6,7 +6,7 @@ import type { PostgresAccessService } from '../src/modules/access/postgres.js'
 import type { AgentChatService } from '../src/modules/conversations/agentChat.js'
 import { registerAgentChatRoutes } from '../src/routes/agentChat.js'
 
-it.each(['regular', 'selected'] as const)('admits an escaped pasted log within the Worker input budget through the %s HTTP chat route', async kind => {
+it.each(['regular', 'selected'] as const)('admits a full-sized pasted log through the %s HTTP chat route', async kind => {
   const app = Fastify()
   registerOperatorHttpSecurity(app, {
     authenticate: async () => localHumanPrincipal,
@@ -22,7 +22,7 @@ it.each(['regular', 'selected'] as const)('admits an escaped pasted log within t
   })
   registerAgentChatRoutes(app, { sendCommand, sendSelectedRunCommand } as unknown as AgentChatService)
   try {
-    const content = '\u0001'.repeat(120_000)
+    const content = '\u0001'.repeat(1_048_576)
     const message = { requestId: 'large-log', content, expectedConversationId: null }
     const url = kind === 'regular' ? '/api/workspaces/workspace/agent-chat/messages'
       : '/api/workspaces/workspace/agent-chat/workflows/workflow/runs/run/nodes/node/messages'
