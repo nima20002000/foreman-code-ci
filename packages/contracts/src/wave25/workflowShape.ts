@@ -1,3 +1,5 @@
+import { NodeBrowserSettingsSchema } from '../browserProfiles.js'
+import { WorkflowHierarchySchema } from '../workflowHierarchy.js'
 import { WorkflowWorktreeSettingsSchema, AgentWorktreeSettingsSchema } from '../worktreeSettings.js'
 import { z } from 'zod'
 import { IdSchema, GraphIdSchema, TimestampSchema } from '../schemaPrimitives.js'
@@ -107,6 +109,7 @@ const CurrentAgentWorkflowNodeFields = {
   join: z.object({ mode: z.literal('all') }).strict().optional(), choice: WorkflowChoiceSchema.optional(),
   /** Changes the Agent's default Foreman Code MCP tools for this node only. */
   graphqlTools: GraphqlToolOverrideSchema.optional(),
+  browser: NodeBrowserSettingsSchema.optional(),
   artifactOutputs: WorkflowArtifactOutputsV1Schema.optional(),
   interval: AgentIntervalSchema.optional(),
   /** Enforced deliverable schema; absent applies the default non-empty deliverable rule. */
@@ -130,6 +133,7 @@ export const CurrentWorkflowRelationshipSchema = z.object({
 /** Incomplete authoring is allowed here; immutable executable validation below
  * requires a real entry, complete approval and enough execution budget. */
 export const CurrentWorkflowDefinitionBaseSchema = z.object({
+  hierarchy: WorkflowHierarchySchema.optional(),
   id: GraphIdSchema, workspaceId: GraphIdSchema, name: z.string().trim().min(1), description: z.string().optional(),
   executionSemanticsVersion: CurrentExecutionSemanticsSchema, entryNodeId: GraphIdSchema.nullable(),
   executionCondition: ExecutionConditionSchema, approval: WorkflowApprovalConfigurationSchema.optional(),

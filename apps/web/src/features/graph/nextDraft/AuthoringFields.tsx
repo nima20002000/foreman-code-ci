@@ -22,7 +22,7 @@ export function EntryFields({ graph, context, change, agentEdits }: { graph: Wor
   return <section aria-labelledby={id} className="next-draft-section">
     <h3 id={id}>Starting node</h3>
     <Select data-save-field="entry" label="Starts the workflow" value={graph.entryNodeId ?? ''} aria-invalid={!choices.valid}
-      labelHint={<InfoHint label="Starts the workflow">{choices.mode === 'orchestrator' ? 'Only an orchestrator can start a workflow that has one.' : 'The first node to run. It can’t receive a dependency.'}</InfoHint>}
+      labelHint={<InfoHint label="Starts the workflow">{choices.mode === 'master' ? 'The Master starts this workflow.' : choices.mode === 'orchestrator' ? 'Only an Orchestrator can start a workflow that has one.' : 'The first node to run. It can’t receive a dependency.'}</InfoHint>}
       onChange={(event) => change((value) => ({ ...value, entryNodeId: event.target.value || null }))} options={[
         { value: '', label: 'Choose a node' },
         ...graph.nodes.map((node) => ({ value: node.id, disabled: !choices.eligible.some((item) => item.id === node.id), label: nodeTitle(graph, node.id) })),
@@ -34,7 +34,7 @@ export function EntryFields({ graph, context, change, agentEdits }: { graph: Wor
 export function ApprovalFields({ graph, context, change, report, agentEdits }: { graph: WorkflowDefinitionV3; context: NextDraftContext; change: EditGraph; report: (error: unknown) => void; agentEdits?: DraftAgentEdits }) {
   let hint = 'Agents ask you before sensitive actions. Requests appear in the approval inbox.'
   if (graph.approval?.handler === 'orchestrator') {
-    hint = 'The starting orchestrator reviews requests from agents it has an approval connection to.'
+    hint = 'The starting Master or Orchestrator reviews requests from agents it has an approval connection to.'
   } else if (graph.approval?.handler === 'native') {
     hint = 'Each Agent must explicitly use native approval handling. Saved permission rules still apply; requests do not go to the app’s approval inbox.'
   }
@@ -47,12 +47,15 @@ export function ApprovalFields({ graph, context, change, report, agentEdits }: {
       if (handler !== 'user' && handler !== 'orchestrator' && handler !== 'native') return
       try { change((value) => changeApprovalHandler(value, handler)) } catch (error) { report(error) }
     }} options={[{ value: '', label: 'Choose who approves', disabled: true }, { value: 'user', label: 'You, the Operator' },
-      { value: 'orchestrator', label: 'An orchestrator agent' }, { value: 'native', label: 'Native harness' }]} />
-    {graph.approval?.handler === 'orchestrator' ? <Select data-save-field="orchestrator" label="Reviewing orchestrator" value={graph.approval.designatedOrchestratorAgentId ?? ''}
-      labelHint={<InfoHint label="Reviewing orchestrator">{hint}</InfoHint>}
+      { value: 'orchestrator', label: 'A coordinator agent' }, { value: 'native', label: 'Native harness' }]} />
+    {graph.approval?.handler === 'orchestrator' ? <Select data-save-field="orchestrator" label="Reviewing coordinator" value={graph.approval.designatedOrchestratorAgentId ?? ''}
+      labelHint={<InfoHint label="Reviewing coordinator">{hint}</InfoHint>}
       onChange={(event) => change((value) => ({ ...value, approval: { handler: 'orchestrator', ...(event.target.value ? { designatedOrchestratorAgentId: event.target.value } : {}) } }))} options={[
-        { value: '', label: 'Choose an orchestrator' },
-        ...graph.nodes.filter((node) => node.kind!=='job').filter((node) => roleEvidence(context, node.agentId, agentEdits).role === 'orchestrator').map((node) => ({ value: node.agentId, label: nodeTitle(graph, node.id) })),
+        { value: '', label: 'Choose a coordinator' },
+        ...graph.nodes.filter((node) => node.kind!=='job').filter((node) => {
+          const role = roleEvidence(context, node.agentId, agentEdits).role
+          return role === 'orchestrator' || role === 'master' && graph.entryNodeId === node.id
+        }).map((node) => ({ value: node.agentId, label: nodeTitle(graph, node.id) })),
       ]} /> : null}
   </section>
 }
@@ -65,7 +68,7 @@ export function AvailableAgentList({ context, change, report }: { context: NextD
   return <ul className="board-agent-picker-list" aria-label="Available Agents">
     {available.map((record) => <li key={record.agent.id}>
       <span className="board-agent-picker-name">{record.agent.name}</span>
-      <span className="board-agent-picker-role">{record.agent.productRole === 'orchestrator' ? 'Orchestrator' : 'Worker'}</span>
+      <span className="board-agent-picker-role">{record.agent.productRole === 'master' ? 'Master' : record.agent.productRole === 'orchestrator' ? 'Orchestrator' : 'Worker'}</span>
       <Button size="sm" aria-label={`Add ${record.agent.name}`}
         onClick={() => { try { change((value) => attachAgent(value, record, `node-${crypto.randomUUID()}`)) } catch (error) { report(error) } }}>Add</Button>
     </li>)}
@@ -80,7 +83,7 @@ export function NodeWorkflowFields({ graph, node, context, change, agentEdits }:
   return <section className="next-draft-section" aria-label="In this workflow">
     <h3>In this workflow</h3>
     <Switch label="Starts the workflow" checked={starts} disabled={!eligible && !starts}
-      hint={!eligible && !starts ? choices.mode === 'orchestrator' ? 'Only an orchestrator can start this workflow.' : 'This node can’t start the workflow.' : undefined}
+      hint={!eligible && !starts ? choices.mode === 'master' ? 'Only the Master can start this workflow.' : choices.mode === 'orchestrator' ? 'Only an Orchestrator can start this workflow.' : 'This node can’t start the workflow.' : undefined}
       onChange={(event) => { const checked = event.currentTarget.checked; change((value) => ({ ...value, entryNodeId: checked ? node.id : value.entryNodeId === node.id ? null : value.entryNodeId })) }} />
     <ChoiceFields graph={graph} node={node} change={change} />
     <IntervalFields node={node} change={change} />
