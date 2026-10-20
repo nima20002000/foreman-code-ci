@@ -66,7 +66,10 @@ describe('disabled collaboration shell through navigation and rendered controls'
   it('explains a hidden Operator destination without mounting a conversation or making requests', async () => {
     const fetch = vi.spyOn(globalThis, 'fetch'), user = userEvent.setup()
     mount('/workspaces/workspace?workflowId=workflow&boardPanel=operator')
-    expect(await screen.findByRole('status')).toHaveTextContent('Operator chat is hidden in Agent settings.')
+    const warning = await screen.findByText('Operator chat is hidden in Agent settings.')
+    expect(warning).toHaveAttribute('role', 'status')
+    expect(warning).toBeVisible()
+    expect(warning).toHaveTextContent('Operator chat is hidden in Agent settings.')
     expect(screen.queryByRole('dialog', { name: 'Operator chat' })).not.toBeInTheDocument()
     expect(screen.queryByRole('textbox', { name: 'Message' })).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Back to Board' }))

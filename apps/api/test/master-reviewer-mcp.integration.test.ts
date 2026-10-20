@@ -3,6 +3,7 @@ import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { ExecutableWorkflowV3Schema } from '@foreman-code/contracts/wave25'
 import { expect, it } from 'vitest'
 import { buildApp } from '../src/app.js'
+import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { PostgresAppInteractionService } from '../src/modules/interactions/app.js'
 import { approvalDatabase } from './helpers/wave25ApprovalDatabase.js'
 import { approvalResponse } from './helpers/approvalResponse.js'
@@ -15,6 +16,9 @@ it.skipIf(!postgresEnabled)('preserves the Master identity and designated review
   const app = buildApp({
     readiness: { database: { ping: async () => {} }, checkpoints: { ping: async () => {} } },
     appMcp: tools.appMcp(f.access, new PostgresAppInteractionService(f.pool, f.repository, f.commands, f.service)),
+    operator: { access: f.access, services: {
+      commands: f.commands, ci: tools.ci, bugReports: tools.bugReports,
+    } as OperatorServices },
   })
   const clients: Client[] = []
   try {
