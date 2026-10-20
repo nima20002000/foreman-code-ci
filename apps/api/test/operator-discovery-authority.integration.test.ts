@@ -132,6 +132,14 @@ it('requires overlapping workspace grants for root adoption and filters the requ
   expect(decodeMcpToolResult(schema)).toMatchObject({ permissionRequirements: { actions: expect.arrayContaining(rootActions) } })
 })
 
+it.each(['workflowIds', 'runIds', 'mainIds', 'deviceIds',
+  'applicationInstallationIds', 'providerAccountIds'] as const)(
+  'hides root adoption when its actions are restricted to %s', async dimension => {
+    const client = await connect([{ actions: [...rootActions], scope: { [dimension]: [workspaceId] } }])
+    await expectDenied(client, adoptionTool, { workspaceId, hostRef: { kind: 'main', mainId: fixture.mainId } })
+    await expectHidden(client, adoptionTool)
+  })
+
 it.each(['workspaceIds', 'workflowIds', 'runIds', 'mainIds', 'deviceIds',
   'applicationInstallationIds', 'providerAccountIds'] as const)(
   'hides host harness operations from %s scoped grants and preserves the saved profile', async dimension => {
