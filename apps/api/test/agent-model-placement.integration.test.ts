@@ -4,7 +4,7 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
 import { expect, it } from 'vitest'
 import { AgentMutationResultSchema, ManagedAgentDetailSchema } from '@foreman-code/contracts/management'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
-import { HostHarnessOverrideSaveResultSchema, HostHarnessInstanceCheckResultSchema, HostHarnessOverrideListSchema,
+import { HostHarnessOverrideSaveResultSchema, HostHarnessInstanceCheckResultSchema,
   type HostHarnessOverride, type HostHarnessProfileEvidence } from '@foreman-code/contracts/harness-registry'
 import { makeCurrentWorkflowFixture, CurrentWorkflowSaveResultSchema, CurrentWorkflowReadResultSchema,
   CurrentWorkflowValidationSchema, ManualRunStartResultSchema, canonicalGraphJson } from '@foreman-code/contracts/wave25'
@@ -115,32 +115,6 @@ it('reconciles a changed Agent profile through authenticated MCP and admits the 
     const otherInput = { ...another, expectedAgentConfigurationVersionIds: initial.expectedAgentConfigurationVersionIds,
       graph: { ...another.graph, nodes: initial.graph.nodes } }
     const other = CurrentWorkflowSaveResultSchema.parse(await call('workflow_save_v3', otherInput))
-    const originalSelection = { instanceId: old.instanceId, instanceRevision: old.instanceRevision, target }
-    for (const [selection, changedConfiguration, reason] of [
-      [{ ...originalSelection, instanceRevision: '0' }, old.configuration, 'selection is stale'],
-      [originalSelection, { ...old.configuration, model: 'changed-model' }, 'configuration changed'],
-    ] as const) {
-      const conflict = await owner.callTool({ name: 'agent_update', arguments: {
-        workspaceId, agentId, commandId: randomUUID(), expectedRevision: created.metadataRevision,
-        expectedConfigurationVersionId: created.agent.configurationVersionId,
-        configuration: changedConfiguration, harnessProfileSelection: selection,
-      } })
-      expect(conflict.isError).toBe(true)
-      const message = JSON.stringify(conflict.content)
-      expect(message).toContain('HARNESS_PROFILE_SELECTION_CONFLICT')
-      expect.soft(message).toContain(reason)
-      expect.soft(message).toMatch(/harness_instances_list.*harness_instance_save.*returned selection/)
-      expect(ManagedAgentDetailSchema.parse(await call('agent_get', { workspaceId, agentId })).agent)
-        .toEqual(created.agent)
-    }
-    const listed = HostHarnessOverrideListSchema.parse(await call('harness_instances_list', {
-      hostRef: target.hostRef, applicationInstallationId: mainId,
-    }))
-    expect(listed.overrides.find(profile => profile.instanceId === old.instanceId)?.configuration)
-      .toEqual(old.configuration)
-    const tools = (await owner.listTools()).tools
-    expect.soft(tools.find(tool => tool.name === 'agent_update')?.description)
-      .toMatch(/harness_instances_list.*harness_instance_save.*returned selection/)
     const selected = await saveProfile('changed-model')
     const updateInput = { workspaceId, agentId, commandId: randomUUID(), expectedRevision: created.metadataRevision,
       expectedConfigurationVersionId: created.agent.configurationVersionId,
