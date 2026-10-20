@@ -28,7 +28,7 @@ function Harness({ initialCardId, ...overrides }: Partial<MemoryBoardProps> & { 
 function mutationCalls(): MemoryBoardMutation[] {
   return fixture.calls.filter((call) => call.method === 'mutate').map((call) => call.value as MemoryBoardMutation)
 }
-async function ready() { await waitFor(() => expect(screen.getByRole('button', { name: 'Add card', exact: true })).toBeEnabled()) }
+async function ready() { await waitFor(() => expect(screen.getByRole('button', { name: 'Add card' })).toBeEnabled()) }
 beforeEach(() => {
   cache = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity }, mutations: { retry: false } } })
   fixture = createMemoryTestPort()
@@ -61,23 +61,23 @@ describe('visible memory boards and editing', () => {
     fixture = createMemoryTestPort({ cards: [memoryTestCard({ status: 'done', completionKind: 'dropped', reason: 'Superseded by the release plan.' })] })
     const user = userEvent.setup()
     render(<Harness />, { wrapper }); await ready()
-    for (const label of ['Todo', 'Doing', 'Blocked', 'Done']) expect(screen.getByRole('region', { name: label, exact: true })).toBeInTheDocument()
+    for (const label of ['Todo', 'Doing', 'Blocked', 'Done']) expect(screen.getByRole('region', { name: label })).toBeInTheDocument()
     expect(fixture.calls.filter((call) => call.method === 'cards')).toHaveLength(0)
     await user.click(screen.getByRole('button', { name: 'Show Done' }))
-    expect(await screen.findByText('Dropped')).toBeInTheDocument()
+    expect(await within(screen.getByRole('region', { name: 'Done' })).findByText('Dropped')).toBeInTheDocument()
     expect(screen.getByText('Superseded by the release plan.')).toBeInTheDocument()
     expect(fixture.calls.filter((call) => call.method === 'cards')).toHaveLength(1)
   })
   it('appends deliberately requested pages beyond five and resets a live refresh to one bounded page', async () => {
     fixture = createMemoryTestPort({ cards: Array.from({ length: 121 }, (_, index) => memoryTestCard({ id: `card-${index}`, title: `Page task ${index}` })) })
     const user = userEvent.setup(); render(<Harness />, { wrapper }); await ready()
-    const column = within(screen.getByRole('region', { name: 'Todo', exact: true }))
+    const column = within(screen.getByRole('region', { name: 'Todo' }))
     for (let page = 0; page < 6; page++) {
       await user.click(column.getByRole('button', { name: 'Load more Todo' }))
       await waitFor(() => expect(column.getAllByRole('button', { name: /^Page task / })).toHaveLength(Math.min(121, (page + 2) * 20)))
     }
-    expect(column.getByRole('button', { name: 'Page task 0', exact: true })).toBeInTheDocument()
-    expect(column.getByRole('button', { name: 'Page task 120', exact: true })).toBeInTheDocument()
+    expect(column.getByRole('button', { name: 'Page task 0' })).toBeInTheDocument()
+    expect(column.getByRole('button', { name: 'Page task 120' })).toBeInTheDocument()
     const before = fixture.calls.filter((call) => call.method === 'cards').length
     fixture.board.revision = 2
     act(() => fixture.emit({ id: 'changed', boardId: fixture.board.id, sequence: 2, boardRevision: 2, entity: 'card', entityId: 'card-0', entityRevision: 2,
@@ -90,7 +90,7 @@ describe('visible memory boards and editing', () => {
   })
   it('creates a card through the public client and renders its confirmed details', async () => {
     const user = userEvent.setup(); render(<Harness />, { wrapper }); await ready()
-    await user.click(screen.getByRole('button', { name: 'Add card', exact: true }))
+    await user.click(screen.getByRole('button', { name: 'Add card' }))
     await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Review accessibility')
     await user.type(screen.getByLabelText('Details'), 'Check keyboard movement.')
     await user.click(screen.getByRole('button', { name: 'Create card' }))
@@ -104,11 +104,11 @@ describe('visible memory boards and editing', () => {
     fixture = createMemoryTestPort({ cards: [existing] })
     fixture.control.write = async (command) => ({ commandId: command.commandId!, outcome: 'existing', card: existing, bindings: [], claims: [], boardRevision: 1 })
     const user = userEvent.setup(); render(<Harness />, { wrapper }); await ready()
-    await user.click(screen.getByRole('button', { name: 'Add card', exact: true }))
+    await user.click(screen.getByRole('button', { name: 'Add card' }))
     await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Review accessibility')
     await user.type(screen.getByLabelText('Details'), 'My intended new details')
     await user.click(screen.getByRole('button', { name: 'Create card' }))
-    expect(await screen.findByRole('heading', { name: 'Review accessibility', exact: true })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Review accessibility' })).toBeInTheDocument()
     expect(screen.getByText('Done · Completed')).toBeInTheDocument()
     expect(screen.getByText('Already accepted work.')).toBeInTheDocument()
     expect(screen.getByRole('textbox', { name: 'Title' })).toHaveValue('Review accessibility')
@@ -119,11 +119,11 @@ describe('visible memory boards and editing', () => {
   it('uses the original note identity when archiving and restoring', async () => {
     fixture = createMemoryTestPort({ notes: [memoryTestNote()] })
     const user = userEvent.setup(); render(<Harness />, { wrapper }); await ready()
-    await user.click(screen.getByRole('button', { name: 'Archive note', exact: true }))
+    await user.click(screen.getByRole('button', { name: 'Archive note' }))
     await waitFor(() => expect(screen.queryByText('Keep the public API stable.')).not.toBeInTheDocument())
-    await user.click(screen.getByRole('button', { name: 'Archived notes', exact: true }))
+    await user.click(screen.getByRole('button', { name: 'Archived notes' }))
     expect(await screen.findByText('Keep the public API stable.')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Restore', exact: true }))
+    await user.click(screen.getByRole('button', { name: 'Restore' }))
     await waitFor(() => expect(mutationCalls()).toHaveLength(2))
     expect(mutationCalls().map((command) => command.kind === 'note_archive' ? [command.noteId, command.archived] : null))
       .toEqual([[memoryTestIds.note, true], [memoryTestIds.note, false]])
@@ -131,7 +131,7 @@ describe('visible memory boards and editing', () => {
   it('preserves text and the exact pending identity after an unknown save across unmount', async () => {
     fixture.control.write = async () => { throw new ApiError({ code: 'NETWORK_ERROR', message: 'Connection lost after dispatch.' }) }
     const user = userEvent.setup(); const view = render(<Harness />, { wrapper }); await ready()
-    await user.click(screen.getByRole('button', { name: 'Add card', exact: true }))
+    await user.click(screen.getByRole('button', { name: 'Add card' }))
     await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Do not duplicate this task')
     await user.click(screen.getByRole('button', { name: 'Create card' }))
     expect(await screen.findByRole('heading', { name: 'One save needs confirmation' })).toBeInTheDocument()
@@ -150,7 +150,7 @@ describe('visible memory boards and editing', () => {
     fixture.control.write = async () => { throw new ApiError({ code: 'NETWORK_ERROR', message: 'Lost response.' }) }
     fixture.control.lookup = async () => { throw new ApiError({ code: 'FORBIDDEN', message: 'Receipt lookup denied.' }, 403) }
     const user = userEvent.setup(); render(<Harness />, { wrapper }); await ready()
-    await user.click(screen.getByRole('button', { name: 'Add card', exact: true }))
+    await user.click(screen.getByRole('button', { name: 'Add card' }))
     await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Retained task')
     await user.click(screen.getByRole('button', { name: 'Create card' }))
     await screen.findByRole('heading', { name: 'One save needs confirmation' })
@@ -172,8 +172,8 @@ describe('visible memory boards and editing', () => {
       throw new ApiError({ code: 'NETWORK_ERROR', message: 'Committed response was lost.' })
     }
     const user = userEvent.setup(); render(<Harness />, { wrapper }); await ready()
-    await user.click(screen.getByRole('button', { name: 'Add note', exact: true }))
-    await user.type(screen.getByRole('textbox', { name: 'Note', exact: true }), 'A note that must be saved once')
+    await user.click(screen.getByRole('button', { name: 'Add note' }))
+    await user.type(screen.getByRole('textbox', { name: 'Note' }), 'A note that must be saved once')
     await user.click(screen.getByRole('button', { name: 'Save note' }))
     await screen.findByRole('heading', { name: 'One save needs confirmation' })
     await user.click(screen.getByRole('button', { name: recovery === 'check' ? 'Check status' : 'Retry original save' }))
@@ -182,20 +182,31 @@ describe('visible memory boards and editing', () => {
     expect(screen.queryByRole('heading', { name: 'One save needs confirmation' })).not.toBeInTheDocument()
     expect(mutationCalls()).toHaveLength(recovery === 'check' ? 1 : 2)
     if (recovery === 'retry') expect(mutationCalls()[1]).toEqual(mutationCalls()[0])
-    await user.click(screen.getByRole('button', { name: 'Add note', exact: true }))
-    expect(screen.getByRole('textbox', { name: 'Note', exact: true })).toHaveValue('')
+    await user.click(screen.getByRole('button', { name: 'Add note' }))
+    expect(screen.getByRole('textbox', { name: 'Note' })).toHaveValue('')
+  })
+  it('shows a confirmed new note when returning from its editor without a stream event', async () => {
+    const user = userEvent.setup()
+    render(<Harness />, { wrapper })
+    await ready()
+    await user.click(screen.getByRole('button', { name: 'Add note' }))
+    await user.type(screen.getByRole('textbox', { name: 'Note' }), 'Remember the release decision')
+    await user.click(screen.getByRole('button', { name: 'Save note' }))
+    expect(await screen.findByText('Remember the release decision')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Save note' })).not.toBeInTheDocument()
+    expect(mutationCalls()).toHaveLength(1)
   })
   it('rebases only the reviewed card delta after a revision conflict', async () => {
     fixture = createMemoryTestPort({ cards: [memoryTestCard({ body: 'Earlier details' })] })
     const latest = memoryTestCard({ body: 'Details changed by another actor', revision: 2 })
     fixture.control.write = async () => { throw new ApiError({ code: 'REVISION_CONFLICT', message: 'This card changed.', details: { current: latest } }, 409) }
     const user = userEvent.setup(); render(<Harness initialCardId={memoryTestIds.card} />, { wrapper })
-    await user.click(await screen.findByRole('button', { name: 'Edit', exact: true }))
+    await user.click(await screen.findByRole('button', { name: 'Edit' }))
     await user.clear(screen.getByRole('textbox', { name: 'Title' }))
     await user.type(screen.getByRole('textbox', { name: 'Title' }), 'My revised title')
     await user.click(screen.getByRole('button', { name: 'Save changes' }))
     await screen.findByRole('region', { name: 'Edit conflict' })
-    expect(screen.getByLabelText('Your draft')).toHaveValue(expect.stringContaining('My revised title'))
+    expect(screen.getByLabelText('Your draft')).toHaveValue('My revised title\nEarlier details\n')
     await user.click(screen.getByRole('button', { name: 'Keep editing my draft' }))
     expect(screen.getByLabelText('Details')).toHaveValue('Details changed by another actor')
     fixture.cards.set(latest.id, latest); fixture.control.write = undefined
@@ -217,7 +228,7 @@ describe('visible memory boards and editing', () => {
     render(<Harness />, { wrapper })
     expect(await screen.findByRole('button', { name: 'Prepare release notes' })).toBeInTheDocument()
     expect(screen.getByText(/Offline · Last updated/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Add card', exact: true })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Add card' })).toBeDisabled()
     expect(fixture.calls.filter((call) => call.method === 'board')).toHaveLength(1)
   })
   it('does not rewind a newer card after a stale snapshot and page response', async () => {
@@ -236,7 +247,7 @@ describe('visible memory boards and editing', () => {
   })
   it('keeps draft fields through live refresh and makes no automatic write on reconnect', async () => {
     const user = userEvent.setup(); render(<Harness />, { wrapper }); await ready()
-    await user.click(screen.getByRole('button', { name: 'Add card', exact: true }))
+    await user.click(screen.getByRole('button', { name: 'Add card' }))
     await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Unsaved words')
     act(() => { fixture.connection('offline'); fixture.connection('connected') })
     expect(screen.getByRole('textbox', { name: 'Title' })).toHaveValue('Unsaved words')
@@ -249,10 +260,10 @@ describe('exact work identity, access and one modal', () => {
   it('keeps unsent work obligations visible and removable after their display link is removed', async () => {
     const nodes: MemoryNodeOption[] = [{ node, label: 'Writer', available: true, currentWork: [] }]
     const user = userEvent.setup(); render(<Harness nodes={nodes} />, { wrapper }); await ready()
-    await user.click(screen.getByRole('button', { name: 'Add card', exact: true }))
+    await user.click(screen.getByRole('button', { name: 'Add card' }))
     await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Track next task')
-    await user.click(screen.getByRole('checkbox', { name: 'Writer', exact: true }))
-    await user.click(screen.getByRole('checkbox', { name: 'Writer', exact: true }))
+    await user.click(screen.getByRole('checkbox', { name: 'Writer' }))
+    await user.click(screen.getByRole('checkbox', { name: 'Writer' }))
     expect(screen.getByText('1 new work obligation selected.')).toBeInTheDocument()
     expect(screen.getByText('Next activation · Writer')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Remove work selection' }))
@@ -273,7 +284,7 @@ describe('exact work identity, access and one modal', () => {
     fixture.control.history = [entry]
     const open = vi.fn(), user = userEvent.setup()
     render(<Harness initialCardId={memoryTestIds.card} onOpenHistoryWork={open} />, { wrapper })
-    await user.click(await screen.findByRole('button', { name: 'History', exact: true }))
+    await user.click(await screen.findByRole('button', { name: 'History' }))
     await user.click(screen.getByText('reason changed'))
     expect(screen.getByText('Previously: Waiting for assets')).toBeVisible()
     expect(screen.getByText('Saved: Assets received')).toBeVisible()
@@ -314,7 +325,7 @@ describe('exact work identity, access and one modal', () => {
     render(<Harness initialCardId={memoryTestIds.card} onOpenWork={open} health={[{ bindingId: binding.id, state: 'offline', lastSeenAt: memoryTestTime }]} />, { wrapper })
     await screen.findByText(/Waiting for child reports/)
     expect(screen.getByText(/Computer offline/)).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Open work', exact: true }))
+    await user.click(screen.getByRole('button', { name: 'Open work' }))
     expect(open).toHaveBeenCalledWith(binding)
     expect(mutationCalls()).toHaveLength(0)
   })
@@ -327,7 +338,7 @@ describe('exact work identity, access and one modal', () => {
     expect(screen.getAllByRole('dialog')).toHaveLength(1)
     expect(screen.getByText('Showing current memory, not this run’s past state.')).toBeInTheDocument()
     expect(screen.getByText('Returning browser control…')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Add card', exact: true }))
+    await user.click(screen.getByRole('button', { name: 'Add card' }))
     await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Keep this draft')
     fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
     expect(await screen.findByRole('heading', { name: 'Discard unsaved changes?' })).toBeInTheDocument()
