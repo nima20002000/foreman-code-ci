@@ -113,13 +113,28 @@ describe.skipIf(!postgresEnabled)('Memory boards public persistence and engine p
     const saved=await f.service.mutate(f.worker,{kind:'card_create',boardId,card:{title:'Parent obligation',body:'',status:'todo',completionKind:null,reason:null,assignee:null,linkedNodes:[]}})
     await f.publish(f.fact(original,'waiting_children',{requestGroupId:randomUUID(),outstandingRequestIds:[randomUUID()]}))
     const successor=await f.prepareWork('queued',f.agent,original.work)
-    await f.publish(f.fact(successor,'continuation_admitted',{continuationOf:original.work}))
+    await f.publish(f.fact(successor,'admitted',{continuationOf:original.work}))
     expect(await f.card(boardId,saved.card!.id)).toMatchObject({card:{status:'doing'},bindings:[{work:successor.work,currentExecutionId:successor.execution.executionId,state:'queued'}]})
     await f.publish(f.fact(successor,'failed'))
     const next=await f.service.mutate(principal,{kind:'card_create',boardId,card:{title:'Future independent work',body:'',status:'todo',completionKind:null,reason:null,assignee:null,linkedNodes:[]},
       workSelections:[{kind:'next_activation',node:successor.value.node}]})
     await f.publish(f.fact(successor,'retry_admitted'))
     expect(await f.card(boardId,next.card!.id)).toMatchObject({bindings:[],claims:[{state:'armed'}]})
+  })
+  it('transfers a waiting task to the launched child-return work',async()=>{
+    const original=await f.prepareWork()
+    f.setSubject(original.subject)
+    const saved=await f.service.mutate(f.worker,{kind:'card_create',boardId,
+      card:{title:'Waiting task',body:'',status:'todo',completionKind:null,reason:null,assignee:null,linkedNodes:[]}})
+    await f.publish(f.fact(original,'waiting_children',{requestGroupId:randomUUID(),outstandingRequestIds:[randomUUID()]}))
+    const successor=await f.prepareWork('running',f.agent,original.work)
+    await f.publish(f.fact(successor,'launched',{continuationOf:original.work}))
+    expect(await f.card(boardId,saved.card!.id)).toMatchObject({
+      card:{status:'doing'},
+      bindings:[{work:successor.work,currentExecutionId:successor.execution.executionId,state:'running'}],
+    })
+    await f.publish(f.fact(successor,'accepted'))
+    expect((await f.card(boardId,saved.card!.id)).card.status).toBe('done')
   })
   it('records a never-launched preparation failure atomically without fabricated Doing history',async()=>{
     const task=await f.prepareWork('queued')

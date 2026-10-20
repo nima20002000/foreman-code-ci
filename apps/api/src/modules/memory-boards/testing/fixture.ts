@@ -53,7 +53,7 @@ export function memoryFixture(pool: pg.Pool, principal: ManagementPrincipal) {
     const execution={runId:work.runId,workflowVersionId:work.workflowVersionId,activationId:work.activationId,executionId:randomUUID(),attempt:1}
     const subject:AgentSubject={kind:'execution',agent:identity,execution}
     const value:ResolvedWork={node:{workspaceId,workflowId,workflowNodeId:identity.workflowNodeId,agentId:identity.agentId},work,state,
-      currentExecutionId:execution.executionId,reason:state==='failed'?'Native failure':null}
+      currentExecutionId:execution.executionId,reason:['blocked','failed','canceled'].includes(state)?'Native work stopped':null}
     await pool.query('insert into memory_test_owner(id,record) values($1,$2)',[canonicalJson(work),value])
     return {work,execution,subject,value}
   }
