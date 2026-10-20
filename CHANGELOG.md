@@ -7,6 +7,13 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.0.113] - 2026-10-19
+
+Review fan-outs converge, and CI tests are steadier.
+- A coder that hands one change to several reviewers now gets their feedback as one continuation, instead of one parallel coder run per reviewer. A node never runs two feedback continuations at once; returns for the same caller are grouped, and returns for different callers keep their own replies.
+- When some reviewers accept and another finishes, the join-all step after them still runs. Feedback that arrives after a continuation has started goes into the next one instead of being lost. Continuations queued before this upgrade still resolve.
+- Test reliability: CI fleet-preference and cloud throughput-weight tests wait for every computer's status before admitting work.
+
 ## [0.0.112] - 2026-10-19
 
 CI keeps moving when a computer goes offline.
