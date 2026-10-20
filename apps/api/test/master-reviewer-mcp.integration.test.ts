@@ -11,10 +11,6 @@ import { workerToolServices } from './helpers/workerMcpServices.js'
 
 it.skipIf(!postgresEnabled)('preserves the Master identity and designated reviewer authority through authenticated MCP', async () => {
   const f = await approvalDatabase({ reviewerRole: 'master' })
-  expect(ExecutableWorkflowV3Schema.parse({ version: f.version, configurations: f.f.configurations }).version)
-    .toEqual(f.version)
-  expect(f.version.definition.hierarchy?.masterNodeId).toBe(f.version.entryNodeId)
-  expect(f.run).not.toHaveProperty('resultProtocol')
   const tools = workerToolServices(f.pool, f.commands)
   const app = buildApp({
     readiness: { database: { ping: async () => {} }, checkpoints: { ping: async () => {} } },
@@ -22,6 +18,10 @@ it.skipIf(!postgresEnabled)('preserves the Master identity and designated review
   })
   const clients: Client[] = []
   try {
+    expect(ExecutableWorkflowV3Schema.parse({ version: f.version, configurations: f.f.configurations }).version)
+      .toEqual(f.version)
+    expect(f.version.definition.hierarchy?.masterNodeId).toBe(f.version.entryNodeId)
+    expect(f.run).not.toHaveProperty('resultProtocol')
     const origin = await app.listen({ host: '127.0.0.1', port: 0 })
     const connect = async (token: string) => {
       const client = new Client({ name: 'master-reviewer-context', version: '1' })
