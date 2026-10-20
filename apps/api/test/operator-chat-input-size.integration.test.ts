@@ -8,6 +8,7 @@ import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { OperatorChatService } from '../src/modules/conversations/operatorChat.js'
 import { PostgresFoundationSettingsRepository } from '../src/modules/settings/foundation.js'
+import { FoundationSettingsManagementService } from '../src/modules/settings/management.js'
 import { registerOperatorChatRoutes } from '../src/routes/operatorChat.js'
 import { graphRpc, graphRpcValue } from './eng04-graph-composition-fixture.js'
 import { ChatManager, claudeConfiguration, registerOperatorChatFixture,
@@ -56,8 +57,17 @@ async function apiFixture() {
 async function saveWorkerDefaults(profile: HarnessProfileSelection) {
   const settings = new PostgresFoundationSettingsRepository(pool)
   const defaults = await settings.getAgentDefaults()
-  return settings.updateAgentDefaults({ ...defaults.value, operator: { ...defaults.value.operator,
-    harness: claudeConfiguration, harnessProfileSelection: profile } }, defaults.revision)
+  const management = new FoundationSettingsManagementService(settings, new PostgresCommandCoordinator(pool),
+    undefined, operators, {
+      validateSelection: async (_principal, selected, harness) => {
+        expect(selected).toEqual(profile)
+        expect(harness).toEqual(claudeConfiguration)
+      },
+    })
+  const saved = await management.updateAgentDefaults(owner, 'http', { commandId: randomUUID(),
+    expectedRevision: defaults.revision, value: { ...defaults.value, operator: { ...defaults.value.operator,
+      harness: claudeConfiguration, harnessProfileSelection: profile } } })
+  return saved.value
 }
 
 describe.skipIf(!connectionString)('Operator input size admission', () => {
@@ -152,7 +162,9 @@ describe.skipIf(!connectionString)('Operator input size admission', () => {
       const http = await f.send(source.id, input)
       expect(http.statusCode, http.body).toBe(400)
       expect(http.json()).toMatchObject({ error: { code: 'CHAT_MESSAGE_TOO_LARGE' } })
-      expect((await f.sendMcp(source.id, input)).result?.isError).toBe(true)
+      const mcp = await f.sendMcp(source.id, input)
+      expect(mcp.result?.isError).toBe(true)
+      expect(JSON.stringify(mcp.result)).toContain('CHAT_MESSAGE_TOO_LARGE')
       expect(await chat.get(source.id, f.writer.principal)).toEqual(before)
       expect(await repository.active(`operator-fork:${input.requestId}`)).toBeUndefined()
       expect(await repository.hasTurn(source.id, input.requestId)).toBe(false)

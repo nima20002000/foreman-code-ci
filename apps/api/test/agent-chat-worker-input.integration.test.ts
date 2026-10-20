@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { expect, it, vi } from 'vitest'
 import { AgentChatStateSchema, SendAgentChatMessageResponseSchema } from '@foreman-code/contracts/agent-chat'
 import { remoteAgentConversation } from './helpers/remoteAgentConversation.js'
@@ -56,7 +56,12 @@ it.each((['codex', 'claude'] as const).flatMap(harness => [false, true].map(exis
     expect(f.receivedAttachments).toEqual([text])
     const read = AgentChatStateSchema.parse(await f.value('agent_chat_read', { query: f.context }))
     expect(read.messages.find(message => message.requestId === requestId && message.role === 'user'))
-      .toMatchObject({ content: '', attachments: [attachment] })
+      .toMatchObject({ content: '', originalInput: { requestId, content: '', attachments: [attachment] },
+        attachments: [{
+          file: { fileId: attachment.fileId, state: 'ready' },
+          revision: { ...attachment, filename: 'attached.md', mediaType: 'text/markdown',
+            byteSize: Buffer.byteLength(text), sha256: createHash('sha256').update(text).digest('hex') },
+        }] })
     expect(read.turns.find(turn => turn.requestId === requestId)?.delivery).toBe('completed')
   } finally { await f.close() }
 }, 30_000)
