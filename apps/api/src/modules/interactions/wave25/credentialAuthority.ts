@@ -64,7 +64,7 @@ export async function credentialAuthority(
   if (purpose === 'workflow' && (row.execution_closed || !['starting','running','waiting'].includes(e.state)
     || e.state !== 'starting' && !row.budget_active)) return fail('AUTH_REVOKED')
   const designated = v.approval.handler === 'orchestrator' && v.approval.designatedOrchestratorAgentId === e.agentId
-    && v.entryNodeId === e.workflowNodeId && (c.productRole === 'master' || c.productRole === 'orchestrator')
+    && v.entryNodeId === e.workflowNodeId && c.productRole === 'orchestrator'
   if (designated) validateReviewerBootstrap(v.definition, v.approval, c.harness, v.entryNodeId)
   let canRespond = false
   if (designated) {

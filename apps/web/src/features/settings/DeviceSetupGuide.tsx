@@ -7,8 +7,8 @@ export function DeviceSetupGuide() {
     <h3>Before you add a computer</h3>
     <ol className="computer-steps">
       <li><strong>Install the companion on the remote computer first.</strong> <InfoHint label="Computer request code">Its request code only exists after the companion is installed and opened there.</InfoHint>
-        <InfoHint label="Pairing">Pairing lets the computer connect and send heartbeats to this main. It does not allow remote commands.</InfoHint></li>
-      <li><strong>Approve remote commands separately.</strong> A person must approve running commands as the selected operating-system user. Pairing never counts as that approval.</li>
+        <InfoHint label="Pairing">Pairing lets the computer connect and send heartbeats to this main. Pairing authorizes connection changes; connection readiness is checked separately.</InfoHint></li>
+      <li><strong>Configure the connection through the Operator.</strong> Pairing authorizes connection changes. The Operator can use device_connection_configure with settings:update for the selected operating-system user.</li>
       <li><strong>Check connection readiness.</strong> <InfoHint label="Connection readiness">Readiness comes from a verified connection, not from registration or inventory.</InfoHint></li>
     </ol>
     <details className="computer-details"><summary>Network prerequisites</summary>
@@ -22,7 +22,7 @@ export function DeviceSetupGuide() {
   </section>
 }
 
-/** Pairing alone cannot establish whether remote commands are approved or ready. */
+/** Pairing alone does not establish connection readiness. */
 export function ConnectionSetupStatus({ registration }: { registration: DeviceRegistration }) {
   const state = registration.status === 'revoked' ? 'blocked' : registration.status === 'paired' ? 'unverified' : 'needs-pairing'
   return <section className="device-setup-status" aria-label="Remote command connection" data-state={state}>
@@ -30,7 +30,7 @@ export function ConnectionSetupStatus({ registration }: { registration: DeviceRe
     <p role="status">{registration.status === 'revoked'
       ? <><strong>Blocked.</strong> This computer’s registration is revoked, so no connection can be set up.</>
       : registration.status === 'paired'
-        ? <><strong>Connection status unverified.</strong> This computer is paired. Ask the Operator to read its current remote-command approval and check the connection.</>
+        ? <><strong>Connection status unverified.</strong> This computer is paired. Ask the Operator to read and configure its connection, then check readiness with device_connection_read, device_connection_configure and device_connection_check.</>
         : <><strong>Pairing needed.</strong> Pair this computer before any connection can be set up.</>}</p>
   </section>
 }

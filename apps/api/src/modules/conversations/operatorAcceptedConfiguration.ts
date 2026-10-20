@@ -64,7 +64,9 @@ export async function acceptOperatorConfiguration(query: Queryable, current: Ope
     ? await accounts.resolve(settings, preparedProfile ?? base.harnessProfileSelection, { sql: query }) : settings
   const harness = isDeepStrictEqual(withAdvancedDefaults(base.harness), withAdvancedDefaults(requested)) ? base.harness : requested
   if (base.harnessProfileSelection && !preparedProfile && !isDeepStrictEqual(base.harness, harness)) {
-    throw new DomainError('HARNESS_PROFILE_SELECTION_CONFLICT', 'Per-message settings cannot rewrite the configuration of an explicitly selected host profile. Save and select that configured profile first.', 409)
+    throw new DomainError('HARNESS_PROFILE_SELECTION_CONFLICT',
+      'This Operator conversation is pinned to its saved harness profile and model. Send with the pinned settings, '
+      + 'or save the desired defaults and start a new conversation.', 409)
   }
   const showThinking = input.settings?.showThinking ?? base.showThinking ?? false
   const harnessProfileSelection = preparedProfile ?? base.harnessProfileSelection
