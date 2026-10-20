@@ -36,7 +36,6 @@ import type { RepeatRepositoryServices } from '../../src/modules/runs/repeatRepo
 export async function codexApprovalRuntime(handler: 'user' | 'orchestrator' = 'user',
   options: ApprovalProviderOptions & {
     fixture?: ReturnType<typeof makeCurrentWorkflowFixture>
-    reviewerRole?: 'orchestrator' | 'master'
     approvalPolicy?: 'never'
     skills?: ResolvedSkill[]
     database?: Awaited<ReturnType<typeof agent3Database>>
@@ -52,7 +51,7 @@ export async function codexApprovalRuntime(handler: 'user' | 'orchestrator' = 'u
     const entry = f.version.definition.nodes.find((node) => node.id === f.version.entryNodeId)!
     const approval = handler === 'user' ? { handler } : { handler, designatedOrchestratorAgentId: entry.agentId }
     f.configurations = f.configurations.map(c => AgentConfigurationVersionSchema.parse({ ...c,
-      productRole: handler === 'orchestrator' && c.agentId === entry.agentId ? options.reviewerRole ?? 'orchestrator' : 'coder',
+      productRole: handler === 'orchestrator' && c.agentId === entry.agentId ? 'orchestrator' : 'coder',
       harness: {
         ...DEFAULT_HARNESS_DEFAULTS.codex, model: 'test-model', reasoningEffort: 'low',
         sandbox: options.sandbox ?? 'read-only', serviceTier: 'standard',

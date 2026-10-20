@@ -11,7 +11,6 @@ import {
   GraphqlToolOverrideSchema,
   effectiveGraphqlTools,
   type GraphqlAgentTool,
-  type WorkflowAgentProductRole,
 } from '@foreman-code/contracts'
 import { AcceptedWorkflowRunV3Schema, WorkflowVersionV3Schema } from '@foreman-code/contracts/wave25'
 import { WORKER_NATIVE_OUTPUT_TOOL_NAMES, WorkerNativeOutputOperationSchema } from '@foreman-code/contracts/worker-native-output'
@@ -55,7 +54,7 @@ export function decodeInteractionCursor(cursor: string | undefined): string | un
   }
 }
 
-export interface WorkerToolAccess { role: WorkflowAgentProductRole; tools: GraphqlAgentTool[] }
+export interface WorkerToolAccess { role: 'orchestrator' | 'coder'; tools: GraphqlAgentTool[] }
 
 export interface AppInteractionService {
   context(principal: ManagementPrincipal): Promise<unknown>
@@ -162,10 +161,7 @@ export class PostgresAppInteractionService implements AppInteractionService {
     const row = result.rows[0]
     if (!row) throw new DomainError('MCP_TOOL_DISCOVERY_FAILED',
       'The pinned Agent configuration and workflow node could not be loaded. Retry the activation.', 503)
-    if (row.role !== 'master' && row.role !== 'orchestrator' && row.role !== 'coder') {
-      throw new DomainError('MCP_TOOL_DISCOVERY_FAILED', 'The pinned Agent role is unavailable.', 503)
-    }
-    const role = row.role
+    const role = row.role === 'orchestrator' ? 'orchestrator' : 'coder'
     const defaults = row.defaults == null ? undefined : GraphqlToolDefaultsSchema.parse(row.defaults)
     const override = row.override == null ? undefined : GraphqlToolOverrideSchema.parse(row.override)
     const tools = effectiveGraphqlTools(role, defaults, override, row.interval != null).filter(tool => {
@@ -200,7 +196,7 @@ export class PostgresAppInteractionService implements AppInteractionService {
        join agent_configuration_versions c on c.id=(r.record->'agentConfigurationVersionIds'->>$2)
          and c.workspace_id=r.workspace_id and c.agent_id=e.agent_id
        where b.principal_id=$1 and b.agent_id=$2 and b.revoked_at is null
-         and c.record->>'productRole' in ('master','orchestrator')
+         and c.record->>'productRole'='orchestrator'
          and r.execution_state in ('queued','running','waiting')
          and exists (select 1 from jsonb_to_recordset($3::jsonb)
            as response_grant("workspaceIds" text[],"workflowIds" text[],"runIds" text[])

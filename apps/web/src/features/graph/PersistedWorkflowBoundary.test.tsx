@@ -93,7 +93,7 @@ it.each(['draft read first', 'save reply first'] as const)(
     })
     const client = mount(context)
     const user = await rename()
-    await user.click(screen.getByRole('button', { name: 'Save workflow' }))
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
     await waitFor(() => expect(saved).toBeDefined())
     if (order === 'draft read first') {
       await act(async () => {

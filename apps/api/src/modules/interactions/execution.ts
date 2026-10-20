@@ -706,7 +706,7 @@ export class ApprovalExecutionCoordinator {
     if (candidates.length !== 1) return
     const execution = candidates[0]!
     const configuration = await this.runs.getExecutionConfiguration(execution.agentConfigurationVersionId, execution)
-    if (!configuration || (configuration.productRole !== 'master' && configuration.productRole !== 'orchestrator')) return
+    if (!configuration || configuration.productRole !== 'orchestrator') return
     const native = await this.interactions.coordination.workflowSession(execution.id)
     if (!native?.finalized || execution.state !== 'completed') return
     await this.reviewers.enqueue(interaction, agentId, {
@@ -1172,8 +1172,7 @@ export class ApprovalExecutionCoordinator {
       || execution.runtimeDirectory !== owned.execution.runtimeDirectory
       || !run || run.id !== owned.execution.runId || !['running', 'waiting'].includes(run.executionState) || run.outcome !== 'pending'
       || run.approval?.handler !== 'orchestrator' || run.approval.designatedOrchestratorAgentId !== execution.agentId
-      || !configuration || (configuration.productRole !== 'master' && configuration.productRole !== 'orchestrator')
-      || configuration.agentId !== execution.agentId
+      || configuration?.productRole !== 'orchestrator' || configuration.agentId !== execution.agentId
       || configuration.id !== execution.agentConfigurationVersionId || configuration.workspaceId !== run.workspaceId
       || configuration.harness.harness !== session.harness || !native?.finalized) {
       throw new DomainError('REVIEWER_AUTHORITY_LOST', 'The Run or finalized reviewer execution no longer authorizes this review.', 409)
@@ -1416,7 +1415,7 @@ export class ApprovalExecutionCoordinator {
     if (execution.state !== 'completed' || execution.result?.outcome !== 'succeeded' || !execution.nativeSessionId)
       return false
     const configuration = await this.runs.getExecutionConfiguration(execution.agentConfigurationVersionId, execution)
-    if (!configuration || (configuration.productRole !== 'master' && configuration.productRole !== 'orchestrator')) return false
+    if (!configuration || configuration.productRole !== 'orchestrator') return false
     const context = await this.managerContext(execution, configuration)
     if (context.acceptedPlacement?.hostRef.kind !== 'device') return false
     const native = await this.interactions.coordination.workflowSession(execution.id)
@@ -2000,7 +1999,7 @@ export class ApprovalExecutionCoordinator {
       if (previous?.cleanup || previous?.reviewFinishing) throw new DomainError('SESSION_LANE_BUSY',
         'The captured reviewer lifetime is still closing.', 409)
       const native = await this.interactions.coordination.workflowSession(execution.id)
-      if ((configuration.productRole !== 'master' && configuration.productRole !== 'orchestrator') || !['running', 'waiting'].includes(run.executionState)
+      if (configuration.productRole !== 'orchestrator' || !['running', 'waiting'].includes(run.executionState)
         || run.outcome !== 'pending' || execution.state !== 'completed' || !native?.finalized || run.approval?.handler !== 'orchestrator'
         || run.approval.designatedOrchestratorAgentId !== execution.agentId) {
         throw new DomainError('SESSION_LANE_BUSY', 'Workflow finalization must finish before review attachment.', 409)
