@@ -39,7 +39,12 @@ it.skipIf(!postgresEnabled)('preserves the Master identity and designated review
       role: 'master', principal: { audience: 'worker', agentId: f.reviewer.agentId },
       capabilities: { contextGet: true, interactionList: true, interactionGet: true, interactionRespond: true },
     })
-    expect((await master.listTools()).tools.map(tool => tool.name)).toContain('interaction_respond')
+    const masterTools = (await master.listTools()).tools.map(tool => tool.name)
+    expect(masterTools).toContain('interaction_respond')
+    expect(masterTools).toEqual(expect.arrayContaining([
+      'ci_run', 'ci_get', 'ci_computers_list', 'ci_cancel', 'ci_logs_read',
+    ]))
+    expect(masterTools).not.toContain('memory_board_get')
 
     const requesterCredential = await f.credentials.issueForExecution(f.requester.id)
     const coder = await connect(requesterCredential.environment.variables.GRAPHQL_MCP_TOKEN!)
