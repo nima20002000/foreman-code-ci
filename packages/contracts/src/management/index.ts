@@ -581,8 +581,6 @@ export const OperatorToolNameSchema = z.enum([
   "operator_chat_create", "operator_chat_list", "operator_chat_get", "operator_chat_history_get", "operator_chat_activity_get",
   "operator_chat_send", "operator_chat_cancel", "operator_chat_respond", "operator_handoff_history_get",
   "operator_chat_delete", "operator_chat_restore",
-  "agent_chat_ensure_conversation", "conversation_file_upload", "conversation_file_finalize",
-  "conversation_file_cancel", "conversation_files_list", "conversation_file_read",
   "agent_chat_read", "agent_chat_send", "agent_chat_interrupt", "agent_chat_cancel_queued", "agent_chat_respond",
   "workspace_defaults_get",
   'general_settings_get', 'general_settings_update', 'circle_credit_allowance_get', 'circle_credit_allowance_update',
