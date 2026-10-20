@@ -4,7 +4,6 @@ import { isDeepStrictEqual } from 'node:util'
 import { AgentDefaultsSchema, DEFAULT_AGENT_DEFAULTS, applyOperatorChatSettings, OperatorConfigurationVersionSchema, withAdvancedDefaults,
   type HarnessConfiguration, type OperatorConfigurationVersion, type SendOperatorMessageRequest } from '@foreman-code/contracts'
 import { DomainError } from '../errors.js'
-import { harnessProfileSelectionConflict } from '../harnesses/instanceSettings/selectionConflict.js'
 import type { ProviderAccountConfigurationService } from '../harnesses/providerAccountConfiguration.js'
 import type { HarnessProfileSelection } from '@foreman-code/contracts/harness-registry'
 
@@ -65,8 +64,7 @@ export async function acceptOperatorConfiguration(query: Queryable, current: Ope
     ? await accounts.resolve(settings, preparedProfile ?? base.harnessProfileSelection, { sql: query }) : settings
   const harness = isDeepStrictEqual(withAdvancedDefaults(base.harness), withAdvancedDefaults(requested)) ? base.harness : requested
   if (base.harnessProfileSelection && !preparedProfile && !isDeepStrictEqual(base.harness, harness)) {
-    throw harnessProfileSelectionConflict(
-      'The harness configuration changed: per-message settings differ from the selected host profile.')
+    throw new DomainError('HARNESS_PROFILE_SELECTION_CONFLICT', 'Per-message settings cannot rewrite the configuration of an explicitly selected host profile. Save and select that configured profile first.', 409)
   }
   const showThinking = input.settings?.showThinking ?? base.showThinking ?? false
   const harnessProfileSelection = preparedProfile ?? base.harnessProfileSelection
