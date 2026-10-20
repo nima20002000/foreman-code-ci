@@ -31,8 +31,10 @@ export function useDraftAgentPanels({ draftKey, edit, editIntent, core, board, r
   const { inspect, presentation, setOpenNode, setPanel, change, report } = core
   const openAgent = (nodeId: string, next: AgentPanel = 'settings') => inspect(() => {
     presentation.getState().setFocusedNodeId(nodeId); presentation.getState().setFocusedEdgeId(undefined)
-    setOpenNode({ nodeId, panel: next })
+    if (board?.selectSidePanel) board.selectSidePanel({ kind: 'agent', nodeId, tab: next === 'info' ? 'details' : next })
+    else setOpenNode({ nodeId, panel: next })
   })
+  const closePanel = () => board?.selectSidePanel ? board.selectSidePanel({ kind: 'none' }) : setOpenNode(undefined)
   const panels = (nodeId: string, pinned?: PinnedPanelNode): AgentPanels => {
     const node = pinned ? {...pinned,id:nodeId} : graph.nodes.find((item) => item.id === nodeId)
     if (!node) return { chat: null, settings: null, info: null }
@@ -52,7 +54,7 @@ export function useDraftAgentPanels({ draftKey, edit, editIntent, core, board, r
     const chat = unsavedChat ? <EmptyState icon="chat" title="Save this Agent and workflow to chat"
       description="Save the Agent settings and workflow changes, then reopen chat. Workflow alerts list any missing setup." />
       : <AgentChatPanel name={pinned?.name ?? nodeTitle(graph, node.id)} activity={run.activity} running={run.state === 'running'}
-      role={pinnedAgent?.role ?? (agent?.productRole === 'orchestrator' ? 'Orchestrator' : 'Worker')} runLabel={pinnedAgent?.runLabel ?? run.label} onClose={() => inspect(() => setOpenNode(undefined))}
+      role={pinnedAgent?.role ?? (agent?.productRole === 'master' ? 'Master' : agent?.productRole === 'orchestrator' ? 'Orchestrator' : 'Worker')} runLabel={pinnedAgent?.runLabel ?? run.label} onClose={() => inspect(closePanel)}
       context={{ workspaceId: graph.workspaceId, workflowId: graph.id, workflowNodeId: node.id, agentId: node.agentId,
         ...(board?.run ? { runId: board.run.runId } : {}) }}
       onNewConversation={() => {
@@ -73,14 +75,14 @@ export function useDraftAgentPanels({ draftKey, edit, editIntent, core, board, r
       chat,
       chatHasHeader: !unsavedChat,
       settings: <fieldset className="board-popover-fields" disabled={edit.busy || reloading || editIntent.locked}>
-        <BoardAgentSettings draftKey={draftKey} edit={edit} nodeId={node.id} close={() => setOpenNode(undefined)}
+        <BoardAgentSettings draftKey={draftKey} edit={edit} nodeId={node.id} close={closePanel}
           remove={() => { setOpenNode(undefined); change((value) => removeNode(value, node.id)) }} />
         <NodeWorkflowFields graph={graph} node={graph.nodes.find((item) => item.id === node.id)!} context={context} agentEdits={edit.agentEdits} change={change} />
       </fieldset>,
       info: <AgentInfoTabs scope={board?.run} agentId={node.agentId} details={<>
         <AgentFacts items={[
           { label: 'Status', value: statusLabel },
-          { label: 'Role', value: role.role === 'orchestrator' ? 'Orchestrator' : role.role === 'coder' ? 'Worker' : 'Unknown' },
+          { label: 'Role', value: role.role === 'master' ? 'Master' : role.role === 'orchestrator' ? 'Orchestrator' : role.role === 'coder' ? 'Worker' : 'Unknown' },
           { label: 'Starts workflow', value: graph.entryNodeId === node.id ? 'Yes' : 'No' },
           ...(agent ? agentSettingRows(agent) : []),
         ]} />

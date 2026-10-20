@@ -101,7 +101,7 @@ export class WorkerCredentialService {
            join agent_configuration_versions c on c.id=he.record->>'agentConfigurationVersionId'
            where s.execution_id=$1 and s.workflow_finalized_at is not null
              and s.reference->>'nativeSessionId'=he.record->>'nativeSessionId'
-             and c.record->>'productRole'='orchestrator'`, [executionId],
+             and c.record->>'productRole' in ('master','orchestrator')`, [executionId],
         )
         if (execution.state !== 'completed' || run.approval?.handler !== 'orchestrator'
           || run.approval.designatedOrchestratorAgentId !== execution.agentId || !ready.rowCount) {
