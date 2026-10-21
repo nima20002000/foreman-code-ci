@@ -16,7 +16,7 @@ export async function runNativeShell(command, policy, settings) {
   }
   const args = [settings.sandboxLauncher]
   for (const [key, value] of Object.entries(overrides)) args.push('-c', `${key}=${JSON.stringify(value)}`)
-  args.push('sandbox', 'linux', '--', '/bin/sh', '-c', command)
+  args.push('sandbox', '--', '/bin/sh', '-c', command)
   try {
     const result = await execute(process.execPath, args, { cwd: policy.cwd,
       env: { ...process.env, CODEX_HOME: settings.sandboxHome }, timeout: 30000 })
