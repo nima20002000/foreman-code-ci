@@ -42,6 +42,8 @@ export function createMemoryBoardClient(schemas: MemoryWireSchemas, http: ApiCli
     readBoard: (boardId, signal) => http.request(readPath({ boardId, view: 'board' }), schemas.board, { signal }),
     readCards: (boardId, filter, options) => http.request(readPath({ boardId, view: 'cards', ...filter, ...pageFields(options) }), schemas.cards, { signal: options?.signal }),
     readCard: (boardId, cardId, options) => http.request(readPath({ boardId, view: 'card', cardId, ...pageFields(options) }), schemas.card, { signal: options?.signal }),
+    readBindings: (boardId, cardId, options) => http.request(readPath({ boardId, view: 'bindings', cardId, ...pageFields(options) }), schemas.bindings, { signal: options?.signal }),
+    readClaims: (boardId, cardId, options) => http.request(readPath({ boardId, view: 'claims', cardId, ...pageFields(options) }), schemas.claims, { signal: options?.signal }),
     readNotes: (boardId, archived, options) => http.request(readPath({ boardId, view: 'notes', archived, ...pageFields(options) }), schemas.notes, { signal: options?.signal }),
     readCommand: (boardId, commandId, signal) => http.request(readPath({ boardId, view: 'command', commandId }), schemas.command, { signal }),
     readChanges: (boardId, afterSequence, options) => {
