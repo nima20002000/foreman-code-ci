@@ -77,8 +77,13 @@ export function createProductionWorkflowChat(input: {
       if (query.runId) {
         const selected = await execution.resolve(principal, { workspaceId, workflowId: query.workflowId,
           workflowNodeId: query.workflowNodeId, runId: query.runId })
-        if (selected.kind === 'selected') return selected.target
-        throw new DomainError('CHAT_TARGET_SELECTION_REQUIRED', 'Choose the exact Run chat target before sending.', 409)
+        if (selected.kind !== 'selected') throw new DomainError(
+          'CHAT_TARGET_SELECTION_REQUIRED', 'Choose the exact Run chat target before sending.', 409)
+        if (selected.state === 'idle' && selected.target.kind === 'workflow_execution') return {
+          kind: 'historical_execution', selection: { workspaceId, workflowId: query.workflowId,
+            workflowNodeId: query.workflowNodeId, runId: query.runId, executionId: selected.target.execution.executionId },
+        }
+        return selected.target
       }
       const read = await agent.read(principal, workspaceId, query)
       if (!read.deliveryTarget) throw new DomainError('CHAT_TARGET_UNAVAILABLE', 'Read the selected Agent before sending.', 409)
