@@ -12,6 +12,12 @@ export class ConversationCredentials {
   private readonly access: PostgresAccessService
   constructor(private readonly pool: pg.Pool) { this.access = new PostgresAccessService(pool) }
 
+  async revoke(conversationId: string, keepPrincipalId?: string): Promise<void> {
+    await this.pool.query(`update management_principals set revoked_at=now()
+      where revoked_at is null and id in (select principal_id from agent_conversation_credentials
+        where conversation_id=$1 and ($2::text is null or principal_id<>$2))`, [conversationId, keepPrincipalId ?? null])
+  }
+
   async issue(context: ConversationFeatureContext) {
     return withTransaction(this.pool, async sql => {
       const repository = new PostgresAgentChatRepository(this.pool)
