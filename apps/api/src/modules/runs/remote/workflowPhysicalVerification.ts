@@ -23,6 +23,7 @@ import type { RunOwnership } from '../ownership.js'
 import { readReconciledDispatchIntent } from './persistence.js'
 import { repeatExecutionIdentity,repeatDigest } from '../repeatResolution.js'
 import type { WorkflowNativeProofRecord } from '../workflowNativeProof.js'
+import { matchesWorkflowNativeTerminalLocked } from '../workflowCoordinationTerminal.js'
 import { remoteWorkflowProcessDigest, remoteWorkflowSourceDigest, remoteWorkflowNativeHistory,
   readPhysicalReadout, hasNativeClosure } from './workflowPhysicalReadout.js'
 import { DomainError } from '../../errors.js'
@@ -35,8 +36,7 @@ import { assertRepeatCanonicalReceiptLocked,requireRepeatCanonicalReceiptBeforeC
 import type { WorkflowPhysicalArtifactsPort } from './workflowPhysicalArtifacts.js'
 import { readWorkflowNativeEntryLocked,workflowNativeReservation,type WorkflowNativeReservation,type WorkflowNativeEntryRecord } from '../workflowNativeEntry.js'
 import { canonicalRepeatEffectReceipt } from '../../run-graph/repeatPublication.js'
-import { workflowNativeSourceId, readWorkflowTerminalSource } from '../workflowNativeSource.js'
-import { assertOriginalWorkflowTerminal } from '../../interactions/workflowTerminalSource.js'
+import { workflowNativeSourceId } from '../workflowNativeSource.js'
 
 export interface RemoteWorkflowMainLifetime {
   execution: HarnessExecution
@@ -492,18 +492,6 @@ async function sharedRemoteBindingRows(sql: GraphTransactionSql, owner: RunOwner
   return rows
 }
 
-/** Closed output uses its committed terminal as readback authority after credentials end. */
-async function isCommittedTerminalReplay(sql: GraphTransactionSql, execution: HarnessExecution,
-  source: WorkflowOriginalNativeSource, session: NativeSessionReference): Promise<boolean> {
-  if (execution.state !== 'completed' || source.type !== 'history' || !source.history.terminalTurn
-    || source.history.pendingInteraction || source.history.pendingInteractions.length) return false
-  const proof = await readWorkflowTerminalSource(sql, execution)
-  if (!proof || proof.original.type !== 'history' || !same(proof.session, session)
-    || !same(proof.original.history.terminalTurn, source.history.terminalTurn)) return false
-  assertOriginalWorkflowTerminal(execution, session, source.history, source.history.terminalTurn.correlationId)
-  return true
-}
-
 async function readRemoteBindingRows(sql: GraphTransactionSql, capture: Bound, retained: boolean,
   input: RemoteWorkflowPhysicalVerificationInput): Promise<RemoteBindingRows> {
   const { readout, lifetime } = capture, receipt = readout.receipt, intent = receipt.intent
@@ -545,11 +533,7 @@ async function readRemoteBindingRows(sql: GraphTransactionSql, capture: Bound, r
     ? await readRetainedRemoteReviewer(sql, execution.data) : undefined
   const reviewerAuthorized = reviewer?.generation === lifetime.closureGeneration && same(reviewer?.session, readout.session)
   const committedPublication = retained && [...capture.publications].some(didGraphTransactionCommit)
-  const completedReplay = !committedPublication && !executionRow?.authorized && !reviewerAuthorized
-    && execution.success && !lifetime.review && receipt.outputValidationComplete
-    && (receipt.terminal?.kind === 'completed' || receipt.terminal?.kind === 'failed')
-    && await isCommittedTerminalReplay(sql, execution.data, capture.source, readout.session)
-  if (!committedPublication && !completedReplay && !receipt.stopFence && !executionRow?.authorized && !reviewerAuthorized) {
+  if (!committedPublication && !receipt.stopFence && !executionRow?.authorized && !reviewerAuthorized) {
     return unavailable('execution_authorization')
   }
   if (!execution.success || execution.data.id !== lifetime.execution.id
@@ -560,7 +544,7 @@ async function readRemoteBindingRows(sql: GraphTransactionSql, capture: Bound, r
     if(execution.data.runId!==lifetime.execution.runId||!same(repeatExecutionIdentity(execution.data),repeatExecutionIdentity(lifetime.execution))
       ||execution.data.runtimeDirectory!==lifetime.execution.runtimeDirectory||!same(execution.data.input,lifetime.execution.input)
       ||execution.data.createdAt!==lifetime.execution.createdAt
-      ||execution.data.result!==undefined&&!same(execution.data.result,readout.output?.result))return unavailable('published_execution')
+      ||execution.data.result!==undefined&&!await matchesWorkflowNativeTerminalLocked(sql,execution.data,readout.output?.result))return unavailable('published_execution')
     const saved=(await sql.query<{receipt:unknown}>('select receipt from remote_execution_receipts where operation_id=$1 for share',[intent.operationId])).rows[0]
     if(!saved||!same(saved.receipt,receipt))return unavailable('published_receipt')
   }
@@ -749,7 +733,7 @@ async function recordRemotePublications(sql: GraphTransactionSql, original: Veri
   // Source publication may precede the execution's terminal update. Only
   // the transaction that sees the matching saved result may retire the Worker.
   if (capture.publications.has(sql) && execution.state === 'completed' && receipt.terminal
-    && (receipt.terminal.result ? same(execution.result, receipt.terminal.result)
+    && (receipt.terminal.result ? await matchesWorkflowNativeTerminalLocked(sql, execution, receipt.terminal.result)
       : receipt.terminal.kind === 'cancelled' && (execution.result?.outcome === 'canceled'
         || lifetime.review && receipt.retainedReviewer && same(execution.result, receipt.retainedReviewer.result)))) {
     capture.terminalPublications.add(sql)
