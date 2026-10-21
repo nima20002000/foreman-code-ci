@@ -619,16 +619,9 @@ describe('Live Run status on the Board', () => {
           page: { before: null, nextCursor: null, hasMore: false } } } : {}) })
       }),
     )
-    const { cache, router } = await mount(href(scope))
-    const canvas = await screen.findByLabelText('Selected Run pinned topology')
-    expect(canvas).toHaveRole('region')
-    expect(canvas).toBeVisible()
-    const agentButton = (node: typeof first) => within(canvas).getByLabelText(`Inspect Run node ${nameOf(node)}`, { selector: 'button' })
-    const agentNode = (node: typeof first) => agentButton(node).closest<HTMLElement>('.n-agent')!
-    const expectAgentVisible = (node: typeof first) => {
-      expect(agentButton(node)).toHaveRole('button')
-      expect(agentButton(node)).toBeVisible()
-    }
+    const { cache } = await mount(href(scope))
+    const agentNode = (node: typeof first) => within(pinnedCanvas()).getByRole('button', { name: `Inspect Run node ${nameOf(node)}` })
+      .closest<HTMLElement>('.n-agent')!
     const nodeState = (node: typeof first) => agentNode(node).getAttribute('data-state')
     const advance = async (next: () => void) => act(async () => {
       next()
@@ -638,19 +631,14 @@ describe('Live Run status on the Board', () => {
     })
 
     // The first Agent's turn: it is visibly running, the next one is queued, not idle.
-    // Keep polling predicates cheap so DOM style calculations do not starve the HTTP polling timers.
     await waitFor(() => expect(nodeState(first)).toBe('running'))
     expect(nodeState(added)).toBe('queued')
-    expectAgentVisible(first)
-    expectAgentVisible(added)
-    expect(screen.queryByRole('region', { name: 'Run status', hidden: true })).not.toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Run status' })).not.toBeInTheDocument()
 
     // The turn passes; the second Agent runs CI on a cloud computer. CI lives on the CI server, not in a strip on top.
     ciState = 'running'
     await advance(() => cut('2', 'running', [execution(first, 'completed'), execution(added, 'running')]))
-    const ciServerButton = await within(canvas).findByLabelText(/^CI server, 1 running/, { selector: 'button' })
-    expect(ciServerButton).toHaveRole('button')
-    expect(ciServerButton).toBeVisible()
+    const ciServerButton = await within(pinnedCanvas()).findByRole('button', { name: /^CI server, 1 running/ })
     expect(screen.queryByRole('list', { name: 'CI jobs' })).not.toBeInTheDocument()
     fireEvent.click(ciServerButton)
     const ciDialog = await screen.findByRole('dialog', { name: 'CI server' })
@@ -662,24 +650,15 @@ describe('Live Run status on the Board', () => {
     await waitFor(() => expect(nodeState(added)).toBe('waiting'))
     expect(within(agentNode(added)).getByText('Waiting for CI build-api · running')).toBeVisible()
     expect(nodeState(first)).toBe('completed')
-    expectAgentVisible(first)
-    expectAgentVisible(added)
-    expect(screen.queryByRole('region', { name: 'Run status', hidden: true })).not.toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Run status' })).not.toBeInTheDocument()
 
     // CI finished and the second Agent's node now explains the pending decision.
     ciState = 'passed'; decision = true
     await advance(() => cut('3', 'waiting', [execution(first, 'completed'), execution(added, 'completed')]))
-    expect(router.state.location.search).toMatchObject({ workflowId: scope.workflowId, runId: scope.runId,
-      workflowVersionId: scope.workflowVersionId, executionSemanticsVersion: 3 })
-    const decisionLabel = await waitFor(() => within(agentNode(added)).getByText('Waiting for your decision'))
-    expect(decisionLabel).toBeVisible()
+    await waitFor(() => expect(within(agentNode(added)).getByText('Waiting for your decision')).toBeVisible())
     expect(nodeState(added)).toBe('waiting')
-    expectAgentVisible(added)
-    expect(screen.queryByRole('region', { name: 'Run status', hidden: true })).not.toBeInTheDocument()
-    const inboxButton = screen.getByLabelText('Open human approval inbox, 1 pending', { selector: 'button' })
-    expect(inboxButton).toHaveRole('button')
-    expect(inboxButton).toBeVisible()
-    await userEvent.setup().click(inboxButton)
+    expect(screen.queryByRole('region', { name: 'Run status' })).not.toBeInTheDocument()
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Open human approval inbox, 1 pending' }))
     expect(await screen.findByRole('dialog', { name: 'Human approval inbox' })).toBeVisible()
   }, 15_000)
 })

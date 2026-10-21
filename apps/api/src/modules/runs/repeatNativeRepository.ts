@@ -21,6 +21,7 @@ export interface RepeatLaunchClaim {
   startedAt: string
   workingDirectory: string
   runtimeDirectory: string
+  memoryBoardDigest?: HarnessExecution['memoryBoardDigest']
   systemPrompt?: HarnessExecution['systemPrompt']
   sessionContinuation?: HarnessExecution['sessionContinuation']
 }
@@ -45,6 +46,7 @@ export function repeatLaunchClaim(scope: RepeatScope, ref: RepeatNodeRef, execut
     technicalAttempt: execution.attempt, inputDigest, createdAt: execution.createdAt,
     startedAt: execution.startedAt, workingDirectory: execution.workingDirectory,
     runtimeDirectory: execution.runtimeDirectory,
+    ...(execution.memoryBoardDigest ? { memoryBoardDigest: execution.memoryBoardDigest } : {}),
     ...(execution.systemPrompt ? { systemPrompt: structuredClone(execution.systemPrompt) } : {}),
     ...(execution.sessionContinuation ? { sessionContinuation: structuredClone(execution.sessionContinuation) } : {}),
   }

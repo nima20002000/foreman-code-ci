@@ -2,13 +2,11 @@ import { useCallback, useRef } from 'react'
 import { useLocation, useNavigate } from '@tanstack/react-router'
 import { boardSidePanelFromSearch, type BoardSidePanel, type RepeatGraphScopeV3 } from '@foreman-code/contracts/wave25'
 import type { RunsSelectorSearchSchema } from '../runs-selector/search'
-import { useSelectedRun } from '../runs-selector/useSelectedRun'
 import { useSidePanelPresentation } from './sidePanelPresentation'
 
 /** Navigation belongs to the URL. Drafts and scroll stay in their existing local owners. */
 export function useWorkflowSidePanel(workspaceId: string, workflowId: string, run?: RepeatGraphScopeV3) {
   const location = useLocation(), navigate = useNavigate()
-  const { generation, isCurrent } = useSelectedRun({ workspaceId, workflowId })
   const search = location.search
   const scope = JSON.stringify([workspaceId, workflowId])
   const opener = useRef<HTMLElement | null>(null)
@@ -21,7 +19,6 @@ export function useWorkflowSidePanel(workspaceId: string, workflowId: string, ru
       workflowVersionId, executionSemanticsVersion } : {}) }),
   [workflowId, runId, workflowVersionId, executionSemanticsVersion])
   const selectPanel = useCallback((next: BoardSidePanel) => {
-    if (!isCurrent(generation)) return
     if (panel.kind === 'none' && next.kind !== 'none') {
       opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
     }
@@ -43,20 +40,18 @@ export function useWorkflowSidePanel(workspaceId: string, workflowId: string, ru
         }
         return selected
       } })
-  }, [navigate, workspaceId, workflowId, keepRun, scope, panel.kind, generation, isCurrent])
+  }, [navigate, workspaceId, workflowId, keepRun, scope, panel.kind])
   const closeOperator = useCallback(() => {
     selectPanel(useSidePanelPresentation.getState().beforeOperator[scope] ?? { kind: 'none' })
   }, [scope, selectPanel])
   const selectView = useCallback((view: 'graph' | 'overview') => {
-    if (!isCurrent(generation)) return
     void navigate({ to: '/workspaces/$workspaceId', params: { workspaceId }, hash: true,
       search: previous => previous.workflowId && previous.workflowId !== workflowId ? previous : ({ ...keepRun(previous), boardView: view }) })
-  }, [navigate, workspaceId, workflowId, keepRun, generation, isCurrent])
+  }, [navigate, workspaceId, workflowId, keepRun])
   const setMemoryOpen = useCallback((open: boolean) => {
-    if (!isCurrent(generation)) return
     void navigate({ to: '/workspaces/$workspaceId', params: { workspaceId }, hash: true,
       search: previous => previous.workflowId && previous.workflowId !== workflowId ? previous : ({ ...keepRun(previous), boardMemory: open ? true : undefined }) })
-  }, [navigate, workspaceId, workflowId, keepRun, generation, isCurrent])
+  }, [navigate, workspaceId, workflowId, keepRun])
   const agentSelection: Extract<BoardSidePanel, { kind: 'agent' }> | undefined = search.boardNodeId
     ? { kind: 'agent', nodeId: search.boardNodeId, tab: search.boardAgentTab ?? 'chat',
       ...(search.boardExecutionId ? { executionId: search.boardExecutionId } : {}) } : undefined
