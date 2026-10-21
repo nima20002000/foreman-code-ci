@@ -1,3 +1,4 @@
+import type { SqlQuery } from '../../infrastructure/transaction.js'
 import { randomUUID } from 'node:crypto'
 import type pg from 'pg'
 import {
@@ -23,7 +24,7 @@ export class PostgresWorkflowChatRepository {
   readonly deliveries: PostgresChatDeliveryRepository
   constructor(readonly pool: pg.Pool) { this.deliveries = new PostgresChatDeliveryRepository(pool) }
 
-  async channel(scope: ChannelScope, sql: Pick<pg.PoolClient, 'query'> = this.pool): Promise<ChannelRecord | undefined> {
+  async channel(scope: ChannelScope, sql: SqlQuery = this.pool): Promise<ChannelRecord | undefined> {
     const row = (await sql.query<ChannelRow>('select * from workflow_chat_channels where workspace_id=$1 and workflow_id=$2',
       [scope.workspaceId, scope.workflowId])).rows[0]
     return row ? { ...scope, id: row.id, revision: Number(row.revision), nextSequence: Number(row.next_sequence) } : undefined
@@ -91,7 +92,7 @@ export class PostgresWorkflowChatRepository {
     await tx.query('update workflow_chat_channels set revision=revision+1,next_sequence=next_sequence+1 where id=$1', [post.channelId])
   }
 
-  async history(scope: ChannelScope, principalId: string, input: ChannelRead = {}, sql: Pick<pg.PoolClient, 'query'> = this.pool): Promise<ChannelPostPage> {
+  async history(scope: ChannelScope, principalId: string, input: ChannelRead = {}, sql: SqlQuery = this.pool): Promise<ChannelPostPage> {
     if (sql === this.pool) return withTransaction(this.pool, tx => this.history(scope, principalId, input, tx),
       { isolation: 'repeatable read', readOnly: true })
     const limit = pageLimit(input.limit)
@@ -121,7 +122,7 @@ export class PostgresWorkflowChatRepository {
     return WorkflowChatPostSchema.parse(row.record)
   }
 
-  async receipts(scope: ChannelScope, principalId: string, input: ChannelRead = {}, sql: Pick<pg.PoolClient, 'query'> = this.pool):
+  async receipts(scope: ChannelScope, principalId: string, input: ChannelRead = {}, sql: SqlQuery = this.pool):
     Promise<{ items: ChatDeliveryReceipt[]; nextCursor: string | null; hasMore: boolean; revision: number }> {
     if (sql === this.pool) return withTransaction(this.pool, tx => this.receipts(scope, principalId, input, tx),
       { isolation: 'repeatable read', readOnly: true })

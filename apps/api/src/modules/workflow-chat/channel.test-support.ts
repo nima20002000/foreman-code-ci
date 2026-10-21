@@ -15,7 +15,7 @@ export const caller: ManagementPrincipal = { id: 'user', name: 'User', audience:
   expiresAt: '9999-12-31T23:59:59.999Z', grants: [{ actions: ['agent_chat:read', 'agent_chat:write', 'agent_chat:cancel'],
     scope: { workspaceIds: ['workspace'], workflowIds: ['workflow'] } }] }
 export const scope = { workspaceId: 'workspace', workflowId: 'workflow' }
-export const target: DeliveryTarget = { kind: 'workflow_execution', agent: { ...scope, workflowNodeId: 'node', agentId: 'agent' },
+export const target: Extract<DeliveryTarget, { kind: 'workflow_execution' }> = { kind: 'workflow_execution', agent: { ...scope, workflowNodeId: 'node', agentId: 'agent' },
   execution: { runId: 'run', workflowVersionId: 'version', executionId: 'execution', activationId: 'activation', attempt: 1 } }
 const qualification = { appliedIntent: 'next_turn' as const, ownerBinding: { configurationVersionId: 'configuration' } }
 

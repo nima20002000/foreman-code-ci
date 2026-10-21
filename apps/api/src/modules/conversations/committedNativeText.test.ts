@@ -9,9 +9,9 @@ const owner = () => ({ scope: { kind: 'operator_chat' as const, conversationId: 
   requestId: 'request-a', sessionId: native.sessionId, turnId: native.turnId })
 const event = (sequence: number, text: string): NativeHarnessEvent => ({ connectionId: 'connection-a', sequence,
   occurredAt: '2026-10-01T00:00:00Z', type: 'assistant.delta', payload: { itemId: native.itemId, text } })
-const saved: Message = { id: 'durable-native-row', conversationId: 'chat-a', requestId: 'request-a', role: 'assistant',
+const saved = { id: 'durable-native-row', conversationId: 'chat-a', requestId: 'request-a', role: 'assistant',
   content: 'Committed text', nativeMessageId: native.itemId, activityNative: native, activityChannel: 'assistant',
-  nativeMessageComplete: false, revision: '17', sequence: '9' }
+  nativeMessageComplete: false, revision: '17', sequence: '9' } satisfies Message
 
 describe('committed native text publisher boundary', () => {
   it('exposes only the durable replacement and keeps original native/message revisions after commit', async () => {

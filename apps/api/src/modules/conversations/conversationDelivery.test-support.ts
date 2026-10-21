@@ -43,7 +43,10 @@ export class DeliveryNativeFixture extends ChatManager {
   async configureSessionPreferences(preferences: SessionPreferences) { this.preferences = structuredClone(preferences) }
   appliedSessionPreferences() { return this.preferences ?? null }
   override async createSession() { this.lastSession = await super.createSession(); return this.lastSession }
-  async reconcileSessionCreation() { return this.lastSession }
+  async reconcileSessionCreation() {
+    if (!this.lastSession) throw new Error('No native creation has been observed.')
+    return this.lastSession
+  }
   override async *startTurn(session: NativeSessionReference, input: NativeTurnInput, signal?: AbortSignal) {
     if (this.pauseBeforeInput) await new Promise<void>(resolve => {
       const stop = () => { signal?.removeEventListener('abort', stop); resolve() }
@@ -94,7 +97,6 @@ export async function conversationDeliveryFixture() {
   }))
   const saved = await seedAgent3(database.pool, database.directory, definition, { run: false })
   const node = saved.version.definition.nodes[0]!
-  if (node.kind === 'job') throw new Error('The conversation fixture requires an Agent node.')
   const query = { workflowId: saved.scope.workflowId, workflowNodeId: node.id, agentId: node.agentId }
   const scope = { workspaceId: saved.scope.workspaceId, workflowId: saved.scope.workflowId }
   const access = new PostgresAccessService(database.pool)

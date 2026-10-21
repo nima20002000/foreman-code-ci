@@ -1,3 +1,4 @@
+import type { SqlQuery } from '../../../infrastructure/transaction.js'
 import { recoverPersistedClaudeCompaction } from '../../harnesses/claudeSdk/recoverCompaction.js'
 import { randomUUID } from 'node:crypto'
 import { mergeContextSnapshot } from './context.js'
@@ -362,7 +363,7 @@ export class SessionControlStore {
 
   /** Reads admitted preferences through the caller's owner transaction without changing defaults. */
   async acceptedSettings(binding: Pick<SessionControlBinding, 'conversationId' | 'principalId' | 'defaultSubject' | 'profileKey'>,
-    selectedMode?: SessionControlState['desiredMode'], sql: Pick<pg.Pool, 'query'> = this.pool): Promise<AcceptedChatSettings> {
+    selectedMode?: SessionControlState['desiredMode'], sql: SqlQuery = this.pool): Promise<AcceptedChatSettings> {
     const record = (await sql.query<{ record: unknown }>(
       'select record from conversation_session_controls where conversation_id=$1', [binding.conversationId])).rows[0]
     const state = record ? SessionControlStateSchema.parse(record.record) : undefined

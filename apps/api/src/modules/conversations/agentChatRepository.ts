@@ -1,3 +1,4 @@
+import type { SqlQuery } from '../../infrastructure/transaction.js'
 import { boundedConversationMessages } from './snapshotMessages.js'
 import { admitSessionMessage } from './sessionControls/messageAdmission.js'
 import { withTransaction, type TransactionSql } from '../../infrastructure/transaction.js'
@@ -32,7 +33,7 @@ import { legacyProviderAccountBinding, readProviderAccountBinding, type Accepted
   from '../provider-accounts/acceptedBindings.js'
 import type { AcceptedProviderAccountBinding } from '@foreman-code/contracts/provider-accounts'
 
-type Queryable = Pick<pg.PoolClient, 'query'>
+type Queryable = SqlQuery
 type State = NonNullable<Awaited<ReturnType<PostgresAgentChatRepository['state']>>>
 export function agentActivityScope(loaded: Pick<State, 'row' | 'selection'>): ActivityScope {
   const { row } = loaded

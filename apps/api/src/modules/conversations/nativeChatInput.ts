@@ -47,7 +47,7 @@ export function restoreAcceptedChatInput(manager: object, correlationId: string,
   manager.restorePreparedInput(correlationId, accepted)
 }
 
-export function validateChatInput(input: { content: string; attachments?: readonly unknown[] }): void {
+export function validateChatInput(input: { content: string; attachments?: readonly unknown[] | undefined }): void {
   if (!input.content.trim() && !input.attachments?.length) {
     throw new DomainError('CHAT_INPUT_EMPTY', 'Write a message or attach a file before sending.', 422)
   }
@@ -82,7 +82,7 @@ export function validatePreparedChatInput(prepared: PreparedChatInput, workerReq
 }
 
 /** A remote admission cannot silently fall back to validating only user text. */
-export async function preflightChatInput(input: { content: string; attachments?: readonly unknown[] }, options: {
+export async function preflightChatInput(input: { content: string; attachments?: readonly unknown[] | undefined }, options: {
   workerRequired: boolean; prompt: string; startup?: boolean; settings?: AcceptedChatSettings; prepare?: () => Promise<PreparedChatInput>
 }): Promise<AcceptedChatInput> {
   validateChatInput(input)

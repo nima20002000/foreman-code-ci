@@ -1,3 +1,4 @@
+import type { SqlQuery } from '../../infrastructure/transaction.js'
 import { withWorkflowChatContext } from '../workflow-chat/nativeContext.js'
 import { nativeChatPrompt, preflightChatInput, restoreAcceptedChatInput, type AcceptedChatInput, type AcceptedChatSettings, type PreparedChatInput } from './nativeChatInput.js'
 import { logIgnoredError } from '../diagnostics/ignoredError.js'
@@ -1122,11 +1123,8 @@ export class AgentChatService {
     const settings = await this.sessionControls.acceptedSettings({ conversationId: resolution.row.id, principalId: principal.id,
       defaultSubject: `${resolution.row.workspace_id}:${resolution.row.agent_id}`, profileKey: configuration.id }, request.sessionMode, sql ?? this.pool)
     const userPrompt = withWorkflowChatContext(nativeChatPrompt(sessionTaskContent(request.content, settings.sessionMode), Boolean(request.attachments?.length)), channelContext)
-    const skills = configuration.instructionDelivery !== 'native-v1' && resolution.create?.origin.kind === 'fresh'
-      ? legacySkillPrompt(configuration) : []
-    const prompt = request.intent === 'steer' ? userPrompt : resolution.row
-      ? agentMessagePrompt(resolution.row.record, configuration, userPrompt).text
-      : skills.length ? [...skills, '', 'USER MESSAGE', userPrompt].join('\n') : userPrompt
+    const prompt = request.intent === 'steer' ? userPrompt
+      : agentMessagePrompt(resolution.row.record, configuration, userPrompt).text
     const startup = request.intent !== 'steer' && !resolution.row?.record.startupDelivered
     const featureContext = await conversationFeatureContext(sql ?? this.pool, resolution.row, configuration)
     const prepare = (text: string) => preflightChatInput(request, {
@@ -1248,7 +1246,7 @@ export class AgentChatService {
   private async authorizeDelivery(principal: ManagementPrincipal, target: ConversationTarget,
     action: 'read' | 'write' | 'cancel', tx?: TransactionSql): Promise<void> {
     if (target.kind !== 'agent_conversation') throw new DomainError('CHAT_TARGET_INVALID', 'An Agent owner requires its Agent target.', 422)
-    const sql = tx ?? this.pool
+    const sql: SqlQuery = tx ?? this.pool
     const row = (await sql.query<Pick<AgentConversationRow, 'workspace_id' | 'workflow_id' | 'workflow_node_id' | 'agent_id' | 'origin_run_id'>>(
       "select workspace_id,workflow_id,workflow_node_id,agent_id,origin_run_id from operator_conversations where kind='agent' and id=$1",
     [target.conversationId])).rows[0]
@@ -1603,7 +1601,7 @@ export class AgentChatService {
       : configuration
   }
 
-  private async pendingConfiguration(row: AgentConversationRow, sql: Pick<pg.PoolClient, 'query'> = this.pool) {
+  private async pendingConfiguration(row: AgentConversationRow, sql: SqlQuery = this.pool) {
     if (row.origin_run_id && !row.native_session_id && !row.record.startupDelivered) return undefined
     const agent = (await sql.query<{ current_configuration_version_id: string | null }>(
       'select current_configuration_version_id from agents where workspace_id=$1 and id=$2 and archived_at is null',

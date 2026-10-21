@@ -1,3 +1,4 @@
+import type { SqlQuery } from '../../infrastructure/transaction.js'
 import type pg from 'pg'
 import {
   ChatDeliveryReceiptSchema, ChatSendRequestSchema,
@@ -14,7 +15,7 @@ interface StoredRow {
   owner_admission: StoredDelivery['ownerAdmission']; sequence: string; revision: string
   owner_binding: DeliveryOwnerBinding
 }
-type Query = Pick<pg.PoolClient, 'query'>
+type Query = SqlQuery
 function stored(row: StoredRow): StoredDelivery {
   const request = ChatSendRequestSchema.parse(row.request)
   if (!request.commandId) throw new Error('A durable chat command has no identity.')

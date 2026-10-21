@@ -9,8 +9,8 @@ import type { AcceptedChatInput } from '../conversations/nativeChatInput.js'
 export interface ChannelScope { workspaceId: string; workflowId: string }
 export interface ChannelRecord extends ChannelScope { id: string; revision: number; nextSequence: number }
 export interface ChannelPage<T> { items: T[]; nextCursor: string | null; hasMore: boolean; revision: number }
-export interface ChannelRead { cursor?: string; limit?: number; postId?: string; receiptId?: string;
-  commandId?: string; runId?: string }
+export interface ChannelRead { cursor?: string | undefined; limit?: number | undefined; postId?: string | undefined; receiptId?: string | undefined;
+  commandId?: string | undefined; runId?: string | undefined }
 /** Private admission pins; public nativeTurnId may later identify the delivered continuation instead. */
 export interface DeliveryOwnerBinding {
   agentIdentity?: AgentIdentity

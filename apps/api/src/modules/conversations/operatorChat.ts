@@ -1,3 +1,4 @@
+import type { SqlQuery } from '../../infrastructure/transaction.js'
 import { nativeChatPrompt, preflightChatInput, restoreAcceptedChatInput, validateChatInput, type AcceptedChatInput, type AcceptedChatSettings, type PreparedChatInput } from './nativeChatInput.js'
 import { operatorMessagePrompt } from './operatorInput.js'
 import { installChatDeliveryBridge, operatorDeliveryBridge } from '../workflow-chat/deliveryBridgeAccess.js'
@@ -8,7 +9,7 @@ import { ConversationDeliveryOwner, type ConversationTarget } from './conversati
 import type { PostgresChatDeliveryRepository } from '../workflow-chat/deliveryRepository.js'
 import type { DeliveryQualification, StoredDelivery } from '../workflow-chat/model.js'
 import type { ChatSendRequest, ChatDeliveryReceipt } from '@foreman-code/contracts'
-import { SessionControlStateSchema } from '@foreman-code/contracts'
+import { SessionControlStateSchema, sessionTaskContent } from '@foreman-code/contracts'
 import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
 import { validateMessageAttachments } from './messageAttachments.js'
 import { logIgnoredError } from '../diagnostics/ignoredError.js'
@@ -691,7 +692,7 @@ export class OperatorChatService {
   private async authorizeDelivery(principal: ManagementPrincipal, target: ConversationTarget,
     action: 'read' | 'write' | 'cancel', sql?: TransactionSql): Promise<void> {
     if (target.kind !== 'operator_conversation') throw new DomainError('CHAT_TARGET_INVALID', 'An Operator conversation is required.', 422)
-    const query = sql ?? this.repository.pool
+    const query: SqlQuery = sql ?? this.repository.pool
     const live = await readLiveManagementPrincipal(query, principal.id)
     requireAuthorization(principal, 'operator_chat:read')
     if (action !== 'read') requireAuthorization(principal, action === 'write' ? 'operator_chat:write' : 'operator_chat:cancel')
@@ -783,7 +784,7 @@ export class OperatorChatService {
       const row = await this.repository.active(id), runtime = this.runtimes.get(id), binding = command.ownerBinding
       let state: ChatDeliveryReceipt['state'] = 'failed', nativeTurnId: string | undefined, errorCode = 'CHAT_TARGET_CHANGED'
       if (row?.active_request_id === binding.ownerRequestId && row?.active_native_turn_id === binding.nativeTurnId
-        && runtime?.session?.nativeSessionId === binding.nativeSessionId && runtime?.manager.steerTurn && binding.nativeTurnId && binding.acceptedInput) {
+        && runtime?.session && runtime.session.nativeSessionId === binding.nativeSessionId && runtime.manager.steerTurn && binding.nativeTurnId && binding.acceptedInput) {
         try {
           runtime.manager.setSessionControlPrincipal?.(principal.id)
           restoreAcceptedChatInput(runtime.manager, nativeCorrelation(id, command.request.commandId), binding.acceptedInput)
@@ -1613,7 +1614,7 @@ export class OperatorChatService {
         for (const command of commands) {
           const binding = command.ownerBinding
           let accepted = false
-          if (binding.nativeTurnId && runtime?.session?.nativeSessionId === binding.nativeSessionId && runtime.manager.reconcileSteers) {
+          if (binding.nativeTurnId && runtime?.session && runtime.session.nativeSessionId === binding.nativeSessionId && runtime.manager.reconcileSteers) {
             try {
               const evidence = await runtime.manager.reconcileSteers(runtime.session, [{
                 clientCorrelationId: nativeCorrelation(id, command.request.commandId), expectedTurnId: binding.nativeTurnId,

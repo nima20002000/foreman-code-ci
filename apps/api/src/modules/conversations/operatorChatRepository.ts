@@ -1,3 +1,4 @@
+import type { SqlQuery } from '../../infrastructure/transaction.js'
 import { boundedConversationMessages } from './snapshotMessages.js'
 import type { TextTruncation } from '@foreman-code/contracts/activity-text'
 import { withTransaction, type TransactionSql } from '../../infrastructure/transaction.js'
@@ -80,7 +81,7 @@ export interface ConversationRow {
   last_result: ExecutionResult | null
   updated_at: Date
 }
-type Queryable = Pick<pg.PoolClient, 'query'>
+type Queryable = SqlQuery
 
 export interface OperatorTerminal {
   observation: {

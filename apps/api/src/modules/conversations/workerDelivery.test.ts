@@ -1,3 +1,4 @@
+import { SessionPreferencesSchema } from '@foreman-code/contracts'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { WorkerConversationReceiptSchema } from '@foreman-code/contracts/remote-execution-rpc'
 import type { NativeInitialTurnInput } from '../harnesses/port.js'
@@ -11,7 +12,7 @@ describe('accepted cold/queued Worker inputs through the actual Main/Worker publ
   afterEach(async () => { await f.close() })
   const collect = async (events: AsyncIterable<unknown>) => { for await (const event of events) void event }
   const input = (correlationId: string, prompt: string, mode: 'regular' | 'plan' = 'plan'): NativeInitialTurnInput => ({
-    clientCorrelationId: correlationId, prompt, sessionMode: mode, sessionPreferences: { contextBudget: 4096 },
+    clientCorrelationId: correlationId, prompt, sessionMode: mode, sessionPreferences: SessionPreferencesSchema.parse({ contextBudget: 4096 }),
     onSessionObserved: async () => {},
   })
 
@@ -44,7 +45,7 @@ describe('accepted cold/queued Worker inputs through the actual Main/Worker publ
       { correlationId: 'C', mode: 'regular', preferences: { contextBudget: 4096 } }])
     expect(f.frames.filter(frame => frame.method === 'conversation.initial-turn').map(frame => frame.correlationId)).toEqual(['A', 'B', 'C'])
     expect(f.credentials).toContain('token-two')
-    expect((await f.journal.conversations.read(f.binding))?.appliedPreferences).toEqual({ contextBudget: 4096 })
+    expect((await f.journal.conversations.read(f.binding))?.appliedPreferences).toEqual(SessionPreferencesSchema.parse({ contextBudget: 4096 }))
   })
 
   it('retains proof across replacement and rejects prompt/settings/credential growth before any native input', async () => {
@@ -57,7 +58,7 @@ describe('accepted cold/queued Worker inputs through the actual Main/Worker publ
       restoreAcceptedChatInput(next, 'proof', accepted)
       await expect(collect(next.startInitialTurn!(f.start('proof', variant === 'credential' ? 'a-larger-new-token' : 'token-one'), {
         ...original, ...(variant === 'prompt' ? { prompt: `${original.prompt}!` } : {}),
-        ...(variant === 'preferences' ? { sessionPreferences: { contextBudget: 8192 } } : {}),
+        ...(variant === 'preferences' ? { sessionPreferences: SessionPreferencesSchema.parse({ contextBudget: 8192 }) } : {}),
       }))).rejects.toMatchObject({ code: 'CHAT_PREFLIGHT_CHANGED' })
     }
     expect(f.inputs).toEqual([])

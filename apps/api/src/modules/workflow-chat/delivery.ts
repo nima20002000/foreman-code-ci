@@ -17,7 +17,7 @@ import { readRetainedDeliveryInputs, type DeliveryInputRead } from './retainedIn
 import { PostgresChatControlRepository } from './controlRepository.js'
 
 export interface ConversationDeliveryPort extends Pick<ExecutionChatPort, 'deliver' | 'stop' | 'cancel'> {
-  read(principal: ManagementPrincipal, request: { target: DeliveryTarget; cursor?: string; limit?: number }): Promise<ChatTargetRead>
+  read(principal: ManagementPrincipal, request: { target: DeliveryTarget; cursor?: string | undefined; limit?: number | undefined }): Promise<ChatTargetRead>
 }
 export interface ChatTargetAuthority {
   authenticate(principal: ManagementPrincipal, target: DeliveryTarget, action: 'read' | 'write' | 'cancel'): Promise<ManagementPrincipal>
@@ -131,8 +131,8 @@ export class ChatDeliveryRouter {
     componentLogger('engine').warn({ receiptId: id, err: error }, 'Chat prepared admission remains pending')
   }
 
-  async read(principal: ManagementPrincipal, input: { target: DeliveryTarget; cursor?: string; limit?: number;
-    commandId?: string; receiptId?: string; deliveryInputs?: DeliveryInputRead }) {
+  async read(principal: ManagementPrincipal, input: { target: DeliveryTarget; cursor?: string | undefined; limit?: number | undefined;
+    commandId?: string | undefined; receiptId?: string | undefined; deliveryInputs?: DeliveryInputRead | undefined }) {
     const target = DeliveryTargetSchema.parse(input.target)
     const caller = await this.authority.authenticate(principal, target, 'read')
     if (input.receiptId) {

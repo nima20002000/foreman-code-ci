@@ -1,11 +1,11 @@
-import type pg from 'pg'
+import type { SqlQuery } from '../../infrastructure/transaction.js'
 import { AgentSubjectSchema, type AgentConfigurationVersion, type AgentSubject } from '@foreman-code/contracts'
 import { PostgresWorkflowRepository } from '../workflows/postgres.js'
 import { DomainError } from '../errors.js'
 import type { AgentConversationRow } from './agentChatRepository.js'
 
 /** Accepted conversation facts for D's shared scoped-credential resolver. Never an Operator or fabricated Run. */
-export async function conversationFeatureContext(sql: Pick<pg.PoolClient, 'query'>,
+export async function conversationFeatureContext(sql: SqlQuery,
   row: AgentConversationRow, configuration: AgentConfigurationVersion, acceptedWorkflowVersionId?: string) {
   if (configuration.workspaceId !== row.workspace_id || configuration.agentId !== row.agent_id) {
     throw new DomainError('CHAT_SUBJECT_CONFIGURATION_MISMATCH', 'The accepted configuration belongs to another Agent.', 409)

@@ -1,3 +1,4 @@
+import type { SqlQuery } from '../../infrastructure/transaction.js'
 import type pg from 'pg'
 import { ChatControlReceiptSchema, type ChatControlReceipt, type ChatStopRequest,
   type ChatQueueCancelRequest, type DeliveryTarget } from '@foreman-code/contracts'
@@ -11,7 +12,7 @@ export interface ControlOwnerBinding { conversationId: string; requestId?: strin
 export interface StoredControl {
   request: RetainedControlRequest; receipt: ChatControlReceipt; ownerBinding: ControlOwnerBinding; inputHash: string
 }
-type Query = Pick<pg.PoolClient, 'query'>
+type Query = SqlQuery
 
 /** Command replay reads the admitted effective operation before looking at a current native owner. */
 export class PostgresChatControlRepository {

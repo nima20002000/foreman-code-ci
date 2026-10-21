@@ -79,7 +79,7 @@ export class LegacyChatDeliveryBridge {
   }
 
   async stopAgent(principal: ManagementPrincipal, workspaceId: string, conversationId: string,
-    input: { requestId: string; scope: ChatStopRequest['scope']; expectedNativeTurnId?: string }) {
+    input: { requestId: string; scope: ChatStopRequest['scope']; expectedNativeTurnId?: string | undefined }) {
     const target = await this.conversationTarget(principal, workspaceId, conversationId)
     const receipt = await this.router.stop(principal, { commandId: input.requestId, target, scope: input.scope,
       ...(input.expectedNativeTurnId ? { expectedNativeTurnId: input.expectedNativeTurnId } : {}) })
@@ -100,7 +100,7 @@ export class LegacyChatDeliveryBridge {
   }
 
   async readAgentInputs(principal: ManagementPrincipal, workspaceId: string,
-    input: { query?: AgentChatQuery; conversationId?: string; target?: DeliveryTarget }, deliveryInputs: DeliveryInputRead) {
+    input: { query?: AgentChatQuery | undefined; conversationId?: string | undefined; target?: DeliveryTarget | undefined }, deliveryInputs: DeliveryInputRead) {
     const target = input.target ?? (input.conversationId
       ? await this.conversationTarget(principal, workspaceId, input.conversationId)
       : input.query ? await this.agentTarget(principal, workspaceId, input.query) : undefined)
