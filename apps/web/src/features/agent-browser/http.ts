@@ -4,7 +4,7 @@ import { assertSession, installationHeaders, reloadChangedInstallation, sessionG
 /** Transport only. D supplies canonical C0 serialization/parsing; no wire shape lives here. */
 export interface BrowserWireCodec<Arguments extends readonly unknown[], Result> {
   encode(...args: Arguments): { json?: unknown; bytes?: Uint8Array; query?: URLSearchParams; headers?: HeadersInit }
-  decode(response: Response): Promise<Result>
+  decode(response: Response, args: Arguments): Promise<Result>
 }
 
 export type BrowserMethodCodec<Method> = Method extends (...args: infer Arguments) => Promise<infer Result>
@@ -27,7 +27,7 @@ export function createBrowserHttp(options: BrowserHttpOptions) {
     if (encoded.query) url.search = encoded.query.toString()
     const headers = installationHeaders(encoded.headers)
     let body: BodyInit | undefined
-    if (encoded.bytes) body = new Blob([new Uint8Array(encoded.bytes)])
+    if (encoded.bytes) { body = new Blob([new Uint8Array(encoded.bytes)]); headers.set('content-type', 'application/octet-stream') }
     else if (encoded.json !== undefined) { body = JSON.stringify(encoded.json); headers.set('content-type', 'application/json') }
     const response = await (options.fetch ?? globalThis.fetch)(url, { method, credentials: 'omit', cache: 'no-store', headers, body, signal: requestSignal })
     assertSession(generation); requestSignal.throwIfAborted()
@@ -37,7 +37,7 @@ export function createBrowserHttp(options: BrowserHttpOptions) {
       if (failure.code) reloadChangedInstallation(failure.code)
       throw Object.assign(new Error(failure.message), failure, { status: response.status })
     }
-    const result = await codec.decode(response)
+    const result = await codec.decode(response, args)
     assertSession(generation); requestSignal.throwIfAborted()
     return result
   }

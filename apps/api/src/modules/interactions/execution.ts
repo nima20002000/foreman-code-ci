@@ -1010,6 +1010,7 @@ export class ApprovalExecutionCoordinator {
         current, active.binding, !!active.nativeTarget)
       this.managerCredentials.set(current.manager, consultation.credential)
       await this.collaboration?.prepareConsultation(owner, source, active.binding, transaction)
+      const browserPrompt = await this.collaboration?.readConsultationPrompt(active.binding, transaction)
       const start = { kind: 'workflow-consultation' as const, consultation: active.binding, request,
         correlationId: `consultation:${active.binding.consultationId}`,
         ...(active.nativeTurnId ? { nativeTurnId: active.nativeTurnId } : {}),
@@ -1029,7 +1030,7 @@ export class ApprovalExecutionCoordinator {
       const sessionMode = current.activeSessionMode, credential = consultation.credential
       const task = capacity.run(current.controller.signal, () => observeWorkflowConsultation({ binding: active.binding, commandId: command.id, agentId: source.agentId,
         session: current.session!, manager: current.manager, transaction, signal: current.controller.signal,
-        prompt: admittedWorkflowChatPrompt(command), sessionMode,
+        prompt: [admittedWorkflowChatPrompt(command), browserPrompt].filter(Boolean).join('\n\n'), sessionMode,
         captured: active.nativeTarget, secrets: Object.values(credential.environment.variables), assertCurrent: check,
         acknowledge: async (lease, providerId) => {
           await this.interactions.coordination.bindLaneTurn(lease.fence, lease.correlationId)

@@ -4,7 +4,6 @@ import { useSessionControls } from '../sessionControls/useSessionControls'
 import { compactionBlocksSend, parseSessionCommand } from '@foreman-code/contracts'
 import { useMemo, type ReactNode } from 'react'
 import type { AgentChatContext } from '@foreman-code/contracts/agent-chat'
-import type { SelectedRunChatExecution } from '@foreman-code/contracts/selected-run-chat'
 import { ChatAttachmentControl, useConversationAttachments } from '../../attachments'
 import { ChatAttachmentBoundary } from '../ChatAttachmentBoundary'
 
@@ -37,15 +36,14 @@ import '../chatAttachments.css'
 /** Mounted ONLY through the existing Board AgentChatPanel. Server state stays in Query. */
 type AgentConversationProps = {
   context: AgentChatContext; name: string; role?: string; activity?: string; runLabel?: string
-  selection?: SelectedRunChatExecution
   onClose?: () => void; onNewConversation?: () => void
 }
 export function AgentConversation(props: AgentConversationProps) {
-  return <ChatAttachmentBoundary><AgentConversationContent key={`${identityEpoch()}:${agentChatContextKey(props.context)}:${props.selection?.executionId ?? ''}`} {...props} /></ChatAttachmentBoundary>
+  return <ChatAttachmentBoundary><AgentConversationContent key={`${identityEpoch()}:${agentChatContextKey(props.context)}`} {...props} /></ChatAttachmentBoundary>
 }
 
-function AgentConversationContent({ context, name, activity, runLabel, onClose, onNewConversation, selection }: AgentConversationProps) {
-  const chat = useAgentChat(context, { selection }), state = chat.state
+function AgentConversationContent({ context, name, activity, runLabel, onClose, onNewConversation }: AgentConversationProps) {
+  const chat = useAgentChat(context), state = chat.state
   const conversation = state?.conversation
   const retired = conversation?.harness === 'opencode' || state?.capabilities.harness === 'opencode'
   const conversationId = conversation?.id

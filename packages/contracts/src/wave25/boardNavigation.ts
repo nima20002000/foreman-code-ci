@@ -27,10 +27,11 @@ export const BoardSidePanelSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('group_chat') }).strict(),
   z.object({ kind: z.literal('agent'), nodeId: GraphIdSchema,
     tab: z.enum(['chat', 'settings', 'details']), executionId: GraphIdSchema.optional(), waitingActivationId: GraphIdSchema.optional() }).strict(),
-  z.object({ kind: z.literal('browser'), nodeId: GraphIdSchema.optional(), executionId: GraphIdSchema.optional() }).strict(),
+  z.object({ kind: z.literal('browser'), nodeId: GraphIdSchema.optional(), executionId: GraphIdSchema.optional(),
+    waitingActivationId: GraphIdSchema.optional(), sessionId: GraphIdSchema.optional(), tabId: GraphIdSchema.optional() }).strict(),
   z.object({ kind: z.literal('operator') }).strict(),
 ]).superRefine((panel, context) => {
-  if (panel.kind === 'agent' && panel.executionId && panel.waitingActivationId) context.addIssue({ code: 'custom',
+  if ((panel.kind === 'agent' || panel.kind === 'browser') && panel.executionId && panel.waitingActivationId) context.addIssue({ code: 'custom',
     path: ['waitingActivationId'], message: 'Select either an execution or a waiting coordinator.' })
 });
 export type BoardSidePanel = z.infer<typeof BoardSidePanelSchema>
@@ -42,6 +43,7 @@ const BoardSurfaceSelectionFields = {
   boardNodeId: GraphIdSchema.optional(), boardExecutionId: GraphIdSchema.optional(),
   boardWaitingActivationId: GraphIdSchema.optional(),
   boardTeamId: GraphIdSchema.optional(),
+  browserSessionId: GraphIdSchema.optional(), browserTabId: GraphIdSchema.optional(),
   groupRunId: GraphIdSchema.optional(), groupPostId: GraphIdSchema.optional(), groupReceiptId: GraphIdSchema.optional(),
   boardMemory: z.union([z.literal(true), z.literal('true').transform(() => true as const)]).optional(),
 }
@@ -97,7 +99,9 @@ export function boardSidePanelFromSearch(search: WorkspaceBoardSearch): BoardSid
       tab: search.boardAgentTab ?? 'chat', ...(search.boardExecutionId ? { executionId: search.boardExecutionId } : {}),
       ...(search.boardWaitingActivationId ? { waitingActivationId: search.boardWaitingActivationId } : {}) })
     case 'browser': return { kind: 'browser', ...(search.boardNodeId ? { nodeId: search.boardNodeId } : {}),
-      ...(search.boardExecutionId ? { executionId: search.boardExecutionId } : {}) }
+      ...(search.boardExecutionId ? { executionId: search.boardExecutionId } : {}),
+      ...(search.boardWaitingActivationId ? { waitingActivationId: search.boardWaitingActivationId } : {}),
+      ...(search.browserSessionId ? { sessionId: search.browserSessionId } : {}), ...(search.browserTabId ? { tabId: search.browserTabId } : {}) }
     default: return { kind: 'none' }
   }
 }
@@ -142,7 +146,7 @@ export function boardSearchForRun(search: WorkspaceBoardSearch, workflowId: stri
   void _run; void _version; void _semantics; void _node; void _edge; void _exchange
   const changedRun = search.workflowId !== workflowId || search.runId !== run?.runId
     || search.workflowVersionId !== run?.workflowVersionId
-  if (changedRun) { delete rest.boardExecutionId; delete rest.boardWaitingActivationId }
+  if (changedRun) { delete rest.boardExecutionId; delete rest.boardWaitingActivationId; delete rest.browserSessionId; delete rest.browserTabId }
   return WorkspaceBoardSearchSchema.parse({ ...rest, workflowId, ...(run ? {
     runId: run.runId, workflowVersionId: run.workflowVersionId, executionSemanticsVersion: run.executionSemanticsVersion,
   } : {}) })
@@ -168,7 +172,7 @@ export function staysOnWorkflowBoard(current: { pathname: string; search: unknow
 function authoringSelection(search: WorkspaceBoardSearch): WorkspaceBoardSearch {
   const value = { ...search }
   for (const key of ['activityKind', 'activityAgentId', 'boardView', 'boardPanel', 'boardAgentTab',
-    'boardNodeId', 'boardExecutionId', 'boardWaitingActivationId', 'boardTeamId', 'boardMemory',
+    'browserSessionId', 'browserTabId', 'boardNodeId', 'boardExecutionId', 'boardWaitingActivationId', 'boardTeamId', 'boardMemory',
     'groupRunId', 'groupPostId', 'groupReceiptId'] as const) delete value[key]
   return value
 }

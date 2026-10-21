@@ -82,12 +82,10 @@ function nativeMessage(target: WorkflowChatTarget, row: TextRow, content: string
 /** SQL projection of the existing single observer's retained native source.
  * Old consultation pages load their actual bindings; recent hints are not a history limit. */
 export async function readWorkflowNativeChat(sql: GraphSqlClient, target: WorkflowChatTarget,
-  input: { cursor?: string; limit: number; bindings: CoordinatorConsultationBinding[]; messageId?: string;
-    afterRevision?: string; messageBytes?: number }): Promise<WorkflowNativeChatPage> {
+  input: { cursor?: string; limit: number; bindings: CoordinatorConsultationBinding[]; messageId?: string }): Promise<WorkflowNativeChatPage> {
   const kind = target.kind === 'workflow_execution' ? 'execution' : 'consultation'
   const page = `with message_page as materialized (select source_id,message_key from workflow_native_chat_items
     where kind=$6 and run_id=$1 and scope_id=$2 and ($4::bigint is null or sequence<$4)
-      and ($8::bigint is null or revision>$8)
       and ($7::jsonb is null or (source_id=$7::jsonb->>0
         and message_key::jsonb=jsonb_build_array($7::jsonb->2,$7::jsonb->3,$7::jsonb->4)))
     order by sequence desc limit $5), source_events as (`
@@ -114,20 +112,13 @@ export async function readWorkflowNativeChat(sql: GraphSqlClient, target: Workfl
   )`)
   const rows = (await sql.query<TextRow>(source + textProjection, [workflowTargetRunId(target),
     target.kind === 'workflow_execution' ? target.execution.executionId : target.waitingActivationId,
-    target.agent.workflowNodeId, beforeCursor(target, input.cursor), Math.min(100, input.limit) + 1, kind,
-    input.messageId ?? null, input.afterRevision ?? null])).rows
+    target.agent.workflowNodeId, beforeCursor(target, input.cursor), Math.min(100, input.limit) + 1, kind, input.messageId ?? null])).rows
   const messages: EngineChatMessage[] = [], redactor = nativePersistenceRedactor([])
   let usedBytes = 2
   for (const row of rows.slice(0, Math.min(100, input.limit))) {
     const safe = redactor.text(row.content)
     let message = nativeMessage(target, row, safe)
     let bytes = Buffer.byteLength(canonicalJson(message)) + (messages.length ? 1 : 0)
-    if (input.messageBytes && bytes > input.messageBytes) {
-      const fixed = Buffer.byteLength(canonicalJson(nativeMessage(target, row, ''))) + 128
-      const text = Buffer.from(safe).subarray(0, Math.max(0, Math.floor((input.messageBytes - fixed) / 6)))
-      message = nativeMessage(target, row, new TextDecoder().decode(text, { stream: true }))
-      bytes = Buffer.byteLength(canonicalJson(message))
-    }
     if (!input.messageId && usedBytes + bytes > 192 * 1024) {
       if (messages.length) break
       const fixed = Buffer.byteLength(canonicalJson(nativeMessage(target, row, ''))) + 128

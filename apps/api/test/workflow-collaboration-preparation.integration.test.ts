@@ -100,6 +100,8 @@ describe.skipIf(!postgresEnabled)('workflow collaboration preparation and atomic
         workflowVersionId: f.version.id, activationId: subject.kind === 'execution' ? subject.execution.activationId : undefined })
       const prompt = await integration.readPrompt(f.owner, f.execution)
       expect(prompt).toContain('revision 7')
+      expect(prompt).toContain('owned-browser')
+      expect(prompt).toContain('browser_session_get')
       await f.restart()
       const recovered = (await f.store.readExecution(f.execution.id)).execution
       await integration.prepare(f.owner, f.run, f.version, recovered)

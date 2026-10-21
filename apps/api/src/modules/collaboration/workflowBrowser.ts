@@ -1,3 +1,4 @@
+import { browserSessionPrompt } from './browserPrompt.js'
 import {
   AgentSubjectSchema, BrowserPrepareResultSchema, BrowserReleaseResultSchema, NodeBrowserSettingsSchema,
   type HarnessExecution,
@@ -99,6 +100,15 @@ export class WorkflowBrowserOwnership {
         result.kind === 'unavailable' ? JSON.stringify(result) : null, result.kind === 'ready'
           ? result.session.state === 'ready' && result.control.state === 'agent' ? 'ready' : 'preparing'
           : 'unavailable'])
+    })
+  }
+
+  async readPrompt(owner: RunOwnership, execution: HarnessExecution): Promise<string | undefined> {
+    if (!this.installed) return undefined
+    return withWorkflowPreparation(owner, execution, false, async sql => {
+      const row = (await sql.query<BrowserBinding>('select * from workflow_collaboration_preparations where execution_id=$1',
+        [execution.id])).rows[0]
+      return row?.browser_state === 'ready' && row.browser_session_id ? browserSessionPrompt(row.browser_session_id) : undefined
     })
   }
 

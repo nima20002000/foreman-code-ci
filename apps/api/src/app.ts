@@ -1,3 +1,4 @@
+import { registerProductionBrowserRoutes } from './routes/browserComposition.js'
 import { registerRuntimeInstallationSecurity } from './infrastructure/runtimeIdentity.js'
 import { randomUUID } from 'node:crypto'
 import type { Socket } from 'node:net'
@@ -202,6 +203,9 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
   })
 
   if (options.operator) registerOperatorHttpSecurity(app, options.operator.access, options.localHuman, options.browserOrigin)
+  const browser = options.operator?.services.browser
+  if (browser && options.operator) registerProductionBrowserRoutes(app, browser, { access: options.operator.access,
+    localHuman: options.localHuman, browserOrigin: options.browserOrigin, runtimeIdentity: options.runtimeIdentity })
   if (options.operator) registerManagementRoutes(app, options.operator.services)
   if (options.operator?.services.providerAccounts) registerProviderAccountRoutes(app, options.operator.services.providerAccounts)
   if (options.operator?.services.runPlacements) registerRunPlacementRoutes(app, options.operator.services.runPlacements)

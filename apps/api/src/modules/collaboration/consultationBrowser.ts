@@ -1,3 +1,4 @@
+import { browserSessionPrompt } from './browserPrompt.js'
 import { AgentSubjectSchema, BrowserPrepareResultSchema, BrowserReleaseResultSchema, canonicalJson,
   type CoordinatorConsultationBinding } from '@foreman-code/contracts'
 import { DomainError } from '../errors.js'
@@ -54,6 +55,15 @@ export class ConsultationBrowserOwnership {
       `The coordinator browser is unavailable: ${result.reason}.`, result.retryable ? 503 : 409)
     if (result.session.state !== 'ready' || result.control.state !== 'agent') throw new DomainError(
       'BROWSER_CONTROL_PENDING', 'The coordinator browser is waiting for host-confirmed control.', 503)
+  }
+
+  async readPrompt(transaction: ConsultationTransaction, binding: CoordinatorConsultationBinding) {
+    return transaction(async context => {
+      const current = await readCoordinatorConsultationLocked(context.sql, binding.runId, binding.waitingActivationId)
+      if (canonicalJson(current?.binding) !== canonicalJson(binding)) throw new DomainError('COORDINATOR_BINDING_CONFLICT', 'The consultation browser changed.', 409)
+      const row = (await context.sql.query<BrowserRow>('select * from run_coordinator_consultations where id=$1', [binding.consultationId])).rows[0]
+      return row?.browser_state === 'ready' && row.browser_session_id ? browserSessionPrompt(row.browser_session_id) : undefined
+    })
   }
 
   private async retain(transaction: ConsultationTransaction, binding: CoordinatorConsultationBinding,

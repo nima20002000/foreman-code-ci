@@ -31,8 +31,10 @@ export class WorkflowCollaborationIntegration {
     owner.assertOwned()
     await this.browser.prepare(owner, run, version, execution, () => this.computerId(owner, execution))
   }
-  readPrompt(owner: RunOwnership, execution: HarnessExecution): Promise<string | undefined> {
-    return this.memory.readPrompt(owner, execution)
+  async readPrompt(owner: RunOwnership, execution: HarnessExecution): Promise<string | undefined> {
+    const memory = await this.memory.readPrompt(owner, execution)
+    const browser = await this.browser.readPrompt(owner, execution)
+    return [memory, browser].filter(Boolean).join('\n\n') || undefined
   }
   async effectRepairPrompt(owner: RunOwnership, failure: WorkflowResultEffectFailure): Promise<string> {
     owner.assertOwned()
@@ -58,6 +60,9 @@ export class WorkflowCollaborationIntegration {
     binding: CoordinatorConsultationBinding, transaction: ConsultationTransaction): Promise<void> {
     await this.consultationBrowser.prepare(transaction, binding, () => this.computerId(owner, execution))
     owner.assertOwned()
+  }
+  readConsultationPrompt(binding: CoordinatorConsultationBinding, transaction: ConsultationTransaction) {
+    return this.consultationBrowser.readPrompt(transaction, binding)
   }
   releaseConsultation(binding: CoordinatorConsultationBinding, transaction: ConsultationTransaction,
     reason: 'terminal' | 'stop'): Promise<void> {
