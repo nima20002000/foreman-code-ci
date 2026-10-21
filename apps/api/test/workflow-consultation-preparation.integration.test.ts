@@ -4,6 +4,7 @@ import { WorkflowExecutionChatResolutionSchema } from '@foreman-code/contracts'
 import { WorkflowExecutionChatService } from '../src/modules/collaboration/workflowChatService.js'
 import { workflowChatInputPrompt } from '../src/modules/interactions/workflowChatInput.js'
 import { DomainError } from '../src/modules/errors.js'
+import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { checkpointRuntimeFixture } from './helpers/wave25Br1003Runtime.js'
 import { CheckpointTestProvider } from './helpers/wave25Br1003Provider.js'
 import { hierarchyRuntimeFixture, coordinationOutput } from './helpers/hierarchyRuntimeFixture.js'
@@ -52,7 +53,7 @@ describe.skipIf(!postgresEnabled)('coordinator consultation preparation', () => 
     })
     let first: Promise<unknown> | undefined
     try {
-      const caller = await f.access.issue({ name: 'Consultation Operator', audience: 'operator',
+      const caller = await new PostgresAccessService(f.db.pool).issue({ name: 'Consultation Operator', audience: 'operator',
         grants: [{ actions: ManagementActionSchema.options, scope: { workspaceIds: [f.f.run.workspaceId] } }] })
       const chat = new WorkflowExecutionChatService(f.db.pool, {
         owner: f.native.workflowChatOwner(f.db.pool, async (_context, request) => ({ nativePrompt: workflowChatInputPrompt(request) })),
