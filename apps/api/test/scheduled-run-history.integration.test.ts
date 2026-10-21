@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import {
-  AcceptedRepeatStartV1Schema, CurrentWorkflowSaveResultSchema, CURRENT_WORKFLOW_TOOLS,
+  AcceptedRepeatStartV1Schema, CurrentOperatorCapabilitiesSchema, CurrentWorkflowSaveResultSchema, CURRENT_WORKFLOW_TOOLS,
   makeCurrentWorkflowFixture, RunStartV3ResultSchema,
 } from '@foreman-code/contracts/wave25'
 import { RunBoardSnapshotGetResultSchema, RunDropdownPageSchema } from '@foreman-code/contracts/run-snapshots'
@@ -216,15 +216,38 @@ describe.skipIf(!postgresEnabled)('SCH-05 immutable Board/history authenticated 
         expect(schema.name).toBe(name)
         expect(schema.inputSchema).toEqual(tool?.inputSchema)
         expect(schema.outputSchema?.type).toBe('object')
+        expect(schema.permissionRequirements.actions).toEqual(['runs:read'])
       }
       expect(discovery.map((tool) => tool.name)).not.toContain('run_start')
-      const caps = value(await r.client.callTool({ name: 'operator_get_capabilities', arguments: { detail: 'full' } })) as {
-        runtimeLimits: Array<{ feature: string; detail: string }> }
-      expect(caps.runtimeLimits.find((item) => item.feature === 'run_board_history')?.detail).toContain('tools/list')
+      const historyNames = Object.values(RUN_HISTORY_TOOLS)
+      for (const detail of ['full', 'compact'] as const) {
+        const response = value(await r.client.callTool({ name: 'operator_get_capabilities', arguments: { detail } }))
+        const caps = detail === 'full' ? CurrentOperatorCapabilitiesSchema.parse(response)
+          : OperatorCompactCapabilitiesSchema.parse(response)
+        expect([...caps.tools].sort()).toEqual(discovery.map(tool => tool.name).sort())
+        if (detail === 'full') {
+          const full = CurrentOperatorCapabilitiesSchema.parse(response)
+          for (const name of historyNames) {
+            expect(full.requirements?.find(entry => entry.name === name)).toMatchObject({ name, actions: ['runs:read'] })
+          }
+          expect(full.runtimeLimits).toContainEqual(expect.objectContaining({ feature: 'run_board_history', state: 'limited' }))
+        }
+      }
       expect((await f.app.inject({ method: 'GET', url: url(RUN_HISTORY_TOOLS.snapshot, args), headers: { authorization: 'Bearer invalid' } })).statusCode).toBe(401)
       await parity(f, r.client, r.token, RUN_HISTORY_TOOLS.snapshot, args)
       const noRead = await reader(f, [{ actions: ['capabilities:read'], scope: {} }])
-      expect((await noRead.client.listTools()).tools.map((tool) => tool.name)).not.toContain(RUN_HISTORY_TOOLS.snapshot)
+      const deniedDiscovery = (await noRead.client.listTools()).tools.map(tool => tool.name)
+      for (const name of historyNames) expect(deniedDiscovery).not.toContain(name)
+      for (const detail of ['full', 'compact'] as const) {
+        const response = value(await noRead.client.callTool({ name: 'operator_get_capabilities', arguments: { detail } }))
+        const caps = detail === 'full' ? CurrentOperatorCapabilitiesSchema.parse(response)
+          : OperatorCompactCapabilitiesSchema.parse(response)
+        for (const name of historyNames) expect(caps.tools).not.toContain(name)
+        if (detail === 'full') {
+          const full = CurrentOperatorCapabilitiesSchema.parse(response)
+          for (const name of historyNames) expect(full.requirements?.map(entry => entry.name)).not.toContain(name)
+        }
+      }
       await denied(f, noRead.client, noRead.token, RUN_HISTORY_TOOLS.snapshot, args, 403, 'ACCESS_DENIED')
       await denied(f, noRead.client, noRead.token, RUN_HISTORY_TOOLS.list, scope(f), 403, 'ACCESS_DENIED')
       await denied(f, r.client, r.token, RUN_HISTORY_TOOLS.snapshot, { ...args, workspaceId: 'forged-workspace' }, 403, 'ACCESS_DENIED')
