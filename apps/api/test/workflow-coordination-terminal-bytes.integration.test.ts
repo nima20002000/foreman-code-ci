@@ -10,7 +10,7 @@ describe.skipIf(!postgresEnabled)('workflow coordination terminal persistence', 
     const saved = makeCurrentWorkflowFixture('terminal-bytes', 'single')
     saved.run = { ...saved.run, resultProtocol: COORDINATION_RESULT_PROTOCOL }
     const output = { data: { z: '雪', a: 'First' }, summary: 'Completed the task.',
-      board: { kind: 'none', reason: 'no_changes' } }
+      board: { kind: 'none', reason: 'no_access' } }
     const f = await checkpointRuntimeFixture(1, 1, { fixture: saved, approvalNodeIds: [],
       collaborationPorts: {}, outputFor: () => output })
     try {

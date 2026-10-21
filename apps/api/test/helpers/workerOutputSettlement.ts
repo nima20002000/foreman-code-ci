@@ -5,6 +5,7 @@ import { RemoteOperationReceiptSchema } from '@foreman-code/contracts/remote-exe
 import { remoteReviewProduction, waitForRemoteReview } from './remoteReviewProduction.js'
 import { completedRun, startWhenReady } from './harnessInstallationUpdate.js'
 import { expectMcpAccessDenied } from './deniedMcpTool.js'
+import { readWorkflowClosure } from '../../src/modules/interactions/workflowClosure.js'
 
 export async function assertWorkerOutputSettlement(cut: 'pending' | 'retired' = 'pending'): Promise<void> {
   const f = await remoteReviewProduction({ workflow: 'single', executionHost: 'worker',
@@ -48,6 +49,9 @@ export async function assertWorkerOutputSettlement(cut: 'pending' | 'retired' = 
     expect(execution.id).toBe(before.executions[0]!.id)
     expect(execution.nativeSessionId).toBe(before.executions[0]!.nativeSessionId)
     expect(execution.result).toEqual(before.executions[0]!.result)
+    expect(await readWorkflowClosure(f.db.pool, execution)).toMatchObject({
+      session: { nativeSessionId: execution.nativeSessionId },
+    })
     const calls = await f.provider.calls()
     expect(calls.filter(call => call.method === 'turn/start'
       && call.correlationId === `execution:${execution.id}`)).toHaveLength(1)

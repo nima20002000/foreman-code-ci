@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { stat } from 'node:fs/promises'
 import { inspect } from 'node:util'
 import { describe, expect, it } from 'vitest'
-import { WorkflowHierarchyReadResultSchema, WorkflowReportsPageSchema } from '@foreman-code/contracts'
+import { COORDINATION_RESULT_PROTOCOL, WorkflowHierarchyReadResultSchema, WorkflowReportsPageSchema } from '@foreman-code/contracts'
 import { AgentMutationResultSchema } from '@foreman-code/contracts/management'
 import { CurrentRunDetailsSchema, CurrentWorkflowSaveResultSchema, RunStartV3ResultSchema,
   SavedManagedWorkflowCommandResultSchema } from '@foreman-code/contracts/wave25'
@@ -67,7 +67,7 @@ describe.skipIf(!postgresEnabled)('single-computer hierarchy Start through authe
       await expect.poll(async () => (await read()).run.executionState, { timeout: 30_000 }).toBe('completed')
       const result = await read()
       expect(result.run).toMatchObject({ outcome: 'succeeded', workflowVersionId: saved.currentVersionId })
-      expect(result.run.resultProtocol).toBeUndefined()
+      expect(result.run.resultProtocol).toBe(COORDINATION_RESULT_PROTOCOL)
       expect(result.executions).toHaveLength(5)
       expect(result.executions.every(execution => execution.result?.outcome === 'succeeded')).toBe(true)
       const reports = WorkflowReportsPageSchema.parse(await workflowChatCall(f, 'workflow_reports_read', { workspaceId, workflowId, runId }))

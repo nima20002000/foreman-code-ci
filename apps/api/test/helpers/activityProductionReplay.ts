@@ -29,6 +29,7 @@ export class ActivityProductionReplay {
   private readonly auxiliary = new Set<string>()
   nextResponse: 'acknowledged' | 'uncertain' | 'unacknowledged' = 'acknowledged'
   nextStart: 'active' | 'complete' | 'approval' | 'reject' | 'uncertain' = 'active'
+  nextCompletionText = 'recorded workflow final'
 
   constructor(private readonly threadIdPrefix = 'recorded-thread',
     private readonly qualifiedModels: readonly string[] = ['test-model']) {}
@@ -72,6 +73,8 @@ export class ActivityProductionReplay {
         if (method === 'turn/start') {
           if (!thread || params.threadId !== thread.id || !Array.isArray(params.input)) throw new Error('Replay turn admission is unscoped.')
           const mode = this.nextStart; this.nextStart = 'active'
+          const completionText = this.nextCompletionText
+          this.nextCompletionText = 'recorded workflow final'
           if (mode === 'reject') throw new CodexRpcError(method, 'recorded-rejection', false, 'CODEX_REQUEST_FAILED')
           const turn: Turn = { id: `recorded-turn-${thread.turns.length + 1}`, status: 'inProgress', itemsView: 'full',
             error: null, startedAt: 1, completedAt: null, durationMs: null,
@@ -85,7 +88,7 @@ export class ActivityProductionReplay {
           }
           if (mode === 'complete' || mode === 'approval') {
             const task = new Promise<void>((resolve, reject) => setImmediate(() => {
-              if (mode === 'complete') { this.complete(thread.id, turn.id, 'recorded workflow final'); resolve() }
+              if (mode === 'complete') { this.complete(thread.id, turn.id, completionText); resolve() }
               else this.ask(thread.id, turn.id).then(resolve, reject)
             }))
             this.inFlight.add(task); void task.finally(() => this.inFlight.delete(task)).catch(() => { /* ignore: disposal awaits the original recorded task; this observer only removes it from the in-flight set. */ })
