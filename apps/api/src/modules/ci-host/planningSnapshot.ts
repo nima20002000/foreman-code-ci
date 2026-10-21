@@ -36,7 +36,7 @@ export class CiPlanningSnapshot implements HostCiEndpoint {
 
   constructor(private readonly endpoint: HostCiEndpoint) {}
 
-  private statusKey(computer: HostCiComputer): string {
+  statusKey(computer: HostCiComputer): string {
     return this.endpoint.statusKey?.(computer) ?? canonicalJson(computer)
   }
 
