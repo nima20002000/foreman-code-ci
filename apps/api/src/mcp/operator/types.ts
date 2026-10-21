@@ -23,7 +23,8 @@ import type { FoundationSettingsManagementService } from '../../modules/settings
 import type { OperatorInteractionService } from '../../modules/interactions/operator.js'
 
 export interface OperatorServices {
-  memoryBoards?: import('../../modules/memory-boards/service.js').MemoryBoardService
+  executionChat?: import('../../modules/collaboration/workflowChatService.js').WorkflowExecutionChatService
+  workflowHierarchy?: import('../../modules/workflow-hierarchy/service.js').WorkflowHierarchyService
   circleAccounts?: import('../../modules/settings/circleAccounts.js').CircleAccountsManagementService
   bugReports?: import('../../modules/bug-reports/service.js').BugReportService
   providerAccounts?: import('../../modules/provider-accounts/service.js').ProviderAccountsService
@@ -51,7 +52,6 @@ export interface OperatorServices {
   buildComputers?: import('../../modules/settings/buildComputers.js').BuildComputerSettings
   devices?: DeviceManagementService
   sources?: import('../../modules/sources/service.js').PostgresSourceService
-  temporaryFiles?: import('../../modules/files/service.js').TemporaryFileService
   fileReferences?: FileReferenceService
   executionReadiness?: import('../../modules/harnesses/executionReadiness.js').ExecutionReadinessService
   runGraph?: RunGraphReadApi
@@ -80,7 +80,6 @@ export interface OperatorServices {
 
 export interface OperatorRequestContext {
   principal: ManagementPrincipal
-  reauthorize?: () => Promise<ManagementPrincipal>
   signal?: AbortSignal
   services: OperatorServices
 }
