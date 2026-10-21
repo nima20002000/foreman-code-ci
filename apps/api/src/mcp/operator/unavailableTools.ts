@@ -34,7 +34,9 @@ export async function unavailableDeviceOperatorToolCall(context: OperatorRequest
   return { jsonrpc: '2.0' as const, id: call.data.id, result: toolFailure(error) }
 }
 
-const OPERATOR_CONTROL_TOOLS = ['operator_chat_cancel', 'operator_chat_respond', 'operator_chat_controls_get', 'operator_chat_controls_update', 'agent_chat_controls_get', 'agent_chat_controls_update'] as const
+const OPERATOR_CONTROL_TOOLS = ['operator_chat_cancel', 'operator_chat_respond', 'operator_chat_controls_get', 'operator_chat_controls_update', 'agent_chat_controls_get', 'agent_chat_controls_update',
+  'agent_chat_ensure_conversation', 'conversation_file_upload', 'conversation_file_finalize',
+  'conversation_file_cancel', 'conversation_files_list', 'conversation_file_read'] as const
 const ControlToolCall = z.object({ jsonrpc: z.literal('2.0'), id: z.union([z.string(), z.number().int()]),
   method: z.literal('tools/call'), params: z.object({ name: z.enum(OPERATOR_CONTROL_TOOLS) }).passthrough() }).passthrough()
 
@@ -43,9 +45,11 @@ export async function unavailableOperatorControlToolCall(context: OperatorReques
   const call = ControlToolCall.safeParse(body)
   if (!call.success || operatorToolAvailable(context, call.data.params.name)) return undefined
   const name = call.data.params.name
-  const composed = name.startsWith('agent_chat_') ? context.services.agentChat : context.services.operatorChat
+  let composed: unknown = context.services.operatorChat
+  if (name.startsWith('agent_chat_')) composed = context.services.agentChat
+  if (name.startsWith('conversation_file')) composed = context.services.temporaryFiles
   const error = composed
-    ? new DomainError('ACCESS_DENIED', 'Operator control requires compatible global control and read grants.', 403)
+    ? new DomainError('ACCESS_DENIED', 'The chat operation requires compatible conversation grants.', 403)
     : new DomainError('OPERATOR_CHAT_UNAVAILABLE', 'Operator chat is not composed in this application.', 503)
   if (error.status === 403) await context.services.commands.recordDenied(context.principal.id, 'mcp', name, `mcp:${name}`)
   return { jsonrpc: '2.0' as const, id: call.data.id, result: toolFailure(error) }

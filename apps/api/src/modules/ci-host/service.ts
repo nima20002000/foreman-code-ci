@@ -24,6 +24,7 @@ import { planCiParts, runsOnCircleCi, unitPartOf } from './parts.js'
 import { planIntegrationParts } from './integrationParts.js'
 import { readCiSlots } from './planningCapacity.js'
 import { CiPlanningSnapshot, isBackgroundYield } from './planningSnapshot.js'
+import { CiComputerStatuses } from './computerStatus.js'
 import { HostCiReads, retryRead } from './readQueries.js'
 import { CI_QUEUE_ORDER, ciQueueReason, compareCiQueue } from './priority.js'
 import { prepareCiSupersession, validateCiSupersession, supersedeCiRuns } from './supersession.js'
@@ -101,7 +102,7 @@ async function inBatches<T>(items: readonly T[], limit: number, work: (item: T) 
 export class HostCiService {
   private dispatching: Promise<void> | undefined
   private dispatchRequested = false
-  private superseding: Promise<void> | undefined
+  private cleaningTickets: Promise<void> | undefined
   private readonly observingRuns = new Map<string, Promise<void>>()
   private readonly cancelingTickets = new Map<string, Promise<{ run: CiRunRecord }>>()
   /** Observed runs whose execution is settled and whose logs and results are still being collected. */
@@ -137,7 +138,15 @@ export class HostCiService {
     this.circleCredits = options.circleCredits
     this.circleStandby = options.circleStandby
     this.reservedCloudSlots = options.reservedCloudSlots ?? 0
+    const statusKey = (computer: HostCiComputer) => endpoint.statusKey?.(computer) ?? canonicalJson(computer)
+    const statuses = new CiComputerStatuses(this.pool,
+      computer => computer.hostRef.kind === 'cloud' ? endpoint.statusKey?.(computer) : undefined,
+      async (run, computer, status) => {
+        await this.reconcileHostStart(run, computer, status)
+        await recordCiExecutorStatus(this.pool, run, computer, status)
+      })
     this.endpoint = {
+      statusKey,
       computers: async () => {
         const computers = await waitForCiDispatch(() => endpoint.computers())
         this.planningEndpoint.observeComputers(computers)
@@ -160,25 +169,14 @@ export class HostCiService {
             throw error
           }
         }
-        const assigned = (await this.pool.query<{ record: unknown; host_key: string }>(
-          `select record,host_key from ci_runs where state in ('starting','running')`)).rows
-          .filter(row => row.host_key === computer.key)
-        let status: CiHostStatus | null = null
         try {
-          const reply = await waitForCiDispatch(send)
-          if (reply.operation === 'status') status = reply
+          const reply = await statuses.read(computer, () => waitForCiDispatch(send))
+          this.planningEndpoint.observeStatus(computer, reply)
           return reply
         } catch (error) {
           // Yielding to foreground work says nothing about the computer; its last-known readiness stays bounded by age.
           if (!isBackgroundYield(error)) this.planningEndpoint.invalidate(computer)
           throw error
-        } finally {
-          for (const row of assigned) {
-            const run = CiRunRecordSchema.parse(row.record)
-            await this.reconcileHostStart(run, computer, status)
-            await recordCiExecutorStatus(this.pool, run, computer, status)
-          }
-          if (status) this.planningEndpoint.observeStatus(computer, status)
         }
       },
     }
@@ -207,10 +205,10 @@ export class HostCiService {
     await Promise.all([this.drain(), this.circleCredits?.close?.()])
   }
 
-  /** Resolves when dispatch, superseded cleanup, observations and readiness reads have finished, including work they start. */
+  /** Resolves when dispatch, ticket cleanup, observations and readiness reads have finished, including work they start. */
   async drain() {
     for (;;) {
-      const pending = [this.dispatching, this.superseding, this.prewarm.drain(),
+      const pending = [this.dispatching, this.cleaningTickets, this.prewarm.drain(),
         ...this.observingRuns.values(), ...this.observingComputers.values(), ...this.cloudDispatches.values(),
         ...this.policyRefreshes.values(), ...this.retainedExecutors.work()]
         .filter(work => work !== undefined)
@@ -764,17 +762,26 @@ export class HostCiService {
     })
   }
 
-  private async cancelSuperseded() {
+  private async cancelObsoleteTickets() {
     const rows = (await this.pool.query<{ record: unknown }>(`select record from ci_runs
-      where state in ('queued','starting','running') and record->>'supersededBy' is not null`)).rows
-    const runs = rows.map(row => CiRunRecordSchema.parse(row.record)).filter(run => run.supersededBy)
+      where state in ('queued','starting','running') and (record->>'supersededBy' is not null
+        or record->>'gate'='true' and exists (
+          select 1 from ci_runs failed where failed.workspace_id=ci_runs.workspace_id
+            and failed.group_id=ci_runs.group_id and failed.state='failed' and failed.record->>'gate'='true'))`)).rows
+    const runs = rows.map(row => CiRunRecordSchema.parse(row.record))
+    let canceled = false
     await inBatches(runs, 8, async run => {
       try {
-        await this.cancelTicket(run.workspaceId, run.id)
+        const audit: CiCancellation | undefined = run.supersededBy ? undefined : {
+          principalId: run.initiator.principalId, source: 'mcp', commandId: randomUUID(), reason: 'gate_failed',
+        }
+        const result = await this.cancelTicket(run.workspaceId, run.id, audit)
+        if (result.run.state === 'canceled') canceled = true
       } catch (error) {
-        log.warn({ err: error, runId: run.id }, 'Superseded CI cleanup failed; retrying')
+        log.warn({ err: error, runId: run.id }, 'CI ticket cleanup failed; retrying')
       }
     })
+    if (canceled) void this.dispatch()
   }
 
   private async saveCancellation(sql: string, parameters: unknown[], run: CiRunRecord,
@@ -1367,10 +1374,12 @@ export class HostCiService {
 
   private refreshComputerStatuses(computers: HostCiComputer[]) {
     for (const computer of computers) {
-      if (this.planningEndpoint.status(computer) || this.observingComputers.has(computer.key)) continue
-      const retry = this.computerStatusRetries.get(computer.key)
+      const key = computer.hostRef.kind === 'cloud'
+        ? this.endpoint.statusKey?.(computer) ?? computer.key : computer.key
+      if (this.planningEndpoint.status(computer) || this.observingComputers.has(key)) continue
+      const retry = this.computerStatusRetries.get(key)
         ?? new RetryBackoff({ initialMs: 5000, maxMs: 300_000 })
-      this.computerStatusRetries.set(computer.key, retry)
+      this.computerStatusRetries.set(key, retry)
       if (!retry.ready()) continue
       // Readiness belongs to dispatch; collecting running tickets uses the shared pool.
       const observation = withCiDatabasePriority(() => readCiComputerStatus(this.endpoint, computer)).then(status => {
@@ -1380,8 +1389,8 @@ export class HostCiService {
         } else {
           retry.fail()
         }
-      }).finally(() => { this.observingComputers.delete(computer.key) })
-      this.observingComputers.set(computer.key, observation)
+      }).finally(() => { this.observingComputers.delete(key) })
+      this.observingComputers.set(key, observation)
     }
   }
 
@@ -1498,9 +1507,9 @@ export class HostCiService {
 
   private async dispatchOnce() {
     const snapshots: PolicySnapshots = new Map()
-    this.superseding ??= withoutCiDatabasePriority(() => this.cancelSuperseded())
-      .catch(error => log.warn({ err: error }, 'Superseded CI cleanup failed; retrying'))
-      .finally(() => { this.superseding = undefined })
+    this.cleaningTickets ??= withoutCiDatabasePriority(() => this.cancelObsoleteTickets())
+      .catch(error => log.warn({ err: error }, 'CI ticket cleanup failed; retrying'))
+      .finally(() => { this.cleaningTickets = undefined })
     const knownComputers = await this.endpoint.computers()
     const { parsed, durations, coverage } = await readQueuedCiRuns(this.pool)
     void withoutCiDatabasePriority(async () => this.prewarm.schedule(knownComputers, parsed))
