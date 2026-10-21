@@ -1,3 +1,4 @@
+import { workflowResultContext } from '../resultContext.js'
 import { parseWorkHandoffArtifactResult } from '@foreman-code/contracts/wave25'
 import { isDeepStrictEqual as same } from 'node:util'
 import { HarnessExecutionSchema, type HarnessExecution } from '@foreman-code/contracts'
@@ -79,11 +80,11 @@ export function createWorkflowArtifactOutputsGate(mainId: string,
     let mappings
     try {
       if (version.definition.handoffs) {
-        mappings = parseWorkHandoffArtifactResult(execution.result, node.artifactOutputs).artifactOutputs.outputs
+        mappings = parseWorkHandoffArtifactResult(execution.result, node.artifactOutputs, workflowResultContext(version, execution)).artifactOutputs.outputs
       } else if (node.choice) {
-        mappings = parseWorkflowArtifactResult(execution.result, node.artifactOutputs, node.choice).artifactOutputs.outputs
+        mappings = parseWorkflowArtifactResult(execution.result, node.artifactOutputs, node.choice, workflowResultContext(version, execution)).artifactOutputs.outputs
       } else {
-        mappings = parseWorkflowArtifactResult(execution.result, node.artifactOutputs).artifactOutputs.outputs
+        mappings = parseWorkflowArtifactResult(execution.result, node.artifactOutputs, node.choice, workflowResultContext(version, execution)).artifactOutputs.outputs
       }
     } catch { return conflict() }
     const native = remote.native

@@ -826,6 +826,7 @@ export async function remoteReviewProduction(options: {
       pauseWorkerConnection: transport.pauseConnections,
       resumeWorkerConnection: transport.resumeConnections,
       dropNextPhysicalReadout: transport.dropNextPhysicalReadout,
+      dropNextSettlement: transport.dropNextSettlement,
       loseNextCompactionResponse: transport.loseNextCompactionResponse,
       conversationRequests: transport.conversationRequests,
       async restoreOriginalResponseGrant() {
