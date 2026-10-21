@@ -652,6 +652,7 @@ export class RemoteNativeSessionManager implements NativeHarnessSessionManager {
   }
   async settleTurn(session: NativeSessionReference, correlationId: string, signal?: AbortSignal) {
     this.assertSession(session)
+    if (this.receipt?.terminal) return this.reconcile(session, correlationId, signal)
     const nativeTurnId = this.receipt?.native?.turnId
     if (!nativeTurnId) throw new Error('Original native turn is unavailable')
     await this.status(await this.request('settle-turn', { correlationId, nativeTurnId }, signal))
