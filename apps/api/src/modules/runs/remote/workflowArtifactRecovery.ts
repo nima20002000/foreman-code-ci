@@ -1,3 +1,4 @@
+import { workflowResultContext } from '../resultContext.js'
 import { isDeepStrictEqual } from 'node:util'
 import type { HarnessExecution } from '@foreman-code/contracts'
 import { ArtifactAttemptSchema } from '@foreman-code/contracts/artifact-edges'
@@ -57,11 +58,11 @@ export async function recoverWorkflowArtifactOutputs(input: {
     await assertSettlementLocked(sql, snapshot.run, [execution.id], owner)
     let mappings
     if (snapshot.version.definition.handoffs) {
-      mappings = parseWorkHandoffArtifactResult(execution.result, node.artifactOutputs).artifactOutputs
+      mappings = parseWorkHandoffArtifactResult(execution.result, node.artifactOutputs, workflowResultContext(snapshot.version, execution)).artifactOutputs
     } else if (node.choice) {
-      mappings = parseWorkflowArtifactResult(execution.result, node.artifactOutputs, node.choice).artifactOutputs
+      mappings = parseWorkflowArtifactResult(execution.result, node.artifactOutputs, node.choice, workflowResultContext(snapshot.version, execution)).artifactOutputs
     } else {
-      mappings = parseWorkflowArtifactResult(execution.result, node.artifactOutputs).artifactOutputs
+      mappings = parseWorkflowArtifactResult(execution.result, node.artifactOutputs, node.choice, workflowResultContext(snapshot.version, execution)).artifactOutputs
     }
     const publication = (await sql.query<{ transfer_receipt: unknown }>(
       `select record->'transferReceipt' as transfer_receipt from file_tool_publications
