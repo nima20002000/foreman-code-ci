@@ -13,7 +13,6 @@ import { beforeGraphCommit, withExclusiveGraphConnection, type GraphTransactionS
 import { openRepeatCanonicalPublicationLocked } from '../run-graph/repeatPublication.js'
 import { withNativeGraphProjectionBatch } from '../run-graph/nativeIngestion.js'
 import { RunOwnership } from './ownership.js'
-import type { WorkflowResultEffectFailure } from './workflowResultEffectFailure.js'
 import type { RepeatRepositoryActivation, RepositoryExecutionSemantics, RepositoryWorkflowRun, RunStateUpdate } from './port.js'
 import { runStartSemantics } from './repeatStartDispatch.js'
 import { RepeatRepositoryFactory } from './repeatRepositoryHost.js'
@@ -29,7 +28,6 @@ import type { WorkflowNativeLease, WorkflowApprovalCorrelation, WorkflowContinua
 import { isWorkflowTranscriptEvent, WorkflowNativeProofServices } from './workflowNativeProof.js'
 import { readWorkflowTerminalSource } from './workflowNativeSource.js'
 import { NATIVE_EVENT_BATCH_SIZE } from '../interactions/nativeEventBatches.js'
-import { readWorkflowCoordinationTerminalLocked } from './workflowCoordinationTerminal.js'
 
 /** Saved pins never default to an old mode. Independent native/graph protocol
  * versions and WorkflowVersion revision numbers are not execution semantics. */
@@ -157,38 +155,14 @@ export class PostgresRunRepository {
     if (!configuration || !execution) return configuration
     const { version } = await this.getRepeatSnapshot(execution.runId)
     const node = version.definition.nodes.find(item => item.id === execution.workflowNodeId)
-    return node && node.kind !== 'job' && (node.skills || node.browser?.enabled)
-      ? this.workflows.resolveNodeSkills(configuration, node.skills, version.nodeSkillSnapshots?.[node.id], node.browser)
+    return node && node.kind !== 'job' && node.skills
+      ? this.workflows.resolveNodeSkills(configuration, node.skills, version.nodeSkillSnapshots?.[node.id])
       : configuration
   }
-  async updateExecution(execution: HarnessExecution, owner: RunOwnership, evidence: RepeatNativeEvidence,
-    resultEffectFailure?: WorkflowResultEffectFailure): Promise<void> {
+  async updateExecution(execution: HarnessExecution, owner: RunOwnership, evidence: RepeatNativeEvidence): Promise<void> {
     const original = captureRepeatNativeEvidence(evidence), incoming = HarnessExecutionSchema.parse(structuredClone(execution))
     this.requireOwner(incoming.runId, owner)
-    await (await this.repeat(owner)).updateExecution(incoming, original, resultEffectFailure)
-    await this.nativeCommitted?.(original)
-  }
-  async readWorkflowTerminalSettlement(execution: HarnessExecution, owner: RunOwnership):
-    Promise<{ nativeResult: ExecutionResult; correlationId: string } | undefined> {
-    this.requireOwner(execution.runId, owner)
-    return this.read(execution.runId, owner, async (sql, snapshot) => {
-      if (!snapshot.run.resultProtocol) return undefined
-      const stored = await readRepeatExecutionLocked(sql, snapshot, execution.id)
-      if (!sameRepeatValue(stored.execution, execution)) throw new DomainError(
-        'COORDINATION_TERMINAL_CONFLICT', 'Terminal recovery requires the exact retained execution.', 409)
-      const retained = await readWorkflowCoordinationTerminalLocked(sql, execution)
-      return retained && !retained.settled
-        ? { nativeResult: retained.nativeResult, correlationId: retained.nativeCorrelationId } : undefined
-    })
-  }
-  async publishWorkflowTerminalSettlement(execution: HarnessExecution, owner: RunOwnership,
-    evidence: RepeatNativeEvidence): Promise<void> {
-    const original = captureRepeatNativeEvidence(evidence), incoming = HarnessExecutionSchema.parse(structuredClone(execution))
-    this.requireOwner(incoming.runId, owner)
-    await owner.oneShotConnection().transaction(async sql => {
-      const { snapshot } = await openWorkflowLifecycleLocked(sql, owner.runId)
-      await this.nativeProof.publishWorkflowTerminalSettlementLocked(sql, snapshot.run, incoming, original, owner)
-    })
+    await (await this.repeat(owner)).updateExecution(incoming, original)
     await this.nativeCommitted?.(original)
   }
   async retainSettledTerminal(owner: RunOwnership, suppliedEvidence: RepeatNativeEvidence): Promise<void> {

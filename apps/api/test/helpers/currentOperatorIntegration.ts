@@ -3,8 +3,6 @@ import { memoryBoardAuthority } from '../../src/modules/collaboration/memoryBoar
 import { PostgresAppInteractionService } from '../../src/modules/interactions/app.js'
 import { workerToolServices } from './workerMcpServices.js'
 import { OperatorInteractionService } from '../../src/modules/interactions/operator.js'
-import { WorkflowHierarchyService } from '../../src/modules/workflow-hierarchy/service.js'
-import { createWorkflowExecutionChatService } from '../../src/modules/collaboration/workflowChatProduction.js'
 import { PostgresWorkspaceRepository } from '../../src/modules/workspaces/postgres.js'
 import { ExecutionReadinessService } from '../../src/modules/harnesses/executionReadiness.js'
 import { NativeRollout } from '../../src/modules/harnesses/nativeRollout.js'
@@ -31,18 +29,17 @@ import { checkpointRuntimeFixture } from './wave25Br1003Runtime.js'
 
 /** Real authenticated transport and qualified production binding over the shared
  * provider-boundary fixture. No fake engine Start/Stop receipt or native proof. */
-export async function currentOperatorIntegration(options: Parameters<typeof checkpointRuntimeFixture>[2] & { agentManagement?: boolean; graphReads?: boolean; interactions?: boolean; workflowHierarchy?: boolean; executionChat?: boolean; reportDispatchFailure?: (runId: string, code: string, error: unknown) => void } = {}) {
+export async function currentOperatorIntegration(options: Parameters<typeof checkpointRuntimeFixture>[2] & { agentManagement?: boolean; graphReads?: boolean; interactions?: boolean;
+  reportDispatchFailure?: (runId: string, code: string, error: unknown) => void } = {}) {
   const f = await checkpointRuntimeFixture(1, 1, options)
   const clients: Client[] = []
   const commands = new PostgresCommandCoordinator(f.db.pool), access = new PostgresAccessService(f.db.pool)
   const writer = await access.issue({ name: 'Current Operator integration', audience: 'operator', expiresAt: new Date(Date.now() + 600000),
     grants: [{ actions: ManagementActionSchema.options, scope: {} }] })
   const dispatchErrors: unknown[] = []
-  const dispatchFailureDetails: unknown[] = []
   const binding = createCurrentNativeProductionFactory({ isRuntimeOpen: () => true,
     reportDispatchFailure: (id, code, error) => {
       dispatchErrors.push(code)
-      dispatchFailureDetails.push(error)
       options.reportDispatchFailure?.(id, code, error)
     } })({ primaryPool: f.db.pool, commands,
     runs: f.runs, workflows: f.workflows, locations: f.locations, engine: f.engine,
@@ -63,8 +60,6 @@ export async function currentOperatorIntegration(options: Parameters<typeof chec
   } })
   if (options.graphReads) Object.assign(services, { runGraph: new RunGraphReadService(f.db.pool, { qualifiedReads: true }) })
   if (options.interactions) Object.assign(services, { interactions: new OperatorInteractionService(f.service) })
-  if (options.workflowHierarchy) Object.assign(services, { workflowHierarchy: new WorkflowHierarchyService(f.db.pool, commands, services.workflows) })
-  if (options.executionChat) Object.assign(services, { executionChat: createWorkflowExecutionChatService(f.db.pool, f.native) })
   const app = buildApp({ appMcp: workerServices.appMcp(access, new PostgresAppInteractionService(f.db.pool, f.repository, commands, f.service)), ...(options.interactions ? { product: {
     workspaces: new PostgresWorkspaceRepository(f.db.pool, f.workflows, f.runs),
     workflows: f.workflows, runs: f.runs, engine: f.engine, interactions: f.service,
@@ -77,7 +72,7 @@ export async function currentOperatorIntegration(options: Parameters<typeof chec
       return client
     }
     const client = await connect(writer.token)
-    return { ...f, app, address, client, connect, writer, access, services, commands, dispatchErrors, dispatchFailureDetails,
+    return { ...f, app, address, client, connect, writer, access, services, commands, dispatchErrors,
       async close() { await Promise.allSettled(clients.map((c) => c.close())); await app.close(); await f.close() },
       async create() {
         const created = (await services.workflows.create(writer.principal, 'mcp', { workspaceId: f.f.scope.workspaceId, commandId: randomUUID(), name: 'Transport current workflow' })).value
