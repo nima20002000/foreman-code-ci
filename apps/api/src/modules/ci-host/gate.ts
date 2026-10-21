@@ -58,28 +58,17 @@ export async function readCiComputerStatus(endpoint: HostCiEndpoint, computer: H
 async function gateComputers(endpoint: HostCiEndpoint, reservedCloudSlots: number,
   usedByComputer: ReadonlyMap<string, number>): Promise<GateComputer[]> {
   const computers = withoutReservedCloudSlots(await endpoint.computers(), reservedCloudSlots)
-  const available: (GateComputer | null)[] = []
-  const unreadableClouds: string[] = []
-  for (let offset = 0; offset < computers.length; offset += 8) {
-    const batch = await Promise.all(computers.slice(offset, offset + 8).map(async computer => {
-      const status = await readCiComputerStatus(endpoint, computer)
-      if (!status && computer.hostRef.kind === 'cloud') unreadableClouds.push(computer.key)
-      if (!status?.ready) return null
-      const shards = buildComputerIntegrationShards(status, computer.buildAllowancePercent)
-      const occupied = Math.max(status.slotsUsed ?? 0, usedByComputer.get(computer.key) ?? 0)
-      // Gate dispatch reserves the whole builder, so even a partially occupied builder cannot start a gate part.
-      const freeSlots = computer.hostRef.kind !== 'cloud' && occupied > 0
-        ? 0 : Math.max(0, (status.slotsTotal ?? 1) - occupied)
-      const available: GateComputer = { computer, shards, freeSlots, checkMs: 0, files: [] }
-      return available
-    }))
-    available.push(...batch)
-  }
-  if (unreadableClouds.length) {
-    throw new DomainError('CI_GATE_CAPACITY_REQUIRED',
-      'Cloud CI status is temporarily unavailable. Retry gate planning after the fleet can be read.',
-      409, { retryable: true, unavailableComputers: unreadableClouds.sort() })
-  }
+  const available = await Promise.all(computers.map(async computer => {
+    const status = await readCiComputerStatus(endpoint, computer)
+    if (!status?.ready) return null
+    const shards = buildComputerIntegrationShards(status, computer.buildAllowancePercent)
+    const occupied = Math.max(status.slotsUsed ?? 0, usedByComputer.get(computer.key) ?? 0)
+    // Gate dispatch reserves the whole builder, so even a partially occupied builder cannot start a gate part.
+    const freeSlots = computer.hostRef.kind !== 'cloud' && occupied > 0
+      ? 0 : Math.max(0, (status.slotsTotal ?? 1) - occupied)
+    const available: GateComputer = { computer, shards, freeSlots, checkMs: 0, files: [] }
+    return available
+  }))
   return available.filter((value): value is GateComputer => value !== null)
 }
 

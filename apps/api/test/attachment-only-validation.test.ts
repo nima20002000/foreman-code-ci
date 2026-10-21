@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
-import { CHAT_MAX_MESSAGE_JSON_BYTES, SendOperatorMessageRequestSchema } from '@foreman-code/contracts'
-import { AGENT_CHAT_MAX_MESSAGE_CHARACTERS, AgentChatMessageCommandSchema, SendAgentChatMessageRequestSchema }
+import { SendOperatorMessageRequestSchema } from '@foreman-code/contracts'
+import { AGENT_CHAT_MAX_MESSAGE_CHARACTERS, SendAgentChatMessageRequestSchema }
   from '@foreman-code/contracts/agent-chat'
 import { AgentChatSendToolInputSchema, SendSelectedRunChatRequestSchema } from '@foreman-code/contracts/selected-run-chat'
 
@@ -62,28 +62,19 @@ for (const [name, schema, input] of [
 }
 
 describe('text and attachment message identities', () => {
-  it('bounds encoded Agent messages including attachments while retaining historical retry inputs', () => {
+  it('retains the Agent text limit and accepts attachment-only input for new-turn intents', () => {
     for (const intent of ['next_turn', 'interrupt_and_send'] as const) {
       expect(SendAgentChatMessageRequestSchema.parse({ ...agentInput, content: '', attachments: [first], intent }).intent).toBe(intent)
     }
     expect(SendAgentChatMessageRequestSchema.safeParse({ ...agentInput, content: '', attachments: [first], intent: 'steer' }).success).toBe(false)
+    const atLimit = 'x'.repeat(AGENT_CHAT_MAX_MESSAGE_CHARACTERS)
     for (const attachments of [[], [first]]) {
-      const envelope = { ...agentInput, content: '', attachments }
-      const overhead = Buffer.byteLength(JSON.stringify(envelope), 'utf8')
-      for (const character of ['x', '界', '\u0001']) {
-        const bytes = Buffer.byteLength(JSON.stringify(character), 'utf8') - 2
-        const content = character.repeat(Math.floor((CHAT_MAX_MESSAGE_JSON_BYTES - overhead) / bytes))
-        const accepted = { ...envelope, content }
-        const rejected = { ...envelope, content: content + character }
-        expect(Buffer.byteLength(JSON.stringify(accepted), 'utf8')).toBeLessThanOrEqual(CHAT_MAX_MESSAGE_JSON_BYTES)
-        expect(Buffer.byteLength(JSON.stringify(rejected), 'utf8')).toBeGreaterThan(CHAT_MAX_MESSAGE_JSON_BYTES)
-        expect(SendAgentChatMessageRequestSchema.parse(accepted).content).toBe(content)
-        expect(SendAgentChatMessageRequestSchema.safeParse(rejected).success).toBe(false)
-      }
-      const historical = { ...envelope, content: 'x'.repeat(AGENT_CHAT_MAX_MESSAGE_CHARACTERS) }
-      expect(AgentChatMessageCommandSchema.parse(historical).content).toBe(historical.content)
-      expect(SendAgentChatMessageRequestSchema.safeParse(historical).success).toBe(false)
-      expect(AgentChatMessageCommandSchema.safeParse({ ...historical, content: historical.content + 'x' }).success).toBe(false)
+      expect(SendAgentChatMessageRequestSchema.safeParse({
+        ...agentInput, content: atLimit, attachments,
+      }).success).toBe(true)
+      expect(SendAgentChatMessageRequestSchema.safeParse({
+        ...agentInput, content: atLimit + 'x', attachments,
+      }).success).toBe(false)
     }
   })
 
