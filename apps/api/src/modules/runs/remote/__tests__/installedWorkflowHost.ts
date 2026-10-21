@@ -9,7 +9,6 @@ import {
   withAdvancedDefaults,
   type AgentConfigurationVersion,
   type NativeSessionReference,
-  type ResultProtocol,
 } from '@foreman-code/contracts'
 import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
 import type { NativeHistory, NativeSessionStart } from '../../../harnesses/port.js'
@@ -158,14 +157,12 @@ export async function sourceFixture(relativeCwd='', options: {
 
 export async function runningInstalledFixture(phase: 'generation' | 'approval wait' = 'generation',
   fixtureOptions: { retainReviewer?: boolean; deferTurn?: boolean; artifactOutputKeys?: string[];
-    resultProtocol?: ResultProtocol;
     mainNow?: () => number; realMcp?: true;
     authorizeReviewer?: () => Promise<void>;
     mcp?: { request: WorkerMcpRelay['request']; onSessionStart(input: NativeSessionStart): Promise<void> } } = {}) {
   const { artifactOutputKeys } = fixtureOptions
   const f = await sourceFixture('', artifactOutputKeys
     ? { artifactOutputKeys, attemptId: randomUUID(), operationId: randomUUID() } : {})
-  if (fixtureOptions.resultProtocol) Object.assign(f.request, { resultProtocol: fixtureOptions.resultProtocol })
   if (fixtureOptions.retainReviewer) f.request.configuration.productRole = 'orchestrator'
   if (artifactOutputKeys) {
     f.request.configuration.harness = { ...DEFAULT_HARNESS_DEFAULTS.codex, sandbox: 'workspace-write' }
