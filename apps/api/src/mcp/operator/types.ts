@@ -23,8 +23,6 @@ import type { FoundationSettingsManagementService } from '../../modules/settings
 import type { OperatorInteractionService } from '../../modules/interactions/operator.js'
 
 export interface OperatorServices {
-  executionChat?: import('../../modules/collaboration/workflowChatService.js').WorkflowExecutionChatService
-  workflowHierarchy?: import('../../modules/workflow-hierarchy/service.js').WorkflowHierarchyService
   circleAccounts?: import('../../modules/settings/circleAccounts.js').CircleAccountsManagementService
   bugReports?: import('../../modules/bug-reports/service.js').BugReportService
   providerAccounts?: import('../../modules/provider-accounts/service.js').ProviderAccountsService
@@ -61,8 +59,6 @@ export interface OperatorServices {
   operatorChat?: Pick<OperatorChatService,
     'readSessionControls' | 'changeSessionControls' | 'setup' | 'create' | 'list' | 'get' | 'history' | 'activityPage'
     | 'send' | 'handoffHistory' | 'cancel' | 'respond' | 'setDeleted'>
-  workflowChat?: import('../../modules/workflow-chat/service.js').WorkflowChatService
-  chatDelivery?: import('../../modules/workflow-chat/delivery.js').ChatDeliveryRouter
   agentChat?: AgentChatService
   fileRetention?: FileRetentionService
   harnessSettings?: { mcp: HarnessMcpSettingsService; directories: HarnessDirectoryBrowser; plugins?: CodexPluginSettingsService; claudePlugins?: ClaudePluginSettingsService }
