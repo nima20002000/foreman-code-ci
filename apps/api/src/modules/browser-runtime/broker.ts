@@ -280,7 +280,7 @@ export class BrowserBroker implements BrowserLifecyclePort {
       }
       if (!input.browser.profileId) return { kind: 'unavailable', reason: 'profile_missing', retryable: false }
       const live = await this.allocate(input.browser.profileId, input.commandId, binding.readOnly, input.subject)
-      try { await this.assertCurrent(live) } catch (error) {
+      try { await this.options.authority.assertCurrent(input.subject) } catch (error) {
         await this.closeOwned(live); throw error
       }
       return { kind: 'ready', session: structuredClone(live.record.session), control: structuredClone(live.record.control) }
@@ -335,7 +335,7 @@ export class BrowserBroker implements BrowserLifecyclePort {
     if (previous?.state === 'completed') throw new DomainError('BROWSER_ALLOCATION_RECOVERY', 'The prepared session must be reconciled from its durable ownership journal.', 503)
     // The exact subject/command/profile/computer admission exists durably before a process or target is allocated.
     await this.options.journal.write(allocationKey, { inputHash, state: 'reserved', value: allocation })
-    if (subject) await this.options.authority.assertCurrent(subject, { profileId })
+    if (subject) await this.options.authority.assertCurrent(subject)
     const native = await this.options.driver.openProfile(profileId)
     if (!Number.isSafeInteger(native.generation) || native.generation < 1) throw new DomainError('BROWSER_GENERATION_INVALID', 'Browser generation was not allocated.', 503)
     if (allocation.generation !== undefined && allocation.generation !== native.generation) {
@@ -343,7 +343,7 @@ export class BrowserBroker implements BrowserLifecyclePort {
     }
     allocation.generation = native.generation
     await this.options.journal.write(allocationKey, { inputHash, state: 'reserved', value: allocation })
-    if (subject) await this.options.authority.assertCurrent(subject, { profileId })
+    if (subject) await this.options.authority.assertCurrent(subject)
     const tab = await this.options.driver.createTab(profileId, native.generation, allocation.token)
     const { sessionId: id, tabId } = allocation
     const session = BrowserSessionSchema.parse({ id, ...(subject ? { subject } : { setupForProfileId: profileId }),
