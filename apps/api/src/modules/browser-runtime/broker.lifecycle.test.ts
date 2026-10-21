@@ -173,6 +173,38 @@ it('binds a preparation command to its original saved assignment and does not re
   expect(f.driver.openProfile).toHaveBeenCalledTimes(1)
 })
 
+it.each(['profile', 'disabled'] as const)('retires a conversation browser when its accepted assignment becomes %s', async change => {
+  const f = fixture()
+  const subject: AgentSubject = { kind: 'conversation', agent: execution().agent, conversationId: 'conversation' }
+  const first = ready(await f.broker.prepare(f.request(subject, 'first-conversation-turn'))).session
+  const peer = ready(await f.broker.prepare(f.request(execution('peer'), 'peer-turn'))).session
+  const browser: NodeBrowserSettings = change === 'profile' ? { enabled: true, profileId: 'second-profile' } : { enabled: false }
+  f.assignment(subject, browser)
+  const prepared = await f.broker.prepare({ subject, browser, computerId: 'main', commandId: 'later-conversation-turn' })
+  expect(f.broker.read(first.id).session.state).toBe('closed')
+  expect(f.broker.read(peer.id).session.state).toBe('ready')
+  if (change === 'profile') {
+    const second = ready(prepared).session
+    expect(second.id).not.toBe(first.id)
+    expect(second.profileId).toBe('second-profile')
+  } else expect(prepared).toEqual({ kind: 'unavailable', reason: 'disabled', retryable: false })
+})
+
+it('keeps a changed conversation assignment pending until its previous native leases close', async () => {
+  const f = fixture()
+  const subject: AgentSubject = { kind: 'conversation', agent: execution().agent, conversationId: 'conversation' }
+  const first = ready(await f.broker.prepare(f.request(subject, 'first-conversation-turn'))).session
+  vi.mocked(f.driver.closeTab).mockRejectedValueOnce(new Error('The old tab has not closed'))
+  const browser = { enabled: true, profileId: 'second-profile' }
+  f.assignment(subject, browser)
+  const input = { subject, browser, computerId: 'main', commandId: 'later-conversation-turn' }
+  expect(await f.broker.prepare(input)).toMatchObject({ kind: 'unavailable', reason: 'profile_busy', retryable: true })
+  expect(f.driver.createTab).toHaveBeenCalledTimes(1)
+  const second = ready(await f.broker.prepare(input)).session
+  expect(f.broker.read(first.id).session.state).toBe('closed')
+  expect(second.profileId).toBe('second-profile')
+})
+
 it('acknowledges takeover only after releasing pressed state and fences a delayed helper follow-up', async () => {
   const f = fixture(), { session } = ready(await f.broker.prepare(f.request()))
   const entered = deferred<void>(), proceed = deferred<void>()
