@@ -98,7 +98,9 @@ it.each(browserSubjects())('preserves $kind scope through MCP preparation, tab o
   errorCode(await call(f, wrongScope, 'browser_session_get', { sessionId }), 'ACCESS_DENIED')
   const action = { ...state, commandId: 'mutate', action: { kind: 'navigate' as const, url: 'https://fixture.test/allowed' } }
   await expect(call(f, reader, 'browser_action', action)).rejects.toMatchObject({ message: 'Tool browser_action not found' })
-  await expect(call(f, disabled, 'browser_action', action)).rejects.toMatchObject({ message: 'Tool browser_action not found' })
+  await expect(call(f, disabled, 'browser_action', action)).rejects.toMatchObject({
+    name: 'ProtocolError', code: -32601, message: 'Method not found',
+  })
   expect(await value(f, agent, 'browser_state_read', state)).toMatchObject({ url: 'about:blank' })
   expect(await value(f, agent, 'browser_action', action)).toMatchObject({ state: 'completed' })
   expect(await value(f, agent, 'browser_action', action)).toMatchObject({ state: 'completed' })
