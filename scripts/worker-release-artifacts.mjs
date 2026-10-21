@@ -163,6 +163,7 @@ async function reuseWorkerArtifact({ repository, previousDirectory, previousArti
     const bytes = await readFile(join(directory, 'manifest.json'))
     if (sha256(bytes) !== retained.manifestSha256) throw new Error('Worker manifest checksum mismatch')
     const manifest = JSON.parse(bytes)
+    if (manifest.browserRuntimeStatus?.state === 'failed') return false
     const snapshot = manifest.sourceSnapshot
     const required = ['package.json', 'pnpm-lock.yaml', 'scripts/build-worker-artifact.mjs', path]
     if (!snapshot || snapshot.commit !== manifest.commit || !Array.isArray(snapshot.files)
