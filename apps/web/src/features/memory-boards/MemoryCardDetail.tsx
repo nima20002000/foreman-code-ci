@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import type { MemoryCard as Card, MemoryCardWorkBinding } from '@foreman-code/contracts'
 import { Button } from '../../shared/ui/nocturne/Button'
-import { useMemoryCardDetail, useMemoryHistory } from './queries'
+import { useMemoryCardDetail, useMemoryHistory, useMemoryBindings, useMemoryClaims } from './queries'
 import type { MemoryBoardClient, MemoryCardDetail as Detail, MemoryChange, MemoryNodeOption, MemoryWorkHealth } from './ports'
 import { bindingLabel, errorMessage, nodeLabel, statusLabels, visibleTime } from './presentation'
 
@@ -34,7 +34,9 @@ function CardDetailBody({ detail, client, nodes, health, canWrite, onEdit, onOpe
   const [historyOpen, setHistoryOpen] = useState(false)
   const history = useMemoryHistory(client, detail, historyOpen)
   const card = detail.card
-  const terminalBlocker = detail.bindings.some((binding) => !binding.resolution && (binding.state === 'failed' || binding.state === 'canceled'))
+  const bindings = useMemoryBindings(client, detail)
+  const claims = useMemoryClaims(client, detail)
+  const terminalBlocker = detail.workSummary.unresolvedFailures > 0
   return <section className="n-stack memory-detail" aria-label="Card detail">
     <Button onClick={onBack}>Back to Memory board</Button>
     <h3>{card.title}</h3>
@@ -46,8 +48,9 @@ function CardDetailBody({ detail, client, nodes, health, canWrite, onEdit, onOpe
     {card.linkedNodes.length > 0 && <div><h4>Linked nodes</h4><ul>{card.linkedNodes.map((node) =>
       <li key={`${node.workflowId}/${node.workflowNodeId}/${node.agentId}`}>{nodeLabel(node, nodes)}</li>)}</ul></div>}
     <div><h4>Linked work</h4>
+      <p>{detail.workSummary.activeBindings} active obligations · {detail.workSummary.armedClaims} next-activation claims</p>
       {detail.bindings.length === 0 && detail.claims.length === 0 && <p>No work obligations. Assigning an owner does not start an agent.</p>}
-      <ul className="memory-work-list">{detail.bindings.map((binding) => {
+      <ul className="memory-work-list">{bindings.data.pages.flatMap(page => page.items).map((binding) => {
         const currentHealth = health.find((item) => item.bindingId === binding.id)
         return <li key={binding.id}>
           <strong>{nodeLabel(binding.node, nodes)}</strong>
@@ -59,7 +62,13 @@ function CardDetailBody({ detail, client, nodes, health, canWrite, onEdit, onOpe
           {binding.resolution && <p>Resolved by {binding.resolution.kind === 'reopened' ? 'reopening' : 'dropping'}: {binding.resolution.reason}. Original outcome: {binding.state}.</p>}
           <Button size="sm" onClick={() => onOpenWork(binding)}>Open work</Button>
         </li>
-      })}{detail.claims.map((claim) => <li key={claim.id}>Next activation · {nodeLabel(claim.node, nodes)} · {claim.state}</li>)}</ul>
+      })}{claims.data.pages.flatMap(page => page.items).map((claim) => <li key={claim.id}>Next activation · {nodeLabel(claim.node, nodes)} · {claim.state}</li>)}</ul>
+      {bindings.isError && <p role="alert">Couldn’t load linked work. <Button onClick={() => void bindings.refetch()}>Retry linked work</Button></p>}
+      {claims.isError && <p role="alert">Couldn’t load activation claims. <Button onClick={() => void claims.refetch()}>Retry claims</Button></p>}
+      {bindings.hasNextPage && <Button loading={bindings.isFetchingNextPage} loadingLabel="Loading linked work…"
+        onClick={() => void bindings.fetchNextPage()}>Load more linked work</Button>}
+      {claims.hasNextPage && <Button loading={claims.isFetchingNextPage} loadingLabel="Loading activation claims…"
+        onClick={() => void claims.fetchNextPage()}>Load more activation claims</Button>}
     </div>
     {card.sourcePostId && <Button onClick={() => onSourcePost?.(card.sourcePostId!)} disabled={!onSourcePost}>Source message</Button>}
     <div className="n-actions">
