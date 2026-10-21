@@ -81,6 +81,16 @@ export async function remoteChatProvider(harness: 'codex' | 'claude', directory:
         return { ...transport, request: async (...requestArgs: Parameters<typeof transport.request>) => {
           const [method, params = {}] = requestArgs
           calls.push(method)
+          if (method === 'turn/steer') {
+            const thread = replay.threads.get(String(params.threadId))
+            const turn = thread?.turns.find(value => value.id === params.expectedTurnId)
+            if (!turn || turn.status !== 'inProgress' || !Array.isArray(params.input)) {
+              throw new Error('The recorded steer must address its active native turn')
+            }
+            turn.items.push({ id: randomUUID(), type: 'userMessage',
+              clientId: params.clientUserMessageId ?? null, content: params.input })
+            return { turnId: turn.id }
+          }
           if (method === 'thread/compact/start') {
             compactions++
             const thread = replay.threads.get(String(params.threadId))!
