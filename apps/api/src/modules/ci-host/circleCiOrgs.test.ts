@@ -179,6 +179,7 @@ it('restores a recovered standby organization’s registered role before overflo
     credits: { total: 400_000, used: owner === 'alpha' ? 380_000 : 0,
       remaining: owner === 'alpha' ? 20_000 : 400_000, asOf: new Date(now).toISOString() },
   } }, undefined, () => now)
+  await selector.recordCreditRefusal('alpha')
   expect((await selector.roles('site-ci')).get(circleOrgKey('delta', 'reserve'))?.schedulingRole).toBe('active')
   now += 1000
   expect((await selector.roles('site-ci')).get(circleOrgKey('delta', 'reserve'))?.schedulingRole).toBe('standby')

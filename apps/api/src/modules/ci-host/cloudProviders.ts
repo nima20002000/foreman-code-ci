@@ -9,6 +9,7 @@ import { CloudHttp, type CloudRestOptions } from './cloudHttp.js'
 import { GitHubRest } from './cloudGithub.js'
 import { CircleRest } from './cloudCircle.js'
 import { circleCiIntegrationResults } from './circleCiResults.js'
+import { isCircleCreditRefusal } from './circleCreditRefusal.js'
 
 export interface CloudRun {
   circleAccountId?: string
@@ -545,7 +546,8 @@ export class CircleCiProvider implements CloudProvider {
     if (!canceling && view.errors?.length && (view.phase === 'ended' || view.current_outcome === 'not_run')) {
       const message = view.errors.map(error => `${error.type}: ${error.message}`).join('; ')
       throw new DomainError('CI_CLOUD_PIPELINE_FAILED', `${this.label} pipeline failed: ${message}`, 502,
-        { configError: view.errors.some(error => error.type === 'config') })
+        { configError: view.errors.some(error => error.type === 'config'),
+          creditRefused: view.errors.some(isCircleCreditRefusal) })
     }
     return view
   }

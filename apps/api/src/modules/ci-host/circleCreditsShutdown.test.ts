@@ -72,13 +72,13 @@ it.each(['poll request', 'poll sleep', 'download', 'download body'] as const)(
               void release.promise.then(() => {
                 signal.removeEventListener('abort', abort)
                 if (signal.aborted) return
-                controller.enqueue(new TextEncoder().encode('TOTAL_CREDITS\n1000\n'))
+                controller.enqueue(new TextEncoder().encode('COMPUTE_CREDITS\n1000\n'))
                 controller.close()
               })
             },
           }))
         }
-        return new Response('TOTAL_CREDITS\n1000\n')
+        return new Response('COMPUTE_CREDITS\n1000\n')
       },
     })
     const create = () => new CircleCreditUsage(http, {
