@@ -80,7 +80,7 @@ export const BrowserProfileSyncTargetSchema = z.object({
   snapshot: BrowserSnapshotIdentitySchema.nullable(),
   state: z.enum(['queued','transferring','waiting_idle','applying','up_to_date',
     'failed','offline','excluded']),
-  exclusion: z.enum(['local_only','local_override','source','removed']).nullable(),
+  exclusion: z.enum(['local_only','local_override','source']).nullable(),
   reason: z.string().nullable(), updatedAt: TimestampSchema,
 }).strict().superRefine((target, context) => {
   if (target.snapshot && target.snapshot.profileId !== target.profileId) context.addIssue({ code: 'custom', path: ['snapshot'], message: 'Snapshot must identify this profile.' });

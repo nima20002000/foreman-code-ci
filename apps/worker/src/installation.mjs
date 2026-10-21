@@ -6,8 +6,6 @@ import { join, dirname, basename, isAbsolute } from 'node:path';
 import { WorkerError, requirePrivateDirectory } from './diagnostics.mjs';
 import { acquireWorkerLock } from './runtime.mjs';
 import { migratePinnedCompanionLauncher } from './companionLauncher.mjs';
-import { stageBundledBrowserRuntime, activateBrowserRuntime, rollbackBrowserRuntime,
-  offlineBrowserRuntimeLifecycle, readBrowserRuntimeActivation, readInstalledBrowserRuntime } from './browserRuntimeInstall.mjs';
 
 const hash = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const digest = /^[a-f0-9]{64}$/;
@@ -215,27 +213,19 @@ export async function migrateReleaseCompanionLauncher({ directory, stateDirector
   });
 }
 
-async function installRelease({ root, artifact, approvedManifestSha256, facts, expected, updatePolicy, stageOnly,
-  stagedBrowserRuntime, browserRuntimeLifecycle, browserRuntimeReadiness, signal }, state, bound) {
+async function installRelease({ root, artifact, approvedManifestSha256, facts, expected, updatePolicy, stageOnly }, state, bound) {
   const bytes = await readFile(join(artifact, 'manifest.json'));
   if (!digest.test(approvedManifestSha256) || hash(bytes) !== approvedManifestSha256) throw new WorkerError('manifest_checksum_mismatch');
   const manifest = JSON.parse(bytes);
   validateManifest(manifest, facts, expected);
-  const browserRuntime = stagedBrowserRuntime ?? await stageBundledBrowserRuntime({ root, artifact, manifest,
-    target: facts, signal, readiness: browserRuntimeReadiness });
-  // installVersion owns the Worker state lock; running installs only stage and use their live host lifecycle.
-  const lifecycle = browserRuntimeLifecycle ?? (!stageOnly && browserRuntime
-    ? await offlineBrowserRuntimeLifecycle({ nativeHostModule: browserRuntime.nativeHostModule,
-      profileStateRoot: join(state, 'browser', 'profile-data') }) : undefined);
   let current;
   try { current = await readlink(join(root, 'current')); } catch (error) { if (error.code !== 'ENOENT') throw error; }
   if (current) {
     if (!/^versions\/\d+\.\d+\.\d+-[a-f0-9]{64}$/.test(current)) throw new WorkerError('installation_invalid');
     if (hash(await readFile(join(root, current, 'manifest.json'))) === approvedManifestSha256) {
       await verifyRelease(join(root, current), approvedManifestSha256);
-      const browserActivation = !stageOnly && browserRuntime ? await activateInstalledBrowser(root, browserRuntime, lifecycle, signal) : undefined;
       return { version: manifest.version, manifestSha256: approvedManifestSha256,
-        directory: join(root, current), browserRuntime, browserActivation };
+        directory: join(root, current) };
     }
     const previous = JSON.parse(await readFile(join(root, current, 'manifest.json'), 'utf8'));
     if (!stageOnly && manifest.version === previous.version && manifest.commit !== previous.commit) {
@@ -279,33 +269,13 @@ async function installRelease({ root, artifact, approvedManifestSha256, facts, e
     }
     await syncDirectory(releases);
     if (!bound) await bindInstallationState(root, state);
-    let browserActivation;
     if (!stageOnly) {
-      if (browserRuntime) browserActivation = await activateInstalledBrowser(root, browserRuntime, lifecycle, signal);
-      try {
-        if (current) await switchLink(root, 'previous', current);
-        await switchLink(root, 'current', `versions/${release}`);
-      } catch (error) {
-        if (browserActivation) await rollbackBrowserRuntime({ runtimeRoot: join(root, 'browser-runtime'), ...browserActivation,
-          drain: lifecycle.stop ?? (async () => undefined), restoreProfiles: lifecycle.restoreProfiles });
-        throw error;
-      }
+      if (current) await switchLink(root, 'previous', current);
+      await switchLink(root, 'current', `versions/${release}`);
     }
     return { version: manifest.version, manifestSha256: approvedManifestSha256,
-      directory: join(releases, release), browserRuntime, browserActivation };
+      directory: join(releases, release) };
   } finally { await rm(stage, { recursive: true, force: true }); }
-}
-
-async function activateInstalledBrowser(root, staged, lifecycle, signal) {
-  let prepared;
-  try {
-    return await activateBrowserRuntime({ runtimeRoot: join(root, 'browser-runtime'), staged, signal,
-      drain: lifecycle.drain, onPrepared: receipt => { prepared = receipt; } });
-  } catch (error) {
-    if (prepared) await rollbackBrowserRuntime({ runtimeRoot: join(root, 'browser-runtime'), ...prepared,
-      drain: lifecycle.stop ?? (async () => undefined), restoreProfiles: lifecycle.restoreProfiles });
-    throw error;
-  }
 }
 
 export async function readRetainedRelease(root) {
@@ -323,18 +293,6 @@ export async function rollbackVersion({ root, stateDirectory, approveStop, facts
       if (!approveStop || await approveStop() !== true) throw new WorkerError('update_not_approved');
       const retained = await readRetainedRelease(root);
       validateManifest(retained.manifest, facts, expected);
-      const activation = await readBrowserRuntimeActivation(join(root, 'browser-runtime'));
-      const retainedRuntime = retained.manifest.browserRuntime?.manifestSha256;
-      const currentRuntime = activation ? await readInstalledBrowserRuntime({ runtimeRoot: join(root, 'browser-runtime'), target: facts }) : null;
-      if (currentRuntime?.manifestSha256 !== retainedRuntime && activation?.changed && activation.state !== 'rolled-back') {
-        if (activation.previousReference !== (retainedRuntime ? `versions/${retainedRuntime}` : null)) {
-          throw new WorkerError('browser_runtime_rollback_unavailable');
-        }
-        const lifecycle = await offlineBrowserRuntimeLifecycle({ nativeHostModule: activation.nativeHostModule,
-          profileStateRoot: activation.profileStateRoot });
-        await rollbackBrowserRuntime({ runtimeRoot: join(root, 'browser-runtime'), ...activation,
-          drain: async () => undefined, restoreProfiles: lifecycle.restoreProfiles });
-      }
       const previous = await readlink(join(root, 'previous'));
       await switchLink(root, 'current', previous);
     } finally {

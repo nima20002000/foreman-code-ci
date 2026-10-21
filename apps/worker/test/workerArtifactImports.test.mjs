@@ -1,4 +1,3 @@
-import { prepareNativeBrowserBuild } from './fixtures/browserTarget.mjs';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -19,7 +18,6 @@ async function fixture(t) {
   const directory = join(parent, 'artifacts-link');
   await symlink('artifacts', directory);
   const root = join(directory, 'repository');
-  const { file: targetFile } = await prepareNativeBrowserBuild(repository);
   const environment = {
     ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null',
   };
@@ -39,7 +37,7 @@ async function fixture(t) {
       '-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null', 'commit', '--quiet', '-m', 'Worker imports']);
     const commit = git(['rev-parse', 'HEAD']).trim();
     return spawnSync(process.execPath, [join(root, 'scripts/build-worker-artifact.mjs'),
-      targetFile, join(directory, 'release')], {
+      'apps/worker/artifacts/ubuntu-26.04-x64-target.json', join(directory, 'release')], {
       cwd: root, encoding: 'utf8', timeout: 120_000,
       env: { ...environment, FOREMAN_CODE_WORKER_BUILD_COMMIT: commit, GRAPHQL_WORKER_BUILD_COMMIT: commit },
     });
