@@ -24,21 +24,6 @@ function killWriter(pid: number) {
   }
 }
 
-function handleProcessReadError(error: NodeJS.ErrnoException): undefined {
-  if (error.code === 'ENOENT' || error.code === 'ESRCH') return undefined
-  throw error
-}
-
-it.each(['ENOENT', 'ESRCH'])('treats %s from the process state read as a gone process', code => {
-  const error = Object.assign(new Error('Process disappeared during read'), { code })
-  expect(handleProcessReadError(error)).toBeUndefined()
-})
-
-it('preserves unexpected process state read failures', () => {
-  const error = Object.assign(new Error('Permission denied'), { code: 'EACCES' })
-  expect(() => handleProcessReadError(error)).toThrow(error)
-})
-
 it('enforces the preparation deadline after API exit and keeps the repository locked until writers stop', async () => {
   const root = await mkdtemp(join(persistentFixtureRoot, 'preparation-deadline-'))
   const repository = join(root, 'repository')
@@ -79,7 +64,10 @@ it('enforces the preparation deadline after API exit and keeps the repository lo
     expect(await withHostCiRunLock(repository, async () => 'released', { nonBlocking: true })).toBeUndefined()
     await expect(withHostCiRunLock(repository, async () => 'released', { signal: AbortSignal.timeout(3000) }))
       .resolves.toBe('released')
-    const processState = await readFile(`/proc/${pid}/stat`, 'utf8').catch(handleProcessReadError)
+    const processState = await readFile(`/proc/${pid}/stat`, 'utf8').catch((error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT') return undefined
+      throw error
+    })
     if (processState) expect(processState.slice(processState.lastIndexOf(') ') + 2).split(' ')[0]).toBe('Z')
   } finally {
     await kill(api)
