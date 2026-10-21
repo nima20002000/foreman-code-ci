@@ -32,7 +32,7 @@ it('opens the Group panel on the Board, posts exact text and retains its selecti
   const panel = await screen.findByRole('region', { name: 'Group chat' })
   const composer = within(panel).getByRole('combobox', { name: 'Message this workflow' })
   await user.type(composer, '  Board conversation  ')
-  await user.click(within(panel).getByRole('button', { name: 'Post', exact: true }))
+  await user.click(within(panel).getByRole('button', { name: 'Post' }))
   await screen.findByRole('complementary', { name: 'Selected post' })
   expect(bodies).toEqual(['  Board conversation  '])
   expect(router.state.location.search.groupPostId).toBe('posted-message')
