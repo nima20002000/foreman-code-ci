@@ -1,3 +1,4 @@
+import { workflowResultContext } from './resultContext.js'
 import type { ExecutionResult, HarnessExecution } from '@foreman-code/contracts'
 import { canonicalGraphJson, type OutputReferenceKind, type WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
 import { deliverableFailure, deliverableVerdict, type DeliverableContract } from '../interactions/deliverable.js'
@@ -34,11 +35,13 @@ export async function referencesCreatedByExecution(db: Queryable, kind: OutputRe
 export function workflowDeliverableContract(version: WorkflowVersionV3, execution: HarnessExecution,
   referencesExist: DeliverableContract['referencesExist']): DeliverableContract | undefined {
   const node = version.definition.nodes.find(item => item.id === execution.workflowNodeId)
-  if (!node || node.kind === 'job' || repeatTickIndex(execution.input) !== undefined) return undefined
+  if (!node || node.kind === 'job') return undefined
+  const coordination = workflowResultContext(version, execution)
+  if (repeatTickIndex(execution.input) !== undefined && !coordination) return undefined
   const repeatExit = version.definition.repeat?.blocks.some(block => block.exitNodeId === node.id) ?? false
   return {
-    source: version.definition.handoffs || repeatExit ? 'latestDeliverable' : node.choice || node.artifactOutputs ? 'data' : 'text',
-    outputSchema: node.outputSchema, referencesExist,
+    source: version.definition.handoffs || repeatExit ? 'latestDeliverable' : node.choice || node.artifactOutputs || coordination ? 'data' : 'text',
+    outputSchema: node.outputSchema, referencesExist, ...(coordination ? { coordination } : {}),
   }
 }
 

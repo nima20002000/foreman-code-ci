@@ -46,6 +46,7 @@ export function registerProductionFileStorage(app: FastifyInstance, pool: pg.Poo
   const references = new FileReferenceService(repository, bytes, new PostgresFileReferenceAuthorization(pool),
     new PostgresCommandCoordinator(pool))
   // The MCP endpoint is composed before this helper. Its onReady hook binds this same service.
+  app.decorate('temporaryFileService', service)
   app.decorate('fileReferenceService', references)
   // FIL-37: authenticated agent-tool/conversation adapters bind this read-only service, not FIL-36 writes.
   const agentReferences = new AgentReferenceService({

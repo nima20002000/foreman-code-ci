@@ -1,12 +1,12 @@
-import type { ExecutionResult, HarnessExecutionContext } from '@foreman-code/contracts'
+import type { ExecutionResult, HarnessExecutionContext, CoordinationResultContext } from '@foreman-code/contracts'
 import { ZodError } from 'zod'
 import { parseWorkResultForInput, receivedWorkRequestIds } from '../runs/workHandoffResult.js'
 
 export function workResultRepairPrompt(result: ExecutionResult, contract: string, input?: unknown,
-  context?: HarnessExecutionContext): string | undefined {
+  context?: HarnessExecutionContext, coordination?: CoordinationResultContext): string | undefined {
   if (result.outcome !== 'succeeded') return undefined
   try {
-    parseWorkResultForInput(result, input, context)
+    parseWorkResultForInput(result, input, context, coordination)
     return undefined
   } catch (error) {
     const issues = error instanceof ZodError ? JSON.stringify(error.issues) : String(error)

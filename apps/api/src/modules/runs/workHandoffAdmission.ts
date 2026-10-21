@@ -1,3 +1,4 @@
+import { workflowResultContext } from './resultContext.js'
 import { HarnessExecutionSchema } from '@foreman-code/contracts'
 import {
   AcceptedCurrentNodeResultSchema, WorkActivationIdentitySchema, WorkHandoffResultSchema,
@@ -343,7 +344,7 @@ export async function admitWorkHandoffLocked(context: AdmissionContext, sourceEx
   if (!sameRepeatValue(activation.scope, scope) || activation.activationId !== sourceActivationId) {
     return repeatConflict('WORK_SOURCE_ACTIVATION_CONFLICT')
   }
-  const result = WorkHandoffResultSchema.parse(parseWorkHandoffResult(execution.result))
+  const result = WorkHandoffResultSchema.parse(parseWorkHandoffResult(execution.result, workflowResultContext(context.version, execution)))
   const routing: WorkHandoffResult['routing'] = result.routing.kind === 'return' && result.routing.outcome === 'accepted'
     && !result.data.remainingFindings.length ? { kind: 'finish' as const } : result.routing
   const node = version.definition.nodes.find((item) => item.id === execution.workflowNodeId)
@@ -555,7 +556,8 @@ async function forwardAcceptedWorkReturnsLocked(context: AdmissionContext,
   if (returns.some(row => row.returned.outcome !== 'accepted' || row.returned.remainingFindings.length)) return []
   const destinations: string[] = []
   for (const row of returns) {
-    const result = parseWorkHandoffResult(AcceptedCurrentNodeResultSchema.parse(JSON.parse(row.result_json)))
+    const result = parseWorkHandoffResult(AcceptedCurrentNodeResultSchema.parse(JSON.parse(row.result_json)),
+      workflowResultContext(context.version, { workflowNodeId: row.node_id, resultProtocol: context.hooks.run.resultProtocol }))
     for (const relationshipId of selectedWorkHandoffRoutes(context.version.definition, row.node_id, result)) {
       const admitted = await admitWorkHandoffLocked(context, row.returned.sourceExecutionId,
         relationshipId, sourceActivationId)

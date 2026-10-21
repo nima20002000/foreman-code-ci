@@ -1,3 +1,4 @@
+import { workflowResultContext } from './resultContext.js'
 import { IntervalCheckAcceptedInputSchema } from '@foreman-code/contracts/wave25'
 import {
   SourceSchema, EntrySchema, readStoredRepeatOccurrence, readStoredRepeatExecution,
@@ -66,7 +67,7 @@ export { readRepeatExecutionLocked, type StoredRepeatExecution } from './repeatE
 
 /** This is an internal projection of the SHELL-validated v3 Run, not a new wire schema. */
 export type RepeatRuntimeRun = Pick<WorkflowRunV3, 'id' | 'workspaceId' | 'workflowId' | 'workflowVersionId'
-  | 'agentConfigurationVersionIds' | 'approval' | 'input' | 'executionState'> & { executionSemanticsVersion: 3 }
+  | 'agentConfigurationVersionIds' | 'approval' | 'input' | 'executionState' | 'resultProtocol'> & { executionSemanticsVersion: 3 }
 export type RepeatFact =
   | { type: 'repeat.occurrence'; occurrence: RepeatOccurrenceV1 }
   | { type: 'repeat.decision'; decision: RepeatDecisionMetadataV1 }
@@ -88,6 +89,9 @@ export interface RepeatLockedHooks {
   /** Optional only for read/semantics-only hosts. Every native method fails
    * closed unless the complete native capability is installed. */
   native?: RepeatNativeLockedHooks
+  validateMemoryResultLocked?(sql: GraphTransactionSql, execution: HarnessExecution, result: ExecutionResult): Promise<void>
+  memoryWorkChangedLocked?(sql: GraphTransactionSql, executionId: string, sourceEventKey: string): Promise<void>
+  prepareMemoryLaunchLocked?(sql: GraphTransactionSql, execution: HarnessExecution): Promise<HarnessExecution>
   run: RepeatRuntimeRun
   assertAuthorityLocked(sql: GraphTransactionSql): Promise<void>
   /** SQL-only durable completeness for declared original artifacts. Optional
@@ -160,6 +164,8 @@ export async function readRepeatDecision(sql: GraphSqlClient, scope: RepeatScope
 
 /** Durable bookkeeping using the EXISTING dedicated owner connection. No scheduler,
  * native launch, approval delivery, terminal rewrite, new owner, or detached pool. */
+class MemoryValidationComplete extends Error {}
+
 export class RepeatRunRepository {
   constructor(private readonly owner: Pick<RunOwnership, 'runId' | 'assertOwned' | 'oneShotConnection' | 'readOneShotFence'>,
     private readonly host: RepeatRepositoryHost, expectedVersion: WorkflowVersionV3) {
@@ -212,19 +218,33 @@ export class RepeatRunRepository {
   }
   /** One business request on the already-owned Run; replay returns its first receipt. */
   admitWorkRequest(sourceExecutionId: string, selectedRelationshipId?: string): Promise<WorkRequestAdmission> {
-    return this.transaction((context) => admitWorkHandoffLocked({ ...context,
-      assertActive: () => this.active(context),
-    }, sourceExecutionId, selectedRelationshipId))
+    return this.transaction(async context => {
+      const receipt = await admitWorkHandoffLocked({ ...context, assertActive: () => this.active(context) },
+        sourceExecutionId, selectedRelationshipId)
+      let id: string
+      if (receipt.kind === 'accepted') id = receipt.request.requestId
+      else if (receipt.kind === 'limit_reached') id = receipt.denial.denialId
+      else id = receipt.unresolvedId
+      if (!receipt.replayed) await context.hooks.memoryWorkChangedLocked?.(context.sql, sourceExecutionId, `request:${id}`)
+      return receipt
+    })
   }
   returnWork(sourceExecutionId: string): Promise<WorkReturnReceipt> {
-    return this.transaction((context) => returnWorkHandoffLocked({ ...context,
-      assertActive: () => this.active(context),
-    }, sourceExecutionId))
+    return this.transaction(async context => {
+      const receipt = await returnWorkHandoffLocked({ ...context, assertActive: () => this.active(context) }, sourceExecutionId)
+      if (!receipt.replayed) await context.hooks.memoryWorkChangedLocked?.(context.sql, sourceExecutionId,
+        `return:${receipt.value.returnId}`)
+      return receipt
+    })
   }
   recordWorkUnresolved(sourceExecutionId: string): Promise<{ unresolvedId: string; replayed: boolean }> {
-    return this.transaction((context) => recordUnresolvedWorkLocked({ ...context,
-      assertActive: () => this.active(context),
-    }, sourceExecutionId, 'finish_with_findings'))
+    return this.transaction(async context => {
+      const receipt = await recordUnresolvedWorkLocked({ ...context, assertActive: () => this.active(context) },
+        sourceExecutionId, 'finish_with_findings')
+      if (!receipt.replayed) await context.hooks.memoryWorkChangedLocked?.(context.sql, sourceExecutionId,
+        `unresolved:${receipt.unresolvedId}`)
+      return receipt
+    })
   }
   resolveWaitingWorkJoins(sourceActivationId: string): Promise<string[]> {
     return this.transaction((context) => resolveWaitingWorkJoinsLocked({ ...context,
@@ -349,7 +369,7 @@ export class RepeatRunRepository {
       if (stored.execution.result.outcome !== 'succeeded') return repeatConflict('WORK_SELECTED_EXECUTION_FAILED')
       await this.assertArtifactOutputs(context, stored.execution)
       const result = AcceptedCurrentNodeResultSchema.parse(stored.execution.result)
-      const workResult = parseWorkHandoffResult(result)
+      const workResult = parseWorkHandoffResult(result, workflowResultContext(context.version, stored.execution))
       await assertWorkHandoffDeliveryLocked(context, stored.execution, stored.workActivationId, workResult)
       const resultJson = canonicalGraphJson(result, 64 * 1024), resultDigest = repeatDigest(result, 64 * 1024)
       await this.effect(context, 'terminal.accept', executionId,
@@ -508,8 +528,10 @@ export class RepeatRunRepository {
       await native.assertLaunchLocked(context.sql, stored.execution, stored.ref, paths)
       const systemPrompt = await readSystemPromptSetting(context.sql)
       let next = HarnessExecutionSchema.parse({
-        ...stored.execution, ...paths, systemPrompt, state: 'starting', startedAt: context.now,
+        ...stored.execution, ...paths, systemPrompt,
+        ...(context.hooks.run.resultProtocol ? { resultProtocol: context.hooks.run.resultProtocol } : {}), state: 'starting', startedAt: context.now,
       })
+      if (context.hooks.prepareMemoryLaunchLocked) next = await context.hooks.prepareMemoryLaunchLocked(context.sql, next)
       const sessionContinuation = await readWorkflowSessionContinuation(context.sql, next)
       if (sessionContinuation) next = HarnessExecutionSchema.parse({ ...next, sessionContinuation })
       const claim = repeatLaunchClaim(context.scope, stored.ref, next, stored.inputDigest)
@@ -694,6 +716,23 @@ export class RepeatRunRepository {
       await this.execution(context, executionId)
       return readWorkResultRepairAttempt(context.sql, executionId)
     }, { readOnly: true })
+  }
+
+  async validateMemoryResult(executionId: string, result: ExecutionResult): Promise<void> {
+    try {
+      await this.transaction(async context => {
+        const stored = await this.execution(context, executionId)
+        if (!stored.execution.resultProtocol || result.outcome !== 'succeeded') return
+        this.active(context)
+        await context.hooks.assertAuthorityLocked(context.sql)
+        if (!context.hooks.validateMemoryResultLocked) return repeatConflict('MEMORY_BOARDS_UNAVAILABLE')
+        await context.hooks.validateMemoryResultLocked(context.sql, stored.execution, result)
+        // Use the normal rollback boundary: validation never commits effects or notifications.
+        throw new MemoryValidationComplete()
+      })
+    } catch (error) {
+      if (!(error instanceof MemoryValidationComplete)) throw error
+    }
   }
 
   async reserveWorkResultRepair(executionId: string, providerId: string,
@@ -1127,10 +1166,10 @@ export class RepeatRunRepository {
         const current = await this.occurrence(context, ref.occurrence!.occurrenceId)
         const exit = context.version.definition.nodes.find((node) => node.id === ref.nodeId)!
         decision = validateRepeatDecisionV1(context.version, decideRepeatExit(context.version, current.occurrence, execution,
-          parseRepeatExitResultV1(execution.result, exit.choice!, exit.kind === 'job' ? undefined : exit.artifactOutputs), context.now), execution.result)
+          parseRepeatExitResultV1(execution.result, exit.choice!, exit.kind === 'job' ? undefined : exit.artifactOutputs, workflowResultContext(context.version, execution)), context.now), execution.result, workflowResultContext(context.version, execution))
         if (decision.reason === 'repeat') {
           successor = makeRepeatOccurrence(context.scope, block, repeatSuccessorInput(current.input, decision, execution.result!), decision)
-          validateRepeatSuccessorV1(context.version, decision, successor.occurrence, execution.result)
+          validateRepeatSuccessorV1(context.version, decision, successor.occurrence, execution.result, workflowResultContext(context.version, execution))
         } else exported = finalRepeatExport(context.version, resolution, decision)
       }
       const facts: RepeatFact[] = [{ type: 'repeat.node.resolved', resolution, outside: ref.occurrence === null }]
@@ -1173,7 +1212,7 @@ export class RepeatRunRepository {
       const execution = await this.execution(context, decision.exitExecution.executionId)
       if (!execution.accepted || repeatDigest(execution.execution.result, 64 * 1024) !== decision.acceptedResultDigest
         || !sameRepeatValue(current.occurrence, decision.occurrence)) return repeatConflict('REPEAT_TERMINAL_CONFLICT')
-      validateRepeatDecisionV1(context.version, decision, execution.execution.result)
+      validateRepeatDecisionV1(context.version, decision, execution.execution.result, workflowResultContext(context.version, execution.execution))
       await this.recordedEffect(context, 'terminal.accept', execution.execution.id)
       if (decision.reason !== 'repeat') return { decision, next: null }
       const found = await context.sql.query<{ occurrence_id: string }>(`select occurrence_id from run_repeat_occurrences
@@ -1181,7 +1220,7 @@ export class RepeatRunRepository {
         current.occurrence.identity.occurrenceIndex + 1])
       if (!found.rows[0]) return repeatConflict('REPEAT_SUCCESSOR_MISSING')
       const next = await this.occurrence(context, found.rows[0].occurrence_id)
-      validateRepeatSuccessorV1(context.version, decision, next.occurrence, execution.execution.result)
+      validateRepeatSuccessorV1(context.version, decision, next.occurrence, execution.execution.result, workflowResultContext(context.version, execution.execution))
       if (!sameRepeatValue(next.input, repeatSuccessorInput(current.input, decision, execution.execution.result!))) return repeatConflict('REPEAT_CARRY_CONFLICT')
       const activated = await context.sql.query<{ execution_id: string }>(`select x.execution_id
         from run_repeat_executions x join run_repeat_slots s on s.slot_id=x.slot_id
@@ -1250,14 +1289,15 @@ export class RepeatRunRepository {
         row.state !== 'completed' && !failedActivations.has(row.activation_id))) {
         return repeatConflict('WORK_ACTIVATIONS_UNRESOLVED')
       }
-      const unreturned = await context.sql.query<{ result_json: string | null }>(`select x.result_json
+      const unreturned = await context.sql.query<{ result_json: string | null; node_id: string }>(`select x.result_json,q.destination_node_id as node_id
         from run_work_requests q left join run_work_results x on x.run_id=q.run_id and x.activation_id=q.destination_activation_id
         where q.run_id=$1 and not (q.destination_activation_id=any($2::text[]))
           and not exists(select 1 from run_work_returns t where t.run_id=q.run_id and t.request_id=q.request_id)`,
       [context.scope.runId, [...failedActivations]])
       // A destination that finished its chain answered the request; only a pending return is unresolved.
       if (unreturned.rows.some(row => row.result_json === null || parseWorkHandoffResult(
-        AcceptedCurrentNodeResultSchema.parse(JSON.parse(row.result_json))).routing.kind !== 'finish')) {
+        AcceptedCurrentNodeResultSchema.parse(JSON.parse(row.result_json)), workflowResultContext(context.version,
+          { workflowNodeId: row.node_id, resultProtocol: context.hooks.run.resultProtocol })).routing.kind !== 'finish')) {
         return repeatConflict('WORK_REQUEST_UNRESOLVED')
       }
       if (failures[0]) throw new WorkExecutionFailure(failures[0].result)
