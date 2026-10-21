@@ -245,9 +245,12 @@ async function fixture(repository = new MemoryRepository(), native = new NativeF
   return { service, repository, native, configuration, internal: service as unknown as Internals }
 }
 interface Internals {
+  reconciliationTimers: Map<string, ReturnType<typeof setTimeout>>
   runTurn(id: string, turn: AgentChatTurn): Promise<void>
   interruptActive(id: string, explicit: boolean, target: { requestId: string; nativeTurnId: string | null } | undefined): Promise<void>
   repair(id: string): Promise<void>
+  steer(principal: ManagementPrincipal, context: AgentChatContext, key: string, input: SendAgentChatMessageRequest,
+    resolution: { context: AgentChatContext; row: AgentConversationRow; configuration: AgentConfigurationVersion }): Promise<{ turn: AgentChatTurn }>
 }
 
 // These tests target the authorized service's lifecycle seam; HTTP/MCP authorization is not replaced or claimed here.
@@ -401,19 +404,18 @@ describe('G1 cancellation and reconciliation', () => {
     })
   }
 
-  it('polls a lost steer acknowledgement after its target completes through the public send service', async () => {
+  it('A2-PF-05 polls a lost steer ACK after its target completes, without any manual acknowledgement', async () => {
     const f = await fixture()
     f.native.histories.set(agentChatCorrelation('conversation', 'first'), proof())
     await f.service.recover()
+    for (const timer of f.internal.reconciliationTimers.values()) clearTimeout(timer)
+    f.internal.reconciliationTimers.clear() // Isolate the lost-steer path from the active-turn timer.
     const input: SendAgentChatMessageRequest = { requestId: 'steer', intent: 'steer', content: 'clarify',
       context: { workflowId: 'workflow', workflowNodeId: 'node', agentId: 'agent' }, expectedConversationId: 'conversation', expectedNativeTurnId: 'native-first' }
-    await assert.rejects(f.service.send(principal, context.workspaceId, input), { code: 'ACCESS_DENIED' })
-    assert.equal(f.native.steered, 0)
-    const sender: ManagementPrincipal = { ...principal, id: 'chat-sender', name: 'Chat sender',
-      grants: [{ actions: ['agent_chat:read', 'agent_chat:write'], scope: principal.grants[0]!.scope }] }
-    const result = await f.service.send(sender, context.workspaceId, input)
+    const result = await f.internal.steer(principal, context, agentChatKey(context), input,
+      { context, row: await f.repository.get(), configuration: f.configuration })
     assert.equal(result.turn.delivery, 'unknown')
-    assert.equal(f.repository.storedReceipts[1]!.delivery, 'unknown')
+    assert.equal(f.internal.reconciliationTimers.has('conversation'), true)
     f.native.histories.set(agentChatCorrelation('conversation', 'first'), proof('first', { outcome: 'succeeded' }))
     await f.service.recover()
     assert.equal(f.repository.row.active_request_id, null)
