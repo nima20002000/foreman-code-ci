@@ -10,6 +10,8 @@ import { WorkflowArtifactResultV1Schema, type WorkflowArtifactOutputsV1 } from '
 import { WorkflowArtifactResultEnvelopeV1Schema, WorkflowChoiceArtifactResultEnvelopeV1Schema } from './workflowArtifactResult.js'
 import { canonicalGraphJson } from './wave25/json.js'
 import { WorkHandoffResultSchema } from './wave25/handoffs.js'
+import { ArtifactCoordinationResultSchema, ChoiceArtifactCoordinationResultSchema,
+  HandoffCoordinationResultSchema } from './coordinationResult.js'
 import { DeviceHistoryGapSchema, DeviceJsonContinuationSchema, DEVICE_JSON_CONTINUATION_LIMIT } from './deviceApplication.js'
 
 export const REMOTE_PHYSICAL_CONTINUATION_LIMIT = DEVICE_JSON_CONTINUATION_LIMIT * 3
@@ -74,7 +76,8 @@ export const RemoteWorkflowPhysicalOutputSchema = z.discriminatedUnion('kind', [
       if (value.result.outcome !== 'succeeded') throw new Error('successful original terminal result required')
       const output = z.object({ text: z.string() }).strict().parse(value.result.output)
       const envelope = z.union([WorkflowArtifactResultEnvelopeV1Schema, WorkflowChoiceArtifactResultEnvelopeV1Schema,
-        WorkHandoffResultSchema]).parse(JSON.parse(output.text))
+        WorkHandoffResultSchema, ArtifactCoordinationResultSchema, ChoiceArtifactCoordinationResultSchema,
+        HandoffCoordinationResultSchema]).parse(JSON.parse(output.text))
       if (canonicalGraphJson(envelope.artifactOutputs) !== canonicalGraphJson(value.artifactOutputs))
         throw new Error('artifact association differs from original terminal text')
     } catch {

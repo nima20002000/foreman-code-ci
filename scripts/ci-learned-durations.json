@@ -1,1 +1,1 @@
-{"apps/api/test/memory-board-composition.integration.test.ts":7030,"apps/api/test/memory-board-digest.integration.test.ts":5691,"apps/api/test/memory-board-workflow.integration.test.ts":10508,"apps/api/test/memory-boards-mcp.integration.test.ts":5049,"apps/api/test/memory-boards.integration.test.ts":8910,"apps/api/test/operator-chat-recent-snapshot.integration.test.ts":10729}
+{"apps/api/test/workflow-consultation-preparation.integration.test.ts":30188,"apps/api/test/workflow-execution-chat.integration.test.ts":25204}
