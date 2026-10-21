@@ -16,7 +16,7 @@ export const toolSchemaTools = [defineOperatorTool({
     const tools = await catalog?.(extra) ?? []
     const tool = tools.find((candidate) => candidate.name === input.name)
     if (!tool) throw new DomainError('ACCESS_DENIED', 'The requested tool is unavailable to this caller.', 403)
-    const requirement = operatorCapabilities(context, {}, registry).requirements.find((entry) => entry.name === input.name)
+    const requirement = operatorCapabilities(context, {}, registry, tools.map(candidate => candidate.name)).requirements.find((entry) => entry.name === input.name)
     return {
       name: tool.name,
       description: tool.description ?? '',
