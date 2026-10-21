@@ -14,15 +14,12 @@ export interface CircleOrganization {
 export interface CircleSchedulingReading extends CircleCreditsReading {
   schedulingRole: CircleSchedulingRole
   schedulingReason: string
-  creditProbeAvailable?: boolean
 }
 export const circleOrgKey = circleCreditKey
 const CREDIT_REFUSAL_RETRY_MS = 5 * 60_000
 
-function reason(role: CircleSchedulingRole, probeAvailable: boolean): string {
-  if (role === 'exhausted') return probeAvailable
-    ? 'CircleCI refused credits. One recovery probe is available; replacement capacity remains active.'
-    : 'CircleCI refused credits. Waiting for the five-minute cooldown or the pending recovery probe.'
+function reason(role: CircleSchedulingRole): string {
+  if (role === 'exhausted') return 'CircleCI refused a job because credits were unavailable; retrying after five minutes.'
   if (role === 'standby') return 'Standby capacity waits for CircleCI to refuse a primary organization for credits.'
   return 'Active for new CI jobs.'
 }
@@ -36,6 +33,7 @@ interface OrganizationStatus {
 
 function canReplace(status: OrganizationStatus): boolean {
   return !status.policy.exhausted && status.org.ready && status.org.mirrorNames.size > 0
+    && (status.reading.credits != null || status.policy.activated)
 }
 
 /** Assignments belong to exhausted primaries globally; a workspace only filters their mirror support. */
@@ -52,7 +50,8 @@ function selectReplacements(statuses: OrganizationStatus[]): Set<string> {
   }
   for (const primary of primaries) {
     if (!primary.policy.exhausted || primary.policy.replacement) continue
-    const standby = standbys.find(status => !selected.has(status.key) && canReplace(status))
+    const standby = standbys.find(status => !selected.has(status.key)
+      && status.reading.credits != null && canReplace(status))
     if (!standby) continue
     primary.policy.replacement = standby.key
     standby.policy.activated = true
@@ -89,7 +88,7 @@ export class CircleStandby {
     return observed?.month === circleMonthStart(this.now()) ? observed.roles : undefined
   }
 
-  async recordCreditRefusal(owner: string, circleAccountId = 'default', runId?: string): Promise<void> {
+  async recordCreditRefusal(owner: string, circleAccountId = 'default'): Promise<void> {
     const now = this.now()
     await this.cache.transaction(state => {
       const saved = state[circleOrgKey(owner, circleAccountId)] ??= { attempts: [] }
@@ -98,43 +97,6 @@ export class CircleStandby {
       }
       saved.policy.creditRefusedUntil = now + CREDIT_REFUSAL_RETRY_MS
       saved.policy.exhausted = true
-      if (saved.policy.creditProbeRunId === runId) delete saved.policy.creditProbeRunId
-    })
-    this.observed.clear()
-  }
-
-  /** The persisted cache lock coordinates all starts and readers for the organization. */
-  async admitStart(owner: string, circleAccountId: string, mirrorName: string, runId: string): Promise<boolean> {
-    const reading = await this.reading(owner, circleAccountId, mirrorName)
-    if (reading.schedulingRole !== 'active' && !reading.creditProbeAvailable) return false
-    const admitted = await this.cache.transaction(state => {
-      const policy = state[circleOrgKey(owner, circleAccountId)]?.policy
-      if (policy?.creditRefusedUntil === undefined) return reading.schedulingRole === 'active'
-      if (this.now() < policy.creditRefusedUntil || policy.creditProbeRunId) return false
-      policy.creditProbeRunId = runId
-      return true
-    })
-    this.observed.clear()
-    return admitted
-  }
-
-  async recordCreditAcceptance(owner: string, circleAccountId: string, runId: string): Promise<void> {
-    await this.cache.transaction(state => {
-      const policy = state[circleOrgKey(owner, circleAccountId)]?.policy
-      if (policy?.creditProbeRunId !== runId) return
-      delete policy.creditRefusedUntil
-      delete policy.creditProbeRunId
-      policy.exhausted = false
-    })
-    this.observed.clear()
-  }
-
-  async finishCreditProbe(owner: string, circleAccountId: string, runId: string): Promise<void> {
-    await this.cache.transaction(state => {
-      const policy = state[circleOrgKey(owner, circleAccountId)]?.policy
-      if (policy?.creditProbeRunId !== runId) return
-      delete policy.creditProbeRunId
-      policy.creditRefusedUntil = this.now() + CREDIT_REFUSAL_RETRY_MS
     })
     this.observed.clear()
   }
@@ -147,27 +109,22 @@ export class CircleStandby {
       const statuses = orgs.map((org, index) => {
         const key = circleOrgKey(org.owner, org.circleAccountId)
         const saved = state[key] ??= { attempts: [] }
-        if (saved.policy?.month !== month) saved.policy = saved.policy?.creditRefusedUntil !== undefined
-          ? { ...saved.policy, month } : { month, exhausted: false, activated: false }
+        if (saved.policy?.month !== month) saved.policy = { month, exhausted: false, activated: false }
         const observed = readings[index]!
         const previousMonth = observed.credits && circleMonthStart(Date.parse(observed.credits.asOf)) !== month
         const reading: CircleCreditsReading = previousMonth
           ? { credits: null, creditsUnavailable: 'Usage from the previous UTC month has expired.' } : observed
         // Old cached exhaustion was inferred from usage; only a provider refusal can block starts.
-        saved.policy.exhausted = saved.policy.creditRefusedUntil !== undefined
+        saved.policy.exhausted = (saved.policy.creditRefusedUntil ?? 0) > this.now()
         return { org, key, reading, policy: saved.policy }
       })
       const selected = selectReplacements(statuses)
       return new Map(statuses.map(status => {
-        const supportsMirror = mirrorName ? status.org.mirrorNames.has(mirrorName) : status.org.mirrorNames.size > 0
-        const probeAvailable = status.policy.exhausted && status.org.ready && supportsMirror
-          && this.now() >= status.policy.creditRefusedUntil! && !status.policy.creditProbeRunId
         let role: CircleSchedulingRole = 'standby'
         if (status.policy.exhausted) role = 'exhausted'
-        else if (supportsMirror
+        else if ((mirrorName ? status.org.mirrorNames.has(mirrorName) : status.org.mirrorNames.size > 0)
           && (status.org.role === 'primary' || selected.has(status.key))) role = 'active'
-        return [status.key, { ...status.reading, schedulingRole: role, schedulingReason: reason(role, probeAvailable),
-          ...(probeAvailable ? { creditProbeAvailable: true } : {}) }]
+        return [status.key, { ...status.reading, schedulingRole: role, schedulingReason: reason(role) }]
       }))
     })
   }

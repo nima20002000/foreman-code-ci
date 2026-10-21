@@ -65,10 +65,8 @@ it.each(['initial lookup', 'later poll'])(
     now += 5 * 60_000 - 1
     expect(await standby.eligible('alpha', 'default', 'site-ci')).toBe(false)
     now++
-    expect(await standby.reading('alpha', 'default', 'site-ci')).toMatchObject({
-      schedulingRole: 'exhausted', creditProbeAvailable: true,
-    })
-    expect(await standby.eligible('delta', 'reserve', 'site-ci')).toBe(true)
+    expect(await standby.eligible('alpha', 'default', 'site-ci')).toBe(true)
+    expect(await standby.eligible('delta', 'reserve', 'site-ci')).toBe(false)
   },
 )
 

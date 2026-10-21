@@ -18,8 +18,7 @@ const entrySchema = z.object({
     basis: z.literal('compute').optional() }).optional(),
   failure: z.string().optional(),
   policy: z.object({ month: period, exhausted: z.boolean(), activated: z.boolean(),
-    replacement: z.string().optional(), creditRefusedUntil: z.number().optional(),
-    creditProbeRunId: z.string().optional() }).optional(),
+    replacement: z.string().optional(), creditRefusedUntil: z.number().optional() }).optional(),
 }).strict()
 const cacheSchema = z.record(z.string(), entrySchema)
 export type CircleCreditState = z.infer<typeof entrySchema>

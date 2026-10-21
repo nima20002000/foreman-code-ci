@@ -896,18 +896,9 @@ export class HostCiService {
       }
       roles = snapshots.get(key)
     } else roles = await this.circleStandby.roles(mirrorName)
-    const probes = new Set<string>()
-    return computers.filter(computer => {
-      const host = computer.hostRef
-      if (host.provider !== 'circleci') return true
-      if (!host.account) return false
-      const key = circleOrgKey(host.account, host.circleAccountId)
-      const reading = roles?.get(key)
-      if (reading?.schedulingRole === 'active') return true
-      if (!reading?.creditProbeAvailable || probes.has(key)) return false
-      probes.add(key)
-      return true
-    })
+    return computers.filter(computer => computer.hostRef.provider !== 'circleci'
+      || computer.hostRef.account && roles?.get(circleOrgKey(computer.hostRef.account,
+        computer.hostRef.circleAccountId))?.schedulingRole === 'active')
   }
 
   private planningForMirror(mirrorName?: string): HostCiEndpoint & Pick<CiPlanningSnapshot, 'lastStatus'> {

@@ -59,8 +59,6 @@ export type CloudStatus = ({ done: false } | {
   /** Empty observations allow recovery, but the accepted pipeline still needs to be followed. */
   terminationUnconfirmed?: true
 }) & { steps?: CloudStep[]; output?: { key: string; text: string }
-  /** CircleCI has started compute; creating a pipeline or queueing a job is insufficient. */
-  executionStarted?: true
   /** The provider holds the workflow in its queue: no job has started. */
   queued?: boolean }
 export interface CloudDispatchInput {
@@ -633,11 +631,7 @@ export class CircleCiProvider implements CloudProvider {
     const key = (step: { jobId: string; num: number }) => `${step.jobId}:${step.num}`
     const steps = raw.map(step => ({ key: key(step), name: step.name, state: step.phase !== 'ended' ? 'running' as const
       : step.outcome === 'succeeded' ? 'passed' as const : step.outcome === 'skipped' ? 'skipped' as const : 'failed' as const }))
-    const executionStarted = jobs.some(job => job.detail.phase === 'started')
-      || raw.some(step => step.phase === 'started' || step.phase === 'ended'
-        && ['succeeded', 'failed', 'errored'].includes(step.outcome ?? ''))
-    const progress = { steps, ...(executionStarted ? { executionStarted: true as const } : {}) }
-    if (ended && hasFinalOutcome) return { ...this.completed(finalOutcomes, stopped, steps), ...progress }
+    if (ended && hasFinalOutcome) return this.completed(finalOutcomes, stopped, steps)
     const pending = !ended && (view.phase !== undefined && view.phase !== 'ended'
       || workflows.some(workflow => workflow.phase !== undefined && workflow.phase !== 'ended'
         || !workflow.jobs?.length && workflow.phase !== 'ended' && view.phase !== 'ended')
@@ -645,16 +639,16 @@ export class CircleCiProvider implements CloudProvider {
     if (pending) {
       // CircleCI serves the whole running step log; status polling stays frequent while output reads are bounded.
       const current = raw.findLast(step => step.phase !== 'ended')
-      if (!current || (run.live?.bytes ?? 0) >= CLOUD_LOG_LIMIT) return { done: false, ...progress }
+      if (!current || (run.live?.bytes ?? 0) >= CLOUD_LOG_LIMIT) return { done: false, steps }
       const previous = this.outputPolls.get(run.runId)
       const now = this.ports.now().getTime()
       if (previous?.key === key(current) && now - previous.at < LIVE_OUTPUT_POLL_MS) {
-        return { done: false, ...progress }
+        return { done: false, steps }
       }
       this.outputPolls.set(run.runId, { key: key(current), at: now })
       const output = await this.rest.output(current.jobId, current.num, 60_000)
       if (output !== null) {
-        return { done: false, ...progress, ...(output.ok ? { output: { key: key(current), text: output.text } } : {}) }
+        return { done: false, steps, ...(output.ok ? { output: { key: key(current), text: output.text } } : {}) }
       }
       const result = await this.ports.run('circleci', ['job', 'output', 'get', current.jobId, '--step-num', String(current.num)],
         { timeoutMs: 60_000 })
@@ -663,16 +657,16 @@ export class CircleCiProvider implements CloudProvider {
         if (limited) throw limited
         logIgnoredError('jobs', 'read CircleCI live output', new DomainError('CI_CLOUD_OUTPUT_UNAVAILABLE',
           `CircleCI live output exited ${result.code}.`, 502), { runId: run.runId })
-        return { done: false, ...progress }
+        return { done: false, steps }
       }
-      return { done: false, ...progress, output: { key: key(current), text: result.stdout } }
+      return { done: false, steps, output: { key: key(current), text: result.stdout } }
     }
     const outcomes = [view.outcome, ...workflows.map(workflow => workflow.outcome),
       ...jobs.filter(job => job.detail.phase === 'ended').map(job => job.detail.outcome)]
       .filter((outcome): outcome is string => outcome !== undefined)
     const finishedAt = [stopped, ...jobs.map(job => job.detail.stopped_at)]
       .filter((value): value is string => value !== undefined).sort().at(-1)
-    return { ...this.completed(outcomes, finishedAt, steps), ...progress }
+    return this.completed(outcomes, finishedAt, steps)
   }
 
   private completed(outcomes: (string | undefined)[], stopped: string | undefined, steps: CloudStep[]): CloudStatus {
@@ -682,8 +676,7 @@ export class CircleCiProvider implements CloudProvider {
     let conclusion: 'success' | 'failure' | 'cancelled' = 'success'
     if (failed) conclusion = 'failure'
     else if (conclusions.includes('cancelled')) conclusion = 'cancelled'
-    return { done: true, finishedAt: stopped ?? this.ports.now().toISOString(), steps, conclusion,
-      ...(conclusion === 'success' ? { executionStarted: true as const } : {}) }
+    return { done: true, finishedAt: stopped ?? this.ports.now().toISOString(), steps, conclusion }
   }
 
   async log(run: CloudRun) {

@@ -36,6 +36,4 @@ export type CircleSchedulingRole = z.infer<typeof CircleSchedulingRoleSchema>
 export const circleSchedulingShape = {
   schedulingRole: CircleSchedulingRoleSchema.optional(),
   schedulingReason: z.string().max(300).optional(),
-  /** One recovery build may be admitted while this organization remains exhausted. */
-  creditProbeAvailable: z.boolean().optional(),
 }

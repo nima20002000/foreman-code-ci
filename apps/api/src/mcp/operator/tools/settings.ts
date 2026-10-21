@@ -188,8 +188,7 @@ export const settingsTools = [
       + 'organization without an entry in accounts, which is keyed by the GitHub owner of the CircleCI org. '
       + 'ci_computers_list and computer_activity_list report each CircleCI org\u2019s remaining credits as this '
       + 'allowance minus that org\u2019s compute usage this month, excluding storage and other charges. This is reporting '
-      + 'only; usage reports never block standby eligibility. Credit refusals allow one coordinated recovery probe '
-      + 'after five minutes, keeping the replacement active until CircleCI starts the probe job. Exports are sampled at most every '
+      + 'only; admission follows CircleCI credit refusals, with a five-minute retry delay. Exports are sampled at most every '
       + 'three hours; readings are usable for four hours from export window end. Primary and standby orgs '
       + 'have separate usage estimates. Requires global settings:read.',
     inputSchema: z.object({}).strict(), outputSchema: ManagedCircleCreditAllowanceSchema,

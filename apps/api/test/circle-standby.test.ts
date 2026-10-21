@@ -131,7 +131,7 @@ it('serializes concurrent alias claims and preserves the chosen login in saved r
   expect(CiRunRecordSchema.parse(saved.record).computer?.hostRef).toEqual(reserveSlot.hostRef)
 })
 
-it('shares provider-refusal and confirmed recovery policy across month boundaries and new-start checks', async () => {
+it('shares the provider-refusal and UTC reset policy used by planning and new-start checks', async () => {
   let now = Date.parse('2026-10-31T23:59:59Z')
   const remaining = 20_000
   const cache = new CircleCreditCache()
@@ -145,18 +145,14 @@ it('shares provider-refusal and confirmed recovery policy across month boundarie
   expect(await selector.eligible('alpha', 'default', 'site-ci')).toBe(false)
   expect(await selector.eligible('delta', 'reserve', 'site-ci')).toBe(true)
   now = Date.parse('2026-10-31T23:59:59Z') + 5 * 60_000
-  expect(await selector.eligible('alpha', 'default', 'site-ci')).toBe(false)
-  expect(await selector.eligible('delta', 'reserve', 'site-ci')).toBe(true)
-  expect(await selector.admitStart('alpha', 'default', 'site-ci', 'probe')).toBe(true)
-  await selector.recordCreditAcceptance('alpha', 'default', 'probe')
   expect(await selector.eligible('alpha', 'default', 'site-ci')).toBe(true)
   expect(await selector.eligible('delta', 'reserve', 'site-ci')).toBe(false)
   now = Date.parse('2026-10-31T23:59:59Z')
   await selector.recordCreditRefusal('alpha')
   await selector.roles('site-ci')
   now += 1000
-  expect(await selector.eligible('alpha', 'default', 'site-ci')).toBe(false)
-  expect(await selector.eligible('delta', 'reserve', 'site-ci')).toBe(true)
+  expect(await selector.eligible('alpha', 'default', 'site-ci')).toBe(true)
+  expect(await selector.eligible('delta', 'reserve', 'site-ci')).toBe(false)
 })
 
 it('cannot claim a stale standby row after its registration has been removed', async () => {
@@ -223,7 +219,6 @@ it('reads persisted account assignments and credits through authenticated MCP af
       return new Response(`COMPUTE_CREDITS\n${id === 'default' ? 380000 : 25000}\n`)
     } })
   const usagePath = join(database.directory, 'circle-usage.json')
-  let now = Date.now()
   const credits = new CircleCreditUsage(http, {
     allowance: async () => ({ defaultMonthlyCredits: 400_000, accounts: {} }), primaryOwner: async () => null,
   }, { cache: new CircleCreditCache(usagePath) })
@@ -240,7 +235,7 @@ it('reads persisted account assignments and credits through authenticated MCP af
   const createSelector = () => new CircleStandby(async () => clouds.map(cloud => ({
     owner: cloud.provider.account!.owner, circleAccountId: cloud.provider.circleAccountId!,
     role: cloud.provider.account!.role!, mirrorNames: cloud.provider.account!.mirrorNames, ready: true,
-  })), credits, new CircleCreditCache(usagePath), () => now)
+  })), credits, new CircleCreditCache(usagePath))
   let selector = createSelector()
   await selector.recordCreditRefusal('alpha')
   for (const cloud of clouds) cloud.setCircleStandby(selector)
@@ -279,7 +274,6 @@ it('reads persisted account assignments and credits through authenticated MCP af
     expect((await call('ci_computers_list', denied.token)).isError).toBe(true)
     expect((await call('computer_activity_list', denied.token)).isError).toBe(true)
     await services.ci.close()
-    now += 5 * 60_000
     selector = createSelector()
     for (const cloud of clouds) cloud.setCircleStandby(selector)
     services.ci = create()
@@ -287,7 +281,7 @@ it('reads persisted account assignments and credits through authenticated MCP af
     expect(listed.computers.find(value => value.hostRef.circleAccountId === 'reserve')).toMatchObject({
       schedulingRole: 'active', credits: { remaining: 375_000 } })
     expect(listed.computers.find(value => value.hostRef.account === 'alpha')).toMatchObject({
-      schedulingRole: 'exhausted', creditProbeAvailable: true, credits: { remaining: 20_000 } })
+      schedulingRole: 'exhausted', credits: { remaining: 20_000 } })
     const activity = ComputerActivityListSchema.parse(decodeMcpToolResult(await call('computer_activity_list')))
     expect(activity.cloud).toMatchObject([
       { account: 'alpha', schedulingRole: 'exhausted', running: 0, credits: { remaining: 20_000 } },

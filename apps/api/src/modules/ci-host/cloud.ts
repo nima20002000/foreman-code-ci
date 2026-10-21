@@ -189,17 +189,13 @@ export class CloudCi {
     return this.standby.reading(this.provider.account.owner, this.provider.circleAccountId, mirrorName)
   }
 
-  private async requireNewStart(mirrorName: string, runId?: string) {
+  private async requireNewStart(mirrorName: string) {
     if (this.provider.recoveryOnly || this.provider.account?.registered === false) {
       throw new DomainError('CI_CLOUD_UNAVAILABLE', 'This CircleCI executor only finishes previously assigned jobs.', 409)
     }
     const reading = await this.schedulingReading(mirrorName)
-    if (reading && reading.schedulingRole !== 'active' && !reading.creditProbeAvailable) {
+    if (reading && reading.schedulingRole !== 'active') {
       throw new DomainError('CI_CLOUD_UNAVAILABLE', reading.schedulingReason, 409)
-    }
-    if (reading && runId && !await this.standby!.admitStart(this.provider.account!.owner,
-      this.provider.circleAccountId ?? 'default', mirrorName, runId)) {
-      throw new DomainError('CI_CLOUD_UNAVAILABLE', 'CircleCI recovery probe is already pending or cooling down.', 409)
     }
   }
 
@@ -421,16 +417,10 @@ export class CloudCi {
     return run
   }
 
-  private async save(run: CloudRun) {
+  private save(run: CloudRun) {
     const transport = this.provider.transport ?? run.transport
-    const saved = await saveCloudRun(this.path(run.runId, 'meta.json'), { ...run, ...(transport ? { transport } : {}),
+    return saveCloudRun(this.path(run.runId, 'meta.json'), { ...run, ...(transport ? { transport } : {}),
       ...(this.provider.id === 'circleci' ? { circleAccountId: this.provider.circleAccountId ?? 'default' } : {}) })
-    if (this.provider.id === 'circleci' && this.standby && !['starting', 'running'].includes(saved.state)
-      && !cancellationPending(saved) && !unresolvedCloudAttemptIds(saved).length && !saved.dispatch?.uncertain) {
-      await this.standby.finishCreditProbe(this.provider.account?.owner ?? saved.mirror.split('/')[0]!,
-        this.provider.circleAccountId ?? 'default', saved.runId)
-    }
-    return saved
   }
 
   private view(run: CloudRun, logBytes: number): CiHostRun {
@@ -701,10 +691,8 @@ export class CloudCi {
     try {
       pending = await this.save({ ...pending, dispatch: { ...pending.dispatch!, uncertain: true, notSent: false } })
       // Check policy after the final journal write, immediately before contacting the provider.
-      const firstDispatch = !run.providerRunId && ((run.dispatch?.attempts ?? 0) === 0 || run.dispatch?.notSent)
-        && !run.dispatch?.uncertain
-      if (firstDispatch || this.provider.id === 'circleci' && this.standby) {
-        await this.requireNewStart(input.mirror.slice(input.mirror.indexOf('/') + 1), pending.runId)
+      if (!run.providerRunId && ((run.dispatch?.attempts ?? 0) === 0 || run.dispatch?.notSent) && !run.dispatch?.uncertain) {
+        await this.requireNewStart(input.mirror.slice(input.mirror.indexOf('/') + 1))
       }
     } catch (error) {
       pending = await this.save({ ...pending, dispatch: { ...pending.dispatch!, uncertain: false, notSent: true } })
@@ -736,7 +724,7 @@ export class CloudCi {
   private async failProviderPipeline(run: CloudRun, error: DomainError): Promise<CloudRun> {
     if (error.details?.creditRefused === true && this.standby) {
       const owner = this.provider.account?.owner ?? run.mirror.split('/')[0]!
-      await this.standby.recordCreditRefusal(owner, this.provider.circleAccountId, run.runId)
+      await this.standby.recordCreditRefusal(owner, this.provider.circleAccountId)
     }
     return this.failPipeline(run, { message: error.message, configError: error.details?.configError === true })
   }
@@ -1681,10 +1669,6 @@ export class CloudCi {
       await this.provider.find(run)
     }
     const status = await this.provider.status(run)
-    if (status.executionStarted && this.provider.id === 'circleci' && this.standby) {
-      await this.standby.recordCreditAcceptance(this.provider.account?.owner ?? run.mirror.split('/')[0]!,
-        this.provider.circleAccountId ?? 'default', runId)
-    }
     this.polled.set(runId, this.ports.now().getTime())
     if (!status.done && status.queued) return this.waitInProviderQueue(run, reassign)
     if (run.providerQueuedAt) {
