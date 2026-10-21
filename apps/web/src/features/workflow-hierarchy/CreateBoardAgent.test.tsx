@@ -57,8 +57,7 @@ it('edits the complete form before staging one private Master and its initial pr
   expect(before.graph.nodes).toEqual([])
   expect(stageAgentEdits(before)).toEqual([])
   await userEvent.click(screen.getByRole('button', { name: 'Add Master to draft' }))
-  await waitFor(() => expect(opened,
-    screen.getByRole('region', { name: 'Create Agent in workflow' }).textContent ?? '').toHaveBeenCalledOnce())
+  await waitFor(() => expect(opened).toHaveBeenCalledOnce())
   const staged = useGraphDraftStore.getState().nextDrafts[draftKey]!, changes = stageAgentEdits(staged)
   expect(changes).toHaveLength(1)
   expect(changes[0]).toMatchObject({ baseRevision: null, agent: { name: 'Project lead', productRole: 'master',

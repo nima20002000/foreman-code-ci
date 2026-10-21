@@ -1,6 +1,5 @@
 import { z } from 'zod'
-import { canonicalJson } from '@foreman-code/contracts/canonical-json'
-import { ChatControlReceiptSchema, ChatDeliveryReceiptSchema, ChatQueueCancelRequestSchema,
+import { canonicalJson, ChatControlReceiptSchema, ChatDeliveryReceiptSchema, ChatQueueCancelRequestSchema,
   ChatSendRequestSchema, ChatStopRequestSchema, EngineChatReadbackSchema, sameAgentNode,
   WorkflowExecutionChatReadRequestSchema, WorkflowExecutionChatResolutionSchema,
   WorkflowExecutionChatSelectionSchema, WorkflowExecutionChatTargetSchema,

@@ -33,7 +33,9 @@ export function useWorkflowSidePanel(workspaceId: string, workflowId: string, ru
       browserVisit.released = true; browserVisit.release?.()
     }
   }, [browserVisit])
-  const runId = run?.runId, workflowVersionId = run?.workflowVersionId, executionSemanticsVersion = run?.executionSemanticsVersion
+  const runId = run?.runId
+  const workflowVersionId = run?.workflowVersionId
+  const executionSemanticsVersion = run?.executionSemanticsVersion
   const keepRun = useCallback((previous: ReturnType<typeof RunsSelectorSearchSchema.parse>) => ({ ...previous, workflowId,
     ...(runId && workflowVersionId && executionSemanticsVersion && !previous.runId && !previous.selectedRunId
       ? { runId, workflowVersionId, executionSemanticsVersion } : {}) }),

@@ -1,11 +1,9 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, type ReactNode } from 'react'
 import { useInfiniteQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
-import { canonicalJson } from '@foreman-code/contracts/canonical-json'
-import { WorkflowExecutionChatSelectionSchema, WorkflowExecutionChatTargetSchema,
+import { canonicalJson, WorkflowExecutionChatSelectionSchema, WorkflowExecutionChatTargetSchema,
   type WorkflowExecutionChatResolution, type WorkflowExecutionChatSelection,
   type WorkflowExecutionChatTarget } from '@foreman-code/contracts'
 import { ApiError } from '../../../shared/api/client'
-import { useBlockingReadError } from '../../../shared/api/readFailure'
 import { sessionGeneration } from '../../../shared/api/sessionBoundary'
 import { executionChatReadKey, executionChatScopeKey, executionChatSelectionKey, resolveExecutionChat,
   workflowExecutionChatClient, type WorkflowExecutionChatClient } from './client'
@@ -60,17 +58,15 @@ export function WorkflowExecutionChatAdapter({selection:raw,views}:{
       ?page.nextCursor:undefined,
     retry:false,staleTime:Infinity,refetchOnMount:'always',refetchOnWindowFocus:false,refetchOnReconnect:false,maxPages:10,
   })
-  const blocked=useBlockingReadError(query)
-  const first=blocked?undefined:query.data?.pages[0], resolved=first?.kind==='selected'?first:undefined
+  const first=query.data?.pages[0], resolved=first?.kind==='selected'?first:undefined
   const pinned=!!resolved&&isPinned(selection,resolved)
   useEffect(()=>{
     if(resolved&&!pinned) onSelectTarget(resolved.target,resolved.workflowVersionId)
   },[resolved,pinned,onSelectTarget])
   const client=useMemo(()=>resolved?boundClient(cache,resolved):undefined,[cache,resolved])
-  const failure=query.error??blocked
-  const error=failure instanceof Error?failure.message:'Chat could not refresh. Your selection has been kept.'
+  const error=query.error instanceof Error?query.error.message:'Chat could not refresh. Your selection has been kept.'
   const retry=<button type="button" onClick={()=>void query.refetch()} disabled={query.isFetching}>Retry</button>
-  if(!first) return failure?<div role="alert">{error} {retry}</div>:<p role="status">Loading selected Agent chat…</p>
+  if(!first) return query.isError?<div role="alert">{error} {retry}</div>:<p role="status">Loading selected Agent chat…</p>
   const status=query.isError?<div role="alert">{error} {retry}</div>:null
   if(resolved) {
     if(!pinned||!client) return <p role="status">Opening the selected Run target…</p>
@@ -102,3 +98,8 @@ function choiceLabel(target:WorkflowExecutionChatTarget) {
     :`Coordinator waiting at ${target.waitingActivationId}`
 }
 
+/** Compose this factory with the supplied F3 views in the shared rail provider. */
+export function createWorkflowExecutionChatSlot(views:WorkflowExecutionChatViews):
+  (selection:WorkflowExecutionChatSlotSelection)=>ReactNode {
+  return selection=><WorkflowExecutionChatAdapter selection={selection} views={views}/>
+}

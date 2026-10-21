@@ -59,7 +59,7 @@ export function filterMcpServers(start: NativeSessionStart, servers: Readonly<Re
     name === 'graphql-files' || nativeMcpServerAllowed(name, policy)))
 }
 
-export function queryOptions(ctx: ClaudeManagerContext, start: NativeSessionStart, preferences = SessionPreferencesSchema.parse({})) {
+export function queryOptions(ctx: ClaudeManagerContext, start: NativeSessionStart, preferences = SessionPreferencesSchema.parse({})): Record<string, unknown> & { env: NodeJS.ProcessEnv } {
   const configuration = sessionStartConfiguration(start)
   const nativeTools = configuration.nativeTools
   const sdkOptions = { ...ctx.options.sdkOptions }

@@ -166,7 +166,7 @@ async function projectLifecycleLocked(sql: GraphTransactionSql, input: WorkflowL
       const updatedAt = input.execution.finishedAt ?? input.execution.startedAt ?? input.execution.createdAt
       await appendHierarchyReportLocked(sql, { id, agent: fact.agent, execution: fact.execution!,
         parentNodeId: parent.parentNodeId, parentRequestId: row.request_id, state, summary,
-        cardIds: receipt?.changedCardIds ?? [], sourceEventKey: fact.sourceEventKey, updatedAt })
+        cardIds: receipt ? receipt.changedCardIds : [], sourceEventKey: fact.sourceEventKey, updatedAt })
       reportIds.push(id)
     }
   }

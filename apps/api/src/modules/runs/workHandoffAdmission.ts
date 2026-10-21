@@ -255,8 +255,9 @@ export async function recordUnresolvedWorkLocked(context: AdmissionContext,
         return repeatConflict('WORK_RETURN_RESULT_CONFLICT')
       }
     }
-    const route = result.routing.kind === 'finish'
-      ? node.choice?.outcomes.find((item) => item.outcome === result.routing.outcome)?.target : undefined
+    const routing = result.routing
+    const route = routing.kind === 'finish'
+      ? node.choice?.outcomes.find((item) => item.outcome === routing.outcome)?.target : undefined
     if (route?.kind === 'edge') return repeatConflict('WORK_UNRESOLVED_ROUTE_EXISTS')
   } else {
     const selected = (await sql.query<{ routes: string[] }>(

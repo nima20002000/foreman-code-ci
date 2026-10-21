@@ -34,7 +34,7 @@ export interface WorkflowChatLockedTarget {
   agent: AgentIdentity
   state: EngineChatReadback['state']
   execution?: HarnessExecution
-  work?: LogicalWorkRef
+  work?: LogicalWorkRef | undefined
   native?: WorkflowChatNativeTarget
   waiting?: {
     delegationGroupId: string
@@ -54,6 +54,12 @@ export interface WorkflowNativeChatPage {
   revision: number
 }
 
+export interface WorkflowChatAdmission {
+  id: string
+  principalId: string
+  appliedIntent: 'steer' | 'next_turn' | 'interrupt_and_send'
+}
+
 /** Implemented by the existing coordinator, not by the durable command service.
  * dispatch loads a committed command by ID and verifies its captured writer again.
  * It never invents a continuation or an input reservation. */
@@ -66,7 +72,8 @@ export interface WorkflowChatOwnerPort {
   /** Read the actual qualified writer, without attaching or acquiring an owner. */
   capabilities(target: WorkflowChatTarget): Promise<EngineChatReadback['capabilities']>
   /** Check the exact serialized native/Worker envelope before durable admission. */
-  validateAdmission(context: WorkflowChatLockedTarget, request: ChatSendRequest): Promise<{ nativePrompt?: string } | void>
+  validateAdmission(context: WorkflowChatLockedTarget, request: ChatSendRequest,
+    admission: WorkflowChatAdmission): Promise<{ nativePrompt?: string } | void>
   dispatch(target: WorkflowChatTarget, commandId: string): Promise<void>
 }
 

@@ -214,8 +214,8 @@ describe.skipIf(!postgresEnabled)('workflow collaboration preparation and atomic
     const f = await fixture({ memory: true }), a = board()
     const integration = new WorkflowCollaborationIntegration({ memoryBoards: a.memoryBoards }, async () => 'computer')
     try {
-      const result: BoardResult = { kind: 'changes', operations: [{ kind: 'note_create', boardId: 'board-one',
-        text: 'A corrected note', expectedRevision: 6, commandId: 'note-command' }] }
+      const result = { kind: 'changes', operations: [{ kind: 'note_create', boardId: 'board-one',
+        text: 'A corrected note', expectedRevision: 6, commandId: 'note-command' }] } satisfies BoardResult
       const execution = await f.finish(f.execution.id, { outcome: 'succeeded', output: {
         summary: 'Complete', board: result, routing: { kind: 'finish' }, data: { latestDeliverable: 'Result', remainingFindings: [] },
       } })

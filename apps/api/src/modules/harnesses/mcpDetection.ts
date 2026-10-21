@@ -12,7 +12,7 @@ import {
   PairedMcpEndpointSchema,
 } from '@foreman-code/contracts'
 import type pg from 'pg'
-import type { ChildProcessEnvironment } from './port.js'
+import type { ChildProcessEnvironment, NativeHarnessSessionManager } from './port.js'
 
 import type { IssuedWorkerCredential, WorkerCredentialService } from '../access/workerCredentials.js'
 import { WORKER_CREDENTIAL_EXPIRY_MARGIN_MS } from '../access/credentialLifetime.js'
@@ -324,6 +324,8 @@ export class WorkerLaunchCredentialService implements ExecutionCredentialProvide
 export interface ExecutionCredentialPrepareInput {
   purpose?: 'reviewer' | 'consultation'
   consultation?: import('@foreman-code/contracts').CoordinatorConsultationBinding
+  /** The coordinator keeps a resident reviewer's existing process during rebinding. */
+  manager?: NativeHarnessSessionManager
   executionId: string
   harness: AgentHarness
   workingDirectory: string

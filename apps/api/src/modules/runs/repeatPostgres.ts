@@ -142,7 +142,8 @@ export type RepeatTickAdmission = { kind: 'busy'; execution?: HarnessExecution }
   | { kind: 'wait'; dueAt: string | null } | { kind: 'admitted'; execution: HarnessExecution }
 export type WorkTerminalAcceptance = { kind: 'accepted'; execution: HarnessExecution; replayed: boolean;
   resultProtocol?: ResultProtocol }
-  | { kind: 'retry' | 'continued'; execution: HarnessExecution }
+  | { kind: 'retry'; execution: HarnessExecution }
+  | { kind: 'continued'; execution: HarnessExecution }
   | { kind: 'waiting_direction'; execution: HarnessExecution; activationId: string; replayed: boolean }
   | { kind: 'refused'; execution: HarnessExecution; code: string; replayed: boolean }
 const BindingSchema = z.object({

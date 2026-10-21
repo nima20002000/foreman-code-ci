@@ -54,7 +54,7 @@ export async function recoverWorkflowArtifactOutputs(input: {
     }
     const source = await readWorkflowTerminalReceiptLocked(sql, snapshot, stored)
     await assertSettlementLocked(sql, snapshot.run, [execution.id], owner)
-    const mappings = workflowArtifactResult(execution.result, snapshot.version, node.id, snapshot.run.resultProtocol)
+    const mappings = workflowArtifactResult(execution.result!, snapshot.version, node.id, snapshot.run.resultProtocol)
     const publication = (await sql.query<{ transfer_receipt: unknown }>(
       `select record->'transferReceipt' as transfer_receipt from file_tool_publications
         where owner_principal_id=$1 and request_id=$2 for share`,

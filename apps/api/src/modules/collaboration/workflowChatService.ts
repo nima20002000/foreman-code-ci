@@ -26,7 +26,7 @@ export class WorkflowExecutionChatService implements ExecutionChatPort {
     return withExclusiveGraphConnection(this.pool, connection => connection.transaction(async sql =>
       resolveWorkflowChatTarget(sql, await readLiveManagementPrincipal(sql, principal.id), input), true))
   }
-  read(principal: Principal, request: { target: DeliveryTarget; cursor?: string; limit?: number }) {
+  read(principal: Principal, request: { target: DeliveryTarget; cursor?: string | undefined; limit?: number | undefined }) {
     return readWorkflowExecutionChat(this.pool, this.dependencies.owner, principal, request)
   }
   async deliver(principal: Principal, raw: ChatSendRequest) {

@@ -41,7 +41,7 @@ export async function recordWorkflowCoordinationTerminalLocked(sql: GraphTransac
   const json = canonicalGraphJson(record, 256 * 1024)
   const inserted = await sql.query(`insert into workflow_coordination_terminals
     (execution_id,run_id,native_proof_id,record,record_json,record_digest)
-    values($1,$2,$3,$4::jsonb,$4,$5) on conflict(execution_id) do update
+    values($1,$2,$3,$4::text::jsonb,$4::text,$5) on conflict(execution_id) do update
       set record=workflow_coordination_terminals.record
       where workflow_coordination_terminals.record=excluded.record returning execution_id`,
   [change.next.id, change.scope.runId, proof.proofId, json, repeatDigest(record, 256 * 1024)])

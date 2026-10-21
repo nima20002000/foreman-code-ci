@@ -235,7 +235,8 @@ export function providerLaunchCredentials(runs: PostgresRunRepository, locations
         'WORKER_EXECUTION_IDENTITY_INVALID', 'Credential preflight requires the pinned local execution.', 409)
       const context: NativeManagerResolutionContext = { executionId: execution.id, agentId: execution.agentId,
         harness: input.harness, workingDirectory: input.workingDirectory, configuration,
-        runId: execution.runId, attempt: execution.attempt, ...(input.purpose ? { purpose: input.purpose } : {}) }
+        runId: execution.runId, attempt: execution.attempt, ...(input.purpose ? { purpose: input.purpose } : {}),
+        ...(input.consultation ? { consultation: input.consultation } : {}) }
       const { manager } = managers.resolve(options.prepareContext ? await options.prepareContext(context) : context)
       return new WorkerLaunchCredentialService(new McpDetectionService(inspector(manager), providerAppEndpoint),
         credentials, run.executionLocation.runnerId, Math.min(300_000, credentials.ttlMs - 30_000)).prepare(input)
@@ -246,6 +247,8 @@ export function providerLaunchCredentials(runs: PostgresRunRepository, locations
     reconcileTerminalCredentials: () => credentials.reconcileTerminalCredentials(),
     renew: (id, credential) => credentials.renewForExecution(id, credential),
     restore: (id, environment) => credentials.restoreForExecution(id, environment),
+    restoreConsultation: (binding, environment) => credentials.restoreForConsultation(binding, environment),
+    renewConsultation: (binding, credential) => credentials.renewForConsultation(binding, credential),
   }
 }
 

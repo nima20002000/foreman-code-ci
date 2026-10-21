@@ -24,7 +24,6 @@ import {
   type ReviewJob,
   type WorkflowRun,
   type CoordinationResultContext,
-  type ChatSendRequest,
   type CoordinatorConsultationBinding,
   canonicalJson,
   HarnessExecutionRequestSchema,
@@ -37,7 +36,7 @@ import type { NativeHarnessSessionManager, NativeHistory } from '../harnesses/po
 import { DomainError } from '../errors.js'
 import type { WorkflowCollaborationIntegration } from '../collaboration/workflowIntegration.js'
 import type { WorkflowQueuedInput, WorkflowChatLockedTarget, WorkflowChatTarget,
-  WorkflowControlCommand } from '../collaboration/workflowControlTypes.js'
+  WorkflowControlCommand, WorkflowChatOwnerPort } from '../collaboration/workflowControlTypes.js'
 import { appendWorkflowChatInput } from './workflowChatInput.js'
 import { workflowChatInputPrompt } from './workflowChatInput.js'
 import { createWorkflowChatOwner, type WorkflowChatNativeCapture } from './workflowChatOwner.js'
@@ -671,7 +670,8 @@ export class ApprovalExecutionCoordinator {
     private readonly nativeCaptures?: WorkflowNativeCapturePort,
     private readonly reviewNativeCaptures?: ReviewNativeCapturePort,
     private readonly recoverNativeProcesses?: (executionId: string, signal: AbortSignal, owner: RunOwnership) => Promise<boolean>,
-    private readonly reserveNativeLaunch?: (executionId: string, manager: NativeHarnessSessionManager) => void | Promise<void>,
+    private readonly reserveNativeLaunch?: (executionId: string, manager: NativeHarnessSessionManager,
+      consultation?: CoordinatorConsultationBinding) => void | Promise<void>,
     private readonly prepareManagerContext?: (context: NativeManagerResolutionContext) => Promise<NativeManagerResolutionContext>,
     private readonly commitReviewNative?: (executionId: string) => Promise<void>,
     private readonly collaboration?: WorkflowCollaborationIntegration,
@@ -871,7 +871,7 @@ export class ApprovalExecutionCoordinator {
   /** Public controls reuse this coordinator's current Run/native ownership.
    * Readback only projects the original observer's durable source. */
   workflowChatOwner(sql: GraphSqlClient,
-    validateAdmission: (context: WorkflowChatLockedTarget, request: ChatSendRequest) => Promise<{ nativePrompt?: string } | void>) {
+    validateAdmission: WorkflowChatOwnerPort['validateAdmission']) {
     return this.workflowControls = createWorkflowChatOwner({ sql, runs: this.runs, validateAdmission,
       withOwner: async (target, work) => {
         const id = target.kind === 'workflow_execution' ? target.execution.executionId
@@ -983,6 +983,10 @@ export class ApprovalExecutionCoordinator {
     try {
       await current.stopReviewerRenewal?.()
       delete current.stopReviewerRenewal
+      if (resolved?.processState === 'needs_start') {
+        await this.reserveNativeLaunch?.(source.id, this.rawManagers.get(current.manager) ?? current.manager, active.binding)
+        resolved.beginStart?.()
+      }
       if (!consultation.credential) consultation.credential = await this.prepareConsultationCredential(
         current, active.binding, !!active.nativeTarget)
       this.managerCredentials.set(current.manager, consultation.credential)
@@ -990,11 +994,10 @@ export class ApprovalExecutionCoordinator {
       const start = { kind: 'workflow-consultation' as const, consultation: active.binding, request,
         correlationId: `consultation:${active.binding.consultationId}`,
         ...(active.nativeTurnId ? { nativeTurnId: active.nativeTurnId } : {}),
-        environment: consultation.credential.environment, instructionsDelivered: true }
+        environment: consultation.credential.environment, instructionsDelivered: true as const }
       if (current.session) {
         if (!active.nativeTarget) await current.manager.rebindApplicationAccess!(current.session, start, current.controller.signal)
       } else {
-        resolved?.beginStart?.()
         const attached = await this.openingSession(current, current.manager.attachSession(reference.session, start, current.controller.signal))
         this.assertSessionIdentity(reference.session, attached)
         resolved?.markResident?.()
@@ -1051,7 +1054,8 @@ export class ApprovalExecutionCoordinator {
     const signal = owned.controller.signal
     if (!recovery) return (await this.credentials.prepare({ executionId: owned.execution.id,
       harness: owned.context.harness, workingDirectory: owned.context.workingDirectory,
-      purpose: 'consultation', consultation: binding, signal })).credential
+      purpose: 'consultation', consultation: binding,
+      manager: this.rawManagers.get(owned.manager) ?? owned.manager, signal })).credential
     if (!this.credentials.restoreConsultation) throw new DomainError('CONSULTATION_CREDENTIAL_UNAVAILABLE',
       'The original consultation credential cannot be restored.', 409)
     const reference = await this.interactions.coordination.workflowSession(owned.execution.id)
@@ -2475,7 +2479,7 @@ export class ApprovalExecutionCoordinator {
         return { manager: resolved.manager, session, signal: owned.controller.signal }
       }
       const environment = await this.prepareEnvironment(resolutionContext, resolved, {
-        signal, purpose: context.purpose, restartOwner: options.restartOwner,
+        signal, ...(context.purpose === 'reviewer' ? { purpose: context.purpose } : {}), restartOwner: options.restartOwner,
       })
       await this.validateContinuation?.(execution.id, signal)
       options.restartOwner?.assertOwned()

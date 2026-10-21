@@ -59,7 +59,7 @@ export async function admitWorkflowChatSendLocked(context: WorkflowChatLockedTar
   identity: AdmissionIdentity, owner: WorkflowChatOwnerPort) {
   await assertSendable(context)
   const applied = appliedIntent(context, request)
-  const prepared = await owner.validateAdmission(context, request)
+  const prepared = await owner.validateAdmission(context, request, { ...identity, appliedIntent: applied })
   const operation = applied === 'steer' ? 'steer' : applied === 'interrupt_and_send' ? 'interrupt'
     : context.target.kind === 'workflow_coordinator' ? 'consultation' : 'input'
   const receipt = ChatDeliveryReceiptSchema.parse({ id: identity.id, commandId: identity.commandId,

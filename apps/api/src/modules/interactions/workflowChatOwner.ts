@@ -1,4 +1,4 @@
-import { canonicalJson, type ChatSendRequest, type EngineChatReadback, type HarnessExecution,
+import { canonicalJson, type EngineChatReadback, type HarnessExecution,
   type NativeSessionReference } from '@foreman-code/contracts'
 import type { GraphSqlClient, GraphTransactionSql } from '../run-graph/connection.js'
 import { DomainError } from '../errors.js'
@@ -25,7 +25,7 @@ export interface WorkflowChatNativeOwnerDependencies {
     work: (owner: RunOwnership, source: HarnessExecution) => Promise<T>): Promise<T>
   capture(target: WorkflowChatTarget, source: HarnessExecution): WorkflowChatNativeCapture | undefined
   captureForRead(target: WorkflowChatTarget): WorkflowChatNativeCapture | undefined
-  validateAdmission(context: WorkflowChatLockedTarget, request: ChatSendRequest): Promise<{ nativePrompt?: string } | void>
+  validateAdmission: WorkflowChatOwnerPort['validateAdmission']
   dispatchConsultation(target: WorkflowChatTarget, command: WorkflowControlCommand,
     owner: RunOwnership, source: HarnessExecution): Promise<void>
 }
