@@ -1026,6 +1026,7 @@ export const ActivityKindSchema = z.enum([
   "work_needs_direction",
   "work_direction_wait",
   "workflow_chat_receipt",
+  "collaboration_lifecycle",
 ]);
 
 /** Ordered native/backend activity. payload remains source-specific but JSON-safe. */
