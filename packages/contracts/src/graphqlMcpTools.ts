@@ -1,4 +1,4 @@
-import { COLLABORATION_AGENT_TOOLS, isCollaborationAgentTool } from './collaborationTools.js';
+import { COLLABORATION_AGENT_TOOLS, isCollaborationAgentTool, memoryBoardTools, newAgentMemoryBoardAccess } from './collaborationTools.js';
 export * from './collaborationTools.js';
 import { type WorkflowAgentProductRole, agentProductRoleLabel } from './agentIdentity.js';
 import { z } from "zod";
@@ -134,6 +134,11 @@ export function graphqlRoleTools(role: WorkflowAgentProductRole, implementedColl
   return GraphqlAgentToolSchema.options.filter((tool) => graphqlToolRoles(tool).includes(role)
     && !GRAPHQL_INTERVAL_TOOLS.includes(tool)
     && (!isCollaborationAgentTool(tool) || implementedCollaborationTools.includes(tool)));
+}
+
+/** Copy only into a newly created Agent. Old absent tool choices retain their legacy meaning. */
+export function newAgentGraphqlTools(role: WorkflowAgentProductRole): GraphqlAgentTool[] {
+  return [...graphqlRoleTools(role), ...memoryBoardTools(newAgentMemoryBoardAccess(role))];
 }
 
 /** Tools named here that the role can never use. */
