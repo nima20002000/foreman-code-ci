@@ -20,7 +20,6 @@ import { useWorkflowOperatorDock } from './operatorDockContext'
 import { useBrowserPanelRelease } from './useBrowserPanelRelease'
 import { useCollaborationUISlots } from '../../shared/ui/collaborationSlots'
 import { createWorkflowExecutionChatSlot } from '../workflow-hierarchy/execution-chat/createWorkflowExecutionChatSlot'
-import { SelectedRunControls } from './actions/SelectedRunControls'
 import './workflowBoard.css'
 
 /** This component is keyed by workspace/workflow only, NEVER by selected Run. */
@@ -157,10 +156,6 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
         style={{ position: 'static', flex: '0 0 auto', flexWrap: 'wrap', justifyContent: 'flex-end', padding: 'var(--space-2)', boxSizing: 'border-box', minWidth: 0 }}>
         <BoardNavigationControls workspaceId={workspaceId} workflowId={workflowId} selection={navigationSelection}
           runsLabel={current && side.view === 'overview' ? 'Choose run' : undefined} />
-        {boardSelection.active && !boardSelection.invalid && boardSelection.identity.runId ?
-          <SelectedRunControls key={JSON.stringify(boardSelection.identity)} visible={!side.memoryOpen}
-            scope={{ workspaceId, workflowId, runId: boardSelection.identity.runId,
-              ...(picked?.kind === 'available' ? { workflowVersionId: picked.workflowVersionId } : {}) }} /> : null}
       </header> : null}
       <div className="workflow-collaboration-layout" data-panel-open={side.panel.kind !== 'none' && !side.memoryOpen}>
       <div className="workflow-collaboration-canvas" hidden={side.view !== 'graph'} inert={side.view !== 'graph'}>

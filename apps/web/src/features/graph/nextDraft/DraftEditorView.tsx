@@ -190,7 +190,6 @@ export function DraftEditorView({ draftKey, edit, updateFailures, controller }: 
     <ConfirmDialog open={confirm === 'reload'} onOpenChange={(open) => { if (!open) setConfirm(undefined) }} title="Inspect the latest saved workflow?"
       description="Your unsaved draft is kept separately for comparison. A fresh editor opens the latest saved workflow."
       confirmLabel="Inspect latest" onConfirm={() => { setConfirm(undefined); void inspectLatest() }} />
-    <RemoveHierarchyNodeDialog draftKey={draftKey} edit={edit} pending={reloading || saveBusy || starting || editIntent.locked}
-      report={report} inspectLatest={inspectLatest} />
+    <RemoveHierarchyNodeDialog draftKey={draftKey} edit={edit} pending={saveBusy || starting || editIntent.locked} report={report} />
   </section>
 }

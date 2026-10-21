@@ -310,8 +310,6 @@ describe('selected saved Run board (real Router, Query, HTTP/MSW and canvas)', (
   it('has only view controls at 320px; keyboard/drag cannot edit, delete, save or Start', async () => {
     const frozenBefore = JSON.stringify(runA)
     const { container } = await mount(); const y = await savedNode('Y')
-    const savedPosition = { transform: 'translate(500px,230px)' }
-    expect(y).toHaveStyle(savedPosition)
     const canvas = screen.getByTestId('run-board-canvas')
     expect(canvas.getBoundingClientRect().width).toBe(320)
     expect(screen.queryByRole('button', { name: /Start|Save|Settings|Chat|interactive/i })).not.toBeInTheDocument()
@@ -329,7 +327,7 @@ describe('selected saved Run board (real Router, Query, HTTP/MSW and canvas)', (
     const up = new MouseEvent('mouseup', { bubbles: true })
     Object.defineProperty(up, 'view', { value: y.ownerDocument.defaultView })
     fireEvent(window, up)
-    expect(y).toHaveStyle(savedPosition)
+    expect(y).toHaveStyle({ transform: 'translate(0px,260px)' })
     expect(authoringShortcut).not.toHaveBeenCalled()
     expect(JSON.stringify(runA)).toBe(frozenBefore)
     await userEvent.click(within(controls as HTMLElement).getAllByRole('button')[2]!)

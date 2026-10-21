@@ -3,14 +3,13 @@ import { create } from 'zustand'
 import type { BoardSidePanel } from '@foreman-code/contracts/wave25'
 
 type ScrollPosition = { top: number; left: number }
-type OperatorReturn = { kind: BoardSidePanel['kind']; runId: string | null; workflowVersionId: string | null }
 type SidePanelPresentation = {
   widths: Record<string, number>
   scroll: Record<string, Record<string, ScrollPosition>>
-  beforeOperator: Record<string, OperatorReturn>
+  beforeOperator: Record<string, BoardSidePanel>
   collapsedTeams: Record<string, string[]>
   setWidth(scope: string, width: number): void
-  rememberOperator(scope: string, selection: OperatorReturn): void
+  rememberOperator(scope: string, selection: BoardSidePanel): void
   rememberScroll(scope: string, positions: Record<string, ScrollPosition>): void
   toggleTeam(scope: string, nodeId: string): void
 }

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, render, screen, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useState } from 'react'
 import userEvent from '@testing-library/user-event'
@@ -95,7 +95,7 @@ function teamContext() {
   return { ...value, draft: { ...value.draft, graph: initial.graph },
     agents: editorAgents(initial).map(agent => ({ agent, metadataRevision: 3 })) }
 }
-function TeamSettings({ pending = false }: { pending?: boolean }) {
+function TeamSettings() {
   const edit = useGraphDraftStore(state => state.nextDrafts[draftKey]!)
   const [open, setOpen] = useState(true)
   const node = edit.graph.nodes.find(item => item.id === 'node-3')!
@@ -108,34 +108,15 @@ function TeamSettings({ pending = false }: { pending?: boolean }) {
     <button onClick={() => useGraphDraftStore.getState().updateNextDraft(draftKey, current => ({ ...current,
       workflowForms: { ...current.workflowForms, removeNode: { nodeId: 'node-1', destinationParentId: '' } } }))}>Remove team</button>
     <button disabled={!edit.history.length} onClick={() => useGraphDraftStore.getState().undoNextDraft(draftKey)}>Undo</button>
-    <RemoveHierarchyNodeDialog draftKey={draftKey} edit={edit} pending={pending} report={report} /></>
+    <RemoveHierarchyNodeDialog draftKey={draftKey} edit={edit} pending={false} report={report} /></>
 }
-function mountTeam({ pending = false } = {}) {
+function mountTeam() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   clients.push(client)
   client.setQueryData(queryKeys.managedHarnessCatalog, [{ harness: 'codex', defaults: DEFAULT_HARNESS_DEFAULTS.codex,
     defaultsRevision: 1, capability: null, discoveryError: null }])
-  return render(<QueryClientProvider client={client}><TeamSettings pending={pending} /></QueryClientProvider>)
+  return render(<QueryClientProvider client={client}><TeamSettings /></QueryClientProvider>)
 }
-
-it('keeps an open removal form locked while its operation is pending', async () => {
-  useGraphDraftStore.getState().installNextDraft(draftKey, teamContext(), true)
-  const original = structuredClone(useGraphDraftStore.getState().nextDrafts[draftKey]!.graph)
-  mountTeam({ pending: true })
-  await userEvent.click(screen.getByRole('button', { name: 'Remove team' }))
-  const dialog = screen.getByRole('dialog', { name: 'Remove Node 1 from workflow?' })
-  expect(within(dialog).getByRole('button', { name: 'Apply removal to draft' })).toBeDisabled()
-  expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeDisabled()
-  expect(within(dialog).getByLabelText('Move 1 Workers to')).toBeDisabled()
-  fireEvent.keyDown(dialog, { key: 'Escape' })
-  fireEvent.pointerDown(dialog)
-  fireEvent.click(dialog)
-  expect(dialog).toBeVisible()
-  expect(useGraphDraftStore.getState().nextDrafts[draftKey]!.graph).toEqual(original)
-  expect(useGraphDraftStore.getState().nextDrafts[draftKey]!.workflowForms?.removeNode).toEqual({
-    nodeId: 'node-1', destinationParentId: '',
-  })
-})
 it('retains a Worker parent until Apply; Cancel leaves graph intact, Apply changes membership and routes in one Undo', async () => {
   useGraphDraftStore.getState().installNextDraft(draftKey, teamContext(), true)
   const original = structuredClone(useGraphDraftStore.getState().nextDrafts[draftKey]!.graph)

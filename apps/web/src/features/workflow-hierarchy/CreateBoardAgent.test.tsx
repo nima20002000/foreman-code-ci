@@ -52,19 +52,20 @@ it('edits the complete form before staging one private Master and its initial pr
   await userEvent.clear(screen.getByRole('textbox', { name: 'Name' }))
   await userEvent.type(screen.getByRole('textbox', { name: 'Name' }), 'Project lead')
   await userEvent.type(screen.getByRole('textbox', { name: 'Initial prompt' }), 'Coordinate the requested change.')
-  await userEvent.type(screen.getByRole('textbox', { name: 'Agent branch prefix' }), 'foreman/lead-work')
+  await userEvent.type(screen.getByRole('textbox', { name: 'Agent branch prefix' }), 'lead-work')
   const before = useGraphDraftStore.getState().nextDrafts[draftKey]!
   expect(before.graph.nodes).toEqual([])
   expect(stageAgentEdits(before)).toEqual([])
   await userEvent.click(screen.getByRole('button', { name: 'Add Master to draft' }))
-  await waitFor(() => expect(opened).toHaveBeenCalledOnce())
+  await waitFor(() => expect(opened,
+    screen.getByRole('region', { name: 'Create Agent in workflow' }).textContent ?? '').toHaveBeenCalledOnce())
   const staged = useGraphDraftStore.getState().nextDrafts[draftKey]!, changes = stageAgentEdits(staged)
   expect(changes).toHaveLength(1)
   expect(changes[0]).toMatchObject({ baseRevision: null, agent: { name: 'Project lead', productRole: 'master',
     graphqlTools: expect.arrayContaining(memoryBoardTools('write')) } })
   expect(changes[0]!.agent.configurationVersionId).toBeUndefined()
   expect(staged.graph.nodes).toEqual([expect.objectContaining({ id: opened.mock.calls[0]![0],
-    initialPrompt: 'Coordinate the requested change.', worktree: { branchPrefix: 'foreman/lead-work' } })])
+    initialPrompt: 'Coordinate the requested change.', worktree: { branchPrefix: 'lead-work' } })])
   expect(staged.context.agents).toEqual([])
   expect(staged.workflowForms?.createAgent).toBeUndefined()
   expect(report).not.toHaveBeenCalled()

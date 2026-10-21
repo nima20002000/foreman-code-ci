@@ -11,24 +11,15 @@ export function HierarchyReportHistory({ scope, agent, initialReport, close, sho
   showExecution(report: HierarchyReport): void; showCard?(cardId: string, report: HierarchyReport): void; visible?: boolean
 }) {
   const history = useHierarchyReportHistory(scope, agent.workflowNodeId, { enabled: visible })
-  const denied = useProtectedAccessError({ ...history,
-    isSuccess: history.isSuccess && !history.refresh.isPending && !history.refresh.isError,
-  }, history.refresh.error)
+  const denied = useProtectedAccessError(history)
   const [selected, setSelected] = useState(initialReport)
-  const byId = new Map<string, HierarchyReport>()
-  for (const page of history.data?.pages ?? []) {
-    for (const report of page.items) if (!byId.has(report.id)) byId.set(report.id, report)
-  }
-  const reports = [...byId.values()].sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))
-  const failure = history.error ?? history.refresh.error
-  const refresh = <Button disabled={history.isFetching || history.refresh.isPending}
-    onClick={() => history.refresh.mutate()}>Refresh reports</Button>
+  const reports = history.data?.pages.flatMap(page => page.items) ?? []
   return <Dialog open={visible} onOpenChange={open => { if (!open) close() }} title={`${agent.displayName} · Report history`} closeLabel="Close report history">
-    {denied ? <Alert tone="warning" title="Report history is no longer available with your access.">{refresh}</Alert> : <>
+    {denied ? <Alert tone="warning" title="Report history is no longer available with your access." /> : <>
       <p>Selected Run · {scope.runId}. Each report keeps its original business request, execution and attempt.</p>
-      {refresh}
       {history.isLoading ? <p role="status">Loading report history…</p> : null}
-      {failure ? <Alert tone="warning" title="Couldn’t refresh report history.">{failure.message}</Alert> : null}
+      {history.error ? <Alert tone="warning" title="Couldn’t load earlier reports.">
+        <Button onClick={() => void history.refetch()}>Retry report history</Button></Alert> : null}
       <ol className="hierarchy-report-history-rounds" aria-label="Report rounds">{reports.map(report => <li key={report.id}>
         <Button size="sm" aria-pressed={selected?.id === report.id} onClick={() => setSelected(report)}>
           {report.state} · {new Date(report.updatedAt).toLocaleString()} · {report.parentRequestId} · attempt {report.execution.attempt}

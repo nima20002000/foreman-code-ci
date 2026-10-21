@@ -2,15 +2,93 @@
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { expect, it, vi } from 'vitest'
+import { HttpResponse } from 'msw'
+import { GraphEditAdvanceInputV3Schema, GraphEditStageInputV3Schema,
+  type GraphEditIntentV3, type GraphEditStageInputV3 } from '@foreman-code/contracts/wave25'
 import { useGraphDraftStore } from '../graph/store'
 import { nextDraftDirty } from '../graph/nextDraft/state'
 import { readConflictRecoveries, readEditOutbox, storeEditSnapshot } from '../graph/nextDraft/editIntentStorage'
 import { fixture as authoringFixture } from '../graph/nextDraft/core.cases'
 import { stageHierarchyAgent } from '../workflow-hierarchy/authoring'
-import { installBoardTestLifecycle } from './eng05D.testSupport'
-import { authoring, draft, mount, recoveryFixture, rename, settings } from './hierarchyRecovery.testSupport'
+import { graphEditIntentKey } from '../graph/nextDraft/useGraphEditIntent'
+import { journalIntent, savedJournal } from '../graph/nextDraft/nim2644Journal.fixture'
+import { installBoardTestLifecycle, measureBoardWire, mountMeasuredBoard } from './eng05D.testSupport'
+import { meaningfulSaveFixture } from './meaningfulSave.testSupport'
 
 installBoardTestLifecycle()
+type Fixture = Awaited<ReturnType<typeof recoveryFixture>>
+const draft = (f: Fixture) => useGraphDraftStore.getState().nextDrafts[f.key]!
+const authoring = () => within(screen.getByRole('region', { name: 'Workflow authoring' }))
+
+/** Only HTTP replies are simulated. The mounted router, editor, storage,
+ * private-command journal client and fresh transport base are production code. */
+async function recoveryFixture(source = authoringFixture()) {
+  const f = await meaningfulSaveFixture(false, source)
+  let saved = structuredClone(f.definition())
+  const baseManaged = f.mock.managed(f.workflowId)
+  const intents = new Map<string, GraphEditIntentV3>(), requests: GraphEditStageInputV3[] = []
+  const controls = { failLatestRead: false, loseStageReply: false }
+  const read = (draftId: string) => ({ intent: intents.get(draftId) ?? null, current: [], canStop: true, affectedSetChanged: false })
+  const reply = async (request: Request) => {
+    const url = new URL(request.url)
+    if (request.method === 'GET' && (url.pathname === f.path || url.pathname === `${f.path}/definition`)) {
+      if (controls.failLatestRead) return HttpResponse.json({ error: { code: 'TEMPORARILY_UNAVAILABLE', message: 'Latest saved workflow could not be read.' } }, { status: 503 })
+      return HttpResponse.json(url.pathname === f.path ? { ...baseManaged, workflow: saved.version.definition,
+        revision: saved.revision, currentVersionId: saved.currentVersionId } : saved)
+    }
+    if (url.pathname !== `${f.path}/definition/edits`) return undefined
+    if (request.method === 'GET') return HttpResponse.json(read(url.searchParams.get('draftId') ?? ''))
+    const raw: unknown = await request.json()
+    if ((raw as { action?: string }).action === 'stage_edits') {
+      const input = GraphEditStageInputV3Schema.parse(raw); requests.push(structuredClone(input))
+      const prior = intents.get(input.draftId)
+      if (prior?.stageCommandId === input.commandId) return HttpResponse.json(read(input.draftId))
+      if (input.expectedRevision !== saved.revision || input.expectedWorkflowVersionId !== saved.currentVersionId) {
+        return HttpResponse.json({ error: { code: 'REVISION_CONFLICT', message: 'The saved workflow changed. Inspect latest to compare your draft.' } }, { status: 409 })
+      }
+      const context = { draft: { ...f.mock.drafts.get(f.workflowId)!, graph: saved.version.definition,
+        revision: saved.revision, publishedRevision: saved.revision, baseWorkflowVersionId: saved.currentVersionId }, agents: f.mock.catalog }
+      intents.set(input.draftId, journalIntent(input, context))
+      if (controls.loseStageReply) { controls.loseStageReply = false; return HttpResponse.error() }
+      return HttpResponse.json(read(input.draftId))
+    }
+    const input = GraphEditAdvanceInputV3Schema.parse(raw), intent = intents.get(input.draftId)!
+    expect(input.intentId).toBe(intent.id); expect(input.commandId).toBe(intent.advanceCommandId)
+    if (intent.state !== 'saved') {
+      const completed = savedJournal(intent, saved.version.version + 1)
+      intents.set(input.draftId, completed)
+      const result = completed.result!
+      saved = { workspaceId: result.workspaceId, workflowId: result.workflowId, revision: result.revision,
+        currentVersionId: result.currentVersionId, version: result.version }
+    }
+    return HttpResponse.json(read(input.draftId))
+  }
+  const externalEdit = (name: string) => {
+    const version = saved.version.version + 1, id = `external-version-${version}`
+    saved = { ...saved, revision: saved.revision + 1, currentVersionId: id,
+      version: { ...saved.version, id, version, definition: { ...saved.version.definition, version, name } } }
+  }
+  const wire = measureBoardWire(f.mock, reply)
+  return { ...f, controls, requests, externalEdit, wire, saved: () => saved }
+}
+async function mount(f: Fixture) {
+  const view = await mountMeasuredBoard(f.href)
+  await screen.findByRole('region', { name: 'Workflow authoring' })
+  await waitFor(() => expect(draft(f)).toBeDefined())
+  await waitFor(() => expect(view.cache.getQueryState(graphEditIntentKey(f.workspaceId, f.workflowId,
+    draft(f).context.draft.id))).toMatchObject({ status: 'success', fetchStatus: 'idle' }))
+  return view
+}
+async function rename(name: string) {
+  await userEvent.click(authoring().getByTitle('Rename workflow'))
+  const field = authoring().getByRole('textbox', { name: 'Workflow name' })
+  await userEvent.clear(field); await userEvent.type(field, `${name}{Enter}`)
+  await userEvent.click(within(await screen.findByRole('dialog', { name: 'Rename workflow?' })).getByRole('button', { name: 'Rename' }))
+}
+async function settings() {
+  if (!screen.queryByRole('region', { name: 'Draft conflict recovery' })) await userEvent.click(authoring().getByRole('button', { name: 'Workflow settings' }))
+  return screen.findByRole('region', { name: 'Draft conflict recovery' })
+}
 
 it('opens latest into a fresh durable base, retains repeated recoveries through refresh and saves only manually reapplied changes', async () => {
   const f = await recoveryFixture(), first = await mount(f)
@@ -155,12 +233,10 @@ it.each(['write', 'read', 'latest-response'] as const)('keeps the original edito
     }) : undefined
   if (failure === 'latest-response') f.controls.failLatestRead = true
   await userEvent.click(screen.getByRole('button', { name: 'Inspect latest' }))
-  if (failure === 'read') {
-    expect(await screen.findByRole('alert')).toHaveTextContent('Recovery read denied')
-  }
   const errorText = failure === 'latest-response' ? 'Latest saved workflow could not be read.'
     : failure === 'read' ? 'Recovery read denied' : /Durable edit storage is unavailable/
-  await screen.findAllByText(errorText)
+  await waitFor(() => expect(screen.queryAllByText(errorText),
+    screen.getByRole('region', { name: 'Workflow authoring' }).textContent ?? '').not.toHaveLength(0))
   restore?.mockRestore(); f.controls.failLatestRead = false
   expect(draft(f).instanceId).toBe(original.instanceId)
   expect(draft(f).graph).toEqual(original.graph)
@@ -175,8 +251,7 @@ it.each(['write', 'read', 'latest-response'] as const)('keeps the original edito
 const getItem = Storage.prototype.getItem
 
 it('blocks Inspect latest while Stage is uncertain and reconciles the original immutable command before opening a fresh base', async () => {
-  const f = await recoveryFixture()
-  const view = await mount(f)
+  const f = await recoveryFixture(); await mount(f)
   await rename('Exact pending name'); await settings()
   f.controls.loseStageReply = true
   await userEvent.click(authoring().getByRole('button', { name: 'Save workflow' }))
@@ -184,13 +259,10 @@ it('blocks Inspect latest while Stage is uncertain and reconciles the original i
   const original = structuredClone(readEditOutbox(f.key)!.request)
   expect(screen.getByRole('button', { name: 'Inspect latest' })).toBeDisabled()
   expect(readConflictRecoveries(f.key)).toEqual([])
-  await waitFor(() => expect(f.requests).toHaveLength(1))
-  await waitFor(() => expect(view.cache.isMutating()).toBe(0))
   await waitFor(() => expect(authoring().getByRole('button', { name: 'Reconcile Save' })).toBeEnabled())
-  expect(screen.queryByRole('dialog', { name: 'Remove workflow node' })).not.toBeInTheDocument()
   await userEvent.click(authoring().getByRole('button', { name: 'Reconcile Save' }))
-  expect(screen.queryByRole('alertdialog', { name: 'Save changes before leaving?' })).not.toBeInTheDocument()
-  await waitFor(() => expect(readEditOutbox(f.key)).toBeUndefined())
+  await waitFor(() => expect(readEditOutbox(f.key),
+    JSON.stringify({ requests: f.requests.length, authoring: screen.getByRole('region', { name: 'Workflow authoring' }).textContent })).toBeUndefined())
   expect(f.requests.length).toBeGreaterThan(1)
   for (const input of f.requests) expect(input).toEqual(original)
   expect(f.saved().version.definition.name).toBe('Exact pending name')

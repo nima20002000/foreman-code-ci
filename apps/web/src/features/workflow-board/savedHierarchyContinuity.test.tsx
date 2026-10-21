@@ -5,8 +5,6 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { http, HttpResponse, type JsonBodyType } from 'msw'
 import { WorkflowHierarchyReadResultSchema } from '@foreman-code/contracts'
-import { LocalHumanAccessSchema } from '@foreman-code/contracts/management'
-import { CURRENT_WORKFLOW_CAPABILITIES, CurrentWorkflowCapabilitiesSchema } from '@foreman-code/contracts/wave25'
 import { subagentCapabilities } from '@foreman-code/contracts/subagents'
 import { server } from '../../mocks/server'
 import { deferred } from '../../test/deferred'
@@ -17,7 +15,6 @@ import { subagentsKey } from '../run-subagents/query'
 import { RunsSelectorSearchSchema } from '../runs-selector/search'
 import { WorkflowBoard } from './WorkflowBoard'
 import { useSidePanelPresentation } from './sidePanelPresentation'
-import { clearBoardStopStorage } from './stopOutbox'
 
 const clients: QueryClient[] = []
 const hierarchyPath = '*/api/management/workspaces/:workspaceId/workflows/:workflowId/hierarchy'
@@ -32,14 +29,6 @@ beforeEach(() => {
   ReportSource.instances = []
   vi.stubGlobal('EventSource', ReportSource)
   useSidePanelPresentation.setState({ collapsedTeams: {}, scroll: {} })
-  clearBoardStopStorage()
-  localStorage.clear()
-  const commands = new Map<string, Promise<unknown>>()
-  Object.defineProperty(navigator, 'locks', { configurable: true, value: { request: (key: string, work: () => unknown) => {
-    const next = (commands.get(key) ?? Promise.resolve()).then(work)
-    commands.set(key, next.catch(() => { /* ignore: callers receive failure; later commands still need the lock. */ }))
-    return next
-  } } })
 })
 afterEach(() => { cleanup(); clients.splice(0).forEach(client => client.clear()); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
@@ -83,7 +72,7 @@ function install() {
   )
   return { requests, record }
 }
-async function mount(entry = runsUrl('run-a'), { hasHierarchy = true } = {}) {
+async function mount(entry = runsUrl('run-a')) {
   const cache = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   clients.push(cache)
   const root = createRootRoute({ component: Outlet })
@@ -96,50 +85,11 @@ async function mount(entry = runsUrl('run-a'), { hasHierarchy = true } = {}) {
     history: createMemoryHistory({ initialEntries: [entry] }), defaultPendingMinMs: 0 })
   await router.load()
   render(<QueryClientProvider client={cache}><RouterProvider router={router} /></QueryClientProvider>)
-  await screen.findByTestId('unified-workflow-board')
-  if (hasHierarchy) await screen.findByRole('button', { name: 'Hide Workers for Y' })
+  await screen.findByRole('button', { name: 'Hide Workers for Y' })
   return { cache, router }
 }
 const toolbar = () => within(screen.getByRole('navigation', { name: 'Workflow views' }))
 const childScope = { ...scope, runId: 'run-a' }
-
-it.each(['graph', 'overview'])('stops an ordinary selected Run from %s and keeps its command after a lost receipt', async view => {
-  install()
-  const stops: Record<string, unknown>[] = []
-  const run = { ...scope, runId: 'run-b', workflowVersionId: 'version-b', executionSemanticsVersion: 3,
-    executionState: 'running', outcome: 'pending', createdAt: '2026-10-01T00:00:00Z', cleanupPending: false }
-  server.use(
-    http.get('*/api/local-human', () => HttpResponse.json(LocalHumanAccessSchema.parse({ principal: {
-      id: 'operator-test', name: 'Test Operator', expiresAt: '2099-01-01T00:00:00Z',
-      grants: [{ actions: ['runs:read', 'runs:stop'], scope: { workspaceIds: [scope.workspaceId] } }],
-    } }))),
-    http.get('*/api/management/workflows/capabilities/v3', () => HttpResponse.json(CurrentWorkflowCapabilitiesSchema.parse({
-      ...CURRENT_WORKFLOW_CAPABILITIES, runtimeAdmission: true, meaningfulEdit: true, stopAvailable: true, reasons: [],
-      editIntents: { ...CURRENT_WORKFLOW_CAPABILITIES.editIntents, stopUnsettled: true },
-    }))),
-    http.get('*/api/management/workspaces/:workspaceId/runs/run-b/executions', () => HttpResponse.json({
-      run, items: [], pageInfo: { nextCursor: null },
-    })),
-    http.post('*/api/management/workspaces/:workspaceId/runs/run-b/stop', async ({ request }) => {
-      stops.push(await request.json() as Record<string, unknown>)
-      if (stops.length === 1) return HttpResponse.error()
-      return HttpResponse.json({ runId: 'run-b', status: 'accepted', processStopped: false, replayed: true })
-    }),
-  )
-  await mount(`${runsUrl('run-b')}&boardView=${view}`, { hasHierarchy: false })
-  fireEvent.click(await screen.findByRole('button', { name: 'Run controls · Stop' }))
-  await waitFor(() => expect(screen.getByRole('button', { name: 'Stop this Run' })).toBeEnabled())
-  fireEvent.click(screen.getByRole('button', { name: 'Stop this Run' }))
-  await screen.findByText(/Stop is not confirmed:/)
-  expect(stops).toHaveLength(1)
-  expect(stops[0]).toMatchObject({ workspaceId: scope.workspaceId, runId: 'run-b' })
-  await waitFor(() => expect(screen.getByRole('button', { name: 'Reconcile Stop' })).toBeEnabled())
-  fireEvent.click(screen.getByRole('button', { name: 'Reconcile Stop' }))
-  await screen.findByText(/Stop receipt: accepted/)
-  expect(stops).toHaveLength(2)
-  expect(stops[1]).toEqual(stops[0])
-  expect(screen.getByRole('region', { name: 'Stop and cleanup' })).toHaveTextContent('version-b')
-})
 
 it('uses saved roles and coordinates, docks one inspector, and navigates teams without changing the Run', async () => {
   install()

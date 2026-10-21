@@ -10,7 +10,6 @@ export function useWorkflowSidePanel(workspaceId: string, workflowId: string, ru
   beforeBrowserHide?: () => void) {
   const location = useLocation(), navigate = useNavigate()
   const search = location.search
-  const pathname = location.pathname
   const scope = JSON.stringify([workspaceId, workflowId])
   const opener = useRef<HTMLElement | null>(null)
   const { boardPanel, boardNodeId, boardExecutionId, boardWaitingActivationId, boardAgentTab } = search
@@ -45,17 +44,13 @@ export function useWorkflowSidePanel(workspaceId: string, workflowId: string, ru
     if (panel.kind === 'none' && next.kind !== 'none') {
       opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
     }
-    void navigate({ to: pathname, hash: true,
+    void navigate({ to: '/workspaces/$workspaceId', params: { workspaceId }, hash: true,
       search: previous => {
         if (previous.workflowId && previous.workflowId !== workflowId) return previous
-        const selected = keepRun(previous)
         if (next.kind === 'operator' && previous.boardPanel !== 'operator') {
-          useSidePanelPresentation.getState().rememberOperator(scope, {
-            kind: boardSidePanelFromSearch(previous).kind,
-            runId: selected.selectedRunId ?? selected.runId ?? null,
-            workflowVersionId: selected.workflowVersionId ?? null,
-          })
+          useSidePanelPresentation.getState().rememberOperator(scope, boardSidePanelFromSearch(previous))
         }
+        const selected = keepRun(previous)
         // The rail owns inspection after a legacy deep link has been opened.
         // Clearing those aliases also makes Back to Board stay closed.
         delete selected.runNodeId; delete selected.runRelationshipId; delete selected.runExchangeKey
@@ -71,35 +66,24 @@ export function useWorkflowSidePanel(workspaceId: string, workflowId: string, ru
         }
         return selected
       } })
-  }, [navigate, pathname, workflowId, keepRun, scope, panel, search.boardMemory, releaseBrowser])
+  }, [navigate, workspaceId, workflowId, keepRun, scope, panel, search.boardMemory, releaseBrowser])
   const closeOperator = useCallback(() => {
-    const previous = useSidePanelPresentation.getState().beforeOperator[scope]
-    const current = keepRun(search)
-    const sameRun = previous?.runId === (current.selectedRunId ?? current.runId ?? null)
-      && previous?.workflowVersionId === (current.workflowVersionId ?? null)
-    const nodeDestination = previous?.kind === 'agent' || previous?.kind === 'browser'
-    if (!previous || nodeDestination && !sameRun) {
-      selectPanel({ kind: 'none' })
-      return
-    }
-    selectPanel(boardSidePanelFromSearch({ ...current,
-      boardPanel: previous.kind === 'none' ? undefined : previous.kind,
-    }))
-  }, [scope, selectPanel, keepRun, search])
+    selectPanel(useSidePanelPresentation.getState().beforeOperator[scope] ?? { kind: 'none' })
+  }, [scope, selectPanel])
   const selectView = useCallback((view: 'graph' | 'overview') => {
-    void navigate({ to: pathname, hash: true,
+    void navigate({ to: '/workspaces/$workspaceId', params: { workspaceId }, hash: true,
       search: previous => previous.workflowId && previous.workflowId !== workflowId ? previous : ({ ...keepRun(previous), boardView: view }) })
-  }, [navigate, pathname, workflowId, keepRun])
+  }, [navigate, workspaceId, workflowId, keepRun])
   const setMemoryOpen = useCallback((open: boolean) => {
     if (open && panel.kind === 'browser' && search.boardMemory !== true) releaseBrowser()
-    void navigate({ to: pathname, hash: true,
+    void navigate({ to: '/workspaces/$workspaceId', params: { workspaceId }, hash: true,
       search: previous => previous.workflowId && previous.workflowId !== workflowId ? previous : ({ ...keepRun(previous), boardMemory: open ? true : undefined }) })
-  }, [navigate, pathname, workflowId, keepRun, panel.kind, search.boardMemory, releaseBrowser])
+  }, [navigate, workspaceId, workflowId, keepRun, panel.kind, search.boardMemory, releaseBrowser])
   const selectTeam = useCallback((nodeId?: string) => {
-    void navigate({ to: pathname, hash: true,
+    void navigate({ to: '/workspaces/$workspaceId', params: { workspaceId }, hash: true,
       search: previous => previous.workflowId && previous.workflowId !== workflowId ? previous
         : ({ ...keepRun(previous), boardView: 'overview', boardTeamId: nodeId }) })
-  }, [navigate, pathname, workflowId, keepRun])
+  }, [navigate, workspaceId, workflowId, keepRun])
   const selectExecution = useCallback((target: { runId: string; workflowVersionId: string; nodeId: string; executionId: string }, tab: 'chat' | 'details' = 'details') => {
     releaseBrowser()
     void navigate({ to: '/workspaces/$workspaceId', params: { workspaceId }, hash: true,

@@ -5,9 +5,8 @@ import { nodeTitle } from '../graph/nextDraft/model'
 import type { NextDraftEdit } from '../graph/nextDraft/state'
 import { hierarchyNodes, removeHierarchyNode } from './authoring'
 
-export function RemoveHierarchyNodeDialog({ draftKey, edit, pending, report, inspectLatest }: {
+export function RemoveHierarchyNodeDialog({ draftKey, edit, pending, report }: {
   draftKey: string; edit: NextDraftEdit; pending: boolean; report(error: unknown): void
-  inspectLatest?(): Promise<void>
 }) {
   const form = edit.workflowForms?.removeNode
   const node = edit.graph.nodes.find(item => item.id === form?.nodeId)
@@ -27,7 +26,7 @@ export function RemoveHierarchyNodeDialog({ draftKey, edit, pending, report, ins
     })
   }
   const leave = useUnsavedChanges({ scope: 'surface', label: 'remove workflow node', dirty: !!form,
-    busy: !!form && pending, saveDisabled: !valid, save: apply, discard })
+    busy: pending, saveDisabled: !valid, save: apply, discard })
   const incident = edit.graph.edges.filter(edge => edge.source === form?.nodeId || edge.target === form?.nodeId)
   const named = edit.graph.nodes.filter(item => item.id !== form?.nodeId).flatMap(item => item.choice?.outcomes.flatMap(outcome =>
     outcome.target.kind === 'edge' && incident.some(edge => outcome.target.kind === 'edge' && edge.id === outcome.target.relationshipId)
@@ -57,7 +56,6 @@ export function RemoveHierarchyNodeDialog({ draftKey, edit, pending, report, ins
         {named.length ? <p>These named outcomes will need explicit connection editing before executable Save: {named.join(', ')}. Their saved names are retained.</p> : null}
       </section>
       <Button onClick={discard}>{workers.length && !destinations.length ? 'Keep orchestrator' : 'Cancel'}</Button>
-      {inspectLatest ? <Button onClick={() => void inspectLatest()}>Inspect latest</Button> : null}
       <Button variant="danger" disabled={!valid} onClick={() => { try { apply() } catch (error) { report(error) } }}>Apply removal to draft</Button>
     </fieldset>
   </Dialog>

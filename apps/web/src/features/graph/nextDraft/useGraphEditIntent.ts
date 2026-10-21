@@ -6,7 +6,6 @@ import { assertSession, sessionGeneration } from '../../../shared/api/sessionBou
 import { queryKeys } from '../../../shared/api/query'
 import { useGraphDraftStore } from '../store'
 import { boardDraftContextKey } from '../../workflow-board/keys'
-import { hierarchyKey } from '../../workflow-hierarchy/queries'
 import { acknowledgeAgentEdits, hasAgentEdits, stageAgentEdits, referencedAgentEdits } from './agentEdits'
 import { draftOperations, hasLocalChanges, mergeAcknowledgement } from './model'
 import { readBoardStart } from '../../workflow-board/startOutbox'
@@ -155,7 +154,6 @@ export function useGraphEditIntent(draftKey: string, edit: NextDraftEdit) {
       if (ownOutbox) acknowledgeEditOutbox(draftKey, intent.stageCommandId)
       setOutboxPending(!!readEditOutbox(draftKey))
       if (intent.state === 'saved') void Promise.all([
-        queryClient.invalidateQueries({ queryKey: hierarchyKey({ workspaceId, workflowId }), exact: true }),
         queryClient.invalidateQueries({ queryKey: boardDraftContextKey(workspaceId, workflowId) }),
         queryClient.invalidateQueries({ queryKey: queryKeys.managedWorkflows(workspaceId) }),
         queryClient.invalidateQueries({ queryKey: queryKeys.managedWorkflow(workspaceId, workflowId) }),

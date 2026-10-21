@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
@@ -24,13 +24,12 @@ class ReportSource extends EventTarget {
   })) }
 }
 beforeEach(() => { ReportSource.instances = []; vi.stubGlobal('EventSource', ReportSource) })
-afterEach(() => { cleanup(); for (const client of clients.splice(0)) client.clear(); vi.unstubAllGlobals(); vi.useRealTimers() })
+afterEach(() => { cleanup(); for (const client of clients.splice(0)) client.clear(); vi.unstubAllGlobals() })
 
 function install(options: { reports?: 'empty' | 'error'; waitForReports?: Promise<void>; noHierarchy?: boolean;
   coordination?: WorkflowHierarchyCoordination } = {}) {
   const hierarchyReads: URL[] = [], reportReads: URL[] = []
   let denied = false, hierarchyStatus = 200
-  let replacedMaster = false
   let coordination = options.coordination
   const agents = [
     { workflowNodeId: 'master-node', agentId: 'master-agent', displayName: 'Saved Master', productRole: 'master' as const },
@@ -50,17 +49,10 @@ function install(options: { reports?: 'empty' | 'error'; waitForReports?: Promis
       code: hierarchyStatus === 403 ? 'ACCESS_DENIED' : 'TEMPORARILY_UNAVAILABLE', message: 'Hierarchy unavailable',
     } }, { status: hierarchyStatus })
     return HttpResponse.json(WorkflowHierarchyReadResultSchema.parse({ ...scope,
-      workflowVersionId: 'past-version', revision: 8, hierarchy: options.noHierarchy ? null : replacedMaster ? {
-        version: 1, masterNodeId: 'orchestrator-node', parents: [
-          { workflowNodeId: 'master-node', parentNodeId: 'orchestrator-node' },
-          { workflowNodeId: 'worker-node', parentNodeId: 'master-node' },
-        ],
-      } : { version: 1, masterNodeId: 'master-node', parents: [
+      workflowVersionId: 'past-version', revision: 8, hierarchy: options.noHierarchy ? null : { version: 1, masterNodeId: 'master-node', parents: [
         { workflowNodeId: 'orchestrator-node', parentNodeId: 'master-node' },
         { workflowNodeId: 'worker-node', parentNodeId: 'orchestrator-node' },
-      ] }, agents: agents.map(agent => !replacedMaster || agent.productRole === 'coder' ? agent : {
-        ...agent, productRole: agent.productRole === 'master' ? 'orchestrator' : 'master',
-      }), ...(url.searchParams.has('runId') ? { run: { runId: 'past-run', state: 'running',
+      ] }, agents, ...(url.searchParams.has('runId') ? { run: { runId: 'past-run', state: 'running',
         ...(coordination ? { coordination } : {}) } } : {}) }))
   }), http.get(`${path}/reports`, async ({ request }) => {
     const url = new URL(request.url); reportReads.push(url)
@@ -73,7 +65,6 @@ function install(options: { reports?: 'empty' | 'error'; waitForReports?: Promis
       nextCursor: null, hasMore: false, revision: 1 })
   }))
   return { hierarchyReads, reportReads, report, deny: () => { denied = true },
-    replaceMaster: () => { replacedMaster = true },
     setCoordination: (next: WorkflowHierarchyCoordination) => { coordination = next },
     failHierarchy: () => { hierarchyStatus = 500 }, denyAll: () => { denied = true; hierarchyStatus = 403 } }
 }
@@ -96,79 +87,6 @@ it('shows configuration with No run selected and never reads reports or subscrib
   await userEvent.click(screen.getByRole('button', { name: 'Ask master' }))
   expect(view.actions.onChat).toHaveBeenCalledTimes(1)
   expect(view.actions.onChat).toHaveBeenCalledWith('master-node')
-})
-
-it('refreshes another client’s saved Master and membership with bounded visible-only reads', async () => {
-  vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
-  const wire = install()
-  const view = mount()
-  await vi.waitFor(() => expect(screen.getByRole('heading', { name: 'Saved Master Master' })).toBeVisible())
-  wire.replaceMaster()
-  await act(async () => { await vi.advanceTimersByTimeAsync(29_000) })
-  expect(wire.hierarchyReads).toHaveLength(1)
-  await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
-  await vi.waitFor(() => expect(screen.getByRole('heading', { name: 'Saved Orchestrator Master' })).toBeVisible())
-  expect(wire.hierarchyReads).toHaveLength(2)
-  fireEvent.click(screen.getByRole('button', { name: 'Ask master' }))
-  expect(view.actions.onChat).toHaveBeenLastCalledWith('orchestrator-node')
-  fireEvent.click(screen.getByRole('button', { name: 'View branch · 1' }))
-  expect(screen.getByRole('region', { name: 'Reports to Saved Master' })).toHaveTextContent('Saved Worker')
-  view.rerender(<QueryClientProvider client={view.client}>
-    <MasterOverview {...scope} {...view.actions} visible={false} />
-  </QueryClientProvider>)
-  await act(async () => { await vi.advanceTimersByTimeAsync(60_000) })
-  expect(wire.hierarchyReads).toHaveLength(2)
-  expect(wire.reportReads).toEqual([])
-  expect(ReportSource.instances).toEqual([])
-})
-
-it('refreshes the newest history on reopen and fills new cursor gaps without losing older pages or selection', async () => {
-  const wire = install()
-  const current = wire.report(1, 'master-node')
-  const report = (round: number): HierarchyReport => ({ ...current, id: `round-${round}`,
-    summary: `Round ${round} summary`, parentRequestId: `request-round-${round}`,
-    execution: { ...current.execution, executionId: `execution-round-${round}`, attempt: round },
-    updatedAt: `2026-10-0${round}T00:00:00Z`,
-  })
-  let latestRound = 2
-  const reads: (string | null)[] = []
-  server.use(http.get(`${path}/reports`, ({ request }) => {
-    const query = new URL(request.url).searchParams
-    if (!query.has('workflowNodeId')) return HttpResponse.json({ ...scope, runId: 'past-run',
-      workflowVersionId: 'past-version', items: [current], nextCursor: null, hasMore: false, revision: latestRound })
-    const cursor = query.get('cursor')
-    reads.push(cursor)
-    const round = cursor === 'older-window' ? 1 : cursor === 'missing-round' ? 3 : latestRound
-    const nextCursor = round === 1 ? null : round === 4 ? 'missing-round' : 'older-window'
-    return HttpResponse.json({ ...scope, runId: 'past-run', workflowVersionId: 'past-version',
-      items: [report(round)], nextCursor, hasMore: nextCursor !== null, revision: latestRound })
-  }))
-  const view = mount('past-run')
-  await screen.findByText('Accepted child summary')
-  await userEvent.click(screen.getByRole('button', { name: 'Report history' }))
-  let dialog = await screen.findByRole('dialog', { name: 'Saved Orchestrator · Report history' })
-  await within(dialog).findByText('Round 2 summary')
-  await userEvent.click(within(dialog).getByRole('button', { name: 'Load earlier reports' }))
-  await within(dialog).findByText('Round 1 summary')
-  await userEvent.click(within(dialog).getByRole('button', { name: 'Close report history' }))
-  latestRound = 4
-  await userEvent.click(screen.getByRole('button', { name: 'Report history' }))
-  dialog = await screen.findByRole('dialog', { name: 'Saved Orchestrator · Report history' })
-  await within(dialog).findByText('Round 4 summary')
-  expect(within(dialog).getByText('Round 1 summary')).toBeVisible()
-  expect(within(dialog).getByText('Round 2 summary')).toBeVisible()
-  expect(reads).toEqual([null, 'older-window', null])
-  await userEvent.click(within(dialog).getByRole('button', { name: /request-round-1/ }))
-  await userEvent.click(within(dialog).getByRole('button', { name: 'Load earlier reports' }))
-  await within(dialog).findByText('Round 3 summary')
-  expect(reads).toEqual([null, 'older-window', null, 'missing-round'])
-  expect(within(dialog).getByRole('button', { name: /request-round-1/ })).toHaveAttribute('aria-pressed', 'true')
-  await userEvent.click(within(dialog).getByRole('button', { name: 'Refresh reports' }))
-  await waitFor(() => expect(reads).toEqual([null, 'older-window', null, 'missing-round', null]))
-  expect(within(dialog).getByRole('button', { name: /request-round-1/ })).toHaveAttribute('aria-pressed', 'true')
-  expect(within(dialog).getByRole('list', { name: 'Report rounds' })).toHaveTextContent('Round 3 summary')
-  await userEvent.click(within(dialog).getByRole('button', { name: 'Show execution' }))
-  expect(view.actions.onReport).toHaveBeenLastCalledWith(report(1))
 })
 
 it('offers explicit Master authoring for a saved workflow with no hierarchy', async () => {
