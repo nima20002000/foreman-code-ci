@@ -6,6 +6,7 @@ import { RETIRED_OPENCODE_MESSAGE, withAdvancedDefaults } from '@foreman-code/co
 import { HostHarnessOverrideListInputSchema, HostHarnessOverrideSaveSchema, type HostHarnessOverride, type HostHarnessOverrideListInput, type HostHarnessOverrideSave, type HostHarnessInstanceCheckInput } from '@foreman-code/contracts/harness-registry'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { DomainError } from '../../errors.js'
+import { harnessProfileSelectionConflict, staleHarnessProfileSelectionConflict } from './selectionConflict.js'
 import { requireAuthorization } from '../../access/policy.js'
 import { commandInputHash, type PostgresCommandCoordinator } from '../../commands/postgres.js'
 import type { HostHarnessInstanceProfileChecks } from './profileChecks.js'
@@ -115,16 +116,18 @@ export class HostHarnessOverrideService {
     const canonicalConfiguration = withAdvancedDefaults(configuration)
     if (!value || !value.enabled || value.instanceRevision !== selection.instanceRevision
       || harnessHostKey(value.target.hostRef) !== harnessHostKey(selection.target.hostRef)
-      || value.target.applicationInstallationId !== selection.target.applicationInstallationId
-      || value.driverId !== configuration.harness
+      || value.target.applicationInstallationId !== selection.target.applicationInstallationId) {
+      throw staleHarnessProfileSelectionConflict('The harness profile selection is stale.')
+    }
+    if (value.driverId !== configuration.harness
       || value.configurationFingerprint !== commandInputHash(canonicalConfiguration)
       || !isDeepStrictEqual(withAdvancedDefaults(value.configuration), canonicalConfiguration)) {
-      throw new DomainError('HARNESS_PROFILE_SELECTION_CONFLICT', 'The selected configured profile or its canonical configuration changed. Read the exact host profile again before saving.', 409)
+      throw harnessProfileSelectionConflict('The harness configuration changed from the selected saved profile.')
     }
     if (!isDeepStrictEqual(value.target, selection.target)
       && (await this.describe(value, client)).qualification !== 'qualified') {
-      throw new DomainError('HARNESS_PROFILE_SELECTION_CONFLICT',
-        'The updated harness installation requires qualification before using this saved profile.', 409)
+      throw staleHarnessProfileSelectionConflict(
+        'The harness profile selection is stale: the updated installation requires qualification before use.')
     }
   }
   /** New local Claude choices may reuse an exact qualified saved profile.
