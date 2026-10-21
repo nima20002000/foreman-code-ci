@@ -1,8 +1,7 @@
 import { installationHeaders, reloadChangedInstallation } from '../../shared/api/sessionBoundary'
-import { z } from 'zod'
 import { ApiErrorResponseSchema } from '@foreman-code/contracts'
 import {
-  FilePageSchema, FileWithRevisionSchema, MessageAttachmentRefSchema,
+  FileReferenceMutationResultSchema, FilePageSchema, FileWithRevisionSchema, MessageAttachmentRefSchema,
   PermanentFileScopeSchema, WorkflowReferenceFileScopeSchema,
   type FilePage, type FileWithRevision, type MessageAttachmentRef,
   type PermanentFileScope, type WorkflowReferenceFileScope,
@@ -13,10 +12,6 @@ import {
 } from '../../shared/api/sessionBoundary'
 import { inspectAttachment } from '../attachments/attachmentFiles'
 import { referenceFilesRoot, referenceScopeKey } from './workflowFilesModel'
-
-// FIL-36 documents this transport envelope; it is absent from the frozen shared
-// contracts. Compose shared metadata, never import API/server-only schemas.
-const ResultSchema = z.object({ value: FileWithRevisionSchema, replayed: z.boolean() }).strict()
 
 export interface ReferenceUpload {
   scope: WorkflowReferenceFileScope
@@ -57,7 +52,7 @@ function parseRow(value: unknown, scope: PermanentFileScope, ref?: MessageAttach
 }
 
 function resultRow(value: unknown, scope: PermanentFileScope, ref?: MessageAttachmentRef) {
-  const parsed = ResultSchema.safeParse(value)
+  const parsed = FileReferenceMutationResultSchema.safeParse(value)
   if (!parsed.success) throw invalidResponse()
   return parseRow(parsed.data.value, scope, ref)
 }
@@ -152,7 +147,7 @@ export function createWorkflowFilesHttpClient(): WorkflowFilesClient {
           || row.revision.byteSize !== metadata.byteSize || row.revision.sha256 !== hash) throw invalidResponse()
         return row
       }
-      const allocation = await apiClient.request(`${root}/uploads`, ResultSchema,
+      const allocation = await apiClient.request(`${root}/uploads`, FileReferenceMutationResultSchema,
         { method: 'POST', body: metadata, signal: context.signal })
       context.check()
       const allocated = validate(allocation)
@@ -165,7 +160,7 @@ export function createWorkflowFilesHttpClient(): WorkflowFilesClient {
       context.check()
       const staged = validate(payload, ref)
       if (staged.file.state === 'ready') return staged
-      const finalized = await apiClient.request(`${path}/finalize`, ResultSchema,
+      const finalized = await apiClient.request(`${path}/finalize`, FileReferenceMutationResultSchema,
         { method: 'POST', body: {}, signal: context.signal })
       context.check()
       const ready = validate(finalized, ref)
@@ -175,7 +170,7 @@ export function createWorkflowFilesHttpClient(): WorkflowFilesClient {
     async remove(input) {
       const scope = WorkflowReferenceFileScopeSchema.parse(input.scope)
       const context = requestContext(input.signal)
-      const result = await apiClient.request(pinnedPath(scope, input.ref), ResultSchema,
+      const result = await apiClient.request(pinnedPath(scope, input.ref), FileReferenceMutationResultSchema,
         { method: 'DELETE', body: { commandId: input.commandId }, signal: context.signal })
       context.check()
       const row = resultRow(result, scope, input.ref)
