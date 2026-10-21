@@ -1,4 +1,3 @@
-import { COORDINATION_RESULT_PROTOCOL } from '@foreman-code/contracts'
 import { insertAcceptedPlacements } from '../placement/persistence.js'
 import type { RunPlacementAdmissionPort, PreparedRunPlacementAdmission } from '../placement/startPort.js'
 import { randomUUID } from 'node:crypto'
@@ -113,6 +112,7 @@ function acceptedReceipt(raw: unknown, input: RunStartV3Input): AcceptedWorkflow
 function immutableRun(run: AcceptedWorkflowRunV3) {
   return { id: run.id, workspaceId: run.workspaceId, workflowId: run.workflowId, workflowVersionId: run.workflowVersionId,
     executionSemanticsVersion: run.executionSemanticsVersion, agentConfigurationVersionIds: run.agentConfigurationVersionIds,
+    ...(run.resultProtocol ? { resultProtocol: run.resultProtocol } : {}),
     executionLocation: run.executionLocation, authorizationPrincipalId: run.authorizationPrincipalId, approval: run.approval,
     executionCondition: run.executionCondition, input: run.input, createdAt: run.createdAt }
 }
@@ -345,6 +345,20 @@ export async function admitRepeatRun(pool: pg.Pool, locations: WorkspaceLocation
     if (!publication || typeof publication.initializeLocked !== 'function') {
       return conflict('REPEAT_START_RUNTIME_UNAVAILABLE', 'New v3 Runs remain disabled until canonical publication and the complete existing-engine lifecycle are composed.')
     }
+    // New-Run protocol enforcement is intentionally OFF until the real F1
+    // callbacks are integrated. A saved hierarchy must never run the old DAG.
+    const requestedVersion = await pool.query<ImmutableWorkflowVersionRow>(
+      `select ${IMMUTABLE_WORKFLOW_VERSION_COLUMNS} from workflow_versions
+        where id=$1 and workspace_id=$2 and workflow_id=$3`,
+      [input.workflowVersionId, input.workspaceId, input.workflowId])
+    if (requestedVersion.rows[0]) {
+      const saved = readImmutableWorkflowVersion(requestedVersion.rows[0], {
+        id: input.workflowVersionId, workspaceId: input.workspaceId, workflowId: input.workflowId })
+      if ('executionSemanticsVersion' in saved && saved.executionSemanticsVersion === 3 && saved.definition.hierarchy) {
+        return conflict('HIERARCHY_RESULT_PROTOCOL_UNAVAILABLE',
+          'Hierarchy is saved. Start becomes available after the shared result protocol and memory-board hooks are integrated.')
+      }
+    }
     return await withRunSourceUse(pool, input.workspaceId, async () => {
       const sourceTransport = source === 'http' ? 'http' : 'mcp'
       const preparationStarted = performance.now()
@@ -381,7 +395,7 @@ export async function admitRepeatRun(pool: pg.Pool, locations: WorkspaceLocation
         for (const node of version.definition.nodes) {
           if (node.kind !== 'job' && node.placement) workerExecution.requireEnabled(node.placement.hostRef)
         }
-        const run = AcceptedWorkflowRunV3Schema.parse({ resultProtocol: COORDINATION_RESULT_PROTOCOL, id: `run-${randomUUID()}`, workspaceId: input.workspaceId,
+        const run = AcceptedWorkflowRunV3Schema.parse({ id: `run-${randomUUID()}`, workspaceId: input.workspaceId,
           workflowId: input.workflowId, workflowVersionId: version.id, executionSemanticsVersion: 3,
           agentConfigurationVersionIds: version.agentConfigurationVersionIds, executionLocation: snapshot.workspace.location,
           authorizationPrincipalId: authority.principal.id, approval: version.approval,
