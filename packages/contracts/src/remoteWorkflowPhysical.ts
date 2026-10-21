@@ -1,5 +1,3 @@
-import { ArtifactCoordinationResultSchema, ChoiceArtifactCoordinationResultSchema, HandoffCoordinationResultSchema,
-  ResultProtocolSchema, type ResultProtocol } from './coordinationResult.js'
 import { z } from 'zod'
 import { NativeSessionReferenceSchema, NativeHarnessEventSchema, PendingNativeInteractionSchema,
   ExecutionResultSchema, RecordedAgentHarnessSchema, ApprovalResponseSemanticSchema } from './index.js'
@@ -12,6 +10,8 @@ import { WorkflowArtifactResultV1Schema, type WorkflowArtifactOutputsV1 } from '
 import { WorkflowArtifactResultEnvelopeV1Schema, WorkflowChoiceArtifactResultEnvelopeV1Schema } from './workflowArtifactResult.js'
 import { canonicalGraphJson } from './wave25/json.js'
 import { WorkHandoffResultSchema } from './wave25/handoffs.js'
+import { ArtifactCoordinationResultSchema, ChoiceArtifactCoordinationResultSchema,
+  HandoffCoordinationResultSchema } from './coordinationResult.js'
 import { DeviceHistoryGapSchema, DeviceJsonContinuationSchema, DEVICE_JSON_CONTINUATION_LIMIT } from './deviceApplication.js'
 
 export const REMOTE_PHYSICAL_CONTINUATION_LIMIT = DEVICE_JSON_CONTINUATION_LIMIT * 3
@@ -69,16 +69,15 @@ export const RemoteWorkflowPhysicalOutputSchema = z.discriminatedUnion('kind', [
     if (value.output !== undefined && !z.object({ text: z.string() }).strict().safeParse(value.output).success)
       context.addIssue({ code: 'custom', message: 'Only the actual provider text-only result can attest zero result artifacts.' })
   }) }).strict(),
-  z.object({ kind: z.literal('published-artifacts'), resultProtocol: ResultProtocolSchema.optional(), result: z.lazy(() => ExecutionResultSchema),
+  z.object({ kind: z.literal('published-artifacts'), result: z.lazy(() => ExecutionResultSchema),
     artifactOutputs: WorkflowArtifactResultV1Schema }).strict().superRefine((value, context) => {
     try {
       canonicalGraphJson(value.result, 64 * 1024)
       if (value.result.outcome !== 'succeeded') throw new Error('successful original terminal result required')
       const output = z.object({ text: z.string() }).strict().parse(value.result.output)
-      const schema = value.resultProtocol
-        ? z.union([ArtifactCoordinationResultSchema, ChoiceArtifactCoordinationResultSchema, HandoffCoordinationResultSchema])
-        : z.union([WorkflowArtifactResultEnvelopeV1Schema, WorkflowChoiceArtifactResultEnvelopeV1Schema, WorkHandoffResultSchema])
-      const envelope = schema.parse(JSON.parse(output.text))
+      const envelope = z.union([WorkflowArtifactResultEnvelopeV1Schema, WorkflowChoiceArtifactResultEnvelopeV1Schema,
+        WorkHandoffResultSchema, ArtifactCoordinationResultSchema, ChoiceArtifactCoordinationResultSchema,
+        HandoffCoordinationResultSchema]).parse(JSON.parse(output.text))
       if (canonicalGraphJson(envelope.artifactOutputs) !== canonicalGraphJson(value.artifactOutputs))
         throw new Error('artifact association differs from original terminal text')
     } catch {
@@ -90,7 +89,7 @@ export type RemoteWorkflowPhysicalOutput = z.infer<typeof RemoteWorkflowPhysical
 
 /** Association metadata from original text; Main still verifies publication and bytes. */
 export function remoteWorkflowPhysicalOutput(result: z.infer<typeof ExecutionResultSchema>,
-  declaration?: WorkflowArtifactOutputsV1, failure?: WorkflowArtifactValidationFailure, resultProtocol?: ResultProtocol): RemoteWorkflowPhysicalOutput {
+  declaration?: WorkflowArtifactOutputsV1, failure?: WorkflowArtifactValidationFailure): RemoteWorkflowPhysicalOutput {
   if (!declaration || result.outcome !== 'succeeded') {
     return RemoteWorkflowPhysicalOutputSchema.parse({ kind: 'text-only', result })
   }
@@ -103,7 +102,6 @@ export function remoteWorkflowPhysicalOutput(result: z.infer<typeof ExecutionRes
       throw new Error('WORKFLOW_ARTIFACT_OUTPUT_KEYS_MISMATCH')
     }
     return RemoteWorkflowPhysicalOutputSchema.parse({ kind: 'published-artifacts', result,
-      ...(resultProtocol ? { resultProtocol } : {}),
       artifactOutputs: envelope.artifactOutputs })
   } catch {
     return RemoteWorkflowPhysicalOutputSchema.parse({ kind: 'invalid-artifacts', result,
