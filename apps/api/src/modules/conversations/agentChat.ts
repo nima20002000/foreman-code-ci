@@ -18,7 +18,8 @@ import { SessionControlStore } from './sessionControls/store.js'
 import { acceptedResponseControl } from './acceptedResponseControl.js'
 import { nativeNonSubmission } from './nativeNonSubmission.js'
 import { sessionStartConfiguration } from '../harnesses/sessionStart.js'
-import { agentConfigurationTransition, agentConfigurationDirectory } from './agentConfigurationTransition.js'
+import { harnessSessionChanged } from '../harnesses/providerAccountConfiguration.js'
+import { WorkerConversationBindingSchema } from '@foreman-code/contracts/remote-execution-rpc'
 import { pendingInteractionAfterHistory } from './pendingInteractionReadback.js'
 import { qualifyChatActivity } from './qualifiedActivity.js'
 import { reconcileKnownActivities } from './reconcileKnownActivities.js'
@@ -37,7 +38,7 @@ import {
   ExecutionLocationSchema, NativeSessionReferenceSchema, type AgentConfigurationVersion, type HarnessExecution, type ExecutionResult, type NativeHarnessEvent, type NativeSessionReference,
 } from '@foreman-code/contracts'
 import {
-  AgentChatStateSchema, AgentChatStreamEventSchema, SendAgentChatMessageRequestSchema, AgentChatMessageCommandSchema, AgentChatReadbackQuerySchema,
+  AgentChatStateSchema, AgentChatStreamEventSchema, SendAgentChatMessageRequestSchema, AgentChatReadbackQuerySchema,
   InterruptAgentChatRequestSchema, CancelQueuedAgentChatTurnRequestSchema, RespondAgentChatInteractionRequestSchema,
   type AgentChatBlockedReason, type AgentChatCapabilities, type AgentChatContext, type AgentChatOrigin, type AgentChatQuery,
   type AgentChatSessionState, type AgentChatState, type AgentChatStreamEvent, type AgentChatTurn, type SendAgentChatMessageRequest,
@@ -63,8 +64,7 @@ import { NativeDeliveryError, NativeTurnNotActiveError } from '../harnesses/erro
 import type { NativeHarnessSessionManager, NativeSessionStart, AgentChatNativeSessionStart, NativeMessageSubmission } from '../harnesses/port.js'
 import { primeInitialNativeStream } from '../harnesses/claudeSdk/initialStream.js'
 import { nativePersistenceRedactor } from '../interactions/nativePersistence.js'
-import { agentMessagePrompt } from './agentMessagePrompt.js'
-import { assertAgentChatInputSize } from './agentInputSize.js'
+import { legacySkillPrompt } from '../skills/instructions.js'
 import { configurationWithNodeSkills } from '../skills/nodeSkills.js'
 import type { PostgresRunRepository } from '../runs/postgres.js'
 import { PostgresWorkflowRepository } from '../workflows/postgres.js'
@@ -859,7 +859,7 @@ export class AgentChatService {
 
   async sendCommand(principal: ManagementPrincipal, workspaceId: string, value: SendAgentChatMessageRequest,
     source: 'http' | 'mcp' = 'http', selection?: { executionId: string; assertCurrent: RunChatAuthorityCheck }) {
-    const input = AgentChatMessageCommandSchema.parse(value)
+    const input = SendAgentChatMessageRequestSchema.parse(value)
     if (parseSessionCommand(input.content).kind !== 'new') return this.send(principal, workspaceId, input)
     return this.command(async () => {
       const context = { workspaceId, ...input.context }
@@ -942,7 +942,7 @@ export class AgentChatService {
 
   private async sendMessage(principal: ManagementPrincipal, workspaceId: string, value: SendAgentChatMessageRequest, executionId?: string, assertCurrent: RunChatAuthorityCheck = async () => {}) {
     this.assertOpen()
-    const parsed = AgentChatMessageCommandSchema.parse(value)
+    const parsed = SendAgentChatMessageRequestSchema.parse(value)
     const planTask = parseSessionCommand(parsed.content).kind === 'plan-task' || parsed.sessionMode === 'plan'
     const input = planTask ? { ...parsed, sessionMode: 'plan' as const } : parsed
     const context: AgentChatContext = { workspaceId, ...input.context }
@@ -971,11 +971,6 @@ export class AgentChatService {
           ...(admitted.replayWarning ? { replayWarning: admitted.replayWarning } : {}) }
       }
     }
-    const admissionValidation = SendAgentChatMessageRequestSchema.safeParse(input)
-    if (!admissionValidation.success) {
-      throw new DomainError('CHAT_MESSAGE_TOO_LARGE',
-        admissionValidation.error.issues.map(issue => issue.message).join('; '), 400)
-    }
     const blocked = resolution.blocked ?? await this.harnessUnavailable(resolution)
     if (blocked) {
       throw new DomainError('AGENT_CHAT_UNAVAILABLE',
@@ -983,20 +978,14 @@ export class AgentChatService {
     }
     validateSessionMessage(input.content, input.sessionMode)
     const row = resolution.row
-    const nextConfiguration = row && input.intent !== 'steer' ? await this.pendingConfiguration(row) : undefined
-    const validateInput = async (sql: pg.PoolClient, current: AgentConversationRow) => {
-      if (resolution.configuration) await assertAgentChatInputSize(sql, { row: current,
-        configuration: resolution.configuration, ...(nextConfiguration ? { nextConfiguration } : {}),
-        request: input, principalId: principal.id })
-    }
-    if (input.intent === 'steer') return this.steer(principal, context, key, input, resolution, selectedRun, assertCurrent, validateInput)
+    if (input.intent === 'steer') return this.steer(principal, context, key, input, resolution, selectedRun, assertCurrent)
     if (input.intent === 'interrupt_and_send' && !row) throw new DomainError('AGENT_CHAT_TURN_NOT_ACTIVE', 'There is no active turn to interrupt.', 409)
     const create = resolution.create ? { ...resolution.create, context } : undefined
     const admit = async () => {
       if (row) await this.sessionControls.assertSendAllowed(row.id)
       await this.conversationAuthority(principal, context)
       return this.repository.admit({ key, request: input, context, delivery: 'queued', ownerPrincipalId: principal.id,
-        assertCurrent, validateInput, ...(create ? { create } : {}) })
+        assertCurrent, ...(create ? { create } : {}) })
     }
     // The repository locks admission with compaction; settlement can proceed after its commit.
     const admitted = await admit()
@@ -1008,8 +997,7 @@ export class AgentChatService {
     return { state: await this.state(await this.resolve(context, resolution.executionId, selectedRun), principal), turn: admitted.turn, replayed: false }
   }
 
-  private async steer(principal: ManagementPrincipal, context: AgentChatContext, key: string, input: SendAgentChatMessageRequest, resolution: Resolution, selectedRun: boolean, assertCurrent: RunChatAuthorityCheck,
-    validateInput: (sql: pg.PoolClient, row: AgentConversationRow) => Promise<void>) {
+  private async steer(principal: ManagementPrincipal, context: AgentChatContext, key: string, input: SendAgentChatMessageRequest, resolution: Resolution, selectedRun: boolean, assertCurrent: RunChatAuthorityCheck = async () => {}) {
     const row = resolution.row
     const runtime = row ? this.runtimes.get(row.id) : undefined
     if (!row || !row.active_request_id || !row.active_native_turn_id || !runtime?.session) {
@@ -1024,8 +1012,7 @@ export class AgentChatService {
     const target = input.expectedNativeTurnId
     return this.control(row.id, async () => {
       await assertCurrent()
-      const admitted = await this.repository.admit({ key, request: input, context, delivery: 'submitting',
-        ownerPrincipalId: principal.id, targetNativeTurnId: target, assertCurrent, validateInput })
+      const admitted = await this.repository.admit({ key, request: input, context, delivery: 'submitting', targetNativeTurnId: target, assertCurrent })
       if (admitted.replayed) return { state: await this.state(await this.resolve(context, resolution.executionId, selectedRun), principal), turn: admitted.turn, replayed: true }
       try {
         const steered = await runtime.manager.steerTurn!(runtime.session!, {
@@ -1241,8 +1228,30 @@ export class AgentChatService {
     if (!previous) {
       throw new DomainError('AGENT_CHAT_CONFIGURATION_MISSING', 'The saved Agent configuration is unavailable.', 409)
     }
-    const directoryBinding = await agentConfigurationDirectory(this.pool, row, configuration)
-    const { previousProfile, replaceSession } = agentConfigurationTransition(row, previous, configuration)
+    let directoryBinding = row.record.directoryBinding
+    if (directoryBinding) {
+      const profile = configuration.harnessProfileSelection
+      const placement = profile ? { ...directoryBinding.placement, instanceId: profile.instanceId,
+        instanceRevision: profile.instanceRevision, harnessInstallationId: profile.target.harnessInstallationId }
+        : directoryBinding.placement
+      const directory = await resolveAgentChatDirectory({ sql: this.pool, configuration,
+        workflowVersionId: directoryBinding.workflowVersionId, placement })
+      if (directory.workingDirectory !== row.record.workingDirectory) {
+        throw new DomainError('AGENT_CHAT_DIRECTORY_UNAVAILABLE', 'The chat settings changed its saved working folder.', 409)
+      }
+      directoryBinding = directory.directoryBinding
+    }
+    const ephemeral = previous.harness.harness === 'codex'
+      && previous.harness.advanced?.sessionPersistence === 'ephemeral'
+    const previousProfile = row.worker_conversation_binding
+      ? WorkerConversationBindingSchema.parse(row.worker_conversation_binding).profile : previous.harnessProfileSelection
+    const profileChanged = previousProfile?.instanceId !== configuration.harnessProfileSelection?.instanceId
+      || commandInputHash(previousProfile?.target ?? null)
+        !== commandInputHash(configuration.harnessProfileSelection?.target ?? null)
+    const claudeDirectoryChanged = previous.harness.harness === 'claude' && configuration.harness.harness === 'claude'
+      && previous.harness.configDirectory !== configuration.harness.configDirectory
+    const replaceSession = harnessSessionChanged(previous.harness, configuration.harness)
+      || ephemeral || profileChanged || claudeDirectoryChanged
     const runtime = this.runtimes.get(row.id)
     if (!runtime?.session && replaceSession && row.native_session_id && row.worker_conversation_binding) {
       const principalId = await this.repository.turnPrincipalId(row.id, row.active_request_id!)
@@ -1367,6 +1376,18 @@ export class AgentChatService {
     return (await runtime.manager.capabilities(this.lifetime.signal)).providerVersion
   }
 
+  /** Earlier configurations send pinned skills with the first turn; native-v1 delivers them at session start. */
+  private prompt(row: AgentConversationRow, configuration: AgentConfigurationVersion, content: string): { text: string; startup: boolean } {
+    if (row.record.handoffContext && !row.record.startupDelivered) {
+      content = `${row.record.handoffContext}\n\n${content}`
+    }
+    if (row.record.origin.kind !== 'fresh' || row.record.startupDelivered) return { text: content, startup: false }
+    if (configuration.instructionDelivery === 'native-v1') return { text: content, startup: true }
+    const skills = legacySkillPrompt(configuration)
+    if (!skills.length) return { text: content, startup: true }
+    return { text: [...skills, '', 'USER MESSAGE', content].join('\n'), startup: true }
+  }
+
   private async runTurn(id: string, turn: AgentChatTurn): Promise<void> {
     const correlationId = agentChatCorrelation(id, turn.requestId)
     const signal = this.lifetime.signal
@@ -1409,7 +1430,7 @@ export class AgentChatService {
       // Stop may have committed while the first session was being created/bound. No turn was sent.
       if (fresh.cancel_requested) { await this.settle(id, turn.requestId, { outcome: 'canceled' }); return }
       signal.throwIfAborted()
-      const prompt = agentMessagePrompt(fresh.record, configuration, sessionTaskContent(content, selectedMode))
+      const prompt = this.prompt(fresh, configuration, sessionTaskContent(content, selectedMode))
       if (!session) {
         if (!runtime.manager.startInitialTurn || forksRunHistory(fresh)) throw new DomainError('AGENT_INITIAL_TURN_UNAVAILABLE', 'No admitted initial native lifecycle is available.', 409)
         initialOffered = true // A failure after offer is not a definite prompt rejection/create failure.
