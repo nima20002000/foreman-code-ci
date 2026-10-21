@@ -1,4 +1,3 @@
-import { MemoryBoardSearchSchema } from '../memoryBoardViews.js'
 import { z } from 'zod'
 import { UrlSearchSelectionSchema } from '../index.js'
 import { GraphIdSchema } from './graphPrimitives.js'
@@ -38,6 +37,7 @@ const BoardSurfaceSelectionFields = {
   boardPanel: z.enum(['group_chat', 'agent', 'browser', 'operator']).optional(),
   boardAgentTab: z.enum(['chat', 'settings', 'details']).optional(),
   boardNodeId: GraphIdSchema.optional(), boardExecutionId: GraphIdSchema.optional(),
+  groupRunId: GraphIdSchema.optional(), groupPostId: GraphIdSchema.optional(), groupReceiptId: GraphIdSchema.optional(),
   boardMemory: z.union([z.literal(true), z.literal('true').transform(() => true as const)]).optional(),
 }
 export function runInspectionKey(selection: WorkspaceBoardExecutionSelection): string | undefined {
@@ -60,7 +60,6 @@ export function readRunInspectionKey(key?: string): WorkspaceBoardExecutionSelec
 /** Presentation only. A URL requests a Run; it never authorizes or proves its pins. */
 export const WorkspaceBoardSearchSchema = UrlSearchSelectionSchema.extend({
   ...BoardSurfaceSelectionFields,
-  ...MemoryBoardSearchSchema.shape,
   ...WorkspaceBoardInspectionSchema.shape,
   activityKind: RunActivityPublicKindSchema.optional(), activityAgentId: GraphIdSchema.optional(),
   runId: GraphIdSchema.optional(),
@@ -161,6 +160,6 @@ export function staysOnWorkflowBoard(current: { pathname: string; search: unknow
 function authoringSelection(search: WorkspaceBoardSearch): WorkspaceBoardSearch {
   const value = { ...search }
   for (const key of ['activityKind', 'activityAgentId', 'boardView', 'boardPanel', 'boardAgentTab',
-    'boardNodeId', 'boardExecutionId', 'boardMemory'] as const) delete value[key]
+    'boardNodeId', 'boardExecutionId', 'boardMemory', 'groupRunId', 'groupPostId', 'groupReceiptId'] as const) delete value[key]
   return value
 }

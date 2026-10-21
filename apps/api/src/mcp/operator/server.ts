@@ -84,7 +84,6 @@ export function registerOperatorTools(server: McpServer, context: OperatorReques
 
 function registerOperatorDefinitions(server: McpServer, context: OperatorRequestContext, catalog?: OperatorCatalog): void {
   const group = (name: OperatorToolGroup) => registerOperatorToolGroup(server, context, OPERATOR_TOOL_GROUPS[name], catalog)
-  group('memoryBoards')
   group('bugReports')
   group('resourceTelemetry')
   group('harnessRegistry')
@@ -111,6 +110,7 @@ function registerOperatorDefinitions(server: McpServer, context: OperatorRequest
   group('settings')
   group('providerAccounts')
   group('agentChat')
+  group('workflowChat')
   group('sessionControls')
   group('workspaceDefaults')
   registerFileRetentionTools(server, context)

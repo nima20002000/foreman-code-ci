@@ -9,7 +9,7 @@ import { hasAction, isAuthorized } from '../../../modules/access/policy.js'
 import type { OperatorRequestContext } from '../types.js'
 import type { AuthorizedResource } from '../../../modules/access/policy.js'
 
-type MemoryToolContext = Pick<OperatorRequestContext, 'principal'> & { services?: OperatorRequestContext['services'] }
+type MemoryToolContext = Pick<OperatorRequestContext, 'principal'>
 /** The composition layer adds these names to its central Operator catalog. */
 export interface MemoryBoardToolDefinition extends Omit<OperatorToolDefinition, 'name' | 'run' | 'handle' | 'discoverable'> {
   name: MemoryTool
@@ -54,22 +54,15 @@ function discover(write: boolean) {
  * scoped agent registry; every guessed invocation still rechecks the service. */
 export function createMemoryBoardTools(service: MemoryBoardService | undefined, schemas: MemoryBoardMcpSchemas = memoryBoardMcpSchemas): MemoryBoardToolDefinition[] {
   if (!service) return []
-  return memoryBoardToolDefinitions(() => service, schemas)
-}
-
-export function memoryBoardToolDefinitions(
-  resolve: (context: MemoryToolContext) => MemoryBoardService,
-  schemas: MemoryBoardMcpSchemas = memoryBoardMcpSchemas,
-): MemoryBoardToolDefinition[] {
   const tools:MemoryBoardToolDefinition[]=[
     {name:'memory_board_get',requires:[['workspaces:read','resource']],discoverable:discover(false),
       permissionDetail:'Workspace boards require workspaces:read; workflow boards require workflows:read in the exact scope.',
       description:'Read one workspace or workflow Memory board, an independent column page, note page, exact task/history or your command receipt. Done is loaded only on request. Unknown command status never proves that a timed-out save did not run.',
-      inputSchema:schemas.read,annotations:readAnnotations,run:(context,input)=>resolve(context).read(context.principal,schemas.read.parse(input))},
+      inputSchema:schemas.read,annotations:readAnnotations,run:(context,input)=>service.read(context.principal,schemas.read.parse(input))},
     {name:'memory_board_changes_read',requires:[['workspaces:read','resource']],discoverable:discover(false),
       permissionDetail:'Workspace boards require workspaces:read; workflow boards require workflows:read in the exact scope.',
       description:'Read a bounded page of committed Memory board changes after a sequence. On resetRequired read the current bounded board snapshot. Closing a board needs no continued reads.',
-      inputSchema:schemas.changes,annotations:readAnnotations,run:(context,input)=>resolve(context).changes(context.principal,schemas.changes.parse(input))},
+      inputSchema:schemas.changes,annotations:readAnnotations,run:(context,input)=>service.changes(context.principal,schemas.changes.parse(input))},
   ]
   const mutations=[
     ['memory_card_create','card_create',schemas.cardCreate,'Create a task or return the existing normalized-title task, including Done. Assignment/display links alone do not bind work. Select exact current work or an explicit one-use Next activation.'],
@@ -86,7 +79,7 @@ export function memoryBoardToolDefinitions(
     run(context,input) {
       const operation=MemoryBoardMutationSchema.parse(input)
       if(operation.kind!==kind)invalid('This mutation kind belongs to another tool.')
-      return resolve(context).mutate(context.principal,operation)
+      return service.mutate(context.principal,operation)
     },
   })
   return tools
