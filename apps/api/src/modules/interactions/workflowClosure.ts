@@ -203,7 +203,7 @@ export async function readRemoteWorkflowContinuation(owner: RunOwnership, execut
       || lifetime.detached && !isDeepStrictEqual(lifetime.detached_reference, session)) return conflict()
     const principals = (await sql.query<{ principal_id: string }>(`select b.principal_id
       from worker_credential_bindings b join management_principals p on p.id=b.principal_id
-      where b.execution_id=$1 and b.run_id=$2 and b.agent_id=$3 and b.purpose='workflow' and b.revoked_at is null
+      where b.execution_id=$1 and b.run_id=$2 and b.agent_id=$3 and b.revoked_at is null
         and p.revoked_at is null and p.expires_at>clock_timestamp() and p.audience='worker' and p.agent_id=b.agent_id
       limit 2`, [current.id, current.runId, current.agentId])).rows
     if (principals.length !== 1) return undefined
