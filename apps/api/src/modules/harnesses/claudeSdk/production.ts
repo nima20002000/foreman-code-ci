@@ -5,7 +5,7 @@ import type { AgentFileToolService } from '../../files/tools/service.js'
 import { productionClaudeFileAdmission } from './fileProduction.js'
 import type pg from 'pg'
 import type { ClaudeHarnessConfiguration } from '@foreman-code/contracts/claude'
-import type { NativeSessionReference } from '@foreman-code/contracts'
+import type { NativeSessionReference, CoordinatorConsultationBinding } from '@foreman-code/contracts'
 import { APP_MCP_TOKEN_NAMES } from '@foreman-code/contracts/product'
 import { readProductEnvironment } from '@foreman-code/contracts/product-environment'
 import { appMcpServerName, isSupportedAppMcpServerName } from '../appMcpLauncher.js'
@@ -34,7 +34,7 @@ import { requireClaudeApiKey } from './productionCredentials.js'
 export type ClaudeProfileOwner = (ClaudeDomainBinding | OperatorProfileObservation | {
   /** Read-only setup has no conversation, accepted input or SDK callbacks. */
   kind: 'operator-inspection'; principalId: string; configurationVersionId: string; configurationHash: string
-}) & { admissionSignal?: AbortSignal; purpose?: 'reviewer' }
+}) & { admissionSignal?: AbortSignal; purpose?: 'reviewer' | 'consultation'; consultation?: CoordinatorConsultationBinding }
 
 /** The role's immutable configuration/placement supplies the selector; the
  * existing admission reads its exact profile and current native proof. */

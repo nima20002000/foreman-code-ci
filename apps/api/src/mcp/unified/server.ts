@@ -12,10 +12,6 @@ import { hasWorkerAction } from '../../modules/access/appPolicy.js'
 import type { AppInteractionService } from '../../modules/interactions/app.js'
 import type { BugReportService } from '../../modules/bug-reports/service.js'
 import type { PostgresCommandCoordinator } from '../../modules/commands/postgres.js'
-import { createMemoryBoardTools } from '../operator/tools/memoryBoards.js'
-import { registerToolDefinition } from '../operator/definition.js'
-import { invokeOperatorTool } from '../operator/invoke.js'
-import { OPERATOR_TOOLS } from '../operator/catalog.js'
 import { registerAppTools } from '../app/server.js'
 import { registerCiTools } from '../shared/ciTools.js'
 import { operatorRequestTools, operatorToolCatalog } from '../operator/server.js'
@@ -30,7 +26,6 @@ import { MCP_ROLE_LABELS, roleInstructions, roleList, toolRoles, type McpRole } 
 export interface GraphqlMcpContext {
   role: McpRole
   principal: ManagementPrincipal
-  reauthorize?: () => Promise<ManagementPrincipal>
   operator?: OperatorServices
   interactions?: AppInteractionService
   references?: AgentReferenceService
@@ -94,7 +89,6 @@ function requestOperatorTools(context: GraphqlMcpContext, registration: McpReque
   if (!registration.operator) {
     const registered: OperatorRequestTools = { tools: [] }
     registered.tools = operatorRequestTools({ principal: context.principal, services: context.operator!,
-      ...(context.reauthorize ? { reauthorize: context.reauthorize } : {}),
       ...(context.signal ? { signal: context.signal } : {}),
     }, callbackContext => registered.catalog?.(callbackContext) ?? Promise.resolve([]))
     registration.operator = Promise.resolve(registered)
@@ -111,7 +105,7 @@ export async function roleDeniedToolCall(context: GraphqlMcpContext, body: unkno
   const call = ToolCall.safeParse(body)
   if (!call.success) return undefined
   const name = call.data.params.name
-  const allowed: readonly McpRole[] = name.startsWith('memory_') ? ['operator', ...toolRoles(name)] : toolRoles(name)
+  const allowed = toolRoles(name)
   const enabled = name === 'bug_report' || !context.tools || context.tools.includes(name)
   const roleAllowed = allowed.includes(context.role)
   const workerReportDenied = context.role !== 'operator' && name === 'bug_report'
@@ -171,12 +165,6 @@ export async function createGraphqlMcpServer(context: GraphqlMcpContext, request
       await registerAppTools(collector, { principal: context.principal, interactions: context.interactions!,
         ...(context.bugReports ? { bugReports: context.bugReports } : {}),
         ...(context.signal ? { signal: context.signal } : {}) })
-      if (context.operator?.memoryBoards) {
-        for (const tool of createMemoryBoardTools(context.operator.memoryBoards)) {
-          registerToolDefinition(collector, { principal: context.principal, services: context.operator }, tool,
-            { invoke: invokeOperatorTool, tools: OPERATOR_TOOLS })
-        }
-      }
       if (context.references) registerExecutionReferenceTools(collector, context.principal, context.references)
       if (context.operator) registerCiTools(collector, { principal: context.principal, services: context.operator,
         ...(context.signal ? { signal: context.signal } : {}) })
