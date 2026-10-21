@@ -16,6 +16,7 @@ import { MainWorkerFiles, type PrepareWorkerFiles } from './mainWorkerFiles.js'
 import { sameConversationForAppAccess } from './conversationAppAccess.js'
 import { definedProperties } from '../definedProperties.js'
 import { componentLogger } from '../diagnostics/logger.js'
+import { assertWorkerChatRequestSize } from './chatInputSize.js'
 
 export interface WorkerConversationCallbacks {
   profile?(): Promise<WorkerConversationProfileFacts>
@@ -59,6 +60,7 @@ export class MainWorkerConversationBridge {
     recoveredSubmission?: NativeMessageSubmission; recoveredTurnId?: string }) {
     const admissionId = randomUUID()
     const request = WorkerConversationRpcRequestSchema.parse({ ...structuredClone(input.request), admissionId })
+    assertWorkerChatRequestSize(request)
     const admission: Admission = { request, channel: input.channel, current: input.current,
       callbacks: input.callbacks ?? {}, tail: Promise.resolve(), identities: new Map(), closed: false }
     if (input.recoveredSubmission) {

@@ -1,7 +1,9 @@
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
+import { ExecutableWorkflowV3Schema } from '@foreman-code/contracts/wave25'
 import { expect, it } from 'vitest'
 import { buildApp } from '../src/app.js'
+import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { PostgresAppInteractionService } from '../src/modules/interactions/app.js'
 import { approvalDatabase } from './helpers/wave25ApprovalDatabase.js'
 import { approvalResponse } from './helpers/approvalResponse.js'
@@ -14,9 +16,16 @@ it.skipIf(!postgresEnabled)('preserves the Master identity and designated review
   const app = buildApp({
     readiness: { database: { ping: async () => {} }, checkpoints: { ping: async () => {} } },
     appMcp: tools.appMcp(f.access, new PostgresAppInteractionService(f.pool, f.repository, f.commands, f.service)),
+    operator: { access: f.access, services: {
+      commands: f.commands, ci: tools.ci, bugReports: tools.bugReports,
+    } as OperatorServices },
   })
   const clients: Client[] = []
   try {
+    expect(ExecutableWorkflowV3Schema.parse({ version: f.version, configurations: f.f.configurations }).version)
+      .toEqual(f.version)
+    expect(f.version.definition.hierarchy?.masterNodeId).toBe(f.version.entryNodeId)
+    expect(f.run).not.toHaveProperty('resultProtocol')
     const origin = await app.listen({ host: '127.0.0.1', port: 0 })
     const connect = async (token: string) => {
       const client = new Client({ name: 'master-reviewer-context', version: '1' })
@@ -34,7 +43,12 @@ it.skipIf(!postgresEnabled)('preserves the Master identity and designated review
       role: 'master', principal: { audience: 'worker', agentId: f.reviewer.agentId },
       capabilities: { contextGet: true, interactionList: true, interactionGet: true, interactionRespond: true },
     })
-    expect((await master.listTools()).tools.map(tool => tool.name)).toContain('interaction_respond')
+    const masterTools = (await master.listTools()).tools.map(tool => tool.name)
+    expect(masterTools).toContain('interaction_respond')
+    expect(masterTools).toEqual(expect.arrayContaining([
+      'ci_run', 'ci_get', 'ci_computers_list', 'ci_cancel', 'ci_logs_read',
+    ]))
+    expect(masterTools).not.toContain('memory_board_get')
 
     const requesterCredential = await f.credentials.issueForExecution(f.requester.id)
     const coder = await connect(requesterCredential.environment.variables.GRAPHQL_MCP_TOKEN!)

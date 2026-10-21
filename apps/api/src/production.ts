@@ -1,5 +1,6 @@
+import { createMemoryBoardService } from './modules/memory-boards/production.js'
+import { memoryBoardAuthority } from './modules/collaboration/memoryBoardAuthority.js'
 import { requireRsyncTransferOwner } from './modules/byte-transfer/rsyncTransferOwner.js'
-import { WorkflowCollaborationIntegration, type WorkflowFeaturePorts } from './modules/collaboration/workflowIntegration.js'
 import { MANAGED_MCP_NAMESPACE } from '@foreman-code/contracts/managed-mcp-channel'
 import { DeviceManagedMcp } from './modules/harnesses/deviceManagedMcp.js'
 import { RunWorktrees } from './modules/runs/runWorktrees.js'
@@ -120,7 +121,6 @@ import { JOB_INPUT_NAMESPACE } from './modules/files/jobInputs/service.js'
 import { PostgresWorkflowJobNodeStore, workflowJobStorePublication } from './modules/jobs/workflowStore.js'
 import { createProductionJobs } from './modules/jobs/production.js'
 import type { OperatorServices } from './mcp/operator/types.js'
-import { WorkflowHierarchyService } from './modules/workflow-hierarchy/service.js'
 import { registerJobRoutes } from './routes/jobs.js'
 import { registerJobRuntimeProfileRoutes } from './routes/jobRuntimeProfiles.js'
 import { registerSourceRoutes } from './routes/sources.js'
@@ -317,8 +317,6 @@ export type ProductionProviderAccountSelection = AccountNativeSelection & {
 type ProductionMainInstallation = Awaited<ReturnType<ProductionDeviceRuntime['initializeFromRuntime']>>
 
 interface ProductionComposition {
-  collaborationPorts: WorkflowFeaturePorts | undefined
-  workflowCollaboration: WorkflowCollaborationIntegration
   config: ApiConfig
   database: ReturnType<typeof createDatabase>
   checkpoints: CheckpointStore
@@ -368,6 +366,7 @@ interface ProductionComposition {
   artifactResultSource: ReturnType<typeof createProductionWorkflowArtifactResultSource> | undefined
   artifactOutputsGate: ReturnType<typeof createWorkflowArtifactOutputsGate> | undefined
   localWorkflowArtifacts: LocalWorkflowArtifacts | undefined
+  memoryBoards: ReturnType<typeof createMemoryBoardService>
   workflowRuntime: ReturnType<typeof createWorkflowRepositoryServices>
   repository: PostgresInteractionRepository
   budgets: PostgresApprovalBudgetRepository
@@ -502,7 +501,6 @@ export function buildProductionApp(
   qualificationSuites?: Record<CompatibilityHarness, QualificationSuite>,
   infrastructure?: ProductionHarnessInfrastructure,
   accountSelection?: ProductionProviderAccountSelection,
-  collaborationPorts?: WorkflowFeaturePorts,
 ) {
   // Service callbacks read the same slots as later startup and shutdown stages.
   const composition = {
@@ -515,7 +513,6 @@ export function buildProductionApp(
     qualificationSuites,
     infrastructure,
     accountSelection,
-    collaborationPorts,
   } as ProductionComposition
   configureMainTransport(composition)
   configureDeviceRuntime(composition)
@@ -845,6 +842,7 @@ function configureProviderAccounts(composition: ProductionComposition) {
   composition.accountConfigurations = new ProviderAccountConfigurationService(providerAccounts)
   const workflowCapture = composition.workflowCapture = createWorkflowNativeCaptureChannel()
   composition.reviewCapture = createReviewNativeCaptureChannel()
+  composition.memoryBoards = createMemoryBoardService(database.pool, memoryBoardAuthority)
   composition.workflowRuntime = createWorkflowRepositoryServices(workflowCapture.verify, (sql, owner, capture) => {
     if (!composition.remoteWorkflow) throw new DomainError('REMOTE_WORKFLOW_UNAVAILABLE', 'The actual original native physical composition is unavailable.', 503)
     return composition.remoteWorkflow.assertPhysical(sql, owner, capture)
@@ -883,20 +881,8 @@ function configureWorkflowRepositories(composition: ProductionComposition) {
     reviewCapture,
     workflowRuntime,
   } = composition
-  const collaboration = composition.workflowCollaboration = new WorkflowCollaborationIntegration(
-    composition.collaborationPorts, async (owner, execution) => {
-      const placement = await owner.oneShotConnection().transaction(sql =>
-        readAcceptedPlacement(sql, execution.runId, execution.workflowNodeId), true)
-      if (placement) return placement.hostRef.kind === 'device' ? placement.hostRef.deviceId : placement.hostRef.mainId
-      const mainId = composition.artifactComposition?.mainId
-      if (!mainId) throw new DomainError('BROWSER_COMPUTER_UNAVAILABLE', 'The accepted Main computer is unavailable.', 503)
-      return mainId
-    })
   const workflowServices: RepeatRepositoryServices = { ...workflowRuntime.services,
-    collaboration: collaboration.hooks,
-    prepareCollaborationExecution: (owner, run, version, execution) => collaboration.prepare(owner, run, version, execution),
-    readCollaborationPrompt: (owner, execution) => collaboration.readPrompt(owner, execution),
-    releaseCollaborationExecution: (owner, execution, version) => collaboration.release(owner, execution, 'terminal', version),
+    memoryBoards: composition.memoryBoards,
     async reconcileWorkflowArtifacts(owner, run, execution, signal) {
       signal.throwIfAborted()
       const snapshot = await runs.getRepeatSnapshot(run.id, owner)
@@ -1605,7 +1591,6 @@ function configureExecutionCoordinator(composition: ProductionComposition) {
     },
     prepareWorkflowManagerContext,
     executionId => remoteWorkflow.afterReviewCommit(executionId),
-    composition.workflowCollaboration,
   )
   composition.telemetryLifetime = new AbortController()
   composition.mainTelemetryContext = null
@@ -2130,6 +2115,7 @@ function configureOperatorServices(composition: ProductionComposition) {
     }),
     operatorChat: chat,
     agentChat,
+    memoryBoards: composition.memoryBoards,
     workspaces: new WorkspaceManagementService(database.pool, commands, locations, foundationSettings, projectRoot),
     locations,
     workflows: new WorkflowManagementService(database.pool, commands, {
@@ -2200,8 +2186,6 @@ function configureOperatorServices(composition: ProductionComposition) {
       },
     )),
   }
-  composition.operatorServices.workflowHierarchy = new WorkflowHierarchyService(database.pool, commands,
-    composition.operatorServices.workflows)
 }
 
 function configureHttpApplication(composition: ProductionComposition) {
