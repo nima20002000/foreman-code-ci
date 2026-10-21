@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { expect, it, vi } from 'vitest'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { operatorChatSettings, type OperatorConfigurationVersion } from '@foreman-code/contracts'
+import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { buildApp } from '../src/app.js'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { postgresEnabled } from './helpers/wave25Agent3.js'
@@ -103,6 +104,40 @@ it.skipIf(!postgresEnabled)('carries the full saved Claude default profile throu
     expect(await rejected.json()).toMatchObject({ error: { code: 'HARNESS_PROFILE_SELECTION_CONFLICT' } })
     expect((await f.db.pool.query('select 1 from operator_conversation_turns where conversation_id=$1', [old.id])).rowCount).toBe(1)
     expect((await repository.acceptedConfiguration(old.id, input.requestId))?.harnessProfileSelection).toEqual(selection)
+    const deniedClient = new Client({ name: 'read-only-conversation', version: '1' })
+    clients.push(deniedClient)
+    await deniedClient.connect(new StreamableHTTPClientTransport(new URL('/mcp', address), {
+      authProvider: { token: async () => reader.token },
+    }))
+    const readConversation = async () => decodeMcpToolResult(await client.callTool({
+      name: 'operator_chat_get', arguments: { conversationId: old.id },
+    }))
+    const beforeConflict = await readConversation()
+    const deniedSend = await deniedClient.callTool({ name: 'operator_chat_send', arguments: {
+      conversationId: old.id, request: mismatch,
+    } })
+    expect(deniedSend.isError).toBe(true)
+    expect(JSON.stringify(deniedSend.content)).toContain('ACCESS_DENIED')
+    const conflict = await client.callTool({ name: 'operator_chat_send', arguments: {
+      conversationId: old.id, request: mismatch,
+    } })
+    expect(conflict.isError).toBe(true)
+    const conflictText = JSON.stringify(conflict.content)
+    expect(conflictText).toContain('HARNESS_PROFILE_SELECTION_CONFLICT')
+    expect.soft(conflictText).toMatch(/conversation.*pinned settings/)
+    expect.soft(conflictText).toMatch(/save.*desired defaults.*start a new conversation/)
+    expect.soft(conflictText).not.toContain('harness_instance_save')
+    expect(await readConversation()).toEqual(beforeConflict)
+    const pinnedRequest = { ...input, requestId: randomUUID(), configurationVersionId: accepted!.id }
+    const pinnedSend = await client.callTool({ name: 'operator_chat_send', arguments: {
+      conversationId: old.id, request: pinnedRequest,
+    } })
+    expect(pinnedSend.isError, JSON.stringify(pinnedSend)).not.toBe(true)
+    await vi.waitFor(async () => {
+      expect((await repository.active(old.id))?.turn_state).toBe('error')
+    }, { interval: 5, timeout: 1000 })
+    expect(await repository.acceptedConfiguration(old.id, pinnedRequest.requestId))
+      .toMatchObject({ harness: configuration, harnessProfileSelection: selection })
     const source = await chat.get(history.id, f.writer.principal)
     const forkInput = { ...input, requestId: randomUUID(), configurationVersionId: history.operatorConfigurationVersionId, forkExpectedRevision: source.revision }
     const forkResponse = await fetch(new URL(`/api/operator/conversations/${history.id}/messages`, address), {
