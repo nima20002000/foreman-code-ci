@@ -1,4 +1,3 @@
-import { COORDINATION_RESULT_PROTOCOL } from '@foreman-code/contracts'
 import { insertAcceptedPlacements } from '../placement/persistence.js'
 import type { RunPlacementAdmissionPort, PreparedRunPlacementAdmission } from '../placement/startPort.js'
 import { randomUUID } from 'node:crypto'
@@ -381,7 +380,7 @@ export async function admitRepeatRun(pool: pg.Pool, locations: WorkspaceLocation
         for (const node of version.definition.nodes) {
           if (node.kind !== 'job' && node.placement) workerExecution.requireEnabled(node.placement.hostRef)
         }
-        const run = AcceptedWorkflowRunV3Schema.parse({ resultProtocol: COORDINATION_RESULT_PROTOCOL, id: `run-${randomUUID()}`, workspaceId: input.workspaceId,
+        const run = AcceptedWorkflowRunV3Schema.parse({ id: `run-${randomUUID()}`, workspaceId: input.workspaceId,
           workflowId: input.workflowId, workflowVersionId: version.id, executionSemanticsVersion: 3,
           agentConfigurationVersionIds: version.agentConfigurationVersionIds, executionLocation: snapshot.workspace.location,
           authorizationPrincipalId: authority.principal.id, approval: version.approval,
