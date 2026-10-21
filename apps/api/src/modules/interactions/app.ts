@@ -1,3 +1,4 @@
+import { readConversationCredential } from '../access/conversationCredentials.js'
 import {
   IdSchema,
   ListInteractionsRequestSchema,
@@ -139,6 +140,8 @@ export class PostgresAppInteractionService implements AppInteractionService {
   }
 
   async toolAccess(principal: ManagementPrincipal): Promise<WorkerToolAccess> {
+    const conversation = await readConversationCredential(this.pool, principal.id)
+    if (conversation) return { role: conversation.subject.agent.productRole, tools: conversation.tools, subject: conversation.subject }
     workerScope(principal)
     // The Run pins the exact configuration version and workflow version; both are immutable for this credential.
     const result = await this.pool.query<{ role: string | null; defaults: unknown; override: unknown;
@@ -172,7 +175,7 @@ export class PostgresAppInteractionService implements AppInteractionService {
     const override = row.override == null ? undefined : GraphqlToolOverrideSchema.parse(row.override)
     const subject = row.purpose === 'consultation'
       ? await readConsultationCredentialSubject(this.pool, principal.id) : undefined
-    const tools = effectiveGraphqlTools(role, defaults, override, row.interval != null).filter(tool => {
+    const tools = effectiveGraphqlTools(role, defaults, override, row.interval != null, ['workflow_chat_read', 'workflow_chat_post']).filter(tool => {
       if (subject && tool === 'interaction_respond') return false
       const operation = WorkerNativeOutputOperationSchema.options.find(operation =>
         WORKER_NATIVE_OUTPUT_TOOL_NAMES[operation] === tool)

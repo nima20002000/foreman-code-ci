@@ -55,6 +55,14 @@ function appliedIntent(context: WorkflowChatLockedTarget, request: ChatSendReque
   return request.intent
 }
 
+export async function qualifyWorkflowChatSendLocked(context: WorkflowChatLockedTarget, request: ChatSendRequest,
+  identity: { id: string; principalId: string; channelContext?: string }, owner: WorkflowChatOwnerPort) {
+  await assertSendable(context)
+  const applied = appliedIntent(context, request)
+  const prepared = await owner.validateAdmission(context, request, { ...identity, appliedIntent: applied })
+  return { appliedIntent: applied, nativePrompt: prepared.nativePrompt }
+}
+
 export async function admitWorkflowChatSendLocked(context: WorkflowChatLockedTarget, request: ChatSendRequest,
   identity: AdmissionIdentity, owner: WorkflowChatOwnerPort) {
   await assertSendable(context)

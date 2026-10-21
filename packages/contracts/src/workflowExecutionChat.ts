@@ -44,3 +44,8 @@ export type WorkflowExecutionChatTarget = z.infer<typeof WorkflowExecutionChatTa
 export type WorkflowExecutionChatReadRequest = z.infer<typeof WorkflowExecutionChatReadRequestSchema>;
 export type WorkflowExecutionChatResolution = z.infer<typeof WorkflowExecutionChatResolutionSchema>;
 export const WORKFLOW_EXECUTION_CHAT_ROUTE = '/api/workspaces/:workspaceId/workflows/:workflowId/execution-chat';
+
+export const WorkflowExecutionChatMessageRequestSchema = z.object({
+  target: WorkflowExecutionChatTargetSchema,
+  messageId: z.string().min(1).max(8192),
+}).strict();

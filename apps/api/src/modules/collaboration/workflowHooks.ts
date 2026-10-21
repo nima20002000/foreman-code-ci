@@ -1,3 +1,4 @@
+import { enqueueGroupChatFact } from './groupChatFacts.js'
 import { createHash } from 'node:crypto'
 import {
   AgentConfigurationVersionSchema, AgentIdentitySchema, BoardApplicationReceiptSchema,
@@ -183,6 +184,9 @@ async function projectLifecycleLocked(sql: GraphTransactionSql, input: WorkflowL
     where run_id=$1 and source='backend' and kind='collaboration_lifecycle' and payload->>'sourceEventKey'=$2`,
   [input.run.id, fact.sourceEventKey])).rows[0]
   if (!retained || !sameWorkflowValue(retained.payload, payload)) conflict('The committed lifecycle source already has different facts.')
+  await enqueueGroupChatFact(sql, { kind: 'lifecycle', agent: fact.agent, fact, summary,
+    sourceEventKey: fact.sourceEventKey,
+    createdAt: input.execution.finishedAt ?? input.execution.startedAt ?? input.execution.createdAt })
 }
 
 function reportState(phase: BoardLifecycleFact['phase']) {

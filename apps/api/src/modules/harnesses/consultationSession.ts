@@ -18,6 +18,17 @@ export function assertConsultationSession(start: NativeSessionStart, session: Na
 
 export function assertConsultationRebind(previous: NativeSessionStart, next: NativeSessionStart,
   session: NativeSessionReference): void {
+  if (previous.kind === 'agent-chat' && next.kind === 'agent-chat') {
+    if (previous.conversationId !== next.conversationId || previous.workflowId !== next.workflowId
+      || previous.workflowNodeId !== next.workflowNodeId || previous.workingDirectory !== next.workingDirectory
+      || !isDeepStrictEqual(previous.configuration, next.configuration)
+      || !next.environment || next.environment.agentId !== next.configuration.agentId
+      || next.configuration.harness.harness !== session.harness) {
+      throw new HarnessExecutionError('CHAT_NATIVE_BINDING_CONFLICT',
+        'Application access can change only on the same idle Agent conversation.')
+    }
+    return
+  }
   assertConsultationSession(next, session)
   assertConsultationSession(previous, session)
   if (!hasWorkflowRequest(previous) || !hasWorkflowRequest(next)

@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { ChatQueueCancelRequestSchema, ChatSendRequestSchema, ChatStopRequestSchema,
   WORKFLOW_EXECUTION_CHAT_ROUTE, WorkflowExecutionChatReadRequestSchema,
-  WorkflowExecutionChatSelectionSchema } from '@foreman-code/contracts'
+  WorkflowExecutionChatSelectionSchema, WorkflowExecutionChatMessageRequestSchema } from '@foreman-code/contracts'
 import { requirePrincipal } from '../modules/access/http.js'
 import type { WorkflowExecutionChatService } from '../modules/collaboration/workflowChatService.js'
 import { asWorkflowChatTarget } from '../modules/collaboration/workflowControlRecords.js'
@@ -26,6 +26,11 @@ export function registerWorkflowExecutionChatRoutes(app: FastifyInstance, servic
     const input = WorkflowExecutionChatReadRequestSchema.parse(request.body)
     targetScope(request.params, input.target)
     return service.read(requirePrincipal(request), input)
+  })
+  app.post<{ Params: Scope; Body: unknown }>(`${WORKFLOW_EXECUTION_CHAT_ROUTE}/message`, request => {
+    const input = WorkflowExecutionChatMessageRequestSchema.parse(request.body)
+    targetScope(request.params, input.target)
+    return service.message(requirePrincipal(request), input.target, input.messageId)
   })
   app.post<{ Params: Scope; Body: unknown }>(`${WORKFLOW_EXECUTION_CHAT_ROUTE}/send`, request => {
     const input = ChatSendRequestSchema.parse(request.body)

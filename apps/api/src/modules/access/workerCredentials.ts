@@ -1,3 +1,4 @@
+import { workflowChatGrants } from './workflowChatGrants.js'
 import { canonicalJson, CoordinatorConsultationBindingSchema, HarnessExecutionSchema, WorkflowRunSchema,
   type CoordinatorConsultationBinding } from '@foreman-code/contracts'
 import { withTransaction } from '../../infrastructure/transaction.js'
@@ -58,7 +59,7 @@ export class WorkerCredentialService {
       const expiry = await this.issueExpiry(client)
       const issued = await this.access.issue({ name: `consultation:${binding.consultationId}`,
         audience: 'worker', agentId: authority.subject.agent.agentId,
-        grants: [{ actions: ['bug_reports:report', 'interactions:read'], scope: {
+        grants: [...await workflowChatGrants(client, authority.source_execution_id), { actions: ['bug_reports:report', 'interactions:read'], scope: {
           workspaceIds: [authority.workspace_id], workflowIds: [authority.workflow_id], runIds: [binding.runId],
         } }], expiresAt: expiry.expiresAt }, client)
       await client.query(`insert into worker_credential_bindings
@@ -190,7 +191,7 @@ export class WorkerCredentialService {
         name: `execution:${identity.execution_id}`,
         audience: 'worker',
         agentId: identity.agent_id,
-        grants: [{
+        grants: [...await workflowChatGrants(client, executionId), {
           actions: [
             'bug_reports:report',
             'interactions:read',

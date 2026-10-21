@@ -1,3 +1,8 @@
+import { prepareAgentChatInput, prepareOperatorChatInput } from './modules/collaboration/chatInputPreparation.js'
+import { ConversationCredentials } from './modules/access/conversationCredentialIssuer.js'
+import { conversationChatTools, readConversationCredential } from './modules/access/conversationCredentials.js'
+import { ConversationNativeAccess } from './modules/collaboration/conversationNativeAccess.js'
+import { createProductionWorkflowChat } from './modules/collaboration/groupChatProduction.js'
 import { requireRsyncTransferOwner } from './modules/byte-transfer/rsyncTransferOwner.js'
 import { WorkflowCollaborationIntegration, type WorkflowFeaturePorts } from './modules/collaboration/workflowIntegration.js'
 import { createWorkflowExecutionChatService } from './modules/collaboration/workflowChatProduction.js'
@@ -54,7 +59,7 @@ import { registerComputerSyncRoutes } from './routes/computerSync.js'
 import { sessionStartDirectory } from './modules/harnesses/sessionStart.js'
 import { recoverPersistedClaudeCompaction } from './modules/harnesses/claudeSdk/recoverCompaction.js'
 import { registerBuildComputerRoutes } from './routes/buildComputers.js'
-import { WORKSPACE_ROOT_EXTENSION } from '@foreman-code/contracts/workspace-root-policies'
+import { ApprovedRootAllowlistSchema, WORKSPACE_ROOT_EXTENSION } from '@foreman-code/contracts/workspace-root-policies'
 import type { ClaudeHarnessConfiguration } from '@foreman-code/contracts/claude'
 import { readProductEnvironment } from '@foreman-code/contracts/product-environment'
 import { appLauncherPath, appMcpServerName } from './modules/harnesses/appMcpLauncher.js'
@@ -435,6 +440,9 @@ interface ProductionComposition {
   operatorManagers: Map<string, NativeHarnessSessionManager>
   operatorConversations: PostgresOperatorConversationRepository
   agentConversations: PostgresAgentChatRepository
+  conversationNativeAccess: ConversationNativeAccess
+  workflowChat: ReturnType<typeof createProductionWorkflowChat>
+  stopWorkflowChat?: () => void
   workerChats: ReturnType<typeof createProductionWorkerConversations>
   agentChatProfileSelection: (
     configuration: import('@foreman-code/contracts').AgentConfigurationVersion,
@@ -1673,6 +1681,12 @@ function configureConversationManagers(composition: ProductionComposition) {
     endpoint: () => deviceRuntime.endpointForDomains(), profiles: selectedProfiles, claudeProfiles,
     operators: operatorConversations, agents: agentConversations, registry: harnessRegistry,
     qualifications: qualificationRepository, access, mcpForward: () => selectedMainMcpForward(composition.app),
+    agentMcp: { authorize: async request => {
+      const principal = await access.authenticate(request.token, 'worker')
+      const credential = await readConversationCredential(database.pool, principal.id)
+      if (!credential) throw new DomainError('ACCESS_DENIED', 'A scoped Agent conversation credential is required.', 403)
+      return { subject: credential.subject, expiresAt: principal.expiresAt }
+    }, forward: () => selectedMainMcpForward(composition.app) },
     fileService: () => productionFileTools(composition.app),
     files: (conversationId, configuration, workingDirectory) => async ({ host, assertHost, ...turn }) => {
       const admissions = 'operatorId' in configuration
@@ -1834,6 +1848,25 @@ function configureOperatorChat(composition: ProductionComposition) {
     operatorAccountBindings,
     resolveOperatorManager,
   } = composition
+  resolveOperatorManager.prepareInput = prepareOperatorChatInput(database.pool, async profile => {
+    const host = profile.target.hostRef
+    if (host.kind !== 'device') throw new DomainError('CHAT_PREFLIGHT_UNAVAILABLE', 'The Worker profile is unavailable.', 409)
+    const endpoint = deviceRuntime.endpointForDomains()
+    const channel = endpoint.captureRequest(host.deviceId, WORKSPACE_ROOT_EXTENSION.namespace)
+    if (!channel || channel.binding.mainId !== host.mainId
+      || channel.binding.workerInstallationId !== profile.target.applicationInstallationId) {
+      throw new DomainError('CHAT_PREFLIGHT_UNAVAILABLE', 'The selected Worker is unavailable.', 503)
+    }
+    const response = await channel.request({ version: 1, operation: 'workspace-roots.configuration' },
+      { signal: new AbortController().signal })
+    const roots = ApprovedRootAllowlistSchema.parse(response.payload)
+    if (response.bytes !== undefined || !isDeepStrictEqual(roots.hostRef, host)
+      || roots.applicationInstallationId !== profile.target.applicationInstallationId
+      || !isDeepStrictEqual(endpoint.captureRequest(host.deviceId, WORKSPACE_ROOT_EXTENSION.namespace)?.binding, channel.binding)) {
+      throw new DomainError('CHAT_PREFLIGHT_UNAVAILABLE', 'The selected Worker root changed during input preparation.', 409)
+    }
+    return roots.managedRuntimeRoot
+  })
   const chatAuthority = composition.chatAuthority = new PostgresOperatorChatAuthority(
     database.pool, access, rollout, operatorWorkingDirectory, appMcpEndpoint,
     (manager) => workerChats!.inspector(manager) ?? nativeFactories.inspector(manager),
@@ -1934,7 +1967,8 @@ function configureAgentChat(composition: ProductionComposition) {
     recoverChatCompaction,
   } = composition
   const agentChatManagers = new Map<string, NativeHarnessSessionManager>()
-  const resolveAgentChatManager: AgentChatManagerFactory = async (conversationId, configuration, workingDirectory, accountSource) => {
+  const nativeAccess = composition.conversationNativeAccess = new ConversationNativeAccess(new ConversationCredentials(database.pool))
+  const resolveAgentChatManager: AgentChatManagerFactory = async (conversationId, configuration, workingDirectory, accountSource, featureContext) => {
     if (configuration.harness.harness === 'opencode') {
       throw new DomainError('HARNESS_RETIRED', RETIRED_OPENCODE_MESSAGE, 409)
     }
@@ -1946,9 +1980,15 @@ function configureAgentChat(composition: ProductionComposition) {
     const selector = selected.profileSelection
     const resolved = agentChatManagers.get(conversationId)
     if (resolved) return resolved
+    const appMcpAccess = featureContext && conversationChatTools(featureContext).length ? 'scoped' as const : 'none' as const
     if (selector?.target.hostRef.kind === 'device') {
-      const manager = workerChats!.create({ configuration, conversationId, workingDirectory, appMcpAccess: 'none',
-        profileSelection: selector, sourceExecution: selected.sourceExecution })
+      const manager = workerChats!.create({ configuration, conversationId, workingDirectory, appMcpAccess, fileInputs: true,
+        profileSelection: selector, sourceExecution: selected.sourceExecution,
+        applicationAccess: start => {
+          const token = start.environment?.variables.FOREMAN_CODE_MCP_TOKEN ?? start.environment?.variables.GRAPHQL_MCP_TOKEN
+          return token ? { kind: 'agent-chat-mcp', token } : undefined
+        } })
+      if (featureContext) await nativeAccess.bind(manager, featureContext)
       agentChatManagers.set(conversationId, manager)
       return manager
     }
@@ -1966,11 +2006,12 @@ function configureAgentChat(composition: ProductionComposition) {
         ...(selector ? { selector } : {}),
         binding: { kind: 'agent', conversationId, workspaceId: configuration.workspaceId, repository: agentConversations },
         role: 'agent-chat', configuration: harness, workingDirectory, ownerAgentId: configuration.agentId, recovery,
-        appMcpAccess: 'none', mode: infrastructure?.mode ?? 'native',
+        appMcpAccess, mode: infrastructure?.mode ?? 'native',
         files: { service: () => productionFileTools(composition.app), ...(infrastructure?.claudeFileSdk ? { sdk: infrastructure.claudeFileSdk } : {}) },
         ...(infrastructure?.claudeClient ? { loadClient: infrastructure.claudeClient } : {}),
         inspectionStart: async () => { throw new DomainError('CLAUDE_MANAGEMENT_MCP_FORBIDDEN', 'Agent chat has no management MCP inspection authority.', 403) },
       })
+      if (featureContext) await nativeAccess.bind(manager, featureContext)
       agentChatManagers.set(conversationId, manager)
       return manager
     }
@@ -1980,8 +2021,9 @@ function configureAgentChat(composition: ProductionComposition) {
         ...(accountBinding?.kind === 'slot' ? { accountBinding } : {}),
         selector,
         binding: { kind: 'agent', conversationId, workspaceId: configuration.workspaceId, repository: agentConversations },
-        configuration: harness, role: 'agent-chat', workingDirectory, ownerAgentId: configuration.agentId, recovery, appMcpAccess: 'none',
+        configuration: harness, role: 'agent-chat', workingDirectory, ownerAgentId: configuration.agentId, recovery, appMcpAccess,
         files: productionCodexChatFiles(() => composition.app, conversationId, chatFileAdmissions) })
+      if (featureContext) await nativeAccess.bind(manager, featureContext)
       agentChatManagers.set(conversationId, manager)
       return manager
     }
@@ -1993,10 +2035,11 @@ function configureAgentChat(composition: ProductionComposition) {
       role: 'agent-chat', workingDirectory, ownerAgentId: configuration.agentId,
       configured: { instanceId: selection?.instance.instanceId ?? configuration.agentId, instanceRevision: configuration.id, driverId: harness.harness,
         enabled: true, configuration: harness },
-      processRecovery: recovery, appMcpAccess: 'none',
+      processRecovery: recovery, appMcpAccess,
       harness: 'codex',
       chatFiles: productionCodexChatFiles(() => composition.app, conversationId, chatFileAdmissions),
     })
+    if (featureContext) await nativeAccess.bind(manager, featureContext)
     agentChatManagers.set(conversationId, manager)
     return manager
   }
@@ -2024,6 +2067,7 @@ function configureAgentChat(composition: ProductionComposition) {
     }
     return undefined
   }
+  resolveAgentChatManager.prepareInput = prepareAgentChatInput(database.pool)
   resolveAgentChatManager.modelOptions = async configuration =>
     configuration.harness === 'opencode' ? []
       : (await composition.nativeConfigurations.options(configuration.harness)).models
@@ -2212,7 +2256,15 @@ function configureOperatorServices(composition: ProductionComposition) {
   }
   composition.operatorServices.workflowHierarchy = new WorkflowHierarchyService(database.pool, commands,
     composition.operatorServices.workflows)
-  composition.operatorServices.executionChat = createWorkflowExecutionChatService(database.pool, approvals)
+  const executionChat = createWorkflowExecutionChatService(database.pool, approvals)
+  composition.operatorServices.executionChat = executionChat
+  composition.workflowChat = createProductionWorkflowChat({ pool: database.pool,
+    agent: composition.agentChat, agentRepository: composition.agentConversations, operator: composition.chat,
+    execution: executionChat,
+    bindConversationScope: composition.conversationNativeAccess.rebind,
+  })
+  composition.operatorServices.workflowChat = composition.workflowChat.service
+  composition.operatorServices.chatDelivery = composition.workflowChat.router
 }
 
 function configureHttpApplication(composition: ProductionComposition) {
@@ -2374,6 +2426,7 @@ function configureRuntimeLifecycle(composition: ProductionComposition) {
       { name: 'native MCP settings', run: () => harnessSettings.mcp.shutdown() },
       { name: 'Codex plugin settings', run: () => harnessSettings.plugins.shutdown() },
       { name: 'harness qualification checks', run: () => Promise.all([harnessCatalog.shutdownChecks(), nativeConfigurations.shutdownChecks()]).then(() => undefined) },
+      { name: 'Group chat', run: async () => { composition.stopWorkflowChat?.() } },
       { name: 'Operator chat', run: () => chat.shutdown() },
       { name: 'Agent chat', run: () => agentChat.shutdown() },
       { name: 'automatic reviews', run: () => reviews.shutdown() },
@@ -2507,6 +2560,7 @@ function configureRuntimeStartup(composition: ProductionComposition) {
     return composition.initialization
   }
   app.addHook('onListen', async () => {
+    composition.stopWorkflowChat ??= composition.workflowChat.start()
     if (!composition.initialized || composition.closing || infrastructure?.mode === 'replay') return
     composition.nativeDefaultsInitialization ??= (async () => {
       await initializeNativeDefaults({

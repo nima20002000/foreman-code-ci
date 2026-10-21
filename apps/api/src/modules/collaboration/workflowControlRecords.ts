@@ -1,3 +1,4 @@
+import { synchronizeGroupDelivery } from './workflowGroupReceipts.js'
 import { createHash } from 'node:crypto'
 import {
   canonicalJson, ChatControlReceiptSchema, ChatDeliveryReceiptSchema, ChatSendRequestSchema,
@@ -92,6 +93,7 @@ export async function updateControlCommand(sql: GraphTransactionSql, row: Contro
 
 async function projectControlReceipt(sql: GraphTransactionSql, runId: string, id: string, revision: number,
   receipt: ChatDeliveryReceipt | ChatControlReceipt, now: string) {
+  if ('requestedIntent' in receipt) await synchronizeGroupDelivery(sql, receipt)
   await sql.query(`insert into run_activity(run_id,source,kind,occurred_at,payload)
     values($1,'backend','workflow_chat_receipt',$2::timestamptz,$3::jsonb)`,
   [runId,now,canonicalJson({ sourceEventKey: `workflow-chat:${id}:${revision}`, revision, receipt })])

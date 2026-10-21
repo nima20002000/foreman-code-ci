@@ -1,3 +1,4 @@
+import { readConversationCredential } from './conversationCredentials.js'
 import { assertWave25WorkerBinding } from '../interactions/wave25/credentialAuthority.js'
 import { HarnessExecutionSchema } from '@foreman-code/contracts'
 import { AcceptedWorkflowRunV3Schema } from '@foreman-code/contracts/wave25'
@@ -74,6 +75,7 @@ export function requireActiveWorkerExecution(identity: WorkerExecutionIdentity):
 
 /** Authentication also fails closed while terminal credential cleanup is retried. */
 export async function requireActiveWorkerBinding(client: pg.ClientBase | pg.Pool, principalId: string): Promise<void> {
+  if (await readConversationCredential(client, principalId)) return
   const active = await client.query(
     `select 1 from worker_credential_bindings b
      join management_principals p on p.id=b.principal_id and p.agent_id=b.agent_id

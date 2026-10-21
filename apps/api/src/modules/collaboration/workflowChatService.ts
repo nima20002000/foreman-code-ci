@@ -1,3 +1,7 @@
+import { readWorkflowNativeChat } from '../interactions/workflowChatNativeRead.js'
+import { PostgresChatDeliveryRepository } from '../workflow-chat/deliveryRepository.js'
+import type { DeliveryQualification } from '../workflow-chat/model.js'
+import { qualifyWorkflowChatSendLocked } from './workflowChatAdmission.js'
 import { randomUUID } from 'node:crypto'
 import type pg from 'pg'
 import { canonicalJson, ChatControlReceiptSchema, ChatDeliveryReceiptSchema, ChatQueueCancelRequestSchema,
@@ -18,7 +22,10 @@ import type { WorkflowChatLockedTarget, WorkflowChatTarget, WorkflowExecutionCha
 
 /** HTTP, Group chat and MCP use this one durable Run-owned admission boundary. */
 export class WorkflowExecutionChatService implements ExecutionChatPort {
-  constructor(private readonly pool: pg.Pool, private readonly dependencies: WorkflowExecutionChatDependencies) {}
+  private readonly groupDeliveries: PostgresChatDeliveryRepository
+  constructor(private readonly pool: pg.Pool, private readonly dependencies: WorkflowExecutionChatDependencies) {
+    this.groupDeliveries = new PostgresChatDeliveryRepository(pool)
+  }
   private now() { return this.dependencies.now?.() ?? new Date().toISOString() }
   private commandId() { return this.dependencies.id?.() ?? randomUUID() }
 
@@ -29,19 +36,55 @@ export class WorkflowExecutionChatService implements ExecutionChatPort {
   read(principal: Principal, request: { target: DeliveryTarget; cursor?: string | undefined; limit?: number | undefined }) {
     return readWorkflowExecutionChat(this.pool, this.dependencies.owner, principal, request)
   }
+  async message(principal: Principal, target: WorkflowChatTarget, messageId: string) {
+    return withWorkflowChatRead(this.pool, principal, target, 'agent_chat:read', async sql => {
+      await readWorkflowChatIdentity(sql, target)
+      const page = await readWorkflowNativeChat(sql, target, { messageId, limit: 1, bindings: [] })
+      const message = page.messages.find(item => item.id === messageId)
+      if (!message) throw new DomainError('CHAT_MESSAGE_NOT_FOUND', 'The selected native message is unavailable.', 404)
+      return message
+    })
+  }
+  async qualify(principal: Principal, request: ChatSendRequest, channelContext?: string): Promise<DeliveryQualification> {
+    const target = asWorkflowChatTarget(request.target)
+    return this.dependencies.owner.transaction(target, async context => {
+      authorizeWorkflowChat(await readLiveManagementPrincipal(context.sql, principal.id), target, 'agent_chat:write')
+      await readWorkflowChatIdentity(context.sql, target)
+      const prepared = await qualifyWorkflowChatSendLocked(context, request, {
+        id: controlId('chat-delivery', principal.id, request.commandId ?? this.commandId()), principalId: principal.id,
+        ...(channelContext ? { channelContext } : {}),
+      }, this.dependencies.owner)
+      return { appliedIntent: prepared.appliedIntent, ownerBinding: {
+        agentIdentity: context.agent, configurationVersionId: context.agent.configurationVersionId,
+        ...(context.native ? { nativeSessionId: context.native.nativeSessionId,
+          ownerRequestId: context.native.ownerRequestId,
+          ...(context.native.nativeTurnId ? { nativeTurnId: context.native.nativeTurnId } : {}) } : {}),
+      } }
+    })
+  }
   async deliver(principal: Principal, raw: ChatSendRequest) {
     const parsed = ChatSendRequestSchema.parse(raw), request = { ...parsed, commandId: parsed.commandId ?? this.commandId() }
     const target = asWorkflowChatTarget(request.target), digest = controlDigest({ kind: 'delivery', request })
     const replay = await this.replay(principal, target, request.commandId, digest, 'agent_chat:write')
     if (replay) return ChatDeliveryReceiptSchema.parse(replay)
     await this.dependencies.assertAttachments(principal, request)
-    const id = controlId('chat-delivery', principal.id, request.commandId)
+    const prepared = await this.groupDeliveries.find(principal.id, request.commandId)
+    const id = prepared?.receipt.id ?? controlId('chat-delivery', principal.id, request.commandId)
     const admitted = await this.dependencies.owner.transaction(target, async context => {
       await this.checkContext(context, principal, target, 'agent_chat:write', request.commandId)
       const stored = await replayControlCommand(context.sql, principal.id, request.commandId, digest)
       if (stored) return { receipt: ChatDeliveryReceiptSchema.parse(stored.receipt), replayed: true }
+      if (prepared) {
+        await this.groupDeliveries.adoptPreparedLocked(context.sql, principal.id, request, async command => {
+          const qualified = await qualifyWorkflowChatSendLocked(context, request,
+            { id, principalId: principal.id }, this.dependencies.owner)
+          if (qualified.appliedIntent !== command.receipt.appliedIntent) throw new DomainError(
+            'CHAT_TARGET_CHANGED', 'The native target changed after the Group message was accepted.', 409)
+          return true
+        })
+      }
       const receipt = await admitWorkflowChatSendLocked(context, request, { id, commandId: request.commandId,
-        principalId: principal.id, now: this.now() }, this.dependencies.owner)
+        principalId: principal.id, now: prepared?.receipt.createdAt ?? this.now() }, this.dependencies.owner)
       return { receipt, replayed: false }
     })
     if (!admitted.replayed) await this.dispatch(target, id)

@@ -80,10 +80,10 @@ function setControlPrincipal(binding: ClaudeDomainBinding, principalId: string):
   if (binding.kind === 'operator' || binding.kind === 'agent') binding.controlPrincipalId = principalId
 }
 
-function bindOperatorCredentialRefresh(manager: ClaudeNativeSessionManager) {
+function bindConversationCredentialRefresh(manager: ClaudeNativeSessionManager) {
   manager.rebindApplicationAccess = async (session, start, signal) => {
-    if (start.kind !== 'operator' || start.configuration.harness.harness !== 'claude') {
-      throw new DomainError('HARNESS_ROLE_AUTHORITY_INVALID', 'Credential rebinding requires the accepted Claude Operator.', 403)
+    if ((start.kind !== 'operator' && start.kind !== 'agent-chat') || start.configuration.harness.harness !== 'claude') {
+      throw new DomainError('HARNESS_ROLE_AUTHORITY_INVALID', 'Credential rebinding requires the accepted Claude conversation.', 403)
     }
     const servers = start.configuration.harness.mcpServers
     const serverName = appMcpServerName(servers)
@@ -318,7 +318,7 @@ export function productionClaudeManager(input: ProductionClaudeInput) {
   }
   result.manager.refreshInspectionCredentials = (start, servers, signal) => refreshOwnedCredentials(start, servers, signal)
   result.manager.refreshSessionCredentials = (session, start, servers, signal) => refreshOwnedCredentials(start, servers, signal, session)
-  if (input.role === 'operator' && input.appMcpAccess === 'scoped') bindOperatorCredentialRefresh(result.manager)
+  if ((input.role === 'operator' || input.role === 'agent-chat') && input.appMcpAccess === 'scoped') bindConversationCredentialRefresh(result.manager)
   const dispose = result.manager.dispose!.bind(result.manager)
   result.manager.dispose = async () => {
     try { await dispose() } finally {
