@@ -170,30 +170,36 @@ export async function planCiGate(input: CiRunInput, integration: CiIntegrationIn
   }
   // A recent slowdown bounds host work even if the typical estimate is optimistic.
   const integrationClouds = integrationFleet.filter(item => item.computer.hostRef.kind === 'cloud')
-  for (const host of hosts) {
-    while (host.files.length && finish(host, 'conservative') > Math.max(...clouds.map(item => finish(item)))) {
-      const file = [...host.files].reverse().find(file => integrationClouds.some(item =>
-        !requiresUserSystemd(file) || item.computer.userSystemd?.supported))
-      if (!file) break
-      const target = [...integrationClouds].filter(item =>
-        !requiresUserSystemd(file) || item.computer.userSystemd?.supported)
-        .sort((left, right) => finishWith(left, file) - finishWith(right, file))[0]!
-      const remaining = host.files.filter(value => value !== file)
-      let remainingLoad = { lanes: Array.from({ length: host.shards }, () => 0), serial: 0, work: 0 }
-      for (const remainingFile of remaining) {
-        remainingLoad = { ...addIntegrationFile(remainingLoad, remainingFile, duration(remainingFile)),
-          work: remainingLoad.work + duration(remainingFile) }
+  // Each file can move from a builder to a cloud only once, bounding the number of improving passes.
+  for (let pass = 0; pass < files.length; pass++) {
+    let moved = false
+    for (const host of hosts) {
+      while (host.files.length && finish(host, 'conservative') > Math.max(...clouds.map(item => finish(item)))) {
+        const file = [...host.files].reverse().find(file => integrationClouds.some(item =>
+          !requiresUserSystemd(file) || item.computer.userSystemd?.supported))
+        if (!file) break
+        const target = [...integrationClouds].filter(item =>
+          !requiresUserSystemd(file) || item.computer.userSystemd?.supported)
+          .sort((left, right) => finishWith(left, file) - finishWith(right, file))[0]!
+        const remaining = host.files.filter(value => value !== file)
+        let remainingLoad = { lanes: Array.from({ length: host.shards }, () => 0), serial: 0, work: 0 }
+        for (const remainingFile of remaining) {
+          remainingLoad = { ...addIntegrationFile(remainingLoad, remainingFile, duration(remainingFile)),
+            work: remainingLoad.work + duration(remainingFile) }
+        }
+        const hostEnd = remaining.length ? host.checkMs + measuredTime(host, remainingLoad.work,
+          SETUP_MS + remainingLoad.serial + Math.max(...remainingLoad.lanes), 'conservative') : host.checkMs
+        const criticalPath = Math.max(...fleet.map(item => finish(item, 'conservative')))
+        const movedCriticalPath = Math.max(hostEnd, finishWith(target, file),
+          ...fleet.filter(item => item !== host && item !== target).map(item => finish(item, 'conservative')))
+        if (movedCriticalPath >= criticalPath) break
+        host.files = remaining
+        load.set(host, remainingLoad)
+        addFile(target, file)
+        moved = true
       }
-      const hostEnd = remaining.length ? host.checkMs + measuredTime(host, remainingLoad.work,
-        SETUP_MS + remainingLoad.serial + Math.max(...remainingLoad.lanes), 'conservative') : host.checkMs
-      const criticalPath = Math.max(...fleet.map(item => finish(item, 'conservative')))
-      const movedCriticalPath = Math.max(hostEnd, finishWith(target, file),
-        ...fleet.filter(item => item !== host && item !== target).map(item => finish(item, 'conservative')))
-      if (movedCriticalPath >= criticalPath) break
-      host.files = remaining
-      load.set(host, remainingLoad)
-      addFile(target, file)
     }
+    if (!moved) break
   }
   for (const item of integrationFleet.filter(item => item.files.length)) {
     const measured = typeof speeds.get(executorSpeedKey(item.computer)) === 'object'
