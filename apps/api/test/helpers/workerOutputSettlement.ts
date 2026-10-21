@@ -1,4 +1,4 @@
-import { stat, writeFile } from 'node:fs/promises'
+import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect } from 'vitest'
 import { RemoteOperationReceiptSchema } from '@foreman-code/contracts/remote-execution'
@@ -6,31 +6,6 @@ import { remoteReviewProduction, waitForRemoteReview } from './remoteReviewProdu
 import { completedRun, startWhenReady } from './harnessInstallationUpdate.js'
 import { expectMcpAccessDenied } from './deniedMcpTool.js'
 import { readWorkflowClosure } from '../../src/modules/interactions/workflowClosure.js'
-import { InstalledWorkflowRecovery } from '../../src/modules/runs/remote/installedWorkflowRecovery.js'
-
-async function workerRecoveryDirectories(f: Awaited<ReturnType<typeof remoteReviewProduction>>) {
-  const rows = await f.db.pool.query<{ receipt: unknown }>('select receipt from remote_execution_receipts')
-  const recovery = new InstalledWorkflowRecovery(join(f.stateDirectory, 'workflow-recovery'), f.registry)
-  return Promise.all(rows.rows.map(async row => {
-    const receipt = RemoteOperationReceiptSchema.parse(row.receipt)
-    const capture = recovery.read(receipt)
-    if (!capture) return { executionId: receipt.intent.executionId, captured: false }
-    const paths = {
-      sourceRoot: capture.source.record.receipt.binding.canonicalPath,
-      sourceTree: capture.source.workingTree.canonicalProjectRoot,
-      sourceCwd: capture.source.workingTree.canonicalCwd,
-      runtimeRoot: capture.approvedRoots.managedRuntimeRoot,
-      runtimeLeaf: capture.runtimeLeaf.canonicalRuntimeDirectory,
-      runtimeMarker: join(capture.runtimeLeaf.canonicalRuntimeDirectory, '.graphql-workflow-runtime.json'),
-    }
-    const inspections = await Promise.allSettled(Object.values(paths).map(path => stat(path)))
-    return { executionId: receipt.intent.executionId, directories: Object.fromEntries(
-      Object.keys(paths).map((name, index) => {
-        const result = inspections[index]!
-        return [name, result.status === 'fulfilled' ? 'present' : String(result.reason)]
-      })) }
-  }))
-}
 
 export async function assertWorkerOutputSettlement(cut: 'pending' | 'retired' = 'pending'): Promise<void> {
   const f = await remoteReviewProduction({ workflow: 'single', executionHost: 'worker',
@@ -96,7 +71,6 @@ export async function assertWorkerOutputSettlement(cut: 'pending' | 'retired' = 
   } catch (error) {
     failure = error
     console.error('Worker output settlement failed', error)
-    console.error('Worker recovery directories', JSON.stringify(await workerRecoveryDirectories(f)))
     console.error('Worker output failure details', JSON.stringify(f.failures()))
     throw error
   } finally {
