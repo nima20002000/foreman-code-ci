@@ -1,3 +1,4 @@
+import type { MemoryWorkPageInfo, MemoryWorkSummary } from '@foreman-code/contracts'
 import type { z } from 'zod'
 import type {
   AgentNodeRef, AgentSubject, ExecutionRef, LogicalWorkRef, MemoryBoard, MemoryBoardScope, MemoryBoardMutation,
@@ -41,6 +42,9 @@ export interface MemoryCardDetail {
   card: MemoryCard
   bindings: MemoryCardWorkBinding[]
   claims: MemoryCardWorkClaim[]
+  bindingPage: MemoryWorkPageInfo
+  claimPage: MemoryWorkPageInfo
+  workSummary: MemoryWorkSummary
   history: MemoryPage<MemoryChange>
 }
 export interface MemoryReceipt {
@@ -78,6 +82,8 @@ export interface MemoryBoardClient {
   readBoard(boardId: string, signal?: AbortSignal): Promise<MemoryBoardView>
   readCards(boardId: string, filter: CardFilter, options?: PageOptions): Promise<MemoryPage<MemoryCard>>
   readCard(boardId: string, cardId: string, options?: PageOptions): Promise<MemoryCardDetail>
+  readBindings(boardId: string, cardId: string, options?: PageOptions): Promise<MemoryPage<MemoryCardWorkBinding>>
+  readClaims(boardId: string, cardId: string, options?: PageOptions): Promise<MemoryPage<MemoryCardWorkClaim>>
   readNotes(boardId: string, archived: boolean, options?: PageOptions): Promise<MemoryPage<MemoryNote>>
   readCommand(boardId: string, commandId: string, signal?: AbortSignal): Promise<MemoryCommandRead>
   readChanges(boardId: string, afterSequence?: number, options?: PageOptions): Promise<MemoryChangesPage>
@@ -85,6 +91,8 @@ export interface MemoryBoardClient {
   subscribe(boardId: string, listeners: MemoryStreamListeners): () => void
 }
 export interface MemoryWireSchemas {
+  bindings: z.ZodType<MemoryPage<MemoryCardWorkBinding>>
+  claims: z.ZodType<MemoryPage<MemoryCardWorkClaim>>
   board: z.ZodType<MemoryBoardView>
   cards: z.ZodType<MemoryPage<MemoryCard>>
   card: z.ZodType<MemoryCardDetail>
