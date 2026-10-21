@@ -1,4 +1,3 @@
-import { MemoryBoardSurface } from './MemoryBoardSurface'
 import { InfoHint } from '../../shared/ui/InfoHint'
 import { activeRunCandidates } from '@foreman-code/contracts/run-snapshots'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type SyntheticEvent } from 'react'
@@ -185,10 +184,7 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
       <WorkflowSidePanel scope={side.scope} opener={side.opener} runId={legacyRun?.runId ?? pickedRunId} selection={side.panel} agentSelection={side.agentSelection} onSelect={side.selectPanel} bodyRef={setSidePanelHost}
         modalOpen={side.memoryOpen} slots={collaborationSlots} />
       </div>
-      {collaborationSlots?.memoryBoard
-        ? <WorkflowMemoryDialog open={side.memoryOpen} onOpenChange={side.setMemoryOpen} slots={collaborationSlots} />
-        : side.memoryOpen && <MemoryBoardSurface scope={{ kind: 'workflow', workspaceId, workflowId }}
-          scopeName="Workflow" dialog={{ open: true, onOpenChange: side.setMemoryOpen, historicalRun: Boolean(legacyRun || pickedRunId) }} />}
+      <WorkflowMemoryDialog open={side.memoryOpen} onOpenChange={side.setMemoryOpen} slots={collaborationSlots} />
     </div>
   </WorkflowBoardContext.Provider>
 }
