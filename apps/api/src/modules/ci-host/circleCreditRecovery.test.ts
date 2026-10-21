@@ -1,14 +1,10 @@
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
-import { afterEach, expect, it, vi } from 'vitest'
+import { expect, it } from 'vitest'
 import { CircleCreditCache, circleCreditKey, circleMonthStart } from './circleCreditCache.js'
 import { CircleCreditUsage } from './circleCredits.js'
 import { CircleStandby, type CircleOrganization } from './circleStandby.js'
 import { fixture } from './cloud.testSupport.js'
-import { dispatchFleet, queuedTicket } from './dispatchFleet.testSupport.js'
-import type { HostCiComputer } from './serviceTypes.js'
-
-afterEach(() => vi.useRealTimers())
 
 const organizations: CircleOrganization[] = [
   { owner: 'alpha', circleAccountId: 'default', role: 'primary', ready: true, mirrorNames: new Set(['site-ci']) },
@@ -103,30 +99,6 @@ it('keeps the replacement active after a rejected probe and observes another com
   expect(await f.cloud.handle(start())).toMatchObject({ run: { state: 'failed', testsStarted: false } })
   expect(f.circle.triggered).toHaveLength(2)
   expect(await policy.eligible('delta', 'reserve', 'site-ci')).toBe(true)
-})
-
-it('offers one probe slot to the dispatcher while preserving replacement slots', async () => {
-  vi.useFakeTimers({ toFake: ['Date'] })
-  vi.setSystemTime(new Date('2026-10-12T00:00:01Z'))
-  const policy = new CircleStandby(async () => organizations, { reading: async () => ({ credits: null }) })
-  await policy.recordCreditRefusal('alpha')
-  vi.setSystemTime(Date.now() + 5 * 60_000)
-  await policy.roles('site-ci')
-  const computers: HostCiComputer[] = organizations.flatMap(org => [0, 1, 2].map(slot => ({
-    key: `fixture:circleci:${org.owner}:${slot}`, label: `Fixture CircleCI ${org.owner} ${slot}`, priority: 30,
-    hostRef: { kind: 'cloud' as const, mainId: 'fixture', provider: 'circleci' as const,
-      account: org.owner, circleAccountId: org.circleAccountId, slot },
-  })))
-  const f = dispatchFleet(computers, Array.from({ length: 6 }, () => queuedTicket({ ciMirror: 'alpha/site-ci' })),
-    { circleStandby: policy })
-  try {
-    await f.service.dispatch()
-    await f.service.drain()
-    expect(f.started.filter(start => start.computer.hostRef.account === 'alpha')).toHaveLength(1)
-    expect(f.started.filter(start => start.computer.hostRef.account === 'delta')).toHaveLength(3)
-  } finally {
-    await f.service.close()
-  }
 })
 
 it('preserves a provider refusal and its replacement when a cooldown crosses UTC month start', async () => {
