@@ -102,7 +102,7 @@ describe('current workflow approval authority', () => {
       const invalid = structuredClone(f)
       invalid.version.approval = { handler: 'orchestrator', designatedOrchestratorAgentId }
       invalid.version.definition.approval = invalid.version.approval
-      expect(() => validate(invalid)).toThrow('explicit entry Orchestrator')
+      expect(() => validate(invalid)).toThrow('the supported initialized reviewer must be the explicit entry coordinator')
     }
   })
 

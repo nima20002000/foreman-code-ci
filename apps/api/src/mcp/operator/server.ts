@@ -20,6 +20,7 @@ import { registerRunGraphTools } from './tools/runGraph.js'
 import { registerRunInspectionTools } from './tools/runInspection.js'
 import { registerWorkflowScheduleTools } from './tools/workflowSchedules.js'
 import { registerCurrentWorkflowTools } from './tools/currentWorkflow.js'
+import { registerWorkflowHierarchyTools } from './tools/workflowHierarchy.js'
 import { registerFileRetentionTools } from './tools/fileRetention.js'
 import { authorizationPrincipal } from '../../modules/access/policy.js'
 import { OPERATOR_TOOL_GROUPS, OPERATOR_TOOLS, type OperatorToolGroup } from './catalog.js'
@@ -71,7 +72,7 @@ export function operatorToolCatalog(services: OperatorServices): readonly BoundT
 
 export function operatorRequestTools(context: OperatorRequestContext, catalog?: OperatorCatalog) {
   const request: CatalogContext = { ...context, principal: authorizationPrincipal(context.principal), catalog }
-  return operatorToolCatalog(context.services).filter(tool => catalogToolAvailable(request, tool.name)).map(tool => ({
+  return operatorToolCatalog(context.services).filter(tool => catalogToolAvailable(request, tool.name, OPERATOR_TOOLS)).map(tool => ({
     name: tool.name,
     description: tool.description,
     register: (server: McpServer) => tool.register(server, request),
@@ -110,11 +111,13 @@ function registerOperatorDefinitions(server: McpServer, context: OperatorRequest
   group('settings')
   group('providerAccounts')
   group('agentChat')
+  group('workflowChat')
   group('sessionControls')
   group('workspaceDefaults')
   registerFileRetentionTools(server, context)
   group('workspaces')
   registerCurrentWorkflowTools(server, context)
+  registerWorkflowHierarchyTools(server, context)
   group('workflows')
   registerWorkflowScheduleTools(server, context)
   group('agents')
