@@ -312,7 +312,8 @@ finally:
     JSON.stringify({ ...manifest, chromiumExecutable: descriptor.chromiumExecutable })],
   { timeout: 60000, maxBuffer: 65536, signal, cwd: workspace,
     env: { PATH: `${join(descriptor.rootDirectory, 'python', 'bin')}:/usr/bin:/bin`, LANG: 'C.UTF-8',
-      HOME: workspace, TMPDIR: workspace, BH_AGENT_WORKSPACE: workspace,
+      HOME: workspace, BH_AGENT_WORKSPACE: workspace,
+      ...(process.env.TMPDIR ? { TMPDIR: process.env.TMPDIR } : {}),
       ...(process.env.CHROME_DEVEL_SANDBOX ? { CHROME_DEVEL_SANDBOX: process.env.CHROME_DEVEL_SANDBOX } : {}),
       PYTHONDONTWRITEBYTECODE: '1', PYTHONNOUSERSITE: '1' } });
   invariant(JSON.parse(stdout.trim()).ready === true, 'readiness returned no confirmation');

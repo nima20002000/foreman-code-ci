@@ -1,7 +1,13 @@
-import { lstat } from 'node:fs/promises';
+import { lstat, mkdir } from 'node:fs/promises';
+import { userInfo } from 'node:os';
+import { join } from 'node:path';
 
 /** Chromium documents this installed helper for AppArmor-restricted developer builds. */
 export async function configureBrowserSandbox() {
+  // Chromium's SingletonSocket must fit the Linux Unix-socket path limit.
+  const scratch = join(userInfo().homedir, '.cache', 'foreman-tmp', 'chrome');
+  await mkdir(scratch, { recursive: true, mode: 0o700 });
+  process.env.TMPDIR = scratch;
   const configured = process.env.CHROME_DEVEL_SANDBOX;
   const helper = configured || '/opt/google/chrome/chrome-sandbox';
   let info;
