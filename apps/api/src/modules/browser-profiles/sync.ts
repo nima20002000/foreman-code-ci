@@ -6,6 +6,10 @@ import { newBrowserReplica, requireBrowserProfile, type BrowserProfileService } 
 import type { BrowserCommandOptions, BrowserCommandReceipt, BrowserProfileSyncJob,
   BrowserProfile, BrowserProfileTransaction } from './types.js'
 
+function maintenancePending(error: unknown): boolean {
+  return error instanceof DomainError && ['PROFILE_BUSY', 'BROWSER_RUNTIME_DRAINING'].includes(error.code)
+}
+
 async function allProfiles(tx: BrowserProfileTransaction): Promise<BrowserProfile[]> {
   const profiles: BrowserProfile[] = []
   let after: string | undefined
@@ -45,11 +49,13 @@ export async function admitBrowserProfileSync(service: BrowserProfileService, pr
           reason: profile.distribution === 'local_only' ? 'This profile is local only.' : null })
         for (const computer of computers) {
           const replica = await tx.replica(id, computer.id) ?? newBrowserReplica(id, computer.id)
+          const removal = (await tx.replicaFacts(id, computer.id)).currentIntent?.operation === 'remove'
           const exclusion = profile.distribution === 'local_only' ? 'local_only'
-            : computer.id === profile.sourceComputerId ? 'source' : replica.localOverride ? 'local_override' : null
+            : computer.id === profile.sourceComputerId ? 'source' : removal ? 'removed' : replica.localOverride ? 'local_override' : null
           job.targets.push({ profileId: id, computerId: computer.id, snapshot: null,
             state: exclusion ? 'excluded' : computer.online ? 'queued' : 'offline', exclusion,
             reason: exclusion === 'source' ? 'Source computer.' : exclusion === 'local_only' ? 'Local-only profile.'
+              : exclusion === 'removed' ? 'This copy was removed. Use Add here to restore it.'
               : exclusion === 'local_override' ? 'This computer keeps its own sign-in.' : computer.online ? null : 'Computer offline.',
             updatedAt: timestamp })
           if (!exclusion) await tx.putIntent({ id: `${job.id}:target:${id}:${computer.id}`, profileId: id,
@@ -236,6 +242,11 @@ export class BrowserProfileSyncCoordinator {
     } catch (error) {
       await this.change(jobId, async (job, tx) => {
         const current = job.profiles.find(value => value.profileId === profileId)!
+        if (maintenancePending(error)) {
+          current.state = 'queued'
+          current.reason = 'Waiting for the source browser to become idle.'
+          return true
+        }
         const terminal = error instanceof DomainError && error.status < 500
         current.state = terminal ? 'failed' : 'offline'
         current.reason = terminal ? 'The source snapshot could not be published safely.' : 'Source result unconfirmed. Reconnect to reconcile the original export.'
@@ -306,6 +317,10 @@ export class BrowserProfileSyncCoordinator {
         operationId: `${jobId}:apply:${profileId}:${computerId}`, revision: intent.revision, jobId })
       await record('up_to_date', null, true)
     } catch (error) {
+      if (maintenancePending(error)) {
+        await record('waiting_idle', 'Waiting for this profile’s browser maintenance to finish.')
+        return
+      }
       await record(error instanceof DomainError && error.status < 500 ? 'failed' : 'offline',
         'The snapshot was not confirmed applied. Retry reconciles this same immutable snapshot.')
     }

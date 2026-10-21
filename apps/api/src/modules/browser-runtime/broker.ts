@@ -529,6 +529,7 @@ export class BrowserBroker implements BrowserLifecyclePort {
     const live = this.requireSession(sessionId)
     if (live.record.control.controllingViewerId !== viewerId) return
     live.gate.fence(); live.record.control.epoch++; live.record.control.state = 'paused'
+    live.record.control.controllingViewerId = null
     live.record.control.reason = 'The controlling viewer disconnected. Browser actions are paused.'
     live.record.session.state = 'paused'; live.lastInput.clear(); await this.persist(live)
     const epoch = live.record.control.epoch
