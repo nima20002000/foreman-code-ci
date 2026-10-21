@@ -25,7 +25,8 @@ describe.skipIf(!postgresEnabled)('workflow control recovery and parent settleme
       const stopped = ChatControlReceiptSchema.parse(await workflowChatCall(f, 'agent_chat_interrupt', {
         commandId: 'stop-child', target, scope: 'active_turn',
       }))
-      expect(stopped.state).toBe('settling')
+      // The native offer is recorded as unknown until the observer proves physical closure.
+      expect(stopped.state).toBe('unknown')
       await expect.poll(async () => (await f.runs.get(f.f.run.id))?.executionState, { timeout: 15_000 }).toBe('completed')
       expect(await drive).not.toBeInstanceOf(Error)
       expect(await f.runs.get(f.f.run.id)).toMatchObject({ outcome: 'succeeded' })
@@ -38,6 +39,9 @@ describe.skipIf(!postgresEnabled)('workflow control recovery and parent settleme
       expect((await f.db.pool.query('select state from run_hierarchy_groups where run_id=$1', [f.f.run.id])).rows)
         .toEqual([{ state: 'continued' }, { state: 'continued' }])
       expect(provider.cancellations).toEqual(['builder'])
+      expect(await workflowChatCall(f, 'agent_chat_interrupt', {
+        commandId: 'stop-child', target, scope: 'active_turn',
+      })).toMatchObject({ id: stopped.id, state: 'completed' })
     } finally { provider.releaseAll(); await f.stop(); await drive; await f.close() }
   }, 60_000)
 
