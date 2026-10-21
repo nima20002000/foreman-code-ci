@@ -13,9 +13,10 @@ export async function admitSessionMessage(client: Pick<pg.PoolClient, 'query'>, 
     throw new DomainError('SESSION_COMPACT_UNCONFIRMED', 'Recover compaction before sending another message.', 409)
   }
   if (input.intent === 'steer') {
-    if (input.sessionMode !== undefined && input.sessionMode !== state?.appliedMode) {
+    if (parseSessionCommand(input.content).kind === 'plan-task'
+      || input.sessionMode !== undefined && input.sessionMode !== state?.appliedMode) {
       throw new DomainError('SESSION_STEER_MODE_UNSUPPORTED',
-        'Steering keeps the active turn’s mode. Send mode changes as a new turn.', 422)
+        'Steering keeps the active turn’s mode. Send mode changes or /plan tasks as a new turn.', 422)
     }
     return
   }
