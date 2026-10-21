@@ -23,8 +23,7 @@ import { assertConversationCursor, withConversationPageRead } from './activityCu
 import { readActivityCommands } from './activityCommands.js'
 import { readConversationPublicationReceipts, type ConversationPublicationReceipt } from './messagePublications.js'
 import { PostgresOperatorActivityRepository } from './operatorActivityRepository.js'
-import { OPERATOR_SNAPSHOT_MESSAGE_BYTES, OPERATOR_HISTORY_PAGE_BYTES } from './operatorChatRepository.js'
-import { agentConfigurationHandoff } from './agentConfigurationTransition.js'
+import { OPERATOR_SNAPSHOT_MESSAGE_BYTES, OPERATOR_HISTORY_PAGE_BYTES, HANDOFF_MESSAGE_LIMIT, handoffContext } from './operatorChatRepository.js'
 import { AgentConfigurationVersionSchema, type AgentConfigurationVersion } from '@foreman-code/contracts'
 import { legacyProviderAccountBinding, readProviderAccountBinding, type AcceptedProviderAccountBindings }
   from '../provider-accounts/acceptedBindings.js'
@@ -357,7 +356,6 @@ export class PostgresAgentChatRepository {
     key: string; request: SendAgentChatMessageRequest; context: AgentChatContext; create?: NewAgentConversation; ownerPrincipalId?: string
     delivery: 'queued' | 'submitting'; targetNativeTurnId?: string
     assertCurrent?: (transaction: pg.PoolClient) => Promise<void>
-    validateInput?: (transaction: pg.PoolClient, row: AgentConversationRow) => Promise<void>
   }): Promise<{ conversationId: string; turn: AgentChatTurn; replayed: boolean; created: boolean; interruptTarget?: AgentChatInterruptTarget; replayWarning?: AgentChatReplayWarning }> {
     return withTransaction(this.pool, async (client) => {
       await client.query('select pg_advisory_xact_lock(hashtext($1))', [`admission:workspace:${input.context.workspaceId}`])
@@ -452,7 +450,6 @@ export class PostgresAgentChatRepository {
         ? { requestId: row.active_request_id, nativeTurnId: row.active_native_turn_id } : undefined
       const targetNativeTurnId = input.request.intent === 'interrupt_and_send'
         ? input.request.expectedNativeTurnId ?? interruptTarget?.nativeTurnId : input.targetNativeTurnId
-      await input.validateInput?.(client, row)
       await admitSessionMessage(client, row.id, input.request)
       await validateMessageAttachments(client, row.id, input.request.attachments)
       await assertAgentChatDirectoryAvailable(client, row.id)
@@ -532,7 +529,16 @@ export class PostgresAgentChatRepository {
       if (row.origin_run_id) record.sourceConfigurationVersionId ??= row.agent_configuration_version_id
       if (options.replaceSession) {
         if (row.native_session_id) record.workerGeneration = randomUUID()
-        record.handoffContext = await agentConfigurationHandoff(client, id, requestId)
+        const history = await client.query<{ role: string; content: string }>(`select role,content
+          from operator_conversation_messages where conversation_id=$1 and role in ('user','assistant')
+          and sequence < (select sequence from operator_conversation_messages
+            where conversation_id=$1 and client_request_id=$2)
+          order by sequence desc limit $3`, [id, requestId, HANDOFF_MESSAGE_LIMIT])
+        const count = await client.query<{ count: string }>(`select count(*)::text as count
+          from operator_conversation_messages where conversation_id=$1 and role in ('user','assistant')
+          and sequence < (select sequence from operator_conversation_messages
+            where conversation_id=$1 and client_request_id=$2)`, [id, requestId])
+        record.handoffContext = handoffContext(null, 0, history.rows, Number(count.rows[0]!.count), 'Agent').text
         record.startupDelivered = false
         delete record.startupReceipt
         delete record.sessionCreation
