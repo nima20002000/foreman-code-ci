@@ -9,6 +9,7 @@ import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { HostCiService, type HostCiComputer } from '../src/modules/ci-host/service.js'
+import { ProductionHostCiEndpoint } from '../src/modules/ci-host/endpoint.js'
 import { CI_GET_ACTIONS, CI_RUN_ACTIONS, RunCiAuthority } from '../src/modules/jobs/ciAuthority.js'
 import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { createTestPool } from './helpers/testPool.mjs'
@@ -43,6 +44,8 @@ async function fixture() {
     }))),
   ]
   const statusReads = new Map<string, number>()
+  const productionEndpoint = new ProductionHostCiEndpoint(pool, 'fixture', () => undefined,
+    { handle: async () => { throw new Error('Unexpected local runner request') } })
   const files = Array.from({ length: 901 }, (_, index) => `apps/api/test/feature-${index}.integration.test.ts`)
   const commands = new PostgresCommandCoordinator(pool)
   const ci = new HostCiService(pool, commands, new RunCiAuthority(pool), {
@@ -52,6 +55,7 @@ async function fixture() {
     unitInventory: async () => ({ files: ['apps/api/src/site.test.ts', 'apps/web/src/site.test.ts'],
       durations: {}, heavy: [] }),
   }, {
+    statusKey: computer => productionEndpoint.statusKey(computer),
     computers: async () => computers,
     request: async (computer, request): Promise<CiHostReply> => {
       if (request.operation === 'status') {
