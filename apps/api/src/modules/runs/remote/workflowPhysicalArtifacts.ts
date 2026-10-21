@@ -1,10 +1,11 @@
+import { parseWorkHandoffArtifactResult } from '@foreman-code/contracts/wave25'
 import { createHash } from 'node:crypto'
 import { isDeepStrictEqual as same } from 'node:util'
 import { ArtifactAttemptSchema } from '@foreman-code/contracts/artifact-edges'
 import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
 import { VerifiedTransferReceiptSchema } from '@foreman-code/contracts/byte-transfer'
 import { SavedRunVersionSnapshotSchema, canonicalGraphJson } from '@foreman-code/contracts/wave25'
-import { workflowArtifactDigestsByOutputKey } from '@foreman-code/contracts/workflow-artifact-result'
+import { parseWorkflowArtifactResult,workflowArtifactDigestsByOutputKey } from '@foreman-code/contracts/workflow-artifact-result'
 import { remoteWorkflowPhysicalOutput, type RemoteWorkflowPhysicalReadout } from '@foreman-code/contracts/remote-workflow-physical'
 import { workflowArtifactTransferManifestDigest } from '@foreman-code/contracts/workflow-artifact-transfer-node'
 import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
@@ -18,7 +19,6 @@ import type { PostgresArtifactPublicationAuthority } from './nativeArtifactAutho
 import { NativeArtifactOutputSchema, type NativeArtifactOutput } from './nativeArtifactOutputs.js'
 import { DomainError } from '../../errors.js'
 import { remoteWorkflowHasTurn } from '@foreman-code/contracts/remote-execution'
-import { workflowArtifactResult } from '../workflowCoordinationResult.js'
 
 export interface WorkflowPhysicalArtifactsPort {
   assertPublications(sql: GraphTransactionSql, readout: RemoteWorkflowPhysicalReadout, binding: Readonly<DeviceSessionBinding>): Promise<void>
@@ -90,7 +90,11 @@ export class PostgresWorkflowPhysicalArtifacts implements WorkflowPhysicalArtifa
       if (receipt.terminal.artifactValidationError) return unavailable()
       const declaration = (() => {
         try {
-          return workflowArtifactResult(output.result, version, node.id, run.resultProtocol)
+          if (version.definition.handoffs) {
+            return parseWorkHandoffArtifactResult(output.result, node.artifactOutputs).artifactOutputs
+          }
+          if (node.choice) return parseWorkflowArtifactResult(output.result, node.artifactOutputs, node.choice).artifactOutputs
+          return parseWorkflowArtifactResult(output.result, node.artifactOutputs).artifactOutputs
         } catch { return unavailable() }
       })()
       if (!same(declaration, output.artifactOutputs)) return unavailable()
