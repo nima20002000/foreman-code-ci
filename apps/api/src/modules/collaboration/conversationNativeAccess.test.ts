@@ -5,6 +5,7 @@ import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { ConversationCredentials } from '../access/conversationCredentialIssuer.js'
 import type { ConversationFeatureContext } from '../conversations/conversationFeatureSubject.js'
 import type { NativeHarnessSessionManager } from '../harnesses/port.js'
+import { DomainError } from '../errors.js'
 import { ConversationNativeAccess } from './conversationNativeAccess.js'
 
 it.each([false, true])('keeps a no-Group-access session after an unrelated save, with rebind support: %s', async supported => {
@@ -23,7 +24,8 @@ it.each([false, true])('keeps a no-Group-access session after an unrelated save,
   }
   const pool = new pg.Pool()
   const credentials = new ConversationCredentials(pool)
-  const issue = vi.spyOn(credentials, 'issue')
+  const issue = vi.spyOn(credentials, 'issue').mockRejectedValue(
+    new DomainError('TOOL_NOT_ENABLED', 'This conversation has no enabled Group chat tools.', 403))
   const rebind = vi.fn(async () => {})
   const manager = (supported ? { rebindApplicationAccess: rebind } : {}) as NativeHarnessSessionManager
   const access = new ConversationNativeAccess(credentials)

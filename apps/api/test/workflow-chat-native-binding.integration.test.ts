@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest'
 import { ChatSendRequestSchema } from '@foreman-code/contracts'
+import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { withTransaction } from '../src/infrastructure/transaction.js'
 import { PostgresChatDeliveryRepository } from '../src/modules/workflow-chat/deliveryRepository.js'
 import { createWorkflowExecutionChatService } from '../src/modules/collaboration/workflowChatProduction.js'
@@ -55,6 +56,6 @@ it('reads the current owner turn through HTTP and authenticated MCP without infe
     expect(read.json()).toMatchObject({ nativeTurnId: qualification.ownerBinding.nativeTurnId, messages: [] })
     const mcp = await f.client.callTool({ name: 'agent_chat_read', arguments: { target } })
     expect(mcp.isError, JSON.stringify(mcp)).not.toBe(true)
-    expect(mcp.structuredContent).toMatchObject({ nativeTurnId: qualification.ownerBinding.nativeTurnId })
+    expect(decodeMcpToolResult(mcp)).toMatchObject({ nativeTurnId: qualification.ownerBinding.nativeTurnId })
   } finally { provider.releaseAll(); await f.stop(); await drive; await f.close() }
 }, 60_000)
