@@ -3,13 +3,20 @@ import { PostgresCommandCoordinator } from '../../src/modules/commands/postgres.
 import { codexApprovalRuntime } from './codexApprovalRuntime.js'
 import { rejectableDeferred } from './deferred.js'
 import type { agent3Database } from './wave25Agent3.js'
+import { masterApprovalFixture, masterApprovalOutput } from './masterApprovalFixture.js'
 
 /** Shared Save/Start and Codex adapter capture with replayed provider IO. */
 export async function approvalDatabase(options: {
   command?: string
+  reviewerRole?: 'orchestrator' | 'master'
   database?: Awaited<ReturnType<typeof agent3Database>>
 } = {}) {
-  const runtime = await codexApprovalRuntime('orchestrator', options)
+  const runtime = await codexApprovalRuntime('orchestrator', {
+    ...options,
+    ...(options.reviewerRole === 'master' ? {
+      fixture: masterApprovalFixture(), workflowOutput: masterApprovalOutput,
+    } : {}),
+  })
   const reconcile = vi.spyOn(runtime.native.reviewers, 'reconcile').mockResolvedValue(undefined)
   const live = rejectableDeferred<void>(), release = rejectableDeferred<void>()
   const issuance = vi.spyOn(runtime.credentials, 'issueForReviewer')
@@ -25,7 +32,9 @@ export async function approvalDatabase(options: {
   async function close() {
     release.resolve()
     await runtime.native.reviewers.shutdown()
-    await dispatch?.catch(() => undefined)
+    await dispatch?.catch(() => {
+      // ignore: shutdown preserves the caller's assertion failure while joining the review task.
+    })
     capture.mockRestore(); reconcile.mockRestore(); issuance.mockRestore()
     await runtime.close()
   }
@@ -36,7 +45,9 @@ export async function approvalDatabase(options: {
     const queued = await runtime.repository.coordination.findReviewJob(interaction.id, interaction.approval.designatedOrchestratorAgentId)
     if (!queued) throw new Error('Expected coordinator review job')
     dispatch = runtime.native.reviewers.dispatchNext(queued.reviewerAgentId, 'approval-consumer')
-    void dispatch.catch(() => undefined)
+    void dispatch.catch(() => {
+      // ignore: the startup race, settle method and close method observe this task's outcome.
+    })
     await Promise.race([live.promise, dispatch.then(() => { throw new Error('Review ended before acknowledgement') })])
     const executions = (await runtime.runs.listRepeatExecutions(runtime.f.run.id)).map((row) => row.execution)
     const reviewer = executions.find((e) => e.agentId === queued.reviewerAgentId)!

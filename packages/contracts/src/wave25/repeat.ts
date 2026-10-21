@@ -1,3 +1,4 @@
+import { RepeatExitDataV1Schema } from '../coordinationResult.js'
 import { z } from 'zod'
 import { AgentConfigurationVersionSchema, TimestampSchema } from '../index.js'
 import type { WorkflowArtifactOutputsV1 } from '../workflowArtifactDeclarations.js'
@@ -105,13 +106,7 @@ export const RepeatRunVersionV1Schema = z.object({
 })
 
 /** One fixed carry/exit payload, not an expression or configurable mapping language. */
-const RepeatExitDataV1Schema = z.unknown().superRefine((value, context) => {
-  try { canonicalGraphJson(value, 64 * 1024) } catch { context.addIssue({ code: 'custom', message: 'REPEAT_EXIT_DATA_INVALID_OR_TOO_LARGE' }) }
-}).pipe(z.object({
-  latestDeliverable: z.json().refine((value) => value !== null, 'REPEAT_DELIVERABLE_REQUIRED'),
-  remainingFindings: z.array(z.json()),
-}).strict())
-export type RepeatExitDataV1 = z.infer<typeof RepeatExitDataV1Schema>
+export { RepeatExitDataV1Schema, type RepeatExitDataV1 } from '../coordinationResult.js'
 
 /** Complete successful accepted results only. The exact native {text} carrier
  * is a parsing-only view, matching the existing one-shot choice policy. Validate
