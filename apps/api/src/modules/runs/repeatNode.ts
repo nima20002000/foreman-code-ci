@@ -1,4 +1,5 @@
-import { HarnessExecutionSchema, type ExecutionResult, type HarnessExecution, type HarnessExecutionContext } from '@foreman-code/contracts'
+import { HarnessExecutionSchema, parseCoordinationResult, type ResultProtocol,
+  type ExecutionResult, type HarnessExecution, type HarnessExecutionContext } from '@foreman-code/contracts'
 import { AcceptedCurrentNodeResultSchema, NodeResolutionSchema, parseRepeatExitResultV1,
   type WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
 
@@ -7,6 +8,7 @@ import { waitBeforeRetry } from './executionRetryPolicy.js'
 import { assertRepeatNativeUpdate } from '../interactions/repeatNativeEvidence.js'
 import { parseCurrentChoiceResult } from './currentRouting.js'
 import { parseWorkResultForInput } from './workHandoffResult.js'
+import { parseWorkflowCoordinationResult } from './workflowCoordinationResult.js'
 import {
   assertRepeatExecution, blockForNode, repeatConflict, repeatDigest, repeatExecutionIdentity, repeatTickIndex,
   type RepeatNodeRef, type RepeatResolution, type RepeatScope,
@@ -15,7 +17,7 @@ import {
 export type RepeatAdmission = { kind: 'waiting' } | { kind: 'resolved'; resolution: RepeatResolution }
   | { kind: 'admitted'; execution: HarnessExecution; reused: boolean }
 export type RepeatAcceptance = { kind: 'accepted' | 'resolved'; resolution: RepeatResolution }
-  | { kind: 'retry'; execution: HarnessExecution }
+  | { kind: 'retry' | 'continued'; execution: HarnessExecution }
 export interface RepeatNodeStore {
   admit(ref: RepeatNodeRef, candidate: () => HarnessExecution): Promise<RepeatAdmission>
   acceptTerminal(executionId: string, candidate: (attempt: number) => HarnessExecution): Promise<RepeatAcceptance>
@@ -36,10 +38,13 @@ export interface RepeatGraphState {
 }
 
 export interface RepeatTerminalOptions {
+  resultProtocol?: ResultProtocol | undefined
   executionContext?: HarnessExecutionContext | undefined
   workResultRepair?: boolean
   /** Precomputed by workflowDeliverableFailure on the same transaction. */
   deliverableFailure?: ExecutionResult | undefined
+  /** A proof-verified, exhausted F1 revision conflict for this original result. */
+  resultEffectFailure?: ExecutionResult | undefined
 }
 
 /** MUST run before the native coordinator's FIRST durable terminal observation.
@@ -52,15 +57,27 @@ export function normalizeRepeatTerminal(version: WorkflowVersionV3, scope: Repea
   assertRepeatExecution(version, scope, ref, execution)
   if (execution.state !== 'completed') return execution
   if (!execution.result) return repeatConflict('EXECUTION_RESULT_MISSING')
-  // An interval check has no result contract; its reply never routes the graph.
-  if (repeatTickIndex(execution.input) !== undefined) return execution
+  const interval = repeatTickIndex(execution.input) !== undefined
+  // Historical interval replies have no structured contract.
+  if (interval && !options.resultProtocol) return execution
   if (execution.result.outcome !== 'succeeded') {
-    return version.definition.handoffs && options.workResultRepair && execution.result.outcome === 'failed'
+    return !options.resultProtocol && version.definition.handoffs && options.workResultRepair && execution.result.outcome === 'failed'
       ? invalidWorkResult(execution) : execution
   }
   // A well-formed envelope whose deliverable still fails its output contract after repair fails loudly.
   const deliverable = (accepted: HarnessExecution) => options.deliverableFailure
     ? HarnessExecutionSchema.parse({ ...accepted, result: options.deliverableFailure }) : accepted
+  if (options.resultProtocol && version.definition.nodes.find(node => node.id === ref.nodeId)?.kind !== 'job') {
+    try {
+      parseWorkflowCoordinationResult(execution.result, { resultProtocol: options.resultProtocol,
+        definition: version.definition, workflowNodeId: execution.workflowNodeId, interval },
+      execution.input, options.executionContext)
+      return options.resultEffectFailure
+        ? HarnessExecutionSchema.parse({ ...execution, result: options.resultEffectFailure }) : deliverable(execution)
+    } catch {
+      return invalidWorkResult(execution)
+    }
+  }
   if (version.definition.handoffs) {
     try { parseWorkResultForInput(execution.result, execution.input, options.executionContext) }
     catch {
@@ -101,7 +118,7 @@ export function prepareRepeatNativeUpdate(version: WorkflowVersionV3, scope: Rep
 }
 
 export function repeatTerminalResolution(version: WorkflowVersionV3, scope: RepeatScope,
-  ref: RepeatNodeRef, execution: HarnessExecution): RepeatResolution {
+  ref: RepeatNodeRef, execution: HarnessExecution, resultProtocol?: ResultProtocol): RepeatResolution {
   assertRepeatExecution(version, scope, ref, execution)
   if (execution.state !== 'completed' || !execution.result || !execution.finishedAt) return repeatConflict('EXECUTION_RESULT_NOT_ACCEPTABLE')
   const node = version.definition.nodes.find((item) => item.id === ref.nodeId)!
@@ -111,8 +128,11 @@ export function repeatTerminalResolution(version: WorkflowVersionV3, scope: Repe
   let selected: string[] = [], deferred: string[] = [], outcome: string | undefined, branchEnded = false
   if (execution.result.outcome === 'succeeded') {
     AcceptedCurrentNodeResultSchema.parse(execution.result)
+    const coordinated = resultProtocol && node.kind !== 'job' ? parseCoordinationResult(execution.result.output,
+      { resultProtocol, definition: version.definition, workflowNodeId: node.id }) : undefined
     if (node.choice) {
-      outcome = (exit ? parseRepeatExitResultV1(execution.result, node.choice, node.kind === 'job' ? undefined : node.artifactOutputs)
+      outcome = coordinated && 'routing' in coordinated && 'outcome' in coordinated.routing ? coordinated.routing.outcome
+        : (exit ? parseRepeatExitResultV1(execution.result, node.choice, node.kind === 'job' ? undefined : node.artifactOutputs)
         : parseCurrentChoiceResult(execution.result, node.choice, node.kind === 'job' ? undefined : node.artifactOutputs)).routing.outcome
       const target = node.choice.outcomes.find((item) => item.outcome === outcome)!.target
       if (exit) deferred = outgoing
@@ -168,10 +188,10 @@ export function repeatNodeAction(input: {
       }, execution)
       input.signal.throwIfAborted()
       const accepted = await input.store.acceptTerminal(execution.id, (attempt) => input.driver.candidate(ref, attempt))
-      if (accepted.kind !== 'retry') return checkpointResolution(accepted.resolution)
+      if (accepted.kind !== 'retry' && accepted.kind !== 'continued') return checkpointResolution(accepted.resolution)
       // Technical attempts keep the same slot and frozen input. The repository
       // checked retry policy, exact negative evidence, cleanup and budget at COMMIT.
-      await waitBeforeRetry(execution, accepted.execution, input.signal)
+      if (accepted.kind === 'retry') await waitBeforeRetry(execution, accepted.execution, input.signal)
       execution = accepted.execution
     }
   }
