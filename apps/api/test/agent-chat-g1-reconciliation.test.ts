@@ -19,10 +19,14 @@ const session: NativeSessionReference = { harness: 'codex', providerVersion: 'fi
 const principal: ManagementPrincipal = { id: 'g1-reader', name: 'G1 reader', audience: 'operator', revokedAt: null,
   expiresAt: new Date(Date.now() + 600_000).toISOString(),
   grants: [{ actions: ['agent_chat:read'], scope: { workspaceIds: [context.workspaceId], workflowIds: [context.workflowId] } }] }
-const pool = { query: async (sql: string, values: unknown[] = []) => ({ rows:
-  sql.includes('from management_principals') && values[0] === principal.id
-    ? [{ id: principal.id, name: principal.name, audience: principal.audience, grants: principal.grants,
-      expires_at: new Date(principal.expiresAt), revoked_at: null, delegated_from: null }] : [], rowCount: 0 }) } as unknown as pg.Pool
+const sender: ManagementPrincipal = { ...principal, id: 'chat-sender', name: 'Chat sender',
+  grants: [{ actions: ['agent_chat:read', 'agent_chat:write'], scope: principal.grants[0]!.scope }] }
+const pool = { query: async (sql: string, values: unknown[] = []) => {
+  const authority = [principal, sender].find(candidate => candidate.id === values[0])
+  return { rows: sql.includes('from management_principals') && authority
+    ? [{ id: authority.id, name: authority.name, audience: authority.audience, grants: authority.grants,
+      expires_at: new Date(authority.expiresAt), revoked_at: null, delegated_from: null }] : [], rowCount: 0 }
+} } as unknown as pg.Pool
 const terminalDeliveries = new Set(['completed', 'failed', 'canceled'])
 function receipt(requestId: string, delivery: AgentChatTurn['delivery'] = 'unknown', sequence = '1'): AgentChatTurn {
   return { requestId, sequence, intent: 'next_turn', delivery, messageId: `message-${requestId}`, createdAt: now.toISOString(), updatedAt: now.toISOString() }
@@ -249,8 +253,6 @@ interface Internals {
   runTurn(id: string, turn: AgentChatTurn): Promise<void>
   interruptActive(id: string, explicit: boolean, target: { requestId: string; nativeTurnId: string | null } | undefined): Promise<void>
   repair(id: string): Promise<void>
-  steer(principal: ManagementPrincipal, context: AgentChatContext, key: string, input: SendAgentChatMessageRequest,
-    resolution: { context: AgentChatContext; row: AgentConversationRow; configuration: AgentConfigurationVersion }): Promise<{ turn: AgentChatTurn }>
 }
 
 // These tests target the authorized service's lifecycle seam; HTTP/MCP authorization is not replaced or claimed here.
@@ -404,24 +406,35 @@ describe('G1 cancellation and reconciliation', () => {
     })
   }
 
-  it('A2-PF-05 polls a lost steer ACK after its target completes, without any manual acknowledgement', async () => {
+  it('polls a lost steer acknowledgement after its target completes through the public send service', async () => {
     const f = await fixture()
     f.native.histories.set(agentChatCorrelation('conversation', 'first'), proof())
     await f.service.recover()
+    // Isolate the send path from the bootstrap poll; no recovery is invoked after this setup.
     for (const timer of f.internal.reconciliationTimers.values()) clearTimeout(timer)
-    f.internal.reconciliationTimers.clear() // Isolate the lost-steer path from the active-turn timer.
+    f.internal.reconciliationTimers.clear()
     const input: SendAgentChatMessageRequest = { requestId: 'steer', intent: 'steer', content: 'clarify',
       context: { workflowId: 'workflow', workflowNodeId: 'node', agentId: 'agent' }, expectedConversationId: 'conversation', expectedNativeTurnId: 'native-first' }
-    const result = await f.internal.steer(principal, context, agentChatKey(context), input,
-      { context, row: await f.repository.get(), configuration: f.configuration })
+    await assert.rejects(f.service.send(principal, context.workspaceId, input), { code: 'ACCESS_DENIED' })
+    assert.equal(f.native.steered, 0)
+    const result = await f.service.send(sender, context.workspaceId, input)
     assert.equal(result.turn.delivery, 'unknown')
-    assert.equal(f.internal.reconciliationTimers.has('conversation'), true)
+    assert.equal(f.repository.storedReceipts[1]!.delivery, 'unknown')
     f.native.histories.set(agentChatCorrelation('conversation', 'first'), proof('first', { outcome: 'succeeded' }))
-    await f.service.recover()
-    assert.equal(f.repository.row.active_request_id, null)
-    assert.equal(f.repository.storedReceipts[1]!.delivery, 'unknown', 'target completion alone is not a steer receipt')
+    const read = () => f.service.read(sender, context.workspaceId, input.context)
+    await vi.waitFor(async () => {
+      const state = await read()
+      assert.equal(state.activeTurn, null)
+      assert.equal(state.turns.find(turn => turn.requestId === 'first')?.delivery, 'completed')
+      assert.equal(state.turns.find(turn => turn.requestId === 'steer')?.delivery, 'unknown',
+        'target completion alone is not a steer receipt')
+    }, { interval: 1, timeout: 3_500 })
     f.native.hideSteerEvidence = false
-    await eventually(() => f.repository.storedReceipts[1]!.delivery === 'completed')
+    await vi.waitFor(async () => {
+      const state = await read()
+      assert.equal(state.activeTurn, null)
+      assert.equal(state.turns.find(turn => turn.requestId === 'steer')?.delivery, 'completed')
+    }, { interval: 1, timeout: 3_500 })
     assert.deepEqual(f.repository.acknowledgedSteers, ['steer'])
     assert.equal(f.native.steered, 1)
     assert.deepEqual(f.native.starts, [])

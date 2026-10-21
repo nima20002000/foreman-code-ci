@@ -1,7 +1,7 @@
 import { InfoHint } from '../../shared/ui/InfoHint'
 import {
-  GRAPHQL_AGENT_TOOLS, graphqlRoleTools,
-  type GraphqlAgentTool, type GraphqlToolOverride,
+  GRAPHQL_AGENT_TOOLS, graphqlRoleTools, effectiveGraphqlTools,
+  type GraphqlAgentTool, type GraphqlToolOverride, type WorkflowAgentProductRole,
 } from '@foreman-code/contracts'
 
 import { Checkbox, SegmentedControl } from '../../shared/ui/nocturne'
@@ -16,14 +16,14 @@ function normalizeToolOverride(override: GraphqlToolOverride | undefined): Graph
 /** The Agent's default Foreman Code MCP tools, and this workflow node's change to them. */
 export function GraphqlToolsFields({ role, defaults, override, onChange }: {
   /** Workflow Agent roles only; Operator tools are never enabled per Agent. */
-  role: 'orchestrator' | 'coder'
+  role: WorkflowAgentProductRole
   defaults: readonly GraphqlAgentTool[] | undefined
   override: GraphqlToolOverride | undefined
-  /** defaults stays undefined (inherit every role tool) until the Agent default itself is edited. */
+  /** Missing defaults retain the legacy enabled set until explicitly edited. */
   onChange(defaults: GraphqlAgentTool[] | undefined, override: GraphqlToolOverride | undefined): void
 }) {
   const tools = graphqlRoleTools(role)
-  const agentDefault = defaults ? tools.filter((tool) => defaults.includes(tool)) : tools
+  const agentDefault = effectiveGraphqlTools(role, defaults)
   const choice = (tool: GraphqlAgentTool): NodeChoice => override?.add.includes(tool) ? 'on' : override?.remove.includes(tool) ? 'off' : 'default'
   const setDefault = (tool: GraphqlAgentTool, enabled: boolean) => {
     const next = tools.filter((item) => item === tool ? enabled : agentDefault.includes(item))

@@ -1,4 +1,5 @@
 import { GRAPHQL_OPERATOR_TOOLS } from '../graphqlMcpTools.js'
+import { AgentProductRoleSchema } from '../agentIdentity.js'
 import { OperationalFailureSchema } from '../operationalFailures.js'
 import { NativeInteractionSupportSchema } from '../nativeInteractionSupport.js'
 import { ClaudeFullAccessConfigurationSchema, ClaudeHarnessConfigurationSchema } from '../claude.js';
@@ -257,7 +258,7 @@ const AgentAddOperationSchema = z.object({
   nodeId: IdSchema,
   name: z.string().trim().min(1).max(200),
   nodeName: z.string().trim().min(1).max(200).optional(),
-  productRole: z.enum(["orchestrator", "coder"]).optional(),
+  productRole: AgentProductRoleSchema.optional(),
   /** Omit to copy the role template. A different harness requires an explicit configuration. */
   harness: z.enum(["codex", "claude"]).optional(),
   configuration: ManagementHarnessConfigurationSchema.optional(),
@@ -271,7 +272,7 @@ const AgentAddOperationSchema = z.object({
 }).strict();
 /** Select a product template; callers cannot fabricate a privileged Agent role. */
 const AgentAddFromTemplateOperationSchema = AgentAddOperationSchema.omit({ harness: true }).extend({
-  type: z.literal("agent.add_from_template"), template: z.enum(["orchestrator", "coder"]),
+  type: z.literal("agent.add_from_template"), template: AgentProductRoleSchema,
 }).strict().refine((value) => value.productRole === undefined || value.productRole === value.template,
   "productRole must match the selected template");
 const WorkflowApprovalOperationSchema = z.object({
@@ -481,8 +482,10 @@ export const AgentDefaultsUpdateInputSchema = z.object({
   expectedRevision: ExpectedRevisionSchema.optional()
     .describe('Omit for last write wins; supply to reject a stale revision.'),
   value: AgentDefaultsSchema.superRefine((value, context) => {
-    for (const role of ['orchestrator', 'coder', 'operator'] as const) {
-      const result = SupportedHarnessConfigurationSchema.safeParse(value[role].harness);
+    for (const role of ['master', 'orchestrator', 'coder', 'operator'] as const) {
+      const template = value[role];
+      if (!template) continue;
+      const result = SupportedHarnessConfigurationSchema.safeParse(template.harness);
       if (!result.success) for (const issue of result.error.issues) context.addIssue({
         ...issue, path: [role, 'harness', ...issue.path],
       });

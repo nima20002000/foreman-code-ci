@@ -271,7 +271,7 @@ function EditableAgentSettingsForm({ agent, initialPrompt, nodeGraphqlTools, cre
       <Textarea label="Initial prompt" aria-label="Initial prompt" className="agent-settings-prompt" rows={3} value={prompt}
         labelHint={<InfoHint label="Initial prompt">The task this node starts with.</InfoHint>}
         onChange={(event) => { setPrompt(event.target.value); clearErrors() }} />
-      <GraphqlToolsFields role={agent.productRole === 'orchestrator' ? 'orchestrator' : 'coder'} defaults={graphqlTools.defaults} override={graphqlTools.override}
+      <GraphqlToolsFields role={agent.productRole === 'master' ? 'master' : agent.productRole === 'orchestrator' ? 'orchestrator' : 'coder'} defaults={graphqlTools.defaults} override={graphqlTools.override}
         onChange={(defaults, override) => { setGraphqlTools({ ...(defaults ? { defaults } : {}), ...(override ? { override } : {}) }); clearErrors() }} />
       <HarnessConfigurationFields editor={editor} issues={issuesAt(issues, ['harness'])} onChange={(next) => { setEditor(next); clearErrors() }} allowHarnessChange={false} harnessDefaults={providerDefaults} workspaceId={workspaceId} routedApproval={Boolean(workflowApprovalHandler)} allowAutoReview={workflowApprovalHandler === 'orchestrator'} compact advancedOnly />
     </div>}
@@ -280,7 +280,7 @@ function EditableAgentSettingsForm({ agent, initialPrompt, nodeGraphqlTools, cre
       {view === 'general' ? <Button size="sm" variant="ghost" className="agent-settings-advanced-link" onClick={() => setView('advanced')} trailing={<Icon name="chevron" size={13} />}>Advanced settings</Button> : null}
       {onRemove ? embedded ? <Button size="sm" variant="ghost" className="agent-settings-trash" aria-label={`Remove ${agent.name} from workflow`} onClick={onRemove}>Remove from workflow</Button>
         : <IconButton size="sm" variant="ghost" className="agent-settings-trash" label={`Remove ${agent.name} from workflow`} onClick={onRemove}><Icon name="minus" size={15} /></IconButton> : null}
-      {embedded ? <Button size="sm" variant="primary" className="agent-settings-save" aria-label="Save agent settings" disabled={!isDirty} onClick={save}>Apply</Button> : null}
+      {embedded ? <Button size="sm" variant="primary" className="agent-settings-save" aria-label="Apply agent settings to draft" disabled={!isDirty} onClick={save}>Apply to draft</Button> : null}
     </footer>
   </div>
 }

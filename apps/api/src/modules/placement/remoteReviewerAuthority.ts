@@ -26,7 +26,8 @@ export async function remoteReviewerPolicy(sql: GraphSqlClient, intent: Dispatch
   const execution = HarnessExecutionSchema.parse(row.execution)
   const configuration = AgentConfigurationVersionSchema.parse(row.configuration)
   if (run.approval?.handler !== 'orchestrator' || run.approval.designatedOrchestratorAgentId !== execution.agentId
-    || version.entryNodeId !== execution.workflowNodeId || configuration.productRole !== 'orchestrator') return undefined
+    || version.entryNodeId !== execution.workflowNodeId
+    || (configuration.productRole !== 'master' && configuration.productRole !== 'orchestrator')) return undefined
   if (!version.definition.nodes.some(node => node.kind !== 'job' && version.definition.edges.some(edge =>
     edge.kind === 'approval' && edge.source === version.entryNodeId && edge.target === node.id))) return undefined
   if (run.id !== intent.runId || execution.id !== intent.executionId || execution.runId !== run.id

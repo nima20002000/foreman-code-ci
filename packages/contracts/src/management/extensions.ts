@@ -1,4 +1,5 @@
 import { optionalCommandId } from './commands.js'
+import { AgentProductRoleSchema } from '../agentIdentity.js';
 import { z } from "zod";
 import { DeviceProvisioningHostReferenceSchema } from "../deviceResources.js";
 import { WorkflowVersionV3Schema } from "../wave25/workflowSchemas.js";
@@ -20,7 +21,7 @@ const Configuration = SupportedHarnessConfigurationSchema;
 export const AgentCreateInputSchema = z.object({
   ...Workspace, commandId: optionalCommandId(Command), agentId: IdSchema,
   name: z.string().trim().min(1).max(200),
-  productRole: z.enum(["coder", "orchestrator"]).default("coder"),
+  productRole: AgentProductRoleSchema.default("coder"),
   description: z.string().max(10_000).optional(),
   role: z.string().trim().min(1).max(200).optional(),
   configuration: Configuration.optional(),

@@ -835,7 +835,7 @@ class InstalledWorkflowHostRuntime {
         const state=await log.status(intent.operationId)
         const declaration = resident.placement.payload.kind === 'agent' ? resident.placement.payload.artifactOutputs : undefined
         const reviewer = state.status === 'known' && !state.receipt.stopFence
-          && resident.capture.facts.configuration.productRole === 'orchestrator'
+          && (resident.capture.facts.configuration.productRole === 'master' || resident.capture.facts.configuration.productRole === 'orchestrator')
           && history.terminalTurn?.result.outcome === 'succeeded'
           ? await workerReviewerAuthorizer(this.forBinding(resident.context.binding))(intent, resident.placement) : undefined
         if(!reviewer&&state.status==='known'&&(state.receipt.stopFence||history.terminalTurn!==undefined&&history.terminalTurn.correlationId===state.receipt.turnInput?.correlationId
