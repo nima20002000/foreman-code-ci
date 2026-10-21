@@ -7,7 +7,7 @@ import { withInteractionResponse, isSessionNativeInteraction } from '@foreman-co
 import { publicOperatorConversation } from './operatorConversationRecord.js'
 import { APP_MCP_TOKEN } from '../harnesses/appMcpLauncher.js'
 import type { SessionControlRequest } from '@foreman-code/contracts'
-import { operatorMessagePrompt } from './operatorMessagePrompt.js'
+import { sessionTaskContent } from '@foreman-code/contracts'
 import { pendingSessionControls, type ChatModelCatalog } from '../harnesses/sessionControlDefaults.js'
 import { validateSessionMessage } from './sessionControls/messageAdmission.js'
 import type { SessionControlStore } from './sessionControls/store.js'
@@ -707,7 +707,14 @@ export class OperatorChatService {
       if (!row || row.active_request_id !== input.requestId) return
       const initialPrompt = publicOperatorConversation(row.record).initialPrompt?.value.text
       const initialPromptText = initialPrompt && !await this.repository.hasNativeSubmission(id) ? initialPrompt : ''
-      const messagePrompt = (handoffContext: string | null) => operatorMessagePrompt(input, initialPromptText, handoffContext)
+      const userPrompt = sessionTaskContent(input.content, input.sessionMode)
+      const hint = input.context && Object.values(input.context).some(Boolean)
+        ? `\n\n[Non-authoritative route context: ${JSON.stringify(input.context)}]` : ''
+      const messagePrompt = (handoffContext: string | null) => {
+        const preamble = [initialPromptText, handoffContext].filter(Boolean).join('\n\n')
+        const prefix = preamble ? `${preamble}\n\nCurrent user message:\n` : ''
+        return `${prefix}${userPrompt}${hint}`
+      }
       const fileInputs = Boolean(input.attachments?.length)
       const admittedFiles = await this.managers.hasFileInputs?.(id, input.requestId) ?? false
       if (fileInputs !== admittedFiles || fileInputs && !this.managers.recordFileSubmission) throw new DomainError(
@@ -865,8 +872,7 @@ export class OperatorChatService {
           if (pending) {
             await this.repository.pending(id, input.requestId, pending)
             this.events.publish(id, 'state', { requestId: input.requestId, pending: true })
-            // Keep this consumer attached while respond() releases the native wait,
-            // so later output continues streaming for the same accepted turn.
+            return // Native request stays resident. The periodic reconciler observes its continuation.
           }
         }
       }
