@@ -158,10 +158,12 @@ export function createExecutionAuthorityExtension(pool: pg.Pool,
       }
       const policy = input.action === 'retain-reviewer' || input.action === 'review'
         ? await remoteReviewerPolicy(sql, input.intent) : undefined
+      const reviewer = policy && (policy.execution.state !== 'completed'
+        || policy.execution.result?.outcome === 'succeeded') ? policy : undefined
       return { payload: ExecutionAuthorityResultSchema.parse({ version: 1, action: input.action,
         operationId: input.intent.operationId, attemptId: input.intent.attemptId, bindingHash: input.intent.bindingHash,
         owner: input.intent.owner, ...authority,
-        ...(policy ? { reviewer: { agentId: policy.execution.agentId,
+        ...(reviewer ? { reviewer: { agentId: reviewer.execution.agentId,
           expiresAt: new Date(Date.now() + 60_000).toISOString() } } : {}) }) }
     })).catch((error: unknown) => { throw databaseReadFailure(error) })
   } }
