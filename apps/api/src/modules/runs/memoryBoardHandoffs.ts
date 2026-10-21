@@ -1,12 +1,19 @@
+import { memoryFindingReason } from './memoryFindings.js'
 import type { BoardLifecycleFact } from '@foreman-code/contracts'
 import { parseWorkHandoffResult, WorkReturnSchema } from '@foreman-code/contracts/wave25'
-import { memoryExecution } from '../collaboration/memoryBoardAuthority.js'
+import { memoryExecution } from '../collaboration/memoryExecution.js'
 import type { MemoryBoardPort } from '../collaboration/ports.js'
 import type { GraphTransactionSql } from '../run-graph/connection.js'
 import { selectedWorkHandoffRoutes } from './workHandoffRouting.js'
 
-type Settlement = Pick<BoardLifecycleFact, 'phase' | 'reason' | 'outstandingRequestIds'>
+type Settlement = Pick<BoardLifecycleFact, 'reason' | 'outstandingRequestIds'> & {
+  phase: 'accepted' | 'blocked' | 'waiting_children'
+}
 const waiting: Settlement = { phase: 'waiting_children', reason: null, outstandingRequestIds: [] }
+
+export function memoryWorkSettlement(tx: GraphTransactionSql, executionId: string): Promise<Settlement> {
+  return settlement(tx, executionId, new Set())
+}
 
 async function settlement(tx: GraphTransactionSql, executionId: string, visited: Set<string>): Promise<Settlement> {
   if (visited.has(executionId)) return waiting
@@ -19,7 +26,7 @@ async function settlement(tx: GraphTransactionSql, executionId: string, visited:
   if (!saved.accepted || result?.outcome !== 'succeeded') return waiting
   const output = parseWorkHandoffResult(result)
   if (output.data.remainingFindings.length) {
-    return { phase: 'blocked', reason: output.data.remainingFindings.join('\n'), outstandingRequestIds: [] }
+    return { phase: 'blocked', reason: memoryFindingReason(output.data.remainingFindings), outstandingRequestIds: [] }
   }
   if (output.routing.kind === 'return') {
     const returned = await tx.query('select return_id from run_work_returns where run_id=$1 and source_execution_id=$2',
@@ -41,7 +48,7 @@ async function settlement(tx: GraphTransactionSql, executionId: string, visited:
     if (request.returned) {
       const returned = WorkReturnSchema.parse(request.returned)
       if (returned.outcome === 'accepted' && !returned.remainingFindings.length) continue
-      return { phase: 'blocked', reason: returned.remainingFindings.join('\n') || 'Required work needs changes.',
+      return { phase: 'blocked', reason: memoryFindingReason(returned.remainingFindings),
         outstandingRequestIds: [request.request_id] }
     }
     const child = request.execution_id ? await settlement(tx, request.execution_id, new Set(visited)) : waiting

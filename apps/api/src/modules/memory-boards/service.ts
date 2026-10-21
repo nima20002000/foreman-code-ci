@@ -10,7 +10,7 @@ import { readDigest } from './digest.js'
 import { inputHash, invalid, same, scopeContains, workKey } from './identity.js'
 import { applyLifecycle, beginEffect, effectReceipt, finishEffect } from './lifecycle.js'
 import { replayCommand } from './mutations.js'
-import { commandReceipt, ensureBoard, loadBoard, lockIdentity, peekBoardScope } from './repository.js'
+import { commandReceipt, ensureBoard, findScopeBoard, loadBoard, lockIdentity, peekBoardScope, readBoard } from './repository.js'
 import { MemoryChangesInputSchema, MemoryReadInputSchema, readChanges, readProjection } from './reads.js'
 
 export class MemoryBoardService implements MemoryBoardPort {
@@ -19,20 +19,33 @@ export class MemoryBoardService implements MemoryBoardPort {
 
   async read(principal: ManagementPrincipal, input: ReadRequest) {
     const request = MemoryReadInputSchema.parse(input)
-    return this.dependencies.transaction(async tx => {
-      const scope = request.scope ?? await peekBoardScope(tx,request.boardId!)
-      const context = await authorizeCaller(tx,this.dependencies.authority,principal,scope,'memory_board_get')
-      await this.dependencies.authority.scope(tx,scope)
-      const row = request.scope ? await ensureBoard(tx,scope) : await loadBoard(tx,request.boardId!)
-      return readProjection(tx,row,request,context.principalId)
+    let boardId = request.boardId
+    if (request.scope) {
+      const scope = request.scope
+      const existing = await this.dependencies.readTransaction(async tx => {
+        await authorizeCaller(tx, this.dependencies.authority, principal, scope, 'memory_board_get')
+        await this.dependencies.authority.scope(tx, scope)
+        return findScopeBoard(tx, scope)
+      })
+      boardId = existing?.board.id ?? await this.dependencies.transaction(async tx => {
+        await authorizeCaller(tx, this.dependencies.authority, principal, scope, 'memory_board_get')
+        await this.dependencies.authority.scope(tx, scope)
+        return (await ensureBoard(tx, scope)).board.id
+      })
+    }
+    return this.dependencies.readTransaction(async tx => {
+      const scope = await peekBoardScope(tx, boardId!)
+      const context = await authorizeCaller(tx, this.dependencies.authority, principal, scope, 'memory_board_get')
+      await this.dependencies.authority.scope(tx, scope)
+      return readProjection(tx, await readBoard(tx, boardId!), request, context.principalId)
     })
   }
   async changes(principal: ManagementPrincipal, input: ChangesRequest) {
     const request = MemoryChangesInputSchema.parse(input)
-    return this.dependencies.transaction(async tx => {
+    return this.dependencies.readTransaction(async tx => {
       const scope = await peekBoardScope(tx,request.boardId)
       await authorizeCaller(tx,this.dependencies.authority,principal,scope,'memory_board_changes_read')
-      return readChanges(tx,await loadBoard(tx,request.boardId),request)
+      return readChanges(tx,await readBoard(tx,request.boardId),request)
     })
   }
   async mutate(principal: ManagementPrincipal, input: MemoryBoardMutation): Promise<MutationReceipt> {

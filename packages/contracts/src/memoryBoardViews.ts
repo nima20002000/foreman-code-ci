@@ -26,8 +26,13 @@ export const MemoryBoardViewSchema = z.object({
   counts: z.object({ todo: revision, doing: revision, blocked: revision, done: revision,
     completed: revision, dropped: revision, notes: revision }).strict(),
 }).strict();
+export const MemoryWorkPageInfoSchema = z.object({ nextCursor: z.string().nullable(), hasMore: z.boolean(), revision }).strict();
+export const MemoryWorkSummarySchema = z.object({ activeBindings: revision, unresolvedFailures: revision, armedClaims: revision }).strict();
+export const MemoryBindingsPageSchema = page(MemoryCardWorkBindingSchema);
+export const MemoryClaimsPageSchema = page(MemoryCardWorkClaimSchema);
 export const MemoryCardDetailSchema = z.object({ card: MemoryCardSchema,
-  bindings: z.array(MemoryCardWorkBindingSchema), claims: z.array(MemoryCardWorkClaimSchema),
+  bindings: z.array(MemoryCardWorkBindingSchema).max(100), claims: z.array(MemoryCardWorkClaimSchema).max(100),
+  bindingPage: MemoryWorkPageInfoSchema, claimPage: MemoryWorkPageInfoSchema, workSummary: MemoryWorkSummarySchema,
   history: page(MemoryBoardChangeSchema),
 }).strict();
 export const MemoryBoardCommandReadSchema = z.discriminatedUnion('state', [
@@ -37,6 +42,7 @@ export const MemoryBoardCommandReadSchema = z.discriminatedUnion('state', [
   z.object({ commandId: IdSchema, state: z.literal('unknown') }).strict(),
 ]);
 export const MemoryBoardWireSchemas = {
+  bindings: MemoryBindingsPageSchema, claims: MemoryClaimsPageSchema,
   board: MemoryBoardViewSchema, cards: page(MemoryCardSchema), card: MemoryCardDetailSchema,
   notes: page(MemoryNoteSchema), command: MemoryBoardCommandReadSchema,
   receipt: MemoryBoardMutationReceiptSchema,
@@ -49,3 +55,6 @@ export const MemoryBoardSearchSchema = z.object({
   memoryStatus: z.enum(['todo', 'doing', 'blocked', 'done']).optional(),
   memoryDone: z.boolean().optional(), memoryCompletion: z.enum(['completed', 'dropped']).optional(),
 }).strict();
+
+export type MemoryWorkPageInfo = z.infer<typeof MemoryWorkPageInfoSchema>;
+export type MemoryWorkSummary = z.infer<typeof MemoryWorkSummarySchema>;

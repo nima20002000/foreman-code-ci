@@ -1,3 +1,4 @@
+import { memoryFindingReason } from './memoryFindings.js'
 import { reconcileMemoryHandoffsLocked } from './memoryBoardHandoffs.js'
 import { selectedWorkHandoffRoutes } from './workHandoffRouting.js'
 import {
@@ -6,7 +7,7 @@ import {
 } from '@foreman-code/contracts'
 import { parseWorkHandoffResult, type WorkflowRunV3 } from '@foreman-code/contracts/wave25'
 import type { MemoryBoardPort } from '../collaboration/ports.js'
-import { memoryExecution } from '../collaboration/memoryBoardAuthority.js'
+import { memoryExecution } from '../collaboration/memoryExecution.js'
 import type { MemoryBoardService } from '../memory-boards/service.js'
 import type { GraphTransactionSql } from '../run-graph/connection.js'
 import type { RepeatEffect } from './repeatPostgres.js'
@@ -48,7 +49,7 @@ export async function applyMemoryEffectLocked(tx: GraphTransactionSql, service: 
   if (repeatTickIndex(saved.execution.input) !== undefined) return
   const source = `${effect.kind}:${effect.entityId}:${effect.digest}`
   if (effect.kind === 'input.bind') {
-    const previous = await continuations(tx, saved.work)
+    const previous = saved.previousExecutionId ? [] : await continuations(tx, saved.work)
     if (previous.length) {
       for (const work of previous) {
         const key = work.kind === 'activation' ? work.activationId : work.slotId
@@ -64,7 +65,7 @@ export async function applyMemoryEffectLocked(tx: GraphTransactionSql, service: 
   if (saved.version.definition.handoffs) {
     const result = parseWorkHandoffResult(saved.execution.result)
     if (result.data.remainingFindings.length) {
-      await lifecycle(tx, service, effect.entityId, source, 'blocked', { reason: result.data.remainingFindings.join('\n') })
+      await lifecycle(tx, service, effect.entityId, source, 'blocked', { reason: memoryFindingReason(result.data.remainingFindings) })
       return
     }
     const outgoing = selectedWorkHandoffRoutes(saved.version.definition, saved.node.id, result)

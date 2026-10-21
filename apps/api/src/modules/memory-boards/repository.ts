@@ -19,6 +19,10 @@ export async function loadBoard(tx: GraphTransactionSql, id: string): Promise<Bo
   const result = await tx.query<StoredBoard>('select * from memory_boards where id=$1 for update', [id])
   return boardRow(result.rows[0] ?? missing('Memory board'))
 }
+export async function readBoard(tx: GraphTransactionSql, id: string): Promise<BoardRow> {
+  const result = await tx.query<StoredBoard>('select * from memory_boards where id=$1', [id])
+  return boardRow(result.rows[0] ?? missing('Memory board'))
+}
 export async function ensureBoard(tx: GraphTransactionSql, scope: MemoryBoardScope): Promise<BoardRow> {
   await tx.query('insert into memory_boards(id,scope_key,scope) values($1,$2,$3) on conflict(scope_key) do nothing',
     [randomUUID(), scopeKey(scope), scope])

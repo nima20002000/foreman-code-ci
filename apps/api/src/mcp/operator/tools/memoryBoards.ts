@@ -64,7 +64,7 @@ export function memoryBoardToolDefinitions(
   const tools:MemoryBoardToolDefinition[]=[
     {name:'memory_board_get',requires:[['workspaces:read','resource']],discoverable:discover(false),
       permissionDetail:'Workspace boards require workspaces:read; workflow boards require workflows:read in the exact scope.',
-      description:'Read one workspace or workflow Memory board, an independent column page, note page, exact task/history or your command receipt. Done is loaded only on request. Unknown command status never proves that a timed-out save did not run.',
+      description:'Read one workspace or workflow Memory board, an independent column page, note page, exact task/history or your command receipt. Card detail bounds its current-work summary and binding/claim pages. Use views bindings and claims with cardId and their independent nextCursor to read retained work. Done is loaded only on request. Unknown command status never proves that a timed-out save did not run.',
       inputSchema:schemas.read,annotations:readAnnotations,run:(context,input)=>resolve(context).read(context.principal,schemas.read.parse(input))},
     {name:'memory_board_changes_read',requires:[['workspaces:read','resource']],discoverable:discover(false),
       permissionDetail:'Workspace boards require workspaces:read; workflow boards require workflows:read in the exact scope.',
