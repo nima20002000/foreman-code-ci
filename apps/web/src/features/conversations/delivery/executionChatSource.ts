@@ -3,7 +3,6 @@ import { DeliveryTargetSchema, EngineChatMessageSchema, type DeliveryTarget, typ
 
 export type ExecutionChatTarget = Extract<DeliveryTarget, { kind: 'workflow_execution' | 'workflow_coordinator' }>
 export const executionChatNoticeSchema = z.object({ target: DeliveryTargetSchema, revision: z.number().int().nonnegative(),
-  sequence: z.number().int().nonnegative().optional(),
   message: EngineChatMessageSchema.optional(), snapshotRequired: z.boolean().optional() })
 export type ExecutionChatNotice = z.infer<typeof executionChatNoticeSchema>
 

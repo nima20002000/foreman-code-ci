@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify'
+import type { IncomingHttpHeaders } from 'node:http'
 import { isIP, Socket } from 'node:net'
 
 import { LocalHumanAccessSchema, type ManagementPrincipal } from '@foreman-code/contracts/management'
@@ -29,7 +30,7 @@ function isAllowedRequestHost(hostname: string): boolean {
     && /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+ts\.net$/i.test(hostname)
 }
 
-export function requireLocalRequest(request: FastifyRequest): void {
+export function requireLocalRequest(request: { hostname: string; headers: IncomingHttpHeaders }): void {
   if (!isAllowedRequestHost(request.hostname)) {
     throw new DomainError('HOST_NOT_ALLOWED', 'The request Host is not allowed.', 403)
   }
@@ -106,6 +107,39 @@ export function requireLocalHuman(request: FastifyRequest): void {
   }
 }
 
+/** The HTTP API and page-view socket share the same local-human and bearer boundary. */
+export async function operatorRequestIdentity(request: { hostname: string; ip: string; headers: IncomingHttpHeaders; socket: unknown },
+  access: PostgresAccessService, localHuman?: LocalHumanAccess, browserOrigin = 'http://127.0.0.1:5173') {
+  requireLocalRequest(request)
+  const headerToken = bearerToken(request.headers.authorization)
+  if (request.headers.authorization !== undefined && !headerToken) {
+    throw new DomainError('AUTH_INVALID', 'The Authorization header is invalid.', 401)
+  }
+  if (!headerToken) {
+    if (!LOOPBACK_HOSTS.has(request.hostname)) {
+      throw new DomainError('AUTH_REQUIRED', 'A bearer credential is required.', 401)
+    }
+    if (!LOOPBACK_IPS.has(request.ip)) {
+      throw new DomainError('LOCAL_HUMAN_REQUIRED', 'The local app requires a loopback client.', 403)
+    }
+    if (request.headers.origin && request.headers.origin !== browserOrigin
+      || request.headers['sec-fetch-site'] === 'cross-site') {
+      throw new DomainError('ORIGIN_NOT_ALLOWED', 'The request Origin is not allowed.', 403)
+    }
+    try {
+      if (request.socket instanceof Socket && !await localHumanClient(request.socket)) {
+        throw new DomainError('LOCAL_HUMAN_REQUIRED', 'Agent processes require an application credential.', 403)
+      }
+    } catch (error) {
+      if (!(error instanceof LocalClientUnavailableError)) throw error
+      throw new DomainError(error.code, error.message, 503, { retryable: true }, { cause: error })
+    }
+  }
+  const authenticate = () => headerToken ? access.authenticate(headerToken, 'operator')
+    : localHuman?.current() ?? Promise.resolve(localHumanPrincipal)
+  return { principal: await authenticate(), authentication: headerToken ? 'bearer' as const : 'local-human' as const, authenticate }
+}
+
 export function registerOperatorHttpSecurity(app: FastifyInstance, access: PostgresAccessService,
   localHuman?: LocalHumanAccess, browserOrigin = 'http://127.0.0.1:5173'): void {
   app.addHook('preHandler', async (request, reply) => {
@@ -113,37 +147,15 @@ export function registerOperatorHttpSecurity(app: FastifyInstance, access: Postg
     if (!path?.startsWith('/api/')) return
     requireLocalRequest(request)
     reply.header('cache-control', 'no-store')
-    const headerToken = bearerToken(request.headers.authorization)
-    if (request.headers.authorization !== undefined && !headerToken) {
-      throw new DomainError('AUTH_INVALID', 'The Authorization header is invalid.', 401)
-    }
-    if (!headerToken) {
-      if (!LOOPBACK_HOSTS.has(request.hostname)) {
-        throw new DomainError('AUTH_REQUIRED', 'A bearer credential is required.', 401)
-      }
-      if (!LOOPBACK_IPS.has(request.ip)) {
-        throw new DomainError('LOCAL_HUMAN_REQUIRED', 'The local app requires a loopback client.', 403)
-      }
-      if (request.headers.origin && request.headers.origin !== browserOrigin
-        || request.headers['sec-fetch-site'] === 'cross-site') {
-        throw new DomainError('ORIGIN_NOT_ALLOWED', 'The request Origin is not allowed.', 403)
-      }
-      try {
-        if (request.raw.socket instanceof Socket && !await localHumanClient(request.raw.socket)) {
-          throw new DomainError('LOCAL_HUMAN_REQUIRED', 'Agent processes require an application credential.', 403)
-        }
-      } catch (error) {
-        if (!(error instanceof LocalClientUnavailableError)) throw error
-        reply.header('retry-after', '1')
-        throw new DomainError(error.code, error.message, 503, { retryable: true }, { cause: error })
-      }
-    }
-    const authenticate = () => headerToken ? access.authenticate(headerToken, 'operator')
-      : localHuman?.current() ?? Promise.resolve(localHumanPrincipal)
-    const principal = await authenticate()
+    let identity: Awaited<ReturnType<typeof operatorRequestIdentity>>
+    try { identity = await operatorRequestIdentity({ hostname: request.hostname, ip: request.ip, headers: request.headers, socket: request.raw.socket }, access, localHuman, browserOrigin) }
+    catch (error) { if (error instanceof DomainError && error.status === 503) reply.header('retry-after', '1'); throw error }
+    const { authenticate } = identity
+    const principal = identity.principal
     request.operatorPrincipal = principal
-    request.operatorAuthentication = headerToken ? 'bearer' : 'local-human'
+    request.operatorAuthentication = identity.authentication
     // Account and chat services resolve persisted resources before checking their full scopes.
+    const browser = path.startsWith('/api/browser/')
     const providerAccounts = path === '/api/provider-accounts' || path.startsWith('/api/provider-accounts/')
     const agentChat = /^\/api\/workspaces\/[^/]+\/agent-chat(?:\/|$)/.test(path)
       || /^\/api\/workspaces\/[^/]+\/workflows\/[^/]+\/execution-chat(?:\/|$)/.test(path)
@@ -157,10 +169,10 @@ export function registerOperatorHttpSecurity(app: FastifyInstance, access: Postg
     request.reauthorizeOperator = async () => {
       const current = await authenticate()
       // Re-check against the same route resource; scoped grants never match an empty resource.
-      if (!agentChat && !selfReadback && !providerAccounts) requireAuthorization(current, actionFor(request), resource)
+      if (!agentChat && !selfReadback && !providerAccounts && !browser) requireAuthorization(current, actionFor(request), resource)
       return current
     }
-    if (!agentChat && !selfReadback && !providerAccounts && !request.url.startsWith('/api/management/')) {
+    if (!agentChat && !selfReadback && !providerAccounts && !browser && !request.url.startsWith('/api/management/')) {
       requireAuthorization(principal, actionFor(request), resource)
       if (request.method === 'GET' && /^\/api\/workspaces\/[^/]+\/runs\/[^/]+(?:\?.*)?$/.test(request.url)) {
         requireAuthorization(principal, 'workspace_locations:read', resource)

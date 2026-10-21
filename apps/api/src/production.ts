@@ -1,3 +1,6 @@
+import { BROWSER_DEVICE_EXTENSION } from '@foreman-code/contracts'
+import { createProductionBrowser } from './modules/collaboration/browserComposition.js'
+import { createMainBrowserRemote } from './modules/collaboration/browserRemote.js'
 import { prepareAgentChatInput, prepareOperatorChatInput } from './modules/collaboration/chatInputPreparation.js'
 import { ConversationCredentials } from './modules/access/conversationCredentialIssuer.js'
 import { conversationChatTools, readConversationCredential } from './modules/access/conversationCredentials.js'
@@ -440,6 +443,8 @@ interface ProductionComposition {
   operatorManagers: Map<string, NativeHarnessSessionManager>
   operatorConversations: PostgresOperatorConversationRepository
   agentConversations: PostgresAgentChatRepository
+  browser: ReturnType<typeof createProductionBrowser>
+  browserRemote: ReturnType<typeof createMainBrowserRemote>
   conversationNativeAccess: ConversationNativeAccess
   workflowChat: ReturnType<typeof createProductionWorkflowChat>
   stopWorkflowChat?: () => void
@@ -528,6 +533,7 @@ export function buildProductionApp(
   } as ProductionComposition
   configureMainTransport(composition)
   configureDeviceRuntime(composition)
+  configureBrowser(composition)
   configureProviderAccounts(composition)
   configureWorkflowRepositories(composition)
   configureHarnessQualifications(composition)
@@ -559,6 +565,26 @@ export function buildProductionApp(
     },
     startDeviceListener: () => composition.deviceRuntime.startListener(),
   }
+}
+
+function configureBrowser(composition: ProductionComposition) {
+  const { config, database, deviceRuntime } = composition
+  const reportFailure = (error: unknown) => componentLogger('harness').warn({ err: error }, 'Browser runtime requires attention')
+  composition.browser = createProductionBrowser({ pool: database.pool,
+    stateDirectory: config.browserStateDirectory ?? resolve(config.harnesses.workspaceRoot, 'browser-state'),
+    runtimeRoot: config.browserRuntimeRoot,
+    binding: id => deviceRuntime.currentBinding(id),
+    assertHostOwnership: async () => {
+      if (!composition.runtimeOwner?.active) throw new DomainError('NATIVE_RUNTIME_UNAVAILABLE', 'The browser runtime owner is unavailable.', 503)
+    }, reportFailure,
+    remote: (pairing, authority) => {
+      const remote = createMainBrowserRemote({ pool: database.pool, pairing, authority,
+        endpoint: () => deviceRuntime.endpointForDomains(), browser: () => composition.browser, reportFailure })
+      composition.browserRemote = remote
+      return remote
+    },
+  })
+  composition.collaborationPorts = { ...composition.collaborationPorts, browser: composition.browser.lifecycle }
 }
 
 function configureMainTransport(composition: ProductionComposition) {
@@ -651,6 +677,7 @@ function configureDeviceRuntime(composition: ProductionComposition) {
   const deviceRuntime = composition.deviceRuntime = new ProductionDeviceRuntime(database.pool, infrastructure?.deviceListener, {
     workerArtifacts: workerArtifactLocation({ environment: process.env,
       releaseDirectory: fileURLToPath(new URL('../../../', import.meta.url)) }),
+    browserMedia: (request, socket, head) => composition.browserRemote.mediaUpgrade(request, socket, head),
     extensions: [
       remoteTelemetry.extension,
       ...rsync.extensions.map(extension => ({ ...extension, role: 'duplex' as const, async handle(raw: unknown, context: import('./modules/devices/deviceApplicationChannel.js').DeviceExtensionContext) {
@@ -661,6 +688,7 @@ function configureDeviceRuntime(composition: ProductionComposition) {
         context.signal.throwIfAborted()
         return { payload: intent }
       } })),
+      { ...BROWSER_DEVICE_EXTENSION, handle: (payload, context) => composition.browserRemote.handle(payload, context) },
       { namespace: WORKSPACE_ROOT_EXTENSION.namespace, version: WORKSPACE_ROOT_EXTENSION.version, role: 'client', maxJsonBytes: WORKSPACE_ROOT_EXTENSION.maxPayloadBytes, maxBinaryBytes: 0 },
       { ...JOB_RUNTIME_QUALIFICATION_EXTENSION, role: 'duplex', async handle(payload, context) {
         const handler = composition.jobRuntime?.qualificationExtension.handle
@@ -2263,6 +2291,7 @@ function configureOperatorServices(composition: ProductionComposition) {
     execution: executionChat,
     bindConversationScope: composition.conversationNativeAccess.rebind,
   })
+  composition.operatorServices.browser = composition.browser
   composition.operatorServices.workflowChat = composition.workflowChat.service
   composition.operatorServices.chatDelivery = composition.workflowChat.router
 }
@@ -2410,6 +2439,7 @@ function configureRuntimeLifecycle(composition: ProductionComposition) {
       } },
       { name: 'computer maintenance admission', run: () => {
         composition.stopComputerTimers()
+        composition.browser.stopAdmission()
         runtimeServices.computerMaintenance?.stopAdmission()
       } },
       { name: 'passive resource telemetry admission', run: async () => { telemetryLifetime.abort() } },
@@ -2426,6 +2456,7 @@ function configureRuntimeLifecycle(composition: ProductionComposition) {
       { name: 'native MCP settings', run: () => harnessSettings.mcp.shutdown() },
       { name: 'Codex plugin settings', run: () => harnessSettings.plugins.shutdown() },
       { name: 'harness qualification checks', run: () => Promise.all([harnessCatalog.shutdownChecks(), nativeConfigurations.shutdownChecks()]).then(() => undefined) },
+      { name: 'browser runtime', run: async () => { await composition.browser.stop(); composition.browserRemote.close() } },
       { name: 'Group chat', run: async () => { composition.stopWorkflowChat?.() } },
       { name: 'Operator chat', run: () => chat.shutdown() },
       { name: 'Agent chat', run: () => agentChat.shutdown() },
@@ -2549,6 +2580,7 @@ function configureRuntimeStartup(composition: ProductionComposition) {
       providerAccounts.bindTarget(async () => ({ hostRef: { kind: 'main', mainId: machine.installationId },
         applicationInstallationId: machine.installationId, keyRevision: null, authorizationRevision: null }))
       assertOpen()
+      await composition.browser.start(machine.installationId)
       await initializeJobServices(composition, machine)
       await initializeWorkflowArtifacts(composition, machine)
       const computerServices = await initializeComputerServices(composition, machine)
@@ -2920,7 +2952,8 @@ async function initializeComputerServices(composition: ProductionComposition, ma
     () => deviceRuntime.endpointForDomains(), commands)
   registerComputerAccountsRoutes(app, runtimeServices.computerAccounts)
   runtimeServices.computerMaintenance = new FleetMaintenanceService(database.pool, machine.installationId,
-    () => deviceRuntime.endpointForDomains(), commands, new ComputerMaintenance(maintenancePorts), {
+    () => deviceRuntime.endpointForDomains(), commands, new ComputerMaintenance({ ...maintenancePorts, browserRuntime: {
+      status: () => composition.browser.runtime.status(), retry: () => composition.browser.runtime.retry() } }), {
       workerManifestSha256s: () => readProductionWorkerManifestSha256s({ environment: process.env,
         releaseDirectory: fileURLToPath(new URL('../../../', import.meta.url)) }),
       workerContentSha256s: () => readProductionWorkerContentSha256s({ environment: process.env,

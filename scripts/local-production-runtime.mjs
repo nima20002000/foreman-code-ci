@@ -426,6 +426,8 @@ export function localProductionEnvironment(desktopHome, password) {
     WORKSPACE_STORAGE_ROOT: join(data, 'workspaces'),
     FILE_STORAGE_ROOT: join(data, 'files'),
     HARNESS_WORKSPACE_ROOT: join(state, 'runs'),
+    BROWSER_STATE_DIRECTORY: state,
+    BROWSER_RUNTIME_ROOT: join(desktopHome, '.local/lib/graphql-production/browser-runtime'),
     // Native entries use one reviewed launcher; each credential selects its own app.
     FOREMAN_CODE_APP_MCP_DIRECTORY: join(desktopHome, '.local/share/graphql/mcp'),
     LOG_DIR: join(state, 'logs'),

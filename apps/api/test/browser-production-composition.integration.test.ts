@@ -1,3 +1,4 @@
+import WebSocket from 'ws'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { expect, it } from 'vitest'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
@@ -40,4 +41,19 @@ it('exposes the production browser catalog over authenticated HTTP and MCP with 
     await denied.close()
     await reader.close()
   }
+})
+
+it('mounts the browser viewer channel and rejects stale installation handshakes', async () => {
+  const owner = await access.issue({ name: 'Browser viewer', audience: 'operator',
+    grants: [{ actions: ['settings:read'], scope: {} }] })
+  const url = new URL('/api/browser/sessions/unknown/view', address); url.protocol = 'ws:'
+  const socket = new WebSocket(url, { headers: { authorization: `Bearer ${owner.token}` } })
+  try {
+    const code = await new Promise<number>((resolve, reject) => {
+      socket.once('error', reject)
+      socket.once('open', () => socket.send(JSON.stringify({ viewId: 'unknown', installationId: 'stale-installation' })))
+      socket.once('close', resolve)
+    })
+    expect(code).toBe(1008)
+  } finally { socket.terminate() }
 })

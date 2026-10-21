@@ -1,5 +1,6 @@
+import { browserAgentTools } from '../collaboration/browserTools.js'
 import { AgentConfigurationVersionSchema, AgentSubjectSchema, canonicalJson, effectiveGraphqlTools,
-  type GraphqlAgentTool } from '@foreman-code/contracts'
+  COLLABORATION_AGENT_TOOLS, type GraphqlAgentTool } from '@foreman-code/contracts'
 import { ManagementPrincipalSchema, type ManagementPrincipal } from '@foreman-code/contracts/management'
 import type { SqlQuery } from '../../infrastructure/transaction.js'
 import type { AgentConversationRow } from '../conversations/agentChatRepository.js'
@@ -13,9 +14,10 @@ const groupTools = new Set<GraphqlAgentTool>([
 export function conversationChatTools(context: ConversationFeatureContext): GraphqlAgentTool[] {
   const configuration = context.configuration
   const readOnly = configuration.harness.harness === 'opencode' || configuration.harness.sandbox === 'read-only'
+  const implemented = [...groupTools, ...(context.node.browser?.enabled ? browserAgentTools : [])]
   return effectiveGraphqlTools(context.subject.agent.productRole, configuration.graphqlTools,
-    context.node.graphqlTools, false, [...groupTools])
-    .filter(tool => groupTools.has(tool) && (!readOnly || tool === 'workflow_chat_read'))
+    context.node.graphqlTools, false, implemented)
+    .filter(tool => implemented.includes(tool) && (!readOnly || COLLABORATION_AGENT_TOOLS[tool as keyof typeof COLLABORATION_AGENT_TOOLS].readOnly))
 }
 
 export async function readConversationCredential(sql: SqlQuery, principalId: string) {

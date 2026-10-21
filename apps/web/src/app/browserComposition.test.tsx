@@ -11,7 +11,15 @@ installBoardTestLifecycle()
 configure({ asyncUtilTimeout: 1000 })
 
 it('mounts the browser profile manager in production Settings', async () => {
-  server.use(http.get('/api/browser/profiles', () => HttpResponse.json({
+  server.use(
+    http.get('/api/devices/main', () => HttpResponse.json({ mainId: '11111111-1111-4111-8111-111111111111',
+      mainPublicKey: 'fixture-key', mainPublicKeyFingerprint: 'a'.repeat(64) })),
+    http.get('/api/devices', () => HttpResponse.json({ devices: [] })),
+    http.post('/api/management/computers/maintenance/read', async ({ request }) => {
+      const { target } = await request.json() as { target: unknown }
+      return HttpResponse.json({ computers: [{ target, status: null }] })
+    }),
+    http.get('/api/browser/profiles', () => HttpResponse.json({
     profiles: [], replicas: [], presentReplicas: [], pendingReplicas: [], nextCursor: null, revision: 0,
   })))
   const router = createRouter({ routeTree, history: createMemoryHistory({ initialEntries: ['/settings/browser-profiles'] }) })

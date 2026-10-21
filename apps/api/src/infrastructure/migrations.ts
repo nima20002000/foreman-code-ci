@@ -1,8 +1,8 @@
+import { browserProfilesMigration } from './browserProfilesMigration.js'
 import { conversationCredentialsMigration } from './conversationCredentialsMigration.js'
 import { hierarchyAdmissionMigration } from './hierarchyAdmissionMigration.js'
 import { hierarchyFeedbackMigration } from './hierarchyFeedbackMigration.js'
 import { workflowChatIndexMigration } from './workflowChatIndexMigration.js'
-import { workflowChatNotificationsMigration } from './workflowChatNotificationsMigration.js'
 import { hierarchyControlSettlementMigration } from './hierarchyControlSettlementMigration.js'
 import { workflowChatMigration } from './workflowChatMigration.js'
 import { operatorSummaryActivityMigration } from './operatorSummaryActivityMigration.js'
@@ -1031,7 +1031,7 @@ export const migrations = [
   hierarchyAdmissionMigration,
   { ...workflowChatMigration, version: 2026102120 },
   conversationCredentialsMigration,
-  workflowChatNotificationsMigration,
+  { ...browserProfilesMigration, version: 2026102122 },
 ] as const
 
 export function assertMigrationVersions(entries: readonly { version: number }[]): void {
