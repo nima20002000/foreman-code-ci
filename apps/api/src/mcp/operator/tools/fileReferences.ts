@@ -9,7 +9,7 @@ import { referenceFileActions } from '../../../modules/files/references/authoriz
 import {
   FileReferenceAddInputSchema, FileReferenceListInputSchema, FileReferenceReadInputSchema,
   FileReferenceReadResultSchema, FileReferenceRemoveToolInputSchema, FileReferenceMutationResultSchema,
-} from '../../../modules/files/references/requests.js'
+} from '@foreman-code/contracts/files'
 import { toolFailure } from '../../shared/results.js'
 import { invokeOperatorTool } from '../invoke.js'
 import type { OperatorRequestContext } from '../types.js'
