@@ -101,6 +101,17 @@ test('bad chunks and unconfirmed readiness never publish a runtime selection', a
   await assert.rejects(readInstalledBrowserRuntime({ runtimeRoot, target }), /BROWSER_RUNTIME_MISSING/);
 });
 
+test('a verified browser unit accepts a compatible Node patch without accepting a different native target', async t => {
+  const directory = await fixture(t);
+  const packed = await artifact(directory, 'runtime');
+  const installed = await stageBrowserRuntime({ runtimeRoot: join(directory, 'runtime-root'), artifact: packed.output,
+    expectedSha256: packed.descriptorSha256, target: { ...target, node: 'v22.23.3' }, readiness: ready, activate: false });
+  assert.equal(installed.runtimeVersion, '1.0.0');
+  for (const incompatible of [{ ...target, arch: 'arm64' }, { ...target, libc: 'glibc-2.35' }, { ...target, node: 'v20.0.0' }]) {
+    assert.throws(() => validateBrowserRuntimeManifest(packed.manifest, incompatible), /target mismatch/);
+  }
+});
+
 test('staging stays inactive, activation drains before selection, and rollback restores profiles before selecting older Chromium', async t => {
   const directory = await fixture(t), runtimeRoot = join(directory, 'runtime'), events = [];
   const first = await stage(runtimeRoot, await artifact(directory, 'old'));
