@@ -40,7 +40,7 @@ export class BrowserAuthority implements BrowserSubjectAuthority, BrowserSession
       ? await new PostgresAgentChatRepository(this.pool).turnPreparedInput(row.id, row.active_request_id)
       : (await this.pool.query<{ prepared: { input: { conversationContext?: { workflowVersionId: string } } } }>(
         `select payload->'preparedInput' as prepared from operator_conversation_turns where conversation_id=$1
-        and native_turn_id is not null order by sequence desc limit 1`, [row.id])).rows[0]?.prepared
+        and native_turn_id is not null order by turn_sequence desc limit 1`, [row.id])).rows[0]?.prepared
     const context = await conversationFeatureContext(this.pool, row, configuration, prepared?.input.conversationContext?.workflowVersionId)
     return { row, configuration, context }
   }
