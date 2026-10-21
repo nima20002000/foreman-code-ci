@@ -1,16 +1,15 @@
-import { decodeCursor, page } from './pagination.js'
-import { readBindingsPage, readClaimsPage, readWorkSummary } from './workReads.js'
 import { z } from 'zod'
 import { MemoryBoardScopeSchema, MemoryCardSchema, MemoryNoteSchema,
   type MemoryCard, type MemoryNote } from '@foreman-code/contracts'
 import type { GraphTransactionSql } from '../run-graph/connection.js'
+import { DomainError } from '../errors.js'
 import type { BoardChange, BoardRow, ChangesPage, Page, ReadRequest, ReadResult } from './types.js'
 import { inputHash, invalid, normalizeTitle } from './identity.js'
-import { cardById, commandReceipt } from './repository.js'
+import { bindingsFor, cardById, claimsFor, commandReceipt } from './repository.js'
 
 export const MemoryReadInputSchema = z.object({
   scope: MemoryBoardScopeSchema.optional(), boardId: z.string().min(1).optional(),
-  view: z.enum(['board','cards','card','notes','command','bindings','claims']).default('board'),
+  view: z.enum(['board','cards','card','notes','command']).default('board'),
   status: z.enum(['todo','doing','blocked','done']).optional(), completionKind: z.enum(['completed','dropped']).optional(),
   query: z.string().max(240).optional(),
   cardId: z.string().min(1).optional(), commandId: z.string().min(1).optional(),
@@ -18,7 +17,7 @@ export const MemoryReadInputSchema = z.object({
 }).strict().superRefine((input, context) => {
   if (!!input.scope === !!input.boardId) context.addIssue({ code: 'custom', message: 'Select exactly one scope or board ID.' })
   if (input.view === 'cards' && !input.status) context.addIssue({ code: 'custom', message: 'Select one card column.' })
-  if (['card','bindings','claims'].includes(input.view) && !input.cardId) context.addIssue({ code: 'custom', message: 'Provide a card ID.' })
+  if (input.view === 'card' && !input.cardId) context.addIssue({ code: 'custom', message: 'Provide a card ID.' })
   if (input.view === 'command' && !input.commandId) context.addIssue({ code: 'custom', message: 'Provide a command ID.' })
   if (input.completionKind && input.status !== 'done') context.addIssue({ code: 'custom', message: 'Completion outcome is a Done filter.' })
 })
@@ -26,6 +25,26 @@ export const MemoryChangesInputSchema = z.object({ boardId: z.string().min(1),
   afterSequence: z.number().int().nonnegative().optional(), cursor: z.string().max(2048).optional(),
   limit: z.number().int().min(1).max(100).optional(),
 }).strict()
+const Cursor = z.object({ key: z.string(), revision: z.number().int().nonnegative(),
+  last: z.tuple([z.union([z.string(),z.number()]),z.string()]) }).strict()
+type CursorValue = z.infer<typeof Cursor>
+function decodeCursor(cursor: string | undefined, key: string, revision: number): CursorValue | undefined {
+  if (!cursor) return undefined
+  let parsed: CursorValue
+  try { parsed = Cursor.parse(JSON.parse(Buffer.from(cursor,'base64url').toString('utf8'))) }
+  catch { invalid('This page cursor is invalid.') }
+  if (parsed.key !== key) invalid('This page cursor belongs to a different filter.')
+  if (parsed.revision !== revision) throw new DomainError('CURSOR_STALE',
+    'The board changed. Read the first page for this filter again.',409,{ resetRequired: true })
+  return parsed
+}
+function page<T>(items: T[], limit: number, revision: number, key: string,
+  last: (item: T) => CursorValue['last']): Page<T> {
+  const hasMore = items.length > limit
+  const visible = items.slice(0,limit)
+  return { items: visible, revision, hasMore,
+    nextCursor: hasMore && visible.length ? Buffer.from(JSON.stringify({ key,revision,last:last(visible[visible.length-1]!) })).toString('base64url') : null }
+}
 export async function readCards(tx: GraphTransactionSql, row: BoardRow, request: ReadRequest): Promise<Page<MemoryCard>> {
   const limit = request.limit ?? 20, query = normalizeTitle(request.query ?? '')
   const key = inputHash({ boardId: row.board.id, status: request.status, completionKind: request.completionKind ?? null,
@@ -73,17 +92,8 @@ async function history(tx: GraphTransactionSql, row: BoardRow, request: ReadRequ
 export async function readProjection(tx: GraphTransactionSql, row: BoardRow, request: ReadRequest, principalId: string): Promise<ReadResult> {
   if (request.view === 'cards') return readCards(tx,row,request)
   if (request.view === 'notes') return readNotes(tx,row,request)
-  if (request.view === 'bindings' || request.view === 'claims') {
-    await cardById(tx, row.board.id, request.cardId!)
-    return request.view === 'bindings' ? readBindingsPage(tx, row, request) : readClaimsPage(tx, row, request)
-  }
-  if (request.view === 'card') {
-    const card = await cardById(tx, row.board.id, request.cardId!)
-    const { items: bindings, ...bindingPage } = await readBindingsPage(tx, row, { ...request, cursor: undefined })
-    const { items: claims, ...claimPage } = await readClaimsPage(tx, row, { ...request, cursor: undefined })
-    return { card, bindings, claims, bindingPage, claimPage, workSummary: await readWorkSummary(tx, card.id),
-      history: await history(tx, row, request) }
-  }
+  if (request.view === 'card') return { card: await cardById(tx,row.board.id,request.cardId!),
+    bindings: await bindingsFor(tx,request.cardId!), claims: await claimsFor(tx,request.cardId!), history: await history(tx,row,request) }
   if (request.view === 'command') {
     const stored = await commandReceipt(tx,principalId,request.commandId!)
     if (!stored || stored.board_id !== row.board.id) return { commandId: request.commandId!, state: 'unknown' }
