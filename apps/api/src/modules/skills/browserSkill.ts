@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import type { ResolvedSkill } from '@foreman-code/contracts'
-import { skillHash } from './catalog.js'
+import { skillHash } from './instructions.js'
 
 export const managedBrowserSkillId = 'foreman-browser-use'
 
