@@ -1,8 +1,4 @@
-import { ChatDeliveryIntentSchema, DeliveryTargetSchema, ChatDeliveryReceiptSchema, ChatControlReceiptSchema, ChatDeliveryInputReadSchema, ChatDeliveryInputPageSchema } from './chatDelivery.js';
-import { EngineChatReadbackSchema } from './workflowChat.js';
-import { NativeSourceMessageSchema } from './messages.js';
 import { NativeInteractionResponseAvailabilitySchema } from './interaction-activity.js';
-import { ChatMessageContentSchema, refineChatMessageSize } from './chatInput.js';
 import { NativeMessageSubmissionSchema } from './claude.js';
 import { z } from "zod";
 import { ActivitySnapshotV1Schema } from "./activity.js";
@@ -46,7 +42,14 @@ export const AgentChatControlsUpdateRequestSchema = z.union([
  */
 
 /** How a new input relates to work already in the conversation. */
-const AgentChatIntentSchema = ChatDeliveryIntentSchema;
+const AgentChatIntentSchema = z.enum([
+  /** Run after the current turn finishes (or immediately when idle). */
+  "next_turn",
+  /** Add text to the active turn. Attachments require a new turn; capabilities.steer must be available. */
+  "steer",
+  /** Interrupt the active turn, wait for native settlement, then submit this input once. */
+  "interrupt_and_send",
+]);
 export type AgentChatIntent = z.infer<typeof AgentChatIntentSchema>;
 
 /**
@@ -185,7 +188,7 @@ export const AgentChatSourceTranscriptSchema = z.object({
   state: HarnessExecutionSchema.shape.state,
   /** Latest public native message revision; "0" when no messages have been recorded. */
   revision: NativeSequenceSchema,
-  messages: z.array(NativeSourceMessageSchema).max(100),
+  messages: z.array(MessageSchema.omit({ conversationId: true })).max(100),
   hasEarlierMessages: z.boolean(),
 }).strict();
 export type AgentChatSourceTranscript = z.infer<typeof AgentChatSourceTranscriptSchema>;
@@ -201,7 +204,7 @@ const AgentChatExecutionItemSchema = z.object({
   revision: NativeSequenceSchema,
   occurredAt: TimestampSchema.optional(),
   entry: z.discriminatedUnion("kind", [
-    z.object({ kind: z.literal("message"), message: NativeSourceMessageSchema }).strict(),
+    z.object({ kind: z.literal("message"), message: MessageSchema.omit({ conversationId: true }) }).strict(),
     z.object({ kind: z.literal("activity"),
       activity: OperatorActivitySchema.pick({ id: true, kind: true, title: true, status: true, input: true, output: true, truncated: true }) }).strict(),
   ]),
@@ -263,8 +266,6 @@ export const AgentChatExecutionActivityPageSchema = z.object({
 export type AgentChatExecutionActivityPage = z.infer<typeof AgentChatExecutionActivityPageSchema>;
 
 export const AgentChatStateSchema = z.object({
-  deliveryTarget: DeliveryTargetSchema.optional(),
-  deliveryTargetState: z.enum(["existing", "not_created"]).optional(),
   responseAvailability: NativeInteractionResponseAvailabilitySchema.optional(),
   qualificationKey: z.string().regex(/^[a-f0-9]{64}$/).optional(),  context: AgentChatContextSchema,
   conversation: AgentConversationSchema.nullable(),
@@ -310,7 +311,7 @@ export const SendAgentChatMessageRequestSchema = z.object({
   requestId: IdSchema,
   ...MessageAttachmentFields,
   context: AgentChatQuerySchema,
-  content: ChatMessageContentSchema.describe('Message text, up to 768 KiB as UTF-8 JSON including request metadata. Saved context and configuration also count toward the Worker 1 MiB limit. Bare /new starts a separate Agent conversation without a model turn.'),
+  content: z.string().trim().max(AGENT_CHAT_MAX_MESSAGE_CHARACTERS).describe('Message text, up to 1,048,576 characters. Bare /new starts a separate Agent conversation and returns a reset response without a model turn.'),
   sessionMode: z.enum(['regular', 'plan']).optional()
     .describe('Selects the mode for a new turn. Steering may only retain the active applied mode; mode changes and /plan tasks require next_turn or interrupt_and_send.'),
   intent: AgentChatIntentSchema.default("next_turn")
@@ -323,19 +324,9 @@ export const SendAgentChatMessageRequestSchema = z.object({
   path: ["content"], message: "Message requires text or an attachment.",
 }).refine((value) => value.intent !== "steer" || value.attachments.length === 0, {
   path: ["attachments"], message: "Attachment steering is not supported. Send attachments in a new turn.",
-}).superRefine(refineChatMessageSize);
+});
 export type SendAgentChatMessageRequest = Omit<z.infer<typeof SendAgentChatMessageRequestSchema>, "attachments">
   & { attachments?: z.input<typeof MessageAttachmentFields.attachments> };
-/** Transport parsing retains the historical character limit so stored receipts remain recoverable.
- * Fresh admissions still validate SendAgentChatMessageRequestSchema after the receipt lookup. */
-export const AgentChatMessageCommandSchema = z.object({ ...SendAgentChatMessageRequestSchema.shape,
-  content: z.string().trim().max(AGENT_CHAT_MAX_MESSAGE_CHARACTERS)
-    .describe('New messages must fit within 768 KiB of UTF-8 JSON. Identical retries may recover older, larger receipts.'),
-}).strict().refine(value => value.content.length > 0 || value.attachments.length > 0, {
-  path: ['content'], message: 'Message requires text or an attachment.',
-}).refine(value => value.intent !== 'steer' || value.attachments.length === 0, {
-  path: ['attachments'], message: 'Attachment steering is not supported. Send attachments in a new turn.',
-});
 /** Legacy urgent receipts did not retain the original target. This is readback, not target verification. */
 const AgentChatReplayWarningSchema = z.object({
   code: z.literal("AGENT_CHAT_LEGACY_TARGET_UNVERIFIABLE"),
@@ -359,19 +350,13 @@ export const AgentChatResetResponseSchema = z.object({
   reset: z.object({ requestId: IdSchema, previousConversationId: IdSchema.nullable() }).strict(),
   replayed: z.boolean(),
 }).strict();
-const AgentChatDeliveryResponseSchema = z.object({
-  state: z.union([AgentChatStateSchema, EngineChatReadbackSchema]).optional(),
-  turn: AgentChatTurnSchema.optional(), receipt: ChatDeliveryReceiptSchema, replayed: z.boolean(),
-}).strict();
 export const AgentChatSendResponseSchema = z.union([
-  SendAgentChatMessageResponseSchema, AgentChatResetResponseSchema, AgentChatDeliveryResponseSchema,
+  SendAgentChatMessageResponseSchema, AgentChatResetResponseSchema,
 ]);
-export type AgentChatSendResponse = z.infer<typeof AgentChatSendResponseSchema>;
 
 /** POST /api/workspaces/:workspaceId/agent-chat/conversations/:conversationId/interrupt */
 export const InterruptAgentChatRequestSchema = z.object({
   requestId: IdSchema,
-  scope: z.enum(["active_turn", "active_and_queued"]).optional(),
   expectedNativeTurnId: IdSchema.optional(),
 }).strict();
 /** POST .../conversations/:conversationId/turns/:turnRequestId/cancel — only a queued turn. */
@@ -381,7 +366,7 @@ export const RespondAgentChatInteractionRequestSchema = z.object({
   requestId: IdSchema, nativeRequestId: IdSchema, optionId: IdSchema,
   response: z.json().optional(),
 }).strict();
-export const AgentChatStateResponseSchema = z.object({ state: AgentChatStateSchema, receipt: ChatControlReceiptSchema.optional() }).strict();
+export const AgentChatStateResponseSchema = z.object({ state: AgentChatStateSchema }).strict();
 /** POST /api/workspaces/:workspaceId/agent-chat/conversation — the stored conversation record, created when absent (no native session). Files attach to it. */
 export const EnsureAgentChatConversationRequestSchema = z.object({
   context: AgentChatQuerySchema, executionId: IdSchema.optional(),
@@ -407,7 +392,6 @@ export const AgentChatTurnPageSchema = z.object({
 
 /** agent_chat_read retains its ordinary state response; explicit page requests add readback fields. */
 export const ReadAgentChatRequestSchema = z.object({
-  deliveryInputs: ChatDeliveryInputReadSchema.optional(),
   workspaceId: IdSchema,
   /** Read a retained conversation in this exact Agent context. */
   conversationId: IdSchema.optional(),
@@ -422,7 +406,6 @@ export const ReadAgentChatRequestSchema = z.object({
   }).strict().optional(),
 }).strict();
 export const ReadAgentChatResponseSchema = AgentChatStateSchema.extend({
-  deliveryInputs: ChatDeliveryInputPageSchema.optional(),
   history: AgentChatHistoryPageSchema.optional(),
   receipts: AgentChatTurnPageSchema.optional(),
   executionActivity: AgentChatExecutionActivityPageSchema.optional(),

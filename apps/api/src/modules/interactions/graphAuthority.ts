@@ -74,7 +74,7 @@ export async function assertOrchestratorGraphAuthority(
     || e.agentConfigurationVersionId !== r.agentConfigurationVersionIds[e.agentId]
     || e.agentConfigurationVersionId !== v.agentConfigurationVersionIds[e.agentId]
     || c.id !== r.agentConfigurationVersionIds[reviewerId] || c.id !== v.agentConfigurationVersionIds[reviewerId]
-    || c.agentId !== reviewerId || (c.productRole !== 'master' && c.productRole !== 'orchestrator')
+    || c.agentId !== reviewerId || c.productRole !== 'orchestrator'
     || r.approval?.handler !== 'orchestrator' || r.approval.designatedOrchestratorAgentId !== reviewerId
     || v.approval?.handler !== 'orchestrator' || v.approval.designatedOrchestratorAgentId !== reviewerId
     || v.definition.approval?.handler !== 'orchestrator'

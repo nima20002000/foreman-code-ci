@@ -1,14 +1,12 @@
 import { ExecutionResultSchema, HarnessExecutionSchema } from '@foreman-code/contracts'
 import {
   AcceptedCurrentNodeResultSchema, WorkActivationIdentitySchema, WorkRequestSchema,
-  canonicalGraphJson, type WorkRequest, type WorkflowVersionV3,
+  canonicalGraphJson, parseWorkHandoffResult, type WorkRequest, type WorkflowVersionV3,
 } from '@foreman-code/contracts/wave25'
 import type { GraphTransactionSql } from '../run-graph/connection.js'
 import type { RepeatLockedHooks } from './repeatPostgres.js'
 import { assertWorkflowExecutionCapacityLocked } from './workflowExecutionBudget.js'
 import { repeatConflict, repeatId, sameRepeatValue, type RepeatScope } from './repeatResolution.js'
-import { hierarchyContinuationForRequestLocked } from './hierarchyGroupSettlement.js'
-import { parseWorkflowWorkResult } from './workflowCoordinationResult.js'
 
 export interface WorkReturnContext {
   sql: GraphTransactionSql; scope: RepeatScope; version: WorkflowVersionV3
@@ -19,9 +17,6 @@ export interface WorkReturnContext {
 export async function ensureWorkReturnContinuationLocked(context: WorkReturnContext,
   request: WorkRequest, returnId: string): Promise<string> {
   const { sql, scope } = context
-  const group = await sql.query(`select 1 from run_hierarchy_group_members where run_id=$1 and request_id=$2`,
-    [scope.runId, request.requestId])
-  if (group.rowCount) return hierarchyContinuationForRequestLocked(context, request)
   const prior = (await sql.query<{ requester_continuation_activation_id: string; state: string }>(
     `select t.requester_continuation_activation_id,a.state from run_work_returns t
       join run_work_requests q on q.run_id=t.run_id and q.request_id=t.request_id
@@ -74,8 +69,7 @@ export async function workRequestSettlementsLocked(context: WorkReturnContext, r
   for (const row of rows) {
     if (row.result_json) {
       const result = AcceptedCurrentNodeResultSchema.parse(JSON.parse(row.result_json))
-      if (parseWorkflowWorkResult(result, context.version, WorkRequestSchema.parse(row.request).destinationNodeId,
-        context.hooks.run.resultProtocol).routing.kind === 'finish') continue
+      if (parseWorkHandoffResult(result).routing.kind === 'finish') continue
     }
     const execution = row.execution ? HarnessExecutionSchema.parse(row.execution) : undefined
     const failure = row.failure_result ?? execution?.result
