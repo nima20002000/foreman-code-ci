@@ -1,4 +1,3 @@
-import { browserProfilesMigration } from './browserProfilesMigration.js'
 import { conversationCredentialsMigration } from './conversationCredentialsMigration.js'
 import { hierarchyAdmissionMigration } from './hierarchyAdmissionMigration.js'
 import { hierarchyFeedbackMigration } from './hierarchyFeedbackMigration.js'
@@ -1031,7 +1030,6 @@ export const migrations = [
   hierarchyAdmissionMigration,
   { ...workflowChatMigration, version: 2026102120 },
   conversationCredentialsMigration,
-  { ...browserProfilesMigration, version: 2026102122 },
 ] as const
 
 export function assertMigrationVersions(entries: readonly { version: number }[]): void {
