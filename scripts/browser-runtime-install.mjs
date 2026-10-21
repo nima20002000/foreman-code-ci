@@ -305,7 +305,7 @@ export async function packBrowserRuntime({ unit, output, manifest, outputOwned =
 }
 
 export async function collectChromiumNotices(chromium, unit, temporary, run) {
-  const { stdout } = await run(chromium, ['--headless=new', '--no-first-run', '--disable-background-networking', '--disable-component-update',
+  const { stdout } = await run(chromium, ['--headless=new', '--allow-chrome-scheme-url', '--no-first-run', '--disable-background-networking', '--disable-component-update',
     `--user-data-dir=${join(temporary, 'credits-profile')}`, '--dump-dom', 'chrome://credits/'], { timeout: 60000, maxBuffer: 32 * 1024 * 1024 });
   invariant(String(stdout).length > 1000 && /license|copyright/i.test(String(stdout)), 'Chromium credits unavailable');
   await mkdir(join(unit, 'licenses'), { recursive: true, mode: 0o700 });
