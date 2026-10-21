@@ -1,10 +1,15 @@
-import { AgentConfigurationVersionSchema, SourceCapacityErrorDetailsSchema, type HarnessExecution } from '@foreman-code/contracts'
+import { reconcileMemoryHandoffsLocked } from './memoryBoardHandoffs.js'
+import type { MemoryBoardService } from '../memory-boards/service.js'
+import { applyMemoryEffectLocked, applyMemoryNativeLocked, prepareMemoryLaunchLocked, validateMemoryResultLocked } from './memoryBoardEffects.js'
+import { AgentConfigurationVersionSchema, SourceCapacityErrorDetailsSchema, type HarnessExecution, type ExecutionResult } from '@foreman-code/contracts'
 import {
   AcceptedWorkflowRunV3Schema, ExecutableWorkflowV3Schema, WorkflowVersionV3Schema, RunWorktreeSchema,
   CurrentRunVersionSnapshotSchema, type AcceptedWorkflowRunV3, type WorkflowVersionV3,
 } from '@foreman-code/contracts/wave25'
 import type { WorkflowNativeProofRecord } from './workflowNativeProof.js'
+import type { WorkflowResultEffectFailure } from './workflowResultEffectFailure.js'
 import { DomainError } from '../errors.js'
+import type { WorkflowCollaborationHooks } from '../collaboration/workflowHooks.js'
 
 import {
   assertGraphTransaction, beforeGraphCommit, isReadOnlyGraphTransaction, type GraphTransactionSql,
@@ -35,6 +40,12 @@ export interface RepeatCanonicalPublication {
   assertLaunchReceiptLocked(claim: RepeatLaunchClaim, digest: string): Promise<void>
 }
 export interface RepeatRepositoryServices {
+  collaboration?: WorkflowCollaborationHooks
+  prepareCollaborationExecution?(owner: RunOwnership, run: AcceptedWorkflowRunV3,
+    version: WorkflowVersionV3, execution: HarnessExecution): Promise<void>
+  readCollaborationPrompt?(owner: RunOwnership, execution: HarnessExecution, version: WorkflowVersionV3): Promise<string | undefined>
+  releaseCollaborationExecution?(owner: RunOwnership, execution: HarnessExecution, version: WorkflowVersionV3): Promise<void>
+  memoryBoards?: MemoryBoardService
   reconcileWorkflowArtifacts?(owner: RunOwnership, run: AcceptedWorkflowRunV3,
     execution: HarnessExecution, signal: AbortSignal): Promise<void>
   preparePlacementExecution?(owner: RunOwnership, run: AcceptedWorkflowRunV3, execution: HarnessExecution): Promise<
@@ -49,7 +60,8 @@ export interface RepeatRepositoryServices {
   assertNativeBoundaryLocked(sql: GraphTransactionSql, run: AcceptedWorkflowRunV3,
     execution: HarnessExecution, ref: RepeatNodeRef, evidence: RepeatNativeBoundaryEvidence, owner: RunOwnership): Promise<void>
   assertNativeUpdateLocked(sql: GraphTransactionSql, run: AcceptedWorkflowRunV3,
-    previous: HarnessExecution, incoming: HarnessExecution, ref: RepeatNodeRef, evidence: RepeatNativeEvidence, owner: RunOwnership): Promise<WorkflowNativeProofRecord>
+    previous: HarnessExecution, incoming: HarnessExecution, ref: RepeatNodeRef, evidence: RepeatNativeEvidence, owner: RunOwnership,
+    resultEffectFailure?: WorkflowResultEffectFailure): Promise<WorkflowNativeProofRecord>
   /** Existing engine/lifecycle policy, not a second scheduler or finishRun call. */
   assertSettlementLocked(sql: GraphTransactionSql, run: AcceptedWorkflowRunV3, ids: readonly string[], owner: RunOwnership): Promise<void>
   allowTechnicalRetryLocked(sql: GraphTransactionSql, run: AcceptedWorkflowRunV3,
@@ -113,6 +125,11 @@ export class RepeatRepositoryFactory {
   async preparePlacementExecution(owner: RunOwnership, run: AcceptedWorkflowRunV3, execution: HarnessExecution) {
     owner.assertOwned()
     try {
+      const current = this.stores.get(owner)
+      if (!current) return repeatConflict('REPEAT_NATIVE_HOST_REQUIRED')
+      await current.store.assertExecutionAdmission(execution.id)
+      await this.services.prepareCollaborationExecution?.(owner, run, current.version, execution)
+      owner.assertOwned()
       return await this.services.preparePlacementExecution?.(owner, run, execution)
     } catch (error) {
       owner.assertOwned()
@@ -142,10 +159,21 @@ export class RepeatRepositoryFactory {
       throw unavailable
     }
   }
-  reconcileWorkflowArtifacts(owner: RunOwnership, run: AcceptedWorkflowRunV3,
+  async reconcileWorkflowArtifacts(owner: RunOwnership, run: AcceptedWorkflowRunV3,
     execution: HarnessExecution, signal: AbortSignal): Promise<void> {
     owner.assertOwned()
-    return this.services.reconcileWorkflowArtifacts?.(owner, run, execution, signal) ?? Promise.resolve()
+    const current = this.stores.get(owner)
+    if (!current) return repeatConflict('REPEAT_NATIVE_HOST_REQUIRED')
+    await this.services.releaseCollaborationExecution?.(owner, execution, current.version)
+    owner.assertOwned()
+    return this.services.reconcileWorkflowArtifacts?.(owner, run, execution, signal)
+  }
+  readCollaborationPrompt(owner: RunOwnership, execution: HarnessExecution): Promise<string | undefined> {
+    owner.assertOwned()
+    if (!this.services.readCollaborationPrompt) return Promise.resolve(undefined)
+    const current = this.stores.get(owner)
+    if (!current) return repeatConflict('REPEAT_NATIVE_HOST_REQUIRED')
+    return this.services.readCollaborationPrompt(owner, execution, current.version)
   }
 
   /** Same actual Run owner and locked hooks for the concrete Job store. */
@@ -166,6 +194,8 @@ export class RepeatRepositoryFactory {
     owner.assertOwned()
     if (scope.runId !== owner.runId) return repeatConflict('REPEAT_SCOPE_CONFLICT')
     const run = AcceptedWorkflowRunV3Schema.parse(record)
+    if (run.resultProtocol && !this.services.memoryBoards) throw new DomainError(
+      'MEMORY_BOARDS_UNAVAILABLE', 'The coordination protocol requires memory board services.', 503)
     CurrentRunVersionSnapshotSchema.parse({ run, version })
     if (run.id !== scope.runId || run.workspaceId !== scope.workspaceId || run.workflowId !== scope.workflowId
       || run.workflowVersionId !== scope.workflowVersionId || scope.executionSemanticsVersion !== 3) return repeatConflict('RUN_PIN_CONFLICT')
@@ -234,6 +264,21 @@ export class RepeatRepositoryFactory {
     }
     const hooks: RepeatLockedHooks = {
       run,
+      ...(this.services.collaboration ? { collaboration: this.services.collaboration } : {}),
+      ...(this.services.memoryBoards ? {
+        validateMemoryResultLocked: (transaction: GraphTransactionSql, execution: HarnessExecution, result: ExecutionResult) => {
+          sameTransaction(transaction)
+          return validateMemoryResultLocked(transaction, this.services.memoryBoards!, execution, result)
+        },
+        memoryWorkChangedLocked: (transaction: GraphTransactionSql, executionId: string, sourceEventKey: string) => {
+          sameTransaction(transaction)
+          return reconcileMemoryHandoffsLocked(transaction, this.services.memoryBoards!, executionId, sourceEventKey)
+        },
+        prepareMemoryLaunchLocked: (transaction: GraphTransactionSql, execution: HarnessExecution) => {
+          sameTransaction(transaction)
+          return prepareMemoryLaunchLocked(transaction, this.services.memoryBoards!, execution)
+        },
+      } : {}),
       persistDispatchLocked: async (transaction, execution, ref, inputDigest) => {
         sameTransaction(transaction)
         const node = version.definition.nodes.find(node => node.id === ref.nodeId)
@@ -271,7 +316,10 @@ export class RepeatRepositoryFactory {
       },
       publishLocked: async (transaction, effect, facts, mutate) => {
         sameTransaction(transaction)
-        await publication.publishEffectLocked(effect, facts, mutate)
+        await publication.publishEffectLocked(effect, facts, async () => {
+          await mutate()
+          if (this.services.memoryBoards) await applyMemoryEffectLocked(transaction, this.services.memoryBoards, effect)
+        })
       },
       assertPublicationReceiptLocked: async (transaction, effect) => {
         sameTransaction(transaction)
@@ -305,15 +353,18 @@ export class RepeatRepositoryFactory {
           await configurations()
           await this.services.assertNativeBoundaryLocked(sql, run, execution, ref, evidence, owner)
         },
-        assertUpdateLocked: async (transaction, previous, incoming, ref, evidence) => {
+        assertUpdateLocked: async (transaction, previous, incoming, ref, evidence, resultEffectFailure) => {
           sameTransaction(transaction)
           assertRepeatExecution(version, scope, ref, previous)
           assertRepeatExecution(version, scope, ref, incoming)
-          return this.services.assertNativeUpdateLocked(sql, run, previous, incoming, ref, evidence, owner)
+          return this.services.assertNativeUpdateLocked(sql, run, previous, incoming, ref, evidence, owner, resultEffectFailure)
         },
         publishLocked: async (transaction, change, mutate) => {
           sameTransaction(transaction)
-          await publication.publishNativeLocked(change, mutate)
+          await publication.publishNativeLocked(change, async () => {
+            await mutate()
+            if (this.services.memoryBoards) await applyMemoryNativeLocked(transaction, this.services.memoryBoards, run, change)
+          })
         },
         assertReceiptLocked: async (transaction, change) => {
           sameTransaction(transaction)

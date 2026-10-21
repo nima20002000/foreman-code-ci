@@ -12,6 +12,8 @@ import { useConversationDraftStore } from '../conversations/conversationDraftSto
 import { providerFixture } from '../conversations/agentChat/f7.testSupport'
 import { installChatSource } from '../conversations/agentChat/testSupport'
 import { useApprovalInboxStore } from '../approvals'
+import { createMemoryBoardHandlers } from '../memory-boards/mocks'
+import { createMemoryTestPort, memoryTestCard } from '../memory-boards/testing'
 import { installBoardTestLifecycle, mountMeasuredBoard } from './eng05D.testSupport'
 import { inspectionBoardFixture } from './inspect/inspectionFixtures'
 
@@ -32,6 +34,15 @@ async function mountBoard(suffix: string) {
   const chat = createAgentChatMock(agentChatFixtureFor(providerFixture('codex'), contexts[0]!))
   chat.setState(agentChatFixtureFor(providerFixture('codex'), contexts[1]!))
   server.use(...chat.handlers.slice(1), ...fixture.mock.handlers)
+  const root = `/api/workspaces/${saved.workspaceId}/workflows/${saved.workflowId}`
+  server.use(http.get(`${root}/execution-chat/target`, ({ request }) => {
+    const nodeId = new URL(request.url).searchParams.get('workflowNodeId')
+    const context = contexts.find(item => item.workflowNodeId === nodeId)
+    return context ? HttpResponse.json({ kind: 'outside_run', agent: context,
+      workflowVersionId: fixture.after.id, reason: 'NO_LIVE_RUN' }) : HttpResponse.json({ error: {
+        code: 'CHAT_NODE_UNAVAILABLE', message: 'The selected Agent is unavailable.' }, }, { status: 404 })
+  }), http.get(`${root}/chat`, () => HttpResponse.json({ items: [], nextCursor: null, hasMore: false, revision: 0 })),
+  http.get(`${root}/chat/deliveries`, () => HttpResponse.json({ items: [], nextCursor: null, hasMore: false, revision: 0 })))
   server.use(http.get('/api/local-human', () => HttpResponse.json(LocalHumanAccessSchema.parse({ principal: {
     id: 'board-containers-tester', name: 'Board container tester', expiresAt: '2099-01-01T00:00:00.000Z', grants: [{
       scope: { workspaceIds: [saved.workspaceId] },
@@ -64,7 +75,7 @@ describe('Board conversation components share one rail', () => {
     expect(secondDraft).toHaveValue('')
     await user.type(secondDraft, 'Retain the second Agent draft')
     await user.click(within(rail()).getByRole('button', { name: /^Group chat$/ }))
-    expect(await screen.findByText('Group chat is not available yet.')).toBeVisible()
+    expect(await screen.findByRole('region', { name: 'Group chat' })).toBeVisible()
     expect(screen.queryByRole('textbox', { name: 'Message' })).not.toBeInTheDocument()
     await user.click(within(rail()).getByRole('button', { name: /^Agent$/ }))
     expect(await within(rail()).findByRole('textbox', { name: 'Message' })).toHaveValue('Retain the second Agent draft')
@@ -74,14 +85,17 @@ describe('Board conversation components share one rail', () => {
 
   it('hides the Agent body beneath Memory board and restores the Board opener after closing', async () => {
     const user = userEvent.setup()
+    const memory = createMemoryTestPort({ cards: [memoryTestCard({ title: 'Keep the conversation draft' })] })
+    server.use(...createMemoryBoardHandlers(memory.port))
     const { names } = await mountBoard('containers-memory')
     const opener = await screen.findByRole('button', { name: `Open ${names.first} chat` })
     await user.click(opener)
     await user.type(await within(rail()).findByRole('textbox', { name: 'Message' }), 'Retain through modal')
-    await user.click(screen.getByRole('button', { name: /^Memory board$/ }))
+    await user.click(within(screen.getByRole('navigation', { name: 'Workflow views' })).getByRole('button', { name: 'Memory board' }))
     expect(await screen.findByRole('dialog', { name: 'Memory board' })).toBeVisible()
+    expect(await screen.findByText('Keep the conversation draft')).toBeVisible()
     expect(screen.queryByRole('complementary', { name: 'Workflow side panel' })).not.toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Close Memory board' }))
+    await user.click(screen.getByRole('button', { name: 'Close memory board' }))
     expect(await within(rail()).findByRole('textbox', { name: 'Message' })).toHaveValue('Retain through modal')
     await user.click(within(rail()).getByRole('button', { name: 'Back to Board' }))
     await waitFor(() => expect(opener).toHaveFocus())
