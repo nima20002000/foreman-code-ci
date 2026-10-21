@@ -69,7 +69,7 @@ describe.skipIf(!postgresEnabled)('hierarchy runtime obligations and reservation
         const input = WorkActivationInputSchema.parse(request.input)
         if (nodeId === 'builder' && input.work.kind === 'work_request') return {
           routing: { kind: 'request', outcome: 'review' }, data: { latestDeliverable: 'Ready for sibling review', remainingFindings: [] },
-          summary: 'Builder requests tester review', board: { kind: 'none', reason: 'no_changes' },
+          summary: 'Builder requests tester review', board: { kind: 'none', reason: 'no_access' },
         }
         return coordinationOutput(nodeId, request, nodeId === 'master' ? { select: ['build'] } : {})
       } })
@@ -194,7 +194,7 @@ describe.skipIf(!postgresEnabled)('hierarchy runtime obligations and reservation
         return { routing: { kind: 'delegate', requests: ['build', 'test', 'bugs'].map(outcome => ({
           outcome, data: { task: `Next task for ${outcome}` } })) },
         data: { latestDeliverable: 'The first child result remains recorded', remainingFindings: [] },
-        summary: 'Request the next child set', board: { kind: 'none', reason: 'no_changes' } }
+        summary: 'Request the next child set', board: { kind: 'none', reason: 'no_access' } }
       } })
     try {
       await expect(f.engine.start(f.f.run.id)).rejects.toMatchObject({ code: 'WORK_SELECTED_EXECUTION_FAILED',
