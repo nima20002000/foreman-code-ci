@@ -1,3 +1,4 @@
+import { workflowResultContext } from '../resultContext.js'
 import { parseWorkHandoffArtifactResult } from '@foreman-code/contracts/wave25'
 import { createHash } from 'node:crypto'
 import { isDeepStrictEqual as same } from 'node:util'
@@ -58,10 +59,11 @@ export class PostgresWorkflowPhysicalArtifacts implements WorkflowPhysicalArtifa
       if (run.id !== intent.runId || run.workflowVersionId !== version.id || run.workspaceId !== version.workspaceId
         || run.workflowId !== version.workflowId || !node || node.kind === 'job' || !node.artifactOutputs
         || run.agentConfigurationVersionIds[node.agentId] !== version.agentConfigurationVersionIds[node.agentId]) return unavailable()
+      if (output.kind === 'published-artifacts' && output.resultProtocol !== run.resultProtocol) return unavailable()
       if (output.kind === 'invalid-artifacts') {
         if (adopted || !same(output.failure, receipt.terminal.artifactValidationError)
           || (receipt.terminal.artifactDigests?.length ?? 0) !== 0) return unavailable()
-        const derived = remoteWorkflowPhysicalOutput(output.result, node.artifactOutputs)
+        const derived = remoteWorkflowPhysicalOutput(output.result, node.artifactOutputs, undefined, run.resultProtocol)
         if (output.failure.reason === 'invalid_result') {
           if (derived.kind !== 'invalid-artifacts' || !same(derived.failure, output.failure)) return unavailable()
           return
@@ -91,10 +93,10 @@ export class PostgresWorkflowPhysicalArtifacts implements WorkflowPhysicalArtifa
       const declaration = (() => {
         try {
           if (version.definition.handoffs) {
-            return parseWorkHandoffArtifactResult(output.result, node.artifactOutputs).artifactOutputs
+            return parseWorkHandoffArtifactResult(output.result, node.artifactOutputs, workflowResultContext(version, { workflowNodeId: node.id, resultProtocol: run.resultProtocol })).artifactOutputs
           }
-          if (node.choice) return parseWorkflowArtifactResult(output.result, node.artifactOutputs, node.choice).artifactOutputs
-          return parseWorkflowArtifactResult(output.result, node.artifactOutputs).artifactOutputs
+          if (node.choice) return parseWorkflowArtifactResult(output.result, node.artifactOutputs, node.choice, workflowResultContext(version, { workflowNodeId: node.id, resultProtocol: run.resultProtocol })).artifactOutputs
+          return parseWorkflowArtifactResult(output.result, node.artifactOutputs, node.choice, workflowResultContext(version, { workflowNodeId: node.id, resultProtocol: run.resultProtocol })).artifactOutputs
         } catch { return unavailable() }
       })()
       if (!same(declaration, output.artifactOutputs)) return unavailable()
