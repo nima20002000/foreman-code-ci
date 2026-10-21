@@ -456,8 +456,8 @@ export class AgentChatService {
       key = row?.agent_key ?? runChatStorageKey(context, executionId)
       const sourceResolution = { context, key, executionId, source, ...(row ? { row } : {}) }
       const pinned = await workflows.getAgentConfiguration(row?.agent_configuration_version_id ?? source.agentConfigurationVersionId)
-      const configuration = pinned && node.skills
-        ? configurationWithNodeSkills(pinned, node.skills, version.nodeSkillSnapshots?.[node.id]) : pinned
+      const configuration = pinned && (node.skills || node.browser?.enabled)
+        ? configurationWithNodeSkills(pinned, node.skills, version.nodeSkillSnapshots?.[node.id], node.browser) : pinned
       if (!configuration) return { ...sourceResolution, blocked: { reason: 'agent_missing',
         message: 'The Agent configuration used by this Run is unavailable. Its transcript remains readable.' } }
       if (configuration.harness.harness === 'opencode') {
@@ -1598,7 +1598,7 @@ export class AgentChatService {
     if (!version || !node || node.kind === 'job' || node.agentId !== row.agent_id) {
       throw new DomainError('AGENT_CHAT_CONFIGURATION_MISSING', 'The originating Run node configuration is unavailable.', 409)
     }
-    return node.skills ? configurationWithNodeSkills(configuration, node.skills, version.nodeSkillSnapshots?.[node.id])
+    return node.skills || node.browser?.enabled ? configurationWithNodeSkills(configuration, node.skills, version.nodeSkillSnapshots?.[node.id], node.browser)
       : configuration
   }
 

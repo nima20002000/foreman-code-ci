@@ -137,11 +137,12 @@ export function createMainBrowserRemote(options: {
           || canonicalJson(entry.envelope) !== canonicalJson(request.envelope)) throw new DomainError('BROWSER_DEVICE_SCOPE', 'Unknown browser request authority.', 403)
         return { payload: { principal: entry.principal ? await caller(binding, request.envelope.authorizationId) : null } }
       }
-      if (request.operation === 'subject' || request.operation === 'subject-current') {
-        const details = await options.authority.details(request.subject)
-        if (details.computerId !== binding.computerId) throw new DomainError('BROWSER_COMPUTER_SCOPE', 'This subject belongs to another execution computer.', 403)
-        if (request.operation === 'subject-current') { await options.authority.assertCurrent(request.subject); return { payload: { current: true } } }
-        return { payload: await options.authority.resolve(request.subject) }
+      if (request.operation === 'subject') {
+        return { payload: await options.authority.resolve(request.subject, { readyComputerId: binding.computerId }) }
+      }
+      if (request.operation === 'subject-current') {
+        await options.authority.assertCurrent(request.subject, binding.computerId)
+        return { payload: { current: true } }
       }
       if (request.operation === 'session-authorize') {
         const principal = await caller(binding, request.authorizationId, request.principalId)

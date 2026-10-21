@@ -259,8 +259,8 @@ export function repeatNativeObserver(context: RepeatNativeObserverContext):
         || pinnedConfiguration.agentId !== node.agentId || pinnedConfiguration.workspaceId !== run.workspaceId) {
         throw new DomainError('REPEAT_EXECUTION_INPUT_CONFLICT', 'Native work requires the immutable occurrence configuration.', 409)
       }
-      const configuration = node.skills ? await context.workflows.resolveNodeSkills(
-        pinnedConfiguration, node.skills, context.version.nodeSkillSnapshots?.[node.id],
+      const configuration = node.skills || node.browser?.enabled ? await context.workflows.resolveNodeSkills(
+        pinnedConfiguration, node.skills, context.version.nodeSkillSnapshots?.[node.id], node.browser,
       ) : pinnedConfiguration
       assertNativeWorkflowConfiguration(configuration.harness, run.approval,
         run.approval.handler === 'orchestrator' && configuration.agentId === run.approval.designatedOrchestratorAgentId)

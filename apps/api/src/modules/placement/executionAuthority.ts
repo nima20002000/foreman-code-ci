@@ -151,8 +151,8 @@ export function createExecutionAuthorityExtension(pool: pg.Pool,
         const node = version.definition.nodes.find(item => item.id === input.intent.nodeId)
         if (!node || node.kind === 'job' || node.agentId !== pinned.agentId
           || version.agentConfigurationVersionIds[node.agentId] !== pinned.id) return denied()
-        const configuration = node.skills
-          ? configurationWithNodeSkills(pinned, node.skills, version.nodeSkillSnapshots?.[node.id]) : pinned
+        const configuration = node.skills || node.browser?.enabled
+          ? configurationWithNodeSkills(pinned, node.skills, version.nodeSkillSnapshots?.[node.id], node.browser) : pinned
         const origin = (await sql.query<{ connection: unknown }>(
           'select connection from remote_dispatch_origins where operation_id=$1',
           [input.intent.operationId])).rows[0]

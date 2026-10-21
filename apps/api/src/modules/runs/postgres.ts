@@ -150,8 +150,8 @@ export class PostgresRunRepository {
     if (!configuration || !execution) return configuration
     const { version } = await this.getRepeatSnapshot(execution.runId)
     const node = version.definition.nodes.find(item => item.id === execution.workflowNodeId)
-    return node && node.kind !== 'job' && node.skills
-      ? this.workflows.resolveNodeSkills(configuration, node.skills, version.nodeSkillSnapshots?.[node.id])
+    return node && node.kind !== 'job' && (node.skills || node.browser?.enabled)
+      ? this.workflows.resolveNodeSkills(configuration, node.skills, version.nodeSkillSnapshots?.[node.id], node.browser)
       : configuration
   }
   async updateExecution(execution: HarnessExecution, owner: RunOwnership, evidence: RepeatNativeEvidence,

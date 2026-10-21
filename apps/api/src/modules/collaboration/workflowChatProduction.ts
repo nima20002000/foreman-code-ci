@@ -39,8 +39,8 @@ async function prepareWorkflowChatPrompt(context: WorkflowChatLockedTarget, requ
   const pinned = AgentConfigurationVersionSchema.parse(row?.record)
   const node = context.version.definition.nodes.find(item => item.id === context.agent.workflowNodeId)
   if (!node || node.kind === 'job') throw new DomainError('CHAT_NODE_UNAVAILABLE', 'The selected Agent is unavailable.', 404)
-  const configuration = node.skills
-    ? configurationWithNodeSkills(pinned, node.skills, context.version.nodeSkillSnapshots?.[node.id]) : pinned
+  const configuration = node.skills || node.browser?.enabled
+    ? configurationWithNodeSkills(pinned, node.skills, context.version.nodeSkillSnapshots?.[node.id], node.browser) : pinned
   if (admission.appliedIntent === 'steer') return { source, nativePrompt: workflowChatInputPrompt(request) }
   if (context.target.kind === 'workflow_coordinator') return {
     source, nativePrompt: await workflowConsultationPromptLocked(context, request, configuration),

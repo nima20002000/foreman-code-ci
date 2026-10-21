@@ -1,3 +1,4 @@
+import { browserOwnerIsActive } from './browserLiveOwner.js'
 import type pg from 'pg'
 import { AgentConfigurationVersionSchema, AgentSubjectSchema, canonicalJson, effectiveGraphqlTools,
   type AgentSubject, type AgentConfigurationVersion, type NodeBrowserSettings } from '@foreman-code/contracts'
@@ -19,11 +20,12 @@ import { browserAgentTools } from './browserTools.js'
 
 export interface BrowserSubjectDetails {
   subject: AgentSubject; browser: NodeBrowserSettings; configuration: AgentConfigurationVersion
-  computerId: string; readOnly: boolean; active: boolean
+  computerId: string; workflowVersionId: string; readOnly: boolean; active: boolean
   tools: string[]
 }
 
 export class BrowserAuthority implements BrowserSubjectAuthority, BrowserSessionAuthority<ManagementPrincipal> {
+  private readonly pins = new Map<string, Promise<BrowserSubjectDetails>>()
   constructor(private readonly pool: pg.Pool, private readonly mainId: () => string,
     private readonly profiles: () => BrowserProfileRepository,
     private readonly runtimeReady: (computerId: string) => Promise<boolean>) {}
@@ -43,10 +45,30 @@ export class BrowserAuthority implements BrowserSubjectAuthority, BrowserSession
     return { row, configuration, context }
   }
 
+  private acceptedPins(raw: AgentSubject): Promise<BrowserSubjectDetails> {
+    const subject = AgentSubjectSchema.parse(raw)
+    const key = canonicalJson(subject)
+    let pending = this.pins.get(key)
+    if (!pending) {
+      pending = this.readPins(subject).catch(error => {
+        this.pins.delete(key)
+        throw error
+      })
+      this.pins.set(key, pending)
+    }
+    return pending
+  }
+
   async details(raw: AgentSubject): Promise<BrowserSubjectDetails> {
+    const pins = await this.acceptedPins(raw)
+    return { ...pins, active: await browserOwnerIsActive(this.pool, pins) }
+  }
+
+  private async readPins(raw: AgentSubject): Promise<BrowserSubjectDetails> {
     const subject = AgentSubjectSchema.parse(raw)
     let configuration: AgentConfigurationVersion
     let browser: NodeBrowserSettings | undefined
+    let workflowVersionId: string
     let computerId = this.mainId()
     let active: boolean
     let tools: string[]
@@ -56,6 +78,7 @@ export class BrowserAuthority implements BrowserSubjectAuthority, BrowserSession
       if (canonicalJson(context.subject) !== canonicalJson(subject)) throw new DomainError('BROWSER_SUBJECT_CHANGED',
         'The conversation browser belongs to another saved configuration.', 409)
       browser = context.node.browser
+      workflowVersionId = context.workflowVersionId
       active = !row.record.archived
       const source = row.record.origin.kind === 'run_execution' ? await readExecutionPlacement(this.pool, row.record.origin.executionId) : undefined
       const worker = row.worker_conversation_binding ? WorkerConversationBindingSchema.parse(row.worker_conversation_binding) : undefined
@@ -81,6 +104,7 @@ export class BrowserAuthority implements BrowserSubjectAuthority, BrowserSession
       const node = identity.version.definition.nodes.find(item => item.id === subject.agent.workflowNodeId)
       if (!node || node.kind === 'job') throw new DomainError('BROWSER_SUBJECT_UNAVAILABLE', 'The saved browser node is unavailable.', 404)
       browser = node.browser
+      workflowVersionId = identity.version.id
       active = consultation !== undefined || !identity.run.stopped
         && ['queued', 'running', 'waiting'].includes(identity.run.execution_state)
         && ['queued', 'starting', 'running', 'waiting'].includes(identity.execution!.state)
@@ -89,12 +113,14 @@ export class BrowserAuthority implements BrowserSubjectAuthority, BrowserSession
       tools = effectiveGraphqlTools(subject.agent.productRole, configuration.graphqlTools, node.graphqlTools,
         Boolean(node.interval), browserAgentTools)
     }
-    return { subject, configuration, browser: browser ?? { enabled: false }, computerId, active, tools,
+    return { subject, configuration, browser: browser ?? { enabled: false }, computerId, workflowVersionId, active, tools,
       readOnly: configuration.harness.harness === 'opencode' || configuration.harness.sandbox === 'read-only' }
   }
 
-  async resolve(subject: AgentSubject) {
+  async resolve(subject: AgentSubject, host?: { readyComputerId: string }) {
     const details = await this.details(subject)
+    if (host && details.computerId !== host.readyComputerId) throw new DomainError('BROWSER_COMPUTER_SCOPE',
+      'This subject belongs to another execution computer.', 403)
     if (!details.active) throw new DomainError('BROWSER_SUBJECT_SETTLED', 'This browser subject has settled.', 409)
     let availability: 'ready' | 'profile_missing' | 'runtime_missing' = 'ready'
     const profileId = details.browser.profileId
@@ -103,14 +129,18 @@ export class BrowserAuthority implements BrowserSubjectAuthority, BrowserSession
       return !!profile && !profile.deleted && (await tx.replicaFacts(profileId, details.computerId)).present
     })
     if (!present) availability = 'profile_missing'
-    else if (!await this.runtimeReady(details.computerId)) availability = 'runtime_missing'
+    else if (!host && !await this.runtimeReady(details.computerId)) availability = 'runtime_missing'
     return { subject: details.subject, browser: details.browser, computerId: details.computerId,
       readOnly: details.readOnly, availability }
   }
-  async assertCurrent(subject: AgentSubject) {
-    const details = await this.details(subject)
-    if (!details.active || !details.browser.enabled) throw new DomainError('BROWSER_SUBJECT_SETTLED',
-      'This saved Agent no longer owns an enabled browser.', 409)
+  async assertCurrent(subject: AgentSubject, computerId?: string) {
+    const pins = await this.acceptedPins(subject)
+    if (computerId && pins.computerId !== computerId) throw new DomainError('BROWSER_COMPUTER_SCOPE',
+      'This subject belongs to another execution computer.', 403)
+    if (!pins.browser.enabled || !await browserOwnerIsActive(this.pool, pins)) {
+      this.pins.delete(canonicalJson(subject))
+      throw new DomainError('BROWSER_SUBJECT_SETTLED', 'This saved Agent no longer owns an enabled browser.', 409)
+    }
   }
   callerId(principal: ManagementPrincipal) { return principal.id }
 
@@ -130,7 +160,9 @@ export class BrowserAuthority implements BrowserSubjectAuthority, BrowserSession
   async subject(principal: ManagementPrincipal, subject: AgentSubject, mutate: boolean) {
     const caller = await readChatPrincipal(this.pool, principal.id)
     if (caller.audience === 'operator') {
-      requireAuthorization(caller, mutate ? 'workflows:update' : 'workflows:read', subject.agent)
+      const runId = subject.kind === 'execution' ? subject.execution.runId
+        : subject.kind === 'coordinator_consultation' ? subject.binding.runId : undefined
+      requireAuthorization(caller, mutate ? 'workflows:update' : 'workflows:read', { ...subject.agent, ...(runId ? { runId } : {}) })
       await this.details(subject)
       return
     }

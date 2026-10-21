@@ -29,7 +29,7 @@ it('finishes every remote preparation when all ordinary request slots are occupi
   const authority = new BrowserAuthority(pool, () => binding.mainId, () => repository, () => remote.ready(binding.deviceId))
   // Saved-node/database facts and the paired carrier are external ports in this transport test.
   const details = vi.spyOn(authority, 'details').mockImplementation(async subject => ({ subject, configuration,
-    browser: { enabled: true, profileId: 'profile' }, computerId: binding.deviceId, active: true, readOnly: false, tools: [] }))
+    browser: { enabled: true, profileId: 'profile' }, workflowVersionId: fixture.version.id, computerId: binding.deviceId, active: true, readOnly: false, tools: [] }))
   const capacity = Promise.withResolvers<void>()
   let admitted = 0
   let statusReads = 0
@@ -59,7 +59,7 @@ it('finishes every remote preparation when all ordinary request slots are occupi
         workflowId: fixture.scope.workflowId, workflowNodeId: fixture.version.definition.nodes[0]!.id,
         agentId: configuration.agentId, productRole: 'coder', displayName: 'Worker', configurationVersionId: configuration.id },
       execution: { runId: fixture.run.id, workflowVersionId: fixture.version.id, executionId: `execution-${index}`, attempt: 1 } }
-      return remote.prepare({ subject, browser: { enabled: true, profileId: 'profile' }, computerId: binding.deviceId, commandId: randomUUID() })
+      return remote.prepare({ subject, browser: { enabled: true, profileId: 'profile' }, workflowVersionId: fixture.version.id, computerId: binding.deviceId, commandId: randomUUID() })
     })
     const settled = await Promise.allSettled(calls)
     expect(settled.map(result => result.status)).toEqual(Array(DEVICE_APPLICATION_IN_FLIGHT).fill('fulfilled'))

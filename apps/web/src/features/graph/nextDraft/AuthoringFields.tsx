@@ -1,5 +1,5 @@
 import { JOB_WORKFLOW_OUTCOMES } from '@foreman-code/contracts/job-workflow'
-import { isHierarchyReportingRoute } from '@foreman-code/contracts'
+import { isHierarchyReportingRoute, withBrowserToolDefaults } from '@foreman-code/contracts'
 import { useId, useState } from 'react'
 import type { WorkflowDefinitionV3, WorkflowRelationship } from '@foreman-code/contracts/wave25'
 import type { DraftAgentEdits } from './agentEdits'
@@ -100,7 +100,7 @@ export function NodeWorkflowFields({ graph, node, context, change, agentEdits }:
       nodeId: node.id, value: node.browser, onChange: browser => changeNode(change, node.id, current => {
         if (current.kind === 'job') return current
         const next = { ...current }; if (browser) next.browser = browser; else delete next.browser
-        return next
+        return withBrowserToolDefaults(next)
       }) }) : null}
     <ChoiceFields graph={graph} node={node} change={change} coordinator={!!graph.hierarchy && (role === 'master' || role === 'orchestrator')} />
     {graph.hierarchy ? <>

@@ -24,6 +24,7 @@ import { DomainError } from '../errors.js'
 type Host = Awaited<ReturnType<typeof createBrowserHost>>
 interface Runtime {
   start(): Promise<unknown>; retry(): Promise<unknown>; close(): Promise<void>
+  stop(): Promise<void>; restoreProfiles(checkpointId: string): Promise<unknown>
   status(): { ready: boolean; phase: string; message?: string; runtimeVersion?: string }
   getHost(): Host | null; stopAdmission(): void; resumeAdmission(): Promise<unknown>; drain(): Promise<unknown>
 }
@@ -167,7 +168,11 @@ export function createInstalledBrowserComposition(options: {
     async retry() { await runtime.retry(); await connectMedia(); return status() },
     stopAdmission: () => runtime.stopAdmission(),
     async drain() { if (runtime.getHost()) await runtime.drain() },
-    async resumeAdmission() { if (runtime.getHost()) await runtime.resumeAdmission() },
+    async resumeAdmission() {
+      await runtime.start()
+      if (runtime.getHost()) await runtime.resumeAdmission()
+      await connectMedia()
+    },
     async close() { closed = true; clearTimeout(retryTimer); socket?.close(1001, 'Worker closing'); extension.close(); await transfers.closeAll(); await runtime.close() },
   }
 }

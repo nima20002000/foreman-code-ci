@@ -39,14 +39,14 @@ export function GraphqlToolsFields({ role, defaults, override, onChange, executi
     const next = GraphqlAgentToolSchema.options.filter(item => selected.has(item))
     // A node change that now matches the default is no longer a change.
     const add = (override?.add ?? []).filter((item) => !next.includes(item))
-    const remove = (override?.remove ?? []).filter((item) => next.includes(item))
+    const remove = (override?.remove ?? []).filter((item) => next.includes(item) || item.startsWith('browser_'))
     onChange(next, normalizeToolOverride({ add, remove }))
   }
   const setChoice = (tool: GraphqlAgentTool, value: NodeChoice) => {
     const add = (override?.add ?? []).filter((item) => item !== tool)
     const remove = (override?.remove ?? []).filter((item) => item !== tool)
     if (value === 'on' && !agentDefault.includes(tool)) add.push(tool)
-    if (value === 'off' && agentDefault.includes(tool)) remove.push(tool)
+    if (value === 'off' && (agentDefault.includes(tool) || tool.startsWith('browser_'))) remove.push(tool)
     // A node-only change never rewrites the Agent's default.
     onChange(defaults ? [...defaults] : undefined, normalizeToolOverride({ add, remove }))
   }
@@ -74,7 +74,7 @@ export function GraphqlToolsFields({ role, defaults, override, onChange, executi
           <Checkbox label="Agent default" aria-label={`${definition.label}: Agent default`} checked={inDefault}
             onChange={(event) => setDefault(tool, event.target.checked)} />
           <SegmentedControl label={`${definition.label}: this workflow`} value={choice(tool)} onValueChange={(value) => setChoice(tool, value as NodeChoice)}
-            options={[{ value: 'default', label: `Default (${inDefault ? 'on' : 'off'})` }, { value: 'on', label: 'On', disabled: inDefault }, { value: 'off', label: 'Off', disabled: !inDefault }]} />
+            options={[{ value: 'default', label: tool.startsWith('browser_') ? 'Default' : `Default (${inDefault ? 'on' : 'off'})` }, { value: 'on', label: 'On', disabled: inDefault }, { value: 'off', label: 'Off', disabled: !inDefault && !tool.startsWith('browser_') }]} />
         </div>
       })}
     </div>
