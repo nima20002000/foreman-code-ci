@@ -38,6 +38,10 @@ import { assertWorkflowCorrelation } from './workResultRepair.js'
 import { retainNativeTranscriptSources } from './nativeTranscriptReceipts.js'
 import { prefetchNativeFrames } from '../run-graph/nativeIngestion.js'
 import { readWorkResultContextLocked } from './workReturnValidation.js'
+import { readWorkflowResultEffectFailureLocked, type WorkflowResultEffectFailure } from './workflowResultEffectFailure.js'
+import { markWorkflowCoordinationTerminalSettledLocked, readWorkflowCoordinationTerminalLocked } from './workflowCoordinationTerminal.js'
+import { finalizeRetainedRemoteReviewerLocked } from '../interactions/retainedRemoteReviewer.js'
+import { projectWorkflowChatNativeReceiptsLocked } from '../interactions/workflowChatNativeReceipts.js'
 
 /** Durable private ORIGINAL-source record. No payload/session/token reaches the
  * graph feed: G1 publishes only its immutable digest and ordinary graph facts. */
@@ -389,6 +393,7 @@ export class WorkflowNativeProofServices {
         } catch (error) { poisonGraphTransaction(sql); throw error }
       })
       await this.afterPersistOriginalLocked?.(sql, evidence, structuredClone(record))
+      await projectWorkflowChatNativeReceiptsLocked(sql, record)
       return structuredClone(record)
     } catch (error) { poisonGraphTransaction(sql); throw error }
   }
@@ -498,6 +503,7 @@ export class WorkflowNativeProofServices {
     })
     for (const [index, frame] of frames.entries()) {
       await this.afterPersistOriginalLocked?.(sql, frame.evidence, structuredClone(records[index]!))
+      await projectWorkflowChatNativeReceiptsLocked(sql, records[index]!)
     }
   }
 
@@ -566,7 +572,8 @@ export class WorkflowNativeProofServices {
 
   async assertNativeUpdateLocked(sql: GraphTransactionSql, run: AcceptedWorkflowRunV3,
     previous: HarnessExecution, incoming: HarnessExecution, ref: RepeatNodeRef,
-    evidence: RepeatNativeEvidence, owner: RunOwnership): Promise<WorkflowNativeProofRecord> {
+    evidence: RepeatNativeEvidence, owner: RunOwnership,
+    resultEffectFailure?: WorkflowResultEffectFailure): Promise<WorkflowNativeProofRecord> {
     assertGraphTransaction(sql)
     try {
       const capture = this.captures.read(evidence)
@@ -579,10 +586,14 @@ export class WorkflowNativeProofServices {
       this.validateObservation(capture, previous, incoming, command)
       const executionContext = snapshot.version.definition.handoffs && stored.workActivationId
         && incoming.result?.outcome === 'succeeded'
-        ? await readWorkResultContextLocked({ sql, scope }, stored.workActivationId, stored.execution.input) : undefined
+        ? await readWorkResultContextLocked({ sql, scope }, stored.workActivationId, stored.execution.input,
+          run.resultProtocol) : undefined
       const expected = prepareRepeatNativeUpdate(snapshot.version, scope, ref, previous, incoming,
         { workResultRepair: command !== `execution:${incoming.id}`,
-          deliverableFailure: await workflowDeliverableFailure(sql, snapshot.version, incoming), executionContext })
+          deliverableFailure: await workflowDeliverableFailure(sql, snapshot.version, incoming, run.resultProtocol),
+          executionContext, resultProtocol: run.resultProtocol,
+          resultEffectFailure: await readWorkflowResultEffectFailureLocked(sql, snapshot.version, incoming,
+            run.resultProtocol, resultEffectFailure) })
       const source = await this.persistCapturedOriginalLocked(sql, run, evidence, owner, capture, current)
       if (incoming.state === 'waiting' && capture.source.type === 'history') {
         const history = capture.source.history
@@ -616,6 +627,44 @@ export class WorkflowNativeProofServices {
         } catch (error) { poisonGraphTransaction(sql); throw error }
       })
       return source
+    } catch (error) { poisonGraphTransaction(sql); throw error }
+  }
+
+  /** A marked result/F1 transaction already committed before the Worker closed.
+   * Retain the same original native terminal with its final physical proof; this
+   * path cannot mutate the execution, spend repair budget, or apply effects. */
+  async publishWorkflowTerminalSettlementLocked(sql: GraphTransactionSql, run: AcceptedWorkflowRunV3,
+    execution: HarnessExecution, evidence: RepeatNativeEvidence, owner: RunOwnership): Promise<void> {
+    assertGraphTransaction(sql)
+    try {
+      const current = await this.current(sql, run, execution.id, owner)
+      if (!run.resultProtocol || !sameRepeatValue(current.stored.execution, execution)) return fail('COORDINATION_TERMINAL_CONFLICT')
+      const retained = await readWorkflowCoordinationTerminalLocked(sql, execution)
+      const capture = this.captures.read(evidence)
+      if (!retained || capture.source.type !== 'history' || !capture.lane
+        || capture.session.nativeSessionId !== execution.nativeSessionId) return fail('COORDINATION_TERMINAL_CONFLICT')
+      const history = capture.source.history, terminal = history.terminalTurn
+      if (!terminal || terminal.correlationId !== retained.nativeCorrelationId
+        || terminal.providerId !== retained.nativeProviderId || history.correlationId !== terminal.correlationId
+        || terminal.providerId !== workflowProviderId(capture.session, history)
+        || terminal.providerId !== capture.lane.providerId || history.pendingInteraction
+        || history.pendingInteractions.length || !sameRepeatValue(terminal.result, retained.nativeResult)) {
+        return fail('NATIVE_TERMINAL_EVIDENCE_MISMATCH')
+      }
+      await assertWorkflowCorrelation(sql, execution.id, terminal.correlationId)
+      assertOriginalWorkflowTerminal(execution, capture.session, history, terminal.correlationId)
+      const proof = await this.persistCapturedOriginalLocked(sql, run, evidence, owner, capture, current)
+      await markWorkflowCoordinationTerminalSettledLocked(sql, execution, proof)
+      if (execution.result?.outcome === 'succeeded' && run.approval.handler === 'orchestrator'
+        && run.approval.designatedOrchestratorAgentId === execution.agentId) {
+        await finalizeRetainedRemoteReviewerLocked(sql, execution)
+      }
+      beforeGraphCommit(sql, async () => {
+        const row = (await sql.query<{ record: unknown }>(
+          'select record from harness_executions where id=$1 and run_id=$2', [execution.id, run.id])).rows[0]
+        if (!row || !sameRepeatValue(row.record, execution)) return fail('COORDINATION_TERMINAL_CONFLICT')
+        await readWorkflowCoordinationTerminalLocked(sql, execution)
+      })
     } catch (error) { poisonGraphTransaction(sql); throw error }
   }
 }
