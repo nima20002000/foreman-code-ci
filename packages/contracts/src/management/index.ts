@@ -1,4 +1,5 @@
 import { GRAPHQL_OPERATOR_TOOLS } from '../graphqlMcpTools.js'
+import { AgentProductRoleSchema } from '../agentIdentity.js'
 import { OperationalFailureSchema } from '../operationalFailures.js'
 import { NativeInteractionSupportSchema } from '../nativeInteractionSupport.js'
 import { ClaudeFullAccessConfigurationSchema, ClaudeHarnessConfigurationSchema } from '../claude.js';
@@ -257,7 +258,7 @@ const AgentAddOperationSchema = z.object({
   nodeId: IdSchema,
   name: z.string().trim().min(1).max(200),
   nodeName: z.string().trim().min(1).max(200).optional(),
-  productRole: z.enum(["orchestrator", "coder"]).optional(),
+  productRole: AgentProductRoleSchema.optional(),
   /** Omit to copy the role template. A different harness requires an explicit configuration. */
   harness: z.enum(["codex", "claude"]).optional(),
   configuration: ManagementHarnessConfigurationSchema.optional(),
@@ -271,7 +272,7 @@ const AgentAddOperationSchema = z.object({
 }).strict();
 /** Select a product template; callers cannot fabricate a privileged Agent role. */
 const AgentAddFromTemplateOperationSchema = AgentAddOperationSchema.omit({ harness: true }).extend({
-  type: z.literal("agent.add_from_template"), template: z.enum(["orchestrator", "coder"]),
+  type: z.literal("agent.add_from_template"), template: AgentProductRoleSchema,
 }).strict().refine((value) => value.productRole === undefined || value.productRole === value.template,
   "productRole must match the selected template");
 const WorkflowApprovalOperationSchema = z.object({
@@ -283,6 +284,7 @@ const AgentRenameOperationSchema = z.object({
 }).strict();
 const AgentConfigureOperationSchema = z.object({
   type: z.literal("agent.configure"), agentId: IdSchema,
+  productRole: AgentProductRoleSchema.optional(),
   expectedAgentRevision: ExpectedRevisionSchema, configuration: ManagementHarnessConfigurationSchema,
   harnessProfileSelection: AgentSchema.shape.harnessProfileSelection,
   prompt: AgentSchema.shape.prompt,
@@ -481,8 +483,10 @@ export const AgentDefaultsUpdateInputSchema = z.object({
   expectedRevision: ExpectedRevisionSchema.optional()
     .describe('Omit for last write wins; supply to reject a stale revision.'),
   value: AgentDefaultsSchema.superRefine((value, context) => {
-    for (const role of ['orchestrator', 'coder', 'operator'] as const) {
-      const result = SupportedHarnessConfigurationSchema.safeParse(value[role].harness);
+    for (const role of ['master', 'orchestrator', 'coder', 'operator'] as const) {
+      const template = value[role];
+      if (!template) continue;
+      const result = SupportedHarnessConfigurationSchema.safeParse(template.harness);
       if (!result.success) for (const issue of result.error.issues) context.addIssue({
         ...issue, path: [role, 'harness', ...issue.path],
       });
@@ -561,6 +565,10 @@ export const REPEAT_OPERATOR_TOOL_NAMES = [
 export type RepeatOperatorToolName = typeof REPEAT_OPERATOR_TOOL_NAMES[number];
 
 export const OperatorToolNameSchema = z.enum([
+  'browser_target_read', 'browser_profiles_list', 'browser_profile_get', 'browser_profile_create', 'browser_profile_update', 'browser_profile_remove', 'browser_profiles_sync', 'browser_profile_sync_get', 'browser_session_open', 'browser_sessions_list', 'browser_session_get', 'browser_session_close', 'browser_tabs_list', 'browser_tab_create', 'browser_tab_select', 'browser_tab_close', 'browser_state_read', 'browser_screenshot', 'browser_action', 'browser_view_open', 'browser_view_read', 'browser_view_close', 'browser_control_acquire', 'browser_control_release', 'browser_input',
+  'harness_instances_list', 'harness_instance_save', 'harness_instance_check', 'workspace_root_configuration_adopt',
+  'reference_files_list', 'reference_file_read', 'reference_file_add', 'reference_file_remove',
+  'file_retention_get', 'file_retention_preview', 'file_retention_save', 'run_summaries_list', 'run_board_snapshot_get',
   'bug_report', 'bug_reports_list', 'bug_report_get', 'bug_report_update', 'bug_reports_close',
   "ci_run", "ci_get", "ci_computers_list", "ci_cancel", "ci_logs_read", "ci_list",
   ...Object.keys(GRAPHQL_OPERATOR_TOOLS) as (keyof typeof GRAPHQL_OPERATOR_TOOLS)[],
@@ -579,9 +587,12 @@ export const OperatorToolNameSchema = z.enum([
   "operator_mcp_setup_get",
   "operator_chat_controls_get", "operator_chat_controls_update", "agent_chat_controls_get", "agent_chat_controls_update",
   "operator_chat_create", "operator_chat_list", "operator_chat_get", "operator_chat_history_get", "operator_chat_activity_get",
-  "operator_chat_send", "operator_chat_cancel", "operator_chat_respond", "operator_handoff_history_get",
+  "operator_chat_send", "operator_chat_cancel", "operator_chat_cancel_queued", "operator_chat_cancel_all_queued", "operator_chat_respond", "operator_handoff_history_get",
   "operator_chat_delete", "operator_chat_restore",
-  "agent_chat_read", "agent_chat_send", "agent_chat_interrupt", "agent_chat_cancel_queued", "agent_chat_respond",
+  "agent_chat_ensure_conversation", "conversation_file_upload", "conversation_file_finalize",
+  "conversation_file_cancel", "conversation_files_list", "conversation_file_read",
+  "agent_chat_read", "agent_chat_send", "agent_chat_interrupt", "agent_chat_cancel_queued", "agent_chat_cancel_all_queued",
+  "workflow_chat_read", "workflow_chat_post", "workflow_chat_deliveries_read", "workflow_chat_delivery_cancel", "agent_chat_respond",
   "workspace_defaults_get",
   'general_settings_get', 'general_settings_update', 'circle_credit_allowance_get', 'circle_credit_allowance_update',
   'circle_accounts_list', 'circle_account_add', 'circle_account_remove',
@@ -595,6 +606,7 @@ export const OperatorToolNameSchema = z.enum([
   "workspace_defaults_update",
   "harness_mcp_servers_list", "harness_mcp_change_request", "harness_mcp_managed_request", "harness_mcp_change_get", "harness_mcp_change_reconcile", "codex_plugin_change", "codex_plugin_reconcile",
   "codex_plugins_list", "codex_plugin_get",
+  "codex_plugin_operations_list", "harness_mcp_plans_list", "harness_mcp_change_decide",
   "claude_plugins_list", "claude_plugin_change", "claude_plugin_marketplace_add",
   "harness_configuration_check",
   "execution_readiness_get",

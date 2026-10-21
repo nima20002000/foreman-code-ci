@@ -32,7 +32,9 @@ beforeEach(() => {
   Object.defineProperty(navigator, 'locks', { configurable: true, value: { request: (name: string, work: (() => unknown) | LockOptions, claim?: (lock: { name: string }) => unknown) => {
     if (typeof work !== 'function') return claim!({ name: name })
     const result = (queues.get(name) ?? Promise.resolve()).then(work)
-    queues.set(name, result.catch(() => undefined))
+    queues.set(name, result.catch(() => {
+      // ignore: the caller observes this request's failure; later lock requests must still run.
+    }))
     return result
   } } })
 })
@@ -119,7 +121,7 @@ it('registers local form dirtiness and discard with the existing navigation guar
   const panel = await screen.findByRole('dialog', { name: /settings$/ })
   const name = within(panel).getByRole('textbox', { name: 'Name' }), original = (name as HTMLInputElement).value
   await user.clear(name); await user.type(name, 'Unsaved name')
-  await user.click(within(panel).getByRole('button', { name: 'Save agent settings' }))
+  await user.click(within(panel).getByRole('button', { name: 'Apply agent settings to draft' }))
   const registered = [...registrations.values()].find((item) => item.current.label.endsWith('next draft'))!
   expect(registered.current.dirty).toBe(true)
   await act(async () => { await registered.current.discard() })
@@ -170,7 +172,7 @@ it.each(['navigation', 'reload'])('quietly retains unfinished agent settings acr
   expect(within(await screen.findByRole('dialog', { name: /settings$/ })).getByRole('textbox', { name: 'Name' })).toHaveValue('Continue here')
   expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
   expect(screen.queryByText(/Draft restored/)).not.toBeInTheDocument()
-  await user.click(screen.getByRole('button', { name: 'Save agent settings' }))
+  await user.click(screen.getByRole('button', { name: 'Apply agent settings to draft' }))
   const draft = useGraphDraftStore.getState().nextDrafts[key]!
   expect(nativeNode(draft.graph.nodes[0])?.name).toBe('Continue here')
   expect(draft.graph.description).toBe('Local workflow edit')
