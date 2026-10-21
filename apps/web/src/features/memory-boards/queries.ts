@@ -16,7 +16,7 @@ export async function refreshMemory(cache: QueryClient, boardId: string): Promis
   await cache.cancelQueries({ queryKey: prefix })
   cache.setQueriesData<InfiniteData<MemoryPage<unknown>, string | null>>({
     queryKey: prefix,
-    predicate: (query) => query.queryKey[3] === 'cards' || query.queryKey[3] === 'notes' || query.queryKey[3] === 'history' || query.queryKey[3] === 'bindings' || query.queryKey[3] === 'claims',
+    predicate: (query) => query.queryKey[3] === 'cards' || query.queryKey[3] === 'notes' || query.queryKey[3] === 'history',
   }, (current) => current ? { ...current, pages: current.pages.slice(0, 1), pageParams: [null] } : current)
   await cache.invalidateQueries({ queryKey: prefix, refetchType: 'active' })
 }
@@ -164,25 +164,4 @@ export function mergedMemoryItems<T extends MemoryCard | MemoryNote>(pages: Memo
     if (!previous || item.revision > previous.revision) found.set(item.id, item)
   }
   return [...found.values()]
-}
-
-function useMemoryWorkPages<T>(detail: MemoryCardDetail, kind: 'bindings' | 'claims', initial: MemoryPage<T>,
-  read: (boardId: string, cardId: string, options: { cursor?: string; signal: AbortSignal }) => Promise<MemoryPage<T>>) {
-  const cache = useQueryClient()
-  const result = useInfiniteQuery({
-    ...quiet, queryKey: [...memoryKey(detail.card.boardId), kind, detail.card.id, initial.revision],
-    initialPageParam: null as string | null,
-    initialData: { pages: [initial], pageParams: [null] },
-    queryFn: ({ pageParam, signal }) => read(detail.card.boardId, detail.card.id,
-      { ...(pageParam ? { cursor: pageParam } : {}), signal }),
-    getNextPageParam: last => last.hasMore ? last.nextCursor : undefined,
-  })
-  useCursorRecovery(result.error, cache, detail.card.boardId)
-  return result
-}
-export function useMemoryBindings(client: MemoryBoardClient, detail: MemoryCardDetail) {
-  return useMemoryWorkPages(detail, 'bindings', { items: detail.bindings, ...detail.bindingPage }, client.readBindings)
-}
-export function useMemoryClaims(client: MemoryBoardClient, detail: MemoryCardDetail) {
-  return useMemoryWorkPages(detail, 'claims', { items: detail.claims, ...detail.claimPage }, client.readClaims)
 }
