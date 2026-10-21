@@ -3,13 +3,12 @@ import { DomainError } from '../errors.js'
 import { CloudHttp } from './cloudHttp.js'
 import { circleJobLog, renderTerminal } from './cloudLog.js'
 import { logIgnoredError } from '../diagnostics/ignoredError.js'
-import { isCircleCreditRefusal } from './circleCreditRefusal.js'
 
 interface Workflow { id: string; status: string; stopped_at?: string }
-interface JobRef { id: string; job_number?: number; status?: string }
+interface JobRef { id: string; job_number?: number }
 interface Pipeline {
   state?: string; errors?: { type: string; message: string }[]
-  created_at?: string; updated_at?: string; project_slug?: string
+  created_at?: string; updated_at?: string
 }
 export interface CircleStep {
   num: number; name: string; phase: string; outcome?: string
@@ -93,8 +92,7 @@ export class CircleRest {
         throw error
       })
       if (!jobs) return null
-      const errors = await this.creditErrors(pipeline.project_slug, jobs, args, timeoutMs)
-      return { ...lifecycle(workflow.status), stopped_at: workflow.stopped_at, jobs, jobsUnavailable, errors }
+      return { ...lifecycle(workflow.status), stopped_at: workflow.stopped_at, jobs, jobsUnavailable }
     }))
     if (mapped.some(workflow => workflow === null)) return null
     const complete = workflows.length > 0 && workflows.every(workflow => lifecycle(workflow.status).phase === 'ended')
@@ -102,22 +100,8 @@ export class CircleRest {
     const notStarted = noJobs && (complete
       || !workflows.length && (pipeline.state === 'created' || pipeline.state === 'errored'))
     return { state: pipeline.state, created_at: pipeline.created_at,
-      phase: complete || notStarted ? 'ended' : 'started',
-      errors: [...pipeline.errors ?? [], ...mapped.flatMap(workflow => workflow!.errors)], workflows: mapped,
+      phase: complete || notStarted ? 'ended' : 'started', errors: pipeline.errors, workflows: mapped,
       ...(notStarted ? { notStarted: true, current_outcome: 'not_run', stopped_at: pipeline.updated_at } : {}) }
-  }
-
-  private async creditErrors(project: string | undefined, jobs: JobRef[], args: string[], timeoutMs: number) {
-    const errors: { type: string; message: string }[] = []
-    if (!project) return errors
-    for (const job of jobs) {
-      if (job.status !== 'not_run' || job.job_number === undefined) continue
-      const response = await this.read(`/api/v1.1/project/${project}/${job.job_number}`, args, timeoutMs)
-      if (!response) continue
-      const detail = await this.http.json<{ messages?: { type: string; message: string }[] }>(response)
-      errors.push(...(detail.messages ?? []).filter(isCircleCreditRefusal))
-    }
-    return errors
   }
 
   private async job(id: string, args: string[], timeoutMs: number): Promise<CircleJob | null> {
