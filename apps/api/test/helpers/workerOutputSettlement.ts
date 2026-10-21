@@ -2,7 +2,7 @@ import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect } from 'vitest'
 import { RemoteOperationReceiptSchema } from '@foreman-code/contracts/remote-execution'
-import { remoteReviewProduction } from './remoteReviewProduction.js'
+import { remoteReviewProduction, waitForRemoteReview } from './remoteReviewProduction.js'
 import { completedRun, startWhenReady } from './harnessInstallationUpdate.js'
 import { expectMcpAccessDenied } from './deniedMcpTool.js'
 
@@ -14,7 +14,10 @@ export async function assertWorkerOutputSettlement(cut: 'pending' | 'retired' = 
       data: 'Completed work', summary: 'Completed work.', board: { kind: 'none', reason: 'no_access' },
     })]))
     const interrupted = cut === 'pending' ? f.dropNextSettlement() : f.holdNextRetirementReply()
+    let reached = false
+    void interrupted.then(() => { reached = true })
     const started = (await startWhenReady(f))!
+    await waitForRemoteReview(async () => reached, value => value, `Worker ${cut} settlement interruption`)
     const reply = await interrupted
     if (cut === 'retired') expect(reply).toMatchObject({ status: 'retired' })
     const before = await f.details(started.run.id)
