@@ -255,7 +255,6 @@ import {
 } from './modules/conversations/operatorChat.js'
 import { PostgresOperatorChatAuthority } from './modules/conversations/operatorChatAuthority.js'
 import { AgentChatService, type AgentChatManagerFactory } from './modules/conversations/agentChat.js'
-import { qualifiedAgentChatSteer } from './modules/conversations/chatSteerQualification.js'
 import { PostgresAgentChatRepository } from './modules/conversations/agentChatRepository.js'
 import { PostgresCommandCoordinator } from './modules/commands/postgres.js'
 import { BugReportService } from './modules/bug-reports/service.js'
@@ -1963,7 +1962,6 @@ function configureOperatorChat(composition: ProductionComposition) {
   resolveOperatorManager.modelOptions = async configuration =>
     configuration.harness === 'opencode' ? []
       : (await composition.nativeConfigurations.options(configuration.harness)).models
-  resolveOperatorManager.qualifiedSteer = qualifiedAgentChatSteer
   resolveOperatorManager.recoverCompaction = recoverChatCompaction
   composition.chat = new OperatorChatService(
     operatorConversations, operators,
@@ -2104,7 +2102,6 @@ function configureAgentChat(composition: ProductionComposition) {
     return undefined
   }
   resolveAgentChatManager.prepareInput = prepareAgentChatInput(database.pool)
-  resolveAgentChatManager.qualifiedSteer = qualifiedAgentChatSteer
   resolveAgentChatManager.modelOptions = async configuration =>
     configuration.harness === 'opencode' ? []
       : (await composition.nativeConfigurations.options(configuration.harness)).models
