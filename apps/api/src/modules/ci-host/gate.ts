@@ -58,33 +58,22 @@ export async function readCiComputerStatus(endpoint: HostCiEndpoint, computer: H
 async function gateComputers(endpoint: HostCiEndpoint, reservedCloudSlots: number,
   usedByComputer: ReadonlyMap<string, number>): Promise<GateComputer[]> {
   const computers = withoutReservedCloudSlots(await endpoint.computers(), reservedCloudSlots)
-  const available: (GateComputer | null)[] = []
-  const unreadableClouds: string[] = []
-  for (let offset = 0; offset < computers.length; offset += 8) {
-    const batch = await Promise.all(computers.slice(offset, offset + 8).map(async computer => {
-      const status = await readCiComputerStatus(endpoint, computer)
-      if (!status && computer.hostRef.kind === 'cloud') unreadableClouds.push(computer.key)
-      if (!status?.ready) return null
-      const shards = buildComputerIntegrationShards(status, computer.buildAllowancePercent)
-      const occupied = Math.max(status.slotsUsed ?? 0, usedByComputer.get(computer.key) ?? 0)
-      // Gate dispatch reserves the whole builder, so even a partially occupied builder cannot start a gate part.
-      const freeSlots = computer.hostRef.kind !== 'cloud' && occupied > 0
-        ? 0 : Math.max(0, (status.slotsTotal ?? 1) - occupied)
-      const available: GateComputer = { computer, shards, freeSlots, checkMs: 0, files: [] }
-      return available
-    }))
-    available.push(...batch)
-  }
-  if (unreadableClouds.length) {
-    throw new DomainError('CI_GATE_CAPACITY_REQUIRED',
-      'Cloud CI status is temporarily unavailable. Retry gate planning after the fleet can be read.',
-      409, { retryable: true, unavailableComputers: unreadableClouds.sort() })
-  }
+  const available = await Promise.all(computers.map(async computer => {
+    const status = await readCiComputerStatus(endpoint, computer)
+    if (!status?.ready) return null
+    const shards = buildComputerIntegrationShards(status, computer.buildAllowancePercent)
+    const occupied = Math.max(status.slotsUsed ?? 0, usedByComputer.get(computer.key) ?? 0)
+    // Gate dispatch reserves the whole builder, so even a partially occupied builder cannot start a gate part.
+    const freeSlots = computer.hostRef.kind !== 'cloud' && occupied > 0
+      ? 0 : Math.max(0, (status.slotsTotal ?? 1) - occupied)
+    const available: GateComputer = { computer, shards, freeSlots, checkMs: 0, files: [] }
+    return available
+  }))
   return available.filter((value): value is GateComputer => value !== null)
 }
 
-/** Prefer one wave; GitHub slots can take integration after checks when no unused cloud slot is free.
- * Measured build throughput sizes integration parts; CPU, memory and build allowance bound execution shards.
+/** One wave: every ready executor takes at most one part. Measured build throughput sizes integration parts;
+ * CPU, memory and build allowance bound execution shards. Cloud slots take one check or integration part each.
  * Busy builders are a fallback when no free executor can take a file; not-ready computers and reserved cloud slots stay out. */
 export async function planCiGate(input: CiRunInput, integration: CiIntegrationInventory,
   unit: CiUnitInventory, durations: CiDurations, endpoint: HostCiEndpoint,
@@ -111,10 +100,9 @@ export async function planCiGate(input: CiRunInput, integration: CiIntegrationIn
     placed.set(part, { ...part, plannedHostKey: target.computer.key, expectedDurationMs })
   }
   const result: GatePart[] = checks.map(part => placed.get(part)!)
-  // A second GitHub boot includes its check backlog and the integration setup cost in the finish estimate.
-  const secondWave = !clouds.some(item => item.checkMs === 0 && item.freeSlots > 0)
-  const integrationFleet = [...hosts, ...clouds.filter(item => item.checkMs === 0
-    || secondWave && item.computer.hostRef.provider === 'github')]
+  // A cloud slot runs one ticket per boot, so a second part on a slot waits for a new boot. Integration therefore goes
+  // only to build computers and cloud slots without a check: every executor gets at most one part.
+  const integrationFleet = [...hosts, ...clouds.filter(item => item.checkMs === 0)]
   const known = Object.values(integration.durations).sort((left, right) => left - right)
   const median = known[Math.floor(known.length / 2)] ?? 30_000
   const duration = (file: string) => integration.durations[file] ?? median
@@ -158,8 +146,7 @@ export async function planCiGate(input: CiRunInput, integration: CiIntegrationIn
     const eligible = integrationFleet.filter(item => item.computer.hostRef.kind !== 'cloud'
       || !requiresUserSystemd(file) || item.computer.userSystemd?.supported)
     const free = eligible.filter(item => item.freeSlots > 0)
-    // Future cloud capacity behind checks does not exclude the existing busy-builder fallback.
-    const candidates = free.some(item => item.checkMs === 0) ? free : eligible
+    const candidates = free.length ? free : eligible
     const target = candidates.map((item, order) => ({ item, order, finish: finishWith(item, file) }))
       .sort((left, right) => left.finish - right.finish
         || (serial ? exclusiveCount(left.item) - exclusiveCount(right.item) : 0) || left.order - right.order)[0]?.item
@@ -179,19 +166,9 @@ export async function planCiGate(input: CiRunInput, integration: CiIntegrationIn
         !requiresUserSystemd(file) || item.computer.userSystemd?.supported)
         .sort((left, right) => finishWith(left, file) - finishWith(right, file))[0]!
       const remaining = host.files.filter(value => value !== file)
-      let remainingLoad = { lanes: Array.from({ length: host.shards }, () => 0), serial: 0, work: 0 }
-      for (const remainingFile of remaining) {
-        remainingLoad = { ...addIntegrationFile(remainingLoad, remainingFile, duration(remainingFile)),
-          work: remainingLoad.work + duration(remainingFile) }
-      }
-      const hostEnd = remaining.length ? host.checkMs + measuredTime(host, remainingLoad.work,
-        SETUP_MS + remainingLoad.serial + Math.max(...remainingLoad.lanes), 'conservative') : host.checkMs
-      const criticalPath = Math.max(...fleet.map(item => finish(item, 'conservative')))
-      const movedCriticalPath = Math.max(hostEnd, finishWith(target, file),
-        ...fleet.filter(item => item !== host && item !== target).map(item => finish(item, 'conservative')))
-      if (movedCriticalPath >= criticalPath) break
-      host.files = remaining
-      load.set(host, remainingLoad)
+      host.files = []
+      load.set(host, { lanes: Array.from({ length: host.shards }, () => 0), serial: 0, work: 0 })
+      for (const remainingFile of remaining) addFile(host, remainingFile)
       addFile(target, file)
     }
   }
@@ -200,7 +177,7 @@ export async function planCiGate(input: CiRunInput, integration: CiIntegrationIn
     const appliedFactor = (item.computer.hostRef.kind === 'cloud' || !measured) && factor(item) !== 1
     result.push({ suite: 'integration', part: null, partition: null, files: item.files,
       plannedHostKey: item.computer.key, integrationShards: item.shards,
-      expectedDurationMs: Math.ceil(finish(item, 'conservative') - item.checkMs),
+      expectedDurationMs: Math.ceil(finish(item, 'conservative')),
       requiresBuildComputer: item.files.some(requiresUserSystemd),
       ...(appliedFactor ? { speedFactor: factor(item) } : {}) })
   }
