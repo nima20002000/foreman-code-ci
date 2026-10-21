@@ -1,4 +1,3 @@
-import { memoryBoardTools, HarnessConfigurationSchema } from '@foreman-code/contracts'
 import {
   IdSchema,
   ListInteractionsRequestSchema,
@@ -169,11 +168,9 @@ export class PostgresAppInteractionService implements AppInteractionService {
     const role = row.role
     const defaults = row.defaults == null ? undefined : GraphqlToolDefaultsSchema.parse(row.defaults)
     const override = row.override == null ? undefined : GraphqlToolOverrideSchema.parse(row.override)
-    const tools = effectiveGraphqlTools(role, defaults, override, row.interval != null, memoryBoardTools('write')).filter(tool => {
+    const tools = effectiveGraphqlTools(role, defaults, override, row.interval != null).filter(tool => {
       const operation = WorkerNativeOutputOperationSchema.options.find(operation =>
         WORKER_NATIVE_OUTPUT_TOOL_NAMES[operation] === tool)
-      if (memoryBoardTools('write').includes(tool) && !memoryBoardTools('read').includes(tool)
-        && HarnessConfigurationSchema.parse(row.harness).sandbox === 'read-only') return false
       if (!operation) return true
       return false
     })

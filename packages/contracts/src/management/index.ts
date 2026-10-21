@@ -564,8 +564,6 @@ export const REPEAT_OPERATOR_TOOL_NAMES = [
 export type RepeatOperatorToolName = typeof REPEAT_OPERATOR_TOOL_NAMES[number];
 
 export const OperatorToolNameSchema = z.enum([
-  'memory_board_get', 'memory_board_changes_read', 'memory_card_create', 'memory_card_update',
-  'memory_note_create', 'memory_note_update', 'memory_note_archive',
   'harness_instances_list', 'harness_instance_save', 'harness_instance_check', 'workspace_root_configuration_adopt',
   'reference_files_list', 'reference_file_read', 'reference_file_add', 'reference_file_remove',
   'file_retention_get', 'file_retention_preview', 'file_retention_save', 'run_summaries_list', 'run_board_snapshot_get',
