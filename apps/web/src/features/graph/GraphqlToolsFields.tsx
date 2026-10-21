@@ -1,6 +1,6 @@
 import { InfoHint } from '../../shared/ui/InfoHint'
 import {
-  COLLABORATION_AGENT_TOOLS, GRAPHQL_AGENT_TOOLS, GraphqlAgentToolSchema, graphqlRoleTools, effectiveGraphqlTools,
+  GRAPHQL_AGENT_TOOLS, GraphqlAgentToolSchema, graphqlRoleTools, effectiveGraphqlTools,
   type GraphqlAgentTool, type GraphqlToolOverride, type WorkflowAgentProductRole,
 } from '@foreman-code/contracts'
 
@@ -27,9 +27,8 @@ export function GraphqlToolsFields({ role, defaults, override, onChange, executi
 }) {
   const sharedFields = useCollaborationUISlots()
   const fields = useWorkflowBoard()?.collaborationFields ?? sharedFields
-  const implemented = fields?.nodeBrowser ? Object.keys(COLLABORATION_AGENT_TOOLS).filter(name => name.startsWith('browser_')) as GraphqlAgentTool[] : []
-  const tools = graphqlRoleTools(role, implemented)
-  const agentDefault = effectiveGraphqlTools(role, defaults, undefined, false, implemented)
+  const tools = graphqlRoleTools(role)
+  const agentDefault = effectiveGraphqlTools(role, defaults)
   const choice = (tool: GraphqlAgentTool): NodeChoice => override?.add.includes(tool) ? 'on' : override?.remove.includes(tool) ? 'off' : 'default'
   const setDefault = (tool: GraphqlAgentTool, enabled: boolean) => {
     // Editing one visible legacy tool must retain configured collaboration tools

@@ -7,6 +7,7 @@ import { requirePrincipal } from '../modules/access/http.js'
 import type { WorkflowExecutionChatService } from '../modules/collaboration/workflowChatService.js'
 import { asWorkflowChatTarget } from '../modules/collaboration/workflowControlRecords.js'
 import { DomainError } from '../modules/errors.js'
+import { registerWorkflowExecutionChatEvents } from './workflowExecutionChatEvents.js'
 
 type Scope = { workspaceId: string; workflowId: string }
 const SelectionQuery = z.object({ workflowNodeId: z.string().min(1), runId: z.string().min(1).optional(),
@@ -20,6 +21,7 @@ function targetScope(params: Scope, raw: unknown) {
   }
 }
 export function registerWorkflowExecutionChatRoutes(app: FastifyInstance, service: WorkflowExecutionChatService): void {
+  registerWorkflowExecutionChatEvents(app, service)
   app.get<{ Params: Scope; Querystring: unknown }>(`${WORKFLOW_EXECUTION_CHAT_ROUTE}/target`, request =>
     service.resolve(requirePrincipal(request), WorkflowExecutionChatSelectionSchema.parse({ ...request.params, ...SelectionQuery.parse(request.query) })))
   app.post<{ Params: Scope; Body: unknown }>(`${WORKFLOW_EXECUTION_CHAT_ROUTE}/read`, request => {
