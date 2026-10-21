@@ -5,6 +5,7 @@ import { unavailableJobToolCall } from '../operator/tools/jobs.js'
 import { unavailableJobRuntimeToolCall } from '../operator/tools/jobRuntimeProfiles.js'
 import { unavailableHostHarnessToolCall } from '../../modules/harnesses/instanceSettings/management.js'
 import type { AgentReferenceService } from '../../modules/files/references/agentService.js'
+import type { TemporaryFileService } from '../../modules/files/service.js'
 import type { FileReferenceService } from '../../modules/files/references/service.js'
 import { MAX_REFERENCE_MCP_BODY_BYTES } from '../../modules/files/references/requests.js'
 import { unavailableFileReferenceToolCall } from '../operator/tools/fileReferences.js'
@@ -21,6 +22,7 @@ import type { BugReportService } from '../../modules/bug-reports/service.js'
 import type { PostgresCommandCoordinator } from '../../modules/commands/postgres.js'
 import { retiredExecutionToolCall } from '../operator/retiredExecutionTools.js'
 import { unavailableCurrentWorkflowToolCall } from '../operator/tools/currentWorkflow.js'
+import { unavailableWorkflowHierarchyToolCall } from '../operator/tools/workflowHierarchy.js'
 import { unavailableRunGraphToolCall } from '../operator/tools/runGraph.js'
 import { unavailableRunInspectionToolCall } from '../operator/tools/runInspection.js'
 import { unavailableFileRetentionToolCall } from '../operator/tools/fileRetention.js'
@@ -67,6 +69,9 @@ export function registerGraphqlMcp(app: FastifyInstance, services: GraphqlMcpSer
   // FIL-03 is composed after buildProductionApp. Bind the same service before any MCP request,
   // rather than constructing another storage/auth boundary or changing server startup ownership.
   app.addHook('onReady', async () => {
+    if (services.operator && app.hasDecorator('temporaryFileService')) {
+      services.operator.temporaryFiles = app.getDecorator<TemporaryFileService>('temporaryFileService')
+    }
     if (services.operator && app.hasDecorator('fileReferenceService')) {
       services.operator.fileReferences = app.getDecorator<FileReferenceService>('fileReferenceService')
     }
@@ -109,6 +114,7 @@ export function registerGraphqlMcp(app: FastifyInstance, services: GraphqlMcpSer
         ?? await retiredExecutionToolCall(context, request.body)
         ?? await unavailableRunToolCall(context, request.body)
         ?? await unavailableCurrentWorkflowToolCall(context, request.body)
+        ?? await unavailableWorkflowHierarchyToolCall(context, request.body)
         ?? await unavailableRunGraphToolCall(context, request.body)
         ?? await unavailableRunInspectionToolCall(context, request.body)
         ?? await unavailableFileReferenceToolCall(context, request.body)
@@ -123,7 +129,9 @@ export function registerGraphqlMcp(app: FastifyInstance, services: GraphqlMcpSer
     }
     const references = services.references ?? (app.hasDecorator('agentReferenceService')
       ? app.getDecorator<AgentReferenceService>('agentReferenceService') : undefined)
-    const context = { role, principal, ...(references ? { references } : {}), ...(access ? { tools: access.tools } : {}),
+    const context = { role, principal,
+      reauthorize: () => services.access.authenticate(bearerToken(request.headers.authorization), audiences),
+      ...(references ? { references } : {}), ...(access ? { tools: access.tools } : {}),
       ...(operation ? { signal: operation.signal } : {}),
       ...(services.operator ? { operator: services.operator } : {}),
       ...(services.interactions ? { interactions: services.interactions } : {}),

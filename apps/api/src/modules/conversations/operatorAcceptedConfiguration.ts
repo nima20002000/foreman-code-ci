@@ -1,5 +1,5 @@
+import type { SqlQuery } from '../../infrastructure/transaction.js'
 import { createHash, randomUUID } from 'node:crypto'
-import type pg from 'pg'
 import { isDeepStrictEqual } from 'node:util'
 import { AgentDefaultsSchema, DEFAULT_AGENT_DEFAULTS, applyOperatorChatSettings, OperatorConfigurationVersionSchema, withAdvancedDefaults,
   type HarnessConfiguration, type OperatorConfigurationVersion, type SendOperatorMessageRequest } from '@foreman-code/contracts'
@@ -7,7 +7,7 @@ import { DomainError } from '../errors.js'
 import type { ProviderAccountConfigurationService } from '../harnesses/providerAccountConfiguration.js'
 import type { HarnessProfileSelection } from '@foreman-code/contracts/harness-registry'
 
-type Queryable = Pick<pg.PoolClient, 'query'>
+type Queryable = SqlQuery
 async function version(query: Queryable, id: string): Promise<OperatorConfigurationVersion> {
   const result = await query.query<{ record: unknown }>('select record from operator_configuration_versions where id=$1', [id])
   if (!result.rows[0]) throw new DomainError('OPERATOR_CONFIGURATION_NOT_FOUND', 'The selected Operator configuration no longer exists.', 409)
@@ -64,7 +64,9 @@ export async function acceptOperatorConfiguration(query: Queryable, current: Ope
     ? await accounts.resolve(settings, preparedProfile ?? base.harnessProfileSelection, { sql: query }) : settings
   const harness = isDeepStrictEqual(withAdvancedDefaults(base.harness), withAdvancedDefaults(requested)) ? base.harness : requested
   if (base.harnessProfileSelection && !preparedProfile && !isDeepStrictEqual(base.harness, harness)) {
-    throw new DomainError('HARNESS_PROFILE_SELECTION_CONFLICT', 'Per-message settings cannot rewrite the configuration of an explicitly selected host profile. Save and select that configured profile first.', 409)
+    throw new DomainError('HARNESS_PROFILE_SELECTION_CONFLICT',
+      'This Operator conversation is pinned to its saved harness profile and model. Send with the pinned settings, '
+      + 'or save the desired defaults and start a new conversation.', 409)
   }
   const showThinking = input.settings?.showThinking ?? base.showThinking ?? false
   const harnessProfileSelection = preparedProfile ?? base.harnessProfileSelection

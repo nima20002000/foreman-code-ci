@@ -54,9 +54,6 @@ export const WorkerConversationBindingSchema = z.object({
   if (value.profile.target.hostRef.kind !== 'device') {
     context.addIssue({ code: 'custom', message: 'A worker conversation requires its selected device profile.' })
   }
-  if (value.owner.kind === 'agent' && value.appMcpAccess !== 'none') {
-    context.addIssue({ code: 'custom', message: 'Agent chat cannot receive management MCP access.' })
-  }
   if (value.owner.kind === 'operator' && value.directoryBinding) {
     context.addIssue({ code: 'custom', message: 'Saved node directories belong only to Agent chat.' })
   }
@@ -182,10 +179,11 @@ export const WorkerConversationHistorySchema = z.object({
 const binding = { binding: WorkerConversationBindingSchema, admissionId: z.uuid().optional() }
 const native = { ...binding, session: z.lazy(() => NativeSessionReferenceSchema) }
 const prompt = {
-  prompt: z.string().min(1).max(1_000_000), correlationId: id,
+  // Attachment text/images are prepared on Worker after this request is validated.
+  prompt: z.string().max(1_000_000), correlationId: id,
   sessionMode: SessionModeSchema.optional(), preferences: SessionPreferencesSchema.optional(),
 }
-const applicationAccess = z.object({ kind: z.literal('operator-chat-mcp'), token: z.string().min(1).max(16384) }).strict()
+const applicationAccess = z.object({ kind: z.enum(['operator-chat-mcp', 'agent-chat-mcp']), token: z.string().min(1).max(16384) }).strict()
 const copyIdentity = { transferId: z.uuid(), executionHostId: id }
 export const WorkerConversationFileCopySchema = z.discriminatedUnion('phase', [
   z.object({ phase: z.literal('validate'), executionHostId: id }).strict(),
@@ -296,7 +294,7 @@ export const WorkerConversationRpcRequestSchema = z.discriminatedUnion('method',
   z.object({ method: z.literal('conversation.compact-reconcile'), ...native, state: CompactionStateSchema }).strict(),
   z.object({ method: z.literal('conversation.compact-read'), ...native, state: CompactionStateSchema,
     configuration: WorkerConversationConfigurationSchema, correlationId: id }).strict(),
-  z.object({ method: z.literal('conversation.steer'), ...native, prompt: prompt.prompt,
+  z.object({ method: z.literal('conversation.steer'), ...native, prompt: prompt.prompt.min(1),
     correlationId: id, expectedTurnId: id }).strict(),
   z.object({ method: z.literal('conversation.reconcile-steers'), ...native,
     inputs: z.array(z.object({ clientCorrelationId: id, expectedTurnId: id }).strict()).max(1000) }).strict(),
@@ -316,8 +314,9 @@ export const WorkerConversationRpcRequestSchema = z.discriminatedUnion('method',
     }
   }
   if ('applicationAccess' in request && request.applicationAccess
-    && (request.binding.owner.kind !== 'operator' || request.binding.appMcpAccess !== 'scoped')) {
-    context.addIssue({ code: 'custom', message: 'Management MCP credentials require a scoped Operator conversation.' })
+    && (request.binding.appMcpAccess !== 'scoped'
+      || (request.applicationAccess.kind === 'operator-chat-mcp') !== (request.binding.owner.kind === 'operator'))) {
+    context.addIssue({ code: 'custom', message: 'MCP credentials must match the scoped conversation owner.' })
   }
 })
 export type WorkerConversationRpcRequest = z.infer<typeof WorkerConversationRpcRequestSchema>

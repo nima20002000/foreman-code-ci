@@ -127,7 +127,9 @@ function validateCoordinationRouting(result: z.infer<typeof HandoffCoordinationR
     if (!node.choice?.outcomes.some((declaration) => declaration.outcome === outcome && declaration.target.kind === 'edge')) throw new Error('HANDOFF_OUTCOME_UNDECLARED');
   }
   if (definition.hierarchy?.masterNodeId === workflowNodeId && result.routing.kind === 'finish'
-    && (context.outstandingRequestIds?.length || result.data.remainingFindings.length)) throw new Error('HIERARCHY_WORK_UNRESOLVED');
+    && context.outstandingRequestIds?.length) throw new Error('HIERARCHY_WORK_UNRESOLVED');
+  // Valid root findings are a nonfinal direction boundary owned by the engine.
+  // They must not be mistaken for malformed output or accepted final success.
 }
 
 
