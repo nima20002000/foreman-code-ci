@@ -1,6 +1,7 @@
 import { useEffect, useMemo, type ReactNode } from 'react'
 import { useInfiniteQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
-import { canonicalJson, WorkflowExecutionChatSelectionSchema, WorkflowExecutionChatTargetSchema,
+import { canonicalJson } from '@foreman-code/contracts/canonical-json'
+import { WorkflowExecutionChatSelectionSchema, WorkflowExecutionChatTargetSchema,
   type WorkflowExecutionChatResolution, type WorkflowExecutionChatSelection,
   type WorkflowExecutionChatTarget } from '@foreman-code/contracts'
 import { ApiError } from '../../../shared/api/client'
