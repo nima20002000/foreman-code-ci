@@ -32,7 +32,8 @@ function nativeFixture() {
   let nextTarget = 0
   const profiles = new Map<string, number>()
   const tabs = new Map<string, NativeBrowserTab & { profileId: string; generation: number }>()
-  const driver: BrowserNativeDriver = {
+  const driver: BrowserNativeDriver & { closeProfile(profileId: string): Promise<void> } = {
+    closeProfile: vi.fn(async profileId => { profiles.delete(profileId) }),
     openProfile: vi.fn(async profileId => {
       const generation = profiles.get(profileId) ?? 1; profiles.set(profileId, generation); return { generation }
     }),
@@ -297,4 +298,38 @@ it('reclaims disconnected viewer ownership after reload without resuming the age
     epoch: reclaimed.epoch, commandId: 'resume' })
   expect(await f.broker.action({ sessionId: session.id, tabId: session.selectedTabId!, commandId: 'agent-resumed',
     actor: agent(session, resumed.epoch), action: { kind: 'type', text: 'resumed' } })).toMatchObject({ state: 'completed' })
+})
+
+it('closes an idle profile process only after its final session releases it', async () => {
+  const f = fixture(), first = execution('first'), second = execution('second')
+  const a = ready(await f.broker.prepare(f.request(first, 'first'))).session
+  const b = ready(await f.broker.prepare(f.request(second, 'second'))).session
+  await f.broker.release({ sessionId: a.id, subject: first, commandId: 'close-first', reason: 'terminal' })
+  expect(f.driver.closeProfile).not.toHaveBeenCalled()
+  await f.broker.release({ sessionId: b.id, subject: second, commandId: 'close-second', reason: 'terminal' })
+  expect(f.driver.closeProfile).toHaveBeenCalledExactlyOnceWith('profile')
+  expect(await f.driver.reconnectProfile('profile')).toBeNull()
+})
+
+it('closes a verified popup attached while its owner is closing without touching a sibling session', async () => {
+  const f = fixture(), subject = execution()
+  const session = ready(await f.broker.prepare(f.request(subject))).session
+  const sibling = ready(await f.broker.prepare(f.request(execution('sibling'), 'sibling'))).session
+  const opener = vi.mocked(f.driver.createTab).mock.results[0]!
+  const openerTab = await opener.value
+  const entered = deferred<void>(), finish = deferred<void>()
+  const close = vi.mocked(f.driver.closeTab).getMockImplementation()!
+  vi.mocked(f.driver.closeTab).mockImplementationOnce(async (...args) => {
+    entered.resolve(); await finish.promise; await close(...args)
+  })
+  const closing = f.broker.release({ sessionId: session.id, subject, commandId: 'close', reason: 'terminal' })
+  await entered.promise
+  const popup = await f.driver.createTab('profile', session.browserGeneration)
+  const receive = vi.mocked(f.driver.onPopup).mock.calls[0]![0]
+  await receive('profile', session.browserGeneration, openerTab.targetId, popup)
+  finish.resolve()
+  expect(await closing).toMatchObject({ state: 'closed' })
+  expect(await f.driver.restoreTab('profile', session.browserGeneration, popup.targetId)).toBeNull()
+  expect(await f.broker.action({ sessionId: sibling.id, tabId: sibling.selectedTabId!, actor: agent(sibling),
+    commandId: 'sibling-alive', action: { kind: 'click', x: 2, y: 3 } })).toMatchObject({ state: 'completed' })
 })

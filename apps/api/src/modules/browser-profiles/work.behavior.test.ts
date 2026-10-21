@@ -116,3 +116,17 @@ it.each(['export', 'apply'] as const)('retries the same admitted %s when mainten
   expect(calls).toHaveLength(2)
   expect(calls[1]).toEqual(calls[0])
 })
+
+it('keeps profile metadata associated with every independently paginated sync target', async () => {
+  const f = profileWorkFixture()
+  await f.service.create(f.owner, { name: 'First', computerId: 'source' })
+  await f.service.create(f.owner, { name: 'Second', computerId: 'source' })
+  const job = (await admitBrowserProfileSync(f.service, f.owner, {})).value
+  const first = await readBrowserProfileSync(f.service, f.owner, { jobId: job.id, limit: 1 })
+  expect(first.nextProfileCursor).not.toBeNull()
+  expect(first.nextTargetCursor).not.toBeNull()
+  const second = await readBrowserProfileSync(f.service, f.owner, { jobId: job.id, limit: 1,
+    profileCursor: first.nextProfileCursor!, targetCursor: first.nextTargetCursor! })
+  expect(second.job.targets).toHaveLength(1)
+  expect(second.job.profiles.map(value => value.profileId)).toContain(second.job.targets[0]!.profileId)
+})
