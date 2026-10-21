@@ -5,7 +5,7 @@ import type { AgentFileToolService } from '../../files/tools/service.js'
 import { productionClaudeFileAdmission } from './fileProduction.js'
 import type pg from 'pg'
 import type { ClaudeHarnessConfiguration } from '@foreman-code/contracts/claude'
-import type { NativeSessionReference, CoordinatorConsultationBinding } from '@foreman-code/contracts'
+import type { NativeSessionReference } from '@foreman-code/contracts'
 import { APP_MCP_TOKEN_NAMES } from '@foreman-code/contracts/product'
 import { readProductEnvironment } from '@foreman-code/contracts/product-environment'
 import { appMcpServerName, isSupportedAppMcpServerName } from '../appMcpLauncher.js'
@@ -29,13 +29,12 @@ import type { OperatorProfileObservation } from '../operatorProfileObservation.j
 import type { ProviderAccountResolver } from '../../provider-accounts/service.js'
 import { assertRuntimeProviderAccountProfile, resolveRuntimeProviderAccount } from '../providerAccountRuntime.js'
 import { requireClaudeApiKey } from './productionCredentials.js'
-import { assertConsultationRebind } from '../consultationSession.js'
 
 /** Private lifetime signal is never serialized into accepted configuration or provenance. */
 export type ClaudeProfileOwner = (ClaudeDomainBinding | OperatorProfileObservation | {
   /** Read-only setup has no conversation, accepted input or SDK callbacks. */
   kind: 'operator-inspection'; principalId: string; configurationVersionId: string; configurationHash: string
-}) & { admissionSignal?: AbortSignal; purpose?: 'reviewer' | 'consultation'; consultation?: CoordinatorConsultationBinding }
+}) & { admissionSignal?: AbortSignal; purpose?: 'reviewer' }
 
 /** The role's immutable configuration/placement supplies the selector; the
  * existing admission reads its exact profile and current native proof. */
@@ -46,7 +45,6 @@ interface ProductionClaudeInput {
   profiles?: AcceptedClaudeProfileAdmission<ClaudeProfileOwner>
   selector?: AcceptedProfileSelector
   binding: ClaudeDomainBinding
-  consultation?: CoordinatorConsultationBinding
   role: 'workflow' | 'operator' | 'agent-chat'
   configuration: ClaudeHarnessConfiguration
   /** Privately provisioned for this accepted profile; never inherited from host authentication. */
@@ -97,34 +95,6 @@ function bindOperatorCredentialRefresh(manager: ClaudeNativeSessionManager) {
   }
 }
 
-function bindConsultationAccess(manager: ClaudeNativeSessionManager,
-  domain: ReturnType<typeof createPostgresClaudeInteractionBridge>,
-  getStart: () => NativeSessionStart | undefined, setStart: (start: NativeSessionStart) => void): void {
-  const rebind = manager.rebindApplicationAccess?.bind(manager)
-  manager.rebindApplicationAccess = async (session, start, effectSignal) => {
-    if (!rebind) throw new DomainError('NATIVE_CREDENTIAL_REBIND_UNAVAILABLE',
-      'This native manager cannot change its application subject.', 409)
-    const sessionStart = getStart()
-    if (!sessionStart) throw new DomainError('CLAUDE_SESSION_CONTEXT_REQUIRED',
-      'The rebind requires its admitted native session context.', 409)
-    assertConsultationRebind(sessionStart, start, session)
-    const domainBinding = domain.authority.binding
-    const previous = domainBinding.kind === 'workflow' ? domainBinding.consultation : undefined
-    await domain.authority.rebindConsultation(start.kind === 'workflow-consultation' ? start.consultation : undefined)
-    try { await rebind(session, start, effectSignal) }
-    catch (error) {
-      // Restore the previous domain only; failed native credential delivery remains a hard error.
-      if (domainBinding.kind === 'workflow') {
-        if (previous) domainBinding.consultation = previous
-        else delete domainBinding.consultation
-      }
-      throw error
-    }
-    setStart(start)
-  }
-
-}
-
 export function productionClaudeManager(input: ProductionClaudeInput) {
   input = ownedClaudeInput(input)
   let actual: ClaudeNativeSessionManager | undefined
@@ -143,8 +113,7 @@ export function productionClaudeManager(input: ProductionClaudeInput) {
       'Claude requires an explicit accepted profile and current native qualification authority.', 409)
     if (input.mode === 'replay' && !input.loadClient) throw new DomainError('HARNESS_REPLAY_INCOMPLETE',
       'Claude replay requires the SDK client port and cannot load a native SDK.', 500)
-    const profileOwner: ClaudeProfileOwner = { ...input.binding, admissionSignal: signal,
-      ...(input.consultation ? { purpose: 'consultation', consultation: input.consultation } : {}) }
+    const profileOwner: ClaudeProfileOwner = { ...input.binding, admissionSignal: signal }
     const account = await resolveRuntimeProviderAccount(input.accounts, 'claude', input.configuration.accountId,
       input.recovery, input.accountSourceRecovery, input.accountBinding)
     if (input.configuration.accountId && !account) throw new DomainError('PROVIDER_ACCOUNT_UNAVAILABLE',
@@ -168,9 +137,7 @@ export function productionClaudeManager(input: ProductionClaudeInput) {
     // placement has its own authenticated host factory and cannot borrow it.
     if (accepted.override.target.hostRef.kind !== 'main') throw new DomainError('HARNESS_HOST_MISMATCH',
       'A registered-device profile must execute through its authenticated host.', 409)
-    const domainBinding = input.binding.kind === 'workflow'
-      ? { ...input.binding, ...(input.consultation ? { consultation: structuredClone(input.consultation) } : {}) } : input.binding
-    const domain = createPostgresClaudeInteractionBridge({ database: input.pool, binding: domainBinding,
+    const domain = createPostgresClaudeInteractionBridge({ database: input.pool, binding: input.binding,
       configuration: compiled.configuration, manager: { nativeCallbackContext: (sessionId, toolUseId) => actual?.nativeCallbackContext(sessionId, toolUseId) } })
     policyBridge = domain.bridge
     let callbackAuthority = await domain.callbackAdmissionIfActive()
@@ -178,7 +145,7 @@ export function productionClaudeManager(input: ProductionClaudeInput) {
     const scope = { deviceId: accepted.override.target.hostRef.mainId, profilePath: compiled.configuration.configDirectory,
       configRevision: accepted.currentBinding.pin.configRevision, cwd: input.workingDirectory }
     const runner = createClaudeSdkRunner({ loadClient: async () => {
-      await input.profiles!.revalidate({ ...profileOwner, admissionSignal: signal }, accepted)
+      await input.profiles!.revalidate({ ...input.binding, admissionSignal: signal }, accepted)
       await input.factories.assertInstallationUnchanged(installation, signal)
       signal.throwIfAborted()
       return (input.loadClient ?? ((selected) => loadOfficialClaudeSdk(selected.profilePath, selected.recovery, selected.binary)))({
@@ -216,8 +183,6 @@ export function productionClaudeManager(input: ProductionClaudeInput) {
         return attached
       }
       const turn = manager.startTurn.bind(manager)
-      if (input.binding.kind === 'workflow') bindConsultationAccess(manager, domain,
-        () => sessionStart, start => { sessionStart = structuredClone(start) })
       manager.startTurn = async function* (session, message, effectSignal) {
         let attached: NativeSessionReference
         try {
