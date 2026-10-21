@@ -1,3 +1,4 @@
+import { canonicalJson } from '@foreman-code/contracts/canonical-json'
 import type { SqlQuery } from '../../../infrastructure/transaction.js'
 import { recoverPersistedClaudeCompaction } from '../../harnesses/claudeSdk/recoverCompaction.js'
 import { randomUUID } from 'node:crypto'
@@ -138,9 +139,9 @@ export class SessionControlStore {
     }
     const native = manager ? readNativeSnapshot(binding) : null
     const applied = native?.applied
-    if (applied && JSON.stringify(applied) !== JSON.stringify(state.applied)) {
+    if (applied && canonicalJson(applied) !== canonicalJson(state.applied)) {
       state.applied = applied
-      if (state.appliedMode === state.desiredMode && JSON.stringify(applied) === JSON.stringify(state.desired)) {
+      if (state.appliedMode === state.desiredMode && canonicalJson(applied) === canonicalJson(state.desired)) {
         state.applicability = 'applied'
       }
       await this.save(state)
@@ -252,7 +253,7 @@ export class SessionControlStore {
           await current.manager.applySessionPreferences(current.session, input.preferences, signal)
           const applied = current.manager.appliedSessionPreferences?.(current.session)
           if (applied) state.applied = applied
-          state.applicability = applied && JSON.stringify(applied) === JSON.stringify(state.desired)
+          state.applicability = applied && canonicalJson(applied) === canonicalJson(state.desired)
             ? 'applied' : 'next-turn'
           await this.save(state)
         }

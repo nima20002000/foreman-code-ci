@@ -84,7 +84,8 @@ export function WorkflowChatComposer({ scope, participants, participantsLoading,
   const bytes = new TextEncoder().encode(draft.body).byteLength
   const submit = () => {
     if (pending || issue || !draft.body.trim() || bytes > 16 * 1024 || !online) return
-    onSubmit({ ...scope, body: draft.body, mentions: draft.mentions, deliveries: draft.deliveries,
+    onSubmit({ workspaceId: scope.workspaceId, workflowId: scope.workflowId,
+      body: draft.body, mentions: draft.mentions, deliveries: draft.deliveries,
       cardIds: [], ...(draft.replyToPostId ? { replyToPostId: draft.replyToPostId } : {}) })
   }
   const master = participants.find(agent => agent.productRole === 'master')

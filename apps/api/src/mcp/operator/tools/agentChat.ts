@@ -2,7 +2,7 @@ import { z } from 'zod'
 import {
   EnsureAgentChatConversationRequestSchema, CancelQueuedAgentChatTurnRequestSchema, RespondAgentChatInteractionRequestSchema,
   AgentChatStateResponseSchema, AgentChatSendResponseSchema, AgentChatStateSchema,
-  ReadAgentChatRequestSchema, ReadAgentChatResponseSchema, SendAgentChatMessageRequestSchema,
+  ReadAgentChatRequestSchema, ReadAgentChatResponseSchema, AgentChatMessageCommandSchema,
   AgentChatTurnSchema, AgentChatResetResponseSchema,
 } from '@foreman-code/contracts/agent-chat'
 import { ChatDeliveryIntentSchema, ChatSendRequestSchema, ChatStopRequestSchema, ChatQueueCancelRequestSchema,
@@ -46,8 +46,8 @@ const readOutput = z.object({ ...AgentChatReadToolOutputSchema.shape, ...z.objec
 }).strict().superRefine((value, context) => validate(readOutputAlternatives, value, context))
 
 // Preserve omission before the legacy next_turn default is applied; explicit auto is never inferred.
-const legacyRequest = z.object({ ...SendAgentChatMessageRequestSchema.shape, intent: ChatDeliveryIntentSchema.optional() }).strict()
-  .superRefine((value, context) => validate(SendAgentChatMessageRequestSchema, value, context))
+const legacyRequest = z.object({ ...AgentChatMessageCommandSchema.shape, intent: ChatDeliveryIntentSchema.optional() }).strict()
+  .superRefine((value, context) => validate(AgentChatMessageCommandSchema, value, context))
 const legacyMessage = z.object({ ...AgentChatSendToolInputSchema.shape.message.unwrap().shape,
   intent: ChatDeliveryIntentSchema.optional() }).strict()
   .superRefine((value, context) => validate(AgentChatSendToolInputSchema.shape.message.unwrap(), value, context))
