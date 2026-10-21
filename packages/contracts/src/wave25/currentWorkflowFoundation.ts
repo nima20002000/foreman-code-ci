@@ -6,7 +6,6 @@ import {
   WorkflowRunRecordSchema, ExecutionResultSchema, TimestampSchema,
 } from '../index.js'
 import { GraphIdSchema } from '../schemaPrimitives.js'
-import { validateHierarchyConfiguration } from './hierarchyValidation.js'
 import { canonicalGraphJson } from './json.js'
 import { ExecutionSemanticsVersionSchema as CurrentExecutionSemanticsSchema } from './workflowShape.js'
 export { ExecutionSemanticsVersionSchema as CurrentExecutionSemanticsSchema } from './workflowShape.js'
@@ -37,9 +36,6 @@ type Version = z.infer<typeof CurrentWorkflowVersionBaseSchema>
 export function validateCurrentWorkflowTopology(version: Version, context: z.RefinementCtx): void {
   const issue = (message: string, path: (string | number)[] = ['definition']) => context.addIssue({ code: 'custom', path, message })
   const graph = version.definition
-  // Hierarchy handoffs activate only an admitted request. Their saved routes may
-  // return to the entry or form review loops; the separate reporting tree stays acyclic.
-  const hierarchyRequests = Boolean(graph.hierarchy && graph.handoffs)
   if(graph.handoffs&&graph.nodes.some(node=>node.kind==='job'))issue('JOB_HANDOFF_POLICY_UNSUPPORTED: noninteractive job nodes use DAG or explicit finite repeat dependencies.')
   if (graph.id !== version.workflowId || graph.workspaceId !== version.workspaceId || graph.version !== version.version) issue('immutable scope/version mismatch')
   if (graph.entryNodeId !== version.entryNodeId) issue('authored and immutable entry must match', ['entryNodeId'])
@@ -73,7 +69,7 @@ export function validateCurrentWorkflowTopology(version: Version, context: z.Ref
       }
     }
     if (edge.kind === 'execution') {
-      if (!hierarchyRequests && edge.target === version.entryNodeId) issue('entry cannot have an incoming execution dependency')
+      if (edge.target === version.entryNodeId) issue('entry cannot have an incoming execution dependency')
       outgoing.set(edge.source, [...(outgoing.get(edge.source) ?? []), edge.target])
       indegree.set(edge.target, (indegree.get(edge.target) ?? 0) + 1)
     } else {
@@ -93,14 +89,14 @@ export function validateCurrentWorkflowTopology(version: Version, context: z.Ref
       if (remaining === 0) queue.push(target)
     }
   }
-  if (!hierarchyRequests && processed !== nodes.size) issue('execution relationships must form an acyclic graph')
+  if (processed !== nodes.size) issue('execution relationships must form an acyclic graph')
   const reachable = new Set<string>(), visit = [version.entryNodeId]
   for (let i = 0; i < visit.length; i++) {
     const id = visit[i]!
     if (reachable.has(id)) continue
     reachable.add(id); visit.push(...(outgoing.get(id) ?? []))
   }
-  for (const edge of execution) if (!hierarchyRequests && !reachable.has(edge.source) && reachable.has(edge.target)) issue('an excluded component cannot supply a selected-component dependency')
+  for (const edge of execution) if (!reachable.has(edge.source) && reachable.has(edge.target)) issue('an excluded component cannot supply a selected-component dependency')
   if (Object.keys(version.agentConfigurationVersionIds).length !== new Set(graph.nodes.filter(node => node.kind !== 'job').map(node => node.agentId)).size) issue('configuration pins must describe exactly this topology')
   for (const node of graph.nodes) {
     if (node.kind !== 'job' && !version.agentConfigurationVersionIds[node.agentId]) issue('each Agent requires an immutable configuration pin')
@@ -136,7 +132,6 @@ export function validateCurrentWorkflowConfigurations(value: { version: Version 
   for (const node of nodes) {
     if (node.kind === 'job') continue
     const configuration = configs.get(version.agentConfigurationVersionIds[node.agentId]!)
-    if (node.browser?.enabled && !node.browser.profileId) fail(`node ${node.id} needs a browser profile before executable save`)
     if (!configuration || configuration.workspaceId !== version.workspaceId || configuration.agentId !== node.agentId || !configuration.productRole) fail('an exact scoped configuration with a pinned product role is required')
     const outside = configuration?.productRole && node.graphqlTools
       ? graphqlToolsOutsideRole(configuration.productRole, [...node.graphqlTools.add, ...node.graphqlTools.remove]) : []
@@ -160,12 +155,7 @@ export function validateCurrentWorkflowConfigurations(value: { version: Version 
   const orchestrators = nodes.filter((node) => role(node.id) === 'orchestrator')
   if (!nodes.length) fail('an executable workflow needs an entry node')
   if (nodes.length === 1 && version.entryNodeId !== nodes[0]?.id) fail('a sole node starts itself')
-  if (version.definition.hierarchy) {
-    validateHierarchyConfiguration(value, context)
-  } else {
-    if (nodes.some((node) => role(node.id) === 'master')) fail('Master nodes require an explicit hierarchy')
-    if (orchestrators.length ? role(version.entryNodeId) !== 'orchestrator' : nodes.find(node => node.id === version.entryNodeId)?.kind !== 'job' && role(version.entryNodeId) !== 'coder') fail('entry must use the pinned Orchestrator role when present, otherwise the Worker (coder) role')
-  }
+  if (orchestrators.length ? role(version.entryNodeId) !== 'orchestrator' : nodes.find(node => node.id === version.entryNodeId)?.kind !== 'job' && role(version.entryNodeId) !== 'coder') fail('entry must use the pinned Orchestrator role when present, otherwise the Worker (coder) role')
   for (const configuration of configurations) {
     if (!HarnessWorkflowCompatibilitySchema.safeParse({ configuration: configuration.harness,
       workflowApprovalHandler: version.approval.handler, designatedOrchestrator: version.approval.handler === 'orchestrator'
@@ -187,8 +177,7 @@ export function validateCurrentWorkflowConfigurations(value: { version: Version 
     return
   }
   const entry = nodes.find((node) => node.id === version.entryNodeId)
-  const coordinatorRole = version.definition.hierarchy ? 'master' : 'orchestrator'
-  if ((entry?.kind === 'job' || entry?.agentId !== version.approval.designatedOrchestratorAgentId) || role(version.entryNodeId) !== coordinatorRole) fail('the supported initialized reviewer must be the explicit entry coordinator')
+  if ((entry?.kind === 'job' || entry?.agentId !== version.approval.designatedOrchestratorAgentId) || role(version.entryNodeId) !== 'orchestrator') fail('the supported initialized reviewer must be the explicit entry Orchestrator')
   for (const edge of approvals) if (edge.source !== version.entryNodeId || edge.target === version.entryNodeId) fail('independent or recursive reviewer startup is unsupported')
   // Match repeatReviewerOccurrence: an outside reviewer is reusable, but an
   // in-block reviewer has no exported execution binding for another scope.

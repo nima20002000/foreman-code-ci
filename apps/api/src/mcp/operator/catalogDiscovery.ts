@@ -1,5 +1,4 @@
 import { CANONICAL_RUN_GRAPH_MCP_TOOLS, CURRENT_WORKFLOW_TOOLS, RUN_INSPECTION_TOOLS } from '@foreman-code/contracts/wave25'
-import { WORKFLOW_HIERARCHY_TOOLS } from '@foreman-code/contracts'
 import { operatorTool } from './catalog.js'
 import { toolAvailable } from './definition.js'
 import type { OperatorRequestContext } from './types.js'
@@ -14,7 +13,6 @@ import { WORKFLOW_SCHEDULE_TOOLS, workflowScheduleToolAvailable } from './tools/
 import { RUN_HISTORY_TOOLS, runHistoryToolsAvailable } from './tools/runHistory.js'
 import { runInspectionToolAvailable } from './tools/runInspection.js'
 import { runGraphToolAvailable } from './tools/runGraph.js'
-import { workflowHierarchyToolAvailable } from './tools/workflowHierarchy.js'
 
 /** Uses the registrars' existing discovery predicates with the current authenticated caller. */
 export function catalogToolAvailable(context: OperatorRequestContext, name: string): boolean {
@@ -37,8 +35,6 @@ export function catalogToolAvailable(context: OperatorRequestContext, name: stri
   const operation = (Object.keys(CURRENT_WORKFLOW_TOOLS) as Array<keyof typeof CURRENT_WORKFLOW_TOOLS>)
     .find(key => CURRENT_WORKFLOW_TOOLS[key] === name)
   if (operation) return !!context.services.workflows?.current && currentWorkflowAvailable(context.principal, operation)
-  const hierarchy = Object.values(WORKFLOW_HIERARCHY_TOOLS).find(candidate => candidate === name)
-  if (hierarchy) return workflowHierarchyToolAvailable(context, hierarchy)
   if (Object.values(RUN_HISTORY_TOOLS).some(candidate => candidate === name)) return runHistoryToolsAvailable(context)
   const inspection = Object.values(RUN_INSPECTION_TOOLS).find(candidate => candidate === name)
   if (inspection) return runInspectionToolAvailable(context, inspection)

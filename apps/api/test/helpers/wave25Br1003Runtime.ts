@@ -17,7 +17,6 @@ import { ReviewNativeProofServices } from '../../src/modules/interactions/review
 import { PostgresRepeatReviewerBindings } from '../../src/modules/interactions/repeatReviewer.js'
 import { PostgresWorkflowClosureStore } from '../../src/modules/interactions/workflowClosure.js'
 import { createWorkflowRepositoryServices } from '../../src/modules/runs/workflowRepositoryServices.js'
-import { WorkflowCollaborationIntegration, type WorkflowFeaturePorts } from '../../src/modules/collaboration/workflowIntegration.js'
 import type { RepeatRepositoryServices } from '../../src/modules/runs/repeatRepositoryHost.js'
 import { randomUUID } from 'node:crypto'
 import { vi } from 'vitest'
@@ -58,8 +57,6 @@ export async function checkpointRuntimeFixture(branches: 1 | 2 = 1, pendingPerEx
     outputFor?: ConstructorParameters<typeof CheckpointTestProvider>[4];
     admitPlacementExecutionLocked?: RepeatRepositoryServices['admitPlacementExecutionLocked'];
     preparePlacementExecution?: RepeatRepositoryServices['preparePlacementExecution'];
-    /** Frozen A/B ports; the production D adapter owns lifecycle and preparation. */
-    collaborationPorts?: WorkflowFeaturePorts;
     /** Exact physical closure port; omitted unless a fixture supplies native lifetimes. */
     recoverNativeProcesses?: ConstructorParameters<typeof ApprovalExecutionCoordinator>[11];
     managerFactory?: (context: NativeManagerResolutionContext,
@@ -116,15 +113,8 @@ export async function checkpointRuntimeFixture(branches: 1 | 2 = 1, pendingPerEx
       const workflowCapture = createWorkflowNativeCaptureChannel()
       const reviewCapture = createReviewNativeCaptureChannel()
       const repositoryServices = createWorkflowRepositoryServices(workflowCapture.verify, undefined, options.nativeSourcePersisted)
-      const collaboration = options.collaborationPorts
-        ? new WorkflowCollaborationIntegration(options.collaborationPorts, async () => 'fixture-main') : undefined
       const runs = new PostgresRunRepository(db.pool, workflows, locations,
         { runtimeRoot: db.directory, ...repositoryServices, services: { ...repositoryServices.services,
-          ...(collaboration ? { collaboration: collaboration.hooks,
-            prepareCollaborationExecution: collaboration.prepare.bind(collaboration),
-            readCollaborationPrompt: collaboration.readPrompt.bind(collaboration),
-            releaseCollaborationExecution: (owner: RunOwnership, execution: Parameters<typeof collaboration.release>[1],
-              version: Parameters<typeof collaboration.release>[3]) => collaboration.release(owner, execution, 'terminal', version) } : {}),
           ...(options.preparePlacementExecution ? { preparePlacementExecution: options.preparePlacementExecution } : {}),
           ...(options.admitPlacementExecutionLocked
             ? { admitPlacementExecutionLocked: options.admitPlacementExecutionLocked } : {}) } },
@@ -146,7 +136,7 @@ export async function checkpointRuntimeFixture(branches: 1 | 2 = 1, pendingPerEx
         launchCredentials, validate,
         new PostgresWorkflowClosureStore(db.pool), new PostgresRepeatReviewerBindings(db.pool),
         workflowCapture.capture, reviewCapture.capture, options.recoverNativeProcesses,
-        undefined, options.prepareManagerContext, undefined, collaboration)
+        undefined, options.prepareManagerContext)
       const engine = new LangGraphWorkflowEngine(runs, workflows, native, checkpointer, db.directory,
         locations, launchCredentials, repository, options.onRunTerminal,
         { workerParallelism: options.workerParallelism ?? 2 })
@@ -235,8 +225,7 @@ export function providerLaunchCredentials(runs: PostgresRunRepository, locations
         'WORKER_EXECUTION_IDENTITY_INVALID', 'Credential preflight requires the pinned local execution.', 409)
       const context: NativeManagerResolutionContext = { executionId: execution.id, agentId: execution.agentId,
         harness: input.harness, workingDirectory: input.workingDirectory, configuration,
-        runId: execution.runId, attempt: execution.attempt, ...(input.purpose ? { purpose: input.purpose } : {}),
-        ...(input.consultation ? { consultation: input.consultation } : {}) }
+        runId: execution.runId, attempt: execution.attempt, ...(input.purpose ? { purpose: input.purpose } : {}) }
       const { manager } = managers.resolve(options.prepareContext ? await options.prepareContext(context) : context)
       return new WorkerLaunchCredentialService(new McpDetectionService(inspector(manager), providerAppEndpoint),
         credentials, run.executionLocation.runnerId, Math.min(300_000, credentials.ttlMs - 30_000)).prepare(input)
@@ -247,8 +236,6 @@ export function providerLaunchCredentials(runs: PostgresRunRepository, locations
     reconcileTerminalCredentials: () => credentials.reconcileTerminalCredentials(),
     renew: (id, credential) => credentials.renewForExecution(id, credential),
     restore: (id, environment) => credentials.restoreForExecution(id, environment),
-    restoreConsultation: (binding, environment) => credentials.restoreForConsultation(binding, environment),
-    renewConsultation: (binding, credential) => credentials.renewForConsultation(binding, credential),
   }
 }
 

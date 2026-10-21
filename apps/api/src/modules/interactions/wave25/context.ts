@@ -122,7 +122,7 @@ export async function readContext(sql: GraphSqlClient, interaction: DurableInter
       if (session.data.providerVersion !== interaction.providerVersion || session.data.harness !== interaction.harness
         || usesNativeSelfReview(c.harness)) return fail('APPROVAL_NATIVE_ROUTE_MISMATCH')
     } else {
-      if (!native?.finalized || (c.productRole !== 'master' && c.productRole !== 'orchestrator')) return fail('REVIEWER_EXECUTION_NOT_READY')
+      if (!native?.finalized || c.productRole !== 'orchestrator') return fail('REVIEWER_EXECUTION_NOT_READY')
       validateReviewerBootstrap(v.definition, v.approval, c.harness, v.entryNodeId)
     }
   }
