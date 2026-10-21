@@ -1,3 +1,5 @@
+import { workflowResultContext } from './resultContext.js'
+import { parseCoordinationResult } from '@foreman-code/contracts'
 import { HarnessExecutionSchema, type ExecutionResult, type HarnessExecution, type HarnessExecutionContext } from '@foreman-code/contracts'
 import { AcceptedCurrentNodeResultSchema, NodeResolutionSchema, parseRepeatExitResultV1,
   type WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
@@ -52,17 +54,24 @@ export function normalizeRepeatTerminal(version: WorkflowVersionV3, scope: Repea
   assertRepeatExecution(version, scope, ref, execution)
   if (execution.state !== 'completed') return execution
   if (!execution.result) return repeatConflict('EXECUTION_RESULT_MISSING')
-  // An interval check has no result contract; its reply never routes the graph.
-  if (repeatTickIndex(execution.input) !== undefined) return execution
   if (execution.result.outcome !== 'succeeded') {
     return version.definition.handoffs && options.workResultRepair && execution.result.outcome === 'failed'
       ? invalidWorkResult(execution) : execution
   }
+  const coordination = workflowResultContext(version, execution)
+  if (coordination) {
+    try { parseCoordinationResult(execution.result.output, coordination) }
+    catch { return HarnessExecutionSchema.parse({ ...execution, result: options.deliverableFailure ?? {
+      outcome: 'failed', error: { code: 'COORDINATION_RESULT_INVALID',
+        message: 'The result did not satisfy the saved coordination protocol.', retryable: false },
+    } }) }
+  }
+  if (repeatTickIndex(execution.input) !== undefined) return execution
   // A well-formed envelope whose deliverable still fails its output contract after repair fails loudly.
   const deliverable = (accepted: HarnessExecution) => options.deliverableFailure
     ? HarnessExecutionSchema.parse({ ...accepted, result: options.deliverableFailure }) : accepted
   if (version.definition.handoffs) {
-    try { parseWorkResultForInput(execution.result, execution.input, options.executionContext) }
+    try { parseWorkResultForInput(execution.result, execution.input, options.executionContext, coordination) }
     catch {
       return invalidWorkResult(execution)
     }
@@ -112,8 +121,8 @@ export function repeatTerminalResolution(version: WorkflowVersionV3, scope: Repe
   if (execution.result.outcome === 'succeeded') {
     AcceptedCurrentNodeResultSchema.parse(execution.result)
     if (node.choice) {
-      outcome = (exit ? parseRepeatExitResultV1(execution.result, node.choice, node.kind === 'job' ? undefined : node.artifactOutputs)
-        : parseCurrentChoiceResult(execution.result, node.choice, node.kind === 'job' ? undefined : node.artifactOutputs)).routing.outcome
+      outcome = (exit ? parseRepeatExitResultV1(execution.result, node.choice, node.kind === 'job' ? undefined : node.artifactOutputs, workflowResultContext(version, execution))
+        : parseCurrentChoiceResult(execution.result, node.choice, node.kind === 'job' ? undefined : node.artifactOutputs, workflowResultContext(version, execution))).routing.outcome
       const target = node.choice.outcomes.find((item) => item.outcome === outcome)!.target
       if (exit) deferred = outgoing
       else {

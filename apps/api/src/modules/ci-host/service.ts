@@ -24,7 +24,6 @@ import { planCiParts, runsOnCircleCi, unitPartOf } from './parts.js'
 import { planIntegrationParts } from './integrationParts.js'
 import { readCiSlots } from './planningCapacity.js'
 import { CiPlanningSnapshot, isBackgroundYield } from './planningSnapshot.js'
-import { CiComputerStatuses } from './computerStatus.js'
 import { HostCiReads, retryRead } from './readQueries.js'
 import { CI_QUEUE_ORDER, ciQueueReason, compareCiQueue } from './priority.js'
 import { prepareCiSupersession, validateCiSupersession, supersedeCiRuns } from './supersession.js'
@@ -138,15 +137,7 @@ export class HostCiService {
     this.circleCredits = options.circleCredits
     this.circleStandby = options.circleStandby
     this.reservedCloudSlots = options.reservedCloudSlots ?? 0
-    const statusKey = (computer: HostCiComputer) => endpoint.statusKey?.(computer) ?? canonicalJson(computer)
-    const statuses = new CiComputerStatuses(this.pool,
-      computer => computer.hostRef.kind === 'cloud' ? endpoint.statusKey?.(computer) : undefined,
-      async (run, computer, status) => {
-        await this.reconcileHostStart(run, computer, status)
-        await recordCiExecutorStatus(this.pool, run, computer, status)
-      })
     this.endpoint = {
-      statusKey,
       computers: async () => {
         const computers = await waitForCiDispatch(() => endpoint.computers())
         this.planningEndpoint.observeComputers(computers)
@@ -169,14 +160,25 @@ export class HostCiService {
             throw error
           }
         }
+        const assigned = (await this.pool.query<{ record: unknown; host_key: string }>(
+          `select record,host_key from ci_runs where state in ('starting','running')`)).rows
+          .filter(row => row.host_key === computer.key)
+        let status: CiHostStatus | null = null
         try {
-          const reply = await statuses.read(computer, () => waitForCiDispatch(send))
-          this.planningEndpoint.observeStatus(computer, reply)
+          const reply = await waitForCiDispatch(send)
+          if (reply.operation === 'status') status = reply
           return reply
         } catch (error) {
           // Yielding to foreground work says nothing about the computer; its last-known readiness stays bounded by age.
           if (!isBackgroundYield(error)) this.planningEndpoint.invalidate(computer)
           throw error
+        } finally {
+          for (const row of assigned) {
+            const run = CiRunRecordSchema.parse(row.record)
+            await this.reconcileHostStart(run, computer, status)
+            await recordCiExecutorStatus(this.pool, run, computer, status)
+          }
+          if (status) this.planningEndpoint.observeStatus(computer, status)
         }
       },
     }
