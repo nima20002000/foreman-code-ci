@@ -42,7 +42,7 @@ export function configurationInput(
   const outside = graphqlToolsOutsideRole(productRole ?? 'coder', graphqlTools ?? [])
   if (outside.length) {
     throw new DomainError('GRAPHQL_TOOL_NOT_ALLOWED_FOR_ROLE',
-      `The ${productRole === 'orchestrator' ? 'Orchestrator' : 'Coder'} role cannot use ${outside.join(', ')}.`, 400, { tools: outside })
+      `The ${productRole === 'master' ? 'Master' : productRole === 'orchestrator' ? 'Orchestrator' : 'Worker'} role cannot use ${outside.join(', ')}.`, 400, { tools: outside })
   }
   if (harness === 'claude') {
     const configuration = agent.harnessConfiguration?.harness === 'claude' ? agent.harnessConfiguration
