@@ -18,8 +18,6 @@ export function createMemoryBoardHandlers(port: MemoryBoardClient) {
         case 'cards': return HttpResponse.json(await port.readCards(boardId, { status: query.get('status') as CardFilter['status'],
           query: query.get('query') ?? undefined, completionKind: query.get('completionKind') as CardFilter['completionKind'] || undefined }, page))
         case 'card': return HttpResponse.json(await port.readCard(boardId, query.get('cardId') ?? '', page))
-        case 'bindings': return HttpResponse.json(await port.readBindings(boardId, query.get('cardId') ?? '', page))
-        case 'claims': return HttpResponse.json(await port.readClaims(boardId, query.get('cardId') ?? '', page))
         case 'notes': return HttpResponse.json(await port.readNotes(boardId, query.get('archived') === 'true', page))
         case 'command': return HttpResponse.json(await port.readCommand(boardId, query.get('commandId') ?? ''))
         default: throw new ApiError({ code: 'INVALID_REQUEST', message: 'Unknown memory view.' }, 400)
