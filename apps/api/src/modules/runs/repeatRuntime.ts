@@ -321,7 +321,7 @@ export function repeatNativeObserver(context: RepeatNativeObserverContext):
       const request = workflowExecutionRequest({ execution: { ...execution, ...paths },
         version: context.version, configuration, workspaceId: run.workspaceId, executionContext })
       const workHandoffContract = context.version.definition.handoffs && repeatTickIndex(execution.input) === undefined
-        ? currentInitialPrompt({ ...node, initialPrompt: undefined }, false, true, execution.resultProtocol) : undefined
+        ? currentInitialPrompt({ ...node, initialPrompt: undefined }, false, true) : undefined
       const deliverable = workflowDeliverableContract(context.version, execution,
         (kind, values) => context.workflows.referencesCreatedByExecution(kind, values, run.workspaceId, execution.id))
       for (;;) {
