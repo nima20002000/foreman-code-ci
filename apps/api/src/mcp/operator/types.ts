@@ -50,7 +50,6 @@ export interface OperatorServices {
   buildComputers?: import('../../modules/settings/buildComputers.js').BuildComputerSettings
   devices?: DeviceManagementService
   sources?: import('../../modules/sources/service.js').PostgresSourceService
-  temporaryFiles?: import('../../modules/files/service.js').TemporaryFileService
   fileReferences?: FileReferenceService
   executionReadiness?: import('../../modules/harnesses/executionReadiness.js').ExecutionReadinessService
   runGraph?: RunGraphReadApi
@@ -79,7 +78,6 @@ export interface OperatorServices {
 
 export interface OperatorRequestContext {
   principal: ManagementPrincipal
-  reauthorize?: () => Promise<ManagementPrincipal>
   signal?: AbortSignal
   services: OperatorServices
 }
