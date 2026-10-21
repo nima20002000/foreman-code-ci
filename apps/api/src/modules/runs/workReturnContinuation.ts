@@ -1,3 +1,4 @@
+import { workflowResultContext } from './resultContext.js'
 import { ExecutionResultSchema, HarnessExecutionSchema } from '@foreman-code/contracts'
 import {
   AcceptedCurrentNodeResultSchema, WorkActivationIdentitySchema, WorkRequestSchema,
@@ -69,7 +70,8 @@ export async function workRequestSettlementsLocked(context: WorkReturnContext, r
   for (const row of rows) {
     if (row.result_json) {
       const result = AcceptedCurrentNodeResultSchema.parse(JSON.parse(row.result_json))
-      if (parseWorkHandoffResult(result).routing.kind === 'finish') continue
+      if (parseWorkHandoffResult(result, workflowResultContext(context.version,
+        { workflowNodeId: request.destinationNodeId, resultProtocol: context.hooks.run.resultProtocol })).routing.kind === 'finish') continue
     }
     const execution = row.execution ? HarnessExecutionSchema.parse(row.execution) : undefined
     const failure = row.failure_result ?? execution?.result

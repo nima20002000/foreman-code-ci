@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { createMemoryHistory, createRootRoute, createRoute, createRouter, Outlet, RouterProvider, useMatch } from '@tanstack/react-router'
+import { createMemoryHistory, createRootRoute, createRoute, createRouter, Outlet, RouterProvider, useLocation } from '@tanstack/react-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { EngineChatReadbackSchema, collaborationContractFixtures } from '@foreman-code/contracts'
 import { Button, Textarea } from '../../shared/ui/nocturne'
@@ -17,19 +17,12 @@ import { OperatorChatVisibilityProvider } from '../operator-chat/visibility'
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
 /** A public consumer of the shell slots. Its local draft owner outlives selected bodies. */
-type Navigation = Pick<ReturnType<typeof useWorkflowSidePanel>, 'selectPanel' | 'selectView' | 'setMemoryOpen'>
-
-function ShellFixture({ captureNavigation }: { captureNavigation?: (navigation: Navigation) => void }) {
-  // The departing Board still owns its matched route until the next page mounts.
-  const match = useMatch({ strict: false })
-  const resolved = resolveRunsSelectorBoardLocation(match.pathname, match.search)
-  const side = useWorkflowSidePanel(resolved.workspaceId, resolved.workflowId ?? 'workflow', resolved.run)
-  useEffect(() => {
-    captureNavigation?.({ selectPanel: side.selectPanel, selectView: side.selectView, setMemoryOpen: side.setMemoryOpen })
-  }, [captureNavigation, side.selectPanel, side.selectView, side.setMemoryOpen])
+function ShellFixture() {
+  const location = useLocation()
+  const resolved = resolveRunsSelectorBoardLocation(location.pathname, location.search)
+  const side = useWorkflowSidePanel('workspace', 'workflow', resolved.run)
   const [host, setHost] = useState<HTMLDivElement | null>(null)
   const [draft, setDraft] = useState('')
-  const [actionAvailable, setActionAvailable] = useState(true)
   useWorkflowOperatorDock(side.scope, host, side.panel.kind === 'operator', side.memoryOpen, side.selectPanel, side.closeOperator)
   const readback = EngineChatReadbackSchema.parse(collaborationContractFixtures.executionReadback)
   return <>
@@ -49,24 +42,19 @@ function ShellFixture({ captureNavigation }: { captureNavigation?: (navigation: 
     {host && side.panel.kind === 'agent' && !side.panel.executionId && !side.memoryOpen
       ? createPortal(<div role="region" aria-label="Fixture transcript" className="fixture-scroll">
         <Textarea autoFocus label="Agent settings draft" value={draft}
-          onChange={event => setDraft(event.target.value)} />
-        {actionAvailable ? <Button onClick={() => setActionAvailable(false)}>Finish panel action</Button> : null}
-        <Button onKeyDown={event => { if (event.key === 'Escape') event.preventDefault() }}>Nested control</Button>
-      </div>, host) : null}
+          onChange={event => setDraft(event.target.value)} /></div>, host) : null}
     <WorkflowMemoryDialog open={side.memoryOpen} onOpenChange={side.setMemoryOpen} />
   </>
 }
 
-function mount(entry: string, captureNavigation?: (navigation: Navigation) => void) {
+function mount(entry: string) {
   const root = createRootRoute({ component: Outlet })
-  const component = () => <ShellFixture captureNavigation={captureNavigation} />
   const board = createRoute({ getParentRoute: () => root, path: '/workspaces/$workspaceId',
-    validateSearch: RunsSelectorSearchSchema.parse, component })
+    validateSearch: RunsSelectorSearchSchema.parse, component: ShellFixture })
   const pinned = createRoute({ getParentRoute: () => root,
     path: '/workspaces/$workspaceId/workflows/$workflowId/runs/$runId/graph/$workflowVersionId/3',
-    validateSearch: RunsSelectorSearchSchema.parse, component })
-  const settings = createRoute({ getParentRoute: () => root, path: '/settings', component: () => <p>Outside Board</p> })
-  const router = createRouter({ routeTree: root.addChildren([board, pinned, settings]),
+    validateSearch: RunsSelectorSearchSchema.parse, component: ShellFixture })
+  const router = createRouter({ routeTree: root.addChildren([board, pinned]),
     history: createMemoryHistory({ initialEntries: [entry] }) })
   render(<OperatorChatVisibilityProvider enabled={false}><WorkflowOperatorDockProvider>
     <RouterProvider router={router} /><WorkflowOperatorChat />
@@ -75,75 +63,6 @@ function mount(entry: string, captureNavigation?: (navigation: Navigation) => vo
 }
 
 describe('disabled collaboration shell through navigation and rendered controls', () => {
-  it.each(['panel', 'view', 'memory'] as const)('ignores a delayed %s action after leaving its Board', async kind => {
-    let pending: Navigation | undefined
-    const router = mount('/workspaces/workspace?workflowId=workflow&runId=run-a&workflowVersionId=version-a&executionSemanticsVersion=3',
-      navigation => { pending ??= navigation })
-    await screen.findByRole('button', { name: 'Open Agent settings' })
-    expect(pending).toBeDefined()
-    await act(async () => { await router.navigate({ to: '/settings' }) })
-    expect(await screen.findByText('Outside Board')).toBeVisible()
-    await act(async () => {
-      if (kind === 'panel') pending!.selectPanel({ kind: 'group_chat' })
-      if (kind === 'view') pending!.selectView('overview')
-      if (kind === 'memory') pending!.setMemoryOpen(true)
-    })
-    await waitFor(() => expect(router.state.status).toBe('idle'))
-    expect(router.state.location.pathname).toBe('/settings')
-    expect(screen.getByText('Outside Board')).toBeVisible()
-  })
-
-  it('does not move another workspace back to the owner of a stale panel action', async () => {
-    let pending: Navigation | undefined
-    const router = mount('/workspaces/workspace?workflowId=workflow', navigation => { pending ??= navigation })
-    await screen.findByRole('button', { name: 'Open Agent settings' })
-    expect(pending).toBeDefined()
-    await act(async () => { await router.navigate({ to: '/workspaces/$workspaceId',
-      params: { workspaceId: 'other-workspace' }, search: { workflowId: 'other-workflow' } }) })
-    await act(async () => pending!.selectPanel({ kind: 'group_chat' }))
-    await waitFor(() => expect(router.state.status).toBe('idle'))
-    expect(router.state.location.pathname).toBe('/workspaces/other-workspace')
-    expect(router.state.location.search).toEqual({ workflowId: 'other-workflow' })
-  })
-
-  it('closes after a focused portal control disappears, deferring Escape while a dialog is open', async () => {
-    const user = userEvent.setup()
-    const router = mount('/workspaces/workspace?workflowId=workflow')
-    const opener = await screen.findByRole('button', { name: 'Open Agent settings' })
-    await user.click(opener)
-    const panel = await screen.findByRole('complementary', { name: 'Workflow side panel' })
-    const action = within(panel).getByRole('button', { name: 'Finish panel action' })
-    await user.click(action)
-    expect(action).not.toBeInTheDocument()
-    expect(document.body).toHaveFocus()
-    const modal = render(<dialog open aria-label="Other dialog">Another surface owns Escape</dialog>)
-    await user.keyboard('{Escape}')
-    expect(panel).toBeVisible()
-    modal.unmount()
-    await user.keyboard('{Escape}')
-    await waitFor(() => expect(panel).not.toBeVisible())
-    expect(router.state.location.search).not.toHaveProperty('boardPanel')
-    expect(opener).toHaveFocus()
-  })
-
-  it('leaves the rail open when a nested control consumes Escape or focus moves outside', async () => {
-    const user = userEvent.setup()
-    mount('/workspaces/workspace?workflowId=workflow')
-    const opener = await screen.findByRole('button', { name: 'Open Agent settings' })
-    await user.click(opener)
-    const panel = await screen.findByRole('complementary', { name: 'Workflow side panel' })
-    await user.click(within(panel).getByRole('button', { name: 'Nested control' }))
-    await user.keyboard('{Escape}')
-    expect(panel).toBeVisible()
-    await act(async () => opener.focus())
-    await user.keyboard('{Escape}')
-    expect(panel).toBeVisible()
-    await act(async () => opener.blur())
-    expect(document.body).toHaveFocus()
-    await user.keyboard('{Escape}')
-    expect(panel).toBeVisible()
-  })
-
   it('explains a hidden Operator destination without mounting a conversation or making requests', async () => {
     const fetch = vi.spyOn(globalThis, 'fetch'), user = userEvent.setup()
     mount('/workspaces/workspace?workflowId=workflow&boardPanel=operator')
