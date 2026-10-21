@@ -1,5 +1,4 @@
 import { operatorSummaryActivityMigration } from './operatorSummaryActivityMigration.js'
-import { workflowControlsMigration } from './workflowControlsMigration.js'
 import { ciIntegrationSelectionMigration } from './ciIntegrationSelectionMigration.js'
 import { ciExecutorCleanupMigration } from './ciExecutorCleanupMigration.js'
 import { ciRetainedExecutorsMigration } from './ciRetainedExecutorsMigration.js'
@@ -61,11 +60,8 @@ import { workJoinDispatchMigration } from './workJoinDispatchMigration.js'
 import { workJoinDispositionMigration } from './workJoinDispositionMigration.js'
 import { workParentRequestMigration } from './workParentRequestMigration.js'
 import { workReturnGroupMigration } from './workReturnGroupMigration.js'
+import { memoryBoardsMigration } from './memoryBoardsMigration.js'
 import { workReturnNodeGroupingMigration } from './workReturnNodeGroupingMigration.js'
-import { workflowHierarchyMigration } from './workflowHierarchyMigration.js'
-import { hierarchyGroupsMigration } from './hierarchyGroupsMigration.js'
-import { hierarchyDirectionMigration } from './hierarchyDirectionMigration.js'
-import { coordinationResultMigration } from './coordinationResultMigration.js'
 import { workReturnRequestMigration } from './workReturnRequestMigration.js'
 import { compactCommandActivityMigration } from './compactCommandActivityMigration.js'
 import { workflowPresentationMigration } from './workflowPresentationMigration.js'
@@ -179,7 +175,6 @@ import { fileReferenceAccessMigration } from './fileReferenceAccessMigration.js'
 import { fileToolsMigration } from '../modules/files/tools/migration.js'
 import { harnessQualificationMigration } from './harnessQualificationMigration.js'
 import { workspaceProvisioningMigration } from './workspaceProvisioningMigration.js'
-import { workflowCollaborationMigration } from './workflowCollaborationMigration.js'
 
 export const migrations = [
   { version: 1, sql: `
@@ -1012,12 +1007,7 @@ export const migrations = [
   ciRetainedExecutorsMigration,
   workReturnGroupMigration,
   workReturnNodeGroupingMigration,
-  workflowHierarchyMigration,
-  hierarchyGroupsMigration,
-  hierarchyDirectionMigration,
-  workflowCollaborationMigration,
-  coordinationResultMigration,
-  workflowControlsMigration,
+  { version: 2026102101, ...memoryBoardsMigration },
 ] as const
 
 export function assertMigrationVersions(entries: readonly { version: number }[]): void {
