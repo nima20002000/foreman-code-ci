@@ -1,5 +1,3 @@
-import { createMemoryBoardService } from '../../src/modules/memory-boards/production.js'
-import { memoryBoardAuthority } from '../../src/modules/collaboration/memoryBoardAuthority.js'
 import { agentWorkflowVersion } from './agentWorkflowFixture.js'
 import { bindRunAuthority, currentOperatorAuthority, type AcceptedRunAuthority } from '../../src/modules/access/runAuthority.js'
 import { requireAuthorization } from '../../src/modules/access/policy.js'
@@ -114,10 +112,9 @@ export async function checkpointRuntimeFixture(branches: 1 | 2 = 1, pendingPerEx
       vi.spyOn(locations, 'revalidateSnapshot').mockResolvedValue(undefined)
       const workflowCapture = createWorkflowNativeCaptureChannel()
       const reviewCapture = createReviewNativeCaptureChannel()
-      const memoryBoards = createMemoryBoardService(db.pool, memoryBoardAuthority)
       const repositoryServices = createWorkflowRepositoryServices(workflowCapture.verify, undefined, options.nativeSourcePersisted)
       const runs = new PostgresRunRepository(db.pool, workflows, locations,
-        { runtimeRoot: db.directory, ...repositoryServices, services: { ...repositoryServices.services, memoryBoards,
+        { runtimeRoot: db.directory, ...repositoryServices, services: { ...repositoryServices.services,
           ...(options.preparePlacementExecution ? { preparePlacementExecution: options.preparePlacementExecution } : {}),
           ...(options.admitPlacementExecutionLocked
             ? { admitPlacementExecutionLocked: options.admitPlacementExecutionLocked } : {}) } },

@@ -272,7 +272,6 @@ function EditableAgentSettingsForm({ agent, initialPrompt, nodeGraphqlTools, cre
         labelHint={<InfoHint label="Initial prompt">The task this node starts with.</InfoHint>}
         onChange={(event) => { setPrompt(event.target.value); clearErrors() }} />
       <GraphqlToolsFields role={agent.productRole === 'master' ? 'master' : agent.productRole === 'orchestrator' ? 'orchestrator' : 'coder'} defaults={graphqlTools.defaults} override={graphqlTools.override}
-        readOnly={configuration.harness === 'opencode' || configuration.sandbox === 'read-only'}
         onChange={(defaults, override) => { setGraphqlTools({ ...(defaults ? { defaults } : {}), ...(override ? { override } : {}) }); clearErrors() }} />
       <HarnessConfigurationFields editor={editor} issues={issuesAt(issues, ['harness'])} onChange={(next) => { setEditor(next); clearErrors() }} allowHarnessChange={false} harnessDefaults={providerDefaults} workspaceId={workspaceId} routedApproval={Boolean(workflowApprovalHandler)} allowAutoReview={workflowApprovalHandler === 'orchestrator'} compact advancedOnly />
     </div>}
