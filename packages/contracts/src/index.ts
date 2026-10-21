@@ -1,3 +1,4 @@
+import { BoardDigestSchema } from './memoryBoards.js';
 import { AgentProductRoleSchema as WorkflowAgentProductRoleSchema, type WorkflowAgentProductRole } from './agentIdentity.js';
 import { ResultProtocolSchema } from './coordinationResult.js';
 import { MessageSchema } from './messages.js';
@@ -882,6 +883,7 @@ export type HarnessExecutionState = z.infer<typeof HarnessExecutionStateSchema>;
 /** One native harness attempt for a workflow node. Attempts may share a parallelGroupId. */
 export const HarnessExecutionSchema = z
   .object({
+    memoryBoardDigest: BoardDigestSchema.optional(),
     id: IdSchema,
     runId: IdSchema,
     workflowNodeId: IdSchema,
@@ -1679,6 +1681,7 @@ export * from './operationalFailures.js'
 
 export * from './agentIdentity.js';
 export * from './memoryBoards.js';
+export * from './memoryBoardViews.js';
 export * from './chatDelivery.js';
 export * from './workflowChat.js';
 export * from './browserProfiles.js';

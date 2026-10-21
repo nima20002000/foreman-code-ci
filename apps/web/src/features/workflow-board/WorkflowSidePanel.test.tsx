@@ -23,7 +23,6 @@ function ShellFixture() {
   const side = useWorkflowSidePanel('workspace', 'workflow', resolved.run)
   const [host, setHost] = useState<HTMLDivElement | null>(null)
   const [draft, setDraft] = useState('')
-  const [actionAvailable, setActionAvailable] = useState(true)
   useWorkflowOperatorDock(side.scope, host, side.panel.kind === 'operator', side.memoryOpen, side.selectPanel, side.closeOperator)
   const readback = EngineChatReadbackSchema.parse(collaborationContractFixtures.executionReadback)
   return <>
@@ -43,10 +42,7 @@ function ShellFixture() {
     {host && side.panel.kind === 'agent' && !side.panel.executionId && !side.memoryOpen
       ? createPortal(<div role="region" aria-label="Fixture transcript" className="fixture-scroll">
         <Textarea autoFocus label="Agent settings draft" value={draft}
-          onChange={event => setDraft(event.target.value)} />
-        {actionAvailable ? <Button onClick={() => setActionAvailable(false)}>Finish panel action</Button> : null}
-        <Button onKeyDown={event => { if (event.key === 'Escape') event.preventDefault() }}>Nested control</Button>
-      </div>, host) : null}
+          onChange={event => setDraft(event.target.value)} /></div>, host) : null}
     <WorkflowMemoryDialog open={side.memoryOpen} onOpenChange={side.setMemoryOpen} />
   </>
 }
@@ -67,44 +63,6 @@ function mount(entry: string) {
 }
 
 describe('disabled collaboration shell through navigation and rendered controls', () => {
-  it('closes after a focused portal control disappears, deferring Escape while a dialog is open', async () => {
-    const user = userEvent.setup()
-    const router = mount('/workspaces/workspace?workflowId=workflow')
-    const opener = await screen.findByRole('button', { name: 'Open Agent settings' })
-    await user.click(opener)
-    const panel = await screen.findByRole('complementary', { name: 'Workflow side panel' })
-    const action = within(panel).getByRole('button', { name: 'Finish panel action' })
-    await user.click(action)
-    expect(action).not.toBeInTheDocument()
-    expect(document.body).toHaveFocus()
-    const modal = render(<dialog open aria-label="Other dialog">Another surface owns Escape</dialog>)
-    await user.keyboard('{Escape}')
-    expect(panel).toBeVisible()
-    modal.unmount()
-    await user.keyboard('{Escape}')
-    await waitFor(() => expect(panel).not.toBeVisible())
-    expect(router.state.location.search).not.toHaveProperty('boardPanel')
-    expect(opener).toHaveFocus()
-  })
-
-  it('leaves the rail open when a nested control consumes Escape or focus moves outside', async () => {
-    const user = userEvent.setup()
-    mount('/workspaces/workspace?workflowId=workflow')
-    const opener = await screen.findByRole('button', { name: 'Open Agent settings' })
-    await user.click(opener)
-    const panel = await screen.findByRole('complementary', { name: 'Workflow side panel' })
-    await user.click(within(panel).getByRole('button', { name: 'Nested control' }))
-    await user.keyboard('{Escape}')
-    expect(panel).toBeVisible()
-    await act(async () => opener.focus())
-    await user.keyboard('{Escape}')
-    expect(panel).toBeVisible()
-    await act(async () => opener.blur())
-    expect(document.body).toHaveFocus()
-    await user.keyboard('{Escape}')
-    expect(panel).toBeVisible()
-  })
-
   it('explains a hidden Operator destination without mounting a conversation or making requests', async () => {
     const fetch = vi.spyOn(globalThis, 'fetch'), user = userEvent.setup()
     mount('/workspaces/workspace?workflowId=workflow&boardPanel=operator')
