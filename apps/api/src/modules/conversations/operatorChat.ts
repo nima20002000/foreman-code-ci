@@ -1347,7 +1347,9 @@ export class OperatorChatService {
       const requestId = row.active_request_id
       try {
         if (!row.owner_principal_id) throw new Error('This legacy conversation needs an explicit owner assignment before recovery.')
-        if (this.tasks.has(row.id)) return
+        // Startup owns submission until its receipt is saved. After submission,
+        // a live stream can stay attached while recovery settles response receipts.
+        if (this.tasks.has(row.id) && row.active_phase !== 'submitted') return
         if (await this.repository.terminal(row.id, requestId)) {
           await this.settleTerminal(row.id, requestId)
           return
